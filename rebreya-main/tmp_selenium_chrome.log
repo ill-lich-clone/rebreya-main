@@ -1,0 +1,6 @@
+START
+MODULE_OK
+DRIVER_STARTED
+TITLE=Тестовый3
+URL=http://localhost:30001/join
+QUIT_OK

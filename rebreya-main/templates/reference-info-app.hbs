@@ -1,0 +1,42 @@
+﻿{{#if hasError}}
+  <section class="rm-shell scrollable">
+    <p class="rm-empty">{{errorMessage}}</p>
+  </section>
+{{else}}
+  <section class="rm-shell scrollable">
+    <header class="rm-hero rm-hero--city">
+      <div>
+        <p class="rm-eyebrow">Справочная запись</p>
+        <h2>{{entry.name}}</h2>
+        <p class="rm-muted">{{entry.subtitle}}</p>
+      </div>
+    </header>
+
+    <section class="rm-panel">
+      <div class="rm-panel__header"><h3>Сводка</h3></div>
+      <dl class="rm-metric-grid rm-metric-grid--compact">
+        {{#each entry.facts}}
+          <div>
+            <dt>{{label}}</dt>
+            <dd>{{displayValue}}</dd>
+          </div>
+        {{/each}}
+      </dl>
+    </section>
+
+    <section class="rm-panel">
+      <div class="rm-panel__header">
+        <h3>Описание</h3>
+        {{#if isEditable}}
+          <button type="button" class="rm-button rm-button--small" data-action="save-reference">Сохранить</button>
+        {{/if}}
+      </div>
+
+      {{#if isEditable}}
+        <textarea class="rm-textarea" name="description" placeholder="Заполните описание вручную...">{{entry.description}}</textarea>
+      {{else}}
+        <p class="rm-empty">{{#if entry.description}}{{entry.description}}{{else}}Описание пока не заполнено.{{/if}}</p>
+      {{/if}}
+    </section>
+  </section>
+{{/if}}

@@ -1,0 +1,114 @@
+﻿<section class="tab {{ heroDollTab.cssClass }} rm-hero-doll-tab" data-tab="{{ heroDollTab.id }}" data-group="{{ heroDollTab.group }}">
+  <div class="rm-hero-doll-tab__layout">
+    <section class="rm-hero-doll-board card">
+      <header class="rm-hero-doll-board__header">
+        <div>
+          <h2>Кукла героя</h2>
+          <p>Перетаскивайте предметы из списка справа или из партийного склада прямо в нужный слот.</p>
+        </div>
+        <button type="button" class="rm-hero-doll-tab__button unbutton always-interactive" data-action="open-party-inventory">
+          <i class="fa-solid fa-box-open" inert></i>
+          <span>Склад группы</span>
+        </button>
+      </header>
+
+      <div class="rm-hero-doll-grid">
+        {{#each heroDoll.slots}}
+          <div class="rm-hero-doll-slot rm-hero-doll-slot--{{ area }}">
+            <button
+              type="button"
+              class="rm-hero-doll-slot__surface unbutton always-interactive {{#if occupied}}is-occupied{{/if}}"
+              data-hero-doll-slot="true"
+              data-action="{{#if occupied}}open-slot-item{{else}}slot-drop{{/if}}"
+              data-slot-id="{{ id }}"
+              {{#if occupied}}data-item-id="{{ itemId }}"{{/if}}
+              title="{{ title }}"
+            >
+              <span class="rm-hero-doll-slot__label">{{ label }}</span>
+
+              {{#if occupied}}
+                <span class="rm-hero-doll-slot__content">
+                  <img class="rm-hero-doll-slot__image" src="{{ itemImg }}" alt="{{ itemName }}">
+                  <span class="rm-hero-doll-slot__copy">
+                    <strong>{{ itemName }}</strong>
+                    {{#if itemMeta}}<small>{{ itemMeta }}</small>{{/if}}
+                  </span>
+                </span>
+              {{else}}
+                <span class="rm-hero-doll-slot__empty">
+                  <i class="fa-solid fa-plus"></i>
+                  <small>пусто</small>
+                </span>
+              {{/if}}
+            </button>
+
+            {{#if occupied}}
+              <button
+                type="button"
+                class="rm-hero-doll-slot__clear rm-icon-button rm-icon-button--danger always-interactive"
+                data-action="clear-slot"
+                data-slot-id="{{ id }}"
+                title="Освободить слот"
+              >
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            {{/if}}
+          </div>
+        {{/each}}
+      </div>
+    </section>
+
+    <section class="rm-hero-doll-stock card">
+      <header class="rm-hero-doll-stock__header">
+        <div>
+          <h3>Инвентарь персонажа</h3>
+          <p>Щёлкните по иконке, чтобы открыть предмет. Перетаскивайте строку в слот куклы.</p>
+        </div>
+        <span class="rm-hero-doll-badge">{{ heroDoll.reservedCount }}/{{ heroDoll.slotCount }}</span>
+      </header>
+
+      {{#if heroDoll.hasInventoryItems}}
+        <ol class="rm-hero-doll-stock__list unlist">
+          {{#each heroDoll.inventoryItems}}
+            <li
+              class="rm-hero-doll-stock__item {{#if reserved}}is-reserved{{/if}}"
+              draggable="true"
+              data-hero-doll-item-drag="true"
+              data-item-id="{{ id }}"
+              data-item-uuid="{{ itemUuid }}"
+              data-allowed-slots="{{ allowedSlotsCsv }}"
+              title="{{ title }}"
+            >
+              <div class="rm-hero-doll-stock__main">
+                <img class="rm-hero-doll-stock__image gold-icon" src="{{ img }}" alt="{{ name }}">
+                <div class="rm-hero-doll-stock__copy">
+                  <strong>{{ name }}</strong>
+                  {{#if meta}}
+                    <p>{{ meta }}</p>
+                  {{/if}}
+                </div>
+              </div>
+
+              <div class="rm-hero-doll-stock__actions">
+                {{#if reserved}}
+                  <span class="rm-hero-doll-badge">{{ reservedSlotLabel }}</span>
+                {{/if}}
+                <button
+                  type="button"
+                  class="rm-icon-button always-interactive"
+                  data-action="open-inventory-item"
+                  data-item-id="{{ id }}"
+                  title="Открыть предмет"
+                >
+                  <i class="fa-solid fa-up-right-from-square"></i>
+                </button>
+              </div>
+            </li>
+          {{/each}}
+        </ol>
+      {{else}}
+        <p class="rm-hero-doll-stock__empty">В инвентаре персонажа нет предметов, которые можно использовать в кукле героя.</p>
+      {{/if}}
+    </section>
+  </div>
+</section>

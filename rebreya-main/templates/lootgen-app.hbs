@@ -1,0 +1,168 @@
+﻿<section class="rm-shell rm-lootgen-shell {{#if viewer}}rm-lootgen-shell--viewer{{/if}}">
+  <header class="rm-compact-shell-header">
+    <div class="rm-compact-shell-header__title">
+      {{#if viewer}}
+        <p class="rm-eyebrow">Сокровища группы</p>
+        <h2>Найденные сокровища</h2>
+      {{else}}
+        <p class="rm-eyebrow">Loot Generator</p>
+        <h2>Лутген Rebreya</h2>
+      {{/if}}
+    </div>
+    {{#if canManage}}
+      <div class="rm-compact-shell-header__actions">
+        <button type="button" class="rm-icon-button" data-action="lootgen-new-window" title="Открыть ещё одно окно лутгена">
+          <i class="fa-solid fa-window-restore"></i>
+        </button>
+      </div>
+    {{/if}}
+  </header>
+
+  {{#if canManage}}
+    <section class="rm-panel rm-panel--compact">
+      <div class="rm-panel__header rm-panel__header--compact">
+        <h3>Параметры генерации</h3>
+      </div>
+
+      <div class="rm-lootgen-fields">
+        <div class="rm-field">
+          <label>Минимальный ранг</label>
+          <input type="number" min="0" max="10" step="1" value="{{form.rankMin}}" data-field="rankMin">
+        </div>
+        <div class="rm-field">
+          <label>Максимальный ранг</label>
+          <input type="number" min="0" max="10" step="1" value="{{form.rankMax}}" data-field="rankMax">
+        </div>
+        <div class="rm-field">
+          <label>Сколько строк</label>
+          <input type="number" min="1" max="40" step="1" value="{{form.itemCount}}" data-field="itemCount">
+        </div>
+        <div class="rm-field">
+          <label>Бюджет, value</label>
+          <input type="number" min="0" step="1" value="{{form.budgetValue}}" data-field="budgetValue">
+        </div>
+      </div>
+
+      <div class="rm-lootgen-fields rm-lootgen-fields--secondary">
+        <div class="rm-field">
+          <label>% магических предметов</label>
+          <input type="number" min="0" max="100" step="1" value="{{form.magicPercent}}" data-field="magicPercent">
+        </div>
+      </div>
+
+      <div class="rm-lootgen-switches">
+        <label class="rm-lootgen-check">
+          <input type="checkbox" {{#if form.includeGear}}checked{{/if}} data-field="includeGear">
+          <span>Снаряжение</span>
+        </label>
+        <label class="rm-lootgen-check">
+          <input type="checkbox" {{#if form.includeMaterials}}checked{{/if}} data-field="includeMaterials">
+          <span>Материалы</span>
+        </label>
+        <label class="rm-lootgen-check">
+          <input type="checkbox" {{#if form.includeMagicItems}}checked{{/if}} data-field="includeMagicItems">
+          <span>Магические предметы</span>
+        </label>
+        <label class="rm-lootgen-check">
+          <input type="checkbox" {{#if form.includeCoins}}checked{{/if}} data-field="includeCoins">
+          <span>Остаток в монеты</span>
+        </label>
+      </div>
+
+      <div class="rm-lootgen-actions">
+        <button type="button" class="rm-button" data-action="lootgen-generate">
+          <i class="fa-solid fa-dice"></i>
+          <span>Сгенерировать</span>
+        </button>
+        <button type="button" class="rm-button rm-button--ghost" data-action="lootgen-clear">
+          <i class="fa-solid fa-eraser"></i>
+          <span>Очистить</span>
+        </button>
+      </div>
+    </section>
+  {{/if}}
+
+  <section class="rm-panel rm-panel--compact">
+    <div class="rm-panel__header rm-panel__header--compact">
+      <h3>{{#if viewer}}Найденные сокровища{{else}}Результат{{/if}}</h3>
+      {{#if generated.generatedAt}}
+        <span class="rm-muted">{{generated.generatedAt}}</span>
+      {{/if}}
+    </div>
+
+    {{#if generated.hasResult}}
+      <section class="rm-compact-pill-strip rm-compact-pill-strip--lootgen">
+        <div class="rm-compact-pill">
+          <span>Строк</span>
+          <strong>{{rmNum generated.rows.length precision=0}}</strong>
+        </div>
+        <div class="rm-compact-pill">
+          <span>Предметов</span>
+          <strong>{{rmNum generated.totalItems precision=0}}</strong>
+        </div>
+        <div class="rm-compact-pill">
+          <span>Потрачено</span>
+          <strong>{{rmNum generated.spentValue precision=0}} value</strong>
+        </div>
+        <div class="rm-compact-pill">
+          <span>Монеты</span>
+          <strong>{{generated.coinsLabel}}</strong>
+        </div>
+      </section>
+
+      {{#if generated.hasRows}}
+        <div class="rm-lootgen-result-list">
+          {{#each generated.rows}}
+            <article class="rm-lootgen-result-row">
+              <div class="rm-lootgen-result-row__main">
+                <strong>
+                  <button
+                    type="button"
+                    class="rm-link-button rm-link-button--accent"
+                    data-action="lootgen-open-entry"
+                    data-row-index="{{rowIndex}}"
+                    title="Открыть предмет"
+                  >
+                    {{name}}
+                  </button>
+                </strong>
+                <p class="rm-muted">
+                  {{typeLabel}} • ранг {{rank}} • {{rmNum value precision=0}} value • x{{rmNum quantity precision=0}}
+                </p>
+              </div>
+              <div class="rm-lootgen-result-row__side">
+                <span>{{rmNum totalValue precision=0}} value</span>
+                {{#if ../canManage}}
+                  <button type="button" class="rm-icon-button" data-action="lootgen-take-row" data-row-index="{{rowIndex}}" title="Добавить строку в склад">
+                    <i class="fa-solid fa-inbox"></i>
+                  </button>
+                {{/if}}
+              </div>
+            </article>
+          {{/each}}
+        </div>
+      {{/if}}
+
+      {{#if canManage}}
+        <div class="rm-lootgen-actions">
+          <button type="button" class="rm-button" data-action="lootgen-take-all">
+            <i class="fa-solid fa-boxes-stacked"></i>
+            <span>Весь лут в склад</span>
+          </button>
+          <button type="button" class="rm-button rm-button--ghost" data-action="lootgen-take-coins" {{#unless generated.hasCoins}}disabled{{/unless}}>
+            <i class="fa-solid fa-coins"></i>
+            <span>Только монеты</span>
+          </button>
+        </div>
+      {{/if}}
+    {{else}}
+      <p class="rm-empty">
+        {{#if viewer}}
+          Мастер ещё не отправил найденные сокровища.
+        {{else}}
+          Сгенерируйте лут по параметрам выше.
+        {{/if}}
+      </p>
+    {{/if}}
+  </section>
+</section>

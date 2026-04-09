@@ -1,0 +1,464 @@
+﻿{{#if hasError}}
+  <section class="rm-shell rm-inventory-shell scrollable">
+    <p class="rm-empty">{{errorMessage}}</p>
+  </section>
+{{else}}
+  <section class="rm-shell rm-inventory-shell rm-inventory-shell--compact scrollable">
+    <header class="rm-compact-shell-header">
+      <div class="rm-compact-shell-header__title">
+        <p class="rm-eyebrow">Партийная логистика</p>
+        <h2>{{actor.name}}</h2>
+      </div>
+
+      <div class="rm-compact-shell-header__actions">
+        <button type="button" class="rm-icon-button" data-action="open-actor-sheet" title="Открыть лист склада">
+          <i class="fa-solid fa-up-right-from-square"></i>
+        </button>
+        <button type="button" class="rm-icon-button" data-action="add-food" title="Добавить еду">
+          <i class="fa-solid fa-bread-slice"></i>
+        </button>
+        <button type="button" class="rm-icon-button" data-action="add-water" title="Добавить воду">
+          <i class="fa-solid fa-droplet"></i>
+        </button>
+      </div>
+    </header>
+
+    <section class="rm-compact-pill-strip">
+      <div class="rm-compact-pill">
+        <span>Поз.</span>
+        <strong>{{rmNum summary.distinctCount precision=0}}</strong>
+      </div>
+      <div class="rm-compact-pill">
+        <span>Ед.</span>
+        <strong>{{rmNum summary.totalQuantity}}</strong>
+      </div>
+      <div class="rm-compact-pill">
+        <span>Вес</span>
+        <strong>{{rmNum summary.totalWeight}} фнт.</strong>
+      </div>
+      <div class="rm-compact-pill">
+        <span>Монеты</span>
+        <strong>{{summary.currencyLabel}}</strong>
+      </div>
+      <div class="rm-compact-pill">
+        <span>Еда</span>
+        <strong>{{rmNum summary.foodLb}} фнт.</strong>
+        <small>{{#if party.hasFoodEstimate}}{{rmNum party.foodDaysLeft}} дн.{{else}}без нормы{{/if}}</small>
+      </div>
+      <div class="rm-compact-pill">
+        <span>Вода</span>
+        <strong>{{rmNum summary.waterGal}} гал.</strong>
+        <small>{{#if party.hasWaterEstimate}}{{rmNum party.waterDaysLeft}} дн.{{else}}без нормы{{/if}}</small>
+      </div>
+      <div class="rm-compact-pill">
+        <span>Энергия</span>
+        <strong>{{rmNum party.totalEnergyCurrent precision=0}} / {{rmNum party.totalEnergyMax precision=0}}</strong>
+      </div>
+      <div class="rm-compact-pill {{summary.freeCapacityClass}}">
+        <span>Свободно</span>
+        <strong>{{rmNum summary.freeCapacityLb}} фнт.</strong>
+      </div>
+    </section>
+
+    <nav class="rm-tabs rm-tabs--compact">
+      <button type="button" class="rm-tab {{#if tabs.isInventory}}is-active{{/if}}" data-action="switch-tab" data-tab="inventory">Инвентарь</button>
+      <button type="button" class="rm-tab {{#if tabs.isParty}}is-active{{/if}}" data-action="switch-tab" data-tab="party">Группа</button>
+      <button type="button" class="rm-tab {{#if tabs.isCraft}}is-active{{/if}}" data-action="switch-tab" data-tab="craft">Крафт</button>
+      <button type="button" class="rm-tab {{#if tabs.isCalendar}}is-active{{/if}}" data-action="switch-tab" data-tab="calendar">Календарь</button>
+    </nav>
+
+    {{#if tabs.isInventory}}
+      <section class="rm-panel rm-panel--full rm-panel--compact">
+        <div class="rm-panel__header rm-panel__header--compact">
+          <h3>Склад</h3>
+          <span class="rm-muted">{{rmNum inventoryCount precision=0}} поз.</span>
+        </div>
+
+        <section
+          class="rm-currency-compact"
+          data-action="edit-currency-root"
+          data-currency-pp="{{summary.currency.pp}}"
+          data-currency-gp="{{summary.currency.gp}}"
+          data-currency-sp="{{summary.currency.sp}}"
+          data-currency-cp="{{summary.currency.cp}}"
+        >
+          <button type="button" class="rm-coin-badge rm-coin-badge--pp" data-action="edit-currency" title="Редактировать монеты">
+            <strong>{{rmNum summary.currency.pp precision=0}}</strong>
+            <span>ПМ</span>
+          </button>
+          <button type="button" class="rm-coin-badge rm-coin-badge--gp" data-action="edit-currency" title="Редактировать монеты">
+            <strong>{{rmNum summary.currency.gp precision=0}}</strong>
+            <span>ЗМ</span>
+          </button>
+          <button type="button" class="rm-coin-badge rm-coin-badge--sp" data-action="edit-currency" title="Редактировать монеты">
+            <strong>{{rmNum summary.currency.sp precision=0}}</strong>
+            <span>СМ</span>
+          </button>
+          <button type="button" class="rm-coin-badge rm-coin-badge--cp" data-action="edit-currency" title="Редактировать монеты">
+            <strong>{{rmNum summary.currency.cp precision=0}}</strong>
+            <span>ММ</span>
+          </button>
+        </section>
+
+        <section class="rm-compact-toolbar">
+          <div class="rm-field">
+            <input type="search" value="{{search}}" placeholder="Поиск: название, тип, материал" data-action="search">
+          </div>
+          <div class="rm-field rm-field--narrow">
+            <select data-action="type-filter">
+              {{#each typeOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </div>
+        </section>
+
+        <div class="rm-compact-dropzone" data-action="inventory-dropzone">
+          <i class="fa-solid fa-box-open"></i>
+          <span>Перетащите сюда предмет из листа или компендия</span>
+        </div>
+
+        {{#if emptyInventory}}
+          <p class="rm-empty">По текущему фильтру склад пуст.</p>
+        {{else}}
+          <div class="rm-compact-item-list">
+            {{#each inventory}}
+              <article class="rm-compact-item" data-item-drag="true" data-item-id="{{itemId}}" data-item-uuid="{{itemUuid}}" draggable="true">
+                <div class="rm-compact-item__main">
+                  <img class="rm-compact-item__image" src="{{img}}" alt="{{name}}">
+                  <div class="rm-compact-item__copy">
+                    <div class="rm-compact-item__title">
+                      {{#if canOpenEntry}}
+                        <button type="button" class="rm-link-button rm-link-button--accent rm-compact-item__name" data-action="open-compendium-entry" data-source-type="{{sourceType}}" data-source-id="{{sourceId}}" data-source-name="{{name}}">{{name}}</button>
+                      {{else}}
+                        <strong class="rm-compact-item__name">{{name}}</strong>
+                      {{/if}}
+                    </div>
+
+                    <p class="rm-compact-item__meta">
+                      {{rmNum quantity}} шт.
+                      {{#if priceLabel}} • {{priceLabel}}{{/if}}
+                      • {{rmNum totalWeight}} фнт.
+                      {{#if itemTypeLabel}} • {{itemTypeLabel}}{{/if}}
+                      {{#if materialLabel}} • {{materialLabel}}{{/if}}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="rm-compact-item__actions">
+                  {{#if canOpenEntry}}
+                    <button type="button" class="rm-icon-button" data-action="open-compendium-entry" data-source-type="{{sourceType}}" data-source-id="{{sourceId}}" data-source-name="{{name}}" title="Открыть запись в компендии">
+                      <i class="fa-solid fa-circle-question"></i>
+                    </button>
+                  {{/if}}
+
+                  <button type="button" class="rm-icon-button" data-action="open-item-sheet" data-item-id="{{itemId}}" title="Открыть лист предмета">
+                    <i class="fa-solid fa-file-lines"></i>
+                  </button>
+
+                  <button type="button" class="rm-icon-button" data-action="edit-item-quantity" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}" title="Изменить количество">
+                    <i class="fa-solid fa-pen"></i>
+                  </button>
+
+                  <button type="button" class="rm-icon-button" data-action="break-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}" title="Разобрать на материалы">
+                    <i class="fa-solid fa-hammer"></i>
+                  </button>
+
+                  <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="delete-item" data-item-id="{{itemId}}" data-item-name="{{name}}" title="Удалить предмет">
+                    <i class="fa-solid fa-trash"></i>
+                  </button>
+                </div>
+              </article>
+            {{/each}}
+          </div>
+        {{/if}}
+      </section>
+    {{/if}}
+
+    {{#if tabs.isParty}}
+      <section class="rm-panel rm-panel--full rm-panel--compact">
+        <div class="rm-panel__header rm-panel__header--compact">
+          <h3>Группа</h3>
+          <span class="rm-muted">{{rmNum party.memberCount precision=0}} уч.</span>
+        </div>
+
+        <section class="rm-party-compact-summary">
+          <div class="rm-party-compact-summary__line">
+            <span>Еда: {{rmNum party.totalFoodPerDay}} / день</span>
+            <span>Вода: {{rmNum party.totalWaterGalPerDay}} / день</span>
+            <span>Груз: {{rmNum party.inventoryWeight}} / {{rmNum party.totalCapacityLb}} фнт.</span>
+          </div>
+          <div class="rm-party-capacity-meter">
+            <div class="rm-party-capacity-meter__bar {{summary.freeCapacityClass}}" style="width: {{party.capacityUsedPercent}}%;"></div>
+          </div>
+          <div class="rm-party-compact-summary__line rm-muted">
+            <span>{{#if party.hasFoodEstimate}}Еды на {{rmNum party.foodDaysLeft}} дн.{{else}}Еда без дневной нормы{{/if}}</span>
+            <span>{{#if party.hasWaterEstimate}}Воды на {{rmNum party.waterDaysLeft}} дн.{{else}}Вода без дневной нормы{{/if}}</span>
+            <span>Энергия: {{rmNum party.totalEnergyCurrent precision=0}} / {{rmNum party.totalEnergyMax precision=0}}</span>
+          </div>
+        </section>
+
+        <section class="rm-party-toolbar rm-party-toolbar--compact">
+          <div class="rm-field">
+            <select data-action="select-add-member">
+              {{#if party.availableActors.length}}
+                {{#each party.availableActors}}
+                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                {{/each}}
+              {{else}}
+                <option value="">Нет доступных актёров</option>
+              {{/if}}
+            </select>
+          </div>
+
+          <div class="rm-field rm-field--narrow">
+            <input type="number" value="{{party.defaultCapMod}}" min="1" step="0.01" data-action="default-cap-mod" placeholder="Мод. груза">
+          </div>
+
+          <div class="rm-party-toolbar__actions">
+            <button type="button" class="rm-icon-button" data-action="add-member" title="Добавить участника" {{#unless party.availableActors.length}}disabled{{/unless}}>
+              <i class="fa-solid fa-user-plus"></i>
+            </button>
+            <button type="button" class="rm-icon-button" data-action="consume-day" title="Списать день (запасы, энергия, крафт)" {{#unless party.memberCount}}disabled{{/unless}}>
+              <i class="fa-solid fa-hourglass-half"></i>
+            </button>
+          </div>
+        </section>
+
+        {{#if party.emptyMembers}}
+          <p class="rm-empty">Группа пока не собрана.</p>
+        {{else}}
+          <div class="rm-party-member-list rm-party-member-list--compact">
+            {{#each party.members}}
+              <details class="rm-party-row {{#if isMissing}}rm-party-row--missing{{/if}}" data-actor-id="{{actorId}}" {{#if expanded}}open{{/if}}>
+                <summary class="rm-party-row__summary">
+                  <div class="rm-party-row__identity">
+                    <img class="rm-party-row__image" src="{{actorImg}}" alt="{{actorName}}">
+                    <div>
+                      <strong>{{actorName}}</strong>
+                      <p class="rm-muted">
+                        {{roleLabel}}
+                        {{#if isMissing}} • лист не найден{{/if}}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="rm-party-row__stats">
+                    <span class="rm-chip">СИЛ {{rmNum strength precision=0}}</span>
+                    <span class="rm-chip">Груз {{rmNum capacityLb}}</span>
+                    <span class="rm-chip">Эн. {{rmNum energyCurrent precision=0}} / {{rmNum energyMax precision=0}}</span>
+                  </div>
+                </summary>
+
+                <div class="rm-party-row__body">
+                  <div class="rm-party-row__controls">
+                    <div class="rm-field">
+                      <label>Роль</label>
+                      <select data-action="party-field" data-actor-id="{{actorId}}" data-field="role">
+                        {{#each roleOptions}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
+
+                    <div class="rm-field">
+                      <label>Еда / день</label>
+                      <input type="number" min="0" step="0.01" value="{{foodPerDay}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="foodPerDay">
+                    </div>
+
+                    <div class="rm-field">
+                      <label>Вода / день</label>
+                      <input type="number" min="0" step="0.01" value="{{waterGalPerDay}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="waterGalPerDay">
+                    </div>
+
+                    <div class="rm-field">
+                      <label>СИЛ override</label>
+                      <input type="number" min="0" step="1" value="{{strOverride}}" placeholder="Лист" data-action="party-field" data-actor-id="{{actorId}}" data-field="strOverride">
+                    </div>
+
+                    <div class="rm-field">
+                      <label>Мод. груза</label>
+                      <input type="number" min="1" step="0.01" value="{{capModOverride}}" placeholder="{{../party.defaultCapMod}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="capModOverride">
+                    </div>
+
+                    <div class="rm-field">
+                      <label>Бонус груза</label>
+                      <input type="number" min="0" step="0.01" value="{{capBonusLb}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="capBonusLb">
+                    </div>
+
+                    <div class="rm-field">
+                      <label>CON override</label>
+                      <input type="number" step="1" value="{{conModOverride}}" placeholder="Лист" data-action="party-field" data-actor-id="{{actorId}}" data-field="conModOverride">
+                    </div>
+
+                    <div class="rm-field">
+                      <label>Энергия</label>
+                      <input type="number" min="0" max="{{energyMax}}" step="1" value="{{energyCurrent}}" data-action="party-energy-current" data-actor-id="{{actorId}}">
+                    </div>
+                  </div>
+
+                  <section class="rm-party-tools">
+                    <h4>Инструменты Rebreya</h4>
+                    <div class="rm-party-tools__rows">
+                      {{#each tools}}
+                        <div class="rm-party-tool-row">
+                          <span>{{label}}</span>
+                          <label><input type="checkbox" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="owned" {{#if owned}}checked{{/if}}> есть</label>
+                          <label><input type="checkbox" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="prof" {{#if prof}}checked{{/if}}> проф</label>
+                          <input type="number" step="0.01" value="{{mod}}" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="mod" title="Модификатор">
+                        </div>
+                      {{/each}}
+                    </div>
+                  </section>
+
+                  <div class="rm-party-row__footer">
+                    <div class="rm-inline-actions">
+                      <span class="rm-muted">Источник силы: {{strengthSource}} • CON: {{conMod}} ({{conModSource}})</span>
+                      <button type="button" class="rm-button rm-button--small rm-button--ghost" data-action="party-restore-energy" data-actor-id="{{actorId}}" data-actor-name="{{actorName}}">Восстановить энергию</button>
+                    </div>
+                    <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="remove-party-member" data-actor-id="{{actorId}}" data-actor-name="{{actorName}}" title="Убрать из группы">
+                      <i class="fa-solid fa-user-minus"></i>
+                    </button>
+                  </div>
+                </div>
+              </details>
+            {{/each}}
+          </div>
+        {{/if}}
+      </section>
+    {{/if}}
+
+    {{#if tabs.isCraft}}
+      <section class="rm-panel rm-panel--full rm-panel--compact">
+        <div class="rm-panel__header rm-panel__header--compact">
+          <h3>Крафт</h3>
+          <span class="rm-muted">Очередь: {{rmNum craft.queueCount precision=0}}</span>
+        </div>
+
+        <section class="rm-craft-toolbar">
+          <div class="rm-field">
+            <label>Поиск предметов</label>
+            <input type="search" value="{{craftSearch}}" placeholder="Название, инструмент, материал" data-action="craft-search">
+          </div>
+          <div class="rm-field">
+            <label>Крафтит</label>
+            <select data-action="craft-crafter">
+              {{#if craft.crafters.length}}
+                {{#each craft.crafters}}
+                  <option value="{{actorId}}" {{#if selected}}selected{{/if}}>{{actorName}}</option>
+                {{/each}}
+              {{else}}
+                <option value="">Нет участников</option>
+              {{/if}}
+            </select>
+          </div>
+          <div class="rm-craft-toolbar__actions">
+            <button type="button" class="rm-button rm-button--small" data-action="craft-process-day">Продвинуть крафт на 1 день</button>
+          </div>
+        </section>
+
+        <div class="rm-craft-layout">
+          <section class="rm-craft-column">
+            <h4>Доступно для крафта</h4>
+            <div class="rm-craft-item-list">
+              {{#each craft.craftableEntries}}
+                <article class="rm-craft-item-row">
+                  <div>
+                    <strong>{{name}}</strong>
+                    <p class="rm-muted">Ранг {{rank}} • {{rmNum priceGold}} зм • {{requiredToolLabel}} • {{materialName}}</p>
+                  </div>
+                  <button type="button" class="rm-button rm-button--small" data-action="craft-queue" data-gear-id="{{id}}" data-gear-name="{{name}}">Крафт</button>
+                </article>
+              {{/each}}
+            </div>
+          </section>
+
+          <section class="rm-craft-column">
+            <h4>Очередь крафта</h4>
+            {{#if craft.hasQueue}}
+              <div class="rm-craft-queue-list">
+                {{#each craft.queue}}
+                  <article class="rm-craft-queue-row">
+                    <div>
+                      <strong>{{gearName}} x{{rmNum quantity precision=0}}</strong>
+                      <p class="rm-muted">{{crafterName}} • {{requiredToolLabel}}</p>
+                      <div class="rm-progress">
+                        <div class="rm-progress__bar" style="width: {{percent}}%;"></div>
+                      </div>
+                      <p class="rm-muted">{{percent}}% • осталось {{rmNum remaining}} зм • {{rmNum daysLeft precision=0}} дн.</p>
+                    </div>
+                    <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="craft-cancel" data-task-id="{{id}}" data-task-name="{{gearName}}" title="Отменить крафт">
+                      <i class="fa-solid fa-ban"></i>
+                    </button>
+                  </article>
+                {{/each}}
+              </div>
+            {{else}}
+              <p class="rm-empty">Очередь крафта пустая.</p>
+            {{/if}}
+          </section>
+        </div>
+      </section>
+    {{/if}}
+
+    {{#if tabs.isCalendar}}
+      <section class="rm-panel rm-panel--full rm-panel--compact">
+        <div class="rm-panel__header rm-panel__header--compact">
+          <h3>Календарь</h3>
+          <span class="rm-muted">{{calendar.weekdayLabel}}</span>
+        </div>
+
+        <section class="rm-calendar-hero">
+          <div class="rm-calendar-hero__meta">
+            <h4>Сегодняшняя дата</h4>
+            <p><strong>Дата:</strong> {{calendar.weekdayLabel}}, {{calendar.day}} {{calendar.monthName}} {{calendar.year}}</p>
+            <p><strong>Луна:</strong> {{calendar.moon.phaseLabel}} (возраст ~{{rmNum calendar.moon.ageDays precision=2}} дн.)</p>
+            <p><strong>Календарь:</strong> {{calendar.monthYearLabel}}</p>
+          </div>
+
+          <div class="rm-calendar-grid">
+            {{#each calendar.weekdayHeaders}}
+              <span class="rm-calendar-grid__weekday">{{this}}</span>
+            {{/each}}
+
+            {{#each calendar.cells}}
+              <button
+                type="button"
+                class="rm-calendar-grid__day {{#if isOutsideMonth}}is-outside{{/if}} {{#if isCurrentDay}}is-current{{/if}}"
+                data-action="calendar-pick-day"
+                data-year="{{year}}"
+                data-month="{{month}}"
+                data-day="{{day}}"
+              >
+                {{day}}
+              </button>
+            {{/each}}
+          </div>
+        </section>
+
+        <section class="rm-calendar-controls">
+          <div class="rm-field rm-field--narrow">
+            <label>Год</label>
+            <input type="number" min="1" step="1" value="{{calendar.yearValue}}" data-field="calendar-year">
+          </div>
+          <div class="rm-field rm-field--narrow">
+            <label>Месяц</label>
+            <input type="number" min="1" max="12" step="1" value="{{calendar.monthValue}}" data-field="calendar-month">
+          </div>
+          <div class="rm-field rm-field--narrow">
+            <label>День</label>
+            <input type="number" min="1" max="31" step="1" value="{{calendar.dayValue}}" data-field="calendar-day">
+          </div>
+          <button type="button" class="rm-button rm-button--small" data-action="calendar-set">Установить дату</button>
+        </section>
+
+        <section class="rm-calendar-actions">
+          <button type="button" class="rm-button" data-action="calendar-advance" data-unit="day" data-value="1">Пропустить день</button>
+          <button type="button" class="rm-button" data-action="calendar-advance" data-unit="week" data-value="1">Пропустить неделю</button>
+          <button type="button" class="rm-button" data-action="calendar-advance" data-unit="month" data-value="1">Пропустить месяц</button>
+        </section>
+      </section>
+    {{/if}}
+  </section>
+{{/if}}
+

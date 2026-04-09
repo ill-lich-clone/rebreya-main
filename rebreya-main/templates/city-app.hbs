@@ -1,0 +1,505 @@
+﻿{{#if hasError}}
+  <section class="rm-shell rm-city-shell scrollable">
+    <p class="rm-empty">{{errorMessage}}</p>
+  </section>
+{{else}}
+  <section class="rm-shell rm-city-shell scrollable">
+    <header class="rm-hero rm-hero--city">
+      <div>
+        <p class="rm-eyebrow">Городская экономика</p>
+        <h2>{{city.name}}</h2>
+        <p class="rm-muted">{{city.state}} / {{city.regionName}} / {{city.cityType}}</p>
+      </div>
+      <div class="rm-city-scoreboard">
+        <div>
+          <span>Самообеспечение</span>
+          <strong class="rm-self-sufficiency" style="--rm-self-sufficiency-color: {{citySelfSufficiencyColor}};">{{rmPct city.selfSufficiencyRate precision=1}}</strong>
+        </div>
+        <div>
+          <span>Баланс</span>
+          <strong class="{{cityBalanceClass}}">{{rmSigned city.netBalance}}</strong>
+        </div>
+      </div>
+    </header>
+
+    <nav class="rm-tabs">
+      <button type="button" class="rm-tab {{#if tabs.isOverview}}is-active{{/if}}" data-action="switch-tab" data-tab="overview">Обзор</button>
+      <button type="button" class="rm-tab {{#if tabs.isGoods}}is-active{{/if}}" data-action="switch-tab" data-tab="goods">Товары</button>
+      <button type="button" class="rm-tab {{#if tabs.isTrade}}is-active{{/if}}" data-action="switch-tab" data-tab="trade">Торговые связи</button>
+      <button type="button" class="rm-tab {{#if tabs.isTraders}}is-active{{/if}}" data-action="switch-tab" data-tab="traders">Торговля</button>
+      <button type="button" class="rm-tab {{#if tabs.isDebug}}is-active{{/if}}" data-action="switch-tab" data-tab="debug">Debug</button>
+    </nav>
+
+    {{#if tabs.isOverview}}
+      <section class="rm-city-layout">
+        <section class="rm-panel">
+          <div class="rm-panel__header"><h3>Паспорт города</h3></div>
+          <dl class="rm-metric-grid rm-metric-grid--compact">
+            <div><dt>Тип</dt><dd>{{city.type}}</dd></div>
+            <div><dt>Тип города</dt><dd>{{city.cityType}}</dd></div>
+            <div><dt>Ранг</dt><dd>{{rmNum city.rank}}</dd></div>
+            <div><dt>Население</dt><dd>{{rmNum city.population precision=0}}</dd></div>
+            <div><dt>Тип локации</dt><dd>{{city.locationType}}</dd></div>
+            <div><dt>Религия</dt><dd>{{city.religion}}</dd></div>
+            <div><dt>Производство</dt><dd>{{rmNum city.totalProduction}}</dd></div>
+            <div><dt>Спрос</dt><dd>{{rmNum city.totalDemand}}</dd></div>
+            <div><dt>Дефицит</dt><dd class="rm-negative">{{rmNum city.totalDeficit}}</dd></div>
+            <div><dt>Профицит</dt><dd class="rm-positive">{{rmNum city.totalSurplus}}</dd></div>
+          </dl>
+        </section>
+
+        <section class="rm-panel">
+          <div class="rm-panel__header"><h3>Активные ивенты города</h3></div>
+          {{#if activeCityEvents.length}}
+            <div class="rm-global-event-card__meta">
+              {{#each activeCityEvents}}
+                <span class="rm-chip">{{name}} · p{{priority}}</span>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="rm-empty">На этот город сейчас не действует ни один ивент.</p>
+          {{/if}}
+        </section>
+
+        <section class="rm-panel">
+          <div class="rm-panel__header"><h3>Критические дефициты</h3></div>
+          <ul class="rm-good-list">
+            {{#each criticalDeficits}}
+              <li>
+                <span>
+                  {{#if hasMaterial}}
+                    <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-material" data-good-id="{{goodId}}">{{goodName}}</button>
+                  {{else}}
+                    {{goodName}}
+                  {{/if}}
+                </span>
+                <strong class="rm-negative">{{rmNum deficit}}</strong>
+              </li>
+            {{else}}
+              <li><span>Дефицитов не найдено.</span></li>
+            {{/each}}
+          </ul>
+        </section>
+
+        <section class="rm-panel">
+          <div class="rm-panel__header"><h3>Ключевые профициты</h3></div>
+          <ul class="rm-good-list">
+            {{#each keySurpluses}}
+              <li>
+                <span>
+                  {{#if hasMaterial}}
+                    <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-material" data-good-id="{{goodId}}">{{goodName}}</button>
+                  {{else}}
+                    {{goodName}}
+                  {{/if}}
+                </span>
+                <strong class="rm-positive">{{rmNum surplus}}</strong>
+              </li>
+            {{else}}
+              <li><span>Профицитов не найдено.</span></li>
+            {{/each}}
+          </ul>
+        </section>
+
+        <section class="rm-panel rm-panel--full">
+          <div class="rm-panel__header"><h3>Связи города</h3></div>
+          <div class="rm-connection-list">
+            {{#each tradeConnections}}
+              <article class="rm-connection-card {{#unless isActive}}is-inactive{{/unless}} {{#if broken}}is-broken{{/if}} {{#if isEventBlocked}}is-event-blocked{{/if}}">
+                <div>
+                  <strong>
+                    <button type="button" class="rm-link-button" data-action="open-trade-route" data-connection-id="{{connectionId}}">{{targetName}}</button>
+                  </strong>
+                  <p class="rm-muted rm-inline-links">
+                    {{#if transportModeId}}
+                      <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-transport-mode-info" data-mode-id="{{transportModeId}}">{{connectionType}}</button>
+                    {{else}}
+                      {{connectionType}}
+                    {{/if}}
+                    {{#unless broken}}
+                      /
+                      <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-state-info" data-state-id="{{targetStateId}}">{{targetState}}</button>
+                      /
+                      <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-region-info" data-region-id="{{targetRegionId}}">{{targetRegionName}}</button>
+                    {{/unless}}
+                  </p>
+                </div>
+                <div class="rm-connection-card__actions">
+                  {{#unless broken}}
+                    <button type="button" class="rm-button rm-button--small" data-action="open-city" data-city-id="{{targetCityId}}">Открыть город</button>
+                  {{/unless}}
+                  <span class="rm-chip {{statusChipClass}}" {{#if statusTooltip}}title="{{statusTooltip}}"{{/if}}>{{toggleLabel}}</span>
+                </div>
+              </article>
+            {{else}}
+              <p class="rm-empty">Связей города не найдено.</p>
+            {{/each}}
+          </div>
+        </section>
+      </section>
+    {{/if}}
+
+    {{#if tabs.isGoods}}
+      <section class="rm-panel">
+        <div class="rm-panel__header"><h3>Баланс по товарам</h3></div>
+        <div class="rm-table-wrap">
+          <table class="rm-table">
+            <thead>
+              <tr>
+                <th>Товар</th>
+                <th>Производство</th>
+                <th>Спрос</th>
+                <th>Баланс</th>
+                <th>Мод. цены</th>
+                <th>Ивенты</th>
+                <th>Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each goodsRows}}
+                <tr class="status-{{status}}">
+                  <td>
+                    {{#if hasMaterial}}
+                      <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-material" data-good-id="{{goodId}}">{{goodName}}</button>
+                    {{else}}
+                      {{goodName}}
+                    {{/if}}
+                  </td>
+                  <td>{{rmNum production}}</td>
+                  <td>{{rmNum demand}}</td>
+                  <td class="{{#if (rmEq status 'deficit')}}rm-negative{{else}}{{#if (rmEq status 'surplus')}}rm-positive{{/if}}{{/if}}">{{rmSigned balance}}</td>
+                  <td class="{{priceModifierClass}} rm-tooltip-anchor" data-rm-tooltip="{{priceModifierTooltip}}">{{rmSignedPct priceModifierPercent precision=1}}</td>
+                  <td>
+                    {{#if hasEventModifiers}}
+                      <span class="rm-chip">{{eventSourceNamesLabel}}</span>
+                    {{else}}
+                      <span class="rm-muted">—</span>
+                    {{/if}}
+                    {{#if blockedByEvents}}
+                      <span class="rm-chip rm-chip--warn">Блок продажи</span>
+                    {{/if}}
+                  </td>
+                  <td>{{statusLabel}}</td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    {{/if}}
+
+    {{#if tabs.isTrade}}
+      <section class="rm-city-layout rm-city-layout--trade">
+        <section class="rm-panel rm-panel--full">
+          <div class="rm-panel__header"><h3>Связи города</h3></div>
+          <div class="rm-connection-rows">
+            {{#each tradeConnections}}
+              <article class="rm-connection-row {{#unless isActive}}is-inactive{{/unless}} {{#if broken}}is-broken{{/if}} {{#if isEventBlocked}}is-event-blocked{{/if}}">
+                <div class="rm-connection-row__main">
+                  <strong>
+                    <button type="button" class="rm-link-button" data-action="open-trade-route" data-connection-id="{{connectionId}}">{{targetName}}</button>
+                  </strong>
+                  <p class="rm-muted rm-inline-links">
+                    {{#if transportModeId}}
+                      <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-transport-mode-info" data-mode-id="{{transportModeId}}">{{connectionType}}</button>
+                    {{else}}
+                      {{connectionType}}
+                    {{/if}}
+                    {{#unless broken}}
+                      /
+                      <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-state-info" data-state-id="{{targetStateId}}">{{targetState}}</button>
+                      /
+                      <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-region-info" data-region-id="{{targetRegionId}}">{{targetRegionName}}</button>
+                    {{/unless}}
+                  </p>
+                </div>
+                <div class="rm-connection-row__meta">
+                  {{#unless broken}}
+                    <span class="rm-chip">Импорт {{matchingNeeds.length}}</span>
+                    <span class="rm-chip">Экспорт {{matchingExports.length}}</span>
+                  {{else}}
+                    <span class="rm-chip rm-chip--warn">Город не найден</span>
+                  {{/unless}}
+                </div>
+                <div class="rm-connection-row__actions">
+                  {{#unless broken}}
+                    <button type="button" class="rm-button rm-button--small" data-action="open-city" data-city-id="{{targetCityId}}">Открыть город</button>
+                  {{/unless}}
+                  <button
+                    type="button"
+                    class="rm-button rm-button--small rm-button--toggle {{toggleClass}}"
+                    data-action="toggle-connection"
+                    data-connection-id="{{connectionId}}"
+                    data-active="{{#if isActive}}true{{else}}false{{/if}}"
+                    {{#if statusTooltip}}title="{{statusTooltip}}"{{/if}}
+                    {{#if toggleDisabled}}disabled{{/if}}
+                  >{{toggleLabel}}</button>
+                </div>
+              </article>
+            {{else}}
+              <p class="rm-empty">Связей города не найдено.</p>
+            {{/each}}
+          </div>
+        </section>
+
+        <section class="rm-panel rm-panel--wide">
+          <div class="rm-panel__header"><h3>Импорт и наценка по товарам</h3></div>
+          <div class="rm-trade-list">
+            {{#each goodsWithImports}}
+              <details class="rm-disclosure">
+                <summary class="rm-disclosure__summary">
+                  <div>
+                    <strong>
+                      {{#if hasMaterial}}
+                        <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-material" data-good-id="{{goodId}}">{{goodName}}</button>
+                      {{else}}
+                        {{goodName}}
+                      {{/if}}
+                    </strong>
+                    <p class="rm-muted">Модификатор цены: <span class="{{priceModifierClass}} rm-tooltip-anchor" data-rm-tooltip="{{priceModifierTooltip}}">{{rmSignedPct priceModifierPercent precision=1}}</span></p>
+                    <p class="rm-muted">Покрытие спроса: {{rmPct coverageRate precision=1}}</p>
+                  </div>
+                  <div class="rm-disclosure__summary-meta">
+                    <span class="rm-chip">{{rmNum importedQuantity}} имп.</span>
+                    <span class="rm-disclosure__caret"><i class="fa-solid fa-chevron-down"></i></span>
+                  </div>
+                </summary>
+                <div class="rm-disclosure__content">
+                  <ul class="rm-good-list rm-good-list--compact">
+                    {{#each importSources}}
+                      <li>
+                        <span>
+                          {{sourceCityName}}
+                          <small class="rm-muted">{{pathLabel}} · логистика {{rmPct movementCost precision=1}}</small>
+                        </span>
+                        <strong class="rm-negative">{{rmSignedPct markupPercent precision=1}}</strong>
+                      </li>
+                    {{/each}}
+                  </ul>
+                </div>
+              </details>
+            {{else}}
+              <p class="rm-empty">Текущие связи не дали импортных поставок для расчёта наценки.</p>
+            {{/each}}
+          </div>
+        </section>
+
+        <section class="rm-panel">
+          <div class="rm-panel__header"><h3>Потенциальный импорт по связям</h3></div>
+          <div class="rm-trade-list">
+            {{#each potentialImports}}
+              <details class="rm-disclosure">
+                <summary class="rm-disclosure__summary">
+                  <div>
+                    <strong>{{targetName}}</strong>
+                    <p class="rm-muted">{{connectionType}} / {{targetState}} / {{targetRegionName}}</p>
+                  </div>
+                  <div class="rm-disclosure__summary-meta">
+                    <span class="rm-chip">{{matchingNeeds.length}} тов.</span>
+                    <button type="button" class="rm-button rm-button--small" data-action="open-city" data-city-id="{{targetCityId}}">Открыть</button>
+                    <span class="rm-disclosure__caret"><i class="fa-solid fa-chevron-down"></i></span>
+                  </div>
+                </summary>
+                <div class="rm-disclosure__content">
+                  <p class="rm-muted">Покрывает дефициты:</p>
+                  <ul class="rm-good-list rm-good-list--compact">
+                    {{#each matchingNeeds}}
+                      <li>
+                        <span>
+                          {{#if hasMaterial}}
+                            <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-material" data-good-id="{{goodId}}">{{goodName}}</button>
+                          {{else}}
+                            {{goodName}}
+                          {{/if}}
+                        </span>
+                        <strong class="rm-positive">{{rmNum overlap}}</strong>
+                      </li>
+                    {{else}}
+                      <li><span>У узла есть профицит, но он не закрывает ваши текущие дефициты напрямую.</span></li>
+                    {{/each}}
+                  </ul>
+                </div>
+              </details>
+            {{else}}
+              <p class="rm-empty">Подходящих поставщиков по текущим связям не найдено.</p>
+            {{/each}}
+          </div>
+        </section>
+
+        <section class="rm-panel">
+          <div class="rm-panel__header"><h3>Потенциальный экспорт</h3></div>
+          <div class="rm-trade-list">
+            {{#each potentialExports}}
+              <details class="rm-disclosure">
+                <summary class="rm-disclosure__summary">
+                  <div>
+                    <strong>{{targetName}}</strong>
+                    <p class="rm-muted">{{connectionType}} / {{targetState}} / {{targetRegionName}}</p>
+                  </div>
+                  <div class="rm-disclosure__summary-meta">
+                    <span class="rm-chip">{{matchingExports.length}} тов.</span>
+                    <button type="button" class="rm-button rm-button--small" data-action="open-city" data-city-id="{{targetCityId}}">Открыть</button>
+                    <span class="rm-disclosure__caret"><i class="fa-solid fa-chevron-down"></i></span>
+                  </div>
+                </summary>
+                <div class="rm-disclosure__content">
+                  <ul class="rm-good-list rm-good-list--compact">
+                    {{#each matchingExports}}
+                      <li>
+                        <span>
+                          {{#if hasMaterial}}
+                            <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-material" data-good-id="{{goodId}}">{{goodName}}</button>
+                          {{else}}
+                            {{goodName}}
+                          {{/if}}
+                        </span>
+                        <strong class="rm-positive">{{rmNum overlap}}</strong>
+                      </li>
+                    {{/each}}
+                  </ul>
+                </div>
+              </details>
+            {{else}}
+              <p class="rm-empty">Подходящих направлений для экспорта по текущим связям не найдено.</p>
+            {{/each}}
+          </div>
+        </section>
+      </section>
+    {{/if}}
+
+    {{#if tabs.isTraders}}
+      <section class="rm-city-layout rm-city-layout--trade">
+        <section class="rm-panel rm-panel--full">
+          <div class="rm-panel__header">
+            <h3>Лавки города</h3>
+          </div>
+          <p class="rm-muted">Профильные лавки: {{profileShopSlotCount}} (формула: 1 + ранг города × 2). Отдельно доступны лавка материалов и лавка магических предметов. Все лавки используют текущие цены города, налоги государства и сохранённый ассортимент.</p>
+        </section>
+
+        <section class="rm-panel rm-panel--full">
+          <div class="rm-panel__header"><h3>Список лавок</h3></div>
+          {{#if traders.length}}
+            <div class="rm-trader-list">
+              {{#each traders}}
+                <article class="rm-trader-card">
+                  <div class="rm-trader-card__head">
+                    <div class="rm-trader-card__identity">
+                      <div class="rm-trader-card__portrait">
+                        {{#if portrait}}
+                          <img src="{{portrait}}" alt="{{merchantName}}">
+                        {{else}}
+                          <i class="fa-solid fa-user"></i>
+                        {{/if}}
+                      </div>
+                      <div class="rm-trader-card__main">
+                        <strong>{{name}}</strong>
+                        <p class="rm-muted">{{merchantName}}</p>
+                        {{#if merchantRole}}
+                          <p class="rm-muted">{{merchantRole}}</p>
+                        {{/if}}
+                      </div>
+                    </div>
+                    <div class="rm-trader-card__status">
+                      <span class="rm-badge {{statusClass}}">{{statusLabel}}</span>
+                    </div>
+                  </div>
+                  <div class="rm-trader-card__footer">
+                    <div class="rm-trader-card__stats">
+                      <span class="rm-chip">{{totalDistinctItems}} видов</span>
+                      <span class="rm-chip">{{totalQuantity}} шт.</span>
+                      {{#if targetTraderValue}}
+                        <span class="rm-chip">Лимит {{rmNum targetTraderValue precision=0}}</span>
+                      {{/if}}
+                    </div>
+                    <div class="rm-trader-card__actions">
+                      <button type="button" class="rm-button rm-button--small" data-action="open-trader" data-trader-key="{{traderKey}}">Открыть лавку</button>
+                    </div>
+                  </div>
+                </article>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="rm-empty">Для этого города пока нет доступных лавок.</p>
+          {{/if}}
+        </section>
+      </section>
+    {{/if}}
+
+    {{#if tabs.isDebug}}
+      <section class="rm-city-layout">
+        <section class="rm-panel">
+          <div class="rm-panel__header"><h3>Регион</h3></div>
+          <p><strong>{{region.name}}</strong> / {{region.state}}</p>
+          <p class="rm-muted">Теги: {{#if region.traits.length}}{{region.traits}}{{else}}нет{{/if}}</p>
+          {{#if debugMode}}
+            <p class="rm-muted">Режим debug включён: показываем полные справочные модификаторы региона.</p>
+          {{else}}
+            <p class="rm-muted">Режим debug выключен, но справочные данные региона всё равно доступны для проверки.</p>
+          {{/if}}
+        </section>
+
+        <section class="rm-panel">
+          <div class="rm-panel__header"><h3>Ивенты и их след</h3></div>
+          {{#if activeCityEvents.length}}
+            <ul class="rm-good-list rm-good-list--compact">
+              {{#each activeCityEvents}}
+                <li><span>{{name}}</span><strong>p{{priority}}</strong></li>
+              {{/each}}
+            </ul>
+            <p class="rm-muted">Вклад по товарам смотрите на вкладке «Товары» в колонке «Ивенты».</p>
+          {{else}}
+            <p class="rm-empty">Для города нет активных ивентов.</p>
+          {{/if}}
+        </section>
+
+        <section class="rm-panel">
+          <div class="rm-panel__header"><h3>Коэффициенты производства региона</h3></div>
+          <ul class="rm-good-list rm-good-list--compact">
+            {{#each coefficientRows}}
+              <li>
+                <span>
+                  {{#if hasMaterial}}
+                    <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-material" data-good-id="{{goodId}}">{{goodName}}</button>
+                  {{else}}
+                    {{goodName}}
+                  {{/if}}
+                </span>
+                <strong>{{rmNum value}}</strong>
+              </li>
+            {{else}}
+              <li><span>Нет данных.</span></li>
+            {{/each}}
+          </ul>
+        </section>
+
+        <section class="rm-panel">
+          <div class="rm-panel__header"><h3>Модификаторы из описания региона</h3></div>
+          <ul class="rm-good-list rm-good-list--compact">
+            {{#each modifierRows}}
+              <li>
+                <span>
+                  {{#if hasMaterial}}
+                    <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-material" data-good-id="{{goodId}}">{{goodName}}</button>
+                  {{else}}
+                    {{goodName}}
+                  {{/if}}
+                </span>
+                <strong>{{rmSigned value}}</strong>
+              </li>
+            {{else}}
+              <li><span>Нет данных.</span></li>
+            {{/each}}
+          </ul>
+        </section>
+
+        <section class="rm-panel rm-panel--wide">
+          <div class="rm-panel__header"><h3>Предупреждения импорта</h3></div>
+          <p class="rm-muted">Городов без строки спроса: {{sourceWarnings.missingDemandCities.length}}. Несопоставленных связей: {{sourceWarnings.brokenConnections.length}}.</p>
+          {{#if importRouteStats}}
+            <p class="rm-muted">Просмотрено состояний маршрута: {{importRouteStats.exploredStates}}. {{#if importRouteStats.truncated}}Расчёт был ограничен защитным лимитом, чтобы не повесить мир.{{else}}Лимит не был достигнут.{{/if}}</p>
+          {{/if}}
+        </section>
+      </section>
+    {{/if}}
+  </section>
+{{/if}}

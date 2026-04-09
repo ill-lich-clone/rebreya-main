@@ -1,0 +1,67 @@
+﻿<section class="rm-shell scrollable">
+  <header class="rm-hero">
+    <div>
+      <p class="rm-eyebrow">Глобальные ивенты</p>
+      <h2>События экономического мира</h2>
+      <p class="rm-muted">Всего: {{totalEventCount}}. В списке: {{filteredEventCount}}. Активных: {{activeEventCount}}.</p>
+    </div>
+    <div class="rm-hero__actions">
+      <button type="button" class="rm-button" data-action="create-event">Создать ивент</button>
+      <button type="button" class="rm-button rm-button--ghost" data-action="quick-create-event">Быстрое создание (30 сек)</button>
+      {{#if hasDraft}}
+        <button type="button" class="rm-button rm-button--ghost" data-action="continue-draft">Продолжить черновик</button>
+      {{/if}}
+      <button type="button" class="rm-button rm-button--ghost" data-action="import-templates">Импорт шаблонов</button>
+      <span class="rm-chip">Подсистема: {{#if enabled}}включена{{else}}выключена{{/if}}</span>
+    </div>
+  </header>
+
+  <section class="rm-panel rm-global-event-filters">
+    <div class="rm-field rm-field--search">
+      <label for="rm-global-event-search">Поиск</label>
+      <input id="rm-global-event-search" type="search" placeholder="Название, описание, scope" value="{{filters.search}}" data-filter="search" />
+    </div>
+    <div class="rm-field">
+      <label for="rm-global-event-status">Статус</label>
+      <select id="rm-global-event-status" data-filter="status">
+        <option value="all" {{#if (rmEq filters.status "all")}}selected{{/if}}>Все</option>
+        <option value="active" {{#if (rmEq filters.status "active")}}selected{{/if}}>Активные</option>
+        <option value="inactive" {{#if (rmEq filters.status "inactive")}}selected{{/if}}>Неактивные</option>
+        <option value="disabled" {{#if (rmEq filters.status "disabled")}}selected{{/if}}>Выключенные</option>
+      </select>
+    </div>
+  </section>
+
+  <section class="rm-global-event-list">
+    {{#each events}}
+      <article class="rm-global-event-card">
+        <div class="rm-global-event-card__head">
+          <div>
+            <strong>{{name}}</strong>
+            <p class="rm-muted">{{description}}</p>
+            <p class="rm-muted">{{scopeLabel}}</p>
+            <p class="rm-muted">Даты: {{dateLabel}}</p>
+          </div>
+          <div class="rm-global-event-card__meta">
+            <span class="rm-badge {{statusClass}}">{{statusLabel}}</span>
+            <span class="rm-chip">priority {{priority}}</span>
+            <span class="rm-chip">{{triggerTypeLabel}}</span>
+            <span class="rm-chip">{{dateLabel}}</span>
+            <span class="rm-chip">effects {{effectsCount}}</span>
+          </div>
+        </div>
+        <div class="rm-global-event-card__actions">
+          <button type="button" class="rm-button rm-button--small" data-action="edit-event" data-event-id="{{id}}">Редактировать</button>
+          <button type="button" class="rm-button rm-button--small" data-action="duplicate-event" data-event-id="{{id}}">Дублировать</button>
+          <button type="button" class="rm-button rm-button--small" data-action="toggle-enabled" data-event-id="{{id}}" data-enabled="{{#if enabled}}true{{else}}false{{/if}}">{{#if enabled}}Выключить{{else}}Включить{{/if}}</button>
+          <button type="button" class="rm-button rm-button--small" data-action="toggle-active" data-event-id="{{id}}" data-active="{{#if active}}true{{else}}false{{/if}}">{{#if active}}Деактивировать{{else}}Активировать{{/if}}</button>
+          <button type="button" class="rm-button rm-button--small" data-action="delete-event" data-event-id="{{id}}">Удалить</button>
+        </div>
+      </article>
+    {{else}}
+      <section class="rm-panel">
+        <p class="rm-empty">По текущим фильтрам ивенты не найдены.</p>
+      </section>
+    {{/each}}
+  </section>
+</section>

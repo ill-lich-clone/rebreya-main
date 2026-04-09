@@ -1,0 +1,241 @@
+﻿{{#if hasError}}
+  <section class="rm-shell scrollable">
+    <p class="rm-empty">{{errorMessage}}</p>
+  </section>
+{{else}}
+  <section class="rm-shell scrollable">
+    <header class="rm-hero rm-hero--city">
+      <div>
+        <p class="rm-eyebrow">Торговая связь</p>
+        <h2>{{route.sourceCityName}} → {{route.targetName}}</h2>
+        <p class="rm-muted rm-inline-links">
+          {{#if route.transportModeId}}
+            <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-transport-mode-info" data-mode-id="{{route.transportModeId}}">{{route.connectionType}}</button>
+          {{else}}
+            {{route.connectionType}}
+          {{/if}}
+          /
+          <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-state-info" data-state-id="{{route.targetStateId}}">{{route.targetState}}</button>
+          /
+          <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-region-info" data-region-id="{{route.targetRegionId}}">{{route.targetRegionName}}</button>
+        </p>
+      </div>
+      <div class="rm-city-scoreboard">
+        <div>
+          <span>Активность</span>
+          <strong {{#if routeStatusTooltip}}title="{{routeStatusTooltip}}"{{/if}}>{{routeStatusLabel}}</strong>
+          {{#if route.eventRouteDisabled}}
+            <small class="rm-muted" {{#if routeStatusTooltip}}title="{{routeStatusTooltip}}"{{/if}}>Отключена ивентом</small>
+          {{/if}}
+        </div>
+        <div>
+          <span>Доп. цена</span>
+          <strong class="{{additionalPriceClass}}">{{display.additionalPricePercent}}</strong>
+        </div>
+        <div>
+          <span>Поток по миру</span>
+          <strong>{{display.totalUsageQuantity}}</strong>
+        </div>
+      </div>
+    </header>
+
+    {{#if isEventModified}}
+      <section class="rm-panel">
+        <div class="rm-panel__header"><h3>Модификаторы ивентов</h3></div>
+        <p class="rm-muted">Источники: {{eventSourceNamesLabel}}</p>
+        {{#if hasEventRiskNotes}}
+          <p class="rm-muted">Причина: {{eventRiskNotesLabel}}</p>
+        {{/if}}
+      </section>
+    {{/if}}
+
+    <section class="rm-city-layout">
+      {{#if isLoadingAnalytics}}
+        <section class="rm-panel rm-panel--full">
+          <p class="rm-empty">Глобальная аналитика связи подгружается. Базовые данные уже открыты, мировой поток появится автоматически через мгновение.</p>
+        </section>
+      {{/if}}
+
+      <section class="rm-panel rm-panel--wide">
+        <div class="rm-panel__header"><h3>Паспорт связи</h3></div>
+        <dl class="rm-metric-grid">
+          <div>
+            <dt>Город-источник</dt>
+            <dd>
+              <button type="button" class="rm-link-button" data-action="open-city" data-city-id="{{route.sourceCityId}}">{{route.sourceCityName}}</button>
+            </dd>
+          </div>
+          <div>
+            <dt>Государство источника</dt>
+            <dd>
+              <button type="button" class="rm-link-button" data-action="open-state-info" data-state-id="{{route.sourceStateId}}">{{route.sourceState}}</button>
+            </dd>
+          </div>
+          <div>
+            <dt>Регион источника</dt>
+            <dd>
+              <button type="button" class="rm-link-button" data-action="open-region-info" data-region-id="{{route.sourceRegionId}}">{{route.sourceRegionName}}</button>
+            </dd>
+          </div>
+          <div>
+            <dt>Город-цель</dt>
+            <dd>
+              {{#if route.broken}}
+                {{route.targetName}}
+              {{else}}
+                <button type="button" class="rm-link-button" data-action="open-city" data-city-id="{{route.targetCityId}}">{{route.targetName}}</button>
+              {{/if}}
+            </dd>
+          </div>
+          <div>
+            <dt>Государство цели</dt>
+            <dd>
+              <button type="button" class="rm-link-button" data-action="open-state-info" data-state-id="{{route.targetStateId}}">{{route.targetState}}</button>
+            </dd>
+          </div>
+          <div>
+            <dt>Регион цели</dt>
+            <dd>
+              <button type="button" class="rm-link-button" data-action="open-region-info" data-region-id="{{route.targetRegionId}}">{{route.targetRegionName}}</button>
+            </dd>
+          </div>
+          <div>
+            <dt>Тип связи</dt>
+            <dd>{{route.connectionType}}</dd>
+          </div>
+          <div>
+            <dt>Базовая цена шага</dt>
+            <dd>{{display.movementCost}}</dd>
+          </div>
+          <div>
+            <dt>Цена этого ребра</dt>
+            <dd class="{{additionalPriceClass}}">{{display.singleStepMarkupPercent}}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="rm-panel">
+        <div class="rm-panel__header"><h3>Глобальная сводка</h3></div>
+        <dl class="rm-metric-grid rm-metric-grid--compact">
+          <div>
+            <dt>Товаров на связи</dt>
+            <dd>{{display.totalGoodsCount}}</dd>
+          </div>
+          <div>
+            <dt>Городов-получателей</dt>
+            <dd>{{display.totalDestinationCount}}</dd>
+          </div>
+          <div>
+            <dt>Самообеспечение цели</dt>
+            <dd>{{display.selfSufficiency}}</dd>
+          </div>
+          <div>
+            <dt>Баланс цели</dt>
+            <dd>{{display.netBalance}}</dd>
+          </div>
+        </dl>
+
+        {{#if route.isBypassed}}
+          <p class="rm-empty">Сейчас мировой импорт обходит эту связь: либо есть более дешёвые маршруты, либо через неё не проходит нужный товар.</p>
+        {{else}}
+          <p class="rm-muted">Эта сводка строится по тем товарам и городам, которые реально выбрали эту связь в текущем расчёте как часть самого выгодного пути.</p>
+        {{/if}}
+      </section>
+
+      <section class="rm-panel">
+        <div class="rm-panel__header">
+          <h3>Ручные параметры</h3>
+          {{#if isEditable}}
+            <button type="button" class="rm-button rm-button--small" data-action="save-route">Сохранить</button>
+          {{/if}}
+        </div>
+
+        {{#if isEditable}}
+          <div class="rm-field">
+            <label for="rm-route-price">Дополнительная цена, %</label>
+            <input id="rm-route-price" type="number" step="0.1" name="additionalPricePercent" value="{{additionalPricePercentValue}}" />
+          </div>
+          <div class="rm-field">
+            <label for="rm-route-description">Описание</label>
+            <textarea id="rm-route-description" class="rm-textarea" name="description" placeholder="Например: уверенный путь даёт скидку, опасное течение повышает цену.">{{route.description}}</textarea>
+          </div>
+        {{else}}
+          <p class="rm-muted">Дополнительная цена: <span class="{{additionalPriceClass}}">{{display.additionalPricePercent}}</span></p>
+          <p class="rm-empty">{{#if route.description}}{{route.description}}{{else}}Описание пока не заполнено.{{/if}}</p>
+        {{/if}}
+      </section>
+
+      <section class="rm-panel">
+        <div class="rm-panel__header"><h3>Главные товары на связи</h3></div>
+        <ul class="rm-good-list rm-good-list--compact">
+          {{#each topGoods}}
+            <li>
+              <span>{{goodName}} <small class="rm-muted">в {{destinationCount}} город.</small></span>
+              <strong>{{rmNum totalQuantity}}</strong>
+            </li>
+          {{else}}
+            <li><span>Пока нет товаров, которые реально проходят через эту связь.</span></li>
+          {{/each}}
+        </ul>
+      </section>
+
+      <section class="rm-panel rm-panel--wide">
+        <div class="rm-panel__header"><h3>Главные города-получатели</h3></div>
+        <ul class="rm-good-list rm-good-list--compact">
+          {{#each topDestinations}}
+            <li>
+              <span>
+                <button type="button" class="rm-link-button" data-action="open-city" data-city-id="{{cityId}}">{{cityName}}</button>
+                <small class="rm-muted">{{state}} / {{regionName}} · {{goodsCount}} тов.</small>
+              </span>
+              <strong>{{rmNum totalQuantity}}</strong>
+            </li>
+          {{else}}
+            <li><span>Эта связь пока не выбрана ни одним городом как выгодный путь поставки.</span></li>
+          {{/each}}
+        </ul>
+      </section>
+
+      <section class="rm-panel rm-panel--full">
+        <div class="rm-panel__header"><h3>Что сейчас проходит через связь</h3></div>
+        {{#if globalUsageRows.length}}
+          <div class="rm-table-wrap">
+            <table class="rm-table">
+              <thead>
+                <tr>
+                  <th>Город-получатель</th>
+                  <th>Товар</th>
+                  <th>Объём</th>
+                  <th>Источник</th>
+                  <th>Наценка ребра</th>
+                  <th>Наценка маршрута</th>
+                  <th>Маршрут</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each globalUsageRows}}
+                  <tr>
+                    <td>
+                      <button type="button" class="rm-link-button" data-action="open-city" data-city-id="{{destinationCityId}}">{{destinationCityName}}</button>
+                      <div class="rm-muted">{{destinationState}} / {{destinationRegionName}}</div>
+                    </td>
+                    <td>{{goodName}}</td>
+                    <td>{{rmNum quantity}}</td>
+                    <td>
+                      <button type="button" class="rm-link-button" data-action="open-city" data-city-id="{{sourceCityId}}">{{sourceCityName}}</button>
+                    </td>
+                    <td class="{{legMarkupClass}}">{{rmSignedPct legMarkupPercent precision=1}}</td>
+                    <td class="{{routeMarkupClass}}">{{rmSignedPct routeMarkupPercent precision=1}}</td>
+                    <td class="rm-table__path">{{pathLabel}}</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        {{else}}
+          <p class="rm-empty">Сейчас мировой импорт эту связь не использует. Если поднять цену альтернативам или снизить цену здесь, поток появится автоматически при следующем пересчёте.</p>
+        {{/if}}
+      </section>
+    </section>
+  </section>
+{{/if}}
