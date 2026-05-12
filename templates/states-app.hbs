@@ -1,0 +1,110 @@
+﻿<section class="rm-shell scrollable">
+  <header class="rm-hero">
+    <div>
+      <p class="rm-eyebrow">Государства</p>
+      <h2>Налоги, пошлины и справка</h2>
+      <p class="rm-muted">Всего государств: {{totalStateCount}}. В текущем списке: {{filteredStateCount}}.</p>
+    </div>
+  </header>
+
+  <section class="rm-panel rm-state-filters">
+    <div class="rm-field rm-field--search">
+      <label for="rm-state-menu-search">Поиск</label>
+      <input id="rm-state-menu-search" type="search" placeholder="Название государства" value="{{filters.search}}" data-filter="search" />
+    </div>
+    <div class="rm-field">
+      <label for="rm-state-menu-sort">Сортировка</label>
+      <select id="rm-state-menu-sort" data-filter="sort">
+        {{#each sortOptions}}
+          <option value="{{value}}" {{#if (rmEq ../filters.sort value)}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
+    </div>
+  </section>
+
+  <section class="rm-state-list">
+    {{#each states}}
+      <details class="rm-disclosure rm-state-card" data-state-card data-state-id="{{id}}">
+        <summary class="rm-disclosure__summary">
+          <div>
+            <strong>{{name}}</strong>
+            <p class="rm-muted">{{cityCount}} городов · население {{rmNum population precision=0}} · самообеспечение {{rmPct selfSufficiencyRate precision=1}}</p>
+          </div>
+          <div class="rm-disclosure__summary-meta">
+            <span class="rm-chip">Налог {{rmSignedPct effectiveTaxPercent precision=1}}</span>
+            <span class="rm-chip">Пошлина {{rmSignedPct effectiveGeneralDutyPercent precision=1}}</span>
+            {{#if activeEvents.length}}
+              <span class="rm-chip">Ивенты {{activeEvents.length}}</span>
+            {{/if}}
+            <span class="rm-disclosure__caret"><i class="fa-solid fa-chevron-down"></i></span>
+          </div>
+        </summary>
+
+        <div class="rm-disclosure__content">
+          <div class="rm-state-card__grid">
+            <section class="rm-panel">
+              <div class="rm-panel__header"><h3>Сводка</h3></div>
+              <dl class="rm-metric-grid rm-metric-grid--compact">
+                <div><dt>Городов</dt><dd>{{cityCount}}</dd></div>
+                <div><dt>Население</dt><dd>{{rmNum population precision=0}}</dd></div>
+                <div><dt>Производство</dt><dd>{{rmNum totalProduction}}</dd></div>
+                <div><dt>Спрос</dt><dd>{{rmNum totalDemand}}</dd></div>
+                <div><dt>Дефицит</dt><dd class="rm-negative">{{rmNum totalDeficit}}</dd></div>
+                <div><dt>Профицит</dt><dd class="rm-positive">{{rmNum totalSurplus}}</dd></div>
+              </dl>
+            </section>
+
+            <section class="rm-panel">
+              <div class="rm-panel__header">
+                <h3>Описание и общие ставки</h3>
+                <button type="button" class="rm-button rm-button--small" data-action="save-state" data-state-id="{{id}}">Сохранить</button>
+              </div>
+              <div class="rm-field">
+                <label>Описание</label>
+                <textarea class="rm-textarea rm-textarea--medium" data-field="description" placeholder="Заполните описание государства вручную...">{{description}}</textarea>
+              </div>
+              <div class="rm-state-policy-grid">
+                <div class="rm-field">
+                  <label>Налог, %</label>
+                  <input type="number" step="0.1" value="{{taxPercentValue}}" data-field="tax-percent" />
+                  <p class="rm-muted">С учётом ивентов: {{effectiveTaxPercentValue}}% (дельта {{taxEventDeltaPercentValue}}%).</p>
+                </div>
+                <div class="rm-field">
+                  <label>Общая пошлина, %</label>
+                  <input type="number" step="0.1" value="{{generalDutyPercentValue}}" data-field="general-duty-percent" />
+                  <p class="rm-muted">С учётом ивентов: {{effectiveGeneralDutyPercentValue}}% (дельта {{dutyEventDeltaPercentValue}}%).</p>
+                </div>
+              </div>
+              {{#if eventSourceNames.length}}
+                <p class="rm-muted">Источники ивентов: {{eventSourceNames}}</p>
+              {{/if}}
+            </section>
+          </div>
+
+          <section class="rm-panel">
+            <div class="rm-panel__header">
+              <h3>Частные пошлины по другим государствам</h3>
+            </div>
+            <div class="rm-duty-checklist">
+              {{#each dutyChecklistRows}}
+                <div class="rm-duty-check-row {{#if enabled}}is-enabled{{/if}}" data-duty-row data-target-state-id="{{targetStateId}}">
+                  <label class="rm-check rm-duty-check-row__toggle">
+                    <input type="checkbox" data-field="duty-enabled" {{#if enabled}}checked{{/if}} />
+                    <span>{{targetStateName}}</span>
+                  </label>
+                  <input type="number" step="0.1" value="{{valuePercent}}" data-field="duty-percent" {{#unless enabled}}disabled{{/unless}} />
+                  <p class="rm-muted">С учётом ивентов: {{effectiveValuePercent}}% (дельта {{deltaPercentValue}}%).</p>
+                </div>
+              {{/each}}
+            </div>
+            <p class="rm-muted">Общая пошлина действует на все внешние государства, а частные ставки позволяют переопределять её для конкретных стран.</p>
+          </section>
+        </div>
+      </details>
+    {{else}}
+      <section class="rm-panel">
+        <p class="rm-empty">По текущим фильтрам государства не найдены.</p>
+      </section>
+    {{/each}}
+  </section>
+</section>

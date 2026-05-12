@@ -1,0 +1,450 @@
+﻿{
+    "source":  {
+                   "workbookPath":  "D:\\груз\\Шпаргалка мастера общий (1).xlsx",
+                   "workbookName":  "Шпаргалка мастера общий (1).xlsx",
+                   "importedAt":  "2026-03-15T19:31:48+02:00",
+                   "sheets":  [
+                                  "Города и локации",
+                                  "Спрос городов",
+                                  "Производство регионов",
+                                  "Описание регионов"
+                              ]
+               },
+    "stats":  {
+                  "goods":  45,
+                  "cities":  300,
+                  "regions":  87,
+                  "states":  16
+              },
+    "transportModes":  [
+                           {
+                               "id":  "peshkom",
+                               "name":  "Пешком",
+                               "movementCost":  0.1,
+                               "maxSteps":  1,
+                               "markupPercent":  0.1,
+                               "workbookMovementCost":  0.1,
+                               "workbookMaxSteps":  1,
+                               "workbookMarkupPercent":  0.1,
+                               "source":  "manual-override"
+                           },
+                           {
+                               "id":  "zemlya",
+                               "name":  "Земля",
+                               "movementCost":  0.2,
+                               "maxSteps":  5,
+                               "markupPercent":  1,
+                               "workbookMovementCost":  0.2,
+                               "workbookMaxSteps":  5,
+                               "workbookMarkupPercent":  1,
+                               "source":  "manual-override"
+                           },
+                           {
+                               "id":  "more",
+                               "name":  "Море",
+                               "movementCost":  0.06,
+                               "maxSteps":  10,
+                               "markupPercent":  0.6,
+                               "workbookMovementCost":  0.06,
+                               "workbookMaxSteps":  10,
+                               "workbookMarkupPercent":  0.6,
+                               "source":  "manual-override"
+                           },
+                           {
+                               "id":  "vozdukh",
+                               "name":  "Воздух",
+                               "movementCost":  0.1,
+                               "maxSteps":  4,
+                               "markupPercent":  0.4,
+                               "workbookMovementCost":  0.1,
+                               "workbookMaxSteps":  4,
+                               "workbookMarkupPercent":  0.4,
+                               "source":  "manual-override"
+                           },
+                           {
+                               "id":  "reka",
+                               "name":  "Река",
+                               "movementCost":  0.08,
+                               "maxSteps":  6,
+                               "markupPercent":  0.48,
+                               "workbookMovementCost":  0.08,
+                               "workbookMaxSteps":  6,
+                               "workbookMarkupPercent":  0.48,
+                               "source":  "manual-override"
+                           },
+                           {
+                               "id":  "pesok",
+                               "name":  "Песок",
+                               "movementCost":  0.25,
+                               "maxSteps":  3,
+                               "markupPercent":  0.75,
+                               "workbookMovementCost":  0.25,
+                               "workbookMaxSteps":  3,
+                               "workbookMarkupPercent":  0.75,
+                               "source":  "manual-override"
+                           },
+                           {
+                               "id":  "zhd",
+                               "name":  "ЖД",
+                               "movementCost":  0.125,
+                               "maxSteps":  7,
+                               "markupPercent":  0.875,
+                               "workbookMovementCost":  0.125,
+                               "workbookMaxSteps":  7,
+                               "workbookMarkupPercent":  0.875,
+                               "source":  "manual-override"
+                           }
+                       ],
+    "workbookTransportModes":  [
+                                   {
+                                       "id":  "peshkom",
+                                       "name":  "Пешком",
+                                       "movementCost":  0.1,
+                                       "maxSteps":  1,
+                                       "markupPercent":  0.1
+                                   },
+                                   {
+                                       "id":  "zemlya",
+                                       "name":  "Земля",
+                                       "movementCost":  0.2,
+                                       "maxSteps":  5,
+                                       "markupPercent":  1
+                                   },
+                                   {
+                                       "id":  "more",
+                                       "name":  "Море",
+                                       "movementCost":  0.06,
+                                       "maxSteps":  10,
+                                       "markupPercent":  0.6
+                                   },
+                                   {
+                                       "id":  "vozdukh",
+                                       "name":  "Воздух",
+                                       "movementCost":  0.1,
+                                       "maxSteps":  4,
+                                       "markupPercent":  0.4
+                                   },
+                                   {
+                                       "id":  "reka",
+                                       "name":  "Река",
+                                       "movementCost":  0.08,
+                                       "maxSteps":  6,
+                                       "markupPercent":  0.48
+                                   },
+                                   {
+                                       "id":  "pesok",
+                                       "name":  "Песок",
+                                       "movementCost":  0.25,
+                                       "maxSteps":  3,
+                                       "markupPercent":  0.75
+                                   },
+                                   {
+                                       "id":  "zhd",
+                                       "name":  "ЖД",
+                                       "movementCost":  0.125,
+                                       "maxSteps":  7,
+                                       "markupPercent":  0.875
+                                   }
+                               ],
+    "cityTypeDemandModifiers":  [
+                                    {
+                                        "id":  "agrarnyy",
+                                        "name":  "Аграрный",
+                                        "categoryModifiers":  {
+                                                                  "metally":  0.95,
+                                                                  "dragmetally":  0.8,
+                                                                  "stroyka":  0.95,
+                                                                  "organika":  1.1,
+                                                                  "tekstil-i-otdelka":  1.1,
+                                                                  "pismo-i-byurokratiya":  0.8,
+                                                                  "khimiya-i-toplivo":  0.8,
+                                                                  "eda":  1.25
+                                                              }
+                                    },
+                                    {
+                                        "id":  "remeslennyy",
+                                        "name":  "Ремесленный",
+                                        "categoryModifiers":  {
+                                                                  "metally":  1.15,
+                                                                  "dragmetally":  0.9,
+                                                                  "stroyka":  1.1,
+                                                                  "organika":  1.2,
+                                                                  "tekstil-i-otdelka":  1.2,
+                                                                  "pismo-i-byurokratiya":  1,
+                                                                  "khimiya-i-toplivo":  1,
+                                                                  "eda":  1
+                                                              }
+                                    },
+                                    {
+                                        "id":  "industrialnyy",
+                                        "name":  "Индустриальный",
+                                        "categoryModifiers":  {
+                                                                  "metally":  1.35,
+                                                                  "dragmetally":  0.9,
+                                                                  "stroyka":  1.2,
+                                                                  "organika":  0.95,
+                                                                  "tekstil-i-otdelka":  0.9,
+                                                                  "pismo-i-byurokratiya":  0.9,
+                                                                  "khimiya-i-toplivo":  1.45,
+                                                                  "eda":  1.05
+                                                              }
+                                    },
+                                    {
+                                        "id":  "portovyy",
+                                        "name":  "Портовый",
+                                        "categoryModifiers":  {
+                                                                  "metally":  1.05,
+                                                                  "dragmetally":  1.1,
+                                                                  "stroyka":  1,
+                                                                  "organika":  1,
+                                                                  "tekstil-i-otdelka":  1.2,
+                                                                  "pismo-i-byurokratiya":  1.2,
+                                                                  "khimiya-i-toplivo":  1,
+                                                                  "eda":  1.15
+                                                              }
+                                    },
+                                    {
+                                        "id":  "shakhtyorskiy",
+                                        "name":  "Шахтёрский",
+                                        "categoryModifiers":  {
+                                                                  "metally":  1.25,
+                                                                  "dragmetally":  1.1,
+                                                                  "stroyka":  1.2,
+                                                                  "organika":  0.95,
+                                                                  "tekstil-i-otdelka":  0.85,
+                                                                  "pismo-i-byurokratiya":  0.85,
+                                                                  "khimiya-i-toplivo":  1.35,
+                                                                  "eda":  1.15
+                                                              }
+                                    },
+                                    {
+                                        "id":  "stolichnyy",
+                                        "name":  "Столичный",
+                                        "categoryModifiers":  {
+                                                                  "metally":  1.1,
+                                                                  "dragmetally":  1.35,
+                                                                  "stroyka":  1.15,
+                                                                  "organika":  1,
+                                                                  "tekstil-i-otdelka":  1.3,
+                                                                  "pismo-i-byurokratiya":  1.45,
+                                                                  "khimiya-i-toplivo":  1,
+                                                                  "eda":  1.25
+                                                              }
+                                    },
+                                    {
+                                        "id":  "magicheskiy",
+                                        "name":  "Магический",
+                                        "categoryModifiers":  {
+                                                                  "metally":  1,
+                                                                  "dragmetally":  1.4,
+                                                                  "stroyka":  1,
+                                                                  "organika":  0.95,
+                                                                  "tekstil-i-otdelka":  1.2,
+                                                                  "pismo-i-byurokratiya":  1.6,
+                                                                  "khimiya-i-toplivo":  1.25,
+                                                                  "eda":  0.95
+                                                              }
+                                    },
+                                    {
+                                        "id":  "voennyy",
+                                        "name":  "Военный",
+                                        "categoryModifiers":  {
+                                                                  "metally":  1.4,
+                                                                  "dragmetally":  0.85,
+                                                                  "stroyka":  1.1,
+                                                                  "organika":  1.15,
+                                                                  "tekstil-i-otdelka":  1,
+                                                                  "pismo-i-byurokratiya":  1,
+                                                                  "khimiya-i-toplivo":  1.5,
+                                                                  "eda":  1.25
+                                                              }
+                                    }
+                                ],
+    "goodGroups":  [
+                       {
+                           "id":  "metally",
+                           "name":  "Металлы",
+                           "goods":  [
+                                         "Железо",
+                                         "Сталь",
+                                         "Медь",
+                                         "Олово",
+                                         "Свинец"
+                                     ]
+                       },
+                       {
+                           "id":  "dragmetally",
+                           "name":  "Драгметаллы",
+                           "goods":  [
+                                         "Серебро",
+                                         "Золото",
+                                         "Платина"
+                                     ]
+                       },
+                       {
+                           "id":  "stroyka",
+                           "name":  "Стройка",
+                           "goods":  [
+                                         "Камень",
+                                         "Сланец",
+                                         "Глина",
+                                         "Кирпич",
+                                         "Известь",
+                                         "Дерево",
+                                         "Стекло"
+                                     ]
+                       },
+                       {
+                           "id":  "organika",
+                           "name":  "Органика",
+                           "goods":  [
+                                         "Кожа",
+                                         "Кость",
+                                         "Смола",
+                                         "Клей"
+                                     ]
+                       },
+                       {
+                           "id":  "tekstil-i-otdelka",
+                           "name":  "Текстиль и отделка",
+                           "goods":  [
+                                         "Ткань",
+                                         "Шёлк",
+                                         "Шерсть",
+                                         "Лён",
+                                         "Хлопок",
+                                         "Красители"
+                                     ]
+                       },
+                       {
+                           "id":  "pismo-i-byurokratiya",
+                           "name":  "Письмо и бюрократия",
+                           "goods":  [
+                                         "Бумага",
+                                         "Пергамент",
+                                         "Воск",
+                                         "Чернила"
+                                     ]
+                       },
+                       {
+                           "id":  "khimiya-i-toplivo",
+                           "name":  "Химия и топливо",
+                           "goods":  [
+                                         "Сера",
+                                         "Селитра",
+                                         "Порох",
+                                         "Масло",
+                                         "Спирт",
+                                         "Уголь",
+                                         "Жидкий уголь"
+                                     ]
+                       },
+                       {
+                           "id":  "eda",
+                           "name":  "Еда",
+                           "goods":  [
+                                         "Пшеница",
+                                         "Мука",
+                                         "Мясо",
+                                         "Рыба",
+                                         "Овощи",
+                                         "Фрукты",
+                                         "Сахар",
+                                         "Соль",
+                                         "Мёд"
+                                     ]
+                       }
+                   ],
+    "warnings":  {
+                     "missingDemandCities":  [
+                                                 {
+                                                     "cityId":  "vurul",
+                                                     "cityName":  "Вурул",
+                                                     "state":  "Азадранская империя",
+                                                     "region":  "Земли Аристея Остина"
+                                                 }
+                                             ],
+                     "unmatchedDemandRows":  [
+
+                                             ],
+                     "brokenConnections":  [
+                                               {
+                                                   "cityId":  "tandaral",
+                                                   "cityName":  "Тандарал",
+                                                   "targetName":  "Зидхэнд",
+                                                   "connectionType":  "Земля",
+                                                   "reason":  "missing-target"
+                                               },
+                                               {
+                                                   "cityId":  "flaso",
+                                                   "cityName":  "Фласо",
+                                                   "targetName":  "Только",
+                                                   "connectionType":  "ЖД",
+                                                   "reason":  "missing-target"
+                                               },
+                                               {
+                                                   "cityId":  "sordigon",
+                                                   "cityName":  "Сордигон",
+                                                   "targetName":  "Переща бродячих теней",
+                                                   "connectionType":  "Земля",
+                                                   "reason":  "missing-target"
+                                               },
+                                               {
+                                                   "cityId":  "mous",
+                                                   "cityName":  "Моус",
+                                                   "targetName":  "Столица красных река",
+                                                   "connectionType":  "Река",
+                                                   "reason":  "missing-target"
+                                               },
+                                               {
+                                                   "cityId":  "molansher",
+                                                   "cityName":  "Моланшер",
+                                                   "targetName":  "Флорансо",
+                                                   "connectionType":  "Воздух",
+                                                   "reason":  "missing-target"
+                                               },
+                                               {
+                                                   "cityId":  "remenser",
+                                                   "cityName":  "Ременсьер",
+                                                   "targetName":  "Флорансо",
+                                                   "connectionType":  "Земля",
+                                                   "reason":  "missing-target"
+                                               },
+                                               {
+                                                   "cityId":  "steynvik",
+                                                   "cityName":  "Стейнвик",
+                                                   "targetName":  "Грай",
+                                                   "connectionType":  "Земля",
+                                                   "reason":  "missing-target"
+                                               },
+                                               {
+                                                   "cityId":  "ayzenburg",
+                                                   "cityName":  "Айзенбург",
+                                                   "targetName":  "Флорансо",
+                                                   "connectionType":  "Воздух",
+                                                   "reason":  "missing-target"
+                                               },
+                                               {
+                                                   "cityId":  "farrenkhof",
+                                                   "cityName":  "Фарренхоф",
+                                                   "targetName":  "Штардольф",
+                                                   "connectionType":  "Море",
+                                                   "reason":  "missing-target"
+                                               },
+                                               {
+                                                   "cityId":  "machi",
+                                                   "cityName":  "Мачи",
+                                                   "targetName":  "Тури",
+                                                   "connectionType":  "Земля",
+                                                   "reason":  "missing-target"
+                                               },
+                                               {
+                                                   "cityId":  "yottenmark",
+                                                   "cityName":  "Йоттенмарк",
+                                                   "targetName":  "Варкельхольд",
+                                                   "connectionType":  "Земля",
+                                                   "reason":  "missing-target"
+                                               }
+                                           ]
+                 }
+}

@@ -1,0 +1,159 @@
+﻿{{#if hasError}}
+  <section class="rm-shell rm-trader-shell scrollable">
+    <p class="rm-empty">{{errorMessage}}</p>
+  </section>
+{{else}}
+  <section class="rm-shell rm-trader-shell scrollable">
+    <header class="rm-trader-header">
+      <div class="rm-trader-header__identity">
+        <button
+          type="button"
+          class="rm-trader-portrait"
+          data-action="portrait-picker"
+          data-current-path="{{trader.portrait}}"
+          aria-label="Выбрать картинку торговца"
+          title="Нажмите, чтобы выбрать картинку"
+        >
+          {{#if trader.portrait}}
+            <img class="rm-trader-portrait__image" src="{{trader.portrait}}" alt="{{trader.name}}">
+          {{else}}
+            <span class="rm-trader-portrait__placeholder">Нет картинки</span>
+          {{/if}}
+        </button>
+
+        <div class="rm-trader-header__text">
+          <p class="rm-eyebrow">Лавка города {{trader.cityName}}</p>
+          <h2>{{trader.name}}</h2>
+          <p class="rm-muted">Владелец: {{trader.merchantName}}{{#if trader.merchantRole}} · {{trader.merchantRole}}{{/if}}</p>
+          <p class="rm-muted">{{trader.cityState}} / {{trader.cityRegion}} / ранг {{rmNum trader.cityRank precision=0}}</p>
+
+          <div class="rm-field">
+            <label>Описание</label>
+            <textarea
+              class="rm-textarea rm-textarea--medium"
+              placeholder="Описание торговца"
+              data-action="description"
+            >{{trader.description}}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="rm-trader-header__side">
+        <div class="rm-trader-summary">
+          <p><span>Налог государства:</span> <strong>{{trader.taxLabel}}</strong></p>
+          {{#if trader.taxEventSourceNames.length}}
+            <p><span>Источник налога:</span> <strong>{{trader.taxEventSourceNames}}</strong></p>
+          {{/if}}
+          <p><span>Позиций:</span> <strong>{{rmNum trader.inventoryCount precision=0}}</strong></p>
+          <p><span>Всего товара:</span> <strong>{{rmNum trader.totalQuantity precision=0}}</strong></p>
+          {{#if trader.cityEventNames.length}}
+            <p><span>Ивенты города:</span> <strong>{{trader.cityEventNames}}</strong></p>
+          {{/if}}
+        </div>
+
+        <div class="rm-trader-customer rm-trader-customer--side">
+          {{#if trader.customer}}
+            <img class="rm-trader-customer__image" src="{{trader.customer.img}}" alt="{{trader.customer.name}}">
+            <strong>{{trader.customer.name}}</strong>
+            <p class="rm-trader-customer__funds">Средства: {{trader.customer.currencyLabel}}</p>
+          {{else}}
+            <span class="rm-trader-customer__placeholder">Покупатель не выбран</span>
+            <p class="rm-muted">Выберите персонажа ниже.</p>
+          {{/if}}
+        </div>
+      </div>
+    </header>
+
+    <section class="rm-trader-toolbar">
+      <div class="rm-field">
+        <label>Покупатель</label>
+        <select data-action="select-customer">
+          {{#each trader.customerOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </div>
+
+      <div class="rm-field">
+        <label>Поиск по лавке</label>
+        <input
+          type="text"
+          value="{{search}}"
+          placeholder="Название, материал"
+          data-action="search"
+        >
+      </div>
+    </section>
+
+    <section class="rm-panel rm-panel--full">
+      <div class="rm-sale-dropzone rm-sale-dropzone--wide" data-action="sale-dropzone">
+        <strong>Продажа через перетягивание</strong>
+        <p class="rm-muted">
+          Перетащите предмет из листа персонажа сюда. Откроется окно, где можно указать количество и подтвердить продажу.
+        </p>
+      </div>
+    </section>
+
+    <section class="rm-panel rm-panel--full">
+      <div class="rm-panel__header">
+        <h3>Ассортимент лавки</h3>
+        <span class="rm-muted">{{rmNum inventoryCount precision=0}} поз.</span>
+      </div>
+
+      {{#if emptyInventory}}
+        <p class="rm-empty">По текущему фильтру товары не найдены.</p>
+      {{else}}
+        <div class="rm-shop-table">
+          <div class="rm-shop-table__header">
+            <span>Предмет</span>
+            <span>Остаток</span>
+            <span>Цена</span>
+            <span></span>
+          </div>
+
+          {{#each inventory}}
+            <article class="rm-shop-table__row" data-item-key="{{itemKey}}">
+              <div
+                class="rm-shop-table__item"
+                title="{{#if itemTypeLabel}}{{itemTypeLabel}}{{/if}}{{#if materialLabel}} / {{materialLabel}}{{/if}}{{#if rank}}, ранг {{rmNum rank precision=0}}{{/if}}{{#if finalWeight}}, вес {{rmNum finalWeight}} фнт.{{/if}}"
+              >
+                {{#if canOpenEntry}}
+                  <button
+                    type="button"
+                    class="rm-link-button rm-link-button--accent rm-shop-table__name"
+                    data-action="open-compendium-entry"
+                    data-source-type="{{sourceType}}"
+                    data-source-id="{{sourceId}}"
+                    data-source-name="{{name}}"
+                  >{{name}}</button>
+                {{else}}
+                  <strong class="rm-shop-table__name">{{name}}</strong>
+                {{/if}}
+              </div>
+
+              <div class="rm-shop-table__qty">{{rmNum quantity precision=0}} шт.</div>
+
+              <div class="rm-shop-table__price">
+                <strong class="rm-tooltip-anchor" data-rm-tooltip="{{markupTooltip}}">{{finalPriceLabel}}</strong>
+                <div class="rm-shop-table__markup rm-muted rm-tooltip-anchor" data-rm-tooltip="{{markupTooltip}}">
+                  Наценка: <span class="{{modifierClass}}">{{modifierLabel}}</span>
+                </div>
+              </div>
+
+              <div class="rm-shop-table__action">
+                <button
+                  type="button"
+                  class="rm-button rm-button--small"
+                  data-action="buy-item"
+                  data-item-key="{{itemKey}}"
+                  {{#unless ../trader.canTrade}}disabled{{/unless}}
+                  {{#unless ../trader.customer}}disabled{{/unless}}
+                >Купить</button>
+              </div>
+            </article>
+          {{/each}}
+        </div>
+      {{/if}}
+    </section>
+  </section>
+{{/if}}

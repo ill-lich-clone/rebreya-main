@@ -1,0 +1,124 @@
+﻿<section class="rm-shell scrollable">
+  <header class="rm-hero">
+    <div>
+      <p class="rm-eyebrow">Мировые связи</p>
+      <h2>Глобальные торговые артерии</h2>
+      <p class="rm-muted">Всего связей: {{totalRoutes}}. В текущем списке: {{filteredRouteCount}}.</p>
+    </div>
+    <div class="rm-hero__actions">
+      <div class="rm-chip">Источник: {{sourceMode}}</div>
+      <div class="rm-chip">Поток: {{rmNum totalUsageQuantity}}</div>
+    </div>
+  </header>
+
+  <section class="rm-panel rm-route-filters-panel">
+    <div class="rm-field rm-field--search">
+      <label for="rm-route-search">Поиск связи</label>
+      <input id="rm-route-search" type="search" placeholder="Связь, город, регион, государство" value="{{filters.search}}" data-filter="search" />
+    </div>
+    <div class="rm-field">
+      <label for="rm-route-state">Государство</label>
+      <select id="rm-route-state" data-filter="state">
+        <option value="all">Все государства</option>
+        {{#each routeStateOptions}}
+          <option value="{{value}}" {{#if (rmEq ../filters.state value)}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
+    </div>
+    <div class="rm-field">
+      <label for="rm-route-status">Статус</label>
+      <select id="rm-route-status" data-filter="status">
+        <option value="all" {{#if (rmEq filters.status "all")}}selected{{/if}}>Все связи</option>
+        <option value="active" {{#if (rmEq filters.status "active")}}selected{{/if}}>Только активные</option>
+        <option value="inactive" {{#if (rmEq filters.status "inactive")}}selected{{/if}}>Только отключённые</option>
+      </select>
+    </div>
+    <div class="rm-field">
+      <label for="rm-route-sort">Сортировка</label>
+      <select id="rm-route-sort" data-filter="sort">
+        {{#each sortOptions}}
+          <option value="{{value}}" {{#if (rmEq ../filters.sort value)}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
+    </div>
+  </section>
+
+  {{#unless tradeAnalyticsReady}}
+    <section class="rm-panel">
+      <p class="rm-empty">Глобальная аналитика связей догружается. Список уже доступен, поток и полезность маршрутов обновятся автоматически.</p>
+    </section>
+  {{/unless}}
+
+  <section class="rm-panel rm-panel--list">
+    <div class="rm-panel__header">
+      <h3>Список мировых связей</h3>
+      <span class="rm-muted">Здесь можно быстро отключать ребро и менять доп. цену без открытия карточки связи.</span>
+    </div>
+
+    <div class="rm-route-list">
+      {{#each routes}}
+        <article class="rm-route-card rm-route-card--wide {{#unless isActive}}is-inactive{{/unless}} {{#if isEventBlocked}}is-event-blocked{{/if}}" data-route-card data-connection-id="{{connectionId}}">
+          <div class="rm-route-card__head">
+            <div>
+              <button type="button" class="rm-link-button" data-action="open-trade-route" data-connection-id="{{connectionId}}">{{sourceCityName}} → {{targetName}}</button>
+              <p class="rm-muted">{{connectionType}} / {{sourceState}} / {{sourceRegionName}}</p>
+              {{#if isEventModified}}
+                <p class="rm-muted">Ивенты: {{eventSummary}}</p>
+              {{/if}}
+              {{#if hasRiskNotes}}
+                <p class="rm-muted">Причина: {{riskNotesLabel}}</p>
+              {{/if}}
+            </div>
+            <div class="rm-route-card__actions">
+              <span class="rm-chip {{activityClass}}" {{#if statusTooltip}}title="{{statusTooltip}}"{{/if}}>{{activityLabel}}</span>
+              {{#if isEventModified}}
+                <span class="rm-chip">Модиф. ивентом</span>
+              {{/if}}
+              <button
+                type="button"
+                class="rm-button rm-button--small rm-button--toggle {{toggleClass}}"
+                data-action="toggle-connection"
+                data-connection-id="{{connectionId}}"
+                data-active="{{#if isActive}}true{{else}}false{{/if}}"
+                {{#if statusTooltip}}title="{{statusTooltip}}"{{/if}}
+                {{#if toggleDisabled}}disabled{{/if}}
+              >{{toggleLabel}}</button>
+              <button type="button" class="rm-button rm-button--small" data-action="open-trade-route" data-connection-id="{{connectionId}}">Открыть</button>
+            </div>
+          </div>
+
+          <dl class="rm-route-card__metrics">
+            <div>
+              <dt>Поток по миру</dt>
+              <dd>{{rmNum totalUsageQuantity}}</dd>
+            </div>
+            <div>
+              <dt>Городов-получателей</dt>
+              <dd>{{totalDestinationCount}}</dd>
+            </div>
+            <div>
+              <dt>Товаров</dt>
+              <dd>{{totalGoodsCount}}</dd>
+            </div>
+            <div>
+              <dt>Доп. цена</dt>
+              <dd class="{{additionalPriceClass}}">{{rmSignedPct additionalPricePercent precision=1}}</dd>
+            </div>
+          </dl>
+
+          <div class="rm-route-inline-editor">
+            <div class="rm-field">
+              <label>Доп. цена, %</label>
+              <input type="number" step="0.1" value="{{additionalPricePercentValue}}" data-field="additional-price" />
+            </div>
+            <div class="rm-route-inline-editor__actions">
+              <button type="button" class="rm-button rm-button--small" data-action="save-route-price" data-connection-id="{{connectionId}}">Сохранить доп. цену</button>
+            </div>
+          </div>
+        </article>
+      {{else}}
+        <p class="rm-empty">По текущим фильтрам мировые связи не найдены.</p>
+      {{/each}}
+    </div>
+  </section>
+</section>

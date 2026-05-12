@@ -1,0 +1,230 @@
+﻿<section class="rm-shell rm-economy-shell scrollable">
+  <header class="rm-hero">
+    <div>
+      <p class="rm-eyebrow">Экономика сеттинга</p>
+      <h2>Сводка по городам и локациям</h2>
+      <p class="rm-muted">Загружено {{totalCityCount}} поселений. Отфильтровано: {{filteredCityCount}}.</p>
+    </div>
+    <div class="rm-hero__actions">
+      <button type="button" class="rm-button" data-action="restore-data">Восстановить данные</button>
+      <button type="button" class="rm-button rm-button--ghost" data-action="reload-data">Перезагрузить данные</button>
+      <div class="rm-chip">Источник: {{dataSource.mode}}</div>
+    </div>
+  </header>
+
+  <section class="rm-summary-grid">
+    <article class="rm-stat-card">
+      <span>Города и локации</span>
+      <strong>{{summary.cityCount}}</strong>
+      <small>{{summaryCountLabel}}</small>
+    </article>
+    <article class="rm-stat-card">
+      <span>Население</span>
+      <strong>{{rmNum summary.population precision=0}}</strong>
+      <small>{{summaryScopeLabel}}</small>
+    </article>
+    <article class="rm-stat-card">
+      <span>Производство / спрос</span>
+      <strong>{{rmNum summary.totalProduction}} / {{rmNum summary.totalDemand}}</strong>
+      <small>{{summaryScopeLabel}}</small>
+    </article>
+    <article class="rm-stat-card">
+      <span>Среднее самообеспечение</span>
+      <strong>{{rmPct summary.averageSelfSufficiency precision=1}}</strong>
+      <small>{{summaryScopeLabel}}</small>
+    </article>
+  </section>
+
+  <section class="rm-panel">
+    <div class="rm-panel__header">
+      <h3>Активные глобальные ивенты</h3>
+      {{#if canManageGlobalEvents}}
+        <button type="button" class="rm-button rm-button--small" data-action="open-global-events">Открыть управление ивентами</button>
+      {{/if}}
+    </div>
+    {{#if hasActiveEvents}}
+      <div class="rm-global-event-card__meta">
+        {{#each activeEvents}}
+          <span class="rm-chip">{{name}} · p{{priority}}</span>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="rm-empty">Сейчас нет активных событий, влияющих на экономику.</p>
+    {{/if}}
+  </section>
+
+  <section class="rm-panel rm-filters-panel">
+    <div class="rm-field rm-field--search">
+      <label for="rm-search">Поиск</label>
+      <input id="rm-search" type="search" placeholder="Город, регион, государство" value="{{filters.search}}" data-filter="search" />
+    </div>
+    <div class="rm-field">
+      <label for="rm-state">Государство</label>
+      <select id="rm-state" data-filter="state">
+        <option value="all">Все государства</option>
+        {{#each stateOptions}}
+          <option value="{{value}}" {{#if (rmEq ../filters.state value)}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
+    </div>
+    <div class="rm-field">
+      <label for="rm-region">Регион</label>
+      <select id="rm-region" data-filter="regionId">
+        <option value="all">Все регионы</option>
+        {{#each regionOptions}}
+          <option value="{{value}}" {{#if (rmEq ../filters.regionId value)}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
+    </div>
+    <div class="rm-field">
+      <label for="rm-city-type">Тип города</label>
+      <select id="rm-city-type" data-filter="cityType">
+        <option value="all">Все типы</option>
+        {{#each cityTypeOptions}}
+          <option value="{{value}}" {{#if (rmEq ../filters.cityType value)}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
+    </div>
+    <div class="rm-field">
+      <label for="rm-sort">Сортировка</label>
+      <select id="rm-sort" data-filter="sort">
+        {{#each sortOptions}}
+          <option value="{{value}}" {{#if (rmEq ../filters.sort value)}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
+    </div>
+  </section>
+
+  <section class="rm-dashboard">
+    <div class="rm-panel rm-panel--list">
+      <div class="rm-panel__header">
+        <h3>Города</h3>
+        <span class="rm-muted">
+          Клик по карточке открывает отдельное окно города.
+          {{#if cityListLimited}} Показано {{visibleCityCount}} из {{filteredCityCount}}. Остальные открывайте через фильтры.{{/if}}
+        </span>
+      </div>
+      <div class="rm-city-list">
+        {{#each cities}}
+          <article class="rm-city-card {{#if totalDeficit}}rm-city-card--deficit{{/if}}">
+            <div class="rm-city-card__head">
+              <div>
+                <button type="button" class="rm-link-button" data-action="open-city" data-city-id="{{id}}">{{name}}</button>
+                <p class="rm-muted">{{state}} / {{regionName}} / {{cityType}}</p>
+                {{#if activeEventNames.length}}
+                  <p class="rm-muted">Ивенты: {{activeEventNames}}</p>
+                {{/if}}
+              </div>
+              <span class="rm-badge rm-self-sufficiency" style="--rm-self-sufficiency-color: {{selfSufficiencyColor}};">{{rmPct selfSufficiencyRate precision=1}}</span>
+            </div>
+            <dl class="rm-metric-grid">
+              <div>
+                <dt>Население</dt>
+                <dd>{{rmNum population precision=0}}</dd>
+              </div>
+              <div>
+                <dt>Производство</dt>
+                <dd>{{rmNum totalProduction}}</dd>
+              </div>
+              <div>
+                <dt>Спрос</dt>
+                <dd>{{rmNum totalDemand}}</dd>
+              </div>
+              <div>
+                <dt>Дефицит</dt>
+                <dd class="rm-negative">{{rmNum totalDeficit}}</dd>
+              </div>
+              <div>
+                <dt>Профицит</dt>
+                <dd class="rm-positive">{{rmNum totalSurplus}}</dd>
+              </div>
+              <div>
+                <dt>Баланс</dt>
+                <dd class="{{netBalanceClass}}">{{rmSigned netBalance}}</dd>
+              </div>
+            </dl>
+          </article>
+        {{else}}
+          <p class="rm-empty">По текущим фильтрам ничего не найдено.</p>
+        {{/each}}
+      </div>
+    </div>
+
+    <aside class="rm-side-stack">
+      <section class="rm-panel">
+        <div class="rm-panel__header">
+          <h3>Инструменты мира</h3>
+        </div>
+        <div class="rm-action-stack">
+          <button type="button" class="rm-button rm-button--wide" data-action="open-world-routes">Открыть мировые связи</button>
+          <button type="button" class="rm-button rm-button--wide" data-action="open-states">Открыть меню государств</button>
+          {{#if canManageGlobalEvents}}
+            <button type="button" class="rm-button rm-button--wide" data-action="open-global-events">Открыть глобальные ивенты</button>
+          {{/if}}
+          <button type="button" class="rm-button rm-button--wide" data-action="open-inventory">Открыть инвентарь группы</button>
+        </div>
+        <p class="rm-muted">В этих окнах можно управлять торговыми артериями, наценками, налогами, пошлинами и общим инвентарём группы, не перегружая главное окно экономики.</p>
+      </section>
+
+      <section class="rm-panel">
+        <div class="rm-panel__header">
+          <h3>{{#if isFilteredSummary}}Топ дефицитов списка{{else}}Топ дефицитов мира{{/if}}</h3>
+        </div>
+        <ul class="rm-good-list">
+          {{#each topDeficitGoods}}
+            <li>
+              <span>{{goodName}}</span>
+              <strong class="rm-negative">{{rmNum deficit}}</strong>
+            </li>
+          {{/each}}
+        </ul>
+      </section>
+
+      <section class="rm-panel">
+        <div class="rm-panel__header">
+          <h3>{{#if isFilteredSummary}}Топ профицитов списка{{else}}Топ профицитов мира{{/if}}</h3>
+        </div>
+        <ul class="rm-good-list">
+          {{#each topSurplusGoods}}
+            <li>
+              <span>{{goodName}}</span>
+              <strong class="rm-positive">{{rmNum surplus}}</strong>
+            </li>
+          {{/each}}
+        </ul>
+      </section>
+
+      <section class="rm-panel">
+        <div class="rm-panel__header">
+          <h3>Государственный обзор</h3>
+        </div>
+        <div class="rm-mini-table">
+          {{#each stateOverview}}
+            <div class="rm-mini-table__row">
+              <span>{{name}}</span>
+              <span>{{cityCount}} гор.</span>
+              <span class="rm-negative">{{rmNum totalDeficit}}</span>
+              <span>{{rmPct selfSufficiencyRate precision=1}}</span>
+            </div>
+          {{/each}}
+        </div>
+      </section>
+
+      <section class="rm-panel">
+        <div class="rm-panel__header">
+          <h3>Региональный обзор</h3>
+        </div>
+        <div class="rm-mini-table">
+          {{#each regionOverview}}
+            <div class="rm-mini-table__row">
+              <span>{{name}}</span>
+              <span>{{state}}</span>
+              <span class="rm-negative">{{rmNum totalDeficit}}</span>
+              <span>{{rmPct selfSufficiencyRate precision=1}}</span>
+            </div>
+          {{/each}}
+        </div>
+      </section>
+    </aside>
+  </section>
+</section>

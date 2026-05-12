@@ -1,0 +1,407 @@
+[
+    {
+        "id":  "zhelezo",
+        "name":  "Железо",
+        "category":  "metals",
+        "groupId":  "metally",
+        "groupName":  "Металлы",
+        "baseProductionPer1000":  10,
+        "baseConsumptionPer1000":  3.2
+    },
+    {
+        "id":  "stal",
+        "name":  "Сталь",
+        "category":  "metals",
+        "groupId":  "metally",
+        "groupName":  "Металлы",
+        "baseProductionPer1000":  1,
+        "baseConsumptionPer1000":  6
+    },
+    {
+        "id":  "med",
+        "name":  "Медь",
+        "category":  "metals",
+        "groupId":  "metally",
+        "groupName":  "Металлы",
+        "baseProductionPer1000":  5.2,
+        "baseConsumptionPer1000":  5
+    },
+    {
+        "id":  "olovo",
+        "name":  "Олово",
+        "category":  "metals",
+        "groupId":  "metally",
+        "groupName":  "Металлы",
+        "baseProductionPer1000":  3,
+        "baseConsumptionPer1000":  2
+    },
+    {
+        "id":  "svinets",
+        "name":  "Свинец",
+        "category":  "metals",
+        "groupId":  "metally",
+        "groupName":  "Металлы",
+        "baseProductionPer1000":  4,
+        "baseConsumptionPer1000":  3
+    },
+    {
+        "id":  "serebro",
+        "name":  "Серебро",
+        "category":  "precious-metals",
+        "groupId":  "dragmetally",
+        "groupName":  "Драгметаллы",
+        "baseProductionPer1000":  2.2,
+        "baseConsumptionPer1000":  2.5
+    },
+    {
+        "id":  "zoloto",
+        "name":  "Золото",
+        "category":  "precious-metals",
+        "groupId":  "dragmetally",
+        "groupName":  "Драгметаллы",
+        "baseProductionPer1000":  0.5,
+        "baseConsumptionPer1000":  0.6
+    },
+    {
+        "id":  "platina",
+        "name":  "Платина",
+        "category":  "precious-metals",
+        "groupId":  "dragmetally",
+        "groupName":  "Драгметаллы",
+        "baseProductionPer1000":  0.1,
+        "baseConsumptionPer1000":  0.1
+    },
+    {
+        "id":  "kamen",
+        "name":  "Камень",
+        "category":  "construction",
+        "groupId":  "stroyka",
+        "groupName":  "Стройка",
+        "baseProductionPer1000":  24,
+        "baseConsumptionPer1000":  18
+    },
+    {
+        "id":  "slanets",
+        "name":  "Сланец",
+        "category":  "construction",
+        "groupId":  "stroyka",
+        "groupName":  "Стройка",
+        "baseProductionPer1000":  11,
+        "baseConsumptionPer1000":  8
+    },
+    {
+        "id":  "glina",
+        "name":  "Глина",
+        "category":  "construction",
+        "groupId":  "stroyka",
+        "groupName":  "Стройка",
+        "baseProductionPer1000":  19,
+        "baseConsumptionPer1000":  10
+    },
+    {
+        "id":  "kirpich",
+        "name":  "Кирпич",
+        "category":  "construction",
+        "groupId":  "stroyka",
+        "groupName":  "Стройка",
+        "baseProductionPer1000":  15,
+        "baseConsumptionPer1000":  12
+    },
+    {
+        "id":  "izvest",
+        "name":  "Известь",
+        "category":  "construction",
+        "groupId":  "stroyka",
+        "groupName":  "Стройка",
+        "baseProductionPer1000":  13,
+        "baseConsumptionPer1000":  8.2
+    },
+    {
+        "id":  "derevo",
+        "name":  "Дерево",
+        "category":  "construction",
+        "groupId":  "stroyka",
+        "groupName":  "Стройка",
+        "baseProductionPer1000":  22,
+        "baseConsumptionPer1000":  20
+    },
+    {
+        "id":  "kozha",
+        "name":  "Кожа",
+        "category":  "organic",
+        "groupId":  "organika",
+        "groupName":  "Органика",
+        "baseProductionPer1000":  8,
+        "baseConsumptionPer1000":  7.1
+    },
+    {
+        "id":  "kost",
+        "name":  "Кость",
+        "category":  "organic",
+        "groupId":  "organika",
+        "groupName":  "Органика",
+        "baseProductionPer1000":  4,
+        "baseConsumptionPer1000":  3
+    },
+    {
+        "id":  "tkan",
+        "name":  "Ткань",
+        "category":  "other",
+        "groupId":  "tekstil-i-otdelka",
+        "groupName":  "Текстиль и отделка",
+        "baseProductionPer1000":  10,
+        "baseConsumptionPer1000":  8
+    },
+    {
+        "id":  "shyolk",
+        "name":  "Шёлк",
+        "category":  "other",
+        "groupId":  "tekstil-i-otdelka",
+        "groupName":  "Текстиль и отделка",
+        "baseProductionPer1000":  1.5,
+        "baseConsumptionPer1000":  1.2
+    },
+    {
+        "id":  "sherst",
+        "name":  "Шерсть",
+        "category":  "other",
+        "groupId":  "tekstil-i-otdelka",
+        "groupName":  "Текстиль и отделка",
+        "baseProductionPer1000":  9,
+        "baseConsumptionPer1000":  8
+    },
+    {
+        "id":  "lyon",
+        "name":  "Лён",
+        "category":  "other",
+        "groupId":  "tekstil-i-otdelka",
+        "groupName":  "Текстиль и отделка",
+        "baseProductionPer1000":  8,
+        "baseConsumptionPer1000":  8
+    },
+    {
+        "id":  "khlopok",
+        "name":  "Хлопок",
+        "category":  "other",
+        "groupId":  "tekstil-i-otdelka",
+        "groupName":  "Текстиль и отделка",
+        "baseProductionPer1000":  7,
+        "baseConsumptionPer1000":  7
+    },
+    {
+        "id":  "steklo",
+        "name":  "Стекло",
+        "category":  "construction",
+        "groupId":  "stroyka",
+        "groupName":  "Стройка",
+        "baseProductionPer1000":  8,
+        "baseConsumptionPer1000":  7
+    },
+    {
+        "id":  "bumaga",
+        "name":  "Бумага",
+        "category":  "other",
+        "groupId":  "pismo-i-byurokratiya",
+        "groupName":  "Письмо и бюрократия",
+        "baseProductionPer1000":  6,
+        "baseConsumptionPer1000":  6.1
+    },
+    {
+        "id":  "pergament",
+        "name":  "Пергамент",
+        "category":  "other",
+        "groupId":  "pismo-i-byurokratiya",
+        "groupName":  "Письмо и бюрократия",
+        "baseProductionPer1000":  2,
+        "baseConsumptionPer1000":  2
+    },
+    {
+        "id":  "vosk",
+        "name":  "Воск",
+        "category":  "other",
+        "groupId":  "pismo-i-byurokratiya",
+        "groupName":  "Письмо и бюрократия",
+        "baseProductionPer1000":  4,
+        "baseConsumptionPer1000":  5
+    },
+    {
+        "id":  "chernila",
+        "name":  "Чернила",
+        "category":  "other",
+        "groupId":  "pismo-i-byurokratiya",
+        "groupName":  "Письмо и бюрократия",
+        "baseProductionPer1000":  3,
+        "baseConsumptionPer1000":  3.5
+    },
+    {
+        "id":  "smola",
+        "name":  "Смола",
+        "category":  "organic",
+        "groupId":  "organika",
+        "groupName":  "Органика",
+        "baseProductionPer1000":  5,
+        "baseConsumptionPer1000":  4
+    },
+    {
+        "id":  "kley",
+        "name":  "Клей",
+        "category":  "organic",
+        "groupId":  "organika",
+        "groupName":  "Органика",
+        "baseProductionPer1000":  4.2,
+        "baseConsumptionPer1000":  4
+    },
+    {
+        "id":  "krasiteli",
+        "name":  "Красители",
+        "category":  "other",
+        "groupId":  "tekstil-i-otdelka",
+        "groupName":  "Текстиль и отделка",
+        "baseProductionPer1000":  2,
+        "baseConsumptionPer1000":  3
+    },
+    {
+        "id":  "sera",
+        "name":  "Сера",
+        "category":  "other",
+        "groupId":  "khimiya-i-toplivo",
+        "groupName":  "Химия и топливо",
+        "baseProductionPer1000":  4,
+        "baseConsumptionPer1000":  12
+    },
+    {
+        "id":  "selitra",
+        "name":  "Селитра",
+        "category":  "other",
+        "groupId":  "khimiya-i-toplivo",
+        "groupName":  "Химия и топливо",
+        "baseProductionPer1000":  4,
+        "baseConsumptionPer1000":  12
+    },
+    {
+        "id":  "porokh",
+        "name":  "Порох",
+        "category":  "other",
+        "groupId":  "khimiya-i-toplivo",
+        "groupName":  "Химия и топливо",
+        "baseProductionPer1000":  2,
+        "baseConsumptionPer1000":  12
+    },
+    {
+        "id":  "maslo",
+        "name":  "Масло",
+        "category":  "other",
+        "groupId":  "khimiya-i-toplivo",
+        "groupName":  "Химия и топливо",
+        "baseProductionPer1000":  6,
+        "baseConsumptionPer1000":  5
+    },
+    {
+        "id":  "spirt",
+        "name":  "Спирт",
+        "category":  "other",
+        "groupId":  "khimiya-i-toplivo",
+        "groupName":  "Химия и топливо",
+        "baseProductionPer1000":  5,
+        "baseConsumptionPer1000":  4
+    },
+    {
+        "id":  "ugol",
+        "name":  "Уголь",
+        "category":  "other",
+        "groupId":  "khimiya-i-toplivo",
+        "groupName":  "Химия и топливо",
+        "baseProductionPer1000":  14,
+        "baseConsumptionPer1000":  16
+    },
+    {
+        "id":  "zhidkiy-ugol",
+        "name":  "Жидкий уголь",
+        "category":  "other",
+        "groupId":  "khimiya-i-toplivo",
+        "groupName":  "Химия и топливо",
+        "baseProductionPer1000":  4,
+        "baseConsumptionPer1000":  9
+    },
+    {
+        "id":  "pshenitsa",
+        "name":  "Пшеница",
+        "category":  "organic",
+        "groupId":  "eda",
+        "groupName":  "Еда",
+        "baseProductionPer1000":  24,
+        "baseConsumptionPer1000":  18
+    },
+    {
+        "id":  "muka",
+        "name":  "Мука",
+        "category":  "organic",
+        "groupId":  "eda",
+        "groupName":  "Еда",
+        "baseProductionPer1000":  18,
+        "baseConsumptionPer1000":  14
+    },
+    {
+        "id":  "myaso",
+        "name":  "Мясо",
+        "category":  "organic",
+        "groupId":  "eda",
+        "groupName":  "Еда",
+        "baseProductionPer1000":  12,
+        "baseConsumptionPer1000":  10
+    },
+    {
+        "id":  "ryba",
+        "name":  "Рыба",
+        "category":  "organic",
+        "groupId":  "eda",
+        "groupName":  "Еда",
+        "baseProductionPer1000":  11,
+        "baseConsumptionPer1000":  8
+    },
+    {
+        "id":  "ovoshchi",
+        "name":  "Овощи",
+        "category":  "organic",
+        "groupId":  "eda",
+        "groupName":  "Еда",
+        "baseProductionPer1000":  20,
+        "baseConsumptionPer1000":  18
+    },
+    {
+        "id":  "frukty",
+        "name":  "Фрукты",
+        "category":  "organic",
+        "groupId":  "eda",
+        "groupName":  "Еда",
+        "baseProductionPer1000":  12,
+        "baseConsumptionPer1000":  10
+    },
+    {
+        "id":  "sakhar",
+        "name":  "Сахар",
+        "category":  "organic",
+        "groupId":  "eda",
+        "groupName":  "Еда",
+        "baseProductionPer1000":  2,
+        "baseConsumptionPer1000":  2
+    },
+    {
+        "id":  "sol",
+        "name":  "Соль",
+        "category":  "organic",
+        "groupId":  "eda",
+        "groupName":  "Еда",
+        "baseProductionPer1000":  7,
+        "baseConsumptionPer1000":  7
+    },
+    {
+        "id":  "myod",
+        "name":  "Мёд",
+        "category":  "organic",
+        "groupId":  "eda",
+        "groupName":  "Еда",
+        "baseProductionPer1000":  1,
+        "baseConsumptionPer1000":  1.5
+    }
+]
