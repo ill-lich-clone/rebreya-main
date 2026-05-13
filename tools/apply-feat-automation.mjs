@@ -92,6 +92,114 @@ const TOOL_PROFICIENCIES = {
     otravitel: [{ tool: "poisoner", mode: MODE_UPGRADE }]
 }
 
+const CULTURAL_WEAPON_PROFICIENCIES = {
+    "trenirovka-s-kuroviyskim-oruzhiem": [
+        ["quarterstaff", "Боевой посох"],
+        ["lightcrossbow", "Арбалет, легкий"],
+        ["estok", "Эсток"],
+        ["rapier", "Рапира"],
+        ["heavycrossbow", "Арбалет, тяжелый"]
+    ],
+    "trenirovka-s-gudadskim-oruzhiem": [
+        ["handaxe", "Ручной топор"],
+        ["sling", "Праща"],
+        ["warhammer", "Боевой молот"],
+        ["boevaya-kosa", "Боевая коса"],
+        ["longbow", "Длинный лук"]
+    ],
+    "trenirovka-s-oruzhiem-menega-dvarfiyskim": [
+        ["lighthammer", "Лёгкий молот"],
+        ["dart", "Дротик"],
+        ["maul", "Молот"],
+        ["warpick", "Боевая кирка"],
+        ["heavycrossbow", "Арбалет, тяжелый"]
+    ],
+    "trenirovka-s-oruzhiem-maytena": [
+        ["greatclub", "Палица"],
+        ["shortbow", "Короткий лук"],
+        ["sablya", "Сабля"],
+        ["spear", "Копьё"],
+        ["kompozitnyy-luk", "Композитный лук"]
+    ],
+    "trenirovka-s-esharskim-oruzhiem": [
+        ["dagger", "Кинжал"],
+        ["sling", "Праща"],
+        ["shamshir", "Шамшир"],
+        ["whip", "Кнут"],
+        ["luk-vsadnika", "Лук всадника"]
+    ],
+    "trenirovka-s-zomarskim-oruzhiem": [
+        ["mace", "Булава"],
+        ["lightcrossbow", "Арбалет, легкий"],
+        ["shortsword", "Короткий меч"],
+        ["warhammer", "Боевой молот"],
+        ["handcrossbow", "Арбалет, ручной"]
+    ],
+    "trenirovka-s-oruzhiem-teblina": [
+        ["dagger", "Кинжал"],
+        ["sling", "Праща"],
+        ["scimitar", "Скимитар"],
+        ["sablya", "Сабля"],
+        ["blowgun", "Духовая трубка"]
+    ],
+    "trenirovka-s-azadranskim-oruzhiem": [
+        ["greatclub", "Палица"],
+        ["dart", "Дротик"],
+        ["longsword", "Длинный меч"],
+        ["kavaleriyskaya-pika", "Кавалерийская пика"],
+        ["kompozitnyy-luk", "Композитный лук"]
+    ],
+    "trenirovka-s-umeliluanskim-oruzhiem": [
+        ["spear", "Копье"],
+        ["shortbow", "Короткий лук"],
+        ["longsword", "Длинный меч"],
+        ["greatsword", "Двуручный меч"],
+        ["heavycrossbow", "Арбалет, тяжелый"]
+    ],
+    "trenirovka-s-nirianskim-oruzhiem": [
+        ["sickle", "Серп"],
+        ["dart", "Дротик"],
+        ["katana", "Катана"],
+        ["kinzhal-na-tsepi", "Кинжал на цепи"],
+        ["mnogozaryadnyy-arbalet", "Многозарядный арбалет"]
+    ],
+    "trenirovka-s-oruzhiem-teokratii": [
+        ["club", "Дубинка"],
+        ["shortbow", "Короткий лук"],
+        ["shamshir", "Шамшир"],
+        ["flail", "Цеп"],
+        ["heavycrossbow", "Арбалет, тяжелый"]
+    ],
+    "trenirovka-s-oruzhiem-yultan-glasta-elfiyskim": [
+        ["spear", "Копье"],
+        ["shortbow", "Короткий лук"],
+        ["estok", "Эсток"],
+        ["longbow", "Длинный лук"],
+        ["kompozitnyy-luk", "Композитный лук"]
+    ],
+    "trenirovka-s-oruzhiem-ilduina": [
+        ["sickle", "Серп"],
+        ["lightcrossbow", "Арбалет, легкий"],
+        ["glaive", "Глефа"],
+        ["morningstar", "Моргенштерн"],
+        ["luk-vsadnika", "Лук всадника"]
+    ],
+    "trenirovka-s-pontvantskim-oruzhiem": [
+        ["kostyanoy-topor", "Костяной топор"],
+        ["sling", "Праща"],
+        ["scimitar", "Скимитар"],
+        ["whip", "Кнут"],
+        ["longbow", "Длинный лук"]
+    ],
+    "trenirovka-s-oruzhiem-golkranda-orochim": [
+        ["shortsword", "Короткий меч"],
+        ["spear", "Копье"],
+        ["dlinnaya-bulava", "Длинная булава"],
+        ["tsepnoy-serp", "Цепной серп"],
+        ["longbow", "Длинный лук"]
+    ]
+}
+
 const STATUS_EFFECTS = {
     prone: {
         label: "Лежащий ничком",
@@ -132,6 +240,10 @@ const STATUS_EFFECTS = {
 }
 
 const STATIC_EFFECTS = {
+    ...Object.fromEntries(Object.entries(CULTURAL_WEAPON_PROFICIENCIES).map(([identifier, weapons]) => [
+        identifier,
+        weapons.map(([value, label]) => weaponProficiency(value, label))
+    ])),
     aristokratichnost: [
         skillBonus("ins", "2", "Бонус +2 к Проницательности"),
         skillBonus("inv", "2", "Бонус +2 к Расследованию"),
@@ -586,6 +698,7 @@ const CURATED_ACTIVITIES = {
 }
 
 const STATUS_OVERRIDES = {
+    ...Object.fromEntries(Object.keys(CULTURAL_WEAPON_PROFICIENCIES).map((identifier) => [identifier, "automated"])),
     "bystraya-noga": "automated",
     "srazhenie-vslepuyu": "automated",
     "torgovaya-hvatka": "automated",
@@ -637,6 +750,7 @@ const MECHANIC_LABELS = {
     activities: "Activities",
     skills: "владения/бонусы навыков",
     tools: "владения инструментами",
+    weaponProficiencies: "владения оружием",
     movement: "скорость",
     senses: "чувства",
     resistance: "сопротивления",
@@ -676,6 +790,10 @@ function resistance(value, note) {
 
 function conditionImmunity(value, note) {
     return change(note, "system.traits.ci.value", value, MODE_ADD, note)
+}
+
+function weaponProficiency(value, label) {
+    return change(label, "system.traits.weaponProf.value", value, MODE_ADD, `Владение оружием: ${label}`)
 }
 
 function statusEffect(statusId, value, note, options = {}) {
@@ -729,6 +847,7 @@ function seconds(value) {
 function classifyKey(key) {
     if (key.includes(".skills.")) return "skills"
     if (key.includes(".tools.")) return "tools"
+    if (key.includes(".weaponProf.")) return "weaponProficiencies"
     if (key.includes(".movement.")) return "movement"
     if (key.includes(".senses.")) return "senses"
     if (key.includes(".dr.")) return "resistance"

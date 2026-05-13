@@ -35888,7 +35888,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "a6cce0786c5e1d6d",
+          "name": "Боевой посох",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "quarterstaff",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Боевой посох</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "098bf74a0e484924",
+          "name": "Арбалет, легкий",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "lightcrossbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Арбалет, легкий</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "75a0019bf9523239",
+          "name": "Эсток",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "estok",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Эсток</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "e869a2f088113066",
+          "name": "Рапира",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "rapier",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Рапира</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "13c0076cec8ef846",
+          "name": "Арбалет, тяжелый",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "heavycrossbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Арбалет, тяжелый</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -35915,8 +36091,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Боевой посох; Владение оружием: Арбалет, легкий; Владение оружием: Эсток; Владение оружием: Рапира; Владение оружием: Арбалет, тяжелый"
           }
         }
       }
@@ -35953,7 +36129,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "bab33a21c8cb81d2",
+          "name": "Ручной топор",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "handaxe",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Ручной топор</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "8214018926e7e379",
+          "name": "Праща",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "sling",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Праща</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "7d77c4a33a01ce38",
+          "name": "Боевой молот",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "warhammer",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Боевой молот</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "95d0b5b2187cabdb",
+          "name": "Боевая коса",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "boevaya-kosa",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Боевая коса</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "2eef2b7562051922",
+          "name": "Длинный лук",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "longbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Длинный лук</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -35980,8 +36332,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Ручной топор; Владение оружием: Праща; Владение оружием: Боевой молот; Владение оружием: Боевая коса; Владение оружием: Длинный лук"
           }
         }
       }
@@ -36018,7 +36370,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "8ad297379504aa8c",
+          "name": "Лёгкий молот",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "lighthammer",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Лёгкий молот</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "3a7845c7a0d6624d",
+          "name": "Дротик",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "dart",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Дротик</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "1e2d9d9e65a17bac",
+          "name": "Молот",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "maul",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Молот</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "f1db6eb31e54bc75",
+          "name": "Боевая кирка",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "warpick",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Боевая кирка</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "af7eb5895b7bcdec",
+          "name": "Арбалет, тяжелый",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "heavycrossbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Арбалет, тяжелый</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36045,8 +36573,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Лёгкий молот; Владение оружием: Дротик; Владение оружием: Молот; Владение оружием: Боевая кирка; Владение оружием: Арбалет, тяжелый"
           }
         }
       }
@@ -36083,7 +36611,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "a2a6183ccb48be62",
+          "name": "Палица",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "greatclub",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Палица</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "fdf621e9f2c521b4",
+          "name": "Короткий лук",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "shortbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Короткий лук</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "2970247e465b5e77",
+          "name": "Сабля",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "sablya",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Сабля</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "fc53731e52237dd2",
+          "name": "Копьё",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "spear",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Копьё</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "5e39995ff8e91a1f",
+          "name": "Композитный лук",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "kompozitnyy-luk",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Композитный лук</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36110,8 +36814,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Палица; Владение оружием: Короткий лук; Владение оружием: Сабля; Владение оружием: Копьё; Владение оружием: Композитный лук"
           }
         }
       }
@@ -36148,7 +36852,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "96585e213cac0f30",
+          "name": "Кинжал",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "dagger",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Кинжал</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "a352db2c94d1c893",
+          "name": "Праща",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "sling",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Праща</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "15d67fedd3e1c48b",
+          "name": "Шамшир",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "shamshir",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Шамшир</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "093581d0ab9dd3b8",
+          "name": "Кнут",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "whip",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Кнут</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "6076ce744b46f9ce",
+          "name": "Лук всадника",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "luk-vsadnika",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Лук всадника</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36175,8 +37055,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Кинжал; Владение оружием: Праща; Владение оружием: Шамшир; Владение оружием: Кнут; Владение оружием: Лук всадника"
           }
         }
       }
@@ -36213,7 +37093,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "c9740f569feb012d",
+          "name": "Булава",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "mace",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Булава</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "02a0009e04a07080",
+          "name": "Арбалет, легкий",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "lightcrossbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Арбалет, легкий</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "764ab36492918f79",
+          "name": "Короткий меч",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "shortsword",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Короткий меч</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "10b8006313d08a8d",
+          "name": "Боевой молот",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "warhammer",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Боевой молот</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "d5ebd48f7e1856f5",
+          "name": "Арбалет, ручной",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "handcrossbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Арбалет, ручной</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36240,8 +37296,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Булава; Владение оружием: Арбалет, легкий; Владение оружием: Короткий меч; Владение оружием: Боевой молот; Владение оружием: Арбалет, ручной"
           }
         }
       }
@@ -36278,7 +37334,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "58fd5c00311bd51f",
+          "name": "Кинжал",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "dagger",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Кинжал</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "77916f0dcfb81588",
+          "name": "Праща",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "sling",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Праща</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "a9d119a4b1882439",
+          "name": "Скимитар",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "scimitar",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Скимитар</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "147f57906b4ec310",
+          "name": "Сабля",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "sablya",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Сабля</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "1b7145fdf0edcf84",
+          "name": "Духовая трубка",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "blowgun",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Духовая трубка</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36305,8 +37537,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Кинжал; Владение оружием: Праща; Владение оружием: Скимитар; Владение оружием: Сабля; Владение оружием: Духовая трубка"
           }
         }
       }
@@ -36343,7 +37575,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "a150430aa58e0571",
+          "name": "Палица",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "greatclub",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Палица</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "05ddef2caf26a436",
+          "name": "Дротик",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "dart",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Дротик</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "87df0462b74a2926",
+          "name": "Длинный меч",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "longsword",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Длинный меч</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "4348e46e12b3c730",
+          "name": "Кавалерийская пика",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "kavaleriyskaya-pika",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Кавалерийская пика</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "27153c88a27aa44a",
+          "name": "Композитный лук",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "kompozitnyy-luk",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Композитный лук</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36370,8 +37778,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Палица; Владение оружием: Дротик; Владение оружием: Длинный меч; Владение оружием: Кавалерийская пика; Владение оружием: Композитный лук"
           }
         }
       }
@@ -36408,7 +37816,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "eb70cceaefddec2c",
+          "name": "Копье",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "spear",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Копье</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "f4899462379246d3",
+          "name": "Короткий лук",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "shortbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Короткий лук</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "7384d38d5ed54abb",
+          "name": "Длинный меч",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "longsword",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Длинный меч</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "b3067d5f4222518e",
+          "name": "Двуручный меч",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "greatsword",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Двуручный меч</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "30ad4ad4f7661488",
+          "name": "Арбалет, тяжелый",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "heavycrossbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Арбалет, тяжелый</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36435,8 +38019,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Копье; Владение оружием: Короткий лук; Владение оружием: Длинный меч; Владение оружием: Двуручный меч; Владение оружием: Арбалет, тяжелый"
           }
         }
       }
@@ -36473,7 +38057,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "309b3a75206c58bd",
+          "name": "Серп",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "sickle",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Серп</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "b12dd798c37e892d",
+          "name": "Дротик",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "dart",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Дротик</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "e62725cb046fce0d",
+          "name": "Катана",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "katana",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Катана</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "779b4a022302c56f",
+          "name": "Кинжал на цепи",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "kinzhal-na-tsepi",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Кинжал на цепи</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "2ac01f3322267149",
+          "name": "Многозарядный арбалет",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "mnogozaryadnyy-arbalet",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Многозарядный арбалет</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36500,8 +38260,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Серп; Владение оружием: Дротик; Владение оружием: Катана; Владение оружием: Кинжал на цепи; Владение оружием: Многозарядный арбалет"
           }
         }
       }
@@ -36538,7 +38298,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "1c668c8fc99943c5",
+          "name": "Дубинка",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "club",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Дубинка</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "c154465e6e991b9b",
+          "name": "Короткий лук",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "shortbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Короткий лук</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "5946ac3d32152233",
+          "name": "Шамшир",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "shamshir",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Шамшир</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "82d39da070b1c182",
+          "name": "Цеп",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "flail",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Цеп</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "473d579079eca32d",
+          "name": "Арбалет, тяжелый",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "heavycrossbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Арбалет, тяжелый</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36565,8 +38501,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Дубинка; Владение оружием: Короткий лук; Владение оружием: Шамшир; Владение оружием: Цеп; Владение оружием: Арбалет, тяжелый"
           }
         }
       }
@@ -36603,7 +38539,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "5c0dd4fd4be84a95",
+          "name": "Копье",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "spear",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Копье</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "0a57a3d857373356",
+          "name": "Короткий лук",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "shortbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Короткий лук</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "a324acc8a9186959",
+          "name": "Эсток",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "estok",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Эсток</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "ce400c197e874db0",
+          "name": "Длинный лук",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "longbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Длинный лук</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "fdcc9db0056a8758",
+          "name": "Композитный лук",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "kompozitnyy-luk",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Композитный лук</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36630,8 +38742,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Копье; Владение оружием: Короткий лук; Владение оружием: Эсток; Владение оружием: Длинный лук; Владение оружием: Композитный лук"
           }
         }
       }
@@ -36668,7 +38780,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "27dea0c4628bde9f",
+          "name": "Серп",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "sickle",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Серп</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "bafa9039b2c53662",
+          "name": "Арбалет, легкий",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "lightcrossbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Арбалет, легкий</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "a891590387fb764e",
+          "name": "Глефа",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "glaive",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Глефа</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "7bd3399cc2e3544b",
+          "name": "Моргенштерн",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "morningstar",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Моргенштерн</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "1f12375b4c705fcc",
+          "name": "Лук всадника",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "luk-vsadnika",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Лук всадника</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36695,8 +38983,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Серп; Владение оружием: Арбалет, легкий; Владение оружием: Глефа; Владение оружием: Моргенштерн; Владение оружием: Лук всадника"
           }
         }
       }
@@ -36733,7 +39021,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "e2f4cc8b58e0b8e2",
+          "name": "Костяной топор",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "kostyanoy-topor",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Костяной топор</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "e3b590561bdb9465",
+          "name": "Праща",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "sling",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Праща</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "f641943436fa8e13",
+          "name": "Скимитар",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "scimitar",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Скимитар</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "0125275628d3aa71",
+          "name": "Кнут",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "whip",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Кнут</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "6ad5ea75d8603824",
+          "name": "Длинный лук",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "longbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Длинный лук</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36760,8 +39224,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Костяной топор; Владение оружием: Праща; Владение оружием: Скимитар; Владение оружием: Кнут; Владение оружием: Длинный лук"
           }
         }
       }
@@ -36798,7 +39262,183 @@
         },
         "advancement": {}
       },
-      "effects": [],
+      "effects": [
+        {
+          "_id": "5b6d09ac5d6e1d43",
+          "name": "Короткий меч",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "shortsword",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Короткий меч</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "7a09611846b0c878",
+          "name": "Копье",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "spear",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Копье</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "883d36056d422b30",
+          "name": "Длинная булава",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "dlinnaya-bulava",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Длинная булава</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "8090d8811039e8f1",
+          "name": "Цепной серп",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "tsepnoy-serp",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Цепной серп</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        },
+        {
+          "_id": "1aaddd890d9fd529",
+          "name": "Длинный лук",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.weaponProf.value",
+              "mode": 2,
+              "value": "longbow",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Владение оружием: Длинный лук</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true
+            }
+          }
+        }
+      ],
       "folder": null,
       "flags": {
         "teyvankal": {
@@ -36825,8 +39465,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: нет надежного стандартного поля dnd5e 5.2.5 для полной автоматизации."
+            "status": "automated",
+            "notes": "Владение оружием: Короткий меч; Владение оружием: Копье; Владение оружием: Длинная булава; Владение оружием: Цепной серп; Владение оружием: Длинный лук"
           }
         }
       }

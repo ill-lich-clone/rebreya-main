@@ -149,6 +149,7 @@ const SIMPLE_MELEE_WEAPON_MAP = new Map([
   ["короткий лук", { baseItem: "shortbow", systemTypeValue: "simpleR" }],
   ["лёгкий арбалет", { baseItem: "lightcrossbow", systemTypeValue: "simpleR" }],
   ["легкий арбалет", { baseItem: "lightcrossbow", systemTypeValue: "simpleR" }],
+  ["арбалет, легкий", { baseItem: "lightcrossbow", systemTypeValue: "simpleR" }],
   ["праща", { baseItem: "sling", systemTypeValue: "simpleR" }]
 ]);
 
@@ -159,6 +160,8 @@ const MARTIAL_WEAPON_MAP = new Map([
   ["глефа", { baseItem: "glaive", systemTypeValue: "martialM" }],
   ["двуручный меч", { baseItem: "greatsword", systemTypeValue: "martialM" }],
   ["длинное копьё", { baseItem: "pike", systemTypeValue: "martialM" }],
+  ["длинное копье", { baseItem: "pike", systemTypeValue: "martialM" }],
+  ["пика", { baseItem: "pike", systemTypeValue: "martialM" }],
   ["длинный лук", { baseItem: "longbow", systemTypeValue: "martialR" }],
   ["длинный меч", { baseItem: "longsword", systemTypeValue: "martialM" }],
   ["кистень", { baseItem: "flail", systemTypeValue: "martialM" }],
@@ -170,11 +173,13 @@ const MARTIAL_WEAPON_MAP = new Map([
   ["палаш", { baseItem: "longsword", systemTypeValue: "martialM" }],
   ["рапира", { baseItem: "rapier", systemTypeValue: "martialM" }],
   ["ручной арбалет", { baseItem: "handcrossbow", systemTypeValue: "martialR" }],
+  ["арбалет, ручной", { baseItem: "handcrossbow", systemTypeValue: "martialR" }],
   ["секира", { baseItem: "greataxe", systemTypeValue: "martialM" }],
   ["скимитар", { baseItem: "scimitar", systemTypeValue: "martialM" }],
   ["трезубец", { baseItem: "trident", systemTypeValue: "martialM" }],
   ["тяжёлый арбалет", { baseItem: "heavycrossbow", systemTypeValue: "martialR" }],
   ["тяжелый арбалет", { baseItem: "heavycrossbow", systemTypeValue: "martialR" }],
+  ["арбалет, тяжелый", { baseItem: "heavycrossbow", systemTypeValue: "martialR" }],
   ["цеп", { baseItem: "flail", systemTypeValue: "martialM" }],
   ["шпага", { baseItem: "rapier", systemTypeValue: "martialM" }],
   ["боевой молот", { baseItem: "warhammer", systemTypeValue: "martialM" }]
@@ -383,7 +388,7 @@ export function inferHeroDollSlotsFromName(name, fallback = []) {
   return inferSlotsFromName(name, fallback);
 }
 
-function buildWeaponProfile(name) {
+function buildWeaponProfile(name, fallbackBaseItem = "") {
   const text = normalizeNameKey(name);
   const simple = SIMPLE_MELEE_WEAPON_MAP.get(text);
   if (simple) {
@@ -406,14 +411,14 @@ function buildWeaponProfile(name) {
   if (/лук|арбалет|пращ|дротик|трубк/u.test(text)) {
     return {
       systemTypeValue: "martialR",
-      baseItem: "",
+      baseItem: fallbackBaseItem,
       heroDollSlots: [...HAND_SLOTS, ...BACK_SLOTS]
     };
   }
 
   return {
     systemTypeValue: "martialM",
-    baseItem: "",
+    baseItem: fallbackBaseItem,
     heroDollSlots: [...HAND_SLOTS, ...BACK_SLOTS]
   };
 }
@@ -463,7 +468,7 @@ function buildArmorProfile(name) {
   };
 }
 
-function buildFirearmProfile(name, firearmClass = "") {
+function buildFirearmProfile(name, firearmClass = "", fallbackBaseItem = "") {
   const text = normalizeText(name);
   const normalizedClass = firearmClass === "advanced"
     ? "advanced"
@@ -474,7 +479,7 @@ function buildFirearmProfile(name, firearmClass = "") {
     ));
   const baseItem = /мушкет/u.test(text)
     ? "musket"
-    : (/пистолет/u.test(text) ? "pistol" : "");
+    : (/пистолет/u.test(text) ? "pistol" : fallbackBaseItem);
 
   return {
     firearmClass: normalizedClass,
@@ -588,7 +593,7 @@ export function classifyGearEntry(item = {}) {
   }
 
   if (normalizedEquipmentType === normalizeText("Оружие")) {
-    const weaponProfile = buildWeaponProfile(item.name);
+    const weaponProfile = buildWeaponProfile(item.name, item.id);
     return {
       documentType: "weapon",
       systemTypeValue: weaponProfile.systemTypeValue,
@@ -602,7 +607,7 @@ export function classifyGearEntry(item = {}) {
   }
 
   if (normalizedEquipmentType === normalizeText("Огнестрельное оружие")) {
-    const firearmProfile = buildFirearmProfile(item.name, explicitFirearmClass);
+    const firearmProfile = buildFirearmProfile(item.name, explicitFirearmClass, item.id);
     return {
       documentType: "weapon",
       systemTypeValue: firearmProfile.systemTypeValue,
