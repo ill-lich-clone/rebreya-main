@@ -165,7 +165,8 @@ function buildFeatSignature(feat) {
     subsection: feat.subsection ?? null,
     system: feat.system,
     effects: feat.effects,
-    teyvankal: feat.flags?.teyvankal ?? null
+    teyvankal: feat.flags?.teyvankal ?? null,
+    automation: feat.flags?.[MODULE_ID]?.automation ?? null
   });
 }
 
@@ -200,6 +201,10 @@ async function loadRawFeatItems() {
 
 function createFeatItemData(feat, folderIdByPath) {
   const folderPath = buildFeatFolderPath(feat).join("/");
+  const moduleFlags = isPlainObject(feat.flags?.[MODULE_ID])
+    ? foundry.utils.deepClone(feat.flags[MODULE_ID])
+    : {}
+
   return {
     name: feat.name,
     type: "feat",
@@ -213,6 +218,7 @@ function createFeatItemData(feat, folderIdByPath) {
     flags: {
       ...foundry.utils.deepClone(feat.flags),
       [MODULE_ID]: {
+        ...moduleFlags,
         managed: true,
         sourceType: "feat",
         featId: feat.featId,
