@@ -30,6 +30,177 @@ const NORMALIZED_HUMAN_NAME = "люди";
 const NORMALIZED_MINOR_FEATS_SECTION = "младшие черты";
 const NORMALIZED_RACIAL_FEATS_SECTION = "расовые черты";
 
+const ABILITY_KEYS = ["str", "dex", "con", "int", "wis", "cha"];
+const ALL_LANGUAGE_POOL_KEY = "languages:*";
+const ELEMENTAL_LANGUAGE_IDS = ["auran", "terran", "ignan", "aquan"];
+const STANDARD_LANGUAGE_IDS = new Set([
+  "common",
+  "draconic",
+  "dwarvish",
+  "elvish",
+  "giant",
+  "gnomish",
+  "goblin",
+  "halfling",
+  "orc",
+  "sign"
+]);
+
+const ABILITY_NAME_PATTERNS = [
+  { key: "str", pattern: /сил(?:а|ы|е|у|ой)?/u },
+  { key: "dex", pattern: /ловкост(?:ь|и|ью|ю)?/u },
+  { key: "con", pattern: /телосложени(?:е|я|ю|ем)?/u },
+  { key: "int", pattern: /интеллект(?:а|у|ом)?/u },
+  { key: "wis", pattern: /мудрост(?:ь|и|ью|ю)?/u },
+  { key: "cha", pattern: /харизм(?:а|ы|е|у|ой)?/u }
+];
+
+const LANGUAGE_NAME_PATTERNS = [
+  { id: "common", pattern: /(?:всеобщ|общем|общий)/u },
+  { id: "dwarvish", pattern: /дварфийск/u },
+  { id: "elvish", pattern: /эльфийск/u },
+  { id: "halfling", pattern: /полурослик/u },
+  { id: "orc", pattern: /ороч/u },
+  { id: "goblin", pattern: /гоблин/u },
+  { id: "draconic", pattern: /дракон/u },
+  { id: "infernal", pattern: /инфернал/u },
+  { id: "gnoll", pattern: /гнолл/u },
+  { id: "giant", pattern: /великан/u },
+  { id: "gnomish", pattern: /гном(?:ь|ий|ийск)/u },
+  { id: "auran", pattern: /ауран/u },
+  { id: "terran", pattern: /терран/u },
+  { id: "ignan", pattern: /игнан/u },
+  { id: "aquan", pattern: /акван/u }
+];
+
+const RACE_ABILITY_TEXT_OVERRIDES = {
+  минотавры: "Ваше значение Силы, Мудрости или Харизмы увеличивается на 2, ваше значение Телосложения увеличивается на 2, значение Интеллекта уменьшается на 1.",
+  кентавры: "Ваше значение Силы или Ловкости увеличивается на 2, ваше значение Мудрости увеличивается на 2, значение Интеллекта или Харизмы уменьшается на 2.",
+  леониды: "Ваше значение Ловкости или Силы увеличивается на 2, ваше значение Харизмы или Интеллекта увеличивается на 2, значение Мудрости или Телосложения уменьшается на 1.",
+  полувеликаны: "Ваше значение Силы увеличивается на 2, ваше значение Телосложения или Мудрости увеличивается на 2, значение Ловкости уменьшается на 2.",
+  нефилимы: "Ваше значение Интеллекта или Харизмы увеличивается на 2, ваше значение Ловкости или Силы увеличивается на 1, значение Телосложения или Мудрости уменьшается на 2.",
+  пепельные: "Ваше значение Мудрости или Ловкости увеличивается на 2, ваше значение Харизмы увеличивается на 1, значение Телосложения или Силы уменьшается на 2.",
+  големы: "Ваше значение Силы, Мудрости или Харизмы и Телосложения увеличивается на 2, значение Интеллекта уменьшается на 1."
+};
+
+const RACE_LANGUAGE_RULE_OVERRIDES = {
+  люди: {
+    grants: ["common"],
+    choices: 1
+  },
+  синтеты: {
+    grants: [],
+    choices: 2,
+    hint: "Синтеты сохраняют языки базовой расы. Выберите языки, соответствующие выбранной базовой расе."
+  },
+  гении: {
+    grants: ["common"],
+    choices: 1,
+    poolLanguageIds: ELEMENTAL_LANGUAGE_IDS,
+    hint: "Выберите один язык стихии: Ауран, Терран, Игнан или Акван."
+  },
+  дроу: {
+    grants: ["common"],
+    choices: 1
+  },
+  ааракокры: {
+    grants: ["common"],
+    choices: 1
+  },
+  людоящеры: {
+    grants: ["common"],
+    choices: 1
+  },
+  тортлы: {
+    grants: ["common"],
+    choices: 1
+  },
+  багбиры: {
+    grants: ["common"],
+    choices: 1
+  },
+  кобольды: {
+    grants: ["common"],
+    choices: 1
+  },
+  кентавры: {
+    grants: ["orc"],
+    choices: 1,
+    hint: "Язык кентавров отсутствует в базовом списке dnd5e; выберите дополнительный язык из доступных."
+  },
+  полувеликаны: {
+    grants: ["common"],
+    choices: 1,
+    hint: "Язык полувеликанов отсутствует в базовом списке dnd5e; выберите дополнительный язык из доступных."
+  },
+  грунги: {
+    grants: ["common"],
+    choices: 1,
+    hint: "Язык грунгов отсутствует в базовом списке dnd5e; выберите дополнительный язык из доступных."
+  }
+};
+
+const RACE_ABILITY_OVERRIDES = {
+  кентавры: [
+    {
+      fixed: { wis: 2 },
+      points: 2,
+      cap: 2,
+      allowed: ["str", "dex"],
+      hint: "Выберите Силу или Ловкость для увеличения на 2. Снижение Интеллекта или Харизмы на 2 нужно применить вручную."
+    }
+  ],
+  леониды: [
+    {
+      points: 2,
+      cap: 2,
+      allowed: ["str", "dex"],
+      hint: "Выберите Силу или Ловкость для увеличения на 2."
+    },
+    {
+      points: 2,
+      cap: 2,
+      allowed: ["cha", "int"],
+      hint: "Выберите Харизму или Интеллект для увеличения на 2. Снижение Мудрости или Телосложения на 1 нужно применить вручную."
+    }
+  ],
+  нефилимы: [
+    {
+      points: 2,
+      cap: 2,
+      allowed: ["int", "cha"],
+      hint: "Выберите Интеллект или Харизму для увеличения на 2."
+    },
+    {
+      points: 1,
+      cap: 1,
+      allowed: ["dex", "str"],
+      hint: "Выберите Ловкость или Силу для увеличения на 1. Снижение Телосложения или Мудрости на 2 нужно применить вручную."
+    }
+  ],
+  полуэльфы: [
+    {
+      points: 2,
+      cap: 2,
+      hint: "Выберите одну характеристику для увеличения на 2."
+    },
+    {
+      points: 2,
+      cap: 1,
+      hint: "Распределите два дополнительных пункта по +1."
+    }
+  ],
+  големы: [
+    {
+      fixed: { con: 2, int: -1 },
+      points: 2,
+      cap: 2,
+      allowed: ["str", "wis", "cha"],
+      hint: "Выберите Силу, Мудрость или Харизму для увеличения на 2."
+    }
+  ]
+};
+
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
@@ -128,6 +299,353 @@ function normalizeSize(value) {
 
 function isDnd5eWorld() {
   return game.system?.id === DND5E_SYSTEM_ID;
+}
+
+function getRaceKey(race) {
+  return normalizeMatchText(race?.name || race?.id);
+}
+
+function toNormalizedText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\u0451/gu, "\u0435")
+    .replace(/[«»"']/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function createAbilityFixed(initial = {}) {
+  return {
+    str: Math.floor(parseNumber(initial.str, 0)),
+    dex: Math.floor(parseNumber(initial.dex, 0)),
+    con: Math.floor(parseNumber(initial.con, 0)),
+    int: Math.floor(parseNumber(initial.int, 0)),
+    wis: Math.floor(parseNumber(initial.wis, 0)),
+    cha: Math.floor(parseNumber(initial.cha, 0))
+  };
+}
+
+function hasAnyFixedChange(fixed) {
+  return ABILITY_KEYS.some((key) => Number(fixed?.[key] ?? 0) !== 0);
+}
+
+function extractAbilityKeys(text) {
+  const normalized = toNormalizedText(text);
+  const keys = [];
+  for (const { key, pattern } of ABILITY_NAME_PATTERNS) {
+    if (pattern.test(normalized)) {
+      keys.push(key);
+    }
+  }
+
+  return unique(keys);
+}
+
+function resolveAbilityIncreaseText(race) {
+  const raceKey = getRaceKey(race);
+  const overrideText = cleanString(RACE_ABILITY_TEXT_OVERRIDES[raceKey]);
+  if (overrideText) {
+    return overrideText;
+  }
+
+  const direct = cleanString(race?.fields?.abilityIncrease);
+  if (direct) {
+    return direct;
+  }
+
+  const abilityText = (race.abilities ?? [])
+    .map((ability) => cleanString(ability?.description))
+    .find((text) => /изменени[ея]\s+значени[яй]\s+характеристик/u.test(text));
+  return cleanString(abilityText);
+}
+
+function parseAbilityIncreaseSpecs(race) {
+  const raceKey = getRaceKey(race);
+  const explicitOverride = RACE_ABILITY_OVERRIDES[raceKey];
+  if (Array.isArray(explicitOverride) && explicitOverride.length) {
+    return explicitOverride.map((entry) => ({
+      fixed: createAbilityFixed(entry.fixed),
+      points: Math.max(0, Math.floor(parseNumber(entry.points, 0))),
+      cap: Math.max(1, Math.floor(parseNumber(entry.cap, 2))),
+      allowed: unique(Array.isArray(entry.allowed) ? entry.allowed : []),
+      hint: cleanString(entry.hint)
+    }));
+  }
+
+  const sourceText = resolveAbilityIncreaseText(race);
+  const text = toNormalizedText(sourceText);
+  if (!text) {
+    return [];
+  }
+
+  const fixed = createAbilityFixed();
+  const choiceSpecs = [];
+  const notes = [];
+
+  const handleClause = (matchText, amount, isDecrease = false) => {
+    const keys = extractAbilityKeys(matchText);
+    if (!keys.length) {
+      return false;
+    }
+
+    const parsedAmount = Math.max(0, Math.floor(parseNumber(amount, 0)));
+    if (!parsedAmount) {
+      return false;
+    }
+
+    const hasChoice = /\bили\b/u.test(matchText);
+    if (hasChoice) {
+      if (isDecrease) {
+        notes.push(`Снижение (${keys.join("/")}) на ${parsedAmount} нужно применить вручную.`);
+      }
+      else {
+        choiceSpecs.push({
+          fixed: createAbilityFixed(),
+          points: parsedAmount,
+          cap: parsedAmount,
+          allowed: keys,
+          hint: ""
+        });
+      }
+
+      return true;
+    }
+
+    for (const abilityKey of keys) {
+      fixed[abilityKey] += isDecrease ? -parsedAmount : parsedAmount;
+    }
+
+    return true;
+  };
+
+  const increaseRegex = /([а-яa-z,\s]+?)\s+увеличива\w*\s+на\s+(\d+)/gu;
+  for (const match of text.matchAll(increaseRegex)) {
+    handleClause(match[1], match[2], false);
+  }
+
+  const decreaseRegex = /([а-яa-z,\s]+?)\s+уменьша\w*\s+на\s+(\d+)/gu;
+  for (const match of text.matchAll(decreaseRegex)) {
+    handleClause(match[1], match[2], true);
+  }
+
+  const genericSpecs = [];
+  const fixedPlusTwoKeys = ABILITY_KEYS.filter((key) => fixed[key] >= 2);
+  const hasFixedPlusTwo = fixedPlusTwoKeys.length > 0;
+
+  if (/двух характеристик[^.]*на 1[^.]*либо[^.]*на 2/u.test(text)) {
+    genericSpecs.push({ points: 2, cap: 2 });
+  }
+  else if (/выберите один из вариантов/u.test(text) || /выбер[её]те одно из/u.test(text)) {
+    genericSpecs.push({ points: 3, cap: 2 });
+  }
+  else if (/две другие[^.]*на 1/u.test(text) || /двух других[^.]*на 1/u.test(text)) {
+    genericSpecs.push({ points: 2, cap: 2 });
+    genericSpecs.push({ points: 2, cap: 1 });
+  }
+  else if (/одна [^.]*(характеристика|характеристик)[^.]*на 2[^.]*друга[яо][^.]*на 1/u.test(text)) {
+    if (hasFixedPlusTwo && /другая характеристика/u.test(text)) {
+      genericSpecs.push({ points: 1, cap: 1, disallow: fixedPlusTwoKeys });
+    }
+    else {
+      genericSpecs.push({ points: 3, cap: 2 });
+    }
+  }
+  else if (/одна [^.]*(характеристика|характеристик)[^.]*на 2/u.test(text) && !choiceSpecs.length) {
+    genericSpecs.push({ points: 2, cap: 2 });
+  }
+
+  if (
+    !genericSpecs.length
+    && hasFixedPlusTwo
+    && !choiceSpecs.length
+    && /(другая характеристика увеличивается на 1|другой на 1)/u.test(text)
+  ) {
+    genericSpecs.push({ points: 1, cap: 1, disallow: fixedPlusTwoKeys });
+  }
+
+  const specs = [];
+  if (hasAnyFixedChange(fixed)) {
+    specs.push({
+      fixed,
+      points: 0,
+      cap: 2,
+      allowed: [],
+      hint: ""
+    });
+  }
+
+  for (const entry of choiceSpecs) {
+    specs.push(entry);
+  }
+
+  for (const generic of genericSpecs) {
+    const disallow = new Set(Array.isArray(generic.disallow) ? generic.disallow : []);
+    const allowed = ABILITY_KEYS.filter((key) => !disallow.has(key));
+    specs.push({
+      fixed: createAbilityFixed(),
+      points: Math.max(0, Math.floor(parseNumber(generic.points, 0))),
+      cap: Math.max(1, Math.floor(parseNumber(generic.cap, 2))),
+      allowed,
+      hint: ""
+    });
+  }
+
+  if (!specs.length) {
+    return [];
+  }
+
+  const hintSuffix = notes.length ? ` ${notes.join(" ")}` : "";
+  return specs
+    .filter((entry) => entry.points > 0 || hasAnyFixedChange(entry.fixed))
+    .map((entry) => ({
+      fixed: createAbilityFixed(entry.fixed),
+      points: Math.max(0, Math.floor(parseNumber(entry.points, 0))),
+      cap: Math.max(1, Math.floor(parseNumber(entry.cap, 2))),
+      allowed: unique(Array.isArray(entry.allowed) ? entry.allowed : []),
+      hint: cleanString(entry.hint || sourceText) + hintSuffix
+    }));
+}
+
+function buildAbilityIncreaseAdvancement(race, spec, index = 0) {
+  const locked = spec.allowed.length
+    ? ABILITY_KEYS.filter((abilityKey) => !spec.allowed.includes(abilityKey))
+    : [];
+
+  return {
+    _id: stableHashId(`${race.id}:asi:${index + 1}`, "adv"),
+    type: "AbilityScoreImprovement",
+    title: "Повышение характеристик",
+    hint: cleanString(spec.hint),
+    level: 0,
+    configuration: {
+      cap: Math.max(1, Math.floor(parseNumber(spec.cap, 2))),
+      fixed: createAbilityFixed(spec.fixed),
+      locked,
+      max: 20,
+      points: Math.max(0, Math.floor(parseNumber(spec.points, 0)))
+    },
+    value: {}
+  };
+}
+
+function toLanguageTraitKey(languageId) {
+  const id = cleanString(languageId).toLowerCase();
+  if (!id) {
+    return "";
+  }
+
+  if (["auran", "terran", "ignan", "aquan"].includes(id)) {
+    return `languages:exotic:primordial:${id}`;
+  }
+
+  if (STANDARD_LANGUAGE_IDS.has(id)) {
+    return `languages:standard:${id}`;
+  }
+
+  return `languages:exotic:${id}`;
+}
+
+function resolveLanguageOverrideRule(race) {
+  const rule = RACE_LANGUAGE_RULE_OVERRIDES[getRaceKey(race)];
+  if (!isPlainObject(rule)) {
+    return null;
+  }
+
+  return {
+    grants: unique(Array.isArray(rule.grants) ? rule.grants : []),
+    choices: Math.max(0, Math.floor(parseNumber(rule.choices, 0))),
+    hint: cleanString(rule.hint),
+    poolLanguageIds: unique(Array.isArray(rule.poolLanguageIds) ? rule.poolLanguageIds : [])
+  };
+}
+
+function parseLanguageRuleFromText(text) {
+  const normalized = toNormalizedText(text);
+  if (!normalized) {
+    return null;
+  }
+
+  const grants = new Set();
+  for (const { id, pattern } of LANGUAGE_NAME_PATTERNS) {
+    if (pattern.test(normalized)) {
+      grants.add(id);
+    }
+  }
+
+  let choices = 0;
+  if (/еще одном языке|ещ[её] одном языке|еще одном на ваш выбор|ещ[её] одном на ваш выбор/u.test(normalized)) {
+    choices = 1;
+  }
+  if (/одном языке по вашему/u.test(normalized)) {
+    choices = Math.max(choices, 1);
+  }
+  if (/по одному языку на ваш выбор/u.test(normalized)) {
+    choices = Math.max(choices, 1);
+  }
+  if (/на общем и\.$/u.test(normalized) || /на всеобщем и\.$/u.test(normalized)) {
+    grants.add("common");
+    choices = Math.max(choices, 1);
+  }
+
+  return {
+    grants: Array.from(grants),
+    choices,
+    hint: cleanString(text),
+    poolLanguageIds: []
+  };
+}
+
+function resolveLanguageRule(race) {
+  const override = resolveLanguageOverrideRule(race);
+  if (override) {
+    return override;
+  }
+
+  const fromText = parseLanguageRuleFromText(race?.fields?.languages);
+  if (fromText) {
+    return fromText;
+  }
+
+  return null;
+}
+
+function buildLanguageAdvancement(race) {
+  const rule = resolveLanguageRule(race);
+  if (!rule) {
+    return null;
+  }
+
+  const grants = unique(rule.grants).map((languageId) => toLanguageTraitKey(languageId)).filter(Boolean);
+  const pool = rule.poolLanguageIds.length
+    ? rule.poolLanguageIds.map((languageId) => toLanguageTraitKey(languageId)).filter(Boolean)
+    : [ALL_LANGUAGE_POOL_KEY];
+
+  if (!grants.length && rule.choices <= 0) {
+    return null;
+  }
+
+  const choices = [];
+  if (rule.choices > 0) {
+    choices.push({
+      count: rule.choices,
+      pool
+    });
+  }
+
+  return {
+    _id: stableHashId(`${race.id}:languages`, "adv"),
+    type: "Trait",
+    title: "Языки",
+    hint: cleanString(rule.hint || race?.fields?.languages),
+    level: 0,
+    configuration: {
+      allowReplacements: false,
+      mode: "default",
+      grants,
+      choices
+    },
+    value: {}
+  };
 }
 
 function normalizeFields(rawFields) {
@@ -679,6 +1197,18 @@ function buildRaceAdvancement(race, {
   featLookupByName = new Map()
 } = {}) {
   const advancement = [buildAdvancementSize(race)];
+
+  const abilitySpecs = parseAbilityIncreaseSpecs(race);
+  if (abilitySpecs.length) {
+    abilitySpecs.forEach((spec, index) => {
+      advancement.push(buildAbilityIncreaseAdvancement(race, spec, index));
+    });
+  }
+
+  const languageAdvancement = buildLanguageAdvancement(race);
+  if (languageAdvancement) {
+    advancement.push(languageAdvancement);
+  }
 
   const baseFeatureUuids = race.abilities
     .map((ability) => featureUuidById.get(ability.featureId))
