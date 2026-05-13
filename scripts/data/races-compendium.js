@@ -58,6 +58,21 @@ function normalizeMatchText(value) {
     .trim();
 }
 
+function buildAsciiIdentifier(value, fallbackSeed = "entry") {
+  const base = String(value ?? "")
+    .toLowerCase()
+    .replace(/[^\x00-\x7F]+/gu, " ")
+    .replace(/[^a-z0-9_-]+/gu, "-")
+    .replace(/-{2,}/gu, "-")
+    .replace(/^[-_]+|[-_]+$/gu, "");
+
+  if (base) {
+    return base.slice(0, 64);
+  }
+
+  return `rb_${stableHashId(String(fallbackSeed ?? value ?? "entry"), "identifier")}`;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/gu, "&amp;")
@@ -290,7 +305,10 @@ function buildFeatureDefinitions(races) {
         optionId: null,
         name: ability.name,
         description: buildFeatureDescription(race, ability),
-        identifier: buildSlug(`${race.id}-${ability.id}`, `${race.id}-${ability.id}`),
+        identifier: buildAsciiIdentifier(
+          `${race.id}-${ability.id}-${ability.name}`,
+          `${race.id}::${ability.id}`
+        ),
         folderPath: normalizeFolderPath([RACE_FEATURE_ROOT_FOLDER, race.group, race.name])
       });
 
@@ -304,7 +322,10 @@ function buildFeatureDefinitions(races) {
           optionId: option.id,
           name: option.name,
           description: buildFeatureDescription(race, ability, option),
-          identifier: buildSlug(`${race.id}-${ability.id}-${option.id}`, `${race.id}-${ability.id}-${option.id}`),
+          identifier: buildAsciiIdentifier(
+            `${race.id}-${ability.id}-${option.id}-${option.name}`,
+            `${race.id}::${ability.id}::${option.id}`
+          ),
           folderPath: normalizeFolderPath([RACE_FEATURE_ROOT_FOLDER, race.group, race.name])
         });
       }
@@ -354,7 +375,7 @@ function createFeatureSystem(feature) {
     source: {
       custom: SOURCE_LABEL
     },
-    identifier: cleanString(feature.identifier, feature.featureId),
+    identifier: buildAsciiIdentifier(feature.identifier, feature.featureId),
     type: {
       value: "feat",
       subtype: ""
