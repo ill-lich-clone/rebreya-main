@@ -30,7 +30,8 @@ README описывает **актуальную механику из кода 
 - Синхронизирует world-компендиумы:
   - `world.rebreya-materials`;
   - `world.rebreya-gear`;
-  - `world.rebreya-magic-items`.
+  - `world.rebreya-magic-items`;
+  - `world.rebreya-feats`.
 - Расширяет dnd5e-листы персонажа/предметов (вкладка «Кукла героя», дополнительные поля ранга/слотов и типы предметов).
 
 ## 3. Быстрый старт
@@ -419,6 +420,13 @@ README описывает **актуальную механику из кода 
 - Источник: `magicItem.js`.
 - В flags сохраняются `magicItemId`, `rank`, `value`, `rarity`, `itemSlot`, `heroDollSlots` и др.
 
+### 13.4 Черты (D&D 5e 2014)
+
+- Пак: `world.rebreya-feats`.
+- Источник: `cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json` (fallback: `...-items.json`).
+- Автоматически строятся папки компендиума по `section/subsection` из `flags.teyvankal`.
+- В `flags.rebreya-main` сохраняются `featId`, `section`, `subsection`, `signature`.
+
 ## 14. Настройки модуля
 
 World settings:
@@ -597,6 +605,7 @@ await game.rebreyaMain.openLootgenApp({ newWindow: true });
   - `openMaterialById(materialId, fallbackName?)`
   - `openGearById(gearId, fallbackName?)`
   - `openMagicItemById(magicItemId, fallbackName?)`
+  - `openFeatById(featId, fallbackName?)`
   - `openTradeEntry(sourceType, sourceId, sourceName?)`
 
 ## 17. Структура данных

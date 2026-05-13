@@ -2,6 +2,7 @@
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
 import { GearCompendiumService } from "./data/gear-compendium.js";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
+import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { EconomyRepository } from "./data/repository.js";
 import { TraderService } from "./data/trader-service.js";
 import { InventoryService } from "./data/inventory-service.js";
@@ -40,6 +41,10 @@ function normalizeTradeSourceType(value) {
 
   if (["magicitem", "magicitems", "magic", "magical", "магическийпредмет", "магия"].includes(compact)) {
     return "magicItem";
+  }
+
+  if (["feat", "feats", "черта", "черты", "умение"].includes(compact)) {
+    return "feat";
   }
 
   return compact || "";
@@ -115,6 +120,7 @@ class RebreyaMainModule {
     this.materialsCompendium = new MaterialsCompendiumService();
     this.gearCompendium = new GearCompendiumService();
     this.magicItemsCompendium = new MagicItemsCompendiumService();
+    this.featsCompendium = new FeatsCompendiumService();
     this.traderService = new TraderService(this);
     this.inventoryService = new InventoryService(this);
     this.heroDollService = new HeroDollService(this);
@@ -236,6 +242,14 @@ class RebreyaMainModule {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync magic items compendium.`, error);
       ui.notifications?.warn("Не удалось синхронизировать компендиум магических предметов.");
+    }
+
+    try {
+      await this.featsCompendium.sync();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to sync feats compendium.`, error);
+      ui.notifications?.warn(game.i18n.localize("REBREYA_MAIN.Notifications.FeatsCompendiumSyncFailed"));
     }
   }
 
@@ -1150,6 +1164,11 @@ class RebreyaMainModule {
   async openMagicItemById(magicItemId, fallbackName = "") {
     return this.magicItemsCompendium.openMagicItem(magicItemId, fallbackName);
   }
+
+  async openFeatById(featId, fallbackName = "") {
+    return this.featsCompendium.openFeat(featId, fallbackName);
+  }
+
   async openTradeEntry(sourceType, sourceId, sourceName = "") {
     const normalizedType = normalizeTradeSourceType(sourceType);
 
@@ -1163,6 +1182,10 @@ class RebreyaMainModule {
 
     if (normalizedType === "magicItem") {
       return this.openMagicItemById(sourceId, sourceName);
+    }
+
+    if (normalizedType === "feat") {
+      return this.openFeatById(sourceId, sourceName);
     }
 
     return null;

@@ -1149,3 +1149,23 @@ Hotfix к Смертельное [L] (2026-05-12, immediate follow-up):
 Примечание:
 - Механика "Сдержанный"/"Газообразный" пока только статусная (иконка + value/flags), без отдельной глубокой автоматизации всех пунктов описания.
 - Для "Испуг" реализован требуемый пользователем реальный штраф по броскам.
+
+Библиотека черт V0.8 (2026-05-13):
+- Источник данных: папка `cherty-v08-foundry-2014-import-pack` внутри модуля.
+- Добавлен новый managed-компендиум черт:
+  - Пак: `world.rebreya-feats`
+  - Лейбл: `Черты Rebreya (D&D 5e 2014)`
+  - Тип документов: `Item[type=feat]`
+- Добавлен сервис: `scripts/data/feats-compendium.js`
+  - читает `.../cherty-v08-foundry-2014-bundle.json` (fallback на `...-items.json`);
+  - нормализует элементы и стабилизирует `featId` (из `system.identifier`/name);
+  - строит папки компендиума по `flags.teyvankal.section/subsection` под корнем `Черты V0.8`;
+  - пишет служебные флаги `flags.rebreya-main` (`managed`, `sourceType=feat`, `featId`, `section`, `subsection`, `signature`).
+- Интеграция в lifecycle/API:
+  - `scripts/main.js`: сервис подключен в `#syncManagedCompendia`.
+  - Добавлен API-метод: `openFeatById(featId, fallbackName?)`.
+  - `openTradeEntry` и нормализация `sourceType` расширены поддержкой `feat/черта`.
+- Обновлены:
+  - `scripts/constants.js` (имя/лейбл нового компендиума),
+  - `lang/ru.json` (уведомления синхронизации/поиска черты),
+  - `README.md` (новый компендиум + метод API).
