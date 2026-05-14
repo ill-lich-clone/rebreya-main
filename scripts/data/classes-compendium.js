@@ -815,7 +815,8 @@ function buildClassAdvancement(classData, context) {
   const classFeatureByLevel = new Map();
   const optionalFeatureByLevel = new Map();
   for (const feature of classFeatureEntries) {
-    const uuid = featureUuidById.get(feature.featureId);
+    const featureKey = `${classIdentifier}::class::${feature.featureId}`;
+    const uuid = featureUuidById.get(featureKey);
     if (!uuid) {
       continue;
     }
@@ -874,7 +875,12 @@ function buildClassAdvancement(classData, context) {
   }
 
   const rageActionByLevel = new Map(
-    rageActionEntries.map((entry) => [entry.featureId, featureUuidById.get(entry.featureId)]).filter(([, uuid]) => Boolean(uuid))
+    rageActionEntries
+      .map((entry) => {
+        const featureKey = `${classIdentifier}::rage-action::${entry.featureId}`;
+        return [entry.featureId, featureUuidById.get(featureKey)];
+      })
+      .filter(([, uuid]) => Boolean(uuid))
   );
 
   for (const level of RAGE_ACTION_PICK_LEVELS) {
@@ -906,7 +912,8 @@ function buildSubclassAdvancements(subclass, context) {
   const grouped = new Map();
 
   for (const feature of subclass.features) {
-    const uuid = featureUuidById.get(feature.featureId);
+    const featureKey = `${subclass.subclassId}::subclass::${feature.featureId}`;
+    const uuid = featureUuidById.get(featureKey);
     if (!uuid) {
       continue;
     }
