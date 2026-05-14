@@ -848,6 +848,15 @@ function buildAsiAdvancement(classIdentifier, level) {
   };
 }
 
+function buildHitPointsAdvancement(classIdentifier) {
+  return {
+    _id: stableHashId(`${classIdentifier}:hit-points`, "adv"),
+    type: "HitPoints",
+    configuration: {},
+    value: {}
+  };
+}
+
 function buildScaleValueAdvancement({
   classIdentifier,
   seed,
@@ -1013,6 +1022,8 @@ function buildClassAdvancement(classData, context) {
   const { featureUuidById, classFeatureEntries, rageActionEntries, minorFeatUuids, rageProgression, rageDamageProgression } = context;
   const classIdentifier = classData.identifier;
   const advancements = [];
+
+  advancements.push(buildHitPointsAdvancement(classIdentifier));
 
   advancements.push(buildTraitAdvancement({
     classIdentifier,
