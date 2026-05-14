@@ -11,7 +11,7 @@ import {
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const DEFAULT_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const GEAR_TEMPLATE_VERSION = 4;
+const GEAR_TEMPLATE_VERSION = 5;
 const CUSTOM_GEAR_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const SUPPORTED_GEAR_ICON_EXTENSIONS = new Set(["webp", "png", "jpg", "jpeg", "svg", "avif"]);
 const customGearIconByName = new Map();
@@ -73,7 +73,8 @@ function registerCustomGearIcon(filePath) {
     return;
   }
 
-  customGearIconByName.set(key, normalizedPath);
+  const encodedFilename = encodeURIComponent(filename);
+  customGearIconByName.set(key, `${CUSTOM_GEAR_ICONS_BASE_PATH}/${encodedFilename}`);
 }
 
 async function browseIconDirectory(path) {
