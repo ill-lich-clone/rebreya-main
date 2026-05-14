@@ -1,4 +1,4 @@
-// Foundry macro: repair Barbarian (rework) HP advancement on specific actors.
+// Foundry macro: repair class HP advancement on specific actors.
 // Usage: create a Script macro and paste this file contents.
 
 (async () => {
@@ -14,13 +14,14 @@
   }
 
   const api = game.rebreyaMain;
-  if (!api?.repairBarbarianHitPoints) {
+  const repairFn = api?.repairClassHitPoints ?? api?.repairBarbarianHitPoints;
+  if (!repairFn) {
     ui.notifications?.error("rebreya-main API is unavailable. Reload world and ensure module is enabled.");
     return;
   }
 
-  const result = await api.repairBarbarianHitPoints(ACTOR_IDS);
-  console.log("rebreya-main | repairBarbarianHitPoints", result);
+  const result = await repairFn.call(api, ACTOR_IDS);
+  console.log("rebreya-main | repairClassHitPoints", result);
 
   if (!result) {
     ui.notifications?.warn("HP repair did not run.");
@@ -35,11 +36,11 @@
   ].join(", ");
 
   const missing = Array.isArray(result.missingActorIds) && result.missingActorIds.length
-    ? ` Missing/without barbarian class: ${result.missingActorIds.join(", ")}`
+    ? ` Missing/without class items: ${result.missingActorIds.join(", ")}`
     : "";
 
-  ui.notifications?.info(`Barbarian HP repair complete: ${summary}.${missing}`);
+  ui.notifications?.info(`Class HP repair complete: ${summary}.${missing}`);
 })().catch((error) => {
-  console.error("rebreya-main | Barbarian HP repair macro failed", error);
-  ui.notifications?.error("Barbarian HP repair failed. See console for details.");
+  console.error("rebreya-main | Class HP repair macro failed", error);
+  ui.notifications?.error("Class HP repair failed. See console for details.");
 });

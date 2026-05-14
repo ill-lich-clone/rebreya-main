@@ -937,7 +937,11 @@ class RebreyaMainModule {
   }
 
   async repairBarbarianHitPoints(actorIds = []) {
-    return this.classesCompendium.repairActorBarbarianHitPoints(actorIds);
+    return this.classesCompendium.repairActorClassHitPoints(actorIds);
+  }
+
+  async repairClassHitPoints(actorIds = []) {
+    return this.classesCompendium.repairActorClassHitPoints(actorIds);
   }
 
   async refreshOpenApps() {
