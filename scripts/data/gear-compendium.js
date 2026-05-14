@@ -12,6 +12,10 @@ const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const DEFAULT_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 const GEAR_TEMPLATE_VERSION = 4;
+const CUSTOM_GEAR_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
+const SUPPORTED_GEAR_ICON_EXTENSIONS = new Set(["webp", "png", "jpg", "jpeg", "svg", "avif"]);
+const customGearIconByName = new Map();
+let customGearIconsCacheReady = false;
 
 function escapeHtml(value) {
   return foundry.utils.escapeHTML(String(value ?? ""));
@@ -29,8 +33,108 @@ function normalizeMatchText(value) {
   return String(value ?? "")
     .trim()
     .toLowerCase()
+    .replace(/\u0451/gu, "\u0435")
     .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
     .replace(/\s+/gu, " ");
+}
+
+function resetCustomGearIconCache() {
+  customGearIconsCacheReady = false;
+  customGearIconByName.clear();
+}
+
+function registerCustomGearIcon(filePath) {
+  const normalizedPath = String(filePath ?? "").replace(/\\/gu, "/");
+  if (!normalizedPath) {
+    return;
+  }
+
+  let filename = normalizedPath.split("/").pop() ?? "";
+  try {
+    filename = decodeURIComponent(filename);
+  }
+  catch (_error) {
+    // Оставляем исходное имя, если путь уже не в URL-формате.
+  }
+
+  const extensionIndex = filename.lastIndexOf(".");
+  if (extensionIndex <= 0) {
+    return;
+  }
+
+  const extension = filename.slice(extensionIndex + 1).toLowerCase();
+  if (!SUPPORTED_GEAR_ICON_EXTENSIONS.has(extension)) {
+    return;
+  }
+
+  const iconName = filename.slice(0, extensionIndex);
+  const key = normalizeMatchText(iconName);
+  if (!key || customGearIconByName.has(key)) {
+    return;
+  }
+
+  customGearIconByName.set(key, normalizedPath);
+}
+
+async function browseIconDirectory(path) {
+  let lastError = null;
+  for (const source of ["data", "public"]) {
+    try {
+      return await FilePicker.browse(source, path);
+    }
+    catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError ?? new Error(`Unable to browse icon directory: ${path}`);
+}
+
+async function ensureCustomGearIconCache(forceRefresh = false) {
+  if (forceRefresh) {
+    resetCustomGearIconCache();
+  }
+
+  if (customGearIconsCacheReady) {
+    return;
+  }
+
+  customGearIconsCacheReady = true;
+
+  if (typeof FilePicker !== "function" || typeof FilePicker.browse !== "function") {
+    return;
+  }
+
+  const pendingPaths = [CUSTOM_GEAR_ICONS_BASE_PATH];
+  const visitedPaths = new Set();
+
+  while (pendingPaths.length) {
+    const currentPath = pendingPaths.shift();
+    if (!currentPath || visitedPaths.has(currentPath)) {
+      continue;
+    }
+    visitedPaths.add(currentPath);
+
+    try {
+      const browseResult = await browseIconDirectory(currentPath);
+      const files = Array.isArray(browseResult?.files) ? browseResult.files : [];
+      const directories = Array.isArray(browseResult?.dirs) ? browseResult.dirs : [];
+      files.forEach((filePath) => registerCustomGearIcon(filePath));
+      directories.forEach((directoryPath) => pendingPaths.push(directoryPath));
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to scan custom gear icons path "${currentPath}".`, error);
+    }
+  }
+}
+
+function getCustomGearIconByName(name) {
+  const key = normalizeMatchText(name);
+  if (!key) {
+    return "";
+  }
+
+  return customGearIconByName.get(key) ?? "";
 }
 
 function isDnd5eWorld() {
@@ -111,6 +215,10 @@ function buildGearSignature(item) {
 function getGearIcon(item, classification) {
   const folderPath = buildFolderPath(classification).join(" / ").toLowerCase();
   const typeText = normalizeMatchText(item.equipmentType);
+  const namedCustomIcon = getCustomGearIconByName(item.name);
+  if (namedCustomIcon) {
+    return namedCustomIcon;
+  }
 
   if (classification.documentType === "weapon") {
     if (classification.firearmClass) {
@@ -447,6 +555,8 @@ async function createManagedDocuments(pack, gear) {
   if (!gear.length) {
     return;
   }
+
+  await ensureCustomGearIconCache(true);
 
   let folderIdByPath = new Map();
   try {
