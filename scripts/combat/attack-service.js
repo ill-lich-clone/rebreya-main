@@ -521,6 +521,7 @@ export class CombatAttackService {
     const parsedTextTraits = parseAttackTraitsText(traitText);
 
     const flagTraits = item.getFlag(MODULE_ID, "attackTraits");
+    const actorTraits = item.actor?.getFlag?.(MODULE_ID, "racialAttackTraits");
     const lichValues = this.#getLichWeaponPropertyValues(item, options);
     const explicitTraits = options.attackTraits && typeof options.attackTraits === "object"
       ? options.attackTraits
@@ -553,11 +554,18 @@ export class CombatAttackService {
       );
     };
 
-    return {
+    const itemTraits = {
       mku: resolveTraitValue("mku", "lchMku", parsedTextTraits.mku),
       mu: resolveTraitValue("mu", "lchMu", parsedTextTraits.mu),
       rku: resolveTraitValue("rku", "lchRku", parsedTextTraits.rku),
       deadly: resolveTraitValue("deadly", "lchDeadly", parsedTextTraits.deadly)
+    };
+
+    return {
+      mku: Math.max(itemTraits.mku, normalizeTraitNumber(actorTraits?.mku)),
+      mu: Math.max(itemTraits.mu, normalizeTraitNumber(actorTraits?.mu)),
+      rku: Math.max(itemTraits.rku, normalizeTraitNumber(actorTraits?.rku)),
+      deadly: Math.max(itemTraits.deadly, normalizeTraitNumber(actorTraits?.deadly))
     };
   }
 
@@ -566,18 +574,17 @@ export class CombatAttackService {
     if (Number.isFinite(explicit)) {
       return Math.max(0, explicit);
     }
+    const actorBonus = toNumber(item.actor?.getFlag?.(MODULE_ID, "racialReachBonusFeet"), NaN);
 
     if (!this.#hasItemProperty(item, "lchReach")) {
-      return 0;
+      return Number.isFinite(actorBonus) ? Math.max(0, actorBonus) : 0;
     }
 
     const values = this.#getLichWeaponPropertyValues(item, options);
     const parsed = toNumber(values.reachBonus, NaN);
-    if (!Number.isFinite(parsed)) {
-      return 0;
-    }
+    const itemBonus = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 
-    return Math.max(0, parsed);
+    return Math.max(itemBonus, Number.isFinite(actorBonus) ? Math.max(0, actorBonus) : 0);
   }
 
   #getLichAutomationState(item, options = {}) {

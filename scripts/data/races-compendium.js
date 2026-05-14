@@ -25,6 +25,9 @@ const DEFAULT_FEATURE_ICON = "icons/svg/book.svg";
 
 const RACES_TEMPLATE_VERSION = 1;
 const RACE_FEATURE_TEMPLATE_VERSION = 1;
+const RACE_AUTOMATION_VERSION = "0.1-dnd5e-5.2.5";
+
+const EFFECT_MODE_ADD = 2;
 
 const NORMALIZED_HUMAN_NAME = "люди";
 const NORMALIZED_MINOR_FEATS_SECTION = "младшие черты";
@@ -217,6 +220,14 @@ function parseNumber(value, fallback = 0) {
 
 function unique(values = []) {
   return Array.from(new Set((Array.isArray(values) ? values : []).filter(Boolean)));
+}
+
+function cloneData(value, fallback = null) {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  return JSON.parse(JSON.stringify(value));
 }
 
 function normalizeMatchText(value) {
@@ -679,6 +690,54 @@ function uniqueIdentifier(base, usedIds, fallback) {
   return identifier;
 }
 
+function normalizeAutomationCoverage(value) {
+  const coverage = cleanString(value).toLowerCase();
+  if (["full", "partial", "manual"].includes(coverage)) {
+    return coverage;
+  }
+
+  return "";
+}
+
+function statusFromAutomationCoverage(coverage) {
+  if (coverage === "full") {
+    return "automated";
+  }
+
+  if (coverage === "partial") {
+    return "partial";
+  }
+
+  return "manual";
+}
+
+function normalizeAutomation(rawAutomation) {
+  if (!isPlainObject(rawAutomation)) {
+    return null;
+  }
+
+  const coverage = normalizeAutomationCoverage(rawAutomation.coverage);
+  if (!coverage) {
+    return null;
+  }
+
+  return {
+    version: cleanString(rawAutomation.version, RACE_AUTOMATION_VERSION),
+    coverage,
+    status: cleanString(rawAutomation.status, statusFromAutomationCoverage(coverage)),
+    effects: Array.isArray(rawAutomation.effects) ? cloneData(rawAutomation.effects, []) : [],
+    activities: Array.isArray(rawAutomation.activities) ? cloneData(rawAutomation.activities, []) : [],
+    uses: isPlainObject(rawAutomation.uses) ? cloneData(rawAutomation.uses) : null,
+    advancements: Array.isArray(rawAutomation.advancements) ? cloneData(rawAutomation.advancements, []) : [],
+    mechanics: Array.isArray(rawAutomation.mechanics) ? unique(rawAutomation.mechanics.map((entry) => cleanString(entry))) : [],
+    manualNotes: Array.isArray(rawAutomation.manualNotes)
+      ? rawAutomation.manualNotes.map((entry) => cleanString(entry)).filter(Boolean)
+      : [],
+    notes: cleanString(rawAutomation.notes),
+    sourceRef: isPlainObject(rawAutomation.sourceRef) ? cloneData(rawAutomation.sourceRef) : null
+  };
+}
+
 function normalizeAbilityOption(rawOption, optionIndex, raceId, abilityId, usedOptionIds) {
   const optionName = cleanString(rawOption?.name, `Вариант ${optionIndex + 1}`);
   const optionBaseId = cleanString(rawOption?.id, buildSlug(optionName, `${abilityId}-option-${optionIndex + 1}`));
@@ -688,6 +747,7 @@ function normalizeAbilityOption(rawOption, optionIndex, raceId, abilityId, usedO
     id: optionId,
     name: optionName,
     description: cleanString(rawOption?.description),
+    automation: normalizeAutomation(rawOption?.automation),
     featureId: `${raceId}::${abilityId}::${optionId}`
   };
 }
@@ -708,6 +768,7 @@ function normalizeAbility(rawAbility, abilityIndex, race, usedAbilityIds) {
     description: cleanString(rawAbility?.description),
     kind: cleanString(rawAbility?.kind, "minor"),
     options,
+    automation: normalizeAutomation(rawAbility?.automation),
     featureId: `${race.id}::${abilityId}`
   };
 }
@@ -734,6 +795,7 @@ function normalizeRace(rawRace, raceIndex, usedRaceIds) {
     darkvision: Math.max(0, Math.floor(parseNumber(rawRace?.darkvision, 0))),
     fields: normalizeFields(rawRace?.fields),
     abilities,
+    automation: normalizeAutomation(rawRace?.automation),
     raceFeatNames
   };
 }
@@ -823,6 +885,7 @@ function buildFeatureDefinitions(races) {
         optionId: null,
         name: ability.name,
         description: buildFeatureDescription(race, ability),
+        automation: ability.automation,
         identifier: buildAsciiIdentifier(
           `${race.id}-${ability.id}-${ability.name}`,
           `${race.id}::${ability.id}`
@@ -840,6 +903,7 @@ function buildFeatureDefinitions(races) {
           optionId: option.id,
           name: option.name,
           description: buildFeatureDescription(race, ability, option),
+          automation: option.automation,
           identifier: buildAsciiIdentifier(
             `${race.id}-${ability.id}-${option.id}-${option.name}`,
             `${race.id}::${ability.id}::${option.id}`
@@ -864,7 +928,8 @@ function buildFeatureSignature(feature) {
     optionId: feature.optionId,
     name: feature.name,
     description: feature.description,
-    identifier: feature.identifier
+    identifier: feature.identifier,
+    automation: feature.automation
   });
 }
 
@@ -880,11 +945,372 @@ function buildRaceSignature(race, system) {
     fields: race.fields,
     raceFeatNames: race.raceFeatNames,
     abilities: race.abilities,
+    automation: race.automation,
     system
   });
 }
 
-function createFeatureSystem(feature) {
+function effectDuration(effect) {
+  return {
+    startTime: null,
+    seconds: null,
+    combat: null,
+    rounds: null,
+    turns: null,
+    startRound: null,
+    startTurn: null,
+    ...(isPlainObject(effect?.duration) ? cloneData(effect.duration, {}) : {})
+  };
+}
+
+function effectChanges(effect) {
+  if (Array.isArray(effect?.changes)) {
+    return effect.changes
+      .filter((entry) => isPlainObject(entry) && cleanString(entry.key))
+      .map((entry) => ({
+        key: cleanString(entry.key),
+        mode: Number.isFinite(Number(entry.mode)) ? Number(entry.mode) : EFFECT_MODE_ADD,
+        value: cleanString(entry.value),
+        priority: entry.priority === null || entry.priority === undefined ? null : Number(entry.priority)
+      }));
+  }
+
+  const key = cleanString(effect?.key);
+  if (!key) {
+    return [];
+  }
+
+  return [{
+    key,
+    mode: Number.isFinite(Number(effect?.mode)) ? Number(effect.mode) : EFFECT_MODE_ADD,
+    value: cleanString(effect?.value),
+    priority: effect?.priority === null || effect?.priority === undefined ? null : Number(effect.priority)
+  }];
+}
+
+function buildAutomationEffectFlags(effect) {
+  const flags = {
+    [MODULE_ID]: {
+      managed: true,
+      automation: "race-feature-effect"
+    }
+  };
+
+  if (effect?.specialDuration) {
+    flags.dae = {
+      specialDuration: Array.isArray(effect.specialDuration)
+        ? cloneData(effect.specialDuration, [])
+        : [cleanString(effect.specialDuration)]
+    };
+  }
+
+  const statusId = cleanString(effect?.statusId);
+  if (statusId) {
+    flags.core = {
+      statusId
+    };
+
+    if (statusId.startsWith("rebreya-")) {
+      flags[MODULE_ID].statusId = statusId;
+      flags[MODULE_ID].statusValue = effect.statusValue ?? null;
+      flags[MODULE_ID].statusMeta = isPlainObject(effect.statusMeta) ? cloneData(effect.statusMeta) : {};
+    }
+  }
+
+  return flags;
+}
+
+function automationEffectSignature(effect) {
+  return JSON.stringify({
+    label: cleanString(effect?.label || effect?.name),
+    key: cleanString(effect?.key),
+    value: cleanString(effect?.value),
+    changes: Array.isArray(effect?.changes) ? effect.changes : [],
+    statusId: cleanString(effect?.statusId),
+    statusValue: effect?.statusValue ?? null
+  });
+}
+
+function createAutomationEffect(feature, effect, index = 0) {
+  const statusId = cleanString(effect?.statusId);
+  const name = cleanString(effect?.label || effect?.name, feature.name);
+  return {
+    _id: stableHashId(`${feature.featureId}:effect:${index}:${automationEffectSignature(effect)}`, "effect"),
+    name,
+    type: "base",
+    img: cleanString(effect?.img, DEFAULT_FEATURE_ICON),
+    system: {},
+    changes: effectChanges(effect),
+    disabled: effect?.disabled === true,
+    duration: effectDuration(effect),
+    description: toHtmlParagraphs(effect?.note || effect?.description || name),
+    origin: null,
+    transfer: effect?.transfer !== false,
+    statuses: statusId ? [statusId] : [],
+    sort: index * 100000,
+    flags: buildAutomationEffectFlags(effect)
+  };
+}
+
+function createRollPart(part = {}) {
+  const customFormula = cleanString(part.formula);
+  return {
+    number: customFormula ? null : (Number.isFinite(Number(part.number)) ? Number(part.number) : null),
+    denomination: customFormula ? null : (Number.isFinite(Number(part.denomination)) ? Number(part.denomination) : null),
+    bonus: cleanString(part.bonus),
+    types: Array.isArray(part.types) ? cloneData(part.types, []) : [],
+    custom: {
+      enabled: Boolean(customFormula),
+      formula: customFormula
+    },
+    scaling: {
+      mode: cleanString(part.scaling?.mode),
+      number: Number.isFinite(Number(part.scaling?.number)) ? Number(part.scaling.number) : 1,
+      formula: cleanString(part.scaling?.formula)
+    }
+  };
+}
+
+function activityImage(type) {
+  if (type === "check") {
+    return "systems/dnd5e/icons/svg/activity/check.svg";
+  }
+  if (type === "save") {
+    return "systems/dnd5e/icons/svg/activity/save.svg";
+  }
+  if (type === "damage") {
+    return "systems/dnd5e/icons/svg/activity/damage.svg";
+  }
+  if (type === "heal") {
+    return "systems/dnd5e/icons/svg/activity/heal.svg";
+  }
+
+  return "systems/dnd5e/icons/svg/activity/utility.svg";
+}
+
+function activationValue(type) {
+  return ["action", "bonus", "reaction", "minute", "hour", "day"].includes(type) ? 1 : null;
+}
+
+function buildActivityUses(uses) {
+  if (!isPlainObject(uses)) {
+    return {
+      spent: 0,
+      max: "",
+      recovery: []
+    };
+  }
+
+  const period = cleanString(uses.period);
+  return {
+    spent: 0,
+    max: cleanString(uses.max),
+    recovery: period ? [{
+      period,
+      type: "recoverAll",
+      formula: ""
+    }] : []
+  };
+}
+
+function buildActivityConsumption(uses) {
+  return {
+    scaling: {
+      allowed: false,
+      max: ""
+    },
+    spellSlot: false,
+    targets: isPlainObject(uses) ? [{
+      type: "activityUses",
+      target: "",
+      value: "1",
+      scaling: {
+        mode: "",
+        formula: ""
+      }
+    }] : []
+  };
+}
+
+function defaultActivityTarget(activity) {
+  const hasArea = activity.area === true || activity.template === true;
+  const rangeValue = activity.range ?? "";
+  return {
+    template: {
+      contiguous: false,
+      units: hasArea ? cleanString(activity.rangeUnits, "ft") : "",
+      type: hasArea ? cleanString(activity.templateType, "circle") : "",
+      size: hasArea ? cleanString(activity.templateSize, rangeValue) : "",
+      count: "",
+      width: "",
+      height: ""
+    },
+    affects: {
+      type: cleanString(activity.affectsType || activity.targetType || (hasArea ? "creature" : "")),
+      count: cleanString(activity.targetCount),
+      choice: activity.choice === true,
+      special: cleanString(activity.targetSpecial)
+    },
+    prompt: activity.prompt !== false,
+    override: false
+  };
+}
+
+function createAutomationActivity(feature, activity, index = 0, effectRefs = []) {
+  const type = cleanString(activity?.type, "utility");
+  const rangeValue = activity?.range ?? null;
+  const rangeUnits = cleanString(activity?.rangeUnits, rangeValue ? "ft" : "self");
+  const activationType = cleanString(activity?.activation, "special");
+  const data = {
+    _id: stableHashId(`${feature.featureId}:activity:${index}:${activity?.name}:${activationType}`, "activity"),
+    type,
+    name: cleanString(activity?.name, feature.name),
+    img: cleanString(activity?.img, activityImage(type)),
+    sort: index * 100000,
+    activation: {
+      type: activationType,
+      value: activity?.activationValue ?? activationValue(activationType),
+      condition: cleanString(activity?.condition),
+      override: false
+    },
+    consumption: buildActivityConsumption(activity?.uses),
+    description: {
+      chatFlavor: cleanString(activity?.note)
+    },
+    duration: {
+      value: activity?.duration?.value ?? "",
+      units: cleanString(activity?.duration?.units, "inst"),
+      special: cleanString(activity?.duration?.special),
+      concentration: activity?.duration?.concentration === true,
+      override: false
+    },
+    effects: effectRefs,
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        automation: "race-feature-activity"
+      }
+    },
+    range: {
+      value: rangeValue,
+      units: rangeUnits,
+      special: cleanString(activity?.rangeSpecial),
+      override: false
+    },
+    target: defaultActivityTarget(activity ?? {}),
+    uses: buildActivityUses(activity?.uses)
+  };
+
+  if (type === "check") {
+    data.check = {
+      ability: cleanString(activity?.ability),
+      associated: activity?.skill ? [cleanString(activity.skill)] : [],
+      dc: {
+        calculation: "",
+        formula: cleanString(activity?.dc)
+      }
+    };
+  }
+
+  if (type === "save") {
+    data.save = {
+      ability: Array.isArray(activity?.saveAbility)
+        ? activity.saveAbility.map((entry) => cleanString(entry)).filter(Boolean)
+        : [cleanString(activity?.saveAbility, "con")],
+      dc: {
+        calculation: "",
+        formula: cleanString(activity?.dc)
+      }
+    };
+    data.damage = {
+      onSave: activity?.damage ? cleanString(activity.onSave, "none") : "",
+      parts: activity?.damage ? [createRollPart(activity.damage)] : []
+    };
+  }
+
+  if (type === "damage") {
+    data.damage = {
+      onSave: cleanString(activity?.onSave),
+      parts: activity?.damage ? [createRollPart(activity.damage)] : []
+    };
+  }
+
+  if (type === "heal") {
+    data.healing = createRollPart(activity?.healing ?? { formula: "1", types: ["healing"] });
+  }
+
+  return data;
+}
+
+function buildFeatureAutomationFlag(automation) {
+  if (!automation) {
+    return {
+      version: RACE_AUTOMATION_VERSION,
+      status: "manual",
+      coverage: "manual",
+      notes: "Автоматизация не описана в данных."
+    };
+  }
+
+  return {
+    version: cleanString(automation.version, RACE_AUTOMATION_VERSION),
+    status: cleanString(automation.status, statusFromAutomationCoverage(automation.coverage)),
+    coverage: cleanString(automation.coverage, "manual"),
+    notes: cleanString(automation.notes),
+    manualNotes: Array.isArray(automation.manualNotes) ? cloneData(automation.manualNotes, []) : [],
+    mechanics: Array.isArray(automation.mechanics) ? cloneData(automation.mechanics, []) : []
+  };
+}
+
+function buildFeatureAutomationBundle(feature) {
+  const automation = normalizeAutomation(feature.automation);
+  const effects = [];
+  const effectIdsBySignature = new Map();
+
+  const addEffect = (effectSpec) => {
+    const signature = automationEffectSignature(effectSpec);
+    const existingId = effectIdsBySignature.get(signature);
+    if (existingId) {
+      return existingId;
+    }
+
+    const effect = createAutomationEffect(feature, effectSpec, effects.length);
+    effects.push(effect);
+    effectIdsBySignature.set(signature, effect._id);
+    return effect._id;
+  };
+
+  for (const effectSpec of automation?.effects ?? []) {
+    addEffect(effectSpec);
+  }
+
+  const activities = {};
+  for (const activitySpec of automation?.activities ?? []) {
+    const effectRefs = [];
+    for (const effectSpec of activitySpec.appliedEffects ?? []) {
+      const effectId = addEffect({
+        ...effectSpec,
+        transfer: false
+      });
+      effectRefs.push(activitySpec.type === "save"
+        ? { _id: effectId, onSave: effectSpec.onSave === true }
+        : { _id: effectId });
+    }
+
+    const activity = createAutomationActivity(feature, activitySpec, Object.keys(activities).length, effectRefs);
+    activities[activity._id] = activity;
+  }
+
+  return {
+    automation,
+    effects,
+    activities,
+    uses: buildActivityUses(automation?.uses)
+  };
+}
+
+function createFeatureSystem(feature, automationBundle = null) {
+  const bundle = automationBundle ?? buildFeatureAutomationBundle(feature);
   return {
     description: {
       value: cleanString(feature.description),
@@ -905,12 +1331,8 @@ function createFeatureSystem(feature) {
       repeatable: false
     },
     properties: [],
-    activities: {},
-    uses: {
-      spent: 0,
-      max: "",
-      recovery: []
-    },
+    activities: foundry.utils.deepClone(bundle.activities ?? {}),
+    uses: foundry.utils.deepClone(bundle.uses ?? buildActivityUses(null)),
     advancement: []
   };
 }
@@ -920,6 +1342,7 @@ function createRaceSystem(race, advancement = []) {
   if (race.darkvision > 0) {
     senses.darkvision = race.darkvision;
   }
+  const normalizedRaceName = normalizeMatchText(race.name);
 
   return {
     description: {
@@ -934,7 +1357,7 @@ function createRaceSystem(race, advancement = []) {
     },
     senses,
     type: {
-      value: normalizeMatchText(race.name) === "големы" ? "construct" : "humanoid"
+      value: ["големы", "железорожденные"].includes(normalizedRaceName) ? "construct" : "humanoid"
     },
     advancement: foundry.utils.deepClone(advancement)
   };
@@ -1334,6 +1757,7 @@ async function buildFeatLookup() {
 
 function createFeatureEntryData(feature, folderIdByPath) {
   const folderPath = feature.folderPath.join("/");
+  const automationBundle = buildFeatureAutomationBundle(feature);
   return {
     name: feature.name,
     type: "feat",
@@ -1342,8 +1766,8 @@ function createFeatureEntryData(feature, folderIdByPath) {
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
     },
-    system: createFeatureSystem(feature),
-    effects: [],
+    system: createFeatureSystem(feature, automationBundle),
+    effects: foundry.utils.deepClone(automationBundle.effects),
     flags: {
       [MODULE_ID]: {
         managed: true,
@@ -1352,6 +1776,7 @@ function createFeatureEntryData(feature, folderIdByPath) {
         abilityId: feature.abilityId,
         optionId: feature.optionId,
         featureId: feature.featureId,
+        automation: buildFeatureAutomationFlag(automationBundle.automation),
         signature: buildFeatureSignature(feature)
       }
     }
@@ -1375,6 +1800,7 @@ function createRaceEntryData(entry, folderIdByPath) {
         managed: true,
         sourceType: "race",
         raceId: entry.race.id,
+        automation: buildFeatureAutomationFlag(entry.race.automation),
         signature: entry.signature
       }
     }
