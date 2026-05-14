@@ -4,6 +4,7 @@ import { GearCompendiumService } from "./data/gear-compendium.js";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { RacesCompendiumService } from "./data/races-compendium.js";
+import { ClassesCompendiumService } from "./data/classes-compendium.js";
 import { EconomyRepository } from "./data/repository.js";
 import { TraderService } from "./data/trader-service.js";
 import { InventoryService } from "./data/inventory-service.js";
@@ -123,6 +124,7 @@ class RebreyaMainModule {
     this.magicItemsCompendium = new MagicItemsCompendiumService();
     this.featsCompendium = new FeatsCompendiumService();
     this.racesCompendium = new RacesCompendiumService();
+    this.classesCompendium = new ClassesCompendiumService();
     this.traderService = new TraderService(this);
     this.inventoryService = new InventoryService(this);
     this.heroDollService = new HeroDollService(this);
@@ -260,6 +262,14 @@ class RebreyaMainModule {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync races compendium.`, error);
       ui.notifications?.warn(game.i18n.localize("REBREYA_MAIN.Notifications.RacesCompendiumSyncFailed"));
+    }
+
+    try {
+      await this.classesCompendium.sync();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to sync classes compendium.`, error);
+      ui.notifications?.warn("Не удалось синхронизировать компендиумы классов и архетипов.");
     }
   }
 
