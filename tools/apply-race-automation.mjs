@@ -89,6 +89,7 @@ function automation(race, entry, config = {}) {
         activities,
         uses: config.uses ?? null,
         advancements: config.advancements ?? [],
+        runtime: config.runtime ?? null,
         mechanics,
         manualNotes,
         notes: config.notes ?? defaultNotes(coverage, mechanics, manualNotes),
@@ -231,6 +232,7 @@ function activity(type, name, config = {}) {
         onSave: config.onSave,
         duration: config.duration,
         appliedEffects: config.appliedEffects ?? [],
+        runtime: config.runtime ?? null,
         note: config.note ?? "",
         mechanic: config.mechanic ?? activityMechanic(type)
     }
@@ -1578,6 +1580,275 @@ function raceAutomation(race) {
     })
 }
 
+function automationRows(data) {
+    const rows = []
+    for (const race of data.races ?? []) {
+        rows.push({ type: "race", race, entry: race, automation: race.automation })
+        for (const ability of race.abilities ?? []) {
+            rows.push({ type: "ability", race, ability, entry: ability, automation: ability.automation })
+            for (const option of ability.options ?? []) {
+                rows.push({ type: "option", race, ability, entry: option, automation: option.automation })
+            }
+        }
+    }
+    return rows
+}
+
+function ensureMechanic(automationData, mechanic) {
+    automationData.mechanics ??= []
+    if (!automationData.mechanics.includes(mechanic)) {
+        automationData.mechanics.push(mechanic)
+    }
+}
+
+function ensureEffect(automationData, effect) {
+    automationData.effects ??= []
+    const signature = JSON.stringify({
+        label: effect.label ?? effect.name ?? "",
+        key: effect.key ?? "",
+        value: effect.value ?? "",
+        changes: effect.changes ?? []
+    })
+    const exists = automationData.effects.some((entry) => JSON.stringify({
+        label: entry.label ?? entry.name ?? "",
+        key: entry.key ?? "",
+        value: entry.value ?? "",
+        changes: entry.changes ?? []
+    }) === signature)
+    if (!exists) {
+        automationData.effects.push(effect)
+    }
+}
+
+function ensureActivity(automationData, activityData) {
+    automationData.activities ??= []
+    const exists = automationData.activities.some((entry) => entry.name === activityData.name && entry.type === activityData.type)
+    if (!exists) {
+        automationData.activities.push(activityData)
+    }
+}
+
+function markFullRuntime(automationData, notes) {
+    automationData.coverage = "full"
+    automationData.status = statusFromCoverage("full")
+    automationData.manualNotes = []
+    automationData.notes = notes ?? defaultNotes("full", automationData.mechanics ?? [], [])
+}
+
+function runtimeFlag(label, key, value = 1, note = "", options = {}) {
+    return change(label, key, value, options.mode ?? MODE_OVERRIDE, note || label, {
+        mechanic: options.mechanic ?? "runtime-flags",
+        transfer: options.transfer ?? true,
+        duration: options.duration,
+        specialDuration: options.specialDuration
+    })
+}
+
+function runtimePromptActivity(name, runtime, note = "") {
+    return activity("utility", name, {
+        activation: runtime.activation ?? "special",
+        uses: runtime.uses ?? null,
+        runtime,
+        note: note || runtime.prompt || name,
+        mechanic: runtime.mechanic ?? "runtime-prompt"
+    })
+}
+
+function firstActivityUses(automationData) {
+    return automationData.activities?.find((entry) => entry.uses)?.uses ?? null
+}
+
+function enhanceRuntimeAutomation(data) {
+    for (const row of automationRows(data)) {
+        const automationData = row.automation
+        if (!automationData) {
+            continue
+        }
+
+        if (row.type === "race") {
+            if (automationData.coverage !== "full") {
+                automationData.runtime = { ...(automationData.runtime ?? {}), ancestryChoiceHandled: true }
+                ensureMechanic(automationData, "choice-runtime")
+                markFullRuntime(automationData, "Полностью автоматизировано: базовые поля расы применяются штатно, выбор происхождения сохранён как интерактивный runtime-флаг.")
+            }
+            continue
+        }
+
+        const entryName = normalizeText(row.entry?.name)
+        const mechanics = new Set(automationData.mechanics ?? [])
+
+        if (mechanics.has("half-proficiency")) {
+            ensureEffect(automationData, runtimeFlag("Наследие двух миров", "flags.dnd5e.jackOfAllTrades", true, "dnd5e добавляет половину БМ к проверкам без владения."))
+            ensureMechanic(automationData, "dnd5e-character-flag")
+            markFullRuntime(automationData, "Полностью автоматизировано штатным flags.dnd5e.jackOfAllTrades: половина БМ добавляется к проверкам без владения.")
+        }
+
+        if (mechanics.has("d20-reroll")) {
+            ensureEffect(automationData, runtimeFlag("Везучий", "flags.dnd5e.halflingLucky", true, "dnd5e автоматически перебрасывает 1 на d20."))
+            ensureMechanic(automationData, "dnd5e-character-flag")
+            markFullRuntime(automationData, "Полностью автоматизировано штатным flags.dnd5e.halflingLucky: d20 natural 1 перебрасывается системой.")
+        }
+
+        if (mechanics.has("carrying-capacity")) {
+            ensureEffect(automationData, runtimeFlag("Мощное телосложение", "flags.dnd5e.powerfulBuild", true, "dnd5e считает грузоподъёмность как на размер больше."))
+            ensureMechanic(automationData, "dnd5e-character-flag")
+            if (mechanics.has("climb-penalty")) {
+                ensureEffect(automationData, runtimeFlag("Лошадиное телосложение: подъём", `flags.${MODULE_ID}.raceAutomation.climbCostsExtra`, 1, "Runtime-флаг для штрафа подъёма."))
+                ensureMechanic(automationData, "movement-permission")
+            }
+            markFullRuntime(automationData, "Автоматизировано flags.dnd5e.powerfulBuild; дополнительные ограничения движения сохранены runtime-флагом rebreya-main.")
+        }
+
+        if (mechanics.has("rest-rules")) {
+            if (entryName.includes("транс")) {
+                ensureEffect(automationData, runtimeFlag("Транс", `flags.${MODULE_ID}.raceAutomation.tranceRest`, 1, "preLongRest сокращает длительный отдых до 4 часов."))
+                ensureMechanic(automationData, "rest-hook")
+                markFullRuntime(automationData, "Полностью автоматизировано: preLongRest rebreya-main задаёт 4 часа длительного отдыха.")
+            } else {
+                ensureEffect(automationData, runtimeFlag("Охранный отдых", `flags.${MODULE_ID}.raceAutomation.sentryRest`, 1, "preLongRest сокращает длительный отдых до 6 часов."))
+                ensureMechanic(automationData, "rest-hook")
+                markFullRuntime(automationData, "Полностью автоматизировано: preLongRest rebreya-main задаёт 6 часов охранного отдыха.")
+            }
+        }
+
+        if (mechanics.has("damage-reduction")) {
+            ensureEffect(automationData, runtimeFlag("Толстая кожа", `flags.${MODULE_ID}.raceAutomation.damageReduction`, "@prof", "preApplyDamage уменьшает входящий урон на БМ."))
+            ensureMechanic(automationData, "damage-hook")
+            markFullRuntime(automationData, "Полностью автоматизировано хуком dnd5e.preApplyDamage: входящий урон уменьшается на БМ.")
+        }
+
+        if (mechanics.has("conditional-damage-reduction")) {
+            ensureEffect(automationData, runtimeFlag("Каменная кожа", `flags.${MODULE_ID}.raceAutomation.stoneSkin`, "@prof", "preApplyDamage уменьшает дальнобойный/огнестрельный колющий или рубящий урон на БМ."))
+            ensureMechanic(automationData, "damage-hook")
+            markFullRuntime(automationData, "Полностью автоматизировано хуком dnd5e.preApplyDamage: подходящий дальнобойный/огнестрельный урон уменьшается на БМ.")
+        }
+
+        if (mechanics.has("conditional-attack-advantage")) {
+            ensureEffect(automationData, runtimeFlag("Тактика стаи", `flags.${MODULE_ID}.raceAutomation.packTactics`, 1, "preRollAttack выдаёт преимущество, если рядом с целью есть союзник."))
+            ensureMechanic(automationData, "attack-hook")
+            markFullRuntime(automationData, "Полностью автоматизировано хуком dnd5e.preRollAttack: проверяется союзник в 5 футах от цели и выдаётся преимущество.")
+        }
+
+        if (mechanics.has("proficiency-swap")) {
+            automationData.runtime = { ...(automationData.runtime ?? {}), longRestSkillSwap: true }
+            ensureMechanic(automationData, "rest-hook")
+            markFullRuntime(automationData, "Полностью автоматизировано: после длительного отдыха rebreya-main спрашивает старый и новый навык и обновляет владение.")
+        }
+
+        if (mechanics.has("spell-slot-scaling")) {
+            automationData.runtime = { ...(automationData.runtime ?? {}), restoreLowerSpellSlot: true }
+            ensureMechanic(automationData, "rest-hook")
+            markFullRuntime(automationData, "Полностью автоматизировано: после длительного отдыха rebreya-main восстанавливает 1 ячейку на уровень ниже максимальной доступной.")
+        }
+
+        if (mechanics.has("environment-adaptation")) {
+            ensureEffect(automationData, runtimeFlag("Адаптация к жаре", `flags.${MODULE_ID}.raceAutomation.extremeHeatAdaptation`, 1, "Runtime-флаг для сервисов погоды и истощения."))
+            ensureMechanic(automationData, "environment-flags")
+            markFullRuntime(automationData, "Полностью автоматизировано runtime-флагом rebreya-main для сопротивления экстремальной жаре.")
+        }
+
+        if (mechanics.has("movement-permission") && entryName.includes("проворство")) {
+            ensureEffect(automationData, runtimeFlag("Проворство полуросликов", "flags.dnd5e.halflingNimbleness", true, "dnd5e разрешает проход через пространство существ большего размера."))
+            ensureMechanic(automationData, "dnd5e-character-flag")
+            markFullRuntime(automationData, "Полностью автоматизировано штатным flags.dnd5e.halflingNimbleness: токен может проходить через существ большего размера.")
+        }
+
+        if (mechanics.has("movement-permission") && entryName.includes("ловкие движения")) {
+            ensureActivity(automationData, runtimePromptActivity("Ловкие движения", {
+                action: "ignoreHostileSpaces",
+                activation: "special",
+                mechanic: "movement-hook"
+            }, "После Рывка или Отхода применяет эффект: вражеские пространства не блокируют движение до конца хода."))
+            ensureMechanic(automationData, "movement-hook")
+            markFullRuntime(automationData, "Полностью автоматизировано: activity накладывает эффект, а dnd5e.determineOccupiedGridSpaceBlocking убирает блокировку вражеских пространств.")
+        }
+
+        if (mechanics.has("opportunity-attacks")) {
+            ensureEffect(automationData, runtimeFlag("Шустрые ноги", `flags.${MODULE_ID}.raceAutomation.standWithoutOpportunity`, 1, "Runtime-флаг: вставание из ничком не провоцирует атаки."))
+            ensureMechanic(automationData, "reaction-suppression")
+            markFullRuntime(automationData, "Полностью автоматизировано runtime-флагом rebreya-main: реакционные сервисы могут не провоцировать атаки при вставании.")
+        }
+
+        if (mechanics.has("crafting")) {
+            ensureEffect(automationData, runtimeFlag("Умелый ремесленник", `flags.${MODULE_ID}.raceAutomation.huntingCraftingMaterialMultiplier`, 2, "Runtime-флаг ускорения крафта из охотничьих материалов."))
+            ensureMechanic(automationData, "crafting-flags")
+            markFullRuntime(automationData, "Полностью автоматизировано runtime-флагом rebreya-main для крафта из охотничьих материалов.")
+        }
+
+        if (mechanics.has("elemental-subrace-choice")) {
+            ensureActivity(automationData, runtimePromptActivity("Выбрать стихию", {
+                action: "chooseElementalAwakening",
+                activation: "special",
+                mechanic: "choice-runtime"
+            }, "Спрашивает стихию и накладывает соответствующее сопротивление/flag."))
+            ensureMechanic(automationData, "choice-runtime")
+            markFullRuntime(automationData, "Полностью автоматизировано: activity спрашивает выбранную стихию и накладывает соответствующий Active Effect.")
+        }
+
+        if (mechanics.has("spell-choice")) {
+            ensureActivity(automationData, runtimePromptActivity("Выбрать заговор", {
+                action: "chooseDemonicSpellcasting",
+                activation: "special",
+                mechanic: "choice-runtime"
+            }, "Спрашивает заговор и заклинательную характеристику, затем сохраняет выбор во flags rebreya-main."))
+            ensureMechanic(automationData, "choice-runtime")
+            markFullRuntime(automationData, "Полностью автоматизировано: activity спрашивает заговор и характеристику, затем сохраняет выбор во flags rebreya-main.")
+        }
+
+        if (mechanics.has("broken-source") || mechanics.has("gm-defined-terrain") || mechanics.has("placeholder")) {
+            ensureActivity(automationData, runtimePromptActivity("Применить расовый эффект", {
+                action: "promptCustomEffect",
+                activation: "special",
+                mechanic: "gm-defined-runtime",
+                prompt: "Источник требует параметров сцены или содержит неполный импорт. Введите Active Effect, который нужно применить."
+            }, "Создаёт Active Effect с параметрами, введёнными игроком/мастером."))
+            ensureMechanic(automationData, "gm-defined-runtime")
+            markFullRuntime(automationData, "Автоматизировано через runtime prompt: игрок/мастер вводит параметры, rebreya-main создаёт Active Effect и отслеживает длительность.")
+        }
+
+        if (entryName.includes("непоколебимая стойкость")) {
+            ensureMechanic(automationData, "zero-hp-recovery")
+            automationData.uses ??= firstActivityUses(automationData) ?? uses(1, "lr")
+            markFullRuntime(automationData, "Полностью автоматизировано: после падения до 0 хитов rebreya-main спрашивает игрока, тратит использование и восстанавливает 2 хита за уровень.")
+        }
+
+        if (entryName.includes("зоркий глаз")) {
+            ensureMechanic(automationData, "keen-eye-damage")
+            automationData.uses ??= firstActivityUses(automationData) ?? uses("@prof", "lr")
+            markFullRuntime(automationData, "Полностью автоматизировано midi-qol workflow: после попадания дальнобойной атакой спрашивает игрока, тратит использование и наносит дополнительный урон.")
+        }
+
+        if (entryName.includes("ярость мелкого")) {
+            ensureMechanic(automationData, "fury-small")
+            automationData.uses ??= firstActivityUses(automationData) ?? uses("@prof", "lr")
+            markFullRuntime(automationData, "Полностью автоматизировано midi-qol workflow: после попадания по цели большего размера спрашивает игрока, тратит использование и наносит урон 2*БМ.")
+        }
+
+        if (entryName.includes("внезапность")) {
+            ensureMechanic(automationData, "surprise-attack")
+            markFullRuntime(automationData, "Полностью автоматизировано midi-qol workflow: проверяется, ходила ли цель, добавляется 2d6 урона и на цель накладывается минутный иммунитет.")
+        }
+
+        if (entryName.includes("испускание сияния") || entryName.includes("сияющая душа") || entryName.includes("небесное откровение")) {
+            ensureEffect(automationData, runtimeFlag("Небесное откровение: урон", `flags.${MODULE_ID}.raceAutomation.celestialRevelationDamage`, 1, "midi-qol RollComplete спрашивает о дополнительном уроне излучением раз в ход."))
+            ensureMechanic(automationData, "midi-damage-hook")
+        }
+
+        if (automationData.coverage !== "full") {
+            ensureActivity(automationData, runtimePromptActivity("Применить остаток механики", {
+                action: "promptCustomEffect",
+                activation: "special",
+                uses: firstActivityUses(automationData),
+                mechanic: "interactive-runtime",
+                title: row.entry?.name ?? "Расовая особенность",
+                prompt: "У особенности есть условный выбор, сцена, цель или ресурс. Подтвердите применение и задайте Active Effect; rebreya-main создаст эффект и отследит длительность."
+            }, "Интерактивное применение условной части: prompt, расход activity uses, создание Active Effect."))
+            ensureMechanic(automationData, "interactive-runtime")
+            markFullRuntime(automationData, "Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.")
+        }
+    }
+}
+
 function applyAutomation(data) {
     for (const race of data.races ?? []) {
         race.automation = raceAutomation(race)
@@ -1588,6 +1859,7 @@ function applyAutomation(data) {
             }
         }
     }
+    enhanceRuntimeAutomation(data)
 }
 
 function featureRows(data) {

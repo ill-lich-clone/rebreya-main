@@ -729,6 +729,7 @@ function normalizeAutomation(rawAutomation) {
     activities: Array.isArray(rawAutomation.activities) ? cloneData(rawAutomation.activities, []) : [],
     uses: isPlainObject(rawAutomation.uses) ? cloneData(rawAutomation.uses) : null,
     advancements: Array.isArray(rawAutomation.advancements) ? cloneData(rawAutomation.advancements, []) : [],
+    runtime: isPlainObject(rawAutomation.runtime) ? cloneData(rawAutomation.runtime) : null,
     mechanics: Array.isArray(rawAutomation.mechanics) ? unique(rawAutomation.mechanics.map((entry) => cleanString(entry))) : [],
     manualNotes: Array.isArray(rawAutomation.manualNotes)
       ? rawAutomation.manualNotes.map((entry) => cleanString(entry)).filter(Boolean)
@@ -1188,7 +1189,8 @@ function createAutomationActivity(feature, activity, index = 0, effectRefs = [])
     flags: {
       [MODULE_ID]: {
         managed: true,
-        automation: "race-feature-activity"
+        automation: "race-feature-activity",
+        runtime: isPlainObject(activity?.runtime) ? cloneData(activity.runtime) : null
       }
     },
     range: {
@@ -1258,6 +1260,7 @@ function buildFeatureAutomationFlag(automation) {
     coverage: cleanString(automation.coverage, "manual"),
     notes: cleanString(automation.notes),
     manualNotes: Array.isArray(automation.manualNotes) ? cloneData(automation.manualNotes, []) : [],
+    runtime: isPlainObject(automation.runtime) ? cloneData(automation.runtime) : null,
     mechanics: Array.isArray(automation.mechanics) ? cloneData(automation.mechanics, []) : []
   };
 }

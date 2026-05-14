@@ -15,6 +15,7 @@ import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js";
 import { CombatAttackService } from "./combat/attack-service.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
+import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
 import { registerSceneControlsHook } from "./hooks.js";
 import { extendDnd5eItemTypes, registerDnd5eSheetExtensions } from "./integrations/dnd5e-sheet-extensions.js";
 import { registerSettings } from "./settings.js";
@@ -133,6 +134,7 @@ class RebreyaMainModule {
     this.globalEventsService = new GlobalEventsService(this);
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
+    this.raceAutomationService = new RaceAutomationService(this);
     this.repository.setGlobalEventsService(this.globalEventsService);
     this.economyApp = null;
     this.worldTradeRoutesApp = null;
@@ -188,6 +190,13 @@ class RebreyaMainModule {
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize combat attack service.`, error);
     }
+
+    try {
+      await this.raceAutomationService.initialize();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to initialize race automation service.`, error);
+    }
   }
 
   async handleSocketMessage(message) {
@@ -196,6 +205,11 @@ class RebreyaMainModule {
     }
 
     if (message.senderId && message.senderId === game.user?.id) {
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_RACE_AUTOMATION) {
+      await this.raceAutomationService.handleSocketMessage(message.payload ?? {});
       return;
     }
 

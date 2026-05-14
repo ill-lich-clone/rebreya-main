@@ -5,7 +5,8 @@ const HOOKS_REGISTERED_KEY = `${MODULE_ID}.combatHooksRegistered`;
 export function registerCombatHooks(moduleApi) {
   const hasStatusService = Boolean(moduleApi?.combatStatusService);
   const hasAttackService = Boolean(moduleApi?.combatAttackService);
-  if (!hasStatusService && !hasAttackService) {
+  const hasRaceService = Boolean(moduleApi?.raceAutomationService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService) {
     return;
   }
 
@@ -40,6 +41,15 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to handle combat turn reaction processing.`, error);
       });
     }
+
+    if (hasRaceService) {
+      try {
+        moduleApi.raceAutomationService.handleCombatTurnChange(combat, updateData, updateOptions);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to handle combat turn race automation.`, error);
+      }
+    }
   });
 
   if (hasAttackService) {
@@ -60,6 +70,14 @@ export function registerCombatHooks(moduleApi) {
 
     Hooks.on("dnd5e.preRollAttack", (rollConfig, dialogConfig, messageConfig) => {
       try {
+        if (hasRaceService) {
+          moduleApi.raceAutomationService.applyDnd5eAttackRollConfig(
+            rollConfig,
+            dialogConfig,
+            messageConfig
+          );
+        }
+
         return moduleApi.combatAttackService.applyDnd5eAttackRollConfig(
           rollConfig,
           dialogConfig,
@@ -131,6 +149,101 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to apply MIDI roll-complete automation.`, error);
         return true;
       }
+    });
+  }
+
+  if (hasRaceService) {
+    Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
+      moduleApi.raceAutomationService.applyDnd5ePostUseActivity(
+        activity,
+        usageConfig,
+        results
+      ).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply race activity automation.`, error);
+      });
+      return true;
+    });
+
+    Hooks.on("dnd5e.preApplyDamage", (actor, amount, updates, options) => {
+      try {
+        return moduleApi.raceAutomationService.applyDnd5ePreApplyDamage(
+          actor,
+          amount,
+          updates,
+          options
+        );
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply race pre-damage automation.`, error);
+        return true;
+      }
+    });
+
+    Hooks.on("dnd5e.applyDamage", (actor, amount, options) => {
+      moduleApi.raceAutomationService.applyDnd5eApplyDamage(
+        actor,
+        amount,
+        options
+      ).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply race post-damage automation.`, error);
+      });
+      return true;
+    });
+
+    Hooks.on("dnd5e.rollSkill", (rolls, context) => {
+      moduleApi.raceAutomationService.handleSkillRoll(rolls, context).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply race skill roll automation.`, error);
+      });
+    });
+
+    Hooks.on("dnd5e.rollToolCheck", (rolls, context) => {
+      moduleApi.raceAutomationService.handleToolRoll(rolls, context).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply race tool roll automation.`, error);
+      });
+    });
+
+    Hooks.on("dnd5e.rollAbilityCheck", (rolls, context) => {
+      moduleApi.raceAutomationService.handleAbilityCheckRoll(rolls, context).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply race ability roll automation.`, error);
+      });
+    });
+
+    Hooks.on("dnd5e.rollSavingThrow", (rolls, context) => {
+      moduleApi.raceAutomationService.handleSavingThrowRoll(rolls, context).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply race save roll automation.`, error);
+      });
+    });
+
+    Hooks.on("dnd5e.preLongRest", (actor, config) => {
+      try {
+        return moduleApi.raceAutomationService.applyDnd5ePreLongRest(actor, config);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply race pre-rest automation.`, error);
+        return true;
+      }
+    });
+
+    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
+      moduleApi.raceAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply race rest automation.`, error);
+      });
+    });
+
+    Hooks.on("dnd5e.determineOccupiedGridSpaceBlocking", (gridSpace, token, options, found) => {
+      try {
+        moduleApi.raceAutomationService.handleMovementBlocking(gridSpace, token, options, found);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply race movement automation.`, error);
+      }
+    });
+
+    Hooks.on("midi-qol.RollComplete", (workflow) => {
+      moduleApi.raceAutomationService.applyMidiRollComplete(workflow).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply MIDI race automation.`, error);
+      });
+      return true;
     });
   }
 }
