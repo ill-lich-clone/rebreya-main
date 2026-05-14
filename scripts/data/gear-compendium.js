@@ -518,6 +518,10 @@ async function findGearDocument(pack, gearItem) {
 }
 
 function shouldRebuildPack(gear, documents) {
+  if (getLegacyDuplicateDocumentIds(gear, documents).length) {
+    return true;
+  }
+
   const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
   if (managedDocuments.length !== gear.length) {
     return true;
@@ -540,16 +544,39 @@ function shouldRebuildPack(gear, documents) {
   return false;
 }
 
-async function deleteManagedDocuments(pack, documents) {
+function getLegacyDuplicateDocumentIds(gear, documents) {
+  const gearIds = new Set(
+    gear.map((item) => String(item?.id ?? "").trim()).filter(Boolean)
+  );
+  const gearNameKeys = new Set(
+    gear.map((item) => normalizeMatchText(item?.name ?? "")).filter(Boolean)
+  );
+
+  return documents
+    .filter((document) => !document.getFlag(MODULE_ID, "managed"))
+    .filter((document) => {
+      const legacyGearId = String(document.getFlag(MODULE_ID, "gearId") ?? "").trim();
+      if (legacyGearId && gearIds.has(legacyGearId)) {
+        return true;
+      }
+
+      return gearNameKeys.has(normalizeMatchText(document.name));
+    })
+    .map((document) => document.id);
+}
+
+async function deleteManagedDocuments(pack, documents, gear = []) {
   const managedIds = documents
     .filter((document) => document.getFlag(MODULE_ID, "managed"))
     .map((document) => document.id);
+  const legacyDuplicateIds = getLegacyDuplicateDocumentIds(gear, documents);
+  const deleteIds = Array.from(new Set([...managedIds, ...legacyDuplicateIds]));
 
-  if (!managedIds.length) {
+  if (!deleteIds.length) {
     return;
   }
 
-  await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
+  await Item.implementation.deleteDocuments(deleteIds, { pack: pack.collection });
 }
 
 async function createManagedDocuments(pack, gear) {
@@ -589,7 +616,7 @@ export class GearCompendiumService {
       return pack;
     }
 
-    await deleteManagedDocuments(pack, documents);
+    await deleteManagedDocuments(pack, documents, safeGear);
     await createManagedDocuments(pack, safeGear);
 
     return game.packs.get(PACK_ID) ?? pack;
