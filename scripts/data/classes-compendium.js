@@ -1475,6 +1475,20 @@ async function loadData() {
   return normalizeBarbarianData(rawData);
 }
 
+function normalizeActorId(value) {
+  const text = cleanString(value);
+  if (!text) {
+    return "";
+  }
+
+  const match = text.match(/^Actor\.([A-Za-z0-9]+)$/u);
+  if (match) {
+    return cleanString(match[1]);
+  }
+
+  return text;
+}
+
 function isMatchingClassItem(item, classIdentifier, normalizedClassName) {
   if (item?.type !== "class") {
     return false;
@@ -1508,17 +1522,28 @@ function buildDefaultHitPointsValue({ classLevels, isOriginalClass, existingValu
   };
 }
 
-async function syncWorldBarbarianClassAdvancements(classData) {
+async function syncWorldBarbarianClassAdvancements(classData, { actorIds = [] } = {}) {
   const classIdentifier = buildAsciiIdentifier(classData?.identifier, "barbarian-rework-v012");
   const normalizedClassName = normalizeMatchText(classData?.name);
   const actors = Array.isArray(game.actors?.contents) ? game.actors.contents : [];
+  const targetActorIds = new Set(
+    (Array.isArray(actorIds) ? actorIds : [actorIds])
+      .map((value) => normalizeActorId(value))
+      .filter(Boolean)
+  );
+  const isTargetedRun = targetActorIds.size > 0;
 
   let scanned = 0;
   let updatedItems = 0;
   let updatedActors = 0;
   let failures = 0;
+  const touchedActorIds = new Set();
 
   for (const actor of actors) {
+    if (isTargetedRun && !targetActorIds.has(actor?.id)) {
+      continue;
+    }
+
     if (actor?.type !== "character" || actor?.isOwner !== true) {
       continue;
     }
@@ -1530,6 +1555,7 @@ async function syncWorldBarbarianClassAdvancements(classData) {
 
     for (const classItem of candidateClasses) {
       scanned += 1;
+      touchedActorIds.add(actor.id);
 
       try {
         const currentAdvancement = Array.isArray(classItem.system?.advancement)
@@ -1599,15 +1625,22 @@ async function syncWorldBarbarianClassAdvancements(classData) {
       scanned,
       updatedItems,
       updatedActors,
-      failures
+      failures,
+      targeted: isTargetedRun
     });
   }
+
+  const missingActorIds = isTargetedRun
+    ? Array.from(targetActorIds).filter((actorId) => !touchedActorIds.has(actorId))
+    : [];
 
   return {
     scanned,
     updatedItems,
     updatedActors,
-    failures
+    failures,
+    targeted: isTargetedRun,
+    missingActorIds
   };
 }
 
@@ -1636,5 +1669,14 @@ export class ClassesCompendiumService {
       featuresPack,
       actorClassMigration
     };
+  }
+
+  async repairActorBarbarianHitPoints(actorIds = []) {
+    if (!game.user?.isGM || !isDnd5eWorld()) {
+      return null;
+    }
+
+    const normalizedData = await loadData();
+    return syncWorldBarbarianClassAdvancements(normalizedData.classData, { actorIds });
   }
 }

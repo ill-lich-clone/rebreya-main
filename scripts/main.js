@@ -936,6 +936,10 @@ class RebreyaMainModule {
     return model;
   }
 
+  async repairBarbarianHitPoints(actorIds = []) {
+    return this.classesCompendium.repairActorBarbarianHitPoints(actorIds);
+  }
+
   async refreshOpenApps() {
     const tasks = [];
 
