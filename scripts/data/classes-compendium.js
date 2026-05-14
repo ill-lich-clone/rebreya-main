@@ -1475,6 +1475,142 @@ async function loadData() {
   return normalizeBarbarianData(rawData);
 }
 
+function isMatchingClassItem(item, classIdentifier, normalizedClassName) {
+  if (item?.type !== "class") {
+    return false;
+  }
+
+  const itemIdentifier = buildAsciiIdentifier(foundry.utils.getProperty(item, "system.identifier"), item.name);
+  if (itemIdentifier === classIdentifier) {
+    return true;
+  }
+
+  return normalizeMatchText(item?.name) === normalizedClassName;
+}
+
+function buildDefaultHitPointsValue({ classLevels, isOriginalClass, existingValue = {} }) {
+  const value = isPlainObject(existingValue) ? foundry.utils.deepClone(existingValue) : {};
+  let didChange = false;
+
+  for (let level = 1; level <= classLevels; level += 1) {
+    const key = String(level);
+    if (value[key] === "max" || value[key] === "avg" || Number.isFinite(Number(value[key]))) {
+      continue;
+    }
+
+    value[key] = (level === 1 && isOriginalClass) ? "max" : "avg";
+    didChange = true;
+  }
+
+  return {
+    value,
+    didChange
+  };
+}
+
+async function syncWorldBarbarianClassAdvancements(classData) {
+  const classIdentifier = buildAsciiIdentifier(classData?.identifier, "barbarian-rework-v012");
+  const normalizedClassName = normalizeMatchText(classData?.name);
+  const actors = Array.isArray(game.actors?.contents) ? game.actors.contents : [];
+
+  let scanned = 0;
+  let updatedItems = 0;
+  let updatedActors = 0;
+  let failures = 0;
+
+  for (const actor of actors) {
+    if (actor?.type !== "character" || actor?.isOwner !== true) {
+      continue;
+    }
+
+    const candidateClasses = actor.items.contents.filter((item) => isMatchingClassItem(item, classIdentifier, normalizedClassName));
+    if (!candidateClasses.length) {
+      continue;
+    }
+
+    for (const classItem of candidateClasses) {
+      scanned += 1;
+
+      try {
+        const currentAdvancement = Array.isArray(classItem.system?.advancement)
+          ? foundry.utils.deepClone(classItem.system.advancement)
+          : [];
+        const classLevels = Math.max(1, Math.floor(parseNumber(classItem.system?.levels, 1)));
+        const isOriginalClass = cleanString(foundry.utils.getProperty(actor, "system.details.originalClass")) === classItem.id;
+        const oldHpMax = parseNumber(foundry.utils.getProperty(actor, "system.attributes.hp.max"), 0);
+        const oldHpValue = parseNumber(foundry.utils.getProperty(actor, "system.attributes.hp.value"), oldHpMax);
+        const oldDamage = Math.max(0, oldHpMax - oldHpValue);
+
+        let didChange = false;
+        const hpAdvancementIndex = currentAdvancement.findIndex((entry) => entry?.type === "HitPoints");
+        if (hpAdvancementIndex === -1) {
+          const hpAdvancement = buildHitPointsAdvancement(classIdentifier);
+          const { value } = buildDefaultHitPointsValue({
+            classLevels,
+            isOriginalClass,
+            existingValue: {}
+          });
+          hpAdvancement.value = value;
+          currentAdvancement.unshift(hpAdvancement);
+          didChange = true;
+        }
+        else {
+          const hpAdvancement = currentAdvancement[hpAdvancementIndex] ?? {};
+          const { value, didChange: didValueChange } = buildDefaultHitPointsValue({
+            classLevels,
+            isOriginalClass,
+            existingValue: hpAdvancement.value
+          });
+          if (didValueChange) {
+            hpAdvancement.value = value;
+            currentAdvancement[hpAdvancementIndex] = hpAdvancement;
+            didChange = true;
+          }
+        }
+
+        if (!didChange) {
+          continue;
+        }
+
+        await classItem.update({
+          "system.advancement": currentAdvancement
+        });
+        updatedItems += 1;
+
+        const newHpMax = parseNumber(foundry.utils.getProperty(actor, "system.attributes.hp.max"), oldHpMax);
+        const targetHpValue = Math.max(0, Math.floor(newHpMax - oldDamage));
+        const currentHpValue = parseNumber(foundry.utils.getProperty(actor, "system.attributes.hp.value"), targetHpValue);
+        if (currentHpValue !== targetHpValue) {
+          await actor.update({
+            "system.attributes.hp.value": targetHpValue
+          });
+          updatedActors += 1;
+        }
+      }
+      catch (error) {
+        failures += 1;
+        console.warn(`${MODULE_ID} | Failed to migrate class advancement for actor '${actor?.name ?? actor?.id}' and class '${classItem?.name ?? classItem?.id}'.`, error);
+      }
+    }
+  }
+
+  if (updatedItems || failures) {
+    console.log(`${MODULE_ID} | Barbarian class migration complete.`, {
+      scanned,
+      updatedItems,
+      updatedActors,
+      failures
+    });
+  }
+
+  return {
+    scanned,
+    updatedItems,
+    updatedActors,
+    failures
+  };
+}
+
 export class ClassesCompendiumService {
   async sync() {
     if (!game.user?.isGM || !isDnd5eWorld()) {
@@ -1492,11 +1628,13 @@ export class ClassesCompendiumService {
       featureUuidById,
       minorFeatUuids
     });
+    const actorClassMigration = await syncWorldBarbarianClassAdvancements(normalizedData.classData);
 
     return {
       classesPack,
       subclassesPack,
-      featuresPack
+      featuresPack,
+      actorClassMigration
     };
   }
 }
