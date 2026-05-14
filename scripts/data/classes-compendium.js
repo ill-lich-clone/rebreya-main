@@ -24,7 +24,7 @@ const CLASS_ROOT_FOLDER = "Классы Rebreya";
 const SUBCLASS_ROOT_FOLDER = "Архетипы Rebreya";
 const CLASS_FEATURE_ROOT_FOLDER = "Умения варвара Rebreya (Реворк V0.12)";
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 2;
+const CLASS_FEATURE_TEMPLATE_VERSION = 3;
 const SUBCLASS_TEMPLATE_VERSION = 1;
 const CLASS_TEMPLATE_VERSION = 1;
 
