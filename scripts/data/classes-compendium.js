@@ -549,7 +549,7 @@ function createRageFeatureAutomation(feature, classIdentifier) {
       disabled: false,
       duration: {
         startTime: null,
-        seconds: 60,
+        seconds: null,
         combat: null,
         rounds: 10,
         turns: null,
