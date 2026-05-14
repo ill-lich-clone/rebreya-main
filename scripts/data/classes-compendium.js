@@ -24,7 +24,7 @@ const CLASS_ROOT_FOLDER = "Классы Rebreya";
 const SUBCLASS_ROOT_FOLDER = "Архетипы Rebreya";
 const CLASS_FEATURE_ROOT_FOLDER = "Умения варвара Rebreya (Реворк V0.12)";
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 1;
+const CLASS_FEATURE_TEMPLATE_VERSION = 2;
 const SUBCLASS_TEMPLATE_VERSION = 1;
 const CLASS_TEMPLATE_VERSION = 1;
 
@@ -37,6 +37,9 @@ const MINOR_FEAT_LEVELS = [3, 6, 9, 12, 15, 18];
 const RAGE_ACTION_PICK_LEVELS = [5, 10, 15, 20];
 const SKILL_POOL = ["ath", "prc", "sur", "itm", "nat", "ani"];
 const ASI_LEVELS = [4, 8, 12, 16, 19];
+const EFFECT_MODE_CUSTOM = 0;
+const EFFECT_MODE_ADD = 2;
+const EFFECT_MODE_OVERRIDE = 5;
 
 const OPTIONAL_CLASS_FEATURE_NAMES = new Set([
   "стальной желудок",
@@ -407,8 +410,254 @@ function buildSubtypeRequirementsLabel(feature) {
   return `Варвар, ${level}-й уровень`;
 }
 
-function createFeatureSystem(feature, classIdentifier) {
-  const isRageFeature = feature.sourceType === "classFeature" && normalizeMatchText(feature.name) === "ярость";
+function createEmptyFeatureAutomation() {
+  return {
+    activities: {},
+    effects: [],
+    usesRecovery: []
+  };
+}
+
+function createRageFeatureAutomation(feature, classIdentifier) {
+  const effectId = stableHashId(`${classIdentifier}:${feature.featureId}:rage-effect`, "effect");
+  const activityId = stableHashId(`${classIdentifier}:${feature.featureId}:rage-activity`, "activity");
+  const rageDamageFormula = `+@scale.${classIdentifier}.rage-damage`;
+
+  return {
+    activities: {
+      [activityId]: {
+        _id: activityId,
+        type: "utility",
+        name: "Войти в ярость",
+        img: "systems/dnd5e/icons/svg/activity/utility.svg",
+        sort: 0,
+        activation: {
+          type: "bonus",
+          value: 1,
+          condition: "",
+          override: false
+        },
+        consumption: {
+          scaling: {
+            allowed: false,
+            max: ""
+          },
+          spellSlot: false,
+          targets: [{
+            type: "itemUses",
+            target: "",
+            value: "1",
+            scaling: {
+              mode: "",
+              formula: ""
+            }
+          }]
+        },
+        description: {
+          chatFlavor: ""
+        },
+        duration: {
+          value: 1,
+          units: "minute",
+          special: "",
+          concentration: false,
+          override: false
+        },
+        effects: [{ _id: effectId }],
+        flags: {
+          [MODULE_ID]: {
+            managed: true,
+            automation: "barbarian-rage-activity"
+          }
+        },
+        range: {
+          value: null,
+          units: "self",
+          special: "",
+          override: false
+        },
+        target: {
+          template: {
+            count: "",
+            contiguous: false,
+            type: "",
+            size: "",
+            width: "",
+            height: "",
+            units: ""
+          },
+          affects: {
+            count: "",
+            type: "self",
+            choice: false,
+            special: ""
+          },
+          prompt: false,
+          override: false
+        },
+        uses: {
+          spent: 0,
+          max: "",
+          recovery: []
+        }
+      }
+    },
+    effects: [{
+      _id: effectId,
+      name: "Ярость",
+      type: "base",
+      img: DEFAULT_FEATURE_ICON,
+      system: {},
+      changes: [
+        {
+          key: "system.bonuses.mwak.damage",
+          mode: EFFECT_MODE_ADD,
+          value: rageDamageFormula,
+          priority: 20
+        },
+        {
+          key: "system.traits.dr.value",
+          mode: EFFECT_MODE_ADD,
+          value: "bludgeoning",
+          priority: 20
+        },
+        {
+          key: "system.traits.dr.value",
+          mode: EFFECT_MODE_ADD,
+          value: "piercing",
+          priority: 20
+        },
+        {
+          key: "system.traits.dr.value",
+          mode: EFFECT_MODE_ADD,
+          value: "slashing",
+          priority: 20
+        },
+        {
+          key: "flags.midi-qol.advantage.check.str",
+          mode: EFFECT_MODE_CUSTOM,
+          value: "1",
+          priority: 20
+        },
+        {
+          key: "flags.midi-qol.advantage.save.str",
+          mode: EFFECT_MODE_CUSTOM,
+          value: "1",
+          priority: 20
+        }
+      ],
+      disabled: false,
+      duration: {
+        startTime: null,
+        seconds: 60,
+        combat: null,
+        rounds: 10,
+        turns: null,
+        startRound: null,
+        startTurn: null
+      },
+      description: "<p>Автоматизация ярости: бонус к урону, сопротивления и преимущества проверок/спасбросков Силы.</p>",
+      origin: null,
+      transfer: false,
+      statuses: [],
+      sort: 0,
+      flags: {
+        dae: {
+          selfTarget: true,
+          selfTargetAlways: true,
+          specialDuration: ["combatEnd"]
+        },
+        [MODULE_ID]: {
+          managed: true,
+          automation: "barbarian-rage-effect"
+        }
+      }
+    }],
+    usesRecovery: [{
+      period: "lr",
+      type: "recoverAll",
+      formula: ""
+    }]
+  };
+}
+
+function createUnarmoredDefenseFeatureAutomation(feature, classIdentifier) {
+  const effectId = stableHashId(`${classIdentifier}:${feature.featureId}:unarmored-defense`, "effect");
+
+  return {
+    activities: {},
+    effects: [{
+      _id: effectId,
+      name: "Защита без доспехов",
+      type: "base",
+      img: DEFAULT_FEATURE_ICON,
+      system: {},
+      changes: [{
+        key: "system.attributes.ac.calc",
+        mode: EFFECT_MODE_OVERRIDE,
+        value: "unarmoredBarb",
+        priority: 20
+      }],
+      disabled: false,
+      duration: {
+        startTime: null,
+        seconds: null,
+        combat: null,
+        rounds: null,
+        turns: null,
+        startRound: null,
+        startTurn: null
+      },
+      description: "<p>Автоматизация: КД рассчитывается как 10 + Ловкость + Телосложение, пока не надет доспех.</p>",
+      origin: null,
+      transfer: true,
+      statuses: [],
+      sort: 0,
+      flags: {
+        dae: {
+          disableCondition: "@attributes.ac.armor > 10"
+        },
+        [MODULE_ID]: {
+          managed: true,
+          automation: "barbarian-unarmored-defense"
+        }
+      }
+    }],
+    usesRecovery: []
+  };
+}
+
+function createFeatureAutomation(feature, classIdentifier) {
+  if (feature.sourceType !== "classFeature") {
+    return createEmptyFeatureAutomation();
+  }
+
+  const normalizedName = normalizeMatchText(feature.name);
+  if (normalizedName === "ярость") {
+    return createRageFeatureAutomation(feature, classIdentifier);
+  }
+
+  if (normalizedName === "защита без доспехов") {
+    return createUnarmoredDefenseFeatureAutomation(feature, classIdentifier);
+  }
+
+  return createEmptyFeatureAutomation();
+}
+
+function createFeatureSystem(feature, classIdentifier, featureAutomation = null) {
+  const normalizedName = normalizeMatchText(feature.name);
+  const isRageFeature = feature.sourceType === "classFeature" && normalizedName === "ярость";
+  const automation = featureAutomation ?? createFeatureAutomation(feature, classIdentifier);
+  const rageRecovery = isRageFeature
+    ? [{
+      period: "lr",
+      type: "recoverAll",
+      formula: ""
+    }]
+    : [];
+  const usesRecovery = Array.isArray(automation?.usesRecovery) && automation.usesRecovery.length
+    ? foundry.utils.deepClone(automation.usesRecovery)
+    : rageRecovery;
 
   return {
     description: {
@@ -430,11 +679,11 @@ function createFeatureSystem(feature, classIdentifier) {
       repeatable: false
     },
     properties: [],
-    activities: {},
+    activities: foundry.utils.deepClone(automation?.activities ?? {}),
     uses: {
       spent: 0,
       max: isRageFeature ? `@scale.${classIdentifier}.rage-uses` : "",
-      recovery: []
+      recovery: usesRecovery
     },
     advancement: []
   };
@@ -1015,6 +1264,7 @@ function buildSubclassSignature(subclass, system, metadata = {}) {
 
 function createFeatureEntryData(feature, folderIdByPath) {
   const folderPath = feature.folderPath.join("/");
+  const featureAutomation = createFeatureAutomation(feature, feature.classIdentifier);
   return {
     name: feature.name,
     type: "feat",
@@ -1023,8 +1273,8 @@ function createFeatureEntryData(feature, folderIdByPath) {
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
     },
-    system: createFeatureSystem(feature, feature.classIdentifier),
-    effects: [],
+    system: createFeatureSystem(feature, feature.classIdentifier, featureAutomation),
+    effects: foundry.utils.deepClone(featureAutomation.effects),
     flags: {
       [MODULE_ID]: {
         managed: true,
