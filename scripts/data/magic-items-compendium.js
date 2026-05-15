@@ -1,5 +1,11 @@
 ﻿import { MAGIC_ITEMS_COMPENDIUM_LABEL, MAGIC_ITEMS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
-import { ensureCompendiumFolders, ensurePackSidebarFolder, normalizeFolderPath } from "./compendium-utils.js";
+import {
+  buildNamedIconLookup,
+  ensureCompendiumFolders,
+  ensurePackSidebarFolder,
+  normalizeFolderPath,
+  resolveNamedIcon
+} from "./compendium-utils.js";
 import {
   buildSlug,
   classifyMagicItem,
@@ -14,6 +20,8 @@ const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 const MAGIC_TEMPLATE_VERSION = 3;
+const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
+const MAGIC_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Magic Items`, MODULE_ICONS_BASE_PATH];
 
 function escapeHtml(value) {
   return foundry.utils.escapeHTML(String(value ?? ""));
@@ -168,8 +176,8 @@ function buildMagicSignature(item) {
   });
 }
 
-function getMagicItemIcon(_item, _classification) {
-  return DEFAULT_MAGIC_ITEM_ICON;
+function getMagicItemIcon(item, _classification, iconLookup = null) {
+  return resolveNamedIcon(item?.name, iconLookup, DEFAULT_MAGIC_ITEM_ICON);
 }
 
 function buildMetadataRows(item, classification) {
@@ -310,7 +318,7 @@ function buildSystemData(item, classification, descriptionHtml) {
   return baseData;
 }
 
-function createMagicItemData(item, folderIdByPath) {
+function createMagicItemData(item, folderIdByPath, iconLookup = null) {
   const classification = classifyMagicItem(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
   const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
@@ -321,7 +329,7 @@ function createMagicItemData(item, folderIdByPath) {
   return {
     name: item.name,
     type: classification.documentType,
-    img: getMagicItemIcon(item, classification),
+    img: getMagicItemIcon(item, classification, iconLookup),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -482,7 +490,33 @@ async function deleteManagedDocuments(pack, documents) {
   await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
 }
 
-async function createManagedDocuments(pack, items) {
+async function syncManagedDocumentIcons(pack, documents, iconLookup) {
+  const updates = [];
+  for (const document of Array.isArray(documents) ? documents : []) {
+    if (!document?.getFlag?.(MODULE_ID, "managed")) {
+      continue;
+    }
+
+    const currentIcon = String(document.img ?? "").trim() || DEFAULT_MAGIC_ITEM_ICON;
+    const nextIcon = resolveNamedIcon(document.name, iconLookup, currentIcon);
+    if (!nextIcon || nextIcon === currentIcon) {
+      continue;
+    }
+
+    updates.push({
+      _id: document.id,
+      img: nextIcon
+    });
+  }
+
+  if (!updates.length) {
+    return;
+  }
+
+  await Item.implementation.updateDocuments(updates, { pack: pack.collection });
+}
+
+async function createManagedDocuments(pack, items, iconLookup = null) {
   if (!items.length) {
     return;
   }
@@ -499,7 +533,7 @@ async function createManagedDocuments(pack, items) {
   }
 
   await Item.implementation.createDocuments(
-    items.map((item) => createMagicItemData(item, folderIdByPath)),
+    items.map((item) => createMagicItemData(item, folderIdByPath, iconLookup)),
     { pack: pack.collection }
   );
 }
@@ -513,14 +547,19 @@ export class MagicItemsCompendiumService {
     const normalizedItems = normalizeMagicItems(items);
     const pack = await ensurePack();
     const documents = await getPackDocuments(pack);
+    const iconLookup = await buildNamedIconLookup(MAGIC_ICON_SEARCH_PATHS, { forceRefresh: true });
     if (!shouldRebuildPack(normalizedItems, documents)) {
-      return pack;
+      await syncManagedDocumentIcons(pack, documents, iconLookup);
+      return game.packs.get(PACK_ID) ?? pack;
     }
 
     await deleteManagedDocuments(pack, documents);
-    await createManagedDocuments(pack, normalizedItems);
+    await createManagedDocuments(pack, normalizedItems, iconLookup);
+    const activePack = game.packs.get(PACK_ID) ?? pack;
+    const activeDocuments = await getPackDocuments(activePack);
+    await syncManagedDocumentIcons(activePack, activeDocuments, iconLookup);
 
-    return game.packs.get(PACK_ID) ?? pack;
+    return activePack;
   }
 
   async getMagicItemDocument(magicItemId, fallbackName = "") {

@@ -6,13 +6,21 @@ import {
   RACES_COMPENDIUM_LABEL,
   RACES_COMPENDIUM_NAME
 } from "../constants.js";
-import { ensureCompendiumFolders, ensurePackSidebarFolder, normalizeFolderPath } from "./compendium-utils.js";
+import {
+  buildNamedIconLookup,
+  ensureCompendiumFolders,
+  ensurePackSidebarFolder,
+  normalizeFolderPath,
+  resolveNamedIcon
+} from "./compendium-utils.js";
 import { buildSlug } from "./item-classification.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
 const SOURCE_LABEL = "Расы Тейванкаля V0.1";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const RACES_DATA_PATH = `modules/${MODULE_ID}/data/races-teyvankal-v01.json`;
+const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
+const RACE_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Races`, MODULE_ICONS_BASE_PATH];
 
 const RACES_PACK_ID = `world.${RACES_COMPENDIUM_NAME}`;
 const RACE_FEATURES_PACK_ID = `world.${RACE_FEATURES_COMPENDIUM_NAME}`;
@@ -1446,6 +1454,35 @@ async function deleteManagedDocuments(pack, documents) {
   await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
 }
 
+async function syncManagedDocumentIcons(pack, documents, resolveIcon) {
+  if (typeof resolveIcon !== "function") {
+    return;
+  }
+
+  const updates = [];
+  for (const document of Array.isArray(documents) ? documents : []) {
+    if (!document?.getFlag?.(MODULE_ID, "managed")) {
+      continue;
+    }
+
+    const nextIcon = cleanString(resolveIcon(document));
+    if (!nextIcon || nextIcon === cleanString(document.img)) {
+      continue;
+    }
+
+    updates.push({
+      _id: document.id,
+      img: nextIcon
+    });
+  }
+
+  if (!updates.length) {
+    return;
+  }
+
+  await Item.implementation.updateDocuments(updates, { pack: pack.collection });
+}
+
 function shouldRebuildManagedPack(documents, entries, sourceIdFlag) {
   const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
   if (managedDocuments.length !== entries.length) {
@@ -1766,13 +1803,13 @@ async function buildFeatLookup() {
   };
 }
 
-function createFeatureEntryData(feature, folderIdByPath) {
+function createFeatureEntryData(feature, folderIdByPath, iconLookup = null) {
   const folderPath = feature.folderPath.join("/");
   const automationBundle = buildFeatureAutomationBundle(feature);
   return {
     name: feature.name,
     type: "feat",
-    img: DEFAULT_FEATURE_ICON,
+    img: resolveNamedIcon(feature.name, iconLookup, DEFAULT_FEATURE_ICON),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -1794,12 +1831,12 @@ function createFeatureEntryData(feature, folderIdByPath) {
   };
 }
 
-function createRaceEntryData(entry, folderIdByPath) {
+function createRaceEntryData(entry, folderIdByPath, iconLookup = null) {
   const folderPath = entry.folderPath.join("/");
   return {
     name: entry.race.name,
     type: "race",
-    img: DEFAULT_RACE_ICON,
+    img: resolveNamedIcon(entry.race.name, iconLookup, DEFAULT_RACE_ICON),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -1823,7 +1860,7 @@ async function loadRacesData() {
   return normalizeRaces(rawData?.races ?? []);
 }
 
-async function syncRaceFeaturePack(featureDefinitions) {
+async function syncRaceFeaturePack(featureDefinitions, context = {}) {
   const pack = await ensurePack(RACE_FEATURES_PACK_ID, createPackMetadata({
     name: RACE_FEATURES_COMPENDIUM_NAME,
     label: RACE_FEATURES_COMPENDIUM_LABEL,
@@ -1838,11 +1875,20 @@ async function syncRaceFeaturePack(featureDefinitions) {
 
   if (shouldRebuildManagedPack(documents, features, "featureId")) {
     await deleteManagedDocuments(pack, documents);
-    await createManagedDocuments(pack, features, createFeatureEntryData);
+    await createManagedDocuments(
+      pack,
+      features,
+      (entry, folderIdByPath) => createFeatureEntryData(entry, folderIdByPath, context.iconLookup)
+    );
   }
 
   const activePack = game.packs.get(RACE_FEATURES_PACK_ID) ?? pack;
   const featureDocuments = await getPackDocuments(activePack);
+  await syncManagedDocumentIcons(
+    activePack,
+    featureDocuments,
+    (document) => resolveNamedIcon(document.name, context.iconLookup, DEFAULT_FEATURE_ICON)
+  );
   const featureUuidById = new Map();
 
   for (const document of featureDocuments) {
@@ -1890,10 +1936,22 @@ async function syncRacesPack(races, context) {
 
   if (shouldRebuildManagedPack(documents, entriesForComparison, "raceId")) {
     await deleteManagedDocuments(pack, documents);
-    await createManagedDocuments(pack, raceEntries, createRaceEntryData);
+    await createManagedDocuments(
+      pack,
+      raceEntries,
+      (entry, folderIdByPath) => createRaceEntryData(entry, folderIdByPath, context.iconLookup)
+    );
   }
 
-  return game.packs.get(RACES_PACK_ID) ?? pack;
+  const activePack = game.packs.get(RACES_PACK_ID) ?? pack;
+  const activeDocuments = await getPackDocuments(activePack);
+  await syncManagedDocumentIcons(
+    activePack,
+    activeDocuments,
+    (document) => resolveNamedIcon(document.name, context.iconLookup, DEFAULT_RACE_ICON)
+  );
+
+  return activePack;
 }
 
 export class RacesCompendiumService {
@@ -1902,14 +1960,18 @@ export class RacesCompendiumService {
       return null;
     }
 
+    const iconLookup = await buildNamedIconLookup(RACE_ICON_SEARCH_PATHS, { forceRefresh: true });
     const races = await loadRacesData();
     const featureDefinitions = buildFeatureDefinitions(races);
-    const { pack: featuresPack, featureUuidById } = await syncRaceFeaturePack(featureDefinitions);
+    const { pack: featuresPack, featureUuidById } = await syncRaceFeaturePack(featureDefinitions, {
+      iconLookup
+    });
     const featLookup = await buildFeatLookup();
     const racesPack = await syncRacesPack(races, {
       featureUuidById,
       minorFeatUuids: featLookup.minorFeatUuids,
-      featLookupByName: featLookup.byName
+      featLookupByName: featLookup.byName,
+      iconLookup
     });
 
     return {

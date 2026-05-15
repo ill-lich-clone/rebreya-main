@@ -8,7 +8,13 @@ import {
   SUBCLASSES_COMPENDIUM_LABEL,
   SUBCLASSES_COMPENDIUM_NAME
 } from "../constants.js";
-import { ensureCompendiumFolders, ensurePackSidebarFolder, normalizeFolderPath } from "./compendium-utils.js";
+import {
+  buildNamedIconLookup,
+  ensureCompendiumFolders,
+  ensurePackSidebarFolder,
+  normalizeFolderPath,
+  resolveNamedIcon
+} from "./compendium-utils.js";
 import { buildSlug } from "./item-classification.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -16,6 +22,8 @@ const DEFAULT_SOURCE_LABEL = "Реворк Варвара V0.12";
 const REBREYA_SOURCE_LABEL = "Ребрея";
 const COMPENDIUM_SIDEBAR_FOLDER = [REBREYA_SOURCE_LABEL];
 const DATA_PATH = `modules/${MODULE_ID}/data/barbarian-rework-v012.json`;
+const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
+const BARBARIAN_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Barbarian`, MODULE_ICONS_BASE_PATH];
 
 const FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const CLASS_FEATURES_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
@@ -1087,6 +1095,35 @@ async function deleteManagedDocuments(pack, documents) {
   await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
 }
 
+async function syncManagedDocumentIcons(pack, documents, resolveIcon) {
+  if (typeof resolveIcon !== "function") {
+    return;
+  }
+
+  const updates = [];
+  for (const document of Array.isArray(documents) ? documents : []) {
+    if (!document?.getFlag?.(MODULE_ID, "managed")) {
+      continue;
+    }
+
+    const nextIcon = cleanString(resolveIcon(document));
+    if (!nextIcon || nextIcon === cleanString(document.img)) {
+      continue;
+    }
+
+    updates.push({
+      _id: document.id,
+      img: nextIcon
+    });
+  }
+
+  if (!updates.length) {
+    return;
+  }
+
+  await Item.implementation.updateDocuments(updates, { pack: pack.collection });
+}
+
 function getPackFolders(pack) {
   if (pack?.folders?.contents) {
     return Array.from(pack.folders.contents);
@@ -1651,13 +1688,30 @@ function buildSubclassSignature(subclass, system, metadata = {}) {
   });
 }
 
-function createFeatureEntryData(feature, folderIdByPath) {
+function resolveClassFeatureIcon(featureName, iconLookup) {
+  return resolveNamedIcon(featureName, iconLookup, DEFAULT_FEATURE_ICON);
+}
+
+function resolveSubclassIcon(subclassName, iconLookup) {
+  return resolveNamedIcon(subclassName, iconLookup, DEFAULT_SUBCLASS_ICON);
+}
+
+function resolveClassIcon(className, iconLookup) {
+  const iconByClassName = resolveNamedIcon(className, iconLookup);
+  if (iconByClassName) {
+    return iconByClassName;
+  }
+
+  return resolveNamedIcon("Barbarian", iconLookup, DEFAULT_CLASS_ICON);
+}
+
+function createFeatureEntryData(feature, folderIdByPath, iconLookup = null) {
   const folderPath = feature.folderPath.join("/");
   const featureAutomation = createFeatureAutomation(feature, feature.classIdentifier);
   return {
     name: feature.name,
     type: "feat",
-    img: DEFAULT_FEATURE_ICON,
+    img: resolveClassFeatureIcon(feature.name, iconLookup),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -1682,12 +1736,12 @@ function createFeatureEntryData(feature, folderIdByPath) {
   };
 }
 
-function createSubclassEntryData(entry, folderIdByPath) {
+function createSubclassEntryData(entry, folderIdByPath, iconLookup = null) {
   const folderPath = entry.folderPath.join("/");
   return {
     name: entry.subclass.name,
     type: "subclass",
-    img: DEFAULT_SUBCLASS_ICON,
+    img: resolveSubclassIcon(entry.subclass.name, iconLookup),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -1706,12 +1760,12 @@ function createSubclassEntryData(entry, folderIdByPath) {
   };
 }
 
-function createClassEntryData(entry, folderIdByPath) {
+function createClassEntryData(entry, folderIdByPath, iconLookup = null) {
   const folderPath = entry.folderPath.join("/");
   return {
     name: entry.classData.name,
     type: "class",
-    img: DEFAULT_CLASS_ICON,
+    img: resolveClassIcon(entry.classData.name, iconLookup),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -1729,7 +1783,7 @@ function createClassEntryData(entry, folderIdByPath) {
   };
 }
 
-async function syncClassFeaturePack(featureDefinitions) {
+async function syncClassFeaturePack(featureDefinitions, context = {}) {
   const pack = await ensurePack(CLASS_FEATURES_PACK_ID, createPackMetadata({
     name: CLASS_FEATURES_COMPENDIUM_NAME,
     label: CLASS_FEATURES_COMPENDIUM_LABEL,
@@ -1747,11 +1801,20 @@ async function syncClassFeaturePack(featureDefinitions) {
       await clearPackFolderTree(pack, legacyRoot);
     }
     await clearPackFolderTree(pack, CLASS_FEATURE_ROOT_FOLDER);
-    await createManagedDocuments(pack, features, createFeatureEntryData);
+    await createManagedDocuments(
+      pack,
+      features,
+      (entry, folderIdByPath) => createFeatureEntryData(entry, folderIdByPath, context.iconLookup)
+    );
   }
 
   const activePack = game.packs.get(CLASS_FEATURES_PACK_ID) ?? pack;
   const featureDocuments = await getPackDocuments(activePack);
+  await syncManagedDocumentIcons(
+    activePack,
+    featureDocuments,
+    (document) => resolveClassFeatureIcon(document.name, context.iconLookup)
+  );
   const featureUuidById = new Map();
 
   for (const document of featureDocuments) {
@@ -1809,10 +1872,22 @@ async function syncSubclassesPack(normalizedData, context) {
       await clearPackFolderTree(pack, legacyRoot);
     }
     await clearPackFolderTree(pack, SUBCLASS_ROOT_FOLDER);
-    await createManagedDocuments(pack, subclassEntries, createSubclassEntryData);
+    await createManagedDocuments(
+      pack,
+      subclassEntries,
+      (entry, folderIdByPath) => createSubclassEntryData(entry, folderIdByPath, context.iconLookup)
+    );
   }
 
-  return game.packs.get(SUBCLASSES_PACK_ID) ?? pack;
+  const activePack = game.packs.get(SUBCLASSES_PACK_ID) ?? pack;
+  const activeDocuments = await getPackDocuments(activePack);
+  await syncManagedDocumentIcons(
+    activePack,
+    activeDocuments,
+    (document) => resolveSubclassIcon(document.name, context.iconLookup)
+  );
+
+  return activePack;
 }
 
 async function syncClassesPack(normalizedData, context) {
@@ -1854,10 +1929,22 @@ async function syncClassesPack(normalizedData, context) {
       await clearPackFolderTree(pack, legacyRoot);
     }
     await clearPackFolderTree(pack, CLASS_ROOT_FOLDER);
-    await createManagedDocuments(pack, [classEntry], createClassEntryData);
+    await createManagedDocuments(
+      pack,
+      [classEntry],
+      (entry, folderIdByPath) => createClassEntryData(entry, folderIdByPath, context.iconLookup)
+    );
   }
 
-  return game.packs.get(CLASSES_PACK_ID) ?? pack;
+  const activePack = game.packs.get(CLASSES_PACK_ID) ?? pack;
+  const activeDocuments = await getPackDocuments(activePack);
+  await syncManagedDocumentIcons(
+    activePack,
+    activeDocuments,
+    (document) => resolveClassIcon(document.name, context.iconLookup)
+  );
+
+  return activePack;
 }
 
 async function loadData() {
@@ -1871,16 +1958,21 @@ export class ClassesCompendiumService {
       return null;
     }
 
+    const iconLookup = await buildNamedIconLookup(BARBARIAN_ICON_SEARCH_PATHS, { forceRefresh: true });
     const normalizedData = await loadData();
     const featureDefinitions = buildFeatureDefinitions(normalizedData);
-    const { pack: featuresPack, featureUuidById } = await syncClassFeaturePack(featureDefinitions);
+    const { pack: featuresPack, featureUuidById } = await syncClassFeaturePack(featureDefinitions, {
+      iconLookup
+    });
     const minorFeatUuids = await buildMinorFeatPool();
     const subclassesPack = await syncSubclassesPack(normalizedData, {
-      featureUuidById
+      featureUuidById,
+      iconLookup
     });
     const classesPack = await syncClassesPack(normalizedData, {
       featureUuidById,
-      minorFeatUuids
+      minorFeatUuids,
+      iconLookup
     });
 
     return {

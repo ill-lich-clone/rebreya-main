@@ -1,6 +1,12 @@
 import { FEATS_COMPENDIUM_LABEL, FEATS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
-import { ensureCompendiumFolders, ensurePackSidebarFolder, normalizeFolderPath } from "./compendium-utils.js";
+import {
+  buildNamedIconLookup,
+  ensureCompendiumFolders,
+  ensurePackSidebarFolder,
+  normalizeFolderPath,
+  resolveNamedIcon
+} from "./compendium-utils.js";
 import { buildSlug } from "./item-classification.js";
 
 const PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
@@ -9,6 +15,8 @@ const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_FEAT_ICON = "icons/svg/book.svg";
 const FEAT_TEMPLATE_VERSION = 1;
 const FEAT_ROOT_FOLDER = "Черты V0.8";
+const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
+const FEAT_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Feats`, MODULE_ICONS_BASE_PATH];
 const FEATS_BUNDLE_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json`;
 const FEATS_ITEMS_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-items.json`;
 
@@ -200,16 +208,17 @@ async function loadRawFeatItems() {
   );
 }
 
-function createFeatItemData(feat, folderIdByPath) {
+function createFeatItemData(feat, folderIdByPath, iconLookup = null) {
   const folderPath = buildFeatFolderPath(feat).join("/");
   const moduleFlags = isPlainObject(feat.flags?.[MODULE_ID])
     ? foundry.utils.deepClone(feat.flags[MODULE_ID])
     : {}
+  const resolvedIcon = resolveNamedIcon(feat.name, iconLookup, feat.img || DEFAULT_FEAT_ICON);
 
   return {
     name: feat.name,
     type: "feat",
-    img: feat.img || DEFAULT_FEAT_ICON,
+    img: resolvedIcon,
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -321,7 +330,33 @@ async function deleteManagedDocuments(pack, documents) {
   await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
 }
 
-async function createManagedDocuments(pack, feats) {
+async function syncManagedDocumentIcons(pack, documents, iconLookup) {
+  const updates = [];
+  for (const document of Array.isArray(documents) ? documents : []) {
+    if (!document?.getFlag?.(MODULE_ID, "managed")) {
+      continue;
+    }
+
+    const currentIcon = cleanString(document.img, DEFAULT_FEAT_ICON);
+    const nextIcon = resolveNamedIcon(document.name, iconLookup, currentIcon);
+    if (!nextIcon || nextIcon === currentIcon) {
+      continue;
+    }
+
+    updates.push({
+      _id: document.id,
+      img: nextIcon
+    });
+  }
+
+  if (!updates.length) {
+    return;
+  }
+
+  await Item.implementation.updateDocuments(updates, { pack: pack.collection });
+}
+
+async function createManagedDocuments(pack, feats, iconLookup = null) {
   if (!feats.length) {
     return;
   }
@@ -338,7 +373,7 @@ async function createManagedDocuments(pack, feats) {
   }
 
   await Item.implementation.createDocuments(
-    feats.map((feat) => createFeatItemData(feat, folderIdByPath)),
+    feats.map((feat) => createFeatItemData(feat, folderIdByPath, iconLookup)),
     { pack: pack.collection }
   );
 }
@@ -384,14 +419,19 @@ export class FeatsCompendiumService {
     const feats = normalizeFeatItems(rawItems);
     const pack = await ensurePack();
     const documents = await getPackDocuments(pack);
+    const iconLookup = await buildNamedIconLookup(FEAT_ICON_SEARCH_PATHS, { forceRefresh: true });
     if (!shouldRebuildPack(feats, documents)) {
-      return pack;
+      await syncManagedDocumentIcons(pack, documents, iconLookup);
+      return game.packs.get(PACK_ID) ?? pack;
     }
 
     await deleteManagedDocuments(pack, documents);
-    await createManagedDocuments(pack, feats);
+    await createManagedDocuments(pack, feats, iconLookup);
+    const activePack = game.packs.get(PACK_ID) ?? pack;
+    const activeDocuments = await getPackDocuments(activePack);
+    await syncManagedDocumentIcons(activePack, activeDocuments, iconLookup);
 
-    return game.packs.get(PACK_ID) ?? pack;
+    return activePack;
   }
 
   async getFeatDocument(featId, fallbackName = "") {
