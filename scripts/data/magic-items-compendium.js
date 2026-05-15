@@ -1,5 +1,5 @@
 ﻿import { MAGIC_ITEMS_COMPENDIUM_LABEL, MAGIC_ITEMS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
-import { ensureCompendiumFolders, normalizeFolderPath } from "./compendium-utils.js";
+import { ensureCompendiumFolders, ensurePackSidebarFolder, normalizeFolderPath } from "./compendium-utils.js";
 import {
   buildSlug,
   classifyMagicItem,
@@ -11,6 +11,7 @@ import { MAGIC_ITEMS } from "../../magicItem.js";
 
 const PACK_ID = `world.${MAGIC_ITEMS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
+const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 const MAGIC_TEMPLATE_VERSION = 3;
 
@@ -394,11 +395,18 @@ async function ensurePack() {
     pack = null;
   }
 
-  if (pack) {
-    return pack;
+  if (!pack) {
+    pack = await foundry.documents.collections.CompendiumCollection.createCompendium(desired);
   }
 
-  return foundry.documents.collections.CompendiumCollection.createCompendium(desired);
+  try {
+    await ensurePackSidebarFolder(pack, COMPENDIUM_SIDEBAR_FOLDER);
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to assign magic items compendium to sidebar folder '${COMPENDIUM_SIDEBAR_FOLDER.join("/")}'.`, error);
+  }
+
+  return pack;
 }
 
 async function getPackDocuments(pack) {

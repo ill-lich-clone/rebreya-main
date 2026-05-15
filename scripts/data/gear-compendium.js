@@ -1,6 +1,6 @@
 ﻿import { GEAR_COMPENDIUM_LABEL, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
-import { ensureCompendiumFolders, normalizeFolderPath } from "./compendium-utils.js";
+import { ensureCompendiumFolders, ensurePackSidebarFolder, normalizeFolderPath } from "./compendium-utils.js";
 import {
   classifyGearEntry,
   inferHeroDollSlotGroupFromSlots,
@@ -10,6 +10,7 @@ import {
 
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
+const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 const GEAR_TEMPLATE_VERSION = 5;
 const CUSTOM_GEAR_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
@@ -485,11 +486,18 @@ async function ensureGearPack() {
     pack = null;
   }
 
-  if (pack) {
-    return pack;
+  if (!pack) {
+    pack = await foundry.documents.collections.CompendiumCollection.createCompendium(desired);
   }
 
-  return foundry.documents.collections.CompendiumCollection.createCompendium(desired);
+  try {
+    await ensurePackSidebarFolder(pack, COMPENDIUM_SIDEBAR_FOLDER);
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to assign gear compendium to sidebar folder '${COMPENDIUM_SIDEBAR_FOLDER.join("/")}'.`, error);
+  }
+
+  return pack;
 }
 
 async function getPackDocuments(pack) {

@@ -6,11 +6,12 @@ import {
   RACES_COMPENDIUM_LABEL,
   RACES_COMPENDIUM_NAME
 } from "../constants.js";
-import { ensureCompendiumFolders, normalizeFolderPath } from "./compendium-utils.js";
+import { ensureCompendiumFolders, ensurePackSidebarFolder, normalizeFolderPath } from "./compendium-utils.js";
 import { buildSlug } from "./item-classification.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
 const SOURCE_LABEL = "Расы Тейванкаля V0.1";
+const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const RACES_DATA_PATH = `modules/${MODULE_ID}/data/races-teyvankal-v01.json`;
 
 const RACES_PACK_ID = `world.${RACES_COMPENDIUM_NAME}`;
@@ -1401,11 +1402,18 @@ async function ensurePack(packId, metadata) {
     pack = null;
   }
 
-  if (pack) {
-    return pack;
+  if (!pack) {
+    pack = await foundry.documents.collections.CompendiumCollection.createCompendium(metadata);
   }
 
-  return foundry.documents.collections.CompendiumCollection.createCompendium(metadata);
+  try {
+    await ensurePackSidebarFolder(pack, COMPENDIUM_SIDEBAR_FOLDER);
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to assign compendium '${packId}' to sidebar folder '${COMPENDIUM_SIDEBAR_FOLDER.join("/")}'.`, error);
+  }
+
+  return pack;
 }
 
 async function getPackDocuments(pack) {

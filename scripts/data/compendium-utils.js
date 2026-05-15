@@ -1,4 +1,4 @@
-﻿function toFolderArray(path) {
+function toFolderArray(path) {
   if (Array.isArray(path)) {
     return path.map((entry) => String(entry ?? "").trim()).filter(Boolean);
   }
@@ -7,6 +7,10 @@
     .split(/[\\/]+/u)
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function resolveParentFolderId(folder) {
+  return folder?.folder?.id ?? folder?.folder ?? null;
 }
 
 function getPackFolders(pack) {
@@ -28,8 +32,66 @@ function getPackFolders(pack) {
   )) ?? [];
 }
 
+function getCompendiumSidebarFolders() {
+  return game.folders?.filter?.((folder) => (
+    folder?.type === "Compendium"
+    && !folder?.pack
+  )) ?? [];
+}
+
 export function normalizeFolderPath(path) {
   return toFolderArray(path);
+}
+
+export async function ensureCompendiumSidebarFolder(path) {
+  const segments = normalizeFolderPath(path);
+  if (!segments.length) {
+    return null;
+  }
+
+  let parentId = null;
+  let currentFolder = null;
+
+  for (const segment of segments) {
+    const existing = getCompendiumSidebarFolders()
+      .filter((folder) => resolveParentFolderId(folder) === parentId)
+      .filter((folder) => String(folder.name ?? "").trim() === segment)
+      .sort((left, right) => (left.sort ?? 0) - (right.sort ?? 0) || String(left.id).localeCompare(String(right.id)));
+
+    currentFolder = existing[0] ?? null;
+    if (!currentFolder) {
+      currentFolder = await Folder.create({
+        name: segment,
+        type: "Compendium",
+        folder: parentId,
+        sorting: "a"
+      }, {
+        render: false
+      });
+    }
+
+    parentId = currentFolder?.id ?? null;
+  }
+
+  return currentFolder;
+}
+
+export async function ensurePackSidebarFolder(pack, folderPath) {
+  if (!pack || typeof pack.setFolder !== "function") {
+    return null;
+  }
+
+  const folder = await ensureCompendiumSidebarFolder(folderPath);
+  if (!folder?.id) {
+    return null;
+  }
+
+  const currentFolderId = pack.folder?.id ?? pack.config?.folder ?? null;
+  if (currentFolderId !== folder.id) {
+    await pack.setFolder(folder.id);
+  }
+
+  return folder;
 }
 
 export async function ensureCompendiumFolders(pack, folderPaths = []) {

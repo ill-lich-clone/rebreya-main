@@ -1,10 +1,11 @@
 import { FEATS_COMPENDIUM_LABEL, FEATS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
-import { ensureCompendiumFolders, normalizeFolderPath } from "./compendium-utils.js";
+import { ensureCompendiumFolders, ensurePackSidebarFolder, normalizeFolderPath } from "./compendium-utils.js";
 import { buildSlug } from "./item-classification.js";
 
 const PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
+const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_FEAT_ICON = "icons/svg/book.svg";
 const FEAT_TEMPLATE_VERSION = 1;
 const FEAT_ROOT_FOLDER = "Черты V0.8";
@@ -267,11 +268,18 @@ async function ensurePack() {
     pack = null;
   }
 
-  if (pack) {
-    return pack;
+  if (!pack) {
+    pack = await foundry.documents.collections.CompendiumCollection.createCompendium(desired);
   }
 
-  return foundry.documents.collections.CompendiumCollection.createCompendium(desired);
+  try {
+    await ensurePackSidebarFolder(pack, COMPENDIUM_SIDEBAR_FOLDER);
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to assign feats compendium to sidebar folder '${COMPENDIUM_SIDEBAR_FOLDER.join("/")}'.`, error);
+  }
+
+  return pack;
 }
 
 async function getPackDocuments(pack) {

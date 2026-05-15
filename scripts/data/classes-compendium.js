@@ -8,11 +8,13 @@ import {
   SUBCLASSES_COMPENDIUM_LABEL,
   SUBCLASSES_COMPENDIUM_NAME
 } from "../constants.js";
-import { ensureCompendiumFolders, normalizeFolderPath } from "./compendium-utils.js";
+import { ensureCompendiumFolders, ensurePackSidebarFolder, normalizeFolderPath } from "./compendium-utils.js";
 import { buildSlug } from "./item-classification.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
 const DEFAULT_SOURCE_LABEL = "Реворк Варвара V0.12";
+const REBREYA_SOURCE_LABEL = "Ребрея";
+const COMPENDIUM_SIDEBAR_FOLDER = [REBREYA_SOURCE_LABEL];
 const DATA_PATH = `modules/${MODULE_ID}/data/barbarian-rework-v012.json`;
 
 const FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
@@ -20,13 +22,16 @@ const CLASS_FEATURES_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
 const SUBCLASSES_PACK_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
 const CLASSES_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
 
-const CLASS_ROOT_FOLDER = "Классы Rebreya";
-const SUBCLASS_ROOT_FOLDER = "Архетипы Rebreya";
-const CLASS_FEATURE_ROOT_FOLDER = "Умения варвара Rebreya (Реворк V0.12)";
+const CLASS_ROOT_FOLDER = "Классы";
+const SUBCLASS_ROOT_FOLDER = "Архетипы";
+const CLASS_FEATURE_ROOT_FOLDER = "Варвар (Реворк V0.12)";
+const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
+const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
+const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 3;
-const SUBCLASS_TEMPLATE_VERSION = 1;
-const CLASS_TEMPLATE_VERSION = 1;
+const CLASS_FEATURE_TEMPLATE_VERSION = 4;
+const SUBCLASS_TEMPLATE_VERSION = 2;
+const CLASS_TEMPLATE_VERSION = 2;
 
 const DEFAULT_CLASS_ICON = "icons/svg/book.svg";
 const DEFAULT_SUBCLASS_ICON = "icons/svg/book.svg";
@@ -49,6 +54,14 @@ const OPTIONAL_CLASS_FEATURE_NAMES = new Set([
 const SPECIAL_CLASS_FEATURES = {
   MINOR_FEAT: "младшая черта",
   ABILITY_SCORE_IMPROVEMENT: "увеличение характеристик"
+};
+
+const RAGE_ACTION_ACTIVITY_IMAGE = {
+  utility: "systems/dnd5e/icons/svg/activity/utility.svg",
+  damage: "systems/dnd5e/icons/svg/activity/damage.svg",
+  heal: "systems/dnd5e/icons/svg/activity/heal.svg",
+  save: "systems/dnd5e/icons/svg/activity/save.svg",
+  check: "systems/dnd5e/icons/svg/activity/check.svg"
 };
 
 function cleanString(value, fallback = "") {
@@ -627,7 +640,326 @@ function createUnarmoredDefenseFeatureAutomation(feature, classIdentifier) {
   };
 }
 
+function createActivityRollPart({ formula = "", types = [] } = {}) {
+  const customFormula = cleanString(formula);
+  return {
+    number: customFormula ? null : null,
+    denomination: customFormula ? null : null,
+    bonus: "",
+    types: Array.isArray(types) ? types : [],
+    custom: {
+      enabled: true,
+      formula: customFormula || "0"
+    },
+    scaling: {
+      mode: "",
+      number: 1,
+      formula: ""
+    }
+  };
+}
+
+function activationValue(activationType) {
+  return ["action", "bonus", "reaction", "minute", "hour", "day"].includes(activationType) ? 1 : null;
+}
+
+function createRageActionActivity(feature, classIdentifier, activity, index = 0) {
+  const activityId = stableHashId(`${classIdentifier}:${feature.featureId}:rage-action:${index}`, "activity");
+  const type = cleanString(activity.type, "utility");
+  const activationType = cleanString(activity.activation, "action");
+  const rangeValue = Number.isFinite(Number(activity.range)) ? Number(activity.range) : null;
+  const rangeUnits = cleanString(activity.rangeUnits, rangeValue === null ? "self" : "ft");
+
+  const data = {
+    _id: activityId,
+    type,
+    name: cleanString(activity.name, feature.name),
+    img: RAGE_ACTION_ACTIVITY_IMAGE[type] ?? RAGE_ACTION_ACTIVITY_IMAGE.utility,
+    sort: index * 100000,
+    activation: {
+      type: activationType,
+      value: activationValue(activationType),
+      condition: cleanString(activity.condition),
+      override: false
+    },
+    consumption: {
+      scaling: {
+        allowed: false,
+        max: ""
+      },
+      spellSlot: false,
+      targets: []
+    },
+    description: {
+      chatFlavor: cleanString(activity.chatFlavor)
+    },
+    duration: {
+      value: "",
+      units: "inst",
+      special: "",
+      concentration: false,
+      override: false
+    },
+    effects: [],
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        automation: "barbarian-rage-action-activity",
+        rageAction: normalizeMatchText(feature.name)
+      }
+    },
+    range: {
+      value: rangeValue,
+      units: rangeUnits,
+      special: cleanString(activity.rangeSpecial),
+      override: false
+    },
+    target: {
+      template: {
+        count: "",
+        contiguous: false,
+        type: cleanString(activity.templateType),
+        size: cleanString(activity.templateSize),
+        width: "",
+        height: "",
+        units: cleanString(activity.templateUnits)
+      },
+      affects: {
+        count: cleanString(activity.targetCount),
+        type: cleanString(activity.targetType, rangeUnits === "self" ? "self" : ""),
+        choice: false,
+        special: cleanString(activity.targetSpecial)
+      },
+      prompt: false,
+      override: false
+    },
+    uses: {
+      spent: 0,
+      max: "",
+      recovery: []
+    }
+  };
+
+  if (type === "damage" && isPlainObject(activity.damage)) {
+    data.damage = {
+      onSave: cleanString(activity.damage.onSave),
+      parts: [createActivityRollPart({
+        formula: activity.damage.formula,
+        types: Array.isArray(activity.damage.types) ? activity.damage.types : []
+      })]
+    };
+  }
+
+  if (type === "heal" && isPlainObject(activity.healing)) {
+    data.healing = createActivityRollPart({
+      formula: activity.healing.formula,
+      types: Array.isArray(activity.healing.types) ? activity.healing.types : ["healing"]
+    });
+  }
+
+  if (type === "save" && isPlainObject(activity.save)) {
+    data.save = {
+      ability: [cleanString(activity.save.ability, "dex")],
+      dc: {
+        calculation: "",
+        formula: cleanString(activity.save.dc, "8 + @prof + @abilities.str.mod")
+      }
+    };
+    data.damage = {
+      onSave: cleanString(activity.save.onSave, "none"),
+      parts: isPlainObject(activity.save.damage) ? [createActivityRollPart({
+        formula: activity.save.damage.formula,
+        types: Array.isArray(activity.save.damage.types) ? activity.save.damage.types : []
+      })] : []
+    };
+  }
+
+  if (type === "check" && isPlainObject(activity.check)) {
+    data.check = {
+      ability: cleanString(activity.check.ability, "str"),
+      associated: Array.isArray(activity.check.associated)
+        ? activity.check.associated.filter(Boolean).map((entry) => cleanString(entry))
+        : [],
+      dc: {
+        calculation: "",
+        formula: cleanString(activity.check.dc)
+      }
+    };
+  }
+
+  return data;
+}
+
+function createRageActionAutomation(feature, classIdentifier) {
+  const actionKey = normalizeMatchText(feature.name);
+  const actionDefinitions = {
+    "последний удар": [{
+      type: "utility",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "self",
+      chatFlavor: "Совершите особую рукопашную атаку оружием. Доп. урон 1к2 за каждый оставшийся раунд Ярости (макс. 10). После атаки Ярость завершается."
+    }],
+    "нестись в бой": [{
+      type: "utility",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "self",
+      chatFlavor: "Переместитесь на 10 футов в одном направлении и совершите рукопашную атаку оружием со свойством «Наскок 2к2»."
+    }],
+    "задорный захват": [{
+      type: "damage",
+      activation: "action",
+      rangeUnits: "touch",
+      targetType: "creature",
+      chatFlavor: "Совершите проверку Захвата (досягаемость +5 футов). При успехе нанесите дробящий урон, равный модификатору Силы, и переместите цель в пределах досягаемости.",
+      damage: {
+        formula: "@abilities.str.mod",
+        types: ["bludgeoning"]
+      }
+    }],
+    "крик злобы": [{
+      type: "heal",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "self",
+      chatFlavor: "Получите 1к6 временных хитов. Если результат куба меньше или равен дополнительному урону от Ярости, враги в 10 футах становятся Испуганными 2 до конца их следующего хода.",
+      healing: {
+        formula: "1d6",
+        types: ["healing"]
+      }
+    }],
+    "колотить молотить": [{
+      type: "damage",
+      activation: "action",
+      rangeUnits: "touch",
+      targetType: "creature",
+      chatFlavor: "Нанесите 2к10 дробящего урона существу, удерживаемому в захвате. После урона примените свойство «Смертельное».",
+      damage: {
+        formula: "2d10",
+        types: ["bludgeoning"]
+      }
+    }],
+    топот: [{
+      type: "utility",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "self",
+      chatFlavor: "Создайте 5-футовую эманацию труднопроходимой местности. Область можно расчистить Действием. Вы впервые покидаете её без доп. траты скорости."
+    }],
+    "преследующие атаки": [{
+      type: "utility",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "self",
+      chatFlavor: "Используйте только после промаха рукопашной атакой: совершите рукопашную атаку со свойствами «РКУ 1» и «МУ 1»."
+    }],
+    "дружеский пинок": [{
+      type: "utility",
+      activation: "action",
+      rangeUnits: "touch",
+      targetType: "ally",
+      chatFlavor: "Схватите союзника и бросьте его на расстояние до 30 футов, если можете его поднять."
+    }],
+    "далекий прыжок": [{
+      type: "utility",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "self",
+      chatFlavor: "Совершите особый прыжок (длина/высота) на расстояние до удвоенного значения Силы без расхода скорости ходьбы. После падения не получаете урон и приземляетесь на ноги."
+    }],
+    "провоцирующий крик": [{
+      type: "check",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "self",
+      chatFlavor: "Совершите действие Провокация, используя Силу (Запугивание) вместо Харизмы (Запугивание).",
+      check: {
+        ability: "str",
+        associated: ["itm"]
+      }
+    }],
+    "прорезающая атака": [{
+      type: "utility",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "self",
+      chatFlavor: "Совершите Прорубание и примените «Смертельное» ко всем поражённым целям. Если «Смертельное» сработало, добавьте его значение к урону, переносимому на следующую цель."
+    }],
+    "улучшенная преследующая атака": [{
+      type: "utility",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "self",
+      chatFlavor: "Совершите рукопашную атаку со свойствами «РКУ 1» и «МУ 1». После промаха рукопашной атакой значения РКУ из всех источников удваиваются для этой атаки."
+    }],
+    "улучшенный топот": [{
+      type: "save",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "creature",
+      chatFlavor: "10-футовая эманация. Существа совершают спасбросок Ловкости: при провале 3к10 дробящего урона и цель Падает ничком. Область становится труднопроходимой местностью до расчистки.",
+      save: {
+        ability: "dex",
+        dc: "8 + @prof + @abilities.str.mod",
+        onSave: "none",
+        damage: {
+          formula: "3d10",
+          types: ["bludgeoning"]
+        }
+      }
+    }],
+    "кровавое вращение": [{
+      type: "utility",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "self",
+      chatFlavor: "Совершите Круговую атаку. Если попали хотя бы по одному существу, на 1 минуту получаете временные хиты: ваш уровень + количество атакованных существ."
+    }],
+    "ярость без конца": [{
+      type: "utility",
+      activation: "action",
+      rangeUnits: "self",
+      targetType: "self",
+      chatFlavor: "Совершите одну рукопашную атаку оружием. При попадании можете немедленно совершить ещё одно Яростное действие. Повторно использовать до начала следующего хода нельзя."
+    }],
+    "взгляд на тысячу ярдов": [{
+      type: "utility",
+      activation: "action",
+      range: 300,
+      rangeUnits: "ft",
+      targetType: "creature",
+      targetCount: "",
+      chatFlavor: "Выберите любое количество существ в пределах 300 футов. Если максимум костей хитов существа 5 или меньше — оно умирает."
+    }]
+  };
+
+  const activityDefinitions = actionDefinitions[actionKey] ?? [{
+    type: "utility",
+    activation: "action",
+    rangeUnits: "self",
+    targetType: "self",
+    chatFlavor: "Яростное действие."
+  }];
+
+  const activities = {};
+  for (const [index, activity] of activityDefinitions.entries()) {
+    const itemActivity = createRageActionActivity(feature, classIdentifier, activity, index);
+    activities[itemActivity._id] = itemActivity;
+  }
+
+  return {
+    activities,
+    effects: [],
+    usesRecovery: []
+  };
+}
+
 function createFeatureAutomation(feature, classIdentifier) {
+  if (feature.sourceType === "rageAction") {
+    return createRageActionAutomation(feature, classIdentifier);
+  }
+
   if (feature.sourceType !== "classFeature") {
     return createEmptyFeatureAutomation();
   }
@@ -701,7 +1033,7 @@ function createPackMetadata({ name, label, itemTypes = [] }) {
     },
     flags: {
       dnd5e: {
-        sourceBook: DEFAULT_SOURCE_LABEL,
+        sourceBook: REBREYA_SOURCE_LABEL,
         types: itemTypes
       }
     }
@@ -724,11 +1056,18 @@ async function ensurePack(packId, metadata) {
     pack = null;
   }
 
-  if (pack) {
-    return pack;
+  if (!pack) {
+    pack = await foundry.documents.collections.CompendiumCollection.createCompendium(metadata);
   }
 
-  return foundry.documents.collections.CompendiumCollection.createCompendium(metadata);
+  try {
+    await ensurePackSidebarFolder(pack, COMPENDIUM_SIDEBAR_FOLDER);
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to assign compendium '${packId}' to sidebar folder '${COMPENDIUM_SIDEBAR_FOLDER.join("/")}'.`, error);
+  }
+
+  return pack;
 }
 
 async function getPackDocuments(pack) {
@@ -746,6 +1085,45 @@ async function deleteManagedDocuments(pack, documents) {
   }
 
   await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
+}
+
+function getPackFolders(pack) {
+  if (pack?.folders?.contents) {
+    return Array.from(pack.folders.contents);
+  }
+
+  if (typeof pack?.folders?.values === "function") {
+    return Array.from(pack.folders.values());
+  }
+
+  return [];
+}
+
+async function clearPackFolderTree(pack, rootFolderName) {
+  const targetName = cleanString(rootFolderName);
+  if (!targetName) {
+    return;
+  }
+
+  const roots = getPackFolders(pack).filter((folder) => (
+    cleanString(folder?.name) === targetName
+  ));
+  if (!roots.length) {
+    return;
+  }
+
+  for (const root of roots) {
+    try {
+      await root.delete({
+        deleteSubfolders: true,
+        deleteContents: false,
+        render: false
+      });
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to clear compendium folder tree '${targetName}' in ${pack?.collection}.`, error);
+    }
+  }
 }
 
 function shouldRebuildManagedPack(documents, entries, sourceIdFlag) {
@@ -1365,6 +1743,10 @@ async function syncClassFeaturePack(featureDefinitions) {
   const documents = await getPackDocuments(pack);
   if (shouldRebuildManagedPack(documents, features, "featureId")) {
     await deleteManagedDocuments(pack, documents);
+    for (const legacyRoot of LEGACY_CLASS_FEATURE_ROOT_FOLDERS) {
+      await clearPackFolderTree(pack, legacyRoot);
+    }
+    await clearPackFolderTree(pack, CLASS_FEATURE_ROOT_FOLDER);
     await createManagedDocuments(pack, features, createFeatureEntryData);
   }
 
@@ -1423,6 +1805,10 @@ async function syncSubclassesPack(normalizedData, context) {
 
   if (shouldRebuildManagedPack(documents, entriesForComparison, "subclassId")) {
     await deleteManagedDocuments(pack, documents);
+    for (const legacyRoot of LEGACY_SUBCLASS_ROOT_FOLDERS) {
+      await clearPackFolderTree(pack, legacyRoot);
+    }
+    await clearPackFolderTree(pack, SUBCLASS_ROOT_FOLDER);
     await createManagedDocuments(pack, subclassEntries, createSubclassEntryData);
   }
 
@@ -1446,12 +1832,12 @@ async function syncClassesPack(normalizedData, context) {
     rageProgression: normalizedData.rageProgression,
     rageDamageProgression: normalizedData.rageDamageProgression
   });
-  const classSystem = createClassSystem(normalizedData.classData, classAdvancement, normalizedData.sourceLabel);
+  const classSystem = createClassSystem(normalizedData.classData, classAdvancement, REBREYA_SOURCE_LABEL);
   const classEntry = {
     classData: normalizedData.classData,
     system: classSystem,
     signature: buildClassSignature(normalizedData.classData, classSystem, {
-      sourceLabel: normalizedData.sourceLabel,
+      sourceLabel: REBREYA_SOURCE_LABEL,
       featureIds: classFeatures.map((feature) => feature.featureId)
     }),
     folderPath: normalizeFolderPath([CLASS_ROOT_FOLDER])
@@ -1464,6 +1850,10 @@ async function syncClassesPack(normalizedData, context) {
   }];
   if (shouldRebuildManagedPack(documents, entriesForComparison, "classIdentifier")) {
     await deleteManagedDocuments(pack, documents);
+    for (const legacyRoot of LEGACY_CLASS_ROOT_FOLDERS) {
+      await clearPackFolderTree(pack, legacyRoot);
+    }
+    await clearPackFolderTree(pack, CLASS_ROOT_FOLDER);
     await createManagedDocuments(pack, [classEntry], createClassEntryData);
   }
 
