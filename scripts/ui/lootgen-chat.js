@@ -108,7 +108,7 @@ function renderRow(row) {
         <strong>${escapeHtml(row.name || "Предмет")}</strong>
         <span>${escapeHtml(metaParts.filter(Boolean).join(" • "))}</span>
       </div>
-      <span class="rm-chat-loot__state">${claimed ? "Забрано" : "Перетащить"}</span>
+      <span class="rm-chat-loot__state">${claimed ? "Забрано" : "Взять"}</span>
     </article>
   `.trim();
 }
@@ -125,7 +125,6 @@ export function buildLootgenChatContent(state = {}) {
     <section class="rm-chat-loot" data-lootgen-chat-id="${escapeHtml(lootId)}">
       <header class="rm-chat-loot__header">
         <div>
-          <p class="rm-chat-loot__eyebrow">Rebreya Loot</p>
           <h3>Найденные сокровища</h3>
           ${generatedAt ? `<p>${escapeHtml(generatedAt)}</p>` : ""}
         </div>
@@ -150,7 +149,7 @@ export function buildLootgenChatContent(state = {}) {
           data-lootgen-chat-id="${escapeHtml(lootId)}"
           ${coinsClaimed ? "disabled" : ""}
         >
-          ${coinsClaimed ? "Монеты забраны" : "Добавить монеты в склад"}
+          ${coinsClaimed ? "Монеты забраны" : "Монеты в склад"}
         </button>
       </footer>
     </section>

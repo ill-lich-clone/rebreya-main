@@ -1,27 +1,4 @@
 <section class="rm-shell rm-app-shell rm-lootgen-shell {{#if viewer}}rm-lootgen-shell--viewer{{/if}}">
-  <header class="rm-app-header rm-lootgen-hero">
-    <div class="rm-app-title">
-      {{#if viewer}}
-        <p class="rm-eyebrow">Сокровища группы</p>
-        <h2>Найденные сокровища</h2>
-        <p class="rm-muted">Публичный результат лутгена от мастера.</p>
-      {{else}}
-        <p class="rm-eyebrow">Loot Generator</p>
-        <h2>Лутген Rebreya</h2>
-        <p class="rm-muted">Соберите выдачу, отправьте её в чат и дайте игрокам забрать предметы перетаскиванием.</p>
-      {{/if}}
-    </div>
-
-    {{#if canManage}}
-      <div class="rm-app-header__actions">
-        <button type="button" class="rm-button rm-button--secondary" data-action="lootgen-new-window" title="Открыть ещё одно окно лутгена">
-          <i class="fa-solid fa-window-restore"></i>
-          <span>Новое окно</span>
-        </button>
-      </div>
-    {{/if}}
-  </header>
-
   {{#if actionFeedback}}
     <p class="{{actionFeedback.className}}">{{actionFeedback.message}}</p>
   {{/if}}
@@ -34,6 +11,11 @@
           <h3>Параметры выдачи</h3>
           <p class="rm-muted">Главные параметры сверху, дополнительные источники спрятаны в настройках.</p>
         </div>
+
+        <button type="button" class="rm-button rm-button--secondary" data-action="lootgen-new-window" title="Открыть ещё одно окно лутгена">
+          <i class="fa-solid fa-window-restore"></i>
+          <span>Новое окно</span>
+        </button>
 
         <div class="rm-lootgen-control-grid">
           <div class="rm-field">

@@ -1,7 +1,9 @@
 ﻿import {
   ENERGY_BASE_DAYS,
   ENERGY_MIN_DAYS,
+  GEAR_COMPENDIUM_NAME,
   MAGIC_ITEMS_COMPENDIUM_NAME,
+  MATERIALS_COMPENDIUM_NAME,
   MODULE_ID,
   REBREYA_TOOLS,
   SETTINGS_KEYS
@@ -834,7 +836,15 @@ export class InventoryService {
         throw new Error("Материал не найден в данных модуля.");
       }
 
-      return this.#buildMaterialItemData(material, safeQuantity);
+      const itemData = this.#buildMaterialItemData(material, safeQuantity);
+      itemData.img = await this.#resolveManagedCompendiumIcon(
+        MATERIALS_COMPENDIUM_NAME,
+        ["materialId"],
+        material.id,
+        material.name,
+        itemData.img
+      );
+      return itemData;
     }
 
     if (normalizedSourceType === "gear") {
@@ -843,7 +853,15 @@ export class InventoryService {
         throw new Error("Предмет снаряжения не найден в данных модуля.");
       }
 
-      return this.#buildGearItemData(gearItem, safeQuantity);
+      const itemData = this.#buildGearItemData(gearItem, safeQuantity);
+      itemData.img = await this.#resolveManagedCompendiumIcon(
+        GEAR_COMPENDIUM_NAME,
+        ["gearId", "sourceId"],
+        gearItem.id,
+        gearItem.name,
+        itemData.img
+      );
+      return itemData;
     }
 
     if (normalizedSourceType === "magicItem") {
@@ -867,6 +885,43 @@ export class InventoryService {
     }
 
     throw new Error("Неизвестный тип предмета для добавления в склад.");
+  }
+
+  async #resolveManagedCompendiumIcon(packName, flagNames, sourceId, fallbackName, fallbackIcon) {
+    const fallback = String(fallbackIcon ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg";
+    const pack = game.packs.get(`world.${packName}`) ?? null;
+    if (!pack) {
+      return fallback;
+    }
+
+    const safeSourceId = String(sourceId ?? "").trim();
+    const safeFallbackName = normalizeText(fallbackName);
+    const safeFlagNames = Array.isArray(flagNames) ? flagNames.filter(Boolean) : [];
+    const fields = safeFlagNames.map((flagName) => `flags.${MODULE_ID}.${flagName}`);
+
+    try {
+      const index = await pack.getIndex({ fields });
+      const indexEntry = index.find((entry) => {
+        if (safeSourceId) {
+          for (const flagName of safeFlagNames) {
+            if (String(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.${flagName}`) ?? "").trim() === safeSourceId) {
+              return true;
+            }
+          }
+        }
+
+        return safeFallbackName && normalizeText(entry.name) === safeFallbackName;
+      }) ?? null;
+
+      const document = indexEntry
+        ? await pack.getDocument(indexEntry._id ?? indexEntry.id)
+        : null;
+      return String(document?.img ?? "").trim() || fallback;
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to resolve compendium icon for '${fallbackName}'.`, error);
+      return fallback;
+    }
   }
 
   async createLootgenChatItem(row, lootMeta = {}) {
@@ -900,7 +955,18 @@ export class InventoryService {
       return false;
     }
 
-    const itemDocument = await fromUuid(itemUuid);
+    let itemDocument = null;
+    try {
+      itemDocument = await fromUuid(itemUuid);
+    }
+    catch (error) {
+      if (String(error?.message ?? "").includes("does not exist")) {
+        return false;
+      }
+
+      throw error;
+    }
+
     if (!(itemDocument instanceof Item)) {
       return false;
     }
@@ -910,7 +976,16 @@ export class InventoryService {
       return false;
     }
 
-    await itemDocument.delete();
+    try {
+      await itemDocument.delete();
+    }
+    catch (error) {
+      if (String(error?.message ?? "").includes("does not exist")) {
+        return false;
+      }
+
+      throw error;
+    }
     return true;
   }
 
