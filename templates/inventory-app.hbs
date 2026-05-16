@@ -227,40 +227,6 @@
           <span class="rm-muted">{{rmNum party.memberCount precision=0}} уч.</span>
         </div>
 
-        <section class="rm-party-state-card">
-          <div class="rm-party-state-card__header">
-            <h4>Состояние группы</h4>
-            <span class="rm-badge rm-status-badge rm-status-badge--{{party.dashboard.weight.badgeType}}">{{party.dashboard.weight.badgeLabel}}</span>
-          </div>
-
-          <div class="rm-party-state-grid">
-            <article class="rm-party-state-metric {{party.dashboard.food.className}}">
-              <span>Еда</span>
-              <strong>{{party.dashboard.food.daysLabel}}</strong>
-              <small>Расход: {{rmNum party.totalFoodPerDay}} / день</small>
-            </article>
-            <article class="rm-party-state-metric {{party.dashboard.water.className}}">
-              <span>Вода</span>
-              <strong>{{party.dashboard.water.daysLabel}}</strong>
-              <small>Расход: {{rmNum party.totalWaterGalPerDay}} / день</small>
-            </article>
-            <article class="rm-party-state-metric {{party.dashboard.weight.className}}">
-              <span>Груз</span>
-              <strong>{{party.dashboard.weight.badgeLabel}}</strong>
-              <small>{{rmNum party.inventoryWeight}} / {{rmNum party.totalCapacityLb}} фнт.</small>
-            </article>
-            <article class="rm-party-state-metric {{party.dashboard.energy.className}}">
-              <span>Энергия</span>
-              <strong>{{party.dashboard.energy.ratioLabel}}</strong>
-              <small>{{party.dashboard.energy.note}}</small>
-            </article>
-          </div>
-
-          <div class="rm-party-capacity-meter">
-            <div class="rm-party-capacity-meter__bar {{summary.freeCapacityClass}}" style="width: {{party.capacityUsedPercent}}%;"></div>
-          </div>
-        </section>
-
         {{#if party.alerts.length}}
           <div class="rm-status-strip">
             {{#each party.alerts}}
