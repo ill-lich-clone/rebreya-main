@@ -82,6 +82,38 @@ function roundNumber(value, precision = 2) {
   return Math.round((toNumber(value, 0) + Number.EPSILON) * factor) / factor;
 }
 
+function isBlankNumberInput(value) {
+  return value === null || value === undefined || String(value).trim() === "";
+}
+
+function parseNullableInteger(value, { min = null } = {}) {
+  if (isBlankNumberInput(value)) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  const normalized = Math.floor(parsed);
+  return min === null ? normalized : Math.max(min, normalized);
+}
+
+function parseNullableDecimal(value, { min = null, precision = 2 } = {}) {
+  if (isBlankNumberInput(value)) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  const normalized = roundNumber(parsed, precision);
+  return min === null ? normalized : Math.max(min, normalized);
+}
+
 function normalizeText(value) {
   return String(value ?? "")
     .trim()
@@ -417,18 +449,10 @@ export class InventoryService {
   #normalizeMemberState(member, fallbackRole = "member") {
     const nextRole = normalizeRole(member?.role ?? fallbackRole);
     const defaults = PARTY_ROLE_DEFAULTS[nextRole] ?? PARTY_ROLE_DEFAULTS.member;
-    const strOverride = Number.isFinite(Number(member?.strOverride))
-      ? Math.max(0, Math.floor(Number(member.strOverride)))
-      : null;
-    const capModOverride = Number.isFinite(Number(member?.capModOverride))
-      ? Math.max(1, roundNumber(Number(member.capModOverride), 2))
-      : null;
-    const conModOverride = Number.isFinite(Number(member?.conModOverride))
-      ? Math.floor(Number(member.conModOverride))
-      : null;
-    const energyCurrent = member?.energyCurrent === null || member?.energyCurrent === undefined || String(member?.energyCurrent).trim() === ""
-      ? null
-      : Math.max(0, Math.floor(toNumber(member.energyCurrent, 0)));
+    const strOverride = parseNullableInteger(member?.strOverride, { min: 0 });
+    const capModOverride = parseNullableDecimal(member?.capModOverride, { min: 1, precision: 2 });
+    const conModOverride = parseNullableInteger(member?.conModOverride);
+    const energyCurrent = parseNullableInteger(member?.energyCurrent, { min: 0 });
 
     return {
       role: nextRole,
