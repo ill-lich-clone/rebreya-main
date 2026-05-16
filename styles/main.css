@@ -14,7 +14,7 @@
   --rm-disabled: #9f927d;
   --rm-shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
   --rm-shadow-panel: 0 10px 26px rgba(0, 0, 0, 0.24);
-  --rm-radius-window: 12px;
+  --rm-radius-window: 0;
   --rm-radius-section: 8px;
   --rm-radius-row: 6px;
   --rm-radius-input: 6px;
@@ -28,6 +28,16 @@
 
 .rebreya-main {
   color: var(--rm-text);
+}
+
+.rebreya-main.application,
+.rebreya-main.window-app {
+  border-radius: 0 !important;
+}
+
+.rebreya-main .window-header,
+.rebreya-main .window-content {
+  border-radius: 0 !important;
 }
 
 .rebreya-main .window-content {
@@ -2404,7 +2414,7 @@ summary:focus-visible {
 }
 
 .rm-inventory-shell--compact {
-  --rm-ui-window-radius: 12px;
+  --rm-ui-window-radius: 0;
   --rm-ui-section-radius: 8px;
   --rm-ui-row-radius: 6px;
   --rm-ui-input-radius: 6px;
@@ -3628,6 +3638,19 @@ summary:focus-visible {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.rm-lootgen-controls .rm-field > label[title] {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: rgba(239, 184, 95, 0.78);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.rm-lootgen-settings > summary.rm-toggle-affordance::after {
+  display: none;
+  content: "";
 }
 
 .rm-lootgen-settings__content {

@@ -15,19 +15,19 @@
 
         <div class="rm-lootgen-control-grid">
           <div class="rm-field">
-            <label>Минимальный ранг</label>
+            <label title="Нижняя граница ранга для подбора предметов.">Минимальный ранг</label>
             <input type="number" min="0" max="10" step="1" value="{{form.rankMin}}" data-field="rankMin">
           </div>
           <div class="rm-field">
-            <label>Максимальный ранг</label>
+            <label title="Верхняя граница ранга для подбора предметов.">Максимальный ранг</label>
             <input type="number" min="0" max="10" step="1" value="{{form.rankMax}}" data-field="rankMax">
           </div>
           <div class="rm-field">
-            <label>Строк в выдаче</label>
+            <label title="Сколько позиций попытаться сгенерировать за один запуск.">Строк в выдаче</label>
             <input type="number" min="1" max="40" step="1" value="{{form.itemCount}}" data-field="itemCount">
           </div>
           <div class="rm-field">
-            <label>Бюджет, value</label>
+            <label title="Общий лимит value на всю выдачу.">Бюджет, value</label>
             <input type="number" min="0" step="1" value="{{form.budgetValue}}" data-field="budgetValue">
           </div>
         </div>
@@ -39,7 +39,7 @@
           </summary>
           <div class="rm-lootgen-settings__content">
             <div class="rm-field">
-              <label>% магических предметов</label>
+              <label title="Шанс включить магический предмет в выдачу (0-100%).">% магических предметов</label>
               <input type="number" min="0" max="100" step="1" value="{{form.magicPercent}}" data-field="magicPercent">
             </div>
 
