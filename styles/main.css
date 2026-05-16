@@ -3468,6 +3468,19 @@ summary:focus-visible {
   gap: 10px;
 }
 
+.rebreya-lootgen-app .window-content {
+  background:
+    radial-gradient(circle at 14% -8%, rgba(43, 160, 148, 0.2), transparent 34%),
+    radial-gradient(circle at 86% 4%, rgba(240, 128, 51, 0.16), transparent 30%),
+    linear-gradient(180deg, rgba(25, 25, 27, 0.85), rgba(14, 13, 12, 0.85));
+}
+
+.rebreya-lootgen-app .rm-app-sidebar,
+.rebreya-lootgen-app .rm-app-main,
+.rebreya-lootgen-app .rm-app-settings-drawer {
+  background-color: rgba(30, 25, 21, 0.85);
+}
+
 .rm-lootgen-steps {
   display: grid;
   gap: 10px;
@@ -3666,7 +3679,7 @@ summary:focus-visible {
   box-sizing: border-box;
   overflow: hidden;
   border: 1px solid rgba(239, 184, 95, 0.32);
-  border-radius: 10px;
+  border-radius: 4px;
   background:
     radial-gradient(circle at 0 0, rgba(69, 198, 179, 0.12), transparent 34%),
     linear-gradient(180deg, rgba(45, 35, 26, 0.96), rgba(22, 20, 18, 0.96));
@@ -3705,6 +3718,12 @@ summary:focus-visible {
 .rm-chat-loot__header p {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.rm-chat-loot__header h3 {
+  border: 0;
+  font-size: 18px;
+  line-height: 1.05;
 }
 
 .rm-chat-loot__eyebrow,
@@ -3801,6 +3820,54 @@ summary:focus-visible {
 .rm-chat-loot__coin-button:disabled {
   cursor: default;
   opacity: 0.5;
+}
+
+.rm-chat-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-left: 3px solid rgba(239, 184, 95, 0.58);
+  background: rgba(22, 20, 18, 0.88);
+  color: #fff2da;
+}
+
+.rm-chat-status--success {
+  border-left-color: var(--rm-positive);
+}
+
+.rm-chat-status--warning {
+  border-left-color: var(--rm-warning);
+}
+
+.rm-chat-status--error {
+  border-left-color: var(--rm-negative);
+}
+
+.rm-chat-status span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #fff2da !important;
+}
+
+.rm-chat-status__button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid rgba(239, 184, 95, 0.38);
+  border-radius: var(--rm-radius-button);
+  background: rgba(242, 169, 59, 0.18);
+  color: #fff2da !important;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rm-chat-status__button:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .tab.rm-hero-doll-tab {

@@ -19,7 +19,7 @@ import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/ra
 import { registerSceneControlsHook } from "./hooks.js";
 import { extendDnd5eItemTypes, registerDnd5eSheetExtensions } from "./integrations/dnd5e-sheet-extensions.js";
 import { registerSettings } from "./settings.js";
-import { buildLootgenChatContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js";
+import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js";
 import { bringAppToFront, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -477,6 +477,34 @@ class RebreyaMainModule {
       // The claim is already processed; leaving the metadata is safer than failing the drop.
     }
     return result;
+  }
+
+  async restoreLootgenClearFromChat(messageId) {
+    if (!game.user?.isGM) {
+      throw new Error("Восстановить лутген может только ГМ.");
+    }
+
+    const message = game.messages.get(messageId) ?? null;
+    const status = foundry.utils.deepClone(message?.getFlag(MODULE_ID, "lootgenStatus") ?? {});
+    if (!message || status.action !== "clear" || status.restored) {
+      return false;
+    }
+
+    const appKey = String(status.appKey ?? "");
+    const payload = foundry.utils.deepClone(status.payload ?? {});
+    const app = this.lootgenApps.get(appKey) ?? null;
+    if (!app || typeof app.restoreGeneratedResult !== "function") {
+      throw new Error("Окно лутгена для восстановления не найдено.");
+    }
+
+    app.restoreGeneratedResult(payload);
+    status.restored = true;
+    status.message = "Очистка лутгена отменена.";
+    await message.update({
+      content: buildLootgenStatusContent(status),
+      [`flags.${MODULE_ID}.lootgenStatus`]: status
+    });
+    return true;
   }
 
   async #syncManagedCompendia(model) {

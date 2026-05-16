@@ -1,4 +1,5 @@
 ﻿import { MAGIC_ITEMS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
+import { buildLootgenStatusContent } from "./lootgen-chat.js";
 import { bringAppToFront, getAppElement } from "../ui.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -145,8 +146,9 @@ function aggregateRows(rows) {
       existing.totalValue += row.totalValue;
     }
     else if (existing.quantity <= 0) {
-      existing.quantity = 1;
-      existing.totalValue = existing.value;
+      const quantity = Math.max(1, toInteger(row.quantity, 1));
+      existing.quantity = quantity;
+      existing.totalValue = Math.max(existing.value * quantity, toInteger(row.totalValue, existing.value * quantity));
     }
 
     map.set(key, existing);
@@ -176,6 +178,97 @@ function normalizeGeneratedRows(rows = []) {
       totalValue: Math.max(1, toInteger(row.totalValue, toInteger(row.value, 1)))
     }))
     .filter((row) => row.sourceType && row.sourceId && row.name);
+}
+
+function spendRemainingValueIntoRows(rows = [], remainingValue = 0) {
+  const resultRows = (Array.isArray(rows) ? rows : []).map((row) => ({ ...row }));
+  let remaining = Math.max(0, toInteger(remainingValue, 0));
+  const spendableRows = resultRows
+    .map((row, index) => ({
+      index,
+      value: Math.max(1, toInteger(row.value, 1))
+    }))
+    .filter((entry) => entry.value <= remaining);
+
+  if (!spendableRows.length || remaining <= 0) {
+    return { rows: resultRows, remainingValue: remaining };
+  }
+
+  const applySpend = (rowIndex, quantity) => {
+    const row = resultRows[rowIndex];
+    const extraQuantity = Math.max(0, toInteger(quantity, 0));
+    if (!row || extraQuantity <= 0) {
+      return 0;
+    }
+
+    const value = Math.max(1, toInteger(row.value, 1));
+    row.quantity = Math.max(0, toInteger(row.quantity, 0)) + extraQuantity;
+    row.totalValue = Math.max(0, toInteger(row.totalValue, 0)) + (value * extraQuantity);
+    return value * extraQuantity;
+  };
+
+  if (remaining <= 200000) {
+    const previous = Array(remaining + 1).fill(null);
+    previous[0] = { rowIndex: -1, previousTotal: -1 };
+
+    for (let total = 0; total <= remaining; total += 1) {
+      if (!previous[total]) {
+        continue;
+      }
+
+      for (const entry of spendableRows) {
+        const nextTotal = total + entry.value;
+        if (nextTotal <= remaining && !previous[nextTotal]) {
+          previous[nextTotal] = {
+            rowIndex: entry.index,
+            previousTotal: total
+          };
+        }
+      }
+    }
+
+    let bestTotal = remaining;
+    while (bestTotal > 0 && !previous[bestTotal]) {
+      bestTotal -= 1;
+    }
+
+    if (bestTotal > 0) {
+      let cursor = bestTotal;
+      const quantityByRowIndex = new Map();
+      while (cursor > 0) {
+        const step = previous[cursor];
+        if (!step || step.rowIndex < 0) {
+          break;
+        }
+
+        quantityByRowIndex.set(step.rowIndex, (quantityByRowIndex.get(step.rowIndex) ?? 0) + 1);
+        cursor = step.previousTotal;
+      }
+
+      for (const [rowIndex, quantity] of quantityByRowIndex.entries()) {
+        applySpend(rowIndex, quantity);
+      }
+
+      remaining -= bestTotal;
+    }
+
+    return { rows: resultRows, remainingValue: remaining };
+  }
+
+  const greedyRows = [...spendableRows].sort((left, right) => right.value - left.value);
+  for (const entry of greedyRows) {
+    const quantity = Math.floor(remaining / entry.value);
+    if (quantity <= 0) {
+      continue;
+    }
+
+    remaining -= applySpend(entry.index, quantity);
+    if (remaining <= 0) {
+      break;
+    }
+  }
+
+  return { rows: resultRows, remainingValue: remaining };
 }
 
 export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -216,7 +309,6 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.generated = this.#createEmptyGenerated();
     this.chatLootId = "";
     this.renderListenersAbortController = null;
-    this.actionFeedback = null;
 
     if (this.viewer) {
       this.options.window = {
@@ -233,19 +325,6 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   get id() {
     return `${MODULE_ID}-lootgen-${this.appKey}`;
-  }
-
-  #setActionFeedback(type, message) {
-    const safeType = ["success", "error", "warning", "info"].includes(type) ? type : "info";
-    const safeMessage = String(message ?? "").trim();
-    if (!safeMessage) {
-      return;
-    }
-
-    this.actionFeedback = {
-      type: safeType,
-      message: safeMessage
-    };
   }
 
   #createEmptyGenerated() {
@@ -279,6 +358,53 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       generatedAt: String(payload.generatedAt ?? ""),
       hasResult: rows.length > 0 || coins.totalCopper > 0
     };
+  }
+
+  #cloneGeneratedResult() {
+    return foundry.utils.deepClone({
+      rows: this.generated.rows ?? [],
+      coins: normalizeCoins(this.generated.coins ?? {}),
+      spentValue: this.generated.spentValue,
+      budgetValue: this.generated.budgetValue,
+      totalItems: this.generated.totalItems,
+      generatedAt: this.generated.generatedAt,
+      hasResult: this.generated.hasResult
+    });
+  }
+
+  restoreGeneratedResult(payload = {}) {
+    this.generated = this.#normalizeSharedResult(payload);
+    this.chatLootId = "";
+    this.render({ force: true }).catch((error) => {
+      console.error(`${MODULE_ID} | Failed to restore lootgen result.`, error);
+    });
+  }
+
+  async #postStatusToChat(type, message, options = {}) {
+    const safeType = ["success", "error", "warning", "info"].includes(type) ? type : "info";
+    const status = {
+      type: safeType,
+      message: String(message ?? "").trim(),
+      appKey: this.appKey,
+      action: String(options.action ?? ""),
+      canUndo: Boolean(options.canUndo),
+      restored: false,
+      payload: foundry.utils.deepClone(options.payload ?? {})
+    };
+    if (!status.message) {
+      return null;
+    }
+
+    return ChatMessage.create({
+      user: game.user?.id,
+      speaker: ChatMessage.getSpeaker(),
+      content: buildLootgenStatusContent(status),
+      flags: {
+        [MODULE_ID]: {
+          lootgenStatus: status
+        }
+      }
+    });
   }
 
   setSharedResult(payload = {}) {
@@ -515,7 +641,10 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
     }
 
-    const rows = aggregateRows(picks);
+    let rows = aggregateRows(picks);
+    const budgetFill = spendRemainingValueIntoRows(rows, remainingValue);
+    rows = budgetFill.rows;
+    remainingValue = budgetFill.remainingValue;
     const spentValue = rows.reduce((sum, row) => sum + row.totalValue, 0);
     const coinValue = this.includeCoins ? remainingValue : 0;
     const coins = randomCoinsFromValue(coinValue);
@@ -597,7 +726,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async #sendResultToChat() {
     if (!this.generated.hasResult) {
-      throw new Error("Сначала сгенерируйте лут.");
+      throw new Error("Сначала сгенерируйте добычу.");
     }
 
     const result = await this.moduleApi.createLootgenChatMessage(this.#buildSharedPayload(), {
@@ -653,17 +782,10 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const canManage = isGM && !this.viewer;
     const hasItemSources = this.includeGear || this.includeMaterials || this.includeMagicItems;
     const generateDisabled = !hasItemSources;
-    const actionFeedback = this.actionFeedback
-      ? {
-          ...this.actionFeedback,
-          className: `rm-inline-status rm-inline-status--${this.actionFeedback.type}`
-        }
-      : null;
     return {
       isGM,
       viewer: this.viewer,
       canManage,
-      actionFeedback,
       appKey: this.appKey,
       form: {
         rankMin: this.rankMin,
@@ -712,7 +834,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to open generated loot entry.`, error);
-          ui.notifications?.error(error.message || "Не удалось открыть предмет лутгена.");
+          await this.#postStatusToChat("error", error.message || "Не удалось открыть предмет добычи.");
         }
       }, listenerOptions);
     });
@@ -748,29 +870,27 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           if (game.user?.isGM && typeof this.moduleApi.shareLootgenResult === "function") {
             await this.moduleApi.shareLootgenResult(this.#buildSharedPayload());
           }
-          this.#setActionFeedback("success", "Лут успешно сгенерирован.");
           await this.render({ force: true });
-          ui.notifications?.info("Лут сгенерирован.");
+          await this.#postStatusToChat("success", "Добыча сгенерирована.");
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to generate loot.`, error);
-          const message = error.message || "Не удалось сгенерировать лут.";
-          this.#setActionFeedback("error", message);
+          const message = error.message || "Не удалось сгенерировать добычу.";
           await this.render({ force: true });
-          ui.notifications?.error(message);
+          await this.#postStatusToChat("error", message);
         }
       }, listenerOptions);
 
       element.querySelector("[data-action='lootgen-clear']")?.addEventListener("click", async () => {
+        const previousResult = this.#cloneGeneratedResult();
         this.generated = this.#createEmptyGenerated();
         this.chatLootId = "";
-        this.#setActionFeedback("info", "Результат очищен.");
         await this.render({ force: true });
-      }, listenerOptions);
-
-      element.querySelector("[data-action='lootgen-dismiss-feedback']")?.addEventListener("click", async () => {
-        this.actionFeedback = null;
-        await this.render({ force: true });
+        await this.#postStatusToChat("info", "Результат очищен.", {
+          action: "clear",
+          canUndo: Boolean(previousResult.hasResult),
+          payload: previousResult
+        });
       }, listenerOptions);
 
       element.querySelector("[data-action='lootgen-new-window']")?.addEventListener("click", async () => {
@@ -787,16 +907,14 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           try {
             const rowIndex = toInteger(event.currentTarget.dataset.rowIndex, -1);
             await this.#addRowToInventory(rowIndex);
-            this.#setActionFeedback("success", "Строка лута добавлена в партийный склад.");
             await this.render({ force: true });
-            ui.notifications?.info("Строка добавлена в партийный склад.");
+            await this.#postStatusToChat("success", "Строка добычи добавлена в партийный склад.");
           }
           catch (error) {
             console.error(`${MODULE_ID} | Failed to add loot row to inventory.`, error);
-            const message = error.message || "Не удалось добавить строку лутгена.";
-            this.#setActionFeedback("error", message);
-            this.render({ force: true });
-            ui.notifications?.error(message);
+            const message = error.message || "Не удалось добавить строку добычи.";
+            await this.render({ force: true });
+            await this.#postStatusToChat("error", message);
           }
         }, listenerOptions);
       });
@@ -804,32 +922,28 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       element.querySelector("[data-action='lootgen-take-all']")?.addEventListener("click", async () => {
         try {
           await this.#takeAllToInventory();
-          this.#setActionFeedback("success", "Лут полностью перенесён в партийный склад.");
           await this.render({ force: true });
-          ui.notifications?.info("Лут полностью перенесён в партийный склад.");
+          await this.#postStatusToChat("success", "Добыча полностью перенесена в партийный склад.");
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to transfer generated loot.`, error);
-          const message = error.message || "Не удалось перенести лутген в партийный склад.";
-          this.#setActionFeedback("error", message);
-          this.render({ force: true });
-          ui.notifications?.error(message);
+          const message = error.message || "Не удалось перенести добычу в партийный склад.";
+          await this.render({ force: true });
+          await this.#postStatusToChat("error", message);
         }
       }, listenerOptions);
 
       element.querySelector("[data-action='lootgen-send-chat']")?.addEventListener("click", async () => {
         try {
           await this.#sendResultToChat();
-          this.#setActionFeedback("success", "Лут отправлен в чат. Предметы можно перетаскивать в лист персонажа.");
           await this.render({ force: true });
-          ui.notifications?.info("Лут отправлен в чат.");
+          await this.#postStatusToChat("success", "Добыча отправлена в чат. Предметы можно перетаскивать в лист персонажа.");
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to send lootgen result to chat.`, error);
-          const message = error.message || "Не удалось отправить лут в чат.";
-          this.#setActionFeedback("error", message);
-          this.render({ force: true });
-          ui.notifications?.error(message);
+          const message = error.message || "Не удалось отправить добычу в чат.";
+          await this.render({ force: true });
+          await this.#postStatusToChat("error", message);
         }
       }, listenerOptions);
 
@@ -837,22 +951,19 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         try {
           const applied = await this.#addCoinsToInventory();
           if (applied) {
-            this.#setActionFeedback("success", "Монеты из лутгена добавлены в партийный склад.");
             await this.render({ force: true });
-            ui.notifications?.info("Монеты из лутгена добавлены в партийный склад.");
+            await this.#postStatusToChat("success", "Монеты из добычи добавлены в партийный склад.");
           }
           else {
-            this.#setActionFeedback("warning", "В текущем лутгене нет монет для добавления.");
             await this.render({ force: true });
-            ui.notifications?.warn("В текущем лутгене нет монет для добавления.");
+            await this.#postStatusToChat("warning", "В текущей добыче нет монет для добавления.");
           }
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to transfer generated coins.`, error);
-          const message = error.message || "Не удалось перенести монеты лутгена.";
-          this.#setActionFeedback("error", message);
-          this.render({ force: true });
-          ui.notifications?.error(message);
+          const message = error.message || "Не удалось перенести монеты добычи.";
+          await this.render({ force: true });
+          await this.#postStatusToChat("error", message);
         }
       }, listenerOptions);
     }

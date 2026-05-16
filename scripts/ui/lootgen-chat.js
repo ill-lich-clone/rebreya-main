@@ -156,6 +156,48 @@ export function buildLootgenChatContent(state = {}) {
   `.trim();
 }
 
+export function buildLootgenStatusContent(status = {}) {
+  const rawType = String(status.type ?? "info");
+  const type = ["success", "error", "warning", "info"].includes(rawType) ? rawType : "info";
+  const message = escapeHtml(status.message ?? "");
+  const restored = Boolean(status.restored);
+  const canUndo = Boolean(status.canUndo) && !restored;
+  const actionLabel = restored ? "Отменено" : "Отменить";
+
+  return `
+    <section class="rm-chat-status rm-chat-status--${escapeHtml(type)}">
+      <span>${message}</span>
+      ${canUndo || restored ? `
+        <button
+          type="button"
+          class="rm-chat-status__button"
+          data-lootgen-chat-action="undo-clear"
+          ${restored ? "disabled" : ""}
+        >
+          ${actionLabel}
+        </button>
+      ` : ""}
+    </section>
+  `.trim();
+}
+
+async function postLootgenChatStatus(type, message) {
+  const safeType = ["success", "error", "warning", "info"].includes(type) ? type : "info";
+  const safeMessage = String(message ?? "").trim();
+  if (!safeMessage) {
+    return null;
+  }
+
+  return ChatMessage.create({
+    user: game.user?.id,
+    speaker: ChatMessage.getSpeaker(),
+    content: buildLootgenStatusContent({
+      type: safeType,
+      message: safeMessage
+    })
+  });
+}
+
 function bindLootgenChatMessage(message, html) {
   const root = resolveRoot(html);
   if (!root) {
@@ -203,11 +245,29 @@ function bindLootgenChatMessage(message, html) {
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to claim lootgen chat coins.`, error);
-          ui.notifications?.error(error.message || "Не удалось забрать монеты из лута.");
+          await postLootgenChatStatus("error", error.message || "Не удалось забрать монеты из добычи.");
         }
       });
     });
   }
+
+  root.querySelectorAll?.("[data-lootgen-chat-action='undo-clear']").forEach((button) => {
+    if (button.dataset.rebreyaLootBound === "true") {
+      return;
+    }
+
+    button.dataset.rebreyaLootBound = "true";
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      try {
+        await game.rebreyaMain?.restoreLootgenClearFromChat?.(message.id);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to undo lootgen clear.`, error);
+        await postLootgenChatStatus("error", error.message || "Не удалось отменить очистку лутгена.");
+      }
+    });
+  });
 }
 
 export function registerLootgenChatHooks(moduleApi) {

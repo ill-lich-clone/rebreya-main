@@ -1,13 +1,4 @@
 <section class="rm-shell rm-app-shell rm-lootgen-shell {{#if viewer}}rm-lootgen-shell--viewer{{/if}}">
-  {{#if actionFeedback}}
-    <div class="{{actionFeedback.className}}">
-      <span class="rm-inline-status__message">{{actionFeedback.message}}</span>
-      <button type="button" class="rm-inline-status__close" data-action="lootgen-dismiss-feedback" title="Закрыть уведомление" aria-label="Закрыть уведомление">
-        <i class="fa-solid fa-xmark"></i>
-      </button>
-    </div>
-  {{/if}}
-
   <div class="rm-lootgen-workbench {{#unless canManage}}rm-lootgen-workbench--viewer{{/unless}}">
     {{#if canManage}}
       <aside class="rm-app-sidebar rm-lootgen-controls">
@@ -78,7 +69,7 @@
             type="button"
             class="rm-button rm-button--primary rm-button--wide"
             data-action="lootgen-generate"
-            title="{{#if form.generateDisabled}}{{form.generateDisabledReason}}{{else}}Сгенерировать лут по текущим параметрам{{/if}}"
+            title="{{#if form.generateDisabled}}{{form.generateDisabledReason}}{{else}}Сгенерировать добычу по текущим параметрам{{/if}}"
             {{#if form.generateDisabled}}disabled{{/if}}
           >
             <i class="fa-solid fa-dice"></i>
@@ -168,9 +159,9 @@
 
         {{#if canManage}}
           <div class="rm-lootgen-actions">
-            <button type="button" class="rm-button rm-button--secondary" data-action="lootgen-take-all" title="Перенести весь сгенерированный лут в партийный склад">
+            <button type="button" class="rm-button rm-button--secondary" data-action="lootgen-take-all" title="Перенести всю сгенерированную добычу в партийный склад">
               <i class="fa-solid fa-boxes-stacked"></i>
-              <span>Весь лут в склад</span>
+              <span>Всю добычу в склад</span>
             </button>
             <button
               type="button"
@@ -189,7 +180,7 @@
           {{#if viewer}}
             Мастер ещё не отправил найденные сокровища.
           {{else}}
-            <strong>Сгенерируйте лут слева.</strong>
+            <strong>Сгенерируйте добычу.</strong>
             <span>После этого результат можно отправить в чат или перенести в партийный склад.</span>
           {{/if}}
         </div>
