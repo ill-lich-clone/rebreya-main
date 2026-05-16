@@ -153,10 +153,15 @@
 }
 
 .rm-toggle-affordance {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 6px;
+}
+
+.rm-toggle-affordance::after {
+  content: "▾";
+  font-size: 10px;
+  color: var(--rm-muted);
 }
 
 summary.rm-toggle-affordance:not(.rm-button) {
@@ -172,27 +177,9 @@ summary.rm-toggle-affordance:not(.rm-button):hover {
   background: rgba(214, 177, 104, 0.08);
 }
 
-.rm-click-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px dashed rgba(214, 177, 104, 0.36);
-  color: var(--rm-muted);
-  font-size: 11px;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.rm-click-hint::after {
-  content: "▾";
-  font-size: 10px;
-}
-
-.rm-inline-menu[open] > .rm-toggle-affordance .rm-click-hint::after,
-.rm-compact-pill-details[open] > .rm-toggle-affordance .rm-click-hint::after,
-.rm-party-row__advanced[open] > .rm-toggle-affordance .rm-click-hint::after {
+.rm-inline-menu[open] > .rm-toggle-affordance::after,
+.rm-compact-pill-details[open] > .rm-toggle-affordance::after,
+.rm-party-row__advanced[open] > .rm-toggle-affordance::after {
   content: "▴";
 }
 
