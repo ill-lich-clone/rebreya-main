@@ -2273,11 +2273,25 @@ summary:focus-visible {
 }
 
 .rm-party-toolbar--compact {
-  grid-template-columns: minmax(0, 1.8fr) 120px auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  border: 1px dashed rgba(214, 177, 104, 0.26);
+  border-radius: 12px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.rm-party-toolbar--compact.is-dragover {
+  border-color: rgba(214, 177, 104, 0.66);
+  background: rgba(214, 177, 104, 0.1);
 }
 
 .rm-field--narrow {
   min-width: 0;
+}
+
+.rm-party-toolbar--compact .rm-field small.rm-muted {
+  line-height: 1.25;
 }
 
 .rm-compact-dropzone {

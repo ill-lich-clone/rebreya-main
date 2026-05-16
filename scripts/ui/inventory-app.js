@@ -37,6 +37,12 @@ function normalizeInventorySourceType(value) {
   return text || "";
 }
 
+function normalizeLookupText(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
 function roundNumber(value, precision = 2) {
   const factor = 10 ** precision;
   return Math.round((toNumber(value, 0) + Number.EPSILON) * factor) / factor;
@@ -343,6 +349,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.search = "";
     this.typeFilter = "all";
     this.selectedNewMemberId = "";
+    this.newMemberQuery = "";
+    this.availablePartyActors = [];
     this.craftSearch = "";
     this.craftCrafterActorId = "";
     this.expandedPartyMembers = new Set();
@@ -383,6 +391,47 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
+  #resolveAvailableActorIdByName(query, availableActors = null) {
+    const source = Array.isArray(availableActors) ? availableActors : this.availablePartyActors;
+    const safeQuery = normalizeLookupText(query);
+    if (!safeQuery || !source.length) {
+      return "";
+    }
+
+    const exactMatch = source.find((actor) => normalizeLookupText(actor.name) === safeQuery) ?? null;
+    if (exactMatch) {
+      return exactMatch.id;
+    }
+
+    const startsWithMatches = source.filter((actor) => normalizeLookupText(actor.name).startsWith(safeQuery));
+    if (startsWithMatches.length === 1) {
+      return startsWithMatches[0].id;
+    }
+
+    return "";
+  }
+
+  async #resolveDroppedActor(dragData) {
+    if (!dragData || typeof dragData !== "object") {
+      return null;
+    }
+
+    const droppedDocument = dragData.uuid ? await fromUuid(dragData.uuid) : null;
+    if (droppedDocument instanceof Actor) {
+      return droppedDocument;
+    }
+
+    if (droppedDocument?.actor instanceof Actor) {
+      return droppedDocument.actor;
+    }
+
+    if (dragData.type === "Actor" && dragData.id) {
+      return game.actors.get(dragData.id) ?? null;
+    }
+
+    return null;
+  }
+
   async _prepareContext() {
     try {
       const inventorySnapshot = await this.moduleApi.getInventorySnapshot({
@@ -397,6 +446,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
       const calendarSnapshot = this.moduleApi.getCalendarSnapshot();
       const availableActors = partySnapshot.availableActors ?? [];
+      this.availablePartyActors = availableActors.map((actor) => ({
+        id: actor.id,
+        name: actor.name
+      }));
       const totalCapacityLb = toNumber(partySnapshot.totalCapacityLb, 0);
       const inventoryWeight = toNumber(partySnapshot.inventoryWeight, 0);
       const freeCapacityLb = roundNumber(toNumber(partySnapshot.freeCapacityLb, 0), 2);
@@ -506,7 +559,17 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         : null;
 
       if (!availableActors.some((actor) => actor.id === this.selectedNewMemberId)) {
-        this.selectedNewMemberId = availableActors[0]?.id ?? "";
+        this.selectedNewMemberId = "";
+      }
+
+      const resolvedActorIdByQuery = this.#resolveAvailableActorIdByName(this.newMemberQuery, this.availablePartyActors);
+      if (resolvedActorIdByQuery) {
+        this.selectedNewMemberId = resolvedActorIdByQuery;
+      }
+
+      if (!String(this.newMemberQuery ?? "").trim() && this.selectedNewMemberId) {
+        const selectedActor = availableActors.find((actor) => actor.id === this.selectedNewMemberId) ?? null;
+        this.newMemberQuery = selectedActor?.name ?? "";
       }
 
       if (!craftSnapshot.crafters?.some((entry) => entry.actorId === this.craftCrafterActorId)) {
@@ -523,6 +586,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           canEdit: false
         },
         activeTab: this.activeTab,
+        appDomId: this.id,
         search: this.search,
         typeFilter: this.typeFilter,
         craftSearch: this.craftSearch,
@@ -559,6 +623,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             ...actor,
             selected: actor.id === this.selectedNewMemberId
           })),
+          addMemberQuery: this.newMemberQuery,
           hasFoodEstimate,
           hasWaterEstimate
         },
@@ -1000,22 +1065,32 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     }
 
-    element.querySelector("[data-action='select-add-member']")?.addEventListener("change", (event) => {
-      this.selectedNewMemberId = event.currentTarget.value || "";
-    }, listenerOptions);
+    const addMemberQueryInput = element.querySelector("[data-action='add-member-query']");
+    const syncAddMemberSelection = () => {
+      const query = addMemberQueryInput?.value ?? "";
+      this.newMemberQuery = query;
+      this.selectedNewMemberId = this.#resolveAvailableActorIdByName(query);
+    };
+
+    addMemberQueryInput?.addEventListener("input", syncAddMemberSelection, listenerOptions);
+    addMemberQueryInput?.addEventListener("change", syncAddMemberSelection, listenerOptions);
 
     element.querySelector("[data-action='add-member']")?.addEventListener("click", async () => {
+      this.selectedNewMemberId = this.#resolveAvailableActorIdByName(this.newMemberQuery);
       if (!this.selectedNewMemberId) {
-        this.#setActionFeedback("warning", "Нет доступного актёра для добавления в группу.");
+        this.#setActionFeedback("warning", "Введите имя участника и выберите актёра из доступных.");
         this.render({ force: true });
-        ui.notifications?.warn("Нет доступного актёра для добавления в группу.");
+        ui.notifications?.warn("Выберите доступного актёра по имени.");
         return;
       }
 
       try {
+        const actorName = this.availablePartyActors.find((actor) => actor.id === this.selectedNewMemberId)?.name ?? "участник";
         await this.moduleApi.addPartyMember(this.selectedNewMemberId);
+        this.newMemberQuery = "";
+        this.selectedNewMemberId = "";
         this.#setActionFeedback("success", "Участник добавлен в группу.");
-        ui.notifications?.info("Участник добавлен в группу.");
+        ui.notifications?.info(`Участник «${actorName}» добавлен в группу.`);
         bringAppToFront(this);
       }
       catch (error) {
@@ -1027,24 +1102,69 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
     }, listenerOptions);
 
-    element.querySelector("[data-action='default-cap-mod']")?.addEventListener("change", async (event) => {
-      const rawValue = event.currentTarget.value ?? "";
-      if (String(rawValue).trim() === "") {
-        this.render({ force: true });
-        return;
-      }
+    const partyDropzone = element.querySelector("[data-action='party-dropzone']");
+    if (partyDropzone) {
+      partyDropzone.addEventListener("dragover", (event) => {
+        let dragData = null;
+        try {
+          dragData = TextEditor.getDragEventData(event);
+        }
+        catch (_error) {
+          return;
+        }
 
-      try {
-        await this.moduleApi.updatePartyDefaults({
-          defaultCapMod: rawValue
-        });
-        ui.notifications?.info("Базовый множитель грузоподъёмности обновлён.");
-      }
-      catch (error) {
-        console.error(`${MODULE_ID} | Failed to update party defaults.`, error);
-        ui.notifications?.error(error.message || "Не удалось обновить параметры группы.");
-      }
-    }, listenerOptions);
+        const isActorDrag = dragData?.type === "Actor" || String(dragData?.uuid ?? "").includes("Actor.");
+        if (!isActorDrag) {
+          return;
+        }
+
+        event.preventDefault();
+        partyDropzone.classList.add("is-dragover");
+      }, listenerOptions);
+
+      partyDropzone.addEventListener("dragleave", () => {
+        partyDropzone.classList.remove("is-dragover");
+      }, listenerOptions);
+
+      partyDropzone.addEventListener("drop", async (event) => {
+        event.preventDefault();
+        partyDropzone.classList.remove("is-dragover");
+
+        try {
+          const dragData = TextEditor.getDragEventData(event);
+          const actorDocument = await this.#resolveDroppedActor(dragData);
+          if (!(actorDocument instanceof Actor)) {
+            ui.notifications?.warn("Перетащите лист персонажа или актёра.");
+            return;
+          }
+
+          const isAvailable = this.availablePartyActors.some((actor) => actor.id === actorDocument.id);
+          if (!isAvailable) {
+            ui.notifications?.warn(`«${actorDocument.name}» нельзя добавить: актёр недоступен или уже в группе.`);
+            return;
+          }
+
+          const confirmed = await confirmAction(
+            "Добавить участника",
+            `<p>Добавить «${foundry.utils.escapeHTML(actorDocument.name)}» в группу?</p>`
+          );
+          if (!confirmed) {
+            return;
+          }
+
+          await this.moduleApi.addPartyMember(actorDocument.id);
+          this.newMemberQuery = "";
+          this.selectedNewMemberId = "";
+          this.#setActionFeedback("success", `Участник «${actorDocument.name}» добавлен в группу.`);
+          ui.notifications?.info(`Участник «${actorDocument.name}» добавлен в группу.`);
+          bringAppToFront(this);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to add party member by drop.`, error);
+          ui.notifications?.error(error.message || "Не удалось добавить участника из перетаскивания.");
+        }
+      }, listenerOptions);
+    }
 
     element.querySelectorAll("[data-action='party-field']").forEach((field) => {
       field.addEventListener("change", async (event) => {

@@ -235,21 +235,23 @@
           </div>
         {{/if}}
 
-        <section class="rm-party-toolbar rm-party-toolbar--compact">
+        <section class="rm-party-toolbar rm-party-toolbar--compact" data-action="party-dropzone">
           <div class="rm-field">
-            <select data-action="select-add-member">
-              {{#if party.availableActors.length}}
-                {{#each party.availableActors}}
-                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
-                {{/each}}
-              {{else}}
-                <option value="">Нет доступных актёров</option>
-              {{/if}}
-            </select>
-          </div>
-
-          <div class="rm-field rm-field--narrow">
-            <input type="number" value="{{party.defaultCapMod}}" min="1" step="0.01" data-action="default-cap-mod" placeholder="Мод. груза">
+            <input
+              type="text"
+              value="{{party.addMemberQuery}}"
+              placeholder="{{#if party.addMemberDisabled}}Нет доступных актёров{{else}}Введите имя участника{{/if}}"
+              autocomplete="off"
+              list="{{appDomId}}-party-member-list"
+              data-action="add-member-query"
+              {{#if party.addMemberDisabled}}disabled{{/if}}
+            >
+            <datalist id="{{appDomId}}-party-member-list">
+              {{#each party.availableActors}}
+                <option value="{{name}}"></option>
+              {{/each}}
+            </datalist>
+            <small class="rm-muted">Введите имя или перетащите лист персонажа в эту область.</small>
           </div>
 
           <div class="rm-party-toolbar__actions">
