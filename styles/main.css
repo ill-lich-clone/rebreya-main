@@ -152,6 +152,50 @@
   box-shadow: none;
 }
 
+.rm-toggle-affordance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+summary.rm-toggle-affordance:not(.rm-button) {
+  padding: 8px 10px;
+  border: 1px solid rgba(214, 177, 104, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+summary.rm-toggle-affordance:not(.rm-button):hover {
+  border-color: rgba(214, 177, 104, 0.38);
+  background: rgba(214, 177, 104, 0.08);
+}
+
+.rm-click-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px dashed rgba(214, 177, 104, 0.36);
+  color: var(--rm-muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.rm-click-hint::after {
+  content: "▾";
+  font-size: 10px;
+}
+
+.rm-inline-menu[open] > .rm-toggle-affordance .rm-click-hint::after,
+.rm-compact-pill-details[open] > .rm-toggle-affordance .rm-click-hint::after,
+.rm-party-row__advanced[open] > .rm-toggle-affordance .rm-click-hint::after {
+  content: "▴";
+}
+
 .rm-city-scoreboard > div {
   min-width: 150px;
   padding: 10px 12px;
@@ -208,6 +252,13 @@
   opacity: 0.55;
   cursor: not-allowed;
   transform: none !important;
+}
+
+.rm-button:focus-visible,
+.rm-icon-button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid rgba(240, 201, 130, 0.7);
+  outline-offset: 2px;
 }
 
 .rm-button--primary {
