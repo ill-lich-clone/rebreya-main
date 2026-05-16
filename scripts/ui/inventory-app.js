@@ -299,6 +299,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.craftSearchRenderTimeout = null;
     this.focusRestore = null;
     this.renderListenersAbortController = null;
+    this.actionFeedback = null;
   }
 
   get id() {
@@ -316,6 +317,19 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (render) {
       this.render({ force: true });
     }
+  }
+
+  #setActionFeedback(type, message) {
+    const safeType = ["success", "error", "warning", "info"].includes(type) ? type : "info";
+    const safeMessage = String(message ?? "").trim();
+    if (!safeMessage) {
+      return;
+    }
+
+    this.actionFeedback = {
+      type: safeType,
+      message: safeMessage
+    };
   }
 
   async _prepareContext() {
@@ -349,6 +363,35 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ...member,
         expanded: this.expandedPartyMembers.has(member.actorId)
       }));
+      const addMemberDisabled = availableActors.length === 0;
+      const consumeDayDisabled = toInteger(partySnapshot.memberCount, 0) <= 0;
+      const craftHasCrafters = (craftSnapshot.crafters ?? []).length > 0;
+      const processDayDisabled = (craftSnapshot.queue ?? []).length === 0;
+      const partyAlerts = [];
+      if (toNumber(partySnapshot.freeCapacityLb, 0) < 0) {
+        partyAlerts.push({
+          type: "danger",
+          message: `Перегруз: ${roundNumber(Math.abs(toNumber(partySnapshot.freeCapacityLb, 0)), 2)} фнт.`
+        });
+      }
+      if (partySnapshot.foodDaysLeft !== null && toNumber(partySnapshot.foodDaysLeft, 0) <= 0) {
+        partyAlerts.push({
+          type: "warning",
+          message: "Еда закончилась: пополните запас."
+        });
+      }
+      if (partySnapshot.waterDaysLeft !== null && toNumber(partySnapshot.waterDaysLeft, 0) <= 0) {
+        partyAlerts.push({
+          type: "warning",
+          message: "Вода закончилась: пополните запас."
+        });
+      }
+      const actionFeedback = this.actionFeedback
+        ? {
+            ...this.actionFeedback,
+            className: `rm-inline-status rm-inline-status--${this.actionFeedback.type}`
+          }
+        : null;
 
       if (!availableActors.some((actor) => actor.id === this.selectedNewMemberId)) {
         this.selectedNewMemberId = availableActors[0]?.id ?? "";
@@ -386,6 +429,15 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           ...partySnapshot,
           members: partyMembers,
           capacityUsedPercent,
+          alerts: partyAlerts,
+          addMemberDisabled,
+          addMemberDisabledReason: addMemberDisabled
+            ? "Нет доступных актёров для добавления в группу."
+            : "",
+          consumeDayDisabled,
+          consumeDayDisabledReason: consumeDayDisabled
+            ? "Добавьте хотя бы одного участника, чтобы списать день."
+            : "",
           availableActors: availableActors.map((actor) => ({
             ...actor,
             selected: actor.id === this.selectedNewMemberId
@@ -399,7 +451,15 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             ...entry,
             selected: entry.actorId === this.craftCrafterActorId
           })),
-          hasQueue: (craftSnapshot.queue ?? []).length > 0
+          hasQueue: (craftSnapshot.queue ?? []).length > 0,
+          hasCrafters: craftHasCrafters,
+          queueDisabledReason: craftHasCrafters
+            ? ""
+            : "Добавьте участника в группу, чтобы запустить крафт.",
+          processDayDisabled,
+          processDayDisabledReason: processDayDisabled
+            ? "Очередь крафта пуста."
+            : ""
         },
         calendar: {
           ...calendarSnapshot,
@@ -420,6 +480,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           isCraft: this.activeTab === "craft",
           isCalendar: this.activeTab === "calendar"
         },
+        actionFeedback,
         canManage: game.user?.isGM === true
       };
     }
@@ -458,7 +519,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     await this.moduleApi.addPartySupply(resourceKey, quantity);
-    ui.notifications?.info(resourceKey === "water" ? "Запас воды обновлён." : "Запас еды обновлён.");
+    const successMessage = resourceKey === "water"
+      ? "Запас воды обновлён."
+      : "Запас еды обновлён.";
+    this.#setActionFeedback("success", successMessage);
+    ui.notifications?.info(successMessage);
     bringAppToFront(this);
   }
 
@@ -531,9 +596,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const eventText = (toNumber(eventActivation?.started?.length, 0) > 0 || toNumber(eventActivation?.ended?.length, 0) > 0)
       ? ` Ивенты: старт ${toInteger(eventActivation?.started?.length, 0)}, завершение ${toInteger(eventActivation?.ended?.length, 0)}.`
       : "";
-    ui.notifications?.info(
-      `Пропущено ${result.daysAdvanced} дн.: еда -${roundNumber(supplyTotals.foodSpent ?? 0, 2)}, вода -${roundNumber(supplyTotals.waterSpent ?? 0, 2)}, завершено крафта ${craftCompleted}.${shortageText}${dateLabel}${traderResetText}${eventText}`
-    );
+    const message = `Пропущено ${result.daysAdvanced} дн.: еда -${roundNumber(supplyTotals.foodSpent ?? 0, 2)}, вода -${roundNumber(supplyTotals.waterSpent ?? 0, 2)}, завершено крафта ${craftCompleted}.${shortageText}${dateLabel}${traderResetText}${eventText}`;
+    this.#setActionFeedback("success", message);
+    ui.notifications?.info(message);
   }
 
   async _onRender(context, options) {
@@ -824,18 +889,24 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     element.querySelector("[data-action='add-member']")?.addEventListener("click", async () => {
       if (!this.selectedNewMemberId) {
+        this.#setActionFeedback("warning", "Нет доступного актёра для добавления в группу.");
+        this.render({ force: true });
         ui.notifications?.warn("Нет доступного актёра для добавления в группу.");
         return;
       }
 
       try {
         await this.moduleApi.addPartyMember(this.selectedNewMemberId);
+        this.#setActionFeedback("success", "Участник добавлен в группу.");
         ui.notifications?.info("Участник добавлен в группу.");
         bringAppToFront(this);
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to add party member.`, error);
-        ui.notifications?.error(error.message || "Не удалось добавить участника группы.");
+        const message = error.message || "Не удалось добавить участника группы.";
+        this.#setActionFeedback("error", message);
+        this.render({ force: true });
+        ui.notifications?.error(message);
       }
     }, listenerOptions);
 
@@ -997,7 +1068,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to consume party day.`, error);
-        ui.notifications?.error(error.message || "Не удалось списать день группы.");
+        const message = error.message || "Не удалось списать день группы.";
+        this.#setActionFeedback("error", message);
+        this.render({ force: true });
+        ui.notifications?.error(message);
       }
     }, listenerOptions);
 
@@ -1041,12 +1115,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             quantity: Math.max(1, toInteger(quantityValue, 1)),
             crafterActorId: this.craftCrafterActorId
           });
+          this.#setActionFeedback("success", `Крафт «${gearName}» добавлен в очередь.`);
           ui.notifications?.info(`Крафт «${gearName}» добавлен в очередь.`);
           bringAppToFront(this);
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to queue craft task.`, error);
-          ui.notifications?.error(error.message || "Не удалось запустить крафт.");
+          const message = error.message || "Не удалось запустить крафт.";
+          this.#setActionFeedback("error", message);
+          this.render({ force: true });
+          ui.notifications?.error(message);
         }
       }, listenerOptions);
     });
@@ -1077,11 +1155,15 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     element.querySelector("[data-action='craft-process-day']")?.addEventListener("click", async () => {
       try {
         const result = await this.moduleApi.processCraftOneDay();
+        this.#setActionFeedback("success", `Продвинут день крафта. Завершено: ${result.completedCount}.`);
         ui.notifications?.info(`Продвинут день крафта. Завершено: ${result.completedCount}.`);
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to process craft day.`, error);
-        ui.notifications?.error(error.message || "Не удалось продвинуть крафт на день.");
+        const message = error.message || "Не удалось продвинуть крафт на день.";
+        this.#setActionFeedback("error", message);
+        this.render({ force: true });
+        ui.notifications?.error(message);
       }
     }, listenerOptions);
 
@@ -1148,7 +1230,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to advance calendar.`, error);
-          ui.notifications?.error(error.message || "Не удалось продвинуть календарь.");
+          const message = error.message || "Не удалось продвинуть календарь.";
+          this.#setActionFeedback("error", message);
+          this.render({ force: true });
+          ui.notifications?.error(message);
         }
       }, listenerOptions);
     });

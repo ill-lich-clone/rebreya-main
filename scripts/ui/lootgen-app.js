@@ -215,6 +215,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.magicPercent = 25;
     this.generated = this.#createEmptyGenerated();
     this.renderListenersAbortController = null;
+    this.actionFeedback = null;
 
     if (this.viewer) {
       this.options.window = {
@@ -231,6 +232,19 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   get id() {
     return `${MODULE_ID}-lootgen-${this.appKey}`;
+  }
+
+  #setActionFeedback(type, message) {
+    const safeType = ["success", "error", "warning", "info"].includes(type) ? type : "info";
+    const safeMessage = String(message ?? "").trim();
+    if (!safeMessage) {
+      return;
+    }
+
+    this.actionFeedback = {
+      type: safeType,
+      message: safeMessage
+    };
   }
 
   #createEmptyGenerated() {
@@ -582,10 +596,19 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async _prepareContext() {
     const isGM = game.user?.isGM === true;
     const canManage = isGM && !this.viewer;
+    const hasItemSources = this.includeGear || this.includeMaterials || this.includeMagicItems;
+    const generateDisabled = !hasItemSources;
+    const actionFeedback = this.actionFeedback
+      ? {
+          ...this.actionFeedback,
+          className: `rm-inline-status rm-inline-status--${this.actionFeedback.type}`
+        }
+      : null;
     return {
       isGM,
       viewer: this.viewer,
       canManage,
+      actionFeedback,
       appKey: this.appKey,
       form: {
         rankMin: this.rankMin,
@@ -596,7 +619,12 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         includeMaterials: this.includeMaterials,
         includeCoins: this.includeCoins,
         includeMagicItems: this.includeMagicItems,
-        magicPercent: this.magicPercent
+        magicPercent: this.magicPercent,
+        hasItemSources,
+        generateDisabled,
+        generateDisabledReason: generateDisabled
+          ? "Выберите хотя бы один источник предметов: снаряжение, материалы или магические предметы."
+          : ""
       },
       generated: {
         ...this.generated,
@@ -665,17 +693,22 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           if (game.user?.isGM && typeof this.moduleApi.shareLootgenResult === "function") {
             await this.moduleApi.shareLootgenResult(this.#buildSharedPayload());
           }
+          this.#setActionFeedback("success", "Лут успешно сгенерирован.");
           await this.render({ force: true });
           ui.notifications?.info("Лут сгенерирован.");
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to generate loot.`, error);
-          ui.notifications?.error(error.message || "Не удалось сгенерировать лут.");
+          const message = error.message || "Не удалось сгенерировать лут.";
+          this.#setActionFeedback("error", message);
+          await this.render({ force: true });
+          ui.notifications?.error(message);
         }
       }, listenerOptions);
 
       element.querySelector("[data-action='lootgen-clear']")?.addEventListener("click", async () => {
         this.generated = this.#createEmptyGenerated();
+        this.#setActionFeedback("info", "Результат очищен.");
         await this.render({ force: true });
       }, listenerOptions);
 
@@ -693,11 +726,16 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           try {
             const rowIndex = toInteger(event.currentTarget.dataset.rowIndex, -1);
             await this.#addRowToInventory(rowIndex);
+            this.#setActionFeedback("success", "Строка лута добавлена в партийный склад.");
+            await this.render({ force: true });
             ui.notifications?.info("Строка добавлена в партийный склад.");
           }
           catch (error) {
             console.error(`${MODULE_ID} | Failed to add loot row to inventory.`, error);
-            ui.notifications?.error(error.message || "Не удалось добавить строку лутгена.");
+            const message = error.message || "Не удалось добавить строку лутгена.";
+            this.#setActionFeedback("error", message);
+            this.render({ force: true });
+            ui.notifications?.error(message);
           }
         }, listenerOptions);
       });
@@ -705,11 +743,16 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       element.querySelector("[data-action='lootgen-take-all']")?.addEventListener("click", async () => {
         try {
           await this.#takeAllToInventory();
+          this.#setActionFeedback("success", "Лут полностью перенесён в партийный склад.");
+          await this.render({ force: true });
           ui.notifications?.info("Лут полностью перенесён в партийный склад.");
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to transfer generated loot.`, error);
-          ui.notifications?.error(error.message || "Не удалось перенести лутген в партийный склад.");
+          const message = error.message || "Не удалось перенести лутген в партийный склад.";
+          this.#setActionFeedback("error", message);
+          this.render({ force: true });
+          ui.notifications?.error(message);
         }
       }, listenerOptions);
 
@@ -717,15 +760,22 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         try {
           const applied = await this.#addCoinsToInventory();
           if (applied) {
+            this.#setActionFeedback("success", "Монеты из лутгена добавлены в партийный склад.");
+            await this.render({ force: true });
             ui.notifications?.info("Монеты из лутгена добавлены в партийный склад.");
           }
           else {
+            this.#setActionFeedback("warning", "В текущем лутгене нет монет для добавления.");
+            await this.render({ force: true });
             ui.notifications?.warn("В текущем лутгене нет монет для добавления.");
           }
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to transfer generated coins.`, error);
-          ui.notifications?.error(error.message || "Не удалось перенести монеты лутгена.");
+          const message = error.message || "Не удалось перенести монеты лутгена.";
+          this.#setActionFeedback("error", message);
+          this.render({ force: true });
+          ui.notifications?.error(message);
         }
       }, listenerOptions);
     }

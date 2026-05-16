@@ -18,6 +18,10 @@
     {{/if}}
   </header>
 
+  {{#if actionFeedback}}
+    <p class="{{actionFeedback.className}}">{{actionFeedback.message}}</p>
+  {{/if}}
+
   {{#if canManage}}
     <section class="rm-panel rm-panel--compact">
       <div class="rm-panel__header rm-panel__header--compact">
@@ -70,11 +74,17 @@
       </div>
 
       <div class="rm-lootgen-actions">
-        <button type="button" class="rm-button" data-action="lootgen-generate">
+        <button
+          type="button"
+          class="rm-button rm-button--primary"
+          data-action="lootgen-generate"
+          title="{{#if form.generateDisabled}}{{form.generateDisabledReason}}{{else}}Сгенерировать лут по текущим параметрам{{/if}}"
+          {{#if form.generateDisabled}}disabled{{/if}}
+        >
           <i class="fa-solid fa-dice"></i>
           <span>Сгенерировать</span>
         </button>
-        <button type="button" class="rm-button rm-button--ghost" data-action="lootgen-clear">
+        <button type="button" class="rm-button rm-button--secondary" data-action="lootgen-clear" title="Очистить текущий результат лутгена">
           <i class="fa-solid fa-eraser"></i>
           <span>Очистить</span>
         </button>
@@ -145,11 +155,17 @@
 
       {{#if canManage}}
         <div class="rm-lootgen-actions">
-          <button type="button" class="rm-button" data-action="lootgen-take-all">
+          <button type="button" class="rm-button rm-button--primary" data-action="lootgen-take-all" title="Перенести весь сгенерированный лут в партийный склад">
             <i class="fa-solid fa-boxes-stacked"></i>
             <span>Весь лут в склад</span>
           </button>
-          <button type="button" class="rm-button rm-button--ghost" data-action="lootgen-take-coins" {{#unless generated.hasCoins}}disabled{{/unless}}>
+          <button
+            type="button"
+            class="rm-button rm-button--secondary"
+            data-action="lootgen-take-coins"
+            title="{{#if generated.hasCoins}}Перенести в склад только монеты{{else}}Нет монет для переноса{{/if}}"
+            {{#unless generated.hasCoins}}disabled{{/unless}}
+          >
             <i class="fa-solid fa-coins"></i>
             <span>Только монеты</span>
           </button>

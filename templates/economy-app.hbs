@@ -6,8 +6,8 @@
       <p class="rm-muted">Загружено {{totalCityCount}} поселений. Отфильтровано: {{filteredCityCount}}.</p>
     </div>
     <div class="rm-hero__actions">
-      <button type="button" class="rm-button" data-action="restore-data">Восстановить данные</button>
-      <button type="button" class="rm-button rm-button--ghost" data-action="reload-data">Перезагрузить данные</button>
+      <button type="button" class="rm-button rm-button--danger" data-action="restore-data">Восстановить данные</button>
+      <button type="button" class="rm-button rm-button--secondary" data-action="reload-data">Перезагрузить данные</button>
       <div class="rm-chip">Источник: {{dataSource.mode}}</div>
     </div>
   </header>
@@ -39,7 +39,7 @@
     <div class="rm-panel__header">
       <h3>Активные глобальные ивенты</h3>
       {{#if canManageGlobalEvents}}
-        <button type="button" class="rm-button rm-button--small" data-action="open-global-events">Открыть управление ивентами</button>
+        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="open-global-events">Открыть управление ивентами</button>
       {{/if}}
     </div>
     {{#if hasActiveEvents}}
@@ -156,12 +156,12 @@
           <h3>Инструменты мира</h3>
         </div>
         <div class="rm-action-stack">
-          <button type="button" class="rm-button rm-button--wide" data-action="open-world-routes">Открыть мировые связи</button>
-          <button type="button" class="rm-button rm-button--wide" data-action="open-states">Открыть меню государств</button>
+          <button type="button" class="rm-button rm-button--wide rm-button--primary" data-action="open-world-routes">Открыть мировые связи</button>
+          <button type="button" class="rm-button rm-button--wide rm-button--secondary" data-action="open-states">Открыть меню государств</button>
           {{#if canManageGlobalEvents}}
-            <button type="button" class="rm-button rm-button--wide" data-action="open-global-events">Открыть глобальные ивенты</button>
+            <button type="button" class="rm-button rm-button--wide rm-button--secondary" data-action="open-global-events">Открыть глобальные ивенты</button>
           {{/if}}
-          <button type="button" class="rm-button rm-button--wide" data-action="open-inventory">Открыть инвентарь группы</button>
+          <button type="button" class="rm-button rm-button--wide rm-button--secondary" data-action="open-inventory">Открыть инвентарь группы</button>
         </div>
         <p class="rm-muted">В этих окнах можно управлять торговыми артериями, наценками, налогами, пошлинами и общим инвентарём группы, не перегружая главное окно экономики.</p>
       </section>

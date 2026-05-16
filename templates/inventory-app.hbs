@@ -23,22 +23,11 @@
       </div>
     </header>
 
-    <section class="rm-compact-pill-strip">
-      <div class="rm-compact-pill">
-        <span>Поз.</span>
-        <strong>{{rmNum summary.distinctCount precision=0}}</strong>
-      </div>
-      <div class="rm-compact-pill">
-        <span>Ед.</span>
-        <strong>{{rmNum summary.totalQuantity}}</strong>
-      </div>
+    <section class="rm-compact-pill-strip rm-compact-pill-strip--primary">
       <div class="rm-compact-pill">
         <span>Вес</span>
-        <strong>{{rmNum summary.totalWeight}} фнт.</strong>
-      </div>
-      <div class="rm-compact-pill">
-        <span>Монеты</span>
-        <strong>{{summary.currencyLabel}}</strong>
+        <strong>{{rmNum summary.totalWeight}} / {{rmNum party.totalCapacityLb}} фнт.</strong>
+        <small>Свободно: {{rmNum summary.freeCapacityLb}} фнт.</small>
       </div>
       <div class="rm-compact-pill">
         <span>Еда</span>
@@ -54,11 +43,29 @@
         <span>Энергия</span>
         <strong>{{rmNum party.totalEnergyCurrent precision=0}} / {{rmNum party.totalEnergyMax precision=0}}</strong>
       </div>
-      <div class="rm-compact-pill {{summary.freeCapacityClass}}">
-        <span>Свободно</span>
-        <strong>{{rmNum summary.freeCapacityLb}} фнт.</strong>
-      </div>
     </section>
+
+    <details class="rm-compact-pill-details">
+      <summary class="rm-compact-pill-details__toggle">Подробнее по складу</summary>
+      <section class="rm-compact-pill-strip rm-compact-pill-strip--details">
+        <div class="rm-compact-pill">
+          <span>Поз.</span>
+          <strong>{{rmNum summary.distinctCount precision=0}}</strong>
+        </div>
+        <div class="rm-compact-pill">
+          <span>Ед.</span>
+          <strong>{{rmNum summary.totalQuantity}}</strong>
+        </div>
+        <div class="rm-compact-pill">
+          <span>Монеты</span>
+          <strong>{{summary.currencyLabel}}</strong>
+        </div>
+        <div class="rm-compact-pill {{summary.freeCapacityClass}}">
+          <span>Свободно</span>
+          <strong>{{rmNum summary.freeCapacityLb}} фнт.</strong>
+        </div>
+      </section>
+    </details>
 
     <nav class="rm-tabs rm-tabs--compact">
       <button type="button" class="rm-tab {{#if tabs.isInventory}}is-active{{/if}}" data-action="switch-tab" data-tab="inventory">Инвентарь</button>
@@ -66,6 +73,10 @@
       <button type="button" class="rm-tab {{#if tabs.isCraft}}is-active{{/if}}" data-action="switch-tab" data-tab="craft">Крафт</button>
       <button type="button" class="rm-tab {{#if tabs.isCalendar}}is-active{{/if}}" data-action="switch-tab" data-tab="calendar">Календарь</button>
     </nav>
+
+    {{#if actionFeedback}}
+      <p class="{{actionFeedback.className}}">{{actionFeedback.message}}</p>
+    {{/if}}
 
     {{#if tabs.isInventory}}
       <section class="rm-panel rm-panel--full rm-panel--compact">
@@ -198,6 +209,14 @@
           </div>
         </section>
 
+        {{#if party.alerts.length}}
+          <div class="rm-status-strip">
+            {{#each party.alerts}}
+              <span class="rm-badge rm-status-badge rm-status-badge--{{type}}">{{message}}</span>
+            {{/each}}
+          </div>
+        {{/if}}
+
         <section class="rm-party-toolbar rm-party-toolbar--compact">
           <div class="rm-field">
             <select data-action="select-add-member">
@@ -216,11 +235,25 @@
           </div>
 
           <div class="rm-party-toolbar__actions">
-            <button type="button" class="rm-icon-button" data-action="add-member" title="Добавить участника" {{#unless party.availableActors.length}}disabled{{/unless}}>
+            <button
+              type="button"
+              class="rm-button rm-button--small rm-button--primary"
+              data-action="add-member"
+              title="{{#if party.addMemberDisabled}}{{party.addMemberDisabledReason}}{{else}}Добавить участника в группу{{/if}}"
+              {{#if party.addMemberDisabled}}disabled{{/if}}
+            >
               <i class="fa-solid fa-user-plus"></i>
+              <span>Добавить участника</span>
             </button>
-            <button type="button" class="rm-icon-button" data-action="consume-day" title="Списать день (запасы, энергия, крафт)" {{#unless party.memberCount}}disabled{{/unless}}>
+            <button
+              type="button"
+              class="rm-button rm-button--small rm-button--secondary"
+              data-action="consume-day"
+              title="{{#if party.consumeDayDisabled}}{{party.consumeDayDisabledReason}}{{else}}Списать день (запасы, энергия, крафт){{/if}}"
+              {{#if party.consumeDayDisabled}}disabled{{/if}}
+            >
               <i class="fa-solid fa-hourglass-half"></i>
+              <span>Списать день</span>
             </button>
           </div>
         </section>
@@ -353,7 +386,15 @@
             </select>
           </div>
           <div class="rm-craft-toolbar__actions">
-            <button type="button" class="rm-button rm-button--small" data-action="craft-process-day">Продвинуть крафт на 1 день</button>
+            <button
+              type="button"
+              class="rm-button rm-button--small rm-button--secondary"
+              data-action="craft-process-day"
+              title="{{#if craft.processDayDisabled}}{{craft.processDayDisabledReason}}{{else}}Продвинуть крафт на 1 день{{/if}}"
+              {{#if craft.processDayDisabled}}disabled{{/if}}
+            >
+              Продвинуть крафт на 1 день
+            </button>
           </div>
         </section>
 
@@ -367,7 +408,17 @@
                     <strong>{{name}}</strong>
                     <p class="rm-muted">Ранг {{rank}} • {{rmNum priceGold}} зм • {{requiredToolLabel}} • {{materialName}}</p>
                   </div>
-                  <button type="button" class="rm-button rm-button--small" data-action="craft-queue" data-gear-id="{{id}}" data-gear-name="{{name}}">Крафт</button>
+                  <button
+                    type="button"
+                    class="rm-button rm-button--small rm-button--primary"
+                    data-action="craft-queue"
+                    data-gear-id="{{id}}"
+                    data-gear-name="{{name}}"
+                    title="{{#if ../craft.queueDisabledReason}}{{../craft.queueDisabledReason}}{{else}}Поставить в очередь крафта{{/if}}"
+                    {{#unless ../craft.hasCrafters}}disabled{{/unless}}
+                  >
+                    Крафт
+                  </button>
                 </article>
               {{/each}}
             </div>
@@ -453,9 +504,9 @@
         </section>
 
         <section class="rm-calendar-actions">
-          <button type="button" class="rm-button" data-action="calendar-advance" data-unit="day" data-value="1">Пропустить день</button>
-          <button type="button" class="rm-button" data-action="calendar-advance" data-unit="week" data-value="1">Пропустить неделю</button>
-          <button type="button" class="rm-button" data-action="calendar-advance" data-unit="month" data-value="1">Пропустить месяц</button>
+          <button type="button" class="rm-button rm-button--primary" data-action="calendar-advance" data-unit="day" data-value="1">Пропустить день</button>
+          <button type="button" class="rm-button rm-button--secondary" data-action="calendar-advance" data-unit="week" data-value="1">Пропустить неделю</button>
+          <button type="button" class="rm-button rm-button--secondary" data-action="calendar-advance" data-unit="month" data-value="1">Пропустить месяц</button>
         </section>
       </section>
     {{/if}}
