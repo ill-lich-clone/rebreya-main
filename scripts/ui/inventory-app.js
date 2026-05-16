@@ -356,6 +356,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.expandedPartyMembers = new Set();
     this.searchRenderTimeout = null;
     this.craftSearchRenderTimeout = null;
+    this.actionFeedbackTimeout = null;
     this.focusRestore = null;
     this.renderListenersAbortController = null;
     this.actionFeedback = null;
@@ -389,6 +390,23 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       type: safeType,
       message: safeMessage
     };
+
+    window.clearTimeout(this.actionFeedbackTimeout);
+    const feedbackMarker = `${safeType}:${safeMessage}`;
+    this.actionFeedbackTimeout = window.setTimeout(() => {
+      const currentMarker = this.actionFeedback
+        ? `${this.actionFeedback.type}:${this.actionFeedback.message}`
+        : "";
+      if (currentMarker !== feedbackMarker) {
+        return;
+      }
+
+      this.actionFeedback = null;
+      this.actionFeedbackTimeout = null;
+      if (getAppElement(this)) {
+        this.render({ force: true });
+      }
+    }, 3500);
   }
 
   #resolveAvailableActorIdByName(query, availableActors = null) {
@@ -1481,8 +1499,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async _preClose(options) {
     window.clearTimeout(this.searchRenderTimeout);
     window.clearTimeout(this.craftSearchRenderTimeout);
+    window.clearTimeout(this.actionFeedbackTimeout);
     this.searchRenderTimeout = null;
     this.craftSearchRenderTimeout = null;
+    this.actionFeedbackTimeout = null;
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = null;
     return super._preClose ? super._preClose(options) : undefined;
