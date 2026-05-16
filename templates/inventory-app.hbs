@@ -11,14 +11,17 @@
       </div>
 
       <div class="rm-compact-shell-header__actions">
-        <button type="button" class="rm-icon-button" data-action="open-actor-sheet" title="Открыть лист склада">
+        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="open-actor-sheet" title="Открыть лист склада">
           <i class="fa-solid fa-up-right-from-square"></i>
+          <span>Лист склада</span>
         </button>
-        <button type="button" class="rm-icon-button" data-action="add-food" title="Добавить еду">
+        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="add-food" title="Добавить еду">
           <i class="fa-solid fa-bread-slice"></i>
+          <span>Еда</span>
         </button>
-        <button type="button" class="rm-icon-button" data-action="add-water" title="Добавить воду">
+        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="add-water" title="Добавить воду">
           <i class="fa-solid fa-droplet"></i>
+          <span>Вода</span>
         </button>
       </div>
     </header>
@@ -284,7 +287,7 @@
                 </summary>
 
                 <div class="rm-party-row__body">
-                  <div class="rm-party-row__controls">
+                  <div class="rm-party-row__controls rm-party-row__controls--basic">
                     <div class="rm-field">
                       <label>Роль</label>
                       <select data-action="party-field" data-actor-id="{{actorId}}" data-field="role">
@@ -305,6 +308,16 @@
                     </div>
 
                     <div class="rm-field">
+                      <label>Энергия</label>
+                      <input type="number" min="0" max="{{energyMax}}" step="1" value="{{energyCurrent}}" data-action="party-energy-current" data-actor-id="{{actorId}}">
+                    </div>
+                  </div>
+
+                  <details class="rm-party-row__advanced">
+                    <summary class="rm-party-row__advanced-toggle">Доп. настройки и инструменты</summary>
+
+                    <div class="rm-party-row__controls rm-party-row__controls--advanced">
+                      <div class="rm-field">
                       <label>СИЛ override</label>
                       <input type="number" min="0" step="1" value="{{strOverride}}" placeholder="Лист" data-action="party-field" data-actor-id="{{actorId}}" data-field="strOverride">
                     </div>
@@ -323,26 +336,22 @@
                       <label>CON override</label>
                       <input type="number" step="1" value="{{conModOverride}}" placeholder="Лист" data-action="party-field" data-actor-id="{{actorId}}" data-field="conModOverride">
                     </div>
-
-                    <div class="rm-field">
-                      <label>Энергия</label>
-                      <input type="number" min="0" max="{{energyMax}}" step="1" value="{{energyCurrent}}" data-action="party-energy-current" data-actor-id="{{actorId}}">
                     </div>
-                  </div>
 
-                  <section class="rm-party-tools">
-                    <h4>Инструменты Rebreya</h4>
-                    <div class="rm-party-tools__rows">
-                      {{#each tools}}
-                        <div class="rm-party-tool-row">
-                          <span>{{label}}</span>
-                          <label><input type="checkbox" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="owned" {{#if owned}}checked{{/if}}> есть</label>
-                          <label><input type="checkbox" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="prof" {{#if prof}}checked{{/if}}> проф</label>
-                          <input type="number" step="0.01" value="{{mod}}" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="mod" title="Модификатор">
-                        </div>
-                      {{/each}}
-                    </div>
-                  </section>
+                    <section class="rm-party-tools">
+                      <h4>Инструменты Rebreya</h4>
+                      <div class="rm-party-tools__rows">
+                        {{#each tools}}
+                          <div class="rm-party-tool-row">
+                            <span>{{label}}</span>
+                            <label><input type="checkbox" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="owned" {{#if owned}}checked{{/if}}> есть</label>
+                            <label><input type="checkbox" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="prof" {{#if prof}}checked{{/if}}> проф</label>
+                            <input type="number" step="0.01" value="{{mod}}" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="mod" title="Модификатор">
+                          </div>
+                        {{/each}}
+                      </div>
+                    </section>
+                  </details>
 
                   <div class="rm-party-row__footer">
                     <div class="rm-inline-actions">

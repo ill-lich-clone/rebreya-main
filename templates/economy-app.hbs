@@ -6,8 +6,13 @@
       <p class="rm-muted">Загружено {{totalCityCount}} поселений. Отфильтровано: {{filteredCityCount}}.</p>
     </div>
     <div class="rm-hero__actions">
-      <button type="button" class="rm-button rm-button--danger" data-action="restore-data">Восстановить данные</button>
-      <button type="button" class="rm-button rm-button--secondary" data-action="reload-data">Перезагрузить данные</button>
+      <details class="rm-inline-menu rm-inline-menu--service">
+        <summary class="rm-button rm-button--secondary rm-button--small rm-inline-menu__toggle">Сервис</summary>
+        <div class="rm-inline-menu__panel">
+          <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="reload-data">Перезагрузить данные</button>
+          <button type="button" class="rm-button rm-button--small rm-button--danger" data-action="restore-data">Восстановить данные</button>
+        </div>
+      </details>
       <div class="rm-chip">Источник: {{dataSource.mode}}</div>
     </div>
   </header>
@@ -110,14 +115,21 @@
             <div class="rm-city-card__head">
               <div>
                 <button type="button" class="rm-link-button" data-action="open-city" data-city-id="{{id}}">{{name}}</button>
-                <p class="rm-muted">{{state}} / {{regionName}} / {{cityType}}</p>
+                <p class="rm-muted rm-city-card__context">{{state}} / {{regionName}} / {{cityType}}</p>
                 {{#if activeEventNames.length}}
-                  <p class="rm-muted">Ивенты: {{activeEventNames}}</p>
+                  <p class="rm-muted rm-city-card__context">Ивенты: {{activeEventNames}}</p>
                 {{/if}}
               </div>
               <span class="rm-badge rm-self-sufficiency" style="--rm-self-sufficiency-color: {{selfSufficiencyColor}};">{{rmPct selfSufficiencyRate precision=1}}</span>
             </div>
-            <dl class="rm-metric-grid">
+
+            <div class="rm-city-card__critical">
+              <span class="rm-badge rm-status-badge rm-status-badge--danger">Дефицит: {{rmNum totalDeficit}}</span>
+              <span class="rm-badge rm-status-badge rm-status-badge--good">Профицит: {{rmNum totalSurplus}}</span>
+              <span class="rm-badge">Баланс: <strong class="{{netBalanceClass}}">{{rmSigned netBalance}}</strong></span>
+            </div>
+
+            <dl class="rm-metric-grid rm-metric-grid--city-secondary">
               <div>
                 <dt>Население</dt>
                 <dd>{{rmNum population precision=0}}</dd>
@@ -129,18 +141,6 @@
               <div>
                 <dt>Спрос</dt>
                 <dd>{{rmNum totalDemand}}</dd>
-              </div>
-              <div>
-                <dt>Дефицит</dt>
-                <dd class="rm-negative">{{rmNum totalDeficit}}</dd>
-              </div>
-              <div>
-                <dt>Профицит</dt>
-                <dd class="rm-positive">{{rmNum totalSurplus}}</dd>
-              </div>
-              <div>
-                <dt>Баланс</dt>
-                <dd class="{{netBalanceClass}}">{{rmSigned netBalance}}</dd>
               </div>
             </dl>
           </article>
@@ -157,13 +157,19 @@
         </div>
         <div class="rm-action-stack">
           <button type="button" class="rm-button rm-button--wide rm-button--primary" data-action="open-world-routes">Открыть мировые связи</button>
-          <button type="button" class="rm-button rm-button--wide rm-button--secondary" data-action="open-states">Открыть меню государств</button>
-          {{#if canManageGlobalEvents}}
-            <button type="button" class="rm-button rm-button--wide rm-button--secondary" data-action="open-global-events">Открыть глобальные ивенты</button>
-          {{/if}}
-          <button type="button" class="rm-button rm-button--wide rm-button--secondary" data-action="open-inventory">Открыть инвентарь группы</button>
+
+          <details class="rm-inline-menu rm-inline-menu--block">
+            <summary class="rm-button rm-button--wide rm-button--secondary rm-inline-menu__toggle">Другие окна</summary>
+            <div class="rm-inline-menu__panel rm-inline-menu__panel--stack">
+              <button type="button" class="rm-button rm-button--wide rm-button--secondary" data-action="open-states">Открыть меню государств</button>
+              {{#if canManageGlobalEvents}}
+                <button type="button" class="rm-button rm-button--wide rm-button--secondary" data-action="open-global-events">Открыть глобальные ивенты</button>
+              {{/if}}
+              <button type="button" class="rm-button rm-button--wide rm-button--secondary" data-action="open-inventory">Открыть инвентарь группы</button>
+            </div>
+          </details>
         </div>
-        <p class="rm-muted">В этих окнах можно управлять торговыми артериями, наценками, налогами, пошлинами и общим инвентарём группы, не перегружая главное окно экономики.</p>
+        <p class="rm-muted">Основной переход вынесен наверх. Остальные рабочие окна доступны в компактном раскрытии.</p>
       </section>
 
       <section class="rm-panel">

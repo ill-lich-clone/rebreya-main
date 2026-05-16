@@ -110,6 +110,48 @@
   gap: 10px;
 }
 
+.rm-inline-menu {
+  position: relative;
+}
+
+.rm-inline-menu__toggle {
+  list-style: none;
+  cursor: pointer;
+}
+
+.rm-inline-menu__toggle::-webkit-details-marker,
+.rm-inline-menu__toggle::marker {
+  display: none;
+  content: "";
+}
+
+.rm-inline-menu__panel {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+  padding: 10px;
+  border: 1px solid rgba(214, 182, 126, 0.24);
+  border-radius: 12px;
+  background: rgba(37, 28, 20, 0.94);
+  box-shadow: var(--rm-shadow);
+}
+
+.rm-inline-menu--service[open] .rm-inline-menu__panel {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 4;
+}
+
+.rm-inline-menu__panel--stack {
+  min-width: 0;
+}
+
+.rm-inline-menu--block .rm-inline-menu__panel {
+  box-shadow: none;
+}
+
 .rm-city-scoreboard > div {
   min-width: 150px;
   padding: 10px 12px;
@@ -520,6 +562,21 @@
 .rm-connection-card > :first-child,
 .rm-panel__header > :first-child {
   min-width: 0;
+}
+
+.rm-city-card__context {
+  font-size: 12px;
+}
+
+.rm-city-card__critical {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rm-city-card__critical .rm-badge strong {
+  font-size: 12px;
 }
 
 .rm-route-card__actions {
@@ -1269,6 +1326,12 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px 14px;
+}
+
+.rm-metric-grid--city-secondary {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(214, 182, 126, 0.12);
 }
 
 .rm-metric-grid--compact {
@@ -2288,6 +2351,12 @@
   background: rgba(240, 201, 130, 0.12);
 }
 
+.rm-status-badge--good {
+  color: var(--rm-positive);
+  border-color: rgba(128, 196, 126, 0.36);
+  background: rgba(128, 196, 126, 0.12);
+}
+
 .rm-party-capacity-meter {
   height: 10px;
   border: 1px solid rgba(214, 177, 104, 0.22);
@@ -2393,8 +2462,39 @@
 
 .rm-party-row__controls {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
+}
+
+.rm-party-row__controls--basic {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.rm-party-row__controls--advanced {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.rm-party-row__advanced {
+  border: 1px solid rgba(214, 177, 104, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 8px 10px;
+}
+
+.rm-party-row__advanced-toggle {
+  cursor: pointer;
+  color: var(--rm-muted);
+  font-size: 12px;
+  list-style: none;
+}
+
+.rm-party-row__advanced-toggle::-webkit-details-marker,
+.rm-party-row__advanced-toggle::marker {
+  display: none;
+  content: "";
+}
+
+.rm-party-row__advanced[open] .rm-party-row__advanced-toggle {
+  margin-bottom: 8px;
 }
 
 .rm-party-row__footer {
@@ -2678,10 +2778,40 @@
   gap: 10px;
 }
 
+.rm-lootgen-steps {
+  display: grid;
+  gap: 10px;
+}
+
+.rm-lootgen-step {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(214, 177, 104, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rm-lootgen-step h4 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
 .rm-lootgen-fields {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.rm-lootgen-fields--range {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.rm-lootgen-fields--budget {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .rm-lootgen-fields--secondary {
@@ -3240,6 +3370,10 @@
 
   .rm-party-compact-summary__line {
     flex-direction: column;
+  }
+
+  .rm-inline-menu--service[open] .rm-inline-menu__panel {
+    position: static;
   }
 
   .rm-trader-customer__image {

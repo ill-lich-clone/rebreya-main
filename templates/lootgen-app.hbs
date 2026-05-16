@@ -28,49 +28,60 @@
         <h3>Параметры генерации</h3>
       </div>
 
-      <div class="rm-lootgen-fields">
-        <div class="rm-field">
-          <label>Минимальный ранг</label>
-          <input type="number" min="0" max="10" step="1" value="{{form.rankMin}}" data-field="rankMin">
-        </div>
-        <div class="rm-field">
-          <label>Максимальный ранг</label>
-          <input type="number" min="0" max="10" step="1" value="{{form.rankMax}}" data-field="rankMax">
-        </div>
-        <div class="rm-field">
-          <label>Сколько строк</label>
-          <input type="number" min="1" max="40" step="1" value="{{form.itemCount}}" data-field="itemCount">
-        </div>
-        <div class="rm-field">
-          <label>Бюджет, value</label>
-          <input type="number" min="0" step="1" value="{{form.budgetValue}}" data-field="budgetValue">
-        </div>
-      </div>
+      <div class="rm-lootgen-steps">
+        <section class="rm-lootgen-step">
+          <h4><span class="rm-badge">1</span> Диапазон ранга</h4>
+          <div class="rm-lootgen-fields rm-lootgen-fields--range">
+            <div class="rm-field">
+              <label>Минимальный ранг</label>
+              <input type="number" min="0" max="10" step="1" value="{{form.rankMin}}" data-field="rankMin">
+            </div>
+            <div class="rm-field">
+              <label>Максимальный ранг</label>
+              <input type="number" min="0" max="10" step="1" value="{{form.rankMax}}" data-field="rankMax">
+            </div>
+          </div>
+        </section>
 
-      <div class="rm-lootgen-fields rm-lootgen-fields--secondary">
-        <div class="rm-field">
-          <label>% магических предметов</label>
-          <input type="number" min="0" max="100" step="1" value="{{form.magicPercent}}" data-field="magicPercent">
-        </div>
-      </div>
+        <section class="rm-lootgen-step">
+          <h4><span class="rm-badge">2</span> Объём и бюджет</h4>
+          <div class="rm-lootgen-fields rm-lootgen-fields--budget">
+            <div class="rm-field">
+              <label>Сколько строк</label>
+              <input type="number" min="1" max="40" step="1" value="{{form.itemCount}}" data-field="itemCount">
+            </div>
+            <div class="rm-field">
+              <label>Бюджет, value</label>
+              <input type="number" min="0" step="1" value="{{form.budgetValue}}" data-field="budgetValue">
+            </div>
+            <div class="rm-field">
+              <label>% магических предметов</label>
+              <input type="number" min="0" max="100" step="1" value="{{form.magicPercent}}" data-field="magicPercent">
+            </div>
+          </div>
+        </section>
 
-      <div class="rm-lootgen-switches">
-        <label class="rm-lootgen-check">
-          <input type="checkbox" {{#if form.includeGear}}checked{{/if}} data-field="includeGear">
-          <span>Снаряжение</span>
-        </label>
-        <label class="rm-lootgen-check">
-          <input type="checkbox" {{#if form.includeMaterials}}checked{{/if}} data-field="includeMaterials">
-          <span>Материалы</span>
-        </label>
-        <label class="rm-lootgen-check">
-          <input type="checkbox" {{#if form.includeMagicItems}}checked{{/if}} data-field="includeMagicItems">
-          <span>Магические предметы</span>
-        </label>
-        <label class="rm-lootgen-check">
-          <input type="checkbox" {{#if form.includeCoins}}checked{{/if}} data-field="includeCoins">
-          <span>Остаток в монеты</span>
-        </label>
+        <section class="rm-lootgen-step">
+          <h4><span class="rm-badge">3</span> Источники</h4>
+          <div class="rm-lootgen-switches">
+            <label class="rm-lootgen-check">
+              <input type="checkbox" {{#if form.includeGear}}checked{{/if}} data-field="includeGear">
+              <span>Снаряжение</span>
+            </label>
+            <label class="rm-lootgen-check">
+              <input type="checkbox" {{#if form.includeMaterials}}checked{{/if}} data-field="includeMaterials">
+              <span>Материалы</span>
+            </label>
+            <label class="rm-lootgen-check">
+              <input type="checkbox" {{#if form.includeMagicItems}}checked{{/if}} data-field="includeMagicItems">
+              <span>Магические предметы</span>
+            </label>
+            <label class="rm-lootgen-check">
+              <input type="checkbox" {{#if form.includeCoins}}checked{{/if}} data-field="includeCoins">
+              <span>Остаток в монеты</span>
+            </label>
+          </div>
+        </section>
       </div>
 
       <div class="rm-lootgen-actions">

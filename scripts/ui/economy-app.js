@@ -293,20 +293,28 @@ export class EconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
       await this.moduleApi.resetWorldData({ notify: true });
     });
 
-    element.querySelector("[data-action='open-world-routes']")?.addEventListener("click", async () => {
-      await this.moduleApi.openWorldTradeRoutesApp();
+    element.querySelectorAll("[data-action='open-world-routes']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await this.moduleApi.openWorldTradeRoutesApp();
+      });
     });
 
-    element.querySelector("[data-action='open-states']")?.addEventListener("click", async () => {
-      await this.moduleApi.openStatesApp();
+    element.querySelectorAll("[data-action='open-states']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await this.moduleApi.openStatesApp();
+      });
     });
 
-    element.querySelector("[data-action='open-global-events']")?.addEventListener("click", async () => {
-      await this.moduleApi.openGlobalEventsApp();
+    element.querySelectorAll("[data-action='open-global-events']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await this.moduleApi.openGlobalEventsApp();
+      });
     });
 
-    element.querySelector("[data-action='open-inventory']")?.addEventListener("click", async () => {
-      await this.moduleApi.openInventoryApp();
+    element.querySelectorAll("[data-action='open-inventory']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await this.moduleApi.openInventoryApp();
+      });
     });
 
     if (this.pendingFocus?.selector) {
