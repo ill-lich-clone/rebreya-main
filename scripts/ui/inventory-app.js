@@ -42,6 +42,57 @@ function roundNumber(value, precision = 2) {
   return Math.round((toNumber(value, 0) + Number.EPSILON) * factor) / factor;
 }
 
+function resolveCapacitySeverity(freeCapacityLb, usedPercentRaw) {
+  if (toNumber(freeCapacityLb, 0) < 0) {
+    return "danger";
+  }
+  if (toNumber(usedPercentRaw, 0) >= 90) {
+    return "warning";
+  }
+  return "good";
+}
+
+function resolveSupplySeverity(daysLeft, hasEstimate) {
+  if (!hasEstimate) {
+    return "info";
+  }
+  const safeDays = toNumber(daysLeft, 0);
+  if (safeDays <= 0) {
+    return "danger";
+  }
+  if (safeDays <= 1) {
+    return "warning";
+  }
+  return "good";
+}
+
+function resolveEnergySeverity(current, max) {
+  const safeMax = toNumber(max, 0);
+  if (safeMax <= 0) {
+    return "info";
+  }
+  const ratioPercent = (toNumber(current, 0) / safeMax) * 100;
+  if (ratioPercent <= 30) {
+    return "danger";
+  }
+  if (ratioPercent <= 60) {
+    return "warning";
+  }
+  return "good";
+}
+
+function toStateClass(severity) {
+  const safeSeverity = ["danger", "warning", "good", "info"].includes(severity) ? severity : "info";
+  return `rm-state-${safeSeverity}`;
+}
+
+function toStatusBadgeType(severity) {
+  if (severity === "danger" || severity === "warning" || severity === "good") {
+    return severity;
+  }
+  return "info";
+}
+
 function getDialogRoot(html) {
   if (!html) {
     return null;
@@ -348,9 +399,70 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const availableActors = partySnapshot.availableActors ?? [];
       const totalCapacityLb = toNumber(partySnapshot.totalCapacityLb, 0);
       const inventoryWeight = toNumber(partySnapshot.inventoryWeight, 0);
-      const capacityUsedPercent = totalCapacityLb > 0
-        ? Math.min(100, Math.max(0, roundNumber((inventoryWeight / totalCapacityLb) * 100, 1)))
+      const freeCapacityLb = roundNumber(toNumber(partySnapshot.freeCapacityLb, 0), 2);
+      const capacityUsedRawPercent = totalCapacityLb > 0
+        ? roundNumber((inventoryWeight / totalCapacityLb) * 100, 1)
         : 0;
+      const capacityUsedPercent = totalCapacityLb > 0
+        ? Math.min(100, Math.max(0, capacityUsedRawPercent))
+        : 0;
+      const hasFoodEstimate = partySnapshot.foodDaysLeft !== null;
+      const hasWaterEstimate = partySnapshot.waterDaysLeft !== null;
+      const foodDaysLeft = hasFoodEstimate ? roundNumber(toNumber(partySnapshot.foodDaysLeft, 0), 1) : null;
+      const waterDaysLeft = hasWaterEstimate ? roundNumber(toNumber(partySnapshot.waterDaysLeft, 0), 1) : null;
+      const totalFoodPerDay = roundNumber(toNumber(partySnapshot.totalFoodPerDay, 0), 2);
+      const totalWaterPerDay = roundNumber(toNumber(partySnapshot.totalWaterGalPerDay, 0), 2);
+      const totalEnergyCurrent = toNumber(partySnapshot.totalEnergyCurrent, 0);
+      const totalEnergyMax = toNumber(partySnapshot.totalEnergyMax, 0);
+      const energyPercent = totalEnergyMax > 0
+        ? Math.max(0, Math.min(100, roundNumber((totalEnergyCurrent / totalEnergyMax) * 100, 0)))
+        : 0;
+
+      const weightSeverity = resolveCapacitySeverity(freeCapacityLb, capacityUsedRawPercent);
+      const foodSeverity = resolveSupplySeverity(foodDaysLeft, hasFoodEstimate);
+      const waterSeverity = resolveSupplySeverity(waterDaysLeft, hasWaterEstimate);
+      const energySeverity = resolveEnergySeverity(totalEnergyCurrent, totalEnergyMax);
+      const overloadLb = roundNumber(Math.abs(freeCapacityLb), 2);
+
+      const dashboard = {
+        weight: {
+          className: toStateClass(weightSeverity),
+          badgeType: toStatusBadgeType(weightSeverity),
+          badgeLabel: freeCapacityLb < 0
+            ? `Перегруз ${overloadLb} фнт.`
+            : `Загрузка ${roundNumber(capacityUsedRawPercent, 1)}%`,
+          note: freeCapacityLb < 0
+            ? `Свободно: -${overloadLb} фнт.`
+            : `Свободно: ${roundNumber(freeCapacityLb, 2)} фнт.`,
+          meterClass: `is-${weightSeverity}`,
+          meterPercent: capacityUsedPercent
+        },
+        food: {
+          className: toStateClass(foodSeverity),
+          badgeType: toStatusBadgeType(foodSeverity),
+          daysLabel: hasFoodEstimate ? `${foodDaysLeft} дн.` : "Без нормы",
+          note: hasFoodEstimate
+            ? (foodDaysLeft <= 0 ? "Запас исчерпан" : `Расход ${totalFoodPerDay} / день`)
+            : "Задайте расход в группе"
+        },
+        water: {
+          className: toStateClass(waterSeverity),
+          badgeType: toStatusBadgeType(waterSeverity),
+          daysLabel: hasWaterEstimate ? `${waterDaysLeft} дн.` : "Без нормы",
+          note: hasWaterEstimate
+            ? (waterDaysLeft <= 0 ? "Запас исчерпан" : `Расход ${totalWaterPerDay} / день`)
+            : "Задайте расход в группе"
+        },
+        energy: {
+          className: toStateClass(energySeverity),
+          badgeType: toStatusBadgeType(energySeverity),
+          ratioLabel: `${roundNumber(totalEnergyCurrent, 0)} / ${roundNumber(totalEnergyMax, 0)}`,
+          note: totalEnergyMax > 0
+            ? `Готовность ${energyPercent}%`
+            : "Нет участников"
+        }
+      };
+
       const currency = inventorySnapshot.summary.currency ?? {
         pp: 0,
         gp: 0,
@@ -368,19 +480,19 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const craftHasCrafters = (craftSnapshot.crafters ?? []).length > 0;
       const processDayDisabled = (craftSnapshot.queue ?? []).length === 0;
       const partyAlerts = [];
-      if (toNumber(partySnapshot.freeCapacityLb, 0) < 0) {
+      if (freeCapacityLb < 0) {
         partyAlerts.push({
           type: "danger",
-          message: `Перегруз: ${roundNumber(Math.abs(toNumber(partySnapshot.freeCapacityLb, 0)), 2)} фнт.`
+          message: `Перегруз: ${overloadLb} фнт.`
         });
       }
-      if (partySnapshot.foodDaysLeft !== null && toNumber(partySnapshot.foodDaysLeft, 0) <= 0) {
+      if (hasFoodEstimate && toNumber(foodDaysLeft, 0) <= 0) {
         partyAlerts.push({
           type: "warning",
           message: "Еда закончилась: пополните запас."
         });
       }
-      if (partySnapshot.waterDaysLeft !== null && toNumber(partySnapshot.waterDaysLeft, 0) <= 0) {
+      if (hasWaterEstimate && toNumber(waterDaysLeft, 0) <= 0) {
         partyAlerts.push({
           type: "warning",
           message: "Вода закончилась: пополните запас."
@@ -422,14 +534,19 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           ...inventorySnapshot.summary,
           currency,
           partyCapacityLb: partySnapshot.totalCapacityLb,
-          freeCapacityLb: partySnapshot.freeCapacityLb,
-          freeCapacityClass: partySnapshot.freeCapacityLb < 0 ? "rm-negative" : "rm-positive"
+          freeCapacityLb,
+          freeCapacityClass: freeCapacityLb < 0 ? "rm-negative" : "rm-positive"
         },
         party: {
           ...partySnapshot,
+          freeCapacityLb,
+          foodDaysLeft,
+          waterDaysLeft,
           members: partyMembers,
           capacityUsedPercent,
+          capacityUsedRawPercent,
           alerts: partyAlerts,
+          dashboard,
           addMemberDisabled,
           addMemberDisabledReason: addMemberDisabled
             ? "Нет доступных актёров для добавления в группу."
@@ -442,8 +559,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             ...actor,
             selected: actor.id === this.selectedNewMemberId
           })),
-          hasFoodEstimate: partySnapshot.foodDaysLeft !== null,
-          hasWaterEstimate: partySnapshot.waterDaysLeft !== null
+          hasFoodEstimate,
+          hasWaterEstimate
         },
         craft: {
           ...craftSnapshot,

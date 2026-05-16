@@ -27,25 +27,29 @@
     </header>
 
     <section class="rm-compact-pill-strip rm-compact-pill-strip--primary">
-      <div class="rm-compact-pill">
-        <span>Вес</span>
+      <article class="rm-compact-pill rm-compact-pill--focus {{party.dashboard.weight.className}}">
+        <span>Груз</span>
         <strong>{{rmNum summary.totalWeight}} / {{rmNum party.totalCapacityLb}} фнт.</strong>
-        <small>Свободно: {{rmNum summary.freeCapacityLb}} фнт.</small>
-      </div>
-      <div class="rm-compact-pill">
+        <small>{{party.dashboard.weight.note}}</small>
+        <div class="rm-compact-pill__meter" aria-hidden="true">
+          <div class="rm-compact-pill__meter-bar {{party.dashboard.weight.meterClass}}" style="width: {{party.dashboard.weight.meterPercent}}%;"></div>
+        </div>
+      </article>
+      <article class="rm-compact-pill {{party.dashboard.food.className}}">
         <span>Еда</span>
         <strong>{{rmNum summary.foodLb}} фнт.</strong>
-        <small>{{#if party.hasFoodEstimate}}{{rmNum party.foodDaysLeft}} дн.{{else}}без нормы{{/if}}</small>
-      </div>
-      <div class="rm-compact-pill">
+        <small>{{party.dashboard.food.daysLabel}} • {{party.dashboard.food.note}}</small>
+      </article>
+      <article class="rm-compact-pill {{party.dashboard.water.className}}">
         <span>Вода</span>
         <strong>{{rmNum summary.waterGal}} гал.</strong>
-        <small>{{#if party.hasWaterEstimate}}{{rmNum party.waterDaysLeft}} дн.{{else}}без нормы{{/if}}</small>
-      </div>
-      <div class="rm-compact-pill">
+        <small>{{party.dashboard.water.daysLabel}} • {{party.dashboard.water.note}}</small>
+      </article>
+      <article class="rm-compact-pill rm-compact-pill--energy {{party.dashboard.energy.className}}">
         <span>Энергия</span>
-        <strong>{{rmNum party.totalEnergyCurrent precision=0}} / {{rmNum party.totalEnergyMax precision=0}}</strong>
-      </div>
+        <strong>{{party.dashboard.energy.ratioLabel}}</strong>
+        <small>{{party.dashboard.energy.note}}</small>
+      </article>
     </section>
 
     <details class="rm-compact-pill-details">
@@ -159,28 +163,55 @@
                   </div>
                 </div>
 
-                <div class="rm-compact-item__actions">
-                  {{#if canOpenEntry}}
-                    <button type="button" class="rm-icon-button" data-action="open-compendium-entry" data-source-type="{{sourceType}}" data-source-id="{{sourceId}}" data-source-name="{{name}}" title="Открыть запись в компендии">
-                      <i class="fa-solid fa-circle-question"></i>
-                    </button>
-                  {{/if}}
+                <div class="rm-compact-item__side">
+                  <div class="rm-compact-item__metrics">
+                    <p>
+                      <span>Кол-во</span>
+                      <strong>{{rmNum quantity}}</strong>
+                    </p>
+                    <p>
+                      <span>Вес</span>
+                      <strong>{{rmNum totalWeight}} фнт.</strong>
+                    </p>
+                    <p>
+                      <span>Цена</span>
+                      <strong>{{#if priceLabel}}{{priceLabel}}{{else}}-{{/if}}</strong>
+                    </p>
+                  </div>
 
-                  <button type="button" class="rm-icon-button" data-action="open-item-sheet" data-item-id="{{itemId}}" title="Открыть лист предмета">
-                    <i class="fa-solid fa-file-lines"></i>
-                  </button>
+                  <details class="rm-inline-menu rm-inline-menu--service rm-compact-item__menu">
+                    <summary class="rm-inline-menu__toggle rm-icon-button" title="Действия с предметом">
+                      <i class="fa-solid fa-ellipsis"></i>
+                    </summary>
+                    <div class="rm-inline-menu__panel rm-inline-menu__panel--stack">
+                      {{#if canOpenEntry}}
+                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="open-compendium-entry" data-source-type="{{sourceType}}" data-source-id="{{sourceId}}" data-source-name="{{name}}">
+                          <i class="fa-solid fa-circle-question"></i>
+                          <span>Открыть запись</span>
+                        </button>
+                      {{/if}}
 
-                  <button type="button" class="rm-icon-button" data-action="edit-item-quantity" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}" title="Изменить количество">
-                    <i class="fa-solid fa-pen"></i>
-                  </button>
+                      <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="open-item-sheet" data-item-id="{{itemId}}">
+                        <i class="fa-solid fa-file-lines"></i>
+                        <span>Лист предмета</span>
+                      </button>
 
-                  <button type="button" class="rm-icon-button" data-action="break-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}" title="Разобрать на материалы">
-                    <i class="fa-solid fa-hammer"></i>
-                  </button>
+                      <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="edit-item-quantity" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
+                        <i class="fa-solid fa-pen"></i>
+                        <span>Изменить количество</span>
+                      </button>
 
-                  <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="delete-item" data-item-id="{{itemId}}" data-item-name="{{name}}" title="Удалить предмет">
-                    <i class="fa-solid fa-trash"></i>
-                  </button>
+                      <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="break-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
+                        <i class="fa-solid fa-hammer"></i>
+                        <span>Разобрать</span>
+                      </button>
+
+                      <button type="button" class="rm-button rm-button--small rm-button--danger" data-action="delete-item" data-item-id="{{itemId}}" data-item-name="{{name}}">
+                        <i class="fa-solid fa-trash"></i>
+                        <span>Удалить</span>
+                      </button>
+                    </div>
+                  </details>
                 </div>
               </article>
             {{/each}}
@@ -196,19 +227,37 @@
           <span class="rm-muted">{{rmNum party.memberCount precision=0}} уч.</span>
         </div>
 
-        <section class="rm-party-compact-summary">
-          <div class="rm-party-compact-summary__line">
-            <span>Еда: {{rmNum party.totalFoodPerDay}} / день</span>
-            <span>Вода: {{rmNum party.totalWaterGalPerDay}} / день</span>
-            <span>Груз: {{rmNum party.inventoryWeight}} / {{rmNum party.totalCapacityLb}} фнт.</span>
+        <section class="rm-party-state-card">
+          <div class="rm-party-state-card__header">
+            <h4>Состояние группы</h4>
+            <span class="rm-badge rm-status-badge rm-status-badge--{{party.dashboard.weight.badgeType}}">{{party.dashboard.weight.badgeLabel}}</span>
           </div>
+
+          <div class="rm-party-state-grid">
+            <article class="rm-party-state-metric {{party.dashboard.food.className}}">
+              <span>Еда</span>
+              <strong>{{party.dashboard.food.daysLabel}}</strong>
+              <small>Расход: {{rmNum party.totalFoodPerDay}} / день</small>
+            </article>
+            <article class="rm-party-state-metric {{party.dashboard.water.className}}">
+              <span>Вода</span>
+              <strong>{{party.dashboard.water.daysLabel}}</strong>
+              <small>Расход: {{rmNum party.totalWaterGalPerDay}} / день</small>
+            </article>
+            <article class="rm-party-state-metric {{party.dashboard.weight.className}}">
+              <span>Груз</span>
+              <strong>{{party.dashboard.weight.badgeLabel}}</strong>
+              <small>{{rmNum party.inventoryWeight}} / {{rmNum party.totalCapacityLb}} фнт.</small>
+            </article>
+            <article class="rm-party-state-metric {{party.dashboard.energy.className}}">
+              <span>Энергия</span>
+              <strong>{{party.dashboard.energy.ratioLabel}}</strong>
+              <small>{{party.dashboard.energy.note}}</small>
+            </article>
+          </div>
+
           <div class="rm-party-capacity-meter">
             <div class="rm-party-capacity-meter__bar {{summary.freeCapacityClass}}" style="width: {{party.capacityUsedPercent}}%;"></div>
-          </div>
-          <div class="rm-party-compact-summary__line rm-muted">
-            <span>{{#if party.hasFoodEstimate}}Еды на {{rmNum party.foodDaysLeft}} дн.{{else}}Еда без дневной нормы{{/if}}</span>
-            <span>{{#if party.hasWaterEstimate}}Воды на {{rmNum party.waterDaysLeft}} дн.{{else}}Вода без дневной нормы{{/if}}</span>
-            <span>Энергия: {{rmNum party.totalEnergyCurrent precision=0}} / {{rmNum party.totalEnergyMax precision=0}}</span>
           </div>
         </section>
 
