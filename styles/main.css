@@ -2171,45 +2171,13 @@ summary:focus-visible {
   --rm-ui-badge-radius: 999px;
   --rm-ui-button-radius: 7px;
   --rm-ui-tab-radius: 8px;
+  --rm-ui-muted: #ddcaaa;
   --rm-ui-row-bg: rgba(31, 23, 17, 0.78);
   --rm-ui-row-bg-hover: rgba(49, 35, 24, 0.88);
   --rm-ui-row-bg-open: rgba(58, 40, 26, 0.88);
   --rm-ui-divider: rgba(214, 177, 104, 0.22);
   --rm-ui-active: rgba(240, 201, 130, 0.86);
   gap: 12px;
-}
-
-.rm-inventory-shell--compact .panel,
-.rm-inventory-shell--compact .section {
-  border-radius: var(--rm-ui-section-radius);
-}
-
-.rm-inventory-shell--compact .row {
-  border-radius: var(--rm-ui-row-radius);
-}
-
-.rm-inventory-shell--compact .badge {
-  border-radius: var(--rm-ui-badge-radius);
-}
-
-.rm-inventory-shell--compact .button {
-  border-radius: var(--rm-ui-button-radius);
-}
-
-.rm-inventory-shell--compact .tab {
-  border-radius: var(--rm-ui-tab-radius) var(--rm-ui-tab-radius) 0 0;
-}
-
-.rm-inventory-shell--compact .danger {
-  color: var(--rm-negative);
-}
-
-.rm-inventory-shell--compact .warning {
-  color: #f0c982;
-}
-
-.rm-inventory-shell--compact .muted {
-  color: var(--rm-muted);
 }
 
 .rm-inventory-shell--compact .rm-button,
@@ -2229,6 +2197,19 @@ summary:focus-visible {
   border-radius: var(--rm-ui-input-radius);
   border-color: rgba(214, 177, 104, 0.24);
   background: rgba(14, 11, 8, 0.42);
+}
+
+.rm-inventory-shell--compact .rm-muted,
+.rm-inventory-shell--compact .rm-compact-item__meta,
+.rm-inventory-shell--compact .rm-compact-item__metrics span,
+.rm-inventory-shell--compact .rm-compact-pill span,
+.rm-inventory-shell--compact .rm-compact-pill small {
+  color: var(--rm-ui-muted);
+}
+
+.rm-inventory-shell--compact .rm-chip,
+.rm-inventory-shell--compact .rm-badge {
+  border-radius: var(--rm-ui-badge-radius);
 }
 
 .rm-inventory-shell--compact .rm-field input:focus-visible,
@@ -2252,6 +2233,7 @@ summary:focus-visible {
 .rm-inventory-shell--compact .rm-compact-shell-header {
   border-radius: var(--rm-ui-window-radius);
   border-color: rgba(214, 177, 104, 0.3);
+  box-shadow: none;
 }
 
 .rm-compact-shell-header__title {
@@ -2496,6 +2478,16 @@ summary:focus-visible {
   gap: 8px;
 }
 
+.rm-inventory-shell--compact .rm-party-toolbar__actions .rm-button--primary {
+  min-height: 36px;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(255, 236, 196, 0.16);
+}
+
+.rm-inventory-shell--compact .rm-party-toolbar__actions .rm-button--secondary {
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .rm-party-toolbar--compact.is-dragover {
   border-color: rgba(214, 177, 104, 0.66);
   background: rgba(214, 177, 104, 0.1);
@@ -2640,11 +2632,6 @@ summary:focus-visible {
   padding-left: 12px;
 }
 
-.rm-inventory-shell--compact .rm-compact-item__meta,
-.rm-inventory-shell--compact .rm-compact-item__metrics span {
-  color: #e4d4ba;
-}
-
 .rm-compact-item__metrics {
   margin: 0;
   display: grid;
@@ -2691,6 +2678,12 @@ summary:focus-visible {
   width: 32px;
   height: 32px;
   border-radius: var(--rm-ui-button-radius);
+}
+
+.rm-inventory-shell--compact .rm-coin-badge {
+  border-radius: var(--rm-ui-button-radius);
+  min-height: 28px;
+  padding: 4px 9px;
 }
 
 .rm-state-danger {
