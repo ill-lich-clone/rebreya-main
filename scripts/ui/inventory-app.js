@@ -357,6 +357,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.searchRenderTimeout = null;
     this.craftSearchRenderTimeout = null;
     this.actionFeedbackTimeout = null;
+    this.contextMenuCleanup = null;
     this.focusRestore = null;
     this.renderListenersAbortController = null;
     this.actionFeedback = null;
@@ -427,6 +428,119 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     return "";
+  }
+
+  #closeContextMenu() {
+    if (typeof this.contextMenuCleanup === "function") {
+      this.contextMenuCleanup();
+    }
+    this.contextMenuCleanup = null;
+  }
+
+  #openContextMenu({ x, y, title = "", actions = [] }) {
+    this.#closeContextMenu();
+    if (!Array.isArray(actions) || !actions.length) {
+      return;
+    }
+
+    const menuRoot = document.createElement("div");
+    menuRoot.className = "rm-context-menu";
+    menuRoot.setAttribute("role", "menu");
+
+    if (title) {
+      const titleNode = document.createElement("p");
+      titleNode.className = "rm-context-menu__title";
+      titleNode.textContent = title;
+      menuRoot.appendChild(titleNode);
+    }
+
+    for (const action of actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `rm-context-menu__item${action.danger ? " is-danger" : ""}`;
+      if (action.icon) {
+        const iconNode = document.createElement("i");
+        iconNode.className = action.icon;
+        button.appendChild(iconNode);
+      }
+
+      const labelNode = document.createElement("span");
+      labelNode.textContent = action.label ?? "";
+      button.appendChild(labelNode);
+
+      button.addEventListener("click", () => {
+        this.#closeContextMenu();
+        try {
+          action.callback?.();
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Context menu action failed.`, error);
+        }
+      });
+      menuRoot.appendChild(button);
+    }
+
+    document.body.appendChild(menuRoot);
+
+    const bounds = menuRoot.getBoundingClientRect();
+    const maxLeft = window.innerWidth - bounds.width - 8;
+    const maxTop = window.innerHeight - bounds.height - 8;
+    const safeLeft = Math.max(8, Math.min(x, maxLeft));
+    const safeTop = Math.max(8, Math.min(y, maxTop));
+
+    menuRoot.style.left = `${safeLeft}px`;
+    menuRoot.style.top = `${safeTop}px`;
+
+    const handlePointerDown = (event) => {
+      if (!menuRoot.contains(event.target)) {
+        this.#closeContextMenu();
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        this.#closeContextMenu();
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+
+    this.contextMenuCleanup = () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+      menuRoot.remove();
+    };
+  }
+
+  async #removePartyMember(actorId, actorName, element) {
+    const safeActorId = String(actorId ?? "").trim();
+    const safeActorName = String(actorName ?? "участника").trim() || "участника";
+    if (!safeActorId) {
+      return;
+    }
+
+    const confirmed = await confirmAction(
+      "Удалить из группы",
+      `<p>Удалить «${foundry.utils.escapeHTML(safeActorName)}» из состава группы?</p>`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      this.#rememberExpandedPartyMembers(element);
+      await this.moduleApi.removePartyMember(safeActorId);
+      this.#setActionFeedback("success", `Участник «${safeActorName}» удалён из группы.`);
+      ui.notifications?.info(`Участник «${safeActorName}» удалён из группы.`);
+      bringAppToFront(this);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to remove party member.`, error);
+      const message = error.message || "Не удалось удалить участника группы.";
+      this.#setActionFeedback("error", message);
+      this.render({ force: true });
+      ui.notifications?.error(message);
+    }
   }
 
   async #resolveDroppedActor(dragData) {
@@ -808,6 +922,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
 
+    this.#closeContextMenu();
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = new AbortController();
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
@@ -1287,30 +1402,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelectorAll("[data-action='remove-party-member']").forEach((button) => {
-      button.addEventListener("click", async (event) => {
-        const actorId = event.currentTarget.dataset.actorId;
-        const actorName = event.currentTarget.dataset.actorName ?? "участника";
-        const confirmed = await confirmAction(
-          "Удалить из группы",
-          `<p>Удалить «${foundry.utils.escapeHTML(actorName)}» из состава группы?</p>`
-        );
-        if (!confirmed) {
-          return;
-        }
-
-        try {
-          this.#rememberExpandedPartyMembers(element);
-          await this.moduleApi.removePartyMember(actorId);
-          ui.notifications?.info(`Участник «${actorName}» удалён из группы.`);
-        }
-        catch (error) {
-          console.error(`${MODULE_ID} | Failed to remove party member.`, error);
-          ui.notifications?.error(error.message || "Не удалось удалить участника группы.");
-        }
-      }, listenerOptions);
-    });
-
     element.querySelector("[data-action='consume-day']")?.addEventListener("click", async () => {
       try {
         const result = await this.moduleApi.advanceCalendarDays(1, {
@@ -1381,6 +1472,106 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           this.render({ force: true });
           ui.notifications?.error(message);
         }
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll(".rm-party-row__summary").forEach((summaryNode) => {
+      summaryNode.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const row = event.currentTarget.closest(".rm-party-row[data-actor-id]");
+        if (!(row instanceof HTMLElement)) {
+          return;
+        }
+
+        const actorId = String(row.dataset.actorId ?? "").trim();
+        const actorName = String(row.dataset.actorName ?? "").trim() || "участника";
+        if (!actorId) {
+          return;
+        }
+
+        this.#openContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          title: actorName,
+          actions: [
+            {
+              label: "Удалить из группы",
+              icon: "fa-solid fa-user-minus",
+              danger: true,
+              callback: async () => {
+                await this.#removePartyMember(actorId, actorName, element);
+              }
+            }
+          ]
+        });
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll(".rm-compact-item").forEach((itemRow) => {
+      itemRow.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const row = event.currentTarget.closest(".rm-compact-item");
+        if (!(row instanceof HTMLElement)) {
+          return;
+        }
+
+        const itemName = String(row.dataset.itemName ?? "Предмет").trim() || "Предмет";
+        const actionButtons = {
+          openCompendium: row.querySelector("[data-action='open-compendium-entry']"),
+          openItemSheet: row.querySelector("[data-action='open-item-sheet']"),
+          editQuantity: row.querySelector("[data-action='edit-item-quantity']"),
+          breakItem: row.querySelector("[data-action='break-item']"),
+          deleteItem: row.querySelector("[data-action='delete-item']")
+        };
+
+        const actions = [];
+        if (actionButtons.openCompendium) {
+          actions.push({
+            label: "Открыть запись",
+            icon: "fa-solid fa-circle-question",
+            callback: () => actionButtons.openCompendium.click()
+          });
+        }
+        if (actionButtons.openItemSheet) {
+          actions.push({
+            label: "Лист предмета",
+            icon: "fa-solid fa-file-lines",
+            callback: () => actionButtons.openItemSheet.click()
+          });
+        }
+        if (actionButtons.editQuantity) {
+          actions.push({
+            label: "Изменить количество",
+            icon: "fa-solid fa-pen",
+            callback: () => actionButtons.editQuantity.click()
+          });
+        }
+        if (actionButtons.breakItem) {
+          actions.push({
+            label: "Разобрать",
+            icon: "fa-solid fa-hammer",
+            callback: () => actionButtons.breakItem.click()
+          });
+        }
+        if (actionButtons.deleteItem) {
+          actions.push({
+            label: "Удалить",
+            icon: "fa-solid fa-trash",
+            danger: true,
+            callback: () => actionButtons.deleteItem.click()
+          });
+        }
+
+        this.#openContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          title: itemName,
+          actions
+        });
       }, listenerOptions);
     });
 
@@ -1497,6 +1688,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _preClose(options) {
+    this.#closeContextMenu();
     window.clearTimeout(this.searchRenderTimeout);
     window.clearTimeout(this.craftSearchRenderTimeout);
     window.clearTimeout(this.actionFeedbackTimeout);

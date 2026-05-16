@@ -141,7 +141,7 @@
         {{else}}
           <div class="rm-compact-item-list">
             {{#each inventory}}
-              <article class="rm-compact-item" data-item-drag="true" data-item-id="{{itemId}}" data-item-uuid="{{itemUuid}}" draggable="true">
+              <article class="rm-compact-item" data-item-drag="true" data-item-id="{{itemId}}" data-item-name="{{name}}" data-item-uuid="{{itemUuid}}" draggable="true">
                 <div class="rm-compact-item__main">
                   <img class="rm-compact-item__image" src="{{img}}" alt="{{name}}">
                   <div class="rm-compact-item__copy">
@@ -283,7 +283,7 @@
         {{else}}
           <div class="rm-party-member-list rm-party-member-list--compact">
             {{#each party.members}}
-              <details class="rm-party-row {{#if isMissing}}rm-party-row--missing{{/if}}" data-actor-id="{{actorId}}" {{#if expanded}}open{{/if}}>
+              <details class="rm-party-row {{#if isMissing}}rm-party-row--missing{{/if}}" data-actor-id="{{actorId}}" data-actor-name="{{actorName}}" {{#if expanded}}open{{/if}}>
                 <summary class="rm-party-row__summary">
                   <div class="rm-party-row__identity">
                     <img class="rm-party-row__image" src="{{actorImg}}" alt="{{actorName}}">
@@ -375,9 +375,6 @@
                       <span class="rm-muted">Источник силы: {{strengthSource}} • CON: {{conMod}} ({{conModSource}})</span>
                       <button type="button" class="rm-button rm-button--small rm-button--ghost" data-action="party-restore-energy" data-actor-id="{{actorId}}" data-actor-name="{{actorName}}">Восстановить энергию</button>
                     </div>
-                    <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="remove-party-member" data-actor-id="{{actorId}}" data-actor-name="{{actorName}}" title="Убрать из группы">
-                      <i class="fa-solid fa-user-minus"></i>
-                    </button>
                   </div>
                 </div>
               </details>
