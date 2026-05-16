@@ -4,7 +4,7 @@
   </section>
 {{else}}
   <section class="rm-shell rm-inventory-shell rm-inventory-shell--compact scrollable">
-    <header class="rm-compact-shell-header panel">
+    <header class="rm-compact-shell-header">
       <div class="rm-compact-shell-header__title">
         <p class="rm-eyebrow">Партийная логистика</p>
         <h2>{{actor.name}}</h2>
@@ -26,7 +26,7 @@
       </div>
     </header>
 
-    <section class="rm-compact-pill-strip rm-compact-pill-strip--primary section">
+    <section class="rm-compact-pill-strip rm-compact-pill-strip--primary">
       <article class="rm-compact-pill rm-compact-pill--focus {{party.dashboard.weight.className}}">
         <span>Груз</span>
         <strong>{{rmNum summary.totalWeight}} / {{rmNum party.totalCapacityLb}} фнт.</strong>
@@ -52,7 +52,7 @@
       </article>
     </section>
 
-    <details class="rm-compact-pill-details section">
+    <details class="rm-compact-pill-details">
       <summary class="rm-compact-pill-details__toggle rm-toggle-affordance">Подробнее по складу</summary>
       <section class="rm-compact-pill-strip rm-compact-pill-strip--details">
         <div class="rm-compact-pill">
@@ -74,11 +74,11 @@
       </section>
     </details>
 
-    <nav class="rm-tabs rm-tabs--compact section">
-      <button type="button" class="rm-tab tab {{#if tabs.isInventory}}is-active{{/if}}" data-action="switch-tab" data-tab="inventory">Инвентарь</button>
-      <button type="button" class="rm-tab tab {{#if tabs.isParty}}is-active{{/if}}" data-action="switch-tab" data-tab="party">Группа</button>
-      <button type="button" class="rm-tab tab {{#if tabs.isCraft}}is-active{{/if}}" data-action="switch-tab" data-tab="craft">Крафт</button>
-      <button type="button" class="rm-tab tab {{#if tabs.isCalendar}}is-active{{/if}}" data-action="switch-tab" data-tab="calendar">Календарь</button>
+    <nav class="rm-tabs rm-tabs--compact">
+      <button type="button" class="rm-tab {{#if tabs.isInventory}}is-active{{/if}}" data-action="switch-tab" data-tab="inventory">Инвентарь</button>
+      <button type="button" class="rm-tab {{#if tabs.isParty}}is-active{{/if}}" data-action="switch-tab" data-tab="party">Группа</button>
+      <button type="button" class="rm-tab {{#if tabs.isCraft}}is-active{{/if}}" data-action="switch-tab" data-tab="craft">Крафт</button>
+      <button type="button" class="rm-tab {{#if tabs.isCalendar}}is-active{{/if}}" data-action="switch-tab" data-tab="calendar">Календарь</button>
     </nav>
 
     {{#if actionFeedback}}
@@ -86,7 +86,7 @@
     {{/if}}
 
     {{#if tabs.isInventory}}
-      <section class="rm-panel rm-panel--full rm-panel--compact panel">
+      <section class="rm-panel rm-panel--full rm-panel--compact">
         <div class="rm-panel__header rm-panel__header--compact">
           <h3>Склад</h3>
           <span class="rm-muted">{{rmNum inventoryCount precision=0}} поз.</span>
@@ -118,7 +118,7 @@
           </button>
         </section>
 
-        <section class="rm-compact-toolbar section">
+        <section class="rm-compact-toolbar">
           <div class="rm-field">
             <input type="search" value="{{search}}" placeholder="Поиск: название, тип, материал" data-action="search">
           </div>
@@ -131,7 +131,7 @@
           </div>
         </section>
 
-        <div class="rm-compact-dropzone section" data-action="inventory-dropzone">
+        <div class="rm-compact-dropzone" data-action="inventory-dropzone">
           <i class="fa-solid fa-box-open"></i>
           <span>Перетащите сюда предмет из листа или компендия</span>
         </div>
@@ -141,7 +141,7 @@
         {{else}}
           <div class="rm-compact-item-list">
             {{#each inventory}}
-              <article class="rm-compact-item row" data-item-drag="true" data-item-id="{{itemId}}" data-item-name="{{name}}" data-item-uuid="{{itemUuid}}" draggable="true">
+              <article class="rm-compact-item" data-item-drag="true" data-item-id="{{itemId}}" data-item-name="{{name}}" data-item-uuid="{{itemUuid}}" draggable="true">
                 <div class="rm-compact-item__main">
                   <img class="rm-compact-item__image" src="{{img}}" alt="{{name}}">
                   <div class="rm-compact-item__copy">
@@ -221,7 +221,7 @@
     {{/if}}
 
     {{#if tabs.isParty}}
-      <section class="rm-panel rm-panel--full rm-panel--compact panel">
+      <section class="rm-panel rm-panel--full rm-panel--compact">
         <div class="rm-panel__header rm-panel__header--compact">
           <h3>Группа</h3>
           <span class="rm-muted">{{rmNum party.memberCount precision=0}} уч.</span>
@@ -230,12 +230,12 @@
         {{#if party.alerts.length}}
           <div class="rm-status-strip">
             {{#each party.alerts}}
-              <span class="rm-badge rm-status-badge rm-status-badge--{{type}} badge">{{message}}</span>
+              <span class="rm-badge rm-status-badge rm-status-badge--{{type}}">{{message}}</span>
             {{/each}}
           </div>
         {{/if}}
 
-        <section class="rm-party-toolbar rm-party-toolbar--compact section" data-action="party-dropzone">
+        <section class="rm-party-toolbar rm-party-toolbar--compact" data-action="party-dropzone">
           <div class="rm-field">
             <input
               type="text"
@@ -257,7 +257,7 @@
           <div class="rm-party-toolbar__actions">
             <button
               type="button"
-              class="rm-button rm-button--small rm-button--primary button"
+              class="rm-button rm-button--small rm-button--primary"
               data-action="add-member"
               title="{{#if party.addMemberDisabled}}{{party.addMemberDisabledReason}}{{else}}Добавить участника в группу{{/if}}"
               {{#if party.addMemberDisabled}}disabled{{/if}}
@@ -267,7 +267,7 @@
             </button>
             <button
               type="button"
-              class="rm-button rm-button--small rm-button--secondary button"
+              class="rm-button rm-button--small rm-button--secondary"
               data-action="consume-day"
               title="{{#if party.consumeDayDisabled}}{{party.consumeDayDisabledReason}}{{else}}Списать день (запасы, энергия, крафт){{/if}}"
               {{#if party.consumeDayDisabled}}disabled{{/if}}
@@ -283,7 +283,7 @@
         {{else}}
           <div class="rm-party-member-list rm-party-member-list--compact">
             {{#each party.members}}
-              <details class="rm-party-row row {{#if isMissing}}rm-party-row--missing{{/if}}" data-actor-id="{{actorId}}" data-actor-name="{{actorName}}" {{#if expanded}}open{{/if}}>
+              <details class="rm-party-row {{#if isMissing}}rm-party-row--missing{{/if}}" data-actor-id="{{actorId}}" data-actor-name="{{actorName}}" {{#if expanded}}open{{/if}}>
                 <summary class="rm-party-row__summary">
                   <div class="rm-party-row__identity">
                     <img class="rm-party-row__image" src="{{actorImg}}" alt="{{actorName}}">
@@ -297,9 +297,9 @@
                   </div>
 
                   <div class="rm-party-row__stats">
-                    <span class="rm-chip badge">СИЛ {{rmNum strength precision=0}}</span>
-                    <span class="rm-chip badge">Груз {{rmNum capacityLb}}</span>
-                    <span class="rm-chip badge">Эн. {{rmNum energyCurrent precision=0}} / {{rmNum energyMax precision=0}}</span>
+                    <span class="rm-chip">СИЛ {{rmNum strength precision=0}}</span>
+                    <span class="rm-chip">Груз {{rmNum capacityLb}}</span>
+                    <span class="rm-chip">Эн. {{rmNum energyCurrent precision=0}} / {{rmNum energyMax precision=0}}</span>
                   </div>
                 </summary>
 
@@ -385,7 +385,7 @@
     {{/if}}
 
     {{#if tabs.isCraft}}
-      <section class="rm-panel rm-panel--full rm-panel--compact panel">
+      <section class="rm-panel rm-panel--full rm-panel--compact">
         <div class="rm-panel__header rm-panel__header--compact">
           <h3>Крафт</h3>
           <span class="rm-muted">Очередь: {{rmNum craft.queueCount precision=0}}</span>
