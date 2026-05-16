@@ -71,7 +71,7 @@
   align-items: flex-start;
   padding: 16px 18px;
   border: 1px solid rgba(239, 184, 95, 0.26);
-  border-radius: var(--rm-radius-window);
+  border-radius: 0;
   background:
     radial-gradient(circle at 0 0, rgba(69, 198, 179, 0.14), transparent 38%),
     linear-gradient(135deg, rgba(91, 56, 31, 0.95), rgba(37, 32, 27, 0.95));
@@ -112,7 +112,7 @@
 .rm-app-main {
   min-width: 0;
   border: 1px solid rgba(239, 184, 95, 0.16);
-  border-radius: var(--rm-radius-section);
+  border-radius: 0;
   background: rgba(30, 25, 21, 0.78);
   box-shadow: var(--rm-shadow-panel);
 }
@@ -132,7 +132,7 @@
 
 .rm-app-settings-drawer {
   border: 1px solid rgba(239, 184, 95, 0.16);
-  border-radius: var(--rm-radius-section);
+  border-radius: 0;
   background: rgba(18, 16, 15, 0.34);
 }
 
@@ -498,8 +498,12 @@ summary:focus-visible {
 
 .rm-inline-status {
   margin: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
   padding: 8px 10px;
-  border-radius: var(--rm-radius-row);
+  border-radius: 0;
   border: 1px solid rgba(214, 177, 104, 0.26);
   background: rgba(64, 45, 28, 0.66);
   font-size: 12px;
@@ -614,6 +618,28 @@ summary:focus-visible {
   border-radius: var(--rm-radius);
   box-shadow: var(--rm-shadow-panel);
   box-sizing: border-box;
+}
+
+.rm-inline-status__message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rm-inline-status__close {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--rm-radius-button);
+  background: rgba(0, 0, 0, 0.18);
+  color: inherit;
+  cursor: pointer;
+}
+
+.rm-inline-status__close:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .rm-stat-card {
@@ -3452,7 +3478,7 @@ summary:focus-visible {
   gap: 8px;
   padding: 10px;
   border: 1px solid rgba(214, 177, 104, 0.14);
-  border-radius: 10px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.02);
 }
 
@@ -3494,7 +3520,7 @@ summary:focus-visible {
   gap: 8px;
   padding: 7px 10px;
   border: 1px solid rgba(214, 177, 104, 0.18);
-  border-radius: 10px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.03);
   cursor: pointer;
 }
@@ -3528,7 +3554,7 @@ summary:focus-visible {
   gap: 10px;
   align-items: center;
   border: 1px solid rgba(214, 177, 104, 0.15);
-  border-radius: 12px;
+  border-radius: 0;
   padding: 9px 10px;
   background: rgba(33, 24, 17, 0.66);
 }
@@ -3593,6 +3619,10 @@ summary:focus-visible {
   min-height: 420px;
 }
 
+.rm-lootgen-shell .rm-compact-pill {
+  border-radius: 0;
+}
+
 .rm-lootgen-result-panel .rm-panel__header {
   margin-bottom: 0;
   align-items: flex-start;
@@ -3604,7 +3634,7 @@ summary:focus-visible {
 
 .rm-lootgen-result-row {
   border-color: transparent;
-  border-radius: var(--rm-radius-row);
+  border-radius: 0;
   background: rgba(18, 16, 14, 0.68);
   transition: background 120ms ease, border-color 120ms ease;
 }

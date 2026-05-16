@@ -1,6 +1,11 @@
 <section class="rm-shell rm-app-shell rm-lootgen-shell {{#if viewer}}rm-lootgen-shell--viewer{{/if}}">
   {{#if actionFeedback}}
-    <p class="{{actionFeedback.className}}">{{actionFeedback.message}}</p>
+    <div class="{{actionFeedback.className}}">
+      <span class="rm-inline-status__message">{{actionFeedback.message}}</span>
+      <button type="button" class="rm-inline-status__close" data-action="lootgen-dismiss-feedback" title="Закрыть уведомление" aria-label="Закрыть уведомление">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
   {{/if}}
 
   <div class="rm-lootgen-workbench {{#unless canManage}}rm-lootgen-workbench--viewer{{/unless}}">

@@ -768,6 +768,11 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await this.render({ force: true });
       }, listenerOptions);
 
+      element.querySelector("[data-action='lootgen-dismiss-feedback']")?.addEventListener("click", async () => {
+        this.actionFeedback = null;
+        await this.render({ force: true });
+      }, listenerOptions);
+
       element.querySelector("[data-action='lootgen-new-window']")?.addEventListener("click", async () => {
         try {
           await this.moduleApi.openLootgenApp({ newWindow: true });
