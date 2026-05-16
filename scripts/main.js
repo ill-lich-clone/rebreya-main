@@ -19,10 +19,13 @@ import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/ra
 import { registerSceneControlsHook } from "./hooks.js";
 import { extendDnd5eItemTypes, registerDnd5eSheetExtensions } from "./integrations/dnd5e-sheet-extensions.js";
 import { registerSettings } from "./settings.js";
+import { buildLootgenChatContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js";
 import { bringAppToFront, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const SOCKET_EVENT_LOOTGEN_SHOW = "lootgen-show-result";
+const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
+const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
 
 function normalizeLookupText(value) {
   return String(value ?? "")
@@ -222,6 +225,15 @@ class RebreyaMainModule {
         sharedResult: payload
       });
     }
+
+    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ROW && game.user?.isGM) {
+      await this.claimLootgenChatRow(message.payload?.lootId, message.payload?.rowId, { quiet: true, fromSocket: true });
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_COINS && game.user?.isGM) {
+      await this.claimLootgenChatCoins(message.payload?.lootId, { quiet: true, fromSocket: true });
+    }
   }
 
   async shareLootgenResult(payload = {}) {
@@ -233,6 +245,238 @@ class RebreyaMainModule {
       payload: sharedResult,
       senderId: game.user?.id ?? ""
     });
+  }
+
+  #findLootgenChatMessage(lootId) {
+    const safeLootId = String(lootId ?? "").trim();
+    if (!safeLootId) {
+      return null;
+    }
+
+    return game.messages.contents.find((message) => {
+      const state = message.getFlag(MODULE_ID, "lootgenChat") ?? null;
+      return String(state?.lootId ?? "") === safeLootId;
+    }) ?? null;
+  }
+
+  async #updateLootgenChatState(lootId, mutator) {
+    const message = this.#findLootgenChatMessage(lootId);
+    if (!message) {
+      throw new Error("Сообщение с лутом не найдено.");
+    }
+
+    const state = foundry.utils.deepClone(message.getFlag(MODULE_ID, "lootgenChat") ?? {});
+    state.lootId = String(state.lootId ?? lootId ?? "");
+    state.rows = Array.isArray(state.rows) ? state.rows : [];
+    state.coins = state.coins && typeof state.coins === "object" ? state.coins : {};
+    const changed = await mutator(state);
+    if (!changed) {
+      return { message, state, changed: false };
+    }
+
+    await message.update({
+      content: buildLootgenChatContent(state),
+      [`flags.${MODULE_ID}.lootgenChat`]: state
+    });
+
+    return { message, state, changed: true };
+  }
+
+  #emitLootgenClaimRequest(type, payload = {}) {
+    game.socket?.emit?.(SOCKET_CHANNEL, {
+      type,
+      payload: foundry.utils.deepClone(payload),
+      senderId: game.user?.id ?? ""
+    });
+  }
+
+  #notifyLootgenChatClaim(lootId, rowId, claimType) {
+    for (const app of this.lootgenApps.values()) {
+      app?.handleLootgenChatClaim?.(lootId, rowId, claimType);
+    }
+  }
+
+  async createLootgenChatMessage(payload = {}, options = {}) {
+    if (!game.user?.isGM) {
+      throw new Error("Отправлять лут в чат может только ГМ.");
+    }
+
+    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    const lootId = randomID();
+    const appKey = String(options.appKey ?? "");
+    const chatRows = [];
+
+    for (const [index, row] of rows.entries()) {
+      const rowId = randomID();
+      const rowIndex = Number.isFinite(Number(row.rowIndex)) ? Number(row.rowIndex) : index;
+      const item = await this.inventoryService.createLootgenChatItem(row, {
+        lootId,
+        rowId,
+        appKey,
+        rowIndex
+      });
+
+      if (!item) {
+        throw new Error(`Не удалось подготовить предмет "${row.name ?? "лут"}" для чата.`);
+      }
+
+      chatRows.push({
+        rowId,
+        rowIndex,
+        itemId: item.id,
+        itemUuid: item.uuid,
+        name: item.name,
+        img: item.img,
+        sourceType: row.sourceType,
+        sourceId: row.sourceId,
+        typeLabel: row.typeLabel,
+        rank: row.rank,
+        quantity: row.quantity,
+        value: row.value,
+        totalValue: row.totalValue,
+        claimed: false
+      });
+    }
+
+    const state = {
+      lootId,
+      appKey,
+      createdBy: game.user?.id ?? "",
+      generatedAt: String(payload.generatedAt ?? ""),
+      rows: chatRows,
+      coins: foundry.utils.deepClone(payload.coins ?? {}),
+      coinsClaimed: Number(payload.coins?.totalCopper ?? 0) <= 0,
+      spentValue: payload.spentValue ?? 0,
+      budgetValue: payload.budgetValue ?? 0,
+      totalItems: payload.totalItems ?? chatRows.reduce((sum, row) => sum + Number(row.quantity ?? 0), 0)
+    };
+
+    const message = await ChatMessage.create({
+      user: game.user?.id,
+      speaker: ChatMessage.getSpeaker(),
+      content: buildLootgenChatContent(state),
+      flags: {
+        [MODULE_ID]: {
+          lootgenChat: state
+        }
+      }
+    });
+
+    return {
+      lootId,
+      messageId: message?.id ?? "",
+      rows: chatRows
+    };
+  }
+
+  async claimLootgenChatRow(lootId, rowId, { quiet = false, fromSocket = false } = {}) {
+    const safeLootId = String(lootId ?? "").trim();
+    const safeRowId = String(rowId ?? "").trim();
+    if (!safeLootId || !safeRowId) {
+      return false;
+    }
+
+    if (!game.user?.isGM) {
+      if (!fromSocket) {
+        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_ROW, { lootId: safeLootId, rowId: safeRowId });
+      }
+      return true;
+    }
+
+    let claimedRow = null;
+    const result = await this.#updateLootgenChatState(safeLootId, (state) => {
+      const row = state.rows.find((entry) => String(entry.rowId ?? "") === safeRowId) ?? null;
+      if (!row || row.claimed) {
+        return false;
+      }
+
+      row.claimed = true;
+      claimedRow = row;
+      return true;
+    });
+
+    if (!result.changed || !claimedRow) {
+      return false;
+    }
+
+    await this.inventoryService.deleteLootgenChatItem(claimedRow.itemUuid);
+    this.#notifyLootgenChatClaim(safeLootId, safeRowId, "row");
+    if (!quiet) {
+      ui.notifications?.info(`Лут "${claimedRow.name}" отмечен как забранный.`);
+    }
+    return true;
+  }
+
+  async #addLootgenCoinsToInventory(coins = {}) {
+    const inventory = await this.getInventorySnapshot({ createActor: true });
+    const current = inventory?.summary?.currency ?? {
+      pp: 0,
+      gp: 0,
+      sp: 0,
+      cp: 0
+    };
+
+    await this.updatePartyCurrency({
+      pp: toNumber(current.pp, 0) + toNumber(coins.pp, 0),
+      gp: toNumber(current.gp, 0) + toNumber(coins.gp, 0),
+      sp: toNumber(current.sp, 0) + toNumber(coins.sp, 0),
+      cp: toNumber(current.cp, 0) + toNumber(coins.cp, 0)
+    });
+  }
+
+  async claimLootgenChatCoins(lootId, { quiet = false, fromSocket = false } = {}) {
+    const safeLootId = String(lootId ?? "").trim();
+    if (!safeLootId) {
+      return false;
+    }
+
+    if (!game.user?.isGM) {
+      if (!fromSocket) {
+        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_COINS, { lootId: safeLootId });
+      }
+      ui.notifications?.info("Запрос на добавление монет отправлен мастеру.");
+      return true;
+    }
+
+    const message = this.#findLootgenChatMessage(safeLootId);
+    const state = foundry.utils.deepClone(message?.getFlag(MODULE_ID, "lootgenChat") ?? {});
+    if (!message || state.coinsClaimed) {
+      return false;
+    }
+
+    const claimedCoins = foundry.utils.deepClone(state.coins ?? {});
+    await this.#addLootgenCoinsToInventory(claimedCoins);
+    state.coinsClaimed = true;
+    await message.update({
+      content: buildLootgenChatContent(state),
+      [`flags.${MODULE_ID}.lootgenChat`]: state
+    });
+
+    this.#notifyLootgenChatClaim(safeLootId, "", "coins");
+    if (!quiet) {
+      ui.notifications?.info("Монеты из чат-лута добавлены в партийный склад.");
+    }
+    return true;
+  }
+
+  async handleLootgenChatItemCreated(item, _userId) {
+    const claim = item?.getFlag?.(MODULE_ID, "lootgenChat") ?? null;
+    if (!claim?.lootId || !claim?.rowId) {
+      return false;
+    }
+
+    if (item.parent instanceof Actor && item.parent.getFlag(MODULE_ID, "managedLootgenChatActor")) {
+      return false;
+    }
+
+    const result = await this.claimLootgenChatRow(claim.lootId, claim.rowId, { quiet: true });
+    try {
+      await item.unsetFlag(MODULE_ID, "lootgenChat");
+    }
+    catch (_error) {
+      // The claim is already processed; leaving the metadata is safer than failing the drop.
+    }
+    return result;
   }
 
   async #syncManagedCompendia(model) {
@@ -1299,6 +1543,13 @@ Hooks.once("ready", async () => {
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register dnd5e sheet extensions.`, error);
     ui.notifications?.warn("Rebreya: расширения листов dnd5e отключены из-за ошибки.");
+  }
+
+  try {
+    registerLootgenChatHooks(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register lootgen chat hooks.`, error);
   }
 
   try {

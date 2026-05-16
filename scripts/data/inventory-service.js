@@ -9,6 +9,7 @@
 
 const DEFAULT_PARTY_ACTOR_NAME = "Инвентарь группы Rebreya";
 const DEFAULT_PARTY_ACTOR_IMAGE = "icons/svg/item-bag.svg";
+const LOOTGEN_CHAT_ACTOR_NAME = "Лут Rebreya";
 const FOOD_ITEM_NAME = "Еда";
 const WATER_ITEM_NAME = "Галлоны воды";
 const WATER_LB_PER_GALLON = 8;
@@ -795,6 +796,124 @@ export class InventoryService {
     return actor;
   }
 
+  async getLootgenChatActor({ create = false } = {}) {
+    const existingActor = game.actors.contents.find((actor) => actor.getFlag(MODULE_ID, "managedLootgenChatActor")) ?? null;
+    if (existingActor) {
+      return existingActor;
+    }
+
+    if (!create || !game.user?.isGM) {
+      return null;
+    }
+
+    return Actor.create({
+      name: LOOTGEN_CHAT_ACTOR_NAME,
+      type: "npc",
+      img: "icons/containers/chest/chest-reinforced-steel-brown.webp",
+      ownership: {
+        default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
+      },
+      flags: {
+        [MODULE_ID]: {
+          managedLootgenChatActor: true
+        }
+      }
+    }, {
+      renderSheet: false
+    });
+  }
+
+  async buildModelItemData(sourceType, sourceId, quantity = 1) {
+    const model = await this.moduleApi.getModel();
+    const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
+    const normalizedSourceType = normalizeInventorySourceType(sourceType);
+
+    if (normalizedSourceType === "material") {
+      const material = model.materialById?.get(sourceId) ?? null;
+      if (!material) {
+        throw new Error("Материал не найден в данных модуля.");
+      }
+
+      return this.#buildMaterialItemData(material, safeQuantity);
+    }
+
+    if (normalizedSourceType === "gear") {
+      const gearItem = model.gearById?.get(sourceId) ?? null;
+      if (!gearItem) {
+        throw new Error("Предмет снаряжения не найден в данных модуля.");
+      }
+
+      return this.#buildGearItemData(gearItem, safeQuantity);
+    }
+
+    if (normalizedSourceType === "magicItem") {
+      const pack = game.packs.get(`world.${MAGIC_ITEMS_COMPENDIUM_NAME}`) ?? null;
+      const document = await this.moduleApi.magicItemsCompendium.getMagicItemDocument(sourceId);
+      if (!pack || !document) {
+        throw new Error("Магический предмет не найден в компендиуме.");
+      }
+
+      const itemData = sanitizeEmbeddedItemData(document.toObject());
+      foundry.utils.setProperty(itemData, "system.quantity", safeQuantity);
+      itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
+      itemData.flags[MODULE_ID] = {
+        ...(itemData.flags[MODULE_ID] ?? {}),
+        sourceType: "magicItem",
+        sourceId,
+        magicItemId: sourceId,
+        magical: true
+      };
+      return itemData;
+    }
+
+    throw new Error("Неизвестный тип предмета для добавления в склад.");
+  }
+
+  async createLootgenChatItem(row, lootMeta = {}) {
+    if (!game.user?.isGM) {
+      throw new Error("Отправлять лут в чат может только ГМ.");
+    }
+
+    const actor = await this.getLootgenChatActor({ create: true });
+    if (!actor) {
+      throw new Error("Не удалось подготовить актёра чат-лута.");
+    }
+
+    const itemData = await this.buildModelItemData(row.sourceType, row.sourceId, row.quantity);
+    itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
+    itemData.flags[MODULE_ID] = {
+      ...(itemData.flags[MODULE_ID] ?? {}),
+      lootgenChat: {
+        lootId: String(lootMeta.lootId ?? ""),
+        rowId: String(lootMeta.rowId ?? ""),
+        appKey: String(lootMeta.appKey ?? ""),
+        rowIndex: Number.isFinite(Number(lootMeta.rowIndex)) ? Number(lootMeta.rowIndex) : null
+      }
+    };
+
+    const [created] = await actor.createEmbeddedDocuments("Item", [itemData], { renderSheet: false });
+    return created ?? null;
+  }
+
+  async deleteLootgenChatItem(itemUuid) {
+    if (!game.user?.isGM || !itemUuid) {
+      return false;
+    }
+
+    const itemDocument = await fromUuid(itemUuid);
+    if (!(itemDocument instanceof Item)) {
+      return false;
+    }
+
+    const parentActor = itemDocument.parent;
+    if (!(parentActor instanceof Actor) || !parentActor.getFlag(MODULE_ID, "managedLootgenChatActor")) {
+      return false;
+    }
+
+    await itemDocument.delete();
+    return true;
+  }
+
   async getPartySnapshot({ actor = null } = {}) {
     const state = this.#getState();
     const inventoryActor = actor ?? await this.getInventoryActor({ create: false });
@@ -1084,50 +1203,9 @@ export class InventoryService {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
-    const model = await this.moduleApi.getModel();
     const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
-    if (sourceType === "material") {
-      const material = model.materialById?.get(sourceId) ?? null;
-      if (!material) {
-        throw new Error("Материал не найден в данных модуля.");
-      }
-
-      const itemData = this.#buildMaterialItemData(material, safeQuantity);
-      return this.#upsertInventoryItem(actor, itemData, safeQuantity);
-    }
-
-    if (sourceType === "gear") {
-      const gearItem = model.gearById?.get(sourceId) ?? null;
-      if (!gearItem) {
-        throw new Error("Предмет снаряжения не найден в данных модуля.");
-      }
-
-      const itemData = this.#buildGearItemData(gearItem, safeQuantity);
-      return this.#upsertInventoryItem(actor, itemData, safeQuantity);
-    }
-
-    if (sourceType === "magicItem") {
-      const pack = game.packs.get(`world.${MAGIC_ITEMS_COMPENDIUM_NAME}`) ?? null;
-      const document = await this.moduleApi.magicItemsCompendium.getMagicItemDocument(sourceId);
-      if (!pack || !document) {
-        throw new Error("Магический предмет не найден в компендиуме.");
-      }
-
-      const itemData = sanitizeEmbeddedItemData(document.toObject());
-      foundry.utils.setProperty(itemData, "system.quantity", safeQuantity);
-      itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
-      itemData.flags[MODULE_ID] = {
-        ...(itemData.flags[MODULE_ID] ?? {}),
-        sourceType: "magicItem",
-        sourceId,
-        magicItemId: sourceId,
-        magical: true
-      };
-
-      return this.#upsertInventoryItem(actor, itemData, safeQuantity);
-    }
-
-    throw new Error("Неизвестный тип предмета для добавления в склад.");
+    const itemData = await this.buildModelItemData(sourceType, sourceId, safeQuantity);
+    return this.#upsertInventoryItem(actor, itemData, safeQuantity);
   }
 
   async breakItemToMaterial(itemId, quantity = 1) {

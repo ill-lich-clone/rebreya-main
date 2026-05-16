@@ -9,6 +9,7 @@
 | Роль | Реальные классы | Радиус |
 |---|---|---:|
 | Главное окно / верхний хедер | `.rm-hero`, `.window-content` | `12px` |
+| Новый каркас приложения | `.rm-app-shell`, `.rm-app-header`, `.rm-app-sidebar`, `.rm-app-main` | `12px / 8px` |
 | Крупная секция | `.rm-panel`, `.rm-stat-card`, `.rm-disclosure` | `8px` |
 | Строка списка / карточка записи | `.rm-city-card`, `.rm-route-card`, `.rm-trade-card`, `.rm-compact-item`, `.rm-party-row` | `6px` |
 | Поле ввода / поиска | `.rm-field input`, `.rm-field select`, `.rm-textarea` | `6px` |
@@ -24,6 +25,7 @@
 - `badge`: короткий статус или компактный фильтр, например `СИЛ 5`, `Груз 75`, `Эн. 2/2`.
 - `tab`: навигация между разделами; вкладка не должна выглядеть как обычная кнопка.
 - `button`: действие пользователя; главное действие получает `rm-button--primary`.
+- `settings drawer`: настройки, которые должны быть всегда доступны, но не мешают основному сценарию (`.rm-app-settings-drawer`).
 
 ## Состояния
 

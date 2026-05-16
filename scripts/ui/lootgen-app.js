@@ -214,6 +214,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.includeMagicItems = false;
     this.magicPercent = 25;
     this.generated = this.#createEmptyGenerated();
+    this.chatLootId = "";
     this.renderListenersAbortController = null;
     this.actionFeedback = null;
 
@@ -530,6 +531,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }).format(new Date()),
       hasResult: rows.length > 0 || coins.totalCopper > 0
     };
+    this.chatLootId = "";
   }
 
   #buildSharedPayload() {
@@ -591,6 +593,59 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     await this.#addCoinsToInventory();
+  }
+
+  async #sendResultToChat() {
+    if (!this.generated.hasResult) {
+      throw new Error("Сначала сгенерируйте лут.");
+    }
+
+    const result = await this.moduleApi.createLootgenChatMessage(this.#buildSharedPayload(), {
+      appKey: this.appKey
+    });
+    this.chatLootId = result.lootId;
+    const rowIdByIndex = new Map((result.rows ?? []).map((row) => [row.rowIndex, row.rowId]));
+    this.generated.rows = this.generated.rows.map((row) => ({
+      ...row,
+      chatLootId: result.lootId,
+      chatRowId: rowIdByIndex.get(row.rowIndex) ?? ""
+    }));
+    return result;
+  }
+
+  #refreshGeneratedFlags() {
+    const rows = this.generated.rows ?? [];
+    this.generated.totalItems = rows.reduce((sum, row) => sum + toNumber(row.quantity, 0), 0);
+    this.generated.spentValue = rows.reduce((sum, row) => sum + toNumber(row.totalValue, 0), 0);
+    this.generated.hasResult = rows.length > 0 || Number(this.generated.coins?.totalCopper ?? 0) > 0;
+  }
+
+  handleLootgenChatClaim(lootId, rowId, claimType) {
+    if (!this.chatLootId || String(lootId ?? "") !== this.chatLootId) {
+      return false;
+    }
+
+    if (claimType === "coins") {
+      this.generated.coins = randomCoinsFromValue(0);
+      this.#refreshGeneratedFlags();
+      this.render({ force: true }).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to refresh lootgen after coin claim.`, error);
+      });
+      return true;
+    }
+
+    const safeRowId = String(rowId ?? "");
+    const beforeCount = this.generated.rows.length;
+    this.generated.rows = this.generated.rows.filter((row) => String(row.chatRowId ?? "") !== safeRowId);
+    if (this.generated.rows.length === beforeCount) {
+      return false;
+    }
+
+    this.#refreshGeneratedFlags();
+    this.render({ force: true }).catch((error) => {
+      console.error(`${MODULE_ID} | Failed to refresh lootgen after row claim.`, error);
+    });
+    return true;
   }
 
   async _prepareContext() {
@@ -708,6 +763,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       element.querySelector("[data-action='lootgen-clear']")?.addEventListener("click", async () => {
         this.generated = this.#createEmptyGenerated();
+        this.chatLootId = "";
         this.#setActionFeedback("info", "Результат очищен.");
         await this.render({ force: true });
       }, listenerOptions);
@@ -750,6 +806,22 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         catch (error) {
           console.error(`${MODULE_ID} | Failed to transfer generated loot.`, error);
           const message = error.message || "Не удалось перенести лутген в партийный склад.";
+          this.#setActionFeedback("error", message);
+          this.render({ force: true });
+          ui.notifications?.error(message);
+        }
+      }, listenerOptions);
+
+      element.querySelector("[data-action='lootgen-send-chat']")?.addEventListener("click", async () => {
+        try {
+          await this.#sendResultToChat();
+          this.#setActionFeedback("success", "Лут отправлен в чат. Предметы можно перетаскивать в лист персонажа.");
+          await this.render({ force: true });
+          ui.notifications?.info("Лут отправлен в чат.");
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to send lootgen result to chat.`, error);
+          const message = error.message || "Не удалось отправить лут в чат.";
           this.#setActionFeedback("error", message);
           this.render({ force: true });
           ui.notifications?.error(message);
