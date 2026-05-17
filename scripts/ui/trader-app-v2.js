@@ -259,10 +259,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         ].join(" ")).includes(searchText);
       });
 
-      if (inventory.length && !inventory.some((entry) => entry.itemKey === this.selectedItemKey)) {
-        this.selectedItemKey = inventory[0].itemKey;
-      }
-      if (!inventory.length) {
+      if (!inventory.length || !inventory.some((entry) => entry.itemKey === this.selectedItemKey)) {
         this.selectedItemKey = "";
       }
 
@@ -288,6 +285,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         hasError: false,
         trader: snapshot,
         traderArtPath: `modules/${MODULE_ID}/assets/ui/trader-cutout.png`,
+        traderSpeech: snapshot.description || "Добро пожаловать. Выберите товар из ассортимента, чтобы открыть карточку сделки.",
         search: this.search,
         mode: {
           isBuy: modeIsBuy,

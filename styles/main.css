@@ -1976,6 +1976,7 @@ summary:focus-visible {
   padding: 26px 32px 28px;
   overflow: hidden;
   color: var(--rm-trader-v2-ink);
+  color-scheme: light;
   font-family: "Palatino Linotype", Georgia, "Times New Roman", serif;
   background:
     radial-gradient(circle at 76% 42%, rgba(124, 31, 45, 0.18), transparent 30%),
@@ -2035,14 +2036,15 @@ summary:focus-visible {
 
 .rm-trader-v2-character {
   position: absolute;
-  right: 6%;
-  bottom: -86px;
+  right: 7%;
+  bottom: -96px;
   z-index: 1;
   height: min(99%, 835px);
   width: auto;
   max-width: none;
   opacity: 0.82;
-  pointer-events: none;
+  cursor: help;
+  pointer-events: auto;
   filter:
     drop-shadow(0 30px 30px rgba(44, 24, 13, 0.46))
     sepia(0.08)
@@ -2209,9 +2211,10 @@ summary:focus-visible {
 
 .rm-trader-v2-wallet {
   position: absolute;
-  top: 238px;
+  top: auto;
+  bottom: 76px;
   right: 72px;
-  width: 360px;
+  width: 330px;
   padding: 16px 20px 14px;
   border: 2px solid rgba(48, 27, 16, 0.82);
   background:
@@ -2350,9 +2353,9 @@ summary:focus-visible {
 }
 
 .rm-trader-v2-tab.is-active {
-  color: #fff4d8;
-  background: linear-gradient(180deg, #8b2734, #5b1720);
-  box-shadow: inset 0 0 0 1px rgba(240, 208, 127, 0.46);
+  color: var(--rm-trader-v2-wine);
+  background: linear-gradient(180deg, #f1d99f, #d0a84d);
+  box-shadow: inset 0 0 0 1px rgba(125, 31, 45, 0.34);
 }
 
 .rm-trader-v2-field {
@@ -2378,6 +2381,7 @@ summary:focus-visible {
   background-color: #fff5d8 !important;
   color: var(--rm-trader-v2-ink);
   color: var(--rm-trader-v2-ink) !important;
+  color-scheme: light;
   font: 800 14px/1 "Trebuchet MS", "Segoe UI", sans-serif;
   letter-spacing: 0.02em;
   box-shadow: inset 0 0 0 1px rgba(199, 151, 63, 0.28);
@@ -2388,8 +2392,9 @@ summary:focus-visible {
 }
 
 .rm-trader-v2-field select option {
-  background: #fff5d8;
-  color: var(--rm-trader-v2-ink);
+  background: #fff5d8 !important;
+  color: var(--rm-trader-v2-ink) !important;
+  -webkit-text-fill-color: var(--rm-trader-v2-ink) !important;
 }
 
 .rm-trader-v2-field input:focus-visible,
@@ -2469,13 +2474,13 @@ summary:focus-visible {
 
 .rm-trader-v2-row {
   width: 100%;
-  min-height: 50px;
+  min-height: 54px;
   border: 0;
   border-bottom: 1px solid rgba(78, 46, 25, 0.22);
   padding: 8px 12px;
   display: grid;
-  grid-template-columns: 52px 36px minmax(0, 1fr) auto;
-  gap: 2px 12px;
+  grid-template-columns: 36px minmax(0, 1fr) 88px minmax(130px, max-content);
+  gap: 2px 10px;
   align-items: center;
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.42), rgba(255, 247, 222, 0.14)),
@@ -2495,50 +2500,46 @@ summary:focus-visible {
 }
 
 .rm-trader-v2-row.is-selected {
-  color: #fff4d8;
-  color: #fff4d8 !important;
+  color: var(--rm-trader-v2-ink);
+  color: var(--rm-trader-v2-ink) !important;
   background:
-    linear-gradient(90deg, #7f1f2d, #5b1720),
-    var(--rm-trader-v2-wine);
-  background-color: var(--rm-trader-v2-wine) !important;
+    linear-gradient(90deg, rgba(125, 31, 45, 0.16), rgba(245, 225, 172, 0.96)),
+    #f4dda2;
+  background-color: #f4dda2 !important;
   box-shadow:
     inset 5px 0 0 var(--rm-trader-v2-gold),
-    inset 0 0 0 1px rgba(240, 208, 127, 0.38);
+    inset 0 0 0 1px rgba(125, 31, 45, 0.36);
 }
 
 .rm-trader-v2-row__code {
-  grid-row: 1 / span 2;
-  color: var(--rm-trader-v2-gold);
-  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
-
-.rm-trader-v2-row:not(.is-selected) .rm-trader-v2-row__code {
-  color: var(--rm-trader-v2-wine);
+  display: none;
 }
 
 .rm-trader-v2-row__icon {
+  grid-column: 1 / 2;
   grid-row: 1 / span 2;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   border: 1px solid rgba(58, 34, 20, 0.48);
   display: grid;
   place-items: center;
-  color: var(--rm-trader-v2-wine);
+  color: var(--rm-trader-v2-gold);
   background: rgba(255, 248, 224, 0.48);
 }
 
+.rm-trader-v2-row:not(.is-selected) .rm-trader-v2-row__icon {
+  color: var(--rm-trader-v2-wine);
+}
+
 .rm-trader-v2-row.is-selected .rm-trader-v2-row__icon {
-  color: #fff4d8;
-  border-color: rgba(240, 208, 127, 0.48);
-  background: rgba(240, 208, 127, 0.14);
+  color: var(--rm-trader-v2-wine);
+  border-color: rgba(125, 31, 45, 0.56);
+  background: rgba(255, 248, 224, 0.72);
 }
 
 .rm-trader-v2-row__name {
-  grid-column: 3 / 4;
-  font-size: 18px;
+  grid-column: 2 / 3;
+  font-size: 17px;
   font-weight: 900;
   line-height: 1.2;
   letter-spacing: 0.02em;
@@ -2548,7 +2549,7 @@ summary:focus-visible {
 }
 
 .rm-trader-v2-row__meta {
-  grid-column: 3 / 4;
+  grid-column: 2 / 3;
   color: #7b6044;
   font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   font-size: 12px;
@@ -2561,17 +2562,19 @@ summary:focus-visible {
 }
 
 .rm-trader-v2-row.is-selected .rm-trader-v2-row__meta {
-  color: #e9d3a3 !important;
+  color: #6a4328 !important;
 }
 
 .rm-trader-v2-row__qty,
 .rm-trader-v2-row__price {
-  grid-column: 4 / 5;
+  align-self: center;
   text-align: right;
   white-space: nowrap;
 }
 
 .rm-trader-v2-row__qty {
+  grid-column: 3 / 4;
+  grid-row: 1 / span 2;
   color: #7b6044;
   font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   font-size: 12px;
@@ -2581,23 +2584,25 @@ summary:focus-visible {
 }
 
 .rm-trader-v2-row.is-selected .rm-trader-v2-row__qty {
-  color: #e9d3a3 !important;
+  color: #6a4328 !important;
 }
 
 .rm-trader-v2-row__price {
+  grid-column: 4 / 5;
+  grid-row: 1 / span 2;
   color: #3a2418;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 900;
 }
 
 .rm-trader-v2-row.is-selected .rm-trader-v2-row__price {
-  color: #fff4d8 !important;
+  color: #3a2418 !important;
 }
 
 .rm-trader-v2-item-card {
   position: absolute;
   left: min(740px, 50vw);
-  bottom: 96px;
+  bottom: 186px;
   width: min(560px, 36vw);
   min-height: 230px;
   border: 2px solid rgba(48, 27, 16, 0.82);
@@ -2795,20 +2800,53 @@ summary:focus-visible {
 }
 
 .rebreya-trader-app-v2 .rm-trader-v2-row.is-selected {
-  background: linear-gradient(90deg, #861f31, #5a151e) !important;
-  color: #fff4d8 !important;
+  background: linear-gradient(90deg, rgba(125, 31, 45, 0.16), #f4dda2) !important;
+  color: var(--rm-trader-v2-ink) !important;
 }
 
 .rebreya-trader-app-v2 .rm-trader-v2-brand h1,
 .rebreya-trader-app-v2 .rm-trader-v2-item-card h2,
 .rebreya-trader-app-v2 .rm-trader-v2-wallet strong {
   color: var(--rm-trader-v2-wine) !important;
+  font-family: Georgia, "Times New Roman", serif !important;
+  text-shadow: none !important;
 }
 
 .rebreya-trader-app-v2 .rm-trader-v2-speech p,
 .rebreya-trader-app-v2 .rm-trader-v2-item-card__description,
 .rebreya-trader-app-v2 .rm-trader-v2-row:not(.is-selected) {
   color: var(--rm-trader-v2-ink) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-kicker,
+.rebreya-trader-app-v2 .rm-trader-v2-subtitle,
+.rebreya-trader-app-v2 .rm-trader-v2-topline,
+.rebreya-trader-app-v2 .rm-trader-v2-field span,
+.rebreya-trader-app-v2 .rm-trader-v2-list-header,
+.rebreya-trader-app-v2 .rm-trader-v2-terminal-note,
+.rebreya-trader-app-v2 .rm-trader-v2-terminal-note p,
+.rebreya-trader-app-v2 .rm-trader-v2-wallet small {
+  color: #4f301e !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-field select,
+.rebreya-trader-app-v2 .rm-trader-v2-field input,
+.rebreya-trader-app-v2 .rm-trader-v2-field select option,
+.rebreya-trader-app-v2 .rm-trader-v2-field select optgroup {
+  background-color: #fff5d8 !important;
+  color: var(--rm-trader-v2-ink) !important;
+  -webkit-text-fill-color: var(--rm-trader-v2-ink) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-row.is-selected .rm-trader-v2-row__name {
+  color: var(--rm-trader-v2-wine) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-row.is-selected .rm-trader-v2-row__meta,
+.rebreya-trader-app-v2 .rm-trader-v2-row.is-selected .rm-trader-v2-row__qty,
+.rebreya-trader-app-v2 .rm-trader-v2-row.is-selected .rm-trader-v2-row__price {
+  color: #3a2418 !important;
+  -webkit-text-fill-color: #3a2418 !important;
 }
 .rm-trader-header {
   display: grid;

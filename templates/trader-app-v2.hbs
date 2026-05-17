@@ -4,7 +4,13 @@
   </section>
 {{else}}
   <section class="rm-shell rm-trader-v2-shell scrollable">
-    <img class="rm-trader-v2-character" src="{{traderArtPath}}" alt="" aria-hidden="true">
+    <img
+      class="rm-trader-v2-character"
+      src="{{traderArtPath}}"
+      alt="{{trader.merchantName}}"
+      title="{{traderSpeech}}"
+      data-tooltip="{{traderSpeech}}"
+    >
     <div class="rm-trader-v2-frame" aria-hidden="true"></div>
 
     <header class="rm-trader-v2-topline" aria-label="Статус лавки">
@@ -44,18 +50,6 @@
         <small>Покупатель не выбран</small>
       {{/if}}
     </aside>
-
-    <section class="rm-trader-v2-speech" aria-label="Реплика торговца">
-      <div class="rm-trader-v2-speech__meta">
-        <span>{{trader.merchantName}}</span>
-        <span>Прилавок</span>
-      </div>
-      {{#if trader.description}}
-        <p>{{trader.description}}</p>
-      {{else}}
-        <p>Добро пожаловать. Выберите товар из ассортимента, чтобы открыть карточку сделки.</p>
-      {{/if}}
-    </section>
 
     <section class="rm-trader-v2-stage">
       <aside class="rm-trader-v2-list-panel" aria-label="Ассортимент лавки">
@@ -145,8 +139,8 @@
 
     </section>
 
-    <section class="rm-trader-v2-item-card" aria-live="polite">
-      {{#if selectedItem}}
+    {{#if selectedItem}}
+      <section class="rm-trader-v2-item-card" aria-live="polite">
         <div class="rm-trader-v2-item-card__head">
           <div>
             <span>Выбранный товар</span>
@@ -188,13 +182,8 @@
             {{#unless canBuySelected}}disabled{{/unless}}
           >Купить</button>
         </div>
-      {{else}}
-        <div class="rm-trader-v2-item-card__empty">
-          <span>Товар не выбран</span>
-          <p>Выберите позицию из потока ассортимента.</p>
-        </div>
-      {{/if}}
-    </section>
+      </section>
+    {{/if}}
 
     <footer class="rm-trader-v2-footer" aria-hidden="true">
       <span><kbd>↑↓</kbd> Навигация</span>
