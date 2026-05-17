@@ -313,7 +313,6 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     this.purchaseQuantity = 1;
     this.usePartyFunds = options.usePartyFunds !== false;
     this.partyInventoryActorId = null;
-    this.hasSizedToViewport = false;
     this.hasPlayedSequencerEntrance = false;
     this.renderListenersAbortController = null;
   }
@@ -490,6 +489,19 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
+  #fitToViewport() {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    this.setPosition?.({
+      left: 0,
+      top: 0,
+      width: window.innerWidth,
+      height: window.innerHeight
+    });
+  }
+
   async _onRender(context, options) {
     await super._onRender(context, options);
     const element = getAppElement(this);
@@ -503,18 +515,8 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
 
     bringAppToFront(this);
     this.#playSequencerEntrance(element);
-
-    if (!this.hasSizedToViewport && typeof window !== "undefined") {
-      this.hasSizedToViewport = true;
-      const width = Math.max(1280, Math.min(1760, window.innerWidth - 42));
-      const height = Math.max(780, Math.min(980, window.innerHeight - 42));
-      this.setPosition?.({
-        left: Math.max(10, Math.floor((window.innerWidth - width) / 2)),
-        top: Math.max(10, Math.floor((window.innerHeight - height) / 2)),
-        width,
-        height
-      });
-    }
+    this.#fitToViewport();
+    window.addEventListener("resize", () => this.#fitToViewport(), listenerOptions);
 
     const inventoryByKey = new Map((context.inventory ?? []).map((entry) => [entry.itemKey, entry]));
     const customerOptions = context.trader?.customerOptions ?? [];
