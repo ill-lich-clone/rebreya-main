@@ -100,15 +100,10 @@
             <strong>Продажа через инвентарь</strong>
             <p>Перетащите предмет из листа персонажа сюда. Окно продажи покажет оригинальную цену, текущую цену города, налог и выплату.</p>
           </div>
-        {{else}}
-          <div class="rm-trader-v2-terminal-note">
-            <strong>Книга ассортимента</strong>
-            <p>Категорий нет: вся лавка идёт одним списком. Выберите строку, чтобы открыть сделку.</p>
-          </div>
         {{/if}}
 
         <div class="rm-trader-v2-list-header">
-          <span>Весь ассортимент</span>
+          <span>&#1041;&#1083;&#1086;&#1082;&#1080;</span>
           <strong>{{rmNum inventoryCount precision=0}} поз.</strong>
         </div>
 
@@ -124,7 +119,13 @@
                 data-item-key="{{itemKey}}"
                 aria-pressed="{{#if isSelected}}true{{else}}false{{/if}}"
               >
-                <span class="rm-trader-v2-row__icon"><i class="fa-solid fa-cube" aria-hidden="true"></i></span>
+                <span class="rm-trader-v2-row__icon">
+                  {{#if img}}
+                    <img src="{{img}}" alt="">
+                  {{else}}
+                    <i class="fa-solid fa-cube" aria-hidden="true"></i>
+                  {{/if}}
+                </span>
                 <span class="rm-trader-v2-row__name">{{name}}</span>
                 <span class="rm-trader-v2-row__meta">
                   {{#if itemTypeLabel}}{{itemTypeLabel}}{{else}}Товар{{/if}}{{#if materialLabel}} · {{materialLabel}}{{/if}}
@@ -149,6 +150,13 @@
             aria-live="polite"
           >
             <div class="rm-trader-v2-item-card__head">
+              {{#if img}}
+                <img class="rm-trader-v2-item-card__image" src="{{img}}" alt="">
+              {{else}}
+                <span class="rm-trader-v2-item-card__image rm-trader-v2-item-card__image--fallback">
+                  <i class="fa-solid fa-cube" aria-hidden="true"></i>
+                </span>
+              {{/if}}
               <div>
                 <span>&#1042;&#1099;&#1073;&#1088;&#1072;&#1085;&#1085;&#1099;&#1081; &#1090;&#1086;&#1074;&#1072;&#1088;</span>
                 <h2>{{name}}</h2>

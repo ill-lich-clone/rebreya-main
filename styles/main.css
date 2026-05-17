@@ -6634,3 +6634,122 @@ summary:focus-visible {
     animation: none !important;
   }
 }
+
+/* Trader v2 polish pass: texture background, darker sign text, real item icons. */
+.rebreya-trader-app-v2 .rm-trader-v2-shell {
+  background-color: #ecd597 !important;
+  background-image:
+    linear-gradient(90deg, rgba(255, 250, 229, 0.08), rgba(207, 166, 89, 0.16)),
+    url("../templates/texture/shop.webp") !important;
+  background-position: center center, center center !important;
+  background-repeat: no-repeat, no-repeat !important;
+  background-size: 100% 100%, 100% 100% !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-brand {
+  color: #4b2d1b !important;
+  -webkit-text-fill-color: #4b2d1b !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-brand,
+.rebreya-trader-app-v2 .rm-trader-v2-brand * {
+  mix-blend-mode: normal !important;
+  filter: none !important;
+}
+
+.rebreya-trader-app-v2.application .rm-trader-v2-shell .rm-trader-v2-brand h1,
+.rebreya-trader-app-v2.window-app .rm-trader-v2-shell .rm-trader-v2-brand h1,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-brand h1,
+.rebreya-trader-app-v2 .rm-trader-v2-brand h1 {
+  color: #7a1f31 !important;
+  -webkit-text-fill-color: #7a1f31 !important;
+  background: none !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  opacity: 1 !important;
+  text-shadow:
+    0 1px 0 rgba(255, 249, 224, 0.92),
+    0 3px 0 rgba(94, 43, 20, 0.08) !important;
+}
+
+.rebreya-trader-app-v2.application .rm-trader-v2-shell .rm-trader-v2-kicker,
+.rebreya-trader-app-v2.application .rm-trader-v2-shell .rm-trader-v2-subtitle,
+.rebreya-trader-app-v2.window-app .rm-trader-v2-shell .rm-trader-v2-kicker,
+.rebreya-trader-app-v2.window-app .rm-trader-v2-shell .rm-trader-v2-subtitle,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-kicker,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-subtitle {
+  color: #4b2d1b !important;
+  -webkit-text-fill-color: #4b2d1b !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-wallet {
+  top: clamp(92px, 9vh, 128px) !important;
+  right: clamp(78px, 5vw, 124px) !important;
+  bottom: auto !important;
+  width: min(380px, 22vw) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-character-tooltip {
+  top: clamp(188px, 19vh, 250px) !important;
+  right: clamp(390px, 28vw, 590px) !important;
+  z-index: 80 !important;
+  width: min(420px, 28vw) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 248, 224, 0.98), rgba(231, 202, 132, 0.97)) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-character-tooltip strong {
+  color: #7a1f31 !important;
+  -webkit-text-fill-color: #7a1f31 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-stage {
+  top: clamp(292px, 29vh, 358px) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-list-panel {
+  grid-template-rows: auto auto auto minmax(0, 1fr) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-terminal-note {
+  display: none !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-list-header span {
+  letter-spacing: 0.22em;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-row__icon {
+  overflow: hidden;
+  border: 1px solid rgba(93, 59, 35, 0.34);
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 249, 225, 0.92), rgba(219, 184, 107, 0.45));
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-row__icon img,
+.rebreya-trader-app-v2 .rm-trader-v2-item-card__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-item-card__head {
+  grid-template-columns: 58px minmax(0, 1fr) auto auto;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-item-card__image {
+  width: 48px;
+  height: 48px;
+  border: 2px solid rgba(58, 34, 20, 0.68);
+  box-shadow: 4px 4px 0 rgba(48, 27, 16, 0.16);
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-item-card__image--fallback {
+  display: grid;
+  place-items: center;
+  color: #7a1f31 !important;
+  -webkit-text-fill-color: #7a1f31 !important;
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 249, 225, 0.92), rgba(219, 184, 107, 0.45));
+}
