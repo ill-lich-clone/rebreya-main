@@ -178,6 +178,80 @@ async function promptPurchaseQuantity(item) {
   });
 }
 
+async function promptPurchaseTarget(customerOptions, currentActorId = null) {
+  const options = (customerOptions ?? [])
+    .filter((option) => option?.value)
+    .map((option) => ({
+      value: String(option.value),
+      label: String(option.label ?? option.value),
+      selected: option.value === currentActorId || option.selected === true
+    }));
+
+  if (!options.length) {
+    return currentActorId ?? null;
+  }
+
+  if (options.length === 1) {
+    return options[0].value;
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const selectedValue = options.find((option) => option.selected)?.value ?? options[0].value;
+    const optionMarkup = options.map((option) => `
+      <option value="${foundry.utils.escapeHTML(option.value)}" ${option.value === selectedValue ? "selected" : ""}>
+        ${foundry.utils.escapeHTML(option.label)}
+      </option>
+    `).join("");
+
+    const dialog = new Dialog({
+      title: "Куда положить покупку",
+      content: `
+        <form class="rm-purchase-dialog">
+          <div class="rm-purchase-dialog__summary">
+            <strong>Выберите получателя</strong>
+            <p>Можно купить в личный лист персонажа или в партийный склад.</p>
+          </div>
+          <div class="rm-field">
+            <label for="rm-trade-target-v2">Получатель</label>
+            <select id="rm-trade-target-v2" data-field="purchase-target">
+              ${optionMarkup}
+            </select>
+          </div>
+        </form>
+      `,
+      buttons: {
+        confirm: {
+          label: "Продолжить",
+          callback: (html) => {
+            const root = getDialogRoot(html);
+            const targetField = root?.querySelector("[data-field='purchase-target']");
+            settled = true;
+            resolve(targetField?.value ?? selectedValue);
+          }
+        },
+        cancel: {
+          label: "Отмена",
+          callback: () => {
+            settled = true;
+            resolve(undefined);
+          }
+        }
+      },
+      default: "confirm",
+      close: () => {
+        if (!settled) {
+          resolve(undefined);
+        }
+      }
+    }, {
+      classes: ["rebreya-main", "rebreya-trader-dialog"]
+    });
+
+    dialog.render(true);
+  });
+}
+
 async function promptSaleQuantity(preview) {
   return promptTradeQuantity({
     title: `Продажа: ${preview.itemName}`,
@@ -186,6 +260,10 @@ async function promptSaleQuantity(preview) {
     unitLabel: `Цена города за 1 шт.: ${preview.marketPriceLabel}`,
     confirmLabel: "Продать",
     rows: [
+      {
+        label: "Оригинальная цена",
+        getValue: (quantity) => formatCopper(toNumber(preview.basePriceGold, 0) * PRICE_IN_COPPER.gp * quantity)
+      },
       {
         label: "Цена города",
         getValue: (quantity) => formatCopper(preview.grossOfferCopper * quantity)
@@ -211,8 +289,8 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       resizable: true
     },
     position: {
-      width: 1500,
-      height: 900
+      width: 1680,
+      height: 960
     }
   };
 
@@ -232,6 +310,11 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     this.search = "";
     this.mode = "buy";
     this.selectedItemKey = "";
+    this.purchaseQuantity = 1;
+    this.usePartyFunds = options.usePartyFunds !== false;
+    this.partyInventoryActorId = null;
+    this.hasSizedToViewport = false;
+    this.hasPlayedSequencerEntrance = false;
     this.renderListenersAbortController = null;
   }
 
@@ -242,8 +325,9 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
   async _prepareContext() {
     try {
       const snapshot = await this.moduleApi.getTraderSnapshot(this.cityId, this.traderKey, {
-        actorId: this.selectedActorId
+        actorId: this.usePartyFunds ? null : this.selectedActorId
       });
+      this.partyInventoryActorId = snapshot.partyInventoryActorId ?? null;
       this.selectedActorId = snapshot.customer?.id ?? null;
       const searchText = normalizeText(this.search);
       const inventory = (snapshot.inventory ?? []).filter((entry) => {
@@ -264,6 +348,22 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       }
 
       const selectedItem = inventory.find((entry) => entry.itemKey === this.selectedItemKey) ?? null;
+      if (selectedItem) {
+        this.purchaseQuantity = Math.max(1, Math.min(
+          Math.floor(toNumber(this.purchaseQuantity, 1)),
+          Math.max(1, Math.floor(toNumber(selectedItem.quantity, 1)))
+        ));
+      }
+      else {
+        this.purchaseQuantity = 1;
+      }
+
+      const selectedQuote = selectedItem ? {
+        quantity: this.purchaseQuantity,
+        maxQuantity: Math.max(1, Math.floor(toNumber(selectedItem.quantity, 1))),
+        unitPriceLabel: selectedItem.finalPriceLabel,
+        totalLabel: formatCopper(selectedItem.finalPriceCopper * this.purchaseQuantity)
+      } : null;
       const modeIsBuy = this.mode !== "sell";
       const modeIsSell = !modeIsBuy;
 
@@ -291,6 +391,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
           isBuy: modeIsBuy,
           isSell: modeIsSell
         },
+        usePartyFunds: this.usePartyFunds,
         inventory: inventory.map((entry) => ({
           ...entry,
           isSelected: selectedItem?.itemKey === entry.itemKey
@@ -298,6 +399,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         inventoryCount: inventory.length,
         emptyInventory: inventory.length === 0,
         selectedItem,
+        selectedQuote,
         canBuySelected: buyDisabledReason.length === 0,
         buyDisabledReason
       };
@@ -333,17 +435,29 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     bringAppToFront(this);
   }
 
-  async #purchaseItemByKey(itemKey, inventoryByKey) {
+  async #purchaseItemByKey(itemKey, inventoryByKey, requestedQuantity = null, customerOptions = []) {
     const item = inventoryByKey.get(itemKey);
     if (!item) {
       ui.notifications?.warn("Товар уже обновился. Попробуйте открыть лавку заново.");
       return;
     }
 
-    const quantity = await promptPurchaseQuantity(item);
+    const quantity = requestedQuantity
+      ? Math.max(1, Math.min(Math.floor(toNumber(requestedQuantity, 1)), Math.max(1, Math.floor(toNumber(item.quantity, 1)))))
+      : await promptPurchaseQuantity(item);
     if (!quantity) {
       return;
     }
+
+    const actorId = this.usePartyFunds
+      ? (this.partyInventoryActorId ?? this.selectedActorId ?? null)
+      : await promptPurchaseTarget(customerOptions, this.selectedActorId);
+
+    if (actorId === undefined) {
+      return;
+    }
+
+    this.selectedActorId = actorId ?? null;
 
     const result = await this.moduleApi.purchaseTraderItem(
       this.cityId,
@@ -355,6 +469,25 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     ui.notifications?.info(`${result.actorName} покупает «${result.itemName}» за ${result.totalPriceLabel}.`);
     await this.moduleApi.refreshOpenApps();
     bringAppToFront(this);
+  }
+
+  async #playSequencerEntrance(element) {
+    if (this.hasPlayedSequencerEntrance || game.modules?.get?.("sequencer")?.active !== true || typeof Sequence !== "function") {
+      return;
+    }
+
+    this.hasPlayedSequencerEntrance = true;
+    try {
+      await new Sequence()
+        .thenDo(() => element.classList.add("rm-trader-v2-sequencer-open"))
+        .wait(700)
+        .thenDo(() => element.classList.remove("rm-trader-v2-sequencer-open"))
+        .play({ local: true });
+    }
+    catch (error) {
+      console.debug(`${MODULE_ID} | Sequencer trader v2 entrance animation was skipped.`, error);
+      element.classList.remove("rm-trader-v2-sequencer-open");
+    }
   }
 
   async _onRender(context, options) {
@@ -369,11 +502,39 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
 
     bringAppToFront(this);
+    this.#playSequencerEntrance(element);
+
+    if (!this.hasSizedToViewport && typeof window !== "undefined") {
+      this.hasSizedToViewport = true;
+      const width = Math.max(1280, Math.min(1760, window.innerWidth - 42));
+      const height = Math.max(780, Math.min(980, window.innerHeight - 42));
+      this.setPosition?.({
+        left: Math.max(10, Math.floor((window.innerWidth - width) / 2)),
+        top: Math.max(10, Math.floor((window.innerHeight - height) / 2)),
+        width,
+        height
+      });
+    }
 
     const inventoryByKey = new Map((context.inventory ?? []).map((entry) => [entry.itemKey, entry]));
+    const customerOptions = context.trader?.customerOptions ?? [];
+
+    element.querySelector("[data-action='close-trader-v2']")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      this.close();
+    }, listenerOptions);
 
     element.querySelector("[data-action='search']")?.addEventListener("input", (event) => {
       this.search = event.currentTarget.value ?? "";
+      this.render({ force: true });
+    }, listenerOptions);
+
+    element.querySelector("[data-action='toggle-shared-funds']")?.addEventListener("change", (event) => {
+      this.usePartyFunds = event.currentTarget.checked === true;
+      if (!this.usePartyFunds && (!this.selectedActorId || this.selectedActorId === this.partyInventoryActorId)) {
+        const character = game.user?.character;
+        this.selectedActorId = character?.isOwner ? character.id : null;
+      }
       this.render({ force: true });
     }, listenerOptions);
 
@@ -390,6 +551,8 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         }
 
         this.mode = mode;
+        this.selectedItemKey = mode === "sell" ? "" : this.selectedItemKey;
+        this.purchaseQuantity = 1;
         this.render({ force: true });
       }, listenerOptions);
     });
@@ -402,6 +565,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         }
 
         this.selectedItemKey = this.selectedItemKey === itemKey ? "" : itemKey;
+        this.purchaseQuantity = 1;
         this.render({ force: true });
       }, listenerOptions);
     });
@@ -409,8 +573,37 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     element.querySelector("[data-action='clear-selected-item']")?.addEventListener("click", (event) => {
       event.preventDefault();
       this.selectedItemKey = "";
+      this.purchaseQuantity = 1;
       this.render({ force: true });
     }, listenerOptions);
+
+    const quantityInput = element.querySelector("[data-action='purchase-quantity']");
+    if (quantityInput instanceof HTMLInputElement) {
+      const totalOutput = element.querySelector("[data-role='purchase-total']");
+      const unitSummary = element.querySelector("[data-role='purchase-unit-summary']");
+      const buyButton = element.querySelector("[data-action='buy-selected']");
+      const updateQuote = () => {
+        const maxQuantity = Math.max(1, Math.floor(toNumber(quantityInput.dataset.max, quantityInput.max || 1)));
+        const unitPriceCopper = Math.max(0, Math.floor(toNumber(quantityInput.dataset.unitPriceCopper, 0)));
+        const unitPriceLabel = quantityInput.dataset.unitPriceLabel || formatCopper(unitPriceCopper);
+        const quantity = Math.max(1, Math.min(Math.floor(toNumber(quantityInput.value, 1)), maxQuantity));
+        this.purchaseQuantity = quantity;
+        quantityInput.value = String(quantity);
+        if (totalOutput instanceof HTMLElement) {
+          totalOutput.textContent = formatCopper(unitPriceCopper * quantity);
+        }
+        if (unitSummary instanceof HTMLElement) {
+          unitSummary.textContent = `за ${quantity} шт. · ${unitPriceLabel} за штуку`;
+        }
+        if (buyButton instanceof HTMLElement) {
+          buyButton.dataset.quantity = String(quantity);
+        }
+      };
+
+      quantityInput.addEventListener("input", updateQuote, listenerOptions);
+      quantityInput.addEventListener("change", updateQuote, listenerOptions);
+      updateQuote();
+    }
 
     element.querySelectorAll("[data-action='open-compendium-entry']").forEach((button) => {
       button.addEventListener("click", async (event) => {
@@ -441,7 +634,8 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       }
 
       try {
-        await this.#purchaseItemByKey(itemKey, inventoryByKey);
+        const quantity = Math.max(1, Math.floor(toNumber(event.currentTarget.dataset.quantity, this.purchaseQuantity)));
+        await this.#purchaseItemByKey(itemKey, inventoryByKey, quantity, customerOptions);
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to buy selected item '${itemKey}'.`, error);

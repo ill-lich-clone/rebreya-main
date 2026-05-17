@@ -1313,6 +1313,7 @@ export class TraderService {
         img: customerActor.img,
         currencyLabel: formatCopper(actorCurrencyToCopper(customerActor))
       } : null,
+      partyInventoryActorId: partyInventoryActor?.id ?? null,
       customerOptions: buildCustomerOptions(customerActor?.id ?? null, {
         partyInventoryActorId: partyInventoryActor?.id ?? null
       }),

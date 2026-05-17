@@ -4,19 +4,16 @@
   </section>
 {{else}}
   <section class="rm-shell rm-trader-v2-shell scrollable">
-    <div class="rm-trader-v2-character-wrap" tabindex="0" aria-label="{{traderSpeech}}">
-      <img class="rm-trader-v2-character" src="{{traderArtPath}}" alt="{{trader.merchantName}}">
-    </div>
-    <div class="rm-trader-v2-character-tooltip" role="tooltip">
-      <strong>{{trader.merchantName}}</strong>
-      <span>{{traderSpeech}}</span>
-    </div>
+    <button type="button" class="rm-trader-v2-close" data-action="close-trader-v2" aria-label="Закрыть лавку">
+      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+    </button>
+
     <div class="rm-trader-v2-frame" aria-hidden="true"></div>
 
     <header class="rm-trader-v2-topline" aria-label="Статус лавки">
       <div class="rm-trader-v2-route">
         <span class="rm-trader-v2-status-dot"></span>
-        <span>ГОРОД / {{trader.cityName}}</span>
+        <span>Город / {{trader.cityName}}</span>
         <span>/</span>
         <span>{{trader.cityState}}</span>
         <span class="rm-trader-v2-sector">Ранг {{rmNum trader.cityRank precision=0}}</span>
@@ -25,7 +22,7 @@
     </header>
 
     <section class="rm-trader-v2-brand" aria-label="Название лавки">
-      <p class="rm-trader-v2-kicker">ЛАВКА ГОРОДА {{trader.cityName}}</p>
+      <p class="rm-trader-v2-kicker">Лавка города {{trader.cityName}}</p>
       <h1>{{trader.name}}</h1>
       <p class="rm-trader-v2-subtitle">
         {{trader.merchantName}}{{#if trader.merchantRole}} · {{trader.merchantRole}}{{/if}}
@@ -40,15 +37,27 @@
       </div>
     </section>
 
-    <aside class="rm-trader-v2-wallet" aria-label="Кошелёк покупателя">
-      <span class="rm-trader-v2-wallet__label">Кошель покупателя</span>
+    <div class="rm-trader-v2-character-wrap" tabindex="0" aria-label="{{traderSpeech}}">
+      <img class="rm-trader-v2-character" src="{{traderArtPath}}" alt="{{trader.merchantName}}">
+    </div>
+    <div class="rm-trader-v2-character-tooltip" role="tooltip">
+      <strong>{{trader.merchantName}}</strong>
+      <span>{{traderSpeech}}</span>
+    </div>
+
+    <aside class="rm-trader-v2-wallet" aria-label="Кошелёк">
+      <span class="rm-trader-v2-wallet__label">Кошелёк</span>
       {{#if trader.customer}}
         <strong>{{trader.customer.currencyLabel}}</strong>
         <small>{{trader.customer.name}}</small>
       {{else}}
-        <strong>нет кошеля</strong>
-        <small>Покупатель не выбран</small>
+        <strong>нет кошелька</strong>
+        <small>Получатель будет выбран при покупке</small>
       {{/if}}
+      <label class="rm-trader-v2-shared-funds">
+        <input type="checkbox" data-action="toggle-shared-funds" {{#if usePartyFunds}}checked{{/if}}>
+        <span>Использовать общие средства</span>
+      </label>
     </aside>
 
     <section class="rm-trader-v2-stage">
@@ -74,16 +83,7 @@
           </button>
         </div>
 
-        <div class="rm-trader-v2-controls">
-          <label class="rm-trader-v2-field">
-            <span>Покупатель</span>
-            <select data-action="select-customer">
-              {{#each trader.customerOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
-
+        <div class="rm-trader-v2-controls rm-trader-v2-controls--single">
           <label class="rm-trader-v2-field">
             <span>Поиск по лавке</span>
             <input
@@ -97,13 +97,13 @@
 
         {{#if mode.isSell}}
           <div class="rm-trader-v2-dropzone" data-action="sale-dropzone">
-            <strong>Продажа перетаскиванием</strong>
-            <p>Перетащите предмет из листа персонажа сюда, чтобы рассчитать продажу.</p>
+            <strong>Продажа через инвентарь</strong>
+            <p>Перетащите предмет из листа персонажа сюда. Окно продажи покажет оригинальную цену, текущую цену города, налог и выплату.</p>
           </div>
         {{else}}
           <div class="rm-trader-v2-terminal-note">
             <strong>Книга ассортимента</strong>
-            <p>Категорий нет: книга показывает весь список лавки одним потоком.</p>
+            <p>Категорий нет: вся лавка идёт одним списком. Выберите строку, чтобы открыть сделку.</p>
           </div>
         {{/if}}
 
@@ -122,8 +122,8 @@
                 class="rm-trader-v2-row {{#if isSelected}}is-selected{{/if}}"
                 data-action="select-item"
                 data-item-key="{{itemKey}}"
+                aria-pressed="{{#if isSelected}}true{{else}}false{{/if}}"
               >
-                <span class="rm-trader-v2-row__code">№</span>
                 <span class="rm-trader-v2-row__icon"><i class="fa-solid fa-cube" aria-hidden="true"></i></span>
                 <span class="rm-trader-v2-row__name">{{name}}</span>
                 <span class="rm-trader-v2-row__meta">
@@ -136,7 +136,6 @@
           </div>
         {{/if}}
       </aside>
-
     </section>
 
     {{#if selectedItem}}
@@ -162,10 +161,32 @@
           {{#if selectedItem.rank}}<span>Ранг {{rmNum selectedItem.rank precision=0}}</span>{{/if}}
         </div>
 
+        <div class="rm-trader-v2-deal">
+          <label class="rm-trader-v2-deal__quantity">
+            <span>Количество</span>
+            <input
+              type="number"
+              min="1"
+              max="{{selectedQuote.maxQuantity}}"
+              step="1"
+              value="{{selectedQuote.quantity}}"
+              data-action="purchase-quantity"
+              data-max="{{selectedQuote.maxQuantity}}"
+              data-unit-price-copper="{{selectedItem.finalPriceCopper}}"
+              data-unit-price-label="{{selectedQuote.unitPriceLabel}}"
+            >
+          </label>
+          <div class="rm-trader-v2-deal__total">
+            <span>Итого</span>
+            <strong data-role="purchase-total">{{selectedQuote.totalLabel}}</strong>
+            <small data-role="purchase-unit-summary">за {{selectedQuote.quantity}} шт. · {{selectedQuote.unitPriceLabel}} за штуку</small>
+          </div>
+        </div>
+
         {{#if selectedItem.description}}
           <p class="rm-trader-v2-item-card__description">{{selectedItem.description}}</p>
         {{else}}
-          <p class="rm-trader-v2-item-card__description">Описание товара не заполнено. Проверьте запись предмета для подробностей.</p>
+          <p class="rm-trader-v2-item-card__description">Описание товара не заполнено. Откройте запись предмета для подробностей.</p>
         {{/if}}
 
         <div class="rm-trader-v2-item-card__actions">
@@ -177,13 +198,14 @@
               data-source-type="{{selectedItem.sourceType}}"
               data-source-id="{{selectedItem.sourceId}}"
               data-source-name="{{selectedItem.name}}"
-          >Открыть запись</button>
+            >Открыть запись</button>
           {{/if}}
           <button
             type="button"
             class="rm-trader-v2-action rm-trader-v2-action--primary"
             data-action="buy-selected"
             data-item-key="{{selectedItem.itemKey}}"
+            data-quantity="{{selectedQuote.quantity}}"
             title="{{#unless canBuySelected}}{{buyDisabledReason}}{{else}}Купить выбранный товар{{/unless}}"
             {{#unless canBuySelected}}disabled{{/unless}}
           >Купить</button>
