@@ -316,6 +316,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     this.hasPlayedSequencerEntrance = false;
     this.isClosing = false;
     this.searchRenderTimeout = null;
+    this.characterPokeTimeout = null;
     this.renderListenersAbortController = null;
   }
 
@@ -606,6 +607,32 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       await this.#closeWithAnimation(element);
     }, listenerOptions);
 
+    element.querySelector("[data-action='poke-trader-character']")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      const character = event.currentTarget;
+      const tooltip = element.querySelector(".rm-trader-v2-character-tooltip");
+      const tooltipText = tooltip?.querySelector("span");
+      const normalSpeech = context.traderSpeech ?? "";
+
+      character.classList.remove("is-poked");
+      // Restart the scale pulse even when the user clicks repeatedly.
+      void character.offsetWidth;
+      character.classList.add("is-poked");
+      tooltip?.classList?.add("is-visible", "is-poked");
+      if (tooltipText instanceof HTMLElement) {
+        tooltipText.textContent = "\u0410\u0439";
+      }
+
+      window.clearTimeout(this.characterPokeTimeout);
+      this.characterPokeTimeout = window.setTimeout(() => {
+        character.classList.remove("is-poked");
+        tooltip?.classList?.remove("is-visible", "is-poked");
+        if (tooltipText instanceof HTMLElement) {
+          tooltipText.textContent = normalSpeech;
+        }
+      }, 1150);
+    }, listenerOptions);
+
     element.querySelector("[data-action='search']")?.addEventListener("input", (event) => {
       this.search = event.currentTarget.value ?? "";
       window.clearTimeout(this.searchRenderTimeout);
@@ -746,6 +773,8 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
   async _preClose(options) {
     window.clearTimeout(this.searchRenderTimeout);
     this.searchRenderTimeout = null;
+    window.clearTimeout(this.characterPokeTimeout);
+    this.characterPokeTimeout = null;
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = null;
     return super._preClose ? super._preClose(options) : undefined;

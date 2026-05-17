@@ -6753,3 +6753,104 @@ summary:focus-visible {
   background:
     radial-gradient(circle at 35% 28%, rgba(255, 249, 225, 0.92), rgba(219, 184, 107, 0.45));
 }
+
+/* Trader v2 correction pass: real texture, bottom wallet, cleaner dialogue bubble. */
+@keyframes rmTraderV2Poke {
+  0% {
+    transform: scale(1);
+  }
+
+  38% {
+    transform: scale(1.075) translateY(-8px);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-shell {
+  background-color: #ecd597 !important;
+  background-image: url("/modules/rebreya-main/templates/texture/shop.webp") !important;
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-shell::before {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 249, 224, 0.22), transparent 34%),
+    linear-gradient(90deg, rgba(72, 36, 16, 0.08), transparent 26%, transparent 74%, rgba(72, 36, 16, 0.09)) !important;
+  mix-blend-mode: multiply !important;
+  opacity: 0.24 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-wallet {
+  top: auto !important;
+  right: clamp(82px, 5.2vw, 132px) !important;
+  bottom: clamp(88px, 8.5vh, 126px) !important;
+  width: min(390px, 23vw) !important;
+  z-index: 26 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-list-panel.is-buy {
+  grid-template-rows: auto auto minmax(0, 1fr) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-list-panel.is-sell {
+  grid-template-rows: auto auto auto minmax(0, 1fr) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-list-header {
+  display: none !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-character-wrap.is-poked .rm-trader-v2-character {
+  animation: rmTraderV2Poke 720ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+  transform-origin: 52% 82%;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-character-tooltip {
+  top: clamp(176px, 17vh, 236px) !important;
+  right: clamp(410px, 31vw, 640px) !important;
+  z-index: 90 !important;
+  width: min(430px, 30vw) !important;
+  padding: 16px 18px 17px !important;
+  border: 2px solid rgba(48, 27, 16, 0.84) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 248, 224, 0.99), rgba(232, 203, 137, 0.99)) !important;
+  box-shadow:
+    8px 8px 0 rgba(48, 27, 16, 0.2),
+    inset 0 0 0 1px rgba(183, 131, 47, 0.62) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-character-tooltip::after {
+  content: none !important;
+  display: none !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-character-tooltip.is-visible {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-character-tooltip.is-poked {
+  width: auto !important;
+  min-width: 132px;
+  text-align: center;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-character-tooltip.is-poked span {
+  color: #7a1f31 !important;
+  -webkit-text-fill-color: #7a1f31 !important;
+  font-size: 26px !important;
+  font-style: normal !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rebreya-trader-app-v2 .rm-trader-v2-character-wrap.is-poked .rm-trader-v2-character {
+    animation: none !important;
+  }
+}

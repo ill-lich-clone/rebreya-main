@@ -37,7 +37,7 @@
       </div>
     </section>
 
-    <div class="rm-trader-v2-character-wrap" tabindex="0" aria-label="{{traderSpeech}}">
+    <div class="rm-trader-v2-character-wrap" data-action="poke-trader-character" tabindex="0" aria-label="{{traderSpeech}}">
       <img class="rm-trader-v2-character" src="{{traderArtPath}}" alt="{{trader.merchantName}}">
     </div>
     <div class="rm-trader-v2-character-tooltip" role="tooltip">
@@ -61,7 +61,7 @@
     </aside>
 
     <section class="rm-trader-v2-stage">
-      <aside class="rm-trader-v2-list-panel" aria-label="Ассортимент лавки">
+      <aside class="rm-trader-v2-list-panel {{#if mode.isSell}}is-sell{{else}}is-buy{{/if}}" aria-label="Ассортимент лавки">
         <div class="rm-trader-v2-mode" role="group" aria-label="Режим торговли">
           <button
             type="button"
@@ -101,11 +101,6 @@
             <p>Перетащите предмет из листа персонажа сюда. Окно продажи покажет оригинальную цену, текущую цену города, налог и выплату.</p>
           </div>
         {{/if}}
-
-        <div class="rm-trader-v2-list-header">
-          <span>&#1041;&#1083;&#1086;&#1082;&#1080;</span>
-          <strong>{{rmNum inventoryCount precision=0}} поз.</strong>
-        </div>
 
         {{#if emptyInventory}}
           <p class="rm-empty">По текущему фильтру товары не найдены.</p>
