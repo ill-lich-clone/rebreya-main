@@ -4,13 +4,13 @@
   </section>
 {{else}}
   <section class="rm-shell rm-trader-v2-shell scrollable">
-    <img
-      class="rm-trader-v2-character"
-      src="{{traderArtPath}}"
-      alt="{{trader.merchantName}}"
-      title="{{traderSpeech}}"
-      data-tooltip="{{traderSpeech}}"
-    >
+    <div class="rm-trader-v2-character-wrap" tabindex="0" aria-label="{{traderSpeech}}">
+      <img class="rm-trader-v2-character" src="{{traderArtPath}}" alt="{{trader.merchantName}}">
+    </div>
+    <div class="rm-trader-v2-character-tooltip" role="tooltip">
+      <strong>{{trader.merchantName}}</strong>
+      <span>{{traderSpeech}}</span>
+    </div>
     <div class="rm-trader-v2-frame" aria-hidden="true"></div>
 
     <header class="rm-trader-v2-topline" aria-label="Статус лавки">
@@ -147,6 +147,12 @@
             <h2>{{selectedItem.name}}</h2>
           </div>
           <strong>{{selectedItem.finalPriceLabel}}</strong>
+          <button
+            type="button"
+            class="rm-trader-v2-item-card__close"
+            data-action="clear-selected-item"
+            aria-label="Закрыть карточку товара"
+          >×</button>
         </div>
 
         <div class="rm-trader-v2-item-card__meta">

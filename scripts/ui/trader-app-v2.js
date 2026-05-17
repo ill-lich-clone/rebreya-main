@@ -401,10 +401,16 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
           return;
         }
 
-        this.selectedItemKey = itemKey;
+        this.selectedItemKey = this.selectedItemKey === itemKey ? "" : itemKey;
         this.render({ force: true });
       }, listenerOptions);
     });
+
+    element.querySelector("[data-action='clear-selected-item']")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      this.selectedItemKey = "";
+      this.render({ force: true });
+    }, listenerOptions);
 
     element.querySelectorAll("[data-action='open-compendium-entry']").forEach((button) => {
       button.addEventListener("click", async (event) => {
