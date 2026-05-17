@@ -49,6 +49,24 @@ function formatCopper(value) {
   return parts.length ? parts.join(" ") : `0 ${COIN_LABELS.cp}`;
 }
 
+function buildFacetTooltip(kind, label, rank = null) {
+  const safeLabel = String(label ?? "").trim();
+  if (!safeLabel && kind !== "rank") {
+    return "";
+  }
+
+  if (kind === "type") {
+    return `${safeLabel}: тип товара. Показывает назначение предмета и помогает быстро понять, как он используется.`;
+  }
+
+  if (kind === "material") {
+    return `${safeLabel}: основной материал или состав товара. Используется в поиске, ремесле и расчёте торговой ценности.`;
+  }
+
+  const safeRank = Math.max(1, Math.floor(toNumber(rank, 1)));
+  return `Ранг ${safeRank}: примерная редкость и сложность товара. Чем выше ранг, тем реже и дороже позиция.`;
+}
+
 function getDialogRoot(html) {
   if (!html) {
     return null;
@@ -398,6 +416,9 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         usePartyFunds: this.usePartyFunds,
         inventory: inventory.map((entry) => ({
           ...entry,
+          itemTypeTooltip: buildFacetTooltip("type", entry.itemTypeLabel || "Товар"),
+          materialTooltip: entry.materialLabel ? buildFacetTooltip("material", entry.materialLabel) : "",
+          rankTooltip: entry.rank ? buildFacetTooltip("rank", "", entry.rank) : "",
           isSelected: selectedItem?.itemKey === entry.itemKey
         })),
         inventoryCount: inventory.length,
@@ -508,7 +529,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     });
   }
 
-  #updatePurchaseQuoteForInput(quantityInput) {
+  #updatePurchaseQuoteForInput(quantityInput, { commit = true } = {}) {
     if (!(quantityInput instanceof HTMLInputElement)) {
       return;
     }
@@ -521,13 +542,20 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     const maxQuantity = Math.max(1, Math.floor(toNumber(quantityInput.dataset.max, quantityInput.max || 1)));
     const unitPriceCopper = Math.max(0, Math.floor(toNumber(quantityInput.dataset.unitPriceCopper, 0)));
     const unitPriceLabel = quantityInput.dataset.unitPriceLabel || formatCopper(unitPriceCopper);
-    const quantity = Math.max(1, Math.min(Math.floor(toNumber(quantityInput.value, 1)), maxQuantity));
+    const rawQuantity = String(quantityInput.value ?? "").trim();
+    if (!rawQuantity && !commit) {
+      return;
+    }
+
+    const quantity = Math.max(1, Math.min(Math.floor(toNumber(rawQuantity || "1", 1)), maxQuantity));
     const totalOutput = card.querySelector("[data-role='purchase-total']");
     const unitSummary = card.querySelector("[data-role='purchase-unit-summary']");
     const buyButton = card.querySelector("[data-action='buy-selected']");
 
     this.purchaseQuantity = quantity;
-    quantityInput.value = String(quantity);
+    if (commit || rawQuantity !== String(quantity)) {
+      quantityInput.value = String(quantity);
+    }
     if (totalOutput instanceof HTMLElement) {
       totalOutput.textContent = formatCopper(unitPriceCopper * quantity);
     }
@@ -699,10 +727,12 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         return;
       }
 
-      const updateQuote = () => this.#updatePurchaseQuoteForInput(quantityInput);
+      const updateQuote = () => this.#updatePurchaseQuoteForInput(quantityInput, { commit: false });
+      const commitQuote = () => this.#updatePurchaseQuoteForInput(quantityInput, { commit: true });
       quantityInput.addEventListener("input", updateQuote, listenerOptions);
-      quantityInput.addEventListener("change", updateQuote, listenerOptions);
-      updateQuote();
+      quantityInput.addEventListener("change", commitQuote, listenerOptions);
+      quantityInput.addEventListener("blur", commitQuote, listenerOptions);
+      commitQuote();
     });
 
     element.querySelectorAll("[data-action='open-compendium-entry']").forEach((button) => {
@@ -735,6 +765,12 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         }
 
         try {
+          const card = event.currentTarget.closest("[data-item-card]");
+          const quantityInput = card?.querySelector("[data-action='purchase-quantity']");
+          if (quantityInput instanceof HTMLInputElement) {
+            this.#updatePurchaseQuoteForInput(quantityInput, { commit: true });
+          }
+
           const quantity = Math.max(1, Math.floor(toNumber(event.currentTarget.dataset.quantity, this.purchaseQuantity)));
           await this.#purchaseItemByKey(itemKey, inventoryByKey, quantity, customerOptions);
         }

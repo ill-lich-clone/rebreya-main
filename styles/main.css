@@ -6901,3 +6901,80 @@ summary:focus-visible {
   color: #4b2d1b !important;
   -webkit-text-fill-color: #4b2d1b !important;
 }
+
+/* Trader v2 deal card: center placement, compact names, paper tooltips. */
+.rebreya-trader-app-v2 .rm-trader-v2-item-card {
+  left: clamp(620px, 31.5vw, 720px) !important;
+  right: auto !important;
+  bottom: clamp(128px, 14vh, 180px) !important;
+  width: min(500px, 27vw) !important;
+  z-index: 27 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-item-card__head {
+  display: grid !important;
+  grid-template-columns: 46px minmax(0, 1fr) max-content 30px !important;
+  align-items: start !important;
+  gap: 10px !important;
+  padding-right: 0 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-item-card__head > div {
+  min-width: 0;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-item-card__image {
+  width: 42px !important;
+  height: 42px !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-item-card h2 {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(22px, 1.75vw, 34px) !important;
+  line-height: 1 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-item-card__head strong {
+  align-self: start;
+  max-width: 128px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px !important;
+  line-height: 1.15 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-meta-chip.rm-tooltip-anchor[data-rm-tooltip] {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-meta-chip.rm-tooltip-anchor[data-rm-tooltip]::before {
+  border-top-color: #4b2d1b !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-meta-chip.rm-tooltip-anchor[data-rm-tooltip]::after {
+  min-width: 220px;
+  max-width: 320px;
+  border: 2px solid rgba(48, 27, 16, 0.82);
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 249, 231, 0.98), rgba(234, 210, 157, 0.98)) !important;
+  box-shadow: 7px 7px 0 rgba(48, 27, 16, 0.18);
+  color: #4b2d1b !important;
+  -webkit-text-fill-color: #4b2d1b !important;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif !important;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@media (max-width: 1500px) {
+  .rebreya-trader-app-v2 .rm-trader-v2-item-card {
+    left: clamp(480px, 34vw, 570px) !important;
+    width: min(470px, 32vw) !important;
+  }
+}
