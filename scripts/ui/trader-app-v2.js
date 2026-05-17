@@ -387,6 +387,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       return {
         hasError: false,
         trader: snapshot,
+        traderTexturePath: `modules/${MODULE_ID}/templates/texture/shop.webp`,
         traderArtPath: `modules/${MODULE_ID}/assets/ui/trader-cutout.png`,
         traderSpeech: snapshot.description || "Добро пожаловать. Выберите товар из ассортимента, чтобы открыть карточку сделки.",
         search: this.search,
