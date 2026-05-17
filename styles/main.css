@@ -6400,3 +6400,237 @@ summary:focus-visible {
     opacity: 0.72;
   }
 }
+
+/* Trader v2 reference composition: left catalogue, readable signboard, large merchant. */
+@keyframes rmTraderV2RowReveal {
+  from {
+    opacity: 0;
+    transform: translateX(-24px) scaleX(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) scaleX(1);
+  }
+}
+
+@keyframes rmTraderV2CardOpen {
+  from {
+    opacity: 0;
+    transform: translateX(24px) translateY(12px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) scale(1);
+  }
+}
+
+@keyframes rmTraderV2MerchantFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-14px);
+  }
+}
+
+@keyframes rmTraderV2Close {
+  from {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.985);
+    filter: blur(2px);
+  }
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-shell {
+  overflow: hidden;
+}
+
+.rebreya-trader-app-v2.is-closing .rm-trader-v2-shell {
+  animation: rmTraderV2Close 240ms ease-in both;
+  pointer-events: none;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-brand {
+  position: absolute !important;
+  top: clamp(70px, 7.2vh, 112px) !important;
+  left: 50% !important;
+  width: min(1040px, 62vw) !important;
+  min-height: clamp(150px, 17vh, 205px) !important;
+  margin: 0 !important;
+  padding: clamp(20px, 2.2vw, 34px) clamp(44px, 4vw, 76px) !important;
+  transform: translateX(-50%) !important;
+  text-align: center;
+  z-index: 18;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-brand::before,
+.rebreya-trader-app-v2 .rm-trader-v2-brand::after {
+  opacity: 0.9;
+}
+
+.rebreya-trader-app-v2.application .rm-trader-v2-shell .rm-trader-v2-brand > h1,
+.rebreya-trader-app-v2.window-app .rm-trader-v2-shell .rm-trader-v2-brand > h1 {
+  display: block;
+  max-width: 100%;
+  margin: 4px 0 10px;
+  overflow: visible;
+  color: var(--rm-trader-v2-wine) !important;
+  -webkit-text-fill-color: var(--rm-trader-v2-wine) !important;
+  font-family: Georgia, Cambria, "Times New Roman", serif !important;
+  font-size: clamp(46px, 3.9vw, 78px) !important;
+  font-weight: 900 !important;
+  line-height: 0.95 !important;
+  letter-spacing: 0.02em !important;
+  text-shadow: 0 2px 0 rgba(255, 248, 218, 0.75) !important;
+  text-transform: none !important;
+  white-space: nowrap !important;
+}
+
+.rebreya-trader-app-v2.application .rm-trader-v2-shell .rm-trader-v2-kicker,
+.rebreya-trader-app-v2.application .rm-trader-v2-shell .rm-trader-v2-subtitle,
+.rebreya-trader-app-v2.window-app .rm-trader-v2-shell .rm-trader-v2-kicker,
+.rebreya-trader-app-v2.window-app .rm-trader-v2-shell .rm-trader-v2-subtitle {
+  color: #4b2d1b !important;
+  -webkit-text-fill-color: #4b2d1b !important;
+  text-shadow: none !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-character-wrap {
+  right: clamp(90px, 7vw, 175px) !important;
+  bottom: clamp(-430px, -32vh, -300px) !important;
+  height: min(138vh, 1500px) !important;
+  opacity: 0.86 !important;
+  z-index: 7 !important;
+  animation: rmTraderV2MerchantFloat 5.8s ease-in-out infinite;
+  pointer-events: auto;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-stage {
+  top: clamp(320px, 33vh, 405px) !important;
+  right: auto !important;
+  bottom: clamp(110px, 11vh, 150px) !important;
+  left: clamp(72px, 5.2vw, 122px) !important;
+  width: min(665px, 34vw) !important;
+  z-index: 20 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-list-panel {
+  height: 100%;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-list {
+  min-height: 0;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-row {
+  min-height: clamp(58px, 6vh, 74px) !important;
+  grid-template-columns: 38px minmax(0, 1fr) 86px minmax(132px, max-content) !important;
+  animation: rmTraderV2RowReveal 430ms cubic-bezier(0.2, 0.78, 0.2, 1) both;
+  animation-delay: var(--rm-row-delay, 150ms);
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-row.is-selected::before {
+  right: -24px !important;
+  left: auto !important;
+  border-right: 0 !important;
+  border-left: 18px solid var(--rm-trader-v2-wine) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-row__name,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-row__meta,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-row__qty,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-row__price {
+  color: #2f1d12 !important;
+  -webkit-text-fill-color: #2f1d12 !important;
+  text-shadow: none !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-row.is-selected .rm-trader-v2-row__name,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-row.is-selected .rm-trader-v2-row__meta,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-row.is-selected .rm-trader-v2-row__qty,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-row.is-selected .rm-trader-v2-row__price {
+  color: #fff3ca !important;
+  -webkit-text-fill-color: #fff3ca !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-item-card[hidden],
+.rebreya-trader-app-v2 .rm-trader-v2-item-card.is-hidden {
+  display: none !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-item-card.is-active {
+  display: grid !important;
+  animation: rmTraderV2CardOpen 260ms cubic-bezier(0.2, 0.78, 0.2, 1) both;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-item-card {
+  right: clamp(96px, 6.5vw, 152px) !important;
+  bottom: clamp(150px, 15vh, 205px) !important;
+  left: auto !important;
+  width: min(610px, 31vw) !important;
+  z-index: 25 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-item-card,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-item-card span,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-item-card p,
+.rebreya-trader-app-v2 .rm-trader-v2-shell .rm-trader-v2-item-card small {
+  color: #4b2d1b !important;
+  -webkit-text-fill-color: #4b2d1b !important;
+  text-shadow: none !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-wallet {
+  top: clamp(250px, 25vh, 305px) !important;
+  right: clamp(96px, 6.5vw, 152px) !important;
+  bottom: auto !important;
+  width: min(405px, 24vw) !important;
+  z-index: 24 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-footer {
+  z-index: 30;
+}
+
+@media (max-width: 1500px) {
+  .rebreya-trader-app-v2 .rm-trader-v2-brand {
+    width: min(880px, 67vw) !important;
+  }
+
+  .rebreya-trader-app-v2.application .rm-trader-v2-shell .rm-trader-v2-brand > h1,
+  .rebreya-trader-app-v2.window-app .rm-trader-v2-shell .rm-trader-v2-brand > h1 {
+    font-size: clamp(38px, 3.7vw, 58px) !important;
+  }
+
+  .rebreya-trader-app-v2 .rm-trader-v2-stage {
+    width: min(580px, 39vw) !important;
+  }
+
+  .rebreya-trader-app-v2 .rm-trader-v2-character-wrap {
+    right: clamp(52px, 5vw, 90px) !important;
+    height: min(132vh, 1230px) !important;
+  }
+
+  .rebreya-trader-app-v2 .rm-trader-v2-item-card {
+    width: min(520px, 36vw) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rebreya-trader-app-v2 .rm-trader-v2-row,
+  .rebreya-trader-app-v2 .rm-trader-v2-item-card.is-active,
+  .rebreya-trader-app-v2 .rm-trader-v2-character-wrap,
+  .rebreya-trader-app-v2.is-closing .rm-trader-v2-shell {
+    animation: none !important;
+  }
+}

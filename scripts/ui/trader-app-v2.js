@@ -314,6 +314,8 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     this.usePartyFunds = options.usePartyFunds !== false;
     this.partyInventoryActorId = null;
     this.hasPlayedSequencerEntrance = false;
+    this.isClosing = false;
+    this.searchRenderTimeout = null;
     this.renderListenersAbortController = null;
   }
 
@@ -365,6 +367,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       } : null;
       const modeIsBuy = this.mode !== "sell";
       const modeIsSell = !modeIsBuy;
+      const canBuyAnyItem = modeIsBuy && snapshot.canTrade && Boolean(snapshot.customer);
 
       let buyDisabledReason = "";
       if (modeIsSell) {
@@ -399,6 +402,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         emptyInventory: inventory.length === 0,
         selectedItem,
         selectedQuote,
+        canBuyAnyItem,
         canBuySelected: buyDisabledReason.length === 0,
         buyDisabledReason
       };
@@ -502,6 +506,82 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     });
   }
 
+  #updatePurchaseQuoteForInput(quantityInput) {
+    if (!(quantityInput instanceof HTMLInputElement)) {
+      return;
+    }
+
+    const card = quantityInput.closest("[data-item-card]");
+    if (!(card instanceof HTMLElement)) {
+      return;
+    }
+
+    const maxQuantity = Math.max(1, Math.floor(toNumber(quantityInput.dataset.max, quantityInput.max || 1)));
+    const unitPriceCopper = Math.max(0, Math.floor(toNumber(quantityInput.dataset.unitPriceCopper, 0)));
+    const unitPriceLabel = quantityInput.dataset.unitPriceLabel || formatCopper(unitPriceCopper);
+    const quantity = Math.max(1, Math.min(Math.floor(toNumber(quantityInput.value, 1)), maxQuantity));
+    const totalOutput = card.querySelector("[data-role='purchase-total']");
+    const unitSummary = card.querySelector("[data-role='purchase-unit-summary']");
+    const buyButton = card.querySelector("[data-action='buy-selected']");
+
+    this.purchaseQuantity = quantity;
+    quantityInput.value = String(quantity);
+    if (totalOutput instanceof HTMLElement) {
+      totalOutput.textContent = formatCopper(unitPriceCopper * quantity);
+    }
+    if (unitSummary instanceof HTMLElement) {
+      unitSummary.textContent = `за ${quantity} шт. · ${unitPriceLabel} за штуку`;
+    }
+    if (buyButton instanceof HTMLElement) {
+      buyButton.dataset.quantity = String(quantity);
+    }
+  }
+
+  #syncSelectedItemDom(element, { resetQuantity = false } = {}) {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    const activeItemKey = this.selectedItemKey || "";
+    element.querySelectorAll("[data-action='select-item']").forEach((button) => {
+      const isSelected = Boolean(activeItemKey) && button.dataset.itemKey === activeItemKey;
+      button.classList.toggle("is-selected", isSelected);
+      button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    });
+
+    element.querySelectorAll("[data-item-card]").forEach((card) => {
+      if (!(card instanceof HTMLElement)) {
+        return;
+      }
+
+      const isActive = Boolean(activeItemKey) && card.dataset.itemCard === activeItemKey;
+      card.hidden = !isActive;
+      card.classList.toggle("is-active", isActive);
+      card.classList.toggle("is-hidden", !isActive);
+
+      if (!isActive || !resetQuantity) {
+        return;
+      }
+
+      const quantityInput = card.querySelector("[data-action='purchase-quantity']");
+      if (quantityInput instanceof HTMLInputElement) {
+        quantityInput.value = "1";
+        this.#updatePurchaseQuoteForInput(quantityInput);
+      }
+    });
+  }
+
+  async #closeWithAnimation(element) {
+    if (this.isClosing) {
+      return;
+    }
+
+    this.isClosing = true;
+    element?.classList?.add("is-closing");
+    await new Promise((resolve) => window.setTimeout(resolve, 240));
+    await this.close();
+  }
+
   async _onRender(context, options) {
     await super._onRender(context, options);
     const element = getAppElement(this);
@@ -521,14 +601,15 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     const inventoryByKey = new Map((context.inventory ?? []).map((entry) => [entry.itemKey, entry]));
     const customerOptions = context.trader?.customerOptions ?? [];
 
-    element.querySelector("[data-action='close-trader-v2']")?.addEventListener("click", (event) => {
+    element.querySelector("[data-action='close-trader-v2']")?.addEventListener("click", async (event) => {
       event.preventDefault();
-      this.close();
+      await this.#closeWithAnimation(element);
     }, listenerOptions);
 
     element.querySelector("[data-action='search']")?.addEventListener("input", (event) => {
       this.search = event.currentTarget.value ?? "";
-      this.render({ force: true });
+      window.clearTimeout(this.searchRenderTimeout);
+      this.searchRenderTimeout = window.setTimeout(() => this.render({ force: true }), 120);
     }, listenerOptions);
 
     element.querySelector("[data-action='toggle-shared-funds']")?.addEventListener("change", (event) => {
@@ -559,7 +640,11 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelectorAll("[data-action='select-item']").forEach((button) => {
+    element.querySelectorAll("[data-action='select-item']").forEach((button, index) => {
+      if (button instanceof HTMLElement) {
+        button.style.setProperty("--rm-row-delay", `${150 + (index * 46)}ms`);
+      }
+
       button.addEventListener("click", (event) => {
         const itemKey = event.currentTarget.dataset.itemKey ?? "";
         if (!itemKey) {
@@ -568,44 +653,29 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
 
         this.selectedItemKey = this.selectedItemKey === itemKey ? "" : itemKey;
         this.purchaseQuantity = 1;
-        this.render({ force: true });
+        this.#syncSelectedItemDom(element, { resetQuantity: true });
       }, listenerOptions);
     });
 
-    element.querySelector("[data-action='clear-selected-item']")?.addEventListener("click", (event) => {
-      event.preventDefault();
-      this.selectedItemKey = "";
-      this.purchaseQuantity = 1;
-      this.render({ force: true });
-    }, listenerOptions);
+    element.querySelectorAll("[data-action='clear-selected-item']").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        this.selectedItemKey = "";
+        this.purchaseQuantity = 1;
+        this.#syncSelectedItemDom(element);
+      }, listenerOptions);
+    });
 
-    const quantityInput = element.querySelector("[data-action='purchase-quantity']");
-    if (quantityInput instanceof HTMLInputElement) {
-      const totalOutput = element.querySelector("[data-role='purchase-total']");
-      const unitSummary = element.querySelector("[data-role='purchase-unit-summary']");
-      const buyButton = element.querySelector("[data-action='buy-selected']");
-      const updateQuote = () => {
-        const maxQuantity = Math.max(1, Math.floor(toNumber(quantityInput.dataset.max, quantityInput.max || 1)));
-        const unitPriceCopper = Math.max(0, Math.floor(toNumber(quantityInput.dataset.unitPriceCopper, 0)));
-        const unitPriceLabel = quantityInput.dataset.unitPriceLabel || formatCopper(unitPriceCopper);
-        const quantity = Math.max(1, Math.min(Math.floor(toNumber(quantityInput.value, 1)), maxQuantity));
-        this.purchaseQuantity = quantity;
-        quantityInput.value = String(quantity);
-        if (totalOutput instanceof HTMLElement) {
-          totalOutput.textContent = formatCopper(unitPriceCopper * quantity);
-        }
-        if (unitSummary instanceof HTMLElement) {
-          unitSummary.textContent = `за ${quantity} шт. · ${unitPriceLabel} за штуку`;
-        }
-        if (buyButton instanceof HTMLElement) {
-          buyButton.dataset.quantity = String(quantity);
-        }
-      };
+    element.querySelectorAll("[data-action='purchase-quantity']").forEach((quantityInput) => {
+      if (!(quantityInput instanceof HTMLInputElement)) {
+        return;
+      }
 
+      const updateQuote = () => this.#updatePurchaseQuoteForInput(quantityInput);
       quantityInput.addEventListener("input", updateQuote, listenerOptions);
       quantityInput.addEventListener("change", updateQuote, listenerOptions);
       updateQuote();
-    }
+    });
 
     element.querySelectorAll("[data-action='open-compendium-entry']").forEach((button) => {
       button.addEventListener("click", async (event) => {
@@ -628,22 +698,24 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelector("[data-action='buy-selected']")?.addEventListener("click", async (event) => {
-      event.preventDefault();
-      const itemKey = event.currentTarget.dataset.itemKey;
-      if (!itemKey) {
-        return;
-      }
+    element.querySelectorAll("[data-action='buy-selected']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const itemKey = event.currentTarget.dataset.itemKey;
+        if (!itemKey) {
+          return;
+        }
 
-      try {
-        const quantity = Math.max(1, Math.floor(toNumber(event.currentTarget.dataset.quantity, this.purchaseQuantity)));
-        await this.#purchaseItemByKey(itemKey, inventoryByKey, quantity, customerOptions);
-      }
-      catch (error) {
-        console.error(`${MODULE_ID} | Failed to buy selected item '${itemKey}'.`, error);
-        ui.notifications?.error(error.message || "Не удалось совершить покупку.");
-      }
-    }, listenerOptions);
+        try {
+          const quantity = Math.max(1, Math.floor(toNumber(event.currentTarget.dataset.quantity, this.purchaseQuantity)));
+          await this.#purchaseItemByKey(itemKey, inventoryByKey, quantity, customerOptions);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to buy selected item '${itemKey}'.`, error);
+          ui.notifications?.error(error.message || "Не удалось совершить покупку.");
+        }
+      }, listenerOptions);
+    });
 
     const sellZone = element.querySelector("[data-action='sale-dropzone']");
     if (sellZone) {
@@ -672,6 +744,8 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _preClose(options) {
+    window.clearTimeout(this.searchRenderTimeout);
+    this.searchRenderTimeout = null;
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = null;
     return super._preClose ? super._preClose(options) : undefined;
