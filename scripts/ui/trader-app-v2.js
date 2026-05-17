@@ -15,6 +15,25 @@ const COIN_LABELS = {
   cp: "мм"
 };
 
+const DND5E_PRICE_IN_COPPER = {
+  pp: 1000,
+  gp: 100,
+  ep: 50,
+  sp: 10,
+  cp: 1
+};
+
+const SELLABLE_ITEM_TYPES = new Set(["weapon", "equipment", "consumable", "tool", "loot", "backpack"]);
+
+const ITEM_TYPE_LABELS = {
+  weapon: "Оружие",
+  equipment: "Снаряжение",
+  consumable: "Расходники",
+  tool: "Инструменты",
+  loot: "Добыча",
+  backpack: "Контейнеры"
+};
+
 function toSafeId(value) {
   return Array.from(String(value ?? "trader-v2"))
     .map((character) => character.charCodeAt(0).toString(16))
@@ -47,6 +66,84 @@ function formatCopper(value) {
   }
 
   return parts.length ? parts.join(" ") : `0 ${COIN_LABELS.cp}`;
+}
+
+function actorCurrencyToCopperLocal(actor) {
+  const currency = actor?.system?.currency ?? {};
+  return Math.max(0,
+    Math.round(toNumber(currency.pp, 0) * DND5E_PRICE_IN_COPPER.pp)
+    + Math.round(toNumber(currency.gp, 0) * DND5E_PRICE_IN_COPPER.gp)
+    + Math.round(toNumber(currency.ep, 0) * DND5E_PRICE_IN_COPPER.ep)
+    + Math.round(toNumber(currency.sp, 0) * DND5E_PRICE_IN_COPPER.sp)
+    + Math.round(toNumber(currency.cp, 0) * DND5E_PRICE_IN_COPPER.cp)
+  );
+}
+
+function escapeHtml(value) {
+  return foundry.utils.escapeHTML(String(value ?? ""));
+}
+
+function getItemQuantity(itemData) {
+  return Math.max(1, Math.floor(toNumber(foundry.utils.getProperty(itemData, "system.quantity"), 1)));
+}
+
+function getItemPriceCopper(itemData) {
+  const priceValue = toNumber(foundry.utils.getProperty(itemData, "system.price.value"), 0);
+  const denomination = String(foundry.utils.getProperty(itemData, "system.price.denomination") ?? "gp").toLowerCase();
+  const multiplier = DND5E_PRICE_IN_COPPER[denomination] ?? DND5E_PRICE_IN_COPPER.gp;
+  return Math.max(0, Math.round(priceValue * multiplier));
+}
+
+function getItemTypeLabel(item) {
+  return ITEM_TYPE_LABELS[item?.type] ?? String(item?.type ?? "Товар");
+}
+
+function isSellableItem(item) {
+  if (!(item instanceof Item) || !SELLABLE_ITEM_TYPES.has(item.type)) {
+    return false;
+  }
+
+  const itemData = item.toObject();
+  return getItemQuantity(itemData) > 0;
+}
+
+function buildSaleInventoryEntry(item) {
+  const itemData = item.toObject();
+  const flags = foundry.utils.deepClone(item.flags?.[MODULE_ID] ?? {});
+  const priceCopper = getItemPriceCopper(itemData);
+  const itemTypeLabel = String(flags.itemTypeLabel ?? getItemTypeLabel(item)).trim() || "Товар";
+  const materialLabel = String(flags.predominantMaterialName ?? flags.materialName ?? "").trim();
+
+  return {
+    id: item.id,
+    uuid: item.uuid,
+    name: item.name,
+    img: item.img || "icons/svg/item-bag.svg",
+    type: item.type,
+    typeLabel: getItemTypeLabel(item),
+    itemTypeLabel,
+    materialLabel,
+    quantity: getItemQuantity(itemData),
+    priceCopper,
+    priceLabel: formatCopper(priceCopper)
+  };
+}
+
+function groupSaleInventory(entries = []) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const key = entry.typeLabel || "Товары";
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key).push(entry);
+  }
+
+  return Array.from(groups.entries()).map(([label, items]) => ({
+    label,
+    count: items.length,
+    items
+  }));
 }
 
 function buildFacetTooltip(kind, label, rank = null) {
@@ -329,6 +426,10 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     this.mode = "buy";
     this.selectedItemKey = "";
     this.purchaseQuantity = 1;
+    this.saleSellerActorId = options.actorId ?? null;
+    this.saleSearch = "";
+    this.saleBasket = new Map();
+    this.salePreviewCache = new Map();
     this.usePartyFunds = options.usePartyFunds !== false;
     this.partyInventoryActorId = null;
     this.hasPlayedSequencerEntrance = false;
@@ -340,6 +441,65 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
 
   get id() {
     return `${MODULE_ID}-trader-v2-${toSafeId(`${this.cityId}-${this.traderKey}`)}`;
+  }
+
+  #buildSaleContext(snapshot) {
+    const sellerOptions = (snapshot.customerOptions ?? [])
+      .filter((option) => option?.value)
+      .map((option) => ({
+        value: String(option.value),
+        label: String(option.label ?? option.value)
+      }));
+    const sellerIds = new Set(sellerOptions.map((option) => option.value));
+    const preferredSellerId = [
+      this.saleSellerActorId,
+      this.usePartyFunds ? null : this.selectedActorId,
+      game.user?.character?.isOwner ? game.user.character.id : null,
+      snapshot.customer?.id,
+      snapshot.partyInventoryActorId,
+      sellerOptions[0]?.value
+    ].find((actorId) => actorId && sellerIds.has(actorId)) ?? "";
+
+    this.saleSellerActorId = preferredSellerId;
+    const sellerActor = preferredSellerId ? game.actors.get(preferredSellerId) : null;
+    const saleSearchText = normalizeText(this.saleSearch);
+    const allSaleItems = sellerActor?.isOwner
+      ? sellerActor.items.contents
+        .filter(isSellableItem)
+        .map(buildSaleInventoryEntry)
+        .sort((left, right) => left.name.localeCompare(right.name, "ru"))
+      : [];
+    const saleItems = allSaleItems.filter((entry) => {
+      if (!saleSearchText) {
+        return true;
+      }
+
+      return normalizeText([
+        entry.name,
+        entry.typeLabel,
+        entry.itemTypeLabel,
+        entry.materialLabel
+      ].join(" ")).includes(saleSearchText);
+    });
+
+    return {
+      seller: sellerActor?.isOwner ? {
+        id: sellerActor.id,
+        name: sellerActor.name,
+        img: sellerActor.img,
+        currencyLabel: formatCopper(actorCurrencyToCopperLocal(sellerActor))
+      } : null,
+      sellerOptions: sellerOptions.map((option) => ({
+        ...option,
+        selected: option.value === preferredSellerId
+      })),
+      search: this.saleSearch,
+      items: saleItems,
+      itemGroups: groupSaleInventory(saleItems),
+      itemCount: saleItems.length,
+      empty: saleItems.length === 0,
+      basketCount: this.saleBasket.size
+    };
   }
 
   async _prepareContext() {
@@ -427,7 +587,8 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         selectedQuote,
         canBuyAnyItem,
         canBuySelected: buyDisabledReason.length === 0,
-        buyDisabledReason
+        buyDisabledReason,
+        sale: this.#buildSaleContext(snapshot)
       };
     }
     catch (error) {
@@ -612,6 +773,165 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.close();
   }
 
+  #getSaleBasketEntries() {
+    return Array.from(this.saleBasket.values()).sort((left, right) => (
+      left.preview.itemName.localeCompare(right.preview.itemName, "ru")
+    ));
+  }
+
+  #getSaleBasketTotals() {
+    return this.#getSaleBasketEntries().reduce((totals, entry) => {
+      totals.grossCopper += entry.preview.grossOfferCopper * entry.quantity;
+      totals.taxCopper += entry.preview.taxCopper * entry.quantity;
+      totals.netCopper += entry.preview.netPayoutCopper * entry.quantity;
+      return totals;
+    }, {
+      grossCopper: 0,
+      taxCopper: 0,
+      netCopper: 0
+    });
+  }
+
+  #renderSaleBasket(element = getAppElement(this)) {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    const basket = element.querySelector("[data-role='sale-basket']");
+    const empty = element.querySelector("[data-role='sale-basket-empty']");
+    const grossOutput = element.querySelector("[data-role='sale-total-gross']");
+    const taxOutput = element.querySelector("[data-role='sale-total-tax']");
+    const netOutputs = element.querySelectorAll("[data-role='sale-total-net']");
+    const confirmButton = element.querySelector("[data-action='sale-confirm']");
+    const entries = this.#getSaleBasketEntries();
+    const totals = this.#getSaleBasketTotals();
+
+    if (basket instanceof HTMLElement) {
+      basket.innerHTML = entries.map((entry) => {
+        const preview = entry.preview;
+        const quantity = Math.max(1, Math.min(entry.quantity, preview.quantityAvailable));
+        return `
+          <article class="rm-trader-v2-sale-picked" data-sale-basket-item="${escapeHtml(preview.itemUuid)}">
+            <img src="${escapeHtml(preview.img || "icons/svg/item-bag.svg")}" alt="">
+            <div class="rm-trader-v2-sale-picked__main">
+              <strong>${escapeHtml(preview.itemName)}</strong>
+              <small>оригинал ${escapeHtml(preview.marketPriceLabel)} · выплата ${escapeHtml(preview.netPayoutLabel)} за шт.</small>
+              <div class="rm-trader-v2-sale-picked__quantity">
+                <button type="button" data-action="sale-qty-dec" aria-label="Уменьшить количество">−</button>
+                <input
+                  type="number"
+                  min="1"
+                  max="${preview.quantityAvailable}"
+                  step="1"
+                  value="${quantity}"
+                  data-action="sale-basket-quantity"
+                  data-item-uuid="${escapeHtml(preview.itemUuid)}"
+                >
+                <button type="button" data-action="sale-qty-inc" aria-label="Увеличить количество">+</button>
+              </div>
+            </div>
+            <strong class="rm-trader-v2-sale-picked__price">${escapeHtml(formatCopper(preview.netPayoutCopper * quantity))}</strong>
+            <button type="button" class="rm-trader-v2-sale-picked__remove" data-action="sale-remove-item" aria-label="Убрать из продажи">×</button>
+          </article>
+        `;
+      }).join("");
+    }
+
+    if (empty instanceof HTMLElement) {
+      empty.hidden = entries.length > 0;
+    }
+    if (grossOutput instanceof HTMLElement) {
+      grossOutput.textContent = formatCopper(totals.grossCopper);
+    }
+    if (taxOutput instanceof HTMLElement) {
+      taxOutput.textContent = formatCopper(totals.taxCopper);
+    }
+    netOutputs.forEach((netOutput) => {
+      if (netOutput instanceof HTMLElement) {
+        netOutput.textContent = formatCopper(totals.netCopper);
+      }
+    });
+    if (confirmButton instanceof HTMLButtonElement) {
+      confirmButton.disabled = entries.length === 0;
+    }
+  }
+
+  #setSaleBasketQuantity(itemUuid, quantity) {
+    const entry = this.saleBasket.get(itemUuid);
+    if (!entry) {
+      return;
+    }
+
+    entry.quantity = Math.max(1, Math.min(
+      Math.floor(toNumber(quantity, 1)),
+      Math.max(1, Math.floor(toNumber(entry.preview.quantityAvailable, 1)))
+    ));
+  }
+
+  async #addSaleItemToBasket(itemUuid, element) {
+    const existingEntry = this.saleBasket.get(itemUuid);
+    if (existingEntry) {
+      this.#setSaleBasketQuantity(itemUuid, existingEntry.quantity + 1);
+      this.#renderSaleBasket(element);
+      return;
+    }
+
+    const preview = this.salePreviewCache.get(itemUuid)
+      ?? await this.moduleApi.createTraderSalePreview(this.cityId, this.traderKey, { uuid: itemUuid });
+    this.salePreviewCache.set(itemUuid, preview);
+    this.saleBasket.set(itemUuid, {
+      preview,
+      quantity: 1
+    });
+    this.#renderSaleBasket(element);
+  }
+
+  #filterSaleInventoryRows(element) {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+
+    const query = normalizeText(this.saleSearch);
+    let visibleCount = 0;
+    element.querySelectorAll("[data-sale-inventory-item]").forEach((row) => {
+      const haystack = normalizeText(row.dataset.search ?? "");
+      const isVisible = !query || haystack.includes(query);
+      row.hidden = !isVisible;
+      if (isVisible) {
+        visibleCount += 1;
+      }
+    });
+    element.querySelectorAll("[data-sale-group]").forEach((group) => {
+      const hasVisibleRows = Boolean(group.querySelector("[data-sale-inventory-item]:not([hidden])"));
+      group.hidden = !hasVisibleRows;
+    });
+
+    const empty = element.querySelector("[data-role='sale-inventory-empty']");
+    if (empty instanceof HTMLElement) {
+      empty.hidden = visibleCount > 0;
+    }
+  }
+
+  async #confirmSaleBasket(element) {
+    const entries = this.#getSaleBasketEntries();
+    if (!entries.length) {
+      ui.notifications?.warn("Выберите предметы для продажи.");
+      return;
+    }
+
+    const totals = this.#getSaleBasketTotals();
+    for (const entry of entries) {
+      await this.moduleApi.sellTraderItem(this.cityId, this.traderKey, entry.preview, entry.quantity);
+    }
+
+    this.saleBasket.clear();
+    this.salePreviewCache.clear();
+    this.#renderSaleBasket(element);
+    ui.notifications?.info(`Продано ${entries.length} поз. на ${formatCopper(totals.netCopper)}.`);
+    await this.moduleApi.refreshOpenApps();
+    bringAppToFront(this);
+  }
+
   async _onRender(context, options) {
     await super._onRender(context, options);
     const element = getAppElement(this);
@@ -695,6 +1015,107 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         this.render({ force: true });
       }, listenerOptions);
     });
+
+    element.querySelector("[data-action='close-sale-overlay']")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      this.mode = "buy";
+      this.render({ force: true });
+    }, listenerOptions);
+
+    element.querySelector("[data-action='sale-select-seller']")?.addEventListener("change", (event) => {
+      this.saleSellerActorId = event.currentTarget.value || null;
+      this.saleBasket.clear();
+      this.salePreviewCache.clear();
+      this.render({ force: true });
+    }, listenerOptions);
+
+    element.querySelector("[data-action='sale-search']")?.addEventListener("input", (event) => {
+      this.saleSearch = event.currentTarget.value ?? "";
+      this.#filterSaleInventoryRows(element);
+    }, listenerOptions);
+
+    element.querySelectorAll("[data-action='sale-add-item']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const itemUuid = event.currentTarget.dataset.itemUuid ?? "";
+        if (!itemUuid) {
+          return;
+        }
+
+        event.currentTarget.disabled = true;
+        try {
+          await this.#addSaleItemToBasket(itemUuid, element);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to prepare sale item '${itemUuid}'.`, error);
+          ui.notifications?.error(error.message || "Не удалось добавить предмет в продажу.");
+        }
+        finally {
+          event.currentTarget.disabled = false;
+        }
+      }, listenerOptions);
+    });
+
+    element.querySelector("[data-role='sale-basket-panel']")?.addEventListener("click", (event) => {
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+
+      const actionButton = event.target.closest("[data-action]");
+      const row = event.target.closest("[data-sale-basket-item]");
+      if (!(actionButton instanceof HTMLElement) || !(row instanceof HTMLElement)) {
+        return;
+      }
+
+      const itemUuid = row.dataset.saleBasketItem ?? "";
+      const entry = this.saleBasket.get(itemUuid);
+      if (!entry) {
+        return;
+      }
+
+      if (actionButton.dataset.action === "sale-remove-item") {
+        this.saleBasket.delete(itemUuid);
+        this.#renderSaleBasket(element);
+        return;
+      }
+
+      if (actionButton.dataset.action === "sale-qty-dec") {
+        this.#setSaleBasketQuantity(itemUuid, entry.quantity - 1);
+        this.#renderSaleBasket(element);
+        return;
+      }
+
+      if (actionButton.dataset.action === "sale-qty-inc") {
+        this.#setSaleBasketQuantity(itemUuid, entry.quantity + 1);
+        this.#renderSaleBasket(element);
+      }
+    }, listenerOptions);
+
+    element.querySelector("[data-role='sale-basket-panel']")?.addEventListener("change", (event) => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || input.dataset.action !== "sale-basket-quantity") {
+        return;
+      }
+
+      this.#setSaleBasketQuantity(input.dataset.itemUuid ?? "", input.value);
+      this.#renderSaleBasket(element);
+    }, listenerOptions);
+
+    element.querySelector("[data-action='sale-confirm']")?.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.currentTarget.disabled = true;
+      try {
+        await this.#confirmSaleBasket(element);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to confirm sale basket.`, error);
+        ui.notifications?.error(error.message || "Не удалось завершить продажу.");
+        event.currentTarget.disabled = false;
+      }
+    }, listenerOptions);
+
+    this.#renderSaleBasket(element);
+    this.#filterSaleInventoryRows(element);
 
     element.querySelectorAll("[data-action='select-item']").forEach((button, index) => {
       if (button instanceof HTMLElement) {
@@ -814,6 +1235,8 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     this.characterPokeTimeout = null;
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = null;
+    this.saleBasket?.clear?.();
+    this.salePreviewCache?.clear?.();
     return super._preClose ? super._preClose(options) : undefined;
   }
 }

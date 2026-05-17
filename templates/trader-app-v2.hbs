@@ -228,6 +228,89 @@
       </div>
     {{/unless}}
 
+    {{#if mode.isSell}}
+      <section class="rm-trader-v2-sale-overlay" data-role="sale-overlay" aria-label="Продажа предметов">
+        <div class="rm-trader-v2-sale-window">
+          <header class="rm-trader-v2-sale-header">
+            <div>
+              <span>Sell</span>
+              <h2>Продажа</h2>
+            </div>
+            <p>{{#if sale.seller}}{{sale.seller.name}}{{else}}Инвентарь не выбран{{/if}}</p>
+            <button type="button" data-action="close-sale-overlay" aria-label="Закрыть окно продажи">×</button>
+          </header>
+
+          <div class="rm-trader-v2-sale-body">
+            <section class="rm-trader-v2-sale-inventory">
+              <div class="rm-trader-v2-sale-controls">
+                <label>
+                  <span>Инвентарь</span>
+                  <select data-action="sale-select-seller">
+                    {{#each sale.sellerOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                <label>
+                  <span>Поиск</span>
+                  <input type="text" value="{{sale.search}}" placeholder="Название, тип, материал" data-action="sale-search">
+                </label>
+              </div>
+
+              <div class="rm-trader-v2-sale-list">
+                <p class="rm-trader-v2-sale-empty" data-role="sale-inventory-empty" {{#unless sale.empty}}hidden{{/unless}}>
+                  В этом инвентаре нет предметов для продажи.
+                </p>
+                {{#each sale.itemGroups}}
+                  <div class="rm-trader-v2-sale-group" data-sale-group>
+                    <div class="rm-trader-v2-sale-group__header">
+                      <span>{{label}}</span>
+                      <strong>{{count}}</strong>
+                    </div>
+                    {{#each items}}
+                      <button
+                        type="button"
+                        class="rm-trader-v2-sale-row"
+                        data-action="sale-add-item"
+                        data-item-uuid="{{uuid}}"
+                        data-sale-inventory-item
+                        data-search="{{name}} {{typeLabel}} {{itemTypeLabel}} {{materialLabel}}"
+                      >
+                        <img src="{{img}}" alt="">
+                        <span class="rm-trader-v2-sale-row__name">{{name}}</span>
+                        <span class="rm-trader-v2-sale-row__meta">{{itemTypeLabel}}{{#if materialLabel}} · {{materialLabel}}{{/if}}</span>
+                        <span class="rm-trader-v2-sale-row__qty">×{{rmNum quantity precision=0}}</span>
+                        <strong>{{priceLabel}}</strong>
+                      </button>
+                    {{/each}}
+                  </div>
+                {{/each}}
+              </div>
+            </section>
+
+            <aside class="rm-trader-v2-sale-basket-panel" data-role="sale-basket-panel">
+              <div class="rm-trader-v2-sale-basket-head">
+                <span>Выбрано к продаже</span>
+                <strong data-role="sale-total-net">0 мм</strong>
+              </div>
+              <p class="rm-trader-v2-sale-empty" data-role="sale-basket-empty">
+                Нажмите предмет слева, чтобы добавить его в продажу.
+              </p>
+              <div class="rm-trader-v2-sale-basket" data-role="sale-basket"></div>
+              <footer class="rm-trader-v2-sale-total">
+                <div><span>Оригинал</span><strong data-role="sale-total-gross">0 мм</strong></div>
+                <div><span>Налог</span><strong data-role="sale-total-tax">0 мм</strong></div>
+                <div class="rm-trader-v2-sale-total__net"><span>Итого</span><strong data-role="sale-total-net">0 мм</strong></div>
+                <button type="button" class="rm-trader-v2-sale-confirm" data-action="sale-confirm" disabled>
+                  Подтвердить продажу
+                </button>
+              </footer>
+            </aside>
+          </div>
+        </div>
+      </section>
+    {{/if}}
+
     <footer class="rm-trader-v2-footer" aria-hidden="true">
       <span><kbd>↑↓</kbd> Навигация</span>
       <span><kbd>↵</kbd> Выбор</span>
