@@ -1952,7 +1952,9 @@ summary:focus-visible {
 }
 
 .rebreya-trader-app-v2 .window-content {
-  background: #20150e !important;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(255, 247, 214, 0.7), transparent 34%),
+    linear-gradient(108deg, #d9bd7e, #ecdcae 48%, #c9a563) !important;
   overflow: hidden;
 }
 
@@ -1970,6 +1972,7 @@ summary:focus-visible {
   isolation: isolate;
   display: block;
   min-height: 840px;
+  height: 100%;
   padding: 26px 32px 28px;
   overflow: hidden;
   color: var(--rm-trader-v2-ink);
@@ -1978,6 +1981,7 @@ summary:focus-visible {
     radial-gradient(circle at 76% 42%, rgba(124, 31, 45, 0.18), transparent 30%),
     radial-gradient(circle at 18% 16%, rgba(250, 231, 181, 0.95), transparent 36%),
     linear-gradient(108deg, rgba(226, 204, 154, 0.98), rgba(238, 224, 190, 0.96) 48%, rgba(211, 184, 132, 0.98));
+  background-color: #e4cb91 !important;
 }
 
 .rm-trader-v2-shell--error {
@@ -1996,6 +2000,7 @@ summary:focus-visible {
     repeating-linear-gradient(90deg, rgba(53, 32, 17, 0.035) 0 1px, transparent 1px 72px),
     linear-gradient(90deg, rgba(55, 28, 14, 0.14), transparent 18%, transparent 78%, rgba(55, 28, 14, 0.16));
   mix-blend-mode: multiply;
+  opacity: 0.5;
 }
 
 .rm-trader-v2-shell::after {
@@ -2030,12 +2035,13 @@ summary:focus-visible {
 
 .rm-trader-v2-character {
   position: absolute;
-  right: 8%;
-  bottom: -58px;
+  right: 6%;
+  bottom: -86px;
   z-index: 1;
-  height: min(104%, 880px);
+  height: min(99%, 835px);
   width: auto;
   max-width: none;
+  opacity: 0.82;
   pointer-events: none;
   filter:
     drop-shadow(0 30px 30px rgba(44, 24, 13, 0.46))
@@ -2052,7 +2058,7 @@ summary:focus-visible {
 .rm-trader-v2-item-card,
 .rm-trader-v2-footer {
   position: relative;
-  z-index: 3;
+  z-index: 5;
 }
 
 .rm-trader-v2-topline {
@@ -2106,6 +2112,7 @@ summary:focus-visible {
   background:
     linear-gradient(90deg, rgba(255, 249, 231, 0.96), rgba(244, 226, 181, 0.94)),
     var(--rm-trader-v2-paper);
+  background-color: #f7e8bd !important;
   box-shadow:
     12px 12px 0 rgba(48, 27, 16, 0.16),
     inset 0 0 0 1px rgba(199, 151, 63, 0.68);
@@ -2210,6 +2217,7 @@ summary:focus-visible {
   background:
     linear-gradient(180deg, rgba(255, 249, 231, 0.96), rgba(235, 211, 158, 0.94)),
     var(--rm-trader-v2-paper);
+  background-color: #f3dfaa !important;
   box-shadow:
     8px 8px 0 rgba(48, 27, 16, 0.18),
     inset 0 0 0 1px rgba(199, 151, 63, 0.62);
@@ -2248,6 +2256,7 @@ summary:focus-visible {
   background:
     linear-gradient(180deg, rgba(255, 249, 231, 0.96), rgba(238, 219, 172, 0.94)),
     var(--rm-trader-v2-paper);
+  background-color: #f7e8bd !important;
   box-shadow:
     8px 8px 0 rgba(125, 31, 45, 0.16),
     inset 0 0 0 1px rgba(199, 151, 63, 0.52);
@@ -2366,7 +2375,9 @@ summary:focus-visible {
   border: 2px solid rgba(48, 27, 16, 0.62);
   border-radius: 0;
   background: rgba(255, 249, 231, 0.9);
+  background-color: #fff5d8 !important;
   color: var(--rm-trader-v2-ink);
+  color: var(--rm-trader-v2-ink) !important;
   font: 800 14px/1 "Trebuchet MS", "Segoe UI", sans-serif;
   letter-spacing: 0.02em;
   box-shadow: inset 0 0 0 1px rgba(199, 151, 63, 0.28);
@@ -2374,6 +2385,11 @@ summary:focus-visible {
 
 .rm-trader-v2-field input::placeholder {
   color: rgba(69, 43, 27, 0.48);
+}
+
+.rm-trader-v2-field select option {
+  background: #fff5d8;
+  color: var(--rm-trader-v2-ink);
 }
 
 .rm-trader-v2-field input:focus-visible,
@@ -2392,6 +2408,7 @@ summary:focus-visible {
   background:
     linear-gradient(90deg, rgba(125, 31, 45, 0.08), transparent),
     rgba(255, 247, 222, 0.68);
+  background-color: #ead8ac !important;
   color: #55351f;
 }
 
@@ -2427,6 +2444,7 @@ summary:focus-visible {
   border: 2px solid rgba(48, 27, 16, 0.78);
   border-bottom: 0;
   background: linear-gradient(180deg, #fff8df, #e7ce91);
+  background-color: #f2dfab !important;
   color: #4c2a1a;
   font-size: 12px;
   font-weight: 900;
@@ -2443,6 +2461,7 @@ summary:focus-visible {
   min-height: 0;
   border: 2px solid rgba(48, 27, 16, 0.78);
   background: rgba(255, 249, 231, 0.84);
+  background-color: #f5e8c7 !important;
   overflow: auto;
   scrollbar-color: rgba(125, 31, 45, 0.7) rgba(235, 211, 158, 0.72);
   box-shadow: 8px 8px 0 rgba(48, 27, 16, 0.14);
@@ -2461,7 +2480,9 @@ summary:focus-visible {
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.42), rgba(255, 247, 222, 0.14)),
     transparent;
+  background-color: #fbf1d6 !important;
   color: var(--rm-trader-v2-ink);
+  color: var(--rm-trader-v2-ink) !important;
   text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
@@ -2475,9 +2496,11 @@ summary:focus-visible {
 
 .rm-trader-v2-row.is-selected {
   color: #fff4d8;
+  color: #fff4d8 !important;
   background:
     linear-gradient(90deg, #7f1f2d, #5b1720),
     var(--rm-trader-v2-wine);
+  background-color: var(--rm-trader-v2-wine) !important;
   box-shadow:
     inset 5px 0 0 var(--rm-trader-v2-gold),
     inset 0 0 0 1px rgba(240, 208, 127, 0.38);
@@ -2538,7 +2561,7 @@ summary:focus-visible {
 }
 
 .rm-trader-v2-row.is-selected .rm-trader-v2-row__meta {
-  color: #e9d3a3;
+  color: #e9d3a3 !important;
 }
 
 .rm-trader-v2-row__qty,
@@ -2558,7 +2581,7 @@ summary:focus-visible {
 }
 
 .rm-trader-v2-row.is-selected .rm-trader-v2-row__qty {
-  color: #e9d3a3;
+  color: #e9d3a3 !important;
 }
 
 .rm-trader-v2-row__price {
@@ -2568,7 +2591,7 @@ summary:focus-visible {
 }
 
 .rm-trader-v2-row.is-selected .rm-trader-v2-row__price {
-  color: #fff4d8;
+  color: #fff4d8 !important;
 }
 
 .rm-trader-v2-item-card {
@@ -2581,6 +2604,7 @@ summary:focus-visible {
   background:
     linear-gradient(180deg, rgba(255, 249, 231, 0.96), rgba(234, 210, 157, 0.94)),
     var(--rm-trader-v2-paper);
+  background-color: #f3dfaa !important;
   padding: 18px;
   display: grid;
   gap: 14px;
@@ -2745,6 +2769,46 @@ summary:focus-visible {
 .rm-trader-v2-footer strong {
   margin-left: auto;
   color: var(--rm-trader-v2-wine);
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-shell {
+  background:
+    radial-gradient(circle at 76% 42%, rgba(124, 31, 45, 0.12), transparent 30%),
+    radial-gradient(circle at 18% 16%, rgba(255, 244, 209, 0.95), transparent 36%),
+    linear-gradient(108deg, #e6cd94, #efe0b5 48%, #cfaa68) !important;
+  color: var(--rm-trader-v2-ink) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-brand,
+.rebreya-trader-app-v2 .rm-trader-v2-wallet,
+.rebreya-trader-app-v2 .rm-trader-v2-speech,
+.rebreya-trader-app-v2 .rm-trader-v2-item-card {
+  background: linear-gradient(180deg, #fff6d8, #ead39a) !important;
+  color: var(--rm-trader-v2-ink) !important;
+  opacity: 1 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-list,
+.rebreya-trader-app-v2 .rm-trader-v2-row {
+  background-color: #fbf1d6 !important;
+  opacity: 1 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-row.is-selected {
+  background: linear-gradient(90deg, #861f31, #5a151e) !important;
+  color: #fff4d8 !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-brand h1,
+.rebreya-trader-app-v2 .rm-trader-v2-item-card h2,
+.rebreya-trader-app-v2 .rm-trader-v2-wallet strong {
+  color: var(--rm-trader-v2-wine) !important;
+}
+
+.rebreya-trader-app-v2 .rm-trader-v2-speech p,
+.rebreya-trader-app-v2 .rm-trader-v2-item-card__description,
+.rebreya-trader-app-v2 .rm-trader-v2-row:not(.is-selected) {
+  color: var(--rm-trader-v2-ink) !important;
 }
 .rm-trader-header {
   display: grid;
