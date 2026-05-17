@@ -2409,18 +2409,38 @@ summary:focus-visible {
   border-color: rgba(229, 125, 112, 0.28);
 }
 
+.rebreya-inventory-app.application,
+.rebreya-inventory-app.window-app {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.52);
+}
+
+.rebreya-inventory-app .window-header {
+  background: rgba(7, 9, 10, 0.85) !important;
+  border-bottom: 1px solid rgba(239, 184, 95, 0.18);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
 .rebreya-inventory-app .window-content {
+  background:
+    radial-gradient(circle at 14% -8%, rgba(43, 160, 148, 0.2), transparent 34%),
+    radial-gradient(circle at 86% 4%, rgba(240, 128, 51, 0.16), transparent 30%),
+    linear-gradient(180deg, rgba(25, 25, 27, 0.85), rgba(14, 13, 12, 0.85)) !important;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
   border-radius: var(--rm-radius-window);
 }
 
 .rm-inventory-shell--compact {
   --rm-ui-window-radius: 0;
-  --rm-ui-section-radius: 8px;
-  --rm-ui-row-radius: 6px;
+  --rm-ui-section-radius: 0;
+  --rm-ui-row-radius: 0;
   --rm-ui-input-radius: 6px;
   --rm-ui-badge-radius: 999px;
   --rm-ui-button-radius: 7px;
-  --rm-ui-tab-radius: 8px;
+  --rm-ui-tab-radius: 0;
   --rm-ui-muted: #ddcaaa;
   --rm-ui-row-bg: rgba(31, 23, 17, 0.78);
   --rm-ui-row-bg-hover: rgba(49, 35, 24, 0.88);
@@ -2986,6 +3006,14 @@ summary:focus-visible {
   border-radius: var(--rm-ui-section-radius);
   box-shadow: none;
   background: rgba(45, 33, 24, 0.72);
+}
+
+.rm-inventory-shell--compact .rm-compact-pill__meter {
+  border-radius: 0;
+}
+
+.rm-inventory-shell--compact .rm-party-row__image {
+  border-radius: 0;
 }
 
 .rm-inventory-shell--compact .rm-button:disabled {
