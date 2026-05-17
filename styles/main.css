@@ -765,6 +765,29 @@ summary:focus-visible {
   color: var(--rm-text) !important;
 }
 
+.rebreya-economy-app.application,
+.rebreya-economy-app.window-app {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.52);
+}
+
+.rebreya-economy-app .window-header {
+  background: rgba(7, 9, 10, 0.85) !important;
+  border-bottom: 1px solid rgba(239, 184, 95, 0.18);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.rebreya-economy-app .window-content {
+  background:
+    radial-gradient(circle at 14% -8%, rgba(43, 160, 148, 0.2), transparent 34%),
+    radial-gradient(circle at 86% 4%, rgba(240, 128, 51, 0.16), transparent 30%),
+    linear-gradient(180deg, rgba(25, 25, 27, 0.85), rgba(14, 13, 12, 0.85)) !important;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
 .rm-dashboard {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(320px, 0.95fr);
@@ -772,18 +795,30 @@ summary:focus-visible {
 }
 
 .rm-economy-shell {
-  gap: 12px;
+  --rm-economy-section-radius: 0;
+  gap: 10px;
 }
 
 .rm-economy-shell .rm-hero,
+.rm-economy-shell .rm-app-header,
 .rm-economy-shell .rm-panel,
-.rm-economy-shell .rm-stat-card {
+.rm-economy-shell .rm-stat-card,
+.rm-economy-shell .rm-city-card,
+.rm-economy-shell .rm-global-event-card,
+.rm-economy-shell .rm-connection-card,
+.rm-economy-shell .rm-route-card,
+.rm-economy-shell .rm-trade-card {
+  border-radius: var(--rm-economy-section-radius);
   box-shadow: none;
 }
 
 .rm-economy-shell .rm-hero {
   align-items: center;
   padding: 16px 18px;
+}
+
+.rm-economy-shell .rm-app-header__actions {
+  align-items: center;
 }
 
 .rm-economy-shell .rm-summary-grid {
@@ -820,6 +855,10 @@ summary:focus-visible {
 .rm-economy-shell .rm-city-card,
 .rm-economy-shell .rm-global-event-card {
   padding: 13px 14px;
+}
+
+.rm-economy-shell .rm-economy-dashboard {
+  gap: 12px;
 }
 
 .rm-economy-shell .rm-action-stack .rm-button--primary {
