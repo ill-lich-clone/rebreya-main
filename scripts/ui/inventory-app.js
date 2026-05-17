@@ -512,6 +512,29 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     };
   }
 
+  async #openPartyMemberSheet(actorId, actorName = "участника") {
+    const safeActorId = String(actorId ?? "").trim();
+    const safeActorName = String(actorName ?? "участника").trim() || "участника";
+    if (!safeActorId) {
+      return;
+    }
+
+    try {
+      const actor = game.actors?.get(safeActorId) ?? null;
+      if (!actor) {
+        ui.notifications?.warn(`Лист участника «${safeActorName}» не найден.`);
+        return;
+      }
+
+      await actor.sheet?.render?.(true);
+      bringAppToFront(actor.sheet);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to open party member sheet.`, error);
+      ui.notifications?.error(error.message || "Не удалось открыть лист участника.");
+    }
+  }
+
   async #removePartyMember(actorId, actorName, element) {
     const safeActorId = String(actorId ?? "").trim();
     const safeActorName = String(actorName ?? "участника").trim() || "участника";
@@ -1496,6 +1519,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           y: event.clientY,
           title: actorName,
           actions: [
+            {
+              label: "Открыть лист",
+              icon: "fa-solid fa-user",
+              callback: () => {
+                void this.#openPartyMemberSheet(actorId, actorName);
+              }
+            },
             {
               label: "Удалить из группы",
               icon: "fa-solid fa-user-minus",
