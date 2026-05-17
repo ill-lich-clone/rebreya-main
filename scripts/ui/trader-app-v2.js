@@ -65,24 +65,6 @@ function getDialogRoot(html) {
   return null;
 }
 
-async function pickImagePath(currentPath = "") {
-  return new Promise((resolve) => {
-    if (typeof FilePicker !== "function") {
-      resolve(null);
-      return;
-    }
-
-    const picker = new FilePicker({
-      type: "image",
-      current: currentPath || "",
-      callback: (path) => resolve(path)
-    });
-
-    picker.render(true);
-    picker.browse(currentPath || "").catch(() => resolve(null));
-  });
-}
-
 async function promptTradeQuantity({ title, itemName, quantityAvailable, unitLabel, rows, confirmLabel }) {
   return new Promise((resolve) => {
     let settled = false;
@@ -305,6 +287,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       return {
         hasError: false,
         trader: snapshot,
+        traderArtPath: `modules/${MODULE_ID}/assets/ui/trader-cutout.png`,
         search: this.search,
         mode: {
           isBuy: modeIsBuy,
@@ -412,23 +395,6 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         this.render({ force: true });
       }, listenerOptions);
     });
-
-    element.querySelector("[data-action='portrait-picker']")?.addEventListener("click", async (event) => {
-      event.preventDefault();
-      const currentPath = event.currentTarget.dataset.currentPath ?? "";
-      const nextPath = await pickImagePath(currentPath);
-      if (typeof nextPath === "string") {
-        await this.moduleApi.updateTraderMetadata(this.cityId, this.traderKey, {
-          portrait: nextPath
-        });
-      }
-    }, listenerOptions);
-
-    element.querySelector("[data-action='description']")?.addEventListener("change", async (event) => {
-      await this.moduleApi.updateTraderMetadata(this.cityId, this.traderKey, {
-        description: event.currentTarget.value ?? ""
-      });
-    }, listenerOptions);
 
     element.querySelectorAll("[data-action='select-item']").forEach((button) => {
       button.addEventListener("click", (event) => {
