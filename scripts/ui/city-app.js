@@ -376,6 +376,30 @@ export class CityEconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
     });
 
+    element.querySelectorAll("[data-action='open-trader-new']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const traderKey = event.currentTarget.dataset.traderKey;
+        if (!traderKey) {
+          return;
+        }
+
+        event.currentTarget.disabled = true;
+
+        try {
+          await this.moduleApi.openTraderV2(this.cityId, traderKey);
+          this.render({ force: true });
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to open trader v2 '${traderKey}'.`, error);
+          ui.notifications?.error("Не удалось открыть новое окно лавки.");
+          event.currentTarget.disabled = false;
+        }
+      });
+    });
+
     element.querySelectorAll("[data-action='toggle-connection']").forEach((button) => {
       button.addEventListener("click", async (event) => {
         event.preventDefault();

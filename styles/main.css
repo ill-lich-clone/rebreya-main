@@ -1936,6 +1936,230 @@ summary:focus-visible {
   align-content: start;
 }
 
+.rebreya-trader-app-v2.application,
+.rebreya-trader-app-v2.window-app {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.58);
+}
+
+.rebreya-trader-app-v2 .window-header {
+  background: rgba(8, 9, 12, 0.9) !important;
+  border-bottom: 1px solid rgba(141, 109, 255, 0.34);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.rebreya-trader-app-v2 .window-content {
+  background:
+    radial-gradient(circle at 12% 10%, rgba(161, 98, 255, 0.17), transparent 34%),
+    radial-gradient(circle at 82% 82%, rgba(255, 134, 221, 0.18), transparent 30%),
+    linear-gradient(180deg, rgba(20, 16, 24, 0.9), rgba(11, 9, 15, 0.9)) !important;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.rm-trader-v2-shell {
+  gap: 10px;
+}
+
+.rm-trader-v2-hero {
+  border-radius: 0;
+  border-color: rgba(157, 124, 255, 0.34);
+  background:
+    radial-gradient(circle at 0 0, rgba(199, 113, 255, 0.18), transparent 30%),
+    linear-gradient(135deg, rgba(62, 34, 85, 0.92), rgba(30, 20, 40, 0.94));
+}
+
+.rm-trader-v2-wallet {
+  min-width: 280px;
+  padding: 10px 12px;
+  border: 1px solid rgba(157, 124, 255, 0.32);
+  border-radius: 0;
+  background: rgba(16, 12, 22, 0.64);
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  align-content: center;
+}
+
+.rm-trader-v2-wallet__label {
+  color: #d5c6f7;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.rm-trader-v2-wallet strong {
+  color: #f8e7ff;
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.rm-trader-v2-wallet small {
+  color: #cbb7e5;
+}
+
+.rm-trader-v2-stage {
+  display: grid;
+  grid-template-columns: minmax(360px, 460px) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.rm-trader-v2-list-panel,
+.rm-trader-v2-detail-panel {
+  border-radius: 0;
+  border-color: rgba(157, 124, 255, 0.28);
+  background: rgba(17, 12, 23, 0.7);
+}
+
+.rm-trader-v2-list-panel {
+  display: grid;
+  grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+}
+
+.rm-trader-v2-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rm-trader-v2-dropzone {
+  border-color: rgba(157, 124, 255, 0.4);
+  background: rgba(157, 124, 255, 0.08);
+}
+
+.rm-trader-v2-list-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.rm-trader-v2-list {
+  border: 1px solid rgba(157, 124, 255, 0.22);
+  background: rgba(10, 8, 14, 0.58);
+  overflow: auto;
+  min-height: 220px;
+}
+
+.rm-trader-v2-row {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid rgba(157, 124, 255, 0.14);
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  background: transparent;
+  color: var(--rm-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.rm-trader-v2-row:hover {
+  background: rgba(157, 124, 255, 0.14);
+}
+
+.rm-trader-v2-row.is-selected {
+  background: linear-gradient(90deg, rgba(164, 121, 255, 0.36), rgba(232, 130, 214, 0.24));
+}
+
+.rm-trader-v2-row__name {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rm-trader-v2-row__meta {
+  grid-column: 1 / 2;
+  color: #c8b4e8;
+  font-size: 12px;
+}
+
+.rm-trader-v2-row__qty,
+.rm-trader-v2-row__price {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.rm-trader-v2-row__qty {
+  color: #d8c9f1;
+  font-size: 12px;
+}
+
+.rm-trader-v2-row__price {
+  color: #ffe9ff;
+  font-weight: 700;
+}
+
+.rm-trader-v2-detail-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.rm-trader-v2-merchant {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.rm-trader-v2-merchant__portrait {
+  width: 100%;
+  min-height: 200px;
+  border: 1px solid rgba(157, 124, 255, 0.32);
+  border-radius: 0;
+  background: rgba(19, 14, 28, 0.65);
+  color: #d8caef;
+  cursor: pointer;
+  padding: 0;
+}
+
+.rm-trader-v2-merchant__portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.rm-trader-v2-merchant__description {
+  min-width: 0;
+}
+
+.rm-trader-v2-item-card {
+  border: 1px solid rgba(157, 124, 255, 0.28);
+  border-radius: 0;
+  background: rgba(16, 12, 23, 0.72);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.rm-trader-v2-item-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rm-trader-v2-item-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .rm-trader-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 520px);
@@ -4332,8 +4556,18 @@ summary:focus-visible {
   .rm-craft-layout,
   .rm-party-tool-row,
   .rm-compact-toolbar,
-  .rm-party-toolbar--compact {
+  .rm-party-toolbar--compact,
+  .rm-trader-v2-mode,
+  .rm-trader-v2-merchant {
     grid-template-columns: 1fr;
+  }
+
+  .rm-trader-v2-stage {
+    grid-template-columns: 1fr;
+  }
+
+  .rm-trader-v2-list-panel {
+    grid-template-rows: auto;
   }
 
   .rm-trader-header {
@@ -4427,6 +4661,7 @@ summary:focus-visible {
   .rm-trader-card__footer,
   .rm-trader-header__identity,
   .rm-trader-header__side,
+  .rm-trader-v2-item-card__actions,
   .rm-shop-card__head,
   .rm-party-member-card__header,
   .rm-party-member-card__identity,
@@ -4456,6 +4691,7 @@ summary:focus-visible {
   .rm-metric-grid,
   .rm-metric-grid--compact,
   .rm-mini-table__row,
+  .rm-trader-v2-row,
   .rm-connection-row,
   .rm-duty-row,
   .rm-duty-check-row,
@@ -4469,6 +4705,7 @@ summary:focus-visible {
 
   .rm-trader-card__actions,
   .rm-trader-card__status,
+  .rm-trader-v2-wallet,
   .rm-shop-card__price,
   .rm-shop-table__qty,
   .rm-shop-table__price,
@@ -4530,5 +4767,9 @@ summary:focus-visible {
     width: 120px;
     height: 120px;
     flex-basis: 120px;
+  }
+
+  .rm-trader-v2-wallet {
+    justify-items: start;
   }
 }

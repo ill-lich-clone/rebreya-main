@@ -149,6 +149,7 @@ class RebreyaMainModule {
     this.latestLootgenResult = null;
     this.cityApps = new Map();
     this.traderApps = new Map();
+    this.traderV2Apps = new Map();
     this.tradeRouteApps = new Map();
     this.referenceApps = new Map();
   }
@@ -1203,6 +1204,31 @@ class RebreyaMainModule {
     }
   }
 
+  async openTraderV2(cityId, traderKey, options = {}) {
+    try {
+      const { TraderAppV2 } = await import("./ui/trader-app-v2.js");
+      const appKey = `${cityId}::${traderKey}`;
+
+      let app = this.traderV2Apps.get(appKey);
+      if (!app) {
+        app = new TraderAppV2(this, cityId, traderKey, options);
+        this.traderV2Apps.set(appKey, app);
+      }
+      else if (options?.actorId !== undefined) {
+        app.selectedActorId = options.actorId;
+      }
+
+      await app.render({ force: true });
+      bringAppToFront(app);
+      return app;
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to open trader v2 '${cityId}:${traderKey}'.`, error);
+      ui.notifications?.error("Не удалось открыть новое окно лавки.");
+      throw error;
+    }
+  }
+
   async openTraderSheet(cityId, traderKey, options = {}) {
     return this.openTrader(cityId, traderKey, options);
   }
@@ -1258,6 +1284,12 @@ class RebreyaMainModule {
     }
 
     for (const app of this.traderApps.values()) {
+      if (app?.rendered) {
+        tasks.push(rerenderApp(app));
+      }
+    }
+
+    for (const app of this.traderV2Apps.values()) {
       if (app?.rendered) {
         tasks.push(rerenderApp(app));
       }
