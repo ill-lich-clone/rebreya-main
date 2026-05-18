@@ -1809,7 +1809,7 @@ function createFeatureEntryData(feature, folderIdByPath, iconLookup = null) {
   return {
     name: feature.name,
     type: "feat",
-    img: resolveNamedIcon(feature.name, iconLookup, DEFAULT_FEATURE_ICON),
+    img: resolveFeatureIcon(feature.raceName, feature.name, iconLookup, DEFAULT_FEATURE_ICON),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -1821,6 +1821,7 @@ function createFeatureEntryData(feature, folderIdByPath, iconLookup = null) {
         managed: true,
         sourceType: "raceFeature",
         raceId: feature.raceId,
+        raceName: feature.raceName,
         abilityId: feature.abilityId,
         optionId: feature.optionId,
         featureId: feature.featureId,
@@ -1860,6 +1861,31 @@ async function loadRacesData() {
   return normalizeRaces(rawData?.races ?? []);
 }
 
+function resolveFeatureIcon(raceName, featureName, iconLookup, fallbackIcon = DEFAULT_FEATURE_ICON) {
+  const normalizedRaceName = cleanString(raceName);
+  const normalizedFeatureName = cleanString(featureName);
+  const candidates = [];
+
+  if (normalizedRaceName && normalizedFeatureName) {
+    candidates.push(`${normalizedRaceName}__${normalizedFeatureName}`);
+    candidates.push(`${normalizedRaceName}_${normalizedFeatureName}`);
+    candidates.push(`${normalizedRaceName} ${normalizedFeatureName}`);
+  }
+
+  if (normalizedFeatureName) {
+    candidates.push(normalizedFeatureName);
+  }
+
+  for (const candidate of unique(candidates.map((value) => cleanString(value)).filter(Boolean))) {
+    const resolved = resolveNamedIcon(candidate, iconLookup, "");
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return fallbackIcon;
+}
+
 async function syncRaceFeaturePack(featureDefinitions, context = {}) {
   const pack = await ensurePack(RACE_FEATURES_PACK_ID, createPackMetadata({
     name: RACE_FEATURES_COMPENDIUM_NAME,
@@ -1871,6 +1897,7 @@ async function syncRaceFeaturePack(featureDefinitions, context = {}) {
     ...feature,
     signature: buildFeatureSignature(feature)
   }));
+  const featureById = new Map(features.map((feature) => [feature.featureId, feature]));
   const documents = await getPackDocuments(pack);
 
   if (shouldRebuildManagedPack(documents, features, "featureId")) {
@@ -1887,7 +1914,12 @@ async function syncRaceFeaturePack(featureDefinitions, context = {}) {
   await syncManagedDocumentIcons(
     activePack,
     featureDocuments,
-    (document) => resolveNamedIcon(document.name, context.iconLookup, DEFAULT_FEATURE_ICON)
+    (document) => {
+      const featureId = cleanString(document.getFlag(MODULE_ID, "featureId"));
+      const feature = featureById.get(featureId);
+      const raceName = cleanString(feature?.raceName || document.getFlag(MODULE_ID, "raceName"));
+      return resolveFeatureIcon(raceName, document.name, context.iconLookup, DEFAULT_FEATURE_ICON);
+    }
   );
   const featureUuidById = new Map();
 

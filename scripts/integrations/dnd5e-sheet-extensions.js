@@ -1,4 +1,4 @@
-﻿import { MODULE_ID, REBREYA_TOOLS } from "../constants.js";
+﻿import { FEATS_COMPENDIUM_NAME, MODULE_ID, REBREYA_TOOLS } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import {
   getHeroDollSlotGroups,
@@ -24,6 +24,44 @@ const ITEM_RANK_MIN = 0;
 const ITEM_RANK_MAX = 10;
 const ITEM_SLOT_ELIGIBLE_TYPES = new Set(["weapon", "consumable", "equipment"]);
 const HERO_DOLL_DROP_MIME_TYPES = ["text/plain", "text", "application/json"];
+const REBREYA_FEAT_SOURCE_TYPE = "feat";
+const REBREYA_MISC_FEAT_SECTION_LABEL = "Прочие черты";
+const REBREYA_FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
+const REBREYA_FEAT_SUBTYPE_LABELS = {
+  minor: "Младшие черты",
+  general: "Общие черты",
+  major: "Старшие черты",
+  multiclass: "Мультиклассовые черты",
+  racial: "Расовые черты",
+  fightingStyle: "Черты боевых стилей",
+  cultural: "Культурные черты"
+};
+const REBREYA_FEAT_SUBTYPE_BY_SECTION_KEY = new Map([
+  ["младшие черты", "minor"],
+  ["общие черты", "general"],
+  ["старшие черты", "major"],
+  ["мультиклассовые черты", "multiclass"],
+  ["расовые черты", "racial"],
+  ["черты боевых стилей", "fightingStyle"],
+  ["культурные черты", "cultural"],
+  ["устаревшие материалы", "general"]
+]);
+const LEGACY_FEAT_SUBTYPE_ALIASES = new Map([
+  ["origin", "cultural"],
+  ["epicboon", "major"],
+  ["epic-boon", "major"],
+  ["fightingstyle", "fightingStyle"]
+]);
+const REBREYA_FEAT_SECTION_PRIORITY = new Map([
+  ["младшие черты", 10],
+  ["общие черты", 20],
+  ["культурные черты", 30],
+  ["мультиклассовые черты", 40],
+  ["черты боевых стилей", 50],
+  ["старшие черты", 60],
+  ["расовые черты", 70],
+  ["устаревшие материалы", 80]
+]);
 const REBREYA_TOOL_LABEL_BY_ID = new Map(REBREYA_TOOLS.map((tool) => [tool.id, tool.label]));
 const REBREYA_TOOL_ID_BY_TEXT = new Map(REBREYA_TOOLS.map((tool) => [normalizeLookupText(tool.label), tool.id]));
 const LICH_WEAPON_PROPERTY_DEFINITIONS = Object.freeze([
@@ -90,6 +128,440 @@ function normalizeLookupText(value) {
     .toLowerCase()
     .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
     .replace(/\s+/gu, " ");
+}
+
+function getItemFlagValue(item, scope, key) {
+  if (!item || !scope || !key) {
+    return "";
+  }
+
+  const scopeName = String(scope ?? "").trim();
+  const scopeIsKnown = scopeName === "core"
+    || scopeName === game.system?.id
+    || scopeName === MODULE_ID
+    || Boolean(game.modules?.has(scopeName));
+
+  if (scopeIsKnown && typeof item.getFlag === "function") {
+    try {
+      return item.getFlag(scopeName, key) ?? "";
+    }
+    catch (_error) {
+      // Fallback to direct flag payload read for stale/foreign scopes.
+    }
+  }
+
+  return foundry.utils.getProperty(item, `flags.${scopeName}.${key}`) ?? "";
+}
+
+function cleanFeatSectionLabel(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizeFeatSectionKey(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\u0451/gu, "\u0435")
+    .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function normalizeFeatSubtypeKey(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "");
+}
+
+function resolveFeatSubtypeKey(rawSubtype) {
+  const normalized = normalizeFeatSubtypeKey(rawSubtype);
+  if (!normalized) {
+    return "";
+  }
+
+  for (const key of Object.keys(REBREYA_FEAT_SUBTYPE_LABELS)) {
+    if (normalizeFeatSubtypeKey(key) === normalized) {
+      return key;
+    }
+  }
+
+  if (LEGACY_FEAT_SUBTYPE_ALIASES.has(normalized)) {
+    return LEGACY_FEAT_SUBTYPE_ALIASES.get(normalized);
+  }
+
+  return "";
+}
+
+function resolveFeatSectionLabelFromSubtypeKey(subtypeKey) {
+  if (!subtypeKey) {
+    return "";
+  }
+
+  const configuredLabel = cleanFeatSectionLabel(CONFIG.DND5E?.featureTypes?.feat?.subtypes?.[subtypeKey]);
+  if (configuredLabel) {
+    return configuredLabel;
+  }
+
+  return cleanFeatSectionLabel(REBREYA_FEAT_SUBTYPE_LABELS[subtypeKey]);
+}
+
+let rebreyaFeatSectionLookupCache = null;
+let rebreyaFeatSectionLookupPromise = null;
+
+function createEmptyFeatSectionLookup() {
+  return {
+    byFeatId: new Map(),
+    byName: new Map()
+  };
+}
+
+async function getRebreyaFeatSectionLookup() {
+  if (rebreyaFeatSectionLookupCache) {
+    return rebreyaFeatSectionLookupCache;
+  }
+
+  if (rebreyaFeatSectionLookupPromise) {
+    return rebreyaFeatSectionLookupPromise;
+  }
+
+  rebreyaFeatSectionLookupPromise = (async () => {
+    const lookup = createEmptyFeatSectionLookup();
+    const pack = game.packs?.get(REBREYA_FEATS_PACK_ID);
+    if (!pack) {
+      return lookup;
+    }
+
+    let index = [];
+    try {
+      index = await pack.getIndex({
+        fields: [
+          `flags.${MODULE_ID}.featId`,
+          `flags.${MODULE_ID}.section`,
+          "flags.teyvankal.section",
+          "system.type.subtype"
+        ]
+      });
+    }
+    catch (_error) {
+      index = [];
+    }
+
+    for (const row of index) {
+      const section = cleanFeatSectionLabel(
+        foundry.utils.getProperty(row, `flags.${MODULE_ID}.section`)
+        || foundry.utils.getProperty(row, "flags.teyvankal.section")
+        || resolveFeatSectionLabelFromSubtypeKey(resolveFeatSubtypeKey(foundry.utils.getProperty(row, "system.type.subtype")))
+      );
+      if (!section) {
+        continue;
+      }
+
+      const featId = String(foundry.utils.getProperty(row, `flags.${MODULE_ID}.featId`) ?? "").trim();
+      if (featId && !lookup.byFeatId.has(featId)) {
+        lookup.byFeatId.set(featId, section);
+      }
+
+      const nameKey = normalizeLookupText(row?.name);
+      if (nameKey && !lookup.byName.has(nameKey)) {
+        lookup.byName.set(nameKey, section);
+      }
+    }
+
+    if (!lookup.byName.size && !lookup.byFeatId.size) {
+      try {
+        const documents = await pack.getDocuments();
+        for (const document of documents) {
+          const section = cleanFeatSectionLabel(
+            getItemFlagValue(document, MODULE_ID, "section")
+            || getItemFlagValue(document, "teyvankal", "section")
+            || resolveRebreyaFeatSectionFromSubtype(document)
+          );
+          if (!section) {
+            continue;
+          }
+
+          const featId = String(getItemFlagValue(document, MODULE_ID, "featId") ?? "").trim();
+          if (featId && !lookup.byFeatId.has(featId)) {
+            lookup.byFeatId.set(featId, section);
+          }
+
+          const nameKey = normalizeLookupText(document?.name);
+          if (nameKey && !lookup.byName.has(nameKey)) {
+            lookup.byName.set(nameKey, section);
+          }
+        }
+      }
+      catch (_error) {
+        // Keep empty lookup on failure; grouping will safely skip.
+      }
+    }
+
+    return lookup;
+  })();
+
+  try {
+    rebreyaFeatSectionLookupCache = await rebreyaFeatSectionLookupPromise;
+  }
+  finally {
+    rebreyaFeatSectionLookupPromise = null;
+  }
+
+  return rebreyaFeatSectionLookupCache ?? createEmptyFeatSectionLookup();
+}
+
+function resolveRebreyaFeatSectionFromFlags(item) {
+  return cleanFeatSectionLabel(getItemFlagValue(item, "teyvankal", "section"))
+    || cleanFeatSectionLabel(getItemFlagValue(item, MODULE_ID, "section"));
+}
+
+function resolveFeatSubtypeFromItem(item) {
+  const rawSubtype = String(foundry.utils.getProperty(item, "system.type.subtype") ?? "").trim();
+  return resolveFeatSubtypeKey(rawSubtype);
+}
+
+function resolveRebreyaFeatSectionFromSubtype(item) {
+  const subtypeKey = resolveFeatSubtypeFromItem(item);
+  return resolveFeatSectionLabelFromSubtypeKey(subtypeKey);
+}
+
+function resolveRebreyaFeatSectionFromLookup(item, lookup) {
+  if (!lookup || !item) {
+    return "";
+  }
+
+  const featId = String(getItemFlagValue(item, MODULE_ID, "featId") ?? "").trim();
+  if (featId && lookup.byFeatId instanceof Map && lookup.byFeatId.has(featId)) {
+    return cleanFeatSectionLabel(lookup.byFeatId.get(featId));
+  }
+
+  const nameKey = normalizeLookupText(item.name);
+  if (nameKey && lookup.byName instanceof Map && lookup.byName.has(nameKey)) {
+    return cleanFeatSectionLabel(lookup.byName.get(nameKey));
+  }
+
+  return "";
+}
+
+function resolveRebreyaFeatSection(item, lookup) {
+  const fromFlags = resolveRebreyaFeatSectionFromFlags(item);
+  if (fromFlags) {
+    const mappedSubtype = REBREYA_FEAT_SUBTYPE_BY_SECTION_KEY.get(normalizeFeatSectionKey(fromFlags));
+    if (mappedSubtype) {
+      return cleanFeatSectionLabel(REBREYA_FEAT_SUBTYPE_LABELS[mappedSubtype] ?? fromFlags);
+    }
+    return fromFlags;
+  }
+
+  const fromLookup = resolveRebreyaFeatSectionFromLookup(item, lookup);
+  if (fromLookup) {
+    const mappedSubtype = REBREYA_FEAT_SUBTYPE_BY_SECTION_KEY.get(normalizeFeatSectionKey(fromLookup));
+    if (mappedSubtype) {
+      return cleanFeatSectionLabel(REBREYA_FEAT_SUBTYPE_LABELS[mappedSubtype] ?? fromLookup);
+    }
+    return fromLookup;
+  }
+
+  const fromSubtype = resolveRebreyaFeatSectionFromSubtype(item);
+  if (fromSubtype) {
+    return fromSubtype;
+  }
+
+  return "";
+}
+
+function classifyRebreyaFeatItem(item, lookup) {
+  if (!item || item.type !== "feat") {
+    return null;
+  }
+
+  const sourceType = String(getItemFlagValue(item, MODULE_ID, "sourceType") ?? "")
+    .trim()
+    .toLowerCase();
+  const resolvedSection = resolveRebreyaFeatSection(item, lookup);
+
+  if (sourceType === REBREYA_FEAT_SOURCE_TYPE || resolvedSection) {
+    return {
+      item,
+      section: resolvedSection || REBREYA_MISC_FEAT_SECTION_LABEL
+    };
+  }
+
+  return null;
+}
+
+function sortFeatSectionEntries(entries = []) {
+  return Array.from(entries).sort((left, right) => {
+    const leftLabel = cleanFeatSectionLabel(left?.[0]);
+    const rightLabel = cleanFeatSectionLabel(right?.[0]);
+    const leftKey = normalizeFeatSectionKey(leftLabel);
+    const rightKey = normalizeFeatSectionKey(rightLabel);
+    const leftRank = REBREYA_FEAT_SECTION_PRIORITY.get(leftKey) ?? 9999;
+    const rightRank = REBREYA_FEAT_SECTION_PRIORITY.get(rightKey) ?? 9999;
+
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank;
+    }
+
+    return leftLabel.localeCompare(rightLabel, "ru", { sensitivity: "base", numeric: true });
+  });
+}
+
+function sortFeatItemsByName(items = []) {
+  return Array.from(items).sort((left, right) => {
+    const leftName = String(left?.name ?? "").trim();
+    const rightName = String(right?.name ?? "").trim();
+    return leftName.localeCompare(rightName, "ru", { sensitivity: "base", numeric: true });
+  });
+}
+
+function buildItemContextDatasetFromGroups(groups) {
+  if (!groups || typeof groups !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(groups).map(([key, value]) => [`group-${key}`, value])
+  );
+}
+
+function getSectionGroupValue(section, groupKey) {
+  if (!section || !groupKey) {
+    return "";
+  }
+
+  const fromGroups = String(section?.groups?.[groupKey] ?? "").trim();
+  if (fromGroups) {
+    return fromGroups;
+  }
+
+  const fromDataset = String(section?.dataset?.[`group-${groupKey}`] ?? "").trim();
+  if (fromDataset) {
+    return fromDataset;
+  }
+
+  return "";
+}
+
+function resolveRebreyaFeatOriginGroup(sectionLabel, fallbackItem = null) {
+  const normalizedSectionKey = normalizeFeatSectionKey(sectionLabel);
+  const mappedSubtype = REBREYA_FEAT_SUBTYPE_BY_SECTION_KEY.get(normalizedSectionKey)
+    || resolveFeatSubtypeFromItem(fallbackItem);
+  if (mappedSubtype) {
+    return `rebreya-feat-${mappedSubtype}`;
+  }
+
+  const normalizedSubtypeFallback = normalizeFeatSubtypeKey(normalizedSectionKey);
+  return `rebreya-feat-${normalizedSubtypeFallback || "misc"}`;
+}
+
+function applyRebreyaFeatOriginGroupToItemContext(prepared, item, originGroup) {
+  if (!prepared || !item || !originGroup) {
+    return;
+  }
+
+  const itemContext = prepared.itemContext?.[item.id];
+  if (!itemContext || typeof itemContext !== "object") {
+    return;
+  }
+
+  itemContext.groups ??= {};
+  itemContext.groups.origin = originGroup;
+  itemContext.dataset = {
+    ...(itemContext.dataset ?? {}),
+    ...buildItemContextDatasetFromGroups(itemContext.groups)
+  };
+}
+
+async function splitRebreyaFeatSectionsInContext(prepared) {
+  if (!prepared || !Array.isArray(prepared.sections) || !prepared.sections.length) {
+    return prepared;
+  }
+
+  const featSectionLookup = await getRebreyaFeatSectionLookup();
+  const groupedFeatSections = new Map();
+  const rebreyaFeatItemSet = new Set();
+
+  for (const section of prepared.sections) {
+    const items = Array.isArray(section?.items) ? section.items : [];
+    for (const item of items) {
+      const classified = classifyRebreyaFeatItem(item, featSectionLookup);
+      if (!classified?.item) {
+        continue;
+      }
+
+      const sectionLabel = cleanFeatSectionLabel(classified.section) || REBREYA_MISC_FEAT_SECTION_LABEL;
+      const originGroup = resolveRebreyaFeatOriginGroup(sectionLabel, classified.item);
+      if (!groupedFeatSections.has(sectionLabel)) {
+        groupedFeatSections.set(sectionLabel, {
+          items: [],
+          originGroup
+        });
+      }
+
+      const group = groupedFeatSections.get(sectionLabel);
+      group.items.push(classified.item);
+      rebreyaFeatItemSet.add(classified.item);
+      applyRebreyaFeatOriginGroupToItemContext(prepared, classified.item, group.originGroup);
+    }
+  }
+
+  if (!rebreyaFeatItemSet.size) {
+    return prepared;
+  }
+
+  const sectionsWithoutFeatItems = prepared.sections.map((section) => {
+    const items = Array.isArray(section?.items) ? section.items : [];
+    if (!items.length) {
+      return section;
+    }
+
+    return {
+      ...section,
+      items: items.filter((item) => !rebreyaFeatItemSet.has(item))
+    };
+  });
+
+  const templateSection = sectionsWithoutFeatItems.find((section) => getSectionGroupValue(section, "origin") === "other")
+    || sectionsWithoutFeatItems.find((section) => getSectionGroupValue(section, "origin"))
+    || sectionsWithoutFeatItems[0];
+  const baseOrder = Number.isFinite(templateSection?.order) ? templateSection.order : 3000;
+  const templateGroups = (templateSection && typeof templateSection.groups === "object" && !Array.isArray(templateSection.groups))
+    ? templateSection.groups
+    : {};
+  const templateDataset = (templateSection && typeof templateSection.dataset === "object" && !Array.isArray(templateSection.dataset))
+    ? templateSection.dataset
+    : {};
+
+  const customSections = sortFeatSectionEntries(groupedFeatSections.entries()).map(([groupLabel, groupData], index) => {
+    const groups = {
+      ...templateGroups,
+      origin: groupData.originGroup
+    };
+    const idSuffix = groupData.originGroup.replace(/[^a-z0-9-]+/gu, "-");
+    return {
+      ...(templateSection ?? {}),
+      id: `rebreya-${idSuffix || index}`,
+      label: groupLabel,
+      order: baseOrder - 100 + index,
+      groups,
+      dataset: {
+        ...templateDataset,
+        ...buildItemContextDatasetFromGroups(groups)
+      },
+      items: sortFeatItemsByName(groupData.items)
+    };
+  });
+
+  const otherSectionIndex = sectionsWithoutFeatItems.findIndex((section) => getSectionGroupValue(section, "origin") === "other");
+  const insertIndex = otherSectionIndex >= 0 ? otherSectionIndex : sectionsWithoutFeatItems.length;
+  const nextSections = [...sectionsWithoutFeatItems];
+  nextSections.splice(insertIndex, 0, ...customSections);
+
+  return {
+    ...prepared,
+    sections: nextSections
+  };
 }
 
 function normalizeRebreyaToolId(value) {
@@ -268,13 +740,16 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi) {
   const originalPreparePartContext = CharacterActorSheet.prototype._preparePartContext;
   CharacterActorSheet.prototype._preparePartContext = async function (partId, context, options) {
     const prepared = await originalPreparePartContext.call(this, partId, context, options);
+    const preparedWithFeatGroups = partId === "features"
+      ? await splitRebreyaFeatSectionsInContext(prepared)
+      : prepared;
     if (partId !== HERO_DOLL_TAB_ID) {
-      return prepared;
+      return preparedWithFeatGroups;
     }
 
     const tab = buildHeroDollTabState(this);
     return {
-      ...prepared,
+      ...preparedWithFeatGroups,
       tab,
       heroDollTab: tab,
       heroDoll: moduleApi.heroDollService.getActorSnapshot(this.actor)
@@ -1627,6 +2102,15 @@ export function extendDnd5eItemTypes() {
     return;
   }
 
+  CONFIG.DND5E.featureTypes ??= {};
+  const featTypeConfig = CONFIG.DND5E.featureTypes.feat;
+  const featTypeLabel = cleanFeatSectionLabel(featTypeConfig?.label) || "DND5E.Feature.Feat.Label";
+  CONFIG.DND5E.featureTypes.feat = {
+    ...(typeof featTypeConfig === "object" ? featTypeConfig : {}),
+    label: featTypeLabel,
+    subtypes: { ...REBREYA_FEAT_SUBTYPE_LABELS }
+  };
+
   if (!CONFIG.DND5E.weaponTypes || typeof CONFIG.DND5E.weaponTypes !== "object") {
     CONFIG.DND5E.weaponTypes = {};
   }
@@ -1778,4 +2262,5 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     }
   });
 }
+
 

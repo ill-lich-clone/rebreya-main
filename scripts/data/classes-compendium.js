@@ -1410,8 +1410,8 @@ async function buildMinorFeatPool() {
   const index = await pack.getIndex({
     fields: ["flags.teyvankal.section"]
   });
-  const minorFeatUuids = [];
-  const allFeatUuids = [];
+  const minorFeatRecords = [];
+  const allFeatRecords = [];
 
   for (const row of index) {
     const record = normalizeFeatIndexRecord(row, pack);
@@ -1419,18 +1419,44 @@ async function buildMinorFeatPool() {
       continue;
     }
 
-    allFeatUuids.push(record.uuid);
+    const sortName = cleanString(record.name, record.normalizedName || record.uuid);
+    allFeatRecords.push({
+      uuid: record.uuid,
+      sortName
+    });
     if (record.section === normalizeMatchText("младшие черты")) {
-      minorFeatUuids.push(record.uuid);
+      minorFeatRecords.push({
+        uuid: record.uuid,
+        sortName
+      });
     }
   }
 
-  const normalizedMinor = unique(minorFeatUuids);
+  const sortRecords = (records = []) => {
+    const byUuid = new Map();
+    for (const record of records) {
+      const uuid = cleanString(record?.uuid);
+      if (!uuid || byUuid.has(uuid)) {
+        continue;
+      }
+
+      byUuid.set(uuid, {
+        uuid,
+        sortName: cleanString(record?.sortName, uuid)
+      });
+    }
+
+    return Array.from(byUuid.values())
+      .sort((left, right) => left.sortName.localeCompare(right.sortName, "ru", { sensitivity: "base", numeric: true }))
+      .map((record) => record.uuid);
+  };
+
+  const normalizedMinor = sortRecords(minorFeatRecords);
   if (normalizedMinor.length) {
     return normalizedMinor;
   }
 
-  return unique(allFeatUuids);
+  return sortRecords(allFeatRecords);
 }
 
 function buildClassAdvancement(classData, context) {

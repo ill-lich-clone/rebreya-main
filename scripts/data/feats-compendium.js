@@ -19,6 +19,23 @@ const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const FEAT_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Feats`, MODULE_ICONS_BASE_PATH];
 const FEATS_BUNDLE_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json`;
 const FEATS_ITEMS_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-items.json`;
+const DEFAULT_FEAT_SUBTYPE = "general";
+const REBREYA_FEAT_SUBTYPE_BY_SECTION = new Map([
+  ["\u043c\u043b\u0430\u0434\u0448\u0438\u0435 \u0447\u0435\u0440\u0442\u044b", "minor"],
+  ["\u043e\u0431\u0449\u0438\u0435 \u0447\u0435\u0440\u0442\u044b", "general"],
+  ["\u0441\u0442\u0430\u0440\u0448\u0438\u0435 \u0447\u0435\u0440\u0442\u044b", "major"],
+  ["\u043c\u0443\u043b\u044c\u0442\u0438\u043a\u043b\u0430\u0441\u0441\u043e\u0432\u044b\u0435 \u0447\u0435\u0440\u0442\u044b", "multiclass"],
+  ["\u0440\u0430\u0441\u043e\u0432\u044b\u0435 \u0447\u0435\u0440\u0442\u044b", "racial"],
+  ["\u0447\u0435\u0440\u0442\u044b \u0431\u043e\u0435\u0432\u044b\u0445 \u0441\u0442\u0438\u043b\u0435\u0439", "fightingStyle"],
+  ["\u043a\u0443\u043b\u044c\u0442\u0443\u0440\u043d\u044b\u0435 \u0447\u0435\u0440\u0442\u044b", "cultural"],
+  ["\u0443\u0441\u0442\u0430\u0440\u0435\u0432\u0448\u0438\u0435 \u043c\u0430\u0442\u0435\u0440\u0438\u0430\u043b\u044b", "general"]
+]);
+const LEGACY_FEAT_SUBTYPE_ALIASES = new Map([
+  ["origin", "cultural"],
+  ["epicboon", "major"],
+  ["epic-boon", "major"],
+  ["fightingstyle", "fightingStyle"]
+]);
 
 function normalizeMatchText(value) {
   return String(value ?? "")
@@ -55,7 +72,37 @@ function normalizeDescription(rawDescription) {
   };
 }
 
-function normalizeFeatSystem(rawSystem, featId) {
+function normalizeSubtypeKey(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "");
+}
+
+function resolveFeatSubtype(section, rawSubtype = "") {
+  const sectionKey = normalizeMatchText(section);
+  const bySection = REBREYA_FEAT_SUBTYPE_BY_SECTION.get(sectionKey);
+  if (bySection) {
+    return bySection;
+  }
+
+  const normalizedRawSubtype = normalizeSubtypeKey(rawSubtype);
+  if (normalizedRawSubtype) {
+    if (LEGACY_FEAT_SUBTYPE_ALIASES.has(normalizedRawSubtype)) {
+      return LEGACY_FEAT_SUBTYPE_ALIASES.get(normalizedRawSubtype);
+    }
+
+    for (const value of REBREYA_FEAT_SUBTYPE_BY_SECTION.values()) {
+      if (normalizeSubtypeKey(value) === normalizedRawSubtype) {
+        return value;
+      }
+    }
+  }
+
+  return DEFAULT_FEAT_SUBTYPE;
+}
+
+function normalizeFeatSystem(rawSystem, featId, section = "") {
   const system = isPlainObject(rawSystem) ? foundry.utils.deepClone(rawSystem) : {};
   const source = isPlainObject(system.source) ? system.source : {};
   const type = isPlainObject(system.type) ? system.type : {};
@@ -72,7 +119,7 @@ function normalizeFeatSystem(rawSystem, featId) {
     identifier: cleanString(system.identifier, featId),
     type: {
       value: "feat",
-      subtype: cleanString(type.subtype)
+      subtype: resolveFeatSubtype(section, cleanString(type.subtype))
     },
     requirements: cleanString(system.requirements) || null,
     prerequisites: {
@@ -138,7 +185,7 @@ function normalizeFeatItem(rawItem, index, usedIds) {
     name,
     type: "feat",
     img: cleanString(safeItem.img, DEFAULT_FEAT_ICON),
-    system: normalizeFeatSystem(safeItem.system, featId),
+    system: normalizeFeatSystem(safeItem.system, featId, section),
     effects: Array.isArray(safeItem.effects) ? foundry.utils.deepClone(safeItem.effects) : [],
     flags,
     section,
