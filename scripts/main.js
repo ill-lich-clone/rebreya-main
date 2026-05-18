@@ -3,6 +3,7 @@ import { MaterialsCompendiumService } from "./data/materials-compendium.js";
 import { GearCompendiumService } from "./data/gear-compendium.js";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
+import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
 import { RacesCompendiumService } from "./data/races-compendium.js";
 import { ClassesCompendiumService } from "./data/classes-compendium.js";
 import { EconomyRepository } from "./data/repository.js";
@@ -51,6 +52,10 @@ function normalizeTradeSourceType(value) {
 
   if (["feat", "feats", "черта", "черты", "умение"].includes(compact)) {
     return "feat";
+  }
+
+  if (["background", "backgrounds", "предыстория", "предыстории"].includes(compact)) {
+    return "background";
   }
 
   return compact || "";
@@ -127,6 +132,7 @@ class RebreyaMainModule {
     this.gearCompendium = new GearCompendiumService();
     this.magicItemsCompendium = new MagicItemsCompendiumService();
     this.featsCompendium = new FeatsCompendiumService();
+    this.backgroundsCompendium = new BackgroundsCompendiumService();
     this.racesCompendium = new RacesCompendiumService();
     this.classesCompendium = new ClassesCompendiumService();
     this.traderService = new TraderService(this);
@@ -541,6 +547,14 @@ class RebreyaMainModule {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync feats compendium.`, error);
       ui.notifications?.warn(game.i18n.localize("REBREYA_MAIN.Notifications.FeatsCompendiumSyncFailed"));
+    }
+
+    try {
+      await this.backgroundsCompendium.sync();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to sync backgrounds compendium.`, error);
+      ui.notifications?.warn("Не удалось синхронизировать компендиум предысторий.");
     }
 
     try {
@@ -1507,6 +1521,10 @@ class RebreyaMainModule {
     return this.featsCompendium.openFeat(featId, fallbackName);
   }
 
+  async openBackgroundById(backgroundId, fallbackName = "") {
+    return this.backgroundsCompendium.openBackground(backgroundId, fallbackName);
+  }
+
   async openTradeEntry(sourceType, sourceId, sourceName = "") {
     const normalizedType = normalizeTradeSourceType(sourceType);
 
@@ -1524,6 +1542,10 @@ class RebreyaMainModule {
 
     if (normalizedType === "feat") {
       return this.openFeatById(sourceId, sourceName);
+    }
+
+    if (normalizedType === "background") {
+      return this.openBackgroundById(sourceId, sourceName);
     }
 
     return null;
