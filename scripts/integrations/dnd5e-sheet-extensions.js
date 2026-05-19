@@ -1,4 +1,10 @@
-﻿import { FEATS_COMPENDIUM_NAME, MODULE_ID, REBREYA_TOOLS } from "../constants.js";
+﻿import {
+  FEATS_COMPENDIUM_NAME,
+  MODULE_ID,
+  REBREYA_TOOLS,
+  STATES_COMPENDIUM_NAME,
+  STATE_ITEM_TYPE
+} from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import {
   getHeroDollSlotGroups,
@@ -20,15 +26,17 @@ const HEROIC_D20_ROLL_PATCH_FLAG = "__rebreyaHeroicD20RollPatched";
 const HEROIC_D20_KEYBINDINGS_PATCH_FLAG = "__rebreyaHeroicD20KeybindingsPatched";
 const HEROIC_ADVANTAGE_ACTION = "heroic-advantage";
 const HEROIC_DISADVANTAGE_ACTION = "heroic-disadvantage";
-const NATIVE_STATE_ITEM_TYPE = "state";
+const NATIVE_STATE_ITEM_TYPE = STATE_ITEM_TYPE;
+const NATIVE_STATE_LEGACY_ITEM_TYPE = "state";
+const NATIVE_STATE_ITEM_TYPES = new Set([NATIVE_STATE_ITEM_TYPE, NATIVE_STATE_LEGACY_ITEM_TYPE]);
 const NATIVE_STATE_TYPE_LABEL_KEY = "TYPES.Item.state";
 const NATIVE_STATE_TYPE_PLURAL_LABEL_KEY = "TYPES.Item.statePl";
 const NATIVE_STATE_LABEL_KEY = "REBREYA_MAIN.NativeState.Label";
 const NATIVE_STATE_ADD_LABEL_KEY = "REBREYA_MAIN.NativeState.AddButton";
-const NATIVE_STATE_DEFAULT_NAME_KEY = "REBREYA_MAIN.NativeState.DefaultName";
-const NATIVE_STATE_EMPTY_HINT_KEY = "REBREYA_MAIN.NativeState.EmptyHint";
-const NATIVE_STATE_DEFAULT_ICON = "icons/svg/city.svg";
-const NATIVE_STATE_DEFAULT_IDENTIFIER = "native-state";
+const NATIVE_STATE_SELECT_TITLE_KEY = "REBREYA_MAIN.NativeState.SelectTitle";
+const NATIVE_STATE_SELECT_BUTTON_KEY = "REBREYA_MAIN.NativeState.SelectButton";
+const NATIVE_STATE_SELECT_HINT_KEY = "REBREYA_MAIN.NativeState.SelectHint";
+const STATES_PACK_ID = `world.${STATES_COMPENDIUM_NAME}`;
 const ITEM_RANK_MIN = 0;
 const ITEM_RANK_MAX = 10;
 const ITEM_SLOT_ELIGIBLE_TYPES = new Set(["weapon", "consumable", "equipment"]);
@@ -700,6 +708,20 @@ function localizeWithFallback(key, fallback) {
   return value && value !== key ? value : fallback;
 }
 
+function cleanString(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/"/gu, "&quot;")
+    .replace(/'/gu, "&#39;");
+}
+
 function getNativeStateTypeLabel() {
   return localizeWithFallback(NATIVE_STATE_TYPE_LABEL_KEY, "Государство");
 }
@@ -713,10 +735,37 @@ function getNativeStateDataModel() {
     return NativeStateDataModel;
   }
 
+  const BackgroundData = CONFIG.Item?.dataModels?.background;
+  if (BackgroundData) {
+    NativeStateDataModel = class RebreyaStateData extends BackgroundData {
+      static metadata = Object.freeze(foundry.utils.mergeObject(super.metadata, {
+        singleton: true
+      }, { inplace: false }));
+
+      async getFavoriteData() {
+        return {
+          img: this.parent.img,
+          title: this.parent.name,
+          subtitle: getNativeStateSubtitleLabel()
+        };
+      }
+
+      async getSheetData(context) {
+        if (typeof super.getSheetData === "function") {
+          await super.getSheetData(context);
+        }
+        context.subtitles = [{ label: getNativeStateTypeLabel() }];
+        context.singleDescription = true;
+      }
+    };
+
+    return NativeStateDataModel;
+  }
+
   const ItemDataModel = globalThis.dnd5e?.dataModels?.ItemDataModel;
   const ItemDescriptionTemplate = globalThis.dnd5e?.dataModels?.item?.ItemDescriptionTemplate;
   if (ItemDataModel?.mixin && ItemDescriptionTemplate) {
-    NativeStateDataModel = class RebreyaStateData extends ItemDataModel.mixin(ItemDescriptionTemplate) {
+    NativeStateDataModel = class RebreyaStateDataFallback extends ItemDataModel.mixin(ItemDescriptionTemplate) {
       static metadata = Object.freeze(foundry.utils.mergeObject(super.metadata, {
         singleton: true
       }, { inplace: false }));
@@ -744,67 +793,13 @@ function getNativeStateDataModel() {
     return NativeStateDataModel;
   }
 
-  const BackgroundData = CONFIG.Item?.dataModels?.background;
-  if (BackgroundData) {
-    NativeStateDataModel = class RebreyaStateDataFallback extends BackgroundData {
-      static metadata = Object.freeze(foundry.utils.mergeObject(super.metadata, {
-        singleton: true
-      }, { inplace: false }));
-
-      async getFavoriteData() {
-        return {
-          img: this.parent.img,
-          title: this.parent.name,
-          subtitle: getNativeStateSubtitleLabel()
-        };
-      }
-
-      async getSheetData(context) {
-        context.subtitles = [{ label: getNativeStateTypeLabel() }];
-        context.singleDescription = true;
-        context.parts = [];
-      }
-    };
-  }
-
   return NativeStateDataModel;
 }
 
 function registerNativeStateDocumentType() {
-  const itemModel = game.model?.Item;
-  if (itemModel && typeof itemModel === "object" && !itemModel[NATIVE_STATE_ITEM_TYPE]) {
-    try {
-      itemModel[NATIVE_STATE_ITEM_TYPE] = foundry.utils.deepClone(itemModel.background ?? {});
-    }
-    catch (error) {
-      console.warn(`${MODULE_ID} | Failed to add '${NATIVE_STATE_ITEM_TYPE}' to game.model.Item.`, error);
-    }
-  }
-
-  const itemTypes = game.documentTypes?.Item;
-  if (Array.isArray(itemTypes) && !itemTypes.includes(NATIVE_STATE_ITEM_TYPE)) {
-    try {
-      itemTypes.push(NATIVE_STATE_ITEM_TYPE);
-    }
-    catch (error) {
-      console.warn(`${MODULE_ID} | Failed to add '${NATIVE_STATE_ITEM_TYPE}' to game.documentTypes.Item.`, error);
-    }
-  }
-
-  const systemItemTypes = game.system?.documentTypes?.Item;
-  if (
-    systemItemTypes
-    && typeof systemItemTypes === "object"
-    && !(NATIVE_STATE_ITEM_TYPE in systemItemTypes)
-  ) {
-    try {
-      systemItemTypes[NATIVE_STATE_ITEM_TYPE] = {
-        htmlFields: ["description.value", "description.chat"]
-      };
-    }
-    catch (error) {
-      console.warn(`${MODULE_ID} | Failed to add '${NATIVE_STATE_ITEM_TYPE}' to system document types.`, error);
-    }
+  const moduleItemTypes = game.modules?.get?.(MODULE_ID)?.documentTypes?.Item;
+  if (!moduleItemTypes?.state) {
+    console.warn(`${MODULE_ID} | Module manifest does not expose Item document type '${NATIVE_STATE_LEGACY_ITEM_TYPE}'.`);
   }
 }
 
@@ -817,20 +812,23 @@ function registerNativeStateItemType() {
 
   const dataModel = getNativeStateDataModel();
   if (dataModel) {
-    CONFIG.Item.dataModels[NATIVE_STATE_ITEM_TYPE] ??= dataModel;
+    CONFIG.Item.dataModels[NATIVE_STATE_ITEM_TYPE] = dataModel;
   }
 
   CONFIG.Item.typeLabels[NATIVE_STATE_ITEM_TYPE] = NATIVE_STATE_TYPE_LABEL_KEY;
   CONFIG.Item.typeLabels[`${NATIVE_STATE_ITEM_TYPE}Pl`] = NATIVE_STATE_TYPE_PLURAL_LABEL_KEY;
+  CONFIG.Item.typeLabels[NATIVE_STATE_LEGACY_ITEM_TYPE] = NATIVE_STATE_TYPE_LABEL_KEY;
+  CONFIG.Item.typeLabels[`${NATIVE_STATE_LEGACY_ITEM_TYPE}Pl`] = NATIVE_STATE_TYPE_PLURAL_LABEL_KEY;
   CONFIG.Item.typeIcons[NATIVE_STATE_ITEM_TYPE] ??= "fa-solid fa-city";
+  CONFIG.Item.typeIcons[NATIVE_STATE_LEGACY_ITEM_TYPE] ??= "fa-solid fa-city";
 }
 
-function getActorItemsOfType(actor, type) {
-  return actor?.items?.filter?.((item) => item?.type === type) ?? [];
+function isNativeStateItem(item) {
+  return NATIVE_STATE_ITEM_TYPES.has(item?.type);
 }
 
 function getNativeStateItems(actor) {
-  const items = getActorItemsOfType(actor, NATIVE_STATE_ITEM_TYPE);
+  const items = actor?.items?.filter?.((item) => isNativeStateItem(item)) ?? [];
   if (items.length > 1) {
     const extraIds = items.slice(1).map((item) => item.id).filter(Boolean);
     const warningKey = `${actor.id ?? actor.uuid}:${extraIds.join(",")}`;
@@ -921,7 +919,7 @@ function buildNativeStateEmptyCard(canCreate) {
 
   entry.dataset.rebreyaNativeState = "true";
   if (canCreate) {
-    entry.dataset.rebreyaNativeStateAction = "create";
+    entry.dataset.rebreyaNativeStateAction = "select";
     entry.role = "button";
     entry.tabIndex = 0;
   }
@@ -983,35 +981,210 @@ async function openNativeStateItemSheet(item) {
   bringAppToFront(item.sheet);
 }
 
-async function createNativeStateItem(actor) {
+function isNativeStateItemTypeAvailable() {
+  if (game.documentTypes?.Item?.includes?.(NATIVE_STATE_ITEM_TYPE)) {
+    return true;
+  }
+
+  return Boolean(game.model?.Item?.[NATIVE_STATE_ITEM_TYPE]);
+}
+
+function getNativeStatePack() {
+  return game.packs?.get?.(STATES_PACK_ID) ?? null;
+}
+
+function getNativeStatePackRecordLabel(record) {
+  const rank = foundry.utils.getProperty(record, `flags.${MODULE_ID}.rank`);
+  const continent = foundry.utils.getProperty(record, `flags.${MODULE_ID}.continent`);
+  const details = [
+    Number(rank) > 0 ? `ранг ${rank}` : "",
+    cleanString(continent)
+  ].filter(Boolean).join(", ");
+
+  return details ? `${record.name} (${details})` : record.name;
+}
+
+async function getNativeStatePackIndex(pack) {
+  const index = await pack.getIndex({
+    fields: [
+      `flags.${MODULE_ID}.stateId`,
+      `flags.${MODULE_ID}.rank`,
+      `flags.${MODULE_ID}.continent`,
+      `flags.${MODULE_ID}.culturalFeatNames`
+    ]
+  });
+
+  return Array.from(index ?? [])
+    .filter((record) => cleanString(record?._id ?? record?.id) && cleanString(record?.name))
+    .sort((left, right) => {
+      const leftRank = Number(foundry.utils.getProperty(left, `flags.${MODULE_ID}.rank`) ?? 0);
+      const rightRank = Number(foundry.utils.getProperty(right, `flags.${MODULE_ID}.rank`) ?? 0);
+      return (rightRank - leftRank) || String(left.name).localeCompare(String(right.name), game.i18n?.lang ?? "ru");
+    });
+}
+
+function buildNativeStateSelectionContent(records) {
+  const hint = localizeWithFallback(
+    NATIVE_STATE_SELECT_HINT_KEY,
+    "Выберите государство Тейванкаля. После добавления предмет откроется, а культурные черты можно выбрать через развитие предмета."
+  );
+  const options = records.map((record) => {
+    const id = cleanString(record?._id ?? record?.id);
+    const culturalFeatNames = cleanString(foundry.utils.getProperty(record, `flags.${MODULE_ID}.culturalFeatNames`));
+    const title = getNativeStatePackRecordLabel(record);
+    const description = culturalFeatNames ? `Культурные черты: ${culturalFeatNames}` : "";
+    return `<option value="${escapeHtml(id)}" title="${escapeHtml(description)}">${escapeHtml(title)}</option>`;
+  });
+
+  return `
+    <form class="rebreya-native-state-picker">
+      <p class="notes">${escapeHtml(hint)}</p>
+      <div class="form-group">
+        <label>${escapeHtml(getNativeStateSubtitleLabel())}</label>
+        <select name="stateId">${options.join("")}</select>
+      </div>
+    </form>
+  `;
+}
+
+function queryDialogElement(html, selector) {
+  if (html instanceof HTMLElement) {
+    return html.querySelector(selector);
+  }
+
+  const root = html?.[0] ?? html;
+  if (root?.querySelector) {
+    return root.querySelector(selector);
+  }
+
+  return html?.find?.(selector)?.[0] ?? null;
+}
+
+async function openNativeStatePackForManualSelection(pack) {
+  if (!pack) {
+    return null;
+  }
+
+  try {
+    await pack.render({ force: true });
+  }
+  catch (_error) {
+    await pack.render(true);
+  }
+
+  return null;
+}
+
+async function importNativeStateDocumentToActor(actor, stateDocument) {
   const existing = getPrimaryNativeStateItem(actor);
   if (existing) {
     return existing;
   }
 
-  const defaultName = localizeWithFallback(NATIVE_STATE_DEFAULT_NAME_KEY, "Новое государство");
-  const [created] = await actor.createEmbeddedDocuments("Item", [{
-    name: defaultName,
-    type: NATIVE_STATE_ITEM_TYPE,
-    img: NATIVE_STATE_DEFAULT_ICON,
-    system: {
-      identifier: NATIVE_STATE_DEFAULT_IDENTIFIER,
-      description: {
-        value: "",
-        chat: ""
-      },
-      source: {
-        custom: "Rebreya"
-      }
-    },
-    flags: {
-      [MODULE_ID]: {
-        nativeState: true
-      }
-    }
-  }], { renderSheet: false });
+  if (!stateDocument) {
+    return null;
+  }
 
-  return created;
+  const source = foundry.utils.deepClone(stateDocument.toObject());
+  delete source._id;
+  delete source.folder;
+  delete source.ownership;
+  source.type = NATIVE_STATE_ITEM_TYPE;
+  source.flags ??= {};
+  source.flags[MODULE_ID] = {
+    ...(source.flags[MODULE_ID] ?? {}),
+    nativeState: true,
+    sourceCompendiumUuid: stateDocument.uuid
+  };
+
+  const [created] = await actor.createEmbeddedDocuments("Item", [source], { renderSheet: false });
+  return created ?? null;
+}
+
+async function selectNativeStateForActor(actor) {
+  const existing = getPrimaryNativeStateItem(actor);
+  if (existing) {
+    return existing;
+  }
+
+  if (!isNativeStateItemTypeAvailable()) {
+    ui.notifications?.warn?.("Тип предмета «Государство» ещё не зарегистрирован. Перезапустите мир после обновления модуля.");
+    return null;
+  }
+
+  const pack = getNativeStatePack();
+  if (!pack) {
+    ui.notifications?.warn?.("Компендиум государств Rebreya пока не найден. Если модуль только обновлён, перезапустите мир.");
+    return null;
+  }
+
+  const records = await getNativeStatePackIndex(pack);
+  if (!records.length) {
+    await openNativeStatePackForManualSelection(pack);
+    ui.notifications?.warn?.("Компендиум государств пуст или ещё не синхронизирован.");
+    return null;
+  }
+
+  if (typeof Dialog !== "function") {
+    await openNativeStatePackForManualSelection(pack);
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve(value);
+    };
+    const beginAsyncFinish = () => {
+      if (settled) {
+        return false;
+      }
+
+      settled = true;
+      return true;
+    };
+
+    const dialog = new Dialog({
+      title: localizeWithFallback(NATIVE_STATE_SELECT_TITLE_KEY, "Выбор родного государства"),
+      content: buildNativeStateSelectionContent(records),
+      buttons: {
+        select: {
+          label: localizeWithFallback(NATIVE_STATE_SELECT_BUTTON_KEY, "Выбрать"),
+          callback: async (html) => {
+            if (!beginAsyncFinish()) {
+              return;
+            }
+
+            try {
+              const select = queryDialogElement(html, "select[name='stateId']");
+              const stateId = cleanString(select?.value);
+              const document = stateId ? await pack.getDocument(stateId) : null;
+              const item = await importNativeStateDocumentToActor(actor, document);
+              resolve(item);
+            }
+            catch (error) {
+              console.error(`${MODULE_ID} | Failed to import native state item.`, error);
+              ui.notifications?.error?.("Rebreya: не удалось добавить государство.");
+              resolve(null);
+            }
+          }
+        },
+        cancel: {
+          label: game.i18n?.localize?.("Cancel") ?? "Cancel",
+          callback: () => finish(null)
+        }
+      },
+      default: "select",
+      close: () => finish(null)
+    });
+
+    dialog.render(true);
+  });
 }
 
 async function handleNativeStateAction(event, app) {
@@ -1035,18 +1208,20 @@ async function handleNativeStateAction(event, app) {
     return;
   }
 
-  if (action === "create") {
+  if (action === "select") {
     if (!actor.isOwner) {
       return;
     }
 
     try {
-      const item = await createNativeStateItem(actor);
-      await openNativeStateItemSheet(item);
+      const item = await selectNativeStateForActor(actor);
+      if (item) {
+        await openNativeStateItemSheet(item);
+      }
     }
     catch (error) {
-      console.error(`${MODULE_ID} | Failed to create native state item.`, error);
-      ui.notifications?.error?.("Rebreya: не удалось создать государство.");
+      console.error(`${MODULE_ID} | Failed to select native state item.`, error);
+      ui.notifications?.error?.("Rebreya: не удалось выбрать государство.");
     }
   }
 }

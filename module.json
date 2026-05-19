@@ -25,6 +25,16 @@
       "path": "lang/ru.json"
     }
   ],
+  "documentTypes": {
+    "Item": {
+      "state": {
+        "htmlFields": [
+          "description.value",
+          "description.chat"
+        ]
+      }
+    }
+  },
   "url": "",
   "manifest": "",
   "download": ""

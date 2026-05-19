@@ -1,6 +1,8 @@
 ﻿{
   "TYPES.Item.state": "Государство",
   "TYPES.Item.statePl": "Государства",
+  "TYPES.Item.rebreya-main.state": "Государство",
+  "TYPES.Item.rebreya-main.statePl": "Государства",
   "REBREYA_MAIN.Settings.ShowButton.Name": "Показывать кнопку экономики",
   "REBREYA_MAIN.Settings.ShowButton.Hint": "Добавляет кнопку экономики в панель инструментов Foundry.",
   "REBREYA_MAIN.Settings.DebugMode.Name": "Режим debug",
@@ -55,6 +57,9 @@
   "REBREYA_MAIN.NativeState.AddButton": "Добавить государство",
   "REBREYA_MAIN.NativeState.DefaultName": "Новое государство",
   "REBREYA_MAIN.NativeState.EmptyHint": "Родное государство не выбрано",
+  "REBREYA_MAIN.NativeState.SelectTitle": "Выбор родного государства",
+  "REBREYA_MAIN.NativeState.SelectButton": "Выбрать",
+  "REBREYA_MAIN.NativeState.SelectHint": "Выберите государство Тейванкаля. После добавления предмет откроется, а культурные черты можно выбрать через развитие предмета.",
   "REBREYA_MAIN.Combat.HeroicAdvantageButton": "ГЕРОИЧ. ПРЕИМУЩЕСТВО",
   "REBREYA_MAIN.Combat.HeroicDisadvantageButton": "ГЕРОИЧ. ПОМЕХА"
 }

@@ -4,6 +4,7 @@ import { GearCompendiumService } from "./data/gear-compendium.js";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
+import { StatesCompendiumService } from "./data/states-compendium.js";
 import { RacesCompendiumService } from "./data/races-compendium.js";
 import { ClassesCompendiumService } from "./data/classes-compendium.js";
 import { EconomyRepository } from "./data/repository.js";
@@ -56,6 +57,10 @@ function normalizeTradeSourceType(value) {
 
   if (["background", "backgrounds", "предыстория", "предыстории"].includes(compact)) {
     return "background";
+  }
+
+  if (["state", "states", "государство", "государства", "родноегосударство"].includes(compact)) {
+    return "state";
   }
 
   return compact || "";
@@ -133,6 +138,7 @@ class RebreyaMainModule {
     this.magicItemsCompendium = new MagicItemsCompendiumService();
     this.featsCompendium = new FeatsCompendiumService();
     this.backgroundsCompendium = new BackgroundsCompendiumService();
+    this.statesCompendium = new StatesCompendiumService();
     this.racesCompendium = new RacesCompendiumService();
     this.classesCompendium = new ClassesCompendiumService();
     this.traderService = new TraderService(this);
@@ -547,6 +553,14 @@ class RebreyaMainModule {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync feats compendium.`, error);
       ui.notifications?.warn(game.i18n.localize("REBREYA_MAIN.Notifications.FeatsCompendiumSyncFailed"));
+    }
+
+    try {
+      await this.statesCompendium.sync();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to sync states compendium.`, error);
+      ui.notifications?.warn("Не удалось синхронизировать компендиум государств.");
     }
 
     try {
@@ -1525,6 +1539,10 @@ class RebreyaMainModule {
     return this.backgroundsCompendium.openBackground(backgroundId, fallbackName);
   }
 
+  async openStateById(stateId, fallbackName = "") {
+    return this.statesCompendium.openState(stateId, fallbackName);
+  }
+
   async openTradeEntry(sourceType, sourceId, sourceName = "") {
     const normalizedType = normalizeTradeSourceType(sourceType);
 
@@ -1546,6 +1564,10 @@ class RebreyaMainModule {
 
     if (normalizedType === "background") {
       return this.openBackgroundById(sourceId, sourceName);
+    }
+
+    if (normalizedType === "state") {
+      return this.openStateById(sourceId, sourceName);
     }
 
     return null;
