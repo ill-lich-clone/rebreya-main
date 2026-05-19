@@ -3,7 +3,9 @@
   MODULE_ID,
   REBREYA_TOOLS,
   STATES_COMPENDIUM_NAME,
-  STATE_ITEM_TYPE
+  STATE_ITEM_TYPE,
+  TEYVANKAL_STATE_LANGUAGE_GROUP_ID,
+  TEYVANKAL_STATE_LANGUAGES
 } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import {
@@ -137,6 +139,10 @@ REBREYA_TOOL_ID_BY_TEXT.set(normalizeLookupText("Камнелома"), "mason");
 REBREYA_TOOL_ID_BY_TEXT.set(normalizeLookupText("Каменолома"), "mason");
 let NativeStateDataModel = null;
 const nativeStateWarningKeys = new Set();
+const nativeStateBackgroundRepairKeys = new Set();
+const TEYVANKAL_STATE_LANGUAGE_LABEL_BY_ID = new Map(
+  TEYVANKAL_STATE_LANGUAGES.map((language) => [language.id, language.label])
+);
 for (const [legacyLabel, toolId] of LEGACY_REBREYA_TOOL_LABEL_ALIASES) {
   REBREYA_TOOL_ID_BY_TEXT.set(normalizeLookupText(legacyLabel), toolId);
 }
@@ -735,37 +741,14 @@ function getNativeStateDataModel() {
     return NativeStateDataModel;
   }
 
-  const BackgroundData = CONFIG.Item?.dataModels?.background;
-  if (BackgroundData) {
-    NativeStateDataModel = class RebreyaStateData extends BackgroundData {
-      static metadata = Object.freeze(foundry.utils.mergeObject(super.metadata, {
-        singleton: true
-      }, { inplace: false }));
-
-      async getFavoriteData() {
-        return {
-          img: this.parent.img,
-          title: this.parent.name,
-          subtitle: getNativeStateSubtitleLabel()
-        };
-      }
-
-      async getSheetData(context) {
-        if (typeof super.getSheetData === "function") {
-          await super.getSheetData(context);
-        }
-        context.subtitles = [{ label: getNativeStateTypeLabel() }];
-        context.singleDescription = true;
-      }
-    };
-
-    return NativeStateDataModel;
-  }
-
   const ItemDataModel = globalThis.dnd5e?.dataModels?.ItemDataModel;
+  const AdvancementTemplate = globalThis.dnd5e?.dataModels?.item?.AdvancementTemplate;
   const ItemDescriptionTemplate = globalThis.dnd5e?.dataModels?.item?.ItemDescriptionTemplate;
-  if (ItemDataModel?.mixin && ItemDescriptionTemplate) {
-    NativeStateDataModel = class RebreyaStateDataFallback extends ItemDataModel.mixin(ItemDescriptionTemplate) {
+  if (ItemDataModel?.mixin && AdvancementTemplate && ItemDescriptionTemplate) {
+    NativeStateDataModel = class RebreyaStateData extends ItemDataModel.mixin(
+      AdvancementTemplate,
+      ItemDescriptionTemplate
+    ) {
       static metadata = Object.freeze(foundry.utils.mergeObject(super.metadata, {
         singleton: true
       }, { inplace: false }));
@@ -786,7 +769,79 @@ function getNativeStateDataModel() {
       async getSheetData(context) {
         context.subtitles = [{ label: getNativeStateTypeLabel() }];
         context.singleDescription = true;
-        context.parts = [];
+        context.parts = ["dnd5e.details-background"];
+      }
+
+      async _preCreate(data, options, user) {
+        if (typeof super._preCreate === "function" && (await super._preCreate(data, options, user)) === false) {
+          return false;
+        }
+
+        await this.preCreateAdvancement(data, options);
+        return undefined;
+      }
+    };
+
+    return NativeStateDataModel;
+  }
+
+  const BackgroundData = CONFIG.Item?.dataModels?.background;
+  if (BackgroundData) {
+    NativeStateDataModel = class RebreyaStateDataFallback extends BackgroundData {
+      static metadata = Object.freeze(foundry.utils.mergeObject(super.metadata, {
+        singleton: true
+      }, { inplace: false }));
+
+      async getFavoriteData() {
+        return {
+          img: this.parent.img,
+          title: this.parent.name,
+          subtitle: getNativeStateSubtitleLabel()
+        };
+      }
+
+      async getSheetData(context) {
+        if (typeof super.getSheetData === "function") {
+          await super.getSheetData(context);
+        }
+        context.subtitles = [{ label: getNativeStateTypeLabel() }];
+        context.singleDescription = true;
+        context.parts = ["dnd5e.details-background"];
+      }
+
+      _onCreate() {}
+
+      async _preDelete(options, user) {
+        return undefined;
+      }
+    };
+
+    return NativeStateDataModel;
+  }
+
+  if (ItemDataModel?.mixin && ItemDescriptionTemplate) {
+    NativeStateDataModel = class RebreyaStateDataDescriptionOnlyFallback extends ItemDataModel.mixin(ItemDescriptionTemplate) {
+      static metadata = Object.freeze(foundry.utils.mergeObject(super.metadata, {
+        singleton: true
+      }, { inplace: false }));
+
+      prepareDerivedData() {
+        super.prepareDerivedData();
+        this.prepareDescriptionData?.();
+      }
+
+      async getFavoriteData() {
+        return {
+          img: this.parent.img,
+          title: this.parent.name,
+          subtitle: getNativeStateSubtitleLabel()
+        };
+      }
+
+      async getSheetData(context) {
+        context.subtitles = [{ label: getNativeStateTypeLabel() }];
+        context.singleDescription = true;
+        context.parts = ["dnd5e.details-background"];
       }
     };
 
@@ -823,6 +878,39 @@ function registerNativeStateItemType() {
   CONFIG.Item.typeIcons[NATIVE_STATE_LEGACY_ITEM_TYPE] ??= "fa-solid fa-city";
 }
 
+function registerNativeStateAdvancementTypes() {
+  const advancementTypes = CONFIG.DND5E?.advancementTypes ?? {};
+  for (const type of ["ItemChoice", "ItemGrant", "Trait"]) {
+    const validItemTypes = advancementTypes[type]?.validItemTypes;
+    if (validItemTypes instanceof Set) {
+      validItemTypes.add(NATIVE_STATE_ITEM_TYPE);
+      validItemTypes.add(NATIVE_STATE_LEGACY_ITEM_TYPE);
+    }
+  }
+}
+
+function registerNativeStateLanguages() {
+  const languages = CONFIG.DND5E?.languages;
+  if (!languages || typeof languages !== "object") {
+    return;
+  }
+
+  const group = languages[TEYVANKAL_STATE_LANGUAGE_GROUP_ID] ?? {
+    label: "Языки государств Тейванкаля",
+    selectable: false,
+    children: {}
+  };
+  group.label ??= "Языки государств Тейванкаля";
+  group.selectable = false;
+  group.children ??= {};
+
+  for (const [id, label] of TEYVANKAL_STATE_LANGUAGE_LABEL_BY_ID.entries()) {
+    group.children[id] ??= label;
+  }
+
+  languages[TEYVANKAL_STATE_LANGUAGE_GROUP_ID] = group;
+}
+
 function isNativeStateItem(item) {
   return NATIVE_STATE_ITEM_TYPES.has(item?.type);
 }
@@ -846,6 +934,41 @@ function getNativeStateItems(actor) {
 
 function getPrimaryNativeStateItem(actor) {
   return getNativeStateItems(actor)[0] ?? null;
+}
+
+function getNativeStateBackgroundReference(actor) {
+  const background = actor?.system?.details?.background;
+  return isNativeStateItem(background) ? background : null;
+}
+
+function getFirstActualBackgroundItem(actor) {
+  return actor?.items?.find?.((item) => item?.type === "background") ?? null;
+}
+
+async function repairNativeStateBackgroundReference(actor) {
+  const stateAsBackground = getNativeStateBackgroundReference(actor);
+  if (!stateAsBackground || !actor?.isOwner) {
+    return;
+  }
+
+  const repairKey = `${actor.uuid ?? actor.id}:${stateAsBackground.id}`;
+  if (nativeStateBackgroundRepairKeys.has(repairKey)) {
+    return;
+  }
+
+  nativeStateBackgroundRepairKeys.add(repairKey);
+  const replacement = getFirstActualBackgroundItem(actor);
+  try {
+    await actor.update({ "system.details.background": replacement?.id ?? null });
+    console.warn(
+      `${MODULE_ID} | Removed native state item '${stateAsBackground.name}' from actor background slot`
+      + (replacement ? ` and restored '${replacement.name}'.` : ".")
+    );
+  }
+  catch (error) {
+    nativeStateBackgroundRepairKeys.delete(repairKey);
+    console.error(`${MODULE_ID} | Failed to repair native state background slot.`, error);
+  }
 }
 
 function stripHtmlText(value) {
@@ -885,7 +1008,7 @@ function buildNativeStateName(title, subtitle = "") {
 function buildNativeStateItemCard(item) {
   const label = getNativeStateSubtitleLabel();
   const entry = document.createElement("div");
-  entry.classList.add("draggable", "pill-lg", "texture", "background", "state", "item-tooltip", "rebreya-native-state");
+  entry.classList.add("draggable", "pill-lg", "texture", "state", "item-tooltip", "rebreya-native-state");
   entry.dataset.rebreyaNativeState = "true";
   entry.dataset.rebreyaNativeStateAction = "open";
   entry.dataset.itemId = item.id;
@@ -965,6 +1088,23 @@ function findNativeStateInsertionAnchor(container) {
   return container.querySelector(".pill-lg.background, [data-item-type='background']")
     ?? container.querySelector(".pill-lg.race, [data-item-type='race']")
     ?? container.querySelector(".pill-lg.type");
+}
+
+function removeSystemRenderedNativeStateCards(root, actor) {
+  if (!(root instanceof HTMLElement) || !actor) {
+    return;
+  }
+
+  root.querySelectorAll("[data-item-id]").forEach((node) => {
+    if (!(node instanceof HTMLElement) || node.dataset.rebreyaNativeState === "true") {
+      return;
+    }
+
+    const item = actor.items.get(node.dataset.itemId);
+    if (isNativeStateItem(item)) {
+      node.remove();
+    }
+  });
 }
 
 async function openNativeStateItemSheet(item) {
@@ -1075,9 +1215,55 @@ async function openNativeStatePackForManualSelection(pack) {
   return null;
 }
 
+function getCompendiumBrowserClass() {
+  return globalThis.dnd5e?.applications?.CompendiumBrowser ?? null;
+}
+
+async function selectNativeStateDocumentWithBrowser() {
+  const CompendiumBrowser = getCompendiumBrowserClass();
+  if (!CompendiumBrowser?.selectOne) {
+    return null;
+  }
+
+  const result = await CompendiumBrowser.selectOne({
+    mode: CompendiumBrowser.MODES?.ADVANCED,
+    tab: "items",
+    hint: localizeWithFallback(
+      NATIVE_STATE_SELECT_HINT_KEY,
+      "Выберите родное государство Тейванкаля. После выбора откроется развитие для родного языка и культурных черт."
+    ),
+    filters: {
+      locked: {
+        documentClass: "Item",
+        types: new Set([NATIVE_STATE_ITEM_TYPE])
+      }
+    }
+  });
+  if (!result) {
+    return null;
+  }
+
+  const document = await fromUuid(result);
+  return isNativeStateItem(document) ? document : null;
+}
+
+function getAdvancementManagerClass() {
+  return globalThis.dnd5e?.applications?.advancement?.AdvancementManager ?? null;
+}
+
+function renderAdvancementManager(manager) {
+  try {
+    manager.render(true);
+  }
+  catch (_error) {
+    manager.render(true, { force: true });
+  }
+}
+
 async function importNativeStateDocumentToActor(actor, stateDocument) {
   const existing = getPrimaryNativeStateItem(actor);
   if (existing) {
+    await repairNativeStateBackgroundReference(actor);
     return existing;
   }
 
@@ -1097,7 +1283,19 @@ async function importNativeStateDocumentToActor(actor, stateDocument) {
     sourceCompendiumUuid: stateDocument.uuid
   };
 
+  const shouldRunAdvancement = actor.system?.metadata?.supportsAdvancement
+    && Array.isArray(source.system?.advancement)
+    && source.system.advancement.length
+    && !game.settings.get("dnd5e", "disableAdvancements");
+  const AdvancementManager = shouldRunAdvancement ? getAdvancementManagerClass() : null;
+  const manager = AdvancementManager?.forNewItem?.(actor, source);
+  if (manager?.steps?.length) {
+    renderAdvancementManager(manager);
+    return null;
+  }
+
   const [created] = await actor.createEmbeddedDocuments("Item", [source], { renderSheet: false });
+  await repairNativeStateBackgroundReference(actor);
   return created ?? null;
 }
 
@@ -1122,6 +1320,15 @@ async function selectNativeStateForActor(actor) {
   if (!records.length) {
     await openNativeStatePackForManualSelection(pack);
     ui.notifications?.warn?.("Компендиум государств пуст или ещё не синхронизирован.");
+    return null;
+  }
+
+  const selectedDocument = await selectNativeStateDocumentWithBrowser();
+  if (selectedDocument) {
+    return importNativeStateDocumentToActor(actor, selectedDocument);
+  }
+
+  if (getCompendiumBrowserClass()?.selectOne) {
     return null;
   }
 
@@ -1233,6 +1440,8 @@ function bindNativeStateCard(root, app) {
   }
 
   root.querySelectorAll("[data-rebreya-native-state='true']").forEach((node) => node.remove());
+  removeSystemRenderedNativeStateCards(root, actor);
+  void repairNativeStateBackgroundReference(actor);
 
   const container = getNativeStateDetailsPillContainer(root);
   if (!container) {
@@ -2692,6 +2901,8 @@ export function extendDnd5eItemTypes() {
   }
 
   registerNativeStateItemType();
+  registerNativeStateAdvancementTypes();
+  registerNativeStateLanguages();
 
   CONFIG.DND5E.featureTypes ??= {};
   const featTypeConfig = CONFIG.DND5E.featureTypes.feat;

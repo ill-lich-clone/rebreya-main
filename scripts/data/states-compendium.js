@@ -3,7 +3,9 @@ import {
   MODULE_ID,
   STATES_COMPENDIUM_LABEL,
   STATES_COMPENDIUM_NAME,
-  STATE_ITEM_TYPE
+  STATE_ITEM_TYPE,
+  TEYVANKAL_STATE_LANGUAGE_GROUP_ID,
+  TEYVANKAL_STATE_LANGUAGES
 } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import {
@@ -21,7 +23,10 @@ const STATES_DATA_PATH = `modules/${MODULE_ID}/data/states-teyvankal-v02.json`;
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const STATES_ROOT_FOLDER = "Государства Тейванкаля";
 const DEFAULT_STATE_ICON = "icons/svg/city.svg";
-const STATE_TEMPLATE_VERSION = 1;
+const STATE_TEMPLATE_VERSION = 2;
+const STATE_LANGUAGE_ID_BY_LABEL = new Map(
+  TEYVANKAL_STATE_LANGUAGES.map((language) => [normalizeMatchText(language.label), language.id])
+);
 
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -39,6 +44,14 @@ function parseNumber(value, fallback = 0) {
 
 function unique(values = []) {
   return Array.from(new Set((Array.isArray(values) ? values : []).filter(Boolean)));
+}
+
+function normalizeStateLanguages(value) {
+  const source = isPlainObject(value) ? value : {};
+  return {
+    native: cleanString(source.native),
+    dominant: cleanString(source.dominant)
+  };
 }
 
 function normalizeMatchText(value) {
@@ -121,6 +134,7 @@ function normalizeState(rawState = {}, index = 0) {
     magic: cleanString(source.magic),
     description: cleanString(source.description),
     details: cleanString(source.details),
+    languages: normalizeStateLanguages(source.languages),
     tags: unique(Array.isArray(source.tags) ? source.tags.map((entry) => cleanString(entry)) : []),
     culturalFeatNames: unique(Array.isArray(source.culturalFeatNames) ? source.culturalFeatNames.map((entry) => cleanString(entry)) : []),
     manualNotes: unique(Array.isArray(source.manualNotes) ? source.manualNotes.map((entry) => cleanString(entry)) : [])
@@ -164,6 +178,8 @@ function buildStateDescription(state, culturalFeatResolution = null) {
   addInlineDescriptionBlock(rows, "Технологический уровень", state.techLevel);
   addInlineDescriptionBlock(rows, "Армия", state.army);
   addInlineDescriptionBlock(rows, "Волшебство", state.magic);
+  addInlineDescriptionBlock(rows, "Родной язык", state.languages.native);
+  addInlineDescriptionBlock(rows, "Доминирующий язык", state.languages.dominant);
 
   if (state.culturalFeatNames.length) {
     rows.push(`<h3>Культурные черты</h3><p>Персонаж может выбрать до двух культурных черт, связанных с этим государством.</p>${buildCulturalFeatList(state.culturalFeatNames)}`);
@@ -179,6 +195,42 @@ function buildStateDescription(state, culturalFeatResolution = null) {
   }
 
   return rows.join("\n");
+}
+
+function toStateLanguageTraitKey(languageName) {
+  const languageId = STATE_LANGUAGE_ID_BY_LABEL.get(normalizeMatchText(languageName));
+  return languageId ? `languages:${TEYVANKAL_STATE_LANGUAGE_GROUP_ID}:${languageId}` : "";
+}
+
+function buildStateLanguageAdvancement(state) {
+  const languageTraitKey = toStateLanguageTraitKey(state.languages.native);
+  if (!languageTraitKey) {
+    if (state.languages.native) {
+      console.warn(`${MODULE_ID} | Unknown native state language for '${state.name}': ${state.languages.native}`);
+    }
+
+    return null;
+  }
+
+  return {
+    _id: stableHashId(`${state.id}:native-language`, "adv"),
+    type: "Trait",
+    title: "Родной язык",
+    hint: `Выберите родной язык государства: ${state.languages.native}.`,
+    level: 1,
+    configuration: {
+      allowReplacements: false,
+      mode: "default",
+      grants: [],
+      choices: [
+        {
+          count: 1,
+          pool: [languageTraitKey]
+        }
+      ]
+    },
+    value: {}
+  };
 }
 
 function buildCulturalFeatChoiceAdvancement(state, culturalFeatResolution) {
@@ -226,8 +278,6 @@ function createStateSystem(state, advancement, culturalFeatResolution = null) {
       custom: SOURCE_LABEL
     },
     identifier: buildAsciiIdentifier(state.id, state.name),
-    startingEquipment: [],
-    wealth: "",
     advancement: foundry.utils.deepClone(advancement)
   };
 }
@@ -385,6 +435,8 @@ function createStateItemData(entry, folderIdByPath) {
         stateId: entry.state.id,
         rank: entry.state.rank,
         continent: entry.state.continent,
+        nativeLanguage: entry.state.languages.native,
+        dominantLanguage: entry.state.languages.dominant,
         culturalFeatNames: entry.state.culturalFeatNames.join(", "),
         unresolvedCulturalFeats: missingCulturalFeats.length ? missingCulturalFeats : null,
         signature: entry.signature
@@ -512,7 +564,10 @@ function resolveCulturalFeats(state, featLookupByName) {
 function prepareStateEntries(states, featLookupByName) {
   return states.map((state) => {
     const culturalFeatResolution = resolveCulturalFeats(state, featLookupByName);
-    const advancement = [buildCulturalFeatChoiceAdvancement(state, culturalFeatResolution)].filter(Boolean);
+    const advancement = [
+      buildStateLanguageAdvancement(state),
+      buildCulturalFeatChoiceAdvancement(state, culturalFeatResolution)
+    ].filter(Boolean);
     const system = createStateSystem(state, advancement, culturalFeatResolution);
     const entry = {
       state,

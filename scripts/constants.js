@@ -14,6 +14,21 @@ export const BACKGROUNDS_COMPENDIUM_LABEL = "Предыстории Rebreya (D&D
 export const STATES_COMPENDIUM_NAME = "rebreya-states";
 export const STATES_COMPENDIUM_LABEL = "Государства Тейванкаля Rebreya";
 export const STATE_ITEM_TYPE = `${MODULE_ID}.state`;
+export const TEYVANKAL_STATE_LANGUAGE_GROUP_ID = "teyvankal";
+export const TEYVANKAL_STATE_LANGUAGES = Object.freeze([
+  { id: "umeliluan", label: "Умелилуанский" },
+  { id: "zomar", label: "Зомарский" },
+  { id: "azadran", label: "Азадранский" },
+  { id: "nirian", label: "Нирианский" },
+  { id: "ilduin", label: "Илдуинский" },
+  { id: "khurat", label: "Хуратский" },
+  { id: "tsefarian", label: "Цефарийский" },
+  { id: "eshar", label: "Эшарский" },
+  { id: "krangar", label: "Крангарский" },
+  { id: "kurovian", label: "Куровийский" },
+  { id: "shnadar", label: "Шнадарский" },
+  { id: "azelian", label: "Азелийский" }
+]);
 export const RACE_FEATURES_COMPENDIUM_NAME = "rebreya-race-features";
 export const RACE_FEATURES_COMPENDIUM_LABEL = "Расовые умения Тейванкаля Rebreya";
 export const RACES_COMPENDIUM_NAME = "rebreya-races";
