@@ -117,6 +117,10 @@ function isDnd5eWorld() {
   return game.system?.id === DND5E_SYSTEM_ID;
 }
 
+function getPackSourceBook(pack) {
+  return cleanString(foundry.utils.getProperty(pack, "metadata.flags.dnd5e.sourceBook"));
+}
+
 function normalizeState(rawState = {}, index = 0) {
   const source = isPlainObject(rawState) ? rawState : {};
   const name = cleanString(source.name, `Государство ${index + 1}`);
@@ -359,6 +363,23 @@ async function ensurePack() {
       await pack.deleteCompendium();
     }
     pack = null;
+  }
+
+  if (pack && getPackSourceBook(pack) !== SOURCE_LABEL) {
+    const documents = await getPackDocuments(pack);
+    const unmanagedDocuments = documents.filter((document) => !document.getFlag(MODULE_ID, "managed"));
+
+    if (unmanagedDocuments.length) {
+      console.warn(
+        `${MODULE_ID} | States compendium source is '${getPackSourceBook(pack)}', expected '${SOURCE_LABEL}', `
+        + `but the pack has unmanaged documents and will not be recreated automatically: `
+        + unmanagedDocuments.map((document) => `${document.name} (${document.id})`).join(", ")
+      );
+    }
+    else if (typeof pack.deleteCompendium === "function") {
+      await pack.deleteCompendium();
+      pack = null;
+    }
   }
 
   if (!pack) {
