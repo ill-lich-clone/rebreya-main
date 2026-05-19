@@ -18,12 +18,12 @@ import { buildSlug } from "./item-classification.js";
 const PACK_ID = `world.${STATES_COMPENDIUM_NAME}`;
 const FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
-const SOURCE_LABEL = "Заметки о землях Тейванкаля, 2-я редакция";
+const SOURCE_LABEL = "ЗоЗТ";
 const STATES_DATA_PATH = `modules/${MODULE_ID}/data/states-teyvankal-v02.json`;
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const STATES_ROOT_FOLDER = "Государства Тейванкаля";
 const DEFAULT_STATE_ICON = "icons/svg/city.svg";
-const STATE_TEMPLATE_VERSION = 2;
+const STATE_TEMPLATE_VERSION = 3;
 const STATE_LANGUAGE_ID_BY_LABEL = new Map(
   TEYVANKAL_STATE_LANGUAGES.map((language) => [normalizeMatchText(language.label), language.id])
 );
