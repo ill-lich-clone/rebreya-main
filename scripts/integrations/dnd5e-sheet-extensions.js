@@ -20,6 +20,15 @@ const HEROIC_D20_ROLL_PATCH_FLAG = "__rebreyaHeroicD20RollPatched";
 const HEROIC_D20_KEYBINDINGS_PATCH_FLAG = "__rebreyaHeroicD20KeybindingsPatched";
 const HEROIC_ADVANTAGE_ACTION = "heroic-advantage";
 const HEROIC_DISADVANTAGE_ACTION = "heroic-disadvantage";
+const NATIVE_STATE_ITEM_TYPE = "state";
+const NATIVE_STATE_TYPE_LABEL_KEY = "TYPES.Item.state";
+const NATIVE_STATE_TYPE_PLURAL_LABEL_KEY = "TYPES.Item.statePl";
+const NATIVE_STATE_LABEL_KEY = "REBREYA_MAIN.NativeState.Label";
+const NATIVE_STATE_ADD_LABEL_KEY = "REBREYA_MAIN.NativeState.AddButton";
+const NATIVE_STATE_DEFAULT_NAME_KEY = "REBREYA_MAIN.NativeState.DefaultName";
+const NATIVE_STATE_EMPTY_HINT_KEY = "REBREYA_MAIN.NativeState.EmptyHint";
+const NATIVE_STATE_DEFAULT_ICON = "icons/svg/city.svg";
+const NATIVE_STATE_DEFAULT_IDENTIFIER = "native-state";
 const ITEM_RANK_MIN = 0;
 const ITEM_RANK_MAX = 10;
 const ITEM_SLOT_ELIGIBLE_TYPES = new Set(["weapon", "consumable", "equipment"]);
@@ -118,6 +127,8 @@ const LEGACY_REBREYA_TOOL_LABEL_ALIASES = [
 ];
 REBREYA_TOOL_ID_BY_TEXT.set(normalizeLookupText("Камнелома"), "mason");
 REBREYA_TOOL_ID_BY_TEXT.set(normalizeLookupText("Каменолома"), "mason");
+let NativeStateDataModel = null;
+const nativeStateWarningKeys = new Set();
 for (const [legacyLabel, toolId] of LEGACY_REBREYA_TOOL_LABEL_ALIASES) {
   REBREYA_TOOL_ID_BY_TEXT.set(normalizeLookupText(legacyLabel), toolId);
 }
@@ -682,6 +693,414 @@ function isSheetEditable(app, root = null) {
   }
 
   return editableByPermission;
+}
+
+function localizeWithFallback(key, fallback) {
+  const value = game.i18n?.localize?.(key);
+  return value && value !== key ? value : fallback;
+}
+
+function getNativeStateTypeLabel() {
+  return localizeWithFallback(NATIVE_STATE_TYPE_LABEL_KEY, "Государство");
+}
+
+function getNativeStateSubtitleLabel() {
+  return localizeWithFallback(NATIVE_STATE_LABEL_KEY, "Родное государство");
+}
+
+function getNativeStateDataModel() {
+  if (NativeStateDataModel) {
+    return NativeStateDataModel;
+  }
+
+  const ItemDataModel = globalThis.dnd5e?.dataModels?.ItemDataModel;
+  const ItemDescriptionTemplate = globalThis.dnd5e?.dataModels?.item?.ItemDescriptionTemplate;
+  if (ItemDataModel?.mixin && ItemDescriptionTemplate) {
+    NativeStateDataModel = class RebreyaStateData extends ItemDataModel.mixin(ItemDescriptionTemplate) {
+      static metadata = Object.freeze(foundry.utils.mergeObject(super.metadata, {
+        singleton: true
+      }, { inplace: false }));
+
+      prepareDerivedData() {
+        super.prepareDerivedData();
+        this.prepareDescriptionData?.();
+      }
+
+      async getFavoriteData() {
+        return {
+          img: this.parent.img,
+          title: this.parent.name,
+          subtitle: getNativeStateSubtitleLabel()
+        };
+      }
+
+      async getSheetData(context) {
+        context.subtitles = [{ label: getNativeStateTypeLabel() }];
+        context.singleDescription = true;
+        context.parts = [];
+      }
+    };
+
+    return NativeStateDataModel;
+  }
+
+  const BackgroundData = CONFIG.Item?.dataModels?.background;
+  if (BackgroundData) {
+    NativeStateDataModel = class RebreyaStateDataFallback extends BackgroundData {
+      static metadata = Object.freeze(foundry.utils.mergeObject(super.metadata, {
+        singleton: true
+      }, { inplace: false }));
+
+      async getFavoriteData() {
+        return {
+          img: this.parent.img,
+          title: this.parent.name,
+          subtitle: getNativeStateSubtitleLabel()
+        };
+      }
+
+      async getSheetData(context) {
+        context.subtitles = [{ label: getNativeStateTypeLabel() }];
+        context.singleDescription = true;
+        context.parts = [];
+      }
+    };
+  }
+
+  return NativeStateDataModel;
+}
+
+function registerNativeStateDocumentType() {
+  const itemModel = game.model?.Item;
+  if (itemModel && typeof itemModel === "object" && !itemModel[NATIVE_STATE_ITEM_TYPE]) {
+    try {
+      itemModel[NATIVE_STATE_ITEM_TYPE] = foundry.utils.deepClone(itemModel.background ?? {});
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to add '${NATIVE_STATE_ITEM_TYPE}' to game.model.Item.`, error);
+    }
+  }
+
+  const itemTypes = game.documentTypes?.Item;
+  if (Array.isArray(itemTypes) && !itemTypes.includes(NATIVE_STATE_ITEM_TYPE)) {
+    try {
+      itemTypes.push(NATIVE_STATE_ITEM_TYPE);
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to add '${NATIVE_STATE_ITEM_TYPE}' to game.documentTypes.Item.`, error);
+    }
+  }
+
+  const systemItemTypes = game.system?.documentTypes?.Item;
+  if (
+    systemItemTypes
+    && typeof systemItemTypes === "object"
+    && !(NATIVE_STATE_ITEM_TYPE in systemItemTypes)
+  ) {
+    try {
+      systemItemTypes[NATIVE_STATE_ITEM_TYPE] = {
+        htmlFields: ["description.value", "description.chat"]
+      };
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to add '${NATIVE_STATE_ITEM_TYPE}' to system document types.`, error);
+    }
+  }
+}
+
+function registerNativeStateItemType() {
+  registerNativeStateDocumentType();
+
+  CONFIG.Item.dataModels ??= {};
+  CONFIG.Item.typeLabels ??= {};
+  CONFIG.Item.typeIcons ??= {};
+
+  const dataModel = getNativeStateDataModel();
+  if (dataModel) {
+    CONFIG.Item.dataModels[NATIVE_STATE_ITEM_TYPE] ??= dataModel;
+  }
+
+  CONFIG.Item.typeLabels[NATIVE_STATE_ITEM_TYPE] = NATIVE_STATE_TYPE_LABEL_KEY;
+  CONFIG.Item.typeLabels[`${NATIVE_STATE_ITEM_TYPE}Pl`] = NATIVE_STATE_TYPE_PLURAL_LABEL_KEY;
+  CONFIG.Item.typeIcons[NATIVE_STATE_ITEM_TYPE] ??= "fa-solid fa-city";
+}
+
+function getActorItemsOfType(actor, type) {
+  return actor?.items?.filter?.((item) => item?.type === type) ?? [];
+}
+
+function getNativeStateItems(actor) {
+  const items = getActorItemsOfType(actor, NATIVE_STATE_ITEM_TYPE);
+  if (items.length > 1) {
+    const extraIds = items.slice(1).map((item) => item.id).filter(Boolean);
+    const warningKey = `${actor.id ?? actor.uuid}:${extraIds.join(",")}`;
+    if (!nativeStateWarningKeys.has(warningKey)) {
+      nativeStateWarningKeys.add(warningKey);
+      console.warn(
+        `${MODULE_ID} | Actor "${actor.name}" has multiple native state items. `
+        + `Showing the first one (${items[0].id}); extra ids: ${extraIds.join(", ")}.`
+      );
+    }
+  }
+
+  return items;
+}
+
+function getPrimaryNativeStateItem(actor) {
+  return getNativeStateItems(actor)[0] ?? null;
+}
+
+function stripHtmlText(value) {
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = String(value ?? "");
+  return (wrapper.textContent ?? "").replace(/\s+/gu, " ").trim();
+}
+
+function getNativeStateCardSubtitle(item) {
+  const description = stripHtmlText(foundry.utils.getProperty(item, "system.description.value"));
+  if (description) {
+    return description.length > 72 ? `${description.slice(0, 69).trim()}...` : description;
+  }
+
+  return getNativeStateSubtitleLabel();
+}
+
+function buildNativeStateFigure(img, label) {
+  const figure = document.createElement("figure");
+  const image = document.createElement("img");
+  image.classList.add("gold-icon");
+  image.alt = label;
+  image.src = img || NATIVE_STATE_DEFAULT_ICON;
+  figure.append(image);
+  return figure;
+}
+
+function buildNativeStateName(title, subtitle, rollable = true) {
+  const name = document.createElement("div");
+  name.classList.add("name-stacked");
+  if (rollable) {
+    name.classList.add("rollable");
+  }
+
+  const titleElement = document.createElement("span");
+  titleElement.classList.add("title");
+  titleElement.textContent = title;
+  name.append(titleElement);
+
+  if (subtitle) {
+    const subtitleElement = document.createElement("span");
+    subtitleElement.classList.add("subtitle");
+    subtitleElement.textContent = subtitle;
+    name.append(subtitleElement);
+  }
+
+  return name;
+}
+
+function buildNativeStateInfo() {
+  const info = document.createElement("div");
+  info.classList.add("info");
+  const primary = document.createElement("div");
+  primary.classList.add("primary");
+  info.append(primary);
+  return info;
+}
+
+function buildNativeStateItemCard(item) {
+  const label = getNativeStateSubtitleLabel();
+  const entry = document.createElement("li");
+  entry.classList.add("item-tooltip", "item", "rebreya-native-state");
+  entry.dataset.rebreyaNativeState = "true";
+  entry.dataset.rebreyaNativeStateAction = "open";
+  entry.dataset.itemId = item.id;
+  entry.dataset.stateItemId = item.id;
+  entry.dataset.referenceTooltip = item.uuid;
+  entry.role = "button";
+  entry.tabIndex = 0;
+  entry.setAttribute("aria-label", `${label}: ${item.name}`);
+
+  entry.append(
+    buildNativeStateFigure(item.img, item.name),
+    buildNativeStateName(item.name, getNativeStateCardSubtitle(item)),
+    buildNativeStateInfo()
+  );
+
+  return entry;
+}
+
+function buildNativeStateEmptyCard(canCreate) {
+  const title = localizeWithFallback(NATIVE_STATE_ADD_LABEL_KEY, "Добавить государство");
+  const subtitle = localizeWithFallback(NATIVE_STATE_EMPTY_HINT_KEY, "Родное государство не выбрано");
+  const entry = document.createElement("li");
+  entry.classList.add("rebreya-native-state", "empty");
+  if (!canCreate) {
+    entry.classList.add("disabled");
+  }
+
+  entry.dataset.rebreyaNativeState = "true";
+  if (canCreate) {
+    entry.dataset.rebreyaNativeStateAction = "create";
+    entry.role = "button";
+    entry.tabIndex = 0;
+  }
+
+  entry.setAttribute("aria-label", title);
+  entry.append(
+    buildNativeStateFigure(NATIVE_STATE_DEFAULT_ICON, title),
+    buildNativeStateName(title, subtitle, canCreate),
+    buildNativeStateInfo()
+  );
+
+  return entry;
+}
+
+function getNativeStateFavoritesList(root) {
+  return root.querySelector(".sidebar .favorites > ul") ?? root.querySelector(".favorites > ul");
+}
+
+function findFavoriteEntryForItem(list, item) {
+  if (!item) {
+    return null;
+  }
+
+  return Array.from(list.querySelectorAll("[data-item-id]"))
+    .find((node) => node instanceof HTMLElement && node.dataset.itemId === item.id)
+    ?.closest("li") ?? null;
+}
+
+function findNativeStateInsertionAnchor(list, actor) {
+  const anchorTypes = ["race", "background"];
+  let anchor = null;
+  for (const type of anchorTypes) {
+    for (const item of getActorItemsOfType(actor, type)) {
+      anchor = findFavoriteEntryForItem(list, item) ?? anchor;
+    }
+  }
+
+  return anchor;
+}
+
+async function openNativeStateItemSheet(item) {
+  if (!item?.sheet) {
+    return;
+  }
+
+  try {
+    await item.sheet.render({ force: true });
+  }
+  catch (_error) {
+    await item.sheet.render(true);
+  }
+  bringAppToFront(item.sheet);
+}
+
+async function createNativeStateItem(actor) {
+  const existing = getPrimaryNativeStateItem(actor);
+  if (existing) {
+    return existing;
+  }
+
+  const defaultName = localizeWithFallback(NATIVE_STATE_DEFAULT_NAME_KEY, "Новое государство");
+  const [created] = await actor.createEmbeddedDocuments("Item", [{
+    name: defaultName,
+    type: NATIVE_STATE_ITEM_TYPE,
+    img: NATIVE_STATE_DEFAULT_ICON,
+    system: {
+      identifier: NATIVE_STATE_DEFAULT_IDENTIFIER,
+      description: {
+        value: "",
+        chat: ""
+      },
+      source: {
+        custom: "Rebreya"
+      }
+    },
+    flags: {
+      [MODULE_ID]: {
+        nativeState: true
+      }
+    }
+  }], { renderSheet: false });
+
+  return created;
+}
+
+async function handleNativeStateAction(event, app) {
+  const target = event.target?.closest?.("[data-rebreya-native-state-action]");
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const actor = getActorFromSheetApp(app);
+  if (!actor || actor.type !== "character") {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const action = target.dataset.rebreyaNativeStateAction;
+  if (action === "open") {
+    const item = actor.items.get(target.dataset.stateItemId) ?? getPrimaryNativeStateItem(actor);
+    await openNativeStateItemSheet(item);
+    return;
+  }
+
+  if (action === "create") {
+    if (!actor.isOwner) {
+      return;
+    }
+
+    try {
+      const item = await createNativeStateItem(actor);
+      await openNativeStateItemSheet(item);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to create native state item.`, error);
+      ui.notifications?.error?.("Rebreya: не удалось создать государство.");
+    }
+  }
+}
+
+function bindNativeStateCard(root, app) {
+  const actor = getActorFromSheetApp(app);
+  if (!actor || actor.type !== "character") {
+    return;
+  }
+
+  const list = getNativeStateFavoritesList(root);
+  if (!list) {
+    return;
+  }
+
+  list.querySelectorAll("[data-rebreya-native-state='true']").forEach((node) => node.remove());
+
+  const item = getPrimaryNativeStateItem(actor);
+  const entry = item ? buildNativeStateItemCard(item) : buildNativeStateEmptyCard(Boolean(actor.isOwner));
+  const anchor = findNativeStateInsertionAnchor(list, actor);
+  if (anchor) {
+    anchor.after(entry);
+  }
+  else {
+    list.append(entry);
+  }
+
+  if (root.dataset.rebreyaNativeStateBound !== "true") {
+    root.dataset.rebreyaNativeStateBound = "true";
+    root.addEventListener("click", (event) => {
+      handleNativeStateAction(event, app);
+    });
+    root.addEventListener("keydown", (event) => {
+      if (!["Enter", " "].includes(event.key)) {
+        return;
+      }
+
+      const target = event.target?.closest?.("[data-rebreya-native-state-action]");
+      if (target instanceof HTMLElement) {
+        handleNativeStateAction(event, app);
+      }
+    });
+  }
 }
 
 function buildHeroDollTabState(app) {
@@ -2102,6 +2521,8 @@ export function extendDnd5eItemTypes() {
     return;
   }
 
+  registerNativeStateItemType();
+
   CONFIG.DND5E.featureTypes ??= {};
   const featTypeConfig = CONFIG.DND5E.featureTypes.feat;
   const featTypeLabel = cleanFeatSectionLabel(featTypeConfig?.label) || "DND5E.Feature.Feat.Label";
@@ -2207,6 +2628,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     }
 
     bindHeroDollPanel(root, app, moduleApi);
+    try {
+      bindNativeStateCard(root, app);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to bind native state card.`, error);
+    }
   };
 
   for (const hookName of [
@@ -2249,6 +2676,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     const actor = getActorFromSheetApp(app);
     if (actor?.type === "character") {
       bindHeroDollPanel(root, app, moduleApi);
+      try {
+        bindNativeStateCard(root, app);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind native state card on ApplicationV2 render.`, error);
+      }
     }
 
     const item = getItemFromSheetApp(app);
