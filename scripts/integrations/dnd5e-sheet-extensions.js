@@ -865,22 +865,9 @@ function getNativeStateCardSubtitle(item) {
   return getNativeStateSubtitleLabel();
 }
 
-function buildNativeStateFigure(img, label) {
-  const figure = document.createElement("figure");
-  const image = document.createElement("img");
-  image.classList.add("gold-icon");
-  image.alt = label;
-  image.src = img || NATIVE_STATE_DEFAULT_ICON;
-  figure.append(image);
-  return figure;
-}
-
-function buildNativeStateName(title, subtitle, rollable = true) {
+function buildNativeStateName(title, subtitle = "") {
   const name = document.createElement("div");
-  name.classList.add("name-stacked");
-  if (rollable) {
-    name.classList.add("rollable");
-  }
+  name.classList.add("name", "name-stacked");
 
   const titleElement = document.createElement("span");
   titleElement.classList.add("title");
@@ -897,42 +884,37 @@ function buildNativeStateName(title, subtitle, rollable = true) {
   return name;
 }
 
-function buildNativeStateInfo() {
-  const info = document.createElement("div");
-  info.classList.add("info");
-  const primary = document.createElement("div");
-  primary.classList.add("primary");
-  info.append(primary);
-  return info;
-}
-
 function buildNativeStateItemCard(item) {
   const label = getNativeStateSubtitleLabel();
-  const entry = document.createElement("li");
-  entry.classList.add("item-tooltip", "item", "rebreya-native-state");
+  const entry = document.createElement("div");
+  entry.classList.add("draggable", "pill-lg", "texture", "background", "state", "item-tooltip", "rebreya-native-state");
   entry.dataset.rebreyaNativeState = "true";
   entry.dataset.rebreyaNativeStateAction = "open";
   entry.dataset.itemId = item.id;
   entry.dataset.stateItemId = item.id;
+  entry.dataset.uuid = item.uuid;
   entry.dataset.referenceTooltip = item.uuid;
   entry.role = "button";
   entry.tabIndex = 0;
   entry.setAttribute("aria-label", `${label}: ${item.name}`);
 
-  entry.append(
-    buildNativeStateFigure(item.img, item.name),
-    buildNativeStateName(item.name, getNativeStateCardSubtitle(item)),
-    buildNativeStateInfo()
-  );
+  if (item.img) {
+    const image = document.createElement("img");
+    image.classList.add("gold-icon");
+    image.src = item.img;
+    image.alt = item.name;
+    entry.append(image);
+  }
+
+  entry.append(buildNativeStateName(item.name, getNativeStateCardSubtitle(item)));
 
   return entry;
 }
 
 function buildNativeStateEmptyCard(canCreate) {
   const title = localizeWithFallback(NATIVE_STATE_ADD_LABEL_KEY, "Добавить государство");
-  const subtitle = localizeWithFallback(NATIVE_STATE_EMPTY_HINT_KEY, "Родное государство не выбрано");
-  const entry = document.createElement("li");
-  entry.classList.add("rebreya-native-state", "empty");
+  const entry = document.createElement("div");
+  entry.classList.add("pill-lg", "empty", "roboto-upper", "rebreya-native-state");
   if (!canCreate) {
     entry.classList.add("disabled");
   }
@@ -945,39 +927,46 @@ function buildNativeStateEmptyCard(canCreate) {
   }
 
   entry.setAttribute("aria-label", title);
-  entry.append(
-    buildNativeStateFigure(NATIVE_STATE_DEFAULT_ICON, title),
-    buildNativeStateName(title, subtitle, canCreate),
-    buildNativeStateInfo()
-  );
+  entry.textContent = title;
 
   return entry;
 }
 
-function getNativeStateFavoritesList(root) {
-  return root.querySelector(".sidebar .favorites > ul") ?? root.querySelector(".favorites > ul");
+function getNativeStateDetailsPillContainer(root) {
+  const containers = Array.from(root.querySelectorAll(".pills-lg"));
+  let fallback = null;
+
+  for (const container of containers) {
+    if (!(container instanceof HTMLElement)) {
+      continue;
+    }
+
+    const hasCreatureIdentityPill = container.querySelector(".pill-lg.type");
+    if (!hasCreatureIdentityPill) {
+      continue;
+    }
+
+    const hasCharacterIdentityPill = container.querySelector(
+      ".pill-lg.race, .pill-lg.background, [data-item-type='race'], [data-item-type='background']"
+    );
+    if (hasCharacterIdentityPill) {
+      return container;
+    }
+
+    fallback ??= container;
+  }
+
+  return fallback;
 }
 
-function findFavoriteEntryForItem(list, item) {
-  if (!item) {
+function findNativeStateInsertionAnchor(container) {
+  if (!(container instanceof HTMLElement)) {
     return null;
   }
 
-  return Array.from(list.querySelectorAll("[data-item-id]"))
-    .find((node) => node instanceof HTMLElement && node.dataset.itemId === item.id)
-    ?.closest("li") ?? null;
-}
-
-function findNativeStateInsertionAnchor(list, actor) {
-  const anchorTypes = ["race", "background"];
-  let anchor = null;
-  for (const type of anchorTypes) {
-    for (const item of getActorItemsOfType(actor, type)) {
-      anchor = findFavoriteEntryForItem(list, item) ?? anchor;
-    }
-  }
-
-  return anchor;
+  return container.querySelector(".pill-lg.background, [data-item-type='background']")
+    ?? container.querySelector(".pill-lg.race, [data-item-type='race']")
+    ?? container.querySelector(".pill-lg.type");
 }
 
 async function openNativeStateItemSheet(item) {
@@ -1068,21 +1057,27 @@ function bindNativeStateCard(root, app) {
     return;
   }
 
-  const list = getNativeStateFavoritesList(root);
-  if (!list) {
+  root.querySelectorAll("[data-rebreya-native-state='true']").forEach((node) => node.remove());
+
+  const container = getNativeStateDetailsPillContainer(root);
+  if (!container) {
     return;
   }
 
-  list.querySelectorAll("[data-rebreya-native-state='true']").forEach((node) => node.remove());
-
   const item = getPrimaryNativeStateItem(actor);
-  const entry = item ? buildNativeStateItemCard(item) : buildNativeStateEmptyCard(Boolean(actor.isOwner));
-  const anchor = findNativeStateInsertionAnchor(list, actor);
+  const entry = item
+    ? buildNativeStateItemCard(item)
+    : (actor.isOwner ? buildNativeStateEmptyCard(true) : null);
+  if (!entry) {
+    return;
+  }
+
+  const anchor = findNativeStateInsertionAnchor(container);
   if (anchor) {
     anchor.after(entry);
   }
   else {
-    list.append(entry);
+    container.append(entry);
   }
 
   if (root.dataset.rebreyaNativeStateBound !== "true") {

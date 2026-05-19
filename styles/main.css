@@ -7395,6 +7395,14 @@ summary:focus-visible {
   filter: grayscale(0.45);
 }
 
+.dnd5e2 .pill-lg.empty.rebreya-native-state:not(.disabled) {
+  cursor: var(--cursor-pointer);
+}
+
+.dnd5e2 .pill-lg.empty.rebreya-native-state:not(.disabled):hover {
+  opacity: 0.5;
+}
+
 @media (max-width: 1500px) {
   .rebreya-trader-app-v2 .rm-trader-v2-sale-overlay {
     padding: 44px 46px;
