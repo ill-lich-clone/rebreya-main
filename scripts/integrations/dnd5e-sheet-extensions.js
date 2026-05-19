@@ -37,7 +37,6 @@ const NATIVE_STATE_LABEL_KEY = "REBREYA_MAIN.NativeState.Label";
 const NATIVE_STATE_ADD_LABEL_KEY = "REBREYA_MAIN.NativeState.AddButton";
 const NATIVE_STATE_SELECT_TITLE_KEY = "REBREYA_MAIN.NativeState.SelectTitle";
 const NATIVE_STATE_SELECT_BUTTON_KEY = "REBREYA_MAIN.NativeState.SelectButton";
-const NATIVE_STATE_SELECT_HINT_KEY = "REBREYA_MAIN.NativeState.SelectHint";
 const STATES_PACK_ID = `world.${STATES_COMPENDIUM_NAME}`;
 const ITEM_RANK_MIN = 0;
 const ITEM_RANK_MAX = 10;
@@ -1149,10 +1148,6 @@ async function getNativeStatePackIndex(pack) {
 }
 
 function buildNativeStateSelectionContent(records) {
-  const hint = localizeWithFallback(
-    NATIVE_STATE_SELECT_HINT_KEY,
-    "Выберите государство Тейванкаля. После добавления предмет откроется, а культурные черты можно выбрать через развитие предмета."
-  );
   const options = records.map((record) => {
     const id = cleanString(record?._id ?? record?.id);
     const culturalFeatNames = cleanString(foundry.utils.getProperty(record, `flags.${MODULE_ID}.culturalFeatNames`));
@@ -1163,7 +1158,6 @@ function buildNativeStateSelectionContent(records) {
 
   return `
     <form class="rebreya-native-state-picker">
-      <p class="notes">${escapeHtml(hint)}</p>
       <div class="form-group">
         <label>${escapeHtml(getNativeStateSubtitleLabel())}</label>
         <select name="stateId">${options.join("")}</select>
@@ -1213,10 +1207,6 @@ async function selectNativeStateDocumentWithBrowser() {
   const result = await CompendiumBrowser.selectOne({
     mode: CompendiumBrowser.MODES?.ADVANCED,
     tab: "items",
-    hint: localizeWithFallback(
-      NATIVE_STATE_SELECT_HINT_KEY,
-      "Выберите родное государство Тейванкаля. После выбора откроется развитие для родного языка и культурных черт."
-    ),
     filters: {
       locked: {
         documentClass: "Item",

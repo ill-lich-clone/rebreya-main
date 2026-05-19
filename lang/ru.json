@@ -59,7 +59,6 @@
   "REBREYA_MAIN.NativeState.EmptyHint": "Родное государство не выбрано",
   "REBREYA_MAIN.NativeState.SelectTitle": "Выбор родного государства",
   "REBREYA_MAIN.NativeState.SelectButton": "Выбрать",
-  "REBREYA_MAIN.NativeState.SelectHint": "Выберите государство Тейванкаля. После добавления предмет откроется, а культурные черты можно выбрать через развитие предмета.",
   "REBREYA_MAIN.Combat.HeroicAdvantageButton": "ГЕРОИЧ. ПРЕИМУЩЕСТВО",
   "REBREYA_MAIN.Combat.HeroicDisadvantageButton": "ГЕРОИЧ. ПОМЕХА"
 }
