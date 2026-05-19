@@ -971,21 +971,6 @@ async function repairNativeStateBackgroundReference(actor) {
   }
 }
 
-function stripHtmlText(value) {
-  const wrapper = document.createElement("div");
-  wrapper.innerHTML = String(value ?? "");
-  return (wrapper.textContent ?? "").replace(/\s+/gu, " ").trim();
-}
-
-function getNativeStateCardSubtitle(item) {
-  const description = stripHtmlText(foundry.utils.getProperty(item, "system.description.value"));
-  if (description) {
-    return description.length > 72 ? `${description.slice(0, 69).trim()}...` : description;
-  }
-
-  return getNativeStateSubtitleLabel();
-}
-
 function buildNativeStateName(title, subtitle = "") {
   const name = document.createElement("div");
   name.classList.add("name", "name-stacked");
@@ -1027,7 +1012,7 @@ function buildNativeStateItemCard(item) {
     entry.append(image);
   }
 
-  entry.append(buildNativeStateName(item.name, getNativeStateCardSubtitle(item)));
+  entry.append(buildNativeStateName(item.name));
 
   return entry;
 }
