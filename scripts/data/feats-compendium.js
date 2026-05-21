@@ -2,6 +2,7 @@ import { FEATS_COMPENDIUM_LABEL, FEATS_COMPENDIUM_NAME, MODULE_ID } from "../con
 import { bringAppToFront } from "../ui.js";
 import {
   buildNamedIconLookup,
+  deduplicateCompendiumFolders,
   ensureCompendiumFolders,
   ensurePackSidebarFolder,
   normalizeFolderPath,
@@ -465,6 +466,7 @@ export class FeatsCompendiumService {
     const rawItems = Array.isArray(items) ? items : await loadRawFeatItems();
     const feats = normalizeFeatItems(rawItems);
     const pack = await ensurePack();
+    await deduplicateCompendiumFolders(pack);
     const documents = await getPackDocuments(pack);
     const iconLookup = await buildNamedIconLookup(FEAT_ICON_SEARCH_PATHS, { forceRefresh: true });
     if (!shouldRebuildPack(feats, documents)) {

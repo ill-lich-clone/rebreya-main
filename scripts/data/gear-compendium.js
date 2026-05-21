@@ -1,6 +1,11 @@
 ﻿import { GEAR_COMPENDIUM_LABEL, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
-import { ensureCompendiumFolders, ensurePackSidebarFolder, normalizeFolderPath } from "./compendium-utils.js";
+import {
+  deduplicateCompendiumFolders,
+  ensureCompendiumFolders,
+  ensurePackSidebarFolder,
+  normalizeFolderPath
+} from "./compendium-utils.js";
 import {
   classifyGearEntry,
   inferHeroDollSlotGroupFromSlots,
@@ -619,6 +624,7 @@ export class GearCompendiumService {
 
     const safeGear = Array.isArray(gear) ? gear : [];
     const pack = await ensureGearPack();
+    await deduplicateCompendiumFolders(pack, ["Обвес", "Обвесы", "Огнестрельное оружие"]);
     const documents = await getPackDocuments(pack);
     if (!shouldRebuildPack(safeGear, documents)) {
       return pack;

@@ -283,7 +283,7 @@ export async function ensureCompendiumFolders(pack, folderPaths = []) {
   const existingFolders = getPackFolders(pack);
   const byKey = new Map(
     existingFolders.map((folder) => [
-      `${folder.folder ?? "root"}::${String(folder.name ?? "").trim()}`,
+      `${resolveParentFolderId(folder) ?? "root"}::${String(folder.name ?? "").trim()}`,
       folder
     ])
   );
@@ -318,4 +318,118 @@ export async function ensureCompendiumFolders(pack, folderPaths = []) {
   }
 
   return resolved;
+}
+
+function sortFolders(folders = []) {
+  return Array.from(folders).sort((left, right) => (
+    (Number(left?.sort ?? 0) - Number(right?.sort ?? 0))
+    || String(left?.id ?? "").localeCompare(String(right?.id ?? ""))
+  ));
+}
+
+async function reassignFolderChildren(pack, fromFolderId, toFolderId) {
+  const folderUpdates = getPackFolders(pack)
+    .filter((folder) => resolveParentFolderId(folder) === fromFolderId)
+    .map((folder) => ({
+      _id: folder.id,
+      folder: toFolderId
+    }));
+
+  if (!folderUpdates.length) {
+    return;
+  }
+
+  await Folder.updateDocuments(folderUpdates, {
+    pack: pack.collection,
+    render: false
+  });
+}
+
+async function reassignFolderDocuments(pack, fromFolderId, toFolderId) {
+  const documents = await pack.getDocuments();
+  const documentUpdates = (Array.isArray(documents) ? documents : [])
+    .filter((document) => ((document?.folder?.id ?? document?.folder) === fromFolderId))
+    .map((document) => ({
+      _id: document.id,
+      folder: toFolderId
+    }));
+
+  if (!documentUpdates.length) {
+    return;
+  }
+
+  await Item.implementation.updateDocuments(documentUpdates, { pack: pack.collection });
+}
+
+function matchFolderName(folder, allowedNames) {
+  if (!allowedNames?.size) {
+    return true;
+  }
+
+  const folderName = String(folder?.name ?? "").trim();
+  return allowedNames.has(folderName);
+}
+
+export async function deduplicateCompendiumFolders(pack, names = []) {
+  if (!pack?.collection) {
+    return {
+      merged: 0,
+      removed: 0
+    };
+  }
+
+  const allowedNames = new Set((Array.isArray(names) ? names : [])
+    .map((entry) => String(entry ?? "").trim())
+    .filter(Boolean));
+
+  const folders = sortFolders(getPackFolders(pack));
+  const duplicatesByKey = new Map();
+  for (const folder of folders) {
+    if (!matchFolderName(folder, allowedNames)) {
+      continue;
+    }
+
+    const key = `${resolveParentFolderId(folder) ?? "root"}::${String(folder.name ?? "").trim()}`;
+    if (!duplicatesByKey.has(key)) {
+      duplicatesByKey.set(key, []);
+    }
+    duplicatesByKey.get(key).push(folder);
+  }
+
+  let merged = 0;
+  let removed = 0;
+
+  for (const group of duplicatesByKey.values()) {
+    if (group.length <= 1) {
+      continue;
+    }
+
+    const [targetFolder, ...duplicates] = sortFolders(group);
+    for (const duplicateFolder of duplicates) {
+      if (!duplicateFolder?.id || duplicateFolder.id === targetFolder.id) {
+        continue;
+      }
+
+      await reassignFolderChildren(pack, duplicateFolder.id, targetFolder.id);
+      await reassignFolderDocuments(pack, duplicateFolder.id, targetFolder.id);
+      merged += 1;
+
+      try {
+        await duplicateFolder.delete({
+          deleteSubfolders: false,
+          deleteContents: false,
+          render: false
+        });
+        removed += 1;
+      }
+      catch (_error) {
+        // Ничего не делаем: повторная синхронизация попробует удалить остатки ещё раз.
+      }
+    }
+  }
+
+  return {
+    merged,
+    removed
+  };
 }
