@@ -7,6 +7,7 @@ import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
 import { StatesCompendiumService } from "./data/states-compendium.js";
 import { RacesCompendiumService } from "./data/races-compendium.js";
 import { ClassesCompendiumService } from "./data/classes-compendium.js";
+import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { EconomyRepository } from "./data/repository.js";
 import { TraderService } from "./data/trader-service.js";
 import { InventoryService } from "./data/inventory-service.js";
@@ -141,6 +142,7 @@ class RebreyaMainModule {
     this.statesCompendium = new StatesCompendiumService();
     this.racesCompendium = new RacesCompendiumService();
     this.classesCompendium = new ClassesCompendiumService();
+    this.actionsCompendium = new ActionsCompendiumService();
     this.traderService = new TraderService(this);
     this.inventoryService = new InventoryService(this);
     this.heroDollService = new HeroDollService(this);
@@ -585,6 +587,14 @@ class RebreyaMainModule {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync classes compendium.`, error);
       ui.notifications?.warn("Не удалось синхронизировать компендиумы классов и архетипов.");
+    }
+
+    try {
+      await this.actionsCompendium.sync();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to sync actions compendium.`, error);
+      ui.notifications?.warn("Не удалось синхронизировать компендиум действий.");
     }
   }
 
