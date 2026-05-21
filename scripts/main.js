@@ -1531,6 +1531,12 @@ class RebreyaMainModule {
     return this.magicItemsCompendium.openMagicItem(magicItemId, fallbackName);
   }
 
+  async syncFeatsFromWorldCompendium(options = {}) {
+    const result = await this.featsCompendium.syncFromWorldCompendium(options);
+    await this.refreshOpenApps();
+    return result;
+  }
+
   async openFeatById(featId, fallbackName = "") {
     return this.featsCompendium.openFeat(featId, fallbackName);
   }

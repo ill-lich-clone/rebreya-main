@@ -18,6 +18,7 @@ const FEAT_TEMPLATE_VERSION = 1;
 const FEAT_ROOT_FOLDER = "Черты V0.8";
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const FEAT_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Feats`, MODULE_ICONS_BASE_PATH];
+const FEATS_WORLD_OVERRIDE_PATH = `modules/${MODULE_ID}/data/feats-world-overrides.json`;
 const FEATS_BUNDLE_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json`;
 const FEATS_ITEMS_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-items.json`;
 const DEFAULT_FEAT_SUBTYPE = "general";
@@ -241,6 +242,15 @@ async function fetchJson(path, { optional = false } = {}) {
 }
 
 async function loadRawFeatItems() {
+  const worldOverride = await fetchJson(FEATS_WORLD_OVERRIDE_PATH, { optional: true });
+  if (Array.isArray(worldOverride?.items)) {
+    return worldOverride.items;
+  }
+
+  if (Array.isArray(worldOverride)) {
+    return worldOverride;
+  }
+
   const bundle = await fetchJson(FEATS_BUNDLE_PATH, { optional: true });
   if (Array.isArray(bundle?.items)) {
     return bundle.items;
@@ -254,6 +264,59 @@ async function loadRawFeatItems() {
   throw new Error(
     `Failed to resolve feat import files. Expected '${FEATS_BUNDLE_PATH}' or '${FEATS_ITEMS_PATH}'.`
   );
+}
+
+function normalizeUploadPath(path) {
+  return String(path ?? "")
+    .replace(/\\/gu, "/")
+    .replace(/\/{2,}/gu, "/")
+    .replace(/^\/+/gu, "")
+    .replace(/\/+$/gu, "");
+}
+
+function serializeFeatDocument(document) {
+  const source = document?.toObject?.() ?? {};
+  const flags = isPlainObject(source.flags) ? foundry.utils.deepClone(source.flags) : {};
+  const moduleFlags = isPlainObject(flags?.[MODULE_ID]) ? foundry.utils.deepClone(flags[MODULE_ID]) : {};
+  delete moduleFlags.signature;
+  delete moduleFlags.managed;
+  flags[MODULE_ID] = moduleFlags;
+
+  return {
+    name: cleanString(source.name, cleanString(document?.name, "Черта")),
+    type: "feat",
+    img: cleanString(source.img, DEFAULT_FEAT_ICON),
+    system: isPlainObject(source.system) ? foundry.utils.deepClone(source.system) : {},
+    effects: Array.isArray(source.effects) ? foundry.utils.deepClone(source.effects) : [],
+    flags
+  };
+}
+
+async function uploadJsonFile(path, payload) {
+  const normalizedPath = normalizeUploadPath(path);
+  const pathParts = normalizedPath.split("/").filter(Boolean);
+  const filename = pathParts.pop();
+  const targetDirectory = pathParts.join("/");
+
+  if (!filename || !targetDirectory) {
+    throw new Error(`Invalid upload path: ${path}`);
+  }
+
+  const json = `${JSON.stringify(payload, null, 2)}\n`;
+  const file = new File([json], filename, { type: "application/json" });
+
+  let lastError = null;
+  for (const source of ["data", "public"]) {
+    try {
+      const result = await FilePicker.upload(source, targetDirectory, file, {}, { notify: false });
+      return cleanString(result?.path, `${targetDirectory}/${filename}`);
+    }
+    catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError ?? new Error(`Failed to upload JSON file '${normalizedPath}'.`);
 }
 
 function createFeatItemData(feat, folderIdByPath, iconLookup = null) {
@@ -481,6 +544,49 @@ export class FeatsCompendiumService {
     await syncManagedDocumentIcons(activePack, activeDocuments, iconLookup);
 
     return activePack;
+  }
+
+  async syncFromWorldCompendium({ notify = true, runSync = true } = {}) {
+    if (!game.user?.isGM || !isDnd5eWorld()) {
+      return null;
+    }
+
+    const pack = await ensurePack();
+    const documents = await getPackDocuments(pack);
+    const featDocuments = documents
+      .filter((document) => String(document?.type ?? "") === "feat")
+      .sort((left, right) => (
+        (Number(left?.sort ?? 0) - Number(right?.sort ?? 0))
+        || String(left?.name ?? "").localeCompare(String(right?.name ?? ""), "ru")
+      ));
+
+    if (!featDocuments.length) {
+      throw new Error("В компендиуме черт нет записей для экспорта.");
+    }
+
+    const items = featDocuments.map((document) => serializeFeatDocument(document));
+    const payload = {
+      schema: "rebreya-feats-world-override-v1",
+      sourcePack: PACK_ID,
+      generatedAt: new Date().toISOString(),
+      itemCount: items.length,
+      items
+    };
+
+    const savedPath = await uploadJsonFile(FEATS_WORLD_OVERRIDE_PATH, payload);
+
+    if (runSync) {
+      await this.sync();
+    }
+
+    if (notify) {
+      ui.notifications?.info(`Черты сохранены в '${savedPath}' (${items.length} шт.) и назначены источником синхронизации.`);
+    }
+
+    return {
+      path: savedPath,
+      itemCount: items.length
+    };
   }
 
   async getFeatDocument(featId, fallbackName = "") {
