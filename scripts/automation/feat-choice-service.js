@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 
-export const CHOICE_FLAG_SCOPE = "vnde";
+export const CHOICE_FLAG_SCOPE = MODULE_ID;
 export const CHOICE_CONFIG_FLAG = "choiceConfig";
 
 const HOOKS_REGISTERED_KEY = `${MODULE_ID}.featChoiceAutomationHooksRegistered`;
@@ -314,15 +314,13 @@ export function buildChoiceEffectData(item, rawConfig) {
     sort: 0,
     description: `<p>${escapeHtml(description)}</p>`,
     flags: {
-      [CHOICE_FLAG_SCOPE]: {
+      [MODULE_ID]: {
         choiceAutomation: {
           managed: true,
           selectedValue: selectedValues[0] ?? "",
           selectedValues,
-          sourceFlag: `flags.${CHOICE_FLAG_SCOPE}.${CHOICE_CONFIG_FLAG}`
-        }
-      },
-      [MODULE_ID]: {
+          sourceFlag: `flags.${MODULE_ID}.${CHOICE_CONFIG_FLAG}`
+        },
         managed: true,
         automation: "feat-choice"
       }

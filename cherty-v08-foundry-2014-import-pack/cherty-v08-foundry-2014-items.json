@@ -5960,14 +5960,12 @@
         "automation": {
           "version": "0.8-dnd5e-5.2.5",
           "status": "full",
-          "notes": "Choice automation stores the selected armor proficiency in flags.vnde.choiceConfig and creates one transferred Active Effect on the Item.",
+          "notes": "Choice automation stores the selected armor proficiency in flags.rebreya-main.choiceConfig and creates one transferred Active Effect on the Item.",
           "mechanics": [
             "choice-runtime",
             "effects"
           ]
-        }
-      },
-      "vnde": {
+        },
         "choiceConfig": {
           "title": "Знаток доспехов: выберите владение",
           "type": "single",

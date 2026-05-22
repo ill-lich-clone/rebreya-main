@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildChoiceEffectData,
+  CHOICE_FLAG_SCOPE,
   getSelectedChoiceValues,
   normalizeChoiceConfig
 } from "../scripts/automation/feat-choice-service.js";
@@ -51,8 +52,9 @@ test("builds a transferred item Active Effect from selected choice changes", () 
   assert.deepEqual(effect.changes, [
     { key: "system.traits.armorProf.value", mode: 2, value: "hvy", priority: null }
   ]);
-  assert.equal(effect.flags.vnde.choiceAutomation.managed, true);
-  assert.deepEqual(effect.flags.vnde.choiceAutomation.selectedValues, ["hvy"]);
+  assert.equal(CHOICE_FLAG_SCOPE, "rebreya-main");
+  assert.equal(effect.flags["rebreya-main"].choiceAutomation.managed, true);
+  assert.deepEqual(effect.flags["rebreya-main"].choiceAutomation.selectedValues, ["hvy"]);
 });
 
 test("expands template effect changes for multiple selected values", () => {
