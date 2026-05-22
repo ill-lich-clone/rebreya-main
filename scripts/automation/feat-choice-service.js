@@ -86,7 +86,9 @@ function normalizeOption(option) {
   return {
     ...clone(option),
     value,
-    label: cleanString(option.label, cleanString(option.name, value))
+    label: cleanString(option.label, cleanString(option.name, value)),
+    summary: cleanString(option.summary, cleanString(option.subtitle)),
+    description: cleanString(option.description, cleanString(option.text, cleanString(option.hint)))
   };
 }
 
@@ -236,6 +238,184 @@ function hasValidSelectionCount(selectedValues, config) {
 
 function isChoiceEffectRequired(config) {
   return config.effectRequired !== false && config.requireEffect !== false;
+}
+
+function renderParagraphs(value, fallback = "") {
+  const text = cleanString(value, fallback);
+  if (!text) {
+    return "";
+  }
+
+  return text
+    .split(/\n{2,}/u)
+    .map((paragraph) => cleanString(paragraph))
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/gu, "<br>")}</p>`)
+    .join("");
+}
+
+function renderChoiceOptionDetails(option) {
+  const summary = cleanString(option.summary);
+  const description = renderParagraphs(option.description, "Описание будет добавлено позже.");
+  const mechanical = Array.isArray(option.effectChanges) && option.effectChanges.length
+    ? `<div class="rm-feat-choice-preview__tag">Автоматический эффект</div>`
+    : "";
+
+  return `
+    <article class="rm-feat-choice-preview__content">
+      <header>
+        <span class="rm-feat-choice-preview__eyebrow">Преимущество</span>
+        <h3>${escapeHtml(option.label)}</h3>
+      </header>
+      ${summary ? `<p class="rm-feat-choice-preview__summary">${escapeHtml(summary)}</p>` : ""}
+      <div class="rm-feat-choice-preview__description">${description}</div>
+      ${mechanical}
+    </article>
+  `;
+}
+
+function renderChoiceCard(option, selected) {
+  const checked = selected.has(option.value) ? "checked" : "";
+  const selectedClass = selected.has(option.value) ? " is-selected" : "";
+  const summary = cleanString(option.summary, "Нажмите, чтобы посмотреть описание.");
+
+  return `
+    <label class="rm-feat-choice-card${selectedClass}" data-choice-card tabindex="0">
+      <input class="rm-feat-choice-card__input" type="checkbox" data-choice-value value="${escapeHtml(option.value)}" ${checked}>
+      <span class="rm-feat-choice-card__body">
+        <span class="rm-feat-choice-card__marker" aria-hidden="true"></span>
+        <span class="rm-feat-choice-card__text">
+          <strong>${escapeHtml(option.label)}</strong>
+          <span>${escapeHtml(summary)}</span>
+        </span>
+      </span>
+      <div data-choice-description hidden>${renderChoiceOptionDetails(option)}</div>
+    </label>
+  `;
+}
+
+function renderChoiceCounter(config, selectedCount) {
+  const target = config.minCount === config.maxCount
+    ? String(config.maxCount)
+    : `${config.minCount}-${config.maxCount}`;
+  return `${selectedCount} / ${target}`;
+}
+
+function selectedSetFromValues(values) {
+  return new Set((Array.isArray(values) ? values : [])
+    .map(cleanString)
+    .filter(Boolean));
+}
+
+function buildSingleChoiceContent(config, selected) {
+  const options = config.options.map((option) => `
+    <option value="${escapeHtml(option.value)}" ${selected.has(option.value) ? "selected" : ""}>${escapeHtml(option.label)}</option>
+  `).join("");
+
+  return `
+    <form class="rm-feat-choice-form">
+      <p>${escapeHtml(config.prompt ?? "Выберите вариант для этой черты.")}</p>
+      <div class="form-group">
+        <label>${escapeHtml(config.title)}</label>
+        <select data-choice-value>${options}</select>
+      </div>
+    </form>
+  `;
+}
+
+function buildMultipleChoiceContent(config, selected) {
+  const cards = config.options.map((option) => renderChoiceCard(option, selected)).join("");
+  const previewOption = config.options.find((option) => selected.has(option.value)) ?? config.options[0];
+
+  return `
+    <form class="rm-feat-choice-form rm-feat-choice-form--multiple">
+      <header class="rm-feat-choice-header">
+        <p>${escapeHtml(config.prompt ?? choiceCountRequirement(config))}</p>
+        <span class="rm-feat-choice-counter" data-choice-count>${escapeHtml(renderChoiceCounter(config, selected.size))}</span>
+      </header>
+      <div class="rm-feat-choice-grid">
+        <div class="rm-feat-choice-list" role="group" aria-label="${escapeHtml(config.title)}">
+          ${cards}
+        </div>
+        <aside class="rm-feat-choice-preview" data-choice-preview aria-live="polite">
+          ${renderChoiceOptionDetails(previewOption)}
+        </aside>
+      </div>
+    </form>
+  `;
+}
+
+export function buildChoiceDialogContent(rawConfig, selectedValues = []) {
+  const config = normalizeChoiceConfig(rawConfig);
+  if (!config) {
+    return "";
+  }
+
+  const selected = selectedSetFromValues(selectedValues.length ? selectedValues : getSelectedChoiceValues(config));
+  return config.type === "multiple"
+    ? buildMultipleChoiceContent(config, selected)
+    : buildSingleChoiceContent(config, selected);
+}
+
+function bindChoiceDialogInteractions(html, config) {
+  const root = getDialogRoot(html);
+  const form = root?.querySelector?.(".rm-feat-choice-form--multiple");
+  if (!form) {
+    return;
+  }
+
+  const preview = form.querySelector("[data-choice-preview]");
+  const counter = form.querySelector("[data-choice-count]");
+  const cards = Array.from(form.querySelectorAll("[data-choice-card]"));
+
+  const renderPreview = (card) => {
+    const content = card?.querySelector("[data-choice-description]")?.innerHTML;
+    if (!preview || !content) {
+      return;
+    }
+
+    preview.innerHTML = content;
+    cards.forEach((entry) => entry.classList.toggle("is-previewed", entry === card));
+  };
+
+  const updateSelectionState = () => {
+    const selectedCount = cards.filter((card) => card.querySelector("[data-choice-value]")?.checked).length;
+    if (counter) {
+      counter.textContent = renderChoiceCounter(config, selectedCount);
+    }
+
+    cards.forEach((card) => {
+      card.classList.toggle("is-selected", card.querySelector("[data-choice-value]")?.checked === true);
+    });
+  };
+
+  for (const card of cards) {
+    const input = card.querySelector("[data-choice-value]");
+    card.addEventListener("mouseenter", () => renderPreview(card));
+    card.addEventListener("focusin", () => renderPreview(card));
+    card.addEventListener("click", () => renderPreview(card));
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+
+      event.preventDefault();
+      input.checked = !input.checked;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    input?.addEventListener("change", () => {
+      renderPreview(card);
+      updateSelectionState();
+    });
+  }
+
+  updateSelectionState();
+  renderPreview(cards.find((card) => card.querySelector("[data-choice-value]")?.checked) ?? cards[0]);
+}
+
+function choiceDialogWidth(config) {
+  const width = Number(config.dialogWidth ?? 760);
+  return Number.isFinite(width) && width > 0 ? width : 760;
 }
 
 function renderTemplate(value, option) {
@@ -600,9 +780,7 @@ export class FeatChoiceAutomationService {
     return new Promise((resolve) => {
       let settled = false;
       const selected = new Set(getSelectedChoiceValues(config));
-      const content = config.type === "multiple"
-        ? this.#buildMultipleChoiceContent(config, selected)
-        : this.#buildSingleChoiceContent(config, selected);
+      const content = buildChoiceDialogContent(config, [...selected]);
 
       const dialog = new Dialog({
         title: config.title,
@@ -643,43 +821,15 @@ export class FeatChoiceAutomationService {
           if (!settled) {
             resolve([]);
           }
-        }
+        },
+        render: (html) => bindChoiceDialogInteractions(html, config)
+      }, {
+        classes: ["rebreya-main", "rebreya-feat-choice-dialog"],
+        width: choiceDialogWidth(config)
       });
 
       dialog.render(true);
     });
-  }
-
-  #buildSingleChoiceContent(config, selected) {
-    const options = config.options.map((option) => `
-      <option value="${escapeHtml(option.value)}" ${selected.has(option.value) ? "selected" : ""}>${escapeHtml(option.label)}</option>
-    `).join("");
-
-    return `
-      <form>
-        <p>${escapeHtml(config.prompt ?? "Выберите вариант для этой черты.")}</p>
-        <div class="form-group">
-          <label>${escapeHtml(config.title)}</label>
-          <select data-choice-value>${options}</select>
-        </div>
-      </form>
-    `;
-  }
-
-  #buildMultipleChoiceContent(config, selected) {
-    const options = config.options.map((option) => `
-      <label class="checkbox">
-        <input type="checkbox" data-choice-value value="${escapeHtml(option.value)}" ${selected.has(option.value) ? "checked" : ""}>
-        ${escapeHtml(option.label)}
-      </label>
-    `).join("");
-
-    return `
-      <form>
-        <p>${escapeHtml(config.prompt ?? choiceCountRequirement(config))}</p>
-        <div class="form-group stacked">${options}</div>
-      </form>
-    `;
   }
 }
 

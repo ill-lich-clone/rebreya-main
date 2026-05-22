@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import {
   buildChoiceEffectData,
+  buildChoiceDialogContent,
   CHOICE_FLAG_SCOPE,
   FeatChoiceAutomationService,
   getSelectedChoiceValues,
@@ -190,6 +191,38 @@ test("allows completed narrative choices without warning about missing effects",
   }
 });
 
+test("renders multiple choices as item cards with a description preview", () => {
+  const config = normalizeChoiceConfig({
+    title: "Choose noble benefits",
+    type: "multiple",
+    min: 2,
+    max: 6,
+    options: [
+      {
+        value: "etiquette",
+        label: "Polished Etiquette",
+        summary: "Advantage on noble etiquette checks.",
+        description: "You know the etiquette and customs of high society."
+      },
+      {
+        value: "intrigue",
+        label: "Aristocratic Intrigue",
+        summary: "+2 to Insight and Investigation.",
+        description: "Local intrigues sharpened your wit."
+      }
+    ]
+  });
+
+  const html = buildChoiceDialogContent(config, ["intrigue"]);
+
+  assert.match(html, /rm-feat-choice-grid/u);
+  assert.match(html, /data-choice-card/u);
+  assert.match(html, /data-choice-preview/u);
+  assert.match(html, /data-choice-count/u);
+  assert.match(html, /Local intrigues sharpened your wit\./u);
+  assert.match(html, /Advantage on noble etiquette checks\./u);
+});
+
 test("Aristocraticness compendium config offers two to six selectable benefits", () => {
   const bundleUrl = new URL("../cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json", import.meta.url);
   const bundle = JSON.parse(readFileSync(bundleUrl, "utf8"));
@@ -206,6 +239,7 @@ test("Aristocraticness compendium config offers two to six selectable benefits",
   assert.equal(config.minCount, 2);
   assert.equal(config.maxCount, 6);
   assert.equal(config.options.length, 8);
+  assert.equal(config.options.every((option) => typeof option.description === "string" && option.description.length > 40), true);
   assert.deepEqual(effect.changes, [
     { key: "system.skills.ins.bonuses.check", mode: 2, value: "2", priority: null },
     { key: "system.skills.inv.bonuses.check", mode: 2, value: "2", priority: null },

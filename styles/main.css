@@ -3342,6 +3342,238 @@ summary:focus-visible {
   color: var(--rm-text);
 }
 
+.rebreya-feat-choice-dialog .window-content {
+  padding: 16px;
+  background:
+    radial-gradient(circle at 12% 0, rgba(69, 198, 179, 0.16), transparent 32%),
+    radial-gradient(circle at 92% 8%, rgba(242, 169, 59, 0.14), transparent 34%),
+    var(--rm-bg);
+  color: var(--rm-text);
+}
+
+.rm-feat-choice-form {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.rm-feat-choice-form p {
+  margin: 0;
+}
+
+.rm-feat-choice-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.rm-feat-choice-counter {
+  flex: 0 0 auto;
+  min-width: 74px;
+  padding: 5px 10px;
+  border: 1px solid rgba(242, 169, 59, 0.35);
+  border-radius: var(--rm-radius-badge);
+  background: rgba(242, 169, 59, 0.16);
+  color: var(--rm-text);
+  font-weight: 700;
+  text-align: center;
+}
+
+.rm-feat-choice-grid {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.9fr) minmax(280px, 1.1fr);
+  gap: 14px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.rm-feat-choice-list {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  max-height: 460px;
+  min-width: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.rm-feat-choice-card {
+  position: relative;
+  display: block;
+  min-width: 0;
+  margin: 0;
+  cursor: pointer;
+  color: var(--rm-text);
+  outline: none;
+}
+
+.rm-feat-choice-card__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.rm-feat-choice-card__body {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px;
+  border: 1px solid rgba(239, 184, 95, 0.22);
+  border-radius: var(--rm-radius-row);
+  background:
+    linear-gradient(135deg, rgba(55, 41, 29, 0.84), rgba(24, 22, 20, 0.78));
+  box-shadow: inset 0 1px 0 rgba(255, 242, 218, 0.05);
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.rm-feat-choice-card:hover .rm-feat-choice-card__body,
+.rm-feat-choice-card:focus-within .rm-feat-choice-card__body,
+.rm-feat-choice-card.is-previewed .rm-feat-choice-card__body {
+  border-color: rgba(69, 198, 179, 0.65);
+  background:
+    radial-gradient(circle at 100% 0, rgba(69, 198, 179, 0.16), transparent 38%),
+    linear-gradient(135deg, rgba(68, 49, 31, 0.92), rgba(28, 25, 22, 0.86));
+}
+
+.rm-feat-choice-card.is-selected .rm-feat-choice-card__body {
+  border-color: rgba(242, 169, 59, 0.76);
+  background:
+    radial-gradient(circle at 100% 0, rgba(242, 169, 59, 0.22), transparent 42%),
+    linear-gradient(135deg, rgba(78, 53, 30, 0.96), rgba(32, 28, 23, 0.92));
+}
+
+.rm-feat-choice-card__marker {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(255, 242, 218, 0.55);
+  border-radius: 4px;
+  background: rgba(12, 11, 10, 0.42);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.rm-feat-choice-card__input:checked + .rm-feat-choice-card__body .rm-feat-choice-card__marker {
+  border-color: rgba(242, 169, 59, 0.95);
+  background:
+    linear-gradient(135deg, rgba(242, 169, 59, 0.95), rgba(196, 112, 36, 0.95));
+}
+
+.rm-feat-choice-card__input:checked + .rm-feat-choice-card__body .rm-feat-choice-card__marker::after {
+  content: "";
+  display: block;
+  width: 8px;
+  height: 4px;
+  margin: 4px 0 0 4px;
+  border-left: 2px solid #23160c;
+  border-bottom: 2px solid #23160c;
+  transform: rotate(-45deg);
+}
+
+.rm-feat-choice-card__text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rm-feat-choice-card__text strong,
+.rm-feat-choice-card__text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rm-feat-choice-card__text strong {
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+.rm-feat-choice-card__text span {
+  color: var(--rm-muted);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.rm-feat-choice-preview {
+  min-width: 0;
+  max-height: 460px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid rgba(239, 184, 95, 0.22);
+  border-radius: var(--rm-radius-section);
+  background:
+    radial-gradient(circle at 100% 0, rgba(242, 169, 59, 0.13), transparent 35%),
+    rgba(28, 24, 20, 0.88);
+  box-shadow: var(--rm-shadow-panel);
+}
+
+.rm-feat-choice-preview__content {
+  display: grid;
+  gap: 11px;
+}
+
+.rm-feat-choice-preview__content header {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(239, 184, 95, 0.18);
+}
+
+.rm-feat-choice-preview__content h3 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.05;
+}
+
+.rm-feat-choice-preview__eyebrow {
+  color: var(--rm-accent-2);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rm-feat-choice-preview__summary {
+  color: var(--rm-accent);
+  font-weight: 700;
+}
+
+.rm-feat-choice-preview__description {
+  display: grid;
+  gap: 8px;
+  color: var(--rm-text);
+  line-height: 1.45;
+}
+
+.rm-feat-choice-preview__description p {
+  margin: 0;
+}
+
+.rm-feat-choice-preview__tag {
+  justify-self: start;
+  padding: 5px 9px;
+  border: 1px solid rgba(69, 198, 179, 0.38);
+  border-radius: var(--rm-radius-badge);
+  background: rgba(69, 198, 179, 0.13);
+  color: var(--rm-accent-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .rm-feat-choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rm-feat-choice-list,
+  .rm-feat-choice-preview {
+    max-height: none;
+  }
+}
+
 .rm-purchase-dialog__summary {
   display: grid;
   gap: 6px;
