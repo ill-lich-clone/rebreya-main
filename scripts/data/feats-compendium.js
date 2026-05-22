@@ -224,7 +224,8 @@ function buildFeatSignature(feat) {
     system: feat.system,
     effects: feat.effects,
     teyvankal: feat.flags?.teyvankal ?? null,
-    automation: feat.flags?.[MODULE_ID]?.automation ?? null
+    automation: feat.flags?.[MODULE_ID]?.automation ?? null,
+    vndeChoiceConfig: feat.flags?.vnde?.choiceConfig ?? null
   });
 }
 

@@ -8,6 +8,7 @@ import { StatesCompendiumService } from "./data/states-compendium.js";
 import { RacesCompendiumService } from "./data/races-compendium.js";
 import { ClassesCompendiumService } from "./data/classes-compendium.js";
 import { ActionsCompendiumService } from "./data/actions-compendium.js";
+import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js";
 import { TraderService } from "./data/trader-service.js";
 import { InventoryService } from "./data/inventory-service.js";
@@ -152,6 +153,7 @@ class RebreyaMainModule {
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.raceAutomationService = new RaceAutomationService(this);
+    this.featChoiceAutomationService = new FeatChoiceAutomationService(this);
     this.repository.setGlobalEventsService(this.globalEventsService);
     this.economyApp = null;
     this.worldTradeRoutesApp = null;
@@ -1655,6 +1657,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register combat hooks.`, error);
+  }
+
+  try {
+    registerFeatChoiceAutomationHooks(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register feat choice automation hooks.`, error);
   }
 
   try {

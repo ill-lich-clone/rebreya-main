@@ -5932,113 +5932,7 @@
       },
       "advancement": {}
     },
-    "effects": [
-      {
-        "_id": "87f67cffdaa89f51",
-        "name": "Владение лёгкими доспехами",
-        "type": "base",
-        "img": "icons/svg/book.svg",
-        "system": {},
-        "changes": [
-          {
-            "key": "system.traits.armorProf.value",
-            "mode": 2,
-            "value": "lgt",
-            "priority": null
-          }
-        ],
-        "disabled": false,
-        "duration": {
-          "startTime": null,
-          "seconds": null,
-          "combat": null,
-          "rounds": null,
-          "turns": null,
-          "startRound": null,
-          "startTurn": null
-        },
-        "description": "<p>Владение лёгкими доспехами</p>",
-        "origin": null,
-        "transfer": true,
-        "statuses": [],
-        "sort": 0,
-        "flags": {
-          "rebreya-main": {
-            "automation": true
-          }
-        }
-      },
-      {
-        "_id": "d867be399b3c54e4",
-        "name": "Владение средними доспехами",
-        "type": "base",
-        "img": "icons/svg/book.svg",
-        "system": {},
-        "changes": [
-          {
-            "key": "system.traits.armorProf.value",
-            "mode": 2,
-            "value": "med",
-            "priority": null
-          }
-        ],
-        "disabled": false,
-        "duration": {
-          "startTime": null,
-          "seconds": null,
-          "combat": null,
-          "rounds": null,
-          "turns": null,
-          "startRound": null,
-          "startTurn": null
-        },
-        "description": "<p>Владение средними доспехами</p>",
-        "origin": null,
-        "transfer": true,
-        "statuses": [],
-        "sort": 0,
-        "flags": {
-          "rebreya-main": {
-            "automation": true
-          }
-        }
-      },
-      {
-        "_id": "7fcf4259e4f191a0",
-        "name": "Владение тяжёлыми доспехами",
-        "type": "base",
-        "img": "icons/svg/book.svg",
-        "system": {},
-        "changes": [
-          {
-            "key": "system.traits.armorProf.value",
-            "mode": 2,
-            "value": "hvy",
-            "priority": null
-          }
-        ],
-        "disabled": false,
-        "duration": {
-          "startTime": null,
-          "seconds": null,
-          "combat": null,
-          "rounds": null,
-          "turns": null,
-          "startRound": null,
-          "startTurn": null
-        },
-        "description": "<p>Владение тяжёлыми доспехами</p>",
-        "origin": null,
-        "transfer": true,
-        "statuses": [],
-        "sort": 0,
-        "flags": {
-          "rebreya-main": {
-            "automation": true
-          }
-        }
-      }
-    ],
+    "effects": [],
     "folder": null,
     "flags": {
       "teyvankal": {
@@ -6065,8 +5959,59 @@
       "rebreya-main": {
         "automation": {
           "version": "0.8-dnd5e-5.2.5",
-          "status": "partial",
-          "notes": "Владение лёгкими доспехами; Владение средними доспехами; Владение тяжёлыми доспехами. Остальное вручную: условие требует явного выбора момента, цели или включения эффекта в игре."
+          "status": "full",
+          "notes": "Choice automation stores the selected armor proficiency in flags.vnde.choiceConfig and creates one transferred Active Effect on the Item.",
+          "mechanics": [
+            "choice-runtime",
+            "effects"
+          ]
+        }
+      },
+      "vnde": {
+        "choiceConfig": {
+          "title": "Знаток доспехов: выберите владение",
+          "type": "single",
+          "count": 1,
+          "options": [
+            {
+              "value": "lgt",
+              "label": "Лёгкие доспехи"
+            },
+            {
+              "value": "med",
+              "label": "Средние доспехи"
+            },
+            {
+              "value": "hvy",
+              "label": "Тяжёлые доспехи"
+            }
+          ],
+          "effectChanges": {
+            "lgt": [
+              {
+                "key": "system.traits.armorProf.value",
+                "mode": 2,
+                "value": "lgt",
+                "priority": null
+              }
+            ],
+            "med": [
+              {
+                "key": "system.traits.armorProf.value",
+                "mode": 2,
+                "value": "med",
+                "priority": null
+              }
+            ],
+            "hvy": [
+              {
+                "key": "system.traits.armorProf.value",
+                "mode": 2,
+                "value": "hvy",
+                "priority": null
+              }
+            ]
+          }
         }
       }
     }
