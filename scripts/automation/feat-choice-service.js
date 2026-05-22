@@ -1,4 +1,4 @@
-import { MODULE_ID } from "../constants.js";
+import { FEATS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 
 export const CHOICE_FLAG_SCOPE = MODULE_ID;
 export const CHOICE_CONFIG_FLAG = "choiceConfig";
@@ -7,7 +7,9 @@ const HOOKS_REGISTERED_KEY = `${MODULE_ID}.featChoiceAutomationHooksRegistered`;
 const AUTOMATION_OPTION_KEY = "featChoiceAutomation";
 const DND5E_SYSTEM_ID = "dnd5e";
 const DEFAULT_ADVANCEMENT_LEVEL = 0;
+const DEFAULT_FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const LEGACY_COMPENDIUM_ITEM_UUID_PATTERN = /^Compendium\.([^.]+)\.([^.]+)\.([A-Za-z0-9]{16})$/u;
+const COMPENDIUM_ITEM_UUID_PATTERN = /^Compendium\.([^.]+)\.([^.]+)\.Item\.([A-Za-z0-9]{16})$/u;
 
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -22,6 +24,11 @@ function normalizeCompendiumItemUuid(value) {
   }
 
   return `Compendium.${match[1]}.${match[2]}.Item.${match[3]}`;
+}
+
+function compendiumPackIdFromUuid(value) {
+  const match = normalizeCompendiumItemUuid(value).match(COMPENDIUM_ITEM_UUID_PATTERN);
+  return match ? `${match[1]}.${match[2]}` : "";
 }
 
 function isPlainObject(value) {
@@ -231,6 +238,100 @@ function optionUuids(config) {
   return config.options
     .map((option) => cleanString(option.uuid))
     .filter(Boolean);
+}
+
+async function canResolveUuid(uuid) {
+  if (!uuid || typeof globalThis.fromUuid !== "function") {
+    return false;
+  }
+
+  try {
+    return Boolean(await globalThis.fromUuid(uuid));
+  }
+  catch (_error) {
+    return false;
+  }
+}
+
+async function hasUnresolvedChoiceOptionUuids(config) {
+  if (typeof globalThis.fromUuid !== "function") {
+    return false;
+  }
+
+  for (const uuid of optionUuids(config)) {
+    if (!await canResolveUuid(uuid)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function compendiumItemUuid(pack, documentId) {
+  const collection = cleanString(pack?.collection);
+  const id = cleanString(documentId);
+  return collection && id ? `Compendium.${collection}.Item.${id}` : "";
+}
+
+function getChoiceOptionPack(uuid) {
+  const packId = compendiumPackIdFromUuid(uuid) || DEFAULT_FEATS_PACK_ID;
+  return globalThis.game?.packs?.get?.(packId)
+    ?? globalThis.game?.packs?.get?.(DEFAULT_FEATS_PACK_ID)
+    ?? null;
+}
+
+function isChoiceOptionIndexMatch(entry, parentIdentifier, value) {
+  const entryParent = cleanString(getProperty(entry, `flags.${MODULE_ID}.choiceOption.parentIdentifier`));
+  const entryValue = cleanString(getProperty(entry, `flags.${MODULE_ID}.choiceOption.value`));
+  if (entryParent && entryValue) {
+    return entryParent === parentIdentifier && entryValue === value;
+  }
+
+  return cleanString(getProperty(entry, "system.identifier")) === `${parentIdentifier}-${value}`;
+}
+
+async function resolveChoiceOptionUuid(option, parentIdentifier) {
+  const uuid = normalizeCompendiumItemUuid(option?.uuid);
+  if (uuid && await canResolveUuid(uuid)) {
+    return uuid;
+  }
+
+  const pack = getChoiceOptionPack(uuid);
+  if (!pack?.getIndex) {
+    return uuid;
+  }
+
+  const index = await pack.getIndex({
+    fields: [
+      `flags.${MODULE_ID}.choiceOption.parentIdentifier`,
+      `flags.${MODULE_ID}.choiceOption.value`,
+      "system.identifier"
+    ]
+  });
+  const value = cleanString(option?.value);
+  const match = collectionValues(index).find((entry) => isChoiceOptionIndexMatch(entry, parentIdentifier, value));
+  return compendiumItemUuid(pack, match?._id ?? match?.id) || uuid;
+}
+
+export async function resolveChoiceConfigOptionUuids(config, parentIdentifier = "") {
+  if (!config) {
+    return config;
+  }
+
+  const normalizedParentIdentifier = cleanString(parentIdentifier);
+  if (!normalizedParentIdentifier) {
+    return config;
+  }
+
+  const options = [];
+  let changed = false;
+  for (const option of config.options) {
+    const uuid = await resolveChoiceOptionUuid(option, normalizedParentIdentifier);
+    changed ||= uuid !== cleanString(option.uuid);
+    options.push({ ...option, uuid });
+  }
+
+  return changed ? { ...config, options } : config;
 }
 
 export function buildItemChoiceAdvancementData({ identifier = "feat-choice", choiceConfig, level = undefined } = {}) {
@@ -542,13 +643,16 @@ export class FeatChoiceAutomationService {
   }
 
   async configureItemChoice(item, { promptIfMissing = false } = {}) {
-    const config = normalizeChoiceConfig(readChoiceConfig(item));
+    let config = normalizeChoiceConfig(readChoiceConfig(item));
     if (!config) {
       return false;
     }
 
+    const itemIdentifier = cleanString(item?.system?.identifier, cleanString(item?.id, item?.name));
+    config = await this.#resolveChoiceConfigOptionDocuments(config, itemIdentifier);
     const configuredItem = await this.#ensureItemChoiceAdvancement(item, config);
     const activeItem = configuredItem ?? item;
+    await this.#mirrorResolvedChoiceConfig(activeItem, config);
     const advancement = findChoiceAdvancement(activeItem, config);
     const selectedValues = advancement ? selectedValuesFromAdvancement(config, advancement) : [];
     await this.#mirrorSelectionFlags(activeItem, config, selectedValues);
@@ -578,6 +682,42 @@ export class FeatChoiceAutomationService {
 
   #canConfigure(item) {
     return Boolean(globalThis.game?.user?.isGM || item?.isOwner || item?.parent?.isOwner);
+  }
+
+  async #resolveChoiceConfigOptionDocuments(config, itemIdentifier) {
+    let resolvedConfig = await resolveChoiceConfigOptionUuids(config, itemIdentifier);
+    if (!await hasUnresolvedChoiceOptionUuids(resolvedConfig)) {
+      return resolvedConfig;
+    }
+
+    if (await this.#syncFeatsCompendiumForChoices()) {
+      resolvedConfig = await resolveChoiceConfigOptionUuids(resolvedConfig, itemIdentifier);
+    }
+
+    if (await hasUnresolvedChoiceOptionUuids(resolvedConfig)) {
+      console.warn(`${MODULE_ID} | Some feat choice option Items could not be resolved.`, {
+        itemIdentifier,
+        uuids: optionUuids(resolvedConfig)
+      });
+    }
+
+    return resolvedConfig;
+  }
+
+  async #syncFeatsCompendiumForChoices() {
+    const sync = this.moduleApi?.featsCompendium?.sync;
+    if (typeof sync !== "function") {
+      return false;
+    }
+
+    try {
+      await sync.call(this.moduleApi.featsCompendium);
+      return true;
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to sync feats compendium before feat choice configuration.`, error);
+      return false;
+    }
   }
 
   async #ensureItemChoiceAdvancement(item, config) {
@@ -612,6 +752,22 @@ export class FeatChoiceAutomationService {
     }
 
     return item.update({ "system.advancement": advancements }, automationOptions());
+  }
+
+  async #mirrorResolvedChoiceConfig(item, config) {
+    if (typeof item?.update !== "function") {
+      return false;
+    }
+
+    const current = normalizeChoiceConfig(readChoiceConfig(item));
+    if (!current || sameUuidList(optionUuids(current), optionUuids(config))) {
+      return false;
+    }
+
+    await item.update({
+      [`flags.${CHOICE_FLAG_SCOPE}.${CHOICE_CONFIG_FLAG}.options`]: config.options.map(clone)
+    }, automationOptions());
+    return true;
   }
 
   async #mirrorSelectionFlags(item, config, selectedValues) {

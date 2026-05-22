@@ -138,6 +138,145 @@ test("opens native AdvancementManager for an unconfigured owned choice feat", as
   }
 });
 
+test("resolves choice option UUIDs from the live feats compendium index", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const staleUuid = "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa";
+  const actualUuid = "Compendium.world.rebreya-feats.Item.ActualLight00001";
+  const updates = [];
+  const choiceConfig = {
+    title: "Choose armor training",
+    count: 1,
+    options: [{ value: "lgt", label: "Light Armor", uuid: staleUuid }]
+  };
+
+  globalThis.fromUuid = async (uuid) => uuid === actualUuid ? { uuid } : null;
+  globalThis.game = {
+    packs: {
+      get: (packId) => packId === "world.rebreya-feats" ? {
+        collection: "world.rebreya-feats",
+        getIndex: async () => [{
+          _id: "ActualLight00001",
+          system: { identifier: "armor-expert-lgt" },
+          flags: {
+            [CHOICE_FLAG_SCOPE]: {
+              choiceOption: {
+                parentIdentifier: "armor-expert",
+                value: "lgt"
+              }
+            }
+          }
+        }]
+      } : null
+    }
+  };
+
+  const item = {
+    id: "feat-id",
+    name: "Armor Expert",
+    type: "feat",
+    system: {
+      identifier: "armor-expert",
+      advancement: []
+    },
+    getFlag: () => choiceConfig,
+    update: async (update) => {
+      updates.push(update);
+      if (update["system.advancement"]) {
+        item.system.advancement = update["system.advancement"];
+      }
+      if (update[`flags.${CHOICE_FLAG_SCOPE}.choiceConfig.options`]) {
+        choiceConfig.options = update[`flags.${CHOICE_FLAG_SCOPE}.choiceConfig.options`];
+      }
+      return item;
+    }
+  };
+
+  try {
+    await new FeatChoiceAutomationService().configureItemChoice(item);
+
+    assert.equal(item.system.advancement[0].configuration.pool[0].uuid, actualUuid);
+    assert.equal(choiceConfig.options[0].uuid, actualUuid);
+    assert.equal(updates.length, 2);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("syncs the feats compendium when choice option items are missing", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const staleUuid = "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa";
+  const actualUuid = "Compendium.world.rebreya-feats.Item.CreatedLight0001";
+  const updates = [];
+  let syncCalls = 0;
+  let synced = false;
+
+  globalThis.fromUuid = async (uuid) => uuid === actualUuid ? { uuid } : null;
+  globalThis.game = {
+    packs: {
+      get: (packId) => packId === "world.rebreya-feats" ? {
+        collection: "world.rebreya-feats",
+        getIndex: async () => synced ? [{
+          _id: "CreatedLight0001",
+          flags: {
+            [CHOICE_FLAG_SCOPE]: {
+              choiceOption: {
+                parentIdentifier: "armor-expert",
+                value: "lgt"
+              }
+            }
+          }
+        }] : []
+      } : null
+    }
+  };
+
+  const item = {
+    id: "feat-id",
+    name: "Armor Expert",
+    type: "feat",
+    system: {
+      identifier: "armor-expert",
+      advancement: []
+    },
+    getFlag: () => ({
+      title: "Choose armor training",
+      count: 1,
+      options: [{ value: "lgt", label: "Light Armor", uuid: staleUuid }]
+    }),
+    update: async (update) => {
+      updates.push(update);
+      if (update["system.advancement"]) {
+        item.system.advancement = update["system.advancement"];
+      }
+      return item;
+    }
+  };
+  const moduleApi = {
+    featsCompendium: {
+      sync: async () => {
+        syncCalls += 1;
+        synced = true;
+      }
+    }
+  };
+
+  try {
+    await new FeatChoiceAutomationService(moduleApi).configureItemChoice(item);
+
+    assert.equal(syncCalls, 1);
+    assert.equal(item.system.advancement[0].configuration.pool[0].uuid, actualUuid);
+    assert.equal(updates.length, 2);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
 test("does not reopen advancement for a feat with completed ItemChoice values", async () => {
   const previousDnd5e = globalThis.dnd5e;
   const previousGame = globalThis.game;
