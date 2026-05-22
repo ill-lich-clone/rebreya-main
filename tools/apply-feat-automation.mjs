@@ -2906,7 +2906,7 @@ function ensureNativeChoiceItems(items) {
         parent.effects = []
         parent.system ??= {}
         parent.system.activities = {}
-        parent.system.advancement = [buildNativeChoiceAdvancement(parentIdentifier, nativeChoiceConfig)]
+        parent.system.advancement = []
         parent.flags ??= {}
         parent.flags[MODULE_ID] = {
             ...(parent.flags[MODULE_ID] ?? {}),
@@ -2915,7 +2915,7 @@ function ensureNativeChoiceItems(items) {
         parent.flags[MODULE_ID].automation = {
             ...(parent.flags[MODULE_ID].automation ?? {}),
             status: "full",
-            notes: "Нативное развитие dnd5e ItemChoice создаёт реальные Item-варианты с собственными Active Effects."
+            notes: "Choice config is stored on the source feat. The owned-item hook creates dnd5e ItemChoice advancement after the feat is dropped."
         }
 
         items.splice(parentIndex + 1, 0, ...optionItems)

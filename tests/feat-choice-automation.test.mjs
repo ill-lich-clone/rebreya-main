@@ -348,15 +348,12 @@ test("Aristocraticness uses native ItemChoice advancement backed by real option 
   const items = loadBundleItems();
   const parent = byIdentifier(items, "aristokratichnost");
   const config = parent.flags?.[CHOICE_FLAG_SCOPE]?.choiceConfig;
-  const advancement = getChoiceAdvancement(parent);
 
   assert.equal(Array.isArray(parent.system.advancement), true);
-  assert.equal(advancement.type, "ItemChoice");
-  assert.equal(advancement.configuration.choices["0"].count, 6);
+  assert.equal(getChoiceAdvancement(parent), undefined);
   assert.equal(config.min, 2);
   assert.equal(config.max, 6);
   assert.equal(config.options.length, 8);
-  assert.equal(advancement.configuration.pool.length, 8);
   assert.equal(parent.effects.length, 0);
   assert.deepEqual(Object.keys(parent.system.activities ?? {}), []);
 
@@ -373,14 +370,14 @@ test("Aristocraticness uses native ItemChoice advancement backed by real option 
 test("Armor Expert uses native ItemChoice advancement backed by armor option Items", () => {
   const items = loadBundleItems();
   const parent = byIdentifier(items, "znatok-dospehov");
-  const advancement = getChoiceAdvancement(parent);
+  const config = parent.flags?.[CHOICE_FLAG_SCOPE]?.choiceConfig;
 
-  assert.equal(advancement.type, "ItemChoice");
-  assert.equal(advancement.configuration.choices["0"].count, 1);
-  assert.equal(advancement.configuration.pool.length, 3);
+  assert.equal(getChoiceAdvancement(parent), undefined);
+  assert.equal(config.count, 1);
+  assert.equal(config.options.length, 3);
   assert.equal(parent.effects.length, 0);
 
-  const optionItems = advancement.configuration.pool.map((entry) => items.find((item) => item._id === entry.uuid.split(".").at(-1)));
+  const optionItems = config.options.map((option) => items.find((item) => item._id === option.uuid.split(".").at(-1)));
   assert.deepEqual(optionItems.map((item) => item.name), ["Лёгкие доспехи", "Средние доспехи", "Тяжёлые доспехи"]);
   assert.deepEqual(optionItems.map((item) => item.effects[0].changes[0].value), ["lgt", "med", "hvy"]);
 });

@@ -1021,71 +1021,7 @@
           "max": "",
           "recovery": []
         },
-        "advancement": [
-          {
-            "_id": "44474915d28b2706",
-            "type": "ItemChoice",
-            "title": "Аристократичность: выберите преимущества",
-            "hint": "Выберите от 2 до 6 преимуществ, доступных вашему титулу.",
-            "configuration": {
-              "allowDrops": false,
-              "choices": {
-                "0": {
-                  "count": 6,
-                  "replacement": false
-                }
-              },
-              "pool": [
-                {
-                  "uuid": "Compendium.world.rebreya-feats.Item.46318742f36cdcd9"
-                },
-                {
-                  "uuid": "Compendium.world.rebreya-feats.Item.88e93017b8fdc4b6"
-                },
-                {
-                  "uuid": "Compendium.world.rebreya-feats.Item.156b60eb37c22665"
-                },
-                {
-                  "uuid": "Compendium.world.rebreya-feats.Item.85d045e97dd85920"
-                },
-                {
-                  "uuid": "Compendium.world.rebreya-feats.Item.18e33c9e53df0b70"
-                },
-                {
-                  "uuid": "Compendium.world.rebreya-feats.Item.e32c8cff074cefab"
-                },
-                {
-                  "uuid": "Compendium.world.rebreya-feats.Item.02af0d37709a0abb"
-                },
-                {
-                  "uuid": "Compendium.world.rebreya-feats.Item.cbfc68804e332347"
-                }
-              ],
-              "restriction": {
-                "level": "",
-                "list": [],
-                "subtype": "",
-                "type": ""
-              },
-              "spell": null,
-              "type": "feat"
-            },
-            "value": {
-              "added": {},
-              "replaced": {}
-            },
-            "flags": {
-              "rebreya-main": {
-                "choiceAutomation": {
-                  "managed": true,
-                  "minCount": 2,
-                  "maxCount": 6,
-                  "sourceFlag": "flags.rebreya-main.choiceConfig"
-                }
-              }
-            }
-          }
-        ]
+        "advancement": []
       },
       "effects": [],
       "folder": null,
@@ -1117,7 +1053,7 @@
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
             "status": "full",
-            "notes": "Нативное развитие dnd5e ItemChoice создаёт реальные Item-варианты с собственными Active Effects."
+            "notes": "Choice config is stored on the source feat. The owned-item hook creates dnd5e ItemChoice advancement after the feat is dropped."
           },
           "choiceConfig": {
             "title": "Аристократичность: выберите преимущества",
@@ -6484,56 +6420,7 @@
           "max": "",
           "recovery": []
         },
-        "advancement": [
-          {
-            "_id": "a1f2eeb3b8a8ae32",
-            "type": "ItemChoice",
-            "title": "Знаток доспехов: выберите владение",
-            "hint": "Выберите один вариант.",
-            "configuration": {
-              "allowDrops": false,
-              "choices": {
-                "0": {
-                  "count": 1,
-                  "replacement": false
-                }
-              },
-              "pool": [
-                {
-                  "uuid": "Compendium.world.rebreya-feats.Item.99550f666c5a4ab1"
-                },
-                {
-                  "uuid": "Compendium.world.rebreya-feats.Item.c0dee2deb45e743d"
-                },
-                {
-                  "uuid": "Compendium.world.rebreya-feats.Item.e8645e41be915fbd"
-                }
-              ],
-              "restriction": {
-                "level": "",
-                "list": [],
-                "subtype": "",
-                "type": ""
-              },
-              "spell": null,
-              "type": "feat"
-            },
-            "value": {
-              "added": {},
-              "replaced": {}
-            },
-            "flags": {
-              "rebreya-main": {
-                "choiceAutomation": {
-                  "managed": true,
-                  "minCount": 1,
-                  "maxCount": 1,
-                  "sourceFlag": "flags.rebreya-main.choiceConfig"
-                }
-              }
-            }
-          }
-        ]
+        "advancement": []
       },
       "effects": [],
       "folder": null,
@@ -6563,7 +6450,7 @@
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
             "status": "full",
-            "notes": "Нативное развитие dnd5e ItemChoice создаёт реальные Item-варианты с собственными Active Effects."
+            "notes": "Choice config is stored on the source feat. The owned-item hook creates dnd5e ItemChoice advancement after the feat is dropped."
           },
           "choiceConfig": {
             "title": "Знаток доспехов: выберите владение",
