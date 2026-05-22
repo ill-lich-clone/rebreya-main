@@ -7,9 +7,9 @@
     "sourceFile": "Черты V0.8 (1)(1).docx",
     "generatedAt": "2026-05-12T04:38:40.864221+00:00",
     "ruleset": "dnd5e-2014",
-    "itemCount": 408,
+    "itemCount": 419,
     "sections": {
-      "Младшие черты": 98,
+      "Младшие черты": 109,
       "Общие черты": 65,
       "Старшие черты": 77,
       "Мультиклассовые черты": 66,
@@ -1015,176 +1015,77 @@
           "repeatable": false
         },
         "properties": [],
-        "activities": {
-          "c4182a243ad19ca3": {
-            "_id": "c4182a243ad19ca3",
-            "type": "utility",
-            "name": "Реакция черты",
-            "img": "systems/dnd5e/icons/svg/activity/utility.svg",
-            "sort": 100000,
-            "activation": {
-              "type": "reaction",
-              "value": 1,
-              "condition": "",
-              "override": false
-            },
-            "consumption": {
-              "scaling": {
-                "allowed": false,
-                "max": ""
-              },
-              "spellSlot": false,
-              "targets": [
-                {
-                  "type": "activityUses",
-                  "target": "",
-                  "value": "1",
-                  "scaling": {
-                    "mode": "",
-                    "formula": ""
-                  }
-                }
-              ]
-            },
-            "description": {
-              "chatFlavor": "Реакция добавлена как utility activity; триггер и итоговый эффект применяются вручную по описанию"
-            },
-            "duration": {
-              "value": "",
-              "units": "inst",
-              "special": "",
-              "concentration": false,
-              "override": false
-            },
-            "effects": [],
-            "flags": {
-              "rebreya-main": {
-                "automation": true
-              }
-            },
-            "range": {
-              "value": null,
-              "units": "self",
-              "special": "",
-              "override": false
-            },
-            "target": {
-              "template": {
-                "contiguous": false,
-                "units": "",
-                "type": "",
-                "size": "",
-                "count": ""
-              },
-              "affects": {
-                "type": "",
-                "count": "",
-                "choice": false,
-                "special": ""
-              },
-              "prompt": true,
-              "override": false
-            },
-            "uses": {
-              "spent": 0,
-              "max": "@abilities.cha.mod",
-              "recovery": [
-                {
-                  "period": "lr",
-                  "type": "recoverAll",
-                  "formula": ""
-                }
-              ]
-            }
-          },
-          "b8bc530ca18ea94e": {
-            "_id": "b8bc530ca18ea94e",
-            "type": "utility",
-            "name": "Использование черты",
-            "img": "systems/dnd5e/icons/svg/activity/utility.svg",
-            "sort": 200000,
-            "activation": {
-              "type": "special",
-              "value": null,
-              "condition": "",
-              "override": false
-            },
-            "consumption": {
-              "scaling": {
-                "allowed": false,
-                "max": ""
-              },
-              "spellSlot": false,
-              "targets": [
-                {
-                  "type": "activityUses",
-                  "target": "",
-                  "value": "1",
-                  "scaling": {
-                    "mode": "",
-                    "formula": ""
-                  }
-                }
-              ]
-            },
-            "description": {
-              "chatFlavor": "Ограничение использований черты добавлено как activity; конкретный триггер и итоговый эффект применяются вручную по описанию"
-            },
-            "duration": {
-              "value": "",
-              "units": "inst",
-              "special": "",
-              "concentration": false,
-              "override": false
-            },
-            "effects": [],
-            "flags": {
-              "rebreya-main": {
-                "automation": true
-              }
-            },
-            "range": {
-              "value": null,
-              "units": "self",
-              "special": "",
-              "override": false
-            },
-            "target": {
-              "template": {
-                "contiguous": false,
-                "units": "",
-                "type": "",
-                "size": "",
-                "count": ""
-              },
-              "affects": {
-                "type": "",
-                "count": "",
-                "choice": false,
-                "special": ""
-              },
-              "prompt": true,
-              "override": false
-            },
-            "uses": {
-              "spent": 0,
-              "max": "@abilities.cha.mod",
-              "recovery": [
-                {
-                  "period": "lr",
-                  "type": "recoverAll",
-                  "formula": ""
-                }
-              ]
-            }
-          }
-        },
+        "activities": {},
         "uses": {
           "spent": 0,
           "max": "",
           "recovery": []
         },
-        "advancement": {}
+        "advancement": [
+          {
+            "_id": "44474915d28b2706",
+            "type": "ItemChoice",
+            "title": "Аристократичность: выберите преимущества",
+            "hint": "Выберите от 2 до 6 преимуществ, доступных вашему титулу.",
+            "configuration": {
+              "allowDrops": false,
+              "choices": {
+                "0": {
+                  "count": 6,
+                  "replacement": false
+                }
+              },
+              "pool": [
+                {
+                  "uuid": "Compendium.world.rebreya-feats.46318742f36cdcd9"
+                },
+                {
+                  "uuid": "Compendium.world.rebreya-feats.88e93017b8fdc4b6"
+                },
+                {
+                  "uuid": "Compendium.world.rebreya-feats.156b60eb37c22665"
+                },
+                {
+                  "uuid": "Compendium.world.rebreya-feats.85d045e97dd85920"
+                },
+                {
+                  "uuid": "Compendium.world.rebreya-feats.18e33c9e53df0b70"
+                },
+                {
+                  "uuid": "Compendium.world.rebreya-feats.e32c8cff074cefab"
+                },
+                {
+                  "uuid": "Compendium.world.rebreya-feats.02af0d37709a0abb"
+                },
+                {
+                  "uuid": "Compendium.world.rebreya-feats.cbfc68804e332347"
+                }
+              ],
+              "restriction": {
+                "level": "",
+                "list": [],
+                "subtype": "",
+                "type": ""
+              },
+              "spell": null,
+              "type": "feat"
+            },
+            "value": {
+              "added": {},
+              "replaced": {}
+            },
+            "flags": {
+              "rebreya-main": {
+                "choiceAutomation": {
+                  "managed": true,
+                  "minCount": 2,
+                  "maxCount": 6,
+                  "sourceFlag": "flags.rebreya-main.choiceConfig"
+                }
+              }
+            }
+          }
+        ]
       },
       "effects": [],
       "folder": null,
@@ -1215,8 +1116,8 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "partial",
-            "notes": "Choice automation stores 2-6 selected aristocratic benefits in flags.rebreya-main.choiceConfig and creates one transferred Active Effect for selected mechanical bonuses. Narrative benefits, nested tool/language choices, and activity timing remain manual."
+            "status": "full",
+            "notes": "Нативное развитие dnd5e ItemChoice создаёт реальные Item-варианты с собственными Active Effects."
           },
           "choiceConfig": {
             "title": "Аристократичность: выберите преимущества",
@@ -1225,80 +1126,724 @@
             "max": 6,
             "effectRequired": false,
             "prompt": "Выберите от 2 до 6 преимуществ, доступных вашему титулу.",
-            "effectName": "{{item}}: выбранные преимущества",
-            "effectDescription": "Автоматические бонусы выбранных преимуществ Аристократичности.",
             "options": [
               {
                 "value": "polished-etiquette",
                 "label": "Отточенный этикет",
                 "summary": "Преимущество на проверки этикета и обычаев высшего общества.",
-                "description": "Вы в идеале осведомлены о этикете и обычаях высшего общества. Вы с преимуществом совершаете проверки характеристик в тех случаях, когда эти знания могут пригодиться, например, на званом ужине или при личном общении."
+                "description": "Вы в идеале осведомлены о этикете и обычаях высшего общества. Вы с преимуществом совершаете проверки характеристик в тех случаях, когда эти знания могут пригодиться, например, на званом ужине или при личном общении.",
+                "uuid": "Compendium.world.rebreya-feats.46318742f36cdcd9"
               },
               {
                 "value": "aristocratic-charm",
                 "label": "Обаяние аристократов",
                 "summary": "Реакцией добавляете модификатор Харизмы к проверке Харизмы в 30 футах.",
-                "description": "Когда существо в пределах 30 футов совершает проверку Харизмы, вы можете реакцией добавить к броску свой модификатор Харизмы, минимум 1. После использования это умение восстанавливается после продолжительного отдыха."
+                "description": "Когда существо в пределах 30 футов совершает проверку Харизмы, вы можете реакцией добавить к броску свой модификатор Харизмы, минимум 1. После использования это умение восстанавливается после продолжительного отдыха.",
+                "uuid": "Compendium.world.rebreya-feats.88e93017b8fdc4b6"
               },
               {
                 "value": "aristocratic-language",
                 "label": "Язык аристократов",
                 "summary": "Понимаете скрытые мотивы и недосказанность в разговорах аристократов.",
-                "description": "Вы отлично знаете повадки и идеи аристократов. Вы можете прислушаться к разговорам других аристократов в пределах 30 футов и понять, скрывают ли они что-то, какие мотивы ими движут, есть ли третья сторона, агенты или замаскированные имена."
+                "description": "Вы отлично знаете повадки и идеи аристократов. Вы можете прислушаться к разговорам других аристократов в пределах 30 футов и понять, скрывают ли они что-то, какие мотивы ими движут, есть ли третья сторона, агенты или замаскированные имена.",
+                "uuid": "Compendium.world.rebreya-feats.156b60eb37c22665"
               },
               {
                 "value": "privilege",
                 "label": "Привилегированность",
                 "summary": "Вас принимают в высшем обществе, проще попасть в закрытые места и к дворянам.",
-                "description": "Благодаря знатному происхождению другие хорошо к вам относятся. Вас принимают в высшем обществе, считается, что у вас есть право посещать многие места, а при необходимости вы можете получить аудиенцию местного дворянина."
+                "description": "Благодаря знатному происхождению другие хорошо к вам относятся. Вас принимают в высшем обществе, считается, что у вас есть право посещать многие места, а при необходимости вы можете получить аудиенцию местного дворянина.",
+                "uuid": "Compendium.world.rebreya-feats.85d045e97dd85920"
               },
               {
                 "value": "servants",
                 "label": "Слуги",
                 "summary": "Трое преданных слуг помогают с простой работой вне опасных мест.",
-                "description": "На вас работают трое слуг, преданных вашей семье. Это могут быть помощники, слуги или дворецкий. Они являются обывателями, выполняют простую работу, но не сражаются за вас, не идут в опасные места и могут покинуть вас при плохом обращении или угрозе."
+                "description": "На вас работают трое слуг, преданных вашей семье. Это могут быть помощники, слуги или дворецкий. Они являются обывателями, выполняют простую работу, но не сражаются за вас, не идут в опасные места и могут покинуть вас при плохом обращении или угрозе.",
+                "uuid": "Compendium.world.rebreya-feats.18e33c9e53df0b70"
               },
               {
                 "value": "aristocratic-intrigue",
                 "label": "Аристократические интриги",
                 "summary": "+2 к проверкам Мудрости (Проницательность) и Интеллекта (Расследование).",
                 "description": "Вы часто ввязывались в местные интриги, что закалило вашу смекалку. Вы получаете бонус +2 ко всем проверкам Мудрости (Проницательность) и Интеллекта (Расследование).",
-                "effectChanges": [
-                  {
-                    "key": "system.skills.ins.bonuses.check",
-                    "mode": 2,
-                    "value": "2",
-                    "priority": null
-                  },
-                  {
-                    "key": "system.skills.inv.bonuses.check",
-                    "mode": 2,
-                    "value": "2",
-                    "priority": null
-                  }
-                ]
+                "uuid": "Compendium.world.rebreya-feats.e32c8cff074cefab"
               },
               {
                 "value": "secular-education",
                 "label": "Светское образование",
                 "summary": "Владение музыкальным инструментом, набором инструментов и языком на выбор.",
-                "description": "Вы получаете владение одним музыкальным инструментом, одним набором инструментов и одним языком на ваш выбор. Конкретные варианты выбираются отдельно и вносятся вручную по согласованию с Мастером."
+                "description": "Вы получаете владение одним музыкальным инструментом, одним набором инструментов и одним языком на ваш выбор. Конкретные варианты выбираются отдельно и вносятся вручную по согласованию с Мастером.",
+                "uuid": "Compendium.world.rebreya-feats.02af0d37709a0abb"
               },
               {
                 "value": "historical-references",
                 "label": "Исторические справки",
                 "summary": "+2 к проверкам Интеллекта (История).",
                 "description": "Вы отлично знаете историю не только своего рода, но и других семей. Вы получаете бонус +2 к проверкам Интеллекта (История).",
-                "effectChanges": [
-                  {
-                    "key": "system.skills.his.bonuses.check",
-                    "mode": 2,
-                    "value": "2",
-                    "priority": null
-                  }
-                ]
+                "uuid": "Compendium.world.rebreya-feats.cbfc68804e332347"
               }
-            ]
+            ],
+            "count": 6,
+            "itemType": "feat",
+            "allowDrops": false,
+            "advancementId": "44474915d28b2706"
+          }
+        }
+      }
+    },
+    {
+      "_id": "46318742f36cdcd9",
+      "name": "Отточенный этикет",
+      "type": "feat",
+      "img": "icons/svg/book.svg",
+      "system": {
+        "description": {
+          "value": "<p>Вы в идеале осведомлены о этикете и обычаях высшего общества. Вы с преимуществом совершаете проверки характеристик в тех случаях, когда эти знания могут пригодиться, например, на званом ужине или при личном общении.</p>",
+          "chat": ""
+        },
+        "source": {
+          "custom": "Lich"
+        },
+        "identifier": "aristokratichnost-polished-etiquette",
+        "type": {
+          "value": "feat",
+          "subtype": ""
+        },
+        "requirements": "Аристократичность",
+        "prerequisites": {
+          "items": [],
+          "level": 0,
+          "repeatable": false
+        },
+        "properties": [],
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "max": "",
+          "recovery": []
+        },
+        "advancement": []
+      },
+      "effects": [],
+      "flags": {
+        "teyvankal": {
+          "ruleset": "dnd5e-2014",
+          "sourceDocument": "Черты V0.8",
+          "section": "Младшие черты",
+          "sectionKey": "minor",
+          "subsection": null,
+          "tags": [
+            "Социальная/ проверки",
+            "Особая",
+            "Стартовая",
+            "Вариант выбора"
+          ],
+          "sourceRaw": "Lich",
+          "source": "Lich",
+          "sourcePlus": false,
+          "firearm": false,
+          "wip": false,
+          "empty": false,
+          "deprecated": false,
+          "rawHeading": "Отточенный этикет [выбор: Аристократичность]",
+          "requiredFeatNames": [],
+          "hasTables": false,
+          "parserNotes": []
+        },
+        "rebreya-main": {
+          "automation": {
+            "version": "0.8-dnd5e-5.2.5",
+            "status": "manual",
+            "notes": "Вариант выбора для черты \"Аристократичность\"."
+          },
+          "choiceOption": {
+            "parentIdentifier": "aristokratichnost",
+            "value": "polished-etiquette"
+          }
+        }
+      }
+    },
+    {
+      "_id": "88e93017b8fdc4b6",
+      "name": "Обаяние аристократов",
+      "type": "feat",
+      "img": "icons/svg/book.svg",
+      "system": {
+        "description": {
+          "value": "<p>Когда существо в пределах 30 футов совершает проверку Харизмы, вы можете реакцией добавить к броску свой модификатор Харизмы, минимум 1. После использования это умение восстанавливается после продолжительного отдыха.</p>",
+          "chat": ""
+        },
+        "source": {
+          "custom": "Lich"
+        },
+        "identifier": "aristokratichnost-aristocratic-charm",
+        "type": {
+          "value": "feat",
+          "subtype": ""
+        },
+        "requirements": "Аристократичность",
+        "prerequisites": {
+          "items": [],
+          "level": 0,
+          "repeatable": false
+        },
+        "properties": [],
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "max": "",
+          "recovery": []
+        },
+        "advancement": []
+      },
+      "effects": [],
+      "flags": {
+        "teyvankal": {
+          "ruleset": "dnd5e-2014",
+          "sourceDocument": "Черты V0.8",
+          "section": "Младшие черты",
+          "sectionKey": "minor",
+          "subsection": null,
+          "tags": [
+            "Социальная/ проверки",
+            "Особая",
+            "Стартовая",
+            "Вариант выбора"
+          ],
+          "sourceRaw": "Lich",
+          "source": "Lich",
+          "sourcePlus": false,
+          "firearm": false,
+          "wip": false,
+          "empty": false,
+          "deprecated": false,
+          "rawHeading": "Обаяние аристократов [выбор: Аристократичность]",
+          "requiredFeatNames": [],
+          "hasTables": false,
+          "parserNotes": []
+        },
+        "rebreya-main": {
+          "automation": {
+            "version": "0.8-dnd5e-5.2.5",
+            "status": "manual",
+            "notes": "Вариант выбора для черты \"Аристократичность\"."
+          },
+          "choiceOption": {
+            "parentIdentifier": "aristokratichnost",
+            "value": "aristocratic-charm"
+          }
+        }
+      }
+    },
+    {
+      "_id": "156b60eb37c22665",
+      "name": "Язык аристократов",
+      "type": "feat",
+      "img": "icons/svg/book.svg",
+      "system": {
+        "description": {
+          "value": "<p>Вы отлично знаете повадки и идеи аристократов. Вы можете прислушаться к разговорам других аристократов в пределах 30 футов и понять, скрывают ли они что-то, какие мотивы ими движут, есть ли третья сторона, агенты или замаскированные имена.</p>",
+          "chat": ""
+        },
+        "source": {
+          "custom": "Lich"
+        },
+        "identifier": "aristokratichnost-aristocratic-language",
+        "type": {
+          "value": "feat",
+          "subtype": ""
+        },
+        "requirements": "Аристократичность",
+        "prerequisites": {
+          "items": [],
+          "level": 0,
+          "repeatable": false
+        },
+        "properties": [],
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "max": "",
+          "recovery": []
+        },
+        "advancement": []
+      },
+      "effects": [],
+      "flags": {
+        "teyvankal": {
+          "ruleset": "dnd5e-2014",
+          "sourceDocument": "Черты V0.8",
+          "section": "Младшие черты",
+          "sectionKey": "minor",
+          "subsection": null,
+          "tags": [
+            "Социальная/ проверки",
+            "Особая",
+            "Стартовая",
+            "Вариант выбора"
+          ],
+          "sourceRaw": "Lich",
+          "source": "Lich",
+          "sourcePlus": false,
+          "firearm": false,
+          "wip": false,
+          "empty": false,
+          "deprecated": false,
+          "rawHeading": "Язык аристократов [выбор: Аристократичность]",
+          "requiredFeatNames": [],
+          "hasTables": false,
+          "parserNotes": []
+        },
+        "rebreya-main": {
+          "automation": {
+            "version": "0.8-dnd5e-5.2.5",
+            "status": "manual",
+            "notes": "Вариант выбора для черты \"Аристократичность\"."
+          },
+          "choiceOption": {
+            "parentIdentifier": "aristokratichnost",
+            "value": "aristocratic-language"
+          }
+        }
+      }
+    },
+    {
+      "_id": "85d045e97dd85920",
+      "name": "Привилегированность",
+      "type": "feat",
+      "img": "icons/svg/book.svg",
+      "system": {
+        "description": {
+          "value": "<p>Благодаря знатному происхождению другие хорошо к вам относятся. Вас принимают в высшем обществе, считается, что у вас есть право посещать многие места, а при необходимости вы можете получить аудиенцию местного дворянина.</p>",
+          "chat": ""
+        },
+        "source": {
+          "custom": "Lich"
+        },
+        "identifier": "aristokratichnost-privilege",
+        "type": {
+          "value": "feat",
+          "subtype": ""
+        },
+        "requirements": "Аристократичность",
+        "prerequisites": {
+          "items": [],
+          "level": 0,
+          "repeatable": false
+        },
+        "properties": [],
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "max": "",
+          "recovery": []
+        },
+        "advancement": []
+      },
+      "effects": [],
+      "flags": {
+        "teyvankal": {
+          "ruleset": "dnd5e-2014",
+          "sourceDocument": "Черты V0.8",
+          "section": "Младшие черты",
+          "sectionKey": "minor",
+          "subsection": null,
+          "tags": [
+            "Социальная/ проверки",
+            "Особая",
+            "Стартовая",
+            "Вариант выбора"
+          ],
+          "sourceRaw": "Lich",
+          "source": "Lich",
+          "sourcePlus": false,
+          "firearm": false,
+          "wip": false,
+          "empty": false,
+          "deprecated": false,
+          "rawHeading": "Привилегированность [выбор: Аристократичность]",
+          "requiredFeatNames": [],
+          "hasTables": false,
+          "parserNotes": []
+        },
+        "rebreya-main": {
+          "automation": {
+            "version": "0.8-dnd5e-5.2.5",
+            "status": "manual",
+            "notes": "Вариант выбора для черты \"Аристократичность\"."
+          },
+          "choiceOption": {
+            "parentIdentifier": "aristokratichnost",
+            "value": "privilege"
+          }
+        }
+      }
+    },
+    {
+      "_id": "18e33c9e53df0b70",
+      "name": "Слуги",
+      "type": "feat",
+      "img": "icons/svg/book.svg",
+      "system": {
+        "description": {
+          "value": "<p>На вас работают трое слуг, преданных вашей семье. Это могут быть помощники, слуги или дворецкий. Они являются обывателями, выполняют простую работу, но не сражаются за вас, не идут в опасные места и могут покинуть вас при плохом обращении или угрозе.</p>",
+          "chat": ""
+        },
+        "source": {
+          "custom": "Lich"
+        },
+        "identifier": "aristokratichnost-servants",
+        "type": {
+          "value": "feat",
+          "subtype": ""
+        },
+        "requirements": "Аристократичность",
+        "prerequisites": {
+          "items": [],
+          "level": 0,
+          "repeatable": false
+        },
+        "properties": [],
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "max": "",
+          "recovery": []
+        },
+        "advancement": []
+      },
+      "effects": [],
+      "flags": {
+        "teyvankal": {
+          "ruleset": "dnd5e-2014",
+          "sourceDocument": "Черты V0.8",
+          "section": "Младшие черты",
+          "sectionKey": "minor",
+          "subsection": null,
+          "tags": [
+            "Социальная/ проверки",
+            "Особая",
+            "Стартовая",
+            "Вариант выбора"
+          ],
+          "sourceRaw": "Lich",
+          "source": "Lich",
+          "sourcePlus": false,
+          "firearm": false,
+          "wip": false,
+          "empty": false,
+          "deprecated": false,
+          "rawHeading": "Слуги [выбор: Аристократичность]",
+          "requiredFeatNames": [],
+          "hasTables": false,
+          "parserNotes": []
+        },
+        "rebreya-main": {
+          "automation": {
+            "version": "0.8-dnd5e-5.2.5",
+            "status": "manual",
+            "notes": "Вариант выбора для черты \"Аристократичность\"."
+          },
+          "choiceOption": {
+            "parentIdentifier": "aristokratichnost",
+            "value": "servants"
+          }
+        }
+      }
+    },
+    {
+      "_id": "e32c8cff074cefab",
+      "name": "Аристократические интриги",
+      "type": "feat",
+      "img": "icons/svg/book.svg",
+      "system": {
+        "description": {
+          "value": "<p>Вы часто ввязывались в местные интриги, что закалило вашу смекалку. Вы получаете бонус +2 ко всем проверкам Мудрости (Проницательность) и Интеллекта (Расследование).</p>",
+          "chat": ""
+        },
+        "source": {
+          "custom": "Lich"
+        },
+        "identifier": "aristokratichnost-aristocratic-intrigue",
+        "type": {
+          "value": "feat",
+          "subtype": ""
+        },
+        "requirements": "Аристократичность",
+        "prerequisites": {
+          "items": [],
+          "level": 0,
+          "repeatable": false
+        },
+        "properties": [],
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "max": "",
+          "recovery": []
+        },
+        "advancement": []
+      },
+      "effects": [
+        {
+          "_id": "e4556ea4d0598588",
+          "name": "Аристократические интриги",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.skills.ins.bonuses.check",
+              "mode": 2,
+              "value": "2",
+              "priority": null
+            },
+            {
+              "key": "system.skills.inv.bonuses.check",
+              "mode": 2,
+              "value": "2",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>+2 к проверкам Мудрости (Проницательность) и Интеллекта (Расследование).</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true,
+              "choiceOptionEffect": true
+            }
+          }
+        }
+      ],
+      "flags": {
+        "teyvankal": {
+          "ruleset": "dnd5e-2014",
+          "sourceDocument": "Черты V0.8",
+          "section": "Младшие черты",
+          "sectionKey": "minor",
+          "subsection": null,
+          "tags": [
+            "Социальная/ проверки",
+            "Особая",
+            "Стартовая",
+            "Вариант выбора"
+          ],
+          "sourceRaw": "Lich",
+          "source": "Lich",
+          "sourcePlus": false,
+          "firearm": false,
+          "wip": false,
+          "empty": false,
+          "deprecated": false,
+          "rawHeading": "Аристократические интриги [выбор: Аристократичность]",
+          "requiredFeatNames": [],
+          "hasTables": false,
+          "parserNotes": []
+        },
+        "rebreya-main": {
+          "automation": {
+            "version": "0.8-dnd5e-5.2.5",
+            "status": "full",
+            "notes": "Вариант выбора для черты \"Аристократичность\"."
+          },
+          "choiceOption": {
+            "parentIdentifier": "aristokratichnost",
+            "value": "aristocratic-intrigue"
+          }
+        }
+      }
+    },
+    {
+      "_id": "02af0d37709a0abb",
+      "name": "Светское образование",
+      "type": "feat",
+      "img": "icons/svg/book.svg",
+      "system": {
+        "description": {
+          "value": "<p>Вы получаете владение одним музыкальным инструментом, одним набором инструментов и одним языком на ваш выбор. Конкретные варианты выбираются отдельно и вносятся вручную по согласованию с Мастером.</p>",
+          "chat": ""
+        },
+        "source": {
+          "custom": "Lich"
+        },
+        "identifier": "aristokratichnost-secular-education",
+        "type": {
+          "value": "feat",
+          "subtype": ""
+        },
+        "requirements": "Аристократичность",
+        "prerequisites": {
+          "items": [],
+          "level": 0,
+          "repeatable": false
+        },
+        "properties": [],
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "max": "",
+          "recovery": []
+        },
+        "advancement": []
+      },
+      "effects": [],
+      "flags": {
+        "teyvankal": {
+          "ruleset": "dnd5e-2014",
+          "sourceDocument": "Черты V0.8",
+          "section": "Младшие черты",
+          "sectionKey": "minor",
+          "subsection": null,
+          "tags": [
+            "Социальная/ проверки",
+            "Особая",
+            "Стартовая",
+            "Вариант выбора"
+          ],
+          "sourceRaw": "Lich",
+          "source": "Lich",
+          "sourcePlus": false,
+          "firearm": false,
+          "wip": false,
+          "empty": false,
+          "deprecated": false,
+          "rawHeading": "Светское образование [выбор: Аристократичность]",
+          "requiredFeatNames": [],
+          "hasTables": false,
+          "parserNotes": []
+        },
+        "rebreya-main": {
+          "automation": {
+            "version": "0.8-dnd5e-5.2.5",
+            "status": "manual",
+            "notes": "Вариант выбора для черты \"Аристократичность\"."
+          },
+          "choiceOption": {
+            "parentIdentifier": "aristokratichnost",
+            "value": "secular-education"
+          }
+        }
+      }
+    },
+    {
+      "_id": "cbfc68804e332347",
+      "name": "Исторические справки",
+      "type": "feat",
+      "img": "icons/svg/book.svg",
+      "system": {
+        "description": {
+          "value": "<p>Вы отлично знаете историю не только своего рода, но и других семей. Вы получаете бонус +2 к проверкам Интеллекта (История).</p>",
+          "chat": ""
+        },
+        "source": {
+          "custom": "Lich"
+        },
+        "identifier": "aristokratichnost-historical-references",
+        "type": {
+          "value": "feat",
+          "subtype": ""
+        },
+        "requirements": "Аристократичность",
+        "prerequisites": {
+          "items": [],
+          "level": 0,
+          "repeatable": false
+        },
+        "properties": [],
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "max": "",
+          "recovery": []
+        },
+        "advancement": []
+      },
+      "effects": [
+        {
+          "_id": "c3778ce7b6bbba9a",
+          "name": "Исторические справки",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.skills.his.bonuses.check",
+              "mode": 2,
+              "value": "2",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>+2 к проверкам Интеллекта (История).</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true,
+              "choiceOptionEffect": true
+            }
+          }
+        }
+      ],
+      "flags": {
+        "teyvankal": {
+          "ruleset": "dnd5e-2014",
+          "sourceDocument": "Черты V0.8",
+          "section": "Младшие черты",
+          "sectionKey": "minor",
+          "subsection": null,
+          "tags": [
+            "Социальная/ проверки",
+            "Особая",
+            "Стартовая",
+            "Вариант выбора"
+          ],
+          "sourceRaw": "Lich",
+          "source": "Lich",
+          "sourcePlus": false,
+          "firearm": false,
+          "wip": false,
+          "empty": false,
+          "deprecated": false,
+          "rawHeading": "Исторические справки [выбор: Аристократичность]",
+          "requiredFeatNames": [],
+          "hasTables": false,
+          "parserNotes": []
+        },
+        "rebreya-main": {
+          "automation": {
+            "version": "0.8-dnd5e-5.2.5",
+            "status": "full",
+            "notes": "Вариант выбора для черты \"Аристократичность\"."
+          },
+          "choiceOption": {
+            "parentIdentifier": "aristokratichnost",
+            "value": "historical-references"
           }
         }
       }
@@ -5939,7 +6484,56 @@
           "max": "",
           "recovery": []
         },
-        "advancement": {}
+        "advancement": [
+          {
+            "_id": "a1f2eeb3b8a8ae32",
+            "type": "ItemChoice",
+            "title": "Знаток доспехов: выберите владение",
+            "hint": "Выберите один вариант.",
+            "configuration": {
+              "allowDrops": false,
+              "choices": {
+                "0": {
+                  "count": 1,
+                  "replacement": false
+                }
+              },
+              "pool": [
+                {
+                  "uuid": "Compendium.world.rebreya-feats.99550f666c5a4ab1"
+                },
+                {
+                  "uuid": "Compendium.world.rebreya-feats.c0dee2deb45e743d"
+                },
+                {
+                  "uuid": "Compendium.world.rebreya-feats.e8645e41be915fbd"
+                }
+              ],
+              "restriction": {
+                "level": "",
+                "list": [],
+                "subtype": "",
+                "type": ""
+              },
+              "spell": null,
+              "type": "feat"
+            },
+            "value": {
+              "added": {},
+              "replaced": {}
+            },
+            "flags": {
+              "rebreya-main": {
+                "choiceAutomation": {
+                  "managed": true,
+                  "minCount": 1,
+                  "maxCount": 1,
+                  "sourceFlag": "flags.rebreya-main.choiceConfig"
+                }
+              }
+            }
+          }
+        ]
       },
       "effects": [],
       "folder": null,
@@ -5969,11 +6563,7 @@
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
             "status": "full",
-            "notes": "Choice automation stores the selected armor proficiency in flags.rebreya-main.choiceConfig and creates one transferred Active Effect on the Item.",
-            "mechanics": [
-              "choice-runtime",
-              "effects"
-            ]
+            "notes": "Нативное развитие dnd5e ItemChoice создаёт реальные Item-варианты с собственными Active Effects."
           },
           "choiceConfig": {
             "title": "Знаток доспехов: выберите владение",
@@ -5982,43 +6572,353 @@
             "options": [
               {
                 "value": "lgt",
-                "label": "Лёгкие доспехи"
+                "label": "Лёгкие доспехи",
+                "summary": "Вы получаете владение лёгкими доспехами.",
+                "description": "Вы получаете владение лёгкими доспехами.",
+                "uuid": "Compendium.world.rebreya-feats.99550f666c5a4ab1"
               },
               {
                 "value": "med",
-                "label": "Средние доспехи"
+                "label": "Средние доспехи",
+                "summary": "Вы получаете владение средними доспехами.",
+                "description": "Вы получаете владение средними доспехами.",
+                "uuid": "Compendium.world.rebreya-feats.c0dee2deb45e743d"
               },
               {
                 "value": "hvy",
-                "label": "Тяжёлые доспехи"
+                "label": "Тяжёлые доспехи",
+                "summary": "Вы получаете владение тяжёлыми доспехами.",
+                "description": "Вы получаете владение тяжёлыми доспехами.",
+                "uuid": "Compendium.world.rebreya-feats.e8645e41be915fbd"
               }
             ],
-            "effectChanges": {
-              "lgt": [
-                {
-                  "key": "system.traits.armorProf.value",
-                  "mode": 2,
-                  "value": "lgt",
-                  "priority": null
-                }
-              ],
-              "med": [
-                {
-                  "key": "system.traits.armorProf.value",
-                  "mode": 2,
-                  "value": "med",
-                  "priority": null
-                }
-              ],
-              "hvy": [
-                {
-                  "key": "system.traits.armorProf.value",
-                  "mode": 2,
-                  "value": "hvy",
-                  "priority": null
-                }
-              ]
+            "min": 1,
+            "max": 1,
+            "prompt": "Выберите один вариант.",
+            "itemType": "feat",
+            "allowDrops": false,
+            "advancementId": "a1f2eeb3b8a8ae32"
+          }
+        }
+      }
+    },
+    {
+      "_id": "99550f666c5a4ab1",
+      "name": "Лёгкие доспехи",
+      "type": "feat",
+      "img": "icons/svg/book.svg",
+      "system": {
+        "description": {
+          "value": "<p>Вы получаете владение лёгкими доспехами.</p>",
+          "chat": ""
+        },
+        "source": {
+          "custom": "Lich"
+        },
+        "identifier": "znatok-dospehov-lgt",
+        "type": {
+          "value": "feat",
+          "subtype": ""
+        },
+        "requirements": "Знаток доспехов",
+        "prerequisites": {
+          "items": [],
+          "level": 0,
+          "repeatable": false
+        },
+        "properties": [],
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "max": "",
+          "recovery": []
+        },
+        "advancement": []
+      },
+      "effects": [
+        {
+          "_id": "a49fb140193297d6",
+          "name": "Лёгкие доспехи",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.armorProf.value",
+              "mode": 2,
+              "value": "lgt",
+              "priority": null
             }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Вы получаете владение лёгкими доспехами.</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true,
+              "choiceOptionEffect": true
+            }
+          }
+        }
+      ],
+      "flags": {
+        "teyvankal": {
+          "ruleset": "dnd5e-2014",
+          "sourceDocument": "Черты V0.8",
+          "section": "Младшие черты",
+          "sectionKey": "minor",
+          "subsection": null,
+          "tags": [
+            "Бонус/владение",
+            "Вариант выбора"
+          ],
+          "sourceRaw": "Lich",
+          "source": "Lich",
+          "sourcePlus": false,
+          "firearm": false,
+          "wip": false,
+          "empty": false,
+          "deprecated": false,
+          "rawHeading": "Лёгкие доспехи [выбор: Знаток доспехов]",
+          "requiredFeatNames": [],
+          "hasTables": false,
+          "parserNotes": []
+        },
+        "rebreya-main": {
+          "automation": {
+            "version": "0.8-dnd5e-5.2.5",
+            "status": "full",
+            "notes": "Вариант выбора для черты \"Знаток доспехов\"."
+          },
+          "choiceOption": {
+            "parentIdentifier": "znatok-dospehov",
+            "value": "lgt"
+          }
+        }
+      }
+    },
+    {
+      "_id": "c0dee2deb45e743d",
+      "name": "Средние доспехи",
+      "type": "feat",
+      "img": "icons/svg/book.svg",
+      "system": {
+        "description": {
+          "value": "<p>Вы получаете владение средними доспехами.</p>",
+          "chat": ""
+        },
+        "source": {
+          "custom": "Lich"
+        },
+        "identifier": "znatok-dospehov-med",
+        "type": {
+          "value": "feat",
+          "subtype": ""
+        },
+        "requirements": "Знаток доспехов",
+        "prerequisites": {
+          "items": [],
+          "level": 0,
+          "repeatable": false
+        },
+        "properties": [],
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "max": "",
+          "recovery": []
+        },
+        "advancement": []
+      },
+      "effects": [
+        {
+          "_id": "8883e27fa1490151",
+          "name": "Средние доспехи",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.armorProf.value",
+              "mode": 2,
+              "value": "med",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Вы получаете владение средними доспехами.</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true,
+              "choiceOptionEffect": true
+            }
+          }
+        }
+      ],
+      "flags": {
+        "teyvankal": {
+          "ruleset": "dnd5e-2014",
+          "sourceDocument": "Черты V0.8",
+          "section": "Младшие черты",
+          "sectionKey": "minor",
+          "subsection": null,
+          "tags": [
+            "Бонус/владение",
+            "Вариант выбора"
+          ],
+          "sourceRaw": "Lich",
+          "source": "Lich",
+          "sourcePlus": false,
+          "firearm": false,
+          "wip": false,
+          "empty": false,
+          "deprecated": false,
+          "rawHeading": "Средние доспехи [выбор: Знаток доспехов]",
+          "requiredFeatNames": [],
+          "hasTables": false,
+          "parserNotes": []
+        },
+        "rebreya-main": {
+          "automation": {
+            "version": "0.8-dnd5e-5.2.5",
+            "status": "full",
+            "notes": "Вариант выбора для черты \"Знаток доспехов\"."
+          },
+          "choiceOption": {
+            "parentIdentifier": "znatok-dospehov",
+            "value": "med"
+          }
+        }
+      }
+    },
+    {
+      "_id": "e8645e41be915fbd",
+      "name": "Тяжёлые доспехи",
+      "type": "feat",
+      "img": "icons/svg/book.svg",
+      "system": {
+        "description": {
+          "value": "<p>Вы получаете владение тяжёлыми доспехами.</p>",
+          "chat": ""
+        },
+        "source": {
+          "custom": "Lich"
+        },
+        "identifier": "znatok-dospehov-hvy",
+        "type": {
+          "value": "feat",
+          "subtype": ""
+        },
+        "requirements": "Знаток доспехов",
+        "prerequisites": {
+          "items": [],
+          "level": 0,
+          "repeatable": false
+        },
+        "properties": [],
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "max": "",
+          "recovery": []
+        },
+        "advancement": []
+      },
+      "effects": [
+        {
+          "_id": "f5974b084411fee3",
+          "name": "Тяжёлые доспехи",
+          "type": "base",
+          "img": "icons/svg/book.svg",
+          "system": {},
+          "changes": [
+            {
+              "key": "system.traits.armorProf.value",
+              "mode": 2,
+              "value": "hvy",
+              "priority": null
+            }
+          ],
+          "disabled": false,
+          "duration": {
+            "startTime": null,
+            "seconds": null,
+            "combat": null,
+            "rounds": null,
+            "turns": null,
+            "startRound": null,
+            "startTurn": null
+          },
+          "description": "<p>Вы получаете владение тяжёлыми доспехами.</p>",
+          "origin": null,
+          "transfer": true,
+          "statuses": [],
+          "sort": 0,
+          "flags": {
+            "rebreya-main": {
+              "automation": true,
+              "choiceOptionEffect": true
+            }
+          }
+        }
+      ],
+      "flags": {
+        "teyvankal": {
+          "ruleset": "dnd5e-2014",
+          "sourceDocument": "Черты V0.8",
+          "section": "Младшие черты",
+          "sectionKey": "minor",
+          "subsection": null,
+          "tags": [
+            "Бонус/владение",
+            "Вариант выбора"
+          ],
+          "sourceRaw": "Lich",
+          "source": "Lich",
+          "sourcePlus": false,
+          "firearm": false,
+          "wip": false,
+          "empty": false,
+          "deprecated": false,
+          "rawHeading": "Тяжёлые доспехи [выбор: Знаток доспехов]",
+          "requiredFeatNames": [],
+          "hasTables": false,
+          "parserNotes": []
+        },
+        "rebreya-main": {
+          "automation": {
+            "version": "0.8-dnd5e-5.2.5",
+            "status": "full",
+            "notes": "Вариант выбора для черты \"Знаток доспехов\"."
+          },
+          "choiceOption": {
+            "parentIdentifier": "znatok-dospehov",
+            "value": "hvy"
           }
         }
       }

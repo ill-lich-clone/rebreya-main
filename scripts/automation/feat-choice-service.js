@@ -5,8 +5,8 @@ export const CHOICE_CONFIG_FLAG = "choiceConfig";
 
 const HOOKS_REGISTERED_KEY = `${MODULE_ID}.featChoiceAutomationHooksRegistered`;
 const AUTOMATION_OPTION_KEY = "featChoiceAutomation";
-const EFFECT_MODE_ADD = 2;
 const DND5E_SYSTEM_ID = "dnd5e";
+const DEFAULT_ADVANCEMENT_LEVEL = 0;
 
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -29,25 +29,25 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function escapeHtml(value) {
-  const text = cleanString(value);
-  if (globalThis.foundry?.utils?.escapeHTML) {
-    return foundry.utils.escapeHTML(text);
-  }
-
-  return text
-    .replace(/&/gu, "&amp;")
-    .replace(/</gu, "&lt;")
-    .replace(/>/gu, "&gt;")
-    .replace(/"/gu, "&quot;")
-    .replace(/'/gu, "&#39;");
-}
-
 function getProperty(source, path, fallback = undefined) {
   const value = globalThis.foundry?.utils?.getProperty
     ? foundry.utils.getProperty(source, path)
     : path.split(".").reduce((current, part) => current?.[part], source);
   return value === undefined ? fallback : value;
+}
+
+function deterministicId(value) {
+  const text = cleanString(value, "feat-choice");
+  let hashA = 0x811c9dc5;
+  let hashB = 0x45d9f3b;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    hashA = Math.imul(hashA ^ code, 0x01000193) >>> 0;
+    hashB = Math.imul(hashB + code, 0x27d4eb2d) >>> 0;
+  }
+
+  return `${hashA.toString(16).padStart(8, "0")}${hashB.toString(16).padStart(8, "0")}`.slice(0, 16);
 }
 
 function isDnd5eWorld() {
@@ -68,30 +68,6 @@ function isAutomationUpdate(options = {}) {
   return options?.[MODULE_ID]?.[AUTOMATION_OPTION_KEY] === true;
 }
 
-function normalizeOption(option) {
-  if (typeof option === "string" || typeof option === "number") {
-    const value = cleanString(option);
-    return value ? { value, label: value } : null;
-  }
-
-  if (!isPlainObject(option)) {
-    return null;
-  }
-
-  const value = cleanString(option.value, cleanString(option.id, cleanString(option.key, option.label)));
-  if (!value) {
-    return null;
-  }
-
-  return {
-    ...clone(option),
-    value,
-    label: cleanString(option.label, cleanString(option.name, value)),
-    summary: cleanString(option.summary, cleanString(option.subtitle)),
-    description: cleanString(option.description, cleanString(option.text, cleanString(option.hint)))
-  };
-}
-
 function firstDefined(source, keys) {
   for (const key of keys) {
     if (source?.[key] !== undefined && source?.[key] !== null) {
@@ -105,6 +81,15 @@ function firstDefined(source, keys) {
 function toPositiveInteger(value, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 1) {
+    return fallback;
+  }
+
+  return Math.floor(number);
+}
+
+function toLevel(value, fallback = DEFAULT_ADVANCEMENT_LEVEL) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
     return fallback;
   }
 
@@ -132,6 +117,31 @@ function normalizeChoiceBounds(rawConfig, optionCount) {
   const maxCount = Math.max(minCount, rawMaxCount);
 
   return { count: maxCount, minCount, maxCount };
+}
+
+function normalizeOption(option) {
+  if (typeof option === "string" || typeof option === "number") {
+    const value = cleanString(option);
+    return value ? { value, label: value } : null;
+  }
+
+  if (!isPlainObject(option)) {
+    return null;
+  }
+
+  const value = cleanString(option.value, cleanString(option.id, cleanString(option.key, option.label)));
+  if (!value) {
+    return null;
+  }
+
+  return {
+    ...clone(option),
+    value,
+    label: cleanString(option.label, cleanString(option.name, value)),
+    summary: cleanString(option.summary, cleanString(option.subtitle)),
+    description: cleanString(option.description, cleanString(option.text, cleanString(option.hint))),
+    uuid: cleanString(option.uuid, cleanString(option.itemUuid, cleanString(option.sourceUuid)))
+  };
 }
 
 function selectedValuesFromRaw(rawConfig, optionValues, type) {
@@ -177,13 +187,13 @@ export function normalizeChoiceConfig(rawConfig) {
 
   const normalized = {
     ...clone(rawConfig),
-    title: cleanString(rawConfig.title, "Выберите вариант"),
+    title: cleanString(rawConfig.title, "Choose option"),
     type,
     count,
     minCount,
     maxCount,
+    advancementLevel: toLevel(firstDefined(rawConfig, ["advancementLevel", "level"])),
     options,
-    effectChanges: clone(rawConfig.effectChanges ?? []),
     selectedValues
   };
 
@@ -206,396 +216,68 @@ export function getSelectedChoiceValues(rawConfig) {
   return Array.isArray(config.selectedValues) ? [...config.selectedValues] : [];
 }
 
-export function isChoiceSelectionComplete(rawConfig) {
-  const config = normalizeChoiceConfig(rawConfig);
-  if (!config) {
-    return false;
-  }
-
-  const selectedCount = getSelectedChoiceValues(config).length;
-  return selectedCount >= config.minCount && selectedCount <= config.maxCount;
-}
-
-function hasCompleteChoiceSelection(config) {
-  return isChoiceSelectionComplete(config);
-}
-
-function choiceCountRequirement(config) {
-  if (config.type === "single") {
-    return "Выберите один вариант.";
-  }
-
-  if (config.minCount === config.maxCount) {
-    return `Выберите вариантов: ${config.maxCount}.`;
-  }
-
-  return `Выберите от ${config.minCount} до ${config.maxCount} вариантов.`;
-}
-
-function hasValidSelectionCount(selectedValues, config) {
-  return selectedValues.length >= config.minCount && selectedValues.length <= config.maxCount;
-}
-
-function isChoiceEffectRequired(config) {
-  return config.effectRequired !== false && config.requireEffect !== false;
-}
-
-function renderParagraphs(value, fallback = "") {
-  const text = cleanString(value, fallback);
-  if (!text) {
-    return "";
-  }
-
-  return text
-    .split(/\n{2,}/u)
-    .map((paragraph) => cleanString(paragraph))
-    .filter(Boolean)
-    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/gu, "<br>")}</p>`)
-    .join("");
-}
-
-function renderChoiceOptionDetails(option) {
-  const summary = cleanString(option.summary);
-  const description = renderParagraphs(option.description, "Описание будет добавлено позже.");
-  const mechanical = Array.isArray(option.effectChanges) && option.effectChanges.length
-    ? `<div class="rm-feat-choice-preview__tag">Автоматический эффект</div>`
-    : "";
-
-  return `
-    <article class="rm-feat-choice-preview__content">
-      <header>
-        <span class="rm-feat-choice-preview__eyebrow">Преимущество</span>
-        <h3>${escapeHtml(option.label)}</h3>
-      </header>
-      ${summary ? `<p class="rm-feat-choice-preview__summary">${escapeHtml(summary)}</p>` : ""}
-      <div class="rm-feat-choice-preview__description">${description}</div>
-      ${mechanical}
-    </article>
-  `;
-}
-
-function renderChoiceCard(option, selected) {
-  const checked = selected.has(option.value) ? "checked" : "";
-  const selectedClass = selected.has(option.value) ? " is-selected" : "";
-  const summary = cleanString(option.summary, "Нажмите, чтобы посмотреть описание.");
-
-  return `
-    <label class="rm-feat-choice-card${selectedClass}" data-choice-card tabindex="0">
-      <input class="rm-feat-choice-card__input" type="checkbox" data-choice-value value="${escapeHtml(option.value)}" ${checked}>
-      <span class="rm-feat-choice-card__body">
-        <span class="rm-feat-choice-card__marker" aria-hidden="true"></span>
-        <span class="rm-feat-choice-card__text">
-          <strong>${escapeHtml(option.label)}</strong>
-          <span>${escapeHtml(summary)}</span>
-        </span>
-      </span>
-      <div data-choice-description hidden>${renderChoiceOptionDetails(option)}</div>
-    </label>
-  `;
-}
-
-function renderChoiceCounter(config, selectedCount) {
-  const target = config.minCount === config.maxCount
-    ? String(config.maxCount)
-    : `${config.minCount}-${config.maxCount}`;
-  return `${selectedCount} / ${target}`;
-}
-
-function selectedSetFromValues(values) {
-  return new Set((Array.isArray(values) ? values : [])
-    .map(cleanString)
-    .filter(Boolean));
-}
-
-function buildSingleChoiceContent(config, selected) {
-  const options = config.options.map((option) => `
-    <option value="${escapeHtml(option.value)}" ${selected.has(option.value) ? "selected" : ""}>${escapeHtml(option.label)}</option>
-  `).join("");
-
-  return `
-    <form class="rm-feat-choice-form">
-      <p>${escapeHtml(config.prompt ?? "Выберите вариант для этой черты.")}</p>
-      <div class="form-group">
-        <label>${escapeHtml(config.title)}</label>
-        <select data-choice-value>${options}</select>
-      </div>
-    </form>
-  `;
-}
-
-function buildMultipleChoiceContent(config, selected) {
-  const cards = config.options.map((option) => renderChoiceCard(option, selected)).join("");
-  const previewOption = config.options.find((option) => selected.has(option.value)) ?? config.options[0];
-
-  return `
-    <form class="rm-feat-choice-form rm-feat-choice-form--multiple">
-      <header class="rm-feat-choice-header">
-        <p>${escapeHtml(config.prompt ?? choiceCountRequirement(config))}</p>
-        <span class="rm-feat-choice-counter" data-choice-count>${escapeHtml(renderChoiceCounter(config, selected.size))}</span>
-      </header>
-      <div class="rm-feat-choice-grid">
-        <div class="rm-feat-choice-list" role="group" aria-label="${escapeHtml(config.title)}">
-          ${cards}
-        </div>
-        <aside class="rm-feat-choice-preview" data-choice-preview aria-live="polite">
-          ${renderChoiceOptionDetails(previewOption)}
-        </aside>
-      </div>
-    </form>
-  `;
-}
-
-export function buildChoiceDialogContent(rawConfig, selectedValues = []) {
-  const config = normalizeChoiceConfig(rawConfig);
-  if (!config) {
-    return "";
-  }
-
-  const selected = selectedSetFromValues(selectedValues.length ? selectedValues : getSelectedChoiceValues(config));
-  return config.type === "multiple"
-    ? buildMultipleChoiceContent(config, selected)
-    : buildSingleChoiceContent(config, selected);
-}
-
-function bindChoiceDialogInteractions(html, config) {
-  const root = getDialogRoot(html);
-  const form = root?.querySelector?.(".rm-feat-choice-form--multiple");
-  if (!form) {
-    return;
-  }
-
-  const preview = form.querySelector("[data-choice-preview]");
-  const counter = form.querySelector("[data-choice-count]");
-  const cards = Array.from(form.querySelectorAll("[data-choice-card]"));
-
-  const renderPreview = (card) => {
-    const content = card?.querySelector("[data-choice-description]")?.innerHTML;
-    if (!preview || !content) {
-      return;
-    }
-
-    preview.innerHTML = content;
-    cards.forEach((entry) => entry.classList.toggle("is-previewed", entry === card));
-  };
-
-  const updateSelectionState = () => {
-    const selectedCount = cards.filter((card) => card.querySelector("[data-choice-value]")?.checked).length;
-    if (counter) {
-      counter.textContent = renderChoiceCounter(config, selectedCount);
-    }
-
-    cards.forEach((card) => {
-      card.classList.toggle("is-selected", card.querySelector("[data-choice-value]")?.checked === true);
-    });
-  };
-
-  for (const card of cards) {
-    const input = card.querySelector("[data-choice-value]");
-    card.addEventListener("mouseenter", () => renderPreview(card));
-    card.addEventListener("focusin", () => renderPreview(card));
-    card.addEventListener("click", () => renderPreview(card));
-    card.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" && event.key !== " ") {
-        return;
-      }
-
-      event.preventDefault();
-      input.checked = !input.checked;
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    input?.addEventListener("change", () => {
-      renderPreview(card);
-      updateSelectionState();
-    });
-  }
-
-  updateSelectionState();
-  renderPreview(cards.find((card) => card.querySelector("[data-choice-value]")?.checked) ?? cards[0]);
-}
-
-function choiceDialogWidth(config) {
-  const width = Number(config.dialogWidth ?? 760);
-  return Number.isFinite(width) && width > 0 ? width : 760;
-}
-
-function renderTemplate(value, option) {
-  if (typeof value !== "string") {
-    return value;
-  }
-
-  return value
-    .replace(/\{\{\s*value\s*\}\}/gu, option.value)
-    .replace(/\{\{\s*label\s*\}\}/gu, option.label);
-}
-
-function normalizeChange(change, option) {
-  if (!isPlainObject(change)) {
-    return null;
-  }
-
-  const key = cleanString(renderTemplate(change.key, option));
-  if (!key) {
-    return null;
-  }
-
-  const mode = Number(change.mode ?? EFFECT_MODE_ADD);
-  return {
-    key,
-    mode: Number.isFinite(mode) ? mode : EFFECT_MODE_ADD,
-    value: renderTemplate(change.value ?? "", option),
-    priority: change.priority ?? null
-  };
-}
-
-function getRootChangesForOption(effectChanges, option) {
-  if (Array.isArray(effectChanges)) {
-    return effectChanges;
-  }
-
-  if (!isPlainObject(effectChanges)) {
-    return [];
-  }
-
-  if (Array.isArray(effectChanges[option.value])) {
-    return effectChanges[option.value];
-  }
-
-  if (Array.isArray(effectChanges.default)) {
-    return effectChanges.default;
-  }
-
-  return [];
-}
-
-export function buildChoiceEffectChanges(rawConfig) {
-  const config = normalizeChoiceConfig(rawConfig);
-  if (!config) {
-    return [];
-  }
-
-  const selectedValues = getSelectedChoiceValues(config);
-  const optionByValue = new Map(config.options.map((option) => [option.value, option]));
-  const changes = [];
-  const signatures = new Set();
-
-  for (const selectedValue of selectedValues) {
-    const option = optionByValue.get(selectedValue);
-    if (!option) {
-      continue;
-    }
-
-    const sourceChanges = Array.isArray(option.effectChanges)
-      ? option.effectChanges
-      : getRootChangesForOption(config.effectChanges, option);
-
-    for (const sourceChange of sourceChanges) {
-      const change = normalizeChange(sourceChange, option);
-      if (!change) {
-        continue;
-      }
-
-      const signature = JSON.stringify(change);
-      if (signatures.has(signature)) {
-        continue;
-      }
-
-      signatures.add(signature);
-      changes.push(change);
-    }
-  }
-
-  return changes;
-}
-
-function selectedChoiceLabels(config) {
-  const optionByValue = new Map(config.options.map((option) => [option.value, option]));
-  return getSelectedChoiceValues(config)
-    .map((value) => optionByValue.get(value)?.label ?? value)
+function optionUuids(config) {
+  return config.options
+    .map((option) => cleanString(option.uuid))
     .filter(Boolean);
 }
 
-function renderEffectName(item, config, labels) {
-  const itemName = cleanString(item?.name, "Черта");
-  const selectedLabel = labels.join(", ");
-  const template = cleanString(config.effectName);
-  if (template) {
-    return template
-      .replace(/\{\{\s*item\s*\}\}/gu, itemName)
-      .replace(/\{\{\s*label\s*\}\}/gu, selectedLabel)
-      .replace(/\{\{\s*value\s*\}\}/gu, getSelectedChoiceValues(config).join(", "));
-  }
-
-  return selectedLabel ? `${itemName}: ${selectedLabel}` : itemName;
-}
-
-export function buildChoiceEffectData(item, rawConfig) {
-  const config = normalizeChoiceConfig(rawConfig);
+export function buildItemChoiceAdvancementData({ identifier = "feat-choice", choiceConfig, level = undefined } = {}) {
+  const config = normalizeChoiceConfig(choiceConfig);
   if (!config) {
     return null;
   }
 
-  const labels = selectedChoiceLabels(config);
-  const selectedValues = getSelectedChoiceValues(config);
-  const changes = buildChoiceEffectChanges(config);
-  const description = cleanString(
-    config.effectDescription,
-    `Выбранный вариант: ${labels.join(", ") || selectedValues.join(", ")}.`
+  const pool = optionUuids(config).map((uuid) => ({ uuid }));
+  if (!pool.length) {
+    return null;
+  }
+
+  const advancementLevel = toLevel(level, config.advancementLevel);
+  const advancementId = cleanString(
+    config.advancementId,
+    deterministicId(`${identifier}:${config.title}:item-choice`)
   );
+  const itemType = cleanString(config.itemType, "feat");
 
   return {
-    name: renderEffectName(item, config, labels),
-    type: "base",
-    img: cleanString(config.effectImg, cleanString(item?.img, "icons/svg/aura.svg")),
-    system: {},
-    origin: cleanString(item?.uuid),
-    disabled: false,
-    duration: {
-      startTime: null,
-      seconds: null,
-      combat: null,
-      rounds: null,
-      turns: null,
-      startRound: null,
-      startTurn: null
+    _id: advancementId,
+    type: "ItemChoice",
+    title: config.title,
+    hint: cleanString(config.prompt, cleanString(config.hint)),
+    configuration: {
+      allowDrops: config.allowDrops === true,
+      choices: {
+        [String(advancementLevel)]: {
+          count: config.count,
+          replacement: config.replacement === true
+        }
+      },
+      pool,
+      restriction: {
+        level: cleanString(config.restriction?.level),
+        list: Array.isArray(config.restriction?.list) ? [...config.restriction.list] : [],
+        subtype: cleanString(config.restriction?.subtype),
+        type: cleanString(config.restriction?.type)
+      },
+      spell: null,
+      type: itemType
     },
-    transfer: true,
-    statuses: [],
-    changes,
-    sort: 0,
-    description: `<p>${escapeHtml(description)}</p>`,
+    value: {
+      added: {},
+      replaced: {}
+    },
     flags: {
       [MODULE_ID]: {
         choiceAutomation: {
           managed: true,
-          selectedValue: selectedValues[0] ?? "",
-          selectedValues,
-          sourceFlag: `flags.${MODULE_ID}.${CHOICE_CONFIG_FLAG}`
-        },
-        managed: true,
-        automation: "feat-choice"
+          minCount: config.minCount,
+          maxCount: config.maxCount,
+          sourceFlag: `flags.${CHOICE_FLAG_SCOPE}.${CHOICE_CONFIG_FLAG}`
+        }
       }
     }
   };
-}
-
-function getDialogRoot(html) {
-  if (typeof HTMLElement !== "undefined" && html instanceof HTMLElement) {
-    return html;
-  }
-
-  if (typeof HTMLElement !== "undefined" && html?.[0] instanceof HTMLElement) {
-    return html[0];
-  }
-
-  return null;
-}
-
-function getItemEffects(item) {
-  if (Array.isArray(item?.effects)) {
-    return item.effects;
-  }
-
-  return Array.from(item?.effects?.values?.() ?? []);
 }
 
 function readChoiceConfig(item) {
@@ -616,22 +298,120 @@ function readChoiceConfig(item) {
   return getProperty(item, `flags.${CHOICE_FLAG_SCOPE}.${CHOICE_CONFIG_FLAG}`, null);
 }
 
-function readManagedChoiceEffectFlag(effect) {
-  try {
-    const flagValue = effect?.getFlag?.(CHOICE_FLAG_SCOPE, "choiceAutomation");
-    if (flagValue) {
-      return flagValue;
-    }
-  }
-  catch (_error) {
-    // Fall through to direct access for plain source objects.
+function getAdvancements(item) {
+  const advancement = item?.system?.advancement;
+  if (Array.isArray(advancement)) {
+    return advancement;
   }
 
-  return getProperty(effect, `flags.${CHOICE_FLAG_SCOPE}.choiceAutomation`, null);
+  if (isPlainObject(advancement)) {
+    return Object.values(advancement).filter(isPlainObject);
+  }
+
+  return [];
 }
 
-function isManagedChoiceEffect(effect) {
-  return readManagedChoiceEffectFlag(effect)?.managed === true;
+function getAdvancementLevel(advancement, config) {
+  const choices = advancement?.configuration?.choices;
+  const firstLevel = isPlainObject(choices) ? Object.keys(choices)[0] : null;
+  return toLevel(firstLevel, config.advancementLevel);
+}
+
+function hasManagedChoiceFlag(advancement) {
+  return getProperty(advancement, `flags.${MODULE_ID}.choiceAutomation.managed`) === true;
+}
+
+function sameUuidList(left, right) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
+function advancementPoolUuids(advancement) {
+  return (Array.isArray(advancement?.configuration?.pool) ? advancement.configuration.pool : [])
+    .map((entry) => cleanString(entry?.uuid))
+    .filter(Boolean);
+}
+
+function isChoiceAdvancementCandidate(advancement, config) {
+  if (advancement?.type !== "ItemChoice") {
+    return false;
+  }
+
+  if (hasManagedChoiceFlag(advancement)) {
+    return true;
+  }
+
+  if (cleanString(advancement.title) === config.title) {
+    return true;
+  }
+
+  const expected = optionUuids(config);
+  const actual = advancementPoolUuids(advancement);
+  return expected.length > 0 && sameUuidList(actual, expected);
+}
+
+function findChoiceAdvancement(item, config) {
+  return getAdvancements(item).find((advancement) => isChoiceAdvancementCandidate(advancement, config)) ?? null;
+}
+
+function advancementMatchesChoiceConfig(advancement, desired, config) {
+  if (!advancement || !desired) {
+    return false;
+  }
+
+  const level = getAdvancementLevel(desired, config);
+  const actualChoices = advancement.configuration?.choices?.[level]
+    ?? advancement.configuration?.choices?.[String(level)]
+    ?? null;
+  const desiredChoices = desired.configuration.choices[String(level)];
+
+  return advancement.type === desired.type
+    && advancement.configuration?.type === desired.configuration.type
+    && advancement.configuration?.allowDrops === desired.configuration.allowDrops
+    && actualChoices?.count === desiredChoices.count
+    && actualChoices?.replacement === desiredChoices.replacement
+    && sameUuidList(advancementPoolUuids(advancement), advancementPoolUuids(desired));
+}
+
+function getSelectedUuidsFromAdvancement(advancement, level) {
+  const added = advancement?.value?.added?.[level]
+    ?? advancement?.value?.added?.[String(level)]
+    ?? null;
+
+  if (Array.isArray(added)) {
+    return added.map(cleanString).filter(Boolean);
+  }
+
+  if (isPlainObject(added)) {
+    return Object.values(added).map(cleanString).filter(Boolean);
+  }
+
+  return [];
+}
+
+function selectedValuesFromAdvancement(config, advancement) {
+  const level = getAdvancementLevel(advancement, config);
+  const selectedUuids = new Set(getSelectedUuidsFromAdvancement(advancement, level));
+  if (!selectedUuids.size) {
+    return [];
+  }
+
+  return config.options
+    .filter((option) => selectedUuids.has(cleanString(option.uuid)))
+    .map((option) => option.value);
+}
+
+function isChoiceSelectionComplete(item, config) {
+  const advancement = findChoiceAdvancement(item, config);
+  if (!advancement) {
+    return false;
+  }
+
+  const selectedCount = selectedValuesFromAdvancement(config, advancement).length;
+  return selectedCount >= config.minCount && selectedCount <= config.maxCount;
 }
 
 function isActorOwnedItem(item) {
@@ -651,6 +431,74 @@ function isCurrentUserHook(userId) {
   const currentUserId = cleanString(globalThis.game?.user?.id);
   const hookUserId = cleanString(userId);
   return !hookUserId || !currentUserId || hookUserId === currentUserId;
+}
+
+function getActorFromItem(item) {
+  return item?.parent ?? item?.actor ?? null;
+}
+
+function getAdvancementManagerClass() {
+  return globalThis.dnd5e?.applications?.advancement?.AdvancementManager ?? null;
+}
+
+function renderAdvancementManager(manager) {
+  if (!manager?.render) {
+    return false;
+  }
+
+  try {
+    manager.render(true);
+  }
+  catch (_error) {
+    manager.render(true, { force: true });
+  }
+
+  return true;
+}
+
+function collectionValues(collection) {
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+
+  if (typeof collection?.values === "function") {
+    return Array.from(collection.values());
+  }
+
+  if (isPlainObject(collection)) {
+    return Object.values(collection);
+  }
+
+  return [];
+}
+
+function dnd5eFlag(document, key) {
+  try {
+    const flagValue = document?.getFlag?.("dnd5e", key);
+    if (flagValue !== undefined) {
+      return flagValue;
+    }
+  }
+  catch (_error) {
+    // Fall through to source flags for plain objects.
+  }
+
+  return getProperty(document, `flags.dnd5e.${key}`, "");
+}
+
+function isAdvancementChildOf(item, parentItem) {
+  const itemId = cleanString(item?.id, item?._id);
+  const parentId = cleanString(parentItem?.id, parentItem?._id);
+  if (!itemId || !parentId || itemId === parentId) {
+    return false;
+  }
+
+  const origin = cleanString(dnd5eFlag(item, "advancementOrigin"));
+  const root = cleanString(dnd5eFlag(item, "advancementRoot"));
+  return origin === parentId
+    || origin.startsWith(`${parentId}.`)
+    || root === parentId
+    || root.startsWith(`${parentId}.`);
 }
 
 export class FeatChoiceAutomationService {
@@ -674,8 +522,12 @@ export class FeatChoiceAutomationService {
     return this.configureItemChoice(item, { promptIfMissing: true });
   }
 
-  async handleItemDeleted(item, _options = {}, _userId = "") {
-    return Boolean(readChoiceConfig(item));
+  async handleItemDeleted(item, options = {}, userId = "") {
+    if (isAutomationUpdate(options) || !isDnd5eWorld() || !isCurrentUserHook(userId)) {
+      return false;
+    }
+
+    return this.#deleteAdvancementChildItems(item);
   }
 
   async configureItemChoice(item, { promptIfMissing = false } = {}) {
@@ -684,22 +536,21 @@ export class FeatChoiceAutomationService {
       return false;
     }
 
-    if (!hasCompleteChoiceSelection(config)) {
-      await this.#deleteManagedChoiceEffects(item);
-      if (!promptIfMissing) {
-        return false;
-      }
+    const configuredItem = await this.#ensureItemChoiceAdvancement(item, config);
+    const activeItem = configuredItem ?? item;
+    const advancement = findChoiceAdvancement(activeItem, config);
+    const selectedValues = advancement ? selectedValuesFromAdvancement(config, advancement) : [];
+    await this.#mirrorSelectionFlags(activeItem, config, selectedValues);
 
-      const selectedValues = await this.#promptForSelection(item, config);
-      if (!selectedValues.length) {
-        return false;
-      }
-
-      const updatedItem = await this.#saveSelection(item, config, selectedValues);
-      return this.configureItemChoice(updatedItem ?? item, { promptIfMissing: false });
+    if (isChoiceSelectionComplete(activeItem, config)) {
+      return false;
     }
 
-    return this.#upsertManagedChoiceEffect(item, config);
+    if (!promptIfMissing) {
+      return false;
+    }
+
+    return this.#openNativeAdvancement(activeItem, config);
   }
 
   #shouldHandleHookItem(item, options, userId) {
@@ -718,7 +569,50 @@ export class FeatChoiceAutomationService {
     return Boolean(globalThis.game?.user?.isGM || item?.isOwner || item?.parent?.isOwner);
   }
 
-  async #saveSelection(item, config, selectedValues) {
+  async #ensureItemChoiceAdvancement(item, config) {
+    const desired = buildItemChoiceAdvancementData({
+      identifier: item?.system?.identifier ?? item?.id ?? item?.name,
+      choiceConfig: config
+    });
+    if (!desired) {
+      return item;
+    }
+
+    const advancements = getAdvancements(item).map(clone);
+    const existingIndex = advancements.findIndex((advancement) => isChoiceAdvancementCandidate(advancement, config));
+    if (existingIndex >= 0 && advancementMatchesChoiceConfig(advancements[existingIndex], desired, config)) {
+      return item;
+    }
+
+    if (existingIndex >= 0) {
+      const existing = advancements[existingIndex];
+      advancements[existingIndex] = {
+        ...desired,
+        _id: cleanString(existing._id, desired._id),
+        value: isPlainObject(existing.value) ? clone(existing.value) : desired.value
+      };
+    }
+    else {
+      advancements.push(desired);
+    }
+
+    if (typeof item?.update !== "function") {
+      return item;
+    }
+
+    return item.update({ "system.advancement": advancements }, automationOptions());
+  }
+
+  async #mirrorSelectionFlags(item, config, selectedValues) {
+    if (typeof item?.update !== "function") {
+      return false;
+    }
+
+    const current = getSelectedChoiceValues(readChoiceConfig(item));
+    if (sameUuidList(current, selectedValues)) {
+      return false;
+    }
+
     const updates = {};
     if (config.type === "single") {
       updates[`flags.${CHOICE_FLAG_SCOPE}.${CHOICE_CONFIG_FLAG}.selectedValue`] = selectedValues[0] ?? "";
@@ -729,107 +623,43 @@ export class FeatChoiceAutomationService {
       updates[`flags.${CHOICE_FLAG_SCOPE}.${CHOICE_CONFIG_FLAG}.selectedValues`] = selectedValues;
     }
 
-    return item.update(updates, automationOptions());
-  }
-
-  async #upsertManagedChoiceEffect(item, config) {
-    const effectData = buildChoiceEffectData(item, config);
-    if (!effectData?.changes?.length) {
-      await this.#deleteManagedChoiceEffects(item);
-      if (!isChoiceEffectRequired(config)) {
-        return true;
-      }
-
-      globalThis.ui?.notifications?.warn?.(`${item.name}: не настроены Active Effect changes для выбранного варианта.`);
-      return false;
-    }
-
-    const existingEffect = getItemEffects(item).find(isManagedChoiceEffect) ?? null;
-    if (existingEffect) {
-      const effectId = existingEffect.id ?? existingEffect._id;
-      await item.updateEmbeddedDocuments(
-        "ActiveEffect",
-        [{ _id: effectId, ...effectData }],
-        automationOptions()
-      );
-      return true;
-    }
-
-    await item.createEmbeddedDocuments("ActiveEffect", [effectData], automationOptions());
+    await item.update(updates, automationOptions());
     return true;
   }
 
-  async #deleteManagedChoiceEffects(item) {
-    const effectIds = getItemEffects(item)
-      .filter(isManagedChoiceEffect)
-      .map((effect) => effect.id ?? effect._id)
+  #openNativeAdvancement(item, config) {
+    if (globalThis.game?.settings?.get?.("dnd5e", "disableAdvancements")) {
+      globalThis.ui?.notifications?.warn?.(`${item.name}: dnd5e advancements are disabled.`);
+      return false;
+    }
+
+    const actor = getActorFromItem(item);
+    const AdvancementManager = getAdvancementManagerClass();
+    const level = getAdvancementLevel(findChoiceAdvancement(item, config), config);
+    const manager = AdvancementManager?.forModifyChoices?.(actor, item.id ?? item._id, level);
+    if (!manager?.steps?.length) {
+      return false;
+    }
+
+    return renderAdvancementManager(manager);
+  }
+
+  async #deleteAdvancementChildItems(item) {
+    const actor = getActorFromItem(item);
+    if (!actor?.deleteEmbeddedDocuments) {
+      return false;
+    }
+
+    const childItemIds = collectionValues(actor.items)
+      .filter((candidate) => isAdvancementChildOf(candidate, item))
+      .map((candidate) => candidate.id ?? candidate._id)
       .filter(Boolean);
-    if (!effectIds.length) {
+    if (!childItemIds.length) {
       return false;
     }
 
-    await item.deleteEmbeddedDocuments("ActiveEffect", effectIds, automationOptions());
+    await actor.deleteEmbeddedDocuments("Item", childItemIds, automationOptions());
     return true;
-  }
-
-  async #promptForSelection(item, config) {
-    if (!this.#canConfigure(item) || typeof Dialog !== "function") {
-      return [];
-    }
-
-    return new Promise((resolve) => {
-      let settled = false;
-      const selected = new Set(getSelectedChoiceValues(config));
-      const content = buildChoiceDialogContent(config, [...selected]);
-
-      const dialog = new Dialog({
-        title: config.title,
-        content,
-        buttons: {
-          confirm: {
-            label: "Применить",
-            callback: (html) => {
-              const root = getDialogRoot(html);
-              const selectedValues = config.type === "multiple"
-                ? Array.from(root?.querySelectorAll("[data-choice-value]:checked") ?? []).map((input) => input.value)
-                : [cleanString(root?.querySelector("[data-choice-value]")?.value)];
-              const normalizedValues = selectedValues
-                .map(cleanString)
-                .filter(Boolean)
-                .filter((value, index, allValues) => allValues.indexOf(value) === index);
-
-              if (!hasValidSelectionCount(normalizedValues, config)) {
-                globalThis.ui?.notifications?.warn?.(choiceCountRequirement(config));
-                return false;
-              }
-
-              settled = true;
-              resolve(normalizedValues);
-              return true;
-            }
-          },
-          cancel: {
-            label: "Отмена",
-            callback: () => {
-              settled = true;
-              resolve([]);
-            }
-          }
-        },
-        default: "confirm",
-        close: () => {
-          if (!settled) {
-            resolve([]);
-          }
-        },
-        render: (html) => bindChoiceDialogInteractions(html, config)
-      }, {
-        classes: ["rebreya-main", "rebreya-feat-choice-dialog"],
-        width: choiceDialogWidth(config)
-      });
-
-      dialog.render(true);
-    });
   }
 }
 

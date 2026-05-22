@@ -473,7 +473,8 @@ const STATIC_EFFECTS = {
 const CHOICE_CONFIGS = {
     aristokratichnost: {
         suppressEffects: true,
-        note: "Choice automation stores 2-6 selected aristocratic benefits in flags.rebreya-main.choiceConfig and creates one transferred Active Effect for selected mechanical bonuses",
+        suppressActivities: true,
+        note: "Нативное развитие dnd5e ItemChoice позволяет выбрать 2-6 преимуществ Аристократичности как отдельные Item с собственными Active Effects",
         config: {
             title: "Аристократичность: выберите преимущества",
             type: "multiple",
@@ -544,15 +545,31 @@ const CHOICE_CONFIGS = {
     },
     "znatok-dospehov": {
         suppressEffects: true,
-        note: "Choice automation stores the selected armor proficiency in flags.rebreya-main.choiceConfig and creates one transferred Active Effect on the Item",
+        suppressActivities: true,
+        note: "Нативное развитие dnd5e ItemChoice позволяет выбрать одно владение доспехами как отдельный Item с собственным Active Effect",
         config: {
             title: "Знаток доспехов: выберите владение",
             type: "single",
             count: 1,
             options: [
-                { value: "lgt", label: "Лёгкие доспехи" },
-                { value: "med", label: "Средние доспехи" },
-                { value: "hvy", label: "Тяжёлые доспехи" }
+                {
+                    value: "lgt",
+                    label: "Лёгкие доспехи",
+                    summary: "Вы получаете владение лёгкими доспехами.",
+                    description: "Вы получаете владение лёгкими доспехами."
+                },
+                {
+                    value: "med",
+                    label: "Средние доспехи",
+                    summary: "Вы получаете владение средними доспехами.",
+                    description: "Вы получаете владение средними доспехами."
+                },
+                {
+                    value: "hvy",
+                    label: "Тяжёлые доспехи",
+                    summary: "Вы получаете владение тяжёлыми доспехами.",
+                    description: "Вы получаете владение тяжёлыми доспехами."
+                }
             ],
             effectChanges: {
                 lgt: [{ key: "system.traits.armorProf.value", mode: MODE_ADD, value: "lgt", priority: null }],
@@ -2666,7 +2683,263 @@ function addChoiceConfig(item, identifier, notes, mechanics) {
     }
 }
 
+function choiceOptionIdentifier(parentIdentifier, value) {
+    return `${parentIdentifier}-${value}`
+}
+
+function choiceOptionId(parentIdentifier, value) {
+    return deterministicId(`choice-option:${parentIdentifier}:${value}`)
+}
+
+function choiceOptionUuid(parentIdentifier, value) {
+    return `Compendium.world.rebreya-feats.${choiceOptionId(parentIdentifier, value)}`
+}
+
+function choiceAdvancementId(parentIdentifier) {
+    return deterministicId(`choice-advancement:${parentIdentifier}`)
+}
+
+const CHOICE_OPTION_TAG = "\u0412\u0430\u0440\u0438\u0430\u043d\u0442 \u0432\u044b\u0431\u043e\u0440\u0430"
+const CHOICE_OPTION_LABEL = "\u0432\u044b\u0431\u043e\u0440"
+const CHOICE_OPTION_NOTE = "\u0412\u0430\u0440\u0438\u0430\u043d\u0442 \u0432\u044b\u0431\u043e\u0440\u0430 \u0434\u043b\u044f \u0447\u0435\u0440\u0442\u044b"
+const SINGLE_CHOICE_PROMPT = "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043e\u0434\u0438\u043d \u0432\u0430\u0440\u0438\u0430\u043d\u0442."
+
+function getChoiceEffectChanges(choiceConfig, option) {
+    if (Array.isArray(option.effectChanges)) {
+        return clone(option.effectChanges)
+    }
+
+    if (choiceConfig.effectChanges && Array.isArray(choiceConfig.effectChanges[option.value])) {
+        return clone(choiceConfig.effectChanges[option.value])
+    }
+
+    return []
+}
+
+function createChoiceOptionEffect(parent, option, changes) {
+    return {
+        _id: deterministicId(`choice-effect:${getIdentifier(parent)}:${option.value}:${JSON.stringify(changes)}`),
+        name: option.label,
+        type: "base",
+        img: parent.img || "icons/svg/aura.svg",
+        system: {},
+        changes: changes.map((change) => ({
+            key: change.key,
+            mode: change.mode ?? MODE_ADD,
+            value: String(change.value ?? ""),
+            priority: change.priority ?? null
+        })),
+        disabled: false,
+        duration: {
+            startTime: null,
+            seconds: null,
+            combat: null,
+            rounds: null,
+            turns: null,
+            startRound: null,
+            startTurn: null
+        },
+        description: `<p>${option.summary || option.description || option.label}</p>`,
+        origin: null,
+        transfer: true,
+        statuses: [],
+        sort: 0,
+        flags: {
+            [MODULE_ID]: {
+                automation: true,
+                choiceOptionEffect: true
+            }
+        }
+    }
+}
+
+function createChoiceOptionItem(parent, parentIdentifier, option, choiceConfig) {
+    const changes = getChoiceEffectChanges(choiceConfig, option)
+
+    return {
+        _id: choiceOptionId(parentIdentifier, option.value),
+        name: option.label,
+        type: "feat",
+        img: parent.img || "icons/svg/book.svg",
+        system: {
+            description: {
+                value: `<p>${option.description || option.summary || option.label}</p>`,
+                chat: ""
+            },
+            source: clone(parent.system?.source ?? { custom: "" }),
+            identifier: choiceOptionIdentifier(parentIdentifier, option.value),
+            type: clone(parent.system?.type ?? { value: "feat", subtype: "minor" }),
+            requirements: parent.name,
+            prerequisites: {
+                items: [],
+                level: 0,
+                repeatable: false
+            },
+            properties: [],
+            activities: {},
+            uses: {
+                spent: 0,
+                max: "",
+                recovery: []
+            },
+            advancement: []
+        },
+        effects: changes.length ? [createChoiceOptionEffect(parent, option, changes)] : [],
+        flags: {
+            teyvankal: {
+                ...(clone(parent.flags?.teyvankal ?? {})),
+                rawHeading: `${option.label} [${CHOICE_OPTION_LABEL}: ${parent.name}]`,
+                tags: [...new Set([...(parent.flags?.teyvankal?.tags ?? []), CHOICE_OPTION_TAG])]
+            },
+            [MODULE_ID]: {
+                automation: {
+                    version: VERSION,
+                    status: changes.length ? "full" : "manual",
+                    notes: `${CHOICE_OPTION_NOTE} "${parent.name}".`
+                },
+                choiceOption: {
+                    parentIdentifier,
+                    value: option.value
+                }
+            }
+        }
+    }
+}
+
+function buildNativeChoiceConfig(parentIdentifier, choiceConfig) {
+    const options = (choiceConfig.options ?? []).map((option) => {
+        const next = clone(option)
+        delete next.effectChanges
+        next.uuid = choiceOptionUuid(parentIdentifier, option.value)
+        return next
+    })
+    const count = choiceConfig.max ?? choiceConfig.count ?? options.length
+    const min = choiceConfig.min ?? choiceConfig.minCount ?? count
+
+    const nextConfig = {
+        ...clone(choiceConfig),
+        count,
+        min,
+        max: choiceConfig.max ?? choiceConfig.maxCount ?? count,
+        prompt: choiceConfig.prompt ?? (count === 1 ? SINGLE_CHOICE_PROMPT : ""),
+        itemType: "feat",
+        allowDrops: false,
+        advancementId: choiceAdvancementId(parentIdentifier),
+        options
+    }
+    delete nextConfig.effectChanges
+    delete nextConfig.effectName
+    delete nextConfig.effectDescription
+
+    return nextConfig
+}
+
+function buildNativeChoiceAdvancement(parentIdentifier, choiceConfig) {
+    const count = choiceConfig.max ?? choiceConfig.count ?? choiceConfig.options.length
+    const min = choiceConfig.min ?? choiceConfig.minCount ?? count
+
+    return {
+        _id: choiceAdvancementId(parentIdentifier),
+        type: "ItemChoice",
+        title: choiceConfig.title,
+        hint: choiceConfig.prompt ?? "",
+        configuration: {
+            allowDrops: false,
+            choices: {
+                0: {
+                    count,
+                    replacement: false
+                }
+            },
+            pool: choiceConfig.options.map((option) => ({ uuid: option.uuid })),
+            restriction: {
+                level: "",
+                list: [],
+                subtype: "",
+                type: ""
+            },
+            spell: null,
+            type: "feat"
+        },
+        value: {
+            added: {},
+            replaced: {}
+        },
+        flags: {
+            [MODULE_ID]: {
+                choiceAutomation: {
+                    managed: true,
+                    minCount: min,
+                    maxCount: count,
+                    sourceFlag: `flags.${MODULE_ID}.choiceConfig`
+                }
+            }
+        }
+    }
+}
+
+function removeManagedChoiceOptionItems(items) {
+    const managedParents = new Set(Object.keys(CHOICE_CONFIGS))
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+        const parentIdentifier = items[index].flags?.[MODULE_ID]?.choiceOption?.parentIdentifier
+        if (managedParents.has(parentIdentifier)) {
+            items.splice(index, 1)
+        }
+    }
+}
+
+function ensureNativeChoiceItems(items) {
+    removeManagedChoiceOptionItems(items)
+
+    for (const [parentIdentifier, entry] of Object.entries(CHOICE_CONFIGS)) {
+        const parentIndex = items.findIndex((item) => getIdentifier(item) === parentIdentifier)
+        if (parentIndex < 0) {
+            continue
+        }
+
+        const parent = items[parentIndex]
+        const nativeChoiceConfig = buildNativeChoiceConfig(parentIdentifier, entry.config)
+        const optionItems = (entry.config.options ?? []).map((option) => (
+            createChoiceOptionItem(parent, parentIdentifier, option, entry.config)
+        ))
+
+        parent.effects = []
+        parent.system ??= {}
+        parent.system.activities = {}
+        parent.system.advancement = [buildNativeChoiceAdvancement(parentIdentifier, nativeChoiceConfig)]
+        parent.flags ??= {}
+        parent.flags[MODULE_ID] = {
+            ...(parent.flags[MODULE_ID] ?? {}),
+            choiceConfig: nativeChoiceConfig
+        }
+        parent.flags[MODULE_ID].automation = {
+            ...(parent.flags[MODULE_ID].automation ?? {}),
+            status: "full",
+            notes: "Нативное развитие dnd5e ItemChoice создаёт реальные Item-варианты с собственными Active Effects."
+        }
+
+        items.splice(parentIndex + 1, 0, ...optionItems)
+    }
+}
+
+function updateBundleSummary(bundle) {
+    if (!bundle?.summary || !Array.isArray(bundle.items)) {
+        return
+    }
+
+    bundle.summary.itemCount = bundle.items.length
+    bundle.summary.sections = bundle.items.reduce((sections, item) => {
+        const section = item.flags?.teyvankal?.section ?? "Без раздела"
+        sections[section] = (sections[section] ?? 0) + 1
+        return sections
+    }, {})
+}
+
 function addActivities(item, identifier, text, notes, mechanics) {
+    if (CHOICE_CONFIGS[identifier]?.suppressActivities === true) {
+        return
+    }
+
     const activities = CURATED_ACTIVITIES[identifier] ? [...CURATED_ACTIVITIES[identifier]] : inferGenericActivities(identifier, text)
     const effectIds = new Set((item.effects ?? []).map((effect) => effect._id))
     let index = Object.keys(item.system.activities).length + 1
@@ -3183,7 +3456,9 @@ function writeReport(report) {
 }
 
 const items = readJson(ITEMS_PATH)
+removeManagedChoiceOptionItems(items)
 const itemsReport = applyToItems(items)
+ensureNativeChoiceItems(items)
 writeJson(ITEMS_PATH, items)
 
 const bundle = readJson(BUNDLE_PATH)
@@ -3191,7 +3466,10 @@ if (!Array.isArray(bundle.items)) {
     throw new Error("Bundle JSON does not contain an items array")
 }
 
+removeManagedChoiceOptionItems(bundle.items)
 applyToItems(bundle.items)
+ensureNativeChoiceItems(bundle.items)
+updateBundleSummary(bundle)
 writeJson(BUNDLE_PATH, bundle)
 writeReport(itemsReport)
 

@@ -38,6 +38,7 @@ const LEGACY_FEAT_SUBTYPE_ALIASES = new Map([
   ["epic-boon", "major"],
   ["fightingstyle", "fightingStyle"]
 ]);
+const FOUNDRY_DOCUMENT_ID_PATTERN = /^[A-Za-z0-9]{16}$/u;
 
 function normalizeMatchText(value) {
   return String(value ?? "")
@@ -50,6 +51,11 @@ function normalizeMatchText(value) {
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
+}
+
+function normalizeDocumentId(value) {
+  const id = cleanString(value);
+  return FOUNDRY_DOCUMENT_ID_PATTERN.test(id) ? id : "";
 }
 
 function isPlainObject(value) {
@@ -136,7 +142,9 @@ function normalizeFeatSystem(rawSystem, featId, section = "") {
       max: cleanString(uses.max),
       recovery: Array.isArray(uses.recovery) ? foundry.utils.deepClone(uses.recovery) : []
     },
-    advancement: isPlainObject(system.advancement) ? foundry.utils.deepClone(system.advancement) : {}
+    advancement: Array.isArray(system.advancement)
+      ? foundry.utils.deepClone(system.advancement)
+      : (isPlainObject(system.advancement) ? foundry.utils.deepClone(system.advancement) : [])
   };
 }
 
@@ -183,6 +191,7 @@ function normalizeFeatItem(rawItem, index, usedIds) {
   const { flags, section, subsection } = normalizeFeatFlags(safeItem.flags);
 
   return {
+    documentId: normalizeDocumentId(safeItem._id),
     featId,
     name,
     type: "feat",
@@ -216,6 +225,7 @@ function buildFeatSignature(feat) {
   return JSON.stringify({
     templateVersion: FEAT_TEMPLATE_VERSION,
     featId: feat.featId,
+    documentId: feat.documentId,
     name: feat.name,
     type: feat.type,
     img: feat.img,
@@ -284,6 +294,7 @@ function serializeFeatDocument(document) {
   flags[MODULE_ID] = moduleFlags;
 
   return {
+    _id: normalizeDocumentId(source._id ?? document?.id),
     name: cleanString(source.name, cleanString(document?.name, "Черта")),
     type: "feat",
     img: cleanString(source.img, DEFAULT_FEAT_ICON),
@@ -327,7 +338,7 @@ function createFeatItemData(feat, folderIdByPath, iconLookup = null) {
     : {}
   const resolvedIcon = resolveNamedIcon(feat.name, iconLookup, feat.img || DEFAULT_FEAT_ICON);
 
-  return {
+  const itemData = {
     name: feat.name,
     type: "feat",
     img: resolvedIcon,
@@ -350,6 +361,12 @@ function createFeatItemData(feat, folderIdByPath, iconLookup = null) {
       }
     }
   };
+
+  if (feat.documentId) {
+    itemData._id = feat.documentId;
+  }
+
+  return itemData;
 }
 
 function getDesiredPackMetadata() {
