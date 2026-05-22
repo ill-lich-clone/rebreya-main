@@ -1153,113 +1153,7 @@
       },
       "advancement": {}
     },
-    "effects": [
-      {
-        "_id": "9ecc29a4170de482",
-        "name": "Проницательность",
-        "type": "base",
-        "img": "icons/svg/book.svg",
-        "system": {},
-        "changes": [
-          {
-            "key": "system.skills.ins.bonuses.check",
-            "mode": 2,
-            "value": "2",
-            "priority": null
-          }
-        ],
-        "disabled": false,
-        "duration": {
-          "startTime": null,
-          "seconds": null,
-          "combat": null,
-          "rounds": null,
-          "turns": null,
-          "startRound": null,
-          "startTurn": null
-        },
-        "description": "<p>Бонус +2 к Проницательности</p>",
-        "origin": null,
-        "transfer": true,
-        "statuses": [],
-        "sort": 0,
-        "flags": {
-          "rebreya-main": {
-            "automation": true
-          }
-        }
-      },
-      {
-        "_id": "59ee505c172a2d76",
-        "name": "Расследование",
-        "type": "base",
-        "img": "icons/svg/book.svg",
-        "system": {},
-        "changes": [
-          {
-            "key": "system.skills.inv.bonuses.check",
-            "mode": 2,
-            "value": "2",
-            "priority": null
-          }
-        ],
-        "disabled": false,
-        "duration": {
-          "startTime": null,
-          "seconds": null,
-          "combat": null,
-          "rounds": null,
-          "turns": null,
-          "startRound": null,
-          "startTurn": null
-        },
-        "description": "<p>Бонус +2 к Расследованию</p>",
-        "origin": null,
-        "transfer": true,
-        "statuses": [],
-        "sort": 0,
-        "flags": {
-          "rebreya-main": {
-            "automation": true
-          }
-        }
-      },
-      {
-        "_id": "aaa37b9f18008723",
-        "name": "История",
-        "type": "base",
-        "img": "icons/svg/book.svg",
-        "system": {},
-        "changes": [
-          {
-            "key": "system.skills.his.bonuses.check",
-            "mode": 2,
-            "value": "2",
-            "priority": null
-          }
-        ],
-        "disabled": false,
-        "duration": {
-          "startTime": null,
-          "seconds": null,
-          "combat": null,
-          "rounds": null,
-          "turns": null,
-          "startRound": null,
-          "startTurn": null
-        },
-        "description": "<p>Бонус +2 к Истории</p>",
-        "origin": null,
-        "transfer": true,
-        "statuses": [],
-        "sort": 0,
-        "flags": {
-          "rebreya-main": {
-            "automation": true
-          }
-        }
-      }
-    ],
+    "effects": [],
     "folder": null,
     "flags": {
       "teyvankal": {
@@ -1289,7 +1183,73 @@
         "automation": {
           "version": "0.8-dnd5e-5.2.5",
           "status": "partial",
-          "notes": "Бонус +2 к Проницательности; Бонус +2 к Расследованию; Бонус +2 к Истории; Реакция добавлена как utility activity; триггер и итоговый эффект применяются вручную по описанию; Ограничение использований черты добавлено как activity; конкретный триггер и итоговый эффект применяются вручную по описанию. Остальное вручную: есть выбор игрока или таблица вариантов."
+          "notes": "Choice automation stores 2-6 selected aristocratic benefits in flags.rebreya-main.choiceConfig and creates one transferred Active Effect for selected mechanical bonuses. Narrative benefits, nested tool/language choices, and activity timing remain manual."
+        },
+        "choiceConfig": {
+          "title": "Аристократичность: выберите преимущества",
+          "type": "multiple",
+          "min": 2,
+          "max": 6,
+          "effectRequired": false,
+          "prompt": "Выберите от 2 до 6 преимуществ, доступных вашему титулу.",
+          "effectName": "{{item}}: выбранные преимущества",
+          "effectDescription": "Автоматические бонусы выбранных преимуществ Аристократичности.",
+          "options": [
+            {
+              "value": "polished-etiquette",
+              "label": "Отточенный этикет"
+            },
+            {
+              "value": "aristocratic-charm",
+              "label": "Обаяние аристократов"
+            },
+            {
+              "value": "aristocratic-language",
+              "label": "Язык аристократов"
+            },
+            {
+              "value": "privilege",
+              "label": "Привилегированность"
+            },
+            {
+              "value": "servants",
+              "label": "Слуги"
+            },
+            {
+              "value": "aristocratic-intrigue",
+              "label": "Аристократические интриги",
+              "effectChanges": [
+                {
+                  "key": "system.skills.ins.bonuses.check",
+                  "mode": 2,
+                  "value": "2",
+                  "priority": null
+                },
+                {
+                  "key": "system.skills.inv.bonuses.check",
+                  "mode": 2,
+                  "value": "2",
+                  "priority": null
+                }
+              ]
+            },
+            {
+              "value": "secular-education",
+              "label": "Светское образование"
+            },
+            {
+              "value": "historical-references",
+              "label": "Исторические справки",
+              "effectChanges": [
+                {
+                  "key": "system.skills.his.bonuses.check",
+                  "mode": 2,
+                  "value": "2",
+                  "priority": null
+                }
+              ]
+            }
+          ]
         }
       }
     }

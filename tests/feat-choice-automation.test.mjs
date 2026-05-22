@@ -1,9 +1,11 @@
 ﻿import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildChoiceEffectData,
   CHOICE_FLAG_SCOPE,
+  FeatChoiceAutomationService,
   getSelectedChoiceValues,
   normalizeChoiceConfig
 } from "../scripts/automation/feat-choice-service.js";
@@ -77,5 +79,136 @@ test("expands template effect changes for multiple selected values", () => {
   assert.deepEqual(effect.changes, [
     { key: "system.tools.smith.value", mode: 4, value: "1", priority: 20 },
     { key: "system.tools.cook.value", mode: 4, value: "1", priority: 20 }
+  ]);
+});
+
+test("normalizes ranged multiple choices without truncating valid selections", () => {
+  const config = normalizeChoiceConfig({
+    title: "Aristocraticness",
+    type: "multiple",
+    min: 2,
+    max: 6,
+    selectedValues: ["etiquette", "intrigue", "history"],
+    options: [
+      { value: "etiquette", label: "Polished Etiquette" },
+      { value: "intrigue", label: "Aristocratic Intrigue" },
+      { value: "history", label: "Historical References" }
+    ]
+  });
+
+  assert.equal(config.type, "multiple");
+  assert.equal(config.minCount, 2);
+  assert.equal(config.maxCount, 3);
+  assert.deepEqual(getSelectedChoiceValues(config), ["etiquette", "intrigue", "history"]);
+});
+
+test("builds effect changes for every selected value in a ranged choice", () => {
+  const config = normalizeChoiceConfig({
+    title: "Choose noble benefits",
+    type: "multiple",
+    min: 2,
+    max: 6,
+    selectedValues: ["insight", "investigation", "history"],
+    options: [
+      {
+        value: "insight",
+        label: "Insight",
+        effectChanges: [{ key: "system.skills.ins.bonuses.check", mode: 2, value: "2" }]
+      },
+      {
+        value: "investigation",
+        label: "Investigation",
+        effectChanges: [{ key: "system.skills.inv.bonuses.check", mode: 2, value: "2" }]
+      },
+      {
+        value: "history",
+        label: "History",
+        effectChanges: [{ key: "system.skills.his.bonuses.check", mode: 2, value: "2" }]
+      }
+    ]
+  });
+
+  const effect = buildChoiceEffectData({ name: "Aristocraticness" }, config);
+
+  assert.deepEqual(effect.changes, [
+    { key: "system.skills.ins.bonuses.check", mode: 2, value: "2", priority: null },
+    { key: "system.skills.inv.bonuses.check", mode: 2, value: "2", priority: null },
+    { key: "system.skills.his.bonuses.check", mode: 2, value: "2", priority: null }
+  ]);
+});
+
+test("allows completed narrative choices without warning about missing effects", async () => {
+  const previousUi = globalThis.ui;
+  let warnings = 0;
+  let deletedEffectIds = [];
+  globalThis.ui = { notifications: { warn: () => { warnings += 1; } } };
+
+  const item = {
+    name: "Narrative Feat",
+    getFlag: () => ({
+      title: "Choose noble benefits",
+      type: "multiple",
+      min: 2,
+      max: 6,
+      effectRequired: false,
+      selectedValues: ["etiquette", "servants"],
+      options: [
+        { value: "etiquette", label: "Polished Etiquette" },
+        { value: "servants", label: "Servants" }
+      ]
+    }),
+    effects: [
+      {
+        id: "managed-effect",
+        flags: {
+          "rebreya-main": {
+            choiceAutomation: { managed: true }
+          }
+        }
+      }
+    ],
+    deleteEmbeddedDocuments: async (_type, ids) => {
+      deletedEffectIds = ids;
+    },
+    updateEmbeddedDocuments: async () => {
+      throw new Error("No Active Effect should be updated for narrative-only choices");
+    },
+    createEmbeddedDocuments: async () => {
+      throw new Error("No Active Effect should be created for narrative-only choices");
+    }
+  };
+
+  try {
+    const result = await new FeatChoiceAutomationService().configureItemChoice(item, { promptIfMissing: false });
+
+    assert.equal(result, true);
+    assert.equal(warnings, 0);
+    assert.deepEqual(deletedEffectIds, ["managed-effect"]);
+  }
+  finally {
+    globalThis.ui = previousUi;
+  }
+});
+
+test("Aristocraticness compendium config offers two to six selectable benefits", () => {
+  const bundleUrl = new URL("../cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json", import.meta.url);
+  const bundle = JSON.parse(readFileSync(bundleUrl, "utf8"));
+  const feat = bundle.items.find((item) => item.system?.identifier === "aristokratichnost");
+  const choiceConfig = feat.flags?.[CHOICE_FLAG_SCOPE]?.choiceConfig;
+
+  const config = normalizeChoiceConfig({
+    ...choiceConfig,
+    selectedValues: ["aristocratic-intrigue", "historical-references"]
+  });
+  const effect = buildChoiceEffectData(feat, config);
+
+  assert.equal(feat.effects.length, 0);
+  assert.equal(config.minCount, 2);
+  assert.equal(config.maxCount, 6);
+  assert.equal(config.options.length, 8);
+  assert.deepEqual(effect.changes, [
+    { key: "system.skills.ins.bonuses.check", mode: 2, value: "2", priority: null },
+    { key: "system.skills.inv.bonuses.check", mode: 2, value: "2", priority: null },
+    { key: "system.skills.his.bonuses.check", mode: 2, value: "2", priority: null }
   ]);
 });

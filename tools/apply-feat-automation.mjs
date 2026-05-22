@@ -403,11 +403,6 @@ const STATIC_EFFECTS = {
         identifier,
         weapons.map(([value, label]) => weaponProficiency(value, label))
     ])),
-    aristokratichnost: [
-        skillBonus("ins", "2", "Бонус +2 к Проницательности"),
-        skillBonus("inv", "2", "Бонус +2 к Расследованию"),
-        skillBonus("his", "2", "Бонус +2 к Истории")
-    ],
     atletichnyy: [
         change("Скорость лазания", "system.attributes.movement.climb", "@attributes.movement.walk", MODE_UPGRADE, "Скорость лазания не ниже скорости ходьбы")
     ],
@@ -473,6 +468,65 @@ const STATIC_EFFECTS = {
     "schitovaya-trenirovka": [
         change("Владение щитами", "system.traits.armorProf.value", "shl", MODE_ADD, "Владение щитами")
     ]
+}
+
+const CHOICE_CONFIGS = {
+    aristokratichnost: {
+        suppressEffects: true,
+        note: "Choice automation stores 2-6 selected aristocratic benefits in flags.rebreya-main.choiceConfig and creates one transferred Active Effect for selected mechanical bonuses",
+        config: {
+            title: "Аристократичность: выберите преимущества",
+            type: "multiple",
+            min: 2,
+            max: 6,
+            effectRequired: false,
+            prompt: "Выберите от 2 до 6 преимуществ, доступных вашему титулу.",
+            effectName: "{{item}}: выбранные преимущества",
+            effectDescription: "Автоматические бонусы выбранных преимуществ Аристократичности.",
+            options: [
+                { value: "polished-etiquette", label: "Отточенный этикет" },
+                { value: "aristocratic-charm", label: "Обаяние аристократов" },
+                { value: "aristocratic-language", label: "Язык аристократов" },
+                { value: "privilege", label: "Привилегированность" },
+                { value: "servants", label: "Слуги" },
+                {
+                    value: "aristocratic-intrigue",
+                    label: "Аристократические интриги",
+                    effectChanges: [
+                        { key: "system.skills.ins.bonuses.check", mode: MODE_ADD, value: "2", priority: null },
+                        { key: "system.skills.inv.bonuses.check", mode: MODE_ADD, value: "2", priority: null }
+                    ]
+                },
+                { value: "secular-education", label: "Светское образование" },
+                {
+                    value: "historical-references",
+                    label: "Исторические справки",
+                    effectChanges: [
+                        { key: "system.skills.his.bonuses.check", mode: MODE_ADD, value: "2", priority: null }
+                    ]
+                }
+            ]
+        }
+    },
+    "znatok-dospehov": {
+        suppressEffects: true,
+        note: "Choice automation stores the selected armor proficiency in flags.rebreya-main.choiceConfig and creates one transferred Active Effect on the Item",
+        config: {
+            title: "Знаток доспехов: выберите владение",
+            type: "single",
+            count: 1,
+            options: [
+                { value: "lgt", label: "Лёгкие доспехи" },
+                { value: "med", label: "Средние доспехи" },
+                { value: "hvy", label: "Тяжёлые доспехи" }
+            ],
+            effectChanges: {
+                lgt: [{ key: "system.traits.armorProf.value", mode: MODE_ADD, value: "lgt", priority: null }],
+                med: [{ key: "system.traits.armorProf.value", mode: MODE_ADD, value: "med", priority: null }],
+                hvy: [{ key: "system.traits.armorProf.value", mode: MODE_ADD, value: "hvy", priority: null }]
+            }
+        }
+    }
 }
 
 const CURATED_ACTIVITIES = {
@@ -1727,7 +1781,8 @@ const MECHANIC_LABELS = {
     damage: "урон",
     healing: "исцеление",
     uses: "ограничения использований",
-    statuses: "состояния rebreya-main/dnd5e"
+    statuses: "состояния rebreya-main/dnd5e",
+    choices: "выборы через flags"
 }
 
 function change(label, key, value, mode, note, options = {}) {
@@ -2521,6 +2576,10 @@ function clearAutomation(item) {
 }
 
 function addEffects(item, identifier, text, notes, mechanics) {
+    if (CHOICE_CONFIGS[identifier]?.suppressEffects === true) {
+        return
+    }
+
     const effects = []
 
     for (const effect of STATIC_EFFECTS[identifier] ?? []) {
@@ -2550,6 +2609,25 @@ function addEffects(item, identifier, text, notes, mechanics) {
         item.effects.push(createEffect(item, effect))
         notes.push(effect.note)
         mechanics.add(effect.mechanic)
+        mechanics.add("effects")
+    }
+}
+
+function addChoiceConfig(item, identifier, notes, mechanics) {
+    const choiceConfig = CHOICE_CONFIGS[identifier]
+    if (!choiceConfig) {
+        return
+    }
+
+    item.flags ??= {}
+    item.flags[MODULE_ID] = {
+        ...(item.flags[MODULE_ID] ?? {}),
+        choiceConfig: clone(choiceConfig.config)
+    }
+
+    notes.push(choiceConfig.note)
+    mechanics.add("choices")
+    if (JSON.stringify(choiceConfig.config).includes("effectChanges")) {
         mechanics.add("effects")
     }
 }
@@ -2973,6 +3051,7 @@ function automateItem(item, report) {
     const notes = []
     const mechanics = new Set()
 
+    addChoiceConfig(item, identifier, notes, mechanics)
     addEffects(item, identifier, text, notes, mechanics)
     addActivities(item, identifier, text, notes, mechanics)
 

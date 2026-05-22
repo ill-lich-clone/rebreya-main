@@ -90,6 +90,48 @@ function normalizeOption(option) {
   };
 }
 
+function firstDefined(source, keys) {
+  for (const key of keys) {
+    if (source?.[key] !== undefined && source?.[key] !== null) {
+      return source[key];
+    }
+  }
+
+  return undefined;
+}
+
+function toPositiveInteger(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 1) {
+    return fallback;
+  }
+
+  return Math.floor(number);
+}
+
+function clampChoiceCount(value, optionCount) {
+  return Math.max(1, Math.min(optionCount, value));
+}
+
+function normalizeChoiceBounds(rawConfig, optionCount) {
+  const minRaw = firstDefined(rawConfig, ["minCount", "min", "minimum", "minChoices"]);
+  const maxRaw = firstDefined(rawConfig, ["maxCount", "max", "maximum", "maxChoices"]);
+  const hasRange = minRaw !== undefined || maxRaw !== undefined;
+  const exactCount = toPositiveInteger(rawConfig.count, 1);
+
+  if (!hasRange) {
+    const count = clampChoiceCount(exactCount, optionCount);
+    return { count, minCount: count, maxCount: count };
+  }
+
+  const minCount = clampChoiceCount(toPositiveInteger(minRaw, 1), optionCount);
+  const maxFallback = rawConfig.count === undefined ? optionCount : exactCount;
+  const rawMaxCount = clampChoiceCount(toPositiveInteger(maxRaw, maxFallback), optionCount);
+  const maxCount = Math.max(minCount, rawMaxCount);
+
+  return { count: maxCount, minCount, maxCount };
+}
+
 function selectedValuesFromRaw(rawConfig, optionValues, type) {
   const values = [];
   const pushValue = (value) => {
@@ -125,21 +167,19 @@ export function normalizeChoiceConfig(rawConfig) {
   }
 
   const optionValues = new Set(options.map((option) => option.value));
-  const requestedCount = Number(rawConfig.count ?? 1);
-  const count = Math.max(1, Math.min(
-    options.length,
-    Number.isFinite(requestedCount) ? Math.floor(requestedCount) : 1
-  ));
+  const { count, minCount, maxCount } = normalizeChoiceBounds(rawConfig, options.length);
   const rawType = cleanString(rawConfig.type).toLowerCase();
   const multipleTypes = new Set(["multi", "multiple", "checkbox", "checkboxes"]);
-  const type = multipleTypes.has(rawType) || count > 1 ? "multiple" : "single";
-  const selectedValues = selectedValuesFromRaw(rawConfig, optionValues, type).slice(0, count);
+  const type = multipleTypes.has(rawType) || maxCount > 1 ? "multiple" : "single";
+  const selectedValues = selectedValuesFromRaw(rawConfig, optionValues, type);
 
   const normalized = {
     ...clone(rawConfig),
     title: cleanString(rawConfig.title, "Выберите вариант"),
     type,
     count,
+    minCount,
+    maxCount,
     options,
     effectChanges: clone(rawConfig.effectChanges ?? []),
     selectedValues
@@ -164,8 +204,38 @@ export function getSelectedChoiceValues(rawConfig) {
   return Array.isArray(config.selectedValues) ? [...config.selectedValues] : [];
 }
 
+export function isChoiceSelectionComplete(rawConfig) {
+  const config = normalizeChoiceConfig(rawConfig);
+  if (!config) {
+    return false;
+  }
+
+  const selectedCount = getSelectedChoiceValues(config).length;
+  return selectedCount >= config.minCount && selectedCount <= config.maxCount;
+}
+
 function hasCompleteChoiceSelection(config) {
-  return getSelectedChoiceValues(config).length === config.count;
+  return isChoiceSelectionComplete(config);
+}
+
+function choiceCountRequirement(config) {
+  if (config.type === "single") {
+    return "Выберите один вариант.";
+  }
+
+  if (config.minCount === config.maxCount) {
+    return `Выберите вариантов: ${config.maxCount}.`;
+  }
+
+  return `Выберите от ${config.minCount} до ${config.maxCount} вариантов.`;
+}
+
+function hasValidSelectionCount(selectedValues, config) {
+  return selectedValues.length >= config.minCount && selectedValues.length <= config.maxCount;
+}
+
+function isChoiceEffectRequired(config) {
+  return config.effectRequired !== false && config.requireEffect !== false;
 }
 
 function renderTemplate(value, option) {
@@ -485,8 +555,12 @@ export class FeatChoiceAutomationService {
   async #upsertManagedChoiceEffect(item, config) {
     const effectData = buildChoiceEffectData(item, config);
     if (!effectData?.changes?.length) {
-      globalThis.ui?.notifications?.warn?.(`${item.name}: не настроены Active Effect changes для выбранного варианта.`);
       await this.#deleteManagedChoiceEffects(item);
+      if (!isChoiceEffectRequired(config)) {
+        return true;
+      }
+
+      globalThis.ui?.notifications?.warn?.(`${item.name}: не настроены Active Effect changes для выбранного варианта.`);
       return false;
     }
 
@@ -543,10 +617,11 @@ export class FeatChoiceAutomationService {
                 : [cleanString(root?.querySelector("[data-choice-value]")?.value)];
               const normalizedValues = selectedValues
                 .map(cleanString)
-                .filter(Boolean);
+                .filter(Boolean)
+                .filter((value, index, allValues) => allValues.indexOf(value) === index);
 
-              if (normalizedValues.length !== config.count) {
-                globalThis.ui?.notifications?.warn?.(`Выберите вариантов: ${config.count}.`);
+              if (!hasValidSelectionCount(normalizedValues, config)) {
+                globalThis.ui?.notifications?.warn?.(choiceCountRequirement(config));
                 return false;
               }
 
@@ -601,7 +676,7 @@ export class FeatChoiceAutomationService {
 
     return `
       <form>
-        <p>${escapeHtml(config.prompt ?? `Выберите вариантов: ${config.count}.`)}</p>
+        <p>${escapeHtml(config.prompt ?? choiceCountRequirement(config))}</p>
         <div class="form-group stacked">${options}</div>
       </form>
     `;
