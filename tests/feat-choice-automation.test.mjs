@@ -49,7 +49,7 @@ test("builds native dnd5e ItemChoice advancement data from choice config", () =>
       count: 1,
       options: [
         { value: "lgt", label: "Light Armor", uuid: "Compendium.world.rebreya-feats.aaaaaaaaaaaaaaaa" },
-        { value: "med", label: "Medium Armor", uuid: "Compendium.world.rebreya-feats.bbbbbbbbbbbbbbbb" }
+        { value: "med", label: "Medium Armor", uuid: "Compendium.world.rebreya-feats.Item.bbbbbbbbbbbbbbbb" }
       ]
     }
   });
@@ -59,8 +59,8 @@ test("builds native dnd5e ItemChoice advancement data from choice config", () =>
   assert.equal(advancement.configuration.allowDrops, false);
   assert.equal(advancement.configuration.choices["0"].count, 1);
   assert.deepEqual(advancement.configuration.pool, [
-    { uuid: "Compendium.world.rebreya-feats.aaaaaaaaaaaaaaaa" },
-    { uuid: "Compendium.world.rebreya-feats.bbbbbbbbbbbbbbbb" }
+    { uuid: "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa" },
+    { uuid: "Compendium.world.rebreya-feats.Item.bbbbbbbbbbbbbbbb" }
   ]);
 });
 
@@ -110,7 +110,7 @@ test("opens native AdvancementManager for an unconfigured owned choice feat", as
           choiceConfig: {
             title: "Choose armor training",
             count: 1,
-            options: [{ value: "lgt", label: "Light Armor", uuid: "Compendium.world.rebreya-feats.aaaaaaaaaaaaaaaa" }]
+            options: [{ value: "lgt", label: "Light Armor", uuid: "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa" }]
           }
         })
       ]
@@ -118,7 +118,7 @@ test("opens native AdvancementManager for an unconfigured owned choice feat", as
     getFlag: () => ({
       title: "Choose armor training",
       count: 1,
-      options: [{ value: "lgt", label: "Light Armor", uuid: "Compendium.world.rebreya-feats.aaaaaaaaaaaaaaaa" }]
+      options: [{ value: "lgt", label: "Light Armor", uuid: "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa" }]
     })
   };
 
@@ -166,13 +166,13 @@ test("does not reopen advancement for a feat with completed ItemChoice values", 
     choiceConfig: {
       title: "Choose armor training",
       count: 1,
-      options: [{ value: "lgt", label: "Light Armor", uuid: "Compendium.world.rebreya-feats.aaaaaaaaaaaaaaaa" }]
+      options: [{ value: "lgt", label: "Light Armor", uuid: "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa" }]
     }
   });
   advancement.value = {
     added: {
       0: {
-        childItemId: "Compendium.world.rebreya-feats.aaaaaaaaaaaaaaaa"
+        childItemId: "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa"
       }
     },
     replaced: {}
@@ -189,7 +189,7 @@ test("does not reopen advancement for a feat with completed ItemChoice values", 
     getFlag: () => ({
       title: "Choose armor training",
       count: 1,
-      options: [{ value: "lgt", label: "Light Armor", uuid: "Compendium.world.rebreya-feats.aaaaaaaaaaaaaaaa" }]
+      options: [{ value: "lgt", label: "Light Armor", uuid: "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa" }]
     })
   };
 
@@ -222,7 +222,7 @@ test("Aristocraticness uses native ItemChoice advancement backed by real option 
   assert.deepEqual(Object.keys(parent.system.activities ?? {}), []);
 
   for (const option of config.options) {
-    assert.match(option.uuid, /^Compendium\.world\.rebreya-feats\.[A-Za-z0-9]{16}$/u);
+    assert.match(option.uuid, /^Compendium\.world\.rebreya-feats\.Item\.[A-Za-z0-9]{16}$/u);
     const optionId = option.uuid.split(".").at(-1);
     const optionItem = items.find((item) => item._id === optionId);
     assert.equal(optionItem?.type, "feat");

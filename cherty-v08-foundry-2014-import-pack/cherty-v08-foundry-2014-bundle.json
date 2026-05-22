@@ -1037,28 +1037,28 @@
               },
               "pool": [
                 {
-                  "uuid": "Compendium.world.rebreya-feats.46318742f36cdcd9"
+                  "uuid": "Compendium.world.rebreya-feats.Item.46318742f36cdcd9"
                 },
                 {
-                  "uuid": "Compendium.world.rebreya-feats.88e93017b8fdc4b6"
+                  "uuid": "Compendium.world.rebreya-feats.Item.88e93017b8fdc4b6"
                 },
                 {
-                  "uuid": "Compendium.world.rebreya-feats.156b60eb37c22665"
+                  "uuid": "Compendium.world.rebreya-feats.Item.156b60eb37c22665"
                 },
                 {
-                  "uuid": "Compendium.world.rebreya-feats.85d045e97dd85920"
+                  "uuid": "Compendium.world.rebreya-feats.Item.85d045e97dd85920"
                 },
                 {
-                  "uuid": "Compendium.world.rebreya-feats.18e33c9e53df0b70"
+                  "uuid": "Compendium.world.rebreya-feats.Item.18e33c9e53df0b70"
                 },
                 {
-                  "uuid": "Compendium.world.rebreya-feats.e32c8cff074cefab"
+                  "uuid": "Compendium.world.rebreya-feats.Item.e32c8cff074cefab"
                 },
                 {
-                  "uuid": "Compendium.world.rebreya-feats.02af0d37709a0abb"
+                  "uuid": "Compendium.world.rebreya-feats.Item.02af0d37709a0abb"
                 },
                 {
-                  "uuid": "Compendium.world.rebreya-feats.cbfc68804e332347"
+                  "uuid": "Compendium.world.rebreya-feats.Item.cbfc68804e332347"
                 }
               ],
               "restriction": {
@@ -1132,56 +1132,56 @@
                 "label": "Отточенный этикет",
                 "summary": "Преимущество на проверки этикета и обычаев высшего общества.",
                 "description": "Вы в идеале осведомлены о этикете и обычаях высшего общества. Вы с преимуществом совершаете проверки характеристик в тех случаях, когда эти знания могут пригодиться, например, на званом ужине или при личном общении.",
-                "uuid": "Compendium.world.rebreya-feats.46318742f36cdcd9"
+                "uuid": "Compendium.world.rebreya-feats.Item.46318742f36cdcd9"
               },
               {
                 "value": "aristocratic-charm",
                 "label": "Обаяние аристократов",
                 "summary": "Реакцией добавляете модификатор Харизмы к проверке Харизмы в 30 футах.",
                 "description": "Когда существо в пределах 30 футов совершает проверку Харизмы, вы можете реакцией добавить к броску свой модификатор Харизмы, минимум 1. После использования это умение восстанавливается после продолжительного отдыха.",
-                "uuid": "Compendium.world.rebreya-feats.88e93017b8fdc4b6"
+                "uuid": "Compendium.world.rebreya-feats.Item.88e93017b8fdc4b6"
               },
               {
                 "value": "aristocratic-language",
                 "label": "Язык аристократов",
                 "summary": "Понимаете скрытые мотивы и недосказанность в разговорах аристократов.",
                 "description": "Вы отлично знаете повадки и идеи аристократов. Вы можете прислушаться к разговорам других аристократов в пределах 30 футов и понять, скрывают ли они что-то, какие мотивы ими движут, есть ли третья сторона, агенты или замаскированные имена.",
-                "uuid": "Compendium.world.rebreya-feats.156b60eb37c22665"
+                "uuid": "Compendium.world.rebreya-feats.Item.156b60eb37c22665"
               },
               {
                 "value": "privilege",
                 "label": "Привилегированность",
                 "summary": "Вас принимают в высшем обществе, проще попасть в закрытые места и к дворянам.",
                 "description": "Благодаря знатному происхождению другие хорошо к вам относятся. Вас принимают в высшем обществе, считается, что у вас есть право посещать многие места, а при необходимости вы можете получить аудиенцию местного дворянина.",
-                "uuid": "Compendium.world.rebreya-feats.85d045e97dd85920"
+                "uuid": "Compendium.world.rebreya-feats.Item.85d045e97dd85920"
               },
               {
                 "value": "servants",
                 "label": "Слуги",
                 "summary": "Трое преданных слуг помогают с простой работой вне опасных мест.",
                 "description": "На вас работают трое слуг, преданных вашей семье. Это могут быть помощники, слуги или дворецкий. Они являются обывателями, выполняют простую работу, но не сражаются за вас, не идут в опасные места и могут покинуть вас при плохом обращении или угрозе.",
-                "uuid": "Compendium.world.rebreya-feats.18e33c9e53df0b70"
+                "uuid": "Compendium.world.rebreya-feats.Item.18e33c9e53df0b70"
               },
               {
                 "value": "aristocratic-intrigue",
                 "label": "Аристократические интриги",
                 "summary": "+2 к проверкам Мудрости (Проницательность) и Интеллекта (Расследование).",
                 "description": "Вы часто ввязывались в местные интриги, что закалило вашу смекалку. Вы получаете бонус +2 ко всем проверкам Мудрости (Проницательность) и Интеллекта (Расследование).",
-                "uuid": "Compendium.world.rebreya-feats.e32c8cff074cefab"
+                "uuid": "Compendium.world.rebreya-feats.Item.e32c8cff074cefab"
               },
               {
                 "value": "secular-education",
                 "label": "Светское образование",
                 "summary": "Владение музыкальным инструментом, набором инструментов и языком на выбор.",
                 "description": "Вы получаете владение одним музыкальным инструментом, одним набором инструментов и одним языком на ваш выбор. Конкретные варианты выбираются отдельно и вносятся вручную по согласованию с Мастером.",
-                "uuid": "Compendium.world.rebreya-feats.02af0d37709a0abb"
+                "uuid": "Compendium.world.rebreya-feats.Item.02af0d37709a0abb"
               },
               {
                 "value": "historical-references",
                 "label": "Исторические справки",
                 "summary": "+2 к проверкам Интеллекта (История).",
                 "description": "Вы отлично знаете историю не только своего рода, но и других семей. Вы получаете бонус +2 к проверкам Интеллекта (История).",
-                "uuid": "Compendium.world.rebreya-feats.cbfc68804e332347"
+                "uuid": "Compendium.world.rebreya-feats.Item.cbfc68804e332347"
               }
             ],
             "count": 6,
@@ -6500,13 +6500,13 @@
               },
               "pool": [
                 {
-                  "uuid": "Compendium.world.rebreya-feats.99550f666c5a4ab1"
+                  "uuid": "Compendium.world.rebreya-feats.Item.99550f666c5a4ab1"
                 },
                 {
-                  "uuid": "Compendium.world.rebreya-feats.c0dee2deb45e743d"
+                  "uuid": "Compendium.world.rebreya-feats.Item.c0dee2deb45e743d"
                 },
                 {
-                  "uuid": "Compendium.world.rebreya-feats.e8645e41be915fbd"
+                  "uuid": "Compendium.world.rebreya-feats.Item.e8645e41be915fbd"
                 }
               ],
               "restriction": {
@@ -6575,21 +6575,21 @@
                 "label": "Лёгкие доспехи",
                 "summary": "Вы получаете владение лёгкими доспехами.",
                 "description": "Вы получаете владение лёгкими доспехами.",
-                "uuid": "Compendium.world.rebreya-feats.99550f666c5a4ab1"
+                "uuid": "Compendium.world.rebreya-feats.Item.99550f666c5a4ab1"
               },
               {
                 "value": "med",
                 "label": "Средние доспехи",
                 "summary": "Вы получаете владение средними доспехами.",
                 "description": "Вы получаете владение средними доспехами.",
-                "uuid": "Compendium.world.rebreya-feats.c0dee2deb45e743d"
+                "uuid": "Compendium.world.rebreya-feats.Item.c0dee2deb45e743d"
               },
               {
                 "value": "hvy",
                 "label": "Тяжёлые доспехи",
                 "summary": "Вы получаете владение тяжёлыми доспехами.",
                 "description": "Вы получаете владение тяжёлыми доспехами.",
-                "uuid": "Compendium.world.rebreya-feats.e8645e41be915fbd"
+                "uuid": "Compendium.world.rebreya-feats.Item.e8645e41be915fbd"
               }
             ],
             "min": 1,

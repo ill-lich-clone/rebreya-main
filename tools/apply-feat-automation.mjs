@@ -2692,7 +2692,7 @@ function choiceOptionId(parentIdentifier, value) {
 }
 
 function choiceOptionUuid(parentIdentifier, value) {
-    return `Compendium.world.rebreya-feats.${choiceOptionId(parentIdentifier, value)}`
+    return `Compendium.world.rebreya-feats.Item.${choiceOptionId(parentIdentifier, value)}`
 }
 
 function choiceAdvancementId(parentIdentifier) {

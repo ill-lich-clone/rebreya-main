@@ -7,10 +7,21 @@ const HOOKS_REGISTERED_KEY = `${MODULE_ID}.featChoiceAutomationHooksRegistered`;
 const AUTOMATION_OPTION_KEY = "featChoiceAutomation";
 const DND5E_SYSTEM_ID = "dnd5e";
 const DEFAULT_ADVANCEMENT_LEVEL = 0;
+const LEGACY_COMPENDIUM_ITEM_UUID_PATTERN = /^Compendium\.([^.]+)\.([^.]+)\.([A-Za-z0-9]{16})$/u;
 
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || String(fallback ?? "").trim();
+}
+
+function normalizeCompendiumItemUuid(value) {
+  const uuid = cleanString(value);
+  const match = uuid.match(LEGACY_COMPENDIUM_ITEM_UUID_PATTERN);
+  if (!match) {
+    return uuid;
+  }
+
+  return `Compendium.${match[1]}.${match[2]}.Item.${match[3]}`;
 }
 
 function isPlainObject(value) {
@@ -140,7 +151,7 @@ function normalizeOption(option) {
     label: cleanString(option.label, cleanString(option.name, value)),
     summary: cleanString(option.summary, cleanString(option.subtitle)),
     description: cleanString(option.description, cleanString(option.text, cleanString(option.hint))),
-    uuid: cleanString(option.uuid, cleanString(option.itemUuid, cleanString(option.sourceUuid)))
+    uuid: normalizeCompendiumItemUuid(cleanString(option.uuid, cleanString(option.itemUuid, cleanString(option.sourceUuid))))
   };
 }
 
