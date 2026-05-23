@@ -23,7 +23,9 @@ const STATES_DATA_PATH = `modules/${MODULE_ID}/data/states-teyvankal-v02.json`;
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const STATES_ROOT_FOLDER = "Государства Тейванкаля";
 const DEFAULT_STATE_ICON = "icons/svg/city.svg";
-const STATE_TEMPLATE_VERSION = 3;
+const STATE_TEMPLATE_VERSION = 4;
+const CULTURAL_FEAT_SECTION_KEY = "cultural";
+const CULTURAL_FEAT_SECTION_LABEL = "\u043a\u0443\u043b\u044c\u0442\u0443\u0440\u043d\u044b\u0435 \u0447\u0435\u0440\u0442\u044b";
 const STATE_LANGUAGE_ID_BY_LABEL = new Map(
   TEYVANKAL_STATE_LANGUAGES.map((language) => [normalizeMatchText(language.label), language.id])
 );
@@ -188,6 +190,9 @@ function buildStateDescription(state, culturalFeatResolution = null) {
   if (state.culturalFeatNames.length) {
     rows.push(`<h3>Культурные черты</h3><p>Персонаж может выбрать до двух культурных черт, связанных с этим государством.</p>${buildCulturalFeatList(state.culturalFeatNames)}`);
   }
+  else if (culturalFeatResolution?.usesFallbackPool && culturalFeatResolution.itemUuids.length) {
+    rows.push("<h3>Культурные черты</h3><p>Для этого государства не указан отдельный список культурных черт. Персонаж может выбрать две любые культурные черты.</p>");
+  }
 
   const missingNames = culturalFeatResolution?.missingNames ?? [];
   if (missingNames.length) {
@@ -237,18 +242,22 @@ function buildStateLanguageAdvancement(state) {
   };
 }
 
-function buildCulturalFeatChoiceAdvancement(state, culturalFeatResolution) {
+export function buildCulturalFeatChoiceAdvancement(state, culturalFeatResolution) {
   const itemUuids = unique(culturalFeatResolution?.itemUuids ?? []);
   if (!itemUuids.length) {
     return null;
   }
 
   const count = Math.min(2, itemUuids.length);
+  const hint = culturalFeatResolution?.usesFallbackPool
+    ? "Выберите две любые культурные черты персонажа."
+    : "Выберите до двух культурных черт, связанных с родным государством персонажа.";
+
   return {
     _id: stableHashId(`${state.id}:cultural-feats`, "adv"),
     type: "ItemChoice",
     title: "Культурные черты",
-    hint: "Выберите до двух культурных черт, связанных с родным государством персонажа.",
+    hint,
     level: 1,
     configuration: {
       allowDrops: false,
@@ -296,6 +305,7 @@ function buildStateSignature(entry) {
     state: entry.state,
     culturalFeatUuids: entry.culturalFeatResolution.itemUuids,
     missingCulturalFeatNames: entry.culturalFeatResolution.missingNames,
+    usesFallbackCulturalFeatPool: Boolean(entry.culturalFeatResolution.usesFallbackPool),
     system: entry.system
   });
 }
@@ -501,6 +511,10 @@ function normalizeFeatIndexRecord(record, pack) {
   };
 }
 
+function isCulturalFeatRecord(record) {
+  return record?.sectionKey === CULTURAL_FEAT_SECTION_KEY || record?.section === CULTURAL_FEAT_SECTION_LABEL;
+}
+
 async function buildFeatLookup() {
   const pack = game.packs.get(FEATS_PACK_ID);
   if (!pack) {
@@ -511,6 +525,7 @@ async function buildFeatLookup() {
     fields: [`flags.${MODULE_ID}.featId`, "flags.teyvankal.section", "flags.teyvankal.sectionKey"]
   });
   const byName = new Map();
+  const culturalFeatUuids = [];
 
   for (const row of index) {
     const record = normalizeFeatIndexRecord(row, pack);
@@ -522,8 +537,13 @@ async function buildFeatLookup() {
       byName.set(record.normalizedName, []);
     }
     byName.get(record.normalizedName).push(record);
+
+    if (isCulturalFeatRecord(record)) {
+      culturalFeatUuids.push(record.uuid);
+    }
   }
 
+  byName.culturalFeatUuids = unique(culturalFeatUuids);
   return byName;
 }
 
@@ -533,7 +553,7 @@ function pickPreferredCulturalFeat(records = []) {
     return null;
   }
 
-  return list.find((entry) => entry.sectionKey === "cultural" || entry.section === "культурные черты") ?? list[0];
+  return list.find((entry) => isCulturalFeatRecord(entry)) ?? list[0];
 }
 
 function resolveFeatByName(name, featLookupByName) {
@@ -556,8 +576,17 @@ function resolveFeatByName(name, featLookupByName) {
   return null;
 }
 
-function resolveCulturalFeats(state, featLookupByName) {
+export function resolveCulturalFeats(state, featLookupByName) {
   const names = unique(state.culturalFeatNames);
+  if (!names.length) {
+    return {
+      names,
+      itemUuids: unique(featLookupByName?.culturalFeatUuids ?? []),
+      missingNames: [],
+      usesFallbackPool: true
+    };
+  }
+
   const itemUuids = [];
   const missingNames = [];
 
@@ -578,7 +607,8 @@ function resolveCulturalFeats(state, featLookupByName) {
   return {
     names,
     itemUuids: unique(itemUuids),
-    missingNames
+    missingNames,
+    usesFallbackPool: false
   };
 }
 
