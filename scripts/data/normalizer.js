@@ -82,7 +82,8 @@ const GEAR_FIELD_ALIASES = {
   foundryFolder: ["foundryFolder", "folderPath", "folder"],
   itemSlot: ["itemSlot", "slot", "wearSlot", "equipSlot"],
   heroDollSlots: ["heroDollSlots", "heroSlots", "itemSlots", "slots"],
-  firearmClass: ["firearmClass", "gunClass", "firearmSubtype"]
+  firearmClass: ["firearmClass", "gunClass", "firearmSubtype"],
+  weapon: ["weapon", "weaponData", "dnd5eWeapon"]
 };
 
 function isObject(value) {
@@ -100,6 +101,10 @@ function hasValue(value) {
 
 function cleanString(value) {
   return String(value ?? "").trim();
+}
+
+function clonePlainObject(value) {
+  return isObject(value) ? foundry.utils.deepClone(value) : null;
 }
 
 function normalizeMatchText(value) {
@@ -570,6 +575,7 @@ function normalizeGear(rawGear, materialAliasMap, materials) {
       itemSlot: cleanString(getValue(record, GEAR_FIELD_ALIASES.itemSlot)),
       heroDollSlots: getValue(record, GEAR_FIELD_ALIASES.heroDollSlots, []),
       firearmClass: cleanString(getValue(record, GEAR_FIELD_ALIASES.firearmClass)),
+      weapon: clonePlainObject(getValue(record, GEAR_FIELD_ALIASES.weapon)),
       source: cleanString(record?.source ?? "gear-workbook")
     };
   });

@@ -17,7 +17,7 @@ const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const GEAR_TEMPLATE_VERSION = 6;
+const GEAR_TEMPLATE_VERSION = 7;
 const CUSTOM_GEAR_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const SUPPORTED_GEAR_ICON_EXTENSIONS = new Set(["webp", "png", "jpg", "jpeg", "svg", "avif"]);
 const customGearIconByName = new Map();
@@ -371,13 +371,33 @@ function buildDescriptionHtml(item, classification) {
 function buildWeaponDamagePart(formula, damageType) {
   const safeFormula = cleanString(formula);
   const safeDamageType = cleanString(damageType);
-  return {
+  const simpleFormulaMatch = safeFormula.match(/^(\d+)d(\d+)(?:\s*\+\s*(.+))?$/iu);
+  const damagePart = {
+    types: safeDamageType ? [safeDamageType] : [],
     custom: {
       enabled: Boolean(safeFormula),
       formula: safeFormula
-    },
-    types: safeDamageType ? [safeDamageType] : []
+    }
   };
+
+  if (simpleFormulaMatch) {
+    damagePart.number = Number(simpleFormulaMatch[1]);
+    damagePart.denomination = Number(simpleFormulaMatch[2]);
+    damagePart.bonus = cleanString(simpleFormulaMatch[3]);
+    damagePart.custom = {
+      enabled: false,
+      formula: ""
+    };
+  }
+
+  if (!safeFormula) {
+    damagePart.custom = {
+      enabled: false,
+      formula: ""
+    };
+  }
+
+  return damagePart;
 }
 
 function normalizeWeaponRange(range) {

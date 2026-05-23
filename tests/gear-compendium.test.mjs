@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createDnd5eItemData } from "../scripts/data/gear-compendium.js";
+import { normalizeEconomyDataset } from "../scripts/data/normalizer.js";
 
 const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
 const DAMAGE_TYPE_BY_LABEL = new Map([
@@ -15,6 +16,7 @@ const DAMAGE_TYPE_BY_LABEL = new Map([
 
 globalThis.foundry ??= {
   utils: {
+    deepClone: (value) => JSON.parse(JSON.stringify(value)),
     escapeHTML: (value) => String(value ?? "")
       .replace(/&/gu, "&amp;")
       .replace(/</gu, "&lt;")
@@ -64,14 +66,18 @@ test("creates weapon compendium data with damage and Rebreya attack properties",
   const created = createDnd5eItemData(item, new Map());
 
   assert.equal(created.type, "weapon");
+  assert.equal(created.system.damage.base.number, 1);
+  assert.equal(created.system.damage.base.denomination, 6);
   assert.deepEqual(created.system.damage.base.custom, {
-    enabled: true,
-    formula: "1d6"
+    enabled: false,
+    formula: ""
   });
   assert.deepEqual(created.system.damage.base.types, ["piercing"]);
+  assert.equal(created.system.damage.versatile.number, 1);
+  assert.equal(created.system.damage.versatile.denomination, 8);
   assert.deepEqual(created.system.damage.versatile.custom, {
-    enabled: true,
-    formula: "1d8"
+    enabled: false,
+    formula: ""
   });
   assert.deepEqual(created.system.properties, ["ver", "thr", "lchDash", "lchMku", "lchRku"]);
   assert.deepEqual(created.system.range, {
@@ -118,4 +124,37 @@ test("real gear weapon data maps spreadsheet damage and properties to system key
   assert.ok(byId.get("molot").weapon.properties.includes("lchPowerStrike"));
   assert.ok(byId.get("molot").weapon.properties.includes("lchPush"));
   assert.ok(byId.get("kavaleriyskaya-pika").weapon.properties.includes("lchMounted"));
+});
+
+test("normalizes gear without dropping weapon data before compendium sync", () => {
+  const weapon = {
+    damageFormula: "1d8",
+    damageType: "slashing",
+    properties: ["ver", "lchGrip"],
+    range: {
+      value: 0,
+      long: 0,
+      reach: 5,
+      units: "ft"
+    },
+    lichWeaponPropertyValues: {
+      gripModes: "Смена хвата"
+    }
+  };
+
+  const normalized = normalizeEconomyDataset({
+    goods: [],
+    regions: [],
+    cities: [],
+    materials: [],
+    reference: {},
+    gear: [{
+      id: "dlinnyy-mech",
+      name: "Длинный меч",
+      equipmentType: "Оружие",
+      weapon
+    }]
+  });
+
+  assert.deepEqual(normalized.gear[0].weapon, weapon);
 });
