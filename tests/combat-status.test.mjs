@@ -49,6 +49,16 @@ test("discreet effect data stores a visible status counter and speed penalty", (
   );
 });
 
+test("discreet effect data can be created without a counter value", () => {
+  const data = buildDiscreetStatusEffectData(null);
+
+  assert.equal(data.name, "Сдержанный");
+  assert.equal(data.flags["rebreya-main"].statusValue, null);
+  assert.equal(data.flags.statuscounter.value, undefined);
+  assert.equal(data.flags.statuscounter.visible, false);
+  assert.deepEqual(data.changes, []);
+});
+
 test("combat status config registers Rebreya statuses for dnd5e HUD rebuilds", () => {
   const previousConfig = globalThis.CONFIG;
   globalThis.CONFIG = {

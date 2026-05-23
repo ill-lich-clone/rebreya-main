@@ -160,6 +160,10 @@ function plainDiscreetStatusName() {
   return statusLabel(REBREYA_DISCREET_STATUS_ID);
 }
 
+function isUnvaluedDiscreetValue(value) {
+  return value === null;
+}
+
 export function buildDiscreetSpeedChanges(value) {
   const penalty = normalizeStatusValue(value, 1);
   const signedPenalty = String(-penalty);
@@ -202,16 +206,17 @@ function getDiscreetHalfSpeedStrength(actor) {
 }
 
 export function buildDiscreetStatusEffectData(value, { durationRounds = DEFAULT_DURATION_ROUNDS, meta = {} } = {}) {
-  const statusValue = normalizeStatusValue(value, 1);
+  const hasValue = !isUnvaluedDiscreetValue(value);
+  const statusValue = hasValue ? normalizeStatusValue(value, 1) : null;
 
   return {
-    name: discreetStatusName(statusValue),
+    name: hasValue ? discreetStatusName(statusValue) : plainDiscreetStatusName(),
     img: statusIcon(REBREYA_DISCREET_STATUS_ID),
     icon: statusIcon(REBREYA_DISCREET_STATUS_ID),
     statuses: buildEffectStatusesSet(REBREYA_DISCREET_STATUS_ID),
     disabled: false,
     transfer: false,
-    changes: buildDiscreetSpeedChanges(statusValue),
+    changes: hasValue ? buildDiscreetSpeedChanges(statusValue) : [],
     duration: resolveActiveEffectDuration(durationRounds),
     flags: {
       core: {
@@ -223,8 +228,8 @@ export function buildDiscreetStatusEffectData(value, { durationRounds = DEFAULT_
         [STATUS_META_FLAG]: cloneData(meta ?? {})
       },
       [STATUS_COUNTER_MODULE_ID]: {
-        value: statusValue,
-        visible: true,
+        ...(hasValue ? { value: statusValue } : {}),
+        visible: hasValue,
         config: {
           multiplyEffect: false
         }
@@ -529,6 +534,35 @@ export class CombatStatusService {
   async #promptStatusValue(definition, currentValue = 1) {
     return new Promise((resolve) => {
       let settled = false;
+      const allowUnvalued = definition?.id === REBREYA_DISCREET_STATUS_ID;
+      const buttons = {
+        confirm: {
+          label: "Применить",
+          callback: (html) => {
+            const root = getDialogRoot(html);
+            const input = root?.querySelector("[data-field='status-value']");
+            const rawValue = String(input?.value ?? "").trim();
+            settled = true;
+            resolve(allowUnvalued && !rawValue ? null : normalizeStatusValue(rawValue, 1));
+          }
+        },
+        ...(allowUnvalued ? {
+          unvalued: {
+            label: "Без значения",
+            callback: () => {
+              settled = true;
+              resolve(null);
+            }
+          }
+        } : {}),
+        cancel: {
+          label: "Отмена",
+          callback: () => {
+            settled = true;
+            resolve(undefined);
+          }
+        }
+      };
 
       const dialog = new Dialog({
         title: definition?.label ? `${definition.label}: значение` : "Введите значение состояния",
@@ -542,29 +576,13 @@ export class CombatStatusService {
                 min="1"
                 step="1"
                 value="${foundry.utils.escapeHTML(String(normalizeStatusValue(currentValue, 1)))}"
+                placeholder="${allowUnvalued ? "Без значения" : ""}"
                 data-field="status-value"
               >
             </div>
           </form>
         `,
-        buttons: {
-          confirm: {
-            label: "Применить",
-            callback: (html) => {
-              const root = getDialogRoot(html);
-              const input = root?.querySelector("[data-field='status-value']");
-              settled = true;
-              resolve(normalizeStatusValue(input?.value, 1));
-            }
-          },
-          cancel: {
-            label: "Отмена",
-            callback: () => {
-              settled = true;
-              resolve(null);
-            }
-          }
-        },
+        buttons,
         default: "confirm",
         render: (html) => {
           const root = getDialogRoot(html);
@@ -576,7 +594,7 @@ export class CombatStatusService {
         },
         close: () => {
           if (!settled) {
-            resolve(null);
+            resolve(undefined);
           }
         }
       }, {
@@ -616,7 +634,7 @@ export class CombatStatusService {
       event.stopImmediatePropagation?.();
 
       const nextValue = await this.#promptStatusValue(definition, currentStatus?.value ?? 1);
-      if (nextValue === null) {
+      if (nextValue === undefined) {
         return;
       }
 
@@ -637,7 +655,7 @@ export class CombatStatusService {
     }
 
     const nextValue = await this.#promptStatusValue(definition, currentStatus?.value ?? 1);
-    if (nextValue === null) {
+    if (nextValue === undefined) {
       return;
     }
 
