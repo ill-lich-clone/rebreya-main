@@ -8,7 +8,8 @@ import {
 } from "../scripts/combat/status-definitions.js";
 import {
   buildDiscreetStatusEffectData,
-  buildDiscreetStatusSyncUpdates
+  buildDiscreetStatusSyncUpdates,
+  registerCombatStatusConfig
 } from "../scripts/combat/status-service.js";
 
 test("dnd5e restrained is not aliased to the Rebreya discreet status", () => {
@@ -46,6 +47,35 @@ test("discreet effect data stores a visible status counter and speed penalty", (
       ["system.attributes.movement.swim", "-15"]
     ]
   );
+});
+
+test("combat status config registers Rebreya statuses for dnd5e HUD rebuilds", () => {
+  const previousConfig = globalThis.CONFIG;
+  globalThis.CONFIG = {
+    statusEffects: [],
+    DND5E: {
+      statusEffects: {}
+    }
+  };
+
+  try {
+    registerCombatStatusConfig();
+    registerCombatStatusConfig();
+
+    const coreDiscreetStatuses = globalThis.CONFIG.statusEffects.filter(
+      (status) => status.id === "rebreya-discreet"
+    );
+    const dnd5eDiscreetStatus = globalThis.CONFIG.DND5E.statusEffects["rebreya-discreet"];
+
+    assert.equal(coreDiscreetStatuses.length, 1);
+    assert.equal(dnd5eDiscreetStatus.name, "Сдержанный");
+    assert.equal(dnd5eDiscreetStatus.img, "icons/svg/anchor.svg");
+    assert.equal(dnd5eDiscreetStatus.icon, "icons/svg/anchor.svg");
+    assert.equal(dnd5eDiscreetStatus.flags["rebreya-main"].statusKey, "discreet");
+  }
+  finally {
+    globalThis.CONFIG = previousConfig;
+  }
 });
 
 test("discreet status sync keeps several effects but only applies the strongest speed penalty", () => {

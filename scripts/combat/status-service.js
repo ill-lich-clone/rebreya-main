@@ -396,28 +396,41 @@ function buildDynamicStatusChanges(statusId, value) {
 }
 
 export function registerCombatStatusConfig() {
-  if (!Array.isArray(CONFIG?.statusEffects)) {
+  const coreStatusEffects = Array.isArray(CONFIG?.statusEffects) ? CONFIG.statusEffects : null;
+  const dnd5eStatusEffects =
+    CONFIG?.DND5E?.statusEffects && typeof CONFIG.DND5E.statusEffects === "object"
+      ? CONFIG.DND5E.statusEffects
+      : null;
+
+  if (!coreStatusEffects && !dnd5eStatusEffects) {
     return;
   }
 
   const knownIds = new Set(
-    CONFIG.statusEffects
+    (coreStatusEffects ?? [])
       .map((row) => String(row?.id ?? row?._id ?? "").trim())
       .filter(Boolean)
   );
 
   for (const row of REBREYA_STATUS_DEFINITIONS) {
-    if (knownIds.has(row.id)) {
-      continue;
-    }
-
     const statusConfig = buildRebreyaStatusConfig(row.id);
     if (!statusConfig) {
       continue;
     }
 
-    CONFIG.statusEffects.push(statusConfig);
-    knownIds.add(row.id);
+    if (dnd5eStatusEffects && !Object.hasOwn(dnd5eStatusEffects, row.id)) {
+      dnd5eStatusEffects[row.id] = {
+        name: statusConfig.name,
+        img: statusConfig.img,
+        icon: statusConfig.icon,
+        flags: statusConfig.flags
+      };
+    }
+
+    if (coreStatusEffects && !knownIds.has(row.id)) {
+      coreStatusEffects.push(statusConfig);
+      knownIds.add(row.id);
+    }
   }
 }
 
