@@ -17,7 +17,7 @@ const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const GEAR_TEMPLATE_VERSION = 5;
+const GEAR_TEMPLATE_VERSION = 6;
 const CUSTOM_GEAR_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const SUPPORTED_GEAR_ICON_EXTENSIONS = new Set(["webp", "png", "jpg", "jpeg", "svg", "avif"]);
 const customGearIconByName = new Map();
@@ -42,6 +42,21 @@ function normalizeMatchText(value) {
     .replace(/\u0451/gu, "\u0435")
     .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
     .replace(/\s+/gu, " ");
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function cleanString(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function cleanArray(values = []) {
+  return Array.from(new Set((Array.isArray(values) ? values : [])
+    .map((value) => cleanString(value))
+    .filter(Boolean)));
 }
 
 function resetCustomGearIconCache() {
@@ -215,7 +230,8 @@ function buildGearSignature(item) {
     folderPath: buildFolderPath(classification),
     itemSlot,
     heroDollSlots,
-    firearmClass: classification.firearmClass
+    firearmClass: classification.firearmClass,
+    weapon: isPlainObject(item.weapon) ? item.weapon : null
   });
 }
 
@@ -276,6 +292,7 @@ function getGearIcon(item, classification) {
 
 function buildMetadataRows(item, classification) {
   const itemSlotGroup = resolveItemSlotGroup(item, classification);
+  const weapon = isPlainObject(item.weapon) ? item.weapon : {};
   const itemSlotLabel = {
     head: "Голова",
     neck: "Шея",
@@ -326,7 +343,10 @@ function buildMetadataRows(item, classification) {
     ["Вместимость", item.capacity],
     ["Преобладающий материал", item.predominantMaterialName],
     ["Связанный инструмент", item.linkedTool],
-    ["Value", item.value]
+    ["Value", item.value],
+    ["Урон", weapon.damageFormula],
+    ["Тип урона", weapon.damageTypeLabel],
+    ["Свойства оружия", weapon.propertiesText]
   ].filter(([, value]) => value !== null && value !== undefined && value !== "");
 }
 
@@ -346,6 +366,64 @@ function buildDescriptionHtml(item, classification) {
         : "<p>Описание предмета пока не заполнено.</p>"}
     </section>
   `.trim();
+}
+
+function buildWeaponDamagePart(formula, damageType) {
+  const safeFormula = cleanString(formula);
+  const safeDamageType = cleanString(damageType);
+  return {
+    custom: {
+      enabled: Boolean(safeFormula),
+      formula: safeFormula
+    },
+    types: safeDamageType ? [safeDamageType] : []
+  };
+}
+
+function normalizeWeaponRange(range) {
+  if (!isPlainObject(range)) {
+    return null;
+  }
+
+  const value = Number(range.value ?? 0);
+  const long = Number(range.long ?? 0);
+  const reach = Number(range.reach ?? 0);
+  if (![value, long, reach].some((entry) => Number.isFinite(entry) && entry > 0)) {
+    return null;
+  }
+
+  return {
+    value: Number.isFinite(value) ? Math.max(0, value) : 0,
+    long: Number.isFinite(long) ? Math.max(0, long) : 0,
+    reach: Number.isFinite(reach) ? Math.max(0, reach) : 0,
+    units: cleanString(range.units, "ft")
+  };
+}
+
+function applyWeaponData(baseData, weapon) {
+  if (!isPlainObject(weapon)) {
+    return;
+  }
+
+  const properties = cleanArray(weapon.properties);
+  if (properties.length) {
+    baseData.properties = properties;
+  }
+
+  const damageFormula = cleanString(weapon.damageFormula);
+  const damageType = cleanString(weapon.damageType);
+  const versatileDamageFormula = cleanString(weapon.versatileDamageFormula);
+  if (damageFormula || damageType || versatileDamageFormula) {
+    baseData.damage = {
+      base: buildWeaponDamagePart(damageFormula, damageType),
+      versatile: buildWeaponDamagePart(versatileDamageFormula, damageType)
+    };
+  }
+
+  const range = normalizeWeaponRange(weapon.range);
+  if (range) {
+    baseData.range = range;
+  }
 }
 
 function buildSystemData(item, classification, descriptionHtml) {
@@ -376,6 +454,7 @@ function buildSystemData(item, classification, descriptionHtml) {
         value: classification.systemTypeValue || "martialM",
         baseItem: classification.baseItem || ""
       };
+      applyWeaponData(baseData, item.weapon);
       break;
 
     case "equipment":
@@ -411,13 +490,25 @@ function buildSystemData(item, classification, descriptionHtml) {
   return baseData;
 }
 
-function createDnd5eItemData(item, folderIdByPath) {
+function clonePlainObject(value) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  return JSON.parse(JSON.stringify(value));
+}
+
+export function createDnd5eItemData(item, folderIdByPath) {
   const classification = classifyGearEntry(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
   const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
   const signature = buildGearSignature(item);
   const folderPath = buildFolderPath(classification).join("/");
   const descriptionHtml = buildDescriptionHtml(item, classification);
+  const weapon = isPlainObject(item.weapon) ? item.weapon : {};
+  const attackTraits = clonePlainObject(weapon.attackTraits);
+  const lichWeaponPropertyValues = clonePlainObject(weapon.lichWeaponPropertyValues);
+  const attackTraitsText = cleanString(weapon.attackTraitsText || weapon.propertiesText);
 
   return {
     name: item.name,
@@ -448,7 +539,13 @@ function createDnd5eItemData(item, folderIdByPath) {
         predominantMaterialName: item.predominantMaterialName ?? "",
         linkedTool: item.linkedTool ?? "",
         value: item.value ?? "",
-        priceGoldEquivalent: Number(item.priceGoldEquivalent ?? 0)
+        priceGoldEquivalent: Number(item.priceGoldEquivalent ?? 0),
+        attackTraits: attackTraits && Object.keys(attackTraits).length ? attackTraits : null,
+        attackTraitsText: attackTraitsText || null,
+        attackProperties: attackTraitsText || null,
+        lichWeaponPropertyValues: lichWeaponPropertyValues && Object.keys(lichWeaponPropertyValues).length
+          ? lichWeaponPropertyValues
+          : null
       }
     }
   };

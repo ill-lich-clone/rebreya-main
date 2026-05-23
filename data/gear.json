@@ -1957,7 +1957,29 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "15",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "ver",
+                "lchDash",
+                "lchSwing"
+            ],
+            "propertiesText":  "Универсальное (1d8); Наскок 1к2; Размах",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "versatileDamageFormula":  "1d8",
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "1d2"
+            },
+            "attackTraitsText":  "Универсальное (1d8); Наскок 1к2; Размах"
+        }
     },
     {
         "id":  "bulava",
@@ -1977,7 +1999,31 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "25",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "lchDash",
+                "lchMku"
+            ],
+            "propertiesText":  "Одноручное; Наскок 1к2; МКУ 1",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "mku":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "1d2",
+                "mku":  1
+            },
+            "attackTraitsText":  "Одноручное; Наскок 1к2; МКУ 1"
+        }
     },
     {
         "id":  "dubinka",
@@ -1997,7 +2043,24 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "5",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d4",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "lgt",
+                "lchInterfere"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; Мешающее",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; Мешающее"
+        }
     },
     {
         "id":  "kinzhal",
@@ -2017,7 +2080,35 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "25",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d4",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "lgt",
+                "fin",
+                "lchMku",
+                "thr",
+                "lchDeadly"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; Фехтовальное; МКУ 2; Метательное; Дис. 20/60; Смертельное",
+            "range":  {
+                "value":  20,
+                "long":  60,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "mku":  2,
+                "deadly":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "mku":  2,
+                "deadly":  1
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; Фехтовальное; МКУ 2; Метательное; Дис. 20/60; Смертельное"
+        }
     },
     {
         "id":  "kop-e",
@@ -2037,7 +2128,25 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "15",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "ver",
+                "thr"
+            ],
+            "propertiesText":  "Универсальное (1d8); Метательное; Дис 20/60",
+            "range":  {
+                "value":  20,
+                "long":  60,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "versatileDamageFormula":  "1d8",
+            "attackTraitsText":  "Универсальное (1d8); Метательное; Дис 20/60"
+        }
     },
     {
         "id":  "lyogkiy-molot",
@@ -2057,7 +2166,28 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "15",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d4",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "lgt",
+                "lchDash",
+                "thr"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; Наскок 2к2; Метательное; Дис 20/60",
+            "range":  {
+                "value":  20,
+                "long":  60,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "2d2"
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; Наскок 2к2; Метательное; Дис 20/60"
+        }
     },
     {
         "id":  "palitsa",
@@ -2077,7 +2207,34 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "5",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "two",
+                "lchGrip",
+                "hvy",
+                "lchDash",
+                "lchInterfere",
+                "lchStrReq",
+                "lchPush"
+            ],
+            "propertiesText":  "Двуручное; Смена хвата - См доп. свойства; Тяжёлое; Наскок 1к2; Мешающее; 13.0; Смена хвата: (1d6 Колющий, лишается толкающее), Толкающее",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "1d2",
+                "minStrength":  13,
+                "gripModes":  "Смена хвата - См доп. свойства; Смена хвата: (1d6 Колющий, лишается толкающее), Толкающее"
+            },
+            "attackTraitsText":  "Двуручное; Смена хвата - См доп. свойства; Тяжёлое; Наскок 1к2; Мешающее; 13.0; Смена хвата: (1d6 Колющий, лишается толкающее), Толкающее"
+        }
     },
     {
         "id":  "kosa",
@@ -2097,7 +2254,32 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "10",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d4",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "two",
+                "lchGrip",
+                "rch",
+                "lchReach",
+                "lchInterfere",
+                "lchWhirl"
+            ],
+            "propertiesText":  "Двуручное; Смена хвата - См доп. свойства; Досягаемость 5; Мешающее; Круговая атака; Смена хвата: (1d6 Рубящий, лишается Досягаемость 5)",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "reachBonus":  5,
+                "gripModes":  "Смена хвата - См доп. свойства; Смена хвата: (1d6 Рубящий, лишается Досягаемость 5)"
+            },
+            "attackTraitsText":  "Двуручное; Смена хвата - См доп. свойства; Досягаемость 5; Мешающее; Круговая атака; Смена хвата: (1d6 Рубящий, лишается Досягаемость 5)"
+        }
     },
     {
         "id":  "kastet",
@@ -2117,7 +2299,23 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "5",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d2",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "lgt"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; Нельзя обезоружить. Скрытное ношение",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; Нельзя обезоружить. Скрытное ношение"
+        }
     },
     {
         "id":  "ruchnoy-topor",
@@ -2137,7 +2335,32 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "15",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "lgt",
+                "lchRku",
+                "thr",
+                "lchPowerStrike"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; РКУ 1; Метательное; Дис 20/60; Силовой удар",
+            "range":  {
+                "value":  20,
+                "long":  60,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "rku":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "rku":  1
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; РКУ 1; Метательное; Дис 20/60; Силовой удар"
+        }
     },
     {
         "id":  "serp",
@@ -2157,7 +2380,33 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "5",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d4",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "lgt",
+                "lchRku",
+                "lchDeadly"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; РКУ 1; Смертельное",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "rku":  1,
+                "deadly":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "rku":  1,
+                "deadly":  1
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; РКУ 1; Смертельное"
+        }
     },
     {
         "id":  "arbalet-legkiy",
@@ -2177,7 +2426,26 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "40",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "two",
+                "amm",
+                "lod",
+                "lchAim"
+            ],
+            "propertiesText":  "Двуручное; Боеприпас; дис. 80/320; Перезарядка, прицеливание",
+            "range":  {
+                "value":  80,
+                "long":  320,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Боеприпас; дис. 80/320; Перезарядка, прицеливание"
+        }
     },
     {
         "id":  "drotik",
@@ -2197,7 +2465,33 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "5",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d4",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "lchMku",
+                "amm",
+                "lchDeadly"
+            ],
+            "propertiesText":  "Одноручное; МКУ 1; Боеприпас; дис. 20/60; Смертельное",
+            "range":  {
+                "value":  20,
+                "long":  60,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "mku":  1,
+                "deadly":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "mku":  1,
+                "deadly":  1
+            },
+            "attackTraitsText":  "Одноручное; МКУ 1; Боеприпас; дис. 20/60; Смертельное"
+        }
     },
     {
         "id":  "korotkiy-luk",
@@ -2217,7 +2511,24 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "30",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "two",
+                "amm"
+            ],
+            "propertiesText":  "Двуручное; Боеприпас; дис. 80/320",
+            "range":  {
+                "value":  80,
+                "long":  320,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Боеприпас; дис. 80/320"
+        }
     },
     {
         "id":  "prashcha",
@@ -2237,7 +2548,30 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "10",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d4",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "lchRku",
+                "amm"
+            ],
+            "propertiesText":  "Одноручное; РКУ 1; Боеприпас; дис. 30/120",
+            "range":  {
+                "value":  30,
+                "long":  120,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "rku":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "rku":  1
+            },
+            "attackTraitsText":  "Одноручное; РКУ 1; Боеприпас; дис. 30/120"
+        }
     },
     {
         "id":  "alebarda",
@@ -2257,7 +2591,36 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Деревянщика",
         "value":  "80",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d10",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "two",
+                "lchGrip",
+                "hvy",
+                "lchDash",
+                "rch",
+                "lchReach",
+                "lchStrReq",
+                "lchPush"
+            ],
+            "propertiesText":  "Двуручное; Смена хвата - См доп. свойства; Тяжёлое; Наскок 2к2; Досягаемость 5; 13.0; Смена хвата (1d8 колющий, Толкающее, Наскок 1к2)",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "2d2",
+                "reachBonus":  5,
+                "minStrength":  13,
+                "gripModes":  "Смена хвата - См доп. свойства; Смена хвата (1d8 колющий, Толкающее, Наскок 1к2)"
+            },
+            "attackTraitsText":  "Двуручное; Смена хвата - См доп. свойства; Тяжёлое; Наскок 2к2; Досягаемость 5; 13.0; Смена хвата (1d8 колющий, Толкающее, Наскок 1к2)"
+        }
     },
     {
         "id":  "boevaya-kirka",
@@ -2277,7 +2640,34 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "lchDash",
+                "lchRku",
+                "lchMku"
+            ],
+            "propertiesText":  "Одноручное; Наскок 1к2; РКУ 1; МКУ 1",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "rku":  1,
+                "mku":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "1d2",
+                "rku":  1,
+                "mku":  1
+            },
+            "attackTraitsText":  "Одноручное; Наскок 1к2; РКУ 1; МКУ 1"
+        }
     },
     {
         "id":  "boevoy-molot",
@@ -2297,7 +2687,31 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "ver",
+                "lchDash",
+                "lchPower",
+                "lchBackswing",
+                "lchPowerStrike"
+            ],
+            "propertiesText":  "Универсальное (1d10); Наскок 1к2; Силовое; Обратный замах; Силовой удар",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "versatileDamageFormula":  "1d10",
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "1d2"
+            },
+            "attackTraitsText":  "Универсальное (1d10); Наскок 1к2; Силовое; Обратный замах; Силовой удар"
+        }
     },
     {
         "id":  "glefa",
@@ -2317,7 +2731,36 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Деревянщика",
         "value":  "90",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d10",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "two",
+                "lchGrip",
+                "hvy",
+                "lchDash",
+                "rch",
+                "lchReach",
+                "lchSwing",
+                "lchStrReq"
+            ],
+            "propertiesText":  "Двуручное; Смена хвата - См доп. свойства; Тяжёлое; Наскок 1к2; Досягаемость 5; Размах; 13.0; Смена хвата (Рубящий 1d8, лишается Досягаемость 5, Круговая атака)",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "1d2",
+                "reachBonus":  5,
+                "minStrength":  13,
+                "gripModes":  "Смена хвата - См доп. свойства; Смена хвата (Рубящий 1d8, лишается Досягаемость 5, Круговая атака)"
+            },
+            "attackTraitsText":  "Двуручное; Смена хвата - См доп. свойства; Тяжёлое; Наскок 1к2; Досягаемость 5; Размах; 13.0; Смена хвата (Рубящий 1d8, лишается Досягаемость 5, Круговая атака)"
+        }
     },
     {
         "id":  "dvuruchnyy-mech",
@@ -2337,7 +2780,29 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "120",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d6",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "two",
+                "hvy",
+                "lchWhirl",
+                "lchStrReq"
+            ],
+            "propertiesText":  "Двуручное; Тяжёлое; Круговая атака; 13.0",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "minStrength":  13
+            },
+            "attackTraitsText":  "Двуручное; Тяжёлое; Круговая атака; 13.0"
+        }
     },
     {
         "id":  "kavaleriyskaya-pika",
@@ -2357,7 +2822,32 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Деревянщика",
         "value":  "100",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d12",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "spc",
+                "lchDash",
+                "rch",
+                "lchReach",
+                "lchPush",
+                "lchMounted"
+            ],
+            "propertiesText":  "Особое; Наскок 3к2; Досягаемость 5; Особое: (Вы совершаете с помехой атаки длинным копьём по существам, находящимся в пределах 5 футов от вас. Кроме того, если вы не находитесь верхом, длинное копьё используется двумя руками), Толкающее, Верховой бой",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "3d2",
+                "reachBonus":  5
+            },
+            "attackTraitsText":  "Особое; Наскок 3к2; Досягаемость 5; Особое: (Вы совершаете с помехой атаки длинным копьём по существам, находящимся в пределах 5 футов от вас. Кроме того, если вы не находитесь верхом, длинное копьё используется двумя руками), Толкающее, Верховой бой"
+        }
     },
     {
         "id":  "dlinnyy-mech",
@@ -2377,7 +2867,30 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "90",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "ver",
+                "lchGrip",
+                "lchSwing",
+                "lchWhirl"
+            ],
+            "propertiesText":  "Универсальное (1d10); Смена хвата - См доп. свойства; Размах; Круговая атака; Смена хвата ( 1d6 колющий, универсальное 1d8)",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "versatileDamageFormula":  "1d10",
+            "lichWeaponPropertyValues":  {
+                "gripModes":  "Смена хвата - См доп. свойства; Смена хвата ( 1d6 колющий, универсальное 1d8)"
+            },
+            "attackTraitsText":  "Универсальное (1d10); Смена хвата - См доп. свойства; Размах; Круговая атака; Смена хвата ( 1d6 колющий, универсальное 1d8)"
+        }
     },
     {
         "id":  "knut",
@@ -2397,7 +2910,36 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "50",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d4",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "lchGrip",
+                "fin",
+                "rch",
+                "lchReach",
+                "lchMku",
+                "lchTrip"
+            ],
+            "propertiesText":  "Одноручное; Смена хвата - См доп. свойства; Фехтовальное; Досягаемость 10; МКУ 2; Смена хвата (Мешающее, досягаемость 5), опрокидывающие",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "mku":  2
+            },
+            "lichWeaponPropertyValues":  {
+                "reachBonus":  10,
+                "mku":  2,
+                "gripModes":  "Смена хвата - См доп. свойства; Смена хвата (Мешающее, досягаемость 5), опрокидывающие"
+            },
+            "attackTraitsText":  "Одноручное; Смена хвата - См доп. свойства; Фехтовальное; Досягаемость 10; МКУ 2; Смена хвата (Мешающее, досягаемость 5), опрокидывающие"
+        }
     },
     {
         "id":  "korotkiy-mech",
@@ -2417,7 +2959,33 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "50",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "lchGrip",
+                "lgt",
+                "fin",
+                "lchMku"
+            ],
+            "propertiesText":  "Одноручное; Смена хвата - См доп. свойства; Лёгкое; Фехтовальное; МКУ 1; Смена хвата (1d6 рубящий, Лишается МКУ)",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "mku":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "mku":  1,
+                "gripModes":  "Смена хвата - См доп. свойства; Смена хвата (1d6 рубящий, Лишается МКУ)"
+            },
+            "attackTraitsText":  "Одноручное; Смена хвата - См доп. свойства; Лёгкое; Фехтовальное; МКУ 1; Смена хвата (1d6 рубящий, Лишается МКУ)"
+        }
     },
     {
         "id":  "molot",
@@ -2437,7 +3005,33 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "80",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d6",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "two",
+                "hvy",
+                "lchDash",
+                "lchPower",
+                "lchStrReq",
+                "lchPowerStrike",
+                "lchPush"
+            ],
+            "propertiesText":  "Двуручное; Тяжёлое; Наскок 1к2; Силовое; 13.0; Силовой удар, Толкающее",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "1d2",
+                "minStrength":  13
+            },
+            "attackTraitsText":  "Двуручное; Тяжёлое; Наскок 1к2; Силовое; 13.0; Силовой удар, Толкающее"
+        }
     },
     {
         "id":  "morgenshtern",
@@ -2457,7 +3051,32 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "lchDash",
+                "lchMku",
+                "lchPower"
+            ],
+            "propertiesText":  "Одноручное; Наскок 1к2; МКУ 1; Силовое",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "mku":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "1d2",
+                "mku":  1
+            },
+            "attackTraitsText":  "Одноручное; Наскок 1к2; МКУ 1; Силовое"
+        }
     },
     {
         "id":  "pika",
@@ -2477,7 +3096,36 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Деревянщика",
         "value":  "80",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d10",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "two",
+                "lchGrip",
+                "hvy",
+                "lchDash",
+                "rch",
+                "lchReach",
+                "lchBackswing",
+                "lchStrReq"
+            ],
+            "propertiesText":  "Двуручное; Смена хвата - См доп. свойства; Тяжёлое; Наскок 2к2; Досягаемость 5; Обратный замах; 13.0; Смена хвата (1d8 Колющий, наскок 3)",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "2d2",
+                "reachBonus":  5,
+                "minStrength":  13,
+                "gripModes":  "Смена хвата - См доп. свойства; Смена хвата (1d8 Колющий, наскок 3)"
+            },
+            "attackTraitsText":  "Двуручное; Смена хвата - См доп. свойства; Тяжёлое; Наскок 2к2; Досягаемость 5; Обратный замах; 13.0; Смена хвата (1d8 Колющий, наскок 3)"
+        }
     },
     {
         "id":  "rapira",
@@ -2497,7 +3145,30 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "lchGrip",
+                "lchDash",
+                "fin",
+                "lchPush"
+            ],
+            "propertiesText":  "Одноручное; Смена хвата - См доп. свойства; Наскок 1к2; Фехтовальное; Смена хвата (1d4 колющий урон, РКУ 1), Толкающее",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "1d2",
+                "gripModes":  "Смена хвата - См доп. свойства; Смена хвата (1d4 колющий урон, РКУ 1), Толкающее"
+            },
+            "attackTraitsText":  "Одноручное; Смена хвата - См доп. свойства; Наскок 1к2; Фехтовальное; Смена хвата (1d4 колющий урон, РКУ 1), Толкающее"
+        }
     },
     {
         "id":  "sekira",
@@ -2517,7 +3188,34 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "120",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d12",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "two",
+                "hvy",
+                "lchWhirl",
+                "lchStrReq",
+                "lchDeadly"
+            ],
+            "propertiesText":  "Двуручное; Тяжёлое; Круговая атака; 13.0; Смертельное",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "deadly":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "minStrength":  13,
+                "deadly":  1
+            },
+            "attackTraitsText":  "Двуручное; Тяжёлое; Круговая атака; 13.0; Смертельное"
+        }
     },
     {
         "id":  "skimitar",
@@ -2537,7 +3235,25 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "lgt",
+                "fin",
+                "lchSwing"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; Фехтовальное; Размах",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; Фехтовальное; Размах"
+        }
     },
     {
         "id":  "trezubets",
@@ -2557,7 +3273,30 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "ver",
+                "lchDash",
+                "lchBackswing",
+                "thr"
+            ],
+            "propertiesText":  "Универсальное (1d8); Наскок 2к2; Обратный замах; Метательное; Дис 20/60",
+            "range":  {
+                "value":  20,
+                "long":  60,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "versatileDamageFormula":  "1d8",
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "2d2"
+            },
+            "attackTraitsText":  "Универсальное (1d8); Наскок 2к2; Обратный замах; Метательное; Дис 20/60"
+        }
     },
     {
         "id":  "tsep",
@@ -2577,7 +3316,33 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "80",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "lchMku",
+                "lchDeadly",
+                "lchPowerStrike"
+            ],
+            "propertiesText":  "Одноручное; МКУ 1; Смертельное; Силовой удар",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "mku":  1,
+                "deadly":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "mku":  1,
+                "deadly":  1
+            },
+            "attackTraitsText":  "Одноручное; МКУ 1; Смертельное; Силовой удар"
+        }
     },
     {
         "id":  "gear-2",
@@ -2597,7 +3362,29 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "spc",
+                "rch",
+                "lchReach",
+                "lchInterfere"
+            ],
+            "propertiesText":  "Одноручное; Особое; Досягаемость 5; Мешающее; Особое: (Цепи нужно свободное пространство. Если в пределах вашей досягаемости находится больше одного существа, то вы получаете штраф к броскам атаки цепью -2)",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "reachBonus":  5
+            },
+            "attackTraitsText":  "Одноручное; Особое; Досягаемость 5; Мешающее; Особое: (Цепи нужно свободное пространство. Если в пределах вашей досягаемости находится больше одного существа, то вы получаете штраф к броскам атаки цепью -2)"
+        }
     },
     {
         "id":  "palash",
@@ -2617,7 +3404,29 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "50",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d8kh1",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "lchDash",
+                "fin",
+                "lchSwing",
+                "lchMounted"
+            ],
+            "propertiesText":  "Одноручное; Наскок 1к2; Фехтовальное; Размах; Верховой бой",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "1d2"
+            },
+            "attackTraitsText":  "Одноручное; Наскок 1к2; Фехтовальное; Размах; Верховой бой"
+        }
     },
     {
         "id":  "sablya",
@@ -2637,7 +3446,32 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "lgt",
+                "fin",
+                "lchMku",
+                "lchWhirl"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; Фехтовальное; МКУ 1; Круговая атака",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "mku":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "mku":  1
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; Фехтовальное; МКУ 1; Круговая атака"
+        }
     },
     {
         "id":  "katana",
@@ -2657,7 +3491,31 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "100",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "ver",
+                "lchDash",
+                "fin",
+                "lchBackswing",
+                "lchWhirl"
+            ],
+            "propertiesText":  "Универсальное (2d4); Наскок 1к2; Фехтовальное; Обратный замах; Круговая атака",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "versatileDamageFormula":  "2d4",
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "1d2"
+            },
+            "attackTraitsText":  "Универсальное (2d4); Наскок 1к2; Фехтовальное; Обратный замах; Круговая атака"
+        }
     },
     {
         "id":  "estok",
@@ -2677,7 +3535,32 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "100",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "lgt",
+                "fin",
+                "lchMku",
+                "lchPush"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; Фехтовальное; МКУ 1; Толкающее",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "mku":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "mku":  1
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; Фехтовальное; МКУ 1; Толкающее"
+        }
     },
     {
         "id":  "boevaya-kosa",
@@ -2697,7 +3580,36 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "two",
+                "lchGrip",
+                "rch",
+                "lchReach",
+                "lchWhirl",
+                "lchDeadly"
+            ],
+            "propertiesText":  "Двуручное; Смена хвата - См доп. свойства; Досягаемость 5; Круговая атака; Смертельное; Смена хвата (1d10 Рубящий, лишается Досягаемость 5)",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "deadly":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "reachBonus":  5,
+                "deadly":  1,
+                "gripModes":  "Смена хвата - См доп. свойства; Смена хвата (1d10 Рубящий, лишается Досягаемость 5)"
+            },
+            "attackTraitsText":  "Двуручное; Смена хвата - См доп. свойства; Досягаемость 5; Круговая атака; Смертельное; Смена хвата (1d10 Рубящий, лишается Досягаемость 5)"
+        }
     },
     {
         "id":  "dvustoronniy-topor",
@@ -2717,7 +3629,34 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "120",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d12",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "two",
+                "hvy",
+                "lchMku",
+                "lchWhirl",
+                "lchStrReq"
+            ],
+            "propertiesText":  "Двуручное; Тяжёлое; МКУ 1; Круговая атака; 15.0",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "mku":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "mku":  1,
+                "minStrength":  15
+            },
+            "attackTraitsText":  "Двуручное; Тяжёлое; МКУ 1; Круговая атака; 15.0"
+        }
     },
     {
         "id":  "kostyanoy-topor",
@@ -2737,7 +3676,31 @@
         "predominantMaterialName":  "Кость",
         "linkedTool":  "Художественные",
         "value":  "60",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d8kh1",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "two",
+                "lchRku",
+                "lchBackswing"
+            ],
+            "propertiesText":  "Двуручное; РКУ 1; Обратный замах",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "rku":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "rku":  1
+            },
+            "attackTraitsText":  "Двуручное; РКУ 1; Обратный замах"
+        }
     },
     {
         "id":  "molot-vsadnika",
@@ -2757,7 +3720,29 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d10",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "lchDash",
+                "lchPower",
+                "lchSwing",
+                "lchMounted"
+            ],
+            "propertiesText":  "Одноручное; Наскок 2к2; Силовое; Размах; Верховой бой",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "2d2"
+            },
+            "attackTraitsText":  "Одноручное; Наскок 2к2; Силовое; Размах; Верховой бой"
+        }
     },
     {
         "id":  "dvustoronniy-molot",
@@ -2777,7 +3762,33 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "150",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d12",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "two",
+                "hvy",
+                "rch",
+                "lchReach",
+                "lchInterfere",
+                "lchStrReq",
+                "lchPowerStrike"
+            ],
+            "propertiesText":  "Двуручное; Тяжёлое; Досягаемость 5; Мешающее; 15.0; Силовой удар",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "reachBonus":  5,
+                "minStrength":  15
+            },
+            "attackTraitsText":  "Двуручное; Тяжёлое; Досягаемость 5; Мешающее; 15.0; Силовой удар"
+        }
     },
     {
         "id":  "kinzhal-na-tsepi",
@@ -2797,7 +3808,26 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "60",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d6kh1",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "lgt",
+                "fin",
+                "thr",
+                "spc"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; Фехтовальное; Метательное; Дис 30; Особое: (После атаки таким кинжалом, вам нужно Бонусным действием либо одной из доступных атак притянуть кинжал к себе)",
+            "range":  {
+                "value":  30,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; Фехтовальное; Метательное; Дис 30; Особое: (После атаки таким кинжалом, вам нужно Бонусным действием либо одной из доступных атак притянуть кинжал к себе)"
+        }
     },
     {
         "id":  "dlinnaya-bulava",
@@ -2817,7 +3847,38 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d10",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "two",
+                "hvy",
+                "rch",
+                "lchReach",
+                "lchInterfere",
+                "lchStrReq",
+                "lchDeadly",
+                "lchPowerStrike"
+            ],
+            "propertiesText":  "Двуручное; Тяжёлое; Досягаемость 5; Мешающее; 13.0; Смертельное; Силовой удар",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "deadly":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "reachBonus":  5,
+                "minStrength":  13,
+                "deadly":  1
+            },
+            "attackTraitsText":  "Двуручное; Тяжёлое; Досягаемость 5; Мешающее; 13.0; Смертельное; Силовой удар"
+        }
     },
     {
         "id":  "tsepnoy-serp",
@@ -2837,7 +3898,30 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "80",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d10",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "two",
+                "fin",
+                "rch",
+                "lchReach",
+                "lchSwing"
+            ],
+            "propertiesText":  "Двуручное; Фехтовальное; Досягаемость 5; Размах",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "reachBonus":  5
+            },
+            "attackTraitsText":  "Двуручное; Фехтовальное; Досягаемость 5; Размах"
+        }
     },
     {
         "id":  "mech-palacha",
@@ -2857,7 +3941,31 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "120",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "ver",
+                "lchDeadly"
+            ],
+            "propertiesText":  "Универсальное (1d10); Смертельное",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "versatileDamageFormula":  "1d10",
+            "attackTraits":  {
+                "deadly":  1
+            },
+            "lichWeaponPropertyValues":  {
+                "deadly":  1
+            },
+            "attackTraitsText":  "Универсальное (1d10); Смертельное"
+        }
     },
     {
         "id":  "metallicheskaya-perchatka",
@@ -2877,7 +3985,24 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "25",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d3",
+            "damageType":  "bludgeoning",
+            "damageTypeLabel":  "Дробящий",
+            "properties":  [
+                "lgt",
+                "lchBackswing"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; Обратный замах; Нельзя обезоружить",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; Обратный замах; Нельзя обезоружить"
+        }
     },
     {
         "id":  "shamshir",
@@ -2897,7 +4022,28 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "80",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "lchDash",
+                "lchSwing",
+                "lchMounted"
+            ],
+            "propertiesText":  "Одноручное; Наскок 2к2; Размах; Верховой бой",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "dashDice":  "2d2"
+            },
+            "attackTraitsText":  "Одноручное; Наскок 2к2; Размах; Верховой бой"
+        }
     },
     {
         "id":  "arbalet-ruchnoy",
@@ -2917,7 +4063,26 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "200",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "lgt",
+                "amm",
+                "lod",
+                "lchAim"
+            ],
+            "propertiesText":  "Одноручное; Лёгкое; Боеприпас; Дис 30/120; Перезарядка, прицеливание",
+            "range":  {
+                "value":  30,
+                "long":  120,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Лёгкое; Боеприпас; Дис 30/120; Перезарядка, прицеливание"
+        }
     },
     {
         "id":  "arbalet-tyazhelyy",
@@ -2937,7 +4102,31 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "250",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d10",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "two",
+                "hvy",
+                "amm",
+                "lchStrReq",
+                "lod",
+                "lchAim"
+            ],
+            "propertiesText":  "Двуручное; Тяжёлое; Боеприпас; Дис 100/400; 13.0; Перезарядка, прицеливание",
+            "range":  {
+                "value":  100,
+                "long":  400,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "minStrength":  13
+            },
+            "attackTraitsText":  "Двуручное; Тяжёлое; Боеприпас; Дис 100/400; 13.0; Перезарядка, прицеливание"
+        }
     },
     {
         "id":  "dlinnyy-luk",
@@ -2957,7 +4146,30 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "300",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "two",
+                "hvy",
+                "amm",
+                "lchStrReq",
+                "lchArcShot"
+            ],
+            "propertiesText":  "Двуручное; Тяжёлое; Боеприпас; Дис 120/480; 13.0; Стрельба навесом",
+            "range":  {
+                "value":  120,
+                "long":  480,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "minStrength":  13
+            },
+            "attackTraitsText":  "Двуручное; Тяжёлое; Боеприпас; Дис 120/480; 13.0; Стрельба навесом"
+        }
     },
     {
         "id":  "dukhovaya-trubka",
@@ -2977,7 +4189,30 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "25",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "lchRku",
+                "amm"
+            ],
+            "propertiesText":  "Одноручное; РКУ 2; Боеприпас; Дис 25/100",
+            "range":  {
+                "value":  25,
+                "long":  100,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraits":  {
+                "rku":  2
+            },
+            "lichWeaponPropertyValues":  {
+                "rku":  2
+            },
+            "attackTraitsText":  "Одноручное; РКУ 2; Боеприпас; Дис 25/100"
+        }
     },
     {
         "id":  "set",
@@ -2997,7 +4232,24 @@
         "predominantMaterialName":  "Лён",
         "linkedTool":  "Гримёра",
         "value":  "30",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "",
+            "damageType":  "",
+            "damageTypeLabel":  "",
+            "properties":  [
+                "thr",
+                "spc"
+            ],
+            "propertiesText":  "Одноручное; Метательное; Дис 5/20; Особое. Существа Большого и меньше размеров, по которым попала атака сетью, становятся опутанными, пока не высвободятся. Сеть не оказывает эффекта на бесформенных существ и тех, чей размер Огромный или ещё больше. Существо может действием совершить проверку Силы Сл 10, чтобы высвободиться самому или освободить другое существо, находящееся в пределах его досягаемости. Причинение сети 5 единиц рубящего урона (КД 10) тоже освобождает существо, не причиняя ему вреда, оканчивая эффект и уничтожая сеть.",
+            "range":  {
+                "value":  5,
+                "long":  20,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Метательное; Дис 5/20; Особое. Существа Большого и меньше размеров, по которым попала атака сетью, становятся опутанными, пока не высвободятся. Сеть не оказывает эффекта на бесформенных существ и тех, чей размер Огромный или ещё больше. Существо может действием совершить проверку Силы Сл 10, чтобы высвободиться самому или освободить другое существо, находящееся в пределах его досягаемости. Причинение сети 5 единиц рубящего урона (КД 10) тоже освобождает существо, не причиняя ему вреда, оканчивая эффект и уничтожая сеть."
+        }
     },
     {
         "id":  "luk-vsadnika",
@@ -3017,7 +4269,27 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "250",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "two",
+                "lgt",
+                "amm",
+                "lchMounted",
+                "lchArcShot"
+            ],
+            "propertiesText":  "Двуручное; Лёгкое; Боеприпас; Дис 80/320; Верховой бой, Стрельба навесом",
+            "range":  {
+                "value":  80,
+                "long":  320,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Лёгкое; Боеприпас; Дис 80/320; Верховой бой, Стрельба навесом"
+        }
     },
     {
         "id":  "kompozitnyy-luk",
@@ -3037,7 +4309,30 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d12",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "two",
+                "hvy",
+                "amm",
+                "lchStrReq",
+                "lchArcShot"
+            ],
+            "propertiesText":  "Двуручное; Тяжёлое; Боеприпас; Дис 200/800; 16.0; Стрельба навесом",
+            "range":  {
+                "value":  200,
+                "long":  800,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "minStrength":  16
+            },
+            "attackTraitsText":  "Двуручное; Тяжёлое; Боеприпас; Дис 200/800; 16.0; Стрельба навесом"
+        }
     },
     {
         "id":  "mnogozaryadnyy-arbalet",
@@ -3057,7 +4352,30 @@
         "predominantMaterialName":  "Дерево",
         "linkedTool":  "Деревянщика",
         "value":  "1000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "piercing",
+            "damageTypeLabel":  "Колющий",
+            "properties":  [
+                "two",
+                "hvy",
+                "amm",
+                "lchStrReq",
+                "spc"
+            ],
+            "propertiesText":  "Двуручное; Тяжёлое; Боеприпас; Дис 100/400; 14.0; Особое (Этот арбалет использует правила огнестрела со Сменой магазина и имеет 12 болтов)",
+            "range":  {
+                "value":  100,
+                "long":  400,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "lichWeaponPropertyValues":  {
+                "minStrength":  14
+            },
+            "attackTraitsText":  "Двуручное; Тяжёлое; Боеприпас; Дис 100/400; 14.0; Особое (Этот арбалет использует правила огнестрела со Сменой магазина и имеет 12 болтов)"
+        }
     },
     {
         "id":  "styoganyy-dospekh",

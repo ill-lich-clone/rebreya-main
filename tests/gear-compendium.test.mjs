@@ -1,0 +1,121 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { createDnd5eItemData } from "../scripts/data/gear-compendium.js";
+
+const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
+const DAMAGE_TYPE_BY_LABEL = new Map([
+  ["Дробящий", "bludgeoning"],
+  ["Колющий", "piercing"],
+  ["Рубящий", "slashing"]
+]);
+
+globalThis.foundry ??= {
+  utils: {
+    escapeHTML: (value) => String(value ?? "")
+      .replace(/&/gu, "&amp;")
+      .replace(/</gu, "&lt;")
+      .replace(/>/gu, "&gt;")
+      .replace(/"/gu, "&quot;")
+      .replace(/'/gu, "&#39;")
+  }
+};
+
+globalThis.CONST ??= {
+  DOCUMENT_OWNERSHIP_LEVELS: {
+    OBSERVER: 2
+  }
+};
+
+test("creates weapon compendium data with damage and Rebreya attack properties", () => {
+  const item = {
+    id: "test-spear",
+    name: "Test Spear",
+    equipmentType: "Оружие",
+    priceGoldEquivalent: 1,
+    weight: 3,
+    weapon: {
+      damageFormula: "1d6",
+      damageType: "piercing",
+      versatileDamageFormula: "1d8",
+      properties: ["ver", "thr", "lchDash", "lchMku", "lchRku"],
+      range: {
+        value: 20,
+        long: 60,
+        reach: 5,
+        units: "ft"
+      },
+      attackTraitsText: "Наскок 2d2; МКУ 1; РКУ 1",
+      attackTraits: {
+        mku: 1,
+        rku: 1
+      },
+      lichWeaponPropertyValues: {
+        dashDice: "2d2",
+        mku: 1,
+        rku: 1
+      }
+    }
+  };
+
+  const created = createDnd5eItemData(item, new Map());
+
+  assert.equal(created.type, "weapon");
+  assert.deepEqual(created.system.damage.base.custom, {
+    enabled: true,
+    formula: "1d6"
+  });
+  assert.deepEqual(created.system.damage.base.types, ["piercing"]);
+  assert.deepEqual(created.system.damage.versatile.custom, {
+    enabled: true,
+    formula: "1d8"
+  });
+  assert.deepEqual(created.system.properties, ["ver", "thr", "lchDash", "lchMku", "lchRku"]);
+  assert.deepEqual(created.system.range, {
+    value: 20,
+    long: 60,
+    reach: 5,
+    units: "ft"
+  });
+  assert.deepEqual(created.flags["rebreya-main"].attackTraits, {
+    mku: 1,
+    rku: 1
+  });
+  assert.deepEqual(created.flags["rebreya-main"].lichWeaponPropertyValues, {
+    dashDice: "2d2",
+    mku: 1,
+    rku: 1
+  });
+  assert.equal(created.flags["rebreya-main"].attackTraitsText, "Наскок 2d2; МКУ 1; РКУ 1");
+});
+
+test("real gear weapon data maps spreadsheet damage and properties to system keys", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+
+  for (const item of gear) {
+    const weapon = item.weapon;
+    if (!weapon?.damageFormula) {
+      continue;
+    }
+
+    const expectedDamageType = DAMAGE_TYPE_BY_LABEL.get(weapon.damageTypeLabel);
+    assert.ok(expectedDamageType, `${item.id} has unsupported damage type label ${weapon.damageTypeLabel}`);
+    assert.equal(weapon.damageType, expectedDamageType, `${item.id} maps ${weapon.damageTypeLabel} to dnd5e damage type`);
+  }
+
+  assert.ok(byId.get("kinzhal").weapon.properties.includes("lchDeadly"));
+  assert.equal(byId.get("kinzhal").weapon.attackTraits.deadly, 1);
+  assert.ok(byId.get("ruchnoy-topor").weapon.properties.includes("lchRku"));
+  assert.equal(byId.get("ruchnoy-topor").weapon.attackTraits.rku, 1);
+  assert.ok(byId.get("set").weapon.properties.includes("spc"));
+  assert.ok(byId.get("arbalet-legkiy").weapon.properties.includes("lod"));
+  assert.ok(byId.get("arbalet-legkiy").weapon.properties.includes("lchAim"));
+  assert.ok(byId.get("dlinnyy-luk").weapon.properties.includes("lchArcShot"));
+  assert.ok(byId.get("molot").weapon.properties.includes("lchPowerStrike"));
+  assert.ok(byId.get("molot").weapon.properties.includes("lchPush"));
+  assert.ok(byId.get("kavaleriyskaya-pika").weapon.properties.includes("lchMounted"));
+});
