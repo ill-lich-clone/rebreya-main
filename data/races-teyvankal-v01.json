@@ -8847,7 +8847,7 @@
                     "appliedEffects": [
                       {
                         "label": "Опутан",
-                        "statusId": "rebreya-restrained",
+                        "statusId": "restrained",
                         "statusValue": null,
                         "statusMeta": {},
                         "transfer": false,

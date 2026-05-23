@@ -24660,7 +24660,7 @@
         "_id": "4eda6ffcbc66c7ce",
         "name": "Сдержанный",
         "type": "base",
-        "img": "systems/dnd5e/icons/svg/statuses/restrained.svg",
+        "img": "icons/svg/anchor.svg",
         "system": {},
         "changes": [],
         "disabled": false,
@@ -24677,13 +24677,13 @@
         "origin": null,
         "transfer": false,
         "statuses": [
-          "rebreya-restrained"
+          "rebreya-discreet"
         ],
         "sort": 0,
         "flags": {
           "rebreya-main": {
             "automation": true,
-            "statusId": "rebreya-restrained",
+            "statusId": "rebreya-discreet",
             "statusValue": null,
             "statusMeta": {}
           },
@@ -24693,7 +24693,7 @@
             ]
           },
           "core": {
-            "statusId": "rebreya-restrained"
+            "statusId": "rebreya-discreet"
           }
         }
       },
@@ -25359,7 +25359,7 @@
         "_id": "f9226c39864c8edb",
         "name": "Сдержанный 10",
         "type": "base",
-        "img": "systems/dnd5e/icons/svg/statuses/restrained.svg",
+        "img": "icons/svg/anchor.svg",
         "system": {},
         "changes": [],
         "disabled": false,
@@ -25376,18 +25376,18 @@
         "origin": null,
         "transfer": false,
         "statuses": [
-          "rebreya-restrained"
+          "rebreya-discreet"
         ],
         "sort": 0,
         "flags": {
           "rebreya-main": {
             "automation": true,
-            "statusId": "rebreya-restrained",
+            "statusId": "rebreya-discreet",
             "statusValue": 10,
             "statusMeta": {}
           },
           "core": {
-            "statusId": "rebreya-restrained"
+            "statusId": "rebreya-discreet"
           }
         }
       }
@@ -29791,7 +29791,7 @@
         "_id": "2f15df692ece2fcb",
         "name": "Сдержанный",
         "type": "base",
-        "img": "systems/dnd5e/icons/svg/statuses/restrained.svg",
+        "img": "icons/svg/anchor.svg",
         "system": {},
         "changes": [],
         "disabled": false,
@@ -29808,13 +29808,13 @@
         "origin": null,
         "transfer": false,
         "statuses": [
-          "rebreya-restrained"
+          "rebreya-discreet"
         ],
         "sort": 0,
         "flags": {
           "rebreya-main": {
             "automation": true,
-            "statusId": "rebreya-restrained",
+            "statusId": "rebreya-discreet",
             "statusValue": null,
             "statusMeta": {}
           },
@@ -29824,7 +29824,7 @@
             ]
           },
           "core": {
-            "statusId": "rebreya-restrained"
+            "statusId": "rebreya-discreet"
           }
         }
       }
@@ -30585,7 +30585,7 @@
         "_id": "df10d49a7c85ee6a",
         "name": "Сдержанный",
         "type": "base",
-        "img": "systems/dnd5e/icons/svg/statuses/restrained.svg",
+        "img": "icons/svg/anchor.svg",
         "system": {},
         "changes": [],
         "disabled": false,
@@ -30602,18 +30602,18 @@
         "origin": null,
         "transfer": false,
         "statuses": [
-          "rebreya-restrained"
+          "rebreya-discreet"
         ],
         "sort": 0,
         "flags": {
           "rebreya-main": {
             "automation": true,
-            "statusId": "rebreya-restrained",
+            "statusId": "rebreya-discreet",
             "statusValue": null,
             "statusMeta": {}
           },
           "core": {
-            "statusId": "rebreya-restrained"
+            "statusId": "rebreya-discreet"
           }
         }
       }
@@ -35586,7 +35586,7 @@
         "_id": "01927a988e48bffb",
         "name": "Сдержанный",
         "type": "base",
-        "img": "systems/dnd5e/icons/svg/statuses/restrained.svg",
+        "img": "icons/svg/anchor.svg",
         "system": {},
         "changes": [],
         "disabled": false,
@@ -35603,18 +35603,18 @@
         "origin": null,
         "transfer": false,
         "statuses": [
-          "rebreya-restrained"
+          "rebreya-discreet"
         ],
         "sort": 0,
         "flags": {
           "rebreya-main": {
             "automation": true,
-            "statusId": "rebreya-restrained",
+            "statusId": "rebreya-discreet",
             "statusValue": null,
             "statusMeta": {}
           },
           "core": {
-            "statusId": "rebreya-restrained"
+            "statusId": "rebreya-discreet"
           }
         }
       }
@@ -36819,7 +36819,7 @@
         "_id": "7951dfa93d526600",
         "name": "Сдержанный 15",
         "type": "base",
-        "img": "systems/dnd5e/icons/svg/statuses/restrained.svg",
+        "img": "icons/svg/anchor.svg",
         "system": {},
         "changes": [],
         "disabled": false,
@@ -36836,13 +36836,13 @@
         "origin": null,
         "transfer": false,
         "statuses": [
-          "rebreya-restrained"
+          "rebreya-discreet"
         ],
         "sort": 0,
         "flags": {
           "rebreya-main": {
             "automation": true,
-            "statusId": "rebreya-restrained",
+            "statusId": "rebreya-discreet",
             "statusValue": 15,
             "statusMeta": {}
           },
@@ -36852,7 +36852,7 @@
             ]
           },
           "core": {
-            "statusId": "rebreya-restrained"
+            "statusId": "rebreya-discreet"
           }
         }
       }
@@ -57294,7 +57294,7 @@
         "_id": "167fbb1bd3ca0b56",
         "name": "Сдержанный",
         "type": "base",
-        "img": "systems/dnd5e/icons/svg/statuses/restrained.svg",
+        "img": "icons/svg/anchor.svg",
         "system": {},
         "changes": [],
         "disabled": false,
@@ -57311,18 +57311,18 @@
         "origin": null,
         "transfer": false,
         "statuses": [
-          "rebreya-restrained"
+          "rebreya-discreet"
         ],
         "sort": 0,
         "flags": {
           "rebreya-main": {
             "automation": true,
-            "statusId": "rebreya-restrained",
+            "statusId": "rebreya-discreet",
             "statusValue": null,
             "statusMeta": {}
           },
           "core": {
-            "statusId": "rebreya-restrained"
+            "statusId": "rebreya-discreet"
           }
         }
       }
@@ -57866,7 +57866,7 @@
         "_id": "0f023d7f35febb7e",
         "name": "Сдержанный 10",
         "type": "base",
-        "img": "systems/dnd5e/icons/svg/statuses/restrained.svg",
+        "img": "icons/svg/anchor.svg",
         "system": {},
         "changes": [],
         "disabled": false,
@@ -57883,13 +57883,13 @@
         "origin": null,
         "transfer": false,
         "statuses": [
-          "rebreya-restrained"
+          "rebreya-discreet"
         ],
         "sort": 0,
         "flags": {
           "rebreya-main": {
             "automation": true,
-            "statusId": "rebreya-restrained",
+            "statusId": "rebreya-discreet",
             "statusValue": 10,
             "statusMeta": {}
           },
@@ -57899,7 +57899,7 @@
             ]
           },
           "core": {
-            "statusId": "rebreya-restrained"
+            "statusId": "rebreya-discreet"
           }
         }
       }

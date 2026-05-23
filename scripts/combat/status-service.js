@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import {
+  REBREYA_DISCREET_STATUS_ID,
   REBREYA_STATUS_DEFINITIONS,
   buildRebreyaStatusConfig,
   getRebreyaStatusDefinition,
@@ -11,7 +12,10 @@ const STATUS_VALUE_FLAG = "statusValue";
 const STATUS_META_FLAG = "statusMeta";
 const DEFAULT_DURATION_ROUNDS = 0;
 const LEGACY_BLOODIED_STATUS_ID = "rebreya-bloodied";
+const LEGACY_RESTRAINED_STATUS_ID = "rebreya-restrained";
 const FRIGHTENED_STATUS_ID = "rebreya-frightened";
+const STATUS_COUNTER_MODULE_ID = "statuscounter";
+const DISCREET_MOVEMENT_KEYS = Object.freeze(["walk", "burrow", "climb", "fly", "swim"]);
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -20,6 +24,25 @@ function toNumber(value, fallback = 0) {
 
 function toInteger(value, fallback = 0) {
   return Math.floor(toNumber(value, fallback));
+}
+
+function cloneData(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (globalThis.foundry?.utils?.deepClone) {
+    return foundry.utils.deepClone(value);
+  }
+
+  return JSON.parse(JSON.stringify(value));
+}
+
+function getProperty(source, path, fallback = undefined) {
+  const value = globalThis.foundry?.utils?.getProperty
+    ? foundry.utils.getProperty(source, path)
+    : String(path ?? "").split(".").reduce((current, part) => current?.[part], source);
+  return value === undefined ? fallback : value;
 }
 
 function normalizeLookupText(value) {
@@ -117,6 +140,214 @@ function normalizeStatusValue(value, fallback = 1) {
   return Math.max(1, numericValue);
 }
 
+function activeEffectAddMode() {
+  return globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
+}
+
+function statusLabel(statusId) {
+  return getRebreyaStatusDefinition(statusId)?.label ?? statusId;
+}
+
+function statusIcon(statusId) {
+  return getRebreyaStatusDefinition(statusId)?.icon ?? "icons/svg/aura.svg";
+}
+
+function discreetStatusName(value) {
+  return `${statusLabel(REBREYA_DISCREET_STATUS_ID)} ${normalizeStatusValue(value, 1)}`;
+}
+
+function plainDiscreetStatusName() {
+  return statusLabel(REBREYA_DISCREET_STATUS_ID);
+}
+
+export function buildDiscreetSpeedChanges(value) {
+  const penalty = normalizeStatusValue(value, 1);
+  const signedPenalty = String(-penalty);
+  const mode = activeEffectAddMode();
+  const priority = 20;
+
+  return DISCREET_MOVEMENT_KEYS.map((movementKey) => ({
+    key: `system.attributes.movement.${movementKey}`,
+    mode,
+    value: signedPenalty,
+    priority
+  }));
+}
+
+function getActorMovementValue(actor, movementKey) {
+  const sourceValue = getProperty(actor, `_source.system.attributes.movement.${movementKey}`);
+  const preparedValue = getProperty(actor, `system.attributes.movement.${movementKey}`);
+  const numericValue = Number(sourceValue ?? preparedValue ?? 0);
+  return Number.isFinite(numericValue) ? Math.max(0, numericValue) : 0;
+}
+
+function buildDiscreetHalfSpeedChanges(actor) {
+  const mode = activeEffectAddMode();
+  const priority = 20;
+  return DISCREET_MOVEMENT_KEYS
+    .map((movementKey) => {
+      const penalty = getActorMovementValue(actor, movementKey) / 2;
+      return penalty > 0 ? {
+        key: `system.attributes.movement.${movementKey}`,
+        mode,
+        value: String(-penalty),
+        priority
+      } : null;
+    })
+    .filter(Boolean);
+}
+
+function getDiscreetHalfSpeedStrength(actor) {
+  return Math.max(...DISCREET_MOVEMENT_KEYS.map((movementKey) => getActorMovementValue(actor, movementKey) / 2), 0);
+}
+
+export function buildDiscreetStatusEffectData(value, { durationRounds = DEFAULT_DURATION_ROUNDS, meta = {} } = {}) {
+  const statusValue = normalizeStatusValue(value, 1);
+
+  return {
+    name: discreetStatusName(statusValue),
+    img: statusIcon(REBREYA_DISCREET_STATUS_ID),
+    icon: statusIcon(REBREYA_DISCREET_STATUS_ID),
+    statuses: buildEffectStatusesSet(REBREYA_DISCREET_STATUS_ID),
+    disabled: false,
+    transfer: false,
+    changes: buildDiscreetSpeedChanges(statusValue),
+    duration: resolveActiveEffectDuration(durationRounds),
+    flags: {
+      core: {
+        statusId: REBREYA_DISCREET_STATUS_ID
+      },
+      [MODULE_ID]: {
+        [STATUS_ID_FLAG]: REBREYA_DISCREET_STATUS_ID,
+        [STATUS_VALUE_FLAG]: statusValue,
+        [STATUS_META_FLAG]: cloneData(meta ?? {})
+      },
+      [STATUS_COUNTER_MODULE_ID]: {
+        value: statusValue,
+        visible: true,
+        config: {
+          multiplyEffect: false
+        }
+      }
+    }
+  };
+}
+
+function getEffectDocumentId(effect) {
+  return String(effect?.id ?? effect?._id ?? "").trim();
+}
+
+function getEffectStatusValue(effect, scope, key) {
+  try {
+    const flagValue = effect?.getFlag?.(scope, key);
+    if (flagValue !== undefined) {
+      return flagValue;
+    }
+  }
+  catch (_error) {
+    // Fall through to direct object reads for source data and tests.
+  }
+
+  return getProperty(effect, `flags.${scope}.${key}`);
+}
+
+function hasDiscreetStatusId(effect) {
+  const statusIds = extractEffectStatuses(effect);
+  if (statusIds.includes(REBREYA_DISCREET_STATUS_ID) || statusIds.includes(LEGACY_RESTRAINED_STATUS_ID)) {
+    return true;
+  }
+
+  const moduleStatusId = String(getEffectStatusValue(effect, MODULE_ID, STATUS_ID_FLAG) ?? "").trim();
+  const coreStatusId = String(getEffectStatusValue(effect, "core", "statusId") ?? "").trim();
+  return moduleStatusId === REBREYA_DISCREET_STATUS_ID
+    || moduleStatusId === LEGACY_RESTRAINED_STATUS_ID
+    || coreStatusId === REBREYA_DISCREET_STATUS_ID
+    || coreStatusId === LEGACY_RESTRAINED_STATUS_ID;
+}
+
+function parseDiscreetValueFromName(name) {
+  const match = String(name ?? "").match(/(\d+)(?!.*\d)/u);
+  return match ? normalizeStatusValue(match[1], 1) : null;
+}
+
+function readDiscreetStatusAmount(effect) {
+  const counterValue = getEffectStatusValue(effect, STATUS_COUNTER_MODULE_ID, "value");
+  if (Number.isFinite(Number(counterValue)) && Number(counterValue) > 0) {
+    return {
+      hasValue: true,
+      value: normalizeStatusValue(counterValue, 1)
+    };
+  }
+
+  const moduleValue = getEffectStatusValue(effect, MODULE_ID, STATUS_VALUE_FLAG);
+  if (Number.isFinite(Number(moduleValue)) && Number(moduleValue) > 0) {
+    return {
+      hasValue: true,
+      value: normalizeStatusValue(moduleValue, 1)
+    };
+  }
+
+  const nameValue = parseDiscreetValueFromName(effect?.name);
+  return nameValue === null
+    ? { hasValue: false, value: null }
+    : { hasValue: true, value: nameValue };
+}
+
+function readDiscreetStatusValue(effect) {
+  return readDiscreetStatusAmount(effect).value ?? 0;
+}
+
+export function buildDiscreetStatusSyncUpdates(effects = [], { actor = null } = {}) {
+  const rows = (Array.isArray(effects) ? effects : [])
+    .filter(hasDiscreetStatusId)
+    .map((effect, index) => ({
+      effect,
+      index,
+      id: getEffectDocumentId(effect),
+      amount: readDiscreetStatusAmount(effect)
+    }))
+    .map((row) => ({
+      ...row,
+      strength: row.amount.hasValue ? row.amount.value : getDiscreetHalfSpeedStrength(actor)
+    }))
+    .filter((row) => row.id && row.strength > 0);
+
+  if (!rows.length) {
+    return [];
+  }
+
+  const strongest = rows.reduce((best, row) => {
+    if (!best || row.strength > best.strength) {
+      return row;
+    }
+
+    return best;
+  }, null);
+
+  return rows.map((row) => {
+    const hasValue = row.amount.hasValue;
+    return {
+      _id: row.id,
+      name: hasValue ? discreetStatusName(row.amount.value) : plainDiscreetStatusName(),
+      img: statusIcon(REBREYA_DISCREET_STATUS_ID),
+      icon: statusIcon(REBREYA_DISCREET_STATUS_ID),
+      statuses: [REBREYA_DISCREET_STATUS_ID],
+      changes: row.id === strongest.id
+        ? (hasValue ? buildDiscreetSpeedChanges(row.amount.value) : buildDiscreetHalfSpeedChanges(actor))
+        : [],
+      "flags.core.statusId": REBREYA_DISCREET_STATUS_ID,
+      [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: REBREYA_DISCREET_STATUS_ID,
+      [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: hasValue ? row.amount.value : null,
+      ...(hasValue ? {
+        [`flags.${STATUS_COUNTER_MODULE_ID}.value`]: row.amount.value,
+        [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: true
+      } : {
+        [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: false
+      })
+    };
+  });
+}
+
 function buildFrightenedChanges(value) {
   const penalty = normalizeStatusValue(value, 1);
   const signedPenalty = String(-penalty);
@@ -194,6 +425,7 @@ export class CombatStatusService {
   constructor(moduleApi) {
     this.moduleApi = moduleApi;
     this._internalActorUpdates = new Set();
+    this._discreetSyncActorIds = new Set();
     this._turnLocks = new Set();
   }
 
@@ -360,11 +592,32 @@ export class CombatStatusService {
       return;
     }
 
+    const currentStatus = this.getStatus(actor, statusId);
+    if (statusId === REBREYA_DISCREET_STATUS_ID) {
+      if (event.type !== "click" || event.button !== 0) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+
+      const nextValue = await this.#promptStatusValue(definition, currentStatus?.value ?? 1);
+      if (nextValue === null) {
+        return;
+      }
+
+      await this.setStatus(actor, statusId, {
+        active: true,
+        value: nextValue
+      });
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
 
-    const currentStatus = this.getStatus(actor, statusId);
     if (currentStatus?.active) {
       await this.clearStatus(actor, statusId);
       return;
@@ -386,6 +639,11 @@ export class CombatStatusService {
       return null;
     }
 
+    if (statusId === REBREYA_DISCREET_STATUS_ID) {
+      return this.#getDiscreetStatusEffects(actor)
+        .sort((left, right) => readDiscreetStatusValue(right) - readDiscreetStatusValue(left))[0] ?? null;
+    }
+
     return actor.effects.contents.find((effect) => {
       const statusIds = extractEffectStatuses(effect);
       if (statusIds.includes(statusId)) {
@@ -398,6 +656,13 @@ export class CombatStatusService {
   }
 
   #buildFallbackEffectData(statusId, options = {}) {
+    if (statusId === REBREYA_DISCREET_STATUS_ID) {
+      return buildDiscreetStatusEffectData(options.value, {
+        durationRounds: options.durationRounds,
+        meta: options.meta ?? {}
+      });
+    }
+
     const definition = getRebreyaStatusDefinition(statusId);
     const statusLabel = definition?.label ?? statusId;
     const statusIcon = definition?.icon ?? "icons/svg/aura.svg";
@@ -460,6 +725,18 @@ export class CombatStatusService {
     const active = options.active !== false;
     const overlay = options.overlay === true;
     const durationRounds = toNumber(options.durationRounds, DEFAULT_DURATION_ROUNDS);
+    if (statusId === REBREYA_DISCREET_STATUS_ID) {
+      if (!active) {
+        return this.#clearDiscreetStatuses(actor);
+      }
+
+      return this.#createDiscreetStatus(actor, {
+        value: options.value,
+        durationRounds,
+        meta: options.meta ?? {}
+      });
+    }
+
     const current = this.#findStatusEffect(actor, statusId);
 
     if (!active) {
@@ -530,7 +807,9 @@ export class CombatStatusService {
     }
 
     const effect = this.#findStatusEffect(actor, statusId);
-    const value = effect?.getFlag(MODULE_ID, STATUS_VALUE_FLAG) ?? null;
+    const value = statusId === REBREYA_DISCREET_STATUS_ID && effect
+      ? readDiscreetStatusValue(effect)
+      : effect?.getFlag(MODULE_ID, STATUS_VALUE_FLAG) ?? null;
     const meta = effect?.getFlag(MODULE_ID, STATUS_META_FLAG) ?? {};
 
     return {
@@ -567,7 +846,107 @@ export class CombatStatusService {
       value,
       meta
     });
+    if (statusId === REBREYA_DISCREET_STATUS_ID) {
+      await this.#syncDiscreetStatusEffects(actor);
+    }
     return effect;
+  }
+
+  #getDiscreetStatusEffects(actor) {
+    if (!(actor instanceof Actor)) {
+      return [];
+    }
+
+    return (actor.effects?.contents ?? []).filter(hasDiscreetStatusId);
+  }
+
+  async #createDiscreetStatus(actor, { value = 1, durationRounds = DEFAULT_DURATION_ROUNDS, meta = {} } = {}) {
+    const [created] = await actor.createEmbeddedDocuments("ActiveEffect", [
+      buildDiscreetStatusEffectData(value, {
+        durationRounds,
+        meta
+      })
+    ]);
+
+    await this.#syncDiscreetStatusEffects(actor);
+    return created ?? true;
+  }
+
+  async #clearDiscreetStatuses(actor) {
+    const effects = this.#getDiscreetStatusEffects(actor);
+    if (!effects.length) {
+      return false;
+    }
+
+    const effectIds = effects.map((effect) => effect.id ?? effect._id).filter(Boolean);
+    if (typeof actor.deleteEmbeddedDocuments === "function") {
+      await actor.deleteEmbeddedDocuments("ActiveEffect", effectIds);
+    }
+    else {
+      for (const effect of effects) {
+        await effect.delete?.();
+      }
+    }
+
+    return true;
+  }
+
+  async #syncDiscreetStatusEffects(actor) {
+    if (!(actor instanceof Actor)) {
+      return false;
+    }
+
+    if (this._discreetSyncActorIds.has(actor.id)) {
+      return false;
+    }
+
+    const effects = this.#getDiscreetStatusEffects(actor);
+    const updates = buildDiscreetStatusSyncUpdates(effects, { actor });
+    if (!updates.length) {
+      return false;
+    }
+
+    this._discreetSyncActorIds.add(actor.id);
+    try {
+      if (typeof actor.updateEmbeddedDocuments === "function") {
+        await actor.updateEmbeddedDocuments("ActiveEffect", updates);
+      }
+      else {
+        for (const update of updates) {
+          const effect = effects.find((candidate) => getEffectDocumentId(candidate) === update._id);
+          await effect?.update?.(update);
+        }
+      }
+
+      return true;
+    }
+    finally {
+      this._discreetSyncActorIds.delete(actor.id);
+    }
+  }
+
+  async handleActiveEffectUpdate(effect) {
+    if (!hasDiscreetStatusId(effect)) {
+      return false;
+    }
+
+    return this.#syncDiscreetStatusEffects(effect.parent);
+  }
+
+  async handleActiveEffectCreated(effect) {
+    if (!hasDiscreetStatusId(effect)) {
+      return false;
+    }
+
+    return this.#syncDiscreetStatusEffects(effect.parent);
+  }
+
+  async handleActiveEffectDeleted(effect) {
+    if (!hasDiscreetStatusId(effect)) {
+      return false;
+    }
+
+    return this.#syncDiscreetStatusEffects(effect.parent);
   }
 
   async applyDecayingDamage(actorOrId, amount, options = {}) {

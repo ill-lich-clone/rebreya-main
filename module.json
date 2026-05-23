@@ -35,6 +35,17 @@
       }
     }
   },
+  "relationships": {
+    "requires": [
+      {
+        "id": "statuscounter",
+        "type": "module",
+        "compatibility": {
+          "minimum": "3.0.4"
+        }
+      }
+    ]
+  },
   "url": "",
   "manifest": "",
   "download": ""

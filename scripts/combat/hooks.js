@@ -27,6 +27,24 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to bind token HUD status interactions.`, error);
       });
     });
+
+    Hooks.on("createActiveEffect", (effect) => {
+      moduleApi.combatStatusService.handleActiveEffectCreated(effect).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to sync discreet status after effect creation.`, error);
+      });
+    });
+
+    Hooks.on("updateActiveEffect", (effect, changed) => {
+      moduleApi.combatStatusService.handleActiveEffectUpdate(effect, changed).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to sync discreet status after effect update.`, error);
+      });
+    });
+
+    Hooks.on("deleteActiveEffect", (effect) => {
+      moduleApi.combatStatusService.handleActiveEffectDeleted(effect).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to sync discreet status after effect deletion.`, error);
+      });
+    });
   }
 
   Hooks.on("combatTurn", (combat, updateData, updateOptions) => {

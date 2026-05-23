@@ -1,13 +1,14 @@
 import { MODULE_ID } from "../constants.js";
 
 export const REBREYA_BLOODIED_STATUS_ID = "rebreya-bloodied";
+export const REBREYA_DISCREET_STATUS_ID = "rebreya-discreet";
 
 const STATUS_DEFINITIONS = Object.freeze([
   {
-    id: "rebreya-restrained",
-    key: "restrained",
+    id: REBREYA_DISCREET_STATUS_ID,
+    key: "discreet",
     label: "Сдержанный",
-    icon: "systems/dnd5e/icons/svg/statuses/restrained.svg",
+    icon: "icons/svg/anchor.svg",
     supportsValue: true
   },
   {
@@ -165,7 +166,8 @@ registerAlias("замедление", "rebreya-slowed");
 registerAlias("ускорение", "rebreya-hasted");
 registerAlias("испуг", "rebreya-frightened");
 registerAlias("испуганный", "rebreya-frightened");
-registerAlias("сдержанный", "rebreya-restrained");
+registerAlias("сдержанный", REBREYA_DISCREET_STATUS_ID);
+registerAlias("rebreya-restrained", REBREYA_DISCREET_STATUS_ID);
 registerAlias("газообразный", "rebreya-gaseous");
 
 export const REBREYA_STATUS_DEFINITIONS = STATUS_DEFINITIONS.map((row) => ({ ...row }));
