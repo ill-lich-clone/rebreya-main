@@ -30,9 +30,10 @@ test("states without linked cultural feats choose two from all cultural feats", 
   assert.equal(resolution.usesFallbackPool, true);
   assert.deepEqual(resolution.itemUuids, featUuids);
   assert.equal(advancement.type, "ItemChoice");
+  assert.equal(advancement.level, 0);
   assert.equal(advancement.configuration.type, "feat");
   assert.equal(advancement.configuration.allowDrops, false);
-  assert.deepEqual(advancement.configuration.choices["1"], {
+  assert.deepEqual(advancement.configuration.choices["0"], {
     count: 2,
     replacement: false
   });
@@ -59,7 +60,8 @@ test("states with linked cultural feats keep their explicit feat pool", () => {
 
   assert.equal(resolution.usesFallbackPool, false);
   assert.deepEqual(resolution.itemUuids, [linkedUuid]);
-  assert.deepEqual(advancement.configuration.choices["1"], {
+  assert.equal(advancement.level, 0);
+  assert.deepEqual(advancement.configuration.choices["0"], {
     count: 1,
     replacement: false
   });

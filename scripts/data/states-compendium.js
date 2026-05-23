@@ -24,6 +24,8 @@ const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const STATES_ROOT_FOLDER = "Государства Тейванкаля";
 const DEFAULT_STATE_ICON = "icons/svg/city.svg";
 const STATE_TEMPLATE_VERSION = 4;
+// State origin choices must apply immediately, even before the actor has class levels.
+const STATE_ADVANCEMENT_LEVEL = 0;
 const CULTURAL_FEAT_SECTION_KEY = "cultural";
 const CULTURAL_FEAT_SECTION_LABEL = "\u043a\u0443\u043b\u044c\u0442\u0443\u0440\u043d\u044b\u0435 \u0447\u0435\u0440\u0442\u044b";
 const STATE_LANGUAGE_ID_BY_LABEL = new Map(
@@ -226,7 +228,7 @@ function buildStateLanguageAdvancement(state) {
     type: "Trait",
     title: "Родной язык",
     hint: `Выберите родной язык государства: ${state.languages.native}.`,
-    level: 1,
+    level: STATE_ADVANCEMENT_LEVEL,
     configuration: {
       allowReplacements: false,
       mode: "default",
@@ -258,11 +260,11 @@ export function buildCulturalFeatChoiceAdvancement(state, culturalFeatResolution
     type: "ItemChoice",
     title: "Культурные черты",
     hint,
-    level: 1,
+    level: STATE_ADVANCEMENT_LEVEL,
     configuration: {
       allowDrops: false,
       choices: {
-        "1": {
+        [String(STATE_ADVANCEMENT_LEVEL)]: {
           count,
           replacement: false
         }
