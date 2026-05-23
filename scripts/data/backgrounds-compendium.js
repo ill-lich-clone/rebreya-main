@@ -25,6 +25,8 @@ const DEFAULT_BACKGROUND_ICON = "systems/dnd5e/icons/svg/items/background.svg";
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const BACKGROUND_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Backgrounds`, MODULE_ICONS_BASE_PATH];
 const BACKGROUND_TEMPLATE_VERSION = 1;
+// The source level sorts backgrounds; dnd5e advancement must apply immediately when the background is added.
+const BACKGROUND_ADVANCEMENT_LEVEL = 0;
 
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -253,7 +255,7 @@ function buildTraitAdvancement({ background, seed, title, hint = "", grants = []
     type: "Trait",
     title: cleanString(title, "Владение"),
     hint: cleanString(hint),
-    level: Math.max(0, Math.floor(parseNumber(background.level, 1))),
+    level: BACKGROUND_ADVANCEMENT_LEVEL,
     configuration: {
       allowReplacements: false,
       mode: "default",
@@ -275,7 +277,7 @@ function buildItemGrantAdvancement(background, bonusFeatResolution) {
     type: "ItemGrant",
     title: "Бонусная черта",
     hint: cleanString(background.bonusFeat.text),
-    level: Math.max(0, Math.floor(parseNumber(background.level, 1))),
+    level: BACKGROUND_ADVANCEMENT_LEVEL,
     configuration: {
       items: itemUuids.map((uuid) => ({ uuid, optional: false })),
       optional: false,
@@ -285,7 +287,7 @@ function buildItemGrantAdvancement(background, bonusFeatResolution) {
   };
 }
 
-function buildBackgroundAdvancement(background, bonusFeatResolution) {
+export function buildBackgroundAdvancement(background, bonusFeatResolution) {
   const advancements = [];
   const skillAdvancement = buildTraitAdvancement({
     background,
