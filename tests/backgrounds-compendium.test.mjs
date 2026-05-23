@@ -29,6 +29,17 @@ function makeBackground(level) {
   };
 }
 
+function makeBackgroundWithBonusFeat(names, text = "Bonus feat choice.") {
+  return {
+    ...makeBackground(1),
+    id: "background-bonus-choice-test",
+    bonusFeat: {
+      text,
+      names
+    }
+  };
+}
+
 test("background advancements apply at level 0 so classless actors receive them", () => {
   const bonusFeatResolution = {
     itemUuids: ["Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa"],
@@ -42,4 +53,36 @@ test("background advancements apply at level 0 so classless actors receive them"
     assert.deepEqual(advancements.map((advancement) => advancement.level), [0, 0, 0, 0]);
     assert.deepEqual(advancements.map((advancement) => advancement.type), ["Trait", "Trait", "Trait", "ItemGrant"]);
   }
+});
+
+test("background alternative bonus feats use one ItemChoice with custom feat drops enabled", () => {
+  const bonusFeatResolution = {
+    itemUuids: [
+      "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa",
+      "Compendium.world.rebreya-feats.Item.bbbbbbbbbbbbbbbb"
+    ],
+    missingNames: []
+  };
+
+  const advancements = buildBackgroundAdvancement(
+    makeBackgroundWithBonusFeat(
+      ["Аристократичность", "Исполнитель"],
+      "На 1-м уровне вы получаете младшую черту “Аристократичность” или “Исполнитель”."
+    ),
+    bonusFeatResolution
+  );
+  const bonusFeatAdvancement = advancements.at(-1);
+
+  assert.equal(bonusFeatAdvancement.type, "ItemChoice");
+  assert.equal(bonusFeatAdvancement.level, 0);
+  assert.equal(bonusFeatAdvancement.configuration.type, "feat");
+  assert.equal(bonusFeatAdvancement.configuration.allowDrops, true);
+  assert.deepEqual(bonusFeatAdvancement.configuration.choices["0"], {
+    count: 1,
+    replacement: false
+  });
+  assert.deepEqual(bonusFeatAdvancement.configuration.pool, [
+    { uuid: "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa" },
+    { uuid: "Compendium.world.rebreya-feats.Item.bbbbbbbbbbbbbbbb" }
+  ]);
 });

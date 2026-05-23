@@ -24,7 +24,7 @@ const BACKGROUND_ROOT_FOLDER = "Предыстории V0.12";
 const DEFAULT_BACKGROUND_ICON = "systems/dnd5e/icons/svg/items/background.svg";
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const BACKGROUND_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Backgrounds`, MODULE_ICONS_BASE_PATH];
-const BACKGROUND_TEMPLATE_VERSION = 1;
+const BACKGROUND_TEMPLATE_VERSION = 2;
 // The source level sorts backgrounds; dnd5e advancement must apply immediately when the background is added.
 const BACKGROUND_ADVANCEMENT_LEVEL = 0;
 
@@ -287,6 +287,51 @@ function buildItemGrantAdvancement(background, bonusFeatResolution) {
   };
 }
 
+function buildItemChoiceAdvancement(background, bonusFeatResolution) {
+  const itemUuids = unique(bonusFeatResolution?.itemUuids ?? []);
+  if (!itemUuids.length) {
+    return null;
+  }
+
+  return {
+    _id: stableHashId(`${background.id}:bonus-feat-choice`, "adv"),
+    type: "ItemChoice",
+    title: "Бонусная черта",
+    hint: cleanString(background.bonusFeat.text),
+    level: BACKGROUND_ADVANCEMENT_LEVEL,
+    configuration: {
+      allowDrops: true,
+      choices: {
+        [String(BACKGROUND_ADVANCEMENT_LEVEL)]: {
+          count: 1,
+          replacement: false
+        }
+      },
+      pool: itemUuids.map((uuid) => ({ uuid })),
+      restriction: {
+        level: "",
+        list: [],
+        subtype: "",
+        type: ""
+      },
+      spell: null,
+      type: "feat"
+    },
+    value: {
+      added: {},
+      replaced: {}
+    }
+  };
+}
+
+function buildBonusFeatAdvancement(background, bonusFeatResolution) {
+  if (unique(background.bonusFeat.names).length > 1) {
+    return buildItemChoiceAdvancement(background, bonusFeatResolution);
+  }
+
+  return buildItemGrantAdvancement(background, bonusFeatResolution);
+}
+
 export function buildBackgroundAdvancement(background, bonusFeatResolution) {
   const advancements = [];
   const skillAdvancement = buildTraitAdvancement({
@@ -325,7 +370,7 @@ export function buildBackgroundAdvancement(background, bonusFeatResolution) {
     advancements.push(languageAdvancement);
   }
 
-  const bonusFeatAdvancement = buildItemGrantAdvancement(background, bonusFeatResolution);
+  const bonusFeatAdvancement = buildBonusFeatAdvancement(background, bonusFeatResolution);
   if (bonusFeatAdvancement) {
     advancements.push(bonusFeatAdvancement);
   }
