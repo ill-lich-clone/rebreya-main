@@ -69168,7 +69168,7 @@
     "img": "icons/svg/book.svg",
     "system": {
       "description": {
-        "value": "",
+        "value": "<p>Благодаря знакомству с торговцами, мастерами и банкирами, Вы можете найти контакт почти в любом крупном городе. Вы получаете владение навыком Проницательность.</p>",
         "chat": ""
       },
       "source": {
@@ -69194,7 +69194,43 @@
       },
       "advancement": {}
     },
-    "effects": [],
+    "effects": [
+      {
+        "_id": "78e32a393ebda584",
+        "name": "Проницательность",
+        "type": "base",
+        "img": "icons/svg/book.svg",
+        "system": {},
+        "changes": [
+          {
+            "key": "system.skills.ins.value",
+            "mode": 4,
+            "value": "1",
+            "priority": null
+          }
+        ],
+        "disabled": false,
+        "duration": {
+          "startTime": null,
+          "seconds": null,
+          "combat": null,
+          "rounds": null,
+          "turns": null,
+          "startRound": null,
+          "startTurn": null
+        },
+        "description": "<p>Владение навыком Проницательность</p>",
+        "origin": null,
+        "transfer": true,
+        "statuses": [],
+        "sort": 0,
+        "flags": {
+          "rebreya-main": {
+            "automation": true
+          }
+        }
+      }
+    ],
     "folder": null,
     "flags": {
       "teyvankal": {
@@ -69203,26 +69239,29 @@
         "section": "Культурные черты",
         "sectionKey": "cultural",
         "subsection": null,
-        "tags": [],
+        "tags": [
+          "Куровийский союз",
+          "Республика Зомар"
+        ],
         "sourceRaw": "Lich",
         "source": "Lich",
         "sourcePlus": false,
         "firearm": false,
         "wip": false,
-        "empty": true,
+        "empty": false,
         "deprecated": false,
         "rawHeading": "Гильдейская сеть [Lich]",
         "requiredFeatNames": [],
         "hasTables": false,
         "parserNotes": [
-          "Пустая черта: по инструкции создан только предмет с названием."
+          "Ручная корректировка: описание, метки и владение из данных Rebreya."
         ]
       },
       "rebreya-main": {
         "automation": {
           "version": "0.8-dnd5e-5.2.5",
-          "status": "manual",
-          "notes": "Автоматизация не добавлена: в описании нет однозначной числовой механики для Active Effect, Activity, состояния или расхода."
+          "status": "automated",
+          "notes": "Владение навыком Проницательность"
         }
       }
     }

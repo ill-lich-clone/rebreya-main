@@ -10,9 +10,13 @@ import {
   normalizeChoiceConfig
 } from "../scripts/automation/feat-choice-service.js";
 
-function loadBundleItems() {
+function loadBundle() {
   const bundleUrl = new URL("../cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json", import.meta.url);
-  return JSON.parse(readFileSync(bundleUrl, "utf8")).items;
+  return JSON.parse(readFileSync(bundleUrl, "utf8"));
+}
+
+function loadBundleItems() {
+  return loadBundle().items;
 }
 
 function byIdentifier(items, identifier) {
@@ -21,6 +25,14 @@ function byIdentifier(items, identifier) {
 
 function getChoiceAdvancement(item) {
   return item.system.advancement.find((advancement) => advancement.type === "ItemChoice");
+}
+
+function textContent(value) {
+  return String(value ?? "").replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ").trim();
+}
+
+function getEffectChange(item, key) {
+  return (item.effects ?? []).flatMap((effect) => effect.changes ?? []).find((change) => change.key === key);
 }
 
 test("normalizes a single feat choice config and selected value", () => {
@@ -380,4 +392,64 @@ test("Armor Expert uses native ItemChoice advancement backed by armor option Ite
   const optionItems = config.options.map((option) => items.find((item) => item._id === option.uuid.split(".").at(-1)));
   assert.deepEqual(optionItems.map((item) => item.name), ["Лёгкие доспехи", "Средние доспехи", "Тяжёлые доспехи"]);
   assert.deepEqual(optionItems.map((item) => item.effects[0].changes[0].value), ["lgt", "med", "hvy"]);
+});
+
+test("Guild Network cultural feat grants Insight proficiency", () => {
+  const items = loadBundleItems();
+  const feat = byIdentifier(items, "gildeyskaya-set");
+  const description = textContent(feat.system.description.value);
+  const proficiency = getEffectChange(feat, "system.skills.ins.value");
+
+  assert.equal(feat.name, "\u0413\u0438\u043b\u044c\u0434\u0435\u0439\u0441\u043a\u0430\u044f \u0441\u0435\u0442\u044c");
+  assert.equal(feat.flags.teyvankal.empty, false);
+  assert.deepEqual(feat.flags.teyvankal.tags, ["\u041a\u0443\u0440\u043e\u0432\u0438\u0439\u0441\u043a\u0438\u0439 \u0441\u043e\u044e\u0437", "\u0420\u0435\u0441\u043f\u0443\u0431\u043b\u0438\u043a\u0430 \u0417\u043e\u043c\u0430\u0440"]);
+  assert.match(description, /\u0412\u044b \u043f\u043e\u043b\u0443\u0447\u0430\u0435\u0442\u0435 \u0432\u043b\u0430\u0434\u0435\u043d\u0438\u0435 \u043d\u0430\u0432\u044b\u043a\u043e\u043c \u041f\u0440\u043e\u043d\u0438\u0446\u0430\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c/u);
+  assert.equal(proficiency?.value, "1");
+  assert.equal(proficiency?.mode, 4);
+  assert.equal(feat.flags[CHOICE_FLAG_SCOPE].automation.status, "automated");
+});
+
+test("direct cultural skill proficiencies are automated as proficiency effects", () => {
+  const items = loadBundleItems();
+  const cultural = items.filter((item) => item.flags?.teyvankal?.sectionKey === "cultural");
+  const skillKeysByName = new Map([
+    ["\u0410\u043a\u0440\u043e\u0431\u0430\u0442\u0438\u043a\u0430", "acr"],
+    ["\u0410\u0442\u043b\u0435\u0442\u0438\u043a\u0430", "ath"],
+    ["\u0412\u044b\u0436\u0438\u0432\u0430\u043d\u0438\u0435", "sur"],
+    ["\u0412\u044b\u0441\u0442\u0443\u043f\u043b\u0435\u043d\u0438\u0435", "prf"],
+    ["\u0417\u0430\u043f\u0443\u0433\u0438\u0432\u0430\u043d\u0438\u0435", "itm"],
+    ["\u041b\u043e\u0432\u043a\u043e\u0441\u0442\u044c \u0440\u0443\u043a", "slt"],
+    ["\u041c\u0430\u0433\u0438\u044f", "arc"],
+    ["\u041c\u0435\u0434\u0438\u0446\u0438\u043d\u0430", "med"],
+    ["\u041e\u0431\u043c\u0430\u043d", "dec"],
+    ["\u041f\u0440\u043e\u043d\u0438\u0446\u0430\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c", "ins"],
+    ["\u041f\u0440\u0438\u0440\u043e\u0434\u0430", "nat"],
+    ["\u0420\u0430\u0441\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u043d\u0438\u0435", "inv"],
+    ["\u0420\u0435\u043b\u0438\u0433\u0438\u044f", "rel"],
+    ["\u0423\u0431\u0435\u0436\u0434\u0435\u043d\u0438\u0435", "per"]
+  ]);
+  const failures = [];
+
+  for (const feat of cultural) {
+    const description = textContent(feat.system.description.value);
+    for (const [skillName, skillKey] of skillKeysByName) {
+      if (!description.includes(`\u0432\u043b\u0430\u0434\u0435\u043d\u0438\u0435 \u043d\u0430\u0432\u044b\u043a\u043e\u043c ${skillName}`)) {
+        continue;
+      }
+
+      const proficiency = getEffectChange(feat, `system.skills.${skillKey}.value`);
+      if (proficiency?.value !== "1" || proficiency?.mode !== 4) {
+        failures.push(`${feat.name}: ${skillName}`);
+      }
+    }
+  }
+
+  assert.deepEqual(failures, []);
+});
+
+test("feat bundle empty summary matches item flags", () => {
+  const bundle = loadBundle();
+  const emptyItems = bundle.items.filter((item) => item.flags?.teyvankal?.empty);
+
+  assert.equal(bundle.summary.emptyCount, emptyItems.length);
 });

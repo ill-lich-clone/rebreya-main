@@ -75,7 +75,8 @@ const SKILL_PROFICIENCIES = {
     "nam-ne-privykat": ["slt"],
     "pervaya-pomosch": ["med"],
     "zakon-sily": ["ath"],
-    "lovkie-dvizheniya": ["acr"]
+    "lovkie-dvizheniya": ["acr"],
+    "gildeyskaya-set": ["ins"]
 }
 
 const TOOL_PROFICIENCIES = {
@@ -2357,6 +2358,40 @@ function getIdentifier(item) {
     return item.system?.identifier ?? item.flags?.teyvankal?.id ?? item.name
 }
 
+const SOURCE_CORRECTIONS = {
+    "gildeyskaya-set": {
+        description: "\u0411\u043b\u0430\u0433\u043e\u0434\u0430\u0440\u044f \u0437\u043d\u0430\u043a\u043e\u043c\u0441\u0442\u0432\u0443 \u0441 \u0442\u043e\u0440\u0433\u043e\u0432\u0446\u0430\u043c\u0438, \u043c\u0430\u0441\u0442\u0435\u0440\u0430\u043c\u0438 \u0438 \u0431\u0430\u043d\u043a\u0438\u0440\u0430\u043c\u0438, \u0412\u044b \u043c\u043e\u0436\u0435\u0442\u0435 \u043d\u0430\u0439\u0442\u0438 \u043a\u043e\u043d\u0442\u0430\u043a\u0442 \u043f\u043e\u0447\u0442\u0438 \u0432 \u043b\u044e\u0431\u043e\u043c \u043a\u0440\u0443\u043f\u043d\u043e\u043c \u0433\u043e\u0440\u043e\u0434\u0435. \u0412\u044b \u043f\u043e\u043b\u0443\u0447\u0430\u0435\u0442\u0435 \u0432\u043b\u0430\u0434\u0435\u043d\u0438\u0435 \u043d\u0430\u0432\u044b\u043a\u043e\u043c \u041f\u0440\u043e\u043d\u0438\u0446\u0430\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c.",
+        tags: ["\u041a\u0443\u0440\u043e\u0432\u0438\u0439\u0441\u043a\u0438\u0439 \u0441\u043e\u044e\u0437", "\u0420\u0435\u0441\u043f\u0443\u0431\u043b\u0438\u043a\u0430 \u0417\u043e\u043c\u0430\u0440"],
+        note: "\u0420\u0443\u0447\u043d\u0430\u044f \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u0438\u0440\u043e\u0432\u043a\u0430: \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435, \u043c\u0435\u0442\u043a\u0438 \u0438 \u0432\u043b\u0430\u0434\u0435\u043d\u0438\u0435 \u0438\u0437 \u0434\u0430\u043d\u043d\u044b\u0445 Rebreya."
+    }
+}
+
+function applySourceCorrections(item) {
+    const correction = SOURCE_CORRECTIONS[getIdentifier(item)]
+    if (!correction) {
+        return
+    }
+
+    item.system ??= {}
+    const description = item.system.description && typeof item.system.description === "object" && !Array.isArray(item.system.description)
+        ? clone(item.system.description)
+        : { chat: "" }
+    description.value = `<p>${correction.description}</p>`
+    description.chat ??= ""
+    item.system.description = description
+
+    item.flags ??= {}
+    item.flags.teyvankal = {
+        ...(item.flags.teyvankal ?? {}),
+        tags: [...correction.tags],
+        empty: false,
+        parserNotes: [
+            ...((item.flags.teyvankal?.parserNotes ?? []).filter((note) => !/Пустая черта|Ручная корректировка: описание, метки и владение/u.test(note))),
+            correction.note
+        ]
+    }
+}
+
 function effectId(item, label) {
     return deterministicId(`${getIdentifier(item)}:${label}`)
 }
@@ -2933,6 +2968,10 @@ function updateBundleSummary(bundle) {
         sections[section] = (sections[section] ?? 0) + 1
         return sections
     }, {})
+    bundle.summary.emptyCount = bundle.items.filter((item) => item.flags?.teyvankal?.empty === true).length
+    bundle.summary.wipCount = bundle.items.filter((item) => item.flags?.teyvankal?.wip === true).length
+    bundle.summary.tableFeatCount = bundle.items.filter((item) => item.flags?.teyvankal?.hasTables === true).length
+    bundle.summary.firearmCount = bundle.items.filter((item) => item.flags?.teyvankal?.firearm === true).length
 }
 
 function addActivities(item, identifier, text, notes, mechanics) {
@@ -3351,6 +3390,7 @@ function noteText(status, notes, text) {
 }
 
 function automateItem(item, report) {
+    applySourceCorrections(item)
     clearAutomation(item)
 
     const identifier = getIdentifier(item)
