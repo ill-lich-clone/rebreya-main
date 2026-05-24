@@ -106,6 +106,16 @@ function isKnownStatusConfig(statusId) {
   });
 }
 
+function canUseNativeStatusToggle(actor, statusId) {
+  const safeStatusId = String(statusId ?? "").trim();
+  return Boolean(
+    safeStatusId
+    && !safeStatusId.startsWith("rebreya-")
+    && isKnownStatusConfig(safeStatusId)
+    && typeof actor?.toggleStatusEffect === "function"
+  );
+}
+
 function resolveActiveEffectDuration(durationRounds = DEFAULT_DURATION_ROUNDS) {
   const safeRounds = Math.max(0, Math.floor(toNumber(durationRounds, DEFAULT_DURATION_ROUNDS)));
   if (safeRounds <= 0) {
@@ -902,7 +912,7 @@ export class CombatStatusService {
       }
     }
     if (Object.hasOwn(options, "meta")) {
-      patch[`flags.${MODULE_ID}.${STATUS_META_FLAG}`] = foundry.utils.deepClone(options.meta ?? {});
+      patch[`flags.${MODULE_ID}.${STATUS_META_FLAG}`] = cloneData(options.meta ?? {});
     }
 
     await effect.update(patch);
@@ -950,7 +960,7 @@ export class CombatStatusService {
         return false;
       }
 
-      if (isKnownStatusConfig(statusId) && typeof actor.toggleStatusEffect === "function") {
+      if (canUseNativeStatusToggle(actor, statusId)) {
         await actor.toggleStatusEffect(statusId, { active: false, overlay });
       }
       else {
@@ -962,7 +972,7 @@ export class CombatStatusService {
 
     let effect = current;
     if (!effect) {
-      if (isKnownStatusConfig(statusId) && typeof actor.toggleStatusEffect === "function") {
+      if (canUseNativeStatusToggle(actor, statusId)) {
         const result = await actor.toggleStatusEffect(statusId, { active: true, overlay });
         if (result instanceof ActiveEffect) {
           effect = result;

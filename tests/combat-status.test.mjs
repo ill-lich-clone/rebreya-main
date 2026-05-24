@@ -7,6 +7,7 @@ import {
   normalizeRebreyaStatusId
 } from "../scripts/combat/status-definitions.js";
 import {
+  CombatStatusService,
   buildDiscreetStatusEffectData,
   buildDiscreetStatusSyncUpdates,
   buildFrightenedStatusEffectData,
@@ -108,6 +109,89 @@ test("frightened effect data stores a visible counter and attack penalties only"
       ["system.bonuses.rsak.attack", "-3"]
     ]
   );
+});
+
+test("frightened setStatus bypasses dnd5e toggleStatusEffect id generation", async () => {
+  const previousActor = globalThis.Actor;
+  const previousConfig = globalThis.CONFIG;
+
+  class TestActor {}
+  globalThis.Actor = TestActor;
+  globalThis.CONFIG = {
+    statusEffects: [
+      { id: "rebreya-frightened" }
+    ]
+  };
+
+  try {
+    const service = new CombatStatusService({});
+    const createdEffects = [];
+    const actor = new TestActor();
+    actor.id = "actor-1";
+    actor.system = { attributes: { prof: 4 } };
+    actor.effects = { contents: createdEffects };
+    actor.toggleStatusEffect = async () => {
+      throw new Error("toggleStatusEffect must not be called for rebreya frightened");
+    };
+    actor.createEmbeddedDocuments = async (_type, documents) => {
+      const created = documents.map((document, index) => ({
+        ...document,
+        id: `effect-${index}`,
+        _id: `effect-${index}`,
+        parent: actor,
+        getFlag(scope, key) {
+          return this.flags?.[scope]?.[key];
+        },
+        async update(patch) {
+          Object.assign(this, patch);
+          for (const [key, value] of Object.entries(patch)) {
+            if (!key.includes(".")) continue;
+            key.split(".").reduce((target, part, partIndex, parts) => {
+              if (partIndex === parts.length - 1) {
+                target[part] = value;
+                return target;
+              }
+
+              target[part] ??= {};
+              return target[part];
+            }, this);
+          }
+        }
+      }));
+      createdEffects.push(...created);
+      return created;
+    };
+    actor.updateEmbeddedDocuments = async (_type, updates) => {
+      for (const update of updates) {
+        const effect = createdEffects.find((candidate) => candidate.id === update._id);
+        await effect?.update(update);
+      }
+      return updates;
+    };
+
+    const effect = await service.setStatus(actor, "rebreya-frightened", {
+      active: true,
+      value: 2
+    });
+
+    assert.equal(effect.name, "Испуг 2");
+    assert.equal(createdEffects.length, 1);
+    assert.equal(createdEffects[0].flags["rebreya-main"].statusValue, 2);
+    assert.equal(createdEffects[0].flags.statuscounter.value, 2);
+    assert.deepEqual(
+      createdEffects[0].changes.map((change) => [change.key, change.value]),
+      [
+        ["system.bonuses.mwak.attack", "-2"],
+        ["system.bonuses.rwak.attack", "-2"],
+        ["system.bonuses.msak.attack", "-2"],
+        ["system.bonuses.rsak.attack", "-2"]
+      ]
+    );
+  }
+  finally {
+    globalThis.Actor = previousActor;
+    globalThis.CONFIG = previousConfig;
+  }
 });
 
 test("frightened effect data falls back to half source proficiency with minimum two", () => {
