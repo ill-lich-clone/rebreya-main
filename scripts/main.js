@@ -22,6 +22,7 @@ import { CombatStatusService, registerCombatStatusConfig } from "./combat/status
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
 import { registerSceneControlsHook } from "./hooks.js";
 import { extendDnd5eItemTypes, registerDnd5eSheetExtensions } from "./integrations/dnd5e-sheet-extensions.js";
+import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import { registerSettings } from "./settings.js";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js";
@@ -1627,6 +1628,13 @@ Hooks.once("init", () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register combat status config.`, error);
+  }
+
+  try {
+    patchSmAirshipRenderSettingsHook();
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to patch sm-airship settings hook.`, error);
   }
 });
 
