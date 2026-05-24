@@ -242,6 +242,187 @@ test("frightened setStatus uses the native dnd5e status id for midi and dae", as
   }
 });
 
+test("active frightened HUD click updates the value instead of clearing the status", async () => {
+  const previousActor = globalThis.Actor;
+  const previousActiveEffect = globalThis.ActiveEffect;
+  const previousConfig = globalThis.CONFIG;
+  const previousConst = globalThis.CONST;
+  const previousFoundry = globalThis.foundry;
+  const previousDialog = globalThis.Dialog;
+  const previousHTMLElement = globalThis.HTMLElement;
+  const previousHTMLInputElement = globalThis.HTMLInputElement;
+
+  class TestHTMLElement {
+    constructor() {
+      this.dataset = {};
+      this.listeners = [];
+      this.input = null;
+    }
+
+    addEventListener(type, handler, capture) {
+      this.listeners.push({ type, handler, capture });
+    }
+
+    closest(selector) {
+      return selector === ".effect-control[data-status-id]" ? this : null;
+    }
+
+    querySelector(selector) {
+      return selector === "[data-field='status-value']" ? this.input : null;
+    }
+  }
+
+  class TestHTMLInputElement extends TestHTMLElement {
+    constructor(value = "") {
+      super();
+      this.value = value;
+    }
+
+    focus() {}
+    select() {}
+  }
+
+  function applyPatch(target, patch) {
+    for (const [key, value] of Object.entries(patch)) {
+      if (!key.includes(".")) {
+        target[key] = value;
+        continue;
+      }
+
+      key.split(".").reduce((current, part, partIndex, parts) => {
+        if (partIndex === parts.length - 1) {
+          current[part] = value;
+          return current;
+        }
+
+        current[part] ??= {};
+        return current[part];
+      }, target);
+    }
+  }
+
+  class TestActor {}
+  class TestActiveEffect {}
+
+  globalThis.Actor = TestActor;
+  globalThis.ActiveEffect = TestActiveEffect;
+  globalThis.HTMLElement = TestHTMLElement;
+  globalThis.HTMLInputElement = TestHTMLInputElement;
+  globalThis.CONFIG = { statusEffects: [{ id: "frightened" }] };
+  globalThis.CONST = { ACTIVE_EFFECT_MODES: { ADD: 2 } };
+  globalThis.foundry = {
+    utils: {
+      deepClone: (value) => JSON.parse(JSON.stringify(value)),
+      escapeHTML: (value) => String(value ?? ""),
+      getProperty: (source, path) => String(path ?? "").split(".").reduce((current, part) => current?.[part], source)
+    }
+  };
+
+  let dialogOpened = 0;
+  globalThis.Dialog = class Dialog {
+    constructor(config) {
+      this.config = config;
+    }
+
+    render() {
+      dialogOpened += 1;
+      const root = new TestHTMLElement();
+      root.input = new TestHTMLInputElement("4");
+      this.config.render?.(root);
+      this.config.buttons.confirm.callback(root);
+    }
+  };
+
+  try {
+    const service = new CombatStatusService({});
+    const actor = new TestActor();
+    actor.id = "actor-1";
+    actor.system = { attributes: { prof: 4 } };
+    let clearCalls = 0;
+
+    const effect = new TestActiveEffect();
+    Object.assign(effect, {
+      id: "abcdefghijklmnop",
+      _id: "abcdefghijklmnop",
+      name: "РСЃРїСѓРіР°РЅРЅС‹Р№ 2",
+      statuses: ["frightened"],
+      flags: {
+        core: { statusId: "frightened" },
+        "rebreya-main": { statusId: "frightened", statusValue: 2 },
+        statuscounter: { value: 2, visible: true }
+      },
+      changes: [],
+      parent: actor,
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      },
+      async update(patch) {
+        applyPatch(this, patch);
+      },
+      async delete() {
+        clearCalls += 1;
+      }
+    });
+
+    actor.effects = { contents: [effect] };
+    actor.toggleStatusEffect = async (_statusId, options) => {
+      if (options?.active === false) {
+        clearCalls += 1;
+      }
+      return true;
+    };
+    actor.updateEmbeddedDocuments = async (_type, updates) => {
+      for (const update of updates) {
+        if (update._id === effect.id) {
+          await effect.update(update);
+        }
+      }
+      return updates;
+    };
+
+    const root = new TestHTMLElement();
+    await service.bindTokenHud({ object: { actor } }, root);
+
+    const control = new TestHTMLElement();
+    control.dataset.statusId = "frightened";
+    const event = {
+      type: "click",
+      button: 0,
+      target: control,
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    };
+
+    root.listeners.find((entry) => entry.type === "click")?.handler(event);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(dialogOpened, 1);
+    assert.equal(clearCalls, 0);
+    assert.equal(effect.flags["rebreya-main"].statusValue, 4);
+    assert.equal(effect.flags.statuscounter.value, 4);
+    assert.deepEqual(
+      effect.changes.map((change) => [change.key, change.value]),
+      [
+        ["system.bonuses.mwak.attack", "-4"],
+        ["system.bonuses.rwak.attack", "-4"],
+        ["system.bonuses.msak.attack", "-4"],
+        ["system.bonuses.rsak.attack", "-4"]
+      ]
+    );
+  }
+  finally {
+    globalThis.Actor = previousActor;
+    globalThis.ActiveEffect = previousActiveEffect;
+    globalThis.CONFIG = previousConfig;
+    globalThis.CONST = previousConst;
+    globalThis.foundry = previousFoundry;
+    globalThis.Dialog = previousDialog;
+    globalThis.HTMLElement = previousHTMLElement;
+    globalThis.HTMLInputElement = previousHTMLInputElement;
+  }
+});
+
 test("frightened effect data falls back to half source proficiency with minimum two", () => {
   const highProficiency = buildFrightenedStatusEffectData(null, {
     sourceActor: {

@@ -806,14 +806,24 @@ export class CombatStatusService {
       return;
     }
 
+    if (event.type === "contextmenu") {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+
+      if (currentStatus?.active) {
+        await this.clearStatus(actor, statusId);
+      }
+      return;
+    }
+
+    if (event.type !== "click" || event.button !== 0) {
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
-
-    if (currentStatus?.active) {
-      await this.clearStatus(actor, statusId);
-      return;
-    }
 
     const nextValue = await this.#promptStatusValue(definition, currentStatus?.value ?? 1);
     if (nextValue === undefined) {
