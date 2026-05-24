@@ -2156,12 +2156,6 @@
                             "mode": 2,
                             "value": "-@prof",
                             "priority": 20
-                          },
-                          {
-                            "key": "system.bonuses.abilities.check",
-                            "mode": 2,
-                            "value": "-@prof",
-                            "priority": 20
                           }
                         ],
                         "duration": {
@@ -7393,12 +7387,6 @@
                       },
                       {
                         "key": "system.bonuses.rsak.attack",
-                        "mode": 2,
-                        "value": "-@prof",
-                        "priority": 20
-                      },
-                      {
-                        "key": "system.bonuses.abilities.check",
                         "mode": 2,
                         "value": "-@prof",
                         "priority": 20

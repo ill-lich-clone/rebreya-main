@@ -16,6 +16,12 @@ const LEGACY_RESTRAINED_STATUS_ID = "rebreya-restrained";
 const FRIGHTENED_STATUS_ID = "rebreya-frightened";
 const STATUS_COUNTER_MODULE_ID = "statuscounter";
 const DISCREET_MOVEMENT_KEYS = Object.freeze(["walk", "burrow", "climb", "fly", "swim"]);
+const FRIGHTENED_ATTACK_BONUS_KEYS = Object.freeze([
+  "system.bonuses.mwak.attack",
+  "system.bonuses.rwak.attack",
+  "system.bonuses.msak.attack",
+  "system.bonuses.rsak.attack"
+]);
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -140,6 +146,49 @@ function normalizeStatusValue(value, fallback = 1) {
   return Math.max(1, numericValue);
 }
 
+function getActorProficiencyBonus(actor) {
+  const rawValue = getProperty(actor, "system.attributes.prof");
+  if (rawValue && typeof rawValue === "object") {
+    const objectValue = Number(rawValue.flat ?? rawValue.value ?? rawValue.total ?? 0);
+    return Number.isFinite(objectValue) && objectValue > 0 ? objectValue : 0;
+  }
+
+  const numericValue = Number(rawValue ?? 0);
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : 0;
+}
+
+function resolveNumericStatusValue(value, { actor = null, sourceActor = null } = {}) {
+  if (Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+
+  const rawValue = String(value ?? "").trim();
+  if (!rawValue) {
+    return NaN;
+  }
+
+  const proficiency = getActorProficiencyBonus(sourceActor) || getActorProficiencyBonus(actor);
+  const resolvedValue = rawValue
+    .replace(/@prof\b/giu, String(proficiency))
+    .replace(/@attributes\.prof\b/giu, String(proficiency));
+
+  return Number.isFinite(Number(resolvedValue)) ? Number(resolvedValue) : NaN;
+}
+
+function fallbackFrightenedValue({ actor = null, sourceActor = null } = {}) {
+  const proficiency = getActorProficiencyBonus(sourceActor) || getActorProficiencyBonus(actor);
+  return Math.max(2, Math.floor(proficiency / 2));
+}
+
+function normalizeFrightenedValue(value, context = {}) {
+  const numericValue = resolveNumericStatusValue(value, context);
+  if (Number.isFinite(numericValue) && numericValue > 0) {
+    return Math.max(1, Math.floor(numericValue));
+  }
+
+  return fallbackFrightenedValue(context);
+}
+
 function activeEffectAddMode() {
   return globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
 }
@@ -158,6 +207,10 @@ function discreetStatusName(value) {
 
 function plainDiscreetStatusName() {
   return statusLabel(REBREYA_DISCREET_STATUS_ID);
+}
+
+function frightenedStatusName(value, context = {}) {
+  return `${statusLabel(FRIGHTENED_STATUS_ID)} ${normalizeFrightenedValue(value, context)}`;
 }
 
 function isUnvaluedDiscreetValue(value) {
@@ -238,6 +291,54 @@ export function buildDiscreetStatusEffectData(value, { durationRounds = DEFAULT_
   };
 }
 
+function buildFrightenedChanges(value, context = {}) {
+  const penalty = normalizeFrightenedValue(value, context);
+  const signedPenalty = String(-penalty);
+  const mode = activeEffectAddMode();
+  const priority = 20;
+  return FRIGHTENED_ATTACK_BONUS_KEYS.map((key) => ({
+    key,
+    mode,
+    value: signedPenalty,
+    priority
+  }));
+}
+
+export function buildFrightenedStatusEffectData(
+  value,
+  { durationRounds = DEFAULT_DURATION_ROUNDS, meta = {}, actor = null, sourceActor = null } = {}
+) {
+  const statusValue = normalizeFrightenedValue(value, { actor, sourceActor });
+
+  return {
+    name: frightenedStatusName(statusValue),
+    img: statusIcon(FRIGHTENED_STATUS_ID),
+    icon: statusIcon(FRIGHTENED_STATUS_ID),
+    statuses: buildEffectStatusesSet(FRIGHTENED_STATUS_ID),
+    disabled: false,
+    transfer: false,
+    changes: buildFrightenedChanges(statusValue),
+    duration: resolveActiveEffectDuration(durationRounds),
+    flags: {
+      core: {
+        statusId: FRIGHTENED_STATUS_ID
+      },
+      [MODULE_ID]: {
+        [STATUS_ID_FLAG]: FRIGHTENED_STATUS_ID,
+        [STATUS_VALUE_FLAG]: statusValue,
+        [STATUS_META_FLAG]: cloneData(meta ?? {})
+      },
+      [STATUS_COUNTER_MODULE_ID]: {
+        value: statusValue,
+        visible: true,
+        config: {
+          multiplyEffect: false
+        }
+      }
+    }
+  };
+}
+
 function getEffectDocumentId(effect) {
   return String(effect?.id ?? effect?._id ?? "").trim();
 }
@@ -302,6 +403,85 @@ function readDiscreetStatusValue(effect) {
   return readDiscreetStatusAmount(effect).value ?? 0;
 }
 
+function hasFrightenedStatusId(effect) {
+  const statusIds = extractEffectStatuses(effect);
+  if (statusIds.includes(FRIGHTENED_STATUS_ID)) {
+    return true;
+  }
+
+  const moduleStatusId = String(getEffectStatusValue(effect, MODULE_ID, STATUS_ID_FLAG) ?? "").trim();
+  const coreStatusId = String(getEffectStatusValue(effect, "core", "statusId") ?? "").trim();
+  return moduleStatusId === FRIGHTENED_STATUS_ID || coreStatusId === FRIGHTENED_STATUS_ID;
+}
+
+function parseFrightenedValueFromName(name) {
+  const match = String(name ?? "").match(/(\d+)(?!.*\d)/u);
+  return match ? normalizeFrightenedValue(match[1]) : null;
+}
+
+function readFrightenedStatusValue(effect, context = {}) {
+  const counterValue = getEffectStatusValue(effect, STATUS_COUNTER_MODULE_ID, "value");
+  if (Number.isFinite(Number(counterValue)) && Number(counterValue) > 0) {
+    return normalizeFrightenedValue(counterValue, context);
+  }
+
+  const moduleValue = getEffectStatusValue(effect, MODULE_ID, STATUS_VALUE_FLAG);
+  if (Number.isFinite(Number(moduleValue)) && Number(moduleValue) > 0) {
+    return normalizeFrightenedValue(moduleValue, context);
+  }
+
+  const nameValue = parseFrightenedValueFromName(effect?.name);
+  return nameValue ?? normalizeFrightenedValue(moduleValue, context);
+}
+
+export function buildFrightenedStatusSyncUpdates(effects = [], {
+  actor = null,
+  sourceActor = null,
+  sourceActorByEffectId = new Map()
+} = {}) {
+  const sourceActorLookup = sourceActorByEffectId instanceof Map ? sourceActorByEffectId : new Map();
+  const rows = (Array.isArray(effects) ? effects : [])
+    .filter(hasFrightenedStatusId)
+    .map((effect, index) => {
+      const id = getEffectDocumentId(effect);
+      const rowSourceActor = sourceActorLookup.get(id) ?? sourceActor;
+      const value = readFrightenedStatusValue(effect, { actor, sourceActor: rowSourceActor });
+      return {
+        effect,
+        index,
+        id,
+        value
+      };
+    })
+    .filter((row) => row.id && row.value > 0);
+
+  if (!rows.length) {
+    return [];
+  }
+
+  const strongest = rows.reduce((best, row) => {
+    if (!best || row.value > best.value) {
+      return row;
+    }
+
+    return best;
+  }, null);
+
+  return rows.map((row) => ({
+    _id: row.id,
+    name: frightenedStatusName(row.value),
+    img: statusIcon(FRIGHTENED_STATUS_ID),
+    icon: statusIcon(FRIGHTENED_STATUS_ID),
+    statuses: [FRIGHTENED_STATUS_ID],
+    changes: row.id === strongest.id ? buildFrightenedChanges(row.value) : [],
+    "flags.core.statusId": FRIGHTENED_STATUS_ID,
+    [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: FRIGHTENED_STATUS_ID,
+    [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: row.value,
+    [`flags.${STATUS_COUNTER_MODULE_ID}.value`]: row.value,
+    [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: true
+  }));
+}
+
 export function buildDiscreetStatusSyncUpdates(effects = [], { actor = null } = {}) {
   const rows = (Array.isArray(effects) ? effects : [])
     .filter(hasDiscreetStatusId)
@@ -351,45 +531,6 @@ export function buildDiscreetStatusSyncUpdates(effects = [], { actor = null } = 
       })
     };
   });
-}
-
-function buildFrightenedChanges(value) {
-  const penalty = normalizeStatusValue(value, 1);
-  const signedPenalty = String(-penalty);
-  const mode = CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
-  const priority = 20;
-  return [
-    {
-      key: "system.bonuses.mwak.attack",
-      mode,
-      value: signedPenalty,
-      priority
-    },
-    {
-      key: "system.bonuses.rwak.attack",
-      mode,
-      value: signedPenalty,
-      priority
-    },
-    {
-      key: "system.bonuses.msak.attack",
-      mode,
-      value: signedPenalty,
-      priority
-    },
-    {
-      key: "system.bonuses.rsak.attack",
-      mode,
-      value: signedPenalty,
-      priority
-    },
-    {
-      key: "system.bonuses.abilities.check",
-      mode,
-      value: signedPenalty,
-      priority
-    }
-  ];
 }
 
 function buildDynamicStatusChanges(statusId, value) {
@@ -444,6 +585,7 @@ export class CombatStatusService {
     this.moduleApi = moduleApi;
     this._internalActorUpdates = new Set();
     this._discreetSyncActorIds = new Set();
+    this._frightenedSyncActorIds = new Set();
     this._turnLocks = new Set();
   }
 
@@ -694,6 +836,15 @@ export class CombatStatusService {
       });
     }
 
+    if (statusId === FRIGHTENED_STATUS_ID) {
+      return buildFrightenedStatusEffectData(options.value, {
+        durationRounds: options.durationRounds,
+        meta: options.meta ?? {},
+        actor: options.actor ?? null,
+        sourceActor: options.sourceActor ?? null
+      });
+    }
+
     const definition = getRebreyaStatusDefinition(statusId);
     const statusLabel = definition?.label ?? statusId;
     const statusIcon = definition?.icon ?? "icons/svg/aura.svg";
@@ -729,10 +880,25 @@ export class CombatStatusService {
       [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: statusId
     };
     if (Object.hasOwn(options, "value")) {
-      patch[`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`] = options.value;
-      const dynamicChanges = buildDynamicStatusChanges(statusId, options.value);
+      const statusValue = statusId === FRIGHTENED_STATUS_ID
+        ? normalizeFrightenedValue(options.value, {
+          actor: options.actor ?? null,
+          sourceActor: options.sourceActor ?? null
+        })
+        : options.value;
+      patch[`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`] = statusValue;
+      const dynamicChanges = buildDynamicStatusChanges(statusId, statusValue);
       if (Array.isArray(dynamicChanges)) {
         patch.changes = dynamicChanges;
+      }
+      if (statusId === FRIGHTENED_STATUS_ID) {
+        patch.name = frightenedStatusName(statusValue);
+        patch.img = statusIcon(FRIGHTENED_STATUS_ID);
+        patch.icon = statusIcon(FRIGHTENED_STATUS_ID);
+        patch.statuses = [FRIGHTENED_STATUS_ID];
+        patch["flags.core.statusId"] = FRIGHTENED_STATUS_ID;
+        patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = statusValue;
+        patch[`flags.${STATUS_COUNTER_MODULE_ID}.visible`] = true;
       }
     }
     if (Object.hasOwn(options, "meta")) {
@@ -754,17 +920,26 @@ export class CombatStatusService {
     }
 
     const active = options.active !== false;
-    const overlay = options.overlay === true;
-    const durationRounds = toNumber(options.durationRounds, DEFAULT_DURATION_ROUNDS);
+    const statusOptions = active && statusId === FRIGHTENED_STATUS_ID
+      ? {
+        ...options,
+        value: normalizeFrightenedValue(Object.hasOwn(options, "value") ? options.value : null, {
+          actor,
+          sourceActor: options.sourceActor ?? null
+        })
+      }
+      : options;
+    const overlay = statusOptions.overlay === true;
+    const durationRounds = toNumber(statusOptions.durationRounds, DEFAULT_DURATION_ROUNDS);
     if (statusId === REBREYA_DISCREET_STATUS_ID) {
       if (!active) {
         return this.#clearDiscreetStatuses(actor);
       }
 
       return this.#createDiscreetStatus(actor, {
-        value: options.value,
+        value: statusOptions.value,
         durationRounds,
-        meta: options.meta ?? {}
+        meta: statusOptions.meta ?? {}
       });
     }
 
@@ -801,18 +976,28 @@ export class CombatStatusService {
         const [created] = await actor.createEmbeddedDocuments("ActiveEffect", [
           this.#buildFallbackEffectData(statusId, {
             durationRounds,
-            value: Object.hasOwn(options, "value") ? options.value : null,
-            meta: options.meta ?? {}
+            value: Object.hasOwn(statusOptions, "value") ? statusOptions.value : null,
+            meta: statusOptions.meta ?? {},
+            actor,
+            sourceActor: statusOptions.sourceActor ?? null
           })
         ]);
         effect = created ?? null;
       }
     }
 
-    if (effect && (Object.hasOwn(options, "value") || Object.hasOwn(options, "meta"))) {
+    if (effect && (Object.hasOwn(statusOptions, "value") || Object.hasOwn(statusOptions, "meta"))) {
       await this.#storeStatusMetadata(effect, statusId, {
-        value: options.value,
-        meta: options.meta
+        value: statusOptions.value,
+        meta: statusOptions.meta,
+        actor,
+        sourceActor: statusOptions.sourceActor ?? null
+      });
+    }
+
+    if (effect && statusId === FRIGHTENED_STATUS_ID) {
+      await this.#syncFrightenedStatusEffects(actor, {
+        sourceActor: statusOptions.sourceActor ?? null
       });
     }
 
@@ -840,7 +1025,9 @@ export class CombatStatusService {
     const effect = this.#findStatusEffect(actor, statusId);
     const value = statusId === REBREYA_DISCREET_STATUS_ID && effect
       ? readDiscreetStatusValue(effect)
-      : effect?.getFlag(MODULE_ID, STATUS_VALUE_FLAG) ?? null;
+      : (statusId === FRIGHTENED_STATUS_ID && effect
+        ? readFrightenedStatusValue(effect, { actor })
+        : effect?.getFlag(MODULE_ID, STATUS_VALUE_FLAG) ?? null);
     const meta = effect?.getFlag(MODULE_ID, STATUS_META_FLAG) ?? {};
 
     return {
@@ -864,21 +1051,28 @@ export class CombatStatusService {
       throw new Error("Не указан идентификатор состояния.");
     }
 
+    const statusValue = statusId === FRIGHTENED_STATUS_ID
+      ? normalizeFrightenedValue(value, { actor })
+      : value;
     const effect = this.#findStatusEffect(actor, statusId);
     if (!effect) {
       return this.setStatus(actor, statusId, {
         active: true,
-        value,
+        value: statusValue,
         meta
       });
     }
 
     await this.#storeStatusMetadata(effect, statusId, {
-      value,
-      meta
+      value: statusValue,
+      meta,
+      actor
     });
     if (statusId === REBREYA_DISCREET_STATUS_ID) {
       await this.#syncDiscreetStatusEffects(actor);
+    }
+    if (statusId === FRIGHTENED_STATUS_ID) {
+      await this.#syncFrightenedStatusEffects(actor);
     }
     return effect;
   }
@@ -889,6 +1083,68 @@ export class CombatStatusService {
     }
 
     return (actor.effects?.contents ?? []).filter(hasDiscreetStatusId);
+  }
+
+  #getFrightenedStatusEffects(actor) {
+    if (!(actor instanceof Actor)) {
+      return [];
+    }
+
+    return (actor.effects?.contents ?? []).filter(hasFrightenedStatusId);
+  }
+
+  async #resolveEffectSourceActor(effect) {
+    const meta = getEffectStatusValue(effect, MODULE_ID, STATUS_META_FLAG);
+    const sourceActorId = String(meta?.sourceActorId ?? "").trim();
+    if (sourceActorId) {
+      const sourceActor = game.actors?.get?.(sourceActorId) ?? null;
+      if (sourceActor instanceof Actor) {
+        return sourceActor;
+      }
+    }
+
+    const origin = String(effect?.origin ?? getProperty(effect, "origin", "") ?? "").trim();
+    if (!origin || typeof fromUuid !== "function") {
+      return null;
+    }
+
+    try {
+      const document = await fromUuid(origin);
+      if (document instanceof Actor) {
+        return document;
+      }
+      if (document?.actor instanceof Actor) {
+        return document.actor;
+      }
+      if (document?.parent instanceof Actor) {
+        return document.parent;
+      }
+      if (document?.parent?.actor instanceof Actor) {
+        return document.parent.actor;
+      }
+    }
+    catch (_error) {
+      return null;
+    }
+
+    return null;
+  }
+
+  async #buildFrightenedSourceActorMap(effects) {
+    const sourceActorByEffectId = new Map();
+    for (const effect of effects) {
+      const id = getEffectDocumentId(effect);
+      if (!id) {
+        continue;
+      }
+
+      const sourceActor = await this.#resolveEffectSourceActor(effect);
+      if (sourceActor instanceof Actor) {
+        sourceActorByEffectId.set(id, sourceActor);
+      }
+    }
+
+    return sourceActorByEffectId;
   }
 
   async #createDiscreetStatus(actor, { value = 1, durationRounds = DEFAULT_DURATION_ROUNDS, meta = {} } = {}) {
@@ -956,28 +1212,76 @@ export class CombatStatusService {
     }
   }
 
-  async handleActiveEffectUpdate(effect) {
-    if (!hasDiscreetStatusId(effect)) {
+  async #syncFrightenedStatusEffects(actor, { sourceActor = null } = {}) {
+    if (!(actor instanceof Actor)) {
       return false;
     }
 
-    return this.#syncDiscreetStatusEffects(effect.parent);
+    if (this._frightenedSyncActorIds.has(actor.id)) {
+      return false;
+    }
+
+    const effects = this.#getFrightenedStatusEffects(actor);
+    const sourceActorByEffectId = await this.#buildFrightenedSourceActorMap(effects);
+    const updates = buildFrightenedStatusSyncUpdates(effects, {
+      actor,
+      sourceActor,
+      sourceActorByEffectId
+    });
+    if (!updates.length) {
+      return false;
+    }
+
+    this._frightenedSyncActorIds.add(actor.id);
+    try {
+      if (typeof actor.updateEmbeddedDocuments === "function") {
+        await actor.updateEmbeddedDocuments("ActiveEffect", updates);
+      }
+      else {
+        for (const update of updates) {
+          const effect = effects.find((candidate) => getEffectDocumentId(candidate) === update._id);
+          await effect?.update?.(update);
+        }
+      }
+
+      return true;
+    }
+    finally {
+      this._frightenedSyncActorIds.delete(actor.id);
+    }
+  }
+
+  async handleActiveEffectUpdate(effect) {
+    const didSyncDiscreet = hasDiscreetStatusId(effect)
+      ? await this.#syncDiscreetStatusEffects(effect.parent)
+      : false;
+    const didSyncFrightened = hasFrightenedStatusId(effect)
+      ? await this.#syncFrightenedStatusEffects(effect.parent)
+      : false;
+
+    return didSyncDiscreet || didSyncFrightened;
   }
 
   async handleActiveEffectCreated(effect) {
-    if (!hasDiscreetStatusId(effect)) {
-      return false;
-    }
+    const didSyncDiscreet = hasDiscreetStatusId(effect)
+      ? await this.#syncDiscreetStatusEffects(effect.parent)
+      : false;
+    const didSyncFrightened = hasFrightenedStatusId(effect)
+      ? await this.#syncFrightenedStatusEffects(effect.parent)
+      : false;
 
-    return this.#syncDiscreetStatusEffects(effect.parent);
+    return didSyncDiscreet || didSyncFrightened;
   }
 
   async handleActiveEffectDeleted(effect) {
-    if (!hasDiscreetStatusId(effect)) {
-      return false;
-    }
+    const didSyncDiscreet = hasDiscreetStatusId(effect)
+      ? await this.#syncDiscreetStatusEffects(effect.parent)
+      : false;
+    const didSyncFrightened = hasFrightenedStatusId(effect)
+      ? await this.#syncFrightenedStatusEffects(effect.parent)
+      : false;
 
-    return this.#syncDiscreetStatusEffects(effect.parent);
+    return didSyncDiscreet || didSyncFrightened;
   }
 
   async applyDecayingDamage(actorOrId, amount, options = {}) {

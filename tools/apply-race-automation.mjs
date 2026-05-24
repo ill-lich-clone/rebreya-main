@@ -278,8 +278,7 @@ function frightenedEffect(value = "@prof", config = {}) {
             { key: "system.bonuses.mwak.attack", mode: MODE_ADD, value: penalty, priority: 20 },
             { key: "system.bonuses.rwak.attack", mode: MODE_ADD, value: penalty, priority: 20 },
             { key: "system.bonuses.msak.attack", mode: MODE_ADD, value: penalty, priority: 20 },
-            { key: "system.bonuses.rsak.attack", mode: MODE_ADD, value: penalty, priority: 20 },
-            { key: "system.bonuses.abilities.check", mode: MODE_ADD, value: penalty, priority: 20 }
+            { key: "system.bonuses.rsak.attack", mode: MODE_ADD, value: penalty, priority: 20 }
         ]
     })
 }

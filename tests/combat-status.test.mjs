@@ -9,6 +9,8 @@ import {
 import {
   buildDiscreetStatusEffectData,
   buildDiscreetStatusSyncUpdates,
+  buildFrightenedStatusEffectData,
+  buildFrightenedStatusSyncUpdates,
   registerCombatStatusConfig
 } from "../scripts/combat/status-service.js";
 
@@ -86,6 +88,109 @@ test("combat status config registers Rebreya statuses for dnd5e HUD rebuilds", (
   finally {
     globalThis.CONFIG = previousConfig;
   }
+});
+
+test("frightened effect data stores a visible counter and attack penalties only", () => {
+  const data = buildFrightenedStatusEffectData(3);
+
+  assert.equal(data.name, "Испуг 3");
+  assert.equal(data.flags["rebreya-main"].statusId, "rebreya-frightened");
+  assert.equal(data.flags["rebreya-main"].statusValue, 3);
+  assert.equal(data.flags.statuscounter.value, 3);
+  assert.equal(data.flags.statuscounter.visible, true);
+  assert.deepEqual([...data.statuses], ["rebreya-frightened"]);
+  assert.deepEqual(
+    data.changes.map((change) => [change.key, change.value]),
+    [
+      ["system.bonuses.mwak.attack", "-3"],
+      ["system.bonuses.rwak.attack", "-3"],
+      ["system.bonuses.msak.attack", "-3"],
+      ["system.bonuses.rsak.attack", "-3"]
+    ]
+  );
+});
+
+test("frightened effect data falls back to half source proficiency with minimum two", () => {
+  const highProficiency = buildFrightenedStatusEffectData(null, {
+    sourceActor: {
+      system: {
+        attributes: {
+          prof: 6
+        }
+      }
+    }
+  });
+  const lowProficiency = buildFrightenedStatusEffectData(null, {
+    sourceActor: {
+      system: {
+        attributes: {
+          prof: 3
+        }
+      }
+    }
+  });
+
+  assert.equal(highProficiency.flags["rebreya-main"].statusValue, 3);
+  assert.equal(highProficiency.flags.statuscounter.value, 3);
+  assert.equal(lowProficiency.flags["rebreya-main"].statusValue, 2);
+  assert.equal(lowProficiency.flags.statuscounter.value, 2);
+});
+
+test("frightened status sync keeps only the strongest attack penalty active", () => {
+  const updates = buildFrightenedStatusSyncUpdates([
+    {
+      id: "weak",
+      name: "Испуг 2",
+      flags: {
+        statuscounter: { value: 2 },
+        "rebreya-main": { statusId: "rebreya-frightened", statusValue: 2 }
+      },
+      changes: [
+        { key: "system.bonuses.abilities.check", mode: 2, value: "-2", priority: 20 }
+      ],
+      statuses: ["rebreya-frightened"]
+    },
+    {
+      id: "fallback",
+      name: "Испуг",
+      flags: {
+        "rebreya-main": { statusId: "rebreya-frightened", statusValue: null }
+      },
+      changes: [],
+      statuses: ["rebreya-frightened"]
+    }
+  ], {
+    sourceActor: {
+      system: {
+        attributes: {
+          prof: 6
+        }
+      }
+    }
+  });
+
+  assert.deepEqual(updates.find((update) => update._id === "weak"), {
+    _id: "weak",
+    name: "Испуг 2",
+    img: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+    icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+    statuses: ["rebreya-frightened"],
+    changes: [],
+    "flags.core.statusId": "rebreya-frightened",
+    "flags.rebreya-main.statusId": "rebreya-frightened",
+    "flags.rebreya-main.statusValue": 2,
+    "flags.statuscounter.value": 2,
+    "flags.statuscounter.visible": true
+  });
+  assert.deepEqual(
+    updates.find((update) => update._id === "fallback")?.changes.map((change) => [change.key, change.value]),
+    [
+      ["system.bonuses.mwak.attack", "-3"],
+      ["system.bonuses.rwak.attack", "-3"],
+      ["system.bonuses.msak.attack", "-3"],
+      ["system.bonuses.rsak.attack", "-3"]
+    ]
+  );
 });
 
 test("discreet status sync keeps several effects but only applies the strongest speed penalty", () => {

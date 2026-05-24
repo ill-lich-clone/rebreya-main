@@ -1933,14 +1933,7 @@ function statusChanges(statusId, value) {
             mode: MODE_ADD,
             value: String(-penalty),
             priority: 20
-        })).concat([
-            {
-                key: "system.bonuses.abilities.check",
-                mode: MODE_ADD,
-                value: String(-penalty),
-                priority: 20
-            }
-        ])
+        }))
     }
 
     return []
@@ -2452,6 +2445,18 @@ function effectFlags(effect) {
             statusId: effect.statusId,
             statusValue: effect.statusValue ?? null,
             statusMeta: effect.statusMeta ?? {}
+        }
+    }
+
+    if (effect.statusId === "rebreya-frightened" && Number.isFinite(Number(effect.statusValue))) {
+        flags.statuscounter = {
+            ...(flags.statuscounter ?? {}),
+            value: Math.max(1, Math.floor(Number(effect.statusValue))),
+            visible: true,
+            config: {
+                ...(flags.statuscounter?.config ?? {}),
+                multiplyEffect: false
+            }
         }
     }
 

@@ -7301,12 +7301,6 @@
               "mode": 2,
               "value": "-1",
               "priority": 20
-            },
-            {
-              "key": "system.bonuses.abilities.check",
-              "mode": 2,
-              "value": "-1",
-              "priority": 20
             }
           ],
           "disabled": false,
@@ -7335,6 +7329,13 @@
             },
             "core": {
               "statusId": "rebreya-frightened"
+            },
+            "statuscounter": {
+              "value": 1,
+              "visible": true,
+              "config": {
+                "multiplyEffect": false
+              }
             }
           }
         }
@@ -16801,12 +16802,6 @@
               "mode": 2,
               "value": "-1",
               "priority": 20
-            },
-            {
-              "key": "system.bonuses.abilities.check",
-              "mode": 2,
-              "value": "-1",
-              "priority": 20
             }
           ],
           "disabled": false,
@@ -16835,6 +16830,13 @@
             },
             "core": {
               "statusId": "rebreya-frightened"
+            },
+            "statuscounter": {
+              "value": 1,
+              "visible": true,
+              "config": {
+                "multiplyEffect": false
+              }
             }
           }
         }
@@ -17121,12 +17123,6 @@
               "mode": 2,
               "value": "-2",
               "priority": 20
-            },
-            {
-              "key": "system.bonuses.abilities.check",
-              "mode": 2,
-              "value": "-2",
-              "priority": 20
             }
           ],
           "disabled": false,
@@ -17160,6 +17156,13 @@
             },
             "core": {
               "statusId": "rebreya-frightened"
+            },
+            "statuscounter": {
+              "value": 2,
+              "visible": true,
+              "config": {
+                "multiplyEffect": false
+              }
             }
           }
         }
@@ -31422,12 +31425,6 @@
               "mode": 2,
               "value": "-3",
               "priority": 20
-            },
-            {
-              "key": "system.bonuses.abilities.check",
-              "mode": 2,
-              "value": "-3",
-              "priority": 20
             }
           ],
           "disabled": false,
@@ -31456,6 +31453,13 @@
             },
             "core": {
               "statusId": "rebreya-frightened"
+            },
+            "statuscounter": {
+              "value": 3,
+              "visible": true,
+              "config": {
+                "multiplyEffect": false
+              }
             }
           }
         },
@@ -31489,12 +31493,6 @@
               "mode": 2,
               "value": "-1",
               "priority": 20
-            },
-            {
-              "key": "system.bonuses.abilities.check",
-              "mode": 2,
-              "value": "-1",
-              "priority": 20
             }
           ],
           "disabled": false,
@@ -31523,6 +31521,13 @@
             },
             "core": {
               "statusId": "rebreya-frightened"
+            },
+            "statuscounter": {
+              "value": 1,
+              "visible": true,
+              "config": {
+                "multiplyEffect": false
+              }
             }
           }
         }
@@ -41097,12 +41102,6 @@
               "mode": 2,
               "value": "-1",
               "priority": 20
-            },
-            {
-              "key": "system.bonuses.abilities.check",
-              "mode": 2,
-              "value": "-1",
-              "priority": 20
             }
           ],
           "disabled": false,
@@ -41131,6 +41130,13 @@
             },
             "core": {
               "statusId": "rebreya-frightened"
+            },
+            "statuscounter": {
+              "value": 1,
+              "visible": true,
+              "config": {
+                "multiplyEffect": false
+              }
             }
           }
         }
@@ -43200,12 +43206,6 @@
               "mode": 2,
               "value": "-3",
               "priority": 20
-            },
-            {
-              "key": "system.bonuses.abilities.check",
-              "mode": 2,
-              "value": "-3",
-              "priority": 20
             }
           ],
           "disabled": false,
@@ -43239,6 +43239,13 @@
             },
             "core": {
               "statusId": "rebreya-frightened"
+            },
+            "statuscounter": {
+              "value": 3,
+              "visible": true,
+              "config": {
+                "multiplyEffect": false
+              }
             }
           }
         },
@@ -43269,12 +43276,6 @@
             },
             {
               "key": "system.bonuses.rsak.attack",
-              "mode": 2,
-              "value": "-1",
-              "priority": 20
-            },
-            {
-              "key": "system.bonuses.abilities.check",
               "mode": 2,
               "value": "-1",
               "priority": 20
@@ -43311,6 +43312,13 @@
             },
             "core": {
               "statusId": "rebreya-frightened"
+            },
+            "statuscounter": {
+              "value": 1,
+              "visible": true,
+              "config": {
+                "multiplyEffect": false
+              }
             }
           }
         }
@@ -54559,12 +54567,6 @@
               "mode": 2,
               "value": "-2",
               "priority": 20
-            },
-            {
-              "key": "system.bonuses.abilities.check",
-              "mode": 2,
-              "value": "-2",
-              "priority": 20
             }
           ],
           "disabled": false,
@@ -54593,6 +54595,13 @@
             },
             "core": {
               "statusId": "rebreya-frightened"
+            },
+            "statuscounter": {
+              "value": 2,
+              "visible": true,
+              "config": {
+                "multiplyEffect": false
+              }
             }
           }
         }
@@ -57286,12 +57295,6 @@
               "mode": 2,
               "value": "-2",
               "priority": 20
-            },
-            {
-              "key": "system.bonuses.abilities.check",
-              "mode": 2,
-              "value": "-2",
-              "priority": 20
             }
           ],
           "disabled": false,
@@ -57320,6 +57323,13 @@
             },
             "core": {
               "statusId": "rebreya-frightened"
+            },
+            "statuscounter": {
+              "value": 2,
+              "visible": true,
+              "config": {
+                "multiplyEffect": false
+              }
             }
           }
         },
