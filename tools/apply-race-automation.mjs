@@ -269,7 +269,7 @@ function statusEffect(statusId, label, note, config = {}) {
 
 function frightenedEffect(value = "@prof", config = {}) {
     const penalty = String(value).startsWith("-") ? String(value) : `-${value}`
-    return statusEffect("rebreya-frightened", "Испуг", "Испуг применён как состояние rebreya-main со значением.", {
+    return statusEffect("frightened", "Испуганный", "Испуг применён как состояние rebreya-main со значением.", {
         statusValue: value,
         onSave: config.onSave,
         duration: config.duration,

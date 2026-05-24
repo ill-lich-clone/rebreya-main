@@ -1,6 +1,8 @@
 import { MODULE_ID } from "../constants.js";
 import {
+  LEGACY_REBREYA_FRIGHTENED_STATUS_ID,
   REBREYA_DISCREET_STATUS_ID,
+  REBREYA_FRIGHTENED_STATUS_ID,
   REBREYA_STATUS_DEFINITIONS,
   buildRebreyaStatusConfig,
   getRebreyaStatusDefinition,
@@ -13,7 +15,7 @@ const STATUS_META_FLAG = "statusMeta";
 const DEFAULT_DURATION_ROUNDS = 0;
 const LEGACY_BLOODIED_STATUS_ID = "rebreya-bloodied";
 const LEGACY_RESTRAINED_STATUS_ID = "rebreya-restrained";
-const FRIGHTENED_STATUS_ID = "rebreya-frightened";
+const FRIGHTENED_STATUS_ID = REBREYA_FRIGHTENED_STATUS_ID;
 const STATUS_COUNTER_MODULE_ID = "statuscounter";
 const DISCREET_MOVEMENT_KEYS = Object.freeze(["walk", "burrow", "climb", "fly", "swim"]);
 const FRIGHTENED_ATTACK_BONUS_KEYS = Object.freeze([
@@ -114,6 +116,10 @@ function canUseNativeStatusToggle(actor, statusId) {
     && isKnownStatusConfig(safeStatusId)
     && typeof actor?.toggleStatusEffect === "function"
   );
+}
+
+function shouldRegisterDnd5eStatusEffect(statusId) {
+  return String(statusId ?? "").trim().startsWith("rebreya-");
 }
 
 function resolveActiveEffectDuration(durationRounds = DEFAULT_DURATION_ROUNDS) {
@@ -415,13 +421,16 @@ function readDiscreetStatusValue(effect) {
 
 function hasFrightenedStatusId(effect) {
   const statusIds = extractEffectStatuses(effect);
-  if (statusIds.includes(FRIGHTENED_STATUS_ID)) {
+  if (statusIds.includes(FRIGHTENED_STATUS_ID) || statusIds.includes(LEGACY_REBREYA_FRIGHTENED_STATUS_ID)) {
     return true;
   }
 
   const moduleStatusId = String(getEffectStatusValue(effect, MODULE_ID, STATUS_ID_FLAG) ?? "").trim();
   const coreStatusId = String(getEffectStatusValue(effect, "core", "statusId") ?? "").trim();
-  return moduleStatusId === FRIGHTENED_STATUS_ID || coreStatusId === FRIGHTENED_STATUS_ID;
+  return moduleStatusId === FRIGHTENED_STATUS_ID
+    || moduleStatusId === LEGACY_REBREYA_FRIGHTENED_STATUS_ID
+    || coreStatusId === FRIGHTENED_STATUS_ID
+    || coreStatusId === LEGACY_REBREYA_FRIGHTENED_STATUS_ID;
 }
 
 function parseFrightenedValueFromName(name) {
@@ -574,7 +583,7 @@ export function registerCombatStatusConfig() {
       continue;
     }
 
-    if (dnd5eStatusEffects && !Object.hasOwn(dnd5eStatusEffects, row.id)) {
+    if (dnd5eStatusEffects && shouldRegisterDnd5eStatusEffect(row.id) && !Object.hasOwn(dnd5eStatusEffects, row.id)) {
       dnd5eStatusEffects[row.id] = {
         name: statusConfig.name,
         img: statusConfig.img,
@@ -827,6 +836,12 @@ export class CombatStatusService {
         .sort((left, right) => readDiscreetStatusValue(right) - readDiscreetStatusValue(left))[0] ?? null;
     }
 
+    if (statusId === FRIGHTENED_STATUS_ID) {
+      return this.#getFrightenedStatusEffects(actor)
+        .sort((left, right) => readFrightenedStatusValue(right, { actor }) - readFrightenedStatusValue(left, { actor }))[0]
+        ?? null;
+    }
+
     return actor.effects.contents.find((effect) => {
       const statusIds = extractEffectStatuses(effect);
       if (statusIds.includes(statusId)) {
@@ -960,7 +975,11 @@ export class CombatStatusService {
         return false;
       }
 
-      if (canUseNativeStatusToggle(actor, statusId)) {
+      const currentStatusIds = extractEffectStatuses(current);
+      const currentIsLegacyFrightened = statusId === FRIGHTENED_STATUS_ID
+        && currentStatusIds.includes(LEGACY_REBREYA_FRIGHTENED_STATUS_ID)
+        && !currentStatusIds.includes(FRIGHTENED_STATUS_ID);
+      if (!currentIsLegacyFrightened && canUseNativeStatusToggle(actor, statusId)) {
         await actor.toggleStatusEffect(statusId, { active: false, overlay });
       }
       else {

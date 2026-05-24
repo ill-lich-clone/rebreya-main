@@ -2126,8 +2126,8 @@
                     "dc": "@attributes.spell.dc",
                     "appliedEffects": [
                       {
-                        "label": "Испуг",
-                        "statusId": "rebreya-frightened",
+                        "label": "Испуганный",
+                        "statusId": "frightened",
                         "statusValue": "@prof",
                         "statusMeta": {},
                         "transfer": false,
@@ -7360,8 +7360,8 @@
                 },
                 "appliedEffects": [
                   {
-                    "label": "Испуг",
-                    "statusId": "rebreya-frightened",
+                    "label": "Испуганный",
+                    "statusId": "frightened",
                     "statusValue": "@prof",
                     "statusMeta": {},
                     "transfer": false,

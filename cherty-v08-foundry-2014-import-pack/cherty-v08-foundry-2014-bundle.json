@@ -7273,7 +7273,7 @@
         },
         {
           "_id": "075ad77e8acd0be9",
-          "name": "Испуг 1",
+          "name": "Испуганный 1",
           "type": "base",
           "img": "systems/dnd5e/icons/svg/statuses/frightened.svg",
           "system": {},
@@ -7317,18 +7317,18 @@
           "origin": null,
           "transfer": false,
           "statuses": [
-            "rebreya-frightened"
+            "frightened"
           ],
           "sort": 0,
           "flags": {
             "rebreya-main": {
               "automation": true,
-              "statusId": "rebreya-frightened",
+              "statusId": "frightened",
               "statusValue": 1,
               "statusMeta": {}
             },
             "core": {
-              "statusId": "rebreya-frightened"
+              "statusId": "frightened"
             },
             "statuscounter": {
               "value": 1,
@@ -16774,7 +16774,7 @@
       "effects": [
         {
           "_id": "6ede32e2df1cf922",
-          "name": "Испуг 1",
+          "name": "Испуганный 1",
           "type": "base",
           "img": "systems/dnd5e/icons/svg/statuses/frightened.svg",
           "system": {},
@@ -16818,18 +16818,18 @@
           "origin": null,
           "transfer": false,
           "statuses": [
-            "rebreya-frightened"
+            "frightened"
           ],
           "sort": 0,
           "flags": {
             "rebreya-main": {
               "automation": true,
-              "statusId": "rebreya-frightened",
+              "statusId": "frightened",
               "statusValue": 1,
               "statusMeta": {}
             },
             "core": {
-              "statusId": "rebreya-frightened"
+              "statusId": "frightened"
             },
             "statuscounter": {
               "value": 1,
@@ -17095,7 +17095,7 @@
         },
         {
           "_id": "e54205a09168d89d",
-          "name": "Испуг 2",
+          "name": "Испуганный 2",
           "type": "base",
           "img": "systems/dnd5e/icons/svg/statuses/frightened.svg",
           "system": {},
@@ -17139,13 +17139,13 @@
           "origin": null,
           "transfer": false,
           "statuses": [
-            "rebreya-frightened"
+            "frightened"
           ],
           "sort": 0,
           "flags": {
             "rebreya-main": {
               "automation": true,
-              "statusId": "rebreya-frightened",
+              "statusId": "frightened",
               "statusValue": 2,
               "statusMeta": {}
             },
@@ -17155,7 +17155,7 @@
               ]
             },
             "core": {
-              "statusId": "rebreya-frightened"
+              "statusId": "frightened"
             },
             "statuscounter": {
               "value": 2,
@@ -31397,7 +31397,7 @@
       "effects": [
         {
           "_id": "366a31e7bf1d731c",
-          "name": "Испуг 3",
+          "name": "Испуганный 3",
           "type": "base",
           "img": "systems/dnd5e/icons/svg/statuses/frightened.svg",
           "system": {},
@@ -31441,18 +31441,18 @@
           "origin": null,
           "transfer": false,
           "statuses": [
-            "rebreya-frightened"
+            "frightened"
           ],
           "sort": 0,
           "flags": {
             "rebreya-main": {
               "automation": true,
-              "statusId": "rebreya-frightened",
+              "statusId": "frightened",
               "statusValue": 3,
               "statusMeta": {}
             },
             "core": {
-              "statusId": "rebreya-frightened"
+              "statusId": "frightened"
             },
             "statuscounter": {
               "value": 3,
@@ -31465,7 +31465,7 @@
         },
         {
           "_id": "e500eda3f68716f3",
-          "name": "Испуг 1",
+          "name": "Испуганный 1",
           "type": "base",
           "img": "systems/dnd5e/icons/svg/statuses/frightened.svg",
           "system": {},
@@ -31509,18 +31509,18 @@
           "origin": null,
           "transfer": false,
           "statuses": [
-            "rebreya-frightened"
+            "frightened"
           ],
           "sort": 0,
           "flags": {
             "rebreya-main": {
               "automation": true,
-              "statusId": "rebreya-frightened",
+              "statusId": "frightened",
               "statusValue": 1,
               "statusMeta": {}
             },
             "core": {
-              "statusId": "rebreya-frightened"
+              "statusId": "frightened"
             },
             "statuscounter": {
               "value": 1,
@@ -41074,7 +41074,7 @@
       "effects": [
         {
           "_id": "f5e2db889c103d1e",
-          "name": "Испуг 1",
+          "name": "Испуганный 1",
           "type": "base",
           "img": "systems/dnd5e/icons/svg/statuses/frightened.svg",
           "system": {},
@@ -41118,18 +41118,18 @@
           "origin": null,
           "transfer": false,
           "statuses": [
-            "rebreya-frightened"
+            "frightened"
           ],
           "sort": 0,
           "flags": {
             "rebreya-main": {
               "automation": true,
-              "statusId": "rebreya-frightened",
+              "statusId": "frightened",
               "statusValue": 1,
               "statusMeta": {}
             },
             "core": {
-              "statusId": "rebreya-frightened"
+              "statusId": "frightened"
             },
             "statuscounter": {
               "value": 1,
@@ -43178,7 +43178,7 @@
       "effects": [
         {
           "_id": "abd82c9af1d50644",
-          "name": "Испуг 3",
+          "name": "Испуганный 3",
           "type": "base",
           "img": "systems/dnd5e/icons/svg/statuses/frightened.svg",
           "system": {},
@@ -43222,13 +43222,13 @@
           "origin": null,
           "transfer": false,
           "statuses": [
-            "rebreya-frightened"
+            "frightened"
           ],
           "sort": 0,
           "flags": {
             "rebreya-main": {
               "automation": true,
-              "statusId": "rebreya-frightened",
+              "statusId": "frightened",
               "statusValue": 3,
               "statusMeta": {}
             },
@@ -43238,7 +43238,7 @@
               ]
             },
             "core": {
-              "statusId": "rebreya-frightened"
+              "statusId": "frightened"
             },
             "statuscounter": {
               "value": 3,
@@ -43251,7 +43251,7 @@
         },
         {
           "_id": "9b9e7bec8f03b406",
-          "name": "Испуг 1",
+          "name": "Испуганный 1",
           "type": "base",
           "img": "systems/dnd5e/icons/svg/statuses/frightened.svg",
           "system": {},
@@ -43295,13 +43295,13 @@
           "origin": null,
           "transfer": false,
           "statuses": [
-            "rebreya-frightened"
+            "frightened"
           ],
           "sort": 0,
           "flags": {
             "rebreya-main": {
               "automation": true,
-              "statusId": "rebreya-frightened",
+              "statusId": "frightened",
               "statusValue": 1,
               "statusMeta": {}
             },
@@ -43311,7 +43311,7 @@
               ]
             },
             "core": {
-              "statusId": "rebreya-frightened"
+              "statusId": "frightened"
             },
             "statuscounter": {
               "value": 1,
@@ -54539,7 +54539,7 @@
       "effects": [
         {
           "_id": "7f15ebdbe5470373",
-          "name": "Испуг 2",
+          "name": "Испуганный 2",
           "type": "base",
           "img": "systems/dnd5e/icons/svg/statuses/frightened.svg",
           "system": {},
@@ -54583,18 +54583,18 @@
           "origin": null,
           "transfer": false,
           "statuses": [
-            "rebreya-frightened"
+            "frightened"
           ],
           "sort": 0,
           "flags": {
             "rebreya-main": {
               "automation": true,
-              "statusId": "rebreya-frightened",
+              "statusId": "frightened",
               "statusValue": 2,
               "statusMeta": {}
             },
             "core": {
-              "statusId": "rebreya-frightened"
+              "statusId": "frightened"
             },
             "statuscounter": {
               "value": 2,
@@ -57267,7 +57267,7 @@
         },
         {
           "_id": "38eb4ac0b6661fa2",
-          "name": "Испуг 2",
+          "name": "Испуганный 2",
           "type": "base",
           "img": "systems/dnd5e/icons/svg/statuses/frightened.svg",
           "system": {},
@@ -57311,18 +57311,18 @@
           "origin": null,
           "transfer": false,
           "statuses": [
-            "rebreya-frightened"
+            "frightened"
           ],
           "sort": 0,
           "flags": {
             "rebreya-main": {
               "automation": true,
-              "statusId": "rebreya-frightened",
+              "statusId": "frightened",
               "statusValue": 2,
               "statusMeta": {}
             },
             "core": {
-              "statusId": "rebreya-frightened"
+              "statusId": "frightened"
             },
             "statuscounter": {
               "value": 2,

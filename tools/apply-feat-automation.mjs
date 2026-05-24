@@ -215,8 +215,8 @@ const STATUS_EFFECTS = {
         label: "Запутанный",
         icon: "icons/svg/daze.svg"
     },
-    "rebreya-frightened": {
-        label: "Испуг",
+    "frightened": {
+        label: "Испуганный",
         icon: "systems/dnd5e/icons/svg/statuses/frightened.svg"
     },
     "rebreya-provoked": {
@@ -321,7 +321,7 @@ const CONDITION_IMMUNITIES = [
 ]
 
 const STATUS_KEYWORDS = [
-    { statusId: "rebreya-frightened", value: 1, pattern: /испуг|испуган|страх/iu },
+    { statusId: "frightened", value: 1, pattern: /испуг|испуган|страх/iu },
     { statusId: "rebreya-restrained", value: null, pattern: /сдержан/iu },
     { statusId: "rebreya-entangled-mind", value: null, pattern: /запутан/iu },
     { statusId: "rebreya-clumsy", value: 1, pattern: /неуклюж/iu },
@@ -644,7 +644,7 @@ const CURATED_ACTIVITIES = {
             range: 30,
             area: true,
             appliedEffects: [
-                statusEffect("rebreya-frightened", 2, "Испуг 2 на 1 минуту добавлен на провал спасброска; повтор спасброска при получении урона ведется вручную", { duration: seconds(60) })
+                statusEffect("frightened", 2, "Испуг 2 на 1 минуту добавлен на провал спасброска; повтор спасброска при получении урона ведется вручную", { duration: seconds(60) })
             ],
             note: "Спасбросок Мудрости Сл 12 + БМ добавлен; расход Дыхания и повтор спасброска при уроне требуют ручной проверки"
         }
@@ -660,8 +660,8 @@ const CURATED_ACTIVITIES = {
             area: true,
             uses: { max: "@prof", period: "lr" },
             appliedEffects: [
-                statusEffect("rebreya-frightened", 3, "Испуг 3 до конца следующего хода добавлен на провал спасброска", { duration: rounds(1) }),
-                statusEffect("rebreya-frightened", 1, "Испуг 1 добавлен на успех спасброска", { duration: rounds(1), onSave: true })
+                statusEffect("frightened", 3, "Испуг 3 до конца следующего хода добавлен на провал спасброска", { duration: rounds(1) }),
+                statusEffect("frightened", 1, "Испуг 1 добавлен на успех спасброска", { duration: rounds(1), onSave: true })
             ],
             note: "Действие с массовым спасброском Мудрости, расходом БМ/длительный отдых и состоянием Испуг 3/1 добавлено"
         }
@@ -676,8 +676,8 @@ const CURATED_ACTIVITIES = {
             targetType: "creature",
             uses: { max: "@prof", period: "lr" },
             appliedEffects: [
-                statusEffect("rebreya-frightened", 3, "Испуг 3 до конца следующего хода владельца добавлен на провал спасброска", { duration: rounds(1), specialDuration: "turnEndSource" }),
-                statusEffect("rebreya-frightened", 1, "Испуг 1 добавлен на успех спасброска", { duration: rounds(1), onSave: true, specialDuration: "turnEndSource" })
+                statusEffect("frightened", 3, "Испуг 3 до конца следующего хода владельца добавлен на провал спасброска", { duration: rounds(1), specialDuration: "turnEndSource" }),
+                statusEffect("frightened", 1, "Испуг 1 добавлен на успех спасброска", { duration: rounds(1), onSave: true, specialDuration: "turnEndSource" })
             ],
             note: "Спасбросок Мудрости после попадания оружием и состояния Испуг 3/1 добавлены; триггер «один раз за ход после попадания» выбирается вручную"
         }
@@ -693,7 +693,7 @@ const CURATED_ACTIVITIES = {
             targetType: "creature",
             uses: { max: "@prof", period: "lr" },
             appliedEffects: [
-                statusEffect("rebreya-frightened", 2, "Испуг 2 на 1 минуту добавлен на провал спасброска", { duration: seconds(60) }),
+                statusEffect("frightened", 2, "Испуг 2 на 1 минуту добавлен на провал спасброска", { duration: seconds(60) }),
                 statusEffect("rebreya-restrained", null, "Сдержанный на 1 минуту добавлен на провал спасброска", { duration: seconds(60) }),
                 statusEffect("rebreya-restrained", null, "Сдержанный на 1 минуту добавлен на успех спасброска", { duration: seconds(60), onSave: true })
             ],
@@ -1427,7 +1427,7 @@ const CURATED_ACTIVITIES = {
             range: 30,
             targetType: "creature",
             appliedEffects: [
-                statusEffect("rebreya-frightened", 2, "Испуг 2 до конца следующего хода цели добавлен к успешной деморализации", { duration: rounds(1), specialDuration: "turnEnd" })
+                statusEffect("frightened", 2, "Испуг 2 до конца следующего хода цели добавлен к успешной деморализации", { duration: rounds(1), specialDuration: "turnEnd" })
             ],
             note: "Состязание Запугивания против пассивной Мудрости и Испуг 2 добавлены; замена одной атаки выбирается вручную"
         }
@@ -1926,7 +1926,7 @@ function statusEffect(statusId, value, note, options = {}) {
 }
 
 function statusChanges(statusId, value) {
-    if (statusId === "rebreya-frightened") {
+    if (statusId === "frightened") {
         const penalty = Math.max(1, Math.floor(Number(value ?? 1)))
         return ["mwak", "rwak", "msak", "rsak"].map((attackType) => ({
             key: `system.bonuses.${attackType}.attack`,
@@ -2448,7 +2448,7 @@ function effectFlags(effect) {
         }
     }
 
-    if (effect.statusId === "rebreya-frightened" && Number.isFinite(Number(effect.statusValue))) {
+    if (effect.statusId === "frightened" && Number.isFinite(Number(effect.statusValue))) {
         flags.statuscounter = {
             ...(flags.statuscounter ?? {}),
             value: Math.max(1, Math.floor(Number(effect.statusValue))),

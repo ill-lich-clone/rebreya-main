@@ -2,6 +2,8 @@ import { MODULE_ID } from "../constants.js";
 
 export const REBREYA_BLOODIED_STATUS_ID = "rebreya-bloodied";
 export const REBREYA_DISCREET_STATUS_ID = "rebreya-discreet";
+export const REBREYA_FRIGHTENED_STATUS_ID = "frightened";
+export const LEGACY_REBREYA_FRIGHTENED_STATUS_ID = "rebreya-frightened";
 
 const STATUS_DEFINITIONS = Object.freeze([
   {
@@ -12,9 +14,9 @@ const STATUS_DEFINITIONS = Object.freeze([
     supportsValue: true
   },
   {
-    id: "rebreya-frightened",
+    id: REBREYA_FRIGHTENED_STATUS_ID,
     key: "frightened",
-    label: "Испуг",
+    label: "Испуганный",
     icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
     supportsValue: true
   },
@@ -164,8 +166,9 @@ registerAlias("затухающий урон", "rebreya-decaying-damage");
 registerAlias("провокация", "rebreya-provoked");
 registerAlias("замедление", "rebreya-slowed");
 registerAlias("ускорение", "rebreya-hasted");
-registerAlias("испуг", "rebreya-frightened");
-registerAlias("испуганный", "rebreya-frightened");
+registerAlias("испуг", REBREYA_FRIGHTENED_STATUS_ID);
+registerAlias("испуганный", REBREYA_FRIGHTENED_STATUS_ID);
+registerAlias(LEGACY_REBREYA_FRIGHTENED_STATUS_ID, REBREYA_FRIGHTENED_STATUS_ID);
 registerAlias("сдержанный", REBREYA_DISCREET_STATUS_ID);
 registerAlias("rebreya-restrained", REBREYA_DISCREET_STATUS_ID);
 registerAlias("газообразный", "rebreya-gaseous");
