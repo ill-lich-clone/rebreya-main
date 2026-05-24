@@ -21,9 +21,17 @@ const DND5E_SYSTEM_ID = "dnd5e";
 const DEFAULT_SOURCE_LABEL = "Реворк Варвара V0.12";
 const REBREYA_SOURCE_LABEL = "Ребрея";
 const COMPENDIUM_SIDEBAR_FOLDER = [REBREYA_SOURCE_LABEL];
-const DATA_PATH = `modules/${MODULE_ID}/data/barbarian-rework-v012.json`;
+const CLASS_DATA_PATHS = [
+  `modules/${MODULE_ID}/data/barbarian-rework-v012.json`,
+  `modules/${MODULE_ID}/data/fighter-rework-v028.json`
+];
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
-const BARBARIAN_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Barbarian`, MODULE_ICONS_BASE_PATH];
+const CLASS_ICON_SEARCH_PATHS = [
+  `${MODULE_ICONS_BASE_PATH}/Barbarian`,
+  `${MODULE_ICONS_BASE_PATH}/Fighter`,
+  `${MODULE_ICONS_BASE_PATH}/Feats`,
+  MODULE_ICONS_BASE_PATH
+];
 
 const FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const CLASS_FEATURES_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
@@ -33,6 +41,7 @@ const CLASSES_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
 const CLASS_ROOT_FOLDER = "Классы";
 const SUBCLASS_ROOT_FOLDER = "Архетипы";
 const CLASS_FEATURE_ROOT_FOLDER = "Варвар (Реворк V0.12)";
+const FIGHTER_CLASS_FEATURE_ROOT_FOLDER = "Воин (Реворк V0.28)";
 const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
@@ -46,9 +55,11 @@ const DEFAULT_SUBCLASS_ICON = "icons/svg/book.svg";
 const DEFAULT_FEATURE_ICON = "icons/svg/book.svg";
 
 const DEFAULT_HD = "d12";
+const FIGHTER_HD = "d10";
 const MINOR_FEAT_LEVELS = [3, 6, 9, 12, 15, 18];
 const RAGE_ACTION_PICK_LEVELS = [5, 10, 15, 20];
 const SKILL_POOL = ["ath", "prc", "sur", "itm", "nat", "ani"];
+const FIGHTER_SKILL_POOL = ["acr", "ath", "prc", "sur", "itm", "his", "ins", "ani"];
 const ASI_LEVELS = [4, 8, 12, 16, 19];
 const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
@@ -61,7 +72,8 @@ const OPTIONAL_CLASS_FEATURE_NAMES = new Set([
 
 const SPECIAL_CLASS_FEATURES = {
   MINOR_FEAT: "младшая черта",
-  ABILITY_SCORE_IMPROVEMENT: "увеличение характеристик"
+  ABILITY_SCORE_IMPROVEMENT: "увеличение характеристик",
+  ABILITY_SCORE_IMPROVEMENT_ALT: "повышение характеристики"
 };
 
 const RAGE_ACTION_ACTIVITY_IMAGE = {
@@ -206,7 +218,34 @@ function normalizeFeatureEntry(rawFeature, index, {
   };
 }
 
-function normalizeBarbarianData(rawData) {
+function normalizeProgressionMap(value) {
+  const progression = {};
+  for (const [level, entry] of Object.entries(isPlainObject(value) ? value : {})) {
+    const parsedLevel = Math.max(1, Math.floor(parseNumber(level, 0)));
+    const parsedValue = Math.max(0, Math.floor(parseNumber(entry, 0)));
+    if (parsedLevel >= 1 && parsedLevel <= 20 && parsedValue > 0) {
+      progression[String(parsedLevel)] = parsedValue;
+    }
+  }
+
+  return progression;
+}
+
+function normalizeDieProgressionMap(value) {
+  const progression = {};
+  for (const [level, entry] of Object.entries(isPlainObject(value) ? value : {})) {
+    const parsedLevel = Math.max(1, Math.floor(parseNumber(level, 0)));
+    const match = cleanString(entry).match(/^d(\d+)$/iu);
+    const faces = match ? Math.floor(parseNumber(match[1], 0)) : 0;
+    if (parsedLevel >= 1 && parsedLevel <= 20 && faces > 0) {
+      progression[String(parsedLevel)] = `d${faces}`;
+    }
+  }
+
+  return progression;
+}
+
+export function normalizeClassCompendiumData(rawData) {
   const data = isPlainObject(rawData) ? rawData : {};
   const sourceLabel = cleanString(data.source, DEFAULT_SOURCE_LABEL);
 
@@ -216,6 +255,20 @@ function normalizeBarbarianData(rawData) {
     cleanString(rawClass.identifier, buildSlug(className, "barbarian-rework-v012")),
     className
   );
+  const classFeatureRootFolder = cleanString(
+    data.classFeatureRootFolder,
+    classIdentifier === "fighter-rework-v028" ? FIGHTER_CLASS_FEATURE_ROOT_FOLDER : CLASS_FEATURE_ROOT_FOLDER
+  );
+  const hitDie = cleanString(rawClass.hitDie, classIdentifier === "fighter-rework-v028" ? FIGHTER_HD : DEFAULT_HD);
+  const primaryAbility = unique(Array.isArray(rawClass.primaryAbility) ? rawClass.primaryAbility : ["str"]);
+  const skillPool = unique(Array.isArray(rawClass.skillPool)
+    ? rawClass.skillPool
+    : classIdentifier === "fighter-rework-v028" ? FIGHTER_SKILL_POOL : SKILL_POOL);
+  const saveProficiencies = unique(Array.isArray(rawClass.saveProficiencies) ? rawClass.saveProficiencies : ["str", "con"]);
+  const wealth = cleanString(rawClass.wealth, classIdentifier === "fighter-rework-v028" ? "5d4*10" : "2d4*10");
+  const subclassTitle = cleanString(rawClass.subclassTitle, classIdentifier === "fighter-rework-v028" ? "Воинский архетип" : "Путь дикости");
+  const subclassHint = cleanString(rawClass.subclassHint, classIdentifier === "fighter-rework-v028" ? "Выберите архетип воина." : "Выберите архетип варвара.");
+
   const usedClassFeatureIds = new Set();
   const classFeatures = (Array.isArray(rawClass.features) ? rawClass.features : [])
     .map((feature, index) => {
@@ -285,37 +338,72 @@ function normalizeBarbarianData(rawData) {
     }))
     .filter((action) => action.name);
 
-  const rageProgression = {};
-  for (const [level, value] of Object.entries(isPlainObject(data.rageProgression) ? data.rageProgression : {})) {
-    const parsedLevel = Math.max(1, Math.floor(parseNumber(level, 0)));
-    const parsedValue = Math.max(0, Math.floor(parseNumber(value, 0)));
-    if (parsedLevel >= 1 && parsedLevel <= 20 && parsedValue > 0) {
-      rageProgression[String(parsedLevel)] = parsedValue;
-    }
-  }
+  const usedFightingStyleIds = new Set();
+  const fightingStyles = (Array.isArray(data.fightingStyles) ? data.fightingStyles : [])
+    .map((style, index) => {
+      const entry = normalizeFeatureEntry(style, index, {
+        scopeId: `${classIdentifier}-fighting-style`,
+        fallbackName: "Боевой стиль",
+        fallbackLevel: 1,
+        usedIds: usedFightingStyleIds,
+        forceRequiredLevel: 1
+      });
+      return {
+        ...entry,
+        levels: [1],
+        maneuvers: unique(Array.isArray(style?.maneuvers) ? style.maneuvers.map((maneuver) => cleanString(maneuver)) : [])
+      };
+    })
+    .filter((style) => style.name);
 
-  const rageDamageProgression = {};
-  for (const [level, value] of Object.entries(isPlainObject(data.rageDamageProgression) ? data.rageDamageProgression : {})) {
-    const parsedLevel = Math.max(1, Math.floor(parseNumber(level, 0)));
-    const parsedValue = Math.max(0, Math.floor(parseNumber(value, 0)));
-    if (parsedLevel >= 1 && parsedLevel <= 20 && parsedValue > 0) {
-      rageDamageProgression[String(parsedLevel)] = parsedValue;
-    }
-  }
+  const usedManeuverIds = new Set();
+  const maneuvers = (Array.isArray(data.maneuvers) ? data.maneuvers : [])
+    .map((maneuver, index) => normalizeFeatureEntry(maneuver, index, {
+      scopeId: `${classIdentifier}-maneuver`,
+      fallbackName: "Боевой приём",
+      fallbackLevel: 1,
+      usedIds: usedManeuverIds,
+      forceRequiredLevel: maneuver?.requiredLevel ?? 0
+    }))
+    .map((maneuver) => ({
+      ...maneuver,
+      levels: [Math.max(1, maneuver.requiredLevel || 1)]
+    }))
+    .filter((maneuver) => maneuver.name);
+
+  const rawDominanceProgression = isPlainObject(data.dominanceProgression) ? data.dominanceProgression : {};
 
   return {
     sourceLabel,
+    classFeatureRootFolder,
     classData: {
       name: className,
       description: cleanString(rawClass.description),
       identifier: classIdentifier,
+      hitDie,
+      primaryAbility,
+      skillPool,
+      saveProficiencies,
+      wealth,
+      subclassTitle,
+      subclassHint,
       features: classFeatures
     },
     subclasses,
     rageActions,
-    rageProgression,
-    rageDamageProgression
+    rageProgression: normalizeProgressionMap(data.rageProgression),
+    rageDamageProgression: normalizeProgressionMap(data.rageDamageProgression),
+    fightingStyles,
+    maneuvers,
+    dominanceProgression: {
+      dice: normalizeProgressionMap(rawDominanceProgression.dice),
+      die: normalizeDieProgressionMap(rawDominanceProgression.die)
+    }
   };
+}
+
+function normalizeBarbarianData(rawData) {
+  return normalizeClassCompendiumData(rawData);
 }
 
 function isDnd5eWorld() {
@@ -335,15 +423,36 @@ async function fetchJson(path, { optional = false } = {}) {
   return response.json();
 }
 
-function buildFeatureDefinitions(normalizedData) {
+export function buildFeatureDefinitions(normalizedData) {
   const definitions = [];
   const classId = normalizedData.classData.identifier;
+  const classFeatureRootFolder = cleanString(normalizedData.classFeatureRootFolder, CLASS_FEATURE_ROOT_FOLDER);
+  const className = cleanString(normalizedData.classData.name, "Класс");
+  const sourceLabel = cleanString(normalizedData.sourceLabel, DEFAULT_SOURCE_LABEL);
+
+  const buildBaseFeatureDefinition = (feature, sourceType, folderPath, identifierSeed) => ({
+    featureId: `${classId}::${sourceType}::${feature.featureId}`,
+    sourceType,
+    classIdentifier: classId,
+    className,
+    subclassId: null,
+    subclassName: null,
+    name: feature.name,
+    description: feature.description,
+    levels: feature.levels,
+    requiredLevel: feature.requiredLevel,
+    optional: feature.optional === true,
+    identifier: buildAsciiIdentifier(identifierSeed, `${classId}::${sourceType}::${feature.featureId}`),
+    folderPath,
+    sourceLabel
+  });
 
   for (const feature of normalizedData.classData.features) {
     definitions.push({
       featureId: `${classId}::class::${feature.featureId}`,
       sourceType: "classFeature",
       classIdentifier: classId,
+      className,
       subclassId: null,
       subclassName: null,
       name: feature.name,
@@ -352,7 +461,8 @@ function buildFeatureDefinitions(normalizedData) {
       requiredLevel: feature.requiredLevel,
       optional: feature.optional === true,
       identifier: buildAsciiIdentifier(`${classId}-${feature.featureId}`, `${classId}::${feature.featureId}`),
-      folderPath: normalizeFolderPath([CLASS_FEATURE_ROOT_FOLDER, "Базовые умения"])
+      folderPath: normalizeFolderPath([classFeatureRootFolder, "Базовые умения"]),
+      sourceLabel
     });
   }
 
@@ -361,6 +471,7 @@ function buildFeatureDefinitions(normalizedData) {
       featureId: `${classId}::rage-action::${action.featureId}`,
       sourceType: "rageAction",
       classIdentifier: classId,
+      className,
       subclassId: null,
       subclassName: null,
       name: action.name,
@@ -369,8 +480,30 @@ function buildFeatureDefinitions(normalizedData) {
       requiredLevel: action.requiredLevel,
       optional: false,
       identifier: buildAsciiIdentifier(`${classId}-rage-${action.featureId}`, `${classId}::rage::${action.featureId}`),
-      folderPath: normalizeFolderPath([CLASS_FEATURE_ROOT_FOLDER, "Яростные действия"])
+      folderPath: normalizeFolderPath([classFeatureRootFolder, "Яростные действия"]),
+      sourceLabel
     });
+  }
+
+  for (const style of normalizedData.fightingStyles ?? []) {
+    definitions.push({
+      ...buildBaseFeatureDefinition(
+        style,
+        "fightingStyle",
+        normalizeFolderPath([classFeatureRootFolder, "Боевые стили"]),
+        `${classId}-style-${style.featureId}`
+      ),
+      maneuvers: unique(style.maneuvers)
+    });
+  }
+
+  for (const maneuver of normalizedData.maneuvers ?? []) {
+    definitions.push(buildBaseFeatureDefinition(
+      maneuver,
+      "fighterManeuver",
+      normalizeFolderPath([classFeatureRootFolder, "Боевые приёмы"]),
+      `${classId}-maneuver-${maneuver.featureId}`
+    ));
   }
 
   for (const subclass of normalizedData.subclasses) {
@@ -379,6 +512,7 @@ function buildFeatureDefinitions(normalizedData) {
         featureId: `${subclass.subclassId}::subclass::${feature.featureId}`,
         sourceType: "subclassFeature",
         classIdentifier: classId,
+        className,
         subclassId: subclass.subclassId,
         subclassName: subclass.name,
         name: feature.name,
@@ -390,7 +524,8 @@ function buildFeatureDefinitions(normalizedData) {
           `${subclass.subclassId}-${feature.featureId}`,
           `${subclass.subclassId}::${feature.featureId}`
         ),
-        folderPath: normalizeFolderPath([CLASS_FEATURE_ROOT_FOLDER, "Архетипы", subclass.name])
+        folderPath: normalizeFolderPath([classFeatureRootFolder, "Архетипы", subclass.name]),
+        sourceLabel
       });
     }
   }
@@ -411,7 +546,9 @@ function buildFeatureSignature(feature) {
     levels: feature.levels,
     requiredLevel: feature.requiredLevel,
     optional: feature.optional,
-    identifier: feature.identifier
+    identifier: feature.identifier,
+    maneuvers: feature.maneuvers ?? [],
+    sourceLabel: feature.sourceLabel ?? DEFAULT_SOURCE_LABEL
   });
 }
 
@@ -428,7 +565,15 @@ function buildSubtypeRequirementsLabel(feature) {
     return "Яростное действие";
   }
 
-  return `Варвар, ${level}-й уровень`;
+  if (feature.sourceType === "fightingStyle") {
+    return "Боевой стиль воина";
+  }
+
+  if (feature.sourceType === "fighterManeuver") {
+    return level > 1 ? `Боевой приём, ${level}-й уровень` : "Боевой приём";
+  }
+
+  return `${cleanString(feature.className, "Класс")}, ${level}-й уровень`;
 }
 
 function createEmptyFeatureAutomation() {
@@ -963,9 +1108,107 @@ function createRageActionAutomation(feature, classIdentifier) {
   };
 }
 
+function createDominanceManeuverAutomation(feature, classIdentifier) {
+  const activityId = stableHashId(`${classIdentifier}:${feature.featureId}:dominance-maneuver`, "activity");
+  const description = cleanString(feature.description, feature.name);
+  const activationType = /триггер|реакци|⚡/iu.test(description)
+    ? "reaction"
+    : /бонусным действием/iu.test(description)
+      ? "bonus"
+      : "action";
+
+  return {
+    activities: {
+      [activityId]: {
+        _id: activityId,
+        type: "utility",
+        name: feature.name,
+        img: RAGE_ACTION_ACTIVITY_IMAGE.utility,
+        sort: 0,
+        activation: {
+          type: activationType,
+          value: activationValue(activationType),
+          condition: "",
+          override: false
+        },
+        consumption: {
+          scaling: {
+            allowed: false,
+            max: ""
+          },
+          spellSlot: false,
+          targets: [{
+            type: "itemUses",
+            target: "fighter-dominance",
+            value: "1",
+            scaling: {
+              mode: "",
+              formula: ""
+            }
+          }]
+        },
+        description: {
+          chatFlavor: `${feature.name}: используйте кость доминирования @scale.${classIdentifier}.dominance-die. ${description}`
+        },
+        duration: {
+          value: "",
+          units: "inst",
+          special: "",
+          concentration: false,
+          override: false
+        },
+        effects: [],
+        flags: {
+          [MODULE_ID]: {
+            managed: true,
+            automation: "fighter-dominance-maneuver",
+            maneuver: normalizeMatchText(feature.name)
+          }
+        },
+        range: {
+          value: null,
+          units: "self",
+          special: "",
+          override: false
+        },
+        target: {
+          template: {
+            count: "",
+            contiguous: false,
+            type: "",
+            size: "",
+            width: "",
+            height: "",
+            units: ""
+          },
+          affects: {
+            count: "",
+            type: "self",
+            choice: false,
+            special: ""
+          },
+          prompt: false,
+          override: false
+        },
+        uses: {
+          spent: 0,
+          max: "",
+          recovery: []
+        }
+      }
+    },
+    effects: [],
+    usesRecovery: []
+  };
+}
+
 function createFeatureAutomation(feature, classIdentifier) {
   if (feature.sourceType === "rageAction") {
     return createRageActionAutomation(feature, classIdentifier);
+  }
+
+  if (feature.sourceType === "fighterManeuver") {
+    return createDominanceManeuverAutomation(feature, classIdentifier);
   }
 
   if (feature.sourceType !== "classFeature") {
@@ -987,6 +1230,9 @@ function createFeatureAutomation(feature, classIdentifier) {
 function createFeatureSystem(feature, classIdentifier, featureAutomation = null) {
   const normalizedName = normalizeMatchText(feature.name);
   const isRageFeature = feature.sourceType === "classFeature" && normalizedName === "ярость";
+  const isDominanceFeature = feature.sourceType === "classFeature"
+    && classIdentifier === "fighter-rework-v028"
+    && normalizedName === "стиль доминирования";
   const automation = featureAutomation ?? createFeatureAutomation(feature, classIdentifier);
   const rageRecovery = isRageFeature
     ? [{
@@ -995,9 +1241,17 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null)
       formula: ""
     }]
     : [];
+  const dominanceRecovery = isDominanceFeature
+    ? [{
+      period: "lr",
+      type: "recoverAll",
+      formula: ""
+    }]
+    : [];
+  const defaultRecovery = rageRecovery.length ? rageRecovery : dominanceRecovery;
   const usesRecovery = Array.isArray(automation?.usesRecovery) && automation.usesRecovery.length
     ? foundry.utils.deepClone(automation.usesRecovery)
-    : rageRecovery;
+    : defaultRecovery;
 
   return {
     description: {
@@ -1005,7 +1259,7 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null)
       chat: ""
     },
     source: {
-      custom: DEFAULT_SOURCE_LABEL
+      custom: cleanString(feature.sourceLabel, DEFAULT_SOURCE_LABEL)
     },
     identifier: buildAsciiIdentifier(feature.identifier, feature.featureId),
     type: {
@@ -1022,7 +1276,11 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null)
     activities: foundry.utils.deepClone(automation?.activities ?? {}),
     uses: {
       spent: 0,
-      max: isRageFeature ? `@scale.${classIdentifier}.rage-uses` : "",
+      max: isRageFeature
+        ? `@scale.${classIdentifier}.rage-uses`
+        : isDominanceFeature
+          ? `@scale.${classIdentifier}.dominance-dice`
+          : "",
       recovery: usesRecovery
     },
     advancement: []
@@ -1279,13 +1537,32 @@ function buildScaleValueAdvancement({
   hint = "",
   identifier,
   scaleEntries = {},
-  level = 1
+  level = 1,
+  type = "number"
 }) {
   const normalizedScale = {};
   for (const [scaleLevel, scaleValue] of Object.entries(isPlainObject(scaleEntries) ? scaleEntries : {})) {
     const parsedLevel = Math.max(1, Math.floor(parseNumber(scaleLevel, 0)));
+    if (parsedLevel < 1 || parsedLevel > 20) {
+      continue;
+    }
+
+    if (type === "dice") {
+      const match = cleanString(scaleValue).match(/^(\d*)d(\d+)$/iu);
+      const number = match?.[1] ? Math.floor(parseNumber(match[1], 0)) : null;
+      const faces = match ? Math.floor(parseNumber(match[2], 0)) : 0;
+      if (faces > 0) {
+        normalizedScale[String(parsedLevel)] = {
+          number,
+          faces,
+          modifiers: []
+        };
+      }
+      continue;
+    }
+
     const parsedValue = Math.max(0, parseNumber(scaleValue, 0));
-    if (parsedLevel >= 1 && parsedLevel <= 20) {
+    if (parsedValue > 0) {
       normalizedScale[String(parsedLevel)] = { value: parsedValue };
     }
   }
@@ -1298,7 +1575,7 @@ function buildScaleValueAdvancement({
     level: Math.max(0, Math.floor(parseNumber(level, 1))),
     configuration: {
       identifier: buildAsciiIdentifier(identifier, `${classIdentifier}:${seed}`),
-      type: "number",
+      type: type === "dice" ? "dice" : "number",
       distance: {
         units: "ft"
       },
@@ -1376,12 +1653,12 @@ function buildItemChoiceAdvancement({
   };
 }
 
-function buildSubclassAdvancement(classIdentifier) {
+function buildSubclassAdvancement(classIdentifier, classData = {}) {
   return {
     _id: stableHashId(`${classIdentifier}:subclass`, "adv"),
     type: "Subclass",
-    title: "Путь дикости",
-    hint: "Выберите архетип варвара.",
+    title: cleanString(classData.subclassTitle, "Архетип"),
+    hint: cleanString(classData.subclassHint, "Выберите архетип."),
     level: 3,
     value: {}
   };
@@ -1459,8 +1736,17 @@ async function buildMinorFeatPool() {
   return sortRecords(allFeatRecords);
 }
 
-function buildClassAdvancement(classData, context) {
-  const { featureUuidById, classFeatureEntries, rageActionEntries, minorFeatUuids, rageProgression, rageDamageProgression } = context;
+export function buildClassAdvancement(classData, context = {}) {
+  const {
+    featureUuidById = new Map(),
+    classFeatureEntries = [],
+    rageActionEntries = [],
+    minorFeatUuids = [],
+    rageProgression = {},
+    rageDamageProgression = {},
+    fightingStyleEntries = [],
+    dominanceProgression = {}
+  } = context;
   const classIdentifier = classData.identifier;
   const advancements = [];
 
@@ -1470,44 +1756,73 @@ function buildClassAdvancement(classData, context) {
     classIdentifier,
     seed: "saves",
     title: "Спасброски",
-    hint: "Владение спасбросками Силы и Телосложения.",
+    hint: "Владение спасбросками класса.",
     level: 1,
-    grants: ["saves:str", "saves:con"]
+    grants: (classData.saveProficiencies ?? ["str", "con"]).map((save) => `saves:${save}`)
   }));
 
   advancements.push(buildTraitAdvancement({
     classIdentifier,
     seed: "skills",
-    title: "Навыки варвара",
-    hint: "Выберите два навыка варвара.",
+    title: `Навыки: ${classData.name}`,
+    hint: "Выберите два навыка класса.",
     level: 1,
     choices: [{
       count: 2,
-      pool: SKILL_POOL.map((skill) => `skills:${skill}`)
+      pool: (classData.skillPool ?? SKILL_POOL).map((skill) => `skills:${skill}`)
     }]
   }));
 
-  advancements.push(buildScaleValueAdvancement({
-    classIdentifier,
-    seed: "rage-uses",
-    title: "Ярость: использования",
-    hint: "Количество использований ярости до отдыха.",
-    identifier: "rage-uses",
-    scaleEntries: rageProgression,
-    level: 1
-  }));
+  if (Object.keys(rageProgression).length) {
+    advancements.push(buildScaleValueAdvancement({
+      classIdentifier,
+      seed: "rage-uses",
+      title: "Ярость: использования",
+      hint: "Количество использований ярости до отдыха.",
+      identifier: "rage-uses",
+      scaleEntries: rageProgression,
+      level: 1
+    }));
+  }
 
-  advancements.push(buildScaleValueAdvancement({
-    classIdentifier,
-    seed: "rage-damage",
-    title: "Урон ярости",
-    hint: "Дополнительный урон в ярости.",
-    identifier: "rage-damage",
-    scaleEntries: rageDamageProgression,
-    level: 1
-  }));
+  if (Object.keys(rageDamageProgression).length) {
+    advancements.push(buildScaleValueAdvancement({
+      classIdentifier,
+      seed: "rage-damage",
+      title: "Урон ярости",
+      hint: "Дополнительный урон в ярости.",
+      identifier: "rage-damage",
+      scaleEntries: rageDamageProgression,
+      level: 1
+    }));
+  }
 
-  advancements.push(buildSubclassAdvancement(classIdentifier));
+  if (Object.keys(dominanceProgression?.dice ?? {}).length) {
+    advancements.push(buildScaleValueAdvancement({
+      classIdentifier,
+      seed: "dominance-dice",
+      title: "Кости доминирования: число",
+      hint: "Количество костей доминирования до отдыха.",
+      identifier: "dominance-dice",
+      scaleEntries: dominanceProgression.dice,
+      level: 1
+    }));
+  }
+
+  if (Object.keys(dominanceProgression?.die ?? {}).length) {
+    advancements.push(buildScaleValueAdvancement({
+      classIdentifier,
+      seed: "dominance-die",
+      title: "Кость доминирования",
+      hint: "Размер кости доминирования.",
+      identifier: "dominance-die",
+      scaleEntries: dominanceProgression.die,
+      level: 1,
+      type: "dice"
+    }));
+  }
+
+  advancements.push(buildSubclassAdvancement(classIdentifier, classData));
 
   for (const level of ASI_LEVELS) {
     advancements.push(buildAsiAdvancement(classIdentifier, level));
@@ -1526,7 +1841,10 @@ function buildClassAdvancement(classData, context) {
       continue;
     }
 
-    if (feature.normalizedName === SPECIAL_CLASS_FEATURES.ABILITY_SCORE_IMPROVEMENT) {
+    if (
+      feature.normalizedName === SPECIAL_CLASS_FEATURES.ABILITY_SCORE_IMPROVEMENT
+      || feature.normalizedName === SPECIAL_CLASS_FEATURES.ABILITY_SCORE_IMPROVEMENT_ALT
+    ) {
       continue;
     }
 
@@ -1605,6 +1923,22 @@ function buildClassAdvancement(classData, context) {
     }));
   }
 
+  const fightingStylePool = fightingStyleEntries
+    .map((entry) => featureUuidById.get(`${classIdentifier}::fightingStyle::${entry.featureId}`))
+    .filter(Boolean);
+
+  if (fightingStylePool.length) {
+    advancements.push(buildItemChoiceAdvancement({
+      classIdentifier,
+      seed: "fighting-style",
+      title: "Боевой стиль",
+      hint: "Выберите один боевой стиль воина. Приёмы, которые даёт стиль, указаны в описании выбранного айтема.",
+      level: 1,
+      count: 1,
+      pool: fightingStylePool
+    }));
+  }
+
   return advancements;
 }
 
@@ -1654,11 +1988,11 @@ function createClassSystem(classData, advancement = [], sourceLabel = DEFAULT_SO
     levels: 1,
     hd: {
       additional: "",
-      denomination: DEFAULT_HD,
+      denomination: cleanString(classData.hitDie, DEFAULT_HD),
       spent: 0
     },
     primaryAbility: {
-      value: ["str"],
+      value: unique(classData.primaryAbility ?? ["str"]),
       all: false
     },
     properties: [],
@@ -1667,7 +2001,7 @@ function createClassSystem(classData, advancement = [], sourceLabel = DEFAULT_SO
       ability: ""
     },
     startingEquipment: [],
-    wealth: "2d4*10",
+    wealth: cleanString(classData.wealth, "2d4*10"),
     advancement: foundry.utils.deepClone(advancement)
   };
 }
@@ -1728,10 +2062,14 @@ function resolveClassIcon(className, iconLookup) {
     return iconByClassName;
   }
 
+  if (normalizeMatchText(className).includes("воин")) {
+    return resolveNamedIcon("Fighter", iconLookup, DEFAULT_CLASS_ICON);
+  }
+
   return resolveNamedIcon("Barbarian", iconLookup, DEFAULT_CLASS_ICON);
 }
 
-function createFeatureEntryData(feature, folderIdByPath, iconLookup = null) {
+export function createFeatureEntryData(feature, folderIdByPath, iconLookup = null) {
   const folderPath = feature.folderPath.join("/");
   const featureAutomation = createFeatureAutomation(feature, feature.classIdentifier);
   return {
@@ -1753,10 +2091,13 @@ function createFeatureEntryData(feature, folderIdByPath, iconLookup = null) {
         featureId: feature.featureId,
         requiredLevel: feature.requiredLevel,
         optional: feature.optional === true,
+        maneuvers: feature.maneuvers ?? [],
         signature: buildFeatureSignature(feature),
         automation: feature.sourceType === "rageAction"
           ? { type: "rageAction", requiredLevel: feature.requiredLevel }
-          : undefined
+          : feature.sourceType === "fighterManeuver"
+            ? { type: "fighterManeuver", requiredLevel: feature.requiredLevel }
+            : undefined
       }
     }
   };
@@ -1826,7 +2167,14 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
     for (const legacyRoot of LEGACY_CLASS_FEATURE_ROOT_FOLDERS) {
       await clearPackFolderTree(pack, legacyRoot);
     }
-    await clearPackFolderTree(pack, CLASS_FEATURE_ROOT_FOLDER);
+    const rootFolders = unique([
+      CLASS_FEATURE_ROOT_FOLDER,
+      FIGHTER_CLASS_FEATURE_ROOT_FOLDER,
+      ...(Array.isArray(context.rootFolders) ? context.rootFolders : [])
+    ]);
+    for (const rootFolder of rootFolders) {
+      await clearPackFolderTree(pack, rootFolder);
+    }
     await createManagedDocuments(
       pack,
       features,
@@ -1862,29 +2210,32 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
   };
 }
 
-async function syncSubclassesPack(normalizedData, context) {
+async function syncSubclassesPack(normalizedDataList, context) {
   const pack = await ensurePack(SUBCLASSES_PACK_ID, createPackMetadata({
     name: SUBCLASSES_COMPENDIUM_NAME,
     label: SUBCLASSES_COMPENDIUM_LABEL,
     itemTypes: ["subclass"]
   }));
 
-  const classIdentifier = normalizedData.classData.identifier;
-  const subclassEntries = normalizedData.subclasses.map((subclass) => {
-    const advancement = buildSubclassAdvancements(subclass, context);
-    const system = createSubclassSystem(subclass, classIdentifier, advancement, normalizedData.sourceLabel);
-    return {
-      subclass,
-      classIdentifier,
-      system,
-      signature: buildSubclassSignature(subclass, system, {
+  const subclassEntries = [];
+  for (const normalizedData of Array.isArray(normalizedDataList) ? normalizedDataList : [normalizedDataList]) {
+    const classIdentifier = normalizedData.classData.identifier;
+    for (const subclass of normalizedData.subclasses) {
+      const advancement = buildSubclassAdvancements(subclass, context);
+      const system = createSubclassSystem(subclass, classIdentifier, advancement, normalizedData.sourceLabel);
+      subclassEntries.push({
+        subclass,
         classIdentifier,
-        sourceLabel: normalizedData.sourceLabel,
-        featureIds: subclass.features.map((feature) => feature.featureId)
-      }),
-      folderPath: normalizeFolderPath([SUBCLASS_ROOT_FOLDER, normalizedData.classData.name])
-    };
-  });
+        system,
+        signature: buildSubclassSignature(subclass, system, {
+          classIdentifier,
+          sourceLabel: normalizedData.sourceLabel,
+          featureIds: subclass.features.map((feature) => feature.featureId)
+        }),
+        folderPath: normalizeFolderPath([SUBCLASS_ROOT_FOLDER, normalizedData.classData.name])
+      });
+    }
+  }
 
   const documents = await getPackDocuments(pack);
   const entriesForComparison = subclassEntries.map((entry) => ({
@@ -1916,39 +2267,43 @@ async function syncSubclassesPack(normalizedData, context) {
   return activePack;
 }
 
-async function syncClassesPack(normalizedData, context) {
+async function syncClassesPack(normalizedDataList, context) {
   const pack = await ensurePack(CLASSES_PACK_ID, createPackMetadata({
     name: CLASSES_COMPENDIUM_NAME,
     label: CLASSES_COMPENDIUM_LABEL,
     itemTypes: ["class"]
   }));
 
-  const classFeatures = normalizedData.classData.features;
-  const rageActions = normalizedData.rageActions;
-  const classAdvancement = buildClassAdvancement(normalizedData.classData, {
-    featureUuidById: context.featureUuidById,
-    classFeatureEntries: classFeatures,
-    rageActionEntries: rageActions,
-    minorFeatUuids: context.minorFeatUuids,
-    rageProgression: normalizedData.rageProgression,
-    rageDamageProgression: normalizedData.rageDamageProgression
-  });
-  const classSystem = createClassSystem(normalizedData.classData, classAdvancement, REBREYA_SOURCE_LABEL);
-  const classEntry = {
-    classData: normalizedData.classData,
-    system: classSystem,
-    signature: buildClassSignature(normalizedData.classData, classSystem, {
-      sourceLabel: REBREYA_SOURCE_LABEL,
-      featureIds: classFeatures.map((feature) => feature.featureId)
-    }),
-    folderPath: normalizeFolderPath([CLASS_ROOT_FOLDER])
-  };
+  const classEntries = [];
+  for (const normalizedData of Array.isArray(normalizedDataList) ? normalizedDataList : [normalizedDataList]) {
+    const classFeatures = normalizedData.classData.features;
+    const classAdvancement = buildClassAdvancement(normalizedData.classData, {
+      featureUuidById: context.featureUuidById,
+      classFeatureEntries: classFeatures,
+      rageActionEntries: normalizedData.rageActions,
+      minorFeatUuids: context.minorFeatUuids,
+      rageProgression: normalizedData.rageProgression,
+      rageDamageProgression: normalizedData.rageDamageProgression,
+      fightingStyleEntries: normalizedData.fightingStyles,
+      dominanceProgression: normalizedData.dominanceProgression
+    });
+    const classSystem = createClassSystem(normalizedData.classData, classAdvancement, REBREYA_SOURCE_LABEL);
+    classEntries.push({
+      classData: normalizedData.classData,
+      system: classSystem,
+      signature: buildClassSignature(normalizedData.classData, classSystem, {
+        sourceLabel: REBREYA_SOURCE_LABEL,
+        featureIds: classFeatures.map((feature) => feature.featureId)
+      }),
+      folderPath: normalizeFolderPath([CLASS_ROOT_FOLDER])
+    });
+  }
 
   const documents = await getPackDocuments(pack);
-  const entriesForComparison = [{
-    classIdentifier: normalizedData.classData.identifier,
-    signature: classEntry.signature
-  }];
+  const entriesForComparison = classEntries.map((entry) => ({
+    classIdentifier: entry.classData.identifier,
+    signature: entry.signature
+  }));
   if (shouldRebuildManagedPack(documents, entriesForComparison, "classIdentifier")) {
     await deleteManagedDocuments(pack, documents);
     for (const legacyRoot of LEGACY_CLASS_ROOT_FOLDERS) {
@@ -1957,7 +2312,7 @@ async function syncClassesPack(normalizedData, context) {
     await clearPackFolderTree(pack, CLASS_ROOT_FOLDER);
     await createManagedDocuments(
       pack,
-      [classEntry],
+      classEntries,
       (entry, folderIdByPath) => createClassEntryData(entry, folderIdByPath, context.iconLookup)
     );
   }
@@ -1974,8 +2329,13 @@ async function syncClassesPack(normalizedData, context) {
 }
 
 async function loadData() {
-  const rawData = await fetchJson(DATA_PATH);
-  return normalizeBarbarianData(rawData);
+  const normalized = [];
+  for (const path of CLASS_DATA_PATHS) {
+    const rawData = await fetchJson(path);
+    normalized.push(normalizeBarbarianData(rawData));
+  }
+
+  return normalized;
 }
 
 export class ClassesCompendiumService {
@@ -1984,11 +2344,12 @@ export class ClassesCompendiumService {
       return null;
     }
 
-    const iconLookup = await buildNamedIconLookup(BARBARIAN_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildNamedIconLookup(CLASS_ICON_SEARCH_PATHS, { forceRefresh: true });
     const normalizedData = await loadData();
-    const featureDefinitions = buildFeatureDefinitions(normalizedData);
+    const featureDefinitions = normalizedData.flatMap((classData) => buildFeatureDefinitions(classData));
     const { pack: featuresPack, featureUuidById } = await syncClassFeaturePack(featureDefinitions, {
-      iconLookup
+      iconLookup,
+      rootFolders: normalizedData.map((classData) => classData.classFeatureRootFolder)
     });
     const minorFeatUuids = await buildMinorFeatPool();
     const subclassesPack = await syncSubclassesPack(normalizedData, {
