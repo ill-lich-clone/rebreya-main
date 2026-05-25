@@ -1,8 +1,23 @@
-import { MODULE_ID } from "../constants.js";
+import { CLASS_FEATURES_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 
 const EFFECT_MODE_OVERRIDE = 5;
 const LAST_ATTACK_MAX_AGE_MS = 120000;
 const BLOODIED_STATUS_IDS = new Set(["bloodied", "rebreya-bloodied"]);
+const SECOND_WIND_USES_RECOVERY = Object.freeze([{
+  period: "lr",
+  type: "recoverAll",
+  formula: ""
+}]);
+const FIGHTER_MULTIATTACK_CHOICES = Object.freeze([{
+  featureId: "fighter-multiattack-action-surge",
+  name: "Воинская мультиатака: Всплеск действий"
+}, {
+  featureId: "fighter-multiattack-horde-breaker",
+  name: "Воинская мультиатака: Разрушитель орд"
+}, {
+  featureId: "fighter-multiattack-stalwart-defender",
+  name: "Воинская мультиатака: Стойкий защитник"
+}]);
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -103,9 +118,25 @@ function itemFeatureId(item) {
   return cleanText(readDocumentFlag(item, "featureId"));
 }
 
+function rawFeatureId(featureId) {
+  return cleanText(featureId).split("::").pop() ?? "";
+}
+
 function featureIdMatches(item, rawId) {
   const featureId = itemFeatureId(item);
   return featureId === rawId || featureId.endsWith(`::class::${rawId}`);
+}
+
+function multiattackChoiceFromItem(item) {
+  const rawId = rawFeatureId(itemFeatureId(item));
+  return FIGHTER_MULTIATTACK_CHOICES.find((choice) => (
+    choice.featureId === rawId || normalizeText(choice.name) === normalizeText(item?.name)
+  )) ?? null;
+}
+
+function isSecondWindRecovery(recovery) {
+  return Array.isArray(recovery)
+    && recovery.some((entry) => cleanText(entry?.period) === "lr" && cleanText(entry?.type) === "recoverAll");
 }
 
 function effectStatuses(effect) {
@@ -298,6 +329,20 @@ export class FighterAutomationService {
     return true;
   }
 
+  async handleRestCompleted(actor, result = {}, config = {}) {
+    if (!(actor instanceof Actor) || !this.#isLongRest(result, config)) {
+      return true;
+    }
+
+    const secondWind = this.#findSecondWind(actor);
+    if (secondWind) {
+      await this.#ensureSecondWindResource(actor, secondWind, { restore: true });
+    }
+
+    await this.#handleMultiattackRestChoice(actor);
+    return true;
+  }
+
   async #applyManeuver(actor, activity, fighterAutomation = {}) {
     const lastAttack = this.#lastAttack(actor);
     const target = this.#resolveManeuverTarget(lastAttack);
@@ -348,6 +393,109 @@ export class FighterAutomationService {
       .find((actor) => actor instanceof Actor) ?? null;
   }
 
+  #isLongRest(result = {}, config = {}) {
+    if (result?.longRest === true || config?.longRest === true) {
+      return true;
+    }
+
+    return [
+      result?.type,
+      result?.restType,
+      result?.period,
+      config?.type,
+      config?.restType,
+      config?.period
+    ].some((value) => {
+      const text = normalizeText(value);
+      return text === "long" || text === "lr" || text.includes("продолж");
+    });
+  }
+
+  async #handleMultiattackRestChoice(actor) {
+    const multiattackItems = this.#fighterMultiattackItems(actor);
+    if (!multiattackItems.length && this.#fighterLevel(actor) < 2) {
+      return false;
+    }
+
+    const choices = FIGHTER_MULTIATTACK_CHOICES.map((choice) => {
+      const ownedItem = multiattackItems.find((item) => multiattackChoiceFromItem(item)?.featureId === choice.featureId) ?? null;
+      return {
+        ...choice,
+        owned: Boolean(ownedItem),
+        itemId: ownedItem?.id ?? ownedItem?._id ?? ""
+      };
+    });
+    const selectedId = cleanText(await this.#promptFighterMultiattackChoice(actor, choices));
+    const selected = choices.find((choice) => choice.featureId === selectedId || choice.itemId === selectedId) ?? null;
+    if (!selected) {
+      return false;
+    }
+
+    let selectedKept = false;
+    const deleteIds = [];
+    for (const item of multiattackItems) {
+      const itemChoice = multiattackChoiceFromItem(item);
+      if (itemChoice?.featureId !== selected.featureId) {
+        deleteIds.push(item.id ?? item._id);
+        continue;
+      }
+
+      if (selectedKept) {
+        deleteIds.push(item.id ?? item._id);
+        continue;
+      }
+
+      selectedKept = true;
+    }
+
+    if (deleteIds.length && typeof actor.deleteEmbeddedDocuments === "function") {
+      await actor.deleteEmbeddedDocuments("Item", deleteIds.filter(Boolean));
+    }
+
+    if (!selectedKept) {
+      const itemData = await this.#loadMultiattackFeatureData(selected.featureId);
+      if (itemData && typeof actor.createEmbeddedDocuments === "function") {
+        await actor.createEmbeddedDocuments("Item", [itemData]);
+      }
+    }
+
+    return true;
+  }
+
+  #fighterMultiattackItems(actor) {
+    return collectionValues(actor?.items).filter((item) => Boolean(multiattackChoiceFromItem(item)));
+  }
+
+  async #loadMultiattackFeatureData(featureId) {
+    const rawId = rawFeatureId(featureId);
+    const pack = game.packs?.get?.(`world.${CLASS_FEATURES_COMPENDIUM_NAME}`);
+    if (!pack || typeof pack.getDocuments !== "function") {
+      return null;
+    }
+
+    let documents = [];
+    try {
+      documents = await pack.getDocuments();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to read fighter multiattack features from compendium.`, error);
+      return null;
+    }
+
+    const document = documents.find((entry) => rawFeatureId(itemFeatureId(entry)) === rawId
+      || normalizeText(entry?.name) === normalizeText(FIGHTER_MULTIATTACK_CHOICES.find((choice) => choice.featureId === rawId)?.name));
+    if (!document) {
+      return null;
+    }
+
+    const data = typeof document.toObject === "function"
+      ? document.toObject()
+      : foundry.utils.deepClone(document);
+    delete data._id;
+    delete data.folder;
+    return data;
+  }
+
   async #useSecondWind(actor, item, automation = {}) {
     const secondWind = item ?? this.#findSecondWind(actor);
     if (!secondWind) {
@@ -356,7 +504,7 @@ export class FighterAutomationService {
     }
 
     const uses = secondWind.system?.uses ?? {};
-    const maxUses = await this.#resolveUsesMax(uses.max, actor);
+    const maxUses = await this.#ensureSecondWindResource(actor, secondWind);
     const spent = Math.max(0, Math.floor(toNumber(uses.spent, 0)));
     const remaining = Math.max(0, maxUses - spent);
     if (remaining <= 0) {
@@ -395,6 +543,47 @@ export class FighterAutomationService {
     return true;
   }
 
+  async #ensureSecondWindResource(actor, item, { restore = false } = {}) {
+    const uses = item?.system?.uses ?? {};
+    const fighterLevel = this.#fighterLevel(actor);
+    const resolvedMax = fighterLevel > 0
+      ? fighterLevel
+      : await this.#resolveUsesMax(uses.max, actor);
+    const maxUses = Math.max(0, Math.floor(resolvedMax));
+    if (maxUses <= 0) {
+      return 0;
+    }
+
+    const patch = {};
+    if (String(uses.max ?? "") !== String(maxUses)) {
+      patch["system.uses.max"] = maxUses;
+    }
+    if (!isSecondWindRecovery(uses.recovery)) {
+      patch["system.uses.recovery"] = foundry.utils.deepClone(SECOND_WIND_USES_RECOVERY);
+    }
+
+    const spent = Math.max(0, Math.floor(toNumber(uses.spent, 0)));
+    if (restore && spent !== 0) {
+      patch["system.uses.spent"] = 0;
+    }
+    else if (!restore && spent > maxUses) {
+      patch["system.uses.spent"] = maxUses;
+    }
+
+    if (Object.keys(patch).length) {
+      if (typeof item.update === "function") {
+        await item.update(patch);
+      }
+      else {
+        for (const [path, value] of Object.entries(patch)) {
+          foundry.utils.setProperty(item, path, value);
+        }
+      }
+    }
+
+    return maxUses;
+  }
+
   async #resolveUsesMax(value, actor) {
     const numeric = Number(value);
     if (Number.isFinite(numeric)) {
@@ -409,6 +598,53 @@ export class FighterAutomationService {
     const roll = this.#createRoll(formula, actor);
     await roll.evaluate();
     return Math.max(0, Math.floor(toNumber(roll.total, 0)));
+  }
+
+  #fighterLevel(actor) {
+    const classes = actor?.system?.classes;
+    if (classes && typeof classes === "object") {
+      for (const [key, entry] of Object.entries(classes)) {
+        if (!this.#isFighterClassKey(key, entry)) {
+          continue;
+        }
+
+        const levels = toNumber(entry?.levels ?? entry?.level ?? entry?.value, 0);
+        if (levels > 0) {
+          return Math.floor(levels);
+        }
+      }
+    }
+
+    for (const item of collectionValues(actor?.items)) {
+      if (item?.type !== "class") {
+        continue;
+      }
+
+      if (!this.#isFighterClassKey(item?.system?.identifier ?? item?.identifier, item)) {
+        continue;
+      }
+
+      const levels = toNumber(item?.system?.levels ?? item?.system?.level ?? item?.system?.advancement?.level, 0);
+      if (levels > 0) {
+        return Math.floor(levels);
+      }
+    }
+
+    return 0;
+  }
+
+  #isFighterClassKey(key, entry = {}) {
+    const text = normalizeText([
+      key,
+      entry?.identifier,
+      entry?.name,
+      entry?.label,
+      entry?.system?.identifier
+    ].filter(Boolean).join(" "));
+    return text.includes("fighter")
+      || text.includes("fighter rework v028")
+      || text === "воин"
+      || text.includes("воин реворк");
   }
 
   async #applyIronWillAfterHealing(actor) {
@@ -672,6 +908,60 @@ export class FighterAutomationService {
               const root = globalThis.HTMLElement && html instanceof HTMLElement ? html : html?.[0];
               settled = true;
               resolve(Number(root?.querySelector("[data-second-wind-dice]")?.value ?? context.min));
+            }
+          },
+          cancel: {
+            label: "Отмена",
+            callback: () => {
+              settled = true;
+              resolve(null);
+            }
+          }
+        },
+        default: "confirm",
+        close: () => {
+          if (!settled) {
+            resolve(null);
+          }
+        }
+      });
+      dialog.render(true);
+    });
+  }
+
+  async #promptFighterMultiattackChoice(actor, choices) {
+    if (typeof this._options.promptFighterMultiattackChoice === "function") {
+      return this._options.promptFighterMultiattackChoice(actor, choices);
+    }
+
+    if (!this.#canPrompt(actor) || typeof Dialog !== "function") {
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const options = choices.map((choice) => {
+        const suffix = choice.owned ? " (есть)" : " (добавить)";
+        return `<option value="${escapeHtml(choice.featureId)}">${escapeHtml(choice.name)}${suffix}</option>`;
+      });
+
+      const dialog = new Dialog({
+        title: "Воинская мультиатака",
+        content: `
+          <form>
+            <div class="form-group">
+              <label>Оставить вариант до следующего продолжительного отдыха</label>
+              <select data-fighter-multiattack-choice>${options.join("")}</select>
+            </div>
+          </form>
+        `,
+        buttons: {
+          confirm: {
+            label: "Оставить",
+            callback: (html) => {
+              const root = globalThis.HTMLElement && html instanceof HTMLElement ? html : html?.[0];
+              settled = true;
+              resolve(cleanText(root?.querySelector("[data-fighter-multiattack-choice]")?.value));
             }
           },
           cancel: {

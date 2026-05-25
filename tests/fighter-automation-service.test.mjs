@@ -42,7 +42,7 @@ globalThis.game ??= {
 const { FighterAutomationService } = await import("../scripts/combat/fighter-automation-service.js");
 
 class TestActor extends Actor {
-  constructor({ id = "actor", name = "Actor", hp = {}, items = [], effects = [] } = {}) {
+  constructor({ id = "actor", name = "Actor", hp = {}, classes = {}, items = [], effects = [] } = {}) {
     super();
     this.id = id;
     this.uuid = `Actor.${id}`;
@@ -52,6 +52,7 @@ class TestActor extends Actor {
       abilities: {
         con: { mod: 3 }
       },
+      classes,
       attributes: {
         hp: {
           value: hp.value ?? 10,
@@ -81,6 +82,8 @@ class TestActor extends Actor {
     this.damageApplications = [];
     this.updates = [];
     this.createdEffects = [];
+    this.createdItems = [];
+    this.deletedDocuments = [];
   }
 
   getRollData() {
@@ -104,8 +107,30 @@ class TestActor extends Actor {
   }
 
   async createEmbeddedDocuments(type, rows) {
+    if (type === "Item") {
+      this.createdItems.push({ type, rows });
+      for (const [index, row] of rows.entries()) {
+        const item = makeItem({
+          id: row._id ?? `created-${this.createdItems.length}-${index}`,
+          name: row.name,
+          featureId: foundry.utils.getProperty(row, "flags.rebreya-main.featureId")
+        });
+        this.items.contents.push(item);
+        item.actor = this;
+      }
+      return rows;
+    }
+
     this.createdEffects.push({ type, rows });
     return rows;
+  }
+
+  async deleteEmbeddedDocuments(type, ids) {
+    this.deletedDocuments.push({ type, ids });
+    if (type === "Item") {
+      this.items.contents = this.items.contents.filter((item) => !ids.includes(item.id));
+    }
+    return ids;
   }
 }
 
@@ -266,9 +291,164 @@ test("fighter second wind prompts for dice, spends selected uses, and heals the 
 
   assert.equal(secondWind.system.uses.spent, 4);
   assert.equal(actor.system.attributes.hp.value, 21);
-  assert.deepEqual(secondWind.updates[0], {
-    "system.uses.spent": 4
+  assert.ok(secondWind.updates.some((patch) => patch["system.uses.spent"] === 4));
+});
+
+test("fighter second wind repairs a missing actor resource before asking how many dice to spend", async () => {
+  const secondWind = makeItem({
+    id: "second-wind",
+    name: "Второе дыхание",
+    featureId: "fighter-rework-v028::class::second-wind",
+    uses: {
+      spent: 0,
+      max: "",
+      recovery: []
+    }
   });
+  const actor = new TestActor({
+    id: "fighter",
+    hp: {
+      value: 12,
+      max: 30
+    },
+    classes: {
+      "fighter-rework-v028": {
+        levels: 5
+      }
+    },
+    items: [secondWind]
+  });
+  let promptContext = null;
+  const service = new FighterAutomationService({}, {
+    promptSecondWindDice: async (_actor, context) => {
+      promptContext = context;
+      return 3;
+    },
+    rollFactory: () => fixedRoll(10)
+  });
+  const activity = makeActivity({
+    actor,
+    item: secondWind,
+    automation: "fighter-second-wind",
+    fighterAutomation: {
+      kind: "secondWind",
+      die: "d6",
+      maxDiceAbility: "con",
+      minDice: 1
+    }
+  });
+
+  await service.applyDnd5ePostUseActivity(activity, {}, {});
+
+  assert.deepEqual(promptContext, {
+    min: 1,
+    max: 3,
+    remaining: 5,
+    die: "d6"
+  });
+  assert.equal(secondWind.system.uses.max, 5);
+  assert.deepEqual(secondWind.system.uses.recovery, [{
+    period: "lr",
+    type: "recoverAll",
+    formula: ""
+  }]);
+  assert.equal(secondWind.system.uses.spent, 3);
+  assert.equal(actor.system.attributes.hp.value, 22);
+});
+
+test("fighter long rest keeps the selected multiattack variant and deletes the others", async () => {
+  const actionSurge = makeItem({
+    id: "action-surge",
+    name: "Воинская мультиатака: Всплеск действий",
+    featureId: "fighter-rework-v028::class::fighter-multiattack-action-surge"
+  });
+  const hordeBreaker = makeItem({
+    id: "horde-breaker",
+    name: "Воинская мультиатака: Разрушитель орд",
+    featureId: "fighter-rework-v028::class::fighter-multiattack-horde-breaker"
+  });
+  const stalwartDefender = makeItem({
+    id: "stalwart-defender",
+    name: "Воинская мультиатака: Стойкий защитник",
+    featureId: "fighter-rework-v028::class::fighter-multiattack-stalwart-defender"
+  });
+  const actor = new TestActor({
+    id: "fighter",
+    items: [actionSurge, hordeBreaker, stalwartDefender]
+  });
+  const service = new FighterAutomationService({}, {
+    promptFighterMultiattackChoice: async (_actor, choices) => {
+      assert.deepEqual(choices.map((choice) => choice.featureId), [
+        "fighter-multiattack-action-surge",
+        "fighter-multiattack-horde-breaker",
+        "fighter-multiattack-stalwart-defender"
+      ]);
+      return "fighter-multiattack-horde-breaker";
+    }
+  });
+
+  await service.handleRestCompleted(actor, { type: "long" }, {});
+
+  assert.deepEqual(actor.deletedDocuments, [{
+    type: "Item",
+    ids: ["action-surge", "stalwart-defender"]
+  }]);
+  assert.deepEqual(actor.items.contents.map((item) => item.id), ["horde-breaker"]);
+});
+
+test("fighter long rest can add a selected multiattack variant back from the class feature pack", async () => {
+  const previousGame = globalThis.game;
+  const actionSurge = makeItem({
+    id: "action-surge",
+    name: "Воинская мультиатака: Всплеск действий",
+    featureId: "fighter-rework-v028::class::fighter-multiattack-action-surge"
+  });
+  const actor = new TestActor({
+    id: "fighter",
+    items: [actionSurge]
+  });
+  globalThis.game = {
+    ...previousGame,
+    packs: {
+      get: (packId) => {
+        if (packId !== "world.rebreya-class-features") {
+          return null;
+        }
+
+        return {
+          getDocuments: async () => [{
+            name: "Воинская мультиатака: Разрушитель орд",
+            toObject: () => ({
+              name: "Воинская мультиатака: Разрушитель орд",
+              type: "feat",
+              flags: {
+                "rebreya-main": {
+                  featureId: "fighter-rework-v028::class::fighter-multiattack-horde-breaker"
+                }
+              }
+            })
+          }]
+        };
+      }
+    }
+  };
+  try {
+    const service = new FighterAutomationService({}, {
+      promptFighterMultiattackChoice: async () => "fighter-multiattack-horde-breaker"
+    });
+
+    await service.handleRestCompleted(actor, { type: "long" }, {});
+
+    assert.deepEqual(actor.deletedDocuments, [{
+      type: "Item",
+      ids: ["action-surge"]
+    }]);
+    assert.equal(actor.createdItems[0].rows[0].name, "Воинская мультиатака: Разрушитель орд");
+    assert.deepEqual(actor.items.contents.map((item) => item.name), ["Воинская мультиатака: Разрушитель орд"]);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
 });
 
 test("fighter iron will prompts second wind at the start of a bloodied turn", async () => {

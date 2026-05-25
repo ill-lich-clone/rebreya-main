@@ -52,6 +52,7 @@ const REBREYA_FEAT_SUBTYPE_LABELS = {
   multiclass: "Мультиклассовые черты",
   racial: "Расовые черты",
   fightingStyle: "Черты боевых стилей",
+  fighterManeuver: "Воинские приёмы",
   cultural: "Культурные черты"
 };
 const REBREYA_FEAT_SUBTYPE_BY_SECTION_KEY = new Map([
@@ -61,6 +62,7 @@ const REBREYA_FEAT_SUBTYPE_BY_SECTION_KEY = new Map([
   ["мультиклассовые черты", "multiclass"],
   ["расовые черты", "racial"],
   ["черты боевых стилей", "fightingStyle"],
+  ["воинские приёмы", "fighterManeuver"],
   ["культурные черты", "cultural"],
   ["устаревшие материалы", "general"]
 ]);
@@ -76,6 +78,7 @@ const REBREYA_FEAT_SECTION_PRIORITY = new Map([
   ["культурные черты", 30],
   ["мультиклассовые черты", 40],
   ["черты боевых стилей", 50],
+  ["воинские приёмы", 55],
   ["старшие черты", 60],
   ["расовые черты", 70],
   ["устаревшие материалы", 80]
@@ -2887,6 +2890,16 @@ export function extendDnd5eItemTypes() {
     label: featTypeLabel,
     subtypes: { ...REBREYA_FEAT_SUBTYPE_LABELS }
   };
+  const classTypeConfig = CONFIG.DND5E.featureTypes.class;
+  if (typeof classTypeConfig === "object") {
+    CONFIG.DND5E.featureTypes.class = {
+      ...classTypeConfig,
+      subtypes: {
+        ...(classTypeConfig.subtypes ?? {}),
+        fighterManeuver: REBREYA_FEAT_SUBTYPE_LABELS.fighterManeuver
+      }
+    };
+  }
 
   if (!CONFIG.DND5E.weaponTypes || typeof CONFIG.DND5E.weaponTypes !== "object") {
     CONFIG.DND5E.weaponTypes = {};

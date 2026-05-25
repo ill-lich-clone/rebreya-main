@@ -302,6 +302,12 @@ export function registerCombatHooks(moduleApi) {
       return true;
     });
 
+    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
+      moduleApi.fighterAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply fighter rest automation.`, error);
+      });
+    });
+
     Hooks.on("midi-qol.RollComplete", (workflow) => {
       try {
         return moduleApi.fighterAutomationService.applyMidiRollComplete(workflow);

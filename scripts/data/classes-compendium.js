@@ -1778,7 +1778,7 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null,
     identifier: buildAsciiIdentifier(feature.identifier, feature.featureId),
     type: {
       value: "class",
-      subtype: ""
+      subtype: feature.sourceType === "fighterManeuver" ? "fighterManeuver" : ""
     },
     requirements: buildSubtypeRequirementsLabel(feature),
     prerequisites: {
@@ -1801,7 +1801,7 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null,
   };
 }
 
-function createPackMetadata({ name, label, itemTypes = [] }) {
+export function createPackMetadata({ name, label, itemTypes = [] }) {
   return {
     label,
     type: "Item",
@@ -1813,11 +1813,44 @@ function createPackMetadata({ name, label, itemTypes = [] }) {
     },
     flags: {
       dnd5e: {
-        sourceBook: REBREYA_SOURCE_LABEL,
+        sourceBook: DEFAULT_SOURCE_LABEL,
         types: itemTypes
       }
     }
   };
+}
+
+async function syncPackMetadata(pack, metadata) {
+  if (!pack || typeof pack.configure !== "function") {
+    return;
+  }
+
+  const desiredDnd5eFlags = metadata.flags?.dnd5e ?? {};
+  const currentSourceBook = cleanString(foundry.utils.getProperty(pack, "metadata.flags.dnd5e.sourceBook"));
+  const desiredSourceBook = cleanString(desiredDnd5eFlags.sourceBook);
+  const currentTypes = foundry.utils.getProperty(pack, "metadata.flags.dnd5e.types") ?? [];
+  const desiredTypes = Array.isArray(desiredDnd5eFlags.types) ? desiredDnd5eFlags.types : [];
+  if (
+    currentSourceBook === desiredSourceBook
+    && JSON.stringify(currentTypes) === JSON.stringify(desiredTypes)
+  ) {
+    return;
+  }
+
+  try {
+    await pack.configure({
+      flags: {
+        ...(pack.metadata?.flags ?? {}),
+        dnd5e: {
+          ...(pack.metadata?.flags?.dnd5e ?? {}),
+          ...desiredDnd5eFlags
+        }
+      }
+    });
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to update compendium '${pack.collection ?? metadata.name}' metadata.`, error);
+  }
 }
 
 async function ensurePack(packId, metadata) {
@@ -1838,6 +1871,9 @@ async function ensurePack(packId, metadata) {
 
   if (!pack) {
     pack = await foundry.documents.collections.CompendiumCollection.createCompendium(metadata);
+  }
+  else {
+    await syncPackMetadata(pack, metadata);
   }
 
   try {

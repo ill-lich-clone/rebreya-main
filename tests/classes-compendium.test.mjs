@@ -24,6 +24,7 @@ const {
   buildSubclassAdvancements,
   createClassSystem,
   createFeatureEntryData,
+  createPackMetadata,
   normalizeClassCompendiumData
 } = await import("../scripts/data/classes-compendium.js");
 
@@ -76,6 +77,28 @@ test("barbarian and fighter reworks use the ZoZT source label", () => {
   assert.equal(barbarian.runes.length, 0);
   assert.equal(createClassSystem(barbarian.classData, [], barbarian.sourceLabel).source.custom, "ЗоЗТ");
   assert.equal(createClassSystem(fighter.classData, [], fighter.sourceLabel).source.custom, "ЗоЗТ");
+});
+
+test("class compendium pack metadata uses the ZoZT source book", () => {
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    system: {
+      id: "dnd5e"
+    }
+  };
+
+  try {
+    const metadata = createPackMetadata({
+      name: "rebreya-classes",
+      label: "Классы Rebreya",
+      itemTypes: ["class"]
+    });
+
+    assert.equal(metadata.flags.dnd5e.sourceBook, "ЗоЗТ");
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
 });
 
 test("fighter data defines dominance dice, fighting styles, maneuvers, and subclasses", () => {
@@ -237,6 +260,7 @@ test("fighter maneuvers consume the shared dominance dice item by identifier", (
   const activity = Object.values(entry.system.activities)[0];
 
   assert.equal(entry.flags["rebreya-main"].sourceType, "fighterManeuver");
+  assert.equal(entry.system.type.subtype, "fighterManeuver");
   assert.deepEqual(activity.consumption.targets, [{
     type: "itemUses",
     target: "fighter-dominance",
