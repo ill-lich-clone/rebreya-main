@@ -6,6 +6,7 @@ const WEAPON_TYPE_MARTIAL_PREFIX = "martial";
 const FIREARM_WEIGHT_THRESHOLD_LB = 10;
 const REACTION_STATE_FLAG = "reactionState";
 const REACTION_DEFAULT_MAX_USES = 1;
+const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -29,6 +30,38 @@ function normalizeLookupText(value) {
     .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
     .replace(/[_\-\s]+/gu, " ")
     .replace(/\s+/gu, " ");
+}
+
+function readDocumentFlag(document, scope, key) {
+  if (typeof document?.getFlag === "function") {
+    return document.getFlag(scope, key);
+  }
+
+  return foundry.utils.getProperty(document, `flags.${scope}.${key}`);
+}
+
+function collectionValues(collection) {
+  if (!collection) {
+    return [];
+  }
+
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+
+  if (Array.isArray(collection.contents)) {
+    return collection.contents;
+  }
+
+  if (typeof collection.values === "function") {
+    return Array.from(collection.values());
+  }
+
+  return [];
+}
+
+function activityConsumptionTargets(activity) {
+  return collectionValues(foundry.utils.getProperty(activity, "consumption.targets"));
 }
 
 function normalizeAbilityKey(value, fallback = "str") {
@@ -839,7 +872,66 @@ export class CombatAttackService {
     return deadly;
   }
 
+  #isFighterDominanceManeuverActivity(activity) {
+    return readDocumentFlag(activity, MODULE_ID, "automation") === "fighter-dominance-maneuver";
+  }
+
+  #resolveFighterDominanceItem(actor, classIdentifier = "") {
+    const normalizedClassIdentifier = String(classIdentifier ?? "").trim();
+    return collectionValues(actor?.items).find((item) => {
+      const featureId = String(readDocumentFlag(item, MODULE_ID, "featureId") ?? "").trim();
+      if (featureId === `${normalizedClassIdentifier}::class::${FIGHTER_DOMINANCE_TARGET}`) {
+        return true;
+      }
+
+      if (!normalizedClassIdentifier && featureId.endsWith(`::class::${FIGHTER_DOMINANCE_TARGET}`)) {
+        return true;
+      }
+
+      const identifier = String(foundry.utils.getProperty(item, "system.identifier") ?? "").trim();
+      if (identifier === FIGHTER_DOMINANCE_TARGET || identifier.endsWith(`-${FIGHTER_DOMINANCE_TARGET}`)) {
+        return true;
+      }
+
+      return normalizeLookupText(item?.name) === "стиль доминирования";
+    }) ?? null;
+  }
+
+  #retargetFighterDominanceConsumption(activity) {
+    if (!this.#isFighterDominanceManeuverActivity(activity)) {
+      return;
+    }
+
+    const actor = activity?.actor ?? activity?.item?.actor ?? null;
+    if (!actor?.items) {
+      return;
+    }
+
+    const targets = activityConsumptionTargets(activity)
+      .filter((target) => target?.type === "itemUses" && target.target === FIGHTER_DOMINANCE_TARGET);
+    if (!targets.length) {
+      return;
+    }
+
+    const classIdentifier = String(
+      readDocumentFlag(activity?.item, MODULE_ID, "classIdentifier")
+      ?? readDocumentFlag(activity, MODULE_ID, "classIdentifier")
+      ?? ""
+    ).trim();
+    const dominanceItem = this.#resolveFighterDominanceItem(actor, classIdentifier);
+    const dominanceItemId = dominanceItem?.id ?? dominanceItem?._id ?? "";
+    if (!dominanceItemId) {
+      return;
+    }
+
+    for (const target of targets) {
+      target.target = dominanceItemId;
+    }
+  }
+
   applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
+    this.#retargetFighterDominanceConsumption(activity);
+
     if (!this.#isWeaponAttackActivity(activity)) {
       return true;
     }

@@ -46,7 +46,7 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 5;
+const CLASS_FEATURE_TEMPLATE_VERSION = 6;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CLASS_TEMPLATE_VERSION = 3;
 
@@ -206,8 +206,61 @@ function toHtmlParagraphs(value) {
 
   return text
     .split(/\n{2,}/gu)
-    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/gu, "<br>")}</p>`)
+    .map((paragraph) => `<p>${formatParagraphLines(paragraph)}</p>`)
     .join("");
+}
+
+function isTextListLine(line) {
+  return /^(?:[●•▪*]|\d+[.)])\s*/u.test(cleanString(line));
+}
+
+function isTextLevelLine(line) {
+  return /^(?:\d+[-\s]?(?:й|го)\s+уровень|умение\s+\d)/iu.test(cleanString(line));
+}
+
+function isIndentedTextLine(line) {
+  return /^\s{4,}\S/u.test(String(line ?? ""));
+}
+
+function isLikelyStandaloneHeading(line) {
+  const text = cleanString(line);
+  if (!text || text.length > 72) {
+    return false;
+  }
+
+  return !/[.!?;:,]$/u.test(text);
+}
+
+function shouldStartHtmlLine(rawLine, line, segments) {
+  if (!segments.length) {
+    return true;
+  }
+
+  if (isTextListLine(line) || isTextLevelLine(line) || isIndentedTextLine(rawLine)) {
+    return true;
+  }
+
+  const previous = segments.at(-1) ?? "";
+  return isLikelyStandaloneHeading(previous);
+}
+
+function formatParagraphLines(paragraph) {
+  const segments = [];
+  for (const rawLine of String(paragraph ?? "").split(/\n/gu)) {
+    const line = cleanString(rawLine);
+    if (!line) {
+      continue;
+    }
+
+    if (shouldStartHtmlLine(rawLine, line, segments)) {
+      segments.push(line);
+    }
+    else {
+      segments[segments.length - 1] = `${segments.at(-1)} ${line}`;
+    }
+  }
+
+  return segments.map((segment) => escapeHtml(segment)).join("<br>");
 }
 
 function uniqueIdentifier(base, usedIds, fallbackSeed = "entry") {

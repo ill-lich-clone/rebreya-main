@@ -130,6 +130,29 @@ test("fighter advancements expose dominance scales and a fighting style choice",
   assert.equal(styleChoice.configuration.pool.length, 12);
 });
 
+test("fighter class advancement grants every non-special base feature", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const featureDefinitions = buildFeatureDefinitions(fighter);
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const advancement = buildClassAdvancement(fighter.classData, {
+    featureUuidById,
+    classFeatureEntries: fighter.classData.features,
+    minorFeatUuids: ["Compendium.world.rebreya-feats.Item.minor"],
+    maneuverEntries: fighter.maneuvers,
+    fightingStyleEntries: fighter.fightingStyles,
+    dominanceProgression: fighter.dominanceProgression
+  });
+  const specialFeatureNames = new Set(["Младшая черта", "Повышение характеристики", "Увеличение характеристик"]);
+  const expectedFeatureUuids = fighter.classData.features
+    .filter((feature) => !specialFeatureNames.has(feature.name))
+    .map((feature) => featureUuidById.get(`${fighter.classData.identifier}::class::${feature.featureId}`));
+  const grantedFeatureUuids = advancement
+    .filter((entry) => entry.type === "ItemGrant" && entry.title.startsWith("Классовые умения"))
+    .flatMap((entry) => entry.configuration.items.map((item) => item.uuid));
+
+  assert.deepEqual(new Set(grantedFeatureUuids), new Set(expectedFeatureUuids));
+});
+
 test("fighter maneuvers consume the shared dominance dice item by identifier", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
   const maneuver = buildFeatureDefinitions(fighter).find((definition) => definition.sourceType === "fighterManeuver");
@@ -147,6 +170,29 @@ test("fighter maneuvers consume the shared dominance dice item by identifier", (
     }
   }]);
   assert.match(activity.description.chatFlavor, /@scale\.fighter-rework-v028\.dominance-die/u);
+});
+
+test("all fighter maneuvers have an activity that spends dominance dice", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const maneuvers = buildFeatureDefinitions(fighter).filter((definition) => definition.sourceType === "fighterManeuver");
+
+  for (const maneuver of maneuvers) {
+    const entry = createFeatureEntryData(maneuver, new Map());
+    const activities = Object.values(entry.system.activities);
+
+    assert.equal(activities.length, 1, `${maneuver.name} должен иметь одну активность`);
+    assert.equal(entry.flags["rebreya-main"].automation.type, "fighterManeuver");
+    assert.deepEqual(activities[0].consumption.targets, [{
+      type: "itemUses",
+      target: "fighter-dominance",
+      value: "1",
+      scaling: {
+        mode: "",
+        formula: ""
+      }
+    }]);
+    assert.match(activities[0].description.chatFlavor, /@scale\.fighter-rework-v028\.dominance-die/u);
+  }
 });
 
 test("fighter fighting style items grant the real feat and their fixed maneuvers", () => {
@@ -178,6 +224,29 @@ test("fighter fighting style items grant the real feat and their fixed maneuvers
       return featureUuidById.get(maneuver.featureId);
     })
   );
+});
+
+test("all fixed fighter fighting styles grant the maneuvers named in data", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const featureUuidById = makeUuidMap(definitions);
+  const maneuverNameByUuid = new Map(
+    definitions
+      .filter((definition) => definition.sourceType === "fighterManeuver")
+      .map((definition) => [featureUuidById.get(definition.featureId), definition.name])
+  );
+
+  for (const styleData of fighter.fightingStyles.filter((style) => style.maneuvers.length)) {
+    const style = definitions.find((definition) => definition.sourceType === "fightingStyle" && definition.styleName === styleData.name);
+    const entry = createFeatureEntryData(style, new Map(), null, { featureUuidById });
+    const maneuverGrant = entry.system.advancement.find((advancement) => advancement.title === "Приёмы боевого стиля");
+
+    assert.deepEqual(
+      maneuverGrant.configuration.items.map((item) => maneuverNameByUuid.get(item.uuid)),
+      styleData.maneuvers,
+      `Боевой стиль ${styleData.name} должен выдавать свои приёмы`
+    );
+  }
 });
 
 test("fighter fighting style maneuver grants use actual class-feature document UUIDs", () => {
@@ -248,6 +317,19 @@ test("fighter multiattack variants are activatable feature items", () => {
   assert.equal(entry.system.uses.recovery[0].period, "lr");
   assert.equal(activity.activation.type, "special");
   assert.deepEqual(activity.consumption.targets.map((target) => target.value), ["1"]);
+});
+
+test("fighter descriptions fold PDF hard wraps but keep heading breaks", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const actionSurge = definitions.find((definition) => definition.name === "Воинская мультиатака: Всплеск действий");
+  const entry = createFeatureEntryData(actionSurge, new Map());
+  const html = entry.system.description.value;
+
+  assert.match(html, /Воинская мультиатака: Всплеск действий<br>2-й уровень, умение воина<br>Вы на мгновение/u);
+  assert.match(html, /можете стать Заряженным/u);
+  assert.doesNotMatch(html, /стать<br>Заряженным/u);
+  assert.doesNotMatch(html, /текущего<br>хода/u);
 });
 
 test("minor feat pool excludes choice option items", async () => {
