@@ -32,7 +32,7 @@ function makeActor(items) {
   };
 }
 
-test("fighter dominance maneuvers retarget shared dominance dice item before use", () => {
+test("fighter dominance maneuvers retarget shared dominance dice item before use without rewriting item targeting", () => {
   const dominanceItem = {
     id: "actualDominanceItemId",
     name: "Стиль доминирования",
@@ -93,7 +93,7 @@ test("fighter dominance maneuvers retarget shared dominance dice item before use
   service.applyDnd5ePreUseActivity(activity);
 
   assert.equal(target.target, dominanceItem.id);
-  assert.equal(activity.target.affects.type, "creature");
-  assert.equal(activity.target.prompt, true);
-  assert.equal(activity.range.units, "");
+  assert.equal(activity.target.affects.type, "self");
+  assert.equal(activity.target.prompt, false);
+  assert.equal(activity.range.units, "self");
 });

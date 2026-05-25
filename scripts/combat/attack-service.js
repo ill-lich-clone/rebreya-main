@@ -902,8 +902,6 @@ export class CombatAttackService {
       return;
     }
 
-    this.#retargetFighterManeuverTarget(activity);
-
     const actor = activity?.actor ?? activity?.item?.actor ?? null;
     if (!actor?.items) {
       return;
@@ -928,23 +926,6 @@ export class CombatAttackService {
 
     for (const target of targets) {
       target.target = dominanceItemId;
-    }
-  }
-
-  #retargetFighterManeuverTarget(activity) {
-    const fighterAutomation = readDocumentFlag(activity, MODULE_ID, "fighterAutomation") ?? {};
-    if (!fighterAutomation.extraDamage && !fighterAutomation.status) {
-      return;
-    }
-
-    if (foundry.utils.getProperty(activity, "target.affects.type") === "self") {
-      foundry.utils.setProperty(activity, "target.affects.type", "creature");
-    }
-    if (foundry.utils.getProperty(activity, "target.prompt") !== true) {
-      foundry.utils.setProperty(activity, "target.prompt", true);
-    }
-    if (foundry.utils.getProperty(activity, "range.units") === "self") {
-      foundry.utils.setProperty(activity, "range.units", "");
     }
   }
 
