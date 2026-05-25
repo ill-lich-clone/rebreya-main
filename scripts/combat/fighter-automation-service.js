@@ -8,6 +8,7 @@ const SECOND_WIND_USES_RECOVERY = Object.freeze([{
   type: "recoverAll",
   formula: ""
 }]);
+const IRON_WILL_NEXT_SAVE_EFFECT_NAME = "Железная воля: следующий приём";
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 const FIGHTER_MANEUVER_SUBTYPE = "fighterManeuver";
 const FIGHTER_MULTIATTACK_CHOICES = Object.freeze([{
@@ -219,6 +220,7 @@ export class FighterAutomationService {
     this.moduleApi = moduleApi;
     this._lastAttacks = new Map();
     this._ironWillTurnPrompts = new Set();
+    this._ironWillNextSavePending = new Set();
     this._options = options;
   }
 
@@ -730,7 +732,22 @@ export class FighterAutomationService {
       return true;
     }
 
-    return this.#createActorEffect(actor, this.#ironWillNextSaveEffectData(actor));
+    const effectKey = `${this.#actorKey(actor)}:iron-will-next-save`;
+    if (this._ironWillNextSavePending.has(effectKey)) {
+      return true;
+    }
+
+    this._ironWillNextSavePending.add(effectKey);
+    try {
+      if (this.#hasIronWillNextSave(actor)) {
+        return true;
+      }
+
+      return await this.#createActorEffect(actor, this.#ironWillNextSaveEffectData(actor));
+    }
+    finally {
+      this._ironWillNextSavePending.delete(effectKey);
+    }
   }
 
   #hasIronWill(actor) {
@@ -743,14 +760,31 @@ export class FighterAutomationService {
 
   #hasIronWillNextSave(actor) {
     return collectionValues(actor?.effects).some((effect) => (
-      readDocumentFlag(effect, "fighterAutomation")?.kind === "ironWillNextSave"
+      this.#isIronWillNextSaveEffect(effect, actor)
     ));
   }
 
   #findIronWillNextSaveEffect(actor) {
     return collectionValues(actor?.effects).find((effect) => (
-      readDocumentFlag(effect, "fighterAutomation")?.kind === "ironWillNextSave"
+      this.#isIronWillNextSaveEffect(effect, actor)
     )) ?? null;
+  }
+
+  #isIronWillNextSaveEffect(effect, actor) {
+    if (readDocumentFlag(effect, "fighterAutomation")?.kind === "ironWillNextSave") {
+      return true;
+    }
+
+    if (effect?.disabled === true || effect?.transfer === true) {
+      return false;
+    }
+
+    if (normalizeText(effect?.name) !== normalizeText(IRON_WILL_NEXT_SAVE_EFFECT_NAME)) {
+      return false;
+    }
+
+    const origin = cleanText(effect?.origin);
+    return !origin || !actor?.uuid || origin === actor.uuid;
   }
 
   async #consumeIronWillNextSave(actor) {
@@ -806,7 +840,7 @@ export class FighterAutomationService {
 
   #ironWillNextSaveEffectData(actor) {
     return {
-      name: "Железная воля",
+      name: IRON_WILL_NEXT_SAVE_EFFECT_NAME,
       type: "base",
       img: "icons/svg/aura.svg",
       system: {},
@@ -816,7 +850,7 @@ export class FighterAutomationService {
         startTime: null,
         seconds: null,
         combat: null,
-        rounds: 2,
+        rounds: null,
         turns: null,
         startRound: null,
         startTurn: null
@@ -827,7 +861,7 @@ export class FighterAutomationService {
       statuses: [],
       flags: {
         dae: {
-          specialDuration: ["combatEnd"]
+          specialDuration: ["turnEndSource", "combatEnd"]
         },
         [MODULE_ID]: {
           managed: true,

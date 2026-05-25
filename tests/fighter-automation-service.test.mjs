@@ -623,6 +623,48 @@ test("fighter iron will creates its next-save effect after healing while not blo
   await service.applyDnd5eApplyDamage(actor, -4, {});
 
   assert.equal(actor.createdEffects[0].type, "ActiveEffect");
-  assert.equal(actor.createdEffects[0].rows[0].name, "Железная воля");
-  assert.equal(actor.createdEffects[0].rows[0].flags["rebreya-main"].fighterAutomation.kind, "ironWillNextSave");
+  const effect = actor.createdEffects[0].rows[0];
+  assert.equal(effect.name, "Железная воля: следующий приём");
+  assert.equal(effect.duration.rounds, null);
+  assert.equal(effect.duration.turns, null);
+  assert.deepEqual(effect.flags.dae.specialDuration, ["turnEndSource", "combatEnd"]);
+  assert.equal(effect.flags["rebreya-main"].fighterAutomation.kind, "ironWillNextSave");
+});
+
+test("fighter iron will does not create duplicate next-save effects when healing fires twice before effects refresh", async () => {
+  const ironWill = makeItem({
+    id: "iron-will",
+    name: "Железная воля",
+    featureId: "fighter-rework-v028::class::iron-will"
+  });
+  const actor = new TestActor({
+    id: "fighter",
+    hp: {
+      value: 20,
+      max: 30
+    },
+    items: [ironWill]
+  });
+  const service = new FighterAutomationService({});
+  let releaseFirstCreate = null;
+  const firstCreateStarted = new Promise((resolve) => {
+    actor.createEmbeddedDocuments = async (type, rows) => {
+      actor.createdEffects.push({ type, rows });
+      resolve();
+      if (actor.createdEffects.length === 1) {
+        await new Promise((release) => {
+          releaseFirstCreate = release;
+        });
+      }
+      return rows;
+    };
+  });
+
+  const firstHealing = service.applyDnd5eApplyDamage(actor, -4, {});
+  await firstCreateStarted;
+  const secondHealing = service.applyDnd5eApplyDamage(actor, -3, {});
+  releaseFirstCreate();
+  await Promise.all([firstHealing, secondHealing]);
+
+  assert.equal(actor.createdEffects.length, 1);
 });
