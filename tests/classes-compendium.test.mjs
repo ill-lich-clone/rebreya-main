@@ -277,6 +277,9 @@ test("fighter maneuvers consume the shared dominance dice item by identifier", (
   const activity = Object.values(entry.system.activities)[0];
 
   assert.equal(entry.flags["rebreya-main"].sourceType, "fighterManeuver");
+  assert.equal(entry.flags["rebreya-main"].section, "Воинские приёмы");
+  assert.equal(entry.flags.teyvankal.section, "Воинские приёмы");
+  assert.equal(entry.system.type.value, "feat");
   assert.equal(entry.system.type.subtype, "fighterManeuver");
   assert.deepEqual(activity.consumption.targets, [{
     type: "itemUses",
@@ -346,7 +349,7 @@ test("fighter second wind uses its item uses as the healing dice pool", () => {
   const entry = createFeatureEntryData(secondWind, new Map());
   const activity = Object.values(entry.system.activities)[0];
 
-  assert.equal(entry.system.uses.max, "@classes.fighter-rework-v028.levels");
+  assert.equal(entry.system.uses.max, "@details.level");
   assert.deepEqual(entry.system.uses.recovery, [{
     period: "lr",
     type: "recoverAll",

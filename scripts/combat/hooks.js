@@ -273,6 +273,22 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasFighterService) {
+    const repairFighterActor = (app) => {
+      const actor = app?.actor ?? app?.document ?? null;
+      moduleApi.fighterAutomationService.repairActor(actor).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to repair fighter actor items.`, error);
+      });
+    };
+
+    for (const hookName of [
+      "renderActorSheet",
+      "renderActorSheet5eCharacter2",
+      "renderActorSheet5eCharacter",
+      "renderCharacterActorSheet"
+    ]) {
+      Hooks.on(hookName, repairFighterActor);
+    }
+
     Hooks.on("combatTurnChange", (combat, previous, current) => {
       void previous;
       moduleApi.fighterAutomationService.handleCombatTurnChange(combat, current ?? {}).catch((error) => {

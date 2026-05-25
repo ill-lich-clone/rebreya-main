@@ -54,9 +54,10 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 7;
+const CLASS_FEATURE_TEMPLATE_VERSION = 8;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CLASS_TEMPLATE_VERSION = 3;
+const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 
 const DEFAULT_CLASS_ICON = "icons/svg/book.svg";
 const DEFAULT_SUBCLASS_ICON = "icons/svg/book.svg";
@@ -1784,7 +1785,7 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null,
     source: createSourceData(feature.sourceLabel),
     identifier: buildAsciiIdentifier(feature.identifier, feature.featureId),
     type: {
-      value: "class",
+      value: feature.sourceType === "fighterManeuver" ? "feat" : "class",
       subtype: feature.sourceType === "fighterManeuver" ? "fighterManeuver" : ""
     },
     requirements: buildSubtypeRequirementsLabel(feature),
@@ -2875,6 +2876,28 @@ function resolveClassIcon(className, iconLookup) {
 export function createFeatureEntryData(feature, folderIdByPath, iconLookup = null, context = {}) {
   const folderPath = feature.folderPath.join("/");
   const featureAutomation = createFeatureAutomation(feature, feature.classIdentifier);
+  const moduleFlags = {
+    managed: true,
+    sourceType: feature.sourceType,
+    classIdentifier: feature.classIdentifier,
+    subclassId: feature.subclassId,
+    subclassName: feature.subclassName,
+    styleName: feature.styleName,
+    featureId: feature.featureId,
+    requiredLevel: feature.requiredLevel,
+    optional: feature.optional === true,
+    maneuvers: feature.maneuvers ?? [],
+    signature: buildFeatureSignature(feature, context),
+    automation: feature.sourceType === "rageAction"
+      ? { type: "rageAction", requiredLevel: feature.requiredLevel }
+      : feature.sourceType === "fighterManeuver"
+        ? { type: "fighterManeuver", requiredLevel: feature.requiredLevel }
+        : undefined
+  };
+  if (feature.sourceType === "fighterManeuver") {
+    moduleFlags.section = FIGHTER_MANEUVER_SECTION_LABEL;
+  }
+
   const entryData = {
     name: feature.name,
     type: "feat",
@@ -2886,24 +2909,15 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
     system: createFeatureSystem(feature, feature.classIdentifier, featureAutomation, context),
     effects: foundry.utils.deepClone(featureAutomation.effects),
     flags: {
-      [MODULE_ID]: {
-        managed: true,
-        sourceType: feature.sourceType,
-        classIdentifier: feature.classIdentifier,
-        subclassId: feature.subclassId,
-        subclassName: feature.subclassName,
-        styleName: feature.styleName,
-        featureId: feature.featureId,
-        requiredLevel: feature.requiredLevel,
-        optional: feature.optional === true,
-        maneuvers: feature.maneuvers ?? [],
-        signature: buildFeatureSignature(feature, context),
-        automation: feature.sourceType === "rageAction"
-          ? { type: "rageAction", requiredLevel: feature.requiredLevel }
-          : feature.sourceType === "fighterManeuver"
-            ? { type: "fighterManeuver", requiredLevel: feature.requiredLevel }
-            : undefined
-      }
+      [MODULE_ID]: moduleFlags,
+      ...(feature.sourceType === "fighterManeuver"
+        ? {
+          teyvankal: {
+            section: FIGHTER_MANEUVER_SECTION_LABEL,
+            subsection: null
+          }
+        }
+        : {})
     }
   };
 

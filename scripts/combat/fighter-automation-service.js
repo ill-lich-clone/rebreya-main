@@ -8,6 +8,8 @@ const SECOND_WIND_USES_RECOVERY = Object.freeze([{
   type: "recoverAll",
   formula: ""
 }]);
+const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
+const FIGHTER_MANEUVER_SUBTYPE = "fighterManeuver";
 const FIGHTER_MULTIATTACK_CHOICES = Object.freeze([{
   featureId: "fighter-multiattack-action-surge",
   name: "Воинская мультиатака: Всплеск действий"
@@ -137,6 +139,20 @@ function multiattackChoiceFromItem(item) {
 function isSecondWindRecovery(recovery) {
   return Array.isArray(recovery)
     && recovery.some((entry) => cleanText(entry?.period) === "lr" && cleanText(entry?.type) === "recoverAll");
+}
+
+function isFighterManeuverItem(item) {
+  const sourceType = cleanText(readDocumentFlag(item, "sourceType"));
+  if (sourceType === "fighterManeuver") {
+    return true;
+  }
+
+  const featureId = itemFeatureId(item);
+  if (featureId.includes("::fighterManeuver::")) {
+    return true;
+  }
+
+  return readDocumentFlag(item, "automation")?.type === "fighterManeuver";
 }
 
 function effectStatuses(effect) {
@@ -329,13 +345,29 @@ export class FighterAutomationService {
     return true;
   }
 
+  async repairActor(actor) {
+    if (!(actor instanceof Actor)) {
+      return false;
+    }
+
+    const secondWind = this.#findSecondWind(actor);
+    if (secondWind) {
+      await this.#ensureSecondWindResource(actor, secondWind);
+    }
+
+    await this.#repairManeuverSections(actor);
+    return true;
+  }
+
   async handleRestCompleted(actor, result = {}, config = {}) {
     if (!(actor instanceof Actor) || !this.#isLongRest(result, config)) {
       return true;
     }
 
+    await this.repairActor(actor);
+
     const secondWind = this.#findSecondWind(actor);
-    if (secondWind) {
+    if (secondWind && secondWind.system?.uses?.spent) {
       await this.#ensureSecondWindResource(actor, secondWind, { restore: true });
     }
 
@@ -582,6 +614,44 @@ export class FighterAutomationService {
     }
 
     return maxUses;
+  }
+
+  async #repairManeuverSections(actor) {
+    for (const item of collectionValues(actor?.items)) {
+      if (!isFighterManeuverItem(item)) {
+        continue;
+      }
+
+      const patch = {};
+      if (getProperty(item, "system.type.value") !== "feat") {
+        patch["system.type.value"] = "feat";
+      }
+      if (getProperty(item, "system.type.subtype") !== FIGHTER_MANEUVER_SUBTYPE) {
+        patch["system.type.subtype"] = FIGHTER_MANEUVER_SUBTYPE;
+      }
+      if (getProperty(item, `flags.${MODULE_ID}.section`) !== FIGHTER_MANEUVER_SECTION_LABEL) {
+        patch[`flags.${MODULE_ID}.section`] = FIGHTER_MANEUVER_SECTION_LABEL;
+      }
+      if (getProperty(item, "flags.teyvankal.section") !== FIGHTER_MANEUVER_SECTION_LABEL) {
+        patch["flags.teyvankal.section"] = FIGHTER_MANEUVER_SECTION_LABEL;
+      }
+      if (Object.hasOwn(getProperty(item, "flags.teyvankal", {}), "subsection") === false) {
+        patch["flags.teyvankal.subsection"] = null;
+      }
+
+      if (!Object.keys(patch).length) {
+        continue;
+      }
+
+      if (typeof item.update === "function") {
+        await item.update(patch);
+      }
+      else {
+        for (const [path, value] of Object.entries(patch)) {
+          foundry.utils.setProperty(item, path, value);
+        }
+      }
+    }
   }
 
   async #resolveUsesMax(value, actor) {

@@ -356,6 +356,52 @@ test("fighter second wind repairs a missing actor resource before asking how man
   assert.equal(actor.system.attributes.hp.value, 22);
 });
 
+test("fighter actor repair restores second wind resources and moves maneuvers into their sheet section", async () => {
+  const secondWind = makeItem({
+    id: "second-wind",
+    name: "Второе дыхание",
+    featureId: "fighter-rework-v028::class::second-wind",
+    uses: {
+      spent: 0,
+      max: "",
+      recovery: []
+    }
+  });
+  const maneuver = makeItem({
+    id: "maneuver",
+    name: "Провоцирующая атака",
+    featureId: "fighter-rework-v028::fighterManeuver::provociruyushchaya-ataka"
+  });
+  maneuver.flags["rebreya-main"].sourceType = "fighterManeuver";
+  maneuver.system.type = {
+    value: "class",
+    subtype: ""
+  };
+  const actor = new TestActor({
+    id: "fighter",
+    classes: {
+      "fighter-rework-v028": {
+        levels: 6
+      }
+    },
+    items: [secondWind, maneuver]
+  });
+  const service = new FighterAutomationService({});
+
+  await service.repairActor(actor);
+
+  assert.equal(secondWind.system.uses.max, 6);
+  assert.deepEqual(secondWind.system.uses.recovery, [{
+    period: "lr",
+    type: "recoverAll",
+    formula: ""
+  }]);
+  assert.equal(maneuver.system.type.value, "feat");
+  assert.equal(maneuver.system.type.subtype, "fighterManeuver");
+  assert.equal(maneuver.flags["rebreya-main"].section, "Воинские приёмы");
+  assert.equal(maneuver.flags.teyvankal.section, "Воинские приёмы");
+});
+
 test("fighter long rest keeps the selected multiattack variant and deletes the others", async () => {
   const actionSurge = makeItem({
     id: "action-surge",

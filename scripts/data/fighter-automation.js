@@ -94,7 +94,8 @@ export function getFighterSecondWindAutomation() {
 }
 
 export function fighterSecondWindUsesMax(classIdentifier) {
-  return `@classes.${cleanText(classIdentifier, "fighter-rework-v028")}.levels`;
+  void classIdentifier;
+  return "@details.level";
 }
 
 export function getFighterIronWillAutomation() {
