@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 globalThis.foundry ??= {
@@ -152,6 +152,54 @@ test("shared class feature icons resolve from common icon names", () => {
     createFeatureEntryData(fighterDefinitions.find((definition) => definition.name === "Дополнительная черта"), new Map(), iconLookup).img,
     iconLookup.get("младшая черта")
   );
+});
+
+test("fighter feature icons resolve from class-specific short and qualified names", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const fighterDefinitions = buildFeatureDefinitions(fighter);
+  const iconLookup = new Map([
+    ["всплеск действий", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%92%D1%81%D0%BF%D0%BB%D0%B5%D1%81%D0%BA%20%D0%B4%D0%B5%D0%B9%D1%81%D1%82%D0%B2%D0%B8%D0%B9.webp"],
+    ["дуэлянт", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%94%D1%83%D1%8D%D0%BB%D1%8F%D0%BD%D1%82.webp"],
+    ["ответный удар прием", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%9E%D1%82%D0%B2%D0%B5%D1%82%D0%BD%D1%8B%D0%B9%20%D1%83%D0%B4%D0%B0%D1%80%20%E2%80%94%20%D0%BF%D1%80%D0%B8%D1%91%D0%BC.webp"],
+    ["ответный удар самурай", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%9E%D1%82%D0%B2%D0%B5%D1%82%D0%BD%D1%8B%D0%B9%20%D1%83%D0%B4%D0%B0%D1%80%20%E2%80%94%20%D0%A1%D0%B0%D0%BC%D1%83%D1%80%D0%B0%D0%B9.webp"],
+    ["дополнительные владения самурай", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%94%D0%BE%D0%BF%D0%BE%D0%BB%D0%BD%D0%B8%D1%82%D0%B5%D0%BB%D1%8C%D0%BD%D1%8B%D0%B5%20%D0%B2%D0%BB%D0%B0%D0%B4%D0%B5%D0%BD%D0%B8%D1%8F%20%E2%80%94%20%D0%A1%D0%B0%D0%BC%D1%83%D1%80%D0%B0%D0%B9.webp"],
+    ["использование заклинаний лесной страж", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%98%D1%81%D0%BF%D0%BE%D0%BB%D1%8C%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5%20%D0%B7%D0%B0%D0%BA%D0%BB%D0%B8%D0%BD%D0%B0%D0%BD%D0%B8%D0%B9%20%E2%80%94%20%D0%9B%D0%B5%D1%81%D0%BD%D0%BE%D0%B9%20%D1%81%D1%82%D1%80%D0%B0%D0%B6.webp"]
+  ]);
+
+  const actionSurge = fighterDefinitions.find((definition) => definition.name === "Воинская мультиатака: Всплеск действий");
+  const duelistStyle = fighterDefinitions.find((definition) => definition.sourceType === "fightingStyle" && definition.styleName === "Дуэлянт");
+  const riposteManeuver = fighterDefinitions.find((definition) => definition.sourceType === "fighterManeuver" && definition.name === "Ответный удар");
+  const samuraiProficiencies = fighterDefinitions.find((definition) => definition.subclassName === "Самурай" && definition.name === "Дополнительные Владения");
+  const samuraiRetaliation = fighterDefinitions.find((definition) => definition.subclassName === "Самурай" && definition.name === "Ответный удар");
+  const woodlandSpellcasting = fighterDefinitions.find((definition) => definition.subclassName === "Лесной страж" && definition.name === "Использование заклинаний");
+
+  assert.equal(createFeatureEntryData(actionSurge, new Map(), iconLookup).img, iconLookup.get("всплеск действий"));
+  assert.equal(createFeatureEntryData(duelistStyle, new Map(), iconLookup).img, iconLookup.get("дуэлянт"));
+  assert.equal(createFeatureEntryData(riposteManeuver, new Map(), iconLookup).img, iconLookup.get("ответный удар прием"));
+  assert.equal(createFeatureEntryData(samuraiProficiencies, new Map(), iconLookup).img, iconLookup.get("дополнительные владения самурай"));
+  assert.equal(createFeatureEntryData(samuraiRetaliation, new Map(), iconLookup).img, iconLookup.get("ответный удар самурай"));
+  assert.equal(createFeatureEntryData(woodlandSpellcasting, new Map(), iconLookup).img, iconLookup.get("использование заклинаний лесной страж"));
+});
+
+test("fighter class and subclass icons live under Classes/Fighter", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const requiredIconNames = ["Fighter", ...fighter.subclasses.map((subclass) => subclass.name)];
+
+  for (const iconName of requiredIconNames) {
+    const iconPath = join(process.cwd(), "templates/icons/Classes/Fighter", `${iconName}.webp`);
+    assert.ok(existsSync(iconPath), `${iconName} icon should exist at ${iconPath}`);
+  }
+});
+
+test("class icon search prioritizes icons under the Classes directory", () => {
+  const source = readFileSync(join(process.cwd(), "scripts/data/classes-compendium.js"), "utf8");
+  const fighterClassPathIndex = source.indexOf("${MODULE_ICONS_BASE_PATH}/Classes/Fighter");
+  const oldFighterPathIndex = source.indexOf("${MODULE_ICONS_BASE_PATH}/Fighter");
+  const featsPathIndex = source.indexOf("${MODULE_ICONS_BASE_PATH}/Feats");
+
+  assert.notEqual(fighterClassPathIndex, -1);
+  assert.ok(fighterClassPathIndex < featsPathIndex);
+  assert.ok(fighterClassPathIndex < oldFighterPathIndex);
 });
 
 test("fighter class advancement grants every non-special base feature", () => {

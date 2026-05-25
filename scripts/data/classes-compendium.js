@@ -27,8 +27,10 @@ const CLASS_DATA_PATHS = [
 ];
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const CLASS_ICON_SEARCH_PATHS = [
-  `${MODULE_ICONS_BASE_PATH}/Barbarian`,
+  `${MODULE_ICONS_BASE_PATH}/Classes/Fighter`,
+  `${MODULE_ICONS_BASE_PATH}/Classes/Barbarian`,
   `${MODULE_ICONS_BASE_PATH}/Fighter`,
+  `${MODULE_ICONS_BASE_PATH}/Barbarian`,
   `${MODULE_ICONS_BASE_PATH}/Feats`,
   MODULE_ICONS_BASE_PATH
 ];
@@ -2465,10 +2467,54 @@ function buildSubclassSignature(subclass, system, metadata = {}) {
   });
 }
 
-function resolveClassFeatureIcon(featureName, iconLookup) {
-  const directIcon = resolveNamedIcon(featureName, iconLookup);
-  if (directIcon) {
-    return directIcon;
+function addIconCandidate(candidates, seenCandidates, value) {
+  const text = cleanString(value);
+  const key = normalizeMatchText(text);
+  if (!key || seenCandidates.has(key)) {
+    return;
+  }
+
+  seenCandidates.add(key);
+  candidates.push(text);
+}
+
+function splitQualifiedFeatureName(featureName) {
+  const [prefix, ...rest] = cleanString(featureName).split(":");
+  return {
+    prefix: cleanString(prefix),
+    suffix: rest.join(":").trim()
+  };
+}
+
+function resolveClassFeatureIcon(featureOrName, iconLookup) {
+  const feature = isPlainObject(featureOrName)
+    ? featureOrName
+    : { name: featureOrName };
+  const featureName = cleanString(feature.name);
+  const sourceType = cleanString(feature.sourceType);
+  const subclassName = cleanString(feature.subclassName);
+  const styleName = cleanString(feature.styleName);
+  const { prefix, suffix } = splitQualifiedFeatureName(featureName);
+  const candidates = [];
+  const seenCandidates = new Set();
+
+  if (sourceType === "subclassFeature" && subclassName) {
+    addIconCandidate(candidates, seenCandidates, `${featureName} — ${subclassName}`);
+  }
+
+  if (sourceType === "fighterManeuver") {
+    addIconCandidate(candidates, seenCandidates, `${featureName} — приём`);
+  }
+
+  addIconCandidate(candidates, seenCandidates, featureName);
+
+  if (sourceType === "fightingStyle" && styleName) {
+    addIconCandidate(candidates, seenCandidates, styleName);
+  }
+
+  if (suffix) {
+    addIconCandidate(candidates, seenCandidates, suffix);
+    addIconCandidate(candidates, seenCandidates, prefix);
   }
 
   const sharedFeatureIconName = {
@@ -2476,8 +2522,13 @@ function resolveClassFeatureIcon(featureName, iconLookup) {
     "увеличение характеристик": "Повышение характеристик",
     "увеличение характеристики": "Повышение характеристик"
   }[normalizeMatchText(featureName)];
-  if (sharedFeatureIconName) {
-    return resolveNamedIcon(sharedFeatureIconName, iconLookup, DEFAULT_FEATURE_ICON);
+  addIconCandidate(candidates, seenCandidates, sharedFeatureIconName);
+
+  for (const candidate of candidates) {
+    const icon = resolveNamedIcon(candidate, iconLookup);
+    if (icon) {
+      return icon;
+    }
   }
 
   return DEFAULT_FEATURE_ICON;
@@ -2506,7 +2557,7 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
   const entryData = {
     name: feature.name,
     type: "feat",
-    img: resolveClassFeatureIcon(feature.name, iconLookup),
+    img: resolveClassFeatureIcon(feature, iconLookup),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -2519,6 +2570,8 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
         sourceType: feature.sourceType,
         classIdentifier: feature.classIdentifier,
         subclassId: feature.subclassId,
+        subclassName: feature.subclassName,
+        styleName: feature.styleName,
         featureId: feature.featureId,
         requiredLevel: feature.requiredLevel,
         optional: feature.optional === true,
@@ -2674,6 +2727,7 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
   const activePack = game.packs.get(CLASS_FEATURES_PACK_ID) ?? pack;
   const featureDocuments = await getPackDocuments(activePack);
   const featureUuidById = buildFeatureUuidMap(featureDefinitions, activePack.collection, featureDocuments);
+  const featureDefinitionById = new Map(featureDefinitions.map((feature) => [feature.featureId, feature]));
   await syncFeatureDocumentAdvancements(activePack, featureDocuments, featureDefinitions, {
     ...context,
     featureUuidById
@@ -2681,7 +2735,10 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
   await syncManagedDocumentIcons(
     activePack,
     featureDocuments,
-    (document) => resolveClassFeatureIcon(document.name, context.iconLookup)
+    (document) => {
+      const featureId = cleanString(document.getFlag(MODULE_ID, "featureId"));
+      return resolveClassFeatureIcon(featureDefinitionById.get(featureId) ?? document.name, context.iconLookup);
+    }
   );
 
   return {
