@@ -19,6 +19,7 @@ import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js";
 import { CombatAttackService } from "./combat/attack-service.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
+import { FighterAutomationService } from "./combat/fighter-automation-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
 import { registerSceneControlsHook } from "./hooks.js";
 import { extendDnd5eItemTypes, registerDnd5eSheetExtensions } from "./integrations/dnd5e-sheet-extensions.js";
@@ -155,6 +156,7 @@ class RebreyaMainModule {
     this.globalEventsService = new GlobalEventsService(this);
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
+    this.fighterAutomationService = new FighterAutomationService(this);
     this.raceAutomationService = new RaceAutomationService(this);
     this.featChoiceAutomationService = new FeatChoiceAutomationService(this);
     this.repository.setGlobalEventsService(this.globalEventsService);
@@ -212,6 +214,13 @@ class RebreyaMainModule {
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize combat attack service.`, error);
+    }
+
+    try {
+      await this.fighterAutomationService.initialize();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to initialize fighter automation service.`, error);
     }
 
     try {

@@ -272,6 +272,68 @@ test("all fighter maneuvers have an activity that spends dominance dice", () => 
   }
 });
 
+test("fighter maneuver activities expose editable runtime automation metadata", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const provocation = definitions.find((definition) => definition.sourceType === "fighterManeuver" && definition.name === "Провоцирующая атака");
+  const brutalStrike = definitions.find((definition) => definition.sourceType === "fighterManeuver" && definition.name === "Жестокий удар");
+
+  const provocationActivity = Object.values(createFeatureEntryData(provocation, new Map()).system.activities)[0];
+  const brutalStrikeActivity = Object.values(createFeatureEntryData(brutalStrike, new Map()).system.activities)[0];
+
+  assert.equal(provocationActivity.flags["rebreya-main"].automation, "fighter-dominance-maneuver");
+  assert.deepEqual(provocationActivity.flags["rebreya-main"].fighterAutomation.extraDamage, {
+    formula: "@scale.fighter-rework-v028.dominance-die"
+  });
+  assert.deepEqual(provocationActivity.flags["rebreya-main"].fighterAutomation.status, {
+    id: "rebreya-provoked",
+    value: 1,
+    durationRounds: 1
+  });
+  assert.match(provocationActivity.description.chatFlavor, /Спровоцированной/u);
+
+  assert.deepEqual(brutalStrikeActivity.flags["rebreya-main"].fighterAutomation.extraDamage, {
+    formula: "@scale.fighter-rework-v028.dominance-die"
+  });
+  assert.equal(brutalStrikeActivity.flags["rebreya-main"].fighterAutomation.status, undefined);
+});
+
+test("fighter second wind uses its item uses as the healing dice pool", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const secondWind = definitions.find((definition) => definition.sourceType === "classFeature" && definition.name === "Второе дыхание");
+  const entry = createFeatureEntryData(secondWind, new Map());
+  const activity = Object.values(entry.system.activities)[0];
+
+  assert.equal(entry.system.uses.max, "@classes.fighter-rework-v028.levels");
+  assert.deepEqual(entry.system.uses.recovery, [{
+    period: "lr",
+    type: "recoverAll",
+    formula: ""
+  }]);
+  assert.equal(activity.type, "utility");
+  assert.equal(activity.activation.type, "bonus");
+  assert.equal(activity.flags["rebreya-main"].automation, "fighter-second-wind");
+  assert.deepEqual(activity.flags["rebreya-main"].fighterAutomation, {
+    kind: "secondWind",
+    die: "d6",
+    maxDiceAbility: "con",
+    minDice: 1
+  });
+});
+
+test("fighter iron will has a passive runtime marker for combat automation", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const ironWill = definitions.find((definition) => definition.sourceType === "classFeature" && definition.name === "Железная воля");
+  const entry = createFeatureEntryData(ironWill, new Map());
+
+  assert.deepEqual(Object.values(entry.system.activities), []);
+  assert.equal(entry.effects.length, 1);
+  assert.equal(entry.effects[0].flags["rebreya-main"].automation, "fighter-iron-will");
+  assert.deepEqual(entry.effects[0].flags.dae.specialDuration, ["combatEnd"]);
+});
+
 test("fighter fighting style items grant the real feat and their fixed maneuvers", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
   const definitions = buildFeatureDefinitions(fighter);

@@ -15,6 +15,12 @@ import {
   normalizeFolderPath,
   resolveNamedIcon
 } from "./compendium-utils.js";
+import {
+  fighterSecondWindUsesMax,
+  getFighterIronWillAutomation,
+  getFighterManeuverAutomation,
+  getFighterSecondWindAutomation
+} from "./fighter-automation.js";
 import { buildSlug } from "./item-classification.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -1343,6 +1349,7 @@ function createRageActionAutomation(feature, classIdentifier) {
 function createDominanceManeuverAutomation(feature, classIdentifier) {
   const activityId = stableHashId(`${classIdentifier}:${feature.featureId}:dominance-maneuver`, "activity");
   const description = cleanString(feature.description, feature.name);
+  const fighterAutomation = getFighterManeuverAutomation(feature.name, classIdentifier);
   const activationType = /триггер|реакци|⚡/iu.test(description)
     ? "reaction"
     : /бонусным действием/iu.test(description)
@@ -1394,7 +1401,8 @@ function createDominanceManeuverAutomation(feature, classIdentifier) {
           [MODULE_ID]: {
             managed: true,
             automation: "fighter-dominance-maneuver",
-            maneuver: normalizeMatchText(feature.name)
+            maneuver: normalizeMatchText(feature.name),
+            fighterAutomation
           }
         },
         range: {
@@ -1430,6 +1438,131 @@ function createDominanceManeuverAutomation(feature, classIdentifier) {
       }
     },
     effects: [],
+    usesRecovery: []
+  };
+}
+
+function createSecondWindAutomation(feature, classIdentifier) {
+  const activityId = stableHashId(`${classIdentifier}:${feature.featureId}:second-wind`, "activity");
+  return {
+    activities: {
+      [activityId]: {
+        _id: activityId,
+        type: "utility",
+        name: feature.name,
+        img: RAGE_ACTION_ACTIVITY_IMAGE.heal,
+        sort: 0,
+        activation: {
+          type: "bonus",
+          value: 1,
+          condition: "Также можно использовать вместо одной из атак.",
+          override: false
+        },
+        consumption: {
+          scaling: {
+            allowed: false,
+            max: ""
+          },
+          spellSlot: false,
+          targets: []
+        },
+        description: {
+          chatFlavor: cleanString(feature.description)
+        },
+        duration: {
+          value: "",
+          units: "inst",
+          special: "",
+          concentration: false,
+          override: false
+        },
+        effects: [],
+        flags: {
+          [MODULE_ID]: {
+            managed: true,
+            automation: "fighter-second-wind",
+            fighterAutomation: getFighterSecondWindAutomation()
+          }
+        },
+        range: {
+          value: null,
+          units: "self",
+          special: "",
+          override: false
+        },
+        target: {
+          template: {
+            count: "",
+            contiguous: false,
+            type: "",
+            size: "",
+            width: "",
+            height: "",
+            units: ""
+          },
+          affects: {
+            count: "",
+            type: "self",
+            choice: false,
+            special: ""
+          },
+          prompt: false,
+          override: false
+        },
+        uses: {
+          spent: 0,
+          max: "",
+          recovery: []
+        }
+      }
+    },
+    effects: [],
+    usesMax: fighterSecondWindUsesMax(classIdentifier),
+    usesRecovery: [{
+      period: "lr",
+      type: "recoverAll",
+      formula: ""
+    }]
+  };
+}
+
+function createIronWillAutomation(feature, classIdentifier) {
+  const effectId = stableHashId(`${classIdentifier}:${feature.featureId}:iron-will`, "effect");
+  return {
+    activities: {},
+    effects: [{
+      _id: effectId,
+      name: feature.name,
+      type: "base",
+      img: DEFAULT_FEATURE_ICON,
+      system: {},
+      changes: [],
+      disabled: false,
+      duration: {
+        startTime: null,
+        seconds: null,
+        combat: null,
+        rounds: null,
+        turns: null,
+        startRound: null,
+        startTurn: null
+      },
+      description: "<p>Автоматизация: отслеживает лечение и начало хода для эффектов Железной воли.</p>",
+      origin: null,
+      transfer: true,
+      statuses: [],
+      sort: 0,
+      flags: {
+        dae: {
+          specialDuration: ["combatEnd"]
+        },
+        [MODULE_ID]: {
+          managed: true,
+          automation: "fighter-iron-will",
+          fighterAutomation: getFighterIronWillAutomation()
+        }
+      }
+    }],
     usesRecovery: []
   };
 }
@@ -1587,6 +1720,14 @@ function createFeatureAutomation(feature, classIdentifier) {
   const normalizedName = normalizeMatchText(feature.name);
   if (classIdentifier === "fighter-rework-v028" && normalizedName.startsWith("воинская мультиатака")) {
     return createFighterMultiattackAutomation(feature, classIdentifier);
+  }
+
+  if (classIdentifier === "fighter-rework-v028" && normalizedName === "второе дыхание") {
+    return createSecondWindAutomation(feature, classIdentifier);
+  }
+
+  if (classIdentifier === "fighter-rework-v028" && normalizedName === "железная воля") {
+    return createIronWillAutomation(feature, classIdentifier);
   }
 
   if (normalizedName === "ярость") {

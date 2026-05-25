@@ -6,7 +6,8 @@ export function registerCombatHooks(moduleApi) {
   const hasStatusService = Boolean(moduleApi?.combatStatusService);
   const hasAttackService = Boolean(moduleApi?.combatAttackService);
   const hasRaceService = Boolean(moduleApi?.raceAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService) {
+  const hasFighterService = Boolean(moduleApi?.fighterAutomationService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService) {
     return;
   }
 
@@ -67,6 +68,12 @@ export function registerCombatHooks(moduleApi) {
       catch (error) {
         console.error(`${MODULE_ID} | Failed to handle combat turn race automation.`, error);
       }
+    }
+
+    if (hasFighterService) {
+      moduleApi.fighterAutomationService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to handle combat turn fighter automation.`, error);
+      });
     }
   });
 
@@ -262,6 +269,40 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to apply MIDI race automation.`, error);
       });
       return true;
+    });
+  }
+
+  if (hasFighterService) {
+    Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
+      moduleApi.fighterAutomationService.applyDnd5ePostUseActivity(
+        activity,
+        usageConfig,
+        results
+      ).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply fighter activity automation.`, error);
+      });
+      return true;
+    });
+
+    Hooks.on("dnd5e.applyDamage", (actor, amount, options) => {
+      moduleApi.fighterAutomationService.applyDnd5eApplyDamage(
+        actor,
+        amount,
+        options
+      ).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply fighter healing automation.`, error);
+      });
+      return true;
+    });
+
+    Hooks.on("midi-qol.RollComplete", (workflow) => {
+      try {
+        return moduleApi.fighterAutomationService.applyMidiRollComplete(workflow);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to capture fighter MIDI workflow.`, error);
+        return true;
+      }
     });
   }
 }
