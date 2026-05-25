@@ -23,6 +23,7 @@ import { FighterAutomationService } from "./combat/fighter-automation-service.js
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
 import { registerSceneControlsHook } from "./hooks.js";
 import { extendDnd5eItemTypes, registerDnd5eSheetExtensions } from "./integrations/dnd5e-sheet-extensions.js";
+import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import { registerSettings } from "./settings.js";
@@ -1688,6 +1689,13 @@ Hooks.once("init", () => {
 });
 
 Hooks.once("ready", async () => {
+  try {
+    patchEffectMacroCombatHooks();
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to patch effectmacro combat hook.`, error);
+  }
+
   try {
     patchTransformCleanupUpdateActorHook();
   }

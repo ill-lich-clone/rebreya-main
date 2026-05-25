@@ -273,6 +273,13 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasFighterService) {
+    Hooks.on("combatTurnChange", (combat, previous, current) => {
+      void previous;
+      moduleApi.fighterAutomationService.handleCombatTurnChange(combat, current ?? {}).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to handle combat turn-change fighter automation.`, error);
+      });
+    });
+
     Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
       moduleApi.fighterAutomationService.applyDnd5ePostUseActivity(
         activity,

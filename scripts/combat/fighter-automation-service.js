@@ -223,8 +223,8 @@ export class FighterAutomationService {
     return true;
   }
 
-  async handleCombatTurnChange(combat) {
-    const actor = combat?.combatant?.actor ?? null;
+  async handleCombatTurnChange(combat, updateData = {}) {
+    const actor = this.#resolveCombatTurnActor(combat, updateData);
     if (!(actor instanceof Actor)) {
       return true;
     }
@@ -237,7 +237,7 @@ export class FighterAutomationService {
       return true;
     }
 
-    const turnKey = `${combat?.round ?? 0}:${combat?.turn ?? 0}:${this.#actorKey(actor)}:iron-will`;
+    const turnKey = `${updateData?.round ?? combat?.round ?? 0}:${updateData?.turn ?? combat?.turn ?? 0}:${this.#actorKey(actor)}:iron-will`;
     if (this._ironWillTurnPrompts.has(turnKey)) {
       return true;
     }
@@ -259,6 +259,33 @@ export class FighterAutomationService {
     }
 
     return true;
+  }
+
+  #resolveCombatTurnActor(combat, updateData = {}) {
+    const directActor = updateData?.combatant?.actor ?? null;
+    if (directActor instanceof Actor) {
+      return directActor;
+    }
+
+    const combatantId = cleanText(updateData?.combatantId);
+    if (combatantId) {
+      const combatant = combat?.combatants?.get?.(combatantId)
+        ?? collectionValues(combat?.combatants).find((entry) => cleanText(entry?.id) === combatantId)
+        ?? null;
+      if (combatant?.actor instanceof Actor) {
+        return combatant.actor;
+      }
+    }
+
+    const turn = Number(updateData?.turn);
+    if (Number.isInteger(turn)) {
+      const combatant = collectionValues(combat?.turns)[turn] ?? null;
+      if (combatant?.actor instanceof Actor) {
+        return combatant.actor;
+      }
+    }
+
+    return combat?.combatant?.actor ?? null;
   }
 
   async applyDnd5eApplyDamage(actor, amount, options = {}) {

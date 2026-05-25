@@ -316,6 +316,68 @@ test("fighter iron will prompts second wind at the start of a bloodied turn", as
   assert.equal(actor.system.attributes.hp.value, 17);
 });
 
+test("fighter iron will resolves the upcoming combatTurn actor from updateData.turn", async () => {
+  const oldActor = new TestActor({
+    id: "old",
+    hp: {
+      value: 5,
+      max: 30
+    },
+    items: []
+  });
+  const secondWind = makeItem({
+    id: "second-wind",
+    name: "Второе дыхание",
+    featureId: "fighter-rework-v028::class::second-wind",
+    uses: {
+      spent: 0,
+      max: 5,
+      recovery: []
+    }
+  });
+  const ironWill = makeItem({
+    id: "iron-will",
+    name: "Железная воля",
+    featureId: "fighter-rework-v028::class::iron-will"
+  });
+  const nextActor = new TestActor({
+    id: "next",
+    hp: {
+      value: 8,
+      max: 30
+    },
+    items: [secondWind, ironWill]
+  });
+  let prompts = 0;
+  const service = new FighterAutomationService({}, {
+    confirmIronWillSecondWind: async () => {
+      prompts += 1;
+      return true;
+    },
+    promptSecondWindDice: async () => 1,
+    rollFactory: () => fixedRoll(4)
+  });
+
+  await service.handleCombatTurnChange({
+    round: 1,
+    turn: 0,
+    combatant: {
+      actor: oldActor
+    },
+    turns: [
+      { actor: oldActor },
+      { actor: nextActor }
+    ]
+  }, {
+    round: 1,
+    turn: 1
+  });
+
+  assert.equal(prompts, 1);
+  assert.equal(nextActor.system.attributes.hp.value, 12);
+  assert.equal(oldActor.system.attributes.hp.value, 5);
+});
+
 test("fighter iron will creates its next-save effect after healing while not bloodied", async () => {
   const ironWill = makeItem({
     id: "iron-will",
