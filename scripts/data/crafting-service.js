@@ -69,8 +69,9 @@ export class CraftingService {
   }
 
   async #writeState(mutator) {
-    if (!game.user?.isGM) {
-      throw new Error("Управлять крафтом может только ГМ.");
+    const canManageInventory = this.moduleApi.inventoryService?.canManagePartyInventory?.() === true;
+    if (!game.user?.isGM && !canManageInventory) {
+      throw new Error("Крафтом управляют владельцы партийного склада.");
     }
 
     const state = this.#getState();

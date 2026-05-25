@@ -21,6 +21,26 @@ const SIZE_ORDER = {
   grg: 5
 };
 
+function getSocketUser(senderId) {
+  const safeSenderId = cleanText(senderId);
+  if (!safeSenderId) {
+    return null;
+  }
+
+  return game.users?.get?.(safeSenderId)
+    ?? game.users?.contents?.find?.((user) => user?.id === safeSenderId)
+    ?? null;
+}
+
+function canProcessRaceAutomationSocket(senderId) {
+  if (!game.user?.isGM) {
+    return false;
+  }
+
+  const sender = getSocketUser(senderId);
+  return sender?.isGM === true;
+}
+
 function getDialogRoot(html) {
   if (html instanceof HTMLElement) {
     return html;
@@ -320,8 +340,8 @@ export class RaceAutomationService {
     return true;
   }
 
-  async handleSocketMessage(payload = {}) {
-    if (!game.user?.isGM) {
+  async handleSocketMessage(payload = {}, { senderId = "" } = {}) {
+    if (!canProcessRaceAutomationSocket(senderId)) {
       return false;
     }
 
@@ -1227,6 +1247,10 @@ export class RaceAutomationService {
   }
 
   async #emitAsGM(action, payload = {}) {
+    if (!game.user?.isGM) {
+      return false;
+    }
+
     game.socket?.emit?.(SOCKET_CHANNEL, {
       type: SOCKET_EVENT_RACE_AUTOMATION,
       payload: {

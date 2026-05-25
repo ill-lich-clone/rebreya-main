@@ -32,6 +32,7 @@ const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const SOCKET_EVENT_LOOTGEN_SHOW = "lootgen-show-result";
 const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
 const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
+const SOCKET_EVENT_TRADER_AUDIT = "trader-audit";
 
 function normalizeLookupText(value) {
   return String(value ?? "")
@@ -231,7 +232,19 @@ class RebreyaMainModule {
     }
 
     if (message.type === SOCKET_EVENT_RACE_AUTOMATION) {
-      await this.raceAutomationService.handleSocketMessage(message.payload ?? {});
+      await this.raceAutomationService.handleSocketMessage(message.payload ?? {}, {
+        senderId: message.senderId ?? ""
+      });
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_TRADER_AUDIT) {
+      if (game.user?.isGM) {
+        await this.traderService.recordTradeAudit(message.payload ?? {}, {
+          senderId: message.senderId ?? ""
+        });
+        await this.refreshOpenApps();
+      }
       return;
     }
 
@@ -893,6 +906,33 @@ class RebreyaMainModule {
 
   async sellTraderItem(cityId, traderKey, preview, quantity) {
     return this.traderService.sellItem(cityId, traderKey, preview, quantity);
+  }
+
+  async recordTraderAudit(operation = {}) {
+    if (game.user?.isGM) {
+      const record = await this.traderService.recordTradeAudit(operation, {
+        senderId: operation.senderId ?? game.user?.id ?? ""
+      });
+      await this.refreshOpenApps();
+      return record;
+    }
+
+    game.socket?.emit?.(SOCKET_CHANNEL, {
+      type: SOCKET_EVENT_TRADER_AUDIT,
+      payload: foundry.utils.deepClone(operation),
+      senderId: game.user?.id ?? ""
+    });
+    return null;
+  }
+
+  getTradeAuditLog() {
+    return this.traderService.getTradeAuditLog();
+  }
+
+  async rollbackTraderAuditEntry(entryId) {
+    const result = await this.traderService.rollbackTradeAuditEntry(entryId);
+    await this.refreshOpenApps();
+    return result;
   }
 
   async updateTraderMetadata(cityId, traderKey, patch) {

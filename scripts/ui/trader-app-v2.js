@@ -430,7 +430,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     this.saleSearch = "";
     this.saleBasket = new Map();
     this.salePreviewCache = new Map();
-    this.usePartyFunds = options.usePartyFunds !== false;
+    this.usePartyFunds = options.usePartyFunds ?? game.user?.isGM === true;
     this.partyInventoryActorId = null;
     this.hasPlayedSequencerEntrance = false;
     this.isClosing = false;

@@ -11,6 +11,7 @@ import {
 import { formatPercent, formatSignedPercent } from "../ui.js";
 
 const MAX_ACTIVE_TRADERS = 21;
+const TRADE_AUDIT_LIMIT = 20;
 const MIN_PRICE_GOLD = 0.01;
 const GENERAL_TRADER_ICON = "icons/svg/item-bag.svg";
 const MATERIAL_TRADER_ICON = "icons/svg/coins.svg";
@@ -102,8 +103,16 @@ function createEmptyTraderState() {
   return {
     version: 1,
     order: [],
-    traders: {}
+    traders: {},
+    tradeLog: []
   };
+}
+
+function createTradeAuditId() {
+  const randomPart = typeof randomID === "function"
+    ? randomID()
+    : Math.random().toString(36).slice(2, 10);
+  return `trade-${Date.now()}-${randomPart}`;
 }
 
 function escapeHtml(value) {
@@ -177,6 +186,155 @@ function getActorTradeCandidates() {
   return game.actors.contents
     .filter((actor) => actor?.isOwner && !actor.getFlag(MODULE_ID, "managedTrader"))
     .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+}
+
+function getUserById(userId) {
+  const safeUserId = String(userId ?? "").trim();
+  if (!safeUserId) {
+    return null;
+  }
+
+  return game.users?.get?.(safeUserId)
+    ?? game.users?.contents?.find?.((user) => user?.id === safeUserId)
+    ?? null;
+}
+
+function userOwnsActor(actor, userId) {
+  const safeUserId = String(userId ?? "").trim();
+  if (!actor || !safeUserId) {
+    return false;
+  }
+
+  const user = getUserById(safeUserId);
+  if (user?.isGM) {
+    return true;
+  }
+
+  const ownerLevel = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+  if (user && typeof actor.testUserPermission === "function") {
+    try {
+      if (actor.testUserPermission(user, ownerLevel)) {
+        return true;
+      }
+    }
+    catch (_error) {
+      // Try the string permission form below for older Foundry APIs.
+    }
+
+    try {
+      if (actor.testUserPermission(user, "OWNER")) {
+        return true;
+      }
+    }
+    catch (_error) {
+      // Fall through to ownership data.
+    }
+  }
+
+  const ownership = actor.ownership ?? actor._source?.ownership ?? {};
+  return toNumber(ownership[safeUserId], 0) >= ownerLevel
+    || toNumber(ownership.default, 0) >= ownerLevel;
+}
+
+function assertUserCanTradeActor(actor, userId) {
+  const safeUserId = String(userId ?? "").trim();
+  if (!safeUserId) {
+    return;
+  }
+
+  if (!userOwnsActor(actor, safeUserId)) {
+    throw new Error("Игрок не владеет выбранным персонажем для торговли.");
+  }
+}
+
+function getUserLabel(userId) {
+  const user = getUserById(userId);
+  return String(user?.name ?? user?.id ?? userId ?? "").trim();
+}
+
+function formatAuditTimestamp(timestamp) {
+  const date = new Date(Math.max(0, Math.floor(toNumber(timestamp, Date.now()))));
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function normalizeTradeAuditRecord(operation = {}, { senderId = "" } = {}) {
+  const type = String(operation.type ?? "").trim() === "sale" ? "sale" : "purchase";
+  const quantity = Math.max(1, Math.floor(toNumber(operation.quantity, 1)));
+  const totalCopper = Math.max(0, Math.round(toNumber(
+    operation.totalCopper,
+    type === "sale" ? operation.netPayoutCopper : operation.totalPriceCopper
+  )));
+  const safeSenderId = String(senderId || operation.senderId || "").trim();
+
+  return {
+    id: String(operation.id ?? "").trim() || createTradeAuditId(),
+    type,
+    createdAt: Math.max(0, Math.floor(toNumber(operation.createdAt, Date.now()))),
+    senderId: safeSenderId,
+    senderName: String(operation.senderName ?? getUserLabel(safeSenderId)).trim(),
+    actorId: String(operation.actorId ?? "").trim(),
+    actorName: String(operation.actorName ?? "").trim(),
+    cityId: String(operation.cityId ?? "").trim(),
+    cityName: String(operation.cityName ?? "").trim(),
+    traderKey: String(operation.traderKey ?? "").trim(),
+    traderName: String(operation.traderName ?? "").trim(),
+    itemId: String(operation.itemId ?? "").trim(),
+    itemUuid: String(operation.itemUuid ?? "").trim(),
+    itemName: String(operation.itemName ?? "").trim(),
+    sourceType: String(operation.sourceType ?? "").trim(),
+    sourceId: String(operation.sourceId ?? "").trim(),
+    quantity,
+    totalCopper,
+    totalPriceCopper: Math.max(0, Math.round(toNumber(operation.totalPriceCopper, type === "purchase" ? totalCopper : 0))),
+    grossOfferCopper: Math.max(0, Math.round(toNumber(operation.grossOfferCopper, 0))),
+    taxCopper: Math.max(0, Math.round(toNumber(operation.taxCopper, 0))),
+    netPayoutCopper: Math.max(0, Math.round(toNumber(operation.netPayoutCopper, type === "sale" ? totalCopper : 0))),
+    currencyBeforeCopper: Math.max(0, Math.round(toNumber(operation.currencyBeforeCopper, 0))),
+    currencyAfterCopper: Math.max(0, Math.round(toNumber(operation.currencyAfterCopper, 0))),
+    itemQuantityBefore: Math.max(0, Math.floor(toNumber(operation.itemQuantityBefore, 0))),
+    itemQuantityAfter: Math.max(0, Math.floor(toNumber(operation.itemQuantityAfter, 0))),
+    rawItemData: operation.rawItemData ? sanitizeRawItemData(operation.rawItemData) : null,
+    verified: operation.verified === false ? false : true,
+    rolledBack: operation.rolledBack === true,
+    rolledBackAt: Math.max(0, Math.floor(toNumber(operation.rolledBackAt, 0))),
+    rolledBackByUserId: String(operation.rolledBackByUserId ?? "").trim()
+  };
+}
+
+function buildAuditViewRecord(record) {
+  const typeLabel = record.type === "sale" ? "Продажа" : "Покупка";
+  const copper = record.type === "sale"
+    ? toNumber(record.netPayoutCopper, record.totalCopper)
+    : toNumber(record.totalPriceCopper, record.totalCopper);
+  const rolledBack = record.rolledBack === true;
+  const verified = record.verified !== false;
+
+  return {
+    ...record,
+    typeLabel,
+    timestampLabel: formatAuditTimestamp(record.createdAt),
+    amountLabel: formatCopper(copper),
+    quantityLabel: `${record.quantity} шт.`,
+    actorLabel: record.actorName || record.actorId || "Персонаж",
+    traderLabel: [record.cityName, record.traderName].filter(Boolean).join(" / "),
+    userLabel: record.senderName || record.senderId || "Игрок",
+    statusLabel: rolledBack ? "Откат выполнен" : (verified ? "Активна" : "Проверить вручную"),
+    rolledBack,
+    rollbackDisabled: rolledBack || !verified || game.user?.isGM !== true,
+    rollbackTitle: rolledBack
+      ? "Операция уже откачена"
+      : (verified ? "Откатить операцию" : "Нельзя откатить: владелец операции не подтверждён")
+  };
 }
 
 function resolveActorByPreference(actorId = null, { preferredActor = null } = {}) {
@@ -751,7 +909,11 @@ export class TraderService {
       return createEmptyTraderState();
     }
 
-    return foundry.utils.mergeObject(createEmptyTraderState(), foundry.utils.deepClone(state));
+    const nextState = foundry.utils.mergeObject(createEmptyTraderState(), foundry.utils.deepClone(state));
+    nextState.order = Array.isArray(nextState.order) ? nextState.order : [];
+    nextState.traders = nextState.traders && typeof nextState.traders === "object" ? nextState.traders : {};
+    nextState.tradeLog = Array.isArray(nextState.tradeLog) ? nextState.tradeLog : [];
+    return nextState;
   }
 
   async #setState(nextState) {
@@ -768,6 +930,190 @@ export class TraderService {
     const result = await mutator(state);
     await this.#setState(state);
     return result;
+  }
+
+  async #recordTradeAudit(operation = {}) {
+    if (typeof this.moduleApi?.recordTraderAudit !== "function") {
+      return null;
+    }
+
+    try {
+      return await this.moduleApi.recordTraderAudit(operation);
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to record trade audit.`, error);
+      return null;
+    }
+  }
+
+  #verifyAuditRecord(record) {
+    const actor = record.actorId ? game.actors?.get?.(record.actorId) ?? null : null;
+    if (!actor || !record.senderId) {
+      return {
+        ...record,
+        verified: record.verified !== false && Boolean(actor)
+      };
+    }
+
+    return {
+      ...record,
+      actorName: String(actor.name ?? record.actorName ?? "").trim(),
+      verified: userOwnsActor(actor, record.senderId)
+    };
+  }
+
+  #findAuditItem(actor, record) {
+    const itemId = String(record.itemId ?? "").trim();
+    if (itemId) {
+      const byId = actor.items?.get?.(itemId) ?? null;
+      if (byId) {
+        return byId;
+      }
+    }
+
+    const sourceType = String(record.sourceType ?? "").trim();
+    const sourceId = String(record.sourceId ?? "").trim();
+    const itemName = normalizeText(record.itemName);
+    return actor.items?.contents?.find?.((item) => {
+      if (sourceType && sourceId) {
+        const itemSourceType = item.getFlag?.(MODULE_ID, "sourceType");
+        const itemSourceId = item.getFlag?.(MODULE_ID, "sourceId");
+        if (itemSourceType === sourceType && itemSourceId === sourceId) {
+          return true;
+        }
+      }
+
+      return itemName && normalizeText(item.name) === itemName;
+    }) ?? null;
+  }
+
+  async #rollbackPurchase(record, actor) {
+    const quantity = Math.max(1, Math.floor(toNumber(record.quantity, 1)));
+    const item = this.#findAuditItem(actor, record);
+    if (!item) {
+      throw new Error("Предмет покупки больше не найден у персонажа.");
+    }
+
+    const currentQuantity = getRawQuantity(item.toObject());
+    if (currentQuantity < quantity) {
+      throw new Error("У персонажа уже нет нужного количества предмета для отката.");
+    }
+
+    if (currentQuantity <= quantity) {
+      await item.delete();
+    }
+    else {
+      await item.update({
+        "system.quantity": currentQuantity - quantity
+      });
+    }
+
+    const refundCopper = Math.max(0, Math.round(toNumber(record.totalPriceCopper, record.totalCopper)));
+    await actor.update(buildCurrencyUpdate(actorCurrencyToCopper(actor) + refundCopper));
+  }
+
+  async #rollbackSale(record, actor) {
+    const quantity = Math.max(1, Math.floor(toNumber(record.quantity, 1)));
+    const payoutCopper = Math.max(0, Math.round(toNumber(record.netPayoutCopper, record.totalCopper)));
+    const currentFundsCopper = actorCurrencyToCopper(actor);
+    if (currentFundsCopper < payoutCopper) {
+      throw new Error("У персонажа не хватает монет, чтобы откатить продажу.");
+    }
+
+    await actor.update(buildCurrencyUpdate(currentFundsCopper - payoutCopper));
+
+    const existingItem = this.#findAuditItem(actor, record);
+    if (existingItem) {
+      const nextQuantity = getRawQuantity(existingItem.toObject()) + quantity;
+      await existingItem.update({
+        "system.quantity": nextQuantity
+      });
+      return;
+    }
+
+    const itemData = record.rawItemData
+      ? sanitizeRawItemData(record.rawItemData)
+      : {
+          name: record.itemName || "Возвращённый предмет",
+          type: "loot",
+          img: "icons/svg/item-bag.svg",
+          system: {
+            quantity
+          },
+          flags: {
+            [MODULE_ID]: {
+              sourceType: record.sourceType,
+              sourceId: record.sourceId
+            }
+          }
+        };
+    foundry.utils.setProperty(itemData, "system.quantity", quantity);
+    await actor.createEmbeddedDocuments("Item", [itemData]);
+  }
+
+  getTradeAuditLog() {
+    return this.#getState()
+      .tradeLog
+      .slice()
+      .sort((left, right) => toNumber(right.createdAt, 0) - toNumber(left.createdAt, 0))
+      .slice(0, TRADE_AUDIT_LIMIT)
+      .map((record) => buildAuditViewRecord(record));
+  }
+
+  async recordTradeAudit(operation = {}, { senderId = "" } = {}) {
+    if (!game.user?.isGM) {
+      return null;
+    }
+
+    return this.#writeState((state) => {
+      const record = this.#verifyAuditRecord(normalizeTradeAuditRecord(operation, { senderId }));
+      state.tradeLog = [record, ...(state.tradeLog ?? []).filter((entry) => entry.id !== record.id)]
+        .slice(0, TRADE_AUDIT_LIMIT);
+      return buildAuditViewRecord(foundry.utils.deepClone(record));
+    });
+  }
+
+  async rollbackTradeAuditEntry(entryId) {
+    if (!game.user?.isGM) {
+      throw new Error("Откат торговых операций доступен только мастеру.");
+    }
+
+    const safeEntryId = String(entryId ?? "").trim();
+    if (!safeEntryId) {
+      throw new Error("Операция торговли не найдена.");
+    }
+
+    return this.#writeState(async (state) => {
+      const record = (state.tradeLog ?? []).find((entry) => entry.id === safeEntryId) ?? null;
+      if (!record) {
+        throw new Error("Операция торговли не найдена.");
+      }
+
+      if (record.rolledBack === true) {
+        throw new Error("Эта операция уже откачена.");
+      }
+
+      if (record.verified === false) {
+        throw new Error("Операция не подтверждена владельцем персонажа.");
+      }
+
+      const actor = game.actors?.get?.(record.actorId) ?? null;
+      if (!actor) {
+        throw new Error("Персонаж операции не найден.");
+      }
+
+      if (record.type === "sale") {
+        await this.#rollbackSale(record, actor);
+      }
+      else {
+        await this.#rollbackPurchase(record, actor);
+      }
+
+      record.rolledBack = true;
+      record.rolledBackAt = Date.now();
+      record.rolledBackByUserId = game.user?.id ?? "";
+      return buildAuditViewRecord(foundry.utils.deepClone(record));
+    });
   }
 
   async resetState() {
@@ -1320,7 +1666,7 @@ export class TraderService {
       taxPercent: toNumber(statePolicy.taxPercent, 0),
       taxLabel: formatPercent(toNumber(statePolicy.taxPercent, 0), 1),
       taxEventSourceNames: uniqueStrings(statePolicy?.eventDelta?.sourceEventNames ?? []),
-      canTrade: game.user?.isGM === true,
+      canTrade: game.user?.isGM === true || Boolean(customerActor),
       expectedTraderCount: getExpectedTraderCount(citySnapshot),
       cityEventNames: uniqueStrings(citySnapshot?.activeEventNames ?? [])
     };
@@ -1367,7 +1713,7 @@ export class TraderService {
     });
   }
 
-  async purchaseItem(cityId, traderKey, itemKey, quantity, { actorId = null } = {}) {
+  async purchaseItem(cityId, traderKey, itemKey, quantity, { actorId = null, requestedByUserId = "" } = {}) {
     const partyInventoryActor = await this.moduleApi.inventoryService?.getInventoryActor?.({
       create: game.user?.isGM === true
     }) ?? null;
@@ -1377,6 +1723,7 @@ export class TraderService {
     if (!buyer?.isOwner) {
       throw new Error("Не выбран персонаж для покупки.");
     }
+    assertUserCanTradeActor(buyer, requestedByUserId);
 
     const snapshot = await this.getTraderSnapshot(cityId, traderKey, { actorId: buyer.id });
     const inventoryItem = snapshot.inventory.find((entry) => entry.itemKey === itemKey);
@@ -1431,6 +1778,8 @@ export class TraderService {
       const sourceId = item.getFlag(MODULE_ID, "sourceId");
       return sourceType === inventoryItem.sourceType && sourceId === inventoryItem.sourceId;
     });
+    const itemQuantityBefore = matchItem ? getRawQuantity(matchItem.toObject()) : 0;
+    let purchasedItemDocument = matchItem ?? null;
 
     if (matchItem) {
       const nextQuantity = getRawQuantity(matchItem.toObject()) + purchaseQuantity;
@@ -1439,27 +1788,32 @@ export class TraderService {
       });
     }
     else {
-      await buyer.createEmbeddedDocuments("Item", [purchasedItemData]);
+      const [createdItem] = await buyer.createEmbeddedDocuments("Item", [purchasedItemData]);
+      purchasedItemDocument = createdItem ?? null;
     }
 
     await buyer.update(buildCurrencyUpdate(currentFundsCopper - totalPriceCopper));
 
-    await this.#writeState(async (state) => {
-      const traderId = getTraderStateKey(cityId, traderKey);
-      const traderState = state.traders[traderId];
-      if (!traderState) {
-        throw new Error("Состояние торговца не найдено.");
-      }
-
-      const stockItem = traderState.inventory.find((entry) => entry.itemKey === itemKey);
-      if (!stockItem) {
-        throw new Error("Товар отсутствует в сохранённом ассортименте.");
-      }
-
-      stockItem.quantity = Math.max(0, Math.floor(toNumber(stockItem.quantity, 0)) - purchaseQuantity);
-      traderState.updatedAt = Date.now();
-      traderState.inventory = traderState.inventory.filter((entry) => toNumber(entry.quantity, 0) > 0);
-      state.order = [traderId, ...state.order.filter((entry) => entry !== traderId)];
+    await this.#recordTradeAudit({
+      type: "purchase",
+      actorId: buyer.id,
+      actorName: buyer.name,
+      cityId,
+      cityName: snapshot.cityName,
+      traderKey,
+      traderName: snapshot.name,
+      itemId: purchasedItemDocument?.id ?? matchItem?.id ?? "",
+      itemUuid: purchasedItemDocument?.uuid ?? matchItem?.uuid ?? "",
+      itemName: inventoryItem.name,
+      sourceType: inventoryItem.sourceType,
+      sourceId: inventoryItem.sourceId,
+      quantity: purchaseQuantity,
+      totalCopper: totalPriceCopper,
+      totalPriceCopper,
+      currencyBeforeCopper: currentFundsCopper,
+      currencyAfterCopper: currentFundsCopper - totalPriceCopper,
+      itemQuantityBefore,
+      itemQuantityAfter: itemQuantityBefore + purchaseQuantity
     });
 
     return {
@@ -1620,7 +1974,7 @@ export class TraderService {
     };
   }
 
-  async sellItem(cityId, traderKey, preview, quantity) {
+  async sellItem(cityId, traderKey, preview, quantity, { requestedByUserId = "" } = {}) {
     if (!preview?.actorId || !preview?.itemUuid) {
       throw new Error("Нет подготовленного предмета для продажи.");
     }
@@ -1629,6 +1983,7 @@ export class TraderService {
     if (!actor?.isOwner) {
       throw new Error("Продавец недоступен.");
     }
+    assertUserCanTradeActor(actor, requestedByUserId);
 
     const itemDocument = await fromUuid(preview.itemUuid);
     if (!(itemDocument instanceof Item) || itemDocument.parent?.id !== actor.id) {
@@ -1636,7 +1991,8 @@ export class TraderService {
     }
 
     const sellQuantity = Math.max(1, Math.floor(toNumber(quantity, 1)));
-    const currentQuantity = getRawQuantity(itemDocument.toObject());
+    const itemDataBeforeSale = itemDocument.toObject();
+    const currentQuantity = getRawQuantity(itemDataBeforeSale);
     if (sellQuantity > currentQuantity) {
       throw new Error("У персонажа нет такого количества предмета.");
     }
@@ -1657,55 +2013,30 @@ export class TraderService {
       });
     }
 
-    await this.#writeState(async (state) => {
-      const traderId = getTraderStateKey(cityId, traderKey);
-      const traderState = state.traders[traderId];
-      if (!traderState) {
-        throw new Error("Состояние торговца не найдено.");
-      }
-
-      const existingEntry = traderState.inventory.find((entry) => (
-        entry.sourceType === preview.sourceType
-        && entry.sourceId === preview.sourceId
-      ));
-
-      if (existingEntry) {
-        existingEntry.quantity = Math.max(0, Math.floor(toNumber(existingEntry.quantity, 0))) + sellQuantity;
-        if (preview.sourceType === "custom" && !existingEntry.rawItemData) {
-          existingEntry.rawItemData = sanitizeRawItemData(preview.rawItemData);
-        }
-        if (!existingEntry.rarity && preview.rarity) {
-          existingEntry.rarity = preview.rarity;
-        }
-        if (!existingEntry.shopSubtype && preview.shopSubtype) {
-          existingEntry.shopSubtype = preview.shopSubtype;
-        }
-      }
-      else {
-        traderState.inventory.push({
-          itemKey: `${preview.sourceType}:${preview.sourceId}`,
-          sourceType: preview.sourceType,
-          sourceId: preview.sourceId,
-          name: preview.itemName,
-          img: preview.img,
-          description: preview.description,
-          quantity: sellQuantity,
-          basePriceGold: preview.basePriceGold,
-          baseWeight: preview.baseWeight,
-          rank: preview.rank,
-          itemTypeLabel: preview.itemTypeLabel,
-          predominantMaterialId: preview.predominantMaterialId,
-          predominantMaterialName: preview.predominantMaterialName,
-          linkedTool: preview.linkedTool,
-          linkedGoodId: preview.linkedGoodId,
-          rarity: preview.rarity ?? "",
-          shopSubtype: preview.shopSubtype ?? "",
-          rawItemData: preview.sourceType === "custom" ? sanitizeRawItemData(preview.rawItemData) : null
-        });
-      }
-
-      traderState.updatedAt = Date.now();
-      state.order = [traderId, ...state.order.filter((entry) => entry !== traderId)];
+    const traderSnapshot = await this.getTraderSnapshot(cityId, traderKey, { actorId: actor.id });
+    await this.#recordTradeAudit({
+      type: "sale",
+      actorId: actor.id,
+      actorName: actor.name,
+      cityId,
+      cityName: traderSnapshot.cityName,
+      traderKey,
+      traderName: traderSnapshot.name,
+      itemId: itemDocument.id,
+      itemUuid: itemDocument.uuid,
+      itemName: preview.itemName,
+      sourceType: preview.sourceType,
+      sourceId: preview.sourceId,
+      quantity: sellQuantity,
+      totalCopper: netPayoutCopper,
+      grossOfferCopper,
+      taxCopper,
+      netPayoutCopper,
+      currencyBeforeCopper: actorFunds,
+      currencyAfterCopper: actorFunds + netPayoutCopper,
+      itemQuantityBefore: currentQuantity,
+      itemQuantityAfter: Math.max(0, currentQuantity - sellQuantity),
+      rawItemData: itemDataBeforeSale
     });
 
     return {

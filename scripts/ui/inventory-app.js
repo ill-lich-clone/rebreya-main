@@ -361,6 +361,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.focusRestore = null;
     this.renderListenersAbortController = null;
     this.actionFeedback = null;
+    this.canManage = false;
   }
 
   get id() {
@@ -712,6 +713,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             className: `rm-inline-status rm-inline-status--${this.actionFeedback.type}`
           }
         : null;
+      const canManage = Boolean(partySnapshot.canManage || inventorySnapshot.actor?.canEdit);
+      this.canManage = canManage;
 
       if (!availableActors.some((actor) => actor.id === this.selectedNewMemberId)) {
         this.selectedNewMemberId = "";
@@ -818,7 +821,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           isCalendar: this.activeTab === "calendar"
         },
         actionFeedback,
-        canManage: game.user?.isGM === true
+        canManage
       };
     }
     catch (error) {
@@ -1514,27 +1517,29 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           return;
         }
 
+        const actions = [{
+          label: "Открыть лист",
+          icon: "fa-solid fa-user",
+          callback: () => {
+            void this.#openPartyMemberSheet(actorId, actorName);
+          }
+        }];
+        if (this.canManage) {
+          actions.push({
+            label: "Удалить из группы",
+            icon: "fa-solid fa-user-minus",
+            danger: true,
+            callback: async () => {
+              await this.#removePartyMember(actorId, actorName, element);
+            }
+          });
+        }
+
         this.#openContextMenu({
           x: event.clientX,
           y: event.clientY,
           title: actorName,
-          actions: [
-            {
-              label: "Открыть лист",
-              icon: "fa-solid fa-user",
-              callback: () => {
-                void this.#openPartyMemberSheet(actorId, actorName);
-              }
-            },
-            {
-              label: "Удалить из группы",
-              icon: "fa-solid fa-user-minus",
-              danger: true,
-              callback: async () => {
-                await this.#removePartyMember(actorId, actorName, element);
-              }
-            }
-          ]
+          actions
         });
       }, listenerOptions);
     });

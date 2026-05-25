@@ -146,6 +146,27 @@ async function confirmDataRestore() {
   });
 }
 
+async function confirmTradeRollback(record) {
+  const itemName = foundry.utils.escapeHTML(String(record?.itemName ?? "операция"));
+  const actorName = foundry.utils.escapeHTML(String(record?.actorLabel ?? record?.actorName ?? "персонаж"));
+  if (typeof DialogV2?.confirm === "function") {
+    return DialogV2.confirm({
+      window: {
+        title: "Откатить торговую операцию"
+      },
+      content: `<p>Откатить «${itemName}» для ${actorName}?</p>`
+    });
+  }
+
+  return Dialog.confirm({
+    title: "Откатить торговую операцию",
+    content: `<p>Откатить «${itemName}» для ${actorName}?</p>`,
+    yes: () => true,
+    no: () => false,
+    defaultYes: false
+  });
+}
+
 export class EconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: `${MODULE_ID}-economy-app`,
@@ -198,6 +219,7 @@ export class EconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
       name: event.name || event.id,
       priority: Number(event?.stacking?.priority ?? event.priority ?? 100)
     }));
+    const tradeAuditLog = this.moduleApi.getTradeAuditLog?.() ?? [];
 
     return {
       hasError: false,
@@ -223,6 +245,10 @@ export class EconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
       activeEvents,
       hasActiveEvents: activeEvents.length > 0,
       canManageGlobalEvents: game.user?.isGM === true,
+      canManageTradeAudit: game.user?.isGM === true,
+      tradeAuditLog,
+      tradeAuditCount: tradeAuditLog.length,
+      hasTradeAuditLog: tradeAuditLog.length > 0,
       dataSource: model.source,
       debugMode: game.settings.get(MODULE_ID, "debugMode")
     };
@@ -314,6 +340,30 @@ export class EconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
     element.querySelectorAll("[data-action='open-inventory']").forEach((button) => {
       button.addEventListener("click", async () => {
         await this.moduleApi.openInventoryApp();
+      });
+    });
+
+    element.querySelectorAll("[data-action='rollback-trade-audit']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const auditId = String(event.currentTarget.dataset.auditId ?? "").trim();
+        if (!auditId) {
+          return;
+        }
+
+        const record = context.tradeAuditLog?.find?.((entry) => entry.id === auditId) ?? null;
+        const confirmed = await confirmTradeRollback(record);
+        if (!confirmed) {
+          return;
+        }
+
+        try {
+          const result = await this.moduleApi.rollbackTraderAuditEntry(auditId);
+          ui.notifications?.info(`Операция «${result.itemName}» откачена.`);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to rollback trade audit '${auditId}'.`, error);
+          ui.notifications?.error(error.message || "Не удалось откатить торговую операцию.");
+        }
       });
     });
 

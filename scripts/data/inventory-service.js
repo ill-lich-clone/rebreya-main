@@ -489,9 +489,27 @@ export class InventoryService {
     return nextState;
   }
 
+  canManagePartyInventory(actor = null) {
+    if (game.user?.isGM) {
+      return true;
+    }
+
+    const inventoryActor = actor ?? (() => {
+      const state = this.#getState();
+      return state.inventoryActorId ? game.actors.get(state.inventoryActorId) ?? null : null;
+    })();
+    return inventoryActor?.isOwner === true;
+  }
+
+  #assertCanManagePartyInventory(actor = null) {
+    if (!this.canManagePartyInventory(actor)) {
+      throw new Error("Партийным инвентарём управляют владельцы склада.");
+    }
+  }
+
   async #writeState(mutator) {
-    if (!game.user?.isGM) {
-      throw new Error("Партийные настройки может менять только ГМ.");
+    if (!this.canManagePartyInventory()) {
+      throw new Error("Партийным инвентарём управляют владельцы склада.");
     }
 
     const state = this.#getState();
@@ -770,7 +788,7 @@ export class InventoryService {
       type: "npc",
       img: DEFAULT_PARTY_ACTOR_IMAGE,
       ownership: {
-        default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
+        default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER
       },
       flags: {
         [MODULE_ID]: {
@@ -1100,7 +1118,7 @@ export class InventoryService {
       waterGal,
       foodDaysLeft: totalFoodPerDay > 0 ? roundNumber(foodLb / totalFoodPerDay, 1) : null,
       waterDaysLeft: totalWaterGalPerDay > 0 ? roundNumber(waterGal / totalWaterGalPerDay, 1) : null,
-      canManage: game.user?.isGM === true
+      canManage: this.canManagePartyInventory(inventoryActor)
     };
   }
 
@@ -1176,6 +1194,7 @@ export class InventoryService {
 
   async updateItemQuantity(itemId, nextQuantity) {
     const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
     const item = actor?.items.get(itemId) ?? null;
     if (!item) {
       throw new Error("Предмет не найден в партийном инвентаре.");
@@ -1196,6 +1215,7 @@ export class InventoryService {
 
   async deleteItem(itemId) {
     const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
     const item = actor?.items.get(itemId) ?? null;
     if (!item) {
       throw new Error("Предмет не найден в партийном инвентаре.");
@@ -1206,13 +1226,10 @@ export class InventoryService {
   }
 
   async addSupply(resourceKey, quantity) {
-    if (!game.user?.isGM) {
-      throw new Error("Запасы может менять только ГМ.");
-    }
-
     const normalizedKey = resourceKey === "water" ? "water" : "food";
     const safeQuantity = Math.max(0, roundNumber(toNumber(quantity, 0), 2));
     const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
     const item = await this.#ensureSupplyItem(actor, normalizedKey);
     if (!item) {
       throw new Error("Не удалось подготовить предмет запасов.");
@@ -1229,11 +1246,8 @@ export class InventoryService {
   }
 
   async updateCurrency(values = {}) {
-    if (!game.user?.isGM) {
-      throw new Error("Монеты может менять только ГМ.");
-    }
-
     const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
@@ -1250,11 +1264,8 @@ export class InventoryService {
   }
 
   async convertCurrency(mode = "normalized") {
-    if (!game.user?.isGM) {
-      throw new Error("Конвертировать монеты может только ГМ.");
-    }
-
     const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
@@ -1269,11 +1280,8 @@ export class InventoryService {
   }
 
   async addModelItemToInventory(sourceType, sourceId, quantity = 1) {
-    if (!game.user?.isGM) {
-      throw new Error("Добавлять предметы в партийный склад может только ГМ.");
-    }
-
     const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
@@ -1284,11 +1292,8 @@ export class InventoryService {
   }
 
   async breakItemToMaterial(itemId, quantity = 1) {
-    if (!game.user?.isGM) {
-      throw new Error("Разбирать предметы может только ГМ.");
-    }
-
     const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
     const item = actor?.items.get(itemId) ?? null;
     if (!item) {
       throw new Error("Предмет не найден в партийном инвентаре.");
@@ -1457,15 +1462,12 @@ export class InventoryService {
   }
 
   async restoreMemberEnergy(actorId, days = 1) {
-    if (!game.user?.isGM) {
-      throw new Error("Восстанавливать энергию может только ГМ.");
-    }
-
     if (!actorId) {
       throw new Error("Не выбран участник группы.");
     }
 
     const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
@@ -1531,11 +1533,8 @@ export class InventoryService {
   }
 
   async consumeSuppliesOneDay({ applyEnergy = true } = {}) {
-    if (!game.user?.isGM) {
-      throw new Error("Списание дневных запасов доступно только ГМу.");
-    }
-
     const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
@@ -1649,6 +1648,7 @@ export class InventoryService {
 
   async importDroppedItem(dropData) {
     const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }

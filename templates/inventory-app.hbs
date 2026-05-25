@@ -15,14 +15,16 @@
           <i class="fa-solid fa-up-right-from-square"></i>
           <span>Лист склада</span>
         </button>
-        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="add-food" title="Добавить еду">
-          <i class="fa-solid fa-bread-slice"></i>
-          <span>Еда</span>
-        </button>
-        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="add-water" title="Добавить воду">
-          <i class="fa-solid fa-droplet"></i>
-          <span>Вода</span>
-        </button>
+        {{#if canManage}}
+          <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="add-food" title="Добавить еду">
+            <i class="fa-solid fa-bread-slice"></i>
+            <span>Еда</span>
+          </button>
+          <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="add-water" title="Добавить воду">
+            <i class="fa-solid fa-droplet"></i>
+            <span>Вода</span>
+          </button>
+        {{/if}}
       </div>
     </header>
 
@@ -100,22 +102,41 @@
           data-currency-sp="{{summary.currency.sp}}"
           data-currency-cp="{{summary.currency.cp}}"
         >
-          <button type="button" class="rm-coin-badge rm-coin-badge--pp" data-action="edit-currency" title="Редактировать монеты">
-            <strong>{{rmNum summary.currency.pp precision=0}}</strong>
-            <span>ПМ</span>
-          </button>
-          <button type="button" class="rm-coin-badge rm-coin-badge--gp" data-action="edit-currency" title="Редактировать монеты">
-            <strong>{{rmNum summary.currency.gp precision=0}}</strong>
-            <span>ЗМ</span>
-          </button>
-          <button type="button" class="rm-coin-badge rm-coin-badge--sp" data-action="edit-currency" title="Редактировать монеты">
-            <strong>{{rmNum summary.currency.sp precision=0}}</strong>
-            <span>СМ</span>
-          </button>
-          <button type="button" class="rm-coin-badge rm-coin-badge--cp" data-action="edit-currency" title="Редактировать монеты">
-            <strong>{{rmNum summary.currency.cp precision=0}}</strong>
-            <span>ММ</span>
-          </button>
+          {{#if canManage}}
+            <button type="button" class="rm-coin-badge rm-coin-badge--pp" data-action="edit-currency" title="Редактировать монеты">
+              <strong>{{rmNum summary.currency.pp precision=0}}</strong>
+              <span>ПМ</span>
+            </button>
+            <button type="button" class="rm-coin-badge rm-coin-badge--gp" data-action="edit-currency" title="Редактировать монеты">
+              <strong>{{rmNum summary.currency.gp precision=0}}</strong>
+              <span>ЗМ</span>
+            </button>
+            <button type="button" class="rm-coin-badge rm-coin-badge--sp" data-action="edit-currency" title="Редактировать монеты">
+              <strong>{{rmNum summary.currency.sp precision=0}}</strong>
+              <span>СМ</span>
+            </button>
+            <button type="button" class="rm-coin-badge rm-coin-badge--cp" data-action="edit-currency" title="Редактировать монеты">
+              <strong>{{rmNum summary.currency.cp precision=0}}</strong>
+              <span>ММ</span>
+            </button>
+          {{else}}
+            <span class="rm-coin-badge rm-coin-badge--pp">
+              <strong>{{rmNum summary.currency.pp precision=0}}</strong>
+              <span>ПМ</span>
+            </span>
+            <span class="rm-coin-badge rm-coin-badge--gp">
+              <strong>{{rmNum summary.currency.gp precision=0}}</strong>
+              <span>ЗМ</span>
+            </span>
+            <span class="rm-coin-badge rm-coin-badge--sp">
+              <strong>{{rmNum summary.currency.sp precision=0}}</strong>
+              <span>СМ</span>
+            </span>
+            <span class="rm-coin-badge rm-coin-badge--cp">
+              <strong>{{rmNum summary.currency.cp precision=0}}</strong>
+              <span>ММ</span>
+            </span>
+          {{/if}}
         </section>
 
         <section class="rm-compact-toolbar">
@@ -131,10 +152,12 @@
           </div>
         </section>
 
-        <div class="rm-compact-dropzone" data-action="inventory-dropzone">
-          <i class="fa-solid fa-box-open"></i>
-          <span>Перетащите сюда предмет из листа или компендия</span>
-        </div>
+        {{#if canManage}}
+          <div class="rm-compact-dropzone" data-action="inventory-dropzone">
+            <i class="fa-solid fa-box-open"></i>
+            <span>Перетащите сюда предмет из листа или компендия</span>
+          </div>
+        {{/if}}
 
         {{#if emptyInventory}}
           <p class="rm-empty">По текущему фильтру склад пуст.</p>
@@ -196,20 +219,22 @@
                         <span>Лист предмета</span>
                       </button>
 
-                      <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="edit-item-quantity" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
-                        <i class="fa-solid fa-pen"></i>
-                        <span>Изменить количество</span>
-                      </button>
+                      {{#if ../canManage}}
+                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="edit-item-quantity" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
+                          <i class="fa-solid fa-pen"></i>
+                          <span>Изменить количество</span>
+                        </button>
 
-                      <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="break-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
-                        <i class="fa-solid fa-hammer"></i>
-                        <span>Разобрать</span>
-                      </button>
+                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="break-item" data-item-id="{{itemId}}" data-item-name="{{name}}" data-quantity="{{quantity}}">
+                          <i class="fa-solid fa-hammer"></i>
+                          <span>Разобрать</span>
+                        </button>
 
-                      <button type="button" class="rm-button rm-button--small rm-button--danger" data-action="delete-item" data-item-id="{{itemId}}" data-item-name="{{name}}">
-                        <i class="fa-solid fa-trash"></i>
-                        <span>Удалить</span>
-                      </button>
+                        <button type="button" class="rm-button rm-button--small rm-button--danger" data-action="delete-item" data-item-id="{{itemId}}" data-item-name="{{name}}">
+                          <i class="fa-solid fa-trash"></i>
+                          <span>Удалить</span>
+                        </button>
+                      {{/if}}
                     </div>
                   </details>
                 </div>
@@ -235,48 +260,50 @@
           </div>
         {{/if}}
 
-        <section class="rm-party-toolbar rm-party-toolbar--compact" data-action="party-dropzone">
-          <div class="rm-field">
-            <input
-              type="text"
-              value="{{party.addMemberQuery}}"
-              placeholder="{{#if party.addMemberDisabled}}Нет доступных актёров{{else}}Введите имя участника{{/if}}"
-              autocomplete="off"
-              list="{{appDomId}}-party-member-list"
-              data-action="add-member-query"
-              {{#if party.addMemberDisabled}}disabled{{/if}}
-            >
-            <datalist id="{{appDomId}}-party-member-list">
-              {{#each party.availableActors}}
-                <option value="{{name}}"></option>
-              {{/each}}
-            </datalist>
-            <small class="rm-muted">Введите имя или перетащите лист персонажа в эту область.</small>
-          </div>
+        {{#if canManage}}
+          <section class="rm-party-toolbar rm-party-toolbar--compact" data-action="party-dropzone">
+            <div class="rm-field">
+              <input
+                type="text"
+                value="{{party.addMemberQuery}}"
+                placeholder="{{#if party.addMemberDisabled}}Нет доступных актёров{{else}}Введите имя участника{{/if}}"
+                autocomplete="off"
+                list="{{appDomId}}-party-member-list"
+                data-action="add-member-query"
+                {{#if party.addMemberDisabled}}disabled{{/if}}
+              >
+              <datalist id="{{appDomId}}-party-member-list">
+                {{#each party.availableActors}}
+                  <option value="{{name}}"></option>
+                {{/each}}
+              </datalist>
+              <small class="rm-muted">Введите имя или перетащите лист персонажа в эту область.</small>
+            </div>
 
-          <div class="rm-party-toolbar__actions">
-            <button
-              type="button"
-              class="rm-button rm-button--small rm-button--primary"
-              data-action="add-member"
-              title="{{#if party.addMemberDisabled}}{{party.addMemberDisabledReason}}{{else}}Добавить участника в группу{{/if}}"
-              {{#if party.addMemberDisabled}}disabled{{/if}}
-            >
-              <i class="fa-solid fa-user-plus"></i>
-              <span>Добавить участника</span>
-            </button>
-            <button
-              type="button"
-              class="rm-button rm-button--small rm-button--secondary"
-              data-action="consume-day"
-              title="{{#if party.consumeDayDisabled}}{{party.consumeDayDisabledReason}}{{else}}Списать день (запасы, энергия, крафт){{/if}}"
-              {{#if party.consumeDayDisabled}}disabled{{/if}}
-            >
-              <i class="fa-solid fa-hourglass-half"></i>
-              <span>Списать день</span>
-            </button>
-          </div>
-        </section>
+            <div class="rm-party-toolbar__actions">
+              <button
+                type="button"
+                class="rm-button rm-button--small rm-button--primary"
+                data-action="add-member"
+                title="{{#if party.addMemberDisabled}}{{party.addMemberDisabledReason}}{{else}}Добавить участника в группу{{/if}}"
+                {{#if party.addMemberDisabled}}disabled{{/if}}
+              >
+                <i class="fa-solid fa-user-plus"></i>
+                <span>Добавить участника</span>
+              </button>
+              <button
+                type="button"
+                class="rm-button rm-button--small rm-button--secondary"
+                data-action="consume-day"
+                title="{{#if party.consumeDayDisabled}}{{party.consumeDayDisabledReason}}{{else}}Списать день (запасы, энергия, крафт){{/if}}"
+                {{#if party.consumeDayDisabled}}disabled{{/if}}
+              >
+                <i class="fa-solid fa-hourglass-half"></i>
+                <span>Списать день</span>
+              </button>
+            </div>
+          </section>
+        {{/if}}
 
         {{#if party.emptyMembers}}
           <p class="rm-empty">Группа пока не собрана.</p>
@@ -307,7 +334,7 @@
                   <div class="rm-party-row__controls rm-party-row__controls--basic">
                     <div class="rm-field">
                       <label>Роль</label>
-                      <select data-action="party-field" data-actor-id="{{actorId}}" data-field="role">
+                      <select data-action="party-field" data-actor-id="{{actorId}}" data-field="role" {{#unless ../canManage}}disabled{{/unless}}>
                         {{#each roleOptions}}
                           <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                         {{/each}}
@@ -316,17 +343,17 @@
 
                     <div class="rm-field">
                       <label>Еда / день</label>
-                      <input type="number" min="0" step="0.01" value="{{foodPerDay}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="foodPerDay">
+                      <input type="number" min="0" step="0.01" value="{{foodPerDay}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="foodPerDay" {{#unless ../canManage}}disabled{{/unless}}>
                     </div>
 
                     <div class="rm-field">
                       <label>Вода / день</label>
-                      <input type="number" min="0" step="0.01" value="{{waterGalPerDay}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="waterGalPerDay">
+                      <input type="number" min="0" step="0.01" value="{{waterGalPerDay}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="waterGalPerDay" {{#unless ../canManage}}disabled{{/unless}}>
                     </div>
 
                     <div class="rm-field">
                       <label>Энергия</label>
-                      <input type="number" min="0" max="{{energyMax}}" step="1" value="{{energyCurrent}}" data-action="party-energy-current" data-actor-id="{{actorId}}">
+                      <input type="number" min="0" max="{{energyMax}}" step="1" value="{{energyCurrent}}" data-action="party-energy-current" data-actor-id="{{actorId}}" {{#unless ../canManage}}disabled{{/unless}}>
                     </div>
                   </div>
 
@@ -336,22 +363,22 @@
                     <div class="rm-party-row__controls rm-party-row__controls--advanced">
                       <div class="rm-field">
                       <label>СИЛ override</label>
-                      <input type="number" min="0" step="1" value="{{strOverride}}" placeholder="Лист" data-action="party-field" data-actor-id="{{actorId}}" data-field="strOverride">
+                       <input type="number" min="0" step="1" value="{{strOverride}}" placeholder="Лист" data-action="party-field" data-actor-id="{{actorId}}" data-field="strOverride" {{#unless ../canManage}}disabled{{/unless}}>
                     </div>
 
                     <div class="rm-field">
                       <label>Мод. груза</label>
-                      <input type="number" min="1" step="0.01" value="{{capModOverride}}" placeholder="{{../party.defaultCapMod}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="capModOverride">
+                       <input type="number" min="1" step="0.01" value="{{capModOverride}}" placeholder="{{../party.defaultCapMod}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="capModOverride" {{#unless ../canManage}}disabled{{/unless}}>
                     </div>
 
                     <div class="rm-field">
                       <label>Бонус груза</label>
-                      <input type="number" min="0" step="0.01" value="{{capBonusLb}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="capBonusLb">
+                       <input type="number" min="0" step="0.01" value="{{capBonusLb}}" data-action="party-field" data-actor-id="{{actorId}}" data-field="capBonusLb" {{#unless ../canManage}}disabled{{/unless}}>
                     </div>
 
                     <div class="rm-field">
                       <label>CON override</label>
-                      <input type="number" step="1" value="{{conModOverride}}" placeholder="Лист" data-action="party-field" data-actor-id="{{actorId}}" data-field="conModOverride">
+                       <input type="number" step="1" value="{{conModOverride}}" placeholder="Лист" data-action="party-field" data-actor-id="{{actorId}}" data-field="conModOverride" {{#unless ../canManage}}disabled{{/unless}}>
                     </div>
                     </div>
 
@@ -361,9 +388,9 @@
                         {{#each tools}}
                           <div class="rm-party-tool-row">
                             <span>{{label}}</span>
-                            <label><input type="checkbox" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="owned" {{#if owned}}checked{{/if}}> есть</label>
-                            <label><input type="checkbox" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="prof" {{#if prof}}checked{{/if}}> проф</label>
-                            <input type="number" step="0.01" value="{{mod}}" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="mod" title="Модификатор">
+                            <label><input type="checkbox" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="owned" {{#if owned}}checked{{/if}} {{#unless ../../canManage}}disabled{{/unless}}> есть</label>
+                            <label><input type="checkbox" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="prof" {{#if prof}}checked{{/if}} {{#unless ../../canManage}}disabled{{/unless}}> проф</label>
+                            <input type="number" step="0.01" value="{{mod}}" data-action="party-tool-field" data-actor-id="{{../actorId}}" data-tool-id="{{toolId}}" data-field="mod" title="Модификатор" {{#unless ../../canManage}}disabled{{/unless}}>
                           </div>
                         {{/each}}
                       </div>
@@ -373,7 +400,9 @@
                   <div class="rm-party-row__footer">
                     <div class="rm-inline-actions">
                       <span class="rm-muted">Источник силы: {{strengthSource}} • CON: {{conMod}} ({{conModSource}})</span>
-                      <button type="button" class="rm-button rm-button--small rm-button--ghost" data-action="party-restore-energy" data-actor-id="{{actorId}}" data-actor-name="{{actorName}}">Восстановить энергию</button>
+                      {{#if ../canManage}}
+                        <button type="button" class="rm-button rm-button--small rm-button--ghost" data-action="party-restore-energy" data-actor-id="{{actorId}}" data-actor-name="{{actorName}}">Восстановить энергию</button>
+                      {{/if}}
                     </div>
                   </div>
                 </div>
@@ -415,6 +444,7 @@
               data-action="craft-process-day"
               title="{{#if craft.processDayDisabled}}{{craft.processDayDisabledReason}}{{else}}Продвинуть крафт на 1 день{{/if}}"
               {{#if craft.processDayDisabled}}disabled{{/if}}
+              {{#unless canManage}}disabled{{/unless}}
             >
               Продвинуть крафт на 1 день
             </button>
@@ -439,6 +469,7 @@
                     data-gear-name="{{name}}"
                     title="{{#if ../craft.queueDisabledReason}}{{../craft.queueDisabledReason}}{{else}}Поставить в очередь крафта{{/if}}"
                     {{#unless ../craft.hasCrafters}}disabled{{/unless}}
+                    {{#unless ../canManage}}disabled{{/unless}}
                   >
                     Крафт
                   </button>
@@ -461,9 +492,11 @@
                       </div>
                       <p class="rm-muted">{{percent}}% • осталось {{rmNum remaining}} зм • {{rmNum daysLeft precision=0}} дн.</p>
                     </div>
-                    <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="craft-cancel" data-task-id="{{id}}" data-task-name="{{gearName}}" title="Отменить крафт">
-                      <i class="fa-solid fa-ban"></i>
-                    </button>
+                    {{#if ../canManage}}
+                      <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="craft-cancel" data-task-id="{{id}}" data-task-name="{{gearName}}" title="Отменить крафт">
+                        <i class="fa-solid fa-ban"></i>
+                      </button>
+                    {{/if}}
                   </article>
                 {{/each}}
               </div>

@@ -151,6 +151,43 @@
     </div>
 
     <aside class="rm-side-stack">
+      {{#if canManageTradeAudit}}
+        <section class="rm-panel">
+          <div class="rm-panel__header">
+            <h3>Последние торговые операции</h3>
+            <span class="rm-muted">{{rmNum tradeAuditCount precision=0}} / 20</span>
+          </div>
+          {{#if hasTradeAuditLog}}
+            <div class="rm-trade-audit-list">
+              {{#each tradeAuditLog}}
+                <article class="rm-trade-audit-row {{#if rolledBack}}is-rolled-back{{/if}}">
+                  <div class="rm-trade-audit-row__main">
+                    <strong>{{typeLabel}}: {{itemName}}</strong>
+                    <span class="rm-muted">{{timestampLabel}} • {{actorLabel}} • {{userLabel}}</span>
+                    <span class="rm-muted">{{quantityLabel}} • {{amountLabel}}{{#if traderLabel}} • {{traderLabel}}{{/if}}</span>
+                  </div>
+                  <div class="rm-trade-audit-row__actions">
+                    <span class="rm-badge">{{statusLabel}}</span>
+                    <button
+                      type="button"
+                      class="rm-icon-button"
+                      data-action="rollback-trade-audit"
+                      data-audit-id="{{id}}"
+                      title="{{rollbackTitle}}"
+                      {{#if rollbackDisabled}}disabled{{/if}}
+                    >
+                      <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                  </div>
+                </article>
+              {{/each}}
+            </div>
+          {{else}}
+            <p class="rm-empty">Торговых операций пока нет.</p>
+          {{/if}}
+        </section>
+      {{/if}}
+
       <section class="rm-panel">
         <div class="rm-panel__header">
           <h3>Инструменты мира</h3>

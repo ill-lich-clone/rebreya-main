@@ -1728,6 +1728,41 @@ summary:focus-visible {
   font-size: 13px;
 }
 
+.rm-trade-audit-list {
+  display: grid;
+  gap: 8px;
+}
+
+.rm-trade-audit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(214, 182, 126, 0.12);
+}
+
+.rm-trade-audit-row.is-rolled-back {
+  opacity: 0.68;
+}
+
+.rm-trade-audit-row__main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rm-trade-audit-row__main strong,
+.rm-trade-audit-row__main span {
+  overflow-wrap: anywhere;
+}
+
+.rm-trade-audit-row__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .rm-good-list {
   list-style: none;
   padding: 0;
