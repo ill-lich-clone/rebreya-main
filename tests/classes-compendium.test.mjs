@@ -272,7 +272,8 @@ test("fighter class advancement grants every non-special base feature", () => {
 
 test("fighter maneuvers consume the shared dominance dice item by identifier", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
-  const maneuver = buildFeatureDefinitions(fighter).find((definition) => definition.sourceType === "fighterManeuver");
+  const maneuver = buildFeatureDefinitions(fighter)
+    .find((definition) => definition.sourceType === "fighterManeuver" && definition.name === "Ответный удар");
   const entry = createFeatureEntryData(maneuver, new Map());
   const activity = Object.values(entry.system.activities)[0];
 
@@ -290,6 +291,9 @@ test("fighter maneuvers consume the shared dominance dice item by identifier", (
       formula: ""
     }
   }]);
+  assert.equal(activity.target.affects.type, "creature");
+  assert.equal(activity.target.prompt, true);
+  assert.equal(activity.range.units, "");
   assert.match(activity.description.chatFlavor, /@scale\.fighter-rework-v028\.dominance-die/u);
 });
 
@@ -312,6 +316,11 @@ test("all fighter maneuvers have an activity that spends dominance dice", () => 
         formula: ""
       }
     }]);
+    const fighterAutomation = activities[0].flags["rebreya-main"].fighterAutomation;
+    if (fighterAutomation.extraDamage || fighterAutomation.status) {
+      assert.equal(activities[0].target.affects.type, "creature", `${maneuver.name} не должен целиться в себя`);
+      assert.equal(activities[0].target.prompt, true, `${maneuver.name} должен брать выбранную цель`);
+    }
     assert.match(activities[0].description.chatFlavor, /@scale\.fighter-rework-v028\.dominance-die/u);
   }
 });

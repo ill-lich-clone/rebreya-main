@@ -1360,6 +1360,7 @@ function createDominanceManeuverAutomation(feature, classIdentifier) {
   const activityId = stableHashId(`${classIdentifier}:${feature.featureId}:dominance-maneuver`, "activity");
   const description = cleanString(feature.description, feature.name);
   const fighterAutomation = getFighterManeuverAutomation(feature.name, classIdentifier);
+  const targetsCreature = Boolean(fighterAutomation.extraDamage || fighterAutomation.status);
   const activationType = /триггер|реакци|⚡/iu.test(description)
     ? "reaction"
     : /бонусным действием/iu.test(description)
@@ -1417,7 +1418,7 @@ function createDominanceManeuverAutomation(feature, classIdentifier) {
         },
         range: {
           value: null,
-          units: "self",
+          units: targetsCreature ? "" : "self",
           special: "",
           override: false
         },
@@ -1433,11 +1434,11 @@ function createDominanceManeuverAutomation(feature, classIdentifier) {
           },
           affects: {
             count: "",
-            type: "self",
+            type: targetsCreature ? "creature" : "self",
             choice: false,
             special: ""
           },
-          prompt: false,
+          prompt: targetsCreature,
           override: false
         },
         uses: {

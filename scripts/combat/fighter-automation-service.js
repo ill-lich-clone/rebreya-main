@@ -3,6 +3,7 @@ import { CLASS_FEATURES_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 const EFFECT_MODE_OVERRIDE = 5;
 const LAST_ATTACK_MAX_AGE_MS = 120000;
 const BLOODIED_STATUS_IDS = new Set(["bloodied", "rebreya-bloodied"]);
+const FIGHTER_DOMINANCE_FEATURE_ID = "fighter-dominance";
 const SECOND_WIND_USES_RECOVERY = Object.freeze([{
   period: "lr",
   type: "recoverAll",
@@ -75,6 +76,26 @@ function collectionValues(collection) {
 
   if (typeof collection.values === "function") {
     return Array.from(collection.values());
+  }
+
+  return [];
+}
+
+function collectionEntries(collection) {
+  if (!collection) {
+    return [];
+  }
+
+  if (Array.isArray(collection)) {
+    return collection.map((value, index) => [String(value?._id ?? value?.id ?? index), value]);
+  }
+
+  if (typeof collection.entries === "function") {
+    return Array.from(collection.entries());
+  }
+
+  if (typeof collection === "object") {
+    return Object.entries(collection);
   }
 
   return [];
@@ -156,6 +177,11 @@ function isFighterManeuverItem(item) {
   return readDocumentFlag(item, "automation")?.type === "fighterManeuver";
 }
 
+function isFighterManeuverActivityDocument(document) {
+  return cleanText(readDocumentFlag(document, "automation")) === "fighter-dominance-maneuver"
+    || readDocumentFlag(document, "fighterAutomation")?.kind === "maneuver";
+}
+
 function effectStatuses(effect) {
   const statuses = effect?.statuses;
   if (statuses instanceof Set) {
@@ -234,6 +260,10 @@ export class FighterAutomationService {
       return true;
     }
 
+    if (this.#isFighterManeuverWorkflow(workflow)) {
+      return true;
+    }
+
     const targets = targetActorsFromWorkflow(workflow);
     if (!targets.length) {
       return true;
@@ -266,7 +296,7 @@ export class FighterAutomationService {
     }
 
     if (automation === "fighter-dominance-maneuver" || fighterAutomation?.kind === "maneuver") {
-      await this.#applyManeuver(actor, activity, fighterAutomation);
+      await this.#applyManeuver(actor, activity, fighterAutomation, results);
     }
 
     return true;
@@ -377,9 +407,13 @@ export class FighterAutomationService {
     return true;
   }
 
-  async #applyManeuver(actor, activity, fighterAutomation = {}) {
+  async #applyManeuver(actor, activity, fighterAutomation = {}, results = {}) {
+    if ((await this.#consumeDominanceDieIfNeeded(actor, activity, results)) === false) {
+      return false;
+    }
+
     const lastAttack = this.#lastAttack(actor);
-    const target = this.#resolveManeuverTarget(lastAttack);
+    const target = this.#resolveManeuverTarget(lastAttack, actor);
     const item = activity?.item;
 
     if (target && fighterAutomation?.extraDamage?.formula) {
@@ -390,12 +424,17 @@ export class FighterAutomationService {
       });
     }
 
-    if (target && fighterAutomation?.saveAbility && this.#hasIronWillNextSave(actor)) {
-      await this.#applySaveDisadvantageEffect(target, fighterAutomation.saveAbility, actor);
-      await this.#consumeIronWillNextSave(actor);
+    let saveSucceeded = false;
+    if (target && fighterAutomation?.saveAbility) {
+      if (this.#hasIronWillNextSave(actor)) {
+        await this.#applySaveDisadvantageEffect(target, fighterAutomation.saveAbility, actor);
+        await this.#consumeIronWillNextSave(actor);
+      }
+
+      saveSucceeded = await this.#rollManeuverSave(target, fighterAutomation.saveAbility, actor, item ?? activity) === true;
     }
 
-    if (target && fighterAutomation?.status?.id) {
+    if (target && fighterAutomation?.status?.id && !saveSucceeded) {
       await this.#setStatus(target, fighterAutomation.status, actor);
     }
 
@@ -416,15 +455,117 @@ export class FighterAutomationService {
     return entry;
   }
 
-  #resolveManeuverTarget(lastAttack) {
-    const storedTarget = lastAttack?.targets?.find((target) => target instanceof Actor);
+  #resolveManeuverTarget(lastAttack, sourceActor = null) {
+    const selectedTarget = collectionValues(game.user?.targets)
+      .map(resolveActorFromTarget)
+      .find((actor) => actor instanceof Actor && actor !== sourceActor) ?? null;
+    if (selectedTarget) {
+      return selectedTarget;
+    }
+
+    const storedTarget = lastAttack?.targets?.find((target) => target instanceof Actor && target !== sourceActor);
     if (storedTarget) {
       return storedTarget;
     }
 
-    return collectionValues(game.user?.targets)
-      .map(resolveActorFromTarget)
-      .find((actor) => actor instanceof Actor) ?? null;
+    return null;
+  }
+
+  #isFighterManeuverWorkflow(workflow) {
+    return isFighterManeuverActivityDocument(workflow?.activity)
+      || isFighterManeuverActivityDocument(workflow?.item)
+      || isFighterManeuverItem(workflow?.item);
+  }
+
+  async #consumeDominanceDieIfNeeded(actor, activity, results = {}) {
+    if (!isFighterManeuverActivityDocument(activity)) {
+      return true;
+    }
+
+    const dominanceItem = this.#findDominanceItem(actor);
+    if (!dominanceItem) {
+      return true;
+    }
+
+    if (this.#didNativeConsumeItemUse(results, dominanceItem)) {
+      return true;
+    }
+
+    const maxUses = await this.#resolveUsesMax(dominanceItem.system?.uses?.max, actor);
+    if (maxUses <= 0) {
+      return true;
+    }
+
+    const spent = Math.max(0, Math.floor(toNumber(dominanceItem.system?.uses?.spent, 0)));
+    if (spent >= maxUses) {
+      globalThis.ui?.notifications?.warn("Стиль доминирования: не осталось костей доминирования.");
+      return false;
+    }
+
+    if (typeof dominanceItem.update === "function") {
+      await dominanceItem.update({ "system.uses.spent": spent + 1 });
+    }
+    else {
+      foundry.utils.setProperty(dominanceItem, "system.uses.spent", spent + 1);
+    }
+    return true;
+  }
+
+  #didNativeConsumeItemUse(results, item) {
+    const itemId = cleanText(item?.id ?? item?._id);
+    if (!itemId) {
+      return false;
+    }
+
+    return collectionValues(results?.updates?.item).some((update) => (
+      cleanText(update?._id ?? update?.id) === itemId
+      && update !== null
+      && typeof update === "object"
+      && Object.hasOwn(update, "system.uses.spent")
+    ));
+  }
+
+  #findDominanceItem(actor) {
+    return collectionValues(actor?.items).find((item) => {
+      if (featureIdMatches(item, FIGHTER_DOMINANCE_FEATURE_ID)) {
+        return true;
+      }
+
+      const identifier = cleanText(item?.system?.identifier);
+      if (identifier === FIGHTER_DOMINANCE_FEATURE_ID || identifier.endsWith(`-${FIGHTER_DOMINANCE_FEATURE_ID}`)) {
+        return true;
+      }
+
+      return normalizeText(item?.name) === "стиль доминирования";
+    }) ?? null;
+  }
+
+  #fighterManeuverSaveDc(actor) {
+    const proficiency = toNumber(getProperty(actor, "system.attributes.prof", 2), 2);
+    const strength = toNumber(getProperty(actor, "system.abilities.str.mod", 0), 0);
+    const dexterity = toNumber(getProperty(actor, "system.abilities.dex.mod", 0), 0);
+    return 8 + proficiency + Math.max(strength, dexterity);
+  }
+
+  async #rollManeuverSave(target, ability, sourceActor, sourceDocument) {
+    if (typeof target?.rollSavingThrow !== "function") {
+      return null;
+    }
+
+    const abilityKey = cleanText(ability, "wis").toLowerCase();
+    const dc = this.#fighterManeuverSaveDc(sourceActor);
+    const rolls = await target.rollSavingThrow({
+      ability: abilityKey,
+      target: dc
+    }, {}, {
+      data: {
+        speaker: speakerForActor(target),
+        flavor: `${cleanText(sourceDocument?.name, "Воинский приём")}: спасбросок ${abilityKey.toUpperCase()} Сл ${dc}`
+      }
+    });
+    const roll = Array.isArray(rolls) ? rolls[0] : rolls;
+    const total = Number(roll?.total);
+    return Number.isFinite(total) ? total >= dc : null;
   }
 
   #isLongRest(result = {}, config = {}) {
@@ -619,6 +760,7 @@ export class FighterAutomationService {
   }
 
   async #repairManeuverSections(actor) {
+    const dominanceItem = this.#findDominanceItem(actor);
     for (const item of collectionValues(actor?.items)) {
       if (!isFighterManeuverItem(item)) {
         continue;
@@ -640,6 +782,7 @@ export class FighterAutomationService {
       if (Object.hasOwn(getProperty(item, "flags.teyvankal", {}), "subsection") === false) {
         patch["flags.teyvankal.subsection"] = null;
       }
+      this.#appendManeuverActivityRepairPatch(item, dominanceItem, patch);
 
       if (!Object.keys(patch).length) {
         continue;
@@ -652,6 +795,40 @@ export class FighterAutomationService {
         for (const [path, value] of Object.entries(patch)) {
           foundry.utils.setProperty(item, path, value);
         }
+      }
+    }
+  }
+
+  #appendManeuverActivityRepairPatch(item, dominanceItem, patch) {
+    const dominanceItemId = cleanText(dominanceItem?.id ?? dominanceItem?._id);
+    for (const [activityId, activity] of collectionEntries(item?.system?.activities)) {
+      if (!isFighterManeuverActivityDocument(activity)) {
+        continue;
+      }
+
+      for (const [index, target] of collectionEntries(activity?.consumption?.targets)) {
+        if (target?.type !== "itemUses" || !dominanceItemId) {
+          continue;
+        }
+
+        if (cleanText(target.target) === FIGHTER_DOMINANCE_FEATURE_ID || cleanText(target.target) === "") {
+          patch[`system.activities.${activityId}.consumption.targets.${index}.target`] = dominanceItemId;
+        }
+      }
+
+      const fighterAutomation = readDocumentFlag(activity, "fighterAutomation") ?? {};
+      if (!fighterAutomation.extraDamage && !fighterAutomation.status) {
+        continue;
+      }
+
+      if (getProperty(activity, "target.affects.type") === "self") {
+        patch[`system.activities.${activityId}.target.affects.type`] = "creature";
+      }
+      if (getProperty(activity, "target.prompt") !== true) {
+        patch[`system.activities.${activityId}.target.prompt`] = true;
+      }
+      if (getProperty(activity, "range.units") === "self") {
+        patch[`system.activities.${activityId}.range.units`] = "";
       }
     }
   }

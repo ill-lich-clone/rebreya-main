@@ -184,6 +184,43 @@ function makeActivity({ actor, item, automation, fighterAutomation } = {}) {
   };
 }
 
+function makeDominanceActivity({ target = "fighter-dominance", fighterAutomation = null } = {}) {
+  return {
+    _id: "dominance-activity",
+    type: "utility",
+    consumption: {
+      targets: [{
+        type: "itemUses",
+        target,
+        value: "1",
+        scaling: {
+          mode: "",
+          formula: ""
+        }
+      }]
+    },
+    flags: {
+      "rebreya-main": {
+        automation: "fighter-dominance-maneuver",
+        fighterAutomation
+      }
+    },
+    range: {
+      value: null,
+      units: "self"
+    },
+    target: {
+      affects: {
+        type: "self"
+      },
+      prompt: false
+    },
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  };
+}
+
 function fixedRoll(total) {
   return {
     total,
@@ -250,6 +287,194 @@ test("fighter maneuver runtime adds dominance damage to the last MIDI hit target
     durationRounds: 1,
     sourceActor: source
   }]);
+});
+
+test("fighter maneuver runtime ignores the maneuver self-target workflow and uses the selected creature target", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const source = new TestActor({ id: "fighter", name: "Воин" });
+  const target = new TestActor({ id: "lich", name: "Лич" });
+  globalThis.game.user.targets = new Set([{ actor: target }]);
+  const service = new FighterAutomationService({}, {
+    rollFactory: () => fixedRoll(4)
+  });
+  const item = makeItem({ id: "riposte", name: "Ответный удар" });
+  const activity = makeActivity({
+    actor: source,
+    item,
+    automation: "fighter-dominance-maneuver",
+    fighterAutomation: {
+      kind: "maneuver",
+      extraDamage: {
+        formula: "1d4"
+      }
+    }
+  });
+
+  try {
+    await service.applyMidiRollComplete({
+      actor: source,
+      item,
+      activity,
+      targets: new Set([{ actor: source }])
+    });
+    await service.applyDnd5ePostUseActivity(activity, {}, {});
+
+    assert.equal(source.damageApplications.length, 0);
+    assert.deepEqual(target.damageApplications[0].damages, [{
+      value: 4,
+      type: ""
+    }]);
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+});
+
+test("fighter maneuver runtime spends the owned dominance dice item when dnd5e did not consume it", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const dominance = makeItem({
+    id: "dominance-real",
+    name: "Стиль доминирования",
+    featureId: "fighter-rework-v028::class::fighter-dominance",
+    uses: {
+      spent: 0,
+      max: 2,
+      recovery: []
+    }
+  });
+  const item = makeItem({ id: "riposte", name: "Ответный удар" });
+  const source = new TestActor({
+    id: "fighter",
+    name: "Воин",
+    items: [dominance, item]
+  });
+  const target = new TestActor({ id: "target", name: "Цель" });
+  globalThis.game.user.targets = new Set([{ actor: target }]);
+  const service = new FighterAutomationService({}, {
+    rollFactory: () => fixedRoll(4)
+  });
+  const activity = makeActivity({
+    actor: source,
+    item,
+    automation: "fighter-dominance-maneuver",
+    fighterAutomation: {
+      kind: "maneuver",
+      extraDamage: {
+        formula: "1d4"
+      }
+    }
+  });
+
+  try {
+    await service.applyDnd5ePostUseActivity(activity, {}, {});
+
+    assert.equal(dominance.system.uses.spent, 1);
+    assert.equal(target.damageApplications.length, 1);
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+});
+
+test("fighter maneuver rolls a target saving throw before applying a save-gated status", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const source = new TestActor({ id: "fighter", name: "Воин" });
+  source.system.attributes.prof = 3;
+  source.system.abilities.str = { mod: 4 };
+  source.system.abilities.dex = { mod: 2 };
+  const target = new TestActor({ id: "target", name: "Цель" });
+  const saves = [];
+  target.rollSavingThrow = async (config) => {
+    saves.push(config);
+    return [fixedRoll(8)];
+  };
+  globalThis.game.user.targets = new Set([{ actor: target }]);
+  const statuses = [];
+  const service = new FighterAutomationService({
+    combatStatusService: {
+      setStatus: async (...args) => {
+        statuses.push(args);
+        return true;
+      }
+    }
+  }, {
+    rollFactory: () => fixedRoll(3)
+  });
+  const item = makeItem({ id: "provocation", name: "Провоцирующая атака" });
+  const activity = makeActivity({
+    actor: source,
+    item,
+    automation: "fighter-dominance-maneuver",
+    fighterAutomation: {
+      kind: "maneuver",
+      status: {
+        id: "rebreya-provoked",
+        value: 1,
+        durationRounds: 1
+      },
+      saveAbility: "wis"
+    }
+  });
+
+  try {
+    await service.applyDnd5ePostUseActivity(activity, {}, {});
+
+    assert.deepEqual(saves.map((save) => ({
+      ability: save.ability,
+      target: save.target
+    })), [{
+      ability: "wis",
+      target: 15
+    }]);
+    assert.equal(statuses.length, 1);
+    assert.equal(statuses[0][1], "rebreya-provoked");
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+});
+
+test("fighter maneuver does not apply a save-gated status after a successful save", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const source = new TestActor({ id: "fighter", name: "Воин" });
+  source.system.attributes.prof = 2;
+  source.system.abilities.str = { mod: 3 };
+  const target = new TestActor({ id: "target", name: "Цель" });
+  target.rollSavingThrow = async () => [fixedRoll(20)];
+  globalThis.game.user.targets = new Set([{ actor: target }]);
+  const statuses = [];
+  const service = new FighterAutomationService({
+    combatStatusService: {
+      setStatus: async (...args) => {
+        statuses.push(args);
+        return true;
+      }
+    }
+  });
+  const item = makeItem({ id: "menacing", name: "Атака с угрозой" });
+  const activity = makeActivity({
+    actor: source,
+    item,
+    automation: "fighter-dominance-maneuver",
+    fighterAutomation: {
+      kind: "maneuver",
+      status: {
+        id: "frightened",
+        value: 2,
+        durationRounds: 1
+      },
+      saveAbility: "wis"
+    }
+  });
+
+  try {
+    await service.applyDnd5ePostUseActivity(activity, {}, {});
+
+    assert.equal(statuses.length, 0);
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
 });
 
 test("fighter second wind prompts for dice, spends selected uses, and heals the actor", async () => {
@@ -400,6 +625,48 @@ test("fighter actor repair restores second wind resources and moves maneuvers in
   assert.equal(maneuver.system.type.subtype, "fighterManeuver");
   assert.equal(maneuver.flags["rebreya-main"].section, "Воинские приёмы");
   assert.equal(maneuver.flags.teyvankal.section, "Воинские приёмы");
+});
+
+test("fighter actor repair retargets maneuver consumption to the owned dominance item and stops targeting self", async () => {
+  const dominance = makeItem({
+    id: "dominance-real",
+    name: "Стиль доминирования",
+    featureId: "fighter-rework-v028::class::fighter-dominance",
+    uses: {
+      spent: 0,
+      max: 2,
+      recovery: []
+    }
+  });
+  const maneuver = makeItem({
+    id: "riposte",
+    name: "Ответный удар",
+    featureId: "fighter-rework-v028::fighterManeuver::riposte"
+  });
+  maneuver.flags["rebreya-main"].sourceType = "fighterManeuver";
+  maneuver.system.activities = {
+    "dominance-activity": makeDominanceActivity({
+      fighterAutomation: {
+        kind: "maneuver",
+        extraDamage: {
+          formula: "1d4"
+        }
+      }
+    })
+  };
+  const actor = new TestActor({
+    id: "fighter",
+    items: [dominance, maneuver]
+  });
+  const service = new FighterAutomationService({});
+
+  await service.repairActor(actor);
+
+  const activity = maneuver.system.activities["dominance-activity"];
+  assert.equal(activity.consumption.targets[0].target, "dominance-real");
+  assert.equal(activity.target.affects.type, "creature");
+  assert.equal(activity.target.prompt, true);
+  assert.equal(activity.range.units, "");
 });
 
 test("fighter long rest keeps the selected multiattack variant and deletes the others", async () => {
