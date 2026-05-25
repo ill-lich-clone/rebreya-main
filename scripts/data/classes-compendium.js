@@ -54,7 +54,7 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 6;
+const CLASS_FEATURE_TEMPLATE_VERSION = 7;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CLASS_TEMPLATE_VERSION = 3;
 
@@ -782,7 +782,8 @@ function buildFeatureSignature(feature, context = {}) {
     maneuverFeatureIds: feature.maneuverFeatureIds ?? [],
     allManeuverFeatureIds: feature.allManeuverFeatureIds ?? [],
     advancement: buildFeatureItemAdvancements(feature, context),
-    sourceLabel: feature.sourceLabel ?? DEFAULT_SOURCE_LABEL
+    sourceLabel: feature.sourceLabel ?? DEFAULT_SOURCE_LABEL,
+    sourceBook: cleanString(feature.sourceLabel, DEFAULT_SOURCE_LABEL)
   });
 }
 
@@ -819,6 +820,14 @@ function createEmptyFeatureAutomation() {
     activities: {},
     effects: [],
     usesRecovery: []
+  };
+}
+
+function createSourceData(sourceLabel = DEFAULT_SOURCE_LABEL) {
+  const source = cleanString(sourceLabel, DEFAULT_SOURCE_LABEL);
+  return {
+    book: source,
+    custom: source
   };
 }
 
@@ -1772,9 +1781,7 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null,
       value: toHtmlParagraphs(feature.description),
       chat: ""
     },
-    source: {
-      custom: cleanString(feature.sourceLabel, DEFAULT_SOURCE_LABEL)
-    },
+    source: createSourceData(feature.sourceLabel),
     identifier: buildAsciiIdentifier(feature.identifier, feature.featureId),
     type: {
       value: "class",
@@ -2710,9 +2717,7 @@ export function createClassSystem(classData, advancement = [], sourceLabel = DEF
       value: toHtmlParagraphs(classData.description),
       chat: ""
     },
-    source: {
-      custom: sourceLabel
-    },
+    source: createSourceData(sourceLabel),
     identifier: buildAsciiIdentifier(classData.identifier, classData.name),
     levels: 1,
     hd: {
@@ -2735,15 +2740,13 @@ export function createClassSystem(classData, advancement = [], sourceLabel = DEF
   };
 }
 
-function createSubclassSystem(subclass, classIdentifier, advancement = [], sourceLabel = DEFAULT_SOURCE_LABEL) {
+export function createSubclassSystem(subclass, classIdentifier, advancement = [], sourceLabel = DEFAULT_SOURCE_LABEL) {
   return {
     description: {
       value: toHtmlParagraphs(subclass.description),
       chat: ""
     },
-    source: {
-      custom: sourceLabel
-    },
+    source: createSourceData(sourceLabel),
     identifier: buildAsciiIdentifier(subclass.subclassId, subclass.name),
     classIdentifier: buildAsciiIdentifier(classIdentifier, classIdentifier),
     spellcasting: {

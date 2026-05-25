@@ -25,6 +25,7 @@ const {
   createClassSystem,
   createFeatureEntryData,
   createPackMetadata,
+  createSubclassSystem,
   normalizeClassCompendiumData
 } = await import("../scripts/data/classes-compendium.js");
 
@@ -76,7 +77,23 @@ test("barbarian and fighter reworks use the ZoZT source label", () => {
   assert.equal(fighter.sourceLabel, "ЗоЗТ");
   assert.equal(barbarian.runes.length, 0);
   assert.equal(createClassSystem(barbarian.classData, [], barbarian.sourceLabel).source.custom, "ЗоЗТ");
+  assert.equal(createClassSystem(barbarian.classData, [], barbarian.sourceLabel).source.book, "ЗоЗТ");
   assert.equal(createClassSystem(fighter.classData, [], fighter.sourceLabel).source.custom, "ЗоЗТ");
+  assert.equal(createClassSystem(fighter.classData, [], fighter.sourceLabel).source.book, "ЗоЗТ");
+});
+
+test("fighter class-related items carry ZoZT as source book instead of relying on pack root", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const feature = definitions.find((definition) => definition.sourceType === "classFeature" && definition.name === "Второе дыхание");
+  const featureEntry = createFeatureEntryData(feature, new Map());
+  const subclass = fighter.subclasses.find((entry) => entry.name === "Рунный рыцарь");
+  const subclassSystem = createSubclassSystem(subclass, fighter.classData.identifier, [], fighter.sourceLabel);
+
+  assert.equal(featureEntry.system.source.book, "ЗоЗТ");
+  assert.equal(featureEntry.system.source.custom, "ЗоЗТ");
+  assert.equal(subclassSystem.source.book, "ЗоЗТ");
+  assert.equal(subclassSystem.source.custom, "ЗоЗТ");
 });
 
 test("class compendium pack metadata uses the ZoZT source book", () => {
