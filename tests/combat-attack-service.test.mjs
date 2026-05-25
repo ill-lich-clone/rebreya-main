@@ -66,11 +66,26 @@ test("fighter dominance maneuvers retarget shared dominance dice item before use
     item: maneuverItem,
     flags: {
       "rebreya-main": {
-        automation: "fighter-dominance-maneuver"
+        automation: "fighter-dominance-maneuver",
+        fighterAutomation: {
+          kind: "maneuver",
+          extraDamage: {
+            formula: "1d4"
+          }
+        }
       }
     },
     consumption: {
       targets: [target]
+    },
+    range: {
+      units: "self"
+    },
+    target: {
+      affects: {
+        type: "self"
+      },
+      prompt: false
     }
   };
 
@@ -78,4 +93,7 @@ test("fighter dominance maneuvers retarget shared dominance dice item before use
   service.applyDnd5ePreUseActivity(activity);
 
   assert.equal(target.target, dominanceItem.id);
+  assert.equal(activity.target.affects.type, "creature");
+  assert.equal(activity.target.prompt, true);
+  assert.equal(activity.range.units, "");
 });

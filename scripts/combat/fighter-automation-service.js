@@ -81,26 +81,6 @@ function collectionValues(collection) {
   return [];
 }
 
-function collectionEntries(collection) {
-  if (!collection) {
-    return [];
-  }
-
-  if (Array.isArray(collection)) {
-    return collection.map((value, index) => [String(value?._id ?? value?.id ?? index), value]);
-  }
-
-  if (typeof collection.entries === "function") {
-    return Array.from(collection.entries());
-  }
-
-  if (typeof collection === "object") {
-    return Object.entries(collection);
-  }
-
-  return [];
-}
-
 function resolveActorFromTarget(target) {
   return target?.actor
     ?? target?.document?.actor
@@ -760,7 +740,6 @@ export class FighterAutomationService {
   }
 
   async #repairManeuverSections(actor) {
-    const dominanceItem = this.#findDominanceItem(actor);
     for (const item of collectionValues(actor?.items)) {
       if (!isFighterManeuverItem(item)) {
         continue;
@@ -782,7 +761,6 @@ export class FighterAutomationService {
       if (Object.hasOwn(getProperty(item, "flags.teyvankal", {}), "subsection") === false) {
         patch["flags.teyvankal.subsection"] = null;
       }
-      this.#appendManeuverActivityRepairPatch(item, dominanceItem, patch);
 
       if (!Object.keys(patch).length) {
         continue;
@@ -795,40 +773,6 @@ export class FighterAutomationService {
         for (const [path, value] of Object.entries(patch)) {
           foundry.utils.setProperty(item, path, value);
         }
-      }
-    }
-  }
-
-  #appendManeuverActivityRepairPatch(item, dominanceItem, patch) {
-    const dominanceItemId = cleanText(dominanceItem?.id ?? dominanceItem?._id);
-    for (const [activityId, activity] of collectionEntries(item?.system?.activities)) {
-      if (!isFighterManeuverActivityDocument(activity)) {
-        continue;
-      }
-
-      for (const [index, target] of collectionEntries(activity?.consumption?.targets)) {
-        if (target?.type !== "itemUses" || !dominanceItemId) {
-          continue;
-        }
-
-        if (cleanText(target.target) === FIGHTER_DOMINANCE_FEATURE_ID || cleanText(target.target) === "") {
-          patch[`system.activities.${activityId}.consumption.targets.${index}.target`] = dominanceItemId;
-        }
-      }
-
-      const fighterAutomation = readDocumentFlag(activity, "fighterAutomation") ?? {};
-      if (!fighterAutomation.extraDamage && !fighterAutomation.status) {
-        continue;
-      }
-
-      if (getProperty(activity, "target.affects.type") === "self") {
-        patch[`system.activities.${activityId}.target.affects.type`] = "creature";
-      }
-      if (getProperty(activity, "target.prompt") !== true) {
-        patch[`system.activities.${activityId}.target.prompt`] = true;
-      }
-      if (getProperty(activity, "range.units") === "self") {
-        patch[`system.activities.${activityId}.range.units`] = "";
       }
     }
   }

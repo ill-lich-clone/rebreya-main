@@ -627,23 +627,22 @@ test("fighter actor repair restores second wind resources and moves maneuvers in
   assert.equal(maneuver.flags.teyvankal.section, "Воинские приёмы");
 });
 
-test("fighter actor repair retargets maneuver consumption to the owned dominance item and stops targeting self", async () => {
-  const dominance = makeItem({
-    id: "dominance-real",
-    name: "Стиль доминирования",
-    featureId: "fighter-rework-v028::class::fighter-dominance",
-    uses: {
-      spent: 0,
-      max: 2,
-      recovery: []
-    }
-  });
+test("fighter actor repair does not mutate maneuver activity data during sheet render", async () => {
   const maneuver = makeItem({
     id: "riposte",
     name: "Ответный удар",
     featureId: "fighter-rework-v028::fighterManeuver::riposte"
   });
   maneuver.flags["rebreya-main"].sourceType = "fighterManeuver";
+  maneuver.flags["rebreya-main"].section = "Воинские приёмы";
+  maneuver.flags.teyvankal = {
+    section: "Воинские приёмы",
+    subsection: null
+  };
+  maneuver.system.type = {
+    value: "feat",
+    subtype: "fighterManeuver"
+  };
   maneuver.system.activities = {
     "dominance-activity": makeDominanceActivity({
       fighterAutomation: {
@@ -656,17 +655,18 @@ test("fighter actor repair retargets maneuver consumption to the owned dominance
   };
   const actor = new TestActor({
     id: "fighter",
-    items: [dominance, maneuver]
+    items: [maneuver]
   });
   const service = new FighterAutomationService({});
 
   await service.repairActor(actor);
 
   const activity = maneuver.system.activities["dominance-activity"];
-  assert.equal(activity.consumption.targets[0].target, "dominance-real");
-  assert.equal(activity.target.affects.type, "creature");
-  assert.equal(activity.target.prompt, true);
-  assert.equal(activity.range.units, "");
+  assert.equal(maneuver.updates.length, 0);
+  assert.equal(activity.consumption.targets[0].target, "fighter-dominance");
+  assert.equal(activity.target.affects.type, "self");
+  assert.equal(activity.target.prompt, false);
+  assert.equal(activity.range.units, "self");
 });
 
 test("fighter long rest keeps the selected multiattack variant and deletes the others", async () => {
