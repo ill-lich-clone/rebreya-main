@@ -130,6 +130,30 @@ test("fighter advancements expose dominance scales and a fighting style choice",
   assert.equal(styleChoice.configuration.pool.length, 12);
 });
 
+test("shared class feature icons resolve from common icon names", () => {
+  const barbarian = normalizeClassCompendiumData(loadJson("data/barbarian-rework-v012.json"));
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const iconLookup = new Map([
+    ["младшая черта", "modules/rebreya-main/templates/icons/%D0%9C%D0%BB%D0%B0%D0%B4%D1%88%D0%B0%D1%8F%20%D1%87%D0%B5%D1%80%D1%82%D0%B0.png"],
+    ["повышение характеристик", "modules/rebreya-main/templates/icons/%D0%9F%D0%BE%D0%B2%D1%8B%D1%88%D0%B5%D0%BD%D0%B8%D0%B5%20%D1%85%D0%B0%D1%80%D0%B0%D0%BA%D1%82%D0%B5%D1%80%D0%B8%D1%81%D1%82%D0%B8%D0%BA.png"]
+  ]);
+  const barbarianDefinitions = buildFeatureDefinitions(barbarian);
+  const fighterDefinitions = buildFeatureDefinitions(fighter);
+
+  assert.equal(
+    createFeatureEntryData(barbarianDefinitions.find((definition) => definition.name === "Младшая черта"), new Map(), iconLookup).img,
+    iconLookup.get("младшая черта")
+  );
+  assert.equal(
+    createFeatureEntryData(barbarianDefinitions.find((definition) => definition.name === "Увеличение Характеристик"), new Map(), iconLookup).img,
+    iconLookup.get("повышение характеристик")
+  );
+  assert.equal(
+    createFeatureEntryData(fighterDefinitions.find((definition) => definition.name === "Дополнительная черта"), new Map(), iconLookup).img,
+    iconLookup.get("младшая черта")
+  );
+});
+
 test("fighter class advancement grants every non-special base feature", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
   const featureDefinitions = buildFeatureDefinitions(fighter);

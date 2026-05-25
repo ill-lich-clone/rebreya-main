@@ -2466,7 +2466,21 @@ function buildSubclassSignature(subclass, system, metadata = {}) {
 }
 
 function resolveClassFeatureIcon(featureName, iconLookup) {
-  return resolveNamedIcon(featureName, iconLookup, DEFAULT_FEATURE_ICON);
+  const directIcon = resolveNamedIcon(featureName, iconLookup);
+  if (directIcon) {
+    return directIcon;
+  }
+
+  const sharedFeatureIconName = {
+    "дополнительная черта": "Младшая черта",
+    "увеличение характеристик": "Повышение характеристик",
+    "увеличение характеристики": "Повышение характеристик"
+  }[normalizeMatchText(featureName)];
+  if (sharedFeatureIconName) {
+    return resolveNamedIcon(sharedFeatureIconName, iconLookup, DEFAULT_FEATURE_ICON);
+  }
+
+  return DEFAULT_FEATURE_ICON;
 }
 
 function resolveSubclassIcon(subclassName, iconLookup) {
