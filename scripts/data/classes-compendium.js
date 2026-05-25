@@ -156,6 +156,39 @@ function featureDocumentId(featureId) {
   return stableHashId(featureId, "class-feature-document");
 }
 
+export function buildFeatureUuidMap(featureDefinitions = [], packCollection = "", documents = []) {
+  const actualUuidByFeatureId = new Map();
+  for (const document of Array.isArray(documents) ? documents : []) {
+    if (!document?.getFlag?.(MODULE_ID, "managed")) {
+      continue;
+    }
+
+    const featureId = cleanString(document.getFlag(MODULE_ID, "featureId"));
+    if (!featureId || !document.uuid) {
+      continue;
+    }
+
+    actualUuidByFeatureId.set(featureId, document.uuid);
+  }
+
+  const featureUuidById = new Map();
+  for (const feature of Array.isArray(featureDefinitions) ? featureDefinitions : []) {
+    const featureId = cleanString(feature?.featureId);
+    if (!featureId) {
+      continue;
+    }
+
+    const actualUuid = actualUuidByFeatureId.get(featureId);
+    const plannedUuid = compendiumItemUuid(packCollection, feature.documentId);
+    const uuid = actualUuid || plannedUuid;
+    if (uuid) {
+      featureUuidById.set(featureId, uuid);
+    }
+  }
+
+  return featureUuidById;
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/gu, "&amp;")
@@ -2487,6 +2520,45 @@ function createClassEntryData(entry, folderIdByPath, iconLookup = null) {
   };
 }
 
+async function syncFeatureDocumentAdvancements(pack, documents, featureDefinitions, context = {}) {
+  const definitionByFeatureId = new Map(
+    (Array.isArray(featureDefinitions) ? featureDefinitions : [])
+      .map((feature) => [feature.featureId, feature])
+  );
+  const updates = [];
+
+  for (const document of Array.isArray(documents) ? documents : []) {
+    if (!document?.getFlag?.(MODULE_ID, "managed")) {
+      continue;
+    }
+
+    const featureId = cleanString(document.getFlag(MODULE_ID, "featureId"));
+    const feature = definitionByFeatureId.get(featureId);
+    if (feature?.sourceType !== "fightingStyle") {
+      continue;
+    }
+
+    const advancement = buildFeatureItemAdvancements(feature, context);
+    const signature = buildFeatureSignature(feature, context);
+    if (
+      JSON.stringify(document.system?.advancement ?? []) === JSON.stringify(advancement)
+      && document.getFlag(MODULE_ID, "signature") === signature
+    ) {
+      continue;
+    }
+
+    updates.push({
+      _id: document.id ?? document._id,
+      "system.advancement": advancement,
+      [`flags.${MODULE_ID}.signature`]: signature
+    });
+  }
+
+  if (updates.length) {
+    await Item.implementation.updateDocuments(updates, { pack: pack.collection });
+  }
+}
+
 async function syncClassFeaturePack(featureDefinitions, context = {}) {
   const pack = await ensurePack(CLASS_FEATURES_PACK_ID, createPackMetadata({
     name: CLASS_FEATURES_COMPENDIUM_NAME,
@@ -2494,21 +2566,25 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
     itemTypes: ["feat"]
   }));
 
-  const plannedFeatureUuidById = new Map(
-    featureDefinitions
-      .map((feature) => [feature.featureId, compendiumItemUuid(pack.collection, feature.documentId)])
-      .filter(([, uuid]) => Boolean(uuid))
-  );
-  const featureContext = {
+  const documents = await getPackDocuments(pack);
+  const comparisonFeatureContext = {
     ...context,
-    featureUuidById: plannedFeatureUuidById
+    featureUuidById: buildFeatureUuidMap(featureDefinitions, pack.collection, documents)
   };
   const features = featureDefinitions.map((feature) => ({
     ...feature,
-    signature: buildFeatureSignature(feature, featureContext)
+    signature: buildFeatureSignature(feature, comparisonFeatureContext)
   }));
-  const documents = await getPackDocuments(pack);
   if (shouldRebuildManagedPack(documents, features, "featureId")) {
+    const creationFeatureContext = {
+      ...context,
+      featureUuidById: buildFeatureUuidMap(featureDefinitions, pack.collection)
+    };
+    const creationFeatures = featureDefinitions.map((feature) => ({
+      ...feature,
+      signature: buildFeatureSignature(feature, creationFeatureContext)
+    }));
+
     await deleteManagedDocuments(pack, documents);
     for (const legacyRoot of LEGACY_CLASS_FEATURE_ROOT_FOLDERS) {
       await clearPackFolderTree(pack, legacyRoot);
@@ -2523,32 +2599,23 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
     }
     await createManagedDocuments(
       pack,
-      features,
-      (entry, folderIdByPath) => createFeatureEntryData(entry, folderIdByPath, context.iconLookup, featureContext)
+      creationFeatures,
+      (entry, folderIdByPath) => createFeatureEntryData(entry, folderIdByPath, context.iconLookup, creationFeatureContext)
     );
   }
 
   const activePack = game.packs.get(CLASS_FEATURES_PACK_ID) ?? pack;
   const featureDocuments = await getPackDocuments(activePack);
+  const featureUuidById = buildFeatureUuidMap(featureDefinitions, activePack.collection, featureDocuments);
+  await syncFeatureDocumentAdvancements(activePack, featureDocuments, featureDefinitions, {
+    ...context,
+    featureUuidById
+  });
   await syncManagedDocumentIcons(
     activePack,
     featureDocuments,
     (document) => resolveClassFeatureIcon(document.name, context.iconLookup)
   );
-  const featureUuidById = new Map();
-
-  for (const document of featureDocuments) {
-    if (!document.getFlag(MODULE_ID, "managed")) {
-      continue;
-    }
-
-    const featureId = cleanString(document.getFlag(MODULE_ID, "featureId"));
-    if (!featureId) {
-      continue;
-    }
-
-    featureUuidById.set(featureId, document.uuid);
-  }
 
   return {
     pack: activePack,

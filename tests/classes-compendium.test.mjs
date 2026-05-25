@@ -20,6 +20,7 @@ const {
   buildMinorFeatPool,
   buildClassAdvancement,
   buildFeatureDefinitions,
+  buildFeatureUuidMap,
   buildSubclassAdvancements,
   createClassSystem,
   createFeatureEntryData,
@@ -38,6 +39,18 @@ function makeFeatIndexPack(rows) {
   return {
     collection: "world.rebreya-feats",
     getIndex: async () => rows
+  };
+}
+
+function makeFeatureDocument(definition, uuid) {
+  return {
+    uuid,
+    getFlag: (scope, key) => {
+      if (scope !== "rebreya-main") return undefined;
+      if (key === "managed") return true;
+      if (key === "featureId") return definition.featureId;
+      return undefined;
+    }
   };
 }
 
@@ -164,6 +177,31 @@ test("fighter fighting style items grant the real feat and their fixed maneuvers
       const maneuver = definitions.find((definition) => definition.sourceType === "fighterManeuver" && definition.name === maneuverName);
       return featureUuidById.get(maneuver.featureId);
     })
+  );
+});
+
+test("fighter fighting style maneuver grants use actual class-feature document UUIDs", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const style = definitions.find((definition) => definition.sourceType === "fightingStyle" && definition.styleName === "Дуэлянт");
+  const styleManeuvers = style.maneuverFeatureIds.map((featureId, index) => {
+    const definition = definitions.find((entry) => entry.featureId === featureId);
+    return {
+      definition,
+      uuid: `Compendium.world.rebreya-class-features.Item.actualManeuver${index}`
+    };
+  });
+  const featureUuidById = buildFeatureUuidMap(
+    definitions,
+    "world.rebreya-class-features",
+    styleManeuvers.map(({ definition, uuid }) => makeFeatureDocument(definition, uuid))
+  );
+  const entry = createFeatureEntryData(style, new Map(), null, { featureUuidById });
+  const maneuverGrant = entry.system.advancement.find((advancement) => advancement.title === "Приёмы боевого стиля");
+
+  assert.deepEqual(
+    maneuverGrant.configuration.items.map((item) => item.uuid),
+    styleManeuvers.map(({ uuid }) => uuid)
   );
 });
 
