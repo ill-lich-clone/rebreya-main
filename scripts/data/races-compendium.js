@@ -1595,15 +1595,17 @@ function buildAdvancementItemChoice({
 
 function normalizeFeatIndexRecord(record, pack) {
   const id = record?._id ?? record?.id ?? "";
-  const uuid = id ? `Compendium.${pack.collection}.${id}` : "";
+  const uuid = id ? `Compendium.${pack.collection}.Item.${id}` : "";
   const section = normalizeMatchText(foundry.utils.getProperty(record, "flags.teyvankal.section"));
+  const choiceOption = foundry.utils.getProperty(record, `flags.${MODULE_ID}.choiceOption`);
 
   return {
     id,
     uuid,
     name: cleanString(record?.name),
     normalizedName: normalizeMatchText(record?.name),
-    section
+    section,
+    isChoiceOption: isPlainObject(choiceOption)
   };
 }
 
@@ -1768,14 +1770,17 @@ async function buildFeatLookup() {
   }
 
   const index = await pack.getIndex({
-    fields: ["flags.teyvankal.section"]
+    fields: [
+      "flags.teyvankal.section",
+      `flags.${MODULE_ID}.choiceOption`
+    ]
   });
   const byName = new Map();
   const minorFeatUuids = [];
 
   for (const row of index) {
     const record = normalizeFeatIndexRecord(row, pack);
-    if (!record.uuid || !record.normalizedName) {
+    if (!record.uuid || !record.normalizedName || record.isChoiceOption) {
       continue;
     }
 

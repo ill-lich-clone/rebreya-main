@@ -18,7 +18,7 @@ import {
 import { buildSlug } from "./item-classification.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
-const DEFAULT_SOURCE_LABEL = "Реворк Варвара V0.12";
+const DEFAULT_SOURCE_LABEL = "ЗоЗТ";
 const REBREYA_SOURCE_LABEL = "Ребрея";
 const COMPENDIUM_SIDEBAR_FOLDER = [REBREYA_SOURCE_LABEL];
 const CLASS_DATA_PATHS = [
@@ -46,9 +46,9 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 4;
-const SUBCLASS_TEMPLATE_VERSION = 2;
-const CLASS_TEMPLATE_VERSION = 2;
+const CLASS_FEATURE_TEMPLATE_VERSION = 5;
+const SUBCLASS_TEMPLATE_VERSION = 3;
+const CLASS_TEMPLATE_VERSION = 3;
 
 const DEFAULT_CLASS_ICON = "icons/svg/book.svg";
 const DEFAULT_SUBCLASS_ICON = "icons/svg/book.svg";
@@ -61,6 +61,10 @@ const RAGE_ACTION_PICK_LEVELS = [5, 10, 15, 20];
 const SKILL_POOL = ["ath", "prc", "sur", "itm", "nat", "ani"];
 const FIGHTER_SKILL_POOL = ["acr", "ath", "prc", "sur", "itm", "his", "ins", "ani"];
 const ASI_LEVELS = [4, 8, 12, 16, 19];
+const BATTLE_MASTER_SUBCLASS_NAME = "мастер боевых искусств";
+const FIGHTING_STYLE_FEATS_SECTION = "черты боевых стилей";
+const MINOR_FEATS_SECTION = "младшие черты";
+const BATTLE_MASTER_MANEUVER_CHOICE_LEVELS = [3, 7, 10, 15, 18];
 const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_OVERRIDE = 5;
@@ -140,6 +144,16 @@ function stableHashId(seed, scope = "id") {
 
   const token = `${hashA.toString(36)}${hashB.toString(36)}`.replace(/[^a-z0-9]/gu, "");
   return token.padEnd(16, "0").slice(0, 16);
+}
+
+function compendiumItemUuid(packCollection, documentId) {
+  const collection = cleanString(packCollection);
+  const id = cleanString(documentId);
+  return collection && id ? `Compendium.${collection}.Item.${id}` : "";
+}
+
+function featureDocumentId(featureId) {
+  return stableHashId(featureId, "class-feature-document");
 }
 
 function escapeHtml(value) {
@@ -429,27 +443,40 @@ export function buildFeatureDefinitions(normalizedData) {
   const classFeatureRootFolder = cleanString(normalizedData.classFeatureRootFolder, CLASS_FEATURE_ROOT_FOLDER);
   const className = cleanString(normalizedData.classData.name, "Класс");
   const sourceLabel = cleanString(normalizedData.sourceLabel, DEFAULT_SOURCE_LABEL);
+  const maneuverFeatureIdByName = new Map(
+    (normalizedData.maneuvers ?? []).map((maneuver) => [
+      normalizeMatchText(maneuver.name),
+      `${classId}::fighterManeuver::${maneuver.featureId}`
+    ])
+  );
+  const allManeuverFeatureIds = Array.from(maneuverFeatureIdByName.values());
 
-  const buildBaseFeatureDefinition = (feature, sourceType, folderPath, identifierSeed) => ({
-    featureId: `${classId}::${sourceType}::${feature.featureId}`,
-    sourceType,
-    classIdentifier: classId,
-    className,
-    subclassId: null,
-    subclassName: null,
-    name: feature.name,
-    description: feature.description,
-    levels: feature.levels,
-    requiredLevel: feature.requiredLevel,
-    optional: feature.optional === true,
-    identifier: buildAsciiIdentifier(identifierSeed, `${classId}::${sourceType}::${feature.featureId}`),
-    folderPath,
-    sourceLabel
-  });
+  const buildBaseFeatureDefinition = (feature, sourceType, folderPath, identifierSeed) => {
+    const featureId = `${classId}::${sourceType}::${feature.featureId}`;
+    return {
+      featureId,
+      documentId: featureDocumentId(featureId),
+      sourceType,
+      classIdentifier: classId,
+      className,
+      subclassId: null,
+      subclassName: null,
+      name: feature.name,
+      description: feature.description,
+      levels: feature.levels,
+      requiredLevel: feature.requiredLevel,
+      optional: feature.optional === true,
+      identifier: buildAsciiIdentifier(identifierSeed, `${classId}::${sourceType}::${feature.featureId}`),
+      folderPath,
+      sourceLabel
+    };
+  };
 
   for (const feature of normalizedData.classData.features) {
+    const featureId = `${classId}::class::${feature.featureId}`;
     definitions.push({
-      featureId: `${classId}::class::${feature.featureId}`,
+      featureId,
+      documentId: featureDocumentId(featureId),
       sourceType: "classFeature",
       classIdentifier: classId,
       className,
@@ -467,8 +494,10 @@ export function buildFeatureDefinitions(normalizedData) {
   }
 
   for (const action of normalizedData.rageActions) {
+    const featureId = `${classId}::rage-action::${action.featureId}`;
     definitions.push({
-      featureId: `${classId}::rage-action::${action.featureId}`,
+      featureId,
+      documentId: featureDocumentId(featureId),
       sourceType: "rageAction",
       classIdentifier: classId,
       className,
@@ -493,7 +522,13 @@ export function buildFeatureDefinitions(normalizedData) {
         normalizeFolderPath([classFeatureRootFolder, "Боевые стили"]),
         `${classId}-style-${style.featureId}`
       ),
-      maneuvers: unique(style.maneuvers)
+      name: `Боевой стиль: ${style.name}`,
+      styleName: style.name,
+      maneuvers: unique(style.maneuvers),
+      maneuverFeatureIds: unique(style.maneuvers
+        .map((maneuverName) => maneuverFeatureIdByName.get(normalizeMatchText(maneuverName)))
+        .filter(Boolean)),
+      allManeuverFeatureIds
     });
   }
 
@@ -508,8 +543,10 @@ export function buildFeatureDefinitions(normalizedData) {
 
   for (const subclass of normalizedData.subclasses) {
     for (const feature of subclass.features) {
+      const featureId = `${subclass.subclassId}::subclass::${feature.featureId}`;
       definitions.push({
-        featureId: `${subclass.subclassId}::subclass::${feature.featureId}`,
+        featureId,
+        documentId: featureDocumentId(featureId),
         sourceType: "subclassFeature",
         classIdentifier: classId,
         className,
@@ -533,21 +570,26 @@ export function buildFeatureDefinitions(normalizedData) {
   return definitions;
 }
 
-function buildFeatureSignature(feature) {
+function buildFeatureSignature(feature, context = {}) {
   return JSON.stringify({
     templateVersion: CLASS_FEATURE_TEMPLATE_VERSION,
     featureId: feature.featureId,
+    documentId: feature.documentId,
     sourceType: feature.sourceType,
     classIdentifier: feature.classIdentifier,
     subclassId: feature.subclassId,
     subclassName: feature.subclassName,
     name: feature.name,
+    styleName: feature.styleName ?? "",
     description: feature.description,
     levels: feature.levels,
     requiredLevel: feature.requiredLevel,
     optional: feature.optional,
     identifier: feature.identifier,
     maneuvers: feature.maneuvers ?? [],
+    maneuverFeatureIds: feature.maneuverFeatureIds ?? [],
+    allManeuverFeatureIds: feature.allManeuverFeatureIds ?? [],
+    advancement: buildFeatureItemAdvancements(feature, context),
     sourceLabel: feature.sourceLabel ?? DEFAULT_SOURCE_LABEL
   });
 }
@@ -1202,6 +1244,143 @@ function createDominanceManeuverAutomation(feature, classIdentifier) {
   };
 }
 
+function createToggleEffect(feature, classIdentifier, { transfer = true, duration = {} } = {}) {
+  const effectId = stableHashId(`${classIdentifier}:${feature.featureId}:toggle-effect`, "effect");
+  return {
+    _id: effectId,
+    name: feature.name,
+    type: "base",
+    img: DEFAULT_FEATURE_ICON,
+    system: {},
+    changes: [],
+    disabled: false,
+    duration: {
+      startTime: null,
+      seconds: null,
+      combat: null,
+      rounds: duration.rounds ?? null,
+      turns: duration.turns ?? null,
+      startRound: null,
+      startTurn: null
+    },
+    description: toHtmlParagraphs(feature.description),
+    origin: null,
+    transfer,
+    statuses: [],
+    sort: 0,
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        automation: "fighter-multiattack-toggle"
+      }
+    }
+  };
+}
+
+function createFighterMultiattackAutomation(feature, classIdentifier) {
+  const normalizedName = normalizeMatchText(feature.name);
+  const activityId = stableHashId(`${classIdentifier}:${feature.featureId}:multiattack-activity`, "activity");
+  const isActionSurge = normalizedName.includes("всплеск действий");
+  const effect = createToggleEffect(feature, classIdentifier, {
+    transfer: !isActionSurge,
+    duration: isActionSurge ? { turns: 1 } : {}
+  });
+
+  const activities = {
+    [activityId]: {
+      _id: activityId,
+      type: "utility",
+      name: isActionSurge ? "Активировать всплеск действий" : "Активировать",
+      img: RAGE_ACTION_ACTIVITY_IMAGE.utility,
+      sort: 0,
+      activation: {
+        type: isActionSurge ? "special" : "action",
+        value: isActionSurge ? null : 1,
+        condition: isActionSurge ? "В свой ход, без траты действия" : "",
+        override: false
+      },
+      consumption: {
+        scaling: {
+          allowed: false,
+          max: ""
+        },
+        spellSlot: false,
+        targets: isActionSurge
+          ? [{
+            type: "itemUses",
+            target: "",
+            value: "1",
+            scaling: {
+              mode: "",
+              formula: ""
+            }
+          }]
+          : []
+      },
+      description: {
+        chatFlavor: feature.description
+      },
+      duration: {
+        value: isActionSurge ? 1 : "",
+        units: isActionSurge ? "turn" : "inst",
+        special: "",
+        concentration: false,
+        override: false
+      },
+      effects: [{ _id: effect._id }],
+      flags: {
+        [MODULE_ID]: {
+          managed: true,
+          automation: "fighter-multiattack"
+        }
+      },
+      range: {
+        value: null,
+        units: "self",
+        special: "",
+        override: false
+      },
+      target: {
+        template: {
+          count: "",
+          contiguous: false,
+          type: "",
+          size: "",
+          width: "",
+          height: "",
+          units: ""
+        },
+        affects: {
+          count: "",
+          type: "self",
+          choice: false,
+          special: ""
+        },
+        prompt: false,
+        override: false
+      },
+      uses: {
+        spent: 0,
+        max: "",
+        recovery: []
+      }
+    }
+  };
+
+  return {
+    activities,
+    effects: [effect],
+    usesMax: isActionSurge ? "@prof" : "",
+    usesRecovery: isActionSurge
+      ? [{
+        period: "lr",
+        type: "recoverAll",
+        formula: ""
+      }]
+      : []
+  };
+}
+
 function createFeatureAutomation(feature, classIdentifier) {
   if (feature.sourceType === "rageAction") {
     return createRageActionAutomation(feature, classIdentifier);
@@ -1216,6 +1395,10 @@ function createFeatureAutomation(feature, classIdentifier) {
   }
 
   const normalizedName = normalizeMatchText(feature.name);
+  if (classIdentifier === "fighter-rework-v028" && normalizedName.startsWith("воинская мультиатака")) {
+    return createFighterMultiattackAutomation(feature, classIdentifier);
+  }
+
   if (normalizedName === "ярость") {
     return createRageFeatureAutomation(feature, classIdentifier);
   }
@@ -1227,7 +1410,7 @@ function createFeatureAutomation(feature, classIdentifier) {
   return createEmptyFeatureAutomation();
 }
 
-function createFeatureSystem(feature, classIdentifier, featureAutomation = null) {
+function createFeatureSystem(feature, classIdentifier, featureAutomation = null, context = {}) {
   const normalizedName = normalizeMatchText(feature.name);
   const isRageFeature = feature.sourceType === "classFeature" && normalizedName === "ярость";
   const isDominanceFeature = feature.sourceType === "classFeature"
@@ -1280,10 +1463,10 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null)
         ? `@scale.${classIdentifier}.rage-uses`
         : isDominanceFeature
           ? `@scale.${classIdentifier}.dominance-dice`
-          : "",
+          : cleanString(automation?.usesMax),
       recovery: usesRecovery
     },
-    advancement: []
+    advancement: foundry.utils.deepClone(buildFeatureItemAdvancements(feature, context))
   };
 }
 
@@ -1653,6 +1836,113 @@ function buildItemChoiceAdvancement({
   };
 }
 
+function pickPreferredFeat(records = [], preferredSection = "") {
+  const list = Array.isArray(records) ? records.filter((entry) => entry?.uuid) : [];
+  if (!list.length) {
+    return null;
+  }
+
+  if (preferredSection) {
+    const exactSection = list.find((entry) => entry.section === preferredSection);
+    if (exactSection) {
+      return exactSection;
+    }
+  }
+
+  return list[0] ?? null;
+}
+
+function resolveFeatByName(name, lookupByName, preferredSection = "") {
+  const normalizedName = normalizeMatchText(name);
+  if (!normalizedName || !(lookupByName instanceof Map)) {
+    return null;
+  }
+
+  const direct = lookupByName.get(normalizedName);
+  if (direct?.length) {
+    return pickPreferredFeat(direct, preferredSection);
+  }
+
+  for (const [candidateName, records] of lookupByName.entries()) {
+    if (candidateName.includes(normalizedName) || normalizedName.includes(candidateName)) {
+      return pickPreferredFeat(records, preferredSection);
+    }
+  }
+
+  return null;
+}
+
+function featureUuidsForIds(featureIds = [], context = {}) {
+  const featureUuidById = context.featureUuidById instanceof Map ? context.featureUuidById : new Map();
+  return unique((Array.isArray(featureIds) ? featureIds : [])
+    .map((featureId) => featureUuidById.get(featureId))
+    .filter(Boolean));
+}
+
+function maneuverUuidPoolFromContext(context = {}) {
+  const classIdentifier = cleanString(context.classIdentifier, "fighter-rework-v028");
+  const maneuverFeatureIds = Array.isArray(context.maneuverFeatureIds)
+    ? context.maneuverFeatureIds
+    : (Array.isArray(context.maneuverEntries) ? context.maneuverEntries : [])
+      .map((entry) => `${classIdentifier}::fighterManeuver::${entry.featureId}`)
+      .filter(Boolean);
+
+  return featureUuidsForIds(maneuverFeatureIds, context);
+}
+
+function buildFeatureItemAdvancements(feature, context = {}) {
+  const advancements = [];
+
+  if (feature.sourceType !== "fightingStyle") {
+    return advancements;
+  }
+
+  const classIdentifier = cleanString(feature.featureId, feature.classIdentifier);
+  const styleFeat = resolveFeatByName(
+    feature.styleName ?? feature.name,
+    context.featLookupByName,
+    FIGHTING_STYLE_FEATS_SECTION
+  );
+  if (styleFeat?.uuid) {
+    advancements.push(buildItemGrantAdvancement({
+      classIdentifier,
+      seed: "style-feat",
+      title: "Черта боевого стиля",
+      hint: "Черта из компендиума черт, соответствующая выбранному боевому стилю.",
+      level: 0,
+      itemUuids: [styleFeat.uuid]
+    }));
+  }
+
+  const fixedManeuverUuids = featureUuidsForIds(feature.maneuverFeatureIds, context);
+  if (fixedManeuverUuids.length) {
+    advancements.push(buildItemGrantAdvancement({
+      classIdentifier,
+      seed: "fixed-maneuvers",
+      title: "Приёмы боевого стиля",
+      hint: "Приёмы, которые выдаёт выбранный боевой стиль.",
+      level: 0,
+      itemUuids: fixedManeuverUuids
+    }));
+    return advancements;
+  }
+
+  const allManeuverUuids = featureUuidsForIds(feature.allManeuverFeatureIds, context);
+  if (!feature.maneuvers?.length && allManeuverUuids.length) {
+    advancements.push(buildItemChoiceAdvancement({
+      classIdentifier,
+      seed: "chosen-maneuvers",
+      title: "Приёмы боевого стиля",
+      hint: "Выберите три любых боевых приёма.",
+      level: 0,
+      count: 3,
+      pool: allManeuverUuids
+    }));
+  }
+
+  return advancements;
+}
+
 function buildSubclassAdvancement(classIdentifier, classData = {}) {
   return {
     _id: stableHashId(`${classIdentifier}:subclass`, "adv"),
@@ -1666,34 +1956,50 @@ function buildSubclassAdvancement(classIdentifier, classData = {}) {
 
 function normalizeFeatIndexRecord(record, pack) {
   const id = record?._id ?? record?.id ?? "";
-  const uuid = id ? `Compendium.${pack.collection}.${id}` : "";
+  const uuid = compendiumItemUuid(pack.collection, id);
   const section = normalizeMatchText(foundry.utils.getProperty(record, "flags.teyvankal.section"));
+  const choiceOption = foundry.utils.getProperty(record, `flags.${MODULE_ID}.choiceOption`);
 
   return {
     id,
     uuid,
     name: cleanString(record?.name),
     normalizedName: normalizeMatchText(record?.name),
-    section
+    section,
+    isChoiceOption: isPlainObject(choiceOption)
   };
 }
 
-async function buildMinorFeatPool() {
+async function buildFeatLookup() {
   const pack = game.packs.get(FEATS_PACK_ID);
   if (!pack) {
-    return [];
+    return {
+      minorFeatUuids: [],
+      byName: new Map()
+    };
   }
 
   const index = await pack.getIndex({
-    fields: ["flags.teyvankal.section"]
+    fields: [
+      "flags.teyvankal.section",
+      `flags.${MODULE_ID}.choiceOption`
+    ]
   });
   const minorFeatRecords = [];
   const allFeatRecords = [];
+  const byName = new Map();
 
   for (const row of index) {
     const record = normalizeFeatIndexRecord(row, pack);
-    if (!record.uuid) {
+    if (!record.uuid || record.isChoiceOption) {
       continue;
+    }
+
+    if (record.normalizedName) {
+      if (!byName.has(record.normalizedName)) {
+        byName.set(record.normalizedName, []);
+      }
+      byName.get(record.normalizedName).push(record);
     }
 
     const sortName = cleanString(record.name, record.normalizedName || record.uuid);
@@ -1701,7 +2007,7 @@ async function buildMinorFeatPool() {
       uuid: record.uuid,
       sortName
     });
-    if (record.section === normalizeMatchText("младшие черты")) {
+    if (record.section === MINOR_FEATS_SECTION) {
       minorFeatRecords.push({
         uuid: record.uuid,
         sortName
@@ -1730,10 +2036,20 @@ async function buildMinorFeatPool() {
 
   const normalizedMinor = sortRecords(minorFeatRecords);
   if (normalizedMinor.length) {
-    return normalizedMinor;
+    return {
+      minorFeatUuids: normalizedMinor,
+      byName
+    };
   }
 
-  return sortRecords(allFeatRecords);
+  return {
+    minorFeatUuids: sortRecords(allFeatRecords),
+    byName
+  };
+}
+
+export async function buildMinorFeatPool() {
+  return (await buildFeatLookup()).minorFeatUuids;
 }
 
 export function buildClassAdvancement(classData, context = {}) {
@@ -1942,7 +2258,7 @@ export function buildClassAdvancement(classData, context = {}) {
   return advancements;
 }
 
-function buildSubclassAdvancements(subclass, context) {
+export function buildSubclassAdvancements(subclass, context = {}) {
   const { featureUuidById } = context;
   const grouped = new Map();
 
@@ -1972,10 +2288,25 @@ function buildSubclassAdvancements(subclass, context) {
     }));
   }
 
+  const maneuverUuids = maneuverUuidPoolFromContext(context);
+  if (normalizeMatchText(subclass.name) === BATTLE_MASTER_SUBCLASS_NAME && maneuverUuids.length) {
+    for (const level of BATTLE_MASTER_MANEUVER_CHOICE_LEVELS) {
+      advancements.push(buildItemChoiceAdvancement({
+        classIdentifier: subclass.subclassId,
+        seed: `maneuvers-${level}`,
+        title: `Приёмы (${level}-й уровень)`,
+        hint: "Выберите два боевых приёма мастера боевых искусств.",
+        level,
+        count: 2,
+        pool: maneuverUuids
+      }));
+    }
+  }
+
   return advancements;
 }
 
-function createClassSystem(classData, advancement = [], sourceLabel = DEFAULT_SOURCE_LABEL) {
+export function createClassSystem(classData, advancement = [], sourceLabel = DEFAULT_SOURCE_LABEL) {
   return {
     description: {
       value: toHtmlParagraphs(classData.description),
@@ -2069,10 +2400,10 @@ function resolveClassIcon(className, iconLookup) {
   return resolveNamedIcon("Barbarian", iconLookup, DEFAULT_CLASS_ICON);
 }
 
-export function createFeatureEntryData(feature, folderIdByPath, iconLookup = null) {
+export function createFeatureEntryData(feature, folderIdByPath, iconLookup = null, context = {}) {
   const folderPath = feature.folderPath.join("/");
   const featureAutomation = createFeatureAutomation(feature, feature.classIdentifier);
-  return {
+  const entryData = {
     name: feature.name,
     type: "feat",
     img: resolveClassFeatureIcon(feature.name, iconLookup),
@@ -2080,7 +2411,7 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
     },
-    system: createFeatureSystem(feature, feature.classIdentifier, featureAutomation),
+    system: createFeatureSystem(feature, feature.classIdentifier, featureAutomation, context),
     effects: foundry.utils.deepClone(featureAutomation.effects),
     flags: {
       [MODULE_ID]: {
@@ -2092,7 +2423,7 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
         requiredLevel: feature.requiredLevel,
         optional: feature.optional === true,
         maneuvers: feature.maneuvers ?? [],
-        signature: buildFeatureSignature(feature),
+        signature: buildFeatureSignature(feature, context),
         automation: feature.sourceType === "rageAction"
           ? { type: "rageAction", requiredLevel: feature.requiredLevel }
           : feature.sourceType === "fighterManeuver"
@@ -2101,6 +2432,12 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
       }
     }
   };
+
+  if (feature.documentId) {
+    entryData._id = feature.documentId;
+  }
+
+  return entryData;
 }
 
 function createSubclassEntryData(entry, folderIdByPath, iconLookup = null) {
@@ -2157,9 +2494,18 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
     itemTypes: ["feat"]
   }));
 
+  const plannedFeatureUuidById = new Map(
+    featureDefinitions
+      .map((feature) => [feature.featureId, compendiumItemUuid(pack.collection, feature.documentId)])
+      .filter(([, uuid]) => Boolean(uuid))
+  );
+  const featureContext = {
+    ...context,
+    featureUuidById: plannedFeatureUuidById
+  };
   const features = featureDefinitions.map((feature) => ({
     ...feature,
-    signature: buildFeatureSignature(feature)
+    signature: buildFeatureSignature(feature, featureContext)
   }));
   const documents = await getPackDocuments(pack);
   if (shouldRebuildManagedPack(documents, features, "featureId")) {
@@ -2178,7 +2524,7 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
     await createManagedDocuments(
       pack,
       features,
-      (entry, folderIdByPath) => createFeatureEntryData(entry, folderIdByPath, context.iconLookup)
+      (entry, folderIdByPath) => createFeatureEntryData(entry, folderIdByPath, context.iconLookup, featureContext)
     );
   }
 
@@ -2221,7 +2567,11 @@ async function syncSubclassesPack(normalizedDataList, context) {
   for (const normalizedData of Array.isArray(normalizedDataList) ? normalizedDataList : [normalizedDataList]) {
     const classIdentifier = normalizedData.classData.identifier;
     for (const subclass of normalizedData.subclasses) {
-      const advancement = buildSubclassAdvancements(subclass, context);
+      const advancement = buildSubclassAdvancements(subclass, {
+        ...context,
+        classIdentifier,
+        maneuverEntries: normalizedData.maneuvers
+      });
       const system = createSubclassSystem(subclass, classIdentifier, advancement, normalizedData.sourceLabel);
       subclassEntries.push({
         subclass,
@@ -2287,12 +2637,12 @@ async function syncClassesPack(normalizedDataList, context) {
       fightingStyleEntries: normalizedData.fightingStyles,
       dominanceProgression: normalizedData.dominanceProgression
     });
-    const classSystem = createClassSystem(normalizedData.classData, classAdvancement, REBREYA_SOURCE_LABEL);
+    const classSystem = createClassSystem(normalizedData.classData, classAdvancement, normalizedData.sourceLabel);
     classEntries.push({
       classData: normalizedData.classData,
       system: classSystem,
       signature: buildClassSignature(normalizedData.classData, classSystem, {
-        sourceLabel: REBREYA_SOURCE_LABEL,
+        sourceLabel: normalizedData.sourceLabel,
         featureIds: classFeatures.map((feature) => feature.featureId)
       }),
       folderPath: normalizeFolderPath([CLASS_ROOT_FOLDER])
@@ -2347,18 +2697,19 @@ export class ClassesCompendiumService {
     const iconLookup = await buildNamedIconLookup(CLASS_ICON_SEARCH_PATHS, { forceRefresh: true });
     const normalizedData = await loadData();
     const featureDefinitions = normalizedData.flatMap((classData) => buildFeatureDefinitions(classData));
+    const featLookup = await buildFeatLookup();
     const { pack: featuresPack, featureUuidById } = await syncClassFeaturePack(featureDefinitions, {
       iconLookup,
+      featLookupByName: featLookup.byName,
       rootFolders: normalizedData.map((classData) => classData.classFeatureRootFolder)
     });
-    const minorFeatUuids = await buildMinorFeatPool();
     const subclassesPack = await syncSubclassesPack(normalizedData, {
       featureUuidById,
       iconLookup
     });
     const classesPack = await syncClassesPack(normalizedData, {
       featureUuidById,
-      minorFeatUuids,
+      minorFeatUuids: featLookup.minorFeatUuids,
       iconLookup
     });
 

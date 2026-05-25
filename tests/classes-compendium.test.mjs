@@ -17,8 +17,11 @@ globalThis.CONST ??= {
 };
 
 const {
+  buildMinorFeatPool,
   buildClassAdvancement,
   buildFeatureDefinitions,
+  buildSubclassAdvancements,
+  createClassSystem,
   createFeatureEntryData,
   normalizeClassCompendiumData
 } = await import("../scripts/data/classes-compendium.js");
@@ -28,8 +31,38 @@ function loadJson(path) {
 }
 
 function makeUuidMap(definitions) {
-  return new Map(definitions.map((definition) => [definition.featureId, `Compendium.world.rebreya-class-features.Item.${definition.identifier}`]));
+  return new Map(definitions.map((definition) => [definition.featureId, `Compendium.world.rebreya-class-features.Item.${definition.documentId ?? definition.identifier}`]));
 }
+
+function makeFeatIndexPack(rows) {
+  return {
+    collection: "world.rebreya-feats",
+    getIndex: async () => rows
+  };
+}
+
+function withGamePacks(pack, callback) {
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    packs: {
+      get: () => pack
+    }
+  };
+
+  return Promise.resolve(callback()).finally(() => {
+    globalThis.game = previousGame;
+  });
+}
+
+test("barbarian and fighter reworks use the ZoZT source label", () => {
+  const barbarian = normalizeClassCompendiumData(loadJson("data/barbarian-rework-v012.json"));
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+
+  assert.equal(barbarian.sourceLabel, "ЗоЗТ");
+  assert.equal(fighter.sourceLabel, "ЗоЗТ");
+  assert.equal(createClassSystem(barbarian.classData, [], barbarian.sourceLabel).source.custom, "ЗоЗТ");
+  assert.equal(createClassSystem(fighter.classData, [], fighter.sourceLabel).source.custom, "ЗоЗТ");
+});
 
 test("fighter data defines dominance dice, fighting styles, maneuvers, and subclasses", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
@@ -37,8 +70,21 @@ test("fighter data defines dominance dice, fighting styles, maneuvers, and subcl
   assert.equal(fighter.classData.identifier, "fighter-rework-v028");
   assert.equal(fighter.classData.hitDie, "d10");
   assert.equal(fighter.classData.features.some((feature) => feature.name === "Стиль доминирования"), true);
+  assert.equal(fighter.classData.features.some((feature) => feature.name === "Воинская мультиатака"), false);
+  assert.deepEqual(
+    fighter.classData.features
+      .filter((feature) => feature.name.startsWith("Воинская мультиатака:"))
+      .map((feature) => feature.name),
+    [
+      "Воинская мультиатака: Всплеск действий",
+      "Воинская мультиатака: Разрушитель орд",
+      "Воинская мультиатака: Стойкий защитник"
+    ]
+  );
   assert.equal(fighter.fightingStyles.length, 12);
   assert.equal(fighter.maneuvers.length, 24);
+  assert.equal(fighter.maneuvers.some((maneuver) => maneuver.name === "Активное уклонение"), true);
+  assert.equal(fighter.maneuvers.some((maneuver) => maneuver.name === "Отвлекающий удар"), true);
   assert.equal(fighter.subclasses.length, 9);
   assert.deepEqual(fighter.dominanceProgression, {
     dice: { "1": 2, "5": 3, "9": 4, "13": 5, "17": 6 },
@@ -88,4 +134,118 @@ test("fighter maneuvers consume the shared dominance dice item by identifier", (
     }
   }]);
   assert.match(activity.description.chatFlavor, /@scale\.fighter-rework-v028\.dominance-die/u);
+});
+
+test("fighter fighting style items grant the real feat and their fixed maneuvers", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const featureUuidById = makeUuidMap(definitions);
+  const style = definitions.find((definition) => definition.sourceType === "fightingStyle" && definition.styleName === "Стрельба");
+  const styleFeatUuid = "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa";
+  const entry = createFeatureEntryData(style, new Map(), null, {
+    featureUuidById,
+    featLookupByName: new Map([
+      ["стрельба", [{
+        uuid: styleFeatUuid,
+        section: "черты боевых стилей"
+      }]]
+    ])
+  });
+
+  const featGrant = entry.system.advancement.find((advancement) => advancement.title === "Черта боевого стиля");
+  const maneuverGrant = entry.system.advancement.find((advancement) => advancement.title === "Приёмы боевого стиля");
+
+  assert.equal(entry.name, "Боевой стиль: Стрельба");
+  assert.deepEqual(featGrant.configuration.items.map((item) => item.uuid), [styleFeatUuid]);
+  assert.equal(maneuverGrant.configuration.items.length, 3);
+  assert.deepEqual(
+    maneuverGrant.configuration.items.map((item) => item.uuid),
+    ["Засада", "Точная атака", "Тактическая оценка"].map((maneuverName) => {
+      const maneuver = definitions.find((definition) => definition.sourceType === "fighterManeuver" && definition.name === maneuverName);
+      return featureUuidById.get(maneuver.featureId);
+    })
+  );
+});
+
+test("superior technique fighting style chooses any three maneuvers", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const featureUuidById = makeUuidMap(definitions);
+  const style = definitions.find((definition) => definition.sourceType === "fightingStyle" && definition.styleName === "Превосходная техника");
+  const entry = createFeatureEntryData(style, new Map(), null, { featureUuidById });
+  const choice = entry.system.advancement.find((advancement) => advancement.type === "ItemChoice");
+
+  assert.equal(entry.name, "Боевой стиль: Превосходная техника");
+  assert.equal(choice.title, "Приёмы боевого стиля");
+  assert.equal(choice.configuration.choices["0"].count, 3);
+  assert.equal(choice.configuration.pool.length, 24);
+});
+
+test("battle master subclass offers maneuver choices at its progression levels", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const featureUuidById = makeUuidMap(definitions);
+  const subclass = fighter.subclasses.find((entry) => entry.name === "Мастер боевых искусств");
+  const advancement = buildSubclassAdvancements(subclass, {
+    featureUuidById,
+    maneuverEntries: fighter.maneuvers,
+    classIdentifier: fighter.classData.identifier
+  });
+  const maneuverChoices = advancement.filter((entry) => entry.type === "ItemChoice" && entry.title.startsWith("Приёмы"));
+
+  assert.deepEqual(maneuverChoices.map((entry) => entry.level), [3, 7, 10, 15, 18]);
+  assert.deepEqual(maneuverChoices.map((entry) => entry.configuration.choices[String(entry.level)].count), [2, 2, 2, 2, 2]);
+  assert.equal(maneuverChoices[0].configuration.pool.length, 24);
+});
+
+test("fighter multiattack variants are activatable feature items", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const actionSurge = definitions.find((definition) => definition.name === "Воинская мультиатака: Всплеск действий");
+  const entry = createFeatureEntryData(actionSurge, new Map());
+  const activity = Object.values(entry.system.activities)[0];
+
+  assert.equal(entry.effects.length, 1);
+  assert.equal(entry.system.uses.max, "@prof");
+  assert.equal(entry.system.uses.recovery[0].period, "lr");
+  assert.equal(activity.activation.type, "special");
+  assert.deepEqual(activity.consumption.targets.map((target) => target.value), ["1"]);
+});
+
+test("minor feat pool excludes choice option items", async () => {
+  const rows = [
+    {
+      _id: "aaaaaaaaaaaaaaaa",
+      name: "Аристократичность",
+      flags: { teyvankal: { section: "Младшие черты" } }
+    },
+    {
+      _id: "bbbbbbbbbbbbbbbb",
+      name: "Аристократические интриги",
+      flags: {
+        teyvankal: { section: "Младшие черты" },
+        "rebreya-main": { choiceOption: { parentIdentifier: "aristokratichnost", value: "aristocratic-intrigue" } }
+      }
+    },
+    {
+      _id: "cccccccccccccccc",
+      name: "Знаток доспехов",
+      flags: { teyvankal: { section: "Младшие черты" } }
+    },
+    {
+      _id: "dddddddddddddddd",
+      name: "Лёгкие доспехи",
+      flags: {
+        teyvankal: { section: "Младшие черты" },
+        "rebreya-main": { choiceOption: { parentIdentifier: "znatok-dospehov", value: "lgt" } }
+      }
+    }
+  ];
+
+  const pool = await withGamePacks(makeFeatIndexPack(rows), () => buildMinorFeatPool());
+
+  assert.deepEqual(pool, [
+    "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa",
+    "Compendium.world.rebreya-feats.Item.cccccccccccccccc"
+  ]);
 });
