@@ -64,9 +64,24 @@ const SKILL_POOL = ["ath", "prc", "sur", "itm", "nat", "ani"];
 const FIGHTER_SKILL_POOL = ["acr", "ath", "prc", "sur", "itm", "his", "ins", "ani"];
 const ASI_LEVELS = [4, 8, 12, 16, 19];
 const BATTLE_MASTER_SUBCLASS_NAME = "мастер боевых искусств";
+const RUNE_KNIGHT_SUBCLASS_NAME = "рунный рыцарь";
 const FIGHTING_STYLE_FEATS_SECTION = "черты боевых стилей";
 const MINOR_FEATS_SECTION = "младшие черты";
 const BATTLE_MASTER_MANEUVER_CHOICE_LEVELS = [3, 7, 10, 15, 18];
+const RUNE_KNIGHT_RUNE_CHOICE_LEVELS = [
+  { level: 3, count: 2 },
+  { level: 7, count: 1 },
+  { level: 10, count: 1 },
+  { level: 15, count: 1 }
+];
+const RUNE_KNIGHT_RUNE_SPECS = [
+  { name: "Каменная руна", requiredLevel: 3 },
+  { name: "Ледяная руна", requiredLevel: 3 },
+  { name: "Облачная руна", requiredLevel: 3 },
+  { name: "Огненная руна", requiredLevel: 3 },
+  { name: "Холмовая руна", requiredLevel: 7 },
+  { name: "Штормовая руна", requiredLevel: 7 }
+];
 const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_OVERRIDE = 5;
@@ -320,6 +335,53 @@ function normalizeFeatureEntry(rawFeature, index, {
   };
 }
 
+function escapeRegExp(value) {
+  return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function extractRuneKnightRuneDescriptions(description) {
+  const text = cleanString(description);
+  const descriptions = new Map();
+  if (!text) {
+    return descriptions;
+  }
+
+  const runeNamePattern = RUNE_KNIGHT_RUNE_SPECS.map((spec) => escapeRegExp(spec.name)).join("|");
+  const headingPattern = new RegExp(`(${runeNamePattern})\\s*(?:\\([^)]*\\))?\\s*\\.`, "giu");
+  const headings = Array.from(text.matchAll(headingPattern));
+
+  for (const [index, match] of headings.entries()) {
+    const name = cleanString(match[1]);
+    const start = match.index ?? 0;
+    const end = headings[index + 1]?.index ?? text.length;
+    const segment = cleanString(text.slice(start, end).replace(/\s+\./u, "."));
+    if (name && segment) {
+      descriptions.set(normalizeMatchText(name), segment);
+    }
+  }
+
+  return descriptions;
+}
+
+function deriveRuneKnightRunes(subclasses = []) {
+  const runeKnight = (Array.isArray(subclasses) ? subclasses : [])
+    .find((subclass) => normalizeMatchText(subclass?.name) === RUNE_KNIGHT_SUBCLASS_NAME);
+  const runeCarver = runeKnight?.features?.find((feature) => normalizeMatchText(feature?.name) === "резчик рун");
+  if (!runeKnight || !runeCarver) {
+    return [];
+  }
+
+  const descriptions = extractRuneKnightRuneDescriptions(runeCarver?.description);
+
+  return RUNE_KNIGHT_RUNE_SPECS.map((spec) => ({
+    id: buildAsciiIdentifier(`rune-knight-${spec.name}`, spec.name),
+    name: spec.name,
+    levels: [spec.requiredLevel],
+    requiredLevel: spec.requiredLevel,
+    description: descriptions.get(normalizeMatchText(spec.name)) ?? `${spec.name}\nРуна рунного рыцаря.`
+  }));
+}
+
 function normalizeProgressionMap(value) {
   const progression = {};
   for (const [level, entry] of Object.entries(isPlainObject(value) ? value : {})) {
@@ -473,6 +535,21 @@ export function normalizeClassCompendiumData(rawData) {
     }))
     .filter((maneuver) => maneuver.name);
 
+  const usedRuneIds = new Set();
+  const runes = (Array.isArray(data.runes) ? data.runes : deriveRuneKnightRunes(subclasses))
+    .map((rune, index) => normalizeFeatureEntry(rune, index, {
+      scopeId: `${classIdentifier}-rune-knight-rune`,
+      fallbackName: "Руна рунного рыцаря",
+      fallbackLevel: 3,
+      usedIds: usedRuneIds,
+      forceRequiredLevel: rune?.requiredLevel ?? rune?.levels?.[0] ?? 3
+    }))
+    .map((rune) => ({
+      ...rune,
+      levels: [Math.max(1, rune.requiredLevel || 3)]
+    }))
+    .filter((rune) => rune.name);
+
   const rawDominanceProgression = isPlainObject(data.dominanceProgression) ? data.dominanceProgression : {};
 
   return {
@@ -497,6 +574,7 @@ export function normalizeClassCompendiumData(rawData) {
     rageDamageProgression: normalizeProgressionMap(data.rageDamageProgression),
     fightingStyles,
     maneuvers,
+    runes,
     dominanceProgression: {
       dice: normalizeProgressionMap(rawDominanceProgression.dice),
       die: normalizeDieProgressionMap(rawDominanceProgression.die)
@@ -538,6 +616,8 @@ export function buildFeatureDefinitions(normalizedData) {
     ])
   );
   const allManeuverFeatureIds = Array.from(maneuverFeatureIdByName.values());
+  const runeKnightSubclass = (normalizedData.subclasses ?? [])
+    .find((subclass) => normalizeMatchText(subclass.name) === RUNE_KNIGHT_SUBCLASS_NAME);
 
   const buildBaseFeatureDefinition = (feature, sourceType, folderPath, identifierSeed) => {
     const featureId = `${classId}::${sourceType}::${feature.featureId}`;
@@ -629,6 +709,24 @@ export function buildFeatureDefinitions(normalizedData) {
     ));
   }
 
+  for (const rune of normalizedData.runes ?? []) {
+    definitions.push({
+      ...buildBaseFeatureDefinition(
+        rune,
+        "runeKnightRune",
+        normalizeFolderPath([
+          classFeatureRootFolder,
+          "Архетипы",
+          runeKnightSubclass?.name ?? "Рунный рыцарь",
+          "Руны"
+        ]),
+        `${classId}-rune-knight-rune-${rune.featureId}`
+      ),
+      subclassId: runeKnightSubclass?.subclassId ?? null,
+      subclassName: runeKnightSubclass?.name ?? "Рунный рыцарь"
+    });
+  }
+
   for (const subclass of normalizedData.subclasses) {
     for (const feature of subclass.features) {
       const featureId = `${subclass.subclassId}::subclass::${feature.featureId}`;
@@ -701,6 +799,10 @@ function buildSubtypeRequirementsLabel(feature) {
 
   if (feature.sourceType === "fighterManeuver") {
     return level > 1 ? `Боевой приём, ${level}-й уровень` : "Боевой приём";
+  }
+
+  if (feature.sourceType === "runeKnightRune") {
+    return `${cleanString(feature.subclassName, "Рунный рыцарь")}, ${level}-й уровень`;
   }
 
   return `${cleanString(feature.className, "Класс")}, ${level}-й уровень`;
@@ -1978,6 +2080,18 @@ function maneuverUuidPoolFromContext(context = {}) {
   return featureUuidsForIds(maneuverFeatureIds, context);
 }
 
+function runeUuidPoolFromContext(context = {}, maxRequiredLevel = 20) {
+  const classIdentifier = cleanString(context.classIdentifier, "fighter-rework-v028");
+  const runeFeatureIds = Array.isArray(context.runeFeatureIds)
+    ? context.runeFeatureIds
+    : (Array.isArray(context.runeEntries) ? context.runeEntries : [])
+      .filter((entry) => Math.max(1, Math.floor(parseNumber(entry?.requiredLevel, entry?.levels?.[0] ?? 3))) <= maxRequiredLevel)
+      .map((entry) => `${classIdentifier}::runeKnightRune::${entry.featureId}`)
+      .filter(Boolean);
+
+  return featureUuidsForIds(runeFeatureIds, context);
+}
+
 function buildFeatureItemAdvancements(feature, context = {}) {
   const advancements = [];
 
@@ -2391,6 +2505,25 @@ export function buildSubclassAdvancements(subclass, context = {}) {
     }
   }
 
+  if (normalizeMatchText(subclass.name) === RUNE_KNIGHT_SUBCLASS_NAME) {
+    for (const { level, count } of RUNE_KNIGHT_RUNE_CHOICE_LEVELS) {
+      const runeUuids = runeUuidPoolFromContext(context, level);
+      if (!runeUuids.length) {
+        continue;
+      }
+
+      advancements.push(buildItemChoiceAdvancement({
+        classIdentifier: subclass.subclassId,
+        seed: `runes-${level}`,
+        title: `Руны (${level}-й уровень)`,
+        hint: "Выберите руны, изучаемые умением «Резчик Рун».",
+        level,
+        count,
+        pool: runeUuids
+      }));
+    }
+  }
+
   return advancements;
 }
 
@@ -2506,7 +2639,15 @@ function resolveClassFeatureIcon(featureOrName, iconLookup) {
     addIconCandidate(candidates, seenCandidates, `${featureName} — приём`);
   }
 
+  if (sourceType === "runeKnightRune") {
+    addIconCandidate(candidates, seenCandidates, `${featureName} — Рунный рыцарь`);
+  }
+
   addIconCandidate(candidates, seenCandidates, featureName);
+
+  if (sourceType === "runeKnightRune") {
+    addIconCandidate(candidates, seenCandidates, "Резчик рун");
+  }
 
   if (sourceType === "fightingStyle" && styleName) {
     addIconCandidate(candidates, seenCandidates, styleName);
@@ -2761,7 +2902,8 @@ async function syncSubclassesPack(normalizedDataList, context) {
       const advancement = buildSubclassAdvancements(subclass, {
         ...context,
         classIdentifier,
-        maneuverEntries: normalizedData.maneuvers
+        maneuverEntries: normalizedData.maneuvers,
+        runeEntries: normalizedData.runes
       });
       const system = createSubclassSystem(subclass, classIdentifier, advancement, normalizedData.sourceLabel);
       subclassEntries.push({

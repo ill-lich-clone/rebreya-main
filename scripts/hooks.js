@@ -1,5 +1,60 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 
+let bg3HotbarSuppressionHookRegistered = false;
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasObjectKeys(value) {
+  return isPlainObject(value) && Object.keys(value).length > 0;
+}
+
+export function shouldSuppressBg3HotbarAutoAdd(item) {
+  if (!item || item.type !== "feat") {
+    return false;
+  }
+
+  const rebreyaFlags = item.flags?.[MODULE_ID];
+  const teyvankalFlags = item.flags?.teyvankal;
+  const managed = item.getFlag?.(MODULE_ID, "managed") ?? rebreyaFlags?.managed;
+  const automation = item.getFlag?.(MODULE_ID, "automation") ?? rebreyaFlags?.automation;
+  const choiceOption = item.getFlag?.(MODULE_ID, "choiceOption") ?? rebreyaFlags?.choiceOption;
+  const sourceType = item.getFlag?.(MODULE_ID, "sourceType") ?? rebreyaFlags?.sourceType;
+  const classIdentifier = item.getFlag?.(MODULE_ID, "classIdentifier") ?? rebreyaFlags?.classIdentifier;
+  const featureId = item.getFlag?.(MODULE_ID, "featureId") ?? rebreyaFlags?.featureId;
+
+  return Boolean(
+    managed
+    || automation
+    || choiceOption
+    || sourceType
+    || classIdentifier
+    || featureId
+    || hasObjectKeys(teyvankalFlags)
+  );
+}
+
+export function applyBg3HotbarAutoAddSuppression(item, options) {
+  if (!isPlainObject(options) || !shouldSuppressBg3HotbarAutoAdd(item)) {
+    return false;
+  }
+
+  options.noBG3AutoAdd = true;
+  return true;
+}
+
+function registerBg3HotbarAutoAddSuppression() {
+  if (bg3HotbarSuppressionHookRegistered || !globalThis.Hooks?.on) {
+    return;
+  }
+
+  bg3HotbarSuppressionHookRegistered = true;
+  Hooks.on("createItem", (item, options) => {
+    applyBg3HotbarAutoAddSuppression(item, options);
+  });
+}
+
 function canShowRebreyaControls() {
   return true;
 }
@@ -232,6 +287,8 @@ export function refreshEconomyLauncher() {
 }
 
 export function registerSceneControlsHook() {
+  registerBg3HotbarAutoAddSuppression();
+
   Hooks.on("getSceneControlButtons", (controls) => {
     if (!canShowRebreyaControls() || !controls) {
       return;

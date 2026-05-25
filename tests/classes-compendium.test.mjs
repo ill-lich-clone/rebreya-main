@@ -73,6 +73,7 @@ test("barbarian and fighter reworks use the ZoZT source label", () => {
 
   assert.equal(barbarian.sourceLabel, "ЗоЗТ");
   assert.equal(fighter.sourceLabel, "ЗоЗТ");
+  assert.equal(barbarian.runes.length, 0);
   assert.equal(createClassSystem(barbarian.classData, [], barbarian.sourceLabel).source.custom, "ЗоЗТ");
   assert.equal(createClassSystem(fighter.classData, [], fighter.sourceLabel).source.custom, "ЗоЗТ");
 });
@@ -96,6 +97,7 @@ test("fighter data defines dominance dice, fighting styles, maneuvers, and subcl
   );
   assert.equal(fighter.fightingStyles.length, 12);
   assert.equal(fighter.maneuvers.length, 24);
+  assert.equal(fighter.runes.length, 6);
   assert.equal(fighter.maneuvers.some((maneuver) => maneuver.name === "Активное уклонение"), true);
   assert.equal(fighter.maneuvers.some((maneuver) => maneuver.name === "Отвлекающий удар"), true);
   assert.equal(fighter.subclasses.length, 9);
@@ -163,7 +165,8 @@ test("fighter feature icons resolve from class-specific short and qualified name
     ["ответный удар прием", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%9E%D1%82%D0%B2%D0%B5%D1%82%D0%BD%D1%8B%D0%B9%20%D1%83%D0%B4%D0%B0%D1%80%20%E2%80%94%20%D0%BF%D1%80%D0%B8%D1%91%D0%BC.webp"],
     ["ответный удар самурай", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%9E%D1%82%D0%B2%D0%B5%D1%82%D0%BD%D1%8B%D0%B9%20%D1%83%D0%B4%D0%B0%D1%80%20%E2%80%94%20%D0%A1%D0%B0%D0%BC%D1%83%D1%80%D0%B0%D0%B9.webp"],
     ["дополнительные владения самурай", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%94%D0%BE%D0%BF%D0%BE%D0%BB%D0%BD%D0%B8%D1%82%D0%B5%D0%BB%D1%8C%D0%BD%D1%8B%D0%B5%20%D0%B2%D0%BB%D0%B0%D0%B4%D0%B5%D0%BD%D0%B8%D1%8F%20%E2%80%94%20%D0%A1%D0%B0%D0%BC%D1%83%D1%80%D0%B0%D0%B9.webp"],
-    ["использование заклинаний лесной страж", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%98%D1%81%D0%BF%D0%BE%D0%BB%D1%8C%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5%20%D0%B7%D0%B0%D0%BA%D0%BB%D0%B8%D0%BD%D0%B0%D0%BD%D0%B8%D0%B9%20%E2%80%94%20%D0%9B%D0%B5%D1%81%D0%BD%D0%BE%D0%B9%20%D1%81%D1%82%D1%80%D0%B0%D0%B6.webp"]
+    ["использование заклинаний лесной страж", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%98%D1%81%D0%BF%D0%BE%D0%BB%D1%8C%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5%20%D0%B7%D0%B0%D0%BA%D0%BB%D0%B8%D0%BD%D0%B0%D0%BD%D0%B8%D0%B9%20%E2%80%94%20%D0%9B%D0%B5%D1%81%D0%BD%D0%BE%D0%B9%20%D1%81%D1%82%D1%80%D0%B0%D0%B6.webp"],
+    ["резчик рун", "modules/rebreya-main/templates/icons/Classes/Fighter/%D0%A0%D0%B5%D0%B7%D1%87%D0%B8%D0%BA%20%D1%80%D1%83%D0%BD.webp"]
   ]);
 
   const actionSurge = fighterDefinitions.find((definition) => definition.name === "Воинская мультиатака: Всплеск действий");
@@ -172,6 +175,7 @@ test("fighter feature icons resolve from class-specific short and qualified name
   const samuraiProficiencies = fighterDefinitions.find((definition) => definition.subclassName === "Самурай" && definition.name === "Дополнительные Владения");
   const samuraiRetaliation = fighterDefinitions.find((definition) => definition.subclassName === "Самурай" && definition.name === "Ответный удар");
   const woodlandSpellcasting = fighterDefinitions.find((definition) => definition.subclassName === "Лесной страж" && definition.name === "Использование заклинаний");
+  const stoneRune = fighterDefinitions.find((definition) => definition.sourceType === "runeKnightRune" && definition.name === "Каменная руна");
 
   assert.equal(createFeatureEntryData(actionSurge, new Map(), iconLookup).img, iconLookup.get("всплеск действий"));
   assert.equal(createFeatureEntryData(duelistStyle, new Map(), iconLookup).img, iconLookup.get("дуэлянт"));
@@ -179,6 +183,7 @@ test("fighter feature icons resolve from class-specific short and qualified name
   assert.equal(createFeatureEntryData(samuraiProficiencies, new Map(), iconLookup).img, iconLookup.get("дополнительные владения самурай"));
   assert.equal(createFeatureEntryData(samuraiRetaliation, new Map(), iconLookup).img, iconLookup.get("ответный удар самурай"));
   assert.equal(createFeatureEntryData(woodlandSpellcasting, new Map(), iconLookup).img, iconLookup.get("использование заклинаний лесной страж"));
+  assert.equal(createFeatureEntryData(stoneRune, new Map(), iconLookup).img, iconLookup.get("резчик рун"));
 });
 
 test("fighter class and subclass icons live under Classes/Fighter", () => {
@@ -375,6 +380,33 @@ test("battle master subclass offers maneuver choices at its progression levels",
   assert.deepEqual(maneuverChoices.map((entry) => entry.level), [3, 7, 10, 15, 18]);
   assert.deepEqual(maneuverChoices.map((entry) => entry.configuration.choices[String(entry.level)].count), [2, 2, 2, 2, 2]);
   assert.equal(maneuverChoices[0].configuration.pool.length, 24);
+});
+
+test("rune knight subclass offers rune choices at its progression levels", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const featureUuidById = makeUuidMap(definitions);
+  const subclass = fighter.subclasses.find((entry) => entry.name === "Рунный рыцарь");
+  const advancement = buildSubclassAdvancements(subclass, {
+    featureUuidById,
+    runeEntries: fighter.runes,
+    classIdentifier: fighter.classData.identifier
+  });
+  const runeChoices = advancement.filter((entry) => entry.type === "ItemChoice" && entry.title.startsWith("Руны"));
+  const runeDefinitions = definitions.filter((definition) => definition.sourceType === "runeKnightRune");
+  const runeUuidByName = new Map(runeDefinitions.map((definition) => [definition.name, featureUuidById.get(definition.featureId)]));
+  const poolUuidsByLevel = new Map(runeChoices.map((entry) => [
+    entry.level,
+    entry.configuration.pool.map((poolEntry) => poolEntry.uuid)
+  ]));
+
+  assert.deepEqual(runeChoices.map((entry) => entry.level), [3, 7, 10, 15]);
+  assert.deepEqual(runeChoices.map((entry) => entry.configuration.choices[String(entry.level)].count), [2, 1, 1, 1]);
+  assert.deepEqual(runeChoices.map((entry) => entry.configuration.pool.length), [4, 6, 6, 6]);
+  assert.ok(poolUuidsByLevel.get(3).includes(runeUuidByName.get("Каменная руна")));
+  assert.equal(poolUuidsByLevel.get(3).includes(runeUuidByName.get("Холмовая руна")), false);
+  assert.ok(poolUuidsByLevel.get(7).includes(runeUuidByName.get("Холмовая руна")));
+  assert.ok(poolUuidsByLevel.get(7).includes(runeUuidByName.get("Штормовая руна")));
 });
 
 test("fighter multiattack variants are activatable feature items", () => {
