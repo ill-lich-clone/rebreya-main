@@ -366,6 +366,58 @@ test("fighter maneuver runtime ignores duplicate actor instances for the source 
   }
 });
 
+test("fighter maneuver runtime infers automation from stale subtype-only maneuver items", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const dominance = makeItem({
+    id: "dominance-real",
+    name: "Стиль доминирования",
+    featureId: "fighter-rework-v028::class::fighter-dominance",
+    uses: {
+      spent: 0,
+      max: 2
+    }
+  });
+  const source = new TestActor({
+    id: "fighter",
+    name: "Воин",
+    items: [dominance]
+  });
+  const target = new TestActor({ id: "lich", name: "Лич" });
+  globalThis.game.user.targets = new Set([{ actor: target }]);
+  const service = new FighterAutomationService({}, {
+    rollFactory: () => fixedRoll(4)
+  });
+  const item = makeItem({ id: "menacing", name: "Атака с угрозой" });
+  item.actor = source;
+  item.system.type = {
+    value: "feat",
+    subtype: "fighterManeuver"
+  };
+  const activity = makeActivity({
+    actor: source,
+    item
+  });
+
+  try {
+    await service.applyDnd5ePostUseActivity(activity, {}, {
+      updates: {
+        item: [{
+          _id: dominance.id,
+          "system.uses.spent": 1
+        }]
+      }
+    });
+
+    assert.deepEqual(target.damageApplications[0].damages, [{
+      value: 4,
+      type: ""
+    }]);
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+});
+
 test("fighter maneuver runtime spends the owned dominance dice item when dnd5e did not consume it", async () => {
   const previousTargets = globalThis.game.user.targets;
   const dominance = makeItem({

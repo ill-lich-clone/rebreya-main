@@ -170,3 +170,95 @@ test("fighter dominance maneuvers retarget blank or own-item use consumption bef
   assert.equal(activityUsesTarget.type, "itemUses");
   assert.equal(activityUsesTarget.target, dominanceItem.id);
 });
+
+test("fighter dominance maneuvers retarget stale subtype-only owned items via activity source", () => {
+  const dominanceItem = {
+    id: "actualDominanceItemId",
+    name: "Стиль доминирования",
+    flags: {
+      "rebreya-main": {
+        featureId: "fighter-rework-v028::class::fighter-dominance"
+      }
+    },
+    system: {
+      identifier: "fighter-dominance",
+      uses: {
+        max: "@scale.fighter-rework-v028.dominance-dice"
+      }
+    }
+  };
+  const maneuverItem = {
+    id: "maneuverItemId",
+    name: "Атака с угрозой",
+    system: {
+      type: {
+        value: "feat",
+        subtype: "fighterManeuver"
+      }
+    }
+  };
+  const actor = makeActor([dominanceItem, maneuverItem]);
+  maneuverItem.actor = actor;
+  const updates = [];
+  const activity = {
+    type: "utility",
+    actor,
+    item: maneuverItem,
+    consumption: {
+      targets: [{
+        type: "itemUses",
+        target: "",
+        value: "1",
+        scaling: {
+          mode: "",
+          formula: ""
+        }
+      }]
+    },
+    range: {
+      units: "self"
+    },
+    target: {
+      affects: {
+        type: "self"
+      },
+      prompt: false
+    },
+    updateSource(patch) {
+      updates.push(patch);
+      for (const [path, value] of Object.entries(patch)) {
+        foundry.utils.setProperty(this, path, value);
+      }
+      return this;
+    }
+  };
+  const usageConfig = {
+    consume: {
+      resources: [0]
+    },
+    hasConsumption: true
+  };
+  const messageConfig = {
+    hasConsumption: true
+  };
+
+  const service = new CombatAttackService({});
+  service.applyDnd5ePreUseActivity(activity, usageConfig, {}, messageConfig);
+
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0]["consumption.targets"], [{
+    type: "itemUses",
+    target: dominanceItem.id,
+    value: "1",
+    scaling: {
+      mode: "",
+      formula: ""
+    }
+  }]);
+  assert.deepEqual(usageConfig.consume.resources, [0]);
+  assert.equal(usageConfig.hasConsumption, true);
+  assert.equal(messageConfig.hasConsumption, true);
+  assert.equal(activity.target.affects.type, "creature");
+  assert.equal(activity.target.prompt, true);
+  assert.equal(activity.range.units, "");
+});

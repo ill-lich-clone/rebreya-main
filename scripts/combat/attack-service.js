@@ -69,6 +69,18 @@ function activityConsumptionTargets(activity) {
   return collectionValues(foundry.utils.getProperty(activity, "consumption.targets"));
 }
 
+function consumptionTargetData(target, overrides = {}) {
+  return {
+    type: String(overrides.type ?? target?.type ?? "").trim(),
+    target: String(overrides.target ?? target?.target ?? "").trim(),
+    value: String(overrides.value ?? target?.value ?? "1").trim() || "1",
+    scaling: {
+      mode: String(overrides.scaling?.mode ?? target?.scaling?.mode ?? "").trim(),
+      formula: String(overrides.scaling?.formula ?? target?.scaling?.formula ?? "").trim()
+    }
+  };
+}
+
 function normalizeAbilityKey(value, fallback = "str") {
   const abilityKey = String(value ?? "").trim().toLowerCase();
   if (["str", "dex", "con", "int", "wis", "cha"].includes(abilityKey)) {
@@ -895,6 +907,21 @@ export class CombatAttackService {
       return true;
     }
 
+    if (String(foundry.utils.getProperty(item, "system.type.subtype") ?? "").trim() === "fighterManeuver") {
+      return true;
+    }
+
+    const identifier = String(foundry.utils.getProperty(item, "system.identifier") ?? "").trim().toLowerCase();
+    if (identifier.includes("fighter-rework-v028") && identifier.includes("maneuver")) {
+      return true;
+    }
+
+    const rebreyaSection = normalizeLookupText(readDocumentFlag(item, MODULE_ID, "section"));
+    const teyvankalSection = normalizeLookupText(foundry.utils.getProperty(item, "flags.teyvankal.section"));
+    if (rebreyaSection === "воинские приёмы" || teyvankalSection === "воинские приёмы") {
+      return true;
+    }
+
     const featureId = String(readDocumentFlag(item, MODULE_ID, "featureId") ?? "").trim();
     if (featureId.includes("::fighterManeuver::")) {
       return true;
@@ -949,7 +976,35 @@ export class CombatAttackService {
     }) ?? null;
   }
 
-  #retargetFighterDominanceConsumption(activity) {
+  #syncUsageConsumptionConfig(usageConfig = {}, messageConfig = {}, indexes = []) {
+    if (!indexes.length) {
+      return;
+    }
+
+    if (usageConfig.consume !== false) {
+      usageConfig.consume ??= {};
+      usageConfig.consume.resources = indexes;
+    }
+    usageConfig.hasConsumption = true;
+    messageConfig.hasConsumption = true;
+  }
+
+  #applyActivitySourcePatch(activity, patch) {
+    if (!isPlainObject(patch) || !Object.keys(patch).length) {
+      return;
+    }
+
+    if (typeof activity?.updateSource === "function") {
+      activity.updateSource(patch);
+      return;
+    }
+
+    for (const [path, value] of Object.entries(patch)) {
+      foundry.utils.setProperty(activity, path, value);
+    }
+  }
+
+  #retargetFighterDominanceConsumption(activity, usageConfig = {}, messageConfig = {}) {
     if (!this.#isFighterDominanceManeuverActivity(activity)) {
       return;
     }
@@ -966,28 +1021,59 @@ export class CombatAttackService {
       return;
     }
 
-    const targets = activityConsumptionTargets(activity)
-      .filter((target) => target?.type === "itemUses" || target?.type === "activityUses");
-    if (!targets.length) {
-      const consumption = foundry.utils.getProperty(activity, "consumption");
-      if (isPlainObject(consumption)) {
-        consumption.targets = [{
-          type: "itemUses",
-          target: dominanceItemId,
-          value: "1",
-          scaling: {
-            mode: "",
-            formula: ""
-          }
-        }];
-      }
+    const allTargets = activityConsumptionTargets(activity);
+    const resourceTargetIndexes = [];
+    let nextTargets = [];
+    if (!allTargets.length) {
+      resourceTargetIndexes.push(0);
+      nextTargets = [consumptionTargetData(null, {
+        type: "itemUses",
+        target: dominanceItemId
+      })];
+      this.#applyActivitySourcePatch(activity, { "consumption.targets": nextTargets });
+      this.#syncUsageConsumptionConfig(usageConfig, messageConfig, resourceTargetIndexes);
       return;
     }
 
-    for (const target of targets) {
-      target.type = "itemUses";
-      target.target = dominanceItemId;
+    let changed = false;
+    nextTargets = allTargets.map((target, index) => {
+      const type = String(target?.type ?? "").trim();
+      if (type !== "itemUses" && type !== "activityUses") {
+        return consumptionTargetData(target);
+      }
+
+      resourceTargetIndexes.push(index);
+      if (type !== "itemUses" || target.target !== dominanceItemId) {
+        changed = true;
+      }
+
+      try {
+        target.type = "itemUses";
+        target.target = dominanceItemId;
+      }
+      catch (_error) {
+        // DataModel fields are synced below through updateSource when direct assignment is unavailable.
+      }
+
+      return consumptionTargetData(target, {
+        type: "itemUses",
+        target: dominanceItemId
+      });
+    });
+
+    if (!resourceTargetIndexes.length) {
+      resourceTargetIndexes.push(nextTargets.length);
+      nextTargets.push(consumptionTargetData(null, {
+        type: "itemUses",
+        target: dominanceItemId
+      }));
+      changed = true;
     }
+
+    if (changed) {
+      this.#applyActivitySourcePatch(activity, { "consumption.targets": nextTargets });
+    }
+    this.#syncUsageConsumptionConfig(usageConfig, messageConfig, resourceTargetIndexes);
   }
 
   #normalizeFighterManeuverTargeting(activity) {
@@ -1006,7 +1092,7 @@ export class CombatAttackService {
   }
 
   applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
-    this.#retargetFighterDominanceConsumption(activity);
+    this.#retargetFighterDominanceConsumption(activity, usageConfig, messageConfig);
     this.#normalizeFighterManeuverTargeting(activity);
 
     if (!this.#isWeaponAttackActivity(activity)) {

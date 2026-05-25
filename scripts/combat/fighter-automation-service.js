@@ -1,4 +1,5 @@
 import { CLASS_FEATURES_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
+import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 
 const EFFECT_MODE_OVERRIDE = 5;
 const LAST_ATTACK_MAX_AGE_MS = 120000;
@@ -149,6 +150,22 @@ function isFighterManeuverItem(item) {
     return true;
   }
 
+  if (cleanText(getProperty(item, "system.type.subtype")) === FIGHTER_MANEUVER_SUBTYPE) {
+    return true;
+  }
+
+  const identifier = cleanText(getProperty(item, "system.identifier")).toLowerCase();
+  if (identifier.includes("fighter-rework-v028") && identifier.includes("maneuver")) {
+    return true;
+  }
+
+  if (
+    normalizeText(readDocumentFlag(item, "section")) === normalizeText(FIGHTER_MANEUVER_SECTION_LABEL)
+    || normalizeText(getProperty(item, "flags.teyvankal.section")) === normalizeText(FIGHTER_MANEUVER_SECTION_LABEL)
+  ) {
+    return true;
+  }
+
   const featureId = itemFeatureId(item);
   if (featureId.includes("::fighterManeuver::")) {
     return true;
@@ -159,7 +176,28 @@ function isFighterManeuverItem(item) {
 
 function isFighterManeuverActivityDocument(document) {
   return cleanText(readDocumentFlag(document, "automation")) === "fighter-dominance-maneuver"
-    || readDocumentFlag(document, "fighterAutomation")?.kind === "maneuver";
+    || readDocumentFlag(document, "fighterAutomation")?.kind === "maneuver"
+    || isFighterManeuverItem(document)
+    || isFighterManeuverItem(document?.item);
+}
+
+function fighterManeuverAutomationFromActivity(activity) {
+  const directAutomation = readDocumentFlag(activity, "fighterAutomation")
+    ?? readDocumentFlag(activity?.item, "fighterAutomation");
+  if (directAutomation?.kind === "maneuver") {
+    return directAutomation;
+  }
+
+  if (!isFighterManeuverItem(activity?.item)) {
+    return {};
+  }
+
+  const classIdentifier = cleanText(
+    readDocumentFlag(activity?.item, "classIdentifier")
+    ?? readDocumentFlag(activity, "classIdentifier"),
+    "fighter-rework-v028"
+  );
+  return getFighterManeuverAutomation(activity?.item?.name ?? activity?.name, classIdentifier);
 }
 
 function effectStatuses(effect) {
@@ -268,7 +306,7 @@ export class FighterAutomationService {
     }
 
     const automation = cleanText(readDocumentFlag(activity, "automation"));
-    const fighterAutomation = readDocumentFlag(activity, "fighterAutomation") ?? {};
+    const fighterAutomation = fighterManeuverAutomationFromActivity(activity);
 
     if (automation === "fighter-second-wind" || fighterAutomation?.kind === "secondWind") {
       await this.#useSecondWind(actor, activity?.item, fighterAutomation);
