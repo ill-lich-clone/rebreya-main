@@ -438,12 +438,12 @@ export class FighterAutomationService {
   #resolveManeuverTarget(lastAttack, sourceActor = null) {
     const selectedTarget = collectionValues(game.user?.targets)
       .map(resolveActorFromTarget)
-      .find((actor) => actor instanceof Actor && actor !== sourceActor) ?? null;
+      .find((actor) => actor instanceof Actor && !this.#isSameActor(actor, sourceActor)) ?? null;
     if (selectedTarget) {
       return selectedTarget;
     }
 
-    const storedTarget = lastAttack?.targets?.find((target) => target instanceof Actor && target !== sourceActor);
+    const storedTarget = lastAttack?.targets?.find((target) => target instanceof Actor && !this.#isSameActor(target, sourceActor));
     if (storedTarget) {
       return storedTarget;
     }
@@ -1246,5 +1246,25 @@ export class FighterAutomationService {
 
   #actorKey(actor) {
     return cleanText(actor?.uuid, actor?.id ?? "");
+  }
+
+  #isSameActor(left, right) {
+    if (!left || !right) {
+      return false;
+    }
+
+    if (left === right) {
+      return true;
+    }
+
+    const leftKey = this.#actorKey(left);
+    const rightKey = this.#actorKey(right);
+    if (leftKey && rightKey && leftKey === rightKey) {
+      return true;
+    }
+
+    const leftId = cleanText(left?.id ?? left?._id);
+    const rightId = cleanText(right?.id ?? right?._id);
+    return Boolean(leftId && rightId && leftId === rightId);
   }
 }

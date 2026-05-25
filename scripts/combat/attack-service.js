@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -11,6 +12,10 @@ const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
   return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function clampInteger(value, min, max) {
@@ -873,7 +878,54 @@ export class CombatAttackService {
   }
 
   #isFighterDominanceManeuverActivity(activity) {
-    return readDocumentFlag(activity, MODULE_ID, "automation") === "fighter-dominance-maneuver";
+    if (readDocumentFlag(activity, MODULE_ID, "automation") === "fighter-dominance-maneuver") {
+      return true;
+    }
+
+    if (readDocumentFlag(activity, MODULE_ID, "fighterAutomation")?.kind === "maneuver") {
+      return true;
+    }
+
+    return this.#isFighterManeuverItem(activity?.item);
+  }
+
+  #isFighterManeuverItem(item) {
+    const sourceType = String(readDocumentFlag(item, MODULE_ID, "sourceType") ?? "").trim();
+    if (sourceType === "fighterManeuver") {
+      return true;
+    }
+
+    const featureId = String(readDocumentFlag(item, MODULE_ID, "featureId") ?? "").trim();
+    if (featureId.includes("::fighterManeuver::")) {
+      return true;
+    }
+
+    return readDocumentFlag(item, MODULE_ID, "automation")?.type === "fighterManeuver";
+  }
+
+  #fighterManeuverClassIdentifier(activity) {
+    return String(
+      readDocumentFlag(activity?.item, MODULE_ID, "classIdentifier")
+      ?? readDocumentFlag(activity, MODULE_ID, "classIdentifier")
+      ?? ""
+    ).trim();
+  }
+
+  #fighterManeuverAutomation(activity) {
+    const directAutomation = readDocumentFlag(activity, MODULE_ID, "fighterAutomation")
+      ?? readDocumentFlag(activity?.item, MODULE_ID, "fighterAutomation");
+    if (directAutomation?.kind === "maneuver") {
+      return directAutomation;
+    }
+
+    if (!this.#isFighterManeuverItem(activity?.item)) {
+      return null;
+    }
+
+    return getFighterManeuverAutomation(
+      activity?.item?.name ?? activity?.name,
+      this.#fighterManeuverClassIdentifier(activity)
+    );
   }
 
   #resolveFighterDominanceItem(actor, classIdentifier = "") {
@@ -907,30 +959,55 @@ export class CombatAttackService {
       return;
     }
 
-    const targets = activityConsumptionTargets(activity)
-      .filter((target) => target?.type === "itemUses" && target.target === FIGHTER_DOMINANCE_TARGET);
-    if (!targets.length) {
-      return;
-    }
-
-    const classIdentifier = String(
-      readDocumentFlag(activity?.item, MODULE_ID, "classIdentifier")
-      ?? readDocumentFlag(activity, MODULE_ID, "classIdentifier")
-      ?? ""
-    ).trim();
+    const classIdentifier = this.#fighterManeuverClassIdentifier(activity);
     const dominanceItem = this.#resolveFighterDominanceItem(actor, classIdentifier);
     const dominanceItemId = dominanceItem?.id ?? dominanceItem?._id ?? "";
     if (!dominanceItemId) {
       return;
     }
 
+    const targets = activityConsumptionTargets(activity)
+      .filter((target) => target?.type === "itemUses" || target?.type === "activityUses");
+    if (!targets.length) {
+      const consumption = foundry.utils.getProperty(activity, "consumption");
+      if (isPlainObject(consumption)) {
+        consumption.targets = [{
+          type: "itemUses",
+          target: dominanceItemId,
+          value: "1",
+          scaling: {
+            mode: "",
+            formula: ""
+          }
+        }];
+      }
+      return;
+    }
+
     for (const target of targets) {
+      target.type = "itemUses";
       target.target = dominanceItemId;
     }
   }
 
+  #normalizeFighterManeuverTargeting(activity) {
+    if (!this.#isFighterDominanceManeuverActivity(activity)) {
+      return;
+    }
+
+    const fighterAutomation = this.#fighterManeuverAutomation(activity);
+    if (!fighterAutomation?.extraDamage && !fighterAutomation?.status) {
+      return;
+    }
+
+    foundry.utils.setProperty(activity, "range.units", "");
+    foundry.utils.setProperty(activity, "target.affects.type", "creature");
+    foundry.utils.setProperty(activity, "target.prompt", true);
+  }
+
   applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
     this.#retargetFighterDominanceConsumption(activity);
+    this.#normalizeFighterManeuverTargeting(activity);
 
     if (!this.#isWeaponAttackActivity(activity)) {
       return true;

@@ -32,7 +32,7 @@ function makeActor(items) {
   };
 }
 
-test("fighter dominance maneuvers retarget shared dominance dice item before use without rewriting item targeting", () => {
+test("fighter dominance maneuvers retarget shared dominance dice item and creature targeting before use", () => {
   const dominanceItem = {
     id: "actualDominanceItemId",
     name: "Стиль доминирования",
@@ -93,7 +93,80 @@ test("fighter dominance maneuvers retarget shared dominance dice item before use
   service.applyDnd5ePreUseActivity(activity);
 
   assert.equal(target.target, dominanceItem.id);
-  assert.equal(activity.target.affects.type, "self");
-  assert.equal(activity.target.prompt, false);
-  assert.equal(activity.range.units, "self");
+  assert.equal(activity.target.affects.type, "creature");
+  assert.equal(activity.target.prompt, true);
+  assert.equal(activity.range.units, "");
+});
+
+test("fighter dominance maneuvers retarget blank or own-item use consumption before use", () => {
+  const dominanceItem = {
+    id: "actualDominanceItemId",
+    name: "Стиль доминирования",
+    flags: {
+      "rebreya-main": {
+        sourceType: "classFeature",
+        classIdentifier: "fighter-rework-v028",
+        featureId: "fighter-rework-v028::class::fighter-dominance"
+      }
+    },
+    system: {
+      uses: {
+        max: "@scale.fighter-rework-v028.dominance-dice"
+      }
+    }
+  };
+  const maneuverItem = {
+    id: "maneuverItemId",
+    name: "Атака с угрозой",
+    flags: {
+      "rebreya-main": {
+        sourceType: "fighterManeuver",
+        classIdentifier: "fighter-rework-v028",
+        featureId: "fighter-rework-v028::fighterManeuver::menacing-attack"
+      }
+    }
+  };
+  const actor = makeActor([dominanceItem, maneuverItem]);
+  maneuverItem.actor = actor;
+  const blankTarget = {
+    type: "itemUses",
+    target: "",
+    value: "1"
+  };
+  const ownItemTarget = {
+    type: "itemUses",
+    target: maneuverItem.id,
+    value: "1"
+  };
+  const activityUsesTarget = {
+    type: "activityUses",
+    target: "dominance-activity",
+    value: "1"
+  };
+  const activity = {
+    type: "utility",
+    actor,
+    item: maneuverItem,
+    flags: {
+      "rebreya-main": {
+        fighterAutomation: {
+          kind: "maneuver",
+          extraDamage: {
+            formula: "1d4"
+          }
+        }
+      }
+    },
+    consumption: {
+      targets: [blankTarget, ownItemTarget, activityUsesTarget]
+    }
+  };
+
+  const service = new CombatAttackService({});
+  service.applyDnd5ePreUseActivity(activity);
+
+  assert.equal(blankTarget.target, dominanceItem.id);
+  assert.equal(ownItemTarget.target, dominanceItem.id);
+  assert.equal(activityUsesTarget.type, "itemUses");
+  assert.equal(activityUsesTarget.target, dominanceItem.id);
 });

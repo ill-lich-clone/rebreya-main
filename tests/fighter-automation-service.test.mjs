@@ -330,6 +330,42 @@ test("fighter maneuver runtime ignores the maneuver self-target workflow and use
   }
 });
 
+test("fighter maneuver runtime ignores duplicate actor instances for the source target", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const source = new TestActor({ id: "fighter", name: "Воин" });
+  const sourceTokenActor = new TestActor({ id: "fighter", name: "Воин" });
+  const target = new TestActor({ id: "lich", name: "Лич" });
+  globalThis.game.user.targets = new Set([{ actor: sourceTokenActor }, { actor: target }]);
+  const service = new FighterAutomationService({}, {
+    rollFactory: () => fixedRoll(4)
+  });
+  const item = makeItem({ id: "menacing", name: "Атака с угрозой" });
+  const activity = makeActivity({
+    actor: source,
+    item,
+    automation: "fighter-dominance-maneuver",
+    fighterAutomation: {
+      kind: "maneuver",
+      extraDamage: {
+        formula: "1d4"
+      }
+    }
+  });
+
+  try {
+    await service.applyDnd5ePostUseActivity(activity, {}, {});
+
+    assert.equal(sourceTokenActor.damageApplications.length, 0);
+    assert.deepEqual(target.damageApplications[0].damages, [{
+      value: 4,
+      type: ""
+    }]);
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+});
+
 test("fighter maneuver runtime spends the owned dominance dice item when dnd5e did not consume it", async () => {
   const previousTargets = globalThis.game.user.targets;
   const dominance = makeItem({

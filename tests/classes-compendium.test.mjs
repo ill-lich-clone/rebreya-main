@@ -466,6 +466,56 @@ test("fighter fighting style maneuver grants use actual class-feature document U
   );
 });
 
+test("fighter fighting style descriptions link their fixed maneuvers", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const featureUuidById = makeUuidMap(definitions);
+  const style = definitions.find((definition) => definition.sourceType === "fightingStyle" && definition.styleName === "Сражение вслепую");
+  const entry = createFeatureEntryData(style, new Map(), null, { featureUuidById });
+
+  for (const maneuverName of ["Готовность", "Атака с финтом", "Точная атака"]) {
+    const maneuver = definitions.find((definition) => definition.sourceType === "fighterManeuver" && definition.name === maneuverName);
+    assert.match(
+      entry.system.description.value,
+      new RegExp(`@UUID\\[${featureUuidById.get(maneuver.featureId).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\]\\{[^}]+\\}`, "u"),
+      `Описание боевого стиля должно ссылаться на ${maneuverName}`
+    );
+  }
+});
+
+test("fighter fighting style description links preserve actual maneuver UUIDs and tolerate е/ё spelling", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const style = definitions.find((definition) => definition.sourceType === "fightingStyle" && definition.styleName === "Перехват");
+  const styleManeuvers = style.maneuverFeatureIds.map((featureId, index) => {
+    const definition = definitions.find((entry) => entry.featureId === featureId);
+    return {
+      definition,
+      uuid: `Compendium.world.rebreya-class-features.Item.actualLinkedManeuver${index}`
+    };
+  });
+  const featureUuidById = buildFeatureUuidMap(
+    definitions,
+    "world.rebreya-class-features",
+    styleManeuvers.map(({ definition, uuid }) => makeFeatureDocument(definition, uuid))
+  );
+  const entry = createFeatureEntryData(style, new Map(), null, { featureUuidById });
+
+  assert.match(entry.system.description.value, /@UUID\[Compendium\.world\.rebreya-class-features\.Item\.actualLinkedManeuver0\]\{Подмена\}/u);
+  assert.match(entry.system.description.value, /@UUID\[Compendium\.world\.rebreya-class-features\.Item\.actualLinkedManeuver1\]\{Атака с Маневром\}/u);
+  assert.match(entry.system.description.value, /@UUID\[Compendium\.world\.rebreya-class-features\.Item\.actualLinkedManeuver2\]\{Провоцирующая Атака\}/u);
+});
+
+test("superior technique description does not link every maneuver in the choice pool", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const featureUuidById = makeUuidMap(definitions);
+  const style = definitions.find((definition) => definition.sourceType === "fightingStyle" && definition.styleName === "Превосходная техника");
+  const entry = createFeatureEntryData(style, new Map(), null, { featureUuidById });
+
+  assert.equal((entry.system.description.value.match(/@UUID\[/gu) ?? []).length, 0);
+});
+
 test("superior technique fighting style chooses any three maneuvers", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
   const definitions = buildFeatureDefinitions(fighter);

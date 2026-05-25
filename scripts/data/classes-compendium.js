@@ -54,7 +54,7 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 8;
+const CLASS_FEATURE_TEMPLATE_VERSION = 9;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CLASS_TEMPLATE_VERSION = 3;
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
@@ -287,6 +287,113 @@ function formatParagraphLines(paragraph) {
   return segments.map((segment) => escapeHtml(segment)).join("<br>");
 }
 
+function escapeRegExp(value) {
+  return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function buildLooseTextPattern(value) {
+  return Array.from(String(value ?? ""))
+    .map((char) => {
+      if (/[\u0435\u0451\u0415\u0401]/u.test(char)) {
+        return "[еёЕЁ]";
+      }
+
+      return escapeRegExp(char);
+    })
+    .join("");
+}
+
+function addDescriptionLinkCandidate(candidates, seen, label, uuid) {
+  const text = cleanString(label);
+  const targetUuid = cleanString(uuid);
+  const key = normalizeMatchText(text);
+  if (!text || !targetUuid || !key || seen.has(key)) {
+    return;
+  }
+
+  seen.add(key);
+  candidates.push({
+    label: text,
+    normalizedLabel: key,
+    uuid: targetUuid
+  });
+}
+
+function collectDescriptionLinkCandidates(feature, context = {}) {
+  const featureUuidById = context.featureUuidById instanceof Map ? context.featureUuidById : new Map();
+  const candidates = [];
+  const seen = new Set();
+
+  if (feature.sourceType === "fightingStyle" && Array.isArray(feature.maneuverFeatureIds)) {
+    for (const [index, featureId] of feature.maneuverFeatureIds.entries()) {
+      addDescriptionLinkCandidate(
+        candidates,
+        seen,
+        feature.maneuvers?.[index] ?? "",
+        featureUuidById.get(featureId)
+      );
+    }
+  }
+
+  const definitions = Array.isArray(context.featureDefinitions) ? context.featureDefinitions : [];
+  const normalizedNameCounts = new Map();
+  for (const definition of definitions) {
+    if (definition?.classIdentifier !== feature.classIdentifier) {
+      continue;
+    }
+
+    const key = normalizeMatchText(definition.name);
+    if (key) {
+      normalizedNameCounts.set(key, (normalizedNameCounts.get(key) ?? 0) + 1);
+    }
+  }
+
+  for (const definition of definitions) {
+    if (definition?.classIdentifier !== feature.classIdentifier || definition.featureId === feature.featureId) {
+      continue;
+    }
+
+    const key = normalizeMatchText(definition.name);
+    if (!key || normalizedNameCounts.get(key) !== 1) {
+      continue;
+    }
+
+    addDescriptionLinkCandidate(candidates, seen, definition.name, featureUuidById.get(definition.featureId));
+  }
+
+  return candidates.sort((left, right) => right.label.length - left.label.length);
+}
+
+function linkDescriptionReferences(html, feature, context = {}) {
+  let output = cleanString(html);
+  if (!output) {
+    return "";
+  }
+
+  for (const candidate of collectDescriptionLinkCandidates(feature, context)) {
+    const pattern = buildLooseTextPattern(escapeHtml(candidate.label));
+    if (!pattern) {
+      continue;
+    }
+
+    const expression = new RegExp(`(^|[^\\p{L}\\p{N}_])(${pattern})(?=$|[^\\p{L}\\p{N}_])`, "giu");
+    output = output.replace(expression, (match, prefix, label, offset, source) => {
+      const previousText = source.slice(Math.max(0, offset - 16), offset);
+      if (previousText.includes("@UUID[")) {
+        return match;
+      }
+
+      return `${prefix}@UUID[${candidate.uuid}]{${label}}`;
+    });
+  }
+
+  return output;
+}
+
+function createFeatureDescriptionValue(feature, context = {}) {
+  return linkDescriptionReferences(toHtmlParagraphs(feature.description), feature, context);
+}
+
 function uniqueIdentifier(base, usedIds, fallbackSeed = "entry") {
   const seed = cleanString(base, buildAsciiIdentifier(fallbackSeed, fallbackSeed));
   let identifier = seed;
@@ -340,10 +447,6 @@ function normalizeFeatureEntry(rawFeature, index, {
     requiredLevel,
     optional: optional === true
   };
-}
-
-function escapeRegExp(value) {
-  return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 function extractRuneKnightRuneDescriptions(description) {
@@ -782,6 +885,7 @@ function buildFeatureSignature(feature, context = {}) {
     maneuvers: feature.maneuvers ?? [],
     maneuverFeatureIds: feature.maneuverFeatureIds ?? [],
     allManeuverFeatureIds: feature.allManeuverFeatureIds ?? [],
+    descriptionHtml: createFeatureDescriptionValue(feature, context),
     advancement: buildFeatureItemAdvancements(feature, context),
     sourceLabel: feature.sourceLabel ?? DEFAULT_SOURCE_LABEL,
     sourceBook: cleanString(feature.sourceLabel, DEFAULT_SOURCE_LABEL)
@@ -1780,7 +1884,7 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null,
 
   return {
     description: {
-      value: toHtmlParagraphs(feature.description),
+      value: createFeatureDescriptionValue(feature, context),
       chat: ""
     },
     source: createSourceData(feature.sourceLabel),
@@ -2995,9 +3099,11 @@ async function syncFeatureDocumentAdvancements(pack, documents, featureDefinitio
     }
 
     const advancement = buildFeatureItemAdvancements(feature, context);
+    const descriptionValue = createFeatureDescriptionValue(feature, context);
     const signature = buildFeatureSignature(feature, context);
     if (
       JSON.stringify(document.system?.advancement ?? []) === JSON.stringify(advancement)
+      && cleanString(document.system?.description?.value) === descriptionValue
       && document.getFlag(MODULE_ID, "signature") === signature
     ) {
       continue;
@@ -3006,6 +3112,7 @@ async function syncFeatureDocumentAdvancements(pack, documents, featureDefinitio
     updates.push({
       _id: document.id ?? document._id,
       "system.advancement": advancement,
+      "system.description.value": descriptionValue,
       [`flags.${MODULE_ID}.signature`]: signature
     });
   }
@@ -3025,6 +3132,7 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
   const documents = await getPackDocuments(pack);
   const comparisonFeatureContext = {
     ...context,
+    featureDefinitions,
     featureUuidById: buildFeatureUuidMap(featureDefinitions, pack.collection, documents)
   };
   const features = featureDefinitions.map((feature) => ({
@@ -3034,6 +3142,7 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
   if (shouldRebuildManagedPack(documents, features, "featureId")) {
     const creationFeatureContext = {
       ...context,
+      featureDefinitions,
       featureUuidById: buildFeatureUuidMap(featureDefinitions, pack.collection)
     };
     const creationFeatures = featureDefinitions.map((feature) => ({
@@ -3066,6 +3175,7 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
   const featureDefinitionById = new Map(featureDefinitions.map((feature) => [feature.featureId, feature]));
   await syncFeatureDocumentAdvancements(activePack, featureDocuments, featureDefinitions, {
     ...context,
+    featureDefinitions,
     featureUuidById
   });
   await syncManagedDocumentIcons(
