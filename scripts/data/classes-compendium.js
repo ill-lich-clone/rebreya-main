@@ -4,7 +4,6 @@ import {
   CLASSES_COMPENDIUM_LABEL,
   CLASSES_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
-  GEAR_COMPENDIUM_NAME,
   MODULE_ID,
   SUBCLASSES_COMPENDIUM_LABEL,
   SUBCLASSES_COMPENDIUM_NAME
@@ -22,6 +21,10 @@ import {
   getFighterManeuverAutomation,
   getFighterSecondWindAutomation
 } from "./fighter-automation.js";
+import {
+  FIGHTER_STARTING_EQUIPMENT_PACKAGES,
+  FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE
+} from "./fighter-starting-equipment.js";
 import { buildSlug } from "./item-classification.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -43,7 +46,6 @@ const CLASS_ICON_SEARCH_PATHS = [
 ];
 
 const FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
-const GEAR_PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const CLASS_FEATURES_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
 const SUBCLASSES_PACK_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
 const CLASSES_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
@@ -98,60 +100,6 @@ const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_OVERRIDE = 5;
 const STARTING_EQUIPMENT_TYPES = new Set(["OR", "AND", "armor", "tool", "weapon", "focus", "currency", "linked"]);
 const STARTING_EQUIPMENT_KEYED_TYPES = new Set(["armor", "tool", "weapon", "focus", "currency", "linked"]);
-const STARTING_EQUIPMENT_WEAPON_POOLS = Object.freeze({
-  mar: Object.freeze([
-    "Compendium.dnd5e.equipment24.Item.phbwepBattleaxe0",
-    "Compendium.dnd5e.equipment24.Item.phbwepFlail00000",
-    "Compendium.dnd5e.equipment24.Item.phbwepGlaive0000",
-    "Compendium.dnd5e.equipment24.Item.phbwepGreataxe00",
-    "Compendium.dnd5e.equipment24.Item.phbwepGreatsword",
-    "Compendium.dnd5e.equipment24.Item.phbwepHalberd000",
-    "Compendium.dnd5e.equipment24.Item.phbwepLance00000",
-    "Compendium.dnd5e.equipment24.Item.phbwepLongbow000",
-    "Compendium.dnd5e.equipment24.Item.phbwepLongsword0",
-    "Compendium.dnd5e.equipment24.Item.phbwepMaul000000",
-    "Compendium.dnd5e.equipment24.Item.phbwepMorningsta",
-    "Compendium.dnd5e.equipment24.Item.phbwepPike000000",
-    "Compendium.dnd5e.equipment24.Item.phbwepRapier0000",
-    "Compendium.dnd5e.equipment24.Item.phbwepScimitar00",
-    "Compendium.dnd5e.equipment24.Item.phbwepShortsword",
-    "Compendium.dnd5e.equipment24.Item.phbwepTrident000",
-    "Compendium.dnd5e.equipment24.Item.phbwepWarPick000",
-    "Compendium.dnd5e.equipment24.Item.phbwepWarhammer0",
-    "Compendium.dnd5e.equipment24.Item.phbwepWhip000000"
-  ])
-});
-const REBREYA_GEAR_BY_DND_STARTING_EQUIPMENT = Object.freeze({
-  "Compendium.dnd5e.equipment24.Item.phbarmChainMail0": Object.freeze(["kol-chuga"]),
-  "Compendium.dnd5e.equipment24.Item.phbarmLeatherArm": Object.freeze(["kozhanyy-dospekh"]),
-  "Compendium.dnd5e.equipment24.Item.phbarmBreastplat": Object.freeze(["mnogosloynyy-bronezhilet"]),
-  "Compendium.dnd5e.equipment24.Item.phbwepLongbow000": Object.freeze(["dlinnyy-luk"]),
-  "Compendium.dnd5e.equipment24.Item.phbamoArrows0000": Object.freeze(["strely-20"]),
-  "Compendium.dnd5e.equipment24.Item.phbarmShield0000": Object.freeze(["shchit"]),
-  "Compendium.dnd5e.equipment24.Item.phbwepMusket0000": Object.freeze(["mushket"]),
-  "Compendium.dnd5e.equipment24.Item.phbwepLightCross": Object.freeze(["arbalet-legkiy"]),
-  "Compendium.dnd5e.equipment24.Item.phbamoBolts00000": Object.freeze(["arbaletnye-bolty-20"]),
-  "Compendium.dnd5e.equipment24.Item.phbwepHandaxe000": Object.freeze(["ruchnoy-topor"])
-});
-const FIGHTER_STARTING_EQUIPMENT_ADVANCEMENTS = Object.freeze([
-  Object.freeze({
-    title: "Стартовое снаряжение: доспехи",
-    hint: "Выберите кольчугу, кожаный доспех или комплект с многослойным бронежилетом."
-  }),
-  Object.freeze({
-    title: "Стартовое снаряжение: основное оружие",
-    hint: "Выберите воинское оружие и щит, два воинских оружия или примитивное длинноствольное огнестрельное оружие с боеприпасами."
-  }),
-  Object.freeze({
-    title: "Стартовое снаряжение: дополнительное оружие",
-    hint: "Выберите лёгкий арбалет с болтами или два ручных топора."
-  }),
-  Object.freeze({
-    title: "Стартовое снаряжение: набор",
-    hint: "Выберите набор исследователя подземелий или набор путешественника."
-  })
-]);
-
 const OPTIONAL_CLASS_FEATURE_NAMES = new Set([
   "стальной желудок",
   "пуленепробиваемое тело"
@@ -903,6 +851,30 @@ export function buildFeatureDefinitions(normalizedData) {
     });
   }
 
+  if (classId === "fighter-rework-v028") {
+    for (const equipmentPackage of FIGHTER_STARTING_EQUIPMENT_PACKAGES) {
+      const featureId = `${classId}::${FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE}::${equipmentPackage.featureId}`;
+      definitions.push({
+        featureId,
+        documentId: featureDocumentId(featureId),
+        sourceType: FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE,
+        classIdentifier: classId,
+        className,
+        subclassId: null,
+        subclassName: null,
+        name: equipmentPackage.name,
+        description: equipmentPackage.description,
+        levels: [1],
+        requiredLevel: 1,
+        optional: true,
+        identifier: buildAsciiIdentifier(`${classId}-${equipmentPackage.featureId}`, featureId),
+        folderPath: normalizeFolderPath([classFeatureRootFolder, "Стартовое снаряжение"]),
+        sourceLabel,
+        startingEquipmentPackage: foundry.utils.deepClone(equipmentPackage)
+      });
+    }
+  }
+
   for (const action of normalizedData.rageActions) {
     const featureId = `${classId}::rage-action::${action.featureId}`;
     definitions.push({
@@ -1017,6 +989,7 @@ function buildFeatureSignature(feature, context = {}) {
     maneuvers: feature.maneuvers ?? [],
     maneuverFeatureIds: feature.maneuverFeatureIds ?? [],
     allManeuverFeatureIds: feature.allManeuverFeatureIds ?? [],
+    startingEquipmentPackage: feature.startingEquipmentPackage ?? null,
     descriptionHtml: createFeatureDescriptionValue(feature, context),
     advancement: buildFeatureItemAdvancements(feature, context),
     sourceLabel: feature.sourceLabel ?? DEFAULT_SOURCE_LABEL,
@@ -2462,128 +2435,35 @@ function proficiencyGrant(prefix, value) {
   return key.includes(":") ? key : `${prefix}:${key}`;
 }
 
-function getGearUuidById(context = {}, gearId = "") {
-  const key = cleanString(gearId);
-  if (!key) {
-    return "";
-  }
-
-  const lookup = context.gearLookup?.gearUuidById ?? context.gearUuidById;
-  if (lookup instanceof Map) {
-    return cleanString(lookup.get(key));
-  }
-
-  if (isPlainObject(lookup)) {
-    return cleanString(lookup[key]);
-  }
-
-  return "";
-}
-
-function getRankOneRebreyaWeaponUuids(context = {}) {
-  const values = context.gearLookup?.rankOneWeaponUuids ?? context.rankOneRebreyaWeaponUuids;
-  return unique(Array.isArray(values) ? values.map((value) => cleanString(value)) : []);
-}
-
-function rebreyaGearUuidsForDndStartingEquipment(context = {}, dndUuid = "") {
-  return (REBREYA_GEAR_BY_DND_STARTING_EQUIPMENT[cleanString(dndUuid)] ?? [])
-    .map((gearId) => getGearUuidById(context, gearId))
-    .filter(Boolean);
-}
-
-function startingEquipmentChildrenByGroup(entries = []) {
-  const childrenByGroup = new Map();
-  for (const entry of entries) {
-    const group = cleanString(entry?.group);
-    if (!group) {
-      continue;
-    }
-
-    if (!childrenByGroup.has(group)) {
-      childrenByGroup.set(group, []);
-    }
-    childrenByGroup.get(group).push(entry);
-  }
-
-  for (const children of childrenByGroup.values()) {
-    children.sort((left, right) => parseNumber(left?.sort, 0) - parseNumber(right?.sort, 0));
-  }
-
-  return childrenByGroup;
-}
-
-function startingEquipmentItemPool(entry, childrenByGroup, context = {}) {
-  const type = cleanString(entry?.type);
-  if (type === "linked") {
-    const key = cleanString(entry.key);
-    return [key, ...rebreyaGearUuidsForDndStartingEquipment(context, key)].filter(Boolean);
-  }
-
-  if (type === "weapon") {
-    const key = cleanString(entry.key);
-    return unique([
-      ...Array.from(STARTING_EQUIPMENT_WEAPON_POOLS[key] ?? []),
-      ...(key === "mar" ? getRankOneRebreyaWeaponUuids(context) : [])
-    ]);
-  }
-
-  if (type === "AND" || type === "OR") {
-    return (childrenByGroup.get(cleanString(entry._id)) ?? [])
-      .flatMap((child) => startingEquipmentItemPool(child, childrenByGroup, context));
-  }
-
-  return [];
-}
-
-function startingEquipmentSelectionCount(entry, childrenByGroup) {
-  const type = cleanString(entry?.type);
-  if (type === "weapon") {
-    return Math.max(1, Math.floor(parseNumber(entry.count, 1)));
-  }
-
-  if (type === "linked") {
-    const count = Math.max(1, Math.floor(parseNumber(entry.count, 1)));
-    return count <= 2 ? count : 1;
-  }
-
-  const children = childrenByGroup.get(cleanString(entry?._id)) ?? [];
-  if (type === "AND") {
-    return children.reduce((total, child) => total + startingEquipmentSelectionCount(child, childrenByGroup), 0);
-  }
-
-  if (type === "OR") {
-    return Math.max(1, ...children.map((child) => startingEquipmentSelectionCount(child, childrenByGroup)));
-  }
-
-  return 0;
-}
-
 function buildStartingEquipmentChoiceAdvancements(classData, context = {}) {
-  const entries = Array.isArray(classData.startingEquipment) ? classData.startingEquipment : [];
-  const childrenByGroup = startingEquipmentChildrenByGroup(entries);
-  return entries
-    .filter((entry) => !entry.group && cleanString(entry.type) === "OR")
-    .sort((left, right) => parseNumber(left.sort, 0) - parseNumber(right.sort, 0))
-    .map((entry, index) => {
-      const metadata = FIGHTER_STARTING_EQUIPMENT_ADVANCEMENTS[index] ?? {};
-      const pool = startingEquipmentItemPool(entry, childrenByGroup, context);
-      if (!pool.length) {
-        return null;
-      }
+  if (classData.identifier !== "fighter-rework-v028") {
+    return [];
+  }
 
-      return buildItemChoiceAdvancement({
-        classIdentifier: classData.identifier,
-        seed: `starting-equipment-${index + 1}-${cleanString(entry._id)}`,
-        title: metadata.title ?? "Стартовое снаряжение",
-        hint: metadata.hint ?? "",
-        level: 1,
-        count: startingEquipmentSelectionCount(entry, childrenByGroup),
-        pool,
-        allowDrops: true,
-        type: null
-      });
-    })
+  const featureUuidById = context.featureUuidById instanceof Map ? context.featureUuidById : new Map();
+  const pool = FIGHTER_STARTING_EQUIPMENT_PACKAGES
+    .map((equipmentPackage) => featureUuidById.get(
+      `${classData.identifier}::${FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE}::${equipmentPackage.featureId}`
+    ))
     .filter(Boolean);
+  if (!pool.length) {
+    return [];
+  }
+
+  return [buildItemChoiceAdvancement({
+    classIdentifier: classData.identifier,
+    seed: "starting-equipment-package",
+    title: "Стартовое снаряжение",
+    hint: [
+      "Выберите А, Б или В:",
+      ...FIGHTER_STARTING_EQUIPMENT_PACKAGES.map((equipmentPackage) => equipmentPackage.label)
+    ].join("\n"),
+    level: 1,
+    count: 1,
+    pool,
+    allowDrops: false,
+    type: null
+  })];
 }
 
 function pickPreferredFeat(records = [], preferredSection = "") {
@@ -2807,58 +2687,6 @@ async function buildFeatLookup() {
   return {
     minorFeatUuids: sortRecords(allFeatRecords),
     byName
-  };
-}
-
-function compendiumIndexItemUuid(pack, entry) {
-  const uuid = cleanString(entry?.uuid);
-  if (uuid) {
-    return uuid;
-  }
-
-  return compendiumItemUuid(pack?.collection, entry?._id ?? entry?.id);
-}
-
-export async function buildGearLookup() {
-  const pack = game.packs.get(GEAR_PACK_ID);
-  if (!pack) {
-    return {
-      gearUuidById: new Map(),
-      rankOneWeaponUuids: []
-    };
-  }
-
-  const index = await pack.getIndex({
-    fields: [
-      `flags.${MODULE_ID}.equipmentType`,
-      `flags.${MODULE_ID}.foundryType`,
-      `flags.${MODULE_ID}.gearId`,
-      `flags.${MODULE_ID}.rank`
-    ]
-  });
-  const gearUuidById = new Map();
-  const rankOneWeaponUuids = [];
-
-  for (const entry of index) {
-    const uuid = compendiumIndexItemUuid(pack, entry);
-    const gearId = cleanString(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.gearId`));
-    if (!uuid || !gearId) {
-      continue;
-    }
-
-    gearUuidById.set(gearId, uuid);
-
-    const foundryType = cleanString(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.foundryType`));
-    const equipmentType = cleanString(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.equipmentType`));
-    const rank = parseNumber(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.rank`), 0);
-    if (foundryType === "weapon" && equipmentType === "Оружие" && rank <= 1) {
-      rankOneWeaponUuids.push(uuid);
-    }
-  }
-
-  return {
-    gearUuidById,
-    rankOneWeaponUuids: unique(rankOneWeaponUuids)
   };
 }
 
@@ -3342,6 +3170,10 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
     requiredLevel: feature.requiredLevel,
     optional: feature.optional === true,
     maneuvers: feature.maneuvers ?? [],
+    startingEquipmentPackageId: feature.startingEquipmentPackage?.id,
+    startingEquipmentPackage: feature.startingEquipmentPackage
+      ? foundry.utils.deepClone(feature.startingEquipmentPackage)
+      : undefined,
     signature: buildFeatureSignature(feature, context),
     automation: feature.sourceType === "rageAction"
       ? { type: "rageAction", requiredLevel: feature.requiredLevel }
@@ -3620,7 +3452,6 @@ async function syncClassesPack(normalizedDataList, context) {
       classFeatureEntries: classFeatures,
       rageActionEntries: normalizedData.rageActions,
       minorFeatUuids: context.minorFeatUuids,
-      gearLookup: context.gearLookup,
       rageProgression: normalizedData.rageProgression,
       rageDamageProgression: normalizedData.rageDamageProgression,
       fightingStyleEntries: normalizedData.fightingStyles,
@@ -3687,7 +3518,6 @@ export class ClassesCompendiumService {
     const normalizedData = await loadData();
     const featureDefinitions = normalizedData.flatMap((classData) => buildFeatureDefinitions(classData));
     const featLookup = await buildFeatLookup();
-    const gearLookup = await buildGearLookup();
     const { pack: featuresPack, featureUuidById } = await syncClassFeaturePack(featureDefinitions, {
       iconLookup,
       featLookupByName: featLookup.byName,
@@ -3700,7 +3530,6 @@ export class ClassesCompendiumService {
     const classesPack = await syncClassesPack(normalizedData, {
       featureUuidById,
       minorFeatUuids: featLookup.minorFeatUuids,
-      gearLookup,
       iconLookup
     });
 

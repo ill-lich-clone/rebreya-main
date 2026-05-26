@@ -42,7 +42,7 @@ globalThis.game ??= {
 const { FighterAutomationService } = await import("../scripts/combat/fighter-automation-service.js");
 
 class TestActor extends Actor {
-  constructor({ id = "actor", name = "Actor", hp = {}, classes = {}, items = [], effects = [] } = {}) {
+  constructor({ id = "actor", name = "Actor", hp = {}, classes = {}, items = [], effects = [], currency = {} } = {}) {
     super();
     this.id = id;
     this.uuid = `Actor.${id}`;
@@ -59,6 +59,9 @@ class TestActor extends Actor {
           max: hp.max ?? 30,
           temp: 0
         }
+      },
+      currency: {
+        gp: currency.gp ?? 0
       }
     };
     this.items = {
@@ -134,20 +137,20 @@ class TestActor extends Actor {
   }
 }
 
-function makeItem({ id, name, featureId = "", uses = null } = {}) {
+function makeItem({ id, name, featureId = "", uses = null, type = "feat", flags = null } = {}) {
   return {
     id,
     _id: id,
     uuid: `Item.${id}`,
     name,
-    type: "feat",
+    type,
     system: {
       uses: uses ?? {
         spent: 0,
         max: ""
       }
     },
-    flags: {
+    flags: flags ?? {
       "rebreya-main": {
         featureId
       }
@@ -285,16 +288,17 @@ test("fighter class creation prompts for starting equipment and grants selected 
   const classItem = makeClassItem({ actor });
   let promptChoices = null;
   const resolvedUuids = [];
+  const resolvedGearIds = [];
   const service = new FighterAutomationService({}, {
     promptFighterStartingEquipment: async (_actor, _item, choices) => {
       promptChoices = choices;
       return {
-        armor: "vest-bow",
-        main: "martial-shield",
-        martialWeapon: "longsword",
-        sidearm: "crossbow",
-        pack: "explorer"
+        package: "b"
       };
+    },
+    resolveStartingEquipmentGearUuid: async (gearId) => {
+      resolvedGearIds.push(gearId);
+      return `Compendium.world.rebreya-gear.Item.${gearId}`;
     },
     resolveStartingEquipmentItem: async (uuid) => {
       resolvedUuids.push(uuid);
@@ -304,8 +308,7 @@ test("fighter class creation prompts for starting equipment and grants selected 
 
   await service.handleCreatedItem(classItem);
 
-  assert.ok(promptChoices.armor.some((choice) => choice.id === "vest-bow"));
-  assert.ok(promptChoices.martialWeapons.some((choice) => choice.id === "longsword"));
+  assert.deepEqual(promptChoices.packages.map((choice) => choice.id), ["a", "b", "c"]);
   assert.equal(actor.createdItems.length, 1);
 
   const rows = actor.createdItems[0].rows;
@@ -314,19 +317,60 @@ test("fighter class creation prompts for starting equipment and grants selected 
     foundry.utils.getProperty(row, "system.quantity")
   ]));
 
-  assert.deepEqual(resolvedUuids, [
-    "Compendium.dnd5e.equipment24.Item.phbarmBreastplat",
-    "Compendium.dnd5e.equipment24.Item.phbwepLongbow000",
-    "Compendium.dnd5e.equipment24.Item.phbamoArrows0000",
-    "Compendium.dnd5e.equipment24.Item.phbwepLongsword0",
-    "Compendium.dnd5e.equipment24.Item.phbarmShield0000",
-    "Compendium.dnd5e.equipment24.Item.phbwepLightCross",
-    "Compendium.dnd5e.equipment24.Item.phbamoBolts00000",
-    "Compendium.dnd5e.equipment24.Item.phbagExplorersPa"
+  assert.deepEqual(resolvedGearIds, [
+    "proklyopannyy-kozhanyy-dospekh",
+    "skimitar",
+    "korotkiy-mech",
+    "dlinnyy-luk",
+    "strely-20",
+    "kolchan",
+    "instrumenty-issledovatelya-0-y-rang"
   ]);
-  assert.equal(quantityByUuid.get("Compendium.dnd5e.equipment24.Item.phbamoArrows0000"), 20);
-  assert.equal(quantityByUuid.get("Compendium.dnd5e.equipment24.Item.phbamoBolts00000"), 20);
+  assert.deepEqual(resolvedUuids, resolvedGearIds.map((gearId) => `Compendium.world.rebreya-gear.Item.${gearId}`));
+  assert.equal(quantityByUuid.get("Compendium.world.rebreya-gear.Item.strely-20"), 1);
+  assert.equal(actor.system.currency.gp, 11);
   assert.equal(classItem.flags["rebreya-main"].startingEquipmentPrompted, true);
+});
+
+test("fighter starting equipment package items expand into Rebreya gear and gold", async () => {
+  const packageItem = makeItem({
+    id: "package-a",
+    name: "Стартовое снаряжение: Вариант А",
+    flags: {
+      "rebreya-main": {
+        sourceType: "fighterStartingEquipmentPackage",
+        startingEquipmentPackageId: "a"
+      }
+    }
+  });
+  const actor = new TestActor({ id: "fighter", name: "Воин", items: [packageItem] });
+  const resolvedGearIds = [];
+  const service = new FighterAutomationService({}, {
+    resolveStartingEquipmentGearUuid: async (gearId) => {
+      resolvedGearIds.push(gearId);
+      return `Compendium.world.rebreya-gear.Item.${gearId}`;
+    },
+    resolveStartingEquipmentItem: async (uuid) => makeStartingEquipmentSource(uuid)
+  });
+
+  await service.handleCreatedItem(packageItem);
+
+  assert.deepEqual(resolvedGearIds, [
+    "kol-chuga",
+    "dvuruchnyy-mech",
+    "tsep",
+    "kop-e",
+    "instrumenty-issledovatelya-0-y-rang"
+  ]);
+  assert.equal(actor.createdItems.length, 1);
+
+  const quantityByUuid = new Map(actor.createdItems[0].rows.map((row) => [
+    foundry.utils.getProperty(row, "flags.dnd5e.sourceId"),
+    foundry.utils.getProperty(row, "system.quantity")
+  ]));
+  assert.equal(quantityByUuid.get("Compendium.world.rebreya-gear.Item.kop-e"), 8);
+  assert.equal(actor.system.currency.gp, 4);
+  assert.deepEqual(actor.deletedDocuments, [{ type: "Item", ids: ["package-a"] }]);
 });
 
 test("fighter class creation does not duplicate native starting equipment choices", async () => {
@@ -336,16 +380,16 @@ test("fighter class creation does not duplicate native starting equipment choice
     type: "ItemChoice",
     level: 1,
     configuration: {
-      allowDrops: true,
+      allowDrops: false,
       type: null,
-      pool: [{ uuid: "Compendium.dnd5e.equipment24.Item.phbarmChainMail0" }]
+      pool: [{ uuid: "Compendium.world.rebreya-class-features.Item.startingEquipmentPackageA" }]
     }
   }];
   let prompts = 0;
   const service = new FighterAutomationService({}, {
     promptFighterStartingEquipment: async () => {
       prompts += 1;
-      return { armor: "chainmail", main: "firearm", sidearm: "handaxes", pack: "dungeoneer" };
+      return { package: "a" };
     },
     resolveStartingEquipmentItem: async (uuid) => makeStartingEquipmentSource(uuid)
   });
@@ -363,7 +407,7 @@ test("fighter starting equipment prompt runs only on the creating client", async
   const service = new FighterAutomationService({}, {
     promptFighterStartingEquipment: async () => {
       prompts += 1;
-      return { armor: "chainmail", main: "firearm", sidearm: "handaxes", pack: "dungeoneer" };
+      return { package: "a" };
     },
     resolveStartingEquipmentItem: async (uuid) => makeStartingEquipmentSource(uuid)
   });

@@ -21,7 +21,6 @@ const {
   buildClassAdvancement,
   buildFeatureDefinitions,
   buildFeatureUuidMap,
-  buildGearLookup,
   buildSubclassAdvancements,
   createClassSystem,
   createFeatureEntryData,
@@ -41,13 +40,6 @@ function makeUuidMap(definitions) {
 function makeFeatIndexPack(rows) {
   return {
     collection: "world.rebreya-feats",
-    getIndex: async () => rows
-  };
-}
-
-function makeGearIndexPack(rows) {
-  return {
-    collection: "world.rebreya-gear",
     getIndex: async () => rows
   };
 }
@@ -215,107 +207,69 @@ test("fighter advancements grant armor and weapon proficiencies natively", () =>
   }
 });
 
-test("fighter advancements expose starting equipment as native item choices", () => {
+test("fighter feature definitions include three preset starting equipment packages", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
-  const advancement = buildClassAdvancement(fighter.classData, {});
+  const packageDefinitions = buildFeatureDefinitions(fighter)
+    .filter((definition) => definition.sourceType === "fighterStartingEquipmentPackage");
+
+  assert.deepEqual(packageDefinitions.map((definition) => definition.name), [
+    "А) Кольчуга, двуручный меч, цеп, 8 метательных копий, набор исследователя подземелий и 4 зм",
+    "Б) Проклёпанная кожана, скимитар, короткий меч, длинный лук, 20 стрел, колчан, набор исследователя подземелий и 11 зм",
+    "В) 155 зм"
+  ]);
+  assert.deepEqual(
+    packageDefinitions[0].startingEquipmentPackage.items.map((item) => [item.gearId, item.quantity ?? 1]),
+    [
+      ["kol-chuga", 1],
+      ["dvuruchnyy-mech", 1],
+      ["tsep", 1],
+      ["kop-e", 8],
+      ["instrumenty-issledovatelya-0-y-rang", 1]
+    ]
+  );
+  assert.deepEqual(packageDefinitions[0].startingEquipmentPackage.currency, { gp: 4 });
+  assert.deepEqual(
+    packageDefinitions[1].startingEquipmentPackage.items.map((item) => [item.gearId, item.quantity ?? 1]),
+    [
+      ["proklyopannyy-kozhanyy-dospekh", 1],
+      ["skimitar", 1],
+      ["korotkiy-mech", 1],
+      ["dlinnyy-luk", 1],
+      ["strely-20", 1],
+      ["kolchan", 1],
+      ["instrumenty-issledovatelya-0-y-rang", 1]
+    ]
+  );
+  assert.deepEqual(packageDefinitions[1].startingEquipmentPackage.currency, { gp: 11 });
+  assert.deepEqual(packageDefinitions[2].startingEquipmentPackage.items, []);
+  assert.deepEqual(packageDefinitions[2].startingEquipmentPackage.currency, { gp: 155 });
+});
+
+test("fighter advancements expose one native item choice for preset starting equipment packages", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const featureDefinitions = buildFeatureDefinitions(fighter);
+  const packageDefinitions = featureDefinitions
+    .filter((definition) => definition.sourceType === "fighterStartingEquipmentPackage");
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const advancement = buildClassAdvancement(fighter.classData, {
+    featureUuidById
+  });
   const equipmentChoices = advancement.filter((entry) => entry.type === "ItemChoice" && entry.configuration?.type === null);
 
-  assert.equal(equipmentChoices.length, 4);
-  assert.deepEqual(equipmentChoices.map((entry) => entry.level), [1, 1, 1, 1]);
-  assert.deepEqual(equipmentChoices.map((entry) => entry.configuration.allowDrops), [true, true, true, true]);
-  assert.deepEqual(equipmentChoices.map((entry) => entry.value), [
-    { added: {}, replaced: {} },
-    { added: {}, replaced: {} },
-    { added: {}, replaced: {} },
-    { added: {}, replaced: {} }
-  ]);
+  assert.equal(equipmentChoices.length, 1);
+  assert.equal(equipmentChoices[0].title, "Стартовое снаряжение");
+  assert.equal(equipmentChoices[0].level, 1);
+  assert.equal(equipmentChoices[0].configuration.allowDrops, false);
+  assert.match(equipmentChoices[0].hint, /Выберите А, Б или В:/u);
+  assert.match(equipmentChoices[0].hint, /А\) Кольчуга/u);
+  assert.match(equipmentChoices[0].hint, /Б\) Проклёпанная кожана/u);
+  assert.match(equipmentChoices[0].hint, /В\) 155 зм/u);
+  assert.deepEqual(equipmentChoices[0].value, { added: {}, replaced: {} });
 
-  const pools = equipmentChoices.map((entry) => new Set(entry.configuration.pool.map((poolEntry) => poolEntry.uuid)));
-  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbarmChainMail0")));
-  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbarmLeatherArm")));
-  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbarmBreastplat")));
-  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbarmShield0000")));
-  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbwepMusket0000")));
-  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbwepLightCross")));
-  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbagDungeoneers")));
-  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbagExplorersPa")));
-});
-
-test("fighter starting equipment choices include Rebreya gear when available", () => {
-  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
-  const gearUuidById = new Map([
-    ["kol-chuga", "Compendium.world.rebreya-gear.Item.kol-chuga"],
-    ["kozhanyy-dospekh", "Compendium.world.rebreya-gear.Item.kozhanyy-dospekh"],
-    ["mnogosloynyy-bronezhilet", "Compendium.world.rebreya-gear.Item.mnogosloynyy-bronezhilet"],
-    ["dlinnyy-luk", "Compendium.world.rebreya-gear.Item.dlinnyy-luk"],
-    ["strely-20", "Compendium.world.rebreya-gear.Item.strely-20"],
-    ["shchit", "Compendium.world.rebreya-gear.Item.shchit"],
-    ["mushket", "Compendium.world.rebreya-gear.Item.mushket"],
-    ["arbalet-legkiy", "Compendium.world.rebreya-gear.Item.arbalet-legkiy"],
-    ["arbaletnye-bolty-20", "Compendium.world.rebreya-gear.Item.arbaletnye-bolty-20"],
-    ["ruchnoy-topor", "Compendium.world.rebreya-gear.Item.ruchnoy-topor"]
-  ]);
-  const advancement = buildClassAdvancement(fighter.classData, {
-    gearLookup: {
-      gearUuidById,
-      rankOneWeaponUuids: ["Compendium.world.rebreya-gear.Item.sablya"]
-    }
-  });
-  const equipmentPool = new Set(
-    advancement
-      .filter((entry) => entry.type === "ItemChoice" && entry.configuration?.type === null)
-      .flatMap((entry) => entry.configuration.pool.map((poolEntry) => poolEntry.uuid))
+  assert.deepEqual(
+    equipmentChoices[0].configuration.pool.map((poolEntry) => poolEntry.uuid),
+    packageDefinitions.map((definition) => featureUuidById.get(definition.featureId))
   );
-
-  for (const uuid of gearUuidById.values()) {
-    assert.ok(equipmentPool.has(uuid), `${uuid} should be available in fighter starting equipment`);
-  }
-  assert.ok(equipmentPool.has("Compendium.world.rebreya-gear.Item.sablya"));
-});
-
-test("gear lookup resolves Rebreya gear from compendium flags", async () => {
-  const rows = [
-    {
-      _id: "realArmorDocId",
-      flags: {
-        "rebreya-main": {
-          gearId: "kozhanyy-dospekh",
-          foundryType: "equipment",
-          equipmentType: "Доспех",
-          rank: 1
-        }
-      }
-    },
-    {
-      _id: "realWeaponDocId",
-      flags: {
-        "rebreya-main": {
-          gearId: "sablya",
-          foundryType: "weapon",
-          equipmentType: "Оружие",
-          rank: 1
-        }
-      }
-    },
-    {
-      _id: "tooLateWeaponDocId",
-      flags: {
-        "rebreya-main": {
-          gearId: "mushket",
-          foundryType: "weapon",
-          equipmentType: "Оружие",
-          rank: 2
-        }
-      }
-    }
-  ];
-
-  const lookup = await withGamePacks(makeGearIndexPack(rows), () => buildGearLookup());
-
-  assert.equal(lookup.gearUuidById.get("kozhanyy-dospekh"), "Compendium.world.rebreya-gear.Item.realArmorDocId");
-  assert.equal(lookup.gearUuidById.get("sablya"), "Compendium.world.rebreya-gear.Item.realWeaponDocId");
-  assert.equal(lookup.gearUuidById.get("mushket"), "Compendium.world.rebreya-gear.Item.tooLateWeaponDocId");
-  assert.deepEqual(lookup.rankOneWeaponUuids, ["Compendium.world.rebreya-gear.Item.realWeaponDocId"]);
 });
 
 test("fighter advancements expose dominance scales and a fighting style choice", () => {
