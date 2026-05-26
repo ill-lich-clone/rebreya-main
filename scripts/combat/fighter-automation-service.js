@@ -325,7 +325,7 @@ export class FighterAutomationService {
 
     const itemData = await this.#buildStartingEquipmentItemData(selection);
     if (itemData.length && typeof actor.createEmbeddedDocuments === "function") {
-      await actor.createEmbeddedDocuments("Item", itemData, { renderSheet: false });
+      await actor.createEmbeddedDocuments("Item", itemData, { keepId: true, renderSheet: false });
     }
     await this.#applyStartingEquipmentCurrency(actor, selection);
 
@@ -470,6 +470,7 @@ export class FighterAutomationService {
     }
 
     await this.#repairManeuverSections(actor);
+    await this.#repairStartingEquipmentContainerLinks(actor);
     return true;
   }
 
@@ -917,6 +918,54 @@ export class FighterAutomationService {
         }
       }
     }
+  }
+
+  async #repairStartingEquipmentContainerLinks(actor) {
+    const items = collectionValues(actor?.items);
+    if (!items.length) {
+      return true;
+    }
+
+    const itemById = new Map(items.map((item) => [cleanText(item?.id), item]).filter(([id]) => id));
+    const containerByGearId = new Map();
+    for (const item of items) {
+      if (item?.type !== "container") {
+        continue;
+      }
+
+      const gearId = cleanText(readDocumentFlag(item, "gearId"));
+      if (gearId && !containerByGearId.has(gearId)) {
+        containerByGearId.set(gearId, item);
+      }
+    }
+
+    for (const item of items) {
+      const containerGearId = cleanText(readDocumentFlag(item, "containerGearId"));
+      const containerContentGearId = cleanText(readDocumentFlag(item, "containerContentGearId"));
+      if (!containerGearId || !containerContentGearId) {
+        continue;
+      }
+
+      const currentContainerId = cleanText(getProperty(item, "system.container"));
+      if (currentContainerId && itemById.has(currentContainerId)) {
+        continue;
+      }
+
+      const containerId = cleanText(containerByGearId.get(containerGearId)?.id);
+      if (!containerId || currentContainerId === containerId) {
+        continue;
+      }
+
+      const patch = { "system.container": containerId };
+      if (typeof item.update === "function") {
+        await item.update(patch);
+      }
+      else {
+        foundry.utils.setProperty(item, "system.container", containerId);
+      }
+    }
+
+    return true;
   }
 
   async #resolveUsesMax(value, actor) {
@@ -1421,7 +1470,7 @@ export class FighterAutomationService {
     const selection = { package: packageId };
     const itemData = await this.#buildStartingEquipmentItemData(selection);
     if (itemData.length && typeof actor.createEmbeddedDocuments === "function") {
-      await actor.createEmbeddedDocuments("Item", itemData, { renderSheet: false });
+      await actor.createEmbeddedDocuments("Item", itemData, { keepId: true, renderSheet: false });
     }
     await this.#applyStartingEquipmentCurrency(actor, selection);
 

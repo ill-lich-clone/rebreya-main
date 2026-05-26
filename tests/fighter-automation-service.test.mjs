@@ -109,9 +109,9 @@ class TestActor extends Actor {
     return this;
   }
 
-  async createEmbeddedDocuments(type, rows) {
+  async createEmbeddedDocuments(type, rows, options = {}) {
     if (type === "Item") {
-      this.createdItems.push({ type, rows });
+      this.createdItems.push({ type, rows, options });
       for (const [index, row] of rows.entries()) {
         const item = makeItem({
           id: row._id ?? `created-${this.createdItems.length}-${index}`,
@@ -137,7 +137,7 @@ class TestActor extends Actor {
   }
 }
 
-function makeItem({ id, name, featureId = "", uses = null, type = "feat", flags = null } = {}) {
+function makeItem({ id, name, featureId = "", uses = null, type = "feat", flags = null, system = {} } = {}) {
   return {
     id,
     _id: id,
@@ -148,7 +148,8 @@ function makeItem({ id, name, featureId = "", uses = null, type = "feat", flags 
       uses: uses ?? {
         spent: 0,
         max: ""
-      }
+      },
+      ...system
     },
     flags: flags ?? {
       "rebreya-main": {
@@ -336,6 +337,7 @@ test("fighter class creation prompts for starting equipment and grants selected 
   assert.deepEqual(resolvedUuids, resolvedGearIds.map((gearId) => `Compendium.world.rebreya-gear.Item.${gearId}`));
   assert.equal(quantityByUuid.get("Compendium.world.rebreya-gear.Item.strely-20"), 1);
   assert.equal(actor.system.currency.gp, 11);
+  assert.equal(actor.createdItems[0].options.keepId, true);
   assert.equal(classItem.flags["rebreya-main"].startingEquipmentPrompted, true);
 });
 
@@ -377,6 +379,7 @@ test("fighter starting equipment package items expand into Rebreya gear and gold
   ]));
   assert.equal(quantityByUuid.get("Compendium.world.rebreya-gear.Item.kop-e"), 8);
   assert.equal(actor.system.currency.gp, 4);
+  assert.equal(actor.createdItems[0].options.keepId, true);
   assert.deepEqual(actor.deletedDocuments, [{ type: "Item", ids: ["package-a"] }]);
 });
 
@@ -1103,6 +1106,41 @@ test("fighter actor repair does not mutate maneuver activity data during sheet r
   assert.equal(activity.target.affects.type, "self");
   assert.equal(activity.target.prompt, false);
   assert.equal(activity.range.units, "self");
+});
+
+test("fighter actor repair moves orphaned starting equipment pack contents into their container", async () => {
+  const container = makeItem({
+    id: "pack",
+    name: "Набор исследователя подземелий",
+    type: "container",
+    flags: {
+      "rebreya-main": {
+        sourceType: "fighterStartingEquipment",
+        gearId: "nabor-issledovatelya-podzemeliy"
+      }
+    }
+  });
+  const torch = makeItem({
+    id: "torch",
+    name: "Факел",
+    system: {
+      container: "stale-container-id"
+    },
+    flags: {
+      "rebreya-main": {
+        sourceType: "fighterStartingEquipment",
+        containerGearId: "nabor-issledovatelya-podzemeliy",
+        containerContentGearId: "fakel"
+      }
+    }
+  });
+  const actor = new TestActor({ id: "fighter", name: "Воин", items: [container, torch] });
+  const service = new FighterAutomationService({});
+
+  await service.repairActor(actor);
+
+  assert.equal(torch.system.container, "pack");
+  assert.deepEqual(torch.updates, [{ "system.container": "pack" }]);
 });
 
 test("fighter long rest keeps the selected multiattack variant and deletes the others", async () => {
