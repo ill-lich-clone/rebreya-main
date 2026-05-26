@@ -476,6 +476,7 @@ test("party inventory is created as player-owned and owned players can manage st
   let supplyUpdatePatch = null;
   let currencyUpdatePatch = null;
   let partyActor = null;
+  let supplyCreatedItemData = null;
 
   class TestActor {
     static async create(data) {
@@ -501,6 +502,7 @@ test("party inventory is created as player-owned and owned players can manage st
         getFlag: (_moduleId, key) => key === "managedPartyInventory",
         createEmbeddedDocuments: async (_type, documents) => {
           const document = documents[0];
+          supplyCreatedItemData = foundry.utils.deepClone(document);
           const item = {
             name: document.name,
             flags: document.flags,
@@ -557,6 +559,7 @@ test("party inventory is created as player-owned and owned players can manage st
     globalThis.game.actors.contents = [partyActor];
 
     await service.addSupply("food", 2);
+    assert.equal(supplyCreatedItemData.img, "icons/consumables/food/berries-ration-round-red.webp");
     await service.updateCurrency({ gp: 3, sp: 4 });
     const partySnapshot = await service.getPartySnapshot();
 

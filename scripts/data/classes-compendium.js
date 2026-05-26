@@ -2450,7 +2450,7 @@ function buildStartingEquipmentChoiceAdvancements(classData, context = {}) {
     return [];
   }
 
-  return [buildItemChoiceAdvancement({
+  const advancement = buildItemChoiceAdvancement({
     classIdentifier: classData.identifier,
     seed: "starting-equipment-package",
     title: "Стартовое снаряжение",
@@ -2463,7 +2463,10 @@ function buildStartingEquipmentChoiceAdvancements(classData, context = {}) {
     pool,
     allowDrops: false,
     type: null
-  })];
+  });
+  advancement.value.added[String(advancement.level)] ??= {};
+
+  return [advancement];
 }
 
 function pickPreferredFeat(records = [], preferredSection = "") {

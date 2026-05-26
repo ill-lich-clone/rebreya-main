@@ -403,7 +403,7 @@ function buildSupplyItemData(resourceKey, quantity) {
   const name = isWater ? WATER_ITEM_NAME : FOOD_ITEM_NAME;
   const img = isWater
     ? "icons/consumables/water/waterskin-leather-blue.webp"
-    : "icons/consumables/food/bowl-oatmeal-brown.webp";
+    : "icons/consumables/food/berries-ration-round-red.webp";
   const weightPerUnit = isWater ? WATER_LB_PER_GALLON : 1;
   const description = isWater
     ? "<p>Общий запас воды группы. Количество считается в галлонах.</p>"

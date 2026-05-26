@@ -226,7 +226,7 @@ test("fighter advancements expose one native item choice for preset starting equ
   assert.match(equipmentChoices[0].hint, /А\) Кольчуга/u);
   assert.match(equipmentChoices[0].hint, /Б\) Проклёпанная кожана/u);
   assert.match(equipmentChoices[0].hint, /В\) 155 зм/u);
-  assert.deepEqual(equipmentChoices[0].value, { added: {}, replaced: {} });
+  assert.deepEqual(equipmentChoices[0].value, { added: { "1": {} }, replaced: {} });
 
   assert.deepEqual(
     equipmentChoices[0].configuration.pool.map((poolEntry) => poolEntry.uuid),
