@@ -126,6 +126,36 @@ test("real gear weapon data maps spreadsheet damage and properties to system key
   assert.ok(byId.get("kavaleriyskaya-pika").weapon.properties.includes("lchMounted"));
 });
 
+test("gear stock icons avoid missing Foundry core asset paths", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const knownMissingStockIcons = new Set([
+    "icons/consumables/potions/potion-bottle-corked-red.webp",
+    "icons/containers/bags/pack-simple-brown.webp",
+    "icons/equipment/shield/heater-steel-blue.webp",
+    "icons/tools/hand/wrench-double-headed.webp",
+    "icons/weapons/ammunition/arrows-war-quiver-brown.webp",
+    "icons/weapons/guns/gun-pistol-flintlock-blue.webp"
+  ]);
+
+  for (const item of gear) {
+    const created = createDnd5eItemData(item, new Map());
+    assert.ok(
+      !knownMissingStockIcons.has(created.img),
+      `${item.id} uses missing stock icon path ${created.img}`
+    );
+  }
+
+  assert.equal(createDnd5eItemData(byId.get("dlinnyy-luk"), new Map()).img, "icons/weapons/bows/longbow-recurve-brown.webp");
+  assert.equal(createDnd5eItemData(byId.get("arbalet-legkiy"), new Map()).img, "icons/weapons/crossbows/crossbow-simple-brown.webp");
+  assert.equal(createDnd5eItemData(byId.get("prashcha"), new Map()).img, "icons/weapons/slings/slingshot-wood.webp");
+  assert.equal(createDnd5eItemData(byId.get("mushket"), new Map()).img, "icons/weapons/guns/gun-pistol-flintlock-metal.webp");
+  assert.equal(createDnd5eItemData(byId.get("shchit"), new Map()).img, "icons/equipment/shield/heater-steel-grey.webp");
+  assert.equal(createDnd5eItemData(byId.get("ryukzak"), new Map()).img, "icons/containers/bags/pack-simple-leather-brown.webp");
+  assert.equal(createDnd5eItemData(byId.get("zel-e-lecheniya-1-go-urovnya"), new Map()).img, "icons/consumables/potions/potion-bottle-corked-labeled-red.webp");
+  assert.equal(createDnd5eItemData(byId.get("kollimatornyy-pritsel"), new Map()).img, "icons/tools/hand/wrench-steel-grey.webp");
+});
+
 test("normalizes gear without dropping weapon data before compendium sync", () => {
   const weapon = {
     damageFormula: "1d8",

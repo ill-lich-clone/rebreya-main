@@ -245,11 +245,20 @@ function getGearIcon(item, classification) {
 
   if (classification.documentType === "weapon") {
     if (classification.firearmClass) {
-      return "icons/weapons/guns/gun-pistol-flintlock-blue.webp";
+      return "icons/weapons/guns/gun-pistol-flintlock-metal.webp";
     }
 
-    if (/арбалет|лук|пращ/u.test(typeText + item.name.toLowerCase())) {
-      return "icons/weapons/ammunition/arrows-war-quiver-brown.webp";
+    const weaponName = normalizeMatchText(item.name);
+    if (/арбалет/u.test(`${typeText} ${weaponName}`)) {
+      return "icons/weapons/crossbows/crossbow-simple-brown.webp";
+    }
+
+    if (/пращ/u.test(`${typeText} ${weaponName}`)) {
+      return "icons/weapons/slings/slingshot-wood.webp";
+    }
+
+    if (/лук/u.test(`${typeText} ${weaponName}`)) {
+      return "icons/weapons/bows/longbow-recurve-brown.webp";
     }
 
     return "icons/weapons/swords/greatsword-crossguard-silver.webp";
@@ -257,7 +266,7 @@ function getGearIcon(item, classification) {
 
   if (classification.documentType === "equipment") {
     if (classification.systemTypeValue === "shield") {
-      return "icons/equipment/shield/heater-steel-blue.webp";
+      return "icons/equipment/shield/heater-steel-grey.webp";
     }
 
     return "icons/equipment/chest/breastplate-layered-steel.webp";
@@ -272,11 +281,11 @@ function getGearIcon(item, classification) {
       return "icons/weapons/ammunition/arrow-broadhead-glowing-orange.webp";
     }
 
-    return "icons/consumables/potions/potion-bottle-corked-red.webp";
+    return "icons/consumables/potions/potion-bottle-corked-labeled-red.webp";
   }
 
   if (folderPath.includes("обвес")) {
-    return "icons/tools/hand/wrench-double-headed.webp";
+    return "icons/tools/hand/wrench-steel-grey.webp";
   }
 
   if (folderPath.includes("скакуны") || folderPath.includes("транспорт")) {
@@ -284,7 +293,7 @@ function getGearIcon(item, classification) {
   }
 
   if (folderPath.includes("снаряжение") && /рюкзак|сумк|чехол|футляр/u.test(normalizeMatchText(item.name))) {
-    return "icons/containers/bags/pack-simple-brown.webp";
+    return "icons/containers/bags/pack-simple-leather-brown.webp";
   }
 
   return DEFAULT_ITEM_ICON;
