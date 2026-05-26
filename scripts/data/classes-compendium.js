@@ -92,6 +92,8 @@ const RUNE_KNIGHT_RUNE_SPECS = [
 const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_OVERRIDE = 5;
+const STARTING_EQUIPMENT_TYPES = new Set(["OR", "AND", "armor", "tool", "weapon", "focus", "currency", "linked"]);
+const STARTING_EQUIPMENT_KEYED_TYPES = new Set(["armor", "tool", "weapon", "focus", "currency", "linked"]);
 
 const OPTIONAL_CLASS_FEATURE_NAMES = new Set([
   "стальной желудок",
@@ -168,6 +170,19 @@ function stableHashId(seed, scope = "id") {
 
   const token = `${hashA.toString(36)}${hashB.toString(36)}`.replace(/[^a-z0-9]/gu, "");
   return token.padEnd(16, "0").slice(0, 16);
+}
+
+function stableDocumentId(seed, usedIds, scope = "document") {
+  let attempt = 1;
+  let id = stableHashId(seed, scope);
+
+  while (usedIds.has(id)) {
+    attempt += 1;
+    id = stableHashId(`${seed}:${attempt}`, scope);
+  }
+
+  usedIds.add(id);
+  return id;
 }
 
 function compendiumItemUuid(packCollection, documentId) {
@@ -519,6 +534,56 @@ function normalizeDieProgressionMap(value) {
   return progression;
 }
 
+function normalizeStartingEquipment(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  const usedIds = new Set();
+  const idBySymbol = new Map();
+  const rows = [];
+
+  for (const [index, entry] of entries.entries()) {
+    if (!isPlainObject(entry)) {
+      continue;
+    }
+
+    const type = cleanString(entry.type);
+    if (!STARTING_EQUIPMENT_TYPES.has(type)) {
+      continue;
+    }
+
+    const key = cleanString(entry.key);
+    if (STARTING_EQUIPMENT_KEYED_TYPES.has(type) && !key) {
+      continue;
+    }
+
+    const symbolId = cleanString(entry._id, `${type}-${index + 1}`);
+    const documentId = /^[A-Za-z0-9]{16}$/u.test(symbolId) && !usedIds.has(symbolId)
+      ? symbolId
+      : stableDocumentId(symbolId, usedIds, "starting-equipment");
+
+    usedIds.add(documentId);
+    idBySymbol.set(symbolId, documentId);
+    rows.push({ entry, index, key, type });
+  }
+
+  return rows.map(({ entry, index, key, type }) => {
+    const symbolId = cleanString(entry._id, `${type}-${index + 1}`);
+    const group = cleanString(entry.group);
+    const count = Math.floor(parseNumber(entry.count, 0));
+    return {
+      _id: idBySymbol.get(symbolId),
+      group: group ? idBySymbol.get(group) ?? group : null,
+      sort: Math.floor(parseNumber(entry.sort, (index + 1) * 100000)),
+      type,
+      ...(count > 0 ? { count } : {}),
+      ...(key ? { key } : {}),
+      ...(Object.hasOwn(entry, "requiresProficiency") ? { requiresProficiency: entry.requiresProficiency === true } : {})
+    };
+  });
+}
+
 export function normalizeClassCompendiumData(rawData) {
   const data = isPlainObject(rawData) ? rawData : {};
   const sourceLabel = cleanString(data.source, DEFAULT_SOURCE_LABEL);
@@ -540,6 +605,7 @@ export function normalizeClassCompendiumData(rawData) {
     : classIdentifier === "fighter-rework-v028" ? FIGHTER_SKILL_POOL : SKILL_POOL);
   const saveProficiencies = unique(Array.isArray(rawClass.saveProficiencies) ? rawClass.saveProficiencies : ["str", "con"]);
   const wealth = cleanString(rawClass.wealth, classIdentifier === "fighter-rework-v028" ? "5d4*10" : "2d4*10");
+  const startingEquipment = normalizeStartingEquipment(rawClass.startingEquipment);
   const subclassTitle = cleanString(rawClass.subclassTitle, classIdentifier === "fighter-rework-v028" ? "Воинский архетип" : "Путь дикости");
   const subclassHint = cleanString(rawClass.subclassHint, classIdentifier === "fighter-rework-v028" ? "Выберите архетип воина." : "Выберите архетип варвара.");
 
@@ -674,6 +740,7 @@ export function normalizeClassCompendiumData(rawData) {
       skillPool,
       saveProficiencies,
       wealth,
+      startingEquipment,
       subclassTitle,
       subclassHint,
       features: classFeatures
@@ -2840,7 +2907,7 @@ export function createClassSystem(classData, advancement = [], sourceLabel = DEF
       progression: "none",
       ability: ""
     },
-    startingEquipment: [],
+    startingEquipment: foundry.utils.deepClone(classData.startingEquipment ?? []),
     wealth: cleanString(classData.wealth, "2d4*10"),
     advancement: foundry.utils.deepClone(advancement)
   };
