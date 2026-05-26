@@ -58,9 +58,9 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 9;
+const CLASS_FEATURE_TEMPLATE_VERSION = 10;
 const SUBCLASS_TEMPLATE_VERSION = 3;
-const CLASS_TEMPLATE_VERSION = 3;
+const CLASS_TEMPLATE_VERSION = 4;
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 
 const DEFAULT_CLASS_ICON = "icons/svg/book.svg";
@@ -624,6 +624,75 @@ function normalizeSpellcastingData(value) {
   };
 }
 
+function normalizeItemChoiceChoices(choices, level = 1, count = 1) {
+  const fallbackLevel = Math.max(0, Math.floor(parseNumber(level, 1)));
+  const fallbackCount = Math.max(1, Math.floor(parseNumber(count, 1)));
+  if (!isPlainObject(choices)) {
+    return {
+      [String(fallbackLevel)]: {
+        count: fallbackCount,
+        replacement: false
+      }
+    };
+  }
+
+  const normalized = {};
+  for (const [rawLevel, rawChoice] of Object.entries(choices)) {
+    const choiceLevel = Math.max(0, Math.floor(parseNumber(rawLevel, fallbackLevel)));
+    const choiceData = isPlainObject(rawChoice) ? rawChoice : { count: rawChoice };
+    const rawCount = Object.hasOwn(choiceData, "count") ? choiceData.count : fallbackCount;
+    normalized[String(choiceLevel)] = {
+      count: rawCount === null ? null : Math.max(0, Math.floor(parseNumber(rawCount, fallbackCount))),
+      replacement: choiceData.replacement === true
+    };
+  }
+
+  return Object.keys(normalized).length
+    ? normalized
+    : normalizeItemChoiceChoices(null, fallbackLevel, fallbackCount);
+}
+
+function normalizeSpellChoiceData(value) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const restrictionData = isPlainObject(value.restriction) ? value.restriction : {};
+  const restrictionList = unique(Array.isArray(restrictionData.list)
+    ? restrictionData.list.map((entry) => cleanString(entry))
+    : cleanString(restrictionData.list)
+      ? [cleanString(restrictionData.list)]
+      : []);
+  const spellData = isPlainObject(value.spell) ? value.spell : {};
+  const usesData = isPlainObject(spellData.uses) ? spellData.uses : {};
+  const ability = unique(Array.isArray(spellData.ability)
+    ? spellData.ability.map((entry) => cleanString(entry))
+    : [cleanString(spellData.ability)].filter(Boolean));
+
+  return {
+    title: cleanString(value.title, "Заклинания"),
+    hint: cleanString(value.hint, "Выберите заклинания класса."),
+    level: Math.max(0, Math.floor(parseNumber(value.level, 1))),
+    choices: normalizeItemChoiceChoices(value.choices, value.level, 1),
+    restriction: {
+      level: cleanString(restrictionData.level, "available"),
+      list: restrictionList,
+      subtype: cleanString(restrictionData.subtype),
+      type: cleanString(restrictionData.type)
+    },
+    spell: {
+      ability,
+      method: cleanString(spellData.method, "spell"),
+      prepared: Math.max(0, Math.floor(parseNumber(spellData.prepared, 0))),
+      uses: {
+        max: cleanString(usesData.max),
+        per: cleanString(usesData.per),
+        requireSlot: usesData.requireSlot !== false
+      }
+    }
+  };
+}
+
 export function normalizeClassCompendiumData(rawData) {
   const data = isPlainObject(rawData) ? rawData : {};
   const sourceLabel = cleanString(data.source, DEFAULT_SOURCE_LABEL);
@@ -658,6 +727,7 @@ export function normalizeClassCompendiumData(rawData) {
   const wealth = cleanString(rawClass.wealth, classIdentifier === "fighter-rework-v028" ? "5d4*10" : "2d4*10");
   const startingEquipment = normalizeStartingEquipment(rawClass.startingEquipment);
   const spellcasting = normalizeSpellcastingData(rawClass.spellcasting);
+  const spellChoice = normalizeSpellChoiceData(rawClass.spellChoice);
   const subclassTitle = cleanString(rawClass.subclassTitle, classIdentifier === "fighter-rework-v028" ? "Воинский архетип" : "Путь дикости");
   const subclassHint = cleanString(rawClass.subclassHint, classIdentifier === "fighter-rework-v028" ? "Выберите архетип воина." : "Выберите архетип варвара.");
 
@@ -744,7 +814,9 @@ export function normalizeClassCompendiumData(rawData) {
       return {
         ...entry,
         levels: [styleLevel],
-        maneuvers: unique(Array.isArray(style?.maneuvers) ? style.maneuvers.map((maneuver) => cleanString(maneuver)) : [])
+        maneuvers: unique(Array.isArray(style?.maneuvers) ? style.maneuvers.map((maneuver) => cleanString(maneuver)) : []),
+        chooseFighterStyle: style?.chooseFighterStyle === true,
+        fightingStyleSourceClassIdentifier: cleanString(style?.fightingStyleSourceClassIdentifier, "fighter-rework-v028")
       };
     })
     .filter((style) => style.name);
@@ -798,6 +870,7 @@ export function normalizeClassCompendiumData(rawData) {
       wealth,
       startingEquipment,
       spellcasting,
+      spellChoice,
       subclassTitle,
       subclassHint,
       features: classFeatures
@@ -951,6 +1024,8 @@ export function buildFeatureDefinitions(normalizedData) {
       ),
       name: `Боевой стиль: ${style.name}`,
       styleName: style.name,
+      chooseFighterStyle: style.chooseFighterStyle === true,
+      fightingStyleSourceClassIdentifier: style.fightingStyleSourceClassIdentifier,
       maneuvers: unique(style.maneuvers),
       maneuverFeatureIds: unique(style.maneuvers
         .map((maneuverName) => maneuverFeatureIdByName.get(normalizeMatchText(maneuverName)))
@@ -1026,6 +1101,8 @@ function buildFeatureSignature(feature, context = {}) {
     subclassName: feature.subclassName,
     name: feature.name,
     styleName: feature.styleName ?? "",
+    chooseFighterStyle: feature.chooseFighterStyle === true,
+    fightingStyleSourceClassIdentifier: feature.fightingStyleSourceClassIdentifier ?? "",
     description: feature.description,
     levels: feature.levels,
     requiredLevel: feature.requiredLevel,
@@ -2434,11 +2511,18 @@ function buildItemChoiceAdvancement({
   hint = "",
   level = 1,
   count = 1,
+  choices = null,
   pool = [],
   allowDrops = false,
+  restriction = {},
+  spell = null,
   type = "feat"
 }) {
   const normalizedPool = unique(pool).map((uuid) => ({ uuid }));
+  const normalizedChoices = normalizeItemChoiceChoices(choices, level, count);
+  const restrictionData = isPlainObject(restriction) ? restriction : {};
+  const spellData = isPlainObject(spell) ? spell : null;
+  const spellUses = isPlainObject(spellData?.uses) ? spellData.uses : {};
 
   return {
     _id: stableHashId(`${classIdentifier}:${seed}`, "adv"),
@@ -2448,20 +2532,32 @@ function buildItemChoiceAdvancement({
     level: Math.max(0, Math.floor(parseNumber(level, 1))),
     configuration: {
       allowDrops: allowDrops === true,
-      choices: {
-        [String(level)]: {
-          count: Math.max(1, Math.floor(parseNumber(count, 1))),
-          replacement: false
-        }
-      },
+      choices: normalizedChoices,
       pool: normalizedPool,
       restriction: {
-        level: "",
-        list: [],
-        subtype: "",
-        type: ""
+        level: cleanString(restrictionData.level),
+        list: unique(Array.isArray(restrictionData.list)
+          ? restrictionData.list.map((entry) => cleanString(entry))
+          : cleanString(restrictionData.list)
+            ? [cleanString(restrictionData.list)]
+            : []),
+        subtype: cleanString(restrictionData.subtype),
+        type: cleanString(restrictionData.type)
       },
-      spell: null,
+      spell: spellData
+        ? {
+          ability: unique(Array.isArray(spellData.ability)
+            ? spellData.ability.map((entry) => cleanString(entry))
+            : [cleanString(spellData.ability)].filter(Boolean)),
+          method: cleanString(spellData.method),
+          prepared: Math.max(0, Math.floor(parseNumber(spellData.prepared, 0))),
+          uses: {
+            max: cleanString(spellUses.max),
+            per: cleanString(spellUses.per),
+            requireSlot: spellUses.requireSlot !== false
+          }
+        }
+        : null,
       type
     },
     value: {
@@ -2513,6 +2609,27 @@ function buildStartingEquipmentChoiceAdvancements(classData, context = {}) {
   advancement.value.added[String(advancement.level)] ??= {};
 
   return [advancement];
+}
+
+function buildSpellChoiceAdvancement(classData) {
+  const spellChoice = isPlainObject(classData.spellChoice) ? classData.spellChoice : null;
+  if (!spellChoice) {
+    return null;
+  }
+
+  return buildItemChoiceAdvancement({
+    classIdentifier: classData.identifier,
+    seed: "spells",
+    title: spellChoice.title,
+    hint: spellChoice.hint,
+    level: spellChoice.level,
+    choices: spellChoice.choices,
+    pool: [],
+    allowDrops: true,
+    restriction: spellChoice.restriction,
+    spell: spellChoice.spell,
+    type: "spell"
+  });
 }
 
 function pickPreferredFeat(records = [], preferredSection = "") {
@@ -2605,6 +2722,29 @@ function buildFeatureItemAdvancements(feature, context = {}) {
     }));
   }
 
+  if (feature.chooseFighterStyle === true) {
+    const sourceClassIdentifier = cleanString(feature.fightingStyleSourceClassIdentifier, "fighter-rework-v028");
+    const commonStyleFeatureIds = (Array.isArray(context.featureDefinitions) ? context.featureDefinitions : [])
+      .filter((definition) => (
+        definition?.sourceType === "fightingStyle"
+        && definition.classIdentifier === sourceClassIdentifier
+      ))
+      .map((definition) => definition.featureId);
+    const commonStyleUuids = featureUuidsForIds(commonStyleFeatureIds, context);
+    if (commonStyleUuids.length) {
+      advancements.push(buildItemChoiceAdvancement({
+        classIdentifier,
+        seed: "common-fighting-style",
+        title: "Обычный боевой стиль",
+        hint: "Выберите один общий боевой стиль.",
+        level: 0,
+        count: 1,
+        pool: commonStyleUuids
+      }));
+    }
+    return advancements;
+  }
+
   const fixedManeuverUuids = featureUuidsForIds(feature.maneuverFeatureIds, context);
   if (fixedManeuverUuids.length) {
     advancements.push(buildItemGrantAdvancement({
@@ -2641,7 +2781,11 @@ function buildSubclassAdvancement(classIdentifier, classData = {}) {
     title: cleanString(classData.subclassTitle, "Архетип"),
     hint: cleanString(classData.subclassHint, "Выберите архетип."),
     level: 3,
-    value: {}
+    configuration: {},
+    value: {
+      document: null,
+      uuid: null
+    }
   };
 }
 
@@ -2960,6 +3104,11 @@ export function buildClassAdvancement(classData, context = {}) {
       count: 2,
       pool
     }));
+  }
+
+  const spellChoiceAdvancement = buildSpellChoiceAdvancement(classData);
+  if (spellChoiceAdvancement) {
+    advancements.push(spellChoiceAdvancement);
   }
 
   const fightingStylePool = fightingStyleEntries

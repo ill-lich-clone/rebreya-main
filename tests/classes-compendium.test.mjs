@@ -321,7 +321,7 @@ test("paladin feature definitions include two preset starting equipment packages
   assert.deepEqual(packageDefinitions[1].startingEquipmentPackage.currency, { gp: 150 });
 });
 
-test("paladin advancement exposes class grants, fighting style, minor feats, and equipment package choice", () => {
+test("paladin advancement exposes class grants, fighting style, spells, minor feats, and equipment package choice", () => {
   const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const featureDefinitions = buildFeatureDefinitions(paladin);
   const featureUuidById = makeUuidMap(featureDefinitions);
@@ -334,6 +334,7 @@ test("paladin advancement exposes class grants, fighting style, minor feats, and
 
   const subclass = advancement.find((entry) => entry.type === "Subclass");
   const styleChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Боевой стиль");
+  const spellChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Заклинания");
   const equipmentChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Стартовое снаряжение");
   const minorFeatChoices = advancement.filter((entry) => entry.type === "ItemChoice" && entry.title.startsWith("Младшая черта"));
   const levelOneGrant = advancement.find((entry) => entry.type === "ItemGrant" && entry.level === 1);
@@ -341,15 +342,88 @@ test("paladin advancement exposes class grants, fighting style, minor feats, and
 
   assert.equal(subclass.level, 3);
   assert.equal(subclass.title, "Священная клятва");
+  assert.deepEqual(subclass.configuration, {});
+  assert.deepEqual(subclass.value, { document: null, uuid: null });
   assert.equal(styleChoice.level, 2);
   assert.equal(styleChoice.configuration.choices["2"].count, 1);
-  assert.equal(styleChoice.configuration.pool.length, paladin.fightingStyles.length);
+  assert.deepEqual(
+    styleChoice.configuration.pool.map((entry) => featureDefinitions.find((definition) => (
+      featureUuidById.get(definition.featureId) === entry.uuid
+    ))?.styleName),
+    ["Обычный стиль", "Стиль паладина"]
+  );
+  assert.equal(spellChoice.level, 2);
+  assert.equal(spellChoice.configuration.type, "spell");
+  assert.deepEqual(spellChoice.configuration.restriction, {
+    level: "available",
+    list: ["class:paladin"],
+    subtype: "",
+    type: ""
+  });
+  assert.deepEqual(spellChoice.configuration.spell, {
+    ability: ["cha"],
+    method: "spell",
+    prepared: 2,
+    uses: {
+      max: "",
+      per: "",
+      requireSlot: true
+    }
+  });
+  assert.deepEqual(spellChoice.configuration.choices["2"], { count: 2, replacement: false });
+  assert.deepEqual(spellChoice.configuration.choices["3"], { count: null, replacement: true });
+  assert.deepEqual(spellChoice.configuration.choices["4"], { count: 1, replacement: true });
+  assert.deepEqual(spellChoice.configuration.choices["20"], { count: 1, replacement: true });
   assert.equal(equipmentChoice.level, 1);
   assert.match(equipmentChoice.hint, /Выберите А или Б:/u);
   assert.deepEqual(equipmentChoice.value, { added: { "1": {} }, replaced: {} });
   assert.equal(minorFeatChoices.length, 6);
   assert.equal(levelOneGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("paladin-rework-v01::class::paladin-divine-sense")), true);
   assert.equal(levelTwoGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("paladin-rework-v01::class::paladin-divine-smite")), true);
+});
+
+test("paladin normal fighting style item offers fighter styles and paladin style is a stub", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
+  const featureDefinitions = [
+    ...buildFeatureDefinitions(fighter),
+    ...buildFeatureDefinitions(paladin)
+  ];
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const normalStyle = featureDefinitions.find((definition) => (
+    definition.sourceType === "fightingStyle"
+    && definition.classIdentifier === "paladin-rework-v01"
+    && definition.styleName === "Обычный стиль"
+  ));
+  const paladinStyle = featureDefinitions.find((definition) => (
+    definition.sourceType === "fightingStyle"
+    && definition.classIdentifier === "paladin-rework-v01"
+    && definition.styleName === "Стиль паладина"
+  ));
+
+  const normalStyleEntry = createFeatureEntryData(normalStyle, new Map(), null, {
+    featureDefinitions,
+    featureUuidById
+  });
+  const paladinStyleEntry = createFeatureEntryData(paladinStyle, new Map(), null, {
+    featureDefinitions,
+    featureUuidById
+  });
+  const commonStyleChoice = normalStyleEntry.system.advancement.find((advancement) => (
+    advancement.type === "ItemChoice" && advancement.title === "Обычный боевой стиль"
+  ));
+  const fighterStyleUuids = buildFeatureDefinitions(fighter)
+    .filter((definition) => definition.sourceType === "fightingStyle")
+    .map((definition) => featureUuidById.get(definition.featureId));
+
+  assert.equal(commonStyleChoice.level, 0);
+  assert.equal(commonStyleChoice.configuration.choices["0"].count, 1);
+  assert.deepEqual(commonStyleChoice.configuration.pool.map((entry) => entry.uuid), fighterStyleUuids);
+  assert.equal(
+    paladinStyleEntry.system.advancement.some((advancement) => advancement.type === "ItemChoice"),
+    false
+  );
+  assert.match(paladinStyleEntry.system.description.value, /Благословенный воин/u);
 });
 
 test("shared class feature icons resolve from common icon names", () => {
