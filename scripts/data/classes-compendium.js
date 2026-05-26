@@ -4,6 +4,7 @@ import {
   CLASSES_COMPENDIUM_LABEL,
   CLASSES_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
+  GEAR_COMPENDIUM_NAME,
   MODULE_ID,
   SUBCLASSES_COMPENDIUM_LABEL,
   SUBCLASSES_COMPENDIUM_NAME
@@ -42,6 +43,7 @@ const CLASS_ICON_SEARCH_PATHS = [
 ];
 
 const FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
+const GEAR_PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const CLASS_FEATURES_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
 const SUBCLASSES_PACK_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
 const CLASSES_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
@@ -118,6 +120,18 @@ const STARTING_EQUIPMENT_WEAPON_POOLS = Object.freeze({
     "Compendium.dnd5e.equipment24.Item.phbwepWarhammer0",
     "Compendium.dnd5e.equipment24.Item.phbwepWhip000000"
   ])
+});
+const REBREYA_GEAR_BY_DND_STARTING_EQUIPMENT = Object.freeze({
+  "Compendium.dnd5e.equipment24.Item.phbarmChainMail0": Object.freeze(["kol-chuga"]),
+  "Compendium.dnd5e.equipment24.Item.phbarmLeatherArm": Object.freeze(["kozhanyy-dospekh"]),
+  "Compendium.dnd5e.equipment24.Item.phbarmBreastplat": Object.freeze(["mnogosloynyy-bronezhilet"]),
+  "Compendium.dnd5e.equipment24.Item.phbwepLongbow000": Object.freeze(["dlinnyy-luk"]),
+  "Compendium.dnd5e.equipment24.Item.phbamoArrows0000": Object.freeze(["strely-20"]),
+  "Compendium.dnd5e.equipment24.Item.phbarmShield0000": Object.freeze(["shchit"]),
+  "Compendium.dnd5e.equipment24.Item.phbwepMusket0000": Object.freeze(["mushket"]),
+  "Compendium.dnd5e.equipment24.Item.phbwepLightCross": Object.freeze(["arbalet-legkiy"]),
+  "Compendium.dnd5e.equipment24.Item.phbamoBolts00000": Object.freeze(["arbaletnye-bolty-20"]),
+  "Compendium.dnd5e.equipment24.Item.phbwepHandaxe000": Object.freeze(["ruchnoy-topor"])
 });
 const FIGHTER_STARTING_EQUIPMENT_ADVANCEMENTS = Object.freeze([
   Object.freeze({
@@ -2448,6 +2462,35 @@ function proficiencyGrant(prefix, value) {
   return key.includes(":") ? key : `${prefix}:${key}`;
 }
 
+function getGearUuidById(context = {}, gearId = "") {
+  const key = cleanString(gearId);
+  if (!key) {
+    return "";
+  }
+
+  const lookup = context.gearLookup?.gearUuidById ?? context.gearUuidById;
+  if (lookup instanceof Map) {
+    return cleanString(lookup.get(key));
+  }
+
+  if (isPlainObject(lookup)) {
+    return cleanString(lookup[key]);
+  }
+
+  return "";
+}
+
+function getRankOneRebreyaWeaponUuids(context = {}) {
+  const values = context.gearLookup?.rankOneWeaponUuids ?? context.rankOneRebreyaWeaponUuids;
+  return unique(Array.isArray(values) ? values.map((value) => cleanString(value)) : []);
+}
+
+function rebreyaGearUuidsForDndStartingEquipment(context = {}, dndUuid = "") {
+  return (REBREYA_GEAR_BY_DND_STARTING_EQUIPMENT[cleanString(dndUuid)] ?? [])
+    .map((gearId) => getGearUuidById(context, gearId))
+    .filter(Boolean);
+}
+
 function startingEquipmentChildrenByGroup(entries = []) {
   const childrenByGroup = new Map();
   for (const entry of entries) {
@@ -2469,19 +2512,24 @@ function startingEquipmentChildrenByGroup(entries = []) {
   return childrenByGroup;
 }
 
-function startingEquipmentItemPool(entry, childrenByGroup) {
+function startingEquipmentItemPool(entry, childrenByGroup, context = {}) {
   const type = cleanString(entry?.type);
   if (type === "linked") {
-    return [cleanString(entry.key)].filter(Boolean);
+    const key = cleanString(entry.key);
+    return [key, ...rebreyaGearUuidsForDndStartingEquipment(context, key)].filter(Boolean);
   }
 
   if (type === "weapon") {
-    return Array.from(STARTING_EQUIPMENT_WEAPON_POOLS[cleanString(entry.key)] ?? []);
+    const key = cleanString(entry.key);
+    return unique([
+      ...Array.from(STARTING_EQUIPMENT_WEAPON_POOLS[key] ?? []),
+      ...(key === "mar" ? getRankOneRebreyaWeaponUuids(context) : [])
+    ]);
   }
 
   if (type === "AND" || type === "OR") {
     return (childrenByGroup.get(cleanString(entry._id)) ?? [])
-      .flatMap((child) => startingEquipmentItemPool(child, childrenByGroup));
+      .flatMap((child) => startingEquipmentItemPool(child, childrenByGroup, context));
   }
 
   return [];
@@ -2510,7 +2558,7 @@ function startingEquipmentSelectionCount(entry, childrenByGroup) {
   return 0;
 }
 
-function buildStartingEquipmentChoiceAdvancements(classData) {
+function buildStartingEquipmentChoiceAdvancements(classData, context = {}) {
   const entries = Array.isArray(classData.startingEquipment) ? classData.startingEquipment : [];
   const childrenByGroup = startingEquipmentChildrenByGroup(entries);
   return entries
@@ -2518,7 +2566,7 @@ function buildStartingEquipmentChoiceAdvancements(classData) {
     .sort((left, right) => parseNumber(left.sort, 0) - parseNumber(right.sort, 0))
     .map((entry, index) => {
       const metadata = FIGHTER_STARTING_EQUIPMENT_ADVANCEMENTS[index] ?? {};
-      const pool = startingEquipmentItemPool(entry, childrenByGroup);
+      const pool = startingEquipmentItemPool(entry, childrenByGroup, context);
       if (!pool.length) {
         return null;
       }
@@ -2762,6 +2810,58 @@ async function buildFeatLookup() {
   };
 }
 
+function compendiumIndexItemUuid(pack, entry) {
+  const uuid = cleanString(entry?.uuid);
+  if (uuid) {
+    return uuid;
+  }
+
+  return compendiumItemUuid(pack?.collection, entry?._id ?? entry?.id);
+}
+
+export async function buildGearLookup() {
+  const pack = game.packs.get(GEAR_PACK_ID);
+  if (!pack) {
+    return {
+      gearUuidById: new Map(),
+      rankOneWeaponUuids: []
+    };
+  }
+
+  const index = await pack.getIndex({
+    fields: [
+      `flags.${MODULE_ID}.equipmentType`,
+      `flags.${MODULE_ID}.foundryType`,
+      `flags.${MODULE_ID}.gearId`,
+      `flags.${MODULE_ID}.rank`
+    ]
+  });
+  const gearUuidById = new Map();
+  const rankOneWeaponUuids = [];
+
+  for (const entry of index) {
+    const uuid = compendiumIndexItemUuid(pack, entry);
+    const gearId = cleanString(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.gearId`));
+    if (!uuid || !gearId) {
+      continue;
+    }
+
+    gearUuidById.set(gearId, uuid);
+
+    const foundryType = cleanString(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.foundryType`));
+    const equipmentType = cleanString(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.equipmentType`));
+    const rank = parseNumber(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.rank`), 0);
+    if (foundryType === "weapon" && equipmentType === "Оружие" && rank <= 1) {
+      rankOneWeaponUuids.push(uuid);
+    }
+  }
+
+  return {
+    gearUuidById,
+    rankOneWeaponUuids: unique(rankOneWeaponUuids)
+  };
+}
+
 export async function buildMinorFeatPool() {
   return (await buildFeatLookup()).minorFeatUuids;
 }
@@ -2829,7 +2929,7 @@ export function buildClassAdvancement(classData, context = {}) {
     }));
   }
 
-  advancements.push(...buildStartingEquipmentChoiceAdvancements(classData));
+  advancements.push(...buildStartingEquipmentChoiceAdvancements(classData, context));
 
   if (Object.keys(rageProgression).length) {
     advancements.push(buildScaleValueAdvancement({
@@ -3520,6 +3620,7 @@ async function syncClassesPack(normalizedDataList, context) {
       classFeatureEntries: classFeatures,
       rageActionEntries: normalizedData.rageActions,
       minorFeatUuids: context.minorFeatUuids,
+      gearLookup: context.gearLookup,
       rageProgression: normalizedData.rageProgression,
       rageDamageProgression: normalizedData.rageDamageProgression,
       fightingStyleEntries: normalizedData.fightingStyles,
@@ -3586,6 +3687,7 @@ export class ClassesCompendiumService {
     const normalizedData = await loadData();
     const featureDefinitions = normalizedData.flatMap((classData) => buildFeatureDefinitions(classData));
     const featLookup = await buildFeatLookup();
+    const gearLookup = await buildGearLookup();
     const { pack: featuresPack, featureUuidById } = await syncClassFeaturePack(featureDefinitions, {
       iconLookup,
       featLookupByName: featLookup.byName,
@@ -3598,6 +3700,7 @@ export class ClassesCompendiumService {
     const classesPack = await syncClassesPack(normalizedData, {
       featureUuidById,
       minorFeatUuids: featLookup.minorFeatUuids,
+      gearLookup,
       iconLookup
     });
 
