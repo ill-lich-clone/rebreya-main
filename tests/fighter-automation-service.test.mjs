@@ -383,6 +383,48 @@ test("fighter starting equipment package items expand into Rebreya gear and gold
   assert.deepEqual(actor.deletedDocuments, [{ type: "Item", ids: ["package-a"] }]);
 });
 
+test("paladin starting equipment package items expand into Rebreya gear and gold", async () => {
+  const packageItem = makeItem({
+    id: "paladin-package-a",
+    name: "Стартовое снаряжение: Вариант А",
+    flags: {
+      "rebreya-main": {
+        sourceType: "paladinStartingEquipmentPackage",
+        startingEquipmentPackageId: "a"
+      }
+    }
+  });
+  const actor = new TestActor({ id: "paladin", name: "Паладин", items: [packageItem] });
+  const resolvedGearIds = [];
+  const service = new FighterAutomationService({}, {
+    resolveStartingEquipmentGearUuid: async (gearId) => {
+      resolvedGearIds.push(gearId);
+      return `Compendium.world.rebreya-gear.Item.${gearId}`;
+    },
+    resolveStartingEquipmentItem: async (uuid) => makeStartingEquipmentSource(uuid)
+  });
+
+  await service.handleCreatedItem(packageItem);
+
+  assert.deepEqual(resolvedGearIds, [
+    "kol-chuga",
+    "shchit",
+    "dlinnyy-mech",
+    "kop-e",
+    "amulet-svyashchennyy-simvol",
+    "nabor-svyashchennika"
+  ]);
+  assert.equal(actor.createdItems.length, 1);
+
+  const quantityByUuid = new Map(actor.createdItems[0].rows.map((row) => [
+    foundry.utils.getProperty(row, "flags.dnd5e.sourceId"),
+    foundry.utils.getProperty(row, "system.quantity")
+  ]));
+  assert.equal(quantityByUuid.get("Compendium.world.rebreya-gear.Item.kop-e"), 6);
+  assert.equal(actor.system.currency.gp, 9);
+  assert.deepEqual(actor.deletedDocuments, [{ type: "Item", ids: ["paladin-package-a"] }]);
+});
+
 test("fighter starting equipment imports Rebreya equipment pack contents", async () => {
   const actor = new TestActor({ id: "fighter", name: "Р’РѕРёРЅ" });
   const classItem = makeClassItem({ actor });

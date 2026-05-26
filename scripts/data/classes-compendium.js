@@ -21,10 +21,7 @@ import {
   getFighterManeuverAutomation,
   getFighterSecondWindAutomation
 } from "./fighter-automation.js";
-import {
-  FIGHTER_STARTING_EQUIPMENT_PACKAGES,
-  FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE
-} from "./fighter-starting-equipment.js";
+import { getClassStartingEquipmentConfig } from "./class-starting-equipment.js";
 import { buildSlug } from "./item-classification.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -33,12 +30,14 @@ const REBREYA_SOURCE_LABEL = "Ребрея";
 const COMPENDIUM_SIDEBAR_FOLDER = [REBREYA_SOURCE_LABEL];
 const CLASS_DATA_PATHS = [
   `modules/${MODULE_ID}/data/barbarian-rework-v012.json`,
-  `modules/${MODULE_ID}/data/fighter-rework-v028.json`
+  `modules/${MODULE_ID}/data/fighter-rework-v028.json`,
+  `modules/${MODULE_ID}/data/paladin-rework-v01.json`
 ];
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const CLASS_ICON_SEARCH_PATHS = [
   `${MODULE_ICONS_BASE_PATH}/Classes/Fighter`,
   `${MODULE_ICONS_BASE_PATH}/Classes/Barbarian`,
+  `${MODULE_ICONS_BASE_PATH}/Classes/Paladin`,
   `${MODULE_ICONS_BASE_PATH}/Fighter`,
   `${MODULE_ICONS_BASE_PATH}/Barbarian`,
   `${MODULE_ICONS_BASE_PATH}/Feats`,
@@ -54,6 +53,7 @@ const CLASS_ROOT_FOLDER = "Классы";
 const SUBCLASS_ROOT_FOLDER = "Архетипы";
 const CLASS_FEATURE_ROOT_FOLDER = "Варвар (Реворк V0.12)";
 const FIGHTER_CLASS_FEATURE_ROOT_FOLDER = "Воин (Реворк V0.28)";
+const PALADIN_CLASS_FEATURE_ROOT_FOLDER = "Паладин (Реворк V0.1)";
 const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
@@ -66,6 +66,7 @@ const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 const DEFAULT_CLASS_ICON = "icons/svg/book.svg";
 const DEFAULT_SUBCLASS_ICON = "icons/svg/book.svg";
 const DEFAULT_FEATURE_ICON = "icons/svg/book.svg";
+const PALADIN_CLASS_ICON = "icons/skills/melee/sword-winged-holy-orange.webp";
 
 const DEFAULT_HD = "d12";
 const FIGHTER_HD = "d10";
@@ -589,6 +590,40 @@ function normalizeStartingEquipment(entries) {
   });
 }
 
+function normalizeTraitChoices(entries, prefix) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  return entries
+    .map((entry) => ({
+      count: Math.max(1, Math.floor(parseNumber(entry?.count, 1))),
+      pool: unique((Array.isArray(entry?.pool) ? entry.pool : [])
+        .map((value) => proficiencyGrant(prefix, value))
+        .filter(Boolean))
+    }))
+    .filter((entry) => entry.pool.length);
+}
+
+function normalizeSpellcastingData(value) {
+  const data = isPlainObject(value) ? value : {};
+  const progression = cleanString(data.progression, "none");
+  const ability = cleanString(data.ability);
+  const preparation = isPlainObject(data.preparation)
+    ? Object.fromEntries(
+      Object.entries(data.preparation)
+        .map(([key, entry]) => [key, cleanString(entry)])
+        .filter(([, entry]) => entry)
+    )
+    : {};
+
+  return {
+    progression,
+    ability,
+    ...(Object.keys(preparation).length ? { preparation } : {})
+  };
+}
+
 export function normalizeClassCompendiumData(rawData) {
   const data = isPlainObject(rawData) ? rawData : {};
   const sourceLabel = cleanString(data.source, DEFAULT_SOURCE_LABEL);
@@ -601,7 +636,11 @@ export function normalizeClassCompendiumData(rawData) {
   );
   const classFeatureRootFolder = cleanString(
     data.classFeatureRootFolder,
-    classIdentifier === "fighter-rework-v028" ? FIGHTER_CLASS_FEATURE_ROOT_FOLDER : CLASS_FEATURE_ROOT_FOLDER
+    classIdentifier === "fighter-rework-v028"
+      ? FIGHTER_CLASS_FEATURE_ROOT_FOLDER
+      : classIdentifier === "paladin-rework-v01"
+        ? PALADIN_CLASS_FEATURE_ROOT_FOLDER
+        : CLASS_FEATURE_ROOT_FOLDER
   );
   const hitDie = cleanString(rawClass.hitDie, classIdentifier === "fighter-rework-v028" ? FIGHTER_HD : DEFAULT_HD);
   const primaryAbility = unique(Array.isArray(rawClass.primaryAbility) ? rawClass.primaryAbility : ["str"]);
@@ -615,8 +654,10 @@ export function normalizeClassCompendiumData(rawData) {
   const weaponProficiencies = unique(Array.isArray(rawClass.weaponProficiencies)
     ? rawClass.weaponProficiencies
     : classIdentifier === "fighter-rework-v028" ? FIGHTER_WEAPON_PROFICIENCIES : []);
+  const weaponProficiencyChoices = normalizeTraitChoices(rawClass.weaponProficiencyChoices, "weapon");
   const wealth = cleanString(rawClass.wealth, classIdentifier === "fighter-rework-v028" ? "5d4*10" : "2d4*10");
   const startingEquipment = normalizeStartingEquipment(rawClass.startingEquipment);
+  const spellcasting = normalizeSpellcastingData(rawClass.spellcasting);
   const subclassTitle = cleanString(rawClass.subclassTitle, classIdentifier === "fighter-rework-v028" ? "Воинский архетип" : "Путь дикости");
   const subclassHint = cleanString(rawClass.subclassHint, classIdentifier === "fighter-rework-v028" ? "Выберите архетип воина." : "Выберите архетип варвара.");
 
@@ -692,16 +733,17 @@ export function normalizeClassCompendiumData(rawData) {
   const usedFightingStyleIds = new Set();
   const fightingStyles = (Array.isArray(data.fightingStyles) ? data.fightingStyles : [])
     .map((style, index) => {
+      const styleLevel = Math.max(1, Math.floor(parseNumber(style?.requiredLevel ?? style?.levels?.[0], 1)));
       const entry = normalizeFeatureEntry(style, index, {
         scopeId: `${classIdentifier}-fighting-style`,
         fallbackName: "Боевой стиль",
         fallbackLevel: 1,
         usedIds: usedFightingStyleIds,
-        forceRequiredLevel: 1
+        forceRequiredLevel: styleLevel
       });
       return {
         ...entry,
-        levels: [1],
+        levels: [styleLevel],
         maneuvers: unique(Array.isArray(style?.maneuvers) ? style.maneuvers.map((maneuver) => cleanString(maneuver)) : [])
       };
     })
@@ -752,8 +794,10 @@ export function normalizeClassCompendiumData(rawData) {
       saveProficiencies,
       armorProficiencies,
       weaponProficiencies,
+      weaponProficiencyChoices,
       wealth,
       startingEquipment,
+      spellcasting,
       subclassTitle,
       subclassHint,
       features: classFeatures
@@ -851,13 +895,14 @@ export function buildFeatureDefinitions(normalizedData) {
     });
   }
 
-  if (classId === "fighter-rework-v028") {
-    for (const equipmentPackage of FIGHTER_STARTING_EQUIPMENT_PACKAGES) {
-      const featureId = `${classId}::${FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE}::${equipmentPackage.featureId}`;
+  const startingEquipmentConfig = getClassStartingEquipmentConfig(classId);
+  if (startingEquipmentConfig) {
+    for (const equipmentPackage of startingEquipmentConfig.packages) {
+      const featureId = `${classId}::${startingEquipmentConfig.sourceType}::${equipmentPackage.featureId}`;
       definitions.push({
         featureId,
         documentId: featureDocumentId(featureId),
-        sourceType: FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE,
+        sourceType: startingEquipmentConfig.sourceType,
         classIdentifier: classId,
         className,
         subclassId: null,
@@ -2436,14 +2481,15 @@ function proficiencyGrant(prefix, value) {
 }
 
 function buildStartingEquipmentChoiceAdvancements(classData, context = {}) {
-  if (classData.identifier !== "fighter-rework-v028") {
+  const startingEquipmentConfig = getClassStartingEquipmentConfig(classData.identifier);
+  if (!startingEquipmentConfig) {
     return [];
   }
 
   const featureUuidById = context.featureUuidById instanceof Map ? context.featureUuidById : new Map();
-  const pool = FIGHTER_STARTING_EQUIPMENT_PACKAGES
+  const pool = startingEquipmentConfig.packages
     .map((equipmentPackage) => featureUuidById.get(
-      `${classData.identifier}::${FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE}::${equipmentPackage.featureId}`
+      `${classData.identifier}::${startingEquipmentConfig.sourceType}::${equipmentPackage.featureId}`
     ))
     .filter(Boolean);
   if (!pool.length) {
@@ -2455,8 +2501,8 @@ function buildStartingEquipmentChoiceAdvancements(classData, context = {}) {
     seed: "starting-equipment-package",
     title: "Стартовое снаряжение",
     hint: [
-      "Выберите А, Б или В:",
-      ...FIGHTER_STARTING_EQUIPMENT_PACKAGES.map((equipmentPackage) => equipmentPackage.label)
+      startingEquipmentConfig.choiceHint,
+      ...startingEquipmentConfig.packages.map((equipmentPackage) => equipmentPackage.label)
     ].join("\n"),
     level: 1,
     count: 1,
@@ -2749,14 +2795,18 @@ export function buildClassAdvancement(classData, context = {}) {
 
   const weaponProficiencyGrants = (classData.weaponProficiencies ?? [])
     .map((proficiency) => proficiencyGrant("weapon", proficiency));
-  if (weaponProficiencyGrants.length) {
+  const weaponProficiencyChoices = Array.isArray(classData.weaponProficiencyChoices)
+    ? classData.weaponProficiencyChoices
+    : [];
+  if (weaponProficiencyGrants.length || weaponProficiencyChoices.length) {
     advancements.push(buildTraitAdvancement({
       classIdentifier,
       seed: "weapon-proficiencies",
       title: "Владение оружием",
       hint: "Владение оружием класса.",
       level: 1,
-      grants: weaponProficiencyGrants
+      grants: weaponProficiencyGrants,
+      choices: weaponProficiencyChoices
     }));
   }
 
@@ -2917,12 +2967,17 @@ export function buildClassAdvancement(classData, context = {}) {
     .filter(Boolean);
 
   if (fightingStylePool.length) {
+    const fightingStyleLevel = Math.min(...fightingStyleEntries
+      .map((entry) => Math.max(1, Math.floor(parseNumber(entry.requiredLevel, entry.levels?.[0] ?? 1))))
+      .filter((level) => level > 0));
     advancements.push(buildItemChoiceAdvancement({
       classIdentifier,
       seed: "fighting-style",
       title: "Боевой стиль",
-      hint: "Выберите один боевой стиль воина. Приёмы, которые даёт стиль, указаны в описании выбранного айтема.",
-      level: 1,
+      hint: classIdentifier === "fighter-rework-v028"
+        ? "Выберите один боевой стиль воина. Приёмы, которые даёт стиль, указаны в описании выбранного айтема."
+        : "Выберите один боевой стиль класса.",
+      level: Number.isFinite(fightingStyleLevel) ? fightingStyleLevel : 1,
       count: 1,
       pool: fightingStylePool
     }));
@@ -2999,6 +3054,7 @@ export function buildSubclassAdvancements(subclass, context = {}) {
 }
 
 export function createClassSystem(classData, advancement = [], sourceLabel = DEFAULT_SOURCE_LABEL) {
+  const spellcasting = normalizeSpellcastingData(classData.spellcasting);
   return {
     description: {
       value: toHtmlParagraphs(classData.description),
@@ -3017,11 +3073,8 @@ export function createClassSystem(classData, advancement = [], sourceLabel = DEF
       all: false
     },
     properties: [],
-    spellcasting: {
-      progression: "none",
-      ability: ""
-    },
-    startingEquipment: classData.identifier === "fighter-rework-v028"
+    spellcasting,
+    startingEquipment: getClassStartingEquipmentConfig(classData.identifier)
       ? []
       : foundry.utils.deepClone(classData.startingEquipment ?? []),
     wealth: cleanString(classData.wealth, "2d4*10"),
@@ -3156,6 +3209,10 @@ function resolveClassIcon(className, iconLookup) {
 
   if (normalizeMatchText(className).includes("воин")) {
     return resolveNamedIcon("Fighter", iconLookup, DEFAULT_CLASS_ICON);
+  }
+
+  if (normalizeMatchText(className).includes("паладин")) {
+    return resolveNamedIcon("Paladin", iconLookup, PALADIN_CLASS_ICON);
   }
 
   return resolveNamedIcon("Barbarian", iconLookup, DEFAULT_CLASS_ICON);

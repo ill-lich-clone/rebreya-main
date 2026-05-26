@@ -1,10 +1,10 @@
 import { CLASS_FEATURES_COMPENDIUM_NAME, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
-import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import {
-  FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE,
-  getFighterStartingEquipmentPackage,
-  getFighterStartingEquipmentPackageChoices
-} from "../data/fighter-starting-equipment.js";
+  getClassStartingEquipmentConfig,
+  getClassStartingEquipmentPackage,
+  isClassStartingEquipmentPackageSourceType
+} from "../data/class-starting-equipment.js";
+import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 
 const EFFECT_MODE_OVERRIDE = 5;
 const LAST_ATTACK_MAX_AGE_MS = 120000;
@@ -1365,7 +1365,7 @@ export class FighterAutomationService {
   }
 
   #isFighterStartingEquipmentPackageItem(item) {
-    return cleanText(readDocumentFlag(item, "sourceType")) === FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE
+    return isClassStartingEquipmentPackageSourceType(readDocumentFlag(item, "sourceType"))
       && !!cleanText(readDocumentFlag(item, "startingEquipmentPackageId"));
   }
 
@@ -1384,7 +1384,7 @@ export class FighterAutomationService {
 
   #startingEquipmentPromptChoices() {
     return {
-      packages: getFighterStartingEquipmentPackageChoices()
+      packages: getClassStartingEquipmentConfig(FIGHTER_CLASS_IDENTIFIER)?.getChoices() ?? []
     };
   }
 
@@ -1467,7 +1467,10 @@ export class FighterAutomationService {
     }
 
     const packageId = cleanText(readDocumentFlag(item, "startingEquipmentPackageId"));
-    const selection = { package: packageId };
+    const selection = {
+      package: packageId,
+      sourceType: cleanText(readDocumentFlag(item, "sourceType"))
+    };
     const itemData = await this.#buildStartingEquipmentItemData(selection);
     if (itemData.length && typeof actor.createEmbeddedDocuments === "function") {
       await actor.createEmbeddedDocuments("Item", itemData, { keepId: true, renderSheet: false });
@@ -1481,7 +1484,10 @@ export class FighterAutomationService {
   }
 
   async #applyStartingEquipmentCurrency(actor, selection = {}) {
-    const equipmentPackage = getFighterStartingEquipmentPackage(selection.package ?? selection.packageId ?? selection.id);
+    const equipmentPackage = getClassStartingEquipmentPackage(
+      selection.sourceType ?? getClassStartingEquipmentConfig(FIGHTER_CLASS_IDENTIFIER)?.sourceType,
+      selection.package ?? selection.packageId ?? selection.id
+    );
     const gp = Math.floor(toNumber(equipmentPackage?.currency?.gp, 0));
     if (!gp || typeof actor?.update !== "function") {
       return true;
@@ -1495,7 +1501,10 @@ export class FighterAutomationService {
   }
 
   #startingEquipmentEntries(selection = {}) {
-    const equipmentPackage = getFighterStartingEquipmentPackage(selection.package ?? selection.packageId ?? selection.id);
+    const equipmentPackage = getClassStartingEquipmentPackage(
+      selection.sourceType ?? getClassStartingEquipmentConfig(FIGHTER_CLASS_IDENTIFIER)?.sourceType,
+      selection.package ?? selection.packageId ?? selection.id
+    );
     if (!equipmentPackage) {
       return [];
     }

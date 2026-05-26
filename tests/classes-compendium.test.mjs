@@ -259,6 +259,99 @@ test("fighter advancements expose dominance scales and a fighting style choice",
   assert.equal(styleChoice.configuration.pool.length, 12);
 });
 
+test("paladin rework data defines ZoZT class basics, spellcasting, and subclasses", () => {
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
+  const system = createClassSystem(paladin.classData, [], paladin.sourceLabel);
+
+  assert.equal(paladin.sourceLabel, "ЗоЗТ");
+  assert.equal(paladin.classData.identifier, "paladin-rework-v01");
+  assert.equal(paladin.classData.hitDie, "d10");
+  assert.deepEqual(paladin.classData.saveProficiencies, ["wis", "cha"]);
+  assert.deepEqual(paladin.classData.skillPool, ["ath", "ins", "itm", "med", "per", "rel"]);
+  assert.equal(paladin.classData.features.some((feature) => feature.name === "Божественная кара"), true);
+  assert.equal(paladin.classData.features.some((feature) => feature.name === "Аура защиты"), true);
+  assert.equal(paladin.subclasses.length, 7);
+  assert.equal(system.source.book, "ЗоЗТ");
+  assert.equal(system.spellcasting.progression, "half");
+  assert.equal(system.spellcasting.ability, "cha");
+  assert.equal(system.spellcasting.preparation.formula, "@abilities.cha.mod + floor(@classes.paladin-rework-v01.levels / 2)");
+});
+
+test("paladin advancements grant armor and strict weapon proficiency choices", () => {
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
+  const advancement = buildClassAdvancement(paladin.classData, {});
+  const armor = advancement.find((entry) => entry.type === "Trait" && entry.title === "Владение доспехами");
+  const weapons = advancement.find((entry) => entry.type === "Trait" && entry.title === "Владение оружием");
+
+  assert.deepEqual(armor.configuration.grants, ["armor:lgt", "armor:med", "armor:hvy", "armor:shl"]);
+  assert.deepEqual(weapons.configuration.grants, []);
+  assert.equal(weapons.configuration.choices.length, 2);
+  assert.equal(weapons.configuration.choices[0].count, 1);
+  assert.ok(weapons.configuration.choices[0].pool.includes("weapon:sim:dagger"));
+  assert.ok(weapons.configuration.choices[0].pool.includes("weapon:sim:spear"));
+  assert.equal(weapons.configuration.choices[1].count, 1);
+  assert.ok(weapons.configuration.choices[1].pool.includes("weapon:mar:longsword"));
+  assert.ok(weapons.configuration.choices[1].pool.includes("weapon:mar:longbow"));
+  assert.equal(weapons.configuration.choices[0].pool.includes("weapon:sim"), false);
+  assert.equal(weapons.configuration.choices[1].pool.includes("weapon:mar"), false);
+});
+
+test("paladin feature definitions include two preset starting equipment packages", () => {
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
+  const packageDefinitions = buildFeatureDefinitions(paladin)
+    .filter((definition) => definition.sourceType === "paladinStartingEquipmentPackage");
+
+  assert.deepEqual(packageDefinitions.map((definition) => definition.name), [
+    "А) Кольчуга, щит, длинный меч, 6 метательных копий, священный символ, набор священника и 9 зм",
+    "Б) 150 зм"
+  ]);
+  assert.deepEqual(
+    packageDefinitions[0].startingEquipmentPackage.items.map((item) => [item.gearId, item.quantity ?? 1]),
+    [
+      ["kol-chuga", 1],
+      ["shchit", 1],
+      ["dlinnyy-mech", 1],
+      ["kop-e", 6],
+      ["amulet-svyashchennyy-simvol", 1],
+      ["nabor-svyashchennika", 1]
+    ]
+  );
+  assert.deepEqual(packageDefinitions[0].startingEquipmentPackage.currency, { gp: 9 });
+  assert.deepEqual(packageDefinitions[1].startingEquipmentPackage.items, []);
+  assert.deepEqual(packageDefinitions[1].startingEquipmentPackage.currency, { gp: 150 });
+});
+
+test("paladin advancement exposes class grants, fighting style, minor feats, and equipment package choice", () => {
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
+  const featureDefinitions = buildFeatureDefinitions(paladin);
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const advancement = buildClassAdvancement(paladin.classData, {
+    featureUuidById,
+    classFeatureEntries: paladin.classData.features,
+    minorFeatUuids: ["Compendium.world.rebreya-feats.Item.minor"],
+    fightingStyleEntries: paladin.fightingStyles
+  });
+
+  const subclass = advancement.find((entry) => entry.type === "Subclass");
+  const styleChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Боевой стиль");
+  const equipmentChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Стартовое снаряжение");
+  const minorFeatChoices = advancement.filter((entry) => entry.type === "ItemChoice" && entry.title.startsWith("Младшая черта"));
+  const levelOneGrant = advancement.find((entry) => entry.type === "ItemGrant" && entry.level === 1);
+  const levelTwoGrant = advancement.find((entry) => entry.type === "ItemGrant" && entry.level === 2);
+
+  assert.equal(subclass.level, 3);
+  assert.equal(subclass.title, "Священная клятва");
+  assert.equal(styleChoice.level, 2);
+  assert.equal(styleChoice.configuration.choices["2"].count, 1);
+  assert.equal(styleChoice.configuration.pool.length, paladin.fightingStyles.length);
+  assert.equal(equipmentChoice.level, 1);
+  assert.match(equipmentChoice.hint, /Выберите А или Б:/u);
+  assert.deepEqual(equipmentChoice.value, { added: { "1": {} }, replaced: {} });
+  assert.equal(minorFeatChoices.length, 6);
+  assert.equal(levelOneGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("paladin-rework-v01::class::paladin-divine-sense")), true);
+  assert.equal(levelTwoGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("paladin-rework-v01::class::paladin-divine-smite")), true);
+});
+
 test("shared class feature icons resolve from common icon names", () => {
   const barbarian = normalizeClassCompendiumData(loadJson("data/barbarian-rework-v012.json"));
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
