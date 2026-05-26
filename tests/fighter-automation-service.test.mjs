@@ -214,12 +214,19 @@ function makeClassItem({ actor, classIdentifier = "fighter-rework-v028" } = {}) 
   };
 }
 
-function makeStartingEquipmentSource(uuid) {
+function makeStartingEquipmentSource(uuid, { type = "loot", contents = [] } = {}) {
   return {
     name: uuid.split(".").at(-1),
-    type: "loot",
+    uuid,
+    type,
     system: {
-      quantity: 1
+      quantity: 1,
+      contents: {
+        values: () => contents.values(),
+        [Symbol.iterator]: function* iterator() {
+          yield* contents;
+        }
+      }
     },
     flags: {},
     toObject() {
@@ -324,7 +331,7 @@ test("fighter class creation prompts for starting equipment and grants selected 
     "dlinnyy-luk",
     "strely-20",
     "kolchan",
-    "instrumenty-issledovatelya-0-y-rang"
+    "nabor-issledovatelya-podzemeliy"
   ]);
   assert.deepEqual(resolvedUuids, resolvedGearIds.map((gearId) => `Compendium.world.rebreya-gear.Item.${gearId}`));
   assert.equal(quantityByUuid.get("Compendium.world.rebreya-gear.Item.strely-20"), 1);
@@ -360,7 +367,7 @@ test("fighter starting equipment package items expand into Rebreya gear and gold
     "dvuruchnyy-mech",
     "tsep",
     "kop-e",
-    "instrumenty-issledovatelya-0-y-rang"
+    "nabor-issledovatelya-podzemeliy"
   ]);
   assert.equal(actor.createdItems.length, 1);
 
@@ -371,6 +378,46 @@ test("fighter starting equipment package items expand into Rebreya gear and gold
   assert.equal(quantityByUuid.get("Compendium.world.rebreya-gear.Item.kop-e"), 8);
   assert.equal(actor.system.currency.gp, 4);
   assert.deepEqual(actor.deletedDocuments, [{ type: "Item", ids: ["package-a"] }]);
+});
+
+test("fighter starting equipment imports Rebreya equipment pack contents", async () => {
+  const actor = new TestActor({ id: "fighter", name: "Р’РѕРёРЅ" });
+  const classItem = makeClassItem({ actor });
+  const service = new FighterAutomationService({}, {
+    promptFighterStartingEquipment: async () => ({
+      package: "a"
+    }),
+    resolveStartingEquipmentGearUuid: async (gearId) => `Compendium.world.rebreya-gear.Item.${gearId}`,
+    resolveStartingEquipmentItem: async (uuid) => {
+      if (uuid.endsWith(".nabor-issledovatelya-podzemeliy")) {
+        return makeStartingEquipmentSource(uuid, {
+          type: "container",
+          contents: [
+            makeStartingEquipmentSource("Compendium.world.rebreya-gear.Item.fakel"),
+            makeStartingEquipmentSource("Compendium.world.rebreya-gear.Item.svecha")
+          ]
+        });
+      }
+
+      return makeStartingEquipmentSource(uuid);
+    }
+  });
+
+  await service.handleCreatedItem(classItem);
+
+  const rows = actor.createdItems[0].rows;
+  const packRow = rows.find((row) => row.type === "container");
+  assert.ok(packRow, "equipment pack container is created");
+  assert.ok(packRow._id, "equipment pack receives an id for contained items");
+
+  const containedRows = rows.filter((row) => foundry.utils.getProperty(row, "system.container") === packRow._id);
+  assert.deepEqual(
+    containedRows.map((row) => foundry.utils.getProperty(row, "flags.dnd5e.sourceId")).sort(),
+    [
+      "Compendium.world.rebreya-gear.Item.fakel",
+      "Compendium.world.rebreya-gear.Item.svecha"
+    ]
+  );
 });
 
 test("fighter class creation does not duplicate native starting equipment choices", async () => {

@@ -8,6 +8,81 @@ import { createDnd5eItemData } from "../scripts/data/gear-compendium.js";
 import { normalizeEconomyDataset } from "../scripts/data/normalizer.js";
 
 const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
+const EQUIPMENT_PACK_CONTENTS = {
+  "nabor-artista": [
+    ["spal-nik", 1],
+    ["odezhda-kostyum", 2],
+    ["svecha", 5],
+    ["ratsiony-1-den", 5],
+    ["burdyuk", 1],
+    ["instrumenty-grimyora-0-y-rang", 1]
+  ],
+  "nabor-vzlomshchika": [
+    ["metallicheskie-shariki-1-000-sht-v-sumke", 1],
+    ["leska-10-futov", 1],
+    ["kolokol-chik", 1],
+    ["svecha", 5],
+    ["lomik", 1],
+    ["molotok", 1],
+    ["shlyambur", 10],
+    ["fonar-zakrytyy", 1],
+    ["maslo-flyaga", 2],
+    ["ratsiony-1-den", 5],
+    ["trutnitsa", 1],
+    ["burdyuk", 1],
+    ["veryovka-pen-kovaya-50-futov", 1]
+  ],
+  "nabor-diplomata": [
+    ["konteyner-dlya-kart-i-svitkov", 2],
+    ["odezhda-otlichnaya", 1],
+    ["chernila-butylochka-30-gramm", 1],
+    ["pischee-pero", 1],
+    ["lampa", 1],
+    ["maslo-flyaga", 2],
+    ["bumaga-odin-list", 5],
+    ["dukhi-flakon", 1],
+    ["vosk", 1],
+    ["mylo", 1]
+  ],
+  "nabor-issledovatelya-podzemeliy": [
+    ["lomik", 1],
+    ["molotok", 1],
+    ["shlyambur", 10],
+    ["fakel", 10],
+    ["trutnitsa", 1],
+    ["ratsiony-1-den", 10],
+    ["burdyuk", 1],
+    ["veryovka-pen-kovaya-50-futov", 1]
+  ],
+  "nabor-puteshestvennika": [
+    ["spal-nik", 1],
+    ["stolovyy-nabor", 1],
+    ["trutnitsa", 1],
+    ["fakel", 10],
+    ["ratsiony-1-den", 10],
+    ["burdyuk", 1],
+    ["veryovka-pen-kovaya-50-futov", 1]
+  ],
+  "nabor-svyashchennika": [
+    ["odeyalo", 1],
+    ["svecha", 10],
+    ["trutnitsa", 1],
+    ["korobka-dlya-pozhertvovaniy", 1],
+    ["blagovoniya-upakovka", 2],
+    ["kadilo", 1],
+    ["oblachenie", 1],
+    ["ratsiony-1-den", 2],
+    ["burdyuk", 1]
+  ],
+  "nabor-uchyonogo": [
+    ["nauchnaya-kniga", 1],
+    ["chernila-butylochka-30-gramm", 1],
+    ["pischee-pero", 1],
+    ["pergament-odin-list", 10],
+    ["sumochka-s-peskom", 1],
+    ["nozh-nebolshoy", 1]
+  ]
+};
 const DAMAGE_TYPE_BY_LABEL = new Map([
   ["Дробящий", "bludgeoning"],
   ["Колющий", "piercing"],
@@ -154,6 +229,93 @@ test("gear stock icons avoid missing Foundry core asset paths", () => {
   assert.equal(createDnd5eItemData(byId.get("ryukzak"), new Map()).img, "icons/containers/bags/pack-simple-leather-brown.webp");
   assert.equal(createDnd5eItemData(byId.get("zel-e-lecheniya-1-go-urovnya"), new Map()).img, "icons/consumables/potions/potion-bottle-corked-labeled-red.webp");
   assert.equal(createDnd5eItemData(byId.get("kollimatornyy-pritsel"), new Map()).img, "icons/tools/hand/wrench-steel-grey.webp");
+});
+
+test("gear data defines D&D equipment packs as Rebreya containers", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+
+  for (const [packId, expectedContents] of Object.entries(EQUIPMENT_PACK_CONTENTS)) {
+    const pack = byId.get(packId);
+    assert.ok(pack, `${packId} exists`);
+    assert.equal(pack.foundryType, "container", `${packId} is a dnd5e container`);
+    assert.equal(pack.foundrySubtype, packId === "nabor-diplomata" ? "chest" : "backpack");
+    assert.ok(pack.containerCapacity?.weight > 0, `${packId} has weight capacity`);
+    assert.deepEqual(
+      pack.containerContents.map((entry) => [entry.gearId, entry.quantity ?? 1]),
+      expectedContents,
+      `${packId} contains the expected Rebreya item ids`
+    );
+
+    for (const [gearId] of expectedContents) {
+      assert.ok(byId.has(gearId), `${packId} references existing Rebreya gear ${gearId}`);
+    }
+  }
+});
+
+test("creates container compendium data with dnd5e capacity and Rebreya contents flag", () => {
+  const created = createDnd5eItemData({
+    id: "test-pack",
+    name: "Test Pack",
+    equipmentType: "Наборы снаряжения",
+    foundryType: "container",
+    foundrySubtype: "backpack",
+    priceGoldEquivalent: 12,
+    weight: 5,
+    containerCapacity: {
+      weight: 30,
+      units: "lb"
+    },
+    containerContents: [
+      { gearId: "svecha", quantity: 5 }
+    ]
+  }, new Map());
+
+  assert.equal(created.type, "container");
+  assert.equal(created.img, "icons/containers/bags/pack-simple-leather-brown.webp");
+  assert.equal(created.system.type.value, "backpack");
+  assert.equal(created.system.capacity.weight.value, 30);
+  assert.equal(created.system.capacity.weight.units, "lb");
+  assert.deepEqual(created.flags["rebreya-main"].containerContents, [
+    { gearId: "svecha", quantity: 5 }
+  ]);
+});
+
+test("creates contained compendium documents linked to their parent container", async () => {
+  const module = await import("../scripts/data/gear-compendium.js");
+
+  assert.equal(typeof module.createDnd5eContainerContentData, "function");
+
+  const docs = module.createDnd5eContainerContentData(
+    {
+      id: "test-pack",
+      name: "Test Pack",
+      containerContents: [
+        { gearId: "svecha", quantity: 5 }
+      ]
+    },
+    new Map([[
+      "svecha",
+      {
+        id: "svecha",
+        name: "Свеча",
+        equipmentType: "Снаряжение",
+        priceGoldEquivalent: 0.01,
+        weight: 0
+      }
+    ]]),
+    "parentContainerId",
+    new Map()
+  );
+
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].name, "Свеча");
+  assert.equal(docs[0].system.quantity, 5);
+  assert.equal(docs[0].system.container, "parentContainerId");
+  assert.equal(docs[0].flags["rebreya-main"].sourceType, "gearContainerContent");
+  assert.equal(docs[0].flags["rebreya-main"].containerGearId, "test-pack");
+  assert.equal(docs[0].flags["rebreya-main"].containerContentGearId, "svecha");
+  assert.equal(docs[0].flags["rebreya-main"].gearId, undefined);
 });
 
 test("normalizes gear without dropping weapon data before compendium sync", () => {

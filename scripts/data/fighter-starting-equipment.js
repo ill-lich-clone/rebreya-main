@@ -12,7 +12,7 @@ export const FIGHTER_STARTING_EQUIPMENT_PACKAGES = Object.freeze([
       Object.freeze({ gearId: "dvuruchnyy-mech", label: "Двуручный меч" }),
       Object.freeze({ gearId: "tsep", label: "Цеп" }),
       Object.freeze({ gearId: "kop-e", label: "Метательное копьё", quantity: 8 }),
-      Object.freeze({ gearId: "instrumenty-issledovatelya-0-y-rang", label: "Набор исследователя подземелий" })
+      Object.freeze({ gearId: "nabor-issledovatelya-podzemeliy", label: "Набор исследователя подземелий" })
     ]),
     currency: Object.freeze({ gp: 4 })
   }),
@@ -29,7 +29,7 @@ export const FIGHTER_STARTING_EQUIPMENT_PACKAGES = Object.freeze([
       Object.freeze({ gearId: "dlinnyy-luk", label: "Длинный лук" }),
       Object.freeze({ gearId: "strely-20", label: "Стрелы (20)" }),
       Object.freeze({ gearId: "kolchan", label: "Колчан" }),
-      Object.freeze({ gearId: "instrumenty-issledovatelya-0-y-rang", label: "Набор исследователя подземелий" })
+      Object.freeze({ gearId: "nabor-issledovatelya-podzemeliy", label: "Набор исследователя подземелий" })
     ]),
     currency: Object.freeze({ gp: 11 })
   }),

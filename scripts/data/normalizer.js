@@ -69,7 +69,9 @@ const GEAR_FIELD_ALIASES = {
   rank: ["rank", "tier"],
   weight: ["weight", "mass"],
   volume: ["volume", "size"],
-  capacity: ["capacity", "containerCapacity"],
+  capacity: ["capacity"],
+  containerCapacity: ["containerCapacity", "dnd5eContainerCapacity"],
+  containerContents: ["containerContents", "contents", "packContents"],
   description: ["description", "notes", "text"],
   predominantMaterial: ["predominantMaterial", "materialName", "material", "sourceMaterial"],
   predominantMaterialId: ["predominantMaterialId", "materialId"],
@@ -93,6 +95,30 @@ function isObject(value) {
 function toNumber(value) {
   const numericValue = Number(value ?? 0);
   return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
+function normalizeContainerContents(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      if (!isObject(entry)) {
+        return null;
+      }
+
+      const gearId = cleanString(entry.gearId ?? entry.id ?? entry.itemId);
+      if (!gearId) {
+        return null;
+      }
+
+      return {
+        gearId,
+        quantity: Math.max(1, Math.floor(toNumber(entry.quantity ?? entry.count ?? 1)))
+      };
+    })
+    .filter(Boolean);
 }
 
 function hasValue(value) {
@@ -560,6 +586,8 @@ function normalizeGear(rawGear, materialAliasMap, materials) {
       weight: toNumber(getValue(record, GEAR_FIELD_ALIASES.weight)),
       volume: cleanString(getValue(record, GEAR_FIELD_ALIASES.volume)),
       capacity: cleanString(getValue(record, GEAR_FIELD_ALIASES.capacity)),
+      containerCapacity: clonePlainObject(getValue(record, GEAR_FIELD_ALIASES.containerCapacity)),
+      containerContents: normalizeContainerContents(getValue(record, GEAR_FIELD_ALIASES.containerContents)),
       description: cleanString(getValue(record, GEAR_FIELD_ALIASES.description)),
       predominantMaterialId: predominantMaterialId ?? null,
       predominantMaterialName: predominantMaterialId

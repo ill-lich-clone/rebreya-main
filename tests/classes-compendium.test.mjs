@@ -147,50 +147,12 @@ test("fighter data defines dominance dice, fighting styles, maneuvers, and subcl
   });
 });
 
-test("fighter class exposes PDF starting equipment choices", () => {
+test("fighter class suppresses PDF starting equipment in favor of preset package choices", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
   const system = createClassSystem(fighter.classData, [], fighter.sourceLabel);
 
   assert.equal(system.wealth, "5d4*10");
-  assert.ok(system.startingEquipment.length > 0);
-  assert.notEqual(system.startingEquipment, fighter.classData.startingEquipment);
-
-  const ids = system.startingEquipment.map((entry) => entry._id);
-  assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(
-    system.startingEquipment.filter((entry) => !entry.group).map((entry) => entry.type),
-    ["OR", "OR", "OR", "OR"]
-  );
-
-  const linkedKeys = new Set(
-    system.startingEquipment
-      .filter((entry) => entry.type === "linked")
-      .map((entry) => entry.key)
-  );
-  for (const key of [
-    "Compendium.dnd5e.equipment24.Item.phbarmChainMail0",
-    "Compendium.dnd5e.equipment24.Item.phbarmLeatherArm",
-    "Compendium.dnd5e.equipment24.Item.phbarmBreastplat",
-    "Compendium.dnd5e.equipment24.Item.phbwepLongbow000",
-    "Compendium.dnd5e.equipment24.Item.phbamoArrows0000",
-    "Compendium.dnd5e.equipment24.Item.phbarmShield0000",
-    "Compendium.dnd5e.equipment24.Item.phbwepMusket0000",
-    "Compendium.dnd5e.equipment24.Item.phbamoBulletsFir",
-    "Compendium.dnd5e.equipment24.Item.phbwepLightCross",
-    "Compendium.dnd5e.equipment24.Item.phbamoBolts00000",
-    "Compendium.dnd5e.equipment24.Item.phbwepHandaxe000",
-    "Compendium.dnd5e.equipment24.Item.phbagDungeoneers",
-    "Compendium.dnd5e.equipment24.Item.phbagExplorersPa"
-  ]) {
-    assert.ok(linkedKeys.has(key), `${key} should be offered by fighter starting equipment`);
-  }
-
-  assert.deepEqual(
-    system.startingEquipment
-      .filter((entry) => entry.type === "weapon" && entry.key === "mar")
-      .map((entry) => entry.count ?? 1),
-    [1, 2]
-  );
+  assert.deepEqual(system.startingEquipment, []);
 });
 
 test("fighter advancements grant armor and weapon proficiencies natively", () => {
@@ -224,7 +186,7 @@ test("fighter feature definitions include three preset starting equipment packag
       ["dvuruchnyy-mech", 1],
       ["tsep", 1],
       ["kop-e", 8],
-      ["instrumenty-issledovatelya-0-y-rang", 1]
+      ["nabor-issledovatelya-podzemeliy", 1]
     ]
   );
   assert.deepEqual(packageDefinitions[0].startingEquipmentPackage.currency, { gp: 4 });
@@ -237,7 +199,7 @@ test("fighter feature definitions include three preset starting equipment packag
       ["dlinnyy-luk", 1],
       ["strely-20", 1],
       ["kolchan", 1],
-      ["instrumenty-issledovatelya-0-y-rang", 1]
+      ["nabor-issledovatelya-podzemeliy", 1]
     ]
   );
   assert.deepEqual(packageDefinitions[1].startingEquipmentPackage.currency, { gp: 11 });

@@ -3018,7 +3018,9 @@ export function createClassSystem(classData, advancement = [], sourceLabel = DEF
       progression: "none",
       ability: ""
     },
-    startingEquipment: foundry.utils.deepClone(classData.startingEquipment ?? []),
+    startingEquipment: classData.identifier === "fighter-rework-v028"
+      ? []
+      : foundry.utils.deepClone(classData.startingEquipment ?? []),
     wealth: cleanString(classData.wealth, "2d4*10"),
     advancement: foundry.utils.deepClone(advancement)
   };

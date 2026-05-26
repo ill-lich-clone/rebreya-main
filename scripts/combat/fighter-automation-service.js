@@ -90,6 +90,18 @@ function collectionValues(collection) {
   return [];
 }
 
+function createDocumentId() {
+  if (typeof foundry?.utils?.randomID === "function") {
+    return foundry.utils.randomID();
+  }
+
+  if (typeof globalThis.randomID === "function") {
+    return globalThis.randomID();
+  }
+
+  return Math.random().toString(36).slice(2, 18).padEnd(16, "0").slice(0, 16);
+}
+
 function resolveActorFromTarget(target) {
   return target?.actor
     ?? target?.document?.actor
@@ -1388,7 +1400,10 @@ export class FighterAutomationService {
     for (const entry of this.#startingEquipmentEntries(selection)) {
       const uuid = entry.uuid || await this.#resolveStartingEquipmentGearUuid(entry.gearId);
       const data = await this.#resolveStartingEquipmentItemData(uuid, entry.quantity);
-      if (data) {
+      if (Array.isArray(data)) {
+        itemData.push(...data);
+      }
+      else if (data) {
         itemData.push(data);
       }
     }
@@ -1476,16 +1491,58 @@ export class FighterAutomationService {
       return null;
     }
 
+    const contents = source.type === "container"
+      ? await this.#resolveStartingEquipmentContainerContents(source)
+      : [];
+    const data = this.#sourceToStartingEquipmentData(source, uuid, quantity);
+    if (!contents.length) {
+      return data;
+    }
+
+    data._id = createDocumentId();
+    const contentData = contents
+      .map((contentSource) => this.#sourceToStartingEquipmentData(
+        contentSource,
+        cleanText(contentSource?.uuid) || cleanText(foundry.utils.getProperty(contentSource, "flags.dnd5e.sourceId")),
+        foundry.utils.getProperty(contentSource, "system.quantity") ?? 1,
+        data._id
+      ))
+      .filter(Boolean);
+
+    return [data, ...contentData];
+  }
+
+  async #resolveStartingEquipmentContainerContents(source) {
+    try {
+      return collectionValues(await source?.system?.contents);
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to read fighter starting equipment container contents.`, error);
+      return [];
+    }
+  }
+
+  #sourceToStartingEquipmentData(source, uuid, quantity = 1, containerId = "") {
+    if (!source) {
+      return null;
+    }
+
     const data = typeof source.toObject === "function"
       ? source.toObject()
       : foundry.utils.deepClone(source);
     delete data._id;
     delete data.id;
+    if (data.system && typeof data.system === "object") {
+      delete data.system.contents;
+    }
     data.flags ??= {};
     foundry.utils.setProperty(data, "flags.dnd5e.sourceId", uuid);
     foundry.utils.setProperty(data, `flags.${MODULE_ID}.sourceType`, "fighterStartingEquipment");
     foundry.utils.setProperty(data, `flags.${MODULE_ID}.classIdentifier`, FIGHTER_CLASS_IDENTIFIER);
     foundry.utils.setProperty(data, "system.quantity", Math.max(1, Math.floor(toNumber(quantity, 1))));
+    if (containerId) {
+      foundry.utils.setProperty(data, "system.container", containerId);
+    }
     return data;
   }
 

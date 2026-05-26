@@ -17,7 +17,8 @@ const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const GEAR_TEMPLATE_VERSION = 7;
+const GEAR_TEMPLATE_VERSION = 8;
+const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const CUSTOM_GEAR_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const SUPPORTED_GEAR_ICON_EXTENSIONS = new Set(["webp", "png", "jpg", "jpeg", "svg", "avif"]);
 const customGearIconByName = new Map();
@@ -57,6 +58,83 @@ function cleanArray(values = []) {
   return Array.from(new Set((Array.isArray(values) ? values : [])
     .map((value) => cleanString(value))
     .filter(Boolean)));
+}
+
+function toFiniteNumber(value, fallback = 0) {
+  const numericValue = Number(value ?? fallback);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function normalizeContainerContents(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      if (!isPlainObject(entry)) {
+        return null;
+      }
+
+      const gearId = cleanString(entry.gearId ?? entry.id ?? entry.itemId);
+      if (!gearId) {
+        return null;
+      }
+
+      return {
+        gearId,
+        quantity: Math.max(1, Math.floor(toFiniteNumber(entry.quantity ?? entry.count, 1)))
+      };
+    })
+    .filter(Boolean);
+}
+
+function cloneContainerContents(value) {
+  return normalizeContainerContents(value).map((entry) => ({ ...entry }));
+}
+
+function collectionValues(collection) {
+  if (!collection) {
+    return [];
+  }
+
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+
+  if (Array.isArray(collection.contents)) {
+    return collection.contents;
+  }
+
+  if (typeof collection.values === "function") {
+    return Array.from(collection.values());
+  }
+
+  return [];
+}
+
+function normalizeContainerCapacity(value) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const count = toFiniteNumber(value.count, 0);
+  const volume = toFiniteNumber(value.volume, 0);
+  const weight = toFiniteNumber(value.weight, 0);
+  const units = cleanString(value.units, "lb");
+  const volumeUnits = cleanString(value.volumeUnits, "ft3");
+
+  return {
+    count: count > 0 ? count : null,
+    volume: {
+      value: volume > 0 ? volume : null,
+      units: volumeUnits
+    },
+    weight: {
+      value: weight > 0 ? weight : null,
+      units
+    }
+  };
 }
 
 function resetCustomGearIconCache() {
@@ -217,6 +295,8 @@ function buildGearSignature(item) {
     weight: item.weight ?? 0,
     volume: item.volume ?? "",
     capacity: item.capacity ?? "",
+    containerCapacity: clonePlainObject(item.containerCapacity),
+    containerContents: cloneContainerContents(item.containerContents),
     description: item.description ?? "",
     predominantMaterialId: item.predominantMaterialId ?? null,
     predominantMaterialName: item.predominantMaterialName ?? "",
@@ -241,6 +321,14 @@ function getGearIcon(item, classification) {
   const namedCustomIcon = getCustomGearIconByName(item.name);
   if (namedCustomIcon) {
     return namedCustomIcon;
+  }
+
+  if (classification.documentType === "container") {
+    if (classification.systemTypeValue === "chest") {
+      return "icons/containers/chest/chest-reinforced-steel-brown.webp";
+    }
+
+    return "icons/containers/bags/pack-simple-leather-brown.webp";
   }
 
   if (classification.documentType === "weapon") {
@@ -507,6 +595,25 @@ function buildSystemData(item, classification, descriptionHtml) {
       };
       break;
 
+    case "container":
+      baseData.type = {
+        value: classification.systemTypeValue || "backpack",
+        subtype: classification.systemTypeSubtype || ""
+      };
+      baseData.capacity = normalizeContainerCapacity(item.containerCapacity) ?? {
+        count: null,
+        volume: {
+          value: null,
+          units: "ft3"
+        },
+        weight: {
+          value: null,
+          units: "lb"
+        }
+      };
+      baseData.properties = cleanArray(item.containerProperties ?? item.properties);
+      break;
+
     case "loot":
     default:
       baseData.type = {
@@ -538,6 +645,7 @@ export function createDnd5eItemData(item, folderIdByPath) {
   const attackTraits = clonePlainObject(weapon.attackTraits);
   const lichWeaponPropertyValues = clonePlainObject(weapon.lichWeaponPropertyValues);
   const attackTraitsText = cleanString(weapon.attackTraitsText || weapon.propertiesText);
+  const containerContents = cloneContainerContents(item.containerContents);
 
   return {
     name: item.name,
@@ -569,6 +677,8 @@ export function createDnd5eItemData(item, folderIdByPath) {
         linkedTool: item.linkedTool ?? "",
         value: item.value ?? "",
         priceGoldEquivalent: Number(item.priceGoldEquivalent ?? 0),
+        containerCapacity: clonePlainObject(item.containerCapacity),
+        containerContents,
         attackTraits: attackTraits && Object.keys(attackTraits).length ? attackTraits : null,
         attackTraitsText: attackTraitsText || null,
         attackProperties: attackTraitsText || null,
@@ -578,6 +688,48 @@ export function createDnd5eItemData(item, folderIdByPath) {
       }
     }
   };
+}
+
+export function createDnd5eContainerContentData(containerItem, gearById, containerDocumentId, folderIdByPath) {
+  const containerId = cleanString(containerDocumentId);
+  if (!containerId || !(gearById instanceof Map)) {
+    return [];
+  }
+
+  return normalizeContainerContents(containerItem?.containerContents)
+    .map((entry) => {
+      const sourceItem = gearById.get(entry.gearId);
+      if (!sourceItem) {
+        return null;
+      }
+
+      const data = createDnd5eItemData(sourceItem, folderIdByPath);
+      delete data._id;
+      delete data.id;
+      data.system ??= {};
+      data.system.quantity = entry.quantity;
+      data.system.container = containerId;
+
+      data.flags ??= {};
+      data.flags[MODULE_ID] ??= {};
+      const moduleFlags = data.flags[MODULE_ID];
+      delete moduleFlags.gearId;
+      moduleFlags.sourceType = GEAR_CONTAINER_CONTENT_SOURCE_TYPE;
+      moduleFlags.containerGearId = cleanString(containerItem?.id);
+      moduleFlags.containerContentGearId = entry.gearId;
+      moduleFlags.containerContentQuantity = entry.quantity;
+      moduleFlags.signature = JSON.stringify({
+        templateVersion: GEAR_TEMPLATE_VERSION,
+        sourceType: GEAR_CONTAINER_CONTENT_SOURCE_TYPE,
+        containerGearId: moduleFlags.containerGearId,
+        containerContentGearId: entry.gearId,
+        quantity: entry.quantity,
+        sourceSignature: buildGearSignature(sourceItem)
+      });
+
+      return data;
+    })
+    .filter(Boolean);
 }
 
 function getDesiredPackMetadata() {
@@ -593,7 +745,7 @@ function getDesiredPackMetadata() {
     flags: {
       dnd5e: {
         sourceBook: "Rebreya",
-        types: ["loot", "weapon", "equipment", "tool", "consumable"]
+        types: ["loot", "weapon", "equipment", "tool", "consumable", "container"]
       }
     }
   };
@@ -638,22 +790,38 @@ async function getPackDocuments(pack) {
 
 async function findGearDocument(pack, gearItem) {
   const index = await pack.getIndex({
-    fields: [`flags.${MODULE_ID}.gearId`]
+    fields: [`flags.${MODULE_ID}.gearId`, `flags.${MODULE_ID}.sourceType`]
   });
-  const indexEntry = index.find((entry) => {
+  const primaryEntries = Array.from(index ?? []).filter((entry) => (
+    foundry.utils.getProperty(entry, `flags.${MODULE_ID}.sourceType`) !== GEAR_CONTAINER_CONTENT_SOURCE_TYPE
+  ));
+  const indexEntry = primaryEntries.find((entry) => {
     const gearId = foundry.utils.getProperty(entry, `flags.${MODULE_ID}.gearId`);
-    return gearId === gearItem.id || normalizeMatchText(entry.name) === normalizeMatchText(gearItem.name);
-  });
+    return gearId === gearItem.id;
+  }) ?? primaryEntries.find((entry) => normalizeMatchText(entry.name) === normalizeMatchText(gearItem.name));
 
   if (indexEntry) {
     return pack.getDocument(indexEntry._id ?? indexEntry.id);
   }
 
   const documents = await pack.getDocuments();
-  return documents.find((entry) => {
+  const primaryDocuments = documents.filter((entry) => (
+    entry.getFlag(MODULE_ID, "sourceType") !== GEAR_CONTAINER_CONTENT_SOURCE_TYPE
+  ));
+  return primaryDocuments.find((entry) => {
     const gearId = entry.getFlag(MODULE_ID, "gearId");
-    return gearId === gearItem.id || normalizeMatchText(entry.name) === normalizeMatchText(gearItem.name);
-  }) ?? null;
+    return gearId === gearItem.id;
+  }) ?? primaryDocuments.find((entry) => normalizeMatchText(entry.name) === normalizeMatchText(gearItem.name)) ?? null;
+}
+
+function getExpectedManagedDocumentCount(gear) {
+  const gearById = new Set(gear.map((item) => cleanString(item?.id)).filter(Boolean));
+  const contentCount = gear.reduce((total, item) => (
+    total + normalizeContainerContents(item?.containerContents)
+      .filter((entry) => gearById.has(entry.gearId))
+      .length
+  ), 0);
+  return gear.length + contentCount;
 }
 
 function shouldRebuildPack(gear, documents) {
@@ -662,12 +830,18 @@ function shouldRebuildPack(gear, documents) {
   }
 
   const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
-  if (managedDocuments.length !== gear.length) {
+  if (managedDocuments.length !== getExpectedManagedDocumentCount(gear)) {
+    return true;
+  }
+
+  const primaryDocuments = managedDocuments
+    .filter((document) => document.getFlag(MODULE_ID, "sourceType") !== GEAR_CONTAINER_CONTENT_SOURCE_TYPE);
+  if (primaryDocuments.length !== gear.length) {
     return true;
   }
 
   const gearById = new Map(gear.map((item) => [item.id, item]));
-  for (const document of managedDocuments) {
+  for (const document of primaryDocuments) {
     const gearId = document.getFlag(MODULE_ID, "gearId");
     const signature = document.getFlag(MODULE_ID, "signature");
     const item = gearById.get(gearId);
@@ -736,10 +910,33 @@ async function createManagedDocuments(pack, gear) {
     console.warn(`${MODULE_ID} | Failed to prepare compendium folders for gear pack.`, error);
   }
 
-  await Item.implementation.createDocuments(
+  const createdDocuments = await Item.implementation.createDocuments(
     gear.map((item) => createDnd5eItemData(item, folderIdByPath)),
     { pack: pack.collection }
   );
+  const createdByGearId = new Map(
+    collectionValues(createdDocuments)
+      .map((document) => [document.getFlag?.(MODULE_ID, "gearId"), document])
+      .filter(([gearId]) => gearId)
+  );
+  const gearById = new Map(gear.map((item) => [item.id, item]));
+  const containedDocumentsData = gear.flatMap((item) => {
+    if (!normalizeContainerContents(item.containerContents).length) {
+      return [];
+    }
+
+    const containerDocumentId = cleanString(createdByGearId.get(item.id)?.id);
+    if (!containerDocumentId) {
+      console.warn(`${MODULE_ID} | Failed to create contents for gear container '${item.id}': missing created container document.`);
+      return [];
+    }
+
+    return createDnd5eContainerContentData(item, gearById, containerDocumentId, folderIdByPath);
+  });
+
+  if (containedDocumentsData.length) {
+    await Item.implementation.createDocuments(containedDocumentsData, { pack: pack.collection });
+  }
 }
 
 export class GearCompendiumService {
