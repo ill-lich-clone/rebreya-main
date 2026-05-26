@@ -915,7 +915,7 @@ export class GearCompendiumService {
 
     const safeGear = Array.isArray(gear) ? gear : [];
     const pack = await ensureGearPack();
-    await deduplicateCompendiumFolders(pack, ["Обвес", "Обвесы", "Огнестрельное оружие"]);
+    await deduplicateCompendiumFolders(pack, ["Обвес", "Обвесы", "Огнестрельное оружие", "Примитивное", "Продвинутое"]);
     const documents = await getPackDocuments(pack);
     const iconLookup = await buildNamedIconLookup(GEAR_ICON_SEARCH_PATHS, { forceRefresh: true });
     if (!shouldRebuildPack(safeGear, documents)) {

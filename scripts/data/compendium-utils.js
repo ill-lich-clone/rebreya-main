@@ -382,51 +382,56 @@ export async function deduplicateCompendiumFolders(pack, names = []) {
     .map((entry) => String(entry ?? "").trim())
     .filter(Boolean));
 
-  const folders = sortFolders(getPackFolders(pack));
-  const duplicatesByKey = new Map();
-  for (const folder of folders) {
-    if (!matchFolderName(folder, allowedNames)) {
-      continue;
-    }
-
-    const key = `${resolveParentFolderId(folder) ?? "root"}::${String(folder.name ?? "").trim()}`;
-    if (!duplicatesByKey.has(key)) {
-      duplicatesByKey.set(key, []);
-    }
-    duplicatesByKey.get(key).push(folder);
-  }
-
   let merged = 0;
   let removed = 0;
+  let removedThisPass = 0;
 
-  for (const group of duplicatesByKey.values()) {
-    if (group.length <= 1) {
-      continue;
-    }
-
-    const [targetFolder, ...duplicates] = sortFolders(group);
-    for (const duplicateFolder of duplicates) {
-      if (!duplicateFolder?.id || duplicateFolder.id === targetFolder.id) {
+  do {
+    removedThisPass = 0;
+    const folders = sortFolders(getPackFolders(pack));
+    const duplicatesByKey = new Map();
+    for (const folder of folders) {
+      if (!matchFolderName(folder, allowedNames)) {
         continue;
       }
 
-      await reassignFolderChildren(pack, duplicateFolder.id, targetFolder.id);
-      await reassignFolderDocuments(pack, duplicateFolder.id, targetFolder.id);
-      merged += 1;
-
-      try {
-        await duplicateFolder.delete({
-          deleteSubfolders: false,
-          deleteContents: false,
-          render: false
-        });
-        removed += 1;
+      const key = `${resolveParentFolderId(folder) ?? "root"}::${String(folder.name ?? "").trim()}`;
+      if (!duplicatesByKey.has(key)) {
+        duplicatesByKey.set(key, []);
       }
-      catch (_error) {
-        // Ничего не делаем: повторная синхронизация попробует удалить остатки ещё раз.
+      duplicatesByKey.get(key).push(folder);
+    }
+
+    for (const group of duplicatesByKey.values()) {
+      if (group.length <= 1) {
+        continue;
+      }
+
+      const [targetFolder, ...duplicates] = sortFolders(group);
+      for (const duplicateFolder of duplicates) {
+        if (!duplicateFolder?.id || duplicateFolder.id === targetFolder.id) {
+          continue;
+        }
+
+        await reassignFolderChildren(pack, duplicateFolder.id, targetFolder.id);
+        await reassignFolderDocuments(pack, duplicateFolder.id, targetFolder.id);
+        merged += 1;
+
+        try {
+          await duplicateFolder.delete({
+            deleteSubfolders: false,
+            deleteContents: false,
+            render: false
+          });
+          removed += 1;
+          removedThisPass += 1;
+        }
+        catch (_error) {
+          // Ничего не делаем: повторная синхронизация попробует удалить остатки ещё раз.
+        }
       }
     }
-  }
+  } while (removedThisPass > 0);
 
   return {
     merged,
