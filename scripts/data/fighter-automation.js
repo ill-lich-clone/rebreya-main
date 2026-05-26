@@ -23,16 +23,19 @@ const MANEUVER_STATUS_AUTOMATION = {
     id: "frightened",
     value: 2,
     durationRounds: 1,
+    expires: "sourceTurnEnd",
     saveAbility: "wis"
   },
   "отвлекающий удар": {
     id: "rebreya-open-position",
-    durationRounds: 1
+    durationRounds: 1,
+    expires: "sourceTurnStart"
   },
   "провоцирующая атака": {
     id: "rebreya-provoked",
     value: 1,
     durationRounds: 1,
+    expires: "sourceTurnEnd",
     saveAbility: "wis"
   }
 };
@@ -74,7 +77,8 @@ export function getFighterManeuverAutomation(name, classIdentifier) {
     automation.status = {
       id: status.id,
       ...(Object.hasOwn(status, "value") ? { value: status.value } : {}),
-      durationRounds: status.durationRounds
+      durationRounds: status.durationRounds,
+      ...(status.expires ? { expires: status.expires } : {})
     };
     if (status.saveAbility) {
       automation.saveAbility = status.saveAbility;

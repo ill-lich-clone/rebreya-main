@@ -341,7 +341,8 @@ test("fighter maneuver activities expose editable runtime automation metadata", 
   assert.deepEqual(provocationActivity.flags["rebreya-main"].fighterAutomation.status, {
     id: "rebreya-provoked",
     value: 1,
-    durationRounds: 1
+    durationRounds: 1,
+    expires: "sourceTurnEnd"
   });
   assert.match(provocationActivity.description.chatFlavor, /Спровоцированной/u);
 

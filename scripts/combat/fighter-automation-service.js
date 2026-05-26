@@ -535,12 +535,52 @@ export class FighterAutomationService {
       return false;
     }
 
-    return collectionValues(results?.updates?.item).some((update) => (
+    if (collectionValues(results?.updates?.item).some((update) => (
       cleanText(update?._id ?? update?.id) === itemId
       && update !== null
       && typeof update === "object"
       && Object.hasOwn(update, "system.uses.spent")
-    ));
+    ))) {
+      return true;
+    }
+
+    return this.#messageHasConsumedItemUse(results, itemId);
+  }
+
+  #messageHasConsumedItemUse(results, itemId) {
+    const consumedSources = [
+      getProperty(results, "message.flags.dnd5e.use.consumed"),
+      getProperty(results, "message.data.flags.dnd5e.use.consumed"),
+      getProperty(results, "message._source.flags.dnd5e.use.consumed"),
+      typeof results?.message?.getFlag === "function"
+        ? results.message.getFlag("dnd5e", "use.consumed")
+        : null
+    ];
+
+    for (const consumed of consumedSources) {
+      const itemDeltas = consumed?.item;
+      if (!itemDeltas) {
+        continue;
+      }
+
+      const deltas = itemDeltas instanceof Map
+        ? itemDeltas.get(itemId)
+        : (Array.isArray(itemDeltas)
+          ? itemDeltas.find((entry) => cleanText(entry?._id ?? entry?.id) === itemId)?.changes
+          : itemDeltas[itemId]);
+      const rows = Array.isArray(deltas)
+        ? deltas
+        : (deltas && typeof deltas === "object" ? Object.values(deltas) : []);
+
+      if (rows.some((row) => (
+        cleanText(row?.keyPath) === "system.uses.spent"
+        && toNumber(row?.delta, 0) > 0
+      ))) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   #findDominanceItem(actor) {
@@ -1056,15 +1096,18 @@ export class FighterAutomationService {
     }
 
     if (typeof this.moduleApi?.combatStatusService?.setStatus === "function") {
-      await this.moduleApi.combatStatusService.setStatus(actor, statusId, {
+      const effect = await this.moduleApi.combatStatusService.setStatus(actor, statusId, {
         active: true,
         ...(Object.hasOwn(status, "value") ? { value: status.value } : {}),
         durationRounds: Math.max(0, Math.floor(toNumber(status.durationRounds, 0))),
         sourceActor
       });
+      await this.#patchManeuverStatusEffect(effect, status, sourceActor);
       return true;
     }
 
+    const specialDuration = this.#maneuverStatusSpecialDuration(status);
+    const duration = this.#maneuverStatusDuration(status);
     return this.#createActorEffect(actor, {
       name: statusId,
       type: "base",
@@ -1072,23 +1115,82 @@ export class FighterAutomationService {
       system: {},
       changes: [],
       disabled: false,
-      duration: {
-        rounds: Math.max(0, Math.floor(toNumber(status.durationRounds, 0)))
-      },
+      duration,
+      origin: cleanText(sourceActor?.uuid) || null,
       transfer: false,
       statuses: [statusId],
       flags: {
         core: {
           statusId
         },
+        ...(specialDuration.length ? {
+          dae: {
+            specialDuration
+          }
+        } : {}),
         [MODULE_ID]: {
           managed: true,
           fighterAutomation: {
-            kind: "maneuverStatus"
+            kind: "maneuverStatus",
+            sourceActorUuid: cleanText(sourceActor?.uuid),
+            expires: cleanText(status.expires)
           }
         }
       }
     });
+  }
+
+  #maneuverStatusSpecialDuration(status = {}) {
+    const expires = cleanText(status.expires);
+    if (expires === "sourceTurnEnd" || expires === "sourceNextTurnEnd") {
+      return ["turnEndSource", "combatEnd"];
+    }
+
+    if (expires === "sourceTurnStart" || expires === "sourceNextTurnStart") {
+      return ["turnStartSource", "combatEnd"];
+    }
+
+    if (Array.isArray(status.specialDuration)) {
+      return status.specialDuration.map((entry) => cleanText(entry)).filter(Boolean);
+    }
+
+    return [];
+  }
+
+  #maneuverStatusDuration(status = {}) {
+    const rounds = Math.max(0, Math.floor(toNumber(status.durationRounds, 0)));
+    return {
+      startTime: null,
+      seconds: null,
+      combat: null,
+      rounds,
+      turns: null,
+      startRound: globalThis.game?.combat?.round ?? null,
+      startTurn: globalThis.game?.combat?.turn ?? null
+    };
+  }
+
+  async #patchManeuverStatusEffect(effect, status = {}, sourceActor) {
+    if (!effect || typeof effect.update !== "function") {
+      return false;
+    }
+
+    const specialDuration = this.#maneuverStatusSpecialDuration(status);
+    const patch = {
+      duration: this.#maneuverStatusDuration(status),
+      origin: cleanText(sourceActor?.uuid) || null,
+      [`flags.${MODULE_ID}.managed`]: true,
+      [`flags.${MODULE_ID}.fighterAutomation.kind`]: "maneuverStatus",
+      [`flags.${MODULE_ID}.fighterAutomation.sourceActorUuid`]: cleanText(sourceActor?.uuid),
+      [`flags.${MODULE_ID}.fighterAutomation.expires`]: cleanText(status.expires)
+    };
+
+    if (specialDuration.length) {
+      patch["flags.dae.specialDuration"] = specialDuration;
+    }
+
+    await effect.update(patch);
+    return true;
   }
 
   async #createActorEffect(actor, effectData) {

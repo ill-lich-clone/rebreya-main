@@ -464,6 +464,70 @@ test("fighter maneuver runtime spends the owned dominance dice item when dnd5e d
   }
 });
 
+test("fighter maneuver runtime does not spend dominance twice when the chat card already consumed it", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const dominance = makeItem({
+    id: "dominance-real",
+    name: "Стиль доминирования",
+    featureId: "fighter-rework-v028::class::fighter-dominance",
+    uses: {
+      spent: 1,
+      max: 2,
+      recovery: []
+    }
+  });
+  const item = makeItem({ id: "menacing", name: "Атака с угрозой" });
+  const source = new TestActor({
+    id: "fighter",
+    name: "Воин",
+    items: [dominance, item]
+  });
+  const target = new TestActor({ id: "target", name: "Цель" });
+  globalThis.game.user.targets = new Set([{ actor: target }]);
+  const service = new FighterAutomationService({}, {
+    rollFactory: () => fixedRoll(4)
+  });
+  const activity = makeActivity({
+    actor: source,
+    item,
+    automation: "fighter-dominance-maneuver",
+    fighterAutomation: {
+      kind: "maneuver",
+      extraDamage: {
+        formula: "1d4"
+      }
+    }
+  });
+
+  try {
+    await service.applyDnd5ePostUseActivity(activity, {}, {
+      message: {
+        flags: {
+          dnd5e: {
+            use: {
+              consumed: {
+                item: {
+                  [dominance.id]: [{
+                    keyPath: "system.uses.spent",
+                    delta: 1
+                  }]
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    assert.equal(dominance.system.uses.spent, 1);
+    assert.equal(dominance.updates.length, 0);
+    assert.equal(target.damageApplications.length, 1);
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+});
+
 test("fighter maneuver rolls a target saving throw before applying a save-gated status", async () => {
   const previousTargets = globalThis.game.user.targets;
   const source = new TestActor({ id: "fighter", name: "Воин" });
@@ -516,6 +580,59 @@ test("fighter maneuver rolls a target saving throw before applying a save-gated 
     }]);
     assert.equal(statuses.length, 1);
     assert.equal(statuses[0][1], "rebreya-provoked");
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+});
+
+test("fighter maneuver status effects expire at the end of the source actor next turn", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const source = new TestActor({ id: "fighter", name: "Воин" });
+  source.system.attributes.prof = 2;
+  source.system.abilities.str = { mod: 3 };
+  const target = new TestActor({ id: "target", name: "Цель" });
+  target.rollSavingThrow = async () => [fixedRoll(5)];
+  globalThis.game.user.targets = new Set([{ actor: target }]);
+  const effectUpdates = [];
+  const statusEffect = {
+    id: "effect-1",
+    async update(patch) {
+      effectUpdates.push(patch);
+      Object.assign(this, patch);
+      return this;
+    }
+  };
+  const service = new FighterAutomationService({
+    combatStatusService: {
+      setStatus: async () => statusEffect
+    }
+  });
+  const item = makeItem({ id: "menacing", name: "Атака с угрозой" });
+  const activity = makeActivity({
+    actor: source,
+    item,
+    automation: "fighter-dominance-maneuver",
+    fighterAutomation: {
+      kind: "maneuver",
+      status: {
+        id: "frightened",
+        value: 2,
+        durationRounds: 1,
+        expires: "sourceTurnEnd"
+      },
+      saveAbility: "wis"
+    }
+  });
+
+  try {
+    await service.applyDnd5ePostUseActivity(activity, {}, {});
+
+    assert.equal(effectUpdates.length, 1);
+    assert.equal(effectUpdates[0].origin, source.uuid);
+    assert.equal(effectUpdates[0].duration.rounds, 1);
+    assert.deepEqual(effectUpdates[0]["flags.dae.specialDuration"], ["turnEndSource", "combatEnd"]);
+    assert.equal(effectUpdates[0]["flags.rebreya-main.fighterAutomation.kind"], "maneuverStatus");
   }
   finally {
     globalThis.game.user.targets = previousTargets;
