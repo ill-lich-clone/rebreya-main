@@ -4,7 +4,9 @@ import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 const EFFECT_MODE_OVERRIDE = 5;
 const LAST_ATTACK_MAX_AGE_MS = 120000;
 const BLOODIED_STATUS_IDS = new Set(["bloodied", "rebreya-bloodied"]);
+const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
 const FIGHTER_DOMINANCE_FEATURE_ID = "fighter-dominance";
+const FIGHTER_STARTING_EQUIPMENT_PROMPT_FLAG = "startingEquipmentPrompted";
 const SECOND_WIND_USES_RECOVERY = Object.freeze([{
   period: "lr",
   type: "recoverAll",
@@ -23,6 +25,64 @@ const FIGHTER_MULTIATTACK_CHOICES = Object.freeze([{
   featureId: "fighter-multiattack-stalwart-defender",
   name: "Воинская мультиатака: Стойкий защитник"
 }]);
+
+const FIGHTER_STARTING_EQUIPMENT_UUIDS = Object.freeze({
+  arrows: "Compendium.dnd5e.equipment24.Item.phbamoArrows0000",
+  bolts: "Compendium.dnd5e.equipment24.Item.phbamoBolts00000",
+  breastplate: "Compendium.dnd5e.equipment24.Item.phbarmBreastplat",
+  bullets: "Compendium.dnd5e.equipment24.Item.phbamoBulletsFir",
+  chainmail: "Compendium.dnd5e.equipment24.Item.phbarmChainMail0",
+  dungeoneerPack: "Compendium.dnd5e.equipment24.Item.phbagDungeoneers",
+  explorerPack: "Compendium.dnd5e.equipment24.Item.phbagExplorersPa",
+  handaxe: "Compendium.dnd5e.equipment24.Item.phbwepHandaxe000",
+  leather: "Compendium.dnd5e.equipment24.Item.phbarmLeatherArm",
+  lightCrossbow: "Compendium.dnd5e.equipment24.Item.phbwepLightCross",
+  longbow: "Compendium.dnd5e.equipment24.Item.phbwepLongbow000",
+  musket: "Compendium.dnd5e.equipment24.Item.phbwepMusket0000",
+  shield: "Compendium.dnd5e.equipment24.Item.phbarmShield0000"
+});
+const FIGHTER_MARTIAL_WEAPON_CHOICES = Object.freeze([
+  { id: "battleaxe", label: "Боевой топор", uuid: "Compendium.dnd5e.equipment24.Item.phbwepBattleaxe0" },
+  { id: "flail", label: "Цеп", uuid: "Compendium.dnd5e.equipment24.Item.phbwepFlail00000" },
+  { id: "glaive", label: "Глефа", uuid: "Compendium.dnd5e.equipment24.Item.phbwepGlaive0000" },
+  { id: "greataxe", label: "Секира", uuid: "Compendium.dnd5e.equipment24.Item.phbwepGreataxe00" },
+  { id: "greatsword", label: "Двуручный меч", uuid: "Compendium.dnd5e.equipment24.Item.phbwepGreatsword" },
+  { id: "halberd", label: "Алебарда", uuid: "Compendium.dnd5e.equipment24.Item.phbwepHalberd000" },
+  { id: "lance", label: "Пика кавалериста", uuid: "Compendium.dnd5e.equipment24.Item.phbwepLance00000" },
+  { id: "longbow", label: "Длинный лук", uuid: FIGHTER_STARTING_EQUIPMENT_UUIDS.longbow },
+  { id: "longsword", label: "Длинный меч", uuid: "Compendium.dnd5e.equipment24.Item.phbwepLongsword0" },
+  { id: "maul", label: "Молот", uuid: "Compendium.dnd5e.equipment24.Item.phbwepMaul000000" },
+  { id: "morningstar", label: "Моргенштерн", uuid: "Compendium.dnd5e.equipment24.Item.phbwepMorningsta" },
+  { id: "pike", label: "Пика", uuid: "Compendium.dnd5e.equipment24.Item.phbwepPike000000" },
+  { id: "rapier", label: "Рапира", uuid: "Compendium.dnd5e.equipment24.Item.phbwepRapier0000" },
+  { id: "scimitar", label: "Скимитар", uuid: "Compendium.dnd5e.equipment24.Item.phbwepScimitar00" },
+  { id: "shortsword", label: "Короткий меч", uuid: "Compendium.dnd5e.equipment24.Item.phbwepShortsword" },
+  { id: "trident", label: "Трезубец", uuid: "Compendium.dnd5e.equipment24.Item.phbwepTrident000" },
+  { id: "warpick", label: "Клевец", uuid: "Compendium.dnd5e.equipment24.Item.phbwepWarPick000" },
+  { id: "warhammer", label: "Боевой молот", uuid: "Compendium.dnd5e.equipment24.Item.phbwepWarhammer0" },
+  { id: "whip", label: "Кнут", uuid: "Compendium.dnd5e.equipment24.Item.phbwepWhip000000" }
+]);
+const FIGHTER_STARTING_EQUIPMENT_CHOICES = Object.freeze({
+  armor: Object.freeze([
+    { id: "chainmail", label: "Кольчуга" },
+    { id: "leather", label: "Кожаный доспех" },
+    { id: "vest-bow", label: "Многослойный бронежилет, длинный лук и 20 стрел" }
+  ]),
+  main: Object.freeze([
+    { id: "martial-shield", label: "Воинское оружие и щит" },
+    { id: "two-martial", label: "Два воинских оружия" },
+    { id: "firearm", label: "Примитивное длинноствольное огнестрельное оружие и 20 боеприпасов" }
+  ]),
+  sidearm: Object.freeze([
+    { id: "crossbow", label: "Лёгкий арбалет и 20 болтов" },
+    { id: "handaxes", label: "Два ручных топора" }
+  ]),
+  pack: Object.freeze([
+    { id: "dungeoneer", label: "Набор исследователя подземелий" },
+    { id: "explorer", label: "Набор путешественника" }
+  ]),
+  martialWeapons: FIGHTER_MARTIAL_WEAPON_CHOICES
+});
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -269,6 +329,41 @@ export class FighterAutomationService {
   }
 
   async initialize() {
+    return true;
+  }
+
+  async handleCreatedItem(item, _options = {}, userId = "") {
+    if (userId && game.user?.id && userId !== game.user.id) {
+      return true;
+    }
+
+    if (!this.#isFighterClassItem(item)) {
+      return true;
+    }
+
+    const actor = item.actor ?? item.parent ?? null;
+    if (!(actor instanceof Actor) || !this.#canPrompt(actor)) {
+      return true;
+    }
+
+    if (readDocumentFlag(item, FIGHTER_STARTING_EQUIPMENT_PROMPT_FLAG)) {
+      return true;
+    }
+
+    const selection = await this.#promptFighterStartingEquipment(actor, item);
+    if (!selection) {
+      return true;
+    }
+
+    const itemData = await this.#buildStartingEquipmentItemData(selection);
+    if (itemData.length && typeof actor.createEmbeddedDocuments === "function") {
+      await actor.createEmbeddedDocuments("Item", itemData, { renderSheet: false });
+    }
+
+    if (typeof item.setFlag === "function") {
+      await item.setFlag(MODULE_ID, FIGHTER_STARTING_EQUIPMENT_PROMPT_FLAG, true);
+    }
+
     return true;
   }
 
@@ -1238,6 +1333,219 @@ export class FighterAutomationService {
     }
 
     return new Roll(cleanText(formula) || "0", actor?.getRollData?.() ?? {});
+  }
+
+  #isFighterClassItem(item) {
+    if (item?.type !== "class") {
+      return false;
+    }
+
+    const classIdentifier = cleanText(
+      readDocumentFlag(item, "classIdentifier") ?? item?.system?.identifier
+    );
+    return classIdentifier === FIGHTER_CLASS_IDENTIFIER;
+  }
+
+  #startingEquipmentPromptChoices() {
+    return {
+      armor: Array.from(FIGHTER_STARTING_EQUIPMENT_CHOICES.armor),
+      main: Array.from(FIGHTER_STARTING_EQUIPMENT_CHOICES.main),
+      sidearm: Array.from(FIGHTER_STARTING_EQUIPMENT_CHOICES.sidearm),
+      pack: Array.from(FIGHTER_STARTING_EQUIPMENT_CHOICES.pack),
+      martialWeapons: Array.from(FIGHTER_STARTING_EQUIPMENT_CHOICES.martialWeapons)
+    };
+  }
+
+  async #promptFighterStartingEquipment(actor, item) {
+    const choices = this.#startingEquipmentPromptChoices();
+    if (typeof this._options.promptFighterStartingEquipment === "function") {
+      return this._options.promptFighterStartingEquipment(actor, item, choices);
+    }
+
+    if (!this.#canPrompt(actor) || typeof Dialog !== "function") {
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const selectOptions = (entries, selectedId = "") => entries
+        .map((entry) => {
+          const selected = entry.id === selectedId ? " selected" : "";
+          return `<option value="${escapeHtml(entry.id)}"${selected}>${escapeHtml(entry.label)}</option>`;
+        })
+        .join("");
+
+      const dialog = new Dialog({
+        title: "Стартовое снаряжение воина",
+        content: `
+          <form>
+            <div class="form-group">
+              <label>Доспехи</label>
+              <select data-fighter-starting-armor>${selectOptions(choices.armor)}</select>
+            </div>
+            <div class="form-group">
+              <label>Основное оружие</label>
+              <select data-fighter-starting-main>${selectOptions(choices.main)}</select>
+            </div>
+            <div class="form-group">
+              <label>Воинское оружие 1</label>
+              <select data-fighter-starting-martial-one>${selectOptions(choices.martialWeapons, "longsword")}</select>
+            </div>
+            <div class="form-group">
+              <label>Воинское оружие 2</label>
+              <select data-fighter-starting-martial-two>${selectOptions(choices.martialWeapons, "longsword")}</select>
+            </div>
+            <div class="form-group">
+              <label>Дополнительное оружие</label>
+              <select data-fighter-starting-sidearm>${selectOptions(choices.sidearm)}</select>
+            </div>
+            <div class="form-group">
+              <label>Набор</label>
+              <select data-fighter-starting-pack>${selectOptions(choices.pack)}</select>
+            </div>
+          </form>
+        `,
+        buttons: {
+          confirm: {
+            label: "Выдать",
+            callback: (html) => {
+              const root = globalThis.HTMLElement && html instanceof HTMLElement ? html : html?.[0];
+              settled = true;
+              resolve({
+                armor: cleanText(root?.querySelector("[data-fighter-starting-armor]")?.value),
+                main: cleanText(root?.querySelector("[data-fighter-starting-main]")?.value),
+                martialWeapon: cleanText(root?.querySelector("[data-fighter-starting-martial-one]")?.value),
+                martialWeapon2: cleanText(root?.querySelector("[data-fighter-starting-martial-two]")?.value),
+                sidearm: cleanText(root?.querySelector("[data-fighter-starting-sidearm]")?.value),
+                pack: cleanText(root?.querySelector("[data-fighter-starting-pack]")?.value)
+              });
+            }
+          },
+          cancel: {
+            label: "Отмена",
+            callback: () => {
+              settled = true;
+              resolve(null);
+            }
+          }
+        },
+        default: "confirm",
+        close: () => {
+          if (!settled) {
+            resolve(null);
+          }
+        }
+      });
+      dialog.render(true);
+    });
+  }
+
+  async #buildStartingEquipmentItemData(selection) {
+    const itemData = [];
+    for (const entry of this.#startingEquipmentEntries(selection)) {
+      const data = await this.#resolveStartingEquipmentItemData(entry.uuid, entry.quantity);
+      if (data) {
+        itemData.push(data);
+      }
+    }
+
+    return itemData;
+  }
+
+  #startingEquipmentEntries(selection = {}) {
+    const entriesByUuid = new Map();
+    const add = (uuid, quantity = 1) => {
+      if (!uuid) {
+        return;
+      }
+
+      const current = entriesByUuid.get(uuid);
+      entriesByUuid.set(uuid, {
+        uuid,
+        quantity: toNumber(current?.quantity, 0) + Math.max(1, Math.floor(toNumber(quantity, 1)))
+      });
+    };
+
+    switch (cleanText(selection.armor, "chainmail")) {
+      case "leather":
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.leather);
+        break;
+      case "vest-bow":
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.breastplate);
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.longbow);
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.arrows, 20);
+        break;
+      case "chainmail":
+      default:
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.chainmail);
+        break;
+    }
+
+    switch (cleanText(selection.main, "martial-shield")) {
+      case "two-martial":
+        add(this.#martialWeaponUuid(selection.martialWeapon));
+        add(this.#martialWeaponUuid(selection.martialWeapon2));
+        break;
+      case "firearm":
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.musket);
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.bullets, 20);
+        break;
+      case "martial-shield":
+      default:
+        add(this.#martialWeaponUuid(selection.martialWeapon));
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.shield);
+        break;
+    }
+
+    switch (cleanText(selection.sidearm, "crossbow")) {
+      case "handaxes":
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.handaxe, 2);
+        break;
+      case "crossbow":
+      default:
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.lightCrossbow);
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.bolts, 20);
+        break;
+    }
+
+    switch (cleanText(selection.pack, "dungeoneer")) {
+      case "explorer":
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.explorerPack);
+        break;
+      case "dungeoneer":
+      default:
+        add(FIGHTER_STARTING_EQUIPMENT_UUIDS.dungeoneerPack);
+        break;
+    }
+
+    return Array.from(entriesByUuid.values());
+  }
+
+  #martialWeaponUuid(value) {
+    const id = cleanText(value, "longsword");
+    return FIGHTER_MARTIAL_WEAPON_CHOICES.find((choice) => choice.id === id)?.uuid
+      ?? FIGHTER_MARTIAL_WEAPON_CHOICES.find((choice) => choice.id === "longsword")?.uuid;
+  }
+
+  async #resolveStartingEquipmentItemData(uuid, quantity = 1) {
+    const source = typeof this._options.resolveStartingEquipmentItem === "function"
+      ? await this._options.resolveStartingEquipmentItem(uuid)
+      : await globalThis.fromUuid?.(uuid);
+    if (!source) {
+      return null;
+    }
+
+    const data = typeof source.toObject === "function"
+      ? source.toObject()
+      : foundry.utils.deepClone(source);
+    delete data._id;
+    delete data.id;
+    data.flags ??= {};
+    foundry.utils.setProperty(data, "flags.dnd5e.sourceId", uuid);
+    foundry.utils.setProperty(data, `flags.${MODULE_ID}.sourceType`, "fighterStartingEquipment");
+    foundry.utils.setProperty(data, `flags.${MODULE_ID}.classIdentifier`, FIGHTER_CLASS_IDENTIFIER);
+    foundry.utils.setProperty(data, "system.quantity", Math.max(1, Math.floor(toNumber(quantity, 1))));
+    return data;
   }
 
   async #promptSecondWindDice(actor, context) {

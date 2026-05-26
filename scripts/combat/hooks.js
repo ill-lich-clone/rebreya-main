@@ -273,6 +273,12 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasFighterService) {
+    Hooks.on("createItem", (item, options, userId) => {
+      moduleApi.fighterAutomationService.handleCreatedItem(item, options, userId).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to handle fighter starting equipment.`, error);
+      });
+    });
+
     const repairFighterActor = (app) => {
       const actor = app?.actor ?? app?.document ?? null;
       moduleApi.fighterAutomationService.repairActor(actor).catch((error) => {

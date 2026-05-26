@@ -184,6 +184,52 @@ function makeActivity({ actor, item, automation, fighterAutomation } = {}) {
   };
 }
 
+function makeClassItem({ actor, classIdentifier = "fighter-rework-v028" } = {}) {
+  return {
+    id: "fighter-class",
+    _id: "fighter-class",
+    uuid: "Item.fighter-class",
+    name: "Воин (реворк V0.28)",
+    type: "class",
+    actor,
+    system: {
+      identifier: classIdentifier
+    },
+    flags: {
+      "rebreya-main": {
+        classIdentifier
+      }
+    },
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    },
+    async setFlag(scope, key, value) {
+      this.flags[scope] ??= {};
+      this.flags[scope][key] = value;
+      return this;
+    }
+  };
+}
+
+function makeStartingEquipmentSource(uuid) {
+  return {
+    name: uuid.split(".").at(-1),
+    type: "loot",
+    system: {
+      quantity: 1
+    },
+    flags: {},
+    toObject() {
+      return foundry.utils.deepClone({
+        name: this.name,
+        type: this.type,
+        system: this.system,
+        flags: this.flags
+      });
+    }
+  };
+}
+
 function makeDominanceActivity({ target = "fighter-dominance", fighterAutomation = null } = {}) {
   return {
     _id: "dominance-activity",
@@ -233,6 +279,73 @@ function fixedRoll(total) {
     }
   };
 }
+
+test("fighter class creation prompts for starting equipment and grants selected items", async () => {
+  const actor = new TestActor({ id: "fighter", name: "Воин" });
+  const classItem = makeClassItem({ actor });
+  let promptChoices = null;
+  const resolvedUuids = [];
+  const service = new FighterAutomationService({}, {
+    promptFighterStartingEquipment: async (_actor, _item, choices) => {
+      promptChoices = choices;
+      return {
+        armor: "vest-bow",
+        main: "martial-shield",
+        martialWeapon: "longsword",
+        sidearm: "crossbow",
+        pack: "explorer"
+      };
+    },
+    resolveStartingEquipmentItem: async (uuid) => {
+      resolvedUuids.push(uuid);
+      return makeStartingEquipmentSource(uuid);
+    }
+  });
+
+  await service.handleCreatedItem(classItem);
+
+  assert.ok(promptChoices.armor.some((choice) => choice.id === "vest-bow"));
+  assert.ok(promptChoices.martialWeapons.some((choice) => choice.id === "longsword"));
+  assert.equal(actor.createdItems.length, 1);
+
+  const rows = actor.createdItems[0].rows;
+  const quantityByUuid = new Map(rows.map((row) => [
+    foundry.utils.getProperty(row, "flags.dnd5e.sourceId"),
+    foundry.utils.getProperty(row, "system.quantity")
+  ]));
+
+  assert.deepEqual(resolvedUuids, [
+    "Compendium.dnd5e.equipment24.Item.phbarmBreastplat",
+    "Compendium.dnd5e.equipment24.Item.phbwepLongbow000",
+    "Compendium.dnd5e.equipment24.Item.phbamoArrows0000",
+    "Compendium.dnd5e.equipment24.Item.phbwepLongsword0",
+    "Compendium.dnd5e.equipment24.Item.phbarmShield0000",
+    "Compendium.dnd5e.equipment24.Item.phbwepLightCross",
+    "Compendium.dnd5e.equipment24.Item.phbamoBolts00000",
+    "Compendium.dnd5e.equipment24.Item.phbagExplorersPa"
+  ]);
+  assert.equal(quantityByUuid.get("Compendium.dnd5e.equipment24.Item.phbamoArrows0000"), 20);
+  assert.equal(quantityByUuid.get("Compendium.dnd5e.equipment24.Item.phbamoBolts00000"), 20);
+  assert.equal(classItem.flags["rebreya-main"].startingEquipmentPrompted, true);
+});
+
+test("fighter starting equipment prompt runs only on the creating client", async () => {
+  const actor = new TestActor({ id: "fighter", name: "Воин" });
+  const classItem = makeClassItem({ actor });
+  let prompts = 0;
+  const service = new FighterAutomationService({}, {
+    promptFighterStartingEquipment: async () => {
+      prompts += 1;
+      return { armor: "chainmail", main: "firearm", sidearm: "handaxes", pack: "dungeoneer" };
+    },
+    resolveStartingEquipmentItem: async (uuid) => makeStartingEquipmentSource(uuid)
+  });
+
+  await service.handleCreatedItem(classItem, {}, "other-user");
+
+  assert.equal(prompts, 0);
+  assert.equal(actor.createdItems.length, 0);
+});
 
 test("fighter maneuver runtime adds dominance damage to the last MIDI hit target and applies Rebreya status", async () => {
   const source = new TestActor({ id: "fighter", name: "Воин" });
