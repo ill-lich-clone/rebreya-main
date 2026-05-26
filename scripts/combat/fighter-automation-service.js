@@ -350,6 +350,10 @@ export class FighterAutomationService {
       return true;
     }
 
+    if (this.#hasNativeStartingEquipmentChoices(item)) {
+      return true;
+    }
+
     const selection = await this.#promptFighterStartingEquipment(actor, item);
     if (!selection) {
       return true;
@@ -1344,6 +1348,20 @@ export class FighterAutomationService {
       readDocumentFlag(item, "classIdentifier") ?? item?.system?.identifier
     );
     return classIdentifier === FIGHTER_CLASS_IDENTIFIER;
+  }
+
+  #hasNativeStartingEquipmentChoices(item) {
+    return (Array.isArray(item?.system?.advancement) ? item.system.advancement : []).some((advancement) => {
+      if (advancement?.type !== "ItemChoice") {
+        return false;
+      }
+
+      const configuration = advancement.configuration ?? {};
+      return configuration.allowDrops === true
+        && configuration.type === null
+        && Array.isArray(configuration.pool)
+        && configuration.pool.length > 0;
+    });
   }
 
   #startingEquipmentPromptChoices() {

@@ -69,6 +69,8 @@ const MINOR_FEAT_LEVELS = [3, 6, 9, 12, 15, 18];
 const RAGE_ACTION_PICK_LEVELS = [5, 10, 15, 20];
 const SKILL_POOL = ["ath", "prc", "sur", "itm", "nat", "ani"];
 const FIGHTER_SKILL_POOL = ["acr", "ath", "prc", "sur", "itm", "his", "ins", "ani"];
+const FIGHTER_ARMOR_PROFICIENCIES = ["lgt", "med", "hvy", "shl"];
+const FIGHTER_WEAPON_PROFICIENCIES = ["sim", "mar"];
 const ASI_LEVELS = [4, 8, 12, 16, 19];
 const BATTLE_MASTER_SUBCLASS_NAME = "мастер боевых искусств";
 const RUNE_KNIGHT_SUBCLASS_NAME = "рунный рыцарь";
@@ -94,6 +96,47 @@ const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_OVERRIDE = 5;
 const STARTING_EQUIPMENT_TYPES = new Set(["OR", "AND", "armor", "tool", "weapon", "focus", "currency", "linked"]);
 const STARTING_EQUIPMENT_KEYED_TYPES = new Set(["armor", "tool", "weapon", "focus", "currency", "linked"]);
+const STARTING_EQUIPMENT_WEAPON_POOLS = Object.freeze({
+  mar: Object.freeze([
+    "Compendium.dnd5e.equipment24.Item.phbwepBattleaxe0",
+    "Compendium.dnd5e.equipment24.Item.phbwepFlail00000",
+    "Compendium.dnd5e.equipment24.Item.phbwepGlaive0000",
+    "Compendium.dnd5e.equipment24.Item.phbwepGreataxe00",
+    "Compendium.dnd5e.equipment24.Item.phbwepGreatsword",
+    "Compendium.dnd5e.equipment24.Item.phbwepHalberd000",
+    "Compendium.dnd5e.equipment24.Item.phbwepLance00000",
+    "Compendium.dnd5e.equipment24.Item.phbwepLongbow000",
+    "Compendium.dnd5e.equipment24.Item.phbwepLongsword0",
+    "Compendium.dnd5e.equipment24.Item.phbwepMaul000000",
+    "Compendium.dnd5e.equipment24.Item.phbwepMorningsta",
+    "Compendium.dnd5e.equipment24.Item.phbwepPike000000",
+    "Compendium.dnd5e.equipment24.Item.phbwepRapier0000",
+    "Compendium.dnd5e.equipment24.Item.phbwepScimitar00",
+    "Compendium.dnd5e.equipment24.Item.phbwepShortsword",
+    "Compendium.dnd5e.equipment24.Item.phbwepTrident000",
+    "Compendium.dnd5e.equipment24.Item.phbwepWarPick000",
+    "Compendium.dnd5e.equipment24.Item.phbwepWarhammer0",
+    "Compendium.dnd5e.equipment24.Item.phbwepWhip000000"
+  ])
+});
+const FIGHTER_STARTING_EQUIPMENT_ADVANCEMENTS = Object.freeze([
+  Object.freeze({
+    title: "Стартовое снаряжение: доспехи",
+    hint: "Выберите кольчугу, кожаный доспех или комплект с многослойным бронежилетом."
+  }),
+  Object.freeze({
+    title: "Стартовое снаряжение: основное оружие",
+    hint: "Выберите воинское оружие и щит, два воинских оружия или примитивное длинноствольное огнестрельное оружие с боеприпасами."
+  }),
+  Object.freeze({
+    title: "Стартовое снаряжение: дополнительное оружие",
+    hint: "Выберите лёгкий арбалет с болтами или два ручных топора."
+  }),
+  Object.freeze({
+    title: "Стартовое снаряжение: набор",
+    hint: "Выберите набор исследователя подземелий или набор путешественника."
+  })
+]);
 
 const OPTIONAL_CLASS_FEATURE_NAMES = new Set([
   "стальной желудок",
@@ -604,6 +647,12 @@ export function normalizeClassCompendiumData(rawData) {
     ? rawClass.skillPool
     : classIdentifier === "fighter-rework-v028" ? FIGHTER_SKILL_POOL : SKILL_POOL);
   const saveProficiencies = unique(Array.isArray(rawClass.saveProficiencies) ? rawClass.saveProficiencies : ["str", "con"]);
+  const armorProficiencies = unique(Array.isArray(rawClass.armorProficiencies)
+    ? rawClass.armorProficiencies
+    : classIdentifier === "fighter-rework-v028" ? FIGHTER_ARMOR_PROFICIENCIES : []);
+  const weaponProficiencies = unique(Array.isArray(rawClass.weaponProficiencies)
+    ? rawClass.weaponProficiencies
+    : classIdentifier === "fighter-rework-v028" ? FIGHTER_WEAPON_PROFICIENCIES : []);
   const wealth = cleanString(rawClass.wealth, classIdentifier === "fighter-rework-v028" ? "5d4*10" : "2d4*10");
   const startingEquipment = normalizeStartingEquipment(rawClass.startingEquipment);
   const subclassTitle = cleanString(rawClass.subclassTitle, classIdentifier === "fighter-rework-v028" ? "Воинский архетип" : "Путь дикости");
@@ -739,6 +788,8 @@ export function normalizeClassCompendiumData(rawData) {
       primaryAbility,
       skillPool,
       saveProficiencies,
+      armorProficiencies,
+      weaponProficiencies,
       wealth,
       startingEquipment,
       subclassTitle,
@@ -2351,7 +2402,9 @@ function buildItemChoiceAdvancement({
   hint = "",
   level = 1,
   count = 1,
-  pool = []
+  pool = [],
+  allowDrops = false,
+  type = "feat"
 }) {
   const normalizedPool = unique(pool).map((uuid) => ({ uuid }));
 
@@ -2362,7 +2415,7 @@ function buildItemChoiceAdvancement({
     hint: cleanString(hint),
     level: Math.max(0, Math.floor(parseNumber(level, 1))),
     configuration: {
-      allowDrops: false,
+      allowDrops: allowDrops === true,
       choices: {
         [String(level)]: {
           count: Math.max(1, Math.floor(parseNumber(count, 1))),
@@ -2377,10 +2430,112 @@ function buildItemChoiceAdvancement({
         type: ""
       },
       spell: null,
-      type: "feat"
+      type
     },
-    value: {}
+    value: {
+      added: {},
+      replaced: {}
+    }
   };
+}
+
+function proficiencyGrant(prefix, value) {
+  const key = cleanString(value);
+  if (!key) {
+    return "";
+  }
+
+  return key.includes(":") ? key : `${prefix}:${key}`;
+}
+
+function startingEquipmentChildrenByGroup(entries = []) {
+  const childrenByGroup = new Map();
+  for (const entry of entries) {
+    const group = cleanString(entry?.group);
+    if (!group) {
+      continue;
+    }
+
+    if (!childrenByGroup.has(group)) {
+      childrenByGroup.set(group, []);
+    }
+    childrenByGroup.get(group).push(entry);
+  }
+
+  for (const children of childrenByGroup.values()) {
+    children.sort((left, right) => parseNumber(left?.sort, 0) - parseNumber(right?.sort, 0));
+  }
+
+  return childrenByGroup;
+}
+
+function startingEquipmentItemPool(entry, childrenByGroup) {
+  const type = cleanString(entry?.type);
+  if (type === "linked") {
+    return [cleanString(entry.key)].filter(Boolean);
+  }
+
+  if (type === "weapon") {
+    return Array.from(STARTING_EQUIPMENT_WEAPON_POOLS[cleanString(entry.key)] ?? []);
+  }
+
+  if (type === "AND" || type === "OR") {
+    return (childrenByGroup.get(cleanString(entry._id)) ?? [])
+      .flatMap((child) => startingEquipmentItemPool(child, childrenByGroup));
+  }
+
+  return [];
+}
+
+function startingEquipmentSelectionCount(entry, childrenByGroup) {
+  const type = cleanString(entry?.type);
+  if (type === "weapon") {
+    return Math.max(1, Math.floor(parseNumber(entry.count, 1)));
+  }
+
+  if (type === "linked") {
+    const count = Math.max(1, Math.floor(parseNumber(entry.count, 1)));
+    return count <= 2 ? count : 1;
+  }
+
+  const children = childrenByGroup.get(cleanString(entry?._id)) ?? [];
+  if (type === "AND") {
+    return children.reduce((total, child) => total + startingEquipmentSelectionCount(child, childrenByGroup), 0);
+  }
+
+  if (type === "OR") {
+    return Math.max(1, ...children.map((child) => startingEquipmentSelectionCount(child, childrenByGroup)));
+  }
+
+  return 0;
+}
+
+function buildStartingEquipmentChoiceAdvancements(classData) {
+  const entries = Array.isArray(classData.startingEquipment) ? classData.startingEquipment : [];
+  const childrenByGroup = startingEquipmentChildrenByGroup(entries);
+  return entries
+    .filter((entry) => !entry.group && cleanString(entry.type) === "OR")
+    .sort((left, right) => parseNumber(left.sort, 0) - parseNumber(right.sort, 0))
+    .map((entry, index) => {
+      const metadata = FIGHTER_STARTING_EQUIPMENT_ADVANCEMENTS[index] ?? {};
+      const pool = startingEquipmentItemPool(entry, childrenByGroup);
+      if (!pool.length) {
+        return null;
+      }
+
+      return buildItemChoiceAdvancement({
+        classIdentifier: classData.identifier,
+        seed: `starting-equipment-${index + 1}-${cleanString(entry._id)}`,
+        title: metadata.title ?? "Стартовое снаряжение",
+        hint: metadata.hint ?? "",
+        level: 1,
+        count: startingEquipmentSelectionCount(entry, childrenByGroup),
+        pool,
+        allowDrops: true,
+        type: null
+      });
+    })
+    .filter(Boolean);
 }
 
 function pickPreferredFeat(records = [], preferredSection = "") {
@@ -2647,6 +2802,34 @@ export function buildClassAdvancement(classData, context = {}) {
       pool: (classData.skillPool ?? SKILL_POOL).map((skill) => `skills:${skill}`)
     }]
   }));
+
+  const armorProficiencyGrants = (classData.armorProficiencies ?? [])
+    .map((proficiency) => proficiencyGrant("armor", proficiency));
+  if (armorProficiencyGrants.length) {
+    advancements.push(buildTraitAdvancement({
+      classIdentifier,
+      seed: "armor-proficiencies",
+      title: "Владение доспехами",
+      hint: "Владение доспехами и щитами класса.",
+      level: 1,
+      grants: armorProficiencyGrants
+    }));
+  }
+
+  const weaponProficiencyGrants = (classData.weaponProficiencies ?? [])
+    .map((proficiency) => proficiencyGrant("weapon", proficiency));
+  if (weaponProficiencyGrants.length) {
+    advancements.push(buildTraitAdvancement({
+      classIdentifier,
+      seed: "weapon-proficiencies",
+      title: "Владение оружием",
+      hint: "Владение оружием класса.",
+      level: 1,
+      grants: weaponProficiencyGrants
+    }));
+  }
+
+  advancements.push(...buildStartingEquipmentChoiceAdvancements(classData));
 
   if (Object.keys(rageProgression).length) {
     advancements.push(buildScaleValueAdvancement({

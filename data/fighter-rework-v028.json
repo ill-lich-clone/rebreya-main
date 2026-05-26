@@ -23,6 +23,16 @@
       "str",
       "con"
     ],
+    "armorProficiencies": [
+      "lgt",
+      "med",
+      "hvy",
+      "shl"
+    ],
+    "weaponProficiencies": [
+      "sim",
+      "mar"
+    ],
     "wealth": "5d4*10",
     "startingEquipment": [
       {

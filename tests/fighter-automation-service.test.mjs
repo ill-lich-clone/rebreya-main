@@ -329,6 +329,33 @@ test("fighter class creation prompts for starting equipment and grants selected 
   assert.equal(classItem.flags["rebreya-main"].startingEquipmentPrompted, true);
 });
 
+test("fighter class creation does not duplicate native starting equipment choices", async () => {
+  const actor = new TestActor({ id: "fighter", name: "Р’РѕРёРЅ" });
+  const classItem = makeClassItem({ actor });
+  classItem.system.advancement = [{
+    type: "ItemChoice",
+    level: 1,
+    configuration: {
+      allowDrops: true,
+      type: null,
+      pool: [{ uuid: "Compendium.dnd5e.equipment24.Item.phbarmChainMail0" }]
+    }
+  }];
+  let prompts = 0;
+  const service = new FighterAutomationService({}, {
+    promptFighterStartingEquipment: async () => {
+      prompts += 1;
+      return { armor: "chainmail", main: "firearm", sidearm: "handaxes", pack: "dungeoneer" };
+    },
+    resolveStartingEquipmentItem: async (uuid) => makeStartingEquipmentSource(uuid)
+  });
+
+  await service.handleCreatedItem(classItem);
+
+  assert.equal(prompts, 0);
+  assert.equal(actor.createdItems.length, 0);
+});
+
 test("fighter starting equipment prompt runs only on the creating client", async () => {
   const actor = new TestActor({ id: "fighter", name: "Воин" });
   const classItem = makeClassItem({ actor });

@@ -193,6 +193,46 @@ test("fighter class exposes PDF starting equipment choices", () => {
   );
 });
 
+test("fighter advancements grant armor and weapon proficiencies natively", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const advancement = buildClassAdvancement(fighter.classData, {});
+  const grants = new Set(
+    advancement
+      .filter((entry) => entry.type === "Trait")
+      .flatMap((entry) => entry.configuration?.grants ?? [])
+  );
+
+  for (const grant of ["armor:lgt", "armor:med", "armor:hvy", "armor:shl", "weapon:sim", "weapon:mar"]) {
+    assert.ok(grants.has(grant), `${grant} should be granted by the fighter class`);
+  }
+});
+
+test("fighter advancements expose starting equipment as native item choices", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const advancement = buildClassAdvancement(fighter.classData, {});
+  const equipmentChoices = advancement.filter((entry) => entry.type === "ItemChoice" && entry.configuration?.type === null);
+
+  assert.equal(equipmentChoices.length, 4);
+  assert.deepEqual(equipmentChoices.map((entry) => entry.level), [1, 1, 1, 1]);
+  assert.deepEqual(equipmentChoices.map((entry) => entry.configuration.allowDrops), [true, true, true, true]);
+  assert.deepEqual(equipmentChoices.map((entry) => entry.value), [
+    { added: {}, replaced: {} },
+    { added: {}, replaced: {} },
+    { added: {}, replaced: {} },
+    { added: {}, replaced: {} }
+  ]);
+
+  const pools = equipmentChoices.map((entry) => new Set(entry.configuration.pool.map((poolEntry) => poolEntry.uuid)));
+  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbarmChainMail0")));
+  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbarmLeatherArm")));
+  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbarmBreastplat")));
+  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbarmShield0000")));
+  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbwepMusket0000")));
+  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbwepLightCross")));
+  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbagDungeoneers")));
+  assert.ok(pools.some((pool) => pool.has("Compendium.dnd5e.equipment24.Item.phbagExplorersPa")));
+});
+
 test("fighter advancements expose dominance scales and a fighting style choice", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
   const featureDefinitions = buildFeatureDefinitions(fighter);
