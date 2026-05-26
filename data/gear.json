@@ -4046,6 +4046,43 @@
         }
     },
     {
+        "id":  "boevoy-topor",
+        "name":  "Боевой топор",
+        "equipmentType":  "Оружие",
+        "shopSubtype":  "Оружейная лавка",
+        "priceText":  "10 зм",
+        "priceValue":  10,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  10,
+        "rank":  1,
+        "weight":  4,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "Крупный топор с длинной рукоятью и острым лезвием",
+        "predominantMaterialId":  "zhelezo",
+        "predominantMaterialName":  "Железо",
+        "linkedTool":  "Кузнеца",
+        "value":  "15",
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageType":  "slashing",
+            "damageTypeLabel":  "Рубящий",
+            "properties":  [
+                "ver"
+            ],
+            "propertiesText":  "Универсальное (1d10)",
+            "range":  {
+                "value":  0,
+                "long":  0,
+                "reach":  5,
+                "units":  "ft"
+            },
+            "versatileDamageFormula":  "1d10",
+            "attackTraitsText":  "Универсальное (1d10)"
+        }
+    },
+    {
         "id":  "arbalet-ruchnoy",
         "name":  "Арбалет, ручной",
         "equipmentType":  "Оружие",

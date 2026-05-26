@@ -34,6 +34,114 @@ const HERO_DOLL_SLOT_GROUPS = [
   { id: "back", label: "Спина", slotIds: [...BACK_SLOTS] }
 ];
 
+const NATIVE_DND5E_WEAPON_BASE_ITEMS = new Set([
+  "battleaxe",
+  "blowgun",
+  "club",
+  "dagger",
+  "dart",
+  "flail",
+  "glaive",
+  "greataxe",
+  "greatclub",
+  "greatsword",
+  "halberd",
+  "handaxe",
+  "handcrossbow",
+  "heavycrossbow",
+  "javelin",
+  "lance",
+  "lightcrossbow",
+  "lighthammer",
+  "longbow",
+  "longsword",
+  "mace",
+  "maul",
+  "morningstar",
+  "musket",
+  "pike",
+  "pistol",
+  "quarterstaff",
+  "rapier",
+  "scimitar",
+  "shortbow",
+  "shortsword",
+  "sickle",
+  "sling",
+  "spear",
+  "trident",
+  "warhammer",
+  "warpick",
+  "whip"
+]);
+
+const REBREYA_ORDINARY_WEAPON_PROFILES = [
+  { names: ["Боевой посох"], gearId: "boevoy-posokh", baseItem: "quarterstaff", systemTypeValue: "simpleM" },
+  { names: ["Булава"], gearId: "bulava", baseItem: "mace", systemTypeValue: "simpleM" },
+  { names: ["Дубинка"], gearId: "dubinka", baseItem: "club", systemTypeValue: "simpleM" },
+  { names: ["Кинжал"], gearId: "kinzhal", baseItem: "dagger", systemTypeValue: "simpleM" },
+  { names: ["Копье", "Копьё"], gearId: "kop-e", baseItem: "spear", systemTypeValue: "simpleM" },
+  { names: ["Лёгкий молот", "Легкий молот"], gearId: "lyogkiy-molot", baseItem: "lighthammer", systemTypeValue: "simpleM" },
+  { names: ["Палица"], gearId: "palitsa", baseItem: "greatclub", systemTypeValue: "simpleM" },
+  { names: ["Коса"], gearId: "kosa", baseItem: "kosa", systemTypeValue: "simpleM" },
+  { names: ["Кастет"], gearId: "kastet", baseItem: "kastet", systemTypeValue: "simpleM" },
+  { names: ["Ручной топор"], gearId: "ruchnoy-topor", baseItem: "handaxe", systemTypeValue: "simpleM" },
+  { names: ["Серп"], gearId: "serp", baseItem: "sickle", systemTypeValue: "simpleM" },
+  { names: ["Арбалет, легкий", "Арбалет, лёгкий", "Легкий арбалет", "Лёгкий арбалет"], gearId: "arbalet-legkiy", baseItem: "lightcrossbow", systemTypeValue: "simpleR" },
+  { names: ["Дротик"], gearId: "drotik", baseItem: "dart", systemTypeValue: "simpleR" },
+  { names: ["Короткий лук"], gearId: "korotkiy-luk", baseItem: "shortbow", systemTypeValue: "simpleR" },
+  { names: ["Праща"], gearId: "prashcha", baseItem: "sling", systemTypeValue: "simpleR" },
+  { names: ["Алебарда"], gearId: "alebarda", baseItem: "halberd", systemTypeValue: "martialM" },
+  { names: ["Боевая кирка"], gearId: "boevaya-kirka", baseItem: "warpick", systemTypeValue: "martialM" },
+  { names: ["Боевой молот"], gearId: "boevoy-molot", baseItem: "warhammer", systemTypeValue: "martialM" },
+  { names: ["Глефа"], gearId: "glefa", baseItem: "glaive", systemTypeValue: "martialM" },
+  { names: ["Двуручный меч"], gearId: "dvuruchnyy-mech", baseItem: "greatsword", systemTypeValue: "martialM" },
+  { names: ["Кавалерийская пика", "Копьё всадника", "Копье всадника"], gearId: "kavaleriyskaya-pika", baseItem: "lance", systemTypeValue: "martialM" },
+  { names: ["Длинный меч"], gearId: "dlinnyy-mech", baseItem: "longsword", systemTypeValue: "martialM" },
+  { names: ["Кнут"], gearId: "knut", baseItem: "whip", systemTypeValue: "martialM" },
+  { names: ["Короткий меч"], gearId: "korotkiy-mech", baseItem: "shortsword", systemTypeValue: "martialM" },
+  { names: ["Молот"], gearId: "molot", baseItem: "maul", systemTypeValue: "martialM" },
+  { names: ["Моргенштерн"], gearId: "morgenshtern", baseItem: "morningstar", systemTypeValue: "martialM" },
+  { names: ["Пика"], gearId: "pika", baseItem: "pike", systemTypeValue: "martialM" },
+  { names: ["Рапира"], gearId: "rapira", baseItem: "rapier", systemTypeValue: "martialM" },
+  { names: ["Секира"], gearId: "sekira", baseItem: "greataxe", systemTypeValue: "martialM" },
+  { names: ["Скимитар"], gearId: "skimitar", baseItem: "scimitar", systemTypeValue: "martialM" },
+  { names: ["Трезубец"], gearId: "trezubets", baseItem: "trident", systemTypeValue: "martialM" },
+  { names: ["Цеп"], gearId: "tsep", baseItem: "flail", systemTypeValue: "martialM" },
+  { names: ["Цепь"], gearId: "gear-2", baseItem: "tsep-chain", systemTypeValue: "martialM" },
+  { names: ["Палаш"], gearId: "palash", baseItem: "palash", systemTypeValue: "martialM" },
+  { names: ["Сабля"], gearId: "sablya", baseItem: "sablya", systemTypeValue: "martialM" },
+  { names: ["Катана"], gearId: "katana", baseItem: "katana", systemTypeValue: "martialM" },
+  { names: ["Эсток"], gearId: "estok", baseItem: "estok", systemTypeValue: "martialM" },
+  { names: ["Боевая коса"], gearId: "boevaya-kosa", baseItem: "boevaya-kosa", systemTypeValue: "martialM" },
+  { names: ["Двусторонний топор"], gearId: "dvustoronniy-topor", baseItem: "dvustoronniy-topor", systemTypeValue: "martialM" },
+  { names: ["Костяной топор"], gearId: "kostyanoy-topor", baseItem: "kostyanoy-topor", systemTypeValue: "martialM" },
+  { names: ["Молот всадника"], gearId: "molot-vsadnika", baseItem: "molot-vsadnika", systemTypeValue: "martialM" },
+  { names: ["Двусторонний молот"], gearId: "dvustoronniy-molot", baseItem: "dvustoronniy-molot", systemTypeValue: "martialM" },
+  { names: ["Кинжал на цепи"], gearId: "kinzhal-na-tsepi", baseItem: "kinzhal-na-tsepi", systemTypeValue: "martialM" },
+  { names: ["Длинная булава"], gearId: "dlinnaya-bulava", baseItem: "dlinnaya-bulava", systemTypeValue: "martialM" },
+  { names: ["Цепной серп"], gearId: "tsepnoy-serp", baseItem: "tsepnoy-serp", systemTypeValue: "martialM" },
+  { names: ["Меч палача"], gearId: "mech-palacha", baseItem: "mech-palacha", systemTypeValue: "martialM" },
+  { names: ["Металлическая перчатка"], gearId: "metallicheskaya-perchatka", baseItem: "metallicheskaya-perchatka", systemTypeValue: "martialM" },
+  { names: ["Шамшир"], gearId: "shamshir", baseItem: "shamshir", systemTypeValue: "martialM" },
+  { names: ["Боевой топор"], gearId: "boevoy-topor", baseItem: "battleaxe", systemTypeValue: "martialM" },
+  { names: ["Арбалет, ручной", "Ручной арбалет"], gearId: "arbalet-ruchnoy", baseItem: "handcrossbow", systemTypeValue: "martialR" },
+  { names: ["Арбалет, тяжелый", "Арбалет, тяжёлый", "Тяжелый арбалет", "Тяжёлый арбалет"], gearId: "arbalet-tyazhelyy", baseItem: "heavycrossbow", systemTypeValue: "martialR" },
+  { names: ["Длинный лук"], gearId: "dlinnyy-luk", baseItem: "longbow", systemTypeValue: "martialR" },
+  { names: ["Духовая трубка"], gearId: "dukhovaya-trubka", baseItem: "blowgun", systemTypeValue: "martialR" },
+  { names: ["Сеть"], gearId: "set", baseItem: "set", systemTypeValue: "martialR" },
+  { names: ["Лук всадника"], gearId: "luk-vsadnika", baseItem: "luk-vsadnika", systemTypeValue: "martialR" },
+  { names: ["Композитный лук"], gearId: "kompozitnyy-luk", baseItem: "kompozitnyy-luk", systemTypeValue: "martialR" },
+  { names: ["Многозарядный арбалет"], gearId: "mnogozaryadnyy-arbalet", baseItem: "mnogozaryadnyy-arbalet", systemTypeValue: "martialR" }
+];
+
+const REBREYA_ORDINARY_WEAPON_PROFILE_BY_NAME = new Map();
+for (const profile of REBREYA_ORDINARY_WEAPON_PROFILES) {
+  for (const name of profile.names) {
+    REBREYA_ORDINARY_WEAPON_PROFILE_BY_NAME.set(normalizeNameKey(name), profile);
+  }
+}
+
 const SLOT_ALIAS_MAP = new Map([
   ["head", ["head"]],
   ["голова", ["head"]],
@@ -390,6 +498,15 @@ export function inferHeroDollSlotsFromName(name, fallback = []) {
 
 function buildWeaponProfile(name, fallbackBaseItem = "") {
   const text = normalizeNameKey(name);
+  const rebreyaWeapon = REBREYA_ORDINARY_WEAPON_PROFILE_BY_NAME.get(text);
+  if (rebreyaWeapon) {
+    return {
+      systemTypeValue: rebreyaWeapon.systemTypeValue,
+      baseItem: rebreyaWeapon.baseItem,
+      heroDollSlots: [...HAND_SLOTS, ...BACK_SLOTS]
+    };
+  }
+
   const simple = SIMPLE_MELEE_WEAPON_MAP.get(text);
   if (simple) {
     return {
@@ -555,6 +672,17 @@ export function buildSlug(value, fallback = "entry") {
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-|-$/gu, "")
     || fallback;
+}
+
+export function getRebreyaWeaponBaseItemDefinitions() {
+  return REBREYA_ORDINARY_WEAPON_PROFILES
+    .filter((profile) => !NATIVE_DND5E_WEAPON_BASE_ITEMS.has(profile.baseItem))
+    .map((profile) => ({
+      baseItem: profile.baseItem,
+      gearId: profile.gearId,
+      name: profile.names[0],
+      systemTypeValue: profile.systemTypeValue
+    }));
 }
 
 export function normalizeHeroDollSlots(value, fallback = []) {

@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 
 import { createDnd5eItemData } from "../scripts/data/gear-compendium.js";
 import { buildNamedIconLookup } from "../scripts/data/compendium-utils.js";
+import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
+import { getRebreyaWeaponBaseItemDefinitions } from "../scripts/data/item-classification.js";
 import { normalizeEconomyDataset } from "../scripts/data/normalizer.js";
+import { buildRebreyaWeaponIdsConfig } from "../scripts/integrations/dnd5e-sheet-extensions.js";
 
 const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
 const EQUIPMENT_PACK_CONTENTS = {
@@ -89,6 +92,105 @@ const DAMAGE_TYPE_BY_LABEL = new Map([
   ["Колющий", "piercing"],
   ["Рубящий", "slashing"]
 ]);
+const NATIVE_DND5E_WEAPON_BASE_ITEMS = new Set([
+  "battleaxe",
+  "blowgun",
+  "club",
+  "dagger",
+  "dart",
+  "flail",
+  "glaive",
+  "greataxe",
+  "greatclub",
+  "greatsword",
+  "halberd",
+  "handaxe",
+  "handcrossbow",
+  "heavycrossbow",
+  "javelin",
+  "lance",
+  "lightcrossbow",
+  "lighthammer",
+  "longbow",
+  "longsword",
+  "mace",
+  "maul",
+  "morningstar",
+  "musket",
+  "pike",
+  "pistol",
+  "quarterstaff",
+  "rapier",
+  "scimitar",
+  "shortbow",
+  "shortsword",
+  "sickle",
+  "sling",
+  "spear",
+  "trident",
+  "warhammer",
+  "warpick",
+  "whip"
+]);
+const EXPECTED_ORDINARY_WEAPONS = [
+  ["boevoy-posokh", "simpleM", "quarterstaff"],
+  ["bulava", "simpleM", "mace"],
+  ["dubinka", "simpleM", "club"],
+  ["kinzhal", "simpleM", "dagger"],
+  ["kop-e", "simpleM", "spear"],
+  ["lyogkiy-molot", "simpleM", "lighthammer"],
+  ["palitsa", "simpleM", "greatclub"],
+  ["kosa", "simpleM", "kosa"],
+  ["kastet", "simpleM", "kastet"],
+  ["ruchnoy-topor", "simpleM", "handaxe"],
+  ["serp", "simpleM", "sickle"],
+  ["arbalet-legkiy", "simpleR", "lightcrossbow"],
+  ["drotik", "simpleR", "dart"],
+  ["korotkiy-luk", "simpleR", "shortbow"],
+  ["prashcha", "simpleR", "sling"],
+  ["alebarda", "martialM", "halberd"],
+  ["boevaya-kirka", "martialM", "warpick"],
+  ["boevoy-molot", "martialM", "warhammer"],
+  ["glefa", "martialM", "glaive"],
+  ["dvuruchnyy-mech", "martialM", "greatsword"],
+  ["kavaleriyskaya-pika", "martialM", "lance"],
+  ["dlinnyy-mech", "martialM", "longsword"],
+  ["knut", "martialM", "whip"],
+  ["korotkiy-mech", "martialM", "shortsword"],
+  ["molot", "martialM", "maul"],
+  ["morgenshtern", "martialM", "morningstar"],
+  ["pika", "martialM", "pike"],
+  ["rapira", "martialM", "rapier"],
+  ["sekira", "martialM", "greataxe"],
+  ["skimitar", "martialM", "scimitar"],
+  ["trezubets", "martialM", "trident"],
+  ["tsep", "martialM", "flail"],
+  ["gear-2", "martialM", "tsep-chain"],
+  ["palash", "martialM", "palash"],
+  ["sablya", "martialM", "sablya"],
+  ["katana", "martialM", "katana"],
+  ["estok", "martialM", "estok"],
+  ["boevaya-kosa", "martialM", "boevaya-kosa"],
+  ["dvustoronniy-topor", "martialM", "dvustoronniy-topor"],
+  ["kostyanoy-topor", "martialM", "kostyanoy-topor"],
+  ["molot-vsadnika", "martialM", "molot-vsadnika"],
+  ["dvustoronniy-molot", "martialM", "dvustoronniy-molot"],
+  ["kinzhal-na-tsepi", "martialM", "kinzhal-na-tsepi"],
+  ["dlinnaya-bulava", "martialM", "dlinnaya-bulava"],
+  ["tsepnoy-serp", "martialM", "tsepnoy-serp"],
+  ["mech-palacha", "martialM", "mech-palacha"],
+  ["metallicheskaya-perchatka", "martialM", "metallicheskaya-perchatka"],
+  ["shamshir", "martialM", "shamshir"],
+  ["boevoy-topor", "martialM", "battleaxe"],
+  ["arbalet-ruchnoy", "martialR", "handcrossbow"],
+  ["arbalet-tyazhelyy", "martialR", "heavycrossbow"],
+  ["dlinnyy-luk", "martialR", "longbow"],
+  ["dukhovaya-trubka", "martialR", "blowgun"],
+  ["set", "martialR", "set"],
+  ["luk-vsadnika", "martialR", "luk-vsadnika"],
+  ["kompozitnyy-luk", "martialR", "kompozitnyy-luk"],
+  ["mnogozaryadnyy-arbalet", "martialR", "mnogozaryadnyy-arbalet"]
+];
 
 globalThis.foundry ??= {
   utils: {
@@ -200,6 +302,37 @@ test("real gear weapon data maps spreadsheet damage and properties to system key
   assert.ok(byId.get("molot").weapon.properties.includes("lchPowerStrike"));
   assert.ok(byId.get("molot").weapon.properties.includes("lchPush"));
   assert.ok(byId.get("kavaleriyskaya-pika").weapon.properties.includes("lchMounted"));
+});
+
+test("ordinary weapons from the weapon sheet use registered dnd5e base weapon ids", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const customDefinitions = new Map(getRebreyaWeaponBaseItemDefinitions()
+    .map((definition) => [definition.baseItem, definition]));
+  const weaponIdsConfig = buildRebreyaWeaponIdsConfig();
+
+  for (const [gearId, expectedType, expectedBaseItem] of EXPECTED_ORDINARY_WEAPONS) {
+    const item = byId.get(gearId);
+    assert.ok(item, `ordinary weapon ${gearId} exists in Rebreya gear data`);
+    assert.equal(item.equipmentType, "Оружие", `${gearId} remains an ordinary weapon`);
+
+    const created = createDnd5eItemData(item, new Map());
+    assert.equal(created._id, createStableGearDocumentId(gearId), `${gearId} uses a stable compendium document id`);
+    assert.equal(created.type, "weapon", `${gearId} is created as a dnd5e weapon`);
+    assert.equal(created.system.type.value, expectedType, `${gearId} uses ${expectedType}`);
+    assert.equal(created.system.type.baseItem, expectedBaseItem, `${gearId} uses base weapon ${expectedBaseItem}`);
+
+    if (!NATIVE_DND5E_WEAPON_BASE_ITEMS.has(expectedBaseItem)) {
+      const definition = customDefinitions.get(expectedBaseItem);
+      assert.ok(definition, `${expectedBaseItem} is registered as a Rebreya base weapon`);
+      assert.equal(definition.gearId, gearId, `${expectedBaseItem} points at the ${gearId} compendium item`);
+      assert.equal(
+        weaponIdsConfig[expectedBaseItem],
+        `world.rebreya-gear.${createStableGearDocumentId(gearId)}`,
+        `${expectedBaseItem} is exposed through CONFIG.DND5E.weaponIds`
+      );
+    }
+  }
 });
 
 test("gear stock icons avoid missing Foundry core asset paths", () => {

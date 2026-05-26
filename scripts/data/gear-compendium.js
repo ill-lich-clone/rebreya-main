@@ -14,6 +14,7 @@ import {
   mapSlotGroupToHeroDollSlots,
   normalizeHeroDollSlotGroup
 } from "./item-classification.js";
+import { createStableGearDocumentId } from "./gear-document-ids.js";
 
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -589,6 +590,7 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
   const containerContents = cloneContainerContents(item.containerContents);
 
   return {
+    _id: createStableGearDocumentId(item.id),
     name: item.name,
     type: classification.documentType,
     img: getGearIcon(item, classification, iconLookup),

@@ -1,5 +1,6 @@
 ﻿import {
   FEATS_COMPENDIUM_NAME,
+  GEAR_COMPENDIUM_NAME,
   MODULE_ID,
   REBREYA_TOOLS,
   STATES_COMPENDIUM_NAME,
@@ -8,7 +9,9 @@
   TEYVANKAL_STATE_LANGUAGES
 } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
+import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import {
+  getRebreyaWeaponBaseItemDefinitions,
   getHeroDollSlotGroups,
   inferHeroDollSlotGroupFromSlots,
   mapSlotGroupToHeroDollSlots,
@@ -2873,6 +2876,24 @@ function bindItemSheetEnhancements(root, app) {
   upsertWeaponAttackTraitsField(root, app);
 }
 
+export function buildRebreyaWeaponIdsConfig() {
+  return Object.fromEntries(getRebreyaWeaponBaseItemDefinitions()
+    .map((definition) => [
+      definition.baseItem,
+      `world.${GEAR_COMPENDIUM_NAME}.${createStableGearDocumentId(definition.gearId)}`
+    ]));
+}
+
+function registerRebreyaWeaponBaseItems() {
+  if (!CONFIG.DND5E?.weaponIds || typeof CONFIG.DND5E.weaponIds !== "object") {
+    CONFIG.DND5E.weaponIds = {};
+  }
+
+  for (const [baseItem, uuid] of Object.entries(buildRebreyaWeaponIdsConfig())) {
+    CONFIG.DND5E.weaponIds[baseItem] = uuid;
+  }
+}
+
 export function extendDnd5eItemTypes() {
   if (!isDnd5eWorld() || !CONFIG.DND5E) {
     return;
@@ -2917,6 +2938,8 @@ export function extendDnd5eItemTypes() {
     CONFIG.DND5E.weaponTypeMap.firearmPrimitive ??= "ranged";
     CONFIG.DND5E.weaponTypeMap.firearmAdvanced ??= "ranged";
   }
+
+  registerRebreyaWeaponBaseItems();
 
   CONFIG.DND5E.itemProperties ??= {};
   for (const definition of LICH_WEAPON_PROPERTY_DEFINITIONS) {
