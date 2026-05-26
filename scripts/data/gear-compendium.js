@@ -1,10 +1,12 @@
 ﻿import { GEAR_COMPENDIUM_LABEL, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import {
+  buildNamedIconLookup,
   deduplicateCompendiumFolders,
   ensureCompendiumFolders,
   ensurePackSidebarFolder,
-  normalizeFolderPath
+  normalizeFolderPath,
+  resolveNamedIcon
 } from "./compendium-utils.js";
 import {
   classifyGearEntry,
@@ -20,9 +22,11 @@ const DEFAULT_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 const GEAR_TEMPLATE_VERSION = 8;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const CUSTOM_GEAR_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
-const SUPPORTED_GEAR_ICON_EXTENSIONS = new Set(["webp", "png", "jpg", "jpeg", "svg", "avif"]);
-const customGearIconByName = new Map();
-let customGearIconsCacheReady = false;
+const GEAR_ICON_SEARCH_PATHS = [
+  `${CUSTOM_GEAR_ICONS_BASE_PATH}/Goods`,
+  `${CUSTOM_GEAR_ICONS_BASE_PATH}/weapons`,
+  CUSTOM_GEAR_ICONS_BASE_PATH
+];
 
 function escapeHtml(value) {
   return foundry.utils.escapeHTML(String(value ?? ""));
@@ -137,106 +141,6 @@ function normalizeContainerCapacity(value) {
   };
 }
 
-function resetCustomGearIconCache() {
-  customGearIconsCacheReady = false;
-  customGearIconByName.clear();
-}
-
-function registerCustomGearIcon(filePath) {
-  const normalizedPath = String(filePath ?? "").replace(/\\/gu, "/");
-  if (!normalizedPath) {
-    return;
-  }
-
-  let filename = normalizedPath.split("/").pop() ?? "";
-  try {
-    filename = decodeURIComponent(filename);
-  }
-  catch (_error) {
-    // Оставляем исходное имя, если путь уже не в URL-формате.
-  }
-
-  const extensionIndex = filename.lastIndexOf(".");
-  if (extensionIndex <= 0) {
-    return;
-  }
-
-  const extension = filename.slice(extensionIndex + 1).toLowerCase();
-  if (!SUPPORTED_GEAR_ICON_EXTENSIONS.has(extension)) {
-    return;
-  }
-
-  const iconName = filename.slice(0, extensionIndex);
-  const key = normalizeMatchText(iconName);
-  if (!key || customGearIconByName.has(key)) {
-    return;
-  }
-
-  const encodedFilename = encodeURIComponent(filename);
-  customGearIconByName.set(key, `${CUSTOM_GEAR_ICONS_BASE_PATH}/${encodedFilename}`);
-}
-
-async function browseIconDirectory(path) {
-  let lastError = null;
-  for (const source of ["data", "public"]) {
-    try {
-      return await FilePicker.browse(source, path);
-    }
-    catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError ?? new Error(`Unable to browse icon directory: ${path}`);
-}
-
-async function ensureCustomGearIconCache(forceRefresh = false) {
-  if (forceRefresh) {
-    resetCustomGearIconCache();
-  }
-
-  if (customGearIconsCacheReady) {
-    return;
-  }
-
-  customGearIconsCacheReady = true;
-
-  if (typeof FilePicker !== "function" || typeof FilePicker.browse !== "function") {
-    return;
-  }
-
-  const pendingPaths = [CUSTOM_GEAR_ICONS_BASE_PATH];
-  const visitedPaths = new Set();
-
-  while (pendingPaths.length) {
-    const currentPath = pendingPaths.shift();
-    if (!currentPath || visitedPaths.has(currentPath)) {
-      continue;
-    }
-    visitedPaths.add(currentPath);
-
-    try {
-      const browseResult = await browseIconDirectory(currentPath);
-      const files = Array.isArray(browseResult?.files) ? browseResult.files : [];
-      const directories = Array.isArray(browseResult?.dirs) ? browseResult.dirs : [];
-      files.forEach((filePath) => registerCustomGearIcon(filePath));
-      directories.forEach((directoryPath) => pendingPaths.push(directoryPath));
-    }
-    catch (error) {
-      console.warn(`${MODULE_ID} | Failed to scan custom gear icons path "${currentPath}".`, error);
-    }
-  }
-}
-
-function getCustomGearIconByName(name) {
-  const key = normalizeMatchText(name);
-  if (!key) {
-    return "";
-  }
-
-  return customGearIconByName.get(key) ?? "";
-}
-
 function isDnd5eWorld() {
   return game.system?.id === DND5E_SYSTEM_ID;
 }
@@ -279,6 +183,43 @@ function buildFolderPath(classification) {
   return normalizeFolderPath(classification.folderPath);
 }
 
+function stripTrailingParenthetical(value) {
+  return cleanString(value).replace(/\s*\([^()]*\)\s*$/u, "").trim();
+}
+
+function getGearIconNameCandidates(item) {
+  const name = cleanString(item?.name);
+  if (!name) {
+    return [];
+  }
+
+  const candidates = [];
+  const equipmentType = cleanString(item?.equipmentType);
+  if (equipmentType) {
+    candidates.push(`${name} (${equipmentType})`);
+  }
+
+  candidates.push(name);
+
+  const shortenedName = stripTrailingParenthetical(name);
+  if (shortenedName && shortenedName !== name) {
+    candidates.push(shortenedName);
+  }
+
+  return Array.from(new Set(candidates));
+}
+
+function resolveGearNamedIcon(item, iconLookup) {
+  for (const iconName of getGearIconNameCandidates(item)) {
+    const iconPath = resolveNamedIcon(iconName, iconLookup, "");
+    if (iconPath) {
+      return iconPath;
+    }
+  }
+
+  return "";
+}
+
 function buildGearSignature(item) {
   const classification = classifyGearEntry(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
@@ -315,10 +256,10 @@ function buildGearSignature(item) {
   });
 }
 
-function getGearIcon(item, classification) {
+function getGearIcon(item, classification, iconLookup = null) {
   const folderPath = buildFolderPath(classification).join(" / ").toLowerCase();
   const typeText = normalizeMatchText(item.equipmentType);
-  const namedCustomIcon = getCustomGearIconByName(item.name);
+  const namedCustomIcon = resolveGearNamedIcon(item, iconLookup);
   if (namedCustomIcon) {
     return namedCustomIcon;
   }
@@ -634,7 +575,7 @@ function clonePlainObject(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-export function createDnd5eItemData(item, folderIdByPath) {
+export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
   const classification = classifyGearEntry(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
   const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
@@ -650,7 +591,7 @@ export function createDnd5eItemData(item, folderIdByPath) {
   return {
     name: item.name,
     type: classification.documentType,
-    img: getGearIcon(item, classification),
+    img: getGearIcon(item, classification, iconLookup),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -690,7 +631,7 @@ export function createDnd5eItemData(item, folderIdByPath) {
   };
 }
 
-export function createDnd5eContainerContentData(containerItem, gearById, containerDocumentId, folderIdByPath) {
+export function createDnd5eContainerContentData(containerItem, gearById, containerDocumentId, folderIdByPath, iconLookup = null) {
   const containerId = cleanString(containerDocumentId);
   if (!containerId || !(gearById instanceof Map)) {
     return [];
@@ -703,7 +644,7 @@ export function createDnd5eContainerContentData(containerItem, gearById, contain
         return null;
       }
 
-      const data = createDnd5eItemData(sourceItem, folderIdByPath);
+      const data = createDnd5eItemData(sourceItem, folderIdByPath, iconLookup);
       delete data._id;
       delete data.id;
       data.system ??= {};
@@ -892,12 +833,39 @@ async function deleteManagedDocuments(pack, documents, gear = []) {
   await Item.implementation.deleteDocuments(deleteIds, { pack: pack.collection });
 }
 
-async function createManagedDocuments(pack, gear) {
-  if (!gear.length) {
+async function syncManagedDocumentIcons(pack, documents, iconLookup) {
+  const updates = [];
+  for (const document of Array.isArray(documents) ? documents : []) {
+    if (!document?.getFlag?.(MODULE_ID, "managed")) {
+      continue;
+    }
+
+    const currentIcon = String(document.img ?? "").trim() || DEFAULT_ITEM_ICON;
+    const nextIcon = resolveGearNamedIcon({
+      name: document.name,
+      equipmentType: document.getFlag(MODULE_ID, "equipmentType")
+    }, iconLookup) || currentIcon;
+    if (!nextIcon || nextIcon === currentIcon) {
+      continue;
+    }
+
+    updates.push({
+      _id: document.id,
+      img: nextIcon
+    });
+  }
+
+  if (!updates.length) {
     return;
   }
 
-  await ensureCustomGearIconCache(true);
+  await Item.implementation.updateDocuments(updates, { pack: pack.collection });
+}
+
+async function createManagedDocuments(pack, gear, iconLookup = null) {
+  if (!gear.length) {
+    return;
+  }
 
   let folderIdByPath = new Map();
   try {
@@ -911,7 +879,7 @@ async function createManagedDocuments(pack, gear) {
   }
 
   const createdDocuments = await Item.implementation.createDocuments(
-    gear.map((item) => createDnd5eItemData(item, folderIdByPath)),
+    gear.map((item) => createDnd5eItemData(item, folderIdByPath, iconLookup)),
     { pack: pack.collection }
   );
   const createdByGearId = new Map(
@@ -931,7 +899,7 @@ async function createManagedDocuments(pack, gear) {
       return [];
     }
 
-    return createDnd5eContainerContentData(item, gearById, containerDocumentId, folderIdByPath);
+    return createDnd5eContainerContentData(item, gearById, containerDocumentId, folderIdByPath, iconLookup);
   });
 
   if (containedDocumentsData.length) {
@@ -949,12 +917,14 @@ export class GearCompendiumService {
     const pack = await ensureGearPack();
     await deduplicateCompendiumFolders(pack, ["Обвес", "Обвесы", "Огнестрельное оружие"]);
     const documents = await getPackDocuments(pack);
+    const iconLookup = await buildNamedIconLookup(GEAR_ICON_SEARCH_PATHS, { forceRefresh: true });
     if (!shouldRebuildPack(safeGear, documents)) {
+      await syncManagedDocumentIcons(pack, documents, iconLookup);
       return pack;
     }
 
     await deleteManagedDocuments(pack, documents, safeGear);
-    await createManagedDocuments(pack, safeGear);
+    await createManagedDocuments(pack, safeGear, iconLookup);
 
     return game.packs.get(PACK_ID) ?? pack;
   }

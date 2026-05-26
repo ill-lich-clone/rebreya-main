@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createDnd5eItemData } from "../scripts/data/gear-compendium.js";
+import { buildNamedIconLookup } from "../scripts/data/compendium-utils.js";
 import { normalizeEconomyDataset } from "../scripts/data/normalizer.js";
 
 const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
@@ -229,6 +230,71 @@ test("gear stock icons avoid missing Foundry core asset paths", () => {
   assert.equal(createDnd5eItemData(byId.get("ryukzak"), new Map()).img, "icons/containers/bags/pack-simple-leather-brown.webp");
   assert.equal(createDnd5eItemData(byId.get("zel-e-lecheniya-1-go-urovnya"), new Map()).img, "icons/consumables/potions/potion-bottle-corked-labeled-red.webp");
   assert.equal(createDnd5eItemData(byId.get("kollimatornyy-pritsel"), new Map()).img, "icons/tools/hand/wrench-steel-grey.webp");
+});
+
+test("gear custom icons override stock fallbacks by item name", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const iconLookup = new Map([
+    ["абак", "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%B1%D0%B0%D0%BA.webp"],
+    ["мушкет", "modules/rebreya-main/templates/icons/weapons/%D0%9C%D1%83%D1%88%D0%BA%D0%B5%D1%82.webp"]
+  ]);
+
+  assert.equal(
+    createDnd5eItemData(byId.get("abak"), new Map(), iconLookup).img,
+    "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%B1%D0%B0%D0%BA.webp"
+  );
+  assert.equal(
+    createDnd5eItemData(byId.get("mushket"), new Map(), iconLookup).img,
+    "modules/rebreya-main/templates/icons/weapons/%D0%9C%D1%83%D1%88%D0%BA%D0%B5%D1%82.webp"
+  );
+});
+
+test("gear custom icons can match shortened and type-qualified item names", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const iconLookup = new Map([
+    ["алхимический огонь", "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%BB%D1%85%D0%B8%D0%BC%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%BE%D0%B3%D0%BE%D0%BD%D1%8C.webp"],
+    ["коготь чудовища имплант", "modules/rebreya-main/templates/icons/Goods/%D0%9A%D0%BE%D0%B3%D0%BE%D1%82%D1%8C%20%D1%87%D1%83%D0%B4%D0%BE%D0%B2%D0%B8%D1%89%D0%B0%20(%D0%B8%D0%BC%D0%BF%D0%BB%D0%B0%D0%BD%D1%82).webp"],
+    ["коготь чудовища усовершенствование", "modules/rebreya-main/templates/icons/Goods/%D0%9A%D0%BE%D0%B3%D0%BE%D1%82%D1%8C%20%D1%87%D1%83%D0%B4%D0%BE%D0%B2%D0%B8%D1%89%D0%B0%20(%D1%83%D1%81%D0%BE%D0%B2%D0%B5%D1%80%D1%88%D0%B5%D0%BD%D1%81%D1%82%D0%B2%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5).webp"]
+  ]);
+
+  assert.equal(
+    createDnd5eItemData(byId.get("alkhimicheskiy-ogon-flyaga"), new Map(), iconLookup).img,
+    "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%BB%D1%85%D0%B8%D0%BC%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D0%BE%D0%B3%D0%BE%D0%BD%D1%8C.webp"
+  );
+  assert.equal(
+    createDnd5eItemData(byId.get("kogot-chudovishcha"), new Map(), iconLookup).img,
+    "modules/rebreya-main/templates/icons/Goods/%D0%9A%D0%BE%D0%B3%D0%BE%D1%82%D1%8C%20%D1%87%D1%83%D0%B4%D0%BE%D0%B2%D0%B8%D1%89%D0%B0%20(%D0%B8%D0%BC%D0%BF%D0%BB%D0%B0%D0%BD%D1%82).webp"
+  );
+  assert.equal(
+    createDnd5eItemData(byId.get("kogot-chudovishcha-2"), new Map(), iconLookup).img,
+    "modules/rebreya-main/templates/icons/Goods/%D0%9A%D0%BE%D0%B3%D0%BE%D1%82%D1%8C%20%D1%87%D1%83%D0%B4%D0%BE%D0%B2%D0%B8%D1%89%D0%B0%20(%D1%83%D1%81%D0%BE%D0%B2%D0%B5%D1%80%D1%88%D0%B5%D0%BD%D1%81%D1%82%D0%B2%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5).webp"
+  );
+});
+
+test("nested Goods icon paths stay URL encoded in named icon lookup", async () => {
+  const originalFilePicker = globalThis.FilePicker;
+  globalThis.FilePicker = function MockFilePicker() {
+  };
+  globalThis.FilePicker.browse = async (_source, path) => {
+    assert.equal(path, "modules/rebreya-main/templates/icons/Goods");
+    return {
+      files: ["modules/rebreya-main/templates/icons/Goods/Абак.webp"],
+      dirs: []
+    };
+  };
+
+  try {
+    const iconLookup = await buildNamedIconLookup(["modules/rebreya-main/templates/icons/Goods"], { forceRefresh: true });
+    assert.equal(
+      iconLookup.get("абак"),
+      "modules/rebreya-main/templates/icons/Goods/%D0%90%D0%B1%D0%B0%D0%BA.webp"
+    );
+  }
+  finally {
+    globalThis.FilePicker = originalFilePicker;
+  }
 });
 
 test("gear data defines D&D equipment packs as Rebreya containers", () => {
