@@ -1,4 +1,4 @@
-import { CLASS_FEATURES_COMPENDIUM_NAME, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
+import { CLASS_FEATURES_COMPENDIUM_NAME, CLASSES_COMPENDIUM_NAME, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import {
   getClassStartingEquipmentConfig,
   getClassStartingEquipmentPackage,
@@ -10,8 +10,14 @@ const EFFECT_MODE_OVERRIDE = 5;
 const LAST_ATTACK_MAX_AGE_MS = 120000;
 const BLOODIED_STATUS_IDS = new Set(["bloodied", "rebreya-bloodied"]);
 const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
+const REBREYA_CLASS_IDENTIFIERS = new Set([
+  "barbarian-rework-v012",
+  FIGHTER_CLASS_IDENTIFIER,
+  "paladin-rework-v01"
+]);
 const FIGHTER_DOMINANCE_FEATURE_ID = "fighter-dominance";
 const FIGHTER_STARTING_EQUIPMENT_PROMPT_FLAG = "startingEquipmentPrompted";
+const REBREYA_CLASSES_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
 const FIGHTER_GEAR_PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const SECOND_WIND_USES_RECOVERY = Object.freeze([{
   period: "lr",
@@ -88,6 +94,44 @@ function collectionValues(collection) {
   }
 
   return [];
+}
+
+function advancementDataArray(value) {
+  return collectionValues(value)
+    .map((entry) => {
+      if (typeof entry?.toObject === "function") {
+        return entry.toObject();
+      }
+
+      if (typeof entry?.toJSON === "function") {
+        return entry.toJSON();
+      }
+
+      return entry;
+    })
+    .filter(Boolean);
+}
+
+function advancementId(advancement) {
+  return cleanText(advancement?._id ?? advancement?.id);
+}
+
+function mergeClassAdvancementData(currentAdvancements, sourceAdvancements) {
+  const currentById = new Map(
+    advancementDataArray(currentAdvancements)
+      .map((advancement) => [advancementId(advancement), advancement])
+      .filter(([id]) => id)
+  );
+
+  return advancementDataArray(sourceAdvancements)
+    .map((sourceAdvancement) => {
+      const nextAdvancement = foundry.utils.deepClone(sourceAdvancement);
+      const currentAdvancement = currentById.get(advancementId(sourceAdvancement));
+      if (currentAdvancement && Object.hasOwn(currentAdvancement, "value")) {
+        nextAdvancement.value = foundry.utils.deepClone(currentAdvancement.value ?? {});
+      }
+      return nextAdvancement;
+    });
 }
 
 function createDocumentId() {
@@ -285,6 +329,7 @@ export class FighterAutomationService {
     this._lastAttacks = new Map();
     this._ironWillTurnPrompts = new Set();
     this._ironWillNextSavePending = new Set();
+    this._classAdvancementSourcesPromise = null;
     this._options = options;
   }
 
@@ -463,6 +508,8 @@ export class FighterAutomationService {
     if (!(actor instanceof Actor)) {
       return false;
     }
+
+    await this.#repairClassAdvancementLinks(actor);
 
     const secondWind = this.#findSecondWind(actor);
     if (secondWind) {
@@ -880,6 +927,92 @@ export class FighterAutomationService {
     }
 
     return maxUses;
+  }
+
+  async #repairClassAdvancementLinks(actor) {
+    const classItems = collectionValues(actor?.items)
+      .filter((item) => item?.type === "class")
+      .map((item) => [item, this.#classIdentifier(item)])
+      .filter(([, classIdentifier]) => REBREYA_CLASS_IDENTIFIERS.has(classIdentifier));
+    if (!classItems.length) {
+      return false;
+    }
+
+    const sourceAdvancementByClass = await this.#classAdvancementSources();
+    if (!sourceAdvancementByClass.size) {
+      return false;
+    }
+
+    let changed = false;
+    for (const [item, classIdentifier] of classItems) {
+      const sourceAdvancement = sourceAdvancementByClass.get(classIdentifier);
+      if (!sourceAdvancement?.length) {
+        continue;
+      }
+
+      const mergedAdvancement = mergeClassAdvancementData(item.system?.advancement, sourceAdvancement);
+      if (
+        !mergedAdvancement.length
+        || JSON.stringify(advancementDataArray(item.system?.advancement)) === JSON.stringify(mergedAdvancement)
+      ) {
+        continue;
+      }
+
+      const patch = { "system.advancement": mergedAdvancement };
+      if (typeof item.update === "function") {
+        await item.update(patch);
+      }
+      else {
+        foundry.utils.setProperty(item, "system.advancement", mergedAdvancement);
+      }
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  async #classAdvancementSources() {
+    if (typeof this._options.resolveClassAdvancementSources === "function") {
+      return this._options.resolveClassAdvancementSources();
+    }
+
+    this._classAdvancementSourcesPromise ??= this.#loadClassAdvancementSources();
+    const sources = await this._classAdvancementSourcesPromise;
+    if (!sources.size) {
+      this._classAdvancementSourcesPromise = null;
+    }
+    return sources;
+  }
+
+  async #loadClassAdvancementSources() {
+    const pack = game.packs?.get?.(REBREYA_CLASSES_PACK_ID) ?? null;
+    if (!pack || typeof pack.getDocuments !== "function") {
+      return new Map();
+    }
+
+    const documents = await pack.getDocuments();
+    const advancementByClass = new Map();
+    for (const document of collectionValues(documents)) {
+      const classIdentifier = this.#classIdentifier(document);
+      if (!REBREYA_CLASS_IDENTIFIERS.has(classIdentifier)) {
+        continue;
+      }
+
+      const advancement = advancementDataArray(document.system?.advancement);
+      if (advancement.length) {
+        advancementByClass.set(classIdentifier, foundry.utils.deepClone(advancement));
+      }
+    }
+
+    return advancementByClass;
+  }
+
+  #classIdentifier(item) {
+    return cleanText(
+      readDocumentFlag(item, "classIdentifier")
+      ?? item?.system?.identifier
+      ?? item?.identifier
+    );
   }
 
   async #repairManeuverSections(actor) {

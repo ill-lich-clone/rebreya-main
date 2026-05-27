@@ -58,9 +58,9 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 11;
+const CLASS_FEATURE_TEMPLATE_VERSION = 12;
 const SUBCLASS_TEMPLATE_VERSION = 3;
-const CLASS_TEMPLATE_VERSION = 4;
+const CLASS_TEMPLATE_VERSION = 5;
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 
 const DEFAULT_CLASS_ICON = "icons/svg/book.svg";
@@ -2336,6 +2336,13 @@ function shouldRebuildManagedPack(documents, entries, sourceIdFlag) {
   return false;
 }
 
+export function getManagedDocumentCreateOptions(pack) {
+  return {
+    pack: pack.collection,
+    keepId: true
+  };
+}
+
 async function createManagedDocuments(pack, entries, createData) {
   if (!entries.length) {
     return;
@@ -2353,7 +2360,7 @@ async function createManagedDocuments(pack, entries, createData) {
   }
 
   const documentsData = entries.map((entry) => createData(entry, folderIdByPath));
-  await Item.implementation.createDocuments(documentsData, { pack: pack.collection });
+  await Item.implementation.createDocuments(documentsData, getManagedDocumentCreateOptions(pack));
 }
 
 function buildTraitAdvancement({

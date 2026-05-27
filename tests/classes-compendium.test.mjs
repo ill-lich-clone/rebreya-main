@@ -24,6 +24,7 @@ const {
   buildSubclassAdvancements,
   createClassSystem,
   createFeatureEntryData,
+  getManagedDocumentCreateOptions,
   createPackMetadata,
   createSubclassSystem,
   normalizeClassCompendiumData
@@ -326,7 +327,7 @@ test("paladin feature definitions include two preset starting equipment packages
   assert.deepEqual(packageDefinitions[1].startingEquipmentPackage.currency, { gp: 150 });
 });
 
-test("paladin advancement exposes class grants, fighting style, spells, minor feats, and equipment package choice", () => {
+test("paladin advancement exposes class grants, fighting style, minor feats, and equipment package choice", () => {
   const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const featureDefinitions = buildFeatureDefinitions(paladin);
   const featureUuidById = makeUuidMap(featureDefinitions);
@@ -339,7 +340,7 @@ test("paladin advancement exposes class grants, fighting style, spells, minor fe
 
   const subclass = advancement.find((entry) => entry.type === "Subclass");
   const styleChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Боевой стиль");
-  const spellChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Заклинания");
+  const spellChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.configuration.type === "spell");
   const equipmentChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Стартовое снаряжение");
   const minorFeatChoices = advancement.filter((entry) => entry.type === "ItemChoice" && entry.title.startsWith("Младшая черта"));
   const levelOneGrant = advancement.find((entry) => entry.type === "ItemGrant" && entry.level === 1);
@@ -357,34 +358,20 @@ test("paladin advancement exposes class grants, fighting style, spells, minor fe
     ))?.styleName),
     ["Обычный стиль", "Стиль паладина"]
   );
-  assert.equal(spellChoice.level, 2);
-  assert.equal(spellChoice.configuration.type, "spell");
-  assert.deepEqual(spellChoice.configuration.restriction, {
-    level: "available",
-    list: ["class:paladin"],
-    subtype: "",
-    type: ""
-  });
-  assert.deepEqual(spellChoice.configuration.spell, {
-    ability: ["cha"],
-    method: "spell",
-    prepared: 2,
-    uses: {
-      max: "",
-      per: "",
-      requireSlot: true
-    }
-  });
-  assert.deepEqual(spellChoice.configuration.choices["2"], { count: 2, replacement: false });
-  assert.deepEqual(spellChoice.configuration.choices["3"], { count: null, replacement: true });
-  assert.deepEqual(spellChoice.configuration.choices["4"], { count: 1, replacement: true });
-  assert.deepEqual(spellChoice.configuration.choices["20"], { count: 1, replacement: true });
+  assert.equal(spellChoice, undefined);
   assert.equal(equipmentChoice.level, 1);
   assert.match(equipmentChoice.hint, /Выберите А или Б:/u);
   assert.deepEqual(equipmentChoice.value, { added: { "1": {} }, replaced: {} });
   assert.equal(minorFeatChoices.length, 6);
   assert.equal(levelOneGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("paladin-rework-v01::class::paladin-divine-sense")), true);
   assert.equal(levelTwoGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("paladin-rework-v01::class::paladin-divine-smite")), true);
+});
+
+test("managed class compendium documents preserve stable ids when created", () => {
+  assert.deepEqual(
+    getManagedDocumentCreateOptions({ collection: "world.rebreya-class-features" }),
+    { pack: "world.rebreya-class-features", keepId: true }
+  );
 });
 
 test("paladin normal fighting style item offers fighter styles and paladin style is a stub", () => {

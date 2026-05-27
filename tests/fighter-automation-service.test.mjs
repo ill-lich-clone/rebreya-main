@@ -1185,6 +1185,100 @@ test("fighter actor repair moves orphaned starting equipment pack contents into 
   assert.deepEqual(torch.updates, [{ "system.container": "pack" }]);
 });
 
+test("actor repair refreshes Rebreya class advancement links from the class compendium", async () => {
+  const previousPacks = game.packs;
+  const staleGrant = {
+    _id: "class-grant-2",
+    type: "ItemGrant",
+    level: 2,
+    title: "Классовые умения (2-й уровень)",
+    configuration: {
+      items: [{ uuid: "Compendium.world.rebreya-class-features.Item.missingFeature" }]
+    },
+    value: { added: { "2": { old: "kept" } } }
+  };
+  const staleSpellChoice = {
+    _id: "spells",
+    type: "ItemChoice",
+    level: 2,
+    title: "Заклинания",
+    configuration: {
+      type: "spell"
+    },
+    value: { added: { "2": { spell: "Compendium.dnd5e.spells.Item.old" } } }
+  };
+  const freshGrant = {
+    _id: "class-grant-2",
+    type: "ItemGrant",
+    level: 2,
+    title: "Классовые умения (2-й уровень)",
+    configuration: {
+      items: [{ uuid: "Compendium.world.rebreya-class-features.Item.paladinDivineSmite" }]
+    },
+    value: {}
+  };
+  const freshStyleChoice = {
+    _id: "fighting-style",
+    type: "ItemChoice",
+    level: 2,
+    title: "Боевой стиль",
+    configuration: {
+      type: "feat",
+      pool: [{ uuid: "Compendium.world.rebreya-class-features.Item.paladinCommonStyle" }]
+    },
+    value: {}
+  };
+  const classItem = makeItem({
+    id: "paladin-class",
+    name: "Паладин (реворк V0.1)",
+    type: "class",
+    system: {
+      identifier: "paladin-rework-v01",
+      advancement: [staleGrant, staleSpellChoice]
+    },
+    flags: {
+      "rebreya-main": {
+        classIdentifier: "paladin-rework-v01"
+      }
+    }
+  });
+  const actor = new TestActor({ id: "paladin", name: "Паладин", items: [classItem] });
+  game.packs = {
+    get: (packId) => packId === "world.rebreya-classes"
+      ? {
+          getDocuments: async () => [{
+            system: {
+              identifier: "paladin-rework-v01",
+              advancement: [freshGrant, freshStyleChoice]
+            },
+            getFlag: (scope, key) => scope === "rebreya-main" && key === "classIdentifier"
+              ? "paladin-rework-v01"
+              : undefined
+          }]
+        }
+      : null
+  };
+
+  try {
+    const service = new FighterAutomationService({});
+    await service.repairActor(actor);
+
+    assert.deepEqual(classItem.system.advancement, [{
+      ...freshGrant,
+      value: staleGrant.value
+    }, freshStyleChoice]);
+    assert.deepEqual(classItem.updates, [{
+      "system.advancement": [{
+        ...freshGrant,
+        value: staleGrant.value
+      }, freshStyleChoice]
+    }]);
+  }
+  finally {
+    game.packs = previousPacks;
+  }
+});
+
 test("fighter long rest keeps the selected multiattack variant and deletes the others", async () => {
   const actionSurge = makeItem({
     id: "action-surge",
