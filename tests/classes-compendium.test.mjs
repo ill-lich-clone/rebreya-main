@@ -335,7 +335,11 @@ test("paladin advancement exposes class grants, fighting style, minor feats, and
     featureUuidById,
     classFeatureEntries: paladin.classData.features,
     minorFeatUuids: ["Compendium.world.rebreya-feats.Item.minor"],
-    fightingStyleEntries: paladin.fightingStyles
+    fightingStyleEntries: paladin.fightingStyles,
+    fightingStyleFeatUuids: [
+      "Compendium.world.rebreya-feats.Item.defense",
+      "Compendium.world.rebreya-feats.Item.dueling"
+    ]
   });
 
   const subclass = advancement.find((entry) => entry.type === "Subclass");
@@ -353,10 +357,12 @@ test("paladin advancement exposes class grants, fighting style, minor feats, and
   assert.equal(styleChoice.level, 2);
   assert.equal(styleChoice.configuration.choices["2"].count, 1);
   assert.deepEqual(
-    styleChoice.configuration.pool.map((entry) => featureDefinitions.find((definition) => (
-      featureUuidById.get(definition.featureId) === entry.uuid
-    ))?.styleName),
-    ["Обычный стиль", "Стиль паладина"]
+    styleChoice.configuration.pool.map((entry) => entry.uuid),
+    [
+      "Compendium.world.rebreya-feats.Item.defense",
+      "Compendium.world.rebreya-feats.Item.dueling",
+      featureUuidById.get("paladin-rework-v01::fightingStyle::paladin-blessed-warrior")
+    ]
   );
   assert.equal(spellChoice, undefined);
   assert.equal(equipmentChoice.level, 1);
@@ -374,7 +380,7 @@ test("managed class compendium documents preserve stable ids when created", () =
   );
 });
 
-test("paladin normal fighting style item offers fighter styles and paladin style is a stub", () => {
+test("paladin fighting style choice is a flat list of style feats plus paladin style", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
   const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const featureDefinitions = [
@@ -382,35 +388,49 @@ test("paladin normal fighting style item offers fighter styles and paladin style
     ...buildFeatureDefinitions(paladin)
   ];
   const featureUuidById = makeUuidMap(featureDefinitions);
-  const normalStyle = featureDefinitions.find((definition) => (
-    definition.sourceType === "fightingStyle"
-    && definition.classIdentifier === "paladin-rework-v01"
-    && definition.styleName === "Обычный стиль"
-  ));
   const paladinStyle = featureDefinitions.find((definition) => (
     definition.sourceType === "fightingStyle"
     && definition.classIdentifier === "paladin-rework-v01"
     && definition.styleName === "Стиль паладина"
   ));
-
-  const normalStyleEntry = createFeatureEntryData(normalStyle, new Map(), null, {
-    featureDefinitions,
-    featureUuidById
-  });
   const paladinStyleEntry = createFeatureEntryData(paladinStyle, new Map(), null, {
     featureDefinitions,
     featureUuidById
   });
-  const commonStyleChoice = normalStyleEntry.system.advancement.find((advancement) => (
-    advancement.type === "ItemChoice" && advancement.title === "Обычный боевой стиль"
-  ));
   const fighterStyleUuids = buildFeatureDefinitions(fighter)
     .filter((definition) => definition.sourceType === "fightingStyle")
     .map((definition) => featureUuidById.get(definition.featureId));
+  const fightingStyleFeatUuids = [
+    "Compendium.world.rebreya-feats.Item.defense",
+    "Compendium.world.rebreya-feats.Item.dueling",
+    "Compendium.world.rebreya-feats.Item.blind-fighting"
+  ];
+  const advancement = buildClassAdvancement(paladin.classData, {
+    featureUuidById,
+    classFeatureEntries: paladin.classData.features,
+    fightingStyleEntries: paladin.fightingStyles,
+    fightingStyleFeatUuids
+  });
+  const styleChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Боевой стиль");
 
-  assert.equal(commonStyleChoice.level, 0);
-  assert.equal(commonStyleChoice.configuration.choices["0"].count, 1);
-  assert.deepEqual(commonStyleChoice.configuration.pool.map((entry) => entry.uuid), fighterStyleUuids);
+  assert.deepEqual(
+    featureDefinitions
+      .filter((definition) => (
+        definition.sourceType === "fightingStyle"
+        && definition.classIdentifier === "paladin-rework-v01"
+      ))
+      .map((definition) => definition.styleName),
+    ["Стиль паладина"]
+  );
+  assert.equal(styleChoice.level, 2);
+  assert.deepEqual(styleChoice.configuration.pool.map((entry) => entry.uuid), [
+    ...fightingStyleFeatUuids,
+    featureUuidById.get("paladin-rework-v01::fightingStyle::paladin-blessed-warrior")
+  ]);
+  assert.equal(
+    styleChoice.configuration.pool.some((entry) => fighterStyleUuids.includes(entry.uuid)),
+    false
+  );
   for (const fighterStyle of buildFeatureDefinitions(fighter).filter((definition) => definition.sourceType === "fightingStyle")) {
     const fighterStyleEntry = createFeatureEntryData(fighterStyle, new Map(), null, {
       featureDefinitions,
@@ -423,6 +443,66 @@ test("paladin normal fighting style item offers fighter styles and paladin style
     false
   );
   assert.match(paladinStyleEntry.system.description.value, /Благословенный воин/u);
+});
+
+test("paladin divine smite variants are separate class and oath feature items", () => {
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
+  const featureDefinitions = buildFeatureDefinitions(paladin);
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const classAdvancement = buildClassAdvancement(paladin.classData, {
+    featureUuidById,
+    classFeatureEntries: paladin.classData.features
+  });
+  const devotion = paladin.subclasses.find((subclass) => subclass.subclassId === "paladin-oath-devotion");
+  const devotionAdvancement = buildSubclassAdvancements(devotion, { featureUuidById });
+
+  const smiteNames = [
+    "Священная божественная кара",
+    "Защитная кара",
+    "Клеймящая кара",
+    "Останавливающая кара",
+    "Толкающая кара",
+    "Опрокидывающая кара",
+    "Гнилая божественная кара",
+    "Гневная кара",
+    "Дальнобойная божественная кара",
+    "Скрытная божественная кара",
+    "Разрушающая кара",
+    "Созидающая кара",
+    "Кара обвинения",
+    "Кара задержания",
+    "Небесная кара",
+    "Оглушающая кара",
+    "Запечатывающая кара",
+    "Изгоняющая кара"
+  ];
+  const definitionNames = new Set(featureDefinitions.map((definition) => definition.name));
+  for (const name of smiteNames) {
+    assert.equal(definitionNames.has(name), true, `${name} должен быть отдельным умением`);
+  }
+
+  const levelElevenGrant = classAdvancement.find((entry) => entry.type === "ItemGrant" && entry.level === 11);
+  const levelSeventeenGrant = classAdvancement.find((entry) => entry.type === "ItemGrant" && entry.level === 17);
+  const devotionGrant = devotionAdvancement.find((entry) => entry.type === "ItemGrant" && entry.level === 3);
+
+  assert.deepEqual(
+    ["paladin-heavenly-smite", "paladin-stunning-smite"].map((id) => (
+      levelElevenGrant.configuration.items.some((item) => item.uuid === featureUuidById.get(`paladin-rework-v01::class::${id}`))
+    )),
+    [true, true]
+  );
+  assert.deepEqual(
+    ["paladin-sealing-smite", "paladin-banishing-smite"].map((id) => (
+      levelSeventeenGrant.configuration.items.some((item) => item.uuid === featureUuidById.get(`paladin-rework-v01::class::${id}`))
+    )),
+    [true, true]
+  );
+  assert.deepEqual(
+    ["devotion-sacred-divine-smite", "devotion-protective-smite"].map((id) => (
+      devotionGrant.configuration.items.some((item) => item.uuid === featureUuidById.get(`paladin-oath-devotion::subclass::${id}`))
+    )),
+    [true, true]
+  );
 });
 
 test("shared class feature icons resolve from common icon names", () => {

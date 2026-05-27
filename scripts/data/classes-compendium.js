@@ -58,9 +58,9 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 12;
+const CLASS_FEATURE_TEMPLATE_VERSION = 13;
 const SUBCLASS_TEMPLATE_VERSION = 3;
-const CLASS_TEMPLATE_VERSION = 5;
+const CLASS_TEMPLATE_VERSION = 6;
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 
 const DEFAULT_CLASS_ICON = "icons/svg/book.svg";
@@ -2820,6 +2820,7 @@ async function buildFeatLookup() {
   if (!pack) {
     return {
       minorFeatUuids: [],
+      fightingStyleFeatUuids: [],
       byName: new Map()
     };
   }
@@ -2831,6 +2832,7 @@ async function buildFeatLookup() {
     ]
   });
   const minorFeatRecords = [];
+  const fightingStyleFeatRecords = [];
   const allFeatRecords = [];
   const byName = new Map();
 
@@ -2854,6 +2856,12 @@ async function buildFeatLookup() {
     });
     if (record.section === MINOR_FEATS_SECTION) {
       minorFeatRecords.push({
+        uuid: record.uuid,
+        sortName
+      });
+    }
+    if (record.section === FIGHTING_STYLE_FEATS_SECTION) {
+      fightingStyleFeatRecords.push({
         uuid: record.uuid,
         sortName
       });
@@ -2883,12 +2891,14 @@ async function buildFeatLookup() {
   if (normalizedMinor.length) {
     return {
       minorFeatUuids: normalizedMinor,
+      fightingStyleFeatUuids: sortRecords(fightingStyleFeatRecords),
       byName
     };
   }
 
   return {
     minorFeatUuids: sortRecords(allFeatRecords),
+    fightingStyleFeatUuids: sortRecords(fightingStyleFeatRecords),
     byName
   };
 }
@@ -2903,6 +2913,7 @@ export function buildClassAdvancement(classData, context = {}) {
     classFeatureEntries = [],
     rageActionEntries = [],
     minorFeatUuids = [],
+    fightingStyleFeatUuids = [],
     rageProgression = {},
     rageDamageProgression = {},
     fightingStyleEntries = [],
@@ -3121,9 +3132,18 @@ export function buildClassAdvancement(classData, context = {}) {
     advancements.push(spellChoiceAdvancement);
   }
 
-  const fightingStylePool = fightingStyleEntries
+  const fightingStyleFeaturePool = fightingStyleEntries
     .map((entry) => featureUuidById.get(`${classIdentifier}::fightingStyle::${entry.featureId}`))
     .filter(Boolean);
+  const fightingStylePool = classIdentifier === "paladin-rework-v01"
+    ? [
+      ...unique(fightingStyleFeatUuids),
+      ...fightingStyleEntries
+        .filter((entry) => normalizeMatchText(entry.name) === "стиль паладина")
+        .map((entry) => featureUuidById.get(`${classIdentifier}::fightingStyle::${entry.featureId}`))
+        .filter(Boolean)
+    ]
+    : fightingStyleFeaturePool;
 
   if (fightingStylePool.length) {
     const fightingStyleLevel = Math.min(...fightingStyleEntries
@@ -3676,6 +3696,7 @@ async function syncClassesPack(normalizedDataList, context) {
       rageProgression: normalizedData.rageProgression,
       rageDamageProgression: normalizedData.rageDamageProgression,
       fightingStyleEntries: normalizedData.fightingStyles,
+      fightingStyleFeatUuids: context.fightingStyleFeatUuids,
       dominanceProgression: normalizedData.dominanceProgression
     });
     const classSystem = createClassSystem(normalizedData.classData, classAdvancement, normalizedData.sourceLabel);
@@ -3751,6 +3772,7 @@ export class ClassesCompendiumService {
     const classesPack = await syncClassesPack(normalizedData, {
       featureUuidById,
       minorFeatUuids: featLookup.minorFeatUuids,
+      fightingStyleFeatUuids: featLookup.fightingStyleFeatUuids,
       iconLookup
     });
 

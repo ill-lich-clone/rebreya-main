@@ -20,6 +20,7 @@ import { registerCombatHooks } from "./combat/hooks.js";
 import { CombatAttackService } from "./combat/attack-service.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js";
+import { PaladinAutomationService } from "./combat/paladin-automation-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
 import { registerSceneControlsHook } from "./hooks.js";
 import {
@@ -162,6 +163,7 @@ class RebreyaMainModule {
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.fighterAutomationService = new FighterAutomationService(this);
+    this.paladinAutomationService = new PaladinAutomationService(this);
     this.raceAutomationService = new RaceAutomationService(this);
     this.featChoiceAutomationService = new FeatChoiceAutomationService(this);
     this.repository.setGlobalEventsService(this.globalEventsService);
@@ -226,6 +228,13 @@ class RebreyaMainModule {
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize fighter automation service.`, error);
+    }
+
+    try {
+      await this.paladinAutomationService.initialize();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to initialize paladin automation service.`, error);
     }
 
     try {

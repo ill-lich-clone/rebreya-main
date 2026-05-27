@@ -7,7 +7,8 @@ export function registerCombatHooks(moduleApi) {
   const hasAttackService = Boolean(moduleApi?.combatAttackService);
   const hasRaceService = Boolean(moduleApi?.raceAutomationService);
   const hasFighterService = Boolean(moduleApi?.fighterAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService) {
+  const hasPaladinService = Boolean(moduleApi?.paladinAutomationService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService) {
     return;
   }
 
@@ -338,6 +339,14 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to capture fighter MIDI workflow.`, error);
         return true;
       }
+    });
+  }
+
+  if (hasPaladinService) {
+    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
+      moduleApi.paladinAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply paladin rest automation.`, error);
+      });
     });
   }
 }
