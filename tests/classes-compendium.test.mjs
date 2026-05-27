@@ -424,6 +424,13 @@ test("paladin normal fighting style item offers fighter styles and paladin style
   assert.equal(commonStyleChoice.level, 0);
   assert.equal(commonStyleChoice.configuration.choices["0"].count, 1);
   assert.deepEqual(commonStyleChoice.configuration.pool.map((entry) => entry.uuid), fighterStyleUuids);
+  for (const fighterStyle of buildFeatureDefinitions(fighter).filter((definition) => definition.sourceType === "fightingStyle")) {
+    const fighterStyleEntry = createFeatureEntryData(fighterStyle, new Map(), null, {
+      featureDefinitions,
+      featureUuidById
+    });
+    assert.equal(fighterStyleEntry.system.prerequisites.level, 0);
+  }
   assert.equal(
     paladinStyleEntry.system.advancement.some((advancement) => advancement.type === "ItemChoice"),
     false

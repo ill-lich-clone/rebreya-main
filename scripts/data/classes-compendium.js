@@ -58,7 +58,7 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 10;
+const CLASS_FEATURE_TEMPLATE_VERSION = 11;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CLASS_TEMPLATE_VERSION = 4;
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
@@ -2108,6 +2108,9 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null,
   const usesRecovery = Array.isArray(automation?.usesRecovery) && automation.usesRecovery.length
     ? foundry.utils.deepClone(automation.usesRecovery)
     : defaultRecovery;
+  const prerequisitesLevel = feature.sourceType === "fightingStyle"
+    ? 0
+    : Math.max(0, Math.floor(parseNumber(feature.requiredLevel, 0)));
 
   return {
     description: {
@@ -2123,7 +2126,7 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null,
     requirements: buildSubtypeRequirementsLabel(feature),
     prerequisites: {
       items: [],
-      level: Math.max(0, Math.floor(parseNumber(feature.requiredLevel, 0))),
+      level: prerequisitesLevel,
       repeatable: false
     },
     properties: [],

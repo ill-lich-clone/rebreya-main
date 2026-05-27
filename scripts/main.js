@@ -25,7 +25,7 @@ import { registerSceneControlsHook } from "./hooks.js";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
-  registerRebreyaWeaponBaseItems
+  registerRebreyaWeaponBaseItemsFromGearPack
 } from "./integrations/dnd5e-sheet-extensions.js";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
@@ -566,7 +566,7 @@ class RebreyaMainModule {
 
     try {
       await this.gearCompendium.sync(model.gear);
-      registerRebreyaWeaponBaseItems();
+      await registerRebreyaWeaponBaseItemsFromGearPack();
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync gear compendium.`, error);

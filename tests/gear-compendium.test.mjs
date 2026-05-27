@@ -4,14 +4,17 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createDnd5eItemData } from "../scripts/data/gear-compendium.js";
+import {
+  createDnd5eItemData,
+  getPrimaryGearDocumentCreateOptions
+} from "../scripts/data/gear-compendium.js";
 import { buildNamedIconLookup } from "../scripts/data/compendium-utils.js";
 import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
 import { getRebreyaWeaponBaseItemDefinitions } from "../scripts/data/item-classification.js";
 import { normalizeEconomyDataset } from "../scripts/data/normalizer.js";
 import {
   buildRebreyaWeaponIdsConfig,
-  registerRebreyaWeaponBaseItems
+  registerRebreyaWeaponBaseItemsFromGearPack
 } from "../scripts/integrations/dnd5e-sheet-extensions.js";
 
 const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
@@ -338,7 +341,22 @@ test("ordinary weapons from the weapon sheet use registered dnd5e base weapon id
   }
 });
 
-test("Rebreya weapon base items register only after the gear pack exists", () => {
+test("Rebreya weapon ids can point at live gear documents instead of predicted ids", () => {
+  const weaponIdsConfig = buildRebreyaWeaponIdsConfig(new Map([
+    ["katana", "Compendium.world.rebreya-gear.Item.liveKatanaDoc"]
+  ]));
+
+  assert.equal(
+    weaponIdsConfig.katana,
+    "Compendium.world.rebreya-gear.Item.liveKatanaDoc"
+  );
+  assert.equal(
+    weaponIdsConfig.palash,
+    `Compendium.world.rebreya-gear.Item.${createStableGearDocumentId("palash")}`
+  );
+});
+
+test("Rebreya weapon base items register from the live gear pack index", async () => {
   const previousGame = globalThis.game;
   const previousConfig = globalThis.CONFIG;
   globalThis.game = {
@@ -354,20 +372,49 @@ test("Rebreya weapon base items register only after the gear pack exists", () =>
   };
 
   try {
-    assert.equal(registerRebreyaWeaponBaseItems(), false);
+    assert.equal(await registerRebreyaWeaponBaseItemsFromGearPack(), false);
     assert.equal(CONFIG.DND5E.weaponIds.katana, undefined);
 
-    globalThis.game.packs.get = (packId) => packId === "world.rebreya-gear" ? {} : null;
-    assert.equal(registerRebreyaWeaponBaseItems(), true);
+    globalThis.game.packs.get = (packId) => packId === "world.rebreya-gear"
+      ? {
+          collection: "world.rebreya-gear",
+          getIndex: async () => [
+            {
+              _id: "liveKatanaDoc",
+              uuid: "Compendium.world.rebreya-gear.Item.liveKatanaDoc",
+              name: "Катана",
+              flags: {
+                "rebreya-main": {
+                  gearId: "katana",
+                  sourceType: "gear"
+                }
+              },
+              system: {
+                type: {
+                  baseItem: "katana"
+                }
+              }
+            }
+          ]
+        }
+      : null;
+    assert.equal(await registerRebreyaWeaponBaseItemsFromGearPack(), true);
     assert.equal(
       CONFIG.DND5E.weaponIds.katana,
-      `Compendium.world.rebreya-gear.Item.${createStableGearDocumentId("katana")}`
+      "Compendium.world.rebreya-gear.Item.liveKatanaDoc"
     );
   }
   finally {
     globalThis.game = previousGame;
     globalThis.CONFIG = previousConfig;
   }
+});
+
+test("primary gear compendium documents preserve stable ids when created", () => {
+  assert.deepEqual(
+    getPrimaryGearDocumentCreateOptions({ collection: "world.rebreya-gear" }),
+    { pack: "world.rebreya-gear", keepId: true }
+  );
 });
 
 test("gear signatures include stable document ids so old compendium documents rebuild", () => {

@@ -20,7 +20,7 @@ const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const GEAR_TEMPLATE_VERSION = 10;
+const GEAR_TEMPLATE_VERSION = 11;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const CUSTOM_GEAR_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const GEAR_ICON_SEARCH_PATHS = [
@@ -696,6 +696,39 @@ function getDesiredPackMetadata() {
   };
 }
 
+async function syncGearPackMetadata(pack, metadata) {
+  if (!pack || typeof pack.configure !== "function") {
+    return;
+  }
+
+  const desiredDnd5eFlags = metadata.flags?.dnd5e ?? {};
+  const currentSourceBook = cleanString(foundry.utils.getProperty(pack, "metadata.flags.dnd5e.sourceBook"));
+  const desiredSourceBook = cleanString(desiredDnd5eFlags.sourceBook);
+  const currentTypes = foundry.utils.getProperty(pack, "metadata.flags.dnd5e.types") ?? [];
+  const desiredTypes = Array.isArray(desiredDnd5eFlags.types) ? desiredDnd5eFlags.types : [];
+  if (
+    currentSourceBook === desiredSourceBook
+    && JSON.stringify(currentTypes) === JSON.stringify(desiredTypes)
+  ) {
+    return;
+  }
+
+  try {
+    await pack.configure({
+      flags: {
+        ...(pack.metadata?.flags ?? {}),
+        dnd5e: {
+          ...(pack.metadata?.flags?.dnd5e ?? {}),
+          ...desiredDnd5eFlags
+        }
+      }
+    });
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to update gear compendium metadata.`, error);
+  }
+}
+
 async function ensureGearPack() {
   const desired = getDesiredPackMetadata();
   let pack = game.packs.get(PACK_ID);
@@ -716,6 +749,9 @@ async function ensureGearPack() {
 
   if (!pack) {
     pack = await foundry.documents.collections.CompendiumCollection.createCompendium(desired);
+  }
+  else {
+    await syncGearPackMetadata(pack, desired);
   }
 
   try {
@@ -866,6 +902,13 @@ async function syncManagedDocumentIcons(pack, documents, iconLookup) {
   await Item.implementation.updateDocuments(updates, { pack: pack.collection });
 }
 
+export function getPrimaryGearDocumentCreateOptions(pack) {
+  return {
+    pack: pack.collection,
+    keepId: true
+  };
+}
+
 async function createManagedDocuments(pack, gear, iconLookup = null) {
   if (!gear.length) {
     return;
@@ -884,7 +927,7 @@ async function createManagedDocuments(pack, gear, iconLookup = null) {
 
   const createdDocuments = await Item.implementation.createDocuments(
     gear.map((item) => createDnd5eItemData(item, folderIdByPath, iconLookup)),
-    { pack: pack.collection }
+    getPrimaryGearDocumentCreateOptions(pack)
   );
   const createdByGearId = new Map(
     collectionValues(createdDocuments)

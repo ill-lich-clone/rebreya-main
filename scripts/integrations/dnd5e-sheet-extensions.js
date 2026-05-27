@@ -2876,20 +2876,111 @@ function bindItemSheetEnhancements(root, app) {
   upsertWeaponAttackTraitsField(root, app);
 }
 
-export function buildRebreyaWeaponIdsConfig() {
+function cleanConfigString(value) {
+  return String(value ?? "").trim();
+}
+
+function collectionValues(collection) {
+  if (!collection) {
+    return [];
+  }
+
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+
+  if (typeof collection.values === "function") {
+    return Array.from(collection.values());
+  }
+
+  return Array.from(collection);
+}
+
+function getIndexRowProperty(row, path) {
+  return foundry.utils.getProperty?.(row, path) ?? path.split(".").reduce((current, part) => (
+    current && typeof current === "object" ? current[part] : undefined
+  ), row);
+}
+
+function getIndexRowUuid(pack, row) {
+  const rowUuid = cleanConfigString(row?.uuid);
+  if (rowUuid) {
+    return rowUuid;
+  }
+
+  const documentId = cleanConfigString(row?._id ?? row?.id);
+  const collection = cleanConfigString(pack?.collection);
+  return documentId && collection ? `Compendium.${collection}.Item.${documentId}` : "";
+}
+
+function buildGearDocumentUuidByGearId(pack, index) {
+  const uuidByGearId = new Map();
+  for (const row of collectionValues(index)) {
+    const gearId = cleanConfigString(getIndexRowProperty(row, `flags.${MODULE_ID}.gearId`));
+    if (!gearId || uuidByGearId.has(gearId)) {
+      continue;
+    }
+
+    const sourceType = cleanConfigString(getIndexRowProperty(row, `flags.${MODULE_ID}.sourceType`));
+    if (sourceType && sourceType !== "gear") {
+      continue;
+    }
+
+    const uuid = getIndexRowUuid(pack, row);
+    if (uuid) {
+      uuidByGearId.set(gearId, uuid);
+    }
+  }
+
+  return uuidByGearId;
+}
+
+export function buildRebreyaWeaponIdsConfig(gearDocumentUuidByGearId = new Map()) {
   return Object.fromEntries(getRebreyaWeaponBaseItemDefinitions()
     .map((definition) => [
       definition.baseItem,
-      `Compendium.world.${GEAR_COMPENDIUM_NAME}.Item.${createStableGearDocumentId(definition.gearId)}`
+      gearDocumentUuidByGearId.get(definition.gearId)
+        ?? `Compendium.world.${GEAR_COMPENDIUM_NAME}.Item.${createStableGearDocumentId(definition.gearId)}`
     ]));
 }
 
-export function registerRebreyaWeaponBaseItems() {
-  if (!isDnd5eWorld() || !CONFIG.DND5E) {
-    return false;
+function buildRebreyaWeaponIdsConfigFromGearPackIndex(pack, index) {
+  if (!pack) {
+    return null;
   }
 
-  if (!game.packs?.get?.(`world.${GEAR_COMPENDIUM_NAME}`)) {
+  const uuidByGearId = buildGearDocumentUuidByGearId(pack, index);
+  if (!uuidByGearId.size) {
+    return null;
+  }
+
+  return buildRebreyaWeaponIdsConfig(uuidByGearId);
+}
+
+async function buildRebreyaWeaponIdsConfigFromGearPack(pack) {
+  const cachedConfig = buildRebreyaWeaponIdsConfigFromGearPackIndex(pack, pack?.index);
+  if (cachedConfig) {
+    return cachedConfig;
+  }
+
+  if (!pack) {
+    return null;
+  }
+
+  const index = typeof pack.getIndex === "function"
+    ? await pack.getIndex({
+        fields: [
+          `flags.${MODULE_ID}.gearId`,
+          `flags.${MODULE_ID}.sourceType`,
+          "system.type.baseItem"
+        ]
+      })
+    : pack.index;
+  return buildRebreyaWeaponIdsConfigFromGearPackIndex(pack, index);
+}
+
+export function registerRebreyaWeaponBaseItems(weaponIdsConfig = buildRebreyaWeaponIdsConfig()) {
+  if (!isDnd5eWorld() || !CONFIG.DND5E) {
     return false;
   }
 
@@ -2897,17 +2988,35 @@ export function registerRebreyaWeaponBaseItems() {
     CONFIG.DND5E.weaponIds = {};
   }
 
-  for (const [baseItem, uuid] of Object.entries(buildRebreyaWeaponIdsConfig())) {
+  for (const [baseItem, uuid] of Object.entries(weaponIdsConfig)) {
     CONFIG.DND5E.weaponIds[baseItem] = uuid;
   }
 
   return true;
 }
 
+export async function registerRebreyaWeaponBaseItemsFromGearPack() {
+  if (!isDnd5eWorld() || !CONFIG.DND5E) {
+    return false;
+  }
+
+  const pack = game.packs?.get?.(`world.${GEAR_COMPENDIUM_NAME}`) ?? null;
+  const weaponIdsConfig = await buildRebreyaWeaponIdsConfigFromGearPack(pack);
+  if (!weaponIdsConfig) {
+    return false;
+  }
+
+  return registerRebreyaWeaponBaseItems(weaponIdsConfig);
+}
+
 export function extendDnd5eItemTypes() {
   if (!isDnd5eWorld() || !CONFIG.DND5E) {
     return;
   }
+
+  registerRebreyaWeaponBaseItemsFromGearPack().catch((error) => {
+    console.warn(`${MODULE_ID} | Failed to register Rebreya weapon base items from gear pack.`, error);
+  });
 
   registerNativeStateItemType();
   registerNativeStateAdvancementTypes();
