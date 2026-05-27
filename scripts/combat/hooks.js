@@ -343,6 +343,17 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasPaladinService) {
+    Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
+      moduleApi.paladinAutomationService.applyDnd5ePostUseActivity(
+        activity,
+        usageConfig,
+        results
+      ).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply paladin activity automation.`, error);
+      });
+      return true;
+    });
+
     Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
       moduleApi.paladinAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
         console.error(`${MODULE_ID} | Failed to apply paladin rest automation.`, error);

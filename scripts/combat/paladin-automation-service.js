@@ -213,6 +213,30 @@ function createSpellData(spellDocument) {
   return data;
 }
 
+function actorHpValue(actor) {
+  return Math.max(0, Math.floor(toNumber(actor?.system?.attributes?.hp?.value, 0)));
+}
+
+function actorHpMax(actor) {
+  return Math.max(0, Math.floor(toNumber(actor?.system?.attributes?.hp?.max, 0)));
+}
+
+function clampInteger(value, min, max) {
+  const numericValue = Math.floor(toNumber(value, min));
+  return Math.min(Math.max(numericValue, min), max);
+}
+
+function speakerForActor(actor) {
+  if (typeof globalThis.ChatMessage?.getSpeaker === "function") {
+    return globalThis.ChatMessage.getSpeaker({ actor });
+  }
+
+  return {
+    actor: actor?.id,
+    alias: actor?.name
+  };
+}
+
 export class PaladinAutomationService {
   constructor(moduleApi, options = {}) {
     this.moduleApi = moduleApi;
@@ -220,6 +244,23 @@ export class PaladinAutomationService {
   }
 
   async initialize() {
+    return true;
+  }
+
+  async applyDnd5ePostUseActivity(activity, usageConfig, results) {
+    void usageConfig;
+    void results;
+
+    const actor = activity?.actor ?? activity?.item?.actor;
+    if (!(actor instanceof Actor)) {
+      return true;
+    }
+
+    const automation = cleanText(itemFlag(activity, MODULE_ID, "automation"));
+    if (automation === "paladin-lay-on-hands") {
+      await this.#useLayOnHands(actor, activity?.item);
+    }
+
     return true;
   }
 
@@ -255,6 +296,140 @@ export class PaladinAutomationService {
 
   #canPrompt(actor) {
     return Boolean(game.user?.isGM || actor?.isOwner);
+  }
+
+  async #useLayOnHands(actor, item) {
+    const layOnHands = item ?? this.#findLayOnHands(actor);
+    if (!layOnHands) {
+      globalThis.ui?.notifications?.warn("Наложение рук: предмет не найден у актёра.");
+      return false;
+    }
+
+    const target = this.#selectedTargetActor();
+    if (!target) {
+      return false;
+    }
+
+    const targetCurrentHp = actorHpValue(target);
+    const targetMaxHp = actorHpMax(target);
+    const missingHp = Math.max(0, targetMaxHp - targetCurrentHp);
+    if (missingHp <= 0) {
+      globalThis.ui?.notifications?.warn("Наложение рук: выбранная цель уже полностью здорова.");
+      return false;
+    }
+
+    const uses = layOnHands.system?.uses ?? {};
+    const maxUses = this.#layOnHandsMaxUses(actor, layOnHands);
+    const spent = Math.max(0, Math.floor(toNumber(uses.spent, 0)));
+    const remaining = Math.max(0, maxUses - spent);
+    if (remaining <= 0) {
+      globalThis.ui?.notifications?.warn("Наложение рук: запас целительной силы исчерпан.");
+      return false;
+    }
+
+    const maxSpend = Math.min(remaining, missingHp);
+    const amount = await this.#promptLayOnHandsPoints(actor, layOnHands, {
+      remaining,
+      max: maxSpend
+    });
+    if (!amount) {
+      return false;
+    }
+
+    const healing = clampInteger(amount, 1, maxSpend);
+    await target.update?.({ "system.attributes.hp.value": targetCurrentHp + healing });
+    await layOnHands.update?.({ "system.uses.spent": spent + healing });
+    await globalThis.ChatMessage?.create?.({
+      speaker: speakerForActor(actor),
+      flavor: `Наложение рук: ${healing} хитов для ${target.name ?? "цели"}.`
+    });
+    return true;
+  }
+
+  #findLayOnHands(actor) {
+    return collectionValues(actor?.items).find((item) => {
+      if (item?.type !== "feat") {
+        return false;
+      }
+
+      const featureId = cleanText(itemFlag(item, MODULE_ID, "featureId"));
+      return featureId.endsWith("::paladin-lay-on-hands")
+        || normalizeText(item?.name) === "наложение рук";
+    }) ?? null;
+  }
+
+  #layOnHandsMaxUses(actor, item) {
+    const rawMax = item?.system?.uses?.max;
+    const numericMax = Math.floor(toNumber(rawMax, 0));
+    if (numericMax > 0) {
+      return numericMax;
+    }
+
+    return Math.max(0, paladinClassLevel(actor) * 5);
+  }
+
+  #selectedTargetActor() {
+    const targets = Array.from(game.user?.targets ?? []);
+    const targetActors = targets
+      .map((target) => target?.actor ?? target?.document?.actor ?? null)
+      .filter((actor) => actor instanceof Actor);
+    if (targetActors.length !== 1) {
+      globalThis.ui?.notifications?.warn("Наложение рук: выберите ровно одну цель.");
+      return null;
+    }
+
+    return targetActors[0];
+  }
+
+  async #promptLayOnHandsPoints(actor, item, details) {
+    if (typeof this._options.promptLayOnHandsPoints === "function") {
+      return this._options.promptLayOnHandsPoints(actor, item, details);
+    }
+
+    if (!this.#canPrompt(actor) || typeof Dialog !== "function") {
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const dialog = new Dialog({
+        title: "Наложение рук",
+        content: `
+          <form>
+            <p>Осталось в запасе: ${escapeHtml(details.remaining)}. Можно потратить до ${escapeHtml(details.max)}.</p>
+            <div class="form-group">
+              <label>Сколько хитов восстановить?</label>
+              <input type="number" min="1" max="${escapeHtml(details.max)}" value="${escapeHtml(details.max)}" data-lay-on-hands-points>
+            </div>
+          </form>
+        `,
+        buttons: {
+          confirm: {
+            label: "Вылечить",
+            callback: (html) => {
+              const root = globalThis.HTMLElement && html instanceof HTMLElement ? html : html?.[0];
+              const rawValue = root?.querySelector("[data-lay-on-hands-points]")?.value;
+              settled = true;
+              resolve(clampInteger(rawValue, 1, details.max));
+            }
+          },
+          cancel: {
+            label: "Отмена",
+            callback: () => {
+              settled = true;
+              resolve(null);
+            }
+          }
+        },
+        default: "confirm",
+        close: () => {
+          if (!settled) {
+            resolve(null);
+          }
+        }
+      });
+      dialog.render(true);
+    });
   }
 
   async #confirmPreparedSpellChange(actor, details) {

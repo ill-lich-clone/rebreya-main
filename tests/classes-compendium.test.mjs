@@ -505,6 +505,53 @@ test("paladin divine smite variants are separate class and oath feature items", 
   );
 });
 
+test("paladin divine sense and lay on hands expose item resources and automation activities", () => {
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
+  const definitions = buildFeatureDefinitions(paladin);
+  const divineSense = definitions.find((definition) => (
+    definition.sourceType === "classFeature" && definition.name === "Божественное чувство"
+  ));
+  const layOnHands = definitions.find((definition) => (
+    definition.sourceType === "classFeature" && definition.name === "Наложение рук"
+  ));
+
+  const divineSenseEntry = createFeatureEntryData(divineSense, new Map());
+  const divineSenseActivity = Object.values(divineSenseEntry.system.activities)[0];
+  const layOnHandsEntry = createFeatureEntryData(layOnHands, new Map());
+  const layOnHandsActivity = Object.values(layOnHandsEntry.system.activities)[0];
+
+  assert.equal(divineSenseEntry.system.uses.max, "@abilities.cha.mod + 1");
+  assert.deepEqual(divineSenseEntry.system.uses.recovery, [{
+    period: "lr",
+    type: "recoverAll",
+    formula: ""
+  }]);
+  assert.equal(divineSenseActivity.type, "utility");
+  assert.equal(divineSenseActivity.activation.type, "action");
+  assert.deepEqual(divineSenseActivity.consumption.targets, [{
+    type: "itemUses",
+    target: "",
+    value: "1",
+    scaling: {
+      mode: "",
+      formula: ""
+    }
+  }]);
+
+  assert.equal(layOnHandsEntry.system.uses.max, "@details.level * 5");
+  assert.deepEqual(layOnHandsEntry.system.uses.recovery, [{
+    period: "lr",
+    type: "recoverAll",
+    formula: ""
+  }]);
+  assert.equal(layOnHandsActivity.type, "utility");
+  assert.equal(layOnHandsActivity.activation.type, "bonus");
+  assert.equal(layOnHandsActivity.target.prompt, true);
+  assert.equal(layOnHandsActivity.target.affects.type, "creature");
+  assert.equal(layOnHandsActivity.flags["rebreya-main"].automation, "paladin-lay-on-hands");
+  assert.deepEqual(layOnHandsActivity.consumption.targets, []);
+});
+
 test("shared class feature icons resolve from common icon names", () => {
   const barbarian = normalizeClassCompendiumData(loadJson("data/barbarian-rework-v012.json"));
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));

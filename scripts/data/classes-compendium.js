@@ -1868,6 +1868,184 @@ function createSecondWindAutomation(feature, classIdentifier) {
   };
 }
 
+function itemUseConsumptionTarget(value = "1") {
+  return {
+    type: "itemUses",
+    target: "",
+    value,
+    scaling: {
+      mode: "",
+      formula: ""
+    }
+  };
+}
+
+function longRestRecovery() {
+  return [{
+    period: "lr",
+    type: "recoverAll",
+    formula: ""
+  }];
+}
+
+function createPaladinDivineSenseAutomation(feature) {
+  const activityId = stableHashId(`${feature.classIdentifier}:${feature.featureId}:divine-sense`, "activity");
+  return {
+    activities: {
+      [activityId]: {
+        _id: activityId,
+        type: "utility",
+        name: feature.name,
+        img: RAGE_ACTION_ACTIVITY_IMAGE.utility,
+        sort: 0,
+        activation: {
+          type: "action",
+          value: 1,
+          condition: "",
+          override: false
+        },
+        consumption: {
+          scaling: {
+            allowed: false,
+            max: ""
+          },
+          spellSlot: false,
+          targets: [itemUseConsumptionTarget()]
+        },
+        description: {
+          chatFlavor: cleanString(feature.description)
+        },
+        duration: {
+          value: "",
+          units: "inst",
+          special: "",
+          concentration: false,
+          override: false
+        },
+        effects: [],
+        flags: {
+          [MODULE_ID]: {
+            managed: true,
+            automation: "paladin-divine-sense"
+          }
+        },
+        range: {
+          value: 60,
+          units: "ft",
+          special: "",
+          override: false
+        },
+        target: {
+          template: {
+            count: "",
+            contiguous: false,
+            type: "",
+            size: "",
+            width: "",
+            height: "",
+            units: ""
+          },
+          affects: {
+            count: "",
+            type: "self",
+            choice: false,
+            special: ""
+          },
+          prompt: false,
+          override: false
+        },
+        uses: {
+          spent: 0,
+          max: "",
+          recovery: []
+        }
+      }
+    },
+    effects: [],
+    usesMax: "@abilities.cha.mod + 1",
+    usesRecovery: longRestRecovery()
+  };
+}
+
+function createPaladinLayOnHandsAutomation(feature) {
+  const activityId = stableHashId(`${feature.classIdentifier}:${feature.featureId}:lay-on-hands`, "activity");
+  return {
+    activities: {
+      [activityId]: {
+        _id: activityId,
+        type: "utility",
+        name: feature.name,
+        img: RAGE_ACTION_ACTIVITY_IMAGE.heal,
+        sort: 0,
+        activation: {
+          type: "bonus",
+          value: 1,
+          condition: "",
+          override: false
+        },
+        consumption: {
+          scaling: {
+            allowed: false,
+            max: ""
+          },
+          spellSlot: false,
+          targets: []
+        },
+        description: {
+          chatFlavor: cleanString(feature.description)
+        },
+        duration: {
+          value: "",
+          units: "inst",
+          special: "",
+          concentration: false,
+          override: false
+        },
+        effects: [],
+        flags: {
+          [MODULE_ID]: {
+            managed: true,
+            automation: "paladin-lay-on-hands"
+          }
+        },
+        range: {
+          value: 5,
+          units: "ft",
+          special: "",
+          override: false
+        },
+        target: {
+          template: {
+            count: "",
+            contiguous: false,
+            type: "",
+            size: "",
+            width: "",
+            height: "",
+            units: ""
+          },
+          affects: {
+            count: "1",
+            type: "creature",
+            choice: false,
+            special: ""
+          },
+          prompt: true,
+          override: false
+        },
+        uses: {
+          spent: 0,
+          max: "",
+          recovery: []
+        }
+      }
+    },
+    effects: [],
+    usesMax: "@details.level * 5",
+    usesRecovery: longRestRecovery()
+  };
+}
+
 function createIronWillAutomation(feature, classIdentifier) {
   const effectId = stableHashId(`${classIdentifier}:${feature.featureId}:iron-will`, "effect");
   return {
@@ -2070,6 +2248,14 @@ function createFeatureAutomation(feature, classIdentifier) {
 
   if (classIdentifier === "fighter-rework-v028" && normalizedName === "железная воля") {
     return createIronWillAutomation(feature, classIdentifier);
+  }
+
+  if (classIdentifier === "paladin-rework-v01" && normalizedName === "божественное чувство") {
+    return createPaladinDivineSenseAutomation(feature);
+  }
+
+  if (classIdentifier === "paladin-rework-v01" && normalizedName === "наложение рук") {
+    return createPaladinLayOnHandsAutomation(feature);
   }
 
   if (normalizedName === "ярость") {
