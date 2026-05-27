@@ -335,6 +335,16 @@ test("ordinary weapons from the weapon sheet use registered dnd5e base weapon id
   }
 });
 
+test("gear signatures include stable document ids so old compendium documents rebuild", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const katana = gear.find((item) => item.id === "katana");
+  const created = createDnd5eItemData(katana, new Map());
+  const signature = JSON.parse(created.flags["rebreya-main"].signature);
+
+  assert.equal(created._id, createStableGearDocumentId("katana"));
+  assert.equal(signature.stableDocumentId, created._id);
+});
+
 test("gear stock icons avoid missing Foundry core asset paths", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const byId = new Map(gear.map((item) => [item.id, item]));

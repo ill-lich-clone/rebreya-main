@@ -20,7 +20,7 @@ const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const GEAR_TEMPLATE_VERSION = 8;
+const GEAR_TEMPLATE_VERSION = 9;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const CUSTOM_GEAR_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const GEAR_ICON_SEARCH_PATHS = [
@@ -225,8 +225,10 @@ function buildGearSignature(item) {
   const classification = classifyGearEntry(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
   const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
+  const stableDocumentId = createStableGearDocumentId(item.id);
   return JSON.stringify({
     templateVersion: GEAR_TEMPLATE_VERSION,
+    stableDocumentId,
     name: item.name ?? "",
     equipmentType: item.equipmentType ?? "",
     priceText: item.priceText ?? "",

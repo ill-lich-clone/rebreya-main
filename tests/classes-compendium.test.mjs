@@ -289,9 +289,14 @@ test("paladin advancements grant armor and strict weapon proficiency choices", (
   assert.equal(weapons.configuration.choices[0].count, 1);
   assert.ok(weapons.configuration.choices[0].pool.includes("weapon:sim:dagger"));
   assert.ok(weapons.configuration.choices[0].pool.includes("weapon:sim:spear"));
+  assert.ok(weapons.configuration.choices[0].pool.includes("weapon:sim:kosa"));
+  assert.ok(weapons.configuration.choices[0].pool.includes("weapon:sim:kastet"));
   assert.equal(weapons.configuration.choices[1].count, 1);
   assert.ok(weapons.configuration.choices[1].pool.includes("weapon:mar:longsword"));
   assert.ok(weapons.configuration.choices[1].pool.includes("weapon:mar:longbow"));
+  assert.ok(weapons.configuration.choices[1].pool.includes("weapon:mar:katana"));
+  assert.ok(weapons.configuration.choices[1].pool.includes("weapon:mar:kompozitnyy-luk"));
+  assert.ok(weapons.configuration.choices[1].pool.includes("weapon:mar:set"));
   assert.equal(weapons.configuration.choices[0].pool.includes("weapon:sim"), false);
   assert.equal(weapons.configuration.choices[1].pool.includes("weapon:mar"), false);
 });
