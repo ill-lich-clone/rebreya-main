@@ -22,7 +22,11 @@ import { CombatStatusService, registerCombatStatusConfig } from "./combat/status
 import { FighterAutomationService } from "./combat/fighter-automation-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
 import { registerSceneControlsHook } from "./hooks.js";
-import { extendDnd5eItemTypes, registerDnd5eSheetExtensions } from "./integrations/dnd5e-sheet-extensions.js";
+import {
+  extendDnd5eItemTypes,
+  registerDnd5eSheetExtensions,
+  registerRebreyaWeaponBaseItems
+} from "./integrations/dnd5e-sheet-extensions.js";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
@@ -562,6 +566,7 @@ class RebreyaMainModule {
 
     try {
       await this.gearCompendium.sync(model.gear);
+      registerRebreyaWeaponBaseItems();
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync gear compendium.`, error);

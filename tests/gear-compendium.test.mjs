@@ -9,7 +9,10 @@ import { buildNamedIconLookup } from "../scripts/data/compendium-utils.js";
 import { createStableGearDocumentId } from "../scripts/data/gear-document-ids.js";
 import { getRebreyaWeaponBaseItemDefinitions } from "../scripts/data/item-classification.js";
 import { normalizeEconomyDataset } from "../scripts/data/normalizer.js";
-import { buildRebreyaWeaponIdsConfig } from "../scripts/integrations/dnd5e-sheet-extensions.js";
+import {
+  buildRebreyaWeaponIdsConfig,
+  registerRebreyaWeaponBaseItems
+} from "../scripts/integrations/dnd5e-sheet-extensions.js";
 
 const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
 const EQUIPMENT_PACK_CONTENTS = {
@@ -328,10 +331,42 @@ test("ordinary weapons from the weapon sheet use registered dnd5e base weapon id
       assert.equal(definition.gearId, gearId, `${expectedBaseItem} points at the ${gearId} compendium item`);
       assert.equal(
         weaponIdsConfig[expectedBaseItem],
-        `world.rebreya-gear.${createStableGearDocumentId(gearId)}`,
-        `${expectedBaseItem} is exposed through CONFIG.DND5E.weaponIds`
+        `Compendium.world.rebreya-gear.Item.${createStableGearDocumentId(gearId)}`,
+        `${expectedBaseItem} is exposed through CONFIG.DND5E.weaponIds as a full UUID`
       );
     }
+  }
+});
+
+test("Rebreya weapon base items register only after the gear pack exists", () => {
+  const previousGame = globalThis.game;
+  const previousConfig = globalThis.CONFIG;
+  globalThis.game = {
+    system: { id: "dnd5e" },
+    packs: {
+      get: () => null
+    }
+  };
+  globalThis.CONFIG = {
+    DND5E: {
+      weaponIds: {}
+    }
+  };
+
+  try {
+    assert.equal(registerRebreyaWeaponBaseItems(), false);
+    assert.equal(CONFIG.DND5E.weaponIds.katana, undefined);
+
+    globalThis.game.packs.get = (packId) => packId === "world.rebreya-gear" ? {} : null;
+    assert.equal(registerRebreyaWeaponBaseItems(), true);
+    assert.equal(
+      CONFIG.DND5E.weaponIds.katana,
+      `Compendium.world.rebreya-gear.Item.${createStableGearDocumentId("katana")}`
+    );
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.CONFIG = previousConfig;
   }
 });
 

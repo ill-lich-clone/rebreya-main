@@ -2880,11 +2880,19 @@ export function buildRebreyaWeaponIdsConfig() {
   return Object.fromEntries(getRebreyaWeaponBaseItemDefinitions()
     .map((definition) => [
       definition.baseItem,
-      `world.${GEAR_COMPENDIUM_NAME}.${createStableGearDocumentId(definition.gearId)}`
+      `Compendium.world.${GEAR_COMPENDIUM_NAME}.Item.${createStableGearDocumentId(definition.gearId)}`
     ]));
 }
 
-function registerRebreyaWeaponBaseItems() {
+export function registerRebreyaWeaponBaseItems() {
+  if (!isDnd5eWorld() || !CONFIG.DND5E) {
+    return false;
+  }
+
+  if (!game.packs?.get?.(`world.${GEAR_COMPENDIUM_NAME}`)) {
+    return false;
+  }
+
   if (!CONFIG.DND5E?.weaponIds || typeof CONFIG.DND5E.weaponIds !== "object") {
     CONFIG.DND5E.weaponIds = {};
   }
@@ -2892,6 +2900,8 @@ function registerRebreyaWeaponBaseItems() {
   for (const [baseItem, uuid] of Object.entries(buildRebreyaWeaponIdsConfig())) {
     CONFIG.DND5E.weaponIds[baseItem] = uuid;
   }
+
+  return true;
 }
 
 export function extendDnd5eItemTypes() {
@@ -2938,8 +2948,6 @@ export function extendDnd5eItemTypes() {
     CONFIG.DND5E.weaponTypeMap.firearmPrimitive ??= "ranged";
     CONFIG.DND5E.weaponTypeMap.firearmAdvanced ??= "ranged";
   }
-
-  registerRebreyaWeaponBaseItems();
 
   CONFIG.DND5E.itemProperties ??= {};
   for (const definition of LICH_WEAPON_PROPERTY_DEFINITIONS) {
