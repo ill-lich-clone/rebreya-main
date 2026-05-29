@@ -132,7 +132,7 @@ function buildToolsRecord() {
     [calendarToolName]: {
       name: calendarToolName,
       order: 30,
-      title: "Открыть календарь Rebreya",
+      title: game.i18n.localize("REBREYA_MAIN.Controls.OpenCalendar"),
       icon: "fa-solid fa-calendar-days",
       button: true,
       visible: true,
@@ -144,7 +144,7 @@ function buildToolsRecord() {
     [lootgenToolName]: {
       name: lootgenToolName,
       order: 40,
-      title: "Открыть лутген Rebreya",
+      title: game.i18n.localize("REBREYA_MAIN.Controls.OpenLootgen"),
       icon: "fa-solid fa-sack-dollar",
       button: true,
       visible: game.user?.isGM === true,
@@ -160,55 +160,6 @@ function buildToolsArray() {
   return Object.values(buildToolsRecord());
 }
 
-function injectToolsIntoRecord(tokenControl) {
-  if (!tokenControl || typeof tokenControl !== "object") {
-    return false;
-  }
-
-  if (!tokenControl.tools || typeof tokenControl.tools !== "object" || Array.isArray(tokenControl.tools)) {
-    return false;
-  }
-
-  const nextTools = buildToolsRecord();
-  for (const [toolName, toolConfig] of Object.entries(nextTools)) {
-    if (!tokenControl.tools[toolName]) {
-      tokenControl.tools[toolName] = toolConfig;
-    }
-  }
-
-  const preferredTool = `${MODULE_ID}-inventory`;
-  if (!tokenControl.activeTool || !tokenControl.tools[tokenControl.activeTool]) {
-    tokenControl.activeTool = preferredTool;
-  }
-
-  return true;
-}
-
-function injectToolsIntoArray(tokenControl) {
-  if (!tokenControl || typeof tokenControl !== "object") {
-    return false;
-  }
-
-  const preferredTool = `${MODULE_ID}-inventory`;
-
-  if (Array.isArray(tokenControl.tools)) {
-    const existing = new Set(tokenControl.tools.map((tool) => tool?.name).filter(Boolean));
-    for (const tool of buildToolsArray()) {
-      if (!existing.has(tool.name)) {
-        tokenControl.tools.push(tool);
-      }
-    }
-
-    if (!tokenControl.activeTool || !tokenControl.tools.some((tool) => tool?.name === tokenControl.activeTool)) {
-      tokenControl.activeTool = preferredTool;
-    }
-
-    return true;
-  }
-
-  return injectToolsIntoRecord(tokenControl);
-}
-
 function buildControlRecord(controlsRecord) {
   const controlName = `${MODULE_ID}-rebreya`;
   const tokenControl = controlsRecord?.tokens ?? controlsRecord?.token ?? null;
@@ -220,7 +171,7 @@ function buildControlRecord(controlsRecord) {
   return {
     name: controlName,
     order,
-    title: "Ребрея",
+    title: game.i18n.localize("REBREYA_MAIN.Controls.GroupTitle"),
     icon: "fa-solid fa-box-open",
     visible: true,
     tools: buildToolsRecord(),
@@ -239,7 +190,7 @@ function buildControlArrayEntry(controlsArray) {
   return {
     name: controlName,
     order,
-    title: "Ребрея",
+    title: game.i18n.localize("REBREYA_MAIN.Controls.GroupTitle"),
     icon: "fa-solid fa-box-open",
     visible: true,
     tools: buildToolsArray(),
@@ -248,11 +199,6 @@ function buildControlArrayEntry(controlsArray) {
 }
 
 function registerSceneControlInRecord(controls) {
-  const tokenControl = controls?.tokens ?? controls?.token ?? null;
-  if (injectToolsIntoRecord(tokenControl)) {
-    return;
-  }
-
   const controlName = `${MODULE_ID}-rebreya`;
   if (controls[controlName]) {
     return;
@@ -262,11 +208,6 @@ function registerSceneControlInRecord(controls) {
 }
 
 function registerSceneControlInArray(controls) {
-  const tokenControl = controls.find((control) => control?.name === "tokens" || control?.name === "token");
-  if (injectToolsIntoArray(tokenControl)) {
-    return;
-  }
-
   const controlName = `${MODULE_ID}-rebreya`;
   if (controls.some((control) => control?.name === controlName)) {
     return;
