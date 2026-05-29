@@ -560,10 +560,14 @@ test("party inventory is created as player-owned and owned players can manage st
 
     await service.addSupply("food", 2);
     assert.equal(supplyCreatedItemData.img, "icons/consumables/food/berries-ration-round-red.webp");
+    assert.equal(supplyUpdatePatch["system.quantity"], 2);
+
+    await service.addSupply("water", 1);
+    assert.equal(supplyCreatedItemData.img, "icons/sundries/survival/waterskin-leather-brown.webp");
+
     await service.updateCurrency({ gp: 3, sp: 4 });
     const partySnapshot = await service.getPartySnapshot();
 
-    assert.equal(supplyUpdatePatch["system.quantity"], 2);
     assert.equal(currencyUpdatePatch["system.currency.gp"], 3);
     assert.equal(currencyUpdatePatch["system.currency.sp"], 4);
     assert.equal(partySnapshot.canManage, true);
@@ -572,6 +576,99 @@ test("party inventory is created as player-owned and owned players can manage st
     globalThis.game = previousGame;
     globalThis.Actor = previousActor;
     globalThis.CONST = previousConst;
+    restoreFoundry();
+  }
+});
+
+test("party inventory snapshot remaps removed core supply icon paths", async () => {
+  const restoreFoundry = installFoundryUtils();
+  const previousGame = globalThis.game;
+
+  const state = {
+    inventoryActorId: "party-inventory"
+  };
+  const actor = {
+    id: "party-inventory",
+    name: "Party Inventory",
+    img: "icons/svg/item-bag.svg",
+    isOwner: true,
+    system: {
+      currency: {}
+    },
+    items: {
+      contents: [
+        {
+          id: "food",
+          uuid: "Actor.party.Item.food",
+          name: "Еда",
+          type: "loot",
+          img: "icons/consumables/food/bowl-oatmeal-brown.webp",
+          flags: {
+            "rebreya-main": {
+              resourceKey: "food",
+              sourceType: "supply"
+            }
+          },
+          toObject: () => ({
+            system: {
+              quantity: 2,
+              weight: { value: 1 },
+              price: {}
+            }
+          })
+        },
+        {
+          id: "water",
+          uuid: "Actor.party.Item.water",
+          name: "Вода",
+          type: "loot",
+          img: "icons/consumables/water/waterskin-leather-blue.webp",
+          flags: {
+            "rebreya-main": {
+              resourceKey: "water",
+              sourceType: "supply"
+            }
+          },
+          toObject: () => ({
+            system: {
+              quantity: 1,
+              weight: { value: 8 },
+              price: {}
+            }
+          })
+        }
+      ]
+    }
+  };
+
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    actors: {
+      get: (id) => id === actor.id ? actor : null
+    },
+    settings: {
+      get: () => state
+    }
+  };
+
+  const service = new InventoryService({
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const snapshot = await service.getInventorySnapshot();
+
+    assert.equal(snapshot.allItems.find((item) => item.itemId === "food").img, "icons/consumables/food/berries-ration-round-red.webp");
+    assert.equal(snapshot.allItems.find((item) => item.itemId === "water").img, "icons/sundries/survival/waterskin-leather-brown.webp");
+  }
+  finally {
+    globalThis.game = previousGame;
     restoreFoundry();
   }
 });

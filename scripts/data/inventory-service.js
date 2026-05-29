@@ -15,6 +15,8 @@ const LOOTGEN_CHAT_ACTOR_NAME = "Лут Rebreya";
 const FOOD_ITEM_NAME = "Еда";
 const WATER_ITEM_NAME = "Галлоны воды";
 const WATER_LB_PER_GALLON = 8;
+const FOOD_SUPPLY_ICON = "icons/consumables/food/berries-ration-round-red.webp";
+const WATER_SUPPLY_ICON = "icons/sundries/survival/waterskin-leather-brown.webp";
 const DEFAULT_CAPACITY_MULTIPLIER = 15;
 const COIN_LABELS = {
   pp: "пм",
@@ -123,6 +125,16 @@ function normalizeText(value) {
     .toLowerCase()
     .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
     .replace(/\s+/gu, " ");
+}
+
+const LEGACY_CORE_ICON_REPLACEMENTS = new Map([
+  ["icons/consumables/food/bowl-oatmeal-brown.webp", FOOD_SUPPLY_ICON],
+  ["icons/consumables/water/waterskin-leather-blue.webp", WATER_SUPPLY_ICON]
+]);
+
+function normalizeInventoryIconPath(value) {
+  const path = String(value ?? "").trim();
+  return LEGACY_CORE_ICON_REPLACEMENTS.get(path) ?? path;
 }
 
 function normalizeInventorySourceType(value) {
@@ -401,9 +413,7 @@ function buildDefaultMemberState(role = "member") {
 function buildSupplyItemData(resourceKey, quantity) {
   const isWater = resourceKey === "water";
   const name = isWater ? WATER_ITEM_NAME : FOOD_ITEM_NAME;
-  const img = isWater
-    ? "icons/consumables/water/waterskin-leather-blue.webp"
-    : "icons/consumables/food/berries-ration-round-red.webp";
+  const img = isWater ? WATER_SUPPLY_ICON : FOOD_SUPPLY_ICON;
   const weightPerUnit = isWater ? WATER_LB_PER_GALLON : 1;
   const description = isWater
     ? "<p>Общий запас воды группы. Количество считается в галлонах.</p>"
@@ -749,7 +759,7 @@ export class InventoryService {
       itemId: item.id,
       itemUuid: item.uuid,
       name: item.name,
-      img: item.img,
+      img: normalizeInventoryIconPath(item.img),
       quantity,
       weightEach,
       totalWeight,

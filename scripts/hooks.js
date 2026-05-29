@@ -166,7 +166,6 @@ function buildControlRecord(controlsRecord) {
   const tokenOrder = Number(tokenControl?.order ?? 0);
   const fallbackOrder = Object.keys(controlsRecord ?? {}).length + 100;
   const order = Number.isFinite(tokenOrder) ? tokenOrder + 1 : fallbackOrder;
-  const activeTool = `${MODULE_ID}-inventory`;
 
   return {
     name: controlName,
@@ -175,7 +174,7 @@ function buildControlRecord(controlsRecord) {
     icon: "fa-solid fa-box-open",
     visible: true,
     tools: buildToolsRecord(),
-    activeTool
+    activeTool: null
   };
 }
 
@@ -185,7 +184,6 @@ function buildControlArrayEntry(controlsArray) {
   const tokenControl = tokenIndex >= 0 ? controlsArray[tokenIndex] : null;
   const tokenOrder = Number(tokenControl?.order ?? 0);
   const order = Number.isFinite(tokenOrder) ? tokenOrder + 1 : (controlsArray.length + 100);
-  const activeTool = `${MODULE_ID}-inventory`;
 
   return {
     name: controlName,
@@ -194,7 +192,7 @@ function buildControlArrayEntry(controlsArray) {
     icon: "fa-solid fa-box-open",
     visible: true,
     tools: buildToolsArray(),
-    activeTool
+    activeTool: null
   };
 }
 
