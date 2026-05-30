@@ -776,7 +776,7 @@ function curatedAutomation(race, ability, entry, isOption) {
         })
     }
 
-    if (raceName === "гномы" && abilityName === "ярость мелкого") {
+    if (raceName === "гоблины" && abilityName === "ярость мелкого") {
         return automation(race, entry, {
             coverage: "partial",
             activities: [activity("damage", "Ярость мелкого", {
@@ -789,7 +789,7 @@ function curatedAutomation(race, ability, entry, isOption) {
         })
     }
 
-    if (raceName === "гномы" && abilityName === "шустрый побег") {
+    if (raceName === "гоблины" && abilityName === "шустрый побег") {
         return automation(race, entry, {
             coverage: "partial",
             activities: [

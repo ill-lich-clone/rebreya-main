@@ -4,7 +4,7 @@
 
 ## Итог
 
-- Рас: full 33, partial 0, manual 0.
+- Рас: full 34, partial 0, manual 0.
 - Особенностей и вариантов: full 131, partial 0, manual 0.
 - Типы механик: ability-score-advancement, armor-class, attack-damage, attack-hook, broken-source, carrying-capacity, choice-options, choice-runtime, choice-table, climb-penalty, condition-traits, conditional-attack-advantage, conditional-damage-reduction, conditional-save-advantage, crafting, crafting-flags, creature-type, d20-reroll, damage-absorption-choice, damage-activity, damage-choice, damage-hook, damage-reduction, damage-resistance-choice, damage-traits, dnd5e-character-flag, effects, elemental-subrace-choice, environment-adaptation, environment-flags, feat-choice, feat-grant, feature-grants, fury-small, gm-defined-runtime, gm-defined-terrain, half-proficiency, healing-activity, hit-points, interactive-runtime, keen-eye-damage, language-advancement, midi-damage-hook, movement, movement-hook, movement-permission, opportunity-attacks, placeholder, proficiencies, proficiency-swap, race-base-fields, race-size, racial-feat-choice, reaction-suppression, rest-hook, rest-rules, save-activity, saving-throw-proficiency-choice, senses, spell-choice, spell-slot-scaling, surprise-attack, tool-proficiency-choice, utility-activity, zero-hp-recovery.
 
@@ -58,9 +58,9 @@
 - Гномы: Боевая смекалка — Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.
 - Гномы: Тяга к знанию — Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.
 - Гномы: Тёмное зрение — Автоматизировано: senses.
-- Гномы: Ярость мелкого — Полностью автоматизировано midi-qol workflow: после попадания по цели большего размера спрашивает игрока, тратит использование и наносит урон 2*БМ.
-- Гномы: Тёмное зрение — Автоматизировано: senses.
-- Гномы: Шустрый побег — Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.
+- Гоблины: Ярость мелкого — Полностью автоматизировано midi-qol workflow: после попадания по цели большего размера спрашивает игрока, тратит использование и наносит урон 2*БМ.
+- Гоблины: Тёмное зрение — Автоматизировано: senses.
+- Гоблины: Шустрый побег — Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.
 - Голиафы: Толстая кожа — Полностью автоматизировано хуком dnd5e.preApplyDamage: входящий урон уменьшается на БМ.
 - Голиафы: Рождённый в горах — Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.
 - Голиафы: Маленький великан — Автоматизировано flags.dnd5e.powerfulBuild; дополнительные ограничения движения сохранены runtime-флагом rebreya-main.

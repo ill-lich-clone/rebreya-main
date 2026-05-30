@@ -1,7 +1,7 @@
 {
   "version": 1,
   "source": "Расы Тейванкаля V0.1.pdf",
-  "raceCount": 33,
+  "raceCount": 34,
   "races": [
     {
       "id": "люди",
@@ -2862,23 +2862,23 @@
       "name": "Гномы",
       "group": "Общие",
       "featuresTitleRaw": "гнома",
-      "lineStart": 1155,
-      "lineEnd": 1237,
+      "lineStart": 1079,
+      "lineEnd": 1146,
       "size": "sm",
-      "speed": 30,
+      "speed": 25,
       "darkvision": 60,
       "fields": {
-        "age": "Гоблины достигают зрелости к 8 годам, и живут до 60 лет.",
-        "size": "Рост гоблинов между 3 и 4 футами. Ваш размер — Маленький.",
-        "weight": "Вес гоблинов колеблется от 40 до 80 фунтов.",
-        "abilityIncrease": "Увеличьте значение одной характеристики на 2 и другой на 1",
-        "speed": "Ваша базовая скорость ходьбы составляет 30 футов.",
-        "languages": "Вы можете говорить, читать и писать на общем и гоблинском.",
-        "raceFeat": "На 6-м уровне вы можете вместо младшей черты выбрать следующую расовую черту: Гоблинская маскировка, Мастер кустарник."
+        "age": "Гномы взрослеют с той же скоростью, что и люди, и вероятнее всего к 40 годам переходят к спокойной взрослой жизни. Они способны прожить от 350 до почти 500 лет.",
+        "size": "Рост гномов между 3 и 4 футами. Ваш размер — Маленький.",
+        "weight": "Средний вес гномов составляет 40 фунтов.",
+        "abilityIncrease": "Увеличьте значение одной характеристики на 2 и другой на 1.",
+        "speed": "Ваша базовая скорость ходьбы равна 25 футам.",
+        "languages": "Вы можете говорить, читать и писать на общем и гномьем.",
+        "raceFeat": "На 6-м уровне вы можете вместо младшей черты выбрать следующую расовую черту: Исчезновение, Механизатор."
       },
       "raceFeatNames": [
-        "Гоблинская маскировка",
-        "Мастер кустарник"
+        "Исчезновение",
+        "Механизатор"
       ],
       "abilities": [
         {
@@ -2925,8 +2925,8 @@
             "sourceRef": {
               "raceId": "гномы",
               "entryId": "гномы-ability-1",
-              "lineStart": 1155,
-              "lineEnd": 1237
+              "lineStart": 1079,
+              "lineEnd": 1146
             }
           }
         },
@@ -3001,8 +3001,8 @@
             "sourceRef": {
               "raceId": "гномы",
               "entryId": "гномы-ability-2",
-              "lineStart": 1155,
-              "lineEnd": 1237
+              "lineStart": 1079,
+              "lineEnd": 1146
             }
           }
         },
@@ -3040,13 +3040,67 @@
             "sourceRef": {
               "raceId": "гномы",
               "entryId": "гномы-ability-3",
-              "lineStart": 1155,
-              "lineEnd": 1237
+              "lineStart": 1079,
+              "lineEnd": 1146
             }
           }
-        },
+        }
+      ],
+      "hasExplicitAbilityLabels": true,
+      "automation": {
+        "version": "0.1-dnd5e-5.2.5",
+        "coverage": "full",
+        "status": "automated",
+        "effects": [],
+        "activities": [],
+        "uses": null,
+        "advancements": [],
+        "runtime": null,
+        "mechanics": [
+          "race-base-fields",
+          "ability-score-advancement",
+          "language-advancement",
+          "feature-grants",
+          "movement",
+          "senses",
+          "racial-feat-choice"
+        ],
+        "manualNotes": [],
+        "notes": "Базовые поля расы автоматизированы: race-base-fields, ability-score-advancement, language-advancement, feature-grants, movement, senses, racial-feat-choice.",
+        "sourceRef": {
+          "raceId": "гномы",
+          "entryId": "гномы",
+          "lineStart": 1079,
+          "lineEnd": 1146
+        }
+      }
+    },
+    {
+      "id": "гоблины",
+      "name": "Гоблины",
+      "group": "Общие",
+      "featuresTitleRaw": "гоблина",
+      "lineStart": 1147,
+      "lineEnd": 1206,
+      "size": "sm",
+      "speed": 30,
+      "darkvision": 60,
+      "fields": {
+        "age": "Гоблины достигают зрелости к 8 годам, и живут до 60 лет.",
+        "size": "Рост гоблинов между 3 и 4 футами. Ваш размер — Маленький.",
+        "weight": "Вес гоблинов колеблется от 40 до 80 фунтов.",
+        "abilityIncrease": "Увеличьте значение одной характеристики на 2 и другой на 1",
+        "speed": "Ваша базовая скорость ходьбы составляет 30 футов.",
+        "languages": "Вы можете говорить, читать и писать на общем и гоблинском.",
+        "raceFeat": "На 6-м уровне вы можете вместо младшей черты выбрать следующую расовую черту: Гоблинская маскировка, Мастер кустарник."
+      },
+      "raceFeatNames": [
+        "Гоблинская маскировка",
+        "Мастер кустарник"
+      ],
+      "abilities": [
         {
-          "id": "гномы-ability-4",
+          "id": "гоблины-ability-1",
           "name": "Ярость мелкого",
           "kind": "main",
           "description": "Когда вы наносите существу урон атакой или заклинанием, и размер существа больше чем ваш, вы можете использовать эту атаку или заклинание для нанесения существу дополнительного урона. Дополнительный урон равен вашему удвоенному бонусу мастерства. Вы можете использовать эту особенность количество раз, равное вашему бонусу мастерства. Вы восстанавливаете все потраченные использования по окончании продолжительного отдыха и вы можете использовать её один раз за ход.",
@@ -3090,15 +3144,15 @@
             "manualNotes": [],
             "notes": "Полностью автоматизировано midi-qol workflow: после попадания по цели большего размера спрашивает игрока, тратит использование и наносит урон 2*БМ.",
             "sourceRef": {
-              "raceId": "гномы",
-              "entryId": "гномы-ability-4",
-              "lineStart": 1155,
-              "lineEnd": 1237
+              "raceId": "гоблины",
+              "entryId": "гоблины-ability-1",
+              "lineStart": 1147,
+              "lineEnd": 1206
             }
           }
         },
         {
-          "id": "гномы-ability-5",
+          "id": "гоблины-ability-2",
           "name": "Тёмное зрение",
           "kind": "minor",
           "description": "На расстоянии 60 футов вы при тусклом освещении можете видеть так, как будто это яркое освещение, и в темноте так, как будто это тусклое освещение. В темноте вы не можете различать цвета, только оттенки серого.",
@@ -3129,15 +3183,15 @@
             "manualNotes": [],
             "notes": "Автоматизировано: senses.",
             "sourceRef": {
-              "raceId": "гномы",
-              "entryId": "гномы-ability-5",
-              "lineStart": 1155,
-              "lineEnd": 1237
+              "raceId": "гоблины",
+              "entryId": "гоблины-ability-2",
+              "lineStart": 1147,
+              "lineEnd": 1206
             }
           }
         },
         {
-          "id": "гномы-ability-6",
+          "id": "гоблины-ability-3",
           "name": "Шустрый побег",
           "kind": "minor",
           "description": "Вы можете совершать действия Отход или Засада бонусным действием в каждый ваш ход.",
@@ -3202,10 +3256,10 @@
             "manualNotes": [],
             "notes": "Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.",
             "sourceRef": {
-              "raceId": "гномы",
-              "entryId": "гномы-ability-6",
-              "lineStart": 1155,
-              "lineEnd": 1237
+              "raceId": "гоблины",
+              "entryId": "гоблины-ability-3",
+              "lineStart": 1147,
+              "lineEnd": 1206
             }
           }
         }
@@ -3232,10 +3286,10 @@
         "manualNotes": [],
         "notes": "Базовые поля расы автоматизированы: race-base-fields, ability-score-advancement, language-advancement, feature-grants, movement, senses, racial-feat-choice.",
         "sourceRef": {
-          "raceId": "гномы",
-          "entryId": "гномы",
-          "lineStart": 1155,
-          "lineEnd": 1237
+          "raceId": "гоблины",
+          "entryId": "гоблины",
+          "lineStart": 1147,
+          "lineEnd": 1206
         }
       }
     },
@@ -8835,7 +8889,7 @@
                     "appliedEffects": [
                       {
                         "label": "Опутан",
-                        "statusId": "restrained",
+                        "statusId": "rebreya-restrained",
                         "statusValue": null,
                         "statusMeta": {},
                         "transfer": false,
