@@ -1,6 +1,31 @@
 import { MODULE_ID } from "../constants.js";
 
 const PALADIN_CLASS_IDENTIFIER = "paladin-rework-v01";
+const DIVINE_SMITE_FEATURE_ID = "paladin-divine-smite";
+const DIVINE_SMITE_DAMAGE_TYPE = "radiant";
+
+const DIVINE_SMITE_VARIANTS = [
+  { id: "devotion-sacred-divine-smite", name: "Священная божественная кара", minSlotLevel: 1 },
+  { id: "devotion-protective-smite", name: "Защитная кара", minSlotLevel: 1 },
+  { id: "vengeance-branding-smite", name: "Клеймящая кара", minSlotLevel: 1 },
+  { id: "vengeance-halting-smite", name: "Останавливающая кара", minSlotLevel: 1 },
+  { id: "glory-pushing-smite", name: "Толкающая кара", minSlotLevel: 1 },
+  { id: "glory-toppling-smite", name: "Опрокидывающая кара", minSlotLevel: 1 },
+  { id: "oathbreaker-rotten-divine-smite", name: "Гнилая божественная кара", minSlotLevel: 1 },
+  { id: "oathbreaker-wrathful-smite", name: "Гневная кара", minSlotLevel: 1 },
+  { id: "nirkadu-ranged-divine-smite", name: "Дальнобойная божественная кара", minSlotLevel: 1, allowRanged: true },
+  { id: "nirkadu-stealthy-divine-smite", name: "Скрытная божественная кара", minSlotLevel: 1 },
+  { id: "arcana-disruptive-smite", name: "Разрушающая кара", minSlotLevel: 1 },
+  { id: "arcana-creative-smite", name: "Созидающая кара", minSlotLevel: 1 },
+  { id: "magistrate-accusation-smite", name: "Кара обвинения", minSlotLevel: 1 },
+  { id: "magistrate-detention-smite", name: "Кара задержания", minSlotLevel: 1 },
+  { id: "paladin-heavenly-smite", name: "Небесная кара", minSlotLevel: 3 },
+  { id: "paladin-stunning-smite", name: "Оглушающая кара", minSlotLevel: 3 },
+  { id: "paladin-sealing-smite", name: "Запечатывающая кара", minSlotLevel: 5 },
+  { id: "paladin-banishing-smite", name: "Изгоняющая кара", minSlotLevel: 5 }
+];
+
+const DIVINE_SMITE_VARIANT_BY_ID = new Map(DIVINE_SMITE_VARIANTS.map((variant) => [variant.id, variant]));
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -66,6 +91,83 @@ function itemFlag(item, scope, key) {
   }
 
   return getProperty(item, `flags.${scope}.${key}`, undefined);
+}
+
+function rawFeatureId(featureId) {
+  return cleanText(featureId).split("::").pop() ?? "";
+}
+
+function itemFeatureId(item) {
+  return cleanText(itemFlag(item, MODULE_ID, "featureId"));
+}
+
+function effectFlag(effect, path, fallback = undefined) {
+  const value = getProperty(effect, `flags.${MODULE_ID}.${path}`, undefined);
+  return value === undefined ? fallback : value;
+}
+
+function featureIdMatches(item, rawId) {
+  const featureId = itemFeatureId(item);
+  return featureId === rawId || rawFeatureId(featureId) === rawId;
+}
+
+function hasActorFeature(actor, rawId, normalizedName = "") {
+  return collectionValues(actor?.items).some((item) => (
+    featureIdMatches(item, rawId)
+    || (normalizedName && normalizeText(item?.name) === normalizedName)
+  ));
+}
+
+function findActorFeature(actor, rawId, normalizedName = "") {
+  return collectionValues(actor?.items).find((item) => (
+    featureIdMatches(item, rawId)
+    || (normalizedName && normalizeText(item?.name) === normalizedName)
+  )) ?? null;
+}
+
+function resolveActorFromTarget(target) {
+  return target?.actor
+    ?? target?.document?.actor
+    ?? target?.object?.actor
+    ?? target?.token?.actor
+    ?? null;
+}
+
+function targetActorsFromWorkflow(workflow) {
+  const targets = [
+    ...collectionValues(workflow?.hitTargets),
+    ...collectionValues(workflow?.hitTargetsEC)
+  ];
+  const seen = new Set();
+  const actors = [];
+  for (const target of targets) {
+    const actor = resolveActorFromTarget(target);
+    if (!(actor instanceof Actor)) {
+      continue;
+    }
+
+    const key = cleanText(actor.uuid ?? actor.id ?? actor.name);
+    if (key && seen.has(key)) {
+      continue;
+    }
+    if (key) {
+      seen.add(key);
+    }
+    actors.push(actor);
+  }
+  return actors;
+}
+
+function getDialogRoot(html) {
+  if (typeof HTMLElement !== "undefined" && html instanceof HTMLElement) {
+    return html;
+  }
+
+  if (typeof HTMLElement !== "undefined" && html?.[0] instanceof HTMLElement) {
+    return html[0];
+  }
+
+  return null;
 }
 
 function itemSourceId(item) {
@@ -237,13 +339,183 @@ function speakerForActor(actor) {
   };
 }
 
+function isWeaponAttackWorkflow(workflow) {
+  const activity = workflow?.activity;
+  const item = activity?.item ?? workflow?.item;
+  if (item?.type !== "weapon") {
+    return false;
+  }
+
+  const activityType = cleanText(activity?.type);
+  return !activityType || activityType === "attack";
+}
+
+function isMeleeWeaponAttackWorkflow(workflow) {
+  const activity = workflow?.activity;
+  const item = activity?.item ?? workflow?.item;
+  const actionType = cleanText(activity?.actionType ?? item?.system?.actionType).toLowerCase();
+  if (actionType === "mwak") {
+    return true;
+  }
+
+  const attackType = cleanText(activity?.attack?.type?.value ?? item?.system?.attack?.type?.value).toLowerCase();
+  return attackType === "melee";
+}
+
+function isRangedWeaponAttackWorkflow(workflow) {
+  const activity = workflow?.activity;
+  const item = activity?.item ?? workflow?.item;
+  const actionType = cleanText(activity?.actionType ?? item?.system?.actionType).toLowerCase();
+  if (actionType === "rwak") {
+    return true;
+  }
+
+  const attackType = cleanText(activity?.attack?.type?.value ?? item?.system?.attack?.type?.value).toLowerCase();
+  return attackType === "ranged";
+}
+
+function availableSpellSlots(actor) {
+  const slots = [];
+  for (let level = 1; level <= 9; level += 1) {
+    const slot = actor?.system?.spells?.[`spell${level}`];
+    const value = Math.floor(toNumber(slot?.value, 0));
+    const max = Math.floor(toNumber(slot?.max, 0));
+    if (value <= 0 || max <= 0) {
+      continue;
+    }
+
+    slots.push({
+      level,
+      value,
+      max
+    });
+  }
+  return slots;
+}
+
+function divineSmiteDamageDice(slotLevel) {
+  return Math.min(5, Math.max(2, Math.floor(toNumber(slotLevel, 1)) + 1));
+}
+
+function combatTurnKey(actor, workflow) {
+  const combat = workflow?.combat ?? game?.combat ?? null;
+  return [
+    cleanText(combat?.id, "no-combat"),
+    Math.floor(toNumber(combat?.round, 0)),
+    Math.floor(toNumber(combat?.turn, 0)),
+    cleanText(actor?.uuid ?? actor?.id ?? actor?.name, "actor"),
+    "divine-smite"
+  ].join(":");
+}
+
+function effectIsEnabled(effect) {
+  return effect?.disabled !== true;
+}
+
+function selectedVariantIdsFromChoice(choice) {
+  if (Array.isArray(choice?.variantIds)) {
+    return choice.variantIds.map((entry) => cleanText(entry)).filter(Boolean);
+  }
+
+  const single = cleanText(choice?.variantId);
+  return single ? [single] : [];
+}
+
 export class PaladinAutomationService {
   constructor(moduleApi, options = {}) {
     this.moduleApi = moduleApi;
+    this._smiteTurnUses = new Set();
     this._options = options;
   }
 
   async initialize() {
+    return true;
+  }
+
+  async applyMidiRollComplete(workflow) {
+    const actor = workflow?.actor;
+    if (!(actor instanceof Actor)) {
+      return true;
+    }
+
+    const smiteFeature = this.#findDivineSmite(actor);
+    if (!smiteFeature || !isWeaponAttackWorkflow(workflow)) {
+      return true;
+    }
+
+    const allVariants = this.#divineSmiteVariants(actor);
+    const canSmiteAtRange = allVariants.some((variant) => variant.allowRanged === true);
+    const isMelee = isMeleeWeaponAttackWorkflow(workflow);
+    if (!isMelee && !(canSmiteAtRange && isRangedWeaponAttackWorkflow(workflow))) {
+      return true;
+    }
+
+    const targets = targetActorsFromWorkflow(workflow);
+    if (!targets.length) {
+      return true;
+    }
+
+    const slots = availableSpellSlots(actor);
+    if (!slots.length) {
+      return true;
+    }
+    const variants = allVariants.filter((variant) => (
+      slots.some((slot) => slot.level >= Math.floor(toNumber(variant.minSlotLevel, 1)))
+    ));
+
+    const turnKey = combatTurnKey(actor, workflow);
+    const ignoresTurnLimit = this.#canIgnoreDivineSmiteTurnLimit(actor);
+    if (!ignoresTurnLimit && this._smiteTurnUses.has(turnKey)) {
+      return true;
+    }
+
+    const details = {
+      slots,
+      variants,
+      targets: targets.map((target) => ({
+        uuid: cleanText(target.uuid ?? target.id),
+        name: cleanText(target.name, "Цель")
+      })),
+      oncePerTurn: !ignoresTurnLimit,
+      damageType: DIVINE_SMITE_DAMAGE_TYPE
+    };
+    const choice = await this.#promptDivineSmite(actor, details);
+    if (!choice) {
+      return true;
+    }
+
+    const slotLevel = Math.floor(toNumber(choice.slotLevel, 0));
+    const selectedSlot = slots.find((slot) => slot.level === slotLevel);
+    if (!selectedSlot) {
+      return true;
+    }
+
+    const chosenTarget = this.#chosenSmiteTarget(targets, choice) ?? targets[0];
+    if (!(chosenTarget instanceof Actor)) {
+      return true;
+    }
+
+    const selectedVariantIds = this.#validatedSmiteVariantIds(choice, variants, selectedSlot.level);
+    const selectedVariants = selectedVariantIds
+      .map((id) => variants.find((variant) => variant.id === id))
+      .filter(Boolean);
+    const latestSlot = actor?.system?.spells?.[`spell${selectedSlot.level}`];
+    const latestValue = Math.floor(toNumber(latestSlot?.value, 0));
+    if (latestValue <= 0) {
+      return true;
+    }
+
+    await actor.update?.({ [`system.spells.spell${selectedSlot.level}.value`]: latestValue - 1 });
+    const formula = `${divineSmiteDamageDice(selectedSlot.level)}d8`;
+    await this.#applyDamage(chosenTarget, formula, DIVINE_SMITE_DAMAGE_TYPE, {
+      sourceActor: actor,
+      sourceItemUuid: smiteFeature.uuid ?? workflow?.item?.uuid,
+      label: this.#divineSmiteLabel(selectedSlot.level, selectedVariants)
+    });
+    if (!ignoresTurnLimit) {
+      this._smiteTurnUses.add(turnKey);
+    }
+
     return true;
   }
 
@@ -296,6 +568,198 @@ export class PaladinAutomationService {
 
   #canPrompt(actor) {
     return Boolean(game.user?.isGM || actor?.isOwner);
+  }
+
+  #findDivineSmite(actor) {
+    return findActorFeature(actor, DIVINE_SMITE_FEATURE_ID, "божественная кара");
+  }
+
+  #divineSmiteVariants(actor) {
+    const variants = [];
+    const seen = new Set();
+    for (const item of collectionValues(actor?.items)) {
+      const rawId = rawFeatureId(itemFeatureId(item));
+      const variant = DIVINE_SMITE_VARIANT_BY_ID.get(rawId)
+        ?? DIVINE_SMITE_VARIANTS.find((entry) => normalizeText(entry.name) === normalizeText(item?.name))
+        ?? null;
+      if (!variant || seen.has(variant.id)) {
+        continue;
+      }
+
+      seen.add(variant.id);
+      variants.push({
+        ...variant,
+        itemUuid: cleanText(item?.uuid),
+        description: cleanText(item?.system?.description?.value ?? item?.system?.description?.chat)
+      });
+    }
+    return variants;
+  }
+
+  #canIgnoreDivineSmiteTurnLimit(actor) {
+    for (const effect of collectionValues(actor?.effects)) {
+      if (!effectIsEnabled(effect)) {
+        continue;
+      }
+
+      const ignoreTurnLimit = effectFlag(effect, "paladinAutomation.divineSmiteIgnoreTurnLimit");
+      const ignoreTurnLimitText = cleanText(ignoreTurnLimit).toLowerCase();
+      if (ignoreTurnLimit === true || ignoreTurnLimitText === "true" || toNumber(ignoreTurnLimit, 0) === 1) {
+        return true;
+      }
+
+      if (normalizeText(effect?.name) === "святой нимб") {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  #canUseMultipleSmiteVariants(actor) {
+    for (const effect of collectionValues(actor?.effects)) {
+      if (!effectIsEnabled(effect)) {
+        continue;
+      }
+
+      if (toNumber(effectFlag(effect, "paladinAutomation.divineSmiteVariantLimit"), 0) >= 2) {
+        return true;
+      }
+
+      if (normalizeText(effect?.name) === "мстящий ангел") {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  #validatedSmiteVariantIds(choice, variants, slotLevel) {
+    const allowed = new Map(variants.map((variant) => [variant.id, variant]));
+    const maximum = this.#canUseMultipleSmiteVariants(choice?.actor) ? 2 : 1;
+    return selectedVariantIdsFromChoice(choice)
+      .filter((id) => {
+        const variant = allowed.get(id);
+        return variant && Math.floor(toNumber(variant.minSlotLevel, 1)) <= slotLevel;
+      })
+      .slice(0, maximum);
+  }
+
+  #chosenSmiteTarget(targets, choice) {
+    const targetUuid = cleanText(choice?.targetUuid);
+    if (!targetUuid) {
+      return targets[0] ?? null;
+    }
+
+    return targets.find((target) => cleanText(target?.uuid ?? target?.id) === targetUuid) ?? null;
+  }
+
+  #divineSmiteLabel(slotLevel, selectedVariants) {
+    const variantNames = selectedVariants.map((variant) => variant.name).filter(Boolean);
+    const suffix = variantNames.length ? `: ${variantNames.join(", ")}` : "";
+    return `Божественная кара (${slotLevel} ур.)${suffix}`;
+  }
+
+  async #applyDamage(actor, formula, damageType = "", options = {}) {
+    if (!(actor instanceof Actor)) {
+      return false;
+    }
+
+    const roll = new Roll(cleanText(formula) || "0", options.sourceActor?.getRollData?.() ?? actor.getRollData?.() ?? {});
+    await roll.evaluate();
+    await actor.applyDamage?.([{
+      value: Math.max(0, toNumber(roll.total, 0)),
+      type: cleanText(damageType)
+    }], {
+      sourceActorUuid: options.sourceActor?.uuid,
+      sourceItemUuid: options.sourceItemUuid
+    });
+    await roll.toMessage?.({
+      speaker: speakerForActor(options.sourceActor ?? actor),
+      flavor: cleanText(options.label, "Божественная кара")
+    });
+    return true;
+  }
+
+  async #promptDivineSmite(actor, details) {
+    if (typeof this._options.promptDivineSmite === "function") {
+      const choice = await this._options.promptDivineSmite(actor, details);
+      return choice ? { ...choice, actor } : null;
+    }
+
+    if (!this.#canPrompt(actor) || typeof Dialog !== "function") {
+      return null;
+    }
+
+    const slotOptions = details.slots.map((slot) => (
+      `<option value="${escapeHtml(slot.level)}">${escapeHtml(slot.level)} ур. (${escapeHtml(slot.value)} / ${escapeHtml(slot.max)})</option>`
+    )).join("");
+    const targetOptions = details.targets.map((target) => (
+      `<option value="${escapeHtml(target.uuid)}">${escapeHtml(target.name)}</option>`
+    )).join("");
+    const variantInputs = details.variants.length
+      ? details.variants.map((variant) => `
+        <label class="checkbox">
+          <input type="checkbox" value="${escapeHtml(variant.id)}" data-smite-variant>
+          ${escapeHtml(variant.name)}${variant.minSlotLevel > 1 ? ` (${escapeHtml(variant.minSlotLevel)}+ ур.)` : ""}
+        </label>
+      `).join("")
+      : "<p>Нет дополнительных вариантов кары.</p>";
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const dialog = new Dialog({
+        title: "Божественная кара",
+        content: `
+          <form>
+            <p>Попадание оружием. Потратить ячейку заклинаний на Божественную кару?</p>
+            <div class="form-group">
+              <label>Ячейка</label>
+              <select data-smite-slot>${slotOptions}</select>
+            </div>
+            ${details.targets.length > 1 ? `
+              <div class="form-group">
+                <label>Цель</label>
+                <select data-smite-target>${targetOptions}</select>
+              </div>
+            ` : ""}
+            <fieldset>
+              <legend>Вариант кары</legend>
+              ${variantInputs}
+            </fieldset>
+          </form>
+        `,
+        buttons: {
+          confirm: {
+            label: "Кара",
+            callback: (html) => {
+              const root = getDialogRoot(html);
+              const slotLevel = Number(root?.querySelector("[data-smite-slot]")?.value ?? 0);
+              const targetUuid = cleanText(root?.querySelector("[data-smite-target]")?.value);
+              const variantIds = Array.from(root?.querySelectorAll("[data-smite-variant]:checked") ?? [])
+                .map((input) => cleanText(input.value))
+                .filter(Boolean);
+              settled = true;
+              resolve({ slotLevel, targetUuid, variantIds, actor });
+            }
+          },
+          cancel: {
+            label: "Отмена",
+            callback: () => {
+              settled = true;
+              resolve(null);
+            }
+          }
+        },
+        default: "confirm",
+        close: () => {
+          if (!settled) {
+            resolve(null);
+          }
+        }
+      });
+      dialog.render(true);
+    });
   }
 
   async #useLayOnHands(actor, item) {

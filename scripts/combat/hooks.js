@@ -359,5 +359,12 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to apply paladin rest automation.`, error);
       });
     });
+
+    Hooks.on("midi-qol.RollComplete", (workflow) => {
+      moduleApi.paladinAutomationService.applyMidiRollComplete(workflow).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply paladin MIDI automation.`, error);
+      });
+      return true;
+    });
   }
 }

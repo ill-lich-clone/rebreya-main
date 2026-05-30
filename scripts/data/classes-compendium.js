@@ -58,7 +58,7 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 14;
+const CLASS_FEATURE_TEMPLATE_VERSION = 15;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CLASS_TEMPLATE_VERSION = 6;
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
@@ -2046,6 +2046,76 @@ function createPaladinLayOnHandsAutomation(feature) {
   };
 }
 
+function createPaladinAuraOfProtectionAutomation(feature) {
+  const effectId = stableHashId(`${feature.classIdentifier}:${feature.featureId}:aura-of-protection`, "effect");
+  return {
+    activities: {},
+    effects: [{
+      _id: effectId,
+      name: feature.name,
+      type: "base",
+      img: DEFAULT_FEATURE_ICON,
+      system: {},
+      changes: [{
+        key: "system.bonuses.abilities.save",
+        mode: EFFECT_MODE_ADD,
+        value: "+@abilities.cha.mod",
+        priority: 20
+      }],
+      disabled: false,
+      duration: {
+        startTime: null,
+        seconds: null,
+        combat: null,
+        rounds: null,
+        turns: null,
+        startRound: null,
+        startTurn: null
+      },
+      description: toHtmlParagraphs(feature.description),
+      origin: null,
+      transfer: true,
+      statuses: [],
+      sort: 0,
+      flags: {
+        ActiveAuras: {
+          aura: "Allies",
+          radius: "10",
+          isAura: true,
+          inactive: false,
+          hidden: false,
+          ignoreSelf: false,
+          height: false,
+          alignment: "",
+          type: "",
+          save: "",
+          savedc: null,
+          hostile: false,
+          onlyOnce: false,
+          time: "None",
+          displayTemp: true,
+          nameOverride: "",
+          customCheck: "",
+          wallsBlock: "system"
+        },
+        dae: {
+          stackable: "noneName",
+          durationExpression: "",
+          macroRepeat: "none",
+          specialDuration: [],
+          transfer: true,
+          showIcon: true
+        },
+        [MODULE_ID]: {
+          managed: true,
+          automation: "paladin-aura-of-protection"
+        }
+      }
+    }],
+    usesRecovery: []
+  };
+}
+
 function createIronWillAutomation(feature, classIdentifier) {
   const effectId = stableHashId(`${classIdentifier}:${feature.featureId}:iron-will`, "effect");
   return {
@@ -2256,6 +2326,10 @@ function createFeatureAutomation(feature, classIdentifier) {
 
   if (classIdentifier === "paladin-rework-v01" && normalizedName === "наложение рук") {
     return createPaladinLayOnHandsAutomation(feature);
+  }
+
+  if (classIdentifier === "paladin-rework-v01" && normalizedName === "аура защиты") {
+    return createPaladinAuraOfProtectionAutomation(feature);
   }
 
   if (normalizedName === "ярость") {

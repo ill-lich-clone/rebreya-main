@@ -553,7 +553,31 @@ test("paladin divine sense and lay on hands expose item resources and automation
   assert.equal(layOnHandsActivity.target.affects.type, "creature");
   assert.equal(layOnHandsActivity.flags["rebreya-main"].automation, "paladin-lay-on-hands");
   assert.deepEqual(layOnHandsActivity.consumption.targets, []);
-  assert.equal(JSON.parse(layOnHandsEntry.flags["rebreya-main"].signature).templateVersion, 14);
+  assert.equal(JSON.parse(layOnHandsEntry.flags["rebreya-main"].signature).templateVersion, 15);
+});
+
+test("paladin aura of protection exposes a DAE Active Auras saving throw bonus", () => {
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
+  const definitions = buildFeatureDefinitions(paladin);
+  const aura = definitions.find((definition) => (
+    definition.sourceType === "classFeature" && definition.name === "Аура защиты"
+  ));
+  const auraEntry = createFeatureEntryData(aura, new Map());
+  const [effect] = auraEntry.effects;
+
+  assert.equal(effect.name, "Аура защиты");
+  assert.equal(effect.transfer, true);
+  assert.deepEqual(effect.changes, [{
+    key: "system.bonuses.abilities.save",
+    mode: 2,
+    value: "+@abilities.cha.mod",
+    priority: 20
+  }]);
+  assert.equal(effect.flags.ActiveAuras.isAura, true);
+  assert.equal(effect.flags.ActiveAuras.aura, "Allies");
+  assert.equal(effect.flags.ActiveAuras.radius, "10");
+  assert.equal(effect.flags.ActiveAuras.ignoreSelf, false);
+  assert.equal(effect.flags["rebreya-main"].automation, "paladin-aura-of-protection");
 });
 
 test("shared class feature icons resolve from common icon names", () => {
