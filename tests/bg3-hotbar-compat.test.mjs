@@ -11,6 +11,7 @@ function withSceneControlsHandler(callback) {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
+  const previousCanvas = globalThis.canvas;
   const handlers = [];
 
   globalThis.Hooks = {
@@ -38,6 +39,7 @@ function withSceneControlsHandler(callback) {
     globalThis.Hooks = previousHooks;
     globalThis.game = previousGame;
     globalThis.ui = previousUi;
+    globalThis.canvas = previousCanvas;
   }
 }
 
@@ -134,5 +136,30 @@ test("scene controls create a separate Rebreya group for array controls", () => 
       "rebreya-main-calendar",
       "rebreya-main-lootgen"
     ]);
+  });
+});
+
+test("scene controls deactivate the tiles layer before Rebreya app buttons run", () => {
+  withSceneControlsHandler((handler) => {
+    let deactivationCount = 0;
+    const tilesLayer = {
+      options: { name: "tiles" },
+      deactivate: () => {
+        deactivationCount += 1;
+      }
+    };
+    globalThis.canvas = { activeLayer: tilesLayer };
+    const controls = {
+      tokens: {
+        name: "tokens",
+        order: 20,
+        tools: {}
+      }
+    };
+
+    handler(controls);
+    controls["rebreya-main-rebreya"].onChange(new Event("change"), true);
+
+    assert.equal(deactivationCount, 1);
   });
 });

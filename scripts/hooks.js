@@ -98,6 +98,46 @@ function createSafeAction(callback, errorLabel) {
   };
 }
 
+function isTilesLayer(layer) {
+  if (!layer) {
+    return false;
+  }
+
+  const tilesLayer = globalThis.canvas?.tiles ?? null;
+  const layerName = String(
+    layer.options?.name
+    ?? layer.constructor?.layerOptions?.name
+    ?? layer.name
+    ?? ""
+  );
+
+  return layer === tilesLayer || layerName === "tiles";
+}
+
+function deactivateActiveTilesLayer() {
+  const activeLayer = globalThis.canvas?.activeLayer ?? null;
+  if (!isTilesLayer(activeLayer) || typeof activeLayer.deactivate !== "function") {
+    return;
+  }
+
+  activeLayer.deactivate();
+}
+
+function createRebreyaControlChange() {
+  return (_event, active = true) => {
+    if (active === false) {
+      return;
+    }
+
+    try {
+      deactivateActiveTilesLayer();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to deactivate tiles layer before opening Rebreya controls.`, error);
+    }
+  };
+}
+
 function buildToolsRecord() {
   const economyToolName = `${MODULE_ID}-economy`;
   const inventoryToolName = `${MODULE_ID}-inventory`;
@@ -181,6 +221,7 @@ function buildControlRecord(controlsRecord) {
     title: game.i18n.localize("REBREYA_MAIN.Controls.GroupTitle"),
     icon: "fa-solid fa-box-open",
     visible: true,
+    onChange: createRebreyaControlChange(),
     tools: buildToolsRecord(),
     activeTool: PANEL_TOOL_NAME
   };
@@ -199,6 +240,7 @@ function buildControlArrayEntry(controlsArray) {
     title: game.i18n.localize("REBREYA_MAIN.Controls.GroupTitle"),
     icon: "fa-solid fa-box-open",
     visible: true,
+    onChange: createRebreyaControlChange(),
     tools: buildToolsArray(),
     activeTool: PANEL_TOOL_NAME
   };
