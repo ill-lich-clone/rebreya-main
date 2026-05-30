@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildRaceAdvancement,
   findStaleGeneratedDocumentIds,
   shouldRebuildManagedPack
 } from "../scripts/data/races-compendium.js";
@@ -81,4 +82,39 @@ test("race pack cleanup finds legacy generated duplicates without managed flags"
   ];
 
   assert.deepEqual(findStaleGeneratedDocumentIds(documents, entries, "raceId"), ["legacyDuplicate"]);
+});
+
+test("fixed-size races do not show a size advancement step", () => {
+  const advancement = buildRaceAdvancement({
+    id: "гоблины",
+    name: "Гоблины",
+    size: "sm",
+    fields: {
+      size: "Рост гоблинов между 3 и 4 футами. Ваш размер — Маленький.",
+      abilityIncrease: "",
+      languages: ""
+    },
+    abilities: [],
+    raceFeatNames: []
+  });
+
+  assert.equal(advancement.some((entry) => entry.type === "Size"), false);
+});
+
+test("variable-size races keep the size advancement step", () => {
+  const advancement = buildRaceAdvancement({
+    id: "железорождённые",
+    name: "Железорождённые",
+    size: "med",
+    fields: {
+      size: "Ваш размер — Средний или Маленький (на ваш выбор).",
+      abilityIncrease: "",
+      languages: ""
+    },
+    abilities: [],
+    raceFeatNames: []
+  });
+  const sizeAdvancement = advancement.find((entry) => entry.type === "Size");
+
+  assert.deepEqual(sizeAdvancement.configuration.sizes, ["med", "sm"]);
 });

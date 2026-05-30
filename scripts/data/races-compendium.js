@@ -1625,6 +1625,7 @@ async function createManagedDocuments(pack, entries, createData) {
 }
 
 function buildAdvancementSize(race) {
+  const sizeChoices = getRaceSizeChoices(race);
   return {
     _id: stableHashId(`${race.id}:size`, "adv"),
     type: "Size",
@@ -1632,10 +1633,37 @@ function buildAdvancementSize(race) {
     hint: "Выберите размер персонажа, если раса допускает несколько вариантов.",
     level: 0,
     configuration: {
-      sizes: [race.size]
+      sizes: sizeChoices
     },
     value: {}
   };
+}
+
+function getRaceSizeChoices(race) {
+  const fallbackSize = normalizeSize(race?.size);
+  const text = normalizeMatchText(`${race?.fields?.size ?? ""} ${fallbackSize}`);
+  const detectedSizes = [];
+  const candidates = [
+    ["tiny", /крошечн|tiny|\btiny\b/u],
+    ["sm", /маленьк|small|\bsm\b/u],
+    ["med", /средн|medium|\bmed\b/u],
+    ["lg", /больш|large|\blg\b/u],
+    ["huge", /огромн|huge|\bhuge\b/u],
+    ["grg", /громадн|gargantuan|\bgrg\b/u]
+  ];
+
+  for (const [size, pattern] of candidates) {
+    if (pattern.test(text)) {
+      detectedSizes.push(size);
+    }
+  }
+
+  return unique([fallbackSize, ...detectedSizes]);
+}
+
+function getFixedRaceSize(race) {
+  const sizeChoices = getRaceSizeChoices(race);
+  return sizeChoices.length === 1 ? sizeChoices[0] : null;
 }
 
 function buildAdvancementItemGrant(race, itemUuids = []) {
@@ -1763,12 +1791,15 @@ function buildRaceFeatHint(race, missing = []) {
   return rows.join(" ");
 }
 
-function buildRaceAdvancement(race, {
+export function buildRaceAdvancement(race, {
   featureUuidById = new Map(),
   minorFeatUuids = [],
   featLookupByName = new Map()
 } = {}) {
-  const advancement = [buildAdvancementSize(race)];
+  const advancement = [];
+  if (getRaceSizeChoices(race).length > 1) {
+    advancement.push(buildAdvancementSize(race));
+  }
 
   const abilitySpecs = parseAbilityIncreaseSpecs(race);
   if (abilitySpecs.length) {
@@ -1955,6 +1986,7 @@ function createRaceEntryData(entry, folderIdByPath, iconLookup = null) {
         managed: true,
         sourceType: "race",
         raceId: entry.race.id,
+        fixedSize: getFixedRaceSize(entry.race),
         automation: buildFeatureAutomationFlag(entry.race.automation),
         signature: entry.signature
       }

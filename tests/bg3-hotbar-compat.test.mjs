@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const {
+  applyFixedRaceSize,
   applyBg3HotbarAutoAddSuppression,
   registerSceneControlsHook,
   shouldSuppressBg3HotbarAutoAdd
@@ -79,6 +80,43 @@ test("BG3 hotbar auto-add suppression leaves unrelated items alone", () => {
   assert.equal(shouldSuppressBg3HotbarAutoAdd(makeItem({ type: "feat" })), false);
   assert.equal(applyBg3HotbarAutoAddSuppression(makeItem({ type: "feat" }), options), false);
   assert.equal(options.noBG3AutoAdd, undefined);
+});
+
+test("fixed-size Rebreya race items update character size after creation", async () => {
+  const updates = [];
+  const actor = {
+    type: "character",
+    system: { traits: { size: "med" } },
+    update: async (patch) => {
+      updates.push(patch);
+      actor.system.traits.size = patch["system.traits.size"];
+    }
+  };
+  const item = makeItem({
+    type: "race",
+    rebreyaFlags: { fixedSize: "sm" }
+  });
+  item.parent = actor;
+
+  assert.equal(await applyFixedRaceSize(item), true);
+  assert.deepEqual(updates, [{ "system.traits.size": "sm" }]);
+});
+
+test("variable-size race items leave character size to dnd5e advancement", async () => {
+  const actor = {
+    type: "character",
+    system: { traits: { size: "med" } },
+    update: async () => {
+      throw new Error("size should not update");
+    }
+  };
+  const item = makeItem({
+    type: "race",
+    rebreyaFlags: { fixedSize: null }
+  });
+  item.parent = actor;
+
+  assert.equal(await applyFixedRaceSize(item), false);
 });
 
 test("scene controls create a separate Rebreya group for record controls", () => {

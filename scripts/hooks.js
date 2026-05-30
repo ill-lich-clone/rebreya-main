@@ -1,7 +1,9 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 
 let bg3HotbarSuppressionHookRegistered = false;
+let fixedRaceSizeHookRegistered = false;
 const PANEL_TOOL_NAME = `${MODULE_ID}-panel`;
+const DND5E_ACTOR_SIZES = new Set(["tiny", "sm", "med", "lg", "huge", "grg"]);
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -53,6 +55,46 @@ function registerBg3HotbarAutoAddSuppression() {
   bg3HotbarSuppressionHookRegistered = true;
   Hooks.on("createItem", (item, options) => {
     applyBg3HotbarAutoAddSuppression(item, options);
+  });
+}
+
+function getItemFlag(item, key) {
+  return item?.getFlag?.(MODULE_ID, key) ?? item?.flags?.[MODULE_ID]?.[key];
+}
+
+export async function applyFixedRaceSize(item) {
+  if (!item || item.type !== "race") {
+    return false;
+  }
+
+  const fixedSize = String(getItemFlag(item, "fixedSize") ?? "").trim();
+  if (!DND5E_ACTOR_SIZES.has(fixedSize)) {
+    return false;
+  }
+
+  const actor = item.parent ?? item.actor ?? null;
+  if (!actor || actor.type !== "character") {
+    return false;
+  }
+
+  if (actor.system?.traits?.size === fixedSize) {
+    return false;
+  }
+
+  await actor.update({ "system.traits.size": fixedSize });
+  return true;
+}
+
+function registerFixedRaceSizeHook() {
+  if (fixedRaceSizeHookRegistered || !globalThis.Hooks?.on) {
+    return;
+  }
+
+  fixedRaceSizeHookRegistered = true;
+  Hooks.on("createItem", (item) => {
+    applyFixedRaceSize(item).catch((error) => {
+      console.error(`${MODULE_ID} | Failed to apply fixed race size.`, error);
+    });
   });
 }
 
@@ -277,6 +319,7 @@ export function refreshEconomyLauncher() {
 
 export function registerSceneControlsHook() {
   registerBg3HotbarAutoAddSuppression();
+  registerFixedRaceSizeHook();
 
   Hooks.on("getSceneControlButtons", (controls) => {
     if (!canShowRebreyaControls() || !controls) {
