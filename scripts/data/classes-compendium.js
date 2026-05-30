@@ -58,7 +58,7 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 13;
+const CLASS_FEATURE_TEMPLATE_VERSION = 14;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CLASS_TEMPLATE_VERSION = 6;
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
@@ -2578,6 +2578,33 @@ function buildTraitAdvancement({
   };
 }
 
+function weaponChoiceAdvancementLabel(choice, index = 0) {
+  const pool = Array.isArray(choice?.pool) ? choice.pool : [];
+  const isSimple = pool.some((entry) => cleanString(entry).startsWith("weapon:sim:"));
+  const isMartial = pool.some((entry) => cleanString(entry).startsWith("weapon:mar:"));
+  if (isSimple && !isMartial) {
+    return {
+      seed: `simple-weapon-proficiencies-${index + 1}`,
+      title: "Владение простым оружием",
+      hint: "Выберите одно простое оружие класса."
+    };
+  }
+
+  if (isMartial && !isSimple) {
+    return {
+      seed: `martial-weapon-proficiencies-${index + 1}`,
+      title: "Владение воинским оружием",
+      hint: "Выберите три воинских оружия класса."
+    };
+  }
+
+  return {
+    seed: `weapon-proficiencies-${index + 1}`,
+    title: "Владение оружием",
+    hint: "Владение оружием класса."
+  };
+}
+
 function createAbilityFixed(initial = {}) {
   return {
     str: Math.floor(parseNumber(initial.str, 0)),
@@ -3149,7 +3176,20 @@ export function buildClassAdvancement(classData, context = {}) {
   const weaponProficiencyChoices = Array.isArray(classData.weaponProficiencyChoices)
     ? classData.weaponProficiencyChoices
     : [];
-  if (weaponProficiencyGrants.length || weaponProficiencyChoices.length) {
+  if (classIdentifier === "paladin-rework-v01" && !weaponProficiencyGrants.length && weaponProficiencyChoices.length) {
+    weaponProficiencyChoices.forEach((choice, index) => {
+      const label = weaponChoiceAdvancementLabel(choice, index);
+      advancements.push(buildTraitAdvancement({
+        classIdentifier,
+        seed: label.seed,
+        title: label.title,
+        hint: label.hint,
+        level: 1,
+        choices: [choice]
+      }));
+    });
+  }
+  else if (weaponProficiencyGrants.length || weaponProficiencyChoices.length) {
     advancements.push(buildTraitAdvancement({
       classIdentifier,
       seed: "weapon-proficiencies",
