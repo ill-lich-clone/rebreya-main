@@ -93,8 +93,11 @@ test("scene controls create a separate Rebreya group for record controls", () =>
 
     assert.deepEqual(controls.tokens.tools, {});
     assert.ok(controls["rebreya-main-rebreya"]);
-    assert.equal(controls["rebreya-main-rebreya"].activeTool, null);
+    assert.equal(controls["rebreya-main-rebreya"].activeTool, "rebreya-main-panel");
+    assert.equal(controls["rebreya-main-rebreya"].tools["rebreya-main-panel"].onChange, undefined);
+    assert.equal(controls["rebreya-main-rebreya"].tools["rebreya-main-panel"].button, undefined);
     assert.deepEqual(Object.keys(controls["rebreya-main-rebreya"].tools), [
+      "rebreya-main-panel",
       "rebreya-main-economy",
       "rebreya-main-inventory",
       "rebreya-main-calendar",
@@ -121,8 +124,11 @@ test("scene controls create a separate Rebreya group for array controls", () => 
     assert.deepEqual(tokenControl.tools, []);
     const rebreyaIndex = controls.findIndex((control) => control?.name === "rebreya-main-rebreya");
     assert.equal(rebreyaIndex, 2);
-    assert.equal(controls[rebreyaIndex].activeTool, null);
+    assert.equal(controls[rebreyaIndex].activeTool, "rebreya-main-panel");
+    assert.equal(controls[rebreyaIndex].tools.find((tool) => tool.name === "rebreya-main-panel").onChange, undefined);
+    assert.equal(controls[rebreyaIndex].tools.find((tool) => tool.name === "rebreya-main-panel").button, undefined);
     assert.deepEqual(controls[rebreyaIndex].tools.map((tool) => tool.name), [
+      "rebreya-main-panel",
       "rebreya-main-economy",
       "rebreya-main-inventory",
       "rebreya-main-calendar",

@@ -191,6 +191,10 @@
   color: var(--rm-accent);
 }
 
+#scene-controls-tools .tool[data-tool="rebreya-main-panel"] {
+  display: none;
+}
+
 .rm-hero {
   display: flex;
   justify-content: space-between;

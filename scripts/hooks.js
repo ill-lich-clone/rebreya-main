@@ -1,6 +1,7 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 
 let bg3HotbarSuppressionHookRegistered = false;
+const PANEL_TOOL_NAME = `${MODULE_ID}-panel`;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -105,6 +106,13 @@ function buildToolsRecord() {
   const showEconomyButton = isEconomyButtonVisible();
 
   return {
+    [PANEL_TOOL_NAME]: {
+      name: PANEL_TOOL_NAME,
+      order: 0,
+      title: game.i18n.localize("REBREYA_MAIN.Controls.GroupTitle"),
+      icon: "fa-solid fa-box-open",
+      visible: true
+    },
     [economyToolName]: {
       name: economyToolName,
       order: 10,
@@ -174,7 +182,7 @@ function buildControlRecord(controlsRecord) {
     icon: "fa-solid fa-box-open",
     visible: true,
     tools: buildToolsRecord(),
-    activeTool: null
+    activeTool: PANEL_TOOL_NAME
   };
 }
 
@@ -192,7 +200,7 @@ function buildControlArrayEntry(controlsArray) {
     icon: "fa-solid fa-box-open",
     visible: true,
     tools: buildToolsArray(),
-    activeTool: null
+    activeTool: PANEL_TOOL_NAME
   };
 }
 
