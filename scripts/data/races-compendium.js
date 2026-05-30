@@ -300,6 +300,14 @@ function stableHashId(seed, scope = "id") {
   return token.padEnd(16, "0").slice(0, 16);
 }
 
+function buildRaceDocumentId(race) {
+  return stableHashId(`race:${race?.id ?? ""}`, "race-doc");
+}
+
+function buildRaceFeatureDocumentId(feature) {
+  return stableHashId(`race-feature:${feature?.featureId ?? ""}`, "race-feature-doc");
+}
+
 function normalizeSize(value) {
   const token = normalizeMatchText(value);
   if (["tiny", "sm", "med", "lg", "huge", "grg"].includes(token)) {
@@ -1483,17 +1491,108 @@ async function syncManagedDocumentIcons(pack, documents, resolveIcon) {
   await Item.implementation.updateDocuments(updates, { pack: pack.collection });
 }
 
-function shouldRebuildManagedPack(documents, entries, sourceIdFlag) {
+function getObjectProperty(object, propertyPath) {
+  return String(propertyPath ?? "")
+    .split(".")
+    .filter(Boolean)
+    .reduce((value, key) => value?.[key], object);
+}
+
+function getDocumentId(document) {
+  return cleanString(document?.id ?? document?._id);
+}
+
+function getDocumentFlag(document, key) {
+  return document?.getFlag?.(MODULE_ID, key);
+}
+
+function normalizeSyncEntry(entry, sourceIdFlag) {
+  return {
+    sourceId: cleanString(entry?.[sourceIdFlag]),
+    documentId: cleanString(entry?.documentId),
+    name: cleanString(entry?.name ?? entry?.race?.name),
+    documentType: cleanString(entry?.documentType),
+    signature: cleanString(entry?.signature)
+  };
+}
+
+export function findStaleGeneratedDocumentIds(documents, entries, sourceIdFlag) {
+  const normalizedEntries = entries.map((entry) => normalizeSyncEntry(entry, sourceIdFlag));
+  const expectedSourceIds = new Set(normalizedEntries.map((entry) => entry.sourceId).filter(Boolean));
+  const expectedDocumentIds = new Set(normalizedEntries.map((entry) => entry.documentId).filter(Boolean));
+  const expectedNames = new Set(normalizedEntries.map((entry) => entry.name).filter(Boolean));
+  const expectedDocumentTypes = new Set(normalizedEntries.map((entry) => entry.documentType).filter(Boolean));
+  const staleIds = [];
+
+  for (const document of Array.isArray(documents) ? documents : []) {
+    if (getDocumentFlag(document, "managed")) {
+      continue;
+    }
+
+    const documentId = getDocumentId(document);
+    if (!documentId) {
+      continue;
+    }
+
+    const documentType = cleanString(document?.type);
+    if (expectedDocumentTypes.size && !expectedDocumentTypes.has(documentType)) {
+      continue;
+    }
+
+    const sourceId = cleanString(getDocumentFlag(document, sourceIdFlag));
+    const sourceIdMatches = sourceId && expectedSourceIds.has(sourceId);
+    const sourceMatches = cleanString(getObjectProperty(document, "system.source.custom")) === SOURCE_LABEL;
+    const nameMatches = expectedNames.has(cleanString(document?.name));
+    const stableIdMatches = expectedDocumentIds.has(documentId);
+
+    if (sourceIdMatches || (sourceMatches && (nameMatches || stableIdMatches))) {
+      staleIds.push(documentId);
+    }
+  }
+
+  return staleIds;
+}
+
+async function deleteStaleGeneratedDocuments(pack, documents, entries, sourceIdFlag) {
+  const staleIds = findStaleGeneratedDocumentIds(documents, entries, sourceIdFlag);
+  if (!staleIds.length) {
+    return [];
+  }
+
+  await Item.implementation.deleteDocuments(staleIds, { pack: pack.collection });
+  return staleIds;
+}
+
+export function shouldRebuildManagedPack(documents, entries, sourceIdFlag) {
   const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
   if (managedDocuments.length !== entries.length) {
     return true;
   }
 
-  const expectedBySourceId = new Map(entries.map((entry) => [entry[sourceIdFlag], entry]));
+  const normalizedEntries = entries.map((entry) => normalizeSyncEntry(entry, sourceIdFlag));
+  const expectedBySourceId = new Map();
+  for (const entry of normalizedEntries) {
+    if (!entry.sourceId || expectedBySourceId.has(entry.sourceId)) {
+      return true;
+    }
+
+    expectedBySourceId.set(entry.sourceId, entry);
+  }
+
+  const seenSourceIds = new Set();
   for (const document of managedDocuments) {
-    const sourceId = cleanString(document.getFlag(MODULE_ID, sourceIdFlag));
+    const sourceId = cleanString(getDocumentFlag(document, sourceIdFlag));
+    if (seenSourceIds.has(sourceId)) {
+      return true;
+    }
+
+    seenSourceIds.add(sourceId);
     const expected = expectedBySourceId.get(sourceId);
     if (!expected) {
+      return true;
+    }
+
+    if (expected.documentId && getDocumentId(document) !== expected.documentId) {
       return true;
     }
 
@@ -1812,6 +1911,7 @@ function createFeatureEntryData(feature, folderIdByPath, iconLookup = null) {
   const folderPath = feature.folderPath.join("/");
   const automationBundle = buildFeatureAutomationBundle(feature);
   return {
+    _id: feature.documentId,
     name: feature.name,
     type: "feat",
     img: resolveFeatureIcon(feature.raceName, feature.name, iconLookup, DEFAULT_FEATURE_ICON),
@@ -1840,6 +1940,7 @@ function createFeatureEntryData(feature, folderIdByPath, iconLookup = null) {
 function createRaceEntryData(entry, folderIdByPath, iconLookup = null) {
   const folderPath = entry.folderPath.join("/");
   return {
+    _id: entry.documentId,
     name: entry.race.name,
     type: "race",
     img: resolveNamedIcon(entry.race.name, iconLookup, DEFAULT_RACE_ICON),
@@ -1900,10 +2001,16 @@ async function syncRaceFeaturePack(featureDefinitions, context = {}) {
 
   const features = featureDefinitions.map((feature) => ({
     ...feature,
+    documentId: buildRaceFeatureDocumentId(feature),
+    documentType: "feat",
     signature: buildFeatureSignature(feature)
   }));
   const featureById = new Map(features.map((feature) => [feature.featureId, feature]));
-  const documents = await getPackDocuments(pack);
+  let documents = await getPackDocuments(pack);
+  const staleDocumentIds = await deleteStaleGeneratedDocuments(pack, documents, features, "featureId");
+  if (staleDocumentIds.length) {
+    documents = await getPackDocuments(pack);
+  }
 
   if (shouldRebuildManagedPack(documents, features, "featureId")) {
     await deleteManagedDocuments(pack, documents);
@@ -1958,6 +2065,8 @@ async function syncRacesPack(races, context) {
     const advancement = buildRaceAdvancement(race, context);
     const system = createRaceSystem(race, advancement);
     return {
+      documentId: buildRaceDocumentId(race),
+      documentType: "race",
       race,
       system,
       signature: buildRaceSignature(race, system),
@@ -1968,11 +2077,20 @@ async function syncRacesPack(races, context) {
   const documents = await getPackDocuments(pack);
   const entriesForComparison = raceEntries.map((entry) => ({
     raceId: entry.race.id,
+    name: entry.race.name,
+    documentId: entry.documentId,
+    documentType: entry.documentType,
     signature: entry.signature
   }));
 
-  if (shouldRebuildManagedPack(documents, entriesForComparison, "raceId")) {
-    await deleteManagedDocuments(pack, documents);
+  let activeDocuments = documents;
+  const staleDocumentIds = await deleteStaleGeneratedDocuments(pack, activeDocuments, entriesForComparison, "raceId");
+  if (staleDocumentIds.length) {
+    activeDocuments = await getPackDocuments(pack);
+  }
+
+  if (shouldRebuildManagedPack(activeDocuments, entriesForComparison, "raceId")) {
+    await deleteManagedDocuments(pack, activeDocuments);
     await createManagedDocuments(
       pack,
       raceEntries,
@@ -1981,10 +2099,10 @@ async function syncRacesPack(races, context) {
   }
 
   const activePack = game.packs.get(RACES_PACK_ID) ?? pack;
-  const activeDocuments = await getPackDocuments(activePack);
+  const syncedDocuments = await getPackDocuments(activePack);
   await syncManagedDocumentIcons(
     activePack,
-    activeDocuments,
+    syncedDocuments,
     (document) => resolveNamedIcon(document.name, context.iconLookup, DEFAULT_RACE_ICON)
   );
 
