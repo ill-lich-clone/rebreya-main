@@ -1185,6 +1185,41 @@ test("fighter actor repair moves orphaned starting equipment pack contents into 
   assert.deepEqual(torch.updates, [{ "system.container": "pack" }]);
 });
 
+test("fighter actor repair leaves valid object container references untouched", async () => {
+  const container = makeItem({
+    id: "pack",
+    name: "РќР°Р±РѕСЂ РїСѓС‚РµС€РµСЃС‚РІРµРЅРЅРёРєР°",
+    type: "container",
+    flags: {
+      "rebreya-main": {
+        sourceType: "fighterStartingEquipment",
+        gearId: "nabor-puteshestvennika"
+      }
+    }
+  });
+  const torch = makeItem({
+    id: "torch",
+    name: "Р¤Р°РєРµР»",
+    system: {
+      container
+    },
+    flags: {
+      "rebreya-main": {
+        sourceType: "fighterStartingEquipment",
+        containerGearId: "nabor-puteshestvennika",
+        containerContentGearId: "fakel"
+      }
+    }
+  });
+  const actor = new TestActor({ id: "fighter", name: "Р’РѕРёРЅ", items: [container, torch] });
+  const service = new FighterAutomationService({});
+
+  await service.repairActor(actor);
+
+  assert.equal(torch.system.container, container);
+  assert.deepEqual(torch.updates, []);
+});
+
 test("actor repair refreshes Rebreya class advancement links from the class compendium", async () => {
   const previousPacks = game.packs;
   const staleGrant = {

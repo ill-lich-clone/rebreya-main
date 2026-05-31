@@ -43,6 +43,40 @@ function cleanText(value, fallback = "") {
   return text || String(fallback ?? "").trim();
 }
 
+function documentReferenceIdentifiers(value) {
+  const addIdentifier = (identifiers, candidate) => {
+    const text = cleanText(candidate);
+    if (!text || identifiers.includes(text)) {
+      return;
+    }
+
+    identifiers.push(text);
+    const uuidItemId = text.match(/(?:^|\.)Item\.([^.]+)$/u)?.[1];
+    if (uuidItemId && !identifiers.includes(uuidItemId)) {
+      identifiers.push(uuidItemId);
+    }
+  };
+
+  const identifiers = [];
+  if (value === null || value === undefined) {
+    return identifiers;
+  }
+
+  if (typeof value !== "object") {
+    addIdentifier(identifiers, value);
+    return identifiers;
+  }
+
+  addIdentifier(identifiers, value.id);
+  addIdentifier(identifiers, value._id);
+  addIdentifier(identifiers, value.uuid);
+  addIdentifier(identifiers, value.document?.id);
+  addIdentifier(identifiers, value.document?._id);
+  addIdentifier(identifiers, value.document?.uuid);
+
+  return identifiers;
+}
+
 function normalizeText(value) {
   return cleanText(value)
     .toLowerCase()
@@ -1079,13 +1113,13 @@ export class FighterAutomationService {
         continue;
       }
 
-      const currentContainerId = cleanText(getProperty(item, "system.container"));
-      if (currentContainerId && itemById.has(currentContainerId)) {
+      const currentContainerIds = documentReferenceIdentifiers(getProperty(item, "system.container"));
+      if (currentContainerIds.some((currentContainerId) => itemById.has(currentContainerId))) {
         continue;
       }
 
       const containerId = cleanText(containerByGearId.get(containerGearId)?.id);
-      if (!containerId || currentContainerId === containerId) {
+      if (!containerId || currentContainerIds.includes(containerId)) {
         continue;
       }
 
