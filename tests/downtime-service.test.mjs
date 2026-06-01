@@ -703,3 +703,88 @@ test("getActionCatalog exposes the first downtime action slice", () => {
     harness.restore();
   }
 });
+
+test("RebreyaMainModule exposes downtime service API and refreshes after mutations", async () => {
+  const previousHooks = globalThis.Hooks;
+  globalThis.Hooks = {
+    once() {}
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-api=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+
+    assert.ok(moduleApi.downtimeService instanceof DowntimeService);
+    assert.equal(moduleApi.downtimeService.moduleApi, moduleApi);
+
+    const calls = [];
+    moduleApi.downtimeService = {
+      getSnapshot(options) {
+        calls.push(["getSnapshot", options]);
+        return { options };
+      },
+      async grantWeeks(payload) {
+        calls.push(["grantWeeks", payload]);
+        return { granted: payload };
+      },
+      async createRequest(payload) {
+        calls.push(["createRequest", payload]);
+        return { created: payload };
+      },
+      async setRequestStatus(requestId, status, options) {
+        calls.push(["setRequestStatus", requestId, status, options]);
+        return { requestId, status, options };
+      },
+      async setRequestChecks(requestId, checks) {
+        calls.push(["setRequestChecks", requestId, checks]);
+        return { requestId, checks };
+      },
+      async recordCheckResult(requestId, checkId, result) {
+        calls.push(["recordCheckResult", requestId, checkId, result]);
+        return { requestId, checkId, result };
+      },
+      getActionCatalog() {
+        calls.push(["getActionCatalog"]);
+        return [{ id: "unique" }];
+      }
+    };
+
+    let refreshCount = 0;
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+
+    assert.deepEqual(moduleApi.getDowntimeSnapshot({ actorId: "actor-a" }), { options: { actorId: "actor-a" } });
+    assert.deepEqual(moduleApi.getDowntimeActionCatalog(), [{ id: "unique" }]);
+    assert.equal(refreshCount, 0);
+
+    assert.deepEqual(await moduleApi.grantDowntimeWeeks({ weeks: 2 }), { granted: { weeks: 2 } });
+    assert.deepEqual(await moduleApi.createDowntimeRequest({ actorId: "actor-a" }), { created: { actorId: "actor-a" } });
+    assert.deepEqual(
+      await moduleApi.setDowntimeRequestStatus("downtime-1", "approved", { result: "ok" }),
+      { requestId: "downtime-1", status: "approved", options: { result: "ok" } }
+    );
+    assert.deepEqual(
+      await moduleApi.setDowntimeRequestChecks("downtime-1", [{ id: "check-1" }]),
+      { requestId: "downtime-1", checks: [{ id: "check-1" }] }
+    );
+    assert.deepEqual(
+      await moduleApi.recordDowntimeCheckResult("downtime-1", "check-1", { total: 17 }),
+      { requestId: "downtime-1", checkId: "check-1", result: { total: 17 } }
+    );
+
+    assert.equal(refreshCount, 5);
+    assert.deepEqual(calls, [
+      ["getSnapshot", { actorId: "actor-a" }],
+      ["getActionCatalog"],
+      ["grantWeeks", { weeks: 2 }],
+      ["createRequest", { actorId: "actor-a" }],
+      ["setRequestStatus", "downtime-1", "approved", { result: "ok" }],
+      ["setRequestChecks", "downtime-1", [{ id: "check-1" }]],
+      ["recordCheckResult", "downtime-1", "check-1", { total: 17 }]
+    ]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+  }
+});

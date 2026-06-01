@@ -12,6 +12,7 @@ import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "
 import { EconomyRepository } from "./data/repository.js";
 import { TraderService } from "./data/trader-service.js";
 import { GroupContextService } from "./data/group-context-service.js";
+import { DowntimeService } from "./data/downtime-service.js";
 import { InventoryService } from "./data/inventory-service.js";
 import { HeroDollService } from "./data/hero-doll-service.js";
 import { CraftingService } from "./data/crafting-service.js";
@@ -143,7 +144,7 @@ function filterVisibleGlobalEvents(events = []) {
   return rows.filter((event) => event?.visibility?.gmOnly === false);
 }
 
-class RebreyaMainModule {
+export class RebreyaMainModule {
   constructor() {
     this.repository = new EconomyRepository();
     this.materialsCompendium = new MaterialsCompendiumService();
@@ -157,6 +158,7 @@ class RebreyaMainModule {
     this.actionsCompendium = new ActionsCompendiumService();
     this.traderService = new TraderService(this);
     this.groupContextService = new GroupContextService(this);
+    this.downtimeService = new DowntimeService(this);
     this.inventoryService = new InventoryService(this);
     this.heroDollService = new HeroDollService(this);
     this.craftingService = new CraftingService(this);
@@ -985,6 +987,44 @@ class RebreyaMainModule {
       return this.groupContextService.resolveForGroup(options.groupActorId);
     }
     return this.groupContextService.resolveForCurrentUser();
+  }
+
+  getDowntimeSnapshot(options = {}) {
+    return this.downtimeService.getSnapshot(options);
+  }
+
+  async grantDowntimeWeeks(payload = {}) {
+    const result = await this.downtimeService.grantWeeks(payload);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async createDowntimeRequest(payload = {}) {
+    const result = await this.downtimeService.createRequest(payload);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async setDowntimeRequestStatus(requestId, status, options = {}) {
+    const result = await this.downtimeService.setRequestStatus(requestId, status, options);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async setDowntimeRequestChecks(requestId, checks = []) {
+    const result = await this.downtimeService.setRequestChecks(requestId, checks);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async recordDowntimeCheckResult(requestId, checkId, result = {}) {
+    const updatedRequest = await this.downtimeService.recordCheckResult(requestId, checkId, result);
+    await this.refreshOpenApps();
+    return updatedRequest;
+  }
+
+  getDowntimeActionCatalog() {
+    return this.downtimeService.getActionCatalog();
   }
 
   async registerPartyGroup(groupActorId) {
