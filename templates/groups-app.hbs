@@ -1,0 +1,90 @@
+<section class="rm-shell scrollable">
+  <header class="rm-hero">
+    <div>
+      <p class="rm-eyebrow">Управление группами</p>
+      <h2>Группы Rebreya</h2>
+      <p class="rm-muted">
+        Зарегистрировано: {{registeredCount}}.
+        {{#if activeGroupName}}Активная: {{activeGroupName}}.{{else}}Активная группа не выбрана.{{/if}}
+      </p>
+    </div>
+  </header>
+
+  {{#if hasGroups}}
+    <section class="rm-panel rm-panel--full rm-panel--compact">
+      <div class="rm-panel__header rm-panel__header--compact">
+        <h3>dnd5e группы</h3>
+        <span class="rm-muted">{{groups.length}} шт.</span>
+      </div>
+
+      <div class="rm-compact-item-list">
+        {{#each groups}}
+          <article class="rm-compact-item" data-group-id="{{id}}">
+            <div class="rm-compact-item__main">
+              <img class="rm-compact-item__image" src="{{img}}" alt="{{name}}">
+              <div class="rm-compact-item__copy">
+                <div class="rm-compact-item__title">
+                  <strong class="rm-compact-item__name">{{name}}</strong>
+                </div>
+                <p class="rm-compact-item__meta">
+                  ID: {{id}} • Участников: {{memberCount}}
+                  {{#if hasInitializedAt}} • Инициализирована: {{initializedAtLabel}}{{/if}}
+                </p>
+                {{#if migration.hasLegacyMerge}}
+                  <p class="rm-muted">
+                    Legacy-инвентарь:
+                    {{#if migration.legacyMergedAtLabel}}{{migration.legacyMergedAtLabel}}{{else}}есть отметки миграции{{/if}}
+                    {{#if migration.legacyInventoryActorId}} • источник {{migration.legacyInventoryActorId}}{{/if}}
+                    {{#if migration.completedPairCount}} • пар: {{migration.completedPairCount}}{{/if}}
+                  </p>
+                {{/if}}
+              </div>
+            </div>
+
+            <div class="rm-compact-item__side">
+              <div class="rm-compact-item__metrics">
+                <p>
+                  <span>Регистрация</span>
+                  <strong>{{#if registered}}есть{{else}}нет{{/if}}</strong>
+                </p>
+                <p>
+                  <span>Активная</span>
+                  <strong>{{#if active}}да{{else}}нет{{/if}}</strong>
+                </p>
+                <p>
+                  <span>Участники</span>
+                  <strong>{{memberCount}}</strong>
+                </p>
+              </div>
+
+              <div class="rm-inline-actions">
+                <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="open-sheet" data-group-id="{{id}}">
+                  <i class="fa-solid fa-up-right-from-square"></i>
+                  <span>Лист</span>
+                </button>
+                <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="register-group" data-group-id="{{id}}" {{#unless canRegister}}disabled{{/unless}}>
+                  <i class="fa-solid fa-clipboard-check"></i>
+                  <span>Зарегистрировать</span>
+                </button>
+                <button type="button" class="rm-button rm-button--small rm-button--primary" data-action="set-active-group" data-group-id="{{id}}" {{#unless canSetActive}}disabled{{/unless}}>
+                  <i class="fa-solid fa-users-viewfinder"></i>
+                  <span>Сделать активной</span>
+                </button>
+                <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="merge-legacy-inventory" data-group-id="{{id}}" {{#unless canMergeLegacy}}disabled{{/unless}}>
+                  <i class="fa-solid fa-code-merge"></i>
+                  <span>Перенести legacy</span>
+                </button>
+              </div>
+            </div>
+          </article>
+        {{/each}}
+      </div>
+    </section>
+  {{else}}
+    <section class="rm-panel">
+      <p class="rm-empty">
+        В мире нет актёров dnd5e типа «Группа». Создайте актёра типа «Группа» через обычный интерфейс Foundry, затем вернитесь сюда для регистрации и выбора активной группы Rebreya.
+      </p>
+    </section>
+  {{/if}}
+</section>

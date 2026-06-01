@@ -183,6 +183,7 @@ function createRebreyaControlChange() {
 function buildToolsRecord() {
   const economyToolName = `${MODULE_ID}-economy`;
   const inventoryToolName = `${MODULE_ID}-inventory`;
+  const groupsToolName = `${MODULE_ID}-groups`;
   const calendarToolName = `${MODULE_ID}-calendar`;
   const lootgenToolName = `${MODULE_ID}-lootgen`;
   const showEconomyButton = isEconomyButtonVisible();
@@ -217,6 +218,18 @@ function buildToolsRecord() {
       onChange: createSafeAction(
         () => game.rebreyaMain?.openInventoryApp?.(),
         "Inventory control click failed."
+      )
+    },
+    [groupsToolName]: {
+      name: groupsToolName,
+      order: 25,
+      title: game.i18n.localize("REBREYA_MAIN.Controls.OpenGroups"),
+      icon: "fa-solid fa-users",
+      button: true,
+      visible: game.user?.isGM === true,
+      onChange: createSafeAction(
+        () => game.rebreyaMain?.openGroupsApp?.(),
+        "Groups control click failed."
       )
     },
     [calendarToolName]: {

@@ -44,6 +44,42 @@ function withSceneControlsHandler(callback) {
   }
 }
 
+function withSceneControlsHandlerForUser(user, callback) {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  const previousCanvas = globalThis.canvas;
+  const handlers = [];
+
+  globalThis.Hooks = {
+    on: (hookName, handler) => {
+      if (hookName === "getSceneControlButtons") {
+        handlers.push(handler);
+      }
+    }
+  };
+  globalThis.game = {
+    i18n: { localize: (key) => key },
+    settings: { get: () => true },
+    user
+  };
+  globalThis.ui = {
+    controls: { render: () => undefined }
+  };
+
+  try {
+    registerSceneControlsHook();
+    assert.equal(handlers.length, 1);
+    callback(handlers[0]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+    globalThis.canvas = previousCanvas;
+  }
+}
+
 function makeItem({ type = "feat", rebreyaFlags = {}, teyvankalFlags = null } = {}) {
   return {
     type,
@@ -140,9 +176,13 @@ test("scene controls create a separate Rebreya group for record controls", () =>
       "rebreya-main-panel",
       "rebreya-main-economy",
       "rebreya-main-inventory",
+      "rebreya-main-groups",
       "rebreya-main-calendar",
       "rebreya-main-lootgen"
     ]);
+    const groupsTool = controls["rebreya-main-rebreya"].tools["rebreya-main-groups"];
+    assert.equal(groupsTool.title, "REBREYA_MAIN.Controls.OpenGroups");
+    assert.equal(groupsTool.visible, true);
   });
 });
 
@@ -171,9 +211,30 @@ test("scene controls create a separate Rebreya group for array controls", () => 
       "rebreya-main-panel",
       "rebreya-main-economy",
       "rebreya-main-inventory",
+      "rebreya-main-groups",
       "rebreya-main-calendar",
       "rebreya-main-lootgen"
     ]);
+    const groupsTool = controls[rebreyaIndex].tools.find((tool) => tool.name === "rebreya-main-groups");
+    assert.equal(groupsTool.title, "REBREYA_MAIN.Controls.OpenGroups");
+    assert.equal(groupsTool.visible, true);
+  });
+});
+
+test("scene controls hide groups tool from non-GM users", () => {
+  withSceneControlsHandlerForUser({ isGM: false }, (handler) => {
+    const controls = {
+      tokens: {
+        name: "tokens",
+        order: 20,
+        tools: {}
+      }
+    };
+
+    handler(controls);
+
+    const groupsTool = controls["rebreya-main-rebreya"].tools["rebreya-main-groups"];
+    assert.equal(groupsTool.visible, false);
   });
 });
 

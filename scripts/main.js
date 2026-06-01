@@ -174,6 +174,7 @@ class RebreyaMainModule {
     this.statesApp = null;
     this.globalEventsApp = null;
     this.inventoryApp = null;
+    this.groupsApp = null;
     this.lootgenApps = new Map();
     this.lootgenCounter = 0;
     this.latestLootgenResult = null;
@@ -1408,6 +1409,10 @@ class RebreyaMainModule {
       tasks.push(rerenderApp(this.inventoryApp));
     }
 
+    if (this.groupsApp?.rendered) {
+      tasks.push(rerenderApp(this.groupsApp));
+    }
+
     for (const app of this.lootgenApps.values()) {
       if (app?.rendered) {
         tasks.push(rerenderApp(app));
@@ -1566,6 +1571,25 @@ class RebreyaMainModule {
       throw error;
     }
   }
+
+  async openGroupsApp() {
+    try {
+      if (!game.user?.isGM) {
+        throw new Error("Окно групп доступно только мастеру.");
+      }
+      const { GroupsApp } = await import("./ui/groups-app.js");
+      if (!this.groupsApp) this.groupsApp = new GroupsApp(this);
+      await this.groupsApp.render({ force: true });
+      bringAppToFront(this.groupsApp);
+      return this.groupsApp;
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to open groups app.`, error);
+      ui.notifications?.error("Не удалось открыть окно групп.");
+      throw error;
+    }
+  }
+
   async openTradeRouteApp(connectionId) {
     try {
       const { TradeRouteApp } = await import("./ui/trade-route-app.js");

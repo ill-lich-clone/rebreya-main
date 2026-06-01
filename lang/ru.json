@@ -27,6 +27,7 @@
   "REBREYA_MAIN.Controls.LauncherLabel": "Экономика",
   "REBREYA_MAIN.Controls.OpenEconomy": "Открыть окно экономики",
   "REBREYA_MAIN.Controls.OpenInventory": "Открыть партийный инвентарь",
+  "REBREYA_MAIN.Controls.OpenGroups": "Группы",
   "REBREYA_MAIN.Controls.OpenCalendar": "Открыть календарь Rebreya",
   "REBREYA_MAIN.Controls.OpenLootgen": "Открыть лутген Rebreya",
   "REBREYA_MAIN.Notifications.DataReloaded": "Данные экономики перезагружены. Загружено городов: {count}.",
