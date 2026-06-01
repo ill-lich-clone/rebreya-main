@@ -138,6 +138,8 @@ README описывает **актуальную механику из кода 
 - `Крафт`: очередь задач, выбор крафтера, прогресс по дням.
 - `Календарь`: дата, фазы луны, переход дней/недель/месяцев.
 
+Инвентарь и состав группы берутся из текущего dnd5e `Actor` типа `group`. Для ГМа это активная зарегистрированная группа мира; для игрока группа определяется по owned-персонажу в составе зарегистрированной группы. Если контекст не найден, окно показывает предупреждение вместо молчаливой работы со старым складом.
+
 ### 5.8 Лавка
 
 Файл: `scripts/ui/trader-app.js`
@@ -281,7 +283,11 @@ README описывает **актуальную механику из кода 
 
 ### 8.1 Склад
 
-- Автосоздаваемый actor: `Инвентарь группы Rebreya`.
+- Источник состава и inventory: существующий dnd5e `Actor` типа `group`.
+- Group actor создается и управляется обычными средствами Foundry/dnd5e; окно Rebreya не создает группы.
+- `Ребрея -> Группы` доступно только ГМу: регистрация существующей group, выбор активной группы мира, открытие штатного листа группы и явный merge legacy-инвентаря.
+- `Инвентарь группы Rebreya` остается только compatibility-источником. Его можно явно слить в зарегистрированную группу; actor не удаляется автоматически, а повторный merge идемпотентен и может продолжить частично выполненное слияние.
+- Базовый state группы создается из данных/defaults модуля, а не из старого inventory actor.
 - Поддержка валют `pp/gp/sp/cp` и конвертации.
 - Запасы:
   - еда (`фнт.`);
@@ -446,9 +452,11 @@ World settings:
 
 Скрытые state settings (хранилище runtime):
 
-- `traderState`, `partyState`, `craftState`, `calendarState`;
+- `traderState`, `partyState`, `groupState`, `craftState`, `calendarState`;
 - `connectionStates`, `tradeRouteOverrides`, `statePolicies`, `referenceNotes`;
 - `globalEventsState`, `globalEventsDraft`.
+
+`groupState` хранит реестр зарегистрированных group actor и world-level active group для ГМа. Это foundation для будущего разделения экономики, ивентов и downtime по группам.
 
 ## 15. Права доступа
 
@@ -458,6 +466,7 @@ World settings:
 - Лутген (генерация и перенос результатов).
 - Сброс/восстановление world override-данных.
 - Управление партийным state (большинство операций склада/группы/крафта).
+- `Ребрея -> Группы`: регистрация существующих dnd5e group actor, выбор активной группы, открытие native group sheet, merge legacy-инвентаря.
 
 ### Игроки (при наличии прав на актеров/предметы)
 
@@ -566,7 +575,13 @@ await game.rebreyaMain.openLootgenApp({ newWindow: true });
   - `updateTraderMetadata(cityId, traderKey, patch)`
 - Инвентарь/группа:
   - `openInventoryApp(options?)`
+  - `openGroupsApp()`
   - `openPartyInventorySheet()`
+  - `getGroupRegistry()`
+  - `getGroupContext(options?)`
+  - `registerPartyGroup(groupActorId)`
+  - `setActivePartyGroup(groupActorId)`
+  - `mergeLegacyInventoryIntoGroup(groupActorId)`
   - `getInventorySnapshot(options?)`
   - `getPartySnapshot(options?)`
   - `addPartyMember(actorId)`
