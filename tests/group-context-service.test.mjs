@@ -134,7 +134,8 @@ test("normalizeGroupRegistry preserves active group and per-group state", () => 
     },
     migration: {
       legacyInventoryMergedAt: 456,
-      legacyInventoryActorId: "legacy-party"
+      legacyInventoryActorId: "legacy-party",
+      legacyInventoryMergePairs: {}
     }
   });
 });

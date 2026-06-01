@@ -29,6 +29,34 @@ function cleanId(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeLegacyInventoryMergePairs(value = {}) {
+  const pairs = {};
+  for (const [pairKey, rawPairState] of Object.entries(asObject(value))) {
+    const pairState = asObject(rawPairState);
+    const itemsByKey = {};
+
+    for (const [itemKey, rawItemState] of Object.entries(asObject(pairState.itemsByKey))) {
+      const itemState = asObject(rawItemState);
+      itemsByKey[itemKey] = {
+        quantityApplied: Math.max(0, Number(itemState.quantityApplied) || 0),
+        targetItemId: cleanId(itemState.targetItemId),
+        created: itemState.created === true,
+        appliedAt: Number(itemState.appliedAt) || 0
+      };
+    }
+
+    pairs[pairKey] = {
+      legacyInventoryActorId: cleanId(pairState.legacyInventoryActorId),
+      groupActorId: cleanId(pairState.groupActorId),
+      currencyAppliedAt: Number(pairState.currencyAppliedAt) || 0,
+      completedAt: Number(pairState.completedAt) || 0,
+      itemsByKey
+    };
+  }
+
+  return pairs;
+}
+
 function getActorById(actorId) {
   const actors = globalThis.game?.actors;
   if (!actors) {
@@ -103,7 +131,8 @@ export function normalizeGroupState(groupActorId, value = {}) {
     },
     migration: {
       legacyInventoryMergedAt: Number(migration.legacyInventoryMergedAt) || 0,
-      legacyInventoryActorId: cleanId(migration.legacyInventoryActorId)
+      legacyInventoryActorId: cleanId(migration.legacyInventoryActorId),
+      legacyInventoryMergePairs: normalizeLegacyInventoryMergePairs(migration.legacyInventoryMergePairs)
     }
   };
 }

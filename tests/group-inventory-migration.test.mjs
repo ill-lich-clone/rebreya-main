@@ -96,7 +96,7 @@ function createItem({
   return item;
 }
 
-function createActor({ id, name = "Actor", type = "npc", isOwner = false, currency = {}, items = [] } = {}) {
+function createActor({ id, name = "Actor", type = "npc", isOwner = false, currency = {}, items = [], flags = {} } = {}) {
   const actor = {
     id,
     name,
@@ -117,7 +117,7 @@ function createActor({ id, name = "Actor", type = "npc", isOwner = false, curren
       contents: items,
       get: (itemId) => actor.items.contents.find((item) => item.id === itemId) ?? null
     },
-    flags: {},
+    flags: clone(flags),
     getFlag(moduleId, key) {
       return this.flags?.[moduleId]?.[key];
     },
@@ -250,7 +250,7 @@ test("getInventoryActor returns resolved dnd5e group actor when group context ex
   }
 });
 
-function createGroupContextService(groupActor, fixture) {
+function createGroupContextService(groupActor, fixture, { onSetRegistry = null } = {}) {
   return {
     resolveForGroup(groupActorId) {
       assert.equal(groupActorId, groupActor.id);
@@ -270,13 +270,22 @@ function createGroupContextService(groupActor, fixture) {
       return fixture.groupState;
     },
     async setRegistry(nextRegistry) {
+      await onSetRegistry?.(nextRegistry);
       await game.settings.set(MODULE_ID, "groupState", nextRegistry);
       return nextRegistry;
     }
   };
 }
 
-function createLegacyMergeFixture({ user = { id: "gm", isGM: true }, groupItems = [], legacyItems = [], legacyActor = null } = {}) {
+function createLegacyMergeFixture({
+  user = { id: "gm", isGM: true },
+  groupItems = [],
+  legacyItems = [],
+  legacyActor = null,
+  groupManaged = true,
+  groupState = null,
+  onSetRegistry = null
+} = {}) {
   const groupActor = createActor({
     id: "group-1",
     name: "Party",
@@ -288,7 +297,8 @@ function createLegacyMergeFixture({ user = { id: "gm", isGM: true }, groupItems 
       sp: 3,
       cp: 4
     },
-    items: groupItems
+    items: groupItems,
+    flags: groupManaged ? { [MODULE_ID]: { managedPartyGroup: true } } : {}
   });
   const inventoryActor = legacyActor ?? createActor({
     id: "legacy-party",
@@ -307,7 +317,7 @@ function createLegacyMergeFixture({ user = { id: "gm", isGM: true }, groupItems 
     actors: legacyActor === null ? [groupActor, inventoryActor] : [groupActor, legacyActor].filter(Boolean),
     user,
     partyState: { inventoryActorId: inventoryActor?.id ?? "" },
-    groupState: {
+    groupState: groupState ?? {
       version: 1,
       activeGroupActorId: groupActor.id,
       groupsById: {
@@ -322,7 +332,7 @@ function createLegacyMergeFixture({ user = { id: "gm", isGM: true }, groupItems 
     }
   });
   const service = new InventoryService({
-    groupContextService: createGroupContextService(groupActor, fixture)
+    groupContextService: createGroupContextService(groupActor, fixture, { onSetRegistry })
   });
 
   return {
@@ -489,6 +499,181 @@ test("mergeLegacyInventoryIntoGroup no-ops when no legacy actor exists", async (
 
     assert.equal(result.noop, true);
     assert.equal(result.legacyInventoryActorId, "missing-legacy");
+    assert.deepEqual(groupActor.system.currency, {
+      pp: 1,
+      gp: 2,
+      ep: 0,
+      sp: 3,
+      cp: 4
+    });
+    assert.equal(groupActor.items.contents.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup does not double currency after partial failure", async () => {
+  let setRegistryCalls = 0;
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    onSetRegistry: async () => {
+      setRegistryCalls += 1;
+      if (setRegistryCalls === 1) {
+        throw new Error("registry write failed after currency");
+      }
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () => service.mergeLegacyInventoryIntoGroup(groupActor.id),
+      /registry write failed after currency/u
+    );
+    assert.deepEqual(groupActor.system.currency, {
+      pp: 6,
+      gp: 8,
+      ep: 0,
+      sp: 10,
+      cp: 12
+    });
+
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.equal(result.noop, false);
+    assert.deepEqual(groupActor.system.currency, {
+      pp: 6,
+      gp: 8,
+      ep: 0,
+      sp: 10,
+      cp: 12
+    });
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup does not double existing item quantity after partial failure", async () => {
+  let setRegistryCalls = 0;
+  const groupItem = createItem({ id: "group-torch", name: "Torch", type: "loot", quantity: 2 });
+  const legacyItem = createItem({ id: "legacy-torch", name: "Torch", type: "loot", quantity: 3 });
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    groupItems: [groupItem],
+    legacyItems: [legacyItem],
+    onSetRegistry: async () => {
+      setRegistryCalls += 1;
+      if (setRegistryCalls === 2) {
+        throw new Error("registry write failed after item");
+      }
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () => service.mergeLegacyInventoryIntoGroup(groupActor.id),
+      /registry write failed after item/u
+    );
+    assert.equal(groupItem.system.quantity, 5);
+
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.equal(result.noop, false);
+    assert.equal(groupItem.system.quantity, 5);
+    assert.equal(groupActor.items.contents.length, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup does not duplicate created item after partial failure", async () => {
+  let setRegistryCalls = 0;
+  const legacyItem = createItem({ id: "legacy-lantern", name: "Lantern", type: "loot", quantity: 1 });
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    legacyItems: [legacyItem],
+    onSetRegistry: async () => {
+      setRegistryCalls += 1;
+      if (setRegistryCalls === 2) {
+        throw new Error("registry write failed after create");
+      }
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () => service.mergeLegacyInventoryIntoGroup(groupActor.id),
+      /registry write failed after create/u
+    );
+    assert.equal(groupActor.items.contents.length, 1);
+
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.equal(result.noop, false);
+    assert.equal(groupActor.items.contents.length, 1);
+    assert.equal(groupActor.items.contents[0].name, "Lantern");
+    assert.equal(groupActor.items.contents[0].system.quantity, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup no-ops when legacy actor flag has completed pair marker", async () => {
+  const pairKey = "legacy-party::group-1";
+  const legacyActor = createActor({
+    id: "legacy-party",
+    name: "Legacy",
+    type: "npc",
+    currency: {
+      gp: 10
+    },
+    items: [createItem({ id: "legacy-item", name: "Torch", type: "loot", quantity: 3 })],
+    flags: {
+      [MODULE_ID]: {
+        legacyInventoryMergedIntoGroup: {
+          pairs: {
+            [pairKey]: {
+              groupActorId: "group-1",
+              completedAt: 123
+            }
+          }
+        }
+      }
+    }
+  });
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    legacyActor
+  });
+
+  try {
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.equal(result.noop, true);
+    assert.deepEqual(groupActor.system.currency, {
+      pp: 1,
+      gp: 2,
+      ep: 0,
+      sp: 3,
+      cp: 4
+    });
+    assert.equal(groupActor.items.contents.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup rejects unmanaged group before mutating", async () => {
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    groupManaged: false,
+    legacyItems: [createItem({ id: "legacy-item", name: "Torch", type: "loot", quantity: 3 })]
+  });
+
+  try {
+    await assert.rejects(
+      () => service.mergeLegacyInventoryIntoGroup(groupActor.id),
+      /registered as a Rebreya party group/u
+    );
     assert.deepEqual(groupActor.system.currency, {
       pp: 1,
       gp: 2,
