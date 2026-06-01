@@ -1,6 +1,8 @@
 ﻿import { MODULE_ID } from "../constants.js";
+import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js";
 import { getHeroDollBackSlots, getHeroDollSlots, inferHeroDollSlotsFromName, normalizeHeroDollSlots } from "./item-classification.js";
 
+const KNOWN_GROUP_CONTEXT_ERRORS = new Set(Object.values(GROUP_CONTEXT_ERRORS));
 const HERO_DOLL_SLOTS = getHeroDollSlots();
 const HERO_DOLL_INVENTORY_TYPES = new Set([
   "weapon",
@@ -51,6 +53,7 @@ function buildEmptySnapshot(actor = null) {
   return {
     actorId: actor?.id ?? "",
     actorName: actor?.name ?? "",
+    downtime: buildEmptyDowntimeSummary(actor?.id ?? ""),
     slots: HERO_DOLL_SLOTS.map((slot) => ({
       ...slot,
       occupied: false,
@@ -69,6 +72,25 @@ function buildEmptySnapshot(actor = null) {
     reservedCount: 0,
     availableCount: 0
   };
+}
+
+function buildEmptyDowntimeSummary(actorId = "") {
+  return {
+    actorId,
+    availableWeeks: 0,
+    reservedWeeks: 0,
+    spentWeeks: 0,
+    pendingCount: 0,
+    hasGroup: false
+  };
+}
+
+function getDowntimeBalance(member = {}) {
+  return member.balance && typeof member.balance === "object" ? member.balance : member;
+}
+
+function isKnownGroupContextError(error) {
+  return KNOWN_GROUP_CONTEXT_ERRORS.has(String(error?.message ?? ""));
 }
 
 export class HeroDollService {
@@ -270,6 +292,46 @@ export class HeroDollService {
       .filter(Boolean);
   }
 
+  #getDowntimeSummary(actor) {
+    const actorId = actor?.id ?? "";
+    const emptySummary = buildEmptyDowntimeSummary(actorId);
+    if (actor?.type !== "character" || typeof this.moduleApi?.getDowntimeSnapshot !== "function") {
+      return emptySummary;
+    }
+
+    let downtimeSnapshot = null;
+    try {
+      downtimeSnapshot = this.moduleApi.getDowntimeSnapshot({ actorId });
+    }
+    catch (error) {
+      if (!isKnownGroupContextError(error)) {
+        console.warn(`${MODULE_ID} | Failed to prepare hero doll downtime summary.`, error);
+      }
+      return emptySummary;
+    }
+
+    const member = Array.isArray(downtimeSnapshot?.members)
+      ? downtimeSnapshot.members.find((entry) => entry?.actorId === actorId)
+      : null;
+    if (!member) {
+      return emptySummary;
+    }
+
+    const balance = getDowntimeBalance(member);
+    const pendingCount = Array.isArray(downtimeSnapshot?.requests)
+      ? downtimeSnapshot.requests.filter((request) => request?.actorId === actorId && request?.status === "pending").length
+      : 0;
+
+    return {
+      actorId,
+      availableWeeks: toNumber(balance.availableWeeks, 0),
+      reservedWeeks: toNumber(balance.reservedWeeks, 0),
+      spentWeeks: toNumber(balance.spentWeeks, 0),
+      pendingCount,
+      hasGroup: true
+    };
+  }
+
   async #moveItemToActor(sourceItem, targetActor) {
     const sourceActor = sourceItem.parent;
     const sourceData = sourceItem.toObject();
@@ -361,6 +423,7 @@ export class HeroDollService {
     return {
       actorId: actor.id,
       actorName: actor.name,
+      downtime: this.#getDowntimeSummary(actor),
       slots,
       inventoryItems,
       slotCount: HERO_DOLL_SLOTS.length,

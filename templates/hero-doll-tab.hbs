@@ -6,6 +6,17 @@
           <h2>Кукла героя</h2>
           <p>Перетаскивайте предметы из списка справа или из партийного склада прямо в нужный слот.</p>
         </div>
+        <button type="button" class="rm-hero-doll-tab__button unbutton always-interactive" data-action="open-downtime" title="Открыть простой группы">
+          <i class="fa-solid fa-hourglass-half" inert></i>
+          <span>
+            Простой:
+            {{#if heroDoll.downtime.hasGroup}}
+              {{ heroDoll.downtime.availableWeeks }} нед. / резерв {{ heroDoll.downtime.reservedWeeks }}
+            {{else}}
+              выбрать группу
+            {{/if}}
+          </span>
+        </button>
         <button type="button" class="rm-hero-doll-tab__button unbutton always-interactive" data-action="open-party-inventory">
           <i class="fa-solid fa-box-open" inert></i>
           <span>Склад группы</span>

@@ -2081,6 +2081,17 @@ function bindHeroDollClickDelegation(panel, app, moduleApi, listenerOptions = un
         break;
       }
 
+      case "open-downtime": {
+        try {
+          await moduleApi.openInventoryApp({ tab: "downtime" });
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to open downtime from hero doll tab.`, error);
+          ui.notifications?.error("Не удалось открыть простой группы.");
+        }
+        break;
+      }
+
       default:
         break;
     }
@@ -2240,6 +2251,17 @@ function bindHeroDollDelegatedListeners(root, app, moduleApi, listenerOptions = 
         catch (error) {
           console.error(`${MODULE_ID} | Failed to open party inventory from hero doll tab.`, error);
           ui.notifications?.error("Не удалось открыть партийный склад.");
+        }
+        break;
+      }
+
+      case "open-downtime": {
+        try {
+          await moduleApi.openInventoryApp({ tab: "downtime" });
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to open downtime from hero doll tab.`, error);
+          ui.notifications?.error("Не удалось открыть простой группы.");
         }
         break;
       }
