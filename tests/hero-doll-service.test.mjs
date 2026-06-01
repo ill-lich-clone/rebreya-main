@@ -69,70 +69,22 @@ function createActor({ id = "actor-a", name = "Hero", type = "character" } = {})
   }();
 }
 
-test("HeroDollService snapshot includes downtime summary for current character member", async () => {
+test("HeroDollService snapshot stays focused on equipment and does not query downtime", async () => {
   const restore = installFoundryStubs();
   try {
-    const { HeroDollService } = await import(`../scripts/data/hero-doll-service.js?hero-doll-downtime=${Date.now()}`);
+    const { HeroDollService } = await import(`../scripts/data/hero-doll-service.js?hero-doll-no-downtime=${Date.now()}`);
     const calls = [];
     const service = new HeroDollService({
-      getDowntimeSnapshot(options) {
-        calls.push(options);
-        return {
-          members: [{
-            actorId: "actor-a",
-            balance: {
-              availableWeeks: 3,
-              reservedWeeks: 2,
-              spentWeeks: 1
-            }
-          }],
-          requests: [
-            { actorId: "actor-a", status: "pending" },
-            { actorId: "actor-a", status: "approved" },
-            { actorId: "actor-b", status: "pending" }
-          ]
-        };
-      }
-    });
-
-    const snapshot = service.getActorSnapshot(createActor({ id: "actor-a" }));
-
-    assert.deepEqual(calls, [{ actorId: "actor-a" }]);
-    assert.deepEqual(snapshot.downtime, {
-      actorId: "actor-a",
-      availableWeeks: 3,
-      reservedWeeks: 2,
-      spentWeeks: 1,
-      pendingCount: 1,
-      hasGroup: true
-    });
-  }
-  finally {
-    restore();
-  }
-});
-
-test("HeroDollService snapshot degrades downtime summary when group context is unavailable", async () => {
-  const restore = installFoundryStubs();
-  try {
-    const { GROUP_CONTEXT_ERRORS } = await import("../scripts/data/group-context-service.js");
-    const { HeroDollService } = await import(`../scripts/data/hero-doll-service.js?hero-doll-no-group=${Date.now()}`);
-    const service = new HeroDollService({
       getDowntimeSnapshot() {
-        throw new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP);
+        calls.push(["getDowntimeSnapshot"]);
+        throw new Error("Hero doll must not ask for downtime.");
       }
     });
 
     const snapshot = service.getActorSnapshot(createActor({ id: "actor-a" }));
 
-    assert.deepEqual(snapshot.downtime, {
-      actorId: "actor-a",
-      availableWeeks: 0,
-      reservedWeeks: 0,
-      spentWeeks: 0,
-      pendingCount: 0,
-      hasGroup: false
-    });
+    assert.deepEqual(calls, []);
+    assert.equal(Object.hasOwn(snapshot, "downtime"), false);
   }
   finally {
     restore();

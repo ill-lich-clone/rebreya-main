@@ -23,6 +23,10 @@ const HERO_DOLL_TAB_ID = "heroDoll";
 const HERO_DOLL_TAB_LABEL = "Кукла героя";
 const HERO_DOLL_TAB_ICON = "fa-solid fa-person";
 const HERO_DOLL_TEMPLATE = `modules/${MODULE_ID}/templates/hero-doll-tab.hbs`;
+const CHARACTER_DOWNTIME_TAB_ID = "downtime";
+const CHARACTER_DOWNTIME_TAB_LABEL = "Простой";
+const CHARACTER_DOWNTIME_TAB_ICON = "fa-solid fa-hourglass-half";
+const CHARACTER_DOWNTIME_TEMPLATE = `modules/${MODULE_ID}/templates/character-downtime-tab.hbs`;
 const HERO_DOLL_PATCH_FLAG = "__rebreyaHeroDollPatched";
 const HERO_DOLL_MOVE_DROP_PATCH_FLAG = "__rebreyaHeroDollMoveDropPatched";
 const HERO_DOLL_PAYLOAD_PATCH_FLAG = "__rebreyaHeroDollPayloadPatched";
@@ -43,6 +47,15 @@ const NATIVE_STATE_SELECT_BUTTON_KEY = "REBREYA_MAIN.NativeState.SelectButton";
 const STATES_PACK_ID = `world.${STATES_COMPENDIUM_NAME}`;
 const ITEM_RANK_MIN = 0;
 const ITEM_RANK_MAX = 10;
+
+function cleanText(value) {
+  return String(value ?? "").trim();
+}
+
+function toPositiveInteger(value, fallback = 1) {
+  const numericValue = Number(value ?? fallback);
+  return Number.isFinite(numericValue) ? Math.max(1, Math.floor(numericValue)) : fallback;
+}
 const ITEM_SLOT_ELIGIBLE_TYPES = new Set(["weapon", "consumable", "equipment"]);
 const HERO_DOLL_DROP_MIME_TYPES = ["text/plain", "text", "application/json"];
 const REBREYA_FEAT_SOURCE_TYPE = "feat";
@@ -640,6 +653,7 @@ function normalizeLichWeaponValue(field, value) {
 let activeHeroDollDragData = null;
 const heroDollPanelAbortControllers = new WeakMap();
 const heroDollRootAbortControllers = new WeakMap();
+const characterDowntimePanelAbortControllers = new WeakMap();
 
 function isDnd5eWorld() {
   return game.system?.id === "dnd5e";
@@ -1476,29 +1490,50 @@ function buildHeroDollTabState(app) {
   };
 }
 
+function buildCharacterDowntimeTabState(app) {
+  const active = app.tabGroups?.primary === CHARACTER_DOWNTIME_TAB_ID;
+  return {
+    id: CHARACTER_DOWNTIME_TAB_ID,
+    tab: CHARACTER_DOWNTIME_TAB_ID,
+    group: "primary",
+    label: CHARACTER_DOWNTIME_TAB_LABEL,
+    icon: CHARACTER_DOWNTIME_TAB_ICON,
+    active,
+    cssClass: active ? "active" : ""
+  };
+}
+
 function ensureHeroDollTabDefinition(CharacterActorSheet) {
   if (!Array.isArray(CharacterActorSheet.TABS)) {
     CharacterActorSheet.TABS = [];
   }
 
-  if (!CharacterActorSheet.TABS.some((tab) => tab?.tab === HERO_DOLL_TAB_ID)) {
-    const nextTabs = [...CharacterActorSheet.TABS];
-    const insertIndex = nextTabs.findIndex((tab) => tab?.tab === "specialTraits");
-    const tabEntry = {
+  let nextTabs = [...CharacterActorSheet.TABS];
+  for (const tabEntry of [
+    {
       tab: HERO_DOLL_TAB_ID,
       label: HERO_DOLL_TAB_LABEL,
       icon: HERO_DOLL_TAB_ICON
-    };
+    },
+    {
+      tab: CHARACTER_DOWNTIME_TAB_ID,
+      label: CHARACTER_DOWNTIME_TAB_LABEL,
+      icon: CHARACTER_DOWNTIME_TAB_ICON
+    }
+  ]) {
+    if (nextTabs.some((tab) => tab?.tab === tabEntry.tab)) {
+      continue;
+    }
 
+    const insertIndex = nextTabs.findIndex((tab) => tab?.tab === "specialTraits");
     if (insertIndex >= 0) {
       nextTabs.splice(insertIndex, 0, tabEntry);
     }
     else {
       nextTabs.push(tabEntry);
     }
-
-    CharacterActorSheet.TABS = nextTabs;
   }
+  CharacterActorSheet.TABS = nextTabs;
 
   CharacterActorSheet.PARTS = {
     ...CharacterActorSheet.PARTS,
@@ -1506,6 +1541,12 @@ function ensureHeroDollTabDefinition(CharacterActorSheet) {
       classes: ["flexcol"],
       container: { classes: ["tab-body"], id: "tabs" },
       template: HERO_DOLL_TEMPLATE,
+      scrollable: [""]
+    },
+    [CHARACTER_DOWNTIME_TAB_ID]: {
+      classes: ["flexcol"],
+      container: { classes: ["tab-body"], id: "tabs" },
+      template: CHARACTER_DOWNTIME_TEMPLATE,
       scrollable: [""]
     }
   };
@@ -1522,8 +1563,18 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi) {
     const preparedWithFeatGroups = partId === "features"
       ? await splitRebreyaFeatSectionsInContext(prepared)
       : prepared;
-    if (partId !== HERO_DOLL_TAB_ID) {
+    if (partId !== HERO_DOLL_TAB_ID && partId !== CHARACTER_DOWNTIME_TAB_ID) {
       return preparedWithFeatGroups;
+    }
+
+    if (partId === CHARACTER_DOWNTIME_TAB_ID) {
+      const tab = buildCharacterDowntimeTabState(this);
+      return {
+        ...preparedWithFeatGroups,
+        tab,
+        characterDowntimeTab: tab,
+        characterDowntime: moduleApi.characterDowntimeService.getActorContext(this.actor)
+      };
     }
 
     const tab = buildHeroDollTabState(this);
@@ -2081,17 +2132,6 @@ function bindHeroDollClickDelegation(panel, app, moduleApi, listenerOptions = un
         break;
       }
 
-      case "open-downtime": {
-        try {
-          await moduleApi.openInventoryApp({ tab: "downtime" });
-        }
-        catch (error) {
-          console.error(`${MODULE_ID} | Failed to open downtime from hero doll tab.`, error);
-          ui.notifications?.error("Не удалось открыть простой группы.");
-        }
-        break;
-      }
-
       default:
         break;
     }
@@ -2255,17 +2295,6 @@ function bindHeroDollDelegatedListeners(root, app, moduleApi, listenerOptions = 
         break;
       }
 
-      case "open-downtime": {
-        try {
-          await moduleApi.openInventoryApp({ tab: "downtime" });
-        }
-        catch (error) {
-          console.error(`${MODULE_ID} | Failed to open downtime from hero doll tab.`, error);
-          ui.notifications?.error("Не удалось открыть простой группы.");
-        }
-        break;
-      }
-
       default:
         break;
     }
@@ -2304,6 +2333,60 @@ function bindHeroDollPanel(root, app, moduleApi) {
   heroDollRootAbortControllers.set(root, rootAbortController);
   const rootListenerOptions = { signal: rootAbortController.signal };
   bindHeroDollDelegatedListeners(root, app, moduleApi, rootListenerOptions);
+}
+
+async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
+  const actor = getActorFromSheetApp(app);
+  if (!actor) {
+    return;
+  }
+
+  const payload = {
+    actionId: cleanText(panel.querySelector("[data-action='character-downtime-action']")?.value) || "unique",
+    weeks: toPositiveInteger(panel.querySelector("[data-action='character-downtime-weeks']")?.value, 1),
+    title: cleanText(panel.querySelector("[data-action='character-downtime-title']")?.value),
+    description: cleanText(panel.querySelector("[data-action='character-downtime-description']")?.value)
+  };
+
+  await moduleApi.characterDowntimeService.createRequest(actor, payload);
+  ui.notifications?.info("Заявка на простой отправлена.");
+  await rerenderActorSheet(app, moduleApi);
+}
+
+function bindCharacterDowntimePanel(root, app, moduleApi) {
+  const panel = root.querySelector(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
+    ?? root.querySelector(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
+  if (!panel) {
+    if (root.dataset.rebreyaCharacterDowntimeWatch !== "true") {
+      root.dataset.rebreyaCharacterDowntimeWatch = "true";
+      root.addEventListener("click", (event) => {
+        const tabTrigger = event.target.closest?.(`[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
+        if (!tabTrigger) {
+          return;
+        }
+
+        window.setTimeout(() => bindCharacterDowntimePanel(root, app, moduleApi), 0);
+      });
+      window.setTimeout(() => bindCharacterDowntimePanel(root, app, moduleApi), 0);
+    }
+
+    return;
+  }
+
+  characterDowntimePanelAbortControllers.get(panel)?.abort();
+  const panelAbortController = new AbortController();
+  characterDowntimePanelAbortControllers.set(panel, panelAbortController);
+  const listenerOptions = { signal: panelAbortController.signal };
+
+  panel.querySelector("[data-action='character-downtime-submit']")?.addEventListener("click", async () => {
+    try {
+      await handleCharacterDowntimeSubmit(panel, app, moduleApi);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to submit character downtime request.`, error);
+      ui.notifications?.error(error.message || "Не удалось отправить заявку на простой.");
+    }
+  }, listenerOptions);
 }
 
 function clampItemRank(value) {
@@ -3159,6 +3242,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     }
 
     bindHeroDollPanel(root, app, moduleApi);
+    bindCharacterDowntimePanel(root, app, moduleApi);
     try {
       bindNativeStateCard(root, app);
     }
@@ -3207,6 +3291,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     const actor = getActorFromSheetApp(app);
     if (actor?.type === "character") {
       bindHeroDollPanel(root, app, moduleApi);
+      bindCharacterDowntimePanel(root, app, moduleApi);
       try {
         bindNativeStateCard(root, app);
       }

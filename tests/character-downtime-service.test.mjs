@@ -180,3 +180,21 @@ test("CharacterDowntimeService creates requests for the current sheet actor only
     }
   ]]);
 });
+
+test("RebreyaMainModule exposes character downtime service for dnd5e sheet parts", async () => {
+  const previousHooks = globalThis.Hooks;
+  globalThis.Hooks = {
+    once() {}
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?character-downtime=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+
+    assert.ok(moduleApi.characterDowntimeService instanceof CharacterDowntimeService);
+    assert.equal(moduleApi.characterDowntimeService.moduleApi, moduleApi);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+  }
+});

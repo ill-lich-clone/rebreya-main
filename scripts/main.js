@@ -13,6 +13,7 @@ import { EconomyRepository } from "./data/repository.js";
 import { TraderService } from "./data/trader-service.js";
 import { GroupContextService } from "./data/group-context-service.js";
 import { DowntimeService } from "./data/downtime-service.js";
+import { CharacterDowntimeService } from "./data/character-downtime-service.js";
 import { InventoryService } from "./data/inventory-service.js";
 import { HeroDollService } from "./data/hero-doll-service.js";
 import { CraftingService } from "./data/crafting-service.js";
@@ -159,6 +160,7 @@ export class RebreyaMainModule {
     this.traderService = new TraderService(this);
     this.groupContextService = new GroupContextService(this);
     this.downtimeService = new DowntimeService(this);
+    this.characterDowntimeService = new CharacterDowntimeService(this);
     this.inventoryService = new InventoryService(this);
     this.heroDollService = new HeroDollService(this);
     this.craftingService = new CraftingService(this);
