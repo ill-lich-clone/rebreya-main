@@ -43,6 +43,37 @@ const SOCKET_EVENT_LOOTGEN_SHOW = "lootgen-show-result";
 const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
 const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
 const SOCKET_EVENT_TRADER_AUDIT = "trader-audit";
+const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
+
+function ensureModuleStylesheet() {
+  if (!globalThis.document?.head) {
+    return;
+  }
+
+  const stylesheetLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
+  const hasModuleStylesheet = stylesheetLinks.some((link) => {
+    const href = String(link.getAttribute("href") ?? "");
+    return href.includes(MODULE_STYLE_PATH);
+  });
+
+  if (hasModuleStylesheet || document.querySelector(`[data-${MODULE_ID}-stylesheet]`)) {
+    return;
+  }
+
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  const moduleVersion = globalThis.game?.modules?.get?.(MODULE_ID)?.version ?? "";
+  link.href = `${MODULE_STYLE_PATH}?v=${encodeURIComponent(moduleVersion)}`;
+  link.setAttribute(`data-${MODULE_ID}-stylesheet`, "true");
+  document.head.append(link);
+}
+
+try {
+  ensureModuleStylesheet();
+}
+catch (error) {
+  console.warn(`${MODULE_ID} | Failed to ensure module stylesheet.`, error);
+}
 
 function normalizeLookupText(value) {
   return String(value ?? "")
@@ -1756,6 +1787,13 @@ export class RebreyaMainModule {
 }
 
 Hooks.once("init", () => {
+  try {
+    ensureModuleStylesheet();
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to ensure module stylesheet.`, error);
+  }
+
   try {
     registerSettings();
   }

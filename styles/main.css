@@ -4154,6 +4154,476 @@ summary:focus-visible {
   background: rgba(128, 196, 126, 0.12);
 }
 
+.rm-downtime-panel {
+  min-height: 520px;
+  border-radius: 0;
+}
+
+.rm-downtime-panel .rm-panel__header--compact {
+  align-items: flex-start;
+}
+
+.rm-downtime-panel .rm-panel__header--compact h3,
+.rm-downtime-panel .rm-panel__header--compact p {
+  margin: 0;
+}
+
+.rm-downtime-panel .rm-panel__header--compact p {
+  margin-top: 4px;
+  line-height: 1.3;
+}
+
+.rm-downtime-layout {
+  display: grid;
+  grid-template-columns: minmax(210px, 250px) minmax(360px, 1fr) minmax(280px, 330px);
+  gap: 12px;
+  align-items: start;
+}
+
+.rm-downtime-column {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid rgba(214, 177, 104, 0.14);
+  border-radius: 0;
+  background: rgba(18, 16, 14, 0.58);
+}
+
+.rm-downtime-column__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(214, 177, 104, 0.14);
+}
+
+.rm-downtime-column__header h4,
+.rm-downtime-column__header p {
+  margin: 0;
+}
+
+.rm-downtime-column__header h4 {
+  font-size: 13px;
+  line-height: 1.2;
+  color: #fff2da;
+}
+
+.rm-downtime-member-list,
+.rm-downtime-request-list,
+.rm-character-downtime-request-list {
+  display: grid;
+  gap: 7px;
+}
+
+.rm-downtime-member,
+.rm-downtime-request,
+.rm-character-downtime-request {
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: var(--rm-ui-row-bg);
+}
+
+.rm-downtime-member {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 8px 9px;
+}
+
+.rm-downtime-member__main,
+.rm-downtime-member__weeks {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rm-downtime-member__main strong,
+.rm-downtime-request__title strong,
+.rm-character-downtime-request__title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rm-downtime-member__weeks {
+  text-align: right;
+}
+
+.rm-downtime-member__weeks strong {
+  font-size: 18px;
+  line-height: 1;
+  color: #fff8e8;
+}
+
+.rm-downtime-member__weeks span,
+.rm-downtime-member__meta {
+  color: var(--rm-ui-muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.rm-downtime-member__meta {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.rm-downtime-grant {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(214, 177, 104, 0.14);
+}
+
+.rm-downtime-grant h4 {
+  margin: 0;
+  color: #fff2da;
+  font-size: 13px;
+}
+
+.rm-downtime-grant__row {
+  display: grid;
+  grid-template-columns: minmax(74px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.rm-downtime-request {
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px;
+}
+
+.rm-downtime-request:hover,
+.rm-downtime-request:first-child {
+  border-color: rgba(214, 177, 104, 0.28);
+  background: var(--rm-ui-row-bg-hover);
+}
+
+.rm-downtime-request__title,
+.rm-character-downtime-request__title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rm-downtime-request__main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.rm-downtime-request__main p,
+.rm-downtime-request__description,
+.rm-downtime-inspector__title p,
+.rm-downtime-inspector__text,
+.rm-downtime-inspector__empty {
+  margin: 0;
+}
+
+.rm-downtime-request__description,
+.rm-downtime-inspector__text,
+.rm-downtime-inspector__empty {
+  color: var(--rm-ui-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.rm-downtime-request__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rm-downtime-request__actions .rm-button {
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.rm-downtime-manual-request {
+  border: 1px solid rgba(214, 177, 104, 0.14);
+  border-radius: 0;
+  background: rgba(22, 18, 14, 0.56);
+}
+
+.rm-downtime-manual-request > summary {
+  display: flex;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+  color: #f2dfc0;
+  font-weight: 700;
+}
+
+.rm-downtime-manual-request > summary::-webkit-details-marker,
+.rm-downtime-manual-request > summary::marker {
+  display: none;
+  content: "";
+}
+
+.rm-downtime-manual-request__body {
+  padding: 0 10px 10px;
+}
+
+.rm-downtime-request-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(76px, 96px);
+  gap: 8px;
+  align-items: end;
+}
+
+.rm-downtime-request-form .rm-field:nth-of-type(4),
+.rm-downtime-request-form .rm-field:nth-of-type(5) {
+  grid-column: span 1;
+}
+
+.rm-downtime-request-form textarea,
+.rm-character-downtime-form textarea {
+  width: 100%;
+  min-height: 68px;
+  padding: 8px 9px;
+  border: 1px solid rgba(214, 177, 104, 0.24);
+  border-radius: 0;
+  background: rgba(14, 11, 8, 0.42);
+  color: var(--rm-text);
+  font: inherit;
+  line-height: 1.35;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.rm-downtime-request-form .rm-button {
+  align-self: stretch;
+}
+
+.rm-downtime-inspector-list,
+.rm-downtime-inspector {
+  display: grid;
+  gap: 10px;
+}
+
+.rm-downtime-inspector {
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(214, 177, 104, 0.12);
+}
+
+.rm-downtime-inspector:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.rm-downtime-inspector__title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.rm-downtime-inspector__title strong {
+  display: block;
+  margin-bottom: 3px;
+  color: #fff8e8;
+  line-height: 1.2;
+}
+
+.rm-downtime-check-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rm-downtime-check-list li {
+  border: 1px solid rgba(214, 177, 104, 0.14);
+  border-radius: 0;
+  padding: 7px 8px;
+  color: #f2dfc0;
+  background: rgba(0, 0, 0, 0.16);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.rm-character-downtime-tab {
+  --rm-sheet-bg: #0f0e0f;
+  --rm-sheet-panel: rgba(18, 17, 17, 0.78);
+  --rm-sheet-line: rgba(188, 158, 112, 0.18);
+  --rm-sheet-line-strong: rgba(205, 171, 119, 0.32);
+  --rm-sheet-text: #f0e7d9;
+  --rm-sheet-muted: #b9aa91;
+  --rm-sheet-accent: #a87943;
+  --rm-sheet-accent-strong: #cfaa68;
+}
+
+.rm-character-downtime-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--rm-sheet-line);
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 24% 0, rgba(151, 40, 34, 0.08), transparent 30%),
+    var(--rm-sheet-panel);
+  color: var(--rm-sheet-text);
+}
+
+.rm-character-downtime-card__header,
+.rm-character-downtime-history > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rm-character-downtime-card__header h3,
+.rm-character-downtime-card__header p,
+.rm-character-downtime-history h4,
+.rm-character-downtime-history > header span {
+  margin: 0;
+}
+
+.rm-character-downtime-card__header h3 {
+  font-size: 16px;
+  line-height: 1.15;
+}
+
+.rm-character-downtime-card__header p,
+.rm-character-downtime-note,
+.rm-character-downtime-request > p {
+  color: var(--rm-sheet-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.rm-character-downtime-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border: 1px solid var(--rm-sheet-line-strong);
+  border-radius: 0;
+  color: #1b1309;
+  background: linear-gradient(180deg, var(--rm-sheet-accent-strong), var(--rm-sheet-accent));
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.rm-character-downtime-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rm-character-downtime-stat {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--rm-sheet-line);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.rm-character-downtime-stat--focus {
+  border-color: var(--rm-sheet-line-strong);
+  background: rgba(82, 61, 35, 0.36);
+}
+
+.rm-character-downtime-stat span,
+.rm-character-downtime-stat small,
+.rm-character-downtime-tab .rm-muted {
+  color: var(--rm-sheet-muted);
+}
+
+.rm-character-downtime-stat span {
+  font-size: 11px;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.rm-character-downtime-stat strong {
+  color: var(--rm-sheet-text);
+  font-size: 16px;
+  line-height: 1.15;
+}
+
+.rm-character-downtime-stat small {
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.rm-character-downtime-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px;
+  gap: 8px;
+  align-items: end;
+}
+
+.rm-character-downtime-form__title,
+.rm-character-downtime-form__description {
+  grid-column: 1 / -1;
+}
+
+.rm-character-downtime-form__submit {
+  grid-column: 1 / -1;
+}
+
+.rm-character-downtime-tab .rm-field label {
+  color: var(--rm-sheet-muted);
+}
+
+.rm-character-downtime-tab .rm-field input,
+.rm-character-downtime-tab .rm-field select,
+.rm-character-downtime-form textarea {
+  border-color: var(--rm-sheet-line-strong);
+  border-radius: 0;
+  background: rgba(7, 7, 8, 0.54);
+  color: var(--rm-sheet-text);
+}
+
+.rm-character-downtime-note {
+  margin: 0;
+}
+
+.rm-character-downtime-history {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rm-sheet-line);
+}
+
+.rm-character-downtime-history h4 {
+  color: var(--rm-sheet-text);
+  font-size: 13px;
+}
+
+.rm-character-downtime-request {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border-color: var(--rm-sheet-line);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.rm-character-downtime-request > p {
+  margin: 0;
+}
+
+.rm-character-downtime-request__title {
+  justify-content: space-between;
+}
+
+.rm-character-downtime-request__title strong {
+  color: var(--rm-sheet-text);
+}
+
 .rm-party-capacity-meter {
   height: 10px;
   border: 1px solid rgba(214, 177, 104, 0.22);
@@ -5398,6 +5868,8 @@ summary:focus-visible {
   .rm-party-tool-row,
   .rm-compact-toolbar,
   .rm-party-toolbar--compact,
+  .rm-downtime-layout,
+  .rm-downtime-request-form,
   .rm-trader-v2-mode,
   .rm-trader-v2-controls {
     grid-template-columns: 1fr;
@@ -5508,6 +5980,14 @@ summary:focus-visible {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .rm-downtime-column--queue {
+    order: 2;
+  }
+
+  .rm-downtime-column--inspector {
+    order: 3;
+  }
+
   .rm-inventory-table__header,
   .rm-inventory-table__row {
     grid-template-columns: 1fr;
@@ -5590,6 +6070,9 @@ summary:focus-visible {
   .rm-compact-pill-strip,
   .rm-compact-item,
   .rm-party-row__summary,
+  .rm-character-downtime-summary,
+  .rm-character-downtime-form,
+  .rm-downtime-member,
   .rm-hero-doll-stock__item {
     grid-template-columns: 1fr;
   }
@@ -5642,6 +6125,27 @@ summary:focus-visible {
   .rm-compact-item__metrics {
     text-align: left;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rm-downtime-panel .rm-panel__header--compact,
+  .rm-downtime-column__header,
+  .rm-downtime-request__title,
+  .rm-downtime-inspector__title,
+  .rm-character-downtime-card__header,
+  .rm-character-downtime-history > header,
+  .rm-character-downtime-request__title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .rm-downtime-member__weeks {
+    text-align: left;
+  }
+
+  .rm-character-downtime-form__title,
+  .rm-character-downtime-form__description,
+  .rm-character-downtime-form__submit {
+    grid-column: auto;
   }
 
   .rm-inventory-shell--compact .rm-tabs--compact .rm-tab,

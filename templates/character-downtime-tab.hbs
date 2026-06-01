@@ -1,9 +1,12 @@
 <section class="tab {{ characterDowntimeTab.cssClass }} rm-character-downtime-tab" data-tab="{{ characterDowntimeTab.id }}" data-group="{{ characterDowntimeTab.group }}">
-  <section class="rm-panel rm-panel--full rm-panel--compact">
-    <div class="rm-panel__header rm-panel__header--compact">
-      <h3>Простой</h3>
-      <span class="rm-muted">{{ characterDowntime.actorName }}</span>
-    </div>
+  <section class="rm-character-downtime-card">
+    <header class="rm-character-downtime-card__header">
+      <div>
+        <h3>Простой</h3>
+        <p>{{ characterDowntime.actorName }}</p>
+      </div>
+      <span class="rm-character-downtime-badge">{{rmNum characterDowntime.balance.availableWeeks precision=0}} нед.</span>
+    </header>
 
     {{#if characterDowntime.warning}}
       <p class="rm-inline-status rm-inline-status--warning">
@@ -11,26 +14,26 @@
       </p>
     {{/if}}
 
-    <section class="rm-compact-pill-strip rm-compact-pill-strip--details">
-      <article class="rm-compact-pill rm-compact-pill--focus">
+    <section class="rm-character-downtime-summary">
+      <article class="rm-character-downtime-stat rm-character-downtime-stat--focus">
         <span>Свободно</span>
         <strong>{{rmNum characterDowntime.balance.availableWeeks precision=0}} нед.</strong>
         <small>можно заявить сейчас</small>
       </article>
-      <article class="rm-compact-pill">
+      <article class="rm-character-downtime-stat">
         <span>В резерве</span>
         <strong>{{rmNum characterDowntime.balance.reservedWeeks precision=0}} нед.</strong>
         <small>по активным заявкам</small>
       </article>
-      <article class="rm-compact-pill">
+      <article class="rm-character-downtime-stat">
         <span>Потрачено</span>
         <strong>{{rmNum characterDowntime.balance.spentWeeks precision=0}} нед.</strong>
         <small>из {{rmNum characterDowntime.balance.totalGrantedWeeks precision=0}} выданных</small>
       </article>
     </section>
 
-    <section class="rm-compact-toolbar">
-      <div class="rm-field">
+    <section class="rm-character-downtime-form">
+      <div class="rm-field rm-character-downtime-form__action">
         <label>Действие</label>
         <select data-action="character-downtime-action" {{#if characterDowntime.submitDisabled}}disabled{{/if}}>
           {{#each characterDowntime.actionOptions}}
@@ -42,20 +45,17 @@
         <label>Недели</label>
         <input type="number" min="1" step="1" value="{{characterDowntime.form.weeks}}" data-action="character-downtime-weeks" {{#if characterDowntime.submitDisabled}}disabled{{/if}}>
       </div>
-    </section>
-
-    <section class="rm-compact-toolbar">
-      <div class="rm-field">
+      <div class="rm-field rm-character-downtime-form__title">
         <label>Название</label>
         <input type="text" value="{{characterDowntime.form.title}}" placeholder="Коротко о цели" data-action="character-downtime-title" {{#if characterDowntime.submitDisabled}}disabled{{/if}}>
       </div>
-      <div class="rm-field">
+      <div class="rm-field rm-character-downtime-form__description">
         <label>Описание</label>
         <textarea rows="2" placeholder="Что персонаж хочет сделать" data-action="character-downtime-description" {{#if characterDowntime.submitDisabled}}disabled{{/if}}>{{characterDowntime.form.description}}</textarea>
       </div>
       <button
         type="button"
-        class="rm-button rm-button--small rm-button--primary"
+        class="rm-button rm-button--small rm-button--primary rm-character-downtime-form__submit"
         data-action="character-downtime-submit"
         title="{{characterDowntime.submitDisabledReason}}"
         {{#if characterDowntime.submitDisabled}}disabled{{/if}}
@@ -66,45 +66,46 @@
     </section>
 
     {{#if characterDowntime.submitDisabledReason}}
-      <p class="rm-muted">{{ characterDowntime.submitDisabledReason }}</p>
+      <p class="rm-character-downtime-note">{{ characterDowntime.submitDisabledReason }}</p>
     {{/if}}
 
-    {{#if characterDowntime.emptyRequests}}
-      <p class="rm-empty">Заявок на простой пока нет.</p>
-    {{else}}
-      <div class="rm-compact-item-list">
-        {{#each characterDowntime.requests}}
-          <article class="rm-compact-item">
-            <div class="rm-compact-item__main">
-              <div class="rm-compact-item__copy">
-                <div class="rm-compact-item__title">
-                  <strong class="rm-compact-item__name">{{title}}</strong>
-                  <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
-                </div>
-                <p class="rm-compact-item__meta">
-                  {{actionLabel}} • {{rmNum weeks precision=0}} нед.
-                </p>
-                {{#if description}}
-                  <p class="rm-muted">{{description}}</p>
-                {{/if}}
-                {{#if hasResult}}
-                  <p class="rm-inline-status rm-inline-status--info"><span>{{result}}</span></p>
-                {{/if}}
-                {{#if hasChecks}}
-                  <div class="rm-status-strip">
-                    {{#each checks}}
-                      <span class="rm-badge rm-status-badge rm-status-badge--info">{{summary}}</span>
-                      {{#if hasResult}}
-                        <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
-                      {{/if}}
-                    {{/each}}
-                  </div>
-                {{/if}}
+    <section class="rm-character-downtime-history">
+      <header>
+        <h4>Заявки</h4>
+        <span class="rm-muted">{{rmNum characterDowntime.requests.length precision=0}}</span>
+      </header>
+
+      {{#if characterDowntime.emptyRequests}}
+        <p class="rm-empty">Заявок на простой пока нет.</p>
+      {{else}}
+        <div class="rm-character-downtime-request-list">
+          {{#each characterDowntime.requests}}
+            <article class="rm-character-downtime-request">
+              <div class="rm-character-downtime-request__title">
+                <strong>{{title}}</strong>
+                <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
               </div>
-            </div>
-          </article>
-        {{/each}}
-      </div>
-    {{/if}}
+              <p class="rm-muted">{{actionLabel}} • {{rmNum weeks precision=0}} нед.</p>
+              {{#if description}}
+                <p>{{description}}</p>
+              {{/if}}
+              {{#if hasResult}}
+                <p class="rm-inline-status rm-inline-status--info"><span>{{result}}</span></p>
+              {{/if}}
+              {{#if hasChecks}}
+                <div class="rm-status-strip">
+                  {{#each checks}}
+                    <span class="rm-badge rm-status-badge rm-status-badge--info">{{summary}}</span>
+                    {{#if hasResult}}
+                      <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
+                    {{/if}}
+                  {{/each}}
+                </div>
+              {{/if}}
+            </article>
+          {{/each}}
+        </div>
+      {{/if}}
+    </section>
   </section>
 </section>

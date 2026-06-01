@@ -770,9 +770,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const grantDisabled = !canManageDowntime || members.length === 0;
     const submitDisabled = !canSubmitDowntime || !this.downtimeRequestActorId || actionCatalog.length === 0;
 
+    const requests = (snapshot.requests ?? []).map((request) => mapDowntimeRequest(request));
+
     return {
       members,
-      requests: (snapshot.requests ?? []).map((request) => mapDowntimeRequest(request)),
+      requests,
       actionOptions: actionCatalog.map((action) => ({
         value: action.id,
         label: action.label ?? action.id,
@@ -814,7 +816,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ? (canSubmitDowntime ? "Заполните персонажа и действие." : "Нет доступных персонажей для заявки.")
         : "",
       emptyMembers: members.length === 0,
-      emptyRequests: (snapshot.requests ?? []).length === 0
+      emptyRequests: requests.length === 0
     };
   }
 
