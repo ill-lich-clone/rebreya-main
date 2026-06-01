@@ -476,12 +476,27 @@ test("InventoryApp downtime controls call module API handlers", async () => {
       error() {}
     }
   };
+  const previousDialog = globalThis.Dialog;
   const previousPrompt = globalThis.prompt;
-  const promptResponses = [
+  const dialogResponses = [
     "Returned for details",
     "Survival|12|wis\nTools|15|dex"
   ];
-  globalThis.prompt = () => promptResponses.shift() ?? "";
+  globalThis.prompt = () => {
+    throw new Error("prompt() is not supported.");
+  };
+  globalThis.Dialog = class Dialog {
+    constructor(config) {
+      this.config = config;
+    }
+
+    render() {
+      const value = dialogResponses.shift() ?? "";
+      const root = createFakeElement();
+      root.querySelector = () => ({ value });
+      this.config.buttons.confirm.callback(root);
+    }
+  };
 
   const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
   const grantButton = createFakeControl({ dataset: { action: "downtime-grant" } });
@@ -555,6 +570,7 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     ]);
   }
   finally {
+    globalThis.Dialog = previousDialog;
     globalThis.prompt = previousPrompt;
     globalThis.ui = previousUi;
     dom.restore();

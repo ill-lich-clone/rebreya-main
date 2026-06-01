@@ -1225,12 +1225,66 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     ui.notifications?.info(message);
   }
 
-  #promptDowntimeText(title, message, initialValue = "") {
-    if (typeof globalThis.prompt !== "function") {
-      return "";
+  async #promptDowntimeText(title, message, initialValue = "") {
+    const DialogClass = globalThis.Dialog;
+    if (typeof DialogClass !== "function") {
+      return null;
     }
 
-    return globalThis.prompt(`${title}\n${message}`, initialValue);
+    return new Promise((resolve) => {
+      let settled = false;
+      const safeTitle = foundry.utils.escapeHTML(title);
+      const safeMessage = foundry.utils.escapeHTML(message);
+      const safeInitialValue = foundry.utils.escapeHTML(String(initialValue ?? ""));
+      const content = `
+        <form class="rm-purchase-dialog rm-downtime-text-dialog">
+          <div class="rm-field">
+            <label>${safeMessage}</label>
+            <textarea rows="4" data-field="downtime-text">${safeInitialValue}</textarea>
+          </div>
+        </form>
+      `;
+
+      const dialog = new DialogClass({
+        title: safeTitle,
+        content,
+        buttons: {
+          confirm: {
+            label: "Сохранить",
+            callback: (html) => {
+              const root = getDialogRoot(html);
+              const input = root?.querySelector("[data-field='downtime-text']");
+              settled = true;
+              resolve(input?.value ?? "");
+            }
+          },
+          cancel: {
+            label: "Отмена",
+            callback: () => {
+              settled = true;
+              resolve(null);
+            }
+          }
+        },
+        default: "confirm",
+        render: (html) => {
+          const root = getDialogRoot(html);
+          const input = root?.querySelector("[data-field='downtime-text']");
+          if (input instanceof HTMLElement) {
+            input.focus();
+          }
+        },
+        close: () => {
+          if (!settled) {
+            resolve(null);
+          }
+        }
+      }, {
+        classes: ["rebreya-main", "rebreya-trader-dialog"]
+      });
+
+      dialog.render(true);
+    });
   }
 
   async #handleDowntimeGrant(element) {
@@ -1282,7 +1336,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     let result = "";
     if (shouldPromptDowntimeResult(status)) {
-      const prompted = this.#promptDowntimeText(
+      const prompted = await this.#promptDowntimeText(
         "Результат простоя",
         "Короткий комментарий для заявки:",
         button.dataset.result ?? ""
@@ -1305,7 +1359,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
 
-    const prompted = this.#promptDowntimeText(
+    const prompted = await this.#promptDowntimeText(
       "Проверки простоя",
       "Введите проверки построчно: Название|DC|характеристика",
       button.dataset.checks ?? ""

@@ -3375,6 +3375,20 @@ summary:focus-visible {
   gap: 14px;
 }
 
+.rm-downtime-text-dialog textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 10px 12px;
+  border: 1px solid var(--rm-border);
+  border-radius: 0;
+  background: rgba(17, 14, 10, 0.32);
+  color: var(--rm-text);
+  font: inherit;
+  line-height: 1.4;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
 .rebreya-trader-dialog .window-content {
   padding: 16px;
   background: radial-gradient(circle at top, rgba(149, 109, 52, 0.18), transparent 40%), var(--rm-bg);
