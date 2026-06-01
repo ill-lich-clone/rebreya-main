@@ -6,6 +6,9 @@ import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
 function installFoundryApplicationStub() {
   const previousFoundry = globalThis.foundry;
   globalThis.foundry = {
+    utils: {
+      escapeHTML: (value) => String(value ?? "")
+    },
     applications: {
       api: {
         ApplicationV2: class {
@@ -43,6 +46,8 @@ function installMinimalDom() {
       this.className = "";
       this.textContent = "";
       this.type = "";
+      this.value = "";
+      this.disabled = false;
       this.closest = closest;
     }
 
@@ -79,6 +84,10 @@ function installMinimalDom() {
   globalThis.window = {
     innerWidth: 1024,
     innerHeight: 768,
+    clearTimeout() {},
+    setTimeout() {
+      return 0;
+    },
     getComputedStyle: () => ({
       zIndex: "100"
     })
@@ -114,7 +123,7 @@ function collectText(node) {
   ].join("");
 }
 
-function createModuleApi({ getGroupContext, partySnapshot = {} }) {
+function createModuleApi({ getGroupContext, partySnapshot = {}, downtimeSnapshot, downtimeError, calls = [] }) {
   return {
     async getInventorySnapshot() {
       return {
@@ -173,8 +182,52 @@ function createModuleApi({ getGroupContext, partySnapshot = {} }) {
         day: 1
       };
     },
+    getDowntimeSnapshot() {
+      calls.push(["getDowntimeSnapshot"]);
+      if (downtimeError) {
+        throw downtimeError;
+      }
+      return downtimeSnapshot ?? {
+        canManage: false,
+        canSubmit: false,
+        members: [],
+        requests: [],
+        actionCatalog: []
+      };
+    },
+    async grantDowntimeWeeks(payload) {
+      calls.push(["grantDowntimeWeeks", payload]);
+      return {};
+    },
+    async createDowntimeRequest(payload) {
+      calls.push(["createDowntimeRequest", payload]);
+      return {};
+    },
+    async setDowntimeRequestStatus(requestId, status, options) {
+      calls.push(["setDowntimeRequestStatus", requestId, status, options]);
+      return {};
+    },
+    async setDowntimeRequestChecks(requestId, checks) {
+      calls.push(["setDowntimeRequestChecks", requestId, checks]);
+      return {};
+    },
     getGroupContext
   };
+}
+
+function createFakeControl({ dataset = {}, value = "", disabled = false } = {}) {
+  const control = createFakeElement({ dataset });
+  control.value = value;
+  control.disabled = disabled;
+  return control;
+}
+
+async function dispatchClick(button) {
+  assert.ok(button.listeners.click?.length, "expected click listener");
+  await button.listeners.click[0]({
+    currentTarget: button,
+    preventDefault() {}
+  });
 }
 
 test("InventoryApp _prepareContext surfaces known no-group display context errors", async () => {
@@ -308,6 +361,203 @@ test("InventoryApp _prepareContext does not hide unexpected display context erro
   }
   finally {
     console.error = previousConsoleError;
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp allows downtime tab and maps downtime snapshot into context options", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => ({
+      groupActor: {
+        id: "group-a",
+        name: "Downtime Group",
+        system: {
+          members: []
+        }
+      },
+      groupId: "group-a",
+      memberActorIds: ["actor-a"]
+    }),
+    downtimeSnapshot: {
+      canManage: true,
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 3,
+          reservedWeeks: 1,
+          spentWeeks: 2,
+          totalGrantedWeeks: 6
+        }
+      }],
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionId: "research",
+        actionLabel: "Research",
+        title: "Ancient map",
+        description: "Find a route.",
+        weeks: 1,
+        status: "pending",
+        checks: [{ id: "check-1", label: "INT", dc: 15, ability: "int" }],
+        result: ""
+      }],
+      actionCatalog: [
+        { id: "unique", label: "Unique" },
+        { id: "research", label: "Research" }
+      ]
+    }
+  }));
+
+  try {
+    app.setActiveTab("downtime", { render: false });
+    app.downtimeRequestActorId = "actor-a";
+    app.downtimeRequestActionId = "research";
+
+    const context = await app._prepareContext();
+
+    assert.equal(context.activeTab, "downtime");
+    assert.equal(context.tabs.isDowntime, true);
+    assert.equal(context.downtime.canManage, true);
+    assert.equal(context.downtime.canSubmit, true);
+    assert.deepEqual(context.downtime.grantActorOptions.map((option) => option.value), ["all", "actor-a"]);
+    assert.equal(context.downtime.requestActorOptions[0].selected, true);
+    assert.equal(context.downtime.actionOptions.find((option) => option.value === "research").selected, true);
+    assert.equal(context.downtime.members[0].availableWeeks, 3);
+    assert.equal(context.downtime.members[0].reservedWeeks, 1);
+    assert.equal(context.downtime.members[0].spentWeeks, 2);
+    assert.equal(context.downtime.members[0].totalGrantedWeeks, 6);
+    assert.equal(context.downtime.requests[0].statusLabel, "Ожидает");
+    assert.equal(context.downtime.requests[0].checks[0].summary, "INT | DC 15 | int");
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp downtime context converts known group errors into empty warning state", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null,
+    downtimeError: new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP)
+  }));
+
+  try {
+    app.setActiveTab("downtime", { render: false });
+
+    const context = await app._prepareContext();
+
+    assert.equal(context.hasError, false);
+    assert.equal(context.downtime.members.length, 0);
+    assert.equal(context.downtime.requests.length, 0);
+    assert.equal(context.downtime.warning, GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP);
+    assert.equal(context.downtime.grantDisabled, true);
+    assert.equal(context.downtime.submitDisabled, true);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp downtime controls call module API handlers", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const calls = [];
+  const previousUi = globalThis.ui;
+  globalThis.ui = {
+    notifications: {
+      info() {},
+      error() {}
+    }
+  };
+  const previousPrompt = globalThis.prompt;
+  const promptResponses = [
+    "Returned for details",
+    "Survival|12|wis\nTools|15|dex"
+  ];
+  globalThis.prompt = () => promptResponses.shift() ?? "";
+
+  const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+  const grantButton = createFakeControl({ dataset: { action: "downtime-grant" } });
+  const submitButton = createFakeControl({ dataset: { action: "downtime-submit" } });
+  const statusButton = createFakeControl({
+    dataset: {
+      action: "downtime-status",
+      requestId: "downtime-1",
+      status: "returned"
+    }
+  });
+  const checksButton = createFakeControl({
+    dataset: {
+      action: "downtime-checks",
+      requestId: "downtime-1"
+    }
+  });
+  const fields = new Map([
+    ["[data-action='downtime-grant-actor']", createFakeControl({ value: "actor-a" })],
+    ["[data-action='downtime-grant-weeks']", createFakeControl({ value: "2" })],
+    ["[data-action='downtime-request-actor']", createFakeControl({ value: "actor-a" })],
+    ["[data-action='downtime-request-action']", createFakeControl({ value: "research" })],
+    ["[data-action='downtime-request-weeks']", createFakeControl({ value: "1" })],
+    ["[data-action='downtime-request-title']", createFakeControl({ value: "Map" })],
+    ["[data-action='downtime-request-description']", createFakeControl({ value: "Find the pass." })]
+  ]);
+  const root = createFakeElement();
+  root.querySelector = (selector) => fields.get(selector) ?? null;
+  root.querySelectorAll = (selector) => {
+    if (selector === "[data-action='downtime-grant']") {
+      return [grantButton];
+    }
+    if (selector === "[data-action='downtime-submit']") {
+      return [submitButton];
+    }
+    if (selector === "[data-action='downtime-status']") {
+      return [statusButton];
+    }
+    if (selector === "[data-action='downtime-checks']") {
+      return [checksButton];
+    }
+    return [];
+  };
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null,
+    calls
+  }));
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    await dispatchClick(grantButton);
+    await dispatchClick(submitButton);
+    await dispatchClick(statusButton);
+    await dispatchClick(checksButton);
+
+    assert.deepEqual(calls, [
+      ["grantDowntimeWeeks", { actorIds: ["actor-a"], weeks: 2, reason: "" }],
+      ["createDowntimeRequest", {
+        actorId: "actor-a",
+        actionId: "research",
+        title: "Map",
+        description: "Find the pass.",
+        weeks: 1
+      }],
+      ["setDowntimeRequestStatus", "downtime-1", "returned", { result: "Returned for details" }],
+      ["setDowntimeRequestChecks", "downtime-1", [
+        { label: "Survival", dc: 12, ability: "wis" },
+        { label: "Tools", dc: 15, ability: "dex" }
+      ]]
+    ]);
+  }
+  finally {
+    globalThis.prompt = previousPrompt;
+    globalThis.ui = previousUi;
+    dom.restore();
     restoreFoundry();
   }
 });

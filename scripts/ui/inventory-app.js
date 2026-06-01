@@ -4,6 +4,34 @@ import { bringAppToFront, getAppElement } from "../ui.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
+const KNOWN_GROUP_CONTEXT_ERROR_MESSAGES = new Set([
+  GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP,
+  GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP
+]);
+
+const DOWNTIME_STATUS_META = Object.freeze({
+  pending: {
+    label: "Ожидает",
+    type: "info"
+  },
+  approved: {
+    label: "Одобрено",
+    type: "good"
+  },
+  returned: {
+    label: "Возвращено",
+    type: "warning"
+  },
+  rejected: {
+    label: "Отклонено",
+    type: "danger"
+  },
+  completed: {
+    label: "Завершено",
+    type: "good"
+  }
+});
+
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
   return Number.isFinite(numericValue) ? numericValue : fallback;
@@ -11,6 +39,107 @@ function toNumber(value, fallback = 0) {
 
 function toInteger(value, fallback = 0) {
   return Math.floor(toNumber(value, fallback));
+}
+
+function cleanText(value) {
+  return String(value ?? "").trim();
+}
+
+function isKnownGroupContextError(error) {
+  return KNOWN_GROUP_CONTEXT_ERROR_MESSAGES.has(error?.message);
+}
+
+function buildEmptyDowntimeContext({ warning = "", grantWeeks = 1, grantActorId = "all", requestActorId = "", requestActionId = "unique", requestWeeks = 1, requestTitle = "", requestDescription = "" } = {}) {
+  const safeWarning = cleanText(warning);
+  return {
+    members: [],
+    requests: [],
+    actionOptions: [],
+    grantActorOptions: [{
+      value: "all",
+      label: "Всем участникам",
+      selected: true
+    }],
+    requestActorOptions: [],
+    canManage: false,
+    canSubmit: false,
+    warning: safeWarning,
+    grantWeeks,
+    grantActorId,
+    requestActorId,
+    requestActionId,
+    requestWeeks,
+    requestTitle,
+    requestDescription,
+    grantDisabled: true,
+    grantDisabledReason: safeWarning || "Нет участников для выдачи простоя.",
+    submitDisabled: true,
+    submitDisabledReason: safeWarning || "Нет доступных персонажей для заявки.",
+    emptyMembers: true,
+    emptyRequests: true
+  };
+}
+
+function buildCheckSummary(check) {
+  const parts = [
+    cleanText(check?.label),
+    cleanText(check?.dc) ? `DC ${cleanText(check.dc).replace(/^dc\s*/iu, "")}` : "",
+    cleanText(check?.ability)
+  ].filter(Boolean);
+  return parts.join(" | ");
+}
+
+function mapDowntimeRequest(request) {
+  const status = cleanText(request?.status) || "pending";
+  const statusMeta = DOWNTIME_STATUS_META[status] ?? {
+    label: status || "Заявка",
+    type: "info"
+  };
+  const checks = (request?.checks ?? []).map((check) => ({
+    ...check,
+    summary: buildCheckSummary(check)
+  }));
+
+  return {
+    ...request,
+    status,
+    statusLabel: statusMeta.label,
+    statusType: statusMeta.type,
+    statusClass: `rm-status-badge--${statusMeta.type}`,
+    checks,
+    checksPrompt: checks.map((check) => [
+      cleanText(check.label),
+      cleanText(check.dc),
+      cleanText(check.ability)
+    ].join("|")).join("\n"),
+    hasChecks: checks.length > 0,
+    hasResult: Boolean(cleanText(request?.result)),
+    canApprove: status === "pending" || status === "returned",
+    canReturn: status === "pending" || status === "approved",
+    canReject: status === "pending" || status === "approved" || status === "returned",
+    canComplete: status === "approved"
+  };
+}
+
+function parseDowntimeChecks(value) {
+  return String(value ?? "")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [label = "", dcText = "", ability = ""] = line.split("|").map((part) => part.trim());
+      const dcMatch = /-?\d+/u.exec(dcText);
+      return {
+        label,
+        dc: dcMatch ? toInteger(dcMatch[0], 0) : 0,
+        ability
+      };
+    })
+    .filter((check) => check.label);
+}
+
+function shouldPromptDowntimeResult(status) {
+  return ["returned", "rejected", "completed"].includes(status);
 }
 
 function normalizeInventorySourceType(value) {
@@ -354,6 +483,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.availablePartyActors = [];
     this.craftSearch = "";
     this.craftCrafterActorId = "";
+    this.downtimeGrantWeeks = 1;
+    this.downtimeGrantActorId = "all";
+    this.downtimeRequestActorId = "";
+    this.downtimeRequestActionId = "unique";
+    this.downtimeRequestWeeks = 1;
+    this.downtimeRequestTitle = "";
+    this.downtimeRequestDescription = "";
     this.expandedPartyMembers = new Set();
     this.searchRenderTimeout = null;
     this.craftSearchRenderTimeout = null;
@@ -371,7 +507,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   setActiveTab(tab, { render = true } = {}) {
-    const allowedTabs = new Set(["inventory", "party", "craft", "calendar"]);
+    const allowedTabs = new Set(["inventory", "party", "craft", "calendar", "downtime"]);
     const nextTab = allowedTabs.has(tab) ? tab : "inventory";
     if (this.activeTab === nextTab) {
       return;
@@ -590,6 +726,98 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return null;
   }
 
+  #prepareDowntimeContext(snapshot = {}, warning = "") {
+    if (!snapshot || warning) {
+      return buildEmptyDowntimeContext({
+        warning,
+        grantWeeks: this.downtimeGrantWeeks,
+        grantActorId: this.downtimeGrantActorId,
+        requestActorId: this.downtimeRequestActorId,
+        requestActionId: this.downtimeRequestActionId,
+        requestWeeks: this.downtimeRequestWeeks,
+        requestTitle: this.downtimeRequestTitle,
+        requestDescription: this.downtimeRequestDescription
+      });
+    }
+
+    const members = (snapshot.members ?? []).map((member) => {
+      const balance = member.balance ?? {};
+      return {
+        ...member,
+        availableWeeks: toInteger(balance.availableWeeks, 0),
+        reservedWeeks: toInteger(balance.reservedWeeks, 0),
+        spentWeeks: toInteger(balance.spentWeeks, 0),
+        totalGrantedWeeks: toInteger(balance.totalGrantedWeeks, 0)
+      };
+    });
+    const grantActorIds = new Set(members.map((member) => member.actorId));
+    if (this.downtimeGrantActorId !== "all" && !grantActorIds.has(this.downtimeGrantActorId)) {
+      this.downtimeGrantActorId = "all";
+    }
+
+    const requestMembers = members.filter((member) => member.canSubmit);
+    if (!requestMembers.some((member) => member.actorId === this.downtimeRequestActorId)) {
+      this.downtimeRequestActorId = requestMembers[0]?.actorId ?? "";
+    }
+
+    const actionCatalog = snapshot.actionCatalog ?? [];
+    if (!actionCatalog.some((action) => action.id === this.downtimeRequestActionId)) {
+      this.downtimeRequestActionId = actionCatalog[0]?.id ?? "unique";
+    }
+
+    const canManageDowntime = Boolean(snapshot.canManage);
+    const canSubmitDowntime = Boolean(snapshot.canSubmit && requestMembers.length);
+    const grantDisabled = !canManageDowntime || members.length === 0;
+    const submitDisabled = !canSubmitDowntime || !this.downtimeRequestActorId || actionCatalog.length === 0;
+
+    return {
+      members,
+      requests: (snapshot.requests ?? []).map((request) => mapDowntimeRequest(request)),
+      actionOptions: actionCatalog.map((action) => ({
+        value: action.id,
+        label: action.label ?? action.id,
+        selected: action.id === this.downtimeRequestActionId
+      })),
+      grantActorOptions: [
+        {
+          value: "all",
+          label: "Всем участникам",
+          selected: this.downtimeGrantActorId === "all"
+        },
+        ...members.map((member) => ({
+          value: member.actorId,
+          label: member.actorName,
+          selected: member.actorId === this.downtimeGrantActorId
+        }))
+      ],
+      requestActorOptions: requestMembers.map((member) => ({
+        value: member.actorId,
+        label: member.actorName,
+        selected: member.actorId === this.downtimeRequestActorId
+      })),
+      canManage: canManageDowntime,
+      canSubmit: canSubmitDowntime,
+      warning: "",
+      grantWeeks: this.downtimeGrantWeeks,
+      grantActorId: this.downtimeGrantActorId,
+      requestActorId: this.downtimeRequestActorId,
+      requestActionId: this.downtimeRequestActionId,
+      requestWeeks: this.downtimeRequestWeeks,
+      requestTitle: this.downtimeRequestTitle,
+      requestDescription: this.downtimeRequestDescription,
+      grantDisabled,
+      grantDisabledReason: grantDisabled
+        ? (canManageDowntime ? "Нет участников для выдачи простоя." : "Только мастер может выдавать недели простоя.")
+        : "",
+      submitDisabled,
+      submitDisabledReason: submitDisabled
+        ? (canSubmitDowntime ? "Заполните персонажа и действие." : "Нет доступных персонажей для заявки.")
+        : "",
+      emptyMembers: members.length === 0,
+      emptyRequests: (snapshot.requests ?? []).length === 0
+    };
+  }
+
   async _prepareContext() {
     try {
       const inventorySnapshot = await this.moduleApi.getInventorySnapshot({
@@ -632,6 +860,18 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         crafterActorId: this.craftCrafterActorId
       });
       const calendarSnapshot = this.moduleApi.getCalendarSnapshot();
+      let downtimeSnapshot = null;
+      let downtimeWarning = "";
+      try {
+        downtimeSnapshot = await this.moduleApi.getDowntimeSnapshot();
+      }
+      catch (error) {
+        if (!isKnownGroupContextError(error)) {
+          throw error;
+        }
+
+        downtimeWarning = error.message || "Не удалось определить группу Rebreya.";
+      }
       const availableActors = partySnapshot.availableActors ?? [];
       this.availablePartyActors = availableActors.map((actor) => ({
         id: actor.id,
@@ -767,6 +1007,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.craftCrafterActorId = craftSnapshot.crafters?.[0]?.actorId ?? "";
       }
 
+      const downtime = this.#prepareDowntimeContext(downtimeSnapshot, downtimeWarning);
+
       return {
         hasError: false,
         actor: inventorySnapshot.actor ?? {
@@ -845,6 +1087,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           monthValue: calendarSnapshot.month,
           dayValue: calendarSnapshot.day
         },
+        downtime,
         typeOptions: [
           { value: "all", label: "Все", selected: this.typeFilter === "all" },
           { value: "gear", label: "Снаряжение", selected: this.typeFilter === "gear" },
@@ -856,7 +1099,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           isInventory: this.activeTab === "inventory",
           isParty: this.activeTab === "party",
           isCraft: this.activeTab === "craft",
-          isCalendar: this.activeTab === "calendar"
+          isCalendar: this.activeTab === "calendar",
+          isDowntime: this.activeTab === "downtime"
         },
         actionFeedback,
         canManage
@@ -979,6 +1223,101 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     ui.notifications?.info(message);
   }
 
+  #promptDowntimeText(title, message, initialValue = "") {
+    if (typeof globalThis.prompt !== "function") {
+      return "";
+    }
+
+    return globalThis.prompt(`${title}\n${message}`, initialValue);
+  }
+
+  async #handleDowntimeGrant(element) {
+    const actorId = cleanText(element.querySelector("[data-action='downtime-grant-actor']")?.value) || "all";
+    const weeks = Math.max(1, toInteger(element.querySelector("[data-action='downtime-grant-weeks']")?.value, 1));
+    this.downtimeGrantActorId = actorId;
+    this.downtimeGrantWeeks = weeks;
+
+    const actorIds = actorId === "all" ? [] : [actorId];
+    await this.moduleApi.grantDowntimeWeeks({
+      actorIds,
+      weeks,
+      reason: ""
+    });
+
+    this.#setActionFeedback("success", `Выдано недель простоя: ${weeks}.`);
+    ui.notifications?.info(`Выдано недель простоя: ${weeks}.`);
+    bringAppToFront(this);
+  }
+
+  async #handleDowntimeSubmit(element) {
+    this.downtimeRequestActorId = cleanText(element.querySelector("[data-action='downtime-request-actor']")?.value);
+    this.downtimeRequestActionId = cleanText(element.querySelector("[data-action='downtime-request-action']")?.value) || "unique";
+    this.downtimeRequestWeeks = Math.max(1, toInteger(element.querySelector("[data-action='downtime-request-weeks']")?.value, 1));
+    this.downtimeRequestTitle = cleanText(element.querySelector("[data-action='downtime-request-title']")?.value);
+    this.downtimeRequestDescription = cleanText(element.querySelector("[data-action='downtime-request-description']")?.value);
+
+    await this.moduleApi.createDowntimeRequest({
+      actorId: this.downtimeRequestActorId,
+      actionId: this.downtimeRequestActionId,
+      title: this.downtimeRequestTitle,
+      description: this.downtimeRequestDescription,
+      weeks: this.downtimeRequestWeeks
+    });
+
+    this.downtimeRequestTitle = "";
+    this.downtimeRequestDescription = "";
+    this.#setActionFeedback("success", "Заявка на простой отправлена.");
+    ui.notifications?.info("Заявка на простой отправлена.");
+    bringAppToFront(this);
+  }
+
+  async #handleDowntimeStatus(button) {
+    const requestId = cleanText(button.dataset.requestId);
+    const status = cleanText(button.dataset.status);
+    if (!requestId || !status) {
+      return;
+    }
+
+    let result = "";
+    if (shouldPromptDowntimeResult(status)) {
+      const prompted = this.#promptDowntimeText(
+        "Результат простоя",
+        "Короткий комментарий для заявки:",
+        button.dataset.result ?? ""
+      );
+      if (prompted === null) {
+        return;
+      }
+      result = cleanText(prompted);
+    }
+
+    await this.moduleApi.setDowntimeRequestStatus(requestId, status, { result });
+    this.#setActionFeedback("success", "Статус заявки обновлён.");
+    ui.notifications?.info("Статус заявки обновлён.");
+    bringAppToFront(this);
+  }
+
+  async #handleDowntimeChecks(button) {
+    const requestId = cleanText(button.dataset.requestId);
+    if (!requestId) {
+      return;
+    }
+
+    const prompted = this.#promptDowntimeText(
+      "Проверки простоя",
+      "Введите проверки построчно: Название|DC|характеристика",
+      button.dataset.checks ?? ""
+    );
+    if (prompted === null) {
+      return;
+    }
+
+    await this.moduleApi.setDowntimeRequestChecks(requestId, parseDowntimeChecks(prompted));
+    this.#setActionFeedback("success", "Проверки заявки обновлены.");
+    ui.notifications?.info("Проверки заявки обновлены.");
+    bringAppToFront(this);
+  }
+
   async _onRender(context, options) {
     await super._onRender(context, options);
     const element = getAppElement(this);
@@ -1037,6 +1376,89 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     element.querySelectorAll("[data-action='switch-tab']").forEach((button) => {
       button.addEventListener("click", (event) => {
         this.setActiveTab(event.currentTarget.dataset.tab || "inventory");
+      }, listenerOptions);
+    });
+
+    const bindDowntimeField = (selector, assign) => {
+      element.querySelector(selector)?.addEventListener("change", (event) => {
+        assign(event.currentTarget.value ?? "");
+      }, listenerOptions);
+    };
+    bindDowntimeField("[data-action='downtime-grant-actor']", (value) => {
+      this.downtimeGrantActorId = cleanText(value) || "all";
+    });
+    bindDowntimeField("[data-action='downtime-grant-weeks']", (value) => {
+      this.downtimeGrantWeeks = Math.max(1, toInteger(value, 1));
+    });
+    bindDowntimeField("[data-action='downtime-request-actor']", (value) => {
+      this.downtimeRequestActorId = cleanText(value);
+    });
+    bindDowntimeField("[data-action='downtime-request-action']", (value) => {
+      this.downtimeRequestActionId = cleanText(value) || "unique";
+    });
+    bindDowntimeField("[data-action='downtime-request-weeks']", (value) => {
+      this.downtimeRequestWeeks = Math.max(1, toInteger(value, 1));
+    });
+    bindDowntimeField("[data-action='downtime-request-title']", (value) => {
+      this.downtimeRequestTitle = String(value ?? "");
+    });
+    bindDowntimeField("[data-action='downtime-request-description']", (value) => {
+      this.downtimeRequestDescription = String(value ?? "");
+    });
+
+    element.querySelectorAll("[data-action='downtime-grant']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          await this.#handleDowntimeGrant(element);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to grant downtime weeks.`, error);
+          const message = error.message || "Не удалось выдать недели простоя.";
+          this.#setActionFeedback("error", message);
+          ui.notifications?.error(message);
+        }
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='downtime-submit']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          await this.#handleDowntimeSubmit(element);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to submit downtime request.`, error);
+          const message = error.message || "Не удалось отправить заявку на простой.";
+          this.#setActionFeedback("error", message);
+          ui.notifications?.error(message);
+        }
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='downtime-status']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        try {
+          await this.#handleDowntimeStatus(event.currentTarget);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to update downtime request status.`, error);
+          const message = error.message || "Не удалось обновить заявку простоя.";
+          this.#setActionFeedback("error", message);
+          ui.notifications?.error(message);
+        }
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='downtime-checks']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        try {
+          await this.#handleDowntimeChecks(event.currentTarget);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to update downtime request checks.`, error);
+          const message = error.message || "Не удалось обновить проверки простоя.";
+          this.#setActionFeedback("error", message);
+          ui.notifications?.error(message);
+        }
       }, listenerOptions);
     });
 

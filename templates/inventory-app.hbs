@@ -93,6 +93,7 @@
       <button type="button" class="rm-tab {{#if tabs.isParty}}is-active{{/if}}" data-action="switch-tab" data-tab="party">Группа</button>
       <button type="button" class="rm-tab {{#if tabs.isCraft}}is-active{{/if}}" data-action="switch-tab" data-tab="craft">Крафт</button>
       <button type="button" class="rm-tab {{#if tabs.isCalendar}}is-active{{/if}}" data-action="switch-tab" data-tab="calendar">Календарь</button>
+      <button type="button" class="rm-tab {{#if tabs.isDowntime}}is-active{{/if}}" data-action="switch-tab" data-tab="downtime">Простой</button>
     </nav>
 
     {{#if actionFeedback}}
@@ -525,6 +526,157 @@
             {{/if}}
           </section>
         </div>
+      </section>
+    {{/if}}
+
+    {{#if tabs.isDowntime}}
+      <section class="rm-panel rm-panel--full rm-panel--compact">
+        <div class="rm-panel__header rm-panel__header--compact">
+          <h3>Простой</h3>
+          <span class="rm-muted">{{rmNum downtime.requests.length precision=0}} заяв.</span>
+        </div>
+
+        {{#if downtime.warning}}
+          <p class="rm-inline-status rm-inline-status--warning">
+            <span>{{downtime.warning}}</span>
+          </p>
+        {{/if}}
+
+        {{#if downtime.emptyMembers}}
+          <p class="rm-empty">В группе пока нет участников для простоя.</p>
+        {{else}}
+          <section class="rm-compact-pill-strip rm-compact-pill-strip--details">
+            {{#each downtime.members}}
+              <article class="rm-compact-pill">
+                <span>{{actorName}}</span>
+                <strong>{{rmNum availableWeeks precision=0}} нед.</strong>
+                <small>рез. {{rmNum reservedWeeks precision=0}} • потрач. {{rmNum spentWeeks precision=0}} • всего {{rmNum totalGrantedWeeks precision=0}}</small>
+              </article>
+            {{/each}}
+          </section>
+        {{/if}}
+
+        {{#if downtime.canManage}}
+          <section class="rm-compact-toolbar">
+            <div class="rm-field">
+              <label>Кому</label>
+              <select data-action="downtime-grant-actor" {{#if downtime.grantDisabled}}disabled{{/if}}>
+                {{#each downtime.grantActorOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </div>
+            <div class="rm-field rm-field--narrow">
+              <label>Недели</label>
+              <input type="number" min="1" step="1" value="{{downtime.grantWeeks}}" data-action="downtime-grant-weeks" {{#if downtime.grantDisabled}}disabled{{/if}}>
+            </div>
+            <button
+              type="button"
+              class="rm-button rm-button--small rm-button--primary"
+              data-action="downtime-grant"
+              title="{{downtime.grantDisabledReason}}"
+              {{#if downtime.grantDisabled}}disabled{{/if}}
+            >
+              <i class="fa-solid fa-calendar-plus"></i>
+              <span>Выдать</span>
+            </button>
+          </section>
+        {{/if}}
+
+        <section class="rm-compact-toolbar">
+          <div class="rm-field">
+            <label>Персонаж</label>
+            <select data-action="downtime-request-actor" {{#if downtime.submitDisabled}}disabled{{/if}}>
+              {{#if downtime.requestActorOptions.length}}
+                {{#each downtime.requestActorOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              {{else}}
+                <option value="">Нет доступных персонажей</option>
+              {{/if}}
+            </select>
+          </div>
+          <div class="rm-field">
+            <label>Действие</label>
+            <select data-action="downtime-request-action" {{#if downtime.submitDisabled}}disabled{{/if}}>
+              {{#each downtime.actionOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </div>
+          <div class="rm-field rm-field--narrow">
+            <label>Недели</label>
+            <input type="number" min="1" step="1" value="{{downtime.requestWeeks}}" data-action="downtime-request-weeks" {{#if downtime.submitDisabled}}disabled{{/if}}>
+          </div>
+        </section>
+
+        <section class="rm-compact-toolbar">
+          <div class="rm-field">
+            <label>Название</label>
+            <input type="text" value="{{downtime.requestTitle}}" placeholder="Коротко о цели" data-action="downtime-request-title" {{#if downtime.submitDisabled}}disabled{{/if}}>
+          </div>
+          <div class="rm-field">
+            <label>Описание</label>
+            <textarea rows="2" placeholder="Что персонаж хочет сделать" data-action="downtime-request-description" {{#if downtime.submitDisabled}}disabled{{/if}}>{{downtime.requestDescription}}</textarea>
+          </div>
+          <button
+            type="button"
+            class="rm-button rm-button--small rm-button--primary"
+            data-action="downtime-submit"
+            title="{{downtime.submitDisabledReason}}"
+            {{#if downtime.submitDisabled}}disabled{{/if}}
+          >
+            <i class="fa-solid fa-paper-plane"></i>
+            <span>Отправить</span>
+          </button>
+        </section>
+
+        {{#if downtime.emptyRequests}}
+          <p class="rm-empty">Заявок на простой пока нет.</p>
+        {{else}}
+          <div class="rm-compact-item-list">
+            {{#each downtime.requests}}
+              <article class="rm-compact-item">
+                <div class="rm-compact-item__main">
+                  <div class="rm-compact-item__copy">
+                    <div class="rm-compact-item__title">
+                      <strong class="rm-compact-item__name">{{title}}</strong>
+                      <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
+                    </div>
+                    <p class="rm-compact-item__meta">
+                      {{actorName}} • {{actionLabel}} • {{rmNum weeks precision=0}} нед.
+                    </p>
+                    {{#if description}}
+                      <p class="rm-muted">{{description}}</p>
+                    {{/if}}
+                    {{#if hasResult}}
+                      <p class="rm-inline-status rm-inline-status--info"><span>{{result}}</span></p>
+                    {{/if}}
+                    {{#if hasChecks}}
+                      <div class="rm-status-strip">
+                        {{#each checks}}
+                          <span class="rm-badge rm-status-badge rm-status-badge--info">{{summary}}</span>
+                        {{/each}}
+                      </div>
+                    {{/if}}
+                  </div>
+                </div>
+
+                {{#if ../downtime.canManage}}
+                  <div class="rm-compact-item__side">
+                    <div class="rm-inline-actions">
+                      <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-status" data-request-id="{{id}}" data-status="approved" {{#unless canApprove}}disabled{{/unless}}>Одобрить</button>
+                      <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-status" data-request-id="{{id}}" data-status="returned" data-result="{{result}}" {{#unless canReturn}}disabled{{/unless}}>Вернуть</button>
+                      <button type="button" class="rm-button rm-button--small rm-button--danger" data-action="downtime-status" data-request-id="{{id}}" data-status="rejected" data-result="{{result}}" {{#unless canReject}}disabled{{/unless}}>Отклонить</button>
+                      <button type="button" class="rm-button rm-button--small rm-button--primary" data-action="downtime-status" data-request-id="{{id}}" data-status="completed" data-result="{{result}}" {{#unless canComplete}}disabled{{/unless}}>Завершить</button>
+                      <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-checks" data-request-id="{{id}}" data-checks="{{checksPrompt}}">Проверки</button>
+                    </div>
+                  </div>
+                {{/if}}
+              </article>
+            {{/each}}
+          </div>
+        {{/if}}
       </section>
     {{/if}}
 
