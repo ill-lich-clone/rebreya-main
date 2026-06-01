@@ -1,0 +1,1377 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Rebreya Downtime UI Redesign Mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111417;
+      --panel: rgba(29, 31, 34, 0.94);
+      --panel-strong: rgba(38, 40, 43, 0.98);
+      --panel-soft: rgba(48, 48, 47, 0.72);
+      --line: rgba(213, 175, 104, 0.22);
+      --line-strong: rgba(213, 175, 104, 0.42);
+      --text: #f4eee3;
+      --muted: #b7afa2;
+      --faint: #8f877d;
+      --accent: #d9ae5f;
+      --accent-strong: #f0c36f;
+      --teal: #72c7bd;
+      --green: #74bf7a;
+      --red: #d46c65;
+      --blue: #8aa7d6;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+      --radius: 8px;
+      --gap: 12px;
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% 12%, rgba(114, 199, 189, 0.12), transparent 30%),
+        linear-gradient(140deg, rgba(39, 43, 43, 0.9), rgba(15, 17, 19, 0.98)),
+        #111417;
+      color: var(--text);
+      letter-spacing: 0;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .mockup-page {
+      width: min(1480px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 20px 0 32px;
+    }
+
+    .mockup-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .mockup-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .mockup-title h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.1;
+      font-weight: 760;
+    }
+
+    .mockup-title p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .mockup-mark,
+    .icon-box {
+      display: inline-grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 7px;
+      border: 1px solid var(--line);
+      color: var(--accent-strong);
+      background: rgba(217, 174, 95, 0.1);
+    }
+
+    .mockup-mark {
+      width: 36px;
+      height: 36px;
+    }
+
+    .mockup-switch {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(24, 26, 29, 0.84);
+    }
+
+    .mockup-switch button {
+      border: 0;
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: var(--muted);
+      background: transparent;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .mockup-switch button.is-active {
+      color: #17130d;
+      background: var(--accent);
+    }
+
+    .stage {
+      position: relative;
+      min-height: 820px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      background:
+        linear-gradient(90deg, rgba(114, 199, 189, 0.26) 0 5px, transparent 5px 100%),
+        linear-gradient(0deg, rgba(217, 174, 95, 0.1) 0 1px, transparent 1px 70px),
+        linear-gradient(90deg, rgba(217, 174, 95, 0.08) 0 1px, transparent 1px 70px),
+        #17191b;
+      box-shadow: var(--shadow);
+    }
+
+    .stage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(115deg, transparent 0 43%, rgba(49, 119, 82, 0.8) 43% 44%, transparent 44% 100%),
+        radial-gradient(circle at 28% 54%, rgba(217, 174, 95, 0.16), transparent 18%),
+        radial-gradient(circle at 76% 28%, rgba(114, 199, 189, 0.13), transparent 22%);
+      opacity: 0.78;
+      pointer-events: none;
+    }
+
+    .foundry-rail {
+      position: absolute;
+      inset: 14px auto 14px 14px;
+      display: grid;
+      grid-template-columns: 36px 36px;
+      align-content: start;
+      gap: 8px;
+      z-index: 1;
+    }
+
+    .rail-button {
+      width: 36px;
+      height: 36px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 7px;
+      background: rgba(7, 8, 9, 0.76);
+      color: var(--muted);
+    }
+
+    .rail-button.is-active {
+      color: var(--accent-strong);
+      border-color: var(--accent);
+      background: rgba(84, 61, 28, 0.8);
+    }
+
+    .window {
+      position: absolute;
+      z-index: 2;
+      border: 1px solid rgba(213, 175, 104, 0.32);
+      border-radius: 8px;
+      background: rgba(22, 21, 20, 0.92);
+      box-shadow: 0 20px 70px rgba(0, 0, 0, 0.48);
+      overflow: hidden;
+      backdrop-filter: blur(4px);
+    }
+
+    .gm-window {
+      left: 76px;
+      top: 38px;
+      width: min(1180px, calc(100% - 118px));
+      min-height: 704px;
+    }
+
+    .sheet-window {
+      right: 42px;
+      top: 60px;
+      width: 760px;
+      min-height: 696px;
+      display: none;
+    }
+
+    .window-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 34px;
+      padding: 0 10px;
+      background: rgba(10, 11, 12, 0.84);
+      border-bottom: 1px solid rgba(213, 175, 104, 0.18);
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .window-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+    }
+
+    .window-body {
+      padding: 16px;
+    }
+
+    .header-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: end;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      margin: 0 0 4px;
+      color: var(--accent);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+    }
+
+    h2,
+    h3,
+    h4,
+    p {
+      margin-top: 0;
+    }
+
+    h2 {
+      margin-bottom: 0;
+      font-size: 26px;
+      line-height: 1.12;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+
+    h4 {
+      margin-bottom: 6px;
+      font-size: 13px;
+      line-height: 1.2;
+      color: var(--muted);
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 34px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      padding: 7px 11px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+      font-size: 13px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      color: #17130d;
+      border-color: transparent;
+      background: linear-gradient(180deg, var(--accent-strong), var(--accent));
+    }
+
+    .btn-danger {
+      border-color: rgba(212, 108, 101, 0.6);
+      color: #ffd8d4;
+      background: rgba(117, 44, 43, 0.52);
+    }
+
+    .btn:disabled {
+      cursor: default;
+      opacity: 0.46;
+    }
+
+    .icon-box {
+      width: 24px;
+      height: 24px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 2px;
+      padding-top: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tab {
+      border: 0;
+      border-radius: 7px 7px 0 0;
+      padding: 10px 13px;
+      color: var(--muted);
+      background: transparent;
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .tab.is-active {
+      color: var(--text);
+      background: rgba(217, 174, 95, 0.18);
+      box-shadow: inset 0 -2px 0 var(--accent);
+    }
+
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .stat,
+    .panel,
+    .request-row,
+    .action-card,
+    .member-row,
+    .timeline-item {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(30, 27, 24, 0.68);
+    }
+
+    .stat {
+      padding: 12px;
+      min-height: 74px;
+    }
+
+    .stat span,
+    .field label,
+    .small-label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .stat strong {
+      display: block;
+      margin-top: 5px;
+      font-size: 20px;
+      line-height: 1.1;
+    }
+
+    .stat small {
+      color: var(--faint);
+      font-size: 12px;
+    }
+
+    .stat.is-alert {
+      border-color: rgba(212, 108, 101, 0.52);
+      background: rgba(93, 40, 39, 0.42);
+    }
+
+    .stat.is-good {
+      border-color: rgba(116, 191, 122, 0.42);
+      background: rgba(39, 81, 61, 0.38);
+    }
+
+    .gm-layout {
+      display: grid;
+      grid-template-columns: 236px minmax(0, 1fr) 330px;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .panel {
+      padding: 12px;
+      min-width: 0;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .panel-header h3 {
+      margin-bottom: 0;
+    }
+
+    .chip,
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 22px;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .status-wait {
+      color: #24190a;
+      background: var(--accent);
+      border-color: transparent;
+    }
+
+    .status-good {
+      color: #dff8df;
+      background: rgba(54, 117, 76, 0.72);
+      border-color: rgba(116, 191, 122, 0.32);
+    }
+
+    .status-info {
+      color: #dce8ff;
+      background: rgba(53, 76, 119, 0.72);
+      border-color: rgba(138, 167, 214, 0.28);
+    }
+
+    .status-danger {
+      color: #ffe0dc;
+      background: rgba(117, 44, 43, 0.72);
+      border-color: rgba(212, 108, 101, 0.35);
+    }
+
+    .member-list,
+    .request-list,
+    .timeline {
+      display: grid;
+      gap: 8px;
+    }
+
+    .member-row {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .member-row.is-selected {
+      border-color: var(--accent);
+      background: rgba(217, 174, 95, 0.12);
+    }
+
+    .avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 7px;
+      background:
+        linear-gradient(145deg, rgba(114, 199, 189, 0.38), rgba(217, 174, 95, 0.28)),
+        #26292d;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    .member-name,
+    .request-title {
+      display: block;
+      overflow: hidden;
+      color: var(--text);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .member-meta,
+    .request-meta,
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .grant-box {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) 96px auto;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 10px;
+      border: 1px solid rgba(114, 199, 189, 0.22);
+      border-radius: var(--radius);
+      background: rgba(31, 62, 63, 0.3);
+    }
+
+    .field {
+      min-width: 0;
+    }
+
+    .field label {
+      margin-bottom: 5px;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid rgba(213, 175, 104, 0.28);
+      border-radius: 7px;
+      padding: 8px 9px;
+      color: var(--text);
+      background: rgba(9, 10, 11, 0.58);
+      outline: none;
+    }
+
+    .field textarea {
+      min-height: 76px;
+      resize: vertical;
+    }
+
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(217, 174, 95, 0.18);
+    }
+
+    .request-tools {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .segmented {
+      display: inline-flex;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.24);
+    }
+
+    .segmented button {
+      border: 0;
+      border-radius: 6px;
+      padding: 6px 9px;
+      color: var(--muted);
+      background: transparent;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .segmented button.is-active {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .request-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+      padding: 11px;
+      text-align: left;
+      color: inherit;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .request-row.is-selected {
+      border-color: var(--accent);
+      background: rgba(217, 174, 95, 0.12);
+    }
+
+    .request-row p {
+      margin-bottom: 0;
+    }
+
+    .request-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .tiny-button {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .inspector-card {
+      display: grid;
+      gap: 10px;
+    }
+
+    .inspector-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: start;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 10px;
+    }
+
+    .inspector-title h3 {
+      margin: 0 0 4px;
+    }
+
+    .next-step {
+      border: 1px solid rgba(138, 167, 214, 0.28);
+      border-radius: var(--radius);
+      padding: 10px;
+      background: rgba(46, 65, 98, 0.34);
+    }
+
+    .check-list {
+      display: grid;
+      gap: 7px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .check-list li {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 7px;
+      padding: 8px;
+      background: rgba(0, 0, 0, 0.16);
+    }
+
+    .sheet-window .window-body {
+      padding: 0;
+    }
+
+    .sheet-hero {
+      position: relative;
+      min-height: 150px;
+      padding: 22px 24px;
+      background:
+        linear-gradient(90deg, rgba(14, 15, 17, 0.68), rgba(14, 15, 17, 0.26)),
+        linear-gradient(130deg, #5c1919, #1a2026 60%);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .sheet-hero h2 {
+      margin-top: 8px;
+      font-size: 32px;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    .level-medal {
+      position: absolute;
+      top: 22px;
+      right: 24px;
+      display: grid;
+      place-items: center;
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      border: 2px solid rgba(244, 238, 227, 0.7);
+      background: rgba(8, 9, 10, 0.7);
+      font-size: 26px;
+      font-weight: 900;
+    }
+
+    .sheet-content {
+      display: grid;
+      grid-template-columns: 230px minmax(0, 1fr);
+      min-height: 514px;
+    }
+
+    .portrait-column {
+      padding: 16px;
+      background: rgba(10, 12, 14, 0.72);
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .portrait {
+      width: 100%;
+      aspect-ratio: 4 / 5;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      background:
+        radial-gradient(circle at 50% 34%, rgba(244, 238, 227, 0.66), transparent 12%),
+        radial-gradient(circle at 50% 68%, rgba(114, 199, 189, 0.5), transparent 34%),
+        linear-gradient(180deg, #27303a, #15181d);
+    }
+
+    .mini-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .mini-stat {
+      border-radius: 6px;
+      padding: 7px 6px;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .mini-stat strong {
+      display: block;
+      font-size: 18px;
+    }
+
+    .downtime-tab {
+      padding: 16px;
+      background: rgba(18, 19, 20, 0.74);
+    }
+
+    .player-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 9px;
+      margin-bottom: 12px;
+    }
+
+    .player-flow {
+      display: grid;
+      gap: 12px;
+    }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .action-card {
+      padding: 10px;
+      color: inherit;
+      text-align: left;
+      min-height: 86px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .action-card.is-selected {
+      border-color: var(--teal);
+      background: rgba(54, 103, 102, 0.36);
+    }
+
+    .action-card strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .action-card span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 88px;
+      gap: 8px;
+    }
+
+    .form-grid .field-wide {
+      grid-column: 1 / -1;
+    }
+
+    .inline-warning {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      border: 1px solid rgba(212, 108, 101, 0.38);
+      border-radius: var(--radius);
+      padding: 9px;
+      color: #ffe0dc;
+      background: rgba(117, 44, 43, 0.3);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .timeline-item {
+      padding: 10px;
+      background: rgba(0, 0, 0, 0.16);
+    }
+
+    .timeline-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .mockup-notes {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .note {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--muted);
+      background: rgba(12, 14, 16, 0.72);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .note strong {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--text);
+    }
+
+    [data-view="player"] .gm-window {
+      display: none;
+    }
+
+    [data-view="player"] .sheet-window {
+      display: block;
+    }
+
+    [data-view="both"] .gm-window {
+      transform: scale(0.78);
+      transform-origin: top left;
+    }
+
+    [data-view="both"] .sheet-window {
+      display: block;
+      right: 30px;
+      top: 118px;
+      width: 610px;
+      transform: scale(0.86);
+      transform-origin: top right;
+    }
+
+    @media (max-width: 1100px) {
+      .mockup-toolbar,
+      .header-grid,
+      .request-tools {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .button-row {
+        justify-content: flex-start;
+      }
+
+      .stage {
+        min-height: 1220px;
+        overflow: auto;
+      }
+
+      .foundry-rail {
+        display: none;
+      }
+
+      .gm-window,
+      .sheet-window,
+      [data-view="both"] .gm-window,
+      [data-view="both"] .sheet-window {
+        position: relative;
+        inset: auto;
+        display: block;
+        width: calc(100% - 24px);
+        margin: 12px;
+        transform: none;
+      }
+
+      .gm-layout,
+      .sheet-content,
+      .mockup-notes {
+        grid-template-columns: 1fr;
+      }
+
+      .summary-strip,
+      .player-grid,
+      .action-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .grant-box {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="mockup-page" data-view="both">
+    <section class="mockup-toolbar" aria-label="Режим просмотра макета">
+      <div class="mockup-title">
+        <span class="mockup-mark" aria-hidden="true">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
+            <path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" stroke="currentColor" stroke-width="1.8"/>
+            <path d="m4.5 8 7.5 4 7.5-4M12 12v8.5" stroke="currentColor" stroke-width="1.8"/>
+          </svg>
+        </span>
+        <div>
+          <h1>Простой Rebreya: новый макет</h1>
+          <p>Разделение мастерской очереди и игроковой заявки на чарнике.</p>
+        </div>
+      </div>
+      <div class="mockup-switch" role="group" aria-label="Показать экран">
+        <button type="button" class="is-active" data-view-button="both">Оба</button>
+        <button type="button" data-view-button="gm">Мастер</button>
+        <button type="button" data-view-button="player">Игрок</button>
+      </div>
+    </section>
+
+    <section class="stage" aria-label="Foundry canvas mockup">
+      <div class="foundry-rail" aria-hidden="true">
+        <button class="rail-button">T</button>
+        <button class="rail-button">M</button>
+        <button class="rail-button is-active">R</button>
+        <button class="rail-button is-active">I</button>
+        <button class="rail-button">G</button>
+        <button class="rail-button">C</button>
+        <button class="rail-button">L</button>
+        <button class="rail-button">D</button>
+      </div>
+
+      <article class="window gm-window" aria-label="Мастерская вкладка простоя">
+        <header class="window-bar">
+          <span>Партийный инвентарь</span>
+          <span class="window-actions">Свернуть Закрыть</span>
+        </header>
+        <section class="window-body">
+          <div class="header-grid">
+            <div>
+              <p class="eyebrow">Активная группа мира</p>
+              <h2>Рассвет порядка 1</h2>
+              <p class="muted">5 участников, календарь и склад привязаны к группе.</p>
+            </div>
+            <div class="button-row">
+              <button class="btn" type="button">
+                <span class="icon-box" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                    <path d="M8 7h11M8 12h11M8 17h11M4 7h.01M4 12h.01M4 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </span>
+                Состав
+              </button>
+              <button class="btn" type="button">Склад</button>
+              <button class="btn btn-primary" type="button">Выдать простой</button>
+            </div>
+          </div>
+
+          <section class="summary-strip" aria-label="Сводка группы">
+            <article class="stat is-good">
+              <span>Свободно у группы</span>
+              <strong>4 нед.</strong>
+              <small>можно заявить сейчас</small>
+            </article>
+            <article class="stat">
+              <span>В резерве</span>
+              <strong>1 нед.</strong>
+              <small>по активным заявкам</small>
+            </article>
+            <article class="stat is-alert">
+              <span>Решение мастера</span>
+              <strong>1 заявка</strong>
+              <small>ожидает статуса</small>
+            </article>
+            <article class="stat">
+              <span>Дата группы</span>
+              <strong>12 Весны</strong>
+              <small>календарь простоя</small>
+            </article>
+          </section>
+
+          <nav class="tabs" aria-label="Разделы партийного инвентаря">
+            <button class="tab" type="button">Инвентарь</button>
+            <button class="tab" type="button">Группа</button>
+            <button class="tab" type="button">Торговля</button>
+            <button class="tab" type="button">Календарь</button>
+            <button class="tab is-active" type="button">Простой</button>
+          </nav>
+
+          <section class="gm-layout">
+            <aside class="panel" aria-label="Участники группы">
+              <div class="panel-header">
+                <h3>Участники</h3>
+                <span class="chip">5</span>
+              </div>
+              <div class="member-list">
+                <button class="member-row is-selected" type="button">
+                  <span class="avatar" aria-hidden="true"></span>
+                  <span>
+                    <span class="member-name">Гугрдуд Бамблбоб</span>
+                    <span class="member-meta">0 свободно, 1 в резерве</span>
+                  </span>
+                  <span class="status status-wait">в работе</span>
+                </button>
+                <button class="member-row" type="button">
+                  <span class="avatar" aria-hidden="true"></span>
+                  <span>
+                    <span class="member-name">Кэссиди Редсмит</span>
+                    <span class="member-meta">1 свободно, заявок нет</span>
+                  </span>
+                  <span class="chip">1</span>
+                </button>
+                <button class="member-row" type="button">
+                  <span class="avatar" aria-hidden="true"></span>
+                  <span>
+                    <span class="member-name">Мёрдичи Вильгельмо</span>
+                    <span class="member-meta">1 свободно, заявок нет</span>
+                  </span>
+                  <span class="chip">1</span>
+                </button>
+                <button class="member-row" type="button">
+                  <span class="avatar" aria-hidden="true"></span>
+                  <span>
+                    <span class="member-name">Ульфрик</span>
+                    <span class="member-meta">1 свободно, заявок нет</span>
+                  </span>
+                  <span class="chip">1</span>
+                </button>
+              </div>
+            </aside>
+
+            <section class="panel" aria-label="Очередь заявок">
+              <div class="grant-box">
+                <div class="field">
+                  <label for="grant-target">Кому выдать недели</label>
+                  <select id="grant-target">
+                    <option>Всем участникам</option>
+                    <option>Выбранному участнику</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="grant-weeks">Недели</label>
+                  <input id="grant-weeks" type="number" value="1" min="1">
+                </div>
+                <button class="btn btn-primary" type="button">Выдать</button>
+              </div>
+
+              <div class="request-tools">
+                <div>
+                  <h3>Очередь заявок</h3>
+                  <p class="muted">Сначала решение, затем проверки и завершение.</p>
+                </div>
+                <div class="segmented" role="group" aria-label="Фильтр заявок">
+                  <button type="button" class="is-active">Новые</button>
+                  <button type="button">В работе</button>
+                  <button type="button">Все</button>
+                </div>
+              </div>
+
+              <div class="request-list">
+                <button class="request-row is-selected" type="button" data-request="rest">
+                  <span>
+                    <span class="request-title">Отдых после площади</span>
+                    <span class="request-meta">Гугрдуд Бамблбоб • Отдых • 1 нед.</span>
+                    <span class="request-actions">
+                      <span class="status status-good">одобрено</span>
+                      <span class="chip">следующий шаг: завершить</span>
+                    </span>
+                  </span>
+                  <span class="tiny-button" aria-label="Открыть">›</span>
+                </button>
+                <button class="request-row" type="button" data-request="research">
+                  <span>
+                    <span class="request-title">Найти следы механизма</span>
+                    <span class="request-meta">Кэссиди Редсмит • Исследование • 1 нед.</span>
+                    <span class="request-actions">
+                      <span class="status status-wait">ожидает</span>
+                      <span class="chip">нет проверок</span>
+                    </span>
+                  </span>
+                  <span class="tiny-button" aria-label="Открыть">›</span>
+                </button>
+                <button class="request-row" type="button" data-request="training">
+                  <span>
+                    <span class="request-title">Тренировка владения</span>
+                    <span class="request-meta">Ульфрик • Тренировка • 1 нед.</span>
+                    <span class="request-actions">
+                      <span class="status status-info">проверки</span>
+                      <span class="chip">2 броска</span>
+                    </span>
+                  </span>
+                  <span class="tiny-button" aria-label="Открыть">›</span>
+                </button>
+              </div>
+            </section>
+
+            <aside class="panel inspector-card" aria-label="Инспектор заявки">
+              <div class="inspector-title">
+                <div>
+                  <h3 id="inspector-title">Отдых после площади</h3>
+                  <p id="inspector-meta" class="muted">Гугрдуд Бамблбоб • 1 неделя</p>
+                </div>
+                <span id="inspector-status" class="status status-good">одобрено</span>
+              </div>
+
+              <div class="next-step">
+                <h4>Следующий шаг</h4>
+                <p id="inspector-step" class="muted">Завершить простой и списать резерв недели.</p>
+              </div>
+
+              <div>
+                <h4>Проверки</h4>
+                <ul class="check-list" id="inspector-checks">
+                  <li>
+                    <span class="muted">Для отдыха проверки не нужны.</span>
+                    <span class="chip">готово</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="field">
+                <label for="gm-result">Комментарий мастера</label>
+                <textarea id="gm-result">Отдых прошёл спокойно, ресурс восстановлен.</textarea>
+              </div>
+
+              <div class="button-row">
+                <button class="btn" type="button">Вернуть</button>
+                <button class="btn btn-danger" type="button">Отклонить</button>
+                <button class="btn btn-primary" type="button">Завершить</button>
+              </div>
+            </aside>
+          </section>
+        </section>
+      </article>
+
+      <article class="window sheet-window" aria-label="Игроковая вкладка простоя на чарнике">
+        <header class="window-bar">
+          <span>Лист персонажа</span>
+          <span class="window-actions">UUID Закрыть</span>
+        </header>
+        <section class="window-body">
+          <header class="sheet-hero">
+            <p class="eyebrow">Бард 1</p>
+            <h2>Кэссиди Редсмит</h2>
+            <span class="level-medal">1</span>
+          </header>
+          <section class="sheet-content">
+            <aside class="portrait-column">
+              <div class="portrait" role="img" aria-label="Портрет персонажа"></div>
+              <div class="mini-stats">
+                <span class="mini-stat"><strong>12</strong><span class="muted">КЗ</span></span>
+                <span class="mini-stat"><strong>8</strong><span class="muted">Хиты</span></span>
+                <span class="mini-stat"><strong>30</strong><span class="muted">Ход</span></span>
+              </div>
+            </aside>
+
+            <section class="downtime-tab">
+              <div class="panel-header">
+                <div>
+                  <h3>Простой</h3>
+                  <p class="muted">Заявка отправляется мастеру группы.</p>
+                </div>
+                <button class="btn" type="button" id="toggle-empty">Показать 0 недель</button>
+              </div>
+
+              <section class="player-grid" aria-label="Баланс простоя">
+                <article class="stat is-good" id="free-stat">
+                  <span>Свободно</span>
+                  <strong id="free-weeks">1 нед.</strong>
+                  <small id="free-note">можно заявить сейчас</small>
+                </article>
+                <article class="stat">
+                  <span>В резерве</span>
+                  <strong id="reserved-weeks">0 нед.</strong>
+                  <small>по активным заявкам</small>
+                </article>
+                <article class="stat">
+                  <span>Потрачено</span>
+                  <strong>0 нед.</strong>
+                  <small>из 1 выданной</small>
+                </article>
+              </section>
+
+              <section class="panel player-flow" aria-label="Создать заявку">
+                <div>
+                  <h4>1. Выберите занятие</h4>
+                  <div class="action-grid">
+                    <button class="action-card is-selected" type="button">
+                      <strong>Уникальная заявка</strong>
+                      <span>Опишите цель, мастер назначит проверки.</span>
+                    </button>
+                    <button class="action-card" type="button">
+                      <strong>Исследование</strong>
+                      <span>Найти сведения, контакты или зацепки.</span>
+                    </button>
+                    <button class="action-card" type="button">
+                      <strong>Тренировка</strong>
+                      <span>Навык, инструмент или долгий проект.</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <h4>2. Опишите заявку</h4>
+                  <div class="form-grid">
+                    <div class="field">
+                      <label for="player-title">Название</label>
+                      <input id="player-title" type="text" value="Найти следы механизма">
+                    </div>
+                    <div class="field">
+                      <label for="player-weeks">Недели</label>
+                      <input id="player-weeks" type="number" value="1" min="1">
+                    </div>
+                    <div class="field field-wide">
+                      <label for="player-desc">Описание</label>
+                      <textarea id="player-desc">Кэссиди ищет, кто мог обслуживать механизм под площадью.</textarea>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="inline-warning" id="player-warning" hidden>
+                  <span aria-hidden="true">!</span>
+                  <span>Недостаточно свободных недель простоя. Попросите мастера выдать недели или завершить старую заявку.</span>
+                </div>
+
+                <button class="btn btn-primary" id="player-submit" type="button">Отправить мастеру</button>
+              </section>
+
+              <section class="timeline" aria-label="История заявок">
+                <article class="timeline-item">
+                  <div class="timeline-head">
+                    <strong>Отдых</strong>
+                    <span class="status status-good">одобрено</span>
+                  </div>
+                  <p class="muted">1 неделя, ожидает завершения мастером.</p>
+                </article>
+                <article class="timeline-item">
+                  <div class="timeline-head">
+                    <strong>Проверка архивов</strong>
+                    <span class="status status-info">нужен бросок</span>
+                  </div>
+                  <p class="muted">Интеллект (Расследование), СЛ назначит мастер.</p>
+                </article>
+              </section>
+            </section>
+          </section>
+        </section>
+      </article>
+    </section>
+
+    <section class="mockup-notes" aria-label="Заметки к макету">
+      <article class="note">
+        <strong>Главная смена</strong>
+        Мастер больше не смотрит на одну длинную форму. Очередь, участники и решение по заявке разделены на три стабильные зоны.
+      </article>
+      <article class="note">
+        <strong>Игроковый сценарий</strong>
+        На чарнике первый экран отвечает на три вопроса: сколько недель есть, что заявить, что уже происходит с заявками.
+      </article>
+      <article class="note">
+        <strong>Состояния</strong>
+        Недостаток недель, ожидающие проверки и завершённые заявки показаны как видимые состояния рядом с действием.
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const page = document.querySelector(".mockup-page");
+    const switchButtons = document.querySelectorAll("[data-view-button]");
+    const requestRows = document.querySelectorAll("[data-request]");
+    const data = {
+      rest: {
+        title: "Отдых после площади",
+        meta: "Гугрдуд Бамблбоб • 1 неделя",
+        status: "одобрено",
+        statusClass: "status status-good",
+        step: "Завершить простой и списать резерв недели.",
+        checks: [["Для отдыха проверки не нужны.", "готово"]]
+      },
+      research: {
+        title: "Найти следы механизма",
+        meta: "Кэссиди Редсмит • 1 неделя",
+        status: "ожидает",
+        statusClass: "status status-wait",
+        step: "Одобрить заявку или вернуть игроку с уточнением.",
+        checks: [["Проверки пока не назначены.", "пусто"]]
+      },
+      training: {
+        title: "Тренировка владения",
+        meta: "Ульфрик • 1 неделя",
+        status: "проверки",
+        statusClass: "status status-info",
+        step: "Дождаться бросков из чарника, затем завершить.",
+        checks: [["Сила (Атлетика), СЛ 13", "ждёт"], ["Инструменты, СЛ 12", "ждёт"]]
+      }
+    };
+
+    switchButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        switchButtons.forEach((item) => item.classList.remove("is-active"));
+        button.classList.add("is-active");
+        page.dataset.view = button.dataset.viewButton;
+      });
+    });
+
+    requestRows.forEach((row) => {
+      row.addEventListener("click", () => {
+        requestRows.forEach((item) => item.classList.remove("is-selected"));
+        row.classList.add("is-selected");
+        const item = data[row.dataset.request];
+        document.querySelector("#inspector-title").textContent = item.title;
+        document.querySelector("#inspector-meta").textContent = item.meta;
+        document.querySelector("#inspector-step").textContent = item.step;
+        const status = document.querySelector("#inspector-status");
+        status.textContent = item.status;
+        status.className = item.statusClass;
+        document.querySelector("#inspector-checks").innerHTML = item.checks
+          .map(([label, state]) => `<li><span class="muted">${label}</span><span class="chip">${state}</span></li>`)
+          .join("");
+      });
+    });
+
+    const toggleEmpty = document.querySelector("#toggle-empty");
+    const playerSubmit = document.querySelector("#player-submit");
+    const playerWarning = document.querySelector("#player-warning");
+    const freeStat = document.querySelector("#free-stat");
+    let emptyMode = false;
+
+    toggleEmpty.addEventListener("click", () => {
+      emptyMode = !emptyMode;
+      document.querySelector("#free-weeks").textContent = emptyMode ? "0 нед." : "1 нед.";
+      document.querySelector("#reserved-weeks").textContent = emptyMode ? "1 нед." : "0 нед.";
+      document.querySelector("#free-note").textContent = emptyMode ? "заявка недоступна" : "можно заявить сейчас";
+      freeStat.classList.toggle("is-good", !emptyMode);
+      freeStat.classList.toggle("is-alert", emptyMode);
+      playerWarning.hidden = !emptyMode;
+      playerSubmit.disabled = emptyMode;
+      toggleEmpty.textContent = emptyMode ? "Показать 1 неделю" : "Показать 0 недель";
+    });
+  </script>
+</body>
+</html>
