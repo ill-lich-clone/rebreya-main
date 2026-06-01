@@ -127,7 +127,8 @@ export function buildDefaultGroupState(groupActorId, { now = Date.now() } = {}) 
       balancesByActorId: {},
       requests: [],
       checks: [],
-      history: []
+      history: [],
+      counter: 0
     },
     migration: {
       legacyInventoryMergedAt: 0,
@@ -154,7 +155,8 @@ export function normalizeGroupState(groupActorId, value = {}) {
       balancesByActorId: clone(asObject(downtimeState.balancesByActorId)),
       requests: clone(asArray(downtimeState.requests)),
       checks: clone(asArray(downtimeState.checks)),
-      history: clone(asArray(downtimeState.history))
+      history: clone(asArray(downtimeState.history)),
+      counter: Math.max(0, Math.floor(Number(downtimeState.counter) || 0))
     },
     migration: {
       ...clone(migration),

@@ -1,20 +1,20 @@
 const ACTION_CATALOG = Object.freeze([
-  { id: "craft", label: "Craft" },
-  { id: "firearm", label: "Firearm" },
-  { id: "magicItem", label: "Magic item" },
-  { id: "profession", label: "Profession" },
-  { id: "rest", label: "Rest" },
-  { id: "research", label: "Research" },
-  { id: "training", label: "Training" },
-  { id: "gambling", label: "Gambling" },
-  { id: "tournament", label: "Tournament" },
-  { id: "carouse", label: "Carouse" },
-  { id: "buyMagicItem", label: "Buy magic item" },
-  { id: "changeSubclass", label: "Change subclass" },
-  { id: "alchemy", label: "Alchemy" },
-  { id: "longProject", label: "Long project" },
-  { id: "construct", label: "Construct" },
-  { id: "unique", label: "Unique request" }
+  { id: "craft", label: "Крафт" },
+  { id: "firearm", label: "Огнестрельное оружие" },
+  { id: "magicItem", label: "Магический предмет" },
+  { id: "profession", label: "Профессия" },
+  { id: "rest", label: "Отдых" },
+  { id: "research", label: "Исследование" },
+  { id: "training", label: "Тренировка" },
+  { id: "gambling", label: "Азартные игры" },
+  { id: "tournament", label: "Турнир" },
+  { id: "carouse", label: "Кутеж" },
+  { id: "buyMagicItem", label: "Покупка магического предмета" },
+  { id: "changeSubclass", label: "Смена подкласса" },
+  { id: "alchemy", label: "Алхимия" },
+  { id: "longProject", label: "Долгий проект" },
+  { id: "construct", label: "Строительство" },
+  { id: "unique", label: "Уникальная заявка" }
 ]);
 
 const ACTION_BY_ID = new Map(ACTION_CATALOG.map((action) => [action.id, action]));
@@ -296,6 +296,10 @@ export class DowntimeService {
 
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
+      if (request.status === "completed" && nextStatus !== "completed") {
+        throw new Error("A completed request is terminal for this downtime slice.");
+      }
+
       const balance = normalizeBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
       this.#applyStatusAccounting(balance, request.status, nextStatus, request.weeks);
       request.status = nextStatus;
@@ -334,9 +338,11 @@ export class DowntimeService {
 
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
-      const actor = this.#requireCurrentMemberActor(context, request.actorId);
-      if (!this.#canManage(context) && !this.#canSubmitForActor(actor, context)) {
-        throw new Error("Players can record results only for an owned character.");
+      if (!this.#canManage(context)) {
+        const actor = this.#requireCurrentMemberActor(context, request.actorId);
+        if (!this.#canSubmitForActor(actor, context)) {
+          throw new Error("Players can record results only for an owned character.");
+        }
       }
 
       const check = request.checks.find((entry) => entry.id === safeCheckId);
@@ -455,12 +461,20 @@ export class DowntimeService {
 
     const safeWeeks = Math.max(1, toWeeks(weeks, 1));
     if (OPEN_RESERVED_STATUSES.has(currentStatus) && RELEASED_STATUSES.has(nextStatus)) {
+      if (balance.reservedWeeks < safeWeeks) {
+        throw new Error("Reserved downtime weeks are lower than the request cost.");
+      }
+
       balance.reservedWeeks = Math.max(0, balance.reservedWeeks - safeWeeks);
       balance.availableWeeks += safeWeeks;
       return;
     }
 
     if (OPEN_RESERVED_STATUSES.has(currentStatus) && nextStatus === "completed") {
+      if (balance.reservedWeeks < safeWeeks) {
+        throw new Error("Reserved downtime weeks are lower than the request cost.");
+      }
+
       balance.reservedWeeks = Math.max(0, balance.reservedWeeks - safeWeeks);
       balance.spentWeeks += safeWeeks;
       return;

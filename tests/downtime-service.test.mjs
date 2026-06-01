@@ -324,6 +324,102 @@ test("complete spends reserved request weeks", async () => {
   }
 });
 
+test("completed requests are terminal", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actorA],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 0,
+          reservedWeeks: 0,
+          spentWeeks: 2,
+          totalGrantedWeeks: 2
+        }
+      },
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Hero A",
+        actionId: "training",
+        actionLabel: "Тренировка",
+        title: "Train",
+        description: "",
+        weeks: 2,
+        status: "completed",
+        checks: [],
+        result: "Done",
+        createdAt: 1,
+        updatedAt: 1,
+        submittedByUserId: "player-1",
+        reviewedByUserId: "gm"
+      }]
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () => harness.service.setRequestStatus("downtime-1", "returned"),
+      /completed request is terminal/u
+    );
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("release and complete reject inconsistent reserved balances without minting weeks", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A" });
+
+  for (const nextStatus of ["rejected", "completed"]) {
+    const harness = createHarness({
+      members: [actorA],
+      downtimeState: {
+        balancesByActorId: {
+          "actor-a": {
+            availableWeeks: 0,
+            reservedWeeks: 1,
+            spentWeeks: 0,
+            totalGrantedWeeks: 2
+          }
+        },
+        requests: [{
+          id: `downtime-${nextStatus}`,
+          actorId: "actor-a",
+          actorName: "Hero A",
+          actionId: "unique",
+          actionLabel: "Уникальная заявка",
+          title: "Request",
+          description: "",
+          weeks: 2,
+          status: "pending",
+          checks: [],
+          result: "",
+          createdAt: 1,
+          updatedAt: 1,
+          submittedByUserId: "player-1",
+          reviewedByUserId: ""
+        }]
+      }
+    });
+
+    try {
+      await assert.rejects(
+        () => harness.service.setRequestStatus(`downtime-${nextStatus}`, nextStatus),
+        /Reserved downtime weeks are lower than the request cost/u
+      );
+
+      const balance = getDowntimeState(harness).balancesByActorId["actor-a"];
+      assert.equal(balance.availableWeeks, 0);
+      assert.equal(balance.reservedWeeks, 1);
+      assert.equal(balance.spentWeeks, 0);
+    }
+    finally {
+      harness.restore();
+    }
+  }
+});
+
 test("GM assigns checks and an owner records check result", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
   const harness = createHarness({
@@ -383,6 +479,60 @@ test("GM assigns checks and an owner records check result", async () => {
     assert.deepEqual(updated.checks[0].result.total, 18);
     assert.equal(updated.checks[0].result.success, true);
     assert.equal(updated.checks[0].result.recordedByUserId, "player-1");
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("GM records check result for stale existing request", async () => {
+  const currentMember = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [currentMember],
+    downtimeState: {
+      balancesByActorId: {
+        "stale-actor": {
+          availableWeeks: 0,
+          reservedWeeks: 1,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      },
+      requests: [{
+        id: "downtime-1",
+        actorId: "stale-actor",
+        actorName: "Former Hero",
+        actionId: "research",
+        actionLabel: "Исследование",
+        title: "Old research",
+        description: "",
+        weeks: 1,
+        status: "approved",
+        checks: [{
+          id: "check-1",
+          label: "Arcana",
+          dc: 15,
+          ability: "int",
+          result: null
+        }],
+        result: "",
+        createdAt: 1,
+        updatedAt: 1,
+        submittedByUserId: "player-1",
+        reviewedByUserId: "gm"
+      }]
+    }
+  });
+
+  try {
+    const updated = await harness.service.recordCheckResult("downtime-1", "check-1", {
+      total: 20,
+      success: true
+    });
+
+    assert.equal(updated.actorId, "stale-actor");
+    assert.equal(updated.checks[0].result.total, 20);
+    assert.equal(updated.checks[0].result.recordedByUserId, "gm");
   }
   finally {
     harness.restore();
@@ -488,6 +638,27 @@ test("getActionCatalog exposes the first downtime action slice", () => {
         "longProject",
         "construct",
         "unique"
+      ]
+    );
+    assert.deepEqual(
+      harness.service.getActionCatalog().map((action) => action.label),
+      [
+        "Крафт",
+        "Огнестрельное оружие",
+        "Магический предмет",
+        "Профессия",
+        "Отдых",
+        "Исследование",
+        "Тренировка",
+        "Азартные игры",
+        "Турнир",
+        "Кутеж",
+        "Покупка магического предмета",
+        "Смена подкласса",
+        "Алхимия",
+        "Долгий проект",
+        "Строительство",
+        "Уникальная заявка"
       ]
     );
   }

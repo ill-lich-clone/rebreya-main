@@ -11,6 +11,7 @@ import {
   normalizeGroupRegistry,
   resolvePlayerGroupActor
 } from "../scripts/data/group-context-service.js";
+import { DowntimeService } from "../scripts/data/downtime-service.js";
 
 function nullProtoRecord(entries = []) {
   return Object.assign(Object.create(null), Object.fromEntries(entries));
@@ -110,7 +111,8 @@ test("normalizeGroupRegistry preserves active group and per-group state", () => 
           balancesByActorId: { "actor-a": 4 },
           requests: [{ id: "request-a" }],
           checks: [{ id: "check-a" }],
-          history: [{ id: "history-a" }]
+          history: [{ id: "history-a" }],
+          counter: 7
         },
         migration: {
           legacyInventoryMergedAt: 456,
@@ -134,7 +136,8 @@ test("normalizeGroupRegistry preserves active group and per-group state", () => 
       balancesByActorId: { "actor-a": 4 },
       requests: [{ id: "request-a" }],
       checks: [{ id: "check-a" }],
-      history: [{ id: "history-a" }]
+      history: [{ id: "history-a" }],
+      counter: 7
     },
     migration: {
       legacyInventoryMergedAt: 456,
@@ -142,6 +145,63 @@ test("normalizeGroupRegistry preserves active group and per-group state", () => 
       legacyInventoryMergePairs: nullProtoRecord()
     }
   });
+});
+
+test("GroupContextService registry path preserves downtime counter between writes", async () => {
+  const member = createCharacter("character-a");
+  member.name = "Hero";
+  const group = createGroup("group-a", [{ actor: member }]);
+  const fixture = installGameFixture({
+    actors: [group, member],
+    user: { id: "gm", isGM: true },
+    registry: {
+      activeGroupActorId: "group-a",
+      groupsById: {
+        "group-a": {
+          groupActorId: "group-a",
+          downtimeState: {
+            counter: 0,
+            balancesByActorId: {
+              "character-a": {
+                availableWeeks: 2,
+                reservedWeeks: 0,
+                spentWeeks: 0,
+                totalGrantedWeeks: 2
+              }
+            },
+            requests: [],
+            checks: [],
+            history: []
+          }
+        }
+      }
+    }
+  });
+
+  try {
+    const groupContextService = new GroupContextService();
+    const service = new DowntimeService({ groupContextService });
+
+    const first = await service.createRequest({
+      actorId: "character-a",
+      actionId: "unique",
+      title: "First",
+      weeks: 1
+    });
+    const second = await service.createRequest({
+      actorId: "character-a",
+      actionId: "unique",
+      title: "Second",
+      weeks: 1
+    });
+
+    assert.equal(first.id, "downtime-1");
+    assert.equal(second.id, "downtime-2");
+    assert.equal(fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE].groupsById["group-a"].downtimeState.counter, 2);
+  }
+  finally {
+    fixture.restore();
+  }
 });
 
 test("normalizeGroupRegistry keeps outer registry key when nested groupActorId is corrupt", () => {
@@ -351,7 +411,8 @@ test("buildDefaultGroupState creates file-backed empty runtime state without leg
       balancesByActorId: {},
       requests: [],
       checks: [],
-      history: []
+      history: [],
+      counter: 0
     },
     migration: {
       legacyInventoryMergedAt: 0,
