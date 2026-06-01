@@ -3,6 +3,8 @@ import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../constants.js";
 export const GROUP_CONTEXT_ERRORS = Object.freeze({
   GROUP_NOT_FOUND: "Группа Rebreya не найдена.",
   INVALID_GROUP_ACTOR: "Актор должен быть группой dnd5e.",
+  GM_NO_ACTIVE_GROUP: "Для мастера не выбрана активная группа Rebreya.",
+  PLAYER_NO_GROUP: "Персонаж игрока не найден в группе Rebreya.",
   PLAYER_NOT_IN_GROUP: "Персонаж игрока не найден в группе Rebreya.",
   PLAYER_IN_MULTIPLE_GROUPS: "Персонажи игрока найдены в нескольких группах Rebreya."
 });
@@ -161,11 +163,7 @@ export function resolvePlayerGroupActor(
     throw new Error(GROUP_CONTEXT_ERRORS.PLAYER_IN_MULTIPLE_GROUPS);
   }
 
-  if (matchingGroups.length === 0) {
-    throw new Error(GROUP_CONTEXT_ERRORS.PLAYER_NOT_IN_GROUP);
-  }
-
-  return matchingGroups[0];
+  return matchingGroups[0] ?? null;
 }
 
 export class GroupContextService {
@@ -204,7 +202,7 @@ export class GroupContextService {
     }
 
     await this.setRegistry(registry);
-    return registry.groupsById[groupActor.id];
+    return this.resolveForGroup(groupActor.id);
   }
 
   async setActiveGroup(groupActorId) {
@@ -222,7 +220,7 @@ export class GroupContextService {
       : buildDefaultGroupState(groupActor.id);
 
     await this.setRegistry(registry);
-    return registry.groupsById[groupActor.id];
+    return this.resolveForGroup(groupActor.id);
   }
 
   resolveForGroup(groupActorId) {
@@ -249,7 +247,7 @@ export class GroupContextService {
     if (user?.isGM) {
       const registry = this.getRegistry();
       if (!registry.activeGroupActorId) {
-        throw new Error(GROUP_CONTEXT_ERRORS.GROUP_NOT_FOUND);
+        throw new Error(GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP);
       }
 
       return this.resolveForGroup(registry.activeGroupActorId);
@@ -259,6 +257,10 @@ export class GroupContextService {
       userIsGM: Boolean(user?.isGM),
       isOwnedCharacter: (actor) => isActorOwnedByCurrentUser(actor)
     });
+
+    if (!groupActor) {
+      throw new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP);
+    }
 
     return this.resolveForGroup(groupActor.id);
   }

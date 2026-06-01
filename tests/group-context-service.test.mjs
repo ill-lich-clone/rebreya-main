@@ -76,6 +76,18 @@ function installGameFixture({ actors = [], user = { id: "gm", isGM: true }, regi
   };
 }
 
+function assertGroupContextShape(context, group, { initializedAt, memberActorIds = [] } = {}) {
+  assert.equal(context.groupActor, group);
+  assert.equal(context.groupId, group.id);
+  assert.equal(context.groupState.groupActorId, group.id);
+  if (initializedAt !== undefined) {
+    assert.equal(context.groupState.initializedAt, initializedAt);
+  }
+  assert.deepEqual(context.members, group.system.members.map((member) => member.actor));
+  assert.deepEqual(context.memberActorIds, memberActorIds);
+  assert.equal(typeof context.canManage, "boolean");
+}
+
 test("normalizeGroupRegistry preserves active group and per-group state", () => {
   const registry = normalizeGroupRegistry({
     version: 1,
@@ -217,21 +229,38 @@ test("resolvePlayerGroupActor throws when the same Foundry user owns characters 
   );
 });
 
+test("resolvePlayerGroupActor returns null when no managed group matches", () => {
+  const ownedCharacter = createCharacter("character-a");
+  const managedGroup = createGroup("group-a", [{ actor: ownedCharacter }]);
+
+  assert.equal(
+    resolvePlayerGroupActor([managedGroup], {
+      userIsGM: false,
+      isOwnedCharacter: () => false
+    }),
+    null
+  );
+});
+
 test("GroupContextService registerGroup sets managed flag, creates state, and selects first active group", async () => {
   const originalNow = Date.now;
   Date.now = () => 1000;
-  const group = createGroup("group-a", [], { managed: false });
+  const member = createCharacter("character-a");
+  const group = createGroup("group-a", [{ actor: member }], { managed: false });
   const fixture = installGameFixture({ actors: [group], registry: {} });
 
   try {
     const service = new GroupContextService();
-    const state = await service.registerGroup("group-a");
+    const context = await service.registerGroup("group-a");
     const registry = fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE];
 
     assert.equal(group.getFlag(MODULE_ID, REBREYA_GROUP_FLAGS.MANAGED), true);
     assert.equal(registry.activeGroupActorId, "group-a");
     assert.equal(registry.groupsById["group-a"].initializedAt, 1000);
-    assert.deepEqual(state, registry.groupsById["group-a"]);
+    assertGroupContextShape(context, group, {
+      initializedAt: 1000,
+      memberActorIds: ["character-a"]
+    });
   }
   finally {
     Date.now = originalNow;
@@ -239,23 +268,62 @@ test("GroupContextService registerGroup sets managed flag, creates state, and se
   }
 });
 
+test("GroupContextService registerGroup return shape includes group context fields", async () => {
+  const group = createGroup("group-a", [{ actor: createCharacter("character-a") }], { managed: false });
+  const fixture = installGameFixture({ actors: [group], registry: {} });
+
+  try {
+    const context = await new GroupContextService().registerGroup("group-a");
+
+    assertGroupContextShape(context, group, { memberActorIds: ["character-a"] });
+    assert.deepEqual(
+      Object.keys(context).sort(),
+      ["canManage", "groupActor", "groupId", "groupState", "memberActorIds", "members"].sort()
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("GroupContextService setActiveGroup sets managed flag and active id", async () => {
   const originalNow = Date.now;
   Date.now = () => 2000;
-  const group = createGroup("group-b", [], { managed: false });
+  const group = createGroup("group-b", [{ actor: createCharacter("character-b") }], { managed: false });
   const fixture = installGameFixture({ actors: [group], registry: {} });
 
   try {
     const service = new GroupContextService();
-    const state = await service.setActiveGroup("group-b");
+    const context = await service.setActiveGroup("group-b");
     const registry = fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE];
 
     assert.equal(group.getFlag(MODULE_ID, REBREYA_GROUP_FLAGS.MANAGED), true);
     assert.equal(registry.activeGroupActorId, "group-b");
-    assert.equal(state.initializedAt, 2000);
+    assertGroupContextShape(context, group, {
+      initializedAt: 2000,
+      memberActorIds: ["character-b"]
+    });
   }
   finally {
     Date.now = originalNow;
+    fixture.restore();
+  }
+});
+
+test("GroupContextService setActiveGroup return shape includes group context fields", async () => {
+  const group = createGroup("group-b", [{ actor: createCharacter("character-b") }], { managed: false });
+  const fixture = installGameFixture({ actors: [group], registry: {} });
+
+  try {
+    const context = await new GroupContextService().setActiveGroup("group-b");
+
+    assertGroupContextShape(context, group, { memberActorIds: ["character-b"] });
+    assert.deepEqual(
+      Object.keys(context).sort(),
+      ["canManage", "groupActor", "groupId", "groupState", "memberActorIds", "members"].sort()
+    );
+  }
+  finally {
     fixture.restore();
   }
 });
@@ -286,6 +354,30 @@ test("GroupContextService GM resolveForCurrentUser uses active group", () => {
   }
 });
 
+test("GroupContextService GM resolveForCurrentUser throws GM_NO_ACTIVE_GROUP without active group", () => {
+  const group = createGroup("group-a");
+  const fixture = installGameFixture({
+    actors: [group],
+    user: { id: "gm", isGM: true },
+    registry: {
+      activeGroupActorId: "",
+      groupsById: {
+        "group-a": buildDefaultGroupState("group-a", { now: 333 })
+      }
+    }
+  });
+
+  try {
+    assert.throws(
+      () => new GroupContextService().resolveForCurrentUser(),
+      (error) => error.message === GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("GroupContextService non-GM resolveForCurrentUser uses owned-character membership", () => {
   const ownedCharacter = createCharacter("character-a", { ownerUserId: "player-1" });
   const otherCharacter = createCharacter("character-b", { ownerUserId: "player-2" });
@@ -307,6 +399,25 @@ test("GroupContextService non-GM resolveForCurrentUser uses owned-character memb
     assert.equal(context.groupActor, playerGroup);
     assert.deepEqual(context.memberActorIds, ["character-a"]);
     assert.equal(context.canManage, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("GroupContextService non-GM resolveForCurrentUser throws PLAYER_NO_GROUP without a matching group", () => {
+  const group = createGroup("group-a", [{ actor: createCharacter("character-a", { ownerUserId: "player-2" }) }]);
+  const fixture = installGameFixture({
+    actors: [group],
+    user: { id: "player-1", isGM: false },
+    registry: {}
+  });
+
+  try {
+    assert.throws(
+      () => new GroupContextService().resolveForCurrentUser(),
+      (error) => error.message === GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP
+    );
   }
   finally {
     fixture.restore();
