@@ -149,6 +149,13 @@ export function registerSettings() {
     default: {}
   });
 
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.GROUP_STATE, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
   game.settings.register(MODULE_ID, SETTINGS_KEYS.CRAFT_STATE, {
     scope: "world",
     config: false,

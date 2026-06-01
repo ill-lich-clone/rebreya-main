@@ -47,6 +47,12 @@ export const MAX_VISIBLE_CITIES = 70;
 export const ENERGY_BASE_DAYS = 3;
 export const ENERGY_MIN_DAYS = 1;
 
+export const REBREYA_GROUP_FLAGS = {
+  MANAGED: "managedPartyGroup",
+  LEGACY_INVENTORY_MERGED_AT: "legacyInventoryMergedAt",
+  LEGACY_INVENTORY_ACTOR_ID: "legacyInventoryActorId"
+};
+
 export const REBREYA_TOOLS = [
   { id: "thieves", label: "Воровские" },
   { id: "alchemy", label: "Алхимические" },
@@ -79,6 +85,7 @@ export const SETTINGS_KEYS = {
   GLOBAL_EVENTS_DRAFT: "globalEventsDraft",
   TRADER_STATE: "traderState",
   PARTY_STATE: "partyState",
+  GROUP_STATE: "groupState",
   CRAFT_STATE: "craftState",
   CALENDAR_STATE: "calendarState",
   CONNECTION_STATES: "connectionStates",
