@@ -384,7 +384,13 @@ test("completed requests are terminal", async () => {
         description: "",
         weeks: 2,
         status: "completed",
-        checks: [],
+        checks: [{
+          id: "check-1",
+          label: "Check",
+          dc: 12,
+          ability: "",
+          result: null
+        }],
         result: "Done",
         createdAt: 1,
         updatedAt: 1,
@@ -399,9 +405,74 @@ test("completed requests are terminal", async () => {
       () => harness.service.setRequestStatus("downtime-1", "returned"),
       /completed request is terminal/u
     );
+    await assert.rejects(
+      () => harness.service.setRequestStatus("downtime-1", "completed", { result: "Edited" }),
+      /completed request is terminal/u
+    );
+    await assert.rejects(
+      () => harness.service.setRequestChecks("downtime-1", [{ label: "New", dc: 10 }]),
+      /completed request is terminal/u
+    );
+    await assert.rejects(
+      () => harness.service.recordCheckResult("downtime-1", "check-1", { total: 15 }),
+      /completed request is terminal/u
+    );
   }
   finally {
     harness.restore();
+  }
+});
+
+test("released requests cannot be completed without re-reserving weeks", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A" });
+
+  for (const status of ["returned", "rejected"]) {
+    const harness = createHarness({
+      members: [actorA],
+      downtimeState: {
+        balancesByActorId: {
+          "actor-a": {
+            availableWeeks: 2,
+            reservedWeeks: 0,
+            spentWeeks: 0,
+            totalGrantedWeeks: 2
+          }
+        },
+        requests: [{
+          id: `downtime-${status}`,
+          actorId: "actor-a",
+          actorName: "Hero A",
+          actionId: "unique",
+          actionLabel: "РЈРЅРёРєР°Р»СЊРЅР°СЏ Р·Р°СЏРІРєР°",
+          title: "Released request",
+          description: "",
+          weeks: 1,
+          status,
+          checks: [],
+          result: "",
+          createdAt: 1,
+          updatedAt: 1,
+          submittedByUserId: "player-1",
+          reviewedByUserId: "gm"
+        }]
+      }
+    });
+
+    try {
+      await assert.rejects(
+        () => harness.service.setRequestStatus(`downtime-${status}`, "completed"),
+        /must be reserved before completion/u
+      );
+
+      const balance = getDowntimeState(harness).balancesByActorId["actor-a"];
+      assert.equal(balance.availableWeeks, 2);
+      assert.equal(balance.reservedWeeks, 0);
+      assert.equal(balance.spentWeeks, 0);
+      assert.equal(getDowntimeState(harness).requests[0].status, status);
+    }
+    finally {
+      harness.restore();
+    }
   }
 });
 

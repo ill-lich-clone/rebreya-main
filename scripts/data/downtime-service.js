@@ -310,9 +310,7 @@ export class DowntimeService {
 
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
-      if (request.status === "completed" && nextStatus !== "completed") {
-        throw new Error("A completed request is terminal for this downtime slice.");
-      }
+      this.#assertRequestIsMutable(request);
 
       const balance = normalizeBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
       this.#applyStatusAccounting(balance, request.status, nextStatus, request.weeks);
@@ -332,6 +330,7 @@ export class DowntimeService {
 
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
+      this.#assertRequestIsMutable(request);
       request.checks = asArray(checks).map((check, index) => {
         const normalized = normalizeCheck({
           id: cleanId(check?.id) || `check-${index + 1}`,
@@ -352,6 +351,7 @@ export class DowntimeService {
 
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
+      this.#assertRequestIsMutable(request);
       if (!this.#canManage(context)) {
         const actor = this.#requireCurrentMemberActor(context, request.actorId);
         if (!this.#canSubmitForActor(actor, context)) {
@@ -468,6 +468,12 @@ export class DowntimeService {
     return request;
   }
 
+  #assertRequestIsMutable(request) {
+    if (request?.status === "completed") {
+      throw new Error("A completed request is terminal for this downtime slice.");
+    }
+  }
+
   #applyStatusAccounting(balance, currentStatus, nextStatus, weeks) {
     if (currentStatus === nextStatus) {
       return;
@@ -505,12 +511,7 @@ export class DowntimeService {
     }
 
     if (RELEASED_STATUSES.has(currentStatus) && nextStatus === "completed") {
-      if (balance.availableWeeks < safeWeeks) {
-        throw new Error("Not enough available downtime weeks.");
-      }
-
-      balance.availableWeeks -= safeWeeks;
-      balance.spentWeeks += safeWeeks;
+      throw new Error("A downtime request must be reserved before completion.");
     }
   }
 }
