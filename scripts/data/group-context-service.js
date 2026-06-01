@@ -38,6 +38,7 @@ function normalizeLegacyInventoryMergePairs(value = {}) {
     for (const [itemKey, rawItemState] of Object.entries(asObject(pairState.itemsByKey))) {
       const itemState = asObject(rawItemState);
       itemsByKey[itemKey] = {
+        ...clone(itemState),
         quantityApplied: Math.max(0, Number(itemState.quantityApplied) || 0),
         targetItemId: cleanId(itemState.targetItemId),
         created: itemState.created === true,
@@ -46,6 +47,7 @@ function normalizeLegacyInventoryMergePairs(value = {}) {
     }
 
     pairs[pairKey] = {
+      ...clone(pairState),
       legacyInventoryActorId: cleanId(pairState.legacyInventoryActorId),
       groupActorId: cleanId(pairState.groupActorId),
       currencyAppliedAt: Number(pairState.currencyAppliedAt) || 0,
@@ -130,6 +132,7 @@ export function normalizeGroupState(groupActorId, value = {}) {
       history: clone(asArray(downtimeState.history))
     },
     migration: {
+      ...clone(migration),
       legacyInventoryMergedAt: Number(migration.legacyInventoryMergedAt) || 0,
       legacyInventoryActorId: cleanId(migration.legacyInventoryActorId),
       legacyInventoryMergePairs: normalizeLegacyInventoryMergePairs(migration.legacyInventoryMergePairs)

@@ -159,6 +159,55 @@ test("normalizeGroupState uses deterministic initializedAt fallback", () => {
   assert.equal(normalizeGroupState("group-a", { initializedAt: "bad" }).initializedAt, 0);
 });
 
+test("normalizeGroupState preserves unknown migration pair and item fields", () => {
+  const state = normalizeGroupState("group-a", {
+    migration: {
+      legacyInventoryMergedAt: "456",
+      legacyInventoryActorId: " legacy-party ",
+      futureMigrationField: {
+        enabled: true
+      },
+      legacyInventoryMergePairs: {
+        "legacy-party::group-a": {
+          legacyInventoryActorId: " legacy-party ",
+          groupActorId: " group-a ",
+          currencyAppliedAt: "123",
+          completedAt: "456",
+          futurePairField: "preserve-me",
+          itemsByKey: {
+            "custom:torch:loot": {
+              quantityApplied: "3",
+              targetItemId: " target-item ",
+              created: true,
+              appliedAt: "222",
+              futureItemField: {
+                note: "keep"
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  assert.deepEqual(state.migration.futureMigrationField, {
+    enabled: true
+  });
+  const pairState = state.migration.legacyInventoryMergePairs["legacy-party::group-a"];
+  assert.equal(pairState.legacyInventoryActorId, "legacy-party");
+  assert.equal(pairState.groupActorId, "group-a");
+  assert.equal(pairState.currencyAppliedAt, 123);
+  assert.equal(pairState.completedAt, 456);
+  assert.equal(pairState.futurePairField, "preserve-me");
+  assert.equal(pairState.itemsByKey["custom:torch:loot"].quantityApplied, 3);
+  assert.equal(pairState.itemsByKey["custom:torch:loot"].targetItemId, "target-item");
+  assert.equal(pairState.itemsByKey["custom:torch:loot"].created, true);
+  assert.equal(pairState.itemsByKey["custom:torch:loot"].appliedAt, 222);
+  assert.deepEqual(pairState.itemsByKey["custom:torch:loot"].futureItemField, {
+    note: "keep"
+  });
+});
+
 test("buildDefaultGroupState creates file-backed empty runtime state without legacy inventory", () => {
   const state = buildDefaultGroupState("group-a", { now: 789 });
 

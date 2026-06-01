@@ -413,6 +413,32 @@ function buildInventoryMergeIndex(actor) {
   return index;
 }
 
+function buildLegacyInventorySourceMergeGroups(actor) {
+  const groups = new Map();
+  for (const sourceItem of actor?.items?.contents ?? []) {
+    const sourceItemData = sanitizeEmbeddedItemData(sourceItem.toObject?.() ?? sourceItem);
+    const quantity = roundNumber(getRawQuantity(sourceItemData), 2);
+    if (quantity <= 0) {
+      continue;
+    }
+
+    const key = getLegacyInventoryMergeKey(sourceItemData);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.quantity = roundNumber(existing.quantity + quantity, 2);
+      continue;
+    }
+
+    groups.set(key, {
+      key,
+      itemData: sourceItemData,
+      quantity
+    });
+  }
+
+  return groups;
+}
+
 function getLegacyInventoryPairKey(legacyActorId, groupActorId) {
   return `${legacyActorId}::${groupActorId}`;
 }
@@ -1025,31 +1051,25 @@ export class InventoryService {
     let mergedItems = 0;
     let createdItems = 0;
 
-    for (const sourceItem of legacyActor.items?.contents ?? []) {
-      const sourceItemData = sanitizeEmbeddedItemData(sourceItem.toObject?.() ?? sourceItem);
-      const quantity = roundNumber(getRawQuantity(sourceItemData), 2);
-      if (quantity <= 0) {
-        continue;
-      }
-
-      const key = getLegacyInventoryMergeKey(sourceItemData);
+    for (const { key, itemData: sourceItemData, quantity: sourceTotalQuantity } of buildLegacyInventorySourceMergeGroups(legacyActor).values()) {
       const targetItem = mergeIndex.get(key) ?? null;
       const appliedQuantity = Math.max(
         toNumber(getLegacyInventoryMergePairState(context.groupState, pairKey).itemsByKey?.[key]?.quantityApplied, 0),
         toNumber(targetItem ? getLegacyInventoryItemPairState(targetItem, pairKey, key).quantityApplied : 0, 0)
       );
-      if (appliedQuantity >= quantity) {
+      const remainingQuantity = roundNumber(sourceTotalQuantity - appliedQuantity, 2);
+      if (remainingQuantity <= 0) {
         continue;
       }
 
       const itemAppliedAt = Date.now();
       if (targetItem) {
-        const nextQuantity = roundNumber(getRawQuantity(targetItem.toObject?.() ?? targetItem) + quantity, 2);
+        const nextQuantity = roundNumber(getRawQuantity(targetItem.toObject?.() ?? targetItem) + remainingQuantity, 2);
         const itemPairs = foundry.utils.deepClone(targetItem.flags?.[MODULE_ID]?.legacyInventoryItemMergePairs ?? {});
         itemPairs[pairKey] = {
           ...(itemPairs[pairKey] ?? {}),
           [key]: {
-            quantityApplied: quantity,
+            quantityApplied: sourceTotalQuantity,
             appliedAt: itemAppliedAt,
             targetItemId: targetItem.id ?? ""
           }
@@ -1060,7 +1080,7 @@ export class InventoryService {
         });
         await persistPairProgress((nextPairState) => {
           nextPairState.itemsByKey[key] = {
-            quantityApplied: quantity,
+            quantityApplied: sourceTotalQuantity,
             targetItemId: targetItem.id ?? "",
             created: false,
             appliedAt: itemAppliedAt
@@ -1070,7 +1090,7 @@ export class InventoryService {
         continue;
       }
 
-      foundry.utils.setProperty(sourceItemData, "system.quantity", quantity);
+      foundry.utils.setProperty(sourceItemData, "system.quantity", remainingQuantity);
       sourceItemData.flags = sourceItemData.flags && typeof sourceItemData.flags === "object" ? sourceItemData.flags : {};
       sourceItemData.flags[MODULE_ID] = sourceItemData.flags[MODULE_ID] && typeof sourceItemData.flags[MODULE_ID] === "object"
         ? sourceItemData.flags[MODULE_ID]
@@ -1079,7 +1099,7 @@ export class InventoryService {
         ...(sourceItemData.flags[MODULE_ID].legacyInventoryItemMergePairs ?? {}),
         [pairKey]: {
           [key]: {
-            quantityApplied: quantity,
+            quantityApplied: sourceTotalQuantity,
             appliedAt: itemAppliedAt,
             targetItemId: ""
           }
@@ -1090,7 +1110,7 @@ export class InventoryService {
         mergeIndex.set(key, created);
         await persistPairProgress((nextPairState) => {
           nextPairState.itemsByKey[key] = {
-            quantityApplied: quantity,
+            quantityApplied: sourceTotalQuantity,
             targetItemId: created.id ?? "",
             created: true,
             appliedAt: itemAppliedAt

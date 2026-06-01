@@ -410,6 +410,51 @@ test("mergeLegacyInventoryIntoGroup merges custom items by normalized name and t
   }
 });
 
+test("mergeLegacyInventoryIntoGroup aggregates duplicate custom legacy items by merge key", async () => {
+  const groupItem = createItem({ id: "group-gem", name: "Blue Gem", type: "loot", quantity: 4 });
+  const firstLegacyItem = createItem({ id: "legacy-gem-a", name: "blue gem", type: "loot", quantity: 2 });
+  const secondLegacyItem = createItem({ id: "legacy-gem-b", name: " Blue   Gem ", type: "loot", quantity: 3 });
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    groupItems: [groupItem],
+    legacyItems: [firstLegacyItem, secondLegacyItem]
+  });
+
+  try {
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.equal(groupItem.system.quantity, 9);
+    assert.equal(groupActor.items.contents.length, 1);
+    assert.equal(result.mergedItems, 1);
+    assert.equal(result.createdItems, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup aggregates duplicate source legacy items by sourceType and sourceId", async () => {
+  const flags = { [MODULE_ID]: { sourceType: "gear", sourceId: "rope" } };
+  const groupItem = createItem({ id: "group-rope", name: "Rope", type: "loot", quantity: 1, flags });
+  const firstLegacyItem = createItem({ id: "legacy-rope-a", name: "Rope", type: "loot", quantity: 2, flags });
+  const secondLegacyItem = createItem({ id: "legacy-rope-b", name: "Rope Coil", type: "loot", quantity: 4, flags });
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    groupItems: [groupItem],
+    legacyItems: [firstLegacyItem, secondLegacyItem]
+  });
+
+  try {
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.equal(groupItem.system.quantity, 7);
+    assert.equal(groupActor.items.contents.length, 1);
+    assert.equal(result.mergedItems, 1);
+    assert.equal(result.createdItems, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("mergeLegacyInventoryIntoGroup creates sanitized new embedded items", async () => {
   const legacyItem = createItem({
     id: "legacy-new",
@@ -580,6 +625,56 @@ test("mergeLegacyInventoryIntoGroup does not double existing item quantity after
     assert.equal(result.noop, false);
     assert.equal(groupItem.system.quantity, 5);
     assert.equal(groupActor.items.contents.length, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup applies only source quantity delta after partial marker", async () => {
+  const groupItem = createItem({ id: "group-torch", name: "Torch", type: "loot", quantity: 10 });
+  const firstLegacyItem = createItem({ id: "legacy-torch-a", name: "Torch", type: "loot", quantity: 2 });
+  const secondLegacyItem = createItem({ id: "legacy-torch-b", name: " torch ", type: "loot", quantity: 3 });
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    groupItems: [groupItem],
+    legacyItems: [firstLegacyItem, secondLegacyItem],
+    groupState: {
+      version: 1,
+      activeGroupActorId: "group-1",
+      groupsById: {
+        "group-1": {
+          groupActorId: "group-1",
+          migration: {
+            legacyInventoryMergedAt: 0,
+            legacyInventoryActorId: "",
+            legacyInventoryMergePairs: {
+              "legacy-party::group-1": {
+                legacyInventoryActorId: "legacy-party",
+                groupActorId: "group-1",
+                currencyAppliedAt: 0,
+                completedAt: 0,
+                itemsByKey: {
+                  "custom:torch:loot": {
+                    quantityApplied: 2,
+                    targetItemId: "group-torch",
+                    created: false,
+                    appliedAt: 100
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  try {
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.equal(result.mergedItems, 1);
+    assert.equal(groupItem.system.quantity, 13);
+    assert.equal(fixture.groupState.groupsById["group-1"].migration.legacyInventoryMergePairs["legacy-party::group-1"].itemsByKey["custom:torch:loot"].quantityApplied, 5);
   }
   finally {
     fixture.restore();
