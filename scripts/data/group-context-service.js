@@ -1,11 +1,11 @@
 import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../constants.js";
 
-export const GROUP_CONTEXT_ERRORS = {
+export const GROUP_CONTEXT_ERRORS = Object.freeze({
   GROUP_NOT_FOUND: "Группа Rebreya не найдена.",
   INVALID_GROUP_ACTOR: "Актор должен быть группой dnd5e.",
   PLAYER_NOT_IN_GROUP: "Персонаж игрока не найден в группе Rebreya.",
   PLAYER_IN_MULTIPLE_GROUPS: "Персонажи игрока найдены в нескольких группах Rebreya."
-};
+});
 
 function clone(value) {
   if (globalThis.foundry?.utils?.deepClone) {
@@ -81,14 +81,13 @@ export function buildDefaultGroupState(groupActorId, { now = Date.now() } = {}) 
 
 export function normalizeGroupState(groupActorId, value = {}) {
   const source = asObject(value);
-  const fallback = buildDefaultGroupState(groupActorId);
   const downtimeState = asObject(source.downtimeState);
   const migration = asObject(source.migration);
 
   return {
     version: 1,
     groupActorId,
-    initializedAt: Number(source.initializedAt) || fallback.initializedAt,
+    initializedAt: Number(source.initializedAt) || 0,
     calendar: clone(asObject(source.calendar)),
     traderState: clone(asObject(source.traderState)),
     tradeAudit: clone(asArray(source.tradeAudit)),
@@ -112,7 +111,7 @@ export function normalizeGroupRegistry(value = {}) {
   const groupsById = {};
 
   for (const [rawGroupActorId, rawState] of Object.entries(asObject(source.groupsById))) {
-    const groupActorId = cleanId(rawState?.groupActorId) || cleanId(rawGroupActorId);
+    const groupActorId = cleanId(rawGroupActorId);
     if (groupActorId) {
       groupsById[groupActorId] = normalizeGroupState(groupActorId, rawState);
     }
@@ -142,7 +141,10 @@ export function getGroupMemberActorIds(groupActor) {
     .filter((actorId) => actorId);
 }
 
-export function resolvePlayerGroupActor(groupActors = [], { userIsGM = false } = {}) {
+export function resolvePlayerGroupActor(
+  groupActors = [],
+  { userIsGM = false, isOwnedCharacter = () => false } = {}
+) {
   if (userIsGM) {
     return null;
   }
@@ -152,7 +154,7 @@ export function resolvePlayerGroupActor(groupActors = [], { userIsGM = false } =
       return false;
     }
 
-    return getGroupMemberActors(groupActor).some((memberActor) => isActorOwnedByCurrentUser(memberActor));
+    return getGroupMemberActors(groupActor).some((memberActor) => isOwnedCharacter(memberActor));
   });
 
   if (matchingGroups.length > 1) {
@@ -193,10 +195,9 @@ export class GroupContextService {
     }
 
     const registry = this.getRegistry();
-    registry.groupsById[groupActor.id] = normalizeGroupState(
-      groupActor.id,
-      registry.groupsById[groupActor.id] ?? {}
-    );
+    registry.groupsById[groupActor.id] = registry.groupsById[groupActor.id]
+      ? normalizeGroupState(groupActor.id, registry.groupsById[groupActor.id])
+      : buildDefaultGroupState(groupActor.id);
 
     if (!registry.activeGroupActorId) {
       registry.activeGroupActorId = groupActor.id;
@@ -208,13 +209,17 @@ export class GroupContextService {
 
   async setActiveGroup(groupActorId) {
     const groupActor = this.#requireGroupActor(groupActorId);
+
+    if (!isManagedPartyGroup(groupActor)) {
+      await groupActor.setFlag?.(MODULE_ID, REBREYA_GROUP_FLAGS.MANAGED, true);
+    }
+
     const registry = this.getRegistry();
 
     registry.activeGroupActorId = groupActor.id;
-    registry.groupsById[groupActor.id] = normalizeGroupState(
-      groupActor.id,
-      registry.groupsById[groupActor.id] ?? {}
-    );
+    registry.groupsById[groupActor.id] = registry.groupsById[groupActor.id]
+      ? normalizeGroupState(groupActor.id, registry.groupsById[groupActor.id])
+      : buildDefaultGroupState(groupActor.id);
 
     await this.setRegistry(registry);
     return registry.groupsById[groupActor.id];
@@ -251,7 +256,8 @@ export class GroupContextService {
     }
 
     const groupActor = resolvePlayerGroupActor(this.getManagedGroupActors(), {
-      userIsGM: Boolean(user?.isGM)
+      userIsGM: Boolean(user?.isGM),
+      isOwnedCharacter: (actor) => isActorOwnedByCurrentUser(actor)
     });
 
     return this.resolveForGroup(groupActor.id);
