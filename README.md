@@ -22,7 +22,7 @@ README описывает **актуальную механику из кода 
   - карточка отдельной связи;
   - государства (налоги/пошлины/описания);
   - глобальные ивенты;
-  - партийный склад, группа, крафт, календарь;
+  - партийный склад, группа, крафт, календарь, простой;
   - лавки города;
   - лутген;
   - справочные карточки.
@@ -56,6 +56,7 @@ README описывает **актуальную механику из кода 
 - `scripts/data/inventory-service.js`: партийный склад/группа/монеты/запасы/энергия.
 - `scripts/data/crafting-service.js`: очередь крафта.
 - `scripts/data/calendar-service.js`: календарь и лунные фазы.
+- `scripts/data/downtime-service.js`: недели простоя, заявки игроков и проверки мастера.
 
 ## 5. Окна и интерфейс
 
@@ -137,6 +138,7 @@ README описывает **актуальную механику из кода 
 - `Группа`: участники, роли, суточный расход еды/воды, груз, энергия, инструменты.
 - `Крафт`: очередь задач, выбор крафтера, прогресс по дням.
 - `Календарь`: дата, фазы луны, переход дней/недель/месяцев.
+- `Простой`: балансы недель по участникам, выдача недель мастером, заявки игроков, статусы и проверки.
 
 Инвентарь и состав группы берутся из текущего dnd5e `Actor` типа `group`. Для ГМа это активная зарегистрированная группа мира; для игрока группа определяется по owned-персонажу в составе зарегистрированной группы. Если контекст не найден, окно показывает предупреждение вместо молчаливой работы со старым складом.
 
@@ -174,6 +176,7 @@ README описывает **актуальную механику из кода 
 - Добавляет вкладку «Кукла героя» на лист персонажа.
 - Drag-and-drop экипировки по слотам.
 - Поддерживает перенос из партийного склада в инвентарь персонажа и резервирование слотов.
+- Показывает краткий счетчик простоя персонажа и открывает вкладку `Простой` в групповом инвентаре.
 
 ## 6. Экономическая механика
 
@@ -307,6 +310,37 @@ README описывает **актуальную механику из кода 
 - `energyMax = max(1, 3 + CON_mod)` (или override).
 - При дневном списании, если участнику не хватило еды/воды, энергия уменьшается.
 - Восстановление энергии возможно за счет расхода запасов.
+
+### 8.4 Простой
+
+Состояние простоя хранится отдельно для каждой зарегистрированной группы:
+
+`groupState.groupsById[groupId].downtimeState`
+
+Состав участников берется из native dnd5e group actor (`system.members`). Балансы хранятся по `actorId` участника:
+
+- `availableWeeks`: свободные недели, которые можно потратить на заявку.
+- `reservedWeeks`: недели, уже зарезервированные активными заявками.
+- `spentWeeks`: завершенные недели.
+- `totalGrantedWeeks`: сколько недель всего выдавалось персонажу.
+
+Рабочий поток:
+
+1. ГМ открывает `Инвентарь -> Простой` для активной группы и выдает недели всем участникам или одному персонажу.
+2. Игрок открывает свой групповой инвентарь или кнопку простоя на вкладке «Кукла героя», выбирает owned-персонажа, действие и число недель.
+3. Создание заявки резервирует недели: они уходят из `availableWeeks` в `reservedWeeks`.
+4. ГМ может одобрить заявку, вернуть на доработку, отклонить, завершить или назначить проверки.
+5. Возврат/отклонение освобождают недели обратно в `availableWeeks`; завершение переносит их в `spentWeeks`.
+
+Статусы заявок:
+
+- `pending`: заявка отправлена, недели зарезервированы.
+- `approved`: мастер одобрил план, недели остаются зарезервированными.
+- `returned`: мастер вернул заявку, недели освобождены.
+- `rejected`: мастер отклонил заявку, недели освобождены.
+- `completed`: заявка завершена, недели потрачены.
+
+Проверки мастера сейчас сохраняются как данные заявки. Автоматических кнопок бросков из листа персонажа для этих проверок пока нет.
 
 ## 9. Крафт
 
@@ -456,7 +490,7 @@ World settings:
 - `connectionStates`, `tradeRouteOverrides`, `statePolicies`, `referenceNotes`;
 - `globalEventsState`, `globalEventsDraft`.
 
-`groupState` хранит реестр зарегистрированных group actor и world-level active group для ГМа. Это foundation для будущего разделения экономики, ивентов и downtime по группам.
+`groupState` хранит реестр зарегистрированных group actor, world-level active group для ГМа и per-group state простоя (`groupsById[groupId].downtimeState`).
 
 ## 15. Права доступа
 
@@ -466,11 +500,13 @@ World settings:
 - Лутген (генерация и перенос результатов).
 - Сброс/восстановление world override-данных.
 - Управление партийным state (большинство операций склада/группы/крафта).
+- Выдача недель простоя, смена статусов заявок и назначение проверок простоя.
 - `Ребрея -> Группы`: регистрация существующих dnd5e group actor, выбор активной группы, открытие native group sheet, merge legacy-инвентаря.
 
 ### Игроки (при наличии прав на актеров/предметы)
 
 - Открытие склад/календарь/часть UI окон.
+- Создание заявок простоя за owned-персонажей своей зарегистрированной группы.
 - Торговля в лавке выбранным персонажем.
 - Просмотр публичных ивентов (если включено в настройках и ивент не `gmOnly`).
 
@@ -490,6 +526,11 @@ await game.rebreyaMain.createGlobalEvent(payload);
 // Инвентарь и календарь
 await game.rebreyaMain.openInventoryApp({ tab: "inventory" });
 await game.rebreyaMain.advanceCalendarDays(1, { consumeSupplies: true, applyEnergy: true, processCraft: true });
+
+// Простой
+await game.rebreyaMain.openInventoryApp({ tab: "downtime" });
+game.rebreyaMain.getDowntimeSnapshot();
+await game.rebreyaMain.createDowntimeRequest({ actorId: "actor-id", actionId: "training", weeks: 1, title: "Тренировка" });
 
 // Лавки
 await game.rebreyaMain.openTrader("city-id", "shop-food-store");
@@ -584,6 +625,8 @@ await game.rebreyaMain.openLootgenApp({ newWindow: true });
   - `mergeLegacyInventoryIntoGroup(groupActorId)`
   - `getInventorySnapshot(options?)`
   - `getPartySnapshot(options?)`
+  - `getDowntimeSnapshot(options?)`
+  - `getDowntimeActionCatalog()`
   - `addPartyMember(actorId)`
   - `removePartyMember(actorId)`
   - `updatePartyDefaults(patch)`
@@ -601,6 +644,12 @@ await game.rebreyaMain.openLootgenApp({ newWindow: true });
   - `updatePartyCurrency(values)`
   - `convertPartyCurrency(mode?)`
   - `getRebreyaToolCatalog()`
+- Простой:
+  - `grantDowntimeWeeks(payload?)`
+  - `createDowntimeRequest(payload?)`
+  - `setDowntimeRequestStatus(requestId, status, options?)`
+  - `setDowntimeRequestChecks(requestId, checks?)`
+  - `recordDowntimeCheckResult(requestId, checkId, result?)`
 - Крафт:
   - `getCraftSnapshot(options?)`
   - `queueCraftTask(payload?)`
@@ -660,6 +709,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\import-gear.ps1 -Wor
 
 - В репозитории есть интеграционный файл `scripts/integrations/item-piles-dnd5e.js`; если он не вызван из `main.js`, интеграция не активируется автоматически.
 - Импорт в текущей модели считается покомпонентно для каждого города; глобальная конкуренция городов за один и тот же экспортный излишек источника пока не симулируется.
+- Простой реализует workflow выдачи недель, заявок, статусов и сохраненных проверок; автоматическое исполнение таблиц главы 9 и кнопки бросков проверок из чарника пока не включены.
 
 ## 20. Диагностика
 
