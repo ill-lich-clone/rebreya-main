@@ -29,13 +29,27 @@ function cleanId(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const UNSAFE_OBJECT_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
+function isSafeObjectKey(value) {
+  return !UNSAFE_OBJECT_KEYS.has(value);
+}
+
 function normalizeLegacyInventoryMergePairs(value = {}) {
-  const pairs = {};
+  const pairs = Object.create(null);
   for (const [pairKey, rawPairState] of Object.entries(asObject(value))) {
+    if (!isSafeObjectKey(pairKey)) {
+      continue;
+    }
+
     const pairState = asObject(rawPairState);
-    const itemsByKey = {};
+    const itemsByKey = Object.create(null);
 
     for (const [itemKey, rawItemState] of Object.entries(asObject(pairState.itemsByKey))) {
+      if (!isSafeObjectKey(itemKey)) {
+        continue;
+      }
+
       const itemState = asObject(rawItemState);
       itemsByKey[itemKey] = {
         ...clone(itemState),

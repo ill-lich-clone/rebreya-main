@@ -12,6 +12,10 @@ import {
   resolvePlayerGroupActor
 } from "../scripts/data/group-context-service.js";
 
+function nullProtoRecord(entries = []) {
+  return Object.assign(Object.create(null), Object.fromEntries(entries));
+}
+
 function createCharacter(id, { ownerUserId = "player-1", type = "character" } = {}) {
   return {
     id,
@@ -135,7 +139,7 @@ test("normalizeGroupRegistry preserves active group and per-group state", () => 
     migration: {
       legacyInventoryMergedAt: 456,
       legacyInventoryActorId: "legacy-party",
-      legacyInventoryMergePairs: {}
+      legacyInventoryMergePairs: nullProtoRecord()
     }
   });
 });
@@ -206,6 +210,79 @@ test("normalizeGroupState preserves unknown migration pair and item fields", () 
   assert.deepEqual(pairState.itemsByKey["custom:torch:loot"].futureItemField, {
     note: "keep"
   });
+});
+
+test("normalizeGroupState rejects dangerous migration pair and item map keys", () => {
+  const legacyInventoryMergePairs = {
+    "legacy-party::group-a": {
+      legacyInventoryActorId: " legacy-party ",
+      groupActorId: " group-a ",
+      futurePairField: "preserve-me",
+      itemsByKey: {
+        "custom:torch:loot": {
+          quantityApplied: "3",
+          futureItemField: {
+            note: "keep"
+          }
+        },
+        prototype: {
+          quantityApplied: "4"
+        },
+        constructor: {
+          quantityApplied: "5"
+        }
+      }
+    },
+    prototype: {
+      groupActorId: "polluted-prototype"
+    },
+    constructor: {
+      groupActorId: "polluted-constructor"
+    }
+  };
+  Object.defineProperty(legacyInventoryMergePairs, "__proto__", {
+    value: {
+      groupActorId: "polluted-proto"
+    },
+    enumerable: true
+  });
+  Object.defineProperty(legacyInventoryMergePairs["legacy-party::group-a"].itemsByKey, "__proto__", {
+    value: {
+      quantityApplied: "6"
+    },
+    enumerable: true
+  });
+
+  const state = normalizeGroupState("group-a", {
+    migration: {
+      legacyInventoryMergePairs
+    }
+  });
+
+  const pairs = state.migration.legacyInventoryMergePairs;
+  const pairState = pairs["legacy-party::group-a"];
+  assert.equal(Object.getPrototypeOf(pairs), null);
+  assert.equal(Object.hasOwn(pairs, "__proto__"), false);
+  assert.equal(Object.hasOwn(pairs, "prototype"), false);
+  assert.equal(Object.hasOwn(pairs, "constructor"), false);
+  assert.equal(pairs.__proto__, undefined);
+  assert.equal(pairs.prototype, undefined);
+  assert.equal(pairs.constructor, undefined);
+  assert.equal(Object.prototype.groupActorId, undefined);
+
+  assert.equal(pairState.futurePairField, "preserve-me");
+  assert.equal(pairState.itemsByKey["custom:torch:loot"].quantityApplied, 3);
+  assert.deepEqual(pairState.itemsByKey["custom:torch:loot"].futureItemField, {
+    note: "keep"
+  });
+  assert.equal(Object.getPrototypeOf(pairState.itemsByKey), null);
+  assert.equal(Object.hasOwn(pairState.itemsByKey, "__proto__"), false);
+  assert.equal(Object.hasOwn(pairState.itemsByKey, "prototype"), false);
+  assert.equal(Object.hasOwn(pairState.itemsByKey, "constructor"), false);
+  assert.equal(pairState.itemsByKey.__proto__, undefined);
+  assert.equal(pairState.itemsByKey.prototype, undefined);
+  assert.equal(pairState.itemsByKey.constructor, undefined);
+  assert.equal(Object.prototype.quantityApplied, undefined);
 });
 
 test("buildDefaultGroupState creates file-backed empty runtime state without legacy inventory", () => {
