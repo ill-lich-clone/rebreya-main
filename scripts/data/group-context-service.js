@@ -35,6 +35,17 @@ function isSafeObjectKey(value) {
   return !UNSAFE_OBJECT_KEYS.has(value);
 }
 
+function cloneSafeObjectMetadata(value) {
+  const metadata = {};
+  for (const [key, entryValue] of Object.entries(clone(asObject(value)))) {
+    if (isSafeObjectKey(key)) {
+      metadata[key] = entryValue;
+    }
+  }
+
+  return metadata;
+}
+
 function normalizeLegacyInventoryMergePairs(value = {}) {
   const pairs = Object.create(null);
   for (const [pairKey, rawPairState] of Object.entries(asObject(value))) {
@@ -52,7 +63,7 @@ function normalizeLegacyInventoryMergePairs(value = {}) {
 
       const itemState = asObject(rawItemState);
       itemsByKey[itemKey] = {
-        ...clone(itemState),
+        ...cloneSafeObjectMetadata(itemState),
         quantityApplied: Math.max(0, Number(itemState.quantityApplied) || 0),
         targetItemId: cleanId(itemState.targetItemId),
         created: itemState.created === true,
@@ -61,7 +72,7 @@ function normalizeLegacyInventoryMergePairs(value = {}) {
     }
 
     pairs[pairKey] = {
-      ...clone(pairState),
+      ...cloneSafeObjectMetadata(pairState),
       legacyInventoryActorId: cleanId(pairState.legacyInventoryActorId),
       groupActorId: cleanId(pairState.groupActorId),
       currencyAppliedAt: Number(pairState.currencyAppliedAt) || 0,

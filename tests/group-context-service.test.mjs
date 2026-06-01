@@ -285,6 +285,56 @@ test("normalizeGroupState rejects dangerous migration pair and item map keys", (
   assert.equal(Object.prototype.quantityApplied, undefined);
 });
 
+test("normalizeGroupState strips dangerous migration pair and item metadata fields", () => {
+  const pairState = {
+    legacyInventoryActorId: " legacy-party ",
+    groupActorId: " group-a ",
+    futurePairField: "preserve-pair",
+    prototype: "drop-pair-prototype",
+    constructor: "drop-pair-constructor",
+    itemsByKey: {
+      "custom:torch:loot": {
+        quantityApplied: "3",
+        targetItemId: " target-item ",
+        futureItemField: "preserve-item",
+        prototype: "drop-item-prototype",
+        constructor: "drop-item-constructor"
+      }
+    }
+  };
+  Object.defineProperty(pairState, "__proto__", {
+    value: "drop-pair-proto",
+    enumerable: true
+  });
+  Object.defineProperty(pairState.itemsByKey["custom:torch:loot"], "__proto__", {
+    value: "drop-item-proto",
+    enumerable: true
+  });
+
+  const state = normalizeGroupState("group-a", {
+    migration: {
+      legacyInventoryMergePairs: {
+        "legacy-party::group-a": pairState
+      }
+    }
+  });
+
+  const normalizedPair = state.migration.legacyInventoryMergePairs["legacy-party::group-a"];
+  const normalizedItem = normalizedPair.itemsByKey["custom:torch:loot"];
+
+  assert.equal(normalizedPair.futurePairField, "preserve-pair");
+  assert.equal(Object.hasOwn(normalizedPair, "__proto__"), false);
+  assert.equal(Object.hasOwn(normalizedPair, "prototype"), false);
+  assert.equal(Object.hasOwn(normalizedPair, "constructor"), false);
+  assert.equal(Object.prototype.futurePairField, undefined);
+
+  assert.equal(normalizedItem.futureItemField, "preserve-item");
+  assert.equal(Object.hasOwn(normalizedItem, "__proto__"), false);
+  assert.equal(Object.hasOwn(normalizedItem, "prototype"), false);
+  assert.equal(Object.hasOwn(normalizedItem, "constructor"), false);
+  assert.equal(Object.prototype.futureItemField, undefined);
+});
+
 test("buildDefaultGroupState creates file-backed empty runtime state without legacy inventory", () => {
   const state = buildDefaultGroupState("group-a", { now: 789 });
 
