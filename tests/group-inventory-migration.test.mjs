@@ -91,12 +91,35 @@ function createItem({
     async update(patch) {
       applyPatch(this, patch);
       return this;
+    },
+    getFlag(moduleId, key) {
+      return this.flags?.[moduleId]?.[key];
+    },
+    async delete() {
+      const parentItems = this.parent?.items?.contents;
+      if (Array.isArray(parentItems)) {
+        const index = parentItems.indexOf(this);
+        if (index >= 0) {
+          parentItems.splice(index, 1);
+        }
+      }
+      return this;
     }
   };
   return item;
 }
 
-function createActor({ id, name = "Actor", type = "npc", isOwner = false, currency = {}, items = [], flags = {} } = {}) {
+function createActor({
+  id,
+  name = "Actor",
+  type = "npc",
+  isOwner = false,
+  currency = {},
+  items = [],
+  flags = {},
+  abilities = {},
+  members = []
+} = {}) {
   const actor = {
     id,
     name,
@@ -111,7 +134,16 @@ function createActor({ id, name = "Actor", type = "npc", isOwner = false, curren
         sp: 0,
         cp: 0,
         ...currency
-      }
+      },
+      abilities: {
+        str: {
+          value: abilities.str?.value ?? 10
+        },
+        con: {
+          mod: abilities.con?.mod ?? 0
+        }
+      },
+      members
     },
     items: {
       contents: items,
@@ -146,6 +178,9 @@ function createActor({ id, name = "Actor", type = "npc", isOwner = false, curren
       return created;
     }
   };
+  for (const item of actor.items.contents) {
+    item.parent = actor;
+  }
   return actor;
 }
 
@@ -959,6 +994,195 @@ test("addSupply rejects when resolved group actor is not owned by a non-GM user"
       () => service.addSupply("food", 1),
       /Партийным инвентарём управляют владельцы склада\./u
     );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("getPartySnapshot uses native group system.members and ignores stale partyState members", async () => {
+  const memberActor = createActor({
+    id: "member-a",
+    name: "Native Member",
+    type: "character",
+    abilities: {
+      str: { value: 12 },
+      con: { mod: 1 }
+    }
+  });
+  const staleActor = createActor({ id: "stale-member", name: "Stale Member", type: "character" });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    members: [{ actor: memberActor }]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor, staleActor],
+    partyState: {
+      members: {
+        "member-a": {
+          foodPerDay: 2,
+          waterGalPerDay: 3,
+          conModOverride: 2
+        },
+        "stale-member": {
+          foodPerDay: 99,
+          waterGalPerDay: 99
+        }
+      }
+    }
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({ groupActor })
+    },
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const snapshot = await service.getPartySnapshot({ actor: groupActor });
+
+    assert.deepEqual(snapshot.members.map((member) => member.actorId), ["member-a"]);
+    assert.equal(snapshot.totalFoodPerDay, 2);
+    assert.equal(snapshot.totalWaterGalPerDay, 3);
+    assert.equal(snapshot.totalEnergyMax, 5);
+    assert.equal(snapshot.availableActors.length, 0);
+    assert.equal(snapshot.membershipManagedByNativeGroup, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("addPartyMember and removePartyMember reject native group contexts without mutating partyState members", async () => {
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true
+  });
+  const initialMembers = {
+    "member-a": {
+      foodPerDay: 2
+    }
+  };
+  const fixture = installInventoryFixture({
+    actors: [groupActor],
+    partyState: {
+      members: clone(initialMembers)
+    }
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({ groupActor })
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () => service.addPartyMember("member-b"),
+      /Состав группы управляется листом dnd5e группы/u
+    );
+    await assert.rejects(
+      () => service.removePartyMember("member-a"),
+      /Состав группы управляется листом dnd5e группы/u
+    );
+    assert.deepEqual(fixture.state.members, initialMembers);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("consumeSuppliesOneDay applies energy only to native group system.members", async () => {
+  const memberActor = createActor({
+    id: "member-a",
+    name: "Native Member",
+    type: "character",
+    abilities: {
+      con: { mod: 0 }
+    }
+  });
+  const staleActor = createActor({
+    id: "stale-member",
+    name: "Stale Member",
+    type: "character"
+  });
+  const food = createItem({
+    id: "food",
+    name: "Food",
+    quantity: 1,
+    flags: {
+      [MODULE_ID]: {
+        resourceKey: "food"
+      }
+    }
+  });
+  const water = createItem({
+    id: "water",
+    name: "Water",
+    quantity: 1,
+    flags: {
+      [MODULE_ID]: {
+        resourceKey: "water"
+      }
+    }
+  });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [food, water],
+    members: [{ actor: memberActor }]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor, staleActor],
+    partyState: {
+      members: {
+        "member-a": {
+          foodPerDay: 2,
+          waterGalPerDay: 2,
+          energyCurrent: 3
+        },
+        "stale-member": {
+          foodPerDay: 99,
+          waterGalPerDay: 99,
+          energyCurrent: 3
+        }
+      }
+    }
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({ groupActor })
+    },
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const result = await service.consumeSuppliesOneDay();
+
+    assert.deepEqual(result.energyUpdates.map((entry) => entry.actorId), ["member-a"]);
+    assert.equal(result.memberCount, 1);
+    assert.equal(result.foodRequired, 2);
+    assert.equal(result.waterRequired, 2);
+    assert.equal(fixture.state.members["member-a"].energyCurrent, 2);
+    assert.equal(fixture.state.members["stale-member"].energyCurrent, 3);
   }
   finally {
     fixture.restore();

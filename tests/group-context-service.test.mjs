@@ -582,6 +582,29 @@ test("GroupContextService non-GM resolveForCurrentUser uses owned-character memb
   }
 });
 
+test("GroupContextService non-GM resolveForCurrentUser rejects managed flag-only unregistered groups", () => {
+  const ownedCharacter = createCharacter("character-a", { ownerUserId: "player-1" });
+  const flagOnlyGroup = createGroup("group-flag-only", [{ actor: ownedCharacter }]);
+  const fixture = installGameFixture({
+    actors: [flagOnlyGroup],
+    user: { id: "player-1", isGM: false },
+    registry: {
+      activeGroupActorId: "",
+      groupsById: {}
+    }
+  });
+
+  try {
+    assert.throws(
+      () => new GroupContextService().resolveForCurrentUser(),
+      (error) => error.message === GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("GroupContextService non-GM resolveForCurrentUser throws PLAYER_NO_GROUP without a matching group", () => {
   const group = createGroup("group-a", [{ actor: createCharacter("character-a", { ownerUserId: "player-2" }) }]);
   const fixture = installGameFixture({

@@ -22,7 +22,7 @@ function installFoundryApplicationStub() {
   };
 }
 
-function createModuleApi({ getGroupContext }) {
+function createModuleApi({ getGroupContext, partySnapshot = {} }) {
   return {
     async getInventorySnapshot() {
       return {
@@ -64,7 +64,8 @@ function createModuleApi({ getGroupContext }) {
         freeCapacityLb: 0,
         foodDaysLeft: null,
         waterDaysLeft: null,
-        canManage: false
+        canManage: false,
+        ...partySnapshot
       };
     },
     async getCraftSnapshot() {
@@ -99,6 +100,42 @@ test("InventoryApp _prepareContext surfaces known no-group display context error
     assert.equal(context.hasError, false);
     assert.equal(context.group, null);
     assert.equal(context.groupContextError, GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp _prepareContext disables member add controls for native group membership", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => ({
+      groupActor: {
+        id: "group-a",
+        name: "Native Group",
+        type: "group",
+        system: {
+          members: []
+        }
+      },
+      groupId: "group-a",
+      memberActorIds: ["member-a"]
+    }),
+    partySnapshot: {
+      canManage: true,
+      availableActors: [{ id: "member-b", name: "Legacy Candidate" }],
+      membershipManagedByNativeGroup: true
+    }
+  }));
+
+  try {
+    const context = await app._prepareContext();
+
+    assert.equal(context.group.name, "Native Group");
+    assert.equal(context.party.membershipManagedByNativeGroup, true);
+    assert.equal(context.party.addMemberDisabled, true);
+    assert.match(context.party.addMemberDisabledReason, /листом группы/u);
   }
   finally {
     restoreFoundry();

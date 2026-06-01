@@ -310,7 +310,11 @@ export class GroupContextService {
       return this.resolveForGroup(registry.activeGroupActorId);
     }
 
-    const groupActor = resolvePlayerGroupActor(this.getManagedGroupActors(), {
+    const registry = this.getRegistry();
+    const registeredGroupActors = Object.keys(registry.groupsById)
+      .map((groupActorId) => getActorById(groupActorId))
+      .filter((actor) => actor?.type === "group");
+    const groupActor = resolvePlayerGroupActor(registeredGroupActors, {
       userIsGM: Boolean(user?.isGM),
       isOwnedCharacter: (actor) => isActorOwnedByCurrentUser(actor)
     });

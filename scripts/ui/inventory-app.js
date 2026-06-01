@@ -363,6 +363,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.renderListenersAbortController = null;
     this.actionFeedback = null;
     this.canManage = false;
+    this.partyMembershipManagedByNativeGroup = false;
   }
 
   get id() {
@@ -714,7 +715,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ...member,
         expanded: this.expandedPartyMembers.has(member.actorId)
       }));
-      const addMemberDisabled = availableActors.length === 0;
+      const membershipManagedByNativeGroup = Boolean(partySnapshot.membershipManagedByNativeGroup);
+      const addMemberDisabled = membershipManagedByNativeGroup || availableActors.length === 0;
       const consumeDayDisabled = toInteger(partySnapshot.memberCount, 0) <= 0;
       const craftHasCrafters = (craftSnapshot.crafters ?? []).length > 0;
       const processDayDisabled = (craftSnapshot.queue ?? []).length === 0;
@@ -745,6 +747,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         : null;
       const canManage = Boolean(partySnapshot.canManage || inventorySnapshot.actor?.canEdit);
       this.canManage = canManage;
+      this.partyMembershipManagedByNativeGroup = membershipManagedByNativeGroup;
 
       if (!availableActors.some((actor) => actor.id === this.selectedNewMemberId)) {
         this.selectedNewMemberId = "";
@@ -801,10 +804,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           capacityUsedRawPercent,
           alerts: partyAlerts,
           dashboard,
+          membershipManagedByNativeGroup,
           addMemberDisabled,
-          addMemberDisabledReason: addMemberDisabled
-            ? "Нет доступных актёров для добавления в группу."
-            : "",
+          addMemberDisabledReason: membershipManagedByNativeGroup
+            ? "Состав управляется листом группы dnd5e."
+            : (addMemberDisabled
+              ? "Нет доступных актёров для добавления в группу."
+              : ""),
           consumeDayDisabled,
           consumeDayDisabledReason: consumeDayDisabled
             ? "Добавьте хотя бы одного участника, чтобы списать день."
@@ -1293,7 +1299,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
     }, listenerOptions);
 
-    const partyDropzone = element.querySelector("[data-action='party-dropzone']");
+    const partyDropzone = this.partyMembershipManagedByNativeGroup
+      ? null
+      : element.querySelector("[data-action='party-dropzone']");
     if (partyDropzone) {
       partyDropzone.addEventListener("dragover", (event) => {
         let dragData = null;
@@ -1556,7 +1564,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             void this.#openPartyMemberSheet(actorId, actorName);
           }
         }];
-        if (this.canManage) {
+        if (this.canManage && !this.partyMembershipManagedByNativeGroup) {
           actions.push({
             label: "Удалить из группы",
             icon: "fa-solid fa-user-minus",

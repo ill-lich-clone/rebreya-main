@@ -274,35 +274,43 @@
 
         {{#if canManage}}
           <section class="rm-party-toolbar rm-party-toolbar--compact" data-action="party-dropzone">
-            <div class="rm-field">
-              <input
-                type="text"
-                value="{{party.addMemberQuery}}"
-                placeholder="{{#if party.addMemberDisabled}}Нет доступных актёров{{else}}Введите имя участника{{/if}}"
-                autocomplete="off"
-                list="{{appDomId}}-party-member-list"
-                data-action="add-member-query"
-                {{#if party.addMemberDisabled}}disabled{{/if}}
-              >
-              <datalist id="{{appDomId}}-party-member-list">
-                {{#each party.availableActors}}
-                  <option value="{{name}}"></option>
-                {{/each}}
-              </datalist>
-              <small class="rm-muted">Введите имя или перетащите лист персонажа в эту область.</small>
-            </div>
+            {{#if party.membershipManagedByNativeGroup}}
+              <p class="rm-inline-status rm-inline-status--info">
+                <span>Состав управляется обычным листом группы dnd5e. Добавляйте и удаляйте участников там.</span>
+              </p>
+            {{else}}
+              <div class="rm-field">
+                <input
+                  type="text"
+                  value="{{party.addMemberQuery}}"
+                  placeholder="{{#if party.addMemberDisabled}}Нет доступных актёров{{else}}Введите имя участника{{/if}}"
+                  autocomplete="off"
+                  list="{{appDomId}}-party-member-list"
+                  data-action="add-member-query"
+                  {{#if party.addMemberDisabled}}disabled{{/if}}
+                >
+                <datalist id="{{appDomId}}-party-member-list">
+                  {{#each party.availableActors}}
+                    <option value="{{name}}"></option>
+                  {{/each}}
+                </datalist>
+                <small class="rm-muted">Введите имя или перетащите лист персонажа в эту область.</small>
+              </div>
+            {{/if}}
 
             <div class="rm-party-toolbar__actions">
-              <button
-                type="button"
-                class="rm-button rm-button--small rm-button--primary"
-                data-action="add-member"
-                title="{{#if party.addMemberDisabled}}{{party.addMemberDisabledReason}}{{else}}Добавить участника в группу{{/if}}"
-                {{#if party.addMemberDisabled}}disabled{{/if}}
-              >
-                <i class="fa-solid fa-user-plus"></i>
-                <span>Добавить участника</span>
-              </button>
+              {{#unless party.membershipManagedByNativeGroup}}
+                <button
+                  type="button"
+                  class="rm-button rm-button--small rm-button--primary"
+                  data-action="add-member"
+                  title="{{#if party.addMemberDisabled}}{{party.addMemberDisabledReason}}{{else}}Добавить участника в группу{{/if}}"
+                  {{#if party.addMemberDisabled}}disabled{{/if}}
+                >
+                  <i class="fa-solid fa-user-plus"></i>
+                  <span>Добавить участника</span>
+                </button>
+              {{/unless}}
               <button
                 type="button"
                 class="rm-button rm-button--small rm-button--secondary"

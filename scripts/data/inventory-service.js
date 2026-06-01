@@ -8,7 +8,7 @@
   REBREYA_TOOLS,
   SETTINGS_KEYS
 } from "../constants.js";
-import { GROUP_CONTEXT_ERRORS, isManagedPartyGroup } from "./group-context-service.js";
+import { GROUP_CONTEXT_ERRORS, getGroupMemberActors, isManagedPartyGroup } from "./group-context-service.js";
 
 const DEFAULT_PARTY_ACTOR_NAME = "Инвентарь группы Rebreya";
 const DEFAULT_PARTY_ACTOR_IMAGE = "icons/svg/item-bag.svg";
@@ -40,6 +40,7 @@ const GROUP_CONTEXT_FALLBACK_ERRORS = new Set([
   GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP,
   GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP
 ]);
+const NATIVE_GROUP_MEMBERSHIP_MESSAGE = "Состав группы управляется листом dnd5e группы. Откройте лист группы, чтобы добавить или удалить участников.";
 const LEGACY_REBREYA_TOOL_LABEL_ALIASES = [
   ["Воровские", "thieves"],
   ["Алхимические", "alchemy"],
@@ -677,6 +678,56 @@ export class InventoryService {
       const itemData = item.toObject();
       return sum + (getRawQuantity(itemData) * getItemWeight(itemData));
     }, 0), 2);
+  }
+
+  #isNativeGroupInventoryActor(actor) {
+    return actor?.type === "group";
+  }
+
+  #buildPartyMemberRows(state, inventoryActor) {
+    if (this.#isNativeGroupInventoryActor(inventoryActor)) {
+      return getGroupMemberActors(inventoryActor)
+        .map((actorDocument) => {
+          const actorId = String(actorDocument?.id ?? "").trim();
+          if (!actorId) {
+            return null;
+          }
+
+          return {
+            actorId,
+            actor: actorDocument,
+            memberState: this.#normalizeMemberState(state.members?.[actorId] ?? buildDefaultMemberState("member"))
+          };
+        })
+        .filter((row) => row);
+    }
+
+    return Object.entries(state.members)
+      .map(([actorId, memberState]) => ({
+        actorId,
+        actor: game.actors.get(actorId) ?? null,
+        memberState: this.#normalizeMemberState(memberState)
+      }));
+  }
+
+  #assertLegacyPartyMembershipMutable() {
+    if (this.#getGroupInventoryActor()) {
+      throw new Error(NATIVE_GROUP_MEMBERSHIP_MESSAGE);
+    }
+  }
+
+  #assertNativeGroupMemberIfNeeded(actorId) {
+    const groupActor = this.#getGroupInventoryActor();
+    if (!groupActor) {
+      return;
+    }
+
+    const memberIds = new Set(getGroupMemberActors(groupActor)
+      .map((actor) => String(actor?.id ?? "").trim())
+      .filter((id) => id));
+    if (!memberIds.has(String(actorId ?? "").trim())) {
+      throw new Error("Участник группы не найден в листе dnd5e группы.");
+    }
   }
 
   async #upsertInventoryItem(actor, itemData, quantity = null) {
@@ -1364,9 +1415,9 @@ export class InventoryService {
     const inventoryWeight = inventoryActor ? this.#getInventoryWeight(inventoryActor) : 0;
     const model = inventoryActor ? await this.moduleApi.getModel() : null;
 
-    const partyMembers = Object.entries(state.members)
-      .map(([actorId, memberState]) => {
-        const actorDocument = game.actors.get(actorId) ?? null;
+    const membershipManagedByNativeGroup = this.#isNativeGroupInventoryActor(inventoryActor);
+    const partyMembers = this.#buildPartyMemberRows(state, inventoryActor)
+      .map(({ actorId, actor: actorDocument, memberState }) => {
         const effectiveStrength = memberState.strOverride ?? getActorStrength(actorDocument);
         const capacityMultiplier = memberState.capModOverride ?? state.defaultCapMod;
         const capacityLb = memberState.role === "transport"
@@ -1424,27 +1475,29 @@ export class InventoryService {
     const totalWaterGalPerDay = roundNumber(partyMembers.reduce((sum, member) => sum + member.waterGalPerDay, 0), 2);
     const totalEnergyCurrent = roundNumber(partyMembers.reduce((sum, member) => sum + member.energyCurrent, 0), 0);
     const totalEnergyMax = roundNumber(partyMembers.reduce((sum, member) => sum + member.energyMax, 0), 0);
-    const availableActors = game.actors.contents
-      .filter((actorDocument) => {
-        if (!actorDocument?.isOwner) {
-          return false;
-        }
+    const availableActors = membershipManagedByNativeGroup
+      ? []
+      : game.actors.contents
+        .filter((actorDocument) => {
+          if (!actorDocument?.isOwner) {
+            return false;
+          }
 
-        if (actorDocument.id === state.inventoryActorId) {
-          return false;
-        }
+          if (actorDocument.id === state.inventoryActorId) {
+            return false;
+          }
 
-        if (actorDocument.getFlag(MODULE_ID, "managedTrader")) {
-          return false;
-        }
+          if (actorDocument.getFlag(MODULE_ID, "managedTrader")) {
+            return false;
+          }
 
-        return !state.members[actorDocument.id];
-      })
-      .sort((left, right) => left.name.localeCompare(right.name, "ru"))
-      .map((actorDocument) => ({
-        id: actorDocument.id,
-        name: actorDocument.name
-      }));
+          return !state.members[actorDocument.id];
+        })
+        .sort((left, right) => left.name.localeCompare(right.name, "ru"))
+        .map((actorDocument) => ({
+          id: actorDocument.id,
+          name: actorDocument.name
+        }));
 
     const inventoryEntries = inventoryActor && model
       ? inventoryActor.items.contents.map((item) => this.#buildInventoryEntry(model, item))
@@ -1458,6 +1511,7 @@ export class InventoryService {
       memberCount: partyMembers.length,
       emptyMembers: partyMembers.length === 0,
       availableActors,
+      membershipManagedByNativeGroup,
       totalCapacityLb,
       totalFoodPerDay,
       totalWaterGalPerDay,
@@ -1701,6 +1755,8 @@ export class InventoryService {
       throw new Error("Не выбран актёр для добавления в группу.");
     }
 
+    this.#assertLegacyPartyMembershipMutable();
+
     return this.#writeState((state) => {
       state.members[actorId] = state.members[actorId] ?? buildDefaultMemberState("member");
       state.members[actorId] = this.#normalizeMemberState(state.members[actorId]);
@@ -1712,6 +1768,8 @@ export class InventoryService {
     if (!actorId) {
       return false;
     }
+
+    this.#assertLegacyPartyMembershipMutable();
 
     return this.#writeState((state) => {
       delete state.members[actorId];
@@ -1734,6 +1792,8 @@ export class InventoryService {
     if (!actorId) {
       throw new Error("Не выбран участник группы.");
     }
+
+    this.#assertNativeGroupMemberIfNeeded(actorId);
 
     return this.#writeState((state) => {
       const currentState = this.#normalizeMemberState(state.members[actorId] ?? buildDefaultMemberState("member"));
@@ -1780,6 +1840,8 @@ export class InventoryService {
       throw new Error("Не выбран участник группы.");
     }
 
+    this.#assertNativeGroupMemberIfNeeded(actorId);
+
     const normalizedToolId = normalizeToolId(toolId);
     if (!normalizedToolId) {
       throw new Error("Инструмент Rebreya не найден.");
@@ -1804,6 +1866,8 @@ export class InventoryService {
     if (!actorId) {
       throw new Error("Не выбран участник группы.");
     }
+
+    this.#assertNativeGroupMemberIfNeeded(actorId);
 
     return this.#writeState((state) => {
       const memberState = this.#normalizeMemberState(state.members[actorId] ?? buildDefaultMemberState("member"));
@@ -1926,15 +1990,26 @@ export class InventoryService {
 
       energyUpdates = await this.#writeState((state) => {
         const updates = [];
-        const sortedMembers = Object.entries(state.members)
-          .map(([actorId, memberState]) => ({
-            actorId,
-            actor: game.actors.get(actorId) ?? null,
-            memberState: this.#normalizeMemberState(memberState)
-          }))
+        const memberIds = new Set(partySnapshot.members.map((member) => member.actorId));
+        const sortedMembers = partySnapshot.members
+          .map((member) => {
+            const actorId = member.actorId;
+            const memberState = this.#normalizeMemberState(
+              state.members[actorId] ?? buildDefaultMemberState(member.role)
+            );
+            return {
+              actorId,
+              actor: game.actors.get(actorId) ?? null,
+              memberState
+            };
+          })
           .sort((left, right) => String(left.actor?.name ?? left.actorId).localeCompare(String(right.actor?.name ?? right.actorId), "ru"));
 
         for (const row of sortedMembers) {
+          if (!memberIds.has(row.actorId)) {
+            continue;
+          }
+
           const foodNeed = Math.max(0, roundNumber(toNumber(row.memberState.foodPerDay, 0), 2));
           const waterNeed = Math.max(0, roundNumber(toNumber(row.memberState.waterGalPerDay, 0), 2));
           const foodCovered = Math.min(availableFood, foodNeed);
