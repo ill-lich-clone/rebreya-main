@@ -1,4 +1,5 @@
 ﻿import { MODULE_ID } from "../constants.js";
+import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
 import { bringAppToFront, getAppElement } from "../ui.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
@@ -615,6 +616,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
       }
       catch (error) {
+        if (![
+          GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP,
+          GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP
+        ].includes(error?.message)) {
+          throw error;
+        }
+
         groupContextError = groupContextError || error.message || "Не удалось определить группу Rebreya.";
       }
       const partySnapshot = await this.moduleApi.getPartySnapshot();
