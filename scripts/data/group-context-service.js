@@ -25,6 +25,17 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function getMaxDowntimeRequestCounter(requests = []) {
+  return asArray(requests).reduce((maxCounter, request) => {
+    const match = /^downtime-(\d+)$/u.exec(cleanId(request?.id));
+    if (!match) {
+      return maxCounter;
+    }
+
+    return Math.max(maxCounter, Math.floor(Number(match[1]) || 0));
+  }, 0);
+}
+
 function cleanId(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -140,6 +151,11 @@ export function buildDefaultGroupState(groupActorId, { now = Date.now() } = {}) 
 export function normalizeGroupState(groupActorId, value = {}) {
   const source = asObject(value);
   const downtimeState = asObject(source.downtimeState);
+  const downtimeRequests = asArray(downtimeState.requests);
+  const downtimeCounter = Math.max(
+    Math.max(0, Math.floor(Number(downtimeState.counter) || 0)),
+    getMaxDowntimeRequestCounter(downtimeRequests)
+  );
   const migration = asObject(source.migration);
 
   return {
@@ -153,10 +169,10 @@ export function normalizeGroupState(groupActorId, value = {}) {
     craftState: clone(asObject(source.craftState)),
     downtimeState: {
       balancesByActorId: clone(asObject(downtimeState.balancesByActorId)),
-      requests: clone(asArray(downtimeState.requests)),
+      requests: clone(downtimeRequests),
       checks: clone(asArray(downtimeState.checks)),
       history: clone(asArray(downtimeState.history)),
-      counter: Math.max(0, Math.floor(Number(downtimeState.counter) || 0))
+      counter: downtimeCounter
     },
     migration: {
       ...clone(migration),

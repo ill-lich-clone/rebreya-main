@@ -103,6 +103,17 @@ function normalizeRequest(value = {}) {
   };
 }
 
+function getMaxRequestCounter(requests = []) {
+  return asArray(requests).reduce((maxCounter, request) => {
+    const match = /^downtime-(\d+)$/u.exec(cleanId(request?.id));
+    if (!match) {
+      return maxCounter;
+    }
+
+    return Math.max(maxCounter, Math.floor(Number(match[1]) || 0));
+  }, 0);
+}
+
 function normalizeDowntimeState(value = {}) {
   const source = asObject(value);
   const balancesByActorId = {};
@@ -113,12 +124,15 @@ function normalizeDowntimeState(value = {}) {
     }
   }
 
+  const requests = asArray(source.requests).map((request) => normalizeRequest(request)).filter((request) => request.id);
+  const counter = Math.max(toWeeks(source.counter), getMaxRequestCounter(requests));
+
   return {
     balancesByActorId,
-    requests: asArray(source.requests).map((request) => normalizeRequest(request)).filter((request) => request.id),
+    requests,
     checks: asArray(source.checks).map((check) => normalizeCheck(check)),
     history: clone(asArray(source.history)),
-    counter: toWeeks(source.counter)
+    counter
   };
 }
 

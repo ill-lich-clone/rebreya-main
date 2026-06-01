@@ -204,6 +204,59 @@ test("GroupContextService registry path preserves downtime counter between write
   }
 });
 
+test("GroupContextService registry path recovers downtime counter from existing request ids", async () => {
+  const member = createCharacter("character-a");
+  member.name = "Hero";
+  const group = createGroup("group-a", [{ actor: member }]);
+  const fixture = installGameFixture({
+    actors: [group, member],
+    user: { id: "gm", isGM: true },
+    registry: {
+      activeGroupActorId: "group-a",
+      groupsById: {
+        "group-a": {
+          groupActorId: "group-a",
+          downtimeState: {
+            balancesByActorId: {
+              "character-a": {
+                availableWeeks: 1,
+                reservedWeeks: 0,
+                spentWeeks: 0,
+                totalGrantedWeeks: 1
+              }
+            },
+            requests: [
+              { id: "downtime-1" },
+              { id: "downtime-5" },
+              { id: "downtime-not-a-number" }
+            ],
+            checks: [],
+            history: []
+          }
+        }
+      }
+    }
+  });
+
+  try {
+    const groupContextService = new GroupContextService();
+    const service = new DowntimeService({ groupContextService });
+
+    const request = await service.createRequest({
+      actorId: "character-a",
+      actionId: "unique",
+      title: "Recovered",
+      weeks: 1
+    });
+
+    assert.equal(request.id, "downtime-6");
+    assert.equal(fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE].groupsById["group-a"].downtimeState.counter, 6);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("normalizeGroupRegistry keeps outer registry key when nested groupActorId is corrupt", () => {
   const registry = normalizeGroupRegistry({
     groupsById: {

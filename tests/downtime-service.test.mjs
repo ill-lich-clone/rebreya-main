@@ -224,6 +224,43 @@ test("createRequest by player reserves weeks for an owned current member", async
   }
 });
 
+test("createRequest recovers counter from existing request ids in direct service state", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actorA],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      },
+      requests: [
+        { id: "downtime-2" },
+        { id: "downtime-9" },
+        { id: "other-100" }
+      ]
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: "actor-a",
+      actionId: "unique",
+      title: "Recovered",
+      weeks: 1
+    });
+
+    assert.equal(request.id, "downtime-10");
+    assert.equal(getDowntimeState(harness).counter, 10);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("reject and return release reserved request weeks back to available", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A" });
   const baseBalance = {
