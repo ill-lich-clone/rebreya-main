@@ -10,6 +10,7 @@ function installFoundryApplicationStub() {
       api: {
         ApplicationV2: class {
           constructor(_options = {}) {}
+          async _onRender() {}
         },
         HandlebarsApplicationMixin: (Base) => class extends Base {},
         DialogV2: {}
@@ -20,6 +21,97 @@ function installFoundryApplicationStub() {
   return () => {
     globalThis.foundry = previousFoundry;
   };
+}
+
+function createFakeElement({ dataset = {}, closest = () => null } = {}) {
+  return new HTMLElement({ dataset, closest });
+}
+
+function installMinimalDom() {
+  const previousHTMLElement = globalThis.HTMLElement;
+  const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
+  let appendedMenu = null;
+
+  globalThis.HTMLElement = class FakeHTMLElement {
+    constructor({ dataset = {}, closest = () => null } = {}) {
+      this.dataset = dataset;
+      this.style = {};
+      this.children = [];
+      this.listeners = {};
+      this.open = false;
+      this.className = "";
+      this.textContent = "";
+      this.type = "";
+      this.closest = closest;
+    }
+
+    addEventListener(type, listener) {
+      this.listeners[type] ??= [];
+      this.listeners[type].push(listener);
+    }
+
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    }
+
+    setAttribute(name, value) {
+      this[name] = value;
+    }
+
+    getBoundingClientRect() {
+      return {
+        width: 120,
+        height: 80
+      };
+    }
+
+    contains(target) {
+      return target === this || this.children.includes(target);
+    }
+
+    remove() {
+      this.removed = true;
+    }
+  };
+
+  globalThis.window = {
+    innerWidth: 1024,
+    innerHeight: 768,
+    getComputedStyle: () => ({
+      zIndex: "100"
+    })
+  };
+  globalThis.document = {
+    body: {
+      appendChild(node) {
+        appendedMenu = node;
+      }
+    },
+    createElement: () => createFakeElement(),
+    querySelectorAll: () => [],
+    addEventListener() {},
+    removeEventListener() {}
+  };
+
+  return {
+    get appendedMenu() {
+      return appendedMenu;
+    },
+    restore() {
+      globalThis.HTMLElement = previousHTMLElement;
+      globalThis.document = previousDocument;
+      globalThis.window = previousWindow;
+    }
+  };
+}
+
+function collectText(node) {
+  return [
+    node?.textContent ?? "",
+    ...(node?.children ?? []).map((child) => collectText(child))
+  ].join("");
 }
 
 function createModuleApi({ getGroupContext, partySnapshot = {} }) {
@@ -138,6 +230,60 @@ test("InventoryApp _prepareContext disables member add controls for native group
     assert.match(context.party.addMemberDisabledReason, /листом группы/u);
   }
   finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp context menu omits remove action for native group membership", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+  const row = createFakeElement({
+    dataset: {
+      actorId: "member-a",
+      actorName: "Native Member"
+    }
+  });
+  const summary = createFakeElement({
+    closest: () => row
+  });
+  const root = createFakeElement({
+    closest: () => root
+  });
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => {
+    if (selector === ".rm-party-row[data-actor-id]") {
+      return [row];
+    }
+    if (selector === ".rm-party-row__summary") {
+      return [summary];
+    }
+    return [];
+  };
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null
+  }));
+  app.element = root;
+  app.canManage = true;
+  app.partyMembershipManagedByNativeGroup = true;
+
+  try {
+    await app._onRender({}, {});
+    summary.listeners.contextmenu[0]({
+      currentTarget: summary,
+      clientX: 10,
+      clientY: 10,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const menuText = collectText(dom.appendedMenu);
+    assert.match(menuText, /Открыть лист/u);
+    assert.doesNotMatch(menuText, /Удалить из группы/u);
+    assert.equal(dom.appendedMenu.children.some((child) => String(child.className).includes("is-danger")), false);
+  }
+  finally {
+    dom.restore();
     restoreFoundry();
   }
 });

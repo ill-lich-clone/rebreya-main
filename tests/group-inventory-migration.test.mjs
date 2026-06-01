@@ -1010,16 +1010,25 @@ test("getPartySnapshot uses native group system.members and ignores stale partyS
       con: { mod: 1 }
     }
   });
+  const defaultStateMemberActor = createActor({
+    id: "member-b",
+    name: "Default State Native Member",
+    type: "character",
+    abilities: {
+      str: { value: 8 },
+      con: { mod: 0 }
+    }
+  });
   const staleActor = createActor({ id: "stale-member", name: "Stale Member", type: "character" });
   const groupActor = createActor({
     id: "group-1",
     name: "Party",
     type: "group",
     isOwner: true,
-    members: [{ actor: memberActor }]
+    members: [{ actor: memberActor }, { actor: defaultStateMemberActor }]
   });
   const fixture = installInventoryFixture({
-    actors: [groupActor, memberActor, staleActor],
+    actors: [groupActor, memberActor, defaultStateMemberActor, staleActor],
     partyState: {
       members: {
         "member-a": {
@@ -1049,11 +1058,16 @@ test("getPartySnapshot uses native group system.members and ignores stale partyS
 
   try {
     const snapshot = await service.getPartySnapshot({ actor: groupActor });
+    const defaultStateMember = snapshot.members.find((member) => member.actorId === "member-b");
 
-    assert.deepEqual(snapshot.members.map((member) => member.actorId), ["member-a"]);
-    assert.equal(snapshot.totalFoodPerDay, 2);
-    assert.equal(snapshot.totalWaterGalPerDay, 3);
-    assert.equal(snapshot.totalEnergyMax, 5);
+    assert.deepEqual(snapshot.members.map((member) => member.actorId), ["member-b", "member-a"]);
+    assert.equal(defaultStateMember.role, "member");
+    assert.equal(defaultStateMember.foodPerDay, 1);
+    assert.equal(defaultStateMember.waterGalPerDay, 1);
+    assert.equal(defaultStateMember.strength, 8);
+    assert.equal(snapshot.totalFoodPerDay, 3);
+    assert.equal(snapshot.totalWaterGalPerDay, 4);
+    assert.equal(snapshot.totalEnergyMax, 8);
     assert.equal(snapshot.availableActors.length, 0);
     assert.equal(snapshot.membershipManagedByNativeGroup, true);
   }
