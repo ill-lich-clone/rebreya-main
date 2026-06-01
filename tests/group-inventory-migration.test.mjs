@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
 import { InventoryService } from "../scripts/data/inventory-service.js";
 
 function installFoundryUtils() {
@@ -201,6 +202,74 @@ test("canManagePartyInventory allows GMs and resolved group actor owners only", 
 
     game.user = { id: "gm", isGM: true };
     assert.equal(service.canManagePartyInventory(), true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("getInventoryActor falls back to legacy actor creation for known no-group context errors", async () => {
+  const fixture = installInventoryFixture();
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => {
+        throw new Error(GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP);
+      }
+    }
+  });
+
+  try {
+    const actor = await service.getInventoryActor({ create: true });
+
+    assert.equal(actor, fixture.createdActor);
+    assert.equal(actor.name, "Инвентарь группы Rebreya");
+    assert.equal(fixture.actorCreateCalls, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("getInventoryActor rethrows unexpected group resolver errors without creating legacy actor", async () => {
+  const fixture = installInventoryFixture();
+  const unexpectedError = new Error("resolver crashed");
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => {
+        throw unexpectedError;
+      }
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () => service.getInventoryActor({ create: true }),
+      (error) => error === unexpectedError
+    );
+    assert.equal(fixture.actorCreateCalls, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("addSupply rejects when resolved group actor is not owned by a non-GM user", async () => {
+  const groupActor = createActor({ id: "group-1", name: "Party", type: "group", isOwner: false });
+  const fixture = installInventoryFixture({
+    actors: [groupActor],
+    user: { id: "player-1", isGM: false }
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({ groupActor })
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () => service.addSupply("food", 1),
+      /Партийным инвентарём управляют владельцы склада\./u
+    );
   }
   finally {
     fixture.restore();

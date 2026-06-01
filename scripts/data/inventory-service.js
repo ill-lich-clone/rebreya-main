@@ -8,6 +8,7 @@
   REBREYA_TOOLS,
   SETTINGS_KEYS
 } from "../constants.js";
+import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js";
 
 const DEFAULT_PARTY_ACTOR_NAME = "Инвентарь группы Rebreya";
 const DEFAULT_PARTY_ACTOR_IMAGE = "icons/svg/item-bag.svg";
@@ -35,6 +36,10 @@ const CURRENCY_MULTIPLIERS = {
 const REBREYA_TOOL_IDS = new Set(REBREYA_TOOLS.map((tool) => tool.id));
 const REBREYA_TOOL_LABEL_BY_ID = new Map(REBREYA_TOOLS.map((tool) => [tool.id, tool.label]));
 const REBREYA_TOOL_ID_BY_LABEL = new Map(REBREYA_TOOLS.map((tool) => [normalizeText(tool.label), tool.id]));
+const GROUP_CONTEXT_FALLBACK_ERRORS = new Set([
+  GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP,
+  GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP
+]);
 const LEGACY_REBREYA_TOOL_LABEL_ALIASES = [
   ["Воровские", "thieves"],
   ["Алхимические", "alchemy"],
@@ -505,7 +510,11 @@ export class InventoryService {
       const groupActor = context?.groupActor ?? null;
       return groupActor?.type === "group" ? groupActor : null;
     }
-    catch {
+    catch (error) {
+      if (!GROUP_CONTEXT_FALLBACK_ERRORS.has(error?.message)) {
+        throw error;
+      }
+
       return null;
     }
   }
