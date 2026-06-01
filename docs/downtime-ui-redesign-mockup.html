@@ -209,6 +209,17 @@
       width: 760px;
       min-height: 696px;
       display: none;
+      --line: rgba(188, 158, 112, 0.18);
+      --line-strong: rgba(205, 171, 119, 0.32);
+      --text: #f0e7d9;
+      --muted: #b9aa91;
+      --faint: #8b7f70;
+      --accent: #a87943;
+      --accent-strong: #cfaa68;
+      --teal: #a87943;
+      --panel-soft: rgba(18, 17, 17, 0.74);
+      border-color: rgba(188, 158, 112, 0.22);
+      background: rgba(11, 11, 12, 0.94);
     }
 
     .window-bar {
@@ -684,9 +695,10 @@
       min-height: 150px;
       padding: 22px 24px;
       background:
-        linear-gradient(90deg, rgba(14, 15, 17, 0.68), rgba(14, 15, 17, 0.26)),
-        linear-gradient(130deg, #5c1919, #1a2026 60%);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        linear-gradient(90deg, rgba(10, 10, 11, 0.82), rgba(10, 10, 11, 0.36)),
+        radial-gradient(circle at 28% 0, rgba(151, 40, 34, 0.46), transparent 42%),
+        linear-gradient(130deg, #3d1113, #151517 62%);
+      border-bottom: 1px solid rgba(188, 158, 112, 0.16);
     }
 
     .sheet-hero h2 {
@@ -704,8 +716,8 @@
       width: 58px;
       height: 58px;
       border-radius: 50%;
-      border: 2px solid rgba(244, 238, 227, 0.7);
-      background: rgba(8, 9, 10, 0.7);
+      border: 2px solid rgba(213, 184, 137, 0.62);
+      background: rgba(8, 8, 9, 0.82);
       font-size: 26px;
       font-weight: 900;
     }
@@ -718,8 +730,8 @@
 
     .portrait-column {
       padding: 16px;
-      background: rgba(10, 12, 14, 0.72);
-      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(9, 9, 10, 0.78);
+      border-right: 1px solid rgba(188, 158, 112, 0.12);
     }
 
     .portrait {
@@ -728,9 +740,9 @@
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 0;
       background:
-        radial-gradient(circle at 50% 34%, rgba(244, 238, 227, 0.66), transparent 12%),
-        radial-gradient(circle at 50% 68%, rgba(114, 199, 189, 0.5), transparent 34%),
-        linear-gradient(180deg, #27303a, #15181d);
+        radial-gradient(circle at 50% 34%, rgba(232, 218, 196, 0.62), transparent 12%),
+        radial-gradient(circle at 50% 68%, rgba(123, 42, 38, 0.38), transparent 34%),
+        linear-gradient(180deg, #242326, #111113);
     }
 
     .mini-stats {
@@ -744,7 +756,8 @@
       border-radius: 0;
       padding: 7px 6px;
       text-align: center;
-      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(188, 158, 112, 0.1);
+      background: rgba(255, 255, 255, 0.04);
     }
 
     .mini-stat strong {
@@ -754,7 +767,9 @@
 
     .downtime-tab {
       padding: 16px;
-      background: rgba(18, 19, 20, 0.74);
+      background:
+        radial-gradient(circle at 24% 0, rgba(151, 40, 34, 0.08), transparent 30%),
+        rgba(15, 14, 14, 0.88);
     }
 
     .player-grid {
@@ -784,8 +799,18 @@
     }
 
     .action-card.is-selected {
-      border-color: var(--teal);
-      background: rgba(54, 103, 102, 0.36);
+      border-color: rgba(205, 171, 119, 0.48);
+      background: rgba(113, 78, 43, 0.28);
+    }
+
+    .sheet-window .stat.is-good {
+      border-color: rgba(205, 171, 119, 0.32);
+      background: rgba(82, 61, 35, 0.36);
+    }
+
+    .sheet-window .stat.is-alert {
+      border-color: rgba(151, 58, 51, 0.44);
+      background: rgba(83, 26, 25, 0.34);
     }
 
     .action-card strong {
