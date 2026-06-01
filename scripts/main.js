@@ -11,6 +11,7 @@ import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js";
 import { TraderService } from "./data/trader-service.js";
+import { GroupContextService } from "./data/group-context-service.js";
 import { InventoryService } from "./data/inventory-service.js";
 import { HeroDollService } from "./data/hero-doll-service.js";
 import { CraftingService } from "./data/crafting-service.js";
@@ -155,6 +156,7 @@ class RebreyaMainModule {
     this.classesCompendium = new ClassesCompendiumService();
     this.actionsCompendium = new ActionsCompendiumService();
     this.traderService = new TraderService(this);
+    this.groupContextService = new GroupContextService(this);
     this.inventoryService = new InventoryService(this);
     this.heroDollService = new HeroDollService(this);
     this.craftingService = new CraftingService(this);
@@ -971,6 +973,29 @@ class RebreyaMainModule {
 
   async getPartySnapshot(options = {}) {
     return this.inventoryService.getPartySnapshot(options);
+  }
+
+  getGroupRegistry() {
+    return this.groupContextService.getRegistry();
+  }
+
+  getGroupContext(options = {}) {
+    if (options?.groupActorId) {
+      return this.groupContextService.resolveForGroup(options.groupActorId);
+    }
+    return this.groupContextService.resolveForCurrentUser();
+  }
+
+  async registerPartyGroup(groupActorId) {
+    const result = await this.groupContextService.registerGroup(groupActorId);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async setActivePartyGroup(groupActorId) {
+    const result = await this.groupContextService.setActiveGroup(groupActorId);
+    await this.refreshOpenApps();
+    return result;
   }
 
   async addPartyMember(actorId) {
