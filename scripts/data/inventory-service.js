@@ -499,12 +499,28 @@ export class InventoryService {
     return nextState;
   }
 
+  #getGroupInventoryActor() {
+    try {
+      const context = this.moduleApi.groupContextService?.resolveForCurrentUser?.();
+      const groupActor = context?.groupActor ?? null;
+      return groupActor?.type === "group" ? groupActor : null;
+    }
+    catch {
+      return null;
+    }
+  }
+
   canManagePartyInventory(actor = null) {
     if (game.user?.isGM) {
       return true;
     }
 
     const inventoryActor = actor ?? (() => {
+      const groupActor = this.#getGroupInventoryActor();
+      if (groupActor) {
+        return groupActor;
+      }
+
       const state = this.#getState();
       return state.inventoryActorId ? game.actors.get(state.inventoryActorId) ?? null : null;
     })();
@@ -783,6 +799,11 @@ export class InventoryService {
   }
 
   async getInventoryActor({ create = false } = {}) {
+    const groupActor = this.#getGroupInventoryActor();
+    if (groupActor) {
+      return groupActor;
+    }
+
     const state = this.#getState();
     const existingActor = state.inventoryActorId ? game.actors.get(state.inventoryActorId) ?? null : null;
     if (existingActor) {
