@@ -992,6 +992,12 @@ class RebreyaMainModule {
     return result;
   }
 
+  async mergeLegacyInventoryIntoGroup(groupActorId) {
+    const result = await this.inventoryService.mergeLegacyInventoryIntoGroup(groupActorId);
+    await this.refreshOpenApps();
+    return result;
+  }
+
   async setActivePartyGroup(groupActorId) {
     const result = await this.groupContextService.setActiveGroup(groupActorId);
     await this.refreshOpenApps();

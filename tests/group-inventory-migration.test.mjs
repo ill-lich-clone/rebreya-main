@@ -1,16 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { MODULE_ID } from "../scripts/constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
 import { InventoryService } from "../scripts/data/inventory-service.js";
+
+function clone(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
 
 function installFoundryUtils() {
   const previousFoundry = globalThis.foundry;
   globalThis.foundry = {
     utils: {
-      deepClone: (value) => JSON.parse(JSON.stringify(value)),
+      deepClone: clone,
       getProperty: (source, path) => String(path ?? "").split(".").reduce((current, part) => current?.[part], source),
       mergeObject: (target, source) => ({ ...target, ...source }),
+      flattenObject: (source, prefix = "") => Object.entries(source ?? {}).reduce((flat, [key, value]) => {
+        const path = prefix ? `${prefix}.${key}` : key;
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          Object.assign(flat, globalThis.foundry.utils.flattenObject(value, path));
+        }
+        else {
+          flat[path] = value;
+        }
+        return flat;
+      }, {}),
       setProperty: (source, path, value) => {
         const parts = String(path ?? "").split(".");
         let cursor = source;
@@ -31,28 +46,114 @@ function installFoundryUtils() {
   };
 }
 
-function createActor({ id, name = "Actor", type = "npc", isOwner = false } = {}) {
-  return {
+function applyPatch(target, patch) {
+  for (const [path, value] of Object.entries(patch ?? {})) {
+    foundry.utils.setProperty(target, path, value);
+  }
+}
+
+function createItem({
+  id,
+  name = "Item",
+  type = "loot",
+  quantity = 1,
+  flags = {},
+  extra = {}
+} = {}) {
+  const item = {
+    _id: id,
+    id,
+    name,
+    type,
+    img: "icons/svg/item-bag.svg",
+    system: {
+      quantity,
+      weight: {
+        value: 0
+      }
+    },
+    flags,
+    ...clone(extra),
+    toObject() {
+      return clone({
+        _id: this._id,
+        name: this.name,
+        type: this.type,
+        img: this.img,
+        system: this.system,
+        flags: this.flags,
+        folder: this.folder,
+        sort: this.sort,
+        ownership: this.ownership,
+        _stats: this._stats
+      });
+    },
+    async update(patch) {
+      applyPatch(this, patch);
+      return this;
+    }
+  };
+  return item;
+}
+
+function createActor({ id, name = "Actor", type = "npc", isOwner = false, currency = {}, items = [] } = {}) {
+  const actor = {
     id,
     name,
     type,
     img: "icons/svg/mystery-man.svg",
     isOwner,
     system: {
-      currency: {}
+      currency: {
+        pp: 0,
+        gp: 0,
+        ep: 0,
+        sp: 0,
+        cp: 0,
+        ...currency
+      }
     },
     items: {
-      contents: [],
-      get: () => null
+      contents: items,
+      get: (itemId) => actor.items.contents.find((item) => item.id === itemId) ?? null
     },
-    getFlag: () => false
+    flags: {},
+    getFlag(moduleId, key) {
+      return this.flags?.[moduleId]?.[key];
+    },
+    async setFlag(moduleId, key, value) {
+      this.flags[moduleId] ??= {};
+      this.flags[moduleId][key] = value;
+      return value;
+    },
+    async update(patch) {
+      applyPatch(this, patch);
+      return this;
+    },
+    async createEmbeddedDocuments(_documentName, documents) {
+      const created = documents.map((document, index) => {
+        const item = createItem({
+          id: `created-${this.items.contents.length + index + 1}`,
+          name: document.name,
+          type: document.type,
+          quantity: foundry.utils.getProperty(document, "system.quantity"),
+          flags: document.flags,
+          extra: document
+        });
+        this.items.contents.push(item);
+        return item;
+      });
+      return created;
+    }
   };
+  return actor;
 }
 
 function installInventoryFixture({
   actors = [],
   user = { id: "gm", isGM: true },
-  partyState = {}
+  partyState = {},
+  groupState = {}
 } = {}) {
   const restoreFoundry = installFoundryUtils();
   const previousGame = globalThis.game;
@@ -90,9 +191,14 @@ function installInventoryFixture({
       get: (actorId) => actors.find((actor) => actor.id === actorId) ?? null
     },
     settings: {
-      get: () => state,
-      set: async (_moduleId, _key, nextState) => {
-        state = nextState;
+      get: (_moduleId, key) => key === "groupState" ? groupState : state,
+      set: async (_moduleId, key, nextState) => {
+        if (key === "groupState") {
+          groupState = nextState;
+        }
+        else {
+          state = nextState;
+        }
         return nextState;
       }
     }
@@ -107,6 +213,9 @@ function installInventoryFixture({
     },
     get state() {
       return state;
+    },
+    get groupState() {
+      return groupState;
     },
     restore() {
       globalThis.game = previousGame;
@@ -135,6 +244,259 @@ test("getInventoryActor returns resolved dnd5e group actor when group context ex
     const actor = await service.getInventoryActor({ create: true });
 
     assert.equal(actor, groupActor);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+function createGroupContextService(groupActor, fixture) {
+  return {
+    resolveForGroup(groupActorId) {
+      assert.equal(groupActorId, groupActor.id);
+      return {
+        groupActor,
+        groupId: groupActor.id,
+        groupState: fixture.groupState.groupsById?.[groupActor.id] ?? {
+          groupActorId: groupActor.id,
+          migration: {
+            legacyInventoryMergedAt: 0,
+            legacyInventoryActorId: ""
+          }
+        }
+      };
+    },
+    getRegistry() {
+      return fixture.groupState;
+    },
+    async setRegistry(nextRegistry) {
+      await game.settings.set(MODULE_ID, "groupState", nextRegistry);
+      return nextRegistry;
+    }
+  };
+}
+
+function createLegacyMergeFixture({ user = { id: "gm", isGM: true }, groupItems = [], legacyItems = [], legacyActor = null } = {}) {
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    currency: {
+      pp: 1,
+      gp: 2,
+      sp: 3,
+      cp: 4
+    },
+    items: groupItems
+  });
+  const inventoryActor = legacyActor ?? createActor({
+    id: "legacy-party",
+    name: "Legacy",
+    type: "npc",
+    isOwner: true,
+    currency: {
+      pp: 5,
+      gp: 6,
+      sp: 7,
+      cp: 8
+    },
+    items: legacyItems
+  });
+  const fixture = installInventoryFixture({
+    actors: legacyActor === null ? [groupActor, inventoryActor] : [groupActor, legacyActor].filter(Boolean),
+    user,
+    partyState: { inventoryActorId: inventoryActor?.id ?? "" },
+    groupState: {
+      version: 1,
+      activeGroupActorId: groupActor.id,
+      groupsById: {
+        [groupActor.id]: {
+          groupActorId: groupActor.id,
+          migration: {
+            legacyInventoryMergedAt: 0,
+            legacyInventoryActorId: ""
+          }
+        }
+      }
+    }
+  });
+  const service = new InventoryService({
+    groupContextService: createGroupContextService(groupActor, fixture)
+  });
+
+  return {
+    fixture,
+    service,
+    groupActor,
+    legacyActor: inventoryActor
+  };
+}
+
+test("mergeLegacyInventoryIntoGroup sums legacy currency into group actor", async () => {
+  const { fixture, service, groupActor } = createLegacyMergeFixture();
+
+  try {
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.deepEqual(groupActor.system.currency, {
+      pp: 6,
+      gp: 8,
+      ep: 0,
+      sp: 10,
+      cp: 12
+    });
+    assert.equal(result.mergedCurrency.pp, 5);
+    assert.equal(result.mergedCurrency.gp, 6);
+    assert.equal(result.mergedCurrency.sp, 7);
+    assert.equal(result.mergedCurrency.cp, 8);
+    assert.equal(result.noop, false);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup merges matching sourceType and sourceId quantities", async () => {
+  const flags = { [MODULE_ID]: { sourceType: "gear", sourceId: "rope" } };
+  const groupItem = createItem({ id: "group-rope", name: "Rope", type: "loot", quantity: 2, flags });
+  const legacyItem = createItem({ id: "legacy-rope", name: "Rope", type: "loot", quantity: 3, flags });
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    groupItems: [groupItem],
+    legacyItems: [legacyItem]
+  });
+
+  try {
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.equal(groupItem.system.quantity, 5);
+    assert.equal(groupActor.items.contents.length, 1);
+    assert.equal(result.mergedItems, 1);
+    assert.equal(result.createdItems, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup merges custom items by normalized name and type", async () => {
+  const groupItem = createItem({ id: "group-gem", name: "  Blue   Gem ", type: "loot", quantity: 4 });
+  const legacyItem = createItem({ id: "legacy-gem", name: "blue gem", type: "loot", quantity: 2 });
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    groupItems: [groupItem],
+    legacyItems: [legacyItem]
+  });
+
+  try {
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.equal(groupItem.system.quantity, 6);
+    assert.equal(groupActor.items.contents.length, 1);
+    assert.equal(result.mergedItems, 1);
+    assert.equal(result.createdItems, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup creates sanitized new embedded items", async () => {
+  const legacyItem = createItem({
+    id: "legacy-new",
+    name: "New Relic",
+    type: "loot",
+    quantity: 9,
+    extra: {
+      folder: "folder-id",
+      sort: 100,
+      ownership: { default: 3 },
+      _stats: { systemId: "dnd5e" }
+    }
+  });
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    legacyItems: [legacyItem]
+  });
+
+  try {
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+    const created = groupActor.items.contents[0].toObject();
+
+    assert.equal(result.createdItems, 1);
+    assert.equal(created.name, "New Relic");
+    assert.equal(created.system.quantity, 9);
+    assert.equal(created._id, "created-1");
+    assert.equal(created.folder, undefined);
+    assert.equal(created.sort, undefined);
+    assert.equal(created.ownership, undefined);
+    assert.equal(created._stats, undefined);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup is idempotent for the same group and legacy actor pair", async () => {
+  const legacyItem = createItem({ id: "legacy-item", name: "Torch", type: "loot", quantity: 3 });
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    legacyItems: [legacyItem]
+  });
+
+  try {
+    const firstResult = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+    const secondResult = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.equal(firstResult.noop, false);
+    assert.equal(secondResult.noop, true);
+    assert.deepEqual(groupActor.system.currency, {
+      pp: 6,
+      gp: 8,
+      ep: 0,
+      sp: 10,
+      cp: 12
+    });
+    assert.equal(groupActor.items.contents.length, 1);
+    assert.equal(groupActor.items.contents[0].system.quantity, 3);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup rejects non-GM users", async () => {
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    user: { id: "player-1", isGM: false }
+  });
+
+  try {
+    await assert.rejects(
+      () => service.mergeLegacyInventoryIntoGroup(groupActor.id),
+      /only by a GM/u
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("mergeLegacyInventoryIntoGroup no-ops when no legacy actor exists", async () => {
+  const { fixture, service, groupActor } = createLegacyMergeFixture({
+    legacyActor: null
+  });
+  fixture.state.inventoryActorId = "missing-legacy";
+
+  try {
+    const result = await service.mergeLegacyInventoryIntoGroup(groupActor.id);
+
+    assert.equal(result.noop, true);
+    assert.equal(result.legacyInventoryActorId, "missing-legacy");
+    assert.deepEqual(groupActor.system.currency, {
+      pp: 1,
+      gp: 2,
+      ep: 0,
+      sp: 3,
+      cp: 4
+    });
+    assert.equal(groupActor.items.contents.length, 0);
   }
   finally {
     fixture.restore();

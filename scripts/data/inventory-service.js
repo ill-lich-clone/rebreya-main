@@ -391,6 +391,28 @@ function sanitizeEmbeddedItemData(itemData) {
   return source;
 }
 
+function getLegacyInventoryMergeKey(itemData) {
+  const flags = foundry.utils.deepClone(itemData?.flags?.[MODULE_ID] ?? {});
+  if (flags.sourceType && flags.sourceId) {
+    return `source:${flags.sourceType}:${flags.sourceId}`;
+  }
+
+  return `custom:${normalizeText(itemData?.name)}:${itemData?.type ?? ""}`;
+}
+
+function buildInventoryMergeIndex(actor) {
+  const index = new Map();
+  for (const item of actor?.items?.contents ?? []) {
+    const itemData = item.toObject?.() ?? item;
+    const key = getLegacyInventoryMergeKey(itemData);
+    if (key && !index.has(key)) {
+      index.set(key, item);
+    }
+  }
+
+  return index;
+}
+
 function buildDefaultPartyState() {
   return {
     version: 1,
@@ -844,6 +866,116 @@ export class InventoryService {
     });
 
     return actor;
+  }
+
+  async mergeLegacyInventoryIntoGroup(groupActorId) {
+    if (!game.user?.isGM) {
+      throw new Error("Legacy inventory merge can be run only by a GM.");
+    }
+
+    const context = this.moduleApi.groupContextService?.resolveForGroup?.(groupActorId);
+    const groupActor = context?.groupActor ?? null;
+    if (!groupActor || groupActor.type !== "group") {
+      throw new Error("Target actor must be a dnd5e group.");
+    }
+
+    const state = this.#getState();
+    const legacyInventoryActorId = state.inventoryActorId;
+    const baseResult = {
+      mergedItems: 0,
+      createdItems: 0,
+      mergedCurrency: {
+        pp: 0,
+        gp: 0,
+        sp: 0,
+        cp: 0
+      },
+      legacyInventoryActorId,
+      groupActorId: groupActor.id,
+      noop: true
+    };
+
+    const legacyActor = legacyInventoryActorId ? game.actors.get(legacyInventoryActorId) ?? null : null;
+    if (!legacyActor || legacyActor.id === groupActor.id) {
+      return baseResult;
+    }
+
+    const migrationState = context.groupState?.migration ?? {};
+    if (migrationState.legacyInventoryActorId === legacyActor.id && Number(migrationState.legacyInventoryMergedAt) > 0) {
+      return baseResult;
+    }
+
+    const sourceCurrency = buildCurrencySnapshot(legacyActor);
+    const targetCurrency = buildCurrencySnapshot(groupActor);
+    const mergedCurrency = {
+      pp: Math.max(0, Math.floor(targetCurrency.pp + sourceCurrency.pp)),
+      gp: Math.max(0, Math.floor(targetCurrency.gp + sourceCurrency.gp)),
+      sp: Math.max(0, Math.floor(targetCurrency.sp + sourceCurrency.sp)),
+      cp: Math.max(0, Math.floor(targetCurrency.cp + sourceCurrency.cp))
+    };
+
+    await groupActor.update(buildCurrencyUpdatePatch(mergedCurrency));
+
+    const mergeIndex = buildInventoryMergeIndex(groupActor);
+    let mergedItems = 0;
+    let createdItems = 0;
+
+    for (const sourceItem of legacyActor.items?.contents ?? []) {
+      const sourceItemData = sanitizeEmbeddedItemData(sourceItem.toObject?.() ?? sourceItem);
+      const quantity = roundNumber(getRawQuantity(sourceItemData), 2);
+      if (quantity <= 0) {
+        continue;
+      }
+
+      const key = getLegacyInventoryMergeKey(sourceItemData);
+      const targetItem = mergeIndex.get(key) ?? null;
+      if (targetItem) {
+        const nextQuantity = roundNumber(getRawQuantity(targetItem.toObject?.() ?? targetItem) + quantity, 2);
+        await targetItem.update({
+          "system.quantity": nextQuantity
+        });
+        mergedItems += 1;
+        continue;
+      }
+
+      foundry.utils.setProperty(sourceItemData, "system.quantity", quantity);
+      const [created] = await groupActor.createEmbeddedDocuments("Item", [sourceItemData], { renderSheet: false });
+      if (created) {
+        mergeIndex.set(key, created);
+        createdItems += 1;
+      }
+    }
+
+    const mergedAt = Date.now();
+    const registry = this.moduleApi.groupContextService?.getRegistry?.();
+    if (registry) {
+      const groupState = registry.groupsById?.[groupActor.id]
+        ? foundry.utils.deepClone(registry.groupsById[groupActor.id])
+        : foundry.utils.deepClone(context.groupState ?? {});
+      groupState.groupActorId = groupActor.id;
+      groupState.migration = {
+        ...(groupState.migration ?? {}),
+        legacyInventoryMergedAt: mergedAt,
+        legacyInventoryActorId: legacyActor.id
+      };
+      registry.groupsById = registry.groupsById ?? {};
+      registry.groupsById[groupActor.id] = groupState;
+      await this.moduleApi.groupContextService.setRegistry?.(registry);
+    }
+
+    await legacyActor.setFlag?.(MODULE_ID, "legacyInventoryMergedIntoGroup", {
+      groupActorId: groupActor.id,
+      mergedAt
+    });
+
+    return {
+      mergedItems,
+      createdItems,
+      mergedCurrency: sourceCurrency,
+      legacyInventoryActorId: legacyActor.id,
+      groupActorId: groupActor.id,
+      noop: false
+    };
   }
 
   async openInventoryActorSheet() {
