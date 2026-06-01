@@ -128,4 +128,3 @@ git add README.md
 git commit -m "docs: document character downtime tab"
 git push origin lich_branch
 ```
-
