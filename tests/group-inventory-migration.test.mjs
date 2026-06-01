@@ -872,6 +872,30 @@ test("getInventoryActor falls back to legacy actor creation for known no-group c
   }
 });
 
+test("getInventorySnapshot with createActor false reports player no-group context without legacy actor", async () => {
+  const fixture = installInventoryFixture({
+    user: { id: "player-1", isGM: false }
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => {
+        throw new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP);
+      }
+    }
+  });
+
+  try {
+    const snapshot = await service.getInventorySnapshot({ createActor: false });
+
+    assert.equal(snapshot.groupContextError, GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP);
+    assert.equal(snapshot.hasActor, false);
+    assert.equal(fixture.actorCreateCalls, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("getInventoryActor rethrows unexpected group resolver errors without creating legacy actor", async () => {
   const fixture = installInventoryFixture();
   const unexpectedError = new Error("resolver crashed");
@@ -886,6 +910,29 @@ test("getInventoryActor rethrows unexpected group resolver errors without creati
   try {
     await assert.rejects(
       () => service.getInventoryActor({ create: true }),
+      (error) => error === unexpectedError
+    );
+    assert.equal(fixture.actorCreateCalls, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("getInventorySnapshot rethrows unexpected group resolver errors", async () => {
+  const fixture = installInventoryFixture();
+  const unexpectedError = new Error("resolver crashed");
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => {
+        throw unexpectedError;
+      }
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () => service.getInventorySnapshot({ createActor: false }),
       (error) => error === unexpectedError
     );
     assert.equal(fixture.actorCreateCalls, 0);

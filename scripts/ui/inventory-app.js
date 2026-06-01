@@ -595,6 +595,28 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         typeFilter: this.typeFilter,
         createActor: true
       });
+      let group = null;
+      let groupContextError = String(inventorySnapshot.groupContextError ?? "").trim();
+      try {
+        const groupContext = this.moduleApi.getGroupContext?.() ?? null;
+        const groupActor = groupContext?.groupActor ?? null;
+        if (groupActor) {
+          group = {
+            id: groupContext.groupId ?? groupActor.id ?? "",
+            name: groupActor.name ?? "Группа",
+            memberCount: toInteger(
+              groupContext.memberActorIds?.length
+                ?? groupContext.members?.length
+                ?? groupActor.system?.members?.length,
+              0
+            )
+          };
+          groupContextError = "";
+        }
+      }
+      catch (error) {
+        groupContextError = groupContextError || error.message || "Не удалось определить группу Rebreya.";
+      }
       const partySnapshot = await this.moduleApi.getPartySnapshot();
       const craftSnapshot = await this.moduleApi.getCraftSnapshot({
         search: this.craftSearch,
@@ -749,6 +771,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         typeFilter: this.typeFilter,
         craftSearch: this.craftSearch,
         craftCrafterActorId: this.craftCrafterActorId,
+        group,
+        groupContextError,
         inventory: inventorySnapshot.items,
         inventoryCount: inventorySnapshot.items.length,
         emptyInventory: inventorySnapshot.emptyInventory,

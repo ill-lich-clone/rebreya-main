@@ -554,6 +554,7 @@ function buildSupplyItemData(resourceKey, quantity) {
 export class InventoryService {
   constructor(moduleApi) {
     this.moduleApi = moduleApi;
+    this.lastGroupContextError = "";
   }
 
   #normalizeMemberState(member, fallbackRole = "member") {
@@ -597,6 +598,7 @@ export class InventoryService {
   }
 
   #getGroupInventoryActor() {
+    this.lastGroupContextError = "";
     try {
       const context = this.moduleApi.groupContextService?.resolveForCurrentUser?.();
       const groupActor = context?.groupActor ?? null;
@@ -607,6 +609,7 @@ export class InventoryService {
         throw error;
       }
 
+      this.lastGroupContextError = error.message;
       return null;
     }
   }
@@ -903,6 +906,10 @@ export class InventoryService {
     const groupActor = this.#getGroupInventoryActor();
     if (groupActor) {
       return groupActor;
+    }
+
+    if (!create && this.lastGroupContextError) {
+      return null;
     }
 
     const state = this.#getState();
@@ -1475,6 +1482,7 @@ export class InventoryService {
         items: [],
         allItems: [],
         emptyInventory: true,
+        groupContextError: this.lastGroupContextError || "",
         summary: {
           distinctCount: 0,
           totalQuantity: 0,

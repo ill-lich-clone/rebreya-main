@@ -28,6 +28,18 @@
       </div>
     </header>
 
+    {{#if group}}
+      <p class="rm-inline-status rm-inline-status--info">
+        <span>Группа: {{group.name}} • {{group.memberCount}} уч.</span>
+      </p>
+    {{/if}}
+
+    {{#if groupContextError}}
+      <p class="rm-inline-status rm-inline-status--warning">
+        <span>{{groupContextError}}</span>
+      </p>
+    {{/if}}
+
     <section class="rm-compact-pill-strip rm-compact-pill-strip--primary">
       <article class="rm-compact-pill rm-compact-pill--focus {{party.dashboard.weight.className}}">
         <span>Груз</span>
