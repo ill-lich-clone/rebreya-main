@@ -1,6 +1,17 @@
 ﻿import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { refreshEconomyLauncher } from "./hooks.js";
 
+const SOCKET_CHANNEL = `module.${MODULE_ID}`;
+export const SOCKET_EVENT_SET_SETTING = "setSetting";
+
+function cloneSettingValue(value) {
+  if (globalThis.foundry?.utils?.deepClone) {
+    return globalThis.foundry.utils.deepClone(value);
+  }
+
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
 function refreshControls() {
   if (ui?.controls?.render) {
     try {
@@ -38,6 +49,23 @@ function refreshCanvasTokenEffects() {
       console.warn(`${MODULE_ID} | Failed to refresh token effects after settings change.`, error);
     }
   }
+}
+
+export async function requestSettingsUpdate(settingKey, settingData, options = {}) {
+  const setting = globalThis.game?.settings?.settings?.get?.(`${MODULE_ID}.${settingKey}`);
+  if (globalThis.game?.user?.isGM || setting?.scope === "client") {
+    await globalThis.game?.settings?.set?.(MODULE_ID, settingKey, settingData, options);
+    return settingData;
+  }
+
+  globalThis.game?.socket?.emit?.(SOCKET_CHANNEL, {
+    type: SOCKET_EVENT_SET_SETTING,
+    key: settingKey,
+    data: cloneSettingValue(settingData),
+    options: cloneSettingValue(options),
+    senderId: globalThis.game?.user?.id ?? ""
+  });
+  return settingData;
 }
 
 export function registerSettings() {

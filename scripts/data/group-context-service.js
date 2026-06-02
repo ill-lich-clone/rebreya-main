@@ -1,4 +1,5 @@
 import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../constants.js";
+import { requestSettingsUpdate } from "../settings.js";
 
 export const GROUP_CONTEXT_ERRORS = Object.freeze({
   GROUP_NOT_FOUND: "Группа Rebreya не найдена.",
@@ -250,7 +251,7 @@ export class GroupContextService {
 
   async setRegistry(value) {
     const registry = normalizeGroupRegistry(value);
-    await globalThis.game?.settings?.set?.(MODULE_ID, SETTINGS_KEYS.GROUP_STATE, registry);
+    await requestSettingsUpdate(SETTINGS_KEYS.GROUP_STATE, registry);
     return registry;
   }
 

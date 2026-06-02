@@ -50,7 +50,7 @@ function createGroup(id, members = [], { managed = true } = {}) {
   };
 }
 
-function installGameFixture({ actors = [], user = { id: "gm", isGM: true }, registry = {} } = {}) {
+function installGameFixture({ actors = [], user = { id: "gm", isGM: true }, registry = {}, socket = null } = {}) {
   const originalGame = globalThis.game;
   const settingsStore = {
     [SETTINGS_KEYS.GROUP_STATE]: registry
@@ -63,6 +63,9 @@ function installGameFixture({ actors = [], user = { id: "gm", isGM: true }, regi
       get: (actorId) => actors.find((actor) => actor.id === actorId) ?? null
     },
     settings: {
+      settings: new Map([
+        [`${MODULE_ID}.${SETTINGS_KEYS.GROUP_STATE}`, { scope: "world" }]
+      ]),
       get: (moduleId, key) => moduleId === MODULE_ID ? settingsStore[key] : undefined,
       set: async (moduleId, key, value) => {
         if (moduleId === MODULE_ID) {
@@ -70,7 +73,8 @@ function installGameFixture({ actors = [], user = { id: "gm", isGM: true }, regi
         }
         return value;
       }
-    }
+    },
+    socket
   };
 
   return {
@@ -555,6 +559,47 @@ test("GroupContextService registerGroup sets managed flag, creates state, and se
   }
   finally {
     Date.now = originalNow;
+    fixture.restore();
+  }
+});
+
+test("GroupContextService setRegistry routes world setting writes through socket for players", async () => {
+  const emitted = [];
+  const groupState = buildDefaultGroupState("group-a", { now: 111 });
+  const fixture = installGameFixture({
+    user: { id: "player-1", isGM: false },
+    registry: {},
+    socket: {
+      emit(channel, message) {
+        emitted.push([channel, message]);
+      }
+    }
+  });
+
+  try {
+    const nextRegistry = {
+      activeGroupActorId: "group-a",
+      groupsById: {
+        "group-a": groupState
+      }
+    };
+    const result = await new GroupContextService().setRegistry(nextRegistry);
+    const expectedSocketData = JSON.parse(JSON.stringify(normalizeGroupRegistry(nextRegistry)));
+
+    assert.deepEqual(result, normalizeGroupRegistry(nextRegistry));
+    assert.deepEqual(fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE], {});
+    assert.deepEqual(emitted, [[
+      `module.${MODULE_ID}`,
+      {
+        type: "setSetting",
+        key: SETTINGS_KEYS.GROUP_STATE,
+        data: expectedSocketData,
+        options: {},
+        senderId: "player-1"
+      }
+    ]]);
+  }
+  finally {
     fixture.restore();
   }
 });

@@ -140,19 +140,8 @@ function getCurrentUser() {
   return globalThis.game?.user ?? null;
 }
 
-function getUserById(userId) {
-  const safeUserId = cleanId(userId);
-  if (!safeUserId) {
-    return null;
-  }
-
-  return globalThis.game?.users?.get?.(safeUserId) ?? {
-    id: safeUserId,
-    isGM: false
-  };
-}
-
-function isActorOwnedByUser(actor, user, { allowActorIsOwner = false } = {}) {
+function isActorOwnedByCurrentUser(actor) {
+  const user = getCurrentUser();
   if (!user || !actor || actor.type !== "character") {
     return false;
   }
@@ -165,20 +154,12 @@ function isActorOwnedByUser(actor, user, { allowActorIsOwner = false } = {}) {
     return actor.testUserPermission(user, "OWNER") === true;
   }
 
-  if (allowActorIsOwner && actor.isOwner === true) {
+  if (actor.isOwner === true) {
     return true;
   }
 
   const ownership = actor.ownership ?? actor._source?.ownership ?? {};
   return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
-}
-
-function isActorOwnedByCurrentUser(actor) {
-  return isActorOwnedByUser(actor, getCurrentUser(), { allowActorIsOwner: true });
-}
-
-function isActorOwnedBySubmitter(actor, userId) {
-  return isActorOwnedByUser(actor, getUserById(userId));
 }
 
 function buildAuditFields(existing = {}) {
@@ -382,19 +363,15 @@ export class DowntimeService {
     title = "",
     description = "",
     weeks = 1
-  } = {}, {
-    groupActorId = "",
-    submitterUserId = ""
   } = {}) {
-    const context = this.#resolveContext(groupActorId);
+    const context = this.#resolveContext();
     const actor = this.#requireCurrentMemberActor(context, actorId);
-    const safeSubmitterUserId = cleanId(submitterUserId);
-    this.#assertCanSubmitForActor(actor, context, { submitterUserId: safeSubmitterUserId });
+    this.#assertCanSubmitForActor(actor, context);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
     const resolvedActionId = ACTION_BY_ID.has(cleanId(actionId)) ? cleanId(actionId) : "unique";
     const action = ACTION_BY_ID.get(resolvedActionId) ?? ACTION_BY_ID.get("unique");
     const safeTitle = cleanString(title) || action.label;
-    const userId = safeSubmitterUserId || cleanId(getCurrentUser()?.id);
+    const userId = cleanId(getCurrentUser()?.id);
 
     return this.#writeGroupState(context, (state) => {
       const balance = normalizeBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance());
@@ -503,11 +480,8 @@ export class DowntimeService {
     });
   }
 
-  #resolveContext(groupActorId = "") {
-    const safeGroupActorId = cleanId(groupActorId);
-    const context = safeGroupActorId && typeof this.moduleApi?.groupContextService?.resolveForGroup === "function"
-      ? this.moduleApi.groupContextService.resolveForGroup(safeGroupActorId)
-      : this.moduleApi?.groupContextService?.resolveForCurrentUser?.();
+  #resolveContext() {
+    const context = this.moduleApi?.groupContextService?.resolveForCurrentUser?.();
     if (!context?.groupId) {
       throw new Error("Downtime requires an active group context.");
     }
@@ -529,12 +503,7 @@ export class DowntimeService {
     }
   }
 
-  #canSubmitForActor(actor, context, { submitterUserId = "" } = {}) {
-    const safeSubmitterUserId = cleanId(submitterUserId);
-    if (safeSubmitterUserId) {
-      return this.#getMemberActorIds(context).has(actor?.id) && isActorOwnedBySubmitter(actor, safeSubmitterUserId);
-    }
-
+  #canSubmitForActor(actor, context) {
     if (this.#canManage(context)) {
       return true;
     }
@@ -542,8 +511,8 @@ export class DowntimeService {
     return this.#getMemberActorIds(context).has(actor?.id) && isActorOwnedByCurrentUser(actor);
   }
 
-  #assertCanSubmitForActor(actor, context, options = {}) {
-    if (!this.#canSubmitForActor(actor, context, options)) {
+  #assertCanSubmitForActor(actor, context) {
+    if (!this.#canSubmitForActor(actor, context)) {
       throw new Error("Players can act only for an owned character.");
     }
   }

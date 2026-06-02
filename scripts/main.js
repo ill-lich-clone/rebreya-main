@@ -36,7 +36,7 @@ import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.j
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration } from "./integrations/smalltime-compat.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
-import { registerSettings } from "./settings.js";
+import { SOCKET_EVENT_SET_SETTING, registerSettings } from "./settings.js";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js";
 import { bringAppToFront, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 
@@ -45,7 +45,6 @@ const SOCKET_EVENT_LOOTGEN_SHOW = "lootgen-show-result";
 const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
 const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
 const SOCKET_EVENT_TRADER_AUDIT = "trader-audit";
-const SOCKET_EVENT_DOWNTIME_CREATE_REQUEST = "downtime-create-request";
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
 
 function ensureModuleStylesheet() {
@@ -312,14 +311,9 @@ export class RebreyaMainModule {
       return;
     }
 
-    if (message.type === SOCKET_EVENT_DOWNTIME_CREATE_REQUEST) {
-      const senderId = String(message.senderId ?? "").trim();
-      const groupActorId = String(message.payload?.groupActorId ?? "").trim();
-      if (game.user?.isGM && senderId && groupActorId) {
-        await this.downtimeService.createRequest(message.payload ?? {}, {
-          groupActorId,
-          submitterUserId: senderId
-        });
+    if (message.type === SOCKET_EVENT_SET_SETTING) {
+      if (game.user?.isGM) {
+        await game.settings.set(MODULE_ID, String(message.key ?? ""), message.data, message.options ?? {});
         await this.refreshOpenApps();
       }
       return;
@@ -1061,20 +1055,6 @@ export class RebreyaMainModule {
   }
 
   async createDowntimeRequest(payload = {}) {
-    if (!globalThis.game?.user?.isGM) {
-      const groupContext = this.groupContextService.resolveForCurrentUser();
-      const socketPayload = {
-        ...payload,
-        groupActorId: groupContext.groupId
-      };
-      globalThis.game?.socket?.emit?.(SOCKET_CHANNEL, {
-        type: SOCKET_EVENT_DOWNTIME_CREATE_REQUEST,
-        payload: foundry.utils.deepClone(socketPayload),
-        senderId: globalThis.game?.user?.id ?? ""
-      });
-      return { queued: true };
-    }
-
     const result = await this.downtimeService.createRequest(payload);
     await this.refreshOpenApps();
     return result;
