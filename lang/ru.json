@@ -13,6 +13,8 @@
   "REBREYA_MAIN.Settings.CustomDataPath.Hint": "Папка должна быть доступна Foundry по HTTP и содержать goods.json, regions.json, cities.json, reference.json, materials.json и gear.json.",
   "REBREYA_MAIN.Settings.DisplayPrecision.Name": "Точность отображения",
   "REBREYA_MAIN.Settings.DisplayPrecision.Hint": "Количество знаков после запятой в интерфейсе экономики.",
+  "REBREYA_MAIN.Settings.RadialStatusEffects.Name": "Радиальные эффекты статусов",
+  "REBREYA_MAIN.Settings.RadialStatusEffects.Hint": "Показывать активные эффекты токена по окружности вокруг него. Снятие эффектов остается штатным.",
   "REBREYA_MAIN.Settings.GlobalEventsEnabled.Name": "Подсистема глобальных ивентов",
   "REBREYA_MAIN.Settings.GlobalEventsEnabled.Hint": "Включает или выключает применение глобальных экономических событий в рантайме.",
   "REBREYA_MAIN.Settings.GlobalEventsNotifications.Name": "Уведомления об ивентах",

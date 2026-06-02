@@ -26,6 +26,20 @@ function requestGlobalEventsRebuild() {
   });
 }
 
+function refreshCanvasTokenEffects() {
+  const tokens = Array.from(globalThis.canvas?.tokens?.placeables ?? []);
+  for (const token of tokens) {
+    try {
+      token.renderFlags?.set?.({ refreshEffects: true, refreshState: true });
+      token._refreshState?.();
+      token._refreshEffects?.();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to refresh token effects after settings change.`, error);
+    }
+  }
+}
+
 export function registerSettings() {
   game.settings.register(MODULE_ID, SETTINGS_KEYS.SHOW_BUTTON, {
     name: "REBREYA_MAIN.Settings.ShowButton.Name",
@@ -84,6 +98,16 @@ export function registerSettings() {
       step: 1
     },
     onChange: () => game.rebreyaMain?.refreshOpenApps?.()
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.RADIAL_STATUS_EFFECTS, {
+    name: "REBREYA_MAIN.Settings.RadialStatusEffects.Name",
+    hint: "REBREYA_MAIN.Settings.RadialStatusEffects.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: refreshCanvasTokenEffects
   });
 
   game.settings.register(MODULE_ID, SETTINGS_KEYS.GLOBAL_EVENTS_ENABLED, {

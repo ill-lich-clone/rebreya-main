@@ -21,6 +21,7 @@ import { CalendarService } from "./data/calendar-service.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js";
 import { CombatAttackService } from "./combat/attack-service.js";
+import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js";
 import { PaladinAutomationService } from "./combat/paladin-automation-service.js";
@@ -1839,6 +1840,13 @@ Hooks.once("init", () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register combat status config.`, error);
+  }
+
+  try {
+    registerRadialStatusEffects();
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register radial status effects.`, error);
   }
 
   try {

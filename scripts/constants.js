@@ -77,6 +77,7 @@ export const SETTINGS_KEYS = {
   DATA_SOURCE_MODE: "dataSourceMode",
   CUSTOM_DATA_PATH: "customDataPath",
   DISPLAY_PRECISION: "displayPrecision",
+  RADIAL_STATUS_EFFECTS: "radialStatusEffects",
   GLOBAL_EVENTS_ENABLED: "globalEventsEnabled",
   GLOBAL_EVENTS_NOTIFICATIONS: "globalEventsNotifications",
   GLOBAL_EVENTS_AUTO_RECALC: "globalEventsAutoRecalc",
