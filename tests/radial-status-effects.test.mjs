@@ -66,6 +66,13 @@ function createSprite() {
   return sprite;
 }
 
+function assertClose(actual, expected, delta = 0.001) {
+  assert.ok(
+    Math.abs(actual - expected) < delta,
+    `Expected ${actual} to be within ${delta} of ${expected}`
+  );
+}
+
 test("radial status effects setting is separate and disabled by default", () => {
   const previousGame = globalThis.game;
   const registered = [];
@@ -96,7 +103,7 @@ test("radial status effects setting is separate and disabled by default", () => 
   }
 });
 
-test("radial layout places status icons around the token center", () => {
+test("radial layout places status icons farther away and fills the full ring", () => {
   const layouts = buildRadialStatusEffectLayouts({
     tokenWidth: 1,
     tokenHeight: 1,
@@ -111,10 +118,17 @@ test("radial layout places status icons around the token center", () => {
 
   for (const layout of layouts) {
     const distance = Math.hypot(layout.x - center.x, layout.y - center.y);
-    assert.ok(Math.abs(distance - 62.5) < 0.001);
+    assertClose(distance, 68.75);
   }
 
-  assert.ok(layouts.some((layout) => layout.x < 0 || layout.x > 100 || layout.y < 0 || layout.y > 100));
+  assertClose(layouts[0].x, 50);
+  assertClose(layouts[0].y, -18.75);
+  assertClose(layouts[1].x, 118.75);
+  assertClose(layouts[1].y, 50);
+  assertClose(layouts[2].x, 50);
+  assertClose(layouts[2].y, 118.75);
+  assertClose(layouts[3].x, -18.75);
+  assertClose(layouts[3].y, 50);
 });
 
 test("radial icon capacity follows token size bands", () => {
@@ -122,6 +136,24 @@ test("radial icon capacity follows token size bands", () => {
   assert.equal(getRadialStatusMaxIcons(1), 16);
   assert.equal(getRadialStatusMaxIcons(2), 28);
   assert.equal(getRadialStatusMaxIcons(3), 40);
+});
+
+test("radial layout keeps icon size until capacity is exceeded", () => {
+  const fullCapacity = buildRadialStatusEffectLayouts({
+    tokenWidth: 1,
+    tokenHeight: 1,
+    gridSize: 100,
+    count: 16
+  });
+  const overCapacity = buildRadialStatusEffectLayouts({
+    tokenWidth: 1,
+    tokenHeight: 1,
+    gridSize: 100,
+    count: 20
+  });
+
+  assert.equal(fullCapacity[0].slotSize, 28);
+  assertClose(overCapacity[0].slotSize, 22.4);
 });
 
 test("applying radial effects moves only status sprites and does not make them clickable", () => {
@@ -150,8 +182,8 @@ test("applying radial effects moves only status sprites and does not make them c
   assert.equal(bg.circles.length, 4);
   assert.equal(first.anchorValue, 0.5);
   assert.equal(second.anchorValue, 0.5);
-  assert.ok(Math.abs(Math.hypot(first.position.x - 50, first.position.y - 50) - 62.5) < 0.001);
-  assert.ok(Math.abs(Math.hypot(second.position.x - 50, second.position.y - 50) - 62.5) < 0.001);
+  assertClose(Math.hypot(first.position.x - 50, first.position.y - 50), 68.75);
+  assertClose(Math.hypot(second.position.x - 50, second.position.y - 50), 68.75);
   assert.deepEqual(overlay.position, { x: 50, y: 50 });
   assert.equal(first.eventMode, undefined);
   assert.equal(first.cursor, undefined);

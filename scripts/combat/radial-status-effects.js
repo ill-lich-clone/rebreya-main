@@ -2,6 +2,8 @@ import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
 
 const DEFAULT_GRID_SIZE = 100;
 const BASE_ICON_SIZE = 20;
+const RADIAL_DISTANCE_MULTIPLIER = 1.1;
+const MIN_ICON_COMPRESSION_SCALE = 0.55;
 const REFRESH_EFFECTS_WRAPPER = Symbol.for(`${MODULE_ID}.radialStatusEffects.refreshEffectsWrapper`);
 const REFRESH_STATE_WRAPPER = Symbol.for(`${MODULE_ID}.radialStatusEffects.refreshStateWrapper`);
 
@@ -46,19 +48,23 @@ export function buildRadialStatusEffectLayouts({
   const tokenExtent = Math.max(safeTokenWidth, safeTokenHeight);
   const safeCount = Math.max(0, Math.floor(Number(count) || 0));
   const gridScale = safeGridSize / DEFAULT_GRID_SIZE;
-  const slotSize = BASE_ICON_SIZE * getRadialStatusIconScale(tokenSize) * gridScale;
-  const maxSlots = Math.max(safeCount, getRadialStatusMaxIcons(safeTokenWidth));
-  const radius = getRadialStatusOffset(tokenSize) * tokenExtent * safeGridSize / 2;
+  const capacity = getRadialStatusMaxIcons(safeTokenWidth);
+  const compressionScale = safeCount > capacity
+    ? Math.max(MIN_ICON_COMPRESSION_SCALE, capacity / safeCount)
+    : 1;
+  const slotSize = BASE_ICON_SIZE * getRadialStatusIconScale(tokenSize) * gridScale * compressionScale;
+  const slots = Math.max(safeCount, 1);
+  const radius = getRadialStatusOffset(tokenSize) * tokenExtent * safeGridSize / 2 * RADIAL_DISTANCE_MULTIPLIER;
   const centerX = safeTokenWidth * safeGridSize / 2;
   const centerY = safeTokenHeight * safeGridSize / 2;
-  const initialRotation = (0.5 + ((1 / maxSlots) * Math.PI)) * Math.PI;
+  const initialRotation = -Math.PI / 2;
 
   return Array.from({ length: safeCount }, (_entry, index) => {
-    const angle = ((index / maxSlots) * 2 * Math.PI) + initialRotation;
+    const angle = ((index / slots) * 2 * Math.PI) + initialRotation;
     return {
       index,
       x: centerX + (radius * Math.cos(angle)),
-      y: centerY - (radius * Math.sin(angle)),
+      y: centerY + (radius * Math.sin(angle)),
       slotSize,
       backgroundRadius: (slotSize / 2) + (slotSize * 0.1)
     };
