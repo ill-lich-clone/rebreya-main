@@ -257,6 +257,7 @@ export class DowntimeService {
     const safeWeeks = this.#requirePositiveWeeks(weeks);
     const memberActorIds = this.#getMemberActorIds(context);
     const requestedActorIds = asArray(actorIds).map((actorId) => cleanId(actorId)).filter(Boolean);
+    const hasExplicitTargets = requestedActorIds.length > 0;
     const targetActorIds = requestedActorIds.length
       ? requestedActorIds.filter((actorId) => memberActorIds.has(actorId))
       : [...memberActorIds];
@@ -266,36 +267,58 @@ export class DowntimeService {
     }
 
     return this.#writeGroupState(context, (state) => {
+      const revocations = [];
+      const skippedActorIds = [];
+
       for (const actorId of targetActorIds) {
         const balance = normalizeBalance(state.balancesByActorId[actorId] ?? buildDefaultBalance());
-        if (balance.availableWeeks < safeWeeks) {
+        if (hasExplicitTargets && balance.availableWeeks < safeWeeks) {
           throw new Error("Not enough available downtime weeks.");
         }
+
+        const revokedWeeks = hasExplicitTargets ? safeWeeks : Math.min(balance.availableWeeks, safeWeeks);
+        if (revokedWeeks <= 0) {
+          skippedActorIds.push(actorId);
+          continue;
+        }
+
+        revocations.push({
+          actorId,
+          weeks: revokedWeeks
+        });
       }
 
-      for (const actorId of targetActorIds) {
-        const balance = normalizeBalance(state.balancesByActorId[actorId] ?? buildDefaultBalance());
-        balance.availableWeeks -= safeWeeks;
+      for (const revocation of revocations) {
+        const balance = normalizeBalance(state.balancesByActorId[revocation.actorId] ?? buildDefaultBalance());
+        balance.availableWeeks -= revocation.weeks;
         balance.totalGrantedWeeks = Math.max(
           balance.availableWeeks + balance.reservedWeeks + balance.spentWeeks,
-          balance.totalGrantedWeeks - safeWeeks
+          balance.totalGrantedWeeks - revocation.weeks
         );
-        state.balancesByActorId[actorId] = balance;
+        state.balancesByActorId[revocation.actorId] = balance;
       }
 
-      state.history.push({
-        id: `downtime-history-${Date.now()}`,
-        type: "revoke",
-        actorIds: [...targetActorIds],
-        weeks: safeWeeks,
-        reason: cleanString(reason),
-        userId: cleanId(getCurrentUser()?.id),
-        createdAt: Date.now()
-      });
+      const revokedActorIds = revocations.map((revocation) => revocation.actorId);
+      const totalRevokedWeeks = revocations.reduce((total, revocation) => total + revocation.weeks, 0);
+      if (revocations.length) {
+        state.history.push({
+          id: `downtime-history-${Date.now()}`,
+          type: "revoke",
+          actorIds: revokedActorIds,
+          skippedActorIds,
+          weeks: safeWeeks,
+          totalRevokedWeeks,
+          reason: cleanString(reason),
+          userId: cleanId(getCurrentUser()?.id),
+          createdAt: Date.now()
+        });
+      }
 
       return {
-        actorIds: [...targetActorIds],
+        actorIds: revokedActorIds,
+        skippedActorIds,
         weeks: safeWeeks,
+        totalRevokedWeeks,
         reason: cleanString(reason)
       };
     });

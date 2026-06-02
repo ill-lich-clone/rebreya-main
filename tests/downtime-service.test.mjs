@@ -228,6 +228,60 @@ test("revokeWeeks as GM removes only available weeks from current members", asyn
   }
 });
 
+test("revokeWeeks for all current members skips members without available weeks", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A" });
+  const actorB = createActor({ id: "actor-b", name: "Hero B" });
+  const actorC = createActor({ id: "actor-c", name: "Hero C" });
+  const harness = createHarness({
+    members: [actorA, actorB, actorC],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 0,
+          reservedWeeks: 0,
+          spentWeeks: 1,
+          totalGrantedWeeks: 1
+        },
+        "actor-b": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        },
+        "actor-c": {
+          availableWeeks: 3,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 3
+        }
+      }
+    }
+  });
+
+  try {
+    const result = await harness.service.revokeWeeks({ weeks: 2, reason: "cleanup" });
+    const state = getDowntimeState(harness);
+    const balances = state.balancesByActorId;
+
+    assert.deepEqual(result.actorIds, ["actor-b", "actor-c"]);
+    assert.deepEqual(result.skippedActorIds, ["actor-a"]);
+    assert.equal(result.totalRevokedWeeks, 3);
+    assert.equal(balances["actor-a"].availableWeeks, 0);
+    assert.equal(balances["actor-a"].totalGrantedWeeks, 1);
+    assert.equal(balances["actor-b"].availableWeeks, 0);
+    assert.equal(balances["actor-b"].totalGrantedWeeks, 0);
+    assert.equal(balances["actor-c"].availableWeeks, 1);
+    assert.equal(balances["actor-c"].totalGrantedWeeks, 1);
+    assert.equal(state.history[0].type, "revoke");
+    assert.deepEqual(state.history[0].actorIds, ["actor-b", "actor-c"]);
+    assert.deepEqual(state.history[0].skippedActorIds, ["actor-a"]);
+    assert.equal(state.history[0].totalRevokedWeeks, 3);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("createRequest by player reserves weeks for an owned current member", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
   const actorB = createActor({ id: "actor-b", name: "Hero B", ownerUserId: "player-2" });

@@ -1313,14 +1313,20 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.downtimeGrantWeeks = weeks;
 
     const actorIds = actorId === "all" ? [] : [actorId];
-    await this.moduleApi.revokeDowntimeWeeks({
+    const result = await this.moduleApi.revokeDowntimeWeeks({
       actorIds,
       weeks,
       reason: ""
     });
 
-    this.#setActionFeedback("success", `Забрано недель простоя: ${weeks}.`);
-    ui.notifications?.info(`Забрано недель простоя: ${weeks}.`);
+    const revokedActorCount = Array.isArray(result?.actorIds) ? result.actorIds.length : actorIds.length;
+    const skippedActorCount = Array.isArray(result?.skippedActorIds) ? result.skippedActorIds.length : 0;
+    const totalRevokedWeeks = Math.max(0, toInteger(result?.totalRevokedWeeks, weeks * Math.max(1, revokedActorCount)));
+    const message = totalRevokedWeeks > 0
+      ? `Забрано недель простоя: ${totalRevokedWeeks}${skippedActorCount ? `, без свободных недель: ${skippedActorCount}` : ""}.`
+      : "Свободных недель для списания нет.";
+    this.#setActionFeedback("success", message);
+    ui.notifications?.info(message);
     bringAppToFront(this);
   }
 

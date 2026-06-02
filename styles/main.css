@@ -4169,6 +4169,7 @@ summary:focus-visible {
 }
 
 .rm-downtime-panel {
+  container-type: inline-size;
   min-height: 520px;
   border-radius: 0;
 }
@@ -4316,6 +4317,15 @@ summary:focus-visible {
   grid-template-columns: minmax(74px, 1fr) auto auto;
   gap: 8px;
   align-items: end;
+}
+
+.rm-downtime-grant__row .rm-field {
+  min-width: 0;
+}
+
+.rm-downtime-grant__row .rm-button {
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .rm-downtime-request {
@@ -4475,6 +4485,34 @@ summary:focus-visible {
   background: rgba(0, 0, 0, 0.16);
   font-size: 12px;
   line-height: 1.3;
+}
+
+@container (max-width: 1220px) {
+  .rm-downtime-layout {
+    grid-template-columns: minmax(220px, 270px) minmax(0, 1fr);
+  }
+
+  .rm-downtime-column--inspector {
+    grid-column: 1 / -1;
+  }
+}
+
+@container (max-width: 860px) {
+  .rm-downtime-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rm-downtime-column--inspector {
+    grid-column: auto;
+  }
+
+  .rm-downtime-grant__row {
+    grid-template-columns: minmax(72px, 96px) minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .rm-downtime-grant__row .rm-button {
+    width: 100%;
+  }
 }
 
 .rm-character-downtime-tab {
