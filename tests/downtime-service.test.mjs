@@ -324,6 +324,60 @@ test("createRequest by player reserves weeks for an owned current member", async
   }
 });
 
+test("createRequest from a GM socket validates the submitting player ownership", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
+  const actorB = createActor({ id: "actor-b", name: "Hero B", ownerUserId: "player-2" });
+  const harness = createHarness({
+    user: { id: "gm", isGM: true },
+    members: [actorA, actorB],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 2,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 2
+        },
+        "actor-b": {
+          availableWeeks: 2,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 2
+        }
+      }
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: "actor-a",
+      actionId: "research",
+      weeks: 1
+    }, {
+      submitterUserId: "player-1"
+    });
+
+    assert.equal(request.actorId, "actor-a");
+    assert.equal(request.submittedByUserId, "player-1");
+    assert.equal(getDowntimeState(harness).balancesByActorId["actor-a"].availableWeeks, 1);
+
+    await assert.rejects(
+      () => harness.service.createRequest({
+        actorId: "actor-b",
+        actionId: "research",
+        weeks: 1
+      }, {
+        submitterUserId: "player-1"
+      }),
+      /Players can act only for an owned character/u
+    );
+    assert.equal(getDowntimeState(harness).balancesByActorId["actor-b"].availableWeeks, 2);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("createRequest recovers counter from existing request ids in direct service state", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A" });
   const harness = createHarness({
@@ -957,8 +1011,15 @@ test("getActionCatalog exposes the first downtime action slice", () => {
 
 test("RebreyaMainModule exposes downtime service API and refreshes after mutations", async () => {
   const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
   globalThis.Hooks = {
     once() {}
+  };
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true
+    }
   };
 
   try {
@@ -1049,5 +1110,128 @@ test("RebreyaMainModule exposes downtime service API and refreshes after mutatio
   }
   finally {
     globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule routes player downtime requests through the GM socket", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousFoundry = globalThis.foundry;
+  globalThis.Hooks = {
+    once() {}
+  };
+  globalThis.foundry = {
+    utils: {
+      deepClone(value) {
+        return value == null ? value : JSON.parse(JSON.stringify(value));
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-socket=${Date.now()}`);
+    const emitted = [];
+    globalThis.game = {
+      user: {
+        id: "player-1",
+        isGM: false
+      },
+      socket: {
+        emit(channel, message) {
+          emitted.push([channel, message]);
+        }
+      }
+    };
+    const playerApi = new RebreyaMainModule();
+    playerApi.groupContextService = {
+      resolveForCurrentUser() {
+        return {
+          groupId: "group-2"
+        };
+      }
+    };
+    const playerCalls = [];
+    playerApi.downtimeService = {
+      async createRequest(payload, options) {
+        playerCalls.push(["createRequest", payload, options]);
+        return {};
+      }
+    };
+
+    assert.deepEqual(await playerApi.createDowntimeRequest({
+      actorId: "actor-a",
+      actionId: "research",
+      weeks: 1,
+      title: "Map"
+    }), { queued: true });
+    assert.deepEqual(playerCalls, []);
+    assert.deepEqual(emitted, [[
+      "module.rebreya-main",
+      {
+        type: "downtime-create-request",
+        payload: {
+          groupActorId: "group-2",
+          actorId: "actor-a",
+          actionId: "research",
+          weeks: 1,
+          title: "Map"
+        },
+        senderId: "player-1"
+      }
+    ]]);
+
+    globalThis.game = {
+      user: {
+        id: "gm",
+        isGM: true
+      }
+    };
+    const gmApi = new RebreyaMainModule();
+    const gmCalls = [];
+    let refreshCount = 0;
+    gmApi.downtimeService = {
+      async createRequest(payload, options) {
+        gmCalls.push(["createRequest", payload, options]);
+        return { id: "downtime-1" };
+      }
+    };
+    gmApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+
+    await gmApi.handleSocketMessage(emitted[0][1]);
+
+    assert.equal(refreshCount, 1);
+    assert.deepEqual(gmCalls, [[
+      "createRequest",
+      {
+        groupActorId: "group-2",
+        actorId: "actor-a",
+        actionId: "research",
+        weeks: 1,
+        title: "Map"
+      },
+      {
+        groupActorId: "group-2",
+        submitterUserId: "player-1"
+      }
+    ]]);
+
+    await gmApi.handleSocketMessage({
+      type: "downtime-create-request",
+      payload: {
+        actorId: "actor-a",
+        weeks: 1
+      },
+      senderId: ""
+    });
+    assert.equal(refreshCount, 1);
+    assert.equal(gmCalls.length, 1);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.foundry = previousFoundry;
   }
 });
