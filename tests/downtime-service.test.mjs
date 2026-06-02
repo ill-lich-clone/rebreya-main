@@ -1068,6 +1068,7 @@ test("RebreyaMainModule applies setSetting socket messages on the GM client", as
     once() {}
   };
   const settingsStore = {};
+  const emitted = [];
   globalThis.game = {
     user: {
       id: "gm",
@@ -1077,6 +1078,11 @@ test("RebreyaMainModule applies setSetting socket messages on the GM client", as
       async set(moduleId, key, value, options) {
         settingsStore[`${moduleId}.${key}`] = { value, options };
         return value;
+      }
+    },
+    socket: {
+      emit(channel, message) {
+        emitted.push([channel, message]);
       }
     }
   };
@@ -1099,7 +1105,8 @@ test("RebreyaMainModule applies setSetting socket messages on the GM client", as
       options: {
         render: false
       },
-      senderId: "player-1"
+      senderId: "player-1",
+      requestId: "settings-test-1"
     });
 
     assert.deepEqual(settingsStore[`${MODULE_ID}.${SETTINGS_KEYS.GROUP_STATE}`], {
@@ -1112,6 +1119,20 @@ test("RebreyaMainModule applies setSetting socket messages on the GM client", as
       }
     });
     assert.equal(refreshCount, 1);
+    assert.deepEqual(emitted, [[
+      `module.${MODULE_ID}`,
+      {
+        type: "setSettingResult",
+        requestId: "settings-test-1",
+        forUserId: "player-1",
+        senderId: "gm",
+        ok: true,
+        data: {
+          version: 1,
+          groupsById: {}
+        }
+      }
+    ]]);
   }
   finally {
     globalThis.Hooks = previousHooks;

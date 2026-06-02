@@ -583,21 +583,35 @@ test("GroupContextService setRegistry routes world setting writes through socket
         "group-a": groupState
       }
     };
-    const result = await new GroupContextService().setRegistry(nextRegistry);
+    const pendingResult = new GroupContextService().setRegistry(nextRegistry);
+    await Promise.resolve();
     const expectedSocketData = JSON.parse(JSON.stringify(normalizeGroupRegistry(nextRegistry)));
 
-    assert.deepEqual(result, normalizeGroupRegistry(nextRegistry));
     assert.deepEqual(fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE], {});
     assert.deepEqual(emitted, [[
       `module.${MODULE_ID}`,
       {
         type: "setSetting",
+        requestId: emitted[0]?.[1]?.requestId,
         key: SETTINGS_KEYS.GROUP_STATE,
         data: expectedSocketData,
         options: {},
         senderId: "player-1"
       }
     ]]);
+    assert.match(emitted[0][1].requestId, /^settings-/u);
+
+    const { handleSettingsUpdateSocketResponse } = await import("../scripts/settings.js");
+    handleSettingsUpdateSocketResponse({
+      type: "setSettingResult",
+      requestId: emitted[0][1].requestId,
+      forUserId: "player-1",
+      ok: true,
+      data: expectedSocketData
+    });
+
+    const result = await pendingResult;
+    assert.deepEqual(result, normalizeGroupRegistry(nextRegistry));
   }
   finally {
     fixture.restore();

@@ -36,7 +36,12 @@ import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.j
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration } from "./integrations/smalltime-compat.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
-import { SOCKET_EVENT_SET_SETTING, registerSettings } from "./settings.js";
+import {
+  SOCKET_EVENT_SET_SETTING,
+  SOCKET_EVENT_SET_SETTING_RESULT,
+  handleSettingsUpdateSocketResponse,
+  registerSettings
+} from "./settings.js";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js";
 import { bringAppToFront, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 
@@ -46,6 +51,14 @@ const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
 const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
 const SOCKET_EVENT_TRADER_AUDIT = "trader-audit";
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
+
+function cloneSocketPayload(value) {
+  if (globalThis.foundry?.utils?.deepClone) {
+    return globalThis.foundry.utils.deepClone(value);
+  }
+
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
 
 function ensureModuleStylesheet() {
   if (!globalThis.document?.head) {
@@ -290,6 +303,11 @@ export class RebreyaMainModule {
       return;
     }
 
+    if (message.type === SOCKET_EVENT_SET_SETTING_RESULT) {
+      handleSettingsUpdateSocketResponse(message);
+      return;
+    }
+
     if (message.senderId && message.senderId === game.user?.id) {
       return;
     }
@@ -313,8 +331,37 @@ export class RebreyaMainModule {
 
     if (message.type === SOCKET_EVENT_SET_SETTING) {
       if (game.user?.isGM) {
-        await game.settings.set(MODULE_ID, String(message.key ?? ""), message.data, message.options ?? {});
-        await this.refreshOpenApps();
+        const requestId = String(message.requestId ?? "").trim();
+        const forUserId = String(message.senderId ?? "").trim();
+        try {
+          await game.settings.set(MODULE_ID, String(message.key ?? ""), message.data, message.options ?? {});
+          await this.refreshOpenApps();
+          if (requestId) {
+            game.socket?.emit?.(SOCKET_CHANNEL, {
+              type: SOCKET_EVENT_SET_SETTING_RESULT,
+              requestId,
+              forUserId,
+              senderId: game.user?.id ?? "",
+              ok: true,
+              data: cloneSocketPayload(message.data)
+            });
+          }
+        }
+        catch (error) {
+          if (requestId) {
+            game.socket?.emit?.(SOCKET_CHANNEL, {
+              type: SOCKET_EVENT_SET_SETTING_RESULT,
+              requestId,
+              forUserId,
+              senderId: game.user?.id ?? "",
+              ok: false,
+              error: error?.message ?? String(error)
+            });
+          }
+          else {
+            throw error;
+          }
+        }
       }
       return;
     }

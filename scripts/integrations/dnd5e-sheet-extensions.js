@@ -653,7 +653,6 @@ function normalizeLichWeaponValue(field, value) {
 let activeHeroDollDragData = null;
 const heroDollPanelAbortControllers = new WeakMap();
 const heroDollRootAbortControllers = new WeakMap();
-const characterDowntimePanelAbortControllers = new WeakMap();
 
 function isDnd5eWorld() {
   return game.system?.id === "dnd5e";
@@ -2353,7 +2352,38 @@ async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
   await rerenderActorSheet(app, moduleApi);
 }
 
+function bindCharacterDowntimeSubmitDelegation(root, app, moduleApi) {
+  if (root.dataset.rebreyaCharacterDowntimeSubmitDelegated === "true") {
+    return;
+  }
+
+  root.dataset.rebreyaCharacterDowntimeSubmitDelegated = "true";
+  root.addEventListener("click", async (event) => {
+    const submitButton = event.target?.closest?.("[data-action='character-downtime-submit']");
+    if (!submitButton || !root.contains(submitButton)) {
+      return;
+    }
+
+    const panel = submitButton.closest?.(".rm-character-downtime-tab")
+      ?? root.querySelector(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
+      ?? root.querySelector(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
+    if (!panel) {
+      return;
+    }
+
+    try {
+      await handleCharacterDowntimeSubmit(panel, app, moduleApi);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to submit character downtime request.`, error);
+      ui.notifications?.error(error.message || "Не удалось отправить заявку на простой.");
+    }
+  });
+}
+
 function bindCharacterDowntimePanel(root, app, moduleApi) {
+  bindCharacterDowntimeSubmitDelegation(root, app, moduleApi);
+
   const panel = root.querySelector(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
     ?? root.querySelector(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
   if (!panel) {
@@ -2372,21 +2402,6 @@ function bindCharacterDowntimePanel(root, app, moduleApi) {
 
     return;
   }
-
-  characterDowntimePanelAbortControllers.get(panel)?.abort();
-  const panelAbortController = new AbortController();
-  characterDowntimePanelAbortControllers.set(panel, panelAbortController);
-  const listenerOptions = { signal: panelAbortController.signal };
-
-  panel.querySelector("[data-action='character-downtime-submit']")?.addEventListener("click", async () => {
-    try {
-      await handleCharacterDowntimeSubmit(panel, app, moduleApi);
-    }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to submit character downtime request.`, error);
-      ui.notifications?.error(error.message || "Не удалось отправить заявку на простой.");
-    }
-  }, listenerOptions);
 }
 
 function clampItemRank(value) {
