@@ -121,14 +121,17 @@ test("radial layout places status icons farther away and fills the full ring", (
     assertClose(distance, 68.75);
   }
 
-  assertClose(layouts[0].x, 50);
-  assertClose(layouts[0].y, -18.75);
-  assertClose(layouts[1].x, 118.75);
-  assertClose(layouts[1].y, 50);
-  assertClose(layouts[2].x, 50);
-  assertClose(layouts[2].y, 118.75);
-  assertClose(layouts[3].x, -18.75);
-  assertClose(layouts[3].y, 50);
+  const radius = 68.75;
+  const firstEffectLeftShift = radius * 0.2;
+  const firstEffectVerticalOffset = Math.sqrt((radius ** 2) - (firstEffectLeftShift ** 2));
+  assertClose(layouts[0].x, center.x - firstEffectLeftShift);
+  assertClose(layouts[0].y, center.y - firstEffectVerticalOffset);
+  assertClose(layouts[1].x, center.x + firstEffectVerticalOffset);
+  assertClose(layouts[1].y, center.y - firstEffectLeftShift);
+  assertClose(layouts[2].x, center.x + firstEffectLeftShift);
+  assertClose(layouts[2].y, center.y + firstEffectVerticalOffset);
+  assertClose(layouts[3].x, center.x - firstEffectVerticalOffset);
+  assertClose(layouts[3].y, center.y + firstEffectLeftShift);
 });
 
 test("radial icon capacity follows token size bands", () => {

@@ -3,6 +3,8 @@ import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
 const DEFAULT_GRID_SIZE = 100;
 const BASE_ICON_SIZE = 20;
 const RADIAL_DISTANCE_MULTIPLIER = 1.1;
+const FIRST_EFFECT_LEFT_OFFSET_RATIO = 0.2;
+const FIRST_EFFECT_INITIAL_ROTATION = -Math.PI / 2 - Math.asin(FIRST_EFFECT_LEFT_OFFSET_RATIO);
 const MIN_ICON_COMPRESSION_SCALE = 0.55;
 const REFRESH_EFFECTS_WRAPPER = Symbol.for(`${MODULE_ID}.radialStatusEffects.refreshEffectsWrapper`);
 const REFRESH_STATE_WRAPPER = Symbol.for(`${MODULE_ID}.radialStatusEffects.refreshStateWrapper`);
@@ -57,10 +59,9 @@ export function buildRadialStatusEffectLayouts({
   const radius = getRadialStatusOffset(tokenSize) * tokenExtent * safeGridSize / 2 * RADIAL_DISTANCE_MULTIPLIER;
   const centerX = safeTokenWidth * safeGridSize / 2;
   const centerY = safeTokenHeight * safeGridSize / 2;
-  const initialRotation = -Math.PI / 2;
 
   return Array.from({ length: safeCount }, (_entry, index) => {
-    const angle = ((index / slots) * 2 * Math.PI) + initialRotation;
+    const angle = ((index / slots) * 2 * Math.PI) + FIRST_EFFECT_INITIAL_ROTATION;
     return {
       index,
       x: centerX + (radius * Math.cos(angle)),
