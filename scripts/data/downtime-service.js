@@ -251,6 +251,89 @@ export class DowntimeService {
     });
   }
 
+  async revokeWeeks({ actorIds = [], weeks = 0, reason = "" } = {}) {
+    const context = this.#resolveContext();
+    this.#assertCanManage(context);
+    const safeWeeks = this.#requirePositiveWeeks(weeks);
+    const memberActorIds = this.#getMemberActorIds(context);
+    const requestedActorIds = asArray(actorIds).map((actorId) => cleanId(actorId)).filter(Boolean);
+    const targetActorIds = requestedActorIds.length
+      ? requestedActorIds.filter((actorId) => memberActorIds.has(actorId))
+      : [...memberActorIds];
+
+    if (!targetActorIds.length) {
+      throw new Error("No current group members selected.");
+    }
+
+    return this.#writeGroupState(context, (state) => {
+      for (const actorId of targetActorIds) {
+        const balance = normalizeBalance(state.balancesByActorId[actorId] ?? buildDefaultBalance());
+        if (balance.availableWeeks < safeWeeks) {
+          throw new Error("Not enough available downtime weeks.");
+        }
+      }
+
+      for (const actorId of targetActorIds) {
+        const balance = normalizeBalance(state.balancesByActorId[actorId] ?? buildDefaultBalance());
+        balance.availableWeeks -= safeWeeks;
+        balance.totalGrantedWeeks = Math.max(
+          balance.availableWeeks + balance.reservedWeeks + balance.spentWeeks,
+          balance.totalGrantedWeeks - safeWeeks
+        );
+        state.balancesByActorId[actorId] = balance;
+      }
+
+      state.history.push({
+        id: `downtime-history-${Date.now()}`,
+        type: "revoke",
+        actorIds: [...targetActorIds],
+        weeks: safeWeeks,
+        reason: cleanString(reason),
+        userId: cleanId(getCurrentUser()?.id),
+        createdAt: Date.now()
+      });
+
+      return {
+        actorIds: [...targetActorIds],
+        weeks: safeWeeks,
+        reason: cleanString(reason)
+      };
+    });
+  }
+
+  async clearHistory() {
+    const context = this.#resolveContext();
+    this.#assertCanManage(context);
+
+    return this.#writeGroupState(context, (state) => {
+      let releasedWeeks = 0;
+      for (const request of state.requests) {
+        if (!OPEN_RESERVED_STATUSES.has(request.status)) {
+          continue;
+        }
+
+        const balance = normalizeBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
+        const requestWeeks = Math.max(1, toWeeks(request.weeks, 1));
+        const released = Math.min(balance.reservedWeeks, requestWeeks);
+        balance.reservedWeeks = Math.max(0, balance.reservedWeeks - released);
+        balance.availableWeeks += released;
+        releasedWeeks += released;
+        state.balancesByActorId[request.actorId] = balance;
+      }
+
+      const removedRequests = state.requests.length;
+      state.requests = [];
+      state.checks = [];
+      state.history = [];
+      state.counter = 0;
+
+      return {
+        removedRequests,
+        releasedWeeks
+      };
+    });
+  }
+
   async createRequest({
     actorId = "",
     actionId = "unique",

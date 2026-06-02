@@ -574,7 +574,7 @@
 
             {{#if downtime.canManage}}
               <section class="rm-downtime-grant">
-                <h4>Выдать недели</h4>
+                <h4>Коррекция недель</h4>
                 <div class="rm-field">
                   <label>Кому</label>
                   <select data-action="downtime-grant-actor" {{#if downtime.grantDisabled}}disabled{{/if}}>
@@ -598,6 +598,16 @@
                     <i class="fa-solid fa-calendar-plus"></i>
                     <span>Выдать</span>
                   </button>
+                  <button
+                    type="button"
+                    class="rm-button rm-button--small rm-button--danger"
+                    data-action="downtime-revoke"
+                    title="{{downtime.grantDisabledReason}}"
+                    {{#if downtime.grantDisabled}}disabled{{/if}}
+                  >
+                    <i class="fa-solid fa-calendar-minus"></i>
+                    <span>Забрать</span>
+                  </button>
                 </div>
               </section>
             {{/if}}
@@ -606,7 +616,20 @@
           <section class="rm-downtime-column rm-downtime-column--queue">
             <header class="rm-downtime-column__header">
               <h4>Очередь заявок</h4>
-              <span class="rm-muted">{{rmNum downtime.requests.length precision=0}} активн.</span>
+              <div class="rm-downtime-column__actions">
+                <span class="rm-muted">{{rmNum downtime.requests.length precision=0}} активн.</span>
+                {{#if downtime.canManage}}
+                  <button
+                    type="button"
+                    class="rm-button rm-button--small rm-button--danger"
+                    data-action="downtime-clear-history"
+                    {{#if downtime.emptyRequests}}disabled{{/if}}
+                  >
+                    <i class="fa-solid fa-trash-can"></i>
+                    <span>Очистить</span>
+                  </button>
+                {{/if}}
+              </div>
             </header>
 
             {{#if downtime.emptyRequests}}

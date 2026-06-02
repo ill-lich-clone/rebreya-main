@@ -1032,6 +1032,18 @@ export class RebreyaMainModule {
     return result;
   }
 
+  async revokeDowntimeWeeks(payload = {}) {
+    const result = await this.downtimeService.revokeWeeks(payload);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async clearDowntimeHistory() {
+    const result = await this.downtimeService.clearHistory();
+    await this.refreshOpenApps();
+    return result;
+  }
+
   async createDowntimeRequest(payload = {}) {
     const result = await this.downtimeService.createRequest(payload);
     await this.refreshOpenApps();

@@ -182,6 +182,52 @@ test("grantWeeks as GM grants all current native members by default", async () =
   }
 });
 
+test("revokeWeeks as GM removes only available weeks from current members", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A" });
+  const actorB = createActor({ id: "actor-b", name: "Hero B" });
+  const harness = createHarness({
+    members: [actorA, actorB],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 3,
+          reservedWeeks: 1,
+          spentWeeks: 2,
+          totalGrantedWeeks: 6
+        },
+        "actor-b": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }
+    }
+  });
+
+  try {
+    const result = await harness.service.revokeWeeks({ actorIds: ["actor-a"], weeks: 2, reason: "test cleanup" });
+    const balances = getDowntimeState(harness).balancesByActorId;
+
+    assert.deepEqual(result.actorIds, ["actor-a"]);
+    assert.equal(balances["actor-a"].availableWeeks, 1);
+    assert.equal(balances["actor-a"].reservedWeeks, 1);
+    assert.equal(balances["actor-a"].spentWeeks, 2);
+    assert.equal(balances["actor-a"].totalGrantedWeeks, 4);
+    assert.equal(balances["actor-b"].availableWeeks, 1);
+    assert.equal(balances["actor-b"].totalGrantedWeeks, 1);
+    assert.equal(getDowntimeState(harness).history[0].type, "revoke");
+
+    await assert.rejects(
+      () => harness.service.revokeWeeks({ actorIds: ["actor-b"], weeks: 2 }),
+      /Not enough available downtime weeks/u
+    );
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("createRequest by player reserves weeks for an owned current member", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
   const actorB = createActor({ id: "actor-b", name: "Hero B", ownerUserId: "player-2" });
@@ -647,6 +693,86 @@ test("GM records check result for stale existing request", async () => {
   }
 });
 
+test("clearHistory removes downtime requests and releases open reservations", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A" });
+  const actorB = createActor({ id: "actor-b", name: "Hero B" });
+  const harness = createHarness({
+    members: [actorA, actorB],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 0,
+          reservedWeeks: 2,
+          spentWeeks: 1,
+          totalGrantedWeeks: 3
+        },
+        "actor-b": {
+          availableWeeks: 2,
+          reservedWeeks: 0,
+          spentWeeks: 1,
+          totalGrantedWeeks: 3
+        }
+      },
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Hero A",
+        actionId: "training",
+        actionLabel: "Training",
+        title: "Open request",
+        description: "",
+        weeks: 2,
+        status: "approved",
+        checks: [],
+        result: "",
+        createdAt: 1,
+        updatedAt: 1,
+        submittedByUserId: "player-1",
+        reviewedByUserId: "gm"
+      }, {
+        id: "downtime-2",
+        actorId: "actor-b",
+        actorName: "Hero B",
+        actionId: "rest",
+        actionLabel: "Rest",
+        title: "Done request",
+        description: "",
+        weeks: 1,
+        status: "completed",
+        checks: [],
+        result: "Done",
+        createdAt: 1,
+        updatedAt: 1,
+        submittedByUserId: "player-2",
+        reviewedByUserId: "gm"
+      }],
+      checks: [{ id: "legacy-check", label: "Legacy", dc: 10 }],
+      history: [{ id: "downtime-history-1", type: "grant", weeks: 3 }],
+      counter: 2
+    }
+  });
+
+  try {
+    const result = await harness.service.clearHistory();
+    const state = getDowntimeState(harness);
+
+    assert.deepEqual(result, { removedRequests: 2, releasedWeeks: 2 });
+    assert.deepEqual(state.requests, []);
+    assert.deepEqual(state.checks, []);
+    assert.deepEqual(state.history, []);
+    assert.equal(state.counter, 0);
+    assert.equal(state.balancesByActorId["actor-a"].availableWeeks, 2);
+    assert.equal(state.balancesByActorId["actor-a"].reservedWeeks, 0);
+    assert.equal(state.balancesByActorId["actor-a"].spentWeeks, 1);
+    assert.equal(state.balancesByActorId["actor-a"].totalGrantedWeeks, 3);
+    assert.equal(state.balancesByActorId["actor-b"].availableWeeks, 2);
+    assert.equal(state.balancesByActorId["actor-b"].spentWeeks, 1);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("non-owner and nonmember actors are rejected for player request and result actions", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
   const actorB = createActor({ id: "actor-b", name: "Hero B", ownerUserId: "player-2" });
@@ -798,6 +924,14 @@ test("RebreyaMainModule exposes downtime service API and refreshes after mutatio
         calls.push(["grantWeeks", payload]);
         return { granted: payload };
       },
+      async revokeWeeks(payload) {
+        calls.push(["revokeWeeks", payload]);
+        return { revoked: payload };
+      },
+      async clearHistory() {
+        calls.push(["clearHistory"]);
+        return { cleared: true };
+      },
       async createRequest(payload) {
         calls.push(["createRequest", payload]);
         return { created: payload };
@@ -830,6 +964,8 @@ test("RebreyaMainModule exposes downtime service API and refreshes after mutatio
     assert.equal(refreshCount, 0);
 
     assert.deepEqual(await moduleApi.grantDowntimeWeeks({ weeks: 2 }), { granted: { weeks: 2 } });
+    assert.deepEqual(await moduleApi.revokeDowntimeWeeks({ weeks: 1 }), { revoked: { weeks: 1 } });
+    assert.deepEqual(await moduleApi.clearDowntimeHistory(), { cleared: true });
     assert.deepEqual(await moduleApi.createDowntimeRequest({ actorId: "actor-a" }), { created: { actorId: "actor-a" } });
     assert.deepEqual(
       await moduleApi.setDowntimeRequestStatus("downtime-1", "approved", { result: "ok" }),
@@ -844,11 +980,13 @@ test("RebreyaMainModule exposes downtime service API and refreshes after mutatio
       { requestId: "downtime-1", checkId: "check-1", result: { total: 17 } }
     );
 
-    assert.equal(refreshCount, 5);
+    assert.equal(refreshCount, 7);
     assert.deepEqual(calls, [
       ["getSnapshot", { actorId: "actor-a" }],
       ["getActionCatalog"],
       ["grantWeeks", { weeks: 2 }],
+      ["revokeWeeks", { weeks: 1 }],
+      ["clearHistory"],
       ["createRequest", { actorId: "actor-a" }],
       ["setRequestStatus", "downtime-1", "approved", { result: "ok" }],
       ["setRequestChecks", "downtime-1", [{ id: "check-1" }]],

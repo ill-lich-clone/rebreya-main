@@ -2,7 +2,7 @@
 import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
 import { bringAppToFront, getAppElement } from "../ui.js";
 
-const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
+const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 const KNOWN_GROUP_CONTEXT_ERROR_MESSAGES = new Set([
   GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP,
@@ -316,8 +316,9 @@ async function promptNumericValue({ title, label, value = "", min = 0, step = "0
 }
 
 async function confirmAction(title, content) {
-  if (typeof DialogV2?.confirm === "function") {
-    return DialogV2.confirm({
+  const dialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof dialogV2?.confirm === "function") {
+    return dialogV2.confirm({
       window: {
         title
       },
@@ -1305,6 +1306,40 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     bringAppToFront(this);
   }
 
+  async #handleDowntimeRevoke(element) {
+    const actorId = cleanText(element.querySelector("[data-action='downtime-grant-actor']")?.value) || "all";
+    const weeks = Math.max(1, toInteger(element.querySelector("[data-action='downtime-grant-weeks']")?.value, 1));
+    this.downtimeGrantActorId = actorId;
+    this.downtimeGrantWeeks = weeks;
+
+    const actorIds = actorId === "all" ? [] : [actorId];
+    await this.moduleApi.revokeDowntimeWeeks({
+      actorIds,
+      weeks,
+      reason: ""
+    });
+
+    this.#setActionFeedback("success", `Забрано недель простоя: ${weeks}.`);
+    ui.notifications?.info(`Забрано недель простоя: ${weeks}.`);
+    bringAppToFront(this);
+  }
+
+  async #handleDowntimeClearHistory() {
+    const confirmed = await confirmAction(
+      "Очистить историю простоя",
+      "<p>Удалить все заявки, проверки и записи решений мастера? Резерв открытых заявок вернётся в свободные недели.</p>"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const result = await this.moduleApi.clearDowntimeHistory();
+    const removedRequests = toInteger(result?.removedRequests, 0);
+    this.#setActionFeedback("success", `История простоя очищена. Удалено заявок: ${removedRequests}.`);
+    ui.notifications?.info("История простоя очищена.");
+    bringAppToFront(this);
+  }
+
   async #handleDowntimeSubmit(element) {
     this.downtimeRequestActorId = cleanText(element.querySelector("[data-action='downtime-request-actor']")?.value);
     this.downtimeRequestActionId = cleanText(element.querySelector("[data-action='downtime-request-action']")?.value) || "unique";
@@ -1470,6 +1505,34 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         catch (error) {
           console.error(`${MODULE_ID} | Failed to grant downtime weeks.`, error);
           const message = error.message || "Не удалось выдать недели простоя.";
+          this.#setActionFeedback("error", message);
+          ui.notifications?.error(message);
+        }
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='downtime-revoke']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          await this.#handleDowntimeRevoke(element);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to revoke downtime weeks.`, error);
+          const message = error.message || "Не удалось забрать недели простоя.";
+          this.#setActionFeedback("error", message);
+          ui.notifications?.error(message);
+        }
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='downtime-clear-history']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          await this.#handleDowntimeClearHistory();
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to clear downtime history.`, error);
+          const message = error.message || "Не удалось очистить историю простоя.";
           this.#setActionFeedback("error", message);
           ui.notifications?.error(message);
         }

@@ -199,6 +199,14 @@ function createModuleApi({ getGroupContext, partySnapshot = {}, downtimeSnapshot
       calls.push(["grantDowntimeWeeks", payload]);
       return {};
     },
+    async revokeDowntimeWeeks(payload) {
+      calls.push(["revokeDowntimeWeeks", payload]);
+      return {};
+    },
+    async clearDowntimeHistory() {
+      calls.push(["clearDowntimeHistory"]);
+      return {};
+    },
     async createDowntimeRequest(payload) {
       calls.push(["createDowntimeRequest", payload]);
       return {};
@@ -469,6 +477,7 @@ test("InventoryApp downtime controls call module API handlers", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
   const calls = [];
+  globalThis.foundry.applications.api.DialogV2.confirm = async () => true;
   const previousUi = globalThis.ui;
   globalThis.ui = {
     notifications: {
@@ -500,6 +509,8 @@ test("InventoryApp downtime controls call module API handlers", async () => {
 
   const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
   const grantButton = createFakeControl({ dataset: { action: "downtime-grant" } });
+  const revokeButton = createFakeControl({ dataset: { action: "downtime-revoke" } });
+  const clearHistoryButton = createFakeControl({ dataset: { action: "downtime-clear-history" } });
   const submitButton = createFakeControl({ dataset: { action: "downtime-submit" } });
   const statusButton = createFakeControl({
     dataset: {
@@ -529,6 +540,12 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     if (selector === "[data-action='downtime-grant']") {
       return [grantButton];
     }
+    if (selector === "[data-action='downtime-revoke']") {
+      return [revokeButton];
+    }
+    if (selector === "[data-action='downtime-clear-history']") {
+      return [clearHistoryButton];
+    }
     if (selector === "[data-action='downtime-submit']") {
       return [submitButton];
     }
@@ -549,12 +566,16 @@ test("InventoryApp downtime controls call module API handlers", async () => {
   try {
     await app._onRender({}, {});
     await dispatchClick(grantButton);
+    await dispatchClick(revokeButton);
+    await dispatchClick(clearHistoryButton);
     await dispatchClick(submitButton);
     await dispatchClick(statusButton);
     await dispatchClick(checksButton);
 
     assert.deepEqual(calls, [
       ["grantDowntimeWeeks", { actorIds: ["actor-a"], weeks: 2, reason: "" }],
+      ["revokeDowntimeWeeks", { actorIds: ["actor-a"], weeks: 2, reason: "" }],
+      ["clearDowntimeHistory"],
       ["createDowntimeRequest", {
         actorId: "actor-a",
         actionId: "research",

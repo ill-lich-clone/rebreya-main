@@ -4224,6 +4224,19 @@ summary:focus-visible {
   color: #fff2da;
 }
 
+.rm-downtime-column__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rm-downtime-column__actions .rm-button {
+  min-height: 28px;
+  padding: 4px 7px;
+}
+
 .rm-downtime-member-list,
 .rm-downtime-request-list,
 .rm-character-downtime-request-list {
@@ -4300,7 +4313,7 @@ summary:focus-visible {
 
 .rm-downtime-grant__row {
   display: grid;
-  grid-template-columns: minmax(74px, 1fr) auto;
+  grid-template-columns: minmax(74px, 1fr) auto auto;
   gap: 8px;
   align-items: end;
 }
