@@ -583,18 +583,23 @@ export function registerCombatStatusConfig() {
       continue;
     }
 
-    if (dnd5eStatusEffects && shouldRegisterDnd5eStatusEffect(row.id) && !Object.hasOwn(dnd5eStatusEffects, row.id)) {
-      dnd5eStatusEffects[row.id] = {
+    if (
+      dnd5eStatusEffects
+      && shouldRegisterDnd5eStatusEffect(row.id)
+      && !Object.hasOwn(dnd5eStatusEffects, statusConfig.id)
+    ) {
+      dnd5eStatusEffects[statusConfig.id] = {
         name: statusConfig.name,
         img: statusConfig.img,
         icon: statusConfig.icon,
+        statuses: statusConfig.statuses,
         flags: statusConfig.flags
       };
     }
 
-    if (coreStatusEffects && !knownIds.has(row.id)) {
+    if (coreStatusEffects && !knownIds.has(statusConfig.id)) {
       coreStatusEffects.push(statusConfig);
-      knownIds.add(row.id);
+      knownIds.add(statusConfig.id);
     }
   }
 }

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  REBREYA_STATUS_DEFINITIONS,
   buildRebreyaStatusConfig,
   getRebreyaStatusDefinition,
   normalizeRebreyaStatusId
@@ -18,6 +19,7 @@ import {
 test("dnd5e restrained is not aliased to the Rebreya discreet status", () => {
   assert.equal(normalizeRebreyaStatusId("restrained", ""), "");
   assert.equal(normalizeRebreyaStatusId("discreet", ""), "rebreya-discreet");
+  assert.equal(normalizeRebreyaStatusId("rbDiscreet", ""), "rebreya-discreet");
   assert.equal(normalizeRebreyaStatusId("Сдержанный", ""), "rebreya-discreet");
   assert.equal(normalizeRebreyaStatusId("frightened", ""), "frightened");
   assert.equal(normalizeRebreyaStatusId("rebreya-frightened", ""), "frightened");
@@ -29,9 +31,31 @@ test("dnd5e restrained is not aliased to the Rebreya discreet status", () => {
   assert.equal(definition.supportsValue, true);
 
   const statusConfig = buildRebreyaStatusConfig("discreet");
-  assert.equal(statusConfig.id, "rebreya-discreet");
+  assert.equal(statusConfig.id, "rbDiscreet");
+  assert.match(statusConfig._id, /^[a-zA-Z0-9]{16}$/u);
   assert.equal(statusConfig.name, "Сдержанный");
   assert.equal(statusConfig.icon, "icons/svg/anchor.svg");
+  assert.deepEqual(statusConfig.statuses, ["rebreya-discreet"]);
+  assert.equal(statusConfig.flags["rebreya-main"].statusId, "rebreya-discreet");
+});
+
+test("custom Rebreya status configs use Foundry-safe ids and keep legacy aliases", () => {
+  const seenDocumentIds = new Set();
+
+  for (const definition of REBREYA_STATUS_DEFINITIONS.filter((row) => row.id.startsWith("rebreya-"))) {
+    const statusConfig = buildRebreyaStatusConfig(definition.id);
+    const expectedDocumentId = `dnd5e${statusConfig.id}`.padEnd(16, "0").slice(0, 16);
+
+    assert.notEqual(statusConfig.id, definition.id);
+    assert.match(statusConfig.id, /^[a-zA-Z0-9]+$/u);
+    assert.equal(statusConfig._id, expectedDocumentId);
+    assert.match(statusConfig._id, /^[a-zA-Z0-9]{16}$/u);
+    assert.deepEqual(statusConfig.statuses, [definition.id]);
+    assert.equal(statusConfig.flags["rebreya-main"].statusId, definition.id);
+    assert.equal(normalizeRebreyaStatusId(statusConfig.id, ""), definition.id);
+    assert.equal(seenDocumentIds.has(statusConfig._id), false, `${statusConfig._id} must be unique`);
+    seenDocumentIds.add(statusConfig._id);
+  }
 });
 
 test("discreet effect data stores a visible status counter and speed penalty", () => {
@@ -79,15 +103,22 @@ test("combat status config registers Rebreya statuses for dnd5e HUD rebuilds", (
     registerCombatStatusConfig();
 
     const coreDiscreetStatuses = globalThis.CONFIG.statusEffects.filter(
+      (status) => status.id === "rbDiscreet"
+    );
+    const legacyDiscreetStatuses = globalThis.CONFIG.statusEffects.filter(
       (status) => status.id === "rebreya-discreet"
     );
-    const dnd5eDiscreetStatus = globalThis.CONFIG.DND5E.statusEffects["rebreya-discreet"];
+    const dnd5eDiscreetStatus = globalThis.CONFIG.DND5E.statusEffects.rbDiscreet;
 
     assert.equal(coreDiscreetStatuses.length, 1);
+    assert.equal(legacyDiscreetStatuses.length, 0);
+    assert.match(coreDiscreetStatuses[0]._id, /^[a-zA-Z0-9]{16}$/u);
     assert.equal(dnd5eDiscreetStatus.name, "Сдержанный");
     assert.equal(dnd5eDiscreetStatus.img, "icons/svg/anchor.svg");
     assert.equal(dnd5eDiscreetStatus.icon, "icons/svg/anchor.svg");
+    assert.deepEqual(dnd5eDiscreetStatus.statuses, ["rebreya-discreet"]);
     assert.equal(dnd5eDiscreetStatus.flags["rebreya-main"].statusKey, "discreet");
+    assert.equal(dnd5eDiscreetStatus.flags["rebreya-main"].statusId, "rebreya-discreet");
   }
   finally {
     globalThis.CONFIG = previousConfig;

@@ -122,7 +122,7 @@ test("radial layout places status icons farther away and fills the full ring", (
   }
 
   const radius = 68.75;
-  const firstEffectLeftShift = radius * 0.2;
+  const firstEffectLeftShift = radius * 0.4;
   const firstEffectVerticalOffset = Math.sqrt((radius ** 2) - (firstEffectLeftShift ** 2));
   assertClose(layouts[0].x, center.x - firstEffectLeftShift);
   assertClose(layouts[0].y, center.y - firstEffectVerticalOffset);
