@@ -618,6 +618,11 @@ export class GlobalEventsService {
   }
 
   #currentIsoDate() {
+    const moduleIsoDate = normalizeIsoDate(this.moduleApi?.getCalendarSnapshot?.()?.isoDate);
+    if (moduleIsoDate) {
+      return moduleIsoDate;
+    }
+
     const calendarState = game.settings.get(MODULE_ID, SETTINGS_KEYS.CALENDAR_STATE);
     const isoDate = normalizeIsoDate(calendarState?.isoDate);
     if (isoDate) {

@@ -1,8 +1,26 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
+import { GROUP_CONTEXT_ERRORS, normalizeGroupState } from "./group-context-service.js";
 
 const WEEKDAY_HEADERS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const MOON_CYCLE_DAYS = 28.8;
 const MOON_EPOCH_UTC = Date.UTC(1, 0, 1);
+const GROUP_CONTEXT_FALLBACK_ERRORS = new Set([
+  GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP,
+  GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP,
+  GROUP_CONTEXT_ERRORS.GROUP_NOT_FOUND
+]);
+
+function clone(value) {
+  if (globalThis.foundry?.utils?.deepClone) {
+    return globalThis.foundry.utils.deepClone(value);
+  }
+
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -94,6 +112,18 @@ function buildDefaultState() {
   return {
     version: 1,
     isoDate: toIsoDate(utcDate)
+  };
+}
+
+function normalizeCalendarState(value = {}, fallback = buildDefaultState()) {
+  const source = asObject(value);
+  const fallbackState = asObject(fallback);
+  const sourceDate = parseIsoDate(source.isoDate);
+  const fallbackDate = parseIsoDate(fallbackState.isoDate) ?? parseIsoDate(buildDefaultState().isoDate);
+
+  return {
+    version: 1,
+    isoDate: toIsoDate(sourceDate ?? fallbackDate)
   };
 }
 
@@ -199,23 +229,73 @@ function buildCalendarCells(date) {
 }
 
 export class CalendarService {
-  #getState() {
-    const state = game.settings.get(MODULE_ID, SETTINGS_KEYS.CALENDAR_STATE);
-    const nextState = foundry.utils.mergeObject(buildDefaultState(), foundry.utils.deepClone(state ?? {}));
-    const parsedDate = parseIsoDate(nextState.isoDate);
-    if (!parsedDate) {
-      nextState.isoDate = buildDefaultState().isoDate;
+  constructor({ groupContextService = null } = {}) {
+    this.groupContextService = groupContextService;
+  }
+
+  setGroupContextService(groupContextService) {
+    this.groupContextService = groupContextService;
+  }
+
+  #getWorldState() {
+    return normalizeCalendarState(
+      globalThis.game?.settings?.get?.(MODULE_ID, SETTINGS_KEYS.CALENDAR_STATE),
+      buildDefaultState()
+    );
+  }
+
+  #getCurrentGroupContext() {
+    if (!this.groupContextService?.resolveForCurrentUser) {
+      return null;
     }
 
-    return nextState;
+    try {
+      return this.groupContextService.resolveForCurrentUser();
+    }
+    catch (error) {
+      if (GROUP_CONTEXT_FALLBACK_ERRORS.has(error?.message)) {
+        return null;
+      }
+
+      throw error;
+    }
   }
 
-  async #setState(nextState) {
-    await game.settings.set(MODULE_ID, SETTINGS_KEYS.CALENDAR_STATE, nextState);
-    return nextState;
+  #getStateScope() {
+    const worldState = this.#getWorldState();
+    const groupContext = this.#getCurrentGroupContext();
+    if (!groupContext?.groupId) {
+      return {
+        type: "world",
+        state: worldState
+      };
+    }
+
+    return {
+      type: "group",
+      groupId: groupContext.groupId,
+      state: normalizeCalendarState(groupContext.groupState?.calendar, worldState)
+    };
   }
 
-  #buildSnapshot(state = this.#getState()) {
+  async #setState(scope, nextState) {
+    const state = normalizeCalendarState(nextState);
+
+    if (scope?.type === "group" && scope.groupId && this.groupContextService) {
+      const registry = this.groupContextService.getRegistry();
+      registry.groupsById[scope.groupId] = {
+        ...normalizeGroupState(scope.groupId, registry.groupsById[scope.groupId] ?? {}),
+        calendar: clone(state)
+      };
+      await this.groupContextService.setRegistry(registry);
+      return state;
+    }
+
+    await globalThis.game?.settings?.set?.(MODULE_ID, SETTINGS_KEYS.CALENDAR_STATE, state);
+    return state;
+  }
+
+  #buildSnapshot(state = this.#getStateScope().state) {
     const date = parseIsoDate(state.isoDate) ?? parseIsoDate(buildDefaultState().isoDate);
     const monthName = getMonthName(date);
     const moon = buildMoonSnapshot(date);
@@ -236,10 +316,11 @@ export class CalendarService {
   }
 
   getSnapshot() {
-    return this.#buildSnapshot();
+    return this.#buildSnapshot(this.#getStateScope().state);
   }
 
   async setDate(year, month, day) {
+    const scope = this.#getStateScope();
     const safeYear = Math.max(1, Math.floor(toNumber(year, 1)));
     const safeMonth = Math.max(1, Math.min(12, Math.floor(toNumber(month, 1))));
     const safeDay = Math.max(1, Math.min(31, Math.floor(toNumber(day, 1))));
@@ -252,7 +333,7 @@ export class CalendarService {
       throw new Error("Некорректная дата календаря.");
     }
 
-    await this.#setState({
+    await this.#setState(scope, {
       version: 1,
       isoDate: toIsoDate(date)
     });
@@ -260,14 +341,15 @@ export class CalendarService {
     return this.getSnapshot();
   }
 
-  async advanceDays(days) {
-    const safeDays = Math.max(0, Math.floor(toNumber(days, 0)));
-    const state = this.#getState();
+  async shiftDays(days) {
+    const safeDays = Math.trunc(toNumber(days, 0));
+    const scope = this.#getStateScope();
+    const state = scope.state;
     const fromDate = parseIsoDate(state.isoDate) ?? parseIsoDate(buildDefaultState().isoDate);
     const toDate = new Date(fromDate.getTime());
     toDate.setUTCDate(toDate.getUTCDate() + safeDays);
 
-    await this.#setState({
+    await this.#setState(scope, {
       version: 1,
       isoDate: toIsoDate(toDate)
     });
@@ -279,6 +361,11 @@ export class CalendarService {
     };
   }
 
+  async advanceDays(days) {
+    const safeDays = Math.max(0, Math.floor(toNumber(days, 0)));
+    return this.shiftDays(safeDays);
+  }
+
   async advanceWeeks(weeks = 1) {
     const safeWeeks = Math.max(0, Math.floor(toNumber(weeks, 0)));
     return this.advanceDays(safeWeeks * 7);
@@ -286,13 +373,14 @@ export class CalendarService {
 
   async advanceMonths(months = 1) {
     const safeMonths = Math.max(0, Math.floor(toNumber(months, 0)));
-    const state = this.#getState();
+    const scope = this.#getStateScope();
+    const state = scope.state;
     const fromDate = parseIsoDate(state.isoDate) ?? parseIsoDate(buildDefaultState().isoDate);
     const toDate = new Date(fromDate.getTime());
     toDate.setUTCMonth(toDate.getUTCMonth() + safeMonths);
     const daysAdvanced = Math.max(0, Math.round((toDate.getTime() - fromDate.getTime()) / 86400000));
 
-    await this.#setState({
+    await this.#setState(scope, {
       version: 1,
       isoDate: toIsoDate(toDate)
     });

@@ -34,6 +34,7 @@ import {
 } from "./integrations/dnd5e-sheet-extensions.js";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
+import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration } from "./integrations/smalltime-compat.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import { registerSettings } from "./settings.js";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js";
@@ -196,7 +197,7 @@ export class RebreyaMainModule {
     this.inventoryService = new InventoryService(this);
     this.heroDollService = new HeroDollService(this);
     this.craftingService = new CraftingService(this);
-    this.calendarService = new CalendarService();
+    this.calendarService = new CalendarService({ groupContextService: this.groupContextService });
     this.globalEventsService = new GlobalEventsService(this);
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
@@ -1088,6 +1089,7 @@ export class RebreyaMainModule {
   async setActivePartyGroup(groupActorId) {
     const result = await this.groupContextService.setActiveGroup(groupActorId);
     await this.refreshOpenApps();
+    await refreshSmallTimeDateDisplay();
     return result;
   }
 
@@ -1262,6 +1264,7 @@ export class RebreyaMainModule {
     ) ? 1 : 0;
     const traderReset = await this.#applyTraderMonthlyReset(monthResetCount, "set-date");
     await this.refreshOpenApps();
+    await refreshSmallTimeDateDisplay();
     return {
       ...result,
       eventActivation,
@@ -1311,6 +1314,41 @@ export class RebreyaMainModule {
     };
   }
 
+  async shiftCalendarDays(days = 0, options = {}) {
+    const safeDays = Math.trunc(Number(days ?? 0));
+    const advance = await this.calendarService.shiftDays(safeDays);
+    const eventActivation = await this.#refreshGlobalEventsByCalendarTransition(advance?.to?.isoDate, advance?.from?.isoDate);
+    const monthResetCount = safeDays > 0
+      ? countMonthStartBoundaries(advance?.from?.isoDate, advance?.to?.isoDate)
+      : 0;
+    const traderReset = await this.#applyTraderMonthlyReset(monthResetCount, options.reason ?? "shift-days");
+    const cycles = options.processDailyCycles === true && safeDays > 0
+      ? await this.#runDayCycles(safeDays, options)
+      : {
+        days: 0,
+        supplies: [],
+        supplyTotals: {
+          foodSpent: 0,
+          waterSpent: 0,
+          foodShortage: 0,
+          waterShortage: 0
+        },
+        craft: {
+          completed: [],
+          completedCount: 0
+        }
+      };
+
+    await this.refreshOpenApps();
+    await refreshSmallTimeDateDisplay();
+    return {
+      ...advance,
+      eventActivation,
+      cycles,
+      traderReset
+    };
+  }
+
   async advanceCalendarDays(days = 1, options = {}) {
     const safeDays = Math.max(0, Math.floor(Number(days ?? 0)));
     const advance = await this.calendarService.advanceDays(safeDays);
@@ -1319,6 +1357,7 @@ export class RebreyaMainModule {
     const traderReset = await this.#applyTraderMonthlyReset(monthResetCount, "advance-days");
     const cycles = await this.#runDayCycles(safeDays, options);
     await this.refreshOpenApps();
+    await refreshSmallTimeDateDisplay();
     return {
       ...advance,
       eventActivation,
@@ -1339,6 +1378,7 @@ export class RebreyaMainModule {
     const traderReset = await this.#applyTraderMonthlyReset(monthResetCount, "advance-months");
     const cycles = await this.#runDayCycles(advance.daysAdvanced, options);
     await this.refreshOpenApps();
+    await refreshSmallTimeDateDisplay();
     return {
       ...advance,
       eventActivation,
@@ -1899,6 +1939,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register combat hooks.`, error);
+  }
+
+  try {
+    registerSmallTimeIntegration(moduleApi);
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to register SmallTime integration.`, error);
   }
 
   try {
