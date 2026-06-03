@@ -1427,7 +1427,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.renderListenersAbortController = new AbortController();
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
 
-    bringAppToFront(this);
     this.#rememberExpandedPartyMembers(element);
 
     element.querySelectorAll(".rm-party-row[data-actor-id]").forEach((row) => {

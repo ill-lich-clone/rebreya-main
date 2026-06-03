@@ -345,12 +345,19 @@ export class DowntimeService {
       }
 
       const removedRequests = state.requests.length;
+      const actorIds = [
+        ...new Set([
+          ...Object.keys(state.balancesByActorId),
+          ...state.requests.map((request) => cleanId(request.actorId)).filter(Boolean)
+        ])
+      ];
       state.requests = [];
       state.checks = [];
       state.history = [];
       state.counter = 0;
 
       return {
+        actorIds,
         removedRequests,
         releasedWeeks
       };

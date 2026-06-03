@@ -598,3 +598,30 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     restoreFoundry();
   }
 });
+
+test("InventoryApp background render does not bring the window to front", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?quiet-render=${Date.now()}`);
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null
+  }));
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = () => [];
+  app.element = root;
+  let bringToFrontCount = 0;
+  app.bringToFront = () => {
+    bringToFrontCount += 1;
+  };
+
+  try {
+    await app._onRender({}, {});
+
+    assert.equal(bringToFrontCount, 0);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});

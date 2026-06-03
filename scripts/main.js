@@ -31,7 +31,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.15";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.16";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration } from "./integrations/smalltime-compat.js";
@@ -52,6 +52,7 @@ const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
 const SOCKET_EVENT_TRADER_AUDIT = "trader-audit";
 const SOCKET_EVENT_DOWNTIME_CREATE_REQUEST = "downtime-create-request";
 const SOCKET_EVENT_DOWNTIME_CREATE_RESULT = "downtime-create-result";
+const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
 let socketModuleApi = null;
 const queuedSocketMessages = [];
@@ -394,6 +395,11 @@ export class RebreyaMainModule {
     }
 
     if (message.senderId && message.senderId === game.user?.id) {
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_DOWNTIME_UPDATED) {
+      await this.#handleDowntimeUpdatedSocketMessage(message);
       return;
     }
 
@@ -1178,18 +1184,27 @@ export class RebreyaMainModule {
   async grantDowntimeWeeks(payload = {}) {
     const result = await this.downtimeService.grantWeeks(payload);
     await this.refreshOpenApps();
+    this.#emitDowntimeUpdated({
+      actorIds: result.actorIds
+    });
     return result;
   }
 
   async revokeDowntimeWeeks(payload = {}) {
     const result = await this.downtimeService.revokeWeeks(payload);
     await this.refreshOpenApps();
+    this.#emitDowntimeUpdated({
+      actorIds: result.actorIds
+    });
     return result;
   }
 
   async clearDowntimeHistory() {
     const result = await this.downtimeService.clearHistory();
     await this.refreshOpenApps();
+    this.#emitDowntimeUpdated({
+      actorIds: result.actorIds
+    });
     return result;
   }
 
@@ -1200,6 +1215,10 @@ export class RebreyaMainModule {
 
     const result = await this.downtimeService.createRequest(payload);
     await this.refreshOpenApps();
+    this.#emitDowntimeUpdated({
+      actorIds: [result.actorId],
+      requestId: result.id
+    });
     return result;
   }
 
@@ -1239,6 +1258,10 @@ export class RebreyaMainModule {
 
     await this.refreshOpenApps();
     await this.#refreshActorSheets([message.data?.actorId]);
+  }
+
+  async #handleDowntimeUpdatedSocketMessage(message = {}) {
+    await this.#refreshActorSheets(message.actorIds ?? message.actorId);
   }
 
   async #handleDowntimeCreateSocketRequest(message = {}) {
@@ -1311,8 +1334,36 @@ export class RebreyaMainModule {
     return result;
   }
 
+  #normalizeDowntimeActorIds(actorIds = []) {
+    const ids = Array.isArray(actorIds) ? actorIds : [actorIds];
+    return [...new Set(ids.map((actorId) => cleanSocketId(actorId)).filter(Boolean))];
+  }
+
+  #emitDowntimeUpdated({ actorIds = [], requestId = "" } = {}) {
+    if (typeof game.socket?.emit !== "function") {
+      return;
+    }
+
+    const safeActorIds = this.#normalizeDowntimeActorIds(actorIds);
+    if (!safeActorIds.length) {
+      return;
+    }
+
+    const message = {
+      type: SOCKET_EVENT_DOWNTIME_UPDATED,
+      senderId: game.user?.id ?? "",
+      actorIds: safeActorIds
+    };
+    const safeRequestId = cleanSocketId(requestId);
+    if (safeRequestId) {
+      message.requestId = safeRequestId;
+    }
+
+    game.socket.emit(SOCKET_CHANNEL, message);
+  }
+
   async #refreshActorSheets(actorIds = []) {
-    const actorIdSet = new Set(actorIds.map((actorId) => cleanSocketId(actorId)).filter(Boolean));
+    const actorIdSet = new Set(this.#normalizeDowntimeActorIds(actorIds));
     if (!actorIdSet.size) {
       return;
     }
@@ -1335,18 +1386,30 @@ export class RebreyaMainModule {
   async setDowntimeRequestStatus(requestId, status, options = {}) {
     const result = await this.downtimeService.setRequestStatus(requestId, status, options);
     await this.refreshOpenApps();
+    this.#emitDowntimeUpdated({
+      actorIds: [result.actorId],
+      requestId: result.id
+    });
     return result;
   }
 
   async setDowntimeRequestChecks(requestId, checks = []) {
     const result = await this.downtimeService.setRequestChecks(requestId, checks);
     await this.refreshOpenApps();
+    this.#emitDowntimeUpdated({
+      actorIds: [result.actorId],
+      requestId: result.id
+    });
     return result;
   }
 
   async recordDowntimeCheckResult(requestId, checkId, result = {}) {
     const updatedRequest = await this.downtimeService.recordCheckResult(requestId, checkId, result);
     await this.refreshOpenApps();
+    this.#emitDowntimeUpdated({
+      actorIds: [updatedRequest.actorId],
+      requestId: updatedRequest.id
+    });
     return updatedRequest;
   }
 

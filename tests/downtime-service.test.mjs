@@ -863,7 +863,11 @@ test("clearHistory removes downtime requests and releases open reservations", as
     const result = await harness.service.clearHistory();
     const state = getDowntimeState(harness);
 
-    assert.deepEqual(result, { removedRequests: 2, releasedWeeks: 2 });
+    assert.deepEqual(result, {
+      actorIds: ["actor-a", "actor-b"],
+      removedRequests: 2,
+      releasedWeeks: 2
+    });
     assert.deepEqual(state.requests, []);
     assert.deepEqual(state.checks, []);
     assert.deepEqual(state.history, []);
@@ -1349,6 +1353,123 @@ test("RebreyaMainModule refreshes player sheets when GM reports downtime creatio
     globalThis.Hooks = previousHooks;
     globalThis.game = previousGame;
     globalThis.ui = previousUi;
+  }
+});
+
+test("RebreyaMainModule refreshes player sheets when GM updates a downtime request", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  globalThis.Hooks = {
+    once() {}
+  };
+  let refreshCount = 0;
+  let renderCount = 0;
+  globalThis.game = {
+    user: {
+      id: "player-1",
+      isGM: false
+    },
+    users: [
+      { id: "player-1", isGM: false, active: true },
+      { id: "gm", isGM: true, active: true }
+    ],
+    socket: {
+      emit() {}
+    }
+  };
+  globalThis.ui = {
+    windows: {
+      sheet1: {
+        actor: {
+          id: "actor-a"
+        },
+        render() {
+          renderCount += 1;
+        }
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-player-update=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+
+    await moduleApi.handleSocketMessage({
+      type: "downtime-updated",
+      senderId: "gm",
+      actorIds: ["actor-a"],
+      requestId: "downtime-1"
+    });
+
+    assert.equal(refreshCount, 0);
+    assert.equal(renderCount, 1);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+  }
+});
+
+test("RebreyaMainModule notifies players when a GM changes downtime request status", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {}
+  };
+  const emitted = [];
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true
+    },
+    socket: {
+      emit(channel, message) {
+        emitted.push([channel, message]);
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-gm-update=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    let refreshCount = 0;
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+    moduleApi.downtimeService.setRequestStatus = async (requestId, status, options) => ({
+      id: requestId,
+      actorId: "actor-a",
+      status,
+      result: options.result
+    });
+
+    const result = await moduleApi.setDowntimeRequestStatus("downtime-1", "approved", { result: "ok" });
+
+    assert.deepEqual(result, {
+      id: "downtime-1",
+      actorId: "actor-a",
+      status: "approved",
+      result: "ok"
+    });
+    assert.equal(refreshCount, 1);
+    assert.deepEqual(emitted, [[
+      `module.${MODULE_ID}`,
+      {
+        type: "downtime-updated",
+        senderId: "gm",
+        actorIds: ["actor-a"],
+        requestId: "downtime-1"
+      }
+    ]]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
   }
 });
 
