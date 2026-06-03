@@ -237,7 +237,7 @@
 
     .member-list,
     .request-list,
-    .roll-block-list,
+    .target-action-list,
     .result-list {
       display: grid;
       gap: 7px;
@@ -245,7 +245,7 @@
 
     .member-row,
     .request-row,
-    .roll-block-row,
+    .target-action-row,
     .result-row,
     .player-card {
       min-width: 0;
@@ -438,20 +438,20 @@
       background: rgba(111, 80, 38, 0.86);
     }
 
-    .roll-block-row {
+    .target-action-row {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-columns: minmax(0, 1fr) auto auto auto;
       gap: 6px;
       align-items: center;
       padding: 7px 8px;
     }
 
-    .roll-block-row.is-active {
+    .target-action-row.is-active {
       border-color: var(--line-hot);
       background: var(--row-hot);
     }
 
-    .roll-summary {
+    .action-summary {
       margin-top: 2px;
       overflow: hidden;
       color: var(--muted);
@@ -461,27 +461,24 @@
       white-space: nowrap;
     }
 
-    .roll-block-editor {
-      display: grid;
-      gap: 8px;
-      padding: 8px;
-      border: 1px solid rgba(214, 177, 104, 0.18);
-      background: rgba(14, 12, 10, 0.62);
-    }
-
-    .roll-editor-grid,
-    .roll-target-grid {
+    .action-dialog-grid,
+    .action-result-grid,
+    .action-effect-grid {
       display: grid;
       gap: 6px;
       align-items: end;
     }
 
-    .roll-editor-grid {
-      grid-template-columns: minmax(120px, 1fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(95px, 0.7fr);
+    .action-dialog-grid {
+      grid-template-columns: minmax(170px, 1.2fr) minmax(130px, 0.85fr) minmax(130px, 0.85fr);
     }
 
-    .roll-target-grid {
-      grid-template-columns: minmax(120px, 1fr) minmax(96px, 0.7fr) minmax(96px, 0.7fr);
+    .action-result-grid {
+      grid-template-columns: minmax(120px, 1fr) 92px minmax(120px, 1fr);
+    }
+
+    .action-effect-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .choice-line,
@@ -535,6 +532,53 @@
 
     .effect-inline > div {
       min-width: 0;
+    }
+
+    .dialog-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: none;
+      place-items: center;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.56);
+    }
+
+    .dialog-backdrop.is-open {
+      display: grid;
+    }
+
+    .action-dialog {
+      width: min(860px, calc(100vw - 36px));
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      border: 1px solid var(--line-hot);
+      background: linear-gradient(180deg, rgba(37, 28, 20, 0.98), rgba(15, 13, 11, 0.98));
+      box-shadow: var(--shadow);
+    }
+
+    .dialog-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(10, 9, 8, 0.82);
+    }
+
+    .dialog-body {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .dialog-section {
+      display: grid;
+      gap: 8px;
+      padding: 9px;
+      border: 1px solid rgba(214, 177, 104, 0.16);
+      background: rgba(13, 11, 9, 0.58);
     }
 
     .result-row {
@@ -656,8 +700,9 @@
 
       .request-form,
       .quick-weeks,
-      .roll-editor-grid,
-      .roll-target-grid,
+      .action-dialog-grid,
+      .action-result-grid,
+      .action-effect-grid,
       .architecture-grid {
         grid-template-columns: 1fr 1fr;
       }
@@ -670,15 +715,16 @@
         grid-template-columns: 1fr;
       }
 
-      .roll-block-row,
+      .target-action-row,
       .check-task {
         grid-template-columns: 1fr;
       }
     }
 
     @media (max-width: 480px) {
-      .roll-editor-grid,
-      .roll-target-grid {
+      .action-dialog-grid,
+      .action-result-grid,
+      .action-effect-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -689,7 +735,7 @@
     <header class="topbar">
       <div>
         <p class="eyebrow">P1 UX concept</p>
-        <h1>Простой: меньше кнопок, блочные проверки, броски из чарника</h1>
+        <h1>Простой: целевые действия, броски из чарника, эффекты без ручного текста</h1>
       </div>
       <div class="actions">
         <button class="btn primary" type="button" onclick="document.querySelector('#master').scrollIntoView({behavior:'smooth'})">Мастер</button>
@@ -837,134 +883,251 @@
 
             <section class="panel">
               <div class="row-head">
-                <h4>Броски</h4>
-                <span class="tip" tabindex="0" data-tip="Каждый блок станет отдельной задачей на чарнике. Блок может быть проверкой навыка, иной характеристикой для навыка, инструментом, спасброском, действием или атакой из листа персонажа.">?</span>
+                <h4>Целевые действия</h4>
+                <span class="chip warn">3 / 5</span>
+                <span class="tip" tabindex="0" data-tip="Короткий список задач по заявке. Детальная настройка открывается отдельным окном через плюс или кнопку редактирования.">?</span>
               </div>
 
-              <div class="roll-block-list">
-                <article class="roll-block-row is-active">
+              <div class="target-action-list">
+                <article class="target-action-row is-active">
                   <div>
                     <strong>Поиск следов</strong>
-                    <p class="roll-summary">Игрок выбирает: МДР (Восприятие), МДР (Проницательность), ИНТ (Расследование)</p>
+                    <p class="action-summary">Проверка с выбором игрока, DC 15</p>
                   </div>
                   <span class="chip warn">ждёт</span>
+                  <button class="icon-btn" type="button" title="Редактировать действие" onclick="openActionDialog()">✎</button>
                   <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
                 </article>
 
-                <article class="roll-block-row">
+                <article class="target-action-row">
                   <div>
                     <strong>Давление авторитетом</strong>
-                    <p class="roll-summary">Телосложение (Запугивание), DC 14 + сумма</p>
+                    <p class="action-summary">Телосложение (Запугивание), DC 14 + сумма</p>
                   </div>
                   <span class="chip good">19</span>
+                  <button class="icon-btn" type="button" title="Редактировать действие" onclick="openActionDialog()">✎</button>
                   <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
                 </article>
 
-                <article class="roll-block-row">
+                <article class="target-action-row">
                   <div>
                     <strong>Проверка боем</strong>
-                    <p class="roll-summary">Атака листа: Винтовка Оскара, свободный итог</p>
+                    <p class="action-summary">Атака листа: Винтовка Оскара, свободный итог</p>
                   </div>
                   <span class="chip info">позже</span>
+                  <button class="icon-btn" type="button" title="Редактировать действие" onclick="openActionDialog()">✎</button>
                   <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
                 </article>
               </div>
 
-              <div class="roll-block-editor">
-                <div class="row-head">
-                  <h4>Настройка блока</h4>
-                  <span class="tip" tabindex="0" data-tip="Механика хранится структурно: источник, характеристика, владение, режим результата и будущий эффект.">?</span>
-                </div>
-
-                <div class="roll-editor-grid">
-                  <div class="field">
-                    <label>Название</label>
-                    <input type="text" value="Поиск следов">
-                  </div>
-                  <div class="field">
-                    <label>Источник</label>
-                    <select>
-                      <option>Навык</option>
-                      <option>Характеристика</option>
-                      <option>Инструмент</option>
-                      <option>Спасбросок</option>
-                      <option>Действие</option>
-                      <option>Атака</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>Итог <span class="tip" tabindex="0" data-tip="DC проверяет порог, сумма копит total, DC + сумма делает оба расчёта, свободный итог отдаёт решение мастеру.">?</span></label>
-                    <select>
-                      <option>DC</option>
-                      <option>Сумма</option>
-                      <option>DC + сумма</option>
-                      <option>Свободный</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>Цель</label>
-                    <input type="number" value="15">
-                  </div>
-                </div>
-
-                <div class="roll-target-grid">
-                  <div class="field">
-                    <label>Что бросать</label>
-                    <select>
-                      <option>Восприятие</option>
-                      <option>Проницательность</option>
-                      <option>Расследование</option>
-                      <option>Запугивание</option>
-                      <option>Воровские инструменты</option>
-                      <option>Винтовка Оскара</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>Характеристика</label>
-                    <select>
-                      <option>Мудрость</option>
-                      <option>Интеллект</option>
-                      <option>Телосложение</option>
-                      <option>Харизма</option>
-                      <option>Из листа</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>Бросок</label>
-                    <select>
-                      <option>Обычный</option>
-                      <option>Преимущество</option>
-                      <option>Помеха</option>
-                      <option>Спросить</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div class="choice-line">
-                  <span class="muted">Выбор игрока:</span>
-                  <button class="option-pill is-active" type="button">МДР (Восприятие)</button>
-                  <button class="option-pill" type="button">МДР (Проницательность)</button>
-                  <button class="option-pill" type="button">ИНТ (Расследование)</button>
-                </div>
-
-                <div class="effect-inline">
-                  <div>
-                    <strong>Эффект: нет</strong>
-                    <p class="muted">Rebreya Main / DAE / Midi-QOL</p>
-                  </div>
-                  <button class="btn ghost" type="button">Настроить</button>
-                </div>
-
-                <div class="actions">
-                  <button class="btn ghost" type="button">+ Блок</button>
-                  <button class="btn primary" type="button">Назначить игроку</button>
-                </div>
+              <div class="actions">
+                <button class="btn ghost" type="button" title="Добавить целевое действие. Максимум пять на заявку." onclick="openActionDialog()">+ Целевое действие</button>
+                <button class="btn primary" type="button">Назначить игроку</button>
               </div>
             </section>
           </aside>
         </div>
       </div>
     </section>
+
+    <div id="target-action-dialog" class="dialog-backdrop" aria-hidden="true">
+      <section class="action-dialog" role="dialog" aria-modal="true" aria-labelledby="target-action-title">
+        <header class="dialog-title">
+          <div>
+            <h2 id="target-action-title">Целевое действие</h2>
+            <p class="muted">Настройка одного действия из пяти для выбранной заявки</p>
+          </div>
+          <button class="icon-btn danger" type="button" title="Закрыть окно" onclick="closeActionDialog()">×</button>
+        </header>
+
+        <div class="dialog-body">
+          <section class="dialog-section">
+            <div class="row-head">
+              <h4>Основа</h4>
+              <span class="tip" tabindex="0" data-tip="Название видно мастеру и игроку. Остальные данные выбираются структурно, без больших текстовых полей.">?</span>
+            </div>
+            <div class="action-dialog-grid">
+              <div class="field">
+                <label>Название</label>
+                <input type="text" value="Поиск следов">
+              </div>
+              <div class="field">
+                <label>Тип действия</label>
+                <select>
+                  <option>Проверка</option>
+                  <option>Выбор проверки</option>
+                  <option>Инструмент</option>
+                  <option>Действие листа</option>
+                  <option>Атака листа</option>
+                  <option>Свободный итог</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Исполнитель</label>
+                <select>
+                  <option>Игрок</option>
+                  <option>Мастер</option>
+                  <option>Любой участник группы</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section class="dialog-section">
+            <div class="row-head">
+              <h4>Что запросить</h4>
+              <span class="tip" tabindex="0" data-tip="Источник берётся из чарника: навык, инструмент, действие, атака или спасбросок. Характеристику можно заменить для нестандартных проверок.">?</span>
+            </div>
+            <div class="action-dialog-grid">
+              <div class="field">
+                <label>Источник</label>
+                <select>
+                  <option>Навык листа</option>
+                  <option>Характеристика</option>
+                  <option>Инструмент листа</option>
+                  <option>Спасбросок</option>
+                  <option>Действие листа</option>
+                  <option>Атака листа</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Характеристика</label>
+                <select>
+                  <option>Мудрость</option>
+                  <option>Интеллект</option>
+                  <option>Телосложение</option>
+                  <option>Харизма</option>
+                  <option>Из листа</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Навык / предмет</label>
+                <select>
+                  <option>Восприятие</option>
+                  <option>Проницательность</option>
+                  <option>Расследование</option>
+                  <option>Запугивание</option>
+                  <option>Воровские инструменты</option>
+                  <option>Винтовка Оскара</option>
+                </select>
+              </div>
+            </div>
+            <div class="choice-line">
+              <span class="muted">Варианты игроку:</span>
+              <button class="option-pill is-active" type="button">МДР (Восприятие)</button>
+              <button class="option-pill" type="button">МДР (Проницательность)</button>
+              <button class="option-pill" type="button">ТЕЛ (Запугивание)</button>
+            </div>
+          </section>
+
+          <section class="dialog-section">
+            <div class="row-head">
+              <h4>Итог</h4>
+              <span class="tip" tabindex="0" data-tip="DC проверяет порог, сумма копит total, DC + сумма делает оба расчёта, свободный итог оставляет оценку мастеру.">?</span>
+            </div>
+            <div class="action-result-grid">
+              <div class="field">
+                <label>Режим</label>
+                <select>
+                  <option>DC</option>
+                  <option>Сумма</option>
+                  <option>DC + сумма</option>
+                  <option>Свободный</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>DC</label>
+                <input type="number" value="15">
+              </div>
+              <div class="field">
+                <label>Записать</label>
+                <select>
+                  <option>Total и успех</option>
+                  <option>Только total</option>
+                  <option>Сумму группы</option>
+                  <option>Решение мастера</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section class="dialog-section">
+            <div class="row-head">
+              <h4>Эффект проверки</h4>
+              <span class="tip" tabindex="0" data-tip="Срабатывает после результата этого действия. Позже сюда подключается Rebreya Main, DAE или Midi-QOL.">?</span>
+            </div>
+            <div class="action-effect-grid">
+              <div class="field">
+                <label>Триггер</label>
+                <select>
+                  <option>После успеха</option>
+                  <option>После провала</option>
+                  <option>После любого результата</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Исполнитель</label>
+                <select>
+                  <option>Rebreya Main</option>
+                  <option>DAE</option>
+                  <option>Midi-QOL</option>
+                  <option>Без эффекта</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Шаблон</label>
+                <select>
+                  <option>Записать прогресс</option>
+                  <option>Выдать Active Effect</option>
+                  <option>Запустить workflow</option>
+                  <option>Создать запись мастеру</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section class="dialog-section">
+            <div class="row-head">
+              <h4>Эффект простоя</h4>
+              <span class="tip" tabindex="0" data-tip="Срабатывает при завершении всей заявки простоя, а не после отдельной проверки.">?</span>
+            </div>
+            <div class="action-effect-grid">
+              <div class="field">
+                <label>Когда</label>
+                <select>
+                  <option>При завершении заявки</option>
+                  <option>При провале заявки</option>
+                  <option>При ручном решении</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Исполнитель</label>
+                <select>
+                  <option>Rebreya Main</option>
+                  <option>DAE</option>
+                  <option>Midi-QOL</option>
+                  <option>Без эффекта</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Шаблон</label>
+                <select>
+                  <option>Выдать награду</option>
+                  <option>Добавить товар торговцу</option>
+                  <option>Изменить событие группы</option>
+                  <option>Выдать Active Effect</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <div class="actions">
+            <button class="btn ghost" type="button" onclick="closeActionDialog()">Отмена</button>
+            <button class="btn primary" type="button" onclick="closeActionDialog()">Сохранить действие</button>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <section id="player" class="mock-window">
       <div class="window-title">
@@ -1027,9 +1190,9 @@
                 <strong>Поиск карты обходного тоннеля</strong>
                 <p class="muted">Исследование - 1 нед.</p>
               </div>
-              <span class="chip info">Проверки</span>
+              <span class="chip info">Действия</span>
             </div>
-            <p class="muted">Мастер назначил проверки. Броски ниже используют лист Оскара и сохраняют результат в заявке.</p>
+            <p class="muted">Мастер назначил целевые действия. Игрок выполняет их с листа персонажа, а результат сохраняется в заявке.</p>
 
             <div class="check-task">
               <div>
@@ -1080,8 +1243,8 @@
         <p class="muted">Свободные поля нужны только для коротких названий. Примечания, причины и инструкции идут через шаблоны, подсказки и структурные поля.</p>
       </div>
       <div class="note">
-        <strong>Броски как задачи</strong>
-        <p class="muted">Каждый блок проверки превращается в задачу на чарнике. Игрок выбирает допустимый вариант, жмёт "Бросить", система сохраняет total/DC/сумму.</p>
+        <strong>Целевые действия</strong>
+        <p class="muted">В заявке видно до пяти задач. Плюс открывает отдельное окно, где мастер настраивает источник из чарника, итог и эффекты.</p>
       </div>
       <div class="note">
         <strong>Подсказки статусов</strong>
@@ -1091,7 +1254,7 @@
 
     <section class="note-row architecture-grid">
       <div class="note">
-        <strong>RollSpec</strong>
+        <strong>ActionSpec</strong>
         <p class="muted">Тип источника: ability, skill, tool, save, action, attack. Отдельно хранится характеристика, владение и список вариантов для выбора игроком.</p>
       </div>
       <div class="note">
@@ -1100,7 +1263,7 @@
       </div>
       <div class="note">
         <strong>EffectSpec</strong>
-        <p class="muted">Триггеры onSuccess/onFailure/onAny/onComplete. Исполнители: Rebreya Main, DAE, Midi-QOL, future adapter.</p>
+        <p class="muted">Раздельные эффекты проверки и всего простоя. Триггеры onSuccess/onFailure/onAny/onComplete, исполнители Rebreya Main, DAE, Midi-QOL.</p>
       </div>
       <div class="note">
         <strong>Roll adapter</strong>
@@ -1113,6 +1276,18 @@
     function selectRequest(node) {
       document.querySelectorAll(".request-row").forEach((row) => row.classList.remove("is-active"));
       node.classList.add("is-active");
+    }
+
+    function openActionDialog() {
+      const dialog = document.querySelector("#target-action-dialog");
+      dialog?.classList.add("is-open");
+      dialog?.setAttribute("aria-hidden", "false");
+    }
+
+    function closeActionDialog() {
+      const dialog = document.querySelector("#target-action-dialog");
+      dialog?.classList.remove("is-open");
+      dialog?.setAttribute("aria-hidden", "true");
     }
   </script>
 </body>
