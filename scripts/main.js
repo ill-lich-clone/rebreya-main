@@ -31,7 +31,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.16";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.17";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration } from "./integrations/smalltime-compat.js";

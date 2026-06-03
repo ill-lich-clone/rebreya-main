@@ -640,8 +640,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       resizable: true
     },
     position: {
-      width: 1320,
-      height: 900
+      width: 1120,
+      height: 760
     }
   };
 
@@ -1487,7 +1487,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         <section class="rm-downtime-target-dialog__section">
           <header>
             <h4>Основа</h4>
-            <span class="rm-muted">Название видно игроку и мастеру; остальное выбирается полями.</span>
           </header>
           <div class="rm-downtime-target-dialog__grid">
             <div class="rm-field">
@@ -1508,7 +1507,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         <section class="rm-downtime-target-dialog__section">
           <header>
             <h4>Что запросить</h4>
-            <span class="rm-muted">Можно собрать нестандартное сочетание вроде Телосложение (Запугивание).</span>
           </header>
           <div class="rm-downtime-target-dialog__grid">
             <div class="rm-field">
@@ -1543,7 +1541,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         <section class="rm-downtime-target-dialog__section">
           <header>
             <h4>Итог</h4>
-            <span class="rm-muted">DC проверяет порог, сумма копит total, свободный итог оставляет решение мастеру.</span>
           </header>
           <div class="rm-downtime-target-dialog__grid">
             <div class="rm-field">
@@ -1568,7 +1565,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         <section class="rm-downtime-target-dialog__section">
           <header>
             <h4>Эффект проверки</h4>
-            <span class="rm-muted">Срабатывает после этого действия.</span>
           </header>
           <div class="rm-downtime-target-dialog__grid">
             <div class="rm-field">
@@ -1589,7 +1585,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         <section class="rm-downtime-target-dialog__section">
           <header>
             <h4>Эффект простоя</h4>
-            <span class="rm-muted">Срабатывает при итоговом решении по всей заявке.</span>
           </header>
           <div class="rm-downtime-target-dialog__grid">
             <div class="rm-field">
@@ -1701,7 +1696,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           }
         }
       }, {
-        classes: ["rebreya-main", "rebreya-trader-dialog", "rm-downtime-target-action-window"]
+        classes: ["rebreya-main", "rebreya-trader-dialog", "rm-downtime-target-action-window"],
+        width: 720,
+        height: "auto"
       });
 
       dialog.render(true);

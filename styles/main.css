@@ -3395,6 +3395,36 @@ summary:focus-visible {
   color: var(--rm-text);
 }
 
+.rebreya-trader-dialog .dialog-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.rebreya-trader-dialog .dialog-buttons .dialog-button,
+.rebreya-trader-dialog .dialog-buttons button {
+  width: auto !important;
+  min-height: 34px;
+  padding: 7px 14px;
+  flex: 0 0 auto !important;
+  border: 1px solid var(--rm-border);
+  border-radius: var(--rm-radius-button);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f6e8cc;
+  font-size: 13px;
+  text-transform: none;
+}
+
+.rebreya-trader-dialog .dialog-buttons .dialog-button.default,
+.rebreya-trader-dialog .dialog-buttons .dialog-button.bright,
+.rebreya-trader-dialog .dialog-buttons button.default,
+.rebreya-trader-dialog .dialog-buttons button.bright {
+  border-color: rgba(240, 201, 130, 0.46);
+  background: rgba(151, 111, 51, 0.48);
+  color: #fff4da;
+}
+
 
 .rm-purchase-dialog__summary {
   display: grid;
@@ -3529,6 +3559,8 @@ summary:focus-visible {
 
 .rebreya-inventory-app.application,
 .rebreya-inventory-app.window-app {
+  max-width: min(1120px, calc(100vw - 48px)) !important;
+  max-height: min(760px, calc(100vh - 48px)) !important;
   background: transparent !important;
   background-color: transparent !important;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.52);
@@ -4553,15 +4585,28 @@ summary:focus-visible {
   align-items: start;
 }
 
+.rm-downtime-target-action-window.window-app,
+.rm-downtime-target-action-window.application {
+  width: min(720px, calc(100vw - 48px)) !important;
+  max-height: calc(100vh - 48px);
+}
+
+.rm-downtime-target-action-window .window-content {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .rm-downtime-target-action-dialog {
-  width: min(820px, calc(100vw - 60px));
+  width: 100%;
+  min-width: 0;
   display: grid;
   gap: 10px;
+  box-sizing: border-box;
 }
 
 .rm-downtime-target-dialog__section {
   display: grid;
-  gap: 8px;
+  gap: 7px;
   padding: 9px;
   border: 1px solid rgba(214, 177, 104, 0.16);
   background: rgba(12, 9, 6, 0.22);
@@ -4574,6 +4619,10 @@ summary:focus-visible {
   gap: 10px;
 }
 
+.rm-downtime-target-dialog__section header .rm-muted {
+  display: none;
+}
+
 .rm-downtime-target-dialog__section h4,
 .rm-downtime-target-dialog__section p {
   margin: 0;
@@ -4582,7 +4631,7 @@ summary:focus-visible {
 .rm-downtime-target-dialog__grid,
 .rm-downtime-target-dialog__choices {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   align-items: end;
 }

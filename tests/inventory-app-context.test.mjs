@@ -259,6 +259,19 @@ test("InventoryApp _prepareContext surfaces known no-group display context error
   }
 });
 
+test("InventoryApp default size stays below fullscreen dimensions", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+
+  try {
+    assert.equal(InventoryApp.DEFAULT_OPTIONS.position.width, 1120);
+    assert.equal(InventoryApp.DEFAULT_OPTIONS.position.height, 760);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp _prepareContext disables member add controls for native group membership", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
@@ -521,8 +534,12 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     throw new Error("prompt() is not supported.");
   };
   globalThis.Dialog = class Dialog {
-    constructor(config) {
+    static instances = [];
+
+    constructor(config, options = {}) {
       this.config = config;
+      this.options = options;
+      Dialog.instances.push(this);
     }
 
     render() {
@@ -644,6 +661,15 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     await dispatchClick(submitButton);
     await dispatchClick(statusButton);
     await dispatchClick(targetActionButton);
+
+    const targetDialog = globalThis.Dialog.instances.find((dialog) =>
+      dialog.options?.classes?.includes("rm-downtime-target-action-window"));
+    assert.equal(targetDialog?.options?.width, 720);
+    assert.equal(targetDialog?.options?.height, "auto");
+    assert.equal(targetDialog?.config?.content.includes("До 5 задач"), false);
+    assert.equal(targetDialog?.config?.content.includes("Недели, заявки"), false);
+    assert.equal(targetDialog?.config?.content.includes("Можно собрать"), false);
+    assert.equal(targetDialog?.config?.content.includes("DC проверяет"), false);
 
     assert.deepEqual(calls, [
       ["grantDowntimeWeeks", { actorIds: ["actor-a"], weeks: 2, reason: "" }],
