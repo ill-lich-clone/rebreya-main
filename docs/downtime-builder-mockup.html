@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rebreya downtime builder mockup</title>
+  <style>
+    :root {
+      --bg: #11100e;
+      --panel: rgba(31, 25, 18, 0.92);
+      --panel-2: rgba(18, 16, 14, 0.78);
+      --row: rgba(44, 33, 22, 0.7);
+      --row-hot: rgba(72, 53, 31, 0.82);
+      --line: rgba(214, 177, 104, 0.22);
+      --line-hot: rgba(214, 177, 104, 0.48);
+      --text: #f3dfbd;
+      --muted: #bda98a;
+      --strong: #fff5df;
+      --gold: #d4a759;
+      --green: #75b678;
+      --red: #c86b5d;
+      --blue: #7da3d8;
+      --input: rgba(10, 9, 8, 0.72);
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
+      color-scheme: dark;
+      font-family: "Roboto Condensed", "Arial Narrow", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.44)),
+        radial-gradient(circle at 18% 0%, rgba(127, 33, 52, 0.26), transparent 34%),
+        radial-gradient(circle at 82% 10%, rgba(54, 89, 78, 0.18), transparent 32%),
+        #16120f;
+      color: var(--text);
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .page {
+      width: min(1560px, calc(100vw - 32px));
+      margin: 18px auto 40px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .topbar,
+    .mock-window,
+    .note-row {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(55, 38, 23, 0.9), rgba(22, 18, 14, 0.88));
+      box-shadow: var(--shadow);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 14px 16px;
+    }
+
+    .eyebrow {
+      margin: 0 0 4px;
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      color: var(--strong);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 25px;
+      line-height: 1.05;
+    }
+
+    h2 {
+      color: var(--strong);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 20px;
+      line-height: 1.1;
+    }
+
+    h3 {
+      color: var(--strong);
+      font-size: 15px;
+      line-height: 1.1;
+    }
+
+    h4 {
+      color: var(--strong);
+      font-size: 13px;
+      line-height: 1.1;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+
+    .btn,
+    .icon-btn,
+    .seg-btn {
+      min-height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 0;
+      color: var(--text);
+      background: rgba(58, 42, 25, 0.9);
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .btn {
+      padding: 7px 10px;
+      white-space: nowrap;
+    }
+
+    .btn.primary {
+      color: #fff9e9;
+      border-color: rgba(229, 188, 102, 0.68);
+      background: linear-gradient(180deg, rgba(130, 96, 46, 0.94), rgba(83, 61, 31, 0.96));
+    }
+
+    .btn.ghost {
+      background: rgba(15, 13, 11, 0.66);
+    }
+
+    .btn.danger {
+      border-color: rgba(207, 98, 84, 0.58);
+      background: rgba(83, 42, 35, 0.86);
+    }
+
+    .icon-btn {
+      width: 30px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+    }
+
+    .mock-window {
+      min-width: 0;
+    }
+
+    .window-title {
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 11px;
+      color: #f5e4c5;
+      background: rgba(10, 10, 9, 0.88);
+      border-bottom: 1px solid var(--line);
+      font-weight: 800;
+    }
+
+    .window-body {
+      padding: 12px;
+      background: rgba(21, 18, 15, 0.72);
+    }
+
+    .master-layout {
+      display: grid;
+      grid-template-columns: 250px minmax(360px, 1fr) minmax(420px, 520px);
+      gap: 10px;
+      align-items: start;
+    }
+
+    .player-layout {
+      display: grid;
+      grid-template-columns: 270px minmax(420px, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .panel {
+      min-width: 0;
+      display: grid;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid rgba(214, 177, 104, 0.16);
+      background: var(--panel-2);
+    }
+
+    .panel-header,
+    .row-head,
+    .request-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .panel-header {
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(214, 177, 104, 0.14);
+    }
+
+    .member-list,
+    .request-list,
+    .check-list,
+    .result-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .member-row,
+    .request-row,
+    .check-block,
+    .result-row,
+    .player-card {
+      min-width: 0;
+      border: 1px solid rgba(214, 177, 104, 0.14);
+      background: var(--row);
+    }
+
+    .member-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px 10px;
+      padding: 8px;
+    }
+
+    .member-row strong,
+    .request-row strong {
+      color: var(--strong);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .number {
+      text-align: right;
+    }
+
+    .number strong {
+      display: block;
+      color: var(--strong);
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .quick-weeks {
+      display: grid;
+      grid-template-columns: 1fr 62px auto auto;
+      gap: 6px;
+      align-items: end;
+      padding-top: 8px;
+      border-top: 1px solid rgba(214, 177, 104, 0.14);
+    }
+
+    .field {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: #d8c39f;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid rgba(214, 177, 104, 0.24);
+      border-radius: 0;
+      color: var(--text);
+      background: var(--input);
+      padding: 7px 8px;
+    }
+
+    textarea {
+      min-height: 58px;
+      resize: vertical;
+      line-height: 1.35;
+    }
+
+    .request-row {
+      display: grid;
+      gap: 6px;
+      padding: 8px 9px;
+      cursor: pointer;
+    }
+
+    .request-row.is-active,
+    .request-row:hover {
+      border-color: var(--line-hot);
+      background: var(--row-hot);
+    }
+
+    .request-head strong {
+      min-width: 0;
+    }
+
+    .chip,
+    .tip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      border: 1px solid rgba(214, 177, 104, 0.22);
+      color: #f7e5c3;
+      background: rgba(16, 13, 10, 0.64);
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .chip {
+      padding: 4px 7px;
+    }
+
+    .chip.good {
+      border-color: rgba(117, 182, 120, 0.44);
+      color: #c9f0c8;
+      background: rgba(33, 68, 41, 0.56);
+    }
+
+    .chip.warn {
+      border-color: rgba(212, 167, 89, 0.58);
+      color: #ffe3a5;
+      background: rgba(91, 67, 32, 0.56);
+    }
+
+    .chip.danger {
+      border-color: rgba(200, 107, 93, 0.52);
+      color: #ffd0ca;
+      background: rgba(88, 39, 34, 0.56);
+    }
+
+    .chip.info {
+      border-color: rgba(125, 163, 216, 0.44);
+      color: #d4e4ff;
+      background: rgba(36, 50, 74, 0.56);
+    }
+
+    .tip {
+      position: relative;
+      width: 18px;
+      height: 18px;
+      min-height: 18px;
+      border-radius: 50%;
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      cursor: help;
+    }
+
+    .tip::after {
+      content: attr(data-tip);
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 8px);
+      z-index: 10;
+      width: min(260px, 80vw);
+      transform: translateX(-50%);
+      padding: 8px 9px;
+      border: 1px solid var(--line-hot);
+      background: #17120d;
+      color: var(--text);
+      box-shadow: var(--shadow);
+      white-space: normal;
+      line-height: 1.3;
+      font-weight: 600;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .tip:hover::after,
+    .tip:focus-visible::after {
+      opacity: 1;
+    }
+
+    .inspector {
+      display: grid;
+      gap: 10px;
+    }
+
+    .decision-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+      border: 1px solid rgba(214, 177, 104, 0.22);
+    }
+
+    .seg-btn {
+      border-width: 0 1px 0 0;
+      background: rgba(18, 15, 12, 0.78);
+      padding: 7px 4px;
+    }
+
+    .seg-btn:last-child {
+      border-right: 0;
+    }
+
+    .seg-btn.is-active {
+      color: #fff6e4;
+      background: rgba(111, 80, 38, 0.86);
+    }
+
+    .check-block {
+      display: grid;
+      grid-template-columns: minmax(120px, 1.1fr) minmax(120px, 1.1fr) 66px minmax(110px, 0.9fr) auto;
+      gap: 6px;
+      align-items: end;
+      padding: 8px;
+    }
+
+    .check-block .wide {
+      grid-column: span 2;
+    }
+
+    .result-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 8px;
+    }
+
+    .player-sheet {
+      border: 1px solid rgba(214, 177, 104, 0.24);
+      background: rgba(8, 8, 8, 0.84);
+    }
+
+    .portrait {
+      min-height: 340px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(214, 177, 104, 0.24);
+      background:
+        linear-gradient(160deg, rgba(34, 42, 48, 0.92), rgba(12, 12, 14, 0.92)),
+        repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.04) 0 10px, transparent 10px 20px);
+      color: #e6d3b3;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 30px;
+      text-align: center;
+    }
+
+    .character-downtime {
+      display: grid;
+      gap: 10px;
+      padding: 11px;
+      border-left: 1px solid rgba(214, 177, 104, 0.18);
+      background: rgba(16, 14, 12, 0.76);
+    }
+
+    .stat-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 7px;
+    }
+
+    .stat {
+      padding: 8px;
+      border: 1px solid rgba(214, 177, 104, 0.18);
+      background: rgba(32, 25, 18, 0.72);
+    }
+
+    .stat strong {
+      display: block;
+      margin-top: 3px;
+      color: var(--strong);
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .request-form {
+      display: grid;
+      grid-template-columns: minmax(140px, 1fr) 70px minmax(180px, 1.2fr) auto;
+      gap: 7px;
+      align-items: end;
+      padding: 8px;
+      border: 1px solid rgba(214, 177, 104, 0.16);
+      background: rgba(17, 14, 11, 0.72);
+    }
+
+    .request-form details {
+      grid-column: 1 / -1;
+    }
+
+    summary {
+      color: #d8c39f;
+      cursor: pointer;
+      font-weight: 800;
+    }
+
+    .player-card {
+      display: grid;
+      gap: 8px;
+      padding: 9px;
+    }
+
+    .check-task {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 7px;
+      border: 1px solid rgba(125, 163, 216, 0.24);
+      background: rgba(25, 33, 44, 0.58);
+    }
+
+    .note-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .note {
+      border: 1px solid rgba(214, 177, 104, 0.14);
+      background: rgba(12, 10, 8, 0.36);
+      padding: 10px;
+    }
+
+    .note strong {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--strong);
+    }
+
+    @media (max-width: 1180px) {
+      .master-layout,
+      .player-layout,
+      .note-row {
+        grid-template-columns: 1fr;
+      }
+
+      .check-block,
+      .request-form,
+      .quick-weeks {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .check-block .wide,
+      .request-form details {
+        grid-column: 1 / -1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">P1 UX concept</p>
+        <h1>Простой: меньше кнопок, блочные проверки, броски из чарника</h1>
+      </div>
+      <div class="actions">
+        <button class="btn primary" type="button" onclick="document.querySelector('#master').scrollIntoView({behavior:'smooth'})">Мастер</button>
+        <button class="btn" type="button" onclick="document.querySelector('#player').scrollIntoView({behavior:'smooth'})">Игрок</button>
+      </div>
+    </header>
+
+    <section id="master" class="mock-window">
+      <div class="window-title">
+        <span>Партийный инвентарь - вкладка "Простой"</span>
+        <span class="muted">Рассвет порядка 2 - 3 участника</span>
+      </div>
+      <div class="window-body">
+        <div class="master-layout">
+          <aside class="panel">
+            <header class="panel-header">
+              <div>
+                <h3>Участники</h3>
+                <p class="muted">Баланс недель по группе</p>
+              </div>
+              <span class="chip info">3 лист.</span>
+            </header>
+
+            <div class="member-list">
+              <article class="member-row">
+                <div>
+                  <strong>Оскар Койл</strong>
+                  <p class="muted">рез. 1 - потрач. 0</p>
+                </div>
+                <div class="number">
+                  <strong>0</strong>
+                  <span class="muted">своб.</span>
+                </div>
+              </article>
+              <article class="member-row">
+                <div>
+                  <strong>Григ Пимпле</strong>
+                  <p class="muted">рез. 0 - потрач. 0</p>
+                </div>
+                <div class="number">
+                  <strong>2</strong>
+                  <span class="muted">своб.</span>
+                </div>
+              </article>
+              <article class="member-row">
+                <div>
+                  <strong>М-010-7</strong>
+                  <p class="muted">рез. 0 - потрач. 1</p>
+                </div>
+                <div class="number">
+                  <strong>1</strong>
+                  <span class="muted">своб.</span>
+                </div>
+              </article>
+            </div>
+
+            <section class="quick-weeks">
+              <div class="field">
+                <label>Кому <span class="tip" tabindex="0" data-tip="Быстрая коррекция недель. Для тестов можно выбрать всех участников или одного персонажа.">?</span></label>
+                <select>
+                  <option>Всем участникам</option>
+                  <option>Оскар Койл</option>
+                  <option>Григ Пимпле</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Нед.</label>
+                <input type="number" min="1" value="1">
+              </div>
+              <button class="icon-btn" type="button" title="Выдать недели">+</button>
+              <button class="icon-btn" type="button" title="Забрать свободные недели">-</button>
+            </section>
+          </aside>
+
+          <section class="panel">
+            <header class="panel-header">
+              <div>
+                <h3>Очередь</h3>
+                <p class="muted">Клик по заявке открывает инспектор справа</p>
+              </div>
+              <div class="actions">
+                <span class="chip warn">1 активн.</span>
+                <button class="icon-btn danger" type="button" title="Очистить историю заявок">×</button>
+              </div>
+            </header>
+
+            <div class="request-list">
+              <article class="request-row is-active" onclick="selectRequest(this)">
+                <div class="request-head">
+                  <strong>1. Поиск карты обходного тоннеля</strong>
+                  <span class="chip warn">Ожидает</span>
+                </div>
+                <p class="muted">Оскар Койл - Исследование - 1 нед.</p>
+                <p class="muted">Игрок хочет найти маршрут к старой насосной станции.</p>
+              </article>
+
+              <article class="request-row" onclick="selectRequest(this)">
+                <div class="request-head">
+                  <strong>2. Подработка в порту</strong>
+                  <span class="chip good">Одобрено</span>
+                </div>
+                <p class="muted">Григ Пимпле - Профессия - 2 нед.</p>
+              </article>
+
+              <article class="request-row" onclick="selectRequest(this)">
+                <div class="request-head">
+                  <strong>3. Ремонт сервопривода</strong>
+                  <span class="chip info">Проверки</span>
+                </div>
+                <p class="muted">М-010-7 - Долгий проект - 1 нед.</p>
+              </article>
+            </div>
+          </section>
+
+          <aside class="panel inspector">
+            <header class="panel-header">
+              <div>
+                <h3>Инспектор заявки</h3>
+                <p class="muted">Решение, проверки и результаты без текстового парсинга</p>
+              </div>
+              <span class="chip warn">downtime-12</span>
+            </header>
+
+            <section class="panel">
+              <div class="row-head">
+                <h4>Решение мастера</h4>
+                <span class="tip" tabindex="0" data-tip="Решение меняет статус заявки и баланс недель. Подсказки на кнопках объясняют разницу между похожими действиями.">?</span>
+              </div>
+              <div class="decision-strip">
+                <button class="seg-btn is-active" type="button" title="Одобрить: заявка разрешена, недели остаются в резерве до завершения.">Одобрить</button>
+                <button class="seg-btn" type="button" title="Вернуть: отправить игроку на доработку, резерв недель освобождается.">Вернуть</button>
+                <button class="seg-btn" type="button" title="Отклонить: закрыть заявку без выполнения, резерв недель освобождается.">Отклонить</button>
+                <button class="seg-btn" type="button" title="Завершить: простой выполнен, резерв переходит в потраченные недели.">Завершить</button>
+              </div>
+              <div class="field">
+                <label>Комментарий для игрока</label>
+                <textarea>Нужно выяснить, где герой ищет сведения: архив, таверна или у торговцев.</textarea>
+              </div>
+              <div class="actions">
+                <button class="btn ghost" type="button">Сохранить решение</button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="row-head">
+                <h4>Конструктор проверок</h4>
+                <span class="tip" tabindex="0" data-tip="Каждый блок станет отдельной кнопкой броска у игрока в чарнике. Название, DC и тип проверки выбираются полями, а не вводятся одной строкой.">?</span>
+              </div>
+
+              <div class="check-list">
+                <article class="check-block">
+                  <div class="field">
+                    <label>Тип</label>
+                    <select>
+                      <option>Навык</option>
+                      <option>Характеристика</option>
+                      <option>Инструмент</option>
+                      <option>Спасбросок</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Что бросать</label>
+                    <select>
+                      <option>Расследование (ИНТ)</option>
+                      <option>История (ИНТ)</option>
+                      <option>Выживание (МДР)</option>
+                      <option>Инструменты картографа</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>DC</label>
+                    <input type="number" value="15">
+                  </div>
+                  <div class="field">
+                    <label>Режим</label>
+                    <select>
+                      <option>Обычный</option>
+                      <option>Преимущество</option>
+                      <option>Помеха</option>
+                      <option>Мастер решит</option>
+                    </select>
+                  </div>
+                  <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
+                </article>
+
+                <article class="check-block">
+                  <div class="field">
+                    <label>Тип</label>
+                    <select>
+                      <option>Инструмент</option>
+                      <option>Навык</option>
+                      <option>Характеристика</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Что бросать</label>
+                    <select>
+                      <option>Инструменты картографа</option>
+                      <option>Инструменты вора</option>
+                      <option>Набор алхимика</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>DC</label>
+                    <input type="number" value="13">
+                  </div>
+                  <div class="field">
+                    <label>Режим</label>
+                    <select>
+                      <option>Обычный</option>
+                      <option>Преимущество</option>
+                      <option>Помеха</option>
+                    </select>
+                  </div>
+                  <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
+                </article>
+              </div>
+
+              <div class="actions">
+                <button class="btn ghost" type="button">+ Добавить проверку</button>
+                <button class="btn primary" type="button">Назначить игроку</button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="row-head">
+                <h4>Броски</h4>
+                <span class="tip" tabindex="0" data-tip="Игрок бросает из чарника. Мастер видит результат в этой заявке и может завершить простой без переписывания чисел руками.">?</span>
+              </div>
+              <div class="result-list">
+                <div class="result-row">
+                  <div>
+                    <strong>Расследование DC 15</strong>
+                    <p class="muted">Ожидает броска игрока</p>
+                  </div>
+                  <span class="chip warn">ждёт</span>
+                </div>
+                <div class="result-row">
+                  <div>
+                    <strong>Инструменты картографа DC 13</strong>
+                    <p class="muted">17 - успех</p>
+                  </div>
+                  <span class="chip good">успех</span>
+                </div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="player" class="mock-window">
+      <div class="window-title">
+        <span>Чарник dnd5e - вкладка "Простой"</span>
+        <span class="muted">Оскар Койл</span>
+      </div>
+      <div class="window-body player-layout">
+        <aside class="player-sheet">
+          <div class="portrait">Оскар<br>Койл</div>
+        </aside>
+
+        <section class="character-downtime">
+          <header class="panel-header">
+            <div>
+              <h2>Простой</h2>
+              <p class="muted">Заявки, недели и проверки прямо на листе персонажа</p>
+            </div>
+            <span class="chip warn">1 нед. в резерве</span>
+          </header>
+
+          <div class="stat-strip">
+            <article class="stat">
+              <span class="muted">Свободно</span>
+              <strong>0 нед.</strong>
+            </article>
+            <article class="stat">
+              <span class="muted">В резерве</span>
+              <strong>1 нед.</strong>
+            </article>
+            <article class="stat">
+              <span class="muted">Потрачено</span>
+              <strong>0 нед.</strong>
+            </article>
+          </div>
+
+          <section class="request-form">
+            <div class="field">
+              <label>Действие <span class="tip" tabindex="0" data-tip="Тип простоя помогает мастеру подобрать правила и проверки. Уникальная заявка оставляет решение полностью за мастером.">?</span></label>
+              <select>
+                <option>Уникальная заявка</option>
+                <option>Исследование</option>
+                <option>Отдых</option>
+                <option>Крафт</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Нед.</label>
+              <input type="number" value="1" min="1">
+            </div>
+            <div class="field">
+              <label>Цель</label>
+              <input type="text" value="Поиск карты обходного тоннеля">
+            </div>
+            <button class="btn primary" type="button">Отправить</button>
+            <details>
+              <summary>Дополнительное описание</summary>
+              <div class="field" style="margin-top: 7px">
+                <textarea>Оскар ищет старые планы тоннелей рядом с насосной станцией.</textarea>
+              </div>
+            </details>
+          </section>
+
+          <article class="player-card">
+            <div class="request-head">
+              <div>
+                <strong>Поиск карты обходного тоннеля</strong>
+                <p class="muted">Исследование - 1 нед.</p>
+              </div>
+              <span class="chip info">Проверки</span>
+            </div>
+            <p class="muted">Мастер назначил проверки. Броски ниже используют лист Оскара и сохраняют результат в заявке.</p>
+
+            <div class="check-task">
+              <div>
+                <strong>Расследование (ИНТ) DC 15</strong>
+                <p class="muted">Обычный бросок</p>
+              </div>
+              <button class="btn primary" type="button">Бросить</button>
+            </div>
+
+            <div class="check-task">
+              <div>
+                <strong>Инструменты картографа DC 13</strong>
+                <p class="muted">17 - успех</p>
+              </div>
+              <span class="chip good">готово</span>
+            </div>
+          </article>
+
+          <article class="player-card">
+            <div class="request-head">
+              <div>
+                <strong>Тренировка с наставником</strong>
+                <p class="muted">Тренировка - 1 нед.</p>
+              </div>
+              <span class="chip danger">Возвращено</span>
+            </div>
+            <p class="muted">Мастер просит уточнить наставника и место тренировки. Неделя снова свободна, заявку можно отправить заново.</p>
+          </article>
+        </section>
+      </div>
+    </section>
+
+    <section class="note-row">
+      <div class="note">
+        <strong>Меньше кликов</strong>
+        <p class="muted">В очереди остаётся выбор заявки. Основные решения сгруппированы в одном сегменте, а проверки собираются в инспекторе без отдельного текстового диалога.</p>
+      </div>
+      <div class="note">
+        <strong>Броски как задачи</strong>
+        <p class="muted">Каждый блок проверки превращается в задачу на чарнике. Игрок жмёт "Бросить", система сохраняет total, DC, успех/провал и сообщает мастеру через уже добавленный socket-refresh.</p>
+      </div>
+      <div class="note">
+        <strong>Подсказки статусов</strong>
+        <p class="muted">В интерфейсе используются `title` и маленькие "?" рядом с спорными терминами: "Вернуть", "Отклонить", "Резерв", "Потрачено", "DC", "Режим".</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    function selectRequest(node) {
+      document.querySelectorAll(".request-row").forEach((row) => row.classList.remove("is-active"));
+      node.classList.add("is-active");
+    }
+  </script>
+</body>
+</html>
