@@ -9,6 +9,7 @@ function installSheetExtensionStubs() {
   const previousConfig = globalThis.CONFIG;
   const previousHooks = globalThis.Hooks;
   const previousWindow = globalThis.window;
+  const previousDocument = globalThis.document;
   const previousUi = globalThis.ui;
   const previousFoundry = globalThis.foundry;
 
@@ -20,6 +21,7 @@ function installSheetExtensionStubs() {
       this.selectors = selectors;
       this.selectorAll = selectorAll;
       this.listeners = {};
+      this.listenerOptions = {};
       this.value = "";
       this.children = [];
     }
@@ -32,9 +34,11 @@ function installSheetExtensionStubs() {
       return this.selectorAll[selector] ?? [];
     }
 
-    addEventListener(type, listener) {
+    addEventListener(type, listener, options) {
       this.listeners[type] ??= [];
       this.listeners[type].push(listener);
+      this.listenerOptions[type] ??= [];
+      this.listenerOptions[type].push(options);
     }
 
     contains(target) {
@@ -78,9 +82,12 @@ function installSheetExtensionStubs() {
   }
 
   const hooks = new Map();
+  const fakeDocument = new FakeHTMLElement();
+  fakeDocument.documentElement = new FakeHTMLElement();
   globalThis.Actor = FakeActor;
   globalThis.Item = FakeItem;
   globalThis.HTMLElement = FakeHTMLElement;
+  globalThis.document = fakeDocument;
   globalThis.game = {
     system: {
       id: "dnd5e"
@@ -112,6 +119,7 @@ function installSheetExtensionStubs() {
     }
   };
   globalThis.ui = {
+    windows: {},
     notifications: {
       info() {},
       error() {}
@@ -137,6 +145,7 @@ function installSheetExtensionStubs() {
     Actor: FakeActor,
     HTMLElement: FakeHTMLElement,
     CharacterActorSheet,
+    document: fakeDocument,
     hooks,
     restore() {
       globalThis.Actor = previousActor;
@@ -146,6 +155,7 @@ function installSheetExtensionStubs() {
       globalThis.CONFIG = previousConfig;
       globalThis.Hooks = previousHooks;
       globalThis.window = previousWindow;
+      globalThis.document = previousDocument;
       globalThis.ui = previousUi;
       globalThis.foundry = previousFoundry;
     }
@@ -269,6 +279,7 @@ test("character downtime render hook submits requests for the current sheet acto
     stubs.hooks.get("renderCharacterActorSheet")(app, root);
 
     assert.ok(root.listeners.click.length >= 1);
+    assert.ok(root.listenerOptions.click.some((options) => options?.capture === true));
     for (const listener of root.listeners.click) {
       await listener({ target: submitButton });
     }
@@ -344,6 +355,7 @@ test("character downtime submit works when the downtime tab is rendered lazily",
     stubs.hooks.get("renderCharacterActorSheet")(app, root);
 
     assert.ok(root.listeners.click.length >= 1);
+    assert.ok(root.listenerOptions.click.some((options) => options?.capture === true));
     for (const listener of root.listeners.click) {
       await listener({ target: submitButton });
     }
@@ -351,6 +363,459 @@ test("character downtime submit works when the downtime tab is rendered lazily",
     assert.deepEqual(calls, [
       ["createRequest", "actor-a", {
         actionId: "research",
+        weeks: 1,
+        title: "",
+        description: ""
+      }],
+      ["render", { force: true }],
+      ["refreshOpenApps"]
+    ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime document fallback lets sheet root handle unresolved clicks", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-root-after-document=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const submitButton = new stubs.HTMLElement();
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "unique" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-title']": { value: "" },
+        "[data-action='character-downtime-description']": { value: "" },
+        "[data-action='character-downtime-submit']": submitButton
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(submitButton);
+    stubs.document.children.push(submitButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: "downtime-1" };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+    const event = {
+      target: submitButton,
+      preventDefault() {
+        calls.push(["preventDefault"]);
+      },
+      stopPropagation() {
+        calls.push(["stopPropagation"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    assert.ok(stubs.document.listeners.click.length >= 1);
+    assert.ok(root.listeners.click.length >= 1);
+    for (const listener of stubs.document.listeners.click) {
+      await listener(event);
+    }
+    for (const listener of root.listeners.click) {
+      await listener(event);
+    }
+
+    assert.deepEqual(calls, [
+      ["preventDefault"],
+      ["stopPropagation"],
+      ["createRequest", "actor-a", {
+        actionId: "unique",
+        weeks: 1,
+        title: "",
+        description: ""
+      }],
+      ["render", { force: true }],
+      ["refreshOpenApps"]
+    ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime submit handles pointerup before sheet click handlers can swallow it", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-pointer-submit=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const submitButton = new stubs.HTMLElement();
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "unique" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-title']": { value: "" },
+        "[data-action='character-downtime-description']": { value: "" },
+        "[data-action='character-downtime-submit']": submitButton
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(submitButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: "downtime-1" };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    assert.ok(root.listeners.pointerup.length >= 1);
+    assert.ok(root.listenerOptions.pointerup.some((options) => options?.capture === true));
+    for (const listener of root.listeners.pointerup) {
+      await listener({
+        type: "pointerup",
+        target: submitButton,
+        button: 0,
+        preventDefault() {
+          calls.push(["preventDefault"]);
+        },
+        stopPropagation() {
+          calls.push(["stopPropagation"]);
+        }
+      });
+    }
+
+    assert.deepEqual(calls, [
+      ["preventDefault"],
+      ["stopPropagation"],
+      ["createRequest", "actor-a", {
+        actionId: "unique",
+        weeks: 1,
+        title: "",
+        description: ""
+      }],
+      ["render", { force: true }],
+      ["refreshOpenApps"]
+    ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime submit button is also bound directly when the panel exists", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-direct-submit=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const submitButton = new stubs.HTMLElement();
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "unique" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-title']": { value: "" },
+        "[data-action='character-downtime-description']": { value: "" },
+        "[data-action='character-downtime-submit']": submitButton
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(submitButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: "downtime-1" };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    assert.equal(submitButton.dataset.rebreyaCharacterDowntimeSubmitButtonBound, "true");
+    assert.ok(submitButton.listeners.pointerup.length >= 1);
+    assert.ok(submitButton.listenerOptions.pointerup.some((options) => options?.capture === true));
+    for (const listener of submitButton.listeners.pointerup) {
+      await listener({
+        type: "pointerup",
+        target: submitButton,
+        button: 0,
+        preventDefault() {
+          calls.push(["preventDefault"]);
+        },
+        stopPropagation() {
+          calls.push(["stopPropagation"]);
+        }
+      });
+    }
+
+    assert.deepEqual(calls, [
+      ["preventDefault"],
+      ["stopPropagation"],
+      ["createRequest", "actor-a", {
+        actionId: "unique",
+        weeks: 1,
+        title: "",
+        description: ""
+      }],
+      ["render", { force: true }],
+      ["refreshOpenApps"]
+    ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime submit resolves text-node click targets inside the button", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-text-target=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const submitButton = new stubs.HTMLElement();
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "unique" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-title']": { value: "" },
+        "[data-action='character-downtime-description']": { value: "" },
+        "[data-action='character-downtime-submit']": submitButton
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(submitButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: "downtime-1" };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of root.listeners.pointerup) {
+      await listener({
+        type: "pointerup",
+        target: {
+          parentElement: submitButton
+        },
+        button: 0,
+        preventDefault() {
+          calls.push(["preventDefault"]);
+        },
+        stopPropagation() {
+          calls.push(["stopPropagation"]);
+        }
+      });
+    }
+
+    assert.deepEqual(calls, [
+      ["preventDefault"],
+      ["stopPropagation"],
+      ["createRequest", "actor-a", {
+        actionId: "unique",
+        weeks: 1,
+        title: "",
+        description: ""
+      }],
+      ["render", { force: true }],
+      ["refreshOpenApps"]
+    ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime submit is delegated from document when sheet render binding is missed", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-document-submit=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const submitButton = new stubs.HTMLElement();
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "rest" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-title']": { value: "" },
+        "[data-action='character-downtime-description']": { value: "" },
+        "[data-action='character-downtime-submit']": submitButton
+      }
+    });
+    const appRoot = new stubs.HTMLElement({
+      dataset: {
+        appid: "42"
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      if (selector.includes("[data-appid]")) return appRoot;
+      return null;
+    };
+    stubs.document.children.push(submitButton);
+    globalThis.ui.windows["42"] = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: "downtime-1" };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+    const event = {
+      target: submitButton,
+      preventDefault() {
+        calls.push(["preventDefault"]);
+      },
+      stopPropagation() {
+        calls.push(["stopPropagation"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+
+    assert.ok(stubs.document.listeners.click.length >= 1);
+    assert.equal(stubs.document.listenerOptions.click[0]?.capture, true);
+    for (const listener of stubs.document.listeners.click) {
+      await listener(event);
+    }
+
+    assert.deepEqual(calls, [
+      ["preventDefault"],
+      ["stopPropagation"],
+      ["createRequest", "actor-a", {
+        actionId: "rest",
         weeks: 1,
         title: "",
         description: ""

@@ -42,6 +42,7 @@ test("CharacterDowntimeService maps current actor downtime into a player-facing 
   const service = new CharacterDowntimeService(createModuleApi({
     calls,
     snapshot: {
+      groupId: "group-a",
       canSubmit: true,
       members: [{
         actorId: "actor-a",
@@ -110,6 +111,7 @@ test("CharacterDowntimeService maps current actor downtime into a player-facing 
 
   assert.deepEqual(calls, [["getDowntimeSnapshot", { actorId: "actor-a" }]]);
   assert.equal(context.hasGroup, true);
+  assert.equal(context.groupId, "group-a");
   assert.equal(context.actorId, "actor-a");
   assert.equal(context.actorName, "Asha");
   assert.equal(context.canSubmit, true);
@@ -158,7 +160,16 @@ test("CharacterDowntimeService rethrows unexpected downtime context errors", () 
 
 test("CharacterDowntimeService creates requests for the current sheet actor only", async () => {
   const calls = [];
-  const service = new CharacterDowntimeService(createModuleApi({ calls }));
+  const service = new CharacterDowntimeService(createModuleApi({
+    calls,
+    snapshot: {
+      groupId: "group-a",
+      members: [],
+      requests: [],
+      actionCatalog: [],
+      canSubmit: false
+    }
+  }));
 
   const request = await service.createRequest(createActor({ id: "actor-a" }), {
     actorId: "actor-b",
@@ -170,8 +181,14 @@ test("CharacterDowntimeService creates requests for the current sheet actor only
 
   assert.equal(request.actorId, "actor-a");
   assert.deepEqual(calls, [[
+    "getDowntimeSnapshot",
+    {
+      actorId: "actor-a"
+    }
+  ], [
     "createDowntimeRequest",
     {
+      groupId: "group-a",
       actorId: "actor-a",
       actionId: "training",
       weeks: 2,

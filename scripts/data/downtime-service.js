@@ -358,20 +358,24 @@ export class DowntimeService {
   }
 
   async createRequest({
+    groupId = "",
     actorId = "",
     actionId = "unique",
     title = "",
     description = "",
-    weeks = 1
+    weeks = 1,
+    submittedByUserId = ""
   } = {}) {
-    const context = this.#resolveContext();
+    const context = cleanId(groupId)
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
+      : this.#resolveContext();
     const actor = this.#requireCurrentMemberActor(context, actorId);
     this.#assertCanSubmitForActor(actor, context);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
     const resolvedActionId = ACTION_BY_ID.has(cleanId(actionId)) ? cleanId(actionId) : "unique";
     const action = ACTION_BY_ID.get(resolvedActionId) ?? ACTION_BY_ID.get("unique");
     const safeTitle = cleanString(title) || action.label;
-    const userId = cleanId(getCurrentUser()?.id);
+    const userId = cleanId(submittedByUserId) || cleanId(getCurrentUser()?.id);
 
     return this.#writeGroupState(context, (state) => {
       const balance = normalizeBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance());

@@ -653,6 +653,11 @@ function normalizeLichWeaponValue(field, value) {
 let activeHeroDollDragData = null;
 const heroDollPanelAbortControllers = new WeakMap();
 const heroDollRootAbortControllers = new WeakMap();
+const handledCharacterDowntimeClickEvents = new WeakSet();
+const recentCharacterDowntimeSubmitButtons = new WeakMap();
+const characterDowntimeSubmitAbortControllers = new WeakMap();
+let characterDowntimeDocumentSubmitDelegated = false;
+const CHARACTER_DOWNTIME_SUBMIT_DEBOUNCE_MS = 750;
 
 function isDnd5eWorld() {
   return game.system?.id === "dnd5e";
@@ -2352,33 +2357,217 @@ async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
   await rerenderActorSheet(app, moduleApi);
 }
 
+function getApplicationElementCandidates(app) {
+  const candidates = [];
+  for (const element of [
+    app?.element,
+    app?._element,
+    app?.window?.element,
+    app?.window?._element
+  ]) {
+    if (element instanceof HTMLElement) {
+      candidates.push(element);
+    }
+    else if (element?.[0] instanceof HTMLElement) {
+      candidates.push(element[0]);
+    }
+  }
+
+  return candidates;
+}
+
+function collectOpenApplications() {
+  const applications = [];
+  const windows = globalThis.ui?.windows;
+  if (windows && typeof windows === "object") {
+    applications.push(...Object.values(windows));
+  }
+
+  const instances = globalThis.foundry?.applications?.instances;
+  if (instances?.values instanceof Function) {
+    applications.push(...instances.values());
+  }
+  else if (instances && typeof instances === "object") {
+    applications.push(...Object.values(instances));
+  }
+
+  return [...new Set(applications.filter(Boolean))];
+}
+
+function getApplicationIdFromElement(element) {
+  const root = element?.closest?.("[data-appid], [data-app-id], [data-application-id], [data-applicationid], .application, .app, .window-app");
+  if (!root) {
+    return "";
+  }
+
+  for (const value of [
+    root.dataset?.appid,
+    root.dataset?.appId,
+    root.dataset?.applicationId,
+    root.dataset?.applicationid,
+    root.getAttribute?.("data-appid"),
+    root.getAttribute?.("data-app-id"),
+    root.getAttribute?.("data-application-id"),
+    root.getAttribute?.("data-applicationid")
+  ]) {
+    const id = String(value ?? "").trim();
+    if (id) {
+      return id;
+    }
+  }
+
+  return "";
+}
+
+function getApplicationById(appId) {
+  if (!appId) {
+    return null;
+  }
+
+  const windows = globalThis.ui?.windows;
+  if (windows?.[appId]) {
+    return windows[appId];
+  }
+
+  const instances = globalThis.foundry?.applications?.instances;
+  if (instances?.get instanceof Function) {
+    return instances.get(appId) ?? instances.get(Number(appId)) ?? null;
+  }
+
+  return instances?.[appId] ?? null;
+}
+
+function resolveCharacterDowntimeSheetApp(submitButton, fallbackApp = null) {
+  if (getActorFromSheetApp(fallbackApp)?.type === "character") {
+    return fallbackApp;
+  }
+
+  const appFromId = getApplicationById(getApplicationIdFromElement(submitButton));
+  if (getActorFromSheetApp(appFromId)?.type === "character") {
+    return appFromId;
+  }
+
+  for (const app of collectOpenApplications()) {
+    const actor = getActorFromSheetApp(app);
+    if (actor?.type !== "character") {
+      continue;
+    }
+
+    if (getApplicationElementCandidates(app).some((element) => element.contains(submitButton))) {
+      return app;
+    }
+  }
+
+  return null;
+}
+
+function getEventTargetElement(event) {
+  const target = event?.target;
+  if (target?.closest instanceof Function) {
+    return target;
+  }
+
+  if (target?.parentElement?.closest instanceof Function) {
+    return target.parentElement;
+  }
+
+  if (target?.parentNode?.closest instanceof Function) {
+    return target.parentNode;
+  }
+
+  return null;
+}
+
+async function handleCharacterDowntimeSubmitClick(event, { root = null, app = null, moduleApi } = {}) {
+  if (event?.type === "pointerup" && Number(event.button ?? 0) !== 0) {
+    return false;
+  }
+
+  const submitButton = getEventTargetElement(event)?.closest?.("[data-action='character-downtime-submit']");
+  if (!(submitButton instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (root?.contains instanceof Function && !root.contains(submitButton)) {
+    return false;
+  }
+
+  const panel = submitButton.closest?.(".rm-character-downtime-tab")
+    ?? root?.querySelector?.(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
+    ?? root?.querySelector?.(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
+  const sheetApp = resolveCharacterDowntimeSheetApp(submitButton, app);
+  if (!panel || !sheetApp) {
+    return false;
+  }
+
+  if (handledCharacterDowntimeClickEvents.has(event)) {
+    return true;
+  }
+
+  const now = Date.now();
+  const lastSubmitAt = recentCharacterDowntimeSubmitButtons.get(submitButton) ?? 0;
+  if (now - lastSubmitAt < CHARACTER_DOWNTIME_SUBMIT_DEBOUNCE_MS) {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    return true;
+  }
+
+  handledCharacterDowntimeClickEvents.add(event);
+  recentCharacterDowntimeSubmitButtons.set(submitButton, now);
+  event.preventDefault?.();
+  event.stopPropagation?.();
+
+  try {
+    await handleCharacterDowntimeSubmit(panel, sheetApp, moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to submit character downtime request.`, error);
+    ui.notifications?.error(error.message || "Не удалось отправить заявку на простой.");
+  }
+
+  return true;
+}
+
 function bindCharacterDowntimeSubmitDelegation(root, app, moduleApi) {
   if (root.dataset.rebreyaCharacterDowntimeSubmitDelegated === "true") {
     return;
   }
 
   root.dataset.rebreyaCharacterDowntimeSubmitDelegated = "true";
-  root.addEventListener("click", async (event) => {
-    const submitButton = event.target?.closest?.("[data-action='character-downtime-submit']");
-    if (!submitButton || !root.contains(submitButton)) {
-      return;
-    }
+  const listener = async (event) => handleCharacterDowntimeSubmitClick(event, { root, app, moduleApi });
+  for (const type of ["pointerup", "click"]) {
+    root.addEventListener(type, listener, { capture: true });
+  }
+}
 
-    const panel = submitButton.closest?.(".rm-character-downtime-tab")
-      ?? root.querySelector(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
-      ?? root.querySelector(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
-    if (!panel) {
-      return;
-    }
+function bindCharacterDowntimeDocumentSubmitDelegation(moduleApi) {
+  if (characterDowntimeDocumentSubmitDelegated || !(globalThis.document?.addEventListener instanceof Function)) {
+    return;
+  }
 
-    try {
-      await handleCharacterDowntimeSubmit(panel, app, moduleApi);
-    }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to submit character downtime request.`, error);
-      ui.notifications?.error(error.message || "Не удалось отправить заявку на простой.");
-    }
-  });
+  characterDowntimeDocumentSubmitDelegated = true;
+  const listener = async (event) => {
+    await handleCharacterDowntimeSubmitClick(event, { root: globalThis.document, moduleApi });
+  };
+  for (const type of ["pointerup", "click"]) {
+    globalThis.document.addEventListener(type, listener, { capture: true });
+  }
+}
+
+function bindCharacterDowntimeSubmitButton(panel, app, moduleApi) {
+  const submitButton = panel.querySelector("[data-action='character-downtime-submit']");
+  if (!(submitButton instanceof HTMLElement)) {
+    return;
+  }
+
+  submitButton.dataset.rebreyaCharacterDowntimeSubmitButtonBound = "true";
+  characterDowntimeSubmitAbortControllers.get(submitButton)?.abort();
+  const abortController = new AbortController();
+  characterDowntimeSubmitAbortControllers.set(submitButton, abortController);
+  const listener = async (event) => handleCharacterDowntimeSubmitClick(event, { app, moduleApi });
+  for (const type of ["pointerup", "click"]) {
+    submitButton.addEventListener(type, listener, { capture: true, signal: abortController.signal });
+  }
 }
 
 function bindCharacterDowntimePanel(root, app, moduleApi) {
@@ -2389,19 +2578,24 @@ function bindCharacterDowntimePanel(root, app, moduleApi) {
   if (!panel) {
     if (root.dataset.rebreyaCharacterDowntimeWatch !== "true") {
       root.dataset.rebreyaCharacterDowntimeWatch = "true";
-      root.addEventListener("click", (event) => {
-        const tabTrigger = event.target.closest?.(`[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
+      const listener = (event) => {
+        const tabTrigger = getEventTargetElement(event)?.closest?.(`[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
         if (!tabTrigger) {
           return;
         }
 
         window.setTimeout(() => bindCharacterDowntimePanel(root, app, moduleApi), 0);
-      });
+      };
+      for (const type of ["pointerup", "click"]) {
+        root.addEventListener(type, listener, { capture: true });
+      }
       window.setTimeout(() => bindCharacterDowntimePanel(root, app, moduleApi), 0);
     }
 
     return;
   }
+
+  bindCharacterDowntimeSubmitButton(panel, app, moduleApi);
 }
 
 function clampItemRank(value) {
@@ -3244,6 +3438,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   patchActorMoveDropBehavior();
   patchDnd5eDragPayloadFallback();
   patchD20HeroicRollDialog();
+  bindCharacterDowntimeDocumentSubmitDelegation(moduleApi);
 
   const onRenderActorSheet = (app, html) => {
     const actor = getActorFromSheetApp(app);

@@ -78,6 +78,20 @@ function createHarness({
         canManage: Boolean(globalThis.game?.user?.isGM)
       };
     },
+    resolveForGroup(groupActorId) {
+      if (groupActorId !== groupActor.id) {
+        throw new Error("group not found");
+      }
+
+      return {
+        groupActor,
+        groupId: groupActor.id,
+        groupState: registry.groupsById[groupActor.id],
+        members,
+        memberActorIds: members.map((actor) => actor.id),
+        canManage: Boolean(globalThis.game?.user?.isGM)
+      };
+    },
     getRegistry() {
       return clone(registry);
     },
@@ -319,6 +333,44 @@ test("createRequest by player reserves weeks for an owned current member", async
     assert.equal(request.submittedByUserId, "player-1");
     assert.equal(state.balancesByActorId["actor-a"].availableWeeks, 1);
     assert.equal(state.balancesByActorId["actor-a"].reservedWeeks, 2);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("createRequest can target an explicit group and preserve player submitter on GM client", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
+  const harness = createHarness({
+    user: { id: "gm", isGM: true },
+    members: [actorA],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 2,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 2
+        }
+      },
+      counter: 0
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      groupId: "group-1",
+      actorId: "actor-a",
+      actionId: "unique",
+      title: "",
+      weeks: 1,
+      submittedByUserId: "player-1"
+    });
+
+    assert.equal(request.actorId, "actor-a");
+    assert.equal(request.submittedByUserId, "player-1");
+    assert.equal(getDowntimeState(harness).balancesByActorId["actor-a"].availableWeeks, 1);
+    assert.equal(getDowntimeState(harness).balancesByActorId["actor-a"].reservedWeeks, 1);
   }
   finally {
     harness.restore();
@@ -1133,6 +1185,333 @@ test("RebreyaMainModule applies setSetting socket messages on the GM client", as
         }
       }
     ]]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule registers the module socket listener during setup", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  let setupHandler = null;
+  let socketRegistration = null;
+  globalThis.Hooks = {
+    once() {},
+    on(eventName, handler) {
+      if (eventName === "setup") {
+        setupHandler = handler;
+      }
+    }
+  };
+  globalThis.game = {
+    socket: {
+      on(channel, handler) {
+        socketRegistration = {
+          channel,
+          handler
+        };
+      }
+    }
+  };
+
+  try {
+    await import(`../scripts/main.js?setup-socket=${Date.now()}`);
+
+    assert.equal(typeof setupHandler, "function");
+    setupHandler();
+    assert.equal(socketRegistration.channel, `module.${MODULE_ID}`);
+    assert.equal(typeof socketRegistration.handler, "function");
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule routes player downtime creation through the GM socket", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {}
+  };
+  const emitted = [];
+  globalThis.game = {
+    user: {
+      id: "player-1",
+      isGM: false
+    },
+    users: [
+      { id: "player-1", isGM: false, active: true },
+      { id: "gm", isGM: true, active: true }
+    ],
+    socket: {
+      emit(channel, message) {
+        emitted.push([channel, message]);
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-player-socket=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    let directCreateCalled = false;
+    moduleApi.downtimeService.createRequest = async () => {
+      directCreateCalled = true;
+      throw new Error("direct create should not be called");
+    };
+
+    const queuedRequest = await moduleApi.createDowntimeRequest({
+      groupId: "group-a",
+      actorId: "actor-a",
+      actionId: "unique",
+      weeks: 1
+    });
+
+    assert.equal(directCreateCalled, false);
+    assert.equal(queuedRequest.queued, true);
+    assert.equal(queuedRequest.groupId, "group-a");
+    assert.equal(queuedRequest.actorId, "actor-a");
+    assert.match(queuedRequest.requestId, /^downtime-create-/u);
+    assert.equal(emitted.length, 1);
+    assert.equal(emitted[0][0], `module.${MODULE_ID}`);
+    assert.equal(emitted[0][1].type, "downtime-create-request");
+    assert.equal(emitted[0][1].senderId, "player-1");
+    assert.equal(emitted[0][1].payload.groupId, "group-a");
+    assert.equal(emitted[0][1].payload.actorId, "actor-a");
+    assert.match(emitted[0][1].requestId, /^downtime-create-/u);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule refreshes player sheets when GM reports downtime creation", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  globalThis.Hooks = {
+    once() {}
+  };
+  let refreshCount = 0;
+  let renderCount = 0;
+  globalThis.game = {
+    user: {
+      id: "player-1",
+      isGM: false
+    },
+    users: [
+      { id: "player-1", isGM: false, active: true },
+      { id: "gm", isGM: true, active: true }
+    ],
+    socket: {
+      emit() {}
+    }
+  };
+  globalThis.ui = {
+    windows: {
+      sheet1: {
+        actor: {
+          id: "actor-a"
+        },
+        render() {
+          renderCount += 1;
+        }
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-player-result=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+
+    await moduleApi.handleSocketMessage({
+      type: "downtime-create-result",
+      requestId: "downtime-create-test-result",
+      forUserId: "player-1",
+      senderId: "gm",
+      ok: true,
+      data: {
+        id: "downtime-1",
+        actorId: "actor-a"
+      }
+    });
+
+    assert.equal(refreshCount, 1);
+    assert.equal(renderCount, 1);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+  }
+});
+
+test("RebreyaMainModule GM creates socket downtime requests for the submitting player only", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {}
+  };
+  const emitted = [];
+  const playerUser = { id: "player-1", isGM: false, active: true };
+  const actor = {
+    id: "actor-a",
+    name: "Hero A",
+    type: "character",
+    testUserPermission(user, permission) {
+      return permission === "OWNER" && user?.id === "player-1";
+    }
+  };
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true
+    },
+    users: [
+      playerUser,
+      { id: "gm", isGM: true, active: true }
+    ],
+    socket: {
+      emit(channel, message) {
+        emitted.push([channel, message]);
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-gm-socket=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const createCalls = [];
+    let refreshCount = 0;
+    moduleApi.groupContextService.resolveForGroup = (groupActorId) => {
+      assert.equal(groupActorId, "group-a");
+      return {
+        groupId: "group-a",
+        members: [actor],
+        memberActorIds: ["actor-a"]
+      };
+    };
+    moduleApi.downtimeService.createRequest = async (payload) => {
+      createCalls.push(payload);
+      return {
+        id: "downtime-7",
+        actorId: payload.actorId,
+        submittedByUserId: payload.submittedByUserId
+      };
+    };
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+
+    await moduleApi.handleSocketMessage({
+      type: "downtime-create-request",
+      requestId: "downtime-create-test-1",
+      senderId: "player-1",
+      payload: {
+        groupId: "group-a",
+        actorId: "actor-a",
+        actionId: "training",
+        weeks: 1
+      }
+    });
+
+    assert.equal(refreshCount, 1);
+    assert.deepEqual(createCalls, [{
+      groupId: "group-a",
+      actorId: "actor-a",
+      actionId: "training",
+      weeks: 1,
+      submittedByUserId: "player-1"
+    }]);
+    assert.deepEqual(emitted, [[
+      `module.${MODULE_ID}`,
+      {
+        type: "downtime-create-result",
+        requestId: "downtime-create-test-1",
+        forUserId: "player-1",
+        senderId: "gm",
+        ok: true,
+        data: {
+          id: "downtime-7",
+          actorId: "actor-a",
+          submittedByUserId: "player-1"
+        }
+      }
+    ]]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule GM rejects socket downtime requests for unowned actors", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {}
+  };
+  const emitted = [];
+  const actor = {
+    id: "actor-a",
+    name: "Hero A",
+    type: "character",
+    testUserPermission() {
+      return false;
+    }
+  };
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true
+    },
+    users: [
+      { id: "player-1", isGM: false, active: true },
+      { id: "gm", isGM: true, active: true }
+    ],
+    socket: {
+      emit(channel, message) {
+        emitted.push([channel, message]);
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-gm-reject=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    moduleApi.groupContextService.resolveForGroup = () => ({
+      groupId: "group-a",
+      members: [actor],
+      memberActorIds: ["actor-a"]
+    });
+    moduleApi.downtimeService.createRequest = async () => {
+      throw new Error("request should not be created");
+    };
+
+    await moduleApi.handleSocketMessage({
+      type: "downtime-create-request",
+      requestId: "downtime-create-test-2",
+      senderId: "player-1",
+      payload: {
+        groupId: "group-a",
+        actorId: "actor-a",
+        weeks: 1
+      }
+    });
+
+    assert.equal(emitted.length, 1);
+    assert.equal(emitted[0][0], `module.${MODULE_ID}`);
+    assert.equal(emitted[0][1].type, "downtime-create-result");
+    assert.equal(emitted[0][1].requestId, "downtime-create-test-2");
+    assert.equal(emitted[0][1].forUserId, "player-1");
+    assert.equal(emitted[0][1].ok, false);
+    assert.match(emitted[0][1].error, /своего персонажа/u);
   }
   finally {
     globalThis.Hooks = previousHooks;

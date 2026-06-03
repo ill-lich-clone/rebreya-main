@@ -31,7 +31,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.15";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration } from "./integrations/smalltime-compat.js";
@@ -50,7 +50,11 @@ const SOCKET_EVENT_LOOTGEN_SHOW = "lootgen-show-result";
 const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
 const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
 const SOCKET_EVENT_TRADER_AUDIT = "trader-audit";
+const SOCKET_EVENT_DOWNTIME_CREATE_REQUEST = "downtime-create-request";
+const SOCKET_EVENT_DOWNTIME_CREATE_RESULT = "downtime-create-result";
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
+let socketModuleApi = null;
+const queuedSocketMessages = [];
 
 function cloneSocketPayload(value) {
   if (globalThis.foundry?.utils?.deepClone) {
@@ -58,6 +62,82 @@ function cloneSocketPayload(value) {
   }
 
   return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function createSocketRequestId(prefix) {
+  const randomPart = globalThis.foundry?.utils?.randomID?.()
+    ?? Math.random().toString(36).slice(2);
+  return `${prefix}-${Date.now()}-${randomPart}`;
+}
+
+function cleanSocketId(value) {
+  return String(value ?? "").trim();
+}
+
+function getGameUsers() {
+  const users = globalThis.game?.users;
+  if (!users) {
+    return [];
+  }
+
+  if (Array.isArray(users.contents)) {
+    return users.contents;
+  }
+
+  return Array.from(users).map((entry) => Array.isArray(entry) ? entry[1] : entry).filter(Boolean);
+}
+
+function getUserById(userId) {
+  const id = cleanSocketId(userId);
+  if (!id) {
+    return null;
+  }
+
+  return globalThis.game?.users?.get?.(id)
+    ?? getGameUsers().find((user) => user?.id === id)
+    ?? null;
+}
+
+function isActorOwnedByUser(actor, user) {
+  if (!actor || !user || actor.type !== "character") {
+    return false;
+  }
+
+  if (user.isGM) {
+    return true;
+  }
+
+  if (typeof actor.testUserPermission === "function") {
+    return actor.testUserPermission(user, "OWNER") === true;
+  }
+
+  const ownership = actor.ownership ?? actor._source?.ownership ?? {};
+  return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
+}
+
+function dispatchSocketMessage(message) {
+  const moduleApi = socketModuleApi ?? globalThis.game?.rebreyaMain ?? null;
+  if (!moduleApi) {
+    queuedSocketMessages.push(message);
+    return;
+  }
+
+  moduleApi.handleSocketMessage(message).catch((error) => {
+    console.error(`${MODULE_ID} | Failed to handle socket message.`, error);
+  });
+}
+
+function flushQueuedSocketMessages(moduleApi) {
+  if (!moduleApi) {
+    return;
+  }
+
+  while (queuedSocketMessages.length) {
+    const message = queuedSocketMessages.shift();
+    moduleApi.handleSocketMessage(message).catch((error) => {
+      console.error(`${MODULE_ID} | Failed to handle queued socket message.`, error);
+    });
+  }
 }
 
 function ensureModuleStylesheet() {
@@ -308,7 +388,19 @@ export class RebreyaMainModule {
       return;
     }
 
+    if (message.type === SOCKET_EVENT_DOWNTIME_CREATE_RESULT) {
+      await this.#handleDowntimeCreateSocketResult(message);
+      return;
+    }
+
     if (message.senderId && message.senderId === game.user?.id) {
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_DOWNTIME_CREATE_REQUEST) {
+      if (game.user?.isGM) {
+        await this.#handleDowntimeCreateSocketRequest(message);
+      }
       return;
     }
 
@@ -1102,9 +1194,142 @@ export class RebreyaMainModule {
   }
 
   async createDowntimeRequest(payload = {}) {
+    if (!game.user?.isGM) {
+      return this.#requestDowntimeCreateViaGm(payload);
+    }
+
     const result = await this.downtimeService.createRequest(payload);
     await this.refreshOpenApps();
     return result;
+  }
+
+  async #requestDowntimeCreateViaGm(payload = {}) {
+    if (typeof game.socket?.emit !== "function") {
+      throw new Error("Сокет Foundry недоступен для отправки заявки мастеру.");
+    }
+
+    const requestId = createSocketRequestId("downtime-create");
+    const safePayload = cloneSocketPayload(payload);
+    safePayload.actorId = cleanSocketId(safePayload.actorId);
+    safePayload.groupId = cleanSocketId(safePayload.groupId);
+
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: SOCKET_EVENT_DOWNTIME_CREATE_REQUEST,
+      requestId,
+      senderId: game.user?.id ?? "",
+      payload: safePayload
+    });
+    return {
+      ...safePayload,
+      requestId,
+      queued: true
+    };
+  }
+
+  async #handleDowntimeCreateSocketResult(message = {}) {
+    const forUserId = cleanSocketId(message.forUserId);
+    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
+      return;
+    }
+
+    if (message.ok === false) {
+      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил создание заявки простоя.");
+      return;
+    }
+
+    await this.refreshOpenApps();
+    await this.#refreshActorSheets([message.data?.actorId]);
+  }
+
+  async #handleDowntimeCreateSocketRequest(message = {}) {
+    const requestId = cleanSocketId(message.requestId);
+    const forUserId = cleanSocketId(message.senderId);
+
+    try {
+      const result = await this.#createDowntimeRequestFromSocket(message.payload ?? {}, {
+        senderId: forUserId
+      });
+      globalThis.ui?.notifications?.info?.(`Rebreya: заявка на простой от ${result.actorName ?? result.actorId ?? "игрока"}.`);
+
+      if (requestId) {
+        game.socket?.emit?.(SOCKET_CHANNEL, {
+          type: SOCKET_EVENT_DOWNTIME_CREATE_RESULT,
+          requestId,
+          forUserId,
+          senderId: game.user?.id ?? "",
+          ok: true,
+          data: cloneSocketPayload(result)
+        });
+      }
+    }
+    catch (error) {
+      if (requestId) {
+        game.socket?.emit?.(SOCKET_CHANNEL, {
+          type: SOCKET_EVENT_DOWNTIME_CREATE_RESULT,
+          requestId,
+          forUserId,
+          senderId: game.user?.id ?? "",
+          ok: false,
+          error: error?.message ?? String(error)
+        });
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  async #createDowntimeRequestFromSocket(payload = {}, { senderId = "" } = {}) {
+    const senderUser = getUserById(senderId);
+    if (!senderUser) {
+      throw new Error("Игрок для заявки простоя не найден.");
+    }
+
+    const groupId = cleanSocketId(payload.groupId);
+    if (!groupId) {
+      throw new Error("Группа заявки простоя не найдена.");
+    }
+
+    const context = this.groupContextService.resolveForGroup(groupId);
+    const actorId = cleanSocketId(payload.actorId);
+    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
+    if (!actor) {
+      throw new Error("Персонаж заявки простоя не найден в группе.");
+    }
+
+    if (!isActorOwnedByUser(actor, senderUser)) {
+      throw new Error("Игрок может отправлять простой только за своего персонажа.");
+    }
+
+    const result = await this.downtimeService.createRequest({
+      ...cloneSocketPayload(payload),
+      groupId,
+      actorId,
+      submittedByUserId: senderUser.id
+    });
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async #refreshActorSheets(actorIds = []) {
+    const actorIdSet = new Set(actorIds.map((actorId) => cleanSocketId(actorId)).filter(Boolean));
+    if (!actorIdSet.size) {
+      return;
+    }
+
+    const applications = [
+      ...Object.values(globalThis.ui?.windows ?? {}),
+      ...Array.from(globalThis.foundry?.applications?.instances?.values?.() ?? [])
+    ];
+
+    for (const app of new Set(applications.filter(Boolean))) {
+      const actor = app.actor ?? app.document ?? null;
+      if (!actorIdSet.has(cleanSocketId(actor?.id))) {
+        continue;
+      }
+
+      await rerenderApp(app);
+    }
   }
 
   async setDowntimeRequestStatus(requestId, status, options = {}) {
@@ -1952,6 +2177,12 @@ Hooks.once("init", () => {
   }
 });
 
+if (Hooks.on instanceof Function) {
+  Hooks.on("setup", () => {
+    game.socket?.on?.(SOCKET_CHANNEL, dispatchSocketMessage);
+  });
+}
+
 Hooks.once("ready", async () => {
   try {
     patchEffectMacroCombatHooks();
@@ -1978,16 +2209,12 @@ Hooks.once("ready", async () => {
   }
 
   game.rebreyaMain = moduleApi;
+  socketModuleApi = moduleApi;
   const module = game.modules.get(MODULE_ID);
   if (module) {
     module.api = moduleApi;
   }
-
-  game.socket?.on?.(SOCKET_CHANNEL, (message) => {
-    moduleApi.handleSocketMessage(message).catch((error) => {
-      console.error(`${MODULE_ID} | Failed to handle socket message.`, error);
-    });
-  });
+  flushQueuedSocketMessages(moduleApi);
 
   try {
     registerCombatHooks(moduleApi);

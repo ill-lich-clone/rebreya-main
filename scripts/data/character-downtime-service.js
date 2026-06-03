@@ -193,6 +193,7 @@ export class CharacterDowntimeService {
       .map((request) => mapRequest(request));
 
     return {
+      groupId: snapshot.groupId ?? "",
       actorId: actor.id,
       actorName: actor.name ?? actor.id,
       hasGroup: true,
@@ -222,7 +223,16 @@ export class CharacterDowntimeService {
       throw new Error("Персонаж для заявки простоя не найден.");
     }
 
+    let groupId = "";
+    try {
+      groupId = cleanText(this.moduleApi?.getDowntimeSnapshot?.({ actorId: actor.id })?.groupId);
+    }
+    catch (_error) {
+      groupId = "";
+    }
+
     return this.moduleApi.createDowntimeRequest({
+      groupId,
       actorId: actor.id,
       actionId: cleanText(payload.actionId) || "unique",
       weeks: normalizeWeeks(payload.weeks, 1),
