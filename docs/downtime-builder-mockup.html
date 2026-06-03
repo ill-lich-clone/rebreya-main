@@ -226,6 +226,11 @@
       min-width: 0;
     }
 
+    .panel-header--quiet {
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+
     .panel-header {
       padding-bottom: 8px;
       border-bottom: 1px solid rgba(214, 177, 104, 0.14);
@@ -443,14 +448,58 @@
 
     .check-block {
       display: grid;
-      grid-template-columns: minmax(120px, 1.1fr) minmax(120px, 1.1fr) 66px minmax(110px, 0.9fr) auto;
+      grid-template-columns: minmax(120px, 0.85fr) minmax(120px, 0.85fr) minmax(140px, 1fr) minmax(98px, 0.7fr) auto;
       gap: 6px;
       align-items: end;
       padding: 8px;
     }
 
-    .check-block .wide {
-      grid-column: span 2;
+    .check-block .wide,
+    .check-block__line {
+      grid-column: 1 / -1;
+    }
+
+    .check-block__line {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.9fr) minmax(0, 1.2fr) minmax(120px, 0.8fr);
+      gap: 6px;
+      align-items: end;
+    }
+
+    .option-pills,
+    .architecture-grid {
+      display: grid;
+      gap: 7px;
+    }
+
+    .option-pills {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .option-pill {
+      min-width: 0;
+      padding: 7px 8px;
+      border: 1px solid rgba(214, 177, 104, 0.18);
+      background: rgba(14, 12, 10, 0.6);
+      color: var(--text);
+      font-weight: 800;
+      line-height: 1.2;
+      text-align: left;
+    }
+
+    .option-pill.is-active {
+      border-color: rgba(229, 188, 102, 0.62);
+      background: rgba(91, 67, 32, 0.72);
+      color: var(--strong);
+    }
+
+    .effect-slot {
+      display: grid;
+      grid-template-columns: minmax(130px, 0.9fr) minmax(130px, 0.9fr) minmax(150px, 1fr);
+      gap: 6px;
+      padding: 8px;
+      border: 1px dashed rgba(125, 163, 216, 0.36);
+      background: rgba(22, 29, 40, 0.44);
     }
 
     .result-row {
@@ -518,10 +567,6 @@
       background: rgba(17, 14, 11, 0.72);
     }
 
-    .request-form details {
-      grid-column: 1 / -1;
-    }
-
     summary {
       color: #d8c39f;
       cursor: pointer;
@@ -551,6 +596,10 @@
       padding: 12px;
     }
 
+    .architecture-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
     .note {
       border: 1px solid rgba(214, 177, 104, 0.14);
       background: rgba(12, 10, 8, 0.36);
@@ -572,12 +621,15 @@
 
       .check-block,
       .request-form,
-      .quick-weeks {
+      .quick-weeks,
+      .check-block__line,
+      .effect-slot,
+      .architecture-grid {
         grid-template-columns: 1fr 1fr;
       }
 
       .check-block .wide,
-      .request-form details {
+      .check-block__line {
         grid-column: 1 / -1;
       }
     }
@@ -666,8 +718,7 @@
           <section class="panel">
             <header class="panel-header">
               <div>
-                <h3>Очередь</h3>
-                <p class="muted">Клик по заявке открывает инспектор справа</p>
+                <h3>Заявки</h3>
               </div>
               <div class="actions">
                 <span class="chip warn">1 активн.</span>
@@ -704,13 +755,33 @@
           </section>
 
           <aside class="panel inspector">
-            <header class="panel-header">
-              <div>
-                <h3>Инспектор заявки</h3>
-                <p class="muted">Решение, проверки и результаты без текстового парсинга</p>
-              </div>
+            <header class="panel-header panel-header--quiet">
+              <span class="chip warn">Ожидает решения</span>
               <span class="chip warn">downtime-12</span>
             </header>
+
+            <section class="panel">
+              <div class="row-head">
+                <h4>Правила дизайна</h4>
+                <span class="tip" tabindex="0" data-tip="Текстовые поля используются только для короткого названия заявки или блока. Все механически важные данные выбираются полями, чтобы не плодить грязный текст в чате и истории.">?</span>
+              </div>
+              <div class="result-list">
+                <div class="result-row">
+                  <div>
+                    <strong>Название блока вместо примечания</strong>
+                    <p class="muted">Если нужна подсказка, она живёт в tooltip/справке, а не в свободном textarea.</p>
+                  </div>
+                  <span class="chip good">меньше текста</span>
+                </div>
+                <div class="result-row">
+                  <div>
+                    <strong>Схема важнее описания</strong>
+                    <p class="muted">Тип броска, характеристика, владение, DC, сумма и эффект хранятся структурно.</p>
+                  </div>
+                  <span class="chip info">данные</span>
+                </div>
+              </div>
+            </section>
 
             <section class="panel">
               <div class="row-head">
@@ -724,8 +795,14 @@
                 <button class="seg-btn" type="button" title="Завершить: простой выполнен, резерв переходит в потраченные недели.">Завершить</button>
               </div>
               <div class="field">
-                <label>Комментарий для игрока</label>
-                <textarea>Нужно выяснить, где герой ищет сведения: архив, таверна или у торговцев.</textarea>
+                <label>Причина <span class="tip" tabindex="0" data-tip="Шаблон причины вместо свободного комментария. Для редких случаев можно позже добавить короткий override, но базовый поток должен жить без textarea.">?</span></label>
+                <select>
+                  <option>Без причины</option>
+                  <option>Уточнить цель</option>
+                  <option>Уточнить ресурс или место</option>
+                  <option>Недостаточно недель простоя</option>
+                  <option>Нужны проверки</option>
+                </select>
               </div>
               <div class="actions">
                 <button class="btn ghost" type="button">Сохранить решение</button>
@@ -734,73 +811,181 @@
 
             <section class="panel">
               <div class="row-head">
-                <h4>Конструктор проверок</h4>
-                <span class="tip" tabindex="0" data-tip="Каждый блок станет отдельной кнопкой броска у игрока в чарнике. Название, DC и тип проверки выбираются полями, а не вводятся одной строкой.">?</span>
+                <h4>Блоки бросков</h4>
+                <span class="tip" tabindex="0" data-tip="Каждый блок станет отдельной задачей на чарнике. Блок может быть проверкой навыка, иной характеристикой для навыка, инструментом, спасброском, действием или атакой из листа персонажа.">?</span>
               </div>
 
               <div class="check-list">
                 <article class="check-block">
                   <div class="field">
-                    <label>Тип</label>
+                    <label>Блок</label>
+                    <input type="text" value="Поиск следов">
+                  </div>
+                  <div class="field">
+                    <label>Источник</label>
                     <select>
-                      <option>Навык</option>
+                      <option>Навык листа</option>
                       <option>Характеристика</option>
-                      <option>Инструмент</option>
+                      <option>Инструмент листа</option>
                       <option>Спасбросок</option>
+                      <option>Действие листа</option>
+                      <option>Атака листа</option>
                     </select>
                   </div>
                   <div class="field">
-                    <label>Что бросать</label>
+                    <label>Характеристика</label>
                     <select>
-                      <option>Расследование (ИНТ)</option>
-                      <option>История (ИНТ)</option>
-                      <option>Выживание (МДР)</option>
-                      <option>Инструменты картографа</option>
+                      <option>Мудрость</option>
+                      <option>Интеллект</option>
+                      <option>Телосложение</option>
+                      <option>Харизма</option>
+                      <option>Из листа</option>
                     </select>
                   </div>
                   <div class="field">
-                    <label>DC</label>
-                    <input type="number" value="15">
-                  </div>
-                  <div class="field">
-                    <label>Режим</label>
+                    <label>Итог</label>
                     <select>
-                      <option>Обычный</option>
-                      <option>Преимущество</option>
-                      <option>Помеха</option>
-                      <option>Мастер решит</option>
+                      <option>DC</option>
+                      <option>Сумма</option>
+                      <option>DC + сумма</option>
+                      <option>Свободное значение</option>
                     </select>
                   </div>
                   <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
+                  <div class="check-block__line">
+                    <div class="field">
+                      <label>Владение / умение</label>
+                      <select>
+                        <option>Восприятие</option>
+                        <option>Проницательность</option>
+                        <option>Расследование</option>
+                        <option>Запугивание</option>
+                        <option>Без владения</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label>Выбор игрока <span class="tip" tabindex="0" data-tip="Мастер может дать несколько допустимых вариантов. Игрок выбирает один перед броском, например Мудрость (Восприятие) или Мудрость (Проницательность).">?</span></label>
+                      <div class="option-pills">
+                        <button class="option-pill is-active" type="button">МДР (Восприятие)</button>
+                        <button class="option-pill" type="button">МДР (Проницательность)</button>
+                        <button class="option-pill" type="button">ИНТ (Расследование)</button>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label>Порог / цель</label>
+                      <input type="number" value="15">
+                    </div>
+                  </div>
+                  <div class="check-block__line">
+                    <div class="field">
+                      <label>Бросок</label>
+                      <select>
+                        <option>Обычный</option>
+                        <option>Преимущество</option>
+                        <option>Помеха</option>
+                        <option>Спросить игрока</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label>Результат</label>
+                      <select>
+                        <option>Сохранить total</option>
+                        <option>Считать успехи</option>
+                        <option>Считать сумму группы</option>
+                        <option>Ручное решение мастера</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label>Успехи</label>
+                      <input type="number" value="1">
+                    </div>
+                  </div>
                 </article>
 
                 <article class="check-block">
                   <div class="field">
-                    <label>Тип</label>
+                    <label>Блок</label>
+                    <input type="text" value="Давление авторитетом">
+                  </div>
+                  <div class="field">
+                    <label>Источник</label>
                     <select>
-                      <option>Инструмент</option>
-                      <option>Навык</option>
-                      <option>Характеристика</option>
+                      <option>Навык листа</option>
+                      <option>Действие листа</option>
+                      <option>Атака листа</option>
+                      <option>Инструмент листа</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Характеристика</label>
+                    <select>
+                      <option>Телосложение</option>
+                      <option>Харизма</option>
+                      <option>Сила</option>
+                      <option>Из листа</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Итог</label>
+                    <select>
+                      <option>DC + сумма</option>
+                      <option>DC</option>
+                      <option>Сумма</option>
+                      <option>Свободное значение</option>
+                    </select>
+                  </div>
+                  <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
+                  <div class="check-block__line">
+                    <div class="field">
+                      <label>Владение / умение</label>
+                      <select>
+                        <option>Запугивание</option>
+                        <option>Убеждение</option>
+                        <option>Без владения</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label>Пример результата</label>
+                      <select>
+                        <option>Телосложение (Запугивание)</option>
+                        <option>Харизма (Запугивание)</option>
+                        <option>Сила (Запугивание)</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label>DC</label>
+                      <input type="number" value="14">
+                    </div>
+                  </div>
+                </article>
+
+                <article class="check-block">
+                  <div class="field">
+                    <label>Блок</label>
+                    <input type="text" value="Проверка боем">
+                  </div>
+                  <div class="field">
+                    <label>Источник</label>
+                    <select>
+                      <option>Атака листа</option>
+                      <option>Действие листа</option>
+                      <option>Навык листа</option>
                     </select>
                   </div>
                   <div class="field">
                     <label>Что бросать</label>
                     <select>
-                      <option>Инструменты картографа</option>
-                      <option>Инструменты вора</option>
-                      <option>Набор алхимика</option>
+                      <option>Винтовка Оскара</option>
+                      <option>Кинжал</option>
+                      <option>Огненная стрела</option>
                     </select>
                   </div>
                   <div class="field">
-                    <label>DC</label>
-                    <input type="number" value="13">
-                  </div>
-                  <div class="field">
-                    <label>Режим</label>
+                    <label>Итог</label>
                     <select>
-                      <option>Обычный</option>
-                      <option>Преимущество</option>
-                      <option>Помеха</option>
+                      <option>Свободное значение</option>
+                      <option>DC</option>
+                      <option>Сумма</option>
                     </select>
                   </div>
                   <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
@@ -808,8 +993,46 @@
               </div>
 
               <div class="actions">
-                <button class="btn ghost" type="button">+ Добавить проверку</button>
+                <button class="btn ghost" type="button">+ Навык</button>
+                <button class="btn ghost" type="button">+ Инструмент</button>
+                <button class="btn ghost" type="button">+ Атака</button>
                 <button class="btn primary" type="button">Назначить игроку</button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="row-head">
+                <h4>Механический эффект</h4>
+                <span class="tip" tabindex="0" data-tip="Место под будущие эффекты. Сам бросок позже должен идти через Midi/лист dnd5e, а результат может триггерить DAE, Midi workflow или сервис Rebreya Main.">?</span>
+              </div>
+              <div class="effect-slot">
+                <div class="field">
+                  <label>Адаптер</label>
+                  <select>
+                    <option>Rebreya Main</option>
+                    <option>DAE</option>
+                    <option>Midi-QOL</option>
+                    <option>Без эффекта</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Триггер</label>
+                  <select>
+                    <option>После успеха</option>
+                    <option>После провала</option>
+                    <option>После любого броска</option>
+                    <option>При завершении простоя</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Шаблон</label>
+                  <select>
+                    <option>Записать успех проекта</option>
+                    <option>Выдать эффект DAE</option>
+                    <option>Запустить Midi macro</option>
+                    <option>Создать заметку Rebreya</option>
+                  </select>
+                </div>
               </div>
             </section>
 
@@ -821,17 +1044,24 @@
               <div class="result-list">
                 <div class="result-row">
                   <div>
-                    <strong>Расследование DC 15</strong>
-                    <p class="muted">Ожидает броска игрока</p>
+                    <strong>Игрок выберет: МДР (Восприятие) / МДР (Проницательность)</strong>
+                    <p class="muted">DC 15 или сумма группы, ждёт броска</p>
                   </div>
                   <span class="chip warn">ждёт</span>
                 </div>
                 <div class="result-row">
                   <div>
-                    <strong>Инструменты картографа DC 13</strong>
-                    <p class="muted">17 - успех</p>
+                    <strong>Телосложение (Запугивание) DC 14</strong>
+                    <p class="muted">19 - успех, total сохранён</p>
                   </div>
                   <span class="chip good">успех</span>
+                </div>
+                <div class="result-row">
+                  <div>
+                    <strong>Атака листа: Винтовка Оскара</strong>
+                    <p class="muted">Будущий бросок через Midi/dnd5e workflow</p>
+                  </div>
+                  <span class="chip info">позже</span>
                 </div>
               </div>
             </section>
@@ -889,16 +1119,10 @@
               <input type="number" value="1" min="1">
             </div>
             <div class="field">
-              <label>Цель</label>
+              <label>Название заявки <span class="tip" tabindex="0" data-tip="Единственное свободное поле игрока: короткое название заявки. Развёрнутые детали лучше выразить выбором действия или подсказкой мастера.">?</span></label>
               <input type="text" value="Поиск карты обходного тоннеля">
             </div>
             <button class="btn primary" type="button">Отправить</button>
-            <details>
-              <summary>Дополнительное описание</summary>
-              <div class="field" style="margin-top: 7px">
-                <textarea>Оскар ищет старые планы тоннелей рядом с насосной станцией.</textarea>
-              </div>
-            </details>
           </section>
 
           <article class="player-card">
@@ -913,18 +1137,26 @@
 
             <div class="check-task">
               <div>
-                <strong>Расследование (ИНТ) DC 15</strong>
-                <p class="muted">Обычный бросок</p>
+                <strong>Поиск следов</strong>
+                <p class="muted">Выбери один вариант: МДР (Восприятие), МДР (Проницательность), ИНТ (Расследование)</p>
               </div>
               <button class="btn primary" type="button">Бросить</button>
             </div>
 
             <div class="check-task">
               <div>
-                <strong>Инструменты картографа DC 13</strong>
-                <p class="muted">17 - успех</p>
+                <strong>Телосложение (Запугивание) DC 14</strong>
+                <p class="muted">19 - успех, total сохранён</p>
               </div>
               <span class="chip good">готово</span>
+            </div>
+
+            <div class="check-task">
+              <div>
+                <strong>Атака листа: Винтовка Оскара</strong>
+                <p class="muted">Бросок пойдёт через Midi/dnd5e workflow, когда подключим адаптер.</p>
+              </div>
+              <button class="btn primary" type="button">Бросить</button>
             </div>
           </article>
 
@@ -944,16 +1176,35 @@
 
     <section class="note-row">
       <div class="note">
-        <strong>Меньше кликов</strong>
-        <p class="muted">В очереди остаётся выбор заявки. Основные решения сгруппированы в одном сегменте, а проверки собираются в инспекторе без отдельного текстового диалога.</p>
+        <strong>Правило текста</strong>
+        <p class="muted">Свободные поля нужны только для коротких названий. Примечания, причины и инструкции идут через шаблоны, подсказки и структурные поля.</p>
       </div>
       <div class="note">
         <strong>Броски как задачи</strong>
-        <p class="muted">Каждый блок проверки превращается в задачу на чарнике. Игрок жмёт "Бросить", система сохраняет total, DC, успех/провал и сообщает мастеру через уже добавленный socket-refresh.</p>
+        <p class="muted">Каждый блок проверки превращается в задачу на чарнике. Игрок выбирает допустимый вариант, жмёт "Бросить", система сохраняет total/DC/сумму.</p>
       </div>
       <div class="note">
         <strong>Подсказки статусов</strong>
-        <p class="muted">В интерфейсе используются `title` и маленькие "?" рядом с спорными терминами: "Вернуть", "Отклонить", "Резерв", "Потрачено", "DC", "Режим".</p>
+        <p class="muted">Спорные термины получают tooltip: "Вернуть", "Отклонить", "Резерв", "Потрачено", "DC", "Сумма", "Свободное значение".</p>
+      </div>
+    </section>
+
+    <section class="note-row architecture-grid">
+      <div class="note">
+        <strong>RollSpec</strong>
+        <p class="muted">Тип источника: ability, skill, tool, save, action, attack. Отдельно хранится характеристика, владение и список вариантов для выбора игроком.</p>
+      </div>
+      <div class="note">
+        <strong>OutcomeSpec</strong>
+        <p class="muted">Режим результата: DC, сумма, DC + сумма, свободное значение. Хранит total, success, margin, groupTotal и ручное решение мастера.</p>
+      </div>
+      <div class="note">
+        <strong>EffectSpec</strong>
+        <p class="muted">Триггеры onSuccess/onFailure/onAny/onComplete. Исполнители: Rebreya Main, DAE, Midi-QOL, future adapter.</p>
+      </div>
+      <div class="note">
+        <strong>Roll adapter</strong>
+        <p class="muted">Броски должны идти через dnd5e/Midi workflow, чтобы не обходить чарник, эффекты, модификаторы и чат-карты системы.</p>
       </div>
     </section>
   </main>
