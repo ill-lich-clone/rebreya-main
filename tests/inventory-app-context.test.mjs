@@ -553,19 +553,10 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     render() {
       if (this.config.title === "Целевое действие") {
         const values = new Map([
-          ["[data-field='target-action-label']", "Поиск следов"],
-          ["[data-field='target-action-type']", "choice"],
-          ["[data-field='target-action-source-type']", "skill"],
-          ["[data-field='target-action-ability']", "wis"],
-          ["[data-field='target-action-target']", "prc"],
-          ["[data-field='target-action-target-label']", "Восприятие"],
+          ["[data-field='target-action-type']", "check"],
           ["[data-field='target-action-outcome-mode']", "dc"],
           ["[data-field='target-action-dc']", "15"],
-          ["[data-field='target-action-roll-mode']", "normal"],
           ["[data-field='target-action-record-mode']", "total-success"],
-          ["[data-field='target-action-choice-1']", "МДР (Восприятие)"],
-          ["[data-field='target-action-choice-2']", "МДР (Проницательность)"],
-          ["[data-field='target-action-choice-3']", ""],
           ["[data-field='target-action-check-effect-trigger']", "success"],
           ["[data-field='target-action-check-effect-adapter']", "rebreya"],
           ["[data-field='target-action-check-effect-template']", "project-progress"],
@@ -573,8 +564,44 @@ test("InventoryApp downtime controls call module API handlers", async () => {
           ["[data-field='target-action-downtime-effect-adapter']", "rebreya"],
           ["[data-field='target-action-downtime-effect-template']", "group-event"]
         ]);
+        const createChoice = ({ sourceType, ability, target, targetLabel, rollMode }) => {
+          const choiceValues = new Map([
+            ["[data-field='target-choice-source-type']", sourceType],
+            ["[data-field='target-choice-ability']", ability],
+            ["[data-field='target-choice-target']", target],
+            ["[data-field='target-choice-roll-mode']", rollMode]
+          ]);
+          const choice = createFakeElement();
+          choice.querySelector = (selector) => {
+            if (selector === "[data-field='target-choice-target']") {
+              return {
+                value: target,
+                selectedOptions: [{ textContent: targetLabel }]
+              };
+            }
+            return { value: choiceValues.get(selector) ?? "" };
+          };
+          return choice;
+        };
+        const choices = [
+          createChoice({
+            sourceType: "skill",
+            ability: "wis",
+            target: "prc",
+            targetLabel: "Восприятие",
+            rollMode: "normal"
+          }),
+          createChoice({
+            sourceType: "skill",
+            ability: "wis",
+            target: "ins",
+            targetLabel: "Проницательность",
+            rollMode: "normal"
+          })
+        ];
         const root = createFakeElement();
         root.querySelector = (selector) => ({ value: values.get(selector) ?? "" });
+        root.querySelectorAll = (selector) => selector === "[data-target-choice]:not([hidden])" ? choices : [];
         this.config.buttons.confirm.callback(root);
         return;
       }
@@ -678,6 +705,12 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     assert.equal(targetDialog?.config?.content.includes("Недели, заявки"), false);
     assert.equal(targetDialog?.config?.content.includes("Можно собрать"), false);
     assert.equal(targetDialog?.config?.content.includes("DC проверяет"), false);
+    assert.equal(targetDialog?.config?.content.includes("Выбор 1"), false);
+    assert.equal(targetDialog?.config?.content.includes("data-field=\"target-action-target\""), false);
+    assert.equal(targetDialog?.config?.content.includes("data-field=\"target-action-target-label\""), false);
+    assert.equal(targetDialog?.config?.content.includes("data-target-choice"), true);
+    assert.equal(targetDialog?.config?.content.includes("Добавить альтернативу"), true);
+    assert.equal(targetDialog?.config?.content.includes("title=\"Определяет, какой тип задачи получит игрок.\""), true);
 
     assert.deepEqual(calls, [
       ["grantDowntimeWeeks", { actorIds: ["actor-a"], weeks: 2, reason: "" }],
@@ -695,7 +728,7 @@ test("InventoryApp downtime controls call module API handlers", async () => {
       ["setDowntimeRequestChecks", "downtime-1", [
         {
           id: "check-1",
-          label: "Поиск следов",
+          label: "Восприятие",
           actionType: "choice",
           sourceType: "skill",
           ability: "wis",
@@ -706,8 +739,22 @@ test("InventoryApp downtime controls call module API handlers", async () => {
           rollMode: "normal",
           recordMode: "total-success",
           choices: [
-            { label: "МДР (Восприятие)" },
-            { label: "МДР (Проницательность)" }
+            {
+              sourceType: "skill",
+              ability: "wis",
+              target: "prc",
+              targetLabel: "Восприятие",
+              rollMode: "normal",
+              label: "Восприятие"
+            },
+            {
+              sourceType: "skill",
+              ability: "wis",
+              target: "ins",
+              targetLabel: "Проницательность",
+              rollMode: "normal",
+              label: "Проницательность"
+            }
           ],
           checkEffect: {
             trigger: "success",

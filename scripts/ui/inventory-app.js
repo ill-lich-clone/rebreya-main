@@ -52,6 +52,78 @@ const DOWNTIME_SOURCE_TYPE_OPTIONS = Object.freeze([
   { value: "attack", label: "Атака листа", help: "Атака оружием, заклинанием или другим атакующим действием листа." }
 ]);
 
+const DOWNTIME_TARGET_OPTION_GROUPS = Object.freeze([
+  {
+    label: "Навыки",
+    options: [
+      { value: "acr", label: "Акробатика", sourceType: "skill", ability: "dex", help: "Ловкость (Акробатика)." },
+      { value: "ani", label: "Уход за животными", sourceType: "skill", ability: "wis", help: "Мудрость (Уход за животными)." },
+      { value: "arc", label: "Магия", sourceType: "skill", ability: "int", help: "Интеллект (Магия)." },
+      { value: "ath", label: "Атлетика", sourceType: "skill", ability: "str", help: "Сила (Атлетика)." },
+      { value: "dec", label: "Обман", sourceType: "skill", ability: "cha", help: "Харизма (Обман)." },
+      { value: "his", label: "История", sourceType: "skill", ability: "int", help: "Интеллект (История)." },
+      { value: "ins", label: "Проницательность", sourceType: "skill", ability: "wis", help: "Мудрость (Проницательность)." },
+      { value: "itm", label: "Запугивание", sourceType: "skill", ability: "cha", help: "Харизма (Запугивание); характеристику можно заменить." },
+      { value: "inv", label: "Расследование", sourceType: "skill", ability: "int", help: "Интеллект (Расследование)." },
+      { value: "med", label: "Медицина", sourceType: "skill", ability: "wis", help: "Мудрость (Медицина)." },
+      { value: "nat", label: "Природа", sourceType: "skill", ability: "int", help: "Интеллект (Природа)." },
+      { value: "prc", label: "Восприятие", sourceType: "skill", ability: "wis", help: "Мудрость (Восприятие)." },
+      { value: "prf", label: "Выступление", sourceType: "skill", ability: "cha", help: "Харизма (Выступление)." },
+      { value: "per", label: "Убеждение", sourceType: "skill", ability: "cha", help: "Харизма (Убеждение)." },
+      { value: "rel", label: "Религия", sourceType: "skill", ability: "int", help: "Интеллект (Религия)." },
+      { value: "slt", label: "Ловкость рук", sourceType: "skill", ability: "dex", help: "Ловкость (Ловкость рук)." },
+      { value: "ste", label: "Скрытность", sourceType: "skill", ability: "dex", help: "Ловкость (Скрытность)." },
+      { value: "sur", label: "Выживание", sourceType: "skill", ability: "wis", help: "Мудрость (Выживание)." }
+    ]
+  },
+  {
+    label: "Характеристики",
+    options: [
+      { value: "str", label: "Сила", sourceType: "ability", ability: "str", help: "Чистая проверка Силы." },
+      { value: "dex", label: "Ловкость", sourceType: "ability", ability: "dex", help: "Чистая проверка Ловкости." },
+      { value: "con", label: "Телосложение", sourceType: "ability", ability: "con", help: "Чистая проверка Телосложения." },
+      { value: "int", label: "Интеллект", sourceType: "ability", ability: "int", help: "Чистая проверка Интеллекта." },
+      { value: "wis", label: "Мудрость", sourceType: "ability", ability: "wis", help: "Чистая проверка Мудрости." },
+      { value: "cha", label: "Харизма", sourceType: "ability", ability: "cha", help: "Чистая проверка Харизмы." }
+    ]
+  },
+  {
+    label: "Спасброски",
+    options: [
+      { value: "save-str", label: "Спасбросок Силы", sourceType: "save", ability: "str", help: "Спасбросок Силы." },
+      { value: "save-dex", label: "Спасбросок Ловкости", sourceType: "save", ability: "dex", help: "Спасбросок Ловкости." },
+      { value: "save-con", label: "Спасбросок Телосложения", sourceType: "save", ability: "con", help: "Спасбросок Телосложения." },
+      { value: "save-int", label: "Спасбросок Интеллекта", sourceType: "save", ability: "int", help: "Спасбросок Интеллекта." },
+      { value: "save-wis", label: "Спасбросок Мудрости", sourceType: "save", ability: "wis", help: "Спасбросок Мудрости." },
+      { value: "save-cha", label: "Спасбросок Харизмы", sourceType: "save", ability: "cha", help: "Спасбросок Харизмы." }
+    ]
+  },
+  {
+    label: "Инструменты",
+    options: [
+      { value: "thieves", label: "Воровские инструменты", sourceType: "tool", help: "Проверка владения воровскими инструментами." },
+      { value: "disguise", label: "Набор для грима", sourceType: "tool", help: "Проверка владения набором для грима." },
+      { value: "forgery", label: "Набор фальсификатора", sourceType: "tool", help: "Проверка владения набором фальсификатора." },
+      { value: "herbalism", label: "Набор травника", sourceType: "tool", help: "Проверка владения набором травника." },
+      { value: "poisoner", label: "Набор отравителя", sourceType: "tool", help: "Проверка владения набором отравителя." },
+      { value: "navigator", label: "Инструменты навигатора", sourceType: "tool", help: "Проверка владения инструментами навигатора." },
+      { value: "land", label: "Наземный транспорт", sourceType: "tool", help: "Проверка владения наземным транспортом." },
+      { value: "water", label: "Водный транспорт", sourceType: "tool", help: "Проверка владения водным транспортом." },
+      { value: "alchemist", label: "Инструменты алхимика", sourceType: "tool", help: "Проверка владения инструментами алхимика." },
+      { value: "smith", label: "Инструменты кузнеца", sourceType: "tool", help: "Проверка владения инструментами кузнеца." },
+      { value: "tinker", label: "Инструменты жестянщика", sourceType: "tool", help: "Проверка владения инструментами жестянщика." },
+      { value: "cook", label: "Инструменты повара", sourceType: "tool", help: "Проверка владения инструментами повара." }
+    ]
+  },
+  {
+    label: "Лист персонажа",
+    options: [
+      { value: "sheet-action", label: "Действие из листа", sourceType: "sheetAction", help: "Готовое действие из чарника; точный список будет расширяться из данных актёра." },
+      { value: "sheet-attack", label: "Атака из листа", sourceType: "attack", help: "Атака оружием, заклинанием или другим действием атаки." }
+    ]
+  }
+]);
+
 const DOWNTIME_ABILITY_OPTIONS = Object.freeze([
   { value: "", label: "Из листа", help: "Использовать характеристику, заданную системой или выбранным действием." },
   { value: "str", label: "Сила", help: "СИЛ" },
@@ -158,6 +230,40 @@ function renderSelectOptions(options, selectedValue) {
   }).join("");
 }
 
+function getTargetOption(value) {
+  const safeValue = cleanText(value);
+  if (!safeValue) {
+    return null;
+  }
+
+  for (const group of DOWNTIME_TARGET_OPTION_GROUPS) {
+    const option = group.options.find((entry) => entry.value === safeValue);
+    if (option) {
+      return option;
+    }
+  }
+  return null;
+}
+
+function getTargetOptionLabel(value) {
+  return getTargetOption(value)?.label ?? cleanText(value);
+}
+
+function renderGroupedSelectOptions(groups, selectedValue) {
+  return groups.map((group) => {
+    const label = foundry.utils.escapeHTML(group.label);
+    return `<optgroup label="${label}">${renderSelectOptions(group.options, selectedValue)}</optgroup>`;
+  }).join("");
+}
+
+function readSelectedOptionLabel(root, fieldName) {
+  const field = root?.querySelector?.(`[data-field='${fieldName}']`);
+  const selectedOption = field?.selectedOptions?.[0];
+  return cleanText(selectedOption?.textContent ?? selectedOption?.label)
+    || getTargetOptionLabel(field?.value)
+    || cleanText(field?.value);
+}
+
 function readFieldValue(root, fieldName) {
   return cleanText(root?.querySelector(`[data-field='${fieldName}']`)?.value);
 }
@@ -171,6 +277,109 @@ function buildNextTargetActionId(actions = []) {
     }
   }
   return `check-${Date.now()}`;
+}
+
+function normalizeDowntimeTargetChoice(choice = {}, fallback = {}) {
+  const target = cleanText(choice.target) || cleanText(fallback.target) || "prc";
+  const targetOption = getTargetOption(target);
+  const sourceType = cleanText(choice.sourceType)
+    || cleanText(fallback.sourceType)
+    || targetOption?.sourceType
+    || "skill";
+  const ability = cleanText(choice.ability)
+    || cleanText(fallback.ability)
+    || targetOption?.ability
+    || "";
+  const targetLabel = cleanText(choice.targetLabel)
+    || cleanText(choice.label)
+    || getTargetOptionLabel(target);
+  const rollMode = cleanText(choice.rollMode)
+    || cleanText(fallback.rollMode)
+    || "normal";
+
+  return {
+    sourceType,
+    ability,
+    target,
+    targetLabel,
+    rollMode,
+    label: targetLabel
+  };
+}
+
+function buildDowntimeTargetChoices(action = {}) {
+  const fallback = normalizeDowntimeTargetChoice({
+    sourceType: action.sourceType,
+    ability: action.ability,
+    target: action.target,
+    targetLabel: action.targetLabel,
+    rollMode: action.rollMode
+  });
+  const choices = Array.isArray(action.choices) && action.choices.length
+    ? action.choices.map((choice) => normalizeDowntimeTargetChoice(choice, fallback))
+    : [fallback];
+
+  return choices.slice(0, MAX_DOWNTIME_TARGET_ACTIONS);
+}
+
+function buildDowntimeTargetChoiceSummary(choice = {}) {
+  const abilityLabel = getOptionLabel(DOWNTIME_ABILITY_OPTIONS, choice.ability, "Из листа");
+  const targetLabel = cleanText(choice.targetLabel) || getTargetOptionLabel(choice.target);
+  const rollLabel = getOptionLabel(DOWNTIME_ROLL_MODE_OPTIONS, choice.rollMode, "Обычный");
+  return [abilityLabel, targetLabel, rollLabel].filter(Boolean).join(" · ");
+}
+
+function buildDowntimeTargetChoiceRow(choice = {}, index = 0, { visible = true } = {}) {
+  const safeChoice = normalizeDowntimeTargetChoice(choice);
+  const title = index === 0 ? "Основной вариант" : `Альтернатива ${index}`;
+  const hidden = visible ? "" : " hidden";
+  const open = index === 0 ? " open" : "";
+  const summary = foundry.utils.escapeHTML(buildDowntimeTargetChoiceSummary(safeChoice));
+
+  return `
+    <details class="rm-downtime-target-choice"${open}${hidden} data-target-choice data-choice-index="${index}">
+      <summary class="rm-downtime-target-choice__summary" title="Нажмите, чтобы раскрыть настройки варианта.">
+        <span>${foundry.utils.escapeHTML(title)}</span>
+        <strong>${summary}</strong>
+      </summary>
+      <div class="rm-downtime-target-choice__body">
+        <div class="rm-field">
+          <label title="Откуда брать механику броска или действия.">Что бросать</label>
+          <select data-field="target-choice-source-type">${renderSelectOptions(DOWNTIME_SOURCE_TYPE_OPTIONS, safeChoice.sourceType)}</select>
+        </div>
+        <div class="rm-field">
+          <label title="Характеристика броска. «Из листа» берёт системную характеристику выбранного пункта.">Характеристика</label>
+          <select data-field="target-choice-ability">${renderSelectOptions(DOWNTIME_ABILITY_OPTIONS, safeChoice.ability)}</select>
+        </div>
+        <div class="rm-field">
+          <label title="Конкретный навык, спасбросок, инструмент, действие или атака.">Цель</label>
+          <select data-field="target-choice-target">${renderGroupedSelectOptions(DOWNTIME_TARGET_OPTION_GROUPS, safeChoice.target)}</select>
+        </div>
+        <div class="rm-field">
+          <label title="Обычный бросок, преимущество, помеха или выбор игрока перед броском.">Бросок</label>
+          <select data-field="target-choice-roll-mode">${renderSelectOptions(DOWNTIME_ROLL_MODE_OPTIONS, safeChoice.rollMode)}</select>
+        </div>
+      </div>
+    </details>
+  `;
+}
+
+function readDowntimeTargetChoice(row) {
+  const target = readFieldValue(row, "target-choice-target") || "prc";
+  const targetOption = getTargetOption(target);
+  const targetLabel = readSelectedOptionLabel(row, "target-choice-target") || targetOption?.label || target;
+  const sourceType = readFieldValue(row, "target-choice-source-type") || targetOption?.sourceType || "skill";
+  const ability = readFieldValue(row, "target-choice-ability") || targetOption?.ability || "";
+  const rollMode = readFieldValue(row, "target-choice-roll-mode") || "normal";
+
+  return {
+    sourceType,
+    ability,
+    target,
+    targetLabel,
+    rollMode,
+    label: targetLabel
+  };
 }
 
 function isKnownGroupContextError(error) {
@@ -284,7 +493,7 @@ function mapDowntimeTargetAction(check, index) {
     downtimeEffectLabel,
     hasCheckEffect: Boolean(checkEffectLabel),
     hasDowntimeEffect: Boolean(downtimeEffectLabel),
-    hasChoices: Array.isArray(check?.choices) && check.choices.length > 0
+    hasChoices: Array.isArray(check?.choices) && check.choices.length > 1
   };
 }
 
@@ -1473,69 +1682,51 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #buildDowntimeTargetActionDialogContent(action = {}) {
-    const safeLabel = foundry.utils.escapeHTML(cleanText(action.label));
-    const safeTarget = foundry.utils.escapeHTML(cleanText(action.target));
-    const safeTargetLabel = foundry.utils.escapeHTML(cleanText(action.targetLabel));
     const safeDc = foundry.utils.escapeHTML(cleanText(action.dc));
-    const choices = Array.isArray(action.choices) ? action.choices : [];
-    const choiceValue = (index) => foundry.utils.escapeHTML(cleanText(choices[index]?.label));
+    const choices = buildDowntimeTargetChoices(action);
+    const visibleChoiceCount = Math.max(1, choices.length);
+    const choiceRows = Array.from({ length: MAX_DOWNTIME_TARGET_ACTIONS }, (_entry, index) =>
+      buildDowntimeTargetChoiceRow(choices[index] ?? {}, index, { visible: index < visibleChoiceCount }));
     const checkEffect = action.checkEffect && typeof action.checkEffect === "object" ? action.checkEffect : {};
     const downtimeEffect = action.downtimeEffect && typeof action.downtimeEffect === "object" ? action.downtimeEffect : {};
 
     return `
       <form class="rm-purchase-dialog rm-downtime-target-action-dialog">
-        <section class="rm-downtime-target-dialog__section">
+        <nav class="rm-downtime-target-dialog__steps" aria-label="Этапы настройки целевого действия">
+          <span title="Тип задачи и общий сценарий.">1. Основа</span>
+          <span title="Один основной вариант и, при необходимости, альтернативы для игрока.">2. Варианты</span>
+          <span title="Как считать результат броска.">3. Итог</span>
+          <span title="Что запустить после проверки или всего простоя.">4. Эффекты</span>
+        </nav>
+
+        <section class="rm-downtime-target-dialog__section rm-downtime-target-dialog__section--compact">
           <header>
             <h4>Основа</h4>
           </header>
-          <div class="rm-downtime-target-dialog__grid">
-            <div class="rm-field">
-              <label title="Короткое название целевого действия в списке заявки.">Название</label>
-              <input type="text" value="${safeLabel}" data-field="target-action-label" placeholder="Например: Поиск следов">
-            </div>
+          <div class="rm-downtime-target-dialog__grid rm-downtime-target-dialog__grid--compact">
             <div class="rm-field">
               <label title="Определяет, какой тип задачи получит игрок.">Тип действия</label>
               <select data-field="target-action-type">${renderSelectOptions(DOWNTIME_ACTION_TYPE_OPTIONS, action.actionType || "check")}</select>
-            </div>
-            <div class="rm-field">
-              <label title="Источник броска или действия на листе персонажа.">Источник</label>
-              <select data-field="target-action-source-type">${renderSelectOptions(DOWNTIME_SOURCE_TYPE_OPTIONS, action.sourceType || "skill")}</select>
             </div>
           </div>
         </section>
 
         <section class="rm-downtime-target-dialog__section">
           <header>
-            <h4>Что запросить</h4>
+            <h4>Варианты</h4>
           </header>
-          <div class="rm-downtime-target-dialog__grid">
-            <div class="rm-field">
-              <label title="Характеристика броска. «Из листа» берёт системную характеристику выбранного действия.">Характеристика</label>
-              <select data-field="target-action-ability">${renderSelectOptions(DOWNTIME_ABILITY_OPTIONS, action.ability || "")}</select>
-            </div>
-            <div class="rm-field">
-              <label title="Системный ключ навыка, инструмента, действия или атаки. Пока можно оставить человекочитаемый ключ.">Ключ</label>
-              <input type="text" value="${safeTarget}" data-field="target-action-target" placeholder="prc, ins, Запугивание">
-            </div>
-            <div class="rm-field">
-              <label title="Метка, которую увидит игрок. Позже этот список будет подтягиваться из чарника.">Метка листа</label>
-              <input type="text" value="${safeTargetLabel}" data-field="target-action-target-label" placeholder="Восприятие">
-            </div>
+          <div class="rm-downtime-target-choice-list">
+            ${choiceRows.join("")}
           </div>
-          <div class="rm-downtime-target-dialog__choices">
-            <div class="rm-field">
-              <label title="Первый допустимый выбор игрока. Оставьте пустым, если выбор не нужен.">Выбор 1</label>
-              <input type="text" value="${choiceValue(0)}" data-field="target-action-choice-1" placeholder="МДР (Восприятие)">
-            </div>
-            <div class="rm-field">
-              <label title="Второй допустимый выбор игрока.">Выбор 2</label>
-              <input type="text" value="${choiceValue(1)}" data-field="target-action-choice-2" placeholder="МДР (Проницательность)">
-            </div>
-            <div class="rm-field">
-              <label title="Третий допустимый выбор игрока.">Выбор 3</label>
-              <input type="text" value="${choiceValue(2)}" data-field="target-action-choice-3" placeholder="ТЕЛ (Запугивание)">
-            </div>
-          </div>
+          <button
+            type="button"
+            class="rm-button rm-downtime-add-alternative"
+            data-action="target-action-add-alternative"
+            title="Добавляет ещё один структурный вариант, который игрок сможет выбрать вместо основного."
+            ${visibleChoiceCount >= MAX_DOWNTIME_TARGET_ACTIONS ? "disabled" : ""}
+          >
+            + Добавить альтернативу
+          </button>
         </section>
 
         <section class="rm-downtime-target-dialog__section">
@@ -1554,10 +1745,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             <div class="rm-field">
               <label title="Как сохранить результат после броска.">Записать</label>
               <select data-field="target-action-record-mode">${renderSelectOptions(DOWNTIME_RECORD_MODE_OPTIONS, action.recordMode || "total-success")}</select>
-            </div>
-            <div class="rm-field">
-              <label title="Обычный бросок, преимущество, помеха или выбор игрока перед броском.">Бросок</label>
-              <select data-field="target-action-roll-mode">${renderSelectOptions(DOWNTIME_ROLL_MODE_OPTIONS, action.rollMode || "normal")}</select>
             </div>
           </div>
         </section>
@@ -1606,13 +1793,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #readDowntimeTargetActionDialog(root, existingAction = {}, existingActions = []) {
-    const choices = [
-      readFieldValue(root, "target-action-choice-1"),
-      readFieldValue(root, "target-action-choice-2"),
-      readFieldValue(root, "target-action-choice-3")
-    ]
-      .filter(Boolean)
-      .map((label) => ({ label }));
+    const choiceRows = Array.from(root?.querySelectorAll?.("[data-target-choice]:not([hidden])") ?? []);
+    const choices = choiceRows.length
+      ? choiceRows.map((row) => readDowntimeTargetChoice(row))
+      : [normalizeDowntimeTargetChoice(existingAction)];
+    const primaryChoice = choices[0] ?? normalizeDowntimeTargetChoice(existingAction);
     const checkEffect = {
       trigger: readFieldValue(root, "target-action-check-effect-trigger") || "none",
       adapter: readFieldValue(root, "target-action-check-effect-adapter") || "none",
@@ -1624,17 +1809,18 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       template: readFieldValue(root, "target-action-downtime-effect-template") || "none"
     };
 
+    const selectedActionType = readFieldValue(root, "target-action-type") || "check";
     const action = {
       id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
-      label: readFieldValue(root, "target-action-label") || "Целевое действие",
-      actionType: readFieldValue(root, "target-action-type") || "check",
-      sourceType: readFieldValue(root, "target-action-source-type") || "skill",
-      ability: readFieldValue(root, "target-action-ability"),
-      target: readFieldValue(root, "target-action-target"),
-      targetLabel: readFieldValue(root, "target-action-target-label"),
+      label: primaryChoice.label || primaryChoice.targetLabel || "Целевое действие",
+      actionType: choices.length > 1 ? "choice" : selectedActionType,
+      sourceType: primaryChoice.sourceType,
+      ability: primaryChoice.ability,
+      target: primaryChoice.target,
+      targetLabel: primaryChoice.targetLabel,
       outcomeMode: readFieldValue(root, "target-action-outcome-mode") || "dc",
       dc: toInteger(readFieldValue(root, "target-action-dc"), 0),
-      rollMode: readFieldValue(root, "target-action-roll-mode") || "normal",
+      rollMode: primaryChoice.rollMode || "normal",
       recordMode: readFieldValue(root, "target-action-record-mode") || "total-success",
       choices,
       checkEffect,
@@ -1647,11 +1833,32 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (action.downtimeEffect.trigger === "none" || action.downtimeEffect.adapter === "none") {
       delete action.downtimeEffect;
     }
-    if (!action.choices.length) {
-      delete action.choices;
+    return action;
+  }
+
+  #wireDowntimeTargetActionDialog(root) {
+    const rows = Array.from(root?.querySelectorAll?.("[data-target-choice]") ?? []);
+    const addButton = root?.querySelector?.("[data-action='target-action-add-alternative']");
+    if (!addButton || !rows.length) {
+      return;
     }
 
-    return action;
+    const updateButtonState = () => {
+      addButton.disabled = !rows.some((row) => row.hidden === true);
+    };
+
+    addButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      const nextRow = rows.find((row) => row.hidden === true);
+      if (!nextRow) {
+        updateButtonState();
+        return;
+      }
+      nextRow.hidden = false;
+      nextRow.open = true;
+      updateButtonState();
+    });
+    updateButtonState();
   }
 
   async #promptDowntimeTargetAction(existingAction = {}, existingActions = []) {
@@ -1685,9 +1892,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         default: "confirm",
         render: (html) => {
           const root = getDialogRoot(html);
-          const input = root?.querySelector("[data-field='target-action-label']");
-          if (input instanceof HTMLElement) {
-            input.focus();
+          this.#wireDowntimeTargetActionDialog(root);
+          const firstControl = root?.querySelector("[data-field='target-action-type']");
+          if (firstControl instanceof HTMLElement && typeof firstControl.focus === "function") {
+            firstControl.focus();
           }
         },
         close: () => {

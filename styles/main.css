@@ -4602,12 +4602,39 @@ summary:focus-visible {
   box-sizing: border-box;
 }
 
+.rm-downtime-target-dialog__steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid rgba(214, 177, 104, 0.16);
+  background: rgba(214, 177, 104, 0.18);
+}
+
+.rm-downtime-target-dialog__steps span {
+  display: block;
+  min-width: 0;
+  padding: 7px 8px;
+  color: #f1ddb7;
+  background: rgba(10, 8, 5, 0.78);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .rm-downtime-target-dialog__section {
   display: grid;
   gap: 7px;
   padding: 9px;
   border: 1px solid rgba(214, 177, 104, 0.16);
   background: rgba(12, 9, 6, 0.22);
+}
+
+.rm-downtime-target-dialog__section--compact {
+  padding-bottom: 8px;
 }
 
 .rm-downtime-target-dialog__section header {
@@ -4632,6 +4659,77 @@ summary:focus-visible {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   align-items: end;
+}
+
+.rm-downtime-target-dialog__grid--compact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rm-downtime-target-choice-list {
+  display: grid;
+  gap: 6px;
+}
+
+.rm-downtime-target-choice {
+  border: 1px solid rgba(214, 177, 104, 0.18);
+  background: rgba(5, 4, 3, 0.34);
+}
+
+.rm-downtime-target-choice[hidden] {
+  display: none !important;
+}
+
+.rm-downtime-target-choice__summary {
+  display: grid;
+  grid-template-columns: minmax(116px, auto) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 7px 8px;
+  cursor: pointer;
+  color: #f6e8ca;
+  background: rgba(30, 22, 13, 0.68);
+}
+
+.rm-downtime-target-choice__summary span,
+.rm-downtime-target-choice__summary strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rm-downtime-target-choice__summary span {
+  color: var(--rm-ui-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.rm-downtime-target-choice__summary strong {
+  color: #fff8e8;
+  font-size: 13px;
+}
+
+.rm-downtime-target-choice__body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid rgba(214, 177, 104, 0.14);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.rm-downtime-add-alternative {
+  justify-self: start;
+  border-color: rgba(119, 155, 113, 0.52) !important;
+  background: rgba(39, 73, 45, 0.36) !important;
+  color: #d9f1cd !important;
+}
+
+.rm-downtime-add-alternative:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 @container (max-width: 1220px) {
@@ -6082,8 +6180,10 @@ summary:focus-visible {
   .rm-party-toolbar--compact,
   .rm-downtime-layout,
   .rm-downtime-request-form,
+  .rm-downtime-target-dialog__steps,
   .rm-downtime-target-dialog__grid,
   .rm-downtime-target-dialog__choices,
+  .rm-downtime-target-choice__body,
   .rm-trader-v2-mode,
   .rm-trader-v2-controls {
     grid-template-columns: 1fr;
