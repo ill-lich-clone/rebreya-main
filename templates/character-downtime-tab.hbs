@@ -95,7 +95,7 @@
               {{#if hasChecks}}
                 <div class="rm-status-strip">
                   {{#each checks}}
-                    <span class="rm-badge rm-status-badge rm-status-badge--info">{{summary}}</span>
+                    <span class="rm-badge rm-status-badge rm-status-badge--info" title="Целевое действие простоя">{{summary}}</span>
                     {{#if hasResult}}
                       <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
                     {{/if}}

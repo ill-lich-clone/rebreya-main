@@ -746,6 +746,90 @@ test("GM assigns checks and an owner records check result", async () => {
   }
 });
 
+test("GM assigns structured target actions and keeps only five per request", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
+  const harness = createHarness({
+    members: [actorA],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 0,
+          reservedWeeks: 1,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      },
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Hero A",
+        actionId: "research",
+        actionLabel: "Исследование",
+        title: "Research",
+        description: "",
+        weeks: 1,
+        status: "approved",
+        checks: [],
+        result: "",
+        createdAt: 1,
+        updatedAt: 1,
+        submittedByUserId: "player-1",
+        reviewedByUserId: ""
+      }]
+    }
+  });
+
+  try {
+    const assigned = await harness.service.setRequestChecks("downtime-1", [
+      {
+        id: "trace",
+        label: "Поиск следов",
+        actionType: "choice",
+        sourceType: "skill",
+        ability: "wis",
+        target: "prc",
+        targetLabel: "Восприятие",
+        outcomeMode: "dc",
+        dc: 15,
+        rollMode: "normal",
+        recordMode: "total-success",
+        choices: [
+          { ability: "wis", target: "prc", label: "МДР (Восприятие)" },
+          { ability: "wis", target: "ins", label: "МДР (Проницательность)" }
+        ],
+        checkEffect: {
+          trigger: "success",
+          adapter: "rebreya",
+          template: "project-progress"
+        },
+        downtimeEffect: {
+          trigger: "complete",
+          adapter: "rebreya",
+          template: "group-event"
+        }
+      },
+      { id: "two", label: "Two" },
+      { id: "three", label: "Three" },
+      { id: "four", label: "Four" },
+      { id: "five", label: "Five" },
+      { id: "six", label: "Six" }
+    ]);
+
+    assert.equal(assigned.checks.length, 5);
+    assert.equal(assigned.checks[0].actionType, "choice");
+    assert.equal(assigned.checks[0].sourceType, "skill");
+    assert.equal(assigned.checks[0].target, "prc");
+    assert.equal(assigned.checks[0].targetLabel, "Восприятие");
+    assert.equal(assigned.checks[0].outcomeMode, "dc");
+    assert.deepEqual(assigned.checks[0].choices.map((choice) => choice.label), ["МДР (Восприятие)", "МДР (Проницательность)"]);
+    assert.equal(assigned.checks[0].checkEffect.template, "project-progress");
+    assert.equal(assigned.checks[0].downtimeEffect.template, "group-event");
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("GM records check result for stale existing request", async () => {
   const currentMember = createActor({ id: "actor-a", name: "Hero A" });
   const harness = createHarness({

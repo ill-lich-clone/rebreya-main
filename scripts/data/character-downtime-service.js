@@ -25,6 +25,15 @@ const STATUS_META = Object.freeze({
   }
 });
 
+const ABILITY_LABELS = Object.freeze({
+  str: "Сила",
+  dex: "Ловкость",
+  con: "Телосложение",
+  int: "Интеллект",
+  wis: "Мудрость",
+  cha: "Харизма"
+});
+
 function cleanText(value) {
   return String(value ?? "").trim();
 }
@@ -53,10 +62,11 @@ function buildBalance(value = {}) {
 
 function buildCheckSummary(check = {}) {
   const dc = cleanText(check.dc);
+  const ability = cleanText(check.ability);
   return [
     cleanText(check.label),
     dc ? `DC ${dc.replace(/^dc\s*/iu, "")}` : "",
-    cleanText(check.ability)
+    ABILITY_LABELS[ability] ?? ability
   ].filter(Boolean).join(" | ");
 }
 

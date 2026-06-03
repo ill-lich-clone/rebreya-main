@@ -412,7 +412,26 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
         description: "Find a route.",
         weeks: 1,
         status: "pending",
-        checks: [{ id: "check-1", label: "INT", dc: 15, ability: "int" }],
+        checks: [{
+          id: "check-1",
+          label: "Поиск следов",
+          actionType: "choice",
+          sourceType: "skill",
+          ability: "wis",
+          targetLabel: "Восприятие",
+          outcomeMode: "dc",
+          dc: 15,
+          checkEffect: {
+            trigger: "success",
+            adapter: "rebreya",
+            template: "project-progress"
+          },
+          downtimeEffect: {
+            trigger: "complete",
+            adapter: "rebreya",
+            template: "group-event"
+          }
+        }],
         result: ""
       }],
       actionCatalog: [
@@ -441,7 +460,15 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
     assert.equal(context.downtime.members[0].spentWeeks, 2);
     assert.equal(context.downtime.members[0].totalGrantedWeeks, 6);
     assert.equal(context.downtime.requests[0].statusLabel, "Ожидает");
-    assert.equal(context.downtime.requests[0].checks[0].summary, "INT | DC 15 | int");
+    assert.equal(context.downtime.requests[0].checks[0].summary, "Поиск следов | DC 15 | Мудрость");
+    assert.equal(context.downtime.requests[0].targetActions[0].summary, "Поиск следов | DC 15 | Мудрость");
+    assert.equal(context.downtime.requests[0].targetActions[0].sourceTypeLabel, "Навык листа");
+    assert.equal(context.downtime.requests[0].targetActions[0].outcomeModeLabel, "DC");
+    assert.equal(context.downtime.requests[0].targetActions[0].outcomeSummary, "DC 15");
+    assert.equal(context.downtime.requests[0].targetActions[0].checkEffectLabel, "После успеха: Rebreya Main / Записать прогресс");
+    assert.equal(context.downtime.requests[0].targetActions[0].downtimeEffectLabel, "При завершении заявки: Rebreya Main / Изменить событие группы");
+    assert.equal(context.downtime.requests[0].targetActionCount, 1);
+    assert.equal(context.downtime.requests[0].targetActionLimitReached, false);
   }
   finally {
     restoreFoundry();
@@ -488,8 +515,7 @@ test("InventoryApp downtime controls call module API handlers", async () => {
   const previousDialog = globalThis.Dialog;
   const previousPrompt = globalThis.prompt;
   const dialogResponses = [
-    "Returned for details",
-    "Survival|12|wis\nTools|15|dex"
+    "Returned for details"
   ];
   globalThis.prompt = () => {
     throw new Error("prompt() is not supported.");
@@ -500,6 +526,34 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     }
 
     render() {
+      if (this.config.title === "Целевое действие") {
+        const values = new Map([
+          ["[data-field='target-action-label']", "Поиск следов"],
+          ["[data-field='target-action-type']", "choice"],
+          ["[data-field='target-action-source-type']", "skill"],
+          ["[data-field='target-action-ability']", "wis"],
+          ["[data-field='target-action-target']", "prc"],
+          ["[data-field='target-action-target-label']", "Восприятие"],
+          ["[data-field='target-action-outcome-mode']", "dc"],
+          ["[data-field='target-action-dc']", "15"],
+          ["[data-field='target-action-roll-mode']", "normal"],
+          ["[data-field='target-action-record-mode']", "total-success"],
+          ["[data-field='target-action-choice-1']", "МДР (Восприятие)"],
+          ["[data-field='target-action-choice-2']", "МДР (Проницательность)"],
+          ["[data-field='target-action-choice-3']", ""],
+          ["[data-field='target-action-check-effect-trigger']", "success"],
+          ["[data-field='target-action-check-effect-adapter']", "rebreya"],
+          ["[data-field='target-action-check-effect-template']", "project-progress"],
+          ["[data-field='target-action-downtime-effect-trigger']", "complete"],
+          ["[data-field='target-action-downtime-effect-adapter']", "rebreya"],
+          ["[data-field='target-action-downtime-effect-template']", "group-event"]
+        ]);
+        const root = createFakeElement();
+        root.querySelector = (selector) => ({ value: values.get(selector) ?? "" });
+        this.config.buttons.confirm.callback(root);
+        return;
+      }
+
       const value = dialogResponses.shift() ?? "";
       const root = createFakeElement();
       root.querySelector = () => ({ value });
@@ -519,9 +573,9 @@ test("InventoryApp downtime controls call module API handlers", async () => {
       status: "returned"
     }
   });
-  const checksButton = createFakeControl({
+  const targetActionButton = createFakeControl({
     dataset: {
-      action: "downtime-checks",
+      action: "downtime-target-action",
       requestId: "downtime-1"
     }
   });
@@ -552,13 +606,32 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     if (selector === "[data-action='downtime-status']") {
       return [statusButton];
     }
-    if (selector === "[data-action='downtime-checks']") {
-      return [checksButton];
+    if (selector === "[data-action='downtime-target-action']") {
+      return [targetActionButton];
     }
     return [];
   };
   const app = new InventoryApp(createModuleApi({
     getGroupContext: () => null,
+    downtimeSnapshot: {
+      canManage: true,
+      canSubmit: true,
+      members: [],
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionId: "research",
+        actionLabel: "Research",
+        title: "Ancient map",
+        description: "Find a route.",
+        weeks: 1,
+        status: "pending",
+        checks: [],
+        result: ""
+      }],
+      actionCatalog: []
+    },
     calls
   }));
   app.element = root;
@@ -570,7 +643,7 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     await dispatchClick(clearHistoryButton);
     await dispatchClick(submitButton);
     await dispatchClick(statusButton);
-    await dispatchClick(checksButton);
+    await dispatchClick(targetActionButton);
 
     assert.deepEqual(calls, [
       ["grantDowntimeWeeks", { actorIds: ["actor-a"], weeks: 2, reason: "" }],
@@ -584,9 +657,35 @@ test("InventoryApp downtime controls call module API handlers", async () => {
         weeks: 1
       }],
       ["setDowntimeRequestStatus", "downtime-1", "returned", { result: "Returned for details" }],
+      ["getDowntimeSnapshot"],
       ["setDowntimeRequestChecks", "downtime-1", [
-        { label: "Survival", dc: 12, ability: "wis" },
-        { label: "Tools", dc: 15, ability: "dex" }
+        {
+          id: "check-1",
+          label: "Поиск следов",
+          actionType: "choice",
+          sourceType: "skill",
+          ability: "wis",
+          target: "prc",
+          targetLabel: "Восприятие",
+          outcomeMode: "dc",
+          dc: 15,
+          rollMode: "normal",
+          recordMode: "total-success",
+          choices: [
+            { label: "МДР (Восприятие)" },
+            { label: "МДР (Проницательность)" }
+          ],
+          checkEffect: {
+            trigger: "success",
+            adapter: "rebreya",
+            template: "project-progress"
+          },
+          downtimeEffect: {
+            trigger: "complete",
+            adapter: "rebreya",
+            template: "group-event"
+          }
+        }
       ]]
     ]);
   }

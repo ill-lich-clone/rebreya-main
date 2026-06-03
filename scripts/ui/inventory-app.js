@@ -32,6 +32,94 @@ const DOWNTIME_STATUS_META = Object.freeze({
   }
 });
 
+const MAX_DOWNTIME_TARGET_ACTIONS = 5;
+
+const DOWNTIME_ACTION_TYPE_OPTIONS = Object.freeze([
+  { value: "check", label: "Проверка", help: "Одна проверка характеристики, навыка, инструмента, действия или атаки." },
+  { value: "choice", label: "Выбор проверки", help: "Мастер задаёт допустимые варианты, игрок выбирает один перед броском." },
+  { value: "tool", label: "Инструмент", help: "Запрос владения инструментом из листа персонажа." },
+  { value: "sheetAction", label: "Действие листа", help: "Запрос готового действия с листа персонажа." },
+  { value: "attack", label: "Атака листа", help: "Запрос атаки из листа персонажа; позже выполняется через dnd5e/Midi workflow." },
+  { value: "freeform", label: "Свободный итог", help: "Задача без фиксированного броска; мастер оценивает итог вручную." }
+]);
+
+const DOWNTIME_SOURCE_TYPE_OPTIONS = Object.freeze([
+  { value: "skill", label: "Навык листа", help: "Навык из листа, включая замену характеристики." },
+  { value: "ability", label: "Характеристика", help: "Чистая проверка характеристики без навыка." },
+  { value: "tool", label: "Инструмент листа", help: "Инструмент или владение с листа персонажа." },
+  { value: "save", label: "Спасбросок", help: "Спасбросок выбранной характеристики." },
+  { value: "sheetAction", label: "Действие листа", help: "Действие, уже существующее на листе персонажа." },
+  { value: "attack", label: "Атака листа", help: "Атака оружием, заклинанием или другим атакующим действием листа." }
+]);
+
+const DOWNTIME_ABILITY_OPTIONS = Object.freeze([
+  { value: "", label: "Из листа", help: "Использовать характеристику, заданную системой или выбранным действием." },
+  { value: "str", label: "Сила", help: "СИЛ" },
+  { value: "dex", label: "Ловкость", help: "ЛОВ" },
+  { value: "con", label: "Телосложение", help: "ТЕЛ; можно сочетать с навыками вроде Запугивания." },
+  { value: "int", label: "Интеллект", help: "ИНТ" },
+  { value: "wis", label: "Мудрость", help: "МДР" },
+  { value: "cha", label: "Харизма", help: "ХАР" }
+]);
+
+const DOWNTIME_OUTCOME_MODE_OPTIONS = Object.freeze([
+  { value: "dc", label: "DC", help: "Сравнить total с порогом сложности." },
+  { value: "sum", label: "Сумма", help: "Сохранить total для накопления суммы." },
+  { value: "dc-sum", label: "DC + сумма", help: "Одновременно проверить DC и сохранить total в сумму." },
+  { value: "freeform", label: "Свободный", help: "Сохранить результат без автоматической оценки успеха." }
+]);
+
+const DOWNTIME_ROLL_MODE_OPTIONS = Object.freeze([
+  { value: "normal", label: "Обычный", help: "Один стандартный бросок." },
+  { value: "advantage", label: "Преимущество", help: "Бросок с преимуществом." },
+  { value: "disadvantage", label: "Помеха", help: "Бросок с помехой." },
+  { value: "ask", label: "Спросить", help: "Игрок выбирает режим броска в момент выполнения." }
+]);
+
+const DOWNTIME_RECORD_MODE_OPTIONS = Object.freeze([
+  { value: "total-success", label: "Total и успех", help: "Сохранить total и отметку успеха/провала." },
+  { value: "total", label: "Только total", help: "Сохранить только число броска." },
+  { value: "group-sum", label: "Сумма группы", help: "Добавить результат к общей сумме заявки." },
+  { value: "gm", label: "Решение мастера", help: "Оставить итог на ручное решение мастера." }
+]);
+
+const DOWNTIME_EFFECT_TRIGGER_OPTIONS = Object.freeze([
+  { value: "none", label: "Без эффекта", help: "Ничего не запускать автоматически." },
+  { value: "success", label: "После успеха", help: "Запустить эффект только после успешной проверки." },
+  { value: "failure", label: "После провала", help: "Запустить эффект только после провала." },
+  { value: "any", label: "После любого результата", help: "Запустить эффект после любого результата проверки." }
+]);
+
+const DOWNTIME_DOWNTIME_EFFECT_TRIGGER_OPTIONS = Object.freeze([
+  { value: "none", label: "Без эффекта", help: "Ничего не запускать при закрытии заявки." },
+  { value: "complete", label: "При завершении заявки", help: "Запустить эффект, когда мастер завершит простой." },
+  { value: "failure", label: "При провале заявки", help: "Запустить эффект при итоговом провале или отклонении." },
+  { value: "manual", label: "При ручном решении", help: "Запустить эффект после явного решения мастера." }
+]);
+
+const DOWNTIME_EFFECT_ADAPTER_OPTIONS = Object.freeze([
+  { value: "none", label: "Без эффекта", help: "Слот эффекта выключен." },
+  { value: "rebreya", label: "Rebreya Main", help: "Изменить состояние Rebreya: прогресс, торговцы, события, награды." },
+  { value: "dae", label: "DAE", help: "Выдать или снять Active Effect через DAE." },
+  { value: "midi", label: "Midi-QOL", help: "Запустить Midi/dnd5e workflow или макрос." }
+]);
+
+const DOWNTIME_CHECK_EFFECT_TEMPLATE_OPTIONS = Object.freeze([
+  { value: "none", label: "Без шаблона", help: "Не выполнять шаблон." },
+  { value: "project-progress", label: "Записать прогресс", help: "Добавить успех или total к прогрессу проекта." },
+  { value: "active-effect", label: "Выдать Active Effect", help: "Создать эффект на персонаже или цели." },
+  { value: "workflow", label: "Запустить workflow", help: "Передать событие в Midi/dnd5e workflow." },
+  { value: "gm-note", label: "Создать запись мастеру", help: "Оставить структурную запись для мастера." }
+]);
+
+const DOWNTIME_REQUEST_EFFECT_TEMPLATE_OPTIONS = Object.freeze([
+  { value: "none", label: "Без шаблона", help: "Не выполнять шаблон." },
+  { value: "reward", label: "Выдать награду", help: "Выдать предмет, ресурс или отметку прогресса." },
+  { value: "trader-stock", label: "Добавить товар торговцу", help: "Изменить ассортимент торговца группы." },
+  { value: "group-event", label: "Изменить событие группы", help: "Запустить, завершить или отметить активный ивент." },
+  { value: "active-effect", label: "Выдать Active Effect", help: "Создать эффект после завершения простоя." }
+]);
+
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
   return Number.isFinite(numericValue) ? numericValue : fallback;
@@ -43,6 +131,46 @@ function toInteger(value, fallback = 0) {
 
 function cleanText(value) {
   return String(value ?? "").trim();
+}
+
+function getOptionLabel(options, value, fallback = "") {
+  const safeValue = cleanText(value);
+  if (!safeValue) {
+    return fallback;
+  }
+
+  return options.find((option) => option.value === safeValue)?.label ?? (fallback || safeValue);
+}
+
+function createSelectedOptions(options, selectedValue) {
+  const safeSelectedValue = cleanText(selectedValue);
+  return options.map((option) => ({
+    ...option,
+    selected: option.value === safeSelectedValue
+  }));
+}
+
+function renderSelectOptions(options, selectedValue) {
+  return createSelectedOptions(options, selectedValue).map((option) => {
+    const selected = option.selected ? " selected" : "";
+    const title = option.help ? ` title="${foundry.utils.escapeHTML(option.help)}"` : "";
+    return `<option value="${foundry.utils.escapeHTML(option.value)}"${selected}${title}>${foundry.utils.escapeHTML(option.label)}</option>`;
+  }).join("");
+}
+
+function readFieldValue(root, fieldName) {
+  return cleanText(root?.querySelector(`[data-field='${fieldName}']`)?.value);
+}
+
+function buildNextTargetActionId(actions = []) {
+  const usedIds = new Set(actions.map((action) => cleanText(action?.id)).filter(Boolean));
+  for (let index = 1; index <= MAX_DOWNTIME_TARGET_ACTIONS; index += 1) {
+    const candidate = `check-${index}`;
+    if (!usedIds.has(candidate)) {
+      return candidate;
+    }
+  }
+  return `check-${Date.now()}`;
 }
 
 function isKnownGroupContextError(error) {
@@ -81,12 +209,83 @@ function buildEmptyDowntimeContext({ warning = "", grantWeeks = 1, grantActorId 
 }
 
 function buildCheckSummary(check) {
+  const abilityLabel = getOptionLabel(DOWNTIME_ABILITY_OPTIONS, check?.ability, cleanText(check?.ability));
   const parts = [
     cleanText(check?.label),
     cleanText(check?.dc) ? `DC ${cleanText(check.dc).replace(/^dc\s*/iu, "")}` : "",
-    cleanText(check?.ability)
+    abilityLabel
   ].filter(Boolean);
   return parts.join(" | ");
+}
+
+function buildEffectLabel(effect, { downtime = false } = {}) {
+  const safeEffect = effect && typeof effect === "object" && !Array.isArray(effect) ? effect : {};
+  const triggerOptions = downtime ? DOWNTIME_DOWNTIME_EFFECT_TRIGGER_OPTIONS : DOWNTIME_EFFECT_TRIGGER_OPTIONS;
+  const trigger = cleanText(safeEffect.trigger);
+  const adapter = cleanText(safeEffect.adapter);
+  const template = cleanText(safeEffect.template);
+  if (!trigger || trigger === "none" || !adapter || adapter === "none") {
+    return "";
+  }
+
+  const templateOptions = downtime ? DOWNTIME_REQUEST_EFFECT_TEMPLATE_OPTIONS : DOWNTIME_CHECK_EFFECT_TEMPLATE_OPTIONS;
+  return [
+    getOptionLabel(triggerOptions, trigger, trigger),
+    [
+      getOptionLabel(DOWNTIME_EFFECT_ADAPTER_OPTIONS, adapter, adapter),
+      getOptionLabel(templateOptions, template, template)
+    ].filter(Boolean).join(" / ")
+  ].filter(Boolean).join(": ");
+}
+
+function buildOutcomeSummary(check, outcomeMode) {
+  const numericDc = Number(check?.dc);
+  const hasDc = Number.isFinite(numericDc) && numericDc > 0;
+  switch (outcomeMode) {
+    case "dc":
+      return hasDc ? `DC ${numericDc}` : "DC";
+    case "total":
+      return "Сумма";
+    case "dc-total":
+      return hasDc ? `DC ${numericDc} + сумма` : "DC + сумма";
+    case "freeform":
+      return "Свободный";
+    default:
+      return getOptionLabel(DOWNTIME_OUTCOME_MODE_OPTIONS, outcomeMode, outcomeMode);
+  }
+}
+
+function mapDowntimeTargetAction(check, index) {
+  const actionType = cleanText(check?.actionType) || "check";
+  const sourceType = cleanText(check?.sourceType) || "skill";
+  const outcomeMode = cleanText(check?.outcomeMode) || (cleanText(check?.dc) ? "dc" : "freeform");
+  const rollMode = cleanText(check?.rollMode) || "normal";
+  const recordMode = cleanText(check?.recordMode) || "total-success";
+  const checkEffectLabel = buildEffectLabel(check?.checkEffect);
+  const downtimeEffectLabel = buildEffectLabel(check?.downtimeEffect, { downtime: true });
+  return {
+    ...check,
+    number: index + 1,
+    summary: buildCheckSummary(check),
+    actionType,
+    sourceType,
+    outcomeMode,
+    rollMode,
+    recordMode,
+    actionTypeLabel: getOptionLabel(DOWNTIME_ACTION_TYPE_OPTIONS, actionType, actionType),
+    sourceTypeLabel: getOptionLabel(DOWNTIME_SOURCE_TYPE_OPTIONS, sourceType, sourceType),
+    abilityLabel: getOptionLabel(DOWNTIME_ABILITY_OPTIONS, check?.ability, cleanText(check?.ability)),
+    outcomeModeLabel: getOptionLabel(DOWNTIME_OUTCOME_MODE_OPTIONS, outcomeMode, outcomeMode),
+    outcomeSummary: buildOutcomeSummary(check, outcomeMode),
+    rollModeLabel: getOptionLabel(DOWNTIME_ROLL_MODE_OPTIONS, rollMode, rollMode),
+    recordModeLabel: getOptionLabel(DOWNTIME_RECORD_MODE_OPTIONS, recordMode, recordMode),
+    targetLabel: cleanText(check?.targetLabel) || cleanText(check?.target),
+    checkEffectLabel,
+    downtimeEffectLabel,
+    hasCheckEffect: Boolean(checkEffectLabel),
+    hasDowntimeEffect: Boolean(downtimeEffectLabel),
+    hasChoices: Array.isArray(check?.choices) && check.choices.length > 0
+  };
 }
 
 function mapDowntimeRequest(request) {
@@ -95,10 +294,7 @@ function mapDowntimeRequest(request) {
     label: status || "Заявка",
     type: "info"
   };
-  const checks = (request?.checks ?? []).map((check) => ({
-    ...check,
-    summary: buildCheckSummary(check)
-  }));
+  const checks = (request?.checks ?? []).map((check, index) => mapDowntimeTargetAction(check, index));
 
   return {
     ...request,
@@ -107,35 +303,18 @@ function mapDowntimeRequest(request) {
     statusType: statusMeta.type,
     statusClass: `rm-status-badge--${statusMeta.type}`,
     checks,
-    checksPrompt: checks.map((check) => [
-      cleanText(check.label),
-      cleanText(check.dc),
-      cleanText(check.ability)
-    ].join("|")).join("\n"),
+    targetActions: checks,
+    targetActionCount: checks.length,
+    targetActionLimit: MAX_DOWNTIME_TARGET_ACTIONS,
+    targetActionLimitReached: checks.length >= MAX_DOWNTIME_TARGET_ACTIONS,
     hasChecks: checks.length > 0,
+    hasTargetActions: checks.length > 0,
     hasResult: Boolean(cleanText(request?.result)),
     canApprove: status === "pending" || status === "returned",
     canReturn: status === "pending" || status === "approved",
     canReject: status === "pending" || status === "approved" || status === "returned",
     canComplete: status === "approved"
   };
-}
-
-function parseDowntimeChecks(value) {
-  return String(value ?? "")
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [label = "", dcText = "", ability = ""] = line.split("|").map((part) => part.trim());
-      const dcMatch = /-?\d+/u.exec(dcText);
-      return {
-        label,
-        dc: dcMatch ? toInteger(dcMatch[0], 0) : 0,
-        ability
-      };
-    })
-    .filter((check) => check.label);
 }
 
 function shouldPromptDowntimeResult(status) {
@@ -1288,6 +1467,247 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
   }
 
+  async #getDowntimeRequestById(requestId) {
+    const snapshot = await this.moduleApi.getDowntimeSnapshot();
+    return (snapshot?.requests ?? []).find((request) => cleanText(request?.id) === requestId) ?? null;
+  }
+
+  #buildDowntimeTargetActionDialogContent(action = {}) {
+    const safeLabel = foundry.utils.escapeHTML(cleanText(action.label));
+    const safeTarget = foundry.utils.escapeHTML(cleanText(action.target));
+    const safeTargetLabel = foundry.utils.escapeHTML(cleanText(action.targetLabel));
+    const safeDc = foundry.utils.escapeHTML(cleanText(action.dc));
+    const choices = Array.isArray(action.choices) ? action.choices : [];
+    const choiceValue = (index) => foundry.utils.escapeHTML(cleanText(choices[index]?.label));
+    const checkEffect = action.checkEffect && typeof action.checkEffect === "object" ? action.checkEffect : {};
+    const downtimeEffect = action.downtimeEffect && typeof action.downtimeEffect === "object" ? action.downtimeEffect : {};
+
+    return `
+      <form class="rm-purchase-dialog rm-downtime-target-action-dialog">
+        <section class="rm-downtime-target-dialog__section">
+          <header>
+            <h4>Основа</h4>
+            <span class="rm-muted">Название видно игроку и мастеру; остальное выбирается полями.</span>
+          </header>
+          <div class="rm-downtime-target-dialog__grid">
+            <div class="rm-field">
+              <label title="Короткое название целевого действия в списке заявки.">Название</label>
+              <input type="text" value="${safeLabel}" data-field="target-action-label" placeholder="Например: Поиск следов">
+            </div>
+            <div class="rm-field">
+              <label title="Определяет, какой тип задачи получит игрок.">Тип действия</label>
+              <select data-field="target-action-type">${renderSelectOptions(DOWNTIME_ACTION_TYPE_OPTIONS, action.actionType || "check")}</select>
+            </div>
+            <div class="rm-field">
+              <label title="Источник броска или действия на листе персонажа.">Источник</label>
+              <select data-field="target-action-source-type">${renderSelectOptions(DOWNTIME_SOURCE_TYPE_OPTIONS, action.sourceType || "skill")}</select>
+            </div>
+          </div>
+        </section>
+
+        <section class="rm-downtime-target-dialog__section">
+          <header>
+            <h4>Что запросить</h4>
+            <span class="rm-muted">Можно собрать нестандартное сочетание вроде Телосложение (Запугивание).</span>
+          </header>
+          <div class="rm-downtime-target-dialog__grid">
+            <div class="rm-field">
+              <label title="Характеристика броска. «Из листа» берёт системную характеристику выбранного действия.">Характеристика</label>
+              <select data-field="target-action-ability">${renderSelectOptions(DOWNTIME_ABILITY_OPTIONS, action.ability || "")}</select>
+            </div>
+            <div class="rm-field">
+              <label title="Системный ключ навыка, инструмента, действия или атаки. Пока можно оставить человекочитаемый ключ.">Ключ</label>
+              <input type="text" value="${safeTarget}" data-field="target-action-target" placeholder="prc, ins, Запугивание">
+            </div>
+            <div class="rm-field">
+              <label title="Метка, которую увидит игрок. Позже этот список будет подтягиваться из чарника.">Метка листа</label>
+              <input type="text" value="${safeTargetLabel}" data-field="target-action-target-label" placeholder="Восприятие">
+            </div>
+          </div>
+          <div class="rm-downtime-target-dialog__choices">
+            <div class="rm-field">
+              <label title="Первый допустимый выбор игрока. Оставьте пустым, если выбор не нужен.">Выбор 1</label>
+              <input type="text" value="${choiceValue(0)}" data-field="target-action-choice-1" placeholder="МДР (Восприятие)">
+            </div>
+            <div class="rm-field">
+              <label title="Второй допустимый выбор игрока.">Выбор 2</label>
+              <input type="text" value="${choiceValue(1)}" data-field="target-action-choice-2" placeholder="МДР (Проницательность)">
+            </div>
+            <div class="rm-field">
+              <label title="Третий допустимый выбор игрока.">Выбор 3</label>
+              <input type="text" value="${choiceValue(2)}" data-field="target-action-choice-3" placeholder="ТЕЛ (Запугивание)">
+            </div>
+          </div>
+        </section>
+
+        <section class="rm-downtime-target-dialog__section">
+          <header>
+            <h4>Итог</h4>
+            <span class="rm-muted">DC проверяет порог, сумма копит total, свободный итог оставляет решение мастеру.</span>
+          </header>
+          <div class="rm-downtime-target-dialog__grid">
+            <div class="rm-field">
+              <label title="Как трактовать результат броска.">Режим</label>
+              <select data-field="target-action-outcome-mode">${renderSelectOptions(DOWNTIME_OUTCOME_MODE_OPTIONS, action.outcomeMode || (cleanText(action.dc) ? "dc" : "freeform"))}</select>
+            </div>
+            <div class="rm-field">
+              <label title="Порог сложности для режимов DC и DC + сумма.">DC</label>
+              <input type="number" min="0" step="1" value="${safeDc}" data-field="target-action-dc">
+            </div>
+            <div class="rm-field">
+              <label title="Как сохранить результат после броска.">Записать</label>
+              <select data-field="target-action-record-mode">${renderSelectOptions(DOWNTIME_RECORD_MODE_OPTIONS, action.recordMode || "total-success")}</select>
+            </div>
+            <div class="rm-field">
+              <label title="Обычный бросок, преимущество, помеха или выбор игрока перед броском.">Бросок</label>
+              <select data-field="target-action-roll-mode">${renderSelectOptions(DOWNTIME_ROLL_MODE_OPTIONS, action.rollMode || "normal")}</select>
+            </div>
+          </div>
+        </section>
+
+        <section class="rm-downtime-target-dialog__section">
+          <header>
+            <h4>Эффект проверки</h4>
+            <span class="rm-muted">Срабатывает после этого действия.</span>
+          </header>
+          <div class="rm-downtime-target-dialog__grid">
+            <div class="rm-field">
+              <label title="Когда запускать эффект этой проверки.">Триггер</label>
+              <select data-field="target-action-check-effect-trigger">${renderSelectOptions(DOWNTIME_EFFECT_TRIGGER_OPTIONS, checkEffect.trigger || "none")}</select>
+            </div>
+            <div class="rm-field">
+              <label title="Кто исполняет эффект: Rebreya Main, DAE или Midi-QOL.">Исполнитель</label>
+              <select data-field="target-action-check-effect-adapter">${renderSelectOptions(DOWNTIME_EFFECT_ADAPTER_OPTIONS, checkEffect.adapter || "none")}</select>
+            </div>
+            <div class="rm-field">
+              <label title="Что именно сделать после срабатывания эффекта.">Шаблон</label>
+              <select data-field="target-action-check-effect-template">${renderSelectOptions(DOWNTIME_CHECK_EFFECT_TEMPLATE_OPTIONS, checkEffect.template || "none")}</select>
+            </div>
+          </div>
+        </section>
+
+        <section class="rm-downtime-target-dialog__section">
+          <header>
+            <h4>Эффект простоя</h4>
+            <span class="rm-muted">Срабатывает при итоговом решении по всей заявке.</span>
+          </header>
+          <div class="rm-downtime-target-dialog__grid">
+            <div class="rm-field">
+              <label title="Когда запускать эффект всей заявки.">Когда</label>
+              <select data-field="target-action-downtime-effect-trigger">${renderSelectOptions(DOWNTIME_DOWNTIME_EFFECT_TRIGGER_OPTIONS, downtimeEffect.trigger || "none")}</select>
+            </div>
+            <div class="rm-field">
+              <label title="Кто исполняет эффект простоя.">Исполнитель</label>
+              <select data-field="target-action-downtime-effect-adapter">${renderSelectOptions(DOWNTIME_EFFECT_ADAPTER_OPTIONS, downtimeEffect.adapter || "none")}</select>
+            </div>
+            <div class="rm-field">
+              <label title="Что сделать при завершении/решении заявки.">Шаблон</label>
+              <select data-field="target-action-downtime-effect-template">${renderSelectOptions(DOWNTIME_REQUEST_EFFECT_TEMPLATE_OPTIONS, downtimeEffect.template || "none")}</select>
+            </div>
+          </div>
+        </section>
+      </form>
+    `;
+  }
+
+  #readDowntimeTargetActionDialog(root, existingAction = {}, existingActions = []) {
+    const choices = [
+      readFieldValue(root, "target-action-choice-1"),
+      readFieldValue(root, "target-action-choice-2"),
+      readFieldValue(root, "target-action-choice-3")
+    ]
+      .filter(Boolean)
+      .map((label) => ({ label }));
+    const checkEffect = {
+      trigger: readFieldValue(root, "target-action-check-effect-trigger") || "none",
+      adapter: readFieldValue(root, "target-action-check-effect-adapter") || "none",
+      template: readFieldValue(root, "target-action-check-effect-template") || "none"
+    };
+    const downtimeEffect = {
+      trigger: readFieldValue(root, "target-action-downtime-effect-trigger") || "none",
+      adapter: readFieldValue(root, "target-action-downtime-effect-adapter") || "none",
+      template: readFieldValue(root, "target-action-downtime-effect-template") || "none"
+    };
+
+    const action = {
+      id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
+      label: readFieldValue(root, "target-action-label") || "Целевое действие",
+      actionType: readFieldValue(root, "target-action-type") || "check",
+      sourceType: readFieldValue(root, "target-action-source-type") || "skill",
+      ability: readFieldValue(root, "target-action-ability"),
+      target: readFieldValue(root, "target-action-target"),
+      targetLabel: readFieldValue(root, "target-action-target-label"),
+      outcomeMode: readFieldValue(root, "target-action-outcome-mode") || "dc",
+      dc: toInteger(readFieldValue(root, "target-action-dc"), 0),
+      rollMode: readFieldValue(root, "target-action-roll-mode") || "normal",
+      recordMode: readFieldValue(root, "target-action-record-mode") || "total-success",
+      choices,
+      checkEffect,
+      downtimeEffect
+    };
+
+    if (action.checkEffect.trigger === "none" || action.checkEffect.adapter === "none") {
+      delete action.checkEffect;
+    }
+    if (action.downtimeEffect.trigger === "none" || action.downtimeEffect.adapter === "none") {
+      delete action.downtimeEffect;
+    }
+    if (!action.choices.length) {
+      delete action.choices;
+    }
+
+    return action;
+  }
+
+  async #promptDowntimeTargetAction(existingAction = {}, existingActions = []) {
+    const DialogClass = globalThis.Dialog;
+    if (typeof DialogClass !== "function") {
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const dialog = new DialogClass({
+        title: "Целевое действие",
+        content: this.#buildDowntimeTargetActionDialogContent(existingAction),
+        buttons: {
+          confirm: {
+            label: "Сохранить",
+            callback: (html) => {
+              const root = getDialogRoot(html);
+              settled = true;
+              resolve(this.#readDowntimeTargetActionDialog(root, existingAction, existingActions));
+            }
+          },
+          cancel: {
+            label: "Отмена",
+            callback: () => {
+              settled = true;
+              resolve(null);
+            }
+          }
+        },
+        default: "confirm",
+        render: (html) => {
+          const root = getDialogRoot(html);
+          const input = root?.querySelector("[data-field='target-action-label']");
+          if (input instanceof HTMLElement) {
+            input.focus();
+          }
+        },
+        close: () => {
+          if (!settled) {
+            resolve(null);
+          }
+        }
+      }, {
+        classes: ["rebreya-main", "rebreya-trader-dialog", "rm-downtime-target-action-window"]
+      });
+
+      dialog.render(true);
+    });
+  }
+
   async #handleDowntimeGrant(element) {
     const actorId = cleanText(element.querySelector("[data-action='downtime-grant-actor']")?.value) || "all";
     const weeks = Math.max(1, toInteger(element.querySelector("[data-action='downtime-grant-weeks']")?.value, 1));
@@ -1333,7 +1753,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async #handleDowntimeClearHistory() {
     const confirmed = await confirmAction(
       "Очистить историю простоя",
-      "<p>Удалить все заявки, проверки и записи решений мастера? Резерв открытых заявок вернётся в свободные недели.</p>"
+      "<p>Удалить все заявки, целевые действия и записи решений мастера? Резерв открытых заявок вернётся в свободные недели.</p>"
     );
     if (!confirmed) {
       return;
@@ -1394,24 +1814,55 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     bringAppToFront(this);
   }
 
-  async #handleDowntimeChecks(button) {
+  async #handleDowntimeTargetAction(button) {
     const requestId = cleanText(button.dataset.requestId);
     if (!requestId) {
       return;
     }
 
-    const prompted = await this.#promptDowntimeText(
-      "Проверки простоя",
-      "Введите проверки построчно: Название|DC|характеристика",
-      button.dataset.checks ?? ""
-    );
-    if (prompted === null) {
+    const request = await this.#getDowntimeRequestById(requestId);
+    if (!request) {
+      throw new Error("Downtime request not found.");
+    }
+
+    const existingActions = Array.isArray(request.checks) ? request.checks : [];
+    const checkId = cleanText(button.dataset.checkId);
+    const existingAction = existingActions.find((action) => cleanText(action?.id) === checkId) ?? null;
+    if (!existingAction && existingActions.length >= MAX_DOWNTIME_TARGET_ACTIONS) {
+      throw new Error(`Можно назначить не больше ${MAX_DOWNTIME_TARGET_ACTIONS} целевых действий.`);
+    }
+
+    const nextAction = await this.#promptDowntimeTargetAction(existingAction ?? {}, existingActions);
+    if (!nextAction) {
       return;
     }
 
-    await this.moduleApi.setDowntimeRequestChecks(requestId, parseDowntimeChecks(prompted));
-    this.#setActionFeedback("success", "Проверки заявки обновлены.");
-    ui.notifications?.info("Проверки заявки обновлены.");
+    const nextActions = existingAction
+      ? existingActions.map((action) => cleanText(action?.id) === checkId ? nextAction : action)
+      : [...existingActions, nextAction];
+    await this.moduleApi.setDowntimeRequestChecks(requestId, nextActions);
+    this.#setActionFeedback("success", "Целевые действия заявки обновлены.");
+    ui.notifications?.info("Целевые действия заявки обновлены.");
+    bringAppToFront(this);
+  }
+
+  async #handleDowntimeRemoveTargetAction(button) {
+    const requestId = cleanText(button.dataset.requestId);
+    const checkId = cleanText(button.dataset.checkId);
+    if (!requestId || !checkId) {
+      return;
+    }
+
+    const request = await this.#getDowntimeRequestById(requestId);
+    if (!request) {
+      throw new Error("Downtime request not found.");
+    }
+
+    const nextActions = (Array.isArray(request.checks) ? request.checks : [])
+      .filter((action) => cleanText(action?.id) !== checkId);
+    await this.moduleApi.setDowntimeRequestChecks(requestId, nextActions);
+    this.#setActionFeedback("success", "Целевое действие удалено.");
+    ui.notifications?.info("Целевое действие удалено.");
     bringAppToFront(this);
   }
 
@@ -1572,14 +2023,28 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelectorAll("[data-action='downtime-checks']").forEach((button) => {
+    element.querySelectorAll("[data-action='downtime-target-action']").forEach((button) => {
       button.addEventListener("click", async (event) => {
         try {
-          await this.#handleDowntimeChecks(event.currentTarget);
+          await this.#handleDowntimeTargetAction(event.currentTarget);
         }
         catch (error) {
-          console.error(`${MODULE_ID} | Failed to update downtime request checks.`, error);
-          const message = error.message || "Не удалось обновить проверки простоя.";
+          console.error(`${MODULE_ID} | Failed to update downtime target actions.`, error);
+          const message = error.message || "Не удалось обновить целевые действия простоя.";
+          this.#setActionFeedback("error", message);
+          ui.notifications?.error(message);
+        }
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='downtime-remove-target-action']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        try {
+          await this.#handleDowntimeRemoveTargetAction(event.currentTarget);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to remove downtime target action.`, error);
+          const message = error.message || "Не удалось удалить целевое действие простоя.";
           this.#setActionFeedback("error", message);
           ui.notifications?.error(message);
         }

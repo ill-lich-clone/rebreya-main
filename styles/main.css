@@ -4487,6 +4487,106 @@ summary:focus-visible {
   line-height: 1.3;
 }
 
+.rm-downtime-target-actions {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(214, 177, 104, 0.14);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.rm-downtime-target-actions__header,
+.rm-downtime-target-action__title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rm-downtime-target-actions__header h4,
+.rm-downtime-target-actions__header p,
+.rm-downtime-target-action__title strong,
+.rm-downtime-target-action p {
+  margin: 0;
+}
+
+.rm-downtime-target-action-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rm-downtime-target-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid rgba(214, 177, 104, 0.14);
+  background: rgba(12, 9, 6, 0.26);
+}
+
+.rm-downtime-target-action__main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rm-downtime-target-action__title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff8e8;
+}
+
+.rm-downtime-target-action__meta {
+  color: var(--rm-ui-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.rm-downtime-target-action__actions {
+  display: flex;
+  gap: 5px;
+  align-items: start;
+}
+
+.rm-downtime-target-action-dialog {
+  width: min(820px, calc(100vw - 60px));
+  display: grid;
+  gap: 10px;
+}
+
+.rm-downtime-target-dialog__section {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(214, 177, 104, 0.16);
+  background: rgba(12, 9, 6, 0.22);
+}
+
+.rm-downtime-target-dialog__section header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rm-downtime-target-dialog__section h4,
+.rm-downtime-target-dialog__section p {
+  margin: 0;
+}
+
+.rm-downtime-target-dialog__grid,
+.rm-downtime-target-dialog__choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
 @container (max-width: 1220px) {
   .rm-downtime-layout {
     grid-template-columns: minmax(220px, 270px) minmax(0, 1fr);
@@ -5935,6 +6035,8 @@ summary:focus-visible {
   .rm-party-toolbar--compact,
   .rm-downtime-layout,
   .rm-downtime-request-form,
+  .rm-downtime-target-dialog__grid,
+  .rm-downtime-target-dialog__choices,
   .rm-trader-v2-mode,
   .rm-trader-v2-controls {
     grid-template-columns: 1fr;
@@ -6138,6 +6240,7 @@ summary:focus-visible {
   .rm-character-downtime-summary,
   .rm-character-downtime-form,
   .rm-downtime-member,
+  .rm-downtime-target-action,
   .rm-hero-doll-stock__item {
     grid-template-columns: 1fr;
   }

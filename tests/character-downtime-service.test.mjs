@@ -129,7 +129,7 @@ test("CharacterDowntimeService maps current actor downtime into a player-facing 
   assert.equal(context.requests.length, 1);
   assert.equal(context.requests[0].id, "downtime-1");
   assert.equal(context.requests[0].statusLabel, "Одобрено");
-  assert.equal(context.requests[0].checks[0].summary, "Выживание | DC 15 | wis");
+  assert.equal(context.requests[0].checks[0].summary, "Выживание | DC 15 | Мудрость");
   assert.equal(context.requests[0].checks[0].resultLabel, "18, успех");
 });
 

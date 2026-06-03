@@ -21,6 +21,7 @@ const ACTION_BY_ID = new Map(ACTION_CATALOG.map((action) => [action.id, action])
 const OPEN_RESERVED_STATUSES = new Set(["pending", "approved"]);
 const RELEASED_STATUSES = new Set(["rejected", "returned"]);
 const REQUEST_STATUSES = new Set(["pending", "approved", "returned", "rejected", "completed"]);
+const MAX_TARGET_ACTIONS = 5;
 
 function clone(value) {
   if (globalThis.foundry?.utils?.deepClone) {
@@ -70,14 +71,41 @@ function normalizeBalance(value = {}) {
 }
 
 function normalizeCheck(value = {}) {
+  const source = asObject(value);
   const checkId = cleanId(value.id);
-  return {
+  const normalized = {
+    ...clone(source),
     id: checkId || `check-${Date.now()}`,
     label: cleanString(value.label) || cleanString(value.title) || "Check",
     dc: toWeeks(value.dc),
     ability: cleanString(value.ability),
     result: value.result === undefined ? null : clone(value.result)
   };
+
+  if (Array.isArray(source.choices)) {
+    normalized.choices = source.choices
+      .slice(0, MAX_TARGET_ACTIONS)
+      .map((choice) => ({
+        ...clone(asObject(choice)),
+        ability: cleanString(choice?.ability),
+        target: cleanString(choice?.target),
+        label: cleanString(choice?.label)
+      }))
+      .filter((choice) => choice.label || choice.ability || choice.target);
+  }
+
+  for (const effectKey of ["checkEffect", "downtimeEffect"]) {
+    if (source[effectKey] && typeof source[effectKey] === "object" && !Array.isArray(source[effectKey])) {
+      normalized[effectKey] = {
+        ...clone(source[effectKey]),
+        trigger: cleanString(source[effectKey].trigger),
+        adapter: cleanString(source[effectKey].adapter),
+        template: cleanString(source[effectKey].template)
+      };
+    }
+  }
+
+  return normalized;
 }
 
 function normalizeRequest(value = {}) {
@@ -94,7 +122,7 @@ function normalizeRequest(value = {}) {
     description: cleanString(value.description),
     weeks: Math.max(1, toWeeks(value.weeks, 1)),
     status,
-    checks: asArray(value.checks).map((check) => normalizeCheck(check)),
+    checks: asArray(value.checks).slice(0, MAX_TARGET_ACTIONS).map((check) => normalizeCheck(check)),
     result: cleanString(value.result),
     createdAt: Number(value.createdAt) || 0,
     updatedAt: Number(value.updatedAt) || 0,
@@ -448,7 +476,7 @@ export class DowntimeService {
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
       this.#assertRequestIsMutable(request);
-      request.checks = asArray(checks).map((check, index) => {
+      request.checks = asArray(checks).slice(0, MAX_TARGET_ACTIONS).map((check, index) => {
         const normalized = normalizeCheck({
           id: cleanId(check?.id) || `check-${index + 1}`,
           ...asObject(check)

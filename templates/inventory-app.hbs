@@ -534,7 +534,7 @@
         <div class="rm-panel__header rm-panel__header--compact">
           <div>
             <h3>Простой</h3>
-            <p class="rm-muted">Недели, заявки и проверки активной группы</p>
+            <p class="rm-muted">Недели, заявки и целевые действия активной группы</p>
           </div>
           <span class="rm-badge rm-status-badge rm-status-badge--info">{{rmNum downtime.requests.length precision=0}} заяв.</span>
         </div>
@@ -655,7 +655,17 @@
                         <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-status" data-request-id="{{id}}" data-status="returned" data-result="{{result}}" {{#unless canReturn}}disabled{{/unless}}>Вернуть</button>
                         <button type="button" class="rm-button rm-button--small rm-button--danger" data-action="downtime-status" data-request-id="{{id}}" data-status="rejected" data-result="{{result}}" {{#unless canReject}}disabled{{/unless}}>Отклонить</button>
                         <button type="button" class="rm-button rm-button--small rm-button--primary" data-action="downtime-status" data-request-id="{{id}}" data-status="completed" data-result="{{result}}" {{#unless canComplete}}disabled{{/unless}}>Завершить</button>
-                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-checks" data-request-id="{{id}}" data-checks="{{checksPrompt}}">Проверки</button>
+                        <button
+                          type="button"
+                          class="rm-button rm-button--small rm-button--secondary"
+                          data-action="downtime-target-action"
+                          data-request-id="{{id}}"
+                          title="{{#if targetActionLimitReached}}В заявке уже максимум 5 целевых действий{{else}}Добавить целевое действие: проверку, выбор, инструмент, действие или атаку{{/if}}"
+                          {{#if targetActionLimitReached}}disabled{{/if}}
+                        >
+                          <i class="fa-solid fa-plus"></i>
+                          <span>Действие</span>
+                        </button>
                       </div>
                     {{/if}}
                   </article>
@@ -745,17 +755,66 @@
                       <p class="rm-inline-status rm-inline-status--info"><span>{{result}}</span></p>
                     {{/if}}
 
-                    {{#if hasChecks}}
-                      <ul class="rm-downtime-check-list">
-                        {{#each checks}}
-                          <li>
-                            <span>{{summary}}</span>
-                          </li>
-                        {{/each}}
-                      </ul>
-                    {{else}}
-                      <p class="rm-downtime-inspector__empty">Проверки пока не назначены.</p>
-                    {{/if}}
+                    <section class="rm-downtime-target-actions">
+                      <header class="rm-downtime-target-actions__header">
+                        <div>
+                          <h4>Целевые действия</h4>
+                          <p class="rm-muted">До {{targetActionLimit}} задач: проверки, инструменты, действия листа, атаки и эффекты.</p>
+                        </div>
+                        <span class="rm-badge rm-status-badge rm-status-badge--info">{{rmNum targetActionCount precision=0}} / {{rmNum targetActionLimit precision=0}}</span>
+                      </header>
+
+                      {{#if hasTargetActions}}
+                        <ul class="rm-downtime-target-action-list">
+                          {{#each targetActions}}
+                            <li class="rm-downtime-target-action">
+                              <div class="rm-downtime-target-action__main">
+                                <div class="rm-downtime-target-action__title">
+                                  <strong>{{label}}</strong>
+                                  <span class="rm-badge rm-status-badge rm-status-badge--info">{{outcomeSummary}}</span>
+                                </div>
+                                <p class="rm-muted">{{sourceTypeLabel}}{{#if abilityLabel}} • {{abilityLabel}}{{/if}}{{#if targetLabel}} ({{targetLabel}}){{/if}} • {{rollModeLabel}}</p>
+                                {{#if hasChoices}}
+                                  <p class="rm-downtime-target-action__meta">Выбор игрока: {{#each choices}}{{label}}{{#unless @last}} / {{/unless}}{{/each}}</p>
+                                {{/if}}
+                                {{#if hasCheckEffect}}
+                                  <p class="rm-downtime-target-action__meta">Эффект проверки: {{checkEffectLabel}}</p>
+                                {{/if}}
+                                {{#if hasDowntimeEffect}}
+                                  <p class="rm-downtime-target-action__meta">Эффект простоя: {{downtimeEffectLabel}}</p>
+                                {{/if}}
+                              </div>
+                              {{#if @root.downtime.canManage}}
+                                <div class="rm-downtime-target-action__actions">
+                                  <button type="button" class="rm-icon-button" data-action="downtime-target-action" data-request-id="{{../id}}" data-check-id="{{id}}" title="Редактировать целевое действие">
+                                    <i class="fa-solid fa-pen"></i>
+                                  </button>
+                                  <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="downtime-remove-target-action" data-request-id="{{../id}}" data-check-id="{{id}}" title="Удалить целевое действие">
+                                    <i class="fa-solid fa-trash"></i>
+                                  </button>
+                                </div>
+                              {{/if}}
+                            </li>
+                          {{/each}}
+                        </ul>
+                      {{else}}
+                        <p class="rm-downtime-inspector__empty">Целевые действия пока не назначены.</p>
+                      {{/if}}
+
+                      {{#if @root.downtime.canManage}}
+                        <button
+                          type="button"
+                          class="rm-button rm-button--small rm-button--secondary"
+                          data-action="downtime-target-action"
+                          data-request-id="{{id}}"
+                          title="{{#if targetActionLimitReached}}В заявке уже максимум 5 целевых действий{{else}}Добавить целевое действие{{/if}}"
+                          {{#if targetActionLimitReached}}disabled{{/if}}
+                        >
+                          <i class="fa-solid fa-plus"></i>
+                          <span>Целевое действие</span>
+                        </button>
+                      {{/if}}
+                    </section>
                   </section>
                 {{/each}}
               </div>
