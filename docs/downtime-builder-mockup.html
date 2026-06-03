@@ -43,8 +43,7 @@
 
     button,
     input,
-    select,
-    textarea {
+    select {
       font: inherit;
     }
 
@@ -238,7 +237,7 @@
 
     .member-list,
     .request-list,
-    .check-list,
+    .roll-block-list,
     .result-list {
       display: grid;
       gap: 7px;
@@ -246,7 +245,7 @@
 
     .member-row,
     .request-row,
-    .check-block,
+    .roll-block-row,
     .result-row,
     .player-card {
       min-width: 0;
@@ -306,8 +305,7 @@
     }
 
     input,
-    select,
-    textarea {
+    select {
       width: 100%;
       min-height: 34px;
       border: 1px solid rgba(214, 177, 104, 0.24);
@@ -315,12 +313,6 @@
       color: var(--text);
       background: var(--input);
       padding: 7px 8px;
-    }
-
-    textarea {
-      min-height: 58px;
-      resize: vertical;
-      line-height: 1.35;
     }
 
     .request-row {
@@ -446,24 +438,62 @@
       background: rgba(111, 80, 38, 0.86);
     }
 
-    .check-block {
+    .roll-block-row {
       display: grid;
-      grid-template-columns: minmax(120px, 0.85fr) minmax(120px, 0.85fr) minmax(140px, 1fr) minmax(98px, 0.7fr) auto;
+      grid-template-columns: minmax(0, 1fr) auto auto;
       gap: 6px;
-      align-items: end;
+      align-items: center;
+      padding: 7px 8px;
+    }
+
+    .roll-block-row.is-active {
+      border-color: var(--line-hot);
+      background: var(--row-hot);
+    }
+
+    .roll-summary {
+      margin-top: 2px;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.25;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .roll-block-editor {
+      display: grid;
+      gap: 8px;
       padding: 8px;
+      border: 1px solid rgba(214, 177, 104, 0.18);
+      background: rgba(14, 12, 10, 0.62);
     }
 
-    .check-block .wide,
-    .check-block__line {
-      grid-column: 1 / -1;
-    }
-
-    .check-block__line {
+    .roll-editor-grid,
+    .roll-target-grid {
       display: grid;
-      grid-template-columns: minmax(120px, 0.9fr) minmax(0, 1.2fr) minmax(120px, 0.8fr);
       gap: 6px;
       align-items: end;
+    }
+
+    .roll-editor-grid {
+      grid-template-columns: minmax(120px, 1fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(95px, 0.7fr);
+    }
+
+    .roll-target-grid {
+      grid-template-columns: minmax(120px, 1fr) minmax(96px, 0.7fr) minmax(96px, 0.7fr);
+    }
+
+    .choice-line,
+    .architecture-grid {
+      gap: 7px;
+    }
+
+    .choice-line {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      padding-top: 2px;
     }
 
     .option-pills,
@@ -493,13 +523,18 @@
       color: var(--strong);
     }
 
-    .effect-slot {
-      display: grid;
-      grid-template-columns: minmax(130px, 0.9fr) minmax(130px, 0.9fr) minmax(150px, 1fr);
-      gap: 6px;
+    .effect-inline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
       padding: 8px;
       border: 1px dashed rgba(125, 163, 216, 0.36);
       background: rgba(22, 29, 40, 0.44);
+    }
+
+    .effect-inline > div {
+      min-width: 0;
     }
 
     .result-row {
@@ -619,18 +654,32 @@
         grid-template-columns: 1fr;
       }
 
-      .check-block,
       .request-form,
       .quick-weeks,
-      .check-block__line,
-      .effect-slot,
+      .roll-editor-grid,
+      .roll-target-grid,
       .architecture-grid {
         grid-template-columns: 1fr 1fr;
       }
+    }
 
-      .check-block .wide,
-      .check-block__line {
-        grid-column: 1 / -1;
+    @media (max-width: 760px) {
+      .request-form,
+      .quick-weeks,
+      .architecture-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .roll-block-row,
+      .check-task {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .roll-editor-grid,
+      .roll-target-grid {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -762,29 +811,6 @@
 
             <section class="panel">
               <div class="row-head">
-                <h4>Правила дизайна</h4>
-                <span class="tip" tabindex="0" data-tip="Текстовые поля используются только для короткого названия заявки или блока. Все механически важные данные выбираются полями, чтобы не плодить грязный текст в чате и истории.">?</span>
-              </div>
-              <div class="result-list">
-                <div class="result-row">
-                  <div>
-                    <strong>Название блока вместо примечания</strong>
-                    <p class="muted">Если нужна подсказка, она живёт в tooltip/справке, а не в свободном textarea.</p>
-                  </div>
-                  <span class="chip good">меньше текста</span>
-                </div>
-                <div class="result-row">
-                  <div>
-                    <strong>Схема важнее описания</strong>
-                    <p class="muted">Тип броска, характеристика, владение, DC, сумма и эффект хранятся структурно.</p>
-                  </div>
-                  <span class="chip info">данные</span>
-                </div>
-              </div>
-            </section>
-
-            <section class="panel">
-              <div class="row-head">
                 <h4>Решение мастера</h4>
                 <span class="tip" tabindex="0" data-tip="Решение меняет статус заявки и баланс недель. Подсказки на кнопках объясняют разницу между похожими действиями.">?</span>
               </div>
@@ -795,7 +821,7 @@
                 <button class="seg-btn" type="button" title="Завершить: простой выполнен, резерв переходит в потраченные недели.">Завершить</button>
               </div>
               <div class="field">
-                <label>Причина <span class="tip" tabindex="0" data-tip="Шаблон причины вместо свободного комментария. Для редких случаев можно позже добавить короткий override, но базовый поток должен жить без textarea.">?</span></label>
+                <label>Причина <span class="tip" tabindex="0" data-tip="Шаблон причины вместо свободного комментария. Для редких случаев можно позже добавить короткий override, но базовый поток должен жить без большого текстового поля.">?</span></label>
                 <select>
                   <option>Без причины</option>
                   <option>Уточнить цель</option>
@@ -811,25 +837,86 @@
 
             <section class="panel">
               <div class="row-head">
-                <h4>Блоки бросков</h4>
+                <h4>Броски</h4>
                 <span class="tip" tabindex="0" data-tip="Каждый блок станет отдельной задачей на чарнике. Блок может быть проверкой навыка, иной характеристикой для навыка, инструментом, спасброском, действием или атакой из листа персонажа.">?</span>
               </div>
 
-              <div class="check-list">
-                <article class="check-block">
+              <div class="roll-block-list">
+                <article class="roll-block-row is-active">
+                  <div>
+                    <strong>Поиск следов</strong>
+                    <p class="roll-summary">Игрок выбирает: МДР (Восприятие), МДР (Проницательность), ИНТ (Расследование)</p>
+                  </div>
+                  <span class="chip warn">ждёт</span>
+                  <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
+                </article>
+
+                <article class="roll-block-row">
+                  <div>
+                    <strong>Давление авторитетом</strong>
+                    <p class="roll-summary">Телосложение (Запугивание), DC 14 + сумма</p>
+                  </div>
+                  <span class="chip good">19</span>
+                  <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
+                </article>
+
+                <article class="roll-block-row">
+                  <div>
+                    <strong>Проверка боем</strong>
+                    <p class="roll-summary">Атака листа: Винтовка Оскара, свободный итог</p>
+                  </div>
+                  <span class="chip info">позже</span>
+                  <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
+                </article>
+              </div>
+
+              <div class="roll-block-editor">
+                <div class="row-head">
+                  <h4>Настройка блока</h4>
+                  <span class="tip" tabindex="0" data-tip="Механика хранится структурно: источник, характеристика, владение, режим результата и будущий эффект.">?</span>
+                </div>
+
+                <div class="roll-editor-grid">
                   <div class="field">
-                    <label>Блок</label>
+                    <label>Название</label>
                     <input type="text" value="Поиск следов">
                   </div>
                   <div class="field">
                     <label>Источник</label>
                     <select>
-                      <option>Навык листа</option>
+                      <option>Навык</option>
                       <option>Характеристика</option>
-                      <option>Инструмент листа</option>
+                      <option>Инструмент</option>
                       <option>Спасбросок</option>
-                      <option>Действие листа</option>
-                      <option>Атака листа</option>
+                      <option>Действие</option>
+                      <option>Атака</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Итог <span class="tip" tabindex="0" data-tip="DC проверяет порог, сумма копит total, DC + сумма делает оба расчёта, свободный итог отдаёт решение мастеру.">?</span></label>
+                    <select>
+                      <option>DC</option>
+                      <option>Сумма</option>
+                      <option>DC + сумма</option>
+                      <option>Свободный</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Цель</label>
+                    <input type="number" value="15">
+                  </div>
+                </div>
+
+                <div class="roll-target-grid">
+                  <div class="field">
+                    <label>Что бросать</label>
+                    <select>
+                      <option>Восприятие</option>
+                      <option>Проницательность</option>
+                      <option>Расследование</option>
+                      <option>Запугивание</option>
+                      <option>Воровские инструменты</option>
+                      <option>Винтовка Оскара</option>
                     </select>
                   </div>
                   <div class="field">
@@ -843,225 +930,34 @@
                     </select>
                   </div>
                   <div class="field">
-                    <label>Итог</label>
+                    <label>Бросок</label>
                     <select>
-                      <option>DC</option>
-                      <option>Сумма</option>
-                      <option>DC + сумма</option>
-                      <option>Свободное значение</option>
+                      <option>Обычный</option>
+                      <option>Преимущество</option>
+                      <option>Помеха</option>
+                      <option>Спросить</option>
                     </select>
                   </div>
-                  <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
-                  <div class="check-block__line">
-                    <div class="field">
-                      <label>Владение / умение</label>
-                      <select>
-                        <option>Восприятие</option>
-                        <option>Проницательность</option>
-                        <option>Расследование</option>
-                        <option>Запугивание</option>
-                        <option>Без владения</option>
-                      </select>
-                    </div>
-                    <div class="field">
-                      <label>Выбор игрока <span class="tip" tabindex="0" data-tip="Мастер может дать несколько допустимых вариантов. Игрок выбирает один перед броском, например Мудрость (Восприятие) или Мудрость (Проницательность).">?</span></label>
-                      <div class="option-pills">
-                        <button class="option-pill is-active" type="button">МДР (Восприятие)</button>
-                        <button class="option-pill" type="button">МДР (Проницательность)</button>
-                        <button class="option-pill" type="button">ИНТ (Расследование)</button>
-                      </div>
-                    </div>
-                    <div class="field">
-                      <label>Порог / цель</label>
-                      <input type="number" value="15">
-                    </div>
-                  </div>
-                  <div class="check-block__line">
-                    <div class="field">
-                      <label>Бросок</label>
-                      <select>
-                        <option>Обычный</option>
-                        <option>Преимущество</option>
-                        <option>Помеха</option>
-                        <option>Спросить игрока</option>
-                      </select>
-                    </div>
-                    <div class="field">
-                      <label>Результат</label>
-                      <select>
-                        <option>Сохранить total</option>
-                        <option>Считать успехи</option>
-                        <option>Считать сумму группы</option>
-                        <option>Ручное решение мастера</option>
-                      </select>
-                    </div>
-                    <div class="field">
-                      <label>Успехи</label>
-                      <input type="number" value="1">
-                    </div>
-                  </div>
-                </article>
-
-                <article class="check-block">
-                  <div class="field">
-                    <label>Блок</label>
-                    <input type="text" value="Давление авторитетом">
-                  </div>
-                  <div class="field">
-                    <label>Источник</label>
-                    <select>
-                      <option>Навык листа</option>
-                      <option>Действие листа</option>
-                      <option>Атака листа</option>
-                      <option>Инструмент листа</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>Характеристика</label>
-                    <select>
-                      <option>Телосложение</option>
-                      <option>Харизма</option>
-                      <option>Сила</option>
-                      <option>Из листа</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>Итог</label>
-                    <select>
-                      <option>DC + сумма</option>
-                      <option>DC</option>
-                      <option>Сумма</option>
-                      <option>Свободное значение</option>
-                    </select>
-                  </div>
-                  <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
-                  <div class="check-block__line">
-                    <div class="field">
-                      <label>Владение / умение</label>
-                      <select>
-                        <option>Запугивание</option>
-                        <option>Убеждение</option>
-                        <option>Без владения</option>
-                      </select>
-                    </div>
-                    <div class="field">
-                      <label>Пример результата</label>
-                      <select>
-                        <option>Телосложение (Запугивание)</option>
-                        <option>Харизма (Запугивание)</option>
-                        <option>Сила (Запугивание)</option>
-                      </select>
-                    </div>
-                    <div class="field">
-                      <label>DC</label>
-                      <input type="number" value="14">
-                    </div>
-                  </div>
-                </article>
-
-                <article class="check-block">
-                  <div class="field">
-                    <label>Блок</label>
-                    <input type="text" value="Проверка боем">
-                  </div>
-                  <div class="field">
-                    <label>Источник</label>
-                    <select>
-                      <option>Атака листа</option>
-                      <option>Действие листа</option>
-                      <option>Навык листа</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>Что бросать</label>
-                    <select>
-                      <option>Винтовка Оскара</option>
-                      <option>Кинжал</option>
-                      <option>Огненная стрела</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>Итог</label>
-                    <select>
-                      <option>Свободное значение</option>
-                      <option>DC</option>
-                      <option>Сумма</option>
-                    </select>
-                  </div>
-                  <button class="icon-btn danger" type="button" title="Удалить блок">×</button>
-                </article>
-              </div>
-
-              <div class="actions">
-                <button class="btn ghost" type="button">+ Навык</button>
-                <button class="btn ghost" type="button">+ Инструмент</button>
-                <button class="btn ghost" type="button">+ Атака</button>
-                <button class="btn primary" type="button">Назначить игроку</button>
-              </div>
-            </section>
-
-            <section class="panel">
-              <div class="row-head">
-                <h4>Механический эффект</h4>
-                <span class="tip" tabindex="0" data-tip="Место под будущие эффекты. Сам бросок позже должен идти через Midi/лист dnd5e, а результат может триггерить DAE, Midi workflow или сервис Rebreya Main.">?</span>
-              </div>
-              <div class="effect-slot">
-                <div class="field">
-                  <label>Адаптер</label>
-                  <select>
-                    <option>Rebreya Main</option>
-                    <option>DAE</option>
-                    <option>Midi-QOL</option>
-                    <option>Без эффекта</option>
-                  </select>
                 </div>
-                <div class="field">
-                  <label>Триггер</label>
-                  <select>
-                    <option>После успеха</option>
-                    <option>После провала</option>
-                    <option>После любого броска</option>
-                    <option>При завершении простоя</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label>Шаблон</label>
-                  <select>
-                    <option>Записать успех проекта</option>
-                    <option>Выдать эффект DAE</option>
-                    <option>Запустить Midi macro</option>
-                    <option>Создать заметку Rebreya</option>
-                  </select>
-                </div>
-              </div>
-            </section>
 
-            <section class="panel">
-              <div class="row-head">
-                <h4>Броски</h4>
-                <span class="tip" tabindex="0" data-tip="Игрок бросает из чарника. Мастер видит результат в этой заявке и может завершить простой без переписывания чисел руками.">?</span>
-              </div>
-              <div class="result-list">
-                <div class="result-row">
+                <div class="choice-line">
+                  <span class="muted">Выбор игрока:</span>
+                  <button class="option-pill is-active" type="button">МДР (Восприятие)</button>
+                  <button class="option-pill" type="button">МДР (Проницательность)</button>
+                  <button class="option-pill" type="button">ИНТ (Расследование)</button>
+                </div>
+
+                <div class="effect-inline">
                   <div>
-                    <strong>Игрок выберет: МДР (Восприятие) / МДР (Проницательность)</strong>
-                    <p class="muted">DC 15 или сумма группы, ждёт броска</p>
+                    <strong>Эффект: нет</strong>
+                    <p class="muted">Rebreya Main / DAE / Midi-QOL</p>
                   </div>
-                  <span class="chip warn">ждёт</span>
+                  <button class="btn ghost" type="button">Настроить</button>
                 </div>
-                <div class="result-row">
-                  <div>
-                    <strong>Телосложение (Запугивание) DC 14</strong>
-                    <p class="muted">19 - успех, total сохранён</p>
-                  </div>
-                  <span class="chip good">успех</span>
-                </div>
-                <div class="result-row">
-                  <div>
-                    <strong>Атака листа: Винтовка Оскара</strong>
-                    <p class="muted">Будущий бросок через Midi/dnd5e workflow</p>
-                  </div>
-                  <span class="chip info">позже</span>
+
+                <div class="actions">
+                  <button class="btn ghost" type="button">+ Блок</button>
+                  <button class="btn primary" type="button">Назначить игроку</button>
                 </div>
               </div>
             </section>
@@ -1138,7 +1034,11 @@
             <div class="check-task">
               <div>
                 <strong>Поиск следов</strong>
-                <p class="muted">Выбери один вариант: МДР (Восприятие), МДР (Проницательность), ИНТ (Расследование)</p>
+                <div class="choice-line">
+                  <button class="option-pill is-active" type="button">МДР (Восприятие)</button>
+                  <button class="option-pill" type="button">МДР (Проницательность)</button>
+                  <button class="option-pill" type="button">ИНТ (Расследование)</button>
+                </div>
               </div>
               <button class="btn primary" type="button">Бросить</button>
             </div>
