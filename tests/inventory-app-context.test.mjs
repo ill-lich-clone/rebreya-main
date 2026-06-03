@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
 
@@ -259,17 +260,24 @@ test("InventoryApp _prepareContext surfaces known no-group display context error
   }
 });
 
-test("InventoryApp default size stays below fullscreen dimensions", async () => {
+test("InventoryApp keeps the wide party inventory window size", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
 
   try {
-    assert.equal(InventoryApp.DEFAULT_OPTIONS.position.width, 1120);
-    assert.equal(InventoryApp.DEFAULT_OPTIONS.position.height, 760);
+    assert.equal(InventoryApp.DEFAULT_OPTIONS.position.width, 1320);
+    assert.equal(InventoryApp.DEFAULT_OPTIONS.position.height, 900);
   }
   finally {
     restoreFoundry();
   }
+});
+
+test("InventoryApp CSS does not cap the party inventory below its configured size", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.equal(css.includes("max-width: min(1120px"), false);
+  assert.equal(css.includes("max-height: min(760px"), false);
 });
 
 test("InventoryApp _prepareContext disables member add controls for native group membership", async () => {

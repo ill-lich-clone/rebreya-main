@@ -1557,7 +1557,7 @@ test("RebreyaMainModule notifies players when a GM changes downtime request stat
   }
 });
 
-test("RebreyaMainModule GM creates socket downtime requests for the submitting player only", async () => {
+test("RebreyaMainModule GM creates socket downtime requests without activating inventory windows", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   globalThis.Hooks = {
@@ -1626,7 +1626,7 @@ test("RebreyaMainModule GM creates socket downtime requests for the submitting p
       }
     });
 
-    assert.equal(refreshCount, 1);
+    assert.equal(refreshCount, 0);
     assert.deepEqual(createCalls, [{
       groupId: "group-a",
       actorId: "actor-a",
