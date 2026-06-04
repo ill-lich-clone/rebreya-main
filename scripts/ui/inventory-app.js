@@ -52,6 +52,12 @@ const DOWNTIME_ACTION_TYPE_OPTIONS = Object.freeze([
   { value: "freeform", label: "Свободный итог", help: "Задача без фиксированного броска; мастер оценивает итог вручную." }
 ]);
 
+const DOWNTIME_ACTION_TYPE_SELECT_OPTIONS = Object.freeze([
+  DOWNTIME_ACTION_TYPE_OPTIONS[0],
+  DOWNTIME_ACTION_TYPE_OPTIONS[2],
+  DOWNTIME_ACTION_TYPE_OPTIONS[6]
+]);
+
 const DOWNTIME_SOURCE_TYPE_OPTIONS = Object.freeze([
   { value: "ability", label: "Характеристика", help: "Чистая проверка характеристики без навыка." },
   { value: "skill", label: "Навык", help: "Навык из листа, включая замену характеристики." },
@@ -429,6 +435,13 @@ function buildNextTargetActionId(actions = []) {
   return `check-${Date.now()}`;
 }
 
+function getSelectableDowntimeActionType(actionType = "") {
+  const safeActionType = cleanText(actionType);
+  return DOWNTIME_ACTION_TYPE_SELECT_OPTIONS.some((option) => option.value === safeActionType)
+    ? safeActionType
+    : "check";
+}
+
 function normalizeDowntimeTargetChoice(choice = {}, fallback = {}, actor = null) {
   const sourceType = cleanText(choice.sourceType)
     || cleanText(fallback.sourceType)
@@ -523,9 +536,12 @@ function buildDowntimeTargetChoiceFields(choice = {}, actor = null) {
   `;
 }
 
+function buildDowntimeTargetChoiceHeading(choiceCount = 1) {
+  return choiceCount > 1 ? "Персонаж выбирает одно из" : "Персонаж должен";
+}
+
 function buildDowntimeTargetChoiceRow(choice = {}, index = 0, { visible = true, actor = null } = {}) {
   const safeChoice = normalizeDowntimeTargetChoice(choice, {}, actor);
-  const title = index === 0 ? "Основной вариант" : `Альтернатива ${index}`;
   const hidden = visible ? "" : " hidden";
   const open = index === 0 ? " open" : "";
   const summary = foundry.utils.escapeHTML(buildDowntimeTargetChoiceSummary(safeChoice));
@@ -533,8 +549,15 @@ function buildDowntimeTargetChoiceRow(choice = {}, index = 0, { visible = true, 
   return `
     <details class="rm-downtime-target-choice"${open}${hidden} data-target-choice data-choice-index="${index}">
       <summary class="rm-downtime-target-choice__summary" title="Нажмите, чтобы раскрыть настройки варианта.">
-        <span>${foundry.utils.escapeHTML(title)}</span>
         <strong data-target-choice-summary>${summary}</strong>
+        <span class="rm-downtime-target-choice__actions">
+          <button type="button" class="rm-icon-button" data-action="target-choice-edit" title="Редактировать вариант" aria-label="Редактировать вариант">
+            <i class="fa-solid fa-pen"></i>
+          </button>
+          <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="target-choice-remove" title="Удалить вариант" aria-label="Удалить вариант">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </span>
       </summary>
       <div class="rm-downtime-target-choice__body">
         <div class="rm-field rm-downtime-target-choice__source">
@@ -1926,6 +1949,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const safeDc = foundry.utils.escapeHTML(cleanText(action.dc));
     const choices = buildDowntimeTargetChoices(action, actor);
     const visibleChoiceCount = Math.max(1, choices.length);
+    const selectedActionType = getSelectableDowntimeActionType(action.actionType);
     const choiceRows = Array.from({ length: MAX_DOWNTIME_TARGET_ACTIONS }, (_entry, index) =>
       buildDowntimeTargetChoiceRow(choices[index] ?? {}, index, { visible: index < visibleChoiceCount, actor }));
     const checkEffect = action.checkEffect && typeof action.checkEffect === "object" ? action.checkEffect : {};
@@ -1953,14 +1977,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           <div class="rm-downtime-target-dialog__grid rm-downtime-target-dialog__grid--compact">
             <div class="rm-field">
               <label title="Определяет, какой тип задачи получит игрок.">Тип действия</label>
-              <select data-field="target-action-type">${renderSelectOptions(DOWNTIME_ACTION_TYPE_OPTIONS, action.actionType || "check")}</select>
+              <select data-field="target-action-type">${renderSelectOptions(DOWNTIME_ACTION_TYPE_SELECT_OPTIONS, selectedActionType)}</select>
             </div>
           </div>
         </section>
 
         <section class="rm-downtime-target-dialog__section" data-step-panel="variants" hidden>
           <header>
-            <h4>Варианты</h4>
+            <h4 data-target-choice-heading>${buildDowntimeTargetChoiceHeading(visibleChoiceCount)}</h4>
           </header>
           <div class="rm-downtime-target-choice-list">
             ${choiceRows.join("")}
@@ -2097,11 +2121,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       .map((row) => readDowntimeThreshold(row))
       .filter((threshold) => threshold.from || threshold.to || threshold.outcome !== "gm");
 
-    const selectedActionType = readFieldValue(root, "target-action-type") || "check";
+    const selectedActionType = getSelectableDowntimeActionType(readFieldValue(root, "target-action-type"));
     const action = {
       id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
       label: primaryChoice.label || primaryChoice.targetLabel || "Целевое действие",
-      actionType: choices.length > 1 ? "choice" : selectedActionType,
+      actionType: selectedActionType === "check" && choices.length > 1 ? "choice" : selectedActionType,
       sourceType: primaryChoice.sourceType,
       ability: primaryChoice.ability,
       target: primaryChoice.target,
@@ -2130,6 +2154,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   #wireDowntimeTargetActionDialog(root, { onSave, onCancel, actor = null, dialog = null } = {}) {
     const rows = Array.from(root?.querySelectorAll?.("[data-target-choice]") ?? []);
     const addButton = root?.querySelector?.("[data-action='target-action-add-alternative']");
+    const choiceHeading = root?.querySelector?.("[data-target-choice-heading]");
     const stepButtons = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? []);
     const stepPanels = Array.from(root?.querySelectorAll?.("[data-step-panel]") ?? []);
     const previousButton = root?.querySelector?.("[data-action='target-action-previous']");
@@ -2182,23 +2207,41 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       onCancel?.();
     });
 
-    if (addButton && rows.length) {
-      const updateButtonState = () => {
-        addButton.disabled = !rows.some((row) => row.hidden === true);
-      };
+    const getVisibleChoiceRows = () => rows.filter((row) => row.hidden !== true);
+    const updateChoiceListState = () => {
+      const visibleRows = getVisibleChoiceRows();
+      if (choiceHeading) {
+        choiceHeading.textContent = buildDowntimeTargetChoiceHeading(Math.max(1, visibleRows.length));
+      }
+      if (addButton) {
+        addButton.disabled = visibleRows.length >= Math.min(rows.length, MAX_DOWNTIME_TARGET_ACTIONS);
+      }
+      rows.forEach((row) => {
+        const hidden = row.hidden === true;
+        const editButton = row?.querySelector?.("[data-action='target-choice-edit']");
+        const removeButton = row?.querySelector?.("[data-action='target-choice-remove']");
+        if (editButton) {
+          editButton.disabled = hidden;
+        }
+        if (removeButton) {
+          removeButton.disabled = hidden || visibleRows.length <= 1;
+        }
+      });
+    };
 
+    if (addButton && rows.length) {
       addButton.addEventListener?.("click", (event) => {
         event.preventDefault();
+        event.stopPropagation?.();
         const nextRow = rows.find((row) => row.hidden === true);
         if (!nextRow) {
-          updateButtonState();
+          updateChoiceListState();
           return;
         }
         nextRow.hidden = false;
         nextRow.open = true;
-        updateButtonState();
+        updateChoiceListState();
       });
-      updateButtonState();
     }
 
     const updateOutcomeFields = () => {
@@ -2270,10 +2313,33 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         row.dataset.previousTarget = readFieldValue(row, "target-choice-target");
       }
       const sourceField = row?.querySelector?.("[data-field='target-choice-source-type']");
+      const editButton = row?.querySelector?.("[data-action='target-choice-edit']");
+      const removeButton = row?.querySelector?.("[data-action='target-choice-remove']");
       sourceField?.addEventListener?.("change", () => renderChoiceFields(row));
+      editButton?.addEventListener?.("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation?.();
+        if (row.hidden !== true) {
+          row.open = true;
+        }
+      });
+      removeButton?.addEventListener?.("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation?.();
+        if (row.hidden === true || getVisibleChoiceRows().length <= 1) {
+          updateChoiceListState();
+          return;
+        }
+        row.hidden = true;
+        row.open = false;
+        updateChoiceListState();
+      });
       bindChoiceFieldListeners(row);
       updateChoiceSummary(row);
     });
+    if (rows.length) {
+      updateChoiceListState();
+    }
   }
 
   #setDowntimeTargetActionStep(root, step = "basis", dialog = null) {

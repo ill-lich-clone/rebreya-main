@@ -4720,7 +4720,7 @@ summary:focus-visible {
 
 .rm-downtime-target-choice__summary {
   display: grid;
-  grid-template-columns: minmax(116px, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   min-width: 0;
@@ -4730,24 +4730,25 @@ summary:focus-visible {
   background: rgba(30, 22, 13, 0.68);
 }
 
-.rm-downtime-target-choice__summary span,
 .rm-downtime-target-choice__summary strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.rm-downtime-target-choice__summary span {
-  color: var(--rm-ui-muted);
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.rm-downtime-target-choice__summary strong {
   color: #fff8e8;
   font-size: 13px;
+}
+
+.rm-downtime-target-choice__actions {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.rm-downtime-target-choice__actions .rm-icon-button {
+  width: 28px;
+  height: 28px;
 }
 
 .rm-downtime-target-choice__body {

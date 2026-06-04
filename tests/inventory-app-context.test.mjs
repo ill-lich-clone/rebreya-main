@@ -723,10 +723,24 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-action-target\""), false);
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-action-target-label\""), false);
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-choice-roll-mode\""), false);
+    const actionTypeSelect = targetDialog?.config?.content.match(/<select data-field="target-action-type">([\s\S]*?)<\/select>/u)?.[1] ?? "";
+    assert.equal((actionTypeSelect.match(/<option/g) ?? []).length, 3);
+    assert.equal(actionTypeSelect.includes(">Проверка<"), true);
+    assert.equal(actionTypeSelect.includes(">Итог простоя<"), true);
+    assert.equal(actionTypeSelect.includes(">Свободный итог<"), true);
+    assert.equal(actionTypeSelect.includes(">Выбор проверки<"), false);
+    assert.equal(actionTypeSelect.includes(">Инструмент<"), false);
+    assert.equal(actionTypeSelect.includes(">Действие листа<"), false);
+    assert.equal(actionTypeSelect.includes(">Атака листа<"), false);
     assert.equal(targetDialog?.config?.content.includes("data-target-choice"), true);
     assert.equal(targetDialog?.config?.content.includes("data-target-choice-fields"), true);
     assert.match(targetDialog?.config?.content ?? "", /data-target-choice-target=(?:"|&quot;)skill(?:"|&quot;)/u);
     assert.equal(targetDialog?.config?.content.includes("data-target-choice-target=\"save\""), false);
+    assert.equal(targetDialog?.config?.content.includes("Персонаж должен"), true);
+    assert.equal(targetDialog?.config?.content.includes("Основной вариант"), false);
+    assert.equal(targetDialog?.config?.content.includes("Альтернатива 1"), false);
+    assert.equal(targetDialog?.config?.content.includes("data-action=\"target-choice-edit\""), true);
+    assert.equal(targetDialog?.config?.content.includes("data-action=\"target-choice-remove\""), true);
     assert.equal(targetDialog?.config?.content.includes("Добавить альтернативу"), true);
     assert.equal(targetDialog?.config?.content.includes("Итог простоя"), true);
     assert.equal(targetDialog?.config?.content.includes("Пороги"), true);
@@ -882,6 +896,163 @@ test("InventoryApp downtime controls call module API handlers", async () => {
   finally {
     globalThis.Dialog = previousDialog;
     globalThis.prompt = previousPrompt;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp downtime target dialog edits and removes variant choices", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousUi = globalThis.ui;
+  globalThis.ui = {
+    notifications: {
+      error() {},
+      info() {}
+    }
+  };
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      this.closed = false;
+      Dialog.instances.push(this);
+    }
+
+    setPosition() {}
+
+    close() {
+      this.closed = true;
+      this.config.close?.();
+    }
+
+    render() {}
+  };
+
+  const createChoiceRow = ({ sourceType = "skill", ability = "wis", target, targetLabel }) => {
+    const summary = createFakeElement();
+    const editButton = createFakeControl({ dataset: { action: "target-choice-edit" } });
+    const removeButton = createFakeControl({ dataset: { action: "target-choice-remove" } });
+    const sourceField = createFakeControl({ value: sourceType });
+    const abilityField = createFakeControl({ value: ability });
+    const targetField = createFakeControl({ value: target });
+    targetField.selectedOptions = [{ textContent: targetLabel }];
+    const row = createFakeElement();
+    row.hidden = false;
+    row.open = false;
+    row.querySelector = (selector) => {
+      if (selector === "[data-target-choice-summary]") return summary;
+      if (selector === "[data-action='target-choice-edit']") return editButton;
+      if (selector === "[data-action='target-choice-remove']") return removeButton;
+      if (selector === "[data-field='target-choice-source-type']") return sourceField;
+      if (selector === "[data-field='target-choice-ability']") return abilityField;
+      if (selector === "[data-field='target-choice-target']") return targetField;
+      if (selector === "[data-target-choice-fields]") return createFakeElement();
+      return null;
+    };
+    return { row, editButton, removeButton };
+  };
+
+  const calls = [];
+  const targetButton = createFakeControl({
+    dataset: {
+      action: "downtime-target-action",
+      requestId: "downtime-1",
+      checkId: "check-1"
+    }
+  });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='downtime-target-action']" ? [targetButton] : [];
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?choice-controls=${Date.now()}`);
+    const app = new InventoryApp(createModuleApi({
+      calls,
+      downtimeSnapshot: {
+        canManage: true,
+        canSubmit: false,
+        members: [],
+        actionCatalog: [],
+        requests: [{
+          id: "downtime-1",
+          actorId: "actor-a",
+          actorName: "Asha",
+          actionId: "unique",
+          actionLabel: "Unique",
+          title: "Test",
+          weeks: 1,
+          status: "pending",
+          checks: [{
+            id: "check-1",
+            label: "Восприятие",
+            actionType: "choice",
+            sourceType: "skill",
+            ability: "wis",
+            target: "prc",
+            targetLabel: "Восприятие",
+            outcomeMode: "dc",
+            dc: 12,
+            recordMode: "total-success",
+            choices: [
+              { sourceType: "skill", ability: "wis", target: "prc", targetLabel: "Восприятие", rollMode: "normal" },
+              { sourceType: "skill", ability: "str", target: "ath", targetLabel: "Атлетика", rollMode: "normal" }
+            ]
+          }]
+        }]
+      }
+    }));
+    app.element = root;
+    await app._onRender({}, {});
+
+    const targetActionPromise = dispatchClick(targetButton);
+    await new Promise((resolve) => setImmediate(resolve));
+    const dialog = globalThis.Dialog.instances.at(-1);
+
+    const primary = createChoiceRow({ target: "prc", targetLabel: "Восприятие" });
+    const alternative = createChoiceRow({ ability: "str", target: "ath", targetLabel: "Атлетика" });
+    const saveButton = createFakeControl({ dataset: { action: "target-action-save" } });
+    const values = new Map([
+      ["[data-field='target-action-type']", "check"],
+      ["[data-field='target-action-outcome-mode']", "dc"],
+      ["[data-field='target-action-dc']", "12"],
+      ["[data-field='target-action-record-mode']", "total-success"]
+    ]);
+    const dialogRoot = createFakeElement();
+    dialogRoot.querySelector = (selector) => {
+      if (selector === "[data-action='target-action-save']") return saveButton;
+      return { value: values.get(selector) ?? "" };
+    };
+    dialogRoot.querySelectorAll = (selector) => {
+      if (selector === "[data-target-choice]") return [primary.row, alternative.row];
+      if (selector === "[data-target-choice]:not([hidden])") {
+        return [primary.row, alternative.row].filter((row) => row.hidden !== true);
+      }
+      return [];
+    };
+    dialog.config.render(dialogRoot);
+
+    await dispatchClick(primary.editButton);
+    assert.equal(primary.row.open, true);
+    await dispatchClick(alternative.removeButton);
+    assert.equal(alternative.row.hidden, true);
+    assert.equal(alternative.row.open, false);
+    await dispatchClick(saveButton);
+    await targetActionPromise;
+
+    const updateCall = calls.find((call) => call[0] === "setDowntimeRequestChecks");
+    assert.equal(updateCall?.[1], "downtime-1");
+    assert.equal(updateCall?.[2]?.length, 1);
+    assert.equal(updateCall?.[2]?.[0]?.actionType, "check");
+    assert.equal(updateCall?.[2]?.[0]?.choices.length, 1);
+    assert.equal(updateCall?.[2]?.[0]?.choices[0].target, "prc");
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
     globalThis.ui = previousUi;
     dom.restore();
     restoreFoundry();
