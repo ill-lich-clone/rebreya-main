@@ -4594,6 +4594,10 @@ summary:focus-visible {
   overflow-y: auto;
 }
 
+.rm-downtime-target-action-window .dialog-buttons:empty {
+  display: none;
+}
+
 .rm-downtime-target-action-dialog {
   width: 100%;
   min-width: 0;
@@ -4745,6 +4749,22 @@ summary:focus-visible {
 .rm-downtime-effect-block:last-child {
   padding-bottom: 0;
   border-bottom: 0;
+}
+
+.rm-downtime-target-dialog__footer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding-top: 2px;
+}
+
+.rm-downtime-target-dialog__footer .rm-button {
+  min-width: 96px;
+}
+
+.rm-downtime-target-dialog__footer [hidden] {
+  display: none !important;
 }
 
 .rm-downtime-add-alternative {

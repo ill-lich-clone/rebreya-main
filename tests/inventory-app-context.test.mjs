@@ -600,7 +600,13 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     constructor(config, options = {}) {
       this.config = config;
       this.options = options;
+      this.closed = false;
       Dialog.instances.push(this);
+    }
+
+    close() {
+      this.closed = true;
+      this.config.close?.();
     }
 
     render() {
@@ -722,14 +728,49 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     assert.match(targetDialog?.config?.content ?? "", /data-outcome-dc-field[^>]*hidden/u);
     assert.match(targetDialog?.config?.content ?? "", /data-effect-fields="check"[^>]*hidden/u);
     assert.match(targetDialog?.config?.content ?? "", /data-effect-fields="downtime"[^>]*hidden/u);
-    assert.deepEqual(Object.keys(targetDialog?.config?.buttons ?? {}), ["previous", "next", "confirm", "cancel"]);
-    assert.equal(targetDialog?.config?.buttons.previous.label, "Назад");
-    assert.equal(targetDialog?.config?.buttons.next.label, "Далее");
-    assert.equal(targetDialog?.config?.buttons.confirm.label, "Сохранить");
-    assert.equal(targetDialog?.config?.buttons.next.callback(createTargetActionDialogRoot()), false);
-    assert.equal(targetDialog?.config?.buttons.previous.callback(createTargetActionDialogRoot()), false);
+    assert.deepEqual(Object.keys(targetDialog?.config?.buttons ?? {}), []);
+    assert.equal(targetDialog?.config?.content.includes("data-action=\"target-action-previous\""), true);
+    assert.equal(targetDialog?.config?.content.includes("data-action=\"target-action-next\""), true);
+    assert.equal(targetDialog?.config?.content.includes("data-action=\"target-action-save\""), true);
+    assert.equal(targetDialog?.config?.content.includes("data-action=\"target-action-cancel\""), true);
     assert.equal(calls.some((call) => call[0] === "setDowntimeRequestChecks"), false);
-    targetDialog?.config?.buttons.confirm.callback(createTargetActionDialogRoot());
+
+    const previousTargetActionStep = createFakeControl({ dataset: { action: "target-action-step", step: "basis" } });
+    const nextTargetActionStep = createFakeControl({ dataset: { action: "target-action-step", step: "variants" } });
+    const finalTargetActionStep = createFakeControl({ dataset: { action: "target-action-step", step: "effects" } });
+    const previousTargetActionButton = createFakeControl({ dataset: { action: "target-action-previous" } });
+    const nextTargetActionButton = createFakeControl({ dataset: { action: "target-action-next" } });
+    const saveTargetActionButton = createFakeControl({ dataset: { action: "target-action-save" } });
+    const cancelTargetActionButton = createFakeControl({ dataset: { action: "target-action-cancel" } });
+    const targetActionRoot = createTargetActionDialogRoot();
+    targetActionRoot.querySelector = (selector) => {
+      if (selector === "[data-action='target-action-previous']") return previousTargetActionButton;
+      if (selector === "[data-action='target-action-next']") return nextTargetActionButton;
+      if (selector === "[data-action='target-action-save']") return saveTargetActionButton;
+      if (selector === "[data-action='target-action-cancel']") return cancelTargetActionButton;
+      return createTargetActionDialogRoot().querySelector(selector);
+    };
+    targetActionRoot.querySelectorAll = (selector) => {
+      if (selector === "[data-action='target-action-step']") {
+        return [previousTargetActionStep, nextTargetActionStep, finalTargetActionStep];
+      }
+      if (selector === "[data-step-panel]") {
+        return [
+          createFakeElement({ dataset: { stepPanel: "basis" } }),
+          createFakeElement({ dataset: { stepPanel: "variants" } }),
+          createFakeElement({ dataset: { stepPanel: "effects" } })
+        ];
+      }
+      return createTargetActionDialogRoot().querySelectorAll(selector);
+    };
+    targetDialog.config.render(targetActionRoot);
+    assert.ok(nextTargetActionButton.listeners.click?.length, "expected next step listener");
+    await dispatchClick(nextTargetActionButton);
+    assert.equal(targetDialog.closed, false);
+    assert.equal(calls.some((call) => call[0] === "setDowntimeRequestChecks"), false);
+    assert.ok(saveTargetActionButton.listeners.click?.length, "expected save listener");
+    await dispatchClick(saveTargetActionButton);
+    assert.equal(targetDialog.closed, true);
     await targetActionPromise;
 
     assert.deepEqual(calls, [

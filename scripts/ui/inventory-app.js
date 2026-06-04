@@ -1795,6 +1795,38 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             </div>
           </div>
         </section>
+
+        <footer class="rm-downtime-target-dialog__footer">
+          <button
+            type="button"
+            class="rm-button rm-button--secondary"
+            data-action="target-action-previous"
+            title="Вернуться к предыдущему шагу."
+            hidden
+            disabled
+          >Назад</button>
+          <span class="rm-downtime-target-dialog__footer-spacer"></span>
+          <button
+            type="button"
+            class="rm-button rm-button--primary"
+            data-action="target-action-next"
+            title="Перейти к следующему шагу без сохранения."
+          >Далее</button>
+          <button
+            type="button"
+            class="rm-button rm-button--primary"
+            data-action="target-action-save"
+            title="Сохранить целевое действие."
+            hidden
+            disabled
+          >Сохранить</button>
+          <button
+            type="button"
+            class="rm-button rm-button--secondary"
+            data-action="target-action-cancel"
+            title="Закрыть окно без сохранения изменений."
+          >Отмена</button>
+        </footer>
       </form>
     `;
   }
@@ -1843,17 +1875,32 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return action;
   }
 
-  #wireDowntimeTargetActionDialog(root) {
+  #wireDowntimeTargetActionDialog(root, { onSave, onCancel } = {}) {
     const rows = Array.from(root?.querySelectorAll?.("[data-target-choice]") ?? []);
     const addButton = root?.querySelector?.("[data-action='target-action-add-alternative']");
     const stepButtons = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? []);
     const stepPanels = Array.from(root?.querySelectorAll?.("[data-step-panel]") ?? []);
+    const previousButton = root?.querySelector?.("[data-action='target-action-previous']");
+    const nextButton = root?.querySelector?.("[data-action='target-action-next']");
+    const saveButton = root?.querySelector?.("[data-action='target-action-save']");
+    const cancelButton = root?.querySelector?.("[data-action='target-action-cancel']");
     const outcomeSelect = root?.querySelector?.("[data-field='target-action-outcome-mode']");
     const dcField = root?.querySelector?.("[data-outcome-dc-field]");
     const checkEffectTrigger = root?.querySelector?.("[data-field='target-action-check-effect-trigger']");
     const downtimeEffectTrigger = root?.querySelector?.("[data-field='target-action-downtime-effect-trigger']");
     const checkEffectFields = root?.querySelector?.("[data-effect-fields='check']");
     const downtimeEffectFields = root?.querySelector?.("[data-effect-fields='downtime']");
+
+    root?.addEventListener?.("keydown", (event) => {
+      if (event.key !== "Enter") {
+        return;
+      }
+      if (cleanText(event.target?.tagName).toLowerCase() === "textarea") {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    });
 
     if (stepButtons.length && stepPanels.length) {
       stepButtons.forEach((button) => {
@@ -1864,6 +1911,23 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
       this.#setDowntimeTargetActionStep(root, stepButtons.find((button) => button.classList?.contains?.("is-active"))?.dataset?.step ?? "basis");
     }
+
+    previousButton?.addEventListener?.("click", (event) => {
+      event.preventDefault();
+      this.#moveDowntimeTargetActionStep(root, -1);
+    });
+    nextButton?.addEventListener?.("click", (event) => {
+      event.preventDefault();
+      this.#moveDowntimeTargetActionStep(root, 1);
+    });
+    saveButton?.addEventListener?.("click", (event) => {
+      event.preventDefault();
+      onSave?.(root);
+    });
+    cancelButton?.addEventListener?.("click", (event) => {
+      event.preventDefault();
+      onCancel?.();
+    });
 
     if (addButton && rows.length) {
       const updateButtonState = () => {
@@ -1932,11 +1996,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   #updateDowntimeTargetActionDialogButtons(root, activeStep = "basis") {
     const stepOrder = ["basis", "variants", "outcome", "effects"];
     const index = Math.max(0, stepOrder.indexOf(activeStep));
-    const dialogRoot = root?.closest?.(".dialog, .application, .window-app") ?? root;
-    const findButton = (name) => dialogRoot?.querySelector?.(`[data-button='${name}'], button.${name}, button[name='${name}']`);
-    const previous = findButton("previous");
-    const next = findButton("next");
-    const confirm = findButton("confirm");
+    const previous = root?.querySelector?.("[data-action='target-action-previous']");
+    const next = root?.querySelector?.("[data-action='target-action-next']");
+    const confirm = root?.querySelector?.("[data-action='target-action-save']");
     if (previous) {
       previous.hidden = index === 0;
       previous.disabled = index === 0;
@@ -1962,43 +2024,21 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const dialog = new DialogClass({
         title: "Целевое действие",
         content: this.#buildDowntimeTargetActionDialogContent(existingAction),
-        buttons: {
-          previous: {
-            label: "Назад",
-            callback: (html) => {
-              const root = getDialogRoot(html);
-              this.#moveDowntimeTargetActionStep(root, -1);
-              return false;
-            }
-          },
-          next: {
-            label: "Далее",
-            callback: (html) => {
-              const root = getDialogRoot(html);
-              this.#moveDowntimeTargetActionStep(root, 1);
-              return false;
-            }
-          },
-          confirm: {
-            label: "Сохранить",
-            callback: (html) => {
-              const root = getDialogRoot(html);
-              settled = true;
-              resolve(this.#readDowntimeTargetActionDialog(root, existingAction, existingActions));
-            }
-          },
-          cancel: {
-            label: "Отмена",
-            callback: () => {
-              settled = true;
-              resolve(null);
-            }
-          }
-        },
-        default: "next",
+        buttons: {},
         render: (html) => {
           const root = getDialogRoot(html);
-          this.#wireDowntimeTargetActionDialog(root);
+          this.#wireDowntimeTargetActionDialog(root, {
+            onSave: (dialogRoot) => {
+              settled = true;
+              resolve(this.#readDowntimeTargetActionDialog(dialogRoot, existingAction, existingActions));
+              dialog.close?.();
+            },
+            onCancel: () => {
+              settled = true;
+              resolve(null);
+              dialog.close?.();
+            }
+          });
           const firstControl = root?.querySelector("[data-field='target-action-type']");
           if (firstControl instanceof HTMLElement && typeof firstControl.focus === "function") {
             firstControl.focus();
