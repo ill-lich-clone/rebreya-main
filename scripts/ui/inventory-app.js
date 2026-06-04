@@ -1856,25 +1856,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const downtimeEffectFields = root?.querySelector?.("[data-effect-fields='downtime']");
 
     if (stepButtons.length && stepPanels.length) {
-      const setActiveStep = (step) => {
-        const safeStep = cleanText(step) || "basis";
-        stepButtons.forEach((button) => {
-          const active = button.dataset?.step === safeStep;
-          button.classList?.toggle?.("is-active", active);
-          button.setAttribute?.("aria-selected", active ? "true" : "false");
-        });
-        stepPanels.forEach((panel) => {
-          panel.hidden = panel.dataset?.stepPanel !== safeStep;
-        });
-      };
-
       stepButtons.forEach((button) => {
         button.addEventListener("click", (event) => {
           event.preventDefault();
-          setActiveStep(button.dataset?.step);
+          this.#setDowntimeTargetActionStep(root, button.dataset?.step);
         });
       });
-      setActiveStep(stepButtons.find((button) => button.classList?.contains?.("is-active"))?.dataset?.step ?? "basis");
+      this.#setDowntimeTargetActionStep(root, stepButtons.find((button) => button.classList?.contains?.("is-active"))?.dataset?.step ?? "basis");
     }
 
     if (addButton && rows.length) {
@@ -1915,6 +1903,54 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     updateEffectFields(downtimeEffectTrigger, downtimeEffectFields);
   }
 
+  #setDowntimeTargetActionStep(root, step = "basis") {
+    const stepOrder = ["basis", "variants", "outcome", "effects"];
+    const safeStep = stepOrder.includes(cleanText(step)) ? cleanText(step) : "basis";
+    const stepButtons = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? []);
+    const stepPanels = Array.from(root?.querySelectorAll?.("[data-step-panel]") ?? []);
+    stepButtons.forEach((button) => {
+      const active = button.dataset?.step === safeStep;
+      button.classList?.toggle?.("is-active", active);
+      button.setAttribute?.("aria-selected", active ? "true" : "false");
+    });
+    stepPanels.forEach((panel) => {
+      panel.hidden = panel.dataset?.stepPanel !== safeStep;
+    });
+    this.#updateDowntimeTargetActionDialogButtons(root, safeStep);
+  }
+
+  #moveDowntimeTargetActionStep(root, direction = 1) {
+    const stepOrder = ["basis", "variants", "outcome", "effects"];
+    const activeButton = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? [])
+      .find((button) => button.classList?.contains?.("is-active") || button.getAttribute?.("aria-selected") === "true");
+    const activeStep = cleanText(activeButton?.dataset?.step) || "basis";
+    const activeIndex = Math.max(0, stepOrder.indexOf(activeStep));
+    const nextIndex = Math.max(0, Math.min(stepOrder.length - 1, activeIndex + direction));
+    this.#setDowntimeTargetActionStep(root, stepOrder[nextIndex]);
+  }
+
+  #updateDowntimeTargetActionDialogButtons(root, activeStep = "basis") {
+    const stepOrder = ["basis", "variants", "outcome", "effects"];
+    const index = Math.max(0, stepOrder.indexOf(activeStep));
+    const dialogRoot = root?.closest?.(".dialog, .application, .window-app") ?? root;
+    const findButton = (name) => dialogRoot?.querySelector?.(`[data-button='${name}'], button.${name}, button[name='${name}']`);
+    const previous = findButton("previous");
+    const next = findButton("next");
+    const confirm = findButton("confirm");
+    if (previous) {
+      previous.hidden = index === 0;
+      previous.disabled = index === 0;
+    }
+    if (next) {
+      next.hidden = index >= stepOrder.length - 1;
+      next.disabled = index >= stepOrder.length - 1;
+    }
+    if (confirm) {
+      confirm.hidden = index < stepOrder.length - 1;
+      confirm.disabled = index < stepOrder.length - 1;
+    }
+  }
+
   async #promptDowntimeTargetAction(existingAction = {}, existingActions = []) {
     const DialogClass = globalThis.Dialog;
     if (typeof DialogClass !== "function") {
@@ -1927,6 +1963,22 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         title: "Целевое действие",
         content: this.#buildDowntimeTargetActionDialogContent(existingAction),
         buttons: {
+          previous: {
+            label: "Назад",
+            callback: (html) => {
+              const root = getDialogRoot(html);
+              this.#moveDowntimeTargetActionStep(root, -1);
+              return false;
+            }
+          },
+          next: {
+            label: "Далее",
+            callback: (html) => {
+              const root = getDialogRoot(html);
+              this.#moveDowntimeTargetActionStep(root, 1);
+              return false;
+            }
+          },
           confirm: {
             label: "Сохранить",
             callback: (html) => {
@@ -1943,7 +1995,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             }
           }
         },
-        default: "confirm",
+        default: "next",
         render: (html) => {
           const root = getDialogRoot(html);
           this.#wireDowntimeTargetActionDialog(root);
