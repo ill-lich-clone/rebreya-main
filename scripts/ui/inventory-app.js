@@ -35,6 +35,12 @@ const DOWNTIME_STATUS_META = Object.freeze({
 
 const MAX_DOWNTIME_TARGET_ACTIONS = 5;
 const MAX_DOWNTIME_THRESHOLDS = 5;
+const DOWNTIME_TARGET_DIALOG_DIMENSIONS = Object.freeze({
+  basis: { width: 620, height: 360 },
+  variants: { width: 820, height: 560 },
+  outcome: { width: 720, height: 520 },
+  effects: { width: 720, height: 560 }
+});
 
 const DOWNTIME_ACTION_TYPE_OPTIONS = Object.freeze([
   { value: "check", label: "Проверка", help: "Одна проверка характеристики, навыка, инструмента, действия или атаки." },
@@ -47,12 +53,12 @@ const DOWNTIME_ACTION_TYPE_OPTIONS = Object.freeze([
 ]);
 
 const DOWNTIME_SOURCE_TYPE_OPTIONS = Object.freeze([
-  { value: "skill", label: "Навык листа", help: "Навык из листа, включая замену характеристики." },
   { value: "ability", label: "Характеристика", help: "Чистая проверка характеристики без навыка." },
-  { value: "tool", label: "Инструмент листа", help: "Инструмент или владение с листа персонажа." },
+  { value: "skill", label: "Навык", help: "Навык из листа, включая замену характеристики." },
+  { value: "tool", label: "Инструмент", help: "Инструмент или владение с листа персонажа." },
   { value: "save", label: "Спасбросок", help: "Спасбросок выбранной характеристики." },
-  { value: "sheetAction", label: "Действие листа", help: "Действие, уже существующее на листе персонажа." },
-  { value: "attack", label: "Атака листа", help: "Атака оружием, заклинанием или другим атакующим действием листа." }
+  { value: "sheetAction", label: "Действие", help: "Действие, уже существующее на листе персонажа." },
+  { value: "attack", label: "Атака", help: "Атака оружием, заклинанием или другим атакующим действием листа." }
 ]);
 
 const DOWNTIME_REBREYA_TOOL_OPTIONS = Object.freeze(REBREYA_TOOLS.map((tool) => ({
@@ -105,7 +111,8 @@ const DOWNTIME_TARGET_OPTION_GROUPS = Object.freeze([
       { value: "save-con", label: "Спасбросок Телосложения", sourceType: "save", ability: "con", help: "Спасбросок Телосложения." },
       { value: "save-int", label: "Спасбросок Интеллекта", sourceType: "save", ability: "int", help: "Спасбросок Интеллекта." },
       { value: "save-wis", label: "Спасбросок Мудрости", sourceType: "save", ability: "wis", help: "Спасбросок Мудрости." },
-      { value: "save-cha", label: "Спасбросок Харизмы", sourceType: "save", ability: "cha", help: "Спасбросок Харизмы." }
+      { value: "save-cha", label: "Спасбросок Харизмы", sourceType: "save", ability: "cha", help: "Спасбросок Харизмы." },
+      { value: "death", label: "Спасбросок смерти", sourceType: "save", ability: "death", help: "Спасбросок смерти из чарника." }
     ]
   },
   {
@@ -229,13 +236,16 @@ function renderSelectOptions(options, selectedValue) {
   }).join("");
 }
 
-function getTargetOption(value) {
+function getTargetOption(value, sourceType = "", actor = null) {
   const safeValue = cleanText(value);
   if (!safeValue) {
     return null;
   }
 
-  for (const group of DOWNTIME_TARGET_OPTION_GROUPS) {
+  const groups = cleanText(sourceType)
+    ? getTargetOptionGroupsForSourceType(sourceType, actor)
+    : DOWNTIME_TARGET_OPTION_GROUPS;
+  for (const group of groups) {
     const option = group.options.find((entry) => entry.value === safeValue);
     if (option) {
       return option;
@@ -244,8 +254,8 @@ function getTargetOption(value) {
   return null;
 }
 
-function getTargetOptionLabel(value) {
-  return getTargetOption(value)?.label ?? cleanText(value);
+function getTargetOptionLabel(value, sourceType = "", actor = null) {
+  return getTargetOption(value, sourceType, actor)?.label ?? cleanText(value);
 }
 
 function renderGroupedSelectOptions(groups, selectedValue) {
@@ -255,11 +265,152 @@ function renderGroupedSelectOptions(groups, selectedValue) {
   }).join("");
 }
 
-function readSelectedOptionLabel(root, fieldName) {
+function collectionValues(collection) {
+  if (!collection) {
+    return [];
+  }
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+  if (typeof collection.values === "function") {
+    return Array.from(collection.values());
+  }
+  if (typeof collection === "object") {
+    return Object.values(collection);
+  }
+  return [];
+}
+
+function getGameActorById(actorId) {
+  const safeActorId = cleanText(actorId);
+  if (!safeActorId) {
+    return null;
+  }
+  return globalThis.game?.actors?.get?.(safeActorId)
+    ?? collectionValues(globalThis.game?.actors).find((actor) => actor?.id === safeActorId)
+    ?? null;
+}
+
+function getActivityType(activity) {
+  return cleanText(activity?.type)
+    || cleanText(activity?._source?.type)
+    || cleanText(activity?.constructor?.metadata?.type)
+    || cleanText(activity?.system?.type);
+}
+
+function getActivityName(activity) {
+  return cleanText(activity?.name)
+    || cleanText(activity?.label)
+    || cleanText(activity?.title)
+    || cleanText(activity?.type);
+}
+
+function getActivityId(activity) {
+  return cleanText(activity?.id)
+    || cleanText(activity?._id)
+    || cleanText(activity?.key)
+    || cleanText(activity?.uuid);
+}
+
+function isAttackActivity(activity, item = null) {
+  const activityType = getActivityType(activity);
+  const actionType = cleanText(activity?.actionType)
+    || cleanText(activity?.system?.actionType)
+    || cleanText(item?.system?.actionType);
+  return activityType === "attack"
+    || Boolean(activity?.attack || activity?.system?.attack)
+    || ["mwak", "rwak", "msak", "rsak"].includes(actionType);
+}
+
+function buildActorActivityOptions(actor, sourceType) {
+  const options = [];
+  for (const item of collectionValues(actor?.items)) {
+    const itemId = cleanText(item?.id);
+    const itemName = cleanText(item?.name) || itemId;
+    const activities = collectionValues(item?.system?.activities);
+    if (!activities.length) {
+      const actionType = cleanText(item?.system?.actionType);
+      const hasActivation = Boolean(cleanText(item?.system?.activation?.type));
+      const attackLike = ["mwak", "rwak", "msak", "rsak"].includes(actionType);
+      if ((sourceType === "attack" && attackLike) || (sourceType === "sheetAction" && hasActivation && !attackLike)) {
+        options.push({
+          value: itemId,
+          label: itemName,
+          sourceType,
+          help: itemName
+        });
+      }
+      continue;
+    }
+
+    for (const activity of activities) {
+      const activityId = getActivityId(activity);
+      const attackLike = isAttackActivity(activity, item);
+      if ((sourceType === "attack" && !attackLike) || (sourceType === "sheetAction" && attackLike)) {
+        continue;
+      }
+      const activityName = getActivityName(activity);
+      const value = itemId && activityId ? `${itemId}:${activityId}` : (activityId || itemId);
+      if (!value) {
+        continue;
+      }
+      options.push({
+        value,
+        label: activityName && activityName !== itemName ? `${itemName}: ${activityName}` : itemName,
+        sourceType,
+        help: itemName
+      });
+    }
+  }
+  return options;
+}
+
+function getTargetOptionGroupsForSourceType(sourceType, actor = null) {
+  const safeSourceType = cleanText(sourceType) || "skill";
+  if (safeSourceType === "sheetAction" || safeSourceType === "attack") {
+    const actorOptions = buildActorActivityOptions(actor, safeSourceType);
+    if (actorOptions.length) {
+      return [{
+        label: safeSourceType === "attack" ? "Атаки листа" : "Действия листа",
+        options: actorOptions
+      }];
+    }
+  }
+
+  return DOWNTIME_TARGET_OPTION_GROUPS
+    .map((group) => ({
+      ...group,
+      options: group.options.filter((option) => option.sourceType === safeSourceType)
+    }))
+    .filter((group) => group.options.length);
+}
+
+function getTargetOptionForSourceType(value, sourceType = "", actor = null) {
+  const safeValue = cleanText(value);
+  if (!safeValue) {
+    return null;
+  }
+  const groups = cleanText(sourceType)
+    ? getTargetOptionGroupsForSourceType(sourceType, actor)
+    : DOWNTIME_TARGET_OPTION_GROUPS;
+  for (const group of groups) {
+    const option = group.options.find((entry) => entry.value === safeValue);
+    if (option) {
+      return option;
+    }
+  }
+  return null;
+}
+
+function getDefaultTargetOption(sourceType = "skill", actor = null) {
+  return getTargetOptionGroupsForSourceType(sourceType, actor)[0]?.options?.[0] ?? null;
+}
+
+function readSelectedOptionLabel(root, fieldName, { sourceType = "", actor = null } = {}) {
   const field = root?.querySelector?.(`[data-field='${fieldName}']`);
   const selectedOption = field?.selectedOptions?.[0];
   return cleanText(selectedOption?.textContent ?? selectedOption?.label)
-    || getTargetOptionLabel(field?.value)
+    || getTargetOptionLabel(field?.value, sourceType, actor)
     || cleanText(field?.value);
 }
 
@@ -278,20 +429,20 @@ function buildNextTargetActionId(actions = []) {
   return `check-${Date.now()}`;
 }
 
-function normalizeDowntimeTargetChoice(choice = {}, fallback = {}) {
-  const target = cleanText(choice.target) || cleanText(fallback.target) || "prc";
-  const targetOption = getTargetOption(target);
+function normalizeDowntimeTargetChoice(choice = {}, fallback = {}, actor = null) {
   const sourceType = cleanText(choice.sourceType)
     || cleanText(fallback.sourceType)
-    || targetOption?.sourceType
     || "skill";
+  const requestedTarget = cleanText(choice.target) || cleanText(fallback.target);
+  const targetOption = getTargetOption(requestedTarget, sourceType, actor) ?? getDefaultTargetOption(sourceType, actor);
+  const target = targetOption?.value ?? requestedTarget;
   const ability = cleanText(choice.ability)
     || cleanText(fallback.ability)
     || targetOption?.ability
     || "";
   const targetLabel = cleanText(choice.targetLabel)
     || cleanText(choice.label)
-    || getTargetOptionLabel(target);
+    || getTargetOptionLabel(target, sourceType, actor);
   const rollMode = cleanText(choice.rollMode)
     || cleanText(fallback.rollMode)
     || "normal";
@@ -306,29 +457,74 @@ function normalizeDowntimeTargetChoice(choice = {}, fallback = {}) {
   };
 }
 
-function buildDowntimeTargetChoices(action = {}) {
+function buildDowntimeTargetChoices(action = {}, actor = null) {
   const fallback = normalizeDowntimeTargetChoice({
     sourceType: action.sourceType,
     ability: action.ability,
     target: action.target,
     targetLabel: action.targetLabel,
     rollMode: action.rollMode
-  });
+  }, {}, actor);
   const choices = Array.isArray(action.choices) && action.choices.length
-    ? action.choices.map((choice) => normalizeDowntimeTargetChoice(choice, fallback))
+    ? action.choices.map((choice) => normalizeDowntimeTargetChoice(choice, fallback, actor))
     : [fallback];
 
   return choices.slice(0, MAX_DOWNTIME_TARGET_ACTIONS);
 }
 
 function buildDowntimeTargetChoiceSummary(choice = {}) {
-  const abilityLabel = getOptionLabel(DOWNTIME_ABILITY_OPTIONS, choice.ability, "Из листа");
-  const targetLabel = cleanText(choice.targetLabel) || getTargetOptionLabel(choice.target);
-  return [abilityLabel, targetLabel].filter(Boolean).join(" · ");
+  const sourceType = cleanText(choice.sourceType) || "skill";
+  const targetLabel = cleanText(choice.targetLabel) || getTargetOptionLabel(choice.target, sourceType);
+  if (sourceType === "skill" || sourceType === "tool") {
+    const abilityLabel = getOptionLabel(DOWNTIME_ABILITY_OPTIONS, choice.ability, "Из листа");
+    return [abilityLabel, targetLabel].filter(Boolean).join(" · ");
+  }
+  return targetLabel || getOptionLabel(DOWNTIME_SOURCE_TYPE_OPTIONS, sourceType, sourceType);
 }
 
-function buildDowntimeTargetChoiceRow(choice = {}, index = 0, { visible = true } = {}) {
-  const safeChoice = normalizeDowntimeTargetChoice(choice);
+function buildDowntimeTargetChoiceFields(choice = {}, actor = null) {
+  const safeChoice = normalizeDowntimeTargetChoice(choice, {}, actor);
+  const targetGroups = getTargetOptionGroupsForSourceType(safeChoice.sourceType, actor);
+  const targetLabel = safeChoice.sourceType === "skill"
+    ? "Навык"
+    : (safeChoice.sourceType === "tool"
+      ? "Инструмент"
+      : (safeChoice.sourceType === "attack"
+        ? "Атака"
+        : (safeChoice.sourceType === "sheetAction" ? "Действие" : "Цель")));
+
+  if (safeChoice.sourceType === "ability") {
+    return `
+      <div class="rm-field">
+        <label title="Характеристика из листа персонажа.">Характеристика</label>
+        <select data-field="target-choice-target" data-target-choice-target="ability">${renderGroupedSelectOptions(targetGroups, safeChoice.target)}</select>
+      </div>
+    `;
+  }
+
+  if (safeChoice.sourceType === "skill" || safeChoice.sourceType === "tool") {
+    return `
+      <div class="rm-field">
+        <label title="Характеристика броска. «Из листа» берёт системную характеристику выбранного пункта.">Характеристика</label>
+        <select data-field="target-choice-ability">${renderSelectOptions(DOWNTIME_ABILITY_OPTIONS, safeChoice.ability)}</select>
+      </div>
+      <div class="rm-field">
+        <label title="Конкретный ${safeChoice.sourceType === "skill" ? "навык" : "инструмент"} из доступного списка.">${targetLabel}</label>
+        <select data-field="target-choice-target" data-target-choice-target="${foundry.utils.escapeHTML(safeChoice.sourceType)}">${renderGroupedSelectOptions(targetGroups, safeChoice.target)}</select>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="rm-field">
+      <label title="Конкретный пункт из листа персонажа или системного списка.">${targetLabel}</label>
+      <select data-field="target-choice-target" data-target-choice-target="${foundry.utils.escapeHTML(safeChoice.sourceType)}">${renderGroupedSelectOptions(targetGroups, safeChoice.target)}</select>
+    </div>
+  `;
+}
+
+function buildDowntimeTargetChoiceRow(choice = {}, index = 0, { visible = true, actor = null } = {}) {
+  const safeChoice = normalizeDowntimeTargetChoice(choice, {}, actor);
   const title = index === 0 ? "Основной вариант" : `Альтернатива ${index}`;
   const hidden = visible ? "" : " hidden";
   const open = index === 0 ? " open" : "";
@@ -341,17 +537,12 @@ function buildDowntimeTargetChoiceRow(choice = {}, index = 0, { visible = true }
         <strong data-target-choice-summary>${summary}</strong>
       </summary>
       <div class="rm-downtime-target-choice__body">
-        <div class="rm-field">
+        <div class="rm-field rm-downtime-target-choice__source">
           <label title="Откуда брать механику броска или действия.">Что бросать</label>
           <select data-field="target-choice-source-type">${renderSelectOptions(DOWNTIME_SOURCE_TYPE_OPTIONS, safeChoice.sourceType)}</select>
         </div>
-        <div class="rm-field">
-          <label title="Характеристика броска. «Из листа» берёт системную характеристику выбранного пункта.">Характеристика</label>
-          <select data-field="target-choice-ability">${renderSelectOptions(DOWNTIME_ABILITY_OPTIONS, safeChoice.ability)}</select>
-        </div>
-        <div class="rm-field">
-          <label title="Конкретный навык, спасбросок, инструмент, действие или атака.">Цель</label>
-          <select data-field="target-choice-target">${renderGroupedSelectOptions(DOWNTIME_TARGET_OPTION_GROUPS, safeChoice.target)}</select>
+        <div class="rm-downtime-target-choice__fields" data-target-choice-fields>
+          ${buildDowntimeTargetChoiceFields(safeChoice, actor)}
         </div>
       </div>
     </details>
@@ -406,12 +597,19 @@ function readDowntimeThreshold(row) {
   };
 }
 
-function readDowntimeTargetChoice(row) {
-  const target = readFieldValue(row, "target-choice-target") || "prc";
-  const targetOption = getTargetOption(target);
-  const targetLabel = readSelectedOptionLabel(row, "target-choice-target") || targetOption?.label || target;
-  const sourceType = readFieldValue(row, "target-choice-source-type") || targetOption?.sourceType || "skill";
-  const ability = readFieldValue(row, "target-choice-ability") || targetOption?.ability || "";
+function readDowntimeTargetChoice(row, actor = null) {
+  const sourceType = readFieldValue(row, "target-choice-source-type") || "skill";
+  const defaultTarget = getDefaultTargetOption(sourceType, actor);
+  const target = readFieldValue(row, "target-choice-target") || defaultTarget?.value || "prc";
+  const targetOption = getTargetOption(target, sourceType, actor) ?? defaultTarget;
+  const targetLabel = readSelectedOptionLabel(row, "target-choice-target", { sourceType, actor }) || targetOption?.label || target;
+  let ability = readFieldValue(row, "target-choice-ability") || targetOption?.ability || "";
+  if (sourceType === "ability") {
+    ability = target;
+  }
+  else if (sourceType === "save") {
+    ability = targetOption?.ability || (target.startsWith("save-") ? target.slice(5) : target);
+  }
   const rollMode = "normal";
 
   return {
@@ -1724,12 +1922,12 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return (snapshot?.requests ?? []).find((request) => cleanText(request?.id) === requestId) ?? null;
   }
 
-  #buildDowntimeTargetActionDialogContent(action = {}) {
+  #buildDowntimeTargetActionDialogContent(action = {}, actor = null) {
     const safeDc = foundry.utils.escapeHTML(cleanText(action.dc));
-    const choices = buildDowntimeTargetChoices(action);
+    const choices = buildDowntimeTargetChoices(action, actor);
     const visibleChoiceCount = Math.max(1, choices.length);
     const choiceRows = Array.from({ length: MAX_DOWNTIME_TARGET_ACTIONS }, (_entry, index) =>
-      buildDowntimeTargetChoiceRow(choices[index] ?? {}, index, { visible: index < visibleChoiceCount }));
+      buildDowntimeTargetChoiceRow(choices[index] ?? {}, index, { visible: index < visibleChoiceCount, actor }));
     const checkEffect = action.checkEffect && typeof action.checkEffect === "object" ? action.checkEffect : {};
     const downtimeEffect = action.downtimeEffect && typeof action.downtimeEffect === "object" ? action.downtimeEffect : {};
     const outcomeMode = action.outcomeMode || (cleanText(action.dc) ? "dc" : "freeform");
@@ -1878,11 +2076,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     `;
   }
 
-  #readDowntimeTargetActionDialog(root, existingAction = {}, existingActions = []) {
+  #readDowntimeTargetActionDialog(root, existingAction = {}, existingActions = [], actor = null) {
     const choiceRows = Array.from(root?.querySelectorAll?.("[data-target-choice]:not([hidden])") ?? []);
     const choices = choiceRows.length
-      ? choiceRows.map((row) => readDowntimeTargetChoice(row))
-      : [normalizeDowntimeTargetChoice(existingAction)];
+      ? choiceRows.map((row) => readDowntimeTargetChoice(row, actor))
+      : [normalizeDowntimeTargetChoice(existingAction, {}, actor)];
     const primaryChoice = choices[0] ?? normalizeDowntimeTargetChoice(existingAction);
     const checkEffect = {
       trigger: readFieldValue(root, "target-action-check-effect-trigger") || "none",
@@ -1929,7 +2127,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return action;
   }
 
-  #wireDowntimeTargetActionDialog(root, { onSave, onCancel } = {}) {
+  #wireDowntimeTargetActionDialog(root, { onSave, onCancel, actor = null, dialog = null } = {}) {
     const rows = Array.from(root?.querySelectorAll?.("[data-target-choice]") ?? []);
     const addButton = root?.querySelector?.("[data-action='target-action-add-alternative']");
     const stepButtons = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? []);
@@ -1961,19 +2159,19 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       stepButtons.forEach((button) => {
         button.addEventListener("click", (event) => {
           event.preventDefault();
-          this.#setDowntimeTargetActionStep(root, button.dataset?.step);
+          this.#setDowntimeTargetActionStep(root, button.dataset?.step, dialog);
         });
       });
-      this.#setDowntimeTargetActionStep(root, stepButtons.find((button) => button.classList?.contains?.("is-active"))?.dataset?.step ?? "basis");
+      this.#setDowntimeTargetActionStep(root, stepButtons.find((button) => button.classList?.contains?.("is-active"))?.dataset?.step ?? "basis", dialog);
     }
 
     previousButton?.addEventListener?.("click", (event) => {
       event.preventDefault();
-      this.#moveDowntimeTargetActionStep(root, -1);
+      this.#moveDowntimeTargetActionStep(root, -1, dialog);
     });
     nextButton?.addEventListener?.("click", (event) => {
       event.preventDefault();
-      this.#moveDowntimeTargetActionStep(root, 1);
+      this.#moveDowntimeTargetActionStep(root, 1, dialog);
     });
     saveButton?.addEventListener?.("click", (event) => {
       event.preventDefault();
@@ -2027,18 +2225,38 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const updateChoiceSummary = (row) => {
       const summary = row?.querySelector?.("[data-target-choice-summary]");
       if (summary) {
-        summary.textContent = buildDowntimeTargetChoiceSummary(readDowntimeTargetChoice(row));
+        summary.textContent = buildDowntimeTargetChoiceSummary(readDowntimeTargetChoice(row, actor));
       }
+    };
+    const bindChoiceFieldListeners = (row) => {
+      const targetField = row?.querySelector?.("[data-field='target-choice-target']");
+      const abilityField = row?.querySelector?.("[data-field='target-choice-ability']");
+      targetField?.addEventListener?.("change", () => syncChoiceTarget(row));
+      abilityField?.addEventListener?.("change", () => updateChoiceSummary(row));
+    };
+    const renderChoiceFields = (row) => {
+      const fields = row?.querySelector?.("[data-target-choice-fields]");
+      if (!fields) {
+        return;
+      }
+      const sourceType = readFieldValue(row, "target-choice-source-type") || "skill";
+      const nextChoice = normalizeDowntimeTargetChoice({
+        ...readDowntimeTargetChoice(row, actor),
+        sourceType
+      }, {}, actor);
+      fields.innerHTML = buildDowntimeTargetChoiceFields(nextChoice, actor);
+      if (row?.dataset) {
+        row.dataset.previousTarget = nextChoice.target;
+      }
+      bindChoiceFieldListeners(row);
+      updateChoiceSummary(row);
     };
     const syncChoiceTarget = (row) => {
       const targetField = row?.querySelector?.("[data-field='target-choice-target']");
-      const sourceField = row?.querySelector?.("[data-field='target-choice-source-type']");
       const abilityField = row?.querySelector?.("[data-field='target-choice-ability']");
-      const previousTargetOption = getTargetOption(row?.dataset?.previousTarget);
-      const targetOption = getTargetOption(targetField?.value);
-      if (sourceField && targetOption?.sourceType) {
-        sourceField.value = targetOption.sourceType;
-      }
+      const sourceType = readFieldValue(row, "target-choice-source-type") || "skill";
+      const previousTargetOption = getTargetOption(row?.dataset?.previousTarget, sourceType, actor);
+      const targetOption = getTargetOption(targetField?.value, sourceType, actor);
       if (abilityField && targetOption?.ability && (!abilityField.value || abilityField.value === previousTargetOption?.ability)) {
         abilityField.value = targetOption.ability;
       }
@@ -2051,17 +2269,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       if (row?.dataset && !row.dataset.previousTarget) {
         row.dataset.previousTarget = readFieldValue(row, "target-choice-target");
       }
-      const targetField = row?.querySelector?.("[data-field='target-choice-target']");
       const sourceField = row?.querySelector?.("[data-field='target-choice-source-type']");
-      const abilityField = row?.querySelector?.("[data-field='target-choice-ability']");
-      targetField?.addEventListener?.("change", () => syncChoiceTarget(row));
-      sourceField?.addEventListener?.("change", () => updateChoiceSummary(row));
-      abilityField?.addEventListener?.("change", () => updateChoiceSummary(row));
+      sourceField?.addEventListener?.("change", () => renderChoiceFields(row));
+      bindChoiceFieldListeners(row);
       updateChoiceSummary(row);
     });
   }
 
-  #setDowntimeTargetActionStep(root, step = "basis") {
+  #setDowntimeTargetActionStep(root, step = "basis", dialog = null) {
     const stepOrder = ["basis", "variants", "outcome", "effects"];
     const safeStep = stepOrder.includes(cleanText(step)) ? cleanText(step) : "basis";
     const stepButtons = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? []);
@@ -2075,16 +2290,29 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       panel.hidden = panel.dataset?.stepPanel !== safeStep;
     });
     this.#updateDowntimeTargetActionDialogButtons(root, safeStep);
+    this.#resizeDowntimeTargetActionDialog(root, safeStep, dialog);
   }
 
-  #moveDowntimeTargetActionStep(root, direction = 1) {
+  #moveDowntimeTargetActionStep(root, direction = 1, dialog = null) {
     const stepOrder = ["basis", "variants", "outcome", "effects"];
     const activeButton = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? [])
       .find((button) => button.classList?.contains?.("is-active") || button.getAttribute?.("aria-selected") === "true");
     const activeStep = cleanText(activeButton?.dataset?.step) || "basis";
     const activeIndex = Math.max(0, stepOrder.indexOf(activeStep));
     const nextIndex = Math.max(0, Math.min(stepOrder.length - 1, activeIndex + direction));
-    this.#setDowntimeTargetActionStep(root, stepOrder[nextIndex]);
+    this.#setDowntimeTargetActionStep(root, stepOrder[nextIndex], dialog);
+  }
+
+  #resizeDowntimeTargetActionDialog(root, activeStep = "basis", dialog = null) {
+    const dimensions = DOWNTIME_TARGET_DIALOG_DIMENSIONS[activeStep] ?? DOWNTIME_TARGET_DIALOG_DIMENSIONS.basis;
+    root?.style?.setProperty?.("--rm-downtime-target-dialog-width", `${dimensions.width}px`);
+    root?.style?.setProperty?.("--rm-downtime-target-dialog-height", `${dimensions.height}px`);
+    const shell = root?.closest?.(".rm-downtime-target-action-window, .window-app, .application");
+    shell?.style?.setProperty?.("--rm-downtime-target-dialog-width", `${dimensions.width}px`);
+    shell?.style?.setProperty?.("--rm-downtime-target-dialog-height", `${dimensions.height}px`);
+    if (typeof dialog?.setPosition === "function") {
+      dialog.setPosition(dimensions);
+    }
   }
 
   #updateDowntimeTargetActionDialogButtons(root, activeStep = "basis") {
@@ -2107,7 +2335,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
-  async #promptDowntimeTargetAction(existingAction = {}, existingActions = []) {
+  async #promptDowntimeTargetAction(existingAction = {}, existingActions = [], actor = null) {
     const DialogClass = globalThis.Dialog;
     if (typeof DialogClass !== "function") {
       return null;
@@ -2117,14 +2345,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       let settled = false;
       const dialog = new DialogClass({
         title: "Целевое действие",
-        content: this.#buildDowntimeTargetActionDialogContent(existingAction),
+        content: this.#buildDowntimeTargetActionDialogContent(existingAction, actor),
         buttons: {},
         render: (html) => {
           const root = getDialogRoot(html);
           this.#wireDowntimeTargetActionDialog(root, {
+            actor,
+            dialog,
             onSave: (dialogRoot) => {
               settled = true;
-              resolve(this.#readDowntimeTargetActionDialog(dialogRoot, existingAction, existingActions));
+              resolve(this.#readDowntimeTargetActionDialog(dialogRoot, existingAction, existingActions, actor));
               dialog.close?.();
             },
             onCancel: () => {
@@ -2145,8 +2375,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
       }, {
         classes: ["rebreya-main", "rebreya-trader-dialog", "rm-downtime-target-action-window"],
-        width: 920,
-        height: 680
+        width: DOWNTIME_TARGET_DIALOG_DIMENSIONS.basis.width,
+        height: DOWNTIME_TARGET_DIALOG_DIMENSIONS.basis.height
       });
 
       dialog.render(true);
@@ -2277,7 +2507,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       throw new Error(`Можно назначить не больше ${MAX_DOWNTIME_TARGET_ACTIONS} целевых действий.`);
     }
 
-    const nextAction = await this.#promptDowntimeTargetAction(existingAction ?? {}, existingActions);
+    const actor = getGameActorById(request.actorId);
+    const nextAction = await this.#promptDowntimeTargetAction(existingAction ?? {}, existingActions, actor);
     if (!nextAction) {
       return;
     }

@@ -2540,6 +2540,14 @@ async function rollCharacterDowntimeTarget(actor, button, event) {
   }
 
   if (sourceType === "save") {
+    if (ability === "death") {
+      if (typeof actor.rollDeathSave !== "function") {
+        throw new Error("Спасбросок смерти для проверки простоя не найден в листе персонажа.");
+      }
+
+      return actor.rollDeathSave({ ...eventConfig, legacy: false }, {}, buildDowntimeRollMessageData(button));
+    }
+
     if (!ability || typeof actor.rollSavingThrow !== "function") {
       throw new Error("Спасбросок для проверки простоя не найден в листе персонажа.");
     }

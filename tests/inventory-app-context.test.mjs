@@ -483,7 +483,7 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
     assert.equal(context.downtime.requests[0].statusLabel, "Ожидает");
     assert.equal(context.downtime.requests[0].checks[0].summary, "Поиск следов | DC 15 | Мудрость");
     assert.equal(context.downtime.requests[0].targetActions[0].summary, "Поиск следов | DC 15 | Мудрость");
-    assert.equal(context.downtime.requests[0].targetActions[0].sourceTypeLabel, "Навык листа");
+    assert.equal(context.downtime.requests[0].targetActions[0].sourceTypeLabel, "Навык");
     assert.equal(context.downtime.requests[0].targetActions[0].outcomeModeLabel, "DC");
     assert.equal(context.downtime.requests[0].targetActions[0].outcomeSummary, "DC 15");
     assert.equal(context.downtime.requests[0].targetActions[0].checkEffectLabel, "После успеха: Rebreya Main / Записать прогресс");
@@ -601,7 +601,12 @@ test("InventoryApp downtime controls call module API handlers", async () => {
       this.config = config;
       this.options = options;
       this.closed = false;
+      this.positionCalls = [];
       Dialog.instances.push(this);
+    }
+
+    setPosition(position) {
+      this.positionCalls.push(position);
     }
 
     close() {
@@ -708,8 +713,8 @@ test("InventoryApp downtime controls call module API handlers", async () => {
 
     const targetDialog = globalThis.Dialog.instances.find((dialog) =>
       dialog.options?.classes?.includes("rm-downtime-target-action-window"));
-    assert.equal(targetDialog?.options?.width, 920);
-    assert.equal(targetDialog?.options?.height, 680);
+    assert.equal(targetDialog?.options?.width, 620);
+    assert.equal(targetDialog?.options?.height, 360);
     assert.equal(targetDialog?.config?.content.includes("До 5 задач"), false);
     assert.equal(targetDialog?.config?.content.includes("Недели, заявки"), false);
     assert.equal(targetDialog?.config?.content.includes("Можно собрать"), false);
@@ -719,12 +724,15 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-action-target-label\""), false);
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-choice-roll-mode\""), false);
     assert.equal(targetDialog?.config?.content.includes("data-target-choice"), true);
+    assert.equal(targetDialog?.config?.content.includes("data-target-choice-fields"), true);
+    assert.match(targetDialog?.config?.content ?? "", /data-target-choice-target=(?:"|&quot;)skill(?:"|&quot;)/u);
+    assert.equal(targetDialog?.config?.content.includes("data-target-choice-target=\"save\""), false);
     assert.equal(targetDialog?.config?.content.includes("Добавить альтернативу"), true);
     assert.equal(targetDialog?.config?.content.includes("Итог простоя"), true);
     assert.equal(targetDialog?.config?.content.includes("Пороги"), true);
     assert.equal(targetDialog?.config?.content.includes("data-outcome-thresholds-field"), true);
-    assert.equal(targetDialog?.config?.content.includes("Ювелира"), true);
-    assert.equal(targetDialog?.config?.content.includes("Камнелома"), true);
+    assert.equal(targetDialog?.config?.content.includes("Ювелира"), false);
+    assert.equal(targetDialog?.config?.content.includes("Камнелома"), false);
     assert.equal(targetDialog?.config?.content.includes("title=\"Определяет, какой тип задачи получит игрок.\""), true);
     assert.equal(targetDialog?.config?.content.includes("data-action=\"target-action-step\""), true);
     assert.match(targetDialog?.config?.content ?? "", /data-step-panel="basis"[^>]*>/u);
@@ -756,12 +764,15 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     liveTargetChoiceAbility.selectedOptions = [{ textContent: "Мудрость" }];
     const liveTargetChoiceSource = createFakeControl({ value: "skill" });
     liveTargetChoiceSource.selectedOptions = [{ textContent: "Навык листа" }];
+    const liveTargetChoiceFields = createFakeElement();
+    liveTargetChoiceFields.innerHTML = "";
     const liveTargetChoice = createFakeElement();
     liveTargetChoice.querySelector = (selector) => {
       if (selector === "[data-target-choice-summary]") return targetChoiceSummary;
       if (selector === "[data-field='target-choice-target']") return liveTargetChoiceTarget;
       if (selector === "[data-field='target-choice-ability']") return liveTargetChoiceAbility;
       if (selector === "[data-field='target-choice-source-type']") return liveTargetChoiceSource;
+      if (selector === "[data-target-choice-fields]") return liveTargetChoiceFields;
       return null;
     };
     const targetActionRoot = createTargetActionDialogRoot();
@@ -790,11 +801,19 @@ test("InventoryApp downtime controls call module API handlers", async () => {
       return createTargetActionDialogRoot().querySelectorAll(selector);
     };
     targetDialog.config.render(targetActionRoot);
+    assert.deepEqual(targetDialog.positionCalls[0], { width: 620, height: 360 });
+    assert.ok(liveTargetChoiceSource.listeners.change?.length, "expected source choice change listener");
+    liveTargetChoiceSource.value = "save";
+    liveTargetChoiceSource.listeners.change[0]({ currentTarget: liveTargetChoiceSource, preventDefault() {} });
+    assert.equal(liveTargetChoiceFields.innerHTML.includes("Спасбросок смерти"), true);
+    assert.equal(liveTargetChoiceFields.innerHTML.includes("Восприятие"), false);
     assert.ok(liveTargetChoiceTarget.listeners.change?.length, "expected target choice change listener");
+    liveTargetChoiceSource.value = "skill";
     liveTargetChoiceTarget.listeners.change[0]({ currentTarget: liveTargetChoiceTarget, preventDefault() {} });
     assert.equal(targetChoiceSummary.textContent, "Мудрость · Уход за животными");
     assert.ok(nextTargetActionButton.listeners.click?.length, "expected next step listener");
     await dispatchClick(nextTargetActionButton);
+    assert.deepEqual(targetDialog.positionCalls.at(-1), { width: 820, height: 560 });
     assert.equal(targetDialog.closed, false);
     assert.equal(calls.some((call) => call[0] === "setDowntimeRequestChecks"), false);
     assert.ok(saveTargetActionButton.listeners.click?.length, "expected save listener");
@@ -891,6 +910,155 @@ test("InventoryApp background render does not bring the window to front", async 
     assert.equal(bringToFrontCount, 0);
   }
   finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp downtime target dialog renders actor actions and attacks from the sheet", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  globalThis.ui = {
+    notifications: {
+      error() {},
+      info() {}
+    }
+  };
+  globalThis.game = {
+    actors: new Map([["actor-a", {
+      id: "actor-a",
+      items: new Map([
+        ["sword", {
+          id: "sword",
+          name: "Longsword",
+          system: {
+            activities: new Map([["slash", {
+              id: "slash",
+              name: "Slash",
+              type: "attack"
+            }]])
+          }
+        }],
+        ["second-wind", {
+          id: "second-wind",
+          name: "Second Wind",
+          system: {
+            activities: new Map([["heal", {
+              id: "heal",
+              name: "Recover",
+              type: "heal"
+            }]])
+          }
+        }]
+      ])
+    }]])
+  };
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      Dialog.instances.push(this);
+    }
+
+    close() {
+      this.config.close?.();
+    }
+
+    render() {}
+  };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?actor-actions=${Date.now()}`);
+    const attackButton = createFakeControl({
+      dataset: {
+        action: "downtime-target-action",
+        requestId: "downtime-1",
+        checkId: "attack-check"
+      }
+    });
+    const actionButton = createFakeControl({
+      dataset: {
+        action: "downtime-target-action",
+        requestId: "downtime-1",
+        checkId: "action-check"
+      }
+    });
+    const root = createFakeElement();
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => selector === "[data-action='downtime-target-action']"
+      ? [attackButton, actionButton]
+      : [];
+    const app = new InventoryApp(createModuleApi({
+      downtimeSnapshot: {
+        canManage: true,
+        canSubmit: false,
+        members: [],
+        actionCatalog: [],
+        requests: [{
+          id: "downtime-1",
+          actorId: "actor-a",
+          actorName: "Asha",
+          actionId: "unique",
+          actionLabel: "Unique",
+          title: "Test",
+          weeks: 1,
+          status: "pending",
+          checks: [{
+            id: "attack-check",
+            label: "Attack",
+            sourceType: "attack",
+            target: "sword:slash",
+            targetLabel: "Longsword: Slash",
+            choices: [{
+              sourceType: "attack",
+              target: "sword:slash",
+              targetLabel: "Longsword: Slash"
+            }]
+          }, {
+            id: "action-check",
+            label: "Action",
+            sourceType: "sheetAction",
+            target: "second-wind:heal",
+            targetLabel: "Second Wind: Recover",
+            choices: [{
+              sourceType: "sheetAction",
+              target: "second-wind:heal",
+              targetLabel: "Second Wind: Recover"
+            }]
+          }]
+        }]
+      }
+    }));
+    app.element = root;
+
+    await app._onRender({}, {});
+    const attackPromise = dispatchClick(attackButton);
+    await new Promise((resolve) => setImmediate(resolve));
+    const attackDialog = globalThis.Dialog.instances.at(-1);
+    assert.equal(attackDialog.config.content.includes("Longsword: Slash"), true);
+    assert.equal(attackDialog.config.content.includes("Second Wind: Recover"), false);
+    assert.match(attackDialog.config.content, /data-target-choice-target=(?:"|&quot;)attack(?:"|&quot;)/u);
+    attackDialog.close();
+    await attackPromise;
+
+    const actionPromise = dispatchClick(actionButton);
+    await new Promise((resolve) => setImmediate(resolve));
+    const actionDialog = globalThis.Dialog.instances.at(-1);
+    assert.equal(actionDialog.config.content.includes("Second Wind: Recover"), true);
+    assert.equal(actionDialog.config.content.includes("Longsword: Slash"), false);
+    assert.match(actionDialog.config.content, /data-target-choice-target=(?:"|&quot;)sheetAction(?:"|&quot;)/u);
+    actionDialog.close();
+    await actionPromise;
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
     dom.restore();
     restoreFoundry();
   }

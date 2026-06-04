@@ -1039,3 +1039,91 @@ test("character downtime roll buttons use native dnd5e saving throws", async () 
     stubs.restore();
   }
 });
+
+test("character downtime roll buttons use native dnd5e death saves", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-roll-death-save=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    actor.rollDeathSave = async (config) => {
+      calls.push(["rollDeathSave", config]);
+      return [{ total: 12 }];
+    };
+    actor.rollSavingThrow = async () => {
+      throw new Error("death saves must not use rollSavingThrow");
+    };
+
+    const rollButton = new stubs.HTMLElement({
+      dataset: {
+        action: "character-downtime-roll",
+        requestId: "downtime-3",
+        checkId: "death-save",
+        actorId: "actor-a",
+        sourceType: "save",
+        ability: "death",
+        target: "death",
+        targetLabel: "Death Save",
+        dc: "10"
+      }
+    });
+    const panel = new stubs.HTMLElement();
+    rollButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-roll']") return rollButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(rollButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async recordDowntimeCheckResult(requestId, checkId, result) {
+        calls.push(["recordDowntimeCheckResult", requestId, checkId, result]);
+        return { id: requestId, actorId: "actor-a" };
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of root.listeners.pointerup) {
+      await listener({
+        type: "pointerup",
+        target: rollButton,
+        button: 0,
+        preventDefault() {},
+        stopPropagation() {}
+      });
+    }
+
+    const deathSaveCall = calls.find((call) => call[0] === "rollDeathSave");
+    assert.equal(deathSaveCall?.[1]?.event?.type, "pointerup");
+    assert.equal(deathSaveCall?.[1]?.legacy, false);
+    assert.equal(calls.find((call) => call[0] === "recordDowntimeCheckResult")?.[3]?.success, true);
+  }
+  finally {
+    stubs.restore();
+  }
+});
