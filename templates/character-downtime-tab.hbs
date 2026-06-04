@@ -93,12 +93,40 @@
                 <p class="rm-inline-status rm-inline-status--info"><span>{{result}}</span></p>
               {{/if}}
               {{#if hasChecks}}
-                <div class="rm-status-strip">
+                <div class="rm-status-strip rm-character-downtime-checks">
                   {{#each checks}}
-                    <span class="rm-badge rm-status-badge rm-status-badge--info" title="Целевое действие простоя">{{summary}}</span>
-                    {{#if hasResult}}
-                      <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
-                    {{/if}}
+                    <div class="rm-character-downtime-check">
+                      <span class="rm-badge rm-status-badge rm-status-badge--info" title="Целевое действие простоя">{{summary}}</span>
+                      {{#if hasResult}}
+                        <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
+                      {{/if}}
+                      {{#if hasRollTargets}}
+                        <div class="rm-character-downtime-check__actions">
+                          {{#each rollTargets}}
+                            <button
+                              type="button"
+                              class="rm-button rm-button--small rm-button--secondary rm-character-downtime-roll"
+                              data-action="character-downtime-roll"
+                              data-request-id="{{../../id}}"
+                              data-check-id="{{../id}}"
+                              data-group-id="{{../../groupId}}"
+                              data-actor-id="{{../../actorId}}"
+                              data-source-type="{{sourceType}}"
+                              data-ability="{{ability}}"
+                              data-target="{{target}}"
+                              data-target-label="{{label}}"
+                              data-choice-index="{{choiceIndex}}"
+                              data-dc="{{dc}}"
+                              title="{{rollTitle}}"
+                              {{#unless canRoll}}disabled{{/unless}}
+                            >
+                              <i class="fa-solid fa-dice-d20"></i>
+                              <span>{{buttonLabel}}</span>
+                            </button>
+                          {{/each}}
+                        </div>
+                      {{/if}}
+                    </div>
                   {{/each}}
                 </div>
               {{/if}}

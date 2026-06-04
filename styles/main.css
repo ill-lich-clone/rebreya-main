@@ -5025,6 +5025,38 @@ summary:focus-visible {
   color: var(--rm-sheet-text);
 }
 
+.rm-character-downtime-checks {
+  display: grid;
+  gap: 5px;
+}
+
+.rm-character-downtime-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rm-character-downtime-check__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.rm-character-downtime-roll {
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 0;
+}
+
+.rm-character-downtime-roll span {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .rm-party-capacity-meter {
   height: 10px;
   border: 1px solid rgba(214, 177, 104, 0.22);

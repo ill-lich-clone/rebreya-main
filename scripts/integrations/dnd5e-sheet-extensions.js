@@ -655,9 +655,15 @@ const heroDollPanelAbortControllers = new WeakMap();
 const heroDollRootAbortControllers = new WeakMap();
 const handledCharacterDowntimeClickEvents = new WeakSet();
 const recentCharacterDowntimeSubmitButtons = new WeakMap();
+const recentCharacterDowntimeRollButtons = new WeakMap();
 const characterDowntimeSubmitAbortControllers = new WeakMap();
+const characterDowntimeRollAbortControllers = new WeakMap();
 let characterDowntimeDocumentSubmitDelegated = false;
+let characterDowntimeDocumentRollDelegated = false;
 const CHARACTER_DOWNTIME_SUBMIT_DEBOUNCE_MS = 750;
+const CHARACTER_DOWNTIME_ROLL_DEBOUNCE_MS = 750;
+const CHARACTER_DOWNTIME_ROLLABLE_SOURCE_TYPES = new Set(["skill", "ability", "save", "tool"]);
+const CHARACTER_DOWNTIME_ABILITY_KEYS = new Set(["str", "dex", "con", "int", "wis", "cha"]);
 
 function isDnd5eWorld() {
   return game.system?.id === "dnd5e";
@@ -2478,6 +2484,131 @@ function getEventTargetElement(event) {
   return null;
 }
 
+function normalizeDowntimeRollAbility(value = "") {
+  const cleaned = cleanText(value);
+  return cleaned.startsWith("save-") ? cleaned.slice(5) : cleaned;
+}
+
+function getDowntimeRollDc(value) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
+}
+
+function getDowntimeRollTotal(rolls) {
+  const roll = Array.isArray(rolls) ? rolls[0] : rolls;
+  const total = Number(
+    roll?.total
+    ?? roll?._total
+    ?? roll?.result?.total
+    ?? roll?.terms?.find?.((term) => term?.total !== undefined)?.total
+  );
+  return Number.isFinite(total) ? total : null;
+}
+
+function buildDowntimeRollMessageData(button) {
+  return {
+    data: {
+      flags: {
+        [MODULE_ID]: {
+          downtimeRequestId: cleanText(button.dataset.requestId),
+          downtimeCheckId: cleanText(button.dataset.checkId),
+          downtimeChoiceIndex: cleanText(button.dataset.choiceIndex)
+        }
+      }
+    }
+  };
+}
+
+async function rollCharacterDowntimeTarget(actor, button, event) {
+  const sourceType = cleanText(button.dataset.sourceType) || "skill";
+  const target = cleanText(button.dataset.target);
+  const targetAbility = normalizeDowntimeRollAbility(target);
+  const ability = normalizeDowntimeRollAbility(button.dataset.ability) || targetAbility;
+  const eventConfig = { event };
+
+  if (!CHARACTER_DOWNTIME_ROLLABLE_SOURCE_TYPES.has(sourceType)) {
+    throw new Error("Этот тип целевого действия пока нельзя бросить из чарника.");
+  }
+
+  if (sourceType === "skill") {
+    if (!target || typeof actor.rollSkill !== "function") {
+      throw new Error("Навык для проверки простоя не найден в листе персонажа.");
+    }
+
+    const config = ability ? { ...eventConfig, skill: target, ability } : { ...eventConfig, skill: target };
+    return actor.rollSkill(config, {}, buildDowntimeRollMessageData(button));
+  }
+
+  if (sourceType === "save") {
+    if (!ability || typeof actor.rollSavingThrow !== "function") {
+      throw new Error("Спасбросок для проверки простоя не найден в листе персонажа.");
+    }
+
+    return actor.rollSavingThrow({ ...eventConfig, ability }, {}, buildDowntimeRollMessageData(button));
+  }
+
+  if (sourceType === "ability") {
+    if (!ability || typeof actor.rollAbilityCheck !== "function") {
+      throw new Error("Характеристика для проверки простоя не найдена в листе персонажа.");
+    }
+
+    return actor.rollAbilityCheck({ ...eventConfig, ability }, {}, buildDowntimeRollMessageData(button));
+  }
+
+  if (sourceType === "tool") {
+    if (!target || typeof actor.rollToolCheck !== "function") {
+      throw new Error("Инструмент для проверки простоя не найден в листе персонажа.");
+    }
+
+    const config = ability && CHARACTER_DOWNTIME_ABILITY_KEYS.has(ability)
+      ? { ...eventConfig, tool: target, ability }
+      : { ...eventConfig, tool: target };
+    return actor.rollToolCheck(config, {}, buildDowntimeRollMessageData(button));
+  }
+
+  return null;
+}
+
+async function handleCharacterDowntimeRoll(button, app, moduleApi, event) {
+  const actor = getActorFromSheetApp(app);
+  if (!actor) {
+    return;
+  }
+
+  const requestId = cleanText(button.dataset.requestId);
+  const checkId = cleanText(button.dataset.checkId);
+  if (!requestId || !checkId) {
+    throw new Error("Целевое действие простоя не найдено.");
+  }
+
+  const rolls = await rollCharacterDowntimeTarget(actor, button, event);
+  const total = getDowntimeRollTotal(rolls);
+  if (total === null) {
+    return;
+  }
+
+  const dc = getDowntimeRollDc(button.dataset.dc);
+  const result = {
+    total,
+    dc,
+    success: dc > 0 ? total >= dc : undefined,
+    sourceType: cleanText(button.dataset.sourceType) || "skill",
+    ability: normalizeDowntimeRollAbility(button.dataset.ability),
+    target: cleanText(button.dataset.target),
+    targetLabel: cleanText(button.dataset.targetLabel)
+  };
+  if (result.success === undefined) {
+    delete result.success;
+  }
+
+  await moduleApi.recordDowntimeCheckResult(requestId, checkId, result, {
+    actorId: cleanText(button.dataset.actorId) || actor.id,
+    groupId: cleanText(button.dataset.groupId)
+  });
+  ui.notifications?.info("Результат проверки простоя записан.");
+  await rerenderActorSheet(app, moduleApi);
+}
+
 async function handleCharacterDowntimeSubmitClick(event, { root = null, app = null, moduleApi } = {}) {
   if (event?.type === "pointerup" && Number(event.button ?? 0) !== 0) {
     return false;
@@ -2528,6 +2659,61 @@ async function handleCharacterDowntimeSubmitClick(event, { root = null, app = nu
   return true;
 }
 
+async function handleCharacterDowntimeRollClick(event, { root = null, app = null, moduleApi } = {}) {
+  if (event?.type === "pointerup" && Number(event.button ?? 0) !== 0) {
+    return false;
+  }
+
+  const rollButton = getEventTargetElement(event)?.closest?.("[data-action='character-downtime-roll']");
+  if (!(rollButton instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (root?.contains instanceof Function && !root.contains(rollButton)) {
+    return false;
+  }
+
+  const panel = rollButton.closest?.(".rm-character-downtime-tab")
+    ?? root?.querySelector?.(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
+    ?? root?.querySelector?.(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
+  const sheetApp = resolveCharacterDowntimeSheetApp(rollButton, app);
+  if (!panel || !sheetApp) {
+    return false;
+  }
+
+  if (handledCharacterDowntimeClickEvents.has(event)) {
+    return true;
+  }
+
+  const now = Date.now();
+  const lastRollAt = recentCharacterDowntimeRollButtons.get(rollButton) ?? 0;
+  if (now - lastRollAt < CHARACTER_DOWNTIME_ROLL_DEBOUNCE_MS) {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    return true;
+  }
+
+  handledCharacterDowntimeClickEvents.add(event);
+  recentCharacterDowntimeRollButtons.set(rollButton, now);
+  event.preventDefault?.();
+  event.stopPropagation?.();
+
+  const wasDisabled = Boolean(rollButton.disabled);
+  rollButton.disabled = true;
+  try {
+    await handleCharacterDowntimeRoll(rollButton, sheetApp, moduleApi, event);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to roll character downtime target.`, error);
+    ui.notifications?.error(error.message || "Не удалось выполнить проверку простоя.");
+  }
+  finally {
+    rollButton.disabled = wasDisabled;
+  }
+
+  return true;
+}
+
 function bindCharacterDowntimeSubmitDelegation(root, app, moduleApi) {
   if (root.dataset.rebreyaCharacterDowntimeSubmitDelegated === "true") {
     return;
@@ -2535,6 +2721,18 @@ function bindCharacterDowntimeSubmitDelegation(root, app, moduleApi) {
 
   root.dataset.rebreyaCharacterDowntimeSubmitDelegated = "true";
   const listener = async (event) => handleCharacterDowntimeSubmitClick(event, { root, app, moduleApi });
+  for (const type of ["pointerup", "click"]) {
+    root.addEventListener(type, listener, { capture: true });
+  }
+}
+
+function bindCharacterDowntimeRollDelegation(root, app, moduleApi) {
+  if (root.dataset.rebreyaCharacterDowntimeRollDelegated === "true") {
+    return;
+  }
+
+  root.dataset.rebreyaCharacterDowntimeRollDelegated = "true";
+  const listener = async (event) => handleCharacterDowntimeRollClick(event, { root, app, moduleApi });
   for (const type of ["pointerup", "click"]) {
     root.addEventListener(type, listener, { capture: true });
   }
@@ -2548,6 +2746,20 @@ function bindCharacterDowntimeDocumentSubmitDelegation(moduleApi) {
   characterDowntimeDocumentSubmitDelegated = true;
   const listener = async (event) => {
     await handleCharacterDowntimeSubmitClick(event, { root: globalThis.document, moduleApi });
+  };
+  for (const type of ["pointerup", "click"]) {
+    globalThis.document.addEventListener(type, listener, { capture: true });
+  }
+}
+
+function bindCharacterDowntimeDocumentRollDelegation(moduleApi) {
+  if (characterDowntimeDocumentRollDelegated || !(globalThis.document?.addEventListener instanceof Function)) {
+    return;
+  }
+
+  characterDowntimeDocumentRollDelegated = true;
+  const listener = async (event) => {
+    await handleCharacterDowntimeRollClick(event, { root: globalThis.document, moduleApi });
   };
   for (const type of ["pointerup", "click"]) {
     globalThis.document.addEventListener(type, listener, { capture: true });
@@ -2570,8 +2782,27 @@ function bindCharacterDowntimeSubmitButton(panel, app, moduleApi) {
   }
 }
 
+function bindCharacterDowntimeRollButtons(panel, app, moduleApi) {
+  const rollButtons = Array.from(panel.querySelectorAll("[data-action='character-downtime-roll']") ?? []);
+  for (const rollButton of rollButtons) {
+    if (!(rollButton instanceof HTMLElement)) {
+      continue;
+    }
+
+    rollButton.dataset.rebreyaCharacterDowntimeRollButtonBound = "true";
+    characterDowntimeRollAbortControllers.get(rollButton)?.abort();
+    const abortController = new AbortController();
+    characterDowntimeRollAbortControllers.set(rollButton, abortController);
+    const listener = async (event) => handleCharacterDowntimeRollClick(event, { app, moduleApi });
+    for (const type of ["pointerup", "click"]) {
+      rollButton.addEventListener(type, listener, { capture: true, signal: abortController.signal });
+    }
+  }
+}
+
 function bindCharacterDowntimePanel(root, app, moduleApi) {
   bindCharacterDowntimeSubmitDelegation(root, app, moduleApi);
+  bindCharacterDowntimeRollDelegation(root, app, moduleApi);
 
   const panel = root.querySelector(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
     ?? root.querySelector(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
@@ -2596,6 +2827,7 @@ function bindCharacterDowntimePanel(root, app, moduleApi) {
   }
 
   bindCharacterDowntimeSubmitButton(panel, app, moduleApi);
+  bindCharacterDowntimeRollButtons(panel, app, moduleApi);
 }
 
 function clampItemRank(value) {
@@ -3439,6 +3671,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   patchDnd5eDragPayloadFallback();
   patchD20HeroicRollDialog();
   bindCharacterDowntimeDocumentSubmitDelegation(moduleApi);
+  bindCharacterDowntimeDocumentRollDelegation(moduleApi);
 
   const onRenderActorSheet = (app, html) => {
     const actor = getActorFromSheetApp(app);

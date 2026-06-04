@@ -87,11 +87,14 @@ function normalizeCheck(value = {}) {
       .slice(0, MAX_TARGET_ACTIONS)
       .map((choice) => ({
         ...clone(asObject(choice)),
+        sourceType: cleanString(choice?.sourceType),
         ability: cleanString(choice?.ability),
         target: cleanString(choice?.target),
+        targetLabel: cleanString(choice?.targetLabel),
+        rollMode: cleanString(choice?.rollMode),
         label: cleanString(choice?.label)
       }))
-      .filter((choice) => choice.label || choice.ability || choice.target);
+      .filter((choice) => choice.label || choice.ability || choice.target || choice.sourceType);
   }
 
   for (const effectKey of ["checkEffect", "downtimeEffect"]) {
@@ -489,14 +492,20 @@ export class DowntimeService {
     });
   }
 
-  async recordCheckResult(requestId, checkId, result = {}) {
-    const context = this.#resolveContext();
+  async recordCheckResult(requestId, checkId, result = {}, { groupId = "", actorId = "" } = {}) {
+    const context = cleanId(groupId)
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
+      : this.#resolveContext();
     const safeRequestId = cleanId(requestId);
     const safeCheckId = cleanId(checkId);
+    const safeActorId = cleanId(actorId);
 
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
       this.#assertRequestIsMutable(request);
+      if (safeActorId && request.actorId !== safeActorId) {
+        throw new Error("Downtime request does not belong to this character.");
+      }
       if (!this.#canManage(context)) {
         const actor = this.#requireCurrentMemberActor(context, request.actorId);
         if (!this.#canSubmitForActor(actor, context)) {
@@ -511,7 +520,7 @@ export class DowntimeService {
 
       check.result = {
         ...clone(asObject(result)),
-        recordedByUserId: cleanId(getCurrentUser()?.id),
+        recordedByUserId: cleanId(asObject(result).recordedByUserId) || cleanId(getCurrentUser()?.id),
         recordedAt: Date.now()
       };
       request.updatedAt = Date.now();

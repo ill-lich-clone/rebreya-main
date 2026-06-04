@@ -133,6 +133,81 @@ test("CharacterDowntimeService maps current actor downtime into a player-facing 
   assert.equal(context.requests[0].checks[0].resultLabel, "18, успех");
 });
 
+test("CharacterDowntimeService exposes structured roll targets for assigned checks", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 1,
+          reservedWeeks: 1,
+          spentWeeks: 0,
+          totalGrantedWeeks: 2
+        }
+      }],
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actionId: "unique",
+        actionLabel: "Unique",
+        title: "Scout",
+        weeks: 1,
+        status: "approved",
+        checks: [{
+          id: "check-1",
+          label: "Scout Route",
+          sourceType: "skill",
+          ability: "wis",
+          target: "prc",
+          targetLabel: "Perception",
+          dc: 15,
+          choices: [{
+            sourceType: "skill",
+            ability: "wis",
+            target: "prc",
+            targetLabel: "Perception"
+          }, {
+            sourceType: "skill",
+            ability: "wis",
+            target: "ins",
+            targetLabel: "Insight"
+          }]
+        }],
+        result: ""
+      }],
+      actionCatalog: [{ id: "unique", label: "Unique" }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }));
+  const check = context.requests[0].checks[0];
+
+  assert.equal(check.hasRollTargets, true);
+  assert.deepEqual(check.rollTargets.map((target) => ({
+    sourceType: target.sourceType,
+    ability: target.ability,
+    target: target.target,
+    label: target.label,
+    canRoll: target.canRoll
+  })), [{
+    sourceType: "skill",
+    ability: "wis",
+    target: "prc",
+    label: "Perception",
+    canRoll: true
+  }, {
+    sourceType: "skill",
+    ability: "wis",
+    target: "ins",
+    label: "Insight",
+    canRoll: true
+  }]);
+});
+
 test("CharacterDowntimeService converts known group errors into a warning context", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     error: new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP)

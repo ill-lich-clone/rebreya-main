@@ -1376,6 +1376,76 @@ test("RebreyaMainModule routes player downtime creation through the GM socket", 
   }
 });
 
+test("RebreyaMainModule routes player downtime check results through the GM socket", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {}
+  };
+  const emitted = [];
+  globalThis.game = {
+    user: {
+      id: "player-1",
+      isGM: false
+    },
+    users: [
+      { id: "player-1", isGM: false, active: true },
+      { id: "gm", isGM: true, active: true }
+    ],
+    socket: {
+      emit(channel, message) {
+        emitted.push([channel, message]);
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-check-player-socket=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    let directRecordCalled = false;
+    moduleApi.downtimeService.recordCheckResult = async () => {
+      directRecordCalled = true;
+      throw new Error("direct record should not be called");
+    };
+
+    const queuedResult = await moduleApi.recordDowntimeCheckResult("downtime-1", "check-1", {
+      total: 18,
+      success: true
+    }, {
+      groupId: "group-a",
+      actorId: "actor-a"
+    });
+
+    assert.equal(directRecordCalled, false);
+    assert.equal(queuedResult.queued, true);
+    assert.equal(queuedResult.requestId, "downtime-1");
+    assert.equal(queuedResult.checkId, "check-1");
+    assert.match(queuedResult.socketRequestId, /^downtime-check-result-/u);
+    assert.deepEqual(emitted, [[
+      `module.${MODULE_ID}`,
+      {
+        type: "downtime-check-result-request",
+        requestId: queuedResult.socketRequestId,
+        senderId: "player-1",
+        payload: {
+          groupId: "group-a",
+          actorId: "actor-a",
+          requestId: "downtime-1",
+          checkId: "check-1",
+          result: {
+            total: 18,
+            success: true
+          }
+        }
+      }
+    ]]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
 test("RebreyaMainModule refreshes player sheets when GM reports downtime creation", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
@@ -1542,6 +1612,123 @@ test("RebreyaMainModule notifies players when a GM changes downtime request stat
     });
     assert.equal(refreshCount, 1);
     assert.deepEqual(emitted, [[
+      `module.${MODULE_ID}`,
+      {
+        type: "downtime-updated",
+        senderId: "gm",
+        actorIds: ["actor-a"],
+        requestId: "downtime-1"
+      }
+    ]]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule GM records socket downtime check results for owned actors", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {}
+  };
+  const emitted = [];
+  const playerUser = { id: "player-1", isGM: false, active: true };
+  const actor = {
+    id: "actor-a",
+    name: "Hero A",
+    type: "character",
+    testUserPermission(user, permission) {
+      return permission === "OWNER" && user?.id === "player-1";
+    }
+  };
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true
+    },
+    users: [
+      playerUser,
+      { id: "gm", isGM: true, active: true }
+    ],
+    socket: {
+      emit(channel, message) {
+        emitted.push([channel, message]);
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-check-gm-socket=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const recordCalls = [];
+    moduleApi.groupContextService.resolveForGroup = (groupActorId) => {
+      assert.equal(groupActorId, "group-a");
+      return {
+        groupId: "group-a",
+        members: [actor],
+        memberActorIds: ["actor-a"]
+      };
+    };
+    moduleApi.downtimeService.recordCheckResult = async (requestId, checkId, result) => {
+      recordCalls.push([requestId, checkId, result]);
+      return {
+        id: requestId,
+        actorId: "actor-a",
+        checks: [{
+          id: checkId,
+          result
+        }]
+      };
+    };
+    moduleApi.refreshOpenApps = async () => {
+      throw new Error("socket check results should not activate inventory windows");
+    };
+
+    await moduleApi.handleSocketMessage({
+      type: "downtime-check-result-request",
+      requestId: "downtime-check-result-test-1",
+      senderId: "player-1",
+      payload: {
+        groupId: "group-a",
+        actorId: "actor-a",
+        requestId: "downtime-1",
+        checkId: "check-1",
+        result: {
+          total: 18,
+          success: true
+        }
+      }
+    });
+
+    assert.deepEqual(recordCalls, [["downtime-1", "check-1", {
+      total: 18,
+      success: true,
+      recordedByUserId: "player-1"
+    }]]);
+    assert.deepEqual(emitted, [[
+      `module.${MODULE_ID}`,
+      {
+        type: "downtime-check-result-result",
+        requestId: "downtime-check-result-test-1",
+        forUserId: "player-1",
+        senderId: "gm",
+        ok: true,
+        data: {
+          id: "downtime-1",
+          actorId: "actor-a",
+          checks: [{
+            id: "check-1",
+            result: {
+              total: 18,
+              success: true,
+              recordedByUserId: "player-1"
+            }
+          }]
+        }
+      }
+    ], [
       `module.${MODULE_ID}`,
       {
         type: "downtime-updated",

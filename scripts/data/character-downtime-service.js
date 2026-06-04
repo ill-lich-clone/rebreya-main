@@ -34,6 +34,8 @@ const ABILITY_LABELS = Object.freeze({
   cha: "Харизма"
 });
 
+const ROLLABLE_SOURCE_TYPES = new Set(["skill", "ability", "save", "tool"]);
+
 function cleanText(value) {
   return String(value ?? "").trim();
 }
@@ -92,21 +94,79 @@ function buildResultLabel(result) {
   return parts.join(", ");
 }
 
-function mapRequest(request = {}) {
+function normalizeRollAbility(value = "") {
+  const cleaned = cleanText(value);
+  return cleaned.startsWith("save-") ? cleaned.slice(5) : cleaned;
+}
+
+function buildRollTarget(check = {}, choice = {}, { canRollRequest = false, choiceIndex = 0, hasChoices = false } = {}) {
+  const sourceType = cleanText(choice.sourceType) || cleanText(check.sourceType) || "skill";
+  const target = cleanText(choice.target) || cleanText(check.target);
+  const ability = normalizeRollAbility(choice.ability) || normalizeRollAbility(check.ability) || normalizeRollAbility(target);
+  const label = cleanText(choice.targetLabel)
+    || cleanText(choice.label)
+    || cleanText(check.targetLabel)
+    || cleanText(check.label)
+    || target
+    || ability;
+  const dc = toInteger(check.dc, 0);
+  const canRoll = Boolean(canRollRequest)
+    && ROLLABLE_SOURCE_TYPES.has(sourceType)
+    && Boolean(sourceType === "ability" ? ability : (target || ability));
+
+  return {
+    choiceIndex,
+    sourceType,
+    ability,
+    target,
+    label,
+    dc,
+    canRoll,
+    buttonLabel: hasChoices ? label : "Кинуть",
+    rollTitle: canRoll
+      ? `Кинуть ${label || "проверку"}`
+      : "Этот тип целевого действия пока не бросается из чарника"
+  };
+}
+
+function buildRollTargets(check = {}, { canRollRequest = false } = {}) {
+  const choices = Array.isArray(check.choices) ? check.choices : [];
+  if (choices.length) {
+    return choices.map((choice, index) => buildRollTarget(check, choice, {
+      canRollRequest,
+      choiceIndex: index,
+      hasChoices: choices.length > 1
+    }));
+  }
+
+  return [buildRollTarget(check, {}, { canRollRequest, choiceIndex: 0, hasChoices: false })];
+}
+
+function mapRequest(request = {}, { groupId = "" } = {}) {
   const status = cleanText(request.status) || "pending";
   const meta = STATUS_META[status] ?? {
     label: status || "Заявка",
     type: "info"
   };
-  const checks = (Array.isArray(request.checks) ? request.checks : []).map((check) => ({
-    ...check,
-    summary: buildCheckSummary(check),
-    resultLabel: buildResultLabel(check?.result),
-    hasResult: Boolean(buildResultLabel(check?.result))
-  }));
+  const canRollRequest = status === "pending" || status === "approved";
+  const checks = (Array.isArray(request.checks) ? request.checks : []).map((check) => {
+    const resultLabel = buildResultLabel(check?.result);
+    const rollTargets = buildRollTargets(check, {
+      canRollRequest: canRollRequest && !resultLabel
+    });
+    return {
+      ...check,
+      summary: buildCheckSummary(check),
+      resultLabel,
+      hasResult: Boolean(resultLabel),
+      rollTargets,
+      hasRollTargets: rollTargets.some((target) => target.canRoll)
+    };
+  });
 
   return {
     ...request,
+    groupId: cleanText(request.groupId) || cleanText(groupId),
     status,
     statusLabel: meta.label,
     statusClass: `rm-status-badge--${meta.type}`,
@@ -200,7 +260,7 @@ export class CharacterDowntimeService {
       : "";
     const requests = (Array.isArray(snapshot?.requests) ? snapshot.requests : [])
       .filter((request) => request?.actorId === actor.id)
-      .map((request) => mapRequest(request));
+      .map((request) => mapRequest(request, { groupId: snapshot.groupId }));
 
     return {
       groupId: snapshot.groupId ?? "",
