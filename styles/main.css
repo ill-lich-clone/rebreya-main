@@ -4585,8 +4585,9 @@ summary:focus-visible {
 
 .rm-downtime-target-action-window.window-app,
 .rm-downtime-target-action-window.application {
-  width: min(720px, calc(100vw - 48px)) !important;
-  max-height: calc(100vh - 48px);
+  width: min(920px, calc(100vw - 32px)) !important;
+  height: min(680px, calc(100vh - 32px)) !important;
+  max-height: calc(100vh - 32px);
 }
 
 .rm-downtime-target-action-window .window-content {
@@ -4601,9 +4602,24 @@ summary:focus-visible {
 .rm-downtime-target-action-dialog {
   width: 100%;
   min-width: 0;
+  min-height: 100%;
   display: grid;
+  grid-template-rows: auto 1fr auto;
   gap: 10px;
   box-sizing: border-box;
+}
+
+.rm-downtime-target-action-dialog select,
+.rm-downtime-target-action-dialog option,
+.rm-downtime-target-action-dialog optgroup {
+  color: #f7ead0;
+  background-color: #120d08;
+  color-scheme: dark;
+}
+
+.rm-downtime-target-action-dialog option:checked {
+  color: #fff8e8;
+  background-color: #6a4a22;
 }
 
 .rm-downtime-target-dialog__steps {
@@ -4650,6 +4666,10 @@ summary:focus-visible {
   padding: 9px;
   border: 1px solid rgba(214, 177, 104, 0.16);
   background: rgba(12, 9, 6, 0.22);
+}
+
+.rm-downtime-target-dialog__section[hidden] {
+  display: none !important;
 }
 
 .rm-downtime-target-dialog__section--compact {
@@ -4739,6 +4759,26 @@ summary:focus-visible {
   background: rgba(0, 0, 0, 0.18);
 }
 
+.rm-downtime-thresholds {
+  display: grid;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.rm-downtime-thresholds[hidden] {
+  display: none !important;
+}
+
+.rm-downtime-threshold-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.6fr) minmax(72px, 0.6fr) minmax(150px, 1fr);
+  gap: 8px;
+  align-items: end;
+  padding: 7px 8px;
+  border: 1px solid rgba(214, 177, 104, 0.16);
+  background: rgba(5, 4, 3, 0.28);
+}
+
 .rm-downtime-effect-block {
   display: grid;
   gap: 8px;
@@ -4756,7 +4796,11 @@ summary:focus-visible {
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: 10px;
   align-items: center;
-  padding-top: 2px;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding-top: 8px;
+  background: linear-gradient(180deg, rgba(18, 13, 8, 0), rgba(18, 13, 8, 0.94) 30%);
 }
 
 .rm-downtime-target-dialog__footer .rm-button {

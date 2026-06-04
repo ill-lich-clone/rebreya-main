@@ -708,8 +708,8 @@ test("InventoryApp downtime controls call module API handlers", async () => {
 
     const targetDialog = globalThis.Dialog.instances.find((dialog) =>
       dialog.options?.classes?.includes("rm-downtime-target-action-window"));
-    assert.equal(targetDialog?.options?.width, 720);
-    assert.equal(targetDialog?.options?.height, "auto");
+    assert.equal(targetDialog?.options?.width, 920);
+    assert.equal(targetDialog?.options?.height, 680);
     assert.equal(targetDialog?.config?.content.includes("До 5 задач"), false);
     assert.equal(targetDialog?.config?.content.includes("Недели, заявки"), false);
     assert.equal(targetDialog?.config?.content.includes("Можно собрать"), false);
@@ -717,8 +717,14 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     assert.equal(targetDialog?.config?.content.includes("Выбор 1"), false);
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-action-target\""), false);
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-action-target-label\""), false);
+    assert.equal(targetDialog?.config?.content.includes("data-field=\"target-choice-roll-mode\""), false);
     assert.equal(targetDialog?.config?.content.includes("data-target-choice"), true);
     assert.equal(targetDialog?.config?.content.includes("Добавить альтернативу"), true);
+    assert.equal(targetDialog?.config?.content.includes("Итог простоя"), true);
+    assert.equal(targetDialog?.config?.content.includes("Пороги"), true);
+    assert.equal(targetDialog?.config?.content.includes("data-outcome-thresholds-field"), true);
+    assert.equal(targetDialog?.config?.content.includes("Ювелира"), true);
+    assert.equal(targetDialog?.config?.content.includes("Камнелома"), true);
     assert.equal(targetDialog?.config?.content.includes("title=\"Определяет, какой тип задачи получит игрок.\""), true);
     assert.equal(targetDialog?.config?.content.includes("data-action=\"target-action-step\""), true);
     assert.match(targetDialog?.config?.content ?? "", /data-step-panel="basis"[^>]*>/u);
@@ -742,6 +748,22 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     const nextTargetActionButton = createFakeControl({ dataset: { action: "target-action-next" } });
     const saveTargetActionButton = createFakeControl({ dataset: { action: "target-action-save" } });
     const cancelTargetActionButton = createFakeControl({ dataset: { action: "target-action-cancel" } });
+    const targetChoiceSummary = createFakeElement();
+    targetChoiceSummary.textContent = "Мудрость · Восприятие";
+    const liveTargetChoiceTarget = createFakeControl({ value: "ani" });
+    liveTargetChoiceTarget.selectedOptions = [{ textContent: "Уход за животными" }];
+    const liveTargetChoiceAbility = createFakeControl({ value: "wis" });
+    liveTargetChoiceAbility.selectedOptions = [{ textContent: "Мудрость" }];
+    const liveTargetChoiceSource = createFakeControl({ value: "skill" });
+    liveTargetChoiceSource.selectedOptions = [{ textContent: "Навык листа" }];
+    const liveTargetChoice = createFakeElement();
+    liveTargetChoice.querySelector = (selector) => {
+      if (selector === "[data-target-choice-summary]") return targetChoiceSummary;
+      if (selector === "[data-field='target-choice-target']") return liveTargetChoiceTarget;
+      if (selector === "[data-field='target-choice-ability']") return liveTargetChoiceAbility;
+      if (selector === "[data-field='target-choice-source-type']") return liveTargetChoiceSource;
+      return null;
+    };
     const targetActionRoot = createTargetActionDialogRoot();
     targetActionRoot.querySelector = (selector) => {
       if (selector === "[data-action='target-action-previous']") return previousTargetActionButton;
@@ -758,12 +780,19 @@ test("InventoryApp downtime controls call module API handlers", async () => {
         return [
           createFakeElement({ dataset: { stepPanel: "basis" } }),
           createFakeElement({ dataset: { stepPanel: "variants" } }),
+          createFakeElement({ dataset: { stepPanel: "outcome" } }),
           createFakeElement({ dataset: { stepPanel: "effects" } })
         ];
+      }
+      if (selector === "[data-target-choice]") {
+        return [liveTargetChoice];
       }
       return createTargetActionDialogRoot().querySelectorAll(selector);
     };
     targetDialog.config.render(targetActionRoot);
+    assert.ok(liveTargetChoiceTarget.listeners.change?.length, "expected target choice change listener");
+    liveTargetChoiceTarget.listeners.change[0]({ currentTarget: liveTargetChoiceTarget, preventDefault() {} });
+    assert.equal(targetChoiceSummary.textContent, "Мудрость · Уход за животными");
     assert.ok(nextTargetActionButton.listeners.click?.length, "expected next step listener");
     await dispatchClick(nextTargetActionButton);
     assert.equal(targetDialog.closed, false);

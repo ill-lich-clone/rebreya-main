@@ -1,4 +1,5 @@
 ﻿import { MODULE_ID } from "../constants.js";
+import { REBREYA_TOOLS } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
 import { bringAppToFront, getAppElement } from "../ui.js";
 
@@ -33,10 +34,12 @@ const DOWNTIME_STATUS_META = Object.freeze({
 });
 
 const MAX_DOWNTIME_TARGET_ACTIONS = 5;
+const MAX_DOWNTIME_THRESHOLDS = 5;
 
 const DOWNTIME_ACTION_TYPE_OPTIONS = Object.freeze([
   { value: "check", label: "Проверка", help: "Одна проверка характеристики, навыка, инструмента, действия или атаки." },
   { value: "choice", label: "Выбор проверки", help: "Мастер задаёт допустимые варианты, игрок выбирает один перед броском." },
+  { value: "downtimeResult", label: "Итог простоя", help: "Общий итог по всем проверкам заявки: сумма, успехи, пороги и итоговые эффекты." },
   { value: "tool", label: "Инструмент", help: "Запрос владения инструментом из листа персонажа." },
   { value: "sheetAction", label: "Действие листа", help: "Запрос готового действия с листа персонажа." },
   { value: "attack", label: "Атака листа", help: "Запрос атаки из листа персонажа; позже выполняется через dnd5e/Midi workflow." },
@@ -51,6 +54,13 @@ const DOWNTIME_SOURCE_TYPE_OPTIONS = Object.freeze([
   { value: "sheetAction", label: "Действие листа", help: "Действие, уже существующее на листе персонажа." },
   { value: "attack", label: "Атака листа", help: "Атака оружием, заклинанием или другим атакующим действием листа." }
 ]);
+
+const DOWNTIME_REBREYA_TOOL_OPTIONS = Object.freeze(REBREYA_TOOLS.map((tool) => ({
+  value: tool.id,
+  label: tool.label,
+  sourceType: "tool",
+  help: `Проверка владения инструментом Ребреи: ${tool.label}.`
+})));
 
 const DOWNTIME_TARGET_OPTION_GROUPS = Object.freeze([
   {
@@ -100,20 +110,7 @@ const DOWNTIME_TARGET_OPTION_GROUPS = Object.freeze([
   },
   {
     label: "Инструменты",
-    options: [
-      { value: "thieves", label: "Воровские инструменты", sourceType: "tool", help: "Проверка владения воровскими инструментами." },
-      { value: "disguise", label: "Набор для грима", sourceType: "tool", help: "Проверка владения набором для грима." },
-      { value: "forgery", label: "Набор фальсификатора", sourceType: "tool", help: "Проверка владения набором фальсификатора." },
-      { value: "herbalism", label: "Набор травника", sourceType: "tool", help: "Проверка владения набором травника." },
-      { value: "poisoner", label: "Набор отравителя", sourceType: "tool", help: "Проверка владения набором отравителя." },
-      { value: "navigator", label: "Инструменты навигатора", sourceType: "tool", help: "Проверка владения инструментами навигатора." },
-      { value: "land", label: "Наземный транспорт", sourceType: "tool", help: "Проверка владения наземным транспортом." },
-      { value: "water", label: "Водный транспорт", sourceType: "tool", help: "Проверка владения водным транспортом." },
-      { value: "alchemist", label: "Инструменты алхимика", sourceType: "tool", help: "Проверка владения инструментами алхимика." },
-      { value: "smith", label: "Инструменты кузнеца", sourceType: "tool", help: "Проверка владения инструментами кузнеца." },
-      { value: "tinker", label: "Инструменты жестянщика", sourceType: "tool", help: "Проверка владения инструментами жестянщика." },
-      { value: "cook", label: "Инструменты повара", sourceType: "tool", help: "Проверка владения инструментами повара." }
-    ]
+    options: DOWNTIME_REBREYA_TOOL_OPTIONS
   },
   {
     label: "Лист персонажа",
@@ -138,14 +135,8 @@ const DOWNTIME_OUTCOME_MODE_OPTIONS = Object.freeze([
   { value: "dc", label: "DC", help: "Сравнить total с порогом сложности." },
   { value: "sum", label: "Сумма", help: "Сохранить total для накопления суммы." },
   { value: "dc-sum", label: "DC + сумма", help: "Одновременно проверить DC и сохранить total в сумму." },
+  { value: "thresholds", label: "Пороги", help: "Сравнить общий итог простоя с несколькими порогами или диапазонами." },
   { value: "freeform", label: "Свободный", help: "Сохранить результат без автоматической оценки успеха." }
-]);
-
-const DOWNTIME_ROLL_MODE_OPTIONS = Object.freeze([
-  { value: "normal", label: "Обычный", help: "Один стандартный бросок." },
-  { value: "advantage", label: "Преимущество", help: "Бросок с преимуществом." },
-  { value: "disadvantage", label: "Помеха", help: "Бросок с помехой." },
-  { value: "ask", label: "Спросить", help: "Игрок выбирает режим броска в момент выполнения." }
 ]);
 
 const DOWNTIME_RECORD_MODE_OPTIONS = Object.freeze([
@@ -153,6 +144,14 @@ const DOWNTIME_RECORD_MODE_OPTIONS = Object.freeze([
   { value: "total", label: "Только total", help: "Сохранить только число броска." },
   { value: "group-sum", label: "Сумма группы", help: "Добавить результат к общей сумме заявки." },
   { value: "gm", label: "Решение мастера", help: "Оставить итог на ручное решение мастера." }
+]);
+
+const DOWNTIME_THRESHOLD_OUTCOME_OPTIONS = Object.freeze([
+  { value: "failure", label: "Провал", help: "Итог считается провалом." },
+  { value: "partial", label: "Частично", help: "Итог даёт частичный результат." },
+  { value: "success", label: "Успех", help: "Итог считается успехом." },
+  { value: "great-success", label: "Сильный успех", help: "Итог даёт улучшенный результат." },
+  { value: "gm", label: "Решение мастера", help: "Мастер решает последствия вручную." }
 ]);
 
 const DOWNTIME_EFFECT_TRIGGER_OPTIONS = Object.freeze([
@@ -325,8 +324,7 @@ function buildDowntimeTargetChoices(action = {}) {
 function buildDowntimeTargetChoiceSummary(choice = {}) {
   const abilityLabel = getOptionLabel(DOWNTIME_ABILITY_OPTIONS, choice.ability, "Из листа");
   const targetLabel = cleanText(choice.targetLabel) || getTargetOptionLabel(choice.target);
-  const rollLabel = getOptionLabel(DOWNTIME_ROLL_MODE_OPTIONS, choice.rollMode, "Обычный");
-  return [abilityLabel, targetLabel, rollLabel].filter(Boolean).join(" · ");
+  return [abilityLabel, targetLabel].filter(Boolean).join(" · ");
 }
 
 function buildDowntimeTargetChoiceRow(choice = {}, index = 0, { visible = true } = {}) {
@@ -340,7 +338,7 @@ function buildDowntimeTargetChoiceRow(choice = {}, index = 0, { visible = true }
     <details class="rm-downtime-target-choice"${open}${hidden} data-target-choice data-choice-index="${index}">
       <summary class="rm-downtime-target-choice__summary" title="Нажмите, чтобы раскрыть настройки варианта.">
         <span>${foundry.utils.escapeHTML(title)}</span>
-        <strong>${summary}</strong>
+        <strong data-target-choice-summary>${summary}</strong>
       </summary>
       <div class="rm-downtime-target-choice__body">
         <div class="rm-field">
@@ -355,13 +353,57 @@ function buildDowntimeTargetChoiceRow(choice = {}, index = 0, { visible = true }
           <label title="Конкретный навык, спасбросок, инструмент, действие или атака.">Цель</label>
           <select data-field="target-choice-target">${renderGroupedSelectOptions(DOWNTIME_TARGET_OPTION_GROUPS, safeChoice.target)}</select>
         </div>
-        <div class="rm-field">
-          <label title="Обычный бросок, преимущество, помеха или выбор игрока перед броском.">Бросок</label>
-          <select data-field="target-choice-roll-mode">${renderSelectOptions(DOWNTIME_ROLL_MODE_OPTIONS, safeChoice.rollMode)}</select>
-        </div>
       </div>
     </details>
   `;
+}
+
+function normalizeDowntimeThreshold(threshold = {}, index = 0) {
+  const defaults = [
+    { from: 0, to: 9, outcome: "failure" },
+    { from: 10, to: 20, outcome: "partial" },
+    { from: 21, to: "", outcome: "success" }
+  ];
+  const fallback = defaults[index] ?? { from: "", to: "", outcome: "gm" };
+  return {
+    from: cleanText(threshold.from) || cleanText(fallback.from),
+    to: cleanText(threshold.to) || cleanText(fallback.to),
+    outcome: cleanText(threshold.outcome) || fallback.outcome
+  };
+}
+
+function buildDowntimeThresholdRow(threshold = {}, index = 0) {
+  const safeThreshold = normalizeDowntimeThreshold(threshold, index);
+  return `
+    <div class="rm-downtime-threshold-row" data-threshold-row>
+      <div class="rm-field">
+        <label title="Нижняя граница общего итога простоя.">От</label>
+        <input type="number" step="1" value="${foundry.utils.escapeHTML(safeThreshold.from)}" data-field="target-threshold-from">
+      </div>
+      <div class="rm-field">
+        <label title="Верхняя граница. Пусто означает значение и выше.">До</label>
+        <input type="number" step="1" value="${foundry.utils.escapeHTML(safeThreshold.to)}" data-field="target-threshold-to">
+      </div>
+      <div class="rm-field">
+        <label title="Какой итог применить при попадании в этот диапазон.">Итог</label>
+        <select data-field="target-threshold-outcome">${renderSelectOptions(DOWNTIME_THRESHOLD_OUTCOME_OPTIONS, safeThreshold.outcome)}</select>
+      </div>
+    </div>
+  `;
+}
+
+function buildDowntimeThresholdRows(thresholds = []) {
+  const safeThresholds = Array.isArray(thresholds) ? thresholds.slice(0, MAX_DOWNTIME_THRESHOLDS) : [];
+  const rows = safeThresholds.length ? safeThresholds : [{}, {}, {}];
+  return rows.map((threshold, index) => buildDowntimeThresholdRow(threshold, index)).join("");
+}
+
+function readDowntimeThreshold(row) {
+  return {
+    from: readFieldValue(row, "target-threshold-from"),
+    to: readFieldValue(row, "target-threshold-to"),
+    outcome: readFieldValue(row, "target-threshold-outcome") || "gm"
+  };
 }
 
 function readDowntimeTargetChoice(row) {
@@ -370,7 +412,7 @@ function readDowntimeTargetChoice(row) {
   const targetLabel = readSelectedOptionLabel(row, "target-choice-target") || targetOption?.label || target;
   const sourceType = readFieldValue(row, "target-choice-source-type") || targetOption?.sourceType || "skill";
   const ability = readFieldValue(row, "target-choice-ability") || targetOption?.ability || "";
-  const rollMode = readFieldValue(row, "target-choice-roll-mode") || "normal";
+  const rollMode = "normal";
 
   return {
     sourceType,
@@ -453,10 +495,14 @@ function buildOutcomeSummary(check, outcomeMode) {
   switch (outcomeMode) {
     case "dc":
       return hasDc ? `DC ${numericDc}` : "DC";
+    case "sum":
     case "total":
       return "Сумма";
+    case "dc-sum":
     case "dc-total":
       return hasDc ? `DC ${numericDc} + сумма` : "DC + сумма";
+    case "thresholds":
+      return "Пороги";
     case "freeform":
       return "Свободный";
     default:
@@ -468,7 +514,6 @@ function mapDowntimeTargetAction(check, index) {
   const actionType = cleanText(check?.actionType) || "check";
   const sourceType = cleanText(check?.sourceType) || "skill";
   const outcomeMode = cleanText(check?.outcomeMode) || (cleanText(check?.dc) ? "dc" : "freeform");
-  const rollMode = cleanText(check?.rollMode) || "normal";
   const recordMode = cleanText(check?.recordMode) || "total-success";
   const checkEffectLabel = buildEffectLabel(check?.checkEffect);
   const downtimeEffectLabel = buildEffectLabel(check?.downtimeEffect, { downtime: true });
@@ -479,14 +524,12 @@ function mapDowntimeTargetAction(check, index) {
     actionType,
     sourceType,
     outcomeMode,
-    rollMode,
     recordMode,
     actionTypeLabel: getOptionLabel(DOWNTIME_ACTION_TYPE_OPTIONS, actionType, actionType),
     sourceTypeLabel: getOptionLabel(DOWNTIME_SOURCE_TYPE_OPTIONS, sourceType, sourceType),
     abilityLabel: getOptionLabel(DOWNTIME_ABILITY_OPTIONS, check?.ability, cleanText(check?.ability)),
     outcomeModeLabel: getOptionLabel(DOWNTIME_OUTCOME_MODE_OPTIONS, outcomeMode, outcomeMode),
     outcomeSummary: buildOutcomeSummary(check, outcomeMode),
-    rollModeLabel: getOptionLabel(DOWNTIME_ROLL_MODE_OPTIONS, rollMode, rollMode),
     recordModeLabel: getOptionLabel(DOWNTIME_RECORD_MODE_OPTIONS, recordMode, recordMode),
     targetLabel: cleanText(check?.targetLabel) || cleanText(check?.target),
     checkEffectLabel,
@@ -1692,6 +1735,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const outcomeMode = action.outcomeMode || (cleanText(action.dc) ? "dc" : "freeform");
     const recordMode = action.recordMode || (outcomeMode === "freeform" ? "gm" : "total-success");
     const showDc = ["dc", "dc-sum"].includes(outcomeMode);
+    const showThresholds = outcomeMode === "thresholds";
     const checkEffectActive = cleanText(checkEffect.trigger) && checkEffect.trigger !== "none";
     const downtimeEffectActive = cleanText(downtimeEffect.trigger) && downtimeEffect.trigger !== "none";
 
@@ -1751,6 +1795,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
               <label title="Как сохранить результат после броска.">Записать</label>
               <select data-field="target-action-record-mode">${renderSelectOptions(DOWNTIME_RECORD_MODE_OPTIONS, recordMode)}</select>
             </div>
+          </div>
+          <div class="rm-downtime-thresholds" data-outcome-thresholds-field${showThresholds ? "" : " hidden"}>
+            ${buildDowntimeThresholdRows(action.thresholds)}
           </div>
         </section>
 
@@ -1847,6 +1894,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       adapter: readFieldValue(root, "target-action-downtime-effect-adapter") || "none",
       template: readFieldValue(root, "target-action-downtime-effect-template") || "none"
     };
+    const outcomeMode = readFieldValue(root, "target-action-outcome-mode") || "dc";
+    const thresholds = Array.from(root?.querySelectorAll?.("[data-threshold-row]") ?? [])
+      .map((row) => readDowntimeThreshold(row))
+      .filter((threshold) => threshold.from || threshold.to || threshold.outcome !== "gm");
 
     const selectedActionType = readFieldValue(root, "target-action-type") || "check";
     const action = {
@@ -1857,7 +1908,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       ability: primaryChoice.ability,
       target: primaryChoice.target,
       targetLabel: primaryChoice.targetLabel,
-      outcomeMode: readFieldValue(root, "target-action-outcome-mode") || "dc",
+      outcomeMode,
       dc: toInteger(readFieldValue(root, "target-action-dc"), 0),
       rollMode: primaryChoice.rollMode || "normal",
       recordMode: readFieldValue(root, "target-action-record-mode") || "total-success",
@@ -1871,6 +1922,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     if (action.downtimeEffect.trigger === "none" || action.downtimeEffect.adapter === "none") {
       delete action.downtimeEffect;
+    }
+    if (outcomeMode === "thresholds" && thresholds.length) {
+      action.thresholds = thresholds;
     }
     return action;
   }
@@ -1886,6 +1940,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const cancelButton = root?.querySelector?.("[data-action='target-action-cancel']");
     const outcomeSelect = root?.querySelector?.("[data-field='target-action-outcome-mode']");
     const dcField = root?.querySelector?.("[data-outcome-dc-field]");
+    const thresholdsField = root?.querySelector?.("[data-outcome-thresholds-field]");
     const checkEffectTrigger = root?.querySelector?.("[data-field='target-action-check-effect-trigger']");
     const downtimeEffectTrigger = root?.querySelector?.("[data-field='target-action-downtime-effect-trigger']");
     const checkEffectFields = root?.querySelector?.("[data-effect-fields='check']");
@@ -1934,7 +1989,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         addButton.disabled = !rows.some((row) => row.hidden === true);
       };
 
-      addButton.addEventListener("click", (event) => {
+      addButton.addEventListener?.("click", (event) => {
         event.preventDefault();
         const nextRow = rows.find((row) => row.hidden === true);
         if (!nextRow) {
@@ -1952,6 +2007,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       if (dcField) {
         dcField.hidden = !["dc", "dc-sum"].includes(cleanText(outcomeSelect?.value));
       }
+      if (thresholdsField) {
+        thresholdsField.hidden = cleanText(outcomeSelect?.value) !== "thresholds";
+      }
     };
     outcomeSelect?.addEventListener?.("change", updateOutcomeFields);
     updateOutcomeFields();
@@ -1965,6 +2023,42 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     downtimeEffectTrigger?.addEventListener?.("change", () => updateEffectFields(downtimeEffectTrigger, downtimeEffectFields));
     updateEffectFields(checkEffectTrigger, checkEffectFields);
     updateEffectFields(downtimeEffectTrigger, downtimeEffectFields);
+
+    const updateChoiceSummary = (row) => {
+      const summary = row?.querySelector?.("[data-target-choice-summary]");
+      if (summary) {
+        summary.textContent = buildDowntimeTargetChoiceSummary(readDowntimeTargetChoice(row));
+      }
+    };
+    const syncChoiceTarget = (row) => {
+      const targetField = row?.querySelector?.("[data-field='target-choice-target']");
+      const sourceField = row?.querySelector?.("[data-field='target-choice-source-type']");
+      const abilityField = row?.querySelector?.("[data-field='target-choice-ability']");
+      const previousTargetOption = getTargetOption(row?.dataset?.previousTarget);
+      const targetOption = getTargetOption(targetField?.value);
+      if (sourceField && targetOption?.sourceType) {
+        sourceField.value = targetOption.sourceType;
+      }
+      if (abilityField && targetOption?.ability && (!abilityField.value || abilityField.value === previousTargetOption?.ability)) {
+        abilityField.value = targetOption.ability;
+      }
+      if (row?.dataset) {
+        row.dataset.previousTarget = cleanText(targetField?.value);
+      }
+      updateChoiceSummary(row);
+    };
+    rows.forEach((row) => {
+      if (row?.dataset && !row.dataset.previousTarget) {
+        row.dataset.previousTarget = readFieldValue(row, "target-choice-target");
+      }
+      const targetField = row?.querySelector?.("[data-field='target-choice-target']");
+      const sourceField = row?.querySelector?.("[data-field='target-choice-source-type']");
+      const abilityField = row?.querySelector?.("[data-field='target-choice-ability']");
+      targetField?.addEventListener?.("change", () => syncChoiceTarget(row));
+      sourceField?.addEventListener?.("change", () => updateChoiceSummary(row));
+      abilityField?.addEventListener?.("change", () => updateChoiceSummary(row));
+      updateChoiceSummary(row);
+    });
   }
 
   #setDowntimeTargetActionStep(root, step = "basis") {
@@ -2051,8 +2145,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
       }, {
         classes: ["rebreya-main", "rebreya-trader-dialog", "rm-downtime-target-action-window"],
-        width: 720,
-        height: "auto"
+        width: 920,
+        height: 680
       });
 
       dialog.render(true);
