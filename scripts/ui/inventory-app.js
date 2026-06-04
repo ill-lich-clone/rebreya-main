@@ -1689,17 +1689,22 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       buildDowntimeTargetChoiceRow(choices[index] ?? {}, index, { visible: index < visibleChoiceCount }));
     const checkEffect = action.checkEffect && typeof action.checkEffect === "object" ? action.checkEffect : {};
     const downtimeEffect = action.downtimeEffect && typeof action.downtimeEffect === "object" ? action.downtimeEffect : {};
+    const outcomeMode = action.outcomeMode || (cleanText(action.dc) ? "dc" : "freeform");
+    const recordMode = action.recordMode || (outcomeMode === "freeform" ? "gm" : "total-success");
+    const showDc = ["dc", "dc-sum"].includes(outcomeMode);
+    const checkEffectActive = cleanText(checkEffect.trigger) && checkEffect.trigger !== "none";
+    const downtimeEffectActive = cleanText(downtimeEffect.trigger) && downtimeEffect.trigger !== "none";
 
     return `
       <form class="rm-purchase-dialog rm-downtime-target-action-dialog">
-        <nav class="rm-downtime-target-dialog__steps" aria-label="Этапы настройки целевого действия">
-          <span title="Тип задачи и общий сценарий.">1. Основа</span>
-          <span title="Один основной вариант и, при необходимости, альтернативы для игрока.">2. Варианты</span>
-          <span title="Как считать результат броска.">3. Итог</span>
-          <span title="Что запустить после проверки или всего простоя.">4. Эффекты</span>
+        <nav class="rm-downtime-target-dialog__steps" aria-label="Этапы настройки целевого действия" role="tablist">
+          <button type="button" class="is-active" data-action="target-action-step" data-step="basis" title="Тип задачи и общий сценарий." aria-selected="true">1. Основа</button>
+          <button type="button" data-action="target-action-step" data-step="variants" title="Один основной вариант и, при необходимости, альтернативы для игрока." aria-selected="false">2. Варианты</button>
+          <button type="button" data-action="target-action-step" data-step="outcome" title="Как считать результат броска." aria-selected="false">3. Итог</button>
+          <button type="button" data-action="target-action-step" data-step="effects" title="Что запустить после проверки или всего простоя." aria-selected="false">4. Эффекты</button>
         </nav>
 
-        <section class="rm-downtime-target-dialog__section rm-downtime-target-dialog__section--compact">
+        <section class="rm-downtime-target-dialog__section rm-downtime-target-dialog__section--compact" data-step-panel="basis">
           <header>
             <h4>Основа</h4>
           </header>
@@ -1711,7 +1716,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           </div>
         </section>
 
-        <section class="rm-downtime-target-dialog__section">
+        <section class="rm-downtime-target-dialog__section" data-step-panel="variants" hidden>
           <header>
             <h4>Варианты</h4>
           </header>
@@ -1729,62 +1734,64 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           </button>
         </section>
 
-        <section class="rm-downtime-target-dialog__section">
+        <section class="rm-downtime-target-dialog__section" data-step-panel="outcome" hidden>
           <header>
             <h4>Итог</h4>
           </header>
           <div class="rm-downtime-target-dialog__grid">
             <div class="rm-field">
               <label title="Как трактовать результат броска.">Режим</label>
-              <select data-field="target-action-outcome-mode">${renderSelectOptions(DOWNTIME_OUTCOME_MODE_OPTIONS, action.outcomeMode || (cleanText(action.dc) ? "dc" : "freeform"))}</select>
+              <select data-field="target-action-outcome-mode">${renderSelectOptions(DOWNTIME_OUTCOME_MODE_OPTIONS, outcomeMode)}</select>
             </div>
-            <div class="rm-field">
+            <div class="rm-field" data-outcome-dc-field${showDc ? "" : " hidden"}>
               <label title="Порог сложности для режимов DC и DC + сумма.">DC</label>
               <input type="number" min="0" step="1" value="${safeDc}" data-field="target-action-dc">
             </div>
             <div class="rm-field">
               <label title="Как сохранить результат после броска.">Записать</label>
-              <select data-field="target-action-record-mode">${renderSelectOptions(DOWNTIME_RECORD_MODE_OPTIONS, action.recordMode || "total-success")}</select>
+              <select data-field="target-action-record-mode">${renderSelectOptions(DOWNTIME_RECORD_MODE_OPTIONS, recordMode)}</select>
             </div>
           </div>
         </section>
 
-        <section class="rm-downtime-target-dialog__section">
-          <header>
-            <h4>Эффект проверки</h4>
-          </header>
-          <div class="rm-downtime-target-dialog__grid">
+        <section class="rm-downtime-target-dialog__section" data-step-panel="effects" hidden>
+          <div class="rm-downtime-effect-block">
+            <header>
+              <h4>Эффект проверки</h4>
+            </header>
             <div class="rm-field">
-              <label title="Когда запускать эффект этой проверки.">Триггер</label>
+              <label title="Когда запускать эффект этой проверки. Остальные поля появляются только если эффект включён.">Триггер</label>
               <select data-field="target-action-check-effect-trigger">${renderSelectOptions(DOWNTIME_EFFECT_TRIGGER_OPTIONS, checkEffect.trigger || "none")}</select>
             </div>
-            <div class="rm-field">
-              <label title="Кто исполняет эффект: Rebreya Main, DAE или Midi-QOL.">Исполнитель</label>
-              <select data-field="target-action-check-effect-adapter">${renderSelectOptions(DOWNTIME_EFFECT_ADAPTER_OPTIONS, checkEffect.adapter || "none")}</select>
-            </div>
-            <div class="rm-field">
-              <label title="Что именно сделать после срабатывания эффекта.">Шаблон</label>
-              <select data-field="target-action-check-effect-template">${renderSelectOptions(DOWNTIME_CHECK_EFFECT_TEMPLATE_OPTIONS, checkEffect.template || "none")}</select>
+            <div class="rm-downtime-target-dialog__grid" data-effect-fields="check"${checkEffectActive ? "" : " hidden"}>
+              <div class="rm-field">
+                <label title="Кто исполняет эффект: Rebreya Main, DAE или Midi-QOL.">Исполнитель</label>
+                <select data-field="target-action-check-effect-adapter">${renderSelectOptions(DOWNTIME_EFFECT_ADAPTER_OPTIONS, checkEffect.adapter || "none")}</select>
+              </div>
+              <div class="rm-field">
+                <label title="Что именно сделать после срабатывания эффекта.">Шаблон</label>
+                <select data-field="target-action-check-effect-template">${renderSelectOptions(DOWNTIME_CHECK_EFFECT_TEMPLATE_OPTIONS, checkEffect.template || "none")}</select>
+              </div>
             </div>
           </div>
-        </section>
 
-        <section class="rm-downtime-target-dialog__section">
-          <header>
-            <h4>Эффект простоя</h4>
-          </header>
-          <div class="rm-downtime-target-dialog__grid">
+          <div class="rm-downtime-effect-block">
+            <header>
+              <h4>Эффект простоя</h4>
+            </header>
             <div class="rm-field">
-              <label title="Когда запускать эффект всей заявки.">Когда</label>
+              <label title="Когда запускать эффект всей заявки. Остальные поля появляются только если эффект включён.">Когда</label>
               <select data-field="target-action-downtime-effect-trigger">${renderSelectOptions(DOWNTIME_DOWNTIME_EFFECT_TRIGGER_OPTIONS, downtimeEffect.trigger || "none")}</select>
             </div>
-            <div class="rm-field">
-              <label title="Кто исполняет эффект простоя.">Исполнитель</label>
-              <select data-field="target-action-downtime-effect-adapter">${renderSelectOptions(DOWNTIME_EFFECT_ADAPTER_OPTIONS, downtimeEffect.adapter || "none")}</select>
-            </div>
-            <div class="rm-field">
-              <label title="Что сделать при завершении/решении заявки.">Шаблон</label>
-              <select data-field="target-action-downtime-effect-template">${renderSelectOptions(DOWNTIME_REQUEST_EFFECT_TEMPLATE_OPTIONS, downtimeEffect.template || "none")}</select>
+            <div class="rm-downtime-target-dialog__grid" data-effect-fields="downtime"${downtimeEffectActive ? "" : " hidden"}>
+              <div class="rm-field">
+                <label title="Кто исполняет эффект простоя.">Исполнитель</label>
+                <select data-field="target-action-downtime-effect-adapter">${renderSelectOptions(DOWNTIME_EFFECT_ADAPTER_OPTIONS, downtimeEffect.adapter || "none")}</select>
+              </div>
+              <div class="rm-field">
+                <label title="Что сделать при завершении/решении заявки.">Шаблон</label>
+                <select data-field="target-action-downtime-effect-template">${renderSelectOptions(DOWNTIME_REQUEST_EFFECT_TEMPLATE_OPTIONS, downtimeEffect.template || "none")}</select>
+              </div>
             </div>
           </div>
         </section>
@@ -1839,26 +1846,73 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   #wireDowntimeTargetActionDialog(root) {
     const rows = Array.from(root?.querySelectorAll?.("[data-target-choice]") ?? []);
     const addButton = root?.querySelector?.("[data-action='target-action-add-alternative']");
-    if (!addButton || !rows.length) {
-      return;
+    const stepButtons = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? []);
+    const stepPanels = Array.from(root?.querySelectorAll?.("[data-step-panel]") ?? []);
+    const outcomeSelect = root?.querySelector?.("[data-field='target-action-outcome-mode']");
+    const dcField = root?.querySelector?.("[data-outcome-dc-field]");
+    const checkEffectTrigger = root?.querySelector?.("[data-field='target-action-check-effect-trigger']");
+    const downtimeEffectTrigger = root?.querySelector?.("[data-field='target-action-downtime-effect-trigger']");
+    const checkEffectFields = root?.querySelector?.("[data-effect-fields='check']");
+    const downtimeEffectFields = root?.querySelector?.("[data-effect-fields='downtime']");
+
+    if (stepButtons.length && stepPanels.length) {
+      const setActiveStep = (step) => {
+        const safeStep = cleanText(step) || "basis";
+        stepButtons.forEach((button) => {
+          const active = button.dataset?.step === safeStep;
+          button.classList?.toggle?.("is-active", active);
+          button.setAttribute?.("aria-selected", active ? "true" : "false");
+        });
+        stepPanels.forEach((panel) => {
+          panel.hidden = panel.dataset?.stepPanel !== safeStep;
+        });
+      };
+
+      stepButtons.forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          setActiveStep(button.dataset?.step);
+        });
+      });
+      setActiveStep(stepButtons.find((button) => button.classList?.contains?.("is-active"))?.dataset?.step ?? "basis");
     }
 
-    const updateButtonState = () => {
-      addButton.disabled = !rows.some((row) => row.hidden === true);
-    };
+    if (addButton && rows.length) {
+      const updateButtonState = () => {
+        addButton.disabled = !rows.some((row) => row.hidden === true);
+      };
 
-    addButton.addEventListener("click", (event) => {
-      event.preventDefault();
-      const nextRow = rows.find((row) => row.hidden === true);
-      if (!nextRow) {
+      addButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        const nextRow = rows.find((row) => row.hidden === true);
+        if (!nextRow) {
+          updateButtonState();
+          return;
+        }
+        nextRow.hidden = false;
+        nextRow.open = true;
         updateButtonState();
-        return;
-      }
-      nextRow.hidden = false;
-      nextRow.open = true;
+      });
       updateButtonState();
-    });
-    updateButtonState();
+    }
+
+    const updateOutcomeFields = () => {
+      if (dcField) {
+        dcField.hidden = !["dc", "dc-sum"].includes(cleanText(outcomeSelect?.value));
+      }
+    };
+    outcomeSelect?.addEventListener?.("change", updateOutcomeFields);
+    updateOutcomeFields();
+
+    const updateEffectFields = (trigger, fields) => {
+      if (fields) {
+        fields.hidden = !cleanText(trigger?.value) || trigger.value === "none";
+      }
+    };
+    checkEffectTrigger?.addEventListener?.("change", () => updateEffectFields(checkEffectTrigger, checkEffectFields));
+    downtimeEffectTrigger?.addEventListener?.("change", () => updateEffectFields(downtimeEffectTrigger, downtimeEffectFields));
+    updateEffectFields(checkEffectTrigger, checkEffectFields);
+    updateEffectFields(downtimeEffectTrigger, downtimeEffectFields);
   }
 
   async #promptDowntimeTargetAction(existingAction = {}, existingActions = []) {

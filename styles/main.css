@@ -4610,19 +4610,34 @@ summary:focus-visible {
   background: rgba(214, 177, 104, 0.18);
 }
 
-.rm-downtime-target-dialog__steps span {
+.rm-downtime-target-dialog__steps button {
   display: block;
   min-width: 0;
   padding: 7px 8px;
+  border: 0;
+  border-radius: 0;
   color: #f1ddb7;
   background: rgba(10, 8, 5, 0.78);
   font-size: 12px;
   font-weight: 800;
   line-height: 1.2;
   text-transform: uppercase;
+  text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.rm-downtime-target-dialog__steps button:hover,
+.rm-downtime-target-dialog__steps button:focus-visible {
+  background: rgba(76, 50, 23, 0.86);
+  color: #fff8e8;
+}
+
+.rm-downtime-target-dialog__steps button.is-active {
+  background: rgba(104, 74, 33, 0.88);
+  color: #fff8e8;
 }
 
 .rm-downtime-target-dialog__section {
@@ -4718,6 +4733,18 @@ summary:focus-visible {
   padding: 8px;
   border-top: 1px solid rgba(214, 177, 104, 0.14);
   background: rgba(0, 0, 0, 0.18);
+}
+
+.rm-downtime-effect-block {
+  display: grid;
+  gap: 8px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid rgba(214, 177, 104, 0.12);
+}
+
+.rm-downtime-effect-block:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .rm-downtime-add-alternative {

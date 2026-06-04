@@ -711,6 +711,14 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     assert.equal(targetDialog?.config?.content.includes("data-target-choice"), true);
     assert.equal(targetDialog?.config?.content.includes("Добавить альтернативу"), true);
     assert.equal(targetDialog?.config?.content.includes("title=\"Определяет, какой тип задачи получит игрок.\""), true);
+    assert.equal(targetDialog?.config?.content.includes("data-action=\"target-action-step\""), true);
+    assert.match(targetDialog?.config?.content ?? "", /data-step-panel="basis"[^>]*>/u);
+    assert.match(targetDialog?.config?.content ?? "", /data-step-panel="variants"[^>]*hidden/u);
+    assert.match(targetDialog?.config?.content ?? "", /data-step-panel="outcome"[^>]*hidden/u);
+    assert.match(targetDialog?.config?.content ?? "", /data-step-panel="effects"[^>]*hidden/u);
+    assert.match(targetDialog?.config?.content ?? "", /data-outcome-dc-field[^>]*hidden/u);
+    assert.match(targetDialog?.config?.content ?? "", /data-effect-fields="check"[^>]*hidden/u);
+    assert.match(targetDialog?.config?.content ?? "", /data-effect-fields="downtime"[^>]*hidden/u);
 
     assert.deepEqual(calls, [
       ["grantDowntimeWeeks", { actorIds: ["actor-a"], weeks: 2, reason: "" }],
