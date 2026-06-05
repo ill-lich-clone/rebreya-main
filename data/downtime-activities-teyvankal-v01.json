@@ -1,0 +1,1303 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "document": "БЕТА Заметки о землях Тейванкаля, 2-я редакция (1)",
+    "chapter": "Глава 9: Между приключениями",
+    "section": "Деятельность во время простоя"
+  },
+  "activities": [
+    {
+      "id": "craft",
+      "name": "Ремесло / Создание / Крафт",
+      "rank": "0+",
+      "defaultWeeks": 1,
+      "duration": "1+ рабочая неделя, прогресс считается по дням.",
+      "summary": "Создание немагических предметов из материалов и с доступом к мастерской нужного ранга.",
+      "requirements": [
+        "Материалы для предмета.",
+        "Мастерская и инструменты подходящего ранга."
+      ],
+      "automationStatus": "partial",
+      "automationNotes": [
+        "Шаблон фиксирует стоимость и прогресс, но фактическое списание материалов и создание предметов требует связи с крафтом Rebreya."
+      ],
+      "targetActions": [
+        {
+          "id": "craft-resources",
+          "label": "Материалы и мастерская",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Материалы стоят половину рыночной цены создаваемых предметов; обычный прогресс 5 зм рыночной стоимости в день.",
+            "cost": {
+              "amount": 0,
+              "currency": "gp",
+              "formula": "половина рыночной цены предмета",
+              "payer": "character",
+              "timing": "manual"
+            },
+            "purchases": [
+              {
+                "label": "Экстренная работа",
+                "cost": {
+                  "amount": 0,
+                  "currency": "gp",
+                  "formula": "по таблице экстренной работы"
+                },
+                "effect": {
+                  "type": "unlock",
+                  "value": "ускорить дневной прогресс"
+                },
+                "scope": "request"
+              }
+            ]
+          }
+        },
+        {
+          "id": "craft-progress",
+          "label": "Прогресс предмета",
+          "actionType": "downtimeResult",
+          "outcomeMode": "sum",
+          "recordMode": "group-sum",
+          "summary": "Суммируйте вложенную рыночную стоимость до полной цены предмета."
+        }
+      ]
+    },
+    {
+      "id": "firearm-crafting",
+      "name": "Создание огнестрельного оружия",
+      "rank": "3+",
+      "defaultWeeks": 1,
+      "duration": "1+ рабочая неделя, пока оружие не будет готово.",
+      "summary": "Создание огнестрельного оружия по готовой формуле с инструментами Жестянщика.",
+      "requirements": [
+        "Формула или чертёж оружия.",
+        "Инструменты Жестянщика.",
+        "Мастерская соответствующего уровня."
+      ],
+      "automationStatus": "partial",
+      "automationNotes": [
+        "Прогресс и требования записаны, но итоговое создание оружия и материалы пока проверяются мастером."
+      ],
+      "targetActions": [
+        {
+          "id": "firearm-crafting-resources",
+          "label": "Формула и материалы",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Персонаж вкладывает в создание огнестрела по 25 зм рыночной стоимости в день.",
+            "cost": {
+              "amount": 0,
+              "currency": "gp",
+              "formula": "материалы по цене оружия",
+              "payer": "character",
+              "timing": "manual"
+            }
+          }
+        },
+        {
+          "id": "firearm-crafting-progress",
+          "label": "Прогресс оружия",
+          "actionType": "downtimeResult",
+          "outcomeMode": "sum",
+          "recordMode": "group-sum",
+          "summary": "Суммируйте 25 зм прогресса за каждый рабочий день."
+        }
+      ]
+    },
+    {
+      "id": "firearm-development",
+      "name": "Разработка огнестрельного оружия",
+      "rank": "3+",
+      "defaultWeeks": 1,
+      "duration": "1+ рабочая неделя как шаг длительного проекта.",
+      "summary": "Разработка формулы огнестрельного оружия через проект и проверку Интеллекта или Силы с инструментами Жестянщика.",
+      "requirements": [
+        "Персонаж должен напрямую заниматься изготовлением огнестрельного оружия."
+      ],
+      "automationStatus": "partial",
+      "automationNotes": [
+        "Бросок инструмента автоматизирован, но DC и продвижение проекта задаёт мастер."
+      ],
+      "targetActions": [
+        {
+          "id": "firearm-development-resources",
+          "label": "Расходы разработки",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Разработка требует стартовые расходы вдвое выше цены оружия и 200 зм за неделю тестов.",
+            "cost": {
+              "amount": 200,
+              "currency": "gp",
+              "formula": "200 зм за неделю + стартовые расходы 2x цены оружия",
+              "payer": "character",
+              "timing": "manual"
+            }
+          }
+        },
+        {
+          "id": "firearm-development-check",
+          "label": "Разработка чертежа",
+          "actionType": "choice",
+          "choices": [
+            {
+              "sourceType": "tool",
+              "ability": "int",
+              "target": "tinker",
+              "targetLabel": "Инструменты Жестянщика"
+            },
+            {
+              "sourceType": "tool",
+              "ability": "str",
+              "target": "tinker",
+              "targetLabel": "Инструменты Жестянщика"
+            }
+          ],
+          "outcomeMode": "dc",
+          "recordMode": "total-success"
+        },
+        {
+          "id": "firearm-development-result",
+          "label": "Прогресс проекта",
+          "actionType": "downtimeResult",
+          "outcomeMode": "dc-sum",
+          "recordMode": "group-sum",
+          "summary": "Продвигайте длительный проект по правилу мастера."
+        }
+      ]
+    },
+    {
+      "id": "magic-item-crafting",
+      "name": "Создание магического предмета",
+      "rank": "3+",
+      "defaultWeeks": 1,
+      "duration": "По правилам создания магических предметов из главы 8.",
+      "summary": "Создание магического предмета вынесено в главу 8 и требует отдельной предметной автоматизации.",
+      "requirements": [
+        "Требования зависят от конкретного магического предмета."
+      ],
+      "automationStatus": "needs-work",
+      "automationNotes": [
+        "В этой главе есть только ссылка на главу 8; нужен отдельный импорт правил магического крафта."
+      ],
+      "targetActions": [
+        {
+          "id": "magic-item-crafting-note",
+          "label": "Настроить по главе 8",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "profession-work",
+      "name": "Работа по профессии",
+      "rank": "2",
+      "defaultWeeks": 4,
+      "duration": "Один промежуток работы обычно считается месяцем.",
+      "summary": "Персонаж выбирает навык для работы и получает зарплату за день по результату проверки и уровню.",
+      "requirements": [
+        "Мастер должен подтвердить, что выбранная работа возможна в текущем месте."
+      ],
+      "automationStatus": "partial",
+      "automationNotes": [
+        "Шаблон содержит проверку и пороги, но таблица зарплаты по уровню пока не считает деньги автоматически."
+      ],
+      "targetActions": [
+        {
+          "id": "profession-resources",
+          "label": "Модификаторы работы",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Отличный инструмент, год опыта и помощь фракции могут добавить бонусы к броску.",
+            "cost": {
+              "amount": 0,
+              "currency": "gp",
+              "payer": "manual",
+              "timing": "manual"
+            },
+            "purchases": [
+              {
+                "label": "Отличный инструмент",
+                "cost": {
+                  "amount": 0,
+                  "currency": "gp",
+                  "formula": "по предмету"
+                },
+                "effect": {
+                  "type": "bonus",
+                  "value": "+1"
+                },
+                "scope": "next-check"
+              },
+              {
+                "label": "Год опыта работы",
+                "cost": {
+                  "amount": 0,
+                  "currency": "custom",
+                  "formula": "нарративное условие"
+                },
+                "effect": {
+                  "type": "bonus",
+                  "value": "+2"
+                },
+                "scope": "next-check"
+              },
+              {
+                "label": "Помощь своей фракции",
+                "cost": {
+                  "amount": 0,
+                  "currency": "custom",
+                  "formula": "ресурс фракции"
+                },
+                "effect": {
+                  "type": "bonus",
+                  "value": "+3"
+                },
+                "scope": "next-check"
+              }
+            ]
+          }
+        },
+        {
+          "id": "profession-check",
+          "label": "Проверка выбранного навыка",
+          "actionType": "freeform",
+          "outcomeMode": "thresholds",
+          "recordMode": "gm",
+          "thresholds": [
+            {
+              "to": 9,
+              "label": "Трудности",
+              "outcome": "failure"
+            },
+            {
+              "from": 10,
+              "label": "Обычная оплата",
+              "outcome": "success"
+            },
+            {
+              "from": 20,
+              "label": "Хорошая оплата",
+              "outcome": "success"
+            },
+            {
+              "from": 30,
+              "label": "Отличная оплата",
+              "outcome": "great-success"
+            },
+            {
+              "from": 40,
+              "label": "Максимальная оплата",
+              "outcome": "great-success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rest",
+      "name": "Отдых",
+      "rank": "1",
+      "defaultWeeks": 1,
+      "duration": "1 рабочая неделя.",
+      "summary": "Персонаж отдыхает, получает преимущество против длительных болезней и ядов и может убрать один подходящий вредный эффект.",
+      "requirements": [
+        "Поддерживать существование хотя бы Рядового рабочего."
+      ],
+      "automationStatus": "partial",
+      "automationNotes": [
+        "Заявка и недельная стоимость работают, но снятие эффектов и преимущество пока применяет мастер."
+      ],
+      "targetActions": [
+        {
+          "id": "rest-resources",
+          "label": "Условия отдыха",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Нужно поддерживать существование хотя бы Рядового рабочего.",
+            "cost": {
+              "amount": 0,
+              "currency": "gp",
+              "formula": "по образу жизни",
+              "payer": "character",
+              "timing": "manual"
+            }
+          }
+        },
+        {
+          "id": "rest-result",
+          "label": "Эффект отдыха",
+          "actionType": "downtimeResult",
+          "outcomeMode": "freeform",
+          "recordMode": "gm",
+          "downtimeEffect": {
+            "trigger": "complete",
+            "adapter": "rebreya",
+            "template": "active-effect"
+          }
+        }
+      ]
+    },
+    {
+      "id": "research",
+      "name": "Исследование",
+      "rank": "1+",
+      "rankMode": "select",
+      "defaultWeeks": 1,
+      "duration": "1 рабочая неделя.",
+      "summary": "Персонаж изучает личность, место, предмет или другой конкретный вопрос.",
+      "requirements": [
+        "Доступ к библиотеке, мудрецу или другому источнику знаний."
+      ],
+      "automationStatus": "partial",
+      "automationNotes": [
+        "Стоимость, бонусы и бросок Интеллекта структурированы; выдачу конкретных фрагментов сведений делает мастер."
+      ],
+      "rankTable": [
+        {
+          "rank": 1,
+          "baseCost": 10,
+          "stepCost": 5
+        },
+        {
+          "rank": 2,
+          "baseCost": 20,
+          "stepCost": 10
+        },
+        {
+          "rank": 3,
+          "baseCost": 50,
+          "stepCost": 50
+        },
+        {
+          "rank": 4,
+          "baseCost": 120,
+          "stepCost": 100
+        },
+        {
+          "rank": 5,
+          "baseCost": 200,
+          "stepCost": 200
+        },
+        {
+          "rank": 6,
+          "baseCost": 500,
+          "stepCost": 400
+        },
+        {
+          "rank": 7,
+          "baseCost": 1000,
+          "stepCost": 800
+        },
+        {
+          "rank": 8,
+          "baseCost": 2500,
+          "stepCost": 2000
+        },
+        {
+          "rank": 9,
+          "baseCost": 5000,
+          "stepCost": 3000
+        }
+      ],
+      "targetActions": [
+        {
+          "id": "research-resources",
+          "label": "Стоимость исследования",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Базовая сумма зависит от ранга. Каждый дополнительный шаг сверх базы даёт +1 к проверке, максимум +5.",
+            "cost": {
+              "amount": 0,
+              "currency": "gp",
+              "formula": "базовая сумма по рангу + шаги",
+              "payer": "character",
+              "timing": "manual"
+            },
+            "purchases": [
+              {
+                "label": "Дополнительный шаг исследования",
+                "cost": {
+                  "amount": 0,
+                  "currency": "gp",
+                  "formula": "стоимость шага по рангу"
+                },
+                "effect": {
+                  "type": "bonus",
+                  "value": "+1"
+                },
+                "scope": "next-check",
+                "max": 5
+              }
+            ]
+          }
+        },
+        {
+          "id": "research-check",
+          "label": "Проверка исследования",
+          "actionType": "check",
+          "sourceType": "ability",
+          "ability": "int",
+          "target": "int",
+          "targetLabel": "Интеллект",
+          "outcomeMode": "thresholds",
+          "recordMode": "total"
+        },
+        {
+          "id": "research-result",
+          "label": "Фрагменты сведений",
+          "actionType": "downtimeResult",
+          "outcomeMode": "thresholds",
+          "recordMode": "gm",
+          "thresholds": [
+            {
+              "from": 1,
+              "to": 10,
+              "label": "Безрезультатно",
+              "outcome": "failure"
+            },
+            {
+              "from": 11,
+              "to": 16,
+              "label": "Один фрагмент сведений",
+              "outcome": "partial"
+            },
+            {
+              "from": 17,
+              "to": 25,
+              "label": "Два фрагмента сведений",
+              "outcome": "success"
+            },
+            {
+              "from": 26,
+              "label": "Три фрагмента сведений",
+              "outcome": "great-success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "training",
+      "name": "Обучение",
+      "rank": "1+",
+      "defaultWeeks": 10,
+      "duration": "От 4 до 50 рабочих недель в зависимости от выбранного владения.",
+      "summary": "Персонаж обучается языку, инструменту, оружию, навыку или компетентности.",
+      "requirements": [
+        "Учитель, готовый обучать персонажа.",
+        "Достаточно свободных Очков обучения."
+      ],
+      "automationStatus": "needs-work",
+      "automationNotes": [
+        "Стоимость и длительность заданы таблицей, но выдача владений и проверка Очков обучения требуют отдельной интеграции с листом."
+      ],
+      "rankTable": [
+        {
+          "training": "Язык",
+          "learningPoints": 1,
+          "weeks": 10,
+          "weeklyCost": 25
+        },
+        {
+          "training": "Инструмент",
+          "learningPoints": 1,
+          "weeks": 10,
+          "weeklyCost": 25
+        },
+        {
+          "training": "Огнестрельное оружие",
+          "learningPoints": 2,
+          "weeks": 4,
+          "weeklyCost": 100
+        },
+        {
+          "training": "Простое или воинское оружие",
+          "learningPoints": 2,
+          "weeks": 20,
+          "weeklyCost": 25
+        },
+        {
+          "training": "Навык",
+          "learningPoints": 3,
+          "weeks": 20,
+          "weeklyCost": 30
+        },
+        {
+          "training": "Компетентность в инструменте",
+          "learningPoints": 5,
+          "weeks": 50,
+          "weeklyCost": 100
+        },
+        {
+          "training": "Компетентность в навыке",
+          "learningPoints": 9,
+          "weeks": 50,
+          "weeklyCost": 150
+        }
+      ],
+      "targetActions": [
+        {
+          "id": "training-resources",
+          "label": "Оплата обучения",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Стоимость и длительность зависят от типа обучения; длительность уменьшается на модификатор Интеллекта, минимум 1 неделя.",
+            "cost": {
+              "amount": 0,
+              "currency": "gp",
+              "formula": "стоимость выбранного обучения за неделю",
+              "payer": "character",
+              "timing": "manual"
+            }
+          }
+        },
+        {
+          "id": "training-result",
+          "label": "Новое владение",
+          "actionType": "downtimeResult",
+          "outcomeMode": "freeform",
+          "recordMode": "gm",
+          "downtimeEffect": {
+            "trigger": "complete",
+            "adapter": "rebreya",
+            "template": "reward"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gambling",
+      "name": "Азартные игры",
+      "rank": "4+",
+      "defaultWeeks": 1,
+      "duration": "1 рабочая неделя.",
+      "summary": "Персонаж делает ставку и проходит три проверки против случайной сложности.",
+      "requirements": [
+        "Ставка от 10 до 1000 зм или больше по решению мастера."
+      ],
+      "automationStatus": "partial",
+      "automationNotes": [
+        "Три проверки из чарника есть, но случайная DC-формула и выплата ставки пока считаются мастером."
+      ],
+      "targetActions": [
+        {
+          "id": "gambling-stake",
+          "label": "Ставка",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Ставка обычно от 10 до 1000 зм; для каждой проверки DC считается отдельно.",
+            "cost": {
+              "amount": 0,
+              "currency": "gp",
+              "formula": "ставка 10-1000+ зм",
+              "payer": "character",
+              "timing": "manual"
+            }
+          }
+        },
+        {
+          "id": "gambling-insight",
+          "label": "Чтение игроков",
+          "actionType": "check",
+          "sourceType": "skill",
+          "ability": "wis",
+          "target": "ins",
+          "targetLabel": "Проницательность",
+          "outcomeMode": "dc",
+          "dcFormula": "5+2d10 или 7+3d10",
+          "recordMode": "total-success"
+        },
+        {
+          "id": "gambling-deception",
+          "label": "Блеф",
+          "actionType": "check",
+          "sourceType": "skill",
+          "ability": "cha",
+          "target": "dec",
+          "targetLabel": "Обман",
+          "outcomeMode": "dc",
+          "dcFormula": "5+2d10 или 7+3d10",
+          "recordMode": "total-success"
+        },
+        {
+          "id": "gambling-intimidation",
+          "label": "Давление",
+          "actionType": "check",
+          "sourceType": "skill",
+          "ability": "cha",
+          "target": "itm",
+          "targetLabel": "Запугивание",
+          "outcomeMode": "dc",
+          "dcFormula": "5+2d10 или 7+3d10",
+          "recordMode": "total-success"
+        },
+        {
+          "id": "gambling-result",
+          "label": "Итог ставки",
+          "actionType": "downtimeResult",
+          "outcomeMode": "thresholds",
+          "recordMode": "gm",
+          "thresholds": [
+            {
+              "from": 0,
+              "to": 0,
+              "label": "Потеря ставки и долг",
+              "outcome": "failure"
+            },
+            {
+              "from": 1,
+              "to": 1,
+              "label": "Потеря половины ставки",
+              "outcome": "partial"
+            },
+            {
+              "from": 2,
+              "to": 2,
+              "label": "Ставка + 50%",
+              "outcome": "success"
+            },
+            {
+              "from": 3,
+              "label": "Удвоение ставки",
+              "outcome": "great-success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fighting-tournament",
+      "name": "Бойцовский турнир",
+      "rank": "4+",
+      "defaultWeeks": 1,
+      "duration": "1 рабочая неделя.",
+      "summary": "Несмертельный турнир с тремя проверками против случайной сложности.",
+      "requirements": [
+        "Турнир доступен в местах с урбанизацией хотя бы 4."
+      ],
+      "automationStatus": "partial",
+      "automationNotes": [
+        "Атлетика, Акробатика и Телосложение бросаются из листа; замена одной проверки атакой и бонус от кости хитов требуют доработки."
+      ],
+      "targetActions": [
+        {
+          "id": "tournament-athletics",
+          "label": "Силовая борьба",
+          "actionType": "check",
+          "sourceType": "skill",
+          "ability": "str",
+          "target": "ath",
+          "targetLabel": "Атлетика",
+          "outcomeMode": "dc",
+          "dcFormula": "5+2d10 или 7+3d10",
+          "recordMode": "total-success"
+        },
+        {
+          "id": "tournament-acrobatics",
+          "label": "Манёвр",
+          "actionType": "check",
+          "sourceType": "skill",
+          "ability": "dex",
+          "target": "acr",
+          "targetLabel": "Акробатика",
+          "outcomeMode": "dc",
+          "dcFormula": "5+2d10 или 7+3d10",
+          "recordMode": "total-success"
+        },
+        {
+          "id": "tournament-endurance",
+          "label": "Выносливость",
+          "actionType": "check",
+          "sourceType": "ability",
+          "ability": "con",
+          "target": "con",
+          "targetLabel": "Телосложение + наибольшая Кость Хитов",
+          "outcomeMode": "dc",
+          "dcFormula": "5+2d10 или 7+3d10",
+          "recordMode": "total-success"
+        },
+        {
+          "id": "tournament-result",
+          "label": "Приз турнира",
+          "actionType": "downtimeResult",
+          "outcomeMode": "thresholds",
+          "recordMode": "gm",
+          "thresholds": [
+            {
+              "from": 0,
+              "to": 0,
+              "label": "0 зм",
+              "outcome": "failure"
+            },
+            {
+              "from": 1,
+              "to": 1,
+              "label": "50 зм",
+              "outcome": "partial"
+            },
+            {
+              "from": 2,
+              "to": 2,
+              "label": "100 зм",
+              "outcome": "success"
+            },
+            {
+              "from": 3,
+              "label": "200 зм",
+              "outcome": "great-success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "carousing",
+      "name": "Кутёж",
+      "rank": "3+",
+      "defaultWeeks": 1,
+      "duration": "1 рабочая неделя.",
+      "summary": "Неделя общения и развлечений с попыткой обзавестись контактами.",
+      "requirements": [
+        "Для кутежа со знатью нужен доступ в местный высший свет или успешная маскировка."
+      ],
+      "automationStatus": "partial",
+      "automationNotes": [
+        "Стоимость и проверка Убеждения есть, но таблица результатов кутежа в извлечённом разделе не попала и требует ручного решения."
+      ],
+      "targetActions": [
+        {
+          "id": "carousing-resources",
+          "label": "Круг общения",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Простонародье 10 зм, зажиточные люди 50 зм, знать 250 зм в неделю.",
+            "cost": {
+              "amount": 10,
+              "currency": "gp",
+              "formula": "10/50/250 зм по кругу общения",
+              "payer": "character",
+              "timing": "manual"
+            },
+            "purchases": [
+              {
+                "label": "Зажиточные люди",
+                "cost": {
+                  "amount": 50,
+                  "currency": "gp"
+                },
+                "effect": {
+                  "type": "unlock",
+                  "value": "контакты зажиточных"
+                },
+                "scope": "request"
+              },
+              {
+                "label": "Знать",
+                "cost": {
+                  "amount": 250,
+                  "currency": "gp"
+                },
+                "effect": {
+                  "type": "unlock",
+                  "value": "контакты знати"
+                },
+                "scope": "request"
+              }
+            ]
+          }
+        },
+        {
+          "id": "carousing-check",
+          "label": "Новые контакты",
+          "actionType": "check",
+          "sourceType": "skill",
+          "ability": "cha",
+          "target": "per",
+          "targetLabel": "Убеждение",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "magic-item-purchase",
+      "name": "Покупка магического предмета",
+      "rank": "2+",
+      "defaultWeeks": 1,
+      "duration": "По правилам покупки магических предметов из главы 8.",
+      "summary": "Покупка магического предмета вынесена в главу 8.",
+      "requirements": [
+        "Условия зависят от предмета, города и доступных торговцев."
+      ],
+      "automationStatus": "needs-work",
+      "automationNotes": [
+        "Нужно связать с торговцами, наличием товаров и правилами главы 8."
+      ],
+      "targetActions": [
+        {
+          "id": "magic-item-purchase-note",
+          "label": "Настроить покупку",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "crime",
+      "name": "Преступная деятельность",
+      "rank": "",
+      "defaultWeeks": 1,
+      "duration": "Не указано в извлечённом разделе.",
+      "summary": "В разделе есть заголовок без механических правил.",
+      "automationStatus": "blocked",
+      "automationNotes": [
+        "Нет правил в этом разделе PDF, поэтому создан только placeholder-предмет."
+      ],
+      "targetActions": [
+        {
+          "id": "crime-note",
+          "label": "Ручная заявка",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "spread-rumors",
+      "name": "Распространение слухов",
+      "rank": "",
+      "defaultWeeks": 1,
+      "duration": "Не указано в извлечённом разделе.",
+      "summary": "В разделе есть заголовок без механических правил.",
+      "automationStatus": "blocked",
+      "automationNotes": [
+        "Нет стоимости, проверок и результата в этом разделе."
+      ],
+      "targetActions": [
+        {
+          "id": "spread-rumors-note",
+          "label": "Ручная заявка",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "change-subclass",
+      "name": "Смена подкласса",
+      "rank": "",
+      "defaultWeeks": 1,
+      "duration": "Количество недель равно БМ на момент смены архетипа.",
+      "summary": "Персонаж меняет архетип одного из классов после интенсивных тренировок.",
+      "requirements": [
+        "Мастер подтверждает доступность смены архетипа."
+      ],
+      "automationStatus": "needs-work",
+      "automationNotes": [
+        "Стоимость и срок записаны, но Foundry-замена подкласса требует отдельной безопасной миграции класса/фич."
+      ],
+      "targetActions": [
+        {
+          "id": "change-subclass-resources",
+          "label": "Интенсивные тренировки",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Срок равен БМ, стоимость 100 зм за неделю.",
+            "cost": {
+              "amount": 100,
+              "currency": "gp",
+              "formula": "100 зм * БМ недель",
+              "payer": "character",
+              "timing": "manual"
+            }
+          }
+        },
+        {
+          "id": "change-subclass-result",
+          "label": "Новый архетип",
+          "actionType": "downtimeResult",
+          "outcomeMode": "freeform",
+          "recordMode": "gm",
+          "downtimeEffect": {
+            "trigger": "complete",
+            "adapter": "rebreya",
+            "template": "reward"
+          }
+        }
+      ]
+    },
+    {
+      "id": "change-class",
+      "name": "Смена класса",
+      "rank": "",
+      "defaultWeeks": 1,
+      "duration": "Не указано в извлечённом разделе.",
+      "summary": "В разделе есть заголовок без механических правил.",
+      "automationStatus": "blocked",
+      "automationNotes": [
+        "Нет правил в этом разделе PDF; смена класса ещё опаснее смены подкласса и требует отдельной миграции."
+      ],
+      "targetActions": [
+        {
+          "id": "change-class-note",
+          "label": "Ручная заявка",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "buy-magic-components",
+      "name": "Покупка магических компонентов",
+      "rank": "",
+      "defaultWeeks": 1,
+      "duration": "Не указано в извлечённом разделе.",
+      "summary": "В разделе есть заголовок без механических правил.",
+      "automationStatus": "blocked",
+      "automationNotes": [
+        "Нужно импортировать правила компонентов и связать их с торговцами."
+      ],
+      "targetActions": [
+        {
+          "id": "buy-magic-components-note",
+          "label": "Ручная заявка",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "search-magic-components",
+      "name": "Поиск магических компонентов",
+      "rank": "",
+      "defaultWeeks": 1,
+      "duration": "Не указано в извлечённом разделе.",
+      "summary": "В разделе есть заголовок без механических правил.",
+      "automationStatus": "blocked",
+      "automationNotes": [
+        "Нет DC, стоимости и результатов в этой главе."
+      ],
+      "targetActions": [
+        {
+          "id": "search-magic-components-note",
+          "label": "Ручная заявка",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "gather-rumors",
+      "name": "Сбор слухов",
+      "rank": "",
+      "defaultWeeks": 1,
+      "duration": "Не указано в извлечённом разделе.",
+      "summary": "В разделе есть заголовок без механических правил.",
+      "automationStatus": "blocked",
+      "automationNotes": [
+        "Нет правил в этом разделе PDF."
+      ],
+      "targetActions": [
+        {
+          "id": "gather-rumors-note",
+          "label": "Ручная заявка",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "laboratory-alchemy",
+      "name": "Лабораторная алхимия",
+      "rank": "Lich",
+      "defaultWeeks": 1,
+      "duration": "От 1 до 25 недель по уровню зелья.",
+      "summary": "Работа в алхимической мастерской; стоимость и срок зависят от уровня зелья.",
+      "requirements": [
+        "Алхимическая мастерская.",
+        "Правила выбранного зелья."
+      ],
+      "automationStatus": "needs-work",
+      "automationNotes": [
+        "Таблица сроков и золота занесена, но нужна связка с алхимической мастерской и созданием зелий."
+      ],
+      "rankTable": [
+        {
+          "potionLevel": 1,
+          "weeks": 1,
+          "cost": 20
+        },
+        {
+          "potionLevel": 2,
+          "weeks": 2,
+          "cost": 75
+        },
+        {
+          "potionLevel": 3,
+          "weeks": 3,
+          "cost": 130
+        },
+        {
+          "potionLevel": 4,
+          "weeks": 4,
+          "cost": 350
+        },
+        {
+          "potionLevel": 5,
+          "weeks": 5,
+          "cost": 600
+        },
+        {
+          "potionLevel": 6,
+          "weeks": 8,
+          "cost": 1500
+        },
+        {
+          "potionLevel": 7,
+          "weeks": 15,
+          "cost": 2500
+        },
+        {
+          "potionLevel": 8,
+          "weeks": 20,
+          "cost": 5000
+        },
+        {
+          "potionLevel": 9,
+          "weeks": 25,
+          "cost": 7500
+        }
+      ],
+      "targetActions": [
+        {
+          "id": "alchemy-resources",
+          "label": "Стоимость зелья",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Срок и золото берутся из таблицы лабораторного способа.",
+            "cost": {
+              "amount": 0,
+              "currency": "gp",
+              "formula": "по уровню зелья",
+              "payer": "character",
+              "timing": "manual"
+            }
+          }
+        },
+        {
+          "id": "alchemy-result",
+          "label": "Созданное зелье",
+          "actionType": "downtimeResult",
+          "outcomeMode": "freeform",
+          "recordMode": "gm",
+          "downtimeEffect": {
+            "trigger": "complete",
+            "adapter": "rebreya",
+            "template": "reward"
+          }
+        }
+      ]
+    },
+    {
+      "id": "scientific-lectures",
+      "name": "Участие в научных лекциях и семинарах",
+      "rank": "",
+      "defaultWeeks": 1,
+      "duration": "Не указано в извлечённом разделе.",
+      "summary": "В разделе есть заголовок без механических правил.",
+      "automationStatus": "blocked",
+      "automationNotes": [
+        "Нет стоимости, проверок и результата в этой главе."
+      ],
+      "targetActions": [
+        {
+          "id": "scientific-lectures-note",
+          "label": "Ручная заявка",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "invention-exhibition",
+      "name": "Участие в выставках изобретений",
+      "rank": "",
+      "defaultWeeks": 1,
+      "duration": "Не указано в извлечённом разделе.",
+      "summary": "В разделе есть заголовок без механических правил.",
+      "automationStatus": "blocked",
+      "automationNotes": [
+        "Нет механики в разделе."
+      ],
+      "targetActions": [
+        {
+          "id": "invention-exhibition-note",
+          "label": "Ручная заявка",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "charity",
+      "name": "Благотворительность",
+      "rank": "",
+      "defaultWeeks": 1,
+      "duration": "Не указано в извлечённом разделе.",
+      "summary": "В разделе есть заголовок без механических правил.",
+      "automationStatus": "blocked",
+      "automationNotes": [
+        "Нет стоимости и последствий в этой главе."
+      ],
+      "targetActions": [
+        {
+          "id": "charity-note",
+          "label": "Ручная заявка",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "racing",
+      "name": "Участие в гонках",
+      "rank": "",
+      "defaultWeeks": 1,
+      "duration": "Не указано в извлечённом разделе.",
+      "summary": "В разделе есть заголовок без механических правил.",
+      "automationStatus": "blocked",
+      "automationNotes": [
+        "Нет механики гонок в этой главе."
+      ],
+      "targetActions": [
+        {
+          "id": "racing-note",
+          "label": "Ручная заявка",
+          "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        }
+      ]
+    },
+    {
+      "id": "long-project",
+      "name": "Работа над длительным проектом",
+      "rank": "1-9",
+      "defaultWeeks": 1,
+      "duration": "1 рабочая неделя за шаг проекта.",
+      "summary": "Персонаж продвигает длительный проект проверкой, выбранной мастером.",
+      "requirements": [
+        "Мастер и игрок определяют цель, ранг, счётчик и проверки проекта."
+      ],
+      "automationStatus": "partial",
+      "automationNotes": [
+        "Шаблон хранит результат и прогресс, но конкретную проверку мастер должен назначить в заявке."
+      ],
+      "targetActions": [
+        {
+          "id": "long-project-resources",
+          "label": "Ресурсы проекта",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Требования и стоимость зависят от проекта.",
+            "cost": {
+              "amount": 0,
+              "currency": "custom",
+              "formula": "по проекту",
+              "payer": "manual",
+              "timing": "manual"
+            }
+          }
+        },
+        {
+          "id": "long-project-check",
+          "label": "Проверка проекта",
+          "actionType": "freeform",
+          "outcomeMode": "dc-sum",
+          "recordMode": "group-sum"
+        },
+        {
+          "id": "long-project-result",
+          "label": "Сдвиг счётчика",
+          "actionType": "downtimeResult",
+          "outcomeMode": "thresholds",
+          "recordMode": "gm",
+          "thresholds": [
+            {
+              "to": 0,
+              "label": "Без прогресса",
+              "outcome": "failure"
+            },
+            {
+              "from": 1,
+              "label": "Один шаг",
+              "outcome": "success"
+            },
+            {
+              "from": 5,
+              "label": "Дополнительные шаги за каждые 5 сверх DC",
+              "outcome": "great-success"
+            }
+          ],
+          "downtimeEffect": {
+            "trigger": "complete",
+            "adapter": "rebreya",
+            "template": "project-progress"
+          }
+        }
+      ]
+    },
+    {
+      "id": "construct-crafting",
+      "name": "Создание конструкта",
+      "rank": "0-9",
+      "defaultWeeks": 1,
+      "duration": "1+ рабочая неделя, пока конструкт не будет завершён.",
+      "summary": "Создание конструкта по правилам конструкта с мастерской нужного ранга.",
+      "requirements": [
+        "Достаточно золота для выбранного конструкта.",
+        "Своя мастерская с рангом не ниже ранга конструкта."
+      ],
+      "automationStatus": "needs-work",
+      "automationNotes": [
+        "Нужна отдельная таблица конструктов и связка с крафтовым прогрессом."
+      ],
+      "targetActions": [
+        {
+          "id": "construct-resources",
+          "label": "Стоимость конструкта",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Цена и модификаторы берутся из правил создания конструкта.",
+            "cost": {
+              "amount": 0,
+              "currency": "gp",
+              "formula": "по выбранному конструкту",
+              "payer": "character",
+              "timing": "manual"
+            }
+          }
+        },
+        {
+          "id": "construct-progress",
+          "label": "Прогресс конструкта",
+          "actionType": "downtimeResult",
+          "outcomeMode": "sum",
+          "recordMode": "group-sum"
+        }
+      ]
+    }
+  ]
+}
