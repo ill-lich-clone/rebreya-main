@@ -4774,6 +4774,30 @@ summary:focus-visible {
   max-width: 420px;
 }
 
+.rm-downtime-resources-panel,
+.rm-downtime-resource-purchases {
+  display: grid;
+  gap: 8px;
+}
+
+.rm-downtime-resource-purchases header h4 {
+  margin: 0;
+  color: #f6e8ca;
+}
+
+.rm-downtime-resource-purchase {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.4fr) minmax(90px, 0.7fr) minmax(90px, 0.7fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(130px, 1fr);
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(214, 177, 104, 0.14);
+  background: rgba(5, 4, 3, 0.24);
+}
+
+.rm-downtime-resource-purchase[hidden] {
+  display: none !important;
+}
+
 .rm-downtime-thresholds {
   display: grid;
   gap: 6px;
@@ -6325,6 +6349,7 @@ summary:focus-visible {
   .rm-downtime-target-dialog__grid,
   .rm-downtime-target-dialog__choices,
   .rm-downtime-target-choice__body,
+  .rm-downtime-resource-purchase,
   .rm-trader-v2-mode,
   .rm-trader-v2-controls {
     grid-template-columns: 1fr;

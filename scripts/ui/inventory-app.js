@@ -35,6 +35,7 @@ const DOWNTIME_STATUS_META = Object.freeze({
 
 const MAX_DOWNTIME_TARGET_ACTIONS = 5;
 const MAX_DOWNTIME_THRESHOLDS = 5;
+const MAX_DOWNTIME_RESOURCE_PURCHASES = 3;
 const DOWNTIME_TARGET_DIALOG_DIMENSIONS = Object.freeze({
   basis: { width: 620, height: 360 },
   variants: { width: 820, height: 560 },
@@ -44,6 +45,7 @@ const DOWNTIME_TARGET_DIALOG_DIMENSIONS = Object.freeze({
 
 const DOWNTIME_ACTION_TYPE_OPTIONS = Object.freeze([
   { value: "check", label: "Проверка", help: "Одна проверка характеристики, навыка, инструмента, действия или атаки." },
+  { value: "resources", label: "Ресурсы", help: "Стоимость простоя, нарративные требования и опциональные покупки бонусов." },
   { value: "choice", label: "Выбор проверки", help: "Мастер задаёт допустимые варианты, игрок выбирает один перед броском." },
   { value: "downtimeResult", label: "Итог простоя", help: "Общий итог по всем проверкам заявки: сумма, успехи, пороги и итоговые эффекты." },
   { value: "tool", label: "Инструмент", help: "Запрос владения инструментом из листа персонажа." },
@@ -52,11 +54,8 @@ const DOWNTIME_ACTION_TYPE_OPTIONS = Object.freeze([
   { value: "freeform", label: "Свободный итог", help: "Задача без фиксированного броска; мастер оценивает итог вручную." }
 ]);
 
-const DOWNTIME_ACTION_TYPE_SELECT_OPTIONS = Object.freeze([
-  DOWNTIME_ACTION_TYPE_OPTIONS[0],
-  DOWNTIME_ACTION_TYPE_OPTIONS[2],
-  DOWNTIME_ACTION_TYPE_OPTIONS[6]
-]);
+const DOWNTIME_ACTION_TYPE_SELECT_OPTIONS = Object.freeze(DOWNTIME_ACTION_TYPE_OPTIONS
+  .filter((option) => ["check", "resources", "downtimeResult", "freeform"].includes(option.value)));
 
 const DOWNTIME_SOURCE_TYPE_OPTIONS = Object.freeze([
   { value: "ability", label: "Характеристика", help: "Чистая проверка характеристики без навыка." },
@@ -157,6 +156,39 @@ const DOWNTIME_RECORD_MODE_OPTIONS = Object.freeze([
   { value: "total", label: "Только total", help: "Сохранить только число броска." },
   { value: "group-sum", label: "Сумма группы", help: "Добавить результат к общей сумме заявки." },
   { value: "gm", label: "Решение мастера", help: "Оставить итог на ручное решение мастера." }
+]);
+
+const DOWNTIME_RESOURCE_CURRENCY_OPTIONS = Object.freeze([
+  { value: "gp", label: "зм", help: "Золотые монеты." },
+  { value: "sp", label: "см", help: "Серебряные монеты." },
+  { value: "cp", label: "мм", help: "Медные монеты." },
+  { value: "custom", label: "ресурс", help: "Нестандартный ресурс группы или предмет." }
+]);
+
+const DOWNTIME_RESOURCE_PAYER_OPTIONS = Object.freeze([
+  { value: "character", label: "персонаж", help: "Платит персонаж заявки." },
+  { value: "group", label: "группа", help: "Платит партийная группа." },
+  { value: "manual", label: "мастер", help: "Мастер списывает вручную." }
+]);
+
+const DOWNTIME_RESOURCE_TIMING_OPTIONS = Object.freeze([
+  { value: "onApproval", label: "при одобрении", help: "Резервировать или списывать после одобрения мастером." },
+  { value: "onStart", label: "при старте", help: "Списывать перед выполнением проверок." },
+  { value: "onComplete", label: "при завершении", help: "Списывать после решения заявки." },
+  { value: "manual", label: "вручную", help: "Только запись для мастера без автоматического действия." }
+]);
+
+const DOWNTIME_PURCHASE_EFFECT_OPTIONS = Object.freeze([
+  { value: "bonus", label: "бонус", help: "Добавить число или формулу к броску." },
+  { value: "advantage", label: "преимущество", help: "Дать преимущество на подходящую проверку." },
+  { value: "unlock", label: "доступ", help: "Открыть дополнительный вариант или результат." }
+]);
+
+const DOWNTIME_PURCHASE_SCOPE_OPTIONS = Object.freeze([
+  { value: "next-check", label: "следующая проверка", help: "Применить к следующему броску этой заявки." },
+  { value: "request", label: "вся заявка", help: "Применить ко всему простою." },
+  { value: "outcome", label: "итог", help: "Применить к итоговому подсчёту." },
+  { value: "manual", label: "мастер решит", help: "Мастер применит покупку вручную." }
 ]);
 
 const DOWNTIME_THRESHOLD_OUTCOME_OPTIONS = Object.freeze([
@@ -572,6 +604,151 @@ function buildDowntimeTargetChoiceRow(choice = {}, index = 0, { visible = true, 
   `;
 }
 
+function normalizeDowntimeResources(action = {}) {
+  const resources = action.resources && typeof action.resources === "object" && !Array.isArray(action.resources)
+    ? action.resources
+    : {};
+  const cost = resources.cost && typeof resources.cost === "object" && !Array.isArray(resources.cost)
+    ? resources.cost
+    : {};
+  return {
+    narrative: cleanText(resources.narrative),
+    cost: {
+      amount: toInteger(cost.amount, 0),
+      currency: cleanText(cost.currency) || "gp",
+      payer: cleanText(cost.payer) || "character",
+      timing: cleanText(cost.timing) || "onApproval"
+    },
+    purchases: Array.isArray(resources.purchases) ? resources.purchases.slice(0, MAX_DOWNTIME_RESOURCE_PURCHASES) : []
+  };
+}
+
+function normalizeDowntimeResourcePurchase(purchase = {}) {
+  const cost = purchase.cost && typeof purchase.cost === "object" && !Array.isArray(purchase.cost)
+    ? purchase.cost
+    : {};
+  const effect = purchase.effect && typeof purchase.effect === "object" && !Array.isArray(purchase.effect)
+    ? purchase.effect
+    : {};
+  return {
+    label: cleanText(purchase.label),
+    cost: {
+      amount: toInteger(cost.amount, 0),
+      currency: cleanText(cost.currency) || "gp"
+    },
+    effect: {
+      type: cleanText(effect.type) || "bonus",
+      value: cleanText(effect.value)
+    },
+    scope: cleanText(purchase.scope) || "next-check"
+  };
+}
+
+function buildDowntimeResourcePurchaseRow(purchase = {}, index = 0, { visible = true } = {}) {
+  const safePurchase = normalizeDowntimeResourcePurchase(purchase);
+  const hidden = visible ? "" : " hidden";
+  return `
+    <div class="rm-downtime-resource-purchase" data-resource-purchase-row data-purchase-index="${index}"${hidden}>
+      <div class="rm-field">
+        <label title="Название покупки, которое увидит мастер и позже игрок.">Покупка</label>
+        <input type="text" value="${foundry.utils.escapeHTML(safePurchase.label)}" data-field="target-action-purchase-label" placeholder="Нанять помощников">
+      </div>
+      <div class="rm-field">
+        <label title="Сколько стоит эта опция.">Цена</label>
+        <input type="number" min="0" step="1" value="${safePurchase.cost.amount || ""}" data-field="target-action-purchase-amount">
+      </div>
+      <div class="rm-field">
+        <label title="Валюта или тип ресурса.">Валюта</label>
+        <select data-field="target-action-purchase-currency">${renderSelectOptions(DOWNTIME_RESOURCE_CURRENCY_OPTIONS, safePurchase.cost.currency)}</select>
+      </div>
+      <div class="rm-field">
+        <label title="Что даёт покупка.">Эффект</label>
+        <select data-field="target-action-purchase-effect-type">${renderSelectOptions(DOWNTIME_PURCHASE_EFFECT_OPTIONS, safePurchase.effect.type)}</select>
+      </div>
+      <div class="rm-field">
+        <label title="Число, ключ Foundry или формула: 2, @prof, 1d4. Для преимущества можно оставить пустым.">Значение</label>
+        <input type="text" value="${foundry.utils.escapeHTML(safePurchase.effect.value)}" data-field="target-action-purchase-effect-value" placeholder="+2, @prof, 1d4">
+      </div>
+      <div class="rm-field">
+        <label title="Куда применить покупку.">Куда</label>
+        <select data-field="target-action-purchase-scope">${renderSelectOptions(DOWNTIME_PURCHASE_SCOPE_OPTIONS, safePurchase.scope)}</select>
+      </div>
+    </div>
+  `;
+}
+
+function buildDowntimeResourcesPanel(action = {}) {
+  const resources = normalizeDowntimeResources(action);
+  const visiblePurchaseCount = resources.purchases.length;
+  const purchaseRows = Array.from({ length: MAX_DOWNTIME_RESOURCE_PURCHASES }, (_entry, index) =>
+    buildDowntimeResourcePurchaseRow(resources.purchases[index] ?? {}, index, { visible: index < visiblePurchaseCount }));
+  return `
+    <div class="rm-downtime-resources-panel" data-resource-panel>
+      <div class="rm-downtime-target-dialog__grid">
+        <div class="rm-field">
+          <label title="Базовая стоимость простоя. Позже она будет списываться через экономику группы или персонажа.">Стоимость</label>
+          <input type="number" min="0" step="1" value="${resources.cost.amount || ""}" data-field="target-action-resource-amount">
+        </div>
+        <div class="rm-field">
+          <label title="Валюта или тип ресурса для стоимости простоя.">Валюта</label>
+          <select data-field="target-action-resource-currency">${renderSelectOptions(DOWNTIME_RESOURCE_CURRENCY_OPTIONS, resources.cost.currency)}</select>
+        </div>
+        <div class="rm-field">
+          <label title="Из какого кошелька списывать стоимость.">Платит</label>
+          <select data-field="target-action-resource-payer">${renderSelectOptions(DOWNTIME_RESOURCE_PAYER_OPTIONS, resources.cost.payer)}</select>
+        </div>
+        <div class="rm-field">
+          <label title="Когда эта стоимость должна резервироваться или списываться.">Когда</label>
+          <select data-field="target-action-resource-timing">${renderSelectOptions(DOWNTIME_RESOURCE_TIMING_OPTIONS, resources.cost.timing)}</select>
+        </div>
+      </div>
+      <div class="rm-field">
+        <label title="Нарративные требования: библиотека, мудрец, город, материалы, доступ.">Нарратив</label>
+        <textarea rows="3" data-field="target-action-resource-narrative" placeholder="Что нужно для этого простоя">${foundry.utils.escapeHTML(resources.narrative)}</textarea>
+      </div>
+      <div class="rm-downtime-resource-purchases">
+        <header>
+          <h4>Опционально докупить</h4>
+        </header>
+        ${purchaseRows.join("")}
+        <button type="button" class="rm-button rm-downtime-add-alternative" data-action="target-action-add-purchase" title="Добавить ещё одну покупку." ${visiblePurchaseCount >= MAX_DOWNTIME_RESOURCE_PURCHASES ? "disabled" : ""}>+ Покупка</button>
+      </div>
+    </div>
+  `;
+}
+
+function readDowntimeResourcePurchase(row) {
+  const purchase = {
+    label: readFieldValue(row, "target-action-purchase-label"),
+    cost: {
+      amount: toInteger(readFieldValue(row, "target-action-purchase-amount"), 0),
+      currency: readFieldValue(row, "target-action-purchase-currency") || "gp"
+    },
+    effect: {
+      type: readFieldValue(row, "target-action-purchase-effect-type") || "bonus",
+      value: readFieldValue(row, "target-action-purchase-effect-value")
+    },
+    scope: readFieldValue(row, "target-action-purchase-scope") || "next-check"
+  };
+  return purchase;
+}
+
+function readDowntimeResources(root) {
+  const purchases = Array.from(root?.querySelectorAll?.("[data-resource-purchase-row]:not([hidden])") ?? [])
+    .map((row) => readDowntimeResourcePurchase(row))
+    .filter((purchase) => purchase.label || purchase.cost.amount > 0 || purchase.effect.value || purchase.effect.type === "advantage");
+  return {
+    narrative: readFieldValue(root, "target-action-resource-narrative"),
+    cost: {
+      amount: toInteger(readFieldValue(root, "target-action-resource-amount"), 0),
+      currency: readFieldValue(root, "target-action-resource-currency") || "gp",
+      payer: readFieldValue(root, "target-action-resource-payer") || "character",
+      timing: readFieldValue(root, "target-action-resource-timing") || "onApproval"
+    },
+    purchases
+  };
+}
+
 function normalizeDowntimeThreshold(threshold = {}, index = 0) {
   const defaults = [
     { from: 0, to: 9, outcome: "failure" },
@@ -711,6 +888,12 @@ function buildEffectLabel(effect, { downtime = false } = {}) {
 }
 
 function buildOutcomeSummary(check, outcomeMode) {
+  if (cleanText(check?.actionType) === "resources") {
+    const resources = normalizeDowntimeResources(check);
+    const amount = toInteger(resources.cost.amount, 0);
+    const currency = getOptionLabel(DOWNTIME_RESOURCE_CURRENCY_OPTIONS, resources.cost.currency, resources.cost.currency);
+    return amount > 0 ? `${amount} ${currency}` : "Ресурсы";
+  }
   const numericDc = Number(check?.dc);
   const hasDc = Number.isFinite(numericDc) && numericDc > 0;
   switch (outcomeMode) {
@@ -733,7 +916,7 @@ function buildOutcomeSummary(check, outcomeMode) {
 
 function mapDowntimeTargetAction(check, index) {
   const actionType = cleanText(check?.actionType) || "check";
-  const sourceType = cleanText(check?.sourceType) || "skill";
+  const sourceType = actionType === "resources" ? "" : (cleanText(check?.sourceType) || "skill");
   const outcomeMode = cleanText(check?.outcomeMode) || (cleanText(check?.dc) ? "dc" : "freeform");
   const recordMode = cleanText(check?.recordMode) || "total-success";
   const checkEffectLabel = buildEffectLabel(check?.checkEffect);
@@ -747,12 +930,14 @@ function mapDowntimeTargetAction(check, index) {
     outcomeMode,
     recordMode,
     actionTypeLabel: getOptionLabel(DOWNTIME_ACTION_TYPE_OPTIONS, actionType, actionType),
-    sourceTypeLabel: getOptionLabel(DOWNTIME_SOURCE_TYPE_OPTIONS, sourceType, sourceType),
-    abilityLabel: getOptionLabel(DOWNTIME_ABILITY_OPTIONS, check?.ability, cleanText(check?.ability)),
+    sourceTypeLabel: actionType === "resources" ? "Ресурсы" : getOptionLabel(DOWNTIME_SOURCE_TYPE_OPTIONS, sourceType, sourceType),
+    abilityLabel: actionType === "resources" ? "" : getOptionLabel(DOWNTIME_ABILITY_OPTIONS, check?.ability, cleanText(check?.ability)),
     outcomeModeLabel: getOptionLabel(DOWNTIME_OUTCOME_MODE_OPTIONS, outcomeMode, outcomeMode),
     outcomeSummary: buildOutcomeSummary(check, outcomeMode),
     recordModeLabel: getOptionLabel(DOWNTIME_RECORD_MODE_OPTIONS, recordMode, recordMode),
-    targetLabel: cleanText(check?.targetLabel) || cleanText(check?.target),
+    targetLabel: actionType === "resources"
+      ? cleanText(check?.resources?.narrative)
+      : (cleanText(check?.targetLabel) || cleanText(check?.target)),
     checkEffectLabel,
     downtimeEffectLabel,
     hasCheckEffect: Boolean(checkEffectLabel),
@@ -1950,6 +2135,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const choices = buildDowntimeTargetChoices(action, actor);
     const visibleChoiceCount = Math.max(1, choices.length);
     const selectedActionType = getSelectableDowntimeActionType(action.actionType);
+    const isResourceAction = selectedActionType === "resources";
     const choiceRows = Array.from({ length: MAX_DOWNTIME_TARGET_ACTIONS }, (_entry, index) =>
       buildDowntimeTargetChoiceRow(choices[index] ?? {}, index, { visible: index < visibleChoiceCount, actor }));
     const checkEffect = action.checkEffect && typeof action.checkEffect === "object" ? action.checkEffect : {};
@@ -1984,20 +2170,26 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         <section class="rm-downtime-target-dialog__section" data-step-panel="variants" hidden>
           <header>
-            <h4 data-target-choice-heading>${buildDowntimeTargetChoiceHeading(visibleChoiceCount)}</h4>
+            <h4 data-target-choice-heading${isResourceAction ? " hidden" : ""}>${buildDowntimeTargetChoiceHeading(visibleChoiceCount)}</h4>
+            <h4 data-resource-heading${isResourceAction ? "" : " hidden"}>Ресурсы</h4>
           </header>
-          <div class="rm-downtime-target-choice-list">
-            ${choiceRows.join("")}
+          <div data-target-choice-panel${isResourceAction ? " hidden" : ""}>
+            <div class="rm-downtime-target-choice-list">
+              ${choiceRows.join("")}
+            </div>
+            <button
+              type="button"
+              class="rm-button rm-downtime-add-alternative"
+              data-action="target-action-add-alternative"
+              title="Добавляет ещё один структурный вариант, который игрок сможет выбрать вместо основного."
+              ${visibleChoiceCount >= MAX_DOWNTIME_TARGET_ACTIONS ? "disabled" : ""}
+            >
+              + Добавить альтернативу
+            </button>
           </div>
-          <button
-            type="button"
-            class="rm-button rm-downtime-add-alternative"
-            data-action="target-action-add-alternative"
-            title="Добавляет ещё один структурный вариант, который игрок сможет выбрать вместо основного."
-            ${visibleChoiceCount >= MAX_DOWNTIME_TARGET_ACTIONS ? "disabled" : ""}
-          >
-            + Добавить альтернативу
-          </button>
+          <div${isResourceAction ? "" : " hidden"} data-resource-panel-shell>
+            ${buildDowntimeResourcesPanel(action)}
+          </div>
         </section>
 
         <section class="rm-downtime-target-dialog__section" data-step-panel="outcome" hidden>
@@ -2101,10 +2293,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #readDowntimeTargetActionDialog(root, existingAction = {}, existingActions = [], actor = null) {
-    const choiceRows = Array.from(root?.querySelectorAll?.("[data-target-choice]:not([hidden])") ?? []);
-    const choices = choiceRows.length
-      ? choiceRows.map((row) => readDowntimeTargetChoice(row, actor))
-      : [normalizeDowntimeTargetChoice(existingAction, {}, actor)];
+    const selectedActionType = getSelectableDowntimeActionType(readFieldValue(root, "target-action-type"));
+    const isResourceAction = selectedActionType === "resources";
+    const choiceRows = isResourceAction ? [] : Array.from(root?.querySelectorAll?.("[data-target-choice]:not([hidden])") ?? []);
+    const choices = isResourceAction
+      ? []
+      : (choiceRows.length
+        ? choiceRows.map((row) => readDowntimeTargetChoice(row, actor))
+        : [normalizeDowntimeTargetChoice(existingAction, {}, actor)]);
     const primaryChoice = choices[0] ?? normalizeDowntimeTargetChoice(existingAction);
     const checkEffect = {
       trigger: readFieldValue(root, "target-action-check-effect-trigger") || "none",
@@ -2121,15 +2317,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       .map((row) => readDowntimeThreshold(row))
       .filter((threshold) => threshold.from || threshold.to || threshold.outcome !== "gm");
 
-    const selectedActionType = getSelectableDowntimeActionType(readFieldValue(root, "target-action-type"));
     const action = {
       id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
-      label: primaryChoice.label || primaryChoice.targetLabel || "Целевое действие",
+      label: isResourceAction ? "Ресурсы" : (primaryChoice.label || primaryChoice.targetLabel || "Целевое действие"),
       actionType: selectedActionType === "check" && choices.length > 1 ? "choice" : selectedActionType,
-      sourceType: primaryChoice.sourceType,
-      ability: primaryChoice.ability,
-      target: primaryChoice.target,
-      targetLabel: primaryChoice.targetLabel,
+      sourceType: isResourceAction ? "" : primaryChoice.sourceType,
+      ability: isResourceAction ? "" : primaryChoice.ability,
+      target: isResourceAction ? "" : primaryChoice.target,
+      targetLabel: isResourceAction ? "" : primaryChoice.targetLabel,
       outcomeMode,
       dc: toInteger(readFieldValue(root, "target-action-dc"), 0),
       rollMode: primaryChoice.rollMode || "normal",
@@ -2148,6 +2343,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (outcomeMode === "thresholds" && thresholds.length) {
       action.thresholds = thresholds;
     }
+    if (isResourceAction) {
+      action.resources = readDowntimeResources(root);
+    }
     return action;
   }
 
@@ -2155,6 +2353,12 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const rows = Array.from(root?.querySelectorAll?.("[data-target-choice]") ?? []);
     const addButton = root?.querySelector?.("[data-action='target-action-add-alternative']");
     const choiceHeading = root?.querySelector?.("[data-target-choice-heading]");
+    const actionTypeSelect = root?.querySelector?.("[data-field='target-action-type']");
+    const resourceHeading = root?.querySelector?.("[data-resource-heading]");
+    const choicePanel = root?.querySelector?.("[data-target-choice-panel]");
+    const resourcePanelShell = root?.querySelector?.("[data-resource-panel-shell]");
+    const addPurchaseButton = root?.querySelector?.("[data-action='target-action-add-purchase']");
+    const purchaseRows = Array.from(root?.querySelectorAll?.("[data-resource-purchase-row]") ?? []);
     const stepButtons = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? []);
     const stepPanels = Array.from(root?.querySelectorAll?.("[data-step-panel]") ?? []);
     const previousButton = root?.querySelector?.("[data-action='target-action-previous']");
@@ -2208,6 +2412,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
 
     const getVisibleChoiceRows = () => rows.filter((row) => row.hidden !== true);
+    const isResourceAction = () => cleanText(actionTypeSelect?.value) === "resources";
     const updateChoiceListState = () => {
       const visibleRows = getVisibleChoiceRows();
       if (choiceHeading) {
@@ -2228,6 +2433,24 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
       });
     };
+    const updateActionTypePanels = () => {
+      const resourceActive = isResourceAction();
+      if (choiceHeading) {
+        choiceHeading.hidden = resourceActive;
+      }
+      if (resourceHeading) {
+        resourceHeading.hidden = !resourceActive;
+      }
+      if (choicePanel) {
+        choicePanel.hidden = resourceActive;
+      }
+      if (resourcePanelShell) {
+        resourcePanelShell.hidden = !resourceActive;
+      }
+    };
+
+    actionTypeSelect?.addEventListener?.("change", updateActionTypePanels);
+    updateActionTypePanels();
 
     if (addButton && rows.length) {
       addButton.addEventListener?.("click", (event) => {
@@ -2242,6 +2465,24 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         nextRow.open = true;
         updateChoiceListState();
       });
+    }
+
+    if (addPurchaseButton && purchaseRows.length) {
+      const updatePurchaseButtonState = () => {
+        addPurchaseButton.disabled = !purchaseRows.some((row) => row.hidden === true);
+      };
+      addPurchaseButton.addEventListener?.("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation?.();
+        const nextRow = purchaseRows.find((row) => row.hidden === true);
+        if (!nextRow) {
+          updatePurchaseButtonState();
+          return;
+        }
+        nextRow.hidden = false;
+        updatePurchaseButtonState();
+      });
+      updatePurchaseButtonState();
     }
 
     const updateOutcomeFields = () => {

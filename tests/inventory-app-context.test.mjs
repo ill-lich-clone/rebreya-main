@@ -724,8 +724,9 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-action-target-label\""), false);
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-choice-roll-mode\""), false);
     const actionTypeSelect = targetDialog?.config?.content.match(/<select data-field="target-action-type">([\s\S]*?)<\/select>/u)?.[1] ?? "";
-    assert.equal((actionTypeSelect.match(/<option/g) ?? []).length, 3);
+    assert.equal((actionTypeSelect.match(/<option/g) ?? []).length, 4);
     assert.equal(actionTypeSelect.includes(">Проверка<"), true);
+    assert.equal(actionTypeSelect.includes(">Ресурсы<"), true);
     assert.equal(actionTypeSelect.includes(">Итог простоя<"), true);
     assert.equal(actionTypeSelect.includes(">Свободный итог<"), true);
     assert.equal(actionTypeSelect.includes(">Выбор проверки<"), false);
@@ -1050,6 +1051,166 @@ test("InventoryApp downtime target dialog edits and removes variant choices", as
     assert.equal(updateCall?.[2]?.[0]?.actionType, "check");
     assert.equal(updateCall?.[2]?.[0]?.choices.length, 1);
     assert.equal(updateCall?.[2]?.[0]?.choices[0].target, "prc");
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp downtime target dialog saves resource costs and optional purchases", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousUi = globalThis.ui;
+  globalThis.ui = {
+    notifications: {
+      error() {},
+      info() {}
+    }
+  };
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      this.closed = false;
+      Dialog.instances.push(this);
+    }
+
+    setPosition() {}
+
+    close() {
+      this.closed = true;
+      this.config.close?.();
+    }
+
+    render() {}
+  };
+
+  const calls = [];
+  const targetButton = createFakeControl({
+    dataset: {
+      action: "downtime-target-action",
+      requestId: "downtime-1"
+    }
+  });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='downtime-target-action']" ? [targetButton] : [];
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?resource-action=${Date.now()}`);
+    const app = new InventoryApp(createModuleApi({
+      calls,
+      downtimeSnapshot: {
+        canManage: true,
+        canSubmit: false,
+        members: [],
+        actionCatalog: [],
+        requests: [{
+          id: "downtime-1",
+          actorId: "actor-a",
+          actorName: "Asha",
+          actionId: "research",
+          actionLabel: "Исследование",
+          title: "Research",
+          weeks: 1,
+          status: "pending",
+          checks: []
+        }]
+      }
+    }));
+    app.element = root;
+    await app._onRender({}, {});
+
+    const targetActionPromise = dispatchClick(targetButton);
+    await new Promise((resolve) => setImmediate(resolve));
+    const dialog = globalThis.Dialog.instances.at(-1);
+    assert.equal(dialog.config.content.includes(">Ресурсы<"), true);
+    assert.equal(dialog.config.content.includes("data-field=\"target-action-resource-amount\""), true);
+    assert.equal(dialog.config.content.includes("data-field=\"target-action-resource-narrative\""), true);
+    assert.equal(dialog.config.content.includes("data-resource-purchase-row"), true);
+
+    const saveButton = createFakeControl({ dataset: { action: "target-action-save" } });
+    const values = new Map([
+      ["[data-field='target-action-type']", "resources"],
+      ["[data-field='target-action-resource-amount']", "10000"],
+      ["[data-field='target-action-resource-currency']", "gp"],
+      ["[data-field='target-action-resource-payer']", "character"],
+      ["[data-field='target-action-resource-timing']", "onApproval"],
+      ["[data-field='target-action-resource-narrative']", "Доступ к библиотеке и мудрецу."],
+      ["[data-field='target-action-outcome-mode']", "freeform"],
+      ["[data-field='target-action-dc']", ""],
+      ["[data-field='target-action-record-mode']", "gm"]
+    ]);
+    const purchaseValues = new Map([
+      ["[data-field='target-action-purchase-label']", "Нанять ассистента"],
+      ["[data-field='target-action-purchase-amount']", "250"],
+      ["[data-field='target-action-purchase-currency']", "gp"],
+      ["[data-field='target-action-purchase-effect-type']", "bonus"],
+      ["[data-field='target-action-purchase-effect-value']", "1d4"],
+      ["[data-field='target-action-purchase-scope']", "next-check"]
+    ]);
+    const purchaseRow = createFakeElement();
+    purchaseRow.hidden = false;
+    purchaseRow.querySelector = (selector) => ({ value: purchaseValues.get(selector) ?? "" });
+    const dialogRoot = createFakeElement();
+    dialogRoot.querySelector = (selector) => {
+      if (selector === "[data-action='target-action-save']") return saveButton;
+      return { value: values.get(selector) ?? "" };
+    };
+    dialogRoot.querySelectorAll = (selector) => {
+      if (selector === "[data-target-choice]:not([hidden])") return [];
+      if (selector === "[data-resource-purchase-row]:not([hidden])") return [purchaseRow];
+      return [];
+    };
+    dialog.config.render(dialogRoot);
+
+    await dispatchClick(saveButton);
+    await targetActionPromise;
+
+    const updateCall = calls.find((call) => call[0] === "setDowntimeRequestChecks");
+    assert.equal(updateCall?.[1], "downtime-1");
+    assert.equal(updateCall?.[2]?.length, 1);
+    assert.deepEqual(updateCall?.[2]?.[0], {
+      id: "check-1",
+      label: "Ресурсы",
+      actionType: "resources",
+      sourceType: "",
+      ability: "",
+      target: "",
+      targetLabel: "",
+      outcomeMode: "freeform",
+      dc: 0,
+      rollMode: "normal",
+      recordMode: "gm",
+      choices: [],
+      resources: {
+        narrative: "Доступ к библиотеке и мудрецу.",
+        cost: {
+          amount: 10000,
+          currency: "gp",
+          payer: "character",
+          timing: "onApproval"
+        },
+        purchases: [{
+          label: "Нанять ассистента",
+          cost: {
+            amount: 250,
+            currency: "gp"
+          },
+          effect: {
+            type: "bonus",
+            value: "1d4"
+          },
+          scope: "next-check"
+        }]
+      }
+    });
   }
   finally {
     globalThis.Dialog = previousDialog;
