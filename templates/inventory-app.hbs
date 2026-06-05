@@ -622,6 +622,8 @@
                     type="button"
                     class="rm-button rm-button--small rm-button--danger"
                     data-action="downtime-clear-history"
+                    title="Очистить все заявки, целевые действия и решения мастера. Резерв открытых заявок вернётся в свободные недели."
+                    data-tooltip="Очистить все заявки, целевые действия и решения мастера. Резерв открытых заявок вернётся в свободные недели."
                     {{#if downtime.emptyRequests}}disabled{{/if}}
                   >
                     <i class="fa-solid fa-trash-can"></i>
@@ -650,10 +652,10 @@
 
                     {{#if ../downtime.canManage}}
                       <div class="rm-downtime-request__actions">
-                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-status" data-request-id="{{id}}" data-status="approved" {{#unless canApprove}}disabled{{/unless}}>Одобрить</button>
-                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-status" data-request-id="{{id}}" data-status="returned" data-result="{{result}}" {{#unless canReturn}}disabled{{/unless}}>Вернуть</button>
-                        <button type="button" class="rm-button rm-button--small rm-button--danger" data-action="downtime-status" data-request-id="{{id}}" data-status="rejected" data-result="{{result}}" {{#unless canReject}}disabled{{/unless}}>Отклонить</button>
-                        <button type="button" class="rm-button rm-button--small rm-button--primary" data-action="downtime-status" data-request-id="{{id}}" data-status="completed" data-result="{{result}}" {{#unless canComplete}}disabled{{/unless}}>Завершить</button>
+                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-status" data-request-id="{{id}}" data-status="approved" title="Одобрить: оставить недели в резерве и разрешить игроку выполнять целевые действия." data-tooltip="Одобрить: оставить недели в резерве и разрешить игроку выполнять целевые действия." {{#unless canApprove}}disabled{{/unless}}>Одобрить</button>
+                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-status" data-request-id="{{id}}" data-status="returned" data-result="{{result}}" title="Вернуть: снять резерв, вернуть недели игроку и отправить заявку на доработку." data-tooltip="Вернуть: снять резерв, вернуть недели игроку и отправить заявку на доработку." {{#unless canReturn}}disabled{{/unless}}>Вернуть</button>
+                        <button type="button" class="rm-button rm-button--small rm-button--danger" data-action="downtime-status" data-request-id="{{id}}" data-status="rejected" data-result="{{result}}" title="Отклонить: отказать в заявке и вернуть зарезервированные недели." data-tooltip="Отклонить: отказать в заявке и вернуть зарезервированные недели." {{#unless canReject}}disabled{{/unless}}>Отклонить</button>
+                        <button type="button" class="rm-button rm-button--small rm-button--primary" data-action="downtime-status" data-request-id="{{id}}" data-status="completed" data-result="{{result}}" title="Завершить: списать резерв в потраченные недели и закрыть заявку." data-tooltip="Завершить: списать резерв в потраченные недели и закрыть заявку." {{#unless canComplete}}disabled{{/unless}}>Завершить</button>
                         <button
                           type="button"
                           class="rm-button rm-button--small rm-button--secondary"

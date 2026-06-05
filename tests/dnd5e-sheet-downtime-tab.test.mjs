@@ -981,6 +981,107 @@ test("character downtime roll buttons use native dnd5e skill rolls and record th
   }
 });
 
+test("character downtime freeform rolls record totals without synthetic DC success", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-roll-freeform=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    actor.rollSkill = async (config) => {
+      calls.push(["rollSkill", config]);
+      return { total: 21 };
+    };
+
+    const rollButton = new stubs.HTMLElement({
+      dataset: {
+        action: "character-downtime-roll",
+        requestId: "downtime-1",
+        checkId: "check-1",
+        groupId: "group-a",
+        sourceType: "skill",
+        ability: "dex",
+        target: "acr",
+        targetLabel: "Акробатика",
+        outcomeMode: "freeform",
+        dc: "0"
+      }
+    });
+    const panel = new stubs.HTMLElement();
+    rollButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-roll']") return rollButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(rollButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async recordDowntimeCheckResult(requestId, checkId, result, options) {
+        calls.push(["recordDowntimeCheckResult", requestId, checkId, result, options]);
+        return { id: requestId, actorId: "actor-a" };
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of root.listeners.click) {
+      await listener({
+        target: rollButton,
+        preventDefault() {
+          calls.push(["preventDefault"]);
+        },
+        stopPropagation() {
+          calls.push(["stopPropagation"]);
+        }
+      });
+    }
+
+    assert.deepEqual(calls.filter((call) => call[0] === "recordDowntimeCheckResult"), [[
+      "recordDowntimeCheckResult",
+      "downtime-1",
+      "check-1",
+      {
+        total: 21,
+        sourceType: "skill",
+        ability: "dex",
+        target: "acr",
+        targetLabel: "Акробатика",
+        outcomeMode: "freeform"
+      },
+      {
+        actorId: "actor-a",
+        groupId: "group-a"
+      }
+    ]]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("character downtime roll buttons use native dnd5e saving throws", async () => {
   const stubs = installSheetExtensionStubs();
   try {

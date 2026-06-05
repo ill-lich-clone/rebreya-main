@@ -1082,6 +1082,10 @@ function getDialogRoot(html) {
   return null;
 }
 
+function hasOpenDowntimeTargetActionDialog() {
+  return Boolean(globalThis.document?.querySelector?.(".rm-downtime-target-action-window"));
+}
+
 function readCurrencyValuesFromRoot(root) {
   return {
     pp: toInteger(root?.querySelector("[data-field='currency-pp']")?.value, 0),
@@ -1381,7 +1385,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       this.actionFeedback = null;
       this.actionFeedbackTimeout = null;
-      if (getAppElement(this)) {
+      if (getAppElement(this) && !hasOpenDowntimeTargetActionDialog()) {
         this.render({ force: true });
       }
     }, 3500);
@@ -2123,6 +2127,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
 
       dialog.render(true);
+      if (typeof globalThis.window?.setTimeout === "function") {
+        globalThis.window.setTimeout(() => bringAppToFront(dialog), 0);
+      }
     });
   }
 
@@ -2706,7 +2713,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     this.#setActionFeedback("success", `Выдано недель простоя: ${weeks}.`);
     ui.notifications?.info(`Выдано недель простоя: ${weeks}.`);
-    bringAppToFront(this);
   }
 
   async #handleDowntimeRevoke(element) {
@@ -2730,7 +2736,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       : "Свободных недель для списания нет.";
     this.#setActionFeedback("success", message);
     ui.notifications?.info(message);
-    bringAppToFront(this);
   }
 
   async #handleDowntimeClearHistory() {
@@ -2746,7 +2751,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const removedRequests = toInteger(result?.removedRequests, 0);
     this.#setActionFeedback("success", `История простоя очищена. Удалено заявок: ${removedRequests}.`);
     ui.notifications?.info("История простоя очищена.");
-    bringAppToFront(this);
   }
 
   async #handleDowntimeSubmit(element) {
@@ -2768,7 +2772,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.downtimeRequestDescription = "";
     this.#setActionFeedback("success", "Заявка на простой отправлена.");
     ui.notifications?.info("Заявка на простой отправлена.");
-    bringAppToFront(this);
   }
 
   async #handleDowntimeStatus(button) {
@@ -2794,7 +2797,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.moduleApi.setDowntimeRequestStatus(requestId, status, { result });
     this.#setActionFeedback("success", "Статус заявки обновлён.");
     ui.notifications?.info("Статус заявки обновлён.");
-    bringAppToFront(this);
   }
 
   async #handleDowntimeTargetAction(button) {
@@ -2827,7 +2829,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.moduleApi.setDowntimeRequestChecks(requestId, nextActions);
     this.#setActionFeedback("success", "Целевые действия заявки обновлены.");
     ui.notifications?.info("Целевые действия заявки обновлены.");
-    bringAppToFront(this);
   }
 
   async #handleDowntimeRemoveTargetAction(button) {
@@ -2847,7 +2848,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.moduleApi.setDowntimeRequestChecks(requestId, nextActions);
     this.#setActionFeedback("success", "Целевое действие удалено.");
     ui.notifications?.info("Целевое действие удалено.");
-    bringAppToFront(this);
   }
 
   async _onRender(context, options) {

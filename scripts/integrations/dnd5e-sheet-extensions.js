@@ -1,4 +1,5 @@
 ﻿import {
+  DOWNTIME_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
   GEAR_COMPENDIUM_NAME,
   DOWNTIME_ITEM_TYPE,
@@ -662,6 +663,7 @@ const recentCharacterDowntimeSubmitButtons = new WeakMap();
 const recentCharacterDowntimeRollButtons = new WeakMap();
 const characterDowntimeSubmitAbortControllers = new WeakMap();
 const characterDowntimeRollAbortControllers = new WeakMap();
+const characterDowntimeLibraryAbortControllers = new WeakMap();
 let characterDowntimeDocumentSubmitDelegated = false;
 let characterDowntimeDocumentRollDelegated = false;
 const CHARACTER_DOWNTIME_SUBMIT_DEBOUNCE_MS = 750;
@@ -2437,6 +2439,169 @@ async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
   await rerenderActorSheet(app, moduleApi);
 }
 
+function getDowntimeLibraryPack() {
+  return game.packs?.get?.(`world.${DOWNTIME_COMPENDIUM_NAME}`) ?? null;
+}
+
+async function renderDowntimeLibraryPack(pack) {
+  if (!pack || typeof pack.render !== "function") {
+    return;
+  }
+
+  try {
+    await pack.render({ force: true });
+  }
+  catch (_error) {
+    await pack.render(true);
+  }
+}
+
+function stripHtmlText(value = "") {
+  const text = String(value ?? "")
+    .replace(/<style[\s\S]*?<\/style>/giu, " ")
+    .replace(/<script[\s\S]*?<\/script>/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  return text.length > 260 ? `${text.slice(0, 257).trim()}...` : text;
+}
+
+function normalizeDowntimeLibraryRecord(pack, row = {}) {
+  const uuid = getIndexRowUuid(pack, row);
+  if (!uuid) {
+    return null;
+  }
+
+  const downtimeFlag = getIndexRowProperty(row, `flags.${MODULE_ID}.downtime`) ?? {};
+  const targetActions = Array.isArray(downtimeFlag.targetActions) ? downtimeFlag.targetActions : [];
+  return {
+    uuid,
+    name: cleanText(row.name) || "Простой",
+    summary: stripHtmlText(
+      getIndexRowProperty(row, "system.description.value")
+      || downtimeFlag.summary
+      || ""
+    ),
+    targetActionCount: targetActions.length
+  };
+}
+
+async function getDowntimeLibraryRecords() {
+  const pack = getDowntimeLibraryPack();
+  if (!pack || typeof pack.getIndex !== "function") {
+    return {
+      pack,
+      records: []
+    };
+  }
+
+  const index = await pack.getIndex({
+    fields: [
+      `flags.${MODULE_ID}.downtime`,
+      `flags.${MODULE_ID}.downtimeId`,
+      "system.description.value"
+    ]
+  });
+  const records = collectionValues(index)
+    .map((row) => normalizeDowntimeLibraryRecord(pack, row))
+    .filter(Boolean)
+    .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+
+  return {
+    pack,
+    records
+  };
+}
+
+function setCharacterDowntimeActionSelection(panel, record) {
+  const actionInput = panel?.querySelector?.("[data-action='character-downtime-action']");
+  const actionLabel = panel?.querySelector?.("[data-action='character-downtime-action-label']");
+  const actionButton = panel?.querySelector?.("[data-action='character-downtime-open-library']");
+  if (actionInput) {
+    actionInput.value = record.uuid;
+  }
+  if (actionLabel) {
+    actionLabel.textContent = record.name;
+  }
+  if (actionButton) {
+    actionButton.title = record.summary || `Выбрано: ${record.name}`;
+  }
+
+  const titleInput = panel?.querySelector?.("[data-action='character-downtime-title']");
+  if (titleInput && !cleanText(titleInput.value)) {
+    titleInput.value = record.name;
+  }
+}
+
+async function openCharacterDowntimeLibraryPicker(panel) {
+  const DialogClass = globalThis.Dialog;
+  const { pack, records } = await getDowntimeLibraryRecords();
+  if (!pack) {
+    ui.notifications?.warn("Библиотека простоя Rebreya не найдена.");
+    return;
+  }
+  if (!records.length) {
+    await renderDowntimeLibraryPack(pack);
+    ui.notifications?.warn("В библиотеке простоя пока нет доступных шаблонов.");
+    return;
+  }
+  if (typeof DialogClass !== "function") {
+    await renderDowntimeLibraryPack(pack);
+    return;
+  }
+
+  const rows = records.map((record) => `
+    <button type="button" class="rm-character-downtime-library__row" data-downtime-action-uuid="${escapeHtml(record.uuid)}">
+      <span>
+        <strong>${escapeHtml(record.name)}</strong>
+        ${record.summary ? `<small>${escapeHtml(record.summary)}</small>` : ""}
+      </span>
+      <em>${escapeHtml(String(record.targetActionCount))}</em>
+    </button>
+  `).join("");
+
+  await new Promise((resolve) => {
+    const dialog = new DialogClass({
+      title: "Библиотека простоя",
+      content: `<section class="rm-character-downtime-library">${rows}</section>`,
+      buttons: {
+        openPack: {
+          label: "Открыть библиотеку",
+          callback: async () => {
+            await renderDowntimeLibraryPack(pack);
+            resolve();
+          }
+        },
+        close: {
+          label: "Закрыть",
+          callback: () => resolve()
+        }
+      },
+      render: (html) => {
+        const root = queryDialogElement(html, ".rm-character-downtime-library");
+        root?.querySelectorAll?.("[data-downtime-action-uuid]")?.forEach((button) => {
+          button.addEventListener("click", () => {
+            const uuid = cleanText(button.dataset.downtimeActionUuid);
+            const record = records.find((entry) => entry.uuid === uuid) ?? null;
+            if (record) {
+              setCharacterDowntimeActionSelection(panel, record);
+            }
+            resolve();
+            dialog.close?.();
+          });
+        });
+      },
+      close: () => resolve()
+    }, {
+      classes: ["rebreya-main", "rebreya-trader-dialog", "rm-character-downtime-library-window"],
+      width: 560,
+      height: 620
+    });
+
+    dialog.render(true);
+  });
+}
+
 function getApplicationElementCandidates(app) {
   const candidates = [];
   for (const element of [
@@ -2669,18 +2834,22 @@ async function handleCharacterDowntimeRoll(button, app, moduleApi, event) {
     return;
   }
 
+  const explicitOutcomeMode = cleanText(button.dataset.outcomeMode);
+  const outcomeMode = explicitOutcomeMode || (cleanText(button.dataset.dc) ? "dc" : "freeform");
   const dc = getDowntimeRollDc(button.dataset.dc);
   const result = {
     total,
-    dc,
-    success: dc > 0 ? total >= dc : undefined,
     sourceType: cleanText(button.dataset.sourceType) || "skill",
     ability: normalizeDowntimeRollAbility(button.dataset.ability),
     target: cleanText(button.dataset.target),
     targetLabel: cleanText(button.dataset.targetLabel)
   };
-  if (result.success === undefined) {
-    delete result.success;
+  if (explicitOutcomeMode) {
+    result.outcomeMode = outcomeMode;
+  }
+  if (["dc", "dc-sum"].includes(outcomeMode) && dc > 0) {
+    result.dc = dc;
+    result.success = total >= dc;
   }
 
   await moduleApi.recordDowntimeCheckResult(requestId, checkId, result, {
@@ -2882,6 +3051,28 @@ function bindCharacterDowntimeRollButtons(panel, app, moduleApi) {
   }
 }
 
+function bindCharacterDowntimeLibraryButton(panel) {
+  const button = panel.querySelector("[data-action='character-downtime-open-library']");
+  if (!(button instanceof HTMLElement)) {
+    return;
+  }
+
+  characterDowntimeLibraryAbortControllers.get(button)?.abort();
+  const abortController = new AbortController();
+  characterDowntimeLibraryAbortControllers.set(button, abortController);
+  button.addEventListener("click", async (event) => {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    try {
+      await openCharacterDowntimeLibraryPicker(panel);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to open downtime library picker.`, error);
+      ui.notifications?.error(error.message || "Не удалось открыть библиотеку простоя.");
+    }
+  }, { capture: true, signal: abortController.signal });
+}
+
 function bindCharacterDowntimePanel(root, app, moduleApi) {
   bindCharacterDowntimeSubmitDelegation(root, app, moduleApi);
   bindCharacterDowntimeRollDelegation(root, app, moduleApi);
@@ -2910,6 +3101,7 @@ function bindCharacterDowntimePanel(root, app, moduleApi) {
 
   bindCharacterDowntimeSubmitButton(panel, app, moduleApi);
   bindCharacterDowntimeRollButtons(panel, app, moduleApi);
+  bindCharacterDowntimeLibraryButton(panel);
 }
 
 function clampItemRank(value) {

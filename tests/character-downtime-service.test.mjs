@@ -208,6 +208,85 @@ test("CharacterDowntimeService exposes structured roll targets for assigned chec
   }]);
 });
 
+test("CharacterDowntimeService keeps freeform roll targets out of DC accounting", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 0,
+          reservedWeeks: 1,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }],
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actionId: "gambling",
+        actionLabel: "Азартные игры",
+        title: "Азартные игры",
+        weeks: 1,
+        status: "approved",
+        checks: [{
+          id: "check-1",
+          label: "Акробатика",
+          sourceType: "skill",
+          ability: "dex",
+          target: "acr",
+          targetLabel: "Акробатика",
+          dc: 0,
+          outcomeMode: "freeform"
+        }],
+        result: ""
+      }],
+      actionCatalog: [{ id: "gambling", label: "Азартные игры" }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }));
+  const check = context.requests[0].checks[0];
+
+  assert.equal(check.summary, "Акробатика | Ловкость");
+  assert.equal(check.rollTargets[0].outcomeMode, "freeform");
+  assert.equal(check.rollTargets[0].dc, 0);
+});
+
+test("CharacterDowntimeService exposes selected action labels for library picker buttons", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }],
+      requests: [],
+      actionCatalog: [
+        { id: "unique", label: "Уникальная заявка" },
+        { id: "Compendium.world.rebreya-downtime.Item.downtime-gambling", label: "Азартные игры" }
+      ]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }), {
+    actionId: "Compendium.world.rebreya-downtime.Item.downtime-gambling"
+  });
+
+  assert.equal(context.selectedActionLabel, "Азартные игры");
+});
+
 test("CharacterDowntimeService converts known group errors into a warning context", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     error: new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP)

@@ -1,4 +1,4 @@
-import { DOWNTIME_ITEM_TYPE, MODULE_ID } from "../constants.js";
+import { DOWNTIME_COMPENDIUM_NAME, DOWNTIME_ITEM_TYPE, MODULE_ID } from "../constants.js";
 
 const ACTION_CATALOG = Object.freeze([
   { id: "craft", label: "Крафт" },
@@ -25,6 +25,7 @@ const RELEASED_STATUSES = new Set(["rejected", "returned"]);
 const REQUEST_STATUSES = new Set(["pending", "approved", "returned", "rejected", "completed"]);
 const MAX_TARGET_ACTIONS = 5;
 const DOWNTIME_TEMPLATE_FLAG = "downtime";
+const DOWNTIME_COMPENDIUM_PACK_ID = `world.${DOWNTIME_COMPENDIUM_NAME}`;
 
 function clone(value) {
   if (globalThis.foundry?.utils?.deepClone) {
@@ -212,6 +213,94 @@ function buildDowntimeTemplateActionFromItem(item) {
     rankTable: normalizeRankTable(config.rankTable),
     targetActions: normalizeTemplateTargetActions(config.targetActions)
   };
+}
+
+function getDowntimeCompendiumPack() {
+  return globalThis.game?.packs?.get?.(DOWNTIME_COMPENDIUM_PACK_ID) ?? null;
+}
+
+function getCompendiumDocumentIdFromUuid(value = "") {
+  const safeValue = cleanId(value);
+  const prefix = `Compendium.${DOWNTIME_COMPENDIUM_PACK_ID}.Item.`;
+  return safeValue.startsWith(prefix) ? cleanId(safeValue.slice(prefix.length)) : "";
+}
+
+function getCompendiumRowDocumentId(row = {}) {
+  return cleanId(row._id) || cleanId(row.id);
+}
+
+function getCompendiumRowDowntimeId(row = {}) {
+  return cleanId(getObjectPath(row, `flags.${MODULE_ID}.downtimeId`))
+    || cleanId(getObjectPath(row, `flags.${MODULE_ID}.${DOWNTIME_TEMPLATE_FLAG}.downtimeId`));
+}
+
+async function getDowntimeCompendiumIndex(pack) {
+  if (!pack || typeof pack.getIndex !== "function") {
+    return [];
+  }
+
+  const index = await pack.getIndex({
+    fields: [
+      `flags.${MODULE_ID}.downtimeId`,
+      `flags.${MODULE_ID}.${DOWNTIME_TEMPLATE_FLAG}`,
+      "system.description.value"
+    ]
+  });
+  return collectionContents(index);
+}
+
+async function getDowntimeCompendiumDocument(pack, documentId = "") {
+  const safeDocumentId = cleanId(documentId);
+  if (!pack || !safeDocumentId || typeof pack.getDocument !== "function") {
+    return null;
+  }
+
+  try {
+    return await pack.getDocument(safeDocumentId);
+  }
+  catch (_error) {
+    return null;
+  }
+}
+
+async function resolveDowntimeCompendiumAction(actionId = "") {
+  const safeActionId = cleanId(actionId);
+  if (!safeActionId) {
+    return null;
+  }
+
+  const pack = getDowntimeCompendiumPack();
+  if (!pack) {
+    return null;
+  }
+
+  const explicitDocumentId = getCompendiumDocumentIdFromUuid(safeActionId);
+  if (explicitDocumentId) {
+    const document = await getDowntimeCompendiumDocument(pack, explicitDocumentId);
+    return buildDowntimeTemplateActionFromItem(document);
+  }
+
+  if (safeActionId.startsWith("Compendium.") && typeof globalThis.fromUuid === "function") {
+    try {
+      const document = await globalThis.fromUuid(safeActionId);
+      const action = buildDowntimeTemplateActionFromItem(document);
+      if (action) {
+        return action;
+      }
+    }
+    catch (_error) {
+      return null;
+    }
+  }
+
+  const index = await getDowntimeCompendiumIndex(pack);
+  const row = index.find((entry) => getCompendiumRowDowntimeId(entry) === safeActionId) ?? null;
+  if (!row) {
+    return null;
+  }
+
+  const document = await getDowntimeCompendiumDocument(pack, getCompendiumRowDocumentId(row));
+  return buildDowntimeTemplateActionFromItem(document);
 }
 
 function normalizeRequest(value = {}) {
@@ -530,7 +619,7 @@ export class DowntimeService {
     const actor = this.#requireCurrentMemberActor(context, actorId);
     this.#assertCanSubmitForActor(actor, context);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
-    const action = this.#resolveAction(context, actionId);
+    const action = await this.#resolveAction(context, actionId);
     const resolvedActionId = action.id;
     const safeTitle = cleanString(title) || action.label;
     const userId = cleanId(submittedByUserId) || cleanId(getCurrentUser()?.id);
@@ -705,12 +794,17 @@ export class DowntimeService {
     ];
   }
 
-  #resolveAction(context, actionId) {
+  async #resolveAction(context, actionId) {
     const safeActionId = cleanId(actionId);
     const templateAction = this.#getDowntimeTemplateActions(context)
       .find((action) => action.id === safeActionId || action.templateUuid === safeActionId || action.templateItemId === safeActionId);
     if (templateAction) {
       return templateAction;
+    }
+
+    const compendiumAction = await resolveDowntimeCompendiumAction(safeActionId);
+    if (compendiumAction) {
+      return compendiumAction;
     }
 
     const staticActionId = ACTION_BY_ID.has(safeActionId) ? safeActionId : "unique";

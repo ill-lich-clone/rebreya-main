@@ -64,10 +64,15 @@ function buildBalance(value = {}) {
 
 function buildCheckSummary(check = {}) {
   const dc = cleanText(check.dc);
+  const outcomeMode = cleanText(check.outcomeMode) || (dc ? "dc" : "freeform");
+  const numericDc = Number(dc.replace(/^dc\s*/iu, ""));
+  const shouldShowDc = ["dc", "dc-sum"].includes(outcomeMode)
+    && dc
+    && (!Number.isFinite(numericDc) || numericDc > 0);
   const ability = cleanText(check.ability);
   return [
     cleanText(check.label),
-    dc ? `DC ${dc.replace(/^dc\s*/iu, "")}` : "",
+    shouldShowDc ? `DC ${dc.replace(/^dc\s*/iu, "")}` : "",
     ABILITY_LABELS[ability] ?? ability
   ].filter(Boolean).join(" | ");
 }
@@ -103,6 +108,7 @@ function buildRollTarget(check = {}, choice = {}, { canRollRequest = false, choi
   const sourceType = cleanText(choice.sourceType) || cleanText(check.sourceType) || "skill";
   const target = cleanText(choice.target) || cleanText(check.target);
   const ability = normalizeRollAbility(choice.ability) || normalizeRollAbility(check.ability) || normalizeRollAbility(target);
+  const outcomeMode = cleanText(check.outcomeMode) || (cleanText(check.dc) ? "dc" : "freeform");
   const label = cleanText(choice.targetLabel)
     || cleanText(choice.label)
     || cleanText(check.targetLabel)
@@ -121,6 +127,7 @@ function buildRollTarget(check = {}, choice = {}, { canRollRequest = false, choi
     target,
     label,
     dc,
+    outcomeMode,
     canRoll,
     buttonLabel: hasChoices ? label : "Кинуть",
     rollTitle: canRoll
@@ -191,6 +198,7 @@ function buildEmptyContext(actor, {
     canSubmit: false,
     balance: buildBalance(),
     actionOptions: [],
+    selectedActionLabel: "Выбрать простой",
     requests: [],
     emptyRequests: true,
     form: {
@@ -262,6 +270,13 @@ export class CharacterDowntimeService {
       .filter((request) => request?.actorId === actor.id)
       .map((request) => mapRequest(request, { groupId: snapshot.groupId }));
 
+    const selectedAction = actionCatalog.find((action) => action.id === actionId) ?? null;
+    const actionOptions = actionCatalog.map((action) => ({
+      value: action.id,
+      label: action.label ?? action.id,
+      selected: action.id === actionId
+    }));
+
     return {
       groupId: snapshot.groupId ?? "",
       actorId: actor.id,
@@ -270,11 +285,8 @@ export class CharacterDowntimeService {
       warning: "",
       canSubmit,
       balance,
-      actionOptions: actionCatalog.map((action) => ({
-        value: action.id,
-        label: action.label ?? action.id,
-        selected: action.id === actionId
-      })),
+      actionOptions,
+      selectedActionLabel: cleanText(selectedAction?.label) || "Выбрать простой",
       requests,
       emptyRequests: requests.length === 0,
       form: {

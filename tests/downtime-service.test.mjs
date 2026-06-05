@@ -63,7 +63,8 @@ function createHarness({
   user = { id: "gm", isGM: true },
   members = [],
   groupItems = [],
-  downtimeState = {}
+  downtimeState = {},
+  packs = null
 } = {}) {
   const previousGame = globalThis.game;
   const groupActor = createGroup("group-1", members, groupItems);
@@ -71,7 +72,8 @@ function createHarness({
   let setRegistryCalls = 0;
 
   globalThis.game = {
-    user
+    user,
+    packs
   };
 
   const groupContextService = {
@@ -1230,6 +1232,97 @@ test("createRequest links downtime requests to the selected template item and co
       target: "his",
       targetLabel: "История",
       dc: 15,
+      result: null
+    }]);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("createRequest resolves static catalog ids through the managed downtime compendium", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const compendiumItem = createDowntimeTemplateItem({
+    id: "downtime-gambling",
+    name: "Азартные игры",
+    config: {
+      downtimeId: "gambling",
+      defaultWeeks: 1,
+      targetActions: [{
+        id: "gambling-acrobatics",
+        label: "Акробатика",
+        actionType: "check",
+        sourceType: "skill",
+        ability: "dex",
+        target: "acr",
+        targetLabel: "Акробатика",
+        outcomeMode: "freeform"
+      }]
+    }
+  });
+  compendiumItem.uuid = "Compendium.world.rebreya-downtime.Item.downtime-gambling";
+  const pack = {
+    collection: "world.rebreya-downtime",
+    async getIndex() {
+      return [{
+        _id: "downtime-gambling",
+        id: "downtime-gambling",
+        name: "Азартные игры",
+        uuid: compendiumItem.uuid,
+        flags: {
+          [MODULE_ID]: {
+            downtimeId: "gambling",
+            downtime: {
+              downtimeId: "gambling"
+            }
+          }
+        }
+      }];
+    },
+    async getDocument(documentId) {
+      return documentId === "downtime-gambling" ? compendiumItem : null;
+    }
+  };
+  const harness = createHarness({
+    members: [actor],
+    packs: {
+      get(packId) {
+        return packId === "world.rebreya-downtime" ? pack : null;
+      }
+    },
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: "gambling",
+      weeks: 1
+    });
+
+    assert.equal(request.actionId, compendiumItem.uuid);
+    assert.equal(request.actionLabel, "Азартные игры");
+    assert.equal(request.templateUuid, compendiumItem.uuid);
+    assert.equal(request.templateItemId, "downtime-gambling");
+    assert.deepEqual(request.checks, [{
+      id: "gambling-acrobatics",
+      label: "Акробатика",
+      actionType: "check",
+      sourceType: "skill",
+      ability: "dex",
+      target: "acr",
+      targetLabel: "Акробатика",
+      outcomeMode: "freeform",
+      dc: 0,
       result: null
     }]);
   }

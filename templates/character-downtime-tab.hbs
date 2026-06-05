@@ -1,13 +1,5 @@
 <section class="tab {{ characterDowntimeTab.cssClass }} rm-character-downtime-tab" data-tab="{{ characterDowntimeTab.id }}" data-group="{{ characterDowntimeTab.group }}">
   <section class="rm-character-downtime-card">
-    <header class="rm-character-downtime-card__header">
-      <div>
-        <h3>Простой</h3>
-        <p>{{ characterDowntime.actorName }}</p>
-      </div>
-      <span class="rm-character-downtime-badge">{{rmNum characterDowntime.balance.availableWeeks precision=0}} нед.</span>
-    </header>
-
     {{#if characterDowntime.warning}}
       <p class="rm-inline-status rm-inline-status--warning">
         <span>{{ characterDowntime.warning }}</span>
@@ -35,11 +27,17 @@
     <section class="rm-character-downtime-form">
       <div class="rm-field rm-character-downtime-form__action">
         <label>Действие</label>
-        <select data-action="character-downtime-action" {{#if characterDowntime.submitDisabled}}disabled{{/if}}>
-          {{#each characterDowntime.actionOptions}}
-            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-          {{/each}}
-        </select>
+        <input type="hidden" value="{{characterDowntime.form.actionId}}" data-action="character-downtime-action">
+        <button
+          type="button"
+          class="rm-button rm-button--small rm-button--secondary rm-character-downtime-library-button"
+          data-action="character-downtime-open-library"
+          title="Выбрать простой из библиотеки Rebreya"
+          {{#unless characterDowntime.actionOptions.length}}disabled{{/unless}}
+        >
+          <i class="fa-solid fa-book-open"></i>
+          <span data-action="character-downtime-action-label">{{characterDowntime.selectedActionLabel}}</span>
+        </button>
       </div>
       <div class="rm-field rm-field--narrow">
         <label>Недели</label>
@@ -115,6 +113,7 @@
                               data-ability="{{ability}}"
                               data-target="{{target}}"
                               data-target-label="{{label}}"
+                              data-outcome-mode="{{outcomeMode}}"
                               data-choice-index="{{choiceIndex}}"
                               data-dc="{{dc}}"
                               title="{{rollTitle}}"
