@@ -326,9 +326,14 @@ test("revokeWeeks for all current members skips members without available weeks"
 test("createRequest by player reserves weeks for an owned current member", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
   const actorB = createActor({ id: "actor-b", name: "Hero B", ownerUserId: "player-2" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-training",
+    name: "Training"
+  });
   const harness = createHarness({
     user: { id: "player-1", isGM: false },
     members: [actorA, actorB],
+    groupItems: [templateItem],
     downtimeState: {
       balancesByActorId: {
         "actor-a": {
@@ -345,7 +350,7 @@ test("createRequest by player reserves weeks for an owned current member", async
   try {
     const request = await harness.service.createRequest({
       actorId: "actor-a",
-      actionId: "training",
+      actionId: templateItem.uuid,
       title: "Train",
       description: "Practice",
       weeks: 2
@@ -354,7 +359,7 @@ test("createRequest by player reserves weeks for an owned current member", async
 
     assert.equal(request.id, "downtime-1");
     assert.equal(request.actorId, "actor-a");
-    assert.equal(request.actionId, "training");
+    assert.equal(request.actionId, templateItem.uuid);
     assert.equal(request.status, "pending");
     assert.equal(request.submittedByUserId, "player-1");
     assert.equal(state.balancesByActorId["actor-a"].availableWeeks, 1);
@@ -367,9 +372,14 @@ test("createRequest by player reserves weeks for an owned current member", async
 
 test("createRequest can target an explicit group and preserve player submitter on GM client", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-freeform",
+    name: "Freeform downtime"
+  });
   const harness = createHarness({
     user: { id: "gm", isGM: true },
     members: [actorA],
+    groupItems: [templateItem],
     downtimeState: {
       balancesByActorId: {
         "actor-a": {
@@ -387,7 +397,7 @@ test("createRequest can target an explicit group and preserve player submitter o
     const request = await harness.service.createRequest({
       groupId: "group-1",
       actorId: "actor-a",
-      actionId: "unique",
+      actionId: templateItem.uuid,
       title: "",
       weeks: 1,
       submittedByUserId: "player-1"
@@ -405,8 +415,13 @@ test("createRequest can target an explicit group and preserve player submitter o
 
 test("createRequest recovers counter from existing request ids in direct service state", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-recovered",
+    name: "Recovered downtime"
+  });
   const harness = createHarness({
     members: [actorA],
+    groupItems: [templateItem],
     downtimeState: {
       balancesByActorId: {
         "actor-a": {
@@ -427,7 +442,7 @@ test("createRequest recovers counter from existing request ids in direct service
   try {
     const request = await harness.service.createRequest({
       actorId: "actor-a",
-      actionId: "unique",
+      actionId: templateItem.uuid,
       title: "Recovered",
       weeks: 1
     });
@@ -1070,52 +1085,11 @@ test("non-owner and nonmember actors are rejected for player request and result 
   }
 });
 
-test("getActionCatalog exposes the first downtime action slice", () => {
+test("getActionCatalog only exposes downtime template items", () => {
   const harness = createHarness();
 
   try {
-    assert.deepEqual(
-      harness.service.getActionCatalog().map((action) => action.id),
-      [
-        "craft",
-        "firearm",
-        "magicItem",
-        "profession",
-        "rest",
-        "research",
-        "training",
-        "gambling",
-        "tournament",
-        "carouse",
-        "buyMagicItem",
-        "changeSubclass",
-        "alchemy",
-        "longProject",
-        "construct",
-        "unique"
-      ]
-    );
-    assert.deepEqual(
-      harness.service.getActionCatalog().map((action) => action.label),
-      [
-        "Крафт",
-        "Огнестрельное оружие",
-        "Магический предмет",
-        "Профессия",
-        "Отдых",
-        "Исследование",
-        "Тренировка",
-        "Азартные игры",
-        "Турнир",
-        "Кутеж",
-        "Покупка магического предмета",
-        "Смена подкласса",
-        "Алхимия",
-        "Долгий проект",
-        "Строительство",
-        "Уникальная заявка"
-      ]
-    );
+    assert.deepEqual(harness.service.getActionCatalog(), []);
   }
   finally {
     harness.restore();
@@ -1240,7 +1214,39 @@ test("createRequest links downtime requests to the selected template item and co
   }
 });
 
-test("createRequest resolves static catalog ids through the managed downtime compendium", async () => {
+test("createRequest rejects unknown downtime action ids instead of using the legacy unique fallback", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () => harness.service.createRequest({
+        actorId: actor.id,
+        actionId: "unique",
+        weeks: 1
+      }),
+      /Downtime action not found/u
+    );
+    assert.deepEqual(getDowntimeState(harness).requests ?? [], []);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("createRequest resolves managed downtime compendium ids", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
   const compendiumItem = createDowntimeTemplateItem({
     id: "downtime-gambling",

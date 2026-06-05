@@ -188,7 +188,7 @@ function buildEmptyContext(actor, {
   warning = "",
   formState = {}
 } = {}) {
-  const actionId = cleanText(formState.actionId) || "unique";
+  const actionId = cleanText(formState.actionId);
   const weeks = normalizeWeeks(formState.weeks, 1);
   return {
     actorId: actor?.id ?? "",
@@ -198,6 +198,7 @@ function buildEmptyContext(actor, {
     canSubmit: false,
     balance: buildBalance(),
     actionOptions: [],
+    libraryDisabled: true,
     selectedActionLabel: "Выбрать простой",
     requests: [],
     emptyRequests: true,
@@ -250,20 +251,17 @@ export class CharacterDowntimeService {
     }
 
     const actionCatalog = Array.isArray(snapshot?.actionCatalog) ? snapshot.actionCatalog : [];
-    let actionId = cleanText(formState.actionId) || "unique";
-    if (actionCatalog.length && !actionCatalog.some((action) => action.id === actionId)) {
-      actionId = actionCatalog[0].id;
-    }
+    const actionId = cleanText(formState.actionId);
 
     const weeks = normalizeWeeks(formState.weeks, 1);
     const balance = buildBalance(member.balance ?? member);
     const canSubmit = Boolean(member.canSubmit && snapshot?.canSubmit);
-    const submitDisabled = !canSubmit || !actionCatalog.length || balance.availableWeeks < weeks;
+    const submitDisabled = !canSubmit || !actionId || balance.availableWeeks < weeks;
     const submitDisabledReason = submitDisabled
       ? (!canSubmit
         ? "У вас нет прав отправлять заявки за этого персонажа."
-        : (!actionCatalog.length
-          ? "Нет доступных действий простоя."
+        : (!actionId
+          ? "Выберите простой из библиотеки."
           : "Недостаточно свободных недель простоя."))
       : "";
     const requests = (Array.isArray(snapshot?.requests) ? snapshot.requests : [])
@@ -286,6 +284,7 @@ export class CharacterDowntimeService {
       canSubmit,
       balance,
       actionOptions,
+      libraryDisabled: !canSubmit,
       selectedActionLabel: cleanText(selectedAction?.label) || "Выбрать простой",
       requests,
       emptyRequests: requests.length === 0,
@@ -316,7 +315,7 @@ export class CharacterDowntimeService {
     return this.moduleApi.createDowntimeRequest({
       groupId,
       actorId: actor.id,
-      actionId: cleanText(payload.actionId) || "unique",
+      actionId: cleanText(payload.actionId),
       weeks: normalizeWeeks(payload.weeks, 1),
       title: cleanText(payload.title),
       description: cleanText(payload.description)

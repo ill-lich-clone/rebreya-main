@@ -2428,7 +2428,7 @@ async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
   }
 
   const payload = {
-    actionId: cleanText(panel.querySelector("[data-action='character-downtime-action']")?.value) || "unique",
+    actionId: cleanText(panel.querySelector("[data-action='character-downtime-action']")?.value),
     weeks: toPositiveInteger(panel.querySelector("[data-action='character-downtime-weeks']")?.value, 1),
     title: cleanText(panel.querySelector("[data-action='character-downtime-title']")?.value),
     description: cleanText(panel.querySelector("[data-action='character-downtime-description']")?.value)

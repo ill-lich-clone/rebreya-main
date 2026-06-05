@@ -33,7 +33,7 @@
           class="rm-button rm-button--small rm-button--secondary rm-character-downtime-library-button"
           data-action="character-downtime-open-library"
           title="Выбрать простой из библиотеки Rebreya"
-          {{#unless characterDowntime.actionOptions.length}}disabled{{/unless}}
+          {{#if characterDowntime.libraryDisabled}}disabled{{/if}}
         >
           <i class="fa-solid fa-book-open"></i>
           <span data-action="character-downtime-action-label">{{characterDowntime.selectedActionLabel}}</span>

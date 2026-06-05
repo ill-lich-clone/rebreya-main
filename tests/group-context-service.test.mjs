@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/constants.js";
+import { DOWNTIME_ITEM_TYPE, MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../scripts/constants.js";
 import {
   GROUP_CONTEXT_ERRORS,
   GroupContextService,
@@ -27,10 +27,16 @@ function createCharacter(id, { ownerUserId = "player-1", type = "character" } = 
   };
 }
 
-function createGroup(id, members = [], { managed = true } = {}) {
+function createGroup(id, members = [], { managed = true, items = [] } = {}) {
   return {
     id,
     type: "group",
+    items: {
+      contents: items,
+      get(itemId) {
+        return items.find((item) => item.id === itemId) ?? null;
+      }
+    },
     system: {
       members
     },
@@ -46,6 +52,18 @@ function createGroup(id, members = [], { managed = true } = {}) {
       this.flags[scope] ??= {};
       this.flags[scope][key] = value;
       return value;
+    }
+  };
+}
+
+function createDowntimeTemplateItem({ groupId = "group-a", id = "downtime-test", name = "Test downtime", config = {} } = {}) {
+  return {
+    id,
+    name,
+    type: DOWNTIME_ITEM_TYPE,
+    uuid: `Actor.${groupId}.Item.${id}`,
+    getFlag(scope, key) {
+      return scope === MODULE_ID && key === "downtime" ? config : undefined;
     }
   };
 }
@@ -154,7 +172,8 @@ test("normalizeGroupRegistry preserves active group and per-group state", () => 
 test("GroupContextService registry path preserves downtime counter between writes", async () => {
   const member = createCharacter("character-a");
   member.name = "Hero";
-  const group = createGroup("group-a", [{ actor: member }]);
+  const downtimeItem = createDowntimeTemplateItem({ id: "downtime-counter", name: "Counter downtime" });
+  const group = createGroup("group-a", [{ actor: member }], { items: [downtimeItem] });
   const fixture = installGameFixture({
     actors: [group, member],
     user: { id: "gm", isGM: true },
@@ -188,13 +207,13 @@ test("GroupContextService registry path preserves downtime counter between write
 
     const first = await service.createRequest({
       actorId: "character-a",
-      actionId: "unique",
+      actionId: downtimeItem.uuid,
       title: "First",
       weeks: 1
     });
     const second = await service.createRequest({
       actorId: "character-a",
-      actionId: "unique",
+      actionId: downtimeItem.uuid,
       title: "Second",
       weeks: 1
     });
@@ -211,7 +230,8 @@ test("GroupContextService registry path preserves downtime counter between write
 test("GroupContextService registry path recovers downtime counter from existing request ids", async () => {
   const member = createCharacter("character-a");
   member.name = "Hero";
-  const group = createGroup("group-a", [{ actor: member }]);
+  const downtimeItem = createDowntimeTemplateItem({ id: "downtime-recovered", name: "Recovered downtime" });
+  const group = createGroup("group-a", [{ actor: member }], { items: [downtimeItem] });
   const fixture = installGameFixture({
     actors: [group, member],
     user: { id: "gm", isGM: true },
@@ -248,7 +268,7 @@ test("GroupContextService registry path recovers downtime counter from existing 
 
     const request = await service.createRequest({
       actorId: "character-a",
-      actionId: "unique",
+      actionId: downtimeItem.uuid,
       title: "Recovered",
       weeks: 1
     });

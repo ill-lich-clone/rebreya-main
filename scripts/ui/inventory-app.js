@@ -826,7 +826,7 @@ function isKnownGroupContextError(error) {
   return KNOWN_GROUP_CONTEXT_ERROR_MESSAGES.has(error?.message);
 }
 
-function buildEmptyDowntimeContext({ warning = "", grantWeeks = 1, grantActorId = "all", requestActorId = "", requestActionId = "unique", requestWeeks = 1, requestTitle = "", requestDescription = "" } = {}) {
+function buildEmptyDowntimeContext({ warning = "", grantWeeks = 1, grantActorId = "all", requestActorId = "", requestActionId = "", requestWeeks = 1, requestTitle = "", requestDescription = "" } = {}) {
   const safeWarning = cleanText(warning);
   return {
     members: [],
@@ -1328,7 +1328,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.downtimeGrantWeeks = 1;
     this.downtimeGrantActorId = "all";
     this.downtimeRequestActorId = "";
-    this.downtimeRequestActionId = "unique";
+    this.downtimeRequestActionId = "";
     this.downtimeRequestWeeks = 1;
     this.downtimeRequestTitle = "";
     this.downtimeRequestDescription = "";
@@ -1604,7 +1604,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     const actionCatalog = snapshot.actionCatalog ?? [];
     if (!actionCatalog.some((action) => action.id === this.downtimeRequestActionId)) {
-      this.downtimeRequestActionId = actionCatalog[0]?.id ?? "unique";
+      this.downtimeRequestActionId = actionCatalog[0]?.id ?? "";
     }
 
     const canManageDowntime = Boolean(snapshot.canManage);
@@ -2755,7 +2755,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async #handleDowntimeSubmit(element) {
     this.downtimeRequestActorId = cleanText(element.querySelector("[data-action='downtime-request-actor']")?.value);
-    this.downtimeRequestActionId = cleanText(element.querySelector("[data-action='downtime-request-action']")?.value) || "unique";
+    this.downtimeRequestActionId = cleanText(element.querySelector("[data-action='downtime-request-action']")?.value);
     this.downtimeRequestWeeks = Math.max(1, toInteger(element.querySelector("[data-action='downtime-request-weeks']")?.value, 1));
     this.downtimeRequestTitle = cleanText(element.querySelector("[data-action='downtime-request-title']")?.value);
     this.downtimeRequestDescription = cleanText(element.querySelector("[data-action='downtime-request-description']")?.value);
@@ -2925,7 +2925,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this.downtimeRequestActorId = cleanText(value);
     });
     bindDowntimeField("[data-action='downtime-request-action']", (value) => {
-      this.downtimeRequestActionId = cleanText(value) || "unique";
+      this.downtimeRequestActionId = cleanText(value);
     });
     bindDowntimeField("[data-action='downtime-request-weeks']", (value) => {
       this.downtimeRequestWeeks = Math.max(1, toInteger(value, 1));

@@ -1,25 +1,5 @@
 import { DOWNTIME_COMPENDIUM_NAME, DOWNTIME_ITEM_TYPE, MODULE_ID } from "../constants.js";
 
-const ACTION_CATALOG = Object.freeze([
-  { id: "craft", label: "Крафт" },
-  { id: "firearm", label: "Огнестрельное оружие" },
-  { id: "magicItem", label: "Магический предмет" },
-  { id: "profession", label: "Профессия" },
-  { id: "rest", label: "Отдых" },
-  { id: "research", label: "Исследование" },
-  { id: "training", label: "Тренировка" },
-  { id: "gambling", label: "Азартные игры" },
-  { id: "tournament", label: "Турнир" },
-  { id: "carouse", label: "Кутеж" },
-  { id: "buyMagicItem", label: "Покупка магического предмета" },
-  { id: "changeSubclass", label: "Смена подкласса" },
-  { id: "alchemy", label: "Алхимия" },
-  { id: "longProject", label: "Долгий проект" },
-  { id: "construct", label: "Строительство" },
-  { id: "unique", label: "Уникальная заявка" }
-]);
-
-const ACTION_BY_ID = new Map(ACTION_CATALOG.map((action) => [action.id, action]));
 const OPEN_RESERVED_STATUSES = new Set(["pending", "approved"]);
 const RELEASED_STATUSES = new Set(["rejected", "returned"]);
 const REQUEST_STATUSES = new Set(["pending", "approved", "returned", "rejected", "completed"]);
@@ -305,16 +285,14 @@ async function resolveDowntimeCompendiumAction(actionId = "") {
 
 function normalizeRequest(value = {}) {
   const requestedActionId = cleanId(value.actionId);
-  const hasStaticAction = ACTION_BY_ID.has(requestedActionId);
-  const actionId = hasStaticAction || isDowntimeTemplateActionId(requestedActionId) ? requestedActionId : "unique";
-  const action = ACTION_BY_ID.get(actionId) ?? ACTION_BY_ID.get("unique");
+  const actionId = requestedActionId || cleanId(value.templateUuid);
   const status = REQUEST_STATUSES.has(cleanId(value.status)) ? cleanId(value.status) : "pending";
   const normalized = {
     id: cleanId(value.id),
     actorId: cleanId(value.actorId),
     actorName: cleanString(value.actorName),
     actionId,
-    actionLabel: cleanString(value.actionLabel) || action.label,
+    actionLabel: cleanString(value.actionLabel) || cleanString(value.title) || actionId,
     title: cleanString(value.title),
     description: cleanString(value.description),
     weeks: Math.max(1, toWeeks(value.weeks, 1)),
@@ -607,7 +585,7 @@ export class DowntimeService {
   async createRequest({
     groupId = "",
     actorId = "",
-    actionId = "unique",
+    actionId = "",
     title = "",
     description = "",
     weeks = 1,
@@ -785,13 +763,7 @@ export class DowntimeService {
 
   #getActionCatalog(context = null) {
     const templateActions = this.#getDowntimeTemplateActions(context);
-    return [
-      ...templateActions.map((action) => clone(action)),
-      ...ACTION_CATALOG.map((action) => ({
-        ...clone(action),
-        source: "static"
-      }))
-    ];
+    return templateActions.map((action) => clone(action));
   }
 
   async #resolveAction(context, actionId) {
@@ -807,13 +779,7 @@ export class DowntimeService {
       return compendiumAction;
     }
 
-    const staticActionId = ACTION_BY_ID.has(safeActionId) ? safeActionId : "unique";
-    const staticAction = ACTION_BY_ID.get(staticActionId) ?? ACTION_BY_ID.get("unique");
-    return {
-      ...clone(staticAction),
-      source: "static",
-      targetActions: []
-    };
+    throw new Error("Downtime action not found.");
   }
 
   #assertCanSubmitForActor(actor, context) {
