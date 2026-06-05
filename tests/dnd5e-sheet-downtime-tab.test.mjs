@@ -130,6 +130,10 @@ function installSheetExtensionStubs() {
       deepClone(value) {
         return value == null ? value : JSON.parse(JSON.stringify(value));
       },
+      mergeObject(original, other, { inplace = true } = {}) {
+        const target = inplace ? original : { ...(original ?? {}) };
+        return Object.assign(target, other ?? {});
+      },
       getProperty(source, path) {
         return String(path ?? "").split(".").reduce((current, part) => (
           current && typeof current === "object" ? current[part] : undefined
@@ -218,6 +222,48 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime character sh
     ]);
   }
   finally {
+    stubs.restore();
+  }
+});
+
+test("extendDnd5eItemTypes registers the Rebreya downtime item type", async () => {
+  const stubs = installSheetExtensionStubs();
+  const warningCalls = [];
+  const previousConsoleWarn = console.warn;
+  console.warn = (...args) => warningCalls.push(args);
+  globalThis.game.modules = new Map([
+    ["rebreya-main", {
+      documentTypes: {
+        Item: {
+          state: {},
+          downtime: {}
+        }
+      }
+    }]
+  ]);
+  globalThis.CONFIG.Item = {
+    dataModels: {
+      background: class BackgroundData {
+        static metadata = {};
+      }
+    },
+    typeLabels: {},
+    typeIcons: {}
+  };
+
+  try {
+    const { extendDnd5eItemTypes } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-item-type=${Date.now()}`);
+
+    extendDnd5eItemTypes();
+
+    assert.equal(globalThis.CONFIG.Item.typeLabels["rebreya-main.downtime"], "TYPES.Item.rebreya-main.downtime");
+    assert.equal(globalThis.CONFIG.Item.typeLabels["rebreya-main.downtimePl"], "TYPES.Item.rebreya-main.downtimePl");
+    assert.equal(globalThis.CONFIG.Item.typeIcons["rebreya-main.downtime"], "fa-solid fa-hourglass-half");
+    assert.equal(typeof globalThis.CONFIG.Item.dataModels["rebreya-main.downtime"], "function");
+    assert.equal(warningCalls.some((args) => String(args[0]).includes("downtime")), false);
+  }
+  finally {
+    console.warn = previousConsoleWarn;
     stubs.restore();
   }
 });

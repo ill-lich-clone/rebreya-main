@@ -14,6 +14,7 @@ export const BACKGROUNDS_COMPENDIUM_LABEL = "Предыстории Rebreya (D&D
 export const STATES_COMPENDIUM_NAME = "rebreya-states";
 export const STATES_COMPENDIUM_LABEL = "Государства Тейванкаля Rebreya";
 export const STATE_ITEM_TYPE = `${MODULE_ID}.state`;
+export const DOWNTIME_ITEM_TYPE = `${MODULE_ID}.downtime`;
 export const TEYVANKAL_STATE_LANGUAGE_GROUP_ID = "teyvankal";
 export const TEYVANKAL_STATE_LANGUAGES = Object.freeze([
   { id: "umeliluan", label: "Умелилуанский" },

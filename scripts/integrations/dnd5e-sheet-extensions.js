@@ -1,6 +1,7 @@
 ﻿import {
   FEATS_COMPENDIUM_NAME,
   GEAR_COMPENDIUM_NAME,
+  DOWNTIME_ITEM_TYPE,
   MODULE_ID,
   REBREYA_TOOLS,
   STATES_COMPENDIUM_NAME,
@@ -40,6 +41,8 @@ const NATIVE_STATE_LEGACY_ITEM_TYPE = "state";
 const NATIVE_STATE_ITEM_TYPES = new Set([NATIVE_STATE_ITEM_TYPE, NATIVE_STATE_LEGACY_ITEM_TYPE]);
 const NATIVE_STATE_TYPE_LABEL_KEY = "TYPES.Item.state";
 const NATIVE_STATE_TYPE_PLURAL_LABEL_KEY = "TYPES.Item.statePl";
+const DOWNTIME_TYPE_LABEL_KEY = "TYPES.Item.rebreya-main.downtime";
+const DOWNTIME_TYPE_PLURAL_LABEL_KEY = "TYPES.Item.rebreya-main.downtimePl";
 const NATIVE_STATE_LABEL_KEY = "REBREYA_MAIN.NativeState.Label";
 const NATIVE_STATE_ADD_LABEL_KEY = "REBREYA_MAIN.NativeState.AddButton";
 const NATIVE_STATE_SELECT_TITLE_KEY = "REBREYA_MAIN.NativeState.SelectTitle";
@@ -156,6 +159,7 @@ const LEGACY_REBREYA_TOOL_LABEL_ALIASES = [
 REBREYA_TOOL_ID_BY_TEXT.set(normalizeLookupText("Камнелома"), "mason");
 REBREYA_TOOL_ID_BY_TEXT.set(normalizeLookupText("Каменолома"), "mason");
 let NativeStateDataModel = null;
+let DowntimeDataModel = null;
 const nativeStateWarningKeys = new Set();
 const nativeStateBackgroundRepairKeys = new Set();
 const TEYVANKAL_STATE_LANGUAGE_LABEL_BY_ID = new Map(
@@ -905,6 +909,76 @@ function registerNativeStateItemType() {
   CONFIG.Item.typeLabels[`${NATIVE_STATE_LEGACY_ITEM_TYPE}Pl`] = NATIVE_STATE_TYPE_PLURAL_LABEL_KEY;
   CONFIG.Item.typeIcons[NATIVE_STATE_ITEM_TYPE] ??= "fa-solid fa-city";
   CONFIG.Item.typeIcons[NATIVE_STATE_LEGACY_ITEM_TYPE] ??= "fa-solid fa-city";
+}
+
+function getDowntimeTypeLabel() {
+  return game.i18n?.localize?.(DOWNTIME_TYPE_LABEL_KEY) ?? "Простой";
+}
+
+function getDowntimeDataModel() {
+  if (DowntimeDataModel) {
+    return DowntimeDataModel;
+  }
+
+  const BackgroundData = CONFIG.Item?.dataModels?.background;
+  if (BackgroundData) {
+    DowntimeDataModel = class RebreyaDowntimeData extends BackgroundData {
+      static metadata = Object.freeze(foundry.utils.mergeObject(super.metadata, {
+        singleton: true
+      }, { inplace: false }));
+
+      async getFavoriteData() {
+        return {
+          img: this.parent.img,
+          title: this.parent.name,
+          subtitle: getDowntimeTypeLabel()
+        };
+      }
+
+      async getSheetData(context) {
+        if (typeof super.getSheetData === "function") {
+          await super.getSheetData(context);
+        }
+        context.subtitles = [{ label: getDowntimeTypeLabel() }];
+        context.singleDescription = true;
+        context.parts = ["dnd5e.details-background"];
+      }
+
+      _onCreate() {}
+
+      async _preDelete(options, user) {
+        return undefined;
+      }
+    };
+
+    return DowntimeDataModel;
+  }
+
+  return DowntimeDataModel;
+}
+
+function registerDowntimeDocumentType() {
+  const moduleItemTypes = game.modules?.get?.(MODULE_ID)?.documentTypes?.Item;
+  if (!moduleItemTypes?.downtime) {
+    console.warn(`${MODULE_ID} | Module manifest does not expose Item document type 'downtime'.`);
+  }
+}
+
+function registerDowntimeItemType() {
+  registerDowntimeDocumentType();
+
+  CONFIG.Item.dataModels ??= {};
+  CONFIG.Item.typeLabels ??= {};
+  CONFIG.Item.typeIcons ??= {};
+
+  const dataModel = getDowntimeDataModel();
+  if (dataModel) {
+    CONFIG.Item.dataModels[DOWNTIME_ITEM_TYPE] = dataModel;
+  }
+
+  CONFIG.Item.typeLabels[DOWNTIME_ITEM_TYPE] = DOWNTIME_TYPE_LABEL_KEY;
+  CONFIG.Item.typeLabels[`${DOWNTIME_ITEM_TYPE}Pl`] = DOWNTIME_TYPE_PLURAL_LABEL_KEY;
+  CONFIG.Item.typeIcons[DOWNTIME_ITEM_TYPE] ??= "fa-solid fa-hourglass-half";
 }
 
 function registerNativeStateAdvancementTypes() {
@@ -3573,6 +3647,7 @@ export function extendDnd5eItemTypes() {
   });
 
   registerNativeStateItemType();
+  registerDowntimeItemType();
   registerNativeStateAdvancementTypes();
   registerNativeStateLanguages();
 

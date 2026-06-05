@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { MODULE_ID } from "../scripts/constants.js";
+import { DOWNTIME_ITEM_TYPE, MODULE_ID } from "../scripts/constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
 import { InventoryService } from "../scripts/data/inventory-service.js";
 
@@ -279,6 +279,49 @@ test("getInventoryActor returns resolved dnd5e group actor when group context ex
     const actor = await service.getInventoryActor({ create: true });
 
     assert.equal(actor, groupActor);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("getInventorySnapshot classifies Rebreya downtime items as downtime templates", async () => {
+  const downtimeItem = createItem({
+    id: "downtime-research",
+    name: "Исследование",
+    type: DOWNTIME_ITEM_TYPE
+  });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [downtimeItem]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor]
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({ groupActor })
+    },
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const snapshot = await service.getInventorySnapshot();
+    const filtered = await service.getInventorySnapshot({ typeFilter: "downtime" });
+
+    assert.equal(snapshot.items[0].sourceType, "downtime");
+    assert.equal(snapshot.items[0].sourceTypeLabel, "Простой");
+    assert.equal(snapshot.items[0].itemTypeLabel, "Простой");
+    assert.deepEqual(filtered.items.map((item) => item.itemId), ["downtime-research"]);
   }
   finally {
     fixture.restore();

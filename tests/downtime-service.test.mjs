@@ -28,11 +28,17 @@ function createActor({
   };
 }
 
-function createGroup(id, members = []) {
+function createGroup(id, members = [], items = []) {
   return {
     id,
     name: "Party",
     type: "group",
+    items: {
+      contents: items,
+      get(itemId) {
+        return items.find((item) => item.id === itemId) ?? null;
+      }
+    },
     system: {
       members: members.map((actor) => ({ actor }))
     }
@@ -56,10 +62,11 @@ function createRegistry(groupId, downtimeState = {}) {
 function createHarness({
   user = { id: "gm", isGM: true },
   members = [],
+  groupItems = [],
   downtimeState = {}
 } = {}) {
   const previousGame = globalThis.game;
-  const groupActor = createGroup("group-1", members);
+  const groupActor = createGroup("group-1", members, groupItems);
   let registry = createRegistry(groupActor.id, clone(downtimeState));
   let setRegistryCalls = 0;
 
@@ -113,6 +120,23 @@ function createHarness({
     },
     restore() {
       globalThis.game = previousGame;
+    }
+  };
+}
+
+function createDowntimeTemplateItem({
+  id = "downtime-research",
+  name = "Исследование",
+  config = {}
+} = {}) {
+  return {
+    id,
+    name,
+    type: "rebreya-main.downtime",
+    uuid: `Actor.group-1.Item.${id}`,
+    img: "icons/svg/hourglass.svg",
+    getFlag(scope, key) {
+      return scope === MODULE_ID && key === "downtime" ? clone(config) : undefined;
     }
   };
 }
@@ -1090,6 +1114,124 @@ test("getActionCatalog exposes the first downtime action slice", () => {
         "Уникальная заявка"
       ]
     );
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("getActionCatalog exposes Rebreya downtime template items from the active group", () => {
+  const templateItem = createDowntimeTemplateItem({
+    name: "Исследование по рангу",
+    config: {
+      defaultWeeks: 2,
+      rankMode: "required",
+      rankTable: [{ rank: 4, baseTotal: 120, stepCost: 100 }],
+      targetActions: [{
+        id: "check-archive",
+        label: "Архив",
+        actionType: "check",
+        sourceType: "skill",
+        ability: "int",
+        target: "his",
+        targetLabel: "История"
+      }]
+    }
+  });
+  const harness = createHarness({
+    groupItems: [templateItem]
+  });
+
+  try {
+    const action = harness.service.getActionCatalog().find((entry) => entry.id === templateItem.uuid);
+
+    assert.deepEqual(action, {
+      id: templateItem.uuid,
+      label: "Исследование по рангу",
+      source: "item",
+      templateUuid: templateItem.uuid,
+      templateItemId: templateItem.id,
+      defaultWeeks: 2,
+      rankMode: "required",
+      rankTable: [{ rank: 4, baseTotal: 120, stepCost: 100 }],
+      targetActions: [{
+        id: "check-archive",
+        label: "Архив",
+        actionType: "check",
+        sourceType: "skill",
+        ability: "int",
+        target: "his",
+        targetLabel: "История"
+      }]
+    });
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("createRequest links downtime requests to the selected template item and copies target actions", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-research",
+    name: "Исследование по рангу",
+    config: {
+      defaultWeeks: 2,
+      rankMode: "required",
+      rankTable: [{ rank: 4, baseTotal: 120, stepCost: 100 }],
+      targetActions: [{
+        id: "check-archive",
+        label: "Архив",
+        actionType: "check",
+        sourceType: "skill",
+        ability: "int",
+        target: "his",
+        targetLabel: "История",
+        dc: 15
+      }]
+    }
+  });
+  const harness = createHarness({
+    members: [actor],
+    groupItems: [templateItem],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 3,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 3
+        }
+      }
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      title: "",
+      weeks: 2
+    });
+
+    assert.equal(request.actionId, templateItem.uuid);
+    assert.equal(request.actionLabel, "Исследование по рангу");
+    assert.equal(request.templateUuid, templateItem.uuid);
+    assert.equal(request.templateItemId, templateItem.id);
+    assert.equal(request.templateSource, "item");
+    assert.equal(request.title, "Исследование по рангу");
+    assert.deepEqual(request.templateRankTable, [{ rank: 4, baseTotal: 120, stepCost: 100 }]);
+    assert.deepEqual(request.checks, [{
+      id: "check-archive",
+      label: "Архив",
+      actionType: "check",
+      sourceType: "skill",
+      ability: "int",
+      target: "his",
+      targetLabel: "История",
+      dc: 15,
+      result: null
+    }]);
   }
   finally {
     harness.restore();

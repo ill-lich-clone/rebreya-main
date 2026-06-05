@@ -1933,6 +1933,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           { value: "gear", label: "Снаряжение", selected: this.typeFilter === "gear" },
           { value: "material", label: "Материалы", selected: this.typeFilter === "material" },
           { value: "supply", label: "Запасы", selected: this.typeFilter === "supply" },
+          { value: "downtime", label: "Простой", selected: this.typeFilter === "downtime" },
           { value: "custom", label: "Прочее", selected: this.typeFilter === "custom" }
         ],
         tabs: {

@@ -1,4 +1,5 @@
 ﻿import {
+  DOWNTIME_ITEM_TYPE,
   ENERGY_BASE_DAYS,
   ENERGY_MIN_DAYS,
   GEAR_COMPENDIUM_NAME,
@@ -906,7 +907,7 @@ export class InventoryService {
     const quantity = roundNumber(getRawQuantity(itemData), 2);
     const weightEach = roundNumber(getItemWeight(itemData), 2);
     const totalWeight = roundNumber(quantity * weightEach, 2);
-    const {
+    let {
       sourceFlags,
       sourceType,
       sourceId,
@@ -914,13 +915,19 @@ export class InventoryService {
       matchedGear,
       resourceKey
     } = this.#matchInventorySource(model, item);
+    if (item.type === DOWNTIME_ITEM_TYPE) {
+      sourceType = "downtime";
+    }
+
     const isFood = resourceKey === "food" || normalizeText(item.name) === normalizeText(FOOD_ITEM_NAME);
     const isWater = resourceKey === "water" || normalizeText(item.name) === normalizeText(WATER_ITEM_NAME);
-    const itemTypeLabel = matchedMaterial?.type
+    const itemTypeLabel = item.type === DOWNTIME_ITEM_TYPE
+      ? "Простой"
+      : (matchedMaterial?.type
       ?? matchedGear?.equipmentType
       ?? sourceFlags.itemType
       ?? sourceFlags.magicItemType
-      ?? String(foundry.utils.getProperty(itemData, "system.type.subtype") || item.type || "Предмет");
+      ?? String(foundry.utils.getProperty(itemData, "system.type.subtype") || item.type || "Предмет"));
     const materialLabel = matchedMaterial?.name
       ?? matchedGear?.predominantMaterialName
       ?? sourceFlags.predominantMaterialName
@@ -942,7 +949,9 @@ export class InventoryService {
           ? "Снаряжение"
           : (sourceType === "magicItem"
             ? "Магический предмет"
-            : (sourceType === "supply" ? "Запасы" : "Прочее"))),
+            : (sourceType === "supply"
+              ? "Запасы"
+              : (sourceType === "downtime" ? "Простой" : "Прочее")))),
       sourceId,
       sourceName: item.name,
       canOpenEntry: sourceType === "material" || sourceType === "gear" || sourceType === "magicItem",

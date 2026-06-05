@@ -1,8 +1,12 @@
 ﻿{
   "TYPES.Item.state": "Государство",
   "TYPES.Item.statePl": "Государства",
+  "TYPES.Item.downtime": "Простой",
+  "TYPES.Item.downtimePl": "Простои",
   "TYPES.Item.rebreya-main.state": "Государство",
   "TYPES.Item.rebreya-main.statePl": "Государства",
+  "TYPES.Item.rebreya-main.downtime": "Простой",
+  "TYPES.Item.rebreya-main.downtimePl": "Простои",
   "REBREYA_MAIN.Settings.ShowButton.Name": "Показывать кнопку экономики",
   "REBREYA_MAIN.Settings.ShowButton.Hint": "Показывает кнопку экономики в отдельной панели Rebreya.",
   "REBREYA_MAIN.Settings.DebugMode.Name": "Режим debug",

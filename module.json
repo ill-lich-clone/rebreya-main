@@ -7,13 +7,13 @@
       "name": "ill_lich"
     }
   ],
-  "version": "1.4.27",
+  "version": "1.4.28",
   "compatibility": {
     "minimum": "13",
     "verified": "13"
   },
   "esmodules": [
-    "scripts/main-1.4.27.js"
+    "scripts/main-1.4.28.js"
   ],
   "socket": true,
   "styles": [
@@ -29,6 +29,12 @@
   "documentTypes": {
     "Item": {
       "state": {
+        "htmlFields": [
+          "description.value",
+          "description.chat"
+        ]
+      },
+      "downtime": {
         "htmlFields": [
           "description.value",
           "description.chat"

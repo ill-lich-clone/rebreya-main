@@ -1,3 +1,5 @@
+import { DOWNTIME_ITEM_TYPE, MODULE_ID } from "../constants.js";
+
 const ACTION_CATALOG = Object.freeze([
   { id: "craft", label: "Крафт" },
   { id: "firearm", label: "Огнестрельное оружие" },
@@ -22,6 +24,7 @@ const OPEN_RESERVED_STATUSES = new Set(["pending", "approved"]);
 const RELEASED_STATUSES = new Set(["rejected", "returned"]);
 const REQUEST_STATUSES = new Set(["pending", "approved", "returned", "rejected", "completed"]);
 const MAX_TARGET_ACTIONS = 5;
+const DOWNTIME_TEMPLATE_FLAG = "downtime";
 
 function clone(value) {
   if (globalThis.foundry?.utils?.deepClone) {
@@ -39,12 +42,46 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function collectionContents(collection) {
+  if (!collection) {
+    return [];
+  }
+
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+
+  if (Array.isArray(collection.contents)) {
+    return collection.contents;
+  }
+
+  if (typeof collection.values === "function") {
+    return [...collection.values()];
+  }
+
+  if (typeof collection === "object") {
+    return Object.values(collection);
+  }
+
+  return [];
+}
+
 function cleanId(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function getObjectPath(source, path) {
+  if (globalThis.foundry?.utils?.getProperty) {
+    return globalThis.foundry.utils.getProperty(source, path);
+  }
+
+  return String(path ?? "").split(".").reduce((current, part) => (
+    current && typeof current === "object" ? current[part] : undefined
+  ), source);
 }
 
 function toWeeks(value, fallback = 0) {
@@ -111,11 +148,79 @@ function normalizeCheck(value = {}) {
   return normalized;
 }
 
+function isDowntimeTemplateActionId(actionId = "") {
+  const safeActionId = cleanId(actionId);
+  return Boolean(safeActionId) && (
+    safeActionId.includes(".Item.")
+    || safeActionId.startsWith("Item.")
+    || safeActionId.startsWith("Compendium.")
+  );
+}
+
+function isDowntimeTemplateItem(item) {
+  return item?.type === DOWNTIME_ITEM_TYPE;
+}
+
+function getDowntimeTemplateConfig(item) {
+  const flagValue = typeof item?.getFlag === "function"
+    ? item.getFlag(MODULE_ID, DOWNTIME_TEMPLATE_FLAG)
+    : undefined;
+  return asObject(flagValue
+    ?? getObjectPath(item, `flags.${MODULE_ID}.${DOWNTIME_TEMPLATE_FLAG}`)
+    ?? getObjectPath(item, "system.rebreyaDowntime"));
+}
+
+function normalizeTemplateTargetActions(value = []) {
+  return asArray(value)
+    .slice(0, MAX_TARGET_ACTIONS)
+    .map((action, index) => {
+      const source = asObject(action);
+      return {
+        ...clone(source),
+        id: cleanId(source.id) || `check-${index + 1}`,
+        label: cleanString(source.label) || cleanString(source.title) || `Действие ${index + 1}`
+      };
+    })
+    .filter((action) => action.label || action.actionType || action.sourceType);
+}
+
+function normalizeRankTable(value = []) {
+  return asArray(value)
+    .map((entry) => clone(asObject(entry)))
+    .filter((entry) => Object.keys(entry).length > 0);
+}
+
+function buildDowntimeTemplateActionFromItem(item) {
+  if (!isDowntimeTemplateItem(item)) {
+    return null;
+  }
+
+  const templateUuid = cleanId(item.uuid) || (cleanId(item.id) ? `Item.${cleanId(item.id)}` : "");
+  if (!templateUuid) {
+    return null;
+  }
+
+  const config = getDowntimeTemplateConfig(item);
+  return {
+    id: templateUuid,
+    label: cleanString(item.name) || "Простой",
+    source: "item",
+    templateUuid,
+    templateItemId: cleanId(item.id),
+    defaultWeeks: toWeeks(config.defaultWeeks, 1),
+    rankMode: cleanString(config.rankMode),
+    rankTable: normalizeRankTable(config.rankTable),
+    targetActions: normalizeTemplateTargetActions(config.targetActions)
+  };
+}
+
 function normalizeRequest(value = {}) {
-  const actionId = ACTION_BY_ID.has(cleanId(value.actionId)) ? cleanId(value.actionId) : "unique";
+  const requestedActionId = cleanId(value.actionId);
+  const hasStaticAction = ACTION_BY_ID.has(requestedActionId);
+  const actionId = hasStaticAction || isDowntimeTemplateActionId(requestedActionId) ? requestedActionId : "unique";
   const action = ACTION_BY_ID.get(actionId) ?? ACTION_BY_ID.get("unique");
   const status = REQUEST_STATUSES.has(cleanId(value.status)) ? cleanId(value.status) : "pending";
-  return {
+  const normalized = {
     id: cleanId(value.id),
     actorId: cleanId(value.actorId),
     actorName: cleanString(value.actorName),
@@ -132,6 +237,13 @@ function normalizeRequest(value = {}) {
     submittedByUserId: cleanId(value.submittedByUserId),
     reviewedByUserId: cleanId(value.reviewedByUserId)
   };
+  if (isDowntimeTemplateActionId(actionId) || cleanId(value.templateUuid)) {
+    normalized.templateUuid = cleanId(value.templateUuid) || actionId;
+    normalized.templateItemId = cleanId(value.templateItemId);
+    normalized.templateSource = cleanString(value.templateSource) || "item";
+    normalized.templateRankTable = normalizeRankTable(value.templateRankTable);
+  }
+  return normalized;
 }
 
 function getMaxRequestCounter(requests = []) {
@@ -207,7 +319,15 @@ export class DowntimeService {
   }
 
   getActionCatalog() {
-    return ACTION_CATALOG.map((action) => ({ ...action }));
+    let context = null;
+    try {
+      context = this.#resolveContext();
+    }
+    catch (_error) {
+      context = null;
+    }
+
+    return this.#getActionCatalog(context);
   }
 
   getSnapshot({ actorId = "" } = {}) {
@@ -237,7 +357,7 @@ export class DowntimeService {
       members,
       balancesByActorId: clone(state.balancesByActorId),
       requests: state.requests.map((request) => clone(request)),
-      actionCatalog: this.getActionCatalog(),
+      actionCatalog: this.#getActionCatalog(context),
       counter: state.counter
     };
   }
@@ -410,8 +530,8 @@ export class DowntimeService {
     const actor = this.#requireCurrentMemberActor(context, actorId);
     this.#assertCanSubmitForActor(actor, context);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
-    const resolvedActionId = ACTION_BY_ID.has(cleanId(actionId)) ? cleanId(actionId) : "unique";
-    const action = ACTION_BY_ID.get(resolvedActionId) ?? ACTION_BY_ID.get("unique");
+    const action = this.#resolveAction(context, actionId);
+    const resolvedActionId = action.id;
     const safeTitle = cleanString(title) || action.label;
     const userId = cleanId(submittedByUserId) || cleanId(getCurrentUser()?.id);
 
@@ -436,12 +556,21 @@ export class DowntimeService {
         description: cleanString(description),
         weeks: safeWeeks,
         status: "pending",
-        checks: [],
+        checks: asArray(action.targetActions).slice(0, MAX_TARGET_ACTIONS).map((targetAction, index) => normalizeCheck({
+          id: cleanId(targetAction?.id) || `check-${index + 1}`,
+          ...asObject(targetAction)
+        })),
         result: "",
         ...audit,
         submittedByUserId: userId,
         reviewedByUserId: ""
       };
+      if (action.source === "item") {
+        request.templateUuid = cleanId(action.templateUuid) || resolvedActionId;
+        request.templateItemId = cleanId(action.templateItemId);
+        request.templateSource = "item";
+        request.templateRankTable = normalizeRankTable(action.rankTable);
+      }
       state.requests.push(request);
       return clone(request);
     });
@@ -557,6 +686,40 @@ export class DowntimeService {
     }
 
     return this.#getMemberActorIds(context).has(actor?.id) && isActorOwnedByCurrentUser(actor);
+  }
+
+  #getDowntimeTemplateActions(context) {
+    return collectionContents(context?.groupActor?.items)
+      .map((item) => buildDowntimeTemplateActionFromItem(item))
+      .filter(Boolean);
+  }
+
+  #getActionCatalog(context = null) {
+    const templateActions = this.#getDowntimeTemplateActions(context);
+    return [
+      ...templateActions.map((action) => clone(action)),
+      ...ACTION_CATALOG.map((action) => ({
+        ...clone(action),
+        source: "static"
+      }))
+    ];
+  }
+
+  #resolveAction(context, actionId) {
+    const safeActionId = cleanId(actionId);
+    const templateAction = this.#getDowntimeTemplateActions(context)
+      .find((action) => action.id === safeActionId || action.templateUuid === safeActionId || action.templateItemId === safeActionId);
+    if (templateAction) {
+      return templateAction;
+    }
+
+    const staticActionId = ACTION_BY_ID.has(safeActionId) ? safeActionId : "unique";
+    const staticAction = ACTION_BY_ID.get(staticActionId) ?? ACTION_BY_ID.get("unique");
+    return {
+      ...clone(staticAction),
+      source: "static",
+      targetActions: []
+    };
   }
 
   #assertCanSubmitForActor(actor, context) {
