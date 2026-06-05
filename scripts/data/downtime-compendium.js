@@ -17,7 +17,7 @@ const SOURCE_LABEL = "ЗоЗТ: Между приключениями";
 const DOWNTIME_DATA_PATH = `modules/${MODULE_ID}/data/downtime-activities-teyvankal-v01.json`;
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DOWNTIME_ROOT_FOLDER = "Простой";
-const DEFAULT_DOWNTIME_ICON = "icons/svg/hourglass.svg";
+const DEFAULT_DOWNTIME_ICON = "systems/dnd5e/icons/svg/activity/utility.svg";
 const DOWNTIME_TEMPLATE_VERSION = 1;
 const FALLBACK_OBSERVER_OWNERSHIP = 2;
 

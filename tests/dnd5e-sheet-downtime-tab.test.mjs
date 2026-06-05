@@ -12,6 +12,8 @@ function installSheetExtensionStubs() {
   const previousDocument = globalThis.document;
   const previousUi = globalThis.ui;
   const previousFoundry = globalThis.foundry;
+  const previousDnd5e = globalThis.dnd5e;
+  const previousFromUuid = globalThis.fromUuid;
 
   class FakeActor {}
   class FakeItem {}
@@ -162,6 +164,8 @@ function installSheetExtensionStubs() {
       globalThis.document = previousDocument;
       globalThis.ui = previousUi;
       globalThis.foundry = previousFoundry;
+      globalThis.dnd5e = previousDnd5e;
+      globalThis.fromUuid = previousFromUuid;
     }
   };
 }
@@ -264,6 +268,75 @@ test("extendDnd5eItemTypes registers the Rebreya downtime item type", async () =
   }
   finally {
     console.warn = previousConsoleWarn;
+    stubs.restore();
+  }
+});
+
+test("selectDowntimeTemplateDocumentWithBrowser locks native dnd5e browser to downtime items", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const calls = [];
+    globalThis.dnd5e = {
+      applications: {
+        CompendiumBrowser: {
+          MODES: {
+            ADVANCED: "advanced"
+          },
+          async selectOne(options) {
+            calls.push(options);
+            return "Compendium.world.rebreya-downtime.Item.gambling";
+          }
+        }
+      }
+    };
+    globalThis.fromUuid = async (uuid) => ({
+      uuid,
+      type: "rebreya-main.downtime",
+      name: "Gambling"
+    });
+
+    const { selectDowntimeTemplateDocumentWithBrowser } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-browser=${Date.now()}`);
+    const document = await selectDowntimeTemplateDocumentWithBrowser();
+
+    assert.equal(document.name, "Gambling");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].mode, "advanced");
+    assert.equal(calls[0].tab, "items");
+    assert.equal(calls[0].filters.locked.documentClass, "Item");
+    assert.deepEqual([...calls[0].filters.locked.types], ["rebreya-main.downtime"]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("selectDowntimeTemplateDocumentWithBrowser rejects non-downtime browser results", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    globalThis.dnd5e = {
+      applications: {
+        CompendiumBrowser: {
+          MODES: {
+            ADVANCED: "advanced"
+          },
+          async selectOne() {
+            return "Compendium.world.rebreya-downtime.Item.feat";
+          }
+        }
+      }
+    };
+    globalThis.fromUuid = async (uuid) => ({
+      uuid,
+      type: "feat",
+      name: "Not Downtime"
+    });
+
+    const { selectDowntimeTemplateDocumentWithBrowser } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-browser-reject=${Date.now()}`);
+    const document = await selectDowntimeTemplateDocumentWithBrowser();
+
+    assert.equal(document, null);
+  }
+  finally {
     stubs.restore();
   }
 });

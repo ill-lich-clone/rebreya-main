@@ -2486,6 +2486,27 @@ function normalizeDowntimeLibraryRecord(pack, row = {}) {
   };
 }
 
+function isDowntimeTemplateItem(item) {
+  return item?.type === DOWNTIME_ITEM_TYPE;
+}
+
+function normalizeDowntimeLibraryDocument(document = {}) {
+  const downtimeFlag = document?.getFlag?.(MODULE_ID, "downtime")
+    ?? foundry.utils.getProperty?.(document, `flags.${MODULE_ID}.downtime`)
+    ?? {};
+  const targetActions = Array.isArray(downtimeFlag.targetActions) ? downtimeFlag.targetActions : [];
+  return {
+    uuid: cleanText(document.uuid),
+    name: cleanText(document.name) || "Простой",
+    summary: stripHtmlText(
+      foundry.utils.getProperty?.(document, "system.description.value")
+      || downtimeFlag.summary
+      || ""
+    ),
+    targetActionCount: targetActions.length
+  };
+}
+
 async function getDowntimeLibraryRecords() {
   const pack = getDowntimeLibraryPack();
   if (!pack || typeof pack.getIndex !== "function") {
@@ -2513,6 +2534,30 @@ async function getDowntimeLibraryRecords() {
   };
 }
 
+export async function selectDowntimeTemplateDocumentWithBrowser() {
+  const CompendiumBrowser = getCompendiumBrowserClass();
+  if (!CompendiumBrowser?.selectOne) {
+    return null;
+  }
+
+  const result = await CompendiumBrowser.selectOne({
+    mode: CompendiumBrowser.MODES?.ADVANCED,
+    tab: "items",
+    filters: {
+      locked: {
+        documentClass: "Item",
+        types: new Set([DOWNTIME_ITEM_TYPE])
+      }
+    }
+  });
+  if (!result) {
+    return null;
+  }
+
+  const document = await fromUuid(result);
+  return isDowntimeTemplateItem(document) ? document : null;
+}
+
 function setCharacterDowntimeActionSelection(panel, record) {
   const actionInput = panel?.querySelector?.("[data-action='character-downtime-action']");
   const actionLabel = panel?.querySelector?.("[data-action='character-downtime-action-label']");
@@ -2534,7 +2579,6 @@ function setCharacterDowntimeActionSelection(panel, record) {
 }
 
 async function openCharacterDowntimeLibraryPicker(panel) {
-  const DialogClass = globalThis.Dialog;
   const { pack, records } = await getDowntimeLibraryRecords();
   if (!pack) {
     ui.notifications?.warn("Библиотека простоя Rebreya не найдена.");
@@ -2545,61 +2589,18 @@ async function openCharacterDowntimeLibraryPicker(panel) {
     ui.notifications?.warn("В библиотеке простоя пока нет доступных шаблонов.");
     return;
   }
-  if (typeof DialogClass !== "function") {
-    await renderDowntimeLibraryPack(pack);
+
+  const selectedDocument = await selectDowntimeTemplateDocumentWithBrowser();
+  if (selectedDocument) {
+    setCharacterDowntimeActionSelection(panel, normalizeDowntimeLibraryDocument(selectedDocument));
     return;
   }
 
-  const rows = records.map((record) => `
-    <button type="button" class="rm-character-downtime-library__row" data-downtime-action-uuid="${escapeHtml(record.uuid)}">
-      <span>
-        <strong>${escapeHtml(record.name)}</strong>
-        ${record.summary ? `<small>${escapeHtml(record.summary)}</small>` : ""}
-      </span>
-      <em>${escapeHtml(String(record.targetActionCount))}</em>
-    </button>
-  `).join("");
+  if (getCompendiumBrowserClass()?.selectOne) {
+    return;
+  }
 
-  await new Promise((resolve) => {
-    const dialog = new DialogClass({
-      title: "Библиотека простоя",
-      content: `<section class="rm-character-downtime-library">${rows}</section>`,
-      buttons: {
-        openPack: {
-          label: "Открыть библиотеку",
-          callback: async () => {
-            await renderDowntimeLibraryPack(pack);
-            resolve();
-          }
-        },
-        close: {
-          label: "Закрыть",
-          callback: () => resolve()
-        }
-      },
-      render: (html) => {
-        const root = queryDialogElement(html, ".rm-character-downtime-library");
-        root?.querySelectorAll?.("[data-downtime-action-uuid]")?.forEach((button) => {
-          button.addEventListener("click", () => {
-            const uuid = cleanText(button.dataset.downtimeActionUuid);
-            const record = records.find((entry) => entry.uuid === uuid) ?? null;
-            if (record) {
-              setCharacterDowntimeActionSelection(panel, record);
-            }
-            resolve();
-            dialog.close?.();
-          });
-        });
-      },
-      close: () => resolve()
-    }, {
-      classes: ["rebreya-main", "rebreya-trader-dialog", "rm-character-downtime-library-window"],
-      width: 560,
-      height: 620
-    });
-
-    dialog.render(true);
-  });
+  await renderDowntimeLibraryPack(pack);
 }
 
 function getApplicationElementCandidates(app) {

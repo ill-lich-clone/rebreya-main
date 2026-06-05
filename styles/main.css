@@ -5049,62 +5049,6 @@ summary:focus-visible {
   margin: 0;
 }
 
-.rm-character-downtime-library-window .window-content {
-  background: var(--rm-bg);
-  color: var(--rm-text);
-}
-
-.rm-character-downtime-library {
-  display: grid;
-  gap: 6px;
-  max-height: 500px;
-  overflow: auto;
-}
-
-.rm-character-downtime-library__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  width: 100%;
-  padding: 9px 10px;
-  border: 1px solid var(--rm-border);
-  border-radius: 0;
-  background: rgba(255, 255, 255, 0.035);
-  color: var(--rm-text);
-  text-align: left;
-}
-
-.rm-character-downtime-library__row:hover {
-  border-color: rgba(240, 201, 130, 0.55);
-  background: rgba(151, 111, 51, 0.24);
-}
-
-.rm-character-downtime-library__row span {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}
-
-.rm-character-downtime-library__row strong,
-.rm-character-downtime-library__row small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rm-character-downtime-library__row small {
-  color: var(--rm-muted);
-  font-size: 12px;
-}
-
-.rm-character-downtime-library__row em {
-  min-width: 28px;
-  color: var(--rm-muted);
-  font-style: normal;
-  text-align: right;
-}
-
 .rm-character-downtime-history {
   display: grid;
   gap: 8px;

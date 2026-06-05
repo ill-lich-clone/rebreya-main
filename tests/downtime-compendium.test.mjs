@@ -95,6 +95,7 @@ test("downtime item data stores automation status and a stable Rebreya template 
   const itemData = createDowntimeItemData(rest, new Map([["Простой", "folder-id"]]));
 
   assert.equal(itemData.folder, "folder-id");
+  assert.equal(itemData.img, "systems/dnd5e/icons/svg/activity/utility.svg");
   assert.equal(itemData.ownership.default, 2);
   assert.equal(itemData.flags[MODULE_ID].managed, true);
   assert.equal(itemData.flags[MODULE_ID].sourceType, "downtimeTemplate");
