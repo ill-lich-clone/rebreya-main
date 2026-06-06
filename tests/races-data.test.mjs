@@ -73,3 +73,34 @@ test("race data keeps ironborn parser-sensitive fields intact", () => {
   assert.doesNotMatch(resilience.description, /Модификации Железорождённых/u);
   assert.doesNotMatch(resilience.description, /Гении/u);
 });
+
+test("race darkvision abilities do not absorb following race text", () => {
+  const data = loadRacesData();
+  const standardDarkvision =
+    "На расстоянии в 60 футов Вы при тусклом освещении можете видеть так, как будто это яркое освещение, и в темноте так, как будто это тусклое освещение. В темноте Вы не можете различать цвета, только оттенки серого.";
+  const standardDarkvisionLowercase =
+    "На расстоянии в 60 футов вы при тусклом освещении можете видеть так, как будто это яркое освещение, и в темноте так, как будто это тусклое освещение. В темноте вы не можете различать цвета, только оттенки серого.";
+
+  const expectedDescriptions = new Map([
+    ["орки", standardDarkvision],
+    [
+      "морские-эльфы",
+      `Привыкнув к сумраку леса и ночному небу, Вы обладаете превосходным зрением в темноте и при тусклом освещении. ${standardDarkvision}`
+    ],
+    [
+      "гномы",
+      `Вы обладаете превосходным зрением в темноте и при тусклом освещении. ${standardDarkvision}`
+    ],
+    ["табакси", standardDarkvision],
+    ["леониды", standardDarkvisionLowercase]
+  ]);
+
+  for (const [raceId, expectedDescription] of expectedDescriptions) {
+    const race = getRace(data, raceId);
+    assert.ok(race, `${raceId} must exist`);
+
+    const darkvision = race.abilities.find((ability) => ability.name === "Тёмное зрение");
+    assert.ok(darkvision, `${race.name} must have Darkvision ability`);
+    assert.equal(darkvision.description, expectedDescription);
+  }
+});
