@@ -88,6 +88,28 @@ test("research downtime keeps the rank costs and structured result thresholds", 
   ]);
 });
 
+test("carousing downtime stores social class resource choices", () => {
+  const carousing = normalizeDowntimeActivity(
+    DOWNTIME_DATA.activities.find((activity) => activity.id === "carousing")
+  );
+  const itemData = createDowntimeItemData(carousing, new Map());
+  const downtime = itemData.flags[MODULE_ID].downtime;
+  const resourceAction = downtime.targetActions.find((action) => action.id === "carousing-resources");
+
+  assert.equal(resourceAction.actionType, "resources");
+  assert.deepEqual(resourceAction.resources.choices.map((choice) => [
+    choice.id,
+    choice.label,
+    choice.cost.amount,
+    choice.cost.currency
+  ]), [
+    ["commoners", "Простонародье", 10, "gp"],
+    ["wealthy", "Зажиточные люди", 50, "gp"],
+    ["nobility", "Знать", 250, "gp"]
+  ]);
+  assert.equal(resourceAction.resources.choices[2].requirement, "Доступ в местный высший свет или успешная маскировка.");
+});
+
 test("downtime item data stores automation status and a stable Rebreya template flag", () => {
   const rest = normalizeDowntimeActivity(
     DOWNTIME_DATA.activities.find((activity) => activity.id === "rest")

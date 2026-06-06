@@ -379,6 +379,99 @@ test("CharacterDowntimeService exposes selected template details and archives co
   assert.equal(context.archivePage.total, 1);
 });
 
+test("CharacterDowntimeService exposes and forwards downtime resource choices", async () => {
+  const calls = [];
+  const service = new CharacterDowntimeService(createModuleApi({
+    calls,
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }],
+      requests: [],
+      actionCatalog: [{
+        id: "Compendium.world.rebreya-downtime.Item.carousing",
+        label: "Кутёж",
+        targetActions: [{
+          id: "carousing-resources",
+          label: "Круг общения",
+          actionType: "resources",
+          resources: {
+            choices: [{
+              id: "commoners",
+              label: "Простонародье",
+              cost: {
+                amount: 10,
+                currency: "gp"
+              }
+            }, {
+              id: "wealthy",
+              label: "Зажиточные люди",
+              cost: {
+                amount: 50,
+                currency: "gp"
+              }
+            }]
+          }
+        }]
+      }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }), {
+    actionId: "Compendium.world.rebreya-downtime.Item.carousing",
+    targetActionSelections: [{
+      actionId: "carousing-resources",
+      choiceId: "wealthy"
+    }]
+  });
+
+  assert.equal(context.selectedTemplate.resourceActions[0].hasResourceChoices, true);
+  assert.deepEqual(context.selectedTemplate.resourceActions[0].resourceChoices.map((choice) => [
+    choice.id,
+    choice.label,
+    choice.outcomeSummary,
+    choice.selected
+  ]), [
+    ["commoners", "Простонародье", "10 зм", false],
+    ["wealthy", "Зажиточные люди", "50 зм", true]
+  ]);
+
+  await service.createRequest(createActor({ id: "actor-a" }), {
+    actionId: "Compendium.world.rebreya-downtime.Item.carousing",
+    weeks: 1,
+    targetActionSelections: [{
+      actionId: "carousing-resources",
+      choiceId: "wealthy"
+    }]
+  });
+
+  assert.deepEqual(calls.at(-1), [
+    "createDowntimeRequest",
+    {
+      groupId: "group-a",
+      actorId: "actor-a",
+      actionId: "Compendium.world.rebreya-downtime.Item.carousing",
+      weeks: 1,
+      title: "",
+      description: "",
+      targetActionSelections: [{
+        actionId: "carousing-resources",
+        choiceId: "wealthy"
+      }]
+    }
+  ]);
+});
+
 test("CharacterDowntimeService converts known group errors into a warning context", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     error: new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP)

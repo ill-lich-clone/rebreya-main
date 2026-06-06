@@ -67,7 +67,18 @@
           {{#if characterDowntime.selectedTemplate.hasResourceActions}}
             <div class="rm-character-downtime-template__line">
               {{#each characterDowntime.selectedTemplate.resourceActions}}
-                <span class="rm-chip" data-tooltip="{{label}}">{{outcomeSummary}}</span>
+                {{#if hasResourceChoices}}
+                  <label class="rm-character-downtime-resource-choice">
+                    <span>{{label}}</span>
+                    <select data-action="character-downtime-resource-choice" data-target-action-id="{{id}}">
+                      {{#each resourceChoices}}
+                        <option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}} · {{outcomeSummary}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                {{else}}
+                  <span class="rm-chip" data-tooltip="{{label}}">{{outcomeSummary}}</span>
+                {{/if}}
               {{/each}}
             </div>
           {{/if}}

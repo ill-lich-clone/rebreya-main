@@ -5061,6 +5061,23 @@ summary:focus-visible {
   gap: 6px;
 }
 
+.rm-character-downtime-resource-choice {
+  display: grid;
+  gap: 4px;
+  min-width: min(100%, 280px);
+  flex: 1 1 240px;
+}
+
+.rm-character-downtime-resource-choice span {
+  color: var(--rm-sheet-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rm-character-downtime-resource-choice select {
+  min-height: 34px;
+}
+
 .rm-character-downtime-template__summary {
   margin: 0;
   max-height: 132px;

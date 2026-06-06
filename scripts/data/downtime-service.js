@@ -130,6 +130,66 @@ function normalizeCheck(value = {}) {
   return normalized;
 }
 
+function normalizeTargetActionSelections(value = []) {
+  const selections = new Map();
+  for (const entry of asArray(value)) {
+    const actionId = cleanId(entry?.actionId);
+    const choiceId = cleanId(entry?.choiceId);
+    if (actionId && choiceId) {
+      selections.set(actionId, choiceId);
+    }
+  }
+  return selections;
+}
+
+function normalizeResourceChoice(choice = {}, index = 0) {
+  const source = asObject(choice);
+  return {
+    ...clone(source),
+    id: cleanId(source.id) || `choice-${index + 1}`,
+    label: cleanString(source.label) || cleanString(source.name) || `Выбор ${index + 1}`,
+    requirement: cleanString(source.requirement)
+  };
+}
+
+function applySelectedResourceChoice(action = {}, selections = new Map()) {
+  const source = asObject(action);
+  if (cleanId(source.actionType) !== "resources") {
+    return source;
+  }
+
+  const resources = asObject(source.resources);
+  const choices = asArray(resources.choices).map((choice, index) => normalizeResourceChoice(choice, index));
+  if (!choices.length) {
+    return source;
+  }
+
+  const requestedChoiceId = selections.get(cleanId(source.id));
+  const selectedChoice = choices.find((choice) => choice.id === requestedChoiceId) ?? choices[0];
+  const selectedCost = selectedChoice.cost && typeof selectedChoice.cost === "object" && !Array.isArray(selectedChoice.cost)
+    ? selectedChoice.cost
+    : {};
+  const selectedResources = {
+    ...clone(resources),
+    selectedChoice: clone(selectedChoice),
+    cost: {
+      ...clone(asObject(resources.cost)),
+      ...clone(asObject(selectedCost))
+    }
+  };
+
+  if (selectedChoice.narrative) {
+    selectedResources.narrative = cleanString(selectedChoice.narrative);
+  }
+
+  return {
+    ...clone(source),
+    resources: selectedResources,
+    selectedChoiceId: selectedChoice.id,
+    selectedChoiceLabel: selectedChoice.label
+  };
+}
+
 function isDowntimeTemplateActionId(actionId = "") {
   const safeActionId = cleanId(actionId);
   return Boolean(safeActionId) && (
@@ -617,6 +677,7 @@ export class DowntimeService {
     title = "",
     description = "",
     weeks = 1,
+    targetActionSelections = [],
     submittedByUserId = ""
   } = {}) {
     const context = cleanId(groupId)
@@ -629,6 +690,7 @@ export class DowntimeService {
     const resolvedActionId = action.id;
     const safeTitle = cleanString(title) || action.label;
     const userId = cleanId(submittedByUserId) || cleanId(getCurrentUser()?.id);
+    const actionSelections = normalizeTargetActionSelections(targetActionSelections);
 
     return this.#writeGroupState(context, (state) => {
       const balance = normalizeBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance());
@@ -651,10 +713,13 @@ export class DowntimeService {
         description: cleanString(description),
         weeks: safeWeeks,
         status: "pending",
-        checks: asArray(action.targetActions).slice(0, MAX_TARGET_ACTIONS).map((targetAction, index) => normalizeCheck({
-          id: cleanId(targetAction?.id) || `check-${index + 1}`,
-          ...asObject(targetAction)
-        })),
+        checks: asArray(action.targetActions).slice(0, MAX_TARGET_ACTIONS).map((targetAction, index) => {
+          const selectedTargetAction = applySelectedResourceChoice(targetAction, actionSelections);
+          return normalizeCheck({
+            id: cleanId(selectedTargetAction?.id) || `check-${index + 1}`,
+            ...asObject(selectedTargetAction)
+          });
+        }),
         result: "",
         ...audit,
         submittedByUserId: userId,

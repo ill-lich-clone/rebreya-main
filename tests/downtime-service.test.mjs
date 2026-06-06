@@ -1255,6 +1255,95 @@ test("createRequest links downtime requests to the selected template item and co
   }
 });
 
+test("createRequest applies selected resource choices from downtime templates", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-carousing",
+    name: "Кутёж",
+    config: {
+      rank: "3+",
+      duration: "1 рабочая неделя.",
+      summary: "Неделя общения и развлечений.",
+      targetActions: [{
+        id: "carousing-resources",
+        label: "Круг общения",
+        actionType: "resources",
+        resources: {
+          narrative: "Выберите круг общения.",
+          cost: {
+            amount: 10,
+            currency: "gp",
+            payer: "character",
+            timing: "submit"
+          },
+          choices: [{
+            id: "commoners",
+            label: "Простонародье",
+            cost: {
+              amount: 10,
+              currency: "gp",
+              payer: "character",
+              timing: "submit"
+            }
+          }, {
+            id: "wealthy",
+            label: "Зажиточные люди",
+            cost: {
+              amount: 50,
+              currency: "gp",
+              payer: "character",
+              timing: "submit"
+            }
+          }]
+        }
+      }, {
+        id: "carousing-check",
+        label: "Новые контакты",
+        actionType: "check",
+        sourceType: "skill",
+        ability: "cha",
+        target: "per",
+        targetLabel: "Убеждение"
+      }]
+    }
+  });
+  const harness = createHarness({
+    members: [actor],
+    groupItems: [templateItem],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      weeks: 1,
+      targetActionSelections: [{
+        actionId: "carousing-resources",
+        choiceId: "wealthy"
+      }]
+    });
+
+    assert.equal(request.checks[0].selectedChoiceId, "wealthy");
+    assert.equal(request.checks[0].selectedChoiceLabel, "Зажиточные люди");
+    assert.equal(request.checks[0].resources.cost.amount, 50);
+    assert.equal(request.checks[0].resources.cost.currency, "gp");
+    assert.equal(request.checks[1].targetLabel, "Убеждение");
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("approving a request with completed roll targets archives it as completed", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
   const harness = createHarness({

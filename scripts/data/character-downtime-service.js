@@ -126,25 +126,80 @@ function buildResourceSummary(check = {}) {
   return cleanText(cost.formula) || cleanText(resources.narrative) || "Ресурсы";
 }
 
-function mapTemplateTargetAction(action = {}, index = 0) {
+function buildResourceChoiceSummary(choice = {}) {
+  return buildResourceSummary({
+    resources: {
+      narrative: choice.narrative,
+      cost: choice.cost
+    }
+  });
+}
+
+function normalizeTargetActionSelections(value = []) {
+  const selections = new Map();
+  for (const entry of Array.isArray(value) ? value : []) {
+    const actionId = cleanText(entry?.actionId);
+    const choiceId = cleanText(entry?.choiceId);
+    if (actionId && choiceId) {
+      selections.set(actionId, choiceId);
+    }
+  }
+  return selections;
+}
+
+function buildResourceChoices(action = {}, selectedChoiceId = "") {
+  const resources = action?.resources && typeof action.resources === "object" && !Array.isArray(action.resources)
+    ? action.resources
+    : {};
+  return (Array.isArray(resources.choices) ? resources.choices : [])
+    .map((choice, index) => {
+      const id = cleanText(choice?.id) || `choice-${index + 1}`;
+      const label = cleanText(choice?.label) || cleanText(choice?.name) || `Выбор ${index + 1}`;
+      return {
+        ...choice,
+        id,
+        label,
+        outcomeSummary: buildResourceChoiceSummary(choice),
+        requirement: cleanText(choice?.requirement),
+        selected: id === selectedChoiceId
+      };
+    })
+    .filter((choice) => choice.id && choice.label);
+}
+
+function mapTemplateTargetAction(action = {}, index = 0, selections = new Map()) {
   const actionType = cleanText(action.actionType) || "check";
+  const resourceChoices = actionType === "resources"
+    ? buildResourceChoices(action, selections.get(cleanText(action.id)) || "")
+    : [];
+  if (resourceChoices.length && !resourceChoices.some((choice) => choice.selected)) {
+    resourceChoices[0].selected = true;
+  }
+  const selectedResourceChoice = resourceChoices.find((choice) => choice.selected) ?? null;
   const mapped = {
     ...action,
     number: index + 1,
     actionType,
+    resourceChoices,
+    selectedResourceChoiceId: selectedResourceChoice?.id ?? "",
+    selectedResourceChoiceLabel: selectedResourceChoice?.label ?? "",
     summary: buildCheckSummary(action),
-    outcomeSummary: actionType === "resources" ? buildResourceSummary(action) : buildCheckSummary(action)
+    outcomeSummary: actionType === "resources"
+      ? (selectedResourceChoice?.outcomeSummary || buildResourceSummary(action))
+      : buildCheckSummary(action),
+    hasResourceChoices: resourceChoices.length > 0
   };
   return mapped;
 }
 
-function buildTemplateView(action = null) {
+function buildTemplateView(action = null, formState = {}) {
   if (!action) {
     return null;
   }
 
+  const selections = normalizeTargetActionSelections(formState.targetActionSelections);
   const targetActions = (Array.isArray(action.targetActions) ? action.targetActions : [])
-    .map((entry, index) => mapTemplateTargetAction(entry, index));
+    .map((entry, index) => mapTemplateTargetAction(entry, index, selections));
   const resourceActions = targetActions.filter((entry) => entry.actionType === "resources");
   const checkActions = targetActions.filter((entry) => entry.actionType !== "resources" && entry.actionType !== "downtimeResult");
   const resultActions = targetActions.filter((entry) => entry.actionType === "downtimeResult");
@@ -303,7 +358,7 @@ function buildEmptyContext(actor, {
 } = {}) {
   const actionId = cleanText(formState.actionId);
   const weeks = normalizeWeeks(formState.weeks, 1);
-  const selectedTemplate = buildTemplateView(formState.selectedTemplate);
+  const selectedTemplate = buildTemplateView(formState.selectedTemplate, formState);
   return {
     actorId: actor?.id ?? "",
     actorName: actor?.name ?? "",
@@ -325,7 +380,10 @@ function buildEmptyContext(actor, {
       actionId,
       weeks,
       title: cleanText(formState.title),
-      description: cleanText(formState.description)
+      description: cleanText(formState.description),
+      targetActionSelections: Array.isArray(formState.targetActionSelections)
+        ? formState.targetActionSelections
+        : []
     },
     submitDisabled: true,
     submitDisabledReason: cleanText(warning) || "Персонаж не найден в группе Rebreya."
@@ -392,7 +450,7 @@ export class CharacterDowntimeService {
     const archivePage = paginate(archivedRequests, formState.archivePage);
 
     const selectedAction = actionCatalog.find((action) => action.id === actionId) ?? null;
-    const selectedTemplate = buildTemplateView(selectedAction) ?? buildTemplateView(formState.selectedTemplate);
+    const selectedTemplate = buildTemplateView(selectedAction, formState) ?? buildTemplateView(formState.selectedTemplate, formState);
     const actionOptions = actionCatalog.map((action) => ({
       value: action.id,
       label: action.label ?? action.id,
@@ -423,7 +481,10 @@ export class CharacterDowntimeService {
         actionId,
         weeks,
         title: cleanText(formState.title),
-        description: cleanText(formState.description)
+        description: cleanText(formState.description),
+        targetActionSelections: Array.isArray(formState.targetActionSelections)
+          ? formState.targetActionSelections
+          : []
       },
       submitDisabled,
       submitDisabledReason
@@ -443,13 +504,23 @@ export class CharacterDowntimeService {
       groupId = "";
     }
 
-    return this.moduleApi.createDowntimeRequest({
+    const targetActionSelections = Array.isArray(payload.targetActionSelections)
+      ? payload.targetActionSelections.map((entry) => ({
+        actionId: cleanText(entry?.actionId),
+        choiceId: cleanText(entry?.choiceId)
+      })).filter((entry) => entry.actionId && entry.choiceId)
+      : [];
+    const requestPayload = {
       groupId,
       actorId: actor.id,
       actionId: cleanText(payload.actionId),
       weeks: normalizeWeeks(payload.weeks, 1),
       title: cleanText(payload.title),
       description: cleanText(payload.description)
-    });
+    };
+    if (targetActionSelections.length) {
+      requestPayload.targetActionSelections = targetActionSelections;
+    }
+    return this.moduleApi.createDowntimeRequest(requestPayload);
   }
 }

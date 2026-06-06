@@ -776,32 +776,41 @@
             "cost": {
               "amount": 10,
               "currency": "gp",
-              "formula": "10/50/250 зм по кругу общения",
+              "formula": "выбранный круг общения",
               "payer": "character",
               "timing": "manual"
             },
-            "purchases": [
+            "choices": [
               {
+                "id": "commoners",
+                "label": "Простонародье",
+                "cost": {
+                  "amount": 10,
+                  "currency": "gp",
+                  "payer": "character",
+                  "timing": "submit"
+                }
+              },
+              {
+                "id": "wealthy",
                 "label": "Зажиточные люди",
                 "cost": {
                   "amount": 50,
-                  "currency": "gp"
-                },
-                "effect": {
-                  "type": "unlock",
-                  "value": "контакты зажиточных"
+                  "currency": "gp",
+                  "payer": "character",
+                  "timing": "submit"
                 },
                 "scope": "request"
               },
               {
+                "id": "nobility",
                 "label": "Знать",
+                "requirement": "Доступ в местный высший свет или успешная маскировка.",
                 "cost": {
                   "amount": 250,
-                  "currency": "gp"
-                },
-                "effect": {
-                  "type": "unlock",
-                  "value": "контакты знати"
+                  "currency": "gp",
+                  "payer": "character",
+                  "timing": "submit"
                 },
                 "scope": "request"
               }

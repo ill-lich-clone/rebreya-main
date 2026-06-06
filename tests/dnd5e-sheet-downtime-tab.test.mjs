@@ -348,6 +348,12 @@ test("character downtime render hook submits requests for the current sheet acto
     const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
     const calls = [];
     const submitButton = new stubs.HTMLElement();
+    const resourceChoice = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "carousing-resources"
+      }
+    });
+    resourceChoice.value = "wealthy";
     const panel = new stubs.HTMLElement({
       selectors: {
         "[data-action='character-downtime-action']": { value: "research" },
@@ -355,6 +361,9 @@ test("character downtime render hook submits requests for the current sheet acto
         "[data-action='character-downtime-title']": { value: "Найти наставника" },
         "[data-action='character-downtime-description']": { value: "Спросить в архиве" },
         "[data-action='character-downtime-submit']": submitButton
+      },
+      selectorAll: {
+        "[data-action='character-downtime-resource-choice']": [resourceChoice]
       }
     });
     submitButton.closest = (selector) => {
@@ -408,7 +417,11 @@ test("character downtime render hook submits requests for the current sheet acto
         actionId: "research",
         weeks: 2,
         title: "Найти наставника",
-        description: "Спросить в архиве"
+        description: "Спросить в архиве",
+        targetActionSelections: [{
+          actionId: "carousing-resources",
+          choiceId: "wealthy"
+        }]
       }],
       ["render", { force: true }],
       ["refreshOpenApps"]

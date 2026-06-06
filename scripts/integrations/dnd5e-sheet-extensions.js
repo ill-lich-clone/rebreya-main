@@ -2431,12 +2431,16 @@ async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
   }
 
   readCharacterDowntimeFormStateFromPanel(panel, actor);
+  const targetActionSelections = readCharacterDowntimeTargetActionSelections(panel);
   const payload = {
     actionId: cleanText(panel.querySelector("[data-action='character-downtime-action']")?.value),
     weeks: toPositiveInteger(panel.querySelector("[data-action='character-downtime-weeks']")?.value, 1),
     title: cleanText(panel.querySelector("[data-action='character-downtime-title']")?.value),
     description: cleanText(panel.querySelector("[data-action='character-downtime-description']")?.value)
   };
+  if (targetActionSelections.length) {
+    payload.targetActionSelections = targetActionSelections;
+  }
 
   const request = await moduleApi.characterDowntimeService.createRequest(actor, payload);
   await rollImmediateCharacterDowntimeTargets(actor, request, moduleApi);
@@ -2471,8 +2475,18 @@ function updateCharacterDowntimeFormState(actor, patch = {}) {
 function readCharacterDowntimeFormStateFromPanel(panel, actor) {
   return updateCharacterDowntimeFormState(actor, {
     actionId: cleanText(panel?.querySelector("[data-action='character-downtime-action']")?.value),
-    weeks: toPositiveInteger(panel?.querySelector("[data-action='character-downtime-weeks']")?.value, 1)
+    weeks: toPositiveInteger(panel?.querySelector("[data-action='character-downtime-weeks']")?.value, 1),
+    targetActionSelections: readCharacterDowntimeTargetActionSelections(panel)
   });
+}
+
+function readCharacterDowntimeTargetActionSelections(panel) {
+  return Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-resource-choice']") ?? [])
+    .map((control) => ({
+      actionId: cleanText(control?.dataset?.targetActionId),
+      choiceId: cleanText(control?.value)
+    }))
+    .filter((entry) => entry.actionId && entry.choiceId);
 }
 
 function getDowntimeLibraryPack() {
@@ -2627,6 +2641,7 @@ async function setCharacterDowntimeActionSelection(panel, record, app, moduleApi
     updateCharacterDowntimeFormState(actor, {
       actionId: record.uuid,
       weeks: toPositiveInteger(panel?.querySelector("[data-action='character-downtime-weeks']")?.value, 1),
+      targetActionSelections: [],
       selectedTemplate: {
         ...record,
         id: record.uuid,
@@ -3244,6 +3259,18 @@ function bindCharacterDowntimeStateControls(panel, app, moduleApi) {
     weeksInput.addEventListener("change", (event) => {
       updateCharacterDowntimeFormState(actor, {
         weeks: toPositiveInteger(event.currentTarget?.value, 1)
+      });
+    }, listenerOptions);
+  }
+
+  for (const select of Array.from(panel.querySelectorAll("[data-action='character-downtime-resource-choice']") ?? [])) {
+    if (!(select instanceof HTMLElement) || !(select.addEventListener instanceof Function)) {
+      continue;
+    }
+
+    select.addEventListener("change", () => {
+      updateCharacterDowntimeFormState(actor, {
+        targetActionSelections: readCharacterDowntimeTargetActionSelections(panel)
       });
     }, listenerOptions);
   }
