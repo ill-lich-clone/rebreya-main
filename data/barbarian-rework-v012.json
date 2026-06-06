@@ -3,6 +3,81 @@
   "class": {
     "name": "Варвар (реворк V0.12)",
     "identifier": "barbarian-rework-v012",
+    "armorProficiencies": [
+      "lgt",
+      "med",
+      "shl"
+    ],
+    "weaponProficiencyChoices": [
+      {
+        "count": 1,
+        "pool": [
+          "weapon:sim:club",
+          "weapon:sim:dagger",
+          "weapon:sim:greatclub",
+          "weapon:sim:handaxe",
+          "weapon:sim:javelin",
+          "weapon:sim:kastet",
+          "weapon:sim:kosa",
+          "weapon:sim:lighthammer",
+          "weapon:sim:mace",
+          "weapon:sim:quarterstaff",
+          "weapon:sim:sickle",
+          "weapon:sim:spear",
+          "weapon:sim:lightcrossbow",
+          "weapon:sim:dart",
+          "weapon:sim:shortbow",
+          "weapon:sim:sling"
+        ]
+      },
+      {
+        "count": 1,
+        "pool": [
+          "weapon:mar:battleaxe",
+          "weapon:mar:flail",
+          "weapon:mar:glaive",
+          "weapon:mar:greataxe",
+          "weapon:mar:greatsword",
+          "weapon:mar:halberd",
+          "weapon:mar:lance",
+          "weapon:mar:longsword",
+          "weapon:mar:maul",
+          "weapon:mar:morningstar",
+          "weapon:mar:pike",
+          "weapon:mar:rapier",
+          "weapon:mar:scimitar",
+          "weapon:mar:shortsword",
+          "weapon:mar:trident",
+          "weapon:mar:warpick",
+          "weapon:mar:warhammer",
+          "weapon:mar:whip",
+          "weapon:mar:blowgun",
+          "weapon:mar:boevaya-kosa",
+          "weapon:mar:dlinnaya-bulava",
+          "weapon:mar:dvustoronniy-molot",
+          "weapon:mar:dvustoronniy-topor",
+          "weapon:mar:estok",
+          "weapon:mar:handcrossbow",
+          "weapon:mar:heavycrossbow",
+          "weapon:mar:katana",
+          "weapon:mar:kinzhal-na-tsepi",
+          "weapon:mar:kompozitnyy-luk",
+          "weapon:mar:kostyanoy-topor",
+          "weapon:mar:longbow",
+          "weapon:mar:luk-vsadnika",
+          "weapon:mar:mech-palacha",
+          "weapon:mar:metallicheskaya-perchatka",
+          "weapon:mar:molot-vsadnika",
+          "weapon:mar:mnogozaryadnyy-arbalet",
+          "weapon:mar:palash",
+          "weapon:mar:sablya",
+          "weapon:mar:set",
+          "weapon:mar:shamshir",
+          "weapon:mar:tsep-chain",
+          "weapon:mar:tsepnoy-serp"
+        ]
+      }
+    ],
     "features": [
       {
         "name": "Защита без доспехов",

@@ -255,7 +255,8 @@ function buildGearSignature(item) {
     itemSlot,
     heroDollSlots,
     firearmClass: classification.firearmClass,
-    weapon: isPlainObject(item.weapon) ? item.weapon : null
+    weapon: isPlainObject(item.weapon) ? item.weapon : null,
+    armor: isPlainObject(item.armor) ? item.armor : null
   });
 }
 
@@ -487,6 +488,39 @@ function applyWeaponData(baseData, weapon) {
   }
 }
 
+function normalizeArmorProperties(properties) {
+  return cleanArray(properties);
+}
+
+function isArmorEquipmentType(type) {
+  return ["light", "medium", "heavy", "shield"].includes(cleanString(type));
+}
+
+function applyArmorData(baseData, item, classification) {
+  const armor = isPlainObject(item?.armor) ? item.armor : null;
+  const typeValue = cleanString(armor?.type) || classification.systemTypeValue || "wondrous";
+  baseData.type = {
+    value: typeValue,
+    baseItem: cleanString(armor?.baseItem) || classification.baseItem || ""
+  };
+
+  if (!armor && !isArmorEquipmentType(typeValue)) {
+    return;
+  }
+
+  baseData.armor = {
+    value: Math.max(0, Math.floor(toFiniteNumber(armor?.value, 0))),
+    magicalBonus: armor?.magicalBonus === undefined || armor?.magicalBonus === null
+      ? null
+      : Math.max(0, Math.floor(toFiniteNumber(armor.magicalBonus, 0))),
+    dex: armor?.dex === undefined || armor?.dex === null
+      ? null
+      : Math.floor(toFiniteNumber(armor.dex, 0))
+  };
+  baseData.strength = Math.max(0, Math.floor(toFiniteNumber(armor?.strength, 0)));
+  baseData.properties = normalizeArmorProperties(armor?.properties);
+}
+
 function buildSystemData(item, classification, descriptionHtml) {
   const weightValue = Number.isFinite(Number(item.weight)) ? Number(item.weight) : 0;
   const price = goldToDnd5ePrice(item.priceGoldEquivalent ?? item.priceValue ?? 0);
@@ -519,10 +553,7 @@ function buildSystemData(item, classification, descriptionHtml) {
       break;
 
     case "equipment":
-      baseData.type = {
-        value: classification.systemTypeValue || "wondrous",
-        baseItem: classification.baseItem || ""
-      };
+      applyArmorData(baseData, item, classification);
       break;
 
     case "tool":

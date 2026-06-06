@@ -197,6 +197,39 @@ const EXPECTED_ORDINARY_WEAPONS = [
   ["kompozitnyy-luk", "martialR", "kompozitnyy-luk"],
   ["mnogozaryadnyy-arbalet", "martialR", "mnogozaryadnyy-arbalet"]
 ];
+const EXPECTED_ARMOR = new Map([
+  ["styoganyy-dospekh", { type: "light", baseItem: "padded", value: 11, dex: null, strength: 0, stealth: true }],
+  ["kozhanyy-dospekh", { type: "light", baseItem: "leather", value: 11, dex: null, strength: 0, stealth: false }],
+  ["proklyopannyy-kozhanyy-dospekh", { type: "light", baseItem: "studded", value: 12, dex: null, strength: 0, stealth: false }],
+  ["boevaya-bronya-shef-povara", { type: "light", baseItem: "", value: 11, dex: null, strength: 0, stealth: false }],
+  ["shkurnyy-dospekh", { type: "medium", baseItem: "hide", value: 12, dex: 2, strength: 0, stealth: false }],
+  ["kol-chuzhnaya-rubakha", { type: "medium", baseItem: "chainshirt", value: 13, dex: 2, strength: 0, stealth: false }],
+  ["cheshuychatyy-dospekh", { type: "medium", baseItem: "scalemail", value: 14, dex: 2, strength: 0, stealth: true }],
+  ["kirasa", { type: "medium", baseItem: "breastplate", value: 14, dex: 2, strength: 0, stealth: false }],
+  ["polulaty", { type: "medium", baseItem: "halfplate", value: 15, dex: 2, strength: 0, stealth: true }],
+  ["improvizirovannyy-dospekh", { type: "medium", baseItem: "", value: 11, dex: 2, strength: 0, stealth: true }],
+  ["kolechnyy-dospekh", { type: "heavy", baseItem: "ringmail", value: 14, dex: null, strength: 0, stealth: true }],
+  ["kol-chuga", { type: "heavy", baseItem: "chainmail", value: 16, dex: null, strength: 0, stealth: true }],
+  ["nabornyy-dospekh", { type: "heavy", baseItem: "splint", value: 17, dex: null, strength: 13, stealth: true }],
+  ["laty", { type: "heavy", baseItem: "plate", value: 18, dex: null, strength: 15, stealth: true }],
+  ["pantsir-tortla", { type: "heavy", baseItem: "", value: 17, dex: null, strength: 18, stealth: true }],
+  ["shchit", { type: "shield", baseItem: "shield", value: 2, dex: null, strength: 0, stealth: false }],
+  ["bakler", { type: "shield", baseItem: "", value: 1, dex: null, strength: 0, stealth: false }],
+  ["bashennyy-shchit", { type: "shield", baseItem: "", value: 2, dex: null, strength: 16, stealth: true }],
+  ["tyazhelyy-plashch", { type: "light", baseItem: "", value: 11, dex: null, strength: 0, stealth: true }],
+  ["kozhanaya-kurtka", { type: "light", baseItem: "", value: 11, dex: null, strength: 0, stealth: false }],
+  ["zashchitnaya-rubashka", { type: "light", baseItem: "", value: 11, dex: null, strength: 0, stealth: false }],
+  ["listovoy-zhilet", { type: "light", baseItem: "", value: 12, dex: null, strength: 0, stealth: true }],
+  ["ukreplennyy-plashch", { type: "light", baseItem: "", value: 12, dex: null, strength: 0, stealth: false }],
+  ["mnogosloynyy-bronezhilet", { type: "medium", baseItem: "", value: 13, dex: 2, strength: 0, stealth: false }],
+  ["lyogkaya-sluzhebnaya-bronya", { type: "medium", baseItem: "", value: 14, dex: 2, strength: 0, stealth: false }],
+  ["takticheskaya-bronya", { type: "medium", baseItem: "", value: 15, dex: 2, strength: 10, stealth: true }],
+  ["pekhotnaya-shturmovaya-bronya", { type: "heavy", baseItem: "", value: 16, dex: null, strength: 10, stealth: true }],
+  ["tyazhelaya-sluzhebnaya-bronya", { type: "heavy", baseItem: "", value: 17, dex: null, strength: 13, stealth: true }],
+  ["sverkhtyazhelaya-shturmovaya-bronya", { type: "heavy", baseItem: "", value: 18, dex: null, strength: 15, stealth: true }],
+  ["ukreplennyy-shchit", { type: "shield", baseItem: "", value: 2, dex: null, strength: 13, stealth: false }],
+  ["ballisticheskiy-shchit", { type: "shield", baseItem: "", value: 3, dex: null, strength: 15, stealth: true }]
+]);
 
 globalThis.foundry ??= {
   utils: {
@@ -338,6 +371,38 @@ test("ordinary weapons from the weapon sheet use registered dnd5e base weapon id
         `${expectedBaseItem} is exposed through CONFIG.DND5E.weaponIds as a full UUID`
       );
     }
+  }
+});
+
+test("real gear armor data maps every armor sheet row to dnd5e armor system keys", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+
+  for (const [gearId, expected] of EXPECTED_ARMOR) {
+    const item = byId.get(gearId);
+    assert.ok(item, `armor ${gearId} exists in Rebreya gear data`);
+    assert.equal(item.armor?.type, expected.type, `${gearId} stores armor type from the armor sheet`);
+    assert.equal(item.armor?.value, expected.value, `${gearId} stores AC value from the armor sheet`);
+    assert.equal(item.armor?.dex, expected.dex, `${gearId} stores dex cap from the armor sheet`);
+    assert.equal(item.armor?.strength, expected.strength, `${gearId} stores strength requirement from the armor sheet`);
+    assert.equal(
+      (item.armor?.properties ?? []).includes("stealthDisadvantage"),
+      expected.stealth,
+      `${gearId} stores stealth disadvantage from the armor sheet`
+    );
+
+    const created = createDnd5eItemData(item, new Map());
+    assert.equal(created.type, "equipment", `${gearId} is created as dnd5e equipment`);
+    assert.equal(created.system.type.value, expected.type, `${gearId} uses the expected equipment armor type`);
+    assert.equal(created.system.type.baseItem, expected.baseItem, `${gearId} uses the expected base armor id`);
+    assert.equal(created.system.armor.value, expected.value, `${gearId} emits armor.value`);
+    assert.equal(created.system.armor.dex, expected.dex, `${gearId} emits armor.dex`);
+    assert.equal(created.system.strength, expected.strength, `${gearId} emits strength requirement`);
+    assert.equal(
+      (created.system.properties ?? []).includes("stealthDisadvantage"),
+      expected.stealth,
+      `${gearId} emits stealth disadvantage`
+    );
   }
 });
 
@@ -625,6 +690,15 @@ test("normalizes gear without dropping weapon data before compendium sync", () =
     }
   };
 
+  const armor = {
+    type: "heavy",
+    baseItem: "chainmail",
+    value: 16,
+    dex: null,
+    strength: 0,
+    properties: ["stealthDisadvantage"]
+  };
+
   const normalized = normalizeEconomyDataset({
     goods: [],
     regions: [],
@@ -635,9 +709,11 @@ test("normalizes gear without dropping weapon data before compendium sync", () =
       id: "dlinnyy-mech",
       name: "Длинный меч",
       equipmentType: "Оружие",
-      weapon
+      weapon,
+      armor
     }]
   });
 
   assert.deepEqual(normalized.gear[0].weapon, weapon);
+  assert.deepEqual(normalized.gear[0].armor, armor);
 });

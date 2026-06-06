@@ -1,4 +1,10 @@
 import {
+  BARBARIAN_STARTING_EQUIPMENT_PACKAGES,
+  BARBARIAN_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE,
+  getBarbarianStartingEquipmentPackage,
+  getBarbarianStartingEquipmentPackageChoices
+} from "./barbarian-starting-equipment.js";
+import {
   FIGHTER_STARTING_EQUIPMENT_PACKAGES,
   FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE,
   getFighterStartingEquipmentPackage,
@@ -12,6 +18,14 @@ import {
 } from "./paladin-starting-equipment.js";
 
 export const CLASS_STARTING_EQUIPMENT_CONFIGS = Object.freeze([
+  Object.freeze({
+    classIdentifier: "barbarian-rework-v012",
+    sourceType: BARBARIAN_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE,
+    packages: BARBARIAN_STARTING_EQUIPMENT_PACKAGES,
+    choiceHint: "Выберите А или Б:",
+    getPackage: getBarbarianStartingEquipmentPackage,
+    getChoices: getBarbarianStartingEquipmentPackageChoices
+  }),
   Object.freeze({
     classIdentifier: "fighter-rework-v028",
     sourceType: FIGHTER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE,

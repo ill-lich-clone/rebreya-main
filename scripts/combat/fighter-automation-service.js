@@ -1,6 +1,7 @@
 import { CLASS_FEATURES_COMPENDIUM_NAME, CLASSES_COMPENDIUM_NAME, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import {
   getClassStartingEquipmentConfig,
+  getClassStartingEquipmentConfigBySourceType,
   getClassStartingEquipmentPackage,
   isClassStartingEquipmentPackageSourceType
 } from "../data/class-starting-equipment.js";
@@ -1114,6 +1115,10 @@ export class FighterAutomationService {
       }
 
       const currentContainerIds = documentReferenceIdentifiers(getProperty(item, "system.container"));
+      if (!currentContainerIds.length) {
+        continue;
+      }
+
       if (currentContainerIds.some((currentContainerId) => itemById.has(currentContainerId))) {
         continue;
       }
@@ -1615,7 +1620,7 @@ export class FighterAutomationService {
     const itemData = [];
     for (const entry of this.#startingEquipmentEntries(selection)) {
       const uuid = entry.uuid || await this.#resolveStartingEquipmentGearUuid(entry.gearId);
-      const data = await this.#resolveStartingEquipmentItemData(uuid, entry.quantity);
+      const data = await this.#resolveStartingEquipmentItemData(uuid, entry.quantity, selection);
       if (Array.isArray(data)) {
         itemData.push(...data);
       }
@@ -1708,7 +1713,20 @@ export class FighterAutomationService {
     return cleanText(entry?.uuid) || (documentId ? `Compendium.${pack.collection}.Item.${documentId}` : "");
   }
 
-  async #resolveStartingEquipmentItemData(uuid, quantity = 1) {
+  #startingEquipmentItemContext(selection = {}) {
+    const packageSourceType = cleanText(selection.sourceType)
+      || getClassStartingEquipmentConfig(FIGHTER_CLASS_IDENTIFIER)?.sourceType
+      || "";
+    const config = getClassStartingEquipmentConfigBySourceType(packageSourceType);
+    return {
+      classIdentifier: config?.classIdentifier ?? FIGHTER_CLASS_IDENTIFIER,
+      sourceType: packageSourceType.endsWith("Package")
+        ? packageSourceType.slice(0, -"Package".length)
+        : "fighterStartingEquipment"
+    };
+  }
+
+  async #resolveStartingEquipmentItemData(uuid, quantity = 1, selection = {}) {
     const source = typeof this._options.resolveStartingEquipmentItem === "function"
       ? await this._options.resolveStartingEquipmentItem(uuid)
       : await globalThis.fromUuid?.(uuid);
@@ -1719,7 +1737,8 @@ export class FighterAutomationService {
     const contents = source.type === "container"
       ? await this.#resolveStartingEquipmentContainerContents(source)
       : [];
-    const data = this.#sourceToStartingEquipmentData(source, uuid, quantity);
+    const context = this.#startingEquipmentItemContext(selection);
+    const data = this.#sourceToStartingEquipmentData(source, uuid, quantity, "", context);
     if (!contents.length) {
       return data;
     }
@@ -1730,7 +1749,8 @@ export class FighterAutomationService {
         contentSource,
         cleanText(contentSource?.uuid) || cleanText(foundry.utils.getProperty(contentSource, "flags.dnd5e.sourceId")),
         foundry.utils.getProperty(contentSource, "system.quantity") ?? 1,
-        data._id
+        data._id,
+        context
       ))
       .filter(Boolean);
 
@@ -1747,7 +1767,7 @@ export class FighterAutomationService {
     }
   }
 
-  #sourceToStartingEquipmentData(source, uuid, quantity = 1, containerId = "") {
+  #sourceToStartingEquipmentData(source, uuid, quantity = 1, containerId = "", context = {}) {
     if (!source) {
       return null;
     }
@@ -1762,8 +1782,8 @@ export class FighterAutomationService {
     }
     data.flags ??= {};
     foundry.utils.setProperty(data, "flags.dnd5e.sourceId", uuid);
-    foundry.utils.setProperty(data, `flags.${MODULE_ID}.sourceType`, "fighterStartingEquipment");
-    foundry.utils.setProperty(data, `flags.${MODULE_ID}.classIdentifier`, FIGHTER_CLASS_IDENTIFIER);
+    foundry.utils.setProperty(data, `flags.${MODULE_ID}.sourceType`, cleanText(context.sourceType) || "fighterStartingEquipment");
+    foundry.utils.setProperty(data, `flags.${MODULE_ID}.classIdentifier`, cleanText(context.classIdentifier) || FIGHTER_CLASS_IDENTIFIER);
     foundry.utils.setProperty(data, "system.quantity", Math.max(1, Math.floor(toNumber(quantity, 1))));
     if (containerId) {
       foundry.utils.setProperty(data, "system.container", containerId);

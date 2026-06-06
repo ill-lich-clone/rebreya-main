@@ -425,6 +425,55 @@ test("paladin starting equipment package items expand into Rebreya gear and gold
   assert.deepEqual(actor.deletedDocuments, [{ type: "Item", ids: ["paladin-package-a"] }]);
 });
 
+test("barbarian starting equipment package items expand into Rebreya gear and gold", async () => {
+  const packageItem = makeItem({
+    id: "barbarian-package-a",
+    name: "Starting Equipment: Variant A",
+    flags: {
+      "rebreya-main": {
+        sourceType: "barbarianStartingEquipmentPackage",
+        startingEquipmentPackageId: "a"
+      }
+    }
+  });
+  const actor = new TestActor({ id: "barbarian", name: "Barbarian", items: [packageItem] });
+  const resolvedGearIds = [];
+  const service = new FighterAutomationService({}, {
+    resolveStartingEquipmentGearUuid: async (gearId) => {
+      resolvedGearIds.push(gearId);
+      return `Compendium.world.rebreya-gear.Item.${gearId}`;
+    },
+    resolveStartingEquipmentItem: async (uuid) => makeStartingEquipmentSource(uuid)
+  });
+
+  await service.handleCreatedItem(packageItem);
+
+  assert.deepEqual(resolvedGearIds, [
+    "sekira",
+    "ruchnoy-topor",
+    "nabor-puteshestvennika"
+  ]);
+  assert.equal(actor.createdItems.length, 1);
+
+  const quantityByUuid = new Map(actor.createdItems[0].rows.map((row) => [
+    foundry.utils.getProperty(row, "flags.dnd5e.sourceId"),
+    foundry.utils.getProperty(row, "system.quantity")
+  ]));
+  const sourceTypeByUuid = new Map(actor.createdItems[0].rows.map((row) => [
+    foundry.utils.getProperty(row, "flags.dnd5e.sourceId"),
+    foundry.utils.getProperty(row, "flags.rebreya-main.sourceType")
+  ]));
+  const classIdentifierByUuid = new Map(actor.createdItems[0].rows.map((row) => [
+    foundry.utils.getProperty(row, "flags.dnd5e.sourceId"),
+    foundry.utils.getProperty(row, "flags.rebreya-main.classIdentifier")
+  ]));
+  assert.equal(quantityByUuid.get("Compendium.world.rebreya-gear.Item.ruchnoy-topor"), 4);
+  assert.equal(sourceTypeByUuid.get("Compendium.world.rebreya-gear.Item.sekira"), "barbarianStartingEquipment");
+  assert.equal(classIdentifierByUuid.get("Compendium.world.rebreya-gear.Item.sekira"), "barbarian-rework-v012");
+  assert.equal(actor.system.currency.gp, 15);
+  assert.deepEqual(actor.deletedDocuments, [{ type: "Item", ids: ["barbarian-package-a"] }]);
+});
+
 test("fighter starting equipment imports Rebreya equipment pack contents", async () => {
   const actor = new TestActor({ id: "fighter", name: "Р’РѕРёРЅ" });
   const classItem = makeClassItem({ actor });
@@ -1183,6 +1232,41 @@ test("fighter actor repair moves orphaned starting equipment pack contents into 
 
   assert.equal(torch.system.container, "pack");
   assert.deepEqual(torch.updates, [{ "system.container": "pack" }]);
+});
+
+test("fighter actor repair leaves intentionally extracted starting equipment pack contents in inventory", async () => {
+  const container = makeItem({
+    id: "pack",
+    name: "Equipment Pack",
+    type: "container",
+    flags: {
+      "rebreya-main": {
+        sourceType: "fighterStartingEquipment",
+        gearId: "nabor-puteshestvennika"
+      }
+    }
+  });
+  const torch = makeItem({
+    id: "torch",
+    name: "Torch",
+    system: {
+      container: null
+    },
+    flags: {
+      "rebreya-main": {
+        sourceType: "fighterStartingEquipment",
+        containerGearId: "nabor-puteshestvennika",
+        containerContentGearId: "fakel"
+      }
+    }
+  });
+  const actor = new TestActor({ id: "fighter", name: "Fighter", items: [container, torch] });
+  const service = new FighterAutomationService({});
+
+  await service.repairActor(actor);
+
+  assert.equal(torch.system.container, null);
+  assert.deepEqual(torch.updates, []);
 });
 
 test("fighter actor repair leaves valid object container references untouched", async () => {

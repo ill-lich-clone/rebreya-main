@@ -85,7 +85,8 @@ const GEAR_FIELD_ALIASES = {
   itemSlot: ["itemSlot", "slot", "wearSlot", "equipSlot"],
   heroDollSlots: ["heroDollSlots", "heroSlots", "itemSlots", "slots"],
   firearmClass: ["firearmClass", "gunClass", "firearmSubtype"],
-  weapon: ["weapon", "weaponData", "dnd5eWeapon"]
+  weapon: ["weapon", "weaponData", "dnd5eWeapon"],
+  armor: ["armor", "armorData", "dnd5eArmor"]
 };
 
 function isObject(value) {
@@ -119,6 +120,24 @@ function normalizeContainerContents(value) {
       };
     })
     .filter(Boolean);
+}
+
+function normalizeArmorData(value) {
+  if (!isObject(value)) {
+    return null;
+  }
+
+  return {
+    ...value,
+    type: cleanString(value.type),
+    baseItem: cleanString(value.baseItem),
+    value: toNumber(value.value),
+    dex: value.dex === null ? null : toNumber(value.dex),
+    strength: toNumber(value.strength),
+    properties: Array.isArray(value.properties)
+      ? value.properties.map((property) => cleanString(property)).filter(Boolean)
+      : []
+  };
 }
 
 function hasValue(value) {
@@ -604,6 +623,7 @@ function normalizeGear(rawGear, materialAliasMap, materials) {
       heroDollSlots: getValue(record, GEAR_FIELD_ALIASES.heroDollSlots, []),
       firearmClass: cleanString(getValue(record, GEAR_FIELD_ALIASES.firearmClass)),
       weapon: clonePlainObject(getValue(record, GEAR_FIELD_ALIASES.weapon)),
+      armor: normalizeArmorData(getValue(record, GEAR_FIELD_ALIASES.armor)),
       source: cleanString(record?.source ?? "gear-workbook")
     };
   });

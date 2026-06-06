@@ -260,6 +260,81 @@ test("fighter advancements expose dominance scales and a fighting style choice",
   assert.equal(styleChoice.configuration.pool.length, 12);
 });
 
+test("barbarian advancements grant armor and one simple plus one martial weapon choice", () => {
+  const barbarian = normalizeClassCompendiumData(loadJson("data/barbarian-rework-v012.json"));
+  const advancement = buildClassAdvancement(barbarian.classData, {});
+  const armor = advancement.find((entry) => (
+    entry.type === "Trait"
+      && entry.configuration?.grants?.includes("armor:lgt")
+  ));
+  const weaponChoices = advancement.filter((entry) => (
+    entry.type === "Trait"
+      && (entry.configuration?.choices ?? []).some((choice) => (
+        (choice.pool ?? []).some((grant) => String(grant).startsWith("weapon:"))
+      ))
+  ));
+  const simpleWeapons = weaponChoices.find((entry) => (
+    entry.configuration.choices[0].pool.every((grant) => String(grant).startsWith("weapon:sim:"))
+  ));
+  const martialWeapons = weaponChoices.find((entry) => (
+    entry.configuration.choices[0].pool.every((grant) => String(grant).startsWith("weapon:mar:"))
+  ));
+
+  assert.deepEqual(armor.configuration.grants, ["armor:lgt", "armor:med", "armor:shl"]);
+  assert.equal(weaponChoices.length, 2);
+  assert.equal(simpleWeapons.configuration.choices.length, 1);
+  assert.equal(simpleWeapons.configuration.choices[0].count, 1);
+  assert.ok(simpleWeapons.configuration.choices[0].pool.includes("weapon:sim:handaxe"));
+  assert.ok(simpleWeapons.configuration.choices[0].pool.includes("weapon:sim:spear"));
+  assert.equal(martialWeapons.configuration.choices.length, 1);
+  assert.equal(martialWeapons.configuration.choices[0].count, 1);
+  assert.ok(martialWeapons.configuration.choices[0].pool.includes("weapon:mar:greataxe"));
+  assert.ok(martialWeapons.configuration.choices[0].pool.includes("weapon:mar:longsword"));
+});
+
+test("barbarian feature definitions include two preset starting equipment packages", () => {
+  const barbarian = normalizeClassCompendiumData(loadJson("data/barbarian-rework-v012.json"));
+  const system = createClassSystem(barbarian.classData, [], barbarian.sourceLabel);
+  const packageDefinitions = buildFeatureDefinitions(barbarian)
+    .filter((definition) => definition.sourceType === "barbarianStartingEquipmentPackage");
+
+  assert.deepEqual(system.startingEquipment, []);
+  assert.deepEqual(
+    packageDefinitions.map((definition) => definition.startingEquipmentPackage.items.map((item) => [item.gearId, item.quantity ?? 1])),
+    [
+      [
+        ["sekira", 1],
+        ["ruchnoy-topor", 4],
+        ["nabor-puteshestvennika", 1]
+      ],
+      []
+    ]
+  );
+  assert.deepEqual(packageDefinitions[0].startingEquipmentPackage.currency, { gp: 15 });
+  assert.deepEqual(packageDefinitions[1].startingEquipmentPackage.currency, { gp: 75 });
+});
+
+test("barbarian advancement exposes one native item choice for preset starting equipment packages", () => {
+  const barbarian = normalizeClassCompendiumData(loadJson("data/barbarian-rework-v012.json"));
+  const featureDefinitions = buildFeatureDefinitions(barbarian);
+  const packageDefinitions = featureDefinitions
+    .filter((definition) => definition.sourceType === "barbarianStartingEquipmentPackage");
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const advancement = buildClassAdvancement(barbarian.classData, {
+    featureUuidById
+  });
+  const equipmentChoices = advancement.filter((entry) => entry.type === "ItemChoice" && entry.configuration?.type === null);
+
+  assert.equal(packageDefinitions.length, 2);
+  assert.equal(equipmentChoices.length, 1);
+  assert.equal(equipmentChoices[0].level, 1);
+  assert.equal(equipmentChoices[0].configuration.allowDrops, false);
+  assert.deepEqual(
+    equipmentChoices[0].configuration.pool.map((entry) => entry.uuid),
+    packageDefinitions.map((definition) => featureUuidById.get(definition.featureId))
+  );
+});
+
 test("paladin rework data defines ZoZT class basics, spellcasting, and subclasses", () => {
   const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const system = createClassSystem(paladin.classData, [], paladin.sourceLabel);

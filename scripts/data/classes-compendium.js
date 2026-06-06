@@ -2654,13 +2654,16 @@ function buildTraitAdvancement({
 
 function weaponChoiceAdvancementLabel(choice, index = 0) {
   const pool = Array.isArray(choice?.pool) ? choice.pool : [];
+  const count = Math.max(1, Math.floor(parseNumber(choice?.count, 1)));
   const isSimple = pool.some((entry) => cleanString(entry).startsWith("weapon:sim:"));
   const isMartial = pool.some((entry) => cleanString(entry).startsWith("weapon:mar:"));
   if (isSimple && !isMartial) {
     return {
       seed: `simple-weapon-proficiencies-${index + 1}`,
       title: "Владение простым оружием",
-      hint: "Выберите одно простое оружие класса."
+      hint: count === 1
+        ? "Выберите одно простое оружие класса."
+        : `Выберите простые оружия класса: ${count}.`
     };
   }
 
@@ -2668,7 +2671,9 @@ function weaponChoiceAdvancementLabel(choice, index = 0) {
     return {
       seed: `martial-weapon-proficiencies-${index + 1}`,
       title: "Владение воинским оружием",
-      hint: "Выберите три воинских оружия класса."
+      hint: count === 1
+        ? "Выберите одно воинское оружие класса."
+        : `Выберите воинские оружия класса: ${count}.`
     };
   }
 
@@ -3250,7 +3255,7 @@ export function buildClassAdvancement(classData, context = {}) {
   const weaponProficiencyChoices = Array.isArray(classData.weaponProficiencyChoices)
     ? classData.weaponProficiencyChoices
     : [];
-  if (classIdentifier === "paladin-rework-v01" && !weaponProficiencyGrants.length && weaponProficiencyChoices.length) {
+  if (!weaponProficiencyGrants.length && weaponProficiencyChoices.length) {
     weaponProficiencyChoices.forEach((choice, index) => {
       const label = weaponChoiceAdvancementLabel(choice, index);
       advancements.push(buildTraitAdvancement({

@@ -4432,7 +4432,17 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Гримёра",
         "value":  "25",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "light",
+            "baseItem":  "padded",
+            "value":  11,
+            "dex":  null,
+            "strength":  0,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "kozhanyy-dospekh",
@@ -4452,7 +4462,15 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "50",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "light",
+            "baseItem":  "leather",
+            "value":  11,
+            "dex":  null,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "proklyopannyy-kozhanyy-dospekh",
@@ -4472,7 +4490,15 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "125",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "light",
+            "baseItem":  "studded",
+            "value":  12,
+            "dex":  null,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "boevaya-bronya-shef-povara",
@@ -4492,7 +4518,15 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "50",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "light",
+            "baseItem":  "",
+            "value":  11,
+            "dex":  null,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "shkurnyy-dospekh",
@@ -4512,7 +4546,15 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "60",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "medium",
+            "baseItem":  "hide",
+            "value":  12,
+            "dex":  2,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "kol-chuzhnaya-rubakha",
@@ -4532,7 +4574,15 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "120",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "medium",
+            "baseItem":  "chainshirt",
+            "value":  13,
+            "dex":  2,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "cheshuychatyy-dospekh",
@@ -4552,7 +4602,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "200",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "medium",
+            "baseItem":  "scalemail",
+            "value":  14,
+            "dex":  2,
+            "strength":  0,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "kirasa",
@@ -4572,7 +4632,15 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "600",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "medium",
+            "baseItem":  "breastplate",
+            "value":  14,
+            "dex":  2,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "polulaty",
@@ -4592,7 +4660,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "1500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "medium",
+            "baseItem":  "halfplate",
+            "value":  15,
+            "dex":  2,
+            "strength":  0,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "improvizirovannyy-dospekh",
@@ -4612,7 +4690,17 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "50",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "medium",
+            "baseItem":  "",
+            "value":  11,
+            "dex":  2,
+            "strength":  0,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "kolechnyy-dospekh",
@@ -4632,7 +4720,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "heavy",
+            "baseItem":  "ringmail",
+            "value":  14,
+            "dex":  null,
+            "strength":  0,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "kol-chuga",
@@ -4652,7 +4750,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "1000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "heavy",
+            "baseItem":  "chainmail",
+            "value":  16,
+            "dex":  null,
+            "strength":  0,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "nabornyy-dospekh",
@@ -4672,7 +4780,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "1500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "heavy",
+            "baseItem":  "splint",
+            "value":  17,
+            "dex":  null,
+            "strength":  13,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "laty",
@@ -4692,7 +4810,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "3000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "heavy",
+            "baseItem":  "plate",
+            "value":  18,
+            "dex":  null,
+            "strength":  15,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "pantsir-tortla",
@@ -4712,7 +4840,17 @@
         "predominantMaterialName":  "Кость",
         "linkedTool":  "Кожедела",
         "value":  "5000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "heavy",
+            "baseItem":  "",
+            "value":  17,
+            "dex":  null,
+            "strength":  18,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "shchit",
@@ -4732,7 +4870,15 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
         "value":  "100",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "shield",
+            "baseItem":  "shield",
+            "value":  2,
+            "dex":  null,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "bakler",
@@ -4752,7 +4898,15 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "70",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "shield",
+            "baseItem":  "",
+            "value":  1,
+            "dex":  null,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "bashennyy-shchit",
@@ -4772,7 +4926,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "250",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "shield",
+            "baseItem":  "",
+            "value":  2,
+            "dex":  null,
+            "strength":  16,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "tyazhelyy-plashch",
@@ -4792,7 +4956,17 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Гримёра",
         "value":  "20",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "light",
+            "baseItem":  "",
+            "value":  11,
+            "dex":  null,
+            "strength":  0,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "kozhanaya-kurtka",
@@ -4812,7 +4986,15 @@
         "predominantMaterialName":  "Кожа",
         "linkedTool":  "Кожедела",
         "value":  "50",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "light",
+            "baseItem":  "",
+            "value":  11,
+            "dex":  null,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "zashchitnaya-rubashka",
@@ -4832,7 +5014,15 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "100",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "light",
+            "baseItem":  "",
+            "value":  11,
+            "dex":  null,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "listovoy-zhilet",
@@ -4852,7 +5042,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "200",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "light",
+            "baseItem":  "",
+            "value":  12,
+            "dex":  null,
+            "strength":  0,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "ukreplennyy-plashch",
@@ -4872,7 +5072,15 @@
         "predominantMaterialName":  "Ткань",
         "linkedTool":  "Гримёра",
         "value":  "250",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "light",
+            "baseItem":  "",
+            "value":  12,
+            "dex":  null,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "mnogosloynyy-bronezhilet",
@@ -4892,7 +5100,15 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "400",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "medium",
+            "baseItem":  "",
+            "value":  13,
+            "dex":  2,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "lyogkaya-sluzhebnaya-bronya",
@@ -4912,7 +5128,15 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "medium",
+            "baseItem":  "",
+            "value":  14,
+            "dex":  2,
+            "strength":  0,
+            "properties":  []
+        }
     },
     {
         "id":  "takticheskaya-bronya",
@@ -4932,7 +5156,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "800",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "medium",
+            "baseItem":  "",
+            "value":  15,
+            "dex":  2,
+            "strength":  10,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "pekhotnaya-shturmovaya-bronya",
@@ -4952,7 +5186,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "1200",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "heavy",
+            "baseItem":  "",
+            "value":  16,
+            "dex":  null,
+            "strength":  10,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "tyazhelaya-sluzhebnaya-bronya",
@@ -4972,7 +5216,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "1500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "heavy",
+            "baseItem":  "",
+            "value":  17,
+            "dex":  null,
+            "strength":  13,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "sverkhtyazhelaya-shturmovaya-bronya",
@@ -4992,7 +5246,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "5000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "heavy",
+            "baseItem":  "",
+            "value":  18,
+            "dex":  null,
+            "strength":  15,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "ukreplennyy-shchit",
@@ -5012,7 +5276,15 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "shield",
+            "baseItem":  "",
+            "value":  2,
+            "dex":  null,
+            "strength":  13,
+            "properties":  []
+        }
     },
     {
         "id":  "ballisticheskiy-shchit",
@@ -5032,7 +5304,17 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Кузнеца",
         "value":  "600",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "armor":  {
+            "type":  "shield",
+            "baseItem":  "",
+            "value":  3,
+            "dex":  null,
+            "strength":  15,
+            "properties":  [
+                "stealthDisadvantage"
+            ]
+        }
     },
     {
         "id":  "kremnevyy-pistolet",
