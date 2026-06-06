@@ -454,10 +454,46 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
           }
         }],
         result: ""
+      }, {
+        id: "downtime-2",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionId: "gambling",
+        actionLabel: "Gambling",
+        title: "Gambling",
+        weeks: 1,
+        status: "completed",
+        checks: [],
+        result: "21"
       }],
       actionCatalog: [
-        { id: "unique", label: "Unique" },
-        { id: "research", label: "Research" }
+        {
+          id: "research",
+          label: "Research",
+          rank: "1+",
+          duration: "1 week",
+          summary: "Find answers.",
+          requirements: ["Library"],
+          targetActions: [{
+            id: "research-cost",
+            label: "Cost",
+            actionType: "resources",
+            resources: {
+              cost: {
+                amount: 10,
+                currency: "gp",
+                payer: "character"
+              }
+            }
+          }, {
+            id: "research-check",
+            label: "Research check",
+            actionType: "check",
+            sourceType: "ability",
+            ability: "int",
+            targetLabel: "Intelligence"
+          }]
+        }
       ]
     }
   }));
@@ -490,10 +526,74 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
     assert.equal(context.downtime.requests[0].targetActions[0].downtimeEffectLabel, "При завершении заявки: Rebreya Main / Изменить событие группы");
     assert.equal(context.downtime.requests[0].targetActionCount, 1);
     assert.equal(context.downtime.requests[0].targetActionLimitReached, false);
+    assert.deepEqual(context.downtime.archiveRequests.map((request) => request.id), ["downtime-2"]);
+    assert.equal(context.downtime.archiveCount, 1);
+    assert.equal(context.downtime.showArchive, false);
+    assert.equal(context.downtime.selectedRequest.id, "downtime-1");
+    assert.equal(context.downtime.selectedRequest.templateSummary, "Find answers.");
+    assert.equal(context.downtime.selectedRequest.resourceActions[0].outcomeSummary, "10 зм");
+    assert.equal(context.downtime.selectedRequest.checkActions[0].summary, "Research check | Интеллект");
   }
   finally {
     restoreFoundry();
   }
+});
+
+test("InventoryApp downtime context can switch queue pages to archive requests", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => ({
+      canManage: true,
+      groupId: "group-a",
+      groupActor: null
+    }),
+    downtimeSnapshot: {
+      canManage: true,
+      canSubmit: true,
+      members: [],
+      requests: [{
+        id: "downtime-active",
+        title: "Active",
+        status: "pending",
+        checks: []
+      }, {
+        id: "downtime-archive",
+        title: "Archive",
+        status: "completed",
+        checks: []
+      }],
+      actionCatalog: []
+    }
+  }));
+
+  try {
+    app.setActiveTab("downtime", { render: false });
+    app.downtimeShowArchive = true;
+    app.downtimeSelectedRequestId = "downtime-archive";
+
+    const context = await app._prepareContext();
+
+    assert.equal(context.downtime.showArchive, true);
+    assert.deepEqual(context.downtime.visibleRequests.map((request) => request.id), ["downtime-archive"]);
+    assert.equal(context.downtime.selectedRequest.id, "downtime-archive");
+    assert.equal(context.downtime.archivePage.total, 1);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp downtime controls do not define duplicate tooltip attributes", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const downtimeTags = template
+    .match(/<[^>]*data-action="downtime-[^"]+"[^>]*>/gu)
+    ?? [];
+  const duplicateTooltipTags = downtimeTags.filter((tag) => (
+    /\stitle=/u.test(tag) && /\sdata-tooltip=/u.test(tag)
+  ));
+
+  assert.deepEqual(duplicateTooltipTags, []);
 });
 
 test("InventoryApp downtime context converts known group errors into empty warning state", async () => {

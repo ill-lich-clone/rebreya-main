@@ -664,6 +664,8 @@ const recentCharacterDowntimeRollButtons = new WeakMap();
 const characterDowntimeSubmitAbortControllers = new WeakMap();
 const characterDowntimeRollAbortControllers = new WeakMap();
 const characterDowntimeLibraryAbortControllers = new WeakMap();
+const characterDowntimeStateAbortControllers = new WeakMap();
+const characterDowntimeFormStateByActorId = new Map();
 let characterDowntimeDocumentSubmitDelegated = false;
 let characterDowntimeDocumentRollDelegated = false;
 const CHARACTER_DOWNTIME_SUBMIT_DEBOUNCE_MS = 750;
@@ -1655,11 +1657,12 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi) {
 
     if (partId === CHARACTER_DOWNTIME_TAB_ID) {
       const tab = buildCharacterDowntimeTabState(this);
+      const formState = characterDowntimeFormStateByActorId.get(this.actor?.id) ?? {};
       return {
         ...preparedWithFeatGroups,
         tab,
         characterDowntimeTab: tab,
-        characterDowntime: moduleApi.characterDowntimeService.getActorContext(this.actor)
+        characterDowntime: moduleApi.characterDowntimeService.getActorContext(this.actor, formState)
       };
     }
 
@@ -2427,6 +2430,7 @@ async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
     return;
   }
 
+  readCharacterDowntimeFormStateFromPanel(panel, actor);
   const payload = {
     actionId: cleanText(panel.querySelector("[data-action='character-downtime-action']")?.value),
     weeks: toPositiveInteger(panel.querySelector("[data-action='character-downtime-weeks']")?.value, 1),
@@ -2434,9 +2438,41 @@ async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
     description: cleanText(panel.querySelector("[data-action='character-downtime-description']")?.value)
   };
 
-  await moduleApi.characterDowntimeService.createRequest(actor, payload);
+  const request = await moduleApi.characterDowntimeService.createRequest(actor, payload);
+  await rollImmediateCharacterDowntimeTargets(actor, request, moduleApi);
   ui.notifications?.info("Заявка на простой отправлена.");
   await rerenderActorSheet(app, moduleApi);
+}
+
+function getCharacterDowntimeFormState(actorId = "") {
+  const safeActorId = cleanText(actorId);
+  if (!safeActorId) {
+    return {};
+  }
+
+  const state = characterDowntimeFormStateByActorId.get(safeActorId) ?? {};
+  characterDowntimeFormStateByActorId.set(safeActorId, state);
+  return state;
+}
+
+function updateCharacterDowntimeFormState(actor, patch = {}) {
+  if (!actor?.id) {
+    return {};
+  }
+
+  const state = {
+    ...getCharacterDowntimeFormState(actor.id),
+    ...patch
+  };
+  characterDowntimeFormStateByActorId.set(actor.id, state);
+  return state;
+}
+
+function readCharacterDowntimeFormStateFromPanel(panel, actor) {
+  return updateCharacterDowntimeFormState(actor, {
+    actionId: cleanText(panel?.querySelector("[data-action='character-downtime-action']")?.value),
+    weeks: toPositiveInteger(panel?.querySelector("[data-action='character-downtime-weeks']")?.value, 1)
+  });
 }
 
 function getDowntimeLibraryPack() {
@@ -2477,6 +2513,13 @@ function normalizeDowntimeLibraryRecord(pack, row = {}) {
   return {
     uuid,
     name: cleanText(row.name) || "Простой",
+    id: uuid,
+    label: cleanText(row.name) || "Простой",
+    rank: cleanText(downtimeFlag.rank),
+    duration: cleanText(downtimeFlag.duration),
+    requirements: Array.isArray(downtimeFlag.requirements) ? downtimeFlag.requirements.map((entry) => cleanText(entry)).filter(Boolean) : [],
+    rankTable: Array.isArray(downtimeFlag.rankTable) ? foundry.utils.deepClone(downtimeFlag.rankTable) : [],
+    targetActions: foundry.utils.deepClone(targetActions),
     summary: stripHtmlText(
       getIndexRowProperty(row, "system.description.value")
       || downtimeFlag.summary
@@ -2498,6 +2541,13 @@ function normalizeDowntimeLibraryDocument(document = {}) {
   return {
     uuid: cleanText(document.uuid),
     name: cleanText(document.name) || "Простой",
+    id: cleanText(document.uuid),
+    label: cleanText(document.name) || "Простой",
+    rank: cleanText(downtimeFlag.rank),
+    duration: cleanText(downtimeFlag.duration),
+    requirements: Array.isArray(downtimeFlag.requirements) ? downtimeFlag.requirements.map((entry) => cleanText(entry)).filter(Boolean) : [],
+    rankTable: Array.isArray(downtimeFlag.rankTable) ? foundry.utils.deepClone(downtimeFlag.rankTable) : [],
+    targetActions: foundry.utils.deepClone(targetActions),
     summary: stripHtmlText(
       foundry.utils.getProperty?.(document, "system.description.value")
       || downtimeFlag.summary
@@ -2558,10 +2608,11 @@ export async function selectDowntimeTemplateDocumentWithBrowser() {
   return isDowntimeTemplateItem(document) ? document : null;
 }
 
-function setCharacterDowntimeActionSelection(panel, record) {
+async function setCharacterDowntimeActionSelection(panel, record, app, moduleApi) {
   const actionInput = panel?.querySelector?.("[data-action='character-downtime-action']");
   const actionLabel = panel?.querySelector?.("[data-action='character-downtime-action-label']");
   const actionButton = panel?.querySelector?.("[data-action='character-downtime-open-library']");
+  const actor = getActorFromSheetApp(app);
   if (actionInput) {
     actionInput.value = record.uuid;
   }
@@ -2569,16 +2620,24 @@ function setCharacterDowntimeActionSelection(panel, record) {
     actionLabel.textContent = record.name;
   }
   if (actionButton) {
-    actionButton.title = record.summary || `Выбрано: ${record.name}`;
+    actionButton.dataset.tooltip = record.summary || `Выбрано: ${record.name}`;
   }
 
-  const titleInput = panel?.querySelector?.("[data-action='character-downtime-title']");
-  if (titleInput && !cleanText(titleInput.value)) {
-    titleInput.value = record.name;
+  if (actor?.id) {
+    updateCharacterDowntimeFormState(actor, {
+      actionId: record.uuid,
+      weeks: toPositiveInteger(panel?.querySelector("[data-action='character-downtime-weeks']")?.value, 1),
+      selectedTemplate: {
+        ...record,
+        id: record.uuid,
+        label: record.name
+      }
+    });
+    await rerenderActorSheet(app, moduleApi);
   }
 }
 
-async function openCharacterDowntimeLibraryPicker(panel) {
+async function openCharacterDowntimeLibraryPicker(panel, app, moduleApi) {
   const { pack, records } = await getDowntimeLibraryRecords();
   if (!pack) {
     ui.notifications?.warn("Библиотека простоя Rebreya не найдена.");
@@ -2592,7 +2651,7 @@ async function openCharacterDowntimeLibraryPicker(panel) {
 
   const selectedDocument = await selectDowntimeTemplateDocumentWithBrowser();
   if (selectedDocument) {
-    setCharacterDowntimeActionSelection(panel, normalizeDowntimeLibraryDocument(selectedDocument));
+    await setCharacterDowntimeActionSelection(panel, normalizeDowntimeLibraryDocument(selectedDocument), app, moduleApi);
     return;
   }
 
@@ -2757,6 +2816,117 @@ function buildDowntimeRollMessageData(button) {
       }
     }
   };
+}
+
+function hasCharacterDowntimeRecordedResult(check = {}) {
+  return Boolean(check?.result && typeof check.result === "object" && Object.keys(check.result).length);
+}
+
+function buildCharacterDowntimeRollDataset(request = {}, check = {}, choice = {}) {
+  const sourceType = cleanText(choice.sourceType) || cleanText(check.sourceType) || "skill";
+  const target = cleanText(choice.target) || cleanText(check.target);
+  const targetAbility = normalizeDowntimeRollAbility(target);
+  const ability = normalizeDowntimeRollAbility(choice.ability)
+    || normalizeDowntimeRollAbility(check.ability)
+    || targetAbility;
+  const targetLabel = cleanText(choice.targetLabel)
+    || cleanText(choice.label)
+    || cleanText(check.targetLabel)
+    || cleanText(check.label)
+    || target;
+  const dc = getDowntimeRollDc(check.dc);
+  const outcomeMode = cleanText(check.outcomeMode) || (dc > 0 ? "dc" : "freeform");
+  return {
+    requestId: cleanText(request.id),
+    checkId: cleanText(check.id),
+    groupId: cleanText(request.groupId),
+    actorId: cleanText(request.actorId),
+    sourceType,
+    ability,
+    target,
+    targetLabel,
+    outcomeMode,
+    choiceIndex: cleanText(choice.choiceIndex),
+    dc: String(dc)
+  };
+}
+
+function getImmediateCharacterDowntimeRollDatasets(request = {}) {
+  return (Array.isArray(request.checks) ? request.checks : [])
+    .filter((check) => {
+      const actionType = cleanText(check?.actionType) || "check";
+      return actionType === "check" && !hasCharacterDowntimeRecordedResult(check);
+    })
+    .flatMap((check) => {
+      const choices = Array.isArray(check.choices) ? check.choices : [];
+      if (choices.length > 1) {
+        return [];
+      }
+
+      const choice = choices[0] ?? {};
+      const sourceType = cleanText(choice.sourceType) || cleanText(check.sourceType) || "skill";
+      const target = cleanText(choice.target) || cleanText(check.target);
+      const ability = normalizeDowntimeRollAbility(choice.ability)
+        || normalizeDowntimeRollAbility(check.ability)
+        || normalizeDowntimeRollAbility(target);
+      if (!CHARACTER_DOWNTIME_ROLLABLE_SOURCE_TYPES.has(sourceType)) {
+        return [];
+      }
+      if ((sourceType === "ability" || sourceType === "save") ? !ability : !target) {
+        return [];
+      }
+
+      return [buildCharacterDowntimeRollDataset(request, check, choice)];
+    });
+}
+
+async function recordCharacterDowntimeRollDataset(actor, dataset, moduleApi, event = undefined) {
+  const button = { dataset };
+  const rolls = await rollCharacterDowntimeTarget(actor, button, event);
+  const total = getDowntimeRollTotal(rolls);
+  if (total === null) {
+    return false;
+  }
+
+  const outcomeMode = cleanText(dataset.outcomeMode) || (cleanText(dataset.dc) ? "dc" : "freeform");
+  const dc = getDowntimeRollDc(dataset.dc);
+  const result = {
+    total,
+    sourceType: cleanText(dataset.sourceType) || "skill",
+    ability: normalizeDowntimeRollAbility(dataset.ability),
+    target: cleanText(dataset.target),
+    targetLabel: cleanText(dataset.targetLabel)
+  };
+  if (outcomeMode) {
+    result.outcomeMode = outcomeMode;
+  }
+  if (["dc", "dc-sum"].includes(outcomeMode) && dc > 0) {
+    result.dc = dc;
+    result.success = total >= dc;
+  }
+
+  await moduleApi.recordDowntimeCheckResult(dataset.requestId, dataset.checkId, result, {
+    actorId: cleanText(dataset.actorId) || actor.id,
+    groupId: cleanText(dataset.groupId)
+  });
+  return true;
+}
+
+async function rollImmediateCharacterDowntimeTargets(actor, request, moduleApi) {
+  const datasets = getImmediateCharacterDowntimeRollDatasets(request);
+  if (!datasets.length) {
+    return;
+  }
+
+  let recorded = 0;
+  for (const dataset of datasets) {
+    if (await recordCharacterDowntimeRollDataset(actor, dataset, moduleApi)) {
+      recorded += 1;
+    }
+  }
+  if (recorded > 0) {
+    ui.notifications?.info("Результаты проверок простоя записаны.");
+  }
 }
 
 async function rollCharacterDowntimeTarget(actor, button, event) {
@@ -3052,7 +3222,54 @@ function bindCharacterDowntimeRollButtons(panel, app, moduleApi) {
   }
 }
 
-function bindCharacterDowntimeLibraryButton(panel) {
+function bindCharacterDowntimeStateControls(panel, app, moduleApi) {
+  const actor = getActorFromSheetApp(app);
+  if (!actor?.id) {
+    return;
+  }
+
+  characterDowntimeStateAbortControllers.get(panel)?.abort();
+  const abortController = new AbortController();
+  characterDowntimeStateAbortControllers.set(panel, abortController);
+  const listenerOptions = { capture: true, signal: abortController.signal };
+
+  const weeksInput = panel.querySelector("[data-action='character-downtime-weeks']");
+  if (weeksInput?.addEventListener instanceof Function) {
+    weeksInput.addEventListener("change", (event) => {
+      updateCharacterDowntimeFormState(actor, {
+        weeks: toPositiveInteger(event.currentTarget?.value, 1)
+      });
+    }, listenerOptions);
+  }
+
+  for (const button of Array.from(panel.querySelectorAll("[data-action='character-downtime-page']") ?? [])) {
+    if (!(button instanceof HTMLElement)) {
+      continue;
+    }
+
+    button.addEventListener("click", async (event) => {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      const target = event.currentTarget;
+      const pageType = cleanText(target?.dataset?.pageType);
+      const delta = cleanText(target?.dataset?.direction) === "next" ? 1 : -1;
+      const state = getCharacterDowntimeFormState(actor.id);
+      if (pageType === "archive") {
+        updateCharacterDowntimeFormState(actor, {
+          archivePage: Math.max(1, toPositiveInteger(state.archivePage, 1) + delta)
+        });
+      }
+      else {
+        updateCharacterDowntimeFormState(actor, {
+          requestPage: Math.max(1, toPositiveInteger(state.requestPage, 1) + delta)
+        });
+      }
+      await rerenderActorSheet(app, moduleApi);
+    }, listenerOptions);
+  }
+}
+
+function bindCharacterDowntimeLibraryButton(panel, app, moduleApi) {
   const button = panel.querySelector("[data-action='character-downtime-open-library']");
   if (!(button instanceof HTMLElement)) {
     return;
@@ -3065,7 +3282,7 @@ function bindCharacterDowntimeLibraryButton(panel) {
     event.preventDefault?.();
     event.stopPropagation?.();
     try {
-      await openCharacterDowntimeLibraryPicker(panel);
+      await openCharacterDowntimeLibraryPicker(panel, app, moduleApi);
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open downtime library picker.`, error);
@@ -3102,7 +3319,8 @@ function bindCharacterDowntimePanel(root, app, moduleApi) {
 
   bindCharacterDowntimeSubmitButton(panel, app, moduleApi);
   bindCharacterDowntimeRollButtons(panel, app, moduleApi);
-  bindCharacterDowntimeLibraryButton(panel);
+  bindCharacterDowntimeStateControls(panel, app, moduleApi);
+  bindCharacterDowntimeLibraryButton(panel, app, moduleApi);
 }
 
 function clampItemRank(value) {

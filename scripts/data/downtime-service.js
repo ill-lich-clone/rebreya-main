@@ -6,6 +6,7 @@ const REQUEST_STATUSES = new Set(["pending", "approved", "returned", "rejected",
 const MAX_TARGET_ACTIONS = 5;
 const DOWNTIME_TEMPLATE_FLAG = "downtime";
 const DOWNTIME_COMPENDIUM_PACK_ID = `world.${DOWNTIME_COMPENDIUM_NAME}`;
+const ROLLABLE_DOWNTIME_ACTION_TYPES = new Set(["check", "choice"]);
 
 function clone(value) {
   if (globalThis.foundry?.utils?.deepClone) {
@@ -171,6 +172,10 @@ function normalizeRankTable(value = []) {
     .filter((entry) => Object.keys(entry).length > 0);
 }
 
+function normalizeStringList(value = []) {
+  return asArray(value).map((entry) => cleanString(entry)).filter(Boolean);
+}
+
 function buildDowntimeTemplateActionFromItem(item) {
   if (!isDowntimeTemplateItem(item)) {
     return null;
@@ -188,6 +193,10 @@ function buildDowntimeTemplateActionFromItem(item) {
     source: "item",
     templateUuid,
     templateItemId: cleanId(item.id),
+    rank: cleanString(config.rank),
+    duration: cleanString(config.duration),
+    summary: cleanString(config.summary),
+    requirements: normalizeStringList(config.requirements),
     defaultWeeks: toWeeks(config.defaultWeeks, 1),
     rankMode: cleanString(config.rankMode),
     rankTable: normalizeRankTable(config.rankTable),
@@ -308,9 +317,28 @@ function normalizeRequest(value = {}) {
     normalized.templateUuid = cleanId(value.templateUuid) || actionId;
     normalized.templateItemId = cleanId(value.templateItemId);
     normalized.templateSource = cleanString(value.templateSource) || "item";
+    normalized.templateRank = cleanString(value.templateRank);
+    normalized.templateDuration = cleanString(value.templateDuration);
+    normalized.templateSummary = cleanString(value.templateSummary);
+    normalized.templateRequirements = normalizeStringList(value.templateRequirements);
     normalized.templateRankTable = normalizeRankTable(value.templateRankTable);
   }
   return normalized;
+}
+
+function hasRecordedResult(check = {}) {
+  const result = check?.result;
+  return Boolean(result && typeof result === "object" && Object.keys(result).length > 0);
+}
+
+function isRollableDowntimeCheck(check = {}) {
+  const actionType = cleanString(check?.actionType) || "check";
+  return ROLLABLE_DOWNTIME_ACTION_TYPES.has(actionType);
+}
+
+function hasCompletedRollTargets(request = {}) {
+  const rollableChecks = asArray(request.checks).filter((check) => isRollableDowntimeCheck(check));
+  return rollableChecks.length > 0 && rollableChecks.every((check) => hasRecordedResult(check));
 }
 
 function getMaxRequestCounter(requests = []) {
@@ -636,6 +664,10 @@ export class DowntimeService {
         request.templateUuid = cleanId(action.templateUuid) || resolvedActionId;
         request.templateItemId = cleanId(action.templateItemId);
         request.templateSource = "item";
+        request.templateRank = cleanString(action.rank);
+        request.templateDuration = cleanString(action.duration);
+        request.templateSummary = cleanString(action.summary);
+        request.templateRequirements = normalizeStringList(action.requirements);
         request.templateRankTable = normalizeRankTable(action.rankTable);
       }
       state.requests.push(request);
@@ -656,9 +688,12 @@ export class DowntimeService {
       const request = this.#findRequest(state, safeRequestId);
       this.#assertRequestIsMutable(request);
 
+      const effectiveStatus = nextStatus === "approved" && hasCompletedRollTargets(request)
+        ? "completed"
+        : nextStatus;
       const balance = normalizeBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
-      this.#applyStatusAccounting(balance, request.status, nextStatus, request.weeks);
-      request.status = nextStatus;
+      this.#applyStatusAccounting(balance, request.status, effectiveStatus, request.weeks);
+      request.status = effectiveStatus;
       request.result = cleanString(result);
       request.reviewedByUserId = cleanId(getCurrentUser()?.id);
       request.updatedAt = Date.now();

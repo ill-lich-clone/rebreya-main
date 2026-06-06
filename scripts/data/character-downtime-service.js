@@ -35,6 +35,15 @@ const ABILITY_LABELS = Object.freeze({
 });
 
 const ROLLABLE_SOURCE_TYPES = new Set(["skill", "ability", "save", "tool"]);
+const ARCHIVED_REQUEST_STATUSES = new Set(["completed", "rejected"]);
+const REQUEST_PAGE_SIZE = 5;
+
+const CURRENCY_LABELS = Object.freeze({
+  gp: "зм",
+  sp: "см",
+  cp: "мм",
+  pp: "пм"
+});
 
 function cleanText(value) {
   return String(value ?? "").trim();
@@ -63,6 +72,9 @@ function buildBalance(value = {}) {
 }
 
 function buildCheckSummary(check = {}) {
+  if (cleanText(check.actionType) === "resources") {
+    return cleanText(check.label) || "Ресурсы";
+  }
   const dc = cleanText(check.dc);
   const outcomeMode = cleanText(check.outcomeMode) || (dc ? "dc" : "freeform");
   const numericDc = Number(dc.replace(/^dc\s*/iu, ""));
@@ -75,6 +87,81 @@ function buildCheckSummary(check = {}) {
     shouldShowDc ? `DC ${dc.replace(/^dc\s*/iu, "")}` : "",
     ABILITY_LABELS[ability] ?? ability
   ].filter(Boolean).join(" | ");
+}
+
+function buildResourceSummary(check = {}) {
+  const resources = check?.resources && typeof check.resources === "object" && !Array.isArray(check.resources)
+    ? check.resources
+    : {};
+  const cost = resources.cost && typeof resources.cost === "object" && !Array.isArray(resources.cost)
+    ? resources.cost
+    : {};
+  const amount = toInteger(cost.amount, 0);
+  const currency = CURRENCY_LABELS[cleanText(cost.currency)] ?? cleanText(cost.currency);
+  if (amount > 0 && currency) {
+    return `${amount} ${currency}`;
+  }
+  return cleanText(cost.formula) || cleanText(resources.narrative) || "Ресурсы";
+}
+
+function mapTemplateTargetAction(action = {}, index = 0) {
+  const actionType = cleanText(action.actionType) || "check";
+  const mapped = {
+    ...action,
+    number: index + 1,
+    actionType,
+    summary: buildCheckSummary(action),
+    outcomeSummary: actionType === "resources" ? buildResourceSummary(action) : buildCheckSummary(action)
+  };
+  return mapped;
+}
+
+function buildTemplateView(action = null) {
+  if (!action) {
+    return null;
+  }
+
+  const targetActions = (Array.isArray(action.targetActions) ? action.targetActions : [])
+    .map((entry, index) => mapTemplateTargetAction(entry, index));
+  const resourceActions = targetActions.filter((entry) => entry.actionType === "resources");
+  const checkActions = targetActions.filter((entry) => entry.actionType !== "resources" && entry.actionType !== "downtimeResult");
+  const resultActions = targetActions.filter((entry) => entry.actionType === "downtimeResult");
+  return {
+    id: cleanText(action.id),
+    label: cleanText(action.label) || cleanText(action.name) || "Простой",
+    rank: cleanText(action.rank),
+    duration: cleanText(action.duration),
+    summary: cleanText(action.summary),
+    requirements: Array.isArray(action.requirements) ? action.requirements.map((entry) => cleanText(entry)).filter(Boolean) : [],
+    rankTable: Array.isArray(action.rankTable) ? action.rankTable : [],
+    targetActions,
+    resourceActions,
+    checkActions,
+    resultActions,
+    hasRank: Boolean(cleanText(action.rank)),
+    hasDuration: Boolean(cleanText(action.duration)),
+    hasSummary: Boolean(cleanText(action.summary)),
+    hasRequirements: Array.isArray(action.requirements) && action.requirements.length > 0,
+    hasResourceActions: resourceActions.length > 0,
+    hasCheckActions: checkActions.length > 0,
+    hasResultActions: resultActions.length > 0,
+    hasTargetActions: targetActions.length > 0
+  };
+}
+
+function paginate(items = [], page = 1, pageSize = REQUEST_PAGE_SIZE) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const totalPages = Math.max(1, Math.ceil(safeItems.length / pageSize));
+  const current = Math.min(Math.max(1, toInteger(page, 1)), totalPages);
+  const start = (current - 1) * pageSize;
+  return {
+    items: safeItems.slice(start, start + pageSize),
+    current,
+    total: totalPages,
+    hasPrevious: current > 1,
+    hasNext: current < totalPages,
+    count: safeItems.length
+  };
 }
 
 function buildResultLabel(result) {
@@ -179,8 +266,12 @@ function mapRequest(request = {}, { groupId = "" } = {}) {
     statusClass: `rm-status-badge--${meta.type}`,
     weeks: normalizeWeeks(request.weeks, 1),
     checks,
+    targetActions: checks,
+    resourceActions: checks.filter((check) => cleanText(check.actionType) === "resources"),
+    checkActions: checks.filter((check) => !["resources", "downtimeResult"].includes(cleanText(check.actionType))),
     hasChecks: checks.length > 0,
-    hasResult: Boolean(cleanText(request.result))
+    hasResult: Boolean(cleanText(request.result)),
+    isArchived: ARCHIVED_REQUEST_STATUSES.has(status)
   };
 }
 
@@ -190,6 +281,7 @@ function buildEmptyContext(actor, {
 } = {}) {
   const actionId = cleanText(formState.actionId);
   const weeks = normalizeWeeks(formState.weeks, 1);
+  const selectedTemplate = buildTemplateView(formState.selectedTemplate);
   return {
     actorId: actor?.id ?? "",
     actorName: actor?.name ?? "",
@@ -199,8 +291,13 @@ function buildEmptyContext(actor, {
     balance: buildBalance(),
     actionOptions: [],
     libraryDisabled: true,
-    selectedActionLabel: "Выбрать простой",
+    selectedActionLabel: selectedTemplate?.label || "Выбрать простой",
+    selectedTemplate,
     requests: [],
+    archiveRequests: [],
+    requestPage: paginate([]),
+    archivePage: paginate([]),
+    hasArchiveRequests: false,
     emptyRequests: true,
     form: {
       actionId,
@@ -267,8 +364,13 @@ export class CharacterDowntimeService {
     const requests = (Array.isArray(snapshot?.requests) ? snapshot.requests : [])
       .filter((request) => request?.actorId === actor.id)
       .map((request) => mapRequest(request, { groupId: snapshot.groupId }));
+    const activeRequests = requests.filter((request) => !request.isArchived);
+    const archivedRequests = requests.filter((request) => request.isArchived);
+    const activePage = paginate(activeRequests, formState.requestPage);
+    const archivePage = paginate(archivedRequests, formState.archivePage);
 
     const selectedAction = actionCatalog.find((action) => action.id === actionId) ?? null;
+    const selectedTemplate = buildTemplateView(selectedAction) ?? buildTemplateView(formState.selectedTemplate);
     const actionOptions = actionCatalog.map((action) => ({
       value: action.id,
       label: action.label ?? action.id,
@@ -285,9 +387,16 @@ export class CharacterDowntimeService {
       balance,
       actionOptions,
       libraryDisabled: !canSubmit,
-      selectedActionLabel: cleanText(selectedAction?.label) || "Выбрать простой",
-      requests,
-      emptyRequests: requests.length === 0,
+      selectedActionLabel: selectedTemplate?.label || cleanText(selectedAction?.label) || "Выбрать простой",
+      selectedTemplate,
+      requests: activePage.items,
+      archiveRequests: archivePage.items,
+      requestPage: activePage,
+      archivePage,
+      hasArchiveRequests: archivedRequests.length > 0,
+      requestCount: activeRequests.length,
+      archiveCount: archivedRequests.length,
+      emptyRequests: activeRequests.length === 0,
       form: {
         actionId,
         weeks,

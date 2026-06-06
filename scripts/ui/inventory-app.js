@@ -33,6 +33,9 @@ const DOWNTIME_STATUS_META = Object.freeze({
   }
 });
 
+const DOWNTIME_ARCHIVE_STATUSES = new Set(["completed", "rejected"]);
+const DOWNTIME_PAGE_SIZE = 5;
+
 const MAX_DOWNTIME_TARGET_ACTIONS = 5;
 const MAX_DOWNTIME_THRESHOLDS = 5;
 const MAX_DOWNTIME_RESOURCE_PURCHASES = 3;
@@ -831,6 +834,16 @@ function buildEmptyDowntimeContext({ warning = "", grantWeeks = 1, grantActorId 
   return {
     members: [],
     requests: [],
+    archiveRequests: [],
+    visibleRequests: [],
+    selectedRequest: null,
+    showArchive: false,
+    visiblePage: paginateDowntimeRequests([]),
+    visibleRequestCount: 0,
+    requestPage: paginateDowntimeRequests([]),
+    archivePage: paginateDowntimeRequests([]),
+    requestCount: 0,
+    archiveCount: 0,
     actionOptions: [],
     grantActorOptions: [{
       value: "all",
@@ -853,7 +866,9 @@ function buildEmptyDowntimeContext({ warning = "", grantWeeks = 1, grantActorId 
     submitDisabled: true,
     submitDisabledReason: safeWarning || "Нет доступных персонажей для заявки.",
     emptyMembers: true,
-    emptyRequests: true
+    emptyRequests: true,
+    emptyArchiveRequests: true,
+    emptyVisibleRequests: true
   };
 }
 
@@ -942,31 +957,144 @@ function mapDowntimeTargetAction(check, index) {
     downtimeEffectLabel,
     hasCheckEffect: Boolean(checkEffectLabel),
     hasDowntimeEffect: Boolean(downtimeEffectLabel),
+    hasResult: Boolean(check?.result && typeof check.result === "object" && Object.keys(check.result).length),
+    resultLabel: buildDowntimeCheckResultLabel(check?.result),
     hasChoices: Array.isArray(check?.choices) && check.choices.length > 1
   };
 }
 
-function mapDowntimeRequest(request) {
+function buildDowntimeCheckResultLabel(result) {
+  if (!result || typeof result !== "object") {
+    return "";
+  }
+
+  const parts = [];
+  if (result.total !== undefined && result.total !== null && cleanText(result.total) !== "") {
+    parts.push(cleanText(result.total));
+  }
+  if (result.success === true) {
+    parts.push("успех");
+  }
+  else if (result.success === false) {
+    parts.push("провал");
+  }
+  if (cleanText(result.note)) {
+    parts.push(cleanText(result.note));
+  }
+
+  return parts.join(", ");
+}
+
+function buildDowntimeTemplateView(action = null) {
+  if (!action) {
+    return null;
+  }
+
+  const targetActions = (Array.isArray(action.targetActions) ? action.targetActions : [])
+    .map((entry, index) => mapDowntimeTargetAction(entry, index));
+  return {
+    id: cleanText(action.id),
+    label: cleanText(action.label),
+    rank: cleanText(action.rank),
+    duration: cleanText(action.duration),
+    summary: cleanText(action.summary),
+    requirements: Array.isArray(action.requirements) ? action.requirements.map((entry) => cleanText(entry)).filter(Boolean) : [],
+    rankTable: Array.isArray(action.rankTable) ? action.rankTable : [],
+    targetActions,
+    resourceActions: targetActions.filter((entry) => entry.actionType === "resources"),
+    checkActions: targetActions.filter((entry) => entry.actionType !== "resources" && entry.actionType !== "downtimeResult"),
+    resultActions: targetActions.filter((entry) => entry.actionType === "downtimeResult"),
+    hasTargetActions: targetActions.length > 0
+  };
+}
+
+function paginateDowntimeRequests(requests = [], page = 1, pageSize = DOWNTIME_PAGE_SIZE) {
+  const safeRequests = Array.isArray(requests) ? requests : [];
+  const total = Math.max(1, Math.ceil(safeRequests.length / pageSize));
+  const current = Math.min(Math.max(1, toInteger(page, 1)), total);
+  const start = (current - 1) * pageSize;
+  return {
+    items: safeRequests.slice(start, start + pageSize),
+    current,
+    total,
+    count: safeRequests.length,
+    hasPrevious: current > 1,
+    hasNext: current < total
+  };
+}
+
+function findTemplateAction(actionCatalogById, request = {}) {
+  const ids = [
+    cleanText(request.actionId),
+    cleanText(request.templateUuid),
+    cleanText(request.templateItemId)
+  ].filter(Boolean);
+  for (const id of ids) {
+    const action = actionCatalogById.get(id);
+    if (action) {
+      return action;
+    }
+  }
+  return null;
+}
+
+function mapDowntimeRequest(request, actionCatalogById = new Map()) {
   const status = cleanText(request?.status) || "pending";
   const statusMeta = DOWNTIME_STATUS_META[status] ?? {
     label: status || "Заявка",
     type: "info"
   };
+  const templateAction = findTemplateAction(actionCatalogById, request);
+  const templateView = buildDowntimeTemplateView(templateAction);
   const checks = (request?.checks ?? []).map((check, index) => mapDowntimeTargetAction(check, index));
+  const requestResourceActions = checks.filter((check) => check.actionType === "resources");
+  const requestCheckActions = checks.filter((check) => check.actionType !== "resources" && check.actionType !== "downtimeResult");
+  const requestResultActions = checks.filter((check) => check.actionType === "downtimeResult");
+  const resourceActions = templateView?.resourceActions?.length ? templateView.resourceActions : requestResourceActions;
+  const checkActions = templateView?.checkActions?.length ? templateView.checkActions : requestCheckActions;
+  const resultActions = templateView?.resultActions?.length ? templateView.resultActions : requestResultActions;
 
   return {
     ...request,
+    displayTitle: cleanText(request?.title) || cleanText(request?.actionLabel) || "Заявка",
     status,
     statusLabel: statusMeta.label,
     statusType: statusMeta.type,
     statusClass: `rm-status-badge--${statusMeta.type}`,
+    templateRank: cleanText(request?.templateRank) || templateView?.rank || "",
+    templateDuration: cleanText(request?.templateDuration) || templateView?.duration || "",
+    templateSummary: cleanText(request?.templateSummary) || templateView?.summary || "",
+    templateRequirements: Array.isArray(request?.templateRequirements) && request.templateRequirements.length
+      ? request.templateRequirements
+      : (templateView?.requirements ?? []),
+    templateRankTable: Array.isArray(request?.templateRankTable) && request.templateRankTable.length
+      ? request.templateRankTable
+      : (templateView?.rankTable ?? []),
+    hasTemplateRank: Boolean(cleanText(request?.templateRank) || templateView?.rank),
+    hasTemplateDuration: Boolean(cleanText(request?.templateDuration) || templateView?.duration),
+    hasTemplateSummary: Boolean(cleanText(request?.templateSummary) || templateView?.summary),
+    hasTemplateRequirements: Boolean(
+      (Array.isArray(request?.templateRequirements) && request.templateRequirements.length)
+      || templateView?.requirements?.length
+    ),
+    hasTemplateRankTable: Boolean(
+      (Array.isArray(request?.templateRankTable) && request.templateRankTable.length)
+      || templateView?.rankTable?.length
+    ),
     checks,
     targetActions: checks,
+    resourceActions,
+    checkActions,
+    resultActions,
     targetActionCount: checks.length,
     targetActionLimit: MAX_DOWNTIME_TARGET_ACTIONS,
     targetActionLimitReached: checks.length >= MAX_DOWNTIME_TARGET_ACTIONS,
     hasChecks: checks.length > 0,
     hasTargetActions: checks.length > 0,
+    hasResources: resourceActions.length > 0,
+    hasCheckActions: checkActions.length > 0,
+    hasResultActions: resultActions.length > 0,
+    isArchived: DOWNTIME_ARCHIVE_STATUSES.has(status),
     hasResult: Boolean(cleanText(request?.result)),
     canApprove: status === "pending" || status === "returned",
     canReturn: status === "pending" || status === "approved",
@@ -1332,6 +1460,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.downtimeRequestWeeks = 1;
     this.downtimeRequestTitle = "";
     this.downtimeRequestDescription = "";
+    this.downtimeShowArchive = false;
+    this.downtimeSelectedRequestId = "";
+    this.downtimeQueuePage = 1;
+    this.downtimeArchivePage = 1;
     this.expandedPartyMembers = new Set();
     this.searchRenderTimeout = null;
     this.craftSearchRenderTimeout = null;
@@ -1612,11 +1744,47 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const grantDisabled = !canManageDowntime || members.length === 0;
     const submitDisabled = !canSubmitDowntime || !this.downtimeRequestActorId || actionCatalog.length === 0;
 
-    const requests = (snapshot.requests ?? []).map((request) => mapDowntimeRequest(request));
+    const actionCatalogById = new Map(actionCatalog.flatMap((action) => {
+      const ids = [
+        cleanText(action.id),
+        cleanText(action.templateUuid),
+        cleanText(action.templateItemId)
+      ].filter(Boolean);
+      return ids.map((id) => [id, action]);
+    }));
+    const allRequests = (snapshot.requests ?? []).map((request) => mapDowntimeRequest(request, actionCatalogById));
+    const activeRequests = allRequests.filter((request) => !request.isArchived);
+    const archiveRequests = allRequests.filter((request) => request.isArchived);
+    const queuePage = paginateDowntimeRequests(activeRequests, this.downtimeQueuePage);
+    const archivePage = paginateDowntimeRequests(archiveRequests, this.downtimeArchivePage);
+    this.downtimeQueuePage = queuePage.current;
+    this.downtimeArchivePage = archivePage.current;
+    const visiblePage = this.downtimeShowArchive ? archivePage : queuePage;
+    const rawVisibleRequests = this.downtimeShowArchive ? archivePage.items : queuePage.items;
+    let selectedRequest = rawVisibleRequests.find((request) => request.id === this.downtimeSelectedRequestId) ?? null;
+    if (!selectedRequest) {
+      selectedRequest = rawVisibleRequests[0] ?? null;
+      this.downtimeSelectedRequestId = selectedRequest?.id ?? "";
+    }
+    const visibleRequests = rawVisibleRequests.map((request) => ({
+      ...request,
+      isSelected: request.id === selectedRequest?.id
+    }));
+    selectedRequest = visibleRequests.find((request) => request.id === selectedRequest?.id) ?? selectedRequest;
 
     return {
       members,
-      requests,
+      requests: queuePage.items,
+      archiveRequests: archivePage.items,
+      visibleRequests,
+      selectedRequest,
+      showArchive: this.downtimeShowArchive,
+      visiblePage,
+      visibleRequestCount: visiblePage.count,
+      requestPage: queuePage,
+      archivePage,
+      requestCount: activeRequests.length,
+      archiveCount: archiveRequests.length,
       actionOptions: actionCatalog.map((action) => ({
         value: action.id,
         label: action.label ?? action.id,
@@ -1658,7 +1826,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ? (canSubmitDowntime ? "Заполните персонажа и действие." : "Нет доступных персонажей для заявки.")
         : "",
       emptyMembers: members.length === 0,
-      emptyRequests: requests.length === 0
+      emptyRequests: activeRequests.length === 0,
+      emptyArchiveRequests: archiveRequests.length === 0,
+      emptyVisibleRequests: visibleRequests.length === 0
     };
   }
 
@@ -2976,6 +3146,37 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           this.#setActionFeedback("error", message);
           ui.notifications?.error(message);
         }
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='downtime-toggle-archive']").forEach((button) => {
+      button.addEventListener("click", () => {
+        this.downtimeShowArchive = !this.downtimeShowArchive;
+        this.downtimeSelectedRequestId = "";
+        this.render({ force: true });
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='downtime-select-request']").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        this.downtimeSelectedRequestId = cleanText(event.currentTarget?.dataset?.requestId);
+        this.render({ force: true });
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='downtime-page']").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        const target = event.currentTarget;
+        const pageType = cleanText(target?.dataset?.pageType);
+        const direction = cleanText(target?.dataset?.direction);
+        const delta = direction === "next" ? 1 : -1;
+        if (pageType === "archive") {
+          this.downtimeArchivePage = Math.max(1, this.downtimeArchivePage + delta);
+        }
+        else {
+          this.downtimeQueuePage = Math.max(1, this.downtimeQueuePage + delta);
+        }
+        this.render({ force: true });
       }, listenerOptions);
     });
 

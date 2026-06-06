@@ -1127,6 +1127,10 @@ test("getActionCatalog exposes Rebreya downtime template items from the active g
       source: "item",
       templateUuid: templateItem.uuid,
       templateItemId: templateItem.id,
+      rank: "",
+      duration: "",
+      summary: "",
+      requirements: [],
       defaultWeeks: 2,
       rankMode: "required",
       rankTable: [{ rank: 4, baseTotal: 120, stepCost: 100 }],
@@ -1152,10 +1156,27 @@ test("createRequest links downtime requests to the selected template item and co
     id: "downtime-research",
     name: "Исследование по рангу",
     config: {
+      rank: "1+",
+      duration: "1 рабочая неделя.",
+      summary: "Изучить вопрос.",
+      requirements: ["Библиотека"],
       defaultWeeks: 2,
       rankMode: "required",
       rankTable: [{ rank: 4, baseTotal: 120, stepCost: 100 }],
       targetActions: [{
+        id: "research-resources",
+        label: "Стоимость исследования",
+        actionType: "resources",
+        resources: {
+          narrative: "Базовая сумма зависит от ранга.",
+          cost: {
+            amount: 10,
+            currency: "gp",
+            payer: "character",
+            timing: "submit"
+          }
+        }
+      }, {
         id: "check-archive",
         label: "Архив",
         actionType: "check",
@@ -1195,9 +1216,29 @@ test("createRequest links downtime requests to the selected template item and co
     assert.equal(request.templateUuid, templateItem.uuid);
     assert.equal(request.templateItemId, templateItem.id);
     assert.equal(request.templateSource, "item");
+    assert.equal(request.templateRank, "1+");
+    assert.equal(request.templateDuration, "1 рабочая неделя.");
+    assert.equal(request.templateSummary, "Изучить вопрос.");
+    assert.deepEqual(request.templateRequirements, ["Библиотека"]);
     assert.equal(request.title, "Исследование по рангу");
     assert.deepEqual(request.templateRankTable, [{ rank: 4, baseTotal: 120, stepCost: 100 }]);
     assert.deepEqual(request.checks, [{
+      id: "research-resources",
+      label: "Стоимость исследования",
+      actionType: "resources",
+      resources: {
+        narrative: "Базовая сумма зависит от ранга.",
+        cost: {
+          amount: 10,
+          currency: "gp",
+          payer: "character",
+          timing: "submit"
+        }
+      },
+      dc: 0,
+      ability: "",
+      result: null
+    }, {
       id: "check-archive",
       label: "Архив",
       actionType: "check",
@@ -1208,6 +1249,104 @@ test("createRequest links downtime requests to the selected template item and co
       dc: 15,
       result: null
     }]);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("approving a request with completed roll targets archives it as completed", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 0,
+          reservedWeeks: 1,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      },
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Hero A",
+        actionId: "Actor.group-1.Item.downtime-gambling",
+        actionLabel: "Азартные игры",
+        title: "Азартные игры",
+        weeks: 1,
+        status: "pending",
+        checks: [{
+          id: "gambling-acrobatics",
+          label: "Акробатика",
+          actionType: "check",
+          sourceType: "skill",
+          ability: "dex",
+          target: "acr",
+          result: {
+            total: 21
+          }
+        }]
+      }]
+    }
+  });
+
+  try {
+    const request = await harness.service.setRequestStatus("downtime-1", "approved");
+    const balance = getDowntimeState(harness).balancesByActorId["actor-a"];
+
+    assert.equal(request.status, "completed");
+    assert.equal(balance.reservedWeeks, 0);
+    assert.equal(balance.spentWeeks, 1);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("approving a request without completed roll targets keeps it active", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 0,
+          reservedWeeks: 1,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      },
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Hero A",
+        actionId: "Actor.group-1.Item.downtime-gambling",
+        actionLabel: "Азартные игры",
+        title: "Азартные игры",
+        weeks: 1,
+        status: "pending",
+        checks: [{
+          id: "gambling-acrobatics",
+          label: "Акробатика",
+          actionType: "check",
+          sourceType: "skill",
+          ability: "dex",
+          target: "acr",
+          result: null
+        }]
+      }]
+    }
+  });
+
+  try {
+    const request = await harness.service.setRequestStatus("downtime-1", "approved");
+    const balance = getDowntimeState(harness).balancesByActorId["actor-a"];
+
+    assert.equal(request.status, "approved");
+    assert.equal(balance.reservedWeeks, 1);
+    assert.equal(balance.spentWeeks, 0);
   }
   finally {
     harness.restore();

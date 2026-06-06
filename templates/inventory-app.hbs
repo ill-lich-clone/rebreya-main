@@ -614,54 +614,60 @@
 
           <section class="rm-downtime-column rm-downtime-column--queue">
             <header class="rm-downtime-column__header">
-              <h4>Очередь заявок</h4>
+              <h4>{{#if downtime.showArchive}}Архив{{else}}Очередь заявок{{/if}}</h4>
               <div class="rm-downtime-column__actions">
-                <span class="rm-muted">{{rmNum downtime.requests.length precision=0}} активн.</span>
+                <span class="rm-muted">{{rmNum downtime.visibleRequestCount precision=0}}</span>
+                <button
+                  type="button"
+                  class="rm-icon-button {{#if downtime.showArchive}}is-active{{/if}}"
+                  data-action="downtime-toggle-archive"
+                  data-tooltip="{{#if downtime.showArchive}}Показать активные заявки{{else}}Показать архив заявок{{/if}}"
+                  {{#if downtime.emptyArchiveRequests}}{{#unless downtime.showArchive}}disabled{{/unless}}{{/if}}
+                >
+                  <i class="fa-solid fa-box-archive"></i>
+                </button>
                 {{#if downtime.canManage}}
                   <button
                     type="button"
-                    class="rm-button rm-button--small rm-button--danger"
+                    class="rm-icon-button rm-icon-button--danger"
                     data-action="downtime-clear-history"
-                    title="Очистить все заявки, целевые действия и решения мастера. Резерв открытых заявок вернётся в свободные недели."
                     data-tooltip="Очистить все заявки, целевые действия и решения мастера. Резерв открытых заявок вернётся в свободные недели."
-                    {{#if downtime.emptyRequests}}disabled{{/if}}
+                    {{#if downtime.emptyVisibleRequests}}disabled{{/if}}
                   >
                     <i class="fa-solid fa-trash-can"></i>
-                    <span>Очистить</span>
                   </button>
                 {{/if}}
               </div>
             </header>
 
-            {{#if downtime.emptyRequests}}
+            {{#if downtime.emptyVisibleRequests}}
               <p class="rm-empty">Заявок на простой пока нет.</p>
             {{else}}
               <div class="rm-downtime-request-list">
-                {{#each downtime.requests}}
-                  <article class="rm-downtime-request">
+                {{#each downtime.visibleRequests}}
+                  <article class="rm-downtime-request {{#if isSelected}}is-selected{{/if}}">
                     <div class="rm-downtime-request__main">
                       <div class="rm-downtime-request__title">
-                        <strong>{{title}}</strong>
+                        <button type="button" class="rm-link-button rm-downtime-request__select" data-action="downtime-select-request" data-request-id="{{id}}">
+                          <strong>{{displayTitle}}</strong>
+                        </button>
                         <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
                       </div>
                       <p class="rm-muted">{{actorName}} • {{actionLabel}} • {{rmNum weeks precision=0}} нед.</p>
-                      {{#if description}}
-                        <p class="rm-downtime-request__description">{{description}}</p>
-                      {{/if}}
                     </div>
 
                     {{#if ../downtime.canManage}}
                       <div class="rm-downtime-request__actions">
-                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-status" data-request-id="{{id}}" data-status="approved" title="Одобрить: оставить недели в резерве и разрешить игроку выполнять целевые действия." data-tooltip="Одобрить: оставить недели в резерве и разрешить игроку выполнять целевые действия." {{#unless canApprove}}disabled{{/unless}}>Одобрить</button>
-                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-status" data-request-id="{{id}}" data-status="returned" data-result="{{result}}" title="Вернуть: снять резерв, вернуть недели игроку и отправить заявку на доработку." data-tooltip="Вернуть: снять резерв, вернуть недели игроку и отправить заявку на доработку." {{#unless canReturn}}disabled{{/unless}}>Вернуть</button>
-                        <button type="button" class="rm-button rm-button--small rm-button--danger" data-action="downtime-status" data-request-id="{{id}}" data-status="rejected" data-result="{{result}}" title="Отклонить: отказать в заявке и вернуть зарезервированные недели." data-tooltip="Отклонить: отказать в заявке и вернуть зарезервированные недели." {{#unless canReject}}disabled{{/unless}}>Отклонить</button>
-                        <button type="button" class="rm-button rm-button--small rm-button--primary" data-action="downtime-status" data-request-id="{{id}}" data-status="completed" data-result="{{result}}" title="Завершить: списать резерв в потраченные недели и закрыть заявку." data-tooltip="Завершить: списать резерв в потраченные недели и закрыть заявку." {{#unless canComplete}}disabled{{/unless}}>Завершить</button>
+                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-status" data-request-id="{{id}}" data-status="approved" data-tooltip="Одобрить: оставить недели в резерве и разрешить игроку выполнять целевые действия." {{#unless canApprove}}disabled{{/unless}}>Одобрить</button>
+                        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="downtime-status" data-request-id="{{id}}" data-status="returned" data-result="{{result}}" data-tooltip="Вернуть: снять резерв, вернуть недели игроку и отправить заявку на доработку." {{#unless canReturn}}disabled{{/unless}}>Вернуть</button>
+                        <button type="button" class="rm-button rm-button--small rm-button--danger" data-action="downtime-status" data-request-id="{{id}}" data-status="rejected" data-result="{{result}}" data-tooltip="Отклонить: отказать в заявке и вернуть зарезервированные недели." {{#unless canReject}}disabled{{/unless}}>Отклонить</button>
+                        <button type="button" class="rm-button rm-button--small rm-button--primary" data-action="downtime-status" data-request-id="{{id}}" data-status="completed" data-result="{{result}}" data-tooltip="Завершить: списать резерв в потраченные недели и закрыть заявку." {{#unless canComplete}}disabled{{/unless}}>Завершить</button>
                         <button
                           type="button"
                           class="rm-button rm-button--small rm-button--secondary"
                           data-action="downtime-target-action"
                           data-request-id="{{id}}"
-                          title="{{#if targetActionLimitReached}}В заявке уже максимум 5 целевых действий{{else}}Добавить целевое действие: проверку, выбор, инструмент, действие или атаку{{/if}}"
+                          data-tooltip="{{#if targetActionLimitReached}}В заявке уже максимум 5 целевых действий{{else}}Добавить целевое действие: проверку, выбор, инструмент, действие или атаку{{/if}}"
                           {{#if targetActionLimitReached}}disabled{{/if}}
                         >
                           <i class="fa-solid fa-plus"></i>
@@ -672,6 +678,18 @@
                   </article>
                 {{/each}}
               </div>
+
+              {{#if downtime.visiblePage.total}}
+                <nav class="rm-downtime-pagination">
+                  <button type="button" class="rm-icon-button" data-action="downtime-page" data-page-type="{{#if downtime.showArchive}}archive{{else}}queue{{/if}}" data-direction="previous" data-tooltip="Предыдущая страница" {{#unless downtime.visiblePage.hasPrevious}}disabled{{/unless}}>
+                    <i class="fa-solid fa-chevron-left"></i>
+                  </button>
+                  <span class="rm-muted">{{rmNum downtime.visiblePage.current precision=0}} / {{rmNum downtime.visiblePage.total precision=0}}</span>
+                  <button type="button" class="rm-icon-button" data-action="downtime-page" data-page-type="{{#if downtime.showArchive}}archive{{else}}queue{{/if}}" data-direction="next" data-tooltip="Следующая страница" {{#unless downtime.visiblePage.hasNext}}disabled{{/unless}}>
+                    <i class="fa-solid fa-chevron-right"></i>
+                  </button>
+                </nav>
+              {{/if}}
             {{/if}}
 
             {{#if downtime.canSubmit}}
@@ -729,96 +747,136 @@
 
           <aside class="rm-downtime-column rm-downtime-column--inspector">
             <header class="rm-downtime-column__header">
-              <h4>Решение мастера</h4>
+              <h4>{{#if downtime.selectedRequest}}{{downtime.selectedRequest.displayTitle}}{{else}}Заявка{{/if}}</h4>
+              {{#if downtime.selectedRequest}}
+                <span class="rm-badge rm-status-badge {{downtime.selectedRequest.statusClass}}">{{downtime.selectedRequest.statusLabel}}</span>
+              {{/if}}
             </header>
 
-            {{#if downtime.emptyRequests}}
-              <p class="rm-empty">Нет заявки для инспектора.</p>
-            {{/if}}
-
-            {{#unless downtime.emptyRequests}}
-              <div class="rm-downtime-inspector-list">
-                {{#each downtime.requests}}
-                  <section class="rm-downtime-inspector">
-                    <div class="rm-downtime-inspector__title">
-                      <div>
-                        <strong>{{title}}</strong>
-                        <p class="rm-muted">{{actorName}} • {{actionLabel}} • {{rmNum weeks precision=0}} нед.</p>
-                      </div>
-                      <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
-                    </div>
-
-                    {{#if description}}
-                      <p class="rm-downtime-inspector__text">{{description}}</p>
-                    {{/if}}
-
-                    {{#if hasResult}}
-                      <p class="rm-inline-status rm-inline-status--info"><span>{{result}}</span></p>
-                    {{/if}}
-
-                    <section class="rm-downtime-target-actions">
-                      <header class="rm-downtime-target-actions__header">
-                        <div>
-                          <h4>Целевые действия</h4>
-                        </div>
-                        <span class="rm-badge rm-status-badge rm-status-badge--info">{{rmNum targetActionCount precision=0}} / {{rmNum targetActionLimit precision=0}}</span>
-                      </header>
-
-                      {{#if hasTargetActions}}
-                        <ul class="rm-downtime-target-action-list">
-                          {{#each targetActions}}
-                            <li class="rm-downtime-target-action">
-                              <div class="rm-downtime-target-action__main">
-                                <div class="rm-downtime-target-action__title">
-                                  <strong>{{label}}</strong>
-                                  <span class="rm-badge rm-status-badge rm-status-badge--info">{{outcomeSummary}}</span>
-                                </div>
-                                <p class="rm-muted">{{sourceTypeLabel}}{{#if abilityLabel}} • {{abilityLabel}}{{/if}}{{#if targetLabel}} ({{targetLabel}}){{/if}}</p>
-                                {{#if hasChoices}}
-                                  <p class="rm-downtime-target-action__meta">Выбор игрока: {{#each choices}}{{label}}{{#unless @last}} / {{/unless}}{{/each}}</p>
-                                {{/if}}
-                                {{#if hasCheckEffect}}
-                                  <p class="rm-downtime-target-action__meta">Эффект проверки: {{checkEffectLabel}}</p>
-                                {{/if}}
-                                {{#if hasDowntimeEffect}}
-                                  <p class="rm-downtime-target-action__meta">Эффект простоя: {{downtimeEffectLabel}}</p>
-                                {{/if}}
-                              </div>
-                              {{#if @root.downtime.canManage}}
-                                <div class="rm-downtime-target-action__actions">
-                                  <button type="button" class="rm-icon-button" data-action="downtime-target-action" data-request-id="{{../id}}" data-check-id="{{id}}" title="Редактировать целевое действие">
-                                    <i class="fa-solid fa-pen"></i>
-                                  </button>
-                                  <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="downtime-remove-target-action" data-request-id="{{../id}}" data-check-id="{{id}}" title="Удалить целевое действие">
-                                    <i class="fa-solid fa-trash"></i>
-                                  </button>
-                                </div>
-                              {{/if}}
-                            </li>
-                          {{/each}}
-                        </ul>
-                      {{else}}
-                        <p class="rm-downtime-inspector__empty">Целевые действия пока не назначены.</p>
-                      {{/if}}
-
-                      {{#if @root.downtime.canManage}}
-                        <button
-                          type="button"
-                          class="rm-button rm-button--small rm-button--secondary"
-                          data-action="downtime-target-action"
-                          data-request-id="{{id}}"
-                          title="{{#if targetActionLimitReached}}В заявке уже максимум 5 целевых действий{{else}}Добавить целевое действие{{/if}}"
-                          {{#if targetActionLimitReached}}disabled{{/if}}
-                        >
-                          <i class="fa-solid fa-plus"></i>
-                          <span>Целевое действие</span>
-                        </button>
-                      {{/if}}
-                    </section>
-                  </section>
-                {{/each}}
-              </div>
+            {{#unless downtime.selectedRequest}}
+              <p class="rm-empty">Нет выбранной заявки.</p>
             {{/unless}}
+
+            {{#if downtime.selectedRequest}}
+              <section class="rm-downtime-inspector">
+                <div class="rm-downtime-inspector__title">
+                  <div>
+                    <strong>{{downtime.selectedRequest.actionLabel}}</strong>
+                    <p class="rm-muted">{{downtime.selectedRequest.actorName}} • {{rmNum downtime.selectedRequest.weeks precision=0}} нед.</p>
+                  </div>
+                </div>
+
+                {{#if downtime.selectedRequest.description}}
+                  <p class="rm-downtime-inspector__text">{{downtime.selectedRequest.description}}</p>
+                {{/if}}
+
+                {{#if downtime.selectedRequest.hasResult}}
+                  <p class="rm-inline-status rm-inline-status--info"><span>{{downtime.selectedRequest.result}}</span></p>
+                {{/if}}
+
+                {{#if downtime.selectedRequest.hasTemplateSummary}}
+                  <p class="rm-downtime-inspector__text">{{downtime.selectedRequest.templateSummary}}</p>
+                {{/if}}
+
+                <div class="rm-status-strip rm-downtime-template-meta">
+                  {{#if downtime.selectedRequest.hasTemplateRank}}
+                    <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Ранг простоя из предмета">{{downtime.selectedRequest.templateRank}}</span>
+                  {{/if}}
+                  {{#if downtime.selectedRequest.hasTemplateDuration}}
+                    <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Базовая длительность">{{downtime.selectedRequest.templateDuration}}</span>
+                  {{/if}}
+                  {{#if downtime.selectedRequest.hasTemplateRequirements}}
+                    {{#each downtime.selectedRequest.templateRequirements}}
+                      <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Требование простоя">{{this}}</span>
+                    {{/each}}
+                  {{/if}}
+                </div>
+
+                {{#if downtime.selectedRequest.hasResources}}
+                  <section class="rm-downtime-target-actions">
+                    <header class="rm-downtime-target-actions__header">
+                      <h4>Ресурсы</h4>
+                    </header>
+                    <ul class="rm-downtime-target-action-list">
+                      {{#each downtime.selectedRequest.resourceActions}}
+                        <li class="rm-downtime-target-action rm-downtime-target-action--resource">
+                          <div class="rm-downtime-target-action__main">
+                            <div class="rm-downtime-target-action__title">
+                              <strong>{{label}}</strong>
+                              <span class="rm-badge rm-status-badge rm-status-badge--info">{{outcomeSummary}}</span>
+                            </div>
+                            {{#if targetLabel}}
+                              <p class="rm-muted">{{targetLabel}}</p>
+                            {{/if}}
+                          </div>
+                        </li>
+                      {{/each}}
+                    </ul>
+                  </section>
+                {{/if}}
+
+                <section class="rm-downtime-target-actions">
+                  <header class="rm-downtime-target-actions__header">
+                    <h4>Целевые действия</h4>
+                    <span class="rm-badge rm-status-badge rm-status-badge--info">{{rmNum downtime.selectedRequest.targetActionCount precision=0}} / {{rmNum downtime.selectedRequest.targetActionLimit precision=0}}</span>
+                  </header>
+
+                  {{#if downtime.selectedRequest.hasTargetActions}}
+                    <ul class="rm-downtime-target-action-list">
+                      {{#each downtime.selectedRequest.targetActions}}
+                        <li class="rm-downtime-target-action">
+                          <div class="rm-downtime-target-action__main">
+                            <div class="rm-downtime-target-action__title">
+                              <strong>{{label}}</strong>
+                              <span class="rm-badge rm-status-badge rm-status-badge--info">{{outcomeSummary}}</span>
+                            </div>
+                            <p class="rm-muted">{{sourceTypeLabel}}{{#if abilityLabel}} • {{abilityLabel}}{{/if}}{{#if targetLabel}} ({{targetLabel}}){{/if}}</p>
+                            {{#if hasResult}}
+                              <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
+                            {{/if}}
+                            {{#if hasChoices}}
+                              <p class="rm-downtime-target-action__meta">Выбор игрока: {{#each choices}}{{label}}{{#unless @last}} / {{/unless}}{{/each}}</p>
+                            {{/if}}
+                            {{#if hasCheckEffect}}
+                              <p class="rm-downtime-target-action__meta">Эффект проверки: {{checkEffectLabel}}</p>
+                            {{/if}}
+                            {{#if hasDowntimeEffect}}
+                              <p class="rm-downtime-target-action__meta">Эффект простоя: {{downtimeEffectLabel}}</p>
+                            {{/if}}
+                          </div>
+                          {{#if @root.downtime.canManage}}
+                            <div class="rm-downtime-target-action__actions">
+                              <button type="button" class="rm-icon-button" data-action="downtime-target-action" data-request-id="{{../id}}" data-check-id="{{id}}" data-tooltip="Редактировать целевое действие">
+                                <i class="fa-solid fa-pen"></i>
+                              </button>
+                              <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="downtime-remove-target-action" data-request-id="{{../id}}" data-check-id="{{id}}" data-tooltip="Удалить целевое действие">
+                                <i class="fa-solid fa-trash"></i>
+                              </button>
+                            </div>
+                          {{/if}}
+                        </li>
+                      {{/each}}
+                    </ul>
+                  {{else}}
+                    <p class="rm-downtime-inspector__empty">Целевые действия пока не назначены.</p>
+                  {{/if}}
+
+                  {{#if downtime.canManage}}
+                    <button
+                      type="button"
+                      class="rm-button rm-button--small rm-button--secondary"
+                      data-action="downtime-target-action"
+                      data-request-id="{{downtime.selectedRequest.id}}"
+                      data-tooltip="{{#if downtime.selectedRequest.targetActionLimitReached}}В заявке уже максимум 5 целевых действий{{else}}Добавить целевое действие{{/if}}"
+                      {{#if downtime.selectedRequest.targetActionLimitReached}}disabled{{/if}}
+                    >
+                      <i class="fa-solid fa-plus"></i>
+                      <span>Целевое действие</span>
+                    </button>
+                  {{/if}}
+                </section>
+              </section>
+            {{/if}}
           </aside>
         </div>
       </section>

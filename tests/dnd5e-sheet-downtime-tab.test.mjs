@@ -495,6 +495,126 @@ test("character downtime submit works when the downtime tab is rendered lazily",
   }
 });
 
+test("character downtime submit immediately rolls single target checks", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-submit-auto-roll=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    actor.rollSkill = async (config) => {
+      calls.push(["rollSkill", config]);
+      return { total: 21 };
+    };
+
+    const submitButton = new stubs.HTMLElement();
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "Compendium.world.rebreya-downtime.Item.gambling" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-submit']": submitButton
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(submitButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return {
+            id: "downtime-1",
+            actorId: targetActor.id,
+            checks: [{
+              id: "check-1",
+              actionType: "check",
+              sourceType: "skill",
+              ability: "dex",
+              target: "acr",
+              targetLabel: "Акробатика",
+              outcomeMode: "freeform",
+              dc: 0
+            }]
+          };
+        }
+      },
+      async recordDowntimeCheckResult(requestId, checkId, result, options) {
+        calls.push(["recordDowntimeCheckResult", requestId, checkId, result, options]);
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of root.listeners.click) {
+      await listener({
+        target: submitButton,
+        preventDefault() {
+          calls.push(["preventDefault"]);
+        },
+        stopPropagation() {
+          calls.push(["stopPropagation"]);
+        }
+      });
+    }
+
+    assert.deepEqual(calls.filter((call) => call[0] === "rollSkill"), [[
+      "rollSkill",
+      {
+        event: undefined,
+        skill: "acr",
+        ability: "dex"
+      }
+    ]]);
+    assert.deepEqual(calls.filter((call) => call[0] === "recordDowntimeCheckResult"), [[
+      "recordDowntimeCheckResult",
+      "downtime-1",
+      "check-1",
+      {
+        total: 21,
+        outcomeMode: "freeform",
+        sourceType: "skill",
+        ability: "dex",
+        target: "acr",
+        targetLabel: "Акробатика"
+      },
+      {
+        actorId: "actor-a",
+        groupId: ""
+      }
+    ]]);
+    assert.deepEqual(calls.filter((call) => call[0] === "render"), [["render", { force: true }]]);
+    assert.deepEqual(calls.filter((call) => call[0] === "refreshOpenApps"), [["refreshOpenApps"]]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("character downtime document fallback lets sheet root handle unresolved clicks", async () => {
   const stubs = installSheetExtensionStubs();
   try {

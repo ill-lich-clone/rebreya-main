@@ -1,4 +1,4 @@
-<section class="tab {{ characterDowntimeTab.cssClass }} rm-character-downtime-tab" data-tab="{{ characterDowntimeTab.id }}" data-group="{{ characterDowntimeTab.group }}">
+<section class="tab {{ characterDowntimeTab.cssClass }} rm-character-downtime-tab" data-tab="{{ characterDowntimeTab.id }}" data-group="{{ characterDowntimeTab.group }}" data-actor-id="{{characterDowntime.actorId}}">
   <section class="rm-character-downtime-card">
     {{#if characterDowntime.warning}}
       <p class="rm-inline-status rm-inline-status--warning">
@@ -32,7 +32,7 @@
           type="button"
           class="rm-button rm-button--small rm-button--secondary rm-character-downtime-library-button"
           data-action="character-downtime-open-library"
-          title="Выбрать простой из библиотеки Rebreya"
+          data-tooltip="Выбрать простой из библиотеки Rebreya"
           {{#if characterDowntime.libraryDisabled}}disabled{{/if}}
         >
           <i class="fa-solid fa-book-open"></i>
@@ -43,19 +43,68 @@
         <label>Недели</label>
         <input type="number" min="1" step="1" value="{{characterDowntime.form.weeks}}" data-action="character-downtime-weeks" {{#if characterDowntime.submitDisabled}}disabled{{/if}}>
       </div>
-      <div class="rm-field rm-character-downtime-form__title">
-        <label>Название</label>
-        <input type="text" value="{{characterDowntime.form.title}}" placeholder="Коротко о цели" data-action="character-downtime-title" {{#if characterDowntime.submitDisabled}}disabled{{/if}}>
-      </div>
-      <div class="rm-field rm-character-downtime-form__description">
-        <label>Описание</label>
-        <textarea rows="2" placeholder="Что персонаж хочет сделать" data-action="character-downtime-description" {{#if characterDowntime.submitDisabled}}disabled{{/if}}>{{characterDowntime.form.description}}</textarea>
-      </div>
+
+      {{#if characterDowntime.selectedTemplate}}
+        <section class="rm-character-downtime-template" data-action="character-downtime-template-preview">
+          <div class="rm-status-strip rm-character-downtime-template__meta">
+            {{#if characterDowntime.selectedTemplate.hasRank}}
+              <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Ранг простоя">{{characterDowntime.selectedTemplate.rank}}</span>
+            {{/if}}
+            {{#if characterDowntime.selectedTemplate.hasDuration}}
+              <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Длительность">{{characterDowntime.selectedTemplate.duration}}</span>
+            {{/if}}
+            {{#if characterDowntime.selectedTemplate.hasRequirements}}
+              {{#each characterDowntime.selectedTemplate.requirements}}
+                <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Требование">{{this}}</span>
+              {{/each}}
+            {{/if}}
+          </div>
+
+          {{#if characterDowntime.selectedTemplate.hasSummary}}
+            <p class="rm-character-downtime-template__summary">{{characterDowntime.selectedTemplate.summary}}</p>
+          {{/if}}
+
+          {{#if characterDowntime.selectedTemplate.hasResourceActions}}
+            <div class="rm-character-downtime-template__line">
+              {{#each characterDowntime.selectedTemplate.resourceActions}}
+                <span class="rm-chip" data-tooltip="{{label}}">{{outcomeSummary}}</span>
+              {{/each}}
+            </div>
+          {{/if}}
+
+          {{#if characterDowntime.selectedTemplate.hasCheckActions}}
+            <div class="rm-character-downtime-template__line">
+              {{#each characterDowntime.selectedTemplate.checkActions}}
+                <span class="rm-chip" data-tooltip="{{label}}">{{summary}}</span>
+              {{/each}}
+            </div>
+          {{/if}}
+
+          {{#if characterDowntime.selectedTemplate.hasResultActions}}
+            <div class="rm-character-downtime-template__line">
+              {{#each characterDowntime.selectedTemplate.resultActions}}
+                <span class="rm-chip" data-tooltip="{{label}}">{{summary}}</span>
+              {{/each}}
+            </div>
+          {{/if}}
+
+          {{#if characterDowntime.selectedTemplate.rankTable.length}}
+            <div class="rm-character-downtime-rank-table">
+              {{#each characterDowntime.selectedTemplate.rankTable}}
+                <span>{{rank}}</span>
+                <span>{{#if baseCost}}{{baseCost}}{{else}}{{baseTotal}}{{/if}}</span>
+                <span>{{stepCost}}</span>
+              {{/each}}
+            </div>
+          {{/if}}
+        </section>
+      {{/if}}
+
       <button
         type="button"
         class="rm-button rm-button--small rm-button--primary rm-character-downtime-form__submit"
         data-action="character-downtime-submit"
-        title="{{characterDowntime.submitDisabledReason}}"
+        data-tooltip="{{characterDowntime.submitDisabledReason}}"
         {{#if characterDowntime.submitDisabled}}disabled{{/if}}
       >
         <i class="fa-solid fa-paper-plane"></i>
@@ -63,18 +112,14 @@
       </button>
     </section>
 
-    {{#if characterDowntime.submitDisabledReason}}
-      <p class="rm-character-downtime-note">{{ characterDowntime.submitDisabledReason }}</p>
-    {{/if}}
-
     <section class="rm-character-downtime-history">
       <header>
         <h4>Заявки</h4>
-        <span class="rm-muted">{{rmNum characterDowntime.requests.length precision=0}}</span>
+        <span class="rm-muted">{{rmNum characterDowntime.requestCount precision=0}}</span>
       </header>
 
       {{#if characterDowntime.emptyRequests}}
-        <p class="rm-empty">Заявок на простой пока нет.</p>
+        <p class="rm-empty">Активных заявок нет.</p>
       {{else}}
         <div class="rm-character-downtime-request-list">
           {{#each characterDowntime.requests}}
@@ -94,7 +139,7 @@
                 <div class="rm-status-strip rm-character-downtime-checks">
                   {{#each checks}}
                     <div class="rm-character-downtime-check">
-                      <span class="rm-badge rm-status-badge rm-status-badge--info" title="Целевое действие простоя">{{summary}}</span>
+                      <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Целевое действие простоя">{{summary}}</span>
                       {{#if hasResult}}
                         <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
                       {{/if}}
@@ -116,7 +161,7 @@
                               data-outcome-mode="{{outcomeMode}}"
                               data-choice-index="{{choiceIndex}}"
                               data-dc="{{dc}}"
-                              title="{{rollTitle}}"
+                              data-tooltip="{{rollTitle}}"
                               {{#unless canRoll}}disabled{{/unless}}
                             >
                               <i class="fa-solid fa-dice-d20"></i>
@@ -132,7 +177,63 @@
             </article>
           {{/each}}
         </div>
+
+        <nav class="rm-character-downtime-pagination">
+          <button type="button" class="rm-icon-button" data-action="character-downtime-page" data-page-type="request" data-direction="previous" data-tooltip="Предыдущая страница" {{#unless characterDowntime.requestPage.hasPrevious}}disabled{{/unless}}>
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+          <span class="rm-muted">{{rmNum characterDowntime.requestPage.current precision=0}} / {{rmNum characterDowntime.requestPage.total precision=0}}</span>
+          <button type="button" class="rm-icon-button" data-action="character-downtime-page" data-page-type="request" data-direction="next" data-tooltip="Следующая страница" {{#unless characterDowntime.requestPage.hasNext}}disabled{{/unless}}>
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </nav>
       {{/if}}
     </section>
+
+    {{#if characterDowntime.hasArchiveRequests}}
+      <section class="rm-character-downtime-history rm-character-downtime-history--archive">
+        <header>
+          <h4>Архив</h4>
+          <span class="rm-muted">{{rmNum characterDowntime.archiveCount precision=0}}</span>
+        </header>
+
+        <div class="rm-character-downtime-request-list">
+          {{#each characterDowntime.archiveRequests}}
+            <article class="rm-character-downtime-request is-archived">
+              <div class="rm-character-downtime-request__title">
+                <strong>{{title}}</strong>
+                <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
+              </div>
+              <p class="rm-muted">{{actionLabel}} • {{rmNum weeks precision=0}} нед.</p>
+              {{#if hasResult}}
+                <p class="rm-inline-status rm-inline-status--info"><span>{{result}}</span></p>
+              {{/if}}
+              {{#if hasChecks}}
+                <div class="rm-status-strip rm-character-downtime-checks">
+                  {{#each checks}}
+                    <div class="rm-character-downtime-check">
+                      <span class="rm-badge rm-status-badge rm-status-badge--info">{{summary}}</span>
+                      {{#if hasResult}}
+                        <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
+                      {{/if}}
+                    </div>
+                  {{/each}}
+                </div>
+              {{/if}}
+            </article>
+          {{/each}}
+        </div>
+
+        <nav class="rm-character-downtime-pagination">
+          <button type="button" class="rm-icon-button" data-action="character-downtime-page" data-page-type="archive" data-direction="previous" data-tooltip="Предыдущая страница" {{#unless characterDowntime.archivePage.hasPrevious}}disabled{{/unless}}>
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+          <span class="rm-muted">{{rmNum characterDowntime.archivePage.current precision=0}} / {{rmNum characterDowntime.archivePage.total precision=0}}</span>
+          <button type="button" class="rm-icon-button" data-action="character-downtime-page" data-page-type="archive" data-direction="next" data-tooltip="Следующая страница" {{#unless characterDowntime.archivePage.hasNext}}disabled{{/unless}}>
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </nav>
+      </section>
+    {{/if}}
   </section>
 </section>

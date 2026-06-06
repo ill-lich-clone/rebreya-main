@@ -287,6 +287,98 @@ test("CharacterDowntimeService exposes selected action labels for library picker
   assert.equal(context.selectedActionLabel, "Азартные игры");
 });
 
+test("CharacterDowntimeService exposes selected template details and archives completed requests", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 2,
+          reservedWeeks: 1,
+          spentWeeks: 3,
+          totalGrantedWeeks: 6
+        }
+      }],
+      requests: [{
+        id: "downtime-active",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionLabel: "Исследование",
+        title: "Исследование",
+        weeks: 1,
+        status: "approved",
+        checks: [{
+          id: "research-check",
+          label: "Проверка исследования",
+          actionType: "check",
+          sourceType: "ability",
+          ability: "int",
+          target: "int",
+          targetLabel: "Интеллект"
+        }]
+      }, {
+        id: "downtime-archived",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionLabel: "Азартные игры",
+        title: "Азартные игры",
+        weeks: 1,
+        status: "completed",
+        checks: [],
+        result: "21"
+      }],
+      actionCatalog: [{
+        id: "Compendium.world.rebreya-downtime.Item.research",
+        label: "Исследование",
+        rank: "1+",
+        duration: "1 рабочая неделя.",
+        summary: "Изучить вопрос.",
+        requirements: ["Библиотека"],
+        rankTable: [{ rank: 1, baseCost: 10, stepCost: 5 }],
+        targetActions: [{
+          id: "research-resources",
+          label: "Стоимость исследования",
+          actionType: "resources",
+          resources: {
+            narrative: "Базовая сумма зависит от ранга.",
+            cost: {
+              amount: 10,
+              currency: "gp",
+              payer: "character"
+            }
+          }
+        }, {
+          id: "research-check",
+          label: "Проверка исследования",
+          actionType: "check",
+          sourceType: "ability",
+          ability: "int",
+          targetLabel: "Интеллект"
+        }]
+      }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }), {
+    actionId: "Compendium.world.rebreya-downtime.Item.research"
+  });
+
+  assert.equal(context.selectedTemplate.label, "Исследование");
+  assert.equal(context.selectedTemplate.rank, "1+");
+  assert.equal(context.selectedTemplate.duration, "1 рабочая неделя.");
+  assert.equal(context.selectedTemplate.resourceActions[0].outcomeSummary, "10 зм");
+  assert.equal(context.selectedTemplate.checkActions[0].summary, "Проверка исследования | Интеллект");
+  assert.deepEqual(context.requests.map((request) => request.id), ["downtime-active"]);
+  assert.deepEqual(context.archiveRequests.map((request) => request.id), ["downtime-archived"]);
+  assert.equal(context.hasArchiveRequests, true);
+  assert.equal(context.requestPage.total, 1);
+  assert.equal(context.archivePage.total, 1);
+});
+
 test("CharacterDowntimeService converts known group errors into a warning context", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     error: new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP)
