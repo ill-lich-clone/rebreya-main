@@ -25,6 +25,7 @@ const SECOND_WIND_USES_RECOVERY = Object.freeze([{
   type: "recoverAll",
   formula: ""
 }]);
+const REPAIR_UPDATE_OPTIONS = Object.freeze({ render: false });
 const IRON_WILL_NEXT_SAVE_EFFECT_NAME = "Железная воля: следующий приём";
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 const FIGHTER_MANEUVER_SUBTYPE = "fighterManeuver";
@@ -365,6 +366,7 @@ export class FighterAutomationService {
     this._ironWillTurnPrompts = new Set();
     this._ironWillNextSavePending = new Set();
     this._classAdvancementSourcesPromise = null;
+    this._repairActorPromises = new Map();
     this._options = options;
   }
 
@@ -544,11 +546,30 @@ export class FighterAutomationService {
       return false;
     }
 
+    const repairKey = this.#actorKey(actor) || actor;
+    const currentRepair = this._repairActorPromises.get(repairKey);
+    if (currentRepair) {
+      return currentRepair;
+    }
+
+    const repairPromise = this.#repairActorNow(actor);
+    this._repairActorPromises.set(repairKey, repairPromise);
+    try {
+      return await repairPromise;
+    }
+    finally {
+      if (this._repairActorPromises.get(repairKey) === repairPromise) {
+        this._repairActorPromises.delete(repairKey);
+      }
+    }
+  }
+
+  async #repairActorNow(actor) {
     await this.#repairClassAdvancementLinks(actor);
 
     const secondWind = this.#findSecondWind(actor);
     if (secondWind) {
-      await this.#ensureSecondWindResource(actor, secondWind);
+      await this.#ensureSecondWindResource(actor, secondWind, { render: false });
     }
 
     await this.#repairManeuverSections(actor);
@@ -923,7 +944,7 @@ export class FighterAutomationService {
     return true;
   }
 
-  async #ensureSecondWindResource(actor, item, { restore = false } = {}) {
+  async #ensureSecondWindResource(actor, item, { restore = false, render = true } = {}) {
     const uses = item?.system?.uses ?? {};
     const fighterLevel = this.#fighterLevel(actor);
     const resolvedMax = fighterLevel > 0
@@ -952,7 +973,7 @@ export class FighterAutomationService {
 
     if (Object.keys(patch).length) {
       if (typeof item.update === "function") {
-        await item.update(patch);
+        await item.update(patch, render === false ? REPAIR_UPDATE_OPTIONS : {});
       }
       else {
         for (const [path, value] of Object.entries(patch)) {
@@ -995,7 +1016,7 @@ export class FighterAutomationService {
 
       const patch = { "system.advancement": mergedAdvancement };
       if (typeof item.update === "function") {
-        await item.update(patch);
+        await item.update(patch, REPAIR_UPDATE_OPTIONS);
       }
       else {
         foundry.utils.setProperty(item, "system.advancement", mergedAdvancement);
@@ -1078,7 +1099,7 @@ export class FighterAutomationService {
       }
 
       if (typeof item.update === "function") {
-        await item.update(patch);
+        await item.update(patch, REPAIR_UPDATE_OPTIONS);
       }
       else {
         for (const [path, value] of Object.entries(patch)) {
@@ -1130,7 +1151,7 @@ export class FighterAutomationService {
 
       const patch = { "system.container": containerId };
       if (typeof item.update === "function") {
-        await item.update(patch);
+        await item.update(patch, REPAIR_UPDATE_OPTIONS);
       }
       else {
         foundry.utils.setProperty(item, "system.container", containerId);

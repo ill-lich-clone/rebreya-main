@@ -160,8 +160,10 @@ function makeItem({ id, name, featureId = "", uses = null, type = "feat", flags 
       return this.flags?.[scope]?.[key];
     },
     updates: [],
-    async update(patch) {
+    updateOptions: [],
+    async update(patch, options = {}) {
       this.updates.push(patch);
+      this.updateOptions.push(options);
       for (const [path, value] of Object.entries(patch)) {
         foundry.utils.setProperty(this, path, value);
       }
@@ -1232,6 +1234,7 @@ test("fighter actor repair moves orphaned starting equipment pack contents into 
 
   assert.equal(torch.system.container, "pack");
   assert.deepEqual(torch.updates, [{ "system.container": "pack" }]);
+  assert.deepEqual(torch.updateOptions, [{ render: false }]);
 });
 
 test("fighter actor repair leaves intentionally extracted starting equipment pack contents in inventory", async () => {
@@ -1391,6 +1394,87 @@ test("actor repair refreshes Rebreya class advancement links from the class comp
         ...freshGrant,
         value: staleGrant.value
       }, freshStyleChoice]
+    }]);
+  }
+  finally {
+    game.packs = previousPacks;
+  }
+});
+
+test("actor repair coalesces concurrent class advancement refreshes from sheet renders", async () => {
+  const previousPacks = game.packs;
+  const staleGrant = {
+    _id: "class-grant-1",
+    type: "ItemGrant",
+    level: 1,
+    title: "Old class features",
+    configuration: {
+      items: [{ uuid: "Compendium.world.rebreya-class-features.Item.oldFeature" }]
+    },
+    value: { added: { "1": { old: "kept" } } }
+  };
+  const freshGrant = {
+    _id: "class-grant-1",
+    type: "ItemGrant",
+    level: 1,
+    title: "Fresh class features",
+    configuration: {
+      items: [{ uuid: "Compendium.world.rebreya-class-features.Item.freshFeature" }]
+    },
+    value: {}
+  };
+  const classItem = makeItem({
+    id: "barbarian-class",
+    name: "Barbarian",
+    type: "class",
+    system: {
+      identifier: "barbarian-rework-v012",
+      advancement: [staleGrant]
+    },
+    flags: {
+      "rebreya-main": {
+        classIdentifier: "barbarian-rework-v012"
+      }
+    }
+  });
+  classItem.update = async function update(patch, options = {}) {
+    this.updates.push(patch);
+    this.updateOptions.push(options);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (const [path, value] of Object.entries(patch)) {
+      foundry.utils.setProperty(this, path, value);
+    }
+    return this;
+  };
+  const actor = new TestActor({ id: "barbarian", name: "Barbarian", items: [classItem] });
+  game.packs = {
+    get: (packId) => packId === "world.rebreya-classes"
+      ? {
+          getDocuments: async () => [{
+            system: {
+              identifier: "barbarian-rework-v012",
+              advancement: [freshGrant]
+            },
+            getFlag: (scope, key) => scope === "rebreya-main" && key === "classIdentifier"
+              ? "barbarian-rework-v012"
+              : undefined
+          }]
+        }
+      : null
+  };
+
+  try {
+    const service = new FighterAutomationService({});
+    await Promise.all([
+      service.repairActor(actor),
+      service.repairActor(actor)
+    ]);
+
+    assert.equal(classItem.updates.length, 1);
+    assert.deepEqual(classItem.updateOptions, [{ render: false }]);
+    assert.deepEqual(classItem.system.advancement, [{
+      ...freshGrant,
+      value: staleGrant.value
     }]);
   }
   finally {
