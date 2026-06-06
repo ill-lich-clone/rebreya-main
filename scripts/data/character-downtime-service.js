@@ -82,10 +82,32 @@ function buildCheckSummary(check = {}) {
     && dc
     && (!Number.isFinite(numericDc) || numericDc > 0);
   const ability = cleanText(check.ability);
+  const abilityLabel = ABILITY_LABELS[ability] ?? ability;
+  const sourceType = cleanText(check.sourceType) || "skill";
+  const targetLabel = cleanText(check.targetLabel) || cleanText(check.label) || cleanText(check.target);
+  let summary = cleanText(check.label) || "Проверка";
+
+  if (sourceType === "save") {
+    summary = ability === "death" ? "Спасбросок смерти" : `Спасбросок: ${abilityLabel}`;
+  }
+  else if (sourceType === "ability") {
+    summary = `Проверка: ${abilityLabel}`;
+  }
+  else if (sourceType === "tool") {
+    summary = abilityLabel && targetLabel
+      ? `Инструмент: ${abilityLabel} (${targetLabel})`
+      : `Инструмент: ${targetLabel || abilityLabel || cleanText(check.label) || "проверка"}`;
+  }
+  else if (abilityLabel && targetLabel) {
+    summary = `Проверка: ${abilityLabel} (${targetLabel})`;
+  }
+  else if (targetLabel) {
+    summary = `Проверка: ${targetLabel}`;
+  }
+
   return [
-    cleanText(check.label),
-    shouldShowDc ? `DC ${dc.replace(/^dc\s*/iu, "")}` : "",
-    ABILITY_LABELS[ability] ?? ability
+    summary,
+    shouldShowDc ? `DC ${dc.replace(/^dc\s*/iu, "")}` : ""
   ].filter(Boolean).join(" | ");
 }
 

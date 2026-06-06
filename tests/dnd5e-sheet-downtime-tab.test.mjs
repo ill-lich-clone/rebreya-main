@@ -495,6 +495,84 @@ test("character downtime submit works when the downtime tab is rendered lazily",
   }
 });
 
+test("character downtime disabled submit is ignored before creating a request", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-disabled-submit=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const submitButton = new stubs.HTMLElement();
+    submitButton.disabled = true;
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "research" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-submit']": submitButton
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(submitButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: "downtime-1" };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    let prevented = false;
+    let stopped = false;
+    for (const listener of root.listeners.click) {
+      await listener({
+        target: submitButton,
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        }
+      });
+    }
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+    assert.deepEqual(calls, []);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("character downtime submit immediately rolls single target checks", async () => {
   const stubs = installSheetExtensionStubs();
   try {

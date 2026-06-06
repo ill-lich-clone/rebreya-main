@@ -645,12 +645,16 @@
             {{else}}
               <div class="rm-downtime-request-list">
                 {{#each downtime.visibleRequests}}
-                  <article class="rm-downtime-request {{#if isSelected}}is-selected{{/if}}">
+                  <article
+                    class="rm-downtime-request {{#if isSelected}}is-selected{{/if}}"
+                    data-action="downtime-select-request"
+                    data-request-id="{{id}}"
+                    role="button"
+                    tabindex="0"
+                  >
                     <div class="rm-downtime-request__main">
                       <div class="rm-downtime-request__title">
-                        <button type="button" class="rm-link-button rm-downtime-request__select" data-action="downtime-select-request" data-request-id="{{id}}">
-                          <strong>{{displayTitle}}</strong>
-                        </button>
+                        <strong>{{displayTitle}}</strong>
                         <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
                       </div>
                       <p class="rm-muted">{{actorName}} • {{actionLabel}} • {{rmNum weeks precision=0}} нед.</p>

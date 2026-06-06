@@ -129,7 +129,7 @@ test("CharacterDowntimeService maps current actor downtime into a player-facing 
   assert.equal(context.requests.length, 1);
   assert.equal(context.requests[0].id, "downtime-1");
   assert.equal(context.requests[0].statusLabel, "Одобрено");
-  assert.equal(context.requests[0].checks[0].summary, "Выживание | DC 15 | Мудрость");
+  assert.equal(context.requests[0].checks[0].summary, "Проверка: Мудрость (Выживание) | DC 15");
   assert.equal(context.requests[0].checks[0].resultLabel, "18, успех");
 });
 
@@ -251,7 +251,7 @@ test("CharacterDowntimeService keeps freeform roll targets out of DC accounting"
   const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }));
   const check = context.requests[0].checks[0];
 
-  assert.equal(check.summary, "Акробатика | Ловкость");
+  assert.equal(check.summary, "Проверка: Ловкость (Акробатика)");
   assert.equal(check.rollTargets[0].outcomeMode, "freeform");
   assert.equal(check.rollTargets[0].dc, 0);
 });
@@ -371,7 +371,7 @@ test("CharacterDowntimeService exposes selected template details and archives co
   assert.equal(context.selectedTemplate.rank, "1+");
   assert.equal(context.selectedTemplate.duration, "1 рабочая неделя.");
   assert.equal(context.selectedTemplate.resourceActions[0].outcomeSummary, "10 зм");
-  assert.equal(context.selectedTemplate.checkActions[0].summary, "Проверка исследования | Интеллект");
+  assert.equal(context.selectedTemplate.checkActions[0].summary, "Проверка: Интеллект");
   assert.deepEqual(context.requests.map((request) => request.id), ["downtime-active"]);
   assert.deepEqual(context.archiveRequests.map((request) => request.id), ["downtime-archived"]);
   assert.equal(context.hasArchiveRequests, true);

@@ -2521,8 +2521,8 @@ function normalizeDowntimeLibraryRecord(pack, row = {}) {
     rankTable: Array.isArray(downtimeFlag.rankTable) ? foundry.utils.deepClone(downtimeFlag.rankTable) : [],
     targetActions: foundry.utils.deepClone(targetActions),
     summary: stripHtmlText(
-      getIndexRowProperty(row, "system.description.value")
-      || downtimeFlag.summary
+      downtimeFlag.summary
+      || getIndexRowProperty(row, "system.description.value")
       || ""
     ),
     targetActionCount: targetActions.length
@@ -2549,8 +2549,8 @@ function normalizeDowntimeLibraryDocument(document = {}) {
     rankTable: Array.isArray(downtimeFlag.rankTable) ? foundry.utils.deepClone(downtimeFlag.rankTable) : [],
     targetActions: foundry.utils.deepClone(targetActions),
     summary: stripHtmlText(
-      foundry.utils.getProperty?.(document, "system.description.value")
-      || downtimeFlag.summary
+      downtimeFlag.summary
+      || foundry.utils.getProperty?.(document, "system.description.value")
       || ""
     ),
     targetActionCount: targetActions.length
@@ -3043,6 +3043,12 @@ async function handleCharacterDowntimeSubmitClick(event, { root = null, app = nu
 
   if (root?.contains instanceof Function && !root.contains(submitButton)) {
     return false;
+  }
+
+  if (submitButton.disabled || submitButton.getAttribute?.("aria-disabled") === "true" || submitButton.matches?.(":disabled")) {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    return true;
   }
 
   const panel = submitButton.closest?.(".rm-character-downtime-tab")

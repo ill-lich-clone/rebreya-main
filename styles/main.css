@@ -4362,9 +4362,11 @@ summary:focus-visible {
   display: grid;
   gap: 8px;
   padding: 9px 10px;
+  cursor: pointer;
 }
 
 .rm-downtime-request:hover,
+.rm-downtime-request:focus-visible,
 .rm-downtime-request.is-selected {
   border-color: rgba(214, 177, 104, 0.28);
   background: var(--rm-ui-row-bg-hover);
@@ -5061,9 +5063,14 @@ summary:focus-visible {
 
 .rm-character-downtime-template__summary {
   margin: 0;
+  max-height: 132px;
+  overflow: auto;
+  padding: 8px 9px;
+  border: 1px solid var(--rm-sheet-line);
+  background: rgba(5, 5, 6, 0.28);
   color: var(--rm-sheet-muted);
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 1.45;
 }
 
 .rm-character-downtime-rank-table {

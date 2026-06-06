@@ -517,8 +517,8 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
     assert.equal(context.downtime.members[0].spentWeeks, 2);
     assert.equal(context.downtime.members[0].totalGrantedWeeks, 6);
     assert.equal(context.downtime.requests[0].statusLabel, "Ожидает");
-    assert.equal(context.downtime.requests[0].checks[0].summary, "Поиск следов | DC 15 | Мудрость");
-    assert.equal(context.downtime.requests[0].targetActions[0].summary, "Поиск следов | DC 15 | Мудрость");
+    assert.equal(context.downtime.requests[0].checks[0].summary, "Проверка: Мудрость (Восприятие) | DC 15");
+    assert.equal(context.downtime.requests[0].targetActions[0].summary, "Проверка: Мудрость (Восприятие) | DC 15");
     assert.equal(context.downtime.requests[0].targetActions[0].sourceTypeLabel, "Навык");
     assert.equal(context.downtime.requests[0].targetActions[0].outcomeModeLabel, "DC");
     assert.equal(context.downtime.requests[0].targetActions[0].outcomeSummary, "DC 15");
@@ -532,7 +532,7 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
     assert.equal(context.downtime.selectedRequest.id, "downtime-1");
     assert.equal(context.downtime.selectedRequest.templateSummary, "Find answers.");
     assert.equal(context.downtime.selectedRequest.resourceActions[0].outcomeSummary, "10 зм");
-    assert.equal(context.downtime.selectedRequest.checkActions[0].summary, "Research check | Интеллект");
+    assert.equal(context.downtime.selectedRequest.checkActions[0].summary, "Проверка: Интеллект");
   }
   finally {
     restoreFoundry();
@@ -594,6 +594,55 @@ test("InventoryApp downtime controls do not define duplicate tooltip attributes"
   ));
 
   assert.deepEqual(duplicateTooltipTags, []);
+});
+
+test("InventoryApp selects downtime requests from the whole request card", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+  const app = new InventoryApp(createModuleApi({
+    downtimeSnapshot: {
+      canManage: true,
+      canSubmit: true,
+      members: [],
+      requests: [{
+        id: "downtime-2",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionLabel: "Gambling",
+        weeks: 1,
+        status: "approved",
+        checks: []
+      }],
+      actionCatalog: []
+    }
+  }));
+  const calls = [];
+  app.render = (options) => {
+    calls.push(["render", options]);
+  };
+  const requestCard = createFakeControl({
+    dataset: {
+      action: "downtime-select-request",
+      requestId: "downtime-2"
+    }
+  });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='downtime-select-request']" ? [requestCard] : [];
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    await dispatchClick(requestCard);
+
+    assert.equal(app.downtimeSelectedRequestId, "downtime-2");
+    assert.deepEqual(calls, [["render", { force: true }]]);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
 });
 
 test("InventoryApp downtime context converts known group errors into empty warning state", async () => {

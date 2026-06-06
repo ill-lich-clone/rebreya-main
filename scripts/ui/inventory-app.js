@@ -874,12 +874,38 @@ function buildEmptyDowntimeContext({ warning = "", grantWeeks = 1, grantActorId 
 
 function buildCheckSummary(check) {
   const abilityLabel = getOptionLabel(DOWNTIME_ABILITY_OPTIONS, check?.ability, cleanText(check?.ability));
-  const parts = [
-    cleanText(check?.label),
-    cleanText(check?.dc) ? `DC ${cleanText(check.dc).replace(/^dc\s*/iu, "")}` : "",
-    abilityLabel
-  ].filter(Boolean);
-  return parts.join(" | ");
+  const dc = cleanText(check?.dc);
+  const outcomeMode = cleanText(check?.outcomeMode) || (dc ? "dc" : "freeform");
+  const numericDc = Number(dc.replace(/^dc\s*/iu, ""));
+  const shouldShowDc = ["dc", "dc-sum"].includes(outcomeMode)
+    && dc
+    && (!Number.isFinite(numericDc) || numericDc > 0);
+  const sourceType = cleanText(check?.sourceType) || "skill";
+  const targetLabel = cleanText(check?.targetLabel) || cleanText(check?.label) || cleanText(check?.target);
+  let summary = cleanText(check?.label) || "Проверка";
+
+  if (sourceType === "save") {
+    summary = cleanText(check?.ability) === "death" ? "Спасбросок смерти" : `Спасбросок: ${abilityLabel}`;
+  }
+  else if (sourceType === "ability") {
+    summary = `Проверка: ${abilityLabel}`;
+  }
+  else if (sourceType === "tool") {
+    summary = abilityLabel && targetLabel
+      ? `Инструмент: ${abilityLabel} (${targetLabel})`
+      : `Инструмент: ${targetLabel || abilityLabel || cleanText(check?.label) || "проверка"}`;
+  }
+  else if (abilityLabel && targetLabel) {
+    summary = `Проверка: ${abilityLabel} (${targetLabel})`;
+  }
+  else if (targetLabel) {
+    summary = `Проверка: ${targetLabel}`;
+  }
+
+  return [
+    summary,
+    shouldShowDc ? `DC ${dc.replace(/^dc\s*/iu, "")}` : ""
+  ].filter(Boolean).join(" | ");
 }
 
 function buildEffectLabel(effect, { downtime = false } = {}) {
@@ -3159,6 +3185,20 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     element.querySelectorAll("[data-action='downtime-select-request']").forEach((button) => {
       button.addEventListener("click", (event) => {
+        const interactiveTarget = event.target?.closest?.("button, a, input, select, textarea, summary");
+        if (interactiveTarget && interactiveTarget !== event.currentTarget) {
+          return;
+        }
+
+        this.downtimeSelectedRequestId = cleanText(event.currentTarget?.dataset?.requestId);
+        this.render({ force: true });
+      }, listenerOptions);
+      button.addEventListener("keydown", (event) => {
+        if (!["Enter", " "].includes(event.key)) {
+          return;
+        }
+
+        event.preventDefault?.();
         this.downtimeSelectedRequestId = cleanText(event.currentTarget?.dataset?.requestId);
         this.render({ force: true });
       }, listenerOptions);
