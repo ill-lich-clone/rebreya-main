@@ -1,9 +1,13 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 
 let bg3HotbarSuppressionHookRegistered = false;
+let bg3HotbarDeathSavesCompatRegistered = false;
 let fixedRaceSizeHookRegistered = false;
 const PANEL_TOOL_NAME = `${MODULE_ID}-panel`;
 const DND5E_ACTOR_SIZES = new Set(["tiny", "sm", "med", "lg", "huge", "grg"]);
+const BG3_HOTBAR_MODULE_ID = "bg3-inspired-hotbar";
+const BG3_DEATH_SAVES_CONTAINER_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/scripts/components/containers/DeathSavesContainer.js`;
+const BG3_DEATH_SAVES_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3DeathSavesPatch`);
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -47,6 +51,67 @@ export function applyBg3HotbarAutoAddSuppression(item, options) {
   return true;
 }
 
+function normalizeDeathSaveCounter(value) {
+  const numericValue = Number(value ?? 0);
+  return Number.isFinite(numericValue) ? Math.max(0, Math.floor(numericValue)) : 0;
+}
+
+function getBg3DeathSavesDisplaySetting() {
+  try {
+    return game.settings.get(BG3_HOTBAR_MODULE_ID, "showDeathSavingThrow") ?? "hide";
+  }
+  catch (_error) {
+    return "hide";
+  }
+}
+
+export function getBg3DeathSaveData(actor, display = getBg3DeathSavesDisplaySetting()) {
+  const death = actor?.system?.attributes?.death ?? {};
+  return {
+    display,
+    success: normalizeDeathSaveCounter(death.success),
+    failure: normalizeDeathSaveCounter(death.failure)
+  };
+}
+
+function isBg3HotbarActive() {
+  try {
+    return globalThis.game?.modules?.get?.(BG3_HOTBAR_MODULE_ID)?.active === true;
+  }
+  catch (_error) {
+    return false;
+  }
+}
+
+export async function patchBg3HotbarDeathSavesContainer({
+  force = false,
+  importModule = (path) => import(path)
+} = {}) {
+  if (!force && !isBg3HotbarActive()) {
+    return false;
+  }
+
+  let module;
+  try {
+    module = await importModule(BG3_DEATH_SAVES_CONTAINER_PATH);
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to load BG3 hotbar death saves component for compatibility patch.`, error);
+    return false;
+  }
+
+  const prototype = module?.DeathSavesContainer?.prototype;
+  if (!prototype || prototype[BG3_DEATH_SAVES_PATCH_FLAG]) {
+    return false;
+  }
+
+  prototype[BG3_DEATH_SAVES_PATCH_FLAG] = true;
+  prototype.getData = async function getRebreyaSafeDeathSavesData() {
+    return getBg3DeathSaveData(this.actor);
+  };
+  return true;
+}
+
 function registerBg3HotbarAutoAddSuppression() {
   if (bg3HotbarSuppressionHookRegistered || !globalThis.Hooks?.on) {
     return;
@@ -55,6 +120,19 @@ function registerBg3HotbarAutoAddSuppression() {
   bg3HotbarSuppressionHookRegistered = true;
   Hooks.on("createItem", (item, options) => {
     applyBg3HotbarAutoAddSuppression(item, options);
+  });
+}
+
+function registerBg3HotbarDeathSavesCompat() {
+  if (bg3HotbarDeathSavesCompatRegistered || !globalThis.Hooks?.once) {
+    return;
+  }
+
+  bg3HotbarDeathSavesCompatRegistered = true;
+  Hooks.once("ready", () => {
+    patchBg3HotbarDeathSavesContainer().catch((error) => {
+      console.warn(`${MODULE_ID} | Failed to patch BG3 hotbar death saves component.`, error);
+    });
   });
 }
 
@@ -332,6 +410,7 @@ export function refreshEconomyLauncher() {
 
 export function registerSceneControlsHook() {
   registerBg3HotbarAutoAddSuppression();
+  registerBg3HotbarDeathSavesCompat();
   registerFixedRaceSizeHook();
 
   Hooks.on("getSceneControlButtons", (controls) => {

@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 const {
   applyFixedRaceSize,
   applyBg3HotbarAutoAddSuppression,
+  getBg3DeathSaveData,
+  patchBg3HotbarDeathSavesContainer,
   registerSceneControlsHook,
   shouldSuppressBg3HotbarAutoAdd
 } = await import("../scripts/hooks.js");
@@ -116,6 +118,64 @@ test("BG3 hotbar auto-add suppression leaves unrelated items alone", () => {
   assert.equal(shouldSuppressBg3HotbarAutoAdd(makeItem({ type: "feat" })), false);
   assert.equal(applyBg3HotbarAutoAddSuppression(makeItem({ type: "feat" }), options), false);
   assert.equal(options.noBG3AutoAdd, undefined);
+});
+
+test("BG3 hotbar death save data tolerates actors without death saves", () => {
+  assert.deepEqual(
+    getBg3DeathSaveData({ type: "group", system: { attributes: {} } }, "show"),
+    { display: "show", success: 0, failure: 0 }
+  );
+  assert.deepEqual(
+    getBg3DeathSaveData({
+      type: "character",
+      system: {
+        attributes: {
+          death: {
+            success: 2,
+            failure: 1
+          }
+        }
+      }
+    }, "only"),
+    { display: "only", success: 2, failure: 1 }
+  );
+});
+
+test("BG3 hotbar death saves container getData is patched to avoid missing death data crashes", async () => {
+  const previousGame = globalThis.game;
+  class DeathSavesContainer {}
+  DeathSavesContainer.prototype.getData = async function getData() {
+    return {
+      display: "show",
+      success: this.actor.system.attributes.death.success || 0,
+      failure: this.actor.system.attributes.death.failure || 0
+    };
+  };
+  let importedPath = "";
+  globalThis.game = {
+    settings: {
+      get: (_moduleId, key) => key === "showDeathSavingThrow" ? "show" : null
+    }
+  };
+
+  try {
+    assert.equal(await patchBg3HotbarDeathSavesContainer({
+      force: true,
+      importModule: async (path) => {
+        importedPath = path;
+        return { DeathSavesContainer };
+      }
+    }), true);
+
+    const instance = new DeathSavesContainer();
+    instance.actor = { type: "group", system: { attributes: {} } };
+
+    assert.match(importedPath, /DeathSavesContainer\.js$/u);
+    assert.deepEqual(await instance.getData(), { display: "show", success: 0, failure: 0 });
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
 });
 
 test("fixed-size Rebreya race items update character size after creation", async () => {
