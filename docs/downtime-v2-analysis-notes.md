@@ -1,42 +1,42 @@
-# Downtime V2 analysis notes
+# Анализ соответствия простоя V2
 
-Date: 2026-06-07
-Branch: lich_branch
+Дата: 2026-06-07
+Ветка: `lich_branch`
 
-## Scope
+## Область анализа
 
-- Source rules: `docs/Простой V2.txt`.
-- Current downtime data: `data/downtime-activities-teyvankal-v01.json`.
-- Current runtime/UI:
+- Источник правил: `docs/Простой V2.txt`.
+- Текущий каталог простоя: `data/downtime-activities-teyvankal-v01.json`.
+- Текущая логика и UI:
   - `scripts/data/downtime-compendium.js`
   - `scripts/data/downtime-service.js`
   - `scripts/data/character-downtime-service.js`
   - `templates/character-downtime-tab.hbs`
   - `templates/inventory-app.hbs`
   - `scripts/integrations/dnd5e-sheet-extensions.js`
-- Test coverage:
+- Тесты, которые покрывают простой:
   - `tests/downtime-compendium.test.mjs`
   - `tests/downtime-service.test.mjs`
   - `tests/character-downtime-service.test.mjs`
   - `tests/dnd5e-sheet-downtime-tab.test.mjs`
 
-## Current architecture snapshot
+## Текущая архитектура
 
-- The module defines a custom dnd5e Item type `rebreya-main.downtime` in `module.json`.
-- `DowntimeCompendiumService` reads `data/downtime-activities-teyvankal-v01.json`, normalizes every activity, and creates managed Item documents in the world compendium `rebreya-downtime`.
-- Each compendium item stores the structured downtime rules under `flags.rebreya-main.downtime`.
-- `DowntimeService` manages group-level downtime balances and requests:
-  - weeks are granted/revoked by GM;
-  - player requests reserve weeks;
-  - rejected/returned requests release reserved weeks;
-  - completed requests move reserved weeks to spent weeks;
-  - each request can hold up to 5 target actions/checks.
-- Character sheet UI lets players select a downtime item, fill structured target inputs, submit a request, and roll supported check/choice target actions.
-- Inventory app UI lets the GM inspect and manage group downtime requests.
+- Модуль объявляет отдельный dnd5e-тип предмета `rebreya-main.downtime` в `module.json`.
+- `DowntimeCompendiumService` читает `data/downtime-activities-teyvankal-v01.json`, нормализует каждую активность и создает управляемые Item-документы в world compendium `rebreya-downtime`.
+- Каждый предмет простоя хранит структурные правила в `flags.rebreya-main.downtime`.
+- `DowntimeService` управляет групповыми балансами недель и заявками:
+  - мастер выдает и отзывает недели;
+  - заявка игрока резервирует недели;
+  - отклоненная или возвращенная заявка освобождает недели;
+  - завершенная заявка переносит недели из резерва в потраченные;
+  - в каждой заявке может быть до 5 целевых действий/проверок.
+- Вкладка персонажа позволяет выбрать предмет простоя, заполнить структурные поля, отправить заявку и бросить поддерживаемые проверки.
+- Вкладка `Инвентарь -> Простой` дает мастеру очередь заявок, инспектор, выдачу недель и управление статусами.
 
-## Current downtime items
+## Текущие предметы простоя
 
-The data file currently defines 26 downtime activities:
+В `data/downtime-activities-teyvankal-v01.json` сейчас 26 активностей:
 
 1. `craft` - Ремесло / Создание / Крафт
 2. `firearm-crafting` - Создание огнестрельного оружия
@@ -65,16 +65,16 @@ The data file currently defines 26 downtime activities:
 25. `long-project` - Работа над длительным проектом
 26. `construct-crafting` - Создание конструкта
 
-## V2 source activity headings
+## Разделы в `Простой V2.txt`
 
-`docs/Простой V2.txt` contains the same top-level set of headings found in the current data file. Some headings are complete rule blocks, while several are only headings/placeholders in the V2 text.
+`docs/Простой V2.txt` содержит тот же верхнеуровневый набор заголовков, что и текущий JSON-каталог. Часть разделов раскрыта правилами, часть является только заголовками или отсылками к внешним правилам.
 
-Complete or mostly complete V2 blocks:
+Полностью или в основном описанные блоки V2:
 
 - Ремесло / Создание / Крафт
 - Создание огнестрельного оружия
 - Разработка огнестрельного оружия
-- Создание магического предмета (reference to chapter 8 only)
+- Создание магического предмета, но только как отсылка к главе 8
 - Работа по профессии
 - Отдых
 - Исследование
@@ -82,13 +82,13 @@ Complete or mostly complete V2 blocks:
 - Азартные игры
 - Бойцовский турнир
 - Кутеж
-- Покупка магического предмета (reference to chapter 8 only)
+- Покупка магического предмета, но только как отсылка к главе 8
 - Смена подкласса
 - Лабораторная алхимия
 - Работа над длительным проектом
 - Создание конструкта
 
-V2 headings without local mechanics in this file:
+Заголовки V2 без локальной механики в этом файле:
 
 - Преступная деятельность
 - Распространение слухов
@@ -101,34 +101,34 @@ V2 headings without local mechanics in this file:
 - Благотворительность
 - Участие в гонках
 
-## Preliminary fit assessment
+## Краткая оценка соответствия
 
-- Coverage by heading is complete: every V2 heading has a corresponding current data activity.
-- The system is a request/workflow tracker plus structured template catalog, not a full rules engine.
-- The JSON intentionally marks many rules as `partial`, `needs-work`, or `blocked`; that matches the current implementation shape.
-- Highest-risk mismatch class: numeric/economic rules are usually stored as text/formulas for GM handling instead of being calculated and enforced.
-- Highest-risk runtime gap: several target action types collect selections, but only `check`/`choice` actions are directly rollable; `resources`, `formulaRoll`, `downtimeResult`, and most outcome tables remain GM/manual.
+- Покрытие по заголовкам полное: каждый заголовок V2 имеет соответствующую активность в текущем JSON.
+- Текущая система - это каталог шаблонов и workflow заявок, а не полный движок правил простоя.
+- В JSON уже честно проставлены статусы `partial`, `needs-work` и `blocked`; они в целом соответствуют реальному состоянию автоматизации.
+- Главный класс расхождений: числовые и экономические правила чаще сохранены как текст/формулы для мастера, но не считаются и не применяются автоматически.
+- Главный runtime-разрыв: часть типов целевых действий собирает выборы игрока, но напрямую бросаются только `check`/`choice`. `resources`, `formulaRoll`, `downtimeResult` и большинство таблиц результата остаются ручными.
 
-## Runtime data flow
+## Поток данных
 
 ```mermaid
 flowchart TD
-  V2["docs/Простой V2.txt"] --> Audit["This analysis"]
+  V2["docs/Простой V2.txt"] --> Audit["этот анализ"]
   Json["data/downtime-activities-teyvankal-v01.json"] --> Compendium["DowntimeCompendiumService"]
   Compendium --> Pack["world.rebreya-downtime Item pack"]
-  Pack --> PlayerSheet["Character sheet Простой tab"]
-  PlayerSheet --> Request["DowntimeService request"]
-  GM["Inventory app Простой tab"] --> Request
+  Pack --> PlayerSheet["вкладка Простой на чарнике"]
+  PlayerSheet --> Request["заявка DowntimeService"]
+  GM["Инвентарь -> Простой"] --> Request
   Request --> State["groupState.groupsById[groupId].downtimeState"]
   State --> PlayerSheet
   State --> GM
 ```
 
-## Generated item ids
+## Стабильные id генерируемых предметов
 
-These ids are generated from `data/downtime-activities-teyvankal-v01.json` by `createStableDowntimeDocumentId(activity.id)`.
+Эти id генерируются из `data/downtime-activities-teyvankal-v01.json` через `createStableDowntimeDocumentId(activity.id)`.
 
-| Item _id | Downtime id | Name | Actions | Status |
+| Item _id | Downtime id | Название | Действий | Статус |
 |---|---|---:|---:|---|
 | `1wuiah2v4fo12000` | `craft` | Ремесло / Создание / Крафт | 4 | `partial` |
 | `12nu7e7dvsmga000` | `firearm-crafting` | Создание огнестрельного оружия | 5 | `partial` |
@@ -157,55 +157,55 @@ These ids are generated from `data/downtime-activities-teyvankal-v01.json` by `c
 | `184vuwu1tehn7a00` | `long-project` | Работа над длительным проектом | 3 | `partial` |
 | `1e0sov6xsepe5000` | `construct-crafting` | Создание конструкта | 2 | `needs-work` |
 
-## Per-activity comparison with V2
+## Сверка активностей с V2
 
-| Activity | Fit to V2 | Current implementation | Gaps / risks |
+| Активность | Соответствие V2 | Что есть сейчас | Пробелы и риски |
 |---|---|---|---|
-| `craft` | High structural fit, partial automation. | Item choice, resource note, day input, progress result. V2 values `5 зм/день` and half-price materials are present as formulas/text. | No automatic price/material/weight calculation, no workshop/tool rank validation, no explicit emergency-work hour table input, no worker upkeep handling, no direct link to `CraftingService` progress. |
-| `firearm-crafting` | High structural fit, partial automation. | Firearm item choice, blueprint item choice, resources, day input, progress result. V2 `25 зм/день` is present. | Blueprint/material/workshop requirements are recorded but not enforced. `mustOwn` is data only unless the picker/runtime validates it elsewhere. No automatic weapon creation or cost/progress settlement. |
-| `firearm-development` | Good fit for the explicit V2 fields. | Item choice, 200 gp weekly expense formula, Int/Str Tinker choice, project-progress result. | V2 says progress follows long-project rules but does not define thresholds; current implementation leaves that to GM. Start cost `2x weapon price` is textual, not computed from selected item price. Requirement "directly crafting firearms" is not enforced. |
-| `magic-item-crafting` | Correctly minimal for V2. | Freeform placeholder, `needs-work`. | V2 only points to chapter 8. Need chapter 8 import before real validation. |
-| `profession-work` | Partial. | Work modifiers are structured; result thresholds 10/20/30/40 are represented. `defaultWeeks: 4` approximates the "month" period. | Salary table by level is not represented as structured data, so pay is not calculated. Skill selection/check is freeform. "Troubles" on result below 10 are not modeled. Partial-month handling is unresolved. |
-| `rest` | Partial. | One-week rest, lifestyle/resource requirement, result effect placeholder. | No automatic advantage against long diseases/poisons. No UI to choose effect/stat to restore. No effect removal/application. |
-| `research` | Strong data fit, partial runtime. | Rank cost table matches V2. Extra steps input is capped at 5. Int check and result thresholds are represented. | Extra-step bonus is stored as data but not obviously applied to the character roll total. V2 penalties (`-5` per 10 CR, `-10` undocumented object) are absent. Resource cost is not debited. Facts learned remain GM text. |
-| `training` | Data table mostly present, automation low. | Rank table has all seven training types with weeks/costs/learning points; option choice exposes the training type. | Options use `rank` for the point-like value instead of an explicit `learningPoints`. No calculation of learning point pool, no Int-modifier duration reduction, no teacher validation, no replacement of previous proficiencies, no automatic proficiency grant. |
-| `gambling` | Good check structure, incomplete settlement. | Stake input; three checks; DC formula switches from `5+2d10` to `7+3d10`; thresholds for 0-3 successes. | Stake exactly 100 gp is ambiguous in V2; current `min: 100` treats it as high-risk. Gaming-set substitution is not modeled. Payout/debt is not automatically calculated or debited/credited. |
-| `fighting-tournament` | Partial. | Standard/large-city option; Athletics, Acrobatics, and Constitution checks; DC formulas and reward thresholds. | Constitution check misses the special hit-die-roll bonus. No option to replace one skill check with a weapon attack. No urbanization/monthly availability enforcement. Prize is not automatically paid. |
-| `carousing` | Partial, blocked by V2 missing result table. | Social-class resource choices with 10/50/250 gp and Persuasion check. | V2 references a "Кутеж" result table that is not in the file; current freeform result is appropriate. Nobility access/disguise requirement is not enforced. |
-| `magic-item-purchase` | Cannot be fully verified from V2. | More structured than V2: item choice, trade-step option, 100 gp search cost, rarity price formulas. | V2 only points to chapter 8, so these formulas must be verified against that chapter, not this file. No trader/inventory/currency settlement in the downtime workflow. |
-| `crime` | Correct placeholder. | Blocked freeform item. | V2 has heading only. |
-| `spread-rumors` | Correct placeholder. | Blocked freeform item. | V2 has heading only. |
-| `change-subclass` | Partial. | Resource action has `100 зм * БМ недель`; result is GM/freeform. | `defaultWeeks` is 1 rather than derived from proficiency bonus. No class/subclass picker and no safe class feature migration. |
-| `change-class` | Correct placeholder. | Blocked freeform item. | V2 has heading only. |
-| `buy-magic-components` | Correct placeholder. | Blocked freeform item. | V2 has heading only. |
-| `search-magic-components` | Correct placeholder. | Blocked freeform item. | V2 has heading only. |
-| `gather-rumors` | Correct placeholder. | Blocked freeform item. | V2 has heading only. |
-| `laboratory-alchemy` | Table values match, UI incomplete. | Rank table stores potion levels 1-9 with weeks and costs. | No option/numeric control to choose potion level from the table. No workshop validation, no potion item creation, no alchemy-rule integration. |
-| `scientific-lectures` | Correct placeholder. | Blocked freeform item. | V2 has heading only. |
-| `invention-exhibition` | Correct placeholder. | Blocked freeform item. | V2 has heading only. |
-| `charity` | Correct placeholder. | Blocked freeform item. | V2 has heading only. |
-| `racing` | Correct placeholder. | Blocked freeform item. | V2 has heading only. |
-| `long-project` | Partial but V2 itself delegates details. | Resource note, freeform project check, progress thresholds. | The thresholds appear to encode assumed long-project rules not present in V2 text. Project rank/resource schema and exact progress target are GM/manual. |
-| `construct-crafting` | Partial. | Resource note and progress result. | No construct choice, no construct cost table, no workshop rank validation, no modifier calculation, no final construct creation. |
+| `craft` | Хорошее структурное соответствие, частичная автоматизация. | Выбор предмета, заметка о ресурсах, ввод рабочих дней, итог прогресса. Значения V2 `5 зм/день` и материалы за половину цены есть как формулы/текст. | Нет автоматического расчета цены, материалов и веса. Не проверяется ранг мастерской/инструментов. Нет отдельного ввода таблицы экстренной работы. Не учтено содержание рабочих. Нет прямой связки с прогрессом `CraftingService`. |
+| `firearm-crafting` | Хорошее структурное соответствие, частичная автоматизация. | Выбор оружия, выбор чертежа, ресурсы, рабочие дни, итог прогресса. Значение V2 `25 зм/день` есть. | Чертеж, материалы и мастерская записаны как требования, но не проверяются. `mustOwn` пока выглядит как данные, а не гарантированная проверка владения. Нет автоматического создания оружия и закрытия стоимости/прогресса. |
+| `firearm-development` | Хорошо покрывает явные поля V2. | Выбор оружия, формула недельных расходов `200 зм`, выбор Инт/Сил с инструментами Жестянщика, итог прогресса проекта. | V2 говорит продвигать проект "как обычно", но не задает пороги; текущая реализация оставляет это мастеру. Стартовая стоимость `2x цена оружия` текстовая, не считается от выбранного предмета. Требование напрямую заниматься созданием огнестрела не проверяется. |
+| `magic-item-crafting` | Минимально и корректно для V2. | Свободная заявка, статус `needs-work`. | В V2 только отсылка к главе 8. Для реальной автоматизации нужно импортировать правила главы 8. |
+| `profession-work` | Частично. | Модификаторы работы структурированы; пороги 10/20/30/40 представлены. `defaultWeeks: 4` приближает период "месяц". | Таблица зарплаты по уровню не занесена как структура, поэтому оплата не считается. Выбор навыка и проверка свободные. "Трудности" при результате ниже 10 не моделируются. Не решено, как считать неполный месяц. |
+| `rest` | Частично. | Одна неделя отдыха, требование к образу жизни/ресурсам, placeholder итогового эффекта. | Нет автоматического преимущества против длительных болезней/ядов. Нет UI для выбора эффекта или характеристики на восстановление. Нет применения/снятия эффекта. |
+| `research` | Сильное соответствие по данным, частичная runtime-реализация. | Таблица стоимости по рангам совпадает с V2. Дополнительные шаги ограничены 5. Есть проверка Интеллекта и пороги результата. | Бонус за дополнительные шаги хранится как данные, но не очевидно применяется к броску персонажа. Нет штрафов V2 (`-5` за каждые 10 ПО, `-10` за незадокументированный объект). Деньги не списываются. Факты исследования остаются текстом мастера. |
+| `training` | Таблица в основном есть, автоматизация низкая. | В `rankTable` есть 7 типов обучения с неделями, ценой и очками; `optionChoice` дает выбрать тип обучения. | В options используется поле `rank` для значения, похожего на очки обучения, вместо явного `learningPoints`. Нет расчета пула очков обучения, уменьшения срока на модификатор Интеллекта, проверки учителя, замены старого владения и автоматической выдачи владения. |
+| `gambling` | Хорошая структура проверок, неполное закрытие экономики. | Ввод ставки; три проверки; формула СЛ переключается с `5+2d10` на `7+3d10`; есть пороги для 0-3 успехов. | Ставка ровно 100 зм неоднозначна в V2; текущий `min: 100` относит ее к высокой сложности. Нет замены навыка игровым набором. Выигрыш, потеря и долг не считаются и не списываются автоматически. |
+| `fighting-tournament` | Частично. | Выбор обычного/крупного города; Атлетика, Акробатика и Телосложение; формулы СЛ и пороги награды. | Проверка Телосложения не добавляет бросок наибольшей Кости Хитов. Нет замены одной проверки броском атаки оружием. Не проверяются урбанизация и месячная доступность турнира. Награда не выплачивается автоматически. |
+| `carousing` | Частично, дальше упирается в отсутствующую таблицу V2. | Выбор социального круга с ценой 10/50/250 зм и проверка Убеждения. | V2 ссылается на таблицу "Кутеж", но в файле ее нет; свободный итог тут оправдан. Доступ к знати/маскировка не проверяются. |
+| `magic-item-purchase` | Нельзя полностью проверить по V2. | Структурировано сильнее, чем V2: выбор предмета, шаг торгов, стоимость поиска 100 зм, формулы цены по редкости. | V2 только ссылается на главу 8, поэтому эти формулы надо сверять с главой 8, а не с этим файлом. Нет связки с торговцами, наличием товара и расчетом валюты. |
+| `crime` | Корректный placeholder. | Заблокированный свободный предмет. | В V2 только заголовок. |
+| `spread-rumors` | Корректный placeholder. | Заблокированный свободный предмет. | В V2 только заголовок. |
+| `change-subclass` | Частично. | Ресурсное действие хранит `100 зм * БМ недель`; итог свободный для мастера. | `defaultWeeks` равен 1, а не выводится из бонуса мастерства. Нет выбора класса/подкласса и безопасной миграции классовых фич. |
+| `change-class` | Корректный placeholder. | Заблокированный свободный предмет. | В V2 только заголовок. |
+| `buy-magic-components` | Корректный placeholder. | Заблокированный свободный предмет. | В V2 только заголовок. |
+| `search-magic-components` | Корректный placeholder. | Заблокированный свободный предмет. | В V2 только заголовок. |
+| `gather-rumors` | Корректный placeholder. | Заблокированный свободный предмет. | В V2 только заголовок. |
+| `laboratory-alchemy` | Табличные значения совпадают, UI неполный. | В `rankTable` занесены уровни зелий 1-9 с неделями и стоимостью. | Нет выбора уровня зелья через option/numeric input. Нет проверки мастерской, создания зелья и интеграции с правилами алхимии. |
+| `scientific-lectures` | Корректный placeholder. | Заблокированный свободный предмет. | В V2 только заголовок. |
+| `invention-exhibition` | Корректный placeholder. | Заблокированный свободный предмет. | В V2 только заголовок. |
+| `charity` | Корректный placeholder. | Заблокированный свободный предмет. | В V2 только заголовок. |
+| `racing` | Корректный placeholder. | Заблокированный свободный предмет. | В V2 только заголовок. |
+| `long-project` | Частично, но сам V2 делегирует детали внешним правилам. | Заметка о ресурсах, свободная проверка проекта, пороги прогресса. | Пороги выглядят как предположение из правил длительных проектов, которых нет в V2-тексте. Ранг, ресурсы и точная цель прогресса остаются ручными. |
+| `construct-crafting` | Частично. | Заметка о ресурсах и итог прогресса. | Нет выбора конструкта, таблицы стоимости, проверки ранга мастерской, расчета модификаторов и создания готового конструкта. |
 
-## Cross-cutting findings
+## Общие выводы
 
-- Source metadata mismatch: `data/downtime-activities-teyvankal-v01.json` and `DowntimeCompendiumService` still label the source as "БЕТА Заметки о землях Тейванкаля, 2-я редакция (1)" / "ЗоЗТ: Между приключениями", not `Простой V2.txt`.
-- Rank/urbanization is stored as text (`rank`) but not checked against a city or location.
-- General V2 timing says working weeks are 5 days and a day needs 8 hours; runtime accounting reserves whole weeks. Day-level details exist only inside some target actions like craft days.
-- Currency/material costs are mostly descriptive. The downtime workflow does not debit actor/group currency, consume materials, create output items, or pay rewards.
-- `checks` is the runtime field for all target actions, not only skill checks. This is documented as compatibility, but it can confuse future migrations.
-- `check` actions can be rolled from the character sheet. `choice` actions can represent alternatives, but immediate auto-roll skips checks with multiple choices. `resources`, `itemChoice`, `numericInput`, `optionChoice`, `formulaRoll`, and `downtimeResult` are stored/displayed, not fully executed.
-- `scripts/main.js` and generated entry `scripts/main-1.4.36.js` duplicate logic; `module.json` currently loads `scripts/main-1.4.36.js`. Any future code fix must keep that release file in sync or update the manifest workflow.
+- Метаданные источника расходятся с новым документом: `data/downtime-activities-teyvankal-v01.json` и `DowntimeCompendiumService` все еще ссылаются на "БЕТА Заметки о землях Тейванкаля, 2-я редакция (1)" / "ЗоЗТ: Между приключениями", а не на `Простой V2.txt`.
+- Ранг/урбанизация хранится как текстовое поле `rank`, но не проверяется против города или локации.
+- Общие правила V2 говорят, что рабочая неделя - 5 дней, а день засчитывается при 8 часах работы. Runtime-состояние резервирует целые недели; дневные детали есть только в отдельных целевых действиях вроде рабочих дней крафта.
+- Денежные и материальные расходы в основном описательные. Workflow простоя не списывает валюту актера/группы, не расходует материалы, не создает итоговые предметы и не выплачивает награды.
+- Поле `checks` в runtime хранит все целевые действия, а не только проверки. Это описано как совместимость, но может путать будущие миграции.
+- `check`-действия бросаются из чарника. `choice` может описывать альтернативы, но авто-бросок пропускает проверки с несколькими вариантами. `resources`, `itemChoice`, `numericInput`, `optionChoice`, `formulaRoll` и `downtimeResult` сохраняются и показываются, но не исполняются полностью.
+- `scripts/main.js` и сгенерированный entry `scripts/main-1.4.36.js` дублируют логику; `module.json` сейчас грузит `scripts/main-1.4.36.js`. Любая будущая правка кода должна синхронизировать оба файла или менять release workflow.
 
-## Suggested priority
+## Приоритеты доработки
 
-1. Update source metadata to explicitly mention `Простой V2.txt` if this file is now the canonical source.
-2. Add focused data/test coverage for the biggest rule omissions that are already in V2:
-   - research penalties and extra-step bonus application;
-   - profession-work salary table;
-   - training learning point pool and Int-modifier duration reduction;
-   - fighting-tournament hit-die bonus and attack substitution;
-   - craft emergency-work hour table.
-3. Add resource settlement only after deciding whether downtime should spend actor currency, group currency, or just produce GM-facing cost summaries.
-4. Keep placeholder activities as blocked until their missing V2 sections or external chapters are imported.
+1. Обновить метаданные источника, если `Простой V2.txt` теперь канонический документ.
+2. Добавить точечные данные и тесты для крупных пробелов, которые уже явно есть в V2:
+   - штрафы исследования и применение бонуса за дополнительные шаги;
+   - таблица зарплаты работы по профессии;
+   - очки обучения и уменьшение срока на модификатор Интеллекта;
+   - бонус Кости Хитов и замена атакой в бойцовском турнире;
+   - таблица экстренной работы для крафта.
+3. Добавлять автоматическое списание ресурсов только после решения, кто платит: актер, групповая казна или пока только мастерская сводка стоимости.
+4. Оставить placeholder-активности в `blocked`, пока не появятся недостающие разделы V2 или внешние главы правил.
