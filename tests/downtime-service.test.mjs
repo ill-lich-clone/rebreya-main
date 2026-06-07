@@ -1344,6 +1344,113 @@ test("createRequest applies selected resource choices from downtime templates", 
   }
 });
 
+test("createRequest applies structured target action selections from downtime templates", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-magic-item-purchase",
+    name: "Покупка магического предмета",
+    config: {
+      rank: "2+",
+      duration: "1 рабочая неделя.",
+      targetActions: [{
+        id: "magic-item-purchase-item",
+        label: "Предмет",
+        actionType: "itemChoice",
+        itemChoice: {
+          sourceType: "magicItem"
+        }
+      }, {
+        id: "magic-item-purchase-trade-step",
+        label: "Тип торгов",
+        actionType: "optionChoice",
+        options: [{
+          id: "normal",
+          label: "Нормальные",
+          value: 0
+        }, {
+          id: "good",
+          label: "Удачные",
+          value: 2
+        }]
+      }, {
+        id: "magic-item-purchase-search-step",
+        label: "Шаг поиска",
+        actionType: "numericInput",
+        input: {
+          min: -5,
+          max: 5,
+          step: 1
+        }
+      }]
+    }
+  });
+  const harness = createHarness({
+    members: [actor],
+    groupItems: [templateItem],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      weeks: 1,
+      targetActionSelections: [{
+        actionId: "magic-item-purchase-item",
+        item: {
+          uuid: "Compendium.world.rebreya-magic-items.Item.wand",
+          id: "wand",
+          name: "Жезл огня",
+          type: "loot",
+          sourceType: "magicItem",
+          rarity: "rare",
+          priceGold: 1200
+        }
+      }, {
+        actionId: "magic-item-purchase-trade-step",
+        optionId: "good"
+      }, {
+        actionId: "magic-item-purchase-search-step",
+        value: -1
+      }]
+    });
+
+    assert.deepEqual(request.checks.map((check) => ({
+      id: check.id,
+      selectedItemName: check.selectedItem?.name,
+      selectedOptionLabel: check.selectedOption?.label,
+      numericValue: check.numericValue
+    })), [{
+      id: "magic-item-purchase-item",
+      selectedItemName: "Жезл огня",
+      selectedOptionLabel: undefined,
+      numericValue: undefined
+    }, {
+      id: "magic-item-purchase-trade-step",
+      selectedItemName: undefined,
+      selectedOptionLabel: "Удачные",
+      numericValue: undefined
+    }, {
+      id: "magic-item-purchase-search-step",
+      selectedItemName: undefined,
+      selectedOptionLabel: undefined,
+      numericValue: -1
+    }]);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("approving a request with completed roll targets archives it as completed", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
   const harness = createHarness({

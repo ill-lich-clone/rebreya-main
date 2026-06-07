@@ -630,6 +630,11 @@ function toFiniteNumber(value, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function toOptionalFiniteNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
 function normalizeNonNegativeInteger(value, fallback = 0) {
   return Math.max(0, Math.floor(toFiniteNumber(value, fallback)));
 }
@@ -2038,6 +2043,113 @@ function getHeroDollDropData(event) {
   return activeHeroDollDragData ? foundry.utils.deepClone(activeHeroDollDragData) : {};
 }
 
+function getCharacterDowntimeDropData(event) {
+  return getHeroDollDropData(event);
+}
+
+function getItemPriceGold(item) {
+  const direct = toOptionalFiniteNumber(item?.priceGold);
+  if (direct !== undefined) {
+    return direct;
+  }
+
+  for (const path of [
+    `flags.${MODULE_ID}.priceGold`,
+    `flags.${MODULE_ID}.magicItem.priceGold`,
+    "system.price.value",
+    "system.price"
+  ]) {
+    const value = foundry.utils.getProperty?.(item, path);
+    const numeric = typeof value === "object" && value !== null
+      ? toOptionalFiniteNumber(value.value)
+      : toOptionalFiniteNumber(value);
+    if (numeric !== undefined) {
+      return numeric;
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeCharacterDowntimeDroppedItem(item, dragData = {}) {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const uuid = cleanText(item.uuid) || cleanText(dragData.uuid);
+  const id = cleanText(item.id) || cleanText(item._id);
+  const name = cleanText(item.name);
+  if (!uuid && !id && !name) {
+    return null;
+  }
+
+  const sourceType = cleanText(item.getFlag?.(MODULE_ID, "sourceType"))
+    || cleanText(foundry.utils.getProperty?.(item, `flags.${MODULE_ID}.sourceType`))
+    || cleanText(foundry.utils.getProperty?.(item, `flags.${MODULE_ID}.magicItem.sourceType`));
+  const rarity = cleanText(foundry.utils.getProperty?.(item, `flags.${MODULE_ID}.magicItem.rarity`))
+    || cleanText(foundry.utils.getProperty?.(item, `flags.${MODULE_ID}.rarity`))
+    || cleanText(foundry.utils.getProperty?.(item, "system.rarity"));
+  const droppedItem = {
+    uuid,
+    id,
+    name: name || "Предмет",
+    type: cleanText(item.type) || cleanText(dragData.type),
+    sourceType,
+    rarity
+  };
+  const priceGold = getItemPriceGold(item);
+  if (priceGold !== undefined) {
+    droppedItem.priceGold = priceGold;
+  }
+  return droppedItem;
+}
+
+function applyCharacterDowntimeItemChoice(control, item = {}) {
+  control.dataset.itemUuid = cleanText(item.uuid);
+  control.dataset.itemId = cleanText(item.id);
+  control.dataset.itemName = cleanText(item.name);
+  control.dataset.itemType = cleanText(item.type);
+  control.dataset.itemSourceType = cleanText(item.sourceType);
+  control.dataset.itemRarity = cleanText(item.rarity);
+  if (item.priceGold !== undefined) {
+    control.dataset.itemPriceGold = String(item.priceGold);
+  }
+  else {
+    delete control.dataset.itemPriceGold;
+  }
+
+  const label = control.querySelector?.("[data-role='character-downtime-item-choice-label']");
+  if (label) {
+    label.textContent = cleanText(item.name) || "Выбрать предмет";
+  }
+}
+
+async function handleCharacterDowntimeItemChoiceDrop(event, control, panel, app, moduleApi) {
+  event.preventDefault?.();
+  event.stopPropagation?.();
+
+  const dragData = getCharacterDowntimeDropData(event);
+  const uuid = cleanText(dragData?.uuid);
+  if (!uuid || typeof fromUuid !== "function") {
+    throw new Error("Перетащенный предмет не найден.");
+  }
+
+  const document = await fromUuid(uuid);
+  const item = normalizeCharacterDowntimeDroppedItem(document, dragData);
+  if (!item) {
+    throw new Error("Можно перетащить только предмет Foundry.");
+  }
+
+  applyCharacterDowntimeItemChoice(control, item);
+  const actor = getActorFromSheetApp(app);
+  if (actor?.id) {
+    updateCharacterDowntimeFormState(actor, {
+      targetActionSelections: readCharacterDowntimeTargetActionSelections(panel)
+    });
+    await rerenderActorSheet(app, moduleApi);
+  }
+}
+
 async function rerenderActorSheet(app, moduleApi) {
   try {
     await app.render({ force: true });
@@ -2481,12 +2593,85 @@ function readCharacterDowntimeFormStateFromPanel(panel, actor) {
 }
 
 function readCharacterDowntimeTargetActionSelections(panel) {
-  return Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-resource-choice']") ?? [])
+  const selections = Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-resource-choice']") ?? [])
     .map((control) => ({
       actionId: cleanText(control?.dataset?.targetActionId),
       choiceId: cleanText(control?.value)
     }))
     .filter((entry) => entry.actionId && entry.choiceId);
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-item-choice']") ?? [])) {
+    const actionId = cleanText(control?.dataset?.targetActionId);
+    const uuid = cleanText(control?.dataset?.itemUuid);
+    const id = cleanText(control?.dataset?.itemId);
+    const name = cleanText(control?.dataset?.itemName);
+    if (!actionId || (!uuid && !id && !name)) {
+      continue;
+    }
+
+    const item = {
+      uuid,
+      id,
+      name: name || "Предмет",
+      type: cleanText(control?.dataset?.itemType),
+      sourceType: cleanText(control?.dataset?.itemSourceType),
+      rarity: cleanText(control?.dataset?.itemRarity)
+    };
+    const priceGold = toOptionalFiniteNumber(control?.dataset?.itemPriceGold);
+    if (priceGold !== undefined) {
+      item.priceGold = priceGold;
+    }
+    selections.push({
+      actionId,
+      item
+    });
+  }
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-option-choice']") ?? [])) {
+    const actionId = cleanText(control?.dataset?.targetActionId);
+    const optionId = cleanText(control?.value);
+    if (actionId && optionId) {
+      selections.push({
+        actionId,
+        optionId
+      });
+    }
+  }
+
+  const checkboxSelections = new Map();
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-option-checkbox']") ?? [])) {
+    const actionId = cleanText(control?.dataset?.targetActionId);
+    const optionId = cleanText(control?.dataset?.optionId) || cleanText(control?.value);
+    if (!actionId || !optionId || control.checked !== true) {
+      continue;
+    }
+
+    checkboxSelections.set(actionId, [
+      ...(checkboxSelections.get(actionId) ?? []),
+      optionId
+    ]);
+  }
+  for (const [actionId, optionIds] of checkboxSelections.entries()) {
+    if (optionIds.length) {
+      selections.push({
+        actionId,
+        optionIds
+      });
+    }
+  }
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-numeric-input']") ?? [])) {
+    const actionId = cleanText(control?.dataset?.targetActionId);
+    const value = toOptionalFiniteNumber(control?.value);
+    if (actionId && value !== undefined) {
+      selections.push({
+        actionId,
+        value
+      });
+    }
+  }
+
+  return selections;
 }
 
 function getDowntimeLibraryPack() {
@@ -2808,6 +2993,39 @@ function getDowntimeRollDc(value) {
   return Number.isFinite(numeric) ? Math.max(0, Math.floor(numeric)) : 0;
 }
 
+async function rollDowntimeFormulaTotal(formula = "") {
+  const safeFormula = cleanText(formula);
+  if (!safeFormula) {
+    return null;
+  }
+
+  if (typeof Roll === "function") {
+    const roll = new Roll(safeFormula);
+    if (typeof roll.evaluate === "function") {
+      const evaluated = await roll.evaluate({ async: true });
+      const total = getDowntimeRollTotal(evaluated ?? roll);
+      return total === null ? getDowntimeRollTotal(roll) : total;
+    }
+  }
+
+  const simpleFormula = safeFormula.replace(/\s+/gu, "");
+  const match = /^(\d+)\+(\d+)d(\d+)$/iu.exec(simpleFormula);
+  if (match) {
+    const base = Number(match[1]);
+    const dice = Number(match[2]);
+    const faces = Number(match[3]);
+    if (Number.isFinite(base) && Number.isFinite(dice) && Number.isFinite(faces)) {
+      let total = base;
+      for (let index = 0; index < dice; index += 1) {
+        total += Math.ceil(Math.random() * faces);
+      }
+      return total;
+    }
+  }
+
+  return null;
+}
+
 function getDowntimeRollTotal(rolls) {
   const roll = Array.isArray(rolls) ? rolls[0] : rolls;
   const total = Number(
@@ -2850,7 +3068,8 @@ function buildCharacterDowntimeRollDataset(request = {}, check = {}, choice = {}
     || cleanText(check.label)
     || target;
   const dc = getDowntimeRollDc(check.dc);
-  const outcomeMode = cleanText(check.outcomeMode) || (dc > 0 ? "dc" : "freeform");
+  const dcFormula = cleanText(choice.dcFormula) || cleanText(check.dcFormula);
+  const outcomeMode = cleanText(check.outcomeMode) || (dc > 0 || dcFormula ? "dc" : "freeform");
   return {
     requestId: cleanText(request.id),
     checkId: cleanText(check.id),
@@ -2862,7 +3081,8 @@ function buildCharacterDowntimeRollDataset(request = {}, check = {}, choice = {}
     targetLabel,
     outcomeMode,
     choiceIndex: cleanText(choice.choiceIndex),
-    dc: String(dc)
+    dc: String(dc),
+    dcFormula
   };
 }
 
@@ -2904,7 +3124,8 @@ async function recordCharacterDowntimeRollDataset(actor, dataset, moduleApi, eve
   }
 
   const outcomeMode = cleanText(dataset.outcomeMode) || (cleanText(dataset.dc) ? "dc" : "freeform");
-  const dc = getDowntimeRollDc(dataset.dc);
+  const dcFormula = cleanText(dataset.dcFormula);
+  const rolledDc = getDowntimeRollDc(dataset.dc) || getDowntimeRollDc(await rollDowntimeFormulaTotal(dcFormula));
   const result = {
     total,
     sourceType: cleanText(dataset.sourceType) || "skill",
@@ -2915,9 +3136,12 @@ async function recordCharacterDowntimeRollDataset(actor, dataset, moduleApi, eve
   if (outcomeMode) {
     result.outcomeMode = outcomeMode;
   }
-  if (["dc", "dc-sum"].includes(outcomeMode) && dc > 0) {
-    result.dc = dc;
-    result.success = total >= dc;
+  if (["dc", "dc-sum"].includes(outcomeMode) && rolledDc > 0) {
+    result.dc = rolledDc;
+    if (dcFormula) {
+      result.dcFormula = dcFormula;
+    }
+    result.success = total >= rolledDc;
   }
 
   await moduleApi.recordDowntimeCheckResult(dataset.requestId, dataset.checkId, result, {
@@ -3022,7 +3246,8 @@ async function handleCharacterDowntimeRoll(button, app, moduleApi, event) {
 
   const explicitOutcomeMode = cleanText(button.dataset.outcomeMode);
   const outcomeMode = explicitOutcomeMode || (cleanText(button.dataset.dc) ? "dc" : "freeform");
-  const dc = getDowntimeRollDc(button.dataset.dc);
+  const dcFormula = cleanText(button.dataset.dcFormula);
+  const rolledDc = getDowntimeRollDc(button.dataset.dc) || getDowntimeRollDc(await rollDowntimeFormulaTotal(dcFormula));
   const result = {
     total,
     sourceType: cleanText(button.dataset.sourceType) || "skill",
@@ -3033,9 +3258,12 @@ async function handleCharacterDowntimeRoll(button, app, moduleApi, event) {
   if (explicitOutcomeMode) {
     result.outcomeMode = outcomeMode;
   }
-  if (["dc", "dc-sum"].includes(outcomeMode) && dc > 0) {
-    result.dc = dc;
-    result.success = total >= dc;
+  if (["dc", "dc-sum"].includes(outcomeMode) && rolledDc > 0) {
+    result.dc = rolledDc;
+    if (dcFormula) {
+      result.dcFormula = dcFormula;
+    }
+    result.success = total >= rolledDc;
   }
 
   await moduleApi.recordDowntimeCheckResult(requestId, checkId, result, {
@@ -3272,6 +3500,40 @@ function bindCharacterDowntimeStateControls(panel, app, moduleApi) {
       updateCharacterDowntimeFormState(actor, {
         targetActionSelections: readCharacterDowntimeTargetActionSelections(panel)
       });
+    }, listenerOptions);
+  }
+
+  for (const control of Array.from(panel.querySelectorAll("[data-action='character-downtime-option-choice'], [data-action='character-downtime-option-checkbox'], [data-action='character-downtime-numeric-input']") ?? [])) {
+    if (!(control instanceof HTMLElement) || !(control.addEventListener instanceof Function)) {
+      continue;
+    }
+
+    control.addEventListener("change", () => {
+      updateCharacterDowntimeFormState(actor, {
+        targetActionSelections: readCharacterDowntimeTargetActionSelections(panel)
+      });
+    }, listenerOptions);
+  }
+
+  for (const control of Array.from(panel.querySelectorAll("[data-action='character-downtime-item-choice']") ?? [])) {
+    if (!(control instanceof HTMLElement) || !(control.addEventListener instanceof Function)) {
+      continue;
+    }
+
+    control.addEventListener("dragover", (event) => {
+      event.preventDefault?.();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "copy";
+      }
+    }, listenerOptions);
+    control.addEventListener("drop", async (event) => {
+      try {
+        await handleCharacterDowntimeItemChoiceDrop(event, control, panel, app, moduleApi);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to select downtime item.`, error);
+        ui.notifications?.error(error.message || "Не удалось выбрать предмет для простоя.");
+      }
     }, listenerOptions);
   }
 

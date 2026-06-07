@@ -472,6 +472,135 @@ test("CharacterDowntimeService exposes and forwards downtime resource choices", 
   ]);
 });
 
+test("CharacterDowntimeService exposes and forwards structured downtime selections", async () => {
+  const calls = [];
+  const service = new CharacterDowntimeService(createModuleApi({
+    calls,
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 2,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 2
+        }
+      }],
+      requests: [],
+      actionCatalog: [{
+        id: "Compendium.world.rebreya-downtime.Item.magic-item-purchase",
+        label: "Покупка магического предмета",
+        targetActions: [{
+          id: "magic-item-purchase-item",
+          label: "Предмет",
+          actionType: "itemChoice",
+          itemChoice: {
+            sourceType: "magicItem"
+          }
+        }, {
+          id: "magic-item-purchase-trade-step",
+          label: "Тип торгов",
+          actionType: "optionChoice",
+          selectionMode: "single",
+          options: [{
+            id: "normal",
+            label: "Нормальные",
+            value: 0
+          }, {
+            id: "good",
+            label: "Удачные",
+            value: 2
+          }]
+        }, {
+          id: "magic-item-purchase-search-step",
+          label: "Шаг поиска",
+          actionType: "numericInput",
+          input: {
+            min: -5,
+            max: 5,
+            step: 1
+          }
+        }]
+      }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }), {
+    actionId: "Compendium.world.rebreya-downtime.Item.magic-item-purchase",
+    targetActionSelections: [{
+      actionId: "magic-item-purchase-item",
+      item: {
+        uuid: "Compendium.world.rebreya-magic-items.Item.wand",
+        name: "Жезл огня",
+        type: "loot",
+        sourceType: "magicItem",
+        rarity: "rare",
+        priceGold: 1200
+      }
+    }, {
+      actionId: "magic-item-purchase-trade-step",
+      optionId: "good"
+    }, {
+      actionId: "magic-item-purchase-search-step",
+      value: -1
+    }]
+  });
+
+  assert.equal(context.selectedTemplate.itemChoiceActions[0].selectedItemName, "Жезл огня");
+  assert.equal(context.selectedTemplate.optionActions[0].options[1].selected, true);
+  assert.equal(context.selectedTemplate.numericActions[0].value, -1);
+  assert.equal(context.selectedTemplate.hasInteractiveActions, true);
+
+  await service.createRequest(createActor({ id: "actor-a" }), {
+    actionId: "Compendium.world.rebreya-downtime.Item.magic-item-purchase",
+    weeks: 1,
+    targetActionSelections: [{
+      actionId: "magic-item-purchase-item",
+      item: {
+        uuid: "Compendium.world.rebreya-magic-items.Item.wand",
+        name: "Жезл огня",
+        sourceType: "magicItem"
+      }
+    }, {
+      actionId: "magic-item-purchase-trade-step",
+      optionId: "good"
+    }, {
+      actionId: "magic-item-purchase-search-step",
+      value: -1
+    }]
+  });
+
+  assert.deepEqual(calls.at(-1), [
+    "createDowntimeRequest",
+    {
+      groupId: "group-a",
+      actorId: "actor-a",
+      actionId: "Compendium.world.rebreya-downtime.Item.magic-item-purchase",
+      weeks: 1,
+      title: "",
+      description: "",
+      targetActionSelections: [{
+        actionId: "magic-item-purchase-item",
+        item: {
+          uuid: "Compendium.world.rebreya-magic-items.Item.wand",
+          name: "Жезл огня",
+          sourceType: "magicItem"
+        }
+      }, {
+        actionId: "magic-item-purchase-trade-step",
+        optionId: "good"
+      }, {
+        actionId: "magic-item-purchase-search-step",
+        value: -1
+      }]
+    }
+  ]);
+});
+
 test("CharacterDowntimeService converts known group errors into a warning context", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     error: new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP)

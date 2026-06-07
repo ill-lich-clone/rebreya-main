@@ -83,6 +83,84 @@
             </div>
           {{/if}}
 
+          {{#if characterDowntime.selectedTemplate.hasItemChoiceActions}}
+            <div class="rm-character-downtime-template__line">
+              {{#each characterDowntime.selectedTemplate.itemChoiceActions}}
+                <button
+                  type="button"
+                  class="rm-button rm-button--small rm-button--secondary rm-character-downtime-item-choice"
+                  data-action="character-downtime-item-choice"
+                  data-target-action-id="{{id}}"
+                  data-item-uuid="{{selectedItem.uuid}}"
+                  data-item-id="{{selectedItem.id}}"
+                  data-item-name="{{selectedItem.name}}"
+                  data-item-type="{{selectedItem.type}}"
+                  data-item-source-type="{{selectedItem.sourceType}}"
+                  data-item-rarity="{{selectedItem.rarity}}"
+                  data-item-price-gold="{{selectedItem.priceGold}}"
+                  data-tooltip="{{label}}"
+                >
+                  <i class="fa-solid fa-box"></i>
+                  <span data-role="character-downtime-item-choice-label">{{#if hasSelectedItem}}{{selectedItemName}}{{else}}{{label}}{{/if}}</span>
+                </button>
+              {{/each}}
+            </div>
+          {{/if}}
+
+          {{#if characterDowntime.selectedTemplate.hasOptionActions}}
+            <div class="rm-character-downtime-template__line">
+              {{#each characterDowntime.selectedTemplate.optionActions}}
+                <label class="rm-character-downtime-resource-choice">
+                  <span>{{label}}</span>
+                  {{#if isMultipleChoice}}
+                    <div class="rm-character-downtime-checkbox-grid">
+                      {{#each options}}
+                        <label>
+                          <input type="checkbox" value="{{id}}" data-action="character-downtime-option-checkbox" data-target-action-id="{{../id}}" data-option-id="{{id}}" {{#if selected}}checked{{/if}}>
+                          <span>{{label}}</span>
+                        </label>
+                      {{/each}}
+                    </div>
+                  {{else}}
+                    <select data-action="character-downtime-option-choice" data-target-action-id="{{id}}">
+                      {{#each options}}
+                        <option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  {{/if}}
+                </label>
+              {{/each}}
+            </div>
+          {{/if}}
+
+          {{#if characterDowntime.selectedTemplate.hasNumericActions}}
+            <div class="rm-character-downtime-template__line">
+              {{#each characterDowntime.selectedTemplate.numericActions}}
+                <label class="rm-character-downtime-resource-choice">
+                  <span>{{label}}</span>
+                  <input
+                    type="number"
+                    min="{{numericInput.min}}"
+                    max="{{numericInput.max}}"
+                    step="{{numericInput.step}}"
+                    value="{{displayValue}}"
+                    data-action="character-downtime-numeric-input"
+                    data-target-action-id="{{id}}"
+                    data-tooltip="{{label}}"
+                  >
+                </label>
+              {{/each}}
+            </div>
+          {{/if}}
+
+          {{#if characterDowntime.selectedTemplate.hasFormulaActions}}
+            <div class="rm-character-downtime-template__line">
+              {{#each characterDowntime.selectedTemplate.formulaActions}}
+                <span class="rm-chip" data-tooltip="{{label}}">{{summary}}</span>
+              {{/each}}
+            </div>
+          {{/if}}
+
           {{#if characterDowntime.selectedTemplate.hasCheckActions}}
             <div class="rm-character-downtime-template__line">
               {{#each characterDowntime.selectedTemplate.checkActions}}
@@ -172,6 +250,7 @@
                               data-outcome-mode="{{outcomeMode}}"
                               data-choice-index="{{choiceIndex}}"
                               data-dc="{{dc}}"
+                              data-dc-formula="{{dcFormula}}"
                               data-tooltip="{{rollTitle}}"
                               {{#unless canRoll}}disabled{{/unless}}
                             >

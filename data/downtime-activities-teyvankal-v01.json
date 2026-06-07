@@ -23,6 +23,30 @@
       ],
       "targetActions": [
         {
+          "id": "craft-item",
+          "label": "Что создать",
+          "actionType": "itemChoice",
+          "itemChoice": {
+            "sourceType": "gear",
+            "allowedItemTypes": [
+              "equipment",
+              "weapon",
+              "consumable",
+              "loot"
+            ],
+            "role": "craftedItem"
+          },
+          "resources": {
+            "cost": {
+              "amount": 0,
+              "currency": "gp",
+              "formula": "50% цены предмета",
+              "payer": "character",
+              "timing": "submit"
+            }
+          }
+        },
+        {
           "id": "craft-resources",
           "label": "Материалы и мастерская",
           "actionType": "resources",
@@ -53,6 +77,18 @@
           }
         },
         {
+          "id": "craft-days",
+          "label": "Рабочие дни",
+          "actionType": "numericInput",
+          "input": {
+            "min": 1,
+            "step": 1,
+            "default": 5,
+            "unit": "дн."
+          },
+          "resultFormula": "5 зм прогресса * дни, с учётом инструмента Rebreya"
+        },
+        {
           "id": "craft-progress",
           "label": "Прогресс предмета",
           "actionType": "downtimeResult",
@@ -80,6 +116,34 @@
       ],
       "targetActions": [
         {
+          "id": "firearm-crafting-item",
+          "label": "Оружие",
+          "actionType": "itemChoice",
+          "itemChoice": {
+            "sourceType": "gear",
+            "allowedItemTypes": [
+              "weapon"
+            ],
+            "subtype": "firearm",
+            "role": "craftedItem"
+          }
+        },
+        {
+          "id": "firearm-crafting-blueprint",
+          "label": "Чертёж",
+          "actionType": "itemChoice",
+          "itemChoice": {
+            "sourceType": "gear",
+            "allowedItemTypes": [
+              "loot",
+              "consumable"
+            ],
+            "subtype": "blueprint",
+            "role": "blueprint",
+            "mustOwn": true
+          }
+        },
+        {
           "id": "firearm-crafting-resources",
           "label": "Формула и материалы",
           "actionType": "resources",
@@ -93,6 +157,18 @@
               "timing": "manual"
             }
           }
+        },
+        {
+          "id": "firearm-crafting-days",
+          "label": "Рабочие дни",
+          "actionType": "numericInput",
+          "input": {
+            "min": 1,
+            "step": 1,
+            "default": 5,
+            "unit": "дн."
+          },
+          "resultFormula": "25 зм прогресса * дни"
         },
         {
           "id": "firearm-crafting-progress",
@@ -120,6 +196,28 @@
       ],
       "targetActions": [
         {
+          "id": "firearm-development-item",
+          "label": "Оружие",
+          "actionType": "itemChoice",
+          "itemChoice": {
+            "sourceType": "gear",
+            "allowedItemTypes": [
+              "weapon"
+            ],
+            "subtype": "firearm",
+            "role": "developedItem"
+          },
+          "resources": {
+            "cost": {
+              "amount": 200,
+              "currency": "gp",
+              "formula": "2x цена оружия единоразово + 200 зм за неделю",
+              "payer": "character",
+              "timing": "submit"
+            }
+          }
+        },
+        {
           "id": "firearm-development-resources",
           "label": "Расходы разработки",
           "actionType": "resources",
@@ -128,7 +226,7 @@
             "cost": {
               "amount": 200,
               "currency": "gp",
-              "formula": "200 зм за неделю + стартовые расходы 2x цены оружия",
+              "formula": "2x цена оружия единоразово + 200 зм за неделю",
               "payer": "character",
               "timing": "manual"
             }
@@ -205,64 +303,44 @@
       ],
       "targetActions": [
         {
-          "id": "profession-resources",
-          "label": "Модификаторы работы",
-          "actionType": "resources",
-          "resources": {
-            "narrative": "Отличный инструмент, год опыта и помощь фракции могут добавить бонусы к броску.",
-            "cost": {
-              "amount": 0,
-              "currency": "gp",
-              "payer": "manual",
-              "timing": "manual"
+          "id": "profession-modifiers",
+          "label": "Условия работы",
+          "actionType": "optionChoice",
+          "selectionMode": "multiple",
+          "options": [
+            {
+              "id": "excellent-tool",
+              "label": "Отличный инструмент",
+              "bonus": 1
             },
-            "purchases": [
-              {
-                "label": "Отличный инструмент",
-                "cost": {
-                  "amount": 0,
-                  "currency": "gp",
-                  "formula": "по предмету"
-                },
-                "effect": {
-                  "type": "bonus",
-                  "value": "+1"
-                },
-                "scope": "next-check"
-              },
-              {
-                "label": "Год опыта работы",
-                "cost": {
-                  "amount": 0,
-                  "currency": "custom",
-                  "formula": "нарративное условие"
-                },
-                "effect": {
-                  "type": "bonus",
-                  "value": "+2"
-                },
-                "scope": "next-check"
-              },
-              {
-                "label": "Помощь своей фракции",
-                "cost": {
-                  "amount": 0,
-                  "currency": "custom",
-                  "formula": "ресурс фракции"
-                },
-                "effect": {
-                  "type": "bonus",
-                  "value": "+3"
-                },
-                "scope": "next-check"
-              }
-            ]
+            {
+              "id": "year-experience",
+              "label": "Год опыта",
+              "bonus": 2
+            },
+            {
+              "id": "faction-help",
+              "label": "Помощь фракции",
+              "bonus": 3
+            }
+          ],
+          "effect": {
+            "type": "bonus",
+            "targetActionId": "profession-check",
+            "mode": "sum-selected-bonus"
           }
         },
         {
           "id": "profession-check",
           "label": "Проверка выбранного навыка",
           "actionType": "freeform",
+          "outcomeMode": "freeform",
+          "recordMode": "gm"
+        },
+        {
+          "id": "profession-result",
+          "label": "Оплата",
+          "actionType": "downtimeResult",
           "outcomeMode": "thresholds",
           "recordMode": "gm",
           "thresholds": [
@@ -403,6 +481,94 @@
       ],
       "targetActions": [
         {
+          "id": "research-rank",
+          "label": "Ранг вопроса",
+          "actionType": "optionChoice",
+          "selectionMode": "single",
+          "options": [
+            {
+              "id": "rank-1",
+              "label": "Ранг 1",
+              "rank": 1,
+              "baseCost": 10,
+              "stepCost": 5
+            },
+            {
+              "id": "rank-2",
+              "label": "Ранг 2",
+              "rank": 2,
+              "baseCost": 20,
+              "stepCost": 10
+            },
+            {
+              "id": "rank-3",
+              "label": "Ранг 3",
+              "rank": 3,
+              "baseCost": 50,
+              "stepCost": 50
+            },
+            {
+              "id": "rank-4",
+              "label": "Ранг 4",
+              "rank": 4,
+              "baseCost": 120,
+              "stepCost": 100
+            },
+            {
+              "id": "rank-5",
+              "label": "Ранг 5",
+              "rank": 5,
+              "baseCost": 200,
+              "stepCost": 200
+            },
+            {
+              "id": "rank-6",
+              "label": "Ранг 6",
+              "rank": 6,
+              "baseCost": 500,
+              "stepCost": 400
+            },
+            {
+              "id": "rank-7",
+              "label": "Ранг 7",
+              "rank": 7,
+              "baseCost": 1000,
+              "stepCost": 800
+            },
+            {
+              "id": "rank-8",
+              "label": "Ранг 8",
+              "rank": 8,
+              "baseCost": 2500,
+              "stepCost": 2000
+            },
+            {
+              "id": "rank-9",
+              "label": "Ранг 9",
+              "rank": 9,
+              "baseCost": 5000,
+              "stepCost": 3000
+            }
+          ]
+        },
+        {
+          "id": "research-extra-steps",
+          "label": "Шаги",
+          "actionType": "numericInput",
+          "input": {
+            "min": 0,
+            "max": 5,
+            "step": 1,
+            "default": 0,
+            "unit": "шаг."
+          },
+          "effect": {
+            "type": "bonus",
+            "targetActionId": "research-check",
+            "valuePerStep": 1
+          }
+        },
+        {
           "id": "research-resources",
           "label": "Стоимость исследования",
           "actionType": "resources",
@@ -539,6 +705,63 @@
       ],
       "targetActions": [
         {
+          "id": "training-type",
+          "label": "Что изучать",
+          "actionType": "optionChoice",
+          "selectionMode": "single",
+          "options": [
+            {
+              "id": "language",
+              "label": "Язык",
+              "rank": 1,
+              "weeks": 10,
+              "weeklyCost": 25
+            },
+            {
+              "id": "tool",
+              "label": "Инструмент",
+              "rank": 1,
+              "weeks": 10,
+              "weeklyCost": 25
+            },
+            {
+              "id": "firearm",
+              "label": "Огнестрельное оружие",
+              "rank": 2,
+              "weeks": 4,
+              "weeklyCost": 100
+            },
+            {
+              "id": "weapon",
+              "label": "Простое/воинское оружие",
+              "rank": 2,
+              "weeks": 20,
+              "weeklyCost": 25
+            },
+            {
+              "id": "skill",
+              "label": "Навык",
+              "rank": 3,
+              "weeks": 20,
+              "weeklyCost": 30
+            },
+            {
+              "id": "tool-expertise",
+              "label": "Компетентность в инструменте",
+              "rank": 5,
+              "weeks": 50,
+              "weeklyCost": 100
+            },
+            {
+              "id": "skill-expertise",
+              "label": "Компетентность в навыке",
+              "rank": 9,
+              "weeks": 50,
+              "weeklyCost": 150
+            }
+          ]
+        },
+        {
           "id": "training-resources",
           "label": "Оплата обучения",
           "actionType": "resources",
@@ -585,7 +808,14 @@
         {
           "id": "gambling-stake",
           "label": "Ставка",
-          "actionType": "resources",
+          "actionType": "numericInput",
+          "input": {
+            "min": 10,
+            "max": 1000,
+            "step": 10,
+            "default": 10,
+            "unit": "зм"
+          },
           "resources": {
             "narrative": "Ставка обычно от 10 до 1000 зм; для каждой проверки DC считается отдельно.",
             "cost": {
@@ -606,7 +836,17 @@
           "target": "ins",
           "targetLabel": "Проницательность",
           "outcomeMode": "dc",
-          "dcFormula": "5+2d10 или 7+3d10",
+          "dcFormula": "5+2d10",
+          "dcFormulaBySelection": {
+            "actionId": "gambling-stake",
+            "defaultFormula": "5+2d10",
+            "rules": [
+              {
+                "min": 100,
+                "formula": "7+3d10"
+              }
+            ]
+          },
           "recordMode": "total-success"
         },
         {
@@ -618,7 +858,17 @@
           "target": "dec",
           "targetLabel": "Обман",
           "outcomeMode": "dc",
-          "dcFormula": "5+2d10 или 7+3d10",
+          "dcFormula": "5+2d10",
+          "dcFormulaBySelection": {
+            "actionId": "gambling-stake",
+            "defaultFormula": "5+2d10",
+            "rules": [
+              {
+                "min": 100,
+                "formula": "7+3d10"
+              }
+            ]
+          },
           "recordMode": "total-success"
         },
         {
@@ -630,7 +880,17 @@
           "target": "itm",
           "targetLabel": "Запугивание",
           "outcomeMode": "dc",
-          "dcFormula": "5+2d10 или 7+3d10",
+          "dcFormula": "5+2d10",
+          "dcFormulaBySelection": {
+            "actionId": "gambling-stake",
+            "defaultFormula": "5+2d10",
+            "rules": [
+              {
+                "min": 100,
+                "formula": "7+3d10"
+              }
+            ]
+          },
           "recordMode": "total-success"
         },
         {
@@ -683,6 +943,24 @@
       ],
       "targetActions": [
         {
+          "id": "tournament-large-city",
+          "label": "Масштаб",
+          "actionType": "optionChoice",
+          "selectionMode": "single",
+          "options": [
+            {
+              "id": "standard",
+              "label": "Обычный турнир",
+              "dcFormula": "5+2d10"
+            },
+            {
+              "id": "large-city",
+              "label": "Крупный город",
+              "dcFormula": "7+3d10"
+            }
+          ]
+        },
+        {
           "id": "tournament-athletics",
           "label": "Силовая борьба",
           "actionType": "check",
@@ -691,7 +969,17 @@
           "target": "ath",
           "targetLabel": "Атлетика",
           "outcomeMode": "dc",
-          "dcFormula": "5+2d10 или 7+3d10",
+          "dcFormula": "5+2d10",
+          "dcFormulaBySelection": {
+            "actionId": "tournament-large-city",
+            "defaultFormula": "5+2d10",
+            "rules": [
+              {
+                "optionId": "large-city",
+                "formula": "7+3d10"
+              }
+            ]
+          },
           "recordMode": "total-success"
         },
         {
@@ -703,7 +991,17 @@
           "target": "acr",
           "targetLabel": "Акробатика",
           "outcomeMode": "dc",
-          "dcFormula": "5+2d10 или 7+3d10",
+          "dcFormula": "5+2d10",
+          "dcFormulaBySelection": {
+            "actionId": "tournament-large-city",
+            "defaultFormula": "5+2d10",
+            "rules": [
+              {
+                "optionId": "large-city",
+                "formula": "7+3d10"
+              }
+            ]
+          },
           "recordMode": "total-success"
         },
         {
@@ -715,7 +1013,17 @@
           "target": "con",
           "targetLabel": "Телосложение + наибольшая Кость Хитов",
           "outcomeMode": "dc",
-          "dcFormula": "5+2d10 или 7+3d10",
+          "dcFormula": "5+2d10",
+          "dcFormulaBySelection": {
+            "actionId": "tournament-large-city",
+            "defaultFormula": "5+2d10",
+            "rules": [
+              {
+                "optionId": "large-city",
+                "formula": "7+3d10"
+              }
+            ]
+          },
           "recordMode": "total-success"
         },
         {
@@ -846,9 +1154,95 @@
       ],
       "targetActions": [
         {
-          "id": "magic-item-purchase-note",
-          "label": "Настроить покупку",
-          "actionType": "freeform",
+          "id": "magic-item-purchase-item",
+          "label": "Предмет",
+          "actionType": "itemChoice",
+          "itemChoice": {
+            "sourceType": "magicItem",
+            "allowedItemTypes": [
+              "equipment",
+              "weapon",
+              "consumable",
+              "loot"
+            ],
+            "role": "wantedItem"
+          }
+        },
+        {
+          "id": "magic-item-purchase-trade-step",
+          "label": "Торги",
+          "actionType": "optionChoice",
+          "selectionMode": "single",
+          "options": [
+            {
+              "id": "forbidden",
+              "label": "Запрещённые",
+              "value": -5
+            },
+            {
+              "id": "impossible",
+              "label": "Невозможные",
+              "value": -3
+            },
+            {
+              "id": "failed",
+              "label": "Провальные",
+              "value": -2
+            },
+            {
+              "id": "bad",
+              "label": "Невыгодные",
+              "value": -1
+            },
+            {
+              "id": "normal",
+              "label": "Нормальные",
+              "value": 0
+            },
+            {
+              "id": "favorable",
+              "label": "Выгодные",
+              "value": 1
+            },
+            {
+              "id": "good",
+              "label": "Удачные",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "id": "magic-item-purchase-search-cost",
+          "label": "Расходы",
+          "actionType": "resources",
+          "resources": {
+            "narrative": "Минимум 1 рабочая неделя и 100 зм расходов на поиск.",
+            "cost": {
+              "amount": 100,
+              "currency": "gp",
+              "payer": "character",
+              "timing": "submit"
+            }
+          }
+        },
+        {
+          "id": "magic-item-purchase-price",
+          "label": "Цена",
+          "actionType": "formulaRoll",
+          "formulaByRarity": {
+            "common": "(1d6 + 1) * 10",
+            "uncommon": "1d6 * 100",
+            "rare": "1d6 * 1000",
+            "veryRare": "(1d8 + 1) * 5000",
+            "legendary": "2d6 * 25000"
+          },
+          "tradeStepActionId": "magic-item-purchase-trade-step",
+          "itemActionId": "magic-item-purchase-item"
+        },
+        {
+          "id": "magic-item-purchase-result",
+          "label": "Сделка",
+          "actionType": "downtimeResult",
           "outcomeMode": "freeform",
           "recordMode": "gm"
         }

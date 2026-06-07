@@ -71,6 +71,11 @@ function toWeeks(value, fallback = 0) {
   return Number.isFinite(numericValue) ? Math.max(0, Math.floor(numericValue)) : fallback;
 }
 
+function toFiniteNumber(value, fallback = undefined) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
 function buildDefaultBalance() {
   return {
     availableWeeks: 0,
@@ -130,13 +135,86 @@ function normalizeCheck(value = {}) {
   return normalized;
 }
 
+function normalizeSelectedItem(item = {}) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return null;
+  }
+
+  const uuid = cleanId(item.uuid);
+  const id = cleanId(item.id);
+  const rawName = cleanString(item.name);
+  if (!uuid && !id && !rawName) {
+    return null;
+  }
+
+  const selectedItem = {
+    name: rawName || "Предмет"
+  };
+  if (uuid) {
+    selectedItem.uuid = uuid;
+  }
+  if (id) {
+    selectedItem.id = id;
+  }
+  const type = cleanString(item.type);
+  if (type) {
+    selectedItem.type = type;
+  }
+  const sourceType = cleanString(item.sourceType);
+  if (sourceType) {
+    selectedItem.sourceType = sourceType;
+  }
+  const rarity = cleanString(item.rarity);
+  if (rarity) {
+    selectedItem.rarity = rarity;
+  }
+  const priceGold = toFiniteNumber(item.priceGold);
+  if (priceGold !== undefined) {
+    selectedItem.priceGold = priceGold;
+  }
+  return selectedItem;
+}
+
+function normalizeSelectionEntry(entry = {}) {
+  const actionId = cleanId(entry?.actionId);
+  if (!actionId) {
+    return null;
+  }
+
+  const selection = {
+    actionId
+  };
+  const choiceId = cleanId(entry?.choiceId);
+  const optionId = cleanId(entry?.optionId);
+  const optionIds = asArray(entry?.optionIds).map((id) => cleanId(id)).filter(Boolean);
+  const value = toFiniteNumber(entry?.value);
+  const item = normalizeSelectedItem(entry?.item);
+
+  if (choiceId) {
+    selection.choiceId = choiceId;
+  }
+  if (optionId) {
+    selection.optionId = optionId;
+  }
+  if (optionIds.length) {
+    selection.optionIds = optionIds;
+  }
+  if (value !== undefined) {
+    selection.value = value;
+  }
+  if (item) {
+    selection.item = item;
+  }
+
+  return selection;
+}
+
 function normalizeTargetActionSelections(value = []) {
   const selections = new Map();
   for (const entry of asArray(value)) {
-    const actionId = cleanId(entry?.actionId);
-    const choiceId = cleanId(entry?.choiceId);
-    if (actionId && choiceId) {
-      selections.set(actionId, choiceId);
+    const selection = normalizeSelectionEntry(entry);
+    if (selection) {
+      selections.set(selection.actionId, selection);
     }
   }
   return selections;
@@ -152,7 +230,7 @@ function normalizeResourceChoice(choice = {}, index = 0) {
   };
 }
 
-function applySelectedResourceChoice(action = {}, selections = new Map()) {
+function applySelectedResourceChoice(action = {}, selection = {}) {
   const source = asObject(action);
   if (cleanId(source.actionType) !== "resources") {
     return source;
@@ -164,7 +242,7 @@ function applySelectedResourceChoice(action = {}, selections = new Map()) {
     return source;
   }
 
-  const requestedChoiceId = selections.get(cleanId(source.id));
+  const requestedChoiceId = cleanId(selection?.choiceId);
   const selectedChoice = choices.find((choice) => choice.id === requestedChoiceId) ?? choices[0];
   const selectedCost = selectedChoice.cost && typeof selectedChoice.cost === "object" && !Array.isArray(selectedChoice.cost)
     ? selectedChoice.cost
@@ -188,6 +266,197 @@ function applySelectedResourceChoice(action = {}, selections = new Map()) {
     selectedChoiceId: selectedChoice.id,
     selectedChoiceLabel: selectedChoice.label
   };
+}
+
+function normalizeOptionChoice(option = {}, index = 0) {
+  const source = asObject(option);
+  return {
+    ...clone(source),
+    id: cleanId(source.id) || `option-${index + 1}`,
+    label: cleanString(source.label) || cleanString(source.name) || `Вариант ${index + 1}`
+  };
+}
+
+function applySelectedOptionChoice(action = {}, selection = {}) {
+  const source = asObject(action);
+  if (cleanId(source.actionType) !== "optionChoice") {
+    return source;
+  }
+
+  const options = asArray(source.options).map((option, index) => normalizeOptionChoice(option, index));
+  if (!options.length) {
+    return source;
+  }
+
+  const selectionMode = cleanString(source.selectionMode) || "single";
+  if (selectionMode === "multiple") {
+    const selectedIds = new Set(asArray(selection?.optionIds).map((id) => cleanId(id)).filter(Boolean));
+    const selectedOptions = options.filter((option) => selectedIds.has(option.id));
+    return {
+      ...clone(source),
+      selectedOptionIds: selectedOptions.map((option) => option.id),
+      selectedOptions: clone(selectedOptions)
+    };
+  }
+
+  const requestedOptionId = cleanId(selection?.optionId);
+  const selectedOption = options.find((option) => option.id === requestedOptionId) ?? options[0];
+  return {
+    ...clone(source),
+    selectedOptionId: selectedOption.id,
+    selectedOptionLabel: selectedOption.label,
+    selectedOption: clone(selectedOption)
+  };
+}
+
+function applySelectedNumericInput(action = {}, selection = {}) {
+  const source = asObject(action);
+  if (cleanId(source.actionType) !== "numericInput") {
+    return source;
+  }
+
+  const input = asObject(source.input);
+  const fallbackValue = toFiniteNumber(input.default);
+  let value = toFiniteNumber(selection?.value, fallbackValue);
+  if (value === undefined) {
+    return source;
+  }
+
+  const min = toFiniteNumber(input.min);
+  const max = toFiniteNumber(input.max);
+  if (min !== undefined) {
+    value = Math.max(min, value);
+  }
+  if (max !== undefined) {
+    value = Math.min(max, value);
+  }
+
+  return {
+    ...clone(source),
+    numericValue: value
+  };
+}
+
+function applySelectedItemChoice(action = {}, selection = {}) {
+  const source = asObject(action);
+  if (cleanId(source.actionType) !== "itemChoice") {
+    return source;
+  }
+
+  const selectedItem = normalizeSelectedItem(selection?.item);
+  if (!selectedItem) {
+    return source;
+  }
+
+  return {
+    ...clone(source),
+    selectedItem
+  };
+}
+
+function applySelectedFormulaRoll(action = {}, selection = {}) {
+  const source = asObject(action);
+  if (cleanId(source.actionType) !== "formulaRoll") {
+    return source;
+  }
+
+  const formula = cleanString(selection?.formula);
+  const result = toFiniteNumber(selection?.result);
+  if (!formula && result === undefined) {
+    return source;
+  }
+
+  const nextAction = {
+    ...clone(source)
+  };
+  if (formula) {
+    nextAction.selectedFormula = formula;
+  }
+  if (result !== undefined) {
+    nextAction.formulaResult = result;
+  }
+  return nextAction;
+}
+
+function matchesFormulaRule(rule = {}, selection = {}) {
+  const source = asObject(rule);
+  const value = toFiniteNumber(selection?.value);
+  const min = toFiniteNumber(source.min);
+  const max = toFiniteNumber(source.max);
+  if ((min !== undefined || max !== undefined) && value === undefined) {
+    return false;
+  }
+  if (value !== undefined) {
+    if (min !== undefined && value < min) {
+      return false;
+    }
+    if (max !== undefined && value > max) {
+      return false;
+    }
+  }
+
+  const optionId = cleanId(selection?.optionId);
+  if (cleanId(source.optionId) && !optionId) {
+    return false;
+  }
+  if (cleanId(source.optionId) && source.optionId !== optionId) {
+    return false;
+  }
+
+  const choiceId = cleanId(selection?.choiceId);
+  if (cleanId(source.choiceId) && !choiceId) {
+    return false;
+  }
+  if (cleanId(source.choiceId) && source.choiceId !== choiceId) {
+    return false;
+  }
+
+  return true;
+}
+
+function applySelectionDrivenFormula(action = {}, selections = new Map()) {
+  const source = asObject(action);
+  const config = asObject(source.dcFormulaBySelection);
+  const sourceActionId = cleanId(config.actionId);
+  if (!sourceActionId) {
+    return source;
+  }
+
+  const selection = selections.get(sourceActionId);
+  const rules = asArray(config.rules);
+  const matchedRule = rules.find((rule) => matchesFormulaRule(rule, selection)) ?? null;
+  const formula = cleanString(matchedRule?.formula) || cleanString(config.defaultFormula);
+  if (!formula) {
+    return source;
+  }
+
+  return {
+    ...clone(source),
+    dcFormula: formula
+  };
+}
+
+function applyTargetActionSelection(action = {}, selections = new Map()) {
+  const source = asObject(action);
+  const selection = selections.get(cleanId(source.id)) ?? {};
+  const actionType = cleanId(source.actionType);
+  let selectedAction = source;
+  if (actionType === "resources") {
+    selectedAction = applySelectedResourceChoice(source, selection);
+  }
+  else if (actionType === "optionChoice") {
+    selectedAction = applySelectedOptionChoice(source, selection);
+  }
+  else if (actionType === "numericInput") {
+    selectedAction = applySelectedNumericInput(source, selection);
+  }
+  else if (actionType === "itemChoice") {
+    selectedAction = applySelectedItemChoice(source, selection);
+  }
+  else if (actionType === "formulaRoll") {
+    selectedAction = applySelectedFormulaRoll(source, selection);
+  }
+  return applySelectionDrivenFormula(selectedAction, selections);
 }
 
 function isDowntimeTemplateActionId(actionId = "") {
@@ -714,7 +983,7 @@ export class DowntimeService {
         weeks: safeWeeks,
         status: "pending",
         checks: asArray(action.targetActions).slice(0, MAX_TARGET_ACTIONS).map((targetAction, index) => {
-          const selectedTargetAction = applySelectedResourceChoice(targetAction, actionSelections);
+          const selectedTargetAction = applyTargetActionSelection(targetAction, actionSelections);
           return normalizeCheck({
             id: cleanId(selectedTargetAction?.id) || `check-${index + 1}`,
             ...asObject(selectedTargetAction)

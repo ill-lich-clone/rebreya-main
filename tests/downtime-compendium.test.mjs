@@ -110,6 +110,46 @@ test("carousing downtime stores social class resource choices", () => {
   assert.equal(resourceAction.resources.choices[2].requirement, "Доступ в местный высший свет или успешная маскировка.");
 });
 
+test("core automated downtimes expose structured player inputs", () => {
+  const activities = normalizeDowntimeActivities(DOWNTIME_DATA.activities);
+  const byId = new Map(activities.map((activity) => [activity.id, createDowntimeItemData(activity, new Map()).flags[MODULE_ID].downtime]));
+
+  const craft = byId.get("craft");
+  assert.equal(craft.targetActions.find((action) => action.id === "craft-item")?.actionType, "itemChoice");
+  assert.equal(craft.targetActions.find((action) => action.id === "craft-days")?.input?.unit, "дн.");
+
+  const firearmCrafting = byId.get("firearm-crafting");
+  assert.equal(firearmCrafting.targetActions.find((action) => action.id === "firearm-crafting-item")?.itemChoice?.subtype, "firearm");
+  assert.equal(firearmCrafting.targetActions.find((action) => action.id === "firearm-crafting-blueprint")?.itemChoice?.role, "blueprint");
+
+  const firearmDevelopment = byId.get("firearm-development");
+  assert.equal(firearmDevelopment.targetActions.find((action) => action.id === "firearm-development-item")?.resources?.cost?.formula, "2x цена оружия единоразово + 200 зм за неделю");
+
+  const profession = byId.get("profession-work");
+  assert.equal(profession.targetActions.find((action) => action.id === "profession-modifiers")?.actionType, "optionChoice");
+  assert.equal(profession.targetActions.find((action) => action.id === "profession-result")?.outcomeMode, "thresholds");
+
+  const research = byId.get("research");
+  assert.equal(research.targetActions.find((action) => action.id === "research-rank")?.actionType, "optionChoice");
+  assert.equal(research.targetActions.find((action) => action.id === "research-extra-steps")?.actionType, "numericInput");
+
+  const training = byId.get("training");
+  assert.equal(training.targetActions.find((action) => action.id === "training-type")?.options?.length, 7);
+
+  const gambling = byId.get("gambling");
+  assert.equal(gambling.targetActions.find((action) => action.id === "gambling-stake")?.actionType, "numericInput");
+  assert.equal(gambling.targetActions.find((action) => action.id === "gambling-insight")?.dcFormulaBySelection?.actionId, "gambling-stake");
+
+  const tournament = byId.get("fighting-tournament");
+  assert.equal(tournament.targetActions.find((action) => action.id === "tournament-large-city")?.actionType, "optionChoice");
+  assert.equal(tournament.targetActions.find((action) => action.id === "tournament-athletics")?.dcFormulaBySelection?.actionId, "tournament-large-city");
+
+  const magicItemPurchase = byId.get("magic-item-purchase");
+  assert.equal(magicItemPurchase.targetActions.find((action) => action.id === "magic-item-purchase-item")?.itemChoice?.sourceType, "magicItem");
+  assert.equal(magicItemPurchase.targetActions.find((action) => action.id === "magic-item-purchase-trade-step")?.actionType, "optionChoice");
+  assert.equal(magicItemPurchase.targetActions.find((action) => action.id === "magic-item-purchase-price")?.actionType, "formulaRoll");
+});
+
 test("downtime item data stores automation status and a stable Rebreya template flag", () => {
   const rest = normalizeDowntimeActivity(
     DOWNTIME_DATA.activities.find((activity) => activity.id === "rest")

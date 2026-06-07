@@ -54,6 +54,11 @@ function toInteger(value, fallback = 0) {
   return Number.isFinite(numericValue) ? Math.max(0, Math.floor(numericValue)) : fallback;
 }
 
+function toFiniteNumber(value, fallback = undefined) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
 function normalizeWeeks(value, fallback = 1) {
   return Math.max(1, toInteger(value, fallback));
 }
@@ -72,7 +77,8 @@ function buildBalance(value = {}) {
 }
 
 function buildCheckSummary(check = {}) {
-  if (cleanText(check.actionType) === "resources") {
+  const actionType = cleanText(check.actionType);
+  if (["resources", "itemChoice", "numericInput", "optionChoice", "formulaRoll"].includes(actionType)) {
     return cleanText(check.label) || "Ресурсы";
   }
   const dc = cleanText(check.dc);
@@ -135,13 +141,88 @@ function buildResourceChoiceSummary(choice = {}) {
   });
 }
 
+function normalizeSelectedItem(item = {}) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return null;
+  }
+
+  const uuid = cleanText(item.uuid);
+  const id = cleanText(item.id);
+  const rawName = cleanText(item.name);
+  if (!uuid && !id && !rawName) {
+    return null;
+  }
+
+  const selectedItem = {
+    name: rawName || "Предмет"
+  };
+  if (uuid) {
+    selectedItem.uuid = uuid;
+  }
+  if (id) {
+    selectedItem.id = id;
+  }
+  const type = cleanText(item.type);
+  if (type) {
+    selectedItem.type = type;
+  }
+  const sourceType = cleanText(item.sourceType);
+  if (sourceType) {
+    selectedItem.sourceType = sourceType;
+  }
+  const rarity = cleanText(item.rarity);
+  if (rarity) {
+    selectedItem.rarity = rarity;
+  }
+  const priceGold = toFiniteNumber(item.priceGold);
+  if (priceGold !== undefined) {
+    selectedItem.priceGold = priceGold;
+  }
+  return selectedItem;
+}
+
+function normalizeSelectionEntry(entry = {}) {
+  const actionId = cleanText(entry?.actionId);
+  if (!actionId) {
+    return null;
+  }
+
+  const selection = {
+    actionId
+  };
+  const choiceId = cleanText(entry?.choiceId);
+  const optionId = cleanText(entry?.optionId);
+  const optionIds = Array.isArray(entry?.optionIds)
+    ? entry.optionIds.map((id) => cleanText(id)).filter(Boolean)
+    : [];
+  const numericValue = toFiniteNumber(entry?.value);
+  const item = normalizeSelectedItem(entry?.item);
+
+  if (choiceId) {
+    selection.choiceId = choiceId;
+  }
+  if (optionId) {
+    selection.optionId = optionId;
+  }
+  if (optionIds.length) {
+    selection.optionIds = optionIds;
+  }
+  if (numericValue !== undefined) {
+    selection.value = numericValue;
+  }
+  if (item) {
+    selection.item = item;
+  }
+
+  return selection;
+}
+
 function normalizeTargetActionSelections(value = []) {
   const selections = new Map();
   for (const entry of Array.isArray(value) ? value : []) {
-    const actionId = cleanText(entry?.actionId);
-    const choiceId = cleanText(entry?.choiceId);
-    if (actionId && choiceId) {
-      selections.set(actionId, choiceId);
+    const selection = normalizeSelectionEntry(entry);
+    if (selection) {
+      selections.set(selection.actionId, selection);
     }
   }
   return selections;
@@ -167,27 +248,108 @@ function buildResourceChoices(action = {}, selectedChoiceId = "") {
     .filter((choice) => choice.id && choice.label);
 }
 
+function buildOptionChoices(action = {}, selection = {}) {
+  const rawOptions = Array.isArray(action?.options) ? action.options : [];
+  const selectedIds = new Set([
+    cleanText(selection?.optionId),
+    ...(Array.isArray(selection?.optionIds) ? selection.optionIds.map((id) => cleanText(id)) : [])
+  ].filter(Boolean));
+  const selectionMode = cleanText(action?.selectionMode) || "single";
+  const options = rawOptions
+    .map((option, index) => {
+      const id = cleanText(option?.id) || `option-${index + 1}`;
+      const label = cleanText(option?.label) || cleanText(option?.name) || `Вариант ${index + 1}`;
+      return {
+        ...option,
+        id,
+        label,
+        selected: selectedIds.has(id)
+      };
+    })
+    .filter((option) => option.id && option.label);
+
+  if (selectionMode !== "multiple" && options.length && !options.some((option) => option.selected)) {
+    options[0].selected = true;
+  }
+
+  return options;
+}
+
+function getSelectedOptionSummary(options = []) {
+  return options
+    .filter((option) => option.selected)
+    .map((option) => cleanText(option.label))
+    .filter(Boolean)
+    .join(", ");
+}
+
+function buildNumericInput(action = {}, selection = {}) {
+  const input = action?.input && typeof action.input === "object" && !Array.isArray(action.input)
+    ? action.input
+    : {};
+  const selectedValue = toFiniteNumber(selection?.value, toFiniteNumber(input.default));
+  return {
+    ...input,
+    value: selectedValue,
+    displayValue: selectedValue === undefined ? "" : String(selectedValue),
+    unit: cleanText(input.unit),
+    min: input.min ?? "",
+    max: input.max ?? "",
+    step: input.step ?? 1
+  };
+}
+
 function mapTemplateTargetAction(action = {}, index = 0, selections = new Map()) {
   const actionType = cleanText(action.actionType) || "check";
+  const actionId = cleanText(action.id);
+  const selection = selections.get(actionId) ?? {};
   const resourceChoices = actionType === "resources"
-    ? buildResourceChoices(action, selections.get(cleanText(action.id)) || "")
+    ? buildResourceChoices(action, cleanText(selection.choiceId))
     : [];
   if (resourceChoices.length && !resourceChoices.some((choice) => choice.selected)) {
     resourceChoices[0].selected = true;
   }
   const selectedResourceChoice = resourceChoices.find((choice) => choice.selected) ?? null;
+  const optionChoices = actionType === "optionChoice" ? buildOptionChoices(action, selection) : [];
+  const selectedItem = actionType === "itemChoice" ? normalizeSelectedItem(selection.item) : null;
+  const numericInput = actionType === "numericInput" ? buildNumericInput(action, selection) : null;
+  const selectedOptionSummary = getSelectedOptionSummary(optionChoices);
   const mapped = {
     ...action,
     number: index + 1,
     actionType,
     resourceChoices,
+    optionChoices,
+    options: optionChoices,
+    selectedItem,
+    selectedItemName: selectedItem?.name ?? "",
+    numericInput,
+    value: numericInput?.value,
+    displayValue: numericInput?.displayValue ?? "",
     selectedResourceChoiceId: selectedResourceChoice?.id ?? "",
     selectedResourceChoiceLabel: selectedResourceChoice?.label ?? "",
+    selectedOptionLabel: selectedOptionSummary,
+    selectionMode: cleanText(action.selectionMode) || "single",
     summary: buildCheckSummary(action),
     outcomeSummary: actionType === "resources"
       ? (selectedResourceChoice?.outcomeSummary || buildResourceSummary(action))
-      : buildCheckSummary(action),
-    hasResourceChoices: resourceChoices.length > 0
+      : (actionType === "optionChoice"
+        ? (selectedOptionSummary || cleanText(action.label))
+        : (actionType === "itemChoice"
+          ? (selectedItem?.name || cleanText(action.label))
+          : (actionType === "numericInput"
+            ? [numericInput?.displayValue, numericInput?.unit].filter(Boolean).join(" ") || cleanText(action.label)
+            : buildCheckSummary(action))))
+      ,
+    hasResourceChoices: resourceChoices.length > 0,
+    hasOptionChoices: optionChoices.length > 0,
+    isMultipleChoice: (cleanText(action.selectionMode) || "single") === "multiple",
+    hasSelectedItem: Boolean(selectedItem),
+    isResourceAction: actionType === "resources",
+    isItemChoiceAction: actionType === "itemChoice",
+    isNumericAction: actionType === "numericInput",
+    isOptionAction: actionType === "optionChoice",
+    isFormulaAction: actionType === "formulaRoll"
   };
   return mapped;
 }
@@ -201,8 +363,14 @@ function buildTemplateView(action = null, formState = {}) {
   const targetActions = (Array.isArray(action.targetActions) ? action.targetActions : [])
     .map((entry, index) => mapTemplateTargetAction(entry, index, selections));
   const resourceActions = targetActions.filter((entry) => entry.actionType === "resources");
-  const checkActions = targetActions.filter((entry) => entry.actionType !== "resources" && entry.actionType !== "downtimeResult");
+  const itemChoiceActions = targetActions.filter((entry) => entry.actionType === "itemChoice");
+  const numericActions = targetActions.filter((entry) => entry.actionType === "numericInput");
+  const optionActions = targetActions.filter((entry) => entry.actionType === "optionChoice");
+  const formulaActions = targetActions.filter((entry) => entry.actionType === "formulaRoll");
+  const interactiveActionTypes = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "formulaRoll"]);
+  const checkActions = targetActions.filter((entry) => !interactiveActionTypes.has(entry.actionType) && entry.actionType !== "downtimeResult");
   const resultActions = targetActions.filter((entry) => entry.actionType === "downtimeResult");
+  const interactiveActions = targetActions.filter((entry) => interactiveActionTypes.has(entry.actionType));
   return {
     id: cleanText(action.id),
     label: cleanText(action.label) || cleanText(action.name) || "Простой",
@@ -213,6 +381,11 @@ function buildTemplateView(action = null, formState = {}) {
     rankTable: Array.isArray(action.rankTable) ? action.rankTable : [],
     targetActions,
     resourceActions,
+    itemChoiceActions,
+    numericActions,
+    optionActions,
+    formulaActions,
+    interactiveActions,
     checkActions,
     resultActions,
     hasRank: Boolean(cleanText(action.rank)),
@@ -220,6 +393,11 @@ function buildTemplateView(action = null, formState = {}) {
     hasSummary: Boolean(cleanText(action.summary)),
     hasRequirements: Array.isArray(action.requirements) && action.requirements.length > 0,
     hasResourceActions: resourceActions.length > 0,
+    hasItemChoiceActions: itemChoiceActions.length > 0,
+    hasNumericActions: numericActions.length > 0,
+    hasOptionActions: optionActions.length > 0,
+    hasFormulaActions: formulaActions.length > 0,
+    hasInteractiveActions: interactiveActions.length > 0,
     hasCheckActions: checkActions.length > 0,
     hasResultActions: resultActions.length > 0,
     hasTargetActions: targetActions.length > 0
@@ -272,7 +450,6 @@ function buildRollTarget(check = {}, choice = {}, { canRollRequest = false, choi
   const sourceType = cleanText(choice.sourceType) || cleanText(check.sourceType) || "skill";
   const target = cleanText(choice.target) || cleanText(check.target);
   const ability = normalizeRollAbility(choice.ability) || normalizeRollAbility(check.ability) || normalizeRollAbility(target);
-  const outcomeMode = cleanText(check.outcomeMode) || (cleanText(check.dc) ? "dc" : "freeform");
   const label = cleanText(choice.targetLabel)
     || cleanText(choice.label)
     || cleanText(check.targetLabel)
@@ -280,6 +457,8 @@ function buildRollTarget(check = {}, choice = {}, { canRollRequest = false, choi
     || target
     || ability;
   const dc = toInteger(check.dc, 0);
+  const dcFormula = cleanText(choice.dcFormula) || cleanText(check.dcFormula);
+  const effectiveOutcomeMode = cleanText(check.outcomeMode) || (dc > 0 || dcFormula ? "dc" : "freeform");
   const canRoll = Boolean(canRollRequest)
     && ROLLABLE_SOURCE_TYPES.has(sourceType)
     && Boolean(sourceType === "ability" ? ability : (target || ability));
@@ -291,7 +470,8 @@ function buildRollTarget(check = {}, choice = {}, { canRollRequest = false, choi
     target,
     label,
     dc,
-    outcomeMode,
+    dcFormula,
+    outcomeMode: effectiveOutcomeMode,
     canRoll,
     buttonLabel: hasChoices ? label : "Кинуть",
     rollTitle: canRoll
@@ -505,10 +685,7 @@ export class CharacterDowntimeService {
     }
 
     const targetActionSelections = Array.isArray(payload.targetActionSelections)
-      ? payload.targetActionSelections.map((entry) => ({
-        actionId: cleanText(entry?.actionId),
-        choiceId: cleanText(entry?.choiceId)
-      })).filter((entry) => entry.actionId && entry.choiceId)
+      ? payload.targetActionSelections.map((entry) => normalizeSelectionEntry(entry)).filter(Boolean)
       : [];
     const requestPayload = {
       groupId,

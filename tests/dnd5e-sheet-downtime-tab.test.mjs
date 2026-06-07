@@ -432,6 +432,243 @@ test("character downtime render hook submits requests for the current sheet acto
   }
 });
 
+test("character downtime submit reads structured target action controls", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-submit-structured=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const submitButton = new stubs.HTMLElement();
+    const itemChoice = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "magic-item-purchase-item",
+        itemUuid: "Compendium.world.rebreya-magic-items.Item.wand",
+        itemId: "wand",
+        itemName: "Жезл огня",
+        itemType: "loot",
+        itemSourceType: "magicItem",
+        itemRarity: "rare",
+        itemPriceGold: "1200"
+      }
+    });
+    const optionChoice = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "magic-item-purchase-trade-step"
+      }
+    });
+    optionChoice.value = "good";
+    const numericInput = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "magic-item-purchase-search-step"
+      }
+    });
+    numericInput.value = "-1";
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "magic-item-purchase" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-title']": { value: "" },
+        "[data-action='character-downtime-description']": { value: "" },
+        "[data-action='character-downtime-submit']": submitButton
+      },
+      selectorAll: {
+        "[data-action='character-downtime-item-choice']": [itemChoice],
+        "[data-action='character-downtime-option-choice']": [optionChoice],
+        "[data-action='character-downtime-numeric-input']": [numericInput]
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(submitButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: "downtime-1" };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of root.listeners.click) {
+      await listener({ target: submitButton });
+    }
+
+    assert.deepEqual(calls.find((call) => call[0] === "createRequest"), [
+      "createRequest",
+      "actor-a",
+      {
+        actionId: "magic-item-purchase",
+        weeks: 1,
+        title: "",
+        description: "",
+        targetActionSelections: [{
+          actionId: "magic-item-purchase-item",
+          item: {
+            uuid: "Compendium.world.rebreya-magic-items.Item.wand",
+            id: "wand",
+            name: "Жезл огня",
+            type: "loot",
+            sourceType: "magicItem",
+            rarity: "rare",
+            priceGold: 1200
+          }
+        }, {
+          actionId: "magic-item-purchase-trade-step",
+          optionId: "good"
+        }, {
+          actionId: "magic-item-purchase-search-step",
+          value: -1
+        }]
+      }
+    ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime roll buttons roll formula DC before recording success", async () => {
+  const stubs = installSheetExtensionStubs();
+  const previousRoll = globalThis.Roll;
+  try {
+    globalThis.Roll = class FakeRoll {
+      constructor(formula) {
+        this.formula = formula;
+        this.total = formula === "5+2d10" ? 17 : 0;
+      }
+
+      async evaluate() {
+        return this;
+      }
+    };
+
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-roll-dc-formula=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    actor.rollSkill = async (config) => {
+      calls.push(["rollSkill", config]);
+      return { total: 18 };
+    };
+
+    const rollButton = new stubs.HTMLElement({
+      dataset: {
+        action: "character-downtime-roll",
+        requestId: "downtime-1",
+        checkId: "gambling-insight",
+        groupId: "group-a",
+        sourceType: "skill",
+        ability: "wis",
+        target: "ins",
+        targetLabel: "Проницательность",
+        outcomeMode: "dc",
+        dc: "0",
+        dcFormula: "5+2d10"
+      }
+    });
+    const panel = new stubs.HTMLElement();
+    rollButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-roll']") return rollButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(rollButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async recordDowntimeCheckResult(requestId, checkId, result, options) {
+        calls.push(["recordDowntimeCheckResult", requestId, checkId, result, options]);
+        return { id: requestId, actorId: "actor-a" };
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of root.listeners.click) {
+      await listener({
+        target: rollButton,
+        preventDefault() {},
+        stopPropagation() {}
+      });
+    }
+
+    assert.deepEqual(calls.filter((call) => call[0] === "recordDowntimeCheckResult"), [[
+      "recordDowntimeCheckResult",
+      "downtime-1",
+      "gambling-insight",
+      {
+        total: 18,
+        outcomeMode: "dc",
+        dc: 17,
+        dcFormula: "5+2d10",
+        success: true,
+        sourceType: "skill",
+        ability: "wis",
+        target: "ins",
+        targetLabel: "Проницательность"
+      },
+      {
+        actorId: "actor-a",
+        groupId: "group-a"
+      }
+    ]]);
+  }
+  finally {
+    globalThis.Roll = previousRoll;
+    stubs.restore();
+  }
+});
+
 test("character downtime submit works when the downtime tab is rendered lazily", async () => {
   const stubs = installSheetExtensionStubs();
   try {
