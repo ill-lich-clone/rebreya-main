@@ -4220,7 +4220,7 @@ summary:focus-visible {
 
 .rm-downtime-layout {
   display: grid;
-  grid-template-columns: minmax(210px, 250px) minmax(360px, 1fr) minmax(280px, 330px);
+  grid-template-columns: minmax(210px, 250px) minmax(520px, 1fr);
   gap: 12px;
   align-items: start;
 }
@@ -4472,6 +4472,55 @@ summary:focus-visible {
 .rm-downtime-request__actions .rm-button {
   min-height: 30px;
   padding: 5px 8px;
+}
+
+.rm-downtime-request-window.window-app,
+.rm-downtime-request-window.application {
+  width: min(940px, calc(100vw - 32px)) !important;
+  height: auto !important;
+  max-height: calc(100vh - 32px);
+}
+
+.rm-downtime-request-window .window-content {
+  overflow-y: auto;
+  max-height: calc(100vh - 80px);
+}
+
+.rm-downtime-request-window .dialog-buttons:empty {
+  display: none;
+}
+
+.rm-downtime-request-dialog {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rm-downtime-request-dialog__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(214, 177, 104, 0.16);
+}
+
+.rm-downtime-request-dialog__header h3,
+.rm-downtime-request-dialog__header p,
+.rm-downtime-request-dialog__text {
+  margin: 0;
+}
+
+.rm-downtime-request-dialog__header h3 {
+  color: #fff8e8;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.rm-downtime-request-dialog__text {
+  color: #f2dfc0;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .rm-downtime-pagination,
@@ -4952,21 +5001,13 @@ summary:focus-visible {
 
 @container (max-width: 1220px) {
   .rm-downtime-layout {
-    grid-template-columns: minmax(220px, 270px) minmax(0, 1fr);
-  }
-
-  .rm-downtime-column--inspector {
-    grid-column: 1 / -1;
+    grid-template-columns: minmax(220px, 270px) minmax(420px, 1fr);
   }
 }
 
 @container (max-width: 860px) {
   .rm-downtime-layout {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .rm-downtime-column--inspector {
-    grid-column: auto;
   }
 
   .rm-downtime-grant__row {
@@ -6737,10 +6778,6 @@ summary:focus-visible {
 
   .rm-downtime-column--queue {
     order: 2;
-  }
-
-  .rm-downtime-column--inspector {
-    order: 3;
   }
 
   .rm-inventory-table__header,

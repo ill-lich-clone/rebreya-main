@@ -787,7 +787,7 @@ test("GM assigns checks and an owner records check result", async () => {
   }
 });
 
-test("GM assigns structured target actions and keeps only five per request", async () => {
+test("GM assigns structured target actions without capping complex requests at five", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
   const harness = createHarness({
     members: [actorA],
@@ -856,7 +856,7 @@ test("GM assigns structured target actions and keeps only five per request", asy
       { id: "six", label: "Six" }
     ]);
 
-    assert.equal(assigned.checks.length, 5);
+    assert.equal(assigned.checks.length, 6);
     assert.equal(assigned.checks[0].actionType, "choice");
     assert.equal(assigned.checks[0].sourceType, "skill");
     assert.equal(assigned.checks[0].target, "prc");
@@ -865,6 +865,7 @@ test("GM assigns structured target actions and keeps only five per request", asy
     assert.deepEqual(assigned.checks[0].choices.map((choice) => choice.label), ["МДР (Восприятие)", "МДР (Проницательность)"]);
     assert.equal(assigned.checks[0].checkEffect.template, "project-progress");
     assert.equal(assigned.checks[0].downtimeEffect.template, "group-event");
+    assert.deepEqual(assigned.checks.map((check) => check.id), ["trace", "two", "three", "four", "five", "six"]);
   }
   finally {
     harness.restore();

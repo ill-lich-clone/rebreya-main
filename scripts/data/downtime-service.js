@@ -3,7 +3,7 @@ import { DOWNTIME_COMPENDIUM_NAME, DOWNTIME_ITEM_TYPE, MODULE_ID } from "../cons
 const OPEN_RESERVED_STATUSES = new Set(["pending", "approved"]);
 const RELEASED_STATUSES = new Set(["rejected", "returned"]);
 const REQUEST_STATUSES = new Set(["pending", "approved", "returned", "rejected", "completed"]);
-const MAX_TARGET_ACTIONS = 5;
+const MAX_TARGET_CHOICES = 5;
 const DOWNTIME_TEMPLATE_FLAG = "downtime";
 const DOWNTIME_COMPENDIUM_PACK_ID = `world.${DOWNTIME_COMPENDIUM_NAME}`;
 const ROLLABLE_DOWNTIME_ACTION_TYPES = new Set(["check", "choice"]);
@@ -108,7 +108,7 @@ function normalizeCheck(value = {}) {
 
   if (Array.isArray(source.choices)) {
     normalized.choices = source.choices
-      .slice(0, MAX_TARGET_ACTIONS)
+      .slice(0, MAX_TARGET_CHOICES)
       .map((choice) => ({
         ...clone(asObject(choice)),
         sourceType: cleanString(choice?.sourceType),
@@ -483,7 +483,6 @@ function getDowntimeTemplateConfig(item) {
 
 function normalizeTemplateTargetActions(value = []) {
   return asArray(value)
-    .slice(0, MAX_TARGET_ACTIONS)
     .map((action, index) => {
       const source = asObject(action);
       return {
@@ -638,7 +637,7 @@ function normalizeRequest(value = {}) {
     description: cleanString(value.description),
     weeks: Math.max(1, toWeeks(value.weeks, 1)),
     status,
-    checks: asArray(value.checks).slice(0, MAX_TARGET_ACTIONS).map((check) => normalizeCheck(check)),
+    checks: asArray(value.checks).map((check) => normalizeCheck(check)),
     result: cleanString(value.result),
     createdAt: Number(value.createdAt) || 0,
     updatedAt: Number(value.updatedAt) || 0,
@@ -986,7 +985,7 @@ export class DowntimeService {
         description: cleanString(description),
         weeks: safeWeeks,
         status: "pending",
-        checks: asArray(action.targetActions).slice(0, MAX_TARGET_ACTIONS).map((targetAction, index) => {
+        checks: asArray(action.targetActions).map((targetAction, index) => {
           const selectedTargetAction = applyTargetActionSelection(targetAction, actionSelections);
           return normalizeCheck({
             id: cleanId(selectedTargetAction?.id) || `check-${index + 1}`,
@@ -1049,7 +1048,7 @@ export class DowntimeService {
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
       this.#assertRequestIsMutable(request);
-      request.checks = asArray(checks).slice(0, MAX_TARGET_ACTIONS).map((check, index) => {
+      request.checks = asArray(checks).map((check, index) => {
         const normalized = normalizeCheck({
           id: cleanId(check?.id) || `check-${index + 1}`,
           ...asObject(check)

@@ -528,7 +528,7 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
     assert.equal(context.downtime.requests[0].targetActions[0].checkEffectLabel, "После успеха: Rebreya Main / Записать прогресс");
     assert.equal(context.downtime.requests[0].targetActions[0].downtimeEffectLabel, "При завершении заявки: Rebreya Main / Изменить событие группы");
     assert.equal(context.downtime.requests[0].targetActionCount, 1);
-    assert.equal(context.downtime.requests[0].targetActionLimitReached, false);
+    assert.equal(context.downtime.requests[0].targetActionLimitReached, undefined);
     assert.deepEqual(context.downtime.archiveRequests.map((request) => request.id), ["downtime-2"]);
     assert.equal(context.downtime.archiveCount, 1);
     assert.equal(context.downtime.showArchive, false);
@@ -601,22 +601,223 @@ test("InventoryApp downtime controls do not define duplicate tooltip attributes"
   assert.deepEqual(duplicateTooltipTags, []);
 });
 
-test("InventoryApp downtime inspector renders copied template description html before summary fallback", async () => {
+test("InventoryApp downtime queue opens request details instead of rendering a fixed inspector column", async () => {
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
-  const descriptionBranchIndex = template.indexOf("{{#if downtime.selectedRequest.hasTemplateDescriptionHtml}}");
-  const descriptionValueIndex = template.indexOf("{{{downtime.selectedRequest.templateDescriptionHtml}}}");
-  const summaryFallbackIndex = template.indexOf("{{else if downtime.selectedRequest.hasTemplateSummary}}");
-  const escapedSummaryIndex = template.indexOf("{{downtime.selectedRequest.templateSummary}}");
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
-  assert.ok(descriptionBranchIndex > 0);
-  assert.ok(descriptionValueIndex > descriptionBranchIndex);
-  assert.ok(summaryFallbackIndex > descriptionValueIndex);
-  assert.ok(escapedSummaryIndex > summaryFallbackIndex);
+  assert.match(template, /data-action="downtime-open-request"/u);
+  assert.match(template, /rm-downtime-request__description[\s\S]*\{\{description\}\}/u);
+  assert.match(template, /rm-downtime-request__description[\s\S]*\{\{templateSummary\}\}/u);
+  assert.doesNotMatch(template, /rm-downtime-column--inspector/u);
+  assert.doesNotMatch(template, /targetActionLimitReached/u);
+  assert.match(css, /\.rm-downtime-layout\s*\{[\s\S]*grid-template-columns:\s*minmax\(210px,\s*250px\)\s*minmax\(520px,\s*1fr\)/u);
 });
 
-test("InventoryApp selects downtime requests from the whole request card", async () => {
+test("InventoryApp opens a full downtime request card dialog from the queue", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      this.closed = false;
+      Dialog.instances.push(this);
+    }
+
+    close() {
+      this.closed = true;
+      this.config.close?.();
+    }
+
+    render() {}
+  };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?request-card=${Date.now()}`);
+    const requestCard = createFakeControl({
+      dataset: {
+        action: "downtime-open-request",
+        requestId: "downtime-1"
+      }
+    });
+    const root = createFakeElement();
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => selector === "[data-action='downtime-open-request']" ? [requestCard] : [];
+    const app = new InventoryApp(createModuleApi({
+      downtimeSnapshot: {
+        canManage: true,
+        canSubmit: false,
+        members: [],
+        actionCatalog: [],
+        requests: [{
+          id: "downtime-1",
+          actorId: "actor-a",
+          actorName: "Asha",
+          actionId: "research",
+          actionLabel: "Research",
+          title: "Ancient map",
+          description: "Find a route.",
+          templateDescriptionHtml: "<h2>Research</h2><h3>Resources</h3><p>Full resources.</p>",
+          weeks: 1,
+          status: "pending",
+          checks: [{
+            id: "check-1",
+            label: "Arcana",
+            actionType: "check",
+            sourceType: "skill",
+            ability: "int",
+            targetLabel: "Arcana",
+            outcomeMode: "dc",
+            dc: 15
+          }],
+          result: ""
+        }]
+      }
+    }));
+    app.element = root;
+
+    await app._onRender({}, {});
+    const openPromise = dispatchClick(requestCard);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const dialog = globalThis.Dialog.instances.at(-1);
+    assert.ok(dialog);
+    assert.equal(dialog.options?.classes?.includes("rm-downtime-request-window"), true);
+    assert.equal(dialog.config.content.includes("Find a route."), true);
+    assert.equal(dialog.config.content.includes("<h2>Research</h2>"), true);
+    assert.equal(dialog.config.content.includes("Arcana"), true);
+    assert.equal(dialog.config.content.includes("data-action=\"downtime-target-action\""), true);
+    dialog.close();
+    await openPromise;
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp opens recorded target actions in a read-only details dialog", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousUi = globalThis.ui;
+  globalThis.ui = {
+    notifications: {
+      error() {},
+      info() {}
+    }
+  };
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      this.closed = false;
+      Dialog.instances.push(this);
+    }
+
+    close() {
+      this.closed = true;
+      this.config.close?.();
+    }
+
+    render() {}
+  };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?readonly-target=${Date.now()}`);
+    const targetButton = createFakeControl({
+      dataset: {
+        action: "downtime-target-action",
+        requestId: "downtime-1",
+        checkId: "check-1"
+      }
+    });
+    const root = createFakeElement();
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => selector === "[data-action='downtime-target-action']" ? [targetButton] : [];
+    const app = new InventoryApp(createModuleApi({
+      downtimeSnapshot: {
+        canManage: true,
+        canSubmit: false,
+        members: [],
+        actionCatalog: [],
+        requests: [{
+          id: "downtime-1",
+          actorId: "actor-a",
+          actorName: "Asha",
+          actionId: "research",
+          actionLabel: "Research",
+          title: "Ancient map",
+          weeks: 1,
+          status: "approved",
+          checks: [{
+            id: "check-1",
+            label: "Arcana",
+            actionType: "check",
+            sourceType: "skill",
+            ability: "int",
+            targetLabel: "Arcana",
+            outcomeMode: "dc",
+            dc: 15,
+            result: {
+              total: 19,
+              success: true
+            }
+          }],
+          result: ""
+        }]
+      }
+    }));
+    app.element = root;
+
+    await app._onRender({}, {});
+    const targetPromise = dispatchClick(targetButton);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const dialog = globalThis.Dialog.instances.at(-1);
+    assert.ok(dialog);
+    assert.equal(dialog.config.content.includes("data-readonly=\"true\""), true);
+    assert.equal(dialog.config.content.includes("Arcana"), true);
+    assert.equal(dialog.config.content.includes("19"), true);
+    assert.equal(dialog.config.content.includes("data-action=\"target-action-save\""), false);
+    dialog.close();
+    await targetPromise;
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp opens downtime requests from the whole request card", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      this.closed = false;
+      Dialog.instances.push(this);
+    }
+
+    close() {
+      this.closed = true;
+      this.config.close?.();
+    }
+
+    render() {}
+  };
   const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
   const app = new InventoryApp(createModuleApi({
     downtimeSnapshot: {
@@ -635,29 +836,30 @@ test("InventoryApp selects downtime requests from the whole request card", async
       actionCatalog: []
     }
   }));
-  const calls = [];
-  app.render = (options) => {
-    calls.push(["render", options]);
-  };
   const requestCard = createFakeControl({
     dataset: {
-      action: "downtime-select-request",
+      action: "downtime-open-request",
       requestId: "downtime-2"
     }
   });
   const root = createFakeElement();
   root.querySelector = () => null;
-  root.querySelectorAll = (selector) => selector === "[data-action='downtime-select-request']" ? [requestCard] : [];
+  root.querySelectorAll = (selector) => selector === "[data-action='downtime-open-request']" ? [requestCard] : [];
   app.element = root;
 
   try {
     await app._onRender({}, {});
-    await dispatchClick(requestCard);
+    const openPromise = dispatchClick(requestCard);
+    await new Promise((resolve) => setImmediate(resolve));
 
     assert.equal(app.downtimeSelectedRequestId, "downtime-2");
-    assert.deepEqual(calls, [["render", { force: true }]]);
+    const dialog = globalThis.Dialog.instances.at(-1);
+    assert.equal(dialog?.options?.classes?.includes("rm-downtime-request-window"), true);
+    dialog.close();
+    await openPromise;
   }
   finally {
+    globalThis.Dialog = previousDialog;
     dom.restore();
     restoreFoundry();
   }

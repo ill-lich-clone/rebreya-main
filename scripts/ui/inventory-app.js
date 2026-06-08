@@ -36,7 +36,7 @@ const DOWNTIME_STATUS_META = Object.freeze({
 const DOWNTIME_ARCHIVE_STATUSES = new Set(["completed", "rejected"]);
 const DOWNTIME_PAGE_SIZE = 5;
 
-const MAX_DOWNTIME_TARGET_ACTIONS = 5;
+const MAX_DOWNTIME_TARGET_CHOICES = 5;
 const MAX_DOWNTIME_THRESHOLDS = 5;
 const MAX_DOWNTIME_RESOURCE_PURCHASES = 3;
 const DOWNTIME_TARGET_DIALOG_DIMENSIONS = Object.freeze({
@@ -252,6 +252,10 @@ function cleanText(value) {
   return String(value ?? "").trim();
 }
 
+function escapeHtml(value) {
+  return foundry.utils.escapeHTML(cleanText(value));
+}
+
 function getOptionLabel(options, value, fallback = "") {
   const safeValue = cleanText(value);
   if (!safeValue) {
@@ -461,7 +465,7 @@ function readFieldValue(root, fieldName) {
 
 function buildNextTargetActionId(actions = []) {
   const usedIds = new Set(actions.map((action) => cleanText(action?.id)).filter(Boolean));
-  for (let index = 1; index <= MAX_DOWNTIME_TARGET_ACTIONS; index += 1) {
+  for (let index = 1; index <= MAX_DOWNTIME_TARGET_CHOICES; index += 1) {
     const candidate = `check-${index}`;
     if (!usedIds.has(candidate)) {
       return candidate;
@@ -517,7 +521,7 @@ function buildDowntimeTargetChoices(action = {}, actor = null) {
     ? action.choices.map((choice) => normalizeDowntimeTargetChoice(choice, fallback, actor))
     : [fallback];
 
-  return choices.slice(0, MAX_DOWNTIME_TARGET_ACTIONS);
+  return choices.slice(0, MAX_DOWNTIME_TARGET_CHOICES);
 }
 
 function buildDowntimeTargetChoiceSummary(choice = {}) {
@@ -1011,6 +1015,11 @@ function buildDowntimeCheckResultLabel(result) {
   return parts.join(", ");
 }
 
+function hasDowntimeTargetActionResult(action = {}) {
+  const result = action?.result;
+  return Boolean(result && typeof result === "object" && Object.keys(result).length);
+}
+
 function buildDowntimeTemplateView(action = null) {
   if (!action) {
     return null;
@@ -1116,8 +1125,6 @@ function mapDowntimeRequest(request, actionCatalogById = new Map()) {
     checkActions,
     resultActions,
     targetActionCount: checks.length,
-    targetActionLimit: MAX_DOWNTIME_TARGET_ACTIONS,
-    targetActionLimitReached: checks.length >= MAX_DOWNTIME_TARGET_ACTIONS,
     hasChecks: checks.length > 0,
     hasTargetActions: checks.length > 0,
     hasResources: resourceActions.length > 0,
@@ -1130,6 +1137,123 @@ function mapDowntimeRequest(request, actionCatalogById = new Map()) {
     canReject: status === "pending" || status === "approved" || status === "returned",
     canComplete: status === "approved"
   };
+}
+
+function buildDowntimeRequestDetailTargetActions(request = {}, { canManage = false } = {}) {
+  const targetActions = Array.isArray(request.targetActions) ? request.targetActions : [];
+  if (!targetActions.length) {
+    return `<p class="rm-downtime-inspector__empty">Целевые действия пока не назначены.</p>`;
+  }
+
+  return `
+    <ul class="rm-downtime-target-action-list">
+      ${targetActions.map((action) => {
+        const hasResult = Boolean(action.hasResult || hasDowntimeTargetActionResult(action));
+        const canEdit = Boolean(canManage && !hasResult && !request.isArchived);
+        const actionButton = canManage
+          ? `
+            <button
+              type="button"
+              class="rm-icon-button"
+              data-action="downtime-target-action"
+              data-request-id="${escapeHtml(request.id)}"
+              data-check-id="${escapeHtml(action.id)}"
+              data-tooltip="${canEdit ? "Редактировать целевое действие" : "Просмотреть целевое действие"}"
+            >
+              <i class="fa-solid ${canEdit ? "fa-pen" : "fa-eye"}"></i>
+            </button>
+          `
+          : "";
+        const removeButton = canEdit
+          ? `
+            <button
+              type="button"
+              class="rm-icon-button rm-icon-button--danger"
+              data-action="downtime-remove-target-action"
+              data-request-id="${escapeHtml(request.id)}"
+              data-check-id="${escapeHtml(action.id)}"
+              data-tooltip="Удалить целевое действие"
+            >
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          `
+          : "";
+        const choices = action.hasChoices
+          ? `<p class="rm-downtime-target-action__meta">Выбор игрока: ${action.choices.map((choice) => escapeHtml(choice.label)).join(" / ")}</p>`
+          : "";
+        const result = hasResult
+          ? `<span class="rm-badge rm-status-badge rm-status-badge--good">${escapeHtml(action.resultLabel || buildDowntimeCheckResultLabel(action.result))}</span>`
+          : "";
+        const effects = [
+          action.hasCheckEffect ? `<p class="rm-downtime-target-action__meta">Эффект проверки: ${escapeHtml(action.checkEffectLabel)}</p>` : "",
+          action.hasDowntimeEffect ? `<p class="rm-downtime-target-action__meta">Эффект простоя: ${escapeHtml(action.downtimeEffectLabel)}</p>` : ""
+        ].filter(Boolean).join("");
+
+        return `
+          <li class="rm-downtime-target-action">
+            <div class="rm-downtime-target-action__main">
+              <div class="rm-downtime-target-action__title">
+                <strong>${escapeHtml(action.label)}</strong>
+                <span class="rm-badge rm-status-badge rm-status-badge--info">${escapeHtml(action.outcomeSummary)}</span>
+              </div>
+              <p class="rm-muted">${escapeHtml(action.sourceTypeLabel)}${action.abilityLabel ? ` • ${escapeHtml(action.abilityLabel)}` : ""}${action.targetLabel ? ` (${escapeHtml(action.targetLabel)})` : ""}</p>
+              ${result}
+              ${choices}
+              ${effects}
+            </div>
+            ${canManage ? `<div class="rm-downtime-target-action__actions">${actionButton}${removeButton}</div>` : ""}
+          </li>
+        `;
+      }).join("")}
+    </ul>
+  `;
+}
+
+function buildDowntimeRequestDialogContent(request = {}, { canManage = false } = {}) {
+  const requestDescription = cleanText(request.description)
+    ? `<p class="rm-downtime-request-dialog__text">${escapeHtml(request.description)}</p>`
+    : "";
+  const templateDescription = request.hasTemplateDescriptionHtml
+    ? `<div class="rm-downtime-inspector__template-description">${request.templateDescriptionHtml}</div>`
+    : (request.hasTemplateSummary ? `<p class="rm-downtime-request-dialog__text">${escapeHtml(request.templateSummary)}</p>` : "");
+  const result = request.hasResult
+    ? `<p class="rm-inline-status rm-inline-status--info"><span>${escapeHtml(request.result)}</span></p>`
+    : "";
+  const requirements = request.hasTemplateRequirements
+    ? request.templateRequirements.map((entry) =>
+      `<span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Требование простоя">${escapeHtml(entry)}</span>`
+    ).join("")
+    : "";
+  const meta = [
+    request.hasTemplateRank ? `<span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Ранг простоя">${escapeHtml(request.templateRank)}</span>` : "",
+    request.hasTemplateDuration ? `<span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Базовая длительность">${escapeHtml(request.templateDuration)}</span>` : "",
+    requirements
+  ].filter(Boolean).join("");
+
+  return `
+    <section class="rm-downtime-request-dialog" data-request-id="${escapeHtml(request.id)}">
+      <header class="rm-downtime-request-dialog__header">
+        <div>
+          <p class="rm-eyebrow">${escapeHtml(request.actorName)} • ${escapeHtml(request.actionLabel)} • ${escapeHtml(request.weeks)} нед.</p>
+          <h3>${escapeHtml(request.displayTitle)}</h3>
+        </div>
+        <span class="rm-badge rm-status-badge ${escapeHtml(request.statusClass)}">${escapeHtml(request.statusLabel)}</span>
+      </header>
+
+      ${requestDescription}
+      ${result}
+      ${meta ? `<div class="rm-status-strip rm-downtime-template-meta">${meta}</div>` : ""}
+      ${templateDescription}
+
+      <section class="rm-downtime-target-actions">
+        <header class="rm-downtime-target-actions__header">
+          <h4>Целевые действия</h4>
+          <span class="rm-badge rm-status-badge rm-status-badge--info">${escapeHtml(request.targetActionCount)}</span>
+        </header>
+        ${buildDowntimeRequestDetailTargetActions(request, { canManage })}
+      </section>
+    </section>
+  `;
 }
 
 function shouldPromptDowntimeResult(status) {
@@ -2337,13 +2461,85 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return (snapshot?.requests ?? []).find((request) => cleanText(request?.id) === requestId) ?? null;
   }
 
-  #buildDowntimeTargetActionDialogContent(action = {}, actor = null) {
+  async #getDowntimeRequestViewById(requestId) {
+    const snapshot = await this.moduleApi.getDowntimeSnapshot();
+    const actionCatalog = snapshot?.actionCatalog ?? [];
+    const actionCatalogById = new Map(actionCatalog.flatMap((action) => {
+      const ids = [
+        cleanText(action.id),
+        cleanText(action.templateUuid),
+        cleanText(action.templateItemId)
+      ].filter(Boolean);
+      return ids.map((id) => [id, action]);
+    }));
+    const request = (snapshot?.requests ?? []).find((entry) => cleanText(entry?.id) === requestId) ?? null;
+    return request
+      ? {
+        ...mapDowntimeRequest(request, actionCatalogById),
+        canManage: Boolean(snapshot?.canManage)
+      }
+      : null;
+  }
+
+  async #promptDowntimeRequestDetails(request = null) {
+    const DialogClass = globalThis.Dialog;
+    if (!request || typeof DialogClass !== "function") {
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      const dialog = new DialogClass({
+        title: request.displayTitle || "Заявка простоя",
+        content: buildDowntimeRequestDialogContent(request, { canManage: Boolean(request.canManage ?? this.canManage) }),
+        buttons: {},
+        render: (html) => {
+          const root = getDialogRoot(html);
+          root?.querySelectorAll?.("[data-action='downtime-target-action']").forEach((button) => {
+            button.addEventListener("click", async (event) => {
+              event.preventDefault?.();
+              event.stopPropagation?.();
+              try {
+                await this.#handleDowntimeTargetAction(event.currentTarget);
+              }
+              catch (error) {
+                console.error(`${MODULE_ID} | Failed to open downtime target action.`, error);
+                ui.notifications?.error(error.message || "Не удалось открыть целевое действие простоя.");
+              }
+            });
+          });
+          root?.querySelectorAll?.("[data-action='downtime-remove-target-action']").forEach((button) => {
+            button.addEventListener("click", async (event) => {
+              event.preventDefault?.();
+              event.stopPropagation?.();
+              try {
+                await this.#handleDowntimeRemoveTargetAction(event.currentTarget);
+                dialog.close?.();
+              }
+              catch (error) {
+                console.error(`${MODULE_ID} | Failed to remove downtime target action.`, error);
+                ui.notifications?.error(error.message || "Не удалось удалить целевое действие простоя.");
+              }
+            });
+          });
+        },
+        close: () => resolve(null)
+      }, {
+        classes: ["rebreya-main", "rebreya-trader-dialog", "rm-downtime-request-window"],
+        width: 940,
+        height: 760
+      });
+
+      dialog.render(true);
+    });
+  }
+
+  #buildDowntimeTargetActionDialogContent(action = {}, actor = null, { readOnly = false } = {}) {
     const safeDc = foundry.utils.escapeHTML(cleanText(action.dc));
     const choices = buildDowntimeTargetChoices(action, actor);
     const visibleChoiceCount = Math.max(1, choices.length);
     const selectedActionType = getSelectableDowntimeActionType(action.actionType);
     const isResourceAction = selectedActionType === "resources";
-    const choiceRows = Array.from({ length: MAX_DOWNTIME_TARGET_ACTIONS }, (_entry, index) =>
+    const choiceRows = Array.from({ length: MAX_DOWNTIME_TARGET_CHOICES }, (_entry, index) =>
       buildDowntimeTargetChoiceRow(choices[index] ?? {}, index, { visible: index < visibleChoiceCount, actor }));
     const checkEffect = action.checkEffect && typeof action.checkEffect === "object" ? action.checkEffect : {};
     const downtimeEffect = action.downtimeEffect && typeof action.downtimeEffect === "object" ? action.downtimeEffect : {};
@@ -2353,9 +2549,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const showThresholds = outcomeMode === "thresholds";
     const checkEffectActive = cleanText(checkEffect.trigger) && checkEffect.trigger !== "none";
     const downtimeEffectActive = cleanText(downtimeEffect.trigger) && downtimeEffect.trigger !== "none";
+    const readOnlyResult = readOnly && hasDowntimeTargetActionResult(action)
+      ? `<p class="rm-inline-status rm-inline-status--info"><span>Результат: ${escapeHtml(buildDowntimeCheckResultLabel(action.result))}</span></p>`
+      : "";
 
     return `
-      <form class="rm-purchase-dialog rm-downtime-target-action-dialog">
+      <form class="rm-purchase-dialog rm-downtime-target-action-dialog" data-readonly="${readOnly ? "true" : "false"}">
+        ${readOnlyResult}
         <nav class="rm-downtime-target-dialog__steps" aria-label="Этапы настройки целевого действия" role="tablist">
           <button type="button" class="is-active" data-action="target-action-step" data-step="basis" title="Тип задачи и общий сценарий." aria-selected="true">1. Основа</button>
           <button type="button" data-action="target-action-step" data-step="variants" title="Один основной вариант и, при необходимости, альтернативы для игрока." aria-selected="false">2. Варианты</button>
@@ -2389,7 +2589,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
               class="rm-button rm-downtime-add-alternative"
               data-action="target-action-add-alternative"
               title="Добавляет ещё один структурный вариант, который игрок сможет выбрать вместо основного."
-              ${visibleChoiceCount >= MAX_DOWNTIME_TARGET_ACTIONS ? "disabled" : ""}
+              ${visibleChoiceCount >= MAX_DOWNTIME_TARGET_CHOICES ? "disabled" : ""}
             >
               + Добавить альтернативу
             </button>
@@ -2480,14 +2680,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             data-action="target-action-next"
             title="Перейти к следующему шагу без сохранения."
           >Далее</button>
-          <button
-            type="button"
-            class="rm-button rm-button--primary"
-            data-action="target-action-save"
-            title="Сохранить целевое действие."
-            hidden
-            disabled
-          >Сохранить</button>
+          ${readOnly ? "" : `
+            <button
+              type="button"
+              class="rm-button rm-button--primary"
+              data-action="target-action-save"
+              title="Сохранить целевое действие."
+              hidden
+              disabled
+            >Сохранить</button>
+          `}
           <button
             type="button"
             class="rm-button rm-button--secondary"
@@ -2556,7 +2758,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return action;
   }
 
-  #wireDowntimeTargetActionDialog(root, { onSave, onCancel, actor = null, dialog = null } = {}) {
+  #wireDowntimeTargetActionDialog(root, { onSave, onCancel, actor = null, dialog = null, readOnly = false } = {}) {
     const rows = Array.from(root?.querySelectorAll?.("[data-target-choice]") ?? []);
     const addButton = root?.querySelector?.("[data-action='target-action-add-alternative']");
     const choiceHeading = root?.querySelector?.("[data-target-choice-heading]");
@@ -2626,17 +2828,17 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         choiceHeading.textContent = buildDowntimeTargetChoiceHeading(Math.max(1, visibleRows.length));
       }
       if (addButton) {
-        addButton.disabled = visibleRows.length >= Math.min(rows.length, MAX_DOWNTIME_TARGET_ACTIONS);
+        addButton.disabled = readOnly || visibleRows.length >= Math.min(rows.length, MAX_DOWNTIME_TARGET_CHOICES);
       }
       rows.forEach((row) => {
         const hidden = row.hidden === true;
         const editButton = row?.querySelector?.("[data-action='target-choice-edit']");
         const removeButton = row?.querySelector?.("[data-action='target-choice-remove']");
         if (editButton) {
-          editButton.disabled = hidden;
+          editButton.disabled = readOnly || hidden;
         }
         if (removeButton) {
-          removeButton.disabled = hidden || visibleRows.length <= 1;
+          removeButton.disabled = readOnly || hidden || visibleRows.length <= 1;
         }
       });
     };
@@ -2659,7 +2861,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     actionTypeSelect?.addEventListener?.("change", updateActionTypePanels);
     updateActionTypePanels();
 
-    if (addButton && rows.length) {
+    if (!readOnly && addButton && rows.length) {
       addButton.addEventListener?.("click", (event) => {
         event.preventDefault();
         event.stopPropagation?.();
@@ -2674,7 +2876,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
     }
 
-    if (addPurchaseButton && purchaseRows.length) {
+    if (!readOnly && addPurchaseButton && purchaseRows.length) {
       const updatePurchaseButtonState = () => {
         addPurchaseButton.disabled = !purchaseRows.some((row) => row.hidden === true);
       };
@@ -2763,10 +2965,15 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const sourceField = row?.querySelector?.("[data-field='target-choice-source-type']");
       const editButton = row?.querySelector?.("[data-action='target-choice-edit']");
       const removeButton = row?.querySelector?.("[data-action='target-choice-remove']");
-      sourceField?.addEventListener?.("change", () => renderChoiceFields(row));
+      if (!readOnly) {
+        sourceField?.addEventListener?.("change", () => renderChoiceFields(row));
+      }
       editButton?.addEventListener?.("click", (event) => {
         event.preventDefault();
         event.stopPropagation?.();
+        if (readOnly) {
+          return;
+        }
         if (row.hidden !== true) {
           row.open = true;
         }
@@ -2774,6 +2981,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       removeButton?.addEventListener?.("click", (event) => {
         event.preventDefault();
         event.stopPropagation?.();
+        if (readOnly) {
+          return;
+        }
         if (row.hidden === true || getVisibleChoiceRows().length <= 1) {
           updateChoiceListState();
           return;
@@ -2787,6 +2997,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
     if (rows.length) {
       updateChoiceListState();
+    }
+    if (readOnly) {
+      root?.querySelectorAll?.("input, select, textarea").forEach((control) => {
+        control.disabled = true;
+      });
     }
   }
 
@@ -2849,7 +3064,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
-  async #promptDowntimeTargetAction(existingAction = {}, existingActions = [], actor = null) {
+  async #promptDowntimeTargetAction(existingAction = {}, existingActions = [], actor = null, { readOnly = false } = {}) {
     const DialogClass = globalThis.Dialog;
     if (typeof DialogClass !== "function") {
       return null;
@@ -2858,15 +3073,22 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return new Promise((resolve) => {
       let settled = false;
       const dialog = new DialogClass({
-        title: "Целевое действие",
-        content: this.#buildDowntimeTargetActionDialogContent(existingAction, actor),
+        title: readOnly ? "Просмотр целевого действия" : "Целевое действие",
+        content: this.#buildDowntimeTargetActionDialogContent(existingAction, actor, { readOnly }),
         buttons: {},
         render: (html) => {
           const root = getDialogRoot(html);
           this.#wireDowntimeTargetActionDialog(root, {
             actor,
             dialog,
+            readOnly,
             onSave: (dialogRoot) => {
+              if (readOnly) {
+                settled = true;
+                resolve(null);
+                dialog.close?.();
+                return;
+              }
               settled = true;
               resolve(this.#readDowntimeTargetActionDialog(dialogRoot, existingAction, existingActions, actor));
               dialog.close?.();
@@ -2952,6 +3174,24 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     ui.notifications?.info("История простоя очищена.");
   }
 
+  async #handleDowntimeOpenRequest(button) {
+    const requestId = cleanText(button?.dataset?.requestId);
+    if (!requestId) {
+      return;
+    }
+
+    const request = await this.#getDowntimeRequestViewById(requestId);
+    if (!request) {
+      throw new Error("Downtime request not found.");
+    }
+
+    this.downtimeSelectedRequestId = requestId;
+    await this.#promptDowntimeRequestDetails({
+      ...request,
+      canManage: this.canManage || Boolean(request.canManage)
+    });
+  }
+
   async #handleDowntimeSubmit(element) {
     this.downtimeRequestActorId = cleanText(element.querySelector("[data-action='downtime-request-actor']")?.value);
     this.downtimeRequestActionId = cleanText(element.querySelector("[data-action='downtime-request-action']")?.value);
@@ -3012,12 +3252,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const existingActions = Array.isArray(request.checks) ? request.checks : [];
     const checkId = cleanText(button.dataset.checkId);
     const existingAction = existingActions.find((action) => cleanText(action?.id) === checkId) ?? null;
-    if (!existingAction && existingActions.length >= MAX_DOWNTIME_TARGET_ACTIONS) {
-      throw new Error(`Можно назначить не больше ${MAX_DOWNTIME_TARGET_ACTIONS} целевых действий.`);
-    }
 
     const actor = getGameActorById(request.actorId);
-    const nextAction = await this.#promptDowntimeTargetAction(existingAction ?? {}, existingActions, actor);
+    const readOnly = Boolean(existingAction && hasDowntimeTargetActionResult(existingAction))
+      || DOWNTIME_ARCHIVE_STATUSES.has(cleanText(request.status));
+    const nextAction = await this.#promptDowntimeTargetAction(existingAction ?? {}, existingActions, actor, { readOnly });
     if (!nextAction) {
       return;
     }
@@ -3186,24 +3425,34 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelectorAll("[data-action='downtime-select-request']").forEach((button) => {
-      button.addEventListener("click", (event) => {
+    element.querySelectorAll("[data-action='downtime-open-request']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
         const interactiveTarget = event.target?.closest?.("button, a, input, select, textarea, summary");
         if (interactiveTarget && interactiveTarget !== event.currentTarget) {
           return;
         }
 
-        this.downtimeSelectedRequestId = cleanText(event.currentTarget?.dataset?.requestId);
-        this.render({ force: true });
+        try {
+          await this.#handleDowntimeOpenRequest(event.currentTarget);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to open downtime request.`, error);
+          ui.notifications?.error(error.message || "Не удалось открыть заявку простоя.");
+        }
       }, listenerOptions);
-      button.addEventListener("keydown", (event) => {
+      button.addEventListener("keydown", async (event) => {
         if (!["Enter", " "].includes(event.key)) {
           return;
         }
 
         event.preventDefault?.();
-        this.downtimeSelectedRequestId = cleanText(event.currentTarget?.dataset?.requestId);
-        this.render({ force: true });
+        try {
+          await this.#handleDowntimeOpenRequest(event.currentTarget);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to open downtime request.`, error);
+          ui.notifications?.error(error.message || "Не удалось открыть заявку простоя.");
+        }
       }, listenerOptions);
     });
 
