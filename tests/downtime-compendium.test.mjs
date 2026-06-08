@@ -79,6 +79,39 @@ function htmlToPlainText(value = "") {
     .trim();
 }
 
+const DOWNTIME_TABLE_EXPECTATIONS = [
+  {
+    activityId: "craft",
+    captions: ["Экстренная работа"],
+    brokenPattern: /Экстренная работа<br>Дополнительные часы работы<br>Монет в день/u
+  },
+  {
+    activityId: "profession-work",
+    captions: ["Модификаторы работы", "Таблица работы"],
+    brokenPattern: /Модификаторы работы<br>Модификатор<br>Бонус к броску|Таблица работы<br>Уровень<br>Провал/u
+  },
+  {
+    activityId: "research",
+    captions: ["Стоимость Исследования", "Результаты исследования"],
+    brokenPattern: /Стоимость Исследования<br>Ранг деятельности<br>Базовая сумму|Результаты исследования<br>Результат проверки<br>Итог/u
+  },
+  {
+    activityId: "gambling",
+    captions: ["Результаты игр"],
+    brokenPattern: /Результаты игр<br>Результат<br>Итог/u
+  },
+  {
+    activityId: "fighting-tournament",
+    captions: ["Результат турнира"],
+    brokenPattern: /Результат турнира<br>Результат<br>Итог/u
+  },
+  {
+    activityId: "laboratory-alchemy",
+    captions: ["Лабораторный способ"],
+    brokenPattern: /Лабораторный способ<br>Уровень зелия<br>Лабораторный способ<br>Золото/u
+  }
+];
+
 test("downtime activity data covers every base downtime heading from chapter 9", () => {
   const activities = normalizeDowntimeActivities(DOWNTIME_DATA.activities);
   const activityIds = activities.map((activity) => activity.id);
@@ -242,6 +275,32 @@ test("downtime item descriptions render V2 rules text in named blocks", () => {
   assert.match(description, /<h3>Ресурсы<\/h3><p>Ресурсы\. Чтобы заниматься Ремеслом/u);
   assert.match(description, /<h3>Определение последствий<\/h3><p>Определение результата\. За каждый день/u);
   assert.equal(itemData.flags[MODULE_ID].downtime.descriptionHtml, description);
+});
+
+test("downtime item descriptions render V2 tabular blocks as HTML tables", () => {
+  const expectedTableCount = DOWNTIME_TABLE_EXPECTATIONS
+    .reduce((total, expectation) => total + expectation.captions.length, 0);
+  let actualTableCount = 0;
+
+  for (const expectation of DOWNTIME_TABLE_EXPECTATIONS) {
+    const activity = normalizeDowntimeActivity(
+      DOWNTIME_DATA.activities.find((entry) => entry.id === expectation.activityId)
+    );
+    const itemData = createDowntimeItemData(activity, new Map());
+    const description = itemData.system.description.value;
+    actualTableCount += description.match(/<table\b/giu)?.length ?? 0;
+
+    assert.doesNotMatch(description, expectation.brokenPattern);
+    for (const caption of expectation.captions) {
+      assert.match(
+        description,
+        new RegExp(`<table\\b[\\s\\S]*?<caption>${caption}</caption>[\\s\\S]*?</table>`, "u"),
+        `${expectation.activityId} must render "${caption}" as an HTML table`
+      );
+    }
+  }
+
+  assert.equal(actualTableCount, expectedTableCount);
 });
 
 test("downtime item descriptions are copied directly from activity data", () => {
