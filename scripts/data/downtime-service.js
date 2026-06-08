@@ -516,6 +516,8 @@ function buildDowntimeTemplateActionFromItem(item) {
   }
 
   const config = getDowntimeTemplateConfig(item);
+  const descriptionHtml = cleanString(config.descriptionHtml)
+    || cleanString(getObjectPath(item, "system.description.value"));
   return {
     id: templateUuid,
     label: cleanString(item.name) || "Простой",
@@ -525,6 +527,7 @@ function buildDowntimeTemplateActionFromItem(item) {
     rank: cleanString(config.rank),
     duration: cleanString(config.duration),
     summary: cleanString(config.summary),
+    descriptionHtml,
     requirements: normalizeStringList(config.requirements),
     defaultWeeks: toWeeks(config.defaultWeeks, 1),
     rankMode: cleanString(config.rankMode),

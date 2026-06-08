@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 function installSheetExtensionStubs() {
   const previousActor = globalThis.Actor;
@@ -230,6 +231,19 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime character sh
   }
 });
 
+test("character downtime template renders full description html before summary fallback", async () => {
+  const template = await readFile(new URL("../templates/character-downtime-tab.hbs", import.meta.url), "utf8");
+  const descriptionBranchIndex = template.indexOf("{{#if characterDowntime.selectedTemplate.hasDescriptionHtml}}");
+  const descriptionValueIndex = template.indexOf("{{{characterDowntime.selectedTemplate.descriptionHtml}}}");
+  const summaryFallbackIndex = template.indexOf("{{else if characterDowntime.selectedTemplate.hasSummary}}");
+  const escapedSummaryIndex = template.indexOf("{{characterDowntime.selectedTemplate.summary}}");
+
+  assert.ok(descriptionBranchIndex > 0);
+  assert.ok(descriptionValueIndex > descriptionBranchIndex);
+  assert.ok(summaryFallbackIndex > descriptionValueIndex);
+  assert.ok(escapedSummaryIndex > summaryFallbackIndex);
+});
+
 test("extendDnd5eItemTypes registers the Rebreya downtime item type", async () => {
   const stubs = installSheetExtensionStubs();
   const warningCalls = [];
@@ -335,6 +349,134 @@ test("selectDowntimeTemplateDocumentWithBrowser rejects non-downtime browser res
     const document = await selectDowntimeTemplateDocumentWithBrowser();
 
     assert.equal(document, null);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime library selection preserves full downtime description html", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-library-description=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const descriptionHtml = "<h2>Азартные игры</h2><h3>Нарративная заявка</h3><p>Полный текст заявки.</p><h3>Ресурсы</h3><p>Полный текст ресурсов.</p><h3>Определение последствий</h3><p>Полный текст последствий.</p>";
+    const actionInput = { value: "" };
+    const actionLabel = { textContent: "" };
+    const libraryButton = new stubs.HTMLElement({
+      dataset: {
+        action: "character-downtime-open-library"
+      }
+    });
+    const weeksInput = { value: "1" };
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": actionInput,
+        "[data-action='character-downtime-action-label']": actionLabel,
+        "[data-action='character-downtime-open-library']": libraryButton,
+        "[data-action='character-downtime-weeks']": weeksInput
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    globalThis.game.packs = {
+      get(packId) {
+        if (packId !== "world.rebreya-downtime") {
+          return null;
+        }
+        return {
+          collection: packId,
+          async getIndex() {
+            return [{
+              _id: "downtime-gambling",
+              name: "Азартные игры",
+              uuid: "Compendium.world.rebreya-downtime.Item.downtime-gambling",
+              flags: {
+                "rebreya-main": {
+                  downtime: {
+                    descriptionHtml
+                  }
+                }
+              },
+              system: {
+                description: {
+                  value: descriptionHtml
+                }
+              }
+            }];
+          }
+        };
+      }
+    };
+    globalThis.dnd5e = {
+      applications: {
+        CompendiumBrowser: {
+          MODES: {
+            ADVANCED: "advanced"
+          },
+          async selectOne() {
+            return "Compendium.world.rebreya-downtime.Item.downtime-gambling";
+          }
+        }
+      }
+    };
+    globalThis.fromUuid = async (uuid) => ({
+      uuid,
+      type: "rebreya-main.downtime",
+      name: "Азартные игры",
+      system: {
+        description: {
+          value: descriptionHtml
+        }
+      },
+      getFlag(scope, key) {
+        return scope === "rebreya-main" && key === "downtime"
+          ? { descriptionHtml }
+          : undefined;
+      }
+    });
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext(targetActor, formState) {
+          calls.push(["context", targetActor.id, formState]);
+          return { actorId: targetActor.id };
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of libraryButton.listeners.click) {
+      await listener({
+        preventDefault() {},
+        stopPropagation() {}
+      });
+    }
+
+    const sheet = new stubs.CharacterActorSheet(actor);
+    await sheet._preparePartContext("downtime", {}, {});
+
+    const contextCall = calls.find((call) => call[0] === "context");
+    assert.equal(actionInput.value, "Compendium.world.rebreya-downtime.Item.downtime-gambling");
+    assert.equal(actionLabel.textContent, "Азартные игры");
+    assert.equal(contextCall[2].selectedTemplate.descriptionHtml, descriptionHtml);
   }
   finally {
     stubs.restore();

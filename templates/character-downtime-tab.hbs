@@ -60,7 +60,11 @@
             {{/if}}
           </div>
 
-          {{#if characterDowntime.selectedTemplate.hasSummary}}
+          {{#if characterDowntime.selectedTemplate.hasDescriptionHtml}}
+            <div class="rm-character-downtime-template__description">
+              {{{characterDowntime.selectedTemplate.descriptionHtml}}}
+            </div>
+          {{else if characterDowntime.selectedTemplate.hasSummary}}
             <p class="rm-character-downtime-template__summary">{{characterDowntime.selectedTemplate.summary}}</p>
           {{/if}}
 

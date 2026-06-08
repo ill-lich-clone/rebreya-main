@@ -5126,6 +5126,49 @@ summary:focus-visible {
   line-height: 1.45;
 }
 
+.rm-character-downtime-template__description {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px 11px;
+  border: 1px solid var(--rm-sheet-line);
+  background: rgba(5, 5, 6, 0.28);
+  color: var(--rm-sheet-text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.rm-character-downtime-template__description h2,
+.rm-character-downtime-template__description h3,
+.rm-character-downtime-template__description p,
+.rm-character-downtime-template__description ul,
+.rm-character-downtime-template__description ol {
+  margin: 0 0 8px;
+}
+
+.rm-character-downtime-template__description h2 {
+  color: var(--rm-sheet-text);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.rm-character-downtime-template__description h3 {
+  color: var(--rm-sheet-gold);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.rm-character-downtime-template__description p:last-child,
+.rm-character-downtime-template__description ul:last-child,
+.rm-character-downtime-template__description ol:last-child {
+  margin-bottom: 0;
+}
+
+.rm-character-downtime-template__description ul,
+.rm-character-downtime-template__description ol {
+  padding-left: 18px;
+}
+
 .rm-character-downtime-rank-table {
   display: grid;
   grid-template-columns: repeat(3, max-content);

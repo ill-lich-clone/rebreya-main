@@ -1102,6 +1102,7 @@ test("getActionCatalog exposes Rebreya downtime template items from the active g
     config: {
       defaultWeeks: 2,
       rankMode: "required",
+      descriptionHtml: "<h2>Исследование по рангу</h2><h3>Нарративная заявка</h3><p>Полный текст заявки.</p><h3>Ресурсы</h3><p>Полный текст ресурсов.</p><h3>Определение последствий</h3><p>Полный текст последствий.</p>",
       rankTable: [{ rank: 4, baseTotal: 120, stepCost: 100 }],
       targetActions: [{
         id: "check-archive",
@@ -1130,6 +1131,7 @@ test("getActionCatalog exposes Rebreya downtime template items from the active g
       rank: "",
       duration: "",
       summary: "",
+      descriptionHtml: "<h2>Исследование по рангу</h2><h3>Нарративная заявка</h3><p>Полный текст заявки.</p><h3>Ресурсы</h3><p>Полный текст ресурсов.</p><h3>Определение последствий</h3><p>Полный текст последствий.</p>",
       requirements: [],
       defaultWeeks: 2,
       rankMode: "required",

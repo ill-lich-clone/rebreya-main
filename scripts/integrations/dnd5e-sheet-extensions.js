@@ -2709,6 +2709,8 @@ function normalizeDowntimeLibraryRecord(pack, row = {}) {
 
   const downtimeFlag = getIndexRowProperty(row, `flags.${MODULE_ID}.downtime`) ?? {};
   const targetActions = Array.isArray(downtimeFlag.targetActions) ? downtimeFlag.targetActions : [];
+  const descriptionHtml = cleanText(downtimeFlag.descriptionHtml)
+    || cleanText(getIndexRowProperty(row, "system.description.value"));
   return {
     uuid,
     name: cleanText(row.name) || "Простой",
@@ -2719,9 +2721,10 @@ function normalizeDowntimeLibraryRecord(pack, row = {}) {
     requirements: Array.isArray(downtimeFlag.requirements) ? downtimeFlag.requirements.map((entry) => cleanText(entry)).filter(Boolean) : [],
     rankTable: Array.isArray(downtimeFlag.rankTable) ? foundry.utils.deepClone(downtimeFlag.rankTable) : [],
     targetActions: foundry.utils.deepClone(targetActions),
+    descriptionHtml,
     summary: stripHtmlText(
       downtimeFlag.summary
-      || getIndexRowProperty(row, "system.description.value")
+      || descriptionHtml
       || ""
     ),
     targetActionCount: targetActions.length
@@ -2737,6 +2740,8 @@ function normalizeDowntimeLibraryDocument(document = {}) {
     ?? foundry.utils.getProperty?.(document, `flags.${MODULE_ID}.downtime`)
     ?? {};
   const targetActions = Array.isArray(downtimeFlag.targetActions) ? downtimeFlag.targetActions : [];
+  const descriptionHtml = cleanText(downtimeFlag.descriptionHtml)
+    || cleanText(foundry.utils.getProperty?.(document, "system.description.value"));
   return {
     uuid: cleanText(document.uuid),
     name: cleanText(document.name) || "Простой",
@@ -2747,9 +2752,10 @@ function normalizeDowntimeLibraryDocument(document = {}) {
     requirements: Array.isArray(downtimeFlag.requirements) ? downtimeFlag.requirements.map((entry) => cleanText(entry)).filter(Boolean) : [],
     rankTable: Array.isArray(downtimeFlag.rankTable) ? foundry.utils.deepClone(downtimeFlag.rankTable) : [],
     targetActions: foundry.utils.deepClone(targetActions),
+    descriptionHtml,
     summary: stripHtmlText(
       downtimeFlag.summary
-      || foundry.utils.getProperty?.(document, "system.description.value")
+      || descriptionHtml
       || ""
     ),
     targetActionCount: targetActions.length

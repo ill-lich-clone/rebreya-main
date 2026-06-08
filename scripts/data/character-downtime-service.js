@@ -49,6 +49,12 @@ function cleanText(value) {
   return String(value ?? "").trim();
 }
 
+function resolveTemplateDescriptionHtml(action = {}) {
+  return cleanText(action.descriptionHtml)
+    || cleanText(action.description?.value)
+    || cleanText(action.system?.description?.value);
+}
+
 function toInteger(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
   return Number.isFinite(numericValue) ? Math.max(0, Math.floor(numericValue)) : fallback;
@@ -371,12 +377,14 @@ function buildTemplateView(action = null, formState = {}) {
   const checkActions = targetActions.filter((entry) => !interactiveActionTypes.has(entry.actionType) && entry.actionType !== "downtimeResult");
   const resultActions = targetActions.filter((entry) => entry.actionType === "downtimeResult");
   const interactiveActions = targetActions.filter((entry) => interactiveActionTypes.has(entry.actionType));
+  const descriptionHtml = resolveTemplateDescriptionHtml(action);
   return {
     id: cleanText(action.id),
     label: cleanText(action.label) || cleanText(action.name) || "Простой",
     rank: cleanText(action.rank),
     duration: cleanText(action.duration),
     summary: cleanText(action.summary),
+    descriptionHtml,
     requirements: Array.isArray(action.requirements) ? action.requirements.map((entry) => cleanText(entry)).filter(Boolean) : [],
     rankTable: Array.isArray(action.rankTable) ? action.rankTable : [],
     targetActions,
@@ -391,6 +399,7 @@ function buildTemplateView(action = null, formState = {}) {
     hasRank: Boolean(cleanText(action.rank)),
     hasDuration: Boolean(cleanText(action.duration)),
     hasSummary: Boolean(cleanText(action.summary)),
+    hasDescriptionHtml: Boolean(descriptionHtml),
     hasRequirements: Array.isArray(action.requirements) && action.requirements.length > 0,
     hasResourceActions: resourceActions.length > 0,
     hasItemChoiceActions: itemChoiceActions.length > 0,

@@ -337,6 +337,7 @@ test("CharacterDowntimeService exposes selected template details and archives co
         rank: "1+",
         duration: "1 рабочая неделя.",
         summary: "Изучить вопрос.",
+        descriptionHtml: "<h2>Исследование</h2><h3>Нарративная заявка</h3><p>Персонаж изучает вопрос.</p><h3>Ресурсы</h3><p>Нужен доступ к источнику знаний.</p><h3>Определение последствий</h3><p>Персонаж проходит проверку Интеллекта.</p>",
         requirements: ["Библиотека"],
         rankTable: [{ rank: 1, baseCost: 10, stepCost: 5 }],
         targetActions: [{
@@ -370,6 +371,8 @@ test("CharacterDowntimeService exposes selected template details and archives co
   assert.equal(context.selectedTemplate.label, "Исследование");
   assert.equal(context.selectedTemplate.rank, "1+");
   assert.equal(context.selectedTemplate.duration, "1 рабочая неделя.");
+  assert.equal(context.selectedTemplate.hasDescriptionHtml, true);
+  assert.equal(context.selectedTemplate.descriptionHtml, "<h2>Исследование</h2><h3>Нарративная заявка</h3><p>Персонаж изучает вопрос.</p><h3>Ресурсы</h3><p>Нужен доступ к источнику знаний.</p><h3>Определение последствий</h3><p>Персонаж проходит проверку Интеллекта.</p>");
   assert.equal(context.selectedTemplate.resourceActions[0].outcomeSummary, "10 зм");
   assert.equal(context.selectedTemplate.checkActions[0].summary, "Проверка: Интеллект");
   assert.deepEqual(context.requests.map((request) => request.id), ["downtime-active"]);
