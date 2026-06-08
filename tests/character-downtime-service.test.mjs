@@ -208,6 +208,86 @@ test("CharacterDowntimeService exposes structured roll targets for assigned chec
   }]);
 });
 
+test("CharacterDowntimeService keeps choice roll targets visible but disabled after one result", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 0,
+          reservedWeeks: 1,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }],
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actionId: "unique",
+        actionLabel: "Unique",
+        title: "Scout",
+        weeks: 1,
+        status: "approved",
+        checks: [{
+          id: "check-1",
+          label: "Scout Route",
+          sourceType: "skill",
+          ability: "wis",
+          target: "prc",
+          targetLabel: "Perception",
+          dc: 15,
+          choices: [{
+            sourceType: "skill",
+            ability: "wis",
+            target: "prc",
+            targetLabel: "Perception"
+          }, {
+            sourceType: "skill",
+            ability: "wis",
+            target: "ins",
+            targetLabel: "Insight"
+          }],
+          result: {
+            total: 18,
+            success: true,
+            choiceIndex: 1
+          }
+        }],
+        result: ""
+      }],
+      actionCatalog: [{ id: "unique", label: "Unique" }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }));
+  const check = context.requests[0].checks[0];
+
+  assert.equal(check.hasRollTargets, true);
+  assert.deepEqual(check.rollTargets.map((target) => ({
+    label: target.label,
+    canRoll: target.canRoll,
+    isResolvedChoice: target.isResolvedChoice,
+    isDisabledChoice: target.isDisabledChoice,
+    buttonLabel: target.buttonLabel
+  })), [{
+    label: "Perception",
+    canRoll: false,
+    isResolvedChoice: false,
+    isDisabledChoice: true,
+    buttonLabel: "Perception"
+  }, {
+    label: "Insight",
+    canRoll: false,
+    isResolvedChoice: true,
+    isDisabledChoice: false,
+    buttonLabel: "18, успех"
+  }]);
+});
+
 test("CharacterDowntimeService keeps freeform roll targets out of DC accounting", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     snapshot: {

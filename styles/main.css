@@ -4996,10 +4996,11 @@ summary:focus-visible {
 }
 
 .rm-character-downtime-stat {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  align-items: center;
   min-width: 0;
-  padding: 9px 10px;
+  min-height: 34px;
+  padding: 7px 10px;
   border: 1px solid var(--rm-sheet-line);
   border-radius: 0;
   background: rgba(255, 255, 255, 0.035);
@@ -5011,7 +5012,6 @@ summary:focus-visible {
 }
 
 .rm-character-downtime-stat span,
-.rm-character-downtime-stat small,
 .rm-character-downtime-tab .rm-muted {
   color: var(--rm-sheet-muted);
 }
@@ -5021,17 +5021,9 @@ summary:focus-visible {
   line-height: 1.2;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-}
-
-.rm-character-downtime-stat strong {
-  color: var(--rm-sheet-text);
-  font-size: 16px;
-  line-height: 1.15;
-}
-
-.rm-character-downtime-stat small {
-  font-size: 11px;
-  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rm-character-downtime-form {
@@ -5128,14 +5120,24 @@ summary:focus-visible {
 
 .rm-character-downtime-template__description {
   margin: 0;
-  max-height: 240px;
-  overflow: auto;
   padding: 10px 11px;
   border: 1px solid var(--rm-sheet-line);
   background: rgba(5, 5, 6, 0.28);
   color: var(--rm-sheet-text);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.rm-character-downtime-template__description table {
+  width: 100%;
+  table-layout: auto;
+  border-collapse: collapse;
+}
+
+.rm-character-downtime-template__description th,
+.rm-character-downtime-template__description td {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .rm-character-downtime-template__description h2,
@@ -5194,6 +5196,18 @@ summary:focus-visible {
   min-height: 38px;
   justify-content: flex-start;
   text-align: left;
+}
+
+.rm-character-downtime-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.rm-character-downtime-clear-action {
+  width: 38px;
+  min-height: 38px;
 }
 
 .rm-character-downtime-library-button span {
@@ -5283,6 +5297,21 @@ summary:focus-visible {
   min-height: 24px;
   padding: 3px 8px;
   border-radius: 0;
+}
+
+.rm-character-downtime-roll[disabled] {
+  opacity: 0.55;
+}
+
+.rm-character-downtime-roll[data-resolved-choice="true"] {
+  opacity: 0.9;
+  border-color: rgba(107, 158, 89, 0.58);
+}
+
+.rm-character-downtime-roll[data-disabled-choice="true"] {
+  border-color: rgba(176, 162, 137, 0.24);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--rm-sheet-muted);
 }
 
 .rm-character-downtime-roll span {

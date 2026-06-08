@@ -244,6 +244,26 @@ test("character downtime template renders full description html before summary f
   assert.ok(escapedSummaryIndex > summaryFallbackIndex);
 });
 
+test("character downtime form keeps template descriptions expanded in the sheet", async () => {
+  const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  const match = styles.match(/\.rm-character-downtime-template__description\s*\{(?<body>[^}]*)\}/u);
+
+  assert.ok(match?.groups?.body);
+  assert.doesNotMatch(match.groups.body, /max-height\s*:/u);
+  assert.doesNotMatch(match.groups.body, /overflow\s*:\s*auto/u);
+});
+
+test("character downtime template uses compact summary stats and selection controls", async () => {
+  const template = await readFile(new URL("../templates/character-downtime-tab.hbs", import.meta.url), "utf8");
+
+  assert.match(template, /Свободно\s*\{\{rmNum characterDowntime\.balance\.availableWeeks/u);
+  assert.match(template, /data-tooltip="Можно заявить сейчас"/u);
+  assert.doesNotMatch(template, /<small>можно заявить сейчас<\/small>/u);
+  assert.doesNotMatch(template, /<label>Действие<\/label>/u);
+  assert.match(template, /data-action="character-downtime-clear-action"/u);
+  assert.match(template, /\{\{#if characterDowntime\.selectedTemplate\}\}[\s\S]*data-action="character-downtime-submit"/u);
+});
+
 test("extendDnd5eItemTypes registers the Rebreya downtime item type", async () => {
   const stubs = installSheetExtensionStubs();
   const warningCalls = [];
@@ -477,6 +497,85 @@ test("character downtime library selection preserves full downtime description h
     assert.equal(actionInput.value, "Compendium.world.rebreya-downtime.Item.downtime-gambling");
     assert.equal(actionLabel.textContent, "Азартные игры");
     assert.equal(contextCall[2].selectedTemplate.descriptionHtml, descriptionHtml);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime clear action removes selected template from form state", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-clear-action=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const actionInput = { value: "Compendium.world.rebreya-downtime.Item.research" };
+    const actionLabel = { textContent: "Исследование" };
+    const clearButton = new stubs.HTMLElement({
+      dataset: {
+        action: "character-downtime-clear-action"
+      }
+    });
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": actionInput,
+        "[data-action='character-downtime-action-label']": actionLabel,
+        "[data-action='character-downtime-weeks']": { value: "2" },
+        "[data-action='character-downtime-clear-action']": clearButton
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext(targetActor, formState) {
+          calls.push(["context", targetActor.id, formState]);
+          return { actorId: targetActor.id };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of clearButton.listeners.click) {
+      await listener({
+        preventDefault() {
+          calls.push(["preventDefault"]);
+        },
+        stopPropagation() {
+          calls.push(["stopPropagation"]);
+        }
+      });
+    }
+
+    const sheet = new stubs.CharacterActorSheet(actor);
+    await sheet._preparePartContext("downtime", {}, {});
+
+    const contextCall = calls.find((call) => call[0] === "context");
+    assert.equal(actionInput.value, "");
+    assert.equal(actionLabel.textContent, "Выбрать простой");
+    assert.equal(contextCall[2].actionId, "");
+    assert.equal(contextCall[2].selectedTemplate, null);
+    assert.deepEqual(calls.filter((call) => call[0] === "render"), [["render", { force: true }]]);
+    assert.deepEqual(calls.filter((call) => call[0] === "refreshOpenApps"), [["refreshOpenApps"]]);
   }
   finally {
     stubs.restore();
@@ -965,7 +1064,7 @@ test("character downtime disabled submit is ignored before creating a request", 
   }
 });
 
-test("character downtime submit immediately rolls single target checks", async () => {
+test("character downtime submit leaves rollable checks for explicit player clicks", async () => {
   const stubs = installSheetExtensionStubs();
   try {
     const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-submit-auto-roll=${Date.now()}`);
@@ -1052,31 +1151,8 @@ test("character downtime submit immediately rolls single target checks", async (
       });
     }
 
-    assert.deepEqual(calls.filter((call) => call[0] === "rollSkill"), [[
-      "rollSkill",
-      {
-        event: undefined,
-        skill: "acr",
-        ability: "dex"
-      }
-    ]]);
-    assert.deepEqual(calls.filter((call) => call[0] === "recordDowntimeCheckResult"), [[
-      "recordDowntimeCheckResult",
-      "downtime-1",
-      "check-1",
-      {
-        total: 21,
-        outcomeMode: "freeform",
-        sourceType: "skill",
-        ability: "dex",
-        target: "acr",
-        targetLabel: "Акробатика"
-      },
-      {
-        actorId: "actor-a",
-        groupId: ""
-      }
-    ]]);
+    assert.deepEqual(calls.filter((call) => call[0] === "rollSkill"), []);
+    assert.deepEqual(calls.filter((call) => call[0] === "recordDowntimeCheckResult"), []);
     assert.deepEqual(calls.filter((call) => call[0] === "render"), [["render", { force: true }]]);
     assert.deepEqual(calls.filter((call) => call[0] === "refreshOpenApps"), [["refreshOpenApps"]]);
   }
@@ -1559,6 +1635,8 @@ test("character downtime roll buttons use native dnd5e skill rolls and record th
         ability: "wis",
         target: "prc",
         targetLabel: "Perception",
+        choiceIndex: "1",
+        hasChoices: "true",
         dc: "15"
       }
     });
@@ -1629,7 +1707,8 @@ test("character downtime roll buttons use native dnd5e skill rolls and record th
         sourceType: "skill",
         ability: "wis",
         target: "prc",
-        targetLabel: "Perception"
+        targetLabel: "Perception",
+        choiceIndex: 1
       },
       {
         actorId: "actor-a",

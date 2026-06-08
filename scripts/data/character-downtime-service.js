@@ -455,7 +455,11 @@ function normalizeRollAbility(value = "") {
   return cleaned.startsWith("save-") ? cleaned.slice(5) : cleaned;
 }
 
-function buildRollTarget(check = {}, choice = {}, { canRollRequest = false, choiceIndex = 0, hasChoices = false } = {}) {
+function buildRollTarget(
+  check = {},
+  choice = {},
+  { canRollRequest = false, choiceIndex = 0, hasChoices = false, resultLabel = "", resolvedChoiceIndex = 0 } = {}
+) {
   const sourceType = cleanText(choice.sourceType) || cleanText(check.sourceType) || "skill";
   const target = cleanText(choice.target) || cleanText(check.target);
   const ability = normalizeRollAbility(choice.ability) || normalizeRollAbility(check.ability) || normalizeRollAbility(target);
@@ -468,12 +472,17 @@ function buildRollTarget(check = {}, choice = {}, { canRollRequest = false, choi
   const dc = toInteger(check.dc, 0);
   const dcFormula = cleanText(choice.dcFormula) || cleanText(check.dcFormula);
   const effectiveOutcomeMode = cleanText(check.outcomeMode) || (dc > 0 || dcFormula ? "dc" : "freeform");
-  const canRoll = Boolean(canRollRequest)
+  const hasResult = Boolean(resultLabel);
+  const isResolvedChoice = hasResult && choiceIndex === resolvedChoiceIndex;
+  const isDisabledChoice = hasResult && hasChoices && !isResolvedChoice;
+  const canRoll = !hasResult
+    && Boolean(canRollRequest)
     && ROLLABLE_SOURCE_TYPES.has(sourceType)
     && Boolean(sourceType === "ability" ? ability : (target || ability));
 
   return {
     choiceIndex,
+    hasChoices,
     sourceType,
     ability,
     target,
@@ -482,24 +491,41 @@ function buildRollTarget(check = {}, choice = {}, { canRollRequest = false, choi
     dcFormula,
     outcomeMode: effectiveOutcomeMode,
     canRoll,
-    buttonLabel: hasChoices ? label : "Кинуть",
-    rollTitle: canRoll
-      ? `Кинуть ${label || "проверку"}`
-      : "Этот тип целевого действия пока не бросается из чарника"
+    hasResult,
+    isResolvedChoice,
+    isDisabledChoice,
+    buttonLabel: isResolvedChoice && resultLabel ? resultLabel : (hasChoices ? label : "Кинуть"),
+    rollTitle: isResolvedChoice && resultLabel
+      ? "Результат уже записан"
+      : (isDisabledChoice
+        ? "Выбран другой вариант этого действия"
+        : (canRoll
+          ? `Кинуть ${label || "проверку"}`
+          : "Этот тип целевого действия пока не бросается из чарника"))
   };
 }
 
-function buildRollTargets(check = {}, { canRollRequest = false } = {}) {
+function buildRollTargets(check = {}, { canRollRequest = false, resultLabel = "" } = {}) {
   const choices = Array.isArray(check.choices) ? check.choices : [];
+  const resultChoiceIndex = toFiniteNumber(check?.result?.choiceIndex);
+  const resolvedChoiceIndex = resultChoiceIndex === undefined ? 0 : Math.max(0, Math.floor(resultChoiceIndex));
   if (choices.length) {
     return choices.map((choice, index) => buildRollTarget(check, choice, {
       canRollRequest,
       choiceIndex: index,
-      hasChoices: choices.length > 1
+      hasChoices: choices.length > 1,
+      resultLabel,
+      resolvedChoiceIndex
     }));
   }
 
-  return [buildRollTarget(check, {}, { canRollRequest, choiceIndex: 0, hasChoices: false })];
+  return [buildRollTarget(check, {}, {
+    canRollRequest,
+    choiceIndex: 0,
+    hasChoices: false,
+    resultLabel,
+    resolvedChoiceIndex: 0
+  })];
 }
 
 function mapRequest(request = {}, { groupId = "" } = {}) {
@@ -512,7 +538,8 @@ function mapRequest(request = {}, { groupId = "" } = {}) {
   const checks = (Array.isArray(request.checks) ? request.checks : []).map((check) => {
     const resultLabel = buildResultLabel(check?.result);
     const rollTargets = buildRollTargets(check, {
-      canRollRequest: canRollRequest && !resultLabel
+      canRollRequest,
+      resultLabel
     });
     return {
       ...check,
@@ -520,7 +547,7 @@ function mapRequest(request = {}, { groupId = "" } = {}) {
       resultLabel,
       hasResult: Boolean(resultLabel),
       rollTargets,
-      hasRollTargets: rollTargets.some((target) => target.canRoll)
+      hasRollTargets: rollTargets.some((target) => target.canRoll || target.hasResult)
     };
   });
 

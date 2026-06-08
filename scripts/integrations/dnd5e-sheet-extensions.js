@@ -2555,7 +2555,6 @@ async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
   }
 
   const request = await moduleApi.characterDowntimeService.createRequest(actor, payload);
-  await rollImmediateCharacterDowntimeTargets(actor, request, moduleApi);
   ui.notifications?.info("Заявка на простой отправлена.");
   await rerenderActorSheet(app, moduleApi);
 }
@@ -3149,6 +3148,9 @@ async function recordCharacterDowntimeRollDataset(actor, dataset, moduleApi, eve
     }
     result.success = total >= rolledDc;
   }
+  if (cleanText(dataset.hasChoices) === "true") {
+    result.choiceIndex = normalizeNonNegativeInteger(dataset.choiceIndex, 0);
+  }
 
   await moduleApi.recordDowntimeCheckResult(dataset.requestId, dataset.checkId, result, {
     actorId: cleanText(dataset.actorId) || actor.id,
@@ -3270,6 +3272,9 @@ async function handleCharacterDowntimeRoll(button, app, moduleApi, event) {
       result.dcFormula = dcFormula;
     }
     result.success = total >= rolledDc;
+  }
+  if (cleanText(button.dataset.hasChoices) === "true") {
+    result.choiceIndex = normalizeNonNegativeInteger(button.dataset.choiceIndex, 0);
   }
 
   await moduleApi.recordDowntimeCheckResult(requestId, checkId, result, {
@@ -3494,6 +3499,29 @@ function bindCharacterDowntimeStateControls(panel, app, moduleApi) {
       updateCharacterDowntimeFormState(actor, {
         weeks: toPositiveInteger(event.currentTarget?.value, 1)
       });
+    }, listenerOptions);
+  }
+
+  const clearActionButton = panel.querySelector("[data-action='character-downtime-clear-action']");
+  if (clearActionButton?.addEventListener instanceof Function) {
+    clearActionButton.addEventListener("click", async (event) => {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      const actionInput = panel.querySelector("[data-action='character-downtime-action']");
+      const actionLabel = panel.querySelector("[data-action='character-downtime-action-label']");
+      if (actionInput) {
+        actionInput.value = "";
+      }
+      if (actionLabel) {
+        actionLabel.textContent = "Выбрать простой";
+      }
+      updateCharacterDowntimeFormState(actor, {
+        actionId: "",
+        weeks: toPositiveInteger(panel.querySelector("[data-action='character-downtime-weeks']")?.value, 1),
+        targetActionSelections: [],
+        selectedTemplate: null
+      });
+      await rerenderActorSheet(app, moduleApi);
     }, listenerOptions);
   }
 

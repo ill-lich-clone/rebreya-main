@@ -7,37 +7,42 @@
     {{/if}}
 
     <section class="rm-character-downtime-summary">
-      <article class="rm-character-downtime-stat rm-character-downtime-stat--focus">
-        <span>Свободно</span>
-        <strong>{{rmNum characterDowntime.balance.availableWeeks precision=0}} нед.</strong>
-        <small>можно заявить сейчас</small>
+      <article class="rm-character-downtime-stat rm-character-downtime-stat--focus" data-tooltip="Можно заявить сейчас">
+        <span>Свободно {{rmNum characterDowntime.balance.availableWeeks precision=0}} нед.</span>
       </article>
-      <article class="rm-character-downtime-stat">
-        <span>В резерве</span>
-        <strong>{{rmNum characterDowntime.balance.reservedWeeks precision=0}} нед.</strong>
-        <small>по активным заявкам</small>
+      <article class="rm-character-downtime-stat" data-tooltip="По активным заявкам">
+        <span>В резерве {{rmNum characterDowntime.balance.reservedWeeks precision=0}} нед.</span>
       </article>
-      <article class="rm-character-downtime-stat">
-        <span>Потрачено</span>
-        <strong>{{rmNum characterDowntime.balance.spentWeeks precision=0}} нед.</strong>
-        <small>из {{rmNum characterDowntime.balance.totalGrantedWeeks precision=0}} выданных</small>
+      <article class="rm-character-downtime-stat" data-tooltip="Из {{rmNum characterDowntime.balance.totalGrantedWeeks precision=0}} выданных">
+        <span>Потрачено {{rmNum characterDowntime.balance.spentWeeks precision=0}} нед.</span>
       </article>
     </section>
 
     <section class="rm-character-downtime-form">
       <div class="rm-field rm-character-downtime-form__action">
-        <label>Действие</label>
         <input type="hidden" value="{{characterDowntime.form.actionId}}" data-action="character-downtime-action">
-        <button
-          type="button"
-          class="rm-button rm-button--small rm-button--secondary rm-character-downtime-library-button"
-          data-action="character-downtime-open-library"
-          data-tooltip="Выбрать простой из библиотеки Rebreya"
-          {{#if characterDowntime.libraryDisabled}}disabled{{/if}}
-        >
-          <i class="fa-solid fa-book-open"></i>
-          <span data-action="character-downtime-action-label">{{characterDowntime.selectedActionLabel}}</span>
-        </button>
+        <div class="rm-character-downtime-picker">
+          <button
+            type="button"
+            class="rm-button rm-button--small rm-button--secondary rm-character-downtime-library-button"
+            data-action="character-downtime-open-library"
+            data-tooltip="Выбрать простой из библиотеки Rebreya"
+            {{#if characterDowntime.libraryDisabled}}disabled{{/if}}
+          >
+            <i class="fa-solid fa-book-open"></i>
+            <span data-action="character-downtime-action-label">{{characterDowntime.selectedActionLabel}}</span>
+          </button>
+          {{#if characterDowntime.selectedTemplate}}
+            <button
+              type="button"
+              class="rm-icon-button rm-character-downtime-clear-action"
+              data-action="character-downtime-clear-action"
+              data-tooltip="Убрать выбранный простой"
+            >
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          {{/if}}
+        </div>
       </div>
       <div class="rm-field rm-field--narrow">
         <label>Недели</label>
@@ -191,18 +196,18 @@
             </div>
           {{/if}}
         </section>
-      {{/if}}
 
-      <button
-        type="button"
-        class="rm-button rm-button--small rm-button--primary rm-character-downtime-form__submit"
-        data-action="character-downtime-submit"
-        data-tooltip="{{characterDowntime.submitDisabledReason}}"
-        {{#if characterDowntime.submitDisabled}}disabled{{/if}}
-      >
-        <i class="fa-solid fa-paper-plane"></i>
-        <span>Отправить</span>
-      </button>
+        <button
+          type="button"
+          class="rm-button rm-button--small rm-button--primary rm-character-downtime-form__submit"
+          data-action="character-downtime-submit"
+          data-tooltip="{{characterDowntime.submitDisabledReason}}"
+          {{#if characterDowntime.submitDisabled}}disabled{{/if}}
+        >
+          <i class="fa-solid fa-paper-plane"></i>
+          <span>Отправить</span>
+        </button>
+      {{/if}}
     </section>
 
     <section class="rm-character-downtime-history">
@@ -234,7 +239,9 @@
                     <div class="rm-character-downtime-check">
                       <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Целевое действие простоя">{{summary}}</span>
                       {{#if hasResult}}
-                        <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
+                        {{#unless hasRollTargets}}
+                          <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
+                        {{/unless}}
                       {{/if}}
                       {{#if hasRollTargets}}
                         <div class="rm-character-downtime-check__actions">
@@ -253,12 +260,17 @@
                               data-target-label="{{label}}"
                               data-outcome-mode="{{outcomeMode}}"
                               data-choice-index="{{choiceIndex}}"
+                              data-has-choices="{{#if hasChoices}}true{{/if}}"
                               data-dc="{{dc}}"
                               data-dc-formula="{{dcFormula}}"
                               data-tooltip="{{rollTitle}}"
+                              {{#if isResolvedChoice}}data-resolved-choice="true"{{/if}}
+                              {{#if isDisabledChoice}}data-disabled-choice="true"{{/if}}
                               {{#unless canRoll}}disabled{{/unless}}
                             >
-                              <i class="fa-solid fa-dice-d20"></i>
+                              {{#unless isResolvedChoice}}
+                                <i class="fa-solid fa-dice-d20"></i>
+                              {{/unless}}
                               <span>{{buttonLabel}}</span>
                             </button>
                           {{/each}}
