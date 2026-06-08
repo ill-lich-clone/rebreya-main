@@ -2592,12 +2592,25 @@ function readCharacterDowntimeFormStateFromPanel(panel, actor) {
 }
 
 function readCharacterDowntimeTargetActionSelections(panel) {
-  const selections = Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-resource-choice']") ?? [])
-    .map((control) => ({
-      actionId: cleanText(control?.dataset?.targetActionId),
-      choiceId: cleanText(control?.value)
-    }))
-    .filter((entry) => entry.actionId && entry.choiceId);
+  const selectionsByActionId = new Map();
+  const ensureSelection = (actionId) => {
+    const safeActionId = cleanText(actionId);
+    if (!safeActionId) {
+      return null;
+    }
+    if (!selectionsByActionId.has(safeActionId)) {
+      selectionsByActionId.set(safeActionId, { actionId: safeActionId });
+    }
+    return selectionsByActionId.get(safeActionId);
+  };
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-resource-choice']") ?? [])) {
+    const selection = ensureSelection(control?.dataset?.targetActionId);
+    const choiceId = cleanText(control?.value);
+    if (selection && choiceId) {
+      selection.choiceId = choiceId;
+    }
+  }
 
   for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-item-choice']") ?? [])) {
     const actionId = cleanText(control?.dataset?.targetActionId);
@@ -2620,20 +2633,25 @@ function readCharacterDowntimeTargetActionSelections(panel) {
     if (priceGold !== undefined) {
       item.priceGold = priceGold;
     }
-    selections.push({
-      actionId,
-      item
-    });
+    const selection = ensureSelection(actionId);
+    if (selection) {
+      selection.item = item;
+    }
+  }
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-rank-choice']") ?? [])) {
+    const selection = ensureSelection(control?.dataset?.targetActionId);
+    const optionId = cleanText(control?.value);
+    if (selection && optionId) {
+      selection.optionId = optionId;
+    }
   }
 
   for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-option-choice']") ?? [])) {
-    const actionId = cleanText(control?.dataset?.targetActionId);
+    const selection = ensureSelection(control?.dataset?.targetActionId);
     const optionId = cleanText(control?.value);
-    if (actionId && optionId) {
-      selections.push({
-        actionId,
-        optionId
-      });
+    if (selection && optionId) {
+      selection.optionId = optionId;
     }
   }
 
@@ -2652,25 +2670,31 @@ function readCharacterDowntimeTargetActionSelections(panel) {
   }
   for (const [actionId, optionIds] of checkboxSelections.entries()) {
     if (optionIds.length) {
-      selections.push({
-        actionId,
-        optionIds
-      });
+      const selection = ensureSelection(actionId);
+      if (selection) {
+        selection.optionIds = optionIds;
+      }
     }
   }
 
   for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-numeric-input']") ?? [])) {
-    const actionId = cleanText(control?.dataset?.targetActionId);
+    const selection = ensureSelection(control?.dataset?.targetActionId);
     const value = toOptionalFiniteNumber(control?.value);
-    if (actionId && value !== undefined) {
-      selections.push({
-        actionId,
-        value
-      });
+    if (selection && value !== undefined) {
+      selection.value = value;
     }
   }
 
-  return selections;
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-resource-quantity']") ?? [])) {
+    const selection = ensureSelection(control?.dataset?.targetActionId);
+    const value = toOptionalFiniteNumber(control?.value);
+    if (selection && value !== undefined) {
+      selection.value = value;
+    }
+  }
+
+  return [...selectionsByActionId.values()]
+    .filter((entry) => entry.choiceId || entry.optionId || entry.optionIds?.length || entry.value !== undefined || entry.item);
 }
 
 function getDowntimeLibraryPack() {

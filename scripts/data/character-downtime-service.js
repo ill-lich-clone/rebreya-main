@@ -281,12 +281,53 @@ function buildOptionChoices(action = {}, selection = {}) {
   return options;
 }
 
+function buildRankChoices(action = {}, selection = {}) {
+  const rankChoice = action?.rankChoice && typeof action.rankChoice === "object" && !Array.isArray(action.rankChoice)
+    ? action.rankChoice
+    : {};
+  const configuredRows = Array.isArray(rankChoice.rows) && rankChoice.rows.length
+    ? rankChoice.rows
+    : (Array.isArray(action.options) ? action.options : []);
+  const rows = configuredRows.length
+    ? configuredRows
+    : Array.from({
+      length: Math.max(0, Math.min(10, toInteger(rankChoice.max, 10)) - Math.max(0, toInteger(rankChoice.min, 0)) + 1)
+    }, (_entry, index) => ({
+      rank: Math.max(0, toInteger(rankChoice.min, 0)) + index
+    }));
+  const selectedId = cleanText(selection?.optionId);
+  const selectedValue = toFiniteNumber(selection?.value);
+  const defaultRank = toFiniteNumber(rankChoice.default);
+  const mapped = rows.map((row, index) => {
+    const rank = toInteger(row?.rank, index);
+    const id = cleanText(row?.id) || `rank-${rank}`;
+    return {
+      ...row,
+      id,
+      rank,
+      label: cleanText(row?.label) || `Ранг ${rank}`,
+      selected: id === selectedId || (selectedValue !== undefined && rank === selectedValue)
+    };
+  }).filter((row) => row.id && row.label);
+
+  if (mapped.length && !mapped.some((row) => row.selected)) {
+    const defaultRow = mapped.find((row) => defaultRank !== undefined && row.rank === defaultRank) ?? mapped[0];
+    defaultRow.selected = true;
+  }
+
+  return mapped;
+}
+
 function getSelectedOptionSummary(options = []) {
   return options
     .filter((option) => option.selected)
     .map((option) => cleanText(option.label))
     .filter(Boolean)
     .join(", ");
+}
+
+function getSelectedRankSummary(options = []) {
+  return options.find((option) => option.selected) ?? null;
 }
 
 function buildNumericInput(action = {}, selection = {}) {
@@ -305,7 +346,82 @@ function buildNumericInput(action = {}, selection = {}) {
   };
 }
 
-function mapTemplateTargetAction(action = {}, index = 0, selections = new Map()) {
+function resolveResourceRank(resources = {}, mappedActionsById = new Map()) {
+  const rankSourceActionId = cleanText(resources.rankSourceActionId);
+  if (!rankSourceActionId) {
+    return undefined;
+  }
+
+  const rankAction = mappedActionsById.get(rankSourceActionId);
+  return toFiniteNumber(rankAction?.selectedRank);
+}
+
+function buildResourceQuantity(action = {}, selection = {}, mappedActionsById = new Map()) {
+  const resources = action?.resources && typeof action.resources === "object" && !Array.isArray(action.resources)
+    ? action.resources
+    : {};
+  const quantity = resources.quantity && typeof resources.quantity === "object" && !Array.isArray(resources.quantity)
+    ? resources.quantity
+    : {};
+  if (!Object.keys(quantity).length && !(Array.isArray(resources.rankCosts) && resources.rankCosts.length)) {
+    return null;
+  }
+
+  const selectedRank = resolveResourceRank(resources, mappedActionsById);
+  const rankCosts = Array.isArray(resources.rankCosts) ? resources.rankCosts : [];
+  const rankCost = rankCosts.find((row) => toFiniteNumber(row?.rank) === selectedRank) ?? rankCosts[0] ?? {};
+  const min = toFiniteNumber(rankCost.min, toFiniteNumber(quantity.min, 0));
+  const max = toFiniteNumber(rankCost.max, toFiniteNumber(quantity.max));
+  const fallback = toFiniteNumber(quantity.default, min ?? 0);
+  let value = toFiniteNumber(selection?.value, fallback);
+  if (value === undefined) {
+    value = fallback ?? 0;
+  }
+  if (min !== undefined) {
+    value = Math.max(min, value);
+  }
+  if (max !== undefined) {
+    value = Math.min(max, value);
+  }
+
+  return {
+    value,
+    displayValue: String(value),
+    min: min ?? "",
+    max: max ?? "",
+    step: toFiniteNumber(quantity.step, 1) ?? 1,
+    unit: cleanText(quantity.unit),
+    label: cleanText(resources.resourceName) || cleanText(action.label)
+  };
+}
+
+function buildComputedResourceCost(action = {}, resourceQuantity = null, mappedActionsById = new Map()) {
+  const resources = action?.resources && typeof action.resources === "object" && !Array.isArray(action.resources)
+    ? action.resources
+    : {};
+  if (!resourceQuantity) {
+    return null;
+  }
+
+  const selectedRank = resolveResourceRank(resources, mappedActionsById);
+  const rankCosts = Array.isArray(resources.rankCosts) ? resources.rankCosts : [];
+  const rankCost = rankCosts.find((row) => toFiniteNumber(row?.rank) === selectedRank) ?? rankCosts[0] ?? {};
+  const baseCost = toFiniteNumber(rankCost.baseCost, toInteger(resources.cost?.amount, 0)) ?? 0;
+  const unitCost = toFiniteNumber(rankCost.unitCost, toFiniteNumber(rankCost.stepCost, 0)) ?? 0;
+  const total = baseCost + (toFiniteNumber(resourceQuantity.value, 0) * unitCost);
+  const currency = cleanText(resources.cost?.currency) || "gp";
+  return {
+    rank: selectedRank,
+    quantity: resourceQuantity.value,
+    baseCost,
+    unitCost,
+    total,
+    currency,
+    label: total > 0 ? `${total} ${CURRENCY_LABELS[currency] ?? currency}` : ""
+  };
+}
+
+function mapTemplateTargetAction(action = {}, index = 0, selections = new Map(), mappedActionsById = new Map()) {
   const actionType = cleanText(action.actionType) || "check";
   const actionId = cleanText(action.id);
   const selection = selections.get(actionId) ?? {};
@@ -317,8 +433,12 @@ function mapTemplateTargetAction(action = {}, index = 0, selections = new Map())
   }
   const selectedResourceChoice = resourceChoices.find((choice) => choice.selected) ?? null;
   const optionChoices = actionType === "optionChoice" ? buildOptionChoices(action, selection) : [];
+  const rankChoices = actionType === "rankChoice" ? buildRankChoices(action, selection) : [];
+  const selectedRankChoice = getSelectedRankSummary(rankChoices);
   const selectedItem = actionType === "itemChoice" ? normalizeSelectedItem(selection.item) : null;
   const numericInput = actionType === "numericInput" ? buildNumericInput(action, selection) : null;
+  const resourceQuantity = actionType === "resources" ? buildResourceQuantity(action, selection, mappedActionsById) : null;
+  const computedCost = actionType === "resources" ? buildComputedResourceCost(action, resourceQuantity, mappedActionsById) : null;
   const selectedOptionSummary = getSelectedOptionSummary(optionChoices);
   const mapped = {
     ...action,
@@ -326,35 +446,45 @@ function mapTemplateTargetAction(action = {}, index = 0, selections = new Map())
     actionType,
     resourceChoices,
     optionChoices,
-    options: optionChoices,
+    rankChoices,
+    options: actionType === "rankChoice" ? rankChoices : optionChoices,
     selectedItem,
     selectedItemName: selectedItem?.name ?? "",
     numericInput,
+    resourceQuantity,
+    computedCost,
     value: numericInput?.value,
     displayValue: numericInput?.displayValue ?? "",
     selectedResourceChoiceId: selectedResourceChoice?.id ?? "",
     selectedResourceChoiceLabel: selectedResourceChoice?.label ?? "",
     selectedOptionLabel: selectedOptionSummary,
+    selectedRank: selectedRankChoice?.rank,
+    selectedRankLabel: selectedRankChoice?.label ?? "",
     selectionMode: cleanText(action.selectionMode) || "single",
     summary: buildCheckSummary(action),
     outcomeSummary: actionType === "resources"
-      ? (selectedResourceChoice?.outcomeSummary || buildResourceSummary(action))
-      : (actionType === "optionChoice"
+      ? (computedCost?.label || selectedResourceChoice?.outcomeSummary || buildResourceSummary(action))
+      : (actionType === "rankChoice"
+        ? (selectedRankChoice?.label || cleanText(action.label))
+        : (actionType === "optionChoice"
         ? (selectedOptionSummary || cleanText(action.label))
         : (actionType === "itemChoice"
           ? (selectedItem?.name || cleanText(action.label))
           : (actionType === "numericInput"
             ? [numericInput?.displayValue, numericInput?.unit].filter(Boolean).join(" ") || cleanText(action.label)
-            : buildCheckSummary(action))))
+            : buildCheckSummary(action)))))
       ,
     hasResourceChoices: resourceChoices.length > 0,
+    hasResourceQuantity: Boolean(resourceQuantity),
     hasOptionChoices: optionChoices.length > 0,
+    hasRankChoices: rankChoices.length > 0,
     isMultipleChoice: (cleanText(action.selectionMode) || "single") === "multiple",
     hasSelectedItem: Boolean(selectedItem),
     isResourceAction: actionType === "resources",
     isItemChoiceAction: actionType === "itemChoice",
     isNumericAction: actionType === "numericInput",
     isOptionAction: actionType === "optionChoice",
+    isRankAction: actionType === "rankChoice",
     isFormulaAction: actionType === "formulaRoll"
   };
   return mapped;
@@ -366,14 +496,20 @@ function buildTemplateView(action = null, formState = {}) {
   }
 
   const selections = normalizeTargetActionSelections(formState.targetActionSelections);
-  const targetActions = (Array.isArray(action.targetActions) ? action.targetActions : [])
-    .map((entry, index) => mapTemplateTargetAction(entry, index, selections));
+  const mappedActionsById = new Map();
+  const targetActions = [];
+  for (const [index, entry] of (Array.isArray(action.targetActions) ? action.targetActions : []).entries()) {
+    const mappedAction = mapTemplateTargetAction(entry, index, selections, mappedActionsById);
+    mappedActionsById.set(mappedAction.id, mappedAction);
+    targetActions.push(mappedAction);
+  }
   const resourceActions = targetActions.filter((entry) => entry.actionType === "resources");
   const itemChoiceActions = targetActions.filter((entry) => entry.actionType === "itemChoice");
   const numericActions = targetActions.filter((entry) => entry.actionType === "numericInput");
   const optionActions = targetActions.filter((entry) => entry.actionType === "optionChoice");
+  const rankActions = targetActions.filter((entry) => entry.actionType === "rankChoice");
   const formulaActions = targetActions.filter((entry) => entry.actionType === "formulaRoll");
-  const interactiveActionTypes = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "formulaRoll"]);
+  const interactiveActionTypes = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll"]);
   const checkActions = targetActions.filter((entry) => !interactiveActionTypes.has(entry.actionType) && entry.actionType !== "downtimeResult");
   const resultActions = targetActions.filter((entry) => entry.actionType === "downtimeResult");
   const interactiveActions = targetActions.filter((entry) => interactiveActionTypes.has(entry.actionType));
@@ -392,6 +528,7 @@ function buildTemplateView(action = null, formState = {}) {
     itemChoiceActions,
     numericActions,
     optionActions,
+    rankActions,
     formulaActions,
     interactiveActions,
     checkActions,
@@ -405,6 +542,7 @@ function buildTemplateView(action = null, formState = {}) {
     hasItemChoiceActions: itemChoiceActions.length > 0,
     hasNumericActions: numericActions.length > 0,
     hasOptionActions: optionActions.length > 0,
+    hasRankActions: rankActions.length > 0,
     hasFormulaActions: formulaActions.length > 0,
     hasInteractiveActions: interactiveActions.length > 0,
     hasCheckActions: checkActions.length > 0,

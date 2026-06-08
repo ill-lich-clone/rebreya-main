@@ -37,7 +37,7 @@ const DOWNTIME_ARCHIVE_STATUSES = new Set(["completed", "rejected"]);
 const DOWNTIME_PAGE_SIZE = 5;
 
 const MAX_DOWNTIME_TARGET_CHOICES = 5;
-const MAX_DOWNTIME_THRESHOLDS = 5;
+const MAX_DOWNTIME_THRESHOLDS = 12;
 const MAX_DOWNTIME_RESOURCE_PURCHASES = 3;
 const DOWNTIME_TARGET_DIALOG_DIMENSIONS = Object.freeze({
   basis: { width: 620, height: 360 },
@@ -49,6 +49,10 @@ const DOWNTIME_TARGET_DIALOG_DIMENSIONS = Object.freeze({
 const DOWNTIME_ACTION_TYPE_OPTIONS = Object.freeze([
   { value: "check", label: "Проверка", help: "Одна проверка характеристики, навыка, инструмента, действия или атаки." },
   { value: "resources", label: "Ресурсы", help: "Стоимость простоя, нарративные требования и опциональные покупки бонусов." },
+  { value: "rankChoice", label: "Выбор ранга", help: "Игрок выбирает ранг простоя из заданного диапазона или таблицы." },
+  { value: "optionChoice", label: "Выбор варианта", help: "Игрок выбирает один или несколько заранее описанных вариантов." },
+  { value: "numericInput", label: "Числовой ресурс", help: "Игрок вводит количество с ограничениями min/max/default." },
+  { value: "formulaRoll", label: "Формула", help: "Игрок или мастер записывает формулу или вычисленное значение." },
   { value: "choice", label: "Выбор проверки", help: "Мастер задаёт допустимые варианты, игрок выбирает один перед броском." },
   { value: "downtimeResult", label: "Итог простоя", help: "Общий итог по всем проверкам заявки: сумма, успехи, пороги и итоговые эффекты." },
   { value: "tool", label: "Инструмент", help: "Запрос владения инструментом из листа персонажа." },
@@ -58,7 +62,7 @@ const DOWNTIME_ACTION_TYPE_OPTIONS = Object.freeze([
 ]);
 
 const DOWNTIME_ACTION_TYPE_SELECT_OPTIONS = Object.freeze(DOWNTIME_ACTION_TYPE_OPTIONS
-  .filter((option) => ["check", "resources", "downtimeResult", "freeform"].includes(option.value)));
+  .filter((option) => ["check", "resources", "rankChoice", "optionChoice", "numericInput", "formulaRoll", "downtimeResult", "freeform"].includes(option.value)));
 
 const DOWNTIME_SOURCE_TYPE_OPTIONS = Object.freeze([
   { value: "ability", label: "Характеристика", help: "Чистая проверка характеристики без навыка." },
@@ -199,6 +203,13 @@ const DOWNTIME_THRESHOLD_OUTCOME_OPTIONS = Object.freeze([
   { value: "partial", label: "Частично", help: "Итог даёт частичный результат." },
   { value: "success", label: "Успех", help: "Итог считается успехом." },
   { value: "great-success", label: "Сильный успех", help: "Итог даёт улучшенный результат." },
+  { value: "no-fragments", label: "0 фрагментов", help: "Не выдать фрагменты сведений." },
+  { value: "one-fragment", label: "1 фрагмент", help: "Выдать один фрагмент сведений." },
+  { value: "two-fragments", label: "2 фрагмента", help: "Выдать два фрагмента сведений." },
+  { value: "three-fragments", label: "3 фрагмента", help: "Выдать три фрагмента сведений." },
+  { value: "grant-item", label: "Выдать предмет", help: "Итогом становится выдача предмета." },
+  { value: "grant-resource", label: "Выдать ресурс", help: "Итогом становится выдача ресурса." },
+  { value: "gm-note", label: "Заметка мастеру", help: "Создать заметку мастеру." },
   { value: "gm", label: "Решение мастера", help: "Мастер решает последствия вручную." }
 ]);
 
@@ -481,6 +492,180 @@ function getSelectableDowntimeActionType(actionType = "") {
     : "check";
 }
 
+function normalizeRankChoiceRows(action = {}) {
+  const rankChoice = action.rankChoice && typeof action.rankChoice === "object" && !Array.isArray(action.rankChoice)
+    ? action.rankChoice
+    : {};
+  const configuredRows = Array.isArray(rankChoice.rows) && rankChoice.rows.length
+    ? rankChoice.rows
+    : (Array.isArray(action.options) ? action.options : []);
+  if (configuredRows.length) {
+    return configuredRows.map((row, index) => {
+      const rank = toInteger(row?.rank, index);
+      return {
+        ...row,
+        id: cleanText(row?.id) || `rank-${rank}`,
+        label: cleanText(row?.label) || `Ранг ${rank}`,
+        rank,
+        baseCost: row?.baseCost ?? "",
+        unitCost: row?.unitCost ?? row?.stepCost ?? "",
+        min: row?.min ?? "",
+        max: row?.max ?? ""
+      };
+    });
+  }
+
+  const min = Math.max(0, toInteger(rankChoice.min, 0));
+  const max = Math.min(10, toInteger(rankChoice.max, 10));
+  return Array.from({ length: Math.max(0, max - min + 1) }, (_entry, index) => {
+    const rank = min + index;
+    return {
+      id: `rank-${rank}`,
+      label: `Ранг ${rank}`,
+      rank,
+      baseCost: "",
+      unitCost: "",
+      min: "",
+      max: ""
+    };
+  });
+}
+
+function buildRankChoicePanel(action = {}) {
+  const rankChoice = action.rankChoice && typeof action.rankChoice === "object" && !Array.isArray(action.rankChoice)
+    ? action.rankChoice
+    : {};
+  const rows = normalizeRankChoiceRows(action);
+  return `
+    <div class="rm-downtime-rank-choice-panel" data-rank-choice-panel>
+      <div class="rm-downtime-target-dialog__grid">
+        <div class="rm-field">
+          <label title="Минимальный доступный ранг.">Мин. ранг</label>
+          <input type="number" min="0" max="10" step="1" value="${escapeHtml(rankChoice.min ?? 0)}" data-field="target-action-rank-min">
+        </div>
+        <div class="rm-field">
+          <label title="Максимальный доступный ранг.">Макс. ранг</label>
+          <input type="number" min="0" max="10" step="1" value="${escapeHtml(rankChoice.max ?? 10)}" data-field="target-action-rank-max">
+        </div>
+        <div class="rm-field">
+          <label title="Ранг, выбранный по умолчанию.">По умолчанию</label>
+          <input type="number" min="0" max="10" step="1" value="${escapeHtml(rankChoice.default ?? rankChoice.min ?? 0)}" data-field="target-action-rank-default">
+        </div>
+      </div>
+      <div class="rm-downtime-rank-table" data-rank-choice-rows>
+        ${rows.map((row) => `
+          <div class="rm-downtime-rank-row" data-rank-choice-row>
+            <input type="number" min="0" max="10" step="1" value="${escapeHtml(row.rank)}" data-field="target-rank-row-rank" aria-label="Ранг">
+            <input type="text" value="${escapeHtml(row.label)}" data-field="target-rank-row-label" aria-label="Подпись ранга">
+            <input type="number" min="0" step="1" value="${escapeHtml(row.baseCost)}" data-field="target-rank-row-base-cost" aria-label="База">
+            <input type="number" min="0" step="1" value="${escapeHtml(row.unitCost)}" data-field="target-rank-row-unit-cost" aria-label="Цена единицы">
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function buildNumericInputPanel(action = {}) {
+  const input = action.input && typeof action.input === "object" && !Array.isArray(action.input)
+    ? action.input
+    : {};
+  const effect = action.effect && typeof action.effect === "object" && !Array.isArray(action.effect)
+    ? action.effect
+    : {};
+  return `
+    <div class="rm-downtime-numeric-input-panel" data-numeric-input-panel>
+      <div class="rm-downtime-target-dialog__grid">
+        <div class="rm-field">
+          <label title="Минимальное значение.">Мин.</label>
+          <input type="number" step="1" value="${escapeHtml(input.min ?? 0)}" data-field="target-action-numeric-min">
+        </div>
+        <div class="rm-field">
+          <label title="Максимальное значение.">Макс.</label>
+          <input type="number" step="1" value="${escapeHtml(input.max ?? "")}" data-field="target-action-numeric-max">
+        </div>
+        <div class="rm-field">
+          <label title="Значение по умолчанию.">По умолчанию</label>
+          <input type="number" step="1" value="${escapeHtml(input.default ?? 0)}" data-field="target-action-numeric-default">
+        </div>
+        <div class="rm-field">
+          <label title="Шаг изменения числа.">Шаг</label>
+          <input type="number" min="1" step="1" value="${escapeHtml(input.step ?? 1)}" data-field="target-action-numeric-step">
+        </div>
+        <div class="rm-field">
+          <label title="Подпись единицы измерения.">Единица</label>
+          <input type="text" value="${escapeHtml(input.unit ?? "")}" data-field="target-action-numeric-unit" placeholder="шаг.">
+        </div>
+        <div class="rm-field">
+          <label title="Целевое действие, к которому применить эффект.">Куда бонус</label>
+          <input type="text" value="${escapeHtml(effect.targetActionId ?? "")}" data-field="target-action-numeric-effect-target" placeholder="research-check">
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function buildOptionChoicePanel(action = {}) {
+  const options = Array.isArray(action.options) && action.options.length
+    ? action.options
+    : [{ id: "option-1", label: "Вариант 1" }];
+  return `
+    <div class="rm-downtime-option-choice-panel" data-option-choice-panel>
+      <div class="rm-field">
+        <label title="Можно выбрать один или несколько вариантов.">Режим выбора</label>
+        <select data-field="target-action-option-selection-mode">
+          ${renderSelectOptions([
+            { value: "single", label: "один" },
+            { value: "multiple", label: "несколько" }
+          ], cleanText(action.selectionMode) || "single")}
+        </select>
+      </div>
+      <div class="rm-downtime-option-choice-list" data-option-choice-rows>
+        ${options.map((option, index) => `
+          <div class="rm-downtime-option-choice-row" data-option-choice-row>
+            <input type="text" value="${escapeHtml(cleanText(option.id) || `option-${index + 1}`)}" data-field="target-option-row-id" aria-label="ID варианта">
+            <input type="text" value="${escapeHtml(cleanText(option.label) || `Вариант ${index + 1}`)}" data-field="target-option-row-label" aria-label="Подпись варианта">
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function buildResultExpressionPanel(action = {}, existingActions = []) {
+  const terms = Array.isArray(action.resultFormula?.terms) && action.resultFormula.terms.length
+    ? action.resultFormula.terms
+    : [{ actionId: "", field: "total", operator: "+" }];
+  const previousActions = existingActions.filter((entry) => cleanText(entry?.id) && cleanText(entry?.id) !== cleanText(action.id));
+  const sourceOptions = [
+    { value: "", label: "выбрать" },
+    ...previousActions.map((entry) => ({ value: cleanText(entry.id), label: cleanText(entry.label) || cleanText(entry.id) }))
+  ];
+  const fieldOptions = [
+    { value: "total", label: "total" },
+    { value: "successes", label: "успехи" },
+    { value: "value", label: "значение" },
+    { value: "quantity", label: "количество" },
+    { value: "computedTotal", label: "стоимость" }
+  ];
+  return `
+    <div class="rm-downtime-result-expression-panel" data-result-expression-panel>
+      <div class="rm-downtime-result-expression-list" data-result-expression-rows>
+        ${terms.map((term) => `
+          <div class="rm-downtime-result-expression-row" data-result-expression-row>
+            <select data-field="target-result-term-action">${renderSelectOptions(sourceOptions, cleanText(term.actionId))}</select>
+            <select data-field="target-result-term-field">${renderSelectOptions(fieldOptions, cleanText(term.field) || "total")}</select>
+            <select data-field="target-result-term-operator">${renderSelectOptions([
+              { value: "+", label: "+" },
+              { value: "-", label: "-" }
+            ], cleanText(term.operator) || "+")}</select>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
 function normalizeDowntimeTargetChoice(choice = {}, fallback = {}, actor = null) {
   const sourceType = cleanText(choice.sourceType)
     || cleanText(fallback.sourceType)
@@ -686,11 +871,51 @@ function buildDowntimeResourcePurchaseRow(purchase = {}, index = 0, { visible = 
 
 function buildDowntimeResourcesPanel(action = {}) {
   const resources = normalizeDowntimeResources(action);
+  const quantity = resources.quantity && typeof resources.quantity === "object" && !Array.isArray(resources.quantity)
+    ? resources.quantity
+    : {};
+  const rankCosts = Array.isArray(resources.rankCosts) ? resources.rankCosts : [];
   const visiblePurchaseCount = resources.purchases.length;
   const purchaseRows = Array.from({ length: MAX_DOWNTIME_RESOURCE_PURCHASES }, (_entry, index) =>
     buildDowntimeResourcePurchaseRow(resources.purchases[index] ?? {}, index, { visible: index < visiblePurchaseCount }));
   return `
     <div class="rm-downtime-resources-panel" data-resource-panel>
+      <div class="rm-downtime-target-dialog__grid">
+        <div class="rm-field">
+          <label title="Название ресурса или количества, которое оплачивает игрок.">Ресурс</label>
+          <input type="text" value="${foundry.utils.escapeHTML(resources.resourceName ?? "")}" data-field="target-action-resource-name" placeholder="Шаг исследования">
+        </div>
+        <label class="rm-field rm-checkbox-field" title="Стоимость зависит от выбранного ранга.">
+          <span>Зависит от ранга</span>
+          <input type="checkbox" data-field="target-action-resource-depends-rank" ${resources.dependsOnRank ? "checked" : ""}>
+        </label>
+        <label class="rm-field rm-checkbox-field" title="Стоимость зависит от уровня персонажа.">
+          <span>Зависит от уровня</span>
+          <input type="checkbox" data-field="target-action-resource-depends-level" ${resources.dependsOnLevel ? "checked" : ""}>
+        </label>
+        <div class="rm-field">
+          <label title="ID целевого действия выбора ранга.">Источник ранга</label>
+          <input type="text" value="${foundry.utils.escapeHTML(resources.rankSourceActionId ?? "")}" data-field="target-action-resource-rank-source" placeholder="research-rank">
+        </div>
+      </div>
+      <div class="rm-downtime-target-dialog__grid">
+        <div class="rm-field">
+          <label title="Минимальное количество ресурса.">Мин.</label>
+          <input type="number" step="1" value="${foundry.utils.escapeHTML(quantity.min ?? 0)}" data-field="target-action-resource-quantity-min">
+        </div>
+        <div class="rm-field">
+          <label title="Максимальное количество ресурса.">Макс.</label>
+          <input type="number" step="1" value="${foundry.utils.escapeHTML(quantity.max ?? "")}" data-field="target-action-resource-quantity-max">
+        </div>
+        <div class="rm-field">
+          <label title="Количество по умолчанию.">По умолчанию</label>
+          <input type="number" step="1" value="${foundry.utils.escapeHTML(quantity.default ?? 0)}" data-field="target-action-resource-quantity-default">
+        </div>
+        <div class="rm-field">
+          <label title="Единица ресурса.">Единица</label>
+          <input type="text" value="${foundry.utils.escapeHTML(quantity.unit ?? "")}" data-field="target-action-resource-quantity-unit" placeholder="шаг.">
+        </div>
+      </div>
       <div class="rm-downtime-target-dialog__grid">
         <div class="rm-field">
           <label title="Базовая стоимость простоя. Позже она будет списываться через экономику группы или персонажа.">Стоимость</label>
@@ -712,6 +937,16 @@ function buildDowntimeResourcesPanel(action = {}) {
       <div class="rm-field">
         <label title="Нарративные требования: библиотека, мудрец, город, материалы, доступ.">Нарратив</label>
         <textarea rows="3" data-field="target-action-resource-narrative" placeholder="Что нужно для этого простоя">${foundry.utils.escapeHTML(resources.narrative)}</textarea>
+      </div>
+      <div class="rm-downtime-rank-table" data-resource-rank-costs>
+        ${rankCosts.map((row) => `
+          <div class="rm-downtime-rank-row" data-resource-rank-cost-row>
+            <input type="number" min="0" max="10" step="1" value="${foundry.utils.escapeHTML(row.rank ?? "")}" data-field="target-resource-rank-cost-rank" aria-label="Ранг">
+            <input type="number" min="0" step="1" value="${foundry.utils.escapeHTML(row.baseCost ?? "")}" data-field="target-resource-rank-cost-base" aria-label="База">
+            <input type="number" min="0" step="1" value="${foundry.utils.escapeHTML(row.unitCost ?? row.stepCost ?? "")}" data-field="target-resource-rank-cost-unit" aria-label="Цена единицы">
+            <input type="number" min="0" step="1" value="${foundry.utils.escapeHTML(row.max ?? "")}" data-field="target-resource-rank-cost-max" aria-label="Лимит">
+          </div>
+        `).join("")}
       </div>
       <div class="rm-downtime-resource-purchases">
         <header>
@@ -744,7 +979,31 @@ function readDowntimeResources(root) {
   const purchases = Array.from(root?.querySelectorAll?.("[data-resource-purchase-row]:not([hidden])") ?? [])
     .map((row) => readDowntimeResourcePurchase(row))
     .filter((purchase) => purchase.label || purchase.cost.amount > 0 || purchase.effect.value || purchase.effect.type === "advantage");
-  return {
+  const quantity = {
+    min: toInteger(readFieldValue(root, "target-action-resource-quantity-min"), 0),
+    default: toInteger(readFieldValue(root, "target-action-resource-quantity-default"), 0),
+    unit: readFieldValue(root, "target-action-resource-quantity-unit")
+  };
+  const quantityMax = readFieldValue(root, "target-action-resource-quantity-max");
+  if (quantityMax !== "") {
+    quantity.max = toInteger(quantityMax, quantity.min);
+  }
+  const rankCosts = Array.from(root?.querySelectorAll?.("[data-resource-rank-cost-row]") ?? [])
+    .map((row) => {
+      const rank = toInteger(readFieldValue(row, "target-resource-rank-cost-rank"), -1);
+      return {
+        rank,
+        baseCost: toInteger(readFieldValue(row, "target-resource-rank-cost-base"), 0),
+        unitCost: toInteger(readFieldValue(row, "target-resource-rank-cost-unit"), 0),
+        max: toInteger(readFieldValue(row, "target-resource-rank-cost-max"), 0)
+      };
+    })
+    .filter((row) => row.rank >= 0);
+  const resourceName = readFieldValue(root, "target-action-resource-name");
+  const dependsOnRank = Boolean(root?.querySelector?.("[data-field='target-action-resource-depends-rank']")?.checked);
+  const dependsOnLevel = Boolean(root?.querySelector?.("[data-field='target-action-resource-depends-level']")?.checked);
+  const rankSourceActionId = readFieldValue(root, "target-action-resource-rank-source");
+  const resources = {
     narrative: readFieldValue(root, "target-action-resource-narrative"),
     cost: {
       amount: toInteger(readFieldValue(root, "target-action-resource-amount"), 0),
@@ -754,6 +1013,25 @@ function readDowntimeResources(root) {
     },
     purchases
   };
+  if (resourceName) {
+    resources.resourceName = resourceName;
+  }
+  if (dependsOnRank) {
+    resources.dependsOnRank = true;
+  }
+  if (dependsOnLevel) {
+    resources.dependsOnLevel = true;
+  }
+  if (rankSourceActionId) {
+    resources.rankSourceActionId = rankSourceActionId;
+  }
+  if (quantity.max !== undefined || quantity.min > 0 || quantity.default > 0 || quantity.unit) {
+    resources.quantity = quantity;
+  }
+  if (rankCosts.length) {
+    resources.rankCosts = rankCosts;
+  }
+  return resources;
 }
 
 function normalizeDowntimeThreshold(threshold = {}, index = 0) {
@@ -786,6 +1064,9 @@ function buildDowntimeThresholdRow(threshold = {}, index = 0) {
         <label title="Какой итог применить при попадании в этот диапазон.">Итог</label>
         <select data-field="target-threshold-outcome">${renderSelectOptions(DOWNTIME_THRESHOLD_OUTCOME_OPTIONS, safeThreshold.outcome)}</select>
       </div>
+      <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="target-threshold-remove" title="Убрать порог" aria-label="Убрать порог">
+        <i class="fa-solid fa-minus"></i>
+      </button>
     </div>
   `;
 }
@@ -793,7 +1074,12 @@ function buildDowntimeThresholdRow(threshold = {}, index = 0) {
 function buildDowntimeThresholdRows(thresholds = []) {
   const safeThresholds = Array.isArray(thresholds) ? thresholds.slice(0, MAX_DOWNTIME_THRESHOLDS) : [];
   const rows = safeThresholds.length ? safeThresholds : [{}, {}, {}];
-  return rows.map((threshold, index) => buildDowntimeThresholdRow(threshold, index)).join("");
+  return `
+    <div data-threshold-rows>
+      ${rows.map((threshold, index) => buildDowntimeThresholdRow(threshold, index)).join("")}
+    </div>
+    <button type="button" class="rm-button rm-downtime-add-alternative" data-action="target-threshold-add" ${rows.length >= MAX_DOWNTIME_THRESHOLDS ? "disabled" : ""}>+ Порог</button>
+  `;
 }
 
 function readDowntimeThreshold(row) {
@@ -801,6 +1087,62 @@ function readDowntimeThreshold(row) {
     from: readFieldValue(row, "target-threshold-from"),
     to: readFieldValue(row, "target-threshold-to"),
     outcome: readFieldValue(row, "target-threshold-outcome") || "gm"
+  };
+}
+
+function readRankChoice(root) {
+  const rows = Array.from(root?.querySelectorAll?.("[data-rank-choice-row]") ?? [])
+    .map((row, index) => {
+      const rank = toInteger(readFieldValue(row, "target-rank-row-rank"), index);
+      return {
+        id: `rank-${rank}`,
+        rank,
+        label: readFieldValue(row, "target-rank-row-label") || `Ранг ${rank}`,
+        baseCost: toInteger(readFieldValue(row, "target-rank-row-base-cost"), 0),
+        unitCost: toInteger(readFieldValue(row, "target-rank-row-unit-cost"), 0)
+      };
+    });
+  return {
+    min: toInteger(readFieldValue(root, "target-action-rank-min"), 0),
+    max: toInteger(readFieldValue(root, "target-action-rank-max"), 10),
+    default: toInteger(readFieldValue(root, "target-action-rank-default"), 0),
+    rows
+  };
+}
+
+function readNumericInput(root) {
+  const input = {
+    min: toInteger(readFieldValue(root, "target-action-numeric-min"), 0),
+    step: Math.max(1, toInteger(readFieldValue(root, "target-action-numeric-step"), 1)),
+    default: toInteger(readFieldValue(root, "target-action-numeric-default"), 0),
+    unit: readFieldValue(root, "target-action-numeric-unit")
+  };
+  const max = readFieldValue(root, "target-action-numeric-max");
+  if (max !== "") {
+    input.max = toInteger(max, input.min);
+  }
+  return input;
+}
+
+function readOptionChoiceOptions(root) {
+  return Array.from(root?.querySelectorAll?.("[data-option-choice-row]") ?? [])
+    .map((row, index) => ({
+      id: readFieldValue(row, "target-option-row-id") || `option-${index + 1}`,
+      label: readFieldValue(row, "target-option-row-label") || `Вариант ${index + 1}`
+    }))
+    .filter((option) => option.id && option.label);
+}
+
+function readResultFormula(root) {
+  const terms = Array.from(root?.querySelectorAll?.("[data-result-expression-row]") ?? [])
+    .map((row) => ({
+      actionId: readFieldValue(row, "target-result-term-action"),
+      field: readFieldValue(row, "target-result-term-field") || "total",
+      operator: readFieldValue(row, "target-result-term-operator") || "+"
+    }))
+    .filter((term) => term.actionId || term.field);
+  return {
+    terms
   };
 }
 
@@ -877,6 +1219,11 @@ function buildEmptyDowntimeContext({ warning = "", grantWeeks = 1, grantActorId 
 }
 
 function buildCheckSummary(check) {
+  const actionType = cleanText(check?.actionType);
+  if (["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "downtimeResult"].includes(actionType)) {
+    return cleanText(check?.label) || "Целевое действие";
+  }
+
   const abilityLabel = getOptionLabel(DOWNTIME_ABILITY_OPTIONS, check?.ability, cleanText(check?.ability));
   const dc = cleanText(check?.dc);
   const outcomeMode = cleanText(check?.outcomeMode) || (dc ? "dc" : "freeform");
@@ -934,10 +1281,27 @@ function buildEffectLabel(effect, { downtime = false } = {}) {
 
 function buildOutcomeSummary(check, outcomeMode) {
   if (cleanText(check?.actionType) === "resources") {
+    if (check?.computedCost?.total !== undefined) {
+      const currency = getOptionLabel(DOWNTIME_RESOURCE_CURRENCY_OPTIONS, check.computedCost.currency, check.computedCost.currency);
+      return `${check.computedCost.total} ${currency}`;
+    }
     const resources = normalizeDowntimeResources(check);
     const amount = toInteger(resources.cost.amount, 0);
     const currency = getOptionLabel(DOWNTIME_RESOURCE_CURRENCY_OPTIONS, resources.cost.currency, resources.cost.currency);
     return amount > 0 ? `${amount} ${currency}` : "Ресурсы";
+  }
+  if (cleanText(check?.actionType) === "rankChoice") {
+    return cleanText(check?.selectedOptionLabel) || (check?.selectedRank !== undefined ? `Ранг ${check.selectedRank}` : "Выбор ранга");
+  }
+  if (cleanText(check?.actionType) === "numericInput") {
+    const unit = cleanText(check?.input?.unit);
+    return check?.numericValue !== undefined ? [check.numericValue, unit].filter(Boolean).join(" ") : "Число";
+  }
+  if (cleanText(check?.actionType) === "optionChoice") {
+    return cleanText(check?.selectedOptionLabel) || "Выбор";
+  }
+  if (cleanText(check?.actionType) === "formulaRoll") {
+    return cleanText(check?.selectedFormula) || "Формула";
   }
   const numericDc = Number(check?.dc);
   const hasDc = Number.isFinite(numericDc) && numericDc > 0;
@@ -961,7 +1325,8 @@ function buildOutcomeSummary(check, outcomeMode) {
 
 function mapDowntimeTargetAction(check, index) {
   const actionType = cleanText(check?.actionType) || "check";
-  const sourceType = actionType === "resources" ? "" : (cleanText(check?.sourceType) || "skill");
+  const nonRollAction = ["resources", "rankChoice", "numericInput", "optionChoice", "formulaRoll", "downtimeResult"].includes(actionType);
+  const sourceType = nonRollAction ? "" : (cleanText(check?.sourceType) || "skill");
   const outcomeMode = cleanText(check?.outcomeMode) || (cleanText(check?.dc) ? "dc" : "freeform");
   const recordMode = cleanText(check?.recordMode) || "total-success";
   const checkEffectLabel = buildEffectLabel(check?.checkEffect);
@@ -975,14 +1340,14 @@ function mapDowntimeTargetAction(check, index) {
     outcomeMode,
     recordMode,
     actionTypeLabel: getOptionLabel(DOWNTIME_ACTION_TYPE_OPTIONS, actionType, actionType),
-    sourceTypeLabel: actionType === "resources" ? "Ресурсы" : getOptionLabel(DOWNTIME_SOURCE_TYPE_OPTIONS, sourceType, sourceType),
-    abilityLabel: actionType === "resources" ? "" : getOptionLabel(DOWNTIME_ABILITY_OPTIONS, check?.ability, cleanText(check?.ability)),
+    sourceTypeLabel: nonRollAction ? getOptionLabel(DOWNTIME_ACTION_TYPE_OPTIONS, actionType, actionType) : getOptionLabel(DOWNTIME_SOURCE_TYPE_OPTIONS, sourceType, sourceType),
+    abilityLabel: nonRollAction ? "" : getOptionLabel(DOWNTIME_ABILITY_OPTIONS, check?.ability, cleanText(check?.ability)),
     outcomeModeLabel: getOptionLabel(DOWNTIME_OUTCOME_MODE_OPTIONS, outcomeMode, outcomeMode),
     outcomeSummary: buildOutcomeSummary(check, outcomeMode),
     recordModeLabel: getOptionLabel(DOWNTIME_RECORD_MODE_OPTIONS, recordMode, recordMode),
     targetLabel: actionType === "resources"
       ? cleanText(check?.resources?.narrative)
-      : (cleanText(check?.targetLabel) || cleanText(check?.target)),
+      : (nonRollAction ? "" : (cleanText(check?.targetLabel) || cleanText(check?.target))),
     checkEffectLabel,
     downtimeEffectLabel,
     hasCheckEffect: Boolean(checkEffectLabel),
@@ -1013,6 +1378,51 @@ function buildDowntimeCheckResultLabel(result) {
   }
 
   return parts.join(", ");
+}
+
+function buildDowntimeTargetActionDetailLines(action = {}) {
+  const lines = [];
+  const actionType = cleanText(action.actionType);
+  if (actionType === "rankChoice") {
+    const rankLabel = cleanText(action.selectedOptionLabel) || (action.selectedRank !== undefined ? `Ранг ${action.selectedRank}` : "");
+    if (rankLabel) {
+      lines.push(`Выбранный ранг: ${rankLabel}`);
+    }
+  }
+  if (actionType === "numericInput" && action.numericValue !== undefined) {
+    lines.push(`Значение: ${[action.numericValue, cleanText(action.input?.unit)].filter(Boolean).join(" ")}`);
+  }
+  if (actionType === "optionChoice" && cleanText(action.selectedOptionLabel)) {
+    lines.push(`Выбор игрока: ${cleanText(action.selectedOptionLabel)}`);
+  }
+  if (actionType === "resources") {
+    const quantity = action.resourceQuantity;
+    if (quantity?.value !== undefined) {
+      lines.push(`Количество: ${[quantity.value, cleanText(quantity.unit)].filter(Boolean).join(" ")}`);
+    }
+    const cost = action.computedCost;
+    if (cost?.total !== undefined) {
+      const currency = getOptionLabel(DOWNTIME_RESOURCE_CURRENCY_OPTIONS, cost.currency, cost.currency);
+      const parts = [];
+      if (cost.rank !== undefined) {
+        parts.push(`ранг ${cost.rank}`);
+      }
+      parts.push(`база ${cost.baseCost}`);
+      parts.push(`${cost.quantity} x ${cost.unitCost}`);
+      lines.push(`Стоимость: ${cost.total} ${currency} (${parts.join(", ")})`);
+    }
+    else {
+      const resources = normalizeDowntimeResources(action);
+      if (resources.cost.amount > 0) {
+        const currency = getOptionLabel(DOWNTIME_RESOURCE_CURRENCY_OPTIONS, resources.cost.currency, resources.cost.currency);
+        lines.push(`Стоимость: ${resources.cost.amount} ${currency}`);
+      }
+    }
+  }
+  if (actionType === "formulaRoll" && cleanText(action.selectedFormula)) {
+    lines.push(`Формула: ${cleanText(action.selectedFormula)}`);
+  }
+  return lines;
 }
 
 function hasDowntimeTargetActionResult(action = {}) {
@@ -1188,6 +1598,9 @@ function buildDowntimeRequestDetailTargetActions(request = {}, { canManage = fal
           action.hasCheckEffect ? `<p class="rm-downtime-target-action__meta">Эффект проверки: ${escapeHtml(action.checkEffectLabel)}</p>` : "",
           action.hasDowntimeEffect ? `<p class="rm-downtime-target-action__meta">Эффект простоя: ${escapeHtml(action.downtimeEffectLabel)}</p>` : ""
         ].filter(Boolean).join("");
+        const details = buildDowntimeTargetActionDetailLines(action)
+          .map((line) => `<p class="rm-downtime-target-action__meta">${escapeHtml(line)}</p>`)
+          .join("");
 
         return `
           <li class="rm-downtime-target-action">
@@ -1199,6 +1612,7 @@ function buildDowntimeRequestDetailTargetActions(request = {}, { canManage = fal
               <p class="rm-muted">${escapeHtml(action.sourceTypeLabel)}${action.abilityLabel ? ` • ${escapeHtml(action.abilityLabel)}` : ""}${action.targetLabel ? ` (${escapeHtml(action.targetLabel)})` : ""}</p>
               ${result}
               ${choices}
+              ${details}
               ${effects}
             </div>
             ${canManage ? `<div class="rm-downtime-target-action__actions">${actionButton}${removeButton}</div>` : ""}
@@ -2539,6 +2953,12 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const visibleChoiceCount = Math.max(1, choices.length);
     const selectedActionType = getSelectableDowntimeActionType(action.actionType);
     const isResourceAction = selectedActionType === "resources";
+    const isCheckAction = selectedActionType === "check" || selectedActionType === "freeform";
+    const isRankAction = selectedActionType === "rankChoice";
+    const isOptionAction = selectedActionType === "optionChoice";
+    const isNumericAction = selectedActionType === "numericInput";
+    const isResultAction = selectedActionType === "downtimeResult";
+    const isFormulaAction = selectedActionType === "formulaRoll";
     const choiceRows = Array.from({ length: MAX_DOWNTIME_TARGET_CHOICES }, (_entry, index) =>
       buildDowntimeTargetChoiceRow(choices[index] ?? {}, index, { visible: index < visibleChoiceCount, actor }));
     const checkEffect = action.checkEffect && typeof action.checkEffect === "object" ? action.checkEffect : {};
@@ -2577,25 +2997,52 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         <section class="rm-downtime-target-dialog__section" data-step-panel="variants" hidden>
           <header>
-            <h4 data-target-choice-heading${isResourceAction ? " hidden" : ""}>${buildDowntimeTargetChoiceHeading(visibleChoiceCount)}</h4>
+            ${isCheckAction ? `<h4 data-target-choice-heading>${buildDowntimeTargetChoiceHeading(visibleChoiceCount)}</h4>` : ""}
             <h4 data-resource-heading${isResourceAction ? "" : " hidden"}>Ресурсы</h4>
+            <h4 data-rank-choice-heading${isRankAction ? "" : " hidden"}>Выбор ранга</h4>
+            <h4 data-option-choice-heading${isOptionAction ? "" : " hidden"}>Выбор варианта</h4>
+            <h4 data-numeric-input-heading${isNumericAction ? "" : " hidden"}>Числовой ресурс</h4>
+            <h4 data-result-expression-heading${isResultAction ? "" : " hidden"}>Формула результата</h4>
+            <h4 data-formula-roll-heading${isFormulaAction ? "" : " hidden"}>Формула</h4>
           </header>
-          <div data-target-choice-panel${isResourceAction ? " hidden" : ""}>
-            <div class="rm-downtime-target-choice-list">
-              ${choiceRows.join("")}
+          ${isCheckAction ? `
+            <div data-target-choice-panel>
+              <div class="rm-downtime-target-choice-list">
+                ${choiceRows.join("")}
+              </div>
+              <button
+                type="button"
+                class="rm-button rm-downtime-add-alternative"
+                data-action="target-action-add-alternative"
+                title="Добавляет ещё один структурный вариант, который игрок сможет выбрать вместо основного."
+                ${visibleChoiceCount >= MAX_DOWNTIME_TARGET_CHOICES ? "disabled" : ""}
+              >
+                + Добавить альтернативу
+              </button>
             </div>
-            <button
-              type="button"
-              class="rm-button rm-downtime-add-alternative"
-              data-action="target-action-add-alternative"
-              title="Добавляет ещё один структурный вариант, который игрок сможет выбрать вместо основного."
-              ${visibleChoiceCount >= MAX_DOWNTIME_TARGET_CHOICES ? "disabled" : ""}
-            >
-              + Добавить альтернативу
-            </button>
-          </div>
+          ` : ""}
           <div${isResourceAction ? "" : " hidden"} data-resource-panel-shell>
             ${buildDowntimeResourcesPanel(action)}
+          </div>
+          <div${isRankAction ? "" : " hidden"} data-rank-choice-panel-shell>
+            ${buildRankChoicePanel(action)}
+          </div>
+          <div${isOptionAction ? "" : " hidden"} data-option-choice-panel-shell>
+            ${buildOptionChoicePanel(action)}
+          </div>
+          <div${isNumericAction ? "" : " hidden"} data-numeric-input-panel-shell>
+            ${buildNumericInputPanel(action)}
+          </div>
+          <div${isResultAction ? "" : " hidden"} data-result-expression-panel-shell>
+            ${buildResultExpressionPanel(action, Array.isArray(this.downtimeContext?.requests) ? this.downtimeContext.requests.flatMap((request) => request.checks ?? []) : [])}
+          </div>
+          <div${isFormulaAction ? "" : " hidden"} data-formula-roll-panel-shell>
+            <div class="rm-downtime-numeric-input-panel" data-formula-roll-panel>
+              <div class="rm-field">
+                <label title="Формула, которую можно записать в заявку.">Формула</label>
+                <input type="text" value="${escapeHtml(action.selectedFormula || action.formula || "")}" data-field="target-action-formula" placeholder="1d20 + @mod">
+              </div>
+            </div>
           </div>
         </section>
 
@@ -2704,12 +3151,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   #readDowntimeTargetActionDialog(root, existingAction = {}, existingActions = [], actor = null) {
     const selectedActionType = getSelectableDowntimeActionType(readFieldValue(root, "target-action-type"));
     const isResourceAction = selectedActionType === "resources";
-    const choiceRows = isResourceAction ? [] : Array.from(root?.querySelectorAll?.("[data-target-choice]:not([hidden])") ?? []);
+    const isCheckAction = selectedActionType === "check" || selectedActionType === "freeform";
+    const choiceRows = isCheckAction ? Array.from(root?.querySelectorAll?.("[data-target-choice]:not([hidden])") ?? []) : [];
     const choices = isResourceAction
       ? []
-      : (choiceRows.length
+      : (isCheckAction && choiceRows.length
         ? choiceRows.map((row) => readDowntimeTargetChoice(row, actor))
-        : [normalizeDowntimeTargetChoice(existingAction, {}, actor)]);
+        : (isCheckAction ? [normalizeDowntimeTargetChoice(existingAction, {}, actor)] : []));
     const primaryChoice = choices[0] ?? normalizeDowntimeTargetChoice(existingAction);
     const checkEffect = {
       trigger: readFieldValue(root, "target-action-check-effect-trigger") || "none",
@@ -2725,6 +3173,72 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const thresholds = Array.from(root?.querySelectorAll?.("[data-threshold-row]") ?? [])
       .map((row) => readDowntimeThreshold(row))
       .filter((threshold) => threshold.from || threshold.to || threshold.outcome !== "gm");
+
+    if (selectedActionType === "rankChoice") {
+      return {
+        ...existingAction,
+        id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
+        label: cleanText(existingAction.label) || "Ранг",
+        actionType: "rankChoice",
+        rankChoice: readRankChoice(root)
+      };
+    }
+
+    if (selectedActionType === "numericInput") {
+      const effectTarget = readFieldValue(root, "target-action-numeric-effect-target");
+      const action = {
+        ...existingAction,
+        id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
+        label: cleanText(existingAction.label) || "Количество",
+        actionType: "numericInput",
+        input: readNumericInput(root)
+      };
+      if (effectTarget) {
+        action.effect = {
+          type: "bonus",
+          targetActionId: effectTarget,
+          valuePerStep: 1
+        };
+      }
+      return action;
+    }
+
+    if (selectedActionType === "optionChoice") {
+      return {
+        ...existingAction,
+        id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
+        label: cleanText(existingAction.label) || "Выбор",
+        actionType: "optionChoice",
+        selectionMode: readFieldValue(root, "target-action-option-selection-mode") || "single",
+        options: readOptionChoiceOptions(root)
+      };
+    }
+
+    if (selectedActionType === "formulaRoll") {
+      return {
+        ...existingAction,
+        id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
+        label: cleanText(existingAction.label) || "Формула",
+        actionType: "formulaRoll",
+        selectedFormula: readFieldValue(root, "target-action-formula")
+      };
+    }
+
+    if (selectedActionType === "downtimeResult") {
+      const action = {
+        ...existingAction,
+        id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
+        label: cleanText(existingAction.label) || "Итог простоя",
+        actionType: "downtimeResult",
+        outcomeMode,
+        recordMode: readFieldValue(root, "target-action-record-mode") || "gm",
+        resultFormula: readResultFormula(root)
+      };
+      if (thresholds.length) {
+        action.thresholds = thresholds;
+      }
+      return action;
+    }
 
     const action = {
       id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
@@ -2764,8 +3278,18 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const choiceHeading = root?.querySelector?.("[data-target-choice-heading]");
     const actionTypeSelect = root?.querySelector?.("[data-field='target-action-type']");
     const resourceHeading = root?.querySelector?.("[data-resource-heading]");
+    const rankHeading = root?.querySelector?.("[data-rank-choice-heading]");
+    const optionHeading = root?.querySelector?.("[data-option-choice-heading]");
+    const numericHeading = root?.querySelector?.("[data-numeric-input-heading]");
+    const resultHeading = root?.querySelector?.("[data-result-expression-heading]");
+    const formulaHeading = root?.querySelector?.("[data-formula-roll-heading]");
     const choicePanel = root?.querySelector?.("[data-target-choice-panel]");
     const resourcePanelShell = root?.querySelector?.("[data-resource-panel-shell]");
+    const rankPanelShell = root?.querySelector?.("[data-rank-choice-panel-shell]");
+    const optionPanelShell = root?.querySelector?.("[data-option-choice-panel-shell]");
+    const numericPanelShell = root?.querySelector?.("[data-numeric-input-panel-shell]");
+    const resultPanelShell = root?.querySelector?.("[data-result-expression-panel-shell]");
+    const formulaPanelShell = root?.querySelector?.("[data-formula-roll-panel-shell]");
     const addPurchaseButton = root?.querySelector?.("[data-action='target-action-add-purchase']");
     const purchaseRows = Array.from(root?.querySelectorAll?.("[data-resource-purchase-row]") ?? []);
     const stepButtons = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? []);
@@ -2777,6 +3301,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const outcomeSelect = root?.querySelector?.("[data-field='target-action-outcome-mode']");
     const dcField = root?.querySelector?.("[data-outcome-dc-field]");
     const thresholdsField = root?.querySelector?.("[data-outcome-thresholds-field]");
+    const thresholdRowsRoot = root?.querySelector?.("[data-threshold-rows]");
+    const addThresholdButton = root?.querySelector?.("[data-action='target-threshold-add']");
     const checkEffectTrigger = root?.querySelector?.("[data-field='target-action-check-effect-trigger']");
     const downtimeEffectTrigger = root?.querySelector?.("[data-field='target-action-downtime-effect-trigger']");
     const checkEffectFields = root?.querySelector?.("[data-effect-fields='check']");
@@ -2821,7 +3347,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
 
     const getVisibleChoiceRows = () => rows.filter((row) => row.hidden !== true);
-    const isResourceAction = () => cleanText(actionTypeSelect?.value) === "resources";
+    const getActionType = () => cleanText(actionTypeSelect?.value) || "check";
+    const isResourceAction = () => getActionType() === "resources";
+    const isCheckAction = () => ["check", "freeform"].includes(getActionType());
     const updateChoiceListState = () => {
       const visibleRows = getVisibleChoiceRows();
       if (choiceHeading) {
@@ -2843,18 +3371,55 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
     };
     const updateActionTypePanels = () => {
-      const resourceActive = isResourceAction();
+      const actionType = getActionType();
+      const checkActive = isCheckAction();
+      const resourceActive = actionType === "resources";
+      const rankActive = actionType === "rankChoice";
+      const optionActive = actionType === "optionChoice";
+      const numericActive = actionType === "numericInput";
+      const resultActive = actionType === "downtimeResult";
+      const formulaActive = actionType === "formulaRoll";
       if (choiceHeading) {
-        choiceHeading.hidden = resourceActive;
+        choiceHeading.hidden = !checkActive;
       }
       if (resourceHeading) {
         resourceHeading.hidden = !resourceActive;
       }
+      if (rankHeading) {
+        rankHeading.hidden = !rankActive;
+      }
+      if (optionHeading) {
+        optionHeading.hidden = !optionActive;
+      }
+      if (numericHeading) {
+        numericHeading.hidden = !numericActive;
+      }
+      if (resultHeading) {
+        resultHeading.hidden = !resultActive;
+      }
+      if (formulaHeading) {
+        formulaHeading.hidden = !formulaActive;
+      }
       if (choicePanel) {
-        choicePanel.hidden = resourceActive;
+        choicePanel.hidden = !checkActive;
       }
       if (resourcePanelShell) {
         resourcePanelShell.hidden = !resourceActive;
+      }
+      if (rankPanelShell) {
+        rankPanelShell.hidden = !rankActive;
+      }
+      if (optionPanelShell) {
+        optionPanelShell.hidden = !optionActive;
+      }
+      if (numericPanelShell) {
+        numericPanelShell.hidden = !numericActive;
+      }
+      if (resultPanelShell) {
+        resultPanelShell.hidden = !resultActive;
+      }
+      if (formulaPanelShell) {
+        formulaPanelShell.hidden = !formulaActive;
       }
     };
 
@@ -2893,6 +3458,51 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
       updatePurchaseButtonState();
     }
+
+    const getThresholdRows = () => Array.from(root?.querySelectorAll?.("[data-threshold-row]") ?? [])
+      .filter((row) => row.hidden !== true);
+    const updateThresholdButtons = () => {
+      const visibleRows = getThresholdRows();
+      if (addThresholdButton) {
+        addThresholdButton.disabled = readOnly || visibleRows.length >= MAX_DOWNTIME_THRESHOLDS;
+      }
+      visibleRows.forEach((row) => {
+        const removeButton = row?.querySelector?.("[data-action='target-threshold-remove']");
+        if (removeButton) {
+          removeButton.disabled = readOnly || visibleRows.length <= 1;
+        }
+      });
+    };
+    const bindThresholdRemove = (row) => {
+      const removeButton = row?.querySelector?.("[data-action='target-threshold-remove']");
+      removeButton?.addEventListener?.("click", (event) => {
+        event.preventDefault();
+        if (readOnly || getThresholdRows().length <= 1) {
+          return;
+        }
+        row.hidden = true;
+        updateThresholdButtons();
+      });
+    };
+    getThresholdRows().forEach((row) => bindThresholdRemove(row));
+    addThresholdButton?.addEventListener?.("click", (event) => {
+      event.preventDefault();
+      if (readOnly || !thresholdRowsRoot || getThresholdRows().length >= MAX_DOWNTIME_THRESHOLDS) {
+        return;
+      }
+      const wrapper = document.createElement?.("div");
+      if (!wrapper) {
+        return;
+      }
+      wrapper.innerHTML = buildDowntimeThresholdRow({}, getThresholdRows().length);
+      const row = wrapper.children?.[0];
+      if (row) {
+        thresholdRowsRoot.appendChild(row);
+        bindThresholdRemove(row);
+      }
+      updateThresholdButtons();
+    });
+    updateThresholdButtons();
 
     const updateOutcomeFields = () => {
       if (dcField) {

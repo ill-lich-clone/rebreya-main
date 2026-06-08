@@ -1458,6 +1458,97 @@ test("createRequest applies structured target action selections from downtime te
   }
 });
 
+test("createRequest snapshots rank choices and rank-priced resources", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-research",
+    name: "Исследование",
+    config: {
+      targetActions: [{
+        id: "research-rank",
+        label: "Ранг вопроса",
+        actionType: "rankChoice",
+        rankChoice: {
+          min: 1,
+          max: 9,
+          default: 1,
+          rows: [
+            { rank: 1, label: "Ранг 1", baseCost: 10, unitCost: 5 },
+            { rank: 4, label: "Ранг 4", baseCost: 120, unitCost: 100 }
+          ]
+        }
+      }, {
+        id: "research-steps",
+        label: "Шаги",
+        actionType: "resources",
+        resources: {
+          resourceName: "Шаг исследования",
+          dependsOnRank: true,
+          rankSourceActionId: "research-rank",
+          quantity: {
+            min: 0,
+            max: 5,
+            default: 0,
+            unit: "шаг."
+          },
+          rankCosts: [
+            { rank: 1, baseCost: 10, unitCost: 5, max: 5 },
+            { rank: 4, baseCost: 120, unitCost: 100, max: 5 }
+          ],
+          cost: {
+            currency: "gp",
+            payer: "character",
+            timing: "manual"
+          }
+        }
+      }]
+    }
+  });
+  const harness = createHarness({
+    members: [actor],
+    groupItems: [templateItem],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      weeks: 1,
+      targetActionSelections: [{
+        actionId: "research-rank",
+        optionId: "rank-4"
+      }, {
+        actionId: "research-steps",
+        value: 99
+      }]
+    });
+
+    assert.equal(request.checks[0].actionType, "rankChoice");
+    assert.equal(request.checks[0].selectedRank, 4);
+    assert.equal(request.checks[0].selectedOptionLabel, "Ранг 4");
+    assert.equal(request.checks[1].actionType, "resources");
+    assert.equal(request.checks[1].resourceQuantity.value, 5);
+    assert.equal(request.checks[1].resourceQuantity.max, 5);
+    assert.equal(request.checks[1].resources.cost.amount, 620);
+    assert.equal(request.checks[1].computedCost.total, 620);
+    assert.equal(request.checks[1].computedCost.baseCost, 120);
+    assert.equal(request.checks[1].computedCost.unitCost, 100);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("approving a request with completed roll targets archives it as completed", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
   const harness = createHarness({

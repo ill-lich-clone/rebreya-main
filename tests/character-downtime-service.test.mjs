@@ -684,6 +684,88 @@ test("CharacterDowntimeService exposes and forwards structured downtime selectio
   ]);
 });
 
+test("CharacterDowntimeService exposes rank and rank-priced resource constructor actions", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }],
+      requests: [],
+      actionCatalog: [{
+        id: "Compendium.world.rebreya-downtime.Item.research",
+        label: "Исследование",
+        targetActions: [{
+          id: "research-rank",
+          label: "Ранг вопроса",
+          actionType: "rankChoice",
+          rankChoice: {
+            min: 1,
+            max: 9,
+            default: 1,
+            rows: [
+              { rank: 1, label: "Ранг 1", baseCost: 10, unitCost: 5 },
+              { rank: 4, label: "Ранг 4", baseCost: 120, unitCost: 100 }
+            ]
+          }
+        }, {
+          id: "research-steps",
+          label: "Шаги",
+          actionType: "resources",
+          resources: {
+            resourceName: "Шаг исследования",
+            dependsOnRank: true,
+            rankSourceActionId: "research-rank",
+            quantity: {
+              min: 0,
+              max: 5,
+              default: 0,
+              unit: "шаг."
+            },
+            rankCosts: [
+              { rank: 1, baseCost: 10, unitCost: 5, max: 5 },
+              { rank: 4, baseCost: 120, unitCost: 100, max: 5 }
+            ],
+            cost: {
+              currency: "gp",
+              payer: "character",
+              timing: "manual"
+            }
+          }
+        }]
+      }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }), {
+    actionId: "Compendium.world.rebreya-downtime.Item.research",
+    targetActionSelections: [{
+      actionId: "research-rank",
+      optionId: "rank-4"
+    }, {
+      actionId: "research-steps",
+      value: 2
+    }]
+  });
+
+  assert.equal(context.selectedTemplate.rankActions.length, 1);
+  assert.equal(context.selectedTemplate.rankActions[0].selectedRank, 4);
+  assert.equal(context.selectedTemplate.rankActions[0].options.find((option) => option.id === "rank-4").selected, true);
+  assert.equal(context.selectedTemplate.resourceActions[0].resourceQuantity.value, 2);
+  assert.equal(context.selectedTemplate.resourceActions[0].resourceQuantity.max, 5);
+  assert.equal(context.selectedTemplate.resourceActions[0].computedCost.total, 320);
+  assert.equal(context.selectedTemplate.resourceActions[0].outcomeSummary, "320 зм");
+});
+
 test("CharacterDowntimeService converts known group errors into a warning context", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     error: new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP)

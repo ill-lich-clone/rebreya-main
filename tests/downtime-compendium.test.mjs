@@ -152,6 +152,8 @@ test("research downtime keeps the rank costs and structured result thresholds", 
   );
   const itemData = createDowntimeItemData(research, new Map());
   const downtime = itemData.flags[MODULE_ID].downtime;
+  const rankAction = downtime.targetActions.find((action) => action.id === "research-rank");
+  const resourceAction = downtime.targetActions.find((action) => action.id === "research-resources");
   const checkAction = downtime.targetActions.find((action) => action.id === "research-check");
   const resultAction = downtime.targetActions.find((action) => action.id === "research-result");
 
@@ -172,8 +174,17 @@ test("research downtime keeps the rank costs and structured result thresholds", 
   assert.equal(checkAction.actionType, "check");
   assert.equal(checkAction.sourceType, "ability");
   assert.equal(checkAction.ability, "int");
+  assert.equal(rankAction.actionType, "rankChoice");
+  assert.equal(rankAction.rankChoice.rows[3].label, "Ранг 4");
+  assert.equal(resourceAction.actionType, "resources");
+  assert.equal(resourceAction.resources.dependsOnRank, true);
+  assert.equal(resourceAction.resources.rankSourceActionId, "research-rank");
+  assert.equal(resourceAction.resources.quantity.max, 5);
+  assert.equal(resourceAction.resources.rankCosts[3].baseCost, 120);
+  assert.equal(resourceAction.resources.rankCosts[3].unitCost, 100);
   assert.equal(resultAction.actionType, "downtimeResult");
   assert.equal(resultAction.outcomeMode, "thresholds");
+  assert.deepEqual(resultAction.resultFormula.terms, [{ actionId: "research-check", field: "total", operator: "+" }]);
   assert.deepEqual(resultAction.thresholds.map((threshold) => threshold.label), [
     "Безрезультатно",
     "Один фрагмент сведений",
@@ -224,8 +235,8 @@ test("core automated downtimes expose structured player inputs", () => {
   assert.equal(profession.targetActions.find((action) => action.id === "profession-result")?.outcomeMode, "thresholds");
 
   const research = byId.get("research");
-  assert.equal(research.targetActions.find((action) => action.id === "research-rank")?.actionType, "optionChoice");
-  assert.equal(research.targetActions.find((action) => action.id === "research-extra-steps")?.actionType, "numericInput");
+  assert.equal(research.targetActions.find((action) => action.id === "research-rank")?.actionType, "rankChoice");
+  assert.equal(research.targetActions.find((action) => action.id === "research-resources")?.resources?.quantity?.max, 5);
 
   const training = byId.get("training");
   assert.equal(training.targetActions.find((action) => action.id === "training-type")?.options?.length, 7);

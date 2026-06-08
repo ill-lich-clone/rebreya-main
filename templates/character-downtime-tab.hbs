@@ -73,6 +73,21 @@
             <p class="rm-character-downtime-template__summary">{{characterDowntime.selectedTemplate.summary}}</p>
           {{/if}}
 
+          {{#if characterDowntime.selectedTemplate.hasRankActions}}
+            <div class="rm-character-downtime-template__line">
+              {{#each characterDowntime.selectedTemplate.rankActions}}
+                <label class="rm-character-downtime-resource-choice">
+                  <span>{{label}}</span>
+                  <select data-action="character-downtime-rank-choice" data-target-action-id="{{id}}">
+                    {{#each rankChoices}}
+                      <option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+              {{/each}}
+            </div>
+          {{/if}}
+
           {{#if characterDowntime.selectedTemplate.hasResourceActions}}
             <div class="rm-character-downtime-template__line">
               {{#each characterDowntime.selectedTemplate.resourceActions}}
@@ -84,6 +99,20 @@
                         <option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}} · {{outcomeSummary}}</option>
                       {{/each}}
                     </select>
+                  </label>
+                {{else if hasResourceQuantity}}
+                  <label class="rm-character-downtime-resource-choice">
+                    <span>{{label}}</span>
+                    <input
+                      type="number"
+                      min="{{resourceQuantity.min}}"
+                      max="{{resourceQuantity.max}}"
+                      step="{{resourceQuantity.step}}"
+                      value="{{resourceQuantity.displayValue}}"
+                      data-action="character-downtime-resource-quantity"
+                      data-target-action-id="{{id}}"
+                      data-tooltip="{{outcomeSummary}}"
+                    >
                   </label>
                 {{else}}
                   <span class="rm-chip" data-tooltip="{{label}}">{{outcomeSummary}}</span>

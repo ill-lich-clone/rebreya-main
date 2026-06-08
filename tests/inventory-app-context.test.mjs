@@ -1093,9 +1093,13 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-action-target-label\""), false);
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-choice-roll-mode\""), false);
     const actionTypeSelect = targetDialog?.config?.content.match(/<select data-field="target-action-type">([\s\S]*?)<\/select>/u)?.[1] ?? "";
-    assert.equal((actionTypeSelect.match(/<option/g) ?? []).length, 4);
+    assert.equal((actionTypeSelect.match(/<option/g) ?? []).length, 8);
     assert.equal(actionTypeSelect.includes(">Проверка<"), true);
     assert.equal(actionTypeSelect.includes(">Ресурсы<"), true);
+    assert.equal(actionTypeSelect.includes(">Выбор ранга<"), true);
+    assert.equal(actionTypeSelect.includes(">Выбор варианта<"), true);
+    assert.equal(actionTypeSelect.includes(">Числовой ресурс<"), true);
+    assert.equal(actionTypeSelect.includes(">Формула<"), true);
     assert.equal(actionTypeSelect.includes(">Итог простоя<"), true);
     assert.equal(actionTypeSelect.includes(">Свободный итог<"), true);
     assert.equal(actionTypeSelect.includes(">Выбор проверки<"), false);
@@ -1580,6 +1584,147 @@ test("InventoryApp downtime target dialog saves resource costs and optional purc
         }]
       }
     });
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp downtime target dialog preserves constructor action types", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousUi = globalThis.ui;
+  globalThis.ui = {
+    notifications: {
+      error() {},
+      info() {}
+    }
+  };
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      Dialog.instances.push(this);
+    }
+
+    setPosition() {}
+    close() {
+      this.config.close?.();
+    }
+    render() {}
+  };
+
+  const rankButton = createFakeControl({
+    dataset: {
+      action: "downtime-target-action",
+      requestId: "downtime-1",
+      checkId: "research-rank"
+    }
+  });
+  const stepsButton = createFakeControl({
+    dataset: {
+      action: "downtime-target-action",
+      requestId: "downtime-1",
+      checkId: "research-steps"
+    }
+  });
+  const resultButton = createFakeControl({
+    dataset: {
+      action: "downtime-target-action",
+      requestId: "downtime-1",
+      checkId: "research-result"
+    }
+  });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='downtime-target-action']"
+    ? [rankButton, stepsButton, resultButton]
+    : [];
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?constructor-types=${Date.now()}`);
+    const app = new InventoryApp(createModuleApi({
+      downtimeSnapshot: {
+        canManage: true,
+        canSubmit: false,
+        members: [],
+        actionCatalog: [],
+        requests: [{
+          id: "downtime-1",
+          actorId: "actor-a",
+          actorName: "Asha",
+          actionId: "research",
+          actionLabel: "Исследование",
+          title: "Research",
+          weeks: 1,
+          status: "pending",
+          checks: [{
+            id: "research-rank",
+            label: "Ранг вопроса",
+            actionType: "rankChoice",
+            rankChoice: {
+              min: 1,
+              max: 9,
+              default: 1,
+              rows: [{ rank: 1, label: "Ранг 1", baseCost: 10, unitCost: 5 }]
+            }
+          }, {
+            id: "research-steps",
+            label: "Шаги",
+            actionType: "numericInput",
+            input: {
+              min: 0,
+              max: 5,
+              step: 1,
+              default: 0,
+              unit: "шаг."
+            }
+          }, {
+            id: "research-result",
+            label: "Фрагменты сведений",
+            actionType: "downtimeResult",
+            resultFormula: {
+              terms: [{ actionId: "research-check", field: "total" }]
+            },
+            thresholds: []
+          }]
+        }]
+      }
+    }));
+    app.element = root;
+    await app._onRender({}, {});
+
+    let dialogPromise = dispatchClick(rankButton);
+    await new Promise((resolve) => setImmediate(resolve));
+    const rankDialog = globalThis.Dialog.instances.at(-1);
+    assert.match(rankDialog.config.content, /<option value="rankChoice"[^>]*selected[^>]*>Выбор ранга<\/option>/u);
+    assert.equal(rankDialog.config.content.includes("data-rank-choice-panel"), true);
+    rankDialog.close?.();
+    await dialogPromise;
+
+    dialogPromise = dispatchClick(stepsButton);
+    await new Promise((resolve) => setImmediate(resolve));
+    const numericDialog = globalThis.Dialog.instances.at(-1);
+    assert.match(numericDialog.config.content, /<option value="numericInput"[^>]*selected[^>]*>Числовой ресурс<\/option>/u);
+    assert.equal(numericDialog.config.content.includes("data-numeric-input-panel"), true);
+    numericDialog.close?.();
+    await dialogPromise;
+
+    dialogPromise = dispatchClick(resultButton);
+    await new Promise((resolve) => setImmediate(resolve));
+    const resultDialog = globalThis.Dialog.instances.at(-1);
+    assert.match(resultDialog.config.content, /<option value="downtimeResult"[^>]*selected[^>]*>Итог простоя<\/option>/u);
+    assert.equal(resultDialog.config.content.includes("data-result-expression-panel"), true);
+    assert.equal(resultDialog.config.content.includes("data-target-choice"), false);
+    assert.equal(resultDialog.config.content.includes("data-field=\"target-choice-target\""), false);
+    resultDialog.close?.();
+    await dialogPromise;
   }
   finally {
     globalThis.Dialog = previousDialog;

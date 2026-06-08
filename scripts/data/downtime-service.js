@@ -277,6 +277,70 @@ function normalizeOptionChoice(option = {}, index = 0) {
   };
 }
 
+function normalizeRankChoiceRow(row = {}, index = 0) {
+  const source = asObject(row);
+  const numericRank = toFiniteNumber(source.rank, index);
+  const rank = Number.isFinite(numericRank) ? Math.floor(numericRank) : index;
+  return {
+    ...clone(source),
+    id: cleanId(source.id) || `rank-${rank}`,
+    label: cleanString(source.label) || `Ранг ${rank}`,
+    rank
+  };
+}
+
+function buildRankChoiceRows(action = {}) {
+  const source = asObject(action);
+  const rankChoice = asObject(source.rankChoice);
+  const configuredRows = asArray(rankChoice.rows).length
+    ? asArray(rankChoice.rows)
+    : asArray(source.options);
+  if (configuredRows.length) {
+    return configuredRows.map((row, index) => normalizeRankChoiceRow(row, index));
+  }
+
+  const min = Math.max(0, Math.floor(toFiniteNumber(rankChoice.min, 0) ?? 0));
+  const max = Math.min(10, Math.floor(toFiniteNumber(rankChoice.max, 10) ?? 10));
+  const start = Math.min(min, max);
+  const end = Math.max(min, max);
+  return Array.from({ length: end - start + 1 }, (_entry, index) => normalizeRankChoiceRow({
+    rank: start + index
+  }, index));
+}
+
+function applySelectedRankChoice(action = {}, selection = {}) {
+  const source = asObject(action);
+  if (cleanId(source.actionType) !== "rankChoice") {
+    return source;
+  }
+
+  const rows = buildRankChoiceRows(source);
+  if (!rows.length) {
+    return source;
+  }
+
+  const requestedOptionId = cleanId(selection?.optionId);
+  const requestedRank = toFiniteNumber(selection?.value);
+  const rankChoice = asObject(source.rankChoice);
+  const defaultRank = toFiniteNumber(rankChoice.default);
+  const selectedRow = rows.find((row) => row.id === requestedOptionId)
+    ?? rows.find((row) => requestedRank !== undefined && row.rank === requestedRank)
+    ?? rows.find((row) => defaultRank !== undefined && row.rank === defaultRank)
+    ?? rows[0];
+
+  return {
+    ...clone(source),
+    rankChoice: {
+      ...clone(rankChoice),
+      rows: clone(rows)
+    },
+    selectedOptionId: selectedRow.id,
+    selectedOptionLabel: selectedRow.label,
+    selectedOption: clone(selectedRow),
+    selectedRank: selectedRow.rank
+  };
+}
+
 function applySelectedOptionChoice(action = {}, selection = {}) {
   const source = asObject(action);
   if (cleanId(source.actionType) !== "optionChoice") {
@@ -334,6 +398,104 @@ function applySelectedNumericInput(action = {}, selection = {}) {
   return {
     ...clone(source),
     numericValue: value
+  };
+}
+
+function clampNumber(value, min = undefined, max = undefined, fallback = 0) {
+  let numericValue = toFiniteNumber(value, fallback);
+  if (numericValue === undefined) {
+    numericValue = fallback;
+  }
+  if (min !== undefined) {
+    numericValue = Math.max(min, numericValue);
+  }
+  if (max !== undefined) {
+    numericValue = Math.min(max, numericValue);
+  }
+  return numericValue;
+}
+
+function resolveSelectedRank(resources = {}, selectedActionsById = new Map()) {
+  const rankSourceActionId = cleanId(resources.rankSourceActionId);
+  if (!rankSourceActionId) {
+    return undefined;
+  }
+
+  const sourceAction = selectedActionsById.get(rankSourceActionId);
+  const selectedRank = toFiniteNumber(sourceAction?.selectedRank);
+  if (selectedRank !== undefined) {
+    return selectedRank;
+  }
+
+  return toFiniteNumber(sourceAction?.selectedOption?.rank);
+}
+
+function resolveRankCostRow(resources = {}, selectedRank = undefined) {
+  const rows = asArray(resources.rankCosts).map((row) => asObject(row));
+  if (!rows.length) {
+    return {};
+  }
+  if (selectedRank !== undefined) {
+    return rows.find((row) => toFiniteNumber(row.rank) === selectedRank) ?? rows[0];
+  }
+  return rows[0];
+}
+
+function applyResourceQuantity(action = {}, selection = {}, selectedActionsById = new Map()) {
+  const source = asObject(action);
+  if (cleanId(source.actionType) !== "resources") {
+    return source;
+  }
+
+  const resources = asObject(source.resources);
+  const quantity = asObject(resources.quantity);
+  if (!Object.keys(quantity).length && !asArray(resources.rankCosts).length) {
+    return source;
+  }
+
+  const selectedRank = resolveSelectedRank(resources, selectedActionsById);
+  const rankCost = resolveRankCostRow(resources, selectedRank);
+  const min = toFiniteNumber(rankCost.min, toFiniteNumber(quantity.min, 0));
+  const max = toFiniteNumber(rankCost.max, toFiniteNumber(quantity.max));
+  const fallback = toFiniteNumber(quantity.default, min ?? 0);
+  const value = clampNumber(selection?.value, min, max, fallback);
+  const baseCost = toFiniteNumber(rankCost.baseCost, toFiniteNumber(resources.cost?.amount, 0)) ?? 0;
+  const unitCost = toFiniteNumber(rankCost.unitCost, toFiniteNumber(rankCost.stepCost, 0)) ?? 0;
+  const currency = cleanString(resources.cost?.currency) || "gp";
+  const total = baseCost + (value * unitCost);
+  const resourceQuantity = {
+    value,
+    min: min ?? "",
+    max: max ?? "",
+    step: toFiniteNumber(quantity.step, 1) ?? 1,
+    unit: cleanString(quantity.unit),
+    label: cleanString(resources.resourceName) || cleanString(source.label)
+  };
+  const computedCost = {
+    rank: selectedRank,
+    quantity: value,
+    baseCost,
+    unitCost,
+    total,
+    currency
+  };
+
+  return {
+    ...clone(source),
+    resources: {
+      ...clone(resources),
+      quantity: {
+        ...clone(quantity),
+        ...resourceQuantity
+      },
+      cost: {
+        ...clone(asObject(resources.cost)),
+        amount: total,
+        currency
+      }
+    },
+    resourceQuantity,
+    computedCost
   };
 }
 
@@ -436,13 +598,17 @@ function applySelectionDrivenFormula(action = {}, selections = new Map()) {
   };
 }
 
-function applyTargetActionSelection(action = {}, selections = new Map()) {
+function applyTargetActionSelection(action = {}, selections = new Map(), selectedActionsById = new Map()) {
   const source = asObject(action);
   const selection = selections.get(cleanId(source.id)) ?? {};
   const actionType = cleanId(source.actionType);
   let selectedAction = source;
   if (actionType === "resources") {
     selectedAction = applySelectedResourceChoice(source, selection);
+    selectedAction = applyResourceQuantity(selectedAction, selection, selectedActionsById);
+  }
+  else if (actionType === "rankChoice") {
+    selectedAction = applySelectedRankChoice(source, selection);
   }
   else if (actionType === "optionChoice") {
     selectedAction = applySelectedOptionChoice(source, selection);
@@ -975,6 +1141,18 @@ export class DowntimeService {
       state.balancesByActorId[actor.id] = balance;
       state.counter += 1;
       const audit = buildAuditFields();
+      const checks = [];
+      const selectedActionsById = new Map();
+      for (const [index, targetAction] of asArray(action.targetActions).entries()) {
+        const selectedTargetAction = applyTargetActionSelection(targetAction, actionSelections, selectedActionsById);
+        const normalizedCheck = normalizeCheck({
+          id: cleanId(selectedTargetAction?.id) || `check-${index + 1}`,
+          ...asObject(selectedTargetAction)
+        });
+        selectedActionsById.set(normalizedCheck.id, normalizedCheck);
+        checks.push(normalizedCheck);
+      }
+
       const request = {
         id: `downtime-${state.counter}`,
         actorId: actor.id,
@@ -985,13 +1163,7 @@ export class DowntimeService {
         description: cleanString(description),
         weeks: safeWeeks,
         status: "pending",
-        checks: asArray(action.targetActions).map((targetAction, index) => {
-          const selectedTargetAction = applyTargetActionSelection(targetAction, actionSelections);
-          return normalizeCheck({
-            id: cleanId(selectedTargetAction?.id) || `check-${index + 1}`,
-            ...asObject(selectedTargetAction)
-          });
-        }),
+        checks,
         result: "",
         ...audit,
         submittedByUserId: userId,
