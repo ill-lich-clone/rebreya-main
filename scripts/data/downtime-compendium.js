@@ -133,6 +133,15 @@ function normalizeRankTable(value = []) {
     .filter((entry) => Object.keys(entry).length > 0);
 }
 
+function normalizeRulesText(value = {}) {
+  const source = asObject(value);
+  return {
+    narrative: cleanString(source.narrative),
+    resources: cleanString(source.resources),
+    outcome: cleanString(source.outcome)
+  };
+}
+
 function normalizeThreshold(rawThreshold = {}) {
   const source = asObject(rawThreshold);
   const from = toOptionalNumber(source.from);
@@ -216,6 +225,7 @@ export function normalizeDowntimeActivity(rawActivity = {}, index = 0) {
     requirements: cleanArray(source.requirements),
     automationStatus,
     automationNotes: cleanArray(source.automationNotes),
+    rulesText: normalizeRulesText(source.rulesText),
     rankTable: normalizeRankTable(source.rankTable),
     targetActions: asArray(source.targetActions).map((action, actionIndex) => normalizeTargetAction(action, actionIndex)),
     tags: cleanArray(source.tags),
@@ -247,12 +257,27 @@ function buildRankTableSummary(activity) {
   return `<h3>Таблица</h3><p>Структурная таблица сохранена во флагах предмета Rebreya Main.</p>`;
 }
 
+function buildRulesTextSection(title, text) {
+  const value = cleanString(text);
+  return value ? `<h3>${escapeHtml(title)}</h3>${toHtmlParagraphs(value)}` : "";
+}
+
+function buildRulesTextSummary(activity) {
+  const rulesText = asObject(activity.rulesText);
+  return [
+    buildRulesTextSection("Нарративная заявка", rulesText.narrative),
+    buildRulesTextSection("Ресурсы", rulesText.resources),
+    buildRulesTextSection("Определение последствий", rulesText.outcome)
+  ].filter(Boolean).join("\n");
+}
+
 function buildDowntimeDescription(activity) {
+  const rulesTextSummary = buildRulesTextSummary(activity);
   const rows = [
     `<h2>${escapeHtml(activity.name)}</h2>`,
     activity.rank ? `<p><strong>Ранг:</strong> ${escapeHtml(activity.rank)}</p>` : "",
     activity.duration ? `<p><strong>Длительность:</strong> ${escapeHtml(activity.duration)}</p>` : "",
-    activity.summary ? toHtmlParagraphs(activity.summary) : "",
+    rulesTextSummary || (activity.summary ? toHtmlParagraphs(activity.summary) : ""),
     renderList("Требования", activity.requirements),
     `<h3>Автоматизация</h3><p>${escapeHtml(AUTOMATION_STATUS_LABELS[activity.automationStatus] ?? activity.automationStatus)}</p>`,
     renderList("Заметки мастеру", activity.automationNotes),
@@ -278,6 +303,7 @@ function buildDowntimeFlag(activity) {
     requirements: clone(activity.requirements),
     automationStatus: activity.automationStatus,
     automationNotes: clone(activity.automationNotes),
+    rulesText: clone(activity.rulesText),
     rankTable: clone(activity.rankTable),
     targetActions: clone(activity.targetActions)
   };

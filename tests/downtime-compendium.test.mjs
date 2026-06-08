@@ -17,6 +17,67 @@ const DOWNTIME_DATA = JSON.parse(readFileSync(
   join(MODULE_ROOT, "data", "downtime-activities-teyvankal-v01.json"),
   "utf8"
 ));
+const DOWNTIME_V2_SOURCE = readFileSync(
+  join(MODULE_ROOT, "docs", "Простой V2.txt"),
+  "utf8"
+);
+
+const V2_ACTIVITY_HEADINGS = [
+  ["craft", "Ремесло [0+] / Создание / Крафт"],
+  ["firearm-crafting", "Создание огнестрельного оружия [3+]"],
+  ["firearm-development", "Разработка огнестрельного оружия [3+]"],
+  ["magic-item-crafting", "Создание магического предмета [3+]"],
+  ["profession-work", "Работа по профессии [2]"],
+  ["rest", "Отдых [1]"],
+  ["research", "Исследование [1+]"],
+  ["training", "Обучение [1+]"],
+  ["gambling", "Азартные игры [4+]"],
+  ["fighting-tournament", "Бойцовский турнир [4+]"],
+  ["carousing", "Кутёж [3+]"],
+  ["magic-item-purchase", "Покупка магического предмета [2+]"],
+  ["crime", "Преступная деятельность"],
+  ["spread-rumors", "Распространение слухов"],
+  ["change-subclass", "Смена подкласса"],
+  ["change-class", "Смена класса"],
+  ["buy-magic-components", "Покупка магических компонентов"],
+  ["search-magic-components", "Поиск магических компонентов"],
+  ["gather-rumors", "Сбор слухов"],
+  ["laboratory-alchemy", "Лабораторная алхимия [Lich]"],
+  ["scientific-lectures", "Участие в научных лекциях и семинарах"],
+  ["invention-exhibition", "Участие в выставках изобретений"],
+  ["charity", "Благотворительность"],
+  ["racing", "Участие в гонках"],
+  ["long-project", "Работа над длительным проектом [1–9] [Lich]"],
+  ["construct-crafting", "Создание конструкта [0–9]"]
+];
+
+function getV2SectionLines(activityId) {
+  const sourceLines = DOWNTIME_V2_SOURCE.replace(/\r\n/gu, "\n").split("\n");
+  const headingIndex = V2_ACTIVITY_HEADINGS.findIndex(([id]) => id === activityId);
+  const heading = V2_ACTIVITY_HEADINGS[headingIndex]?.[1];
+  const start = sourceLines.findIndex((line) => line.trim() === heading);
+  assert.notEqual(start, -1, `Не найден заголовок V2 для ${activityId}: ${heading}`);
+
+  const nextHeadings = new Set(V2_ACTIVITY_HEADINGS.slice(headingIndex + 1).map(([, value]) => value));
+  const end = sourceLines.findIndex((line, index) => index > start && nextHeadings.has(line.trim()));
+  return sourceLines
+    .slice(start + 1, end === -1 ? sourceLines.length : end)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function htmlToPlainText(value = "") {
+  return String(value)
+    .replace(/<br\s*\/?>/giu, "\n")
+    .replace(/<[^>]+>/gu, "\n")
+    .replace(/&quot;/gu, "\"")
+    .replace(/&#39;/gu, "'")
+    .replace(/&lt;/gu, "<")
+    .replace(/&gt;/gu, ">")
+    .replace(/&amp;/gu, "&")
+    .replace(/\n{2,}/gu, "\n")
+    .trim();
+}
 
 test("downtime activity data covers every base downtime heading from chapter 9", () => {
   const activities = normalizeDowntimeActivities(DOWNTIME_DATA.activities);
@@ -148,6 +209,39 @@ test("core automated downtimes expose structured player inputs", () => {
   assert.equal(magicItemPurchase.targetActions.find((action) => action.id === "magic-item-purchase-item")?.itemChoice?.sourceType, "magicItem");
   assert.equal(magicItemPurchase.targetActions.find((action) => action.id === "magic-item-purchase-trade-step")?.actionType, "optionChoice");
   assert.equal(magicItemPurchase.targetActions.find((action) => action.id === "magic-item-purchase-price")?.actionType, "formulaRoll");
+});
+
+test("downtime item descriptions preserve every V2 source rule line", () => {
+  const activities = normalizeDowntimeActivities(DOWNTIME_DATA.activities);
+
+  for (const activity of activities) {
+    const expectedLines = getV2SectionLines(activity.id);
+    if (!expectedLines.length) {
+      continue;
+    }
+
+    const itemData = createDowntimeItemData(activity, new Map());
+    const description = htmlToPlainText(itemData.system.description.value);
+    for (const expectedLine of expectedLines) {
+      assert.ok(
+        description.includes(expectedLine),
+        `${activity.id} description is missing V2 text line: ${expectedLine}`
+      );
+    }
+  }
+});
+
+test("downtime item descriptions render V2 rules text in named blocks", () => {
+  const craft = normalizeDowntimeActivity(
+    DOWNTIME_DATA.activities.find((activity) => activity.id === "craft")
+  );
+  const itemData = createDowntimeItemData(craft, new Map());
+  const description = itemData.system.description.value;
+
+  assert.match(description, /<h3>Нарративная заявка<\/h3><p>Персонаж может создавать/u);
+  assert.match(description, /<h3>Ресурсы<\/h3><p>Ресурсы\. Чтобы заниматься Ремеслом/u);
+  assert.match(description, /<h3>Определение последствий<\/h3><p>Определение результата\. За каждый день/u);
+  assert.deepEqual(itemData.flags[MODULE_ID].downtime.rulesText, craft.rulesText);
 });
 
 test("downtime item data stores automation status and a stable Rebreya template flag", () => {
