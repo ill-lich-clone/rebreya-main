@@ -652,6 +652,7 @@ function normalizeRequest(value = {}) {
     normalized.templateRank = cleanString(value.templateRank);
     normalized.templateDuration = cleanString(value.templateDuration);
     normalized.templateSummary = cleanString(value.templateSummary);
+    normalized.templateDescriptionHtml = cleanString(value.templateDescriptionHtml);
     normalized.templateRequirements = normalizeStringList(value.templateRequirements);
     normalized.templateRankTable = normalizeRankTable(value.templateRankTable);
   }
@@ -1004,6 +1005,7 @@ export class DowntimeService {
         request.templateRank = cleanString(action.rank);
         request.templateDuration = cleanString(action.duration);
         request.templateSummary = cleanString(action.summary);
+        request.templateDescriptionHtml = cleanString(action.descriptionHtml);
         request.templateRequirements = normalizeStringList(action.requirements);
         request.templateRankTable = normalizeRankTable(action.rankTable);
       }

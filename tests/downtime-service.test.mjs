@@ -1154,10 +1154,12 @@ test("getActionCatalog exposes Rebreya downtime template items from the active g
 
 test("createRequest links downtime requests to the selected template item and copies target actions", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const descriptionHtml = "<h2>Research</h2><h3>Narrative request</h3><p>Full narrative.</p><h3>Resources</h3><p>Full resources.</p><h3>Consequences</h3><p>Full consequences.</p>";
   const templateItem = createDowntimeTemplateItem({
     id: "downtime-research",
     name: "Исследование по рангу",
     config: {
+      descriptionHtml,
       rank: "1+",
       duration: "1 рабочая неделя.",
       summary: "Изучить вопрос.",
@@ -1218,12 +1220,14 @@ test("createRequest links downtime requests to the selected template item and co
     assert.equal(request.templateUuid, templateItem.uuid);
     assert.equal(request.templateItemId, templateItem.id);
     assert.equal(request.templateSource, "item");
+    assert.equal(request.templateDescriptionHtml, descriptionHtml);
     assert.equal(request.templateRank, "1+");
     assert.equal(request.templateDuration, "1 рабочая неделя.");
     assert.equal(request.templateSummary, "Изучить вопрос.");
     assert.deepEqual(request.templateRequirements, ["Библиотека"]);
     assert.equal(request.title, "Исследование по рангу");
     assert.deepEqual(request.templateRankTable, [{ rank: 4, baseTotal: 120, stepCost: 100 }]);
+    assert.equal(harness.service.getSnapshot().requests[0].templateDescriptionHtml, descriptionHtml);
     assert.deepEqual(request.checks, [{
       id: "research-resources",
       label: "Стоимость исследования",
@@ -2024,6 +2028,81 @@ test("RebreyaMainModule routes player downtime check results through the GM sock
   }
 });
 
+test("RebreyaMainModule skips non-rendered actor sheets on downtime refreshes", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  const previousFoundry = globalThis.foundry;
+  globalThis.Hooks = {
+    once() {}
+  };
+  const renderCalls = [];
+  globalThis.game = {
+    user: {
+      id: "player-1",
+      isGM: false
+    }
+  };
+  globalThis.ui = {
+    windows: {
+      openSheet: {
+        rendered: true,
+        actor: {
+          id: "actor-a"
+        },
+        render() {
+          renderCalls.push("openSheet");
+        }
+      },
+      closedSheet: {
+        rendered: false,
+        actor: {
+          id: "actor-a"
+        },
+        render() {
+          renderCalls.push("closedSheet");
+        }
+      }
+    }
+  };
+  globalThis.foundry = {
+    applications: {
+      instances: new Map([[
+        "closedV2",
+        {
+          rendered: false,
+          document: {
+            id: "actor-a"
+          },
+          render() {
+            renderCalls.push("closedV2");
+          }
+        }
+      ]])
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-quiet-actor-refresh=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+
+    await moduleApi.handleSocketMessage({
+      type: "downtime-updated",
+      senderId: "gm",
+      actorIds: ["actor-a"],
+      requestId: "downtime-1"
+    });
+
+    assert.deepEqual(renderCalls, ["openSheet"]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+    globalThis.foundry = previousFoundry;
+  }
+});
+
 test("RebreyaMainModule refreshes player sheets when GM reports downtime creation", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
@@ -2049,6 +2128,7 @@ test("RebreyaMainModule refreshes player sheets when GM reports downtime creatio
   globalThis.ui = {
     windows: {
       sheet1: {
+        rendered: true,
         actor: {
           id: "actor-a"
         },
@@ -2113,6 +2193,7 @@ test("RebreyaMainModule refreshes player sheets when GM updates a downtime reque
   globalThis.ui = {
     windows: {
       sheet1: {
+        rendered: true,
         actor: {
           id: "actor-a"
         },

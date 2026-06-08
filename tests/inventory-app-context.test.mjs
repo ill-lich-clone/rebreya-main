@@ -397,6 +397,7 @@ test("InventoryApp _prepareContext does not hide unexpected display context erro
 test("InventoryApp allows downtime tab and maps downtime snapshot into context options", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+  const descriptionHtml = "<h2>Research</h2><h3>Narrative request</h3><p>Full narrative.</p><h3>Resources</h3><p>Full resources.</p><h3>Consequences</h3><p>Full consequences.</p>";
   const app = new InventoryApp(createModuleApi({
     getGroupContext: () => ({
       groupActor: {
@@ -431,6 +432,7 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
         actionLabel: "Research",
         title: "Ancient map",
         description: "Find a route.",
+        templateDescriptionHtml: descriptionHtml,
         weeks: 1,
         status: "pending",
         checks: [{
@@ -473,6 +475,7 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
           rank: "1+",
           duration: "1 week",
           summary: "Find answers.",
+          descriptionHtml: "<h2>Catalog fallback</h2><p>Should not replace request copy.</p>",
           requirements: ["Library"],
           targetActions: [{
             id: "research-cost",
@@ -531,6 +534,8 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
     assert.equal(context.downtime.showArchive, false);
     assert.equal(context.downtime.selectedRequest.id, "downtime-1");
     assert.equal(context.downtime.selectedRequest.templateSummary, "Find answers.");
+    assert.equal(context.downtime.selectedRequest.templateDescriptionHtml, descriptionHtml);
+    assert.equal(context.downtime.selectedRequest.hasTemplateDescriptionHtml, true);
     assert.equal(context.downtime.selectedRequest.resourceActions[0].outcomeSummary, "10 зм");
     assert.equal(context.downtime.selectedRequest.checkActions[0].summary, "Проверка: Интеллект");
   }
@@ -594,6 +599,19 @@ test("InventoryApp downtime controls do not define duplicate tooltip attributes"
   ));
 
   assert.deepEqual(duplicateTooltipTags, []);
+});
+
+test("InventoryApp downtime inspector renders copied template description html before summary fallback", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const descriptionBranchIndex = template.indexOf("{{#if downtime.selectedRequest.hasTemplateDescriptionHtml}}");
+  const descriptionValueIndex = template.indexOf("{{{downtime.selectedRequest.templateDescriptionHtml}}}");
+  const summaryFallbackIndex = template.indexOf("{{else if downtime.selectedRequest.hasTemplateSummary}}");
+  const escapedSummaryIndex = template.indexOf("{{downtime.selectedRequest.templateSummary}}");
+
+  assert.ok(descriptionBranchIndex > 0);
+  assert.ok(descriptionValueIndex > descriptionBranchIndex);
+  assert.ok(summaryFallbackIndex > descriptionValueIndex);
+  assert.ok(escapedSummaryIndex > summaryFallbackIndex);
 });
 
 test("InventoryApp selects downtime requests from the whole request card", async () => {

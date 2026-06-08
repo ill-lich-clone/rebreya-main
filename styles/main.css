@@ -4410,6 +4410,59 @@ summary:focus-visible {
   line-height: 1.35;
 }
 
+.rm-downtime-inspector__template-description {
+  display: grid;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 1px solid rgba(214, 177, 104, 0.16);
+  background: rgba(0, 0, 0, 0.14);
+  color: #f2dfc0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.rm-downtime-inspector__template-description h1,
+.rm-downtime-inspector__template-description h2,
+.rm-downtime-inspector__template-description h3,
+.rm-downtime-inspector__template-description h4,
+.rm-downtime-inspector__template-description p,
+.rm-downtime-inspector__template-description ul,
+.rm-downtime-inspector__template-description ol,
+.rm-downtime-inspector__template-description table {
+  margin: 0;
+}
+
+.rm-downtime-inspector__template-description h1,
+.rm-downtime-inspector__template-description h2 {
+  color: #fff8e8;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.rm-downtime-inspector__template-description h3,
+.rm-downtime-inspector__template-description h4 {
+  color: #fff8e8;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.rm-downtime-inspector__template-description table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.rm-downtime-inspector__template-description th,
+.rm-downtime-inspector__template-description td {
+  padding: 5px 6px;
+  border: 1px solid rgba(214, 177, 104, 0.14);
+}
+
+.rm-downtime-inspector__template-description th {
+  color: #fff8e8;
+  background: rgba(78, 46, 48, 0.66);
+}
+
 .rm-downtime-request__actions {
   display: flex;
   flex-wrap: wrap;

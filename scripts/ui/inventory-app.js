@@ -1024,6 +1024,7 @@ function buildDowntimeTemplateView(action = null) {
     rank: cleanText(action.rank),
     duration: cleanText(action.duration),
     summary: cleanText(action.summary),
+    descriptionHtml: cleanText(action.descriptionHtml),
     requirements: Array.isArray(action.requirements) ? action.requirements.map((entry) => cleanText(entry)).filter(Boolean) : [],
     rankTable: Array.isArray(action.rankTable) ? action.rankTable : [],
     targetActions,
@@ -1090,6 +1091,7 @@ function mapDowntimeRequest(request, actionCatalogById = new Map()) {
     templateRank: cleanText(request?.templateRank) || templateView?.rank || "",
     templateDuration: cleanText(request?.templateDuration) || templateView?.duration || "",
     templateSummary: cleanText(request?.templateSummary) || templateView?.summary || "",
+    templateDescriptionHtml: cleanText(request?.templateDescriptionHtml) || templateView?.descriptionHtml || "",
     templateRequirements: Array.isArray(request?.templateRequirements) && request.templateRequirements.length
       ? request.templateRequirements
       : (templateView?.requirements ?? []),
@@ -1099,6 +1101,7 @@ function mapDowntimeRequest(request, actionCatalogById = new Map()) {
     hasTemplateRank: Boolean(cleanText(request?.templateRank) || templateView?.rank),
     hasTemplateDuration: Boolean(cleanText(request?.templateDuration) || templateView?.duration),
     hasTemplateSummary: Boolean(cleanText(request?.templateSummary) || templateView?.summary),
+    hasTemplateDescriptionHtml: Boolean(cleanText(request?.templateDescriptionHtml) || templateView?.descriptionHtml),
     hasTemplateRequirements: Boolean(
       (Array.isArray(request?.templateRequirements) && request.templateRequirements.length)
       || templateView?.requirements?.length

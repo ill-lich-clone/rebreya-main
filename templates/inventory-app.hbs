@@ -778,7 +778,11 @@
                   <p class="rm-inline-status rm-inline-status--info"><span>{{downtime.selectedRequest.result}}</span></p>
                 {{/if}}
 
-                {{#if downtime.selectedRequest.hasTemplateSummary}}
+                {{#if downtime.selectedRequest.hasTemplateDescriptionHtml}}
+                  <div class="rm-downtime-inspector__template-description">
+                    {{{downtime.selectedRequest.templateDescriptionHtml}}}
+                  </div>
+                {{else if downtime.selectedRequest.hasTemplateSummary}}
                   <p class="rm-downtime-inspector__text">{{downtime.selectedRequest.templateSummary}}</p>
                 {{/if}}
 
