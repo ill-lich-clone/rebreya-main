@@ -241,7 +241,40 @@ test("downtime item descriptions render V2 rules text in named blocks", () => {
   assert.match(description, /<h3>Нарративная заявка<\/h3><p>Персонаж может создавать/u);
   assert.match(description, /<h3>Ресурсы<\/h3><p>Ресурсы\. Чтобы заниматься Ремеслом/u);
   assert.match(description, /<h3>Определение последствий<\/h3><p>Определение результата\. За каждый день/u);
-  assert.deepEqual(itemData.flags[MODULE_ID].downtime.rulesText, craft.rulesText);
+  assert.equal(itemData.flags[MODULE_ID].downtime.descriptionHtml, description);
+});
+
+test("downtime item descriptions are copied directly from activity data", () => {
+  for (const rawActivity of DOWNTIME_DATA.activities) {
+    assert.equal(
+      typeof rawActivity.descriptionHtml,
+      "string",
+      `${rawActivity.id} must store direct item descriptionHtml`
+    );
+    assert.ok(rawActivity.descriptionHtml.includes("<h2>"), `${rawActivity.id} direct description must be item HTML`);
+
+    const activity = normalizeDowntimeActivity(rawActivity);
+    const itemData = createDowntimeItemData(activity, new Map());
+    const downtimeFlag = itemData.flags[MODULE_ID].downtime;
+
+    assert.equal(itemData.system.description.value, rawActivity.descriptionHtml);
+    assert.equal(downtimeFlag.descriptionHtml, rawActivity.descriptionHtml);
+    assert.equal(Object.hasOwn(downtimeFlag, "rulesText"), false);
+  }
+});
+
+test("downtime item descriptions survive parser round trips", () => {
+  for (const rawActivity of DOWNTIME_DATA.activities) {
+    const activity = normalizeDowntimeActivity(rawActivity);
+    const itemData = createDowntimeItemData(activity, new Map());
+    const encodedItem = JSON.stringify(itemData);
+    const decodedItem = JSON.parse(encodedItem);
+    const description = decodedItem.system.description.value;
+
+    assert.equal(description, rawActivity.descriptionHtml);
+    assert.doesNotMatch(description, /<script\b|on[a-z]+\s*=/iu);
+    assert.doesNotMatch(description, /&lt;h[23]&gt;/iu);
+  }
 });
 
 test("downtime item data stores automation status and a stable Rebreya template flag", () => {

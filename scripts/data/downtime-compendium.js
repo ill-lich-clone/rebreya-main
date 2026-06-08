@@ -21,13 +21,6 @@ const DEFAULT_DOWNTIME_ICON = "systems/dnd5e/icons/svg/activity/utility.svg";
 const DOWNTIME_TEMPLATE_VERSION = 1;
 const FALLBACK_OBSERVER_OWNERSHIP = 2;
 
-const AUTOMATION_STATUS_LABELS = Object.freeze({
-  automated: "Автоматизировано",
-  partial: "Частично автоматизировано",
-  "needs-work": "Требует доработки",
-  blocked: "Нужна ручная реализация"
-});
-
 function clone(value) {
   if (globalThis.foundry?.utils?.deepClone) {
     return globalThis.foundry.utils.deepClone(value);
@@ -101,45 +94,10 @@ export function createStableDowntimeDocumentId(activityId) {
   return stableHashId(cleanString(activityId, "downtime"), "downtime-document");
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/gu, "&amp;")
-    .replace(/</gu, "&lt;")
-    .replace(/>/gu, "&gt;")
-    .replace(/"/gu, "&quot;")
-    .replace(/'/gu, "&#39;");
-}
-
-function toHtmlParagraphs(value) {
-  const text = cleanString(value);
-  if (!text) {
-    return "";
-  }
-
-  return text
-    .split(/\n{2,}/gu)
-    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/gu, "<br>")}</p>`)
-    .join("");
-}
-
-function renderList(title, values = []) {
-  const rows = cleanArray(values).map((value) => `<li>${escapeHtml(value)}</li>`);
-  return rows.length ? `<h3>${escapeHtml(title)}</h3><ul>${rows.join("")}</ul>` : "";
-}
-
 function normalizeRankTable(value = []) {
   return asArray(value)
     .map((entry) => clone(asObject(entry)))
     .filter((entry) => Object.keys(entry).length > 0);
-}
-
-function normalizeRulesText(value = {}) {
-  const source = asObject(value);
-  return {
-    narrative: cleanString(source.narrative),
-    resources: cleanString(source.resources),
-    outcome: cleanString(source.outcome)
-  };
 }
 
 function normalizeThreshold(rawThreshold = {}) {
@@ -222,10 +180,10 @@ export function normalizeDowntimeActivity(rawActivity = {}, index = 0) {
     defaultWeeks: Math.max(1, toInteger(source.defaultWeeks, 1)),
     duration: cleanString(source.duration),
     summary: cleanString(source.summary),
+    descriptionHtml: cleanString(source.descriptionHtml),
     requirements: cleanArray(source.requirements),
     automationStatus,
     automationNotes: cleanArray(source.automationNotes),
-    rulesText: normalizeRulesText(source.rulesText),
     rankTable: normalizeRankTable(source.rankTable),
     targetActions: asArray(source.targetActions).map((action, actionIndex) => normalizeTargetAction(action, actionIndex)),
     tags: cleanArray(source.tags),
@@ -240,54 +198,6 @@ export function normalizeDowntimeActivities(rawActivities = []) {
     .filter((activity) => activity.id && activity.name);
 }
 
-function buildTargetActionSummary(actions = []) {
-  const rows = asArray(actions)
-    .map((action) => cleanString(action.label))
-    .filter(Boolean)
-    .map((label) => `<li>${escapeHtml(label)}</li>`);
-
-  return rows.length ? `<h3>Целевые действия</h3><ul>${rows.join("")}</ul>` : "";
-}
-
-function buildRankTableSummary(activity) {
-  if (!activity.rankTable.length) {
-    return "";
-  }
-
-  return `<h3>Таблица</h3><p>Структурная таблица сохранена во флагах предмета Rebreya Main.</p>`;
-}
-
-function buildRulesTextSection(title, text) {
-  const value = cleanString(text);
-  return value ? `<h3>${escapeHtml(title)}</h3>${toHtmlParagraphs(value)}` : "";
-}
-
-function buildRulesTextSummary(activity) {
-  const rulesText = asObject(activity.rulesText);
-  return [
-    buildRulesTextSection("Нарративная заявка", rulesText.narrative),
-    buildRulesTextSection("Ресурсы", rulesText.resources),
-    buildRulesTextSection("Определение последствий", rulesText.outcome)
-  ].filter(Boolean).join("\n");
-}
-
-function buildDowntimeDescription(activity) {
-  const rulesTextSummary = buildRulesTextSummary(activity);
-  const rows = [
-    `<h2>${escapeHtml(activity.name)}</h2>`,
-    activity.rank ? `<p><strong>Ранг:</strong> ${escapeHtml(activity.rank)}</p>` : "",
-    activity.duration ? `<p><strong>Длительность:</strong> ${escapeHtml(activity.duration)}</p>` : "",
-    rulesTextSummary || (activity.summary ? toHtmlParagraphs(activity.summary) : ""),
-    renderList("Требования", activity.requirements),
-    `<h3>Автоматизация</h3><p>${escapeHtml(AUTOMATION_STATUS_LABELS[activity.automationStatus] ?? activity.automationStatus)}</p>`,
-    renderList("Заметки мастеру", activity.automationNotes),
-    buildTargetActionSummary(activity.targetActions),
-    buildRankTableSummary(activity)
-  ];
-
-  return rows.filter(Boolean).join("\n");
-}
-
 function buildDowntimeFlag(activity) {
   return {
     schemaVersion: DOWNTIME_TEMPLATE_VERSION,
@@ -300,10 +210,10 @@ function buildDowntimeFlag(activity) {
     defaultWeeks: activity.defaultWeeks,
     duration: activity.duration,
     summary: activity.summary,
+    descriptionHtml: activity.descriptionHtml,
     requirements: clone(activity.requirements),
     automationStatus: activity.automationStatus,
     automationNotes: clone(activity.automationNotes),
-    rulesText: clone(activity.rulesText),
     rankTable: clone(activity.rankTable),
     targetActions: clone(activity.targetActions)
   };
@@ -320,7 +230,7 @@ function buildDowntimeSignature(activity) {
 function createDowntimeSystem(activity) {
   return {
     description: {
-      value: buildDowntimeDescription(activity),
+      value: activity.descriptionHtml,
       chat: ""
     },
     source: {
