@@ -1686,13 +1686,45 @@ test("InventoryApp downtime target dialog preserves constructor action types", a
               unit: "шаг."
             }
           }, {
+            id: "research-check",
+            label: "Проверка исследования",
+            actionType: "check",
+            sourceType: "ability",
+            ability: "int",
+            target: "int",
+            outcomeMode: "thresholds",
+            recordMode: "pass-thresholds",
+            thresholds: [{
+              from: 1,
+              to: 10,
+              label: "Провал",
+              outcome: "failure"
+            }, {
+              from: 11,
+              to: 16,
+              label: "Частичный успех",
+              outcome: "partial"
+            }]
+          }, {
             id: "research-result",
             label: "Фрагменты сведений",
             actionType: "downtimeResult",
-            resultFormula: {
-              terms: [{ actionId: "research-check", field: "total" }]
-            },
-            thresholds: []
+            outcomeMode: "pass-thresholds",
+            recordMode: "single-result",
+            resultMapping: {
+              sourceActionId: "research-check",
+              sourceField: "thresholdOutcome",
+              outputField: "fragments",
+              rows: [{
+                sourceOutcome: "failure",
+                value: 0,
+                label: "0 фрагментов"
+              }, {
+                sourceOutcome: "partial",
+                value: 1,
+                label: "1 фрагмент"
+              }]
+            }
           }]
         }]
       }
@@ -1720,7 +1752,10 @@ test("InventoryApp downtime target dialog preserves constructor action types", a
     await new Promise((resolve) => setImmediate(resolve));
     const resultDialog = globalThis.Dialog.instances.at(-1);
     assert.match(resultDialog.config.content, /<option value="downtimeResult"[^>]*selected[^>]*>Итог простоя<\/option>/u);
-    assert.equal(resultDialog.config.content.includes("data-result-expression-panel"), true);
+    assert.equal(resultDialog.config.content.includes("data-result-mapping-panel"), true);
+    assert.equal(resultDialog.config.content.includes("data-result-expression-panel"), false);
+    assert.equal(resultDialog.config.content.includes("data-step=\"outcome\""), false);
+    assert.equal(resultDialog.config.content.includes("research-check"), true);
     assert.equal(resultDialog.config.content.includes("data-target-choice"), false);
     assert.equal(resultDialog.config.content.includes("data-field=\"target-choice-target\""), false);
     resultDialog.close?.();

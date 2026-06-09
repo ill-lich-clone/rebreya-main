@@ -672,3 +672,124 @@ test("party inventory snapshot remaps removed core supply icon paths", async () 
     restoreFoundry();
   }
 });
+
+test("InventoryService converts ration items into Rebreya food supply pounds", async () => {
+  const restoreFoundry = installFoundryUtils();
+  const previousGame = globalThis.game;
+  const previousActor = globalThis.Actor;
+
+  let createdSupplyData = null;
+  let supplyUpdatePatch = null;
+  let sourceDeleted = false;
+
+  class TestActor {}
+
+  const partyActor = new TestActor();
+  Object.assign(partyActor, {
+    id: "party-inventory",
+    type: "npc",
+    isOwner: true,
+    system: {
+      currency: {}
+    },
+    items: {
+      contents: [],
+      get: () => null
+    },
+    createEmbeddedDocuments: async (_type, documents) => {
+      createdSupplyData = foundry.utils.deepClone(documents[0]);
+      const item = {
+        name: createdSupplyData.name,
+        type: createdSupplyData.type,
+        flags: createdSupplyData.flags,
+        getFlag: (moduleId, key) => createdSupplyData.flags?.[moduleId]?.[key],
+        toObject: () => foundry.utils.deepClone(createdSupplyData),
+        update: async (patch) => {
+          supplyUpdatePatch = patch;
+        }
+      };
+      partyActor.items.contents.push(item);
+      return [item];
+    }
+  });
+
+  const characterActor = new TestActor();
+  Object.assign(characterActor, {
+    id: "hero",
+    type: "character",
+    isOwner: true
+  });
+
+  const rationItem = {
+    name: "Рационы",
+    type: "consumable",
+    parent: characterActor,
+    actor: characterActor,
+    flags: {},
+    getFlag: () => undefined,
+    toObject: () => ({
+      name: "Рационы",
+      type: "consumable",
+      system: {
+        quantity: 3,
+        weight: {
+          value: 2
+        }
+      },
+      flags: {}
+    }),
+    delete: async () => {
+      sourceDeleted = true;
+    }
+  };
+
+  globalThis.Actor = TestActor;
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    actors: {
+      get: (id) => id === partyActor.id ? partyActor : null
+    },
+    settings: {
+      get: () => ({
+        inventoryActorId: partyActor.id
+      }),
+      set: async () => {}
+    }
+  };
+
+  const service = new InventoryService({
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    assert.deepEqual(service.getRationFoodConversion(rationItem), {
+      itemName: "Рационы",
+      quantity: 3,
+      weightEach: 2,
+      foodLb: 6
+    });
+
+    const result = await service.convertRationItemToFoodSupply(rationItem);
+
+    assert.equal(createdSupplyData.name, "Еда");
+    assert.equal(createdSupplyData.flags["rebreya-main"].resourceKey, "food");
+    assert.equal(supplyUpdatePatch["system.quantity"], 6);
+    assert.equal(supplyUpdatePatch["system.weight.value"], 1);
+    assert.equal(sourceDeleted, true);
+    assert.deepEqual(result, {
+      itemName: "Рационы",
+      foodLb: 6
+    });
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.Actor = previousActor;
+    restoreFoundry();
+  }
+});

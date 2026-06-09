@@ -766,6 +766,98 @@ test("CharacterDowntimeService exposes rank and rank-priced resource constructor
   assert.equal(context.selectedTemplate.resourceActions[0].outcomeSummary, "320 зм");
 });
 
+test("CharacterDowntimeService labels submitted constructor actions and mapped results", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 0,
+          reservedWeeks: 1,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }],
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionId: "research",
+        actionLabel: "Research",
+        title: "Research",
+        weeks: 1,
+        status: "pending",
+        checks: [{
+          id: "research-rank",
+          label: "Question rank",
+          actionType: "rankChoice",
+          selectedRank: 5,
+          selectedOptionLabel: "Rank 5"
+        }, {
+          id: "research-resources",
+          label: "Research cost",
+          actionType: "resources",
+          resourceQuantity: {
+            value: 2,
+            unit: "steps"
+          },
+          computedCost: {
+            total: 600,
+            currency: "gp"
+          },
+          resources: {
+            cost: {
+              amount: 600,
+              currency: "gp"
+            }
+          }
+        }, {
+          id: "research-check",
+          label: "Research check",
+          actionType: "check",
+          sourceType: "ability",
+          ability: "int",
+          target: "int",
+          result: {
+            total: 17,
+            thresholdOutcome: "success",
+            thresholdLabel: "Success"
+          }
+        }, {
+          id: "research-result",
+          label: "Knowledge fragments",
+          actionType: "downtimeResult",
+          result: {
+            value: 2,
+            label: "2 fragments",
+            outputField: "fragments"
+          }
+        }]
+      }],
+      actionCatalog: []
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }));
+  const request = context.requests[0];
+
+  assert.equal(request.checks[0].summary, "Выбор ранга: Question rank");
+  assert.equal(request.checks[0].outcomeSummary, "Rank 5");
+  assert.equal(request.checks[0].hasOutcomeSummary, true);
+  assert.equal(request.checks[1].summary, "Ресурсы: Research cost");
+  assert.equal(request.checks[1].hasOutcomeSummary, true);
+  assert.equal(request.checks[2].resultLabel, "17, Success");
+  assert.equal(request.checks[3].summary, "Итог: Knowledge fragments");
+  assert.equal(request.checks[3].resultLabel, "2 fragments");
+  assert.equal(request.checks[3].hasOutcomeSummary, false);
+  assert.equal(request.checks[3].hasRollTargets, false);
+  assert.deepEqual(request.checkActions.map((check) => check.id), ["research-check"]);
+});
+
 test("CharacterDowntimeService converts known group errors into a warning context", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     error: new Error(GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP)

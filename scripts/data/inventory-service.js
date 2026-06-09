@@ -19,6 +19,7 @@ const WATER_ITEM_NAME = "Галлоны воды";
 const WATER_LB_PER_GALLON = 8;
 const FOOD_SUPPLY_ICON = "icons/consumables/food/berries-ration-round-red.webp";
 const WATER_SUPPLY_ICON = "icons/sundries/survival/waterskin-leather-brown.webp";
+const RATION_ITEM_NAME_WORDS = new Set(["ration", "rations", "паек", "пайки", "рацион", "рационы"]);
 const DEFAULT_CAPACITY_MULTIPLIER = 15;
 const COIN_LABELS = {
   pp: "пм",
@@ -132,6 +133,14 @@ function normalizeText(value) {
     .toLowerCase()
     .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
     .replace(/\s+/gu, " ");
+}
+
+function isRationItemName(value) {
+  const words = normalizeText(value)
+    .replace(/ё/gu, "е")
+    .split(/[^a-zа-я0-9]+/iu)
+    .filter(Boolean);
+  return words.some((word) => RATION_ITEM_NAME_WORDS.has(word));
 }
 
 const LEGACY_CORE_ICON_REPLACEMENTS = new Map([
@@ -2080,6 +2089,64 @@ export class InventoryService {
   getRebreyaToolLabel(toolId) {
     const normalizedToolId = normalizeToolId(toolId);
     return REBREYA_TOOL_LABEL_BY_ID.get(normalizedToolId) ?? "";
+  }
+
+  getRationFoodConversion(item) {
+    const itemData = item?.toObject?.() ?? item ?? {};
+    const itemName = String(item?.name ?? itemData.name ?? "").trim();
+    if (!isRationItemName(itemName)) {
+      return null;
+    }
+
+    const itemFlags = foundry.utils.deepClone(itemData.flags?.[MODULE_ID] ?? {});
+    const resourceKey = String(item?.getFlag?.(MODULE_ID, "resourceKey") ?? itemFlags.resourceKey ?? "").trim().toLowerCase();
+    if (resourceKey) {
+      return null;
+    }
+
+    const quantity = roundNumber(getRawQuantity(itemData), 2);
+    if (quantity <= 0) {
+      return null;
+    }
+
+    const weightEach = roundNumber(Math.max(getItemWeight(itemData), 1), 2);
+    const foodLb = roundNumber(quantity * weightEach, 2);
+    if (foodLb <= 0) {
+      return null;
+    }
+
+    return {
+      itemName: itemName || FOOD_ITEM_NAME,
+      quantity,
+      weightEach,
+      foodLb
+    };
+  }
+
+  async convertRationItemToFoodSupply(item) {
+    const conversion = this.getRationFoodConversion(item);
+    if (!conversion) {
+      throw new Error("Этот предмет не похож на пайки или рационы.");
+    }
+
+    const sourceActor = item?.parent ?? item?.actor ?? null;
+    if (!(sourceActor instanceof Actor)) {
+      throw new Error("Предмет должен находиться в чарнике.");
+    }
+    if (sourceActor.isOwner === false) {
+      throw new Error("У вас нет прав на исходный предмет.");
+    }
+
+    await this.addSupply("food", conversion.foodLb);
+
+    if (typeof item?.delete === "function") {
+      await item.delete();
+    }
+
+    return {
+      itemName: conversion.itemName,
+      foodLb: conversion.foodLb
+    };
   }
 
   async importDroppedItem(dropData) {

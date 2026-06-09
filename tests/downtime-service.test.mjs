@@ -1549,6 +1549,95 @@ test("createRequest snapshots rank choices and rank-priced resources", async () 
   }
 });
 
+test("recordCheckResult passes threshold outcomes into downtime result actions", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    downtimeState: {
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Hero A",
+        actionId: "research",
+        actionLabel: "Research",
+        title: "Research",
+        weeks: 1,
+        status: "pending",
+        checks: [{
+          id: "research-check",
+          label: "Research check",
+          actionType: "check",
+          sourceType: "ability",
+          ability: "int",
+          target: "int",
+          outcomeMode: "thresholds",
+          recordMode: "pass-thresholds",
+          thresholds: [{
+            from: 1,
+            to: 10,
+            label: "Failure",
+            outcome: "failure"
+          }, {
+            from: 11,
+            to: 16,
+            label: "Partial",
+            outcome: "partial"
+          }, {
+            from: 17,
+            to: 25,
+            label: "Success",
+            outcome: "success"
+          }]
+        }, {
+          id: "research-result",
+          label: "Knowledge fragments",
+          actionType: "downtimeResult",
+          outcomeMode: "pass-thresholds",
+          recordMode: "single-result",
+          resultMapping: {
+            sourceActionId: "research-check",
+            sourceField: "thresholdOutcome",
+            outputField: "fragments",
+            rows: [{
+              sourceOutcome: "failure",
+              value: 0,
+              label: "0 fragments"
+            }, {
+              sourceOutcome: "partial",
+              value: 1,
+              label: "1 fragment"
+            }, {
+              sourceOutcome: "success",
+              value: 2,
+              label: "2 fragments"
+            }]
+          }
+        }]
+      }]
+    }
+  });
+
+  try {
+    const request = await harness.service.recordCheckResult("downtime-1", "research-check", {
+      total: 17
+    }, {
+      actorId: actor.id
+    });
+
+    assert.equal(request.checks[0].result.total, 17);
+    assert.equal(request.checks[0].result.thresholdOutcome, "success");
+    assert.equal(request.checks[0].result.thresholdLabel, "Success");
+    assert.equal(request.checks[1].result.value, 2);
+    assert.equal(request.checks[1].result.label, "2 fragments");
+    assert.equal(request.checks[1].result.sourceActionId, "research-check");
+    assert.equal(request.checks[1].result.sourceOutcome, "success");
+    assert.equal(request.checks[1].result.outputField, "fragments");
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("approving a request with completed roll targets archives it as completed", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
   const harness = createHarness({

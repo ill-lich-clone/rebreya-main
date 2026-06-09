@@ -35,6 +35,16 @@ const DOWNTIME_STATUS_META = Object.freeze({
 
 const DOWNTIME_ARCHIVE_STATUSES = new Set(["completed", "rejected"]);
 const DOWNTIME_PAGE_SIZE = 5;
+const DOWNTIME_NON_ROLL_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "downtimeResult"]);
+const DOWNTIME_NON_ROLL_ACTION_SUMMARY_LABELS = Object.freeze({
+  resources: "Ресурсы",
+  itemChoice: "Предмет",
+  numericInput: "Числовой ресурс",
+  optionChoice: "Выбор",
+  rankChoice: "Выбор ранга",
+  formulaRoll: "Формула",
+  downtimeResult: "Итог"
+});
 
 const MAX_DOWNTIME_TARGET_CHOICES = 5;
 const MAX_DOWNTIME_THRESHOLDS = 12;
@@ -155,12 +165,15 @@ const DOWNTIME_OUTCOME_MODE_OPTIONS = Object.freeze([
   { value: "sum", label: "Сумма", help: "Сохранить total для накопления суммы." },
   { value: "dc-sum", label: "DC + сумма", help: "Одновременно проверить DC и сохранить total в сумму." },
   { value: "thresholds", label: "Пороги", help: "Сравнить общий итог простоя с несколькими порогами или диапазонами." },
+  { value: "pass-thresholds", label: "Передать пороги", help: "Передать выбранный порог проверки в итоговое действие." },
   { value: "freeform", label: "Свободный", help: "Сохранить результат без автоматической оценки успеха." }
 ]);
 
 const DOWNTIME_RECORD_MODE_OPTIONS = Object.freeze([
   { value: "total-success", label: "Total и успех", help: "Сохранить total и отметку успеха/провала." },
   { value: "total", label: "Только total", help: "Сохранить только число броска." },
+  { value: "pass-thresholds", label: "Передать пороги", help: "Сохранить total и выбранный порог для итогового действия." },
+  { value: "single-result", label: "Одно значение", help: "Сохранить одно вычисленное значение результата простоя." },
   { value: "group-sum", label: "Сумма группы", help: "Добавить результат к общей сумме заявки." },
   { value: "gm", label: "Решение мастера", help: "Оставить итог на ручное решение мастера." }
 ]);
@@ -666,6 +679,107 @@ function buildResultExpressionPanel(action = {}, existingActions = []) {
   `;
 }
 
+function getResultMappingSourceActions(action = {}, existingActions = []) {
+  const currentId = cleanText(action.id);
+  return (Array.isArray(existingActions) ? existingActions : [])
+    .filter((entry) => cleanText(entry?.id) && cleanText(entry?.id) !== currentId)
+    .filter((entry) => ["check", "choice"].includes(cleanText(entry?.actionType) || "check"));
+}
+
+function getResultMappingSourceThresholds(sourceAction = {}) {
+  const thresholds = Array.isArray(sourceAction?.thresholds) ? sourceAction.thresholds : [];
+  if (thresholds.length) {
+    return thresholds.map((threshold, index) => {
+      const outcome = cleanText(threshold?.outcome) || cleanText(threshold?.id) || `threshold-${index + 1}`;
+      return {
+        value: outcome,
+        label: cleanText(threshold?.label) || getOptionLabel(DOWNTIME_THRESHOLD_OUTCOME_OPTIONS, outcome, outcome)
+      };
+    });
+  }
+  return [
+    { value: "failure", label: "Провал" },
+    { value: "partial", label: "Частичный успех" },
+    { value: "success", label: "Успех" },
+    { value: "great-success", label: "Сильный успех" }
+  ];
+}
+
+function normalizeResultMappingRows(action = {}, sourceAction = {}) {
+  const configuredRows = Array.isArray(action.resultMapping?.rows) ? action.resultMapping.rows : [];
+  if (configuredRows.length) {
+    return configuredRows.map((row) => ({
+      sourceOutcome: cleanText(row?.sourceOutcome) || cleanText(row?.match),
+      value: row?.value ?? "",
+      label: cleanText(row?.label),
+      outcome: cleanText(row?.outcome)
+    }));
+  }
+
+  return getResultMappingSourceThresholds(sourceAction).map((threshold) => ({
+    sourceOutcome: threshold.value,
+    value: "",
+    label: "",
+    outcome: ""
+  }));
+}
+
+function buildResultMappingPanel(action = {}, existingActions = []) {
+  const sourceActions = getResultMappingSourceActions(action, existingActions);
+  const mapping = action.resultMapping && typeof action.resultMapping === "object" && !Array.isArray(action.resultMapping)
+    ? action.resultMapping
+    : {};
+  const selectedSourceId = cleanText(mapping.sourceActionId) || cleanText(action.resultFormula?.terms?.[0]?.actionId) || cleanText(sourceActions[0]?.id);
+  const sourceAction = sourceActions.find((entry) => cleanText(entry.id) === selectedSourceId) ?? sourceActions[0] ?? null;
+  const sourceThresholdOptions = getResultMappingSourceThresholds(sourceAction);
+  const sourceOptions = [
+    { value: "", label: "Выбрать" },
+    ...sourceActions.map((entry) => ({ value: cleanText(entry.id), label: cleanText(entry.label) || cleanText(entry.id) }))
+  ];
+  const rows = normalizeResultMappingRows(action, sourceAction);
+  return `
+    <div class="rm-downtime-result-mapping-panel" data-result-mapping-panel>
+      <div class="rm-downtime-target-dialog__grid">
+        <div class="rm-field">
+          <label title="Целевое действие, чьи пороги нужно превратить в итог простоя.">Источник порогов</label>
+          <select data-field="target-result-mapping-source">${renderSelectOptions(sourceOptions, selectedSourceId)}</select>
+        </div>
+        <div class="rm-field">
+          <label title="Поле результата, которое будет передаваться. Для порогов это thresholdOutcome.">Поле</label>
+          <select data-field="target-result-mapping-source-field">${renderSelectOptions([
+            { value: "thresholdOutcome", label: "порог" },
+            { value: "thresholdLabel", label: "подпись порога" },
+            { value: "total", label: "total" },
+            { value: "success", label: "успех" }
+          ], cleanText(mapping.sourceField) || "thresholdOutcome")}</select>
+        </div>
+        <div class="rm-field">
+          <label title="Имя итогового значения, например fragments.">Итоговое поле</label>
+          <input type="text" value="${escapeHtml(cleanText(mapping.outputField) || "value")}" data-field="target-result-mapping-output-field" placeholder="fragments">
+        </div>
+      </div>
+      <div class="rm-downtime-result-map-list" data-result-map-rows>
+        ${rows.map((row) => `
+          <div class="rm-downtime-result-map-row" data-result-map-row>
+            <div class="rm-field">
+              <label title="Какой порог пришёл из проверки.">Если</label>
+              <select data-field="target-result-map-source">${renderSelectOptions(sourceThresholdOptions, row.sourceOutcome)}</select>
+            </div>
+            <div class="rm-field">
+              <label title="Одно числовое значение результата.">Значение</label>
+              <input type="number" step="1" value="${escapeHtml(row.value)}" data-field="target-result-map-value">
+            </div>
+            <div class="rm-field">
+              <label title="Что увидят игрок и мастер.">Подпись</label>
+              <input type="text" value="${escapeHtml(row.label)}" data-field="target-result-map-label" placeholder="2 фрагмента знаний">
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
 function normalizeDowntimeTargetChoice(choice = {}, fallback = {}, actor = null) {
   const sourceType = cleanText(choice.sourceType)
     || cleanText(fallback.sourceType)
@@ -1146,6 +1260,25 @@ function readResultFormula(root) {
   };
 }
 
+function readResultMapping(root) {
+  const sourceActionId = readFieldValue(root, "target-result-mapping-source");
+  const sourceField = readFieldValue(root, "target-result-mapping-source-field") || "thresholdOutcome";
+  const outputField = readFieldValue(root, "target-result-mapping-output-field") || "value";
+  const rows = Array.from(root?.querySelectorAll?.("[data-result-map-row]") ?? [])
+    .map((row) => ({
+      sourceOutcome: readFieldValue(row, "target-result-map-source"),
+      value: toInteger(readFieldValue(row, "target-result-map-value"), 0),
+      label: readFieldValue(row, "target-result-map-label")
+    }))
+    .filter((row) => row.sourceOutcome || row.label || row.value !== 0);
+  return {
+    sourceActionId,
+    sourceField,
+    outputField,
+    rows
+  };
+}
+
 function readDowntimeTargetChoice(row, actor = null) {
   const sourceType = readFieldValue(row, "target-choice-source-type") || "skill";
   const defaultTarget = getDefaultTargetOption(sourceType, actor);
@@ -1220,8 +1353,10 @@ function buildEmptyDowntimeContext({ warning = "", grantWeeks = 1, grantActorId 
 
 function buildCheckSummary(check) {
   const actionType = cleanText(check?.actionType);
-  if (["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "downtimeResult"].includes(actionType)) {
-    return cleanText(check?.label) || "Целевое действие";
+  if (DOWNTIME_NON_ROLL_ACTION_TYPES.has(actionType)) {
+    const prefix = DOWNTIME_NON_ROLL_ACTION_SUMMARY_LABELS[actionType] ?? "Целевое действие";
+    const label = cleanText(check?.label);
+    return label ? `${prefix}: ${label}` : prefix;
   }
 
   const abilityLabel = getOptionLabel(DOWNTIME_ABILITY_OPTIONS, check?.ability, cleanText(check?.ability));
@@ -1303,6 +1438,9 @@ function buildOutcomeSummary(check, outcomeMode) {
   if (cleanText(check?.actionType) === "formulaRoll") {
     return cleanText(check?.selectedFormula) || "Формула";
   }
+  if (cleanText(check?.actionType) === "downtimeResult") {
+    return buildDowntimeCheckResultLabel(check?.result) || cleanText(check?.label) || "Итог";
+  }
   const numericDc = Number(check?.dc);
   const hasDc = Number.isFinite(numericDc) && numericDc > 0;
   switch (outcomeMode) {
@@ -1316,6 +1454,8 @@ function buildOutcomeSummary(check, outcomeMode) {
       return hasDc ? `DC ${numericDc} + сумма` : "DC + сумма";
     case "thresholds":
       return "Пороги";
+    case "pass-thresholds":
+      return "Передать пороги";
     case "freeform":
       return "Свободный";
     default:
@@ -1325,7 +1465,7 @@ function buildOutcomeSummary(check, outcomeMode) {
 
 function mapDowntimeTargetAction(check, index) {
   const actionType = cleanText(check?.actionType) || "check";
-  const nonRollAction = ["resources", "rankChoice", "numericInput", "optionChoice", "formulaRoll", "downtimeResult"].includes(actionType);
+  const nonRollAction = DOWNTIME_NON_ROLL_ACTION_TYPES.has(actionType);
   const sourceType = nonRollAction ? "" : (cleanText(check?.sourceType) || "skill");
   const outcomeMode = cleanText(check?.outcomeMode) || (cleanText(check?.dc) ? "dc" : "freeform");
   const recordMode = cleanText(check?.recordMode) || "total-success";
@@ -1366,6 +1506,15 @@ function buildDowntimeCheckResultLabel(result) {
   const parts = [];
   if (result.total !== undefined && result.total !== null && cleanText(result.total) !== "") {
     parts.push(cleanText(result.total));
+  }
+  if (cleanText(result.label)) {
+    parts.push(cleanText(result.label));
+  }
+  else if (result.value !== undefined && result.value !== null && cleanText(result.value) !== "") {
+    parts.push(cleanText(result.value));
+  }
+  else if (cleanText(result.thresholdLabel)) {
+    parts.push(cleanText(result.thresholdLabel));
   }
   if (result.success === true) {
     parts.push("успех");
@@ -1422,6 +1571,21 @@ function buildDowntimeTargetActionDetailLines(action = {}) {
   if (actionType === "formulaRoll" && cleanText(action.selectedFormula)) {
     lines.push(`Формула: ${cleanText(action.selectedFormula)}`);
   }
+  if (!DOWNTIME_NON_ROLL_ACTION_TYPES.has(actionType) && action?.result) {
+    const result = action.result;
+    if (result.total !== undefined && cleanText(result.total) !== "") {
+      lines.push(`Бросок: ${cleanText(result.total)}`);
+    }
+    if (cleanText(result.thresholdLabel)) {
+      lines.push(`Порог: ${cleanText(result.thresholdLabel)}`);
+    }
+  }
+  if (actionType === "downtimeResult") {
+    const resultLabel = buildDowntimeCheckResultLabel(action.result);
+    if (resultLabel) {
+      lines.push(`Итог: ${resultLabel}`);
+    }
+  }
   return lines;
 }
 
@@ -1448,7 +1612,7 @@ function buildDowntimeTemplateView(action = null) {
     rankTable: Array.isArray(action.rankTable) ? action.rankTable : [],
     targetActions,
     resourceActions: targetActions.filter((entry) => entry.actionType === "resources"),
-    checkActions: targetActions.filter((entry) => entry.actionType !== "resources" && entry.actionType !== "downtimeResult"),
+    checkActions: targetActions.filter((entry) => !DOWNTIME_NON_ROLL_ACTION_TYPES.has(entry.actionType)),
     resultActions: targetActions.filter((entry) => entry.actionType === "downtimeResult"),
     hasTargetActions: targetActions.length > 0
   };
@@ -1494,7 +1658,7 @@ function mapDowntimeRequest(request, actionCatalogById = new Map()) {
   const templateView = buildDowntimeTemplateView(templateAction);
   const checks = (request?.checks ?? []).map((check, index) => mapDowntimeTargetAction(check, index));
   const requestResourceActions = checks.filter((check) => check.actionType === "resources");
-  const requestCheckActions = checks.filter((check) => check.actionType !== "resources" && check.actionType !== "downtimeResult");
+  const requestCheckActions = checks.filter((check) => !DOWNTIME_NON_ROLL_ACTION_TYPES.has(check.actionType));
   const requestResultActions = checks.filter((check) => check.actionType === "downtimeResult");
   const resourceActions = templateView?.resourceActions?.length ? templateView.resourceActions : requestResourceActions;
   const checkActions = templateView?.checkActions?.length ? templateView.checkActions : requestCheckActions;
@@ -2947,7 +3111,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
   }
 
-  #buildDowntimeTargetActionDialogContent(action = {}, actor = null, { readOnly = false } = {}) {
+  #buildDowntimeTargetActionDialogContent(action = {}, actor = null, { readOnly = false, existingActions = [] } = {}) {
     const safeDc = foundry.utils.escapeHTML(cleanText(action.dc));
     const choices = buildDowntimeTargetChoices(action, actor);
     const visibleChoiceCount = Math.max(1, choices.length);
@@ -2959,6 +3123,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const isNumericAction = selectedActionType === "numericInput";
     const isResultAction = selectedActionType === "downtimeResult";
     const isFormulaAction = selectedActionType === "formulaRoll";
+    const showOutcomeStep = !isResultAction;
     const choiceRows = Array.from({ length: MAX_DOWNTIME_TARGET_CHOICES }, (_entry, index) =>
       buildDowntimeTargetChoiceRow(choices[index] ?? {}, index, { visible: index < visibleChoiceCount, actor }));
     const checkEffect = action.checkEffect && typeof action.checkEffect === "object" ? action.checkEffect : {};
@@ -2979,7 +3144,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         <nav class="rm-downtime-target-dialog__steps" aria-label="Этапы настройки целевого действия" role="tablist">
           <button type="button" class="is-active" data-action="target-action-step" data-step="basis" title="Тип задачи и общий сценарий." aria-selected="true">1. Основа</button>
           <button type="button" data-action="target-action-step" data-step="variants" title="Один основной вариант и, при необходимости, альтернативы для игрока." aria-selected="false">2. Варианты</button>
-          <button type="button" data-action="target-action-step" data-step="outcome" title="Как считать результат броска." aria-selected="false">3. Итог</button>
+          ${showOutcomeStep ? `<button type="button" data-action="target-action-step" data-step="outcome" title="Как считать результат броска." aria-selected="false">3. Итог</button>` : ""}
           <button type="button" data-action="target-action-step" data-step="effects" title="Что запустить после проверки или всего простоя." aria-selected="false">4. Эффекты</button>
         </nav>
 
@@ -3002,7 +3167,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             <h4 data-rank-choice-heading${isRankAction ? "" : " hidden"}>Выбор ранга</h4>
             <h4 data-option-choice-heading${isOptionAction ? "" : " hidden"}>Выбор варианта</h4>
             <h4 data-numeric-input-heading${isNumericAction ? "" : " hidden"}>Числовой ресурс</h4>
-            <h4 data-result-expression-heading${isResultAction ? "" : " hidden"}>Формула результата</h4>
+            <h4 data-result-mapping-heading${isResultAction ? "" : " hidden"}>Результат по порогам</h4>
             <h4 data-formula-roll-heading${isFormulaAction ? "" : " hidden"}>Формула</h4>
           </header>
           ${isCheckAction ? `
@@ -3033,8 +3198,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           <div${isNumericAction ? "" : " hidden"} data-numeric-input-panel-shell>
             ${buildNumericInputPanel(action)}
           </div>
-          <div${isResultAction ? "" : " hidden"} data-result-expression-panel-shell>
-            ${buildResultExpressionPanel(action, Array.isArray(this.downtimeContext?.requests) ? this.downtimeContext.requests.flatMap((request) => request.checks ?? []) : [])}
+          <div${isResultAction ? "" : " hidden"} data-result-mapping-panel-shell>
+            ${buildResultMappingPanel(action, existingActions)}
           </div>
           <div${isFormulaAction ? "" : " hidden"} data-formula-roll-panel-shell>
             <div class="rm-downtime-numeric-input-panel" data-formula-roll-panel>
@@ -3046,7 +3211,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           </div>
         </section>
 
-        <section class="rm-downtime-target-dialog__section" data-step-panel="outcome" hidden>
+        ${showOutcomeStep ? `<section class="rm-downtime-target-dialog__section" data-step-panel="outcome" hidden>
           <header>
             <h4>Итог</h4>
           </header>
@@ -3067,7 +3232,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           <div class="rm-downtime-thresholds" data-outcome-thresholds-field${showThresholds ? "" : " hidden"}>
             ${buildDowntimeThresholdRows(action.thresholds)}
           </div>
-        </section>
+        </section>` : ""}
 
         <section class="rm-downtime-target-dialog__section" data-step-panel="effects" hidden>
           <div class="rm-downtime-effect-block">
@@ -3230,13 +3395,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
         label: cleanText(existingAction.label) || "Итог простоя",
         actionType: "downtimeResult",
-        outcomeMode,
-        recordMode: readFieldValue(root, "target-action-record-mode") || "gm",
-        resultFormula: readResultFormula(root)
+        outcomeMode: "pass-thresholds",
+        recordMode: "single-result",
+        resultMapping: readResultMapping(root)
       };
-      if (thresholds.length) {
-        action.thresholds = thresholds;
-      }
       return action;
     }
 
@@ -3281,14 +3443,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const rankHeading = root?.querySelector?.("[data-rank-choice-heading]");
     const optionHeading = root?.querySelector?.("[data-option-choice-heading]");
     const numericHeading = root?.querySelector?.("[data-numeric-input-heading]");
-    const resultHeading = root?.querySelector?.("[data-result-expression-heading]");
+    const resultHeading = root?.querySelector?.("[data-result-mapping-heading]");
     const formulaHeading = root?.querySelector?.("[data-formula-roll-heading]");
     const choicePanel = root?.querySelector?.("[data-target-choice-panel]");
     const resourcePanelShell = root?.querySelector?.("[data-resource-panel-shell]");
     const rankPanelShell = root?.querySelector?.("[data-rank-choice-panel-shell]");
     const optionPanelShell = root?.querySelector?.("[data-option-choice-panel-shell]");
     const numericPanelShell = root?.querySelector?.("[data-numeric-input-panel-shell]");
-    const resultPanelShell = root?.querySelector?.("[data-result-expression-panel-shell]");
+    const resultPanelShell = root?.querySelector?.("[data-result-mapping-panel-shell]");
     const formulaPanelShell = root?.querySelector?.("[data-formula-roll-panel-shell]");
     const addPurchaseButton = root?.querySelector?.("[data-action='target-action-add-purchase']");
     const purchaseRows = Array.from(root?.querySelectorAll?.("[data-resource-purchase-row]") ?? []);
@@ -3420,6 +3582,18 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       if (formulaPanelShell) {
         formulaPanelShell.hidden = !formulaActive;
+      }
+      const outcomeButton = stepButtons.find((button) => button.dataset?.step === "outcome");
+      const outcomePanel = stepPanels.find((panel) => panel.dataset?.stepPanel === "outcome");
+      if (outcomeButton) {
+        outcomeButton.hidden = resultActive;
+      }
+      if (outcomePanel && resultActive) {
+        outcomePanel.hidden = true;
+      }
+      const activeStep = stepButtons.find((button) => button.classList?.contains?.("is-active"))?.dataset?.step;
+      if (resultActive && activeStep === "outcome") {
+        this.#setDowntimeTargetActionStep(root, "variants", dialog);
       }
     };
 
@@ -3615,8 +3789,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
+  #getDowntimeTargetActionStepOrder(root) {
+    const steps = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? [])
+      .filter((button) => button.hidden !== true)
+      .map((button) => cleanText(button?.dataset?.step))
+      .filter(Boolean);
+    return steps.length ? steps : ["basis", "variants", "outcome", "effects"];
+  }
+
   #setDowntimeTargetActionStep(root, step = "basis", dialog = null) {
-    const stepOrder = ["basis", "variants", "outcome", "effects"];
+    const stepOrder = this.#getDowntimeTargetActionStepOrder(root);
     const safeStep = stepOrder.includes(cleanText(step)) ? cleanText(step) : "basis";
     const stepButtons = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? []);
     const stepPanels = Array.from(root?.querySelectorAll?.("[data-step-panel]") ?? []);
@@ -3633,7 +3815,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #moveDowntimeTargetActionStep(root, direction = 1, dialog = null) {
-    const stepOrder = ["basis", "variants", "outcome", "effects"];
+    const stepOrder = this.#getDowntimeTargetActionStepOrder(root);
     const activeButton = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? [])
       .find((button) => button.classList?.contains?.("is-active") || button.getAttribute?.("aria-selected") === "true");
     const activeStep = cleanText(activeButton?.dataset?.step) || "basis";
@@ -3655,7 +3837,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #updateDowntimeTargetActionDialogButtons(root, activeStep = "basis") {
-    const stepOrder = ["basis", "variants", "outcome", "effects"];
+    const stepOrder = this.#getDowntimeTargetActionStepOrder(root);
     const index = Math.max(0, stepOrder.indexOf(activeStep));
     const previous = root?.querySelector?.("[data-action='target-action-previous']");
     const next = root?.querySelector?.("[data-action='target-action-next']");
@@ -3684,7 +3866,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       let settled = false;
       const dialog = new DialogClass({
         title: readOnly ? "Просмотр целевого действия" : "Целевое действие",
-        content: this.#buildDowntimeTargetActionDialogContent(existingAction, actor, { readOnly }),
+        content: this.#buildDowntimeTargetActionDialogContent(existingAction, actor, { readOnly, existingActions }),
         buttons: {},
         render: (html) => {
           const root = getDialogRoot(html);

@@ -839,6 +839,140 @@ function hasCompletedRollTargets(request = {}) {
   return rollableChecks.length > 0 && rollableChecks.every((check) => hasRecordedResult(check));
 }
 
+function getOptionalNumber(value) {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === "string" && value.trim() === "") {
+    return undefined;
+  }
+  return toFiniteNumber(value);
+}
+
+function evaluateThresholdResult(check = {}, result = {}) {
+  const total = toFiniteNumber(result?.total);
+  if (total === undefined) {
+    return null;
+  }
+
+  const thresholds = asArray(check.thresholds);
+  for (const [index, threshold] of thresholds.entries()) {
+    const source = asObject(threshold);
+    const from = getOptionalNumber(source.from);
+    const to = getOptionalNumber(source.to);
+    if (from !== undefined && total < from) {
+      continue;
+    }
+    if (to !== undefined && total > to) {
+      continue;
+    }
+
+    const outcome = cleanId(source.outcome) || cleanId(source.id) || `threshold-${index + 1}`;
+    return {
+      thresholdOutcome: outcome,
+      thresholdLabel: cleanString(source.label) || outcome,
+      thresholdFrom: from,
+      thresholdTo: to
+    };
+  }
+
+  return null;
+}
+
+function enrichResultWithThreshold(check = {}, result = {}) {
+  const actionOutcomeMode = cleanId(check.outcomeMode);
+  const actionRecordMode = cleanId(check.recordMode);
+  if (actionOutcomeMode !== "thresholds" && actionRecordMode !== "pass-thresholds") {
+    return result;
+  }
+
+  const thresholdResult = evaluateThresholdResult(check, result);
+  if (!thresholdResult) {
+    return result;
+  }
+
+  return {
+    ...result,
+    ...thresholdResult
+  };
+}
+
+function getResultFieldValue(result = {}, field = "") {
+  const safeField = cleanId(field) || "thresholdOutcome";
+  if (safeField in asObject(result)) {
+    return result[safeField];
+  }
+  return getObjectPath(result, safeField);
+}
+
+function computeMappedDowntimeResult(action = {}, checks = []) {
+  if (cleanId(action.actionType) !== "downtimeResult") {
+    return null;
+  }
+
+  const mapping = asObject(action.resultMapping);
+  const sourceActionId = cleanId(mapping.sourceActionId);
+  if (!sourceActionId) {
+    return null;
+  }
+
+  const sourceAction = checks.find((entry) => cleanId(entry?.id) === sourceActionId);
+  const sourceResult = asObject(sourceAction?.result);
+  if (!Object.keys(sourceResult).length) {
+    return null;
+  }
+
+  const sourceField = cleanId(mapping.sourceField) || "thresholdOutcome";
+  const sourceValue = cleanId(getResultFieldValue(sourceResult, sourceField));
+  if (!sourceValue) {
+    return null;
+  }
+
+  const rows = asArray(mapping.rows).map((row) => asObject(row));
+  const matchedRow = rows.find((row) => (
+    cleanId(row.sourceOutcome) === sourceValue
+    || cleanId(row.match) === sourceValue
+  ));
+  if (!matchedRow) {
+    return null;
+  }
+
+  const value = toFiniteNumber(matchedRow.value);
+  const label = cleanString(matchedRow.label)
+    || (value !== undefined ? String(value) : cleanString(matchedRow.outcome) || sourceValue);
+  const outputField = cleanId(mapping.outputField) || "value";
+  const computed = {
+    label,
+    sourceActionId,
+    sourceField,
+    sourceOutcome: sourceValue,
+    sourceLabel: cleanString(sourceResult.thresholdLabel),
+    outputField
+  };
+  if (value !== undefined) {
+    computed.value = value;
+    computed[outputField] = value;
+  }
+  const outcome = cleanId(matchedRow.outcome);
+  if (outcome) {
+    computed.outcome = outcome;
+  }
+  if (sourceResult.total !== undefined) {
+    computed.sourceTotal = sourceResult.total;
+  }
+  return computed;
+}
+
+function refreshMappedDowntimeResults(request = {}) {
+  const checks = asArray(request.checks);
+  for (const action of checks) {
+    const computedResult = computeMappedDowntimeResult(action, checks);
+    if (computedResult) {
+      action.result = computedResult;
+    }
+  }
+}
+
 function getMaxRequestCounter(requests = []) {
   return asArray(requests).reduce((maxCounter, request) => {
     const match = /^downtime-(\d+)$/u.exec(cleanId(request?.id));
@@ -1227,6 +1361,7 @@ export class DowntimeService {
         });
         return normalized;
       });
+      refreshMappedDowntimeResults(request);
       request.reviewedByUserId = cleanId(getCurrentUser()?.id);
       request.updatedAt = Date.now();
       return clone(request);
@@ -1259,11 +1394,13 @@ export class DowntimeService {
         throw new Error("Downtime check not found.");
       }
 
+      const enrichedResult = enrichResultWithThreshold(check, clone(asObject(result)));
       check.result = {
-        ...clone(asObject(result)),
+        ...enrichedResult,
         recordedByUserId: cleanId(asObject(result).recordedByUserId) || cleanId(getCurrentUser()?.id),
         recordedAt: Date.now()
       };
+      refreshMappedDowntimeResults(request);
       request.updatedAt = Date.now();
       return clone(request);
     });

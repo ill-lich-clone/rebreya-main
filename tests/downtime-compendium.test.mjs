@@ -146,7 +146,7 @@ test("downtime activity data covers every base downtime heading from chapter 9",
   ]);
 });
 
-test("research downtime keeps the rank costs and structured result thresholds", () => {
+test("research downtime keeps rank costs and maps check thresholds into fragments", () => {
   const research = normalizeDowntimeActivity(
     DOWNTIME_DATA.activities.find((activity) => activity.id === "research")
   );
@@ -174,6 +174,13 @@ test("research downtime keeps the rank costs and structured result thresholds", 
   assert.equal(checkAction.actionType, "check");
   assert.equal(checkAction.sourceType, "ability");
   assert.equal(checkAction.ability, "int");
+  assert.equal(checkAction.recordMode, "pass-thresholds");
+  assert.deepEqual(checkAction.thresholds.map((threshold) => threshold.outcome), [
+    "failure",
+    "partial",
+    "success",
+    "great-success"
+  ]);
   assert.equal(rankAction.actionType, "rankChoice");
   assert.equal(rankAction.rankChoice.rows[3].label, "Ранг 4");
   assert.equal(resourceAction.actionType, "resources");
@@ -183,13 +190,16 @@ test("research downtime keeps the rank costs and structured result thresholds", 
   assert.equal(resourceAction.resources.rankCosts[3].baseCost, 120);
   assert.equal(resourceAction.resources.rankCosts[3].unitCost, 100);
   assert.equal(resultAction.actionType, "downtimeResult");
-  assert.equal(resultAction.outcomeMode, "thresholds");
-  assert.deepEqual(resultAction.resultFormula.terms, [{ actionId: "research-check", field: "total", operator: "+" }]);
-  assert.deepEqual(resultAction.thresholds.map((threshold) => threshold.label), [
-    "Безрезультатно",
-    "Один фрагмент сведений",
-    "Два фрагмента сведений",
-    "Три фрагмента сведений"
+  assert.equal(resultAction.outcomeMode, "pass-thresholds");
+  assert.equal(resultAction.recordMode, "single-result");
+  assert.equal(resultAction.resultMapping.sourceActionId, "research-check");
+  assert.equal(resultAction.resultMapping.sourceField, "thresholdOutcome");
+  assert.equal(resultAction.resultMapping.outputField, "fragments");
+  assert.deepEqual(resultAction.resultMapping.rows.map((row) => [row.sourceOutcome, row.value, row.outcome]), [
+    ["failure", 0, "no-fragments"],
+    ["partial", 1, "one-fragment"],
+    ["success", 2, "two-fragments"],
+    ["great-success", 3, "three-fragments"]
   ]);
 });
 

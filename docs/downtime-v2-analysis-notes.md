@@ -236,3 +236,11 @@ flowchart TD
 - `resources` теперь должен уметь количество, лимит, `dependsOnRank`, будущий `dependsOnLevel`, `rankSourceActionId`, `rankCosts` и computed cost.
 - `downtimeResult` должен быть не проверкой навыка, а итоговой формулой/условиями от результатов предыдущих целевых действий.
 - `research` пересобирается так: `research-rank` = `rankChoice`; `research-resources` = ресурс "Шаг исследования" с max 5 и таблицей стоимости по рангу; `research-check` = единственная проверка Интеллекта; `research-result` = пороги от `research-check.total`.
+
+## 2026-06-09: Передача порогов в итог простоя
+
+- Уточнена модель `downtimeResult`: для исследования итог больше не хранит собственные numeric-пороги и не считает отдельную формулу от `total`.
+- `research-check` теперь записывает порог проверки через `recordMode: "pass-thresholds"`: провал, частичный успех, успех, сильный успех.
+- `research-result` теперь имеет `outcomeMode: "pass-thresholds"` и `recordMode: "single-result"`; он мапит `thresholdOutcome` из `research-check` в одно значение `fragments`.
+- UI конструктора для `downtimeResult` показывает маппинг "порог -> значение/подпись" и не рендерит отдельную вкладку "Итог".
+- В заявках не-бросковые целевые действия подписываются своим типом: выбор ранга, ресурсы, итог. Для игрока дополнительно показываются выбранный ранг, стоимость/количество и вычисленный итог.

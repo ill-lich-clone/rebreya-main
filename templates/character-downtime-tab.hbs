@@ -267,6 +267,9 @@
                   {{#each checks}}
                     <div class="rm-character-downtime-check">
                       <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Целевое действие простоя">{{summary}}</span>
+                      {{#if hasOutcomeSummary}}
+                        <span class="rm-badge rm-status-badge rm-status-badge--info">{{outcomeSummary}}</span>
+                      {{/if}}
                       {{#if hasResult}}
                         {{#unless hasRollTargets}}
                           <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>

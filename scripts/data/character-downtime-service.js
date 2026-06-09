@@ -37,6 +37,16 @@ const ABILITY_LABELS = Object.freeze({
 const ROLLABLE_SOURCE_TYPES = new Set(["skill", "ability", "save", "tool"]);
 const ARCHIVED_REQUEST_STATUSES = new Set(["completed", "rejected"]);
 const REQUEST_PAGE_SIZE = 5;
+const NON_CHECK_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "downtimeResult"]);
+const NON_CHECK_ACTION_SUMMARY_LABELS = Object.freeze({
+  resources: "Ресурсы",
+  itemChoice: "Предмет",
+  numericInput: "Числовой ресурс",
+  optionChoice: "Выбор",
+  rankChoice: "Выбор ранга",
+  formulaRoll: "Формула",
+  downtimeResult: "Итог"
+});
 
 const CURRENCY_LABELS = Object.freeze({
   gp: "зм",
@@ -84,8 +94,10 @@ function buildBalance(value = {}) {
 
 function buildCheckSummary(check = {}) {
   const actionType = cleanText(check.actionType);
-  if (["resources", "itemChoice", "numericInput", "optionChoice", "formulaRoll"].includes(actionType)) {
-    return cleanText(check.label) || "Ресурсы";
+  if (NON_CHECK_ACTION_TYPES.has(actionType)) {
+    const prefix = NON_CHECK_ACTION_SUMMARY_LABELS[actionType] ?? "Целевое действие";
+    const label = cleanText(check.label);
+    return label ? `${prefix}: ${label}` : prefix;
   }
   const dc = cleanText(check.dc);
   const outcomeMode = cleanText(check.outcomeMode) || (dc ? "dc" : "freeform");
@@ -145,6 +157,36 @@ function buildResourceChoiceSummary(choice = {}) {
       cost: choice.cost
     }
   });
+}
+
+function buildSubmittedActionOutcomeSummary(check = {}) {
+  const actionType = cleanText(check.actionType);
+  if (actionType === "rankChoice") {
+    return cleanText(check.selectedOptionLabel)
+      || (check.selectedRank !== undefined ? `Ранг ${check.selectedRank}` : "");
+  }
+  if (actionType === "resources") {
+    if (cleanText(check.computedCost?.label)) {
+      return cleanText(check.computedCost.label);
+    }
+    if (check.computedCost?.total !== undefined) {
+      const currency = CURRENCY_LABELS[cleanText(check.computedCost.currency)] ?? cleanText(check.computedCost.currency);
+      return [check.computedCost.total, currency].filter(Boolean).join(" ");
+    }
+    return buildResourceSummary(check);
+  }
+  if (actionType === "numericInput") {
+    return check.numericValue !== undefined
+      ? [check.numericValue, cleanText(check.input?.unit)].filter(Boolean).join(" ")
+      : "";
+  }
+  if (actionType === "optionChoice") {
+    return cleanText(check.selectedOptionLabel);
+  }
+  if (actionType === "downtimeResult") {
+    return buildResultLabel(check.result) || cleanText(check.label);
+  }
+  return buildResultLabel(check.result);
 }
 
 function normalizeSelectedItem(item = {}) {
@@ -575,6 +617,15 @@ function buildResultLabel(result) {
   if (result.total !== undefined && result.total !== null && cleanText(result.total) !== "") {
     parts.push(cleanText(result.total));
   }
+  if (cleanText(result.label)) {
+    parts.push(cleanText(result.label));
+  }
+  else if (result.value !== undefined && result.value !== null && cleanText(result.value) !== "") {
+    parts.push(cleanText(result.value));
+  }
+  else if (cleanText(result.thresholdLabel)) {
+    parts.push(cleanText(result.thresholdLabel));
+  }
   if (result.success === true) {
     parts.push("успех");
   }
@@ -644,6 +695,10 @@ function buildRollTarget(
 }
 
 function buildRollTargets(check = {}, { canRollRequest = false, resultLabel = "" } = {}) {
+  if (NON_CHECK_ACTION_TYPES.has(cleanText(check.actionType))) {
+    return [];
+  }
+
   const choices = Array.isArray(check.choices) ? check.choices : [];
   const resultChoiceIndex = toFiniteNumber(check?.result?.choiceIndex);
   const resolvedChoiceIndex = resultChoiceIndex === undefined ? 0 : Math.max(0, Math.floor(resultChoiceIndex));
@@ -675,6 +730,7 @@ function mapRequest(request = {}, { groupId = "" } = {}) {
   const canRollRequest = status === "pending" || status === "approved";
   const checks = (Array.isArray(request.checks) ? request.checks : []).map((check) => {
     const resultLabel = buildResultLabel(check?.result);
+    const outcomeSummary = buildSubmittedActionOutcomeSummary(check);
     const rollTargets = buildRollTargets(check, {
       canRollRequest,
       resultLabel
@@ -682,6 +738,8 @@ function mapRequest(request = {}, { groupId = "" } = {}) {
     return {
       ...check,
       summary: buildCheckSummary(check),
+      outcomeSummary,
+      hasOutcomeSummary: Boolean(outcomeSummary && outcomeSummary !== resultLabel),
       resultLabel,
       hasResult: Boolean(resultLabel),
       rollTargets,
@@ -699,7 +757,7 @@ function mapRequest(request = {}, { groupId = "" } = {}) {
     checks,
     targetActions: checks,
     resourceActions: checks.filter((check) => cleanText(check.actionType) === "resources"),
-    checkActions: checks.filter((check) => !["resources", "downtimeResult"].includes(cleanText(check.actionType))),
+    checkActions: checks.filter((check) => !NON_CHECK_ACTION_TYPES.has(cleanText(check.actionType))),
     hasChecks: checks.length > 0,
     hasResult: Boolean(cleanText(request.result)),
     isArchived: ARCHIVED_REQUEST_STATUSES.has(status)
