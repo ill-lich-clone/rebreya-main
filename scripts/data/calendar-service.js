@@ -4,6 +4,7 @@ import { GROUP_CONTEXT_ERRORS, normalizeGroupState } from "./group-context-servi
 const WEEKDAY_HEADERS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const MOON_CYCLE_DAYS = 28.8;
 const MOON_EPOCH_UTC = Date.UTC(1, 0, 1);
+const SECONDS_PER_DAY = 86400;
 const GROUP_CONTEXT_FALLBACK_ERRORS = new Set([
   GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP,
   GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP,
@@ -30,6 +31,50 @@ function toNumber(value, fallback = 0) {
 function roundNumber(value, precision = 2) {
   const factor = 10 ** precision;
   return Math.round((toNumber(value, 0) + Number.EPSILON) * factor) / factor;
+}
+
+function normalizeTimeOfDaySeconds(value, fallback = 0) {
+  const numericValue = Math.floor(toNumber(value, fallback));
+  return ((numericValue % SECONDS_PER_DAY) + SECONDS_PER_DAY) % SECONDS_PER_DAY;
+}
+
+function buildTimeOfDayParts(value) {
+  const timeOfDaySeconds = normalizeTimeOfDaySeconds(value);
+  const hour = Math.floor(timeOfDaySeconds / 3600);
+  const minute = Math.floor((timeOfDaySeconds % 3600) / 60);
+  const second = timeOfDaySeconds % 60;
+  const timeLabel = [
+    String(hour).padStart(2, "0"),
+    String(minute).padStart(2, "0"),
+    String(second).padStart(2, "0")
+  ].join(":");
+
+  return {
+    timeOfDaySeconds,
+    hour,
+    minute,
+    second,
+    timeLabel,
+    timeShortLabel: timeLabel.slice(0, 5)
+  };
+}
+
+function resolveTimeOfDaySeconds(baseState, options = {}) {
+  const source = asObject(options);
+  if ("timeOfDaySeconds" in source) {
+    return normalizeTimeOfDaySeconds(source.timeOfDaySeconds, baseState?.timeOfDaySeconds ?? 0);
+  }
+
+  const hasParts = ["hour", "minute", "second"].some((key) => key in source);
+  if (!hasParts) {
+    return normalizeTimeOfDaySeconds(baseState?.timeOfDaySeconds ?? 0);
+  }
+
+  const current = buildTimeOfDayParts(baseState?.timeOfDaySeconds ?? 0);
+  const hour = Math.max(0, Math.min(23, Math.floor(toNumber(source.hour, current.hour))));
+  const minute = Math.max(0, Math.min(59, Math.floor(toNumber(source.minute, current.minute))));
+  const second = Math.max(0, Math.min(59, Math.floor(toNumber(source.second, current.second))));
+  return normalizeTimeOfDaySeconds((hour * 3600) + (minute * 60) + second);
 }
 
 function toIsoDate(date) {
@@ -111,7 +156,8 @@ function buildDefaultState() {
   ));
   return {
     version: 1,
-    isoDate: toIsoDate(utcDate)
+    isoDate: toIsoDate(utcDate),
+    timeOfDaySeconds: 0
   };
 }
 
@@ -123,7 +169,11 @@ function normalizeCalendarState(value = {}, fallback = buildDefaultState()) {
 
   return {
     version: 1,
-    isoDate: toIsoDate(sourceDate ?? fallbackDate)
+    isoDate: toIsoDate(sourceDate ?? fallbackDate),
+    timeOfDaySeconds: normalizeTimeOfDaySeconds(
+      source.timeOfDaySeconds,
+      fallbackState.timeOfDaySeconds ?? 0
+    )
   };
 }
 
@@ -296,15 +346,18 @@ export class CalendarService {
   }
 
   #buildSnapshot(state = this.#getStateScope().state) {
-    const date = parseIsoDate(state.isoDate) ?? parseIsoDate(buildDefaultState().isoDate);
+    const normalizedState = normalizeCalendarState(state);
+    const date = parseIsoDate(normalizedState.isoDate) ?? parseIsoDate(buildDefaultState().isoDate);
     const monthName = getMonthName(date);
     const moon = buildMoonSnapshot(date);
+    const timeOfDay = buildTimeOfDayParts(normalizedState.timeOfDaySeconds);
 
     return {
       isoDate: toIsoDate(date),
       year: date.getUTCFullYear(),
       month: date.getUTCMonth() + 1,
       day: date.getUTCDate(),
+      ...timeOfDay,
       weekdayLabel: capitalizeFirst(formatWeekday(date)),
       dateLabel: capitalizeFirst(formatDateLabel(date)),
       monthName,
@@ -319,7 +372,7 @@ export class CalendarService {
     return this.#buildSnapshot(this.#getStateScope().state);
   }
 
-  async setDate(year, month, day) {
+  async setDate(year, month, day, options = {}) {
     const scope = this.#getStateScope();
     const safeYear = Math.max(1, Math.floor(toNumber(year, 1)));
     const safeMonth = Math.max(1, Math.min(12, Math.floor(toNumber(month, 1))));
@@ -335,7 +388,30 @@ export class CalendarService {
 
     await this.#setState(scope, {
       version: 1,
-      isoDate: toIsoDate(date)
+      isoDate: toIsoDate(date),
+      timeOfDaySeconds: resolveTimeOfDaySeconds(scope.state, options)
+    });
+
+    return this.getSnapshot();
+  }
+
+  async setTimeOfDaySeconds(seconds) {
+    const scope = this.#getStateScope();
+    await this.#setState(scope, {
+      version: 1,
+      isoDate: scope.state.isoDate,
+      timeOfDaySeconds: normalizeTimeOfDaySeconds(seconds, scope.state.timeOfDaySeconds ?? 0)
+    });
+
+    return this.getSnapshot();
+  }
+
+  async setTimeOfDay(options = {}) {
+    const scope = this.#getStateScope();
+    await this.#setState(scope, {
+      version: 1,
+      isoDate: scope.state.isoDate,
+      timeOfDaySeconds: resolveTimeOfDaySeconds(scope.state, options)
     });
 
     return this.getSnapshot();
@@ -351,11 +427,15 @@ export class CalendarService {
 
     await this.#setState(scope, {
       version: 1,
-      isoDate: toIsoDate(toDate)
+      isoDate: toIsoDate(toDate),
+      timeOfDaySeconds: state.timeOfDaySeconds
     });
 
     return {
-      from: this.#buildSnapshot({ isoDate: toIsoDate(fromDate) }),
+      from: this.#buildSnapshot({
+        isoDate: toIsoDate(fromDate),
+        timeOfDaySeconds: state.timeOfDaySeconds
+      }),
       to: this.getSnapshot(),
       daysAdvanced: safeDays
     };
@@ -382,11 +462,15 @@ export class CalendarService {
 
     await this.#setState(scope, {
       version: 1,
-      isoDate: toIsoDate(toDate)
+      isoDate: toIsoDate(toDate),
+      timeOfDaySeconds: state.timeOfDaySeconds
     });
 
     return {
-      from: this.#buildSnapshot({ isoDate: toIsoDate(fromDate) }),
+      from: this.#buildSnapshot({
+        isoDate: toIsoDate(fromDate),
+        timeOfDaySeconds: state.timeOfDaySeconds
+      }),
       to: this.getSnapshot(),
       daysAdvanced
     };

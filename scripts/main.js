@@ -35,7 +35,7 @@ import {
 } from "./integrations/dnd5e-sheet-extensions.js?v=1.4.44";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
-import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration } from "./integrations/smalltime-compat.js";
+import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import {
@@ -1594,7 +1594,7 @@ export class RebreyaMainModule {
   async setActivePartyGroup(groupActorId) {
     const result = await this.groupContextService.setActiveGroup(groupActorId);
     await this.refreshOpenApps();
-    await refreshSmallTimeDateDisplay();
+    await syncSmallTimeToCalendarTime(this);
     return result;
   }
 
@@ -1728,6 +1728,21 @@ export class RebreyaMainModule {
     return this.calendarService.getSnapshot();
   }
 
+  async setCalendarTimeOfDay(seconds, options = {}) {
+    const result = await this.calendarService.setTimeOfDaySeconds(seconds);
+    const shouldRefreshApps = options.refreshApps !== false && options.reason !== "smalltime-world-time";
+    const shouldRefreshSmallTime = options.refreshSmallTime !== false && options.reason !== "smalltime-world-time";
+
+    if (shouldRefreshApps) {
+      await this.refreshOpenApps();
+    }
+    if (shouldRefreshSmallTime) {
+      await refreshSmallTimeDateDisplay();
+    }
+
+    return result;
+  }
+
   async #refreshGlobalEventsByCalendarTransition(currentIsoDate, previousIsoDate) {
     const activation = await this.globalEventsService.refreshEventActivationByDate(currentIsoDate, previousIsoDate);
     if (activation.changed && this.globalEventsService.isAutoRecalculateEnabled()) {
@@ -1759,9 +1774,9 @@ export class RebreyaMainModule {
     };
   }
 
-  async setCalendarDate(year, month, day) {
+  async setCalendarDate(year, month, day, options = {}) {
     const previousSnapshot = this.calendarService.getSnapshot();
-    const result = await this.calendarService.setDate(year, month, day);
+    const result = await this.calendarService.setDate(year, month, day, options);
     const eventActivation = await this.#refreshGlobalEventsByCalendarTransition(result?.isoDate, previousSnapshot?.isoDate);
     const monthResetCount = (
       previousSnapshot?.isoDate !== result?.isoDate

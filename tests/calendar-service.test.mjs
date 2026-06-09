@@ -117,3 +117,44 @@ test("calendar service can shift the active group date forward and backward", as
     assert.equal(forward.to.isoDate, "1200-01-02");
   });
 });
+
+test("calendar service stores time of day inside the active group calendar", async () => {
+  const state = {
+    [SETTINGS_KEYS.CALENDAR_STATE]: { version: 1, isoDate: "1300-01-01", timeOfDaySeconds: 3600 },
+    [SETTINGS_KEYS.GROUP_STATE]: {
+      version: 1,
+      activeGroupActorId: "group-a",
+      groupsById: {
+        "group-a": {
+          version: 1,
+          groupActorId: "group-a",
+          calendar: { version: 1, isoDate: "1200-01-10", timeOfDaySeconds: 49025 }
+        }
+      }
+    }
+  };
+
+  await withCalendarHarness(state, async ({ calendarService, state: storedState }) => {
+    const initial = calendarService.getSnapshot();
+    assert.equal(initial.isoDate, "1200-01-10");
+    assert.equal(initial.timeOfDaySeconds, 49025);
+    assert.equal(initial.hour, 13);
+    assert.equal(initial.minute, 37);
+    assert.equal(initial.second, 5);
+    assert.equal(initial.timeLabel, "13:37:05");
+
+    const timeResult = await calendarService.setTimeOfDaySeconds(86399);
+    assert.equal(timeResult.timeOfDaySeconds, 86399);
+    assert.equal(timeResult.timeLabel, "23:59:59");
+    assert.equal(storedState[SETTINGS_KEYS.GROUP_STATE].groupsById["group-a"].calendar.timeOfDaySeconds, 86399);
+    assert.equal(storedState[SETTINGS_KEYS.CALENDAR_STATE].timeOfDaySeconds, 3600);
+
+    const shifted = await calendarService.shiftDays(1);
+    assert.equal(shifted.to.isoDate, "1200-01-11");
+    assert.equal(shifted.to.timeOfDaySeconds, 86399);
+
+    const setDate = await calendarService.setDate(1200, 2, 3);
+    assert.equal(setDate.isoDate, "1200-02-03");
+    assert.equal(setDate.timeOfDaySeconds, 86399);
+  });
+});
