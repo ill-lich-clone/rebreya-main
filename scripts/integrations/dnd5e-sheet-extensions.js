@@ -4137,6 +4137,11 @@ function bindCharacterDowntimeStateControls(panel, app, moduleApi) {
           archivePage: Math.max(1, toPositiveInteger(state.archivePage, 1) + delta)
         });
       }
+      else if (pageType === "currentProject") {
+        updateCharacterDowntimeFormState(actor, {
+          currentProjectPage: Math.max(1, toPositiveInteger(state.currentProjectPage, 1) + delta)
+        });
+      }
       else {
         updateCharacterDowntimeFormState(actor, {
           requestPage: Math.max(1, toPositiveInteger(state.requestPage, 1) + delta)

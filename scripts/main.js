@@ -1209,7 +1209,6 @@ export class RebreyaMainModule {
   async grantDowntimeWeeks(payload = {}) {
     const result = await this.downtimeService.grantWeeks(payload);
     await this.refreshOpenApps();
-    await this.#refreshActorSheets(result.actorIds);
     this.#emitDowntimeUpdated({
       actorIds: result.actorIds
     });
@@ -1219,7 +1218,6 @@ export class RebreyaMainModule {
   async revokeDowntimeWeeks(payload = {}) {
     const result = await this.downtimeService.revokeWeeks(payload);
     await this.refreshOpenApps();
-    await this.#refreshActorSheets(result.actorIds);
     this.#emitDowntimeUpdated({
       actorIds: result.actorIds
     });
@@ -1229,7 +1227,6 @@ export class RebreyaMainModule {
   async clearDowntimeHistory() {
     const result = await this.downtimeService.clearHistory();
     await this.refreshOpenApps();
-    await this.#refreshActorSheets(result.actorIds);
     this.#emitDowntimeUpdated({
       actorIds: result.actorIds
     });
@@ -1243,7 +1240,6 @@ export class RebreyaMainModule {
 
     const result = await this.downtimeService.createRequest(payload);
     await this.refreshOpenApps();
-    await this.#refreshActorSheets([result.actorId]);
     this.#emitDowntimeUpdated({
       actorIds: [result.actorId],
       requestId: result.id
@@ -1286,12 +1282,9 @@ export class RebreyaMainModule {
     }
 
     await this.refreshOpenApps();
-    await this.#refreshActorSheets([message.data?.actorId]);
   }
 
-  async #handleDowntimeUpdatedSocketMessage(message = {}) {
-    await this.#refreshActorSheets(message.actorIds ?? message.actorId);
-  }
+  async #handleDowntimeUpdatedSocketMessage(_message = {}) {}
 
   async #handleDowntimeCreateSocketRequest(message = {}) {
     const requestId = cleanSocketId(message.requestId);
@@ -1302,7 +1295,6 @@ export class RebreyaMainModule {
         senderId: forUserId
       });
       globalThis.ui?.notifications?.info?.(`Rebreya: заявка на простой от ${result.actorName ?? result.actorId ?? "игрока"}.`);
-      await this.#refreshActorSheets([result.actorId]);
 
       if (requestId) {
         game.socket?.emit?.(SOCKET_CHANNEL, {
@@ -1403,7 +1395,6 @@ export class RebreyaMainModule {
     }
 
     await this.refreshOpenApps();
-    await this.#refreshActorSheets([message.data?.actorId]);
   }
 
   async #handleDowntimeCheckResultSocketRequest(message = {}) {
@@ -1426,7 +1417,6 @@ export class RebreyaMainModule {
         });
       }
 
-      await this.#refreshActorSheets([result.actorId]);
       this.#emitDowntimeUpdated({
         actorIds: [result.actorId],
         requestId: result.id
@@ -1513,35 +1503,9 @@ export class RebreyaMainModule {
     game.socket.emit(SOCKET_CHANNEL, message);
   }
 
-  async #refreshActorSheets(actorIds = []) {
-    const actorIdSet = new Set(this.#normalizeDowntimeActorIds(actorIds));
-    if (!actorIdSet.size) {
-      return;
-    }
-
-    const applications = [
-      ...Object.values(globalThis.ui?.windows ?? {}),
-      ...Array.from(globalThis.foundry?.applications?.instances?.values?.() ?? [])
-    ];
-
-    for (const app of new Set(applications.filter(Boolean))) {
-      if (app.rendered !== true) {
-        continue;
-      }
-
-      const actor = app.actor ?? app.document ?? null;
-      if (!actorIdSet.has(cleanSocketId(actor?.id))) {
-        continue;
-      }
-
-      await rerenderApp(app);
-    }
-  }
-
   async setDowntimeRequestStatus(requestId, status, options = {}) {
     const result = await this.downtimeService.setRequestStatus(requestId, status, options);
     await this.refreshOpenApps();
-    await this.#refreshActorSheets([result.actorId]);
     this.#emitDowntimeUpdated({
       actorIds: [result.actorId],
       requestId: result.id
@@ -1552,7 +1516,6 @@ export class RebreyaMainModule {
   async setDowntimeRequestChecks(requestId, checks = []) {
     const result = await this.downtimeService.setRequestChecks(requestId, checks);
     await this.refreshOpenApps();
-    await this.#refreshActorSheets([result.actorId]);
     this.#emitDowntimeUpdated({
       actorIds: [result.actorId],
       requestId: result.id
@@ -1567,7 +1530,6 @@ export class RebreyaMainModule {
 
     const updatedRequest = await this.downtimeService.recordCheckResult(requestId, checkId, result, options);
     await this.refreshOpenApps();
-    await this.#refreshActorSheets([updatedRequest.actorId]);
     this.#emitDowntimeUpdated({
       actorIds: [updatedRequest.actorId],
       requestId: updatedRequest.id

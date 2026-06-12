@@ -789,7 +789,36 @@ function buildProjectCounter(action = {}, selection = {}, mappedActionsById = ne
   };
 }
 
-function buildConfigurableCheck(action = {}, selection = {}) {
+function resolveRankedCheckDc(dcByRank = {}, mappedActionsById = new Map()) {
+  const config = asObject(dcByRank);
+  const rankSourceActionId = cleanText(config.rankSourceActionId);
+  if (!rankSourceActionId) {
+    return undefined;
+  }
+
+  const rankAction = mappedActionsById.get(rankSourceActionId);
+  const selectedRank = toFiniteNumber(rankAction?.selectedRank, toFiniteNumber(rankAction?.selectedOption?.rank));
+  if (selectedRank === undefined) {
+    return undefined;
+  }
+
+  const matchedRow = (Array.isArray(config.rows) ? config.rows : [])
+    .map((row) => asObject(row))
+    .find((row) => {
+      const exactRank = toFiniteNumber(row.rank);
+      if (exactRank !== undefined) {
+        return exactRank === selectedRank;
+      }
+
+      const from = toFiniteNumber(row.from);
+      const to = toFiniteNumber(row.to);
+      return (from === undefined || selectedRank >= from) && (to === undefined || selectedRank <= to);
+    });
+  const dc = toFiniteNumber(matchedRow?.dc);
+  return dc === undefined ? undefined : Math.max(0, Math.floor(dc));
+}
+
+function buildConfigurableCheck(action = {}, selection = {}, mappedActionsById = new Map()) {
   const sourceType = cleanText(selection.sourceType) || cleanText(action.sourceType) || "skill";
   const targetOptions = getCheckTargetOptions(sourceType);
   const defaultTarget = getDefaultCheckTargetOption(sourceType);
@@ -804,7 +833,10 @@ function buildConfigurableCheck(action = {}, selection = {}) {
     : (cleanText(selection.ability)
       || cleanText(action.ability)
       || cleanText(selectedTarget?.ability));
-  const dc = toFiniteNumber(selection.dc, toFiniteNumber(action.dc, 0)) ?? 0;
+  const dcByRank = asObject(action.dcByRank);
+  const rankedDc = resolveRankedCheckDc(dcByRank, mappedActionsById);
+  const isDcLocked = Boolean(dcByRank.locked) && rankedDc !== undefined;
+  const dc = isDcLocked ? rankedDc : (toFiniteNumber(selection.dc, toFiniteNumber(action.dc, 0)) ?? 0);
 
   return {
     sourceType,
@@ -812,6 +844,7 @@ function buildConfigurableCheck(action = {}, selection = {}) {
     target,
     targetLabel,
     dc,
+    isDcLocked,
     sourceTypeOptions: createSelectedOptions(CHECK_SOURCE_OPTIONS, sourceType),
     abilityOptions: createSelectedOptions(CHECK_ABILITY_OPTIONS, inferredAbility),
     targetOptions: createSelectedOptions(targetOptions, target),
@@ -919,7 +952,7 @@ function mapTemplateTargetAction(action = {}, index = 0, selections = new Map(),
   const computedCost = actionType === "resources" ? buildComputedResourceCost(action, resourceQuantity, mappedActionsById) : null;
   const projectCounter = actionType === "projectCounter" ? buildProjectCounter(action, selection, mappedActionsById) : null;
   const configurableCheck = actionType === "check" && action.configurable === true
-    ? buildConfigurableCheck(action, selection)
+    ? buildConfigurableCheck(action, selection, mappedActionsById)
     : null;
   const selectedOptionSummary = getSelectedOptionSummary(optionChoices);
   const checkSummarySource = configurableCheck
@@ -1379,6 +1412,8 @@ function mapRequest(request = {}, { groupId = "", availableWeeks = 0 } = {}) {
     };
   });
   const projectCounter = buildRequestProjectCounter(request, checks, { availableWeeks });
+  const isArchived = ARCHIVED_REQUEST_STATUSES.has(status);
+  const isCurrentProject = Boolean(projectCounter && projectCounter.value < projectCounter.max && isArchived);
 
   return {
     ...request,
@@ -1395,7 +1430,8 @@ function mapRequest(request = {}, { groupId = "", availableWeeks = 0 } = {}) {
     hasProjectCounter: Boolean(projectCounter),
     hasChecks: checks.length > 0,
     hasResult: Boolean(cleanText(request.result)),
-    isArchived: ARCHIVED_REQUEST_STATUSES.has(status)
+    isArchived,
+    isCurrentProject
   };
 }
 
@@ -1418,10 +1454,14 @@ function buildEmptyContext(actor, {
     selectedActionLabel: selectedTemplate?.label || "Выбрать простой",
     selectedTemplate,
     requests: [],
+    currentProjects: [],
     archiveRequests: [],
     requestPage: paginate([]),
+    currentProjectPage: paginate([]),
     archivePage: paginate([]),
+    hasCurrentProjects: false,
     hasArchiveRequests: false,
+    currentProjectCount: 0,
     emptyRequests: true,
     form: {
       actionId,
@@ -1491,9 +1531,11 @@ export class CharacterDowntimeService {
     const requests = (Array.isArray(snapshot?.requests) ? snapshot.requests : [])
       .filter((request) => request?.actorId === actor.id)
       .map((request) => mapRequest(request, { groupId: snapshot.groupId, availableWeeks: balance.availableWeeks }));
-    const activeRequests = requests.filter((request) => !request.isArchived);
-    const archivedRequests = requests.filter((request) => request.isArchived);
+    const currentProjects = requests.filter((request) => request.isCurrentProject);
+    const activeRequests = requests.filter((request) => !request.isArchived && !request.isCurrentProject);
+    const archivedRequests = requests.filter((request) => request.isArchived && !request.isCurrentProject);
     const activePage = paginate(activeRequests, formState.requestPage);
+    const currentProjectPage = paginate(currentProjects, formState.currentProjectPage);
     const archivePage = paginate(archivedRequests, formState.archivePage);
 
     const selectedAction = actionCatalog.find((action) => action.id === actionId) ?? null;
@@ -1517,11 +1559,15 @@ export class CharacterDowntimeService {
       selectedActionLabel: selectedTemplate?.label || cleanText(selectedAction?.label) || "Выбрать простой",
       selectedTemplate,
       requests: activePage.items,
+      currentProjects: currentProjectPage.items,
       archiveRequests: archivePage.items,
       requestPage: activePage,
+      currentProjectPage,
       archivePage,
+      hasCurrentProjects: currentProjects.length > 0,
       hasArchiveRequests: archivedRequests.length > 0,
       requestCount: activeRequests.length,
+      currentProjectCount: currentProjects.length,
       archiveCount: archivedRequests.length,
       emptyRequests: activeRequests.length === 0,
       form: {

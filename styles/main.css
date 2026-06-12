@@ -5460,6 +5460,16 @@ summary:focus-visible {
   position: relative;
 }
 
+.rm-character-downtime-request.has-project-counter {
+  grid-template-columns: minmax(0, 1fr) 176px;
+  column-gap: 12px;
+  align-items: start;
+}
+
+.rm-character-downtime-request.has-project-counter > :not(.rm-character-downtime-project-counter) {
+  grid-column: 1;
+}
+
 .rm-character-downtime-request.is-archived {
   background: rgba(0, 0, 0, 0.12);
 }
@@ -5497,36 +5507,20 @@ summary:focus-visible {
 
 .rm-character-downtime-project-counter {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto;
   gap: 8px;
-  align-items: center;
-  margin-top: 4px;
-  padding: 7px;
-  border: 1px solid rgba(214, 177, 104, 0.28);
-  background: rgba(0, 0, 0, 0.18);
+  justify-items: center;
+  align-self: center;
+  grid-column: 2;
+  grid-row: 1 / span 6;
+  margin: 0;
+  padding: 0;
 }
 
 .rm-character-downtime-project-counter img {
-  width: 56px;
-  height: 56px;
+  width: 176px;
+  height: 112px;
   object-fit: contain;
-}
-
-.rm-character-downtime-project-counter div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.rm-character-downtime-project-counter strong {
-  color: var(--rm-sheet-text);
-  font-size: 13px;
-}
-
-.rm-character-downtime-project-counter span {
-  color: var(--rm-sheet-muted);
-  font-size: 11px;
-  font-weight: 700;
+  background: rgba(0, 0, 0, 0.28);
 }
 
 .rm-character-downtime-roll {
@@ -7044,17 +7038,23 @@ summary:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .rm-character-downtime-request.has-project-counter {
+    grid-template-columns: 1fr;
+  }
+
   .rm-character-downtime-project-counter {
-    grid-template-columns: 48px minmax(0, 1fr);
+    grid-column: 1;
+    grid-row: auto;
+    justify-items: start;
   }
 
   .rm-character-downtime-project-counter img {
-    width: 48px;
-    height: 48px;
+    width: 140px;
+    height: 90px;
   }
 
   .rm-character-downtime-project-counter .rm-button {
-    grid-column: 1 / -1;
+    width: auto;
   }
 
   .rm-compact-pill--focus {

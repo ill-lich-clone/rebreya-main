@@ -1000,6 +1000,25 @@ test("character downtime submit reads configurable long project check fields", a
   }
 });
 
+test("character downtime template locks rank-driven project DC fields", async () => {
+  const template = await readFile(new URL("../templates/character-downtime-tab.hbs", import.meta.url), "utf8");
+
+  assert.match(template, /\{\{#if configurableCheck\.isDcLocked\}\}readonly aria-readonly="true"\{\{\/if\}\}/u);
+});
+
+test("character downtime template renders current projects with a right-side counter", async () => {
+  const template = await readFile(new URL("../templates/character-downtime-tab.hbs", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(template, /characterDowntime\.hasCurrentProjects/u);
+  assert.match(template, /characterDowntime\.currentProjects/u);
+  assert.match(template, /data-page-type="currentProject"/u);
+  assert.match(template, /rm-character-downtime-request \{\{#if hasProjectCounter\}\}has-project-counter\{\{\/if\}\}/u);
+  assert.doesNotMatch(template, /Эта неделя ещё без сдвига/u);
+  assert.match(styles, /\.rm-character-downtime-request\.has-project-counter\s*\{/u);
+  assert.match(styles, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+\d+px/u);
+});
+
 test("character downtime continue button submits continuation payload", async () => {
   const stubs = installSheetExtensionStubs();
   try {

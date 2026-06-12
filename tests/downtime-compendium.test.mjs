@@ -240,6 +240,19 @@ test("long project downtime defines rank-based counters and configurable weekly 
   assert.equal(checkAction.actionType, "check");
   assert.equal(checkAction.configurable, true);
   assert.equal(checkAction.outcomeMode, "dc-sum");
+  assert.equal(checkAction.dcByRank.rankSourceActionId, "long-project-rank");
+  assert.equal(checkAction.dcByRank.locked, true);
+  assert.deepEqual(checkAction.dcByRank.rows.map((row) => [row.rank, row.dc]), [
+    [1, 12],
+    [2, 14],
+    [3, 16],
+    [4, 18],
+    [5, 20],
+    [6, 22],
+    [7, 25],
+    [8, 30],
+    [9, 35]
+  ]);
   assert.equal(resultAction.actionType, "downtimeResult");
   assert.equal(resultAction.resultFormula.outputField, "progressSteps");
   assert.deepEqual(resultAction.resultFormula.terms.map((term) => [term.actionId, term.field]), [

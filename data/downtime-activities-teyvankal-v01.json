@@ -2068,6 +2068,21 @@
           "target": "inv",
           "targetLabel": "Расследование",
           "dc": 15,
+          "dcByRank": {
+            "rankSourceActionId": "long-project-rank",
+            "locked": true,
+            "rows": [
+              { "rank": 1, "dc": 12 },
+              { "rank": 2, "dc": 14 },
+              { "rank": 3, "dc": 16 },
+              { "rank": 4, "dc": 18 },
+              { "rank": 5, "dc": 20 },
+              { "rank": 6, "dc": 22 },
+              { "rank": 7, "dc": 25 },
+              { "rank": 8, "dc": 30 },
+              { "rank": 9, "dc": 35 }
+            ]
+          },
           "outcomeMode": "dc-sum",
           "recordMode": "total-success",
           "summary": "Мастер выбирает подходящую характеристику, навык или инструмент и DC проекта."

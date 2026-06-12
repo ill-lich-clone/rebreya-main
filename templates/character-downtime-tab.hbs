@@ -169,6 +169,7 @@
                       value="{{configurableCheck.dc}}"
                       data-action="character-downtime-check-dc"
                       data-target-action-id="{{id}}"
+                      {{#if configurableCheck.isDcLocked}}readonly aria-readonly="true"{{/if}}
                     >
                   </label>
                 </fieldset>
@@ -339,7 +340,7 @@
       {{else}}
         <div class="rm-character-downtime-request-list">
           {{#each characterDowntime.requests}}
-            <article class="rm-character-downtime-request">
+            <article class="rm-character-downtime-request {{#if hasProjectCounter}}has-project-counter{{/if}}">
               <div class="rm-character-downtime-request__title">
                 <strong>{{title}}</strong>
                 <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
@@ -406,14 +407,6 @@
                   {{#if projectCounter.hasImagePath}}
                     <img src="{{projectCounter.imagePath}}" alt="{{projectCounter.value}} / {{projectCounter.max}}">
                   {{/if}}
-                  <div>
-                    <strong>{{projectCounter.value}} / {{projectCounter.max}}</strong>
-                    {{#if projectCounter.hasWeekResult}}
-                      <span>+{{projectCounter.gained}} за неделю</span>
-                    {{else}}
-                      <span>Эта неделя ещё без сдвига</span>
-                    {{/if}}
-                  </div>
                   {{#if projectCounter.canContinue}}
                     <button
                       type="button"
@@ -441,6 +434,75 @@
         </nav>
       {{/if}}
     </section>
+
+    {{#if characterDowntime.hasCurrentProjects}}
+      <section class="rm-character-downtime-history rm-character-downtime-history--projects">
+        <header>
+          <h4>Текущие проекты</h4>
+          <span class="rm-muted">{{rmNum characterDowntime.currentProjectCount precision=0}}</span>
+        </header>
+
+        <div class="rm-character-downtime-request-list">
+          {{#each characterDowntime.currentProjects}}
+            <article class="rm-character-downtime-request {{#if hasProjectCounter}}has-project-counter{{/if}}">
+              <div class="rm-character-downtime-request__title">
+                <strong>{{title}}</strong>
+                <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
+              </div>
+              <p class="rm-muted">{{actionLabel}} • {{rmNum weeks precision=0}} нед.</p>
+              {{#if description}}
+                <p>{{description}}</p>
+              {{/if}}
+              {{#if hasResult}}
+                <p class="rm-inline-status rm-inline-status--info"><span>{{result}}</span></p>
+              {{/if}}
+              {{#if hasChecks}}
+                <div class="rm-status-strip rm-character-downtime-checks">
+                  {{#each checks}}
+                    <div class="rm-character-downtime-check">
+                      <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Целевое действие простоя">{{summary}}</span>
+                      {{#if hasOutcomeSummary}}
+                        <span class="rm-badge rm-status-badge rm-status-badge--info">{{outcomeSummary}}</span>
+                      {{/if}}
+                      {{#if hasResult}}
+                        <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
+                      {{/if}}
+                    </div>
+                  {{/each}}
+                </div>
+              {{/if}}
+              {{#if hasProjectCounter}}
+                <aside class="rm-character-downtime-project-counter">
+                  {{#if projectCounter.hasImagePath}}
+                    <img src="{{projectCounter.imagePath}}" alt="{{projectCounter.value}} / {{projectCounter.max}}">
+                  {{/if}}
+                  {{#if projectCounter.canContinue}}
+                    <button
+                      type="button"
+                      class="rm-button rm-button--small rm-button--secondary"
+                      data-action="character-downtime-continue"
+                      data-payload="{{projectCounter.continuePayloadJson}}"
+                    >
+                      Продолжить работу
+                    </button>
+                  {{/if}}
+                </aside>
+              {{/if}}
+            </article>
+          {{/each}}
+        </div>
+
+        <nav class="rm-character-downtime-pagination">
+          <button type="button" class="rm-icon-button" data-action="character-downtime-page" data-page-type="currentProject" data-direction="previous" data-tooltip="Предыдущая страница" {{#unless characterDowntime.currentProjectPage.hasPrevious}}disabled{{/unless}}>
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+          <span class="rm-muted">{{rmNum characterDowntime.currentProjectPage.current precision=0}} / {{rmNum characterDowntime.currentProjectPage.total precision=0}}</span>
+          <button type="button" class="rm-icon-button" data-action="character-downtime-page" data-page-type="currentProject" data-direction="next" data-tooltip="Следующая страница" {{#unless characterDowntime.currentProjectPage.hasNext}}disabled{{/unless}}>
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </nav>
+      </section>
+    {{/if}}
 
     {{#if characterDowntime.hasArchiveRequests}}
       <section class="rm-character-downtime-history rm-character-downtime-history--archive">

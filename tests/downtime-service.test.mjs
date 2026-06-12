@@ -1756,6 +1756,21 @@ test("createRequest snapshots long project setup and rank-based counter size", a
         target: "inv",
         targetLabel: "Investigation",
         dc: 15,
+        dcByRank: {
+          rankSourceActionId: "long-project-rank",
+          locked: true,
+          rows: [
+            { rank: 1, dc: 12 },
+            { rank: 2, dc: 14 },
+            { rank: 3, dc: 16 },
+            { rank: 4, dc: 18 },
+            { rank: 5, dc: 20 },
+            { rank: 6, dc: 22 },
+            { rank: 7, dc: 25 },
+            { rank: 8, dc: 30 },
+            { rank: 9, dc: 35 }
+          ]
+        },
         outcomeMode: "dc-sum"
       }, {
         id: "long-project-result",
@@ -1821,7 +1836,8 @@ test("createRequest snapshots long project setup and rank-based counter size", a
     assert.equal(request.checks[3].ability, "int");
     assert.equal(request.checks[3].target, "arc");
     assert.equal(request.checks[3].targetLabel, "Arcana");
-    assert.equal(request.checks[3].dc, 17);
+    assert.equal(request.checks[3].dc, 20);
+    assert.equal(request.checks[3].dcLocked, true);
   }
   finally {
     harness.restore();
@@ -2495,6 +2511,70 @@ test("RebreyaMainModule exposes downtime service API and refreshes after mutatio
   }
 });
 
+test("RebreyaMainModule does not render actor sheets after local downtime mutations", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  globalThis.Hooks = {
+    once() {}
+  };
+  let renderCount = 0;
+  const emitted = [];
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true
+    },
+    socket: {
+      emit(channel, message) {
+        emitted.push([channel, message]);
+      }
+    }
+  };
+  globalThis.ui = {
+    windows: {
+      sheet1: {
+        rendered: true,
+        actor: {
+          id: "actor-a"
+        },
+        render() {
+          renderCount += 1;
+        }
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-local-no-sheet-render=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    let refreshCount = 0;
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+    moduleApi.downtimeService.grantWeeks = async () => ({ actorIds: ["actor-a"] });
+    moduleApi.downtimeService.createRequest = async () => ({ id: "downtime-1", actorId: "actor-a" });
+    moduleApi.downtimeService.setRequestStatus = async (requestId) => ({ id: requestId, actorId: "actor-a" });
+    moduleApi.downtimeService.setRequestChecks = async (requestId) => ({ id: requestId, actorId: "actor-a" });
+    moduleApi.downtimeService.recordCheckResult = async (requestId) => ({ id: requestId, actorId: "actor-a" });
+
+    await moduleApi.grantDowntimeWeeks({ actorId: "actor-a", weeks: 1 });
+    await moduleApi.createDowntimeRequest({ actorId: "actor-a", weeks: 1 });
+    await moduleApi.setDowntimeRequestStatus("downtime-1", "approved");
+    await moduleApi.setDowntimeRequestChecks("downtime-1", []);
+    await moduleApi.recordDowntimeCheckResult("downtime-1", "check-1", { total: 20 });
+
+    assert.equal(refreshCount, 5);
+    assert.equal(renderCount, 0);
+    assert.equal(emitted.every(([, message]) => message.type === "downtime-updated"), true);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+  }
+});
+
 test("RebreyaMainModule applies setSetting socket messages on the GM client", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
@@ -2740,7 +2820,7 @@ test("RebreyaMainModule routes player downtime check results through the GM sock
   }
 });
 
-test("RebreyaMainModule skips non-rendered actor sheets on downtime refreshes", async () => {
+test("RebreyaMainModule does not render actor sheets on downtime updates", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
@@ -2805,7 +2885,7 @@ test("RebreyaMainModule skips non-rendered actor sheets on downtime refreshes", 
       requestId: "downtime-1"
     });
 
-    assert.deepEqual(renderCalls, ["openSheet"]);
+    assert.deepEqual(renderCalls, []);
   }
   finally {
     globalThis.Hooks = previousHooks;
@@ -2815,7 +2895,7 @@ test("RebreyaMainModule skips non-rendered actor sheets on downtime refreshes", 
   }
 });
 
-test("RebreyaMainModule refreshes player sheets when GM reports downtime creation", async () => {
+test("RebreyaMainModule does not render player sheets when GM reports downtime creation", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
@@ -2871,7 +2951,7 @@ test("RebreyaMainModule refreshes player sheets when GM reports downtime creatio
     });
 
     assert.equal(refreshCount, 1);
-    assert.equal(renderCount, 1);
+    assert.equal(renderCount, 0);
   }
   finally {
     globalThis.Hooks = previousHooks;
@@ -2880,7 +2960,7 @@ test("RebreyaMainModule refreshes player sheets when GM reports downtime creatio
   }
 });
 
-test("RebreyaMainModule refreshes player sheets when GM updates a downtime request", async () => {
+test("RebreyaMainModule does not render player sheets when GM updates a downtime request", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
@@ -2931,7 +3011,7 @@ test("RebreyaMainModule refreshes player sheets when GM updates a downtime reque
     });
 
     assert.equal(refreshCount, 0);
-    assert.equal(renderCount, 1);
+    assert.equal(renderCount, 0);
   }
   finally {
     globalThis.Hooks = previousHooks;
@@ -3118,10 +3198,12 @@ test("RebreyaMainModule GM records socket downtime check results for owned actor
 test("RebreyaMainModule GM creates socket downtime requests without activating inventory windows", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
   globalThis.Hooks = {
     once() {}
   };
   const emitted = [];
+  let renderCount = 0;
   const playerUser = { id: "player-1", isGM: false, active: true };
   const actor = {
     id: "actor-a",
@@ -3143,6 +3225,19 @@ test("RebreyaMainModule GM creates socket downtime requests without activating i
     socket: {
       emit(channel, message) {
         emitted.push([channel, message]);
+      }
+    }
+  };
+  globalThis.ui = {
+    windows: {
+      sheet1: {
+        rendered: true,
+        actor: {
+          id: "actor-a"
+        },
+        render() {
+          renderCount += 1;
+        }
       }
     }
   };
@@ -3185,6 +3280,7 @@ test("RebreyaMainModule GM creates socket downtime requests without activating i
     });
 
     assert.equal(refreshCount, 0);
+    assert.equal(renderCount, 0);
     assert.deepEqual(createCalls, [{
       groupId: "group-a",
       actorId: "actor-a",
@@ -3211,6 +3307,7 @@ test("RebreyaMainModule GM creates socket downtime requests without activating i
   finally {
     globalThis.Hooks = previousHooks;
     globalThis.game = previousGame;
+    globalThis.ui = previousUi;
   }
 });
 

@@ -621,6 +621,35 @@ function resolveProjectCounterMax(counter = {}, selectedActionsById = new Map())
   return Math.max(1, Math.floor(toFiniteNumber(counter.max, 4) ?? 4));
 }
 
+function resolveRankedDc(dcByRank = {}, selectedActionsById = new Map()) {
+  const config = asObject(dcByRank);
+  const rankSourceActionId = cleanId(config.rankSourceActionId);
+  if (!rankSourceActionId) {
+    return undefined;
+  }
+
+  const rankAction = selectedActionsById.get(rankSourceActionId);
+  const selectedRank = toFiniteNumber(rankAction?.selectedRank, toFiniteNumber(rankAction?.selectedOption?.rank));
+  if (selectedRank === undefined) {
+    return undefined;
+  }
+
+  const matchedRow = asArray(config.rows)
+    .map((row) => asObject(row))
+    .find((row) => {
+      const exactRank = toFiniteNumber(row.rank);
+      if (exactRank !== undefined) {
+        return exactRank === selectedRank;
+      }
+
+      const from = toFiniteNumber(row.from);
+      const to = toFiniteNumber(row.to);
+      return (from === undefined || selectedRank >= from) && (to === undefined || selectedRank <= to);
+    });
+  const dc = toFiniteNumber(matchedRow?.dc);
+  return dc === undefined ? undefined : Math.max(0, Math.floor(dc));
+}
+
 function applySelectedProjectCounter(action = {}, selection = {}, selectedActionsById = new Map()) {
   const source = asObject(action);
   if (cleanId(source.actionType) !== "projectCounter") {
@@ -673,18 +702,21 @@ function applySelectedOptionChoice(action = {}, selection = {}, selectedActionsB
   };
 }
 
-function applyConfigurableCheckSelection(action = {}, selection = {}) {
+function applyConfigurableCheckSelection(action = {}, selection = {}, selectedActionsById = new Map()) {
   const source = asObject(action);
   const actionType = cleanId(source.actionType) || "check";
   if (actionType !== "check" || source.configurable !== true) {
     return source;
   }
 
+  const dcByRank = asObject(source.dcByRank);
+  const rankedDc = resolveRankedDc(dcByRank, selectedActionsById);
+  const isDcLocked = Boolean(dcByRank.locked) && rankedDc !== undefined;
   const sourceType = cleanId(selection?.sourceType) || cleanId(source.sourceType) || "skill";
   const target = cleanId(selection?.target) || cleanId(source.target);
   const ability = cleanId(selection?.ability) || cleanId(source.ability);
   const targetLabel = cleanString(selection?.targetLabel) || cleanString(source.targetLabel) || cleanString(source.label);
-  const dc = toFiniteNumber(selection?.dc, toFiniteNumber(source.dc, 0)) ?? 0;
+  const dc = isDcLocked ? rankedDc : (toFiniteNumber(selection?.dc, toFiniteNumber(source.dc, 0)) ?? 0);
   return {
     ...clone(source),
     actionType,
@@ -692,7 +724,8 @@ function applyConfigurableCheckSelection(action = {}, selection = {}) {
     ability,
     target,
     targetLabel,
-    dc: Math.max(0, Math.floor(dc))
+    dc: Math.max(0, Math.floor(dc)),
+    dcLocked: isDcLocked
   };
 }
 
@@ -940,7 +973,7 @@ function applyTargetActionSelection(action = {}, selections = new Map(), selecte
     selectedAction = applySelectedOptionChoice(source, selection, selectedActionsById);
   }
   else if (actionType === "check") {
-    selectedAction = applyConfigurableCheckSelection(source, selection);
+    selectedAction = applyConfigurableCheckSelection(source, selection, selectedActionsById);
   }
   else if (actionType === "numericInput") {
     selectedAction = applySelectedNumericInput(source, selection);

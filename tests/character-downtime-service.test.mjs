@@ -1112,7 +1112,22 @@ test("CharacterDowntimeService prepares long project configurable inputs", () =>
           ability: "int",
           target: "inv",
           targetLabel: "Investigation",
-          dc: 15
+          dc: 15,
+          dcByRank: {
+            rankSourceActionId: "long-project-rank",
+            locked: true,
+            rows: [
+              { rank: 1, dc: 12 },
+              { rank: 2, dc: 14 },
+              { rank: 3, dc: 16 },
+              { rank: 4, dc: 18 },
+              { rank: 5, dc: 20 },
+              { rank: 6, dc: 22 },
+              { rank: 7, dc: 25 },
+              { rank: 8, dc: 30 },
+              { rank: 9, dc: 35 }
+            ]
+          }
         }]
       }]
     }
@@ -1142,7 +1157,8 @@ test("CharacterDowntimeService prepares long project configurable inputs", () =>
   assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.sourceType, "skill");
   assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.ability, "wis");
   assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.target, "prc");
-  assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.dc, 18);
+  assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.dc, 25);
+  assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.isDcLocked, true);
   assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.targetOptions.some((option) => option.value === "prc"), true);
 });
 
@@ -1252,6 +1268,87 @@ test("CharacterDowntimeService maps long project counter progress and continuati
     targetLabel: "Arcana",
     dc: 15
   });
+});
+
+test("CharacterDowntimeService keeps unfinished completed long projects in current projects", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 1,
+          totalGrantedWeeks: 2
+        }
+      }],
+      requests: [{
+        id: "downtime-project",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionId: "long-project",
+        actionLabel: "Long Project",
+        templateUuid: "Compendium.world.rebreya-downtime.Item.long-project",
+        title: "Find a patron",
+        weeks: 1,
+        status: "completed",
+        checks: [{
+          id: "long-project-rank",
+          label: "Project rank",
+          actionType: "rankChoice",
+          selectedRank: 5,
+          selectedOptionLabel: "Rank 5"
+        }, {
+          id: "long-project-counter",
+          label: "Project counter",
+          actionType: "projectCounter",
+          projectCounter: {
+            current: 2,
+            max: 6
+          }
+        }, {
+          id: "long-project-check",
+          label: "Progress check",
+          actionType: "check",
+          sourceType: "skill",
+          ability: "int",
+          target: "arc",
+          targetLabel: "Arcana",
+          dc: 20,
+          result: {
+            total: 13,
+            dc: 20,
+            success: false
+          }
+        }, {
+          id: "long-project-result",
+          label: "Counter shift",
+          actionType: "downtimeResult",
+          result: {
+            value: 0,
+            progressSteps: 0,
+            outputField: "progressSteps"
+          }
+        }]
+      }],
+      actionCatalog: []
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }));
+
+  assert.deepEqual(context.requests.map((request) => request.id), []);
+  assert.deepEqual(context.archiveRequests.map((request) => request.id), []);
+  assert.deepEqual(context.currentProjects.map((request) => request.id), ["downtime-project"]);
+  assert.equal(context.hasCurrentProjects, true);
+  assert.equal(context.currentProjectCount, 1);
+  assert.equal(context.archiveCount, 0);
+  assert.equal(context.currentProjects[0].projectCounter.value, 2);
+  assert.equal(context.currentProjects[0].projectCounter.canContinue, true);
 });
 
 test("CharacterDowntimeService converts known group errors into a warning context", () => {
