@@ -1418,9 +1418,53 @@ test("createRequest applies structured target action selections from downtime te
           id: "wand",
           name: "Жезл огня",
           type: "loot",
+          img: "icons/magic/fire/wand-fire.webp",
           sourceType: "magicItem",
           rarity: "rare",
-          priceGold: 1200
+          priceGold: 1200,
+          rebreya: {
+            managed: true,
+            sourceType: "magicItem",
+            magicItemId: "wand",
+            signature: "magic:wands:wand",
+            rarity: "rare",
+            itemType: "wand",
+            itemSubtype: "fire",
+            itemSlot: "hand",
+            heroDollSlots: ["mainHand", "offHand"],
+            rank: 4,
+            foundryType: "loot",
+            foundrySubtype: "wand",
+            foundrySubtypeExtra: "",
+            foundryBaseItem: "",
+            foundryFolder: "magic-items/wands",
+            magical: true,
+            attunement: "required",
+            bargaining: 2,
+            itemBargaining: 2,
+            isConsumable: false,
+            value: 1200,
+            priceGold: 1200,
+            source: "Rebreya"
+          },
+          documentSnapshot: {
+            name: "Fire Wand",
+            type: "loot",
+            img: "icons/magic/fire/wand-fire.webp",
+            system: {
+              price: {
+                value: 1200,
+                denomination: "gp"
+              }
+            },
+            flags: {
+              "rebreya-main": {
+                sourceType: "magicItem",
+                magicItemId: "wand",
+                signature: "magic:wands:wand"
+              }
+            }
+          }
         }
       }, {
         actionId: "magic-item-purchase-trade-step",
@@ -1452,6 +1496,106 @@ test("createRequest applies structured target action selections from downtime te
       selectedOptionLabel: undefined,
       numericValue: -1
     }]);
+    assert.equal(request.checks[0].selectedItem.img, "icons/magic/fire/wand-fire.webp");
+    assert.equal(request.checks[0].selectedItem.rebreya.magicItemId, "wand");
+    assert.deepEqual(request.checks[0].selectedItem.rebreya.heroDollSlots, ["mainHand", "offHand"]);
+    assert.equal(request.checks[0].selectedItem.rebreya.foundryFolder, "magic-items/wands");
+    assert.equal(request.checks[0].selectedItem.documentSnapshot.system.price.value, 1200);
+    assert.equal(request.checks[0].selectedItem.documentSnapshot.flags["rebreya-main"].signature, "magic:wands:wand");
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("createRequest derives magic item purchase bargaining and price formula from selected item", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-magic-item-purchase-derived",
+    name: "Покупка магического предмета",
+    config: {
+      targetActions: [{
+        id: "magic-item-purchase-item",
+        label: "Предмет",
+        actionType: "itemChoice",
+        itemChoice: {
+          sourceType: "magicItem"
+        }
+      }, {
+        id: "magic-item-purchase-trade-step",
+        label: "Торги",
+        actionType: "optionChoice",
+        options: [{
+          id: "forbidden",
+          label: "Запрещённые",
+          value: -5
+        }, {
+          id: "bad",
+          label: "Невыгодные",
+          value: -1
+        }, {
+          id: "normal",
+          label: "Нормальные",
+          value: 0
+        }]
+      }, {
+        id: "magic-item-purchase-price",
+        label: "Цена",
+        actionType: "formulaRoll",
+        formulaByRarity: {
+          rare: "1d6 * 1000"
+        },
+        tradeStepActionId: "magic-item-purchase-trade-step",
+        itemActionId: "magic-item-purchase-item"
+      }]
+    }
+  });
+  const harness = createHarness({
+    members: [actor],
+    groupItems: [templateItem],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      weeks: 1,
+      targetActionSelections: [{
+        actionId: "magic-item-purchase-item",
+        item: {
+          uuid: "Compendium.world.rebreya-magic-items.Item.belt-fire-giant",
+          name: "Пояс силы огненного великана",
+          sourceType: "magicItem",
+          rebreya: {
+            sourceType: "magicItem",
+            magicItemId: "belt-fire-giant",
+            rarity: "Редкий",
+            bargaining: "Невыгодные",
+            itemBargaining: "Невыгодные",
+            signature: JSON.stringify({
+              rarity: "Редкий",
+              bargaining: "Невыгодные",
+              costText: "2d6kh1*1000 зм"
+            }),
+            priceGold: 5500
+          }
+        }
+      }]
+    });
+
+    assert.equal(request.checks[1].selectedOptionId, "bad");
+    assert.equal(request.checks[1].selectedOptionLabel, "Невыгодные");
+    assert.equal(request.checks[2].selectedFormula, "2d6kh1*1000");
   }
   finally {
     harness.restore();
@@ -1549,6 +1693,271 @@ test("createRequest snapshots rank choices and rank-priced resources", async () 
   }
 });
 
+test("createRequest snapshots long project setup and rank-based counter size", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-long-project",
+    name: "Long Project",
+    config: {
+      defaultWeeks: 1,
+      targetActions: [{
+        id: "long-project-rank",
+        label: "Project rank",
+        actionType: "rankChoice",
+        rankChoice: {
+          min: 1,
+          max: 9,
+          default: 1,
+          rows: [
+            { rank: 1, label: "Rank 1", counterMax: 4 },
+            { rank: 5, label: "Rank 5", counterMax: 6 },
+            { rank: 8, label: "Rank 8", counterMax: 8 }
+          ]
+        }
+      }, {
+        id: "long-project-counter",
+        label: "Project counter",
+        actionType: "projectCounter",
+        projectCounter: {
+          rankSourceActionId: "long-project-rank",
+          current: 0,
+          maxByRank: [
+            { from: 1, to: 3, max: 4 },
+            { from: 4, to: 6, max: 6 },
+            { from: 7, to: 9, max: 8 }
+          ]
+        }
+      }, {
+        id: "long-project-resources",
+        label: "Weekly investment",
+        actionType: "resources",
+        resources: {
+          resourceName: "Gold per week",
+          quantity: {
+            min: 0,
+            default: 0,
+            step: 1,
+            unit: "gp",
+            unitCost: 1
+          },
+          cost: {
+            currency: "gp",
+            payer: "character",
+            timing: "manual"
+          }
+        }
+      }, {
+        id: "long-project-check",
+        label: "Progress check",
+        actionType: "check",
+        configurable: true,
+        sourceType: "skill",
+        ability: "int",
+        target: "inv",
+        targetLabel: "Investigation",
+        dc: 15,
+        outcomeMode: "dc-sum"
+      }, {
+        id: "long-project-result",
+        label: "Counter shift",
+        actionType: "downtimeResult",
+        resultFormula: {
+          outputField: "progressSteps",
+          terms: [{
+            actionId: "long-project-check",
+            field: "dcProgressSteps",
+            operator: "+"
+          }]
+        }
+      }]
+    }
+  });
+  const harness = createHarness({
+    members: [actor],
+    groupItems: [templateItem],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      weeks: 1,
+      targetActionSelections: [{
+        actionId: "long-project-rank",
+        optionId: "rank-5"
+      }, {
+        actionId: "long-project-counter",
+        value: 2
+      }, {
+        actionId: "long-project-resources",
+        value: 125
+      }, {
+        actionId: "long-project-check",
+        sourceType: "skill",
+        ability: "int",
+        target: "arc",
+        targetLabel: "Arcana",
+        dc: 17
+      }]
+    });
+
+    assert.equal(request.checks[0].selectedRank, 5);
+    assert.equal(request.checks[1].actionType, "projectCounter");
+    assert.equal(request.checks[1].projectCounter.current, 2);
+    assert.equal(request.checks[1].projectCounter.max, 6);
+    assert.equal(request.checks[2].computedCost.total, 125);
+    assert.equal(request.checks[2].resources.cost.amount, 125);
+    assert.equal(request.checks[3].sourceType, "skill");
+    assert.equal(request.checks[3].ability, "int");
+    assert.equal(request.checks[3].target, "arc");
+    assert.equal(request.checks[3].targetLabel, "Arcana");
+    assert.equal(request.checks[3].dc, 17);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("createRequest computes formula downtime results from selected numeric inputs", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-craft",
+    name: "Craft",
+    config: {
+      defaultWeeks: 1,
+      targetActions: [{
+        id: "craft-days",
+        label: "Work days",
+        actionType: "numericInput",
+        input: {
+          min: 1,
+          max: 5,
+          step: 1,
+          default: 5,
+          unit: "days"
+        }
+      }, {
+        id: "craft-progress",
+        label: "Progress",
+        actionType: "downtimeResult",
+        outcomeMode: "sum",
+        recordMode: "group-sum",
+        resultFormula: {
+          outputField: "progressGold",
+          terms: [{
+            actionId: "craft-days",
+            field: "quantity",
+            operator: "+",
+            multiplier: 5
+          }]
+        }
+      }]
+    }
+  });
+  const harness = createHarness({
+    members: [actor],
+    groupItems: [templateItem],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      weeks: 1,
+      targetActionSelections: [{
+        actionId: "craft-days",
+        value: 3
+      }]
+    });
+
+    const progress = request.checks.find((check) => check.id === "craft-progress");
+    assert.equal(progress.result.total, 15);
+    assert.equal(progress.result.progressGold, 15);
+    assert.deepEqual(progress.result.sourceActionIds, ["craft-days"]);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("recordCheckResult computes long project counter progress from DC margin", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    downtimeState: {
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Hero A",
+        actionId: "long-project",
+        actionLabel: "Long Project",
+        title: "Long Project",
+        weeks: 1,
+        status: "pending",
+        checks: [{
+          id: "long-project-check",
+          label: "Progress check",
+          actionType: "check",
+          sourceType: "skill",
+          ability: "int",
+          target: "arc",
+          dc: 17,
+          outcomeMode: "dc-sum"
+        }, {
+          id: "long-project-result",
+          label: "Counter shift",
+          actionType: "downtimeResult",
+          resultFormula: {
+            outputField: "progressSteps",
+            terms: [{
+              actionId: "long-project-check",
+              field: "dcProgressSteps",
+              operator: "+"
+            }]
+          }
+        }]
+      }]
+    }
+  });
+
+  try {
+    const request = await harness.service.recordCheckResult("downtime-1", "long-project-check", {
+      total: 29
+    }, {
+      actorId: actor.id
+    });
+
+    assert.equal(request.checks[0].result.total, 29);
+    assert.equal(request.checks[0].result.dc, 17);
+    assert.equal(request.checks[0].result.success, true);
+    assert.equal(request.checks[1].result.progressSteps, 3);
+    assert.equal(request.checks[1].result.total, 3);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("recordCheckResult passes threshold outcomes into downtime result actions", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
   const harness = createHarness({
@@ -1632,6 +2041,128 @@ test("recordCheckResult passes threshold outcomes into downtime result actions",
     assert.equal(request.checks[1].result.sourceActionId, "research-check");
     assert.equal(request.checks[1].result.sourceOutcome, "success");
     assert.equal(request.checks[1].result.outputField, "fragments");
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("recordCheckResult computes downtime result formulas from previous action successes", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    downtimeState: {
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Hero A",
+        actionId: "gambling",
+        actionLabel: "Gambling",
+        title: "Gambling",
+        weeks: 1,
+        status: "pending",
+        checks: [{
+          id: "gambling-insight",
+          label: "Insight",
+          actionType: "check",
+          sourceType: "skill",
+          ability: "wis",
+          target: "ins",
+          outcomeMode: "dc",
+          recordMode: "total-success",
+          result: {
+            total: 18,
+            success: true
+          }
+        }, {
+          id: "gambling-deception",
+          label: "Deception",
+          actionType: "check",
+          sourceType: "skill",
+          ability: "cha",
+          target: "dec",
+          outcomeMode: "dc",
+          recordMode: "total-success",
+          result: {
+            total: 9,
+            success: false
+          }
+        }, {
+          id: "gambling-intimidation",
+          label: "Intimidation",
+          actionType: "check",
+          sourceType: "skill",
+          ability: "cha",
+          target: "itm",
+          outcomeMode: "dc",
+          recordMode: "total-success",
+          result: null
+        }, {
+          id: "gambling-result",
+          label: "Stake result",
+          actionType: "downtimeResult",
+          outcomeMode: "thresholds",
+          recordMode: "single-result",
+          resultFormula: {
+            outputField: "successes",
+            terms: [{
+              actionId: "gambling-insight",
+              field: "success",
+              operator: "+"
+            }, {
+              actionId: "gambling-deception",
+              field: "success",
+              operator: "+"
+            }, {
+              actionId: "gambling-intimidation",
+              field: "success",
+              operator: "+"
+            }]
+          },
+          thresholds: [{
+            from: 0,
+            to: 0,
+            label: "Lose stake and debt",
+            outcome: "failure"
+          }, {
+            from: 1,
+            to: 1,
+            label: "Lose half stake",
+            outcome: "partial"
+          }, {
+            from: 2,
+            to: 2,
+            label: "Stake plus 50%",
+            outcome: "success"
+          }, {
+            from: 3,
+            label: "Double stake",
+            outcome: "great-success"
+          }]
+        }]
+      }]
+    }
+  });
+
+  try {
+    const request = await harness.service.recordCheckResult("downtime-1", "gambling-intimidation", {
+      total: 21,
+      success: true
+    }, {
+      actorId: actor.id
+    });
+
+    const resultAction = request.checks.find((check) => check.id === "gambling-result");
+    assert.equal(resultAction.result.total, 2);
+    assert.equal(resultAction.result.successes, 2);
+    assert.equal(resultAction.result.thresholdOutcome, "success");
+    assert.equal(resultAction.result.thresholdLabel, "Stake plus 50%");
+    assert.equal(resultAction.result.outputField, "successes");
+    assert.deepEqual(resultAction.result.sourceActionIds, [
+      "gambling-insight",
+      "gambling-deception",
+      "gambling-intimidation"
+    ]);
   }
   finally {
     harness.restore();

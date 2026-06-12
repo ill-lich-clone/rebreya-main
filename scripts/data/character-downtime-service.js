@@ -1,3 +1,4 @@
+import { MODULE_ID, REBREYA_TOOLS } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js";
 
 const KNOWN_GROUP_CONTEXT_ERROR_MESSAGES = new Set(Object.values(GROUP_CONTEXT_ERRORS));
@@ -37,7 +38,7 @@ const ABILITY_LABELS = Object.freeze({
 const ROLLABLE_SOURCE_TYPES = new Set(["skill", "ability", "save", "tool"]);
 const ARCHIVED_REQUEST_STATUSES = new Set(["completed", "rejected"]);
 const REQUEST_PAGE_SIZE = 5;
-const NON_CHECK_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "downtimeResult"]);
+const NON_CHECK_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "projectCounter", "downtimeResult"]);
 const NON_CHECK_ACTION_SUMMARY_LABELS = Object.freeze({
   resources: "Ресурсы",
   itemChoice: "Предмет",
@@ -45,6 +46,7 @@ const NON_CHECK_ACTION_SUMMARY_LABELS = Object.freeze({
   optionChoice: "Выбор",
   rankChoice: "Выбор ранга",
   formulaRoll: "Формула",
+  projectCounter: "Счётчик",
   downtimeResult: "Итог"
 });
 
@@ -55,8 +57,67 @@ const CURRENCY_LABELS = Object.freeze({
   pp: "пм"
 });
 
+const CHECK_SOURCE_OPTIONS = Object.freeze([
+  { value: "skill", label: "Навык" },
+  { value: "ability", label: "Характеристика" },
+  { value: "tool", label: "Инструмент" }
+]);
+
+const CHECK_ABILITY_OPTIONS = Object.freeze([
+  { value: "", label: "Из листа" },
+  { value: "str", label: "Сила" },
+  { value: "dex", label: "Ловкость" },
+  { value: "con", label: "Телосложение" },
+  { value: "int", label: "Интеллект" },
+  { value: "wis", label: "Мудрость" },
+  { value: "cha", label: "Харизма" }
+]);
+
+const CHECK_SKILL_OPTIONS = Object.freeze([
+  { value: "acr", label: "Акробатика", ability: "dex" },
+  { value: "ani", label: "Уход за животными", ability: "wis" },
+  { value: "arc", label: "Магия", ability: "int" },
+  { value: "ath", label: "Атлетика", ability: "str" },
+  { value: "dec", label: "Обман", ability: "cha" },
+  { value: "his", label: "История", ability: "int" },
+  { value: "ins", label: "Проницательность", ability: "wis" },
+  { value: "itm", label: "Запугивание", ability: "cha" },
+  { value: "inv", label: "Расследование", ability: "int" },
+  { value: "med", label: "Медицина", ability: "wis" },
+  { value: "nat", label: "Природа", ability: "int" },
+  { value: "prc", label: "Восприятие", ability: "wis" },
+  { value: "prf", label: "Выступление", ability: "cha" },
+  { value: "per", label: "Убеждение", ability: "cha" },
+  { value: "rel", label: "Религия", ability: "int" },
+  { value: "slt", label: "Ловкость рук", ability: "dex" },
+  { value: "ste", label: "Скрытность", ability: "dex" },
+  { value: "sur", label: "Выживание", ability: "wis" }
+]);
+
+const CHECK_ABILITY_TARGET_OPTIONS = Object.freeze(CHECK_ABILITY_OPTIONS
+  .filter((option) => option.value)
+  .map((option) => ({ value: option.value, label: option.label, ability: option.value })));
+
+const CHECK_TOOL_OPTIONS = Object.freeze(REBREYA_TOOLS.map((tool) => ({
+  value: tool.id,
+  label: tool.label,
+  ability: ""
+})));
+
 function cleanText(value) {
   return String(value ?? "").trim();
+}
+
+function clone(value) {
+  if (globalThis.foundry?.utils?.deepClone) {
+    return globalThis.foundry.utils.deepClone(value);
+  }
+
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
 function resolveTemplateDescriptionHtml(action = {}) {
@@ -73,6 +134,198 @@ function toInteger(value, fallback = 0) {
 function toFiniteNumber(value, fallback = undefined) {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function createSelectedOptions(options = [], selectedValue = "") {
+  const safeSelectedValue = cleanText(selectedValue);
+  return options.map((option) => ({
+    ...option,
+    selected: cleanText(option.value) === safeSelectedValue
+  }));
+}
+
+function getCheckTargetOptions(sourceType = "skill") {
+  const safeSourceType = cleanText(sourceType) || "skill";
+  if (safeSourceType === "ability") {
+    return CHECK_ABILITY_TARGET_OPTIONS;
+  }
+  if (safeSourceType === "tool") {
+    return CHECK_TOOL_OPTIONS;
+  }
+  return CHECK_SKILL_OPTIONS;
+}
+
+function getCheckTargetOption(value = "", sourceType = "skill") {
+  const safeValue = cleanText(value);
+  return getCheckTargetOptions(sourceType).find((option) => option.value === safeValue) ?? null;
+}
+
+function getDefaultCheckTargetOption(sourceType = "skill") {
+  return getCheckTargetOptions(sourceType)[0] ?? null;
+}
+
+function normalizeLookupText(value = "") {
+  return cleanText(value)
+    .toLocaleLowerCase("ru-RU")
+    .replace(/ё/gu, "е")
+    .replace(/[^a-zа-я0-9+-]+/giu, "");
+}
+
+const BARGAINING_OPTION_ID_BY_TEXT = Object.freeze({
+  [normalizeLookupText("Запрещённые")]: "forbidden",
+  [normalizeLookupText("Запрещенные")]: "forbidden",
+  [normalizeLookupText("Невозможные")]: "impossible",
+  [normalizeLookupText("Провальные")]: "failed",
+  [normalizeLookupText("Невыгодные")]: "bad",
+  [normalizeLookupText("Нормальные")]: "normal",
+  [normalizeLookupText("Выгодные")]: "favorable",
+  [normalizeLookupText("Удачные")]: "good"
+});
+
+const RARITY_KEY_BY_TEXT = Object.freeze({
+  [normalizeLookupText("Обычный")]: "common",
+  [normalizeLookupText("Обычная")]: "common",
+  [normalizeLookupText("common")]: "common",
+  [normalizeLookupText("Необычный")]: "uncommon",
+  [normalizeLookupText("Необычная")]: "uncommon",
+  [normalizeLookupText("uncommon")]: "uncommon",
+  [normalizeLookupText("Редкий")]: "rare",
+  [normalizeLookupText("Редкая")]: "rare",
+  [normalizeLookupText("rare")]: "rare",
+  [normalizeLookupText("Очень редкий")]: "veryRare",
+  [normalizeLookupText("Очень редкая")]: "veryRare",
+  [normalizeLookupText("veryRare")]: "veryRare",
+  [normalizeLookupText("very rare")]: "veryRare",
+  [normalizeLookupText("Легендарный")]: "legendary",
+  [normalizeLookupText("Легендарная")]: "legendary",
+  [normalizeLookupText("legendary")]: "legendary"
+});
+
+function parseRebreyaSignature(value = "") {
+  const text = cleanText(value);
+  if (!text.startsWith("{")) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  }
+  catch (_error) {
+    return {};
+  }
+}
+
+function getItemSignatureData(item = {}) {
+  const rebreya = asObject(item.rebreya);
+  const flags = asObject(item.documentSnapshot?.flags?.[MODULE_ID]);
+  return {
+    ...parseRebreyaSignature(flags.signature),
+    ...parseRebreyaSignature(rebreya.signature)
+  };
+}
+
+function getSelectedItemBargaining(item = {}) {
+  const rebreya = asObject(item.rebreya);
+  const signature = getItemSignatureData(item);
+  return cleanText(item.bargaining)
+    || cleanText(item.itemBargaining)
+    || cleanText(rebreya.bargaining)
+    || cleanText(rebreya.itemBargaining)
+    || cleanText(signature.bargaining);
+}
+
+function normalizeRarityKey(value = "") {
+  return RARITY_KEY_BY_TEXT[normalizeLookupText(value)] || cleanText(value);
+}
+
+function getSelectedItemRarityKey(item = {}) {
+  const rebreya = asObject(item.rebreya);
+  const signature = getItemSignatureData(item);
+  return normalizeRarityKey(
+    cleanText(item.rarity)
+      || cleanText(rebreya.rarity)
+      || cleanText(signature.rarity)
+      || cleanText(item.documentSnapshot?.system?.rarity)
+  );
+}
+
+function cleanFormulaText(value = "") {
+  const text = cleanText(value)
+    .replace(/\s*(зм|gp)\.?\s*$/iu, "")
+    .trim();
+  return text && text !== "-" && text !== "—" ? text : "";
+}
+
+function getSelectedItemCostFormula(item = {}) {
+  const rebreya = asObject(item.rebreya);
+  const signature = getItemSignatureData(item);
+  return cleanFormulaText(item.costText)
+    || cleanFormulaText(item.itemCost)
+    || cleanFormulaText(rebreya.costText)
+    || cleanFormulaText(rebreya.itemCost)
+    || cleanFormulaText(signature.costText)
+    || cleanFormulaText(signature.itemCost);
+}
+
+function findSelectedItemAction(mappedActionsById = new Map(), itemActionId = "") {
+  const safeItemActionId = cleanText(itemActionId);
+  if (safeItemActionId) {
+    const action = mappedActionsById.get(safeItemActionId);
+    if (action?.selectedItem) {
+      return action;
+    }
+  }
+
+  return [...mappedActionsById.values()].find((action) => action?.selectedItem) ?? null;
+}
+
+function resolveBargainingOptionId(options = [], mappedActionsById = new Map()) {
+  const itemAction = findSelectedItemAction(mappedActionsById);
+  const bargaining = getSelectedItemBargaining(itemAction?.selectedItem);
+  if (!bargaining) {
+    return "";
+  }
+
+  const numericBargaining = toFiniteNumber(bargaining);
+  if (numericBargaining !== undefined) {
+    const numericOption = options.find((option) => toFiniteNumber(option?.value) === numericBargaining);
+    if (numericOption?.id) {
+      return cleanText(numericOption.id);
+    }
+  }
+
+  const mappedId = BARGAINING_OPTION_ID_BY_TEXT[normalizeLookupText(bargaining)];
+  if (mappedId && options.some((option) => cleanText(option.id) === mappedId)) {
+    return mappedId;
+  }
+
+  const bargainingKey = normalizeLookupText(bargaining);
+  return cleanText(options.find((option) => normalizeLookupText(option?.label) === bargainingKey)?.id);
+}
+
+function resolveFormulaRollFormula(action = {}, selection = {}, mappedActionsById = new Map()) {
+  const explicitFormula = cleanFormulaText(selection?.formula)
+    || cleanFormulaText(action.selectedFormula)
+    || cleanFormulaText(action.formula);
+  if (explicitFormula) {
+    return explicitFormula;
+  }
+
+  const itemAction = findSelectedItemAction(mappedActionsById, action.itemActionId);
+  const selectedItem = itemAction?.selectedItem;
+  if (!selectedItem) {
+    return "";
+  }
+
+  const itemFormula = getSelectedItemCostFormula(selectedItem);
+  if (itemFormula) {
+    return itemFormula;
+  }
+
+  const rarityKey = getSelectedItemRarityKey(selectedItem);
+  const formulaByRarity = asObject(action.formulaByRarity);
+  return cleanFormulaText(formulaByRarity[rarityKey]);
 }
 
 function normalizeWeeks(value, fallback = 1) {
@@ -175,6 +428,12 @@ function buildSubmittedActionOutcomeSummary(check = {}) {
     }
     return buildResourceSummary(check);
   }
+  if (actionType === "projectCounter") {
+    const counter = asObject(check.projectCounter);
+    const current = toFiniteNumber(counter.current, toFiniteNumber(counter.value));
+    const max = toFiniteNumber(counter.max);
+    return current !== undefined && max !== undefined ? `${current} / ${max}` : cleanText(check.label);
+  }
   if (actionType === "numericInput") {
     return check.numericValue !== undefined
       ? [check.numericValue, cleanText(check.input?.unit)].filter(Boolean).join(" ")
@@ -210,6 +469,10 @@ function normalizeSelectedItem(item = {}) {
   if (id) {
     selectedItem.id = id;
   }
+  const img = cleanText(item.img);
+  if (img) {
+    selectedItem.img = img;
+  }
   const type = cleanText(item.type);
   if (type) {
     selectedItem.type = type;
@@ -222,9 +485,66 @@ function normalizeSelectedItem(item = {}) {
   if (rarity) {
     selectedItem.rarity = rarity;
   }
+  const costText = cleanText(item.costText) || cleanText(item.itemCost);
+  if (costText) {
+    selectedItem.costText = costText;
+  }
   const priceGold = toFiniteNumber(item.priceGold);
   if (priceGold !== undefined) {
     selectedItem.priceGold = priceGold;
+  }
+  const rebreya = asObject(item.rebreya);
+  if (Object.keys(rebreya).length) {
+    selectedItem.rebreya = clone(rebreya);
+  }
+  else {
+    const flags = asObject(item.flags);
+    const moduleFlags = asObject(flags[MODULE_ID]);
+    if (Object.keys(moduleFlags).length) {
+      selectedItem.rebreya = clone(moduleFlags);
+    }
+  }
+  const documentSnapshot = asObject(item.documentSnapshot);
+  if (Object.keys(documentSnapshot).length) {
+    selectedItem.documentSnapshot = clone(documentSnapshot);
+  }
+  else {
+    const itemData = asObject(item.itemData);
+    if (Object.keys(itemData).length) {
+      selectedItem.documentSnapshot = clone(itemData);
+    }
+  }
+  const selectedSourceType = cleanText(selectedItem.sourceType) || cleanText(selectedItem.rebreya?.sourceType);
+  if (selectedSourceType && !selectedItem.sourceType) {
+    selectedItem.sourceType = selectedSourceType;
+  }
+  const sourceId = cleanText(item.sourceId)
+    || cleanText(selectedItem.rebreya?.sourceId)
+    || cleanText(selectedItem.rebreya?.magicItemId)
+    || cleanText(selectedItem.rebreya?.gearId)
+    || cleanText(selectedItem.rebreya?.materialId);
+  if (sourceId) {
+    selectedItem.sourceId = sourceId;
+  }
+  const magicItemId = cleanText(selectedItem.rebreya?.magicItemId);
+  if (magicItemId) {
+    selectedItem.magicItemId = magicItemId;
+  }
+  const gearId = cleanText(selectedItem.rebreya?.gearId);
+  if (gearId) {
+    selectedItem.gearId = gearId;
+  }
+  const materialId = cleanText(selectedItem.rebreya?.materialId);
+  if (materialId) {
+    selectedItem.materialId = materialId;
+  }
+  const signature = getItemSignatureData(selectedItem);
+  const signatureCostText = cleanText(signature.costText) || cleanText(signature.itemCost);
+  if (signatureCostText && !selectedItem.costText) {
+    selectedItem.costText = signatureCostText;
+  }
+  if (selectedItem.rebreya && signatureCostText && !cleanText(selectedItem.rebreya.costText)) {
+    selectedItem.rebreya.costText = signatureCostText;
   }
   return selectedItem;
 }
@@ -244,6 +564,8 @@ function normalizeSelectionEntry(entry = {}) {
     ? entry.optionIds.map((id) => cleanText(id)).filter(Boolean)
     : [];
   const numericValue = toFiniteNumber(entry?.value);
+  const formula = cleanFormulaText(entry?.formula);
+  const result = toFiniteNumber(entry?.result);
   const item = normalizeSelectedItem(entry?.item);
 
   if (choiceId) {
@@ -257,6 +579,32 @@ function normalizeSelectionEntry(entry = {}) {
   }
   if (numericValue !== undefined) {
     selection.value = numericValue;
+  }
+  if (formula) {
+    selection.formula = formula;
+  }
+  if (result !== undefined) {
+    selection.result = result;
+  }
+  const sourceType = cleanText(entry?.sourceType);
+  if (sourceType) {
+    selection.sourceType = sourceType;
+  }
+  const ability = cleanText(entry?.ability);
+  if (ability) {
+    selection.ability = ability;
+  }
+  const target = cleanText(entry?.target);
+  if (target) {
+    selection.target = target;
+  }
+  const targetLabel = cleanText(entry?.targetLabel);
+  if (targetLabel) {
+    selection.targetLabel = targetLabel;
+  }
+  const dc = toFiniteNumber(entry?.dc);
+  if (dc !== undefined) {
+    selection.dc = dc;
   }
   if (item) {
     selection.item = item;
@@ -296,10 +644,11 @@ function buildResourceChoices(action = {}, selectedChoiceId = "") {
     .filter((choice) => choice.id && choice.label);
 }
 
-function buildOptionChoices(action = {}, selection = {}) {
+function buildOptionChoices(action = {}, selection = {}, mappedActionsById = new Map()) {
   const rawOptions = Array.isArray(action?.options) ? action.options : [];
+  const inferredOptionId = cleanText(selection?.optionId) || resolveBargainingOptionId(rawOptions, mappedActionsById);
   const selectedIds = new Set([
-    cleanText(selection?.optionId),
+    inferredOptionId,
     ...(Array.isArray(selection?.optionIds) ? selection.optionIds.map((id) => cleanText(id)) : [])
   ].filter(Boolean));
   const selectionMode = cleanText(action?.selectionMode) || "single";
@@ -311,6 +660,9 @@ function buildOptionChoices(action = {}, selection = {}) {
         ...option,
         id,
         label,
+        displayLabel: option?.value !== undefined && toFiniteNumber(option.value) !== undefined
+          ? `${label} (${toFiniteNumber(option.value) > 0 ? "+" : ""}${toFiniteNumber(option.value)})`
+          : label,
         selected: selectedIds.has(id)
       };
     })
@@ -388,6 +740,86 @@ function buildNumericInput(action = {}, selection = {}) {
   };
 }
 
+function buildFormulaRoll(action = {}, selection = {}, mappedActionsById = new Map()) {
+  const selectedFormula = resolveFormulaRollFormula(action, selection, mappedActionsById);
+  const result = toFiniteNumber(selection?.result, toFiniteNumber(action.formulaResult));
+  const formulaByRarity = asObject(action.formulaByRarity);
+  return {
+    ...action,
+    selectedFormula,
+    formulaResult: result,
+    formulaByRarityJson: Object.keys(formulaByRarity).length ? JSON.stringify(formulaByRarity) : "",
+    summary: selectedFormula || cleanText(action.label)
+  };
+}
+
+function resolveProjectCounterMax(counter = {}, mappedActionsById = new Map()) {
+  const explicitMax = toFiniteNumber(counter.max);
+  if (explicitMax !== undefined && explicitMax > 0) {
+    return Math.floor(explicitMax);
+  }
+
+  const rankSourceActionId = cleanText(counter.rankSourceActionId);
+  const selectedRank = rankSourceActionId
+    ? toFiniteNumber(mappedActionsById.get(rankSourceActionId)?.selectedRank)
+    : undefined;
+  const rankRows = Array.isArray(counter.maxByRank) ? counter.maxByRank : [];
+  const rankRow = selectedRank === undefined
+    ? null
+    : rankRows.find((row) => selectedRank >= toFiniteNumber(row?.from, Number.NEGATIVE_INFINITY)
+      && selectedRank <= toFiniteNumber(row?.to, Number.POSITIVE_INFINITY));
+  const rankedMax = toFiniteNumber(rankRow?.max);
+  if (rankedMax !== undefined && rankedMax > 0) {
+    return Math.floor(rankedMax);
+  }
+
+  return Math.max(0, toInteger(counter.defaultMax, 0));
+}
+
+function buildProjectCounter(action = {}, selection = {}, mappedActionsById = new Map()) {
+  const counter = asObject(action.projectCounter);
+  const max = resolveProjectCounterMax(counter, mappedActionsById);
+  const current = Math.min(max || Number.POSITIVE_INFINITY, toInteger(selection?.value, toInteger(counter.current, 0)));
+  return {
+    ...counter,
+    current,
+    value: current,
+    max,
+    label: cleanText(counter.label) || cleanText(action.label)
+  };
+}
+
+function buildConfigurableCheck(action = {}, selection = {}) {
+  const sourceType = cleanText(selection.sourceType) || cleanText(action.sourceType) || "skill";
+  const targetOptions = getCheckTargetOptions(sourceType);
+  const defaultTarget = getDefaultCheckTargetOption(sourceType);
+  const selectedTarget = getCheckTargetOption(selection.target || action.target, sourceType) ?? defaultTarget;
+  const target = cleanText(selectedTarget?.value) || cleanText(selection.target) || cleanText(action.target);
+  const targetLabel = cleanText(selection.targetLabel)
+    || cleanText(selectedTarget?.label)
+    || cleanText(action.targetLabel)
+    || target;
+  const inferredAbility = sourceType === "ability"
+    ? target
+    : (cleanText(selection.ability)
+      || cleanText(action.ability)
+      || cleanText(selectedTarget?.ability));
+  const dc = toFiniteNumber(selection.dc, toFiniteNumber(action.dc, 0)) ?? 0;
+
+  return {
+    sourceType,
+    ability: inferredAbility,
+    target,
+    targetLabel,
+    dc,
+    sourceTypeOptions: createSelectedOptions(CHECK_SOURCE_OPTIONS, sourceType),
+    abilityOptions: createSelectedOptions(CHECK_ABILITY_OPTIONS, inferredAbility),
+    targetOptions: createSelectedOptions(targetOptions, target),
+    hasAbilitySelect: sourceType !== "ability",
+    isAbilityOnly: sourceType === "ability"
+  };
+}
+
 function resolveResourceRank(resources = {}, mappedActionsById = new Map()) {
   const rankSourceActionId = cleanText(resources.rankSourceActionId);
   if (!rankSourceActionId) {
@@ -449,7 +881,10 @@ function buildComputedResourceCost(action = {}, resourceQuantity = null, mappedA
   const rankCosts = Array.isArray(resources.rankCosts) ? resources.rankCosts : [];
   const rankCost = rankCosts.find((row) => toFiniteNumber(row?.rank) === selectedRank) ?? rankCosts[0] ?? {};
   const baseCost = toFiniteNumber(rankCost.baseCost, toInteger(resources.cost?.amount, 0)) ?? 0;
-  const unitCost = toFiniteNumber(rankCost.unitCost, toFiniteNumber(rankCost.stepCost, 0)) ?? 0;
+  const quantity = resources.quantity && typeof resources.quantity === "object" && !Array.isArray(resources.quantity)
+    ? resources.quantity
+    : {};
+  const unitCost = toFiniteNumber(rankCost.unitCost, toFiniteNumber(rankCost.stepCost, toFiniteNumber(quantity.unitCost, 0))) ?? 0;
   const total = baseCost + (toFiniteNumber(resourceQuantity.value, 0) * unitCost);
   const currency = cleanText(resources.cost?.currency) || "gp";
   return {
@@ -474,16 +909,38 @@ function mapTemplateTargetAction(action = {}, index = 0, selections = new Map(),
     resourceChoices[0].selected = true;
   }
   const selectedResourceChoice = resourceChoices.find((choice) => choice.selected) ?? null;
-  const optionChoices = actionType === "optionChoice" ? buildOptionChoices(action, selection) : [];
+  const optionChoices = actionType === "optionChoice" ? buildOptionChoices(action, selection, mappedActionsById) : [];
   const rankChoices = actionType === "rankChoice" ? buildRankChoices(action, selection) : [];
   const selectedRankChoice = getSelectedRankSummary(rankChoices);
   const selectedItem = actionType === "itemChoice" ? normalizeSelectedItem(selection.item) : null;
   const numericInput = actionType === "numericInput" ? buildNumericInput(action, selection) : null;
+  const formulaRoll = actionType === "formulaRoll" ? buildFormulaRoll(action, selection, mappedActionsById) : null;
   const resourceQuantity = actionType === "resources" ? buildResourceQuantity(action, selection, mappedActionsById) : null;
   const computedCost = actionType === "resources" ? buildComputedResourceCost(action, resourceQuantity, mappedActionsById) : null;
+  const projectCounter = actionType === "projectCounter" ? buildProjectCounter(action, selection, mappedActionsById) : null;
+  const configurableCheck = actionType === "check" && action.configurable === true
+    ? buildConfigurableCheck(action, selection)
+    : null;
   const selectedOptionSummary = getSelectedOptionSummary(optionChoices);
+  const checkSummarySource = configurableCheck
+    ? {
+      ...action,
+      sourceType: configurableCheck.sourceType,
+      ability: configurableCheck.ability,
+      target: configurableCheck.target,
+      targetLabel: configurableCheck.targetLabel,
+      dc: configurableCheck.dc
+    }
+    : action;
   const mapped = {
     ...action,
+    ...(configurableCheck ? {
+      sourceType: configurableCheck.sourceType,
+      ability: configurableCheck.ability,
+      target: configurableCheck.target,
+      targetLabel: configurableCheck.targetLabel,
+      dc: configurableCheck.dc
+    } : {}),
     number: index + 1,
     actionType,
     resourceChoices,
@@ -492,10 +949,17 @@ function mapTemplateTargetAction(action = {}, index = 0, selections = new Map(),
     options: actionType === "rankChoice" ? rankChoices : optionChoices,
     selectedItem,
     selectedItemName: selectedItem?.name ?? "",
+    selectedItemPriceLabel: selectedItem?.priceGold !== undefined ? `${selectedItem.priceGold} ${CURRENCY_LABELS.gp}` : cleanText(selectedItem?.costText),
+    selectedItemJson: selectedItem ? JSON.stringify(selectedItem) : "",
     numericInput,
     resourceQuantity,
     computedCost,
+    projectCounter,
+    configurableCheck,
     value: numericInput?.value,
+    selectedFormula: formulaRoll?.selectedFormula ?? "",
+    formulaResult: formulaRoll?.formulaResult,
+    formulaByRarityJson: formulaRoll?.formulaByRarityJson ?? "",
     displayValue: numericInput?.displayValue ?? "",
     selectedResourceChoiceId: selectedResourceChoice?.id ?? "",
     selectedResourceChoiceLabel: selectedResourceChoice?.label ?? "",
@@ -503,18 +967,22 @@ function mapTemplateTargetAction(action = {}, index = 0, selections = new Map(),
     selectedRank: selectedRankChoice?.rank,
     selectedRankLabel: selectedRankChoice?.label ?? "",
     selectionMode: cleanText(action.selectionMode) || "single",
-    summary: buildCheckSummary(action),
+    summary: actionType === "formulaRoll" ? (formulaRoll?.summary || buildCheckSummary(checkSummarySource)) : buildCheckSummary(checkSummarySource),
     outcomeSummary: actionType === "resources"
       ? (computedCost?.label || selectedResourceChoice?.outcomeSummary || buildResourceSummary(action))
       : (actionType === "rankChoice"
         ? (selectedRankChoice?.label || cleanText(action.label))
-        : (actionType === "optionChoice"
-        ? (selectedOptionSummary || cleanText(action.label))
-        : (actionType === "itemChoice"
-          ? (selectedItem?.name || cleanText(action.label))
-          : (actionType === "numericInput"
-            ? [numericInput?.displayValue, numericInput?.unit].filter(Boolean).join(" ") || cleanText(action.label)
-            : buildCheckSummary(action)))))
+        : (actionType === "projectCounter"
+          ? [projectCounter?.current, projectCounter?.max].filter((entry) => entry !== undefined && entry !== "").join(" / ")
+          : (actionType === "optionChoice"
+          ? (selectedOptionSummary || cleanText(action.label))
+          : (actionType === "itemChoice"
+            ? (selectedItem?.name || cleanText(action.label))
+            : (actionType === "numericInput"
+              ? [numericInput?.displayValue, numericInput?.unit].filter(Boolean).join(" ") || cleanText(action.label)
+              : (actionType === "formulaRoll"
+                ? (formulaRoll?.summary || cleanText(action.label))
+                : buildCheckSummary(checkSummarySource)))))))
       ,
     hasResourceChoices: resourceChoices.length > 0,
     hasResourceQuantity: Boolean(resourceQuantity),
@@ -527,7 +995,9 @@ function mapTemplateTargetAction(action = {}, index = 0, selections = new Map(),
     isNumericAction: actionType === "numericInput",
     isOptionAction: actionType === "optionChoice",
     isRankAction: actionType === "rankChoice",
-    isFormulaAction: actionType === "formulaRoll"
+    isFormulaAction: actionType === "formulaRoll",
+    isProjectCounterAction: actionType === "projectCounter",
+    isConfigurableCheckAction: Boolean(configurableCheck)
   };
   return mapped;
 }
@@ -551,8 +1021,12 @@ function buildTemplateView(action = null, formState = {}) {
   const optionActions = targetActions.filter((entry) => entry.actionType === "optionChoice");
   const rankActions = targetActions.filter((entry) => entry.actionType === "rankChoice");
   const formulaActions = targetActions.filter((entry) => entry.actionType === "formulaRoll");
-  const interactiveActionTypes = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll"]);
-  const checkActions = targetActions.filter((entry) => !interactiveActionTypes.has(entry.actionType) && entry.actionType !== "downtimeResult");
+  const counterActions = targetActions.filter((entry) => entry.actionType === "projectCounter");
+  const configurableCheckActions = targetActions.filter((entry) => entry.configurableCheck);
+  const interactiveActionTypes = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "projectCounter"]);
+  const checkActions = targetActions.filter((entry) => !interactiveActionTypes.has(entry.actionType)
+    && entry.actionType !== "downtimeResult"
+    && !entry.configurableCheck);
   const resultActions = targetActions.filter((entry) => entry.actionType === "downtimeResult");
   const interactiveActions = targetActions.filter((entry) => interactiveActionTypes.has(entry.actionType));
   const descriptionHtml = resolveTemplateDescriptionHtml(action);
@@ -572,6 +1046,8 @@ function buildTemplateView(action = null, formState = {}) {
     optionActions,
     rankActions,
     formulaActions,
+    counterActions,
+    configurableCheckActions,
     interactiveActions,
     checkActions,
     resultActions,
@@ -586,6 +1062,8 @@ function buildTemplateView(action = null, formState = {}) {
     hasOptionActions: optionActions.length > 0,
     hasRankActions: rankActions.length > 0,
     hasFormulaActions: formulaActions.length > 0,
+    hasCounterActions: counterActions.length > 0,
+    hasConfigurableCheckActions: configurableCheckActions.length > 0,
     hasInteractiveActions: interactiveActions.length > 0,
     hasCheckActions: checkActions.length > 0,
     hasResultActions: resultActions.length > 0,
@@ -721,7 +1199,161 @@ function buildRollTargets(check = {}, { canRollRequest = false, resultLabel = ""
   })];
 }
 
-function mapRequest(request = {}, { groupId = "" } = {}) {
+function buildProjectCounterImagePath(max = 0, value = 0) {
+  const safeMax = toInteger(max, 0);
+  if (![4, 6, 8].includes(safeMax)) {
+    return "";
+  }
+
+  const safeValue = Math.max(0, Math.min(safeMax, toInteger(value, 0)));
+  return `modules/${MODULE_ID}/templates/counters/progress-${safeMax}/progress_${safeValue}.png`;
+}
+
+function getProjectCounterProgressSteps(actions = []) {
+  const resultAction = actions.find((action) => cleanText(action.actionType) === "downtimeResult"
+    && toFiniteNumber(action?.result?.progressSteps) !== undefined);
+  if (resultAction) {
+    return toInteger(resultAction.result.progressSteps, 0);
+  }
+
+  const fallbackResult = actions.find((action) => cleanText(action.actionType) === "downtimeResult"
+    && toFiniteNumber(action?.result?.value) !== undefined);
+  return fallbackResult ? toInteger(fallbackResult.result.value, 0) : 0;
+}
+
+function buildContinuationSelection(action = {}, counterValue = undefined) {
+  const actionType = cleanText(action.actionType);
+  const entry = {
+    actionId: cleanText(action.id)
+  };
+  if (!entry.actionId) {
+    return null;
+  }
+
+  if (actionType === "rankChoice") {
+    const optionId = cleanText(action.selectedOptionId);
+    if (optionId) {
+      entry.optionId = optionId;
+    }
+    const rank = toFiniteNumber(action.selectedRank);
+    if (rank !== undefined) {
+      entry.value = rank;
+    }
+  }
+  else if (actionType === "projectCounter") {
+    entry.value = counterValue ?? toFiniteNumber(action.projectCounter?.current, toFiniteNumber(action.projectCounter?.value, 0)) ?? 0;
+  }
+  else if (actionType === "resources") {
+    const choiceId = cleanText(action.selectedChoiceId) || cleanText(action.selectedResourceChoiceId);
+    if (choiceId) {
+      entry.choiceId = choiceId;
+    }
+    const quantity = toFiniteNumber(action.resourceQuantity?.value, toFiniteNumber(action.computedCost?.quantity));
+    if (quantity !== undefined) {
+      entry.value = quantity;
+    }
+  }
+  else if (actionType === "itemChoice") {
+    const selectedItem = normalizeSelectedItem(action.selectedItem);
+    if (selectedItem) {
+      entry.item = selectedItem;
+    }
+  }
+  else if (actionType === "optionChoice") {
+    const optionId = cleanText(action.selectedOptionId);
+    if (optionId) {
+      entry.optionId = optionId;
+    }
+    if (Array.isArray(action.selectedOptionIds) && action.selectedOptionIds.length) {
+      entry.optionIds = action.selectedOptionIds.map((id) => cleanText(id)).filter(Boolean);
+    }
+  }
+  else if (actionType === "numericInput") {
+    const value = toFiniteNumber(action.numericValue, toFiniteNumber(action.value));
+    if (value !== undefined) {
+      entry.value = value;
+    }
+  }
+  else if (actionType === "formulaRoll") {
+    const formula = cleanFormulaText(action.selectedFormula) || cleanFormulaText(action.formula);
+    if (formula) {
+      entry.formula = formula;
+    }
+    const result = toFiniteNumber(action.formulaResult, toFiniteNumber(action.result?.total, toFiniteNumber(action.result?.value)));
+    if (result !== undefined) {
+      entry.result = result;
+    }
+  }
+  else if (actionType === "check") {
+    for (const key of ["sourceType", "ability", "target", "targetLabel"]) {
+      const value = cleanText(action[key]);
+      if (value) {
+        entry[key] = value;
+      }
+    }
+    const dc = toFiniteNumber(action.dc);
+    if (dc !== undefined) {
+      entry.dc = dc;
+    }
+  }
+  else {
+    return null;
+  }
+
+  return Object.keys(entry).length > 1 ? entry : null;
+}
+
+function buildProjectContinuationPayload(request = {}, actions = [], counterValue = 0) {
+  const actionId = cleanText(request.templateUuid) || cleanText(request.actionId);
+  if (!actionId) {
+    return "";
+  }
+
+  const targetActionSelections = actions
+    .map((action) => buildContinuationSelection(action, counterValue))
+    .filter(Boolean);
+  return JSON.stringify({
+    actionId,
+    weeks: 1,
+    title: cleanText(request.title),
+    description: cleanText(request.description),
+    targetActionSelections
+  });
+}
+
+function buildRequestProjectCounter(request = {}, actions = [], { availableWeeks = 0 } = {}) {
+  const counterAction = actions.find((action) => cleanText(action.actionType) === "projectCounter");
+  if (!counterAction) {
+    return null;
+  }
+
+  const counter = asObject(counterAction.projectCounter);
+  const max = toInteger(counter.max, toInteger(counterAction.max, 0));
+  if (max <= 0) {
+    return null;
+  }
+
+  const previousValue = Math.min(max, toInteger(counter.current, toInteger(counter.value, 0)));
+  const gained = Math.max(0, getProjectCounterProgressSteps(actions));
+  const value = Math.min(max, previousValue + gained);
+  const imagePath = buildProjectCounterImagePath(max, value);
+  const canContinue = value < max && toInteger(availableWeeks, 0) > 0 && Boolean(cleanText(request.templateUuid) || cleanText(request.actionId));
+  return {
+    ...counter,
+    previousValue,
+    value,
+    current: value,
+    max,
+    gained,
+    hasWeekResult: gained > 0,
+    imagePath,
+    hasImagePath: Boolean(imagePath),
+    canContinue,
+    continuePayloadJson: canContinue ? buildProjectContinuationPayload(request, actions, value) : ""
+  };
+}
+
+function mapRequest(request = {}, { groupId = "", availableWeeks = 0 } = {}) {
   const status = cleanText(request.status) || "pending";
   const meta = STATUS_META[status] ?? {
     label: status || "Заявка",
@@ -746,6 +1378,7 @@ function mapRequest(request = {}, { groupId = "" } = {}) {
       hasRollTargets: rollTargets.some((target) => target.canRoll || target.hasResult)
     };
   });
+  const projectCounter = buildRequestProjectCounter(request, checks, { availableWeeks });
 
   return {
     ...request,
@@ -758,6 +1391,8 @@ function mapRequest(request = {}, { groupId = "" } = {}) {
     targetActions: checks,
     resourceActions: checks.filter((check) => cleanText(check.actionType) === "resources"),
     checkActions: checks.filter((check) => !NON_CHECK_ACTION_TYPES.has(cleanText(check.actionType))),
+    projectCounter,
+    hasProjectCounter: Boolean(projectCounter),
     hasChecks: checks.length > 0,
     hasResult: Boolean(cleanText(request.result)),
     isArchived: ARCHIVED_REQUEST_STATUSES.has(status)
@@ -855,7 +1490,7 @@ export class CharacterDowntimeService {
       : "";
     const requests = (Array.isArray(snapshot?.requests) ? snapshot.requests : [])
       .filter((request) => request?.actorId === actor.id)
-      .map((request) => mapRequest(request, { groupId: snapshot.groupId }));
+      .map((request) => mapRequest(request, { groupId: snapshot.groupId, availableWeeks: balance.availableWeeks }));
     const activeRequests = requests.filter((request) => !request.isArchived);
     const archivedRequests = requests.filter((request) => request.isArchived);
     const activePage = paginate(activeRequests, formState.requestPage);

@@ -649,6 +649,7 @@ function buildResultExpressionPanel(action = {}, existingActions = []) {
   const terms = Array.isArray(action.resultFormula?.terms) && action.resultFormula.terms.length
     ? action.resultFormula.terms
     : [{ actionId: "", field: "total", operator: "+" }];
+  const outputField = cleanText(action.resultFormula?.outputField) || cleanText(action.outputField) || "value";
   const previousActions = existingActions.filter((entry) => cleanText(entry?.id) && cleanText(entry?.id) !== cleanText(action.id));
   const sourceOptions = [
     { value: "", label: "выбрать" },
@@ -656,13 +657,20 @@ function buildResultExpressionPanel(action = {}, existingActions = []) {
   ];
   const fieldOptions = [
     { value: "total", label: "total" },
+    { value: "success", label: "успех" },
     { value: "successes", label: "успехи" },
     { value: "value", label: "значение" },
     { value: "quantity", label: "количество" },
-    { value: "computedTotal", label: "стоимость" }
+    { value: "computedTotal", label: "стоимость" },
+    { value: "formulaResult", label: "результат формулы" },
+    { value: "selectedValue", label: "значение выбора" }
   ];
   return `
     <div class="rm-downtime-result-expression-panel" data-result-expression-panel>
+      <div class="rm-field">
+        <label title="Имя единственного итогового значения, например successes, progressGold или priceGold.">Итоговое поле</label>
+        <input type="text" value="${escapeHtml(outputField)}" data-field="target-result-formula-output-field" placeholder="successes">
+      </div>
       <div class="rm-downtime-result-expression-list" data-result-expression-rows>
         ${terms.map((term) => `
           <div class="rm-downtime-result-expression-row" data-result-expression-row>
@@ -672,6 +680,7 @@ function buildResultExpressionPanel(action = {}, existingActions = []) {
               { value: "+", label: "+" },
               { value: "-", label: "-" }
             ], cleanText(term.operator) || "+")}</select>
+            <input type="number" step="1" value="${escapeHtml(term.multiplier ?? 1)}" data-field="target-result-term-multiplier" aria-label="Множитель">
           </div>
         `).join("")}
       </div>
@@ -1158,6 +1167,7 @@ function normalizeDowntimeThreshold(threshold = {}, index = 0) {
   return {
     from: cleanText(threshold.from) || cleanText(fallback.from),
     to: cleanText(threshold.to) || cleanText(fallback.to),
+    label: cleanText(threshold.label),
     outcome: cleanText(threshold.outcome) || fallback.outcome
   };
 }
@@ -1177,6 +1187,10 @@ function buildDowntimeThresholdRow(threshold = {}, index = 0) {
       <div class="rm-field">
         <label title="Какой итог применить при попадании в этот диапазон.">Итог</label>
         <select data-field="target-threshold-outcome">${renderSelectOptions(DOWNTIME_THRESHOLD_OUTCOME_OPTIONS, safeThreshold.outcome)}</select>
+      </div>
+      <div class="rm-field">
+        <label title="Что увидят игрок и мастер в результате.">Подпись</label>
+        <input type="text" value="${foundry.utils.escapeHTML(safeThreshold.label)}" data-field="target-threshold-label" placeholder="Ставка + 50%">
       </div>
       <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="target-threshold-remove" title="Убрать порог" aria-label="Убрать порог">
         <i class="fa-solid fa-minus"></i>
@@ -1200,6 +1214,7 @@ function readDowntimeThreshold(row) {
   return {
     from: readFieldValue(row, "target-threshold-from"),
     to: readFieldValue(row, "target-threshold-to"),
+    label: readFieldValue(row, "target-threshold-label"),
     outcome: readFieldValue(row, "target-threshold-outcome") || "gm"
   };
 }
@@ -1252,10 +1267,12 @@ function readResultFormula(root) {
     .map((row) => ({
       actionId: readFieldValue(row, "target-result-term-action"),
       field: readFieldValue(row, "target-result-term-field") || "total",
-      operator: readFieldValue(row, "target-result-term-operator") || "+"
+      operator: readFieldValue(row, "target-result-term-operator") || "+",
+      multiplier: toInteger(readFieldValue(row, "target-result-term-multiplier"), 1)
     }))
     .filter((term) => term.actionId || term.field);
   return {
+    outputField: readFieldValue(root, "target-result-formula-output-field") || "value",
     terms
   };
 }
@@ -3123,6 +3140,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const isNumericAction = selectedActionType === "numericInput";
     const isResultAction = selectedActionType === "downtimeResult";
     const isFormulaAction = selectedActionType === "formulaRoll";
+    const usesResultFormula = isResultAction
+      && action.resultFormula
+      && typeof action.resultFormula === "object"
+      && !Array.isArray(action.resultFormula);
     const showOutcomeStep = !isResultAction;
     const choiceRows = Array.from({ length: MAX_DOWNTIME_TARGET_CHOICES }, (_entry, index) =>
       buildDowntimeTargetChoiceRow(choices[index] ?? {}, index, { visible: index < visibleChoiceCount, actor }));
@@ -3199,7 +3220,12 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             ${buildNumericInputPanel(action)}
           </div>
           <div${isResultAction ? "" : " hidden"} data-result-mapping-panel-shell>
-            ${buildResultMappingPanel(action, existingActions)}
+            ${usesResultFormula ? `
+              ${buildResultExpressionPanel(action, existingActions)}
+              <div class="rm-downtime-thresholds" data-result-formula-thresholds>
+                ${buildDowntimeThresholdRows(action.thresholds)}
+              </div>
+            ` : buildResultMappingPanel(action, existingActions)}
           </div>
           <div${isFormulaAction ? "" : " hidden"} data-formula-roll-panel-shell>
             <div class="rm-downtime-numeric-input-panel" data-formula-roll-panel>
@@ -3390,15 +3416,27 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     if (selectedActionType === "downtimeResult") {
+      const resultFormula = readResultFormula(root);
+      const hasResultFormula = resultFormula.terms.some((term) => cleanText(term.actionId));
       const action = {
         ...existingAction,
         id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
         label: cleanText(existingAction.label) || "Итог простоя",
         actionType: "downtimeResult",
-        outcomeMode: "pass-thresholds",
         recordMode: "single-result",
-        resultMapping: readResultMapping(root)
+        outcomeMode: hasResultFormula ? "thresholds" : "pass-thresholds"
       };
+      if (hasResultFormula) {
+        action.resultFormula = resultFormula;
+        delete action.resultMapping;
+        if (thresholds.length) {
+          action.thresholds = thresholds;
+        }
+      }
+      else {
+        action.resultMapping = readResultMapping(root);
+        delete action.resultFormula;
+      }
       return action;
     }
 

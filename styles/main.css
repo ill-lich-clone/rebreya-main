@@ -5168,18 +5168,125 @@ summary:focus-visible {
   min-height: 34px;
 }
 
-.rm-character-downtime-item-choice {
-  min-width: min(100%, 280px);
-  flex: 1 1 240px;
-  justify-content: flex-start;
-  text-align: left;
+.rm-character-downtime-check-configs {
+  align-items: stretch;
 }
 
-.rm-character-downtime-item-choice span {
+.rm-character-downtime-check-config {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid rgba(214, 177, 104, 0.28);
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.rm-character-downtime-check-config legend {
+  padding: 0 4px;
+  color: var(--rm-sheet-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.rm-character-downtime-check-config label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rm-character-downtime-check-config span {
+  color: var(--rm-sheet-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rm-character-downtime-check-config select,
+.rm-character-downtime-check-config input {
+  min-width: 0;
+  min-height: 34px;
+}
+
+.rm-character-downtime-item-choice,
+.rm-character-downtime-formula-choice {
+  min-width: min(100%, 280px);
+  flex: 1 1 240px;
+}
+
+.rm-character-downtime-item-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 46px;
+  padding: 7px 8px;
+  border: 1px dashed rgba(214, 177, 104, 0.42);
+  border-radius: var(--rm-radius-input);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--rm-sheet-text);
+}
+
+.rm-character-downtime-item-dropzone.has-item {
+  border-style: solid;
+  background: rgba(214, 177, 104, 0.08);
+}
+
+.rm-character-downtime-item-dropzone.is-dragover {
+  border-color: rgba(214, 177, 104, 0.78);
+  background: rgba(214, 177, 104, 0.12);
+}
+
+.rm-character-downtime-item-dropzone__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rm-character-downtime-item-dropzone__main img,
+.rm-character-downtime-item-dropzone__main > i {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 1px solid var(--rm-sheet-line);
+  border-radius: 3px;
+  object-fit: cover;
+}
+
+.rm-character-downtime-item-dropzone__main > i {
+  display: grid;
+  place-items: center;
+  color: var(--rm-sheet-muted);
+}
+
+.rm-character-downtime-item-dropzone__main div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.rm-character-downtime-item-dropzone__main strong,
+.rm-character-downtime-item-dropzone__main span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rm-character-downtime-item-dropzone__main strong {
+  color: var(--rm-sheet-text);
+  font-size: 12px;
+}
+
+.rm-character-downtime-item-dropzone__main span {
+  color: var(--rm-sheet-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rm-character-downtime-item-dropzone__clear {
+  flex: 0 0 auto;
 }
 
 .rm-character-downtime-checkbox-grid {
@@ -5350,6 +5457,7 @@ summary:focus-visible {
   padding: 9px 10px;
   border-color: var(--rm-sheet-line);
   background: rgba(0, 0, 0, 0.18);
+  position: relative;
 }
 
 .rm-character-downtime-request.is-archived {
@@ -5385,6 +5493,40 @@ summary:focus-visible {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 5px;
+}
+
+.rm-character-downtime-project-counter {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+  padding: 7px;
+  border: 1px solid rgba(214, 177, 104, 0.28);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.rm-character-downtime-project-counter img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+.rm-character-downtime-project-counter div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rm-character-downtime-project-counter strong {
+  color: var(--rm-sheet-text);
+  font-size: 13px;
+}
+
+.rm-character-downtime-project-counter span {
+  color: var(--rm-sheet-muted);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .rm-character-downtime-roll {
@@ -6896,6 +7038,23 @@ summary:focus-visible {
 
   .rm-compact-pill-strip--primary {
     grid-template-columns: 1fr;
+  }
+
+  .rm-character-downtime-check-config {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rm-character-downtime-project-counter {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .rm-character-downtime-project-counter img {
+    width: 48px;
+    height: 48px;
+  }
+
+  .rm-character-downtime-project-counter .rm-button {
+    grid-column: 1 / -1;
   }
 
   .rm-compact-pill--focus {

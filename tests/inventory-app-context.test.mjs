@@ -1769,6 +1769,136 @@ test("InventoryApp downtime target dialog preserves constructor action types", a
   }
 });
 
+test("InventoryApp downtime target dialog renders formula result actions", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousUi = globalThis.ui;
+  globalThis.ui = {
+    notifications: {
+      error() {},
+      info() {}
+    }
+  };
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      Dialog.instances.push(this);
+    }
+
+    setPosition() {}
+    close() {
+      this.config.close?.();
+    }
+    render() {}
+  };
+
+  const resultButton = createFakeControl({
+    dataset: {
+      action: "downtime-target-action",
+      requestId: "downtime-1",
+      checkId: "gambling-result"
+    }
+  });
+  const root = createFakeElement();
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => selector === "[data-action='downtime-target-action']"
+    ? [resultButton]
+    : [];
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?formula-result-dialog=${Date.now()}`);
+    const app = new InventoryApp(createModuleApi({
+      downtimeSnapshot: {
+        canManage: true,
+        canSubmit: false,
+        members: [],
+        actionCatalog: [],
+        requests: [{
+          id: "downtime-1",
+          actorId: "actor-a",
+          actorName: "Asha",
+          actionId: "gambling",
+          actionLabel: "Gambling",
+          title: "Gambling",
+          weeks: 1,
+          status: "pending",
+          checks: [{
+            id: "gambling-insight",
+            label: "Insight",
+            actionType: "check",
+            sourceType: "skill",
+            ability: "wis",
+            target: "ins",
+            outcomeMode: "dc",
+            recordMode: "total-success"
+          }, {
+            id: "gambling-deception",
+            label: "Deception",
+            actionType: "check",
+            sourceType: "skill",
+            ability: "cha",
+            target: "dec",
+            outcomeMode: "dc",
+            recordMode: "total-success"
+          }, {
+            id: "gambling-result",
+            label: "Stake result",
+            actionType: "downtimeResult",
+            outcomeMode: "thresholds",
+            recordMode: "single-result",
+            resultFormula: {
+              outputField: "successes",
+              terms: [{
+                actionId: "gambling-insight",
+                field: "success",
+                operator: "+"
+              }, {
+                actionId: "gambling-deception",
+                field: "success",
+                operator: "+"
+              }]
+            },
+            thresholds: [{
+              from: 0,
+              to: 0,
+              label: "Lose",
+              outcome: "failure"
+            }, {
+              from: 1,
+              label: "Win",
+              outcome: "success"
+            }]
+          }]
+        }]
+      }
+    }));
+    app.element = root;
+    await app._onRender({}, {});
+
+    const dialogPromise = dispatchClick(resultButton);
+    await new Promise((resolve) => setImmediate(resolve));
+    const resultDialog = globalThis.Dialog.instances.at(-1);
+
+    assert.equal(resultDialog.config.content.includes("data-result-expression-panel"), true);
+    assert.equal(resultDialog.config.content.includes("data-result-mapping-panel\""), false);
+    assert.equal(resultDialog.config.content.includes("data-threshold-rows"), true);
+    assert.equal(resultDialog.config.content.includes("gambling-insight"), true);
+    assert.equal(resultDialog.config.content.includes("successes"), true);
+    resultDialog.close?.();
+    await dialogPromise;
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp background render does not bring the window to front", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();

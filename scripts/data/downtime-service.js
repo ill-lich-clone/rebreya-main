@@ -76,6 +76,170 @@ function toFiniteNumber(value, fallback = undefined) {
   return Number.isFinite(numericValue) ? numericValue : fallback;
 }
 
+function normalizeLookupText(value = "") {
+  return cleanString(value)
+    .toLocaleLowerCase("ru-RU")
+    .replace(/ё/gu, "е")
+    .replace(/[^a-zа-я0-9+-]+/giu, "");
+}
+
+const BARGAINING_OPTION_ID_BY_TEXT = Object.freeze({
+  [normalizeLookupText("Запрещённые")]: "forbidden",
+  [normalizeLookupText("Запрещенные")]: "forbidden",
+  [normalizeLookupText("Невозможные")]: "impossible",
+  [normalizeLookupText("Провальные")]: "failed",
+  [normalizeLookupText("Невыгодные")]: "bad",
+  [normalizeLookupText("Нормальные")]: "normal",
+  [normalizeLookupText("Выгодные")]: "favorable",
+  [normalizeLookupText("Удачные")]: "good"
+});
+
+const RARITY_KEY_BY_TEXT = Object.freeze({
+  [normalizeLookupText("Обычный")]: "common",
+  [normalizeLookupText("Обычная")]: "common",
+  [normalizeLookupText("common")]: "common",
+  [normalizeLookupText("Необычный")]: "uncommon",
+  [normalizeLookupText("Необычная")]: "uncommon",
+  [normalizeLookupText("uncommon")]: "uncommon",
+  [normalizeLookupText("Редкий")]: "rare",
+  [normalizeLookupText("Редкая")]: "rare",
+  [normalizeLookupText("rare")]: "rare",
+  [normalizeLookupText("Очень редкий")]: "veryRare",
+  [normalizeLookupText("Очень редкая")]: "veryRare",
+  [normalizeLookupText("veryRare")]: "veryRare",
+  [normalizeLookupText("very rare")]: "veryRare",
+  [normalizeLookupText("Легендарный")]: "legendary",
+  [normalizeLookupText("Легендарная")]: "legendary",
+  [normalizeLookupText("legendary")]: "legendary"
+});
+
+function parseRebreyaSignature(value = "") {
+  const text = cleanString(value);
+  if (!text.startsWith("{")) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  }
+  catch (_error) {
+    return {};
+  }
+}
+
+function getItemSignatureData(item = {}) {
+  const rebreya = asObject(item.rebreya);
+  const flags = asObject(item.documentSnapshot?.flags?.[MODULE_ID]);
+  return {
+    ...parseRebreyaSignature(flags.signature),
+    ...parseRebreyaSignature(rebreya.signature)
+  };
+}
+
+function getSelectedItemBargaining(item = {}) {
+  const rebreya = asObject(item.rebreya);
+  const signature = getItemSignatureData(item);
+  return cleanString(item.bargaining)
+    || cleanString(item.itemBargaining)
+    || cleanString(rebreya.bargaining)
+    || cleanString(rebreya.itemBargaining)
+    || cleanString(signature.bargaining);
+}
+
+function normalizeRarityKey(value = "") {
+  return RARITY_KEY_BY_TEXT[normalizeLookupText(value)] || cleanString(value);
+}
+
+function getSelectedItemRarityKey(item = {}) {
+  const rebreya = asObject(item.rebreya);
+  const signature = getItemSignatureData(item);
+  return normalizeRarityKey(
+    cleanString(item.rarity)
+      || cleanString(rebreya.rarity)
+      || cleanString(signature.rarity)
+      || cleanString(item.documentSnapshot?.system?.rarity)
+  );
+}
+
+function cleanFormulaText(value = "") {
+  const text = cleanString(value)
+    .replace(/\s*(зм|gp)\.?\s*$/iu, "")
+    .trim();
+  return text && text !== "-" && text !== "—" ? text : "";
+}
+
+function getSelectedItemCostFormula(item = {}) {
+  const rebreya = asObject(item.rebreya);
+  const signature = getItemSignatureData(item);
+  return cleanFormulaText(item.costText)
+    || cleanFormulaText(item.itemCost)
+    || cleanFormulaText(rebreya.costText)
+    || cleanFormulaText(rebreya.itemCost)
+    || cleanFormulaText(signature.costText)
+    || cleanFormulaText(signature.itemCost);
+}
+
+function findSelectedItemAction(selectedActionsById = new Map(), itemActionId = "") {
+  const safeItemActionId = cleanId(itemActionId);
+  if (safeItemActionId) {
+    const action = selectedActionsById.get(safeItemActionId);
+    if (action?.selectedItem) {
+      return action;
+    }
+  }
+
+  return [...selectedActionsById.values()].find((action) => action?.selectedItem) ?? null;
+}
+
+function resolveBargainingOptionId(options = [], selectedActionsById = new Map()) {
+  const itemAction = findSelectedItemAction(selectedActionsById);
+  const bargaining = getSelectedItemBargaining(itemAction?.selectedItem);
+  if (!bargaining) {
+    return "";
+  }
+
+  const numericBargaining = toFiniteNumber(bargaining);
+  if (numericBargaining !== undefined) {
+    const numericOption = options.find((option) => toFiniteNumber(option?.value) === numericBargaining);
+    if (numericOption?.id) {
+      return cleanId(numericOption.id);
+    }
+  }
+
+  const mappedId = BARGAINING_OPTION_ID_BY_TEXT[normalizeLookupText(bargaining)];
+  if (mappedId && options.some((option) => cleanId(option.id) === mappedId)) {
+    return mappedId;
+  }
+
+  const bargainingKey = normalizeLookupText(bargaining);
+  return cleanId(options.find((option) => normalizeLookupText(option?.label) === bargainingKey)?.id);
+}
+
+function resolveFormulaRollFormula(action = {}, selection = {}, selectedActionsById = new Map()) {
+  const explicitFormula = cleanFormulaText(selection?.formula)
+    || cleanFormulaText(action.selectedFormula)
+    || cleanFormulaText(action.formula);
+  if (explicitFormula) {
+    return explicitFormula;
+  }
+
+  const itemAction = findSelectedItemAction(selectedActionsById, action.itemActionId);
+  const selectedItem = itemAction?.selectedItem;
+  if (!selectedItem) {
+    return "";
+  }
+
+  const itemFormula = getSelectedItemCostFormula(selectedItem);
+  if (itemFormula) {
+    return itemFormula;
+  }
+
+  const rarityKey = getSelectedItemRarityKey(selectedItem);
+  const formulaByRarity = asObject(action.formulaByRarity);
+  return cleanFormulaText(formulaByRarity[rarityKey]);
+}
+
 function buildDefaultBalance() {
   return {
     availableWeeks: 0,
@@ -156,6 +320,10 @@ function normalizeSelectedItem(item = {}) {
   if (id) {
     selectedItem.id = id;
   }
+  const img = cleanString(item.img);
+  if (img) {
+    selectedItem.img = img;
+  }
   const type = cleanString(item.type);
   if (type) {
     selectedItem.type = type;
@@ -168,9 +336,66 @@ function normalizeSelectedItem(item = {}) {
   if (rarity) {
     selectedItem.rarity = rarity;
   }
+  const costText = cleanString(item.costText) || cleanString(item.itemCost);
+  if (costText) {
+    selectedItem.costText = costText;
+  }
   const priceGold = toFiniteNumber(item.priceGold);
   if (priceGold !== undefined) {
     selectedItem.priceGold = priceGold;
+  }
+  const rebreya = asObject(item.rebreya);
+  if (Object.keys(rebreya).length) {
+    selectedItem.rebreya = clone(rebreya);
+  }
+  else {
+    const flags = asObject(item.flags);
+    const moduleFlags = asObject(flags[MODULE_ID]);
+    if (Object.keys(moduleFlags).length) {
+      selectedItem.rebreya = clone(moduleFlags);
+    }
+  }
+  const documentSnapshot = asObject(item.documentSnapshot);
+  if (Object.keys(documentSnapshot).length) {
+    selectedItem.documentSnapshot = clone(documentSnapshot);
+  }
+  else {
+    const itemData = asObject(item.itemData);
+    if (Object.keys(itemData).length) {
+      selectedItem.documentSnapshot = clone(itemData);
+    }
+  }
+  const selectedSourceType = cleanString(selectedItem.sourceType) || cleanString(selectedItem.rebreya?.sourceType);
+  if (selectedSourceType && !selectedItem.sourceType) {
+    selectedItem.sourceType = selectedSourceType;
+  }
+  const sourceId = cleanString(item.sourceId)
+    || cleanString(selectedItem.rebreya?.sourceId)
+    || cleanString(selectedItem.rebreya?.magicItemId)
+    || cleanString(selectedItem.rebreya?.gearId)
+    || cleanString(selectedItem.rebreya?.materialId);
+  if (sourceId) {
+    selectedItem.sourceId = sourceId;
+  }
+  const magicItemId = cleanString(selectedItem.rebreya?.magicItemId);
+  if (magicItemId) {
+    selectedItem.magicItemId = magicItemId;
+  }
+  const gearId = cleanString(selectedItem.rebreya?.gearId);
+  if (gearId) {
+    selectedItem.gearId = gearId;
+  }
+  const materialId = cleanString(selectedItem.rebreya?.materialId);
+  if (materialId) {
+    selectedItem.materialId = materialId;
+  }
+  const signature = getItemSignatureData(selectedItem);
+  const signatureCostText = cleanString(signature.costText) || cleanString(signature.itemCost);
+  if (signatureCostText && !selectedItem.costText) {
+    selectedItem.costText = signatureCostText;
+  }
+  if (selectedItem.rebreya && signatureCostText && !cleanString(selectedItem.rebreya.costText)) {
+    selectedItem.rebreya.costText = signatureCostText;
   }
   return selectedItem;
 }
@@ -188,7 +413,14 @@ function normalizeSelectionEntry(entry = {}) {
   const optionId = cleanId(entry?.optionId);
   const optionIds = asArray(entry?.optionIds).map((id) => cleanId(id)).filter(Boolean);
   const value = toFiniteNumber(entry?.value);
+  const formula = cleanFormulaText(entry?.formula);
+  const result = toFiniteNumber(entry?.result);
   const item = normalizeSelectedItem(entry?.item);
+  const sourceType = cleanId(entry?.sourceType);
+  const ability = cleanId(entry?.ability);
+  const target = cleanId(entry?.target);
+  const targetLabel = cleanString(entry?.targetLabel);
+  const dc = toFiniteNumber(entry?.dc);
 
   if (choiceId) {
     selection.choiceId = choiceId;
@@ -202,8 +434,29 @@ function normalizeSelectionEntry(entry = {}) {
   if (value !== undefined) {
     selection.value = value;
   }
+  if (formula) {
+    selection.formula = formula;
+  }
+  if (result !== undefined) {
+    selection.result = result;
+  }
   if (item) {
     selection.item = item;
+  }
+  if (sourceType) {
+    selection.sourceType = sourceType;
+  }
+  if (ability) {
+    selection.ability = ability;
+  }
+  if (target) {
+    selection.target = target;
+  }
+  if (targetLabel) {
+    selection.targetLabel = targetLabel;
+  }
+  if (dc !== undefined) {
+    selection.dc = dc;
   }
 
   return selection;
@@ -341,7 +594,54 @@ function applySelectedRankChoice(action = {}, selection = {}) {
   };
 }
 
-function applySelectedOptionChoice(action = {}, selection = {}) {
+function resolveProjectCounterMax(counter = {}, selectedActionsById = new Map()) {
+  const rankSourceActionId = cleanId(counter.rankSourceActionId);
+  const rankAction = rankSourceActionId ? selectedActionsById.get(rankSourceActionId) : null;
+  const selectedRank = toFiniteNumber(rankAction?.selectedRank, toFiniteNumber(rankAction?.selectedOption?.rank));
+  const selectedCounterMax = toFiniteNumber(rankAction?.selectedOption?.counterMax);
+  if (selectedCounterMax !== undefined) {
+    return Math.max(1, Math.floor(selectedCounterMax));
+  }
+
+  const matchedRange = asArray(counter.maxByRank)
+    .map((entry) => asObject(entry))
+    .find((entry) => {
+      if (selectedRank === undefined) {
+        return false;
+      }
+      const from = toFiniteNumber(entry.from, selectedRank) ?? selectedRank;
+      const to = toFiniteNumber(entry.to, selectedRank) ?? selectedRank;
+      return selectedRank >= from && selectedRank <= to;
+    });
+  const rangeMax = toFiniteNumber(matchedRange?.max);
+  if (rangeMax !== undefined) {
+    return Math.max(1, Math.floor(rangeMax));
+  }
+
+  return Math.max(1, Math.floor(toFiniteNumber(counter.max, 4) ?? 4));
+}
+
+function applySelectedProjectCounter(action = {}, selection = {}, selectedActionsById = new Map()) {
+  const source = asObject(action);
+  if (cleanId(source.actionType) !== "projectCounter") {
+    return source;
+  }
+
+  const counter = asObject(source.projectCounter);
+  const max = resolveProjectCounterMax(counter, selectedActionsById);
+  const fallback = toFiniteNumber(counter.current, 0) ?? 0;
+  const current = clampNumber(selection?.value, 0, max, fallback);
+  return {
+    ...clone(source),
+    projectCounter: {
+      ...clone(counter),
+      current,
+      max
+    }
+  };
+}
+
+function applySelectedOptionChoice(action = {}, selection = {}, selectedActionsById = new Map()) {
   const source = asObject(action);
   if (cleanId(source.actionType) !== "optionChoice") {
     return source;
@@ -363,13 +663,36 @@ function applySelectedOptionChoice(action = {}, selection = {}) {
     };
   }
 
-  const requestedOptionId = cleanId(selection?.optionId);
+  const requestedOptionId = cleanId(selection?.optionId) || resolveBargainingOptionId(options, selectedActionsById);
   const selectedOption = options.find((option) => option.id === requestedOptionId) ?? options[0];
   return {
     ...clone(source),
     selectedOptionId: selectedOption.id,
     selectedOptionLabel: selectedOption.label,
     selectedOption: clone(selectedOption)
+  };
+}
+
+function applyConfigurableCheckSelection(action = {}, selection = {}) {
+  const source = asObject(action);
+  const actionType = cleanId(source.actionType) || "check";
+  if (actionType !== "check" || source.configurable !== true) {
+    return source;
+  }
+
+  const sourceType = cleanId(selection?.sourceType) || cleanId(source.sourceType) || "skill";
+  const target = cleanId(selection?.target) || cleanId(source.target);
+  const ability = cleanId(selection?.ability) || cleanId(source.ability);
+  const targetLabel = cleanString(selection?.targetLabel) || cleanString(source.targetLabel) || cleanString(source.label);
+  const dc = toFiniteNumber(selection?.dc, toFiniteNumber(source.dc, 0)) ?? 0;
+  return {
+    ...clone(source),
+    actionType,
+    sourceType,
+    ability,
+    target,
+    targetLabel,
+    dc: Math.max(0, Math.floor(dc))
   };
 }
 
@@ -460,7 +783,7 @@ function applyResourceQuantity(action = {}, selection = {}, selectedActionsById 
   const fallback = toFiniteNumber(quantity.default, min ?? 0);
   const value = clampNumber(selection?.value, min, max, fallback);
   const baseCost = toFiniteNumber(rankCost.baseCost, toFiniteNumber(resources.cost?.amount, 0)) ?? 0;
-  const unitCost = toFiniteNumber(rankCost.unitCost, toFiniteNumber(rankCost.stepCost, 0)) ?? 0;
+  const unitCost = toFiniteNumber(rankCost.unitCost, toFiniteNumber(rankCost.stepCost, toFiniteNumber(quantity.unitCost, 0))) ?? 0;
   const currency = cleanString(resources.cost?.currency) || "gp";
   const total = baseCost + (value * unitCost);
   const resourceQuantity = {
@@ -516,13 +839,13 @@ function applySelectedItemChoice(action = {}, selection = {}) {
   };
 }
 
-function applySelectedFormulaRoll(action = {}, selection = {}) {
+function applySelectedFormulaRoll(action = {}, selection = {}, selectedActionsById = new Map()) {
   const source = asObject(action);
   if (cleanId(source.actionType) !== "formulaRoll") {
     return source;
   }
 
-  const formula = cleanString(selection?.formula);
+  const formula = resolveFormulaRollFormula(source, selection, selectedActionsById);
   const result = toFiniteNumber(selection?.result);
   if (!formula && result === undefined) {
     return source;
@@ -610,8 +933,14 @@ function applyTargetActionSelection(action = {}, selections = new Map(), selecte
   else if (actionType === "rankChoice") {
     selectedAction = applySelectedRankChoice(source, selection);
   }
+  else if (actionType === "projectCounter") {
+    selectedAction = applySelectedProjectCounter(source, selection, selectedActionsById);
+  }
   else if (actionType === "optionChoice") {
-    selectedAction = applySelectedOptionChoice(source, selection);
+    selectedAction = applySelectedOptionChoice(source, selection, selectedActionsById);
+  }
+  else if (actionType === "check") {
+    selectedAction = applyConfigurableCheckSelection(source, selection);
   }
   else if (actionType === "numericInput") {
     selectedAction = applySelectedNumericInput(source, selection);
@@ -620,7 +949,7 @@ function applyTargetActionSelection(action = {}, selections = new Map(), selecte
     selectedAction = applySelectedItemChoice(source, selection);
   }
   else if (actionType === "formulaRoll") {
-    selectedAction = applySelectedFormulaRoll(source, selection);
+    selectedAction = applySelectedFormulaRoll(source, selection, selectedActionsById);
   }
   return applySelectionDrivenFormula(selectedAction, selections);
 }
@@ -897,12 +1226,147 @@ function enrichResultWithThreshold(check = {}, result = {}) {
   };
 }
 
+function enrichResultWithDc(check = {}, result = {}) {
+  const outcomeMode = cleanId(result?.outcomeMode) || cleanId(check.outcomeMode);
+  if (!["dc", "dc-sum"].includes(outcomeMode)) {
+    return result;
+  }
+
+  const total = toFiniteNumber(result?.total);
+  const dc = toFiniteNumber(result?.dc, toFiniteNumber(check.dc));
+  if (total === undefined || dc === undefined || dc <= 0) {
+    return result;
+  }
+
+  return {
+    ...result,
+    dc: Math.max(0, Math.floor(dc)),
+    success: total >= dc
+  };
+}
+
 function getResultFieldValue(result = {}, field = "") {
   const safeField = cleanId(field) || "thresholdOutcome";
   if (safeField in asObject(result)) {
     return result[safeField];
   }
   return getObjectPath(result, safeField);
+}
+
+function getFormulaSourceFieldValue(sourceAction = {}, field = "total") {
+  const safeField = cleanId(field) || "total";
+  const result = asObject(sourceAction?.result);
+
+  if (safeField === "success") {
+    if (result.success === true) {
+      return 1;
+    }
+    if (result.success === false) {
+      return 0;
+    }
+    return undefined;
+  }
+
+  if (safeField === "successes") {
+    return getFormulaSourceFieldValue(sourceAction, "success");
+  }
+
+  if (safeField === "dcProgressSteps") {
+    const total = toFiniteNumber(result.total);
+    const dc = toFiniteNumber(result.dc, toFiniteNumber(sourceAction?.dc));
+    if (total === undefined || dc === undefined || dc <= 0 || total < dc) {
+      return 0;
+    }
+    return 1 + Math.floor((total - dc) / 5);
+  }
+
+  if (safeField === "quantity") {
+    return toFiniteNumber(sourceAction?.resourceQuantity?.value, toFiniteNumber(sourceAction?.numericValue));
+  }
+
+  if (safeField === "computedTotal") {
+    return toFiniteNumber(sourceAction?.computedCost?.total);
+  }
+
+  if (safeField === "formulaResult") {
+    return toFiniteNumber(sourceAction?.formulaResult);
+  }
+
+  if (safeField === "selectedValue") {
+    return toFiniteNumber(sourceAction?.selectedOption?.value);
+  }
+
+  if (safeField in result) {
+    return toFiniteNumber(result[safeField]);
+  }
+
+  const nestedResultValue = toFiniteNumber(getObjectPath(result, safeField));
+  if (nestedResultValue !== undefined) {
+    return nestedResultValue;
+  }
+
+  return toFiniteNumber(sourceAction?.[safeField]);
+}
+
+function computeFormulaDowntimeResult(action = {}, checks = []) {
+  if (cleanId(action.actionType) !== "downtimeResult") {
+    return null;
+  }
+
+  const formula = asObject(action.resultFormula);
+  const terms = asArray(formula.terms)
+    .map((term) => asObject(term))
+    .filter((term) => cleanId(term.actionId));
+  if (!terms.length) {
+    return null;
+  }
+
+  let total = 0;
+  const sourceActionIds = [];
+  const sourceFields = [];
+  for (const [index, term] of terms.entries()) {
+    const sourceActionId = cleanId(term.actionId);
+    const sourceAction = checks.find((entry) => cleanId(entry?.id) === sourceActionId);
+    if (!sourceAction) {
+      return null;
+    }
+
+    const field = cleanId(term.field) || "total";
+    const rawValue = getFormulaSourceFieldValue(sourceAction, field);
+    if (rawValue === undefined) {
+      return null;
+    }
+
+    const multiplier = toFiniteNumber(term.multiplier, 1) ?? 1;
+    const value = rawValue * multiplier;
+    const operator = cleanId(term.operator) === "-" ? "-" : "+";
+    total += index === 0 || operator === "+" ? value : -value;
+    sourceActionIds.push(sourceActionId);
+    sourceFields.push(field);
+  }
+
+  const outputField = cleanId(formula.outputField) || cleanId(action.outputField) || "value";
+  const computed = {
+    total,
+    value: total,
+    [outputField]: total,
+    outputField,
+    sourceActionIds,
+    sourceFields
+  };
+  const thresholdResult = evaluateThresholdResult(action, computed);
+  if (thresholdResult) {
+    computed.thresholdOutcome = thresholdResult.thresholdOutcome;
+    computed.thresholdLabel = thresholdResult.thresholdLabel;
+    computed.thresholdFrom = thresholdResult.thresholdFrom;
+    computed.thresholdTo = thresholdResult.thresholdTo;
+    computed.label = thresholdResult.thresholdLabel;
+  }
+  else if (cleanString(formula.label)) {
+    computed.label = cleanString(formula.label);
+  }
+
+  return computed;
 }
 
 function computeMappedDowntimeResult(action = {}, checks = []) {
@@ -966,7 +1430,7 @@ function computeMappedDowntimeResult(action = {}, checks = []) {
 function refreshMappedDowntimeResults(request = {}) {
   const checks = asArray(request.checks);
   for (const action of checks) {
-    const computedResult = computeMappedDowntimeResult(action, checks);
+    const computedResult = computeMappedDowntimeResult(action, checks) ?? computeFormulaDowntimeResult(action, checks);
     if (computedResult) {
       action.result = computedResult;
     }
@@ -1314,6 +1778,7 @@ export class DowntimeService {
         request.templateRequirements = normalizeStringList(action.requirements);
         request.templateRankTable = normalizeRankTable(action.rankTable);
       }
+      refreshMappedDowntimeResults(request);
       state.requests.push(request);
       return clone(request);
     });
@@ -1394,7 +1859,7 @@ export class DowntimeService {
         throw new Error("Downtime check not found.");
       }
 
-      const enrichedResult = enrichResultWithThreshold(check, clone(asObject(result)));
+      const enrichedResult = enrichResultWithThreshold(check, enrichResultWithDc(check, clone(asObject(result))));
       check.result = {
         ...enrichedResult,
         recordedByUserId: cleanId(asObject(result).recordedByUserId) || cleanId(getCurrentUser()?.id),

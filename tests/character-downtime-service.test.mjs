@@ -620,9 +620,39 @@ test("CharacterDowntimeService exposes and forwards structured downtime selectio
         uuid: "Compendium.world.rebreya-magic-items.Item.wand",
         name: "Жезл огня",
         type: "loot",
+        img: "icons/magic/fire/wand-fire.webp",
         sourceType: "magicItem",
         rarity: "rare",
-        priceGold: 1200
+        priceGold: 1200,
+        rebreya: {
+          managed: true,
+          sourceType: "magicItem",
+          magicItemId: "wand",
+          signature: "magic:wands:wand",
+          heroDollSlots: ["mainHand", "offHand"],
+          rank: 4,
+          foundryType: "loot",
+          foundryFolder: "magic-items/wands",
+          priceGold: 1200
+        },
+        documentSnapshot: {
+          name: "Fire Wand",
+          type: "loot",
+          img: "icons/magic/fire/wand-fire.webp",
+          system: {
+            price: {
+              value: 1200,
+              denomination: "gp"
+            }
+          },
+          flags: {
+            "rebreya-main": {
+              sourceType: "magicItem",
+              magicItemId: "wand",
+              signature: "magic:wands:wand"
+            }
+          }
+        }
       }
     }, {
       actionId: "magic-item-purchase-trade-step",
@@ -634,6 +664,9 @@ test("CharacterDowntimeService exposes and forwards structured downtime selectio
   });
 
   assert.equal(context.selectedTemplate.itemChoiceActions[0].selectedItemName, "Жезл огня");
+  assert.equal(context.selectedTemplate.itemChoiceActions[0].selectedItem.rebreya.magicItemId, "wand");
+  assert.deepEqual(context.selectedTemplate.itemChoiceActions[0].selectedItem.rebreya.heroDollSlots, ["mainHand", "offHand"]);
+  assert.match(context.selectedTemplate.itemChoiceActions[0].selectedItemJson, /"magicItemId":"wand"/u);
   assert.equal(context.selectedTemplate.optionActions[0].options[1].selected, true);
   assert.equal(context.selectedTemplate.numericActions[0].value, -1);
   assert.equal(context.selectedTemplate.hasInteractiveActions, true);
@@ -646,7 +679,37 @@ test("CharacterDowntimeService exposes and forwards structured downtime selectio
       item: {
         uuid: "Compendium.world.rebreya-magic-items.Item.wand",
         name: "Жезл огня",
-        sourceType: "magicItem"
+        sourceType: "magicItem",
+        img: "icons/magic/fire/wand-fire.webp",
+        rebreya: {
+          managed: true,
+          sourceType: "magicItem",
+          magicItemId: "wand",
+          signature: "magic:wands:wand",
+          heroDollSlots: ["mainHand", "offHand"],
+          rank: 4,
+          foundryType: "loot",
+          foundryFolder: "magic-items/wands",
+          priceGold: 1200
+        },
+        documentSnapshot: {
+          name: "Fire Wand",
+          type: "loot",
+          img: "icons/magic/fire/wand-fire.webp",
+          system: {
+            price: {
+              value: 1200,
+              denomination: "gp"
+            }
+          },
+          flags: {
+            "rebreya-main": {
+              sourceType: "magicItem",
+              magicItemId: "wand",
+              signature: "magic:wands:wand"
+            }
+          }
+        }
       }
     }, {
       actionId: "magic-item-purchase-trade-step",
@@ -671,7 +734,39 @@ test("CharacterDowntimeService exposes and forwards structured downtime selectio
         item: {
           uuid: "Compendium.world.rebreya-magic-items.Item.wand",
           name: "Жезл огня",
-          sourceType: "magicItem"
+          sourceType: "magicItem",
+          sourceId: "wand",
+          magicItemId: "wand",
+          img: "icons/magic/fire/wand-fire.webp",
+          rebreya: {
+            managed: true,
+            sourceType: "magicItem",
+            magicItemId: "wand",
+            signature: "magic:wands:wand",
+            heroDollSlots: ["mainHand", "offHand"],
+            rank: 4,
+            foundryType: "loot",
+            foundryFolder: "magic-items/wands",
+            priceGold: 1200
+          },
+          documentSnapshot: {
+            name: "Fire Wand",
+            type: "loot",
+            img: "icons/magic/fire/wand-fire.webp",
+            system: {
+              price: {
+                value: 1200,
+                denomination: "gp"
+              }
+            },
+            flags: {
+              "rebreya-main": {
+                sourceType: "magicItem",
+                magicItemId: "wand",
+                signature: "magic:wands:wand"
+              }
+            }
+          }
         }
       }, {
         actionId: "magic-item-purchase-trade-step",
@@ -682,6 +777,95 @@ test("CharacterDowntimeService exposes and forwards structured downtime selectio
       }]
     }
   ]);
+});
+
+test("CharacterDowntimeService derives magic item purchase trade and formula from selected item metadata", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 2,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 2
+        }
+      }],
+      requests: [],
+      actionCatalog: [{
+        id: "Compendium.world.rebreya-downtime.Item.magic-item-purchase",
+        label: "Покупка магического предмета",
+        targetActions: [{
+          id: "magic-item-purchase-item",
+          label: "Предмет",
+          actionType: "itemChoice",
+          itemChoice: {
+            sourceType: "magicItem"
+          }
+        }, {
+          id: "magic-item-purchase-trade-step",
+          label: "Торги",
+          actionType: "optionChoice",
+          selectionMode: "single",
+          options: [{
+            id: "forbidden",
+            label: "Запрещённые",
+            value: -5
+          }, {
+            id: "bad",
+            label: "Невыгодные",
+            value: -1
+          }, {
+            id: "normal",
+            label: "Нормальные",
+            value: 0
+          }]
+        }, {
+          id: "magic-item-purchase-price",
+          label: "Цена",
+          actionType: "formulaRoll",
+          formulaByRarity: {
+            rare: "1d6 * 1000"
+          },
+          tradeStepActionId: "magic-item-purchase-trade-step",
+          itemActionId: "magic-item-purchase-item"
+        }]
+      }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }), {
+    actionId: "Compendium.world.rebreya-downtime.Item.magic-item-purchase",
+    targetActionSelections: [{
+      actionId: "magic-item-purchase-item",
+      item: {
+        uuid: "Compendium.world.rebreya-magic-items.Item.belt-fire-giant",
+        name: "Пояс силы огненного великана",
+        sourceType: "magicItem",
+        rebreya: {
+          sourceType: "magicItem",
+          magicItemId: "belt-fire-giant",
+          rarity: "Редкий",
+          bargaining: "Невыгодные",
+          itemBargaining: "Невыгодные",
+          signature: JSON.stringify({
+            rarity: "Редкий",
+            bargaining: "Невыгодные",
+            costText: "2d6kh1*1000 зм"
+          }),
+          priceGold: 5500
+        }
+      }
+    }]
+  });
+
+  assert.equal(context.selectedTemplate.optionActions[0].selectedOptionLabel, "Невыгодные");
+  assert.equal(context.selectedTemplate.formulaActions[0].selectedFormula, "2d6kh1*1000");
+  assert.equal(context.selectedTemplate.formulaActions[0].summary, "2d6kh1*1000");
 });
 
 test("CharacterDowntimeService exposes rank and rank-priced resource constructor actions", () => {
@@ -856,6 +1040,218 @@ test("CharacterDowntimeService labels submitted constructor actions and mapped r
   assert.equal(request.checks[3].hasOutcomeSummary, false);
   assert.equal(request.checks[3].hasRollTargets, false);
   assert.deepEqual(request.checkActions.map((check) => check.id), ["research-check"]);
+});
+
+test("CharacterDowntimeService prepares long project configurable inputs", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }],
+      requests: [],
+      actionCatalog: [{
+        id: "long-project",
+        label: "Long Project",
+        targetActions: [{
+          id: "long-project-rank",
+          label: "Project rank",
+          actionType: "rankChoice",
+          rankChoice: {
+            min: 1,
+            max: 9,
+            rows: [
+              { rank: 1, label: "Rank 1", counterMax: 4 },
+              { rank: 7, label: "Rank 7", counterMax: 8 }
+            ]
+          }
+        }, {
+          id: "long-project-counter",
+          label: "Project counter",
+          actionType: "projectCounter",
+          projectCounter: {
+            rankSourceActionId: "long-project-rank",
+            maxByRank: [
+              { from: 1, to: 3, max: 4 },
+              { from: 4, to: 6, max: 6 },
+              { from: 7, to: 9, max: 8 }
+            ]
+          }
+        }, {
+          id: "long-project-resources",
+          label: "Weekly gold",
+          actionType: "resources",
+          resources: {
+            resourceName: "Gold per week",
+            quantity: {
+              min: 0,
+              default: 0,
+              step: 1,
+              unit: "gp",
+              unitCost: 1
+            },
+            cost: {
+              currency: "gp"
+            }
+          }
+        }, {
+          id: "long-project-check",
+          label: "Progress check",
+          actionType: "check",
+          configurable: true,
+          sourceType: "skill",
+          ability: "int",
+          target: "inv",
+          targetLabel: "Investigation",
+          dc: 15
+        }]
+      }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }), {
+    actionId: "long-project",
+    targetActionSelections: [{
+      actionId: "long-project-rank",
+      optionId: "rank-7"
+    }, {
+      actionId: "long-project-resources",
+      value: 75
+    }, {
+      actionId: "long-project-check",
+      sourceType: "skill",
+      ability: "wis",
+      target: "prc",
+      targetLabel: "Perception",
+      dc: 18
+    }]
+  });
+
+  assert.equal(context.selectedTemplate.rankActions[0].selectedRank, 7);
+  assert.equal(context.selectedTemplate.counterActions[0].projectCounter.max, 8);
+  assert.equal(context.selectedTemplate.resourceActions[0].computedCost.total, 75);
+  assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.sourceType, "skill");
+  assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.ability, "wis");
+  assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.target, "prc");
+  assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.dc, 18);
+  assert.equal(context.selectedTemplate.configurableCheckActions[0].configurableCheck.targetOptions.some((option) => option.value === "prc"), true);
+});
+
+test("CharacterDowntimeService maps long project counter progress and continuation payload", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 1,
+          reservedWeeks: 1,
+          spentWeeks: 0,
+          totalGrantedWeeks: 2
+        }
+      }],
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionId: "long-project",
+        actionLabel: "Long Project",
+        templateUuid: "Compendium.world.rebreya-downtime.Item.long-project",
+        title: "Find a patron",
+        description: "Court contacts",
+        weeks: 1,
+        status: "pending",
+        checks: [{
+          id: "long-project-rank",
+          label: "Project rank",
+          actionType: "rankChoice",
+          selectedRank: 5,
+          selectedOptionId: "rank-5",
+          selectedOptionLabel: "Rank 5"
+        }, {
+          id: "long-project-counter",
+          label: "Project counter",
+          actionType: "projectCounter",
+          projectCounter: {
+            current: 2,
+            max: 6
+          }
+        }, {
+          id: "long-project-resources",
+          label: "Weekly gold",
+          actionType: "resources",
+          resourceQuantity: {
+            value: 100,
+            unit: "gp"
+          },
+          computedCost: {
+            total: 100,
+            currency: "gp"
+          }
+        }, {
+          id: "long-project-check",
+          label: "Progress check",
+          actionType: "check",
+          sourceType: "skill",
+          ability: "int",
+          target: "arc",
+          targetLabel: "Arcana",
+          dc: 15,
+          result: {
+            total: 23,
+            dc: 15,
+            success: true
+          }
+        }, {
+          id: "long-project-result",
+          label: "Counter shift",
+          actionType: "downtimeResult",
+          result: {
+            value: 2,
+            progressSteps: 2,
+            outputField: "progressSteps"
+          }
+        }]
+      }],
+      actionCatalog: []
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }));
+  const request = context.requests[0];
+  const continuation = JSON.parse(request.projectCounter.continuePayloadJson);
+
+  assert.equal(request.projectCounter.previousValue, 2);
+  assert.equal(request.projectCounter.value, 4);
+  assert.equal(request.projectCounter.max, 6);
+  assert.equal(request.projectCounter.gained, 2);
+  assert.match(request.projectCounter.imagePath, /templates\/counters\/progress-6\/progress_4\.png$/u);
+  assert.equal(request.projectCounter.canContinue, true);
+  assert.equal(continuation.actionId, "Compendium.world.rebreya-downtime.Item.long-project");
+  assert.deepEqual(continuation.targetActionSelections.find((entry) => entry.actionId === "long-project-counter"), {
+    actionId: "long-project-counter",
+    value: 4
+  });
+  assert.deepEqual(continuation.targetActionSelections.find((entry) => entry.actionId === "long-project-check"), {
+    actionId: "long-project-check",
+    sourceType: "skill",
+    ability: "int",
+    target: "arc",
+    targetLabel: "Arcana",
+    dc: 15
+  });
 });
 
 test("CharacterDowntimeService converts known group errors into a warning context", () => {

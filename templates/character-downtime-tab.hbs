@@ -88,6 +88,14 @@
             </div>
           {{/if}}
 
+          {{#if characterDowntime.selectedTemplate.hasCounterActions}}
+            <div class="rm-character-downtime-template__line">
+              {{#each characterDowntime.selectedTemplate.counterActions}}
+                <span class="rm-chip" data-tooltip="{{label}}">{{label}} {{projectCounter.current}} / {{projectCounter.max}}</span>
+              {{/each}}
+            </div>
+          {{/if}}
+
           {{#if characterDowntime.selectedTemplate.hasResourceActions}}
             <div class="rm-character-downtime-template__line">
               {{#each characterDowntime.selectedTemplate.resourceActions}}
@@ -121,26 +129,95 @@
             </div>
           {{/if}}
 
+          {{#if characterDowntime.selectedTemplate.hasConfigurableCheckActions}}
+            <div class="rm-character-downtime-template__line rm-character-downtime-check-configs">
+              {{#each characterDowntime.selectedTemplate.configurableCheckActions}}
+                <fieldset class="rm-character-downtime-check-config">
+                  <legend>{{label}}</legend>
+                  <label>
+                    <span>Что бросать</span>
+                    <select data-action="character-downtime-check-source" data-target-action-id="{{id}}">
+                      {{#each configurableCheck.sourceTypeOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  {{#if configurableCheck.hasAbilitySelect}}
+                    <label>
+                      <span>Характеристика</span>
+                      <select data-action="character-downtime-check-ability" data-target-action-id="{{id}}">
+                        {{#each configurableCheck.abilityOptions}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                  {{/if}}
+                  <label>
+                    <span>{{#if configurableCheck.isAbilityOnly}}Характеристика{{else}}Проверка{{/if}}</span>
+                    <select data-action="character-downtime-check-target" data-target-action-id="{{id}}">
+                      {{#each configurableCheck.targetOptions}}
+                        <option value="{{value}}" data-target-label="{{label}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Сложность</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value="{{configurableCheck.dc}}"
+                      data-action="character-downtime-check-dc"
+                      data-target-action-id="{{id}}"
+                    >
+                  </label>
+                </fieldset>
+              {{/each}}
+            </div>
+          {{/if}}
+
           {{#if characterDowntime.selectedTemplate.hasItemChoiceActions}}
             <div class="rm-character-downtime-template__line">
               {{#each characterDowntime.selectedTemplate.itemChoiceActions}}
-                <button
-                  type="button"
-                  class="rm-button rm-button--small rm-button--secondary rm-character-downtime-item-choice"
+                <div
+                  class="rm-character-downtime-item-choice rm-character-downtime-item-dropzone {{#if hasSelectedItem}}has-item{{/if}}"
                   data-action="character-downtime-item-choice"
                   data-target-action-id="{{id}}"
+                  data-empty-label="{{label}}"
                   data-item-uuid="{{selectedItem.uuid}}"
                   data-item-id="{{selectedItem.id}}"
                   data-item-name="{{selectedItem.name}}"
                   data-item-type="{{selectedItem.type}}"
+                  data-item-img="{{selectedItem.img}}"
                   data-item-source-type="{{selectedItem.sourceType}}"
                   data-item-rarity="{{selectedItem.rarity}}"
                   data-item-price-gold="{{selectedItem.priceGold}}"
+                  data-item-cost-text="{{selectedItem.costText}}"
+                  data-item-snapshot="{{selectedItemJson}}"
                   data-tooltip="{{label}}"
+                  role="group"
                 >
-                  <i class="fa-solid fa-box"></i>
-                  <span data-role="character-downtime-item-choice-label">{{#if hasSelectedItem}}{{selectedItemName}}{{else}}{{label}}{{/if}}</span>
-                </button>
+                  <div class="rm-character-downtime-item-dropzone__main">
+                    {{#if selectedItem.img}}
+                      <img src="{{selectedItem.img}}" alt="{{selectedItemName}}">
+                    {{else}}
+                      <i class="fa-solid fa-box-open"></i>
+                    {{/if}}
+                    <div>
+                      <strong data-role="character-downtime-item-choice-label">{{#if hasSelectedItem}}{{selectedItemName}}{{else}}{{label}}{{/if}}</strong>
+                      <span data-role="character-downtime-item-choice-price">{{selectedItemPriceLabel}}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    class="rm-icon-button rm-character-downtime-item-dropzone__clear"
+                    data-action="character-downtime-clear-item-choice"
+                    data-tooltip="Убрать предмет"
+                    {{#unless hasSelectedItem}}hidden{{/unless}}
+                  >
+                    <i class="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
               {{/each}}
             </div>
           {{/if}}
@@ -162,7 +239,7 @@
                   {{else}}
                     <select data-action="character-downtime-option-choice" data-target-action-id="{{id}}">
                       {{#each options}}
-                        <option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        <option value="{{id}}" data-option-value="{{value}}" {{#if selected}}selected{{/if}}>{{displayLabel}}</option>
                       {{/each}}
                     </select>
                   {{/if}}
@@ -194,7 +271,19 @@
           {{#if characterDowntime.selectedTemplate.hasFormulaActions}}
             <div class="rm-character-downtime-template__line">
               {{#each characterDowntime.selectedTemplate.formulaActions}}
-                <span class="rm-chip" data-tooltip="{{label}}">{{summary}}</span>
+                <label class="rm-character-downtime-resource-choice rm-character-downtime-formula-choice">
+                  <span>{{label}}</span>
+                  <input
+                    type="text"
+                    value="{{selectedFormula}}"
+                    data-action="character-downtime-formula-input"
+                    data-target-action-id="{{id}}"
+                    data-formula-by-rarity="{{formulaByRarityJson}}"
+                    data-trade-step-action-id="{{tradeStepActionId}}"
+                    data-item-action-id="{{itemActionId}}"
+                    placeholder="{{summary}}"
+                  >
+                </label>
               {{/each}}
             </div>
           {{/if}}
@@ -311,6 +400,31 @@
                     </div>
                   {{/each}}
                 </div>
+              {{/if}}
+              {{#if hasProjectCounter}}
+                <aside class="rm-character-downtime-project-counter">
+                  {{#if projectCounter.hasImagePath}}
+                    <img src="{{projectCounter.imagePath}}" alt="{{projectCounter.value}} / {{projectCounter.max}}">
+                  {{/if}}
+                  <div>
+                    <strong>{{projectCounter.value}} / {{projectCounter.max}}</strong>
+                    {{#if projectCounter.hasWeekResult}}
+                      <span>+{{projectCounter.gained}} за неделю</span>
+                    {{else}}
+                      <span>Эта неделя ещё без сдвига</span>
+                    {{/if}}
+                  </div>
+                  {{#if projectCounter.canContinue}}
+                    <button
+                      type="button"
+                      class="rm-button rm-button--small rm-button--secondary"
+                      data-action="character-downtime-continue"
+                      data-payload="{{projectCounter.continuePayloadJson}}"
+                    >
+                      Продолжить работу
+                    </button>
+                  {{/if}}
+                </aside>
               {{/if}}
             </article>
           {{/each}}

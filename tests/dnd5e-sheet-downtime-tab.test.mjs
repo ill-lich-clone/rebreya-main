@@ -15,6 +15,7 @@ function installSheetExtensionStubs() {
   const previousFoundry = globalThis.foundry;
   const previousDnd5e = globalThis.dnd5e;
   const previousFromUuid = globalThis.fromUuid;
+  const previousTextEditor = globalThis.TextEditor;
 
   class FakeActor {}
   class FakeItem {}
@@ -27,6 +28,12 @@ function installSheetExtensionStubs() {
       this.listenerOptions = {};
       this.value = "";
       this.children = [];
+      this.classList = {
+        values: new Set(),
+        add: (...names) => names.forEach((name) => this.classList.values.add(name)),
+        remove: (...names) => names.forEach((name) => this.classList.values.delete(name)),
+        contains: (name) => this.classList.values.has(name)
+      };
     }
 
     querySelector(selector) {
@@ -167,6 +174,7 @@ function installSheetExtensionStubs() {
       globalThis.foundry = previousFoundry;
       globalThis.dnd5e = previousDnd5e;
       globalThis.fromUuid = previousFromUuid;
+      globalThis.TextEditor = previousTextEditor;
     }
   };
 }
@@ -261,7 +269,18 @@ test("character downtime template uses compact summary stats and selection contr
   assert.doesNotMatch(template, /<small>можно заявить сейчас<\/small>/u);
   assert.doesNotMatch(template, /<label>Действие<\/label>/u);
   assert.match(template, /data-action="character-downtime-clear-action"/u);
+  assert.match(template, /data-item-snapshot="\{\{selectedItemJson\}\}"/u);
   assert.match(template, /\{\{#if characterDowntime\.selectedTemplate\}\}[\s\S]*data-action="character-downtime-submit"/u);
+});
+
+test("character downtime item choice renders as a clearable dropzone with price formula controls", async () => {
+  const template = await readFile(new URL("../templates/character-downtime-tab.hbs", import.meta.url), "utf8");
+
+  assert.match(template, /rm-character-downtime-item-dropzone/u);
+  assert.match(template, /data-action="character-downtime-clear-item-choice"/u);
+  assert.match(template, /data-role="character-downtime-item-choice-price"/u);
+  assert.match(template, /data-action="character-downtime-formula-input"/u);
+  assert.match(template, /data-formula-by-rarity="\{\{formulaByRarityJson\}\}"/u);
 });
 
 test("extendDnd5eItemTypes registers the Rebreya downtime item type", async () => {
@@ -680,6 +699,45 @@ test("character downtime submit reads structured target action controls", async 
     const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
     const calls = [];
     const submitButton = new stubs.HTMLElement();
+    const itemSnapshot = {
+      uuid: "Compendium.world.rebreya-magic-items.Item.wand",
+      id: "wand",
+      name: "Р–РµР·Р» РѕРіРЅСЏ",
+      type: "loot",
+      img: "icons/magic/fire/wand-fire.webp",
+      sourceType: "magicItem",
+      rarity: "rare",
+      priceGold: 1200,
+      rebreya: {
+        managed: true,
+        sourceType: "magicItem",
+        magicItemId: "wand",
+        signature: "magic:wands:wand",
+        heroDollSlots: ["mainHand", "offHand"],
+        rank: 4,
+        foundryType: "loot",
+        foundryFolder: "magic-items/wands",
+        priceGold: 1200
+      },
+      documentSnapshot: {
+        name: "Fire Wand",
+        type: "loot",
+        img: "icons/magic/fire/wand-fire.webp",
+        system: {
+          price: {
+            value: 1200,
+            denomination: "gp"
+          }
+        },
+        flags: {
+          "rebreya-main": {
+            sourceType: "magicItem",
+            magicItemId: "wand",
+            signature: "magic:wands:wand"
+          }
+        }
+      }
+    };
     const itemChoice = new stubs.HTMLElement({
       dataset: {
         targetActionId: "magic-item-purchase-item",
@@ -689,7 +747,8 @@ test("character downtime submit reads structured target action controls", async 
         itemType: "loot",
         itemSourceType: "magicItem",
         itemRarity: "rare",
-        itemPriceGold: "1200"
+        itemPriceGold: "1200",
+        itemSnapshot: JSON.stringify(itemSnapshot)
       }
     });
     const optionChoice = new stubs.HTMLElement({
@@ -777,9 +836,39 @@ test("character downtime submit reads structured target action controls", async 
             id: "wand",
             name: "Жезл огня",
             type: "loot",
+            img: "icons/magic/fire/wand-fire.webp",
             sourceType: "magicItem",
             rarity: "rare",
-            priceGold: 1200
+            priceGold: 1200,
+            rebreya: {
+              managed: true,
+              sourceType: "magicItem",
+              magicItemId: "wand",
+              signature: "magic:wands:wand",
+              heroDollSlots: ["mainHand", "offHand"],
+              rank: 4,
+              foundryType: "loot",
+              foundryFolder: "magic-items/wands",
+              priceGold: 1200
+            },
+            documentSnapshot: {
+              name: "Fire Wand",
+              type: "loot",
+              img: "icons/magic/fire/wand-fire.webp",
+              system: {
+                price: {
+                  value: 1200,
+                  denomination: "gp"
+                }
+              },
+              flags: {
+                "rebreya-main": {
+                  sourceType: "magicItem",
+                  magicItemId: "wand",
+                  signature: "magic:wands:wand"
+                }
+              }
+            }
           }
         }, {
           actionId: "magic-item-purchase-trade-step",
@@ -789,6 +878,483 @@ test("character downtime submit reads structured target action controls", async 
           value: -1
         }]
       }
+    ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime submit reads configurable long project check fields", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-project-config=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const submitButton = new stubs.HTMLElement();
+    const sourceSelect = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "long-project-check"
+      }
+    });
+    sourceSelect.value = "skill";
+    const abilitySelect = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "long-project-check"
+      }
+    });
+    abilitySelect.value = "wis";
+    const targetSelect = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "long-project-check",
+        targetLabel: "Perception"
+      }
+    });
+    targetSelect.value = "prc";
+    const dcInput = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "long-project-check"
+      }
+    });
+    dcInput.value = "18";
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "long-project" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-title']": { value: "" },
+        "[data-action='character-downtime-description']": { value: "" },
+        "[data-action='character-downtime-submit']": submitButton
+      },
+      selectorAll: {
+        "[data-action='character-downtime-check-source']": [sourceSelect],
+        "[data-action='character-downtime-check-ability']": [abilitySelect],
+        "[data-action='character-downtime-check-target']": [targetSelect],
+        "[data-action='character-downtime-check-dc']": [dcInput]
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(submitButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: "downtime-1" };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of root.listeners.click) {
+      await listener({ target: submitButton });
+    }
+
+    assert.deepEqual(calls.find((call) => call[0] === "createRequest"), [
+      "createRequest",
+      "actor-a",
+      {
+        actionId: "long-project",
+        weeks: 1,
+        title: "",
+        description: "",
+        targetActionSelections: [{
+          actionId: "long-project-check",
+          sourceType: "skill",
+          ability: "wis",
+          target: "prc",
+          targetLabel: "Perception",
+          dc: 18
+        }]
+      }
+    ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime continue button submits continuation payload", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-project-continue=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const payload = {
+      actionId: "long-project",
+      weeks: 1,
+      title: "Project",
+      description: "Continue",
+      targetActionSelections: [{
+        actionId: "long-project-counter",
+        value: 4
+      }]
+    };
+    const continueButton = new stubs.HTMLElement({
+      dataset: {
+        payload: JSON.stringify(payload)
+      }
+    });
+    const panel = new stubs.HTMLElement();
+    continueButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-continue']") return continueButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(continueButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, requestPayload) {
+          calls.push(["createRequest", targetActor.id, requestPayload]);
+          return { id: "downtime-2" };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of root.listeners.click) {
+      await listener({ target: continueButton, preventDefault() {}, stopPropagation() {} });
+    }
+
+    assert.deepEqual(calls.find((call) => call[0] === "createRequest"), [
+      "createRequest",
+      "actor-a",
+      payload
+    ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime item drop derives bargaining and price formula before submit", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-item-drop-formula=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const label = new stubs.HTMLElement();
+    const priceLabel = new stubs.HTMLElement();
+    const itemChoice = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "magic-item-purchase-item"
+      },
+      selectors: {
+        "[data-role='character-downtime-item-choice-label']": label,
+        "[data-role='character-downtime-item-choice-price']": priceLabel
+      }
+    });
+    const tradeSelect = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "magic-item-purchase-trade-step"
+      }
+    });
+    tradeSelect.value = "forbidden";
+    const formulaInput = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "magic-item-purchase-price",
+        formulaByRarity: JSON.stringify({
+          rare: "1d6 * 1000"
+        }),
+        tradeStepActionId: "magic-item-purchase-trade-step",
+        itemActionId: "magic-item-purchase-item"
+      }
+    });
+    formulaInput.value = "";
+    const submitButton = new stubs.HTMLElement();
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "magic-item-purchase" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-title']": { value: "" },
+        "[data-action='character-downtime-description']": { value: "" },
+        "[data-action='character-downtime-submit']": submitButton
+      },
+      selectorAll: {
+        "[data-action='character-downtime-item-choice']": [itemChoice],
+        "[data-action='character-downtime-option-choice']": [tradeSelect],
+        "[data-action='character-downtime-formula-input']": [formulaInput]
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(submitButton);
+    const rebreyaFlags = {
+      managed: true,
+      sourceType: "magicItem",
+      magicItemId: "belt-fire-giant",
+      rarity: "Редкий",
+      bargaining: "Невыгодные",
+      itemBargaining: "Невыгодные",
+      signature: JSON.stringify({
+        costText: "2d6kh1*1000 зм",
+        bargaining: "Невыгодные",
+        rarity: "Редкий"
+      }),
+      priceGold: 5500
+    };
+    globalThis.fromUuid = async () => ({
+      uuid: "Compendium.world.rebreya-magic-items.Item.belt-fire-giant",
+      id: "belt-fire-giant",
+      name: "Пояс силы огненного великана",
+      type: "equipment",
+      img: "icons/equipment/waist/belt-embossed-gold.webp",
+      system: {
+        price: {
+          value: 5500,
+          denomination: "gp"
+        },
+        rarity: "rare"
+      },
+      flags: {
+        "rebreya-main": rebreyaFlags
+      },
+      getFlag(scope, key) {
+        if (scope !== "rebreya-main") return undefined;
+        return key ? rebreyaFlags[key] : rebreyaFlags;
+      },
+      toObject() {
+        return {
+          name: "Пояс силы огненного великана",
+          type: "equipment",
+          img: "icons/equipment/waist/belt-embossed-gold.webp",
+          system: this.system,
+          flags: this.flags
+        };
+      }
+    });
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: "downtime-1" };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    await itemChoice.listeners.drop[0]({
+      preventDefault() {},
+      stopPropagation() {},
+      dataTransfer: {
+        getData(type) {
+          return type === "text/plain"
+            ? JSON.stringify({ uuid: "Compendium.world.rebreya-magic-items.Item.belt-fire-giant" })
+            : "";
+        }
+      }
+    });
+
+    assert.equal(label.textContent, "Пояс силы огненного великана");
+    assert.equal(priceLabel.textContent, "5500 зм");
+    assert.equal(tradeSelect.value, "bad");
+    assert.equal(formulaInput.value, "2d6kh1*1000");
+
+    for (const listener of root.listeners.click) {
+      await listener({ target: submitButton });
+    }
+
+    const submitCall = calls.find((call) => call[0] === "createRequest");
+    assert.deepEqual(submitCall[2].targetActionSelections.map((entry) => ({
+      actionId: entry.actionId,
+      optionId: entry.optionId,
+      formula: entry.formula,
+      itemName: entry.item?.name
+    })), [{
+      actionId: "magic-item-purchase-item",
+      optionId: undefined,
+      formula: undefined,
+      itemName: "Пояс силы огненного великана"
+    }, {
+      actionId: "magic-item-purchase-trade-step",
+      optionId: "bad",
+      formula: undefined,
+      itemName: undefined
+    }, {
+      actionId: "magic-item-purchase-price",
+      optionId: undefined,
+      formula: "2d6kh1*1000",
+      itemName: undefined
+    }]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime item clear removes stale item formula selections", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-item-clear-formula=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const label = new stubs.HTMLElement();
+    const priceLabel = new stubs.HTMLElement();
+    const clearButton = new stubs.HTMLElement();
+    const itemChoice = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "magic-item-purchase-item",
+        emptyLabel: "Предмет",
+        itemUuid: "Compendium.world.rebreya-magic-items.Item.belt-fire-giant",
+        itemName: "Пояс силы огненного великана",
+        itemCostText: "2d6kh1*1000 зм",
+        itemSnapshot: JSON.stringify({
+          uuid: "Compendium.world.rebreya-magic-items.Item.belt-fire-giant",
+          name: "Пояс силы огненного великана",
+          costText: "2d6kh1*1000 зм"
+        })
+      },
+      selectors: {
+        "[data-role='character-downtime-item-choice-label']": label,
+        "[data-role='character-downtime-item-choice-price']": priceLabel,
+        "[data-action='character-downtime-clear-item-choice']": clearButton
+      }
+    });
+    const tradeSelect = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "magic-item-purchase-trade-step"
+      }
+    });
+    tradeSelect.value = "bad";
+    const formulaInput = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "magic-item-purchase-price",
+        tradeStepActionId: "magic-item-purchase-trade-step",
+        itemActionId: "magic-item-purchase-item"
+      }
+    });
+    formulaInput.value = "2d6kh1*1000";
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "magic-item-purchase" },
+        "[data-action='character-downtime-weeks']": { value: "1" }
+      },
+      selectorAll: {
+        "[data-action='character-downtime-item-choice']": [itemChoice],
+        "[data-action='character-downtime-option-choice']": [tradeSelect],
+        "[data-action='character-downtime-formula-input']": [formulaInput]
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    await clearButton.listeners.click[0]({
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.equal(itemChoice.dataset.itemName, undefined);
+    assert.equal(label.textContent, "Предмет");
+    assert.equal(priceLabel.textContent, "");
+    assert.equal(formulaInput.value, "");
+    assert.equal(tradeSelect.value, "");
+    assert.deepEqual(calls, [
+      ["render", { force: true }],
+      ["refreshOpenApps"]
     ]);
   }
   finally {

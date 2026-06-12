@@ -673,6 +673,7 @@ const characterDowntimeStateAbortControllers = new WeakMap();
 const characterDowntimeFormStateByActorId = new Map();
 let characterDowntimeDocumentSubmitDelegated = false;
 let characterDowntimeDocumentRollDelegated = false;
+let characterDowntimeDocumentContinueDelegated = false;
 const CHARACTER_DOWNTIME_SUBMIT_DEBOUNCE_MS = 750;
 const CHARACTER_DOWNTIME_ROLL_DEBOUNCE_MS = 750;
 const CHARACTER_DOWNTIME_ROLLABLE_SOURCE_TYPES = new Set(["skill", "ability", "save", "tool"]);
@@ -2071,6 +2072,162 @@ function getItemPriceGold(item) {
   return undefined;
 }
 
+function normalizeCharacterDowntimeLookupKey(value = "") {
+  return normalizeLookupText(value)
+    .replace(/ё/gu, "е")
+    .replace(/[^a-zа-я0-9+-]+/giu, "");
+}
+
+const CHARACTER_DOWNTIME_BARGAINING_OPTION_ID_BY_TEXT = Object.freeze({
+  [normalizeCharacterDowntimeLookupKey("Запрещённые")]: "forbidden",
+  [normalizeCharacterDowntimeLookupKey("Запрещенные")]: "forbidden",
+  [normalizeCharacterDowntimeLookupKey("Невозможные")]: "impossible",
+  [normalizeCharacterDowntimeLookupKey("Провальные")]: "failed",
+  [normalizeCharacterDowntimeLookupKey("Невыгодные")]: "bad",
+  [normalizeCharacterDowntimeLookupKey("Нормальные")]: "normal",
+  [normalizeCharacterDowntimeLookupKey("Выгодные")]: "favorable",
+  [normalizeCharacterDowntimeLookupKey("Удачные")]: "good"
+});
+
+const CHARACTER_DOWNTIME_RARITY_KEY_BY_TEXT = Object.freeze({
+  [normalizeCharacterDowntimeLookupKey("Обычный")]: "common",
+  [normalizeCharacterDowntimeLookupKey("Обычная")]: "common",
+  [normalizeCharacterDowntimeLookupKey("common")]: "common",
+  [normalizeCharacterDowntimeLookupKey("Необычный")]: "uncommon",
+  [normalizeCharacterDowntimeLookupKey("Необычная")]: "uncommon",
+  [normalizeCharacterDowntimeLookupKey("uncommon")]: "uncommon",
+  [normalizeCharacterDowntimeLookupKey("Редкий")]: "rare",
+  [normalizeCharacterDowntimeLookupKey("Редкая")]: "rare",
+  [normalizeCharacterDowntimeLookupKey("rare")]: "rare",
+  [normalizeCharacterDowntimeLookupKey("Очень редкий")]: "veryRare",
+  [normalizeCharacterDowntimeLookupKey("Очень редкая")]: "veryRare",
+  [normalizeCharacterDowntimeLookupKey("veryRare")]: "veryRare",
+  [normalizeCharacterDowntimeLookupKey("very rare")]: "veryRare",
+  [normalizeCharacterDowntimeLookupKey("Легендарный")]: "legendary",
+  [normalizeCharacterDowntimeLookupKey("Легендарная")]: "legendary",
+  [normalizeCharacterDowntimeLookupKey("legendary")]: "legendary"
+});
+
+function parseCharacterDowntimeRebreyaSignature(value = "") {
+  const text = cleanText(value);
+  if (!text.startsWith("{")) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  }
+  catch (_error) {
+    return {};
+  }
+}
+
+function getCharacterDowntimeItemSignatureData(item = {}) {
+  const rebreya = item?.rebreya && typeof item.rebreya === "object" && !Array.isArray(item.rebreya) ? item.rebreya : {};
+  const flags = item?.documentSnapshot?.flags?.[MODULE_ID] && typeof item.documentSnapshot.flags[MODULE_ID] === "object"
+    ? item.documentSnapshot.flags[MODULE_ID]
+    : {};
+  return {
+    ...parseCharacterDowntimeRebreyaSignature(flags.signature),
+    ...parseCharacterDowntimeRebreyaSignature(rebreya.signature)
+  };
+}
+
+function getCharacterDowntimeItemBargaining(item = {}) {
+  const rebreya = item?.rebreya && typeof item.rebreya === "object" && !Array.isArray(item.rebreya) ? item.rebreya : {};
+  const signature = getCharacterDowntimeItemSignatureData(item);
+  return cleanText(item.bargaining)
+    || cleanText(item.itemBargaining)
+    || cleanText(rebreya.bargaining)
+    || cleanText(rebreya.itemBargaining)
+    || cleanText(signature.bargaining);
+}
+
+function cleanCharacterDowntimeFormulaText(value = "") {
+  const text = cleanText(value)
+    .replace(/\s*(зм|gp)\.?\s*$/iu, "")
+    .trim();
+  return text && text !== "-" && text !== "—" ? text : "";
+}
+
+function getCharacterDowntimeItemCostFormula(item = {}) {
+  const rebreya = item?.rebreya && typeof item.rebreya === "object" && !Array.isArray(item.rebreya) ? item.rebreya : {};
+  const signature = getCharacterDowntimeItemSignatureData(item);
+  return cleanCharacterDowntimeFormulaText(item.costText)
+    || cleanCharacterDowntimeFormulaText(item.itemCost)
+    || cleanCharacterDowntimeFormulaText(rebreya.costText)
+    || cleanCharacterDowntimeFormulaText(rebreya.itemCost)
+    || cleanCharacterDowntimeFormulaText(signature.costText)
+    || cleanCharacterDowntimeFormulaText(signature.itemCost);
+}
+
+function getCharacterDowntimeItemRarityKey(item = {}) {
+  const rebreya = item?.rebreya && typeof item.rebreya === "object" && !Array.isArray(item.rebreya) ? item.rebreya : {};
+  const signature = getCharacterDowntimeItemSignatureData(item);
+  const rarity = cleanText(item.rarity)
+    || cleanText(rebreya.rarity)
+    || cleanText(signature.rarity)
+    || cleanText(item.documentSnapshot?.system?.rarity);
+  return CHARACTER_DOWNTIME_RARITY_KEY_BY_TEXT[normalizeCharacterDowntimeLookupKey(rarity)] || rarity;
+}
+
+function parseCharacterDowntimeJsonObject(value) {
+  const text = cleanText(value);
+  if (!text) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  }
+  catch (_error) {
+    return {};
+  }
+}
+
+function cloneCharacterDowntimeValue(value) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  if (foundry.utils?.deepClone) {
+    return foundry.utils.deepClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
+function parseCharacterDowntimeItemSnapshot(value) {
+  return parseCharacterDowntimeJsonObject(value);
+}
+
+function getCharacterDowntimeRebreyaFlags(item) {
+  const flagValue = item?.getFlag?.(MODULE_ID);
+  if (flagValue && typeof flagValue === "object" && !Array.isArray(flagValue)) {
+    return cloneCharacterDowntimeValue(flagValue);
+  }
+
+  const flags = foundry.utils.getProperty?.(item, `flags.${MODULE_ID}`);
+  return flags && typeof flags === "object" && !Array.isArray(flags)
+    ? cloneCharacterDowntimeValue(flags)
+    : {};
+}
+
+function buildCharacterDowntimeItemDocumentSnapshot(item) {
+  const source = typeof item?.toObject === "function" ? item.toObject() : item;
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    return {};
+  }
+
+  const snapshot = {};
+  for (const key of ["_id", "id", "name", "type", "img", "system", "flags", "effects"]) {
+    if (source[key] !== undefined) {
+      snapshot[key] = cloneCharacterDowntimeValue(source[key]);
+    }
+  }
+  return snapshot;
+}
+
 function normalizeCharacterDowntimeDroppedItem(item, dragData = {}) {
   if (!item || typeof item !== "object") {
     return null;
@@ -2093,6 +2250,7 @@ function normalizeCharacterDowntimeDroppedItem(item, dragData = {}) {
     uuid,
     id,
     name: name || "Предмет",
+    img: cleanText(item.img) || cleanText(dragData.img),
     type: cleanText(item.type) || cleanText(dragData.type),
     sourceType,
     rarity
@@ -2100,6 +2258,33 @@ function normalizeCharacterDowntimeDroppedItem(item, dragData = {}) {
   const priceGold = getItemPriceGold(item);
   if (priceGold !== undefined) {
     droppedItem.priceGold = priceGold;
+  }
+  const rebreya = getCharacterDowntimeRebreyaFlags(item);
+  if (Object.keys(rebreya).length) {
+    droppedItem.rebreya = rebreya;
+    droppedItem.sourceType ||= cleanText(rebreya.sourceType);
+    droppedItem.sourceId = cleanText(rebreya.sourceId)
+      || cleanText(rebreya.magicItemId)
+      || cleanText(rebreya.gearId)
+      || cleanText(rebreya.materialId);
+    droppedItem.magicItemId = cleanText(rebreya.magicItemId);
+    droppedItem.gearId = cleanText(rebreya.gearId);
+    droppedItem.materialId = cleanText(rebreya.materialId);
+  }
+  const documentSnapshot = buildCharacterDowntimeItemDocumentSnapshot(item);
+  if (Object.keys(documentSnapshot).length) {
+    droppedItem.documentSnapshot = documentSnapshot;
+  }
+  const signature = getCharacterDowntimeItemSignatureData(droppedItem);
+  const costText = cleanText(rebreya.costText)
+    || cleanText(rebreya.itemCost)
+    || cleanText(signature.costText)
+    || cleanText(signature.itemCost);
+  if (costText) {
+    droppedItem.costText = costText;
+    if (droppedItem.rebreya && !cleanText(droppedItem.rebreya.costText)) {
+      droppedItem.rebreya.costText = costText;
+    }
   }
   return droppedItem;
 }
@@ -2109,8 +2294,11 @@ function applyCharacterDowntimeItemChoice(control, item = {}) {
   control.dataset.itemId = cleanText(item.id);
   control.dataset.itemName = cleanText(item.name);
   control.dataset.itemType = cleanText(item.type);
+  control.dataset.itemImg = cleanText(item.img);
   control.dataset.itemSourceType = cleanText(item.sourceType);
   control.dataset.itemRarity = cleanText(item.rarity);
+  control.dataset.itemCostText = cleanText(item.costText);
+  control.dataset.itemSnapshot = JSON.stringify(item);
   if (item.priceGold !== undefined) {
     control.dataset.itemPriceGold = String(item.priceGold);
   }
@@ -2121,6 +2309,137 @@ function applyCharacterDowntimeItemChoice(control, item = {}) {
   const label = control.querySelector?.("[data-role='character-downtime-item-choice-label']");
   if (label) {
     label.textContent = cleanText(item.name) || "Выбрать предмет";
+  }
+  const price = control.querySelector?.("[data-role='character-downtime-item-choice-price']");
+  if (price) {
+    price.textContent = item.priceGold !== undefined ? `${item.priceGold} зм` : cleanText(item.costText);
+  }
+  const clearButton = control.querySelector?.("[data-action='character-downtime-clear-item-choice']");
+  if (clearButton) {
+    clearButton.hidden = false;
+  }
+  control.classList?.add?.("has-item");
+}
+
+function clearCharacterDowntimeItemChoice(control) {
+  for (const key of [
+    "itemUuid",
+    "itemId",
+    "itemName",
+    "itemType",
+    "itemImg",
+    "itemSourceType",
+    "itemRarity",
+    "itemPriceGold",
+    "itemCostText",
+    "itemSnapshot"
+  ]) {
+    delete control.dataset[key];
+  }
+
+  const label = control.querySelector?.("[data-role='character-downtime-item-choice-label']");
+  if (label) {
+    label.textContent = cleanText(control.dataset.emptyLabel) || "Перетащите предмет";
+  }
+  const price = control.querySelector?.("[data-role='character-downtime-item-choice-price']");
+  if (price) {
+    price.textContent = "";
+  }
+  const clearButton = control.querySelector?.("[data-action='character-downtime-clear-item-choice']");
+  if (clearButton) {
+    clearButton.hidden = true;
+  }
+  control.classList?.remove?.("has-item");
+}
+
+function getCharacterDowntimeBargainingOptionId(item = {}, select = null) {
+  const bargaining = getCharacterDowntimeItemBargaining(item);
+  if (!bargaining) {
+    return "";
+  }
+
+  const options = Array.from(select?.options ?? []);
+  const numericBargaining = toOptionalFiniteNumber(bargaining);
+  if (numericBargaining !== undefined) {
+    const numericOption = options.find((option) => toOptionalFiniteNumber(option?.dataset?.optionValue) === numericBargaining);
+    if (numericOption?.value) {
+      return cleanText(numericOption.value);
+    }
+  }
+
+  const mappedId = CHARACTER_DOWNTIME_BARGAINING_OPTION_ID_BY_TEXT[normalizeCharacterDowntimeLookupKey(bargaining)];
+  if (mappedId && (!options.length || options.some((option) => cleanText(option.value) === mappedId))) {
+    return mappedId;
+  }
+
+  const bargainingKey = normalizeCharacterDowntimeLookupKey(bargaining);
+  return cleanText(options.find((option) => normalizeCharacterDowntimeLookupKey(option?.textContent) === bargainingKey)?.value);
+}
+
+function resolveCharacterDowntimeFormulaForItem(item = {}, formulaControl = null) {
+  const itemFormula = getCharacterDowntimeItemCostFormula(item);
+  if (itemFormula) {
+    return itemFormula;
+  }
+
+  const formulaByRarity = parseCharacterDowntimeJsonObject(formulaControl?.dataset?.formulaByRarity);
+  const rarityKey = getCharacterDowntimeItemRarityKey(item);
+  return cleanCharacterDowntimeFormulaText(formulaByRarity[rarityKey]);
+}
+
+function applyCharacterDowntimeDerivedItemSelections(panel, item = {}, itemControl = null) {
+  const itemActionId = cleanText(itemControl?.dataset?.targetActionId);
+  const formulaControls = Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-formula-input']") ?? []);
+  const relatedFormulaControls = formulaControls.filter((control) => {
+    const configuredItemActionId = cleanText(control?.dataset?.itemActionId);
+    return !configuredItemActionId || !itemActionId || configuredItemActionId === itemActionId;
+  });
+  const formulaControl = relatedFormulaControls[0] ?? formulaControls[0] ?? null;
+  if (formulaControl) {
+    const formula = resolveCharacterDowntimeFormulaForItem(item, formulaControl);
+    if (formula) {
+      formulaControl.value = formula;
+    }
+  }
+
+  const tradeActionId = cleanText(formulaControl?.dataset?.tradeStepActionId) || "magic-item-purchase-trade-step";
+  const optionControls = Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-option-choice']") ?? []);
+  const tradeControl = optionControls.find((control) => cleanText(control?.dataset?.targetActionId) === tradeActionId)
+    ?? optionControls[0]
+    ?? null;
+  if (tradeControl) {
+    const optionId = getCharacterDowntimeBargainingOptionId(item, tradeControl);
+    if (optionId) {
+      tradeControl.value = optionId;
+    }
+  }
+}
+
+function clearCharacterDowntimeDerivedItemSelections(panel, itemControl = null) {
+  const itemActionId = cleanText(itemControl?.dataset?.targetActionId);
+  const formulaControls = Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-formula-input']") ?? []);
+  const relatedFormulaControls = formulaControls.filter((control) => {
+    const configuredItemActionId = cleanText(control?.dataset?.itemActionId);
+    return !configuredItemActionId || !itemActionId || configuredItemActionId === itemActionId;
+  });
+  const affectedFormulaControls = relatedFormulaControls.length ? relatedFormulaControls : formulaControls;
+  const tradeActionIds = new Set();
+  for (const control of affectedFormulaControls) {
+    const tradeActionId = cleanText(control?.dataset?.tradeStepActionId);
+    if (tradeActionId) {
+      tradeActionIds.add(tradeActionId);
+    }
+    control.value = "";
+  }
+
+  if (!tradeActionIds.size) {
+    tradeActionIds.add("magic-item-purchase-trade-step");
+  }
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-option-choice']") ?? [])) {
+    if (tradeActionIds.has(cleanText(control?.dataset?.targetActionId))) {
+      control.value = "";
+    }
   }
 }
 
@@ -2141,6 +2460,7 @@ async function handleCharacterDowntimeItemChoiceDrop(event, control, panel, app,
   }
 
   applyCharacterDowntimeItemChoice(control, item);
+  applyCharacterDowntimeDerivedItemSelections(panel, item, control);
   const actor = getActorFromSheetApp(app);
   if (actor?.id) {
     updateCharacterDowntimeFormState(actor, {
@@ -2617,21 +2937,47 @@ function readCharacterDowntimeTargetActionSelections(panel) {
     const uuid = cleanText(control?.dataset?.itemUuid);
     const id = cleanText(control?.dataset?.itemId);
     const name = cleanText(control?.dataset?.itemName);
-    if (!actionId || (!uuid && !id && !name)) {
+    const snapshot = parseCharacterDowntimeItemSnapshot(control?.dataset?.itemSnapshot);
+    if (!actionId || (!uuid && !id && !name && !cleanText(snapshot.uuid) && !cleanText(snapshot.id) && !cleanText(snapshot.name))) {
       continue;
     }
 
     const item = {
-      uuid,
-      id,
-      name: name || "Предмет",
-      type: cleanText(control?.dataset?.itemType),
-      sourceType: cleanText(control?.dataset?.itemSourceType),
-      rarity: cleanText(control?.dataset?.itemRarity)
+      ...snapshot
     };
+    if (uuid) {
+      item.uuid = uuid;
+    }
+    if (id) {
+      item.id = id;
+    }
+    if (name) {
+      item.name = name;
+    }
+    item.name ||= "Предмет";
+    const type = cleanText(control?.dataset?.itemType);
+    if (type) {
+      item.type = type;
+    }
+    const img = cleanText(control?.dataset?.itemImg);
+    if (img) {
+      item.img = img;
+    }
+    const sourceType = cleanText(control?.dataset?.itemSourceType);
+    if (sourceType) {
+      item.sourceType = sourceType;
+    }
+    const rarity = cleanText(control?.dataset?.itemRarity);
+    if (rarity) {
+      item.rarity = rarity;
+    }
     const priceGold = toOptionalFiniteNumber(control?.dataset?.itemPriceGold);
     if (priceGold !== undefined) {
       item.priceGold = priceGold;
+    }
+    const costText = cleanText(control?.dataset?.itemCostText);
+    if (costText) {
+      item.costText = costText;
     }
     const selection = ensureSelection(actionId);
     if (selection) {
@@ -2693,8 +3039,75 @@ function readCharacterDowntimeTargetActionSelections(panel) {
     }
   }
 
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-formula-input']") ?? [])) {
+    const selection = ensureSelection(control?.dataset?.targetActionId);
+    const formula = cleanCharacterDowntimeFormulaText(control?.value);
+    if (selection && formula) {
+      selection.formula = formula;
+    }
+  }
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-formula-result']") ?? [])) {
+    const selection = ensureSelection(control?.dataset?.targetActionId);
+    const result = toOptionalFiniteNumber(control?.value);
+    if (selection && result !== undefined) {
+      selection.result = result;
+    }
+  }
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-check-source']") ?? [])) {
+    const selection = ensureSelection(control?.dataset?.targetActionId);
+    const sourceType = cleanText(control?.value);
+    if (selection && sourceType) {
+      selection.sourceType = sourceType;
+    }
+  }
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-check-ability']") ?? [])) {
+    const selection = ensureSelection(control?.dataset?.targetActionId);
+    const ability = cleanText(control?.value);
+    if (selection && ability) {
+      selection.ability = ability;
+    }
+  }
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-check-target']") ?? [])) {
+    const selection = ensureSelection(control?.dataset?.targetActionId);
+    const target = cleanText(control?.value);
+    if (selection && target) {
+      selection.target = target;
+      const option = control?.selectedOptions?.[0] ?? control?.options?.[control.selectedIndex];
+      const targetLabel = cleanText(control?.dataset?.targetLabel)
+        || cleanText(option?.dataset?.targetLabel)
+        || cleanText(option?.label)
+        || cleanText(option?.textContent);
+      if (targetLabel) {
+        selection.targetLabel = targetLabel;
+      }
+    }
+  }
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-check-dc']") ?? [])) {
+    const selection = ensureSelection(control?.dataset?.targetActionId);
+    const dc = toOptionalFiniteNumber(control?.value);
+    if (selection && dc !== undefined) {
+      selection.dc = dc;
+    }
+  }
+
   return [...selectionsByActionId.values()]
-    .filter((entry) => entry.choiceId || entry.optionId || entry.optionIds?.length || entry.value !== undefined || entry.item);
+    .filter((entry) => entry.choiceId
+      || entry.optionId
+      || entry.optionIds?.length
+      || entry.value !== undefined
+      || entry.item
+      || entry.formula
+      || entry.result !== undefined
+      || entry.sourceType
+      || entry.ability
+      || entry.target
+      || entry.targetLabel
+      || entry.dc !== undefined);
 }
 
 function getDowntimeLibraryPack() {
@@ -3420,6 +3833,65 @@ async function handleCharacterDowntimeRollClick(event, { root = null, app = null
   return true;
 }
 
+function parseCharacterDowntimeContinuationPayload(value = "") {
+  const payload = parseCharacterDowntimeJsonObject(value);
+  return cleanText(payload.actionId) ? payload : null;
+}
+
+async function handleCharacterDowntimeContinueClick(event, { root = null, app = null, moduleApi } = {}) {
+  if (event?.type === "pointerup" && Number(event.button ?? 0) !== 0) {
+    return false;
+  }
+
+  const continueButton = getEventTargetElement(event)?.closest?.("[data-action='character-downtime-continue']");
+  if (!(continueButton instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (root?.contains instanceof Function && !root.contains(continueButton)) {
+    return false;
+  }
+
+  if (continueButton.disabled || continueButton.getAttribute?.("aria-disabled") === "true" || continueButton.matches?.(":disabled")) {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    return true;
+  }
+
+  const panel = continueButton.closest?.(".rm-character-downtime-tab")
+    ?? root?.querySelector?.(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
+    ?? root?.querySelector?.(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
+  const sheetApp = resolveCharacterDowntimeSheetApp(continueButton, app);
+  if (!panel || !sheetApp) {
+    return false;
+  }
+
+  if (handledCharacterDowntimeClickEvents.has(event)) {
+    return true;
+  }
+
+  handledCharacterDowntimeClickEvents.add(event);
+  event.preventDefault?.();
+  event.stopPropagation?.();
+
+  try {
+    const actor = getActorFromSheetApp(sheetApp);
+    const payload = parseCharacterDowntimeContinuationPayload(continueButton.dataset.payload);
+    if (!actor || !payload) {
+      return true;
+    }
+    await moduleApi.characterDowntimeService.createRequest(actor, payload);
+    ui.notifications?.info("Заявка на продолжение проекта отправлена.");
+    await rerenderActorSheet(sheetApp, moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to continue character downtime project.`, error);
+    ui.notifications?.error(error.message || "Не удалось продолжить проект.");
+  }
+
+  return true;
+}
+
 function bindCharacterDowntimeSubmitDelegation(root, app, moduleApi) {
   if (root.dataset.rebreyaCharacterDowntimeSubmitDelegated === "true") {
     return;
@@ -3439,6 +3911,18 @@ function bindCharacterDowntimeRollDelegation(root, app, moduleApi) {
 
   root.dataset.rebreyaCharacterDowntimeRollDelegated = "true";
   const listener = async (event) => handleCharacterDowntimeRollClick(event, { root, app, moduleApi });
+  for (const type of ["pointerup", "click"]) {
+    root.addEventListener(type, listener, { capture: true });
+  }
+}
+
+function bindCharacterDowntimeContinueDelegation(root, app, moduleApi) {
+  if (root.dataset.rebreyaCharacterDowntimeContinueDelegated === "true") {
+    return;
+  }
+
+  root.dataset.rebreyaCharacterDowntimeContinueDelegated = "true";
+  const listener = async (event) => handleCharacterDowntimeContinueClick(event, { root, app, moduleApi });
   for (const type of ["pointerup", "click"]) {
     root.addEventListener(type, listener, { capture: true });
   }
@@ -3466,6 +3950,20 @@ function bindCharacterDowntimeDocumentRollDelegation(moduleApi) {
   characterDowntimeDocumentRollDelegated = true;
   const listener = async (event) => {
     await handleCharacterDowntimeRollClick(event, { root: globalThis.document, moduleApi });
+  };
+  for (const type of ["pointerup", "click"]) {
+    globalThis.document.addEventListener(type, listener, { capture: true });
+  }
+}
+
+function bindCharacterDowntimeDocumentContinueDelegation(moduleApi) {
+  if (characterDowntimeDocumentContinueDelegated || !(globalThis.document?.addEventListener instanceof Function)) {
+    return;
+  }
+
+  characterDowntimeDocumentContinueDelegated = true;
+  const listener = async (event) => {
+    await handleCharacterDowntimeContinueClick(event, { root: globalThis.document, moduleApi });
   };
   for (const type of ["pointerup", "click"]) {
     globalThis.document.addEventListener(type, listener, { capture: true });
@@ -3561,15 +4059,19 @@ function bindCharacterDowntimeStateControls(panel, app, moduleApi) {
     }, listenerOptions);
   }
 
-  for (const control of Array.from(panel.querySelectorAll("[data-action='character-downtime-option-choice'], [data-action='character-downtime-option-checkbox'], [data-action='character-downtime-numeric-input']") ?? [])) {
+  for (const control of Array.from(panel.querySelectorAll("[data-action='character-downtime-rank-choice'], [data-action='character-downtime-option-choice'], [data-action='character-downtime-option-checkbox'], [data-action='character-downtime-numeric-input'], [data-action='character-downtime-resource-quantity'], [data-action='character-downtime-formula-input'], [data-action='character-downtime-formula-result'], [data-action='character-downtime-check-source'], [data-action='character-downtime-check-ability'], [data-action='character-downtime-check-target'], [data-action='character-downtime-check-dc']") ?? [])) {
     if (!(control instanceof HTMLElement) || !(control.addEventListener instanceof Function)) {
       continue;
     }
 
-    control.addEventListener("change", () => {
+    control.addEventListener("change", async () => {
       updateCharacterDowntimeFormState(actor, {
         targetActionSelections: readCharacterDowntimeTargetActionSelections(panel)
       });
+      const action = cleanText(control?.dataset?.action);
+      if (action === "character-downtime-check-source" || action === "character-downtime-rank-choice") {
+        await rerenderActorSheet(app, moduleApi);
+      }
     }, listenerOptions);
   }
 
@@ -3583,16 +4085,39 @@ function bindCharacterDowntimeStateControls(panel, app, moduleApi) {
       if (event.dataTransfer) {
         event.dataTransfer.dropEffect = "copy";
       }
+      control.classList?.add?.("is-dragover");
+    }, listenerOptions);
+    control.addEventListener("dragleave", () => {
+      control.classList?.remove?.("is-dragover");
     }, listenerOptions);
     control.addEventListener("drop", async (event) => {
       try {
+        control.classList?.remove?.("is-dragover");
         await handleCharacterDowntimeItemChoiceDrop(event, control, panel, app, moduleApi);
       }
       catch (error) {
+        control.classList?.remove?.("is-dragover");
         console.error(`${MODULE_ID} | Failed to select downtime item.`, error);
         ui.notifications?.error(error.message || "Не удалось выбрать предмет для простоя.");
       }
     }, listenerOptions);
+
+    const clearButton = control.querySelector?.("[data-action='character-downtime-clear-item-choice']");
+    if (clearButton?.addEventListener instanceof Function) {
+      clearButton.addEventListener("click", async (event) => {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        clearCharacterDowntimeItemChoice(control);
+        clearCharacterDowntimeDerivedItemSelections(panel, control);
+        const actor = getActorFromSheetApp(app);
+        if (actor?.id) {
+          updateCharacterDowntimeFormState(actor, {
+            targetActionSelections: readCharacterDowntimeTargetActionSelections(panel)
+          });
+          await rerenderActorSheet(app, moduleApi);
+        }
+      }, listenerOptions);
+    }
   }
 
   for (const button of Array.from(panel.querySelectorAll("[data-action='character-downtime-page']") ?? [])) {
@@ -3647,6 +4172,7 @@ function bindCharacterDowntimeLibraryButton(panel, app, moduleApi) {
 function bindCharacterDowntimePanel(root, app, moduleApi) {
   bindCharacterDowntimeSubmitDelegation(root, app, moduleApi);
   bindCharacterDowntimeRollDelegation(root, app, moduleApi);
+  bindCharacterDowntimeContinueDelegation(root, app, moduleApi);
 
   const panel = root.querySelector(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
     ?? root.querySelector(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
@@ -4519,6 +5045,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   patchD20HeroicRollDialog();
   bindCharacterDowntimeDocumentSubmitDelegation(moduleApi);
   bindCharacterDowntimeDocumentRollDelegation(moduleApi);
+  bindCharacterDowntimeDocumentContinueDelegation(moduleApi);
 
   const onRenderActorSheet = (app, html) => {
     const actor = getActorFromSheetApp(app);

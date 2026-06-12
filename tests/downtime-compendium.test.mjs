@@ -203,6 +203,50 @@ test("research downtime keeps rank costs and maps check thresholds into fragment
   ]);
 });
 
+test("long project downtime defines rank-based counters and configurable weekly progress", () => {
+  const longProject = normalizeDowntimeActivity(
+    DOWNTIME_DATA.activities.find((activity) => activity.id === "long-project")
+  );
+  const itemData = createDowntimeItemData(longProject, new Map());
+  const downtime = itemData.flags[MODULE_ID].downtime;
+  const rankAction = downtime.targetActions.find((action) => action.id === "long-project-rank");
+  const counterAction = downtime.targetActions.find((action) => action.id === "long-project-counter");
+  const resourceAction = downtime.targetActions.find((action) => action.id === "long-project-resources");
+  const checkAction = downtime.targetActions.find((action) => action.id === "long-project-check");
+  const resultAction = downtime.targetActions.find((action) => action.id === "long-project-result");
+
+  assert.equal(rankAction.actionType, "rankChoice");
+  assert.deepEqual(rankAction.rankChoice.rows.map((row) => [row.rank, row.counterMax]), [
+    [1, 4],
+    [2, 4],
+    [3, 4],
+    [4, 6],
+    [5, 6],
+    [6, 6],
+    [7, 8],
+    [8, 8],
+    [9, 8]
+  ]);
+  assert.equal(counterAction.actionType, "projectCounter");
+  assert.equal(counterAction.projectCounter.rankSourceActionId, "long-project-rank");
+  assert.deepEqual(counterAction.projectCounter.maxByRank.map((row) => [row.from, row.to, row.max]), [
+    [1, 3, 4],
+    [4, 6, 6],
+    [7, 9, 8]
+  ]);
+  assert.equal(resourceAction.actionType, "resources");
+  assert.equal(resourceAction.resources.quantity.unit, "gp");
+  assert.equal(resourceAction.resources.quantity.unitCost, 1);
+  assert.equal(checkAction.actionType, "check");
+  assert.equal(checkAction.configurable, true);
+  assert.equal(checkAction.outcomeMode, "dc-sum");
+  assert.equal(resultAction.actionType, "downtimeResult");
+  assert.equal(resultAction.resultFormula.outputField, "progressSteps");
+  assert.deepEqual(resultAction.resultFormula.terms.map((term) => [term.actionId, term.field]), [
+    ["long-project-check", "dcProgressSteps"]
+  ]);
+});
+
 test("carousing downtime stores social class resource choices", () => {
   const carousing = normalizeDowntimeActivity(
     DOWNTIME_DATA.activities.find((activity) => activity.id === "carousing")
@@ -254,10 +298,28 @@ test("core automated downtimes expose structured player inputs", () => {
   const gambling = byId.get("gambling");
   assert.equal(gambling.targetActions.find((action) => action.id === "gambling-stake")?.actionType, "numericInput");
   assert.equal(gambling.targetActions.find((action) => action.id === "gambling-insight")?.dcFormulaBySelection?.actionId, "gambling-stake");
+  assert.equal(gambling.targetActions.find((action) => action.id === "gambling-result")?.recordMode, "single-result");
+  assert.deepEqual(
+    gambling.targetActions.find((action) => action.id === "gambling-result")?.resultFormula?.terms.map((term) => [term.actionId, term.field]),
+    [
+      ["gambling-insight", "success"],
+      ["gambling-deception", "success"],
+      ["gambling-intimidation", "success"]
+    ]
+  );
 
   const tournament = byId.get("fighting-tournament");
   assert.equal(tournament.targetActions.find((action) => action.id === "tournament-large-city")?.actionType, "optionChoice");
   assert.equal(tournament.targetActions.find((action) => action.id === "tournament-athletics")?.dcFormulaBySelection?.actionId, "tournament-large-city");
+  assert.equal(tournament.targetActions.find((action) => action.id === "tournament-result")?.recordMode, "single-result");
+  assert.deepEqual(
+    tournament.targetActions.find((action) => action.id === "tournament-result")?.resultFormula?.terms.map((term) => [term.actionId, term.field]),
+    [
+      ["tournament-athletics", "success"],
+      ["tournament-acrobatics", "success"],
+      ["tournament-endurance", "success"]
+    ]
+  );
 
   const magicItemPurchase = byId.get("magic-item-purchase");
   assert.equal(magicItemPurchase.targetActions.find((action) => action.id === "magic-item-purchase-item")?.itemChoice?.sourceType, "magicItem");
