@@ -210,11 +210,15 @@ test("long project downtime defines rank-based counters and configurable weekly 
   const itemData = createDowntimeItemData(longProject, new Map());
   const downtime = itemData.flags[MODULE_ID].downtime;
   const rankAction = downtime.targetActions.find((action) => action.id === "long-project-rank");
+  const descriptionAction = downtime.targetActions.find((action) => action.id === "long-project-description");
   const counterAction = downtime.targetActions.find((action) => action.id === "long-project-counter");
   const resourceAction = downtime.targetActions.find((action) => action.id === "long-project-resources");
   const checkAction = downtime.targetActions.find((action) => action.id === "long-project-check");
   const resultAction = downtime.targetActions.find((action) => action.id === "long-project-result");
 
+  assert.equal(descriptionAction.actionType, "descriptionBlock");
+  assert.equal(descriptionAction.descriptionBlock.title, "");
+  assert.equal(descriptionAction.descriptionBlock.description, "");
   assert.equal(rankAction.actionType, "rankChoice");
   assert.deepEqual(rankAction.rankChoice.rows.map((row) => [row.rank, row.counterMax]), [
     [1, 4],

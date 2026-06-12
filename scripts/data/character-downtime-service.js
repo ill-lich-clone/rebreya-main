@@ -38,7 +38,7 @@ const ABILITY_LABELS = Object.freeze({
 const ROLLABLE_SOURCE_TYPES = new Set(["skill", "ability", "save", "tool"]);
 const ARCHIVED_REQUEST_STATUSES = new Set(["completed", "rejected"]);
 const REQUEST_PAGE_SIZE = 5;
-const NON_CHECK_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "projectCounter", "downtimeResult"]);
+const NON_CHECK_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "projectCounter", "descriptionBlock", "downtimeResult"]);
 const NON_CHECK_ACTION_SUMMARY_LABELS = Object.freeze({
   resources: "Ресурсы",
   itemChoice: "Предмет",
@@ -47,6 +47,7 @@ const NON_CHECK_ACTION_SUMMARY_LABELS = Object.freeze({
   rankChoice: "Выбор ранга",
   formulaRoll: "Формула",
   projectCounter: "Счётчик",
+  descriptionBlock: "Описание",
   downtimeResult: "Итог"
 });
 
@@ -442,6 +443,10 @@ function buildSubmittedActionOutcomeSummary(check = {}) {
   if (actionType === "optionChoice") {
     return cleanText(check.selectedOptionLabel);
   }
+  if (actionType === "descriptionBlock") {
+    const block = asObject(check.descriptionBlock);
+    return cleanText(block.title) || cleanText(block.description);
+  }
   if (actionType === "downtimeResult") {
     return buildResultLabel(check.result) || cleanText(check.label);
   }
@@ -567,6 +572,8 @@ function normalizeSelectionEntry(entry = {}) {
   const formula = cleanFormulaText(entry?.formula);
   const result = toFiniteNumber(entry?.result);
   const item = normalizeSelectedItem(entry?.item);
+  const hasTitle = Object.hasOwn(entry ?? {}, "title");
+  const hasDescription = Object.hasOwn(entry ?? {}, "description");
 
   if (choiceId) {
     selection.choiceId = choiceId;
@@ -608,6 +615,12 @@ function normalizeSelectionEntry(entry = {}) {
   }
   if (item) {
     selection.item = item;
+  }
+  if (hasTitle) {
+    selection.title = cleanText(entry.title);
+  }
+  if (hasDescription) {
+    selection.description = cleanText(entry.description);
   }
 
   return selection;
@@ -931,6 +944,18 @@ function buildComputedResourceCost(action = {}, resourceQuantity = null, mappedA
   };
 }
 
+function buildDescriptionBlock(action = {}, selection = {}) {
+  const sourceBlock = action?.descriptionBlock && typeof action.descriptionBlock === "object" && !Array.isArray(action.descriptionBlock)
+    ? action.descriptionBlock
+    : {};
+  return {
+    title: Object.hasOwn(selection ?? {}, "title") ? cleanText(selection.title) : cleanText(sourceBlock.title),
+    description: Object.hasOwn(selection ?? {}, "description") ? cleanText(selection.description) : cleanText(sourceBlock.description),
+    titleLabel: cleanText(sourceBlock.titleLabel) || "Название",
+    descriptionLabel: cleanText(sourceBlock.descriptionLabel) || "Описание"
+  };
+}
+
 function mapTemplateTargetAction(action = {}, index = 0, selections = new Map(), mappedActionsById = new Map()) {
   const actionType = cleanText(action.actionType) || "check";
   const actionId = cleanText(action.id);
@@ -948,6 +973,7 @@ function mapTemplateTargetAction(action = {}, index = 0, selections = new Map(),
   const selectedItem = actionType === "itemChoice" ? normalizeSelectedItem(selection.item) : null;
   const numericInput = actionType === "numericInput" ? buildNumericInput(action, selection) : null;
   const formulaRoll = actionType === "formulaRoll" ? buildFormulaRoll(action, selection, mappedActionsById) : null;
+  const descriptionBlock = actionType === "descriptionBlock" ? buildDescriptionBlock(action, selection) : null;
   const resourceQuantity = actionType === "resources" ? buildResourceQuantity(action, selection, mappedActionsById) : null;
   const computedCost = actionType === "resources" ? buildComputedResourceCost(action, resourceQuantity, mappedActionsById) : null;
   const projectCounter = actionType === "projectCounter" ? buildProjectCounter(action, selection, mappedActionsById) : null;
@@ -988,6 +1014,7 @@ function mapTemplateTargetAction(action = {}, index = 0, selections = new Map(),
     resourceQuantity,
     computedCost,
     projectCounter,
+    descriptionBlock,
     configurableCheck,
     value: numericInput?.value,
     selectedFormula: formulaRoll?.selectedFormula ?? "",
@@ -1015,7 +1042,9 @@ function mapTemplateTargetAction(action = {}, index = 0, selections = new Map(),
               ? [numericInput?.displayValue, numericInput?.unit].filter(Boolean).join(" ") || cleanText(action.label)
               : (actionType === "formulaRoll"
                 ? (formulaRoll?.summary || cleanText(action.label))
-                : buildCheckSummary(checkSummarySource)))))))
+                : (actionType === "descriptionBlock"
+                  ? (descriptionBlock?.title || descriptionBlock?.description || cleanText(action.label))
+                  : buildCheckSummary(checkSummarySource))))))))
       ,
     hasResourceChoices: resourceChoices.length > 0,
     hasResourceQuantity: Boolean(resourceQuantity),
@@ -1030,6 +1059,7 @@ function mapTemplateTargetAction(action = {}, index = 0, selections = new Map(),
     isRankAction: actionType === "rankChoice",
     isFormulaAction: actionType === "formulaRoll",
     isProjectCounterAction: actionType === "projectCounter",
+    isDescriptionBlockAction: actionType === "descriptionBlock",
     isConfigurableCheckAction: Boolean(configurableCheck)
   };
   return mapped;
@@ -1055,8 +1085,9 @@ function buildTemplateView(action = null, formState = {}) {
   const rankActions = targetActions.filter((entry) => entry.actionType === "rankChoice");
   const formulaActions = targetActions.filter((entry) => entry.actionType === "formulaRoll");
   const counterActions = targetActions.filter((entry) => entry.actionType === "projectCounter");
+  const descriptionActions = targetActions.filter((entry) => entry.actionType === "descriptionBlock");
   const configurableCheckActions = targetActions.filter((entry) => entry.configurableCheck);
-  const interactiveActionTypes = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "projectCounter"]);
+  const interactiveActionTypes = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "projectCounter", "descriptionBlock"]);
   const checkActions = targetActions.filter((entry) => !interactiveActionTypes.has(entry.actionType)
     && entry.actionType !== "downtimeResult"
     && !entry.configurableCheck);
@@ -1080,6 +1111,7 @@ function buildTemplateView(action = null, formState = {}) {
     rankActions,
     formulaActions,
     counterActions,
+    descriptionActions,
     configurableCheckActions,
     interactiveActions,
     checkActions,
@@ -1096,6 +1128,7 @@ function buildTemplateView(action = null, formState = {}) {
     hasRankActions: rankActions.length > 0,
     hasFormulaActions: formulaActions.length > 0,
     hasCounterActions: counterActions.length > 0,
+    hasDescriptionActions: descriptionActions.length > 0,
     hasConfigurableCheckActions: configurableCheckActions.length > 0,
     hasInteractiveActions: interactiveActions.length > 0,
     hasCheckActions: checkActions.length > 0,
@@ -1317,6 +1350,11 @@ function buildContinuationSelection(action = {}, counterValue = undefined) {
       entry.result = result;
     }
   }
+  else if (actionType === "descriptionBlock") {
+    const block = asObject(action.descriptionBlock);
+    entry.title = cleanText(block.title);
+    entry.description = cleanText(block.description);
+  }
   else if (actionType === "check") {
     for (const key of ["sourceType", "ability", "target", "targetLabel"]) {
       const value = cleanText(action[key]);
@@ -1336,8 +1374,44 @@ function buildContinuationSelection(action = {}, counterValue = undefined) {
   return Object.keys(entry).length > 1 ? entry : null;
 }
 
-function buildProjectContinuationPayload(request = {}, actions = [], counterValue = 0) {
-  const actionId = cleanText(request.templateUuid) || cleanText(request.actionId);
+function getContinuationActionAliases(action = {}) {
+  return new Set([
+    cleanText(action.id),
+    cleanText(action.templateUuid),
+    cleanText(action.templateItemId),
+    cleanText(action.downtimeId)
+  ].filter(Boolean));
+}
+
+function resolveContinuationActionId(request = {}, actionCatalog = []) {
+  const candidates = [
+    cleanText(request.templateUuid),
+    cleanText(request.actionId),
+    cleanText(request.templateItemId)
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const match = (Array.isArray(actionCatalog) ? actionCatalog : [])
+      .find((action) => getContinuationActionAliases(action).has(candidate));
+    if (match) {
+      return cleanText(match.id) || cleanText(match.templateUuid) || candidate;
+    }
+  }
+
+  const requestedLabel = cleanText(request.actionLabel) || cleanText(request.title);
+  if (requestedLabel) {
+    const labelMatch = (Array.isArray(actionCatalog) ? actionCatalog : [])
+      .find((action) => cleanText(action.label) === requestedLabel || cleanText(action.name) === requestedLabel);
+    if (labelMatch) {
+      return cleanText(labelMatch.id) || cleanText(labelMatch.templateUuid);
+    }
+  }
+
+  return cleanText(request.templateUuid) || cleanText(request.actionId);
+}
+
+function buildProjectContinuationPayload(request = {}, actions = [], counterValue = 0, actionCatalog = []) {
+  const actionId = resolveContinuationActionId(request, actionCatalog);
   if (!actionId) {
     return "";
   }
@@ -1354,7 +1428,7 @@ function buildProjectContinuationPayload(request = {}, actions = [], counterValu
   });
 }
 
-function buildRequestProjectCounter(request = {}, actions = [], { availableWeeks = 0 } = {}) {
+function buildRequestProjectCounter(request = {}, actions = [], { availableWeeks = 0, actionCatalog = [] } = {}) {
   const counterAction = actions.find((action) => cleanText(action.actionType) === "projectCounter");
   if (!counterAction) {
     return null;
@@ -1370,7 +1444,8 @@ function buildRequestProjectCounter(request = {}, actions = [], { availableWeeks
   const gained = Math.max(0, getProjectCounterProgressSteps(actions));
   const value = Math.min(max, previousValue + gained);
   const imagePath = buildProjectCounterImagePath(max, value);
-  const canContinue = value < max && toInteger(availableWeeks, 0) > 0 && Boolean(cleanText(request.templateUuid) || cleanText(request.actionId));
+  const continuePayloadJson = buildProjectContinuationPayload(request, actions, value, actionCatalog);
+  const canContinue = value < max && toInteger(availableWeeks, 0) > 0 && Boolean(continuePayloadJson);
   return {
     ...counter,
     previousValue,
@@ -1382,11 +1457,11 @@ function buildRequestProjectCounter(request = {}, actions = [], { availableWeeks
     imagePath,
     hasImagePath: Boolean(imagePath),
     canContinue,
-    continuePayloadJson: canContinue ? buildProjectContinuationPayload(request, actions, value) : ""
+    continuePayloadJson: canContinue ? continuePayloadJson : ""
   };
 }
 
-function mapRequest(request = {}, { groupId = "", availableWeeks = 0 } = {}) {
+function mapRequest(request = {}, { groupId = "", availableWeeks = 0, actionCatalog = [] } = {}) {
   const status = cleanText(request.status) || "pending";
   const meta = STATUS_META[status] ?? {
     label: status || "Заявка",
@@ -1411,7 +1486,7 @@ function mapRequest(request = {}, { groupId = "", availableWeeks = 0 } = {}) {
       hasRollTargets: rollTargets.some((target) => target.canRoll || target.hasResult)
     };
   });
-  const projectCounter = buildRequestProjectCounter(request, checks, { availableWeeks });
+  const projectCounter = buildRequestProjectCounter(request, checks, { availableWeeks, actionCatalog });
   const isArchived = ARCHIVED_REQUEST_STATUSES.has(status);
   const isCurrentProject = Boolean(projectCounter && projectCounter.value < projectCounter.max && isArchived);
 
@@ -1431,7 +1506,8 @@ function mapRequest(request = {}, { groupId = "", availableWeeks = 0 } = {}) {
     hasChecks: checks.length > 0,
     hasResult: Boolean(cleanText(request.result)),
     isArchived,
-    isCurrentProject
+    isCurrentProject,
+    showStatusBadge: !isCurrentProject
   };
 }
 
@@ -1530,7 +1606,11 @@ export class CharacterDowntimeService {
       : "";
     const requests = (Array.isArray(snapshot?.requests) ? snapshot.requests : [])
       .filter((request) => request?.actorId === actor.id)
-      .map((request) => mapRequest(request, { groupId: snapshot.groupId, availableWeeks: balance.availableWeeks }));
+      .map((request) => mapRequest(request, {
+        groupId: snapshot.groupId,
+        availableWeeks: balance.availableWeeks,
+        actionCatalog
+      }));
     const currentProjects = requests.filter((request) => request.isCurrentProject);
     const activeRequests = requests.filter((request) => !request.isArchived && !request.isCurrentProject);
     const archivedRequests = requests.filter((request) => request.isArchived && !request.isCurrentProject);

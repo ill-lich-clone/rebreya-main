@@ -35,7 +35,7 @@ const DOWNTIME_STATUS_META = Object.freeze({
 
 const DOWNTIME_ARCHIVE_STATUSES = new Set(["completed", "rejected"]);
 const DOWNTIME_PAGE_SIZE = 5;
-const DOWNTIME_NON_ROLL_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "downtimeResult"]);
+const DOWNTIME_NON_ROLL_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "descriptionBlock", "downtimeResult"]);
 const DOWNTIME_NON_ROLL_ACTION_SUMMARY_LABELS = Object.freeze({
   resources: "Ресурсы",
   itemChoice: "Предмет",
@@ -43,6 +43,7 @@ const DOWNTIME_NON_ROLL_ACTION_SUMMARY_LABELS = Object.freeze({
   optionChoice: "Выбор",
   rankChoice: "Выбор ранга",
   formulaRoll: "Формула",
+  descriptionBlock: "Описание",
   downtimeResult: "Итог"
 });
 
@@ -63,6 +64,7 @@ const DOWNTIME_ACTION_TYPE_OPTIONS = Object.freeze([
   { value: "optionChoice", label: "Выбор варианта", help: "Игрок выбирает один или несколько заранее описанных вариантов." },
   { value: "numericInput", label: "Числовой ресурс", help: "Игрок вводит количество с ограничениями min/max/default." },
   { value: "formulaRoll", label: "Формула", help: "Игрок или мастер записывает формулу или вычисленное значение." },
+  { value: "descriptionBlock", label: "Блок описания", help: "Игрок заполняет название и описание заявки или проекта." },
   { value: "choice", label: "Выбор проверки", help: "Мастер задаёт допустимые варианты, игрок выбирает один перед броском." },
   { value: "downtimeResult", label: "Итог простоя", help: "Общий итог по всем проверкам заявки: сумма, успехи, пороги и итоговые эффекты." },
   { value: "tool", label: "Инструмент", help: "Запрос владения инструментом из листа персонажа." },
@@ -72,7 +74,7 @@ const DOWNTIME_ACTION_TYPE_OPTIONS = Object.freeze([
 ]);
 
 const DOWNTIME_ACTION_TYPE_SELECT_OPTIONS = Object.freeze(DOWNTIME_ACTION_TYPE_OPTIONS
-  .filter((option) => ["check", "resources", "rankChoice", "optionChoice", "numericInput", "formulaRoll", "downtimeResult", "freeform"].includes(option.value)));
+  .filter((option) => ["check", "resources", "rankChoice", "optionChoice", "numericInput", "formulaRoll", "descriptionBlock", "downtimeResult", "freeform"].includes(option.value)));
 
 const DOWNTIME_SOURCE_TYPE_OPTIONS = Object.freeze([
   { value: "ability", label: "Характеристика", help: "Чистая проверка характеристики без навыка." },
@@ -613,6 +615,32 @@ function buildNumericInputPanel(action = {}) {
           <label title="Целевое действие, к которому применить эффект.">Куда бонус</label>
           <input type="text" value="${escapeHtml(effect.targetActionId ?? "")}" data-field="target-action-numeric-effect-target" placeholder="research-check">
         </div>
+      </div>
+    </div>
+  `;
+}
+
+function normalizeDescriptionBlock(action = {}) {
+  const block = action.descriptionBlock && typeof action.descriptionBlock === "object" && !Array.isArray(action.descriptionBlock)
+    ? action.descriptionBlock
+    : {};
+  return {
+    title: cleanText(block.title),
+    description: cleanText(block.description)
+  };
+}
+
+function buildDescriptionBlockPanel(action = {}) {
+  const block = normalizeDescriptionBlock(action);
+  return `
+    <div class="rm-downtime-description-block-panel" data-description-block-panel>
+      <div class="rm-field">
+        <label title="Предзаполненное название. Игрок сможет изменить его в заявке.">Название</label>
+        <input type="text" value="${escapeHtml(block.title)}" data-field="target-action-description-title" placeholder="Название проекта">
+      </div>
+      <div class="rm-field">
+        <label title="Предзаполненное описание. Игрок сможет изменить его в заявке.">Описание</label>
+        <textarea rows="5" data-field="target-action-description-text" placeholder="Что персонаж хочет сделать?">${escapeHtml(block.description)}</textarea>
       </div>
     </div>
   `;
@@ -1253,6 +1281,13 @@ function readNumericInput(root) {
   return input;
 }
 
+function readDescriptionBlock(root) {
+  return {
+    title: readFieldValue(root, "target-action-description-title"),
+    description: readFieldValue(root, "target-action-description-text")
+  };
+}
+
 function readOptionChoiceOptions(root) {
   return Array.from(root?.querySelectorAll?.("[data-option-choice-row]") ?? [])
     .map((row, index) => ({
@@ -1455,6 +1490,12 @@ function buildOutcomeSummary(check, outcomeMode) {
   if (cleanText(check?.actionType) === "formulaRoll") {
     return cleanText(check?.selectedFormula) || "Формула";
   }
+  if (cleanText(check?.actionType) === "descriptionBlock") {
+    const block = check?.descriptionBlock && typeof check.descriptionBlock === "object" && !Array.isArray(check.descriptionBlock)
+      ? check.descriptionBlock
+      : {};
+    return cleanText(block.title) || cleanText(block.description) || "Описание";
+  }
   if (cleanText(check?.actionType) === "downtimeResult") {
     return buildDowntimeCheckResultLabel(check?.result) || cleanText(check?.label) || "Итог";
   }
@@ -1587,6 +1628,17 @@ function buildDowntimeTargetActionDetailLines(action = {}) {
   }
   if (actionType === "formulaRoll" && cleanText(action.selectedFormula)) {
     lines.push(`Формула: ${cleanText(action.selectedFormula)}`);
+  }
+  if (actionType === "descriptionBlock") {
+    const block = action?.descriptionBlock && typeof action.descriptionBlock === "object" && !Array.isArray(action.descriptionBlock)
+      ? action.descriptionBlock
+      : {};
+    if (cleanText(block.title)) {
+      lines.push(`Название: ${cleanText(block.title)}`);
+    }
+    if (cleanText(block.description)) {
+      lines.push(`Описание: ${cleanText(block.description)}`);
+    }
   }
   if (!DOWNTIME_NON_ROLL_ACTION_TYPES.has(actionType) && action?.result) {
     const result = action.result;
@@ -3140,11 +3192,12 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const isNumericAction = selectedActionType === "numericInput";
     const isResultAction = selectedActionType === "downtimeResult";
     const isFormulaAction = selectedActionType === "formulaRoll";
+    const isDescriptionAction = selectedActionType === "descriptionBlock";
     const usesResultFormula = isResultAction
       && action.resultFormula
       && typeof action.resultFormula === "object"
       && !Array.isArray(action.resultFormula);
-    const showOutcomeStep = !isResultAction;
+    const showOutcomeStep = !isResultAction && !isDescriptionAction;
     const choiceRows = Array.from({ length: MAX_DOWNTIME_TARGET_CHOICES }, (_entry, index) =>
       buildDowntimeTargetChoiceRow(choices[index] ?? {}, index, { visible: index < visibleChoiceCount, actor }));
     const checkEffect = action.checkEffect && typeof action.checkEffect === "object" ? action.checkEffect : {};
@@ -3190,6 +3243,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             <h4 data-numeric-input-heading${isNumericAction ? "" : " hidden"}>Числовой ресурс</h4>
             <h4 data-result-mapping-heading${isResultAction ? "" : " hidden"}>Результат по порогам</h4>
             <h4 data-formula-roll-heading${isFormulaAction ? "" : " hidden"}>Формула</h4>
+            <h4 data-description-block-heading${isDescriptionAction ? "" : " hidden"}>Блок описания</h4>
           </header>
           ${isCheckAction ? `
             <div data-target-choice-panel>
@@ -3234,6 +3288,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 <input type="text" value="${escapeHtml(action.selectedFormula || action.formula || "")}" data-field="target-action-formula" placeholder="1d20 + @mod">
               </div>
             </div>
+          </div>
+          <div${isDescriptionAction ? "" : " hidden"} data-description-block-panel-shell>
+            ${buildDescriptionBlockPanel(action)}
           </div>
         </section>
 
@@ -3415,6 +3472,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       };
     }
 
+    if (selectedActionType === "descriptionBlock") {
+      return {
+        ...existingAction,
+        id: cleanText(existingAction.id) || buildNextTargetActionId(existingActions),
+        label: cleanText(existingAction.label) || "Описание проекта",
+        actionType: "descriptionBlock",
+        descriptionBlock: readDescriptionBlock(root)
+      };
+    }
+
     if (selectedActionType === "downtimeResult") {
       const resultFormula = readResultFormula(root);
       const hasResultFormula = resultFormula.terms.some((term) => cleanText(term.actionId));
@@ -3483,6 +3550,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const numericHeading = root?.querySelector?.("[data-numeric-input-heading]");
     const resultHeading = root?.querySelector?.("[data-result-mapping-heading]");
     const formulaHeading = root?.querySelector?.("[data-formula-roll-heading]");
+    const descriptionHeading = root?.querySelector?.("[data-description-block-heading]");
     const choicePanel = root?.querySelector?.("[data-target-choice-panel]");
     const resourcePanelShell = root?.querySelector?.("[data-resource-panel-shell]");
     const rankPanelShell = root?.querySelector?.("[data-rank-choice-panel-shell]");
@@ -3490,6 +3558,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const numericPanelShell = root?.querySelector?.("[data-numeric-input-panel-shell]");
     const resultPanelShell = root?.querySelector?.("[data-result-mapping-panel-shell]");
     const formulaPanelShell = root?.querySelector?.("[data-formula-roll-panel-shell]");
+    const descriptionPanelShell = root?.querySelector?.("[data-description-block-panel-shell]");
     const addPurchaseButton = root?.querySelector?.("[data-action='target-action-add-purchase']");
     const purchaseRows = Array.from(root?.querySelectorAll?.("[data-resource-purchase-row]") ?? []);
     const stepButtons = Array.from(root?.querySelectorAll?.("[data-action='target-action-step']") ?? []);
@@ -3579,6 +3648,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const numericActive = actionType === "numericInput";
       const resultActive = actionType === "downtimeResult";
       const formulaActive = actionType === "formulaRoll";
+      const descriptionActive = actionType === "descriptionBlock";
       if (choiceHeading) {
         choiceHeading.hidden = !checkActive;
       }
@@ -3599,6 +3669,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       if (formulaHeading) {
         formulaHeading.hidden = !formulaActive;
+      }
+      if (descriptionHeading) {
+        descriptionHeading.hidden = !descriptionActive;
       }
       if (choicePanel) {
         choicePanel.hidden = !checkActive;
@@ -3621,16 +3694,19 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       if (formulaPanelShell) {
         formulaPanelShell.hidden = !formulaActive;
       }
+      if (descriptionPanelShell) {
+        descriptionPanelShell.hidden = !descriptionActive;
+      }
       const outcomeButton = stepButtons.find((button) => button.dataset?.step === "outcome");
       const outcomePanel = stepPanels.find((panel) => panel.dataset?.stepPanel === "outcome");
       if (outcomeButton) {
-        outcomeButton.hidden = resultActive;
+        outcomeButton.hidden = resultActive || descriptionActive;
       }
-      if (outcomePanel && resultActive) {
+      if (outcomePanel && (resultActive || descriptionActive)) {
         outcomePanel.hidden = true;
       }
       const activeStep = stepButtons.find((button) => button.classList?.contains?.("is-active"))?.dataset?.step;
-      if (resultActive && activeStep === "outcome") {
+      if ((resultActive || descriptionActive) && activeStep === "outcome") {
         this.#setDowntimeTargetActionStep(root, "variants", dialog);
       }
     };

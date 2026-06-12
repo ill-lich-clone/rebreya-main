@@ -3055,6 +3055,20 @@ function readCharacterDowntimeTargetActionSelections(panel) {
     }
   }
 
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-description-title']") ?? [])) {
+    const selection = ensureSelection(control?.dataset?.targetActionId);
+    if (selection) {
+      selection.title = cleanText(control?.value);
+    }
+  }
+
+  for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-description-text']") ?? [])) {
+    const selection = ensureSelection(control?.dataset?.targetActionId);
+    if (selection) {
+      selection.description = cleanText(control?.value);
+    }
+  }
+
   for (const control of Array.from(panel?.querySelectorAll?.("[data-action='character-downtime-check-source']") ?? [])) {
     const selection = ensureSelection(control?.dataset?.targetActionId);
     const sourceType = cleanText(control?.value);
@@ -3107,7 +3121,9 @@ function readCharacterDowntimeTargetActionSelections(panel) {
       || entry.ability
       || entry.target
       || entry.targetLabel
-      || entry.dc !== undefined);
+      || entry.dc !== undefined
+      || entry.title !== undefined
+      || entry.description !== undefined);
 }
 
 function getDowntimeLibraryPack() {
@@ -4059,7 +4075,7 @@ function bindCharacterDowntimeStateControls(panel, app, moduleApi) {
     }, listenerOptions);
   }
 
-  for (const control of Array.from(panel.querySelectorAll("[data-action='character-downtime-rank-choice'], [data-action='character-downtime-option-choice'], [data-action='character-downtime-option-checkbox'], [data-action='character-downtime-numeric-input'], [data-action='character-downtime-resource-quantity'], [data-action='character-downtime-formula-input'], [data-action='character-downtime-formula-result'], [data-action='character-downtime-check-source'], [data-action='character-downtime-check-ability'], [data-action='character-downtime-check-target'], [data-action='character-downtime-check-dc']") ?? [])) {
+  for (const control of Array.from(panel.querySelectorAll("[data-action='character-downtime-rank-choice'], [data-action='character-downtime-option-choice'], [data-action='character-downtime-option-checkbox'], [data-action='character-downtime-numeric-input'], [data-action='character-downtime-resource-quantity'], [data-action='character-downtime-formula-input'], [data-action='character-downtime-formula-result'], [data-action='character-downtime-description-title'], [data-action='character-downtime-description-text'], [data-action='character-downtime-check-source'], [data-action='character-downtime-check-ability'], [data-action='character-downtime-check-target'], [data-action='character-downtime-check-dc']") ?? [])) {
     if (!(control instanceof HTMLElement) || !(control.addEventListener instanceof Function)) {
       continue;
     }

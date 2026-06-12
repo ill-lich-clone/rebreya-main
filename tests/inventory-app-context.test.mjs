@@ -1093,8 +1093,9 @@ test("InventoryApp downtime controls call module API handlers", async () => {
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-action-target-label\""), false);
     assert.equal(targetDialog?.config?.content.includes("data-field=\"target-choice-roll-mode\""), false);
     const actionTypeSelect = targetDialog?.config?.content.match(/<select data-field="target-action-type">([\s\S]*?)<\/select>/u)?.[1] ?? "";
-    assert.equal((actionTypeSelect.match(/<option/g) ?? []).length, 8);
+    assert.equal((actionTypeSelect.match(/<option/g) ?? []).length, 9);
     assert.equal(actionTypeSelect.includes(">Проверка<"), true);
+    assert.equal(actionTypeSelect.includes(">Блок описания<"), true);
     assert.equal(actionTypeSelect.includes(">Ресурсы<"), true);
     assert.equal(actionTypeSelect.includes(">Выбор ранга<"), true);
     assert.equal(actionTypeSelect.includes(">Выбор варианта<"), true);
@@ -1729,6 +1730,7 @@ test("InventoryApp downtime target dialog preserves constructor action types", a
         }]
       }
     }));
+    const downtimeSnapshot = app.moduleApi.getDowntimeSnapshot();
     app.element = root;
     await app._onRender({}, {});
 
@@ -1738,6 +1740,38 @@ test("InventoryApp downtime target dialog preserves constructor action types", a
     assert.match(rankDialog.config.content, /<option value="rankChoice"[^>]*selected[^>]*>Выбор ранга<\/option>/u);
     assert.equal(rankDialog.config.content.includes("data-rank-choice-panel"), true);
     rankDialog.close?.();
+    await dialogPromise;
+
+    const descriptionButton = createFakeControl({
+      dataset: {
+        action: "downtime-target-action",
+        requestId: "downtime-1",
+        checkId: "research-description"
+      }
+    });
+    root.querySelectorAll = (selector) => selector === "[data-action='downtime-target-action']"
+      ? [descriptionButton]
+      : [];
+    app.element = root;
+    downtimeSnapshot.requests[0].checks.push({
+      id: "research-description",
+      label: "Описание проекта",
+      actionType: "descriptionBlock",
+      descriptionBlock: {
+        title: "Проект",
+        description: "Описание"
+      }
+    });
+    await app._onRender({}, {});
+
+    dialogPromise = dispatchClick(descriptionButton);
+    await new Promise((resolve) => setImmediate(resolve));
+    const descriptionDialog = globalThis.Dialog.instances.at(-1);
+    assert.match(descriptionDialog.config.content, /<option value="descriptionBlock"[^>]*selected[^>]*>Блок описания<\/option>/u);
+    assert.equal(descriptionDialog.config.content.includes("data-description-block-panel"), true);
+    assert.equal(descriptionDialog.config.content.includes("data-field=\"target-action-description-title\""), true);
+    assert.equal(descriptionDialog.config.content.includes("data-field=\"target-action-description-text\""), true);
+    descriptionDialog.close?.();
     await dialogPromise;
 
     dialogPromise = dispatchClick(stepsButton);

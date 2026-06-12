@@ -416,6 +416,8 @@ function normalizeSelectionEntry(entry = {}) {
   const formula = cleanFormulaText(entry?.formula);
   const result = toFiniteNumber(entry?.result);
   const item = normalizeSelectedItem(entry?.item);
+  const hasTitle = Object.hasOwn(entry ?? {}, "title");
+  const hasDescription = Object.hasOwn(entry ?? {}, "description");
   const sourceType = cleanId(entry?.sourceType);
   const ability = cleanId(entry?.ability);
   const target = cleanId(entry?.target);
@@ -457,6 +459,12 @@ function normalizeSelectionEntry(entry = {}) {
   }
   if (dc !== undefined) {
     selection.dc = dc;
+  }
+  if (hasTitle) {
+    selection.title = cleanString(entry.title);
+  }
+  if (hasDescription) {
+    selection.description = cleanString(entry.description);
   }
 
   return selection;
@@ -954,6 +962,23 @@ function applySelectionDrivenFormula(action = {}, selections = new Map()) {
   };
 }
 
+function applyDescriptionBlockSelection(action = {}, selection = {}) {
+  const source = asObject(action);
+  if (cleanId(source.actionType) !== "descriptionBlock") {
+    return source;
+  }
+
+  const block = asObject(source.descriptionBlock);
+  return {
+    ...clone(source),
+    descriptionBlock: {
+      ...clone(block),
+      title: Object.hasOwn(selection ?? {}, "title") ? cleanString(selection.title) : cleanString(block.title),
+      description: Object.hasOwn(selection ?? {}, "description") ? cleanString(selection.description) : cleanString(block.description)
+    }
+  };
+}
+
 function applyTargetActionSelection(action = {}, selections = new Map(), selectedActionsById = new Map()) {
   const source = asObject(action);
   const selection = selections.get(cleanId(source.id)) ?? {};
@@ -983,6 +1008,9 @@ function applyTargetActionSelection(action = {}, selections = new Map(), selecte
   }
   else if (actionType === "formulaRoll") {
     selectedAction = applySelectedFormulaRoll(source, selection, selectedActionsById);
+  }
+  else if (actionType === "descriptionBlock") {
+    selectedAction = applyDescriptionBlockSelection(source, selection);
   }
   return applySelectionDrivenFormula(selectedAction, selections);
 }
@@ -1045,12 +1073,14 @@ function buildDowntimeTemplateActionFromItem(item) {
   const config = getDowntimeTemplateConfig(item);
   const descriptionHtml = cleanString(config.descriptionHtml)
     || cleanString(getObjectPath(item, "system.description.value"));
+  const downtimeId = cleanId(config.downtimeId);
   return {
     id: templateUuid,
     label: cleanString(item.name) || "Простой",
     source: "item",
     templateUuid,
     templateItemId: cleanId(item.id),
+    ...(downtimeId ? { downtimeId } : {}),
     rank: cleanString(config.rank),
     duration: cleanString(config.duration),
     summary: cleanString(config.summary),
@@ -1949,7 +1979,10 @@ export class DowntimeService {
   async #resolveAction(context, actionId) {
     const safeActionId = cleanId(actionId);
     const templateAction = this.#getDowntimeTemplateActions(context)
-      .find((action) => action.id === safeActionId || action.templateUuid === safeActionId || action.templateItemId === safeActionId);
+      .find((action) => action.id === safeActionId
+        || action.templateUuid === safeActionId
+        || action.templateItemId === safeActionId
+        || action.downtimeId === safeActionId);
     if (templateAction) {
       return templateAction;
     }

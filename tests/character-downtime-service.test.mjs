@@ -1270,6 +1270,58 @@ test("CharacterDowntimeService maps long project counter progress and continuati
   });
 });
 
+test("CharacterDowntimeService continues legacy long projects through the current template id", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 1,
+          totalGrantedWeeks: 2
+        }
+      }],
+      requests: [{
+        id: "downtime-project",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionId: "long-project",
+        actionLabel: "Long Project",
+        title: "Find a patron",
+        weeks: 1,
+        status: "completed",
+        checks: [{
+          id: "long-project-counter",
+          label: "Project counter",
+          actionType: "projectCounter",
+          projectCounter: {
+            current: 1,
+            max: 6
+          }
+        }]
+      }],
+      actionCatalog: [{
+        id: "Compendium.world.rebreya-downtime.Item.current-long-project",
+        templateUuid: "Compendium.world.rebreya-downtime.Item.current-long-project",
+        templateItemId: "current-long-project",
+        downtimeId: "long-project",
+        label: "Long Project"
+      }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }));
+  const continuation = JSON.parse(context.currentProjects[0].projectCounter.continuePayloadJson);
+
+  assert.equal(continuation.actionId, "Compendium.world.rebreya-downtime.Item.current-long-project");
+  assert.equal(context.currentProjects[0].showStatusBadge, false);
+});
+
 test("CharacterDowntimeService keeps unfinished completed long projects in current projects", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     snapshot: {
@@ -1349,6 +1401,53 @@ test("CharacterDowntimeService keeps unfinished completed long projects in curre
   assert.equal(context.archiveCount, 0);
   assert.equal(context.currentProjects[0].projectCounter.value, 2);
   assert.equal(context.currentProjects[0].projectCounter.canContinue, true);
+});
+
+test("CharacterDowntimeService exposes editable description blocks", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }],
+      requests: [],
+      actionCatalog: [{
+        id: "long-project",
+        label: "Long Project",
+        targetActions: [{
+          id: "long-project-description",
+          label: "Описание проекта",
+          actionType: "descriptionBlock",
+          descriptionBlock: {
+            title: "",
+            description: ""
+          }
+        }]
+      }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }), {
+    actionId: "long-project",
+    targetActionSelections: [{
+      actionId: "long-project-description",
+      title: "Башня у моря",
+      description: "Найти архитектора и материалы."
+    }]
+  });
+
+  assert.equal(context.selectedTemplate.hasDescriptionActions, true);
+  assert.equal(context.selectedTemplate.descriptionActions[0].descriptionBlock.title, "Башня у моря");
+  assert.equal(context.selectedTemplate.descriptionActions[0].descriptionBlock.description, "Найти архитектора и материалы.");
 });
 
 test("CharacterDowntimeService converts known group errors into a warning context", () => {

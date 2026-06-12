@@ -73,6 +73,33 @@
             <p class="rm-character-downtime-template__summary">{{characterDowntime.selectedTemplate.summary}}</p>
           {{/if}}
 
+          {{#if characterDowntime.selectedTemplate.hasDescriptionActions}}
+            <div class="rm-character-downtime-template__line rm-character-downtime-description-blocks">
+              {{#each characterDowntime.selectedTemplate.descriptionActions}}
+                <fieldset class="rm-character-downtime-description-block">
+                  <legend>{{label}}</legend>
+                  <label>
+                    <span>{{descriptionBlock.titleLabel}}</span>
+                    <input
+                      type="text"
+                      value="{{descriptionBlock.title}}"
+                      data-action="character-downtime-description-title"
+                      data-target-action-id="{{id}}"
+                    >
+                  </label>
+                  <label>
+                    <span>{{descriptionBlock.descriptionLabel}}</span>
+                    <textarea
+                      rows="3"
+                      data-action="character-downtime-description-text"
+                      data-target-action-id="{{id}}"
+                    >{{descriptionBlock.description}}</textarea>
+                  </label>
+                </fieldset>
+              {{/each}}
+            </div>
+          {{/if}}
+
           {{#if characterDowntime.selectedTemplate.hasRankActions}}
             <div class="rm-character-downtime-template__line">
               {{#each characterDowntime.selectedTemplate.rankActions}}
@@ -343,7 +370,9 @@
             <article class="rm-character-downtime-request {{#if hasProjectCounter}}has-project-counter{{/if}}">
               <div class="rm-character-downtime-request__title">
                 <strong>{{title}}</strong>
-                <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
+                {{#if showStatusBadge}}
+                  <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
+                {{/if}}
               </div>
               <p class="rm-muted">{{actionLabel}} • {{rmNum weeks precision=0}} нед.</p>
               {{#if description}}
@@ -410,7 +439,7 @@
                   {{#if projectCounter.canContinue}}
                     <button
                       type="button"
-                      class="rm-button rm-button--small rm-button--secondary"
+                      class="rm-button rm-button--small rm-button--secondary rm-character-downtime-continue-button"
                       data-action="character-downtime-continue"
                       data-payload="{{projectCounter.continuePayloadJson}}"
                     >
@@ -447,7 +476,9 @@
             <article class="rm-character-downtime-request {{#if hasProjectCounter}}has-project-counter{{/if}}">
               <div class="rm-character-downtime-request__title">
                 <strong>{{title}}</strong>
-                <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
+                {{#if showStatusBadge}}
+                  <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
+                {{/if}}
               </div>
               <p class="rm-muted">{{actionLabel}} • {{rmNum weeks precision=0}} нед.</p>
               {{#if description}}
@@ -479,7 +510,7 @@
                   {{#if projectCounter.canContinue}}
                     <button
                       type="button"
-                      class="rm-button rm-button--small rm-button--secondary"
+                      class="rm-button rm-button--small rm-button--secondary rm-character-downtime-continue-button"
                       data-action="character-downtime-continue"
                       data-payload="{{projectCounter.continuePayloadJson}}"
                     >

@@ -885,6 +885,103 @@ test("character downtime submit reads structured target action controls", async 
   }
 });
 
+test("character downtime submit reads description block controls", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-description-block=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const submitButton = new stubs.HTMLElement();
+    const titleInput = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "long-project-description"
+      }
+    });
+    titleInput.value = "Башня у моря";
+    const descriptionInput = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "long-project-description"
+      }
+    });
+    descriptionInput.value = "Найти архитектора и материалы.";
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "long-project" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-title']": { value: "" },
+        "[data-action='character-downtime-description']": { value: "" },
+        "[data-action='character-downtime-submit']": submitButton
+      },
+      selectorAll: {
+        "[data-action='character-downtime-description-title']": [titleInput],
+        "[data-action='character-downtime-description-text']": [descriptionInput]
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(submitButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: "downtime-1" };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of root.listeners.click) {
+      await listener({ target: submitButton });
+    }
+
+    assert.deepEqual(calls.find((call) => call[0] === "createRequest"), [
+      "createRequest",
+      "actor-a",
+      {
+        actionId: "long-project",
+        weeks: 1,
+        title: "",
+        description: "",
+        targetActionSelections: [{
+          actionId: "long-project-description",
+          title: "Башня у моря",
+          description: "Найти архитектора и материалы."
+        }]
+      }
+    ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("character downtime submit reads configurable long project check fields", async () => {
   const stubs = installSheetExtensionStubs();
   try {
@@ -1017,6 +1114,16 @@ test("character downtime template renders current projects with a right-side cou
   assert.doesNotMatch(template, /Эта неделя ещё без сдвига/u);
   assert.match(styles, /\.rm-character-downtime-request\.has-project-counter\s*\{/u);
   assert.match(styles, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+\d+px/u);
+  assert.match(styles, /\.rm-character-downtime-continue-button\s*\{[\s\S]*text-transform:\s*none/u);
+});
+
+test("character downtime template renders editable description blocks and hides current project status", async () => {
+  const template = await readFile(new URL("../templates/character-downtime-tab.hbs", import.meta.url), "utf8");
+
+  assert.match(template, /characterDowntime\.selectedTemplate\.hasDescriptionActions/u);
+  assert.match(template, /data-action="character-downtime-description-title"/u);
+  assert.match(template, /data-action="character-downtime-description-text"/u);
+  assert.match(template, /\{\{#if showStatusBadge\}\}[\s\S]*\{\{statusLabel\}\}[\s\S]*\{\{\/if\}\}/u);
 });
 
 test("character downtime continue button submits continuation payload", async () => {

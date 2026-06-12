@@ -1844,6 +1844,60 @@ test("createRequest snapshots long project setup and rank-based counter size", a
   }
 });
 
+test("createRequest snapshots editable description blocks", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-long-project",
+    name: "Long Project",
+    config: {
+      defaultWeeks: 1,
+      targetActions: [{
+        id: "long-project-description",
+        label: "Project description",
+        actionType: "descriptionBlock",
+        descriptionBlock: {
+          title: "",
+          description: ""
+        }
+      }]
+    }
+  });
+  const harness = createHarness({
+    members: [actor],
+    groupItems: [templateItem],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      weeks: 1,
+      targetActionSelections: [{
+        actionId: "long-project-description",
+        title: "Башня у моря",
+        description: "Найти архитектора и материалы."
+      }]
+    });
+
+    assert.equal(request.checks[0].actionType, "descriptionBlock");
+    assert.equal(request.checks[0].descriptionBlock.title, "Башня у моря");
+    assert.equal(request.checks[0].descriptionBlock.description, "Найти архитектора и материалы.");
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("createRequest computes formula downtime results from selected numeric inputs", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
   const templateItem = createDowntimeTemplateItem({
