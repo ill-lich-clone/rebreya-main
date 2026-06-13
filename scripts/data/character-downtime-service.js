@@ -1488,7 +1488,8 @@ function mapRequest(request = {}, { groupId = "", availableWeeks = 0, actionCata
   });
   const projectCounter = buildRequestProjectCounter(request, checks, { availableWeeks, actionCatalog });
   const isArchived = ARCHIVED_REQUEST_STATUSES.has(status);
-  const isCurrentProject = Boolean(projectCounter && projectCounter.value < projectCounter.max && isArchived);
+  const isProjectClosed = request.projectClosed === true;
+  const isCurrentProject = Boolean(projectCounter && projectCounter.value < projectCounter.max && isArchived && !isProjectClosed);
 
   return {
     ...request,
@@ -1507,6 +1508,7 @@ function mapRequest(request = {}, { groupId = "", availableWeeks = 0, actionCata
     hasResult: Boolean(cleanText(request.result)),
     isArchived,
     isCurrentProject,
+    isProjectClosed,
     showStatusBadge: !isCurrentProject
   };
 }

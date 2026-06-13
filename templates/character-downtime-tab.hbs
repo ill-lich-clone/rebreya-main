@@ -507,16 +507,29 @@
                   {{#if projectCounter.hasImagePath}}
                     <img src="{{projectCounter.imagePath}}" alt="{{projectCounter.value}} / {{projectCounter.max}}">
                   {{/if}}
-                  {{#if projectCounter.canContinue}}
+                  <div class="rm-character-downtime-project-actions">
+                    {{#if projectCounter.canContinue}}
+                      <button
+                        type="button"
+                        class="rm-icon-button rm-character-downtime-project-action"
+                        data-action="character-downtime-continue"
+                        data-payload="{{projectCounter.continuePayloadJson}}"
+                        data-tooltip="Продолжить работу"
+                      >
+                        <i class="fa-solid fa-forward"></i>
+                      </button>
+                    {{/if}}
                     <button
                       type="button"
-                      class="rm-button rm-button--small rm-button--secondary rm-character-downtime-continue-button"
-                      data-action="character-downtime-continue"
-                      data-payload="{{projectCounter.continuePayloadJson}}"
+                      class="rm-icon-button rm-character-downtime-project-action rm-character-downtime-project-action--close"
+                      data-action="character-downtime-close-project"
+                      data-request-id="{{id}}"
+                      data-group-id="{{groupId}}"
+                      data-tooltip="Завершить проект досрочно"
                     >
-                      Продолжить работу
+                      <i class="fa-solid fa-flag-checkered"></i>
                     </button>
-                  {{/if}}
+                  </div>
                 </aside>
               {{/if}}
             </article>

@@ -56,6 +56,8 @@ const SOCKET_EVENT_DOWNTIME_CREATE_REQUEST = "downtime-create-request";
 const SOCKET_EVENT_DOWNTIME_CREATE_RESULT = "downtime-create-result";
 const SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST = "downtime-check-result-request";
 const SOCKET_EVENT_DOWNTIME_CHECK_RESULT_RESULT = "downtime-check-result-result";
+const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST = "downtime-project-close-request";
+const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT = "downtime-project-close-result";
 const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
 let socketModuleApi = null;
@@ -404,6 +406,11 @@ export class RebreyaMainModule {
       return;
     }
 
+    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT) {
+      await this.#handleDowntimeProjectCloseSocketResult(message);
+      return;
+    }
+
     if (message.senderId && message.senderId === game.user?.id) {
       return;
     }
@@ -423,6 +430,13 @@ export class RebreyaMainModule {
     if (message.type === SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST) {
       if (game.user?.isGM) {
         await this.#handleDowntimeCheckResultSocketRequest(message);
+      }
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST) {
+      if (game.user?.isGM) {
+        await this.#handleDowntimeProjectCloseSocketRequest(message);
       }
       return;
     }
@@ -1473,6 +1487,137 @@ export class RebreyaMainModule {
         actorId
       }
     );
+  }
+
+  async closeDowntimeProject({ requestId = "", groupId = "", actorId = "" } = {}) {
+    if (!game.user?.isGM) {
+      return this.#requestDowntimeProjectCloseViaGm({ requestId, groupId, actorId });
+    }
+
+    const options = {
+      actorId: cleanSocketId(actorId)
+    };
+    const safeGroupId = cleanSocketId(groupId);
+    if (safeGroupId) {
+      options.groupId = safeGroupId;
+    }
+
+    const result = await this.downtimeService.closeProject(cleanSocketId(requestId), options);
+    await this.refreshOpenApps();
+    this.#emitDowntimeUpdated({
+      actorIds: [result.actorId],
+      requestId: result.id
+    });
+    return result;
+  }
+
+  async #requestDowntimeProjectCloseViaGm({ requestId = "", groupId = "", actorId = "" } = {}) {
+    if (typeof game.socket?.emit !== "function") {
+      throw new Error("Сокет Foundry недоступен для закрытия проекта.");
+    }
+
+    const socketRequestId = createSocketRequestId("downtime-project-close");
+    const payload = {
+      groupId: cleanSocketId(groupId),
+      actorId: cleanSocketId(actorId),
+      requestId: cleanSocketId(requestId)
+    };
+
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST,
+      requestId: socketRequestId,
+      senderId: game.user?.id ?? "",
+      payload
+    });
+    return {
+      ...payload,
+      socketRequestId,
+      queued: true
+    };
+  }
+
+  async #handleDowntimeProjectCloseSocketResult(message = {}) {
+    const forUserId = cleanSocketId(message.forUserId);
+    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
+      return;
+    }
+
+    if (message.ok === false) {
+      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил закрытие проекта.");
+      return;
+    }
+
+    await this.refreshOpenApps();
+  }
+
+  async #handleDowntimeProjectCloseSocketRequest(message = {}) {
+    const requestId = cleanSocketId(message.requestId);
+    const forUserId = cleanSocketId(message.senderId);
+
+    try {
+      const result = await this.#closeDowntimeProjectFromSocket(message.payload ?? {}, {
+        senderId: forUserId
+      });
+
+      if (requestId) {
+        game.socket?.emit?.(SOCKET_CHANNEL, {
+          type: SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT,
+          requestId,
+          forUserId,
+          senderId: game.user?.id ?? "",
+          ok: true,
+          data: cloneSocketPayload(result)
+        });
+      }
+
+      this.#emitDowntimeUpdated({
+        actorIds: [result.actorId],
+        requestId: result.id
+      });
+    }
+    catch (error) {
+      if (requestId) {
+        game.socket?.emit?.(SOCKET_CHANNEL, {
+          type: SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT,
+          requestId,
+          forUserId,
+          senderId: game.user?.id ?? "",
+          ok: false,
+          error: error?.message ?? String(error)
+        });
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  async #closeDowntimeProjectFromSocket(payload = {}, { senderId = "" } = {}) {
+    const senderUser = getUserById(senderId);
+    if (!senderUser) {
+      throw new Error("Игрок для закрытия проекта не найден.");
+    }
+
+    const groupId = cleanSocketId(payload.groupId);
+    if (!groupId) {
+      throw new Error("Группа проекта не найдена.");
+    }
+
+    const context = this.groupContextService.resolveForGroup(groupId);
+    const actorId = cleanSocketId(payload.actorId);
+    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
+    if (!actor) {
+      throw new Error("Персонаж проекта не найден в группе.");
+    }
+
+    if (!isActorOwnedByUser(actor, senderUser)) {
+      throw new Error("Игрок может закрывать проект только своего персонажа.");
+    }
+
+    return this.downtimeService.closeProject(cleanSocketId(payload.requestId), {
+      groupId,
+      actorId
+    });
   }
 
   #normalizeDowntimeActorIds(actorIds = []) {

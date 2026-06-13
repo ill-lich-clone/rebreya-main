@@ -5569,6 +5569,29 @@ summary:focus-visible {
   background: rgba(0, 0, 0, 0.28);
 }
 
+.rm-character-downtime-project-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.rm-character-downtime-project-action {
+  width: 34px;
+  height: 34px;
+}
+
+.rm-character-downtime-project-action--close {
+  color: #ffd5d1;
+  border-color: rgba(229, 125, 112, 0.42);
+  background: rgba(229, 125, 112, 0.12);
+}
+
+.rm-character-downtime-project-action--close:hover:not(:disabled) {
+  border-color: rgba(229, 125, 112, 0.7);
+  background: rgba(229, 125, 112, 0.2);
+}
+
 .rm-character-downtime-roll {
   min-height: 24px;
   padding: 3px 8px;

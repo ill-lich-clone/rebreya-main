@@ -617,6 +617,57 @@ test("completed requests are terminal", async () => {
   }
 });
 
+test("closeProject closes an unfinished completed project without week accounting", async () => {
+  const harness = createHarness({
+    members: [createActor({ id: "actor-a", name: "Hero A" })],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 0,
+          reservedWeeks: 0,
+          spentWeeks: 1,
+          totalGrantedWeeks: 1
+        }
+      },
+      requests: [{
+        id: "downtime-project",
+        actorId: "actor-a",
+        actorName: "Hero A",
+        actionId: "long-project",
+        actionLabel: "Long Project",
+        title: "Tower",
+        weeks: 1,
+        status: "completed",
+        checks: [{
+          id: "long-project-counter",
+          label: "Project counter",
+          actionType: "projectCounter",
+          projectCounter: {
+            current: 2,
+            max: 6
+          }
+        }]
+      }]
+    }
+  });
+
+  try {
+    const request = await harness.service.closeProject("downtime-project", {
+      actorId: "actor-a"
+    });
+    const balance = getDowntimeState(harness).balancesByActorId["actor-a"];
+
+    assert.equal(request.projectClosed, true);
+    assert.equal(request.projectClosedByUserId, "gm");
+    assert.equal(balance.availableWeeks, 0);
+    assert.equal(balance.reservedWeeks, 0);
+    assert.equal(balance.spentWeeks, 1);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("released requests cannot be completed without re-reserving weeks", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A" });
 
@@ -1844,6 +1895,55 @@ test("createRequest snapshots long project setup and rank-based counter size", a
   }
 });
 
+test("createRequest resolves legacy downtime ids from template target actions", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "generated-template-id",
+    name: "Работа над длительным проектом",
+    config: {
+      defaultWeeks: 1,
+      targetActions: [{
+        id: "long-project-counter",
+        label: "Project counter",
+        actionType: "projectCounter",
+        projectCounter: {
+          current: 0,
+          max: 6
+        }
+      }]
+    }
+  });
+  const harness = createHarness({
+    members: [actor],
+    groupItems: [templateItem],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 1
+        }
+      }
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: "long-project",
+      weeks: 1
+    });
+
+    assert.equal(request.actionId, templateItem.uuid);
+    assert.equal(request.templateUuid, templateItem.uuid);
+    assert.equal(request.checks[0].id, "long-project-counter");
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("createRequest snapshots editable description blocks", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
   const templateItem = createDowntimeTemplateItem({
@@ -2514,6 +2614,10 @@ test("RebreyaMainModule exposes downtime service API and refreshes after mutatio
         calls.push(["recordCheckResult", requestId, checkId, result]);
         return { requestId, checkId, result };
       },
+      async closeProject(requestId, options) {
+        calls.push(["closeProject", requestId, options]);
+        return { requestId, projectClosed: true, ...options };
+      },
       getActionCatalog() {
         calls.push(["getActionCatalog"]);
         return [{ id: "unique" }];
@@ -2545,8 +2649,12 @@ test("RebreyaMainModule exposes downtime service API and refreshes after mutatio
       await moduleApi.recordDowntimeCheckResult("downtime-1", "check-1", { total: 17 }),
       { requestId: "downtime-1", checkId: "check-1", result: { total: 17 } }
     );
+    assert.deepEqual(
+      await moduleApi.closeDowntimeProject({ requestId: "downtime-1", actorId: "actor-a" }),
+      { requestId: "downtime-1", projectClosed: true, actorId: "actor-a" }
+    );
 
-    assert.equal(refreshCount, 7);
+    assert.equal(refreshCount, 8);
     assert.deepEqual(calls, [
       ["getSnapshot", { actorId: "actor-a" }],
       ["getActionCatalog"],
@@ -2556,7 +2664,8 @@ test("RebreyaMainModule exposes downtime service API and refreshes after mutatio
       ["createRequest", { actorId: "actor-a" }],
       ["setRequestStatus", "downtime-1", "approved", { result: "ok" }],
       ["setRequestChecks", "downtime-1", [{ id: "check-1" }]],
-      ["recordCheckResult", "downtime-1", "check-1", { total: 17 }]
+      ["recordCheckResult", "downtime-1", "check-1", { total: 17 }],
+      ["closeProject", "downtime-1", { actorId: "actor-a" }]
     ]);
   }
   finally {

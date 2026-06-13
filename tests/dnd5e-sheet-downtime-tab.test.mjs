@@ -1111,10 +1111,14 @@ test("character downtime template renders current projects with a right-side cou
   assert.match(template, /characterDowntime\.currentProjects/u);
   assert.match(template, /data-page-type="currentProject"/u);
   assert.match(template, /rm-character-downtime-request \{\{#if hasProjectCounter\}\}has-project-counter\{\{\/if\}\}/u);
+  assert.match(template, /data-action="character-downtime-close-project"/u);
+  assert.match(template, /data-tooltip="Завершить проект досрочно"/u);
+  assert.match(template, /fa-solid fa-forward/u);
+  assert.match(template, /fa-solid fa-flag-checkered/u);
   assert.doesNotMatch(template, /Эта неделя ещё без сдвига/u);
   assert.match(styles, /\.rm-character-downtime-request\.has-project-counter\s*\{/u);
   assert.match(styles, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+\d+px/u);
-  assert.match(styles, /\.rm-character-downtime-continue-button\s*\{[\s\S]*text-transform:\s*none/u);
+  assert.match(styles, /\.rm-character-downtime-project-actions\s*\{/u);
 });
 
 test("character downtime template renders editable description blocks and hides current project status", async () => {
@@ -1196,6 +1200,82 @@ test("character downtime continue button submits continuation payload", async ()
       "createRequest",
       "actor-a",
       payload
+    ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime close project button closes without creating a new request", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-project-close=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const closeButton = new stubs.HTMLElement({
+      dataset: {
+        requestId: "downtime-project",
+        groupId: "group-a"
+      }
+    });
+    const panel = new stubs.HTMLElement();
+    closeButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-close-project']") return closeButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(closeButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, requestPayload) {
+          calls.push(["createRequest", targetActor.id, requestPayload]);
+          return { id: "downtime-2" };
+        }
+      },
+      async closeDowntimeProject(payload) {
+        calls.push(["closeDowntimeProject", payload]);
+        return { id: payload.requestId, projectClosed: true };
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of root.listeners.click) {
+      await listener({ target: closeButton, preventDefault() {}, stopPropagation() {} });
+    }
+
+    assert.equal(calls.some((call) => call[0] === "createRequest"), false);
+    assert.deepEqual(calls.find((call) => call[0] === "closeDowntimeProject"), [
+      "closeDowntimeProject",
+      {
+        requestId: "downtime-project",
+        actorId: "actor-a",
+        groupId: "group-a"
+      }
     ]);
   }
   finally {

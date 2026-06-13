@@ -1403,6 +1403,53 @@ test("CharacterDowntimeService keeps unfinished completed long projects in curre
   assert.equal(context.currentProjects[0].projectCounter.canContinue, true);
 });
 
+test("CharacterDowntimeService moves manually closed projects out of current projects", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 0,
+          reservedWeeks: 0,
+          spentWeeks: 1,
+          totalGrantedWeeks: 1
+        }
+      }],
+      requests: [{
+        id: "downtime-project",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionId: "long-project",
+        actionLabel: "Long Project",
+        title: "Find a patron",
+        weeks: 1,
+        status: "completed",
+        projectClosed: true,
+        checks: [{
+          id: "long-project-counter",
+          label: "Project counter",
+          actionType: "projectCounter",
+          projectCounter: {
+            current: 2,
+            max: 6
+          }
+        }]
+      }],
+      actionCatalog: []
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }));
+
+  assert.equal(context.hasCurrentProjects, false);
+  assert.deepEqual(context.currentProjects, []);
+  assert.deepEqual(context.archiveRequests.map((request) => request.id), ["downtime-project"]);
+});
+
 test("CharacterDowntimeService exposes editable description blocks", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     snapshot: {

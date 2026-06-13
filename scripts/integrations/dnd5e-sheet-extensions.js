@@ -666,6 +666,8 @@ const heroDollRootAbortControllers = new WeakMap();
 const handledCharacterDowntimeClickEvents = new WeakSet();
 const recentCharacterDowntimeSubmitButtons = new WeakMap();
 const recentCharacterDowntimeRollButtons = new WeakMap();
+const recentCharacterDowntimeContinueButtons = new WeakMap();
+const recentCharacterDowntimeProjectCloseButtons = new WeakMap();
 const characterDowntimeSubmitAbortControllers = new WeakMap();
 const characterDowntimeRollAbortControllers = new WeakMap();
 const characterDowntimeLibraryAbortControllers = new WeakMap();
@@ -674,8 +676,10 @@ const characterDowntimeFormStateByActorId = new Map();
 let characterDowntimeDocumentSubmitDelegated = false;
 let characterDowntimeDocumentRollDelegated = false;
 let characterDowntimeDocumentContinueDelegated = false;
+let characterDowntimeDocumentProjectCloseDelegated = false;
 const CHARACTER_DOWNTIME_SUBMIT_DEBOUNCE_MS = 750;
 const CHARACTER_DOWNTIME_ROLL_DEBOUNCE_MS = 750;
+const CHARACTER_DOWNTIME_PROJECT_ACTION_DEBOUNCE_MS = 750;
 const CHARACTER_DOWNTIME_ROLLABLE_SOURCE_TYPES = new Set(["skill", "ability", "save", "tool"]);
 const CHARACTER_DOWNTIME_ABILITY_KEYS = new Set(["str", "dex", "con", "int", "wis", "cha"]);
 
@@ -3890,6 +3894,13 @@ async function handleCharacterDowntimeContinueClick(event, { root = null, app = 
   event.preventDefault?.();
   event.stopPropagation?.();
 
+  const now = Date.now();
+  const lastContinueAt = recentCharacterDowntimeContinueButtons.get(continueButton) ?? 0;
+  if (now - lastContinueAt < CHARACTER_DOWNTIME_PROJECT_ACTION_DEBOUNCE_MS) {
+    return true;
+  }
+  recentCharacterDowntimeContinueButtons.set(continueButton, now);
+
   try {
     const actor = getActorFromSheetApp(sheetApp);
     const payload = parseCharacterDowntimeContinuationPayload(continueButton.dataset.payload);
@@ -3903,6 +3914,76 @@ async function handleCharacterDowntimeContinueClick(event, { root = null, app = 
   catch (error) {
     console.error(`${MODULE_ID} | Failed to continue character downtime project.`, error);
     ui.notifications?.error(error.message || "Не удалось продолжить проект.");
+  }
+
+  return true;
+}
+
+async function handleCharacterDowntimeCloseProjectClick(event, { root = null, app = null, moduleApi } = {}) {
+  if (event?.type === "pointerup" && Number(event.button ?? 0) !== 0) {
+    return false;
+  }
+
+  const closeButton = getEventTargetElement(event)?.closest?.("[data-action='character-downtime-close-project']");
+  if (!(closeButton instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (root?.contains instanceof Function && !root.contains(closeButton)) {
+    return false;
+  }
+
+  if (closeButton.disabled || closeButton.getAttribute?.("aria-disabled") === "true" || closeButton.matches?.(":disabled")) {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    return true;
+  }
+
+  const panel = closeButton.closest?.(".rm-character-downtime-tab")
+    ?? root?.querySelector?.(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
+    ?? root?.querySelector?.(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
+  const sheetApp = resolveCharacterDowntimeSheetApp(closeButton, app);
+  if (!panel || !sheetApp) {
+    return false;
+  }
+
+  if (handledCharacterDowntimeClickEvents.has(event)) {
+    return true;
+  }
+
+  handledCharacterDowntimeClickEvents.add(event);
+  event.preventDefault?.();
+  event.stopPropagation?.();
+
+  const now = Date.now();
+  const lastCloseAt = recentCharacterDowntimeProjectCloseButtons.get(closeButton) ?? 0;
+  if (now - lastCloseAt < CHARACTER_DOWNTIME_PROJECT_ACTION_DEBOUNCE_MS) {
+    return true;
+  }
+  recentCharacterDowntimeProjectCloseButtons.set(closeButton, now);
+
+  const wasDisabled = Boolean(closeButton.disabled);
+  closeButton.disabled = true;
+  try {
+    const actor = getActorFromSheetApp(sheetApp);
+    const requestId = cleanText(closeButton.dataset.requestId);
+    if (!actor || !requestId) {
+      return true;
+    }
+    await moduleApi.closeDowntimeProject({
+      requestId,
+      actorId: actor.id,
+      groupId: cleanText(closeButton.dataset.groupId)
+    });
+    ui.notifications?.info("Проект закрыт.");
+    await rerenderActorSheet(sheetApp, moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to close character downtime project.`, error);
+    ui.notifications?.error(error.message || "Не удалось закрыть проект.");
+  }
+  finally {
+    closeButton.disabled = wasDisabled;
   }
 
   return true;
@@ -3944,6 +4025,18 @@ function bindCharacterDowntimeContinueDelegation(root, app, moduleApi) {
   }
 }
 
+function bindCharacterDowntimeProjectCloseDelegation(root, app, moduleApi) {
+  if (root.dataset.rebreyaCharacterDowntimeProjectCloseDelegated === "true") {
+    return;
+  }
+
+  root.dataset.rebreyaCharacterDowntimeProjectCloseDelegated = "true";
+  const listener = async (event) => handleCharacterDowntimeCloseProjectClick(event, { root, app, moduleApi });
+  for (const type of ["pointerup", "click"]) {
+    root.addEventListener(type, listener, { capture: true });
+  }
+}
+
 function bindCharacterDowntimeDocumentSubmitDelegation(moduleApi) {
   if (characterDowntimeDocumentSubmitDelegated || !(globalThis.document?.addEventListener instanceof Function)) {
     return;
@@ -3980,6 +4073,20 @@ function bindCharacterDowntimeDocumentContinueDelegation(moduleApi) {
   characterDowntimeDocumentContinueDelegated = true;
   const listener = async (event) => {
     await handleCharacterDowntimeContinueClick(event, { root: globalThis.document, moduleApi });
+  };
+  for (const type of ["pointerup", "click"]) {
+    globalThis.document.addEventListener(type, listener, { capture: true });
+  }
+}
+
+function bindCharacterDowntimeDocumentProjectCloseDelegation(moduleApi) {
+  if (characterDowntimeDocumentProjectCloseDelegated || !(globalThis.document?.addEventListener instanceof Function)) {
+    return;
+  }
+
+  characterDowntimeDocumentProjectCloseDelegated = true;
+  const listener = async (event) => {
+    await handleCharacterDowntimeCloseProjectClick(event, { root: globalThis.document, moduleApi });
   };
   for (const type of ["pointerup", "click"]) {
     globalThis.document.addEventListener(type, listener, { capture: true });
@@ -4194,6 +4301,7 @@ function bindCharacterDowntimePanel(root, app, moduleApi) {
   bindCharacterDowntimeSubmitDelegation(root, app, moduleApi);
   bindCharacterDowntimeRollDelegation(root, app, moduleApi);
   bindCharacterDowntimeContinueDelegation(root, app, moduleApi);
+  bindCharacterDowntimeProjectCloseDelegation(root, app, moduleApi);
 
   const panel = root.querySelector(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
     ?? root.querySelector(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
@@ -5067,6 +5175,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   bindCharacterDowntimeDocumentSubmitDelegation(moduleApi);
   bindCharacterDowntimeDocumentRollDelegation(moduleApi);
   bindCharacterDowntimeDocumentContinueDelegation(moduleApi);
+  bindCharacterDowntimeDocumentProjectCloseDelegation(moduleApi);
 
   const onRenderActorSheet = (app, html) => {
     const actor = getActorFromSheetApp(app);

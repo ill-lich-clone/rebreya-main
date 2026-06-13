@@ -1050,6 +1050,16 @@ function normalizeTemplateTargetActions(value = []) {
     .filter((action) => action.label || action.actionType || action.sourceType);
 }
 
+function templateActionMatchesLegacyId(action = {}, actionId = "") {
+  const safeActionId = cleanId(actionId);
+  if (!safeActionId) {
+    return false;
+  }
+
+  return asArray(action.targetActions)
+    .some((targetAction) => cleanId(targetAction?.id).startsWith(`${safeActionId}-`));
+}
+
 function normalizeRankTable(value = []) {
   return asArray(value)
     .map((entry) => clone(asObject(entry)))
@@ -1171,8 +1181,15 @@ async function resolveDowntimeCompendiumAction(actionId = "") {
     }
   }
 
+  const documentById = await getDowntimeCompendiumDocument(pack, safeActionId);
+  const documentByIdAction = buildDowntimeTemplateActionFromItem(documentById);
+  if (documentByIdAction) {
+    return documentByIdAction;
+  }
+
   const index = await getDowntimeCompendiumIndex(pack);
-  const row = index.find((entry) => getCompendiumRowDowntimeId(entry) === safeActionId) ?? null;
+  const row = index.find((entry) => getCompendiumRowDowntimeId(entry) === safeActionId
+    || getCompendiumRowDocumentId(entry) === safeActionId) ?? null;
   if (!row) {
     return null;
   }
@@ -1212,6 +1229,11 @@ function normalizeRequest(value = {}) {
     normalized.templateDescriptionHtml = cleanString(value.templateDescriptionHtml);
     normalized.templateRequirements = normalizeStringList(value.templateRequirements);
     normalized.templateRankTable = normalizeRankTable(value.templateRankTable);
+  }
+  if (value.projectClosed === true) {
+    normalized.projectClosed = true;
+    normalized.projectClosedAt = Number(value.projectClosedAt) || 0;
+    normalized.projectClosedByUserId = cleanId(value.projectClosedByUserId);
   }
   return normalized;
 }
@@ -1847,6 +1869,36 @@ export class DowntimeService {
     });
   }
 
+  async closeProject(requestId, { groupId = "", actorId = "" } = {}) {
+    const context = cleanId(groupId)
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
+      : this.#resolveContext();
+    const safeRequestId = cleanId(requestId);
+    const safeActorId = cleanId(actorId);
+
+    return this.#writeGroupState(context, (state) => {
+      const request = this.#findRequest(state, safeRequestId);
+      if (safeActorId && request.actorId !== safeActorId) {
+        throw new Error("Downtime request does not belong to this character.");
+      }
+      if (!this.#canManage(context)) {
+        const actor = this.#requireCurrentMemberActor(context, request.actorId);
+        if (!this.#canSubmitForActor(actor, context)) {
+          throw new Error("Players can close projects only for an owned character.");
+        }
+      }
+      if (!asArray(request.checks).some((check) => cleanId(check?.actionType) === "projectCounter")) {
+        throw new Error("Downtime project counter not found.");
+      }
+
+      request.projectClosed = true;
+      request.projectClosedAt = Date.now();
+      request.projectClosedByUserId = cleanId(getCurrentUser()?.id);
+      request.updatedAt = Date.now();
+      return clone(request);
+    });
+  }
+
   async setRequestStatus(requestId, status, { result = "" } = {}) {
     const context = this.#resolveContext();
     this.#assertCanManage(context);
@@ -1982,7 +2034,8 @@ export class DowntimeService {
       .find((action) => action.id === safeActionId
         || action.templateUuid === safeActionId
         || action.templateItemId === safeActionId
-        || action.downtimeId === safeActionId);
+        || action.downtimeId === safeActionId
+        || templateActionMatchesLegacyId(action, safeActionId));
     if (templateAction) {
       return templateAction;
     }
