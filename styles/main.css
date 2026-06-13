@@ -4392,6 +4392,14 @@ summary:focus-visible {
   min-width: 0;
 }
 
+.rm-character-downtime-request__title-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
+}
+
 .rm-downtime-request__main {
   min-width: 0;
   display: grid;
@@ -5535,6 +5543,40 @@ summary:focus-visible {
 .rm-character-downtime-checks {
   display: grid;
   gap: 5px;
+}
+
+.rm-character-downtime-project-summary {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.rm-character-downtime-project-summary__row {
+  display: grid;
+  grid-template-columns: minmax(132px, 0.55fr) minmax(120px, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.rm-character-downtime-project-summary__row dt,
+.rm-character-downtime-project-summary__row dd,
+.rm-character-downtime-project-summary__row p {
+  margin: 0;
+}
+
+.rm-character-downtime-project-summary__row dt {
+  color: var(--rm-sheet-muted);
+  font-size: 12px;
+}
+
+.rm-character-downtime-project-summary__row dd {
+  color: var(--rm-sheet-text);
+  font-weight: 700;
+}
+
+.rm-character-downtime-project-summary__row p {
+  grid-column: 2;
+  color: var(--rm-sheet-muted);
 }
 
 .rm-character-downtime-check {

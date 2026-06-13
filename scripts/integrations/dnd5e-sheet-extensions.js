@@ -675,6 +675,7 @@ const characterDowntimeStateAbortControllers = new WeakMap();
 const characterDowntimeFormStateByActorId = new Map();
 let characterDowntimeDocumentSubmitDelegated = false;
 let characterDowntimeDocumentRollDelegated = false;
+let characterDowntimeDocumentEditDelegated = false;
 let characterDowntimeDocumentContinueDelegated = false;
 let characterDowntimeDocumentProjectCloseDelegated = false;
 const CHARACTER_DOWNTIME_SUBMIT_DEBOUNCE_MS = 750;
@@ -2866,7 +2867,7 @@ async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
     return;
   }
 
-  readCharacterDowntimeFormStateFromPanel(panel, actor);
+  const formState = readCharacterDowntimeFormStateFromPanel(panel, actor);
   const targetActionSelections = readCharacterDowntimeTargetActionSelections(panel);
   const payload = {
     actionId: cleanText(panel.querySelector("[data-action='character-downtime-action']")?.value),
@@ -2874,12 +2875,21 @@ async function handleCharacterDowntimeSubmit(panel, app, moduleApi) {
     title: cleanText(panel.querySelector("[data-action='character-downtime-title']")?.value),
     description: cleanText(panel.querySelector("[data-action='character-downtime-description']")?.value)
   };
+  const editRequestId = cleanText(formState.editRequestId);
+  if (editRequestId) {
+    payload.requestId = editRequestId;
+  }
   if (targetActionSelections.length) {
     payload.targetActionSelections = targetActionSelections;
   }
 
-  const request = await moduleApi.characterDowntimeService.createRequest(actor, payload);
-  ui.notifications?.info("Заявка на простой отправлена.");
+  await moduleApi.characterDowntimeService.createRequest(actor, payload);
+  characterDowntimeFormStateByActorId.set(actor.id, {
+    editRequestId: "",
+    weeks: 1,
+    targetActionSelections: []
+  });
+  ui.notifications?.info(editRequestId ? "Заявка на простой обновлена." : "Заявка на простой отправлена.");
   await rerenderActorSheet(app, moduleApi);
 }
 
@@ -3286,6 +3296,7 @@ async function setCharacterDowntimeActionSelection(panel, record, app, moduleApi
 
   if (actor?.id) {
     updateCharacterDowntimeFormState(actor, {
+      editRequestId: "",
       actionId: record.uuid,
       weeks: toPositiveInteger(panel?.querySelector("[data-action='character-downtime-weeks']")?.value, 1),
       targetActionSelections: [],
@@ -3853,6 +3864,68 @@ async function handleCharacterDowntimeRollClick(event, { root = null, app = null
   return true;
 }
 
+function parseCharacterDowntimeEditState(value = "") {
+  const state = parseCharacterDowntimeJsonObject(value);
+  const requestId = cleanText(state.requestId);
+  const actionId = cleanText(state.actionId);
+  if (!requestId || !actionId) {
+    return null;
+  }
+
+  return {
+    editRequestId: requestId,
+    actionId,
+    weeks: toPositiveInteger(state.weeks, 1),
+    title: cleanText(state.title),
+    description: cleanText(state.description),
+    targetActionSelections: Array.isArray(state.targetActionSelections)
+      ? state.targetActionSelections
+      : [],
+    selectedTemplate: null
+  };
+}
+
+async function handleCharacterDowntimeEditRequestClick(event, { root = null, app = null, moduleApi } = {}) {
+  if (event?.type === "pointerup" && Number(event.button ?? 0) !== 0) {
+    return false;
+  }
+
+  const editButton = getEventTargetElement(event)?.closest?.("[data-action='character-downtime-edit-request']");
+  if (!(editButton instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (root?.contains instanceof Function && !root.contains(editButton)) {
+    return false;
+  }
+
+  const panel = editButton.closest?.(".rm-character-downtime-tab")
+    ?? root?.querySelector?.(`[data-application-part='${CHARACTER_DOWNTIME_TAB_ID}'] .rm-character-downtime-tab`)
+    ?? root?.querySelector?.(`.rm-character-downtime-tab[data-tab='${CHARACTER_DOWNTIME_TAB_ID}']`);
+  const sheetApp = resolveCharacterDowntimeSheetApp(editButton, app);
+  if (!panel || !sheetApp) {
+    return false;
+  }
+
+  if (handledCharacterDowntimeClickEvents.has(event)) {
+    return true;
+  }
+
+  handledCharacterDowntimeClickEvents.add(event);
+  event.preventDefault?.();
+  event.stopPropagation?.();
+
+  const actor = getActorFromSheetApp(sheetApp);
+  const editState = parseCharacterDowntimeEditState(editButton.dataset.editState);
+  if (!actor?.id || !editState) {
+    return true;
+  }
+
+  updateCharacterDowntimeFormState(actor, editState);
+  await rerenderActorSheet(sheetApp, moduleApi);
+  return true;
+}
+
 function parseCharacterDowntimeContinuationPayload(value = "") {
   const payload = parseCharacterDowntimeJsonObject(value);
   return cleanText(payload.actionId) ? payload : null;
@@ -3903,12 +3976,16 @@ async function handleCharacterDowntimeContinueClick(event, { root = null, app = 
 
   try {
     const actor = getActorFromSheetApp(sheetApp);
-    const payload = parseCharacterDowntimeContinuationPayload(continueButton.dataset.payload);
-    if (!actor || !payload) {
+    const requestId = cleanText(continueButton.dataset.requestId);
+    if (!actor || !requestId) {
       return true;
     }
-    await moduleApi.characterDowntimeService.createRequest(actor, payload);
-    ui.notifications?.info("Заявка на продолжение проекта отправлена.");
+    await moduleApi.continueDowntimeProject({
+      requestId,
+      actorId: actor.id,
+      groupId: cleanText(continueButton.dataset.groupId)
+    });
+    ui.notifications?.info("Проект продолжен на следующую неделю.");
     await rerenderActorSheet(sheetApp, moduleApi);
   }
   catch (error) {
@@ -4013,6 +4090,18 @@ function bindCharacterDowntimeRollDelegation(root, app, moduleApi) {
   }
 }
 
+function bindCharacterDowntimeEditDelegation(root, app, moduleApi) {
+  if (root.dataset.rebreyaCharacterDowntimeEditDelegated === "true") {
+    return;
+  }
+
+  root.dataset.rebreyaCharacterDowntimeEditDelegated = "true";
+  const listener = async (event) => handleCharacterDowntimeEditRequestClick(event, { root, app, moduleApi });
+  for (const type of ["pointerup", "click"]) {
+    root.addEventListener(type, listener, { capture: true });
+  }
+}
+
 function bindCharacterDowntimeContinueDelegation(root, app, moduleApi) {
   if (root.dataset.rebreyaCharacterDowntimeContinueDelegated === "true") {
     return;
@@ -4059,6 +4148,20 @@ function bindCharacterDowntimeDocumentRollDelegation(moduleApi) {
   characterDowntimeDocumentRollDelegated = true;
   const listener = async (event) => {
     await handleCharacterDowntimeRollClick(event, { root: globalThis.document, moduleApi });
+  };
+  for (const type of ["pointerup", "click"]) {
+    globalThis.document.addEventListener(type, listener, { capture: true });
+  }
+}
+
+function bindCharacterDowntimeDocumentEditDelegation(moduleApi) {
+  if (characterDowntimeDocumentEditDelegated || !(globalThis.document?.addEventListener instanceof Function)) {
+    return;
+  }
+
+  characterDowntimeDocumentEditDelegated = true;
+  const listener = async (event) => {
+    await handleCharacterDowntimeEditRequestClick(event, { root: globalThis.document, moduleApi });
   };
   for (const type of ["pointerup", "click"]) {
     globalThis.document.addEventListener(type, listener, { capture: true });
@@ -4161,6 +4264,7 @@ function bindCharacterDowntimeStateControls(panel, app, moduleApi) {
         actionLabel.textContent = "Выбрать простой";
       }
       updateCharacterDowntimeFormState(actor, {
+        editRequestId: "",
         actionId: "",
         weeks: toPositiveInteger(panel.querySelector("[data-action='character-downtime-weeks']")?.value, 1),
         targetActionSelections: [],
@@ -4300,6 +4404,7 @@ function bindCharacterDowntimeLibraryButton(panel, app, moduleApi) {
 function bindCharacterDowntimePanel(root, app, moduleApi) {
   bindCharacterDowntimeSubmitDelegation(root, app, moduleApi);
   bindCharacterDowntimeRollDelegation(root, app, moduleApi);
+  bindCharacterDowntimeEditDelegation(root, app, moduleApi);
   bindCharacterDowntimeContinueDelegation(root, app, moduleApi);
   bindCharacterDowntimeProjectCloseDelegation(root, app, moduleApi);
 
@@ -5174,6 +5279,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   patchD20HeroicRollDialog();
   bindCharacterDowntimeDocumentSubmitDelegation(moduleApi);
   bindCharacterDowntimeDocumentRollDelegation(moduleApi);
+  bindCharacterDowntimeDocumentEditDelegation(moduleApi);
   bindCharacterDowntimeDocumentContinueDelegation(moduleApi);
   bindCharacterDowntimeDocumentProjectCloseDelegation(moduleApi);
 

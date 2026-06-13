@@ -1015,6 +1015,51 @@ function applyTargetActionSelection(action = {}, selections = new Map(), selecte
   return applySelectionDrivenFormula(selectedAction, selections);
 }
 
+function buildSelectedRequestChecks(action = {}, actionSelections = new Map()) {
+  const checks = [];
+  const selectedActionsById = new Map();
+  for (const [index, targetAction] of asArray(action.targetActions).entries()) {
+    const selectedTargetAction = applyTargetActionSelection(targetAction, actionSelections, selectedActionsById);
+    const normalizedCheck = normalizeCheck({
+      id: cleanId(selectedTargetAction?.id) || `check-${index + 1}`,
+      ...asObject(selectedTargetAction)
+    });
+    selectedActionsById.set(normalizedCheck.id, normalizedCheck);
+    checks.push(normalizedCheck);
+  }
+  return checks;
+}
+
+function applyRequestTemplateMetadata(request = {}, action = {}, resolvedActionId = "") {
+  for (const key of [
+    "templateUuid",
+    "templateItemId",
+    "templateSource",
+    "templateRank",
+    "templateDuration",
+    "templateSummary",
+    "templateDescriptionHtml",
+    "templateRequirements",
+    "templateRankTable"
+  ]) {
+    delete request[key];
+  }
+
+  if (action.source !== "item") {
+    return;
+  }
+
+  request.templateUuid = cleanId(action.templateUuid) || resolvedActionId;
+  request.templateItemId = cleanId(action.templateItemId);
+  request.templateSource = "item";
+  request.templateRank = cleanString(action.rank);
+  request.templateDuration = cleanString(action.duration);
+  request.templateSummary = cleanString(action.summary);
+  request.templateDescriptionHtml = cleanString(action.descriptionHtml);
+  request.templateRequirements = normalizeStringList(action.requirements);
+  request.templateRankTable = normalizeRankTable(action.rankTable);
+}
+
 function isDowntimeTemplateActionId(actionId = "") {
   const safeActionId = cleanId(actionId);
   return Boolean(safeActionId) && (
@@ -1251,6 +1296,52 @@ function isRollableDowntimeCheck(check = {}) {
 function hasCompletedRollTargets(request = {}) {
   const rollableChecks = asArray(request.checks).filter((check) => isRollableDowntimeCheck(check));
   return rollableChecks.length > 0 && rollableChecks.every((check) => hasRecordedResult(check));
+}
+
+function hasAnyRecordedResult(request = {}) {
+  return asArray(request.checks).some((check) => hasRecordedResult(check));
+}
+
+function getProjectCounterCheck(checks = []) {
+  return asArray(checks).find((check) => cleanId(check?.actionType) === "projectCounter") ?? null;
+}
+
+function getProjectProgressSteps(checks = []) {
+  const resultAction = asArray(checks)
+    .find((check) => cleanId(check?.actionType) === "downtimeResult"
+      && asObject(check?.result).progressSteps !== undefined);
+  const result = asObject(resultAction?.result);
+  return Math.max(0, toWeeks(result.progressSteps, toWeeks(result.value, toWeeks(result.total, 0))));
+}
+
+function getProjectCounterState(checks = []) {
+  const counterCheck = getProjectCounterCheck(checks);
+  if (!counterCheck) {
+    return null;
+  }
+
+  const counter = asObject(counterCheck.projectCounter);
+  const max = Math.max(1, toWeeks(counter.max, toWeeks(counterCheck.max, 0)));
+  if (max <= 0) {
+    return null;
+  }
+
+  const current = Math.min(max, toWeeks(counter.current, toWeeks(counter.value, 0)) + getProjectProgressSteps(checks));
+  return {
+    check: counterCheck,
+    counter,
+    current,
+    max
+  };
+}
+
+function clearWeeklyProjectResults(request = {}) {
+  for (const check of asArray(request.checks)) {
+    const actionType = cleanId(check?.actionType);
+    if (actionType === "downtimeResult" || isRollableDowntimeCheck(check)) {
+      check.result = null;
+    }
+  }
 }
 
 function getOptionalNumber(value) {
@@ -1824,17 +1915,7 @@ export class DowntimeService {
       state.balancesByActorId[actor.id] = balance;
       state.counter += 1;
       const audit = buildAuditFields();
-      const checks = [];
-      const selectedActionsById = new Map();
-      for (const [index, targetAction] of asArray(action.targetActions).entries()) {
-        const selectedTargetAction = applyTargetActionSelection(targetAction, actionSelections, selectedActionsById);
-        const normalizedCheck = normalizeCheck({
-          id: cleanId(selectedTargetAction?.id) || `check-${index + 1}`,
-          ...asObject(selectedTargetAction)
-        });
-        selectedActionsById.set(normalizedCheck.id, normalizedCheck);
-        checks.push(normalizedCheck);
-      }
+      const checks = buildSelectedRequestChecks(action, actionSelections);
 
       const request = {
         id: `downtime-${state.counter}`,
@@ -1852,19 +1933,72 @@ export class DowntimeService {
         submittedByUserId: userId,
         reviewedByUserId: ""
       };
-      if (action.source === "item") {
-        request.templateUuid = cleanId(action.templateUuid) || resolvedActionId;
-        request.templateItemId = cleanId(action.templateItemId);
-        request.templateSource = "item";
-        request.templateRank = cleanString(action.rank);
-        request.templateDuration = cleanString(action.duration);
-        request.templateSummary = cleanString(action.summary);
-        request.templateDescriptionHtml = cleanString(action.descriptionHtml);
-        request.templateRequirements = normalizeStringList(action.requirements);
-        request.templateRankTable = normalizeRankTable(action.rankTable);
-      }
+      applyRequestTemplateMetadata(request, action, resolvedActionId);
       refreshMappedDowntimeResults(request);
       state.requests.push(request);
+      return clone(request);
+    });
+  }
+
+  async updateRequest({
+    groupId = "",
+    requestId = "",
+    actorId = "",
+    actionId = "",
+    title = "",
+    description = "",
+    weeks = 1,
+    targetActionSelections = []
+  } = {}) {
+    const context = cleanId(groupId)
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
+      : this.#resolveContext();
+    const actor = this.#requireCurrentMemberActor(context, actorId);
+    this.#assertCanSubmitForActor(actor, context);
+    const safeRequestId = cleanId(requestId);
+    const safeWeeks = this.#requirePositiveWeeks(weeks);
+    const action = await this.#resolveAction(context, actionId);
+    const resolvedActionId = action.id;
+    const safeTitle = cleanString(title) || action.label;
+    const actionSelections = normalizeTargetActionSelections(targetActionSelections);
+
+    return this.#writeGroupState(context, (state) => {
+      const request = this.#findRequest(state, safeRequestId);
+      if (request.actorId !== actor.id) {
+        throw new Error("Downtime request does not belong to this character.");
+      }
+      if (request.status !== "pending") {
+        throw new Error("Only pending downtime requests can be edited.");
+      }
+      if (hasAnyRecordedResult(request)) {
+        throw new Error("Downtime request already has recorded results.");
+      }
+
+      const previousWeeks = Math.max(1, toWeeks(request.weeks, 1));
+      const balance = normalizeBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance());
+      if (balance.reservedWeeks < previousWeeks) {
+        throw new Error("Reserved downtime weeks are lower than the request cost.");
+      }
+      const weekDelta = safeWeeks - previousWeeks;
+      if (weekDelta > 0 && balance.availableWeeks < weekDelta) {
+        throw new Error("Not enough available downtime weeks.");
+      }
+
+      balance.availableWeeks -= weekDelta;
+      balance.reservedWeeks += weekDelta;
+      state.balancesByActorId[actor.id] = balance;
+
+      request.actionId = resolvedActionId;
+      request.actionLabel = action.label;
+      request.title = safeTitle;
+      request.description = cleanString(description);
+      request.weeks = safeWeeks;
+      request.checks = buildSelectedRequestChecks(action, actionSelections);
+      request.result = "";
+      request.reviewedByUserId = "";
+      request.updatedAt = Date.now();
+      applyRequestTemplateMetadata(request, action, resolvedActionId);
+      refreshMappedDowntimeResults(request);
       return clone(request);
     });
   }
@@ -1894,6 +2028,62 @@ export class DowntimeService {
       request.projectClosed = true;
       request.projectClosedAt = Date.now();
       request.projectClosedByUserId = cleanId(getCurrentUser()?.id);
+      request.updatedAt = Date.now();
+      return clone(request);
+    });
+  }
+
+  async continueProject(requestId, { groupId = "", actorId = "" } = {}) {
+    const context = cleanId(groupId)
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
+      : this.#resolveContext();
+    const safeRequestId = cleanId(requestId);
+    const safeActorId = cleanId(actorId);
+
+    return this.#writeGroupState(context, (state) => {
+      const request = this.#findRequest(state, safeRequestId);
+      if (safeActorId && request.actorId !== safeActorId) {
+        throw new Error("Downtime request does not belong to this character.");
+      }
+      if (!this.#canManage(context)) {
+        const actor = this.#requireCurrentMemberActor(context, request.actorId);
+        if (!this.#canSubmitForActor(actor, context)) {
+          throw new Error("Players can continue projects only for an owned character.");
+        }
+      }
+      if (request.projectClosed === true) {
+        throw new Error("Downtime project is closed.");
+      }
+      if (request.status !== "completed") {
+        throw new Error("Only completed project weeks can be continued.");
+      }
+
+      const projectCounter = getProjectCounterState(request.checks);
+      if (!projectCounter) {
+        throw new Error("Downtime project counter not found.");
+      }
+      if (projectCounter.current >= projectCounter.max) {
+        throw new Error("Downtime project counter is already complete.");
+      }
+
+      const balance = normalizeBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
+      if (balance.availableWeeks < 1) {
+        throw new Error("Not enough available downtime weeks.");
+      }
+
+      balance.availableWeeks -= 1;
+      balance.reservedWeeks += 1;
+      state.balancesByActorId[request.actorId] = balance;
+
+      projectCounter.check.projectCounter = {
+        ...clone(projectCounter.counter),
+        current: projectCounter.current,
+        max: projectCounter.max
+      };
+      clearWeeklyProjectResults(request);
+      request.status = "pending";
+      request.result = "";
+      request.reviewedByUserId = "";
       request.updatedAt = Date.now();
       return clone(request);
     });

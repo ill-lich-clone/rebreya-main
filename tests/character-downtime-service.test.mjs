@@ -1349,6 +1349,14 @@ test("CharacterDowntimeService keeps unfinished completed long projects in curre
         weeks: 1,
         status: "completed",
         checks: [{
+          id: "long-project-description",
+          label: "Project description",
+          actionType: "descriptionBlock",
+          descriptionBlock: {
+            title: "Test Project",
+            description: "Find a lost archive"
+          }
+        }, {
           id: "long-project-rank",
           label: "Project rank",
           actionType: "rankChoice",
@@ -1361,6 +1369,14 @@ test("CharacterDowntimeService keeps unfinished completed long projects in curre
           projectCounter: {
             current: 2,
             max: 6
+          }
+        }, {
+          id: "long-project-resources",
+          label: "Weekly gold",
+          actionType: "resources",
+          computedCost: {
+            total: 10,
+            currency: "gp"
           }
         }, {
           id: "long-project-check",
@@ -1401,6 +1417,15 @@ test("CharacterDowntimeService keeps unfinished completed long projects in curre
   assert.equal(context.archiveCount, 0);
   assert.equal(context.currentProjects[0].projectCounter.value, 2);
   assert.equal(context.currentProjects[0].projectCounter.canContinue, true);
+  assert.deepEqual(context.currentProjects[0].projectSummaryRows.map((row) => [row.label, row.value]), [
+    ["Project description", "Test Project"],
+    ["Project rank", "Rank 5"],
+    ["Project counter", "2 / 6"],
+    ["Weekly gold", "10 зм"]
+  ]);
+  const resultAction = context.currentProjects[0].checks.find((check) => check.id === "long-project-result");
+  assert.equal(resultAction.resultLabel, "0 делений");
+  assert.match(resultAction.resultTooltip, /Сдвиг счётчика/u);
 });
 
 test("CharacterDowntimeService moves manually closed projects out of current projects", () => {

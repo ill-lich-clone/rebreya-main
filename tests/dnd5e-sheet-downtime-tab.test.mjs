@@ -269,6 +269,8 @@ test("character downtime template uses compact summary stats and selection contr
   assert.doesNotMatch(template, /<small>можно заявить сейчас<\/small>/u);
   assert.doesNotMatch(template, /<label>Действие<\/label>/u);
   assert.match(template, /data-action="character-downtime-clear-action"/u);
+  assert.match(template, /data-action="character-downtime-edit-request"/u);
+  assert.match(template, /data-edit-state="\{\{editFormStateJson\}\}"/u);
   assert.match(template, /data-item-snapshot="\{\{selectedItemJson\}\}"/u);
   assert.match(template, /\{\{#if characterDowntime\.selectedTemplate\}\}[\s\S]*data-action="character-downtime-submit"/u);
 });
@@ -650,7 +652,8 @@ test("character downtime render hook submits requests for the current sheet acto
         }
       },
       characterDowntimeService: {
-        getActorContext() {
+        getActorContext(targetActor, formState) {
+          calls.push(["context", targetActor.id, formState]);
           return {};
         },
         async createRequest(targetActor, payload) {
@@ -685,6 +688,146 @@ test("character downtime render hook submits requests for the current sheet acto
       }],
       ["render", { force: true }],
       ["refreshOpenApps"]
+    ]);
+
+    const sheet = new stubs.CharacterActorSheet(actor);
+    await sheet._preparePartContext("downtime", {}, {});
+    const contextCall = calls.findLast((call) => call[0] === "context");
+    assert.equal(contextCall[2].actionId ?? "", "");
+    assert.equal(contextCall[2].weeks ?? 1, 1);
+    assert.deepEqual(contextCall[2].targetActionSelections ?? [], []);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime edit button restores a pending request and submit updates it", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-edit-request=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const editButton = new stubs.HTMLElement({
+      dataset: {
+        editState: JSON.stringify({
+          requestId: "downtime-1",
+          actionId: "long-project",
+          weeks: 1,
+          title: "",
+          description: "",
+          targetActionSelections: [{
+            actionId: "project-rank",
+            value: 2
+          }]
+        })
+      }
+    });
+    const submitButton = new stubs.HTMLElement();
+    const rankChoice = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "project-rank"
+      }
+    });
+    rankChoice.value = "rank-5";
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "long-project" },
+        "[data-action='character-downtime-weeks']": { value: "1" },
+        "[data-action='character-downtime-title']": { value: "" },
+        "[data-action='character-downtime-description']": { value: "" },
+        "[data-action='character-downtime-submit']": submitButton
+      },
+      selectorAll: {
+        "[data-action='character-downtime-rank-choice']": [rankChoice]
+      }
+    });
+    editButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-edit-request']") return editButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(editButton, submitButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext(targetActor, formState) {
+          calls.push(["context", targetActor.id, formState]);
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: payload.requestId };
+        }
+      },
+      async refreshOpenApps() {
+        calls.push(["refreshOpenApps"]);
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    for (const listener of root.listeners.click) {
+      await listener({
+        target: editButton,
+        preventDefault() {},
+        stopPropagation() {}
+      });
+    }
+
+    const sheet = new stubs.CharacterActorSheet(actor);
+    await sheet._preparePartContext("downtime", {}, {});
+    const editContextCall = calls.findLast((call) => call[0] === "context");
+    assert.equal(editContextCall[2].editRequestId, "downtime-1");
+    assert.equal(editContextCall[2].actionId, "long-project");
+    assert.deepEqual(editContextCall[2].targetActionSelections, [{
+      actionId: "project-rank",
+      value: 2
+    }]);
+
+    for (const listener of root.listeners.click) {
+      await listener({
+        target: submitButton,
+        preventDefault() {},
+        stopPropagation() {}
+      });
+    }
+
+    assert.deepEqual(calls.find((call) => call[0] === "createRequest"), [
+      "createRequest",
+      "actor-a",
+      {
+        requestId: "downtime-1",
+        actionId: "long-project",
+        weeks: 1,
+        title: "",
+        description: "",
+        targetActionSelections: [{
+          actionId: "project-rank",
+          optionId: "rank-5"
+        }]
+      }
     ]);
   }
   finally {
@@ -1112,13 +1255,19 @@ test("character downtime template renders current projects with a right-side cou
   assert.match(template, /data-page-type="currentProject"/u);
   assert.match(template, /rm-character-downtime-request \{\{#if hasProjectCounter\}\}has-project-counter\{\{\/if\}\}/u);
   assert.match(template, /data-action="character-downtime-close-project"/u);
+  assert.match(template, /data-action="character-downtime-continue"/u);
+  assert.match(template, /data-request-id="\{\{id\}\}"/u);
+  assert.match(template, /data-group-id="\{\{groupId\}\}"/u);
   assert.match(template, /data-tooltip="Завершить проект досрочно"/u);
   assert.match(template, /fa-solid fa-forward/u);
   assert.match(template, /fa-solid fa-flag-checkered/u);
+  assert.match(template, /projectSummaryRows/u);
+  assert.doesNotMatch(template, /rm-character-downtime-continue-button/u);
   assert.doesNotMatch(template, /Эта неделя ещё без сдвига/u);
   assert.match(styles, /\.rm-character-downtime-request\.has-project-counter\s*\{/u);
   assert.match(styles, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+\d+px/u);
   assert.match(styles, /\.rm-character-downtime-project-actions\s*\{/u);
+  assert.match(styles, /\.rm-character-downtime-project-summary\s*\{/u);
 });
 
 test("character downtime template renders editable description blocks and hides current project status", async () => {
@@ -1130,25 +1279,16 @@ test("character downtime template renders editable description blocks and hides 
   assert.match(template, /\{\{#if showStatusBadge\}\}[\s\S]*\{\{statusLabel\}\}[\s\S]*\{\{\/if\}\}/u);
 });
 
-test("character downtime continue button submits continuation payload", async () => {
+test("character downtime continue button reopens the same project without creating a duplicate", async () => {
   const stubs = installSheetExtensionStubs();
   try {
     const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-project-continue=${Date.now()}`);
     const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
     const calls = [];
-    const payload = {
-      actionId: "long-project",
-      weeks: 1,
-      title: "Project",
-      description: "Continue",
-      targetActionSelections: [{
-        actionId: "long-project-counter",
-        value: 4
-      }]
-    };
     const continueButton = new stubs.HTMLElement({
       dataset: {
-        payload: JSON.stringify(payload)
+        requestId: "downtime-project",
+        groupId: "group-a"
       }
     });
     const panel = new stubs.HTMLElement();
@@ -1184,6 +1324,10 @@ test("character downtime continue button submits continuation payload", async ()
           return { id: "downtime-2" };
         }
       },
+      async continueDowntimeProject(payload) {
+        calls.push(["continueDowntimeProject", payload]);
+        return { id: payload.requestId, status: "pending" };
+      },
       async refreshOpenApps() {
         calls.push(["refreshOpenApps"]);
       }
@@ -1196,10 +1340,14 @@ test("character downtime continue button submits continuation payload", async ()
       await listener({ target: continueButton, preventDefault() {}, stopPropagation() {} });
     }
 
-    assert.deepEqual(calls.find((call) => call[0] === "createRequest"), [
-      "createRequest",
-      "actor-a",
-      payload
+    assert.equal(calls.some((call) => call[0] === "createRequest"), false);
+    assert.deepEqual(calls.find((call) => call[0] === "continueDowntimeProject"), [
+      "continueDowntimeProject",
+      {
+        requestId: "downtime-project",
+        actorId: "actor-a",
+        groupId: "group-a"
+      }
     ]);
   }
   finally {

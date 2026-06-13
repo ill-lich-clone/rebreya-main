@@ -370,6 +370,110 @@ test("createRequest by player reserves weeks for an owned current member", async
   }
 });
 
+test("updateRequest edits a pending request without duplicating or losing week accounting", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-project",
+    name: "Project",
+    config: {
+      targetActions: [{
+        id: "project-rank",
+        label: "Project rank",
+        actionType: "rankChoice",
+        rankChoice: {
+          min: 1,
+          max: 9
+        }
+      }, {
+        id: "project-check",
+        label: "Project check",
+        actionType: "check",
+        configurable: true,
+        sourceType: "skill",
+        ability: "int",
+        target: "arc",
+        targetLabel: "Arcana",
+        dc: 12
+      }]
+    }
+  });
+  const harness = createHarness({
+    user: { id: "player-1", isGM: false },
+    members: [actorA],
+    groupItems: [templateItem],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 3,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 3
+        }
+      },
+      counter: 0
+    }
+  });
+
+  try {
+    const request = await harness.service.createRequest({
+      actorId: "actor-a",
+      actionId: templateItem.uuid,
+      title: "Old project",
+      weeks: 2,
+      targetActionSelections: [{
+        actionId: "project-rank",
+        value: 2
+      }]
+    });
+
+    const updated = await harness.service.updateRequest({
+      requestId: request.id,
+      actorId: "actor-a",
+      actionId: templateItem.uuid,
+      title: "Edited project",
+      weeks: 1,
+      targetActionSelections: [{
+        actionId: "project-rank",
+        value: 5
+      }, {
+        actionId: "project-check",
+        sourceType: "skill",
+        ability: "wis",
+        target: "prc",
+        targetLabel: "Perception",
+        dc: 18
+      }]
+    });
+
+    const state = getDowntimeState(harness);
+    assert.equal(state.requests.length, 1);
+    assert.equal(updated.id, request.id);
+    assert.equal(updated.title, "Edited project");
+    assert.equal(updated.weeks, 1);
+    assert.equal(updated.checks.find((check) => check.id === "project-rank").selectedRank, 5);
+    assert.equal(updated.checks.find((check) => check.id === "project-check").target, "prc");
+    assert.equal(updated.checks.find((check) => check.id === "project-check").dc, 18);
+    assert.equal(state.balancesByActorId["actor-a"].availableWeeks, 2);
+    assert.equal(state.balancesByActorId["actor-a"].reservedWeeks, 1);
+
+    await harness.service.recordCheckResult(request.id, "project-check", {
+      total: 20
+    });
+    await assert.rejects(
+      () => harness.service.updateRequest({
+        requestId: request.id,
+        actorId: "actor-a",
+        actionId: templateItem.uuid,
+        weeks: 1
+      }),
+      /already has recorded results/u
+    );
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("createRequest can target an explicit group and preserve player submitter on GM client", async () => {
   const actorA = createActor({ id: "actor-a", name: "Hero A", ownerUserId: "player-1" });
   const templateItem = createDowntimeTemplateItem({
@@ -661,6 +765,86 @@ test("closeProject closes an unfinished completed project without week accountin
     assert.equal(request.projectClosedByUserId, "gm");
     assert.equal(balance.availableWeeks, 0);
     assert.equal(balance.reservedWeeks, 0);
+    assert.equal(balance.spentWeeks, 1);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("continueProject reopens the same long project without duplicating requests", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    downtimeState: {
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 1,
+          totalGrantedWeeks: 2
+        }
+      },
+      requests: [{
+        id: "downtime-project",
+        actorId: "actor-a",
+        actorName: "Hero A",
+        actionId: "long-project",
+        actionLabel: "Long Project",
+        title: "Tower",
+        weeks: 1,
+        status: "completed",
+        checks: [{
+          id: "long-project-counter",
+          label: "Project counter",
+          actionType: "projectCounter",
+          projectCounter: {
+            current: 1,
+            max: 4
+          }
+        }, {
+          id: "long-project-check",
+          label: "Progress check",
+          actionType: "check",
+          sourceType: "skill",
+          ability: "int",
+          target: "inv",
+          targetLabel: "Investigation",
+          dc: 14,
+          result: {
+            total: 20,
+            dc: 14,
+            success: true
+          }
+        }, {
+          id: "long-project-result",
+          label: "Counter shift",
+          actionType: "downtimeResult",
+          result: {
+            total: 2,
+            value: 2,
+            progressSteps: 2,
+            outputField: "progressSteps"
+          }
+        }]
+      }]
+    }
+  });
+
+  try {
+    const request = await harness.service.continueProject("downtime-project", {
+      actorId: actor.id
+    });
+    const state = getDowntimeState(harness);
+    const balance = state.balancesByActorId["actor-a"];
+
+    assert.equal(state.requests.length, 1);
+    assert.equal(request.status, "pending");
+    assert.equal(request.checks.find((check) => check.id === "long-project-counter").projectCounter.current, 3);
+    assert.equal(request.checks.find((check) => check.id === "long-project-check").result, null);
+    assert.equal(request.checks.find((check) => check.id === "long-project-result").result, null);
+    assert.equal(balance.availableWeeks, 0);
+    assert.equal(balance.reservedWeeks, 1);
     assert.equal(balance.spentWeeks, 1);
   }
   finally {
@@ -2674,14 +2858,15 @@ test("RebreyaMainModule exposes downtime service API and refreshes after mutatio
   }
 });
 
-test("RebreyaMainModule does not render actor sheets after local downtime mutations", async () => {
+test("RebreyaMainModule refreshes open actor sheets after downtime mutations", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
+  const previousFoundry = globalThis.foundry;
   globalThis.Hooks = {
     once() {}
   };
-  let renderCount = 0;
+  const renderCalls = [];
   const emitted = [];
   globalThis.game = {
     user: {
@@ -2702,19 +2887,52 @@ test("RebreyaMainModule does not render actor sheets after local downtime mutati
           id: "actor-a"
         },
         render() {
-          renderCount += 1;
+          renderCalls.push("sheet1");
+        }
+      },
+      closedSheet: {
+        rendered: false,
+        actor: {
+          id: "actor-a"
+        },
+        render() {
+          renderCalls.push("closedSheet");
         }
       }
+    }
+  };
+  globalThis.foundry = {
+    applications: {
+      instances: new Map([[
+        "closedV2",
+        {
+          rendered: false,
+          document: {
+            id: "actor-a"
+          },
+          render() {
+            renderCalls.push("closedV2");
+          }
+        }
+      ], [
+        "openV2",
+        {
+          rendered: true,
+          document: {
+            id: "actor-a",
+            type: "character"
+          },
+          render() {
+            renderCalls.push("openV2");
+          }
+        }
+      ]])
     }
   };
 
   try {
     const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-local-no-sheet-render=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
-    let refreshCount = 0;
-    moduleApi.refreshOpenApps = async () => {
-      refreshCount += 1;
-    };
     moduleApi.downtimeService.grantWeeks = async () => ({ actorIds: ["actor-a"] });
     moduleApi.downtimeService.createRequest = async () => ({ id: "downtime-1", actorId: "actor-a" });
     moduleApi.downtimeService.setRequestStatus = async (requestId) => ({ id: requestId, actorId: "actor-a" });
@@ -2727,14 +2945,16 @@ test("RebreyaMainModule does not render actor sheets after local downtime mutati
     await moduleApi.setDowntimeRequestChecks("downtime-1", []);
     await moduleApi.recordDowntimeCheckResult("downtime-1", "check-1", { total: 20 });
 
-    assert.equal(refreshCount, 5);
-    assert.equal(renderCount, 0);
+    assert.deepEqual([...new Set(renderCalls)].sort(), ["openV2", "sheet1"]);
+    assert.equal(renderCalls.includes("closedSheet"), false);
+    assert.equal(renderCalls.includes("closedV2"), false);
     assert.equal(emitted.every(([, message]) => message.type === "downtime-updated"), true);
   }
   finally {
     globalThis.Hooks = previousHooks;
     globalThis.game = previousGame;
     globalThis.ui = previousUi;
+    globalThis.foundry = previousFoundry;
   }
 });
 
@@ -2983,7 +3203,7 @@ test("RebreyaMainModule routes player downtime check results through the GM sock
   }
 });
 
-test("RebreyaMainModule does not render actor sheets on downtime updates", async () => {
+test("RebreyaMainModule refreshes open actor sheets on downtime updates", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
@@ -3033,6 +3253,18 @@ test("RebreyaMainModule does not render actor sheets on downtime updates", async
             renderCalls.push("closedV2");
           }
         }
+      ], [
+        "openV2",
+        {
+          rendered: true,
+          document: {
+            id: "actor-a",
+            type: "character"
+          },
+          render() {
+            renderCalls.push("openV2");
+          }
+        }
       ]])
     }
   };
@@ -3048,7 +3280,9 @@ test("RebreyaMainModule does not render actor sheets on downtime updates", async
       requestId: "downtime-1"
     });
 
-    assert.deepEqual(renderCalls, []);
+    assert.deepEqual([...new Set(renderCalls)].sort(), ["openSheet", "openV2"]);
+    assert.equal(renderCalls.includes("closedSheet"), false);
+    assert.equal(renderCalls.includes("closedV2"), false);
   }
   finally {
     globalThis.Hooks = previousHooks;
@@ -3173,7 +3407,7 @@ test("RebreyaMainModule does not render player sheets when GM updates a downtime
       requestId: "downtime-1"
     });
 
-    assert.equal(refreshCount, 0);
+    assert.equal(refreshCount, 1);
     assert.equal(renderCount, 0);
   }
   finally {

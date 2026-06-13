@@ -54,8 +54,12 @@ const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
 const SOCKET_EVENT_TRADER_AUDIT = "trader-audit";
 const SOCKET_EVENT_DOWNTIME_CREATE_REQUEST = "downtime-create-request";
 const SOCKET_EVENT_DOWNTIME_CREATE_RESULT = "downtime-create-result";
+const SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST = "downtime-update-request";
+const SOCKET_EVENT_DOWNTIME_UPDATE_RESULT = "downtime-update-result";
 const SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST = "downtime-check-result-request";
 const SOCKET_EVENT_DOWNTIME_CHECK_RESULT_RESULT = "downtime-check-result-result";
+const SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST = "downtime-project-continue-request";
+const SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT = "downtime-project-continue-result";
 const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST = "downtime-project-close-request";
 const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT = "downtime-project-close-result";
 const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
@@ -120,6 +124,51 @@ function isActorOwnedByUser(actor, user) {
 
   const ownership = actor.ownership ?? actor._source?.ownership ?? {};
   return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
+}
+
+function getApplicationInstances(value) {
+  if (!value) {
+    return [];
+  }
+
+  if (value instanceof Map) {
+    return Array.from(value.values());
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  return Object.values(value);
+}
+
+function getOpenActorSheetApps() {
+  const apps = [
+    ...Object.values(globalThis.ui?.windows ?? {}),
+    ...getApplicationInstances(globalThis.foundry?.applications?.instances)
+  ];
+  const seen = new Set();
+  return apps.filter((app) => {
+    if (!app || seen.has(app) || !app.rendered || typeof app.render !== "function") {
+      return false;
+    }
+
+    const actor = app.actor ?? app.document;
+    if (!actor?.id) {
+      return false;
+    }
+
+    const isActorDocument = actor.type === "character"
+      || actor.documentName === "Actor"
+      || actor.constructor?.documentName === "Actor"
+      || Boolean(app.actor);
+    if (!isActorDocument) {
+      return false;
+    }
+
+    seen.add(app);
+    return true;
+  });
 }
 
 function dispatchSocketMessage(message) {
@@ -401,8 +450,18 @@ export class RebreyaMainModule {
       return;
     }
 
+    if (message.type === SOCKET_EVENT_DOWNTIME_UPDATE_RESULT) {
+      await this.#handleDowntimeUpdateSocketResult(message);
+      return;
+    }
+
     if (message.type === SOCKET_EVENT_DOWNTIME_CHECK_RESULT_RESULT) {
       await this.#handleDowntimeCheckResultSocketResult(message);
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT) {
+      await this.#handleDowntimeProjectContinueSocketResult(message);
       return;
     }
 
@@ -427,9 +486,23 @@ export class RebreyaMainModule {
       return;
     }
 
+    if (message.type === SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST) {
+      if (game.user?.isGM) {
+        await this.#handleDowntimeUpdateSocketRequest(message);
+      }
+      return;
+    }
+
     if (message.type === SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST) {
       if (game.user?.isGM) {
         await this.#handleDowntimeCheckResultSocketRequest(message);
+      }
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST) {
+      if (game.user?.isGM) {
+        await this.#handleDowntimeProjectContinueSocketRequest(message);
       }
       return;
     }
@@ -1261,6 +1334,20 @@ export class RebreyaMainModule {
     return result;
   }
 
+  async updateDowntimeRequest(payload = {}) {
+    if (!game.user?.isGM) {
+      return this.#requestDowntimeUpdateViaGm(payload);
+    }
+
+    const result = await this.downtimeService.updateRequest(payload);
+    await this.refreshOpenApps();
+    this.#emitDowntimeUpdated({
+      actorIds: [result.actorId],
+      requestId: result.id
+    });
+    return result;
+  }
+
   async #requestDowntimeCreateViaGm(payload = {}) {
     if (typeof game.socket?.emit !== "function") {
       throw new Error("Сокет Foundry недоступен для отправки заявки мастеру.");
@@ -1284,6 +1371,30 @@ export class RebreyaMainModule {
     };
   }
 
+  async #requestDowntimeUpdateViaGm(payload = {}) {
+    if (typeof game.socket?.emit !== "function") {
+      throw new Error("Сокет Foundry недоступен для обновления заявки мастеру.");
+    }
+
+    const requestId = createSocketRequestId("downtime-update");
+    const safePayload = cloneSocketPayload(payload);
+    safePayload.actorId = cleanSocketId(safePayload.actorId);
+    safePayload.groupId = cleanSocketId(safePayload.groupId);
+    safePayload.requestId = cleanSocketId(safePayload.requestId);
+
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST,
+      requestId,
+      senderId: game.user?.id ?? "",
+      payload: safePayload
+    });
+    return {
+      ...safePayload,
+      socketRequestId: requestId,
+      queued: true
+    };
+  }
+
   async #handleDowntimeCreateSocketResult(message = {}) {
     const forUserId = cleanSocketId(message.forUserId);
     if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
@@ -1298,7 +1409,23 @@ export class RebreyaMainModule {
     await this.refreshOpenApps();
   }
 
-  async #handleDowntimeUpdatedSocketMessage(_message = {}) {}
+  async #handleDowntimeUpdateSocketResult(message = {}) {
+    const forUserId = cleanSocketId(message.forUserId);
+    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
+      return;
+    }
+
+    if (message.ok === false) {
+      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил обновление заявки простоя.");
+      return;
+    }
+
+    await this.refreshOpenApps();
+  }
+
+  async #handleDowntimeUpdatedSocketMessage(_message = {}) {
+    await this.refreshOpenApps();
+  }
 
   async #handleDowntimeCreateSocketRequest(message = {}) {
     const requestId = cleanSocketId(message.requestId);
@@ -1325,6 +1452,48 @@ export class RebreyaMainModule {
       if (requestId) {
         game.socket?.emit?.(SOCKET_CHANNEL, {
           type: SOCKET_EVENT_DOWNTIME_CREATE_RESULT,
+          requestId,
+          forUserId,
+          senderId: game.user?.id ?? "",
+          ok: false,
+          error: error?.message ?? String(error)
+        });
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  async #handleDowntimeUpdateSocketRequest(message = {}) {
+    const requestId = cleanSocketId(message.requestId);
+    const forUserId = cleanSocketId(message.senderId);
+
+    try {
+      const result = await this.#updateDowntimeRequestFromSocket(message.payload ?? {}, {
+        senderId: forUserId
+      });
+
+      if (requestId) {
+        game.socket?.emit?.(SOCKET_CHANNEL, {
+          type: SOCKET_EVENT_DOWNTIME_UPDATE_RESULT,
+          requestId,
+          forUserId,
+          senderId: game.user?.id ?? "",
+          ok: true,
+          data: cloneSocketPayload(result)
+        });
+      }
+
+      this.#emitDowntimeUpdated({
+        actorIds: [result.actorId],
+        requestId: result.id
+      });
+    }
+    catch (error) {
+      if (requestId) {
+        game.socket?.emit?.(SOCKET_CHANNEL, {
+          type: SOCKET_EVENT_DOWNTIME_UPDATE_RESULT,
           requestId,
           forUserId,
           senderId: game.user?.id ?? "",
@@ -1367,6 +1536,35 @@ export class RebreyaMainModule {
       submittedByUserId: senderUser.id
     });
     return result;
+  }
+
+  async #updateDowntimeRequestFromSocket(payload = {}, { senderId = "" } = {}) {
+    const senderUser = getUserById(senderId);
+    if (!senderUser) {
+      throw new Error("Игрок для обновления заявки простоя не найден.");
+    }
+
+    const groupId = cleanSocketId(payload.groupId);
+    if (!groupId) {
+      throw new Error("Группа заявки простоя не найдена.");
+    }
+
+    const context = this.groupContextService.resolveForGroup(groupId);
+    const actorId = cleanSocketId(payload.actorId);
+    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
+    if (!actor) {
+      throw new Error("Персонаж заявки простоя не найден в группе.");
+    }
+
+    if (!isActorOwnedByUser(actor, senderUser)) {
+      throw new Error("Игрок может обновлять простой только за своего персонажа.");
+    }
+
+    return this.downtimeService.updateRequest({
+      ...cloneSocketPayload(payload),
+      groupId,
+      actorId
+    });
   }
 
   async #requestDowntimeCheckResultViaGm(requestId, checkId, result = {}, options = {}) {
@@ -1487,6 +1685,137 @@ export class RebreyaMainModule {
         actorId
       }
     );
+  }
+
+  async continueDowntimeProject({ requestId = "", groupId = "", actorId = "" } = {}) {
+    if (!game.user?.isGM) {
+      return this.#requestDowntimeProjectContinueViaGm({ requestId, groupId, actorId });
+    }
+
+    const options = {
+      actorId: cleanSocketId(actorId)
+    };
+    const safeGroupId = cleanSocketId(groupId);
+    if (safeGroupId) {
+      options.groupId = safeGroupId;
+    }
+
+    const result = await this.downtimeService.continueProject(cleanSocketId(requestId), options);
+    await this.refreshOpenApps();
+    this.#emitDowntimeUpdated({
+      actorIds: [result.actorId],
+      requestId: result.id
+    });
+    return result;
+  }
+
+  async #requestDowntimeProjectContinueViaGm({ requestId = "", groupId = "", actorId = "" } = {}) {
+    if (typeof game.socket?.emit !== "function") {
+      throw new Error("Сокет Foundry недоступен для продолжения проекта.");
+    }
+
+    const socketRequestId = createSocketRequestId("downtime-project-continue");
+    const payload = {
+      groupId: cleanSocketId(groupId),
+      actorId: cleanSocketId(actorId),
+      requestId: cleanSocketId(requestId)
+    };
+
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST,
+      requestId: socketRequestId,
+      senderId: game.user?.id ?? "",
+      payload
+    });
+    return {
+      ...payload,
+      socketRequestId,
+      queued: true
+    };
+  }
+
+  async #handleDowntimeProjectContinueSocketResult(message = {}) {
+    const forUserId = cleanSocketId(message.forUserId);
+    if (forUserId && forUserId !== cleanSocketId(game.user?.id)) {
+      return;
+    }
+
+    if (message.ok === false) {
+      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил продолжение проекта.");
+      return;
+    }
+
+    await this.refreshOpenApps();
+  }
+
+  async #handleDowntimeProjectContinueSocketRequest(message = {}) {
+    const requestId = cleanSocketId(message.requestId);
+    const forUserId = cleanSocketId(message.senderId);
+
+    try {
+      const result = await this.#continueDowntimeProjectFromSocket(message.payload ?? {}, {
+        senderId: forUserId
+      });
+
+      if (requestId) {
+        game.socket?.emit?.(SOCKET_CHANNEL, {
+          type: SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT,
+          requestId,
+          forUserId,
+          senderId: game.user?.id ?? "",
+          ok: true,
+          data: cloneSocketPayload(result)
+        });
+      }
+
+      this.#emitDowntimeUpdated({
+        actorIds: [result.actorId],
+        requestId: result.id
+      });
+    }
+    catch (error) {
+      if (requestId) {
+        game.socket?.emit?.(SOCKET_CHANNEL, {
+          type: SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT,
+          requestId,
+          forUserId,
+          senderId: game.user?.id ?? "",
+          ok: false,
+          error: error?.message ?? String(error)
+        });
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  async #continueDowntimeProjectFromSocket(payload = {}, { senderId = "" } = {}) {
+    const senderUser = getUserById(senderId);
+    if (!senderUser) {
+      throw new Error("Игрок для продолжения проекта не найден.");
+    }
+
+    const groupId = cleanSocketId(payload.groupId);
+    if (!groupId) {
+      throw new Error("Группа проекта не найдена.");
+    }
+
+    const context = this.groupContextService.resolveForGroup(groupId);
+    const actorId = cleanSocketId(payload.actorId);
+    const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
+    if (!actor) {
+      throw new Error("Персонаж проекта не найден в группе.");
+    }
+
+    if (!isActorOwnedByUser(actor, senderUser)) {
+      throw new Error("Игрок может продолжать проект только своего персонажа.");
+    }
+
+    return this.downtimeService.continueProject(cleanSocketId(payload.requestId), {
+      groupId,
+      actorId
+    });
   }
 
   async closeDowntimeProject({ requestId = "", groupId = "", actorId = "" } = {}) {
@@ -2200,6 +2529,10 @@ export class RebreyaMainModule {
       if (app?.rendered) {
         tasks.push(rerenderApp(app));
       }
+    }
+
+    for (const app of getOpenActorSheetApps()) {
+      tasks.push(rerenderApp(app));
     }
 
     await Promise.allSettled(tasks);

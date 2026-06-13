@@ -121,6 +121,10 @@ function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function resolveTemplateDescriptionHtml(action = {}) {
   return cleanText(action.descriptionHtml)
     || cleanText(action.description?.value)
@@ -448,7 +452,7 @@ function buildSubmittedActionOutcomeSummary(check = {}) {
     return cleanText(block.title) || cleanText(block.description);
   }
   if (actionType === "downtimeResult") {
-    return buildResultLabel(check.result) || cleanText(check.label);
+    return buildDowntimeResultLabel(check) || cleanText(check.label);
   }
   return buildResultLabel(check.result);
 }
@@ -1183,6 +1187,129 @@ function buildResultLabel(result) {
   return parts.join(", ");
 }
 
+function pluralizeRussian(value, one, few, many) {
+  const number = Math.abs(Math.floor(Number(value) || 0));
+  const lastTwo = number % 100;
+  const last = number % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) {
+    return many;
+  }
+  if (last === 1) {
+    return one;
+  }
+  if (last >= 2 && last <= 4) {
+    return few;
+  }
+  return many;
+}
+
+function buildDowntimeResultLabel(check = {}) {
+  if (cleanText(check.actionType) !== "downtimeResult") {
+    return buildResultLabel(check.result);
+  }
+
+  const result = asObject(check.result);
+  const outputField = cleanText(result.outputField);
+  if (outputField === "progressSteps" || result.progressSteps !== undefined) {
+    const steps = Math.max(0, toInteger(result.progressSteps, toInteger(result.value, toInteger(result.total, 0))));
+    return `${steps} ${pluralizeRussian(steps, "деление", "деления", "делений")}`;
+  }
+
+  return buildResultLabel(result);
+}
+
+function buildResultTooltip(check = {}) {
+  if (!check?.result || typeof check.result !== "object") {
+    return "";
+  }
+
+  if (cleanText(check.actionType) === "downtimeResult") {
+    const result = asObject(check.result);
+    const parts = [cleanText(check.label) || "Итог"];
+    if (result.sourceActionId) {
+      parts.push(`Источник: ${result.sourceActionId}`);
+    }
+    if (result.sourceTotal !== undefined) {
+      parts.push(`Результат проверки: ${result.sourceTotal}`);
+    }
+    if (result.progressSteps !== undefined || result.value !== undefined || result.total !== undefined) {
+      const steps = Math.max(0, toInteger(result.progressSteps, toInteger(result.value, toInteger(result.total, 0))));
+      parts.push(`Сдвиг счётчика: ${steps}`);
+    }
+    return parts.join(" · ");
+  }
+
+  const result = asObject(check.result);
+  const parts = [];
+  if (result.total !== undefined) {
+    parts.push(`Итог броска: ${result.total}`);
+  }
+  if (result.dc !== undefined) {
+    parts.push(`СЛ: ${result.dc}`);
+  }
+  if (result.success === true) {
+    parts.push("Успех");
+  }
+  else if (result.success === false) {
+    parts.push("Провал");
+  }
+  return parts.join(" · ");
+}
+
+function buildProjectSummaryRows(checks = [], projectCounter = null) {
+  if (!projectCounter) {
+    return [];
+  }
+
+  const rows = [];
+  for (const check of asArray(checks)) {
+    const actionType = cleanText(check.actionType);
+    const label = cleanText(check.label);
+    if (!label) {
+      continue;
+    }
+
+    if (actionType === "descriptionBlock") {
+      const block = asObject(check.descriptionBlock);
+      const value = cleanText(block.title);
+      const description = cleanText(block.description);
+      if (value || description) {
+        rows.push({
+          label,
+          value: value || description,
+          description,
+          tooltip: description
+        });
+      }
+    }
+    else if (actionType === "rankChoice") {
+      const value = buildSubmittedActionOutcomeSummary(check);
+      if (value) {
+        rows.push({ label, value });
+      }
+    }
+    else if (actionType === "projectCounter") {
+      rows.push({
+        label,
+        value: `${projectCounter.value} / ${projectCounter.max}`,
+        tooltip: `Заполнено ${projectCounter.value} из ${projectCounter.max}`
+      });
+    }
+    else if (actionType === "resources") {
+      const value = buildSubmittedActionOutcomeSummary(check);
+      if (value) {
+        rows.push({ label, value });
+      }
+    }
+  }
+
+  return rows;
+}
+
+function isProjectSummaryAction(check = {}) {
+  return ["descriptionBlock", "rankChoice", "projectCounter", "resources"].includes(cleanText(check.actionType));
+}
+
 function normalizeRollAbility(value = "") {
   const cleaned = cleanText(value);
   return cleaned.startsWith("save-") ? cleaned.slice(5) : cleaned;
@@ -1428,6 +1555,33 @@ function buildProjectContinuationPayload(request = {}, actions = [], counterValu
   });
 }
 
+function hasRecordedActionResult(action = {}) {
+  const result = action?.result;
+  return Boolean(result && typeof result === "object" && Object.keys(result).length > 0);
+}
+
+function buildRequestEditFormState(request = {}, actions = [], actionCatalog = []) {
+  const actionId = resolveContinuationActionId(request, actionCatalog);
+  if (!actionId) {
+    return null;
+  }
+
+  const counterAction = actions.find((action) => cleanText(action.actionType) === "projectCounter");
+  const counter = asObject(counterAction?.projectCounter);
+  const counterValue = toFiniteNumber(counter.current, toFiniteNumber(counter.value, 0)) ?? 0;
+  const targetActionSelections = actions
+    .map((action) => buildContinuationSelection(action, counterValue))
+    .filter(Boolean);
+  return {
+    requestId: cleanText(request.id),
+    actionId,
+    weeks: normalizeWeeks(request.weeks, 1),
+    title: cleanText(request.title),
+    description: cleanText(request.description),
+    targetActionSelections
+  };
+}
+
 function buildRequestProjectCounter(request = {}, actions = [], { availableWeeks = 0, actionCatalog = [] } = {}) {
   const counterAction = actions.find((action) => cleanText(action.actionType) === "projectCounter");
   if (!counterAction) {
@@ -1469,7 +1623,8 @@ function mapRequest(request = {}, { groupId = "", availableWeeks = 0, actionCata
   };
   const canRollRequest = status === "pending" || status === "approved";
   const checks = (Array.isArray(request.checks) ? request.checks : []).map((check) => {
-    const resultLabel = buildResultLabel(check?.result);
+    const resultLabel = buildDowntimeResultLabel(check);
+    const resultTooltip = buildResultTooltip(check);
     const outcomeSummary = buildSubmittedActionOutcomeSummary(check);
     const rollTargets = buildRollTargets(check, {
       canRollRequest,
@@ -1481,15 +1636,23 @@ function mapRequest(request = {}, { groupId = "", availableWeeks = 0, actionCata
       outcomeSummary,
       hasOutcomeSummary: Boolean(outcomeSummary && outcomeSummary !== resultLabel),
       resultLabel,
+      resultTooltip,
+      hasResultTooltip: Boolean(resultTooltip),
       hasResult: Boolean(resultLabel),
       rollTargets,
       hasRollTargets: rollTargets.some((target) => target.canRoll || target.hasResult)
     };
   });
   const projectCounter = buildRequestProjectCounter(request, checks, { availableWeeks, actionCatalog });
+  const projectSummaryRows = buildProjectSummaryRows(checks, projectCounter);
+  const visibleChecks = projectSummaryRows.length
+    ? checks.filter((check) => !isProjectSummaryAction(check))
+    : checks;
   const isArchived = ARCHIVED_REQUEST_STATUSES.has(status);
   const isProjectClosed = request.projectClosed === true;
   const isCurrentProject = Boolean(projectCounter && projectCounter.value < projectCounter.max && isArchived && !isProjectClosed);
+  const editFormState = buildRequestEditFormState(request, checks, actionCatalog);
+  const canEdit = status === "pending" && Boolean(editFormState?.actionId) && !checks.some((check) => hasRecordedActionResult(check));
 
   return {
     ...request,
@@ -1504,12 +1667,19 @@ function mapRequest(request = {}, { groupId = "", availableWeeks = 0, actionCata
     checkActions: checks.filter((check) => !NON_CHECK_ACTION_TYPES.has(cleanText(check.actionType))),
     projectCounter,
     hasProjectCounter: Boolean(projectCounter),
+    projectSummaryRows,
+    hasProjectSummaryRows: projectSummaryRows.length > 0,
     hasChecks: checks.length > 0,
+    visibleChecks,
+    hasVisibleChecks: visibleChecks.length > 0,
     hasResult: Boolean(cleanText(request.result)),
     isArchived,
     isCurrentProject,
     isProjectClosed,
-    showStatusBadge: !isCurrentProject
+    showStatusBadge: !isCurrentProject,
+    canEdit,
+    editFormState,
+    editFormStateJson: editFormState ? JSON.stringify(editFormState) : ""
   };
 }
 
@@ -1520,6 +1690,7 @@ function buildEmptyContext(actor, {
   const actionId = cleanText(formState.actionId);
   const weeks = normalizeWeeks(formState.weeks, 1);
   const selectedTemplate = buildTemplateView(formState.selectedTemplate, formState);
+  const editRequestId = cleanText(formState.editRequestId);
   return {
     actorId: actor?.id ?? "",
     actorName: actor?.name ?? "",
@@ -1543,6 +1714,8 @@ function buildEmptyContext(actor, {
     emptyRequests: true,
     form: {
       actionId,
+      editRequestId,
+      isEditing: Boolean(editRequestId),
       weeks,
       title: cleanText(formState.title),
       description: cleanText(formState.description),
@@ -1594,11 +1767,18 @@ export class CharacterDowntimeService {
 
     const actionCatalog = Array.isArray(snapshot?.actionCatalog) ? snapshot.actionCatalog : [];
     const actionId = cleanText(formState.actionId);
+    const editRequestId = cleanText(formState.editRequestId);
 
     const weeks = normalizeWeeks(formState.weeks, 1);
     const balance = buildBalance(member.balance ?? member);
+    const actorRequests = (Array.isArray(snapshot?.requests) ? snapshot.requests : [])
+      .filter((request) => request?.actorId === actor.id);
+    const editingRequest = editRequestId
+      ? actorRequests.find((request) => cleanText(request?.id) === editRequestId && cleanText(request?.status) === "pending")
+      : null;
+    const effectiveAvailableWeeks = balance.availableWeeks + (editingRequest ? normalizeWeeks(editingRequest.weeks, 1) : 0);
     const canSubmit = Boolean(member.canSubmit && snapshot?.canSubmit);
-    const submitDisabled = !canSubmit || !actionId || balance.availableWeeks < weeks;
+    const submitDisabled = !canSubmit || !actionId || effectiveAvailableWeeks < weeks;
     const submitDisabledReason = submitDisabled
       ? (!canSubmit
         ? "У вас нет прав отправлять заявки за этого персонажа."
@@ -1606,8 +1786,7 @@ export class CharacterDowntimeService {
           ? "Выберите простой из библиотеки."
           : "Недостаточно свободных недель простоя."))
       : "";
-    const requests = (Array.isArray(snapshot?.requests) ? snapshot.requests : [])
-      .filter((request) => request?.actorId === actor.id)
+    const requests = actorRequests
       .map((request) => mapRequest(request, {
         groupId: snapshot.groupId,
         availableWeeks: balance.availableWeeks,
@@ -1654,6 +1833,8 @@ export class CharacterDowntimeService {
       emptyRequests: activeRequests.length === 0,
       form: {
         actionId,
+        editRequestId,
+        isEditing: Boolean(editRequestId),
         weeks,
         title: cleanText(formState.title),
         description: cleanText(formState.description),
@@ -1682,6 +1863,7 @@ export class CharacterDowntimeService {
     const targetActionSelections = Array.isArray(payload.targetActionSelections)
       ? payload.targetActionSelections.map((entry) => normalizeSelectionEntry(entry)).filter(Boolean)
       : [];
+    const requestId = cleanText(payload.requestId);
     const requestPayload = {
       groupId,
       actorId: actor.id,
@@ -1690,9 +1872,14 @@ export class CharacterDowntimeService {
       title: cleanText(payload.title),
       description: cleanText(payload.description)
     };
-    if (targetActionSelections.length) {
+    if (requestId) {
+      requestPayload.requestId = requestId;
+    }
+    if (targetActionSelections.length || requestId) {
       requestPayload.targetActionSelections = targetActionSelections;
     }
-    return this.moduleApi.createDowntimeRequest(requestPayload);
+    return requestId
+      ? this.moduleApi.updateDowntimeRequest(requestPayload)
+      : this.moduleApi.createDowntimeRequest(requestPayload);
   }
 }

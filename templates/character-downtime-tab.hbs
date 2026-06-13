@@ -351,7 +351,7 @@
           {{#if characterDowntime.submitDisabled}}disabled{{/if}}
         >
           <i class="fa-solid fa-paper-plane"></i>
-          <span>Отправить</span>
+          <span>{{#if characterDowntime.form.isEditing}}Сохранить{{else}}Отправить{{/if}}</span>
         </button>
       {{/if}}
     </section>
@@ -370,9 +370,22 @@
             <article class="rm-character-downtime-request {{#if hasProjectCounter}}has-project-counter{{/if}}">
               <div class="rm-character-downtime-request__title">
                 <strong>{{title}}</strong>
-                {{#if showStatusBadge}}
-                  <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
-                {{/if}}
+                <div class="rm-character-downtime-request__title-actions">
+                  {{#if showStatusBadge}}
+                    <span class="rm-badge rm-status-badge {{statusClass}}">{{statusLabel}}</span>
+                  {{/if}}
+                  {{#if canEdit}}
+                    <button
+                      type="button"
+                      class="rm-icon-button rm-character-downtime-edit-request"
+                      data-action="character-downtime-edit-request"
+                      data-edit-state="{{editFormStateJson}}"
+                      data-tooltip="Редактировать заявку"
+                    >
+                      <i class="fa-solid fa-pencil"></i>
+                    </button>
+                  {{/if}}
+                </div>
               </div>
               <p class="rm-muted">{{actionLabel}} • {{rmNum weeks precision=0}} нед.</p>
               {{#if description}}
@@ -381,9 +394,22 @@
               {{#if hasResult}}
                 <p class="rm-inline-status rm-inline-status--info"><span>{{result}}</span></p>
               {{/if}}
-              {{#if hasChecks}}
+              {{#if hasProjectSummaryRows}}
+                <dl class="rm-character-downtime-project-summary">
+                  {{#each projectSummaryRows}}
+                    <div class="rm-character-downtime-project-summary__row" {{#if tooltip}}data-tooltip="{{tooltip}}"{{/if}}>
+                      <dt>{{label}}</dt>
+                      <dd>{{value}}</dd>
+                      {{#if description}}
+                        <p>{{description}}</p>
+                      {{/if}}
+                    </div>
+                  {{/each}}
+                </dl>
+              {{/if}}
+              {{#if hasVisibleChecks}}
                 <div class="rm-status-strip rm-character-downtime-checks">
-                  {{#each checks}}
+                  {{#each visibleChecks}}
                     <div class="rm-character-downtime-check">
                       <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Целевое действие простоя">{{summary}}</span>
                       {{#if hasOutcomeSummary}}
@@ -391,7 +417,7 @@
                       {{/if}}
                       {{#if hasResult}}
                         {{#unless hasRollTargets}}
-                          <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
+                          <span class="rm-badge rm-status-badge rm-status-badge--good" {{#if hasResultTooltip}}data-tooltip="{{resultTooltip}}"{{/if}}>{{resultLabel}}</span>
                         {{/unless}}
                       {{/if}}
                       {{#if hasRollTargets}}
@@ -436,16 +462,6 @@
                   {{#if projectCounter.hasImagePath}}
                     <img src="{{projectCounter.imagePath}}" alt="{{projectCounter.value}} / {{projectCounter.max}}">
                   {{/if}}
-                  {{#if projectCounter.canContinue}}
-                    <button
-                      type="button"
-                      class="rm-button rm-button--small rm-button--secondary rm-character-downtime-continue-button"
-                      data-action="character-downtime-continue"
-                      data-payload="{{projectCounter.continuePayloadJson}}"
-                    >
-                      Продолжить работу
-                    </button>
-                  {{/if}}
                 </aside>
               {{/if}}
             </article>
@@ -487,16 +503,29 @@
               {{#if hasResult}}
                 <p class="rm-inline-status rm-inline-status--info"><span>{{result}}</span></p>
               {{/if}}
-              {{#if hasChecks}}
+              {{#if hasProjectSummaryRows}}
+                <dl class="rm-character-downtime-project-summary">
+                  {{#each projectSummaryRows}}
+                    <div class="rm-character-downtime-project-summary__row" {{#if tooltip}}data-tooltip="{{tooltip}}"{{/if}}>
+                      <dt>{{label}}</dt>
+                      <dd>{{value}}</dd>
+                      {{#if description}}
+                        <p>{{description}}</p>
+                      {{/if}}
+                    </div>
+                  {{/each}}
+                </dl>
+              {{/if}}
+              {{#if hasVisibleChecks}}
                 <div class="rm-status-strip rm-character-downtime-checks">
-                  {{#each checks}}
+                  {{#each visibleChecks}}
                     <div class="rm-character-downtime-check">
                       <span class="rm-badge rm-status-badge rm-status-badge--info" data-tooltip="Целевое действие простоя">{{summary}}</span>
                       {{#if hasOutcomeSummary}}
                         <span class="rm-badge rm-status-badge rm-status-badge--info">{{outcomeSummary}}</span>
                       {{/if}}
                       {{#if hasResult}}
-                        <span class="rm-badge rm-status-badge rm-status-badge--good">{{resultLabel}}</span>
+                        <span class="rm-badge rm-status-badge rm-status-badge--good" {{#if hasResultTooltip}}data-tooltip="{{resultTooltip}}"{{/if}}>{{resultLabel}}</span>
                       {{/if}}
                     </div>
                   {{/each}}
@@ -513,7 +542,8 @@
                         type="button"
                         class="rm-icon-button rm-character-downtime-project-action"
                         data-action="character-downtime-continue"
-                        data-payload="{{projectCounter.continuePayloadJson}}"
+                        data-request-id="{{id}}"
+                        data-group-id="{{groupId}}"
                         data-tooltip="Продолжить работу"
                       >
                         <i class="fa-solid fa-forward"></i>
