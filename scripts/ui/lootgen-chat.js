@@ -16,6 +16,16 @@ function toInteger(value, fallback = 0) {
   return Number.isFinite(numericValue) ? Math.floor(numericValue) : fallback;
 }
 
+function cleanHookUserId(value) {
+  return String(value ?? "").trim();
+}
+
+function isCurrentUserHook(userId) {
+  const currentUserId = cleanHookUserId(globalThis.game?.user?.id);
+  const hookUserId = cleanHookUserId(userId);
+  return !hookUserId || !currentUserId || hookUserId === currentUserId;
+}
+
 function normalizeCoins(coins = {}) {
   const result = {
     pp: Math.max(0, toInteger(coins.pp, 0)),
@@ -280,6 +290,10 @@ export function registerLootgenChatHooks(moduleApi) {
   });
 
   Hooks.on("createItem", (item, _options, userId) => {
+    if (!isCurrentUserHook(userId)) {
+      return;
+    }
+
     moduleApi.handleLootgenChatItemCreated?.(item, userId).catch((error) => {
       console.error(`${MODULE_ID} | Failed to process lootgen chat item claim.`, error);
     });

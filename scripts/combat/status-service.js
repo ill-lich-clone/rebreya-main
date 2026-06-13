@@ -389,6 +389,12 @@ function getEffectDocumentId(effect) {
   return String(effect?.id ?? effect?._id ?? "").trim();
 }
 
+function buildEffectIdSet(effectIds = []) {
+  return new Set((Array.isArray(effectIds) ? effectIds : [effectIds])
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean));
+}
+
 function getEffectStatusValue(effect, scope, key) {
   try {
     const flagValue = effect?.getFlag?.(scope, key);
@@ -487,12 +493,12 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
   actor = null,
   sourceActor = null,
   sourceActorByEffectId = new Map(),
-  excludeEffectIds = []
+  excludeEffectIds = [],
+  skipUpdateEffectIds = []
 } = {}) {
   const sourceActorLookup = sourceActorByEffectId instanceof Map ? sourceActorByEffectId : new Map();
-  const excludedIds = new Set((Array.isArray(excludeEffectIds) ? excludeEffectIds : [])
-    .map((id) => String(id ?? "").trim())
-    .filter(Boolean));
+  const excludedIds = buildEffectIdSet(excludeEffectIds);
+  const skippedUpdateIds = buildEffectIdSet(skipUpdateEffectIds);
   const rows = (Array.isArray(effects) ? effects : [])
     .filter(hasFrightenedStatusId)
     .map((effect, index) => {
@@ -521,28 +527,30 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
     return best;
   }, null);
 
-  return rows.map((row) => ({
-    _id: row.id,
-    name: frightenedStatusName(row.value),
-    img: statusIcon(FRIGHTENED_STATUS_ID),
-    icon: statusIcon(FRIGHTENED_STATUS_ID),
-    statuses: buildSyncedFrightenedStatuses(row.effect),
-    changes: buildSyncedFrightenedChanges(row.effect, row.value, { isStrongest: row.id === strongest.id }),
-    "flags.core.statusId": FRIGHTENED_STATUS_ID,
-    [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: FRIGHTENED_STATUS_ID,
-    [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: row.value,
-    [`flags.${STATUS_COUNTER_MODULE_ID}.value`]: row.value,
-    [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: true
-  }));
+  return rows
+    .filter((row) => !skippedUpdateIds.has(row.id))
+    .map((row) => ({
+      _id: row.id,
+      name: frightenedStatusName(row.value),
+      img: statusIcon(FRIGHTENED_STATUS_ID),
+      icon: statusIcon(FRIGHTENED_STATUS_ID),
+      statuses: buildSyncedFrightenedStatuses(row.effect),
+      changes: buildSyncedFrightenedChanges(row.effect, row.value, { isStrongest: row.id === strongest.id }),
+      "flags.core.statusId": FRIGHTENED_STATUS_ID,
+      [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: FRIGHTENED_STATUS_ID,
+      [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: row.value,
+      [`flags.${STATUS_COUNTER_MODULE_ID}.value`]: row.value,
+      [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: true
+    }));
 }
 
 export function buildDiscreetStatusSyncUpdates(effects = [], {
   actor = null,
-  excludeEffectIds = []
+  excludeEffectIds = [],
+  skipUpdateEffectIds = []
 } = {}) {
-  const excludedIds = new Set((Array.isArray(excludeEffectIds) ? excludeEffectIds : [])
-    .map((id) => String(id ?? "").trim())
-    .filter(Boolean));
+  const excludedIds = buildEffectIdSet(excludeEffectIds);
+  const skippedUpdateIds = buildEffectIdSet(skipUpdateEffectIds);
   const rows = (Array.isArray(effects) ? effects : [])
     .filter(hasDiscreetStatusId)
     .map((effect, index) => ({
@@ -570,28 +578,30 @@ export function buildDiscreetStatusSyncUpdates(effects = [], {
     return best;
   }, null);
 
-  return rows.map((row) => {
-    const hasValue = row.amount.hasValue;
-    return {
-      _id: row.id,
-      name: hasValue ? discreetStatusName(row.amount.value) : plainDiscreetStatusName(),
-      img: statusIcon(REBREYA_DISCREET_STATUS_ID),
-      icon: statusIcon(REBREYA_DISCREET_STATUS_ID),
-      statuses: [REBREYA_DISCREET_STATUS_ID],
-      changes: row.id === strongest.id
-        ? (hasValue ? buildDiscreetSpeedChanges(row.amount.value) : buildDiscreetHalfSpeedChanges(actor))
-        : [],
-      "flags.core.statusId": REBREYA_DISCREET_STATUS_ID,
-      [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: REBREYA_DISCREET_STATUS_ID,
-      [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: hasValue ? row.amount.value : null,
-      ...(hasValue ? {
-        [`flags.${STATUS_COUNTER_MODULE_ID}.value`]: row.amount.value,
-        [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: true
-      } : {
-        [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: false
-      })
-    };
-  });
+  return rows
+    .filter((row) => !skippedUpdateIds.has(row.id))
+    .map((row) => {
+      const hasValue = row.amount.hasValue;
+      return {
+        _id: row.id,
+        name: hasValue ? discreetStatusName(row.amount.value) : plainDiscreetStatusName(),
+        img: statusIcon(REBREYA_DISCREET_STATUS_ID),
+        icon: statusIcon(REBREYA_DISCREET_STATUS_ID),
+        statuses: [REBREYA_DISCREET_STATUS_ID],
+        changes: row.id === strongest.id
+          ? (hasValue ? buildDiscreetSpeedChanges(row.amount.value) : buildDiscreetHalfSpeedChanges(actor))
+          : [],
+        "flags.core.statusId": REBREYA_DISCREET_STATUS_ID,
+        [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: REBREYA_DISCREET_STATUS_ID,
+        [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: hasValue ? row.amount.value : null,
+        ...(hasValue ? {
+          [`flags.${STATUS_COUNTER_MODULE_ID}.value`]: row.amount.value,
+          [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: true
+        } : {
+          [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: false
+        })
+      };
+    });
 }
 
 function buildDynamicStatusChanges(statusId, value) {
@@ -1264,7 +1274,7 @@ export class CombatStatusService {
     return true;
   }
 
-  async #syncDiscreetStatusEffects(actor, { excludeEffectIds = [] } = {}) {
+  async #syncDiscreetStatusEffects(actor, { excludeEffectIds = [], skipUpdateEffectIds = [] } = {}) {
     if (!(actor instanceof Actor)) {
       return false;
     }
@@ -1274,7 +1284,7 @@ export class CombatStatusService {
     }
 
     const effects = this.#getDiscreetStatusEffects(actor);
-    const updates = buildDiscreetStatusSyncUpdates(effects, { actor, excludeEffectIds });
+    const updates = buildDiscreetStatusSyncUpdates(effects, { actor, excludeEffectIds, skipUpdateEffectIds });
     if (!updates.length) {
       return false;
     }
@@ -1298,7 +1308,7 @@ export class CombatStatusService {
     }
   }
 
-  async #syncFrightenedStatusEffects(actor, { sourceActor = null, excludeEffectIds = [] } = {}) {
+  async #syncFrightenedStatusEffects(actor, { sourceActor = null, excludeEffectIds = [], skipUpdateEffectIds = [] } = {}) {
     if (!(actor instanceof Actor)) {
       return false;
     }
@@ -1313,7 +1323,8 @@ export class CombatStatusService {
       actor,
       sourceActor,
       sourceActorByEffectId,
-      excludeEffectIds
+      excludeEffectIds,
+      skipUpdateEffectIds
     });
     if (!updates.length) {
       return false;
@@ -1350,11 +1361,12 @@ export class CombatStatusService {
   }
 
   async handleActiveEffectCreated(effect) {
+    const createdEffectId = getEffectDocumentId(effect);
     const didSyncDiscreet = hasDiscreetStatusId(effect)
-      ? await this.#syncDiscreetStatusEffects(effect.parent)
+      ? await this.#syncDiscreetStatusEffects(effect.parent, { skipUpdateEffectIds: [createdEffectId] })
       : false;
     const didSyncFrightened = hasFrightenedStatusId(effect)
-      ? await this.#syncFrightenedStatusEffects(effect.parent)
+      ? await this.#syncFrightenedStatusEffects(effect.parent, { skipUpdateEffectIds: [createdEffectId] })
       : false;
 
     return didSyncDiscreet || didSyncFrightened;

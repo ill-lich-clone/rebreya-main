@@ -603,6 +603,37 @@ test("frightened status sync ignores the effect currently being deleted", () => 
   );
 });
 
+test("frightened status sync ranks but does not update the effect currently being created", () => {
+  const updates = buildFrightenedStatusSyncUpdates([
+    {
+      id: "created",
+      name: "Frightened 4",
+      flags: {
+        statuscounter: { value: 4 },
+        "rebreya-main": { statusId: "frightened", statusValue: 4 }
+      },
+      statuses: ["frightened"]
+    },
+    {
+      id: "existing",
+      name: "Frightened 2",
+      flags: {
+        statuscounter: { value: 2 },
+        "rebreya-main": { statusId: "frightened", statusValue: 2 }
+      },
+      changes: [
+        { key: "system.bonuses.mwak.attack", mode: 2, value: "-2", priority: 20 }
+      ],
+      statuses: ["frightened"]
+    }
+  ], {
+    skipUpdateEffectIds: ["created"]
+  });
+
+  assert.deepEqual(updates.map((update) => update._id), ["existing"]);
+  assert.deepEqual(updates[0].changes, []);
+});
+
 test("discreet status sync keeps several effects but only applies the strongest speed penalty", () => {
   const updates = buildDiscreetStatusSyncUpdates([
     {
@@ -686,6 +717,36 @@ test("discreet status sync ignores the effect currently being deleted", () => {
       ["system.attributes.movement.swim", "-5"]
     ]
   );
+});
+
+test("discreet status sync ranks but does not update the effect currently being created", () => {
+  const updates = buildDiscreetStatusSyncUpdates([
+    {
+      id: "created",
+      name: "Discreet 15",
+      flags: {
+        statuscounter: { value: 15 },
+        "rebreya-main": { statusId: "rebreya-discreet", statusValue: 15 }
+      },
+      changes: []
+    },
+    {
+      id: "existing",
+      name: "Discreet 5",
+      flags: {
+        statuscounter: { value: 5 },
+        "rebreya-main": { statusId: "rebreya-discreet", statusValue: 5 }
+      },
+      changes: [
+        { key: "system.attributes.movement.walk", mode: 2, value: "-5", priority: 20 }
+      ]
+    }
+  ], {
+    skipUpdateEffectIds: ["created"]
+  });
+
+  assert.deepEqual(updates.map((update) => update._id), ["existing"]);
+  assert.deepEqual(updates[0].changes, []);
 });
 
 test("unvalued discreet status halves movement instead of using a counter value", () => {
