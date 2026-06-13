@@ -320,6 +320,36 @@ function buildFrightenedChanges(value, context = {}) {
   }));
 }
 
+function buildSyncedFrightenedChanges(effect, value, { isStrongest = false } = {}) {
+  const preservedChanges = (Array.isArray(effect?.changes) ? effect.changes : [])
+    .filter((change) => !FRIGHTENED_ATTACK_BONUS_KEYS.includes(change?.key));
+
+  return isStrongest
+    ? [...preservedChanges, ...buildFrightenedChanges(value)]
+    : preservedChanges;
+}
+
+function getExplicitEffectStatuses(effect) {
+  if (effect?.statuses instanceof Set) {
+    return [...effect.statuses].map((entry) => String(entry ?? "").trim()).filter(Boolean);
+  }
+
+  if (Array.isArray(effect?.statuses)) {
+    return effect.statuses.map((entry) => String(entry ?? "").trim()).filter(Boolean);
+  }
+
+  return null;
+}
+
+function buildSyncedFrightenedStatuses(effect) {
+  const explicitStatuses = getExplicitEffectStatuses(effect);
+  if (explicitStatuses && explicitStatuses.length === 0) {
+    return [];
+  }
+
+  return [FRIGHTENED_STATUS_ID];
+}
+
 export function buildFrightenedStatusEffectData(
   value,
   { durationRounds = DEFAULT_DURATION_ROUNDS, meta = {}, actor = null, sourceActor = null } = {}
@@ -456,9 +486,13 @@ function readFrightenedStatusValue(effect, context = {}) {
 export function buildFrightenedStatusSyncUpdates(effects = [], {
   actor = null,
   sourceActor = null,
-  sourceActorByEffectId = new Map()
+  sourceActorByEffectId = new Map(),
+  excludeEffectIds = []
 } = {}) {
   const sourceActorLookup = sourceActorByEffectId instanceof Map ? sourceActorByEffectId : new Map();
+  const excludedIds = new Set((Array.isArray(excludeEffectIds) ? excludeEffectIds : [])
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean));
   const rows = (Array.isArray(effects) ? effects : [])
     .filter(hasFrightenedStatusId)
     .map((effect, index) => {
@@ -472,6 +506,7 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
         value
       };
     })
+    .filter((row) => !excludedIds.has(row.id))
     .filter((row) => row.id && row.value > 0);
 
   if (!rows.length) {
@@ -491,8 +526,8 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
     name: frightenedStatusName(row.value),
     img: statusIcon(FRIGHTENED_STATUS_ID),
     icon: statusIcon(FRIGHTENED_STATUS_ID),
-    statuses: [FRIGHTENED_STATUS_ID],
-    changes: row.id === strongest.id ? buildFrightenedChanges(row.value) : [],
+    statuses: buildSyncedFrightenedStatuses(row.effect),
+    changes: buildSyncedFrightenedChanges(row.effect, row.value, { isStrongest: row.id === strongest.id }),
     "flags.core.statusId": FRIGHTENED_STATUS_ID,
     [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: FRIGHTENED_STATUS_ID,
     [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: row.value,
@@ -501,7 +536,13 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
   }));
 }
 
-export function buildDiscreetStatusSyncUpdates(effects = [], { actor = null } = {}) {
+export function buildDiscreetStatusSyncUpdates(effects = [], {
+  actor = null,
+  excludeEffectIds = []
+} = {}) {
+  const excludedIds = new Set((Array.isArray(excludeEffectIds) ? excludeEffectIds : [])
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean));
   const rows = (Array.isArray(effects) ? effects : [])
     .filter(hasDiscreetStatusId)
     .map((effect, index) => ({
@@ -510,6 +551,7 @@ export function buildDiscreetStatusSyncUpdates(effects = [], { actor = null } = 
       id: getEffectDocumentId(effect),
       amount: readDiscreetStatusAmount(effect)
     }))
+    .filter((row) => !excludedIds.has(row.id))
     .map((row) => ({
       ...row,
       strength: row.amount.hasValue ? row.amount.value : getDiscreetHalfSpeedStrength(actor)
@@ -1222,7 +1264,7 @@ export class CombatStatusService {
     return true;
   }
 
-  async #syncDiscreetStatusEffects(actor) {
+  async #syncDiscreetStatusEffects(actor, { excludeEffectIds = [] } = {}) {
     if (!(actor instanceof Actor)) {
       return false;
     }
@@ -1232,7 +1274,7 @@ export class CombatStatusService {
     }
 
     const effects = this.#getDiscreetStatusEffects(actor);
-    const updates = buildDiscreetStatusSyncUpdates(effects, { actor });
+    const updates = buildDiscreetStatusSyncUpdates(effects, { actor, excludeEffectIds });
     if (!updates.length) {
       return false;
     }
@@ -1256,7 +1298,7 @@ export class CombatStatusService {
     }
   }
 
-  async #syncFrightenedStatusEffects(actor, { sourceActor = null } = {}) {
+  async #syncFrightenedStatusEffects(actor, { sourceActor = null, excludeEffectIds = [] } = {}) {
     if (!(actor instanceof Actor)) {
       return false;
     }
@@ -1270,7 +1312,8 @@ export class CombatStatusService {
     const updates = buildFrightenedStatusSyncUpdates(effects, {
       actor,
       sourceActor,
-      sourceActorByEffectId
+      sourceActorByEffectId,
+      excludeEffectIds
     });
     if (!updates.length) {
       return false;
@@ -1318,11 +1361,12 @@ export class CombatStatusService {
   }
 
   async handleActiveEffectDeleted(effect) {
+    const deletedEffectId = getEffectDocumentId(effect);
     const didSyncDiscreet = hasDiscreetStatusId(effect)
-      ? await this.#syncDiscreetStatusEffects(effect.parent)
+      ? await this.#syncDiscreetStatusEffects(effect.parent, { excludeEffectIds: [deletedEffectId] })
       : false;
     const didSyncFrightened = hasFrightenedStatusId(effect)
-      ? await this.#syncFrightenedStatusEffects(effect.parent)
+      ? await this.#syncFrightenedStatusEffects(effect.parent, { excludeEffectIds: [deletedEffectId] })
       : false;
 
     return didSyncDiscreet || didSyncFrightened;

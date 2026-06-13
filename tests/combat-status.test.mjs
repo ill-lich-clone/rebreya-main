@@ -481,26 +481,48 @@ test("frightened effect data falls back to half source proficiency with minimum 
 });
 
 test("frightened status sync keeps only the strongest attack penalty active", () => {
+  const attackBonusKeys = [
+    "system.bonuses.mwak.attack",
+    "system.bonuses.rwak.attack",
+    "system.bonuses.msak.attack",
+    "system.bonuses.rsak.attack"
+  ];
+  const weakOverTime = {
+    key: "flags.midi-qol.OverTime",
+    mode: 0,
+    value: "turn=end,saveAbility=wis,saveDC=13",
+    priority: 20
+  };
+  const strongestOverTime = {
+    key: "flags.midi-qol.OverTime",
+    mode: 0,
+    value: "turn=end,saveAbility=wis,saveDC=15",
+    priority: 20
+  };
   const updates = buildFrightenedStatusSyncUpdates([
     {
       id: "weak",
-      name: "Испуг 2",
+      name: "Frightened 2",
       flags: {
         statuscounter: { value: 2 },
         "rebreya-main": { statusId: "rebreya-frightened", statusValue: 2 }
       },
       changes: [
-        { key: "system.bonuses.abilities.check", mode: 2, value: "-2", priority: 20 }
+        weakOverTime,
+        { key: "system.bonuses.mwak.attack", mode: 2, value: "-2", priority: 20 }
       ],
-      statuses: ["rebreya-frightened"]
+      statuses: []
     },
     {
       id: "fallback",
-      name: "Испуг",
+      name: "Frightened",
       flags: {
         "rebreya-main": { statusId: "frightened", statusValue: null }
       },
-      changes: [],
+      changes: [
+        strongestOverTime,
+        { key: "system.bonuses.rwak.attack", mode: 2, value: "-99", priority: 20 }
+      ],
       statuses: ["frightened"]
     }
   ], {
@@ -518,8 +540,8 @@ test("frightened status sync keeps only the strongest attack penalty active", ()
     name: "Испуганный 2",
     img: "systems/dnd5e/icons/svg/statuses/frightened.svg",
     icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
-    statuses: ["frightened"],
-    changes: [],
+    statuses: [],
+    changes: [weakOverTime],
     "flags.core.statusId": "frightened",
     "flags.rebreya-main.statusId": "frightened",
     "flags.rebreya-main.statusValue": 2,
@@ -529,10 +551,54 @@ test("frightened status sync keeps only the strongest attack penalty active", ()
   assert.deepEqual(
     updates.find((update) => update._id === "fallback")?.changes.map((change) => [change.key, change.value]),
     [
+      ["flags.midi-qol.OverTime", "turn=end,saveAbility=wis,saveDC=15"],
       ["system.bonuses.mwak.attack", "-3"],
       ["system.bonuses.rwak.attack", "-3"],
       ["system.bonuses.msak.attack", "-3"],
       ["system.bonuses.rsak.attack", "-3"]
+    ]
+  );
+  assert.deepEqual(updates.find((update) => update._id === "fallback")?.statuses, ["frightened"]);
+  assert.deepEqual(
+    updates.flatMap((update) => update.changes
+      .filter((change) => attackBonusKeys.includes(change.key))
+      .map((change) => [update._id, change.key, change.value])),
+    attackBonusKeys.map((key) => ["fallback", key, "-3"])
+  );
+});
+
+test("frightened status sync ignores the effect currently being deleted", () => {
+  const updates = buildFrightenedStatusSyncUpdates([
+    {
+      id: "deleted",
+      name: "Испуг 4",
+      flags: {
+        statuscounter: { value: 4 },
+        "rebreya-main": { statusId: "frightened", statusValue: 4 }
+      },
+      statuses: ["frightened"]
+    },
+    {
+      id: "remaining",
+      name: "Испуг 2",
+      flags: {
+        statuscounter: { value: 2 },
+        "rebreya-main": { statusId: "frightened", statusValue: 2 }
+      },
+      statuses: ["frightened"]
+    }
+  ], {
+    excludeEffectIds: ["deleted"]
+  });
+
+  assert.deepEqual(updates.map((update) => update._id), ["remaining"]);
+  assert.deepEqual(
+    updates[0].changes.map((change) => [change.key, change.value]),
+    [
+      ["system.bonuses.mwak.attack", "-2"],
+      ["system.bonuses.rwak.attack", "-2"],
+      ["system.bonuses.msak.attack", "-2"],
+      ["system.bonuses.rsak.attack", "-2"]
     ]
   );
 });
@@ -581,6 +647,43 @@ test("discreet status sync keeps several effects but only applies the strongest 
       ["system.attributes.movement.climb", "-15"],
       ["system.attributes.movement.fly", "-15"],
       ["system.attributes.movement.swim", "-15"]
+    ]
+  );
+});
+
+test("discreet status sync ignores the effect currently being deleted", () => {
+  const updates = buildDiscreetStatusSyncUpdates([
+    {
+      id: "deleted",
+      name: "Сдержанный 15",
+      flags: {
+        statuscounter: { value: 15 },
+        "rebreya-main": { statusId: "rebreya-discreet", statusValue: 15 }
+      },
+      changes: []
+    },
+    {
+      id: "remaining",
+      name: "Сдержанный 5",
+      flags: {
+        statuscounter: { value: 5 },
+        "rebreya-main": { statusId: "rebreya-discreet", statusValue: 5 }
+      },
+      changes: []
+    }
+  ], {
+    excludeEffectIds: ["deleted"]
+  });
+
+  assert.deepEqual(updates.map((update) => update._id), ["remaining"]);
+  assert.deepEqual(
+    updates[0].changes.map((change) => [change.key, change.value]),
+    [
+      ["system.attributes.movement.walk", "-5"],
+      ["system.attributes.movement.burrow", "-5"],
+      ["system.attributes.movement.climb", "-5"],
+      ["system.attributes.movement.fly", "-5"],
+      ["system.attributes.movement.swim", "-5"]
     ]
   );
 });
