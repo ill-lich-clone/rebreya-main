@@ -3702,22 +3702,11 @@ async function rollCharacterDowntimeTarget(actor, button, event) {
   return null;
 }
 
-async function handleCharacterDowntimeRoll(button, app, moduleApi, event) {
-  const actor = getActorFromSheetApp(app);
-  if (!actor) {
-    return;
-  }
-
-  const requestId = cleanText(button.dataset.requestId);
-  const checkId = cleanText(button.dataset.checkId);
-  if (!requestId || !checkId) {
-    throw new Error("Целевое действие простоя не найдено.");
-  }
-
+async function buildCharacterDowntimeRollResult(actor, button, event) {
   const rolls = await rollCharacterDowntimeTarget(actor, button, event);
   const total = getDowntimeRollTotal(rolls);
   if (total === null) {
-    return;
+    return null;
   }
 
   const explicitOutcomeMode = cleanText(button.dataset.outcomeMode);
@@ -3744,6 +3733,24 @@ async function handleCharacterDowntimeRoll(button, app, moduleApi, event) {
   if (cleanText(button.dataset.hasChoices) === "true") {
     result.choiceIndex = normalizeNonNegativeInteger(button.dataset.choiceIndex, 0);
   }
+
+  return result;
+}
+
+async function handleCharacterDowntimeRoll(button, app, moduleApi, event) {
+  const actor = getActorFromSheetApp(app);
+  if (!actor) {
+    return;
+  }
+
+  const requestId = cleanText(button.dataset.requestId);
+  const checkId = cleanText(button.dataset.checkId);
+  if (!requestId || !checkId) {
+    throw new Error("Целевое действие простоя не найдено.");
+  }
+
+  const result = await buildCharacterDowntimeRollResult(actor, button, event);
+  if (!result) return;
 
   await moduleApi.recordDowntimeCheckResult(requestId, checkId, result, {
     actorId: cleanText(button.dataset.actorId) || actor.id,
@@ -3977,15 +3984,22 @@ async function handleCharacterDowntimeContinueClick(event, { root = null, app = 
   try {
     const actor = getActorFromSheetApp(sheetApp);
     const requestId = cleanText(continueButton.dataset.requestId);
-    if (!actor || !requestId) {
+    const checkId = cleanText(continueButton.dataset.checkId);
+    if (!actor || !requestId || !checkId) {
+      return true;
+    }
+    const result = await buildCharacterDowntimeRollResult(actor, continueButton, event);
+    if (!result) {
       return true;
     }
     await moduleApi.continueDowntimeProject({
       requestId,
       actorId: actor.id,
-      groupId: cleanText(continueButton.dataset.groupId)
+      groupId: cleanText(continueButton.dataset.groupId),
+      checkId,
+      result
     });
-    ui.notifications?.info("Проект продолжен на следующую неделю.");
+    ui.notifications?.info("Неделя проекта записана.");
     await rerenderActorSheet(sheetApp, moduleApi);
   }
   catch (error) {

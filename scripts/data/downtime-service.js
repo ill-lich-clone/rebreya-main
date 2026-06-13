@@ -1344,6 +1344,25 @@ function clearWeeklyProjectResults(request = {}) {
   }
 }
 
+function applyCheckResultToRequest(request = {}, checkId = "", result = {}) {
+  const safeCheckId = cleanId(checkId);
+  const check = asArray(request.checks).find((entry) => entry.id === safeCheckId);
+  if (!check) {
+    throw new Error("Downtime check not found.");
+  }
+
+  const sourceResult = clone(asObject(result));
+  const enrichedResult = enrichResultWithThreshold(check, enrichResultWithDc(check, sourceResult));
+  check.result = {
+    ...enrichedResult,
+    recordedByUserId: cleanId(sourceResult.recordedByUserId) || cleanId(getCurrentUser()?.id),
+    recordedAt: Date.now()
+  };
+  refreshMappedDowntimeResults(request);
+  request.updatedAt = Date.now();
+  return check;
+}
+
 function getOptionalNumber(value) {
   if (value === undefined || value === null) {
     return undefined;
@@ -2033,12 +2052,13 @@ export class DowntimeService {
     });
   }
 
-  async continueProject(requestId, { groupId = "", actorId = "" } = {}) {
+  async continueProject(requestId, { groupId = "", actorId = "", checkId = "", result = {} } = {}) {
     const context = cleanId(groupId)
       ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
       : this.#resolveContext();
     const safeRequestId = cleanId(requestId);
     const safeActorId = cleanId(actorId);
+    const safeCheckId = cleanId(checkId);
 
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
@@ -2065,6 +2085,9 @@ export class DowntimeService {
       if (projectCounter.current >= projectCounter.max) {
         throw new Error("Downtime project counter is already complete.");
       }
+      if (!safeCheckId) {
+        throw new Error("Downtime project check not found.");
+      }
 
       const balance = normalizeBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
       if (balance.availableWeeks < 1) {
@@ -2072,7 +2095,7 @@ export class DowntimeService {
       }
 
       balance.availableWeeks -= 1;
-      balance.reservedWeeks += 1;
+      balance.spentWeeks += 1;
       state.balancesByActorId[request.actorId] = balance;
 
       projectCounter.check.projectCounter = {
@@ -2081,10 +2104,8 @@ export class DowntimeService {
         max: projectCounter.max
       };
       clearWeeklyProjectResults(request);
-      request.status = "pending";
-      request.result = "";
-      request.reviewedByUserId = "";
-      request.updatedAt = Date.now();
+      applyCheckResultToRequest(request, safeCheckId, result);
+      request.status = "completed";
       return clone(request);
     });
   }
@@ -2159,19 +2180,7 @@ export class DowntimeService {
         }
       }
 
-      const check = request.checks.find((entry) => entry.id === safeCheckId);
-      if (!check) {
-        throw new Error("Downtime check not found.");
-      }
-
-      const enrichedResult = enrichResultWithThreshold(check, enrichResultWithDc(check, clone(asObject(result))));
-      check.result = {
-        ...enrichedResult,
-        recordedByUserId: cleanId(asObject(result).recordedByUserId) || cleanId(getCurrentUser()?.id),
-        recordedAt: Date.now()
-      };
-      refreshMappedDowntimeResults(request);
-      request.updatedAt = Date.now();
+      applyCheckResultToRequest(request, safeCheckId, result);
       return clone(request);
     });
   }

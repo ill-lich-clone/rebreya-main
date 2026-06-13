@@ -1687,29 +1687,31 @@ export class RebreyaMainModule {
     );
   }
 
-  async continueDowntimeProject({ requestId = "", groupId = "", actorId = "" } = {}) {
+  async continueDowntimeProject({ requestId = "", groupId = "", actorId = "", checkId = "", result = {} } = {}) {
     if (!game.user?.isGM) {
-      return this.#requestDowntimeProjectContinueViaGm({ requestId, groupId, actorId });
+      return this.#requestDowntimeProjectContinueViaGm({ requestId, groupId, actorId, checkId, result });
     }
 
     const options = {
-      actorId: cleanSocketId(actorId)
+      actorId: cleanSocketId(actorId),
+      checkId: cleanSocketId(checkId),
+      result: cloneSocketPayload(result)
     };
     const safeGroupId = cleanSocketId(groupId);
     if (safeGroupId) {
       options.groupId = safeGroupId;
     }
 
-    const result = await this.downtimeService.continueProject(cleanSocketId(requestId), options);
+    const continuedRequest = await this.downtimeService.continueProject(cleanSocketId(requestId), options);
     await this.refreshOpenApps();
     this.#emitDowntimeUpdated({
-      actorIds: [result.actorId],
-      requestId: result.id
+      actorIds: [continuedRequest.actorId],
+      requestId: continuedRequest.id
     });
-    return result;
+    return continuedRequest;
   }
 
-  async #requestDowntimeProjectContinueViaGm({ requestId = "", groupId = "", actorId = "" } = {}) {
+  async #requestDowntimeProjectContinueViaGm({ requestId = "", groupId = "", actorId = "", checkId = "", result = {} } = {}) {
     if (typeof game.socket?.emit !== "function") {
       throw new Error("Сокет Foundry недоступен для продолжения проекта.");
     }
@@ -1718,7 +1720,9 @@ export class RebreyaMainModule {
     const payload = {
       groupId: cleanSocketId(groupId),
       actorId: cleanSocketId(actorId),
-      requestId: cleanSocketId(requestId)
+      requestId: cleanSocketId(requestId),
+      checkId: cleanSocketId(checkId),
+      result: cloneSocketPayload(result)
     };
 
     game.socket.emit(SOCKET_CHANNEL, {
@@ -1814,7 +1818,12 @@ export class RebreyaMainModule {
 
     return this.downtimeService.continueProject(cleanSocketId(payload.requestId), {
       groupId,
-      actorId
+      actorId,
+      checkId: cleanSocketId(payload.checkId),
+      result: {
+        ...cloneSocketPayload(payload.result ?? {}),
+        recordedByUserId: senderUser.id
+      }
     });
   }
 
@@ -2532,7 +2541,7 @@ export class RebreyaMainModule {
     }
 
     for (const app of getOpenActorSheetApps()) {
-      tasks.push(rerenderApp(app));
+      tasks.push(rerenderApp(app, { focus: false }));
     }
 
     await Promise.allSettled(tasks);

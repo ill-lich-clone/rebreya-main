@@ -544,6 +544,16 @@
                         data-action="character-downtime-continue"
                         data-request-id="{{id}}"
                         data-group-id="{{groupId}}"
+                        data-check-id="{{projectCounter.continueRollTarget.checkId}}"
+                        data-source-type="{{projectCounter.continueRollTarget.sourceType}}"
+                        data-ability="{{projectCounter.continueRollTarget.ability}}"
+                        data-target="{{projectCounter.continueRollTarget.target}}"
+                        data-target-label="{{projectCounter.continueRollTarget.label}}"
+                        data-outcome-mode="{{projectCounter.continueRollTarget.outcomeMode}}"
+                        data-choice-index="{{projectCounter.continueRollTarget.choiceIndex}}"
+                        data-has-choices="{{#if projectCounter.continueRollTarget.hasChoices}}true{{/if}}"
+                        data-dc="{{projectCounter.continueRollTarget.dc}}"
+                        data-dc-formula="{{projectCounter.continueRollTarget.dcFormula}}"
                         data-tooltip="Продолжить работу"
                       >
                         <i class="fa-solid fa-forward"></i>

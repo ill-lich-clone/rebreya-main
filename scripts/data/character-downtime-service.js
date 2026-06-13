@@ -1392,6 +1392,37 @@ function buildRollTargets(check = {}, { canRollRequest = false, resultLabel = ""
   })];
 }
 
+function buildProjectContinueRollTarget(actions = []) {
+  for (const action of asArray(actions)) {
+    if (NON_CHECK_ACTION_TYPES.has(cleanText(action?.actionType))) {
+      continue;
+    }
+
+    const choices = Array.isArray(action.choices) ? action.choices : [];
+    const resultChoiceIndex = toFiniteNumber(action?.result?.choiceIndex);
+    const choiceIndex = resultChoiceIndex === undefined
+      ? 0
+      : Math.max(0, Math.floor(resultChoiceIndex));
+    const choice = choices.length ? (choices[choiceIndex] ?? choices[0] ?? {}) : {};
+    const target = buildRollTarget(action, choice, {
+      canRollRequest: true,
+      choiceIndex,
+      hasChoices: choices.length > 1,
+      resultLabel: "",
+      resolvedChoiceIndex: choiceIndex
+    });
+
+    if (target.canRoll) {
+      return {
+        ...target,
+        checkId: cleanText(action.id)
+      };
+    }
+  }
+
+  return null;
+}
+
 function buildProjectCounterImagePath(max = 0, value = 0) {
   const safeMax = toInteger(max, 0);
   if (![4, 6, 8].includes(safeMax)) {
@@ -1599,7 +1630,8 @@ function buildRequestProjectCounter(request = {}, actions = [], { availableWeeks
   const value = Math.min(max, previousValue + gained);
   const imagePath = buildProjectCounterImagePath(max, value);
   const continuePayloadJson = buildProjectContinuationPayload(request, actions, value, actionCatalog);
-  const canContinue = value < max && toInteger(availableWeeks, 0) > 0 && Boolean(continuePayloadJson);
+  const continueRollTarget = buildProjectContinueRollTarget(actions);
+  const canContinue = value < max && toInteger(availableWeeks, 0) > 0 && Boolean(continueRollTarget);
   return {
     ...counter,
     previousValue,
@@ -1611,7 +1643,9 @@ function buildRequestProjectCounter(request = {}, actions = [], { availableWeeks
     imagePath,
     hasImagePath: Boolean(imagePath),
     canContinue,
-    continuePayloadJson: canContinue ? continuePayloadJson : ""
+    continueRollTarget,
+    hasContinueRollTarget: Boolean(continueRollTarget),
+    continuePayloadJson: value < max ? continuePayloadJson : ""
   };
 }
 

@@ -1279,7 +1279,7 @@ test("character downtime template renders editable description blocks and hides 
   assert.match(template, /\{\{#if showStatusBadge\}\}[\s\S]*\{\{statusLabel\}\}[\s\S]*\{\{\/if\}\}/u);
 });
 
-test("character downtime continue button reopens the same project without creating a duplicate", async () => {
+test("character downtime continue button rolls the project check and records the same project", async () => {
   const stubs = installSheetExtensionStubs();
   try {
     const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-project-continue=${Date.now()}`);
@@ -1288,9 +1288,20 @@ test("character downtime continue button reopens the same project without creati
     const continueButton = new stubs.HTMLElement({
       dataset: {
         requestId: "downtime-project",
-        groupId: "group-a"
+        groupId: "group-a",
+        checkId: "long-project-check",
+        sourceType: "skill",
+        ability: "int",
+        target: "inv",
+        targetLabel: "Investigation",
+        outcomeMode: "dc-sum",
+        dc: "16"
       }
     });
+    actor.rollSkill = async (config) => {
+      calls.push(["rollSkill", config]);
+      return [{ total: 21 }];
+    };
     const panel = new stubs.HTMLElement();
     continueButton.closest = (selector) => {
       if (selector === "[data-action='character-downtime-continue']") return continueButton;
@@ -1326,7 +1337,7 @@ test("character downtime continue button reopens the same project without creati
       },
       async continueDowntimeProject(payload) {
         calls.push(["continueDowntimeProject", payload]);
-        return { id: payload.requestId, status: "pending" };
+        return { id: payload.requestId, status: "completed" };
       },
       async refreshOpenApps() {
         calls.push(["refreshOpenApps"]);
@@ -1336,17 +1347,37 @@ test("character downtime continue button reopens the same project without creati
     registerDnd5eSheetExtensions(moduleApi);
     stubs.hooks.get("renderCharacterActorSheet")(app, root);
 
+    const clickEvent = { target: continueButton, preventDefault() {}, stopPropagation() {} };
     for (const listener of root.listeners.click) {
-      await listener({ target: continueButton, preventDefault() {}, stopPropagation() {} });
+      await listener(clickEvent);
     }
 
     assert.equal(calls.some((call) => call[0] === "createRequest"), false);
+    assert.deepEqual(calls.find((call) => call[0] === "rollSkill"), [
+      "rollSkill",
+      {
+        event: clickEvent,
+        skill: "inv",
+        ability: "int"
+      }
+    ]);
     assert.deepEqual(calls.find((call) => call[0] === "continueDowntimeProject"), [
       "continueDowntimeProject",
       {
         requestId: "downtime-project",
         actorId: "actor-a",
-        groupId: "group-a"
+        groupId: "group-a",
+        checkId: "long-project-check",
+        result: {
+          total: 21,
+          sourceType: "skill",
+          ability: "int",
+          target: "inv",
+          targetLabel: "Investigation",
+          outcomeMode: "dc-sum",
+          dc: 16,
+          success: true
+        }
       }
     ]);
   }

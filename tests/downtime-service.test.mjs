@@ -772,7 +772,7 @@ test("closeProject closes an unfinished completed project without week accountin
   }
 });
 
-test("continueProject reopens the same long project without duplicating requests", async () => {
+test("continueProject spends a week and records a new long project roll without reopening the request", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
   const harness = createHarness({
     members: [actor],
@@ -811,6 +811,7 @@ test("continueProject reopens the same long project without duplicating requests
           target: "inv",
           targetLabel: "Investigation",
           dc: 14,
+          outcomeMode: "dc-sum",
           result: {
             total: 20,
             dc: 14,
@@ -826,6 +827,18 @@ test("continueProject reopens the same long project without duplicating requests
             progressSteps: 2,
             outputField: "progressSteps"
           }
+        }, {
+          id: "long-project-result-fresh",
+          label: "Counter shift",
+          actionType: "downtimeResult",
+          resultFormula: {
+            outputField: "progressSteps",
+            terms: [{
+              actionId: "long-project-check",
+              field: "dcProgressSteps",
+              operator: "+"
+            }]
+          }
         }]
       }]
     }
@@ -833,19 +846,25 @@ test("continueProject reopens the same long project without duplicating requests
 
   try {
     const request = await harness.service.continueProject("downtime-project", {
-      actorId: actor.id
+      actorId: actor.id,
+      checkId: "long-project-check",
+      result: {
+        total: 23
+      }
     });
     const state = getDowntimeState(harness);
     const balance = state.balancesByActorId["actor-a"];
 
     assert.equal(state.requests.length, 1);
-    assert.equal(request.status, "pending");
+    assert.equal(request.status, "completed");
     assert.equal(request.checks.find((check) => check.id === "long-project-counter").projectCounter.current, 3);
-    assert.equal(request.checks.find((check) => check.id === "long-project-check").result, null);
+    assert.equal(request.checks.find((check) => check.id === "long-project-check").result.total, 23);
+    assert.equal(request.checks.find((check) => check.id === "long-project-check").result.dc, 14);
     assert.equal(request.checks.find((check) => check.id === "long-project-result").result, null);
+    assert.equal(request.checks.find((check) => check.id === "long-project-result-fresh").result.progressSteps, 2);
     assert.equal(balance.availableWeeks, 0);
-    assert.equal(balance.reservedWeeks, 1);
-    assert.equal(balance.spentWeeks, 1);
+    assert.equal(balance.reservedWeeks, 0);
+    assert.equal(balance.spentWeeks, 2);
   }
   finally {
     harness.restore();
@@ -3225,8 +3244,8 @@ test("RebreyaMainModule refreshes open actor sheets on downtime updates", async 
         actor: {
           id: "actor-a"
         },
-        render() {
-          renderCalls.push("openSheet");
+        render(options) {
+          renderCalls.push(["openSheet", options]);
         }
       },
       closedSheet: {
@@ -3261,8 +3280,8 @@ test("RebreyaMainModule refreshes open actor sheets on downtime updates", async 
             id: "actor-a",
             type: "character"
           },
-          render() {
-            renderCalls.push("openV2");
+          render(options) {
+            renderCalls.push(["openV2", options]);
           }
         }
       ]])
@@ -3280,9 +3299,13 @@ test("RebreyaMainModule refreshes open actor sheets on downtime updates", async 
       requestId: "downtime-1"
     });
 
-    assert.deepEqual([...new Set(renderCalls)].sort(), ["openSheet", "openV2"]);
-    assert.equal(renderCalls.includes("closedSheet"), false);
-    assert.equal(renderCalls.includes("closedV2"), false);
+    assert.deepEqual(renderCalls.map((call) => call[0]).sort(), ["openSheet", "openV2"]);
+    assert.deepEqual(renderCalls.map((call) => call[1]), [
+      { force: true, focus: false },
+      { force: true, focus: false }
+    ]);
+    assert.equal(renderCalls.some((call) => call[0] === "closedSheet"), false);
+    assert.equal(renderCalls.some((call) => call[0] === "closedV2"), false);
   }
   finally {
     globalThis.Hooks = previousHooks;

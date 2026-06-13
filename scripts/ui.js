@@ -67,12 +67,16 @@ export function bringAppToFront(app) {
   return windowElement;
 }
 
-export function rerenderApp(app) {
+export function rerenderApp(app, { focus = true } = {}) {
   if (!app?.render) {
     return Promise.resolve();
   }
 
-  return app.render({ force: true });
+  const options = { force: true };
+  if (focus === false) {
+    options.focus = false;
+  }
+  return app.render(options);
 }
 
 export function registerHandlebarsHelpers() {
