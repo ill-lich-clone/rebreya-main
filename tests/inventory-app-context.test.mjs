@@ -601,6 +601,25 @@ test("InventoryApp downtime controls do not define duplicate tooltip attributes"
   assert.deepEqual(duplicateTooltipTags, []);
 });
 
+test("InventoryApp inventory rows expose a player self-drag action outside manager controls", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const rowIndex = template.indexOf('class="rm-compact-item"');
+  const selfDragIndex = template.indexOf('data-action="drag-item-to-self"', rowIndex);
+  const managerControlsIndex = template.indexOf("{{#if ../canManage}}", rowIndex);
+
+  assert.ok(rowIndex >= 0, "inventory item row should exist");
+  assert.ok(selfDragIndex > rowIndex, "inventory item row should render a self-drag action");
+  assert.ok(managerControlsIndex > rowIndex, "inventory item row should keep manager-only controls");
+  assert.ok(
+    selfDragIndex < managerControlsIndex,
+    "self-drag action must not be hidden behind manager-only controls"
+  );
+  assert.match(
+    template.slice(selfDragIndex, managerControlsIndex),
+    /data-action="drag-item-to-self"[\s\S]*data-item-drag="true"[\s\S]*draggable="true"[\s\S]*Перетащите себе/u
+  );
+});
+
 test("InventoryApp downtime queue opens request details instead of rendering a fixed inspector column", async () => {
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");

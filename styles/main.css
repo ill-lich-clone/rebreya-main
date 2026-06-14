@@ -4078,6 +4078,24 @@ summary:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.rm-compact-item__self-drag {
+  justify-self: start;
+  max-width: 100%;
+  margin-top: 4px;
+  cursor: grab;
+}
+
+.rm-compact-item__self-drag:active {
+  cursor: grabbing;
+}
+
+.rm-compact-item__self-drag span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .rm-compact-item__side {
   display: flex;
   align-items: center;
