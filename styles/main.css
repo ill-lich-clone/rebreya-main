@@ -197,7 +197,7 @@
 
 .rm-player-inventory-button {
   position: fixed;
-  left: 0;
+  left: clamp(250px, 14.5vw, calc(100vw - 42px));
   top: 0;
   width: 30px;
   height: 30px;

@@ -10,6 +10,7 @@ const BG3_HOTBAR_MODULE_ID = "bg3-inspired-hotbar";
 const BG3_DEATH_SAVES_CONTAINER_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/scripts/components/containers/DeathSavesContainer.js`;
 const BG3_DEATH_SAVES_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3DeathSavesPatch`);
 const PLAYER_INVENTORY_BUTTON_SELECTOR = "[data-rebreya-player-inventory-button='true']";
+const PLAYER_INVENTORY_BUTTON_LEFT = "clamp(250px, 14.5vw, calc(100vw - 42px))";
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -238,12 +239,6 @@ export function positionPlayerInventoryQuickButton(button, playersElement, { vie
 
   const rect = playersElement.getBoundingClientRect();
   const ownerDocument = playersElement.ownerDocument ?? globalThis.document;
-  const viewportWidth = Number(
-    viewport?.innerWidth
-    ?? globalThis.innerWidth
-    ?? ownerDocument?.documentElement?.clientWidth
-    ?? 0
-  );
   const viewportHeight = Number(
     viewport?.innerHeight
     ?? globalThis.innerHeight
@@ -256,12 +251,10 @@ export function positionPlayerInventoryQuickButton(button, playersElement, { vie
   }
 
   const buttonSize = 30;
-  const offsetX = Math.max(18, viewportWidth * 0.018);
-  const left = Math.max(8, Math.min(viewportWidth - buttonSize - 8, rect.right + offsetX));
   const centerY = rect.top + (rect.height * 0.58);
   const top = Math.max(8, Math.min(viewportHeight - buttonSize - 8, centerY - (buttonSize / 2)));
 
-  button.style.left = formatViewportUnit(left, viewportWidth, "vw");
+  button.style.left = PLAYER_INVENTORY_BUTTON_LEFT;
   button.style.top = formatViewportUnit(top, viewportHeight, "vh");
   return true;
 }

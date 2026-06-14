@@ -341,7 +341,7 @@ test("player list gets one external round Rebreya inventory button", async () =>
   assert.equal(button.dataset.rebreyaPlayerInventoryButton, "true");
   assert.equal(button.classList.contains("rm-player-inventory-button"), true);
   assert.equal(button.getAttribute("aria-label"), "Открыть инвентарь Rebreya");
-  assert.match(button.style.left, /vw$/u);
+  assert.equal(button.style.left, "clamp(250px, 14.5vw, calc(100vw - 42px))");
   assert.match(button.style.top, /vh$/u);
 
   await button.listeners.click[0]({
