@@ -10,7 +10,7 @@ const BG3_HOTBAR_MODULE_ID = "bg3-inspired-hotbar";
 const BG3_DEATH_SAVES_CONTAINER_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/scripts/components/containers/DeathSavesContainer.js`;
 const BG3_DEATH_SAVES_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3DeathSavesPatch`);
 const PLAYER_INVENTORY_BUTTON_SELECTOR = "[data-rebreya-player-inventory-button='true']";
-const PLAYER_INVENTORY_BUTTON_LEFT = "clamp(250px, 14.5vw, calc(100vw - 42px))";
+const PLAYER_INVENTORY_BUTTON_LEFT = "clamp(220px, 8.5vw, 280px)";
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
