@@ -2273,6 +2273,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.renderListenersAbortController = null;
     this.actionFeedback = null;
     this.canManage = false;
+    this.canDropInventoryItems = false;
     this.partyMembershipManagedByNativeGroup = false;
   }
 
@@ -2800,7 +2801,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           }
         : null;
       const canManage = Boolean(partySnapshot.canManage || inventorySnapshot.actor?.canEdit);
+      const canDropInventoryItems = Boolean(
+        canManage
+        || partySnapshot.canDropInventoryItems
+        || inventorySnapshot.canDropInventoryItems
+      );
       this.canManage = canManage;
+      this.canDropInventoryItems = canDropInventoryItems;
       this.partyMembershipManagedByNativeGroup = membershipManagedByNativeGroup;
 
       if (!availableActors.some((actor) => actor.id === this.selectedNewMemberId)) {
@@ -2918,7 +2925,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           isDowntime: this.activeTab === "downtime"
         },
         actionFeedback,
-        canManage
+        canManage,
+        canDropInventoryItems
       };
     }
     catch (error) {
@@ -4642,7 +4650,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         dropzone.classList.add("is-dragover");
       }, listenerOptions);
 
-      dropzone.addEventListener("dragleave", () => {
+      dropzone.addEventListener("dragleave", (event) => {
+        if (event.relatedTarget && dropzone.contains(event.relatedTarget)) {
+          return;
+        }
         dropzone.classList.remove("is-dragover");
       }, listenerOptions);
 
@@ -4653,7 +4664,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         try {
           const dragData = TextEditor.getDragEventData(event);
           await this.moduleApi.importInventoryDrop(dragData);
-          ui.notifications?.info("Предмет перенесён в партийный склад.");
+          ui.notifications?.info(this.canManage
+            ? "Предмет перенесён в партийный склад."
+            : "Запрос на перенос предмета отправлен мастеру.");
           bringAppToFront(this);
         }
         catch (error) {

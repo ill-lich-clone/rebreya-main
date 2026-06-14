@@ -101,10 +101,21 @@
     {{/if}}
 
     {{#if tabs.isInventory}}
-      <section class="rm-panel rm-panel--full rm-panel--compact">
+      <section
+        class="rm-panel rm-panel--full rm-panel--compact {{#if canDropInventoryItems}}rm-inventory-drop-surface{{/if}}"
+        {{#if canDropInventoryItems}}data-action="inventory-dropzone"{{/if}}
+      >
         <div class="rm-panel__header rm-panel__header--compact">
           <h3>Склад</h3>
-          <span class="rm-muted">{{rmNum inventoryCount precision=0}} поз.</span>
+          <div class="rm-inventory-drop-header">
+            {{#if canDropInventoryItems}}
+              <span class="rm-inventory-drop-hint">
+                <i class="fa-solid fa-box-open"></i>
+                Перетащите предмет в область склада
+              </span>
+            {{/if}}
+            <span class="rm-muted">{{rmNum inventoryCount precision=0}} поз.</span>
+          </div>
         </div>
 
         <section
@@ -164,13 +175,6 @@
             </select>
           </div>
         </section>
-
-        {{#if canManage}}
-          <div class="rm-compact-dropzone" data-action="inventory-dropzone">
-            <i class="fa-solid fa-box-open"></i>
-            <span>Перетащите сюда предмет из листа или компендия</span>
-          </div>
-        {{/if}}
 
         {{#if emptyInventory}}
           <p class="rm-empty">По текущему фильтру склад пуст.</p>

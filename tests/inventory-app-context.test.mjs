@@ -620,6 +620,51 @@ test("InventoryApp inventory rows expose a player self-drag action outside manag
   );
 });
 
+test("InventoryApp exposes a full inventory drop surface to players who can contribute items", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?player-inventory-drop=${Date.now()}`);
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => ({
+      groupActor: {
+        id: "group-a",
+        name: "Native Group",
+        type: "group",
+        system: {
+          members: []
+        }
+      },
+      groupId: "group-a",
+      memberActorIds: ["member-a"]
+    }),
+    partySnapshot: {
+      canManage: false,
+      canDropInventoryItems: true
+    }
+  }));
+
+  try {
+    const context = await app._prepareContext();
+
+    assert.equal(context.canManage, false);
+    assert.equal(context.canDropInventoryItems, true);
+  }
+  finally {
+    restoreFoundry();
+  }
+
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  const inventoryPanelStart = template.indexOf("    {{#if tabs.isInventory}}\n      <section");
+  const inventoryPanelEnd = template.indexOf("{{#if tabs.isParty}}", inventoryPanelStart);
+  const inventoryPanel = template.slice(inventoryPanelStart, inventoryPanelEnd);
+
+  assert.match(inventoryPanel, /canDropInventoryItems/u);
+  assert.match(inventoryPanel, /rm-inventory-drop-surface/u);
+  assert.match(inventoryPanel, /data-action="inventory-dropzone"/u);
+  assert.doesNotMatch(inventoryPanel, /rm-compact-dropzone/u);
+  assert.match(css, /\.rm-inventory-drop-surface\.is-dragover/u);
+});
+
 test("InventoryApp downtime queue opens request details instead of rendering a fixed inspector column", async () => {
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");

@@ -3959,26 +3959,36 @@ summary:focus-visible {
   line-height: 1.25;
 }
 
-.rm-compact-dropzone {
+.rm-inventory-drop-surface {
+  position: relative;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.rm-inventory-drop-surface.is-dragover {
+  border-color: rgba(214, 177, 104, 0.78);
+  background: rgba(214, 177, 104, 0.09);
+  box-shadow: inset 0 0 0 2px rgba(214, 177, 104, 0.24);
+}
+
+.rm-inventory-drop-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 12px;
   min-width: 0;
-  padding: 8px 10px;
-  border: 1px dashed rgba(214, 177, 104, 0.35);
-  border-radius: var(--rm-radius-section);
+}
+
+.rm-inventory-drop-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   color: var(--rm-muted);
-  background: rgba(255, 255, 255, 0.02);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
 }
 
-.rm-inventory-shell--compact .rm-compact-dropzone {
-  border-radius: var(--rm-ui-section-radius);
-}
-
-.rm-compact-dropzone.is-dragover {
-  border-color: rgba(214, 177, 104, 0.68);
-  background: rgba(214, 177, 104, 0.08);
+.rm-inventory-drop-surface.is-dragover .rm-inventory-drop-hint {
   color: var(--rm-text);
 }
 

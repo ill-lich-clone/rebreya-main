@@ -3142,6 +3142,74 @@ test("RebreyaMainModule routes character class socket automation to the paladin 
   }
 });
 
+test("RebreyaMainModule routes player inventory imports through the active GM", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {},
+    on() {}
+  };
+  const emitted = [];
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true
+    },
+    socket: {
+      emit(channel, message) {
+        emitted.push({ channel, message });
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?inventory-import-socket=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    let handled = null;
+    let refreshCount = 0;
+    moduleApi.inventoryService.handleImportDroppedItemSocketRequest = async (payload, options) => {
+      handled = { payload, options };
+      return { id: "group-1" };
+    };
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+
+    await moduleApi.handleSocketMessage({
+      type: "inventory-import-request",
+      payload: {
+        itemUuid: "Actor.member-1.Item.item-1",
+        targetActorUuid: "Actor.group-1"
+      },
+      senderId: "player-1"
+    });
+
+    assert.deepEqual(handled, {
+      payload: {
+        itemUuid: "Actor.member-1.Item.item-1",
+        targetActorUuid: "Actor.group-1"
+      },
+      options: {
+        senderId: "player-1"
+      }
+    });
+    assert.equal(refreshCount, 1);
+    assert.deepEqual(emitted, [{
+      channel: `module.${MODULE_ID}`,
+      message: {
+        type: "inventory-import-result",
+        forUserId: "player-1",
+        senderId: "gm",
+        ok: true
+      }
+    }]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
 test("RebreyaMainModule routes player downtime creation through the GM socket", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;

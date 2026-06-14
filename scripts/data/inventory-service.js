@@ -11,6 +11,9 @@
 } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS, getGroupMemberActors, isManagedPartyGroup } from "./group-context-service.js";
 
+const SOCKET_CHANNEL = `module.${MODULE_ID}`;
+export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
+export const SOCKET_EVENT_INVENTORY_IMPORT_RESULT = "inventory-import-result";
 const DEFAULT_PARTY_ACTOR_NAME = "Инвентарь группы Rebreya";
 const DEFAULT_PARTY_ACTOR_IMAGE = "icons/svg/item-bag.svg";
 const LOOTGEN_CHAT_ACTOR_NAME = "Лут Rebreya";
@@ -133,6 +136,101 @@ function normalizeText(value) {
     .toLowerCase()
     .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
     .replace(/\s+/gu, " ");
+}
+
+function cleanId(value) {
+  return String(value ?? "").trim();
+}
+
+function collectionValues(collection) {
+  if (!collection) {
+    return [];
+  }
+
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+
+  if (Array.isArray(collection.contents)) {
+    return collection.contents;
+  }
+
+  if (typeof collection.values === "function") {
+    return Array.from(collection.values());
+  }
+
+  return [];
+}
+
+function getSocketUser(senderId) {
+  const safeSenderId = cleanId(senderId);
+  if (!safeSenderId) {
+    return null;
+  }
+
+  return game.users?.get?.(safeSenderId)
+    ?? collectionValues(game.users).find((user) => user?.id === safeSenderId)
+    ?? null;
+}
+
+function isActiveGmClient() {
+  if (!game.user?.isGM) {
+    return false;
+  }
+
+  const activeGm = game.users?.activeGM
+    ?? collectionValues(game.users).find((user) => user?.isGM && user?.active)
+    ?? null;
+  return !activeGm?.id || activeGm.id === game.user.id;
+}
+
+function userOwnsActor(actor, user) {
+  if (!actor || !user) {
+    return false;
+  }
+
+  if (user.isGM) {
+    return true;
+  }
+
+  if (typeof actor.testUserPermission === "function") {
+    try {
+      return actor.testUserPermission(user, "OWNER") === true;
+    }
+    catch (_error) {
+      return false;
+    }
+  }
+
+  const ownership = actor.ownership ?? actor._source?.ownership ?? {};
+  return Number(ownership[user.id] ?? ownership.default ?? 0) >= 3;
+}
+
+function isActorDocument(document) {
+  if (!document) {
+    return false;
+  }
+
+  if (typeof globalThis.Actor === "function" && document instanceof globalThis.Actor) {
+    return true;
+  }
+
+  return document.documentName === "Actor"
+    || Boolean(document.id && document.system && document.items);
+}
+
+async function resolveUuid(uuid) {
+  const safeUuid = cleanId(uuid);
+  if (!safeUuid || typeof globalThis.fromUuid !== "function") {
+    return null;
+  }
+
+  try {
+    return await globalThis.fromUuid(safeUuid);
+  }
+  catch (_error) {
+    return null;
+  }
 }
 
 function isRationItemName(value) {
@@ -640,6 +738,30 @@ export class InventoryService {
       return state.inventoryActorId ? game.actors.get(state.inventoryActorId) ?? null : null;
     })();
     return inventoryActor?.isOwner === true;
+  }
+
+  canDropInventoryItems(actor = null) {
+    if (this.canManagePartyInventory(actor)) {
+      return true;
+    }
+
+    try {
+      const context = this.moduleApi.groupContextService?.resolveForCurrentUser?.();
+      const groupActor = context?.groupActor ?? null;
+      const inventoryActor = actor ?? groupActor;
+      return Boolean(
+        context?.canManage
+        && groupActor?.id
+        && inventoryActor?.id === groupActor.id
+        && isManagedPartyGroup(groupActor)
+      );
+    }
+    catch (error) {
+      if (GROUP_CONTEXT_FALLBACK_ERRORS.has(error?.message)) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   #assertCanManagePartyInventory(actor = null) {
@@ -1541,7 +1663,8 @@ export class InventoryService {
       waterGal,
       foodDaysLeft: totalFoodPerDay > 0 ? roundNumber(foodLb / totalFoodPerDay, 1) : null,
       waterDaysLeft: totalWaterGalPerDay > 0 ? roundNumber(waterGal / totalWaterGalPerDay, 1) : null,
-      canManage: this.canManagePartyInventory(inventoryActor)
+      canManage: this.canManagePartyInventory(inventoryActor),
+      canDropInventoryItems: this.canDropInventoryItems(inventoryActor)
     };
   }
 
@@ -1554,6 +1677,7 @@ export class InventoryService {
         items: [],
         allItems: [],
         emptyInventory: true,
+        canDropInventoryItems: false,
         groupContextError: this.lastGroupContextError || "",
         summary: {
           distinctCount: 0,
@@ -1612,6 +1736,7 @@ export class InventoryService {
       items: filteredItems,
       allItems,
       emptyInventory: filteredItems.length === 0,
+      canDropInventoryItems: this.canDropInventoryItems(actor),
       summary
     };
   }
@@ -2151,24 +2276,81 @@ export class InventoryService {
 
   async importDroppedItem(dropData) {
     const actor = await this.getInventoryActor({ create: true });
-    this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
-    const itemDocument = dropData?.uuid ? await fromUuid(dropData.uuid) : null;
+    const itemDocument = dropData?.uuid ? await resolveUuid(dropData.uuid) : null;
     if (!(itemDocument instanceof Item)) {
       throw new Error("Перетащите предмет из листа персонажа или компендиума.");
     }
 
-    if (itemDocument.parent instanceof Actor && !itemDocument.parent.isOwner) {
+    const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
+    if (sourceActor && sourceActor.isOwner === false) {
       throw new Error("У вас нет прав на исходный предмет.");
     }
 
-    if (itemDocument.parent instanceof Actor && itemDocument.parent.id === actor.id) {
+    if (sourceActor?.id === actor.id) {
       return itemDocument;
     }
 
+    if (!this.canManagePartyInventory(actor)) {
+      if (!this.canDropInventoryItems(actor) || !sourceActor) {
+        throw new Error("У вас нет прав на добавление предметов в партийный склад.");
+      }
+
+      if (!cleanId(actor.uuid) || !cleanId(itemDocument.uuid) || typeof game.socket?.emit !== "function") {
+        throw new Error("Не удалось отправить перенос предмета мастеру.");
+      }
+
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: SOCKET_EVENT_INVENTORY_IMPORT_REQUEST,
+        payload: {
+          itemUuid: itemDocument.uuid,
+          targetActorUuid: actor.uuid
+        },
+        senderId: game.user?.id ?? ""
+      });
+      return actor;
+    }
+
+    return this.#importItemDocument(actor, itemDocument);
+  }
+
+  async handleImportDroppedItemSocketRequest(payload = {}, { senderId = "" } = {}) {
+    if (!isActiveGmClient()) {
+      return false;
+    }
+
+    const sender = getSocketUser(senderId);
+    const itemDocument = await resolveUuid(payload.itemUuid);
+    const targetActor = await resolveUuid(payload.targetActorUuid);
+    if (!sender || !(itemDocument instanceof Item) || !isActorDocument(targetActor)) {
+      throw new Error("Некорректный запрос на перенос предмета.");
+    }
+
+    if (!isManagedPartyGroup(targetActor)) {
+      throw new Error("Цель переноса не является партийным складом.");
+    }
+
+    const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
+    if (!sourceActor || !userOwnsActor(sourceActor, sender)) {
+      throw new Error("Игрок не владеет исходным предметом.");
+    }
+
+    const context = this.moduleApi.groupContextService?.resolveForGroup?.(targetActor.id);
+    const members = context?.members ?? getGroupMemberActors(targetActor);
+    const ownedSourceMember = members.some((memberActor) => (
+      memberActor?.id === sourceActor.id && userOwnsActor(memberActor, sender)
+    ));
+    if (!ownedSourceMember) {
+      throw new Error("Исходный персонаж не входит в эту группу.");
+    }
+
+    return this.#importItemDocument(targetActor, itemDocument);
+  }
+
+  async #importItemDocument(actor, itemDocument) {
     const sourceItemData = itemDocument.toObject();
     const importedItemData = sanitizeEmbeddedItemData(sourceItemData);
     const importedQuantity = Math.max(0, getRawQuantity(importedItemData));
@@ -2196,7 +2378,7 @@ export class InventoryService {
       await actor.createEmbeddedDocuments("Item", [importedItemData]);
     }
 
-    if (itemDocument.parent instanceof Actor) {
+    if (isActorDocument(itemDocument.parent)) {
       await itemDocument.delete();
     }
 

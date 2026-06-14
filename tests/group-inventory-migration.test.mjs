@@ -928,6 +928,242 @@ test("canManagePartyInventory allows GMs and resolved group actor owners only", 
   }
 });
 
+test("canDropInventoryItems allows owners of native group members without full inventory management", () => {
+  const memberActor = createActor({ id: "member-1", name: "Hero", type: "character", isOwner: true });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: false,
+    flags: { [MODULE_ID]: { managedPartyGroup: true } },
+    members: [{ actor: memberActor }]
+  });
+  groupActor.uuid = "Actor.group-1";
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    user: { id: "player-1", isGM: false }
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({
+        groupActor,
+        members: [memberActor],
+        canManage: true
+      }),
+      resolveForGroup: () => ({
+        groupActor,
+        members: [memberActor],
+        canManage: true
+      })
+    }
+  });
+
+  try {
+    assert.equal(service.canManagePartyInventory(), false);
+    assert.equal(service.canDropInventoryItems(), true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("player inventory item drops into an unowned group actor are routed through the GM socket", async () => {
+  const previousItem = globalThis.Item;
+  const previousFromUuid = globalThis.fromUuid;
+  const memberActor = createActor({ id: "member-1", name: "Hero", type: "character", isOwner: true });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: false,
+    flags: { [MODULE_ID]: { managedPartyGroup: true } },
+    members: [{ actor: memberActor }]
+  });
+  groupActor.uuid = "Actor.group-1";
+  const sourceItem = createItem({ id: "source-item", name: "Torch", quantity: 2 });
+  sourceItem.uuid = "Actor.member-1.Item.source-item";
+  sourceItem.parent = memberActor;
+  memberActor.items.contents.push(sourceItem);
+  const emitted = [];
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    user: { id: "player-1", isGM: false }
+  });
+  globalThis.Item = Object;
+  globalThis.fromUuid = async (uuid) => (uuid === sourceItem.uuid ? sourceItem : null);
+  globalThis.game.socket = {
+    emit(channel, message) {
+      emitted.push({ channel, message });
+    }
+  };
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({
+        groupActor,
+        members: [memberActor],
+        canManage: true
+      })
+    }
+  });
+
+  try {
+    const result = await service.importDroppedItem({ uuid: sourceItem.uuid });
+
+    assert.equal(result, groupActor);
+    assert.deepEqual(groupActor.items.contents, []);
+    assert.equal(memberActor.items.contents.includes(sourceItem), true);
+    assert.deepEqual(emitted, [{
+      channel: "module.rebreya-main",
+      message: {
+        type: "inventory-import-request",
+        payload: {
+          itemUuid: sourceItem.uuid,
+          targetActorUuid: groupActor.uuid
+        },
+        senderId: "player-1"
+      }
+    }]);
+  }
+  finally {
+    fixture.restore();
+    globalThis.Item = previousItem;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("active GM applies a validated player inventory import socket request", async () => {
+  const previousItem = globalThis.Item;
+  const previousFromUuid = globalThis.fromUuid;
+  const memberActor = createActor({ id: "member-1", name: "Hero", type: "character", isOwner: false });
+  memberActor.ownership = { player: 3 };
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    flags: { [MODULE_ID]: { managedPartyGroup: true } },
+    members: [{ actor: memberActor }]
+  });
+  groupActor.uuid = "Actor.group-1";
+  const sourceItem = createItem({ id: "source-item", name: "Torch", quantity: 2 });
+  sourceItem.uuid = "Actor.member-1.Item.source-item";
+  sourceItem.parent = memberActor;
+  memberActor.items.contents.push(sourceItem);
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    user: { id: "gm", isGM: true, active: true }
+  });
+  const gmUser = game.user;
+  const playerUser = { id: "player", isGM: false, active: true };
+  globalThis.game.users = {
+    activeGM: gmUser,
+    get: (id) => ({ gm: gmUser, player: playerUser })[id] ?? null,
+    contents: [gmUser, playerUser]
+  };
+  globalThis.Item = Object;
+  globalThis.fromUuid = async (uuid) => ({
+    [sourceItem.uuid]: sourceItem,
+    [groupActor.uuid]: groupActor
+  })[uuid] ?? null;
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForGroup: () => ({
+        groupActor,
+        members: [memberActor],
+        canManage: true
+      })
+    },
+    async getModel() {
+      return {};
+    }
+  });
+
+  try {
+    const result = await service.handleImportDroppedItemSocketRequest({
+      itemUuid: sourceItem.uuid,
+      targetActorUuid: groupActor.uuid
+    }, {
+      senderId: "player"
+    });
+
+    assert.equal(result, groupActor);
+    assert.equal(groupActor.items.contents.length, 1);
+    assert.equal(groupActor.items.contents[0].name, "Torch");
+    assert.equal(groupActor.items.contents[0].system.quantity, 2);
+    assert.equal(memberActor.items.contents.includes(sourceItem), false);
+  }
+  finally {
+    fixture.restore();
+    globalThis.Item = previousItem;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("GM rejects inventory import requests from actors outside the target group", async () => {
+  const previousItem = globalThis.Item;
+  const previousFromUuid = globalThis.fromUuid;
+  const groupMember = createActor({ id: "member-1", name: "Party Hero", type: "character" });
+  const outsiderActor = createActor({ id: "outsider-1", name: "Outsider", type: "character" });
+  outsiderActor.ownership = { player: 3 };
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    flags: { [MODULE_ID]: { managedPartyGroup: true } },
+    members: [{ actor: groupMember }]
+  });
+  groupActor.uuid = "Actor.group-1";
+  const sourceItem = createItem({ id: "source-item", name: "Torch", quantity: 2 });
+  sourceItem.uuid = "Actor.outsider-1.Item.source-item";
+  sourceItem.parent = outsiderActor;
+  outsiderActor.items.contents.push(sourceItem);
+  const fixture = installInventoryFixture({
+    actors: [groupActor, groupMember, outsiderActor],
+    user: { id: "gm", isGM: true, active: true }
+  });
+  const gmUser = game.user;
+  const playerUser = { id: "player", isGM: false, active: true };
+  globalThis.game.users = {
+    activeGM: gmUser,
+    get: (id) => ({ gm: gmUser, player: playerUser })[id] ?? null,
+    contents: [gmUser, playerUser]
+  };
+  globalThis.Item = Object;
+  globalThis.fromUuid = async (uuid) => ({
+    [sourceItem.uuid]: sourceItem,
+    [groupActor.uuid]: groupActor
+  })[uuid] ?? null;
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForGroup: () => ({
+        groupActor,
+        members: [groupMember],
+        canManage: true
+      })
+    }
+  });
+
+  try {
+    await assert.rejects(
+      service.handleImportDroppedItemSocketRequest({
+        itemUuid: sourceItem.uuid,
+        targetActorUuid: groupActor.uuid
+      }, {
+        senderId: "player"
+      }),
+      /не входит в эту группу/u
+    );
+    assert.equal(groupActor.items.contents.length, 0);
+    assert.equal(outsiderActor.items.contents.includes(sourceItem), true);
+  }
+  finally {
+    fixture.restore();
+    globalThis.Item = previousItem;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
 test("getInventoryActor falls back to legacy actor creation for known no-group context errors", async () => {
   const fixture = installInventoryFixture();
   const service = new InventoryService({
