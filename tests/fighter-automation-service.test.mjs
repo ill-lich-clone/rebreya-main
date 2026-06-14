@@ -1401,6 +1401,84 @@ test("actor repair refreshes Rebreya class advancement links from the class comp
   }
 });
 
+test("actor repair passes mutable update options to MidiItem class advancement updates", async () => {
+  const previousPacks = game.packs;
+  const staleGrant = {
+    _id: "class-grant-1",
+    type: "ItemGrant",
+    level: 1,
+    title: "Old class features",
+    configuration: {
+      items: [{ uuid: "Compendium.world.rebreya-class-features.Item.oldFeature" }]
+    },
+    value: { added: { "1": { old: "kept" } } }
+  };
+  const freshGrant = {
+    _id: "class-grant-1",
+    type: "ItemGrant",
+    level: 1,
+    title: "Fresh class features",
+    configuration: {
+      items: [{ uuid: "Compendium.world.rebreya-class-features.Item.freshFeature" }]
+    },
+    value: {}
+  };
+  const classItem = makeItem({
+    id: "fighter-class",
+    name: "Fighter",
+    type: "class",
+    system: {
+      identifier: "fighter-rework-v028",
+      advancement: [staleGrant]
+    },
+    flags: {
+      "rebreya-main": {
+        classIdentifier: "fighter-rework-v028"
+      }
+    }
+  });
+  const actor = new TestActor({ id: "fighter", name: "Fighter", items: [classItem] });
+  classItem.update = async function update(patch, options = {}) {
+    options.parent = actor;
+    this.updates.push(patch);
+    this.updateOptions.push(options);
+    for (const [path, value] of Object.entries(patch)) {
+      foundry.utils.setProperty(this, path, value);
+    }
+    return this;
+  };
+  game.packs = {
+    get: (packId) => packId === "world.rebreya-classes"
+      ? {
+          getDocuments: async () => [{
+            system: {
+              identifier: "fighter-rework-v028",
+              advancement: [freshGrant]
+            },
+            getFlag: (scope, key) => scope === "rebreya-main" && key === "classIdentifier"
+              ? "fighter-rework-v028"
+              : undefined
+          }]
+        }
+      : null
+  };
+
+  try {
+    const service = new FighterAutomationService({});
+    await service.repairActor(actor);
+
+    assert.equal(classItem.updateOptions[0].render, false);
+    assert.equal(classItem.updateOptions[0].parent, actor);
+    assert.deepEqual(classItem.system.advancement, [{
+      ...freshGrant,
+      value: staleGrant.value
+    }]);
+  }
+  finally {
+    game.packs = previousPacks;
+  }
+});
+
 test("actor repair coalesces concurrent class advancement refreshes from sheet renders", async () => {
   const previousPacks = game.packs;
   const staleGrant = {

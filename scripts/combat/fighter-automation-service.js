@@ -25,7 +25,6 @@ const SECOND_WIND_USES_RECOVERY = Object.freeze([{
   type: "recoverAll",
   formula: ""
 }]);
-const REPAIR_UPDATE_OPTIONS = Object.freeze({ render: false });
 const IRON_WILL_NEXT_SAVE_EFFECT_NAME = "Железная воля: следующий приём";
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 const FIGHTER_MANEUVER_SUBTYPE = "fighterManeuver";
@@ -97,6 +96,10 @@ function toNumber(value, fallback = 0) {
 function clampInteger(value, min, max) {
   const numeric = Math.floor(toNumber(value, min));
   return Math.max(min, Math.min(max, numeric));
+}
+
+function repairUpdateOptions() {
+  return { render: false };
 }
 
 function getProperty(source, path, fallback = undefined) {
@@ -973,7 +976,7 @@ export class FighterAutomationService {
 
     if (Object.keys(patch).length) {
       if (typeof item.update === "function") {
-        await item.update(patch, render === false ? REPAIR_UPDATE_OPTIONS : {});
+        await item.update(patch, render === false ? repairUpdateOptions() : {});
       }
       else {
         for (const [path, value] of Object.entries(patch)) {
@@ -1016,7 +1019,7 @@ export class FighterAutomationService {
 
       const patch = { "system.advancement": mergedAdvancement };
       if (typeof item.update === "function") {
-        await item.update(patch, REPAIR_UPDATE_OPTIONS);
+        await item.update(patch, repairUpdateOptions());
       }
       else {
         foundry.utils.setProperty(item, "system.advancement", mergedAdvancement);
@@ -1099,7 +1102,7 @@ export class FighterAutomationService {
       }
 
       if (typeof item.update === "function") {
-        await item.update(patch, REPAIR_UPDATE_OPTIONS);
+        await item.update(patch, repairUpdateOptions());
       }
       else {
         for (const [path, value] of Object.entries(patch)) {
@@ -1151,7 +1154,7 @@ export class FighterAutomationService {
 
       const patch = { "system.container": containerId };
       if (typeof item.update === "function") {
-        await item.update(patch, REPAIR_UPDATE_OPTIONS);
+        await item.update(patch, repairUpdateOptions());
       }
       else {
         foundry.utils.setProperty(item, "system.container", containerId);
