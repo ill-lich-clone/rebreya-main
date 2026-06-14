@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 const {
   applyFixedRaceSize,
   applyBg3HotbarAutoAddSuppression,
+  ensurePlayerInventoryQuickButton,
   getBg3DeathSaveData,
   patchBg3HotbarDeathSavesContainer,
   registerSceneControlsHook,
@@ -90,6 +91,69 @@ function makeItem({ type = "feat", rebreyaFlags = {}, teyvankalFlags = null } = 
       ...(teyvankalFlags ? { teyvankal: teyvankalFlags } : {})
     },
     getFlag: (scope, key) => scope === "rebreya-main" ? rebreyaFlags[key] : undefined
+  };
+}
+
+class FakeClassList {
+  constructor() {
+    this.values = new Set();
+  }
+
+  add(...names) {
+    names.forEach((name) => this.values.add(name));
+  }
+
+  contains(name) {
+    return this.values.has(name);
+  }
+}
+
+class FakeElement {
+  constructor(tagName = "div", ownerDocument = null) {
+    this.tagName = tagName.toUpperCase();
+    this.ownerDocument = ownerDocument;
+    this.children = [];
+    this.dataset = {};
+    this.classList = new FakeClassList();
+    this.attributes = {};
+    this.listeners = {};
+    this.innerHTML = "";
+    this.type = "";
+    this.title = "";
+  }
+
+  append(child) {
+    child.parentElement = this;
+    this.children.push(child);
+  }
+
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+  }
+
+  getAttribute(name) {
+    return this.attributes[name];
+  }
+
+  addEventListener(type, listener) {
+    this.listeners[type] ??= [];
+    this.listeners[type].push(listener);
+  }
+
+  querySelector(selector) {
+    if (selector === "[data-rebreya-player-inventory-button='true']") {
+      return this.children.find((child) => child.dataset.rebreyaPlayerInventoryButton === "true") ?? null;
+    }
+
+    return null;
+  }
+}
+
+function createFakeDocument() {
+  return {
+    createElement(tagName) {
+      return new FakeElement(tagName, this);
+    }
   };
 }
 
@@ -213,6 +277,39 @@ test("variable-size race items leave character size to dnd5e advancement", async
   item.parent = actor;
 
   assert.equal(await applyFixedRaceSize(item), false);
+});
+
+test("player list gets one external round Rebreya inventory button", async () => {
+  const document = createFakeDocument();
+  const playersElement = new FakeElement("div", document);
+  const opened = [];
+
+  const inserted = ensurePlayerInventoryQuickButton(playersElement, {
+    openInventoryApp: async () => {
+      opened.push(true);
+    }
+  });
+  const insertedAgain = ensurePlayerInventoryQuickButton(playersElement, {
+    openInventoryApp: async () => {
+      opened.push("duplicate");
+    }
+  });
+
+  const button = playersElement.children[0];
+  assert.equal(inserted, true);
+  assert.equal(insertedAgain, false);
+  assert.equal(playersElement.classList.contains("rm-rebreya-player-inventory-anchor"), true);
+  assert.equal(playersElement.children.length, 1);
+  assert.equal(button.dataset.rebreyaPlayerInventoryButton, "true");
+  assert.equal(button.classList.contains("rm-player-inventory-button"), true);
+  assert.equal(button.getAttribute("aria-label"), "Открыть инвентарь Rebreya");
+
+  await button.listeners.click[0]({
+    preventDefault() {},
+    stopPropagation() {}
+  });
+
+  assert.deepEqual(opened, [true]);
 });
 
 test("scene controls create a separate Rebreya group for record controls", () => {

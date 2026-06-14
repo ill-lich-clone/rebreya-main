@@ -135,6 +135,58 @@ test("smalltime world time updates shift the Rebreya calendar only on the GM cli
   }
 });
 
+test("smalltime asks before consuming supplies when world time advances the date", async () => {
+  const previousGame = globalThis.game;
+  const calls = [];
+  const moduleApi = {
+    async setCalendarTimeOfDay(seconds, options) {
+      calls.push({ seconds, options });
+      return { timeOfDaySeconds: seconds };
+    },
+    async shiftCalendarDays(days, options) {
+      calls.push({ days, options });
+      return { daysAdvanced: days };
+    }
+  };
+
+  try {
+    globalThis.game = { user: { isGM: true } };
+    const dayDelta = await handleSmallTimeWorldTimeUpdate(24 * 3600, 3600, {
+      moduleApi,
+      confirmSupplyConsumption: async (days) => {
+        calls.push({ confirmedDays: days });
+        return true;
+      },
+      refreshSmallTimeDateDisplay: () => calls.push({ refreshed: true })
+    });
+
+    assert.equal(dayDelta, 1);
+    assert.deepEqual(calls, [
+      {
+        seconds: 0,
+        options: {
+          reason: "smalltime-world-time"
+        }
+      },
+      { confirmedDays: 1 },
+      {
+        days: 1,
+        options: {
+          processDailyCycles: true,
+          consumeSupplies: true,
+          applyEnergy: true,
+          processCraft: false,
+          reason: "smalltime-world-time"
+        }
+      },
+      { refreshed: true }
+    ]);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
 test("smalltime world time updates store Rebreya time of day without a day change", async () => {
   const previousGame = globalThis.game;
   const calls = [];

@@ -3,11 +3,13 @@
 let bg3HotbarSuppressionHookRegistered = false;
 let bg3HotbarDeathSavesCompatRegistered = false;
 let fixedRaceSizeHookRegistered = false;
+let playerInventoryQuickButtonHookRegistered = false;
 const PANEL_TOOL_NAME = `${MODULE_ID}-panel`;
 const DND5E_ACTOR_SIZES = new Set(["tiny", "sm", "med", "lg", "huge", "grg"]);
 const BG3_HOTBAR_MODULE_ID = "bg3-inspired-hotbar";
 const BG3_DEATH_SAVES_CONTAINER_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/scripts/components/containers/DeathSavesContainer.js`;
 const BG3_DEATH_SAVES_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3DeathSavesPatch`);
+const PLAYER_INVENTORY_BUTTON_SELECTOR = "[data-rebreya-player-inventory-button='true']";
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -173,6 +175,94 @@ function registerFixedRaceSizeHook() {
     applyFixedRaceSize(item).catch((error) => {
       console.error(`${MODULE_ID} | Failed to apply fixed race size.`, error);
     });
+  });
+}
+
+function resolvePlayerListElement(html) {
+  const HTMLElementClass = globalThis.HTMLElement;
+  if (HTMLElementClass && html instanceof HTMLElementClass) {
+    if (html.id === "players") {
+      return html;
+    }
+
+    return html.querySelector?.("#players") ?? null;
+  }
+
+  const root = Array.isArray(html) ? html[0] : html?.[0] ?? html;
+  if (HTMLElementClass && root instanceof HTMLElementClass) {
+    if (root.id === "players") {
+      return root;
+    }
+
+    return root.querySelector?.("#players") ?? null;
+  }
+
+  const jqueryResult = html?.find?.("#players")?.[0] ?? null;
+  if (jqueryResult) {
+    return jqueryResult;
+  }
+
+  return globalThis.document?.getElementById?.("players") ?? null;
+}
+
+export function ensurePlayerInventoryQuickButton(playersElement, moduleApi = globalThis.game?.rebreyaMain) {
+  if (!playersElement?.querySelector || !playersElement?.ownerDocument?.createElement) {
+    return false;
+  }
+
+  if (playersElement.querySelector(PLAYER_INVENTORY_BUTTON_SELECTOR)) {
+    return false;
+  }
+
+  const label = "Открыть инвентарь Rebreya";
+  const button = playersElement.ownerDocument.createElement("button");
+  button.type = "button";
+  button.dataset.rebreyaPlayerInventoryButton = "true";
+  button.classList?.add?.("rm-player-inventory-button");
+  button.title = label;
+  button.setAttribute?.("aria-label", label);
+  button.innerHTML = '<i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>';
+  button.addEventListener?.("click", async (event) => {
+    event.preventDefault?.();
+    event.stopPropagation?.();
+
+    try {
+      await (moduleApi ?? globalThis.game?.rebreyaMain)?.openInventoryApp?.();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to open inventory from player list button.`, error);
+    }
+  });
+
+  playersElement.classList?.add?.("rm-rebreya-player-inventory-anchor");
+  if (typeof playersElement.append === "function") {
+    playersElement.append(button);
+  }
+  else {
+    playersElement.appendChild?.(button);
+  }
+  return true;
+}
+
+function injectPlayerInventoryQuickButton(html) {
+  const playersElement = resolvePlayerListElement(html);
+  ensurePlayerInventoryQuickButton(playersElement);
+}
+
+function registerPlayerInventoryQuickButtonHook() {
+  if (playerInventoryQuickButtonHookRegistered || !globalThis.Hooks?.on) {
+    return;
+  }
+
+  playerInventoryQuickButtonHookRegistered = true;
+  Hooks.on("renderPlayerList", (_app, html) => {
+    injectPlayerInventoryQuickButton(html);
+  });
+  Hooks.on("renderPlayers", (_app, html) => {
+    injectPlayerInventoryQuickButton(html);
+  });
+  Hooks.once?.("ready", () => {
+    injectPlayerInventoryQuickButton();
   });
 }
 
@@ -412,6 +502,7 @@ export function registerSceneControlsHook() {
   registerBg3HotbarAutoAddSuppression();
   registerBg3HotbarDeathSavesCompat();
   registerFixedRaceSizeHook();
+  registerPlayerInventoryQuickButtonHook();
 
   Hooks.on("getSceneControlButtons", (controls) => {
     if (!canShowRebreyaControls() || !controls) {

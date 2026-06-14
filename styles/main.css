@@ -195,6 +195,47 @@
   display: none;
 }
 
+#players.rm-rebreya-player-inventory-anchor {
+  position: relative;
+  overflow: visible;
+}
+
+#players .rm-player-inventory-button {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 28px;
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: rgba(28, 29, 33, 0.96);
+  color: #d9c98f;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  z-index: 2;
+}
+
+#players .rm-player-inventory-button:hover,
+#players .rm-player-inventory-button:focus-visible {
+  border-color: rgba(217, 201, 143, 0.65);
+  background: rgba(42, 43, 48, 0.98);
+  color: #f0df9b;
+}
+
+#players .rm-player-inventory-button:focus-visible {
+  outline: 2px solid rgba(240, 223, 155, 0.7);
+  outline-offset: 2px;
+}
+
+#players .rm-player-inventory-button i {
+  font-size: 14px;
+  line-height: 1;
+  pointer-events: none;
+}
+
 .rm-hero {
   display: flex;
   justify-content: space-between;

@@ -280,10 +280,62 @@ function bindRebreyaCalendarOpen(app) {
   return true;
 }
 
+export async function confirmSmallTimeSupplyConsumption(days) {
+  const safeDays = Math.max(1, Math.floor(toNumber(days, 1)));
+  const dayLabel = safeDays === 1 ? "1 день" : `${safeDays} дн.`;
+  const title = "Списать припасы?";
+  const content = `<p>SmallTime изменил дату на ${dayLabel}. Списать еду и воду группы?</p>`;
+  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+
+  try {
+    if (typeof DialogV2?.confirm === "function") {
+      return await DialogV2.confirm({
+        window: { title },
+        content,
+        yes: { label: "Списать" },
+        no: { label: "Не списывать" }
+      });
+    }
+
+    if (typeof globalThis.Dialog?.confirm === "function") {
+      return await globalThis.Dialog.confirm({
+        title,
+        content,
+        yes: () => true,
+        no: () => false,
+        defaultYes: false
+      });
+    }
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to confirm SmallTime supply consumption.`, error);
+  }
+
+  return false;
+}
+
+async function shouldConsumeSuppliesForSmallTimeDayDelta(dayDelta, confirmSupplyConsumption) {
+  if (dayDelta <= 0) {
+    return false;
+  }
+
+  try {
+    return await confirmSupplyConsumption?.(dayDelta) === true;
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to confirm SmallTime supply consumption.`, error);
+    return false;
+  }
+}
+
 export async function handleSmallTimeWorldTimeUpdate(
   worldTime,
   deltaSeconds,
-  { moduleApi = activeModuleApi, refreshSmallTimeDateDisplay: refreshDisplay = refreshSmallTimeDateDisplay } = {}
+  {
+    moduleApi = activeModuleApi,
+    confirmSupplyConsumption = confirmSmallTimeSupplyConsumption,
+    refreshSmallTimeDateDisplay: refreshDisplay = refreshSmallTimeDateDisplay
+  } = {}
 ) {
   const rawDayDelta = countWorldTimeDayDelta(worldTime, deltaSeconds);
   const dayDelta = suppressNextWorldTimeDateDelta ? 0 : rawDayDelta;
@@ -298,10 +350,21 @@ export async function handleSmallTimeWorldTimeUpdate(
     }
 
     if (dayDelta !== 0 && moduleApi?.shiftCalendarDays) {
-      await moduleApi.shiftCalendarDays(dayDelta, {
-        processDailyCycles: false,
-        reason: "smalltime-world-time"
-      });
+      const shouldConsumeSupplies = await shouldConsumeSuppliesForSmallTimeDayDelta(dayDelta, confirmSupplyConsumption);
+      const shiftOptions = shouldConsumeSupplies
+        ? {
+            processDailyCycles: true,
+            consumeSupplies: true,
+            applyEnergy: true,
+            processCraft: false,
+            reason: "smalltime-world-time"
+          }
+        : {
+            processDailyCycles: false,
+            reason: "smalltime-world-time"
+          };
+
+      await moduleApi.shiftCalendarDays(dayDelta, shiftOptions);
     }
   }
 
