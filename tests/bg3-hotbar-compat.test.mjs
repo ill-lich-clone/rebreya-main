@@ -120,6 +120,7 @@ class FakeElement {
     this.listeners = {};
     this.innerHTML = "";
     this.id = "";
+    this.style = {};
     this.type = "";
     this.title = "";
   }
@@ -165,11 +166,14 @@ class FakeElement {
 }
 
 function createFakeDocument() {
-  return {
+  const document = {
+    body: null,
     createElement(tagName) {
       return new FakeElement(tagName, this);
     }
   };
+  document.body = new FakeElement("body", document);
+  return document;
 }
 
 test("BG3 hotbar auto-add suppression marks Rebreya feat creations", () => {
@@ -297,27 +301,48 @@ test("variable-size race items leave character size to dnd5e advancement", async
 test("player list gets one external round Rebreya inventory button", async () => {
   const document = createFakeDocument();
   const playersElement = new FakeElement("div", document);
+  playersElement.getBoundingClientRect = () => ({
+    top: 100,
+    right: 220,
+    bottom: 220,
+    left: 20,
+    width: 200,
+    height: 120
+  });
   const opened = [];
 
   const inserted = ensurePlayerInventoryQuickButton(playersElement, {
     openInventoryApp: async () => {
       opened.push(true);
     }
+  }, {
+    viewport: {
+      innerWidth: 1000,
+      innerHeight: 800
+    }
   });
   const insertedAgain = ensurePlayerInventoryQuickButton(playersElement, {
     openInventoryApp: async () => {
       opened.push("duplicate");
     }
+  }, {
+    viewport: {
+      innerWidth: 1000,
+      innerHeight: 800
+    }
   });
 
-  const button = playersElement.children[0];
+  const button = document.body.children[0];
   assert.equal(inserted, true);
   assert.equal(insertedAgain, false);
-  assert.equal(playersElement.classList.contains("rm-rebreya-player-inventory-anchor"), true);
-  assert.equal(playersElement.children.length, 1);
+  assert.equal(playersElement.children.length, 0);
+  assert.equal(document.body.children.length, 1);
+  assert.equal(button.parentElement, document.body);
   assert.equal(button.dataset.rebreyaPlayerInventoryButton, "true");
   assert.equal(button.classList.contains("rm-player-inventory-button"), true);
   assert.equal(button.getAttribute("aria-label"), "Открыть инвентарь Rebreya");
+  assert.match(button.style.left, /vw$/u);
+  assert.match(button.style.top, /vh$/u);
 
   await button.listeners.click[0]({
     preventDefault() {},

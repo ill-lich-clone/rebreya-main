@@ -223,17 +223,77 @@ export function resolvePlayerInventoryButtonAnchor(app, html = null) {
   return globalThis.document?.getElementById?.("players") ?? null;
 }
 
-export function ensurePlayerInventoryQuickButton(playersElement, moduleApi = globalThis.game?.rebreyaMain) {
-  if (!playersElement?.querySelector || !playersElement?.ownerDocument?.createElement) {
+function formatViewportUnit(value, viewportSize, unit) {
+  if (!Number.isFinite(value) || !Number.isFinite(viewportSize) || viewportSize <= 0) {
+    return "0";
+  }
+
+  return `${Number(((value / viewportSize) * 100).toFixed(3))}${unit}`;
+}
+
+export function positionPlayerInventoryQuickButton(button, playersElement, { viewport = globalThis } = {}) {
+  if (!button?.style || typeof playersElement?.getBoundingClientRect !== "function") {
     return false;
   }
 
-  if (playersElement.querySelector(PLAYER_INVENTORY_BUTTON_SELECTOR)) {
+  const rect = playersElement.getBoundingClientRect();
+  const ownerDocument = playersElement.ownerDocument ?? globalThis.document;
+  const viewportWidth = Number(
+    viewport?.innerWidth
+    ?? globalThis.innerWidth
+    ?? ownerDocument?.documentElement?.clientWidth
+    ?? 0
+  );
+  const viewportHeight = Number(
+    viewport?.innerHeight
+    ?? globalThis.innerHeight
+    ?? ownerDocument?.documentElement?.clientHeight
+    ?? 0
+  );
+
+  if (!Number.isFinite(rect?.right) || !Number.isFinite(rect?.top) || !Number.isFinite(rect?.height)) {
+    return false;
+  }
+
+  const buttonSize = 30;
+  const offsetX = Math.max(18, viewportWidth * 0.018);
+  const left = Math.max(8, Math.min(viewportWidth - buttonSize - 8, rect.right + offsetX));
+  const centerY = rect.top + (rect.height * 0.58);
+  const top = Math.max(8, Math.min(viewportHeight - buttonSize - 8, centerY - (buttonSize / 2)));
+
+  button.style.left = formatViewportUnit(left, viewportWidth, "vw");
+  button.style.top = formatViewportUnit(top, viewportHeight, "vh");
+  return true;
+}
+
+function removeEmbeddedPlayerInventoryButton(playersElement, buttonHost) {
+  const embeddedButton = playersElement?.querySelector?.(PLAYER_INVENTORY_BUTTON_SELECTOR);
+  if (embeddedButton && embeddedButton.parentElement !== buttonHost) {
+    embeddedButton.remove?.();
+  }
+}
+
+export function ensurePlayerInventoryQuickButton(
+  playersElement,
+  moduleApi = globalThis.game?.rebreyaMain,
+  { viewport = globalThis } = {}
+) {
+  const ownerDocument = playersElement?.ownerDocument ?? globalThis.document;
+  const buttonHost = ownerDocument?.body;
+  if (!playersElement || !buttonHost?.querySelector || !ownerDocument?.createElement) {
+    return false;
+  }
+
+  removeEmbeddedPlayerInventoryButton(playersElement, buttonHost);
+
+  const existingButton = buttonHost.querySelector(PLAYER_INVENTORY_BUTTON_SELECTOR);
+  if (existingButton) {
+    positionPlayerInventoryQuickButton(existingButton, playersElement, { viewport });
     return false;
   }
 
   const label = "Открыть инвентарь Rebreya";
-  const button = playersElement.ownerDocument.createElement("button");
+  const button = ownerDocument.createElement("button");
   button.type = "button";
   button.dataset.rebreyaPlayerInventoryButton = "true";
   button.classList?.add?.("rm-player-inventory-button");
@@ -252,13 +312,13 @@ export function ensurePlayerInventoryQuickButton(playersElement, moduleApi = glo
     }
   });
 
-  playersElement.classList?.add?.("rm-rebreya-player-inventory-anchor");
-  if (typeof playersElement.append === "function") {
-    playersElement.append(button);
+  if (typeof buttonHost.append === "function") {
+    buttonHost.append(button);
   }
   else {
-    playersElement.appendChild?.(button);
+    buttonHost.appendChild?.(button);
   }
+  positionPlayerInventoryQuickButton(button, playersElement, { viewport });
   return true;
 }
 
@@ -282,6 +342,9 @@ function registerPlayerInventoryQuickButtonHook() {
   Hooks.once?.("ready", () => {
     injectPlayerInventoryQuickButton();
   });
+  globalThis.addEventListener?.("resize", () => {
+    injectPlayerInventoryQuickButton();
+  }, { passive: true });
 }
 
 function canShowRebreyaControls() {
