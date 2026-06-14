@@ -202,7 +202,7 @@
 
 #players .rm-player-inventory-button {
   position: absolute;
-  left: calc(100% + 8px);
+  left: 112%;
   bottom: 28px;
   width: 30px;
   height: 30px;

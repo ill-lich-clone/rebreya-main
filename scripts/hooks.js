@@ -178,26 +178,44 @@ function registerFixedRaceSizeHook() {
   });
 }
 
-function resolvePlayerListElement(html) {
+function unwrapHtmlElement(value) {
   const HTMLElementClass = globalThis.HTMLElement;
-  if (HTMLElementClass && html instanceof HTMLElementClass) {
-    if (html.id === "players") {
-      return html;
-    }
-
-    return html.querySelector?.("#players") ?? null;
+  const element = Array.isArray(value) ? value[0] : value?.[0] ?? value;
+  if (HTMLElementClass && element instanceof HTMLElementClass) {
+    return element;
   }
 
-  const root = Array.isArray(html) ? html[0] : html?.[0] ?? html;
-  if (HTMLElementClass && root instanceof HTMLElementClass) {
-    if (root.id === "players") {
-      return root;
-    }
-
-    return root.querySelector?.("#players") ?? null;
+  if (typeof element?.querySelector === "function") {
+    return element;
   }
 
-  const jqueryResult = html?.find?.("#players")?.[0] ?? null;
+  return null;
+}
+
+function findPlayersRoot(element) {
+  if (!element?.querySelector) {
+    return null;
+  }
+
+  if (element.id === "players") {
+    return element;
+  }
+
+  return element.closest?.("#players") ?? element.querySelector("#players");
+}
+
+export function resolvePlayerInventoryButtonAnchor(app, html = null) {
+  const appRoot = findPlayersRoot(unwrapHtmlElement(app?.element ?? app));
+  if (appRoot) {
+    return appRoot;
+  }
+
+  const htmlRoot = findPlayersRoot(unwrapHtmlElement(html));
+  if (htmlRoot) {
+    return htmlRoot;
+  }
+
+  const jqueryResult = app?.element?.find?.("#players")?.[0] ?? html?.find?.("#players")?.[0] ?? null;
   if (jqueryResult) {
     return jqueryResult;
   }
@@ -244,8 +262,8 @@ export function ensurePlayerInventoryQuickButton(playersElement, moduleApi = glo
   return true;
 }
 
-function injectPlayerInventoryQuickButton(html) {
-  const playersElement = resolvePlayerListElement(html);
+function injectPlayerInventoryQuickButton(app, html) {
+  const playersElement = resolvePlayerInventoryButtonAnchor(app, html);
   ensurePlayerInventoryQuickButton(playersElement);
 }
 
@@ -255,11 +273,11 @@ function registerPlayerInventoryQuickButtonHook() {
   }
 
   playerInventoryQuickButtonHookRegistered = true;
-  Hooks.on("renderPlayerList", (_app, html) => {
-    injectPlayerInventoryQuickButton(html);
+  Hooks.on("renderPlayerList", (app, html) => {
+    injectPlayerInventoryQuickButton(app, html);
   });
-  Hooks.on("renderPlayers", (_app, html) => {
-    injectPlayerInventoryQuickButton(html);
+  Hooks.on("renderPlayers", (app, html) => {
+    injectPlayerInventoryQuickButton(app, html);
   });
   Hooks.once?.("ready", () => {
     injectPlayerInventoryQuickButton();

@@ -8,6 +8,7 @@ const {
   getBg3DeathSaveData,
   patchBg3HotbarDeathSavesContainer,
   registerSceneControlsHook,
+  resolvePlayerInventoryButtonAnchor,
   shouldSuppressBg3HotbarAutoAdd
 } = await import("../scripts/hooks.js");
 
@@ -118,6 +119,7 @@ class FakeElement {
     this.attributes = {};
     this.listeners = {};
     this.innerHTML = "";
+    this.id = "";
     this.type = "";
     this.title = "";
   }
@@ -143,6 +145,19 @@ class FakeElement {
   querySelector(selector) {
     if (selector === "[data-rebreya-player-inventory-button='true']") {
       return this.children.find((child) => child.dataset.rebreyaPlayerInventoryButton === "true") ?? null;
+    }
+
+    if (selector === "#players") {
+      for (const child of this.children) {
+        if (child.id === "players") {
+          return child;
+        }
+
+        const nestedMatch = child.querySelector?.("#players");
+        if (nestedMatch) {
+          return nestedMatch;
+        }
+      }
     }
 
     return null;
@@ -310,6 +325,20 @@ test("player list gets one external round Rebreya inventory button", async () =>
   });
 
   assert.deepEqual(opened, [true]);
+});
+
+test("player inventory button anchor prefers the outer player list app", () => {
+  const document = createFakeDocument();
+  const appRoot = new FakeElement("div", document);
+  const innerHtml = new FakeElement("div", document);
+  const innerPlayers = new FakeElement("div", document);
+  appRoot.id = "players";
+  innerPlayers.id = "players";
+  innerHtml.append(innerPlayers);
+
+  const anchor = resolvePlayerInventoryButtonAnchor({ element: appRoot }, innerHtml);
+
+  assert.equal(anchor, appRoot);
 });
 
 test("scene controls create a separate Rebreya group for record controls", () => {
