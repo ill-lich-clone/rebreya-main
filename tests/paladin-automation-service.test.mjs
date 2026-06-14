@@ -90,6 +90,8 @@ class TestActor extends Actor {
     name = "Паладин",
     level = 5,
     chaMod = 2,
+    isOwner = true,
+    ownership = {},
     hp = { value: 10, max: 30 },
     spellSlots = {},
     effects = [],
@@ -100,7 +102,8 @@ class TestActor extends Actor {
     this.id = id;
     this.uuid = `Actor.${id}`;
     this.name = name;
-    this.isOwner = true;
+    this.isOwner = isOwner;
+    this.ownership = ownership;
     this.system = {
       abilities: {
         cha: { mod: chaMod }
@@ -566,6 +569,231 @@ test("paladin lay on hands prompts for points, spends the item pool, and heals t
   assert.deepEqual(target.updates, [{
     "system.attributes.hp.value": 22
   }]);
+});
+
+test("paladin lay on hands sends a GM socket request when the player cannot update the target", async () => {
+  const previousGame = globalThis.game;
+  const layOnHands = makeFeatureItem({
+    id: "lay-on-hands",
+    name: "РќР°Р»РѕР¶РµРЅРёРµ СЂСѓРє",
+    featureId: "paladin-rework-v01::class::paladin-lay-on-hands",
+    uses: {
+      spent: 5,
+      max: 25,
+      recovery: []
+    }
+  });
+  const paladin = new TestActor({
+    items: [layOnHands],
+    ownership: {
+      player: 3
+    }
+  });
+  const target = new TestActor({
+    id: "target",
+    name: "Р¦РµР»СЊ",
+    isOwner: false,
+    hp: {
+      value: 10,
+      max: 30
+    },
+    items: []
+  });
+  target.update = async () => {
+    throw new Error("player should not update target directly");
+  };
+  const emitted = [];
+  globalThis.game = {
+    ...previousGame,
+    user: {
+      id: "player",
+      isGM: false,
+      targets: new Set([{ actor: target }])
+    },
+    socket: {
+      emit: (channel, message) => {
+        emitted.push({ channel, message });
+      }
+    }
+  };
+  const service = new PaladinAutomationService({}, {
+    promptLayOnHandsPoints: async () => 12
+  });
+
+  try {
+    const activity = {
+      actor: paladin,
+      item: layOnHands,
+      flags: {
+        "rebreya-main": {
+          automation: "paladin-lay-on-hands"
+        }
+      }
+    };
+
+    await service.applyDnd5ePostUseActivity(activity, {}, {});
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+
+  assert.deepEqual(layOnHands.updates, []);
+  assert.equal(target.system.attributes.hp.value, 10);
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].channel, "module.rebreya-main");
+  assert.deepEqual(emitted[0].message, {
+    type: "character-class-automation",
+    payload: {
+      action: "paladin.layOnHands",
+      sourceActorUuid: paladin.uuid,
+      sourceItemId: layOnHands.id,
+      sourceItemUuid: layOnHands.uuid,
+      targetActorUuid: target.uuid,
+      amount: 12
+    },
+    senderId: "player"
+  });
+});
+
+test("paladin lay on hands socket request is applied by the active GM", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  const layOnHands = makeFeatureItem({
+    id: "lay-on-hands",
+    name: "РќР°Р»РѕР¶РµРЅРёРµ СЂСѓРє",
+    featureId: "paladin-rework-v01::class::paladin-lay-on-hands",
+    uses: {
+      spent: 5,
+      max: 25,
+      recovery: []
+    }
+  });
+  const paladin = new TestActor({
+    items: [layOnHands],
+    ownership: {
+      player: 3
+    }
+  });
+  const target = new TestActor({
+    id: "target",
+    name: "Р¦РµР»СЊ",
+    hp: {
+      value: 10,
+      max: 30
+    },
+    items: []
+  });
+  const gmUser = { id: "gm", isGM: true, active: true };
+  const playerUser = { id: "player", isGM: false, active: true };
+  globalThis.game = {
+    ...previousGame,
+    user: gmUser,
+    users: {
+      activeGM: gmUser,
+      get: (id) => ({ gm: gmUser, player: playerUser })[id] ?? null,
+      contents: [gmUser, playerUser]
+    }
+  };
+  globalThis.fromUuidSync = (uuid) => ({
+    [paladin.uuid]: paladin,
+    [target.uuid]: target,
+    [layOnHands.uuid]: layOnHands
+  })[uuid] ?? null;
+
+  try {
+    const result = await new PaladinAutomationService({}).handleSocketMessage({
+      action: "paladin.layOnHands",
+      sourceActorUuid: paladin.uuid,
+      sourceItemId: layOnHands.id,
+      sourceItemUuid: layOnHands.uuid,
+      targetActorUuid: target.uuid,
+      amount: 12
+    }, {
+      senderId: "player"
+    });
+
+    assert.equal(result, true);
+    assert.equal(target.system.attributes.hp.value, 22);
+    assert.deepEqual(target.updates, [{
+      "system.attributes.hp.value": 22
+    }]);
+    assert.equal(layOnHands.system.uses.spent, 17);
+    assert.deepEqual(layOnHands.updates, [{
+      "system.uses.spent": 17
+    }]);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuidSync = previousFromUuidSync;
+  }
+});
+
+test("paladin lay on hands socket request rejects senders that do not own the source actor", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  const layOnHands = makeFeatureItem({
+    id: "lay-on-hands",
+    name: "РќР°Р»РѕР¶РµРЅРёРµ СЂСѓРє",
+    featureId: "paladin-rework-v01::class::paladin-lay-on-hands",
+    uses: {
+      spent: 5,
+      max: 25,
+      recovery: []
+    }
+  });
+  const paladin = new TestActor({
+    items: [layOnHands],
+    ownership: {
+      other: 3
+    }
+  });
+  const target = new TestActor({
+    id: "target",
+    hp: {
+      value: 10,
+      max: 30
+    },
+    items: []
+  });
+  const gmUser = { id: "gm", isGM: true, active: true };
+  const playerUser = { id: "player", isGM: false, active: true };
+  globalThis.game = {
+    ...previousGame,
+    user: gmUser,
+    users: {
+      activeGM: gmUser,
+      get: (id) => ({ gm: gmUser, player: playerUser })[id] ?? null,
+      contents: [gmUser, playerUser]
+    }
+  };
+  globalThis.fromUuidSync = (uuid) => ({
+    [paladin.uuid]: paladin,
+    [target.uuid]: target,
+    [layOnHands.uuid]: layOnHands
+  })[uuid] ?? null;
+
+  try {
+    const result = await new PaladinAutomationService({}).handleSocketMessage({
+      action: "paladin.layOnHands",
+      sourceActorUuid: paladin.uuid,
+      sourceItemId: layOnHands.id,
+      sourceItemUuid: layOnHands.uuid,
+      targetActorUuid: target.uuid,
+      amount: 12
+    }, {
+      senderId: "player"
+    });
+
+    assert.equal(result, false);
+    assert.equal(target.system.attributes.hp.value, 10);
+    assert.deepEqual(target.updates, []);
+    assert.equal(layOnHands.system.uses.spent, 5);
+    assert.deepEqual(layOnHands.updates, []);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuidSync = previousFromUuidSync;
+  }
 });
 
 test("paladin divine smite spends the selected spell slot and applies radiant damage to the hit target", async () => {

@@ -1,7 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 
+const SOCKET_CHANNEL = `module.${MODULE_ID}`;
+const SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION = "character-class-automation";
 const PALADIN_CLASS_IDENTIFIER = "paladin-rework-v01";
 const PALADIN_SPELLCASTING_FEATURE_ID = "paladin-spellcasting";
+const PALADIN_LAY_ON_HANDS_FEATURE_ID = "paladin-lay-on-hands";
 const DIVINE_SMITE_FEATURE_ID = "paladin-divine-smite";
 const DIVINE_SMITE_DAMAGE_TYPE = "radiant";
 const INITIAL_PREPARED_SPELLS_FLAG = "paladinInitialPreparedSpellsSelected";
@@ -33,6 +36,8 @@ function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || String(fallback ?? "").trim();
 }
+
+export { SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION };
 
 function normalizeText(value) {
   return cleanText(value)
@@ -103,6 +108,84 @@ function actorFlag(actor, key) {
   return getProperty(actor, `flags.${MODULE_ID}.${key}`, undefined);
 }
 
+function getSocketUser(senderId) {
+  const safeSenderId = cleanText(senderId);
+  if (!safeSenderId) {
+    return null;
+  }
+
+  return game.users?.get?.(safeSenderId)
+    ?? collectionValues(game.users).find((user) => user?.id === safeSenderId)
+    ?? null;
+}
+
+function activeGmUser() {
+  return game.users?.activeGM
+    ?? collectionValues(game.users).find((user) => user?.isGM && user?.active)
+    ?? null;
+}
+
+function isActiveGmClient() {
+  if (!game.user?.isGM) {
+    return false;
+  }
+
+  const activeGm = activeGmUser();
+  return !activeGm?.id || activeGm.id === game.user.id;
+}
+
+function userOwnsActor(actor, user) {
+  if (!actor || !user) {
+    return false;
+  }
+
+  if (user.isGM) {
+    return true;
+  }
+
+  if (typeof actor.testUserPermission === "function") {
+    try {
+      return actor.testUserPermission(user, "OWNER") === true;
+    }
+    catch (error) {
+      return false;
+    }
+  }
+
+  const ownership = actor.ownership ?? actor._source?.ownership ?? {};
+  return Number(ownership[user.id] ?? ownership.default ?? 0) >= 3;
+}
+
+async function resolveUuid(uuid) {
+  const safeUuid = cleanText(uuid);
+  if (!safeUuid) {
+    return null;
+  }
+
+  if (typeof globalThis.fromUuidSync === "function") {
+    try {
+      const document = globalThis.fromUuidSync(safeUuid);
+      if (document) {
+        return document;
+      }
+    }
+    catch (error) {
+      // Fall through to async UUID resolution.
+    }
+  }
+
+  if (typeof globalThis.fromUuid === "function") {
+    try {
+      return globalThis.fromUuid(safeUuid);
+    }
+    catch (error) {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 async function setActorFlag(actor, key, value) {
   if (typeof actor?.setFlag === "function") {
     return actor.setFlag(MODULE_ID, key, value);
@@ -136,6 +219,11 @@ function featureIdMatches(item, rawId) {
 
 function isPaladinSpellcastingFeature(item) {
   return featureIdMatches(item, PALADIN_SPELLCASTING_FEATURE_ID);
+}
+
+function isLayOnHandsFeature(item) {
+  return featureIdMatches(item, PALADIN_LAY_ON_HANDS_FEATURE_ID)
+    || normalizeText(item?.name) === "наложение рук";
 }
 
 function hasActorFeature(actor, rawId, normalizedName = "") {
@@ -461,6 +549,21 @@ function actorFromItem(item) {
   return item?.parent ?? item?.actor ?? item?.document?.parent ?? null;
 }
 
+function itemBelongsToActor(item, actor) {
+  if (!item || !actor) {
+    return false;
+  }
+
+  if (item.actor === actor || item.parent === actor) {
+    return true;
+  }
+
+  const itemKey = cleanText(item.uuid ?? item.id);
+  return Boolean(itemKey) && collectionValues(actor.items).some((actorItem) => (
+    cleanText(actorItem?.uuid ?? actorItem?.id) === itemKey
+  ));
+}
+
 function isCurrentUserHook(userId) {
   const hookUserId = cleanText(userId);
   const currentUserId = cleanText(game?.user?.id);
@@ -489,6 +592,22 @@ function classItemLevelChanged(changed) {
   return changedPathExists(changed, "system.levels")
     || changedPathExists(changed, "system.level")
     || changedPathExists(changed, "system.advancement.level");
+}
+
+function actorItemByIdOrUuid(actor, itemId, itemUuid) {
+  const safeItemId = cleanText(itemId);
+  const safeItemUuid = cleanText(itemUuid);
+  if (safeItemId && typeof actor?.items?.get === "function") {
+    const item = actor.items.get(safeItemId);
+    if (item) {
+      return item;
+    }
+  }
+
+  return collectionValues(actor?.items).find((item) => (
+    (safeItemId && cleanText(item?.id) === safeItemId)
+    || (safeItemUuid && cleanText(item?.uuid) === safeItemUuid)
+  )) ?? null;
 }
 
 function effectIsEnabled(effect) {
@@ -677,8 +796,30 @@ export class PaladinAutomationService {
     return this.#promptInitialPreparedSpells(actor);
   }
 
+  async handleSocketMessage(payload = {}, { senderId = "" } = {}) {
+    if (!isActiveGmClient()) {
+      return false;
+    }
+
+    const sender = getSocketUser(senderId);
+    if (!sender) {
+      return false;
+    }
+
+    const action = cleanText(payload.action);
+    if (action === "paladin.layOnHands") {
+      return this.#handleLayOnHandsSocketRequest(payload, { sender });
+    }
+
+    return false;
+  }
+
   #canPrompt(actor) {
     return Boolean(game.user?.isGM || actor?.isOwner);
+  }
+
+  #canUpdate(document) {
+    return Boolean(game.user?.isGM || document?.isOwner || document?.actor?.isOwner || document?.parent?.isOwner);
   }
 
   async #promptInitialPreparedSpells(actor, { spellcastingFeature = null } = {}) {
@@ -973,11 +1114,80 @@ export class PaladinAutomationService {
     }
 
     const healing = clampInteger(amount, 1, maxSpend);
-    await target.update?.({ "system.attributes.hp.value": targetCurrentHp + healing });
-    await layOnHands.update?.({ "system.uses.spent": spent + healing });
+    if (!this.#canUpdate(target) || !this.#canUpdate(layOnHands)) {
+      return this.#emitLayOnHandsAsGM(actor, layOnHands, target, healing);
+    }
+
+    return this.#applyLayOnHandsHealing(actor, layOnHands, target, healing, spent);
+  }
+
+  async #handleLayOnHandsSocketRequest(payload = {}, { sender = null } = {}) {
+    const actor = await resolveUuid(payload.sourceActorUuid);
+    const target = await resolveUuid(payload.targetActorUuid);
+    if (!(actor instanceof Actor) || !(target instanceof Actor) || !userOwnsActor(actor, sender)) {
+      return false;
+    }
+
+    const layOnHands = actorItemByIdOrUuid(actor, payload.sourceItemId, payload.sourceItemUuid)
+      ?? await resolveUuid(payload.sourceItemUuid);
+    if (!isLayOnHandsFeature(layOnHands) || !itemBelongsToActor(layOnHands, actor)) {
+      return false;
+    }
+
+    const targetCurrentHp = actorHpValue(target);
+    const targetMaxHp = actorHpMax(target);
+    const missingHp = Math.max(0, targetMaxHp - targetCurrentHp);
+    const uses = layOnHands.system?.uses ?? {};
+    const maxUses = this.#layOnHandsMaxUses(actor, layOnHands);
+    const spent = Math.max(0, Math.floor(toNumber(uses.spent, 0)));
+    const remaining = Math.max(0, maxUses - spent);
+    const healing = Math.min(
+      Math.max(0, Math.floor(toNumber(payload.amount, 0))),
+      missingHp,
+      remaining
+    );
+    if (healing <= 0) {
+      return false;
+    }
+
+    return this.#applyLayOnHandsHealing(actor, layOnHands, target, healing, spent);
+  }
+
+  async #applyLayOnHandsHealing(actor, layOnHands, target, healing, spent) {
+    const targetCurrentHp = actorHpValue(target);
+    const targetMaxHp = actorHpMax(target);
+    const nextHp = Math.min(targetMaxHp, targetCurrentHp + Math.max(0, Math.floor(toNumber(healing, 0))));
+    const appliedHealing = Math.max(0, nextHp - targetCurrentHp);
+    if (appliedHealing <= 0) {
+      return false;
+    }
+
+    await target.update?.({ "system.attributes.hp.value": nextHp });
+    await layOnHands.update?.({ "system.uses.spent": spent + appliedHealing });
     await globalThis.ChatMessage?.create?.({
       speaker: speakerForActor(actor),
-      flavor: `Наложение рук: ${healing} хитов для ${target.name ?? "цели"}.`
+      flavor: `Наложение рук: ${appliedHealing} хитов для ${target.name ?? "цели"}.`
+    });
+    return true;
+  }
+
+  async #emitLayOnHandsAsGM(actor, layOnHands, target, healing) {
+    if (typeof game.socket?.emit !== "function") {
+      globalThis.ui?.notifications?.warn("Наложение рук: нет доступа к GM socket, исцеление не применено.");
+      return false;
+    }
+
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION,
+      payload: {
+        action: "paladin.layOnHands",
+        sourceActorUuid: cleanText(actor?.uuid),
+        sourceItemId: cleanText(layOnHands?.id),
+        sourceItemUuid: cleanText(layOnHands?.uuid),
+        targetActorUuid: cleanText(target?.uuid),
+        amount: Math.max(0, Math.floor(toNumber(healing, 0)))
+      },
+      senderId: game.user?.id ?? ""
     });
     return true;
   }

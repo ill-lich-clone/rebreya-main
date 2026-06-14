@@ -3094,6 +3094,54 @@ test("RebreyaMainModule registers the module socket listener during setup", asyn
   }
 });
 
+test("RebreyaMainModule routes character class socket automation to the paladin service", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {},
+    on() {}
+  };
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?character-class-socket=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    let handled = null;
+    moduleApi.paladinAutomationService.handleSocketMessage = async (payload, options) => {
+      handled = { payload, options };
+      return true;
+    };
+
+    await moduleApi.handleSocketMessage({
+      type: "character-class-automation",
+      payload: {
+        action: "paladin.layOnHands",
+        amount: 7
+      },
+      senderId: "player-1"
+    });
+
+    assert.deepEqual(handled, {
+      payload: {
+        action: "paladin.layOnHands",
+        amount: 7
+      },
+      options: {
+        senderId: "player-1"
+      }
+    });
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
 test("RebreyaMainModule routes player downtime creation through the GM socket", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
