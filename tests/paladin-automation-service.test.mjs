@@ -93,6 +93,7 @@ class TestActor extends Actor {
     hp = { value: 10, max: 30 },
     spellSlots = {},
     effects = [],
+    flags = {},
     items = []
   } = {}) {
     super();
@@ -118,6 +119,7 @@ class TestActor extends Actor {
         }
       }
     };
+    this.flags = foundry.utils.deepClone(flags);
     this.createdItems = [];
     this.items = {
       contents: items,
@@ -381,6 +383,124 @@ test("paladin long rest leaves spells untouched when the player declines the pro
 
   assert.equal(browserOpened, false);
   assert.deepEqual(actor.createdItems, []);
+});
+
+test("paladin spellcasting feature creation asks for initial prepared spells once", async () => {
+  const spellcasting = makeFeatureItem({
+    id: "spellcasting",
+    name: "Использование заклинаний",
+    featureId: "paladin-rework-v01::class::paladin-spellcasting"
+  });
+  const actor = new TestActor({ level: 2, chaMod: 3, items: [spellcasting] });
+  const requested = [];
+  const spellDocuments = new Map([
+    ["Compendium.dnd5e.spells.Item.bless", makeCompendiumSpell({
+      uuid: "Compendium.dnd5e.spells.Item.bless",
+      name: "Благословение",
+      identifier: "bless"
+    })],
+    ["Compendium.dnd5e.spells.Item.cure", makeCompendiumSpell({
+      uuid: "Compendium.dnd5e.spells.Item.cure",
+      name: "Лечение ран",
+      identifier: "cure-wounds"
+    })]
+  ]);
+  const service = new PaladinAutomationService({}, {
+    selectPreparedSpellUuids: async (targetActor, details) => {
+      requested.push({ targetActor, details });
+      return ["Compendium.dnd5e.spells.Item.bless", "Compendium.dnd5e.spells.Item.cure"];
+    },
+    fromUuid: async (uuid) => spellDocuments.get(uuid) ?? null
+  });
+
+  await service.handleCreatedItem(spellcasting, {}, "user");
+
+  assert.equal(requested[0].targetActor, actor);
+  assert.deepEqual(requested[0].details, {
+    paladinLevel: 2,
+    preparedCount: 5,
+    maxSpellLevel: 1,
+    initialSelection: true
+  });
+  assert.equal(actor.createdItems.length, 1);
+  assert.equal(actor.createdItems[0].type, "Item");
+  assert.deepEqual(
+    actor.createdItems[0].documents.map((document) => document.name),
+    ["Благословение", "Лечение ран"]
+  );
+  assert.equal(actor.flags["rebreya-main"].paladinInitialPreparedSpellsSelected, true);
+});
+
+test("paladin initial prepared spell selection does not repeat after the actor flag is set", async () => {
+  const spellcasting = makeFeatureItem({
+    id: "spellcasting",
+    name: "Использование заклинаний",
+    featureId: "paladin-rework-v01::class::paladin-spellcasting"
+  });
+  const actor = new TestActor({
+    level: 2,
+    items: [spellcasting],
+    flags: {
+      "rebreya-main": {
+        paladinInitialPreparedSpellsSelected: true
+      }
+    }
+  });
+  let browserOpened = false;
+  const service = new PaladinAutomationService({}, {
+    selectPreparedSpellUuids: async () => {
+      browserOpened = true;
+      return [];
+    }
+  });
+
+  await service.handleCreatedItem(spellcasting, {}, "user");
+
+  assert.equal(browserOpened, false);
+  assert.deepEqual(actor.createdItems, []);
+});
+
+test("paladin actor level update asks for initial prepared spells when spellcasting already exists", async () => {
+  const spellcasting = makeFeatureItem({
+    id: "spellcasting",
+    name: "Использование заклинаний",
+    featureId: "paladin-rework-v01::class::paladin-spellcasting"
+  });
+  const actor = new TestActor({ level: 2, chaMod: 1, items: [spellcasting] });
+  const spellDocuments = new Map([
+    ["Compendium.dnd5e.spells.Item.bless", makeCompendiumSpell({
+      uuid: "Compendium.dnd5e.spells.Item.bless",
+      name: "Благословение",
+      identifier: "bless"
+    })]
+  ]);
+  let detailsSeen = null;
+  const service = new PaladinAutomationService({}, {
+    selectPreparedSpellUuids: async (_targetActor, details) => {
+      detailsSeen = details;
+      return ["Compendium.dnd5e.spells.Item.bless"];
+    },
+    fromUuid: async (uuid) => spellDocuments.get(uuid) ?? null
+  });
+
+  await service.handleActorUpdated(actor, {
+    system: {
+      classes: {
+        "paladin-rework-v01": {
+          levels: 2
+        }
+      }
+    }
+  }, {}, "user");
+
+  assert.deepEqual(detailsSeen, {
+    paladinLevel: 2,
+    preparedCount: 3,
+    maxSpellLevel: 1,
+    initialSelection: true
+  });
+  assert.equal(actor.createdItems.length, 1);
+  assert.equal(actor.flags["rebreya-main"].paladinInitialPreparedSpellsSelected, true);
 });
 
 test("paladin lay on hands prompts for points, spends the item pool, and heals the selected target", async () => {

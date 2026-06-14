@@ -343,6 +343,24 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasPaladinService) {
+    Hooks.on("createItem", (item, options, userId) => {
+      moduleApi.paladinAutomationService.handleCreatedItem(item, options, userId).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to handle paladin initial spell preparation.`, error);
+      });
+    });
+
+    Hooks.on("updateItem", (item, changed, options, userId) => {
+      moduleApi.paladinAutomationService.handleUpdatedItem(item, changed, options, userId).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to handle paladin level item update.`, error);
+      });
+    });
+
+    Hooks.on("updateActor", (actor, changed, options, userId) => {
+      moduleApi.paladinAutomationService.handleActorUpdated(actor, changed, options, userId).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to handle paladin actor level update.`, error);
+      });
+    });
+
     Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
       moduleApi.paladinAutomationService.applyDnd5ePostUseActivity(
         activity,

@@ -1,8 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 
 const PALADIN_CLASS_IDENTIFIER = "paladin-rework-v01";
+const PALADIN_SPELLCASTING_FEATURE_ID = "paladin-spellcasting";
 const DIVINE_SMITE_FEATURE_ID = "paladin-divine-smite";
 const DIVINE_SMITE_DAMAGE_TYPE = "radiant";
+const INITIAL_PREPARED_SPELLS_FLAG = "paladinInitialPreparedSpellsSelected";
 
 const DIVINE_SMITE_VARIANTS = [
   { id: "devotion-sacred-divine-smite", name: "Священная божественная кара", minSlotLevel: 1 },
@@ -93,6 +95,27 @@ function itemFlag(item, scope, key) {
   return getProperty(item, `flags.${scope}.${key}`, undefined);
 }
 
+function actorFlag(actor, key) {
+  if (typeof actor?.getFlag === "function") {
+    return actor.getFlag(MODULE_ID, key);
+  }
+
+  return getProperty(actor, `flags.${MODULE_ID}.${key}`, undefined);
+}
+
+async function setActorFlag(actor, key, value) {
+  if (typeof actor?.setFlag === "function") {
+    return actor.setFlag(MODULE_ID, key, value);
+  }
+
+  if (typeof actor?.update === "function") {
+    return actor.update({ [`flags.${MODULE_ID}.${key}`]: value });
+  }
+
+  setProperty(actor, `flags.${MODULE_ID}.${key}`, value);
+  return actor;
+}
+
 function rawFeatureId(featureId) {
   return cleanText(featureId).split("::").pop() ?? "";
 }
@@ -111,11 +134,28 @@ function featureIdMatches(item, rawId) {
   return featureId === rawId || rawFeatureId(featureId) === rawId;
 }
 
+function isPaladinSpellcastingFeature(item) {
+  return featureIdMatches(item, PALADIN_SPELLCASTING_FEATURE_ID);
+}
+
 function hasActorFeature(actor, rawId, normalizedName = "") {
   return collectionValues(actor?.items).some((item) => (
     featureIdMatches(item, rawId)
     || (normalizedName && normalizeText(item?.name) === normalizedName)
   ));
+}
+
+function isPaladinClassItem(item) {
+  if (item?.type !== "class") {
+    return false;
+  }
+
+  const text = normalizeText([
+    item?.system?.identifier,
+    item?.identifier,
+    item?.name
+  ].filter(Boolean).join(" "));
+  return text === PALADIN_CLASS_IDENTIFIER || text.includes("paladin") || text.includes("РїР°Р»Р°РґРёРЅ");
 }
 
 function findActorFeature(actor, rawId, normalizedName = "") {
@@ -240,6 +280,11 @@ function paladinClassLevel(actor) {
 function paladinPreparedSpellCount(actor, paladinLevel) {
   const charismaModifier = Math.floor(toNumber(actor?.system?.abilities?.cha?.mod, 0));
   return Math.max(1, charismaModifier + Math.floor(paladinLevel / 2));
+}
+
+function paladinInitialPreparedSpellCount(actor) {
+  const charismaModifier = Math.floor(toNumber(actor?.system?.abilities?.cha?.mod, 0));
+  return Math.max(1, 2 + charismaModifier);
 }
 
 function paladinMaxSpellLevel(paladinLevel) {
@@ -408,6 +453,44 @@ function combatTurnKey(actor, workflow) {
   ].join(":");
 }
 
+function actorAutomationKey(actor, fallback = "actor") {
+  return cleanText(actor?.uuid ?? actor?.id ?? actor?.name, fallback);
+}
+
+function actorFromItem(item) {
+  return item?.parent ?? item?.actor ?? item?.document?.parent ?? null;
+}
+
+function isCurrentUserHook(userId) {
+  const hookUserId = cleanText(userId);
+  const currentUserId = cleanText(game?.user?.id);
+  return !hookUserId || !currentUserId || hookUserId === currentUserId;
+}
+
+function changedPathExists(changed, path) {
+  if (!changed || typeof changed !== "object") {
+    return false;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(changed, path)) {
+    return true;
+  }
+
+  return getProperty(changed, path, undefined) !== undefined;
+}
+
+function actorPaladinLevelChanged(changed) {
+  return changedPathExists(changed, `system.classes.${PALADIN_CLASS_IDENTIFIER}.levels`)
+    || changedPathExists(changed, `system.classes.${PALADIN_CLASS_IDENTIFIER}.level`)
+    || changedPathExists(changed, "system.classes");
+}
+
+function classItemLevelChanged(changed) {
+  return changedPathExists(changed, "system.levels")
+    || changedPathExists(changed, "system.level")
+    || changedPathExists(changed, "system.advancement.level");
+}
+
 function effectIsEnabled(effect) {
   return effect?.disabled !== true;
 }
@@ -425,6 +508,7 @@ export class PaladinAutomationService {
   constructor(moduleApi, options = {}) {
     this.moduleApi = moduleApi;
     this._smiteTurnUses = new Set();
+    this._initialPreparedSpellActors = new Set();
     this._options = options;
   }
 
@@ -566,8 +650,96 @@ export class PaladinAutomationService {
     return true;
   }
 
+  async handleCreatedItem(item, options = {}, userId = "") {
+    void options;
+    if (!isCurrentUserHook(userId) || !isPaladinSpellcastingFeature(item)) {
+      return true;
+    }
+
+    return this.#promptInitialPreparedSpells(actorFromItem(item), { spellcastingFeature: item });
+  }
+
+  async handleUpdatedItem(item, changed = {}, options = {}, userId = "") {
+    void options;
+    if (!isCurrentUserHook(userId) || !isPaladinClassItem(item) || !classItemLevelChanged(changed)) {
+      return true;
+    }
+
+    return this.#promptInitialPreparedSpells(actorFromItem(item));
+  }
+
+  async handleActorUpdated(actor, changed = {}, options = {}, userId = "") {
+    void options;
+    if (!isCurrentUserHook(userId) || !actorPaladinLevelChanged(changed)) {
+      return true;
+    }
+
+    return this.#promptInitialPreparedSpells(actor);
+  }
+
   #canPrompt(actor) {
     return Boolean(game.user?.isGM || actor?.isOwner);
+  }
+
+  async #promptInitialPreparedSpells(actor, { spellcastingFeature = null } = {}) {
+    if (!isActorDocument(actor) || !this.#canPrompt(actor)) {
+      return true;
+    }
+
+    if (actorFlag(actor, INITIAL_PREPARED_SPELLS_FLAG) === true) {
+      return true;
+    }
+
+    const hasSpellcasting = isPaladinSpellcastingFeature(spellcastingFeature)
+      || hasActorFeature(actor, PALADIN_SPELLCASTING_FEATURE_ID);
+    if (!hasSpellcasting) {
+      return true;
+    }
+
+    const paladinLevel = paladinClassLevel(actor);
+    const maxSpellLevel = paladinMaxSpellLevel(paladinLevel);
+    if (paladinLevel < 2 || maxSpellLevel <= 0) {
+      return true;
+    }
+
+    const actorKey = actorAutomationKey(actor, "initial-prepared-spells");
+    if (this._initialPreparedSpellActors.has(actorKey)) {
+      return true;
+    }
+
+    this._initialPreparedSpellActors.add(actorKey);
+    try {
+      if (collectionValues(actor.items).some((item) => isPaladinPreparedSpellItem(item))) {
+        await this.#markInitialPreparedSpellsSelected(actor);
+        return true;
+      }
+
+      const details = {
+        paladinLevel,
+        preparedCount: paladinInitialPreparedSpellCount(actor),
+        maxSpellLevel,
+        initialSelection: true
+      };
+      const selectedUuids = await this.#selectPreparedSpellUuids(actor, details);
+      if (!selectedUuids) {
+        return true;
+      }
+
+      await this.#applyPreparedSpellSelection(actor, selectedUuids);
+      await this.#markInitialPreparedSpellsSelected(actor);
+      return true;
+    }
+    finally {
+      this._initialPreparedSpellActors.delete(actorKey);
+    }
+  }
+
+  async #markInitialPreparedSpellsSelected(actor) {
+    if (actorFlag(actor, INITIAL_PREPARED_SPELLS_FLAG) === true) {
+      return actor;
+    }
+
+    return setActorFlag(actor, INITIAL_PREPARED_SPELLS_FLAG, true);
   }
 
   #findDivineSmite(actor) {
