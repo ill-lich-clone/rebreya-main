@@ -2,11 +2,12 @@
 
 ## Goal
 
-Replace the brown and turquoise visual foundation of every Rebreya window with an inherited dark gray and muted gold theme modeled on the dnd5e character-sheet palette.
+Replace the brown and turquoise visual foundation of Rebreya utility windows with an inherited dark gray and muted gold theme modeled on the dnd5e character-sheet palette. Trader v2 remains a standalone parchment-themed interface.
 
 ## Scope
 
 - Modify the existing `styles/main.css`; do not add a second override stylesheet.
+- Exclude `.rebreya-trader-app-v2` and `.rm-trader-v2-*` from the shared palette migration; their paper, wine, gold, and texture rules are an intentional local theme.
 - Preserve layout, spacing, dimensions, selectors, responsive behavior, and application logic.
 - Keep red, green, and amber colors only where they communicate danger, success, or warning states.
 - Use Foundry's denim texture for the window background and neutral gray surfaces for panels, rows, fields, and overlays.

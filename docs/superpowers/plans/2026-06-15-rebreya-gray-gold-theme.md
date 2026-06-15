@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Convert every Rebreya window to an inherited dnd5e-inspired gray and gold theme without changing layout or behavior.
+**Goal:** Convert Rebreya utility windows to an inherited dnd5e-inspired gray and gold theme without changing layout or behavior, while preserving Trader v2's standalone parchment theme.
 
 **Architecture:** Define primitive and semantic theme tokens in `styles/main.css`, keep existing variables as compatibility aliases, then replace legacy brown and turquoise literals with the shared tokens. A focused Node test enforces the token contract and prevents the old palette from returning.
 
@@ -41,6 +41,7 @@
 - [ ] Replace repeated brown borders with `--rm-border-*` tokens.
 - [ ] Replace cream text literals with `--rm-text-*` tokens.
 - [ ] Replace turquoise decorative accents with neutral gold tokens.
+- [ ] Preserve all `.rebreya-trader-app-v2` and `.rm-trader-v2-*` rules as a standalone local theme.
 - [ ] Preserve semantic success, warning, and danger colors.
 - [ ] Run `node --test tests/style-theme.test.mjs` and confirm it passes.
 

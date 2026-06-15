@@ -4,8 +4,41 @@ import test from "node:test";
 
 const stylesheetUrl = new URL("../styles/main.css", import.meta.url);
 
+function withoutStandaloneTraderRules(css) {
+  const characters = [...css];
+  let cursor = 0;
+
+  while (cursor < css.length) {
+    const open = css.indexOf("{", cursor);
+    if (open < 0) break;
+
+    const boundary = Math.max(
+      css.lastIndexOf("}", open - 1),
+      css.lastIndexOf("{", open - 1),
+      css.lastIndexOf(";", open - 1)
+    );
+    const selector = css.slice(boundary + 1, open);
+    let close = open + 1;
+    let depth = 1;
+
+    while (close < css.length && depth > 0) {
+      if (css[close] === "{") depth += 1;
+      if (css[close] === "}") depth -= 1;
+      close += 1;
+    }
+
+    if (/\.(?:rm-trader-v2|rebreya-trader-app-v2)\b/u.test(selector)) {
+      characters.fill(" ", boundary + 1, close);
+    }
+    cursor = close;
+  }
+
+  return characters.join("");
+}
+
 test("Rebreya windows use an inherited dnd5e-inspired gray and gold theme", async () => {
   const css = await readFile(stylesheetUrl, "utf8");
+  const sharedThemeCss = withoutStandaloneTraderRules(css);
 
   for (const token of [
     "--rm-color-ink",
@@ -74,6 +107,16 @@ test("Rebreya windows use an inherited dnd5e-inspired gray and gold theme", asyn
     "rgba(69, 198, 179",
     "rgba(240, 128, 51"
   ]) {
-    assert.equal(css.includes(legacyColor), false, `Legacy theme color remains: ${legacyColor}`);
+    assert.equal(sharedThemeCss.includes(legacyColor), false, `Legacy theme color remains outside trader v2: ${legacyColor}`);
   }
+});
+
+test("Trader v2 keeps its standalone parchment theme", async () => {
+  const css = await readFile(stylesheetUrl, "utf8");
+
+  assert.match(css, /\.rm-trader-v2-shell\s*\{[^}]*--rm-trader-v2-paper:\s*#f3e6c4;/su);
+  assert.match(css, /\.rm-trader-v2-shell\s*\{[^}]*--rm-trader-v2-wine:\s*#7d1f2d;/su);
+  assert.match(css, /\.rm-trader-v2-shell\s*\{[^}]*color-scheme:\s*light;/su);
+  assert.match(css, /\.rebreya-trader-app-v2 \.rm-trader-v2-shell\s*\{[^}]*shop\.webp/su);
+  assert.match(css, /\.rebreya-trader-app-v2 \.rm-trader-v2-texture\s*\{[^}]*opacity:\s*1;/su);
 });
