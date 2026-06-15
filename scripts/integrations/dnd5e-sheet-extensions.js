@@ -20,6 +20,10 @@ import {
   normalizeHeroDollSlotGroup,
   normalizeHeroDollSlots
 } from "../data/item-classification.js";
+import {
+  bindUniversalBeltSheet,
+  registerUniversalBeltItemContextHook
+} from "./universal-belt.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
 const HERO_DOLL_TAB_LABEL = "Кукла героя";
@@ -5296,6 +5300,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   bindCharacterDowntimeDocumentEditDelegation(moduleApi);
   bindCharacterDowntimeDocumentContinueDelegation(moduleApi);
   bindCharacterDowntimeDocumentProjectCloseDelegation(moduleApi);
+  registerUniversalBeltItemContextHook(moduleApi);
 
   const onRenderActorSheet = (app, html) => {
     const actor = getActorFromSheetApp(app);
@@ -5310,6 +5315,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
 
     bindHeroDollPanel(root, app, moduleApi);
     bindCharacterDowntimePanel(root, app, moduleApi);
+    try {
+      bindUniversalBeltSheet(root, { actor, app, moduleApi, rerenderActorSheet });
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to bind universal belt sheet controls.`, error);
+    }
     try {
       bindNativeStateCard(root, app);
     }
@@ -5359,6 +5370,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     if (actor?.type === "character") {
       bindHeroDollPanel(root, app, moduleApi);
       bindCharacterDowntimePanel(root, app, moduleApi);
+      try {
+        bindUniversalBeltSheet(root, { actor, app, moduleApi, rerenderActorSheet });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind universal belt sheet controls on ApplicationV2 render.`, error);
+      }
       try {
         bindNativeStateCard(root, app);
       }

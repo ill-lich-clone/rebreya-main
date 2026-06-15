@@ -218,3 +218,204 @@ export async function useUniversalBeltItem(actor, slot, event = null) {
   await item.sheet?.render?.(true);
   return item;
 }
+
+let contextHookRegistered = false;
+const boundRoots = new WeakSet();
+
+function buildSlotTitle(slot, item, locked) {
+  if (locked) return `Слот пояса ${slot}: купить за 500 зм`;
+  return item ? `Слот пояса ${slot}: ${item.name}` : `Слот пояса ${slot}: пусто`;
+}
+
+function createSlotElement(slot, actor) {
+  const unlockedCount = getUniversalBeltUnlockedSlotCount(actor);
+  const itemsBySlot = getUniversalBeltItemsBySlot(actor);
+  const item = itemsBySlot.get(slot) ?? null;
+  const locked = slot > unlockedCount;
+  const li = document.createElement("li");
+  li.classList.add("container", "draggable", "rm-universal-belt-slot");
+  li.dataset.rebreyaUniversalBeltSlot = "true";
+  li.dataset.beltSlot = String(slot);
+  li.dataset.locked = locked ? "true" : "false";
+  li.setAttribute("aria-label", buildSlotTitle(slot, item, locked));
+  li.setAttribute("title", buildSlotTitle(slot, item, locked));
+  if (item) {
+    li.dataset.itemId = item.id;
+    li.dataset.uuid = item.uuid ?? "";
+  }
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.classList.add("rm-universal-belt-slot__button");
+  if (item) {
+    button.dataset.action = "rebreya-universal-belt-use";
+    const img = document.createElement("img");
+    img.src = item.img ?? "icons/svg/item-bag.svg";
+    img.alt = item.name ?? "";
+    img.draggable = false;
+    button.append(img);
+  }
+  else {
+    if (locked) {
+      button.dataset.action = "rebreya-universal-belt-purchase";
+    }
+    const icon = document.createElement("i");
+    icon.className = locked ? "fa-solid fa-lock" : "fa-solid fa-bag-shopping";
+    icon.setAttribute("aria-hidden", "true");
+    button.append(icon);
+  }
+  li.append(button);
+  return li;
+}
+
+export function hideBeltedInventoryRows(root, actor) {
+  const beltedIds = new Set([...getUniversalBeltItemsBySlot(actor).values()].map((item) => item.id));
+  if (!beltedIds.size) return;
+
+  const inventoryRoot = root?.querySelector?.("[data-tab='inventory']") ?? root;
+  for (const node of Array.from(inventoryRoot?.querySelectorAll?.("[data-item-id]") ?? [])) {
+    if (node.closest?.(".rm-universal-belt-slot")) continue;
+    if (node.closest?.(".containers")) continue;
+    if (beltedIds.has(node.dataset.itemId)) {
+      node.hidden = true;
+      node.classList?.add?.("rm-universal-belt-hidden-item");
+    }
+  }
+}
+
+export function renderUniversalBeltSlots(root, actor) {
+  const containers = root?.querySelector?.("ul.containers") ?? null;
+  if (!containers || !actor) return false;
+
+  for (const existing of Array.from(containers.querySelectorAll(".rm-universal-belt-slot") ?? [])) {
+    existing.remove();
+  }
+  containers.prepend(...[1, 2, 3].map((slot) => createSlotElement(slot, actor)));
+  hideBeltedInventoryRows(root, actor);
+  return true;
+}
+
+function getDropData(event) {
+  for (const type of ["text/plain", "text", "application/json"]) {
+    const raw = event.dataTransfer?.getData?.(type);
+    if (!raw) continue;
+    try {
+      return JSON.parse(raw);
+    }
+    catch (_error) {
+      return { uuid: raw };
+    }
+  }
+  return null;
+}
+
+async function resolveDroppedItem(dropData) {
+  return dropData?.uuid ? fromUuid(dropData.uuid) : null;
+}
+
+async function confirmBeltPurchase(slot) {
+  if (globalThis.Dialog?.confirm instanceof Function) {
+    return Dialog.confirm({
+      title: "Купить слот пояса",
+      content: `<p>Купить слот пояса ${slot} за 500 зм? Используются только зм и пм.</p>`
+    });
+  }
+  return true;
+}
+
+export function bindUniversalBeltSheet(root, { actor, app, moduleApi, rerenderActorSheet }) {
+  if (!renderUniversalBeltSlots(root, actor) || boundRoots.has(root)) return false;
+  boundRoots.add(root);
+
+  root.addEventListener("dragover", (event) => {
+    const slot = event.target?.closest?.("[data-rebreya-universal-belt-slot='true']");
+    if (!slot || slot.dataset.locked === "true") return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    slot.classList.add("is-dragover");
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+  }, { capture: true });
+
+  root.addEventListener("dragleave", (event) => {
+    const slot = event.target?.closest?.("[data-rebreya-universal-belt-slot='true']");
+    if (!slot) return;
+    slot.classList.remove("is-dragover");
+  }, { capture: true });
+
+  root.addEventListener("drop", async (event) => {
+    const slot = event.target?.closest?.("[data-rebreya-universal-belt-slot='true']");
+    if (!slot || slot.dataset.locked === "true") return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    slot.classList.remove("is-dragover");
+    try {
+      const item = await resolveDroppedItem(getDropData(event));
+      await assignItemToUniversalBeltSlot(actor, Number(slot.dataset.beltSlot), item);
+      await rerenderActorSheet(app, moduleApi);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to assign universal belt slot.`, error);
+      ui.notifications?.error(error.message || "Не удалось поместить предмет в пояс.");
+    }
+  }, { capture: true });
+
+  root.addEventListener("click", async (event) => {
+    const action = event.target?.closest?.("[data-action='rebreya-universal-belt-use'], [data-action='rebreya-universal-belt-purchase']");
+    const slot = action?.closest?.("[data-rebreya-universal-belt-slot='true']");
+    if (!action || !slot) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    try {
+      if (action.dataset.action === "rebreya-universal-belt-purchase") {
+        if (!(await confirmBeltPurchase(slot.dataset.beltSlot))) return;
+        await purchaseUniversalBeltSlot(actor);
+      }
+      else {
+        await useUniversalBeltItem(actor, Number(slot.dataset.beltSlot), event);
+      }
+      await rerenderActorSheet(app, moduleApi);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to handle universal belt action.`, error);
+      ui.notifications?.error(error.message || "Не удалось выполнить действие пояса.");
+    }
+  }, { capture: true });
+
+  return true;
+}
+
+async function renderOwnerSheet(actor) {
+  if (!actor?.sheet?.render) return;
+  try {
+    await actor.sheet.render({ force: true });
+  }
+  catch (_error) {
+    await actor.sheet.render(true);
+  }
+}
+
+export function registerUniversalBeltItemContextHook(moduleApi) {
+  if (contextHookRegistered || !globalThis.Hooks?.on) return false;
+  contextHookRegistered = true;
+  Hooks.on("dnd5e.getItemContextOptions", (item, options) => {
+    if (!getUniversalBeltItemSlot(item)) return;
+    options.push({
+      name: "Убрать из пояса",
+      icon: '<i class="fa-solid fa-box-open fa-fw"></i>',
+      condition: () => item.isOwner !== false,
+      callback: async () => {
+        try {
+          await removeItemFromUniversalBelt(item.parent ?? item.actor, item);
+          await moduleApi?.refreshOpenApps?.();
+          await renderOwnerSheet(item.parent ?? item.actor);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to remove universal belt item.`, error);
+          ui.notifications?.error(error.message || "Не удалось убрать предмет из пояса.");
+        }
+      },
+      group: "action"
+    });
+  });
+  return true;
+}

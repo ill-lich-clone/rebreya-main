@@ -377,3 +377,167 @@ test("using a belt item calls native item use flow without movement automation",
     restore();
   }
 });
+
+class FakeClassList {
+  constructor(initial = []) {
+    this.values = new Set(initial);
+  }
+
+  add(...names) {
+    names.forEach((name) => this.values.add(name));
+  }
+
+  remove(...names) {
+    names.forEach((name) => this.values.delete(name));
+  }
+
+  toggle(name, force) {
+    if (force === false) this.values.delete(name);
+    else this.values.add(name);
+  }
+
+  contains(name) {
+    return this.values.has(name);
+  }
+}
+
+class FakeElement {
+  constructor(tagName = "div") {
+    this.tagName = tagName.toUpperCase();
+    this.children = [];
+    this.dataset = {};
+    this.listeners = {};
+    this.classList = new FakeClassList();
+    this.attributes = {};
+    this.innerHTML = "";
+    this.hidden = false;
+  }
+
+  append(...children) {
+    for (const child of children) {
+      child.parentElement = this;
+      this.children.push(child);
+    }
+  }
+
+  prepend(...children) {
+    for (const child of children.reverse()) {
+      child.parentElement = this;
+      this.children.unshift(child);
+    }
+  }
+
+  remove() {
+    this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
+  }
+
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+  }
+
+  getAttribute(name) {
+    return this.attributes[name];
+  }
+
+  addEventListener(type, listener) {
+    this.listeners[type] ??= [];
+    this.listeners[type].push(listener);
+  }
+
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+
+  querySelectorAll(selector) {
+    const result = [];
+    const visit = (node) => {
+      for (const child of node.children) {
+        if (selector === "ul.containers" && child.tagName === "UL" && child.classList.contains("containers")) result.push(child);
+        if (selector === ".rm-universal-belt-slot" && child.classList.contains("rm-universal-belt-slot")) result.push(child);
+        if (selector === "[data-item-id]" && child.dataset.itemId) result.push(child);
+        visit(child);
+      }
+    };
+    visit(this);
+    return result;
+  }
+}
+
+test("renderUniversalBeltSlots prepends three circular belt slots before native containers", async () => {
+  const restore = installFoundryStubs();
+  const previousDocument = globalThis.document;
+  try {
+    const {
+      renderUniversalBeltSlots
+    } = await import(`../scripts/integrations/universal-belt.js?dom=${Date.now()}`);
+    globalThis.document = { createElement: (tag) => new FakeElement(tag) };
+    const root = new FakeElement("section");
+    const containers = new FakeElement("ul");
+    containers.classList.add("containers");
+    const nativeContainer = new FakeElement("li");
+    nativeContainer.classList.add("container");
+    nativeContainer.dataset.itemId = "backpack";
+    containers.append(nativeContainer);
+    root.append(containers);
+    const actor = new FakeActor({
+      flags: { "rebreya-main": { universalBelt: { unlockedSlots: 1 } } }
+    });
+
+    assert.equal(renderUniversalBeltSlots(root, actor), true);
+
+    const slotNodes = containers.children.filter((child) => child.classList.contains("rm-universal-belt-slot"));
+    assert.equal(slotNodes.length, 3);
+    assert.equal(containers.children.at(0).dataset.beltSlot, "1");
+    assert.equal(containers.children.at(1).dataset.locked, "true");
+    assert.equal(containers.children.at(3).dataset.itemId, "backpack");
+  }
+  finally {
+    globalThis.document = previousDocument;
+    restore();
+  }
+});
+
+test("universal belt context hook adds remove action for belted items only", async () => {
+  const restore = installFoundryStubs();
+  const previousHooks = globalThis.Hooks;
+  try {
+    let hookListener = null;
+    globalThis.Hooks = {
+      on(name, listener) {
+        if (name === "dnd5e.getItemContextOptions") hookListener = listener;
+      }
+    };
+    const {
+      registerUniversalBeltItemContextHook
+    } = await import(`../scripts/integrations/universal-belt.js?context=${Date.now()}`);
+    const moduleApi = { refreshOpenApps: async () => undefined };
+    registerUniversalBeltItemContextHook(moduleApi);
+
+    const actor = new FakeActor();
+    const belted = actor.addItem({
+      _id: "belted",
+      name: "Кинжал",
+      type: "weapon",
+      system: { quantity: 1 },
+      flags: { "rebreya-main": { universalBelt: { slot: 1 } } }
+    });
+    const normal = actor.addItem({
+      _id: "normal",
+      name: "Факел",
+      type: "loot",
+      system: { quantity: 1 }
+    });
+    const beltedOptions = [];
+    const normalOptions = [];
+
+    hookListener(belted, beltedOptions);
+    hookListener(normal, normalOptions);
+
+    assert.equal(beltedOptions.some((option) => option.name === "Убрать из пояса"), true);
+    assert.equal(normalOptions.some((option) => option.name === "Убрать из пояса"), false);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    restore();
+  }
+});

@@ -28,12 +28,36 @@ function installSheetExtensionStubs() {
       this.listenerOptions = {};
       this.value = "";
       this.children = [];
+      this.attributes = {};
+      this.tagName = "DIV";
       this.classList = {
         values: new Set(),
         add: (...names) => names.forEach((name) => this.classList.values.add(name)),
         remove: (...names) => names.forEach((name) => this.classList.values.delete(name)),
         contains: (name) => this.classList.values.has(name)
       };
+    }
+
+    append(...children) {
+      for (const child of children) {
+        child.parentElement = this;
+        this.children.push(child);
+      }
+    }
+
+    prepend(...children) {
+      for (const child of children.reverse()) {
+        child.parentElement = this;
+        this.children.unshift(child);
+      }
+    }
+
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    }
+
+    getAttribute(name) {
+      return this.attributes[name];
     }
 
     querySelector(selector) {
@@ -94,6 +118,11 @@ function installSheetExtensionStubs() {
   const hooks = new Map();
   const fakeDocument = new FakeHTMLElement();
   fakeDocument.documentElement = new FakeHTMLElement();
+  fakeDocument.createElement = (tagName) => {
+    const element = new FakeHTMLElement();
+    element.tagName = String(tagName ?? "div").toUpperCase();
+    return element;
+  };
   globalThis.Actor = FakeActor;
   globalThis.Item = FakeItem;
   globalThis.HTMLElement = FakeHTMLElement;
@@ -233,6 +262,68 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime character sh
       ["heroDoll", "actor-a"],
       ["downtime", "actor-a"]
     ]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("registerDnd5eSheetExtensions renders universal belt slots in the inventory container strip", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?universal-belt-bind=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    actor.flags = {
+      "rebreya-main": {
+        universalBelt: {
+          unlockedSlots: 1
+        }
+      }
+    };
+    actor.getFlag = (scope, key) => actor.flags?.[scope]?.[key];
+    actor.items = {
+      contents: [],
+      get: () => null
+    };
+    const containers = new stubs.HTMLElement();
+    containers.tagName = "UL";
+    containers.classList.add("containers");
+    containers.selectorAll[".rm-universal-belt-slot"] = [];
+    const nativeContainer = new stubs.HTMLElement();
+    nativeContainer.tagName = "LI";
+    nativeContainer.dataset.itemId = "backpack";
+    containers.append(nativeContainer);
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "ul.containers": containers
+      }
+    });
+    const app = {
+      actor,
+      async render() {}
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    const beltSlots = containers.children.filter((child) => child.classList.contains("rm-universal-belt-slot"));
+    assert.equal(beltSlots.length, 3);
+    assert.equal(containers.children[0].dataset.beltSlot, "1");
+    assert.equal(containers.children[1].dataset.locked, "true");
+    assert.equal(containers.children[3].dataset.itemId, "backpack");
   }
   finally {
     stubs.restore();
