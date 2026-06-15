@@ -845,6 +845,212 @@ summary:focus-visible {
   padding-right: 34px;
 }
 
+.rebreya-groups-app .window-content {
+  container-type: inline-size;
+}
+
+.rebreya-groups-app .rm-groups-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.rebreya-groups-app .rm-group-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--rm-border-default);
+  border-top: 2px solid var(--rm-disabled);
+  border-radius: var(--rm-radius-row);
+  background: var(--rm-surface-panel);
+  box-shadow: var(--rm-shadow-panel);
+}
+
+.rebreya-groups-app .rm-group-card.is-active {
+  border-color: var(--rm-border-strong);
+  border-top-color: var(--rm-accent);
+  background:
+    linear-gradient(180deg, rgb(var(--rm-color-gold-rgb) / 0.07), transparent 30%),
+    var(--rm-surface-panel);
+}
+
+.rebreya-groups-app .rm-group-card.is-unregistered {
+  border-style: dashed;
+}
+
+.rebreya-groups-app .rm-group-card__header {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 32px;
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+}
+
+.rebreya-groups-app .rm-group-card__image {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--rm-border-strong);
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--rm-surface-0);
+}
+
+.rebreya-groups-app .rm-group-card__identity {
+  min-width: 0;
+}
+
+.rebreya-groups-app .rm-group-card__name {
+  display: block;
+  overflow: hidden;
+  color: var(--rm-text-primary);
+  font-size: 14px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rebreya-groups-app .rm-group-card__id,
+.rebreya-groups-app .rm-group-card__migration {
+  margin: 4px 0 0;
+  color: var(--rm-text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.rebreya-groups-app .rm-group-card__menu {
+  justify-self: end;
+  z-index: 3;
+}
+
+.rebreya-groups-app .rm-group-card__menu .rm-icon-button {
+  width: 32px;
+  height: 32px;
+}
+
+.rebreya-groups-app .rm-group-card__menu .rm-inline-menu__panel {
+  min-width: 220px;
+}
+
+.rebreya-groups-app .rm-group-card__menu .rm-button {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.rebreya-groups-app .rm-group-card__badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rebreya-groups-app .rm-group-card__badge {
+  padding: 4px 7px;
+  border: 1px solid var(--rm-border-default);
+  border-radius: var(--rm-radius-button);
+  background: var(--rm-surface-subtle);
+  color: var(--rm-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.rebreya-groups-app .rm-group-card__badge.is-active {
+  border-color: var(--rm-accent-strong);
+  background: var(--rm-accent);
+  color: #241a08;
+}
+
+.rebreya-groups-app .rm-group-card__badge.is-registered {
+  border-color: rgba(105, 206, 140, 0.35);
+  color: var(--rm-positive);
+}
+
+.rebreya-groups-app .rm-group-card__badge.is-unregistered {
+  border-color: rgba(232, 185, 78, 0.38);
+  color: var(--rm-warning);
+}
+
+.rebreya-groups-app .rm-group-card__facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.rebreya-groups-app .rm-group-card__fact {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--rm-border-subtle);
+  background: var(--rm-surface-0);
+}
+
+.rebreya-groups-app .rm-group-card__fact span,
+.rebreya-groups-app .rm-group-card__fact strong {
+  display: block;
+}
+
+.rebreya-groups-app .rm-group-card__fact span {
+  color: var(--rm-text-secondary);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.rebreya-groups-app .rm-group-card__fact strong {
+  margin-top: 4px;
+  color: var(--rm-text-primary);
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.rebreya-groups-app .rm-group-card__actions {
+  align-self: end;
+  display: flex;
+  gap: 7px;
+  align-items: stretch;
+}
+
+.rebreya-groups-app .rm-group-card__actions > .rm-button,
+.rebreya-groups-app .rm-group-card__current {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.rebreya-groups-app .rm-group-card__current {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--rm-border-default);
+  border-radius: var(--rm-radius-button);
+  background: rgb(var(--rm-color-gold-rgb) / 0.06);
+  color: var(--rm-accent);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+@container (max-width: 760px) {
+  .rebreya-groups-app .rm-groups-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .rebreya-groups-app .rm-groups-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .item.sheet [data-rebreya-item-field] .form-fields select,
 .item.sheet [data-rebreya-item-field] .form-fields input,
 .item.sheet [data-rebreya-item-field] .form-fields textarea {

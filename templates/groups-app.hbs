@@ -17,65 +17,86 @@
         <span class="rm-muted">{{groups.length}} шт.</span>
       </div>
 
-      <div class="rm-compact-item-list">
+      <div class="rm-groups-grid">
         {{#each groups}}
-          <article class="rm-compact-item" data-group-id="{{id}}">
-            <div class="rm-compact-item__main">
-              <img class="rm-compact-item__image" src="{{img}}" alt="{{name}}">
-              <div class="rm-compact-item__copy">
-                <div class="rm-compact-item__title">
-                  <strong class="rm-compact-item__name">{{name}}</strong>
+          <article class="rm-group-card {{stateClass}}" data-group-id="{{id}}">
+            <header class="rm-group-card__header">
+              <img class="rm-group-card__image" src="{{img}}" alt="{{name}}">
+              <div class="rm-group-card__identity">
+                <strong class="rm-group-card__name">{{name}}</strong>
+                <p class="rm-group-card__id">{{id}}</p>
+              </div>
+
+              <details class="rm-inline-menu rm-inline-menu--service rm-group-card__menu">
+                <summary class="rm-inline-menu__toggle rm-icon-button" title="Дополнительные действия">
+                  <i class="fa-solid fa-ellipsis"></i>
+                </summary>
+                <div class="rm-inline-menu__panel rm-inline-menu__panel--stack">
+                  <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="merge-legacy-inventory" data-group-id="{{id}}" {{#unless canMergeLegacy}}disabled{{/unless}}>
+                    <i class="fa-solid fa-code-merge"></i>
+                    <span>Перенести legacy</span>
+                  </button>
+                  {{#if migration.hasLegacyMerge}}
+                    <p class="rm-group-card__migration">
+                      {{#if migration.legacyMergedAtLabel}}{{migration.legacyMergedAtLabel}}{{else}}Есть отметки миграции{{/if}}
+                      {{#if migration.completedPairCount}} • пар: {{migration.completedPairCount}}{{/if}}
+                    </p>
+                  {{/if}}
                 </div>
-                <p class="rm-compact-item__meta">
-                  ID: {{id}} • Участников: {{memberCount}}
-                  {{#if hasInitializedAt}} • Инициализирована: {{initializedAtLabel}}{{/if}}
-                </p>
-                {{#if migration.hasLegacyMerge}}
-                  <p class="rm-muted">
-                    Legacy-инвентарь:
-                    {{#if migration.legacyMergedAtLabel}}{{migration.legacyMergedAtLabel}}{{else}}есть отметки миграции{{/if}}
-                    {{#if migration.legacyInventoryActorId}} • источник {{migration.legacyInventoryActorId}}{{/if}}
-                    {{#if migration.completedPairCount}} • пар: {{migration.completedPairCount}}{{/if}}
-                  </p>
+              </details>
+            </header>
+
+            <div class="rm-group-card__badges">
+              {{#if active}}
+                <span class="rm-group-card__badge is-active">Активная</span>
+              {{/if}}
+              {{#if registered}}
+                <span class="rm-group-card__badge is-registered">Зарегистрирована</span>
+              {{else}}
+                <span class="rm-group-card__badge is-unregistered">Не зарегистрирована</span>
+              {{/if}}
+            </div>
+
+            <div class="rm-group-card__facts">
+              <div class="rm-group-card__fact">
+                <span>Участники</span>
+                <strong>{{memberCount}}</strong>
+              </div>
+              <div class="rm-group-card__fact">
+                {{#if hasInitializedAt}}
+                  <span>Инициализирована</span>
+                  <strong>{{initializedAtLabel}}</strong>
+                {{else}}
+                  <span>Состояние</span>
+                  <strong>Не подключена к Rebreya</strong>
                 {{/if}}
               </div>
             </div>
 
-            <div class="rm-compact-item__side">
-              <div class="rm-compact-item__metrics">
-                <p>
-                  <span>Регистрация</span>
-                  <strong>{{#if registered}}есть{{else}}нет{{/if}}</strong>
-                </p>
-                <p>
-                  <span>Активная</span>
-                  <strong>{{#if active}}да{{else}}нет{{/if}}</strong>
-                </p>
-                <p>
-                  <span>Участники</span>
-                  <strong>{{memberCount}}</strong>
-                </p>
-              </div>
-
-              <div class="rm-inline-actions">
-                <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="open-sheet" data-group-id="{{id}}">
-                  <i class="fa-solid fa-up-right-from-square"></i>
-                  <span>Лист</span>
-                </button>
-                <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="register-group" data-group-id="{{id}}" {{#unless canRegister}}disabled{{/unless}}>
+            <footer class="rm-group-card__actions">
+              <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="open-sheet" data-group-id="{{id}}">
+                <i class="fa-solid fa-up-right-from-square"></i>
+                <span>Открыть лист</span>
+              </button>
+              {{#if showRegister}}
+                <button type="button" class="rm-button rm-button--small rm-button--primary" data-action="register-group" data-group-id="{{id}}">
                   <i class="fa-solid fa-clipboard-check"></i>
                   <span>Зарегистрировать</span>
                 </button>
-                <button type="button" class="rm-button rm-button--small rm-button--primary" data-action="set-active-group" data-group-id="{{id}}" {{#unless canSetActive}}disabled{{/unless}}>
+              {{/if}}
+              {{#if showSetActive}}
+                <button type="button" class="rm-button rm-button--small rm-button--primary" data-action="set-active-group" data-group-id="{{id}}">
                   <i class="fa-solid fa-users-viewfinder"></i>
                   <span>Сделать активной</span>
                 </button>
-                <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="merge-legacy-inventory" data-group-id="{{id}}" {{#unless canMergeLegacy}}disabled{{/unless}}>
-                  <i class="fa-solid fa-code-merge"></i>
-                  <span>Перенести legacy</span>
-                </button>
-              </div>
-            </div>
+              {{/if}}
+              {{#if showCurrentGroup}}
+                <span class="rm-group-card__current">
+                  <i class="fa-solid fa-circle-check"></i>
+                  Текущая группа
+                </span>
+              {{/if}}
+            </footer>
           </article>
         {{/each}}
       </div>

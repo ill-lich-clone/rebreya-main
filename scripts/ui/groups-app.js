@@ -73,20 +73,26 @@ function mapGroupActor(actor, registry) {
   const groupState = registry?.groupsById?.[actor.id] ?? null;
   const initializedAt = toTimestamp(groupState?.initializedAt);
   const migration = mapMigrationInfo(groupState ?? {});
+  const registered = Boolean(groupState);
+  const active = String(registry?.activeGroupActorId ?? "") === actor.id;
 
   return {
     id: actor.id,
     name: actor.name ?? "Группа",
     img: actor.img || "icons/svg/mystery-man.svg",
     memberCount: getGroupMemberCount(actor),
-    registered: Boolean(groupState),
-    active: String(registry?.activeGroupActorId ?? "") === actor.id,
+    registered,
+    active,
+    stateClass: active ? "is-active" : registered ? "is-registered" : "is-unregistered",
+    showCurrentGroup: active,
+    showSetActive: registered && !active,
+    showRegister: !registered,
     initializedAtLabel: formatDateTime(initializedAt),
     hasInitializedAt: Boolean(initializedAt),
     migration,
-    canRegister: !groupState,
-    canSetActive: Boolean(groupState) && String(registry?.activeGroupActorId ?? "") !== actor.id,
-    canMergeLegacy: Boolean(groupState)
+    canRegister: !registered,
+    canSetActive: registered && !active,
+    canMergeLegacy: registered
   };
 }
 
