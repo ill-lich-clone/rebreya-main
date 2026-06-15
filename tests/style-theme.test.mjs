@@ -36,7 +36,7 @@ function withoutStandaloneTraderRules(css) {
   return characters.join("");
 }
 
-test("Rebreya windows use an inherited dnd5e-inspired gray and gold theme", async () => {
+test("Rebreya windows use the inherited graphite and brass redesign", async () => {
   const css = await readFile(stylesheetUrl, "utf8");
   const sharedThemeCss = withoutStandaloneTraderRules(css);
 
@@ -48,6 +48,9 @@ test("Rebreya windows use an inherited dnd5e-inspired gray and gold theme", asyn
     "--rm-color-surface-hover",
     "--rm-color-gold",
     "--rm-color-gold-bright",
+    "--rm-surface-0",
+    "--rm-surface-1",
+    "--rm-surface-2",
     "--rm-surface-window",
     "--rm-surface-panel",
     "--rm-surface-panel-strong",
@@ -59,7 +62,9 @@ test("Rebreya windows use an inherited dnd5e-inspired gray and gold theme", asyn
     "--rm-border-strong",
     "--rm-text-primary",
     "--rm-text-secondary",
-    "--rm-text-dim"
+    "--rm-text-dim",
+    "--rm-hairline",
+    "--rm-accent-strong"
   ]) {
     assert.match(css, new RegExp(`${token}:`, "u"), `Missing theme token ${token}`);
     assert.doesNotMatch(
@@ -69,7 +74,13 @@ test("Rebreya windows use an inherited dnd5e-inspired gray and gold theme", asyn
     );
   }
 
-  assert.match(css, /--rm-surface-window:[^;]*url\(["']?\/ui\/denim075\.png["']?\)/u);
+  assert.match(css, /--rm-color-ink:\s*#0f1116;/u);
+  assert.match(css, /--rm-color-surface:\s*#1c2026;/u);
+  assert.match(css, /--rm-color-surface-raised:\s*#242a32;/u);
+  assert.match(css, /--rm-color-gold:\s*#e0b25e;/u);
+  assert.match(css, /--rm-color-gold-bright:\s*#f1c477;/u);
+  assert.match(css, /--rm-surface-window:[\s\S]*linear-gradient\(180deg, #181b20 0%, #121419 100%\);/u);
+  assert.doesNotMatch(css, /--rm-surface-window:[^;]*denim075\.png/u);
   assert.match(css, /--rm-bg:\s*var\(--rm-surface-window\)/u);
   assert.match(css, /--rm-panel:\s*var\(--rm-surface-panel\)/u);
   assert.match(css, /--rm-panel-strong:\s*var\(--rm-surface-panel-strong\)/u);
@@ -109,6 +120,17 @@ test("Rebreya windows use an inherited dnd5e-inspired gray and gold theme", asyn
   ]) {
     assert.equal(sharedThemeCss.includes(legacyColor), false, `Legacy theme color remains outside trader v2: ${legacyColor}`);
   }
+});
+
+test("Shared components consume the graphite and brass redesign primitives", async () => {
+  const css = await readFile(stylesheetUrl, "utf8");
+
+  assert.match(css, /\.rm-app-header\s*\{[^}]*border-top:\s*2px solid var\(--rm-accent\);[^}]*background:\s*linear-gradient\(180deg, var\(--rm-surface-2\), var\(--rm-surface-1\)\);/su);
+  assert.match(css, /\.rm-button--primary\s*\{[^}]*background:\s*linear-gradient\(180deg, var\(--rm-accent-strong\), var\(--rm-accent\)\);[^}]*color:\s*#241a08;/su);
+  assert.match(css, /\.rm-stat-card\s*\{[^}]*border-left:\s*3px solid var\(--rm-accent\);/su);
+  assert.match(css, /\.rm-panel__header\s*\{[^}]*border-bottom:\s*1px solid var\(--rm-hairline\);/su);
+  assert.match(css, /\.rm-field input,\s*\.rm-field select\s*\{[^}]*background:\s*var\(--rm-surface-0\);/su);
+  assert.match(css, /\.rm-field input:focus,\s*\.rm-field select:focus,\s*\.rm-textarea:focus\s*\{[^}]*box-shadow:\s*0 0 0 3px rgba\(224, 178, 94, 0\.18\);/su);
 });
 
 test("Trader v2 keeps its standalone parchment theme", async () => {
