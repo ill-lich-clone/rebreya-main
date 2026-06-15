@@ -183,3 +183,38 @@ export async function assignItemToUniversalBeltSlot(actor, slot, item) {
   });
   return item;
 }
+
+export async function purchaseUniversalBeltSlot(actor) {
+  if (!actor?.isOwner) throw new Error("Недостаточно прав для покупки слота пояса.");
+
+  const unlockedSlots = getUniversalBeltUnlockedSlotCount(actor);
+  if (unlockedSlots >= UNIVERSAL_BELT_SLOT_COUNT) {
+    throw new Error("Все слоты пояса уже открыты.");
+  }
+
+  const currentCurrency = foundry.utils.getProperty(actor, "system.currency") ?? {};
+  const payment = calculateUniversalBeltPayment(currentCurrency);
+  if (!payment.ok) {
+    throw new Error("Недостаточно средств: нужно 500 зм или эквивалент в пм.");
+  }
+
+  const nextUnlockedSlots = unlockedSlots + 1;
+  await actor.update({
+    "system.currency.gp": payment.currency.gp,
+    "system.currency.pp": payment.currency.pp
+  });
+  await actor.setFlag(MODULE_ID, UNIVERSAL_BELT_FLAG, {
+    unlockedSlots: nextUnlockedSlots
+  });
+  return nextUnlockedSlots;
+}
+
+export async function useUniversalBeltItem(actor, slot, event = null) {
+  const item = getUniversalBeltItemsBySlot(actor).get(Math.floor(toNumber(slot, 0))) ?? null;
+  if (!item) throw new Error("В этом слоте пояса нет предмета.");
+  if (typeof item.use === "function") {
+    return item.use({ event, legacy: false });
+  }
+  await item.sheet?.render?.(true);
+  return item;
+}

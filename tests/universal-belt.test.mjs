@@ -306,3 +306,74 @@ test("replacing an occupied slot removes and merges the previous belt item", asy
     restore();
   }
 });
+
+test("purchasing belt slots unlocks slot two then slot three and updates gp and pp", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const {
+      purchaseUniversalBeltSlot,
+      getUniversalBeltUnlockedSlotCount
+    } = await import(`../scripts/integrations/universal-belt.js?purchase=${Date.now()}`);
+    const actor = new FakeActor({ currency: { gp: 495, pp: 101 } });
+
+    assert.equal(await purchaseUniversalBeltSlot(actor), 2);
+    assert.equal(getUniversalBeltUnlockedSlotCount(actor), 2);
+    assert.equal(actor.system.currency.gp, 5);
+    assert.equal(actor.system.currency.pp, 100);
+
+    assert.equal(await purchaseUniversalBeltSlot(actor), 3);
+    assert.equal(getUniversalBeltUnlockedSlotCount(actor), 3);
+    assert.equal(actor.system.currency.gp, 5);
+    assert.equal(actor.system.currency.pp, 50);
+  }
+  finally {
+    restore();
+  }
+});
+
+test("purchasing belt slot fails without enough gp and pp", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const {
+      purchaseUniversalBeltSlot
+    } = await import(`../scripts/integrations/universal-belt.js?purchase-fail=${Date.now()}`);
+    const actor = new FakeActor({ currency: { gp: 499, pp: 0 } });
+
+    await assert.rejects(
+      () => purchaseUniversalBeltSlot(actor),
+      /Недостаточно средств/u
+    );
+    assert.equal(actor.system.currency.gp, 499);
+  }
+  finally {
+    restore();
+  }
+});
+
+test("using a belt item calls native item use flow without movement automation", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const {
+      useUniversalBeltItem
+    } = await import(`../scripts/integrations/universal-belt.js?use=${Date.now()}`);
+    const actor = new FakeActor();
+    const item = actor.addItem({
+      _id: "potion",
+      name: "Зелье лечения",
+      type: "consumable",
+      system: { quantity: 1 },
+      flags: { "rebreya-main": { universalBelt: { slot: 1 } } }
+    });
+    const calls = [];
+    item.use = async (options) => {
+      calls.push(options);
+      return "used";
+    };
+
+    assert.equal(await useUniversalBeltItem(actor, 1, { type: "click" }), "used");
+    assert.deepEqual(calls, [{ event: { type: "click" }, legacy: false }]);
+  }
+  finally {
+    restore();
+  }
+});
