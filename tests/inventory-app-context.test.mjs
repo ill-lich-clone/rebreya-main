@@ -601,23 +601,18 @@ test("InventoryApp downtime controls do not define duplicate tooltip attributes"
   assert.deepEqual(duplicateTooltipTags, []);
 });
 
-test("InventoryApp inventory rows expose a player self-drag action outside manager controls", async () => {
+test("InventoryApp inventory rows are draggable without a redundant self-drag button", async () => {
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
   const rowIndex = template.indexOf('class="rm-compact-item"');
-  const selfDragIndex = template.indexOf('data-action="drag-item-to-self"', rowIndex);
-  const managerControlsIndex = template.indexOf("{{#if ../canManage}}", rowIndex);
 
   assert.ok(rowIndex >= 0, "inventory item row should exist");
-  assert.ok(selfDragIndex > rowIndex, "inventory item row should render a self-drag action");
-  assert.ok(managerControlsIndex > rowIndex, "inventory item row should keep manager-only controls");
-  assert.ok(
-    selfDragIndex < managerControlsIndex,
-    "self-drag action must not be hidden behind manager-only controls"
-  );
   assert.match(
-    template.slice(selfDragIndex, managerControlsIndex),
-    /data-action="drag-item-to-self"[\s\S]*data-item-drag="true"[\s\S]*draggable="true"[\s\S]*Перетащите себе/u
+    template.slice(rowIndex, template.indexOf(">", rowIndex) + 1),
+    /data-item-drag="true"[\s\S]*draggable="true"/u
   );
+  assert.doesNotMatch(template, /data-action="drag-item-to-self"/u);
+  assert.doesNotMatch(template, /rm-compact-item__self-drag/u);
+  assert.doesNotMatch(template, /Перетащите себе/u);
 });
 
 test("InventoryApp exposes a full inventory drop surface to players who can contribute items", async () => {

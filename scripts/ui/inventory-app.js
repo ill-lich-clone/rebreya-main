@@ -4256,13 +4256,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelectorAll("[data-action='drag-item-to-self']").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        ui.notifications?.info("Перетащите кнопку в лист персонажа, чтобы забрать предмет себе.");
-      }, listenerOptions);
-    });
-
     element.querySelectorAll("[data-action='switch-tab']").forEach((button) => {
       button.addEventListener("click", (event) => {
         this.setActiveTab(event.currentTarget.dataset.tab || "inventory");
