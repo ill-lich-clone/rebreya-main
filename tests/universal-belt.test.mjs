@@ -520,6 +520,9 @@ test("renderUniversalBeltSlots removes the locked marker from unlocked empty slo
     assert.equal(slotNodes.at(0).dataset.locked, undefined);
     assert.equal(slotNodes.at(1).dataset.locked, undefined);
     assert.equal(slotNodes.at(2).dataset.locked, "true");
+    assert.equal(slotNodes.at(0).children.at(0).children.length, 0);
+    assert.equal(slotNodes.at(1).children.at(0).children.length, 0);
+    assert.match(slotNodes.at(2).children.at(0).children.at(0).className, /fa-lock/u);
     assert.equal(slotNodes.at(1).children.at(0).dataset.action, undefined);
   }
   finally {

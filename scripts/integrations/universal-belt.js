@@ -258,11 +258,11 @@ function createSlotElement(slot, actor) {
   else {
     if (locked) {
       button.dataset.action = "rebreya-universal-belt-purchase";
+      const icon = document.createElement("i");
+      icon.className = "fa-solid fa-lock";
+      icon.setAttribute("aria-hidden", "true");
+      button.append(icon);
     }
-    const icon = document.createElement("i");
-    icon.className = locked ? "fa-solid fa-lock" : "fa-solid fa-bag-shopping";
-    icon.setAttribute("aria-hidden", "true");
-    button.append(icon);
   }
   li.append(button);
   return li;
