@@ -267,6 +267,70 @@
   pointer-events: none;
 }
 
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-universal-belt-slot {
+  position: relative;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  aspect-ratio: 1;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgb(var(--rm-color-gold-rgb) / 0.72);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 36%, rgb(var(--rm-color-gold-rgb) / 0.24), transparent 44%),
+    var(--rm-surface-1);
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 0.42),
+    0 0 0 1px rgb(var(--rm-color-gold-rgb) / 0.12);
+  list-style: none;
+  overflow: hidden;
+}
+
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-universal-belt-slot__button {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--rm-accent-strong);
+  cursor: pointer;
+}
+
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-universal-belt-slot__button img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 0;
+  border-radius: 50%;
+}
+
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-universal-belt-slot__button i {
+  font-size: 15px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-universal-belt-slot[data-locked="true"] {
+  border-style: dashed;
+  opacity: 0.72;
+  filter: grayscale(0.3);
+}
+
+.dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-universal-belt-slot.is-dragover {
+  border-color: var(--rm-accent-strong);
+  box-shadow:
+    inset 0 0 0 2px rgb(var(--rm-color-gold-rgb) / 0.65),
+    0 0 14px rgb(var(--rm-color-gold-rgb) / 0.24);
+}
+
+.rm-universal-belt-hidden-item {
+  display: none !important;
+}
+
 .rm-hero {
   display: flex;
   justify-content: space-between;

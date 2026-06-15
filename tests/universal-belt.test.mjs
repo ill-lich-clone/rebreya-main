@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 function installFoundryStubs() {
   const previousFoundry = globalThis.foundry;
@@ -540,4 +541,13 @@ test("universal belt context hook adds remove action for belted items only", asy
     globalThis.Hooks = previousHooks;
     restore();
   }
+});
+
+test("universal belt styles are scoped to dnd5e inventory container strip", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(css, /\.dnd5e2\.sheet\.actor[\s\S]+\.rm-universal-belt-slot/u);
+  assert.match(css, /\.rm-universal-belt-slot\s*\{[\s\S]*border-radius:\s*50%/u);
+  assert.match(css, /\.rm-universal-belt-slot\[data-locked="true"\]/u);
+  assert.match(css, /\.rm-universal-belt-hidden-item\s*\{[\s\S]*display:\s*none/u);
 });
