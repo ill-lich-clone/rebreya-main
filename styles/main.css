@@ -227,7 +227,7 @@
   color: var(--rm-accent);
 }
 
-#scene-controls-tools .tool[data-tool="rebreya-main-panel"] {
+#scene-controls-tools > li:has(> .tool[data-tool="rebreya-main-panel"]) {
   display: none;
 }
 

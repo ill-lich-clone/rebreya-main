@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 const {
   applyFixedRaceSize,
@@ -395,6 +396,19 @@ test("scene controls create a separate Rebreya group for record controls", () =>
     assert.equal(groupsTool.title, "REBREYA_MAIN.Controls.OpenGroups");
     assert.equal(groupsTool.visible, true);
   });
+});
+
+test("scene controls remove the hidden Rebreya placeholder row from layout", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(
+    css,
+    /#scene-controls-tools\s*>\s*li:has\(>\s*\.tool\[data-tool="rebreya-main-panel"\]\)\s*\{[^}]*display:\s*none;/su
+  );
+  assert.doesNotMatch(
+    css,
+    /#scene-controls-tools\s+\.tool\[data-tool="rebreya-main-panel"\]\s*\{[^}]*display:\s*none;/su
+  );
 });
 
 test("scene controls create a separate Rebreya group for array controls", () => {
