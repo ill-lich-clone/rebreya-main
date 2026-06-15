@@ -117,3 +117,192 @@ test("universal belt purchase spends gp first and makes pp change into gp", asyn
     restore();
   }
 });
+
+class FakeItem {
+  constructor(actor, data) {
+    this.parent = actor;
+    this.actor = actor;
+    this.id = data._id;
+    this.uuid = `Actor.${actor.id}.Item.${this.id}`;
+    this.name = data.name;
+    this.type = data.type ?? "loot";
+    this.img = data.img ?? "icons/svg/item-bag.svg";
+    this.system = structuredClone(data.system ?? {});
+    this.flags = structuredClone(data.flags ?? {});
+    this.deleted = false;
+  }
+
+  toObject() {
+    return structuredClone({
+      _id: this.id,
+      name: this.name,
+      type: this.type,
+      img: this.img,
+      system: this.system,
+      flags: this.flags
+    });
+  }
+
+  getFlag(scope, key) {
+    return String(key).split(".").reduce((current, part) => (
+      current && typeof current === "object" ? current[part] : undefined
+    ), this.flags?.[scope]);
+  }
+
+  async update(patch) {
+    this.parent.updates.push([this.id, patch]);
+    for (const [path, value] of Object.entries(patch)) {
+      foundry.utils.setProperty(this, path, value);
+    }
+    return this;
+  }
+
+  async delete() {
+    this.deleted = true;
+    this.parent.items.contents = this.parent.items.contents.filter((item) => item !== this);
+  }
+}
+
+class FakeActor {
+  constructor({ id = "actor-a", flags = {}, currency = {} } = {}) {
+    this.id = id;
+    this.type = "character";
+    this.isOwner = true;
+    this.flags = structuredClone(flags);
+    this.system = { currency: structuredClone(currency) };
+    this.created = [];
+    this.updates = [];
+    this.items = {
+      contents: [],
+      get: (id) => this.items.contents.find((item) => item.id === id) ?? null
+    };
+  }
+
+  addItem(data) {
+    const item = new FakeItem(this, data);
+    this.items.contents.push(item);
+    return item;
+  }
+
+  getFlag(scope, key) {
+    return this.flags?.[scope]?.[key];
+  }
+
+  async setFlag(scope, key, value) {
+    this.flags[scope] ??= {};
+    this.flags[scope][key] = value;
+    return value;
+  }
+
+  async update(patch) {
+    this.updates.push(["actor", patch]);
+    for (const [path, value] of Object.entries(patch)) {
+      foundry.utils.setProperty(this, path, value);
+    }
+    return this;
+  }
+
+  async createEmbeddedDocuments(type, documents) {
+    assert.equal(type, "Item");
+    return documents.map((documentData, index) => {
+      const item = this.addItem({
+        ...documentData,
+        _id: documentData._id ?? `created-${this.created.length + index + 1}`
+      });
+      this.created.push(item);
+      return item;
+    });
+  }
+}
+
+test("assigning a stack to the belt splits exactly one item into the slot", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const {
+      assignItemToUniversalBeltSlot,
+      getUniversalBeltItemSlot
+    } = await import(`../scripts/integrations/universal-belt.js?split=${Date.now()}`);
+    const actor = new FakeActor();
+    const source = actor.addItem({
+      _id: "item-stack",
+      name: "Зелье лечения",
+      type: "consumable",
+      system: { quantity: 5 }
+    });
+
+    const belted = await assignItemToUniversalBeltSlot(actor, 1, source);
+
+    assert.equal(source.system.quantity, 4);
+    assert.equal(belted.system.quantity, 1);
+    assert.equal(getUniversalBeltItemSlot(belted), 1);
+    assert.equal(actor.items.contents.length, 2);
+  }
+  finally {
+    restore();
+  }
+});
+
+test("assigning a quantity-one item moves that item into the belt without creating a clone", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const {
+      assignItemToUniversalBeltSlot,
+      getUniversalBeltItemSlot
+    } = await import(`../scripts/integrations/universal-belt.js?move-one=${Date.now()}`);
+    const actor = new FakeActor();
+    const source = actor.addItem({
+      _id: "dagger",
+      name: "Кинжал",
+      type: "weapon",
+      system: { quantity: 1 }
+    });
+
+    const belted = await assignItemToUniversalBeltSlot(actor, 1, source);
+
+    assert.equal(belted, source);
+    assert.equal(actor.created.length, 0);
+    assert.equal(getUniversalBeltItemSlot(source), 1);
+  }
+  finally {
+    restore();
+  }
+});
+
+test("replacing an occupied slot removes and merges the previous belt item", async () => {
+  const restore = installFoundryStubs();
+  try {
+    const {
+      assignItemToUniversalBeltSlot,
+      getUniversalBeltItemSlot
+    } = await import(`../scripts/integrations/universal-belt.js?replace=${Date.now()}`);
+    const actor = new FakeActor();
+    const normalPotion = actor.addItem({
+      _id: "normal-potion",
+      name: "Зелье лечения",
+      type: "consumable",
+      system: { quantity: 2 }
+    });
+    const beltedPotion = actor.addItem({
+      _id: "belted-potion",
+      name: "Зелье лечения",
+      type: "consumable",
+      system: { quantity: 1 },
+      flags: { "rebreya-main": { universalBelt: { slot: 1 } } }
+    });
+    const dagger = actor.addItem({
+      _id: "dagger",
+      name: "Кинжал",
+      type: "weapon",
+      system: { quantity: 1 }
+    });
+
+    await assignItemToUniversalBeltSlot(actor, 1, dagger);
+
+    assert.equal(normalPotion.system.quantity, 3);
+    assert.equal(beltedPotion.deleted, true);
+    assert.equal(getUniversalBeltItemSlot(dagger), 1);
+  }
+  finally {
+    restore();
+  }
+});
