@@ -498,6 +498,36 @@ test("renderUniversalBeltSlots prepends three circular belt slots before native 
   }
 });
 
+test("renderUniversalBeltSlots removes the locked marker from unlocked empty slots", async () => {
+  const restore = installFoundryStubs();
+  const previousDocument = globalThis.document;
+  try {
+    const {
+      renderUniversalBeltSlots
+    } = await import(`../scripts/integrations/universal-belt.js?dom-unlocked=${Date.now()}`);
+    globalThis.document = { createElement: (tag) => new FakeElement(tag) };
+    const root = new FakeElement("section");
+    const containers = new FakeElement("ul");
+    containers.classList.add("containers");
+    root.append(containers);
+    const actor = new FakeActor({
+      flags: { "rebreya-main": { universalBelt: { unlockedSlots: 2 } } }
+    });
+
+    assert.equal(renderUniversalBeltSlots(root, actor), true);
+
+    const slotNodes = containers.children.filter((child) => child.classList.contains("rm-universal-belt-slot"));
+    assert.equal(slotNodes.at(0).dataset.locked, undefined);
+    assert.equal(slotNodes.at(1).dataset.locked, undefined);
+    assert.equal(slotNodes.at(2).dataset.locked, "true");
+    assert.equal(slotNodes.at(1).children.at(0).dataset.action, undefined);
+  }
+  finally {
+    globalThis.document = previousDocument;
+    restore();
+  }
+});
+
 test("universal belt context hook adds remove action for belted items only", async () => {
   const restore = installFoundryStubs();
   const previousHooks = globalThis.Hooks;

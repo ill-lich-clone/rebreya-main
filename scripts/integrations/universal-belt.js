@@ -236,7 +236,7 @@ function createSlotElement(slot, actor) {
   li.classList.add("container", "draggable", "rm-universal-belt-slot");
   li.dataset.rebreyaUniversalBeltSlot = "true";
   li.dataset.beltSlot = String(slot);
-  li.dataset.locked = locked ? "true" : "false";
+  if (locked) li.dataset.locked = "true";
   li.setAttribute("aria-label", buildSlotTitle(slot, item, locked));
   li.setAttribute("title", buildSlotTitle(slot, item, locked));
   if (item) {
