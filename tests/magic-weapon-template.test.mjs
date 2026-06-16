@@ -57,6 +57,7 @@ const {
   handleActorRenderMagicWeapons,
   handleCreatedMagicWeaponItem,
   parseMagicWeaponBonus,
+  promptMagicWeaponTemplate,
 } = await import("../scripts/integrations/magic-weapon-template.js");
 
 function makeLongsword() {
@@ -110,6 +111,21 @@ function makeDagger() {
         reach: 0,
         units: "ft",
       },
+    },
+  };
+}
+
+function makeFirearm() {
+  return {
+    id: "automatic-rifle",
+    name: "Автоматическая винтовка",
+    equipmentType: "Огнестрельное оружие",
+    itemType: "Продвинутое",
+    weight: 8,
+    weapon: {
+      damageFormula: "2d8",
+      damageType: "piercing",
+      properties: [],
     },
   };
 }
@@ -218,19 +234,49 @@ test("buildMagicWeaponTemplateOptions lists Rebreya weapon templates only", () =
   );
 });
 
+test("buildMagicWeaponTemplateOptions excludes firearms from generic magic weapon templates", () => {
+  const options = buildMagicWeaponTemplateOptions({
+    gear: [makeLongsword(), makeFirearm(), makeDagger()],
+  });
+
+  assert.deepEqual(
+    options.map((option) => option.id),
+    ["longsword", "dagger"],
+  );
+});
+
 test("createMagicWeaponTemplateUpdate applies base weapon data while preserving magic source", () => {
   const item = new FakeItem({
+    system: {
+      description: {
+        value: `<section class="rebreya-gear-item">
+          <ul>
+            <li><strong>Тип:</strong> Магический предмет</li>
+            <li><strong>Вид предмета:</strong> Оружие</li>
+          </ul>
+          <p>Вы получаете бонус к броскам атаки и урона, совершённым этим магическим оружием.</p>
+        </section>`,
+      },
+    },
     flags: {
       "rebreya-main": {
         sourceType: "magicItem",
         magicItemId: "weapon-plus-2",
+        signature: JSON.stringify({
+          description: "Вы получаете бонус к броскам атаки и урона, совершённым этим магическим оружием.",
+        }),
       },
     },
   });
 
-  const update = createMagicWeaponTemplateUpdate(item, makeLongsword(), 2);
+  const update = createMagicWeaponTemplateUpdate(item, makeLongsword(), 2, {
+    iconLookup: new Map([
+      ["длинный меч", "modules/rebreya-main/templates/icons/weapons/dlinnyy-mech.webp"],
+    ]),
+  });
 
   assert.equal(update.name, "Длинный меч +2");
+  assert.equal(update.img, "modules/rebreya-main/templates/icons/weapons/dlinnyy-mech.webp");
   assert.equal(update.system.type.baseItem, "longsword");
   assert.equal(update.system.damage.base.number, 1);
   assert.equal(update.system.damage.base.denomination, 8);
@@ -250,6 +296,48 @@ test("createMagicWeaponTemplateUpdate applies base weapon data while preserving 
   assert.deepEqual(update.flags["rebreya-main"].attackTraits, { mku: 1 });
   assert.deepEqual(update.flags["rebreya-main"].lichWeaponPropertyValues, { mku: 1 });
   assert.equal(update.flags["rebreya-main"].attackTraitsText, "МКУ 1");
+  assert.doesNotMatch(update.system.description.value, /Тип:\s*Магический предмет/iu);
+  assert.match(update.system.description.value, /Вы получаете бонус к броскам атаки и урона, совершённым этим магическим оружием\./u);
+  assert.equal((update.system.description.value.match(/Вы получаете бонус к броскам атаки и урона, совершённым этим магическим оружием\./gu) ?? []).length, 1);
+});
+
+test("promptMagicWeaponTemplate uses dialog window classes instead of leaking Rebreya text color into light content", async () => {
+  const originalDialog = globalThis.Dialog;
+  const observed = {
+    config: null,
+  };
+
+  class FakeDialog {
+    constructor(config) {
+      observed.config = config;
+    }
+
+    render() {
+      observed.config.buttons.apply.callback({
+        0: {
+          querySelector: () => ({ value: "longsword" }),
+        },
+      });
+    }
+  }
+
+  globalThis.Dialog = FakeDialog;
+
+  try {
+    const selectedId = await promptMagicWeaponTemplate({
+      item: { name: "Оружие +1" },
+      bonus: 1,
+      weapons: [{ id: "longsword", name: "Длинный меч" }],
+    });
+
+    assert.equal(selectedId, "longsword");
+    assert.deepEqual(observed.config.classes, ["rebreya-main", "rebreya-trader-dialog", "rm-magic-weapon-template-window"]);
+    assert.match(observed.config.content, /class="rm-magic-weapon-template-form"/u);
+    assert.doesNotMatch(observed.config.content, /class="rebreya-main/u);
+  }
+  finally {
+    globalThis.Dialog = originalDialog;
+  }
 });
 
 test("handleCreatedMagicWeaponItem prompts and updates only current user's character item", async () => {

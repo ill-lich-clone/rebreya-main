@@ -29,6 +29,10 @@ const GEAR_ICON_SEARCH_PATHS = [
   CUSTOM_GEAR_ICONS_BASE_PATH
 ];
 
+export async function buildGearIconLookup({ forceRefresh = false } = {}) {
+  return buildNamedIconLookup(GEAR_ICON_SEARCH_PATHS, { forceRefresh });
+}
+
 function escapeHtml(value) {
   return foundry.utils.escapeHTML(String(value ?? ""));
 }
@@ -995,7 +999,7 @@ export class GearCompendiumService {
     const pack = await ensureGearPack();
     await deduplicateCompendiumFolders(pack, ["Обвес", "Обвесы", "Огнестрельное оружие", "Примитивное", "Продвинутое"]);
     const documents = await getPackDocuments(pack);
-    const iconLookup = await buildNamedIconLookup(GEAR_ICON_SEARCH_PATHS, { forceRefresh: true });
+    const iconLookup = await buildGearIconLookup({ forceRefresh: true });
     if (!shouldRebuildPack(safeGear, documents)) {
       await syncManagedDocumentIcons(pack, documents, iconLookup);
       return pack;
