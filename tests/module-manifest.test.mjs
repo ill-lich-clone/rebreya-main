@@ -37,3 +37,18 @@ test("module manifest loads a cache-busted entrypoint for the current version", 
   assert.deepEqual(manifest.esmodules, [expectedEntrypoint]);
   assert.match(entrypointSource, new RegExp(`\\?v=${manifest.version.replaceAll(".", "\\.")}`, "u"));
 });
+
+test("module entrypoint registers the live magic weapon template hook", async () => {
+  const manifestUrl = new URL("../module.json", import.meta.url);
+  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+  const entrypointPath = manifest.esmodules?.[0];
+  const entrypointSource = await readFile(new URL(`../${entrypointPath}`, import.meta.url), "utf8");
+  const escapedVersion = manifest.version.replaceAll(".", "\\.");
+
+  assert.match(entrypointSource, /registerMagicWeaponTemplateHook/u);
+  assert.match(
+    entrypointSource,
+    new RegExp(`magic-weapon-template\\.js\\?v=${escapedVersion}`, "u"),
+  );
+  assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
+});
