@@ -54,6 +54,7 @@ globalThis.game = {
 const {
   buildMagicWeaponTemplateOptions,
   createMagicWeaponTemplateUpdate,
+  handleActorRenderMagicWeapons,
   handleCreatedMagicWeaponItem,
   parseMagicWeaponBonus,
 } = await import("../scripts/integrations/magic-weapon-template.js");
@@ -142,7 +143,7 @@ class FakeItem {
       ...system,
     };
     this.flags = flags;
-    this.parent = actorType ? { type: actorType } : null;
+    this.parent = actorType ? { type: actorType, isOwner: true } : null;
     this.updates = [];
   }
 
@@ -162,6 +163,21 @@ class FakeItem {
   async update(data, options) {
     this.updates.push({ data, options });
     return this;
+  }
+}
+
+class FakeActor {
+  constructor({
+    type = "character",
+    isOwner = true,
+    items = [],
+  } = {}) {
+    this.type = type;
+    this.isOwner = isOwner;
+    this.items = items;
+    for (const item of items) {
+      item.parent = this;
+    }
   }
 }
 
@@ -275,4 +291,31 @@ test("handleCreatedMagicWeaponItem ignores other users and non-character items",
   assert.equal(promptCalls, 0);
   assert.equal(otherUserItem.updates.length, 0);
   assert.equal(npcItem.updates.length, 0);
+});
+
+test("handleActorRenderMagicWeapons applies a fallback prompt for unresolved generic magic weapons on owned sheets", async () => {
+  const item = new FakeItem();
+  const actor = new FakeActor({
+    items: [item],
+  });
+  const moduleApi = {
+    getModel: async () => ({
+      gear: [makeLongsword()],
+    }),
+  };
+
+  const handled = await handleActorRenderMagicWeapons(actor, moduleApi, {
+    prompt: async ({ bonus, weapons }) => {
+      assert.equal(bonus, 2);
+      assert.deepEqual(
+        weapons.map((weapon) => weapon.id),
+        ["longsword"],
+      );
+      return "longsword";
+    },
+  });
+
+  assert.equal(handled, true);
+  assert.equal(item.updates.length, 1);
+  assert.equal(item.updates[0].data.name, "Длинный меч +2");
 });
