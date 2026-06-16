@@ -43,6 +43,15 @@ function escapeHtml(value) {
     .replace(/'/gu, "&#39;");
 }
 
+function normalizeMatchText(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\u0451/gu, "\u0435")
+    .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
+    .replace(/\s+/gu, " ");
+}
+
 function isCurrentUserHook(userId) {
   const currentUserId = cleanId(globalThis.game?.user?.id);
   const hookUserId = cleanId(userId);
@@ -175,9 +184,29 @@ function buildMagicWeaponTemplateSelectContent({ item, bonus, weapons }) {
 }
 
 export function parseMagicWeaponBonus(itemOrName) {
-  const name = cleanString(typeof itemOrName === "string" ? itemOrName : itemOrName?.name);
-  const match = name.match(/^(?:Оружие|Weapon)\s*\+\s*([123])$/iu);
-  return match ? Number(match[1]) : null;
+  const item = typeof itemOrName === "string" ? null : itemOrName;
+  const name = cleanString(typeof itemOrName === "string" ? itemOrName : item?.name);
+  const exactMatch = name.match(/^(?:Оружие|Weapon)\s*\+\s*([123])$/iu);
+  if (exactMatch) {
+    return Number(exactMatch[1]);
+  }
+
+  const flags = item ? getModuleFlags(item) : {};
+  const isGenericMagicWeapon = normalizeMatchText(flags.sourceType) === "magicitem"
+    && normalizeMatchText(flags.itemType) === normalizeMatchText("Оружие")
+    && normalizeMatchText(flags.itemSubtype) === normalizeMatchText("Любое");
+  if (!isGenericMagicWeapon) {
+    return null;
+  }
+
+  const plusMatch = name.match(/\+\s*([123])(?:\b|$)/u);
+  if (plusMatch) {
+    return Number(plusMatch[1]);
+  }
+
+  const magicItemId = cleanString(flags.magicItemId);
+  const idMatch = magicItemId.match(/(?:^|[-_])([123])$/u);
+  return idMatch ? Number(idMatch[1]) : null;
 }
 
 export function buildMagicWeaponTemplateOptions(model) {
@@ -223,10 +252,6 @@ function getPromptableMagicWeaponContext(
   }
 
   const actor = getOwnedActor(item);
-  if (!canPromptForActor(actor)) {
-    return null;
-  }
-
   if (item?.type !== "weapon" || item?.getFlag?.(MODULE_ID, "magicWeaponTemplate") === true) {
     return null;
   }

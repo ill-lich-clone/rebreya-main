@@ -190,6 +190,23 @@ test("parseMagicWeaponBonus matches only generic +1/+2/+3 weapon templates", () 
   assert.equal(parseMagicWeaponBonus({ name: "Оружие +4" }), null);
 });
 
+test("parseMagicWeaponBonus can resolve generic magic weapons from Rebreya flags", () => {
+  assert.equal(
+    parseMagicWeaponBonus({
+      name: "Шаблон оружия",
+      flags: {
+        "rebreya-main": {
+          sourceType: "magicItem",
+          itemType: "Оружие",
+          itemSubtype: "Любое",
+          magicItemId: "оружие-3",
+        },
+      },
+    }),
+    3,
+  );
+});
+
 test("buildMagicWeaponTemplateOptions lists Rebreya weapon templates only", () => {
   const options = buildMagicWeaponTemplateOptions({
     gear: [makeArmor(), makeLongsword(), makeDagger()],
@@ -264,6 +281,30 @@ test("handleCreatedMagicWeaponItem prompts and updates only current user's chara
   assert.equal(item.updates.length, 1);
   assert.equal(item.updates[0].data.name, "Длинный меч +2");
   assert.equal(item.updates[0].options["rebreya-main"].skipMagicWeaponTemplate, true);
+});
+
+test("handleCreatedMagicWeaponItem still prompts on the current user's create hook even if actor ownership is not yet reflected", async () => {
+  const item = new FakeItem();
+  item.parent = { type: "character", isOwner: false };
+  const moduleApi = {
+    getModel: async () => ({
+      gear: [makeLongsword()],
+    }),
+  };
+
+  const handled = await handleCreatedMagicWeaponItem(
+    item,
+    {},
+    "player-1",
+    moduleApi,
+    {
+      prompt: async () => "longsword",
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(item.updates.length, 1);
+  assert.equal(item.updates[0].data.name, "Длинный меч +2");
 });
 
 test("handleCreatedMagicWeaponItem ignores other users and non-character items", async () => {
