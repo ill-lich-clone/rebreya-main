@@ -44,6 +44,7 @@ import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.j
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
+import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import {
   SOCKET_EVENT_SET_SETTING,
@@ -3008,6 +3009,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register ration food conversion hook.`, error);
+  }
+
+  try {
+    registerMagicWeaponTemplateHook(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register magic weapon template hook.`, error);
   }
 
   try {
