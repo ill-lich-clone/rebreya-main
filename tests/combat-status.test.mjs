@@ -541,7 +541,7 @@ test("frightened status sync keeps only the strongest attack penalty active", ()
     img: "systems/dnd5e/icons/svg/statuses/frightened.svg",
     icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
     statuses: [],
-    changes: [weakOverTime],
+    changes: [],
     "flags.core.statusId": "frightened",
     "flags.rebreya-main.statusId": "frightened",
     "flags.rebreya-main.statusValue": 2,
@@ -551,7 +551,6 @@ test("frightened status sync keeps only the strongest attack penalty active", ()
   assert.deepEqual(
     updates.find((update) => update._id === "fallback")?.changes.map((change) => [change.key, change.value]),
     [
-      ["flags.midi-qol.OverTime", "turn=end,saveAbility=wis,saveDC=15"],
       ["system.bonuses.mwak.attack", "-3"],
       ["system.bonuses.rwak.attack", "-3"],
       ["system.bonuses.msak.attack", "-3"],
@@ -565,6 +564,39 @@ test("frightened status sync keeps only the strongest attack penalty active", ()
       .map((change) => [update._id, change.key, change.value])),
     attackBonusKeys.map((key) => ["fallback", key, "-3"])
   );
+});
+
+test("frightened status sync canonicalizes named external effects", () => {
+  const updates = buildFrightenedStatusSyncUpdates([
+    {
+      id: "external",
+      name: "Frightened 2",
+      flags: {},
+      changes: [
+        { key: "flags.midi-qol.OverTime", mode: 0, value: "turn=end,saveAbility=wis,saveDC=15", priority: 20 },
+        { key: "system.traits.di.value", mode: 0, value: "fear", priority: 20 }
+      ]
+    }
+  ]);
+
+  assert.deepEqual(updates, [{
+    _id: "external",
+    name: "Испуганный 2",
+    img: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+    icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+    statuses: ["frightened"],
+    changes: [
+      { key: "system.bonuses.mwak.attack", mode: 2, value: "-2", priority: 20 },
+      { key: "system.bonuses.rwak.attack", mode: 2, value: "-2", priority: 20 },
+      { key: "system.bonuses.msak.attack", mode: 2, value: "-2", priority: 20 },
+      { key: "system.bonuses.rsak.attack", mode: 2, value: "-2", priority: 20 }
+    ],
+    "flags.core.statusId": "frightened",
+    "flags.rebreya-main.statusId": "frightened",
+    "flags.rebreya-main.statusValue": 2,
+    "flags.statuscounter.value": 2,
+    "flags.statuscounter.visible": true
+  }]);
 });
 
 test("frightened status sync ignores the effect currently being deleted", () => {
@@ -794,4 +826,53 @@ test("unvalued discreet status halves movement instead of using a counter value"
     "flags.rebreya-main.statusValue": null,
     "flags.statuscounter.visible": false
   }]);
+});
+
+test("external named Rebreya statuses are canonicalized on create", async () => {
+  const previousActor = globalThis.Actor;
+  class TestActor {}
+  globalThis.Actor = TestActor;
+
+  try {
+    const service = new CombatStatusService({});
+    const updates = [];
+    const actor = new TestActor();
+    actor.id = "actor-1";
+    actor.effects = { contents: [] };
+    actor.updateEmbeddedDocuments = async (_type, documents) => {
+      updates.push(...documents);
+      return documents;
+    };
+
+    const effect = {
+      id: "external",
+      name: "Weakened 2",
+      flags: {},
+      changes: [
+        { key: "flags.midi-qol.disadvantage.attack.all", mode: 0, value: "1", priority: 20 }
+      ],
+      parent: actor
+    };
+    actor.effects.contents.push(effect);
+
+    const didSync = await service.handleActiveEffectCreated(effect);
+
+    assert.equal(didSync, true);
+    assert.deepEqual(updates, [{
+      _id: "external",
+      name: "Ослабленный 2",
+      img: "icons/svg/downgrade.svg",
+      icon: "icons/svg/downgrade.svg",
+      statuses: ["rebreya-weakened"],
+      changes: [],
+      "flags.core.statusId": "rebreya-weakened",
+      "flags.rebreya-main.statusId": "rebreya-weakened",
+      "flags.rebreya-main.statusValue": 2,
+      "flags.statuscounter.value": 2,
+      "flags.statuscounter.visible": true
+    }]);
+  }
+  finally {
+    globalThis.Actor = previousActor;
+  }
 });
