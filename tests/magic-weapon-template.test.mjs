@@ -486,6 +486,7 @@ test("createMagicArmorTemplateUpdate applies base armor data while preserving ma
   assert.equal(update.system.type.baseItem, "");
   assert.equal(update.system.armor.value, 11);
   assert.equal(update.system.armor.magicalBonus, 2);
+  assert.ok(update.system.properties.includes("mgc"));
   assert.equal(update.flags["rebreya-main"].sourceType, "magicItem");
   assert.equal(update.flags["rebreya-main"].magicItemId, "armor-plus-2");
   assert.equal(update.flags["rebreya-main"].magicArmorTemplate, true);
@@ -533,6 +534,7 @@ test("createMagicShieldTemplateUpdate applies base shield data while preserving 
   assert.equal(update.system.type.value, "shield");
   assert.equal(update.system.armor.value, 1);
   assert.equal(update.system.armor.magicalBonus, 3);
+  assert.ok(update.system.properties.includes("mgc"));
   assert.equal(update.flags["rebreya-main"].magicShieldTemplate, true);
   assert.equal(update.flags["rebreya-main"].magicShieldBonus, 3);
   assert.equal(update.flags["rebreya-main"].magicShieldGearId, "buckler");

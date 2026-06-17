@@ -644,6 +644,7 @@ function createMagicArmorLikeTemplateUpdate(
   const magicItemId = cleanString(currentModuleFlags.magicItemId, magicItemIdFallback);
 
   applyCommonPreservedFields(baseSystem, currentSystem);
+  baseSystem.properties = mergeProperties(baseSystem.properties, currentSystem.properties, ["mgc"]);
   baseSystem.armor ??= {};
   baseSystem.armor.magicalBonus = Number(bonus);
 
