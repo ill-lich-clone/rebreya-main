@@ -101,7 +101,61 @@ function goldToDnd5ePrice(priceGoldEquivalent) {
   return { value: totalCopper / 10, denomination: "sp" };
 }
 
-function normalizeMagicItems(rawItems = MAGIC_ITEMS) {
+export function parseFixedPriceTextToGold(value) {
+  const text = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/,/gu, ".")
+    .replace(/\s+/gu, " ");
+
+  if (!text || text === "—" || text === "-") {
+    return null;
+  }
+
+  const match = text.match(/^(\d[\d ]*(?:\.\d+)?)\s*(пм|pp|эм|ep|зм|gp|см|sp|мм|cp)$/iu);
+  if (!match) {
+    return null;
+  }
+
+  const numericValue = Number(match[1].replace(/\s+/gu, ""));
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return null;
+  }
+
+  switch (match[2].toLowerCase()) {
+    case "пм":
+    case "pp":
+      return numericValue * 10;
+    case "эм":
+    case "ep":
+      return numericValue * 0.5;
+    case "зм":
+    case "gp":
+      return numericValue;
+    case "см":
+    case "sp":
+      return numericValue * 0.1;
+    case "мм":
+    case "cp":
+      return numericValue * 0.01;
+    default:
+      return null;
+  }
+}
+
+function getNativeMagicItemPrice(item) {
+  const parsedCostGold = parseFixedPriceTextToGold(item?.costText);
+  if (parsedCostGold === null) {
+    return {
+      value: null,
+      denomination: "gp"
+    };
+  }
+
+  return goldToDnd5ePrice(parsedCostGold);
+}
+
+export function normalizeMagicItems(rawItems = MAGIC_ITEMS) {
   const usedIds = new Set();
   return (Array.isArray(rawItems) ? rawItems : [])
     .filter(Boolean)
@@ -254,8 +308,8 @@ function buildDescriptionHtml(item, classification) {
   `.trim();
 }
 
-function buildSystemData(item, classification, descriptionHtml) {
-  const price = goldToDnd5ePrice(item.priceGold);
+export function buildSystemData(item, classification, descriptionHtml) {
+  const price = getNativeMagicItemPrice(item);
   const baseData = {
     description: {
       value: descriptionHtml,
@@ -318,7 +372,7 @@ function buildSystemData(item, classification, descriptionHtml) {
   return baseData;
 }
 
-function createMagicItemData(item, folderIdByPath, iconLookup = null) {
+export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
   const classification = classifyMagicItem(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
   const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
