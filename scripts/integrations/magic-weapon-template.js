@@ -6,6 +6,30 @@ let magicWeaponTemplateHookRegistered = false;
 const pendingMagicWeaponTemplateItemKeys = new Set();
 const MAGIC_WEAPON_TEMPLATE_DIALOG_CLASSES = ["rebreya-main", "rebreya-trader-dialog", "rm-magic-weapon-template-window"];
 
+const MAGIC_ARMOR_TEMPLATE_NAMES = [
+  "Стёганый доспех",
+  "Кожаный доспех",
+  "Проклёпанный кожаный доспех",
+  "Боевая броня шеф-повара",
+  "Шкурный доспех",
+  "Кольчужная рубаха",
+  "Чешуйчатый доспех",
+  "Кираса",
+  "Полулаты",
+  "Импровизированный доспех",
+  "Колечный доспех",
+  "Кольчуга",
+  "Наборный доспех",
+  "Латы",
+  "Панцирь тортла",
+];
+
+const MAGIC_SHIELD_TEMPLATE_NAMES = [
+  "Щит",
+  "Баклер",
+  "Башенный щит",
+];
+
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
@@ -53,6 +77,9 @@ function normalizeMatchText(value) {
     .replace(/\s+/gu, " ");
 }
 
+const NORMALIZED_MAGIC_ARMOR_TEMPLATE_NAMES = new Set(MAGIC_ARMOR_TEMPLATE_NAMES.map((name) => normalizeMatchText(name)));
+const NORMALIZED_MAGIC_SHIELD_TEMPLATE_NAMES = new Set(MAGIC_SHIELD_TEMPLATE_NAMES.map((name) => normalizeMatchText(name)));
+
 function isCurrentUserHook(userId) {
   const currentUserId = cleanId(globalThis.game?.user?.id);
   const hookUserId = cleanId(userId);
@@ -71,9 +98,23 @@ function canPromptForActor(actor) {
   return Boolean(globalThis.game?.user?.isGM || actor?.isOwner);
 }
 
+function shouldSkipMagicTemplate(options = {}, skipKeys = []) {
+  return skipKeys.some((key) =>
+    options?.[MODULE_ID]?.[key] === true
+    || options?.[key] === true
+  );
+}
+
 function shouldSkipMagicWeaponTemplate(options = {}) {
-  return options?.[MODULE_ID]?.skipMagicWeaponTemplate === true
-    || options?.skipMagicWeaponTemplate === true;
+  return shouldSkipMagicTemplate(options, ["skipMagicWeaponTemplate", "skipMagicEquipmentTemplate"]);
+}
+
+function shouldSkipMagicArmorTemplate(options = {}) {
+  return shouldSkipMagicTemplate(options, [
+    "skipMagicArmorTemplate",
+    "skipMagicShieldTemplate",
+    "skipMagicEquipmentTemplate",
+  ]);
 }
 
 function getItemData(item) {
@@ -139,6 +180,17 @@ function maybePreserveSystemField(target, source, field) {
   }
 }
 
+function applyCommonPreservedFields(baseSystem, currentSystem) {
+  maybePreserveSystemField(baseSystem, currentSystem, "quantity");
+  maybePreserveSystemField(baseSystem, currentSystem, "price");
+  maybePreserveSystemField(baseSystem, currentSystem, "rarity");
+  maybePreserveSystemField(baseSystem, currentSystem, "attunement");
+  maybePreserveSystemField(baseSystem, currentSystem, "attuned");
+  maybePreserveSystemField(baseSystem, currentSystem, "identified");
+  maybePreserveSystemField(baseSystem, currentSystem, "container");
+  maybePreserveSystemField(baseSystem, currentSystem, "equipped");
+}
+
 function parseModuleSignature(item) {
   const signature = cleanString(getModuleFlags(item).signature);
   if (!signature) {
@@ -182,7 +234,7 @@ function renderDescriptionParagraphs(value = "") {
     .join("");
 }
 
-function readMagicWeaponRulesText(item) {
+function readMagicItemRulesText(item) {
   const signatureDescription = cleanString(parseModuleSignature(item)?.description);
   if (signatureDescription) {
     return signatureDescription;
@@ -197,16 +249,32 @@ function readMagicWeaponRulesText(item) {
   return htmlToPlainText(withoutMetadataLists);
 }
 
-function buildMagicWeaponDescription(baseDescription = "", magicRulesText = "", bonus = 0) {
+function buildMagicTemplateDescription(baseDescription = "", magicRulesText = "", noteHtml = "") {
   const baseHtml = cleanString(baseDescription);
   const currentHtml = renderDescriptionParagraphs(magicRulesText);
-  const note = `<p><strong>Магическое оружие +${bonus}.</strong> Бонус применяется через поле dnd5e magicalBonus.</p>`;
 
   if (!currentHtml || currentHtml === baseHtml) {
-    return [baseHtml, note].filter(Boolean).join("<hr>");
+    return [baseHtml, noteHtml].filter(Boolean).join("<hr>");
   }
 
-  return [baseHtml, currentHtml, note].filter(Boolean).join("<hr>");
+  return [baseHtml, currentHtml, noteHtml].filter(Boolean).join("<hr>");
+}
+
+function buildMagicWeaponDescription(baseDescription = "", magicRulesText = "", bonus = 0) {
+  return buildMagicTemplateDescription(
+    baseDescription,
+    magicRulesText,
+    `<p><strong>Магическое оружие +${bonus}.</strong> Бонус применяется через поле dnd5e magicalBonus.</p>`,
+  );
+}
+
+function buildMagicArmorDescription(baseDescription = "", magicRulesText = "", bonus = 0, itemLabel = "доспех") {
+  const magicItemLabel = itemLabel === "щит" ? "Магический щит" : "Магический доспех";
+  return buildMagicTemplateDescription(
+    baseDescription,
+    magicRulesText,
+    `<p><strong>${magicItemLabel} +${bonus}.</strong> Бонус применяется через поле dnd5e armor.magicalBonus.</p>`,
+  );
 }
 
 function normalizeModelGear(model) {
@@ -225,21 +293,88 @@ function normalizeModelGear(model) {
   return [];
 }
 
-function buildMagicWeaponTemplateSelectContent({ item, bonus, weapons }) {
-  const itemName = escapeHtml(item?.name || `Оружие +${bonus}`);
-  const options = weapons
-    .map((weapon) => `<option value="${escapeHtml(weapon.id)}">${escapeHtml(weapon.name)}</option>`)
+function buildMagicItemTemplateSelectContent({ item, bonus, itemLabel, options }) {
+  const itemName = escapeHtml(item?.name || `${itemLabel} +${bonus}`);
+  const optionsHtml = options
+    .map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</option>`)
     .join("");
 
   return `
     <form class="rm-magic-weapon-template-form">
-      <p>Выберите базовый шаблон оружия Rebreya для <strong>${itemName}</strong>.</p>
+      <p>Выберите базовый шаблон ${escapeHtml(itemLabel.toLowerCase())} Rebreya для <strong>${itemName}</strong>.</p>
       <div class="form-group">
-        <label>Оружие</label>
-        <select name="gearId">${options}</select>
+        <label>${escapeHtml(itemLabel)}</label>
+        <select name="gearId">${optionsHtml}</select>
       </div>
     </form>
   `;
+}
+
+async function promptMagicItemTemplate({ item, bonus, itemLabel, options, emptyMessage }) {
+  if (!options.length) {
+    globalThis.ui?.notifications?.warn?.(emptyMessage);
+    return null;
+  }
+
+  if (typeof globalThis.Dialog !== "function") {
+    return options[0].id;
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(value);
+    };
+
+    const dialog = new globalThis.Dialog({
+      title: `${itemLabel} +${bonus}`,
+      content: buildMagicItemTemplateSelectContent({ item, bonus, itemLabel, options }),
+      classes: MAGIC_WEAPON_TEMPLATE_DIALOG_CLASSES,
+      buttons: {
+        apply: {
+          icon: '<i class="fa-solid fa-wand-magic-sparkles"></i>',
+          label: "Выбрать",
+          callback: (html) => {
+            const root = html?.[0] ?? html;
+            const selectedId = cleanId(root?.querySelector?.("[name='gearId']")?.value);
+            done(selectedId || options[0].id);
+          },
+        },
+        cancel: {
+          label: "Отмена",
+          callback: () => done(null),
+        },
+      },
+      default: "apply",
+      close: () => done(null),
+    });
+
+    dialog.render(true);
+  });
+}
+
+function parseGenericMagicItemBonus(item, expectedItemType, expectedSubtypes = []) {
+  const flags = item ? getModuleFlags(item) : {};
+  const isGenericMagicItem = normalizeMatchText(flags.sourceType) === "magicitem"
+    && normalizeMatchText(flags.itemType) === normalizeMatchText(expectedItemType)
+    && expectedSubtypes.some((subtype) => normalizeMatchText(flags.itemSubtype) === normalizeMatchText(subtype));
+  if (!isGenericMagicItem) {
+    return null;
+  }
+
+  const name = cleanString(item?.name);
+  const plusMatch = name.match(/\+\s*([123])(?:\b|$)/u);
+  if (plusMatch) {
+    return Number(plusMatch[1]);
+  }
+
+  const magicItemId = cleanString(flags.magicItemId);
+  const idMatch = magicItemId.match(/(?:^|[-_])([123])$/u);
+  return idMatch ? Number(idMatch[1]) : null;
 }
 
 export function parseMagicWeaponBonus(itemOrName) {
@@ -250,22 +385,52 @@ export function parseMagicWeaponBonus(itemOrName) {
     return Number(exactMatch[1]);
   }
 
-  const flags = item ? getModuleFlags(item) : {};
-  const isGenericMagicWeapon = normalizeMatchText(flags.sourceType) === "magicitem"
-    && normalizeMatchText(flags.itemType) === normalizeMatchText("Оружие")
-    && normalizeMatchText(flags.itemSubtype) === normalizeMatchText("Любое");
-  if (!isGenericMagicWeapon) {
+  return item ? parseGenericMagicItemBonus(item, "Оружие", ["Любое", "Any"]) : null;
+}
+
+export function parseMagicArmorBonus(itemOrName) {
+  const item = typeof itemOrName === "string" ? null : itemOrName;
+  const name = cleanString(typeof itemOrName === "string" ? itemOrName : item?.name);
+  const exactMatch = name.match(/^(?:Доспех|Armor)\s*\+\s*([123])$/iu);
+  if (exactMatch) {
+    return Number(exactMatch[1]);
+  }
+
+  return item ? parseGenericMagicItemBonus(item, "Доспех", ["Любой", "Any"]) : null;
+}
+
+export function parseMagicShieldBonus(itemOrName) {
+  const item = typeof itemOrName === "string" ? null : itemOrName;
+  const name = cleanString(typeof itemOrName === "string" ? itemOrName : item?.name);
+  const exactMatch = name.match(/^(?:Щит|Shield)\s*\+\s*([123])$/iu);
+  if (exactMatch) {
+    return Number(exactMatch[1]);
+  }
+
+  return item ? parseGenericMagicItemBonus(item, "Доспех", ["Щит", "Shield"]) : null;
+}
+
+function buildMagicArmorTemplateOption(item) {
+  const id = cleanId(item?.id);
+  const name = cleanString(item?.name);
+  if (!id || !name) {
     return null;
   }
 
-  const plusMatch = name.match(/\+\s*([123])(?:\b|$)/u);
-  if (plusMatch) {
-    return Number(plusMatch[1]);
+  const classification = classifyGearEntry(item);
+  const armorType = cleanString(item?.armor?.type).toLowerCase();
+  if (classification.documentType !== "equipment" || !armorType) {
+    return null;
   }
 
-  const magicItemId = cleanString(flags.magicItemId);
-  const idMatch = magicItemId.match(/(?:^|[-_])([123])$/u);
-  return idMatch ? Number(idMatch[1]) : null;
+  return {
+    id,
+    name,
+    item,
+    armorType,
+    sourceCategory: classification.sourceCategory ?? "",
+    baseItem: cleanString(item?.armor?.baseItem ?? classification.baseItem),
+  };
 }
 
 export function buildMagicWeaponTemplateOptions(model) {
@@ -302,6 +467,51 @@ export function buildMagicWeaponTemplateOptions(model) {
     .sort((left, right) => collator.compare(left.name, right.name));
 }
 
+function buildMagicEquipmentTemplateOptions(model, { allowedNames, kind }) {
+  const collator = new Intl.Collator("ru", {
+    numeric: true,
+    sensitivity: "base",
+  });
+
+  return normalizeModelGear(model)
+    .map((item) => buildMagicArmorTemplateOption(item))
+    .filter((entry) => {
+      if (!entry) {
+        return false;
+      }
+
+      const normalizedName = normalizeMatchText(entry.name);
+      if (!allowedNames.has(normalizedName)) {
+        return false;
+      }
+
+      if (kind === "shield") {
+        return entry.armorType === "shield";
+      }
+
+      return entry.armorType !== "shield";
+    })
+    .sort((left, right) => collator.compare(left.name, right.name));
+}
+
+export function buildMagicArmorTemplateOptions(model) {
+  return buildMagicEquipmentTemplateOptions(model, {
+    allowedNames: NORMALIZED_MAGIC_ARMOR_TEMPLATE_NAMES,
+    kind: "armor",
+  });
+}
+
+export function buildMagicShieldTemplateOptions(model) {
+  return buildMagicEquipmentTemplateOptions(model, {
+    allowedNames: NORMALIZED_MAGIC_SHIELD_TEMPLATE_NAMES,
+    kind: "shield",
+  });
+}
+
+function isAlreadyTemplated(item, flagKeys = []) {
+  return flagKeys.some((flagKey) => item?.getFlag?.(MODULE_ID, flagKey) === true);
+}
+
 function getPromptableMagicWeaponContext(
   item,
   options = {},
@@ -313,7 +523,7 @@ function getPromptableMagicWeaponContext(
   }
 
   const actor = getOwnedActor(item);
-  if (item?.type !== "weapon" || item?.getFlag?.(MODULE_ID, "magicWeaponTemplate") === true) {
+  if (item?.type !== "weapon" || isAlreadyTemplated(item, ["magicWeaponTemplate", "magicEquipmentTemplate"])) {
     return null;
   }
 
@@ -325,6 +535,44 @@ function getPromptableMagicWeaponContext(
   return { actor, bonus };
 }
 
+function getPromptableMagicArmorContext(
+  item,
+  options = {},
+  userId = "",
+  { requireCurrentUser = true } = {},
+) {
+  if ((requireCurrentUser && !isCurrentUserHook(userId)) || shouldSkipMagicArmorTemplate(options) || !isCharacterOwnedItem(item)) {
+    return null;
+  }
+
+  const actor = getOwnedActor(item);
+  if (item?.type !== "equipment" || isAlreadyTemplated(item, ["magicArmorTemplate", "magicShieldTemplate", "magicEquipmentTemplate"])) {
+    return null;
+  }
+
+  const armorBonus = parseMagicArmorBonus(item);
+  if (armorBonus) {
+    return {
+      actor,
+      bonus: armorBonus,
+      itemKind: "armor",
+      itemLabel: "Доспех",
+    };
+  }
+
+  const shieldBonus = parseMagicShieldBonus(item);
+  if (shieldBonus) {
+    return {
+      actor,
+      bonus: shieldBonus,
+      itemKind: "shield",
+      itemLabel: "Щит",
+    };
+  }
+
+  return null;
+}
+
 export function createMagicWeaponTemplateUpdate(item, weaponTemplate, bonus, { iconLookup = null } = {}) {
   const itemData = getItemData(item);
   const currentSystem = clonePlainObject(itemData.system);
@@ -334,23 +582,14 @@ export function createMagicWeaponTemplateUpdate(item, weaponTemplate, bonus, { i
   const baseModuleFlags = clonePlainObject(baseItemData.flags?.[MODULE_ID]);
   const magicItemId = cleanString(currentModuleFlags.magicItemId, `weapon-plus-${bonus}`);
 
-  const properties = mergeProperties(baseSystem.properties, currentSystem.properties, ["mgc"]);
-  baseSystem.properties = properties;
+  baseSystem.properties = mergeProperties(baseSystem.properties, currentSystem.properties, ["mgc"]);
   baseSystem.magicalBonus = Number(bonus);
-
-  maybePreserveSystemField(baseSystem, currentSystem, "quantity");
-  maybePreserveSystemField(baseSystem, currentSystem, "price");
-  maybePreserveSystemField(baseSystem, currentSystem, "rarity");
-  maybePreserveSystemField(baseSystem, currentSystem, "attunement");
-  maybePreserveSystemField(baseSystem, currentSystem, "attuned");
-  maybePreserveSystemField(baseSystem, currentSystem, "identified");
-  maybePreserveSystemField(baseSystem, currentSystem, "container");
-  maybePreserveSystemField(baseSystem, currentSystem, "equipped");
+  applyCommonPreservedFields(baseSystem, currentSystem);
 
   baseSystem.description ??= {};
   baseSystem.description.value = buildMagicWeaponDescription(
     baseSystem.description.value,
-    readMagicWeaponRulesText(item),
+    readMagicItemRulesText(item),
     bonus,
   );
 
@@ -365,16 +604,111 @@ export function createMagicWeaponTemplateUpdate(item, weaponTemplate, bonus, { i
         sourceType: "magicItem",
         magicItemId,
         gearId: cleanId(weaponTemplate.id),
+        magicEquipmentTemplate: true,
+        magicEquipmentKind: "weapon",
+        magicEquipmentBonus: Number(bonus),
+        magicEquipmentGearId: cleanId(weaponTemplate.id),
         magicWeaponTemplate: true,
         magicWeaponBonus: Number(bonus),
         magicWeaponGearId: cleanId(weaponTemplate.id),
         magical: true,
         foundryType: "weapon",
         foundrySubtype: baseModuleFlags.foundrySubtype ?? "",
+        foundrySubtypeExtra: baseModuleFlags.foundrySubtypeExtra ?? "",
         foundryBaseItem: baseModuleFlags.foundryBaseItem ?? "",
       },
     },
   };
+}
+
+function createMagicArmorLikeTemplateUpdate(
+  item,
+  armorTemplate,
+  bonus,
+  {
+    iconLookup = null,
+    itemKind = "armor",
+    templateFlagName = "magicArmorTemplate",
+    bonusFlagName = "magicArmorBonus",
+    gearFlagName = "magicArmorGearId",
+    magicItemIdFallback = `armor-plus-${bonus}`,
+  } = {},
+) {
+  const itemData = getItemData(item);
+  const currentSystem = clonePlainObject(itemData.system);
+  const baseItemData = createDnd5eItemData(armorTemplate, new Map(), iconLookup);
+  const baseSystem = clonePlainObject(baseItemData.system);
+  const currentModuleFlags = getModuleFlags(item);
+  const baseModuleFlags = clonePlainObject(baseItemData.flags?.[MODULE_ID]);
+  const gearId = cleanId(armorTemplate.id);
+  const magicItemId = cleanString(currentModuleFlags.magicItemId, magicItemIdFallback);
+
+  applyCommonPreservedFields(baseSystem, currentSystem);
+  baseSystem.armor ??= {};
+  baseSystem.armor.magicalBonus = Number(bonus);
+
+  baseSystem.description ??= {};
+  baseSystem.description.value = buildMagicArmorDescription(
+    baseSystem.description.value,
+    readMagicItemRulesText(item),
+    bonus,
+    itemKind === "shield" ? "щит" : "доспех",
+  );
+
+  return {
+    name: `${armorTemplate.name} +${bonus}`,
+    img: baseItemData.img,
+    system: baseSystem,
+    flags: {
+      [MODULE_ID]: {
+        ...baseModuleFlags,
+        ...currentModuleFlags,
+        sourceType: "magicItem",
+        magicItemId,
+        gearId,
+        magicEquipmentTemplate: true,
+        magicEquipmentKind: itemKind,
+        magicEquipmentBonus: Number(bonus),
+        magicEquipmentGearId: gearId,
+        [templateFlagName]: true,
+        [bonusFlagName]: Number(bonus),
+        [gearFlagName]: gearId,
+        magical: true,
+        foundryType: "equipment",
+        foundrySubtype: baseModuleFlags.foundrySubtype ?? "",
+        foundrySubtypeExtra: baseModuleFlags.foundrySubtypeExtra ?? "",
+        foundryBaseItem: baseModuleFlags.foundryBaseItem ?? "",
+      },
+    },
+  };
+}
+
+export function createMagicArmorTemplateUpdate(item, armorTemplate, bonus, { iconLookup = null } = {}) {
+  return createMagicArmorLikeTemplateUpdate(item, armorTemplate, bonus, {
+    iconLookup,
+    itemKind: "armor",
+    templateFlagName: "magicArmorTemplate",
+    bonusFlagName: "magicArmorBonus",
+    gearFlagName: "magicArmorGearId",
+    magicItemIdFallback: `armor-plus-${bonus}`,
+  });
+}
+
+export function createMagicShieldTemplateUpdate(item, shieldTemplate, bonus, { iconLookup = null } = {}) {
+  return createMagicArmorLikeTemplateUpdate(item, shieldTemplate, bonus, {
+    iconLookup,
+    itemKind: "shield",
+    templateFlagName: "magicShieldTemplate",
+    bonusFlagName: "magicShieldBonus",
+    gearFlagName: "magicShieldGearId",
+    magicItemIdFallback: `shield-plus-${bonus}`,
+  });
+}
+
+async function resolveModuleModel(moduleApi = globalThis.game?.rebreyaMain) {
+  return typeof moduleApi?.getModel === "function"
+    ? moduleApi.getModel()
+    : moduleApi?.repository?.model;
 }
 
 async function processMagicWeaponTemplateItem(
@@ -390,9 +724,7 @@ async function processMagicWeaponTemplateItem(
 
   pendingMagicWeaponTemplateItemKeys.add(itemKey);
   try {
-    const model = typeof moduleApi?.getModel === "function"
-      ? await moduleApi.getModel()
-      : moduleApi?.repository?.model;
+    const model = await resolveModuleModel(moduleApi);
     const weapons = buildMagicWeaponTemplateOptions(model);
     if (!weapons.length) {
       globalThis.ui?.notifications?.warn?.("В данных Rebreya не найдено базовых шаблонов оружия.");
@@ -415,8 +747,10 @@ async function processMagicWeaponTemplateItem(
     await item.update(updateData, {
       [MODULE_ID]: {
         skipMagicWeaponTemplate: true,
+        skipMagicEquipmentTemplate: true,
       },
       skipMagicWeaponTemplate: true,
+      skipMagicEquipmentTemplate: true,
     });
 
     globalThis.ui?.notifications?.info?.(`Оружие +${bonus} превращено в «${selectedWeapon.name} +${bonus}».`);
@@ -427,50 +761,93 @@ async function processMagicWeaponTemplateItem(
   }
 }
 
-export async function promptMagicWeaponTemplate({ item, bonus, weapons }) {
-  if (!weapons.length) {
-    globalThis.ui?.notifications?.warn?.("В данных Rebreya не найдено базовых шаблонов оружия.");
-    return null;
+async function processMagicArmorTemplateItem(
+  item,
+  context,
+  moduleApi = globalThis.game?.rebreyaMain,
+  { prompt = promptMagicArmorTemplate } = {},
+) {
+  const itemKey = magicWeaponTemplateItemKey(item);
+  if (!itemKey || pendingMagicWeaponTemplateItemKeys.has(itemKey)) {
+    return false;
   }
 
-  if (typeof globalThis.Dialog !== "function") {
-    return weapons[0].id;
-  }
+  pendingMagicWeaponTemplateItemKeys.add(itemKey);
+  try {
+    const model = await resolveModuleModel(moduleApi);
+    const options = context.itemKind === "shield"
+      ? buildMagicShieldTemplateOptions(model)
+      : buildMagicArmorTemplateOptions(model);
+    if (!options.length) {
+      globalThis.ui?.notifications?.warn?.(
+        context.itemKind === "shield"
+          ? "В данных Rebreya не найдено базовых шаблонов щитов."
+          : "В данных Rebreya не найдено базовых шаблонов доспехов.",
+      );
+      return false;
+    }
 
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = (value) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve(value);
-    };
+    const selectedId = cleanId(await prompt({
+      item,
+      bonus: context.bonus,
+      itemLabel: context.itemLabel,
+      options,
+    }));
+    if (!selectedId) {
+      return false;
+    }
 
-    const dialog = new globalThis.Dialog({
-      title: `Оружие +${bonus}`,
-      content: buildMagicWeaponTemplateSelectContent({ item, bonus, weapons }),
-      classes: MAGIC_WEAPON_TEMPLATE_DIALOG_CLASSES,
-      buttons: {
-        apply: {
-          icon: '<i class="fa-solid fa-wand-magic-sparkles"></i>',
-          label: "Выбрать",
-          callback: (html) => {
-            const root = html?.[0] ?? html;
-            const selectedId = cleanId(root?.querySelector?.("[name='gearId']")?.value);
-            done(selectedId || weapons[0].id);
-          },
-        },
-        cancel: {
-          label: "Отмена",
-          callback: () => done(null),
-        },
+    const selectedTemplate = options.find((entry) => entry.id === selectedId);
+    if (!selectedTemplate) {
+      globalThis.ui?.notifications?.warn?.(
+        context.itemKind === "shield"
+          ? "Выбранный шаблон щита Rebreya не найден."
+          : "Выбранный шаблон доспеха Rebreya не найден.",
+      );
+      return false;
+    }
+
+    const iconLookup = await buildGearIconLookup();
+    const updateData = context.itemKind === "shield"
+      ? createMagicShieldTemplateUpdate(item, selectedTemplate.item, context.bonus, { iconLookup })
+      : createMagicArmorTemplateUpdate(item, selectedTemplate.item, context.bonus, { iconLookup });
+    await item.update(updateData, {
+      [MODULE_ID]: {
+        skipMagicArmorTemplate: true,
+        skipMagicEquipmentTemplate: true,
       },
-      default: "apply",
-      close: () => done(null),
+      skipMagicArmorTemplate: true,
+      skipMagicEquipmentTemplate: true,
     });
 
-    dialog.render(true);
+    globalThis.ui?.notifications?.info?.(`${context.itemLabel} +${context.bonus} превращён в «${selectedTemplate.name} +${context.bonus}».`);
+    return true;
+  }
+  finally {
+    pendingMagicWeaponTemplateItemKeys.delete(itemKey);
+  }
+}
+
+export async function promptMagicWeaponTemplate({ item, bonus, weapons }) {
+  return promptMagicItemTemplate({
+    item,
+    bonus,
+    itemLabel: "Оружие",
+    options: weapons,
+    emptyMessage: "В данных Rebreya не найдено базовых шаблонов оружия.",
+  });
+}
+
+async function promptMagicArmorTemplate({ item, bonus, itemLabel, options }) {
+  const emptyMessage = itemLabel === "Щит"
+    ? "В данных Rebreya не найдено базовых шаблонов щитов."
+    : "В данных Rebreya не найдено базовых шаблонов доспехов.";
+  return promptMagicItemTemplate({
+    item,
+    bonus,
+    itemLabel,
+    options,
+    emptyMessage,
   });
 }
 
@@ -491,24 +868,51 @@ export async function handleCreatedMagicWeaponItem(
   return processMagicWeaponTemplateItem(item, promptable.bonus, moduleApi, { prompt });
 }
 
+export async function handleCreatedMagicArmorItem(
+  item,
+  options = {},
+  userId = "",
+  moduleApi = globalThis.game?.rebreyaMain,
+  { prompt = promptMagicArmorTemplate } = {},
+) {
+  const promptable = getPromptableMagicArmorContext(item, options, userId, {
+    requireCurrentUser: true,
+  });
+  if (!promptable) {
+    return false;
+  }
+
+  return processMagicArmorTemplateItem(item, promptable, moduleApi, { prompt });
+}
+
 export async function handleActorRenderMagicWeapons(
   actor,
   moduleApi = globalThis.game?.rebreyaMain,
-  { prompt = promptMagicWeaponTemplate } = {},
+  {
+    prompt = promptMagicWeaponTemplate,
+    armorPrompt = promptMagicArmorTemplate,
+  } = {},
 ) {
   if (actor?.type !== "character" || !canPromptForActor(actor)) {
     return false;
   }
 
   for (const item of normalizeArray(actor.items)) {
-    const promptable = getPromptableMagicWeaponContext(item, {}, "", {
+    const promptableWeapon = getPromptableMagicWeaponContext(item, {}, "", {
       requireCurrentUser: false,
     });
-    if (!promptable) {
-      continue;
+    if (promptableWeapon) {
+      return processMagicWeaponTemplateItem(item, promptableWeapon.bonus, moduleApi, { prompt });
     }
 
-    return processMagicWeaponTemplateItem(item, promptable.bonus, moduleApi, { prompt });
+    const promptableArmor = getPromptableMagicArmorContext(item, {}, "", {
+      requireCurrentUser: false,
+    });
+    if (promptableArmor) {
+      return processMagicArmorTemplateItem(item, promptableArmor, moduleApi, {
+        prompt: armorPrompt,
+      });
+    }
   }
 
   return false;
@@ -521,17 +925,24 @@ export function registerMagicWeaponTemplateHook(moduleApi, { Hooks = globalThis.
 
   magicWeaponTemplateHookRegistered = true;
   Hooks.on("createItem", (item, options, userId) => {
-    handleCreatedMagicWeaponItem(item, options, userId, moduleApi).catch((error) => {
-      console.error(`${MODULE_ID} | Failed to apply magic weapon template.`, error);
-      globalThis.ui?.notifications?.error?.(error.message || "Не удалось применить шаблон магического оружия.");
+    (async () => {
+      const handledWeapon = await handleCreatedMagicWeaponItem(item, options, userId, moduleApi);
+      if (handledWeapon) {
+        return true;
+      }
+
+      return handleCreatedMagicArmorItem(item, options, userId, moduleApi);
+    })().catch((error) => {
+      console.error(`${MODULE_ID} | Failed to apply magic equipment template.`, error);
+      globalThis.ui?.notifications?.error?.(error.message || "Не удалось применить шаблон магического предмета.");
     });
   });
 
   const repairActorSheetMagicWeapons = (app) => {
     const actor = app?.actor ?? app?.document ?? null;
     handleActorRenderMagicWeapons(actor, moduleApi).catch((error) => {
-      console.error(`${MODULE_ID} | Failed to process rendered magic weapon template.`, error);
-      globalThis.ui?.notifications?.error?.(error.message || "Не удалось обработать магическое оружие на листе персонажа.");
+      console.error(`${MODULE_ID} | Failed to process rendered magic equipment template.`, error);
+      globalThis.ui?.notifications?.error?.(error.message || "Не удалось обработать магический предмет на листе персонажа.");
     });
   };
 

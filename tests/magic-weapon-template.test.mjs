@@ -52,10 +52,17 @@ globalThis.game = {
 };
 
 const {
+  buildMagicArmorTemplateOptions,
+  buildMagicShieldTemplateOptions,
   buildMagicWeaponTemplateOptions,
+  createMagicArmorTemplateUpdate,
+  createMagicShieldTemplateUpdate,
   createMagicWeaponTemplateUpdate,
+  handleCreatedMagicArmorItem,
   handleActorRenderMagicWeapons,
   handleCreatedMagicWeaponItem,
+  parseMagicArmorBonus,
+  parseMagicShieldBonus,
   parseMagicWeaponBonus,
   promptMagicWeaponTemplate,
 } = await import("../scripts/integrations/magic-weapon-template.js");
@@ -134,10 +141,75 @@ function makeArmor() {
   return {
     id: "chain-mail",
     name: "Кольчуга",
-    equipmentType: "Броня",
+    equipmentType: "Доспех",
     armor: {
       type: "heavy",
+      baseItem: "chainmail",
       value: 16,
+    },
+  };
+}
+
+function makeChefArmor() {
+  return {
+    id: "chef-armor",
+    name: "Боевая броня шеф-повара",
+    equipmentType: "Доспех",
+    armor: {
+      type: "light",
+      baseItem: "",
+      value: 11,
+      dex: null,
+      strength: 0,
+      properties: [],
+    },
+  };
+}
+
+function makeBuckler() {
+  return {
+    id: "buckler",
+    name: "Баклер",
+    equipmentType: "Доспех",
+    armor: {
+      type: "shield",
+      baseItem: "",
+      value: 1,
+      dex: null,
+      strength: 0,
+      properties: [],
+    },
+  };
+}
+
+function makeTowerShield() {
+  return {
+    id: "tower-shield",
+    name: "Башенный щит",
+    equipmentType: "Доспех",
+    armor: {
+      type: "shield",
+      baseItem: "",
+      value: 2,
+      dex: null,
+      strength: 16,
+      properties: ["stealthDisadvantage"],
+    },
+  };
+}
+
+function makeModernArmor() {
+  return {
+    id: "modern-cloak",
+    name: "Тяжёлый плащ",
+    equipmentType: "Доспех",
+    armor: {
+      type: "light",
+      baseItem: "",
+      value: 11,
+      dex: null,
+      strength: 0,
+      properties: [],
     },
   };
 }
@@ -223,6 +295,58 @@ test("parseMagicWeaponBonus can resolve generic magic weapons from Rebreya flags
   );
 });
 
+test("parseMagicArmorBonus matches only generic +1/+2/+3 armor templates", () => {
+  assert.equal(parseMagicArmorBonus({ name: "Доспех +1" }), 1);
+  assert.equal(parseMagicArmorBonus({ name: "Доспех +2" }), 2);
+  assert.equal(parseMagicArmorBonus({ name: "Доспех +3" }), 3);
+  assert.equal(parseMagicArmorBonus({ name: "Armor +2" }), 2);
+  assert.equal(parseMagicArmorBonus({ name: "Кольчуга +2" }), null);
+  assert.equal(parseMagicArmorBonus({ name: "Доспех +4" }), null);
+});
+
+test("parseMagicArmorBonus can resolve generic magic armor from Rebreya flags", () => {
+  assert.equal(
+    parseMagicArmorBonus({
+      name: "Шаблон доспеха",
+      flags: {
+        "rebreya-main": {
+          sourceType: "magicItem",
+          itemType: "Доспех",
+          itemSubtype: "Любой",
+          magicItemId: "dospekh-3",
+        },
+      },
+    }),
+    3,
+  );
+});
+
+test("parseMagicShieldBonus matches only generic +1/+2/+3 shield templates", () => {
+  assert.equal(parseMagicShieldBonus({ name: "Щит +1" }), 1);
+  assert.equal(parseMagicShieldBonus({ name: "Щит +2" }), 2);
+  assert.equal(parseMagicShieldBonus({ name: "Щит +3" }), 3);
+  assert.equal(parseMagicShieldBonus({ name: "Shield +2" }), 2);
+  assert.equal(parseMagicShieldBonus({ name: "Баклер +2" }), null);
+  assert.equal(parseMagicShieldBonus({ name: "Щит +4" }), null);
+});
+
+test("parseMagicShieldBonus can resolve generic magic shields from Rebreya flags", () => {
+  assert.equal(
+    parseMagicShieldBonus({
+      name: "Шаблон щита",
+      flags: {
+        "rebreya-main": {
+          sourceType: "magicItem",
+          itemType: "Доспех",
+          itemSubtype: "Щит",
+          magicItemId: "shchit-2",
+        },
+      },
+    }),
+    2,
+  );
+});
+
 test("buildMagicWeaponTemplateOptions lists Rebreya weapon templates only", () => {
   const options = buildMagicWeaponTemplateOptions({
     gear: [makeArmor(), makeLongsword(), makeDagger()],
@@ -242,6 +366,28 @@ test("buildMagicWeaponTemplateOptions excludes firearms from generic magic weapo
   assert.deepEqual(
     options.map((option) => option.id),
     ["longsword", "dagger"],
+  );
+});
+
+test("buildMagicArmorTemplateOptions keeps only the allowed ordinary armor templates", () => {
+  const options = buildMagicArmorTemplateOptions({
+    gear: [makeArmor(), makeChefArmor(), makeModernArmor()],
+  });
+
+  assert.deepEqual(
+    options.map((option) => option.id),
+    ["chef-armor", "chain-mail"],
+  );
+});
+
+test("buildMagicShieldTemplateOptions keeps only the allowed ordinary shield templates", () => {
+  const options = buildMagicShieldTemplateOptions({
+    gear: [makeBuckler(), makeTowerShield(), makeModernArmor()],
+  });
+
+  assert.deepEqual(
+    options.map((option) => option.id),
+    ["buckler", "tower-shield"],
   );
 });
 
@@ -299,6 +445,97 @@ test("createMagicWeaponTemplateUpdate applies base weapon data while preserving 
   assert.doesNotMatch(update.system.description.value, /Тип:\s*Магический предмет/iu);
   assert.match(update.system.description.value, /Вы получаете бонус к броскам атаки и урона, совершённым этим магическим оружием\./u);
   assert.equal((update.system.description.value.match(/Вы получаете бонус к броскам атаки и урона, совершённым этим магическим оружием\./gu) ?? []).length, 1);
+});
+
+test("createMagicArmorTemplateUpdate applies base armor data while preserving magic source", () => {
+  const armorTemplate = makeChefArmor();
+  const item = new FakeItem({
+    name: "Доспех +2",
+    type: "equipment",
+    system: {
+      description: {
+        value: `<section class="rebreya-gear-item">
+          <ul>
+            <li><strong>Тип:</strong> Магический предмет</li>
+            <li><strong>Вид предмета:</strong> Доспех</li>
+          </ul>
+          <p>Вы получаете бонус к КД, пока носите этот доспех.</p>
+        </section>`,
+      },
+    },
+    flags: {
+      "rebreya-main": {
+        sourceType: "magicItem",
+        magicItemId: "armor-plus-2",
+        signature: JSON.stringify({
+          description: "Вы получаете бонус к КД, пока носите этот доспех.",
+        }),
+      },
+    },
+  });
+
+  const update = createMagicArmorTemplateUpdate(item, armorTemplate, 2, {
+    iconLookup: new Map([
+      [armorTemplate.name.toLowerCase().replace(/-/gu, " "), "modules/rebreya-main/templates/icons/chef-armor.webp"],
+    ]),
+  });
+
+  assert.equal(update.name, "Боевая броня шеф-повара +2");
+  assert.equal(update.img, "modules/rebreya-main/templates/icons/chef-armor.webp");
+  assert.equal(update.system.type.value, "light");
+  assert.equal(update.system.type.baseItem, "");
+  assert.equal(update.system.armor.value, 11);
+  assert.equal(update.system.armor.magicalBonus, 2);
+  assert.equal(update.flags["rebreya-main"].sourceType, "magicItem");
+  assert.equal(update.flags["rebreya-main"].magicItemId, "armor-plus-2");
+  assert.equal(update.flags["rebreya-main"].magicArmorTemplate, true);
+  assert.equal(update.flags["rebreya-main"].magicArmorBonus, 2);
+  assert.equal(update.flags["rebreya-main"].magicArmorGearId, "chef-armor");
+  assert.equal(update.flags["rebreya-main"].gearId, "chef-armor");
+  assert.doesNotMatch(update.system.description.value, /Тип:\s*Магический предмет/iu);
+  assert.match(update.system.description.value, /Вы получаете бонус к КД, пока носите этот доспех\./u);
+});
+
+test("createMagicShieldTemplateUpdate applies base shield data while preserving magic source", () => {
+  const item = new FakeItem({
+    name: "Щит +3",
+    type: "equipment",
+    system: {
+      description: {
+        value: `<section class="rebreya-gear-item">
+          <ul>
+            <li><strong>Тип:</strong> Магический предмет</li>
+            <li><strong>Подтип:</strong> Щит</li>
+          </ul>
+          <p>Пока вы держите этот щит, вы получаете бонус к КД.</p>
+        </section>`,
+      },
+    },
+    flags: {
+      "rebreya-main": {
+        sourceType: "magicItem",
+        magicItemId: "shield-plus-3",
+        signature: JSON.stringify({
+          description: "Пока вы держите этот щит, вы получаете бонус к КД.",
+        }),
+      },
+    },
+  });
+
+  const update = createMagicShieldTemplateUpdate(item, makeBuckler(), 3, {
+    iconLookup: new Map([
+      ["баклер", "modules/rebreya-main/templates/icons/buckler.webp"],
+    ]),
+  });
+
+  assert.equal(update.name, "Баклер +3");
+  assert.equal(update.img, "modules/rebreya-main/templates/icons/buckler.webp");
+  assert.equal(update.system.type.value, "shield");
+  assert.equal(update.system.armor.value, 1);
+  assert.equal(update.system.armor.magicalBonus, 3);
+  assert.equal(update.flags["rebreya-main"].magicShieldTemplate, true);
+  assert.equal(update.flags["rebreya-main"].magicShieldBonus, 3);
+  assert.equal(update.flags["rebreya-main"].magicShieldGearId, "buckler");
 });
 
 test("promptMagicWeaponTemplate uses dialog window classes instead of leaking Rebreya text color into light content", async () => {
@@ -420,6 +657,67 @@ test("handleCreatedMagicWeaponItem ignores other users and non-character items",
   assert.equal(promptCalls, 0);
   assert.equal(otherUserItem.updates.length, 0);
   assert.equal(npcItem.updates.length, 0);
+});
+
+test("handleCreatedMagicArmorItem prompts and updates generic armor and shield items", async () => {
+  const armorItem = new FakeItem({
+    name: "Доспех +2",
+    type: "equipment",
+  });
+  armorItem.flags = {
+    "rebreya-main": {
+      sourceType: "magicItem",
+      itemType: "Доспех",
+      itemSubtype: "Любой",
+      magicItemId: "dospekh-2",
+    },
+  };
+
+  const shieldItem = new FakeItem({
+    name: "Щит +1",
+    type: "equipment",
+  });
+  shieldItem.flags = {
+    "rebreya-main": {
+      sourceType: "magicItem",
+      itemType: "Доспех",
+      itemSubtype: "Щит",
+      magicItemId: "shchit-1",
+    },
+  };
+
+  const moduleApi = {
+    getModel: async () => ({
+      gear: [makeChefArmor(), makeBuckler(), makeModernArmor()],
+    }),
+  };
+
+  const seen = [];
+  const prompt = async (context) => {
+    seen.push({
+      bonus: context.bonus,
+      itemLabel: context.itemLabel,
+      options: context.options.map((option) => option.id),
+    });
+    return context.options[0].id;
+  };
+
+  assert.equal(await handleCreatedMagicArmorItem(armorItem, {}, "player-1", moduleApi, { prompt }), true);
+  assert.equal(await handleCreatedMagicArmorItem(shieldItem, {}, "player-1", moduleApi, { prompt }), true);
+  assert.deepEqual(seen, [
+    {
+      bonus: 2,
+      itemLabel: "Доспех",
+      options: ["chef-armor"],
+    },
+    {
+      bonus: 1,
+      itemLabel: "Щит",
+      options: ["buckler"],
+    },
+  ]);
+  assert.equal(armorItem.updates[0].data.name, "Боевая броня шеф-повара +2");
+  assert.equal(shieldItem.updates[0].data.name, "Баклер +1");
 });
 
 test("handleActorRenderMagicWeapons applies a fallback prompt for unresolved generic magic weapons on owned sheets", async () => {
