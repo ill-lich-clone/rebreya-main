@@ -541,12 +541,12 @@ test("frightened status sync keeps only the strongest attack penalty active", ()
     img: "systems/dnd5e/icons/svg/statuses/frightened.svg",
     icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
     statuses: [],
+    disabled: true,
     changes: [],
-    "flags.core.statusId": "frightened",
+    "flags.core.statusId": null,
     "flags.rebreya-main.statusId": "frightened",
     "flags.rebreya-main.statusValue": 2,
-    "flags.statuscounter.value": 2,
-    "flags.statuscounter.visible": true
+    "flags.statuscounter.visible": false
   });
   assert.deepEqual(
     updates.find((update) => update._id === "fallback")?.changes.map((change) => [change.key, change.value]),
@@ -580,6 +580,58 @@ test("frightened status sync canonicalizes named external effects", () => {
   ]);
 
   assert.deepEqual(updates, [{
+    _id: "external",
+    name: "Испуганный 2",
+    img: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+    icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+    statuses: ["frightened"],
+    changes: [
+      { key: "system.bonuses.mwak.attack", mode: 2, value: "-2", priority: 20 },
+      { key: "system.bonuses.rwak.attack", mode: 2, value: "-2", priority: 20 },
+      { key: "system.bonuses.msak.attack", mode: 2, value: "-2", priority: 20 },
+      { key: "system.bonuses.rsak.attack", mode: 2, value: "-2", priority: 20 }
+    ],
+    "flags.core.statusId": "frightened",
+    "flags.rebreya-main.statusId": "frightened",
+    "flags.rebreya-main.statusValue": 2,
+    "flags.statuscounter.value": 2,
+    "flags.statuscounter.visible": true
+  }]);
+});
+
+test("frightened status sync leaves only the strongest duplicate as an active native status", () => {
+  const updates = buildFrightenedStatusSyncUpdates([
+    {
+      id: "native",
+      name: "Frightened",
+      flags: {
+        core: { statusId: "frightened" },
+        statuscounter: { value: 1, visible: true }
+      },
+      statuses: ["frightened"],
+      changes: []
+    },
+    {
+      id: "external",
+      name: "Frightened 2",
+      flags: {},
+      changes: []
+    }
+  ]);
+
+  assert.deepEqual(updates, [{
+    _id: "native",
+    name: "Испуганный 1",
+    img: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+    icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+    statuses: [],
+    disabled: true,
+    changes: [],
+    "flags.core.statusId": null,
+    "flags.rebreya-main.statusId": "frightened",
+    "flags.rebreya-main.statusValue": 1,
+    "flags.statuscounter.visible": false
+  }, {
     _id: "external",
     name: "Испуганный 2",
     img: "systems/dnd5e/icons/svg/statuses/frightened.svg",

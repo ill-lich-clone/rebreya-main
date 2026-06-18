@@ -354,13 +354,9 @@ function getExplicitEffectStatuses(effect) {
   return null;
 }
 
-function buildSyncedFrightenedStatuses(effect) {
-  const explicitStatuses = getExplicitEffectStatuses(effect);
-  if (explicitStatuses && explicitStatuses.length === 0) {
-    return [];
-  }
-
-  return [FRIGHTENED_STATUS_ID];
+function buildSyncedFrightenedStatuses(effect, { isStrongest = true } = {}) {
+  void effect;
+  return isStrongest ? [FRIGHTENED_STATUS_ID] : [];
 }
 
 export function buildFrightenedStatusEffectData(
@@ -568,6 +564,7 @@ function buildCanonicalManagedStatusUpdate(effect, statusId, { actor = null, sou
     return null;
   }
 
+  const isActiveFrightenedStatus = statusId !== FRIGHTENED_STATUS_ID || isStrongest;
   const value = readManagedStatusValue(effect, statusId, { actor, sourceActor });
   const patch = {
     _id: effectId,
@@ -575,12 +572,16 @@ function buildCanonicalManagedStatusUpdate(effect, statusId, { actor = null, sou
     img: statusIcon(statusId),
     icon: statusIcon(statusId),
     statuses: statusId === FRIGHTENED_STATUS_ID
-      ? buildSyncedFrightenedStatuses(effect)
+      ? buildSyncedFrightenedStatuses(effect, { isStrongest })
       : [statusId],
     changes: buildCanonicalManagedStatusChanges(effect, statusId, value, { actor, isStrongest }),
-    "flags.core.statusId": statusId,
+    "flags.core.statusId": isActiveFrightenedStatus ? statusId : null,
     [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: statusId
   };
+
+  if (statusId === FRIGHTENED_STATUS_ID && (effect?.disabled === true || !isStrongest)) {
+    patch.disabled = !isStrongest;
+  }
 
   const meta = getEffectStatusValue(effect, MODULE_ID, STATUS_META_FLAG);
   if (meta !== undefined) {
@@ -589,7 +590,7 @@ function buildCanonicalManagedStatusUpdate(effect, statusId, { actor = null, sou
 
   if (statusSupportsValue(statusId)) {
     patch[`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`] = value ?? null;
-    if (value !== null && value !== undefined) {
+    if (value !== null && value !== undefined && isActiveFrightenedStatus) {
       patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = value;
       patch[`flags.${STATUS_COUNTER_MODULE_ID}.visible`] = true;
     }
@@ -641,19 +642,31 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
 
   return rows
     .filter((row) => !skippedUpdateIds.has(row.id))
-    .map((row) => ({
-      _id: row.id,
-      name: frightenedStatusName(row.value),
-      img: statusIcon(FRIGHTENED_STATUS_ID),
-      icon: statusIcon(FRIGHTENED_STATUS_ID),
-      statuses: buildSyncedFrightenedStatuses(row.effect),
-      changes: buildSyncedFrightenedChanges(row.effect, row.value, { isStrongest: row.id === strongest.id }),
-      "flags.core.statusId": FRIGHTENED_STATUS_ID,
-      [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: FRIGHTENED_STATUS_ID,
-      [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: row.value,
-      [`flags.${STATUS_COUNTER_MODULE_ID}.value`]: row.value,
-      [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: true
-    }));
+    .map((row) => {
+      const isStrongest = row.id === strongest.id;
+      const update = {
+        _id: row.id,
+        name: frightenedStatusName(row.value),
+        img: statusIcon(FRIGHTENED_STATUS_ID),
+        icon: statusIcon(FRIGHTENED_STATUS_ID),
+        statuses: buildSyncedFrightenedStatuses(row.effect, { isStrongest }),
+        changes: buildSyncedFrightenedChanges(row.effect, row.value, { isStrongest }),
+        "flags.core.statusId": isStrongest ? FRIGHTENED_STATUS_ID : null,
+        [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: FRIGHTENED_STATUS_ID,
+        [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: row.value,
+        [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: isStrongest
+      };
+
+      if (row.effect?.disabled === true || !isStrongest) {
+        update.disabled = !isStrongest;
+      }
+
+      if (isStrongest) {
+        update[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = row.value;
+      }
+
+      return update;
+    });
 }
 
 export function buildDiscreetStatusSyncUpdates(effects = [], {
