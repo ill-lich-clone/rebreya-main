@@ -138,6 +138,7 @@ test("frightened effect data stores a visible counter and attack penalties only"
   assert.deepEqual(
     data.changes.map((change) => [change.key, change.value]),
     [
+      ["system.bonuses.abilities.check", "-3"],
       ["system.bonuses.mwak.attack", "-3"],
       ["system.bonuses.rwak.attack", "-3"],
       ["system.bonuses.msak.attack", "-3"],
@@ -259,6 +260,7 @@ test("frightened setStatus uses the native dnd5e status id for midi and dae", as
     assert.deepEqual(
       createdEffects[0].changes.map((change) => [change.key, change.value]),
       [
+        ["system.bonuses.abilities.check", "-2"],
         ["system.bonuses.mwak.attack", "-2"],
         ["system.bonuses.rwak.attack", "-2"],
         ["system.bonuses.msak.attack", "-2"],
@@ -435,6 +437,7 @@ test("active frightened HUD click updates the value instead of clearing the stat
     assert.deepEqual(
       effect.changes.map((change) => [change.key, change.value]),
       [
+        ["system.bonuses.abilities.check", "-4"],
         ["system.bonuses.mwak.attack", "-4"],
         ["system.bonuses.rwak.attack", "-4"],
         ["system.bonuses.msak.attack", "-4"],
@@ -482,6 +485,7 @@ test("frightened effect data falls back to half source proficiency with minimum 
 
 test("frightened status sync keeps only the strongest attack penalty active", () => {
   const attackBonusKeys = [
+    "system.bonuses.abilities.check",
     "system.bonuses.mwak.attack",
     "system.bonuses.rwak.attack",
     "system.bonuses.msak.attack",
@@ -542,19 +546,21 @@ test("frightened status sync keeps only the strongest attack penalty active", ()
     icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
     statuses: [],
     disabled: true,
-    changes: [],
+    changes: [weakOverTime],
     "flags.core.statusId": null,
     "flags.rebreya-main.statusId": "frightened",
     "flags.rebreya-main.statusValue": 2,
     "flags.statuscounter.visible": false
   });
   assert.deepEqual(
-    updates.find((update) => update._id === "fallback")?.changes.map((change) => [change.key, change.value]),
+    updates.find((update) => update._id === "fallback")?.changes,
     [
-      ["system.bonuses.mwak.attack", "-3"],
-      ["system.bonuses.rwak.attack", "-3"],
-      ["system.bonuses.msak.attack", "-3"],
-      ["system.bonuses.rsak.attack", "-3"]
+      strongestOverTime,
+      { key: "system.bonuses.abilities.check", mode: 2, value: "-3", priority: 20 },
+      { key: "system.bonuses.mwak.attack", mode: 2, value: "-3", priority: 20 },
+      { key: "system.bonuses.rwak.attack", mode: 2, value: "-3", priority: 20 },
+      { key: "system.bonuses.msak.attack", mode: 2, value: "-3", priority: 20 },
+      { key: "system.bonuses.rsak.attack", mode: 2, value: "-3", priority: 20 }
     ]
   );
   assert.deepEqual(updates.find((update) => update._id === "fallback")?.statuses, ["frightened"]);
@@ -586,6 +592,8 @@ test("frightened status sync canonicalizes named external effects", () => {
     icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
     statuses: ["frightened"],
     changes: [
+      { key: "flags.midi-qol.OverTime", mode: 0, value: "turn=end,saveAbility=wis,saveDC=15", priority: 20 },
+      { key: "system.bonuses.abilities.check", mode: 2, value: "-2", priority: 20 },
       { key: "system.bonuses.mwak.attack", mode: 2, value: "-2", priority: 20 },
       { key: "system.bonuses.rwak.attack", mode: 2, value: "-2", priority: 20 },
       { key: "system.bonuses.msak.attack", mode: 2, value: "-2", priority: 20 },
@@ -638,6 +646,7 @@ test("frightened status sync leaves only the strongest duplicate as an active na
     icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
     statuses: ["frightened"],
     changes: [
+      { key: "system.bonuses.abilities.check", mode: 2, value: "-2", priority: 20 },
       { key: "system.bonuses.mwak.attack", mode: 2, value: "-2", priority: 20 },
       { key: "system.bonuses.rwak.attack", mode: 2, value: "-2", priority: 20 },
       { key: "system.bonuses.msak.attack", mode: 2, value: "-2", priority: 20 },
@@ -679,6 +688,7 @@ test("frightened status sync ignores the effect currently being deleted", () => 
   assert.deepEqual(
     updates[0].changes.map((change) => [change.key, change.value]),
     [
+      ["system.bonuses.abilities.check", "-2"],
       ["system.bonuses.mwak.attack", "-2"],
       ["system.bonuses.rwak.attack", "-2"],
       ["system.bonuses.msak.attack", "-2"],
@@ -923,6 +933,76 @@ test("external named Rebreya statuses are canonicalized on create", async () => 
       "flags.statuscounter.value": 2,
       "flags.statuscounter.visible": true
     }]);
+  }
+  finally {
+    globalThis.Actor = previousActor;
+  }
+});
+
+test("frightened update hook skips already canonical suppressed duplicates", async () => {
+  const previousActor = globalThis.Actor;
+  class TestActor {}
+  globalThis.Actor = TestActor;
+
+  try {
+    const service = new CombatStatusService({});
+    const updates = [];
+    const actor = new TestActor();
+    actor.id = "actor-1";
+
+    const weak = {
+      id: "weak",
+      name: "Испуганный 1",
+      disabled: true,
+      img: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+      icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+      statuses: [],
+      flags: {
+        core: {},
+        "rebreya-main": { statusId: "frightened", statusValue: 1 },
+        statuscounter: { visible: false }
+      },
+      changes: [],
+      parent: actor,
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      }
+    };
+
+    const strong = {
+      id: "strong",
+      name: "Испуганный 2",
+      img: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+      icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+      statuses: ["frightened"],
+      flags: {
+        core: { statusId: "frightened" },
+        "rebreya-main": { statusId: "frightened", statusValue: 2 },
+        statuscounter: { value: 2, visible: true }
+      },
+      changes: [
+        { key: "system.bonuses.abilities.check", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.mwak.attack", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.rwak.attack", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.msak.attack", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.rsak.attack", mode: 2, value: "-2", priority: 20 }
+      ],
+      parent: actor,
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      }
+    };
+
+    actor.effects = { contents: [weak, strong] };
+    actor.updateEmbeddedDocuments = async (_type, documents) => {
+      updates.push(...documents);
+      return documents;
+    };
+
+    const didSync = await service.handleActiveEffectUpdate(weak);
+
+    assert.equal(didSync, false);
+    assert.deepEqual(updates, []);
   }
   finally {
     globalThis.Actor = previousActor;

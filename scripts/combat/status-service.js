@@ -19,10 +19,15 @@ const FRIGHTENED_STATUS_ID = REBREYA_FRIGHTENED_STATUS_ID;
 const STATUS_COUNTER_MODULE_ID = "statuscounter";
 const DISCREET_MOVEMENT_KEYS = Object.freeze(["walk", "burrow", "climb", "fly", "swim"]);
 const FRIGHTENED_ATTACK_BONUS_KEYS = Object.freeze([
+  "system.bonuses.abilities.check",
   "system.bonuses.mwak.attack",
   "system.bonuses.rwak.attack",
   "system.bonuses.msak.attack",
   "system.bonuses.rsak.attack"
+]);
+const FRIGHTENED_ATTACK_BONUS_KEY_SET = new Set(FRIGHTENED_ATTACK_BONUS_KEYS);
+const FRIGHTENED_PRESERVED_CHANGE_KEYS = new Set([
+  "flags.midi-qol.OverTime"
 ]);
 
 function toNumber(value, fallback = 0) {
@@ -338,8 +343,27 @@ function buildFrightenedChanges(value, context = {}) {
   }));
 }
 
+function getEffectChanges(effect) {
+  return Array.isArray(effect?.changes) ? effect.changes : [];
+}
+
+function cloneEffectChange(change) {
+  return cloneData(change);
+}
+
+function preserveFrightenedPassthroughChanges(effect) {
+  return getEffectChanges(effect)
+    .filter((change) => FRIGHTENED_PRESERVED_CHANGE_KEYS.has(String(change?.key ?? "")))
+    .filter((change) => !FRIGHTENED_ATTACK_BONUS_KEY_SET.has(String(change?.key ?? "")))
+    .map(cloneEffectChange)
+    .filter(Boolean);
+}
+
 function buildSyncedFrightenedChanges(effect, value, { isStrongest = false } = {}) {
-  return isStrongest ? buildFrightenedChanges(value) : [];
+  return [
+    ...preserveFrightenedPassthroughChanges(effect),
+    ...(isStrongest ? buildFrightenedChanges(value) : [])
+  ];
 }
 
 function getExplicitEffectStatuses(effect) {
@@ -416,6 +440,64 @@ function getEffectStatusValue(effect, scope, key) {
   }
 
   return getProperty(effect, `flags.${scope}.${key}`);
+}
+
+function readPatchedEffectValue(effect, key) {
+  if (!key.includes(".")) {
+    return effect?.[key];
+  }
+
+  return getProperty(effect, key);
+}
+
+function normalizeComparableEffectValue(value) {
+  if (value instanceof Set) {
+    return [...value].map((entry) => normalizeComparableEffectValue(entry));
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeComparableEffectValue(entry));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((result, key) => {
+        result[key] = normalizeComparableEffectValue(value[key]);
+        return result;
+      }, {});
+  }
+
+  return value;
+}
+
+function areEquivalentPatchedEffectValues(current, next) {
+  if ((current === null || current === undefined) && (next === null || next === undefined)) {
+    return true;
+  }
+
+  return JSON.stringify(normalizeComparableEffectValue(current))
+    === JSON.stringify(normalizeComparableEffectValue(next));
+}
+
+function filterMeaningfulEffectUpdates(effects = [], updates = []) {
+  const effectById = new Map((Array.isArray(effects) ? effects : [])
+    .map((effect) => [getEffectDocumentId(effect), effect]));
+
+  return (Array.isArray(updates) ? updates : []).filter((update) => {
+    const effect = effectById.get(String(update?._id ?? "").trim());
+    if (!effect) {
+      return true;
+    }
+
+    return Object.entries(update).some(([key, value]) => {
+      if (key === "_id") {
+        return false;
+      }
+
+      return !areEquivalentPatchedEffectValues(readPatchedEffectValue(effect, key), value);
+    });
+  });
 }
 
 function resolveManagedStatusIdFromEffect(effect, fallback = "") {
@@ -1463,17 +1545,18 @@ export class CombatStatusService {
 
     const effects = this.#getDiscreetStatusEffects(actor);
     const updates = buildDiscreetStatusSyncUpdates(effects, { actor, excludeEffectIds, skipUpdateEffectIds });
-    if (!updates.length) {
+    const meaningfulUpdates = filterMeaningfulEffectUpdates(effects, updates);
+    if (!meaningfulUpdates.length) {
       return false;
     }
 
     this._discreetSyncActorIds.add(actor.id);
     try {
       if (typeof actor.updateEmbeddedDocuments === "function") {
-        await actor.updateEmbeddedDocuments("ActiveEffect", updates);
+        await actor.updateEmbeddedDocuments("ActiveEffect", meaningfulUpdates);
       }
       else {
-        for (const update of updates) {
+        for (const update of meaningfulUpdates) {
           const effect = effects.find((candidate) => getEffectDocumentId(candidate) === update._id);
           await effect?.update?.(update);
         }
@@ -1504,17 +1587,18 @@ export class CombatStatusService {
       excludeEffectIds,
       skipUpdateEffectIds
     });
-    if (!updates.length) {
+    const meaningfulUpdates = filterMeaningfulEffectUpdates(effects, updates);
+    if (!meaningfulUpdates.length) {
       return false;
     }
 
     this._frightenedSyncActorIds.add(actor.id);
     try {
       if (typeof actor.updateEmbeddedDocuments === "function") {
-        await actor.updateEmbeddedDocuments("ActiveEffect", updates);
+        await actor.updateEmbeddedDocuments("ActiveEffect", meaningfulUpdates);
       }
       else {
-        for (const update of updates) {
+        for (const update of meaningfulUpdates) {
           const effect = effects.find((candidate) => getEffectDocumentId(candidate) === update._id);
           await effect?.update?.(update);
         }
@@ -1540,11 +1624,16 @@ export class CombatStatusService {
     }
 
     return this.#withManagedEffectCanonicalizationLock(effect, async () => {
+      const [meaningfulUpdate] = filterMeaningfulEffectUpdates([effect], [update]);
+      if (!meaningfulUpdate) {
+        return false;
+      }
+
       if (typeof effect.parent.updateEmbeddedDocuments === "function") {
-        await effect.parent.updateEmbeddedDocuments("ActiveEffect", [update]);
+        await effect.parent.updateEmbeddedDocuments("ActiveEffect", [meaningfulUpdate]);
       }
       else {
-        await effect.update?.(update);
+        await effect.update?.(meaningfulUpdate);
       }
       return true;
     });
