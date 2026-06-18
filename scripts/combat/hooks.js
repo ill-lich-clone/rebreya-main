@@ -30,6 +30,15 @@ export function registerCombatHooks(moduleApi) {
       });
     });
 
+    Hooks.on("preCreateActiveEffect", (effect) => {
+      try {
+        moduleApi.combatStatusService.prepareActiveEffectCreate(effect);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to prepare active effect creation for status sync.`, error);
+      }
+    });
+
     Hooks.on("createActiveEffect", (effect) => {
       moduleApi.combatStatusService.handleActiveEffectCreated(effect).catch((error) => {
         console.error(`${MODULE_ID} | Failed to sync discreet status after effect creation.`, error);

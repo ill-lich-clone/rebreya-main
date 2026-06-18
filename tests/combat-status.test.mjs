@@ -660,6 +660,198 @@ test("frightened status sync leaves only the strongest duplicate as an active na
   }]);
 });
 
+test("frightened sync treats DAE auto-created static statuses as passive mirrors", async () => {
+  const previousActor = globalThis.Actor;
+  class TestActor {}
+  globalThis.Actor = TestActor;
+
+  try {
+    const service = new CombatStatusService({});
+    const databaseUpdates = [];
+    const localMirrorUpdates = [];
+    const actor = new TestActor();
+    actor.id = "actor-1";
+
+    const source = {
+      id: "source",
+      name: "Испуганный 2",
+      img: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+      icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+      statuses: ["frightened"],
+      flags: {
+        core: { statusId: "frightened" },
+        "rebreya-main": { statusId: "frightened", statusValue: 2 },
+        statuscounter: { value: 2, visible: true }
+      },
+      changes: [
+        { key: "system.bonuses.abilities.check", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.mwak.attack", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.rwak.attack", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.msak.attack", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.rsak.attack", mode: 2, value: "-2", priority: 20 }
+      ],
+      parent: actor,
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      }
+    };
+
+    const daeMirror = {
+      id: "dnd5efrightened0",
+      name: "Frightened",
+      statuses: ["frightened"],
+      flags: {
+        core: { statusId: "frightened" },
+        dae: { autoCreated: true },
+        statuscounter: { value: 1, visible: true }
+      },
+      changes: [],
+      parent: actor,
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      },
+      updateSource(update) {
+        localMirrorUpdates.push(update);
+      }
+    };
+
+    actor.effects = { contents: [source, daeMirror] };
+    actor.updateEmbeddedDocuments = async (_type, documents) => {
+      databaseUpdates.push(...documents);
+      return documents;
+    };
+
+    const didSync = await service.handleActiveEffectCreated(daeMirror);
+
+    assert.equal(didSync, true);
+    assert.deepEqual(databaseUpdates, []);
+    assert.deepEqual(localMirrorUpdates, [{
+      statuses: [],
+      changes: [],
+      "flags.core.statusId": null,
+      "flags.rebreya-main.statusId": null,
+      "flags.rebreya-main.statusValue": null,
+      "flags.statuscounter.value": null,
+      "flags.statuscounter.visible": false
+    }]);
+  }
+  finally {
+    globalThis.Actor = previousActor;
+  }
+});
+
+test("frightened update sync patches DAE static mirrors locally instead of sending DB updates", async () => {
+  const previousActor = globalThis.Actor;
+  class TestActor {}
+  globalThis.Actor = TestActor;
+
+  try {
+    const service = new CombatStatusService({});
+    const databaseUpdates = [];
+    const localMirrorUpdates = [];
+    const actor = new TestActor();
+    actor.id = "actor-1";
+
+    const source = {
+      id: "source",
+      name: "Испуганный 2",
+      img: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+      icon: "systems/dnd5e/icons/svg/statuses/frightened.svg",
+      statuses: ["frightened"],
+      flags: {
+        core: { statusId: "frightened" },
+        "rebreya-main": { statusId: "frightened", statusValue: 2 },
+        statuscounter: { value: 2, visible: true }
+      },
+      changes: [
+        { key: "system.bonuses.abilities.check", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.mwak.attack", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.rwak.attack", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.msak.attack", mode: 2, value: "-2", priority: 20 },
+        { key: "system.bonuses.rsak.attack", mode: 2, value: "-2", priority: 20 }
+      ],
+      parent: actor,
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      }
+    };
+
+    const daeMirror = {
+      id: "dnd5efrightened0",
+      name: "Frightened",
+      statuses: ["frightened"],
+      flags: {
+        core: { statusId: "frightened" },
+        dae: { autoCreated: true },
+        statuscounter: { value: 1, visible: true }
+      },
+      changes: [],
+      parent: actor,
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      },
+      updateSource(update) {
+        localMirrorUpdates.push(update);
+      }
+    };
+
+    actor.effects = { contents: [source, daeMirror] };
+    actor.updateEmbeddedDocuments = async (_type, documents) => {
+      databaseUpdates.push(...documents);
+      return documents;
+    };
+
+    const didSync = await service.handleActiveEffectUpdate(daeMirror);
+
+    assert.equal(didSync, true);
+    assert.deepEqual(databaseUpdates, []);
+    assert.deepEqual(localMirrorUpdates, [{
+      statuses: [],
+      changes: [],
+      "flags.core.statusId": null,
+      "flags.rebreya-main.statusId": null,
+      "flags.rebreya-main.statusValue": null,
+      "flags.statuscounter.value": null,
+      "flags.statuscounter.visible": false
+    }]);
+  }
+  finally {
+    globalThis.Actor = previousActor;
+  }
+});
+
+test("frightened pre-create hook neutralizes DAE static mirrors before token display", () => {
+  const service = new CombatStatusService({});
+  const updates = [];
+  const effect = {
+    id: "dnd5efrightened0",
+    name: "Frightened",
+    statuses: ["frightened"],
+    flags: {
+      core: { statusId: "frightened" },
+      dae: { autoCreated: true }
+    },
+    changes: [],
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    },
+    updateSource(update) {
+      updates.push(update);
+    }
+  };
+
+  assert.equal(service.prepareActiveEffectCreate(effect), true);
+  assert.deepEqual(updates, [{
+    statuses: [],
+    changes: [],
+    "flags.core.statusId": null,
+    "flags.rebreya-main.statusId": null,
+    "flags.rebreya-main.statusValue": null,
+    "flags.statuscounter.value": null,
+    "flags.statuscounter.visible": false
+  }]);
+});
+
 test("frightened status sync ignores the effect currently being deleted", () => {
   const updates = buildFrightenedStatusSyncUpdates([
     {

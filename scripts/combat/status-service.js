@@ -13,6 +13,7 @@ const STATUS_ID_FLAG = "statusId";
 const STATUS_VALUE_FLAG = "statusValue";
 const STATUS_META_FLAG = "statusMeta";
 const DEFAULT_DURATION_ROUNDS = 0;
+const DAE_MODULE_ID = "dae";
 const LEGACY_BLOODIED_STATUS_ID = "rebreya-bloodied";
 const LEGACY_RESTRAINED_STATUS_ID = "rebreya-restrained";
 const FRIGHTENED_STATUS_ID = REBREYA_FRIGHTENED_STATUS_ID;
@@ -422,6 +423,11 @@ function getEffectDocumentId(effect) {
   return String(effect?.id ?? effect?._id ?? "").trim();
 }
 
+function staticDnd5eStatusEffectId(statusId) {
+  const id = `dnd5e${String(statusId ?? "").trim()}`;
+  return id.length >= 16 ? id.slice(0, 16) : id.padEnd(16, "0");
+}
+
 function buildEffectIdSet(effectIds = []) {
   return new Set((Array.isArray(effectIds) ? effectIds : [effectIds])
     .map((id) => String(id ?? "").trim())
@@ -440,6 +446,58 @@ function getEffectStatusValue(effect, scope, key) {
   }
 
   return getProperty(effect, `flags.${scope}.${key}`);
+}
+
+function isTruthyFlagValue(value) {
+  return value === true || value === "true" || value === 1 || value === "1";
+}
+
+function isDaeAutoCreatedStaticStatusEffect(effect, statusId) {
+  return isTruthyFlagValue(getEffectStatusValue(effect, DAE_MODULE_ID, "autoCreated"))
+    && getEffectDocumentId(effect) === staticDnd5eStatusEffectId(statusId);
+}
+
+function buildPassiveDaeStatusMirrorUpdate(effect, statusId) {
+  const effectId = getEffectDocumentId(effect);
+  if (!effectId) {
+    return null;
+  }
+
+  const update = {
+    _id: effectId,
+    statuses: [],
+    changes: [],
+    "flags.core.statusId": null,
+    [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: null,
+    [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: null,
+    [`flags.${STATUS_COUNTER_MODULE_ID}.value`]: null,
+    [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: false
+  };
+
+  if (effect?.disabled === true) {
+    update.disabled = false;
+  }
+
+  return update;
+}
+
+function buildPassiveDaeStatusMirrorSourceData(effect, statusId) {
+  const update = buildPassiveDaeStatusMirrorUpdate(effect, statusId);
+  if (!update) {
+    return null;
+  }
+
+  const { _id, ...sourceData } = update;
+  return sourceData;
+}
+
+function extractEffectSourceUpdateData(update) {
+  if (!update || typeof update !== "object") {
+    return null;
+  }
+
+  const { _id, ...sourceData } = update;
+  return Object.keys(sourceData).length ? sourceData : null;
 }
 
 function readPatchedEffectValue(effect, key) {
@@ -694,7 +752,7 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
   const sourceActorLookup = sourceActorByEffectId instanceof Map ? sourceActorByEffectId : new Map();
   const excludedIds = buildEffectIdSet(excludeEffectIds);
   const skippedUpdateIds = buildEffectIdSet(skipUpdateEffectIds);
-  const rows = (Array.isArray(effects) ? effects : [])
+  const allRows = (Array.isArray(effects) ? effects : [])
     .filter(hasFrightenedStatusId)
     .map((effect, index) => {
       const id = getEffectDocumentId(effect);
@@ -704,14 +762,23 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
         effect,
         index,
         id,
-        value
+        value,
+        isDaeMirror: isDaeAutoCreatedStaticStatusEffect(effect, FRIGHTENED_STATUS_ID)
       };
     })
     .filter((row) => !excludedIds.has(row.id))
-    .filter((row) => row.id && row.value > 0);
+    .filter((row) => row.id);
+  const passiveMirrorUpdates = allRows
+    .filter((row) => row.isDaeMirror)
+    .filter((row) => !skippedUpdateIds.has(row.id))
+    .map((row) => buildPassiveDaeStatusMirrorUpdate(row.effect, FRIGHTENED_STATUS_ID))
+    .filter(Boolean);
+  const rows = allRows
+    .filter((row) => !row.isDaeMirror)
+    .filter((row) => row.value > 0);
 
   if (!rows.length) {
-    return [];
+    return passiveMirrorUpdates;
   }
 
   const strongest = rows.reduce((best, row) => {
@@ -722,7 +789,8 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
     return best;
   }, null);
 
-  return rows
+  return [
+    ...rows
     .filter((row) => !skippedUpdateIds.has(row.id))
     .map((row) => {
       const isStrongest = row.id === strongest.id;
@@ -748,7 +816,9 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
       }
 
       return update;
-    });
+    }),
+    ...passiveMirrorUpdates
+  ];
 }
 
 export function buildDiscreetStatusSyncUpdates(effects = [], {
@@ -1592,13 +1662,35 @@ export class CombatStatusService {
       return false;
     }
 
+    const effectById = new Map(effects.map((effect) => [getEffectDocumentId(effect), effect]));
+    const databaseUpdates = [];
+    let appliedLocalMirrorUpdate = false;
+
+    for (const update of meaningfulUpdates) {
+      const effect = effectById.get(String(update?._id ?? "").trim());
+      if (isDaeAutoCreatedStaticStatusEffect(effect, FRIGHTENED_STATUS_ID)) {
+        const sourceData = extractEffectSourceUpdateData(update);
+        if (sourceData && typeof effect?.updateSource === "function") {
+          effect.updateSource(sourceData);
+          appliedLocalMirrorUpdate = true;
+          continue;
+        }
+      }
+
+      databaseUpdates.push(update);
+    }
+
+    if (!databaseUpdates.length) {
+      return appliedLocalMirrorUpdate;
+    }
+
     this._frightenedSyncActorIds.add(actor.id);
     try {
       if (typeof actor.updateEmbeddedDocuments === "function") {
-        await actor.updateEmbeddedDocuments("ActiveEffect", meaningfulUpdates);
+        await actor.updateEmbeddedDocuments("ActiveEffect", databaseUpdates);
       }
       else {
-        for (const update of meaningfulUpdates) {
+        for (const update of databaseUpdates) {
           const effect = effects.find((candidate) => getEffectDocumentId(candidate) === update._id);
           await effect?.update?.(update);
         }
@@ -1658,6 +1750,24 @@ export class CombatStatusService {
     }
 
     return this.#canonicalizeManagedStatusEffect(effect, managedStatusId);
+  }
+
+  prepareActiveEffectCreate(effect) {
+    if (!isDaeAutoCreatedStaticStatusEffect(effect, FRIGHTENED_STATUS_ID)) {
+      return false;
+    }
+
+    const sourceData = buildPassiveDaeStatusMirrorSourceData(effect, FRIGHTENED_STATUS_ID);
+    if (!sourceData) {
+      return false;
+    }
+
+    if (typeof effect.updateSource === "function") {
+      effect.updateSource(sourceData);
+      return true;
+    }
+
+    return false;
   }
 
   async handleActiveEffectCreated(effect) {
