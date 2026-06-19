@@ -24,6 +24,7 @@ import {
   bindUniversalBeltSheet,
   registerUniversalBeltItemContextHook
 } from "./universal-belt.js";
+import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
 const HERO_DOLL_TAB_LABEL = "Кукла героя";
@@ -1645,13 +1646,36 @@ function createSheetCombatStatusIcon(iconPath) {
   return icon;
 }
 
-function createSheetCombatStatusTitle(label) {
+function applySheetConditionPresentation(entry, presentation) {
+  if (!(entry instanceof HTMLElement) || !presentation) {
+    return;
+  }
+
+  entry.dataset.uuid = "";
+  entry.dataset.tooltip = presentation.tooltipHtml ?? "";
+  entry.dataset.tooltipClass = "dnd5e2 dnd5e-tooltip item-tooltip themed theme-light";
+  entry.dataset.tooltipDirection = "LEFT";
+  entry.classList.remove("content-link");
+
+  const title = entry.querySelector?.(".name-stacked .title");
+  if (!(title instanceof HTMLElement)) {
+    return;
+  }
+
+  title.textContent = String(presentation.label ?? "").trim();
+  title.setAttribute("lang", "ru");
+  setElementClassState(title, "rm-sheet-status-title--compact", presentation.compactLabel === true);
+}
+
+function createSheetCombatStatusTitle(label, presentation = null) {
   const stack = document.createElement("div");
   stack.classList.add("name-stacked");
 
   const title = document.createElement("span");
   title.classList.add("title");
-  title.textContent = String(label ?? "").trim();
+  title.textContent = String(presentation?.label ?? label ?? "").trim();
+  title.setAttribute("lang", "ru");
+  setElementClassState(title, "rm-sheet-status-title--compact", presentation?.compactLabel === true);
   stack.append(title);
   return stack;
 }
@@ -1723,11 +1747,18 @@ function createSheetCombatStatusToggleIndicator(active) {
 
 function buildSheetCombatStatusRow(moduleApi, actor, definition, statusState, editable, row = null) {
   const entry = row instanceof HTMLElement ? row : document.createElement("li");
+  const presentation = getDnd5eSheetStatusPresentation(definition?.id, {
+    label: definition?.label,
+    icon: definition?.icon,
+    supportsValue: definition?.supportsValue === true
+  });
   entry.dataset.conditionId = String(definition?.id ?? "").trim();
   entry.dataset.rebreyaCombatStatusId = String(definition?.id ?? "").trim();
   entry.dataset.action = "";
   entry.dataset.uuid = "";
-  entry.dataset.tooltip = "";
+  entry.dataset.tooltip = presentation?.tooltipHtml ?? "";
+  entry.dataset.tooltipClass = "dnd5e2 dnd5e-tooltip item-tooltip themed theme-light";
+  entry.dataset.tooltipDirection = "LEFT";
 
   if (!(row instanceof HTMLElement)) {
     entry.dataset.rebreyaCombatStatus = "true";
@@ -1744,7 +1775,7 @@ function buildSheetCombatStatusRow(moduleApi, actor, definition, statusState, ed
   clearElementChildren(entry);
   entry.append(
     createSheetCombatStatusIcon(definition?.icon),
-    createSheetCombatStatusTitle(definition?.label)
+    createSheetCombatStatusTitle(definition?.label, presentation)
   );
 
   if (definition?.supportsValue) {
@@ -1801,6 +1832,29 @@ function buildSheetCombatStatusRow(moduleApi, actor, definition, statusState, ed
   return entry;
 }
 
+function enhanceCharacterSheetConditionRows(rows) {
+  for (const row of rows) {
+    if (!(row instanceof HTMLElement)) {
+      continue;
+    }
+
+    const statusId = String(row.dataset?.conditionId ?? "").trim();
+    if (!statusId) {
+      continue;
+    }
+
+    const title = row.querySelector?.(".name-stacked .title");
+    const label = title instanceof HTMLElement ? String(title.textContent ?? "").trim() : statusId;
+    const iconPath = row.querySelector?.("dnd5e-icon")?.getAttribute?.("src") ?? "";
+    const presentation = getDnd5eSheetStatusPresentation(statusId, {
+      label,
+      icon: iconPath,
+      supportsValue: row.classList?.contains?.("rm-sheet-status--valued") === true
+    });
+    applySheetConditionPresentation(row, presentation);
+  }
+}
+
 function bindCharacterCombatStatusPanel(root, app, moduleApi) {
   const actor = getActorFromSheetApp(app);
   if (!actor || actor.type !== "character") {
@@ -1816,6 +1870,7 @@ function bindCharacterCombatStatusPanel(root, app, moduleApi) {
   const editable = canInteractWithCharacterCombatStatuses(app, actor, root);
   const definitions = getSheetCombatStatusDefinitions(moduleApi);
   if (!definitions.length) {
+    enhanceCharacterSheetConditionRows(Array.from(conditionsList.children ?? []).filter((node) => node instanceof HTMLElement));
     return;
   }
 
@@ -1833,6 +1888,8 @@ function bindCharacterCombatStatusPanel(root, app, moduleApi) {
       conditionsList.append(row);
     }
   }
+
+  enhanceCharacterSheetConditionRows(Array.from(conditionsList.children ?? []).filter((node) => node instanceof HTMLElement));
 }
 
 function buildHeroDollTabState(app) {

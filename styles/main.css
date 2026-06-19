@@ -342,8 +342,21 @@
   margin-left: auto;
 }
 
-.dnd5e2 .effects-element .conditions-list .condition.rm-sheet-status .name-stacked .title {
-  overflow-wrap: anywhere;
+.dnd5e2 .effects-element .conditions-list .condition .name-stacked {
+  min-width: 0;
+}
+
+.dnd5e2 .effects-element .conditions-list .condition .name-stacked .title {
+  hyphens: auto;
+  word-break: normal;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+  line-height: 1.15;
+}
+
+.dnd5e2 .effects-element .conditions-list .condition .name-stacked .title.rm-sheet-status-title--compact {
+  font-size: var(--font-size-12, 12px);
+  line-height: 1.1;
 }
 
 .rm-sheet-status-value-input {

@@ -542,6 +542,88 @@ test("character sheet Rebreya status controls write through the combat status AP
   }
 });
 
+test("character sheet status references use Rebreya text and compact Russian label wrapping", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?combat-status-sheet-reference=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    actor.isOwner = true;
+
+    const unconsciousTitle = new stubs.HTMLElement();
+    unconsciousTitle.classList.add("title");
+    unconsciousTitle.textContent = "Без сознания";
+    const unconsciousRow = new stubs.HTMLElement({
+      dataset: {
+        conditionId: "unconscious",
+        action: "toggleCondition",
+        uuid: "Compendium.dnd5e.rules.english-unconscious"
+      },
+      selectors: {
+        ".name-stacked .title": unconsciousTitle
+      }
+    });
+    unconsciousRow.classList.add("condition", "content-link");
+
+    const conditionsList = new stubs.HTMLElement();
+    conditionsList.append(unconsciousRow);
+    const root = new stubs.HTMLElement({
+      selectors: {
+        ".effects-element .conditions-list": conditionsList
+      },
+      selectorAll: {
+        "[data-rebreya-combat-status='true']": []
+      }
+    });
+    const app = {
+      actor,
+      isEditable: false
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      getCombatStatusDefinitions() {
+        return [
+          { id: "rebreya-provoked", label: "Спровоцированный", icon: "provoked.svg", supportsValue: true }
+        ];
+      },
+      getCombatStatus() {
+        return { active: false, value: null };
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    assert.equal(unconsciousRow.dataset.uuid, "");
+    assert.match(unconsciousRow.dataset.tooltip, /Без сознания/u);
+    assert.match(unconsciousRow.dataset.tooltip, /Недееспособный/u);
+    assert.equal(unconsciousRow.dataset.tooltipClass, "dnd5e2 dnd5e-tooltip item-tooltip themed theme-light");
+    assert.equal(unconsciousTitle.getAttribute("lang"), "ru");
+
+    const provokedRow = conditionsList.children.find((node) => node.dataset.rebreyaCombatStatusId === "rebreya-provoked");
+    const provokedTitle = findTreeNode(
+      provokedRow,
+      (node) => node?.classList?.contains?.("title")
+    );
+    assert.ok(provokedTitle);
+    assert.equal(provokedTitle.getAttribute("lang"), "ru");
+    assert.equal(provokedTitle.classList.contains("rm-sheet-status-title--compact"), true);
+    assert.match(provokedRow.dataset.tooltip, /Состояние Rebreya/u);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("character downtime template renders full description html before summary fallback", async () => {
   const template = await readFile(new URL("../templates/character-downtime-tab.hbs", import.meta.url), "utf8");
   const descriptionBranchIndex = template.indexOf("{{#if characterDowntime.selectedTemplate.hasDescriptionHtml}}");
