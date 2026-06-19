@@ -30,12 +30,21 @@ export function registerCombatHooks(moduleApi) {
       });
     });
 
-    Hooks.on("preCreateActiveEffect", (effect) => {
+    Hooks.on("preCreateActiveEffect", (effect, _data, options) => {
       try {
-        moduleApi.combatStatusService.prepareActiveEffectCreate(effect);
+        moduleApi.combatStatusService.prepareActiveEffectCreate(effect, options);
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to prepare active effect creation for status sync.`, error);
+      }
+    });
+
+    Hooks.on("preDeleteActiveEffect", (effect, options) => {
+      try {
+        moduleApi.combatStatusService.prepareActiveEffectDelete(effect, options);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to prepare active effect deletion for status sync.`, error);
       }
     });
 

@@ -134,6 +134,49 @@ function shouldRegisterDnd5eStatusEffect(statusId) {
   return String(statusId ?? "").trim().startsWith("rebreya-");
 }
 
+function normalizeStatusList(value) {
+  const rawStatuses = value instanceof Set
+    ? [...value]
+    : Array.isArray(value)
+      ? value
+      : [];
+  const seen = new Set();
+  const statuses = [];
+  for (const entry of rawStatuses) {
+    const statusId = String(entry ?? "").trim();
+    if (!statusId || seen.has(statusId)) {
+      continue;
+    }
+
+    seen.add(statusId);
+    statuses.push(statusId);
+  }
+
+  return statuses;
+}
+
+function ensureSelfReferentialStatusConfig(statusConfig, statusId) {
+  const safeStatusId = String(statusId ?? "").trim();
+  if (!statusConfig || !safeStatusId) {
+    return false;
+  }
+
+  const statuses = normalizeStatusList(statusConfig.statuses);
+  if (statuses.includes(safeStatusId)) {
+    return false;
+  }
+
+  statusConfig.statuses = [...statuses, safeStatusId];
+  return true;
+}
+
+function getManagedNativeStatusIds() {
+  return REBREYA_STATUS_DEFINITIONS
+    .filter((row) => !row.foundryId && !shouldRegisterDnd5eStatusEffect(row.id))
+    .map((row) => String(row.id ?? "").trim())
+    .filter(Boolean);
+}
+
 function resolveActiveEffectDuration(durationRounds = DEFAULT_DURATION_ROUNDS) {
   const safeRounds = Math.max(0, Math.floor(toNumber(durationRounds, DEFAULT_DURATION_ROUNDS)));
   if (safeRounds <= 0) {
@@ -457,47 +500,16 @@ function isDaeAutoCreatedStaticStatusEffect(effect, statusId) {
     && getEffectDocumentId(effect) === staticDnd5eStatusEffectId(statusId);
 }
 
-function buildPassiveDaeStatusMirrorUpdate(effect, statusId) {
-  const effectId = getEffectDocumentId(effect);
-  if (!effectId) {
-    return null;
+function suppressDaeStaticStatusEffectAnimation(effect, options, statusId) {
+  if (!isDaeAutoCreatedStaticStatusEffect(effect, statusId)) {
+    return false;
   }
 
-  const update = {
-    _id: effectId,
-    statuses: [],
-    changes: [],
-    "flags.core.statusId": null,
-    [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: null,
-    [`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`]: null,
-    [`flags.${STATUS_COUNTER_MODULE_ID}.value`]: null,
-    [`flags.${STATUS_COUNTER_MODULE_ID}.visible`]: false
-  };
-
-  if (effect?.disabled === true) {
-    update.disabled = false;
+  if (options && typeof options === "object") {
+    options.animate = false;
   }
 
-  return update;
-}
-
-function buildPassiveDaeStatusMirrorSourceData(effect, statusId) {
-  const update = buildPassiveDaeStatusMirrorUpdate(effect, statusId);
-  if (!update) {
-    return null;
-  }
-
-  const { _id, ...sourceData } = update;
-  return sourceData;
-}
-
-function extractEffectSourceUpdateData(update) {
-  if (!update || typeof update !== "object") {
-    return null;
-  }
-
-  const { _id, ...sourceData } = update;
-  return Object.keys(sourceData).length ? sourceData : null;
+  return false;
 }
 
 function readPatchedEffectValue(effect, key) {
@@ -614,6 +626,10 @@ function readDiscreetStatusValue(effect) {
 }
 
 function hasFrightenedStatusId(effect) {
+  if (isDaeAutoCreatedStaticStatusEffect(effect, FRIGHTENED_STATUS_ID)) {
+    return false;
+  }
+
   return resolveManagedStatusIdFromEffect(effect, "") === FRIGHTENED_STATUS_ID;
 }
 
@@ -762,23 +778,16 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
         effect,
         index,
         id,
-        value,
-        isDaeMirror: isDaeAutoCreatedStaticStatusEffect(effect, FRIGHTENED_STATUS_ID)
+        value
       };
     })
     .filter((row) => !excludedIds.has(row.id))
     .filter((row) => row.id);
-  const passiveMirrorUpdates = allRows
-    .filter((row) => row.isDaeMirror)
-    .filter((row) => !skippedUpdateIds.has(row.id))
-    .map((row) => buildPassiveDaeStatusMirrorUpdate(row.effect, FRIGHTENED_STATUS_ID))
-    .filter(Boolean);
   const rows = allRows
-    .filter((row) => !row.isDaeMirror)
     .filter((row) => row.value > 0);
 
   if (!rows.length) {
-    return passiveMirrorUpdates;
+    return [];
   }
 
   const strongest = rows.reduce((best, row) => {
@@ -789,8 +798,7 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
     return best;
   }, null);
 
-  return [
-    ...rows
+  return rows
     .filter((row) => !skippedUpdateIds.has(row.id))
     .map((row) => {
       const isStrongest = row.id === strongest.id;
@@ -816,9 +824,7 @@ export function buildFrightenedStatusSyncUpdates(effects = [], {
       }
 
       return update;
-    }),
-    ...passiveMirrorUpdates
-  ];
+    });
 }
 
 export function buildDiscreetStatusSyncUpdates(effects = [], {
@@ -898,6 +904,19 @@ export function registerCombatStatusConfig() {
 
   if (!coreStatusEffects && !dnd5eStatusEffects) {
     return;
+  }
+
+  for (const statusId of getManagedNativeStatusIds()) {
+    const coreStatusEffect = coreStatusEffects?.find((row) => String(row?.id ?? row?._id ?? "").trim() === statusId);
+    if (coreStatusEffect) {
+      // DAE treats self-referential status configs as already canonical and skips auto-creating a second static effect.
+      ensureSelfReferentialStatusConfig(coreStatusEffect, statusId);
+    }
+
+    const dnd5eStatusEffect = dnd5eStatusEffects?.[statusId];
+    if (dnd5eStatusEffect) {
+      ensureSelfReferentialStatusConfig(dnd5eStatusEffect, statusId);
+    }
   }
 
   const knownIds = new Set(
@@ -1664,24 +1683,16 @@ export class CombatStatusService {
 
     const effectById = new Map(effects.map((effect) => [getEffectDocumentId(effect), effect]));
     const databaseUpdates = [];
-    let appliedLocalMirrorUpdate = false;
 
     for (const update of meaningfulUpdates) {
       const effect = effectById.get(String(update?._id ?? "").trim());
-      if (isDaeAutoCreatedStaticStatusEffect(effect, FRIGHTENED_STATUS_ID)) {
-        const sourceData = extractEffectSourceUpdateData(update);
-        if (sourceData && typeof effect?.updateSource === "function") {
-          effect.updateSource(sourceData);
-          appliedLocalMirrorUpdate = true;
-          continue;
-        }
+      if (effect) {
+        databaseUpdates.push(update);
       }
-
-      databaseUpdates.push(update);
     }
 
     if (!databaseUpdates.length) {
-      return appliedLocalMirrorUpdate;
+      return false;
     }
 
     this._frightenedSyncActorIds.add(actor.id);
@@ -1736,6 +1747,10 @@ export class CombatStatusService {
       return false;
     }
 
+    if (isDaeAutoCreatedStaticStatusEffect(effect, FRIGHTENED_STATUS_ID)) {
+      return false;
+    }
+
     const managedStatusId = resolveManagedStatusIdFromEffect(effect, "");
     if (!managedStatusId) {
       return false;
@@ -1752,25 +1767,19 @@ export class CombatStatusService {
     return this.#canonicalizeManagedStatusEffect(effect, managedStatusId);
   }
 
-  prepareActiveEffectCreate(effect) {
-    if (!isDaeAutoCreatedStaticStatusEffect(effect, FRIGHTENED_STATUS_ID)) {
-      return false;
-    }
+  prepareActiveEffectCreate(effect, options = {}) {
+    return suppressDaeStaticStatusEffectAnimation(effect, options, FRIGHTENED_STATUS_ID);
+  }
 
-    const sourceData = buildPassiveDaeStatusMirrorSourceData(effect, FRIGHTENED_STATUS_ID);
-    if (!sourceData) {
-      return false;
-    }
-
-    if (typeof effect.updateSource === "function") {
-      effect.updateSource(sourceData);
-      return true;
-    }
-
-    return false;
+  prepareActiveEffectDelete(effect, options = {}) {
+    return suppressDaeStaticStatusEffectAnimation(effect, options, FRIGHTENED_STATUS_ID);
   }
 
   async handleActiveEffectCreated(effect) {
+    if (isDaeAutoCreatedStaticStatusEffect(effect, FRIGHTENED_STATUS_ID)) {
+      return false;
+    }
+
     const createdEffectId = getEffectDocumentId(effect);
     const managedStatusId = resolveManagedStatusIdFromEffect(effect, "");
     if (!managedStatusId) {
@@ -1794,6 +1803,10 @@ export class CombatStatusService {
   }
 
   async handleActiveEffectDeleted(effect) {
+    if (isDaeAutoCreatedStaticStatusEffect(effect, FRIGHTENED_STATUS_ID)) {
+      return false;
+    }
+
     const deletedEffectId = getEffectDocumentId(effect);
     const managedStatusId = resolveManagedStatusIdFromEffect(effect, "");
     if (managedStatusId === REBREYA_DISCREET_STATUS_ID) {

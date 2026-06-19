@@ -125,6 +125,40 @@ test("combat status config registers Rebreya statuses for dnd5e HUD rebuilds", (
   }
 });
 
+test("combat status config marks Rebreya-owned native statuses as self-referential for DAE", () => {
+  const previousConfig = globalThis.CONFIG;
+  globalThis.CONFIG = {
+    statusEffects: [
+      {
+        _id: "dnd5efrightened0",
+        id: "frightened",
+        name: "Frightened",
+        statuses: ["fear-aura"]
+      }
+    ],
+    DND5E: {
+      statusEffects: {
+        frightened: {
+          id: "frightened",
+          name: "Frightened",
+          statuses: ["fear-aura"]
+        }
+      }
+    }
+  };
+
+  try {
+    registerCombatStatusConfig();
+    registerCombatStatusConfig();
+
+    assert.deepEqual(globalThis.CONFIG.statusEffects[0].statuses, ["fear-aura", "frightened"]);
+    assert.deepEqual(globalThis.CONFIG.DND5E.statusEffects.frightened.statuses, ["fear-aura", "frightened"]);
+  }
+  finally {
+    globalThis.CONFIG = previousConfig;
+  }
+});
+
 test("frightened effect data stores a visible counter and attack penalties only", () => {
   const data = buildFrightenedStatusEffectData(3);
 
@@ -660,7 +694,7 @@ test("frightened status sync leaves only the strongest duplicate as an active na
   }]);
 });
 
-test("frightened sync treats DAE auto-created static statuses as passive mirrors", async () => {
+test("frightened create hook ignores DAE auto-created static statuses", async () => {
   const previousActor = globalThis.Actor;
   class TestActor {}
   globalThis.Actor = TestActor;
@@ -723,24 +757,16 @@ test("frightened sync treats DAE auto-created static statuses as passive mirrors
 
     const didSync = await service.handleActiveEffectCreated(daeMirror);
 
-    assert.equal(didSync, true);
+    assert.equal(didSync, false);
     assert.deepEqual(databaseUpdates, []);
-    assert.deepEqual(localMirrorUpdates, [{
-      statuses: [],
-      changes: [],
-      "flags.core.statusId": null,
-      "flags.rebreya-main.statusId": null,
-      "flags.rebreya-main.statusValue": null,
-      "flags.statuscounter.value": null,
-      "flags.statuscounter.visible": false
-    }]);
+    assert.deepEqual(localMirrorUpdates, []);
   }
   finally {
     globalThis.Actor = previousActor;
   }
 });
 
-test("frightened update sync patches DAE static mirrors locally instead of sending DB updates", async () => {
+test("frightened update hook ignores DAE auto-created static statuses", async () => {
   const previousActor = globalThis.Actor;
   class TestActor {}
   globalThis.Actor = TestActor;
@@ -803,25 +829,18 @@ test("frightened update sync patches DAE static mirrors locally instead of sendi
 
     const didSync = await service.handleActiveEffectUpdate(daeMirror);
 
-    assert.equal(didSync, true);
+    assert.equal(didSync, false);
     assert.deepEqual(databaseUpdates, []);
-    assert.deepEqual(localMirrorUpdates, [{
-      statuses: [],
-      changes: [],
-      "flags.core.statusId": null,
-      "flags.rebreya-main.statusId": null,
-      "flags.rebreya-main.statusValue": null,
-      "flags.statuscounter.value": null,
-      "flags.statuscounter.visible": false
-    }]);
+    assert.deepEqual(localMirrorUpdates, []);
   }
   finally {
     globalThis.Actor = previousActor;
   }
 });
 
-test("frightened pre-create hook neutralizes DAE static mirrors before token display", () => {
+test("frightened pre-create hook leaves DAE static mirrors untouched", () => {
   const service = new CombatStatusService({});
+  const options = { animate: true };
   const updates = [];
   const effect = {
     id: "dnd5efrightened0",
@@ -840,16 +859,107 @@ test("frightened pre-create hook neutralizes DAE static mirrors before token dis
     }
   };
 
-  assert.equal(service.prepareActiveEffectCreate(effect), true);
-  assert.deepEqual(updates, [{
-    statuses: [],
+  assert.equal(service.prepareActiveEffectCreate(effect, options), false);
+  assert.equal(options.animate, false);
+  assert.deepEqual(updates, []);
+});
+
+test("frightened pre-delete hook suppresses DAE static marker animation", () => {
+  const service = new CombatStatusService({});
+  const options = { animate: true };
+  const effect = {
+    id: "dnd5efrightened0",
+    name: "Frightened",
+    statuses: ["frightened"],
+    flags: {
+      core: { statusId: "frightened" },
+      dae: { autoCreated: true }
+    },
     changes: [],
-    "flags.core.statusId": null,
-    "flags.rebreya-main.statusId": null,
-    "flags.rebreya-main.statusValue": null,
-    "flags.statuscounter.value": null,
-    "flags.statuscounter.visible": false
-  }]);
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  };
+
+  assert.equal(service.prepareActiveEffectDelete(effect, options), false);
+  assert.equal(options.animate, false);
+});
+
+test("frightened delete hook ignores DAE auto-created static statuses", async () => {
+  const previousActor = globalThis.Actor;
+  class TestActor {}
+  globalThis.Actor = TestActor;
+
+  try {
+    const service = new CombatStatusService({});
+    const databaseUpdates = [];
+    const actor = new TestActor();
+    actor.id = "actor-1";
+
+    const source = {
+      id: "source",
+      name: "Frightened 2",
+      statuses: ["frightened"],
+      flags: {
+        core: { statusId: "frightened" },
+        "rebreya-main": { statusId: "frightened", statusValue: 2 },
+        statuscounter: { value: 2, visible: true }
+      },
+      changes: [],
+      parent: actor,
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      }
+    };
+
+    const daeMirror = {
+      id: "dnd5efrightened0",
+      name: "Frightened",
+      statuses: ["frightened"],
+      flags: {
+        core: { statusId: "frightened" },
+        dae: { autoCreated: true },
+        statuscounter: { value: 1, visible: true }
+      },
+      changes: [],
+      parent: actor,
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      }
+    };
+
+    actor.effects = { contents: [source, daeMirror] };
+    actor.updateEmbeddedDocuments = async (_type, documents) => {
+      databaseUpdates.push(...documents);
+      return documents;
+    };
+
+    const didSync = await service.handleActiveEffectDeleted(daeMirror);
+
+    assert.equal(didSync, false);
+    assert.deepEqual(databaseUpdates, []);
+  }
+  finally {
+    globalThis.Actor = previousActor;
+  }
+});
+
+test("frightened sync does not update a DAE mirror after the real source is gone", () => {
+  const updates = buildFrightenedStatusSyncUpdates([
+    {
+      id: "dnd5efrightened0",
+      name: "Frightened",
+      statuses: [],
+      flags: {
+        core: {},
+        dae: { autoCreated: true },
+        statuscounter: { visible: false }
+      },
+      changes: []
+    }
+  ]);
+
+  assert.deepEqual(updates, []);
 });
 
 test("frightened status sync ignores the effect currently being deleted", () => {
