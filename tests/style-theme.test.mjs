@@ -155,4 +155,5 @@ test("Character sheet valued combat statuses use compact numeric inputs instead 
 
   assert.match(css, /\.dnd5e2 \.effects-element \.conditions-list \.condition\.rm-sheet-status--valued\s*\{[^}]*justify-content:\s*space-between;/su);
   assert.match(css, /\.rm-sheet-status-value-input\s*\{[^}]*width:\s*3\.5rem;[^}]*text-align:\s*center;[^}]*background:\s*var\(--rm-surface-input\);/su);
+  assert.match(css, /\.dnd5e2 \.effects-element \.conditions-list \.condition\.rm-sheet-status \.name-stacked \.title\s*\{[^}]*overflow-wrap:\s*anywhere;/su);
 });

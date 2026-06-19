@@ -342,6 +342,10 @@
   margin-left: auto;
 }
 
+.dnd5e2 .effects-element .conditions-list .condition.rm-sheet-status .name-stacked .title {
+  overflow-wrap: anywhere;
+}
+
 .rm-sheet-status-value-input {
   width: 3.5rem;
   min-width: 3.5rem;

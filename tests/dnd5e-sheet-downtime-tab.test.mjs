@@ -443,6 +443,7 @@ test("character sheet Rebreya status controls write through the combat status AP
   try {
     const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?combat-status-sheet-actions=${Date.now()}`);
     const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    actor.isOwner = true;
     const frightenedRow = new stubs.HTMLElement({
       dataset: {
         conditionId: "frightened",
@@ -462,7 +463,7 @@ test("character sheet Rebreya status controls write through the combat status AP
     });
     const app = {
       actor,
-      isEditable: true
+      isEditable: false
     };
     const calls = [];
     const moduleApi = {
@@ -507,6 +508,7 @@ test("character sheet Rebreya status controls write through the combat status AP
       frightenedRow,
       (node) => node?.dataset?.rebreyaCombatStatusInput === "true"
     );
+    assert.equal(frightenedInput.disabled, false);
     frightenedInput.value = "5";
     await frightenedInput.listeners.change[0]({
       currentTarget: frightenedInput,
@@ -522,6 +524,7 @@ test("character sheet Rebreya status controls write through the combat status AP
     });
 
     const gaseousRow = conditionsList.children.find((node) => node.dataset.rebreyaCombatStatusId === "rebreya-gaseous");
+    assert.equal(Array.isArray(gaseousRow.listeners.click), true);
     await gaseousRow.listeners.click[0]({
       currentTarget: gaseousRow,
       preventDefault() {},

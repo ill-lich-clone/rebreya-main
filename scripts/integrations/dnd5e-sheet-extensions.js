@@ -1627,6 +1627,14 @@ function getSheetCombatStatusState(moduleApi, actor, statusId) {
     : { active: false, value: null, meta: {}, effectId: null };
 }
 
+function canInteractWithCharacterCombatStatuses(app, actor, root = null) {
+  if (actor instanceof Actor && typeof actor.isOwner === "boolean") {
+    return actor.isOwner;
+  }
+
+  return isSheetEditable(app, root);
+}
+
 function createSheetCombatStatusIcon(iconPath) {
   const icon = document.createElement("div");
   icon.classList.add("icon");
@@ -1805,7 +1813,7 @@ function bindCharacterCombatStatusPanel(root, app, moduleApi) {
   }
 
   root.querySelectorAll("[data-rebreya-combat-status='true']").forEach((node) => node.remove());
-  const editable = isSheetEditable(app, root);
+  const editable = canInteractWithCharacterCombatStatuses(app, actor, root);
   const definitions = getSheetCombatStatusDefinitions(moduleApi);
   if (!definitions.length) {
     return;
