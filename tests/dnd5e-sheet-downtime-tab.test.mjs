@@ -221,6 +221,25 @@ function createActor(ActorClass, { id = "actor-a", name = "Hero" } = {}) {
   }();
 }
 
+function findTreeNode(root, predicate) {
+  if (!root || typeof predicate !== "function") {
+    return null;
+  }
+
+  if (predicate(root)) {
+    return root;
+  }
+
+  for (const child of root.children ?? []) {
+    const match = findTreeNode(child, predicate);
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
 test("registerDnd5eSheetExtensions registers hero doll and downtime character sheet parts", async () => {
   const stubs = installSheetExtensionStubs();
   try {
@@ -324,6 +343,196 @@ test("registerDnd5eSheetExtensions renders universal belt slots in the inventory
     assert.equal(containers.children[0].dataset.beltSlot, "1");
     assert.equal(containers.children[1].dataset.locked, "true");
     assert.equal(containers.children[3].dataset.itemId, "backpack");
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("registerDnd5eSheetExtensions augments actor sheet conditions with Rebreya statuses and valued inputs", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?combat-status-sheet-render=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const frightenedRow = new stubs.HTMLElement({
+      dataset: {
+        conditionId: "frightened",
+        action: "toggleCondition"
+      }
+    });
+    frightenedRow.classList.add("condition");
+    const unconsciousRow = new stubs.HTMLElement({
+      dataset: {
+        conditionId: "unconscious",
+        action: "toggleCondition"
+      }
+    });
+    unconsciousRow.classList.add("condition");
+    const conditionsList = new stubs.HTMLElement();
+    conditionsList.append(frightenedRow, unconsciousRow);
+    const root = new stubs.HTMLElement({
+      selectors: {
+        ".effects-element .conditions-list": conditionsList
+      },
+      selectorAll: {
+        "[data-rebreya-combat-status='true']": []
+      }
+    });
+    const app = {
+      actor,
+      isEditable: true
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      getCombatStatusDefinitions() {
+        return [
+          { id: "frightened", label: "Испуганный", icon: "fear.svg", supportsValue: true },
+          { id: "rebreya-weakened", label: "Ослабленный", icon: "weak.svg", supportsValue: true },
+          { id: "rebreya-gaseous", label: "Газообразный", icon: "gas.svg", supportsValue: false }
+        ];
+      },
+      getCombatStatus(_actor, statusId) {
+        if (statusId === "frightened") {
+          return { active: true, value: 3 };
+        }
+        return { active: false, value: null };
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    assert.equal(conditionsList.children.length, 4);
+    assert.equal(frightenedRow.dataset.rebreyaCombatStatusId, "frightened");
+    assert.equal(frightenedRow.dataset.action, "");
+    assert.equal(frightenedRow.classList.contains("active"), true);
+
+    const frightenedInput = findTreeNode(
+      frightenedRow,
+      (node) => node?.dataset?.rebreyaCombatStatusInput === "true"
+    );
+    assert.ok(frightenedInput);
+    assert.equal(frightenedInput.value, "3");
+
+    const weakenedRow = conditionsList.children.find((node) => node.dataset.rebreyaCombatStatusId === "rebreya-weakened");
+    assert.ok(weakenedRow);
+    assert.equal(weakenedRow.dataset.rebreyaCombatStatus, "true");
+    assert.ok(findTreeNode(weakenedRow, (node) => node?.dataset?.rebreyaCombatStatusInput === "true"));
+
+    const gaseousRow = conditionsList.children.find((node) => node.dataset.rebreyaCombatStatusId === "rebreya-gaseous");
+    assert.ok(gaseousRow);
+    assert.equal(gaseousRow.classList.contains("active"), false);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character sheet Rebreya status controls write through the combat status API", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?combat-status-sheet-actions=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const frightenedRow = new stubs.HTMLElement({
+      dataset: {
+        conditionId: "frightened",
+        action: "toggleCondition"
+      }
+    });
+    frightenedRow.classList.add("condition");
+    const conditionsList = new stubs.HTMLElement();
+    conditionsList.append(frightenedRow);
+    const root = new stubs.HTMLElement({
+      selectors: {
+        ".effects-element .conditions-list": conditionsList
+      },
+      selectorAll: {
+        "[data-rebreya-combat-status='true']": []
+      }
+    });
+    const app = {
+      actor,
+      isEditable: true
+    };
+    const calls = [];
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      getCombatStatusDefinitions() {
+        return [
+          { id: "frightened", label: "Испуганный", icon: "fear.svg", supportsValue: true },
+          { id: "rebreya-gaseous", label: "Газообразный", icon: "gas.svg", supportsValue: false }
+        ];
+      },
+      getCombatStatus(_actor, statusId) {
+        if (statusId === "frightened") {
+          return { active: false, value: null };
+        }
+        return { active: false, value: null };
+      },
+      async setCombatStatusValue(targetActor, statusId, value) {
+        calls.push(["value", targetActor.id, statusId, value]);
+      },
+      async clearCombatStatus(targetActor, statusId) {
+        calls.push(["clear", targetActor.id, statusId]);
+      },
+      async setCombatStatus(targetActor, statusId, options) {
+        calls.push(["toggle", targetActor.id, statusId, options]);
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    const frightenedInput = findTreeNode(
+      frightenedRow,
+      (node) => node?.dataset?.rebreyaCombatStatusInput === "true"
+    );
+    frightenedInput.value = "5";
+    await frightenedInput.listeners.change[0]({
+      currentTarget: frightenedInput,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    frightenedInput.value = "";
+    await frightenedInput.listeners.change[0]({
+      currentTarget: frightenedInput,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const gaseousRow = conditionsList.children.find((node) => node.dataset.rebreyaCombatStatusId === "rebreya-gaseous");
+    await gaseousRow.listeners.click[0]({
+      currentTarget: gaseousRow,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(calls, [
+      ["value", "actor-a", "frightened", 5],
+      ["clear", "actor-a", "frightened"],
+      ["toggle", "actor-a", "rebreya-gaseous", { active: true }]
+    ]);
   }
   finally {
     stubs.restore();

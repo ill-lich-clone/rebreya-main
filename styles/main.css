@@ -331,6 +331,41 @@
   display: none !important;
 }
 
+.dnd5e2 .effects-element .conditions-list .condition.rm-sheet-status--valued {
+  justify-content: space-between;
+}
+
+.dnd5e2 .effects-element .conditions-list .condition .rm-sheet-status-value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.rm-sheet-status-value-input {
+  width: 3.5rem;
+  min-width: 3.5rem;
+  height: 2rem;
+  padding: 0.25rem 0.4rem;
+  text-align: center;
+  border: 1px solid var(--rm-border-default);
+  border-radius: 6px;
+  background: var(--rm-surface-input);
+  color: var(--rm-text-primary);
+  font-size: var(--font-size-13, 13px);
+}
+
+.rm-sheet-status-value-input:focus {
+  outline: none;
+  border-color: var(--rm-accent);
+  box-shadow: 0 0 0 2px rgb(var(--rm-color-gold-rgb) / 0.18);
+}
+
+.rm-sheet-status-value-input:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
 .rm-hero {
   display: flex;
   justify-content: space-between;

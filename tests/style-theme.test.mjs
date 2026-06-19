@@ -149,3 +149,10 @@ test("Status duration dialog wraps long action labels without spilling outside t
   assert.match(css, /\.rm-status-duration-dialog \.dialog-buttons\s*\{[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*flex-start;[^}]*align-items:\s*stretch;/su);
   assert.match(css, /\.rm-status-duration-dialog \.dialog-buttons \.dialog-button,\s*\.rm-status-duration-dialog \.dialog-buttons button\s*\{[^}]*flex:\s*1 1 180px !important;[^}]*white-space:\s*normal;[^}]*text-wrap:\s*balance;/su);
 });
+
+test("Character sheet valued combat statuses use compact numeric inputs instead of toggle switches", async () => {
+  const css = await readFile(stylesheetUrl, "utf8");
+
+  assert.match(css, /\.dnd5e2 \.effects-element \.conditions-list \.condition\.rm-sheet-status--valued\s*\{[^}]*justify-content:\s*space-between;/su);
+  assert.match(css, /\.rm-sheet-status-value-input\s*\{[^}]*width:\s*3\.5rem;[^}]*text-align:\s*center;[^}]*background:\s*var\(--rm-surface-input\);/su);
+});

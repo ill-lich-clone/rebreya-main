@@ -1580,6 +1580,253 @@ function bindNativeStateCard(root, app) {
   }
 }
 
+function setElementClassState(element, className, active) {
+  if (!(element instanceof HTMLElement) || !className) {
+    return;
+  }
+
+  if (active) {
+    element.classList.add(className);
+  }
+  else {
+    element.classList.remove(className);
+  }
+}
+
+function clearElementChildren(element) {
+  if (!(element instanceof HTMLElement)) {
+    return;
+  }
+
+  if (typeof element.replaceChildren === "function") {
+    element.replaceChildren();
+    return;
+  }
+
+  element.children = [];
+}
+
+function getCharacterSheetConditionsList(root) {
+  const conditionsList = root?.querySelector?.(".effects-element .conditions-list") ?? null;
+  return conditionsList instanceof HTMLElement ? conditionsList : null;
+}
+
+function getSheetCombatStatusDefinitions(moduleApi) {
+  const definitions = typeof moduleApi?.getCombatStatusDefinitions === "function"
+    ? moduleApi.getCombatStatusDefinitions()
+    : moduleApi?.combatStatusService?.getStatusDefinitions?.();
+  return Array.isArray(definitions) ? definitions : [];
+}
+
+function getSheetCombatStatusState(moduleApi, actor, statusId) {
+  const status = typeof moduleApi?.getCombatStatus === "function"
+    ? moduleApi.getCombatStatus(actor, statusId)
+    : moduleApi?.combatStatusService?.getStatus?.(actor, statusId);
+  return status && typeof status === "object"
+    ? status
+    : { active: false, value: null, meta: {}, effectId: null };
+}
+
+function createSheetCombatStatusIcon(iconPath) {
+  const icon = document.createElement("div");
+  icon.classList.add("icon");
+
+  const glyph = document.createElement("dnd5e-icon");
+  glyph.setAttribute("src", String(iconPath ?? ""));
+  icon.append(glyph);
+  return icon;
+}
+
+function createSheetCombatStatusTitle(label) {
+  const stack = document.createElement("div");
+  stack.classList.add("name-stacked");
+
+  const title = document.createElement("span");
+  title.classList.add("title");
+  title.textContent = String(label ?? "").trim();
+  stack.append(title);
+  return stack;
+}
+
+async function applySheetCombatStatusValue(moduleApi, actor, statusId, rawValue) {
+  const numericValue = Number(rawValue ?? "");
+  if (!String(rawValue ?? "").trim() || !Number.isFinite(numericValue) || numericValue <= 0) {
+    if (typeof moduleApi?.clearCombatStatus === "function") {
+      await moduleApi.clearCombatStatus(actor, statusId);
+    }
+    else {
+      await moduleApi?.combatStatusService?.clearStatus?.(actor, statusId);
+    }
+    return;
+  }
+
+  const nextValue = Math.max(1, Math.floor(numericValue));
+  if (typeof moduleApi?.setCombatStatusValue === "function") {
+    await moduleApi.setCombatStatusValue(actor, statusId, nextValue);
+  }
+  else {
+    await moduleApi?.combatStatusService?.setStatusValue?.(actor, statusId, nextValue);
+  }
+}
+
+function createSheetCombatStatusValueControl(moduleApi, actor, definition, statusState, editable) {
+  const wrapper = document.createElement("div");
+  wrapper.classList.add("rm-sheet-status-value");
+
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "1";
+  input.step = "1";
+  input.inputMode = "numeric";
+  input.classList.add("rm-sheet-status-value-input");
+  input.dataset.rebreyaCombatStatusInput = "true";
+  input.disabled = !editable;
+  input.value = statusState?.active && statusState?.value !== null && statusState?.value !== undefined
+    ? String(statusState.value)
+    : "";
+  input.placeholder = statusState?.active ? String(statusState?.value ?? "") : "";
+
+  input.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  input.addEventListener("change", (event) => {
+    void (async () => {
+      try {
+        await applySheetCombatStatusValue(moduleApi, actor, definition.id, event.currentTarget?.value ?? "");
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to update character sheet combat status value.`, error);
+        ui.notifications?.error("Не удалось обновить состояние на листе персонажа.");
+      }
+    })();
+  });
+
+  wrapper.append(input);
+  return wrapper;
+}
+
+function createSheetCombatStatusToggleIndicator(active) {
+  const icon = document.createElement("i");
+  icon.classList.add("fa-solid", active ? "fa-toggle-on" : "fa-toggle-off");
+  return icon;
+}
+
+function buildSheetCombatStatusRow(moduleApi, actor, definition, statusState, editable, row = null) {
+  const entry = row instanceof HTMLElement ? row : document.createElement("li");
+  entry.dataset.conditionId = String(definition?.id ?? "").trim();
+  entry.dataset.rebreyaCombatStatusId = String(definition?.id ?? "").trim();
+  entry.dataset.action = "";
+  entry.dataset.uuid = "";
+  entry.dataset.tooltip = "";
+
+  if (!(row instanceof HTMLElement)) {
+    entry.dataset.rebreyaCombatStatus = "true";
+  }
+  else {
+    entry.dataset.rebreyaCombatStatusNative = "true";
+  }
+
+  entry.classList.add("condition", "rm-sheet-status");
+  entry.classList.remove("content-link");
+  setElementClassState(entry, "active", statusState?.active === true);
+  setElementClassState(entry, "rm-sheet-status--valued", definition?.supportsValue === true);
+
+  clearElementChildren(entry);
+  entry.append(
+    createSheetCombatStatusIcon(definition?.icon),
+    createSheetCombatStatusTitle(definition?.label)
+  );
+
+  if (definition?.supportsValue) {
+    entry.append(createSheetCombatStatusValueControl(moduleApi, actor, definition, statusState, editable));
+    return entry;
+  }
+
+  entry.append(createSheetCombatStatusToggleIndicator(statusState?.active === true));
+
+  if (editable) {
+    entry.tabIndex = 0;
+    entry.setAttribute("role", "button");
+    const toggleStatus = () => {
+      void (async () => {
+        try {
+          if (statusState?.active) {
+            if (typeof moduleApi?.clearCombatStatus === "function") {
+              await moduleApi.clearCombatStatus(actor, definition.id);
+            }
+            else {
+              await moduleApi?.combatStatusService?.clearStatus?.(actor, definition.id);
+            }
+          }
+          else if (typeof moduleApi?.setCombatStatus === "function") {
+            await moduleApi.setCombatStatus(actor, definition.id, { active: true });
+          }
+          else {
+            await moduleApi?.combatStatusService?.setStatus?.(actor, definition.id, { active: true });
+          }
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to toggle character sheet combat status.`, error);
+          ui.notifications?.error("Не удалось обновить состояние на листе персонажа.");
+        }
+      })();
+    };
+
+    entry.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleStatus();
+    });
+    entry.addEventListener("keydown", (event) => {
+      if (!["Enter", " "].includes(event.key)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      toggleStatus();
+    });
+  }
+
+  return entry;
+}
+
+function bindCharacterCombatStatusPanel(root, app, moduleApi) {
+  const actor = getActorFromSheetApp(app);
+  if (!actor || actor.type !== "character") {
+    return;
+  }
+
+  const conditionsList = getCharacterSheetConditionsList(root);
+  if (!conditionsList) {
+    return;
+  }
+
+  root.querySelectorAll("[data-rebreya-combat-status='true']").forEach((node) => node.remove());
+  const editable = isSheetEditable(app, root);
+  const definitions = getSheetCombatStatusDefinitions(moduleApi);
+  if (!definitions.length) {
+    return;
+  }
+
+  const existingRows = Array.from(conditionsList.children ?? []).filter((node) => node instanceof HTMLElement);
+  for (const definition of definitions) {
+    const statusId = String(definition?.id ?? "").trim();
+    if (!statusId) {
+      continue;
+    }
+
+    const statusState = getSheetCombatStatusState(moduleApi, actor, statusId);
+    const nativeRow = existingRows.find((node) => String(node.dataset?.conditionId ?? "").trim() === statusId) ?? null;
+    const row = buildSheetCombatStatusRow(moduleApi, actor, definition, statusState, editable, nativeRow);
+    if (!(nativeRow instanceof HTMLElement)) {
+      conditionsList.append(row);
+    }
+  }
+}
+
 function buildHeroDollTabState(app) {
   const active = app.tabGroups?.primary === HERO_DOLL_TAB_ID;
   return {
@@ -5327,6 +5574,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to bind native state card.`, error);
     }
+    try {
+      bindCharacterCombatStatusPanel(root, app, moduleApi);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to bind character sheet combat statuses.`, error);
+    }
   };
 
   for (const hookName of [
@@ -5381,6 +5634,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind native state card on ApplicationV2 render.`, error);
+      }
+      try {
+        bindCharacterCombatStatusPanel(root, app, moduleApi);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind character sheet combat statuses on ApplicationV2 render.`, error);
       }
     }
 
