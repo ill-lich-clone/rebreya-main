@@ -1283,7 +1283,8 @@ export class CombatStatusService {
           }
         }
       }, {
-        classes: ["rebreya-main", "rebreya-trader-dialog"]
+        classes: ["rebreya-main", "rebreya-trader-dialog", "rm-status-duration-dialog"],
+        width: 560
       });
 
       dialog.render(true);

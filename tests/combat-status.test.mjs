@@ -569,18 +569,21 @@ test("ctrl-click on frightened asks for value then duration and patches DAE sour
   };
 
   const openedDialogs = [];
+  const dialogOptions = [];
   const dialogQueue = [
     { kind: "value", input: "4" },
     { kind: "duration", button: "turnStart" }
   ];
 
   globalThis.Dialog = class Dialog {
-    constructor(config) {
+    constructor(config, options) {
       this.config = config;
+      this.options = options;
     }
 
     render() {
       openedDialogs.push(this.config.title);
+      dialogOptions.push(this.options ?? {});
       const plan = dialogQueue.shift();
       if (!plan) {
         throw new Error("Unexpected dialog render");
@@ -671,6 +674,8 @@ test("ctrl-click on frightened asks for value then duration and patches DAE sour
     await new Promise((resolve) => setImmediate(resolve));
 
     assert.equal(openedDialogs.length, 2);
+    assert.deepEqual(dialogOptions[1].classes, ["rebreya-main", "rebreya-trader-dialog", "rm-status-duration-dialog"]);
+    assert.equal(dialogOptions[1].width, 560);
     assert.equal(effect.flags["rebreya-main"].statusValue, 4);
     assert.equal(effect.flags.statuscounter.value, 4);
     assert.equal(effect.origin, "Actor.actor-2");

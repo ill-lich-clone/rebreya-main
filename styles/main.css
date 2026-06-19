@@ -3789,6 +3789,22 @@ summary:focus-visible {
   color: var(--rm-text-primary);
 }
 
+.rm-status-duration-dialog .dialog-buttons {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: stretch;
+}
+
+.rm-status-duration-dialog .dialog-buttons .dialog-button,
+.rm-status-duration-dialog .dialog-buttons button {
+  flex: 1 1 180px !important;
+  min-width: min(100%, 180px);
+  white-space: normal;
+  text-wrap: balance;
+  text-align: center;
+  line-height: 1.3;
+}
+
 
 .rm-purchase-dialog__summary {
   display: grid;

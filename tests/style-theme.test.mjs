@@ -142,3 +142,10 @@ test("Trader v2 keeps its standalone parchment theme", async () => {
   assert.match(css, /\.rebreya-trader-app-v2 \.rm-trader-v2-shell\s*\{[^}]*shop\.webp/su);
   assert.match(css, /\.rebreya-trader-app-v2 \.rm-trader-v2-texture\s*\{[^}]*opacity:\s*1;/su);
 });
+
+test("Status duration dialog wraps long action labels without spilling outside the window", async () => {
+  const css = await readFile(stylesheetUrl, "utf8");
+
+  assert.match(css, /\.rm-status-duration-dialog \.dialog-buttons\s*\{[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*flex-start;[^}]*align-items:\s*stretch;/su);
+  assert.match(css, /\.rm-status-duration-dialog \.dialog-buttons \.dialog-button,\s*\.rm-status-duration-dialog \.dialog-buttons button\s*\{[^}]*flex:\s*1 1 180px !important;[^}]*white-space:\s*normal;[^}]*text-wrap:\s*balance;/su);
+});
