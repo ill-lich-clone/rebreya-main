@@ -491,6 +491,362 @@ test("active frightened HUD click updates the value instead of clearing the stat
   }
 });
 
+test("ctrl-click on frightened asks for value then duration and patches DAE source expiry from the single target", async () => {
+  const previousActor = globalThis.Actor;
+  const previousActiveEffect = globalThis.ActiveEffect;
+  const previousConfig = globalThis.CONFIG;
+  const previousConst = globalThis.CONST;
+  const previousFoundry = globalThis.foundry;
+  const previousDialog = globalThis.Dialog;
+  const previousHTMLElement = globalThis.HTMLElement;
+  const previousHTMLInputElement = globalThis.HTMLInputElement;
+  const previousGame = globalThis.game;
+
+  class TestHTMLElement {
+    constructor() {
+      this.dataset = {};
+      this.listeners = [];
+      this.input = null;
+    }
+
+    addEventListener(type, handler, capture) {
+      this.listeners.push({ type, handler, capture });
+    }
+
+    closest(selector) {
+      return selector === ".effect-control[data-status-id]" ? this : null;
+    }
+
+    querySelector(selector) {
+      return selector === "[data-field='status-value']" ? this.input : null;
+    }
+  }
+
+  class TestHTMLInputElement extends TestHTMLElement {
+    constructor(value = "") {
+      super();
+      this.value = value;
+    }
+
+    focus() {}
+    select() {}
+  }
+
+  function applyPatch(target, patch) {
+    for (const [key, value] of Object.entries(patch)) {
+      if (!key.includes(".")) {
+        target[key] = value;
+        continue;
+      }
+
+      key.split(".").reduce((current, part, partIndex, parts) => {
+        if (partIndex === parts.length - 1) {
+          current[part] = value;
+          return current;
+        }
+
+        current[part] ??= {};
+        return current[part];
+      }, target);
+    }
+  }
+
+  class TestActor {}
+  class TestActiveEffect {}
+
+  globalThis.Actor = TestActor;
+  globalThis.ActiveEffect = TestActiveEffect;
+  globalThis.HTMLElement = TestHTMLElement;
+  globalThis.HTMLInputElement = TestHTMLInputElement;
+  globalThis.CONFIG = { statusEffects: [{ id: "frightened" }] };
+  globalThis.CONST = { ACTIVE_EFFECT_MODES: { ADD: 2 } };
+  globalThis.foundry = {
+    utils: {
+      deepClone: (value) => JSON.parse(JSON.stringify(value)),
+      escapeHTML: (value) => String(value ?? ""),
+      getProperty: (source, path) => String(path ?? "").split(".").reduce((current, part) => current?.[part], source)
+    }
+  };
+
+  const openedDialogs = [];
+  const dialogQueue = [
+    { kind: "value", input: "4" },
+    { kind: "duration", button: "turnStart" }
+  ];
+
+  globalThis.Dialog = class Dialog {
+    constructor(config) {
+      this.config = config;
+    }
+
+    render() {
+      openedDialogs.push(this.config.title);
+      const plan = dialogQueue.shift();
+      if (!plan) {
+        throw new Error("Unexpected dialog render");
+      }
+
+      if (plan.kind === "value") {
+        const root = new TestHTMLElement();
+        root.input = new TestHTMLInputElement(plan.input);
+        this.config.render?.(root);
+        this.config.buttons.confirm.callback(root);
+        return;
+      }
+
+      this.config.buttons[plan.button].callback();
+    }
+  };
+
+  try {
+    const service = new CombatStatusService({});
+    const actor = new TestActor();
+    actor.id = "actor-1";
+    actor.uuid = "Actor.actor-1";
+    actor.name = "Lich";
+    actor.system = { attributes: { prof: 4 } };
+
+    const sourceActor = new TestActor();
+    sourceActor.id = "actor-2";
+    sourceActor.uuid = "Actor.actor-2";
+    sourceActor.name = "Monk";
+    sourceActor.system = { attributes: { prof: 5 } };
+
+    globalThis.game = {
+      combat: { round: 3, turn: 1 },
+      user: {
+        targets: new Set([{ actor: sourceActor }])
+      }
+    };
+
+    const effect = new TestActiveEffect();
+    Object.assign(effect, {
+      id: "abcdefghijklmnop",
+      _id: "abcdefghijklmnop",
+      name: "Frightened 2",
+      statuses: ["frightened"],
+      flags: {
+        core: { statusId: "frightened" },
+        "rebreya-main": { statusId: "frightened", statusValue: 2 },
+        statuscounter: { value: 2, visible: true }
+      },
+      changes: [],
+      parent: actor,
+      origin: null,
+      duration: {},
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      },
+      async update(patch) {
+        applyPatch(this, patch);
+      }
+    });
+
+    actor.effects = { contents: [effect] };
+    actor.updateEmbeddedDocuments = async (_type, updates) => {
+      for (const update of updates) {
+        if (update._id === effect.id) {
+          await effect.update(update);
+        }
+      }
+      return updates;
+    };
+
+    const root = new TestHTMLElement();
+    await service.bindTokenHud({ object: { actor } }, root);
+
+    const control = new TestHTMLElement();
+    control.dataset.statusId = "frightened";
+    const event = {
+      type: "click",
+      button: 0,
+      ctrlKey: true,
+      target: control,
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    };
+
+    root.listeners.find((entry) => entry.type === "click")?.handler(event);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(openedDialogs.length, 2);
+    assert.equal(effect.flags["rebreya-main"].statusValue, 4);
+    assert.equal(effect.flags.statuscounter.value, 4);
+    assert.equal(effect.origin, "Actor.actor-2");
+    assert.deepEqual(effect.flags.dae.specialDuration, ["turnStartSource", "combatEnd"]);
+    assert.equal(effect.flags["rebreya-main"].statusMeta.sourceActorId, "actor-2");
+    assert.equal(effect.flags["rebreya-main"].statusMeta.durationMode, "turnStartSource");
+    assert.equal(effect.duration.rounds, 1);
+    assert.equal(effect.duration.startRound, 3);
+    assert.equal(effect.duration.startTurn, 1);
+  }
+  finally {
+    globalThis.Actor = previousActor;
+    globalThis.ActiveEffect = previousActiveEffect;
+    globalThis.CONFIG = previousConfig;
+    globalThis.CONST = previousConst;
+    globalThis.foundry = previousFoundry;
+    globalThis.Dialog = previousDialog;
+    globalThis.HTMLElement = previousHTMLElement;
+    globalThis.HTMLInputElement = previousHTMLInputElement;
+    globalThis.game = previousGame;
+  }
+});
+
+test("ctrl-click on a standard status falls back to the bearer when there is not exactly one target", async () => {
+  const previousActor = globalThis.Actor;
+  const previousActiveEffect = globalThis.ActiveEffect;
+  const previousConfig = globalThis.CONFIG;
+  const previousConst = globalThis.CONST;
+  const previousFoundry = globalThis.foundry;
+  const previousDialog = globalThis.Dialog;
+  const previousHTMLElement = globalThis.HTMLElement;
+  const previousGame = globalThis.game;
+
+  class TestHTMLElement {
+    constructor() {
+      this.dataset = {};
+      this.listeners = [];
+    }
+
+    addEventListener(type, handler, capture) {
+      this.listeners.push({ type, handler, capture });
+    }
+
+    closest(selector) {
+      return selector === ".effect-control[data-status-id]" ? this : null;
+    }
+  }
+
+  function applyPatch(target, patch) {
+    for (const [key, value] of Object.entries(patch)) {
+      if (!key.includes(".")) {
+        target[key] = value;
+        continue;
+      }
+
+      key.split(".").reduce((current, part, partIndex, parts) => {
+        if (partIndex === parts.length - 1) {
+          current[part] = value;
+          return current;
+        }
+
+        current[part] ??= {};
+        return current[part];
+      }, target);
+    }
+  }
+
+  class TestActor {}
+  class TestActiveEffect {}
+
+  globalThis.Actor = TestActor;
+  globalThis.ActiveEffect = TestActiveEffect;
+  globalThis.HTMLElement = TestHTMLElement;
+  globalThis.CONFIG = { statusEffects: [{ id: "stunned" }] };
+  globalThis.CONST = { ACTIVE_EFFECT_MODES: { ADD: 2 } };
+  globalThis.foundry = {
+    utils: {
+      deepClone: (value) => JSON.parse(JSON.stringify(value)),
+      escapeHTML: (value) => String(value ?? ""),
+      getProperty: (source, path) => String(path ?? "").split(".").reduce((current, part) => current?.[part], source)
+    }
+  };
+
+  const openedDialogs = [];
+  globalThis.Dialog = class Dialog {
+    constructor(config) {
+      this.config = config;
+    }
+
+    render() {
+      openedDialogs.push(this.config.title);
+      this.config.buttons.turnEnd.callback();
+    }
+  };
+
+  try {
+    const service = new CombatStatusService({});
+    const actor = new TestActor();
+    actor.id = "actor-1";
+    actor.uuid = "Actor.actor-1";
+    actor.name = "Lich";
+
+    const sourceA = new TestActor();
+    sourceA.id = "actor-2";
+    sourceA.uuid = "Actor.actor-2";
+
+    const sourceB = new TestActor();
+    sourceB.id = "actor-3";
+    sourceB.uuid = "Actor.actor-3";
+
+    globalThis.game = {
+      combat: { round: 4, turn: 2 },
+      user: {
+        targets: new Set([{ actor: sourceA }, { actor: sourceB }])
+      }
+    };
+
+    const effect = new TestActiveEffect();
+    Object.assign(effect, {
+      id: "stunned-effect",
+      _id: "stunned-effect",
+      name: "Stunned",
+      statuses: ["stunned"],
+      flags: {
+        core: { statusId: "stunned" }
+      },
+      changes: [],
+      parent: actor,
+      origin: null,
+      duration: {},
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      },
+      async update(patch) {
+        applyPatch(this, patch);
+      }
+    });
+
+    actor.effects = { contents: [effect] };
+
+    const root = new TestHTMLElement();
+    await service.bindTokenHud({ object: { actor } }, root);
+
+    const control = new TestHTMLElement();
+    control.dataset.statusId = "stunned";
+    const event = {
+      type: "click",
+      button: 0,
+      ctrlKey: true,
+      target: control,
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    };
+
+    root.listeners.find((entry) => entry.type === "click")?.handler(event);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(openedDialogs.length, 1);
+    assert.equal(effect.origin, "Actor.actor-1");
+    assert.deepEqual(effect.flags.dae.specialDuration, ["turnEndSource", "combatEnd"]);
+    assert.equal(effect.flags["rebreya-main"].statusMeta.sourceActorId, "actor-1");
+    assert.equal(effect.flags["rebreya-main"].statusMeta.durationMode, "turnEndSource");
+  }
+  finally {
+    globalThis.Actor = previousActor;
+    globalThis.ActiveEffect = previousActiveEffect;
+    globalThis.CONFIG = previousConfig;
+    globalThis.CONST = previousConst;
+    globalThis.foundry = previousFoundry;
+    globalThis.Dialog = previousDialog;
+    globalThis.HTMLElement = previousHTMLElement;
+    globalThis.game = previousGame;
+  }
+});
+
 test("frightened effect data falls back to half source proficiency with minimum two", () => {
   const highProficiency = buildFrightenedStatusEffectData(null, {
     sourceActor: {

@@ -18,6 +18,8 @@ const LEGACY_BLOODIED_STATUS_ID = "rebreya-bloodied";
 const LEGACY_RESTRAINED_STATUS_ID = "rebreya-restrained";
 const FRIGHTENED_STATUS_ID = REBREYA_FRIGHTENED_STATUS_ID;
 const STATUS_COUNTER_MODULE_ID = "statuscounter";
+const DAE_SPECIAL_DURATION_TURN_START_SOURCE = "turnStartSource";
+const DAE_SPECIAL_DURATION_TURN_END_SOURCE = "turnEndSource";
 const DISCREET_MOVEMENT_KEYS = Object.freeze(["walk", "burrow", "climb", "fly", "swim"]);
 const FRIGHTENED_ATTACK_BONUS_KEYS = Object.freeze([
   "system.bonuses.abilities.check",
@@ -192,6 +194,19 @@ function resolveActiveEffectDuration(durationRounds = DEFAULT_DURATION_ROUNDS) {
   };
 }
 
+function buildCombatTurnDuration(rounds = 1) {
+  const safeRounds = Math.max(1, Math.floor(toNumber(rounds, 1)));
+  return {
+    startTime: null,
+    seconds: null,
+    combat: null,
+    rounds: safeRounds,
+    turns: null,
+    startRound: globalThis.game?.combat?.round ?? null,
+    startTurn: globalThis.game?.combat?.turn ?? null
+  };
+}
+
 function getDialogRoot(html) {
   if (!html) {
     return null;
@@ -274,6 +289,32 @@ function statusIcon(statusId) {
 
 function statusSupportsValue(statusId) {
   return getRebreyaStatusDefinition(statusId)?.supportsValue === true;
+}
+
+function configStatusLabel(statusId) {
+  const safeStatusId = String(statusId ?? "").trim();
+  if (!safeStatusId || !Array.isArray(CONFIG?.statusEffects)) {
+    return "";
+  }
+
+  const row = CONFIG.statusEffects.find((entry) => {
+    const entryId = String(entry?.id ?? entry?._id ?? "").trim();
+    return entryId === safeStatusId;
+  });
+
+  return String(row?.name ?? row?.label ?? "").trim();
+}
+
+function timedStatusDurationLabel(durationMode) {
+  if (durationMode === DAE_SPECIAL_DURATION_TURN_START_SOURCE) {
+    return "До начала следующего хода";
+  }
+
+  if (durationMode === DAE_SPECIAL_DURATION_TURN_END_SOURCE) {
+    return "До конца следующего хода";
+  }
+
+  return "";
 }
 
 function discreetStatusName(value) {
@@ -1088,6 +1129,21 @@ export class CombatStatusService {
     return null;
   }
 
+  #resolveHudDurationSourceActor(actor) {
+    const targets = Array.from(globalThis.game?.user?.targets ?? []);
+    if (targets.length === 1) {
+      const targetActor = targets[0]?.actor
+        ?? targets[0]?.document?.actor
+        ?? targets[0]?.object?.actor
+        ?? null;
+      if (targetActor instanceof Actor) {
+        return targetActor;
+      }
+    }
+
+    return actor instanceof Actor ? actor : null;
+  }
+
   #readStatusControlFromEvent(event) {
     const target = event?.target;
     if (!(target instanceof HTMLElement)) {
@@ -1095,6 +1151,20 @@ export class CombatStatusService {
     }
 
     return target.closest?.(".effect-control[data-status-id]") ?? null;
+  }
+
+  #stopHudEvent(event) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.stopImmediatePropagation?.();
+  }
+
+  #statusDisplayName(statusId, effect = null) {
+    return stripTrailingStatusValue(effect?.name)
+      || configStatusLabel(statusId)
+      || statusLabel(statusId)
+      || String(statusId ?? "").trim()
+      || "Состояние";
   }
 
   async #promptStatusValue(definition, currentValue = 1) {
@@ -1171,6 +1241,83 @@ export class CombatStatusService {
     });
   }
 
+  async #promptStatusDuration(statusName, sourceActor) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const referenceLabel = String(sourceActor?.name ?? "").trim() || "носителя состояния";
+      const dialog = new Dialog({
+        title: `${statusName}: длительность`,
+        content: `
+          <form class="rm-purchase-dialog">
+            <p>Точка отсчёта: <strong>${foundry.utils.escapeHTML(referenceLabel)}</strong></p>
+            <p>Выберите, когда снять состояние.</p>
+          </form>
+        `,
+        buttons: {
+          turnStart: {
+            label: "До начала следующего хода",
+            callback: () => {
+              settled = true;
+              resolve(DAE_SPECIAL_DURATION_TURN_START_SOURCE);
+            }
+          },
+          turnEnd: {
+            label: "До конца следующего хода",
+            callback: () => {
+              settled = true;
+              resolve(DAE_SPECIAL_DURATION_TURN_END_SOURCE);
+            }
+          },
+          cancel: {
+            label: "Отмена",
+            callback: () => {
+              settled = true;
+              resolve(undefined);
+            }
+          }
+        },
+        default: "turnStart",
+        close: () => {
+          if (!settled) {
+            resolve(undefined);
+          }
+        }
+      }, {
+        classes: ["rebreya-main", "rebreya-trader-dialog"]
+      });
+
+      dialog.render(true);
+    });
+  }
+
+  async #applyTimedHudStatusEffect(effect, sourceActor, durationMode) {
+    if (!effect || typeof effect.update !== "function") {
+      return false;
+    }
+
+    const sourceActorId = String(sourceActor?.id ?? "").trim();
+    const sourceActorUuid = String(sourceActor?.uuid ?? "").trim();
+    if (!sourceActorId || !sourceActorUuid) {
+      return false;
+    }
+
+    const meta = cloneData(getEffectStatusValue(effect, MODULE_ID, STATUS_META_FLAG) ?? {});
+    meta.sourceActorId = sourceActorId;
+    meta.sourceActorUuid = sourceActorUuid;
+    meta.sourceActorName = String(sourceActor?.name ?? "").trim();
+    meta.durationMode = String(durationMode ?? "").trim();
+    meta.durationLabel = timedStatusDurationLabel(durationMode);
+
+    await effect.update({
+      origin: sourceActorUuid,
+      duration: buildCombatTurnDuration(1),
+      [`flags.${MODULE_ID}.${STATUS_META_FLAG}`]: meta,
+      "flags.dae.specialDuration": [durationMode, "combatEnd"]
+    });
+
+    return true;
+  }
+
   async #handleTokenHudStatusInteraction(event, app) {
     const control = this.#readStatusControlFromEvent(event);
     if (!(control instanceof HTMLElement)) {
@@ -1180,24 +1327,74 @@ export class CombatStatusService {
     const rawStatusId = String(control.dataset.statusId ?? "").trim();
     const statusId = this.#resolveStatusId(rawStatusId);
     const definition = getRebreyaStatusDefinition(statusId);
-    if (!definition?.supportsValue) {
-      return;
-    }
-
     const actor = this.#resolveHudActor(app);
     if (!(actor instanceof Actor)) {
       return;
     }
 
+    const currentEffect = this.#findStatusEffect(actor, statusId);
     const currentStatus = this.getStatus(actor, statusId);
+    if (event.type === "click" && event.button === 0 && event.ctrlKey === true) {
+      if (!globalThis.game?.combat) {
+        ui.notifications?.warn?.("Боевые длительности доступны только в активном бою.");
+        return;
+      }
+
+      this.#stopHudEvent(event);
+
+      let nextValue = currentStatus?.value ?? 1;
+      if (statusSupportsValue(statusId)) {
+        nextValue = await this.#promptStatusValue(
+          definition ?? {
+            id: statusId,
+            label: this.#statusDisplayName(statusId, currentEffect),
+            supportsValue: true
+          },
+          currentStatus?.value ?? 1
+        );
+        if (nextValue === undefined) {
+          return;
+        }
+      }
+
+      const sourceActor = this.#resolveHudDurationSourceActor(actor);
+      const durationMode = await this.#promptStatusDuration(
+        this.#statusDisplayName(statusId, currentEffect),
+        sourceActor
+      );
+      if (!durationMode) {
+        return;
+      }
+
+      let effect = currentEffect;
+      if (!effect || statusSupportsValue(statusId)) {
+        const statusOptions = {
+          active: true,
+          ...(statusSupportsValue(statusId) ? { value: nextValue } : {}),
+          ...(sourceActor instanceof Actor ? { sourceActor } : {})
+        };
+        const result = await this.setStatus(actor, statusId, statusOptions);
+        effect = result instanceof ActiveEffect ? result : this.#findStatusEffect(actor, statusId);
+      }
+
+      if (!effect || !(sourceActor instanceof Actor)) {
+        return;
+      }
+
+      await this.#applyTimedHudStatusEffect(effect, sourceActor, durationMode);
+      return;
+    }
+
+    if (!definition?.supportsValue) {
+      return;
+    }
+
     if (statusId === REBREYA_DISCREET_STATUS_ID) {
       if (event.type !== "click" || event.button !== 0) {
         return;
       }
 
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
+      this.#stopHudEvent(event);
 
       const nextValue = await this.#promptStatusValue(definition, currentStatus?.value ?? 1);
       if (nextValue === undefined) {
@@ -1212,9 +1409,7 @@ export class CombatStatusService {
     }
 
     if (event.type === "contextmenu") {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation?.();
+      this.#stopHudEvent(event);
 
       if (currentStatus?.active) {
         await this.clearStatus(actor, statusId);
@@ -1226,9 +1421,7 @@ export class CombatStatusService {
       return;
     }
 
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation?.();
+    this.#stopHudEvent(event);
 
     const nextValue = await this.#promptStatusValue(definition, currentStatus?.value ?? 1);
     if (nextValue === undefined) {
@@ -1258,7 +1451,16 @@ export class CombatStatusService {
     }
 
     return actor.effects.contents.find((effect) => {
-      return resolveManagedStatusIdFromEffect(effect, "") === statusId;
+      const managedStatusId = resolveManagedStatusIdFromEffect(effect, "");
+      if (managedStatusId === statusId) {
+        return true;
+      }
+
+      if (extractEffectStatuses(effect).includes(statusId)) {
+        return true;
+      }
+
+      return String(getEffectStatusValue(effect, "core", "statusId") ?? "").trim() === statusId;
     }) ?? null;
   }
 
