@@ -204,6 +204,30 @@ function resolveTokenFromActor(actor) {
   return actor?.getActiveTokens?.(true, true)?.[0] ?? actor?.getActiveTokens?.()[0] ?? null;
 }
 
+function resolveTokenFromTarget(target) {
+  if (!target) {
+    return null;
+  }
+
+  if (target instanceof Actor) {
+    return resolveTokenFromActor(target);
+  }
+
+  return target.object
+    ?? target.document?.object
+    ?? target.token
+    ?? (target.actor || target.document?.actor ? target : null)
+    ?? resolveTokenFromActor(resolveActorFromTarget(target));
+}
+
+function resolveSourceTokenFromWorkflow(workflow, actor) {
+  return workflow?.token?.object
+    ?? workflow?.token
+    ?? workflow?.tokenDocument?.object
+    ?? workflow?.tokenDocument
+    ?? resolveTokenFromActor(actor);
+}
+
 function speakerForActor(actor) {
   return ChatMessage.getSpeaker({ actor });
 }
@@ -285,6 +309,39 @@ function isHostile(left, right) {
   }
 
   return leftDisposition !== rightDisposition;
+}
+
+function isHealingWorkflow(workflow) {
+  const typeHints = [
+    workflow?.activity?.type,
+    workflow?.activity?.actionType,
+    workflow?.activity?.system?.actionType,
+    workflow?.item?.system?.actionType,
+    workflow?.damageType,
+    workflow?.defaultDamageType
+  ].map((entry) => cleanText(entry).toLowerCase());
+  if (typeHints.some((entry) => entry === "heal" || entry === "healing")) {
+    return true;
+  }
+
+  const healingRollCount = workflow?.healingRolls?.length ?? workflow?.healingRolls?.size ?? 0;
+  if (workflow?.healingRoll || healingRollCount > 0) {
+    return true;
+  }
+
+  const detailRows = [
+    ...(Array.isArray(workflow?.damageDetail) ? workflow.damageDetail : []),
+    ...(Array.isArray(workflow?.damageList) ? workflow.damageList : [])
+  ];
+  return detailRows.some((row) => {
+    const type = cleanText(row?.type ?? row?.damageType).toLowerCase();
+    if (type === "healing") {
+      return true;
+    }
+
+    const types = Array.isArray(row?.types) ? row.types : [row?.types];
+    return types.some((entry) => cleanText(entry).toLowerCase() === "healing");
+  });
 }
 
 function activeEffectData(name, changes = [], options = {}) {
@@ -676,7 +733,16 @@ export class RaceAutomationService {
       return false;
     }
 
-    const target = hitTargets.map(resolveActorFromTarget).find((entry) => isActorLarger(entry, actor));
+    if (isHealingWorkflow(workflow)) {
+      return false;
+    }
+
+    const sourceToken = resolveSourceTokenFromWorkflow(workflow, actor);
+    const targetToken = hitTargets.find((entry) => (
+      isActorLarger(resolveActorFromTarget(entry), actor)
+      && isHostile(sourceToken, resolveTokenFromTarget(entry))
+    ));
+    const target = resolveActorFromTarget(targetToken);
     if (!(target instanceof Actor)) {
       return false;
     }
