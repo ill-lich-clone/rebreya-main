@@ -8,6 +8,7 @@ import {
   getMaterialPriceModifier,
   getTraderPlanByKey
 } from "../engine/trader-engine.js";
+import { buildGearIconLookup, resolveGearItemIcon } from "./gear-icon-resolver.js";
 import { formatPercent, formatSignedPercent } from "../ui.js";
 
 const MAX_ACTIVE_TRADERS = 21;
@@ -35,6 +36,8 @@ const TRADER_RESTOCK_MODES = {
   MERGE: "merge",
   FREEZE: "freeze"
 };
+
+let sharedGearIconLookupPromise = null;
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -73,6 +76,22 @@ function uniqueStrings(values = []) {
   }
 
   return rows;
+}
+
+async function getTraderGearIconLookup(moduleApi) {
+  if (typeof moduleApi?.getGearIconLookup === "function") {
+    const providedLookup = await moduleApi.getGearIconLookup();
+    return providedLookup instanceof Map ? providedLookup : new Map();
+  }
+
+  if (!sharedGearIconLookupPromise) {
+    sharedGearIconLookupPromise = buildGearIconLookup().catch((error) => {
+      console.warn(`${MODULE_ID} | Failed to build trader gear icon lookup.`, error);
+      return new Map();
+    });
+  }
+
+  return sharedGearIconLookupPromise;
 }
 
 function getTraderSeedSalt(moduleApi) {
@@ -1432,7 +1451,27 @@ export class TraderService {
     return materialModifier > 0 ? materialModifier : materialModifier / 2;
   }
 
-  #buildInventoryViewEntry(model, citySnapshot, statePolicy, traderType, stockEntry) {
+  async #resolveInventoryEntryIcon(model, stockEntry, resolvedMetadata) {
+    const fallbackIcon = getInventoryEntryIcon({ ...stockEntry, ...resolvedMetadata });
+    if (stockEntry.sourceType !== "gear") {
+      return fallbackIcon;
+    }
+
+    const explicitIcon = String(stockEntry.img ?? resolvedMetadata.img ?? "").trim();
+    if (explicitIcon && explicitIcon !== GENERAL_TRADER_ICON) {
+      return explicitIcon;
+    }
+
+    const gearItem = model.gearById?.get(stockEntry.sourceId) ?? null;
+    if (!gearItem) {
+      return fallbackIcon;
+    }
+
+    const iconLookup = await getTraderGearIconLookup(this.moduleApi);
+    return resolveGearItemIcon(gearItem, { iconLookup });
+  }
+
+  async #buildInventoryViewEntry(model, citySnapshot, statePolicy, traderType, stockEntry) {
     const resolvedMetadata = this.#resolveItemMetadata(model, stockEntry);
     const goodId = resolveGoodIdForStockEntry(model, stockEntry, resolvedMetadata);
     const linkedGoodRow = goodId
@@ -1480,10 +1519,11 @@ export class TraderService {
       resolvedMetadata.baseWeight
     );
     const finalPriceCopper = goldToCopper(pricing.finalPriceGold);
+    const icon = await this.#resolveInventoryEntryIcon(model, stockEntry, resolvedMetadata);
 
     return {
       ...stockEntry,
-      img: getInventoryEntryIcon({ ...stockEntry, ...resolvedMetadata }),
+      img: icon,
       description: resolvedMetadata.description,
       itemTypeLabel: resolvedMetadata.itemTypeLabel,
       subtypeLabel: resolvedMetadata.subtypeLabel,
@@ -1626,9 +1666,11 @@ export class TraderService {
       preferredActor: partyInventoryActor
     });
     const statePolicy = getStatePolicyByCity(this.moduleApi, citySnapshot);
-    const inventory = (traderState.inventory ?? [])
-      .filter((entry) => toNumber(entry.quantity, 0) > 0)
-      .map((entry) => this.#buildInventoryViewEntry(model, citySnapshot, statePolicy, plan.traderType, entry))
+    const inventory = (await Promise.all(
+      (traderState.inventory ?? [])
+        .filter((entry) => toNumber(entry.quantity, 0) > 0)
+        .map((entry) => this.#buildInventoryViewEntry(model, citySnapshot, statePolicy, plan.traderType, entry))
+    ))
       .filter((entry) => entry.blockedByEvents !== true)
       .sort((left, right) => left.name.localeCompare(right.name, "ru"));
 

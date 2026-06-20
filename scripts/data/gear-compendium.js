@@ -1,13 +1,17 @@
 ﻿import { GEAR_COMPENDIUM_LABEL, GEAR_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import {
-  buildNamedIconLookup,
   deduplicateCompendiumFolders,
   ensureCompendiumFolders,
   ensurePackSidebarFolder,
-  normalizeFolderPath,
-  resolveNamedIcon
+  normalizeFolderPath
 } from "./compendium-utils.js";
+import {
+  buildGearIconLookup,
+  DEFAULT_GEAR_ICON,
+  resolveGearItemIcon,
+  resolveGearNamedIcon
+} from "./gear-icon-resolver.js";
 import {
   classifyGearEntry,
   inferHeroDollSlotGroupFromSlots,
@@ -16,22 +20,13 @@ import {
 } from "./item-classification.js";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 
+export { buildGearIconLookup };
+
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const DEFAULT_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 const GEAR_TEMPLATE_VERSION = 11;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
-const CUSTOM_GEAR_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
-const GEAR_ICON_SEARCH_PATHS = [
-  `${CUSTOM_GEAR_ICONS_BASE_PATH}/Goods`,
-  `${CUSTOM_GEAR_ICONS_BASE_PATH}/weapons`,
-  CUSTOM_GEAR_ICONS_BASE_PATH
-];
-
-export async function buildGearIconLookup({ forceRefresh = false } = {}) {
-  return buildNamedIconLookup(GEAR_ICON_SEARCH_PATHS, { forceRefresh });
-}
 
 function escapeHtml(value) {
   return foundry.utils.escapeHTML(String(value ?? ""));
@@ -188,43 +183,6 @@ function buildFolderPath(classification) {
   return normalizeFolderPath(classification.folderPath);
 }
 
-function stripTrailingParenthetical(value) {
-  return cleanString(value).replace(/\s*\([^()]*\)\s*$/u, "").trim();
-}
-
-function getGearIconNameCandidates(item) {
-  const name = cleanString(item?.name);
-  if (!name) {
-    return [];
-  }
-
-  const candidates = [];
-  const equipmentType = cleanString(item?.equipmentType);
-  if (equipmentType) {
-    candidates.push(`${name} (${equipmentType})`);
-  }
-
-  candidates.push(name);
-
-  const shortenedName = stripTrailingParenthetical(name);
-  if (shortenedName && shortenedName !== name) {
-    candidates.push(shortenedName);
-  }
-
-  return Array.from(new Set(candidates));
-}
-
-function resolveGearNamedIcon(item, iconLookup) {
-  for (const iconName of getGearIconNameCandidates(item)) {
-    const iconPath = resolveNamedIcon(iconName, iconLookup, "");
-    if (iconPath) {
-      return iconPath;
-    }
-  }
-
-  return "";
-}
-
 function buildGearSignature(item) {
   const classification = classifyGearEntry(item);
   const itemSlot = resolveItemSlotGroup(item, classification);
@@ -262,78 +220,6 @@ function buildGearSignature(item) {
     weapon: isPlainObject(item.weapon) ? item.weapon : null,
     armor: isPlainObject(item.armor) ? item.armor : null
   });
-}
-
-function getGearIcon(item, classification, iconLookup = null) {
-  const folderPath = buildFolderPath(classification).join(" / ").toLowerCase();
-  const typeText = normalizeMatchText(item.equipmentType);
-  const namedCustomIcon = resolveGearNamedIcon(item, iconLookup);
-  if (namedCustomIcon) {
-    return namedCustomIcon;
-  }
-
-  if (classification.documentType === "container") {
-    if (classification.systemTypeValue === "chest") {
-      return "icons/containers/chest/chest-reinforced-steel-brown.webp";
-    }
-
-    return "icons/containers/bags/pack-simple-leather-brown.webp";
-  }
-
-  if (classification.documentType === "weapon") {
-    if (classification.firearmClass) {
-      return "icons/weapons/guns/gun-pistol-flintlock-metal.webp";
-    }
-
-    const weaponName = normalizeMatchText(item.name);
-    if (/арбалет/u.test(`${typeText} ${weaponName}`)) {
-      return "icons/weapons/crossbows/crossbow-simple-brown.webp";
-    }
-
-    if (/пращ/u.test(`${typeText} ${weaponName}`)) {
-      return "icons/weapons/slings/slingshot-wood.webp";
-    }
-
-    if (/лук/u.test(`${typeText} ${weaponName}`)) {
-      return "icons/weapons/bows/longbow-recurve-brown.webp";
-    }
-
-    return "icons/weapons/swords/greatsword-crossguard-silver.webp";
-  }
-
-  if (classification.documentType === "equipment") {
-    if (classification.systemTypeValue === "shield") {
-      return "icons/equipment/shield/heater-steel-grey.webp";
-    }
-
-    return "icons/equipment/chest/breastplate-layered-steel.webp";
-  }
-
-  if (classification.documentType === "tool") {
-    return "icons/tools/smithing/anvil.webp";
-  }
-
-  if (classification.documentType === "consumable") {
-    if (classification.systemTypeValue === "ammo") {
-      return "icons/weapons/ammunition/arrow-broadhead-glowing-orange.webp";
-    }
-
-    return "icons/consumables/potions/potion-bottle-corked-labeled-red.webp";
-  }
-
-  if (folderPath.includes("обвес")) {
-    return "icons/tools/hand/wrench-steel-grey.webp";
-  }
-
-  if (folderPath.includes("скакуны") || folderPath.includes("транспорт")) {
-    return "icons/environment/settlement/wagon.webp";
-  }
-
-  if (folderPath.includes("снаряжение") && /рюкзак|сумк|чехол|футляр/u.test(normalizeMatchText(item.name))) {
-    return "icons/containers/bags/pack-simple-leather-brown.webp";
-  }
-
-  return DEFAULT_ITEM_ICON;
 }
 
 function buildMetadataRows(item, classification) {
@@ -630,7 +516,7 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
     _id: createStableGearDocumentId(item.id),
     name: item.name,
     type: classification.documentType,
-    img: getGearIcon(item, classification, iconLookup),
+    img: resolveGearItemIcon(item, { classification, iconLookup }),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -915,7 +801,7 @@ async function syncManagedDocumentIcons(pack, documents, iconLookup) {
       continue;
     }
 
-    const currentIcon = String(document.img ?? "").trim() || DEFAULT_ITEM_ICON;
+    const currentIcon = String(document.img ?? "").trim() || DEFAULT_GEAR_ICON;
     const nextIcon = resolveGearNamedIcon({
       name: document.name,
       equipmentType: document.getFlag(MODULE_ID, "equipmentType")
