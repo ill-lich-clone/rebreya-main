@@ -33,6 +33,7 @@ import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
 } from "./combat/paladin-automation-service.js?v=1.4.57";
+import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.4.57";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
 import { registerSceneControlsHook } from "./hooks.js?v=1.4.57";
 import {
@@ -361,6 +362,7 @@ export class RebreyaMainModule {
     this.combatAttackService = new CombatAttackService(this);
     this.fighterAutomationService = new FighterAutomationService(this);
     this.paladinAutomationService = new PaladinAutomationService(this);
+    this.rogueAutomationService = new RogueAutomationService(this);
     this.raceAutomationService = new RaceAutomationService(this);
     this.featChoiceAutomationService = new FeatChoiceAutomationService(this);
     this.repository.setGlobalEventsService(this.globalEventsService);
@@ -433,6 +435,13 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize paladin automation service.`, error);
+    }
+
+    try {
+      await this.rogueAutomationService.initialize();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to initialize rogue automation service.`, error);
     }
 
     try {

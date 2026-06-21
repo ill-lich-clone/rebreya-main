@@ -432,6 +432,63 @@ test("rogue feature definitions include two preset starting equipment packages",
   assert.deepEqual(packageDefinitions[1].startingEquipmentPackage.currency, { gp: 100 });
 });
 
+test("rogue cunning strike options are separate feature items in their sheet section", () => {
+  const rogue = normalizeClassCompendiumData(loadJson("data/rogue-rework-v00.json"));
+  const definitions = buildFeatureDefinitions(rogue);
+  const featureUuidById = makeUuidMap(definitions);
+  const cunningStrikes = definitions.filter((definition) => definition.sourceType === "rogueCunningStrike");
+  const hamstring = cunningStrikes.find((definition) => definition.name === "Подрезать");
+  const spillSupplies = cunningStrikes.find((definition) => definition.name === "Рассыпать припасы");
+  const entry = createFeatureEntryData(hamstring, new Map());
+  const classAdvancement = buildClassAdvancement(rogue.classData, {
+    featureUuidById,
+    classFeatureEntries: rogue.classData.features
+  });
+  const thief = rogue.subclasses.find((subclass) => subclass.name === "Вор");
+  const thiefAdvancement = buildSubclassAdvancements(thief, { featureUuidById });
+  const hamstringUuid = featureUuidById.get(hamstring.featureId);
+  const spillSuppliesUuid = featureUuidById.get(spillSupplies.featureId);
+  const levelTwoCunningStrikeGrant = classAdvancement.find((advancement) =>
+    advancement.type === "ItemGrant"
+    && advancement.level === 2
+    && advancement.configuration.items.some((item) => item.uuid === hamstringUuid)
+  );
+  const thiefLevelThreeCunningStrikeGrant = thiefAdvancement.find((advancement) =>
+    advancement.type === "ItemGrant"
+    && advancement.level === 3
+    && advancement.configuration.items.some((item) => item.uuid === spillSuppliesUuid)
+  );
+
+  assert.deepEqual(cunningStrikes.map((definition) => definition.name), [
+    "Подрезать",
+    "Сорвать план",
+    "Открыть позицию",
+    "Сбить прицел",
+    "Подсечка",
+    "Обезоружить",
+    "Вызвать клин",
+    "Оглушить",
+    "Сорвать концентрацию",
+    "Сломать темп",
+    "Пробить защиту",
+    "Заткнуть рот",
+    "Ослепить",
+    "Сорвать ремень",
+    "Рассыпать припасы",
+    "Сорвать снаряжение"
+  ]);
+  assert.equal(hamstring.cunningStrikeCost, 1);
+  assert.equal(spillSupplies.cunningStrikeCost, 2);
+  assert.equal(entry.flags["rebreya-main"].sourceType, "rogueCunningStrike");
+  assert.equal(entry.flags["rebreya-main"].section, "Хитрые удары");
+  assert.equal(entry.flags["rebreya-main"].cunningStrikeCost, 1);
+  assert.equal(entry.flags.teyvankal.section, "Хитрые удары");
+  assert.equal(levelTwoCunningStrikeGrant.configuration.items.length, 13);
+  assert.equal(levelTwoCunningStrikeGrant.configuration.items.some((item) => item.uuid === hamstringUuid), true);
+  assert.equal(thiefLevelThreeCunningStrikeGrant.configuration.items.length, 3);
+  assert.equal(thiefLevelThreeCunningStrikeGrant.configuration.items.some((item) => item.uuid === spillSuppliesUuid), true);
+});
+
 test("paladin rework data defines ZoZT class basics, spellcasting, and subclasses", () => {
   const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const system = createClassSystem(paladin.classData, [], paladin.sourceLabel);

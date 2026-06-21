@@ -65,6 +65,7 @@ const CLASS_FEATURE_TEMPLATE_VERSION = 15;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CLASS_TEMPLATE_VERSION = 6;
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
+const ROGUE_CUNNING_STRIKE_SECTION_LABEL = "Хитрые удары";
 
 const DEFAULT_CLASS_ICON = "icons/svg/book.svg";
 const DEFAULT_SUBCLASS_ICON = "icons/svg/book.svg";
@@ -473,6 +474,18 @@ function normalizeFeatureEntry(rawFeature, index, {
   };
 }
 
+function normalizeCunningStrikeEntry(rawFeature, index, options = {}) {
+  const entry = normalizeFeatureEntry(rawFeature, index, {
+    fallbackName: "Хитрый удар",
+    fallbackLevel: 2,
+    ...options
+  });
+  return {
+    ...entry,
+    cunningStrikeCost: Math.max(0, Math.floor(parseNumber(rawFeature?.cost ?? rawFeature?.cunningStrikeCost, 0)))
+  };
+}
+
 function extractRuneKnightRuneDescriptions(description) {
   const text = cleanString(description);
   const descriptions = new Map();
@@ -800,6 +813,24 @@ export function normalizeClassCompendiumData(rawData) {
     })
     .filter((feature) => feature.name);
 
+  const usedCunningStrikeIds = new Set();
+  const rawCunningStrikes = Array.isArray(rawClass.cunningStrikes)
+    ? rawClass.cunningStrikes
+    : Array.isArray(data.cunningStrikes)
+      ? data.cunningStrikes
+      : [];
+  const cunningStrikes = rawCunningStrikes
+    .map((strike, index) => normalizeCunningStrikeEntry(strike, index, {
+      scopeId: `${classIdentifier}-cunning-strike`,
+      usedIds: usedCunningStrikeIds,
+      forceRequiredLevel: strike?.requiredLevel ?? strike?.levels?.[0] ?? 2
+    }))
+    .map((strike) => ({
+      ...strike,
+      levels: [Math.max(1, strike.requiredLevel || 2)]
+    }))
+    .filter((strike) => strike.name);
+
   const subclasses = [];
   const rawSubclasses = Array.isArray(data.subclasses) ? data.subclasses : [];
   const usedSubclassIds = new Set();
@@ -827,12 +858,26 @@ export function normalizeClassCompendiumData(rawData) {
         usedIds: usedFeatureIds
       }))
       .filter((feature) => feature.name);
+    const usedSubclassCunningStrikeIds = new Set();
+    const subclassCunningStrikes = (Array.isArray(rawSubclass?.cunningStrikes) ? rawSubclass.cunningStrikes : [])
+      .map((strike, strikeIndex) => normalizeCunningStrikeEntry(strike, strikeIndex, {
+        scopeId: `${subclassId}-cunning-strike`,
+        fallbackLevel: 3,
+        usedIds: usedSubclassCunningStrikeIds,
+        forceRequiredLevel: strike?.requiredLevel ?? strike?.levels?.[0] ?? 3
+      }))
+      .map((strike) => ({
+        ...strike,
+        levels: [Math.max(1, strike.requiredLevel || 3)]
+      }))
+      .filter((strike) => strike.name);
 
     subclasses.push({
       subclassId,
       name: subclassName,
       description: subclassDescription,
-      features
+      features,
+      cunningStrikes: subclassCunningStrikes
     });
   }
 
@@ -928,6 +973,7 @@ export function normalizeClassCompendiumData(rawData) {
       scaleAdvancements: normalizeScaleAdvancements(rawClass.scaleAdvancements),
       subclassTitle,
       subclassHint,
+      cunningStrikes,
       features: classFeatures
     },
     subclasses,
@@ -1098,6 +1144,18 @@ export function buildFeatureDefinitions(normalizedData) {
     ));
   }
 
+  for (const strike of normalizedData.classData.cunningStrikes ?? []) {
+    definitions.push({
+      ...buildBaseFeatureDefinition(
+        strike,
+        "rogueCunningStrike",
+        normalizeFolderPath([classFeatureRootFolder, ROGUE_CUNNING_STRIKE_SECTION_LABEL]),
+        `${classId}-cunning-strike-${strike.featureId}`
+      ),
+      cunningStrikeCost: strike.cunningStrikeCost
+    });
+  }
+
   for (const rune of normalizedData.runes ?? []) {
     definitions.push({
       ...buildBaseFeatureDefinition(
@@ -1117,6 +1175,36 @@ export function buildFeatureDefinitions(normalizedData) {
   }
 
   for (const subclass of normalizedData.subclasses) {
+    for (const strike of subclass.cunningStrikes ?? []) {
+      const featureId = `${subclass.subclassId}::rogueCunningStrike::${strike.featureId}`;
+      definitions.push({
+        featureId,
+        documentId: featureDocumentId(featureId),
+        sourceType: "rogueCunningStrike",
+        classIdentifier: classId,
+        className,
+        subclassId: subclass.subclassId,
+        subclassName: subclass.name,
+        name: strike.name,
+        description: strike.description,
+        levels: strike.levels,
+        requiredLevel: strike.requiredLevel,
+        optional: false,
+        identifier: buildAsciiIdentifier(
+          `${subclass.subclassId}-cunning-strike-${strike.featureId}`,
+          `${subclass.subclassId}::cunning-strike::${strike.featureId}`
+        ),
+        folderPath: normalizeFolderPath([
+          classFeatureRootFolder,
+          "Архетипы",
+          subclass.name,
+          ROGUE_CUNNING_STRIKE_SECTION_LABEL
+        ]),
+        sourceLabel,
+        cunningStrikeCost: strike.cunningStrikeCost
+      });
+    }
+
     for (const feature of subclass.features) {
       const featureId = `${subclass.subclassId}::subclass::${feature.featureId}`;
       definitions.push({
@@ -1166,6 +1254,7 @@ function buildFeatureSignature(feature, context = {}) {
     maneuvers: feature.maneuvers ?? [],
     maneuverFeatureIds: feature.maneuverFeatureIds ?? [],
     allManeuverFeatureIds: feature.allManeuverFeatureIds ?? [],
+    cunningStrikeCost: feature.cunningStrikeCost ?? 0,
     startingEquipmentPackage: feature.startingEquipmentPackage ?? null,
     descriptionHtml: createFeatureDescriptionValue(feature, context),
     advancement: buildFeatureItemAdvancements(feature, context),
@@ -1193,6 +1282,10 @@ function buildSubtypeRequirementsLabel(feature) {
 
   if (feature.sourceType === "fighterManeuver") {
     return level > 1 ? `Боевой приём, ${level}-й уровень` : "Боевой приём";
+  }
+
+  if (feature.sourceType === "rogueCunningStrike") {
+    return level > 1 ? `Хитрый удар, ${level}-й уровень` : "Хитрый удар";
   }
 
   if (feature.sourceType === "runeKnightRune") {
@@ -2435,8 +2528,12 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null,
     source: createSourceData(feature.sourceLabel),
     identifier: buildAsciiIdentifier(feature.identifier, feature.featureId),
     type: {
-      value: feature.sourceType === "fighterManeuver" ? "feat" : "class",
-      subtype: feature.sourceType === "fighterManeuver" ? "fighterManeuver" : ""
+      value: ["fighterManeuver", "rogueCunningStrike"].includes(feature.sourceType) ? "feat" : "class",
+      subtype: feature.sourceType === "fighterManeuver"
+        ? "fighterManeuver"
+        : feature.sourceType === "rogueCunningStrike"
+          ? "rogueCunningStrike"
+          : ""
     },
     requirements: buildSubtypeRequirementsLabel(feature),
     prerequisites: {
@@ -3475,6 +3572,33 @@ export function buildClassAdvancement(classData, context = {}) {
     }));
   }
 
+  const cunningStrikeByLevel = new Map();
+  for (const strike of classData.cunningStrikes ?? []) {
+    const featureKey = `${classIdentifier}::rogueCunningStrike::${strike.featureId}`;
+    const uuid = featureUuidById.get(featureKey);
+    if (!uuid) {
+      continue;
+    }
+
+    const level = Math.max(1, Math.floor(parseNumber(strike.requiredLevel, strike.levels?.[0] ?? 2)));
+    if (!cunningStrikeByLevel.has(level)) {
+      cunningStrikeByLevel.set(level, []);
+    }
+    cunningStrikeByLevel.get(level).push(uuid);
+  }
+
+  for (const [level, uuids] of Array.from(cunningStrikeByLevel.entries()).sort((a, b) => a[0] - b[0])) {
+    advancements.push(buildItemGrantAdvancement({
+      classIdentifier,
+      seed: `cunning-strike-${level}`,
+      title: `${ROGUE_CUNNING_STRIKE_SECTION_LABEL} (${level}-й уровень)`,
+      hint: "Варианты Хитрого удара плута.",
+      level,
+      itemUuids: uuids,
+      optional: false
+    }));
+  }
+
   if (minorFeatUuids.length) {
     for (const level of MINOR_FEAT_LEVELS) {
       advancements.push(buildItemChoiceAdvancement({
@@ -3560,6 +3684,21 @@ export function buildClassAdvancement(classData, context = {}) {
 export function buildSubclassAdvancements(subclass, context = {}) {
   const { featureUuidById } = context;
   const grouped = new Map();
+  const cunningStrikeGrouped = new Map();
+
+  for (const strike of subclass.cunningStrikes ?? []) {
+    const featureKey = `${subclass.subclassId}::rogueCunningStrike::${strike.featureId}`;
+    const uuid = featureUuidById.get(featureKey);
+    if (!uuid) {
+      continue;
+    }
+
+    const level = Math.max(1, Math.floor(parseNumber(strike.requiredLevel, strike.levels?.[0] ?? 3)));
+    if (!cunningStrikeGrouped.has(level)) {
+      cunningStrikeGrouped.set(level, []);
+    }
+    cunningStrikeGrouped.get(level).push(uuid);
+  }
 
   for (const feature of subclass.features) {
     const featureKey = `${subclass.subclassId}::subclass::${feature.featureId}`;
@@ -3581,6 +3720,18 @@ export function buildSubclassAdvancements(subclass, context = {}) {
       classIdentifier: subclass.subclassId,
       seed: `grant-${level}`,
       title: `${subclass.name}: умения (${level}-й уровень)`,
+      level,
+      itemUuids: uuids,
+      optional: false
+    }));
+  }
+
+  for (const [level, uuids] of Array.from(cunningStrikeGrouped.entries()).sort((a, b) => a[0] - b[0])) {
+    advancements.push(buildItemGrantAdvancement({
+      classIdentifier: subclass.subclassId,
+      seed: `cunning-strike-${level}`,
+      title: `${subclass.name}: ${ROGUE_CUNNING_STRIKE_SECTION_LABEL} (${level}-й уровень)`,
+      hint: "Варианты Хитрого удара плута.",
       level,
       itemUuids: uuids,
       optional: false
@@ -3807,6 +3958,7 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
     requiredLevel: feature.requiredLevel,
     optional: feature.optional === true,
     maneuvers: feature.maneuvers ?? [],
+    cunningStrikeCost: feature.cunningStrikeCost ?? 0,
     startingEquipmentPackageId: feature.startingEquipmentPackage?.id,
     startingEquipmentPackage: feature.startingEquipmentPackage
       ? foundry.utils.deepClone(feature.startingEquipmentPackage)
@@ -3820,6 +3972,9 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
   };
   if (feature.sourceType === "fighterManeuver") {
     moduleFlags.section = FIGHTER_MANEUVER_SECTION_LABEL;
+  }
+  else if (feature.sourceType === "rogueCunningStrike") {
+    moduleFlags.section = ROGUE_CUNNING_STRIKE_SECTION_LABEL;
   }
 
   const entryData = {
@@ -3841,7 +3996,14 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
             subsection: null
           }
         }
-        : {})
+        : feature.sourceType === "rogueCunningStrike"
+          ? {
+            teyvankal: {
+              section: ROGUE_CUNNING_STRIKE_SECTION_LABEL,
+              subsection: null
+            }
+          }
+          : {})
     }
   };
 

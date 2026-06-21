@@ -8,7 +8,8 @@ export function registerCombatHooks(moduleApi) {
   const hasRaceService = Boolean(moduleApi?.raceAutomationService);
   const hasFighterService = Boolean(moduleApi?.fighterAutomationService);
   const hasPaladinService = Boolean(moduleApi?.paladinAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService) {
+  const hasRogueService = Boolean(moduleApi?.rogueAutomationService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService && !hasRogueService) {
     return;
   }
 
@@ -399,6 +400,15 @@ export function registerCombatHooks(moduleApi) {
     Hooks.on("midi-qol.RollComplete", (workflow) => {
       moduleApi.paladinAutomationService.applyMidiRollComplete(workflow).catch((error) => {
         console.error(`${MODULE_ID} | Failed to apply paladin MIDI automation.`, error);
+      });
+      return true;
+    });
+  }
+
+  if (hasRogueService) {
+    Hooks.on("midi-qol.RollComplete", (workflow) => {
+      moduleApi.rogueAutomationService.applyMidiRollComplete(workflow).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply rogue MIDI automation.`, error);
       });
       return true;
     });
