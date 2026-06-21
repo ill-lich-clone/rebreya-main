@@ -14,7 +14,8 @@ const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
 const REBREYA_CLASS_IDENTIFIERS = new Set([
   "barbarian-rework-v012",
   FIGHTER_CLASS_IDENTIFIER,
-  "paladin-rework-v01"
+  "paladin-rework-v01",
+  "rogue-rework-v00"
 ]);
 const FIGHTER_DOMINANCE_FEATURE_ID = "fighter-dominance";
 const FIGHTER_STARTING_EQUIPMENT_PROMPT_FLAG = "startingEquipmentPrompted";

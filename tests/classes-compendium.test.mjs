@@ -335,6 +335,103 @@ test("barbarian advancement exposes one native item choice for preset starting e
   );
 });
 
+test("rogue rework data defines ZoZT class basics and the thief subclass", () => {
+  const rogue = normalizeClassCompendiumData(loadJson("data/rogue-rework-v00.json"));
+  const system = createClassSystem(rogue.classData, [], rogue.sourceLabel);
+
+  assert.equal(rogue.sourceLabel, "ЗоЗТ");
+  assert.equal(rogue.classData.identifier, "rogue-rework-v00");
+  assert.equal(rogue.classData.hitDie, "d8");
+  assert.deepEqual(rogue.classData.primaryAbility, ["dex"]);
+  assert.deepEqual(rogue.classData.saveProficiencies, ["dex", "int"]);
+  assert.equal(rogue.classData.skillChoiceCount, 4);
+  assert.equal(rogue.classData.skillPool.length, 18);
+  assert.equal(rogue.classData.subclassTitle, "Специализация плута");
+  assert.equal(rogue.classData.features.some((feature) => feature.name === "Компетентность"), true);
+  assert.equal(rogue.classData.features.some((feature) => feature.name === "Скрытая атака"), true);
+  assert.equal(rogue.classData.features.some((feature) => feature.name === "Хитрое действие"), true);
+  assert.equal(rogue.subclasses.length, 1);
+  assert.equal(rogue.subclasses[0].name, "Вор");
+  assert.equal(rogue.subclasses[0].features.some((feature) => feature.name === "Мастер взлома"), true);
+  assert.equal(rogue.subclasses[0].features.some((feature) => feature.name === "Украсть невозможное"), true);
+  assert.equal(system.source.book, "ЗоЗТ");
+  assert.equal(system.wealth, "100");
+  assert.deepEqual(system.startingEquipment, []);
+});
+
+test("rogue advancements expose proficiencies, scales, class grants, and equipment package choice", () => {
+  const rogue = normalizeClassCompendiumData(loadJson("data/rogue-rework-v00.json"));
+  const featureDefinitions = buildFeatureDefinitions(rogue);
+  const packageDefinitions = featureDefinitions
+    .filter((definition) => definition.sourceType === "rogueStartingEquipmentPackage");
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const advancement = buildClassAdvancement(rogue.classData, {
+    featureUuidById,
+    classFeatureEntries: rogue.classData.features,
+    minorFeatUuids: ["Compendium.world.rebreya-feats.Item.minor"]
+  });
+
+  const skills = advancement.find((entry) => entry.type === "Trait" && entry.title === "Навыки: Плут (реворк V0.0)");
+  const armor = advancement.find((entry) => entry.type === "Trait" && entry.title === "Владение доспехами");
+  const tools = advancement.find((entry) => entry.type === "Trait" && entry.title === "Владение инструментами");
+  const simpleWeapons = advancement.find((entry) => entry.type === "Trait" && entry.title === "Владение простым оружием");
+  const martialWeapons = advancement.find((entry) => entry.type === "Trait" && entry.title === "Владение воинским оружием");
+  const sneakAttack = advancement.find((entry) => entry.type === "ScaleValue" && entry.configuration.identifier === "sneak-attack");
+  const breakingBoundaries = advancement.find((entry) => entry.type === "ScaleValue" && entry.configuration.identifier === "breaking-boundaries");
+  const subclass = advancement.find((entry) => entry.type === "Subclass");
+  const equipmentChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Стартовое снаряжение");
+  const minorFeatChoices = advancement.filter((entry) => entry.type === "ItemChoice" && entry.title.startsWith("Младшая черта"));
+  const levelOneGrant = advancement.find((entry) => entry.type === "ItemGrant" && entry.level === 1);
+
+  assert.equal(skills.configuration.choices[0].count, 4);
+  assert.ok(skills.configuration.choices[0].pool.includes("skills:ste"));
+  assert.ok(skills.configuration.choices[0].pool.includes("skills:slt"));
+  assert.deepEqual(armor.configuration.grants, ["armor:lgt"]);
+  assert.deepEqual(tools.configuration.grants, ["tool:thief"]);
+  assert.equal(simpleWeapons.configuration.choices[0].count, 1);
+  assert.ok(simpleWeapons.configuration.choices[0].pool.includes("weapon:sim:dagger"));
+  assert.equal(martialWeapons.configuration.choices[0].count, 1);
+  assert.ok(martialWeapons.configuration.choices[0].pool.includes("weapon:mar:rapier"));
+  assert.ok(martialWeapons.configuration.choices[0].pool.includes("weapon:mar:shortsword"));
+  assert.deepEqual(sneakAttack.configuration.scale["17"], { number: 9, faces: 6, modifiers: [] });
+  assert.deepEqual(breakingBoundaries.configuration.scale["3"], { value: 2 });
+  assert.deepEqual(breakingBoundaries.configuration.scale["17"], { value: 6 });
+  assert.equal(subclass.level, 3);
+  assert.equal(subclass.title, "Специализация плута");
+  assert.equal(equipmentChoice.level, 1);
+  assert.match(equipmentChoice.hint, /Выберите А или Б:/u);
+  assert.deepEqual(equipmentChoice.configuration.pool.map((entry) => entry.uuid), packageDefinitions.map((definition) => featureUuidById.get(definition.featureId)));
+  assert.equal(minorFeatChoices.length, 6);
+  assert.equal(levelOneGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("rogue-rework-v00::class::rogue-sneak-attack")), true);
+});
+
+test("rogue feature definitions include two preset starting equipment packages", () => {
+  const rogue = normalizeClassCompendiumData(loadJson("data/rogue-rework-v00.json"));
+  const packageDefinitions = buildFeatureDefinitions(rogue)
+    .filter((definition) => definition.sourceType === "rogueStartingEquipmentPackage");
+
+  assert.deepEqual(packageDefinitions.map((definition) => definition.name), [
+    "А) Кожаный доспех, 2 кинжала, короткий меч, короткий лук, 20 стрел, колчан, воровские инструменты, набор взломщика и 8 зм",
+    "Б) 100 зм"
+  ]);
+  assert.deepEqual(
+    packageDefinitions[0].startingEquipmentPackage.items.map((item) => [item.gearId, item.quantity ?? 1]),
+    [
+      ["kozhanyy-dospekh", 1],
+      ["kinzhal", 2],
+      ["korotkiy-mech", 1],
+      ["korotkiy-luk", 1],
+      ["strely-20", 1],
+      ["kolchan", 1],
+      ["instrumenty-vorovskie-0-y-rang", 1],
+      ["nabor-vzlomshchika", 1]
+    ]
+  );
+  assert.deepEqual(packageDefinitions[0].startingEquipmentPackage.currency, { gp: 8 });
+  assert.deepEqual(packageDefinitions[1].startingEquipmentPackage.items, []);
+  assert.deepEqual(packageDefinitions[1].startingEquipmentPackage.currency, { gp: 100 });
+});
+
 test("paladin rework data defines ZoZT class basics, spellcasting, and subclasses", () => {
   const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const system = createClassSystem(paladin.classData, [], paladin.sourceLabel);

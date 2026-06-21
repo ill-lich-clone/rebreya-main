@@ -16,6 +16,12 @@ import {
   getPaladinStartingEquipmentPackage,
   getPaladinStartingEquipmentPackageChoices
 } from "./paladin-starting-equipment.js";
+import {
+  ROGUE_STARTING_EQUIPMENT_PACKAGES,
+  ROGUE_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE,
+  getRogueStartingEquipmentPackage,
+  getRogueStartingEquipmentPackageChoices
+} from "./rogue-starting-equipment.js";
 
 export const CLASS_STARTING_EQUIPMENT_CONFIGS = Object.freeze([
   Object.freeze({
@@ -41,6 +47,14 @@ export const CLASS_STARTING_EQUIPMENT_CONFIGS = Object.freeze([
     choiceHint: "Выберите А или Б:",
     getPackage: getPaladinStartingEquipmentPackage,
     getChoices: getPaladinStartingEquipmentPackageChoices
+  }),
+  Object.freeze({
+    classIdentifier: "rogue-rework-v00",
+    sourceType: ROGUE_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE,
+    packages: ROGUE_STARTING_EQUIPMENT_PACKAGES,
+    choiceHint: "Выберите А или Б:",
+    getPackage: getRogueStartingEquipmentPackage,
+    getChoices: getRogueStartingEquipmentPackageChoices
   })
 ]);
 

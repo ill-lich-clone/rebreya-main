@@ -31,15 +31,18 @@ const COMPENDIUM_SIDEBAR_FOLDER = [REBREYA_SOURCE_LABEL];
 const CLASS_DATA_PATHS = [
   `modules/${MODULE_ID}/data/barbarian-rework-v012.json`,
   `modules/${MODULE_ID}/data/fighter-rework-v028.json`,
-  `modules/${MODULE_ID}/data/paladin-rework-v01.json`
+  `modules/${MODULE_ID}/data/paladin-rework-v01.json`,
+  `modules/${MODULE_ID}/data/rogue-rework-v00.json`
 ];
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const CLASS_ICON_SEARCH_PATHS = [
   `${MODULE_ICONS_BASE_PATH}/Classes/Fighter`,
   `${MODULE_ICONS_BASE_PATH}/Classes/Barbarian`,
   `${MODULE_ICONS_BASE_PATH}/Classes/Paladin`,
+  `${MODULE_ICONS_BASE_PATH}/Classes/Rogue`,
   `${MODULE_ICONS_BASE_PATH}/Fighter`,
   `${MODULE_ICONS_BASE_PATH}/Barbarian`,
+  `${MODULE_ICONS_BASE_PATH}/Rogue`,
   `${MODULE_ICONS_BASE_PATH}/Feats`,
   MODULE_ICONS_BASE_PATH
 ];
@@ -540,6 +543,51 @@ function normalizeDieProgressionMap(value) {
   return progression;
 }
 
+function normalizeScaleAdvancements(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  const usedIds = new Set();
+  return entries
+    .map((entry, index) => {
+      const title = cleanString(entry?.title, "Масштабируемое значение");
+      const identifier = uniqueIdentifier(
+        buildAsciiIdentifier(cleanString(entry?.id ?? entry?.identifier, title), `${title}-${index + 1}`),
+        usedIds,
+        `${title}-${index + 1}`
+      );
+      const type = cleanString(entry?.type) === "dice" ? "dice" : "number";
+      return {
+        id: identifier,
+        title,
+        hint: cleanString(entry?.hint),
+        identifier,
+        type,
+        level: Math.max(1, Math.floor(parseNumber(entry?.level, 1))),
+        progression: type === "dice"
+          ? normalizeDiceProgressionMap(entry?.progression)
+          : normalizeProgressionMap(entry?.progression)
+      };
+    })
+    .filter((entry) => Object.keys(entry.progression).length);
+}
+
+function normalizeDiceProgressionMap(value) {
+  const progression = {};
+  for (const [level, entry] of Object.entries(isPlainObject(value) ? value : {})) {
+    const parsedLevel = Math.max(1, Math.floor(parseNumber(level, 0)));
+    const match = cleanString(entry).match(/^(\d*)d(\d+)$/iu);
+    const number = match?.[1] ? Math.floor(parseNumber(match[1], 0)) : 0;
+    const faces = match ? Math.floor(parseNumber(match[2], 0)) : 0;
+    if (parsedLevel >= 1 && parsedLevel <= 20 && number > 0 && faces > 0) {
+      progression[String(parsedLevel)] = `${number}d${faces}`;
+    }
+  }
+
+  return progression;
+}
+
 function normalizeStartingEquipment(entries) {
   if (!Array.isArray(entries)) {
     return [];
@@ -716,10 +764,13 @@ export function normalizeClassCompendiumData(rawData) {
   const skillPool = unique(Array.isArray(rawClass.skillPool)
     ? rawClass.skillPool
     : classIdentifier === "fighter-rework-v028" ? FIGHTER_SKILL_POOL : SKILL_POOL);
+  const skillChoiceCount = Math.max(1, Math.floor(parseNumber(rawClass.skillChoiceCount, 2)));
   const saveProficiencies = unique(Array.isArray(rawClass.saveProficiencies) ? rawClass.saveProficiencies : ["str", "con"]);
   const armorProficiencies = unique(Array.isArray(rawClass.armorProficiencies)
     ? rawClass.armorProficiencies
     : classIdentifier === "fighter-rework-v028" ? FIGHTER_ARMOR_PROFICIENCIES : []);
+  const toolProficiencies = unique(Array.isArray(rawClass.toolProficiencies) ? rawClass.toolProficiencies : []);
+  const toolProficiencyChoices = normalizeTraitChoices(rawClass.toolProficiencyChoices, "tool");
   const weaponProficiencies = unique(Array.isArray(rawClass.weaponProficiencies)
     ? rawClass.weaponProficiencies
     : classIdentifier === "fighter-rework-v028" ? FIGHTER_WEAPON_PROFICIENCIES : []);
@@ -863,14 +914,18 @@ export function normalizeClassCompendiumData(rawData) {
       hitDie,
       primaryAbility,
       skillPool,
+      skillChoiceCount,
       saveProficiencies,
       armorProficiencies,
+      toolProficiencies,
+      toolProficiencyChoices,
       weaponProficiencies,
       weaponProficiencyChoices,
       wealth,
       startingEquipment,
       spellcasting,
       spellChoice,
+      scaleAdvancements: normalizeScaleAdvancements(rawClass.scaleAdvancements),
       subclassTitle,
       subclassHint,
       features: classFeatures
@@ -3229,10 +3284,12 @@ export function buildClassAdvancement(classData, context = {}) {
     classIdentifier,
     seed: "skills",
     title: `Навыки: ${classData.name}`,
-    hint: "Выберите два навыка класса.",
+    hint: classData.skillChoiceCount === 2
+      ? "Выберите два навыка класса."
+      : "Выберите навыки класса.",
     level: 1,
     choices: [{
-      count: 2,
+      count: Math.max(1, Math.floor(parseNumber(classData.skillChoiceCount, 2))),
       pool: (classData.skillPool ?? SKILL_POOL).map((skill) => `skills:${skill}`)
     }]
   }));
@@ -3247,6 +3304,23 @@ export function buildClassAdvancement(classData, context = {}) {
       hint: "Владение доспехами и щитами класса.",
       level: 1,
       grants: armorProficiencyGrants
+    }));
+  }
+
+  const toolProficiencyGrants = (classData.toolProficiencies ?? [])
+    .map((proficiency) => proficiencyGrant("tool", proficiency));
+  const toolProficiencyChoices = Array.isArray(classData.toolProficiencyChoices)
+    ? classData.toolProficiencyChoices
+    : [];
+  if (toolProficiencyGrants.length || toolProficiencyChoices.length) {
+    advancements.push(buildTraitAdvancement({
+      classIdentifier,
+      seed: "tool-proficiencies",
+      title: "Владение инструментами",
+      hint: "Владение инструментами класса.",
+      level: 1,
+      grants: toolProficiencyGrants,
+      choices: toolProficiencyChoices
     }));
   }
 
@@ -3328,6 +3402,19 @@ export function buildClassAdvancement(classData, context = {}) {
       scaleEntries: dominanceProgression.die,
       level: 1,
       type: "dice"
+    }));
+  }
+
+  for (const scale of Array.isArray(classData.scaleAdvancements) ? classData.scaleAdvancements : []) {
+    advancements.push(buildScaleValueAdvancement({
+      classIdentifier,
+      seed: `scale-${scale.identifier}`,
+      title: scale.title,
+      hint: scale.hint,
+      identifier: scale.identifier,
+      scaleEntries: scale.progression,
+      level: scale.level,
+      type: scale.type
     }));
   }
 
@@ -3697,6 +3784,10 @@ function resolveClassIcon(className, iconLookup) {
 
   if (normalizeMatchText(className).includes("паладин")) {
     return resolveNamedIcon("Paladin", iconLookup, PALADIN_CLASS_ICON);
+  }
+
+  if (normalizeMatchText(className).includes("плут")) {
+    return resolveNamedIcon("Rogue", iconLookup, DEFAULT_CLASS_ICON);
   }
 
   return resolveNamedIcon("Barbarian", iconLookup, DEFAULT_CLASS_ICON);
