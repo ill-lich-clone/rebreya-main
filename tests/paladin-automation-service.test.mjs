@@ -871,6 +871,62 @@ test("paladin divine smite spends the selected spell slot and adds radiant bonus
   assert.equal(typeof config.rolls[0].options.flavor, "string");
 });
 
+test("paladin divine smite uses DialogV2 when the legacy Dialog class is unavailable", async () => {
+  const previousDialog = globalThis.Dialog;
+  const previousApplications = globalThis.foundry.applications;
+  const divineSmite = makeFeatureItem({
+    id: "divine-smite",
+    name: "Божественная кара",
+    featureId: "paladin-rework-v01::class::paladin-divine-smite"
+  });
+  const paladin = new TestActor({
+    items: [divineSmite],
+    spellSlots: {
+      spell1: { value: 1, max: 1 }
+    }
+  });
+  const target = new TestActor({ id: "target", name: "Target", items: [] });
+  let dialogCalls = 0;
+  globalThis.Dialog = undefined;
+  globalThis.foundry.applications = {
+    api: {
+      DialogV2: {
+        async wait({ buttons }) {
+          dialogCalls += 1;
+          const form = {
+            querySelector(selector) {
+              if (selector === "[data-smite-slot]") return { value: "1" };
+              if (selector === "[data-smite-target]") return { value: target.uuid };
+              return null;
+            },
+            querySelectorAll() {
+              return [];
+            }
+          };
+          return buttons?.[0]?.callback?.({}, { form }) ?? {};
+        }
+      }
+    }
+  };
+  const service = new PaladinAutomationService({});
+  const workflow = makeWeaponWorkflow({ actor: paladin, target });
+  const config = makeDamageConfig();
+
+  try {
+    await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.foundry.applications = previousApplications;
+  }
+
+  assert.equal(dialogCalls, 1);
+  assert.equal(paladin.system.spells.spell1.value, 0);
+  assert.equal(config.rolls.length, 1);
+  assert.deepEqual(config.rolls[0].parts, ["2d8"]);
+  assert.equal(config.rolls[0].options.type, "radiant");
+});
+
 test("paladin divine smite leaves critical doubling to the dnd5e damage roll", async () => {
   const divineSmite = makeFeatureItem({
     id: "divine-smite",

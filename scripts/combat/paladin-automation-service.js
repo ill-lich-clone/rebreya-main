@@ -88,6 +88,18 @@ function escapeHtml(value) {
   return foundry.utils.escapeHTML(cleanText(value));
 }
 
+function getDialogButtonForm(button) {
+  if (typeof HTMLElement !== "undefined" && button?.form instanceof HTMLElement) {
+    return button.form;
+  }
+
+  if (typeof HTMLElement !== "undefined" && button instanceof HTMLElement) {
+    return button.closest?.("form") ?? null;
+  }
+
+  return button?.form ?? null;
+}
+
 function isActorDocument(actor) {
   return typeof Actor !== "undefined" && actor instanceof Actor;
 }
@@ -1024,7 +1036,7 @@ export class PaladinAutomationService {
       return choice ? { ...choice, actor } : null;
     }
 
-    if (!this.#canPrompt(actor) || typeof Dialog !== "function") {
+    if (!this.#canPrompt(actor)) {
       return null;
     }
 
@@ -1043,29 +1055,65 @@ export class PaladinAutomationService {
       `).join("")
       : "<p>Нет дополнительных вариантов кары.</p>";
 
+    const content = `
+      <form>
+        <p>Попадание оружием. Потратить ячейку заклинаний на Божественную кару?</p>
+        <div class="form-group">
+          <label>Ячейка</label>
+          <select name="slotLevel" data-smite-slot>${slotOptions}</select>
+        </div>
+        ${details.targets.length > 1 ? `
+          <div class="form-group">
+            <label>Цель</label>
+            <select name="targetUuid" data-smite-target>${targetOptions}</select>
+          </div>
+        ` : ""}
+        <fieldset>
+          <legend>Вариант кары</legend>
+          ${variantInputs}
+        </fieldset>
+      </form>
+    `;
+
+    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof DialogV2?.wait === "function") {
+      const choice = await DialogV2.wait({
+        window: { title: "Божественная кара" },
+        content,
+        buttons: [
+          {
+            action: "confirm",
+            label: "Кара",
+            default: true,
+            callback: (_event, button) => {
+              const root = getDialogButtonForm(button);
+              const slotLevel = Number(root?.querySelector?.("[data-smite-slot]")?.value ?? 0);
+              const targetUuid = cleanText(root?.querySelector?.("[data-smite-target]")?.value);
+              const variantIds = Array.from(root?.querySelectorAll?.("[data-smite-variant]:checked") ?? [])
+                .map((input) => cleanText(input.value))
+                .filter(Boolean);
+              return { slotLevel, targetUuid, variantIds, actor };
+            }
+          },
+          {
+            action: "cancel",
+            label: "Отмена",
+            callback: () => null
+          }
+        ]
+      });
+      return choice ? { ...choice, actor } : null;
+    }
+
+    if (typeof Dialog !== "function") {
+      return null;
+    }
+
     return new Promise((resolve) => {
       let settled = false;
       const dialog = new Dialog({
         title: "Божественная кара",
-        content: `
-          <form>
-            <p>Попадание оружием. Потратить ячейку заклинаний на Божественную кару?</p>
-            <div class="form-group">
-              <label>Ячейка</label>
-              <select data-smite-slot>${slotOptions}</select>
-            </div>
-            ${details.targets.length > 1 ? `
-              <div class="form-group">
-                <label>Цель</label>
-                <select data-smite-target>${targetOptions}</select>
-              </div>
-            ` : ""}
-            <fieldset>
-              <legend>Вариант кары</legend>
-              ${variantInputs}
-            </fieldset>
-          </form>
-        `,
+        content,
         buttons: {
           confirm: {
             label: "Кара",

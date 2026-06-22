@@ -226,6 +226,18 @@ function getDialogRoot(html) {
   return null;
 }
 
+function getDialogButtonForm(button) {
+  if (typeof HTMLElement !== "undefined" && button?.form instanceof HTMLElement) {
+    return button.form;
+  }
+
+  if (typeof HTMLElement !== "undefined" && button instanceof HTMLElement) {
+    return button.closest?.("form") ?? null;
+  }
+
+  return button?.form ?? null;
+}
+
 function escapeHtml(value) {
   return foundry.utils.escapeHTML(cleanText(value));
 }
@@ -426,7 +438,7 @@ export class RogueAutomationService {
       return choice ? { ...choice, actor } : null;
     }
 
-    if (!this.#canPrompt(actor) || typeof Dialog !== "function") {
+    if (!this.#canPrompt(actor)) {
       return null;
     }
 
@@ -440,26 +452,59 @@ export class RogueAutomationService {
       ))
     ].join("");
 
+    const content = `
+      <form>
+        <p>Попадание оружием: <strong>${escapeHtml(details.weapon.name)}</strong>. Использовать Скрытую атаку?</p>
+        <p>Урон: ${escapeHtml(details.formula)} ${details.damageType ? `(${escapeHtml(details.damageType)})` : ""}</p>
+        ${details.targets.length > 1 ? `
+          <div class="form-group">
+            <label>Цель</label>
+            <select name="targetUuid" data-sneak-attack-target>${targetOptions}</select>
+          </div>
+        ` : ""}
+        <div class="form-group">
+          <label>Хитрый удар</label>
+          <select name="cunningStrikeId" data-sneak-attack-cunning-strike>${strikeOptions}</select>
+        </div>
+      </form>
+    `;
+
+    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof DialogV2?.wait === "function") {
+      const choice = await DialogV2.wait({
+        window: { title: "Скрытая атака" },
+        content,
+        buttons: [
+          {
+            action: "confirm",
+            label: "Скрытая атака",
+            default: true,
+            callback: (_event, button) => {
+              const root = getDialogButtonForm(button);
+              const targetUuid = cleanText(root?.querySelector?.("[data-sneak-attack-target]")?.value);
+              const cunningStrikeId = cleanText(root?.querySelector?.("[data-sneak-attack-cunning-strike]")?.value);
+              return { targetUuid, cunningStrikeId, actor };
+            }
+          },
+          {
+            action: "cancel",
+            label: "Отмена",
+            callback: () => null
+          }
+        ]
+      });
+      return choice ? { ...choice, actor } : null;
+    }
+
+    if (typeof Dialog !== "function") {
+      return null;
+    }
+
     return new Promise((resolve) => {
       let settled = false;
       const dialog = new Dialog({
         title: "Скрытая атака",
-        content: `
-          <form>
-            <p>Попадание оружием: <strong>${escapeHtml(details.weapon.name)}</strong>. Использовать Скрытую атаку?</p>
-            <p>Урон: ${escapeHtml(details.formula)} ${details.damageType ? `(${escapeHtml(details.damageType)})` : ""}</p>
-            ${details.targets.length > 1 ? `
-              <div class="form-group">
-                <label>Цель</label>
-                <select data-sneak-attack-target>${targetOptions}</select>
-              </div>
-            ` : ""}
-            <div class="form-group">
-              <label>Хитрый удар</label>
-              <select data-sneak-attack-cunning-strike>${strikeOptions}</select>
-            </div>
-          </form>
-        `,
+        content,
         buttons: {
           confirm: {
             label: "Скрытая атака",

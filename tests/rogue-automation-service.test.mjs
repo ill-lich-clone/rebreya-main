@@ -250,6 +250,53 @@ test("rogue sneak attack prompts on a weapon hit and adds reduced bonus damage f
   assert.match(config.rolls[0].options.flavor, /Hamstring/u);
 });
 
+test("rogue sneak attack uses DialogV2 when the legacy Dialog class is unavailable", async () => {
+  const previousDialog = globalThis.Dialog;
+  const previousApplications = globalThis.foundry.applications;
+  const sneakAttack = makeFeatureItem({
+    id: "sneak-attack",
+    name: "Sneak Attack",
+    featureId: "rogue-rework-v00::class::rogue-sneak-attack"
+  });
+  const rogue = new TestActor({ items: [sneakAttack], level: 1 });
+  const target = new TestActor({ id: "target", name: "Target", items: [] });
+  let dialogCalls = 0;
+  globalThis.Dialog = undefined;
+  globalThis.foundry.applications = {
+    api: {
+      DialogV2: {
+        async wait({ buttons }) {
+          dialogCalls += 1;
+          const form = {
+            querySelector(selector) {
+              if (selector === "[data-sneak-attack-target]") return { value: target.uuid };
+              if (selector === "[data-sneak-attack-cunning-strike]") return { value: "" };
+              return null;
+            }
+          };
+          return buttons?.[0]?.callback?.({}, { form }) ?? {};
+        }
+      }
+    }
+  };
+  const service = new RogueAutomationService({});
+  const workflow = makeWeaponWorkflow({ actor: rogue, target });
+  const config = makeDamageConfig();
+
+  try {
+    await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.foundry.applications = previousApplications;
+  }
+
+  assert.equal(dialogCalls, 1);
+  assert.equal(config.rolls.length, 1);
+  assert.deepEqual(config.rolls[0].parts, ["1d6"]);
+  assert.equal(config.rolls[0].options.type, "piercing");
+});
+
 test("rogue sneak attack asks without checking finesse or advantage and only once per turn after use", async () => {
   const sneakAttack = makeFeatureItem({
     id: "sneak-attack",
