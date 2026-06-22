@@ -397,7 +397,7 @@ export function registerCombatHooks(moduleApi) {
       });
     });
 
-    Hooks.on("midi-qol.RollComplete", (workflow) => {
+    Hooks.on("midi-qol.DamageRollComplete", (workflow) => {
       moduleApi.paladinAutomationService.applyMidiRollComplete(workflow).catch((error) => {
         console.error(`${MODULE_ID} | Failed to apply paladin MIDI automation.`, error);
       });

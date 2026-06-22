@@ -201,24 +201,17 @@ function sneakAttackDiceCount(actor) {
 
 function combatTurnKey(actor, workflow) {
   const combat = workflow?.combat ?? game?.combat ?? null;
+  if (!cleanText(combat?.id)) {
+    return "";
+  }
+
   return [
-    cleanText(combat?.id, "no-combat"),
+    cleanText(combat?.id),
     Math.floor(toNumber(combat?.round, 0)),
     Math.floor(toNumber(combat?.turn, 0)),
     cleanText(actor?.uuid ?? actor?.id ?? actor?.name, "actor"),
     "sneak-attack"
   ].join(":");
-}
-
-function speakerForActor(actor) {
-  if (typeof globalThis.ChatMessage?.getSpeaker === "function") {
-    return globalThis.ChatMessage.getSpeaker({ actor });
-  }
-
-  return {
-    actor: actor?.id,
-    alias: actor?.name
-  };
 }
 
 function getDialogRoot(html) {
@@ -244,6 +237,47 @@ function selectedCunningStrikeId(choice) {
     ?? choice?.variantId
     ?? choice?.cunningStrike
   );
+}
+
+function isCriticalWorkflow(workflow) {
+  return workflow?.isCritical === true
+    || workflow?.critical === true
+    || workflow?.workflowOptions?.isCritical === true;
+}
+
+function damageDiceFormula(diceCount, faces, workflow) {
+  const dice = Math.max(0, Math.floor(toNumber(diceCount, 0)));
+  const multiplier = isCriticalWorkflow(workflow) ? 2 : 1;
+  return `${dice * multiplier}d${Math.max(1, Math.floor(toNumber(faces, 1)))}`;
+}
+
+async function createDamageRoll(formula, actor, damageType, flavor) {
+  const RollClass = globalThis.CONFIG?.Dice?.DamageRoll ?? globalThis.Roll;
+  const roll = new RollClass(cleanText(formula) || "0", actor?.getRollData?.() ?? {}, {
+    type: cleanText(damageType),
+    flavor: cleanText(flavor, damageType)
+  });
+  if (typeof roll.evaluate === "function" && !roll._evaluated) {
+    await roll.evaluate();
+  }
+  return roll;
+}
+
+async function appendWorkflowBonusDamage(workflow, actor, formula, damageType, flavor) {
+  const roll = await createDamageRoll(formula, actor, damageType, flavor);
+  if (typeof workflow?.setBonusDamageRolls === "function") {
+    const existing = Array.isArray(workflow.bonusDamageRolls) ? workflow.bonusDamageRolls : [];
+    await workflow.setBonusDamageRolls([...existing, roll]);
+    return true;
+  }
+
+  if (typeof workflow?.setDamageRolls === "function") {
+    const existing = Array.isArray(workflow.damageRolls) ? workflow.damageRolls : [];
+    await workflow.setDamageRolls([...existing, roll]);
+    return true;
+  }
+
+  return false;
 }
 
 export class RogueAutomationService {
@@ -274,7 +308,7 @@ export class RogueAutomationService {
     }
 
     const turnKey = combatTurnKey(actor, workflow);
-    if (this._sneakAttackTurnUses.has(turnKey)) {
+    if (turnKey && this._sneakAttackTurnUses.has(turnKey)) {
       return true;
     }
 
@@ -282,7 +316,7 @@ export class RogueAutomationService {
     const damageType = defaultDamageTypeFromWorkflow(workflow);
     const weapon = workflow?.activity?.item ?? workflow?.item ?? null;
     const details = {
-      formula: `${diceCount}d6`,
+      formula: damageDiceFormula(diceCount, 6, workflow),
       diceCount,
       damageType,
       weapon: {
@@ -311,17 +345,21 @@ export class RogueAutomationService {
     const remainingDice = Math.max(0, diceCount - Math.floor(toNumber(selectedStrike?.cost, 0)));
     const label = this.#sneakAttackLabel(selectedStrike);
     if (remainingDice > 0) {
-      await this.#applyDamage(chosenTarget, `${remainingDice}d6`, damageType, {
-        sourceActor: actor,
-        sourceItemUuid: sneakAttackFeature?.uuid ?? workflow?.item?.uuid,
+      const applied = await appendWorkflowBonusDamage(
+        workflow,
+        actor,
+        damageDiceFormula(remainingDice, 6, workflow),
+        damageType,
         label
-      });
-    }
-    else {
-      await this.#postSneakAttackMessage(actor, "0", label);
+      );
+      if (!applied) {
+        return true;
+      }
     }
 
-    this._sneakAttackTurnUses.add(turnKey);
+    if (turnKey) {
+      this._sneakAttackTurnUses.add(turnKey);
+    }
     return true;
   }
 
@@ -385,37 +423,6 @@ export class RogueAutomationService {
   #sneakAttackLabel(selectedStrike) {
     const suffix = selectedStrike?.name ? `: ${selectedStrike.name}` : "";
     return `Скрытая атака${suffix}`;
-  }
-
-  async #applyDamage(actor, formula, damageType = "", options = {}) {
-    if (!(actor instanceof Actor)) {
-      return false;
-    }
-
-    const roll = new Roll(cleanText(formula) || "0", options.sourceActor?.getRollData?.() ?? actor.getRollData?.() ?? {});
-    await roll.evaluate();
-    await actor.applyDamage?.([{
-      value: Math.max(0, toNumber(roll.total, 0)),
-      type: cleanText(damageType)
-    }], {
-      sourceActorUuid: options.sourceActor?.uuid,
-      sourceItemUuid: options.sourceItemUuid
-    });
-    await roll.toMessage?.({
-      speaker: speakerForActor(options.sourceActor ?? actor),
-      flavor: cleanText(options.label, "Скрытая атака")
-    });
-    return true;
-  }
-
-  async #postSneakAttackMessage(actor, formula, label) {
-    const roll = new Roll(cleanText(formula) || "0", actor.getRollData?.() ?? {});
-    await roll.evaluate();
-    await roll.toMessage?.({
-      speaker: speakerForActor(actor),
-      flavor: cleanText(label, "Скрытая атака")
-    });
-    return true;
   }
 
   async #promptSneakAttack(actor, details) {

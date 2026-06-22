@@ -532,8 +532,12 @@ function divineSmiteDamageDice(slotLevel) {
 
 function combatTurnKey(actor, workflow) {
   const combat = workflow?.combat ?? game?.combat ?? null;
+  if (!cleanText(combat?.id)) {
+    return "";
+  }
+
   return [
-    cleanText(combat?.id, "no-combat"),
+    cleanText(combat?.id),
     Math.floor(toNumber(combat?.round, 0)),
     Math.floor(toNumber(combat?.turn, 0)),
     cleanText(actor?.uuid ?? actor?.id ?? actor?.name, "actor"),
@@ -623,6 +627,47 @@ function selectedVariantIdsFromChoice(choice) {
   return single ? [single] : [];
 }
 
+function isCriticalWorkflow(workflow) {
+  return workflow?.isCritical === true
+    || workflow?.critical === true
+    || workflow?.workflowOptions?.isCritical === true;
+}
+
+function damageDiceFormula(diceCount, faces, workflow) {
+  const dice = Math.max(0, Math.floor(toNumber(diceCount, 0)));
+  const multiplier = isCriticalWorkflow(workflow) ? 2 : 1;
+  return `${dice * multiplier}d${Math.max(1, Math.floor(toNumber(faces, 1)))}`;
+}
+
+async function createDamageRoll(formula, actor, damageType, flavor) {
+  const RollClass = globalThis.CONFIG?.Dice?.DamageRoll ?? globalThis.Roll;
+  const roll = new RollClass(cleanText(formula) || "0", actor?.getRollData?.() ?? {}, {
+    type: cleanText(damageType),
+    flavor: cleanText(flavor, damageType)
+  });
+  if (typeof roll.evaluate === "function" && !roll._evaluated) {
+    await roll.evaluate();
+  }
+  return roll;
+}
+
+async function appendWorkflowBonusDamage(workflow, actor, formula, damageType, flavor) {
+  const roll = await createDamageRoll(formula, actor, damageType, flavor);
+  if (typeof workflow?.setBonusDamageRolls === "function") {
+    const existing = Array.isArray(workflow.bonusDamageRolls) ? workflow.bonusDamageRolls : [];
+    await workflow.setBonusDamageRolls([...existing, roll]);
+    return true;
+  }
+
+  if (typeof workflow?.setDamageRolls === "function") {
+    const existing = Array.isArray(workflow.damageRolls) ? workflow.damageRolls : [];
+    await workflow.setDamageRolls([...existing, roll]);
+    return true;
+  }
+
+  return false;
+}
+
 export class PaladinAutomationService {
   constructor(moduleApi, options = {}) {
     this.moduleApi = moduleApi;
@@ -668,7 +713,7 @@ export class PaladinAutomationService {
 
     const turnKey = combatTurnKey(actor, workflow);
     const ignoresTurnLimit = this.#canIgnoreDivineSmiteTurnLimit(actor);
-    if (!ignoresTurnLimit && this._smiteTurnUses.has(turnKey)) {
+    if (turnKey && !ignoresTurnLimit && this._smiteTurnUses.has(turnKey)) {
       return true;
     }
 
@@ -708,14 +753,19 @@ export class PaladinAutomationService {
       return true;
     }
 
+    const formula = damageDiceFormula(divineSmiteDamageDice(selectedSlot.level), 8, workflow);
+    const applied = await appendWorkflowBonusDamage(
+      workflow,
+      actor,
+      formula,
+      DIVINE_SMITE_DAMAGE_TYPE,
+      this.#divineSmiteLabel(selectedSlot.level, selectedVariants)
+    );
+    if (!applied) {
+      return true;
+    }
     await actor.update?.({ [`system.spells.spell${selectedSlot.level}.value`]: latestValue - 1 });
-    const formula = `${divineSmiteDamageDice(selectedSlot.level)}d8`;
-    await this.#applyDamage(chosenTarget, formula, DIVINE_SMITE_DAMAGE_TYPE, {
-      sourceActor: actor,
-      sourceItemUuid: smiteFeature.uuid ?? workflow?.item?.uuid,
-      label: this.#divineSmiteLabel(selectedSlot.level, selectedVariants)
-    });
-    if (!ignoresTurnLimit) {
+    if (turnKey && !ignoresTurnLimit) {
       this._smiteTurnUses.add(turnKey);
     }
 
@@ -971,27 +1021,6 @@ export class PaladinAutomationService {
     const variantNames = selectedVariants.map((variant) => variant.name).filter(Boolean);
     const suffix = variantNames.length ? `: ${variantNames.join(", ")}` : "";
     return `Божественная кара (${slotLevel} ур.)${suffix}`;
-  }
-
-  async #applyDamage(actor, formula, damageType = "", options = {}) {
-    if (!(actor instanceof Actor)) {
-      return false;
-    }
-
-    const roll = new Roll(cleanText(formula) || "0", options.sourceActor?.getRollData?.() ?? actor.getRollData?.() ?? {});
-    await roll.evaluate();
-    await actor.applyDamage?.([{
-      value: Math.max(0, toNumber(roll.total, 0)),
-      type: cleanText(damageType)
-    }], {
-      sourceActorUuid: options.sourceActor?.uuid,
-      sourceItemUuid: options.sourceItemUuid
-    });
-    await roll.toMessage?.({
-      speaker: speakerForActor(options.sourceActor ?? actor),
-      flavor: cleanText(options.label, "Божественная кара")
-    });
-    return true;
   }
 
   async #promptDivineSmite(actor, details) {

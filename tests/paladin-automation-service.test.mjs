@@ -53,20 +53,24 @@ globalThis.ChatMessage ??= {
 class TestRoll {
   static messages = [];
 
-  constructor(formula, data = {}) {
+  constructor(formula, data = {}, options = {}) {
     this.formula = String(formula ?? "0");
     this.data = data;
+    this.options = options;
     this.total = 0;
+    this._evaluated = false;
   }
 
   async evaluate() {
     const diceMatch = this.formula.match(/^(\d+)d8$/u);
     if (diceMatch) {
       this.total = Number(diceMatch[1]) * 4;
+      this._evaluated = true;
       return this;
     }
 
     this.total = Number(this.formula) || 0;
+    this._evaluated = true;
     return this;
   }
 
@@ -83,6 +87,7 @@ class TestRoll {
 globalThis.Roll ??= TestRoll;
 
 const { PaladinAutomationService } = await import("../scripts/combat/paladin-automation-service.js");
+const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
 
 class TestActor extends Actor {
   constructor({
@@ -276,6 +281,7 @@ function makeFeatureItem({
 function makeWeaponWorkflow({
   actor,
   target,
+  isCritical = false,
   item = {
     id: "sword",
     uuid: "Actor.paladin.Item.sword",
@@ -299,7 +305,15 @@ function makeWeaponWorkflow({
     },
     hitTargets: new Set([{ actor: target }]),
     hitTargetsEC: new Set(),
-    targets: new Set([{ actor }])
+    targets: new Set([{ actor }]),
+    isCritical,
+    bonusDamageRolls: [],
+    bonusDamageRollUpdates: [],
+    async setBonusDamageRolls(rolls) {
+      this.bonusDamageRolls = rolls;
+      this.bonusDamageRollUpdates.push(rolls);
+      return this;
+    }
   };
 }
 
@@ -796,7 +810,7 @@ test("paladin lay on hands socket request rejects senders that do not own the so
   }
 });
 
-test("paladin divine smite spends the selected spell slot and applies radiant damage to the hit target", async () => {
+test("paladin divine smite spends the selected spell slot and adds radiant bonus damage", async () => {
   TestRoll.messages = [];
   const divineSmite = makeFeatureItem({
     id: "divine-smite",
@@ -829,7 +843,9 @@ test("paladin divine smite spends the selected spell slot and applies radiant da
     }
   });
 
-  await service.applyMidiRollComplete(makeWeaponWorkflow({ actor: paladin, target }));
+  const workflow = makeWeaponWorkflow({ actor: paladin, target });
+
+  await service.applyMidiRollComplete(workflow);
 
   assert.equal(prompts.length, 1);
   assert.equal(prompts[0].actor, paladin);
@@ -846,15 +862,79 @@ test("paladin divine smite spends the selected spell slot and applies radiant da
   assert.deepEqual(paladin.updates.at(-1), {
     "system.spells.spell4.value": 0
   });
-  assert.equal(target.damageApplications.length, 1);
-  assert.deepEqual(target.damageApplications[0].damage, [{
-    value: 20,
-    type: "radiant"
-  }]);
-  assert.equal(target.damageApplications[0].options.sourceActorUuid, paladin.uuid);
-  assert.equal(TestRoll.messages[0].formula, "5d8");
-  assert.match(TestRoll.messages[0].message.flavor, /Божественная кара/u);
-  assert.match(TestRoll.messages[0].message.flavor, /Небесная кара/u);
+  assert.equal(target.damageApplications.length, 0);
+  assert.equal(TestRoll.messages.length, 0);
+  assert.equal(workflow.bonusDamageRollUpdates.length, 1);
+  assert.equal(workflow.bonusDamageRolls[0].formula, "5d8");
+  assert.equal(workflow.bonusDamageRolls[0].options.type, "radiant");
+  assert.equal(typeof workflow.bonusDamageRolls[0].options.flavor, "string");
+});
+
+test("paladin divine smite doubles its dice on a critical hit", async () => {
+  const divineSmite = makeFeatureItem({
+    id: "divine-smite",
+    name: "Divine Smite",
+    featureId: "paladin-rework-v01::class::paladin-divine-smite"
+  });
+  const paladin = new TestActor({
+    items: [divineSmite],
+    spellSlots: {
+      spell4: { value: 1, max: 1 }
+    }
+  });
+  const target = new TestActor({ id: "target", name: "Target", items: [] });
+  const service = new PaladinAutomationService({}, {
+    promptDivineSmite: async () => ({ slotLevel: 4 })
+  });
+  const workflow = makeWeaponWorkflow({ actor: paladin, target, isCritical: true });
+
+  await service.applyMidiRollComplete(workflow);
+
+  assert.equal(paladin.system.spells.spell4.value, 0);
+  assert.equal(target.damageApplications.length, 0);
+  assert.equal(workflow.bonusDamageRollUpdates.length, 1);
+  assert.equal(workflow.bonusDamageRolls[0].formula, "10d8");
+  assert.equal(workflow.bonusDamageRolls[0].options.type, "radiant");
+});
+
+test("paladin divine smite does not lock itself forever when combat is inactive", async () => {
+  const previousCombat = globalThis.game.combat;
+  globalThis.game.combat = null;
+  const divineSmite = makeFeatureItem({
+    id: "divine-smite",
+    name: "Divine Smite",
+    featureId: "paladin-rework-v01::class::paladin-divine-smite"
+  });
+  const paladin = new TestActor({
+    items: [divineSmite],
+    spellSlots: {
+      spell1: { value: 2, max: 2 }
+    }
+  });
+  const target = new TestActor({ id: "target", name: "Target", items: [] });
+  let prompts = 0;
+  const service = new PaladinAutomationService({}, {
+    promptDivineSmite: async () => {
+      prompts += 1;
+      return { slotLevel: 1 };
+    }
+  });
+  const firstWorkflow = makeWeaponWorkflow({ actor: paladin, target });
+  const secondWorkflow = makeWeaponWorkflow({ actor: paladin, target });
+
+  try {
+    await service.applyMidiRollComplete(firstWorkflow);
+    await service.applyMidiRollComplete(secondWorkflow);
+  }
+  finally {
+    globalThis.game.combat = previousCombat;
+  }
+
+  assert.equal(prompts, 2);
+  assert.equal(paladin.system.spells.spell1.value, 0);
+  assert.equal(target.damageApplications.length, 0);
+  assert.equal(firstWorkflow.bonusDamageRollUpdates.length, 1);
+  assert.equal(secondWorkflow.bonusDamageRollUpdates.length, 1);
 });
 
 test("paladin divine smite is once per turn unless a bypass effect or feature is present", async () => {
@@ -881,15 +961,18 @@ test("paladin divine smite is once per turn unless a bypass effect or feature is
     }
   });
 
-  await cappedService.applyMidiRollComplete(makeWeaponWorkflow({ actor: cappedPaladin, target }));
-  await cappedService.applyMidiRollComplete(makeWeaponWorkflow({ actor: cappedPaladin, target }));
+  const cappedFirstWorkflow = makeWeaponWorkflow({ actor: cappedPaladin, target });
+  const cappedSecondWorkflow = makeWeaponWorkflow({ actor: cappedPaladin, target });
+  await cappedService.applyMidiRollComplete(cappedFirstWorkflow);
+  await cappedService.applyMidiRollComplete(cappedSecondWorkflow);
 
   assert.equal(cappedPrompts, 1);
   assert.equal(cappedPaladin.system.spells.spell1.value, 3);
-  assert.deepEqual(target.damageApplications[0].damage, [{
-    value: 8,
-    type: "radiant"
-  }]);
+  assert.equal(target.damageApplications.length, 0);
+  assert.equal(cappedFirstWorkflow.bonusDamageRollUpdates.length, 1);
+  assert.equal(cappedFirstWorkflow.bonusDamageRolls[0].formula, "2d8");
+  assert.equal(cappedFirstWorkflow.bonusDamageRolls[0].options.type, "radiant");
+  assert.equal(cappedSecondWorkflow.bonusDamageRollUpdates.length, 0);
 
   const uncappedSmite = makeFeatureItem({
     id: "divine-smite-uncapped",
@@ -919,9 +1002,55 @@ test("paladin divine smite is once per turn unless a bypass effect or feature is
     }
   });
 
-  await uncappedService.applyMidiRollComplete(makeWeaponWorkflow({ actor: uncappedPaladin, target }));
-  await uncappedService.applyMidiRollComplete(makeWeaponWorkflow({ actor: uncappedPaladin, target }));
+  const uncappedFirstWorkflow = makeWeaponWorkflow({ actor: uncappedPaladin, target });
+  const uncappedSecondWorkflow = makeWeaponWorkflow({ actor: uncappedPaladin, target });
+  await uncappedService.applyMidiRollComplete(uncappedFirstWorkflow);
+  await uncappedService.applyMidiRollComplete(uncappedSecondWorkflow);
 
   assert.equal(uncappedPrompts, 2);
   assert.equal(uncappedPaladin.system.spells.spell1.value, 2);
+  assert.equal(uncappedFirstWorkflow.bonusDamageRollUpdates.length, 1);
+  assert.equal(uncappedSecondWorkflow.bonusDamageRollUpdates.length, 1);
+});
+
+test("paladin divine smite automation hooks into midi damage roll completion", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const listeners = [];
+  const workflow = { id: "workflow" };
+  let handledWorkflow = null;
+  globalThis.Hooks = {
+    on(hookName, listener) {
+      listeners.push({ hookName, listener });
+      return listeners.length;
+    }
+  };
+  globalThis.game = {
+    user: {
+      id: "user",
+      isGM: true
+    }
+  };
+
+  try {
+    registerCombatHooks({
+      paladinAutomationService: {
+        async applyMidiRollComplete(value) {
+          handledWorkflow = value;
+        }
+      }
+    });
+
+    const hookNames = listeners.map((entry) => entry.hookName);
+    assert.ok(hookNames.includes("midi-qol.DamageRollComplete"));
+    assert.equal(hookNames.includes("midi-qol.RollComplete"), false);
+
+    const damageRollComplete = listeners.find((entry) => entry.hookName === "midi-qol.DamageRollComplete");
+    await damageRollComplete.listener(workflow);
+    assert.equal(handledWorkflow, workflow);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
 });
