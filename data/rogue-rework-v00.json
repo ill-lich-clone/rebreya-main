@@ -29,6 +29,20 @@
       "sur"
     ],
     "skillChoiceCount": 4,
+    "expertiseChoices": [
+      {
+        "id": "rogue-expertise",
+        "title": "Компетентность",
+        "level": 1,
+        "count": 2
+      },
+      {
+        "id": "rogue-improved-expertise",
+        "title": "Улучшенная компетентность",
+        "level": 5,
+        "count": 2
+      }
+    ],
     "saveProficiencies": [
       "dex",
       "int"

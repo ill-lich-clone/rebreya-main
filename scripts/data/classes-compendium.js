@@ -666,6 +666,34 @@ function normalizeTraitChoices(entries, prefix) {
     .filter((entry) => entry.pool.length);
 }
 
+function normalizeExpertiseChoices(entries, fallbackPool = SKILL_POOL) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  const usedIds = new Set();
+  return entries
+    .map((entry, index) => {
+      const title = cleanString(entry?.title ?? entry?.name, "Компетентность");
+      const id = uniqueIdentifier(
+        buildAsciiIdentifier(cleanString(entry?.id ?? entry?.identifier, title), `${title}-${index + 1}`),
+        usedIds,
+        `${title}-${index + 1}`
+      );
+      const rawPool = Array.isArray(entry?.pool) && entry.pool.length ? entry.pool : fallbackPool;
+      return {
+        id,
+        title,
+        hint: cleanString(entry?.hint),
+        level: Math.max(1, Math.floor(parseNumber(entry?.level, 1))),
+        count: Math.max(1, Math.floor(parseNumber(entry?.count, 2))),
+        mode: cleanString(entry?.mode, "expertise"),
+        pool: unique(rawPool.map((value) => proficiencyGrant("skills", value)).filter(Boolean))
+      };
+    })
+    .filter((entry) => entry.pool.length);
+}
+
 function normalizeSpellcastingData(value) {
   const data = isPlainObject(value) ? value : {};
   const progression = cleanString(data.progression, "none");
@@ -788,6 +816,7 @@ export function normalizeClassCompendiumData(rawData) {
     ? rawClass.weaponProficiencies
     : classIdentifier === "fighter-rework-v028" ? FIGHTER_WEAPON_PROFICIENCIES : []);
   const weaponProficiencyChoices = normalizeTraitChoices(rawClass.weaponProficiencyChoices, "weapon");
+  const expertiseChoices = normalizeExpertiseChoices(rawClass.expertiseChoices, skillPool);
   const wealth = cleanString(rawClass.wealth, classIdentifier === "fighter-rework-v028" ? "5d4*10" : "2d4*10");
   const startingEquipment = normalizeStartingEquipment(rawClass.startingEquipment);
   const spellcasting = normalizeSpellcastingData(rawClass.spellcasting);
@@ -966,6 +995,7 @@ export function normalizeClassCompendiumData(rawData) {
       toolProficiencyChoices,
       weaponProficiencies,
       weaponProficiencyChoices,
+      expertiseChoices,
       wealth,
       startingEquipment,
       spellcasting,
@@ -2781,6 +2811,8 @@ function buildTraitAdvancement({
   title,
   hint = "",
   level = 1,
+  mode = "default",
+  allowReplacements = false,
   grants = [],
   choices = []
 }) {
@@ -2791,8 +2823,8 @@ function buildTraitAdvancement({
     hint: cleanString(hint),
     level: Math.max(0, Math.floor(parseNumber(level, 1))),
     configuration: {
-      allowReplacements: false,
-      mode: "default",
+      allowReplacements: allowReplacements === true,
+      mode: cleanString(mode, "default"),
       grants: unique(grants),
       choices: (Array.isArray(choices) ? choices : [])
         .map((choice) => ({
@@ -3390,6 +3422,21 @@ export function buildClassAdvancement(classData, context = {}) {
       pool: (classData.skillPool ?? SKILL_POOL).map((skill) => `skills:${skill}`)
     }]
   }));
+
+  for (const expertiseChoice of classData.expertiseChoices ?? []) {
+    advancements.push(buildTraitAdvancement({
+      classIdentifier,
+      seed: `expertise-${expertiseChoice.id}`,
+      title: expertiseChoice.title,
+      hint: expertiseChoice.hint || "Выберите навыки, которыми уже владеете, чтобы получить компетентность.",
+      level: expertiseChoice.level,
+      mode: expertiseChoice.mode,
+      choices: [{
+        count: expertiseChoice.count,
+        pool: expertiseChoice.pool
+      }]
+    }));
+  }
 
   const armorProficiencyGrants = (classData.armorProficiencies ?? [])
     .map((proficiency) => proficiencyGrant("armor", proficiency));

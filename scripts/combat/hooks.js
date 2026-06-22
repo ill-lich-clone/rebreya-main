@@ -406,7 +406,7 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasRogueService) {
-    Hooks.on("midi-qol.RollComplete", (workflow) => {
+    Hooks.on("midi-qol.DamageRollComplete", (workflow) => {
       moduleApi.rogueAutomationService.applyMidiRollComplete(workflow).catch((error) => {
         console.error(`${MODULE_ID} | Failed to apply rogue MIDI automation.`, error);
       });

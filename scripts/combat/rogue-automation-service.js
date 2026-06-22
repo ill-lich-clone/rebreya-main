@@ -264,7 +264,7 @@ export class RogueAutomationService {
     }
 
     const sneakAttackFeature = this.#findSneakAttack(actor);
-    if (!sneakAttackFeature || !isWeaponAttackWorkflow(workflow)) {
+    if ((!sneakAttackFeature && !this.#hasRogueSneakAttack(actor)) || !isWeaponAttackWorkflow(workflow)) {
       return true;
     }
 
@@ -313,7 +313,7 @@ export class RogueAutomationService {
     if (remainingDice > 0) {
       await this.#applyDamage(chosenTarget, `${remainingDice}d6`, damageType, {
         sourceActor: actor,
-        sourceItemUuid: sneakAttackFeature.uuid ?? workflow?.item?.uuid,
+        sourceItemUuid: sneakAttackFeature?.uuid ?? workflow?.item?.uuid,
         label
       });
     }
@@ -327,6 +327,14 @@ export class RogueAutomationService {
 
   #findSneakAttack(actor) {
     return findActorFeature(actor, SNEAK_ATTACK_FEATURE_ID, "скрытая атака");
+  }
+
+  #hasRogueSneakAttack(actor) {
+    if (rogueClassLevel(actor) > 0) {
+      return true;
+    }
+
+    return getProperty(actor, `system.scale.${ROGUE_CLASS_IDENTIFIER}.sneak-attack`, null) !== null;
   }
 
   #cunningStrikeOptions(actor, diceCount) {

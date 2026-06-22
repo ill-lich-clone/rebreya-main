@@ -382,10 +382,19 @@ test("rogue advancements expose proficiencies, scales, class grants, and equipme
   const equipmentChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Стартовое снаряжение");
   const minorFeatChoices = advancement.filter((entry) => entry.type === "ItemChoice" && entry.title.startsWith("Младшая черта"));
   const levelOneGrant = advancement.find((entry) => entry.type === "ItemGrant" && entry.level === 1);
+  const levelOneExpertise = advancement.find((entry) => entry.type === "Trait" && entry.title === "Компетентность");
+  const levelFiveExpertise = advancement.find((entry) => entry.type === "Trait" && entry.title === "Улучшенная компетентность");
 
   assert.equal(skills.configuration.choices[0].count, 4);
   assert.ok(skills.configuration.choices[0].pool.includes("skills:ste"));
   assert.ok(skills.configuration.choices[0].pool.includes("skills:slt"));
+  assert.equal(levelOneExpertise.level, 1);
+  assert.equal(levelOneExpertise.configuration.mode, "expertise");
+  assert.equal(levelOneExpertise.configuration.choices[0].count, 2);
+  assert.ok(levelOneExpertise.configuration.choices[0].pool.includes("skills:ste"));
+  assert.equal(levelFiveExpertise.level, 5);
+  assert.equal(levelFiveExpertise.configuration.mode, "expertise");
+  assert.equal(levelFiveExpertise.configuration.choices[0].count, 2);
   assert.deepEqual(armor.configuration.grants, ["armor:lgt"]);
   assert.deepEqual(tools.configuration.grants, ["tool:thief"]);
   assert.equal(simpleWeapons.configuration.choices[0].count, 1);

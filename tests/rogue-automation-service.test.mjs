@@ -76,6 +76,7 @@ class TestRoll {
 globalThis.Roll ??= TestRoll;
 
 const { RogueAutomationService } = await import("../scripts/combat/rogue-automation-service.js");
+const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
 
 class TestActor extends Actor {
   constructor({
@@ -275,4 +276,67 @@ test("rogue sneak attack asks without checking finesse or advantage and only onc
     value: 3,
     type: "bludgeoning"
   }]);
+});
+
+test("rogue sneak attack prompts from rogue class data even if the feature item is missing", async () => {
+  const rogue = new TestActor({ items: [], level: 1 });
+  const target = new TestActor({ id: "target", name: "Цель", items: [] });
+  let prompts = 0;
+  const service = new RogueAutomationService({}, {
+    promptSneakAttack: async () => {
+      prompts += 1;
+      return {};
+    }
+  });
+
+  await service.applyMidiRollComplete(makeWeaponWorkflow({ actor: rogue, target }));
+
+  assert.equal(prompts, 1);
+  assert.equal(target.damageApplications.length, 1);
+  assert.deepEqual(target.damageApplications[0].damage, [{
+    value: 3,
+    type: "piercing"
+  }]);
+});
+
+test("rogue sneak attack automation hooks into midi damage roll completion", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const listeners = [];
+  const workflow = { id: "workflow" };
+  let handledWorkflow = null;
+  globalThis.Hooks = {
+    on(hookName, listener) {
+      listeners.push({ hookName, listener });
+      return listeners.length;
+    }
+  };
+  globalThis.game = {
+    user: {
+      id: "user",
+      isGM: true
+    }
+  };
+
+  try {
+    registerCombatHooks({
+      rogueAutomationService: {
+        async applyMidiRollComplete(value) {
+          handledWorkflow = value;
+        }
+      }
+    });
+
+    const hookNames = listeners.map((entry) => entry.hookName);
+    assert.ok(hookNames.includes("midi-qol.DamageRollComplete"));
+    assert.equal(hookNames.includes("midi-qol.RollComplete"), false);
+
+    const damageRollComplete = listeners.find((entry) => entry.hookName === "midi-qol.DamageRollComplete");
+    await damageRollComplete.listener(workflow);
+    assert.equal(handledWorkflow, workflow);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
 });
