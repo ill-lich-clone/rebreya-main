@@ -188,16 +188,15 @@ function makeWeaponWorkflow({
     damageDetail: [{ type: item.system?.damage?.base?.types?.[0] ?? "piercing" }],
     hitTargets: new Set([{ actor: target }]),
     hitTargetsEC: new Set(),
-    isCritical,
-    bonusDamageRolls: [],
-    bonusDamageRollUpdates: [],
-    async setBonusDamageRolls(rolls) {
-      this.bonusDamageRolls = rolls;
-      this.bonusDamageRollUpdates.push(rolls);
-      return this;
-    }
+    isCritical
   };
   return workflow;
+}
+
+function makeDamageConfig() {
+  return {
+    rolls: []
+  };
 }
 
 test("rogue sneak attack prompts on a weapon hit and adds reduced bonus damage for a selected cunning strike", async () => {
@@ -227,8 +226,9 @@ test("rogue sneak attack prompts on a weapon hit and adds reduced bonus damage f
     }
   });
   const workflow = makeWeaponWorkflow({ actor: rogue, target });
+  const config = makeDamageConfig();
 
-  await service.applyMidiRollComplete(workflow);
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
 
   assert.equal(prompts.length, 1);
   assert.equal(prompts[0].actor, rogue);
@@ -243,10 +243,11 @@ test("rogue sneak attack prompts on a weapon hit and adds reduced bonus damage f
   ]);
   assert.equal(target.damageApplications.length, 0);
   assert.equal(TestRoll.messages.length, 0);
-  assert.equal(workflow.bonusDamageRollUpdates.length, 1);
-  assert.equal(workflow.bonusDamageRolls[0].formula, "2d6");
-  assert.equal(workflow.bonusDamageRolls[0].options.type, "piercing");
-  assert.match(workflow.bonusDamageRolls[0].options.flavor, /Hamstring/u);
+  assert.equal(config.rolls.length, 1);
+  assert.deepEqual(config.rolls[0].parts, ["2d6"]);
+  assert.equal(config.rolls[0].options.type, "piercing");
+  assert.deepEqual(config.rolls[0].options.types, ["piercing"]);
+  assert.match(config.rolls[0].options.flavor, /Hamstring/u);
 });
 
 test("rogue sneak attack asks without checking finesse or advantage and only once per turn after use", async () => {
@@ -280,16 +281,18 @@ test("rogue sneak attack asks without checking finesse or advantage and only onc
   };
   const firstWorkflow = makeWeaponWorkflow({ actor: rogue, target, item: unfinessedWeapon });
   const secondWorkflow = makeWeaponWorkflow({ actor: rogue, target, item: unfinessedWeapon });
+  const firstConfig = makeDamageConfig();
+  const secondConfig = makeDamageConfig();
 
-  await service.applyMidiRollComplete(firstWorkflow);
-  await service.applyMidiRollComplete(secondWorkflow);
+  await service.applyMidiPreDamageRoll(firstWorkflow, firstWorkflow.activity, firstConfig);
+  await service.applyMidiPreDamageRoll(secondWorkflow, secondWorkflow.activity, secondConfig);
 
   assert.equal(prompts, 1);
   assert.equal(target.damageApplications.length, 0);
-  assert.equal(firstWorkflow.bonusDamageRollUpdates.length, 1);
-  assert.equal(firstWorkflow.bonusDamageRolls[0].formula, "1d6");
-  assert.equal(firstWorkflow.bonusDamageRolls[0].options.type, "bludgeoning");
-  assert.equal(secondWorkflow.bonusDamageRollUpdates.length, 0);
+  assert.equal(firstConfig.rolls.length, 1);
+  assert.deepEqual(firstConfig.rolls[0].parts, ["1d6"]);
+  assert.equal(firstConfig.rolls[0].options.type, "bludgeoning");
+  assert.equal(secondConfig.rolls.length, 0);
 });
 
 test("rogue sneak attack prompts from rogue class data even if the feature item is missing", async () => {
@@ -303,17 +306,18 @@ test("rogue sneak attack prompts from rogue class data even if the feature item 
     }
   });
   const workflow = makeWeaponWorkflow({ actor: rogue, target });
+  const config = makeDamageConfig();
 
-  await service.applyMidiRollComplete(workflow);
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
 
   assert.equal(prompts, 1);
   assert.equal(target.damageApplications.length, 0);
-  assert.equal(workflow.bonusDamageRollUpdates.length, 1);
-  assert.equal(workflow.bonusDamageRolls[0].formula, "1d6");
-  assert.equal(workflow.bonusDamageRolls[0].options.type, "piercing");
+  assert.equal(config.rolls.length, 1);
+  assert.deepEqual(config.rolls[0].parts, ["1d6"]);
+  assert.equal(config.rolls[0].options.type, "piercing");
 });
 
-test("rogue sneak attack doubles its remaining dice on a critical hit", async () => {
+test("rogue sneak attack leaves critical doubling to the dnd5e damage roll", async () => {
   const sneakAttack = makeFeatureItem({
     id: "sneak-attack",
     name: "Sneak Attack",
@@ -335,11 +339,13 @@ test("rogue sneak attack doubles its remaining dice on a critical hit", async ()
     })
   });
   const workflow = makeWeaponWorkflow({ actor: rogue, target, isCritical: true });
+  const config = makeDamageConfig();
 
-  await service.applyMidiRollComplete(workflow);
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
 
-  assert.equal(workflow.bonusDamageRollUpdates.length, 1);
-  assert.equal(workflow.bonusDamageRolls[0].formula, "4d6");
+  assert.equal(config.rolls.length, 1);
+  assert.deepEqual(config.rolls[0].parts, ["2d6"]);
+  assert.equal(workflow.isCritical, true);
   assert.equal(target.damageApplications.length, 0);
 });
 
@@ -362,21 +368,23 @@ test("rogue sneak attack does not lock itself forever when combat is inactive", 
   });
   const firstWorkflow = makeWeaponWorkflow({ actor: rogue, target });
   const secondWorkflow = makeWeaponWorkflow({ actor: rogue, target });
+  const firstConfig = makeDamageConfig();
+  const secondConfig = makeDamageConfig();
 
   try {
-    await service.applyMidiRollComplete(firstWorkflow);
-    await service.applyMidiRollComplete(secondWorkflow);
+    await service.applyMidiPreDamageRoll(firstWorkflow, firstWorkflow.activity, firstConfig);
+    await service.applyMidiPreDamageRoll(secondWorkflow, secondWorkflow.activity, secondConfig);
   }
   finally {
     globalThis.game.combat = previousCombat;
   }
 
   assert.equal(prompts, 2);
-  assert.equal(firstWorkflow.bonusDamageRollUpdates.length, 1);
-  assert.equal(secondWorkflow.bonusDamageRollUpdates.length, 1);
+  assert.equal(firstConfig.rolls.length, 1);
+  assert.equal(secondConfig.rolls.length, 1);
 });
 
-test("rogue sneak attack automation hooks into midi damage roll completion", async () => {
+test("rogue sneak attack automation hooks into midi pre-damage roll", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const listeners = [];
@@ -398,18 +406,19 @@ test("rogue sneak attack automation hooks into midi damage roll completion", asy
   try {
     registerCombatHooks({
       rogueAutomationService: {
-        async applyMidiRollComplete(value) {
+        async applyMidiPreDamageRoll(value) {
           handledWorkflow = value;
         }
       }
     });
 
     const hookNames = listeners.map((entry) => entry.hookName);
-    assert.ok(hookNames.includes("midi-qol.DamageRollComplete"));
+    assert.ok(hookNames.includes("midi-qol.preDamageRoll"));
+    assert.equal(hookNames.includes("midi-qol.DamageRollComplete"), false);
     assert.equal(hookNames.includes("midi-qol.RollComplete"), false);
 
-    const damageRollComplete = listeners.find((entry) => entry.hookName === "midi-qol.DamageRollComplete");
-    await damageRollComplete.listener(workflow);
+    const preDamageRoll = listeners.find((entry) => entry.hookName === "midi-qol.preDamageRoll");
+    await preDamageRoll.listener(workflow, workflow.activity, {});
     assert.equal(handledWorkflow, workflow);
   }
   finally {

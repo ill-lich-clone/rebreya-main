@@ -397,20 +397,26 @@ export function registerCombatHooks(moduleApi) {
       });
     });
 
-    Hooks.on("midi-qol.DamageRollComplete", (workflow) => {
-      moduleApi.paladinAutomationService.applyMidiRollComplete(workflow).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to apply paladin MIDI automation.`, error);
-      });
-      return true;
+    Hooks.on("midi-qol.preDamageRoll", async (workflow, activity, config, dialog, message) => {
+      try {
+        return await moduleApi.paladinAutomationService.applyMidiPreDamageRoll(workflow, activity, config, dialog, message);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply paladin MIDI pre-damage automation.`, error);
+        return true;
+      }
     });
   }
 
   if (hasRogueService) {
-    Hooks.on("midi-qol.DamageRollComplete", (workflow) => {
-      moduleApi.rogueAutomationService.applyMidiRollComplete(workflow).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to apply rogue MIDI automation.`, error);
-      });
-      return true;
+    Hooks.on("midi-qol.preDamageRoll", async (workflow, activity, config, dialog, message) => {
+      try {
+        return await moduleApi.rogueAutomationService.applyMidiPreDamageRoll(workflow, activity, config, dialog, message);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply rogue MIDI pre-damage automation.`, error);
+        return true;
+      }
     });
   }
 }

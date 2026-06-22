@@ -306,14 +306,13 @@ function makeWeaponWorkflow({
     hitTargets: new Set([{ actor: target }]),
     hitTargetsEC: new Set(),
     targets: new Set([{ actor }]),
-    isCritical,
-    bonusDamageRolls: [],
-    bonusDamageRollUpdates: [],
-    async setBonusDamageRolls(rolls) {
-      this.bonusDamageRolls = rolls;
-      this.bonusDamageRollUpdates.push(rolls);
-      return this;
-    }
+    isCritical
+  };
+}
+
+function makeDamageConfig() {
+  return {
+    rolls: []
   };
 }
 
@@ -844,8 +843,9 @@ test("paladin divine smite spends the selected spell slot and adds radiant bonus
   });
 
   const workflow = makeWeaponWorkflow({ actor: paladin, target });
+  const config = makeDamageConfig();
 
-  await service.applyMidiRollComplete(workflow);
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
 
   assert.equal(prompts.length, 1);
   assert.equal(prompts[0].actor, paladin);
@@ -864,13 +864,14 @@ test("paladin divine smite spends the selected spell slot and adds radiant bonus
   });
   assert.equal(target.damageApplications.length, 0);
   assert.equal(TestRoll.messages.length, 0);
-  assert.equal(workflow.bonusDamageRollUpdates.length, 1);
-  assert.equal(workflow.bonusDamageRolls[0].formula, "5d8");
-  assert.equal(workflow.bonusDamageRolls[0].options.type, "radiant");
-  assert.equal(typeof workflow.bonusDamageRolls[0].options.flavor, "string");
+  assert.equal(config.rolls.length, 1);
+  assert.deepEqual(config.rolls[0].parts, ["5d8"]);
+  assert.equal(config.rolls[0].options.type, "radiant");
+  assert.deepEqual(config.rolls[0].options.types, ["radiant"]);
+  assert.equal(typeof config.rolls[0].options.flavor, "string");
 });
 
-test("paladin divine smite doubles its dice on a critical hit", async () => {
+test("paladin divine smite leaves critical doubling to the dnd5e damage roll", async () => {
   const divineSmite = makeFeatureItem({
     id: "divine-smite",
     name: "Divine Smite",
@@ -887,14 +888,16 @@ test("paladin divine smite doubles its dice on a critical hit", async () => {
     promptDivineSmite: async () => ({ slotLevel: 4 })
   });
   const workflow = makeWeaponWorkflow({ actor: paladin, target, isCritical: true });
+  const config = makeDamageConfig();
 
-  await service.applyMidiRollComplete(workflow);
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
 
   assert.equal(paladin.system.spells.spell4.value, 0);
   assert.equal(target.damageApplications.length, 0);
-  assert.equal(workflow.bonusDamageRollUpdates.length, 1);
-  assert.equal(workflow.bonusDamageRolls[0].formula, "10d8");
-  assert.equal(workflow.bonusDamageRolls[0].options.type, "radiant");
+  assert.equal(config.rolls.length, 1);
+  assert.deepEqual(config.rolls[0].parts, ["5d8"]);
+  assert.equal(config.rolls[0].options.type, "radiant");
+  assert.equal(workflow.isCritical, true);
 });
 
 test("paladin divine smite does not lock itself forever when combat is inactive", async () => {
@@ -921,10 +924,12 @@ test("paladin divine smite does not lock itself forever when combat is inactive"
   });
   const firstWorkflow = makeWeaponWorkflow({ actor: paladin, target });
   const secondWorkflow = makeWeaponWorkflow({ actor: paladin, target });
+  const firstConfig = makeDamageConfig();
+  const secondConfig = makeDamageConfig();
 
   try {
-    await service.applyMidiRollComplete(firstWorkflow);
-    await service.applyMidiRollComplete(secondWorkflow);
+    await service.applyMidiPreDamageRoll(firstWorkflow, firstWorkflow.activity, firstConfig);
+    await service.applyMidiPreDamageRoll(secondWorkflow, secondWorkflow.activity, secondConfig);
   }
   finally {
     globalThis.game.combat = previousCombat;
@@ -933,8 +938,8 @@ test("paladin divine smite does not lock itself forever when combat is inactive"
   assert.equal(prompts, 2);
   assert.equal(paladin.system.spells.spell1.value, 0);
   assert.equal(target.damageApplications.length, 0);
-  assert.equal(firstWorkflow.bonusDamageRollUpdates.length, 1);
-  assert.equal(secondWorkflow.bonusDamageRollUpdates.length, 1);
+  assert.equal(firstConfig.rolls.length, 1);
+  assert.equal(secondConfig.rolls.length, 1);
 });
 
 test("paladin divine smite is once per turn unless a bypass effect or feature is present", async () => {
@@ -963,16 +968,18 @@ test("paladin divine smite is once per turn unless a bypass effect or feature is
 
   const cappedFirstWorkflow = makeWeaponWorkflow({ actor: cappedPaladin, target });
   const cappedSecondWorkflow = makeWeaponWorkflow({ actor: cappedPaladin, target });
-  await cappedService.applyMidiRollComplete(cappedFirstWorkflow);
-  await cappedService.applyMidiRollComplete(cappedSecondWorkflow);
+  const cappedFirstConfig = makeDamageConfig();
+  const cappedSecondConfig = makeDamageConfig();
+  await cappedService.applyMidiPreDamageRoll(cappedFirstWorkflow, cappedFirstWorkflow.activity, cappedFirstConfig);
+  await cappedService.applyMidiPreDamageRoll(cappedSecondWorkflow, cappedSecondWorkflow.activity, cappedSecondConfig);
 
   assert.equal(cappedPrompts, 1);
   assert.equal(cappedPaladin.system.spells.spell1.value, 3);
   assert.equal(target.damageApplications.length, 0);
-  assert.equal(cappedFirstWorkflow.bonusDamageRollUpdates.length, 1);
-  assert.equal(cappedFirstWorkflow.bonusDamageRolls[0].formula, "2d8");
-  assert.equal(cappedFirstWorkflow.bonusDamageRolls[0].options.type, "radiant");
-  assert.equal(cappedSecondWorkflow.bonusDamageRollUpdates.length, 0);
+  assert.equal(cappedFirstConfig.rolls.length, 1);
+  assert.deepEqual(cappedFirstConfig.rolls[0].parts, ["2d8"]);
+  assert.equal(cappedFirstConfig.rolls[0].options.type, "radiant");
+  assert.equal(cappedSecondConfig.rolls.length, 0);
 
   const uncappedSmite = makeFeatureItem({
     id: "divine-smite-uncapped",
@@ -1004,16 +1011,18 @@ test("paladin divine smite is once per turn unless a bypass effect or feature is
 
   const uncappedFirstWorkflow = makeWeaponWorkflow({ actor: uncappedPaladin, target });
   const uncappedSecondWorkflow = makeWeaponWorkflow({ actor: uncappedPaladin, target });
-  await uncappedService.applyMidiRollComplete(uncappedFirstWorkflow);
-  await uncappedService.applyMidiRollComplete(uncappedSecondWorkflow);
+  const uncappedFirstConfig = makeDamageConfig();
+  const uncappedSecondConfig = makeDamageConfig();
+  await uncappedService.applyMidiPreDamageRoll(uncappedFirstWorkflow, uncappedFirstWorkflow.activity, uncappedFirstConfig);
+  await uncappedService.applyMidiPreDamageRoll(uncappedSecondWorkflow, uncappedSecondWorkflow.activity, uncappedSecondConfig);
 
   assert.equal(uncappedPrompts, 2);
   assert.equal(uncappedPaladin.system.spells.spell1.value, 2);
-  assert.equal(uncappedFirstWorkflow.bonusDamageRollUpdates.length, 1);
-  assert.equal(uncappedSecondWorkflow.bonusDamageRollUpdates.length, 1);
+  assert.equal(uncappedFirstConfig.rolls.length, 1);
+  assert.equal(uncappedSecondConfig.rolls.length, 1);
 });
 
-test("paladin divine smite automation hooks into midi damage roll completion", async () => {
+test("paladin divine smite automation hooks into midi pre-damage roll", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const listeners = [];
@@ -1035,18 +1044,19 @@ test("paladin divine smite automation hooks into midi damage roll completion", a
   try {
     registerCombatHooks({
       paladinAutomationService: {
-        async applyMidiRollComplete(value) {
+        async applyMidiPreDamageRoll(value) {
           handledWorkflow = value;
         }
       }
     });
 
     const hookNames = listeners.map((entry) => entry.hookName);
-    assert.ok(hookNames.includes("midi-qol.DamageRollComplete"));
+    assert.ok(hookNames.includes("midi-qol.preDamageRoll"));
+    assert.equal(hookNames.includes("midi-qol.DamageRollComplete"), false);
     assert.equal(hookNames.includes("midi-qol.RollComplete"), false);
 
-    const damageRollComplete = listeners.find((entry) => entry.hookName === "midi-qol.DamageRollComplete");
-    await damageRollComplete.listener(workflow);
+    const preDamageRoll = listeners.find((entry) => entry.hookName === "midi-qol.preDamageRoll");
+    await preDamageRoll.listener(workflow, workflow.activity, {});
     assert.equal(handledWorkflow, workflow);
   }
   finally {

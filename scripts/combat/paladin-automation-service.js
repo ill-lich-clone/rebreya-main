@@ -627,45 +627,39 @@ function selectedVariantIdsFromChoice(choice) {
   return single ? [single] : [];
 }
 
-function isCriticalWorkflow(workflow) {
-  return workflow?.isCritical === true
-    || workflow?.critical === true
-    || workflow?.workflowOptions?.isCritical === true;
-}
-
-function damageDiceFormula(diceCount, faces, workflow) {
+function damageDiceFormula(diceCount, faces) {
   const dice = Math.max(0, Math.floor(toNumber(diceCount, 0)));
-  const multiplier = isCriticalWorkflow(workflow) ? 2 : 1;
-  return `${dice * multiplier}d${Math.max(1, Math.floor(toNumber(faces, 1)))}`;
+  return `${dice}d${Math.max(1, Math.floor(toNumber(faces, 1)))}`;
 }
 
-async function createDamageRoll(formula, actor, damageType, flavor) {
-  const RollClass = globalThis.CONFIG?.Dice?.DamageRoll ?? globalThis.Roll;
-  const roll = new RollClass(cleanText(formula) || "0", actor?.getRollData?.() ?? {}, {
-    type: cleanText(damageType),
-    flavor: cleanText(flavor, damageType)
+function damagePropertiesFromWorkflow(workflow) {
+  const item = workflow?.activity?.item ?? workflow?.item ?? null;
+  const properties = collectionValues(item?.system?.properties)
+    .map((property) => cleanText(property))
+    .filter(Boolean);
+  const propertyConfig = globalThis.CONFIG?.DND5E?.itemProperties ?? {};
+  return properties.filter((property) => propertyConfig[property]?.isPhysical !== false);
+}
+
+function appendDamageRollConfig(config, workflow, actor, formula, damageType, flavor) {
+  const safeFormula = cleanText(formula);
+  if (!safeFormula) {
+    return false;
+  }
+
+  const safeDamageType = cleanText(damageType);
+  config.rolls ??= [];
+  config.rolls.push({
+    data: actor?.getRollData?.() ?? {},
+    parts: [safeFormula],
+    options: {
+      type: safeDamageType,
+      types: safeDamageType ? [safeDamageType] : [],
+      properties: damagePropertiesFromWorkflow(workflow),
+      flavor: cleanText(flavor, safeDamageType)
+    }
   });
-  if (typeof roll.evaluate === "function" && !roll._evaluated) {
-    await roll.evaluate();
-  }
-  return roll;
-}
-
-async function appendWorkflowBonusDamage(workflow, actor, formula, damageType, flavor) {
-  const roll = await createDamageRoll(formula, actor, damageType, flavor);
-  if (typeof workflow?.setBonusDamageRolls === "function") {
-    const existing = Array.isArray(workflow.bonusDamageRolls) ? workflow.bonusDamageRolls : [];
-    await workflow.setBonusDamageRolls([...existing, roll]);
-    return true;
-  }
-
-  if (typeof workflow?.setDamageRolls === "function") {
-    const existing = Array.isArray(workflow.damageRolls) ? workflow.damageRolls : [];
-    await workflow.setDamageRolls([...existing, roll]);
-    return true;
-  }
-
-  return false;
+  return true;
 }
 
 export class PaladinAutomationService {
@@ -680,7 +674,11 @@ export class PaladinAutomationService {
     return true;
   }
 
-  async applyMidiRollComplete(workflow) {
+  async applyMidiPreDamageRoll(workflow, activity, config = {}) {
+    if (workflow && activity && !workflow.activity) {
+      workflow.activity = activity;
+    }
+
     const actor = workflow?.actor;
     if (!(actor instanceof Actor)) {
       return true;
@@ -753,15 +751,8 @@ export class PaladinAutomationService {
       return true;
     }
 
-    const formula = damageDiceFormula(divineSmiteDamageDice(selectedSlot.level), 8, workflow);
-    const applied = await appendWorkflowBonusDamage(
-      workflow,
-      actor,
-      formula,
-      DIVINE_SMITE_DAMAGE_TYPE,
-      this.#divineSmiteLabel(selectedSlot.level, selectedVariants)
-    );
-    if (!applied) {
+    const formula = damageDiceFormula(divineSmiteDamageDice(selectedSlot.level), 8);
+    if (!appendDamageRollConfig(config, workflow, actor, formula, DIVINE_SMITE_DAMAGE_TYPE, this.#divineSmiteLabel(selectedSlot.level, selectedVariants))) {
       return true;
     }
     await actor.update?.({ [`system.spells.spell${selectedSlot.level}.value`]: latestValue - 1 });
@@ -769,6 +760,10 @@ export class PaladinAutomationService {
       this._smiteTurnUses.add(turnKey);
     }
 
+    return true;
+  }
+
+  async applyMidiRollComplete() {
     return true;
   }
 
