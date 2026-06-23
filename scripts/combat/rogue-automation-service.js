@@ -214,18 +214,6 @@ function combatTurnKey(actor, workflow) {
   ].join(":");
 }
 
-function getDialogRoot(html) {
-  if (typeof HTMLElement !== "undefined" && html instanceof HTMLElement) {
-    return html;
-  }
-
-  if (typeof HTMLElement !== "undefined" && html?.[0] instanceof HTMLElement) {
-    return html[0];
-  }
-
-  return null;
-}
-
 function getDialogButtonForm(button) {
   if (typeof HTMLElement !== "undefined" && button?.form instanceof HTMLElement) {
     return button.form;
@@ -470,69 +458,26 @@ export class RogueAutomationService {
     `;
 
     const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
-    if (typeof DialogV2?.wait === "function") {
-      const choice = await DialogV2.wait({
-        window: { title: "Скрытая атака" },
-        content,
-        buttons: [
-          {
-            action: "confirm",
-            label: "Скрытая атака",
-            default: true,
-            callback: (_event, button) => {
-              const root = getDialogButtonForm(button);
-              const targetUuid = cleanText(root?.querySelector?.("[data-sneak-attack-target]")?.value);
-              const cunningStrikeId = cleanText(root?.querySelector?.("[data-sneak-attack-cunning-strike]")?.value);
-              return { targetUuid, cunningStrikeId, actor };
-            }
-          },
-          {
-            action: "cancel",
-            label: "Отмена",
-            callback: () => null
-          }
-        ]
-      });
-      return choice ? { ...choice, actor } : null;
-    }
-
-    if (typeof Dialog !== "function") {
+    if (typeof DialogV2?.input !== "function") {
       return null;
     }
 
-    return new Promise((resolve) => {
-      let settled = false;
-      const dialog = new Dialog({
-        title: "Скрытая атака",
-        content,
-        buttons: {
-          confirm: {
-            label: "Скрытая атака",
-            callback: (html) => {
-              const root = getDialogRoot(html);
-              const targetUuid = cleanText(root?.querySelector("[data-sneak-attack-target]")?.value);
-              const cunningStrikeId = cleanText(root?.querySelector("[data-sneak-attack-cunning-strike]")?.value);
-              settled = true;
-              resolve({ targetUuid, cunningStrikeId, actor });
-            }
-          },
-          cancel: {
-            label: "Отмена",
-            callback: () => {
-              settled = true;
-              resolve(null);
-            }
-          }
-        },
-        close: () => {
-          if (!settled) {
-            resolve(null);
-          }
-        },
-        default: "confirm"
-      });
-      dialog.render(true);
+    const choice = await DialogV2.input({
+      window: { title: "Скрытая атака" },
+      content,
+      ok: {
+        label: "Скрытая атака",
+        callback: (_event, button) => {
+          const root = getDialogButtonForm(button);
+          const targetUuid = cleanText(root?.querySelector?.("[data-sneak-attack-target]")?.value);
+          const cunningStrikeId = cleanText(root?.querySelector?.("[data-sneak-attack-cunning-strike]")?.value);
+          return { targetUuid, cunningStrikeId, actor };
+        }
+      },
+      rejectClose: false,
+      modal: true
     });
+    return choice ? { ...choice, actor } : null;
   }
 
   #canPrompt(actor) {

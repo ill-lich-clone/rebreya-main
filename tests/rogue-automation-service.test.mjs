@@ -250,7 +250,7 @@ test("rogue sneak attack prompts on a weapon hit and adds reduced bonus damage f
   assert.match(config.rolls[0].options.flavor, /Hamstring/u);
 });
 
-test("rogue sneak attack uses DialogV2 when the legacy Dialog class is unavailable", async () => {
+test("rogue sneak attack uses DialogV2 input without the legacy Dialog class", async () => {
   const previousDialog = globalThis.Dialog;
   const previousApplications = globalThis.foundry.applications;
   const sneakAttack = makeFeatureItem({
@@ -265,7 +265,7 @@ test("rogue sneak attack uses DialogV2 when the legacy Dialog class is unavailab
   globalThis.foundry.applications = {
     api: {
       DialogV2: {
-        async wait({ buttons }) {
+        async input({ ok }) {
           dialogCalls += 1;
           const form = {
             querySelector(selector) {
@@ -274,7 +274,7 @@ test("rogue sneak attack uses DialogV2 when the legacy Dialog class is unavailab
               return null;
             }
           };
-          return buttons?.[0]?.callback?.({}, { form }) ?? {};
+          return ok?.callback?.({}, { form }) ?? {};
         }
       }
     }

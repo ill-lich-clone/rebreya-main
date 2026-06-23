@@ -298,18 +298,6 @@ function targetActorsFromWorkflow(workflow) {
   return actors;
 }
 
-function getDialogRoot(html) {
-  if (typeof HTMLElement !== "undefined" && html instanceof HTMLElement) {
-    return html;
-  }
-
-  if (typeof HTMLElement !== "undefined" && html?.[0] instanceof HTMLElement) {
-    return html[0];
-  }
-
-  return null;
-}
-
 function itemSourceId(item) {
   return cleanText(itemFlag(item, "dnd5e", "sourceId"));
 }
@@ -1076,75 +1064,29 @@ export class PaladinAutomationService {
     `;
 
     const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
-    if (typeof DialogV2?.wait === "function") {
-      const choice = await DialogV2.wait({
-        window: { title: "Божественная кара" },
-        content,
-        buttons: [
-          {
-            action: "confirm",
-            label: "Кара",
-            default: true,
-            callback: (_event, button) => {
-              const root = getDialogButtonForm(button);
-              const slotLevel = Number(root?.querySelector?.("[data-smite-slot]")?.value ?? 0);
-              const targetUuid = cleanText(root?.querySelector?.("[data-smite-target]")?.value);
-              const variantIds = Array.from(root?.querySelectorAll?.("[data-smite-variant]:checked") ?? [])
-                .map((input) => cleanText(input.value))
-                .filter(Boolean);
-              return { slotLevel, targetUuid, variantIds, actor };
-            }
-          },
-          {
-            action: "cancel",
-            label: "Отмена",
-            callback: () => null
-          }
-        ]
-      });
-      return choice ? { ...choice, actor } : null;
-    }
-
-    if (typeof Dialog !== "function") {
+    if (typeof DialogV2?.input !== "function") {
       return null;
     }
 
-    return new Promise((resolve) => {
-      let settled = false;
-      const dialog = new Dialog({
-        title: "Божественная кара",
-        content,
-        buttons: {
-          confirm: {
-            label: "Кара",
-            callback: (html) => {
-              const root = getDialogRoot(html);
-              const slotLevel = Number(root?.querySelector("[data-smite-slot]")?.value ?? 0);
-              const targetUuid = cleanText(root?.querySelector("[data-smite-target]")?.value);
-              const variantIds = Array.from(root?.querySelectorAll("[data-smite-variant]:checked") ?? [])
-                .map((input) => cleanText(input.value))
-                .filter(Boolean);
-              settled = true;
-              resolve({ slotLevel, targetUuid, variantIds, actor });
-            }
-          },
-          cancel: {
-            label: "Отмена",
-            callback: () => {
-              settled = true;
-              resolve(null);
-            }
-          }
-        },
-        default: "confirm",
-        close: () => {
-          if (!settled) {
-            resolve(null);
-          }
+    const choice = await DialogV2.input({
+      window: { title: "Божественная кара" },
+      content,
+      ok: {
+        label: "Кара",
+        callback: (_event, button) => {
+          const root = getDialogButtonForm(button);
+          const slotLevel = Number(root?.querySelector?.("[data-smite-slot]")?.value ?? 0);
+          const targetUuid = cleanText(root?.querySelector?.("[data-smite-target]")?.value);
+          const variantIds = Array.from(root?.querySelectorAll?.("[data-smite-variant]:checked") ?? [])
+            .map((input) => cleanText(input.value))
+            .filter(Boolean);
+          return { slotLevel, targetUuid, variantIds, actor };
         }
-      });
-      dialog.render(true);
+      },
+      rejectClose: false,
+      modal: true
     });
+    return choice ? { ...choice, actor } : null;
   }
 
   async #useLayOnHands(actor, item) {

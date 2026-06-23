@@ -871,7 +871,7 @@ test("paladin divine smite spends the selected spell slot and adds radiant bonus
   assert.equal(typeof config.rolls[0].options.flavor, "string");
 });
 
-test("paladin divine smite uses DialogV2 when the legacy Dialog class is unavailable", async () => {
+test("paladin divine smite uses DialogV2 input without the legacy Dialog class", async () => {
   const previousDialog = globalThis.Dialog;
   const previousApplications = globalThis.foundry.applications;
   const divineSmite = makeFeatureItem({
@@ -891,7 +891,7 @@ test("paladin divine smite uses DialogV2 when the legacy Dialog class is unavail
   globalThis.foundry.applications = {
     api: {
       DialogV2: {
-        async wait({ buttons }) {
+        async input({ ok }) {
           dialogCalls += 1;
           const form = {
             querySelector(selector) {
@@ -903,7 +903,7 @@ test("paladin divine smite uses DialogV2 when the legacy Dialog class is unavail
               return [];
             }
           };
-          return buttons?.[0]?.callback?.({}, { form }) ?? {};
+          return ok?.callback?.({}, { form }) ?? {};
         }
       }
     }
