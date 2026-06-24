@@ -1032,7 +1032,7 @@ export class RogueAutomationService {
     }
 
     return `
-      <div class="rebreya-cunning-strike-options" style="display: grid; gap: 0.5rem;">
+      <div class="rebreya-cunning-strike-options" style="display: grid; gap: 0.5rem; max-height: min(24rem, 50vh); overflow-y: auto; overscroll-behavior: contain; padding-right: 0.25rem;">
         ${details.cunningStrikes.map((strike) => {
           const description = plainText(strike.description);
           return `
@@ -1073,8 +1073,8 @@ export class RogueAutomationService {
             <select name="targetUuid" data-sneak-attack-target>${targetOptions}</select>
           </div>
         ` : ""}
-        <div class="form-group">
-          <label>Хитрый удар</label>
+        <div class="form-group" style="display: block;">
+          <label style="display: block; margin-bottom: 0.35rem;">Хитрый удар</label>
           ${this.#cunningStrikeDialogOptions(details)}
         </div>
       </form>

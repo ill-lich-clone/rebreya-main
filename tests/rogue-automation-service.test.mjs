@@ -639,6 +639,8 @@ test("rogue sneak attack uses DialogV2 input without the legacy Dialog class", a
   assert.equal(config.rolls[0].options.type, "piercing");
   assert.match(dialogContent, /type="checkbox"/u);
   assert.doesNotMatch(dialogContent, /<select[^>]*data-sneak-attack-cunning-strike/u);
+  assert.match(dialogContent, /overflow-y:\s*auto/u);
+  assert.match(dialogContent, /max-height:/u);
   assert.match(dialogContent, /Hamstring/u);
   assert.match(dialogContent, /Speed is reduced by 10 feet/u);
 });
