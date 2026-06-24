@@ -87,6 +87,8 @@ class TestActor extends Actor {
     id = "rogue",
     name = "Rogue",
     level = 5,
+    dexMod = 3,
+    prof = 2,
     isOwner = true,
     items = []
   } = {}) {
@@ -96,6 +98,12 @@ class TestActor extends Actor {
     this.name = name;
     this.isOwner = isOwner;
     this.system = {
+      abilities: {
+        dex: { mod: dexMod }
+      },
+      attributes: {
+        prof
+      },
       classes: {
         "rogue-rework-v00": {
           identifier: "rogue-rework-v00",
@@ -115,6 +123,12 @@ class TestActor extends Actor {
       item.actor = this;
     }
     this.damageApplications = [];
+    this.createdDocuments = [];
+  }
+
+  async createEmbeddedDocuments(type, documents) {
+    this.createdDocuments.push({ type, documents });
+    return documents;
   }
 
   getRollData() {
@@ -132,7 +146,8 @@ function makeFeatureItem({
   name,
   featureId,
   sourceType = "classFeature",
-  cost = 0
+  cost = 0,
+  description = `${name}.`
 } = {}) {
   return {
     id,
@@ -141,7 +156,7 @@ function makeFeatureItem({
     uuid: `Actor.rogue.Item.${id}`,
     system: {
       description: {
-        value: `${name}.`
+        value: description
       }
     },
     flags: {
@@ -199,6 +214,24 @@ function makeDamageConfig() {
   };
 }
 
+function fixedRoll(total) {
+  return { total };
+}
+
+function makeMessage(content = "<div class=\"midi-card\">Attack</div>") {
+  return {
+    content,
+    updates: [],
+    async update(patch) {
+      this.updates.push(patch);
+      if (Object.hasOwn(patch, "content")) {
+        this.content = patch.content;
+      }
+      return this;
+    }
+  };
+}
+
 test("rogue sneak attack prompts on a weapon hit and adds reduced bonus damage for a selected cunning strike", async () => {
   TestRoll.messages = [];
   const sneakAttack = makeFeatureItem({
@@ -248,6 +281,235 @@ test("rogue sneak attack prompts on a weapon hit and adds reduced bonus damage f
   assert.equal(config.rolls[0].options.type, "piercing");
   assert.deepEqual(config.rolls[0].options.types, ["piercing"]);
   assert.match(config.rolls[0].options.flavor, /Hamstring/u);
+});
+
+test("rogue hamstring cunning strike applies a speed penalty and writes the attack card", async () => {
+  const sneakAttack = makeFeatureItem({
+    id: "sneak-attack",
+    name: "Sneak Attack",
+    featureId: "rogue-rework-v00::class::rogue-sneak-attack"
+  });
+  const hamstring = makeFeatureItem({
+    id: "hamstring",
+    name: "Hamstring",
+    featureId: "rogue-rework-v00::rogueCunningStrike::rogue-cunning-strike-hamstring",
+    sourceType: "rogueCunningStrike",
+    cost: 1,
+    description: "Speed is reduced by 10 feet."
+  });
+  const rogue = new TestActor({ items: [sneakAttack, hamstring], level: 5 });
+  const target = new TestActor({ id: "target", name: "Target", items: [] });
+  const service = new RogueAutomationService({}, {
+    promptSneakAttack: async () => ({
+      targetUuid: target.uuid,
+      cunningStrikeId: "rogue-cunning-strike-hamstring"
+    })
+  });
+  const workflow = makeWeaponWorkflow({ actor: rogue, target });
+  const config = makeDamageConfig();
+  const message = makeMessage();
+
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config, null, message);
+
+  assert.equal(target.createdDocuments.length, 1);
+  assert.equal(target.createdDocuments[0].type, "ActiveEffect");
+  const [effect] = target.createdDocuments[0].documents;
+  const changesByKey = new Map(effect.changes.map((change) => [change.key, change]));
+  assert.equal(changesByKey.get("system.attributes.movement.walk").value, "-10");
+  assert.equal(changesByKey.get("system.attributes.movement.fly").value, "-10");
+  assert.deepEqual(effect.flags.dae.specialDuration, ["turnStartSource", "combatEnd"]);
+  assert.equal(effect.origin, rogue.uuid);
+  assert.equal(message.updates.length, 1);
+  assert.match(message.content, /data-rebreya-cunning-strike="rogue-cunning-strike-hamstring"/u);
+  assert.match(message.content, /Hamstring/u);
+  assert.match(message.content, /Speed is reduced by 10 feet/u);
+});
+
+test("rogue disrupt aim cunning strike gives the target disadvantage on its next attack", async () => {
+  const sneakAttack = makeFeatureItem({
+    id: "sneak-attack",
+    name: "Sneak Attack",
+    featureId: "rogue-rework-v00::class::rogue-sneak-attack"
+  });
+  const disruptAim = makeFeatureItem({
+    id: "disrupt-aim",
+    name: "Disrupt Aim",
+    featureId: "rogue-rework-v00::rogueCunningStrike::rogue-cunning-strike-disrupt-aim",
+    sourceType: "rogueCunningStrike",
+    cost: 1
+  });
+  const rogue = new TestActor({ items: [sneakAttack, disruptAim], level: 5 });
+  const target = new TestActor({ id: "target", name: "Target", items: [] });
+  const service = new RogueAutomationService({}, {
+    promptSneakAttack: async () => ({
+      targetUuid: target.uuid,
+      cunningStrikeId: "rogue-cunning-strike-disrupt-aim"
+    })
+  });
+  const workflow = makeWeaponWorkflow({ actor: rogue, target });
+  const config = makeDamageConfig();
+
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
+
+  assert.equal(target.createdDocuments.length, 1);
+  const [effect] = target.createdDocuments[0].documents;
+  assert.deepEqual(effect.changes, [{
+    key: "flags.midi-qol.disadvantage.attack.all",
+    mode: 0,
+    value: "1",
+    priority: 20
+  }]);
+  assert.deepEqual(effect.flags.dae.specialDuration, ["1Attack", "turnStartSource", "combatEnd"]);
+});
+
+test("rogue cunning strike writes card info through the workflow item card uuid when midi passes a message config", async () => {
+  const previousFromUuid = globalThis.fromUuid;
+  const sneakAttack = makeFeatureItem({
+    id: "sneak-attack",
+    name: "Sneak Attack",
+    featureId: "rogue-rework-v00::class::rogue-sneak-attack"
+  });
+  const hamstring = makeFeatureItem({
+    id: "hamstring",
+    name: "Hamstring",
+    featureId: "rogue-rework-v00::rogueCunningStrike::rogue-cunning-strike-hamstring",
+    sourceType: "rogueCunningStrike",
+    cost: 1
+  });
+  const rogue = new TestActor({ items: [sneakAttack, hamstring], level: 5 });
+  const target = new TestActor({ id: "target", name: "Target", items: [] });
+  const card = makeMessage();
+  globalThis.fromUuid = async (uuid) => (uuid === "ChatMessage.card" ? card : null);
+  const service = new RogueAutomationService({}, {
+    promptSneakAttack: async () => ({
+      targetUuid: target.uuid,
+      cunningStrikeId: "rogue-cunning-strike-hamstring"
+    })
+  });
+  const workflow = makeWeaponWorkflow({ actor: rogue, target });
+  workflow.itemCardUuid = "ChatMessage.card";
+  const config = makeDamageConfig();
+
+  try {
+    await service.applyMidiPreDamageRoll(workflow, workflow.activity, config, null, {});
+  }
+  finally {
+    globalThis.fromUuid = previousFromUuid;
+  }
+
+  assert.equal(card.updates.length, 1);
+  assert.match(card.content, /data-rebreya-cunning-strike="rogue-cunning-strike-hamstring"/u);
+});
+
+test("rogue trip cunning strike rolls a dexterity save before applying prone", async () => {
+  const sneakAttack = makeFeatureItem({
+    id: "sneak-attack",
+    name: "Sneak Attack",
+    featureId: "rogue-rework-v00::class::rogue-sneak-attack"
+  });
+  const trip = makeFeatureItem({
+    id: "trip",
+    name: "Trip",
+    featureId: "rogue-rework-v00::rogueCunningStrike::rogue-cunning-strike-trip",
+    sourceType: "rogueCunningStrike",
+    cost: 2
+  });
+  const rogue = new TestActor({ items: [sneakAttack, trip], level: 5, dexMod: 4, prof: 3 });
+  const target = new TestActor({ id: "target", name: "Target", items: [] });
+  const saves = [];
+  target.rollSavingThrow = async (config) => {
+    saves.push(config);
+    return [fixedRoll(8)];
+  };
+  const statusUpdates = [];
+  const service = new RogueAutomationService({
+    combatStatusService: {
+      setStatus: async (...args) => {
+        statusUpdates.push(args);
+        return {
+          async update(patch) {
+            this.patch = patch;
+            return this;
+          }
+        };
+      }
+    }
+  }, {
+    promptSneakAttack: async () => ({
+      targetUuid: target.uuid,
+      cunningStrikeId: "rogue-cunning-strike-trip"
+    })
+  });
+  const workflow = makeWeaponWorkflow({ actor: rogue, target });
+  const config = makeDamageConfig();
+
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
+
+  assert.deepEqual(saves.map((save) => ({ ability: save.ability, target: save.target })), [{
+    ability: "dex",
+    target: 15
+  }]);
+  assert.equal(statusUpdates.length, 1);
+  assert.equal(statusUpdates[0][0], target);
+  assert.equal(statusUpdates[0][1], "prone");
+  assert.deepEqual(statusUpdates[0][2], {
+    active: true,
+    durationRounds: 1,
+    sourceActor: rogue
+  });
+});
+
+test("rogue break tempo cunning strike applies frostbitten 1 on a successful save", async () => {
+  const sneakAttack = makeFeatureItem({
+    id: "sneak-attack",
+    name: "Sneak Attack",
+    featureId: "rogue-rework-v00::class::rogue-sneak-attack"
+  });
+  const breakTempo = makeFeatureItem({
+    id: "break-tempo",
+    name: "Break Tempo",
+    featureId: "rogue-rework-v00::rogueCunningStrike::rogue-cunning-strike-break-tempo",
+    sourceType: "rogueCunningStrike",
+    cost: 3
+  });
+  const rogue = new TestActor({ items: [sneakAttack, breakTempo], level: 7 });
+  const target = new TestActor({ id: "target", name: "Target", items: [] });
+  const saves = [];
+  target.rollSavingThrow = async (config) => {
+    saves.push(config);
+    return [fixedRoll(20)];
+  };
+  const statusUpdates = [];
+  const service = new RogueAutomationService({
+    combatStatusService: {
+      setStatus: async (...args) => {
+        statusUpdates.push(args);
+        return true;
+      }
+    }
+  }, {
+    promptSneakAttack: async () => ({
+      targetUuid: target.uuid,
+      cunningStrikeId: "rogue-cunning-strike-break-tempo"
+    })
+  });
+  const workflow = makeWeaponWorkflow({ actor: rogue, target });
+  const config = makeDamageConfig();
+
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
+
+  assert.deepEqual(saves.map((save) => ({ ability: save.ability, target: save.target })), [{
+    ability: "con",
+    target: 13
+  }]);
+  assert.equal(statusUpdates.length, 1);
+  assert.equal(statusUpdates[0][1], "rebreya-frostbitten");
+  assert.deepEqual(statusUpdates[0][2], {
+    active: true,
+    value: 1,
+    durationRounds: 1,
+    sourceActor: rogue
+  });
 });
 
 test("rogue sneak attack uses DialogV2 input without the legacy Dialog class", async () => {

@@ -3,6 +3,96 @@ import { MODULE_ID } from "../constants.js";
 const ROGUE_CLASS_IDENTIFIER = "rogue-rework-v00";
 const SNEAK_ATTACK_FEATURE_ID = "rogue-sneak-attack";
 const CUNNING_STRIKE_SOURCE_TYPE = "rogueCunningStrike";
+const EFFECT_MODE_CUSTOM = globalThis.CONST?.ACTIVE_EFFECT_MODES?.CUSTOM ?? 0;
+const EFFECT_MODE_ADD = globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
+const MOVEMENT_SPEED_KEYS = Object.freeze([
+  "system.attributes.movement.walk",
+  "system.attributes.movement.burrow",
+  "system.attributes.movement.climb",
+  "system.attributes.movement.fly",
+  "system.attributes.movement.swim"
+]);
+const CUNNING_STRIKE_TEXT = Object.freeze({
+  manualNote: "\u042d\u0442\u043e\u0442 \u0432\u0430\u0440\u0438\u0430\u043d\u0442 \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u0440\u0443\u0447\u043d\u043e\u0439 \u043e\u0442\u0440\u0430\u0431\u043e\u0442\u043a\u0438.",
+  manualSaveNote: "\u0421\u043f\u0430\u0441\u0431\u0440\u043e\u0441\u043e\u043a \u0446\u0435\u043b\u0438 \u043d\u0443\u0436\u043d\u043e \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0432\u0440\u0443\u0447\u043d\u0443\u044e.",
+  saveSuccessNote: "\u0421\u043f\u0430\u0441\u0431\u0440\u043e\u0441\u043e\u043a \u0443\u0441\u043f\u0435\u0448\u0435\u043d: \u044d\u0444\u0444\u0435\u043a\u0442 \u043d\u0435 \u043f\u0440\u0438\u043c\u0435\u043d\u0435\u043d.",
+  cardOnlyNote: "\u0412\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0439 \u0432\u0430\u0440\u0438\u0430\u043d\u0442 \u0437\u0430\u043f\u0438\u0441\u0430\u043d \u0432 \u043a\u0430\u0440\u0442\u043e\u0447\u043a\u0443 \u0430\u0442\u0430\u043a\u0438.",
+  cunningStrike: "\u0425\u0438\u0442\u0440\u044b\u0439 \u0443\u0434\u0430\u0440",
+  save: "\u0421\u043f\u0430\u0441\u0431\u0440\u043e\u0441\u043e\u043a",
+  dc: "\u0421\u043b",
+  success: "\u0443\u0441\u043f\u0435\u0445",
+  failure: "\u043f\u0440\u043e\u0432\u0430\u043b",
+  unchecked: "\u043d\u0435 \u043f\u0440\u043e\u0432\u0435\u0440\u0435\u043d",
+  effect: "\u042d\u0444\u0444\u0435\u043a\u0442",
+  note: "\u0417\u0430\u043c\u0435\u0442\u043a\u0430",
+  die: "\u043a6",
+  speed: "\u0441\u043a\u043e\u0440\u043e\u0441\u0442\u044c",
+  feet: "\u0444\u0442.",
+  nextAttackDisadvantage: "\u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0430\u044f \u0430\u0442\u0430\u043a\u0430 \u0441 \u043f\u043e\u043c\u0435\u0445\u043e\u0439"
+});
+const CUNNING_STRIKE_AUTOMATION = Object.freeze({
+  "rogue-cunning-strike-hamstring": {
+    effect: {
+      kind: "speedPenalty",
+      amount: -10,
+      durationRounds: 1,
+      expires: "sourceTurnStart"
+    }
+  },
+  "rogue-cunning-strike-open-position": {
+    status: {
+      id: "rebreya-open-position",
+      durationRounds: 1,
+      expires: "sourceTurnStart"
+    }
+  },
+  "rogue-cunning-strike-disrupt-aim": {
+    effect: {
+      kind: "nextAttackDisadvantage",
+      durationRounds: 1,
+      specialDuration: ["1Attack", "turnStartSource", "combatEnd"]
+    }
+  },
+  "rogue-cunning-strike-trip": {
+    saveAbility: "dex",
+    failureStatus: {
+      id: "prone",
+      durationRounds: 1,
+      expires: "targetTurnEnd"
+    }
+  },
+  "rogue-cunning-strike-stun": {
+    saveAbility: "con",
+    failureStatus: {
+      id: "rebreya-entangled-mind",
+      durationRounds: 1,
+      expires: "targetTurnEnd"
+    }
+  },
+  "rogue-cunning-strike-break-tempo": {
+    saveAbility: "con",
+    successStatus: {
+      id: "rebreya-frostbitten",
+      value: 1,
+      durationRounds: 1,
+      expires: "targetTurnEnd"
+    },
+    failureStatus: {
+      id: "rebreya-frostbitten",
+      value: 2,
+      durationRounds: 1,
+      expires: "targetTurnEnd"
+    }
+  },
+  "rogue-cunning-strike-blind": {
+    saveAbility: "dex",
+    failureStatus: {
+      id: "blinded",
+      durationRounds: 1,
+      expires: "targetTurnEnd"
+    }
+  }
+});
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -47,6 +137,26 @@ function collectionValues(collection) {
 function getProperty(source, path, fallback = undefined) {
   const value = foundry.utils.getProperty(source, path);
   return value === undefined ? fallback : value;
+}
+
+function speakerForActor(actor) {
+  if (typeof globalThis.ChatMessage?.getSpeaker === "function") {
+    return globalThis.ChatMessage.getSpeaker({ actor });
+  }
+
+  return {
+    actor: cleanText(actor?.id),
+    alias: cleanText(actor?.name)
+  };
+}
+
+function plainText(value) {
+  return cleanText(String(value ?? "")
+    .replace(/<style[\s\S]*?<\/style>/giu, " ")
+    .replace(/<script[\s\S]*?<\/script>/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/&nbsp;/giu, " ")
+    .replace(/\s+/gu, " "));
 }
 
 function itemFlag(item, scope, key) {
@@ -285,7 +395,7 @@ export class RogueAutomationService {
     return true;
   }
 
-  async applyMidiPreDamageRoll(workflow, activity, config = {}) {
+  async applyMidiPreDamageRoll(workflow, activity, config = {}, _dialog = null, message = null) {
     if (workflow && activity && !workflow.activity) {
       workflow.activity = activity;
     }
@@ -345,6 +455,26 @@ export class RogueAutomationService {
     if (remainingDice > 0) {
       if (!appendDamageRollConfig(config, workflow, actor, damageDiceFormula(remainingDice, 6), damageType, label)) {
         return true;
+      }
+    }
+
+    if (selectedStrike) {
+      let outcome = null;
+      try {
+        outcome = await this.#applyCunningStrikeAutomation(actor, chosenTarget, selectedStrike);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply rogue Cunning Strike automation.`, error);
+        outcome = {
+          notes: ["Не удалось применить автоматизацию Хитрого удара."]
+        };
+      }
+      this.#recordCunningStrikeOnWorkflow(workflow, selectedStrike, outcome);
+      try {
+        await this.#postCunningStrikeCardInfo(workflow, message, selectedStrike, outcome);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to append rogue Cunning Strike card info.`, error);
       }
     }
 
@@ -418,6 +548,406 @@ export class RogueAutomationService {
   #sneakAttackLabel(selectedStrike) {
     const suffix = selectedStrike?.name ? `: ${selectedStrike.name}` : "";
     return `Скрытая атака${suffix}`;
+  }
+
+  async #applyCunningStrikeAutomation(sourceActor, target, selectedStrike) {
+    const automation = CUNNING_STRIKE_AUTOMATION[selectedStrike?.id] ?? null;
+    const outcome = {
+      id: cleanText(selectedStrike?.id),
+      name: cleanText(selectedStrike?.name),
+      cost: Math.max(0, Math.floor(toNumber(selectedStrike?.cost, 0))),
+      description: plainText(selectedStrike?.description),
+      applied: [],
+      notes: []
+    };
+
+    if (!automation) {
+      outcome.notes.push(CUNNING_STRIKE_TEXT.manualNote);
+      return outcome;
+    }
+
+    let save = null;
+    if (automation.saveAbility) {
+      save = await this.#rollCunningStrikeSave(target, automation.saveAbility, sourceActor, selectedStrike);
+      outcome.save = save;
+      if (save.success === null) {
+        outcome.notes.push(CUNNING_STRIKE_TEXT.manualSaveNote);
+        return outcome;
+      }
+    }
+
+    if (automation.effect && !automation.saveAbility) {
+      const label = await this.#applyCunningStrikeEffect(target, automation.effect, sourceActor, selectedStrike);
+      if (label) {
+        outcome.applied.push(label);
+      }
+    }
+
+    if (automation.status && !automation.saveAbility) {
+      const label = await this.#applyCunningStrikeStatus(target, automation.status, sourceActor, selectedStrike);
+      if (label) {
+        outcome.applied.push(label);
+      }
+    }
+
+    if (save?.success === false && automation.failureStatus) {
+      const label = await this.#applyCunningStrikeStatus(target, automation.failureStatus, sourceActor, selectedStrike);
+      if (label) {
+        outcome.applied.push(label);
+      }
+    }
+
+    if (save?.success === true && automation.successStatus) {
+      const label = await this.#applyCunningStrikeStatus(target, automation.successStatus, sourceActor, selectedStrike);
+      if (label) {
+        outcome.applied.push(label);
+      }
+    }
+
+    if (save?.success === true && !automation.successStatus) {
+      outcome.notes.push(CUNNING_STRIKE_TEXT.saveSuccessNote);
+    }
+
+    if (!outcome.applied.length && !outcome.notes.length) {
+      outcome.notes.push(CUNNING_STRIKE_TEXT.cardOnlyNote);
+    }
+
+    return outcome;
+  }
+
+  #cunningStrikeSaveDc(actor) {
+    const proficiency = toNumber(getProperty(actor, "system.attributes.prof", 2), 2);
+    const dexterity = toNumber(getProperty(actor, "system.abilities.dex.mod", 0), 0);
+    return 8 + proficiency + dexterity;
+  }
+
+  async #rollCunningStrikeSave(target, ability, sourceActor, selectedStrike) {
+    const abilityKey = cleanText(ability, "dex").toLowerCase();
+    const dc = this.#cunningStrikeSaveDc(sourceActor);
+    if (typeof target?.rollSavingThrow !== "function") {
+      return {
+        ability: abilityKey,
+        dc,
+        total: null,
+        success: null
+      };
+    }
+
+    const rolls = await target.rollSavingThrow({
+      ability: abilityKey,
+      target: dc
+    }, {}, {
+      data: {
+        speaker: speakerForActor(target),
+        flavor: `${cleanText(selectedStrike?.name, CUNNING_STRIKE_TEXT.cunningStrike)}: ${CUNNING_STRIKE_TEXT.save.toLowerCase()} ${abilityKey.toUpperCase()} ${CUNNING_STRIKE_TEXT.dc} ${dc}`
+      }
+    });
+    const roll = Array.isArray(rolls) ? rolls[0] : rolls;
+    const total = Number(roll?.total);
+    return {
+      ability: abilityKey,
+      dc,
+      total: Number.isFinite(total) ? total : null,
+      success: Number.isFinite(total) ? total >= dc : null
+    };
+  }
+
+  async #applyCunningStrikeEffect(target, effect, sourceActor, selectedStrike) {
+    const effectData = this.#cunningStrikeEffectData(effect, sourceActor, selectedStrike);
+    if (!effectData) {
+      return "";
+    }
+
+    const applied = await this.#createActorEffect(target, effectData);
+    return applied ? this.#cunningStrikeEffectLabel(effect) : "";
+  }
+
+  #cunningStrikeEffectData(effect = {}, sourceActor, selectedStrike) {
+    const specialDuration = this.#cunningStrikeSpecialDuration(effect);
+    const base = {
+      name: `${CUNNING_STRIKE_TEXT.cunningStrike}: ${cleanText(selectedStrike?.name, cleanText(effect.kind, "effect"))}`,
+      type: "base",
+      img: "icons/svg/target.svg",
+      system: {},
+      changes: [],
+      disabled: false,
+      duration: this.#cunningStrikeDuration(effect),
+      origin: cleanText(sourceActor?.uuid) || null,
+      transfer: false,
+      statuses: [],
+      flags: {
+        ...(specialDuration.length ? {
+          dae: {
+            specialDuration
+          }
+        } : {}),
+        [MODULE_ID]: {
+          managed: true,
+          rogueAutomation: {
+            kind: "cunningStrikeEffect",
+            strikeId: cleanText(selectedStrike?.id),
+            sourceActorUuid: cleanText(sourceActor?.uuid),
+            expires: cleanText(effect.expires)
+          }
+        }
+      }
+    };
+
+    if (effect.kind === "speedPenalty") {
+      const amount = Math.floor(toNumber(effect.amount, -10));
+      return {
+        ...base,
+        img: "icons/svg/daze.svg",
+        changes: MOVEMENT_SPEED_KEYS.map((key) => ({
+          key,
+          mode: EFFECT_MODE_ADD,
+          value: String(amount),
+          priority: 20
+        }))
+      };
+    }
+
+    if (effect.kind === "nextAttackDisadvantage") {
+      return {
+        ...base,
+        img: "icons/svg/downgrade.svg",
+        changes: [{
+          key: "flags.midi-qol.disadvantage.attack.all",
+          mode: EFFECT_MODE_CUSTOM,
+          value: "1",
+          priority: 20
+        }]
+      };
+    }
+
+    return null;
+  }
+
+  #cunningStrikeEffectLabel(effect = {}) {
+    if (effect.kind === "speedPenalty") {
+      return `${CUNNING_STRIKE_TEXT.speed} ${Math.floor(toNumber(effect.amount, -10))} ${CUNNING_STRIKE_TEXT.feet}`;
+    }
+
+    if (effect.kind === "nextAttackDisadvantage") {
+      return CUNNING_STRIKE_TEXT.nextAttackDisadvantage;
+    }
+
+    return cleanText(effect.kind);
+  }
+
+  async #applyCunningStrikeStatus(target, status, sourceActor, selectedStrike) {
+    const applied = await this.#setCunningStrikeStatus(target, status, sourceActor, selectedStrike);
+    return applied ? this.#cunningStrikeStatusLabel(status) : "";
+  }
+
+  async #setCunningStrikeStatus(actor, status = {}, sourceActor, selectedStrike) {
+    const statusId = cleanText(status.id);
+    if (!statusId) {
+      return false;
+    }
+
+    if (typeof this.moduleApi?.combatStatusService?.setStatus === "function") {
+      const effect = await this.moduleApi.combatStatusService.setStatus(actor, statusId, {
+        active: true,
+        ...(Object.hasOwn(status, "value") ? { value: status.value } : {}),
+        durationRounds: Math.max(0, Math.floor(toNumber(status.durationRounds, 0))),
+        sourceActor
+      });
+      await this.#patchCunningStrikeStatusEffect(effect, status, sourceActor, selectedStrike);
+      return true;
+    }
+
+    const specialDuration = this.#cunningStrikeSpecialDuration(status);
+    return this.#createActorEffect(actor, {
+      name: statusId,
+      type: "base",
+      img: "icons/svg/aura.svg",
+      system: {},
+      changes: [],
+      disabled: false,
+      duration: this.#cunningStrikeDuration(status),
+      origin: cleanText(sourceActor?.uuid) || null,
+      transfer: false,
+      statuses: [statusId],
+      flags: {
+        core: {
+          statusId
+        },
+        ...(specialDuration.length ? {
+          dae: {
+            specialDuration
+          }
+        } : {}),
+        [MODULE_ID]: {
+          managed: true,
+          rogueAutomation: {
+            kind: "cunningStrikeStatus",
+            strikeId: cleanText(selectedStrike?.id),
+            sourceActorUuid: cleanText(sourceActor?.uuid),
+            expires: cleanText(status.expires)
+          }
+        }
+      }
+    });
+  }
+
+  #cunningStrikeStatusLabel(status = {}) {
+    const value = Object.hasOwn(status, "value") ? ` ${status.value}` : "";
+    return `${cleanText(status.id)}${value}`;
+  }
+
+  #cunningStrikeSpecialDuration(entry = {}) {
+    if (Array.isArray(entry.specialDuration)) {
+      return entry.specialDuration.map((value) => cleanText(value)).filter(Boolean);
+    }
+
+    const expires = cleanText(entry.expires);
+    if (expires === "sourceTurnEnd" || expires === "sourceNextTurnEnd") {
+      return ["turnEndSource", "combatEnd"];
+    }
+
+    if (expires === "sourceTurnStart" || expires === "sourceNextTurnStart") {
+      return ["turnStartSource", "combatEnd"];
+    }
+
+    if (expires === "targetTurnEnd" || expires === "targetNextTurnEnd") {
+      return ["turnEnd", "combatEnd"];
+    }
+
+    if (expires === "targetTurnStart" || expires === "targetNextTurnStart") {
+      return ["turnStart", "combatEnd"];
+    }
+
+    return [];
+  }
+
+  #cunningStrikeDuration(entry = {}) {
+    return {
+      startTime: null,
+      seconds: null,
+      combat: null,
+      rounds: Math.max(0, Math.floor(toNumber(entry.durationRounds, 0))),
+      turns: null,
+      startRound: globalThis.game?.combat?.round ?? null,
+      startTurn: globalThis.game?.combat?.turn ?? null
+    };
+  }
+
+  async #patchCunningStrikeStatusEffect(effect, status = {}, sourceActor, selectedStrike) {
+    if (!effect || typeof effect.update !== "function") {
+      return false;
+    }
+
+    const specialDuration = this.#cunningStrikeSpecialDuration(status);
+    const patch = {
+      duration: this.#cunningStrikeDuration(status),
+      origin: cleanText(sourceActor?.uuid) || null,
+      [`flags.${MODULE_ID}.managed`]: true,
+      [`flags.${MODULE_ID}.rogueAutomation.kind`]: "cunningStrikeStatus",
+      [`flags.${MODULE_ID}.rogueAutomation.strikeId`]: cleanText(selectedStrike?.id),
+      [`flags.${MODULE_ID}.rogueAutomation.sourceActorUuid`]: cleanText(sourceActor?.uuid),
+      [`flags.${MODULE_ID}.rogueAutomation.expires`]: cleanText(status.expires)
+    };
+
+    if (specialDuration.length) {
+      patch["flags.dae.specialDuration"] = specialDuration;
+    }
+
+    await effect.update(patch);
+    return true;
+  }
+
+  async #createActorEffect(actor, effectData) {
+    if (!(actor instanceof Actor) || typeof actor.createEmbeddedDocuments !== "function") {
+      return false;
+    }
+
+    const data = foundry.utils.deepClone(effectData);
+    delete data._id;
+    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
+    return true;
+  }
+
+  #recordCunningStrikeOnWorkflow(workflow, selectedStrike, outcome) {
+    if (!workflow) {
+      return false;
+    }
+
+    workflow.rebreyaCunningStrike = {
+      id: cleanText(selectedStrike?.id),
+      name: cleanText(selectedStrike?.name),
+      cost: Math.max(0, Math.floor(toNumber(selectedStrike?.cost, 0))),
+      description: plainText(selectedStrike?.description),
+      outcome: foundry.utils.deepClone(outcome ?? {})
+    };
+    return true;
+  }
+
+  async #resolveCunningStrikeCardMessage(workflow, message) {
+    if (message && typeof message.update === "function") {
+      return message;
+    }
+
+    const uuid = cleanText(
+      workflow?.itemCardUuid
+      ?? workflow?.itemCard?.uuid
+      ?? workflow?.chatCardUuid
+      ?? message?.workflow?.itemCardUuid
+      ?? message?.workflow?.itemCard?.uuid
+    );
+    if (uuid && typeof globalThis.fromUuid === "function") {
+      const cardMessage = await globalThis.fromUuid(uuid);
+      if (cardMessage && typeof cardMessage.update === "function") {
+        return cardMessage;
+      }
+    }
+
+    const id = cleanText(workflow?.itemCardId ?? workflow?.id ?? message?.workflow?.itemCardId ?? message?.workflow?.id);
+    const cardMessage = id ? globalThis.game?.messages?.get?.(id) : null;
+    return cardMessage && typeof cardMessage.update === "function" ? cardMessage : null;
+  }
+
+  async #postCunningStrikeCardInfo(workflow, message, selectedStrike, outcome) {
+    const cardMessage = await this.#resolveCunningStrikeCardMessage(workflow, message);
+    if (!cardMessage) {
+      return false;
+    }
+
+    const strikeId = cleanText(selectedStrike?.id);
+    if (!strikeId) {
+      return false;
+    }
+
+    const currentContent = String(cardMessage.content ?? "");
+    const marker = `data-rebreya-cunning-strike="${escapeHtml(strikeId)}"`;
+    if (currentContent.includes(marker)) {
+      return false;
+    }
+
+    await cardMessage.update({
+      content: `${currentContent}${this.#cunningStrikeCardBlock(selectedStrike, outcome)}`
+    });
+    return true;
+  }
+
+  #cunningStrikeCardBlock(selectedStrike, outcome = {}) {
+    const description = plainText(selectedStrike?.description);
+    const applied = Array.isArray(outcome?.applied) ? outcome.applied.map((entry) => cleanText(entry)).filter(Boolean) : [];
+    const notes = Array.isArray(outcome?.notes) ? outcome.notes.map((entry) => cleanText(entry)).filter(Boolean) : [];
+    const save = outcome?.save ?? null;
+    const saveText = save
+      ? `<div><strong>${CUNNING_STRIKE_TEXT.save}:</strong> ${escapeHtml(String(save.ability ?? "").toUpperCase())} ${CUNNING_STRIKE_TEXT.dc} ${escapeHtml(save.dc)}${save.total !== null && save.total !== undefined ? `, ${escapeHtml(save.total)}` : ""} (${save.success === true ? CUNNING_STRIKE_TEXT.success : save.success === false ? CUNNING_STRIKE_TEXT.failure : CUNNING_STRIKE_TEXT.unchecked})</div>`
+      : "";
+    return `
+      <section class="rebreya-cunning-strike" data-rebreya-cunning-strike="${escapeHtml(selectedStrike?.id)}" style="margin-top: 0.5rem;">
+        <hr>
+        <div><strong>${CUNNING_STRIKE_TEXT.cunningStrike}:</strong> ${escapeHtml(selectedStrike?.name)} (-${escapeHtml(selectedStrike?.cost)}${CUNNING_STRIKE_TEXT.die})</div>
+        ${description ? `<div>${escapeHtml(description)}</div>` : ""}
+        ${saveText}
+        ${applied.length ? `<div><strong>${CUNNING_STRIKE_TEXT.effect}:</strong> ${escapeHtml(applied.join(", "))}</div>` : ""}
+        ${notes.length ? `<div><strong>${CUNNING_STRIKE_TEXT.note}:</strong> ${escapeHtml(notes.join(" "))}</div>` : ""}
+      </section>
+    `;
   }
 
   async #promptSneakAttack(actor, details) {
