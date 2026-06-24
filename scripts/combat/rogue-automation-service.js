@@ -26,6 +26,7 @@ const CUNNING_STRIKE_TEXT = Object.freeze({
   effect: "\u042d\u0444\u0444\u0435\u043a\u0442",
   note: "\u0417\u0430\u043c\u0435\u0442\u043a\u0430",
   die: "\u043a6",
+  openPositionEffectName: "\u041e\u0442\u043a\u0440\u044b\u0442\u0430\u044f \u043f\u043e\u0437\u0438\u0446\u0438\u044f",
   speed: "\u0441\u043a\u043e\u0440\u043e\u0441\u0442\u044c",
   feet: "\u0444\u0442.",
   nextAttackDisadvantage: "\u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0430\u044f \u0430\u0442\u0430\u043a\u0430 \u0441 \u043f\u043e\u043c\u0435\u0445\u043e\u0439"
@@ -40,10 +41,15 @@ const CUNNING_STRIKE_AUTOMATION = Object.freeze({
     }
   },
   "rogue-cunning-strike-open-position": {
-    status: {
-      id: "rebreya-open-position",
+    convenientEffect: {
+      effectName: CUNNING_STRIKE_TEXT.openPositionEffectName,
       durationRounds: 1,
-      expires: "sourceTurnStart"
+      expires: "sourceTurnStart",
+      fallbackStatus: {
+        id: "rebreya-open-position",
+        durationRounds: 1,
+        expires: "sourceTurnStart"
+      }
     }
   },
   "rogue-cunning-strike-disrupt-aim": {
@@ -590,6 +596,18 @@ export class RogueAutomationService {
       }
     }
 
+    if (automation.convenientEffect && !automation.saveAbility) {
+      const label = await this.#applyCunningStrikeConvenientEffect(
+        target,
+        automation.convenientEffect,
+        sourceActor,
+        selectedStrike
+      );
+      if (label) {
+        outcome.applied.push(label);
+      }
+    }
+
     if (save?.success === false && automation.failureStatus) {
       const label = await this.#applyCunningStrikeStatus(target, automation.failureStatus, sourceActor, selectedStrike);
       if (label) {
@@ -740,6 +758,64 @@ export class RogueAutomationService {
     return applied ? this.#cunningStrikeStatusLabel(status) : "";
   }
 
+  #convenientEffectInterface() {
+    return globalThis.game?.dfreds?.effectInterface
+      ?? globalThis.game?.modules?.get?.("dfreds-convenient-effects")?.api
+      ?? this.moduleApi?.convenientEffectInterface
+      ?? this.moduleApi?.convenientEffects
+      ?? null;
+  }
+
+  async #applyCunningStrikeConvenientEffect(target, effect = {}, sourceActor, selectedStrike) {
+    const effectInterface = this.#convenientEffectInterface();
+    const effectName = cleanText(effect.effectName);
+    const effectId = cleanText(effect.effectId);
+    let applied = false;
+
+    if (effectInterface && typeof effectInterface.addEffect === "function" && cleanText(target?.uuid)) {
+      try {
+        const definedEffect = typeof effectInterface.findEffect === "function"
+          ? effectInterface.findEffect({
+            ...(effectId ? { effectId } : {}),
+            ...(effectName ? { effectName } : {})
+          })
+          : null;
+        if (definedEffect || !effectInterface.findEffect) {
+          const createdEffects = await effectInterface.addEffect({
+            ...(effectId ? { effectId } : {}),
+            ...(effectName ? { effectName } : {}),
+            uuid: cleanText(target.uuid),
+            origin: cleanText(sourceActor?.uuid) || undefined
+          });
+          const effects = Array.isArray(createdEffects) ? createdEffects : [];
+          for (const createdEffect of effects) {
+            await this.#patchCunningStrikeStatusEffect(
+              createdEffect,
+              effect,
+              sourceActor,
+              selectedStrike,
+              "cunningStrikeConvenientEffect"
+            );
+          }
+          applied = effects.length > 0 || createdEffects === true;
+        }
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to apply Convenient Effects Cunning Strike effect.`, error);
+      }
+    }
+
+    if (applied) {
+      return effectName || cleanText(effectId);
+    }
+
+    if (effect.fallbackStatus) {
+      return this.#applyCunningStrikeStatus(target, effect.fallbackStatus, sourceActor, selectedStrike);
+    }
+
+    return "";
+  }
+
   async #setCunningStrikeStatus(actor, status = {}, sourceActor, selectedStrike) {
     const statusId = cleanText(status.id);
     if (!statusId) {
@@ -833,7 +909,7 @@ export class RogueAutomationService {
     };
   }
 
-  async #patchCunningStrikeStatusEffect(effect, status = {}, sourceActor, selectedStrike) {
+  async #patchCunningStrikeStatusEffect(effect, status = {}, sourceActor, selectedStrike, kind = "cunningStrikeStatus") {
     if (!effect || typeof effect.update !== "function") {
       return false;
     }
@@ -843,7 +919,7 @@ export class RogueAutomationService {
       duration: this.#cunningStrikeDuration(status),
       origin: cleanText(sourceActor?.uuid) || null,
       [`flags.${MODULE_ID}.managed`]: true,
-      [`flags.${MODULE_ID}.rogueAutomation.kind`]: "cunningStrikeStatus",
+      [`flags.${MODULE_ID}.rogueAutomation.kind`]: cleanText(kind, "cunningStrikeStatus"),
       [`flags.${MODULE_ID}.rogueAutomation.strikeId`]: cleanText(selectedStrike?.id),
       [`flags.${MODULE_ID}.rogueAutomation.sourceActorUuid`]: cleanText(sourceActor?.uuid),
       [`flags.${MODULE_ID}.rogueAutomation.expires`]: cleanText(status.expires)
@@ -950,6 +1026,29 @@ export class RogueAutomationService {
     `;
   }
 
+  #cunningStrikeDialogOptions(details) {
+    if (!Array.isArray(details?.cunningStrikes) || !details.cunningStrikes.length) {
+      return "";
+    }
+
+    return `
+      <div class="rebreya-cunning-strike-options" style="display: grid; gap: 0.5rem;">
+        ${details.cunningStrikes.map((strike) => {
+          const description = plainText(strike.description);
+          return `
+            <label class="rebreya-cunning-strike-option" style="display: grid; grid-template-columns: auto 1fr; gap: 0.5rem; align-items: start; padding: 0.45rem; border: 1px solid var(--color-border-light-tertiary); border-radius: 4px;">
+              <input type="checkbox" name="cunningStrikeId" value="${escapeHtml(strike.id)}" data-sneak-attack-cunning-strike>
+              <span>
+                <strong>${escapeHtml(strike.name)} (-${escapeHtml(strike.cost)}${CUNNING_STRIKE_TEXT.die})</strong>
+                ${description ? `<span style="display: block; margin-top: 0.2rem;">${escapeHtml(description)}</span>` : ""}
+              </span>
+            </label>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
   async #promptSneakAttack(actor, details) {
     if (typeof this._options.promptSneakAttack === "function") {
       const choice = await this._options.promptSneakAttack(actor, details);
@@ -963,12 +1062,6 @@ export class RogueAutomationService {
     const targetOptions = details.targets.map((target) => (
       `<option value="${escapeHtml(target.uuid)}">${escapeHtml(target.name)}</option>`
     )).join("");
-    const strikeOptions = [
-      `<option value="">Без Хитрого удара</option>`,
-      ...details.cunningStrikes.map((strike) => (
-        `<option value="${escapeHtml(strike.id)}">${escapeHtml(strike.name)} (-${escapeHtml(strike.cost)}к6)</option>`
-      ))
-    ].join("");
 
     const content = `
       <form>
@@ -982,7 +1075,7 @@ export class RogueAutomationService {
         ` : ""}
         <div class="form-group">
           <label>Хитрый удар</label>
-          <select name="cunningStrikeId" data-sneak-attack-cunning-strike>${strikeOptions}</select>
+          ${this.#cunningStrikeDialogOptions(details)}
         </div>
       </form>
     `;
@@ -1000,7 +1093,7 @@ export class RogueAutomationService {
         callback: (_event, button) => {
           const root = getDialogButtonForm(button);
           const targetUuid = cleanText(root?.querySelector?.("[data-sneak-attack-target]")?.value);
-          const cunningStrikeId = cleanText(root?.querySelector?.("[data-sneak-attack-cunning-strike]")?.value);
+          const cunningStrikeId = cleanText(root?.querySelector?.("[data-sneak-attack-cunning-strike]:checked")?.value);
           return { targetUuid, cunningStrikeId, actor };
         }
       },

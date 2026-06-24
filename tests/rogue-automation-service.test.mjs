@@ -401,6 +401,74 @@ test("rogue cunning strike writes card info through the workflow item card uuid 
   assert.match(card.content, /data-rebreya-cunning-strike="rogue-cunning-strike-hamstring"/u);
 });
 
+test("rogue open position cunning strike applies through Convenient Effects when available", async () => {
+  const previousDfreds = globalThis.game.dfreds;
+  const sneakAttack = makeFeatureItem({
+    id: "sneak-attack",
+    name: "Sneak Attack",
+    featureId: "rogue-rework-v00::class::rogue-sneak-attack"
+  });
+  const openPosition = makeFeatureItem({
+    id: "open-position",
+    name: "Open Position",
+    featureId: "rogue-rework-v00::rogueCunningStrike::rogue-cunning-strike-open-position",
+    sourceType: "rogueCunningStrike",
+    cost: 1
+  });
+  const rogue = new TestActor({ items: [sneakAttack, openPosition], level: 5 });
+  const target = new TestActor({ id: "target", name: "Target", items: [] });
+  const appliedEffects = [];
+  const effectUpdates = [];
+  globalThis.game.dfreds = {
+    effectInterface: {
+      findEffect: ({ effectName }) => (effectName === "\u041e\u0442\u043a\u0440\u044b\u0442\u0430\u044f \u043f\u043e\u0437\u0438\u0446\u0438\u044f" ? { name: effectName } : null),
+      addEffect: async (payload) => {
+        appliedEffects.push(payload);
+        return [{
+          async update(patch) {
+            effectUpdates.push(patch);
+            return this;
+          }
+        }];
+      }
+    }
+  };
+  const statuses = [];
+  const service = new RogueAutomationService({
+    combatStatusService: {
+      setStatus: async (...args) => {
+        statuses.push(args);
+        return true;
+      }
+    }
+  }, {
+    promptSneakAttack: async () => ({
+      targetUuid: target.uuid,
+      cunningStrikeId: "rogue-cunning-strike-open-position"
+    })
+  });
+  const workflow = makeWeaponWorkflow({ actor: rogue, target });
+  const config = makeDamageConfig();
+
+  try {
+    await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
+  }
+  finally {
+    globalThis.game.dfreds = previousDfreds;
+  }
+
+  assert.deepEqual(appliedEffects, [{
+    effectName: "\u041e\u0442\u043a\u0440\u044b\u0442\u0430\u044f \u043f\u043e\u0437\u0438\u0446\u0438\u044f",
+    uuid: target.uuid,
+    origin: rogue.uuid
+  }]);
+  assert.equal(statuses.length, 0);
+  assert.equal(effectUpdates.length, 1);
+  assert.equal(effectUpdates[0].origin, rogue.uuid);
+  assert.deepEqual(effectUpdates[0]["flags.dae.specialDuration"], ["turnStartSource", "combatEnd"]);
+  assert.equal(effectUpdates[0]["flags.rebreya-main.rogueAutomation.kind"], "cunningStrikeConvenientEffect");
+});
+
 test("rogue trip cunning strike rolls a dexterity save before applying prone", async () => {
   const sneakAttack = makeFeatureItem({
     id: "sneak-attack",
@@ -520,19 +588,31 @@ test("rogue sneak attack uses DialogV2 input without the legacy Dialog class", a
     name: "Sneak Attack",
     featureId: "rogue-rework-v00::class::rogue-sneak-attack"
   });
-  const rogue = new TestActor({ items: [sneakAttack], level: 1 });
+  const hamstring = makeFeatureItem({
+    id: "hamstring",
+    name: "Hamstring",
+    featureId: "rogue-rework-v00::rogueCunningStrike::rogue-cunning-strike-hamstring",
+    sourceType: "rogueCunningStrike",
+    cost: 1,
+    description: "Speed is reduced by 10 feet."
+  });
+  const rogue = new TestActor({ items: [sneakAttack, hamstring], level: 5 });
   const target = new TestActor({ id: "target", name: "Target", items: [] });
   let dialogCalls = 0;
+  let dialogContent = "";
   globalThis.Dialog = undefined;
   globalThis.foundry.applications = {
     api: {
       DialogV2: {
-        async input({ ok }) {
+        async input({ content, ok }) {
           dialogCalls += 1;
+          dialogContent = content;
           const form = {
             querySelector(selector) {
               if (selector === "[data-sneak-attack-target]") return { value: target.uuid };
-              if (selector === "[data-sneak-attack-cunning-strike]") return { value: "" };
+              if (selector === "[data-sneak-attack-cunning-strike]:checked") {
+                return { value: "rogue-cunning-strike-hamstring" };
+              }
               return null;
             }
           };
@@ -555,8 +635,12 @@ test("rogue sneak attack uses DialogV2 input without the legacy Dialog class", a
 
   assert.equal(dialogCalls, 1);
   assert.equal(config.rolls.length, 1);
-  assert.deepEqual(config.rolls[0].parts, ["1d6"]);
+  assert.deepEqual(config.rolls[0].parts, ["2d6"]);
   assert.equal(config.rolls[0].options.type, "piercing");
+  assert.match(dialogContent, /type="checkbox"/u);
+  assert.doesNotMatch(dialogContent, /<select[^>]*data-sneak-attack-cunning-strike/u);
+  assert.match(dialogContent, /Hamstring/u);
+  assert.match(dialogContent, /Speed is reduced by 10 feet/u);
 });
 
 test("rogue sneak attack asks without checking finesse or advantage and only once per turn after use", async () => {
