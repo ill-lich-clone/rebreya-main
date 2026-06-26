@@ -166,10 +166,16 @@ export function registerCombatHooks(moduleApi) {
 
     Hooks.on("dnd5e.rollAttack", (rolls, context) => {
       try {
-        return moduleApi.combatAttackService.applyDnd5ePostAttackRoll(
+        const result = moduleApi.combatAttackService.applyDnd5ePostAttackRoll(
           rolls,
           context
         );
+        if (hasAttackRollBoostService) {
+          moduleApi.attackRollBoostService.applyDnd5eRollAttack(rolls, context).catch((error) => {
+            console.error(`${MODULE_ID} | Failed to apply dnd5e attack roll boost automation.`, error);
+          });
+        }
+        return result;
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to capture post-attack roll automation.`, error);

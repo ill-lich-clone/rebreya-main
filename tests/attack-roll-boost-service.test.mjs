@@ -324,6 +324,233 @@ test("stale fighter precise attack maneuver items still provide an attack roll b
   assert.equal(promptDetails.needed, 1);
 });
 
+test("duplicate precise attack maneuver items only show one attack roll boost option", async () => {
+  const dominance = makeItem({
+    id: "fighter-dominance",
+    name: "Стиль доминирования",
+    uses: {
+      spent: 0,
+      max: "4"
+    }
+  });
+  const firstPreciseAttack = makeItem({
+    id: "first-precise",
+    name: "Точная атака",
+    boosts: []
+  });
+  firstPreciseAttack.flags["rebreya-main"] = {
+    sourceType: "fighterManeuver",
+    classIdentifier: "fighter-rework-v028"
+  };
+  const secondPreciseAttack = makeItem({
+    id: "second-precise",
+    name: "Точная атака",
+    boosts: []
+  });
+  secondPreciseAttack.flags["rebreya-main"] = {
+    sourceType: "fighterManeuver",
+    classIdentifier: "fighter-rework-v028"
+  };
+  const actor = makeActor([dominance, firstPreciseAttack, secondPreciseAttack]);
+  const target = makeTarget({ ac: 18 });
+  const workflow = makeWeaponWorkflow({ actor, target, attackTotal: 14 });
+  let promptDetails = null;
+  const service = new AttackRollBoostService({}, {
+    promptAttackRollBoosts: async (details) => {
+      promptDetails = details;
+      return [];
+    }
+  });
+
+  await service.applyMidiHitsChecked(workflow);
+
+  assert.deepEqual(promptDetails.options.map((option) => option.id), ["fighter-precise-attack"]);
+});
+
+test("bare dnd5e attack rolls prompt for selected target boosts", async () => {
+  const dominance = makeItem({
+    id: "fighter-dominance",
+    name: "Стиль доминирования",
+    uses: {
+      spent: 0,
+      max: "4"
+    }
+  });
+  const preciseAttack = makeItem({
+    id: "precise-attack",
+    name: "Точная атака",
+    boosts: []
+  });
+  preciseAttack.flags["rebreya-main"] = {
+    sourceType: "fighterManeuver",
+    classIdentifier: "fighter-rework-v028"
+  };
+  const weapon = makeItem({
+    id: "longbow",
+    name: "Длинный лук",
+    boosts: []
+  });
+  weapon.type = "weapon";
+  const actor = makeActor([dominance, preciseAttack, weapon]);
+  const target = makeTarget({ ac: 18 });
+  const previousTargets = globalThis.game.user.targets;
+  globalThis.game.user.targets = new Set([target]);
+  let promptDetails = null;
+  const service = new AttackRollBoostService({}, {
+    promptAttackRollBoosts: async (details) => {
+      promptDetails = details;
+      return [];
+    }
+  });
+
+  try {
+    await service.applyDnd5eRollAttack([{
+      total: 14,
+      _total: 14,
+      formula: "1d20 + 6",
+      flags: {}
+    }], {
+      subject: {
+        actor,
+        item: weapon,
+        actionType: "rwak",
+        hasAttack: true,
+        attack: true
+      }
+    });
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+
+  assert.deepEqual(promptDetails.options.map((option) => option.id), ["fighter-precise-attack"]);
+  assert.equal(promptDetails.needed, 4);
+});
+
+test("dnd5e attack roll fallback skips rolls already owned by a MIDI workflow", async () => {
+  const dominance = makeItem({
+    id: "fighter-dominance",
+    name: "Стиль доминирования",
+    uses: {
+      spent: 0,
+      max: "4"
+    }
+  });
+  const preciseAttack = makeItem({
+    id: "precise-attack",
+    name: "Точная атака",
+    boosts: []
+  });
+  preciseAttack.flags["rebreya-main"] = {
+    sourceType: "fighterManeuver",
+    classIdentifier: "fighter-rework-v028"
+  };
+  const weapon = makeItem({
+    id: "longbow",
+    name: "Длинный лук",
+    boosts: []
+  });
+  weapon.type = "weapon";
+  const actor = makeActor([dominance, preciseAttack, weapon]);
+  const target = makeTarget({ ac: 18 });
+  const previousTargets = globalThis.game.user.targets;
+  globalThis.game.user.targets = new Set([target]);
+  let promptDetails = null;
+  const service = new AttackRollBoostService({}, {
+    promptAttackRollBoosts: async (details) => {
+      promptDetails = details;
+      return [];
+    }
+  });
+
+  try {
+    await service.applyDnd5eRollAttack([{
+      total: 14,
+      _total: 14,
+      formula: "1d20 + 6",
+      flags: {},
+      options: {
+        workflow: {}
+      }
+    }], {
+      subject: {
+        actor,
+        item: weapon,
+        actionType: "rwak",
+        hasAttack: true,
+        attack: true
+      }
+    });
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+
+  assert.equal(promptDetails, null);
+});
+
+test("bare dnd5e attack roll fallback only prompts once per roll object", async () => {
+  const dominance = makeItem({
+    id: "fighter-dominance",
+    name: "Стиль доминирования",
+    uses: {
+      spent: 0,
+      max: "4"
+    }
+  });
+  const preciseAttack = makeItem({
+    id: "precise-attack",
+    name: "Точная атака",
+    boosts: []
+  });
+  preciseAttack.flags["rebreya-main"] = {
+    sourceType: "fighterManeuver",
+    classIdentifier: "fighter-rework-v028"
+  };
+  const weapon = makeItem({
+    id: "longbow",
+    name: "Длинный лук",
+    boosts: []
+  });
+  weapon.type = "weapon";
+  const actor = makeActor([dominance, preciseAttack, weapon]);
+  const target = makeTarget({ ac: 18 });
+  const previousTargets = globalThis.game.user.targets;
+  globalThis.game.user.targets = new Set([target]);
+  let promptCount = 0;
+  const service = new AttackRollBoostService({}, {
+    promptAttackRollBoosts: async () => {
+      promptCount += 1;
+      return [];
+    }
+  });
+  const attackRoll = {
+    total: 14,
+    _total: 14,
+    formula: "1d20 + 6",
+    flags: {}
+  };
+  const context = {
+    subject: {
+      actor,
+      item: weapon,
+      actionType: "rwak",
+      hasAttack: true,
+      attack: true
+    }
+  };
+
+  try {
+    await service.applyDnd5eRollAttack([attackRoll], context);
+    await service.applyDnd5eRollAttack([attackRoll], context);
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+
+  assert.equal(promptCount, 1);
+});
+
 test("fresh precise attack boost still prompts when scale max cannot be evaluated by Roll", async () => {
   const dominance = makeItem({
     id: "fighter-dominance",

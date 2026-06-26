@@ -327,6 +327,43 @@ export class AttackRollBoostService {
     return true;
   }
 
+  async applyDnd5eRollAttack(rolls, context = {}) {
+    const attackRoll = collectionValues(rolls)[0] ?? rolls ?? null;
+    if (attackRoll?.options?.workflow || attackRoll?.options?.midiOptions || context?.workflow) {
+      return true;
+    }
+    if (attackRoll?.[CHECKED_WORKFLOW_FLAG]) {
+      return true;
+    }
+    if (attackRoll) {
+      attackRoll[CHECKED_WORKFLOW_FLAG] = true;
+    }
+
+    const subject = context?.subject ?? context?.activity ?? null;
+    const actor = subject?.actor ?? subject?.item?.actor ?? context?.actor ?? context?.item?.actor ?? null;
+    const item = subject?.item ?? context?.item ?? null;
+    const targets = collectionValues(context?.targets).length
+      ? collectionValues(context.targets)
+      : collectionValues(globalThis.game?.user?.targets);
+
+    if (!attackRoll || !actor || !targets.length) {
+      return true;
+    }
+
+    return this.applyMidiHitsChecked({
+      actor,
+      item,
+      activity: subject,
+      attackRoll,
+      attackTotal: toNumber(attackRoll?.total, NaN),
+      isFumble: attackRoll?.isFumble === true,
+      targets: new Set(targets),
+      hitTargets: new Set(),
+      hitTargetsEC: new Set(),
+      hitDisplayData: {}
+    });
+  }
+
   async promptAttackRollBoosts(details) {
     if (typeof this._options.promptAttackRollBoosts === "function") {
       return this._options.promptAttackRollBoosts(details);
@@ -428,7 +465,7 @@ export class AttackRollBoostService {
           continue;
         }
 
-        const key = `${source.id}::${item?.uuid ?? item?.id ?? sources.length}`;
+        const key = source.id;
         if (seen.has(key) || (source.consumption && !(await this.#hasConsumptionAvailable(actor, source)))) {
           continue;
         }
