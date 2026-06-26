@@ -324,6 +324,125 @@ test("stale fighter precise attack maneuver items still provide an attack roll b
   assert.equal(promptDetails.needed, 1);
 });
 
+test("fresh precise attack boost still prompts when scale max cannot be evaluated by Roll", async () => {
+  const dominance = makeItem({
+    id: "fighter-dominance",
+    name: "Стиль доминирования",
+    uses: {
+      spent: 0,
+      max: "2"
+    }
+  });
+  const preciseAttack = makeItem({
+    id: "precise-attack",
+    name: "Точная атака",
+    boosts: [{
+      id: "fighter-precise-attack",
+      label: "Точная атака",
+      formula: "@scale.fighter-rework-v028.dominance-die",
+      consumption: {
+        type: "itemUses",
+        target: "fighter-dominance",
+        value: "1"
+      }
+    }]
+  });
+  const actor = makeActor([dominance, preciseAttack]);
+  actor.system = {
+    scale: {
+      "fighter-rework-v028": {
+        "dominance-die": {
+          number: null,
+          faces: 6,
+          modifiers: []
+        }
+      }
+    }
+  };
+  const target = makeTarget({ ac: 18 });
+  const workflow = makeWeaponWorkflow({ actor, target, attackTotal: 17 });
+  let promptDetails = null;
+  const service = new AttackRollBoostService({}, {
+    rollFactory: (formula) => {
+      if (String(formula).includes("@scale.")) {
+        throw new Error("Scale formula is unavailable in this roll context");
+      }
+      return new TestRoll(formula);
+    },
+    promptAttackRollBoosts: async (details) => {
+      promptDetails = details;
+      return [];
+    }
+  });
+
+  await service.applyMidiHitsChecked(workflow);
+
+  assert.deepEqual(promptDetails.options.map((option) => ({
+    id: option.id,
+    label: option.label,
+    formula: option.formula,
+    maxTotal: option.maxTotal
+  })), [{
+    id: "fighter-precise-attack",
+    label: "Точная атака",
+    formula: "@scale.fighter-rework-v028.dominance-die",
+    maxTotal: 6
+  }]);
+  assert.equal(promptDetails.needed, 1);
+});
+
+test("manually added precise attack boost falls back to a base dominance die without actor scale", async () => {
+  const dominance = makeItem({
+    id: "fighter-dominance",
+    name: "Стиль доминирования",
+    uses: {
+      spent: 0,
+      max: "2"
+    }
+  });
+  const preciseAttack = makeItem({
+    id: "precise-attack",
+    name: "Точная атака",
+    boosts: [{
+      id: "fighter-precise-attack",
+      label: "Точная атака",
+      formula: "@scale.fighter-rework-v028.dominance-die",
+      consumption: {
+        type: "itemUses",
+        target: "fighter-dominance",
+        value: "1"
+      }
+    }]
+  });
+  const actor = makeActor([dominance, preciseAttack]);
+  const target = makeTarget({ ac: 18 });
+  const workflow = makeWeaponWorkflow({ actor, target, attackTotal: 17 });
+  let promptDetails = null;
+  let rolledFormula = "";
+  TestRoll.queuedTotals = [3];
+  const service = new AttackRollBoostService({}, {
+    rollFactory: (formula) => {
+      rolledFormula = formula;
+      if (String(formula).includes("@scale.")) {
+        throw new Error("Unresolved scale formula reached Roll");
+      }
+      return new TestRoll(formula);
+    },
+    promptAttackRollBoosts: async (details) => {
+      promptDetails = details;
+      return ["fighter-precise-attack"];
+    }
+  });
+
+  await service.applyMidiHitsChecked(workflow);
+
+  assert.equal(promptDetails.options[0].maxTotal, 4);
+  assert.equal(rolledFormula, "1d4");
+  assert.equal(workflow.attackTotal, 20);
+  assert.equal(workflow.hitTargets.has(target), true);
+  assert.equal(dominance.system.uses.spent, 1);
+});
+
 test("attack roll boosts do not prompt when available dice cannot reach any missed target AC", async () => {
   const actor = makeActor([makeItem({
     id: "boosts",

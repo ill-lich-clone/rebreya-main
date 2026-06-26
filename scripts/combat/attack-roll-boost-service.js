@@ -6,6 +6,19 @@ const CHECKED_WORKFLOW_FLAG = `_${MODULE_ID}AttackRollBoostChecked`;
 const WEAPON_ATTACK_TYPES = new Set(["mwak", "rwak"]);
 const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
 const FIGHTER_DOMINANCE_FEATURE_ID = "fighter-dominance";
+const SCALE_REFERENCE_PATTERN = /@scale\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)/giu;
+const FIGHTER_DOMINANCE_DIE_PROGRESSION = [
+  { level: 1, formula: "1d4" },
+  { level: 9, formula: "1d6" },
+  { level: 16, formula: "1d8" }
+];
+const FIGHTER_DOMINANCE_DICE_PROGRESSION = [
+  { level: 1, formula: "2" },
+  { level: 5, formula: "3" },
+  { level: 9, formula: "4" },
+  { level: 13, formula: "5" },
+  { level: 17, formula: "6" }
+];
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -133,6 +146,67 @@ function parseMaxFormulaTotal(formula) {
   return (replaced.match(/[+-]?\d+/gu) ?? [])
     .map(Number)
     .reduce((sum, value) => sum + value, 0);
+}
+
+function scaleValueToFormula(value) {
+  if (value == null) {
+    return "";
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "";
+  }
+
+  if (typeof value === "string") {
+    return cleanText(value);
+  }
+
+  const candidates = [
+    value,
+    typeof value.toObject === "function" ? value.toObject() : null
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const explicitFormula = cleanText(candidate.formula);
+    if (explicitFormula) {
+      return explicitFormula;
+    }
+
+    const dieFormula = cleanText(candidate.die ?? candidate.denom);
+    if (/^(?:\d*)d\d+/iu.test(dieFormula)) {
+      const number = Math.max(1, Math.floor(toNumber(candidate.number, 1)));
+      return /^\d/iu.test(dieFormula) ? dieFormula : `${number}${dieFormula}`;
+    }
+
+    const faces = Math.floor(toNumber(candidate.faces, NaN));
+    if (Number.isFinite(faces) && faces > 0) {
+      const number = Math.max(1, Math.floor(toNumber(candidate.number, 1)));
+      const modifiers = Array.isArray(candidate.modifiers)
+        ? candidate.modifiers.join("")
+        : typeof candidate.modifiers?.values === "function"
+          ? Array.from(candidate.modifiers.values()).join("")
+          : "";
+      return `${number}d${faces}${modifiers}`;
+    }
+
+    const numericValue = toNumber(candidate.value, NaN);
+    if (Number.isFinite(numericValue)) {
+      return String(numericValue);
+    }
+  }
+
+  return "";
+}
+
+function progressionFormulaForLevel(entries, level) {
+  const actorLevel = Math.max(1, Math.floor(toNumber(level, 1)));
+  let selected = entries[0]?.formula ?? "";
+  for (const entry of entries) {
+    if (actorLevel >= entry.level) {
+      selected = entry.formula;
+    }
+  }
+  return selected;
 }
 
 function isTokenInSet(set, target) {
@@ -467,8 +541,16 @@ export class AttackRollBoostService {
       return parsed;
     }
 
+    const resolvedFormula = this.#resolveScaleFormula(formula, actor);
+    if (resolvedFormula !== cleanText(formula)) {
+      const resolvedMax = parseMaxFormulaTotal(resolvedFormula);
+      if (Number.isFinite(resolvedMax)) {
+        return resolvedMax;
+      }
+    }
+
     try {
-      const roll = this.#createRoll(formula, actor);
+      const roll = this.#createRoll(resolvedFormula, actor);
       if (typeof roll?.evaluate === "function") {
         await roll.evaluate({ maximize: true, async: true });
       }
@@ -480,6 +562,98 @@ export class AttackRollBoostService {
     catch (_error) {
       return NaN;
     }
+  }
+
+  #resolveScaleFormula(formula, actor) {
+    const text = cleanText(formula);
+    if (!text.includes("@scale.")) {
+      return text;
+    }
+
+    return text.replace(SCALE_REFERENCE_PATTERN, (match, classIdentifier, scaleIdentifier) => {
+      const scaleFormula = this.#scaleReferenceFormula(actor, classIdentifier, scaleIdentifier);
+      return scaleFormula || match;
+    });
+  }
+
+  #scaleReferenceFormula(actor, classIdentifier, scaleIdentifier) {
+    const classKey = cleanText(classIdentifier);
+    const scaleKey = cleanText(scaleIdentifier);
+    if (!classKey || !scaleKey) {
+      return "";
+    }
+
+    const candidates = [
+      getProperty(actor, `system.scale.${classKey}.${scaleKey}`)
+    ];
+
+    for (const options of [{ deterministic: true }, undefined]) {
+      try {
+        const rollData = typeof actor?.getRollData === "function"
+          ? actor.getRollData(options)
+          : null;
+        candidates.push(getProperty(rollData, `scale.${classKey}.${scaleKey}`));
+      }
+      catch (_error) {
+        // Some actor implementations do not accept deterministic roll-data options.
+      }
+    }
+
+    for (const item of collectionValues(actor?.items)) {
+      const itemIdentifier = cleanText(item?.identifier ?? item?.system?.identifier);
+      if (itemIdentifier !== classKey) {
+        continue;
+      }
+
+      candidates.push(
+        getProperty(item, `scaleValues.${scaleKey}`),
+        getProperty(item, `system.scale.${scaleKey}`)
+      );
+    }
+
+    for (const candidate of candidates) {
+      const scaleFormula = scaleValueToFormula(candidate);
+      if (scaleFormula) {
+        return scaleFormula;
+      }
+    }
+
+    return this.#fallbackScaleFormula(actor, classKey, scaleKey);
+  }
+
+  #fallbackScaleFormula(actor, classIdentifier, scaleIdentifier) {
+    if (classIdentifier !== FIGHTER_CLASS_IDENTIFIER) {
+      return "";
+    }
+
+    const level = this.#actorClassLevel(actor, classIdentifier);
+    if (scaleIdentifier === "dominance-die") {
+      return progressionFormulaForLevel(FIGHTER_DOMINANCE_DIE_PROGRESSION, level);
+    }
+
+    if (scaleIdentifier === "dominance-dice") {
+      return progressionFormulaForLevel(FIGHTER_DOMINANCE_DICE_PROGRESSION, level);
+    }
+
+    return "";
+  }
+
+  #actorClassLevel(actor, classIdentifier) {
+    const classItem = collectionValues(actor?.items).find((item) => (
+      cleanText(item?.type) === "class"
+      && cleanText(item?.identifier ?? item?.system?.identifier) === classIdentifier
+    ));
+    const classLevel = toNumber(classItem?.system?.levels, NaN);
+    if (Number.isFinite(classLevel) && classLevel > 0) {
+      return classLevel;
+    }
+
+    const actorLevel = toNumber(actor?.system?.details?.level, NaN);
+    if (Number.isFinite(actorLevel) && actorLevel > 0) {
+      return actorLevel;
+    }
+
+    return 1;
   }
 
   #normalizeSelectedIds(selection) {
@@ -513,11 +687,12 @@ export class AttackRollBoostService {
   }
 
   #createRoll(formula, actor) {
+    const rollFormula = this.#resolveScaleFormula(formula, actor);
     if (typeof this._options.rollFactory === "function") {
-      return this._options.rollFactory(formula, actor);
+      return this._options.rollFactory(rollFormula, actor);
     }
 
-    return new Roll(cleanText(formula) || "0", actor?.getRollData?.() ?? {});
+    return new Roll(rollFormula || "0", actor?.getRollData?.() ?? {});
   }
 
   async #postRollMessage(actor, source, roll, workflow) {
