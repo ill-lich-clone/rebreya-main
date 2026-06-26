@@ -976,9 +976,12 @@ test("fighter maneuver activities expose editable runtime automation metadata", 
   const definitions = buildFeatureDefinitions(fighter);
   const provocation = definitions.find((definition) => definition.sourceType === "fighterManeuver" && definition.name === "Провоцирующая атака");
   const brutalStrike = definitions.find((definition) => definition.sourceType === "fighterManeuver" && definition.name === "Жестокий удар");
+  const preciseAttack = definitions.find((definition) => definition.sourceType === "fighterManeuver" && definition.name === "Точная атака");
 
   const provocationActivity = Object.values(createFeatureEntryData(provocation, new Map()).system.activities)[0];
   const brutalStrikeActivity = Object.values(createFeatureEntryData(brutalStrike, new Map()).system.activities)[0];
+  const preciseAttackEntry = createFeatureEntryData(preciseAttack, new Map());
+  const preciseAttackActivity = Object.values(preciseAttackEntry.system.activities)[0];
 
   assert.equal(provocationActivity.flags["rebreya-main"].automation, "fighter-dominance-maneuver");
   assert.deepEqual(provocationActivity.flags["rebreya-main"].fighterAutomation.extraDamage, {
@@ -996,6 +999,28 @@ test("fighter maneuver activities expose editable runtime automation metadata", 
     formula: "@scale.fighter-rework-v028.dominance-die"
   });
   assert.equal(brutalStrikeActivity.flags["rebreya-main"].fighterAutomation.status, undefined);
+  assert.deepEqual(preciseAttackActivity.flags["rebreya-main"].fighterAutomation.attackRollBoost, {
+    id: "fighter-precise-attack",
+    formula: "@scale.fighter-rework-v028.dominance-die",
+    label: "Точная атака",
+    weaponOnly: true,
+    consumption: {
+      type: "itemUses",
+      target: "fighter-dominance",
+      value: "1"
+    }
+  });
+  assert.deepEqual(preciseAttackEntry.flags["rebreya-main"].attackRollBoosts, [{
+    id: "fighter-precise-attack",
+    formula: "@scale.fighter-rework-v028.dominance-die",
+    label: "Точная атака",
+    weaponOnly: true,
+    consumption: {
+      type: "itemUses",
+      target: "fighter-dominance",
+      value: "1"
+    }
+  }]);
 });
 
 test("fighter second wind uses its item uses as the healing dice pool", () => {

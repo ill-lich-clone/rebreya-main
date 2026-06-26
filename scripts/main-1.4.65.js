@@ -28,6 +28,7 @@ import { registerCombatHooks } from "./combat/hooks.js?v=1.4.65";
 import { CombatAttackService } from "./combat/attack-service.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
+import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.65";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.65";
 import {
   PaladinAutomationService,
@@ -360,6 +361,7 @@ export class RebreyaMainModule {
     this.globalEventsService = new GlobalEventsService(this);
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
+    this.attackRollBoostService = new AttackRollBoostService(this);
     this.fighterAutomationService = new FighterAutomationService(this);
     this.paladinAutomationService = new PaladinAutomationService(this);
     this.rogueAutomationService = new RogueAutomationService(this);

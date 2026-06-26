@@ -9,7 +9,8 @@ export function registerCombatHooks(moduleApi) {
   const hasFighterService = Boolean(moduleApi?.fighterAutomationService);
   const hasPaladinService = Boolean(moduleApi?.paladinAutomationService);
   const hasRogueService = Boolean(moduleApi?.rogueAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService && !hasRogueService) {
+  const hasAttackRollBoostService = Boolean(moduleApi?.attackRollBoostService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService) {
     return;
   }
 
@@ -176,8 +177,11 @@ export function registerCombatHooks(moduleApi) {
       }
     });
 
-    Hooks.on("midi-qol.hitsChecked", (workflow) => {
+    Hooks.on("midi-qol.hitsChecked", async (workflow) => {
       try {
+        if (hasAttackRollBoostService) {
+          await moduleApi.attackRollBoostService.applyMidiHitsChecked(workflow);
+        }
         return moduleApi.combatAttackService.applyMidiHitsChecked(workflow);
       }
       catch (error) {
@@ -192,6 +196,18 @@ export function registerCombatHooks(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to apply MIDI roll-complete automation.`, error);
+        return true;
+      }
+    });
+  }
+
+  if (!hasAttackService && hasAttackRollBoostService) {
+    Hooks.on("midi-qol.hitsChecked", async (workflow) => {
+      try {
+        return await moduleApi.attackRollBoostService.applyMidiHitsChecked(workflow);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply attack roll boost automation.`, error);
         return true;
       }
     });

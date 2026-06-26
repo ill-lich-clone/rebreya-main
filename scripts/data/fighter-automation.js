@@ -85,6 +85,20 @@ export function getFighterManeuverAutomation(name, classIdentifier) {
     }
   }
 
+  if (key === "точная атака") {
+    automation.attackRollBoost = {
+      id: "fighter-precise-attack",
+      formula: fighterDominanceDieFormula(classIdentifier),
+      label: "Точная атака",
+      weaponOnly: true,
+      consumption: {
+        type: "itemUses",
+        target: "fighter-dominance",
+        value: "1"
+      }
+    };
+  }
+
   return automation;
 }
 

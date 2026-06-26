@@ -4019,6 +4019,10 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
   };
   if (feature.sourceType === "fighterManeuver") {
     moduleFlags.section = FIGHTER_MANEUVER_SECTION_LABEL;
+    const fighterAutomation = getFighterManeuverAutomation(feature.name, feature.classIdentifier);
+    if (fighterAutomation.attackRollBoost) {
+      moduleFlags.attackRollBoosts = [foundry.utils.deepClone(fighterAutomation.attackRollBoost)];
+    }
   }
   else if (feature.sourceType === "rogueCunningStrike") {
     moduleFlags.section = ROGUE_CUNNING_STRIKE_SECTION_LABEL;
