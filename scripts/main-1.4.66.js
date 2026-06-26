@@ -1,4 +1,4 @@
-п»їimport { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
+import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
 import { GearCompendiumService } from "./data/gear-compendium.js";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
@@ -246,27 +246,27 @@ function normalizeLookupText(value) {
 
 function normalizeTradeSourceType(value) {
   const compact = normalizeLookupText(value).replace(/[_\-\s]+/gu, "");
-  if (["material", "materials", "РјР°С‚РµСЂРёР°Р»", "РјР°С‚РµСЂРёР°Р»С‹"].includes(compact)) {
+  if (["material", "materials", "материал", "материалы"].includes(compact)) {
     return "material";
   }
 
-  if (["gear", "equipment", "loot", "СЃРЅР°СЂСЏР¶РµРЅРёРµ"].includes(compact)) {
+  if (["gear", "equipment", "loot", "снаряжение"].includes(compact)) {
     return "gear";
   }
 
-  if (["magicitem", "magicitems", "magic", "magical", "РјР°РіРёС‡РµСЃРєРёР№РїСЂРµРґРјРµС‚", "РјР°РіРёСЏ"].includes(compact)) {
+  if (["magicitem", "magicitems", "magic", "magical", "магическийпредмет", "магия"].includes(compact)) {
     return "magicItem";
   }
 
-  if (["feat", "feats", "С‡РµСЂС‚Р°", "С‡РµСЂС‚С‹", "СѓРјРµРЅРёРµ"].includes(compact)) {
+  if (["feat", "feats", "черта", "черты", "умение"].includes(compact)) {
     return "feat";
   }
 
-  if (["background", "backgrounds", "РїСЂРµРґС‹СЃС‚РѕСЂРёСЏ", "РїСЂРµРґС‹СЃС‚РѕСЂРёРё"].includes(compact)) {
+  if (["background", "backgrounds", "предыстория", "предыстории"].includes(compact)) {
     return "background";
   }
 
-  if (["state", "states", "РіРѕСЃСѓРґР°СЂСЃС‚РІРѕ", "РіРѕСЃСѓРґР°СЂСЃС‚РІР°", "СЂРѕРґРЅРѕРµРіРѕСЃСѓРґР°СЂСЃС‚РІРѕ"].includes(compact)) {
+  if (["state", "states", "государство", "государства", "родноегосударство"].includes(compact)) {
     return "state";
   }
 
@@ -496,10 +496,10 @@ export class RebreyaMainModule {
 
       if (message.ok) {
         await this.refreshOpenApps();
-        ui.notifications?.info("РџСЂРµРґРјРµС‚ РїРµСЂРµРЅРµСЃС‘РЅ РІ РїР°СЂС‚РёР№РЅС‹Р№ СЃРєР»Р°Рґ.");
+        ui.notifications?.info("Предмет перенесён в партийный склад.");
       }
       else {
-        ui.notifications?.error(message.error || "РњР°СЃС‚РµСЂ РѕС‚РєР»РѕРЅРёР» РїРµСЂРµРЅРѕСЃ РїСЂРµРґРјРµС‚Р°.");
+        ui.notifications?.error(message.error || "Мастер отклонил перенос предмета.");
       }
       return;
     }
@@ -687,7 +687,7 @@ export class RebreyaMainModule {
   async #updateLootgenChatState(lootId, mutator) {
     const message = this.#findLootgenChatMessage(lootId);
     if (!message) {
-      throw new Error("РЎРѕРѕР±С‰РµРЅРёРµ СЃ Р»СѓС‚РѕРј РЅРµ РЅР°Р№РґРµРЅРѕ.");
+      throw new Error("Сообщение с лутом не найдено.");
     }
 
     const state = foundry.utils.deepClone(message.getFlag(MODULE_ID, "lootgenChat") ?? {});
@@ -723,7 +723,7 @@ export class RebreyaMainModule {
 
   async createLootgenChatMessage(payload = {}, options = {}) {
     if (!game.user?.isGM) {
-      throw new Error("РћС‚РїСЂР°РІР»СЏС‚СЊ Р»СѓС‚ РІ С‡Р°С‚ РјРѕР¶РµС‚ С‚РѕР»СЊРєРѕ Р“Рњ.");
+      throw new Error("Отправлять лут в чат может только ГМ.");
     }
 
     const rows = Array.isArray(payload.rows) ? payload.rows : [];
@@ -742,7 +742,7 @@ export class RebreyaMainModule {
       });
 
       if (!item) {
-        throw new Error(`РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ РїСЂРµРґРјРµС‚ "${row.name ?? "Р»СѓС‚"}" РґР»СЏ С‡Р°С‚Р°.`);
+        throw new Error(`Не удалось подготовить предмет "${row.name ?? "лут"}" для чата.`);
       }
 
       chatRows.push({
@@ -827,7 +827,7 @@ export class RebreyaMainModule {
     await this.inventoryService.deleteLootgenChatItem(claimedRow.itemUuid);
     this.#notifyLootgenChatClaim(safeLootId, safeRowId, "row");
     if (!quiet) {
-      ui.notifications?.info(`Р›СѓС‚ "${claimedRow.name}" РѕС‚РјРµС‡РµРЅ РєР°Рє Р·Р°Р±СЂР°РЅРЅС‹Р№.`);
+      ui.notifications?.info(`Лут "${claimedRow.name}" отмечен как забранный.`);
     }
     return true;
   }
@@ -859,7 +859,7 @@ export class RebreyaMainModule {
       if (!fromSocket) {
         this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_COINS, { lootId: safeLootId });
       }
-      ui.notifications?.info("Р—Р°РїСЂРѕСЃ РЅР° РґРѕР±Р°РІР»РµРЅРёРµ РјРѕРЅРµС‚ РѕС‚РїСЂР°РІР»РµРЅ РјР°СЃС‚РµСЂСѓ.");
+      ui.notifications?.info("Запрос на добавление монет отправлен мастеру.");
       return true;
     }
 
@@ -879,7 +879,7 @@ export class RebreyaMainModule {
 
     this.#notifyLootgenChatClaim(safeLootId, "", "coins");
     if (!quiet) {
-      ui.notifications?.info("РњРѕРЅРµС‚С‹ РёР· С‡Р°С‚-Р»СѓС‚Р° РґРѕР±Р°РІР»РµРЅС‹ РІ РїР°СЂС‚РёР№РЅС‹Р№ СЃРєР»Р°Рґ.");
+      ui.notifications?.info("Монеты из чат-лута добавлены в партийный склад.");
     }
     return true;
   }
@@ -906,7 +906,7 @@ export class RebreyaMainModule {
 
   async restoreLootgenClearFromChat(messageId) {
     if (!game.user?.isGM) {
-      throw new Error("Р’РѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ Р»СѓС‚РіРµРЅ РјРѕР¶РµС‚ С‚РѕР»СЊРєРѕ Р“Рњ.");
+      throw new Error("Восстановить лутген может только ГМ.");
     }
 
     const message = game.messages.get(messageId) ?? null;
@@ -919,12 +919,12 @@ export class RebreyaMainModule {
     const payload = foundry.utils.deepClone(status.payload ?? {});
     const app = this.lootgenApps.get(appKey) ?? null;
     if (!app || typeof app.restoreGeneratedResult !== "function") {
-      throw new Error("РћРєРЅРѕ Р»СѓС‚РіРµРЅР° РґР»СЏ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ РЅРµ РЅР°Р№РґРµРЅРѕ.");
+      throw new Error("Окно лутгена для восстановления не найдено.");
     }
 
     app.restoreGeneratedResult(payload);
     status.restored = true;
-    status.message = "РћС‡РёСЃС‚РєР° Р»СѓС‚РіРµРЅР° РѕС‚РјРµРЅРµРЅР°.";
+    status.message = "Очистка лутгена отменена.";
     await message.update({
       content: buildLootgenStatusContent(status),
       [`flags.${MODULE_ID}.lootgenStatus`]: status
@@ -957,7 +957,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync magic items compendium.`, error);
-      ui.notifications?.warn("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ РєРѕРјРїРµРЅРґРёСѓРј РјР°РіРёС‡РµСЃРєРёС… РїСЂРµРґРјРµС‚РѕРІ.");
+      ui.notifications?.warn("Не удалось синхронизировать компендиум магических предметов.");
     }
 
     try {
@@ -973,7 +973,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync states compendium.`, error);
-      ui.notifications?.warn("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ РєРѕРјРїРµРЅРґРёСѓРј РіРѕСЃСѓРґР°СЂСЃС‚РІ.");
+      ui.notifications?.warn("Не удалось синхронизировать компендиум государств.");
     }
 
     try {
@@ -981,7 +981,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync backgrounds compendium.`, error);
-      ui.notifications?.warn("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ РєРѕРјРїРµРЅРґРёСѓРј РїСЂРµРґС‹СЃС‚РѕСЂРёР№.");
+      ui.notifications?.warn("Не удалось синхронизировать компендиум предысторий.");
     }
 
     try {
@@ -997,7 +997,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync classes compendium.`, error);
-      ui.notifications?.warn("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ РєРѕРјРїРµРЅРґРёСѓРјС‹ РєР»Р°СЃСЃРѕРІ Рё Р°СЂС…РµС‚РёРїРѕРІ.");
+      ui.notifications?.warn("Не удалось синхронизировать компендиумы классов и архетипов.");
     }
 
     try {
@@ -1005,7 +1005,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync actions compendium.`, error);
-      ui.notifications?.warn("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ РєРѕРјРїРµРЅРґРёСѓРј РґРµР№СЃС‚РІРёР№.");
+      ui.notifications?.warn("Не удалось синхронизировать компендиум действий.");
     }
 
     try {
@@ -1013,7 +1013,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync downtime compendium.`, error);
-      ui.notifications?.warn("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ РєРѕРјРїРµРЅРґРёСѓРј РїСЂРѕСЃС‚РѕСЏ.");
+      ui.notifications?.warn("Не удалось синхронизировать компендиум простоя.");
     }
   }
 
@@ -1423,7 +1423,7 @@ export class RebreyaMainModule {
 
   async #requestDowntimeCreateViaGm(payload = {}) {
     if (typeof game.socket?.emit !== "function") {
-      throw new Error("РЎРѕРєРµС‚ Foundry РЅРµРґРѕСЃС‚СѓРїРµРЅ РґР»СЏ РѕС‚РїСЂР°РІРєРё Р·Р°СЏРІРєРё РјР°СЃС‚РµСЂСѓ.");
+      throw new Error("Сокет Foundry недоступен для отправки заявки мастеру.");
     }
 
     const requestId = createSocketRequestId("downtime-create");
@@ -1446,7 +1446,7 @@ export class RebreyaMainModule {
 
   async #requestDowntimeUpdateViaGm(payload = {}) {
     if (typeof game.socket?.emit !== "function") {
-      throw new Error("РЎРѕРєРµС‚ Foundry РЅРµРґРѕСЃС‚СѓРїРµРЅ РґР»СЏ РѕР±РЅРѕРІР»РµРЅРёСЏ Р·Р°СЏРІРєРё РјР°СЃС‚РµСЂСѓ.");
+      throw new Error("Сокет Foundry недоступен для обновления заявки мастеру.");
     }
 
     const requestId = createSocketRequestId("downtime-update");
@@ -1475,7 +1475,7 @@ export class RebreyaMainModule {
     }
 
     if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "РњР°СЃС‚РµСЂ РѕС‚РєР»РѕРЅРёР» СЃРѕР·РґР°РЅРёРµ Р·Р°СЏРІРєРё РїСЂРѕСЃС‚РѕСЏ.");
+      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил создание заявки простоя.");
       return;
     }
 
@@ -1489,7 +1489,7 @@ export class RebreyaMainModule {
     }
 
     if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "РњР°СЃС‚РµСЂ РѕС‚РєР»РѕРЅРёР» РѕР±РЅРѕРІР»РµРЅРёРµ Р·Р°СЏРІРєРё РїСЂРѕСЃС‚РѕСЏ.");
+      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил обновление заявки простоя.");
       return;
     }
 
@@ -1508,7 +1508,7 @@ export class RebreyaMainModule {
       const result = await this.#createDowntimeRequestFromSocket(message.payload ?? {}, {
         senderId: forUserId
       });
-      globalThis.ui?.notifications?.info?.(`Rebreya: Р·Р°СЏРІРєР° РЅР° РїСЂРѕСЃС‚РѕР№ РѕС‚ ${result.actorName ?? result.actorId ?? "РёРіСЂРѕРєР°"}.`);
+      globalThis.ui?.notifications?.info?.(`Rebreya: заявка на простой от ${result.actorName ?? result.actorId ?? "игрока"}.`);
 
       if (requestId) {
         game.socket?.emit?.(SOCKET_CHANNEL, {
@@ -1583,23 +1583,23 @@ export class RebreyaMainModule {
   async #createDowntimeRequestFromSocket(payload = {}, { senderId = "" } = {}) {
     const senderUser = getUserById(senderId);
     if (!senderUser) {
-      throw new Error("РРіСЂРѕРє РґР»СЏ Р·Р°СЏРІРєРё РїСЂРѕСЃС‚РѕСЏ РЅРµ РЅР°Р№РґРµРЅ.");
+      throw new Error("Игрок для заявки простоя не найден.");
     }
 
     const groupId = cleanSocketId(payload.groupId);
     if (!groupId) {
-      throw new Error("Р“СЂСѓРїРїР° Р·Р°СЏРІРєРё РїСЂРѕСЃС‚РѕСЏ РЅРµ РЅР°Р№РґРµРЅР°.");
+      throw new Error("Группа заявки простоя не найдена.");
     }
 
     const context = this.groupContextService.resolveForGroup(groupId);
     const actorId = cleanSocketId(payload.actorId);
     const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
     if (!actor) {
-      throw new Error("РџРµСЂСЃРѕРЅР°Р¶ Р·Р°СЏРІРєРё РїСЂРѕСЃС‚РѕСЏ РЅРµ РЅР°Р№РґРµРЅ РІ РіСЂСѓРїРїРµ.");
+      throw new Error("Персонаж заявки простоя не найден в группе.");
     }
 
     if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("РРіСЂРѕРє РјРѕР¶РµС‚ РѕС‚РїСЂР°РІР»СЏС‚СЊ РїСЂРѕСЃС‚РѕР№ С‚РѕР»СЊРєРѕ Р·Р° СЃРІРѕРµРіРѕ РїРµСЂСЃРѕРЅР°Р¶Р°.");
+      throw new Error("Игрок может отправлять простой только за своего персонажа.");
     }
 
     const result = await this.downtimeService.createRequest({
@@ -1614,23 +1614,23 @@ export class RebreyaMainModule {
   async #updateDowntimeRequestFromSocket(payload = {}, { senderId = "" } = {}) {
     const senderUser = getUserById(senderId);
     if (!senderUser) {
-      throw new Error("РРіСЂРѕРє РґР»СЏ РѕР±РЅРѕРІР»РµРЅРёСЏ Р·Р°СЏРІРєРё РїСЂРѕСЃС‚РѕСЏ РЅРµ РЅР°Р№РґРµРЅ.");
+      throw new Error("Игрок для обновления заявки простоя не найден.");
     }
 
     const groupId = cleanSocketId(payload.groupId);
     if (!groupId) {
-      throw new Error("Р“СЂСѓРїРїР° Р·Р°СЏРІРєРё РїСЂРѕСЃС‚РѕСЏ РЅРµ РЅР°Р№РґРµРЅР°.");
+      throw new Error("Группа заявки простоя не найдена.");
     }
 
     const context = this.groupContextService.resolveForGroup(groupId);
     const actorId = cleanSocketId(payload.actorId);
     const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
     if (!actor) {
-      throw new Error("РџРµСЂСЃРѕРЅР°Р¶ Р·Р°СЏРІРєРё РїСЂРѕСЃС‚РѕСЏ РЅРµ РЅР°Р№РґРµРЅ РІ РіСЂСѓРїРїРµ.");
+      throw new Error("Персонаж заявки простоя не найден в группе.");
     }
 
     if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("РРіСЂРѕРє РјРѕР¶РµС‚ РѕР±РЅРѕРІР»СЏС‚СЊ РїСЂРѕСЃС‚РѕР№ С‚РѕР»СЊРєРѕ Р·Р° СЃРІРѕРµРіРѕ РїРµСЂСЃРѕРЅР°Р¶Р°.");
+      throw new Error("Игрок может обновлять простой только за своего персонажа.");
     }
 
     return this.downtimeService.updateRequest({
@@ -1642,7 +1642,7 @@ export class RebreyaMainModule {
 
   async #requestDowntimeCheckResultViaGm(requestId, checkId, result = {}, options = {}) {
     if (typeof game.socket?.emit !== "function") {
-      throw new Error("РЎРѕРєРµС‚ Foundry РЅРµРґРѕСЃС‚СѓРїРµРЅ РґР»СЏ Р·Р°РїРёСЃРё СЂРµР·СѓР»СЊС‚Р°С‚Р° РїСЂРѕСЃС‚РѕСЏ.");
+      throw new Error("Сокет Foundry недоступен для записи результата простоя.");
     }
 
     const socketRequestId = createSocketRequestId("downtime-check-result");
@@ -1675,7 +1675,7 @@ export class RebreyaMainModule {
     }
 
     if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "РњР°СЃС‚РµСЂ РѕС‚РєР»РѕРЅРёР» Р·Р°РїРёСЃСЊ СЂРµР·СѓР»СЊС‚Р°С‚Р° РїСЂРѕСЃС‚РѕСЏ.");
+      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил запись результата простоя.");
       return;
     }
 
@@ -1727,23 +1727,23 @@ export class RebreyaMainModule {
   async #recordDowntimeCheckResultFromSocket(payload = {}, { senderId = "" } = {}) {
     const senderUser = getUserById(senderId);
     if (!senderUser) {
-      throw new Error("РРіСЂРѕРє РґР»СЏ СЂРµР·СѓР»СЊС‚Р°С‚Р° РїСЂРѕСЃС‚РѕСЏ РЅРµ РЅР°Р№РґРµРЅ.");
+      throw new Error("Игрок для результата простоя не найден.");
     }
 
     const groupId = cleanSocketId(payload.groupId);
     if (!groupId) {
-      throw new Error("Р“СЂСѓРїРїР° СЂРµР·СѓР»СЊС‚Р°С‚Р° РїСЂРѕСЃС‚РѕСЏ РЅРµ РЅР°Р№РґРµРЅР°.");
+      throw new Error("Группа результата простоя не найдена.");
     }
 
     const context = this.groupContextService.resolveForGroup(groupId);
     const actorId = cleanSocketId(payload.actorId);
     const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
     if (!actor) {
-      throw new Error("РџРµСЂСЃРѕРЅР°Р¶ СЂРµР·СѓР»СЊС‚Р°С‚Р° РїСЂРѕСЃС‚РѕСЏ РЅРµ РЅР°Р№РґРµРЅ РІ РіСЂСѓРїРїРµ.");
+      throw new Error("Персонаж результата простоя не найден в группе.");
     }
 
     if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("РРіСЂРѕРє РјРѕР¶РµС‚ Р·Р°РїРёСЃС‹РІР°С‚СЊ СЂРµР·СѓР»СЊС‚Р°С‚ РїСЂРѕСЃС‚РѕСЏ С‚РѕР»СЊРєРѕ Р·Р° СЃРІРѕРµРіРѕ РїРµСЂСЃРѕРЅР°Р¶Р°.");
+      throw new Error("Игрок может записывать результат простоя только за своего персонажа.");
     }
 
     return this.downtimeService.recordCheckResult(
@@ -1786,7 +1786,7 @@ export class RebreyaMainModule {
 
   async #requestDowntimeProjectContinueViaGm({ requestId = "", groupId = "", actorId = "", checkId = "", result = {} } = {}) {
     if (typeof game.socket?.emit !== "function") {
-      throw new Error("РЎРѕРєРµС‚ Foundry РЅРµРґРѕСЃС‚СѓРїРµРЅ РґР»СЏ РїСЂРѕРґРѕР»Р¶РµРЅРёСЏ РїСЂРѕРµРєС‚Р°.");
+      throw new Error("Сокет Foundry недоступен для продолжения проекта.");
     }
 
     const socketRequestId = createSocketRequestId("downtime-project-continue");
@@ -1818,7 +1818,7 @@ export class RebreyaMainModule {
     }
 
     if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "РњР°СЃС‚РµСЂ РѕС‚РєР»РѕРЅРёР» РїСЂРѕРґРѕР»Р¶РµРЅРёРµ РїСЂРѕРµРєС‚Р°.");
+      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил продолжение проекта.");
       return;
     }
 
@@ -1870,23 +1870,23 @@ export class RebreyaMainModule {
   async #continueDowntimeProjectFromSocket(payload = {}, { senderId = "" } = {}) {
     const senderUser = getUserById(senderId);
     if (!senderUser) {
-      throw new Error("РРіСЂРѕРє РґР»СЏ РїСЂРѕРґРѕР»Р¶РµРЅРёСЏ РїСЂРѕРµРєС‚Р° РЅРµ РЅР°Р№РґРµРЅ.");
+      throw new Error("Игрок для продолжения проекта не найден.");
     }
 
     const groupId = cleanSocketId(payload.groupId);
     if (!groupId) {
-      throw new Error("Р“СЂСѓРїРїР° РїСЂРѕРµРєС‚Р° РЅРµ РЅР°Р№РґРµРЅР°.");
+      throw new Error("Группа проекта не найдена.");
     }
 
     const context = this.groupContextService.resolveForGroup(groupId);
     const actorId = cleanSocketId(payload.actorId);
     const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
     if (!actor) {
-      throw new Error("РџРµСЂСЃРѕРЅР°Р¶ РїСЂРѕРµРєС‚Р° РЅРµ РЅР°Р№РґРµРЅ РІ РіСЂСѓРїРїРµ.");
+      throw new Error("Персонаж проекта не найден в группе.");
     }
 
     if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("РРіСЂРѕРє РјРѕР¶РµС‚ РїСЂРѕРґРѕР»Р¶Р°С‚СЊ РїСЂРѕРµРєС‚ С‚РѕР»СЊРєРѕ СЃРІРѕРµРіРѕ РїРµСЂСЃРѕРЅР°Р¶Р°.");
+      throw new Error("Игрок может продолжать проект только своего персонажа.");
     }
 
     return this.downtimeService.continueProject(cleanSocketId(payload.requestId), {
@@ -1924,7 +1924,7 @@ export class RebreyaMainModule {
 
   async #requestDowntimeProjectCloseViaGm({ requestId = "", groupId = "", actorId = "" } = {}) {
     if (typeof game.socket?.emit !== "function") {
-      throw new Error("РЎРѕРєРµС‚ Foundry РЅРµРґРѕСЃС‚СѓРїРµРЅ РґР»СЏ Р·Р°РєСЂС‹С‚РёСЏ РїСЂРѕРµРєС‚Р°.");
+      throw new Error("Сокет Foundry недоступен для закрытия проекта.");
     }
 
     const socketRequestId = createSocketRequestId("downtime-project-close");
@@ -1954,7 +1954,7 @@ export class RebreyaMainModule {
     }
 
     if (message.ok === false) {
-      ui.notifications?.error(String(message.error ?? "").trim() || "РњР°СЃС‚РµСЂ РѕС‚РєР»РѕРЅРёР» Р·Р°РєСЂС‹С‚РёРµ РїСЂРѕРµРєС‚Р°.");
+      ui.notifications?.error(String(message.error ?? "").trim() || "Мастер отклонил закрытие проекта.");
       return;
     }
 
@@ -2006,23 +2006,23 @@ export class RebreyaMainModule {
   async #closeDowntimeProjectFromSocket(payload = {}, { senderId = "" } = {}) {
     const senderUser = getUserById(senderId);
     if (!senderUser) {
-      throw new Error("РРіСЂРѕРє РґР»СЏ Р·Р°РєСЂС‹С‚РёСЏ РїСЂРѕРµРєС‚Р° РЅРµ РЅР°Р№РґРµРЅ.");
+      throw new Error("Игрок для закрытия проекта не найден.");
     }
 
     const groupId = cleanSocketId(payload.groupId);
     if (!groupId) {
-      throw new Error("Р“СЂСѓРїРїР° РїСЂРѕРµРєС‚Р° РЅРµ РЅР°Р№РґРµРЅР°.");
+      throw new Error("Группа проекта не найдена.");
     }
 
     const context = this.groupContextService.resolveForGroup(groupId);
     const actorId = cleanSocketId(payload.actorId);
     const actor = Array.from(context.members ?? []).find((memberActor) => memberActor?.id === actorId) ?? null;
     if (!actor) {
-      throw new Error("РџРµСЂСЃРѕРЅР°Р¶ РїСЂРѕРµРєС‚Р° РЅРµ РЅР°Р№РґРµРЅ РІ РіСЂСѓРїРїРµ.");
+      throw new Error("Персонаж проекта не найден в группе.");
     }
 
     if (!isActorOwnedByUser(actor, senderUser)) {
-      throw new Error("РРіСЂРѕРє РјРѕР¶РµС‚ Р·Р°РєСЂС‹РІР°С‚СЊ РїСЂРѕРµРєС‚ С‚РѕР»СЊРєРѕ СЃРІРѕРµРіРѕ РїРµСЂСЃРѕРЅР°Р¶Р°.");
+      throw new Error("Игрок может закрывать проект только своего персонажа.");
     }
 
     return this.downtimeService.closeProject(cleanSocketId(payload.requestId), {
@@ -2436,7 +2436,7 @@ export class RebreyaMainModule {
   async openLootgenApp({ newWindow = true, viewer = false, sharedResult = null } = {}) {
     try {
       if (!viewer && !game.user?.isGM) {
-        throw new Error("Р›СѓС‚РіРµРЅ РґРѕСЃС‚СѓРїРµРЅ С‚РѕР»СЊРєРѕ РјР°СЃС‚РµСЂСѓ.");
+        throw new Error("Лутген доступен только мастеру.");
       }
 
       const { LootgenApp } = await import("./ui/lootgen-app.js");
@@ -2477,7 +2477,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open loot generator app.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РѕРєРЅРѕ Р»СѓС‚РіРµРЅР°.");
+      ui.notifications?.error("Не удалось открыть окно лутгена.");
       throw error;
     }
   }
@@ -2501,7 +2501,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open trader '${cityId}:${traderKey}'.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РѕРєРЅРѕ Р»Р°РІРєРё.");
+      ui.notifications?.error("Не удалось открыть окно лавки.");
       throw error;
     }
   }
@@ -2526,7 +2526,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open trader v2 '${cityId}:${traderKey}'.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РЅРѕРІРѕРµ РѕРєРЅРѕ Р»Р°РІРєРё.");
+      ui.notifications?.error("Не удалось открыть новое окно лавки.");
       throw error;
     }
   }
@@ -2633,7 +2633,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open economy app.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РѕРєРЅРѕ СЌРєРѕРЅРѕРјРёРєРё. РџРѕРґСЂРѕР±РЅРѕСЃС‚Рё РІ РєРѕРЅСЃРѕР»Рё.");
+      ui.notifications?.error("Не удалось открыть окно экономики. Подробности в консоли.");
       throw error;
     }
   }
@@ -2653,7 +2653,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open city app '${cityId}'.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РѕРєРЅРѕ РіРѕСЂРѕРґР°. РџРѕРґСЂРѕР±РЅРѕСЃС‚Рё РІ РєРѕРЅСЃРѕР»Рё.");
+      ui.notifications?.error("Не удалось открыть окно города. Подробности в консоли.");
       throw error;
     }
   }
@@ -2671,7 +2671,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open world trade routes app.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РѕРєРЅРѕ РјРёСЂРѕРІС‹С… СЃРІСЏР·РµР№.");
+      ui.notifications?.error("Не удалось открыть окно мировых связей.");
       throw error;
     }
   }
@@ -2689,7 +2689,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open states app.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РјРµРЅСЋ РіРѕСЃСѓРґР°СЂСЃС‚РІ.");
+      ui.notifications?.error("Не удалось открыть меню государств.");
       throw error;
     }
   }
@@ -2697,7 +2697,7 @@ export class RebreyaMainModule {
   async openGlobalEventsApp() {
     try {
       if (!game.user?.isGM) {
-        throw new Error("РћРєРЅРѕ РіР»РѕР±Р°Р»СЊРЅС‹С… РёРІРµРЅС‚РѕРІ РґРѕСЃС‚СѓРїРЅРѕ С‚РѕР»СЊРєРѕ РјР°СЃС‚РµСЂСѓ.");
+        throw new Error("Окно глобальных ивентов доступно только мастеру.");
       }
 
       const { GlobalEventsApp } = await import("./ui/global-events-app.js");
@@ -2712,7 +2712,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open global events app.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РѕРєРЅРѕ РіР»РѕР±Р°Р»СЊРЅС‹С… РёРІРµРЅС‚РѕРІ.");
+      ui.notifications?.error("Не удалось открыть окно глобальных ивентов.");
       throw error;
     }
   }
@@ -2736,7 +2736,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open inventory app.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РїР°СЂС‚РёР№РЅС‹Р№ РёРЅРІРµРЅС‚Р°СЂСЊ.");
+      ui.notifications?.error("Не удалось открыть партийный инвентарь.");
       throw error;
     }
   }
@@ -2744,7 +2744,7 @@ export class RebreyaMainModule {
   async openGroupsApp() {
     try {
       if (!game.user?.isGM) {
-        throw new Error("РћРєРЅРѕ РіСЂСѓРїРї РґРѕСЃС‚СѓРїРЅРѕ С‚РѕР»СЊРєРѕ РјР°СЃС‚РµСЂСѓ.");
+        throw new Error("Окно групп доступно только мастеру.");
       }
       const { GroupsApp } = await import("./ui/groups-app.js");
       if (!this.groupsApp) this.groupsApp = new GroupsApp(this);
@@ -2754,7 +2754,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open groups app.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РѕРєРЅРѕ РіСЂСѓРїРї.");
+      ui.notifications?.error("Не удалось открыть окно групп.");
       throw error;
     }
   }
@@ -2779,7 +2779,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open trade route app '${connectionId}'.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ РѕРєРЅРѕ С‚РѕСЂРіРѕРІРѕР№ СЃРІСЏР·Рё.");
+      ui.notifications?.error("Не удалось открыть окно торговой связи.");
       throw error;
     }
   }
@@ -2800,7 +2800,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open reference info '${entryType}:${entryId}'.`, error);
-      ui.notifications?.error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ СЃРїСЂР°РІРѕС‡РЅСѓСЋ Р·Р°РїРёСЃСЊ.");
+      ui.notifications?.error("Не удалось открыть справочную запись.");
       throw error;
     }
   }
@@ -2967,7 +2967,7 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to construct module API.`, error);
-    ui.notifications?.error("Rebreya: РЅРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ РјРѕРґСѓР»СЊРЅС‹Р№ API.");
+    ui.notifications?.error("Rebreya: не удалось запустить модульный API.");
     return;
   }
 
@@ -3005,7 +3005,7 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register dnd5e sheet extensions.`, error);
-    ui.notifications?.warn("Rebreya: СЂР°СЃС€РёСЂРµРЅРёСЏ Р»РёСЃС‚РѕРІ dnd5e РѕС‚РєР»СЋС‡РµРЅС‹ РёР·-Р·Р° РѕС€РёР±РєРё.");
+    ui.notifications?.warn("Rebreya: расширения листов dnd5e отключены из-за ошибки.");
   }
 
   try {

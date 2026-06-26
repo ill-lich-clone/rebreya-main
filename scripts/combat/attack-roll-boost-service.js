@@ -1,8 +1,11 @@
 import { MODULE_ID } from "../constants.js";
+import { getFighterManeuverAutomation, normalizeFighterAutomationKey } from "../data/fighter-automation.js";
 
 const ATTACK_ROLL_BOOST_FLAG = "attackRollBoosts";
 const CHECKED_WORKFLOW_FLAG = `_${MODULE_ID}AttackRollBoostChecked`;
 const WEAPON_ATTACK_TYPES = new Set(["mwak", "rwak"]);
+const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
+const FIGHTER_DOMINANCE_FEATURE_ID = "fighter-dominance";
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -377,7 +380,41 @@ export class AttackRollBoostService {
         ...normalizeBoostEntries(getProperty(activity, `flags.${MODULE_ID}.fighterAutomation.attackRollBoost`))
       );
     }
+    entries.push(...this.#inferFighterManeuverBoostEntries(item));
     return entries;
+  }
+
+  #inferFighterManeuverBoostEntries(item) {
+    if (!this.#isFighterManeuverItem(item)) {
+      return [];
+    }
+
+    const classIdentifier = cleanText(getProperty(item, `flags.${MODULE_ID}.classIdentifier`), FIGHTER_CLASS_IDENTIFIER);
+    const fighterAutomation = getFighterManeuverAutomation(item?.name, classIdentifier);
+    return normalizeBoostEntries(fighterAutomation.attackRollBoost);
+  }
+
+  #isFighterManeuverItem(item) {
+    if (cleanText(getProperty(item, `flags.${MODULE_ID}.sourceType`)) === "fighterManeuver") {
+      return true;
+    }
+
+    if (cleanText(getProperty(item, `flags.${MODULE_ID}.automation.type`)) === "fighterManeuver") {
+      return true;
+    }
+
+    if (cleanText(getProperty(item, "system.type.subtype")) === "fighterManeuver") {
+      return true;
+    }
+
+    if (normalizeFighterAutomationKey(item?.name) === "точная атака") {
+      return true;
+    }
+
+    return collectionValues(item?.system?.activities).some((activity) => (
+      cleanText(getProperty(activity, `flags.${MODULE_ID}.automation`)) === "fighter-dominance-maneuver"
+      || cleanText(getProperty(activity, `flags.${MODULE_ID}.fighterAutomation.kind`)) === "maneuver"
+    ));
   }
 
   async #normalizeSource(actor, item, rawBoost) {
@@ -618,6 +655,13 @@ export class AttackRollBoostService {
     }
 
     return collectionValues(actor?.items).find((item) => {
+      if (
+        targetText === FIGHTER_DOMINANCE_FEATURE_ID
+        && normalizeFighterAutomationKey(item?.name) === "стиль доминирования"
+      ) {
+        return true;
+      }
+
       const identifiers = [
         item?.id,
         item?._id,

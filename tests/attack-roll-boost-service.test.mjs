@@ -77,6 +77,9 @@ const { AttackRollBoostService } = await import("../scripts/combat/attack-roll-b
 
 function maxFormulaTotal(formula) {
   const text = String(formula ?? "0").replace(/\s+/gu, "");
+  if (text === "@scale.fighter-rework-v028.dominance-die") {
+    return 6;
+  }
   const replaced = text.replace(/(\d*)d(\d+)/giu, (_match, count, faces) => {
     const diceCount = Number(count || 1);
     return String(diceCount * Number(faces));
@@ -260,6 +263,65 @@ test("attack roll boosts add selected dice, spend configured uses, and mark targ
     rollTotal: 6,
     targetNames: ["Цель"]
   }]);
+});
+
+test("stale fighter precise attack maneuver items still provide an attack roll boost", async () => {
+  const dominance = makeItem({
+    id: "old-dominance-id",
+    name: "Стиль доминирования",
+    boosts: [],
+    uses: {
+      spent: 0,
+      max: "4"
+    }
+  });
+  dominance.flags["rebreya-main"] = {};
+  dominance.system.identifier = "";
+  const preciseAttack = makeItem({
+    id: "old-precise-id",
+    name: "Точная атака",
+    boosts: []
+  });
+  preciseAttack.flags["rebreya-main"] = {
+    sourceType: "fighterManeuver",
+    classIdentifier: "fighter-rework-v028"
+  };
+  preciseAttack.system.activities = {
+    oldActivity: {
+      flags: {
+        "rebreya-main": {
+          automation: "fighter-dominance-maneuver",
+          fighterAutomation: {
+            kind: "maneuver",
+            key: "точная атака"
+          }
+        }
+      }
+    }
+  };
+  const actor = makeActor([dominance, preciseAttack]);
+  const target = makeTarget({ ac: 18 });
+  const workflow = makeWeaponWorkflow({ actor, target, attackTotal: 17 });
+  let promptDetails = null;
+  const service = new AttackRollBoostService({}, {
+    promptAttackRollBoosts: async (details) => {
+      promptDetails = details;
+      return [];
+    }
+  });
+
+  await service.applyMidiHitsChecked(workflow);
+
+  assert.deepEqual(promptDetails.options.map((option) => ({
+    id: option.id,
+    label: option.label,
+    formula: option.formula
+  })), [{
+    id: "fighter-precise-attack",
+    label: "Точная атака",
+    formula: "@scale.fighter-rework-v028.dominance-die"
+  }]);
+  assert.equal(promptDetails.needed, 1);
 });
 
 test("attack roll boosts do not prompt when available dice cannot reach any missed target AC", async () => {
