@@ -374,10 +374,14 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(automaticRifle.weapon.lichWeaponPropertyValues.automaticDamage, "4d8");
 
   const createdMusket = createDnd5eItemData(musket, new Map());
+  const musketActivityIds = Object.keys(createdMusket.system.activities ?? {});
   const musketAttack = Object.values(createdMusket.system.activities ?? {})[0];
   assert.equal(createdMusket.system.damage.base.number, 2);
   assert.equal(createdMusket.system.damage.base.denomination, 8);
   assert.ok(createdMusket.system.properties.includes("lchFirearmMisfire"));
+  assert.equal(musketActivityIds.length, 1);
+  assert.match(musketActivityIds[0], /^[A-Za-z0-9]{16}$/u);
+  assert.equal(musketAttack._id, musketActivityIds[0]);
   assert.equal(musketAttack.type, "attack");
   assert.equal(musketAttack.attack.type.value, "firearm");
   assert.equal(musketAttack.attack.type.classification, "weapon");

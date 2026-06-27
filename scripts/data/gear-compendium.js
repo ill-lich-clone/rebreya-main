@@ -25,9 +25,9 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 12;
+const GEAR_TEMPLATE_VERSION = 13;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
-const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk";
+const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk001";
 
 function escapeHtml(value) {
   return foundry.utils.escapeHTML(String(value ?? ""));
