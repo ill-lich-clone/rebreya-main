@@ -133,6 +133,31 @@ const LICH_WEAPON_PROPERTY_DEFINITIONS = Object.freeze([
   { key: "lchDeadly", label: "Смерт. [L]" },
   { key: "lchPoison", label: "Отравл. [L]" }
 ]);
+const FIREARM_WEAPON_PROPERTY_DEFINITIONS = Object.freeze([
+  { key: "lchFirearmMisfire", label: "Осечка [О]" },
+  { key: "lchFirearmAmmunition", label: "Боеприпасы [О]" },
+  { key: "lchFirearmAmmoProperty", label: "Св-во боепр. [О]" },
+  { key: "lchFirearmFireMode", label: "Тип стрельбы [О]" },
+  { key: "lchFirearmReload", label: "Перезарядка [О]" },
+  { key: "lchFirearmConstruction", label: "Разл. констр. [О]" },
+  { key: "lchFirearmAutomatic", label: "Автоматическое [О]" },
+  { key: "lchFirearmBoltAction", label: "Затворное [О]" },
+  { key: "lchFirearmSemiAutomatic", label: "Полуавтомат. [О]" },
+  { key: "lchFirearmBulky", label: "Громоздкое [О]" },
+  { key: "lchFirearmScatter", label: "Разброс [О]" },
+  { key: "lchFirearmExplosive", label: "Взрывное [О]" },
+  { key: "lchFirearmRust", label: "Ржавчина [О]" },
+  { key: "lchFirearmInaccurate", label: "Неточное [О]" },
+  { key: "lchFirearmSurprise", label: "Внезапность [О]" },
+  { key: "lchFirearmProneFire", label: "Лежачий огонь [О]" },
+  { key: "lchFirearmWaterVulnerability", label: "Уязв. к воде [О]" },
+  { key: "lchFirearmOverheat", label: "Перегрев [О]" },
+  { key: "lchFirearmMachineGun", label: "Пулемёт [О]" }
+]);
+const REBREYA_WEAPON_PROPERTY_DEFINITIONS = Object.freeze([
+  ...LICH_WEAPON_PROPERTY_DEFINITIONS,
+  ...FIREARM_WEAPON_PROPERTY_DEFINITIONS
+]);
 const LICH_WEAPON_VALUE_FIELDS = Object.freeze([
   { key: "gripModes", propertyKey: "lchGrip", label: "Хват [L]", type: "text", placeholder: "Напр.: 1к8 / 1к10" },
   { key: "minStrength", propertyKey: "lchStrReq", label: "Мин. сила [L]", type: "number", min: 0, step: 1 },
@@ -142,7 +167,17 @@ const LICH_WEAPON_VALUE_FIELDS = Object.freeze([
   { key: "mku", propertyKey: "lchMku", label: "МКУ [L]", type: "number", min: 0, step: 1 },
   { key: "mu", propertyKey: "lchMu", label: "МУ [L]", type: "number", min: 0, step: 1 },
   { key: "rku", propertyKey: "lchRku", label: "РКУ [L]", type: "number", min: 0, step: 1 },
-  { key: "deadly", propertyKey: "lchDeadly", label: "Смерт. [L]", type: "number", min: 0, step: 1 }
+  { key: "deadly", propertyKey: "lchDeadly", label: "Смерт. [L]", type: "number", min: 0, step: 1 },
+  { key: "misfire", propertyKey: "lchFirearmMisfire", label: "Осечка [О]", type: "number", min: 1, step: 1 },
+  { key: "automaticDamage", propertyKey: "lchFirearmAutomatic", label: "Авто. урон [О]", type: "text", placeholder: "Напр.: 6d4" },
+  { key: "semiAutomaticDamage", propertyKey: "lchFirearmSemiAutomatic", label: "Полуавто. урон [О]", type: "text", placeholder: "Напр.: 2d12" },
+  { key: "scatterDamage", propertyKey: "lchFirearmScatter", label: "Разброс [О]", type: "text", placeholder: "Напр.: 1d6" },
+  { key: "surpriseDamage", propertyKey: "lchFirearmSurprise", label: "Внезапность [О]", type: "text", placeholder: "Напр.: 2d6" },
+  { key: "overheat", propertyKey: "lchFirearmOverheat", label: "Перегрев [О]", type: "number", min: 1, step: 1 },
+  { key: "reload", propertyKey: "lchFirearmReload", label: "Перезарядка [О]", type: "text", placeholder: "Напр.: Смена магазина 6" },
+  { key: "ammunition", propertyKey: "lchFirearmAmmunition", label: "Боеприпасы [О]", type: "text", placeholder: "Напр.: Мушкетные" },
+  { key: "ammoProperty", propertyKey: "lchFirearmAmmoProperty", label: "Св-во боепр. [О]", type: "text", placeholder: "Напр.: Разброс (1d6)" },
+  { key: "fireMode", propertyKey: "lchFirearmFireMode", label: "Тип стрельбы [О]", type: "text", placeholder: "Напр.: Одиночные" }
 ]);
 const LEGACY_REBREYA_TOOL_LABEL_ALIASES = [
   ["Воровские", "thieves"],
@@ -5542,7 +5577,7 @@ export function extendDnd5eItemTypes() {
   }
 
   CONFIG.DND5E.itemProperties ??= {};
-  for (const definition of LICH_WEAPON_PROPERTY_DEFINITIONS) {
+  for (const definition of REBREYA_WEAPON_PROPERTY_DEFINITIONS) {
     const existing = CONFIG.DND5E.itemProperties[definition.key];
     if (existing && typeof existing === "object") {
       existing.label = definition.label;
@@ -5561,7 +5596,7 @@ export function extendDnd5eItemTypes() {
     const source = CONFIG.DND5E.validProperties.weapon;
     CONFIG.DND5E.validProperties.weapon = new Set(Array.isArray(source) ? source : []);
   }
-  for (const definition of LICH_WEAPON_PROPERTY_DEFINITIONS) {
+  for (const definition of REBREYA_WEAPON_PROPERTY_DEFINITIONS) {
     CONFIG.DND5E.validProperties.weapon.add(definition.key);
   }
 

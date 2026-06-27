@@ -704,6 +704,14 @@ test("extendDnd5eItemTypes registers the Rebreya downtime item type", async () =
     assert.equal(globalThis.CONFIG.Item.typeLabels["rebreya-main.downtimePl"], "TYPES.Item.rebreya-main.downtimePl");
     assert.equal(globalThis.CONFIG.Item.typeIcons["rebreya-main.downtime"], "fa-solid fa-hourglass-half");
     assert.equal(typeof globalThis.CONFIG.Item.dataModels["rebreya-main.downtime"], "function");
+    assert.equal(globalThis.CONFIG.DND5E.itemProperties.lchFirearmMisfire.label, "Осечка [О]");
+    assert.equal(globalThis.CONFIG.DND5E.itemProperties.lchFirearmAutomatic.label, "Автоматическое [О]");
+    assert.equal(globalThis.CONFIG.DND5E.itemProperties.lchFirearmScatter.label, "Разброс [О]");
+    assert.equal(globalThis.CONFIG.DND5E.itemProperties.lchFirearmOverheat.label, "Перегрев [О]");
+    assert.equal(globalThis.CONFIG.DND5E.validProperties.weapon.has("lchFirearmMisfire"), true);
+    assert.equal(globalThis.CONFIG.DND5E.validProperties.weapon.has("lchFirearmAutomatic"), true);
+    assert.equal(globalThis.CONFIG.DND5E.validProperties.weapon.has("lchFirearmScatter"), true);
+    assert.equal(globalThis.CONFIG.DND5E.validProperties.weapon.has("lchFirearmOverheat"), true);
     assert.equal(warningCalls.some((args) => String(args[0]).includes("downtime")), false);
   }
   finally {

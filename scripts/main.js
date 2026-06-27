@@ -1091,6 +1091,12 @@ export class RebreyaMainModule {
     return this.combatAttackService.rollFirearmAttack(actorOrId, weaponOrId, options);
   }
 
+  async clearFirearmJam(actorOrItem, weaponOrId = null) {
+    const result = await this.combatAttackService.clearFirearmJam(actorOrItem, weaponOrId);
+    await this.refreshOpenApps();
+    return result;
+  }
+
   async resolveProvokedAttack(reactorOrId, targetOrId, options = {}) {
     return this.combatAttackService.resolveProvokedAttack(reactorOrId, targetOrId, options);
   }

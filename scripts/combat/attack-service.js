@@ -5,6 +5,10 @@ const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
 const WEAPON_TYPE_MARTIAL_PREFIX = "martial";
 const FIREARM_WEIGHT_THRESHOLD_LB = 10;
+const FIREARM_JAMMED_FLAG = "firearmJammed";
+const FIREARM_MISFIRE_PROPERTY = "lchFirearmMisfire";
+const FIREARM_RUST_PROPERTY = "lchFirearmRust";
+const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
 const REACTION_STATE_FLAG = "reactionState";
 const REACTION_DEFAULT_MAX_USES = 1;
 const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
@@ -301,6 +305,20 @@ function extractPrimaryDiceTerm(formula) {
   }
 
   return { number, faces };
+}
+
+function randomIntegerInclusive(min, max) {
+  const safeMin = Math.ceil(toNumber(min, 1));
+  const safeMax = Math.floor(toNumber(max, safeMin));
+  const low = Math.min(safeMin, safeMax);
+  const high = Math.max(safeMin, safeMax);
+  const randomUniform = globalThis.CONFIG?.Dice?.randomUniform;
+  const raw = typeof randomUniform === "function" ? randomUniform() : Math.random();
+  return Math.floor(raw * (high - low + 1)) + low;
+}
+
+function isPromiseLike(value) {
+  return value && typeof value.then === "function";
 }
 
 function convertFeetToUnits(feet, units) {
@@ -643,6 +661,217 @@ export class CombatAttackService {
       ...attackTraits,
       reachBonusFeet: this.#resolveReachBonusFeet(item, options)
     };
+  }
+
+  #isFirearmJammed(item) {
+    if (!isFirearmItem(item)) {
+      return false;
+    }
+
+    const state = readDocumentFlag(item, MODULE_ID, FIREARM_JAMMED_FLAG);
+    if (state === true) {
+      return true;
+    }
+
+    return state?.value === true;
+  }
+
+  #resolveFirearmMisfireThreshold(item, options = {}) {
+    if (!isFirearmItem(item)) {
+      return 0;
+    }
+
+    const explicit = toNumber(options.firearmMisfire ?? options.misfire, NaN);
+    if (Number.isFinite(explicit)) {
+      return clampInteger(explicit, 0, 20);
+    }
+
+    const directFlag = toNumber(readDocumentFlag(item, MODULE_ID, "firearmMisfire"), NaN);
+    if (Number.isFinite(directFlag)) {
+      return clampInteger(directFlag, 0, 20);
+    }
+
+    const values = this.#getLichWeaponPropertyValues(item, options);
+    const fromValues = toNumber(values.misfire ?? values.firearmMisfire, NaN);
+    if (this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)) {
+      return clampInteger(Number.isFinite(fromValues) ? fromValues : 1, 1, 20);
+    }
+
+    if (this.#hasItemProperty(item, FIREARM_RUST_PROPERTY)) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  #evaluateFirearmMisfireDie(options = {}) {
+    const explicit = toNumber(options.firearmMisfireRoll ?? options.misfireRoll, NaN);
+    if (Number.isFinite(explicit)) {
+      return {
+        roll: null,
+        total: clampInteger(explicit, 1, 20)
+      };
+    }
+
+    let roll = null;
+    try {
+      roll = new Roll(FIREARM_MISFIRE_DIE_FORMULA);
+      if (typeof roll.evaluateSync === "function") {
+        roll.evaluateSync();
+      }
+      else if (typeof roll.evaluate === "function") {
+        const evaluated = roll.evaluate({ async: false });
+        if (isPromiseLike(evaluated)) {
+          roll = null;
+        }
+      }
+
+      const total = toNumber(roll?.total, NaN);
+      if (Number.isFinite(total)) {
+        return {
+          roll,
+          total: clampInteger(total, 1, 20)
+        };
+      }
+    }
+    catch (_error) {
+      roll = null;
+    }
+
+    return {
+      roll: null,
+      total: randomIntegerInclusive(1, 20)
+    };
+  }
+
+  #writeItemFlag(item, key, value) {
+    try {
+      item.flags ??= {};
+      item.flags[MODULE_ID] ??= {};
+      item.flags[MODULE_ID][key] = value;
+    }
+    catch (_error) {
+      // Foundry persists the flag through setFlag below; direct mutation is only for same-tick reads.
+    }
+
+    if (typeof item?.setFlag === "function") {
+      Promise.resolve(item.setFlag(MODULE_ID, key, value)).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to set item flag "${key}".`, error);
+      });
+    }
+  }
+
+  #clearItemFlag(item, key) {
+    try {
+      if (item.flags?.[MODULE_ID]) {
+        delete item.flags[MODULE_ID][key];
+      }
+    }
+    catch (_error) {
+      // Foundry persists the flag removal through unsetFlag below.
+    }
+
+    if (typeof item?.unsetFlag === "function") {
+      return item.unsetFlag(MODULE_ID, key);
+    }
+
+    return item?.update?.({ [`flags.${MODULE_ID}.${key}`]: null }) ?? Promise.resolve(item);
+  }
+
+  #createFirearmMisfireMessage(actor, item, result, options = {}) {
+    if (options.createMessage === false) {
+      return;
+    }
+
+    const weaponName = item?.name ?? "Оружие";
+    const threshold = Math.max(1, Math.floor(toNumber(result?.threshold, 1)));
+    const rollTotal = Math.max(1, Math.floor(toNumber(result?.rollTotal, 1)));
+    const flavor = result?.jammed === true
+      ? `${weaponName}: Осечка ${threshold} - оружие заклинено`
+      : `${weaponName}: проверка осечки ${threshold}`;
+
+    try {
+      if (result?.roll && typeof result.roll.toMessage === "function") {
+        Promise.resolve(result.roll.toMessage({
+          speaker: ChatMessage.getSpeaker({ actor }),
+          flavor
+        })).catch((error) => {
+          console.error(`${MODULE_ID} | Failed to create firearm misfire roll message.`, error);
+        });
+        return;
+      }
+
+      const userId = String(game.user?.id ?? "").trim();
+      if (typeof ChatMessage?.create === "function" && userId) {
+        const outcome = result?.jammed === true ? "заклинено" : "без осечки";
+        Promise.resolve(ChatMessage.create({
+          user: userId,
+          speaker: ChatMessage.getSpeaker?.({ actor }) ?? {},
+          content: `${weaponName}: Осечка ${threshold}, d20 = ${rollTotal} (${outcome})`
+        })).catch((error) => {
+          console.error(`${MODULE_ID} | Failed to create firearm misfire chat message.`, error);
+        });
+      }
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to create firearm misfire chat message.`, error);
+    }
+  }
+
+  #notifyFirearmJammed(item) {
+    const weaponName = item?.name ?? "Оружие";
+    ui.notifications?.warn?.(`${weaponName}: оружие заклинено. Устраните осечку перед выстрелом.`);
+  }
+
+  #jamFirearm(actor, item, result, options = {}) {
+    const jamState = {
+      value: true,
+      threshold: result.threshold,
+      rollTotal: result.rollTotal,
+      jammedAt: new Date().toISOString()
+    };
+    this.#writeItemFlag(item, FIREARM_JAMMED_FLAG, jamState);
+    this.#createFirearmMisfireMessage(actor, item, { ...result, jammed: true }, options);
+    this.#notifyFirearmJammed(item);
+  }
+
+  #rollFirearmMisfire(actor, item, options = {}) {
+    const threshold = this.#resolveFirearmMisfireThreshold(item, options);
+    if (threshold <= 0) {
+      return {
+        checked: false,
+        jammed: false,
+        threshold: 0,
+        rollTotal: null
+      };
+    }
+
+    const { roll, total } = this.#evaluateFirearmMisfireDie(options);
+    const result = {
+      checked: true,
+      jammed: total <= threshold,
+      threshold,
+      rollTotal: total,
+      roll
+    };
+
+    if (result.jammed) {
+      this.#jamFirearm(actor, item, result, options);
+    }
+    else {
+      this.#createFirearmMisfireMessage(actor, item, result, options);
+    }
+
+    return result;
+  }
+
+  #blockJammedFirearm(item) {
+    if (!this.#isFirearmJammed(item)) {
+      return false;
+    }
+
+    this.#notifyFirearmJammed(item);
+    return true;
   }
 
   #applyDeadlyExecution(actor, deadlyValue, context = {}) {
@@ -1101,6 +1330,10 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
+      if (this.#blockJammedFirearm(item)) {
+        return false;
+      }
+
       const automation = this.#getLichAutomationState(item);
       if (automation.reachBonusFeet <= 0) {
         return true;
@@ -1139,6 +1372,15 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
+      if (this.#blockJammedFirearm(item)) {
+        return false;
+      }
+
+      const misfire = this.#rollFirearmMisfire(activity.actor ?? item.actor ?? null, item, config);
+      if (misfire.jammed) {
+        return false;
+      }
+
       const automation = this.#getLichAutomationState(item);
       const rku = Math.max(0, Math.floor(toNumber(automation.rku, 0)));
       if (rku <= 0) {
@@ -1746,6 +1988,27 @@ export class CombatAttackService {
     };
   }
 
+  async clearFirearmJam(actorOrItem, weaponOrId = null) {
+    const weapon = actorOrItem instanceof Item
+      ? actorOrItem
+      : this.#resolveItem(this.#resolveActor(actorOrItem), weaponOrId);
+    if (!(weapon instanceof Item)) {
+      throw new Error("Failed to resolve firearm weapon.");
+    }
+
+    if (!isFirearmItem(weapon)) {
+      throw new Error("Selected weapon is not classified as firearm.");
+    }
+
+    await this.#clearItemFlag(weapon, FIREARM_JAMMED_FLAG);
+
+    return {
+      weaponId: weapon.id,
+      weaponName: weapon.name,
+      isJammed: false
+    };
+  }
+
   async handleCombatTurnChange(combat, updateData = {}) {
     if (!game.user?.isGM) {
       return null;
@@ -1784,6 +2047,36 @@ export class CombatAttackService {
 
     if (!isWeaponItem(weapon)) {
       throw new Error("Selected item is not a weapon.");
+    }
+
+    if (isFirearmItem(weapon)) {
+      if (this.#blockJammedFirearm(weapon)) {
+        return {
+          success: false,
+          reason: "firearmJammed",
+          actorId: actor.id,
+          actorName: actor.name,
+          weaponId: weapon.id,
+          weaponName: weapon.name,
+          attackKind: String(options.attackKind ?? "weapon"),
+          isJammed: true
+        };
+      }
+
+      const misfire = this.#rollFirearmMisfire(actor, weapon, options);
+      if (misfire.jammed) {
+        return {
+          success: false,
+          reason: "firearmMisfire",
+          actorId: actor.id,
+          actorName: actor.name,
+          weaponId: weapon.id,
+          weaponName: weapon.name,
+          attackKind: String(options.attackKind ?? "weapon"),
+          isJammed: true,
+          misfire
+        };
+      }
     }
 
     const abilityKey = this.#resolveAttackAbilityKey(actor, weapon, options);
