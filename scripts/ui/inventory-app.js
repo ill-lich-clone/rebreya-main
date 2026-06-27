@@ -390,7 +390,7 @@ function isAttackActivity(activity, item = null) {
     || cleanText(item?.system?.actionType);
   return activityType === "attack"
     || Boolean(activity?.attack || activity?.system?.attack)
-    || ["mwak", "rwak", "msak", "rsak"].includes(actionType);
+    || ["mwak", "rwak", "fwak", "msak", "rsak"].includes(actionType);
 }
 
 function buildActorActivityOptions(actor, sourceType) {
@@ -402,7 +402,7 @@ function buildActorActivityOptions(actor, sourceType) {
     if (!activities.length) {
       const actionType = cleanText(item?.system?.actionType);
       const hasActivation = Boolean(cleanText(item?.system?.activation?.type));
-      const attackLike = ["mwak", "rwak", "msak", "rsak"].includes(actionType);
+      const attackLike = ["mwak", "rwak", "fwak", "msak", "rsak"].includes(actionType);
       if ((sourceType === "attack" && attackLike) || (sourceType === "sheetAction" && hasActivation && !attackLike)) {
         options.push({
           value: itemId,

@@ -25,8 +25,9 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 11;
+const GEAR_TEMPLATE_VERSION = 12;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
+const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk";
 
 function escapeHtml(value) {
   return foundry.utils.escapeHTML(String(value ?? ""));
@@ -352,6 +353,48 @@ function normalizeWeaponRange(range) {
   };
 }
 
+function resolveFirearmAttackAbility(item) {
+  const weight = Number(item?.weight ?? item?.system?.weight?.value ?? 0);
+  return Number.isFinite(weight) && weight > 10 ? "str" : "dex";
+}
+
+function isFirearmClassification(classification) {
+  return ["firearmPrimitive", "firearmAdvanced"].includes(cleanString(classification?.systemTypeValue))
+    || Boolean(cleanString(classification?.firearmClass));
+}
+
+function buildFirearmAttackActivity(item) {
+  return {
+    _id: FIREARM_ATTACK_ACTIVITY_ID,
+    type: "attack",
+    name: "Выстрел",
+    activation: {
+      type: "action",
+      value: 1,
+      condition: ""
+    },
+    attack: {
+      ability: resolveFirearmAttackAbility(item),
+      bonus: "",
+      critical: {
+        threshold: null
+      },
+      flat: false,
+      type: {
+        value: "firearm",
+        classification: "weapon"
+      }
+    },
+    damage: {
+      critical: {
+        bonus: ""
+      },
+      includeBase: true,
+      parts: []
+    }
+  };
+}
+
 function applyWeaponData(baseData, weapon) {
   if (!isPlainObject(weapon)) {
     return;
@@ -440,6 +483,11 @@ function buildSystemData(item, classification, descriptionHtml) {
         baseItem: classification.baseItem || ""
       };
       applyWeaponData(baseData, item.weapon);
+      if (isFirearmClassification(classification)) {
+        baseData.activities = {
+          [FIREARM_ATTACK_ACTIVITY_ID]: buildFirearmAttackActivity(item)
+        };
+      }
       break;
 
     case "equipment":

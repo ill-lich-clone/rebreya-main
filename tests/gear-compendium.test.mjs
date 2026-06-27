@@ -96,7 +96,9 @@ const EQUIPMENT_PACK_CONTENTS = {
 const DAMAGE_TYPE_BY_LABEL = new Map([
   ["Дробящий", "bludgeoning"],
   ["Колющий", "piercing"],
-  ["Рубящий", "slashing"]
+  ["Рубящий", "slashing"],
+  ["Огнём", "fire"],
+  ["Электричеством", "lightning"]
 ]);
 const NATIVE_DND5E_WEAPON_BASE_ITEMS = new Set([
   "battleaxe",
@@ -341,6 +343,52 @@ test("real gear weapon data maps spreadsheet damage and properties to system key
   assert.ok(byId.get("molot").weapon.properties.includes("lchPowerStrike"));
   assert.ok(byId.get("molot").weapon.properties.includes("lchPush"));
   assert.ok(byId.get("kavaleriyskaya-pika").weapon.properties.includes("lchMounted"));
+});
+
+test("real firearm gear data maps firearm sheet damage, properties, and attack activity", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const musket = byId.get("mushket");
+  const arquebus = byId.get("arkebuza");
+  const automaticRifle = byId.get("avtomaticheskaya-vintovka");
+
+  assert.ok(musket?.weapon, "musket has firearm weapon data");
+  assert.equal(musket.weapon.damageFormula, "2d8");
+  assert.equal(musket.weapon.damageType, "piercing");
+  assert.deepEqual(musket.weapon.range, {
+    value: 90,
+    long: 210,
+    reach: 0,
+    units: "ft"
+  });
+  assert.ok(musket.weapon.properties.includes("lchFirearmMisfire"));
+  assert.equal(musket.weapon.lichWeaponPropertyValues.misfire, 2);
+  assert.ok(musket.weapon.properties.includes("lchFirearmReload"));
+  assert.equal(musket.weapon.lichWeaponPropertyValues.reload, "Перезарядка 1");
+  assert.ok(musket.weapon.properties.includes("lchFirearmBulky"));
+  assert.ok(musket.weapon.properties.includes("lchFirearmProneFire"));
+
+  assert.ok(automaticRifle?.weapon, "automatic rifle has firearm weapon data");
+  assert.equal(automaticRifle.weapon.damageFormula, "2d8");
+  assert.ok(automaticRifle.weapon.properties.includes("lchFirearmAutomatic"));
+  assert.equal(automaticRifle.weapon.lichWeaponPropertyValues.automaticDamage, "4d8");
+
+  const createdMusket = createDnd5eItemData(musket, new Map());
+  const musketAttack = Object.values(createdMusket.system.activities ?? {})[0];
+  assert.equal(createdMusket.system.damage.base.number, 2);
+  assert.equal(createdMusket.system.damage.base.denomination, 8);
+  assert.ok(createdMusket.system.properties.includes("lchFirearmMisfire"));
+  assert.equal(musketAttack.type, "attack");
+  assert.equal(musketAttack.attack.type.value, "firearm");
+  assert.equal(musketAttack.attack.type.classification, "weapon");
+  assert.equal(musketAttack.attack.ability, "dex");
+
+  const createdArquebus = createDnd5eItemData(arquebus, new Map());
+  const arquebusAttack = Object.values(createdArquebus.system.activities ?? {})[0];
+  assert.equal(createdArquebus.system.damage.base.number, 6);
+  assert.equal(createdArquebus.system.damage.base.denomination, 4);
+  assert.equal(arquebusAttack.attack.type.value, "firearm");
+  assert.equal(arquebusAttack.attack.ability, "str");
 });
 
 test("ordinary weapons from the weapon sheet use registered dnd5e base weapon ids", () => {

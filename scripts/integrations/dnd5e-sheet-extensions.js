@@ -179,6 +179,8 @@ const LICH_WEAPON_VALUE_FIELDS = Object.freeze([
   { key: "ammoProperty", propertyKey: "lchFirearmAmmoProperty", label: "Св-во боепр. [О]", type: "text", placeholder: "Напр.: Разброс (1d6)" },
   { key: "fireMode", propertyKey: "lchFirearmFireMode", label: "Тип стрельбы [О]", type: "text", placeholder: "Напр.: Одиночные" }
 ]);
+const FIREARM_ACTIVITY_ATTACK_TYPE = "firearm";
+const FIREARM_MIDI_ACTION_TYPE = "fwak";
 const LEGACY_REBREYA_TOOL_LABEL_ALIASES = [
   ["Воровские", "thieves"],
   ["Алхимические", "alchemy"],
@@ -1067,6 +1069,99 @@ function registerNativeStateLanguages() {
   }
 
   languages[TEYVANKAL_STATE_LANGUAGE_GROUP_ID] = group;
+}
+
+function findPrototypeDescriptor(prototype, propertyName) {
+  let cursor = prototype;
+  while (cursor) {
+    const descriptor = Object.getOwnPropertyDescriptor(cursor, propertyName);
+    if (descriptor) {
+      return descriptor;
+    }
+    cursor = Object.getPrototypeOf(cursor);
+  }
+
+  return null;
+}
+
+function resolveFirearmAttackAbilityFromItem(item) {
+  const weight = Number(foundry.utils.getProperty(item, "system.weight.value") ?? item?.system?.weight?.value ?? 0);
+  return Number.isFinite(weight) && weight > 10 ? "str" : "dex";
+}
+
+function patchFirearmAttackActivityDocumentClass() {
+  const AttackActivityClass = CONFIG.DND5E?.activityTypes?.attack?.documentClass;
+  const prototype = AttackActivityClass?.prototype;
+  if (!prototype || prototype.__rebreyaFirearmAttackTypePatched) {
+    return;
+  }
+
+  const originalActionType = findPrototypeDescriptor(prototype, "actionType");
+  const originalAvailableAbilities = findPrototypeDescriptor(prototype, "availableAbilities");
+  Object.defineProperty(prototype, "actionType", {
+    configurable: true,
+    get() {
+      const attackType = String(this.attack?.type?.value ?? "").trim();
+      const classification = String(this.attack?.type?.classification ?? "").trim();
+      if (attackType === FIREARM_ACTIVITY_ATTACK_TYPE && classification !== "spell") {
+        return FIREARM_MIDI_ACTION_TYPE;
+      }
+
+      if (typeof originalActionType?.get === "function") {
+        return originalActionType.get.call(this);
+      }
+
+      const type = this.attack?.type ?? {};
+      return `${type.value === "ranged" ? "r" : "m"}${type.classification === "spell" ? "sak" : "wak"}`;
+    }
+  });
+
+  if (typeof originalAvailableAbilities?.get === "function") {
+    Object.defineProperty(prototype, "availableAbilities", {
+      configurable: true,
+      get() {
+        const attackType = String(this.attack?.type?.value ?? "").trim();
+        const classification = String(this.attack?.type?.classification ?? "").trim();
+        if (attackType === FIREARM_ACTIVITY_ATTACK_TYPE && classification !== "spell") {
+          return new Set([resolveFirearmAttackAbilityFromItem(this.item)]);
+        }
+
+        return originalAvailableAbilities.get.call(this);
+      }
+    });
+  }
+
+  Object.defineProperty(prototype, "__rebreyaFirearmAttackTypePatched", {
+    configurable: false,
+    enumerable: false,
+    value: true
+  });
+}
+
+function registerFirearmAttackType() {
+  const dnd5eConfig = CONFIG.DND5E;
+  if (!dnd5eConfig || typeof dnd5eConfig !== "object") {
+    return;
+  }
+
+  const attackTypes = dnd5eConfig.attackTypes && typeof dnd5eConfig.attackTypes === "object"
+    ? dnd5eConfig.attackTypes
+    : {};
+  const nextAttackTypes = {
+    ...attackTypes,
+    [FIREARM_ACTIVITY_ATTACK_TYPE]: {
+      ...(typeof attackTypes[FIREARM_ACTIVITY_ATTACK_TYPE] === "object" ? attackTypes[FIREARM_ACTIVITY_ATTACK_TYPE] : {}),
+      label: "Огнестрельная"
+    }
+  };
+  dnd5eConfig.attackTypes = Object.isSealed(attackTypes)
+    ? Object.seal(nextAttackTypes)
+    : nextAttackTypes;
+
+  dnd5eConfig.itemActionTypes ??= {};
+  dnd5eConfig.itemActionTypes[FIREARM_MIDI_ACTION_TYPE] ??= "Огнестрельная атака";
+
+  patchFirearmAttackActivityDocumentClass();
 }
 
 function isNativeStateItem(item) {
@@ -5575,6 +5670,8 @@ export function extendDnd5eItemTypes() {
     CONFIG.DND5E.weaponTypeMap.firearmPrimitive ??= "ranged";
     CONFIG.DND5E.weaponTypeMap.firearmAdvanced ??= "ranged";
   }
+
+  registerFirearmAttackType();
 
   CONFIG.DND5E.itemProperties ??= {};
   for (const definition of REBREYA_WEAPON_PROPERTY_DEFINITIONS) {

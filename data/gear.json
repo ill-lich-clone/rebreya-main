@@ -5334,7 +5334,39 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "250",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Одноручное; Дальность 30/90; Осечка 3; Боеприпасы: Мушкетные; Одиночные; Перезарядка 1; Лёгкое",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "lchFirearmMisfire",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lgt"
+            ],
+            "range":  {
+                "value":  30,
+                "long":  90,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Дальность 30/90; Осечка 3; Боеприпасы: Мушкетные; Одиночные; Перезарядка 1; Лёгкое",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "misfire":  3,
+                "ammunition":  "Мушкетные",
+                "fireMode":  "Одиночные",
+                "reload":  "Перезарядка 1"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "primitive"
+        },
+        "firearmClass":  "primitive"
     },
     {
         "id":  "derrindzher",
@@ -5354,7 +5386,41 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "250",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d4",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Одноручное; Дальность 20/60; Осечка 3; Боеприпасы: Мушкетные; Одиночные; Перезарядка 2; Внезапность 2d6; Лёгкое",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "lchFirearmMisfire",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchFirearmSurprise",
+                "lgt"
+            ],
+            "range":  {
+                "value":  20,
+                "long":  60,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Дальность 20/60; Осечка 3; Боеприпасы: Мушкетные; Одиночные; Перезарядка 2; Внезапность 2d6; Лёгкое",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "misfire":  3,
+                "ammunition":  "Мушкетные",
+                "fireMode":  "Одиночные",
+                "reload":  "Перезарядка 2",
+                "surpriseDamage":  "2d6"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "primitive"
+        },
+        "firearmClass":  "primitive"
     },
     {
         "id":  "dragun",
@@ -5374,7 +5440,43 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "300",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d10",
+            "damageTypeLabel":  "Дробящий",
+            "damageType":  "bludgeoning",
+            "propertiesText":  "Одноручное; Дальность 15/45; Осечка 2; Боеприпасы: Картечный; Разброс (1d4); Одиночные; Перезарядка 1; Верховой бой",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "lchFirearmMisfire",
+                "lchFirearmAmmunition",
+                "lchFirearmAmmoProperty",
+                "lchFirearmScatter",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchMounted"
+            ],
+            "range":  {
+                "value":  15,
+                "long":  45,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Дальность 15/45; Осечка 2; Боеприпасы: Картечный; Разброс (1d4); Одиночные; Перезарядка 1; Верховой бой",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "misfire":  2,
+                "ammunition":  "Картечный",
+                "ammoProperty":  "Разброс (1d4)",
+                "scatterDamage":  "1d4",
+                "fireMode":  "Одиночные",
+                "reload":  "Перезарядка 1"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "primitive"
+        },
+        "firearmClass":  "primitive"
     },
     {
         "id":  "mnogostvol-nyy-kremnevyy-pistolet",
@@ -5394,7 +5496,38 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "800",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Одноручное; Дальность 40/120; Осечка 1; Боеприпасы: Мушкетные; Одиночные; Перезарядка 6",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "lchFirearmMisfire",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload"
+            ],
+            "range":  {
+                "value":  40,
+                "long":  120,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Дальность 40/120; Осечка 1; Боеприпасы: Мушкетные; Одиночные; Перезарядка 6",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "misfire":  1,
+                "ammunition":  "Мушкетные",
+                "fireMode":  "Одиночные",
+                "reload":  "Перезарядка 6"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "primitive"
+        },
+        "firearmClass":  "primitive"
     },
     {
         "id":  "mushket",
@@ -5414,7 +5547,43 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d8",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Двуручное; Дальность 90/210; Осечка 2; Боеприпасы: Мушкетные; Одиночные; Перезарядка 1; Громоздкое; Лежачий огонь",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmMisfire",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchFirearmConstruction",
+                "lchFirearmBulky",
+                "lchFirearmProneFire"
+            ],
+            "range":  {
+                "value":  90,
+                "long":  210,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 90/210; Осечка 2; Боеприпасы: Мушкетные; Одиночные; Перезарядка 1; Громоздкое; Лежачий огонь",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "misfire":  2,
+                "ammunition":  "Мушкетные",
+                "fireMode":  "Одиночные",
+                "reload":  "Перезарядка 1",
+                "construction":  "Громоздкое"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "primitive"
+        },
+        "firearmClass":  "primitive"
     },
     {
         "id":  "arkebuza",
@@ -5434,7 +5603,43 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "200",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "6d4",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Двуручное; Дальность 30/90; Осечка 4; Боеприпасы: Мушкетные; Одиночные; Перезарядка 1; Громоздкое; Тяжелое",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmMisfire",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchFirearmConstruction",
+                "lchFirearmBulky",
+                "hvy"
+            ],
+            "range":  {
+                "value":  30,
+                "long":  90,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 30/90; Осечка 4; Боеприпасы: Мушкетные; Одиночные; Перезарядка 1; Громоздкое; Тяжелое",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "misfire":  4,
+                "ammunition":  "Мушкетные",
+                "fireMode":  "Одиночные",
+                "reload":  "Перезарядка 1",
+                "construction":  "Громоздкое"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "primitive"
+        },
+        "firearmClass":  "primitive"
     },
     {
         "id":  "mushketon",
@@ -5454,7 +5659,43 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "600",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d6",
+            "damageTypeLabel":  "Дробящий",
+            "damageType":  "bludgeoning",
+            "propertiesText":  "Двуручное; Дальность 20/60; Осечка 3; Боеприпасы: Картечные; Разброс (1d6); Одиночные; Долгая перезарядка 1",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmMisfire",
+                "lchFirearmAmmunition",
+                "lchFirearmAmmoProperty",
+                "lchFirearmScatter",
+                "lchFirearmFireMode",
+                "lchFirearmReload"
+            ],
+            "range":  {
+                "value":  20,
+                "long":  60,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 20/60; Осечка 3; Боеприпасы: Картечные; Разброс (1d6); Одиночные; Долгая перезарядка 1",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "misfire":  3,
+                "ammunition":  "Картечные",
+                "ammoProperty":  "Разброс (1d6)",
+                "scatterDamage":  "1d6",
+                "fireMode":  "Одиночные",
+                "reload":  "Долгая перезарядка 1"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "primitive"
+        },
+        "firearmClass":  "primitive"
     },
     {
         "id":  "kolestsovyy-pistolet",
@@ -5474,7 +5715,39 @@
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Жестянщика",
         "value":  "400",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d6",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Двуручное; Дальность 40/120; Осечка 2; Боеприпасы: Мушкетные; Одиночные; Долгая перезарядка 1",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmMisfire",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload"
+            ],
+            "range":  {
+                "value":  40,
+                "long":  120,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 40/120; Осечка 2; Боеприпасы: Мушкетные; Одиночные; Долгая перезарядка 1",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "misfire":  2,
+                "ammunition":  "Мушкетные",
+                "fireMode":  "Одиночные",
+                "reload":  "Долгая перезарядка 1"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "primitive"
+        },
+        "firearmClass":  "primitive"
     },
     {
         "id":  "pistolet",
@@ -5494,7 +5767,36 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Одноручное; Дальность 40/160; Боеприпасы: Пистолетные; Одиночные; Смена магазина 6",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload"
+            ],
+            "range":  {
+                "value":  40,
+                "long":  160,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Дальность 40/160; Боеприпасы: Пистолетные; Одиночные; Смена магазина 6",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Пистолетные",
+                "fireMode":  "Одиночные",
+                "reload":  "Смена магазина 6"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "tyazhelyy-pistolet",
@@ -5514,7 +5816,36 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1150",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d10",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Одноручное; Дальность 30/120; Боеприпасы: Пистолетные; Одиночные; Смена магазина 8",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload"
+            ],
+            "range":  {
+                "value":  30,
+                "long":  120,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Дальность 30/120; Боеприпасы: Пистолетные; Одиночные; Смена магазина 8",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Пистолетные",
+                "fireMode":  "Одиночные",
+                "reload":  "Смена магазина 8"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "obrez",
@@ -5534,7 +5865,40 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1200",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d6",
+            "damageTypeLabel":  "Дробящий",
+            "damageType":  "bludgeoning",
+            "propertiesText":  "Одноручное; Дальность 15/60; Боеприпасы: Картечный; Разброс (1d6); Одиночные; Безмагазиное 4",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "lchFirearmAmmunition",
+                "lchFirearmAmmoProperty",
+                "lchFirearmScatter",
+                "lchFirearmFireMode",
+                "lchFirearmReload"
+            ],
+            "range":  {
+                "value":  15,
+                "long":  60,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Дальность 15/60; Боеприпасы: Картечный; Разброс (1d6); Одиночные; Безмагазиное 4",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Картечный",
+                "ammoProperty":  "Разброс (1d6)",
+                "scatterDamage":  "1d6",
+                "fireMode":  "Одиночные",
+                "reload":  "Безмагазиное 4"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "avtomaticheskiy-pistolet",
@@ -5554,7 +5918,38 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2100",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "3d4",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Одноручное; Дальность 40/160; Боеприпасы: Пистолетные; Автоматический (6d4); Смена магазина 18",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmAutomatic",
+                "lchFirearmReload"
+            ],
+            "range":  {
+                "value":  40,
+                "long":  160,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Дальность 40/160; Боеприпасы: Пистолетные; Автоматический (6d4); Смена магазина 18",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Пистолетные",
+                "fireMode":  "Автоматический (6d4)",
+                "automaticDamage":  "6d4",
+                "reload":  "Смена магазина 18"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "revol-ver",
@@ -5574,7 +5969,38 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1700",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d8",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Одноручное; Дальность 50/200; Боеприпасы: Пистолетные; Одиночные; Смена магазина 6; Внезапность 2d6",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchFirearmSurprise"
+            ],
+            "range":  {
+                "value":  50,
+                "long":  200,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Одноручное; Дальность 50/200; Боеприпасы: Пистолетные; Одиночные; Смена магазина 6; Внезапность 2d6",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Пистолетные",
+                "fireMode":  "Одиночные",
+                "reload":  "Смена магазина 6",
+                "surpriseDamage":  "2d6"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "ruchnitsa",
@@ -5594,7 +6020,39 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "",
+            "damageTypeLabel":  "Особое",
+            "damageType":  "",
+            "propertiesText":  "Двуручное; Дальность 20/80; Боеприпасы: Ракетные; Одиночные; Безмагазиное 1; Мин. сила 13; Ручница использует ракетные боеприпасы; урон и цена которых зависит от типа боеприпаса",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchStrReq"
+            ],
+            "range":  {
+                "value":  20,
+                "long":  80,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 20/80; Боеприпасы: Ракетные; Одиночные; Безмагазиное 1; Мин. сила 13; Ручница использует ракетные боеприпасы; урон и цена которых зависит от типа боеприпаса",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Ракетные",
+                "fireMode":  "Одиночные",
+                "reload":  "Безмагазиное 1",
+                "minStrength":  13
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "vintovka",
@@ -5614,7 +6072,39 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d8",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Двуручное; Дальность 100/400; Боеприпасы: Винтовочный; Одиночные; Смена магазина 6; Затворное; Лежачий огонь",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchFirearmBoltAction",
+                "lchFirearmProneFire"
+            ],
+            "range":  {
+                "value":  100,
+                "long":  400,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 100/400; Боеприпасы: Винтовочный; Одиночные; Смена магазина 6; Затворное; Лежачий огонь",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Винтовочный",
+                "fireMode":  "Одиночные",
+                "reload":  "Смена магазина 6"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "karabin",
@@ -5634,7 +6124,38 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "1500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d6",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Двуручное; Дальность 50/200; Боеприпасы: Винтовочный; Одиночные; Смена магазина 8; Лежачий огонь",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchFirearmProneFire"
+            ],
+            "range":  {
+                "value":  50,
+                "long":  200,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 50/200; Боеприпасы: Винтовочный; Одиночные; Смена магазина 8; Лежачий огонь",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Винтовочный",
+                "fireMode":  "Одиночные",
+                "reload":  "Смена магазина 8"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "drobovik",
@@ -5654,7 +6175,41 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d8",
+            "damageTypeLabel":  "Дробящий",
+            "damageType":  "bludgeoning",
+            "propertiesText":  "Двуручное; Дальность 30/90; Боеприпасы: Картечный; Разброс (1d6); Одиночные; Безмагазиное 6",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmAmmoProperty",
+                "lchFirearmScatter",
+                "lchFirearmFireMode",
+                "lchFirearmReload"
+            ],
+            "range":  {
+                "value":  30,
+                "long":  90,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 30/90; Боеприпасы: Картечный; Разброс (1d6); Одиночные; Безмагазиное 6",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Картечный",
+                "ammoProperty":  "Разброс (1d6)",
+                "scatterDamage":  "1d6",
+                "fireMode":  "Одиночные",
+                "reload":  "Безмагазиное 6"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "tyazhelaya-vintovka",
@@ -5674,7 +6229,42 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "3000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "3d8",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Двуручное; Дальность 200/800; Боеприпасы: Винтовочный; Одиночные; Долгая смена магазина 4; Громоздкое; Тяжелое; Лежачий огонь",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchFirearmConstruction",
+                "lchFirearmBulky",
+                "hvy",
+                "lchFirearmProneFire"
+            ],
+            "range":  {
+                "value":  200,
+                "long":  800,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 200/800; Боеприпасы: Винтовочный; Одиночные; Долгая смена магазина 4; Громоздкое; Тяжелое; Лежачий огонь",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Винтовочный",
+                "fireMode":  "Одиночные",
+                "reload":  "Долгая смена магазина 4",
+                "construction":  "Громоздкое"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "avtomaticheskaya-vintovka",
@@ -5694,7 +6284,39 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "3500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d8",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Двуручное; Дальность 120/480; Боеприпасы: Винтовочный; Автоматический (4d8); Смена магазина 24",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmAutomatic",
+                "lchFirearmReload"
+            ],
+            "range":  {
+                "value":  120,
+                "long":  480,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 120/480; Боеприпасы: Винтовочный; Автоматический (4d8); Смена магазина 24",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Винтовочный",
+                "fireMode":  "Автоматический (4d8)",
+                "automaticDamage":  "4d8",
+                "reload":  "Смена магазина 24"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "poluavtomaticheskaya-vintovka",
@@ -5714,7 +6336,41 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "3500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d12",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Двуручное; Дальность 80/320; Боеприпасы: Винтовочный; Полуавтоматический (2d12); Смена магазина 18",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmAutomatic",
+                "lchFirearmSemiAutomatic",
+                "lchFirearmReload"
+            ],
+            "range":  {
+                "value":  80,
+                "long":  320,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 80/320; Боеприпасы: Винтовочный; Полуавтоматический (2d12); Смена магазина 18",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Винтовочный",
+                "fireMode":  "Полуавтоматический (2d12)",
+                "automaticDamage":  "2d12",
+                "semiAutomaticDamage":  "2d12",
+                "reload":  "Смена магазина 18"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "ognemyot",
@@ -5734,7 +6390,36 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "3d6",
+            "damageTypeLabel":  "Огнём",
+            "damageType":  "fire",
+            "propertiesText":  "Двуручное; Дальность Особое; Боеприпасы: Топливный бак; Особый; Долгая смена магазина 6; Мин. сила 13; Перегрев (6); Особое",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchStrReq",
+                "lchFirearmOverheat",
+                "spc"
+            ],
+            "range":  null,
+            "attackTraitsText":  "Двуручное; Дальность Особое; Боеприпасы: Топливный бак; Особый; Долгая смена магазина 6; Мин. сила 13; Перегрев (6); Особое",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Топливный бак",
+                "fireMode":  "Особый",
+                "reload":  "Долгая смена магазина 6",
+                "minStrength":  13
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "dvukhstvol-nyy-drobovik",
@@ -5754,7 +6439,42 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "2500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d8",
+            "damageTypeLabel":  "Дробящий",
+            "damageType":  "bludgeoning",
+            "propertiesText":  "Двуручное; Дальность 30/120; Боеприпасы: Картечный; Разброс (1d8); Одиночные; Безмагазиное 2; Особое",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmAmmoProperty",
+                "lchFirearmScatter",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "spc"
+            ],
+            "range":  {
+                "value":  30,
+                "long":  120,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 30/120; Боеприпасы: Картечный; Разброс (1d8); Одиночные; Безмагазиное 2; Особое",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Картечный",
+                "ammoProperty":  "Разброс (1d8)",
+                "scatterDamage":  "1d8",
+                "fireMode":  "Одиночные",
+                "reload":  "Безмагазиное 2"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "perenosnaya-pushka",
@@ -5774,7 +6494,43 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "6500",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d12",
+            "damageTypeLabel":  "Дробящий",
+            "damageType":  "bludgeoning",
+            "propertiesText":  "Двуручное; Дальность 50/200; Боеприпасы: Ядра; Одиночные; Длительная перезарядка; Мин. сила 15; Громоздкое; Особое",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchStrReq",
+                "lchFirearmConstruction",
+                "lchFirearmBulky",
+                "spc"
+            ],
+            "range":  {
+                "value":  50,
+                "long":  200,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 50/200; Боеприпасы: Ядра; Одиночные; Длительная перезарядка; Мин. сила 15; Громоздкое; Особое",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Ядра",
+                "fireMode":  "Одиночные",
+                "reload":  "Длительная перезарядка",
+                "minStrength":  15,
+                "construction":  "Громоздкое"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "tesla-vintovka",
@@ -5794,7 +6550,37 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "7000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d8",
+            "damageTypeLabel":  "Электричеством",
+            "damageType":  "lightning",
+            "propertiesText":  "Двуручное; Дальность 30/120; Боеприпасы: Батарея; Одиночные; Долгая смена магазина 10",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload"
+            ],
+            "range":  {
+                "value":  30,
+                "long":  120,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 30/120; Боеприпасы: Батарея; Одиночные; Долгая смена магазина 10",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Батарея",
+                "fireMode":  "Одиночные",
+                "reload":  "Долгая смена магазина 10"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "gauss-vintovka",
@@ -5814,7 +6600,41 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "16000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "3d12",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Двуручное; Дальность 300/1200; Боеприпасы: Стальной болт + батарея; Одиночные; Долгая смена магазина 4; Громоздкое; Затворное",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchFirearmConstruction",
+                "lchFirearmBulky",
+                "lchFirearmBoltAction"
+            ],
+            "range":  {
+                "value":  300,
+                "long":  1200,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 300/1200; Боеприпасы: Стальной болт + батарея; Одиночные; Долгая смена магазина 4; Громоздкое; Затворное",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Стальной болт + батарея",
+                "fireMode":  "Одиночные",
+                "reload":  "Долгая смена магазина 4",
+                "construction":  "Громоздкое"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "garmata",
@@ -5834,7 +6654,43 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "6000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d10",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Двуручное; Дальность 60/240; Боеприпасы: Картечный; Разброс (1d6); Одиночные/особый; Безмагазиное 7; Мин. сила 13",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmAmmoProperty",
+                "lchFirearmScatter",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchStrReq"
+            ],
+            "range":  {
+                "value":  60,
+                "long":  240,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 60/240; Боеприпасы: Картечный; Разброс (1d6); Одиночные/особый; Безмагазиное 7; Мин. сила 13",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Картечный",
+                "ammoProperty":  "Разброс (1d6)",
+                "scatterDamage":  "1d6",
+                "fireMode":  "Одиночные/особый",
+                "reload":  "Безмагазиное 7",
+                "minStrength":  13
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "miniakula",
@@ -5854,7 +6710,40 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "20000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "1d6",
+            "damageTypeLabel":  "Колющий",
+            "damageType":  "piercing",
+            "propertiesText":  "Двуручное; Дальность 50/200; Боеприпасы: Винтовочный; Особый; Долгая смена магазина 90; Мин. сила 15; Пулемёт",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchStrReq",
+                "lchFirearmMachineGun"
+            ],
+            "range":  {
+                "value":  50,
+                "long":  200,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 50/200; Боеприпасы: Винтовочный; Особый; Долгая смена магазина 90; Мин. сила 15; Пулемёт",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Винтовочный",
+                "fireMode":  "Особый",
+                "reload":  "Долгая смена магазина 90",
+                "minStrength":  15
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "samodel-noe-rpu",
@@ -5874,7 +6763,44 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "5000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "2d10",
+            "damageTypeLabel":  "Огнём",
+            "damageType":  "fire",
+            "propertiesText":  "Двуручное; Дальность 200/800; Осечка 5; Боеприпасы: Ракетный; Взрывное; Одиночный; Длительная перезарядка; Мин. сила 15",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmMisfire",
+                "lchFirearmAmmunition",
+                "lchFirearmAmmoProperty",
+                "lchFirearmExplosive",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchStrReq"
+            ],
+            "range":  {
+                "value":  200,
+                "long":  800,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 200/800; Осечка 5; Боеприпасы: Ракетный; Взрывное; Одиночный; Длительная перезарядка; Мин. сила 15",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "misfire":  5,
+                "ammunition":  "Ракетный",
+                "ammoProperty":  "Взрывное",
+                "fireMode":  "Одиночный",
+                "reload":  "Длительная перезарядка",
+                "minStrength":  15
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "ruchnoy-granatomyot",
@@ -5894,7 +6820,42 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "3000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "",
+            "damageTypeLabel":  "Особое",
+            "damageType":  "",
+            "propertiesText":  "Двуручное; Дальность 40/160; Боеприпасы: Ракетный; Особое; Одиночный; Безмагазиное 1; Мин. сила 15",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmAmmunition",
+                "lchFirearmAmmoProperty",
+                "spc",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchStrReq"
+            ],
+            "range":  {
+                "value":  40,
+                "long":  160,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 40/160; Боеприпасы: Ракетный; Особое; Одиночный; Безмагазиное 1; Мин. сила 15",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "ammunition":  "Ракетный",
+                "ammoProperty":  "Особое",
+                "fireMode":  "Одиночный",
+                "reload":  "Безмагазиное 1",
+                "minStrength":  15
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "uravnitel",
@@ -5914,7 +6875,47 @@
         "predominantMaterialName":  "Сталь",
         "linkedTool":  "Жестянщика",
         "value":  "20000",
-        "source":  "gear-workbook"
+        "source":  "gear-workbook",
+        "weapon":  {
+            "damageFormula":  "6d6",
+            "damageTypeLabel":  "Дробящий",
+            "damageType":  "bludgeoning",
+            "propertiesText":  "Двуручное; Дальность 20/20; Осечка 2; Боеприпасы: Картечный; Особое; Одиночные; Безмагазинное 2; Мин. сила 15; Громоздкое; Особое (вместо совершения атаки выстреливает дробью в виде линии шириной 5 футов в пределах дистанции. Сл спасброска расчитывается как для автоматического огня)",
+            "properties":  [
+                "amm",
+                "lchFirearmWaterVulnerability",
+                "two",
+                "lchFirearmMisfire",
+                "lchFirearmAmmunition",
+                "lchFirearmAmmoProperty",
+                "spc",
+                "lchFirearmFireMode",
+                "lchFirearmReload",
+                "lchStrReq",
+                "lchFirearmConstruction",
+                "lchFirearmBulky"
+            ],
+            "range":  {
+                "value":  20,
+                "long":  20,
+                "reach":  0,
+                "units":  "ft"
+            },
+            "attackTraitsText":  "Двуручное; Дальность 20/20; Осечка 2; Боеприпасы: Картечный; Особое; Одиночные; Безмагазинное 2; Мин. сила 15; Громоздкое; Особое (вместо совершения атаки выстреливает дробью в виде линии шириной 5 футов в пределах дистанции. Сл спасброска расчитывается как для автоматического огня)",
+            "attackTraits":  {},
+            "lichWeaponPropertyValues":  {
+                "misfire":  2,
+                "ammunition":  "Картечный",
+                "ammoProperty":  "Особое",
+                "fireMode":  "Одиночные",
+                "reload":  "Безмагазинное 2",
+                "minStrength":  15,
+                "construction":  "Громоздкое"
+            },
+            "firearmAttackType":  "firearm",
+            "firearmClass":  "advanced"
+        },
+        "firearmClass":  "advanced"
     },
     {
         "id":  "kollimatornyy-pritsel",

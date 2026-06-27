@@ -720,6 +720,66 @@ test("extendDnd5eItemTypes registers the Rebreya downtime item type", async () =
   }
 });
 
+test("extendDnd5eItemTypes registers firearm activity attack type and Midi action type", async () => {
+  const stubs = installSheetExtensionStubs();
+  globalThis.game.modules = new Map([["rebreya-main", { documentTypes: { Item: { state: {}, downtime: {} } } }]]);
+  globalThis.CONFIG.Item = {
+    dataModels: {
+      background: class BackgroundData {
+        static metadata = {};
+      }
+    },
+    typeLabels: {},
+    typeIcons: {}
+  };
+  globalThis.CONFIG.DND5E.attackTypes = Object.seal({
+    melee: { label: "Рукопашная" },
+    ranged: { label: "Дальнобойная" }
+  });
+  globalThis.CONFIG.DND5E.itemActionTypes = {
+    mwak: "Рукопашная атака",
+    rwak: "Дальнобойная атака"
+  };
+  globalThis.CONFIG.DND5E.activityTypes = {
+    attack: {
+      documentClass: class AttackActivity {
+        constructor({ attack = { type: { value: "ranged", classification: "weapon" } } } = {}) {
+          this.attack = attack;
+        }
+
+        get actionType() {
+          const type = this.attack.type;
+          return `${type.value === "ranged" ? "r" : "m"}${type.classification === "spell" ? "sak" : "wak"}`;
+        }
+      }
+    }
+  };
+
+  try {
+    const { extendDnd5eItemTypes } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?firearm-attack-type=${Date.now()}`);
+
+    extendDnd5eItemTypes();
+
+    assert.equal(CONFIG.DND5E.attackTypes.firearm.label, "Огнестрельная");
+    assert.equal(CONFIG.DND5E.itemActionTypes.fwak, "Огнестрельная атака");
+    assert.equal(Object.isSealed(CONFIG.DND5E.attackTypes), true);
+
+    const FirearmAttack = CONFIG.DND5E.activityTypes.attack.documentClass;
+    const activity = new FirearmAttack({
+      attack: {
+        type: {
+          value: "firearm",
+          classification: "weapon"
+        }
+      }
+    });
+    assert.equal(activity.actionType, "fwak");
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("selectDowntimeTemplateDocumentWithBrowser locks native dnd5e browser to downtime items", async () => {
   const stubs = installSheetExtensionStubs();
   try {

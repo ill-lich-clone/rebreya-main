@@ -2,6 +2,7 @@
   [string]$WorkbookPath = "",
   [string]$MaterialsPath = "",
   [string]$OutputPath = "",
+  [switch]$AugmentExisting,
   [switch]$Quiet
 )
 
@@ -30,7 +31,7 @@ function Normalize-DisplayText([string]$Value) {
 function Get-MatchKey([string]$Value) {
   $text = Normalize-DisplayText $Value
   if ([string]::IsNullOrWhiteSpace($text)) { return "" }
-  return $text.ToLowerInvariant()
+  return ($text.ToLowerInvariant() -replace 'ё', 'е')
 }
 function Get-LooseMatchKey([string]$Value) {
   $text = Get-MatchKey $Value
@@ -136,6 +137,29 @@ function Get-FirstWorksheetPath([System.IO.Compression.ZipArchive]$Zip) {
   if (-not $target) { throw "Unable to resolve worksheet relation '$relationId'." }
   return "xl/$target"
 }
+function Resolve-WorksheetTargetPath([string]$Target) {
+  if ([string]::IsNullOrWhiteSpace($Target)) { return "" }
+  $cleanTarget = $Target -replace '\\', '/'
+  if ($cleanTarget.StartsWith("/")) { return $cleanTarget.TrimStart("/") }
+  if ($cleanTarget.StartsWith("xl/")) { return $cleanTarget }
+  return "xl/$cleanTarget"
+}
+function Get-WorksheetPathByName([System.IO.Compression.ZipArchive]$Zip, [string]$WorksheetName) {
+  $workbookXml = Read-ZipXml $Zip "xl/workbook.xml"
+  $relationsXml = Read-ZipXml $Zip "xl/_rels/workbook.xml.rels"
+  $relationById = @{}
+  foreach ($relation in $relationsXml.Relationships.Relationship) { $relationById[$relation.Id] = $relation.Target }
+  $ns = [System.Xml.XmlNamespaceManager]::new($workbookXml.NameTable)
+  $ns.AddNamespace("x", "http://schemas.openxmlformats.org/spreadsheetml/2006/main")
+  foreach ($sheet in $workbookXml.SelectNodes("//x:sheets/x:sheet", $ns)) {
+    if ((Get-MatchKey $sheet.name) -ne (Get-MatchKey $WorksheetName)) { continue }
+    $relationId = $sheet.GetAttribute("id", "http://schemas.openxmlformats.org/officeDocument/2006/relationships")
+    $target = $relationById[$relationId]
+    if (-not $target) { throw "Unable to resolve worksheet relation '$relationId'." }
+    return Resolve-WorksheetTargetPath $target
+  }
+  return ""
+}
 function Read-CellValue($Cell, [string[]]$SharedStrings) {
   $type = $Cell.GetAttribute("t")
   if ($type -eq "inlineStr") {
@@ -186,6 +210,266 @@ function Resolve-MaterialMatch([string]$Name, [object[]]$Materials) {
 function Write-JsonFile([string]$Path, $Data) {
   [System.IO.File]::WriteAllText($Path, ($Data | ConvertTo-Json -Depth 50), [System.Text.UTF8Encoding]::new($false))
 }
+function Normalize-DamageFormula([string]$Value) {
+  $text = Normalize-DisplayText $Value
+  if ([string]::IsNullOrWhiteSpace($text) -or $text -eq '—' -or $text -eq '-') { return "" }
+  $formula = (($text -replace '[кК]', 'd') -replace '\s+', '')
+  if ($formula -notmatch '\d') { return "" }
+  return $formula
+}
+function Convert-DamageTypeLabelToDnd5e([string]$Value) {
+  $key = Get-MatchKey $Value
+  switch ($key) {
+    'дробящий' { return 'bludgeoning' }
+    'колющий' { return 'piercing' }
+    'рубящий' { return 'slashing' }
+    'огонь' { return 'fire' }
+    'огнем' { return 'fire' }
+    'огненный' { return 'fire' }
+    'холод' { return 'cold' }
+    'кислота' { return 'acid' }
+    'электричество' { return 'lightning' }
+    'электричеством' { return 'lightning' }
+    'яд' { return 'poison' }
+    default { return "" }
+  }
+}
+function Parse-RangeValue([string]$Value) {
+  $text = Normalize-DisplayText $Value
+  if ([string]::IsNullOrWhiteSpace($text) -or $text -eq '—' -or $text -eq '-') { return $null }
+  if ($text -match '^\s*(\d+)\s*/\s*(\d+)\s*$') {
+    return [pscustomobject][ordered]@{
+      value = [int]$Matches[1]
+      long = [int]$Matches[2]
+      reach = 0
+      units = 'ft'
+    }
+  }
+  if ($text -match '^\s*(\d+)\s*$') {
+    return [pscustomobject][ordered]@{
+      value = [int]$Matches[1]
+      long = 0
+      reach = 0
+      units = 'ft'
+    }
+  }
+  return $null
+}
+function Add-UniqueString([System.Collections.Generic.List[string]]$List, [string]$Value) {
+  $text = Normalize-DisplayText $Value
+  if ([string]::IsNullOrWhiteSpace($text)) { return }
+  if (-not $List.Contains($text)) { $List.Add($text) }
+}
+function Add-WeaponProperty([System.Collections.Generic.List[string]]$Properties, [string]$PropertyKey) {
+  Add-UniqueString $Properties $PropertyKey
+}
+function Set-OrderedValue([System.Collections.IDictionary]$Values, [string]$Key, $Value) {
+  if ([string]::IsNullOrWhiteSpace($Key) -or $null -eq $Value) { return }
+  if ($Value -is [string] -and [string]::IsNullOrWhiteSpace($Value)) { return }
+  $Values[$Key] = $Value
+}
+function Get-ParenthesizedFormula([string]$Value) {
+  $text = Normalize-DisplayText $Value
+  if ($text -match '\(([^)]+)\)') { return Normalize-DamageFormula $Matches[1] }
+  return ""
+}
+function Get-ParenthesizedInteger([string]$Value) {
+  $text = Normalize-DisplayText $Value
+  if ($text -match '\((\d+)\)') { return [int]$Matches[1] }
+  if ($text -match '(\d+)') { return [int]$Matches[1] }
+  return $null
+}
+function Get-TrailingInteger([string]$Value) {
+  $text = Normalize-DisplayText $Value
+  if ($text -match '(\d+)\s*$') { return [int]$Matches[1] }
+  return $null
+}
+function Add-FirearmAdditionalProperty([string]$Value, [System.Collections.Generic.List[string]]$Properties, [System.Collections.Generic.List[string]]$Labels, [hashtable]$PropertyValues) {
+  $text = Normalize-DisplayText $Value
+  if ([string]::IsNullOrWhiteSpace($text) -or $text -eq '—' -or $text -eq '-') { return }
+  Add-UniqueString $Labels $text
+  $key = Get-MatchKey $text
+
+  if ($key -match 'легк') { Add-WeaponProperty $Properties 'lgt' }
+  if ($key -match 'тяжел|тяжёл') { Add-WeaponProperty $Properties 'hvy' }
+  if ($key -match 'особ') { Add-WeaponProperty $Properties 'spc' }
+  if ($key -match 'затвор') { Add-WeaponProperty $Properties 'lchFirearmBoltAction' }
+  if ($key -match 'лежач') { Add-WeaponProperty $Properties 'lchFirearmProneFire' }
+  if ($key -match 'верхов') { Add-WeaponProperty $Properties 'lchMounted' }
+  if ($key -match 'пулем') { Add-WeaponProperty $Properties 'lchFirearmMachineGun' }
+  if ($key -match 'ржав') { Add-WeaponProperty $Properties 'lchFirearmRust' }
+  if ($key -match 'неточ') { Add-WeaponProperty $Properties 'lchFirearmInaccurate' }
+  if ($key -match 'перегрев') {
+    Add-WeaponProperty $Properties 'lchFirearmOverheat'
+    Set-OrderedValue $PropertyValues 'overheat' (Get-ParenthesizedInteger $text)
+  }
+  if ($key -match '^мку') {
+    Add-WeaponProperty $Properties 'lchMku'
+    Set-OrderedValue $PropertyValues 'mku' (Get-TrailingInteger $text)
+  }
+  if ($key -match '^му') {
+    Add-WeaponProperty $Properties 'lchMu'
+    Set-OrderedValue $PropertyValues 'mu' (Get-TrailingInteger $text)
+  }
+  if ($key -match '^рку') {
+    Add-WeaponProperty $Properties 'lchRku'
+    Set-OrderedValue $PropertyValues 'rku' (Get-TrailingInteger $text)
+  }
+}
+function New-FirearmWeaponData($Row, [string]$FirearmClass) {
+  $rawDamage = Normalize-DisplayText (Get-Value $Row 'C')
+  if ([string]::IsNullOrWhiteSpace($rawDamage)) { return $null }
+  $damageFormula = Normalize-DamageFormula (Get-Value $Row 'C')
+
+  $properties = [System.Collections.Generic.List[string]]::new()
+  $labels = [System.Collections.Generic.List[string]]::new()
+  $values = [ordered]@{}
+  Add-WeaponProperty $properties 'amm'
+  Add-WeaponProperty $properties 'lchFirearmWaterVulnerability'
+
+  $hands = Normalize-DisplayText (Get-Value $Row 'J')
+  if ($hands) {
+    Add-UniqueString $labels $hands
+    $handKey = Get-MatchKey $hands
+    if ($handKey -match 'двуруч') { Add-WeaponProperty $properties 'two' }
+  }
+
+  $rangeText = Normalize-DisplayText (Get-Value $Row 'I')
+  $range = Parse-RangeValue $rangeText
+  if ($rangeText) { Add-UniqueString $labels "Дальность $rangeText" }
+
+  $misfire = Convert-ToPlainNumber (Get-Value $Row 'K') -AllowNull
+  if ($null -ne $misfire -and $misfire -gt 0) {
+    Add-WeaponProperty $properties 'lchFirearmMisfire'
+    Set-OrderedValue $values 'misfire' ([int]$misfire)
+    Add-UniqueString $labels "Осечка $([int]$misfire)"
+  }
+
+  $ammunition = Normalize-DisplayText (Get-Value $Row 'L')
+  if ($ammunition -and $ammunition -ne '—' -and $ammunition -ne '-') {
+    Add-WeaponProperty $properties 'lchFirearmAmmunition'
+    Set-OrderedValue $values 'ammunition' $ammunition
+    Add-UniqueString $labels "Боеприпасы: $ammunition"
+  }
+
+  $ammoProperty = Normalize-DisplayText (Get-Value $Row 'M')
+  if ($ammoProperty -and $ammoProperty -ne '—' -and $ammoProperty -ne '-') {
+    Add-WeaponProperty $properties 'lchFirearmAmmoProperty'
+    Set-OrderedValue $values 'ammoProperty' $ammoProperty
+    Add-UniqueString $labels $ammoProperty
+    $ammoKey = Get-MatchKey $ammoProperty
+    if ($ammoKey -match 'разброс') {
+      Add-WeaponProperty $properties 'lchFirearmScatter'
+      Set-OrderedValue $values 'scatterDamage' (Get-ParenthesizedFormula $ammoProperty)
+    }
+    if ($ammoKey -match 'взрыв') { Add-WeaponProperty $properties 'lchFirearmExplosive' }
+    if ($ammoKey -match 'особ') { Add-WeaponProperty $properties 'spc' }
+  }
+
+  $fireMode = Normalize-DisplayText (Get-Value $Row 'N')
+  if ($fireMode -and $fireMode -ne '—' -and $fireMode -ne '-') {
+    Add-WeaponProperty $properties 'lchFirearmFireMode'
+    Set-OrderedValue $values 'fireMode' $fireMode
+    Add-UniqueString $labels $fireMode
+    $fireModeKey = Get-MatchKey $fireMode
+    if ($fireModeKey -match 'автомат') {
+      Add-WeaponProperty $properties 'lchFirearmAutomatic'
+      Set-OrderedValue $values 'automaticDamage' (Get-ParenthesizedFormula $fireMode)
+    }
+    if ($fireModeKey -match 'полуавтомат') {
+      Add-WeaponProperty $properties 'lchFirearmSemiAutomatic'
+      Set-OrderedValue $values 'semiAutomaticDamage' (Get-ParenthesizedFormula $fireMode)
+    }
+  }
+
+  $reload = Normalize-DisplayText (Get-Value $Row 'O')
+  if ($reload -and $reload -ne '—' -and $reload -ne '-') {
+    Add-WeaponProperty $properties 'lchFirearmReload'
+    Set-OrderedValue $values 'reload' $reload
+    Add-UniqueString $labels $reload
+  }
+
+  $minStrength = Convert-ToPlainNumber (Get-Value $Row 'P') -AllowNull
+  if ($null -ne $minStrength -and $minStrength -gt 0) {
+    Add-WeaponProperty $properties 'lchStrReq'
+    Set-OrderedValue $values 'minStrength' ([int]$minStrength)
+    Add-UniqueString $labels "Мин. сила $([int]$minStrength)"
+  }
+
+  $construction = Normalize-DisplayText (Get-Value $Row 'Q')
+  if ($construction -and $construction -ne '—' -and $construction -ne '-') {
+    Add-WeaponProperty $properties 'lchFirearmConstruction'
+    Set-OrderedValue $values 'construction' $construction
+    Add-UniqueString $labels $construction
+    if ((Get-MatchKey $construction) -match 'громозд') { Add-WeaponProperty $properties 'lchFirearmBulky' }
+  }
+
+  $surprise = Normalize-DamageFormula (Get-Value $Row 'R')
+  if ($surprise) {
+    Add-WeaponProperty $properties 'lchFirearmSurprise'
+    Set-OrderedValue $values 'surpriseDamage' $surprise
+    Add-UniqueString $labels "Внезапность $surprise"
+  }
+
+  $additional = Normalize-DisplayText (Get-Value $Row 'S')
+  if ($additional) {
+    foreach ($part in ($additional -split '[,;]')) {
+      Add-FirearmAdditionalProperty $part $properties $labels $values
+    }
+  }
+
+  return [pscustomobject][ordered]@{
+    damageFormula = $damageFormula
+    damageTypeLabel = Normalize-DisplayText (Get-Value $Row 'D')
+    damageType = Convert-DamageTypeLabelToDnd5e (Get-Value $Row 'D')
+    propertiesText = ($labels.ToArray() -join '; ')
+    properties = $properties.ToArray()
+    range = $range
+    attackTraitsText = ($labels.ToArray() -join '; ')
+    attackTraits = [pscustomobject]@{}
+    lichWeaponPropertyValues = [pscustomobject]$values
+    firearmAttackType = 'firearm'
+    firearmClass = $FirearmClass
+  }
+}
+function Merge-FirearmWeaponData([object[]]$Gear, [object[]]$FirearmRows) {
+  if (-not $FirearmRows -or $FirearmRows.Count -eq 0) { return 0 }
+
+  $firearmsByKey = @{}
+  $currentClass = ""
+  foreach ($row in ($FirearmRows | Where-Object { $_.__row -ge 3 })) {
+    $name = Normalize-DisplayText (Get-Value $row 'A')
+    if ([string]::IsNullOrWhiteSpace($name)) { continue }
+
+    $rawDamage = Normalize-DisplayText (Get-Value $row 'C')
+    if ([string]::IsNullOrWhiteSpace($rawDamage)) {
+      $sectionKey = Get-MatchKey $name
+      if ($sectionKey -match 'примитив') { $currentClass = 'primitive' }
+      elseif ($sectionKey -match 'стандарт|продвинут') { $currentClass = 'advanced' }
+      continue
+    }
+
+    $weapon = New-FirearmWeaponData $row $currentClass
+    if (-not $weapon) { continue }
+    $key = Get-LooseMatchKey $name
+    if ($key) { $firearmsByKey[$key] = $weapon }
+  }
+
+  $matched = 0
+  foreach ($item in $Gear) {
+    if ((Get-MatchKey $item.equipmentType) -ne (Get-MatchKey 'Огнестрельное оружие')) { continue }
+    $key = Get-LooseMatchKey $item.name
+    if (-not $firearmsByKey.ContainsKey($key)) { continue }
+    $weapon = $firearmsByKey[$key]
+    $item | Add-Member -NotePropertyName weapon -NotePropertyValue $weapon -Force
+    if ($weapon.firearmClass) {
+      $item | Add-Member -NotePropertyName firearmClass -NotePropertyValue $weapon.firearmClass -Force
+    }
+    $matched += 1
+  }
+
+  return $matched
+}
 
 if ([string]::IsNullOrWhiteSpace($WorkbookPath)) { throw "WorkbookPath is required." }
 $resolvedMaterialsPath = Resolve-MaterialsPath $MaterialsPath
@@ -203,6 +487,8 @@ try {
   $sharedStrings = Load-SharedStrings $zip
   $worksheetPath = Get-FirstWorksheetPath $zip
   $rows = Read-WorksheetRows $zip $worksheetPath $sharedStrings
+  $firearmWorksheetPath = Get-WorksheetPathByName $zip "Огнестрел V0.36"
+  $firearmRows = if ($firearmWorksheetPath) { Read-WorksheetRows $zip $firearmWorksheetPath $sharedStrings } else { @() }
 }
 finally { $zip.Dispose() }
 
@@ -243,8 +529,20 @@ foreach ($row in ($rows | Where-Object { $_.__row -ge 2 })) {
   $rowCounter += 1
 }
 
+if ($gear.Count -eq 0 -and $AugmentExisting -and (Test-Path -LiteralPath $resolvedOutputPath)) {
+  Write-Info "No gear rows found in the primary worksheet; augmenting existing gear data."
+  $existingGear = @(Get-Content -Raw -Encoding UTF8 $resolvedOutputPath | ConvertFrom-Json)
+  while ($existingGear.Count -eq 1 -and $existingGear[0] -is [System.Array]) {
+    $existingGear = @($existingGear[0])
+  }
+  $gear = $existingGear
+}
+
+$firearmMatchCount = Merge-FirearmWeaponData $gear $firearmRows
+
 Write-JsonFile $resolvedOutputPath $gear
 Write-Info 'Gear import complete.'
 Write-Info "Gear items: $($gear.Count)"
+Write-Info "Firearm weapon rows matched: $firearmMatchCount"
 Write-Info "Path: $resolvedOutputPath"
 

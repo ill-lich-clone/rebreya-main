@@ -3,7 +3,7 @@ import { getFighterManeuverAutomation, normalizeFighterAutomationKey } from "../
 
 const ATTACK_ROLL_BOOST_FLAG = "attackRollBoosts";
 const CHECKED_WORKFLOW_FLAG = `_${MODULE_ID}AttackRollBoostChecked`;
-const WEAPON_ATTACK_TYPES = new Set(["mwak", "rwak"]);
+const WEAPON_ATTACK_TYPES = new Set(["mwak", "rwak", "fwak"]);
 const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
 const FIGHTER_DOMINANCE_FEATURE_ID = "fighter-dominance";
 const SCALE_REFERENCE_PATTERN = /@scale\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)/giu;
