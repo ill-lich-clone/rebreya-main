@@ -5025,7 +5025,12 @@ function isFirearmWeaponItem(item) {
     return true;
   }
 
-  return Array.from(FIREARM_WEAPON_PROPERTY_KEYS).some((propertyKey) => hasItemProperty(item, propertyKey));
+  const firearmClass = String(
+    item.getFlag?.(MODULE_ID, "firearmClass")
+    ?? foundry.utils.getProperty(item, `flags.${MODULE_ID}.firearmClass`)
+    ?? ""
+  ).trim();
+  return Boolean(firearmClass);
 }
 
 function findAncestorElement(element, predicate) {
@@ -5046,6 +5051,12 @@ function findSheetPropertyControl(root, propertyKey) {
   );
 }
 
+function findSheetPropertyControls(root, propertyKey) {
+  return Array.from(root.querySelectorAll(
+    `dnd5e-checkbox[name='system.properties.${propertyKey}'], input[name='system.properties.${propertyKey}']`
+  ) ?? []);
+}
+
 function getSheetPropertyRow(control) {
   return control?.closest?.("label")
     ?? control?.closest?.(".form-group")
@@ -5060,10 +5071,56 @@ function findSheetPropertyFieldset(control, row) {
     ?? null;
 }
 
+function setLocalWeaponProperty(item, propertyKey, checked) {
+  const properties = foundry.utils.getProperty(item, "system.properties");
+  if (Array.isArray(properties)) {
+    const index = properties.indexOf(propertyKey);
+    if (checked && index === -1) {
+      properties.push(propertyKey);
+    }
+    else if (!checked && index !== -1) {
+      properties.splice(index, 1);
+    }
+    return;
+  }
+
+  if (properties instanceof Set) {
+    if (checked) {
+      properties.add(propertyKey);
+    }
+    else {
+      properties.delete(propertyKey);
+    }
+    return;
+  }
+
+  if (properties && typeof properties === "object") {
+    properties[propertyKey] = checked;
+  }
+}
+
+function removeNativeFirearmPropertyRows(root) {
+  for (const definition of FIREARM_WEAPON_PROPERTY_DEFINITIONS) {
+    for (const control of findSheetPropertyControls(root, definition.key)) {
+      if (control.dataset?.rebreyaFirearmProperty === definition.key) {
+        continue;
+      }
+
+      const row = getSheetPropertyRow(control);
+      row?.remove?.();
+    }
+  }
+}
+
 function isSheetWeaponPropertyChecked(root, item, propertyKey) {
   const safePropertyKey = String(propertyKey ?? "").trim();
   if (!safePropertyKey) {
     return false;
+  }
+
+  const customCheckbox = root.querySelector(`input[data-rebreya-firearm-property='${safePropertyKey}']`);
+  if (customCheckbox) {
+    return Boolean(customCheckbox.checked);
   }
 
   const checkbox = root.querySelector(`dnd5e-checkbox[name='system.properties.${safePropertyKey}'], input[name='system.properties.${safePropertyKey}']`);
@@ -5528,33 +5585,14 @@ function upsertFirearmWeaponPropertiesField(root, app) {
   }
 
   details.querySelectorAll("[data-rebreya-item-field='firearm-properties']").forEach((node) => node.remove());
+  removeNativeFirearmPropertyRows(root);
 
   const item = getItemFromSheetApp(app);
   if (!isFirearmWeaponItem(item)) {
     return;
   }
 
-  const entries = [];
-  let sourceFieldset = null;
-  for (const definition of FIREARM_WEAPON_PROPERTY_DEFINITIONS) {
-    const control = findSheetPropertyControl(root, definition.key);
-    if (!control) {
-      continue;
-    }
-
-    const row = getSheetPropertyRow(control);
-    if (!row) {
-      continue;
-    }
-
-    sourceFieldset ??= findSheetPropertyFieldset(control, row);
-    entries.push({ definition, row });
-  }
-
-  if (!entries.length) {
-    return;
-  }
-
+  const editable = isSheetEditable(app, root);
   const fieldset = document.createElement("fieldset");
   fieldset.classList.add("rm-firearm-properties-fieldset");
   fieldset.dataset.rebreyaItemField = "firearm-properties";
@@ -5565,15 +5603,49 @@ function upsertFirearmWeaponPropertiesField(root, app) {
 
   const grid = document.createElement("div");
   grid.classList.add("rm-firearm-properties-grid");
-  for (const { definition, row } of entries) {
-    row.dataset.rebreyaFirearmProperty = definition.key;
-    row.classList?.add?.("rm-firearm-property-row");
+  for (const definition of FIREARM_WEAPON_PROPERTY_DEFINITIONS) {
+    const row = document.createElement("label");
+    row.classList.add("rm-firearm-property-row");
+    row.dataset.rebreyaFirearmPropertyRow = definition.key;
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.name = `system.properties.${definition.key}`;
+    input.checked = hasItemProperty(item, definition.key);
+    input.disabled = !editable;
+    input.dataset.rebreyaFirearmProperty = definition.key;
+
+    const text = document.createElement("span");
+    text.textContent = definition.label;
+
+    input.addEventListener("change", async (event) => {
+      if (!editable) {
+        return;
+      }
+
+      const checked = Boolean(event.currentTarget.checked);
+      setLocalWeaponProperty(item, definition.key, checked);
+      try {
+        await item.update?.({
+          [`system.properties.${definition.key}`]: checked
+        });
+      }
+      catch (error) {
+        event.currentTarget.checked = !checked;
+        setLocalWeaponProperty(item, definition.key, !checked);
+        console.error(`${MODULE_ID} | Failed to update firearm weapon property.`, error);
+        ui.notifications?.error?.("Не удалось обновить свойство огнестрела.");
+      }
+    });
+
+    row.append(input, text);
     grid.append(row);
   }
   fieldset.append(grid);
 
-  if (sourceFieldset?.parentElement && typeof sourceFieldset.after === "function") {
-    sourceFieldset.after(fieldset);
+  const firstFieldset = details.querySelector("fieldset");
+  if (firstFieldset?.parentElement && typeof firstFieldset.after === "function") {
+    firstFieldset.after(fieldset);
   }
   else {
     details.append(fieldset);
@@ -5591,8 +5663,8 @@ function bindItemSheetEnhancements(root, app) {
   upsertItemRankBadge(root, item);
   upsertItemRankField(root, app);
   upsertItemSlotField(root, app);
-  upsertWeaponAttackTraitsField(root, app);
   upsertFirearmWeaponPropertiesField(root, app);
+  upsertWeaponAttackTraitsField(root, app);
 }
 
 function cleanConfigString(value) {

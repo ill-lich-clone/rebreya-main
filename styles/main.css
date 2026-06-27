@@ -1853,7 +1853,19 @@ summary:focus-visible {
 }
 
 .rm-firearm-property-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
   min-width: 0;
+  line-height: 1.25;
+}
+
+.rm-firearm-property-row > input {
+  flex: 0 0 auto;
+}
+
+.rm-firearm-property-row > span {
+  overflow-wrap: anywhere;
 }
 
 .rm-connection-card__actions {
