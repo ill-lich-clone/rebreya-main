@@ -57,6 +57,7 @@ function createItem({
   name = "Item",
   type = "loot",
   quantity = 1,
+  weight = 0,
   flags = {},
   extra = {}
 } = {}) {
@@ -69,7 +70,7 @@ function createItem({
     system: {
       quantity,
       weight: {
-        value: 0
+        value: weight
       }
     },
     flags,
@@ -122,6 +123,7 @@ function createActor({
 } = {}) {
   const actor = {
     id,
+    uuid: `Actor.${id}`,
     name,
     type,
     img: "icons/svg/mystery-man.svg",
@@ -967,6 +969,62 @@ test("canDropInventoryItems allows owners of native group members without full i
   }
 });
 
+test("getPartySnapshot counts carried character inventory weight against party cargo", async () => {
+  const groupItem = createItem({ id: "group-rope", name: "Rope", quantity: 2, weight: 5 });
+  const memberItem = createItem({ id: "member-pack", name: "Pack", quantity: 3, weight: 4 });
+  const memberActor = createActor({
+    id: "member-1",
+    name: "Hero",
+    type: "character",
+    isOwner: true,
+    abilities: { str: { value: 10 } },
+    items: [memberItem]
+  });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    flags: { [MODULE_ID]: { managedPartyGroup: true } },
+    members: [{ actor: memberActor }],
+    items: [groupItem]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor]
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({
+        groupActor,
+        members: [memberActor],
+        canManage: true
+      })
+    },
+    async getModel() {
+      return {
+        materials: [],
+        materialById: new Map(),
+        materialByGoodId: new Map(),
+        gear: [],
+        gearById: new Map()
+      };
+    }
+  });
+
+  try {
+    const snapshot = await service.getPartySnapshot();
+
+    assert.equal(snapshot.partyInventoryWeight, 10);
+    assert.equal(snapshot.memberInventoryWeight, 12);
+    assert.equal(snapshot.inventoryWeight, 22);
+    assert.equal(snapshot.freeCapacityLb, 128);
+    assert.equal(snapshot.members[0].inventoryWeight, 12);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("player inventory item drops into an unowned group actor are routed through the GM socket", async () => {
   const previousItem = globalThis.Item;
   const previousFromUuid = globalThis.fromUuid;
@@ -1019,6 +1077,141 @@ test("player inventory item drops into an unowned group actor are routed through
         payload: {
           itemUuid: sourceItem.uuid,
           targetActorUuid: groupActor.uuid
+        },
+        senderId: "player-1"
+      }
+    }]);
+  }
+  finally {
+    fixture.restore();
+    globalThis.Item = previousItem;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("accepted party inventory item deletes the source item when the user manages the group inventory", async () => {
+  const previousItem = globalThis.Item;
+  const previousFromUuid = globalThis.fromUuid;
+  const sourceItem = createItem({ id: "source-item", name: "Torch", quantity: 2 });
+  sourceItem.uuid = "Actor.group-1.Item.source-item";
+  const acceptedItem = createItem({ id: "accepted-item", name: "Torch", quantity: 2 });
+  acceptedItem.uuid = "Actor.member-1.Item.accepted-item";
+  const memberActor = createActor({
+    id: "member-1",
+    name: "Hero",
+    type: "character",
+    isOwner: true,
+    items: [acceptedItem]
+  });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    flags: { [MODULE_ID]: { managedPartyGroup: true } },
+    members: [{ actor: memberActor }],
+    items: [sourceItem]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    user: { id: "player-1", isGM: false }
+  });
+  globalThis.Item = Object;
+  globalThis.fromUuid = async (uuid) => ({
+    [sourceItem.uuid]: sourceItem,
+    [acceptedItem.uuid]: acceptedItem
+  })[uuid] ?? null;
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({
+        groupActor,
+        members: [memberActor],
+        canManage: true
+      })
+    }
+  });
+
+  try {
+    const result = await service.handleAcceptedPartyInventoryItem(acceptedItem, {
+      sourceItemUuid: sourceItem.uuid
+    });
+
+    assert.equal(result.handled, true);
+    assert.equal(result.requested, false);
+    assert.equal(groupActor.items.contents.includes(sourceItem), false);
+    assert.equal(memberActor.items.contents.includes(acceptedItem), true);
+  }
+  finally {
+    fixture.restore();
+    globalThis.Item = previousItem;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("accepted party inventory item routes source deletion through the GM when the group is unowned", async () => {
+  const previousItem = globalThis.Item;
+  const previousFromUuid = globalThis.fromUuid;
+  const sourceItem = createItem({ id: "source-item", name: "Torch", quantity: 2 });
+  sourceItem.uuid = "Actor.group-1.Item.source-item";
+  const acceptedItem = createItem({ id: "accepted-item", name: "Torch", quantity: 2 });
+  acceptedItem.uuid = "Actor.member-1.Item.accepted-item";
+  const memberActor = createActor({
+    id: "member-1",
+    name: "Hero",
+    type: "character",
+    isOwner: true,
+    items: [acceptedItem]
+  });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: false,
+    flags: { [MODULE_ID]: { managedPartyGroup: true } },
+    members: [{ actor: memberActor }],
+    items: [sourceItem]
+  });
+  const emitted = [];
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    user: { id: "player-1", isGM: false }
+  });
+  globalThis.Item = Object;
+  globalThis.fromUuid = async (uuid) => ({
+    [sourceItem.uuid]: sourceItem,
+    [acceptedItem.uuid]: acceptedItem
+  })[uuid] ?? null;
+  globalThis.game.socket = {
+    emit(channel, message) {
+      emitted.push({ channel, message });
+    }
+  };
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({
+        groupActor,
+        members: [memberActor],
+        canManage: true
+      })
+    }
+  });
+
+  try {
+    const result = await service.handleAcceptedPartyInventoryItem(acceptedItem, {
+      sourceItemUuid: sourceItem.uuid
+    });
+
+    assert.equal(result.handled, true);
+    assert.equal(result.requested, true);
+    assert.equal(groupActor.items.contents.includes(sourceItem), true);
+    assert.deepEqual(emitted, [{
+      channel: "module.rebreya-main",
+      message: {
+        type: "inventory-source-depletion-request",
+        payload: {
+          sourceItemUuid: sourceItem.uuid,
+          targetItemUuid: acceptedItem.uuid,
+          targetActorUuid: memberActor.uuid
         },
         senderId: "player-1"
       }

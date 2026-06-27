@@ -3210,6 +3210,76 @@ test("RebreyaMainModule routes player inventory imports through the active GM", 
   }
 });
 
+test("RebreyaMainModule routes party inventory source depletion through the active GM", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {},
+    on() {}
+  };
+  const emitted = [];
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true
+    },
+    socket: {
+      emit(channel, message) {
+        emitted.push({ channel, message });
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?inventory-depletion-socket=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    let handled = null;
+    let refreshCount = 0;
+    moduleApi.inventoryService.handlePartyInventorySourceDepletionSocketRequest = async (payload, options) => {
+      handled = { payload, options };
+      return { handled: true };
+    };
+    moduleApi.refreshInventoryViews = async () => {
+      refreshCount += 1;
+    };
+
+    await moduleApi.handleSocketMessage({
+      type: "inventory-source-depletion-request",
+      payload: {
+        sourceItemUuid: "Actor.group-1.Item.item-1",
+        targetItemUuid: "Actor.member-1.Item.item-1",
+        targetActorUuid: "Actor.member-1"
+      },
+      senderId: "player-1"
+    });
+
+    assert.deepEqual(handled, {
+      payload: {
+        sourceItemUuid: "Actor.group-1.Item.item-1",
+        targetItemUuid: "Actor.member-1.Item.item-1",
+        targetActorUuid: "Actor.member-1"
+      },
+      options: {
+        senderId: "player-1"
+      }
+    });
+    assert.equal(refreshCount, 1);
+    assert.deepEqual(emitted, [{
+      channel: `module.${MODULE_ID}`,
+      message: {
+        type: "inventory-source-depletion-result",
+        forUserId: "player-1",
+        senderId: "gm",
+        ok: true
+      }
+    }]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
 test("RebreyaMainModule routes player downtime creation through the GM socket", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;

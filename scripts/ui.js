@@ -67,7 +67,7 @@ export function bringAppToFront(app) {
   return windowElement;
 }
 
-export function rerenderApp(app, { focus = true } = {}) {
+export function rerenderApp(app, { focus = true, preserveScroll = false } = {}) {
   if (!app?.render) {
     return Promise.resolve();
   }
@@ -75,6 +75,9 @@ export function rerenderApp(app, { focus = true } = {}) {
   const options = { force: true };
   if (focus === false) {
     options.focus = false;
+  }
+  if (preserveScroll) {
+    options.preserveScroll = true;
   }
   return app.render(options);
 }

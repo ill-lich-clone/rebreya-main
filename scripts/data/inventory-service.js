@@ -14,6 +14,8 @@ import { GROUP_CONTEXT_ERRORS, getGroupMemberActors, isManagedPartyGroup } from 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
 export const SOCKET_EVENT_INVENTORY_IMPORT_RESULT = "inventory-import-result";
+export const SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST = "inventory-source-depletion-request";
+export const SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT = "inventory-source-depletion-result";
 const DEFAULT_PARTY_ACTOR_NAME = "Инвентарь группы Rebreya";
 const DEFAULT_PARTY_ACTOR_IMAGE = "icons/svg/item-bag.svg";
 const LOOTGEN_CHAT_ACTOR_NAME = "Лут Rebreya";
@@ -219,6 +221,19 @@ function isActorDocument(document) {
     || Boolean(document.id && document.system && document.items);
 }
 
+function isItemDocument(document) {
+  if (!document) {
+    return false;
+  }
+
+  if (typeof globalThis.Item === "function" && document instanceof globalThis.Item) {
+    return true;
+  }
+
+  return document.documentName === "Item"
+    || Boolean(document.id && document.system && document.parent);
+}
+
 async function resolveUuid(uuid) {
   const safeUuid = cleanId(uuid);
   if (!safeUuid || typeof globalThis.fromUuid !== "function") {
@@ -231,6 +246,15 @@ async function resolveUuid(uuid) {
   catch (_error) {
     return null;
   }
+}
+
+function itemsCanRepresentSameTransfer(sourceItem, acceptedItem) {
+  if (!sourceItem || !acceptedItem) {
+    return false;
+  }
+
+  return sourceItem.type === acceptedItem.type
+    && normalizeText(sourceItem.name) === normalizeText(acceptedItem.name);
 }
 
 function isRationItemName(value) {
@@ -1552,12 +1576,13 @@ export class InventoryService {
   async getPartySnapshot({ actor = null } = {}) {
     const state = this.#getState();
     const inventoryActor = actor ?? await this.getInventoryActor({ create: false });
-    const inventoryWeight = inventoryActor ? this.#getInventoryWeight(inventoryActor) : 0;
+    const partyInventoryWeight = inventoryActor ? this.#getInventoryWeight(inventoryActor) : 0;
     const model = inventoryActor ? await this.moduleApi.getModel() : null;
 
     const membershipManagedByNativeGroup = this.#isNativeGroupInventoryActor(inventoryActor);
     const partyMembers = this.#buildPartyMemberRows(state, inventoryActor)
       .map(({ actorId, actor: actorDocument, memberState }) => {
+        const inventoryWeight = actorDocument ? this.#getInventoryWeight(actorDocument) : 0;
         const effectiveStrength = memberState.strOverride ?? getActorStrength(actorDocument);
         const capacityMultiplier = memberState.capModOverride ?? state.defaultCapMod;
         const capacityLb = memberState.role === "transport"
@@ -1583,6 +1608,7 @@ export class InventoryService {
           isMissing: !actorDocument,
           role: memberState.role,
           roleLabel: getRoleLabel(memberState.role),
+          inventoryWeight,
           strength: effectiveStrength,
           strengthSource: memberState.strOverride !== null ? "Ручная" : "Лист",
           capacityMultiplier,
@@ -1610,6 +1636,8 @@ export class InventoryService {
       })
       .sort((left, right) => left.actorName.localeCompare(right.actorName, "ru"));
 
+    const memberInventoryWeight = roundNumber(partyMembers.reduce((sum, member) => sum + member.inventoryWeight, 0), 2);
+    const inventoryWeight = roundNumber(partyInventoryWeight + memberInventoryWeight, 2);
     const totalCapacityLb = roundNumber(partyMembers.reduce((sum, member) => sum + member.capacityLb, 0), 2);
     const totalFoodPerDay = roundNumber(partyMembers.reduce((sum, member) => sum + member.foodPerDay, 0), 2);
     const totalWaterGalPerDay = roundNumber(partyMembers.reduce((sum, member) => sum + member.waterGalPerDay, 0), 2);
@@ -1657,6 +1685,8 @@ export class InventoryService {
       totalWaterGalPerDay,
       totalEnergyCurrent,
       totalEnergyMax,
+      partyInventoryWeight,
+      memberInventoryWeight,
       inventoryWeight,
       freeCapacityLb: roundNumber(totalCapacityLb - inventoryWeight, 2),
       foodLb,
@@ -2348,6 +2378,128 @@ export class InventoryService {
     }
 
     return this.#importItemDocument(targetActor, itemDocument);
+  }
+
+  async handleAcceptedPartyInventoryItem(itemDocument, { sourceItemUuid = "" } = {}) {
+    if (!isItemDocument(itemDocument)) {
+      return {
+        handled: false,
+        reason: "acceptedItemMissing"
+      };
+    }
+
+    const targetActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
+    if (targetActor?.type !== "character") {
+      return {
+        handled: false,
+        reason: "targetActorNotCharacter"
+      };
+    }
+
+    const safeSourceItemUuid = cleanId(sourceItemUuid);
+    if (!safeSourceItemUuid) {
+      return {
+        handled: false,
+        reason: "sourceItemMissing"
+      };
+    }
+
+    const sourceItem = await resolveUuid(safeSourceItemUuid);
+    if (!isItemDocument(sourceItem)) {
+      return {
+        handled: false,
+        reason: "sourceItemMissing"
+      };
+    }
+
+    const inventoryActor = await this.getInventoryActor({ create: false });
+    const sourceActor = isActorDocument(sourceItem.parent) ? sourceItem.parent : null;
+    if (!inventoryActor || !sourceActor || sourceActor.id !== inventoryActor.id) {
+      return {
+        handled: false,
+        reason: "sourceNotPartyInventory"
+      };
+    }
+
+    if (!itemsCanRepresentSameTransfer(sourceItem, itemDocument)) {
+      return {
+        handled: false,
+        reason: "itemMismatch"
+      };
+    }
+
+    if (!this.canManagePartyInventory(inventoryActor)) {
+      if (!cleanId(sourceItem.uuid) || !cleanId(itemDocument.uuid) || !cleanId(targetActor.uuid) || typeof game.socket?.emit !== "function") {
+        throw new Error("Не удалось отправить запрос на удаление исходного предмета мастеру.");
+      }
+
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST,
+        payload: {
+          sourceItemUuid: sourceItem.uuid,
+          targetItemUuid: itemDocument.uuid,
+          targetActorUuid: targetActor.uuid
+        },
+        senderId: game.user?.id ?? ""
+      });
+      return {
+        handled: true,
+        requested: true,
+        sourceItemUuid: sourceItem.uuid,
+        targetItemUuid: itemDocument.uuid
+      };
+    }
+
+    await sourceItem.delete();
+    return {
+      handled: true,
+      requested: false,
+      sourceItemUuid: sourceItem.uuid,
+      targetItemUuid: itemDocument.uuid
+    };
+  }
+
+  async handlePartyInventorySourceDepletionSocketRequest(payload = {}, { senderId = "" } = {}) {
+    if (!isActiveGmClient()) {
+      return false;
+    }
+
+    const sender = getSocketUser(senderId);
+    const sourceItem = await resolveUuid(payload.sourceItemUuid);
+    const targetItem = await resolveUuid(payload.targetItemUuid);
+    const targetActor = isActorDocument(targetItem?.parent)
+      ? targetItem.parent
+      : await resolveUuid(payload.targetActorUuid);
+    if (!sender || !isItemDocument(sourceItem) || !isItemDocument(targetItem) || !isActorDocument(targetActor)) {
+      throw new Error("Некорректный запрос на удаление исходного предмета.");
+    }
+
+    if (targetActor.type !== "character" || !userOwnsActor(targetActor, sender)) {
+      throw new Error("Игрок не владеет персонажем, получившим предмет.");
+    }
+
+    const sourceActor = isActorDocument(sourceItem.parent) ? sourceItem.parent : null;
+    if (!sourceActor || !isManagedPartyGroup(sourceActor)) {
+      throw new Error("Исходный предмет не находится в партийном складе.");
+    }
+
+    const context = this.moduleApi.groupContextService?.resolveForGroup?.(sourceActor.id);
+    const members = context?.members ?? getGroupMemberActors(sourceActor);
+    const targetIsGroupMember = members.some((memberActor) => memberActor?.id === targetActor.id);
+    if (!targetIsGroupMember) {
+      throw new Error("Персонаж, получивший предмет, не входит в эту группу.");
+    }
+
+    if (!itemsCanRepresentSameTransfer(sourceItem, targetItem)) {
+      throw new Error("Полученный предмет не совпадает с исходным предметом склада.");
+    }
+
+    await sourceItem.delete();
+    return {
+      handled: true,
+      sourceItemUuid: sourceItem.uuid,
+      targetItemUuid: targetItem.uuid
+    };
   }
 
   async #importItemDocument(actor, itemDocument) {

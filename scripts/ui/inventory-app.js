@@ -1,6 +1,7 @@
 ﻿import { MODULE_ID } from "../constants.js";
 import { REBREYA_TOOLS } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
+import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js";
 import { bringAppToFront, getAppElement } from "../ui.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -2275,6 +2276,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.canManage = false;
     this.canDropInventoryItems = false;
     this.partyMembershipManagedByNativeGroup = false;
+    this.scrollRestore = null;
   }
 
   get id() {
@@ -2291,6 +2293,51 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.activeTab = nextTab;
     if (render) {
       this.render({ force: true });
+    }
+  }
+
+  render(options = {}) {
+    if (options?.preserveScroll) {
+      this.scrollRestore = this.#captureScrollPositions();
+    }
+
+    if (typeof super.render === "function") {
+      return super.render(options);
+    }
+
+    return Promise.resolve(this);
+  }
+
+  #captureScrollPositions() {
+    const element = getAppElement(this);
+    if (!element?.querySelectorAll) {
+      return null;
+    }
+
+    return Array.from(element.querySelectorAll(".scrollable, [data-rm-preserve-scroll]"))
+      .map((node, index) => ({
+        index,
+        top: Number(node.scrollTop ?? 0),
+        left: Number(node.scrollLeft ?? 0)
+      }));
+  }
+
+  #restoreScrollPositions(element) {
+    const positions = this.scrollRestore;
+    this.scrollRestore = null;
+    if (!positions?.length || !element?.querySelectorAll) {
+      return;
+    }
+
+    const nodes = Array.from(element.querySelectorAll(".scrollable, [data-rm-preserve-scroll]"));
+    for (const position of positions) {
+      const node = nodes[position.index] ?? null;
+      if (!node) {
+        continue;
+      }
+
+      node.scrollTop = position.top;
+      node.scrollLeft = position.left;
     }
   }
 
@@ -4240,10 +4287,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
 
         event.dataTransfer.effectAllowed = "all";
-        const payload = JSON.stringify({
-          type: "Item",
-          uuid
-        });
+        const payload = JSON.stringify(buildPartyInventoryItemDragData(uuid));
 
         for (const mimeType of ["text/plain", "text", "application/json", "text/uri-list"]) {
           try {
@@ -5167,6 +5211,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
 
     this.#restoreFocusToInput(element);
+    this.#restoreScrollPositions(element);
   }
 
   async _preClose(options) {

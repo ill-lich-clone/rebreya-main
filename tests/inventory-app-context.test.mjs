@@ -615,6 +615,45 @@ test("InventoryApp inventory rows are draggable without a redundant self-drag bu
   assert.doesNotMatch(template, /Перетащите себе/u);
 });
 
+test("InventoryApp preserveScroll render restores scroll positions after rerender", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?preserve-scroll=${Date.now()}`);
+  const oldScroller = createFakeElement();
+  oldScroller.scrollTop = 240;
+  oldScroller.scrollLeft = 12;
+  const oldRoot = createFakeElement();
+  oldRoot.querySelector = () => null;
+  oldRoot.querySelectorAll = (selector) => selector === ".scrollable, [data-rm-preserve-scroll]"
+    ? [oldScroller]
+    : [];
+  const newScroller = createFakeElement();
+  newScroller.scrollTop = 0;
+  newScroller.scrollLeft = 0;
+  const newRoot = createFakeElement();
+  newRoot.querySelector = () => null;
+  newRoot.querySelectorAll = (selector) => selector === ".scrollable, [data-rm-preserve-scroll]"
+    ? [newScroller]
+    : [];
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null
+  }));
+
+  try {
+    app.element = oldRoot;
+    await app.render({ force: true, preserveScroll: true });
+    app.element = newRoot;
+    await app._onRender({}, {});
+
+    assert.equal(newScroller.scrollTop, 240);
+    assert.equal(newScroller.scrollLeft, 12);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp exposes a full inventory drop surface to players who can contribute items", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?player-inventory-drop=${Date.now()}`);

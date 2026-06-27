@@ -18,7 +18,9 @@ import { CharacterDowntimeService } from "./data/character-downtime-service.js";
 import {
   InventoryService,
   SOCKET_EVENT_INVENTORY_IMPORT_REQUEST,
-  SOCKET_EVENT_INVENTORY_IMPORT_RESULT
+  SOCKET_EVENT_INVENTORY_IMPORT_RESULT,
+  SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST,
+  SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT
 } from "./data/inventory-service.js";
 import { HeroDollService } from "./data/hero-doll-service.js";
 import { CraftingService } from "./data/crafting-service.js";
@@ -44,6 +46,7 @@ import {
 } from "./integrations/dnd5e-sheet-extensions.js?v=1.4.67";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.67";
@@ -504,6 +507,20 @@ export class RebreyaMainModule {
       return;
     }
 
+    if (message.type === SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT) {
+      if (message.forUserId !== game.user?.id) {
+        return;
+      }
+
+      if (message.ok) {
+        await this.refreshInventoryViews();
+      }
+      else {
+        ui.notifications?.error(message.error || "Мастер не смог удалить исходный предмет склада.");
+      }
+      return;
+    }
+
     if (message.senderId && message.senderId === game.user?.id) {
       return;
     }
@@ -584,6 +601,38 @@ export class RebreyaMainModule {
         catch (error) {
           game.socket?.emit?.(SOCKET_CHANNEL, {
             type: SOCKET_EVENT_INVENTORY_IMPORT_RESULT,
+            forUserId,
+            senderId: game.user?.id ?? "",
+            ok: false,
+            error: error?.message ?? String(error)
+          });
+        }
+      }
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST) {
+      if (game.user?.isGM) {
+        const forUserId = String(message.senderId ?? "").trim();
+        try {
+          const result = await this.inventoryService.handlePartyInventorySourceDepletionSocketRequest(message.payload ?? {}, {
+            senderId: forUserId
+          });
+          if (!result) {
+            return;
+          }
+
+          await this.refreshInventoryViews();
+          game.socket?.emit?.(SOCKET_CHANNEL, {
+            type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
+            forUserId,
+            senderId: game.user?.id ?? "",
+            ok: true
+          });
+        }
+        catch (error) {
+          game.socket?.emit?.(SOCKET_CHANNEL, {
+            type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
             forUserId,
             senderId: game.user?.id ?? "",
             ok: false,
@@ -2562,6 +2611,15 @@ export class RebreyaMainModule {
     return model;
   }
 
+  async refreshInventoryViews() {
+    const tasks = [];
+    if (this.inventoryApp?.rendered) {
+      tasks.push(rerenderApp(this.inventoryApp, { preserveScroll: true, focus: false }));
+    }
+
+    await Promise.allSettled(tasks);
+  }
+
   async refreshOpenApps() {
     const tasks = [];
 
@@ -2582,7 +2640,7 @@ export class RebreyaMainModule {
     }
 
     if (this.inventoryApp?.rendered) {
-      tasks.push(rerenderApp(this.inventoryApp));
+      tasks.push(rerenderApp(this.inventoryApp, { preserveScroll: true }));
     }
 
     if (this.groupsApp?.rendered) {
@@ -3032,6 +3090,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register ration food conversion hook.`, error);
+  }
+
+  try {
+    registerInventorySyncHooks(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register inventory sync hooks.`, error);
   }
 
   try {
