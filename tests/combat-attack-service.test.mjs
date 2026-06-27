@@ -87,6 +87,7 @@ function makeFirearmItem({
   values = { misfire: 3 },
   jammed = null
 } = {}) {
+  const updateCalls = [];
   const item = new class extends Item {
     constructor() {
       super();
@@ -123,7 +124,21 @@ function makeFirearmItem({
       delete this.flags?.[scope]?.[key];
       return this;
     }
+
+    async update(updates = {}) {
+      updateCalls.push(updates);
+      for (const [path, value] of Object.entries(updates)) {
+        if (path === "name") {
+          this.name = value;
+        }
+        else {
+          foundry.utils.setProperty(this, path, value);
+        }
+      }
+      return this;
+    }
   }();
+  item.updateCalls = updateCalls;
   return item;
 }
 
@@ -361,7 +376,7 @@ test("fighter dominance maneuvers retarget stale subtype-only owned items via ac
 test("firearm misfire rolls an extra d20 and jams the weapon before the attack", () => {
   TestRoll.queuedTotals = [2];
   TestRoll.messages = [];
-  const weapon = makeFirearmItem();
+  const weapon = makeFirearmItem({ name: "Пистолет" });
   const activity = {
     id: "attack-1",
     type: "attack",
@@ -379,6 +394,7 @@ test("firearm misfire rolls an extra d20 and jams the weapon before the attack",
   assert.equal(result, false);
   assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed").value, true);
   assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed").rollTotal, 2);
+  assert.equal(weapon.name, "Пистолет (клин)");
   assert.equal(TestRoll.messages.length, 1);
   assert.match(TestRoll.messages[0].messageData.flavor, /Осечка/u);
 });
@@ -416,4 +432,96 @@ test("already jammed firearms cannot be used for attack activities", () => {
   finally {
     globalThis.ui.notifications.warn = previousWarn;
   }
+});
+
+test("clearing firearm jam removes jam suffix and raises current misfire by one", async () => {
+  const weapon = makeFirearmItem({
+    name: "Мушкет (клин)",
+    jammed: {
+      value: true,
+      threshold: 3,
+      rollTotal: 2
+    }
+  });
+  const service = new CombatAttackService({});
+
+  const result = await service.clearFirearmJam(weapon);
+
+  assert.equal(result.isJammed, false);
+  assert.equal(result.previousMisfire, 3);
+  assert.equal(result.currentMisfire, 4);
+  assert.equal(weapon.name, "Мушкет");
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmJammed"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmMisfire"), 4);
+});
+
+test("clearing firearm jam caps current misfire at ten", async () => {
+  const weapon = makeFirearmItem({
+    name: "Мушкет (клин)",
+    values: { misfire: 9 },
+    jammed: {
+      value: true,
+      threshold: 9,
+      rollTotal: 3
+    }
+  });
+  const service = new CombatAttackService({});
+
+  await service.clearFirearmJam(weapon);
+  await service.clearFirearmJam(weapon);
+
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmMisfire"), 10);
+});
+
+test("maintaining firearm restores base misfire after successful tinker check", async () => {
+  const weapon = makeFirearmItem({
+    name: "Мушкет",
+    values: { misfire: 3 }
+  });
+  weapon.flags[MODULE_ID].firearmMisfire = 6;
+  weapon.flags[MODULE_ID].firearmBaseMisfire = 3;
+  const service = new CombatAttackService({});
+
+  const result = await service.maintainFirearm(weapon, null, {
+    firearmMaintenanceTotal: 16
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.dc, 16);
+  assert.equal(result.currentMisfire, 3);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmMisfire"), undefined);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmBaseMisfire"), undefined);
+});
+
+test("maintaining firearm rolls tinker tools with the better dex or int ability", async () => {
+  const weapon = makeFirearmItem({
+    name: "Мушкет",
+    values: { misfire: 4 }
+  });
+  weapon.flags[MODULE_ID].firearmMisfire = 5;
+  const calls = [];
+  const actor = new class extends Actor {
+    constructor() {
+      super();
+      this.system = {
+        abilities: {
+          dex: { mod: 1 },
+          int: { mod: 4 }
+        }
+      };
+    }
+
+    async rollToolCheck(toolId, options = {}) {
+      calls.push({ toolId, options });
+      return { total: 20 };
+    }
+  }();
+  weapon.actor = actor;
+  const service = new CombatAttackService({});
+
+  const result = await service.maintainFirearm(weapon);
+
+  assert.equal(result.success, true);
+  assert.equal(calls[0].toolId, "art:tinker");
+  assert.equal(calls[0].options.ability, "int");
 });

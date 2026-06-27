@@ -25,9 +25,11 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 13;
+const GEAR_TEMPLATE_VERSION = 14;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk001";
+const FIREARM_CLEAR_JAM_ACTIVITY_ID = "lchClearBreech01";
+const FIREARM_MAINTAIN_ACTIVITY_ID = "lchMaintainGun01";
 
 function escapeHtml(value) {
   return foundry.utils.escapeHTML(String(value ?? ""));
@@ -395,6 +397,109 @@ function buildFirearmAttackActivity(item) {
   };
 }
 
+function buildSelfUtilityActivity({
+  activityId,
+  name,
+  activationType = "action",
+  chatFlavor = "",
+  automation = "",
+  sort = 0
+}) {
+  return {
+    _id: activityId,
+    type: "utility",
+    name,
+    sort,
+    activation: {
+      type: activationType,
+      value: 1,
+      condition: "",
+      override: false
+    },
+    consumption: {
+      scaling: {
+        allowed: false,
+        max: ""
+      },
+      spellSlot: false,
+      targets: []
+    },
+    description: {
+      chatFlavor
+    },
+    duration: {
+      value: "",
+      units: "inst",
+      special: "",
+      concentration: false,
+      override: false
+    },
+    effects: [],
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        automation
+      }
+    },
+    range: {
+      value: null,
+      units: "self",
+      special: "",
+      override: false
+    },
+    target: {
+      template: {
+        count: "",
+        contiguous: false,
+        type: "",
+        size: "",
+        width: "",
+        height: "",
+        units: ""
+      },
+      affects: {
+        count: "",
+        type: "self",
+        choice: false,
+        special: ""
+      },
+      prompt: false,
+      override: false
+    },
+    uses: {
+      spent: 0,
+      max: "",
+      recovery: []
+    }
+  };
+}
+
+function buildFirearmActivities(item) {
+  const attackActivity = buildFirearmAttackActivity(item);
+  const clearJamActivity = buildSelfUtilityActivity({
+    activityId: FIREARM_CLEAR_JAM_ACTIVITY_ID,
+    name: "Очистить затвор",
+    activationType: "action",
+    chatFlavor: "Очистить затворную раму: снять клин и увеличить текущий показатель осечки на 1, максимум до 10.",
+    automation: "firearm-clear-jam",
+    sort: 100
+  });
+  const maintainActivity = buildSelfUtilityActivity({
+    activityId: FIREARM_MAINTAIN_ACTIVITY_ID,
+    name: "Привести оружие в порядок",
+    activationType: "minute",
+    chatFlavor: "Проверка Ловкости или Интеллекта (инструменты жестянщика) против Сл 10 + текущий показатель осечки. При успехе осечка возвращается к базовому значению.",
+    automation: "firearm-maintain",
+    sort: 200
+  });
+
+  return {
+    [attackActivity._id]: attackActivity,
+    [clearJamActivity._id]: clearJamActivity,
+    [maintainActivity._id]: maintainActivity
+  };
+}
+
 function applyWeaponData(baseData, weapon) {
   if (!isPlainObject(weapon)) {
     return;
@@ -484,9 +589,7 @@ function buildSystemData(item, classification, descriptionHtml) {
       };
       applyWeaponData(baseData, item.weapon);
       if (isFirearmClassification(classification)) {
-        baseData.activities = {
-          [FIREARM_ATTACK_ACTIVITY_ID]: buildFirearmAttackActivity(item)
-        };
+        baseData.activities = buildFirearmActivities(item);
       }
       break;
 

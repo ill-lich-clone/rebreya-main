@@ -6,9 +6,15 @@ const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
 const WEAPON_TYPE_MARTIAL_PREFIX = "martial";
 const FIREARM_WEIGHT_THRESHOLD_LB = 10;
 const FIREARM_JAMMED_FLAG = "firearmJammed";
+const FIREARM_CURRENT_MISFIRE_FLAG = "firearmMisfire";
+const FIREARM_BASE_MISFIRE_FLAG = "firearmBaseMisfire";
 const FIREARM_MISFIRE_PROPERTY = "lchFirearmMisfire";
 const FIREARM_RUST_PROPERTY = "lchFirearmRust";
 const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
+const FIREARM_JAM_NAME_SUFFIX = " (клин)";
+const FIREARM_CLEAR_JAM_AUTOMATION = "firearm-clear-jam";
+const FIREARM_MAINTAIN_AUTOMATION = "firearm-maintain";
+const FIREARM_MAINTENANCE_TOOL_IDS = ["art:tinker", "tinker", "tink"];
 const REACTION_STATE_FLAG = "reactionState";
 const REACTION_DEFAULT_MAX_USES = 1;
 const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
@@ -30,6 +36,40 @@ function clampInteger(value, min, max) {
 function signedNumber(value) {
   const safe = toNumber(value, 0);
   return safe >= 0 ? `+${safe}` : String(safe);
+}
+
+function cleanText(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function stripFirearmJamSuffix(name) {
+  const text = cleanText(name);
+  return text.replace(/\s*\(клин\)\s*$/iu, "").trim() || text;
+}
+
+function withFirearmJamSuffix(name) {
+  const baseName = stripFirearmJamSuffix(name);
+  return `${baseName}${FIREARM_JAM_NAME_SUFFIX}`;
+}
+
+function extractRollTotal(result) {
+  const direct = toNumber(result?.total, NaN);
+  if (Number.isFinite(direct)) {
+    return direct;
+  }
+
+  const roll = result?.roll ?? result?.rolls?.[0] ?? result?.dice?.[0];
+  const rollTotal = toNumber(roll?.total, NaN);
+  if (Number.isFinite(rollTotal)) {
+    return rollTotal;
+  }
+
+  if (Array.isArray(result) && result.length) {
+    return extractRollTotal(result[0]);
+  }
+
+  return NaN;
 }
 
 function normalizeLookupText(value) {
@@ -686,7 +726,7 @@ export class CombatAttackService {
       return clampInteger(explicit, 0, 20);
     }
 
-    const directFlag = toNumber(readDocumentFlag(item, MODULE_ID, "firearmMisfire"), NaN);
+    const directFlag = toNumber(readDocumentFlag(item, MODULE_ID, FIREARM_CURRENT_MISFIRE_FLAG), NaN);
     if (Number.isFinite(directFlag)) {
       return clampInteger(directFlag, 0, 20);
     }
@@ -778,6 +818,112 @@ export class CombatAttackService {
     return item?.update?.({ [`flags.${MODULE_ID}.${key}`]: null }) ?? Promise.resolve(item);
   }
 
+  async #setItemFlag(item, key, value) {
+    try {
+      item.flags ??= {};
+      item.flags[MODULE_ID] ??= {};
+      item.flags[MODULE_ID][key] = value;
+    }
+    catch (_error) {
+      // Foundry persists the flag through setFlag or update below.
+    }
+
+    if (typeof item?.setFlag === "function") {
+      return item.setFlag(MODULE_ID, key, value);
+    }
+
+    return item?.update?.({ [`flags.${MODULE_ID}.${key}`]: value }) ?? item;
+  }
+
+  async #unsetItemFlag(item, key) {
+    try {
+      if (item.flags?.[MODULE_ID]) {
+        delete item.flags[MODULE_ID][key];
+      }
+    }
+    catch (_error) {
+      // Foundry persists the flag removal through unsetFlag or update below.
+    }
+
+    if (typeof item?.unsetFlag === "function") {
+      return item.unsetFlag(MODULE_ID, key);
+    }
+
+    return item?.update?.({ [`flags.${MODULE_ID}.${key}`]: null }) ?? item;
+  }
+
+  #writeItemName(item, name) {
+    const nextName = cleanText(name, item?.name ?? "");
+    if (!nextName || item?.name === nextName) {
+      return;
+    }
+
+    try {
+      item.name = nextName;
+    }
+    catch (_error) {
+      // Foundry persists the name through update below.
+    }
+
+    if (typeof item?.update === "function") {
+      Promise.resolve(item.update({ name: nextName })).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to update item name.`, error);
+      });
+    }
+  }
+
+  async #setItemName(item, name) {
+    const nextName = cleanText(name, item?.name ?? "");
+    if (!nextName || item?.name === nextName) {
+      return item;
+    }
+
+    try {
+      item.name = nextName;
+    }
+    catch (_error) {
+      // Foundry persists the name through update below.
+    }
+
+    return item?.update?.({ name: nextName }) ?? item;
+  }
+
+  #resolveFirearmBaseMisfireThreshold(item, fallback = 1) {
+    const baseFlag = toNumber(readDocumentFlag(item, MODULE_ID, FIREARM_BASE_MISFIRE_FLAG), NaN);
+    if (Number.isFinite(baseFlag)) {
+      return clampInteger(baseFlag, 1, 10);
+    }
+
+    const values = this.#getLichWeaponPropertyValues(item);
+    const configured = toNumber(values.misfire ?? values.firearmMisfire, NaN);
+    if (this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY) && Number.isFinite(configured)) {
+      return clampInteger(configured, 1, 10);
+    }
+
+    if (this.#hasItemProperty(item, FIREARM_RUST_PROPERTY)) {
+      return 1;
+    }
+
+    return clampInteger(fallback, 1, 10);
+  }
+
+  #rememberFirearmBaseMisfire(item, currentThreshold) {
+    const existing = toNumber(readDocumentFlag(item, MODULE_ID, FIREARM_BASE_MISFIRE_FLAG), NaN);
+    if (Number.isFinite(existing)) {
+      return;
+    }
+
+    this.#writeItemFlag(
+      item,
+      FIREARM_BASE_MISFIRE_FLAG,
+      this.#resolveFirearmBaseMisfireThreshold(item, currentThreshold)
+    );
+  }
+
+  #markFirearmNameJammed(item) {
+    this.#writeItemName(item, withFirearmJamSuffix(item?.name));
+  }
+
   #createFirearmMisfireMessage(actor, item, result, options = {}) {
     if (options.createMessage === false) {
       return;
@@ -824,6 +970,8 @@ export class CombatAttackService {
   }
 
   #jamFirearm(actor, item, result, options = {}) {
+    this.#rememberFirearmBaseMisfire(item, result.threshold);
+    this.#markFirearmNameJammed(item);
     const jamState = {
       value: true,
       threshold: result.threshold,
@@ -1320,7 +1468,39 @@ export class CombatAttackService {
     foundry.utils.setProperty(activity, "target.prompt", true);
   }
 
+  #applyFirearmUtilityActivity(activity) {
+    const automation = cleanText(foundry.utils.getProperty(activity, `flags.${MODULE_ID}.automation`));
+    if (![FIREARM_CLEAR_JAM_AUTOMATION, FIREARM_MAINTAIN_AUTOMATION].includes(automation)) {
+      return null;
+    }
+
+    const item = activity?.item ?? null;
+    if (!isFirearmItem(item)) {
+      return true;
+    }
+
+    const actor = activity?.actor ?? item.actor ?? null;
+    if (automation === FIREARM_CLEAR_JAM_AUTOMATION) {
+      this.clearFirearmJam(item).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to clear firearm jam from activity.`, error);
+        ui.notifications?.error?.("Не удалось очистить затвор.");
+      });
+      return false;
+    }
+
+    this.maintainFirearm(item, null, { actor }).catch((error) => {
+      console.error(`${MODULE_ID} | Failed to maintain firearm from activity.`, error);
+      ui.notifications?.error?.("Не удалось привести оружие в порядок.");
+    });
+    return false;
+  }
+
   applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
+    const firearmUtilityResult = this.#applyFirearmUtilityActivity(activity);
+    if (firearmUtilityResult !== null) {
+      return firearmUtilityResult;
+    }
+
     this.#retargetFighterDominanceConsumption(activity, usageConfig, messageConfig);
     this.#normalizeFighterManeuverTargeting(activity);
 
@@ -1988,7 +2168,7 @@ export class CombatAttackService {
     };
   }
 
-  async clearFirearmJam(actorOrItem, weaponOrId = null) {
+  #resolveFirearmWeapon(actorOrItem, weaponOrId = null) {
     const weapon = actorOrItem instanceof Item
       ? actorOrItem
       : this.#resolveItem(this.#resolveActor(actorOrItem), weaponOrId);
@@ -2000,12 +2180,168 @@ export class CombatAttackService {
       throw new Error("Selected weapon is not classified as firearm.");
     }
 
-    await this.#clearItemFlag(weapon, FIREARM_JAMMED_FLAG);
+    return weapon;
+  }
+
+  #resolveFirearmMaintenanceAbility(actor, options = {}) {
+    const explicitAbility = cleanText(options.firearmMaintenanceAbility ?? options.ability).toLowerCase();
+    if (["dex", "int"].includes(explicitAbility)) {
+      return explicitAbility;
+    }
+
+    const dexModifier = toNumber(foundry.utils.getProperty(actor, "system.abilities.dex.mod"), NaN);
+    const intModifier = toNumber(foundry.utils.getProperty(actor, "system.abilities.int.mod"), NaN);
+    if (Number.isFinite(intModifier) && (!Number.isFinite(dexModifier) || intModifier > dexModifier)) {
+      return "int";
+    }
+
+    return "dex";
+  }
+
+  async #rollFirearmMaintenanceCheck(actor, weapon, dc, options = {}) {
+    const ability = this.#resolveFirearmMaintenanceAbility(actor, options);
+    const explicitTotal = toNumber(options.firearmMaintenanceTotal ?? options.maintenanceTotal, NaN);
+    if (Number.isFinite(explicitTotal)) {
+      return {
+        checked: true,
+        total: Math.floor(explicitTotal),
+        dc,
+        toolId: "tinker",
+        ability
+      };
+    }
+
+    if (!actor || typeof actor.rollToolCheck !== "function") {
+      return {
+        checked: false,
+        total: null,
+        dc,
+        reason: "toolRollUnavailable"
+      };
+    }
+
+    const toolIds = Array.isArray(options.toolIds) && options.toolIds.length
+      ? options.toolIds.map(cleanText).filter(Boolean)
+      : FIREARM_MAINTENANCE_TOOL_IDS;
+    for (const toolId of toolIds) {
+      try {
+        const rollResult = await actor.rollToolCheck(toolId, {
+          ability,
+          dc,
+          event: options.event,
+          flavor: `${weapon?.name ?? "Оружие"}: привести оружие в порядок (Сл ${dc})`
+        });
+        const total = extractRollTotal(rollResult);
+        if (Number.isFinite(total)) {
+          return {
+            checked: true,
+            total: Math.floor(total),
+            dc,
+            toolId,
+            ability,
+            roll: rollResult
+          };
+        }
+      }
+      catch (_error) {
+        // Try the next known tinker-tool id; dnd5e ids differ between worlds and versions.
+      }
+    }
+
+    return {
+      checked: false,
+      total: null,
+      dc,
+      reason: "toolRollUnavailable"
+    };
+  }
+
+  async #restoreFirearmMisfireToBase(weapon, fallback = 1) {
+    const baseMisfire = this.#resolveFirearmBaseMisfireThreshold(weapon, fallback);
+    const values = this.#getLichWeaponPropertyValues(weapon);
+    const configuredBase = toNumber(values.misfire ?? values.firearmMisfire, NaN);
+    const matchesConfiguredBase = this.#hasItemProperty(weapon, FIREARM_MISFIRE_PROPERTY)
+      && Number.isFinite(configuredBase)
+      && clampInteger(configuredBase, 1, 10) === baseMisfire;
+
+    if (matchesConfiguredBase) {
+      await this.#unsetItemFlag(weapon, FIREARM_CURRENT_MISFIRE_FLAG);
+    }
+    else {
+      await this.#setItemFlag(weapon, FIREARM_CURRENT_MISFIRE_FLAG, baseMisfire);
+    }
+    await this.#unsetItemFlag(weapon, FIREARM_BASE_MISFIRE_FLAG);
+
+    return baseMisfire;
+  }
+
+  async clearFirearmJam(actorOrItem, weaponOrId = null) {
+    const weapon = this.#resolveFirearmWeapon(actorOrItem, weaponOrId);
+    const previousMisfire = Math.max(1, this.#resolveFirearmMisfireThreshold(weapon));
+    const baseMisfire = this.#resolveFirearmBaseMisfireThreshold(weapon, previousMisfire);
+    const currentMisfire = clampInteger(previousMisfire + 1, 1, 10);
+
+    await this.#setItemFlag(weapon, FIREARM_BASE_MISFIRE_FLAG, baseMisfire);
+    await this.#setItemFlag(weapon, FIREARM_CURRENT_MISFIRE_FLAG, currentMisfire);
+    await this.#unsetItemFlag(weapon, FIREARM_JAMMED_FLAG);
+    await this.#setItemName(weapon, stripFirearmJamSuffix(weapon.name));
+
+    ui.notifications?.info?.(`${weapon.name}: затвор очищен, осечка теперь ${currentMisfire}.`);
 
     return {
       weaponId: weapon.id,
       weaponName: weapon.name,
-      isJammed: false
+      isJammed: false,
+      previousMisfire,
+      currentMisfire,
+      baseMisfire
+    };
+  }
+
+  async maintainFirearm(actorOrItem, weaponOrId = null, options = {}) {
+    const weapon = this.#resolveFirearmWeapon(actorOrItem, weaponOrId);
+    const actor = options.actor instanceof Actor
+      ? options.actor
+      : (weapon.actor instanceof Actor ? weapon.actor : this.#resolveActor(actorOrItem));
+    const previousMisfire = Math.max(1, this.#resolveFirearmMisfireThreshold(weapon));
+    const dc = 10 + previousMisfire;
+    const check = await this.#rollFirearmMaintenanceCheck(actor, weapon, dc, options);
+    if (!check.checked) {
+      ui.notifications?.warn?.("Не удалось бросить проверку инструментов жестянщика.");
+      return {
+        weaponId: weapon.id,
+        weaponName: weapon.name,
+        success: false,
+        dc,
+        total: null,
+        previousMisfire,
+        currentMisfire: previousMisfire,
+        reason: check.reason ?? "checkUnavailable"
+      };
+    }
+
+    const success = check.total >= dc;
+    const currentMisfire = success
+      ? await this.#restoreFirearmMisfireToBase(weapon, previousMisfire)
+      : previousMisfire;
+
+    if (success) {
+      ui.notifications?.info?.(`${weapon.name}: осечка возвращена к ${currentMisfire}.`);
+    }
+    else {
+      ui.notifications?.warn?.(`${weapon.name}: проверка обслуживания не удалась.`);
+    }
+
+    return {
+      weaponId: weapon.id,
+      weaponName: weapon.name,
+      success,
+      dc,
+      total: check.total,
+      previousMisfire,
+      currentMisfire,
+      toolId: check.toolId ?? "",
+      ability: check.ability ?? ""
     };
   }
 

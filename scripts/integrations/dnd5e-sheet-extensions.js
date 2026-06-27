@@ -154,6 +154,8 @@ const FIREARM_WEAPON_PROPERTY_DEFINITIONS = Object.freeze([
   { key: "lchFirearmOverheat", label: "Перегрев [О]" },
   { key: "lchFirearmMachineGun", label: "Пулемёт [О]" }
 ]);
+const FIREARM_WEAPON_TYPE_VALUES = new Set(["firearmPrimitive", "firearmAdvanced"]);
+const FIREARM_WEAPON_PROPERTY_KEYS = new Set(FIREARM_WEAPON_PROPERTY_DEFINITIONS.map((definition) => definition.key));
 const REBREYA_WEAPON_PROPERTY_DEFINITIONS = Object.freeze([
   ...LICH_WEAPON_PROPERTY_DEFINITIONS,
   ...FIREARM_WEAPON_PROPERTY_DEFINITIONS
@@ -5013,6 +5015,51 @@ function hasMagicalProperty(item) {
   return hasItemProperty(item, "mgc");
 }
 
+function isFirearmWeaponItem(item) {
+  if (!(item instanceof Item) || item.type !== "weapon") {
+    return false;
+  }
+
+  const typeValue = String(foundry.utils.getProperty(item, "system.type.value") ?? "").trim();
+  if (FIREARM_WEAPON_TYPE_VALUES.has(typeValue)) {
+    return true;
+  }
+
+  return Array.from(FIREARM_WEAPON_PROPERTY_KEYS).some((propertyKey) => hasItemProperty(item, propertyKey));
+}
+
+function findAncestorElement(element, predicate) {
+  let cursor = element?.parentElement ?? null;
+  while (cursor) {
+    if (predicate(cursor)) {
+      return cursor;
+    }
+    cursor = cursor.parentElement ?? null;
+  }
+
+  return null;
+}
+
+function findSheetPropertyControl(root, propertyKey) {
+  return root.querySelector(
+    `dnd5e-checkbox[name='system.properties.${propertyKey}'], input[name='system.properties.${propertyKey}']`
+  );
+}
+
+function getSheetPropertyRow(control) {
+  return control?.closest?.("label")
+    ?? control?.closest?.(".form-group")
+    ?? control?.parentElement
+    ?? control;
+}
+
+function findSheetPropertyFieldset(control, row) {
+  return control?.closest?.("fieldset")
+    ?? row?.closest?.("fieldset")
+    ?? findAncestorElement(row, (element) => String(element.tagName ?? "").toUpperCase() === "FIELDSET")
+    ?? null;
+}
+
 function isSheetWeaponPropertyChecked(root, item, propertyKey) {
   const safePropertyKey = String(propertyKey ?? "").trim();
   if (!safePropertyKey) {
@@ -5474,6 +5521,65 @@ function upsertWeaponAttackTraitsField(root, app) {
   syncVisibility();
 }
 
+function upsertFirearmWeaponPropertiesField(root, app) {
+  const details = getItemDetailsContainer(root);
+  if (!details) {
+    return;
+  }
+
+  details.querySelectorAll("[data-rebreya-item-field='firearm-properties']").forEach((node) => node.remove());
+
+  const item = getItemFromSheetApp(app);
+  if (!isFirearmWeaponItem(item)) {
+    return;
+  }
+
+  const entries = [];
+  let sourceFieldset = null;
+  for (const definition of FIREARM_WEAPON_PROPERTY_DEFINITIONS) {
+    const control = findSheetPropertyControl(root, definition.key);
+    if (!control) {
+      continue;
+    }
+
+    const row = getSheetPropertyRow(control);
+    if (!row) {
+      continue;
+    }
+
+    sourceFieldset ??= findSheetPropertyFieldset(control, row);
+    entries.push({ definition, row });
+  }
+
+  if (!entries.length) {
+    return;
+  }
+
+  const fieldset = document.createElement("fieldset");
+  fieldset.classList.add("rm-firearm-properties-fieldset");
+  fieldset.dataset.rebreyaItemField = "firearm-properties";
+
+  const legend = document.createElement("legend");
+  legend.textContent = "Свойства огнестрела";
+  fieldset.append(legend);
+
+  const grid = document.createElement("div");
+  grid.classList.add("rm-firearm-properties-grid");
+  for (const { definition, row } of entries) {
+    row.dataset.rebreyaFirearmProperty = definition.key;
+    row.classList?.add?.("rm-firearm-property-row");
+    grid.append(row);
+  }
+  fieldset.append(grid);
+
+  if (sourceFieldset?.parentElement && typeof sourceFieldset.after === "function") {
+    sourceFieldset.after(fieldset);
+  }
+  else {
+    details.append(fieldset);
+  }
+}
+
 function bindItemSheetEnhancements(root, app) {
   const item = getItemFromSheetApp(app);
   if (!item) {
@@ -5486,6 +5592,7 @@ function bindItemSheetEnhancements(root, app) {
   upsertItemRankField(root, app);
   upsertItemSlotField(root, app);
   upsertWeaponAttackTraitsField(root, app);
+  upsertFirearmWeaponPropertiesField(root, app);
 }
 
 function cleanConfigString(value) {

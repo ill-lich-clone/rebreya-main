@@ -1845,6 +1845,17 @@ summary:focus-visible {
   width: 100%;
 }
 
+.rm-firearm-properties-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px 12px;
+  width: 100%;
+}
+
+.rm-firearm-property-row {
+  min-width: 0;
+}
+
 .rm-connection-card__actions {
   display: flex;
   gap: 8px;

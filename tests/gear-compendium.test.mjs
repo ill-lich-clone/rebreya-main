@@ -379,13 +379,22 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(createdMusket.system.damage.base.number, 2);
   assert.equal(createdMusket.system.damage.base.denomination, 8);
   assert.ok(createdMusket.system.properties.includes("lchFirearmMisfire"));
-  assert.equal(musketActivityIds.length, 1);
-  assert.match(musketActivityIds[0], /^[A-Za-z0-9]{16}$/u);
+  assert.equal(musketActivityIds.length, 3);
+  assert.ok(musketActivityIds.every((activityId) => /^[A-Za-z0-9]{16}$/u.test(activityId)));
   assert.equal(musketAttack._id, musketActivityIds[0]);
   assert.equal(musketAttack.type, "attack");
   assert.equal(musketAttack.attack.type.value, "firearm");
   assert.equal(musketAttack.attack.type.classification, "weapon");
   assert.equal(musketAttack.attack.ability, "dex");
+
+  const musketActivitiesByName = new Map(Object.values(createdMusket.system.activities ?? {})
+    .map((activity) => [activity.name, activity]));
+  assert.equal(musketActivitiesByName.get("Очистить затвор")?.type, "utility");
+  assert.equal(musketActivitiesByName.get("Очистить затвор")?.activation.type, "action");
+  assert.equal(musketActivitiesByName.get("Очистить затвор")?.flags["rebreya-main"].automation, "firearm-clear-jam");
+  assert.equal(musketActivitiesByName.get("Привести оружие в порядок")?.type, "utility");
+  assert.equal(musketActivitiesByName.get("Привести оружие в порядок")?.activation.type, "minute");
+  assert.equal(musketActivitiesByName.get("Привести оружие в порядок")?.flags["rebreya-main"].automation, "firearm-maintain");
 
   const createdArquebus = createDnd5eItemData(arquebus, new Map());
   const arquebusAttack = Object.values(createdArquebus.system.activities ?? {})[0];

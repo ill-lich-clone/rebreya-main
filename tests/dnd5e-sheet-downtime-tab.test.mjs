@@ -29,6 +29,7 @@ function installSheetExtensionStubs() {
       this.value = "";
       this.children = [];
       this.attributes = {};
+      this.style = {};
       this.tagName = "DIV";
       this.classList = {
         values: new Set(),
@@ -40,6 +41,9 @@ function installSheetExtensionStubs() {
 
     append(...children) {
       for (const child of children) {
+        if (child.parentElement?.children) {
+          child.parentElement.children = child.parentElement.children.filter((entry) => entry !== child);
+        }
         child.parentElement = this;
         this.children.push(child);
       }
@@ -47,6 +51,9 @@ function installSheetExtensionStubs() {
 
     prepend(...children) {
       for (const child of children.reverse()) {
+        if (child.parentElement?.children) {
+          child.parentElement.children = child.parentElement.children.filter((entry) => entry !== child);
+        }
         child.parentElement = this;
         this.children.unshift(child);
       }
@@ -774,6 +781,78 @@ test("extendDnd5eItemTypes registers firearm activity attack type and Midi actio
       }
     });
     assert.equal(activity.actionType, "fwak");
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("weapon item sheet moves firearm-only properties into a separate details block", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?firearm-property-block=${Date.now()}`);
+
+    const item = new globalThis.Item();
+    item.type = "weapon";
+    item.isOwner = true;
+    item.system = {
+      type: {
+        value: "firearmPrimitive"
+      },
+      properties: {
+        lchFirearmMisfire: true,
+        lchGrip: true
+      }
+    };
+    item.flags = {};
+    item.getFlag = (scope, key) => item.flags?.[scope]?.[key];
+
+    const propertySelector = (key) => `dnd5e-checkbox[name='system.properties.${key}'], input[name='system.properties.${key}']`;
+    const details = new stubs.HTMLElement();
+    const nativeFieldset = new stubs.HTMLElement();
+    nativeFieldset.tagName = "FIELDSET";
+    details.selectors.fieldset = nativeFieldset;
+    details.append(nativeFieldset);
+
+    const misfireRow = new stubs.HTMLElement();
+    misfireRow.tagName = "LABEL";
+    const misfireControl = new stubs.HTMLElement();
+    misfireControl.checked = true;
+    misfireRow.append(misfireControl);
+    nativeFieldset.append(misfireRow);
+
+    const gripRow = new stubs.HTMLElement();
+    gripRow.tagName = "LABEL";
+    const gripControl = new stubs.HTMLElement();
+    gripControl.checked = true;
+    gripRow.append(gripControl);
+    nativeFieldset.append(gripRow);
+
+    const root = new stubs.HTMLElement({
+      selectors: {
+        ".tab[data-tab='details']": details,
+        [propertySelector("lchFirearmMisfire")]: misfireControl,
+        [propertySelector("lchGrip")]: gripControl
+      },
+      selectorAll: {
+        [propertySelector("lchFirearmMisfire")]: [misfireControl],
+        [propertySelector("lchGrip")]: [gripControl]
+      }
+    });
+    const app = {
+      item,
+      isEditable: true
+    };
+
+    registerDnd5eSheetExtensions({});
+    stubs.hooks.get("renderItemSheet")(app, root);
+
+    const firearmBlock = findTreeNode(details, (node) => node.dataset?.rebreyaItemField === "firearm-properties");
+    assert.ok(firearmBlock, "firearm property block is rendered");
+    assert.ok(findTreeNode(firearmBlock, (node) => node.textContent === "Свойства огнестрела"));
+    assert.equal(findTreeNode(firearmBlock, (node) => node === misfireRow), misfireRow);
+    assert.equal(findTreeNode(nativeFieldset, (node) => node === misfireRow), null);
+    assert.equal(findTreeNode(nativeFieldset, (node) => node === gripRow), gripRow);
   }
   finally {
     stubs.restore();
