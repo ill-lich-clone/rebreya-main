@@ -511,17 +511,33 @@ test("maintaining firearm rolls tinker tools with the better dex or int ability"
       };
     }
 
-    async rollToolCheck(toolId, options = {}) {
-      calls.push({ toolId, options });
-      return { total: 20 };
+    async rollToolCheck(config = {}, dialog = {}, message = {}) {
+      calls.push({ config, dialog, message });
+      if (!config || typeof config !== "object" || typeof config.tool !== "string") {
+        throw new Error("Expected dnd5e rollToolCheck config object.");
+      }
+      return [{ total: 20 }];
     }
   }();
   weapon.actor = actor;
   const service = new CombatAttackService({});
+  const previousConfig = globalThis.CONFIG;
+  globalThis.CONFIG = {
+    DND5E: {
+      tools: { tinker: {} },
+      vehicleTypes: {}
+    }
+  };
 
-  const result = await service.maintainFirearm(weapon);
+  try {
+    const result = await service.maintainFirearm(weapon);
 
-  assert.equal(result.success, true);
-  assert.equal(calls[0].toolId, "art:tinker");
-  assert.equal(calls[0].options.ability, "int");
+    assert.equal(result.success, true);
+    assert.equal(calls[0].config.tool, "tinker");
+    assert.equal(calls[0].config.ability, "int");
+    assert.equal(calls[0].config.dc, 15);
+  }
+  finally {
+    globalThis.CONFIG = previousConfig;
+  }
 });

@@ -43,6 +43,17 @@ function cleanText(value, fallback = "") {
   return text || fallback;
 }
 
+function isConfiguredDnd5eToolId(toolId) {
+  const dnd5eConfig = globalThis.CONFIG?.DND5E;
+  const tools = dnd5eConfig?.tools;
+  const vehicles = dnd5eConfig?.vehicleTypes;
+  if (!tools && !vehicles) {
+    return true;
+  }
+
+  return Object.hasOwn(tools ?? {}, toolId) || Object.hasOwn(vehicles ?? {}, toolId);
+}
+
 function stripFirearmJamSuffix(name) {
   const text = cleanText(name);
   return text.replace(/\s*\(клин\)\s*$/iu, "").trim() || text;
@@ -2224,13 +2235,20 @@ export class CombatAttackService {
       ? options.toolIds.map(cleanText).filter(Boolean)
       : FIREARM_MAINTENANCE_TOOL_IDS;
     for (const toolId of toolIds) {
+      if (!isConfiguredDnd5eToolId(toolId)) {
+        continue;
+      }
+
       try {
-        const rollResult = await actor.rollToolCheck(toolId, {
+        const flavor = `${weapon?.name ?? "Оружие"}: привести оружие в порядок (Сл ${dc})`;
+        const rollResult = await actor.rollToolCheck({
+          tool: toolId,
           ability,
           dc,
+          target: dc,
           event: options.event,
-          flavor: `${weapon?.name ?? "Оружие"}: привести оружие в порядок (Сл ${dc})`
-        });
+          flavor
+        }, {}, { flavor });
         const total = extractRollTotal(rollResult);
         if (Number.isFinite(total)) {
           return {
