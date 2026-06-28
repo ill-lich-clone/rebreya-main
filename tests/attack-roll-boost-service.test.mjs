@@ -315,11 +315,13 @@ test("stale fighter precise attack maneuver items still provide an attack roll b
   assert.deepEqual(promptDetails.options.map((option) => ({
     id: option.id,
     label: option.label,
-    formula: option.formula
+    formula: option.formula,
+    displayFormula: option.displayFormula
   })), [{
     id: "fighter-precise-attack",
     label: "Точная атака",
-    formula: "@scale.fighter-rework-v028.dominance-die"
+    formula: "@scale.fighter-rework-v028.dominance-die",
+    displayFormula: "1к4"
   }]);
   assert.equal(promptDetails.needed, 1);
 });
@@ -608,11 +610,13 @@ test("fresh precise attack boost still prompts when scale max cannot be evaluate
     id: option.id,
     label: option.label,
     formula: option.formula,
+    displayFormula: option.displayFormula,
     maxTotal: option.maxTotal
   })), [{
     id: "fighter-precise-attack",
     label: "Точная атака",
     formula: "@scale.fighter-rework-v028.dominance-die",
+    displayFormula: "1к6",
     maxTotal: 6
   }]);
   assert.equal(promptDetails.needed, 1);
@@ -664,6 +668,7 @@ test("manually added precise attack boost falls back to a base dominance die wit
   await service.applyMidiHitsChecked(workflow);
 
   assert.equal(promptDetails.options[0].maxTotal, 4);
+  assert.equal(promptDetails.options[0].displayFormula, "1к4");
   assert.equal(rolledFormula, "1d4");
   assert.equal(workflow.attackTotal, 20);
   assert.equal(workflow.hitTargets.has(target), true);
@@ -725,7 +730,7 @@ test("attack roll boost prompt uses DialogV2 input and checkbox options", async 
       target: { name: "Цель", ac: 24 },
       options: [
         { id: "small", label: "+1d3", formula: "1d3", sourceName: "Мелкая добавка" },
-        { id: "large", label: "+1d12", formula: "1d12", sourceName: "Большая добавка" }
+        { id: "large", label: "+1d12", formula: "@scale.fighter-rework-v028.dominance-die", displayFormula: "1к4", sourceName: "Большая добавка" }
       ]
     });
 
@@ -734,6 +739,8 @@ test("attack roll boost prompt uses DialogV2 input and checkbox options", async 
     assert.match(dialogContent, /data-attack-roll-boost/u);
     assert.match(dialogContent, /max-height:/u);
     assert.match(dialogContent, /overflow-y:\s*auto/u);
+    assert.match(dialogContent, /1к4/u);
+    assert.doesNotMatch(dialogContent, /@scale\.fighter-rework-v028\.dominance-die/u);
   }
   finally {
     globalThis.foundry.applications = previousApplications;

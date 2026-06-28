@@ -1,0 +1,55 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+globalThis.foundry ??= {
+  utils: {
+    deepClone: (value) => JSON.parse(JSON.stringify(value)),
+    getProperty: (object, path) => String(path ?? "").split(".").reduce((value, key) => value?.[key], object),
+    setProperty: (object, path, value) => {
+      const keys = String(path ?? "").split(".").filter(Boolean);
+      let cursor = object;
+      while (keys.length > 1) {
+        const key = keys.shift();
+        cursor[key] ??= {};
+        cursor = cursor[key];
+      }
+      cursor[keys[0]] = value;
+      return true;
+    }
+  }
+};
+
+const { normalizeFeatItems } = await import("../scripts/data/feats-compendium.js");
+
+function loadBundleItems() {
+  const bundleUrl = new URL("../cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json", import.meta.url);
+  return JSON.parse(readFileSync(bundleUrl, "utf8")).items;
+}
+
+test("performer feat exposes automated active performance runtime activity", () => {
+  const feats = normalizeFeatItems(loadBundleItems());
+  const performer = feats.find((feat) => feat.featId === "ispolnitel");
+  const activities = Object.values(performer.system.activities);
+
+  assert.equal(activities.length, 1);
+  const activity = activities[0];
+  assert.equal(activity.name, "Активное выступление");
+  assert.equal(activity.type, "utility");
+  assert.equal(activity.activation.type, "bonus");
+  assert.equal(activity.range.value, 60);
+  assert.equal(activity.range.units, "ft");
+  assert.equal(activity.target.prompt, true);
+  assert.equal(activity.target.affects.type, "creature");
+  assert.deepEqual(activity.consumption.targets, []);
+  assert.deepEqual(activity.flags["rebreya-main"].runtime, {
+    action: "activePerformance",
+    dc: 20,
+    skill: "prf",
+    ability: "cha",
+    successFormula: "1d5",
+    failureFormula: "1d3",
+    durationSeconds: 60
+  });
+  assert.equal(performer.flags["rebreya-main"].automation.status, "active");
+});

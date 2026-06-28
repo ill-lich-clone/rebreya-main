@@ -10,7 +10,8 @@ export function registerCombatHooks(moduleApi) {
   const hasPaladinService = Boolean(moduleApi?.paladinAutomationService);
   const hasRogueService = Boolean(moduleApi?.rogueAutomationService);
   const hasAttackRollBoostService = Boolean(moduleApi?.attackRollBoostService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService) {
+  const hasPerformerService = Boolean(moduleApi?.performerAutomationService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService) {
     return;
   }
 
@@ -101,6 +102,18 @@ export function registerCombatHooks(moduleApi) {
   if (hasAttackService) {
     Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
       try {
+        if (
+          hasPerformerService
+          && moduleApi.performerAutomationService.applyDnd5ePreUseActivity(
+            activity,
+            usageConfig,
+            dialogConfig,
+            messageConfig
+          ) === false
+        ) {
+          return false;
+        }
+
         return moduleApi.combatAttackService.applyDnd5ePreUseActivity(
           activity,
           usageConfig,
@@ -175,6 +188,11 @@ export function registerCombatHooks(moduleApi) {
             console.error(`${MODULE_ID} | Failed to apply dnd5e attack roll boost automation.`, error);
           });
         }
+        if (hasPerformerService) {
+          moduleApi.performerAutomationService.applyDnd5eD20Roll(rolls, context, "attack").catch((error) => {
+            console.error(`${MODULE_ID} | Failed to consume performer d20 effect after attack roll.`, error);
+          });
+        }
         return result;
       }
       catch (error) {
@@ -207,6 +225,30 @@ export function registerCombatHooks(moduleApi) {
     });
   }
 
+  if (!hasAttackService && hasPerformerService) {
+    Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
+      try {
+        return moduleApi.performerAutomationService.applyDnd5ePreUseActivity(
+          activity,
+          usageConfig,
+          dialogConfig,
+          messageConfig
+        );
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply performer pre-use automation.`, error);
+        return true;
+      }
+    });
+
+    Hooks.on("dnd5e.rollAttack", (rolls, context) => {
+      moduleApi.performerAutomationService.applyDnd5eD20Roll(rolls, context, "attack").catch((error) => {
+        console.error(`${MODULE_ID} | Failed to consume performer d20 effect after attack roll.`, error);
+      });
+      return true;
+    });
+  }
+
   if (!hasAttackService && hasAttackRollBoostService) {
     Hooks.on("midi-qol.hitsChecked", async (workflow) => {
       try {
@@ -216,6 +258,63 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to apply attack roll boost automation.`, error);
         return true;
       }
+    });
+  }
+
+  if (hasPerformerService) {
+    Hooks.on("dnd5e.preRollD20Test", (rollConfig, dialogConfig, messageConfig) => {
+      try {
+        return moduleApi.performerAutomationService.applyDnd5ePreRollD20Test(
+          rollConfig,
+          dialogConfig,
+          messageConfig
+        );
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply performer d20 modifier before roll.`, error);
+        return true;
+      }
+    });
+
+    Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
+      moduleApi.performerAutomationService.applyDnd5ePostUseActivity(
+        activity,
+        usageConfig,
+        results
+      ).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply performer activity automation.`, error);
+      });
+      return true;
+    });
+
+    Hooks.on("dnd5e.rollSkill", (rolls, context) => {
+      moduleApi.performerAutomationService.applyDnd5eD20Roll(rolls, context, "skill").catch((error) => {
+        console.error(`${MODULE_ID} | Failed to consume performer d20 effect after skill roll.`, error);
+      });
+    });
+
+    Hooks.on("dnd5e.rollToolCheck", (rolls, context) => {
+      moduleApi.performerAutomationService.applyDnd5eD20Roll(rolls, context, "tool").catch((error) => {
+        console.error(`${MODULE_ID} | Failed to consume performer d20 effect after tool roll.`, error);
+      });
+    });
+
+    Hooks.on("dnd5e.rollAbilityCheck", (rolls, context) => {
+      moduleApi.performerAutomationService.applyDnd5eD20Roll(rolls, context, "ability").catch((error) => {
+        console.error(`${MODULE_ID} | Failed to consume performer d20 effect after ability roll.`, error);
+      });
+    });
+
+    Hooks.on("dnd5e.rollSavingThrow", (rolls, context) => {
+      moduleApi.performerAutomationService.applyDnd5eD20Roll(rolls, context, "save").catch((error) => {
+        console.error(`${MODULE_ID} | Failed to consume performer d20 effect after saving throw.`, error);
+      });
+    });
+
+    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
+      moduleApi.performerAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to clear performer rest automation.`, error);
+      });
     });
   }
 

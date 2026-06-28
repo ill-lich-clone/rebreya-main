@@ -148,6 +148,15 @@ function parseMaxFormulaTotal(formula) {
     .reduce((sum, value) => sum + value, 0);
 }
 
+function formatFormulaForDisplay(formula) {
+  const text = cleanText(formula);
+  if (!text) {
+    return "";
+  }
+
+  return text.replace(/(\d*)d(\d+)/giu, (_match, count, faces) => `${count || "1"}к${faces}`);
+}
+
 function scaleValueToFormula(value) {
   if (value == null) {
     return "";
@@ -276,6 +285,7 @@ export class AttackRollBoostService {
         id: source.id,
         label: source.label,
         formula: source.formula,
+        displayFormula: source.displayFormula,
         sourceName: source.sourceName,
         maxTotal: source.maxTotal,
         itemUuid: source.item?.uuid ?? ""
@@ -302,6 +312,7 @@ export class AttackRollBoostService {
         id: source.id,
         label: source.label,
         formula: source.formula,
+        displayFormula: source.displayFormula,
         rollTotal,
         sourceName: source.sourceName,
         itemUuid: source.item?.uuid ?? ""
@@ -549,6 +560,7 @@ export class AttackRollBoostService {
       label: cleanText(rawBoost?.label, item?.name ?? id),
       sourceName: cleanText(item?.name, rawBoost?.label ?? id),
       formula,
+      displayFormula: formatFormulaForDisplay(this.#resolveScaleFormula(formula, actor)),
       maxTotal,
       weaponOnly: rawBoost?.weaponOnly === true,
       attackTypes: Array.isArray(rawBoost?.attackTypes) ? rawBoost.attackTypes.map(cleanText).filter(Boolean) : [],
@@ -918,7 +930,7 @@ export class AttackRollBoostService {
         <input type="checkbox" name="attackRollBoost" value="${escapeHtml(option.id)}" data-attack-roll-boost>
         <span>
           <strong>${escapeHtml(option.label)}</strong>
-          <span style="display: block; margin-top: 0.2rem;">${escapeHtml(option.formula)}${option.sourceName ? ` · ${escapeHtml(option.sourceName)}` : ""}</span>
+          <span style="display: block; margin-top: 0.2rem;">${escapeHtml(formatFormulaForDisplay(option.displayFormula ?? option.formula))}${option.sourceName ? ` · ${escapeHtml(option.sourceName)}` : ""}</span>
         </span>
       </label>
     `).join("");

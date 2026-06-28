@@ -22,6 +22,8 @@ const FEATS_WORLD_OVERRIDE_PATH = `modules/${MODULE_ID}/data/feats-world-overrid
 const FEATS_BUNDLE_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json`;
 const FEATS_ITEMS_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-items.json`;
 const DEFAULT_FEAT_SUBTYPE = "general";
+const PERFORMER_FEAT_ID = "ispolnitel";
+const ACTIVE_PERFORMANCE_ACTIVITY_ID = "bd37d8496d0f0415";
 const REBREYA_FEAT_SUBTYPE_BY_SECTION = new Map([
   ["\u043c\u043b\u0430\u0434\u0448\u0438\u0435 \u0447\u0435\u0440\u0442\u044b", "minor"],
   ["\u043e\u0431\u0449\u0438\u0435 \u0447\u0435\u0440\u0442\u044b", "general"],
@@ -190,7 +192,7 @@ function normalizeFeatItem(rawItem, index, usedIds) {
   const name = cleanString(safeItem.name, `Черта ${index + 1}`);
   const { flags, section, subsection } = normalizeFeatFlags(safeItem.flags);
 
-  return {
+  return applyFeatAutomationOverrides({
     documentId: normalizeDocumentId(safeItem._id),
     featId,
     name,
@@ -201,10 +203,114 @@ function normalizeFeatItem(rawItem, index, usedIds) {
     flags,
     section,
     subsection
+  });
+}
+
+function createPerformerActivePerformanceActivity() {
+  return {
+    _id: ACTIVE_PERFORMANCE_ACTIVITY_ID,
+    type: "utility",
+    name: "Активное выступление",
+    img: "systems/dnd5e/icons/svg/activity/utility.svg",
+    sort: 100000,
+    activation: {
+      type: "bonus",
+      value: 1,
+      condition: "Бонусным действием либо вместо одной из доступных атак.",
+      override: false
+    },
+    consumption: {
+      scaling: {
+        allowed: false,
+        max: ""
+      },
+      spellSlot: false,
+      targets: []
+    },
+    description: {
+      chatFlavor: "Харизма (Выступление) Сл 20. Успех: цель получает к5 к первому к20-тесту; провал: к3. Для врага кость вычитается."
+    },
+    duration: {
+      value: "",
+      units: "inst",
+      special: "",
+      concentration: false,
+      override: false
+    },
+    effects: [],
+    flags: {
+      [MODULE_ID]: {
+        runtime: {
+          action: "activePerformance",
+          dc: 20,
+          skill: "prf",
+          ability: "cha",
+          successFormula: "1d5",
+          failureFormula: "1d3",
+          durationSeconds: 60
+        }
+      }
+    },
+    range: {
+      value: 60,
+      units: "ft",
+      special: "",
+      override: false
+    },
+    target: {
+      template: {
+        contiguous: false,
+        units: "",
+        type: "",
+        size: "",
+        count: ""
+      },
+      affects: {
+        type: "creature",
+        count: "1",
+        choice: false,
+        special: ""
+      },
+      prompt: true,
+      override: false
+    },
+    uses: {
+      spent: 0,
+      max: "",
+      recovery: []
+    }
   };
 }
 
-function normalizeFeatItems(rawItems = []) {
+function applyFeatAutomationOverrides(feat) {
+  if (feat.featId !== PERFORMER_FEAT_ID) {
+    return feat;
+  }
+
+  const moduleFlags = isPlainObject(feat.flags?.[MODULE_ID]) ? foundry.utils.deepClone(feat.flags[MODULE_ID]) : {};
+  return {
+    ...feat,
+    system: {
+      ...feat.system,
+      activities: {
+        [ACTIVE_PERFORMANCE_ACTIVITY_ID]: createPerformerActivePerformanceActivity()
+      }
+    },
+    flags: {
+      ...feat.flags,
+      [MODULE_ID]: {
+        ...moduleFlags,
+        automation: {
+          ...(isPlainObject(moduleFlags.automation) ? moduleFlags.automation : {}),
+          status: "active",
+          notes: "Активное выступление автоматизировано: бросает Харизму (Выступление), выдаёт к3/к5 цели, применяет к первому d20-тесту и блокирует черту после двух провалов подряд до продолжительного отдыха."
+        }
+      }
+    }
+  };
+}
+
+export function normalizeFeatItems(rawItems = []) {
   const usedIds = new Set();
   return (Array.isArray(rawItems) ? rawItems : [])
     .map((item, index) => normalizeFeatItem(item, index, usedIds))
