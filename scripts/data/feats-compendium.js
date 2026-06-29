@@ -228,7 +228,7 @@ function createPerformerActivePerformanceActivity() {
       targets: []
     },
     description: {
-      chatFlavor: "Харизма (Выступление) Сл 20. Успех: цель получает к5 к первому к20-тесту; провал: к3. Для врага кость вычитается."
+      chatFlavor: "Харизма (Выступление) Сл 20. Успех: цель получает к5; провал: к3. Союзник может добровольно использовать кость в течение 1 минуты для d20-теста. Для врага кость вычитается."
     },
     duration: {
       value: "",
@@ -292,6 +292,11 @@ function applyFeatAutomationOverrides(feat) {
     ...feat,
     system: {
       ...feat.system,
+      uses: {
+        spent: 0,
+        max: "2",
+        recovery: [{ period: "lr", type: "recoverAll", formula: "" }]
+      },
       activities: {
         [ACTIVE_PERFORMANCE_ACTIVITY_ID]: createPerformerActivePerformanceActivity()
       }
@@ -303,7 +308,7 @@ function applyFeatAutomationOverrides(feat) {
         automation: {
           ...(isPlainObject(moduleFlags.automation) ? moduleFlags.automation : {}),
           status: "active",
-          notes: "Активное выступление автоматизировано: бросает Харизму (Выступление), выдаёт к3/к5 цели, применяет к первому d20-тесту и блокирует черту после двух провалов подряд до продолжительного отдыха."
+          notes: "Активное выступление автоматизировано: бросает Харизму (Выступление), выдаёт к3/к5 цели, спрашивает союзника о добровольном d20-добросе, вычитает кость у врага и блокирует черту после двух провалов подряд до продолжительного отдыха."
         }
       }
     }

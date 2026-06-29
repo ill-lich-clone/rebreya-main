@@ -45,6 +45,7 @@ globalThis.ui ??= {
     info: () => {}
   }
 };
+globalThis.fromUuidSync ??= () => null;
 
 const { PerformerAutomationService } = await import("../scripts/combat/performer-automation-service.js");
 
@@ -122,6 +123,30 @@ class TestActor extends Actor {
   }
 }
 
+function makePerformerItem({ spent = 0, max = "2" } = {}) {
+  return {
+    id: "performer-item",
+    uuid: "Actor.performer.Item.performer",
+    img: "icons/svg/book.svg",
+    name: "Исполнитель",
+    system: {
+      uses: {
+        spent,
+        max,
+        recovery: [{ period: "lr", type: "recoverAll", formula: "" }]
+      }
+    },
+    updates: [],
+    async update(patch) {
+      this.updates.push(patch);
+      for (const [path, value] of Object.entries(patch)) {
+        foundry.utils.setProperty(this, path, value);
+      }
+      return this;
+    }
+  };
+}
+
 function makeToken(actor, disposition = 1) {
   return {
     id: `${actor.id}-token`,
@@ -191,26 +216,18 @@ function makePerformerEffect({ formula = "1d3", mode = "add" } = {}) {
 
 test("active performance success applies a d5 die to the selected ally and clears failure streak", async () => {
   const previousTargets = globalThis.game.user.targets;
+  const performerItem = makePerformerItem({ spent: 1 });
   const performer = new TestActor({
     id: "performer",
     disposition: 1,
-    rollTotal: 24,
-    flags: {
-      "rebreya-main": {
-        performerAutomation: {
-          activePerformance: {
-            failures: 1
-          }
-        }
-      }
-    }
+    rollTotal: 24
   });
   const target = new TestActor({ id: "ally", disposition: 1 });
   globalThis.game.user.targets = new Set([target.token]);
   const service = new PerformerAutomationService({});
 
   try {
-    await service.applyDnd5ePostUseActivity(makeActivity(performer), {}, {});
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {});
 
     assert.equal(performer.rolls[0].config.skill, "prf");
     assert.equal(performer.rolls[0].config.ability, "cha");
@@ -220,49 +237,146 @@ test("active performance success applies a d5 die to the selected ally and clear
     assert.equal(effect.duration.seconds, 60);
     assert.equal(effect.flags["rebreya-main"].performerAutomation.formula, "1d5");
     assert.equal(effect.flags["rebreya-main"].performerAutomation.mode, "add");
-    assert.equal(performer.getFlag("rebreya-main", "performerAutomation.activePerformance.failures"), 0);
+    assert.equal(performerItem.system.uses.spent, 0);
   }
   finally {
     globalThis.game.user.targets = previousTargets;
   }
 });
 
-test("second consecutive active performance failure gives a hostile d3 penalty and blocks the feature", async () => {
+test("active performance can resolve the target from the dnd5e usage message", async () => {
   const previousTargets = globalThis.game.user.targets;
-  const performer = new TestActor({
-    id: "performer",
-    disposition: 1,
-    rollTotal: 14,
-    flags: {
-      "rebreya-main": {
-        performerAutomation: {
-          activePerformance: {
-            failures: 1
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  const performerItem = makePerformerItem({ spent: 0 });
+  const performer = new TestActor({ id: "performer", disposition: 1, rollTotal: 23 });
+  const target = new TestActor({ id: "ally", disposition: 1 });
+  globalThis.game.user.targets = new Set();
+  globalThis.fromUuidSync = (uuid) => uuid === target.token.document.uuid ? target.token : null;
+  const service = new PerformerAutomationService({});
+
+  try {
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {
+      message: {
+        flags: {
+          dnd5e: {
+            use: {
+              targets: [{ uuid: target.token.document.uuid, name: target.name }]
+            }
           }
         }
       }
-    }
+    });
+
+    assert.equal(target.created[0].type, "ActiveEffect");
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+    globalThis.fromUuidSync = previousFromUuidSync;
+  }
+});
+
+test("second consecutive active performance failure spends the second use and blocks the feature", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const performerItem = makePerformerItem({ spent: 1 });
+  const performer = new TestActor({
+    id: "performer",
+    disposition: 1,
+    rollTotal: 14
   });
   const target = new TestActor({ id: "enemy", disposition: -1 });
   globalThis.game.user.targets = new Set([target.token]);
   const service = new PerformerAutomationService({});
 
   try {
-    await service.applyDnd5ePostUseActivity(makeActivity(performer), {}, {});
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {});
 
     const effect = target.created[0].documents[0];
     assert.equal(effect.flags["rebreya-main"].performerAutomation.formula, "1d3");
     assert.equal(effect.flags["rebreya-main"].performerAutomation.mode, "subtract");
-    assert.equal(performer.getFlag("rebreya-main", "performerAutomation.activePerformance.failures"), 2);
-    assert.equal(performer.getFlag("rebreya-main", "performerAutomation.activePerformance.blocked"), true);
+    assert.equal(performerItem.system.uses.spent, 2);
+    assert.equal(service.applyDnd5ePreUseActivity(makeActivity(performer, performerItem), {}, {}, {}), false);
   }
   finally {
     globalThis.game.user.targets = previousTargets;
   }
 });
 
-test("performer die is injected into the next d20 test and deleted after the roll", async () => {
+test("allied performer die is not spent when the holder declines the d20 bonus", async () => {
+  const effect = makePerformerEffect({ formula: "1d5", mode: "add" });
+  const actor = new TestActor({ id: "target", effects: [effect] });
+  const service = new PerformerAutomationService({}, {
+    promptD20Bonus: async () => false
+  });
+  const roll = {
+    total: 12,
+    options: {}
+  };
+
+  await service.applyDnd5eD20Roll([roll], { subject: actor }, "skill");
+
+  assert.equal(roll.total, 12);
+  assert.equal(effect.deleted, false);
+});
+
+test("allied performer die can be voluntarily added to a skill d20 test and then expires", async () => {
+  const effect = makePerformerEffect({ formula: "1d5", mode: "add" });
+  const actor = new TestActor({ id: "target", effects: [effect] });
+  const service = new PerformerAutomationService({}, {
+    promptD20Bonus: async (details) => {
+      assert.equal(details.kind, "skill");
+      assert.equal(details.displayFormula, "1к5");
+      return true;
+    },
+    rollFactory: () => ({
+      total: 4,
+      formula: "1d5",
+      async evaluate() {
+        return this;
+      },
+      async toMessage() {
+        return {};
+      }
+    })
+  });
+  const roll = {
+    total: 12,
+    options: {}
+  };
+
+  await service.applyDnd5eD20Roll([roll], { subject: actor }, "skill");
+
+  assert.equal(roll.total, 16);
+  assert.equal(effect.deleted, true);
+});
+
+test("hostile performer die is subtracted from a saving throw d20 test and then expires", async () => {
   const effect = makePerformerEffect({ formula: "1d3", mode: "subtract" });
+  const actor = new TestActor({ id: "target", effects: [effect] });
+  const service = new PerformerAutomationService({}, {
+    rollFactory: () => ({
+      total: 2,
+      formula: "1d3",
+      async evaluate() {
+        return this;
+      },
+      async toMessage() {
+        return {};
+      }
+    })
+  });
+  const roll = {
+    total: 14,
+    options: {}
+  };
+
+  await service.applyDnd5eD20Roll([roll], { subject: actor }, "save");
+
+  assert.equal(roll.total, 12);
+  assert.equal(effect.deleted, true);
+});
+
+test("performer die is no longer injected into d20 tests before the holder chooses to use it", () => {
+  const effect = makePerformerEffect({ formula: "1d5", mode: "add" });
   const actor = new TestActor({ id: "target", effects: [effect] });
   const service = new PerformerAutomationService({});
   const config = {
@@ -280,29 +394,15 @@ test("performer die is injected into the next d20 test and deleted after the rol
   };
 
   service.applyDnd5ePreRollD20Test(config, {}, message);
-  assert.deepEqual(config.rolls[0].parts, ["-1d3"]);
-  assert.equal(config.rolls[0].options.rebreyaPerformerEffectUuid, effect.uuid);
-  assert.match(message.data.flavor, /1к3/u);
-
-  await service.applyDnd5eD20Roll([{ options: config.rolls[0].options }], { subject: actor }, "save");
-
-  assert.equal(effect.deleted, true);
+  assert.deepEqual(config.rolls[0].parts, []);
+  assert.equal(config.rolls[0].options.rebreyaPerformerEffectUuid, undefined);
+  assert.doesNotMatch(message.data.flavor, /Активное выступление/u);
 });
 
-test("active performance cannot start while shame flag is active", () => {
-  const performer = new TestActor({
-    id: "performer",
-    flags: {
-      "rebreya-main": {
-        performerAutomation: {
-          activePerformance: {
-            blocked: true
-          }
-        }
-      }
-    }
-  });
+test("active performance cannot start when both failure uses are spent", () => {
+  const performer = new TestActor({ id: "performer" });
+  const performerItem = makePerformerItem({ spent: 2 });
   const service = new PerformerAutomationService({});
 
-  assert.equal(service.applyDnd5ePreUseActivity(makeActivity(performer), {}, {}, {}), false);
+  assert.equal(service.applyDnd5ePreUseActivity(makeActivity(performer, performerItem), {}, {}, {}), false);
 });

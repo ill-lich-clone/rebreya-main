@@ -42,6 +42,8 @@ test("performer feat exposes automated active performance runtime activity", () 
   assert.equal(activity.target.prompt, true);
   assert.equal(activity.target.affects.type, "creature");
   assert.deepEqual(activity.consumption.targets, []);
+  assert.equal(performer.system.uses.max, "2");
+  assert.deepEqual(performer.system.uses.recovery, [{ period: "lr", type: "recoverAll", formula: "" }]);
   assert.deepEqual(activity.flags["rebreya-main"].runtime, {
     action: "activePerformance",
     dc: 20,

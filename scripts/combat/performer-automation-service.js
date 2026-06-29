@@ -3,7 +3,7 @@ import { MODULE_ID } from "../constants.js";
 const ACTIVE_PERFORMANCE_ACTION = "activePerformance";
 const PERFORMER_STATE_FLAG = "performerAutomation.activePerformance";
 const PERFORMER_EFFECT_KIND = "activePerformanceDie";
-const ROLL_EFFECT_UUID_OPTION = "rebreyaPerformerEffectUuid";
+const DEFAULT_FAILURE_LIMIT = 2;
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -97,28 +97,6 @@ function readDocumentFlag(document, key) {
   return getProperty(document, `flags.${MODULE_ID}.${key}`, undefined);
 }
 
-function actorFlag(actor, key, fallback = undefined) {
-  if (typeof actor?.getFlag === "function") {
-    const value = actor.getFlag(MODULE_ID, key);
-    return value === undefined ? fallback : value;
-  }
-
-  return getProperty(actor, `flags.${MODULE_ID}.${key}`, fallback);
-}
-
-async function setActorFlag(actor, key, value) {
-  if (typeof actor?.setFlag === "function") {
-    return actor.setFlag(MODULE_ID, key, value);
-  }
-
-  if (typeof actor?.update === "function") {
-    return actor.update({ [`flags.${MODULE_ID}.${key}`]: value });
-  }
-
-  setProperty(actor, `flags.${MODULE_ID}.${key}`, value);
-  return actor;
-}
-
 async function unsetActorFlag(actor, key) {
   if (typeof actor?.unsetFlag === "function") {
     return actor.unsetFlag(MODULE_ID, key);
@@ -181,6 +159,20 @@ function resolveTokenFromTarget(target) {
     ?? target.token
     ?? (target.actor || target.document?.actor ? target : null)
     ?? resolveTokenFromActor(resolveActorFromTarget(target));
+}
+
+function resolveUuidSync(uuid) {
+  const safeUuid = cleanText(uuid);
+  if (!safeUuid || typeof globalThis.fromUuidSync !== "function") {
+    return null;
+  }
+
+  try {
+    return globalThis.fromUuidSync(safeUuid);
+  }
+  catch (_error) {
+    return null;
+  }
 }
 
 function tokenDisposition(token) {
@@ -255,7 +247,7 @@ export class PerformerAutomationService {
       return true;
     }
 
-    if (!this.#isActivePerformanceBlocked(actor)) {
+    if (!this.#isActivePerformanceBlocked(activity?.item)) {
       return true;
     }
 
@@ -271,12 +263,12 @@ export class PerformerAutomationService {
       return true;
     }
 
-    if (this.#isActivePerformanceBlocked(actor)) {
+    if (this.#isActivePerformanceBlocked(activity?.item)) {
       return true;
     }
 
     const runtime = activityRuntime(activity) ?? {};
-    const target = this.#selectedTarget(usageConfig, actor);
+    const target = this.#selectedTarget(usageConfig, results, actor);
     if (!target?.actor) {
       globalThis.ui?.notifications?.warn("Исполнитель: выберите цель для Активного выступления.");
       return true;
@@ -294,7 +286,7 @@ export class PerformerAutomationService {
     const formula = cleanText(success ? runtime.successFormula : runtime.failureFormula, success ? "1d5" : "1d3");
     const mode = isHostileTarget(actor, target.token) ? "subtract" : "add";
 
-    await this.#updateActivePerformanceState(actor, success);
+    await this.#updateActivePerformanceUses(activity?.item, success);
     await this.#applyPerformanceDie(target.actor, {
       sourceActor: actor,
       sourceItem: activity?.item,
@@ -313,7 +305,14 @@ export class PerformerAutomationService {
   }
 
   applyDnd5ePreRollD20Test(config = {}, _dialogConfig = {}, messageConfig = {}) {
-    const actor = resolveActorFromSubject(config.subject);
+    void config;
+    void _dialogConfig;
+    void messageConfig;
+    return true;
+  }
+
+  async applyDnd5eD20Roll(rolls, context = {}, _kind = "") {
+    const actor = resolveActorFromSubject(context?.subject ?? context?.actor);
     if (!isActorDocument(actor)) {
       return true;
     }
@@ -325,44 +324,44 @@ export class PerformerAutomationService {
       return true;
     }
 
+    const roll = collectionValues(rolls)[0] ?? rolls ?? null;
+    if (!roll) {
+      return true;
+    }
+
     const mode = cleanText(automation.mode, "add");
-    const signedFormula = mode === "subtract" ? `-${formula}` : formula;
-    for (const rollConfig of config.rolls ?? []) {
-      rollConfig.parts ??= [];
-      rollConfig.options ??= {};
-      if (rollConfig.options[ROLL_EFFECT_UUID_OPTION]) {
-        continue;
+    if (mode !== "subtract") {
+      const confirmed = await this.promptD20Bonus({
+        actor,
+        effect,
+        formula,
+        displayFormula: formatFormulaForDisplay(formula),
+        kind: cleanText(_kind, "d20"),
+        roll,
+        total: toNumber(roll.total, NaN)
+      });
+      if (!confirmed) {
+        return true;
       }
-
-      rollConfig.parts.push(signedFormula);
-      rollConfig.options[ROLL_EFFECT_UUID_OPTION] = cleanText(effect.uuid ?? effect.id);
     }
 
-    const sign = mode === "subtract" ? "-" : "+";
-    const note = `Активное выступление: ${sign}${formatFormulaForDisplay(formula)}`;
-    messageConfig.data ??= {};
-    messageConfig.data.flavor = [messageConfig.data.flavor, note].filter(Boolean).join("<br>");
-    return true;
-  }
-
-  async applyDnd5eD20Roll(rolls, context = {}, _kind = "") {
-    const actor = resolveActorFromSubject(context?.subject ?? context?.actor);
-    if (!isActorDocument(actor)) {
-      return true;
-    }
-
-    const effectUuids = new Set(collectionValues(rolls)
-      .map((roll) => cleanText(roll?.options?.[ROLL_EFFECT_UUID_OPTION]))
-      .filter(Boolean));
-    if (!effectUuids.size) {
-      return true;
-    }
-
-    for (const effect of collectionValues(actor.effects)) {
-      const effectUuid = cleanText(effect?.uuid ?? effect?.id);
-      if (effectUuids.has(effectUuid) && typeof effect?.delete === "function") {
-        await effect.delete();
-      }
+    const bonusRoll = await this.#rollFormula(formula, actor);
+    const bonusTotal = Math.max(0, Math.floor(toNumber(bonusRoll?.total, 0)));
+    const signedTotal = mode === "subtract" ? -bonusTotal : bonusTotal;
+    const currentTotal = toNumber(roll.total, 0);
+    const nextTotal = currentTotal + signedTotal;
+    this.#setRollTotal(roll, nextTotal);
+    await this.#postD20BonusMessage(actor, {
+      mode,
+      formula,
+      bonusTotal,
+      previousTotal: currentTotal,
+      nextTotal,
+      kind: cleanText(_kind, "d20"),
+      bonusRoll
+    });
+    if (typeof effect?.delete === "function") {
+      await effect.delete();
     }
     return true;
   }
@@ -376,9 +375,10 @@ export class PerformerAutomationService {
     return true;
   }
 
-  #selectedTarget(usageConfig, sourceActor) {
+  #selectedTarget(usageConfig, results, sourceActor) {
     const targets = [
       ...collectionValues(usageConfig?.targets),
+      ...this.#messageTargets(results),
       ...collectionValues(globalThis.game?.user?.targets)
     ];
     for (const entry of targets) {
@@ -394,6 +394,18 @@ export class PerformerAutomationService {
     }
 
     return sourceActor ? null : null;
+  }
+
+  #messageTargets(results = {}) {
+    const descriptors = [
+      ...collectionValues(getProperty(results, "message.flags.dnd5e.use.targets")),
+      ...collectionValues(getProperty(results, "message.data.flags.dnd5e.use.targets")),
+      ...collectionValues(getProperty(results, "message._source.flags.dnd5e.use.targets"))
+    ];
+
+    return descriptors
+      .map((target) => resolveUuidSync(target?.uuid) ?? target)
+      .filter(Boolean);
   }
 
   async #rollPerformanceCheck(actor, activity, runtime, dc) {
@@ -419,17 +431,30 @@ export class PerformerAutomationService {
     return [];
   }
 
-  async #updateActivePerformanceState(actor, success) {
-    const current = actorFlag(actor, PERFORMER_STATE_FLAG, {}) ?? {};
-    const failures = success ? 0 : Math.max(0, Math.floor(toNumber(current.failures, 0))) + 1;
-    await setActorFlag(actor, PERFORMER_STATE_FLAG, {
-      failures,
-      blocked: failures >= 2
-    });
+  async #updateActivePerformanceUses(item, success) {
+    if (!item) {
+      return true;
+    }
+
+    const max = this.#failureLimit(item);
+    const spent = Math.max(0, Math.floor(toNumber(item?.system?.uses?.spent, 0)));
+    const nextSpent = success ? 0 : Math.min(max, spent + 1);
+    if (typeof item.update === "function") {
+      await item.update({ "system.uses.spent": nextSpent });
+    }
+    else {
+      setProperty(item, "system.uses.spent", nextSpent);
+    }
+    return true;
   }
 
-  #isActivePerformanceBlocked(actor) {
-    return actorFlag(actor, `${PERFORMER_STATE_FLAG}.blocked`) === true;
+  #isActivePerformanceBlocked(item) {
+    return Math.max(0, Math.floor(toNumber(item?.system?.uses?.spent, 0))) >= this.#failureLimit(item);
+  }
+
+  #failureLimit(item) {
+    const max = Math.floor(toNumber(item?.system?.uses?.max, DEFAULT_FAILURE_LIMIT));
+    return max > 0 ? max : DEFAULT_FAILURE_LIMIT;
   }
 
   async #applyPerformanceDie(targetActor, { sourceActor, sourceItem, formula, mode, seconds }) {
@@ -476,7 +501,9 @@ export class PerformerAutomationService {
         startTurn: null,
         combat: null
       },
-      description: `<p>${escapeHtml(targetActor?.name)} ${isPenalty ? "вычитает" : "добавляет"} ${escapeHtml(displayFormula)} к первому d20-тесту.</p>`,
+      description: isPenalty
+        ? `<p>${escapeHtml(targetActor?.name)} вычитает ${escapeHtml(displayFormula)} из следующего d20-теста.</p>`
+        : `<p>${escapeHtml(targetActor?.name)} может добровольно добавить ${escapeHtml(displayFormula)} к d20-тесту в течение 1 минуты.</p>`,
       origin: cleanText(sourceItem?.uuid ?? sourceActor?.uuid),
       transfer: false,
       statuses: [],
@@ -509,6 +536,91 @@ export class PerformerAutomationService {
       ?? getProperty(effect, `flags.${MODULE_ID}.performerAutomation`, null);
   }
 
+  async promptD20Bonus(details) {
+    if (typeof this._options.promptD20Bonus === "function") {
+      return this._options.promptD20Bonus(details);
+    }
+
+    if (!this.#canPrompt(details?.actor)) {
+      return false;
+    }
+
+    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof DialogV2?.confirm !== "function") {
+      return false;
+    }
+
+    return DialogV2.confirm({
+      window: { title: "Активное выступление" },
+      content: `<p>Использовать кость Исполнителя <strong>+${escapeHtml(details.displayFormula)}</strong> к этому d20-тесту?</p>`,
+      yes: { label: "Использовать" },
+      no: { label: "Не сейчас" },
+      rejectClose: false,
+      modal: true
+    });
+  }
+
+  async #rollFormula(formula, actor) {
+    const roll = typeof this._options.rollFactory === "function"
+      ? this._options.rollFactory(formula, actor)
+      : new Roll(formula || "0", actor?.getRollData?.() ?? {});
+    if (typeof roll?.evaluate === "function") {
+      return roll.evaluate({ async: true });
+    }
+    if (typeof roll?.roll === "function") {
+      return roll.roll({ async: true });
+    }
+    return roll;
+  }
+
+  #setRollTotal(roll, total) {
+    try {
+      roll._total = total;
+    }
+    catch (_error) {
+      // Some roll implementations expose totals as read-only.
+    }
+    try {
+      roll.total = total;
+    }
+    catch (_error) {
+      // Some roll implementations expose totals as read-only.
+    }
+  }
+
+  async #postD20BonusMessage(actor, { mode, formula, bonusTotal, previousTotal, nextTotal, kind, bonusRoll }) {
+    if (typeof bonusRoll?.toMessage === "function") {
+      await bonusRoll.toMessage({
+        speaker: speakerForActor(actor),
+        flavor: `Активное выступление: ${mode === "subtract" ? "вычитание" : "доброс"} ${formatFormulaForDisplay(formula)} (${kind})`
+      });
+    }
+
+    if (typeof globalThis.ChatMessage?.create !== "function") {
+      return false;
+    }
+
+    const sign = mode === "subtract" ? "-" : "+";
+    await ChatMessage.create({
+      speaker: speakerForActor(actor),
+      content: `<p><strong>Активное выступление</strong>: ${escapeHtml(sign)}${escapeHtml(bonusTotal)} к d20-тесту (${escapeHtml(previousTotal)} → ${escapeHtml(nextTotal)}).</p>`,
+      flags: {
+        [MODULE_ID]: {
+          performerAutomation: {
+            action: "d20Bonus",
+            formula,
+            mode,
+            bonusTotal,
+            previousTotal,
+            nextTotal,
+            kind
+          }
+        }
+      }
+    });
+    return true;
+  }
+
   async #postActivePerformanceMessage(actor, targetActor, { success, total, dc, formula, mode }) {
     if (typeof globalThis.ChatMessage?.create !== "function") {
       return false;
@@ -531,5 +643,9 @@ export class PerformerAutomationService {
       }
     });
     return true;
+  }
+
+  #canPrompt(actor) {
+    return Boolean(globalThis.game?.user?.isGM || actor?.isOwner);
   }
 }
