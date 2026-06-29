@@ -281,7 +281,16 @@ export class PerformerAutomationService {
     }
 
     const dc = Math.max(1, Math.floor(toNumber(runtime.dc, 20)));
-    const total = firstRollTotal(results);
+    let total = firstRollTotal(results);
+    if (!Number.isFinite(total)) {
+      const rolls = await this.#rollActivePerformanceCheck(actor, target.actor, {
+        activity,
+        dc,
+        runtime
+      });
+      total = firstRollTotal(rolls);
+    }
+
     if (!Number.isFinite(total)) {
       globalThis.ui?.notifications?.warn("Исполнитель: не удалось определить результат проверки Выступления.");
       return true;
@@ -418,7 +427,18 @@ export class PerformerAutomationService {
   #performerItemMigrationPatch(item, activity) {
     const patch = {};
     const currentActivity = getProperty(item, `system.activities.${activity._id}`, null);
-    if (!currentActivity || currentActivity.type !== activity.type || currentActivity.img !== activity.img || !sameData(currentActivity.check, activity.check)) {
+    const currentRuntime = currentActivity
+      ? readDocumentFlag(currentActivity, "runtime")
+        ?? getProperty(currentActivity, `flags.${MODULE_ID}.runtime`, null)
+      : null;
+    const nextRuntime = getProperty(activity, `flags.${MODULE_ID}.runtime`, null);
+    if (
+      !currentActivity
+      || currentActivity.type !== activity.type
+      || currentActivity.img !== activity.img
+      || currentActivity.check !== undefined
+      || !sameData(currentRuntime, nextRuntime)
+    ) {
       patch[`system.activities.${activity._id}`] = activity;
     }
 
@@ -432,6 +452,35 @@ export class PerformerAutomationService {
     }
 
     return patch;
+  }
+
+  async #rollActivePerformanceCheck(actor, targetActor, { activity, dc, runtime }) {
+    if (typeof actor?.rollSkill !== "function") {
+      return null;
+    }
+
+    const skill = cleanText(runtime?.skill, "prf");
+    const ability = cleanText(runtime?.ability, "cha");
+    return actor.rollSkill({
+      ability,
+      skill,
+      target: dc,
+      hookNames: [ACTIVE_PERFORMANCE_ACTION]
+    }, {}, {
+      data: {
+        speaker: speakerForActor(actor),
+        flags: {
+          [MODULE_ID]: {
+            performerAutomation: {
+              action: ACTIVE_PERFORMANCE_ACTION,
+              sourceItemUuid: cleanText(activity?.item?.uuid),
+              targetActorUuid: cleanText(targetActor?.uuid),
+              dc
+            }
+          }
+        }
+      }
+    });
   }
 
   #selectedTarget(usageConfig, results, sourceActor) {

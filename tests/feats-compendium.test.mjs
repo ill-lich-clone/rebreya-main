@@ -35,21 +35,14 @@ test("performer feat exposes automated active performance runtime activity", () 
   assert.equal(activities.length, 1);
   const activity = activities[0];
   assert.equal(activity.name, "Активное выступление");
-  assert.equal(activity.type, "check");
-  assert.equal(activity.img, "systems/dnd5e/icons/svg/activity/check.svg");
+  assert.equal(activity.type, "utility");
+  assert.equal(activity.img, "systems/dnd5e/icons/svg/activity/utility.svg");
   assert.equal(activity.activation.type, "bonus");
   assert.equal(activity.range.value, 60);
   assert.equal(activity.range.units, "ft");
   assert.equal(activity.target.prompt, true);
   assert.equal(activity.target.affects.type, "creature");
-  assert.deepEqual(activity.check, {
-    ability: "cha",
-    associated: ["prf"],
-    dc: {
-      calculation: "",
-      formula: "20"
-    }
-  });
+  assert.equal(activity.check, undefined);
   assert.deepEqual(activity.consumption.targets, []);
   assert.equal(performer.system.uses.max, "2");
   assert.deepEqual(performer.system.uses.recovery, [{ period: "lr", type: "recoverAll", formula: "" }]);

@@ -190,13 +190,6 @@ function makeActivity(actor, item = {}) {
   };
 }
 
-function makeCheckResults(total, extra = {}) {
-  return {
-    rolls: [{ total }],
-    ...extra
-  };
-}
-
 function makeActorCollection(actors) {
   return {
     contents: actors,
@@ -255,7 +248,7 @@ function makeD20BonusEffect({ formula = "1d4", mode = "add", label = "Р”Рѕ�
   };
 }
 
-test("initialize migrates owned performer activity to a native check activity", async () => {
+test("initialize migrates owned performer activity to automated utility activity", async () => {
   const previousActors = globalThis.game.actors;
   const previousIsGM = globalThis.game.user.isGM;
   const actor = new TestActor({ id: "performer" });
@@ -285,16 +278,9 @@ test("initialize migrates owned performer activity to a native check activity", 
     await new PerformerAutomationService({}).initialize();
 
     const activity = item.system.activities.bd37d8496d0f0415;
-    assert.equal(activity.type, "check");
-    assert.equal(activity.img, "systems/dnd5e/icons/svg/activity/check.svg");
-    assert.deepEqual(activity.check, {
-      ability: "cha",
-      associated: ["prf"],
-      dc: {
-        calculation: "",
-        formula: "20"
-      }
-    });
+    assert.equal(activity.type, "utility");
+    assert.equal(activity.img, "systems/dnd5e/icons/svg/activity/utility.svg");
+    assert.equal(activity.check, undefined);
     assert.equal(item.system.uses.max, "2");
     assert.equal(item.updates.length, 1);
   }
@@ -317,9 +303,15 @@ test("active performance success applies a d5 die to the selected ally and clear
   const service = new PerformerAutomationService({});
 
   try {
-    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, makeCheckResults(24));
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {});
 
-    assert.equal(performer.rolls.length, 0);
+    assert.equal(performer.rolls.length, 1);
+    assert.deepEqual(performer.rolls[0].config, {
+      ability: "cha",
+      skill: "prf",
+      target: 20,
+      hookNames: ["activePerformance"]
+    });
     assert.equal(target.created[0].type, "ActiveEffect");
     const effect = target.created[0].documents[0];
     assert.equal(effect.duration.seconds, 60);
@@ -343,7 +335,7 @@ test("active performance can resolve the target from the dnd5e usage message", a
   const service = new PerformerAutomationService({});
 
   try {
-    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, makeCheckResults(23, {
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {
       message: {
         flags: {
           dnd5e: {
@@ -353,8 +345,9 @@ test("active performance can resolve the target from the dnd5e usage message", a
           }
         }
       }
-    }));
+    });
 
+    assert.equal(performer.rolls.length, 1);
     assert.equal(target.created[0].type, "ActiveEffect");
   }
   finally {
@@ -376,7 +369,7 @@ test("second consecutive active performance failure spends the second use and bl
   const service = new PerformerAutomationService({});
 
   try {
-    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, makeCheckResults(14));
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {});
 
     const effect = target.created[0].documents[0];
     assert.equal(effect.flags["rebreya-main"].performerAutomation.formula, "1d3");
@@ -402,7 +395,7 @@ test("active performance still applies its die when dnd5e has already spent the 
   const service = new PerformerAutomationService({});
 
   try {
-    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, makeCheckResults(14));
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {});
 
     const effect = target.created[0].documents[0];
     assert.equal(effect.flags["rebreya-main"].d20Bonus.formula, "1d3");
