@@ -266,11 +266,18 @@ export class AttackRollBoostService {
     return true;
   }
 
-  async applyMidiHitsChecked(workflow) {
-    if (!workflow || workflow[CHECKED_WORKFLOW_FLAG]) {
+  async applyMidiHitsChecked(workflow, options = {}) {
+    if (
+      !workflow
+      || workflow[CHECKED_WORKFLOW_FLAG]
+      || (workflow.attackRoll?.[CHECKED_WORKFLOW_FLAG] && options.allowCheckedAttackRoll !== true)
+    ) {
       return true;
     }
     workflow[CHECKED_WORKFLOW_FLAG] = true;
+    if (workflow.attackRoll && options.markAttackRoll !== false) {
+      workflow.attackRoll[CHECKED_WORKFLOW_FLAG] = true;
+    }
 
     const actor = workflow.actor ?? workflow.activity?.actor ?? workflow.item?.actor ?? null;
     if (!actor || !this.#canPrompt(actor) || !this.#isAttackWorkflow(workflow)) {
@@ -326,31 +333,31 @@ export class AttackRollBoostService {
     }
 
     const selectedSources = sources.filter((source) => selectedIds.has(source.id));
-    const applied = [];
-    let bonusTotal = 0;
+    const consumedSources = [];
     for (const source of selectedSources) {
       if ((await this.#consumeSource(actor, source)) === false) {
         continue;
       }
-
-      const roll = await this.#rollSource(source, actor);
-      const rollTotal = Math.max(0, Math.floor(toNumber(roll?.total, 0)));
-      bonusTotal += rollTotal;
-      applied.push({
-        id: source.id,
-        label: source.label,
-        formula: source.formula,
-        displayFormula: source.displayFormula,
-        rollTotal,
-        sourceName: source.sourceName,
-        itemUuid: source.item?.uuid ?? ""
-      });
-      await this.#postRollMessage(actor, source, roll, workflow);
+      consumedSources.push(source);
     }
 
-    if (!applied.length) {
+    if (!consumedSources.length) {
       return true;
     }
+
+    const roll = await this.#rollSources(consumedSources, actor);
+    const bonusTotal = Math.max(0, Math.floor(toNumber(roll?.total, 0)));
+    const applied = consumedSources.map((source) => ({
+      id: source.id,
+      label: source.label,
+      formula: source.formula,
+      displayFormula: source.displayFormula,
+      rollTotal: consumedSources.length === 1 ? bonusTotal : null,
+      combinedRollTotal: bonusTotal,
+      sourceName: source.sourceName,
+      itemUuid: source.item?.uuid ?? ""
+    }));
+    await this.#postRollMessage(actor, consumedSources, roll, workflow);
 
     const newTotal = attackTotal + bonusTotal;
     this.#setAttackTotal(workflow, newTotal);
@@ -400,7 +407,7 @@ export class AttackRollBoostService {
       hitTargets: new Set(),
       hitTargetsEC: new Set(),
       hitDisplayData: {}
-    });
+    }, { allowCheckedAttackRoll: true });
   }
 
   async promptAttackRollBoosts(details) {
@@ -855,8 +862,12 @@ export class AttackRollBoostService {
     return single ? new Set([single]) : new Set();
   }
 
-  async #rollSource(source, actor) {
-    const roll = this.#createRoll(source.formula, actor);
+  async #rollSources(sources, actor) {
+    const formula = collectionValues(sources)
+      .map((source) => cleanText(source?.formula))
+      .filter(Boolean)
+      .join(" + ");
+    const roll = this.#createRoll(formula, actor);
     if (typeof roll?.evaluate === "function") {
       return roll.evaluate({ async: true });
     }
@@ -877,14 +888,18 @@ export class AttackRollBoostService {
     return new Roll(rollFormula || "0", actor?.getRollData?.() ?? {});
   }
 
-  async #postRollMessage(actor, source, roll, workflow) {
+  async #postRollMessage(actor, sources, roll, workflow) {
     if (typeof roll?.toMessage !== "function") {
       return false;
     }
 
+    const labels = collectionValues(sources)
+      .map((source) => cleanText(source?.sourceName, source?.label))
+      .filter(Boolean)
+      .join(", ");
     await roll.toMessage({
       speaker: globalThis.ChatMessage?.getSpeaker?.({ actor }) ?? {},
-      flavor: `${cleanText(source.label)}: доброс к атаке ${cleanText(workflow?.item?.name)}`
+      flavor: `${labels}: доброс к атаке ${cleanText(workflow?.item?.name)}`
     });
     return true;
   }

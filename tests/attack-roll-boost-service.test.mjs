@@ -208,7 +208,7 @@ function makeTarget({ id = "target", ac = 19, name = "Цель" } = {}) {
   };
 }
 
-function makeWeaponWorkflow({ actor, target, attackTotal = 18 } = {}) {
+function makeWeaponWorkflow({ actor, target, attackTotal = 18, attackRoll = null } = {}) {
   return {
     actor,
     item: {
@@ -226,7 +226,7 @@ function makeWeaponWorkflow({ actor, target, attackTotal = 18 } = {}) {
         }
       }
     },
-    attackRoll: {
+    attackRoll: attackRoll ?? {
       total: attackTotal,
       options: {},
       data: {}
@@ -380,6 +380,100 @@ test("generic d20 bonus active effects share the attack roll boost dialog and ex
   assert.equal(workflow.hitTargets.has(target), true);
   assert.equal(dominance.system.uses.spent, 0);
   assert.equal(performanceDie.deleted, true);
+});
+
+test("fallback and MIDI hit check do not prompt twice for the same attack roll", async () => {
+  const preciseAttack = makeItem({
+    id: "precise-attack",
+    name: "Точная атака",
+    boosts: [{
+      id: "fighter-precise-attack",
+      label: "Точная атака",
+      formula: "1d4"
+    }]
+  });
+  const weapon = makeItem({
+    id: "longbow",
+    name: "Длинный лук",
+    boosts: []
+  });
+  weapon.type = "weapon";
+  const actor = makeActor([preciseAttack, weapon]);
+  const target = makeTarget({ ac: 18 });
+  const attackRoll = {
+    total: 15,
+    _total: 15,
+    formula: "1d20 + 5",
+    flags: {}
+  };
+  let promptCount = 0;
+  const service = new AttackRollBoostService({}, {
+    promptAttackRollBoosts: async () => {
+      promptCount += 1;
+      return [];
+    }
+  });
+
+  await service.applyDnd5eRollAttack([attackRoll], {
+    subject: {
+      actor,
+      item: weapon,
+      actionType: "rwak",
+      hasAttack: true,
+      attack: true
+    },
+    targets: [target]
+  });
+  await service.applyMidiHitsChecked(makeWeaponWorkflow({ actor, target, attackTotal: 15, attackRoll }));
+
+  assert.equal(promptCount, 1);
+});
+
+test("selected attack roll boost sources are rolled into one combined chat card", async () => {
+  const dominance = makeItem({
+    id: "fighter-dominance",
+    name: "Стиль доминирования",
+    uses: {
+      spent: 0,
+      max: "2"
+    }
+  });
+  const preciseAttack = makeItem({
+    id: "precise-attack",
+    name: "Точная атака",
+    boosts: [{
+      id: "fighter-precise-attack",
+      label: "Точная атака",
+      formula: "1d4",
+      consumption: {
+        type: "itemUses",
+        target: "fighter-dominance",
+        value: "1"
+      }
+    }]
+  });
+  const performer = makeItem({ id: "performer", name: "Исполнитель" });
+  const performanceDie = makeD20BonusEffect({
+    id: "active-performance",
+    sourceItemUuid: performer.uuid
+  });
+  const actor = makeActor([dominance, preciseAttack, performer], [performanceDie]);
+  const target = makeTarget({ ac: 18 });
+  const workflow = makeWeaponWorkflow({ actor, target, attackTotal: 15 });
+  TestRoll.queuedTotals = [3];
+  TestRoll.messages = [];
+  const service = new AttackRollBoostService({}, {
+    promptAttackRollBoosts: async (details) => details.options.map((option) => option.id)
+  });
+
+  await service.applyMidiHitsChecked(workflow);
+
+  assert.equal(workflow.attackTotal, 18);
+  assert.equal(TestRoll.messages.length, 1);
+  assert.equal(TestRoll.messages[0].formula, "1d4 + 1d3");
+  assert.equal(TestRoll.messages[0].total, 3);
+  assert.match(TestRoll.messages[0].messageData.flavor, /Точная атака/u);
+  assert.match(TestRoll.messages[0].messageData.flavor, /Активное выступление/u);
 });
 
 test("stale fighter precise attack maneuver items still provide an attack roll boost", async () => {
