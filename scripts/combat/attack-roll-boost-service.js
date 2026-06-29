@@ -2,6 +2,7 @@ import { MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation, normalizeFighterAutomationKey } from "../data/fighter-automation.js";
 
 const ATTACK_ROLL_BOOST_FLAG = "attackRollBoosts";
+const D20_BONUS_FLAG = "d20Bonus";
 const CHECKED_WORKFLOW_FLAG = `_${MODULE_ID}AttackRollBoostChecked`;
 const WEAPON_ATTACK_TYPES = new Set(["mwak", "rwak", "fwak"]);
 const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
@@ -45,6 +46,14 @@ function getProperty(source, path, fallback = undefined) {
     ? foundry.utils.getProperty(source, path)
     : String(path ?? "").split(".").reduce((current, key) => current?.[key], source);
   return value === undefined ? fallback : value;
+}
+
+function readDocumentFlag(document, key) {
+  if (typeof document?.getFlag === "function") {
+    return document.getFlag(MODULE_ID, key);
+  }
+
+  return getProperty(document, `flags.${MODULE_ID}.${key}`, undefined);
 }
 
 function setProperty(source, path, value) {
@@ -218,6 +227,22 @@ function progressionFormulaForLevel(entries, level) {
   return selected;
 }
 
+function pluralizeRu(value, [one, few, many]) {
+  const number = Math.abs(Math.floor(toNumber(value, 0)));
+  const mod100 = number % 100;
+  const mod10 = number % 10;
+  if (mod100 >= 11 && mod100 <= 14) {
+    return many;
+  }
+  if (mod10 === 1) {
+    return one;
+  }
+  if (mod10 >= 2 && mod10 <= 4) {
+    return few;
+  }
+  return many;
+}
+
 function isTokenInSet(set, target) {
   if (!set?.has) {
     return false;
@@ -284,11 +309,14 @@ export class AttackRollBoostService {
       options: sources.map((source) => ({
         id: source.id,
         label: source.label,
+        displayLabel: source.displayLabel,
+        usesLabel: source.usesLabel,
         formula: source.formula,
         displayFormula: source.displayFormula,
         sourceName: source.sourceName,
         maxTotal: source.maxTotal,
-        itemUuid: source.item?.uuid ?? ""
+        itemUuid: source.item?.uuid ?? "",
+        effectUuid: source.effect?.uuid ?? ""
       }))
     };
 
@@ -390,22 +418,60 @@ export class AttackRollBoostService {
     }
 
     const content = this.#dialogContent(details);
+    if (typeof DialogV2?.wait === "function") {
+      const selected = await DialogV2.wait({
+        window: { title: "Доброс к атаке" },
+        content,
+        buttons: [
+          {
+            action: "add",
+            label: "Добавить к броску",
+            icon: "fa-solid fa-check",
+            default: true,
+            callback: (_event, button, dialog) => this.#selectedIdsFromDialog(button, dialog)
+          },
+          {
+            action: "none",
+            label: "Ничего не добавлять",
+            icon: "fa-solid fa-xmark",
+            callback: () => []
+          }
+        ],
+        rejectClose: false,
+        modal: true
+      });
+      return Array.isArray(selected) ? selected : [];
+    }
+
     const selected = await DialogV2.input({
       window: { title: "Доброс к атаке" },
       content,
       ok: {
         label: "Добавить к броску",
-        callback: (_event, button) => {
-          const root = getDialogButtonForm(button);
-          return Array.from(root?.querySelectorAll?.("[data-attack-roll-boost]:checked") ?? [])
-            .map((input) => cleanText(input.value))
-            .filter(Boolean);
-        }
+        callback: (_event, button, dialog) => this.#selectedIdsFromDialog(button, dialog)
       },
+      buttons: [
+        {
+          action: "none",
+          label: "Ничего не добавлять",
+          icon: "fa-solid fa-xmark",
+          callback: () => []
+        }
+      ],
       rejectClose: false,
       modal: true
     });
     return Array.isArray(selected) ? selected : [];
+  }
+
+  #selectedIdsFromDialog(button, dialog) {
+    const root = getDialogButtonForm(button)
+      ?? dialog?.element?.querySelector?.("form")
+      ?? dialog?.element?.[0]?.querySelector?.("form")
+      ?? null;
+    return Array.from(root?.querySelectorAll?.("[data-attack-roll-boost]:checked") ?? [])
+      .map((input) => cleanText(input.value))
+      .filter(Boolean);
   }
 
   #isAttackWorkflow(workflow) {
@@ -485,6 +551,20 @@ export class AttackRollBoostService {
         sources.push(source);
       }
     }
+
+    for (const source of await this.#activeEffectD20BonusSources(actor, workflow)) {
+      if (!source || !this.#sourceMatchesWorkflow(source, workflow)) {
+        continue;
+      }
+
+      const key = source.id;
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      sources.push(source);
+    }
     return sources;
   }
 
@@ -555,7 +635,7 @@ export class AttackRollBoostService {
       return null;
     }
 
-    return {
+    const source = {
       id,
       label: cleanText(rawBoost?.label, item?.name ?? id),
       sourceName: cleanText(item?.name, rawBoost?.label ?? id),
@@ -569,6 +649,59 @@ export class AttackRollBoostService {
         : null,
       item
     };
+    source.usesLabel = await this.#sourceUsesLabel(actor, source);
+    source.displayLabel = this.#displayLabelWithUses(source.label, source.usesLabel);
+    return source;
+  }
+
+  async #activeEffectD20BonusSources(actor, workflow) {
+    const sources = [];
+    for (const effect of collectionValues(actor?.effects)) {
+      const automation = this.#effectD20BonusAutomation(effect);
+      const formula = cleanText(automation?.formula);
+      const mode = cleanText(automation?.mode, "add");
+      if (
+        effect?.disabled === true
+        || effect?.transfer === true
+        || !formula
+        || mode !== "add"
+        || automation?.prompt === false
+      ) {
+        continue;
+      }
+
+      const maxTotal = await this.#maxFormulaTotal(formula, actor);
+      if (!Number.isFinite(maxTotal) || maxTotal <= 0) {
+        continue;
+      }
+
+      const sourceItem = this.#findSourceItem(actor, automation?.sourceItemUuid);
+      const id = `effect:${cleanText(effect?.uuid ?? effect?.id ?? automation?.label ?? formula)}`;
+      const source = {
+        id,
+        label: cleanText(sourceItem?.name, automation?.sourceName ?? automation?.label ?? effect?.name ?? id),
+        sourceName: cleanText(automation?.label, effect?.name ?? sourceItem?.name ?? id),
+        formula,
+        displayFormula: formatFormulaForDisplay(this.#resolveScaleFormula(cleanText(automation?.displayFormula, formula), actor)),
+        maxTotal,
+        weaponOnly: automation?.weaponOnly === true,
+        attackTypes: Array.isArray(automation?.attackTypes) ? automation.attackTypes.map(cleanText).filter(Boolean) : [],
+        consumption: null,
+        deleteOnUse: automation?.deleteOnUse !== false,
+        item: sourceItem,
+        effect,
+        workflow
+      };
+      source.usesLabel = await this.#sourceUsesLabel(actor, source);
+      source.displayLabel = this.#displayLabelWithUses(source.label, source.usesLabel);
+      sources.push(source);
+    }
+    return sources;
+  }
+
+  #effectD20BonusAutomation(effect) {
+    return readDocumentFlag(effect, D20_BONUS_FLAG)
+      ?? getProperty(effect, `flags.${MODULE_ID}.${D20_BONUS_FLAG}`, null);
   }
 
   #sourceMatchesWorkflow(source, workflow) {
@@ -840,6 +973,14 @@ export class AttackRollBoostService {
   }
 
   async #consumeSource(actor, source) {
+    if (source?.effect && source.deleteOnUse !== false) {
+      if (typeof source.effect.delete !== "function") {
+        return false;
+      }
+      await source.effect.delete();
+      return true;
+    }
+
     const consumption = source?.consumption;
     if (!consumption) {
       return true;
@@ -870,6 +1011,100 @@ export class AttackRollBoostService {
       setProperty(item, "system.uses.spent", spent + amount);
     }
     return true;
+  }
+
+  async #sourceUsesLabel(actor, source) {
+    const explicit = cleanText(source?.usesLabel);
+    if (explicit) {
+      return explicit;
+    }
+
+    if (source?.effect && source.deleteOnUse !== false) {
+      return "1 использование";
+    }
+
+    const consumption = source?.consumption;
+    if (cleanText(consumption?.type) === "itemUses") {
+      const item = this.#findConsumptionItem(actor, consumption.target);
+      const remaining = await this.#remainingItemUses(item, actor);
+      if (!Number.isFinite(remaining)) {
+        return "";
+      }
+
+      return this.#formatUseCount(remaining, this.#useCountForms(item, consumption));
+    }
+
+    const remaining = await this.#remainingItemUses(source?.item, actor);
+    if (!Number.isFinite(remaining)) {
+      return "";
+    }
+
+    return this.#formatUseCount(remaining, ["использование", "использования", "использований"]);
+  }
+
+  async #remainingItemUses(item, actor) {
+    if (!item?.system?.uses) {
+      return Infinity;
+    }
+
+    const max = await this.#resolveUsesMax(item, actor);
+    if (!Number.isFinite(max)) {
+      return Infinity;
+    }
+
+    const spent = Math.max(0, Math.floor(toNumber(item?.system?.uses?.spent, 0)));
+    return Math.max(0, Math.floor(max - spent));
+  }
+
+  #formatUseCount(value, forms) {
+    const count = Math.max(0, Math.floor(toNumber(value, 0)));
+    return `${count} ${pluralizeRu(count, forms)}`;
+  }
+
+  #useCountForms(item, consumption) {
+    const explicit = cleanText(consumption?.useLabel ?? consumption?.usesLabel ?? consumption?.resourceLabel);
+    if (explicit) {
+      return [explicit, explicit, explicit];
+    }
+
+    if (
+      cleanText(consumption?.target) === FIGHTER_DOMINANCE_FEATURE_ID
+      || normalizeFighterAutomationKey(item?.name) === "стиль доминирования"
+    ) {
+      return ["кость превосходства", "кости превосходства", "костей превосходства"];
+    }
+
+    return ["использование", "использования", "использований"];
+  }
+
+  #displayLabelWithUses(label, usesLabel) {
+    const text = cleanText(label);
+    const uses = cleanText(usesLabel);
+    return uses ? `${text} (${uses})` : text;
+  }
+
+  #findSourceItem(actor, uuid) {
+    const sourceUuid = cleanText(uuid);
+    if (!sourceUuid) {
+      return null;
+    }
+
+    const owned = collectionValues(actor?.items).find((item) => (
+      cleanText(item?.uuid) === sourceUuid
+      || cleanText(item?.id) === sourceUuid
+      || cleanText(item?._id) === sourceUuid
+    ));
+    if (owned) {
+      return owned;
+    }
+
+    try {
+      const document = globalThis.fromUuidSync?.(sourceUuid);
+      return document?.actor === actor || cleanText(document?.uuid) === sourceUuid ? document : null;
+    }
+    catch (_error) {
+      return null;
+    }
   }
 
   #findConsumptionItem(actor, target) {
@@ -929,7 +1164,7 @@ export class AttackRollBoostService {
       <label class="rebreya-attack-roll-boost-option" style="display: grid; grid-template-columns: auto 1fr; gap: 0.5rem; align-items: start; padding: 0.45rem; border: 1px solid var(--color-border-light-tertiary); border-radius: 4px;">
         <input type="checkbox" name="attackRollBoost" value="${escapeHtml(option.id)}" data-attack-roll-boost>
         <span>
-          <strong>${escapeHtml(option.label)}</strong>
+          <strong>${escapeHtml(option.displayLabel ?? option.label)}</strong>
           <span style="display: block; margin-top: 0.2rem;">${escapeHtml(formatFormulaForDisplay(option.displayFormula ?? option.formula))}${option.sourceName ? ` · ${escapeHtml(option.sourceName)}` : ""}</span>
         </span>
       </label>

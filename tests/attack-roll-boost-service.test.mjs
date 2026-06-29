@@ -119,7 +119,7 @@ function makeItem({ id, name, boosts = [], uses = null } = {}) {
   };
 }
 
-function makeActor(items = []) {
+function makeActor(items = [], effects = []) {
   const actor = new Actor();
   actor.id = "hero";
   actor.uuid = "Actor.hero";
@@ -137,7 +137,53 @@ function makeActor(items = []) {
   for (const item of items) {
     item.actor = actor;
   }
+  actor.effects = {
+    contents: effects,
+    values: () => effects.values(),
+    [Symbol.iterator]: function* iterator() {
+      yield* effects;
+    }
+  };
+  for (const effect of effects) {
+    effect.parent = actor;
+    effect.actor = actor;
+  }
   return actor;
+}
+
+function makeD20BonusEffect({
+  id = "d20-bonus",
+  name = "Активное выступление",
+  label = "Активное выступление",
+  formula = "1d3",
+  mode = "add",
+  sourceItemUuid = ""
+} = {}) {
+  return {
+    id,
+    uuid: `Actor.hero.ActiveEffect.${id}`,
+    name,
+    disabled: false,
+    transfer: false,
+    flags: {
+      "rebreya-main": {
+        d20Bonus: {
+          label,
+          formula,
+          displayFormula: formula.replace(/d/gu, "к"),
+          mode,
+          prompt: true,
+          deleteOnUse: true,
+          sourceItemUuid
+        }
+      }
+    },
+    deleted: false,
+    async delete() {
+      this.deleted = true;
+      return this;
+    }
+  };
 }
 
 function makeTarget({ id = "target", ac = 19, name = "Цель" } = {}) {
@@ -263,6 +309,77 @@ test("attack roll boosts add selected dice, spend configured uses, and mark targ
     rollTotal: 6,
     targetNames: ["Цель"]
   }]);
+});
+
+test("generic d20 bonus active effects share the attack roll boost dialog and expire when selected", async () => {
+  const dominance = makeItem({
+    id: "fighter-dominance",
+    name: "Стиль доминирования",
+    uses: {
+      spent: 0,
+      max: "2"
+    }
+  });
+  const preciseAttack = makeItem({
+    id: "precise-attack",
+    name: "Точная атака",
+    boosts: [{
+      id: "fighter-precise-attack",
+      label: "Точная атака",
+      formula: "1d4",
+      consumption: {
+        type: "itemUses",
+        target: "fighter-dominance",
+        value: "1"
+      }
+    }]
+  });
+  const performer = makeItem({
+    id: "performer",
+    name: "Исполнитель",
+    uses: {
+      spent: 1,
+      max: "2"
+    }
+  });
+  const performanceDie = makeD20BonusEffect({
+    id: "active-performance",
+    sourceItemUuid: performer.uuid
+  });
+  const actor = makeActor([dominance, preciseAttack, performer], [performanceDie]);
+  const target = makeTarget({ ac: 18 });
+  const workflow = makeWeaponWorkflow({ actor, target, attackTotal: 17 });
+  TestRoll.queuedTotals = [2];
+  let promptDetails = null;
+  const service = new AttackRollBoostService({}, {
+    promptAttackRollBoosts: async (details) => {
+      promptDetails = details;
+      return [details.options.find((option) => option.sourceName === "Активное выступление")?.id];
+    }
+  });
+
+  await service.applyMidiHitsChecked(workflow);
+
+  assert.deepEqual(promptDetails.options.map((option) => ({
+    label: option.label,
+    displayLabel: option.displayLabel,
+    displayFormula: option.displayFormula,
+    sourceName: option.sourceName
+  })), [{
+    label: "Точная атака",
+    displayLabel: "Точная атака (2 кости превосходства)",
+    displayFormula: "1к4",
+    sourceName: "Точная атака"
+  }, {
+    label: "Исполнитель",
+    displayLabel: "Исполнитель (1 использование)",
+    displayFormula: "1к3",
+    sourceName: "Активное выступление"
+  }]);
+  assert.equal(workflow.attackTotal, 19);
+  assert.equal(workflow.hitTargets.has(target), true);
+  assert.equal(dominance.system.uses.spent, 0);
+  assert.equal(performanceDie.deleted, true);
 });
 
 test("stale fighter precise attack maneuver items still provide an attack roll boost", async () => {
@@ -701,11 +818,13 @@ test("attack roll boosts do not prompt when available dice cannot reach any miss
 test("attack roll boost prompt uses DialogV2 input and checkbox options", async () => {
   const previousApplications = globalThis.foundry.applications;
   let dialogContent = "";
+  let dialogButtons = [];
   globalThis.foundry.applications = {
     api: {
       DialogV2: {
-        async input({ content, ok }) {
+        async input({ content, ok, buttons = [] }) {
           dialogContent = content;
+          dialogButtons = buttons;
           const form = {
             querySelectorAll(selector) {
               if (selector === "[data-attack-roll-boost]:checked") {
@@ -741,6 +860,7 @@ test("attack roll boost prompt uses DialogV2 input and checkbox options", async 
     assert.match(dialogContent, /overflow-y:\s*auto/u);
     assert.match(dialogContent, /1к4/u);
     assert.doesNotMatch(dialogContent, /@scale\.fighter-rework-v028\.dominance-die/u);
+    assert.deepEqual(dialogButtons.map((button) => button.label), ["Ничего не добавлять"]);
   }
   finally {
     globalThis.foundry.applications = previousApplications;

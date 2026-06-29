@@ -104,6 +104,22 @@ function readDocumentFlag(document, key) {
   return getProperty(document, `flags.${MODULE_ID}.${key}`, undefined);
 }
 
+function isAttackD20Test(kind, context = {}, roll = null) {
+  if (normalizeKey(kind) === "attack") {
+    return true;
+  }
+
+  const subject = context?.subject ?? context?.activity ?? null;
+  return Boolean(
+    roll?.options?.workflow
+    || roll?.options?.midiOptions
+    || context?.workflow
+    || subject?.hasAttack === true
+    || subject?.attack === true
+    || normalizeKey(subject?.type) === "attack"
+  );
+}
+
 async function unsetActorFlag(actor, key) {
   if (typeof actor?.unsetFlag === "function") {
     return actor.unsetFlag(MODULE_ID, key);
@@ -345,6 +361,10 @@ export class PerformerAutomationService {
 
     const mode = cleanText(automation.mode, "add");
     if (mode !== "subtract") {
+      if (isAttackD20Test(_kind, context, roll)) {
+        return true;
+      }
+
       const confirmed = await this.promptD20Bonus({
         actor,
         effect,

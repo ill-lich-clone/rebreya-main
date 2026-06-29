@@ -486,6 +486,28 @@ test("allied performer die can be voluntarily added to a skill d20 test and then
   assert.equal(effect.deleted, true);
 });
 
+test("allied performer die waits for the attack roll boost dialog on attack d20 tests", async () => {
+  const effect = makePerformerEffect({ formula: "1d3", mode: "add" });
+  const actor = new TestActor({ id: "target", effects: [effect] });
+  let promptCount = 0;
+  const service = new PerformerAutomationService({}, {
+    promptD20Bonus: async () => {
+      promptCount += 1;
+      return true;
+    }
+  });
+  const roll = {
+    total: 24,
+    options: {}
+  };
+
+  await service.applyDnd5eD20Roll([roll], { subject: actor }, "attack");
+
+  assert.equal(promptCount, 0);
+  assert.equal(roll.total, 24);
+  assert.equal(effect.deleted, false);
+});
+
 test("hostile performer die is subtracted from a saving throw d20 test and then expires", async () => {
   const effect = makePerformerEffect({ formula: "1d3", mode: "subtract" });
   const actor = new TestActor({ id: "target", effects: [effect] });
