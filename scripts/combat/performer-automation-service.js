@@ -1,6 +1,8 @@
 import { MODULE_ID } from "../constants.js";
+import { createPerformerActivePerformanceActivity } from "../data/feats-compendium.js";
 
 const ACTIVE_PERFORMANCE_ACTION = "activePerformance";
+const PERFORMER_FEAT_IDENTIFIER = "ispolnitel";
 const PERFORMER_STATE_FLAG = "performerAutomation.activePerformance";
 const PERFORMER_EFFECT_KIND = "activePerformanceDie";
 const DEFAULT_FAILURE_LIMIT = 2;
@@ -8,6 +10,10 @@ const DEFAULT_FAILURE_LIMIT = 2;
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || String(fallback ?? "").trim();
+}
+
+function normalizeKey(value) {
+  return cleanText(value).toLowerCase();
 }
 
 function toNumber(value, fallback = 0) {
@@ -231,6 +237,10 @@ function firstRollTotal(rolls) {
   return NaN;
 }
 
+function sameData(left, right) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
 export class PerformerAutomationService {
   constructor(moduleApi = {}, options = {}) {
     this.moduleApi = moduleApi;
@@ -238,6 +248,7 @@ export class PerformerAutomationService {
   }
 
   async initialize() {
+    await this.#migrateOwnedPerformerItems();
     return true;
   }
 
@@ -256,8 +267,6 @@ export class PerformerAutomationService {
   }
 
   async applyDnd5ePostUseActivity(activity, usageConfig = {}, results = {}) {
-    void results;
-
     const actor = activity?.actor ?? activity?.item?.actor;
     if (!isActivePerformanceActivity(activity) || !isActorDocument(actor)) {
       return true;
@@ -275,8 +284,7 @@ export class PerformerAutomationService {
     }
 
     const dc = Math.max(1, Math.floor(toNumber(runtime.dc, 20)));
-    const checkRolls = await this.#rollPerformanceCheck(actor, activity, runtime, dc);
-    const total = firstRollTotal(checkRolls);
+    const total = firstRollTotal(results);
     if (!Number.isFinite(total)) {
       globalThis.ui?.notifications?.warn("Исполнитель: не удалось определить результат проверки Выступления.");
       return true;
@@ -375,6 +383,58 @@ export class PerformerAutomationService {
     return true;
   }
 
+  async #migrateOwnedPerformerItems() {
+    if (globalThis.game?.user?.isGM !== true) {
+      return true;
+    }
+
+    const activity = createPerformerActivePerformanceActivity();
+    for (const actor of collectionValues(globalThis.game?.actors)) {
+      for (const item of collectionValues(actor?.items)) {
+        if (!this.#isPerformerItem(item)) {
+          continue;
+        }
+
+        const patch = this.#performerItemMigrationPatch(item, activity);
+        if (!Object.keys(patch).length || typeof item.update !== "function") {
+          continue;
+        }
+
+        try {
+          await item.update(patch);
+        }
+        catch (error) {
+          console.warn(`${MODULE_ID} | Failed to migrate performer feat activity on actor '${cleanText(actor?.name ?? actor?.id)}'.`, error);
+        }
+      }
+    }
+
+    return true;
+  }
+
+  #isPerformerItem(item) {
+    return normalizeKey(item?.system?.identifier) === PERFORMER_FEAT_IDENTIFIER;
+  }
+
+  #performerItemMigrationPatch(item, activity) {
+    const patch = {};
+    const currentActivity = getProperty(item, `system.activities.${activity._id}`, null);
+    if (!currentActivity || currentActivity.type !== activity.type || currentActivity.img !== activity.img || !sameData(currentActivity.check, activity.check)) {
+      patch[`system.activities.${activity._id}`] = activity;
+    }
+
+    if (cleanText(item?.system?.uses?.max) !== String(DEFAULT_FAILURE_LIMIT)) {
+      patch["system.uses.max"] = String(DEFAULT_FAILURE_LIMIT);
+    }
+
+    const recovery = [{ period: "lr", type: "recoverAll", formula: "" }];
+    if (!sameData(item?.system?.uses?.recovery, recovery)) {
+      patch["system.uses.recovery"] = recovery;
+    }
+
+    return patch;
+  }
+
   #selectedTarget(usageConfig, results, sourceActor) {
     const targets = [
       ...collectionValues(usageConfig?.targets),
@@ -406,29 +466,6 @@ export class PerformerAutomationService {
     return descriptors
       .map((target) => resolveUuidSync(target?.uuid) ?? target)
       .filter(Boolean);
-  }
-
-  async #rollPerformanceCheck(actor, activity, runtime, dc) {
-    const skill = cleanText(runtime.skill, "prf");
-    const ability = cleanText(runtime.ability, "cha");
-    if (typeof this._options.rollSkill === "function") {
-      return this._options.rollSkill(actor, { skill, ability, target: dc }, activity);
-    }
-
-    if (typeof actor.rollSkill === "function") {
-      return actor.rollSkill({
-        skill,
-        ability,
-        target: dc
-      }, {}, {
-        data: {
-          flavor: `Активное выступление: Харизма (Выступление) Сл ${dc}`,
-          speaker: speakerForActor(actor)
-        }
-      });
-    }
-
-    return [];
   }
 
   async #updateActivePerformanceUses(item, success) {

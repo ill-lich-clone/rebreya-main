@@ -190,6 +190,23 @@ function makeActivity(actor, item = {}) {
   };
 }
 
+function makeCheckResults(total, extra = {}) {
+  return {
+    rolls: [{ total }],
+    ...extra
+  };
+}
+
+function makeActorCollection(actors) {
+  return {
+    contents: actors,
+    values: () => actors.values(),
+    [Symbol.iterator]: function* iterator() {
+      yield* actors;
+    }
+  };
+}
+
 function makePerformerEffect({ formula = "1d3", mode = "add" } = {}) {
   return {
     id: "effect-id",
@@ -214,6 +231,55 @@ function makePerformerEffect({ formula = "1d3", mode = "add" } = {}) {
   };
 }
 
+test("initialize migrates owned performer activity to a native check activity", async () => {
+  const previousActors = globalThis.game.actors;
+  const previousIsGM = globalThis.game.user.isGM;
+  const actor = new TestActor({ id: "performer" });
+  const item = makePerformerItem();
+  item.type = "feat";
+  item.name = "Исполнитель";
+  item.system.identifier = "ispolnitel";
+  item.system.activities = {
+    bd37d8496d0f0415: {
+      _id: "bd37d8496d0f0415",
+      type: "utility",
+      img: "systems/dnd5e/icons/svg/activity/utility.svg",
+      flags: {
+        "rebreya-main": {
+          runtime: {
+            action: "activePerformance"
+          }
+        }
+      }
+    }
+  };
+  actor.items = makeActorCollection([item]);
+  globalThis.game.user.isGM = true;
+  globalThis.game.actors = makeActorCollection([actor]);
+
+  try {
+    await new PerformerAutomationService({}).initialize();
+
+    const activity = item.system.activities.bd37d8496d0f0415;
+    assert.equal(activity.type, "check");
+    assert.equal(activity.img, "systems/dnd5e/icons/svg/activity/check.svg");
+    assert.deepEqual(activity.check, {
+      ability: "cha",
+      associated: ["prf"],
+      dc: {
+        calculation: "",
+        formula: "20"
+      }
+    });
+    assert.equal(item.system.uses.max, "2");
+    assert.equal(item.updates.length, 1);
+  }
+  finally {
+    globalThis.game.actors = previousActors;
+    globalThis.game.user.isGM = previousIsGM;
+  }
+});
+
 test("active performance success applies a d5 die to the selected ally and clears failure streak", async () => {
   const previousTargets = globalThis.game.user.targets;
   const performerItem = makePerformerItem({ spent: 1 });
@@ -227,11 +293,9 @@ test("active performance success applies a d5 die to the selected ally and clear
   const service = new PerformerAutomationService({});
 
   try {
-    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {});
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, makeCheckResults(24));
 
-    assert.equal(performer.rolls[0].config.skill, "prf");
-    assert.equal(performer.rolls[0].config.ability, "cha");
-    assert.equal(performer.rolls[0].config.target, 20);
+    assert.equal(performer.rolls.length, 0);
     assert.equal(target.created[0].type, "ActiveEffect");
     const effect = target.created[0].documents[0];
     assert.equal(effect.duration.seconds, 60);
@@ -255,7 +319,7 @@ test("active performance can resolve the target from the dnd5e usage message", a
   const service = new PerformerAutomationService({});
 
   try {
-    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, makeCheckResults(23, {
       message: {
         flags: {
           dnd5e: {
@@ -265,7 +329,7 @@ test("active performance can resolve the target from the dnd5e usage message", a
           }
         }
       }
-    });
+    }));
 
     assert.equal(target.created[0].type, "ActiveEffect");
   }
@@ -288,7 +352,7 @@ test("second consecutive active performance failure spends the second use and bl
   const service = new PerformerAutomationService({});
 
   try {
-    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {});
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, makeCheckResults(14));
 
     const effect = target.created[0].documents[0];
     assert.equal(effect.flags["rebreya-main"].performerAutomation.formula, "1d3");

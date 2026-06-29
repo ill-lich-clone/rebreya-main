@@ -206,12 +206,12 @@ function normalizeFeatItem(rawItem, index, usedIds) {
   });
 }
 
-function createPerformerActivePerformanceActivity() {
+export function createPerformerActivePerformanceActivity() {
   return {
     _id: ACTIVE_PERFORMANCE_ACTIVITY_ID,
-    type: "utility",
+    type: "check",
     name: "Активное выступление",
-    img: "systems/dnd5e/icons/svg/activity/utility.svg",
+    img: "systems/dnd5e/icons/svg/activity/check.svg",
     sort: 100000,
     activation: {
       type: "bonus",
@@ -238,6 +238,14 @@ function createPerformerActivePerformanceActivity() {
       override: false
     },
     effects: [],
+    check: {
+      ability: "cha",
+      associated: ["prf"],
+      dc: {
+        calculation: "",
+        formula: "20"
+      }
+    },
     flags: {
       [MODULE_ID]: {
         runtime: {
