@@ -5,6 +5,7 @@ const ACTIVE_PERFORMANCE_ACTION = "activePerformance";
 const PERFORMER_FEAT_IDENTIFIER = "ispolnitel";
 const PERFORMER_STATE_FLAG = "performerAutomation.activePerformance";
 const PERFORMER_EFFECT_KIND = "activePerformanceDie";
+const D20_BONUS_FLAG = "d20Bonus";
 const DEFAULT_FAILURE_LIMIT = 2;
 
 function cleanText(value, fallback = "") {
@@ -272,10 +273,6 @@ export class PerformerAutomationService {
       return true;
     }
 
-    if (this.#isActivePerformanceBlocked(activity?.item)) {
-      return true;
-    }
-
     const runtime = activityRuntime(activity) ?? {};
     const target = this.#selectedTarget(usageConfig, results, actor);
     if (!target?.actor) {
@@ -325,7 +322,7 @@ export class PerformerAutomationService {
       return true;
     }
 
-    const effect = this.#findPerformerDieEffect(actor);
+    const effect = this.#findD20BonusEffect(actor);
     const automation = this.#effectAutomation(effect);
     const formula = cleanText(automation?.formula);
     if (!effect || !formula) {
@@ -342,6 +339,7 @@ export class PerformerAutomationService {
       const confirmed = await this.promptD20Bonus({
         actor,
         effect,
+        label: cleanText(automation.label, effect?.name ?? "Доброс"),
         formula,
         displayFormula: formatFormulaForDisplay(formula),
         kind: cleanText(_kind, "d20"),
@@ -361,6 +359,7 @@ export class PerformerAutomationService {
     this.#setRollTotal(roll, nextTotal);
     await this.#postD20BonusMessage(actor, {
       mode,
+      label: cleanText(automation.label, effect?.name ?? "Доброс"),
       formula,
       bonusTotal,
       previousTotal: currentTotal,
@@ -513,7 +512,8 @@ export class PerformerAutomationService {
 
   async #deleteExistingPerformanceDice(actor) {
     for (const effect of collectionValues(actor?.effects)) {
-      if (this.#effectAutomation(effect)?.kind === PERFORMER_EFFECT_KIND && typeof effect?.delete === "function") {
+      const automation = this.#effectAutomation(effect);
+      if (automation?.kind === PERFORMER_EFFECT_KIND && typeof effect?.delete === "function") {
         await effect.delete();
       }
     }
@@ -547,6 +547,17 @@ export class PerformerAutomationService {
       flags: {
         [MODULE_ID]: {
           managed: true,
+          [D20_BONUS_FLAG]: {
+            kind: PERFORMER_EFFECT_KIND,
+            label: "Активное выступление",
+            formula,
+            displayFormula,
+            mode: isPenalty ? "subtract" : "add",
+            prompt: !isPenalty,
+            deleteOnUse: true,
+            sourceActorUuid: cleanText(sourceActor?.uuid),
+            sourceItemUuid: cleanText(sourceItem?.uuid)
+          },
           performerAutomation: {
             kind: PERFORMER_EFFECT_KIND,
             formula,
@@ -560,16 +571,18 @@ export class PerformerAutomationService {
     };
   }
 
-  #findPerformerDieEffect(actor) {
+  #findD20BonusEffect(actor) {
     return collectionValues(actor?.effects).find((effect) => (
       effect?.disabled !== true
       && effect?.transfer !== true
-      && this.#effectAutomation(effect)?.kind === PERFORMER_EFFECT_KIND
+      && cleanText(this.#effectAutomation(effect)?.formula)
     )) ?? null;
   }
 
   #effectAutomation(effect) {
-    return readDocumentFlag(effect, "performerAutomation")
+    return readDocumentFlag(effect, D20_BONUS_FLAG)
+      ?? getProperty(effect, `flags.${MODULE_ID}.${D20_BONUS_FLAG}`, null)
+      ?? readDocumentFlag(effect, "performerAutomation")
       ?? getProperty(effect, `flags.${MODULE_ID}.performerAutomation`, null);
   }
 
@@ -587,9 +600,10 @@ export class PerformerAutomationService {
       return false;
     }
 
+    const label = cleanText(details.label, "Доброс");
     return DialogV2.confirm({
-      window: { title: "Активное выступление" },
-      content: `<p>Использовать кость Исполнителя <strong>+${escapeHtml(details.displayFormula)}</strong> к этому d20-тесту?</p>`,
+      window: { title: label },
+      content: `<p>Использовать <strong>${escapeHtml(label)}</strong> <strong>+${escapeHtml(details.displayFormula)}</strong> к этому d20-тесту?</p>`,
       yes: { label: "Использовать" },
       no: { label: "Не сейчас" },
       rejectClose: false,
@@ -625,11 +639,12 @@ export class PerformerAutomationService {
     }
   }
 
-  async #postD20BonusMessage(actor, { mode, formula, bonusTotal, previousTotal, nextTotal, kind, bonusRoll }) {
+  async #postD20BonusMessage(actor, { mode, label, formula, bonusTotal, previousTotal, nextTotal, kind, bonusRoll }) {
+    const safeLabel = cleanText(label, "Доброс");
     if (typeof bonusRoll?.toMessage === "function") {
       await bonusRoll.toMessage({
         speaker: speakerForActor(actor),
-        flavor: `Активное выступление: ${mode === "subtract" ? "вычитание" : "доброс"} ${formatFormulaForDisplay(formula)} (${kind})`
+        flavor: `${safeLabel}: ${mode === "subtract" ? "вычитание" : "доброс"} ${formatFormulaForDisplay(formula)} (${kind})`
       });
     }
 
@@ -640,11 +655,12 @@ export class PerformerAutomationService {
     const sign = mode === "subtract" ? "-" : "+";
     await ChatMessage.create({
       speaker: speakerForActor(actor),
-      content: `<p><strong>Активное выступление</strong>: ${escapeHtml(sign)}${escapeHtml(bonusTotal)} к d20-тесту (${escapeHtml(previousTotal)} → ${escapeHtml(nextTotal)}).</p>`,
+      content: `<p><strong>${escapeHtml(safeLabel)}</strong>: ${escapeHtml(sign)}${escapeHtml(bonusTotal)} к d20-тесту (${escapeHtml(previousTotal)} → ${escapeHtml(nextTotal)}).</p>`,
       flags: {
         [MODULE_ID]: {
-          performerAutomation: {
+          [D20_BONUS_FLAG]: {
             action: "d20Bonus",
+            label: safeLabel,
             formula,
             mode,
             bonusTotal,
@@ -664,10 +680,13 @@ export class PerformerAutomationService {
     }
 
     const sign = mode === "subtract" ? "-" : "+";
+    const effectText = mode === "subtract"
+      ? `вычитание ${sign}${formatFormulaForDisplay(formula)} из следующего d20-теста`
+      : `добровольный доброс ${sign}${formatFormulaForDisplay(formula)} к d20-тесту`;
     const result = success ? "успех" : "провал";
     await ChatMessage.create({
       speaker: speakerForActor(actor),
-      content: `<p><strong>Активное выступление</strong>: ${escapeHtml(result)} (${escapeHtml(total)}/${escapeHtml(dc)}). ${escapeHtml(targetActor?.name)} получает ${escapeHtml(sign)}${escapeHtml(formatFormulaForDisplay(formula))} к первому d20-тесту.</p>`,
+      content: `<p><strong>Активное выступление</strong>: ${escapeHtml(result)} (${escapeHtml(total)}/${escapeHtml(dc)}). ${escapeHtml(targetActor?.name)} получает ${escapeHtml(effectText)}.</p>`,
       flags: {
         [MODULE_ID]: {
           performerAutomation: {

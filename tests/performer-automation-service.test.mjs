@@ -231,6 +231,30 @@ function makePerformerEffect({ formula = "1d3", mode = "add" } = {}) {
   };
 }
 
+function makeD20BonusEffect({ formula = "1d4", mode = "add", label = "Р”РѕР±СЂРѕСЃ" } = {}) {
+  return {
+    id: "generic-effect-id",
+    uuid: "Actor.target.ActiveEffect.generic-effect-id",
+    name: label,
+    disabled: false,
+    transfer: false,
+    flags: {
+      "rebreya-main": {
+        d20Bonus: {
+          formula,
+          mode,
+          label
+        }
+      }
+    },
+    deleted: false,
+    async delete() {
+      this.deleted = true;
+      return this;
+    }
+  };
+}
+
 test("initialize migrates owned performer activity to a native check activity", async () => {
   const previousActors = globalThis.game.actors;
   const previousIsGM = globalThis.game.user.isGM;
@@ -365,6 +389,31 @@ test("second consecutive active performance failure spends the second use and bl
   }
 });
 
+test("active performance still applies its die when dnd5e has already spent the last failure use before post-use", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const performerItem = makePerformerItem({ spent: 2 });
+  const performer = new TestActor({
+    id: "performer",
+    disposition: 1,
+    rollTotal: 14
+  });
+  const target = new TestActor({ id: "ally", disposition: 1 });
+  globalThis.game.user.targets = new Set([target.token]);
+  const service = new PerformerAutomationService({});
+
+  try {
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, makeCheckResults(14));
+
+    const effect = target.created[0].documents[0];
+    assert.equal(effect.flags["rebreya-main"].d20Bonus.formula, "1d3");
+    assert.equal(effect.flags["rebreya-main"].d20Bonus.mode, "add");
+    assert.equal(effect.flags["rebreya-main"].d20Bonus.label, "Активное выступление");
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+});
+
 test("allied performer die is not spent when the holder declines the d20 bonus", async () => {
   const effect = makePerformerEffect({ formula: "1d5", mode: "add" });
   const actor = new TestActor({ id: "target", effects: [effect] });
@@ -380,6 +429,37 @@ test("allied performer die is not spent when the holder declines the d20 bonus",
 
   assert.equal(roll.total, 12);
   assert.equal(effect.deleted, false);
+});
+
+test("generic d20 bonus active effect can be added voluntarily and then expires", async () => {
+  const effect = makeD20BonusEffect({ formula: "1d4", mode: "add", label: "РџСЂРѕР±РЅС‹Р№ РґРѕР±СЂРѕСЃ" });
+  const actor = new TestActor({ id: "target", effects: [effect] });
+  const service = new PerformerAutomationService({}, {
+    promptD20Bonus: async (details) => {
+      assert.equal(details.label, "РџСЂРѕР±РЅС‹Р№ РґРѕР±СЂРѕСЃ");
+      assert.equal(details.displayFormula, "1к4");
+      return true;
+    },
+    rollFactory: () => ({
+      total: 3,
+      formula: "1d4",
+      async evaluate() {
+        return this;
+      },
+      async toMessage() {
+        return {};
+      }
+    })
+  });
+  const roll = {
+    total: 10,
+    options: {}
+  };
+
+  await service.applyDnd5eD20Roll([roll], { subject: actor }, "save");
+
+  assert.equal(roll.total, 13);
+  assert.equal(effect.deleted, true);
 });
 
 test("allied performer die can be voluntarily added to a skill d20 test and then expires", async () => {
