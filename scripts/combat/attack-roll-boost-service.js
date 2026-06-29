@@ -267,10 +267,10 @@ export class AttackRollBoostService {
   }
 
   async applyMidiHitsChecked(workflow, options = {}) {
+    const attackRollAlreadyChecked = workflow?.attackRoll?.[CHECKED_WORKFLOW_FLAG] && options.allowCheckedAttackRoll !== true;
     if (
       !workflow
       || workflow[CHECKED_WORKFLOW_FLAG]
-      || (workflow.attackRoll?.[CHECKED_WORKFLOW_FLAG] && options.allowCheckedAttackRoll !== true)
     ) {
       return true;
     }
@@ -282,6 +282,10 @@ export class AttackRollBoostService {
     const actor = workflow.actor ?? workflow.activity?.actor ?? workflow.item?.actor ?? null;
     if (!actor || !this.#canPrompt(actor) || !this.#isAttackWorkflow(workflow)) {
       return true;
+    }
+
+    if (attackRollAlreadyChecked) {
+      return this.#applyCheckedAttackRollToWorkflow(workflow);
     }
 
     const attackTotal = this.#attackTotal(workflow);
@@ -501,6 +505,44 @@ export class AttackRollBoostService {
     }
 
     return toNumber(workflow?.attackRoll?.total, NaN);
+  }
+
+  #boostedAttackRollTotal(workflow) {
+    const flaggedTotal = toNumber(getProperty(workflow?.attackRoll, `flags.${MODULE_ID}.attackRollBoostTotal`), NaN);
+    if (Number.isFinite(flaggedTotal)) {
+      return flaggedTotal;
+    }
+
+    return toNumber(workflow?.attackRoll?.total, NaN);
+  }
+
+  #applyCheckedAttackRollToWorkflow(workflow) {
+    const originalTotal = this.#attackTotal(workflow);
+    const boostedTotal = this.#boostedAttackRollTotal(workflow);
+    if (!Number.isFinite(boostedTotal)) {
+      return true;
+    }
+
+    const missedTargets = Number.isFinite(originalTotal)
+      ? this.#missedTargets(workflow, originalTotal)
+      : [];
+    this.#setAttackTotal(workflow, boostedTotal);
+    const hitTargets = missedTargets.length
+      ? this.#applyHitUpdates(workflow, missedTargets, boostedTotal)
+      : [];
+
+    const records = collectionValues(getProperty(workflow?.attackRoll, `flags.${MODULE_ID}.${ATTACK_ROLL_BOOST_FLAG}`, []));
+    if (records.length) {
+      for (const entry of records) {
+        entry.targetNames = hitTargets.map((target) => cleanText(target?.name ?? target?.actor?.name));
+      }
+      this.#recordWorkflowBoosts(workflow, records, {
+        attackTotal: Number.isFinite(originalTotal) ? originalTotal : boostedTotal,
+        newTotal: boostedTotal,
+        hitTargets
+      });
+    }
+    return true;
   }
 
   #missedTargets(workflow, attackTotal) {
@@ -964,6 +1006,9 @@ export class AttackRollBoostService {
     workflow.rebreyaAttackRollBoosts = records;
     workflow.flags ??= {};
     setProperty(workflow, `flags.${MODULE_ID}.${ATTACK_ROLL_BOOST_FLAG}`, records);
+    if (workflow.attackRoll) {
+      setProperty(workflow.attackRoll, `flags.${MODULE_ID}.${ATTACK_ROLL_BOOST_FLAG}`, records);
+    }
   }
 
   async #hasConsumptionAvailable(actor, source) {

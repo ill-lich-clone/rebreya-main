@@ -429,6 +429,63 @@ test("fallback and MIDI hit check do not prompt twice for the same attack roll",
   assert.equal(promptCount, 1);
 });
 
+test("fallback attack roll boost is applied to the later MIDI workflow hit state", async () => {
+  const preciseAttack = makeItem({
+    id: "precise-attack",
+    name: "Точная атака",
+    boosts: [{
+      id: "fighter-precise-attack",
+      label: "Точная атака",
+      formula: "1d4"
+    }]
+  });
+  const performer = makeItem({ id: "performer", name: "Исполнитель" });
+  const performanceDie = makeD20BonusEffect({
+    id: "active-performance",
+    sourceItemUuid: performer.uuid
+  });
+  const weapon = makeItem({
+    id: "longbow",
+    name: "Длинный лук",
+    boosts: []
+  });
+  weapon.type = "weapon";
+  const actor = makeActor([preciseAttack, performer, weapon], [performanceDie]);
+  const target = makeTarget({ ac: 18, name: "Чемпион" });
+  const attackRoll = {
+    total: 13,
+    _total: 13,
+    formula: "1d20 + 5",
+    flags: {}
+  };
+  TestRoll.queuedTotals = [7];
+  let promptCount = 0;
+  const service = new AttackRollBoostService({}, {
+    promptAttackRollBoosts: async (details) => {
+      promptCount += 1;
+      return details.options.map((option) => option.id);
+    }
+  });
+
+  await service.applyDnd5eRollAttack([attackRoll], {
+    subject: {
+      actor,
+      item: weapon,
+      actionType: "rwak",
+      hasAttack: true,
+      attack: true
+    },
+    targets: [target]
+  });
+  const midiWorkflow = makeWeaponWorkflow({ actor, target, attackTotal: 13, attackRoll });
+  await service.applyMidiHitsChecked(midiWorkflow);
+
+  assert.equal(promptCount, 1);
+  assert.equal(attackRoll.total, 20);
+  assert.equal(midiWorkflow.attackTotal, 20);
+  assert.equal(midiWorkflow.hitTargets.has(target), true);
+});
+
 test("selected attack roll boost sources are rolled into one combined chat card", async () => {
   const dominance = makeItem({
     id: "fighter-dominance",
