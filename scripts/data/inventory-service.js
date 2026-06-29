@@ -1508,14 +1508,9 @@ export class InventoryService {
     }
   }
 
-  async createLootgenChatItem(row, lootMeta = {}) {
+  async buildLootgenChatItemData(row, lootMeta = {}) {
     if (!game.user?.isGM) {
       throw new Error("Отправлять лут в чат может только ГМ.");
-    }
-
-    const actor = await this.getLootgenChatActor({ create: true });
-    if (!actor) {
-      throw new Error("Не удалось подготовить актёра чат-лута.");
     }
 
     const itemData = await this.buildModelItemData(row.sourceType, row.sourceId, row.quantity);
@@ -1530,6 +1525,20 @@ export class InventoryService {
       }
     };
 
+    return itemData;
+  }
+
+  async createLootgenChatItem(row, lootMeta = {}) {
+    if (!game.user?.isGM) {
+      throw new Error("Отправлять лут в чат может только ГМ.");
+    }
+
+    const actor = await this.getLootgenChatActor({ create: true });
+    if (!actor) {
+      throw new Error("Не удалось подготовить актёра чат-лута.");
+    }
+
+    const itemData = await this.buildLootgenChatItemData(row, lootMeta);
     const [created] = await actor.createEmbeddedDocuments("Item", [itemData], { renderSheet: false });
     return created ?? null;
   }

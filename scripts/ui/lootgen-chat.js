@@ -91,9 +91,37 @@ function setDragData(event, payload) {
   }
 }
 
+function cloneDragData(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  if (typeof foundry.utils.deepClone === "function") {
+    return foundry.utils.deepClone(value);
+  }
+
+  return JSON.parse(JSON.stringify(value));
+}
+
+function getLootgenState(message) {
+  const state = message?.getFlag?.(MODULE_ID, "lootgenChat") ?? {};
+  return state && typeof state === "object" ? state : {};
+}
+
+function findLootgenRow(message, rowId) {
+  const safeRowId = String(rowId ?? "").trim();
+  if (!safeRowId) {
+    return null;
+  }
+
+  const rows = getLootgenState(message).rows;
+  return (Array.isArray(rows) ? rows : [])
+    .find((row) => String(row?.rowId ?? "").trim() === safeRowId)
+    ?? null;
+}
+
 function renderRow(row) {
   const claimed = Boolean(row.claimed);
-  const itemUuid = String(row.itemUuid ?? "");
   const rowId = String(row.rowId ?? "");
   const image = String(row.img ?? "icons/svg/item-bag.svg");
   const quantity = Math.max(1, Number(row.quantity ?? 1));
@@ -109,7 +137,6 @@ function renderRow(row) {
       class="rm-chat-loot__row ${claimed ? "is-claimed" : ""}"
       data-lootgen-chat-drag="${claimed ? "false" : "true"}"
       data-lootgen-chat-row-id="${escapeHtml(rowId)}"
-      data-item-uuid="${escapeHtml(itemUuid)}"
       draggable="${claimed ? "false" : "true"}"
       title="${claimed ? "Этот предмет уже забрали." : "Перетащите предмет в лист персонажа."}"
     >
@@ -118,7 +145,15 @@ function renderRow(row) {
         <strong>${escapeHtml(row.name || "Предмет")}</strong>
         <span>${escapeHtml(metaParts.filter(Boolean).join(" • "))}</span>
       </div>
-      <span class="rm-chat-loot__state">${claimed ? "Забрано" : "Взять"}</span>
+      <button
+        type="button"
+        class="rm-chat-loot__state"
+        data-lootgen-chat-action="claim-row"
+        data-lootgen-chat-row-id="${escapeHtml(rowId)}"
+        ${claimed ? "disabled" : ""}
+      >
+        ${claimed ? "Забрано" : "Взять"}
+      </button>
     </article>
   `.trim();
 }
@@ -227,15 +262,44 @@ function bindLootgenChatMessage(message, html) {
 
     card.querySelectorAll("[data-lootgen-chat-drag='true']").forEach((row) => {
       row.addEventListener("dragstart", (event) => {
-        const uuid = event.currentTarget.dataset.itemUuid;
-        if (!uuid) {
+        const rowId = event.currentTarget.dataset.lootgenChatRowId;
+        const itemData = cloneDragData(findLootgenRow(message, rowId)?.itemData);
+        if (!itemData) {
           return;
         }
 
         setDragData(event, {
           type: "Item",
-          uuid
+          data: itemData
         });
+      });
+    });
+
+    card.querySelectorAll("[data-lootgen-chat-action='claim-row']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation?.();
+        const lootId = event.currentTarget.dataset.lootgenChatId
+          || card.dataset.lootgenChatId
+          || getLootgenState(message).lootId
+          || "";
+        const rowId = event.currentTarget.dataset.lootgenChatRowId || "";
+        if (!lootId || !rowId) {
+          return;
+        }
+
+        try {
+          if (typeof game.rebreyaMain?.claimLootgenChatRowToCharacter === "function") {
+            await game.rebreyaMain.claimLootgenChatRowToCharacter(lootId, rowId);
+          }
+          else {
+            await game.rebreyaMain?.claimLootgenChatRow?.(lootId, rowId);
+          }
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to claim lootgen chat row.`, error);
+          await postLootgenChatStatus("error", error.message || "Не удалось забрать предмет из добычи.");
+        }
       });
     });
 
@@ -289,8 +353,12 @@ export function registerLootgenChatHooks(moduleApi) {
     bindLootgenChatMessage(message, html);
   });
 
-  Hooks.on("createItem", (item, _options, userId) => {
+  Hooks.on("createItem", (item, options = {}, userId) => {
     if (!isCurrentUserHook(userId)) {
+      return;
+    }
+
+    if (options?.[MODULE_ID]?.skipLootgenChatAutoClaim) {
       return;
     }
 

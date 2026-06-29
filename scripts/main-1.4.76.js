@@ -779,6 +779,59 @@ export class RebreyaMainModule {
     }
   }
 
+  #resolveLootgenClaimActor(actorId = "") {
+    const safeActorId = String(actorId ?? "").trim();
+    const explicitActor = safeActorId ? game.actors?.get?.(safeActorId) ?? null : null;
+    const controlledActors = (globalThis.canvas?.tokens?.controlled ?? [])
+      .map((token) => token?.actor)
+      .filter(Boolean);
+    const actor = [
+      explicitActor,
+      game.user?.character ?? null,
+      ...controlledActors
+    ].find((candidate) => candidate?.type === "character") ?? null;
+
+    if (!actor) {
+      throw new Error("Не выбран персонаж для получения добычи. Назначьте персонажа пользователю или выберите токен персонажа.");
+    }
+
+    if (!game.user?.isGM && actor.isOwner === false) {
+      throw new Error("У вас нет прав на персонажа, который получает добычу.");
+    }
+
+    return actor;
+  }
+
+  async #buildLootgenClaimItemData(row, state) {
+    let itemData = row?.itemData && typeof row.itemData === "object"
+      ? foundry.utils.deepClone(row.itemData)
+      : null;
+
+    if (!itemData) {
+      if (!game.user?.isGM) {
+        throw new Error("В этом сообщении лута нет данных предмета. Попросите мастера отправить добычу в чат заново.");
+      }
+
+      itemData = await this.inventoryService.buildLootgenChatItemData(row, {
+        lootId: state.lootId,
+        rowId: row.rowId,
+        appKey: state.appKey,
+        rowIndex: row.rowIndex
+      });
+    }
+
+    delete itemData._id;
+    delete itemData.folder;
+    delete itemData.sort;
+    foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.lootgenChat`, {
+      lootId: String(state.lootId ?? ""),
+      rowId: String(row.rowId ?? ""),
+      appKey: String(state.appKey ?? ""),
+      rowIndex: Number.isFinite(Number(row.rowIndex)) ? Number(row.rowIndex) : null
+    });
+    return itemData;
+  }
+
   async createLootgenChatMessage(payload = {}, options = {}) {
     if (!game.user?.isGM) {
       throw new Error("Отправлять лут в чат может только ГМ.");
@@ -792,24 +845,25 @@ export class RebreyaMainModule {
     for (const [index, row] of rows.entries()) {
       const rowId = randomID();
       const rowIndex = Number.isFinite(Number(row.rowIndex)) ? Number(row.rowIndex) : index;
-      const item = await this.inventoryService.createLootgenChatItem(row, {
+      const itemData = await this.inventoryService.buildLootgenChatItemData(row, {
         lootId,
         rowId,
         appKey,
         rowIndex
       });
 
-      if (!item) {
+      if (!itemData) {
         throw new Error(`Не удалось подготовить предмет "${row.name ?? "лут"}" для чата.`);
       }
 
       chatRows.push({
         rowId,
         rowIndex,
-        itemId: item.id,
-        itemUuid: item.uuid,
-        name: item.name,
-        img: item.img,
+        itemId: "",
+        itemUuid: "",
+        itemData,
+        name: itemData.name ?? row.name,
+        img: itemData.img ?? row.img,
         sourceType: row.sourceType,
         sourceId: row.sourceId,
         typeLabel: row.typeLabel,
@@ -850,6 +904,47 @@ export class RebreyaMainModule {
       messageId: message?.id ?? "",
       rows: chatRows
     };
+  }
+
+  async claimLootgenChatRowToCharacter(lootId, rowId, { actorId = "" } = {}) {
+    const safeLootId = String(lootId ?? "").trim();
+    const safeRowId = String(rowId ?? "").trim();
+    if (!safeLootId || !safeRowId) {
+      return false;
+    }
+
+    const message = this.#findLootgenChatMessage(safeLootId);
+    const state = foundry.utils.deepClone(message?.getFlag(MODULE_ID, "lootgenChat") ?? {});
+    const rows = Array.isArray(state.rows) ? state.rows : [];
+    const row = rows.find((entry) => String(entry.rowId ?? "") === safeRowId) ?? null;
+    if (!message || !row || row.claimed) {
+      return false;
+    }
+
+    const actor = this.#resolveLootgenClaimActor(actorId);
+    const itemData = await this.#buildLootgenClaimItemData(row, {
+      ...state,
+      lootId: safeLootId
+    });
+    const [createdItem] = await actor.createEmbeddedDocuments("Item", [itemData], {
+      renderSheet: false,
+      [MODULE_ID]: {
+        skipLootgenChatAutoClaim: true
+      }
+    });
+
+    const claimed = await this.claimLootgenChatRow(safeLootId, safeRowId, { quiet: true });
+    try {
+      await createdItem?.unsetFlag?.(MODULE_ID, "lootgenChat");
+    }
+    catch (_error) {
+      // The item is already in the character sheet; stale metadata is harmless.
+    }
+
+    if (claimed) {
+      ui.notifications?.info(`Лут "${row.name ?? createdItem?.name ?? "предмет"}" добавлен в лист персонажа.`);
+    }
+    return claimed;
   }
 
   async claimLootgenChatRow(lootId, rowId, { quiet = false, fromSocket = false } = {}) {

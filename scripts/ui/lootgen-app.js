@@ -937,7 +937,6 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         try {
           await this.#sendResultToChat();
           await this.render({ force: true });
-          await this.#postStatusToChat("success", "Добыча отправлена в чат. Предметы можно перетаскивать в лист персонажа.");
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to send lootgen result to chat.`, error);

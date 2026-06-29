@@ -6926,16 +6926,26 @@ summary:focus-visible {
   grid-column: 2;
   justify-self: start;
   padding: 4px 8px;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: rgb(var(--rm-color-gold-rgb) / 0.14);
   color: var(--rm-accent) !important;
+  font-family: inherit;
   font-size: 11px;
   font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
 }
 
 .rm-chat-loot__row.is-claimed .rm-chat-loot__state {
   background: rgba(159, 146, 125, 0.16);
   color: var(--rm-text-dim) !important;
+  cursor: default;
+}
+
+.rm-chat-loot__state:not(:disabled):hover {
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.4);
+  background: rgb(var(--rm-color-gold-rgb) / 0.22);
 }
 
 .rm-chat-loot__coin-button {
