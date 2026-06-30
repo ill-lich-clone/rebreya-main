@@ -163,6 +163,7 @@ export function buildLootgenChatContent(state = {}) {
   const availableRows = rows.filter((row) => !row.claimed);
   const coins = normalizeCoins(state.coins ?? {});
   const coinsClaimed = Boolean(state.coinsClaimed) || coins.totalCopper <= 0;
+  const allClaimed = availableRows.length <= 0 && coinsClaimed;
   const lootId = String(state.lootId ?? "");
   const generatedAt = String(state.generatedAt ?? "");
 
@@ -187,15 +188,26 @@ export function buildLootgenChatContent(state = {}) {
           <span>Монеты</span>
           <strong>${escapeHtml(formatCoinsLabel(coins))}</strong>
         </div>
-        <button
-          type="button"
-          class="rm-chat-loot__coin-button"
-          data-lootgen-chat-action="claim-coins"
-          data-lootgen-chat-id="${escapeHtml(lootId)}"
-          ${coinsClaimed ? "disabled" : ""}
-        >
-          ${coinsClaimed ? "Монеты забраны" : "Монеты в склад"}
-        </button>
+        <div class="rm-chat-loot__footer-actions">
+          <button
+            type="button"
+            class="rm-chat-loot__coin-button"
+            data-lootgen-chat-action="claim-coins"
+            data-lootgen-chat-id="${escapeHtml(lootId)}"
+            ${coinsClaimed ? "disabled" : ""}
+          >
+            ${coinsClaimed ? "Монеты забраны" : "Монеты в склад"}
+          </button>
+          <button
+            type="button"
+            class="rm-chat-loot__claim-all-button"
+            data-lootgen-chat-action="claim-all"
+            data-lootgen-chat-id="${escapeHtml(lootId)}"
+            ${allClaimed ? "disabled" : ""}
+          >
+            Забрать всё
+          </button>
+        </div>
       </footer>
     </section>
   `.trim();
@@ -289,8 +301,8 @@ function bindLootgenChatMessage(message, html) {
         }
 
         try {
-          if (typeof game.rebreyaMain?.claimLootgenChatRowToCharacter === "function") {
-            await game.rebreyaMain.claimLootgenChatRowToCharacter(lootId, rowId);
+          if (typeof game.rebreyaMain?.claimLootgenChatRowToInventory === "function") {
+            await game.rebreyaMain.claimLootgenChatRowToInventory(lootId, rowId);
           }
           else {
             await game.rebreyaMain?.claimLootgenChatRow?.(lootId, rowId);
@@ -320,6 +332,27 @@ function bindLootgenChatMessage(message, html) {
         catch (error) {
           console.error(`${MODULE_ID} | Failed to claim lootgen chat coins.`, error);
           await postLootgenChatStatus("error", error.message || "Не удалось забрать монеты из добычи.");
+        }
+      });
+    });
+
+    card.querySelectorAll("[data-lootgen-chat-action='claim-all']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const lootId = event.currentTarget.dataset.lootgenChatId
+          || card.dataset.lootgenChatId
+          || message.getFlag(MODULE_ID, "lootgenChat")?.lootId
+          || "";
+        if (!lootId) {
+          return;
+        }
+
+        try {
+          await game.rebreyaMain?.claimLootgenChatAllToInventory?.(lootId);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to claim all lootgen chat loot.`, error);
+          await postLootgenChatStatus("error", error.message || "Не удалось забрать всю добычу в склад.");
         }
       });
     });

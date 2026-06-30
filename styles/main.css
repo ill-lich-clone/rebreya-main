@@ -3841,6 +3841,25 @@ summary:focus-visible {
   align-items: center;
 }
 
+.rm-currency-dialog-window .window-content {
+  min-width: min(420px, calc(100vw - 32px));
+  box-sizing: border-box;
+}
+
+.rm-currency-dialog-window .dialog-buttons {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: stretch;
+}
+
+.rm-currency-dialog-window .dialog-buttons .dialog-button,
+.rm-currency-dialog-window .dialog-buttons button {
+  flex: 1 1 116px !important;
+  min-width: min(100%, 116px);
+  white-space: normal;
+  line-height: 1.25;
+}
+
 .rebreya-trader-dialog .dialog-buttons .dialog-button,
 .rebreya-trader-dialog .dialog-buttons button {
   width: auto !important;
@@ -6849,6 +6868,15 @@ summary:focus-visible {
   min-width: 0;
 }
 
+.rm-chat-loot__footer-actions {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  min-width: min(100%, 190px);
+}
+
 .rm-chat-loot__header h3,
 .rm-chat-loot__header p {
   margin: 0;
@@ -6948,8 +6976,8 @@ summary:focus-visible {
   background: rgb(var(--rm-color-gold-rgb) / 0.22);
 }
 
-.rm-chat-loot__coin-button {
-  flex: 1 1 150px;
+.rm-chat-loot__coin-button,
+.rm-chat-loot__claim-all-button {
   max-width: 100%;
   min-height: 32px;
   padding: 6px 10px;
@@ -6962,7 +6990,18 @@ summary:focus-visible {
   white-space: nowrap;
 }
 
-.rm-chat-loot__coin-button:disabled {
+.rm-chat-loot__coin-button {
+  flex: 0 1 126px;
+}
+
+.rm-chat-loot__claim-all-button {
+  flex: 1 1 96px;
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.45);
+  background: rgb(var(--rm-color-gold-rgb) / 0.28);
+}
+
+.rm-chat-loot__coin-button:disabled,
+.rm-chat-loot__claim-all-button:disabled {
   cursor: default;
   opacity: 0.5;
 }

@@ -871,7 +871,6 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             await this.moduleApi.shareLootgenResult(this.#buildSharedPayload());
           }
           await this.render({ force: true });
-          await this.#postStatusToChat("success", "Добыча сгенерирована.");
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to generate loot.`, error);

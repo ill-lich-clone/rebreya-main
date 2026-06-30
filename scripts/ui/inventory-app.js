@@ -2078,7 +2078,7 @@ async function promptNumericValue({ title, label, value = "", min = 0, step = "0
         }
       }
     }, {
-      classes: ["rebreya-main", "rebreya-trader-dialog"]
+      classes: ["rebreya-main", "rebreya-trader-dialog", "rm-currency-dialog-window"]
     });
 
     dialog.render(true);
@@ -2471,6 +2471,66 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       document.removeEventListener("keydown", handleKeyDown, true);
       menuRoot.remove();
     };
+  }
+
+  #openItemContextMenu(row, { x = 0, y = 0 } = {}) {
+    if (!(row instanceof HTMLElement)) {
+      return;
+    }
+
+    const itemName = String(row.dataset.itemName ?? "Предмет").trim() || "Предмет";
+    const actionButtons = {
+      takeSelf: row.querySelector("[data-action='take-item-self']"),
+      sellItem: row.querySelector("[data-action='sell-item']"),
+      editQuantity: row.querySelector("[data-action='edit-item-quantity']"),
+      breakItem: row.querySelector("[data-action='break-item']"),
+      deleteItem: row.querySelector("[data-action='delete-item']")
+    };
+
+    const actions = [];
+    if (actionButtons.takeSelf) {
+      actions.push({
+        label: "Забрать себе",
+        icon: "fa-solid fa-hand-holding",
+        callback: () => actionButtons.takeSelf.click()
+      });
+    }
+    if (actionButtons.sellItem) {
+      actions.push({
+        label: "Продать",
+        icon: "fa-solid fa-coins",
+        callback: () => actionButtons.sellItem.click()
+      });
+    }
+    if (actionButtons.editQuantity) {
+      actions.push({
+        label: "Изменить количество",
+        icon: "fa-solid fa-pen",
+        callback: () => actionButtons.editQuantity.click()
+      });
+    }
+    if (actionButtons.breakItem) {
+      actions.push({
+        label: "Разобрать",
+        icon: "fa-solid fa-hammer",
+        callback: () => actionButtons.breakItem.click()
+      });
+    }
+    if (actionButtons.deleteItem) {
+      actions.push({
+        label: "Удалить",
+        icon: "fa-solid fa-trash",
+        danger: true,
+        callback: () => actionButtons.deleteItem.click()
+      });
+    }
+
+    this.#openContextMenu({
+      x,
+      y,
+      title: itemName,
+      actions
+    });
   }
 
   async #openPartyMemberSheet(actorId, actorName = "участника") {
@@ -4656,6 +4716,76 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
+    element.querySelectorAll("[data-action='take-item-self']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const itemId = event.currentTarget.dataset.itemId;
+        const itemName = event.currentTarget.dataset.itemName ?? "предмет";
+        const maxQuantity = Math.max(1, toInteger(event.currentTarget.dataset.quantity, 1));
+        try {
+          const quantity = maxQuantity > 1
+            ? await promptNumericValue({
+              title: `Забрать: ${itemName}`,
+              label: `Сколько забрать (1-${maxQuantity})`,
+              value: "1",
+              min: 1,
+              step: "1",
+              confirmLabel: "Забрать"
+            })
+            : 1;
+          if (quantity === null) {
+            return;
+          }
+
+          const safeQuantity = Math.max(1, Math.min(maxQuantity, toInteger(quantity, 1)));
+          const result = await this.moduleApi.takeInventoryItemToCharacter(itemId, {
+            quantity: safeQuantity
+          });
+          ui.notifications?.info(result?.requested
+            ? `Запрос на получение «${itemName}» отправлен мастеру.`
+            : `Предмет «${itemName}» добавлен в ваш лист.`);
+          bringAppToFront(this);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to take inventory item.`, error);
+          ui.notifications?.error(error.message || "Не удалось забрать предмет из склада.");
+        }
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='sell-item']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const itemId = event.currentTarget.dataset.itemId;
+        const itemName = event.currentTarget.dataset.itemName ?? "предмет";
+        const maxQuantity = Math.max(1, toInteger(event.currentTarget.dataset.quantity, 1));
+        try {
+          const quantity = maxQuantity > 1
+            ? await promptNumericValue({
+              title: `Продать: ${itemName}`,
+              label: `Сколько продать (1-${maxQuantity})`,
+              value: "1",
+              min: 1,
+              step: "1",
+              confirmLabel: "Продать"
+            })
+            : 1;
+          if (quantity === null) {
+            return;
+          }
+
+          const safeQuantity = Math.max(1, Math.min(maxQuantity, toInteger(quantity, 1)));
+          const result = await this.moduleApi.sellInventoryItem(itemId, safeQuantity);
+          ui.notifications?.info(result?.requested
+            ? `Запрос на продажу «${itemName}» отправлен мастеру.`
+            : `Предмет «${itemName}» продан за половину цены.`);
+          bringAppToFront(this);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to sell inventory item.`, error);
+          ui.notifications?.error(error.message || "Не удалось продать предмет.");
+        }
+      }, listenerOptions);
+    });
+
     element.querySelectorAll("[data-action='delete-item']").forEach((button) => {
       button.addEventListener("click", async (event) => {
         const itemId = event.currentTarget.dataset.itemId;
@@ -4669,8 +4799,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
 
         try {
-          await this.moduleApi.deleteInventoryItem(itemId);
-          ui.notifications?.info(`Предмет «${itemName}» удалён из партийного склада.`);
+          const result = await this.moduleApi.deleteInventoryItem(itemId);
+          ui.notifications?.info(result?.requested
+            ? `Запрос на удаление «${itemName}» отправлен мастеру.`
+            : `Предмет «${itemName}» удалён из партийного склада.`);
           bringAppToFront(this);
         }
         catch (error) {
@@ -5035,6 +5167,29 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
+    element.querySelectorAll("[data-action='open-item-menu']").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const row = event.currentTarget.closest(".rm-compact-item");
+        if (!(row instanceof HTMLElement)) {
+          return;
+        }
+
+        const rect = event.currentTarget.getBoundingClientRect?.() ?? {};
+        const x = Number.isFinite(event.clientX) && event.clientX > 0
+          ? event.clientX
+          : toNumber(rect.right, toNumber(rect.left, 0) + toNumber(rect.width, 0));
+        const y = Number.isFinite(event.clientY) && event.clientY > 0
+          ? event.clientY
+          : toNumber(rect.bottom, toNumber(rect.top, 0) + toNumber(rect.height, 0));
+        this.#openItemContextMenu(row, {
+          x,
+          y
+        });
+      }, listenerOptions);
+    });
+
     element.querySelectorAll(".rm-compact-item").forEach((itemRow) => {
       itemRow.addEventListener("contextmenu", (event) => {
         event.preventDefault();
@@ -5045,58 +5200,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           return;
         }
 
-        const itemName = String(row.dataset.itemName ?? "Предмет").trim() || "Предмет";
-        const actionButtons = {
-          openCompendium: row.querySelector("[data-action='open-compendium-entry']"),
-          openItemSheet: row.querySelector("[data-action='open-item-sheet']"),
-          editQuantity: row.querySelector("[data-action='edit-item-quantity']"),
-          breakItem: row.querySelector("[data-action='break-item']"),
-          deleteItem: row.querySelector("[data-action='delete-item']")
-        };
-
-        const actions = [];
-        if (actionButtons.openCompendium) {
-          actions.push({
-            label: "Открыть запись",
-            icon: "fa-solid fa-circle-question",
-            callback: () => actionButtons.openCompendium.click()
-          });
-        }
-        if (actionButtons.openItemSheet) {
-          actions.push({
-            label: "Лист предмета",
-            icon: "fa-solid fa-file-lines",
-            callback: () => actionButtons.openItemSheet.click()
-          });
-        }
-        if (actionButtons.editQuantity) {
-          actions.push({
-            label: "Изменить количество",
-            icon: "fa-solid fa-pen",
-            callback: () => actionButtons.editQuantity.click()
-          });
-        }
-        if (actionButtons.breakItem) {
-          actions.push({
-            label: "Разобрать",
-            icon: "fa-solid fa-hammer",
-            callback: () => actionButtons.breakItem.click()
-          });
-        }
-        if (actionButtons.deleteItem) {
-          actions.push({
-            label: "Удалить",
-            icon: "fa-solid fa-trash",
-            danger: true,
-            callback: () => actionButtons.deleteItem.click()
-          });
-        }
-
-        this.#openContextMenu({
+        this.#openItemContextMenu(row, {
           x: event.clientX,
-          y: event.clientY,
-          title: itemName,
-          actions
+          y: event.clientY
         });
       }, listenerOptions);
     });

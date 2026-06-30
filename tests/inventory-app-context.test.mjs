@@ -370,6 +370,78 @@ test("InventoryApp context menu omits remove action for native group membership"
   }
 });
 
+test("InventoryApp item service menu exposes stock actions without duplicate open actions", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?item-menu=${Date.now()}`);
+  const buttonsBySelector = new Map([
+    ["[data-action='open-compendium-entry']", createFakeElement()],
+    ["[data-action='open-item-sheet']", createFakeElement()],
+    ["[data-action='edit-item-quantity']", createFakeElement()],
+    ["[data-action='break-item']", createFakeElement()],
+    ["[data-action='take-item-self']", createFakeElement()],
+    ["[data-action='sell-item']", createFakeElement()],
+    ["[data-action='delete-item']", createFakeElement()]
+  ]);
+  const row = createFakeElement({
+    dataset: {
+      itemId: "item-a",
+      itemName: "Silver Mirror",
+      itemUuid: "Actor.group.Item.item-a",
+      sourceType: "gear",
+      sourceId: "mirror-a",
+      sourceName: "Silver Mirror",
+      quantity: "2"
+    },
+    closest: () => row
+  });
+  row.querySelector = (selector) => buttonsBySelector.get(selector) ?? null;
+  const root = createFakeElement({
+    closest: () => root
+  });
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => (selector === ".rm-compact-item" ? [row] : []);
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null
+  }));
+  app.element = root;
+  app.canManage = true;
+  app.canDropInventoryItems = true;
+
+  try {
+    await app._onRender({}, {});
+    row.listeners.contextmenu[0]({
+      currentTarget: row,
+      clientX: 10,
+      clientY: 10,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const menuText = collectText(dom.appendedMenu);
+    assert.doesNotMatch(menuText, /Открыть запись/u);
+    assert.doesNotMatch(menuText, /Лист предмета/u);
+    assert.match(menuText, /Забрать себе/u);
+    assert.match(menuText, /Продать/u);
+    assert.match(menuText, /Удалить/u);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp template exposes stock item service actions to inventory drop users", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+
+  assert.match(template, /data-action="take-item-self"/u);
+  assert.match(template, /data-action="sell-item"/u);
+  assert.match(template, /data-action="delete-item"/u);
+  assert.match(template, /\{\{#if \.\.\/canDropInventoryItems\}\}/u);
+  assert.doesNotMatch(template, /<span>Открыть запись<\/span>/u);
+  assert.doesNotMatch(template, /<span>Лист предмета<\/span>/u);
+});
+
 test("InventoryApp _prepareContext does not hide unexpected display context errors", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import("../scripts/ui/inventory-app.js");

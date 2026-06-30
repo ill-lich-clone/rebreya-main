@@ -20,7 +20,9 @@ import {
   SOCKET_EVENT_INVENTORY_IMPORT_REQUEST,
   SOCKET_EVENT_INVENTORY_IMPORT_RESULT,
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST,
-  SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT
+  SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
+  SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
+  SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
 } from "./data/inventory-service.js";
 import { HeroDollService } from "./data/hero-doll-service.js";
 import { CraftingService } from "./data/crafting-service.js";
@@ -65,6 +67,8 @@ const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const SOCKET_EVENT_LOOTGEN_SHOW = "lootgen-show-result";
 const SOCKET_EVENT_LOOTGEN_CLAIM_ROW = "lootgen-claim-row";
 const SOCKET_EVENT_LOOTGEN_CLAIM_COINS = "lootgen-claim-coins";
+const SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY = "lootgen-claim-row-to-inventory";
+const SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY = "lootgen-claim-all-to-inventory";
 const SOCKET_EVENT_TRADER_AUDIT = "trader-audit";
 const SOCKET_EVENT_DOWNTIME_CREATE_REQUEST = "downtime-create-request";
 const SOCKET_EVENT_DOWNTIME_CREATE_RESULT = "downtime-create-result";
@@ -530,6 +534,27 @@ export class RebreyaMainModule {
       return;
     }
 
+    if (message.type === SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT) {
+      if (message.forUserId !== game.user?.id) {
+        return;
+      }
+
+      if (message.ok) {
+        await this.refreshOpenApps();
+        const action = String(message.action ?? "");
+        const labels = {
+          take: "Предмет забран из партийного склада.",
+          sell: "Предмет продан, монеты добавлены в склад.",
+          delete: "Предмет удалён из партийного склада."
+        };
+        ui.notifications?.info(labels[action] ?? "Действие со складом выполнено.");
+      }
+      else {
+        ui.notifications?.error(message.error || "Мастер не смог выполнить действие со складом.");
+      }
+      return;
+    }
+
     if (message.senderId && message.senderId === game.user?.id) {
       return;
     }
@@ -652,6 +677,41 @@ export class RebreyaMainModule {
       return;
     }
 
+    if (message.type === SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST) {
+      if (game.user?.isGM) {
+        const forUserId = String(message.senderId ?? "").trim();
+        const action = String(message.payload?.action ?? "");
+        try {
+          const result = await this.inventoryService.handleInventoryItemActionSocketRequest(message.payload ?? {}, {
+            senderId: forUserId
+          });
+          if (!result) {
+            return;
+          }
+
+          await this.refreshOpenApps();
+          game.socket?.emit?.(SOCKET_CHANNEL, {
+            type: SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT,
+            forUserId,
+            senderId: game.user?.id ?? "",
+            action,
+            ok: true
+          });
+        }
+        catch (error) {
+          game.socket?.emit?.(SOCKET_CHANNEL, {
+            type: SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT,
+            forUserId,
+            senderId: game.user?.id ?? "",
+            action,
+            ok: false,
+            error: error?.message ?? String(error)
+          });
+        }
+      }
+      return;
+    }
+
     if (message.type === SOCKET_EVENT_TRADER_AUDIT) {
       if (game.user?.isGM) {
         await this.traderService.recordTradeAudit(message.payload ?? {}, {
@@ -711,6 +771,16 @@ export class RebreyaMainModule {
 
     if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ROW && game.user?.isGM) {
       await this.claimLootgenChatRow(message.payload?.lootId, message.payload?.rowId, { quiet: true, fromSocket: true });
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY && game.user?.isGM) {
+      await this.claimLootgenChatRowToInventory(message.payload?.lootId, message.payload?.rowId, { quiet: true, fromSocket: true });
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY && game.user?.isGM) {
+      await this.claimLootgenChatAllToInventory(message.payload?.lootId, { quiet: true, fromSocket: true });
       return;
     }
 
@@ -777,59 +847,6 @@ export class RebreyaMainModule {
     for (const app of this.lootgenApps.values()) {
       app?.handleLootgenChatClaim?.(lootId, rowId, claimType);
     }
-  }
-
-  #resolveLootgenClaimActor(actorId = "") {
-    const safeActorId = String(actorId ?? "").trim();
-    const explicitActor = safeActorId ? game.actors?.get?.(safeActorId) ?? null : null;
-    const controlledActors = (globalThis.canvas?.tokens?.controlled ?? [])
-      .map((token) => token?.actor)
-      .filter(Boolean);
-    const actor = [
-      explicitActor,
-      game.user?.character ?? null,
-      ...controlledActors
-    ].find((candidate) => candidate?.type === "character") ?? null;
-
-    if (!actor) {
-      throw new Error("Не выбран персонаж для получения добычи. Назначьте персонажа пользователю или выберите токен персонажа.");
-    }
-
-    if (!game.user?.isGM && actor.isOwner === false) {
-      throw new Error("У вас нет прав на персонажа, который получает добычу.");
-    }
-
-    return actor;
-  }
-
-  async #buildLootgenClaimItemData(row, state) {
-    let itemData = row?.itemData && typeof row.itemData === "object"
-      ? foundry.utils.deepClone(row.itemData)
-      : null;
-
-    if (!itemData) {
-      if (!game.user?.isGM) {
-        throw new Error("В этом сообщении лута нет данных предмета. Попросите мастера отправить добычу в чат заново.");
-      }
-
-      itemData = await this.inventoryService.buildLootgenChatItemData(row, {
-        lootId: state.lootId,
-        rowId: row.rowId,
-        appKey: state.appKey,
-        rowIndex: row.rowIndex
-      });
-    }
-
-    delete itemData._id;
-    delete itemData.folder;
-    delete itemData.sort;
-    foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.lootgenChat`, {
-      lootId: String(state.lootId ?? ""),
-      rowId: String(row.rowId ?? ""),
-      appKey: String(state.appKey ?? ""),
-      rowIndex: Number.isFinite(Number(row.rowIndex)) ? Number(row.rowIndex) : null
-    });
-    return itemData;
   }
 
   async createLootgenChatMessage(payload = {}, options = {}) {
@@ -906,11 +923,19 @@ export class RebreyaMainModule {
     };
   }
 
-  async claimLootgenChatRowToCharacter(lootId, rowId, { actorId = "" } = {}) {
+  async claimLootgenChatRowToInventory(lootId, rowId, { quiet = false, fromSocket = false } = {}) {
     const safeLootId = String(lootId ?? "").trim();
     const safeRowId = String(rowId ?? "").trim();
     if (!safeLootId || !safeRowId) {
       return false;
+    }
+
+    if (!game.user?.isGM) {
+      if (!fromSocket) {
+        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY, { lootId: safeLootId, rowId: safeRowId });
+      }
+      ui.notifications?.info("Запрос на добавление добычи в склад отправлен мастеру.");
+      return true;
     }
 
     const message = this.#findLootgenChatMessage(safeLootId);
@@ -921,30 +946,49 @@ export class RebreyaMainModule {
       return false;
     }
 
-    const actor = this.#resolveLootgenClaimActor(actorId);
-    const itemData = await this.#buildLootgenClaimItemData(row, {
-      ...state,
-      lootId: safeLootId
-    });
-    const [createdItem] = await actor.createEmbeddedDocuments("Item", [itemData], {
-      renderSheet: false,
-      [MODULE_ID]: {
-        skipLootgenChatAutoClaim: true
-      }
-    });
-
+    await this.addModelItemToInventory(row.sourceType, row.sourceId, row.quantity);
     const claimed = await this.claimLootgenChatRow(safeLootId, safeRowId, { quiet: true });
-    try {
-      await createdItem?.unsetFlag?.(MODULE_ID, "lootgenChat");
-    }
-    catch (_error) {
-      // The item is already in the character sheet; stale metadata is harmless.
-    }
-
-    if (claimed) {
-      ui.notifications?.info(`Лут "${row.name ?? createdItem?.name ?? "предмет"}" добавлен в лист персонажа.`);
+    if (claimed && !quiet) {
+      ui.notifications?.info(`Лут "${row.name ?? "предмет"}" добавлен в партийный склад.`);
     }
     return claimed;
+  }
+
+  async claimLootgenChatAllToInventory(lootId, { quiet = false, fromSocket = false } = {}) {
+    const safeLootId = String(lootId ?? "").trim();
+    if (!safeLootId) {
+      return false;
+    }
+
+    if (!game.user?.isGM) {
+      if (!fromSocket) {
+        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY, { lootId: safeLootId });
+      }
+      ui.notifications?.info("Запрос на добавление всей добычи в склад отправлен мастеру.");
+      return true;
+    }
+
+    const message = this.#findLootgenChatMessage(safeLootId);
+    const state = foundry.utils.deepClone(message?.getFlag(MODULE_ID, "lootgenChat") ?? {});
+    const rows = Array.isArray(state.rows) ? state.rows : [];
+    let claimedRows = 0;
+    for (const row of rows) {
+      if (row?.claimed) {
+        continue;
+      }
+
+      const claimed = await this.claimLootgenChatRowToInventory(safeLootId, row.rowId, { quiet: true, fromSocket: true });
+      if (claimed) {
+        claimedRows += 1;
+      }
+    }
+
+    const claimedCoins = await this.claimLootgenChatCoins(safeLootId, { quiet: true, fromSocket: true });
+    const changed = claimedRows > 0 || claimedCoins;
+    if (changed && !quiet) {
+      ui.notifications?.info("Вся доступная добыча добавлена в партийный склад.");
+    }
+    return changed;
   }
 
   async claimLootgenChatRow(lootId, rowId, { quiet = false, fromSocket = false } = {}) {
@@ -2313,6 +2357,18 @@ export class RebreyaMainModule {
 
   async deleteInventoryItem(itemId) {
     const result = await this.inventoryService.deleteItem(itemId);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async takeInventoryItemToCharacter(itemId, options = {}) {
+    const result = await this.inventoryService.takeInventoryItemToCharacter(itemId, options);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async sellInventoryItem(itemId, quantity = 1) {
+    const result = await this.inventoryService.sellInventoryItem(itemId, quantity);
     await this.refreshOpenApps();
     return result;
   }

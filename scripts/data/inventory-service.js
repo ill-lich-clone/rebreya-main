@@ -16,6 +16,8 @@ export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
 export const SOCKET_EVENT_INVENTORY_IMPORT_RESULT = "inventory-import-result";
 export const SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST = "inventory-source-depletion-request";
 export const SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT = "inventory-source-depletion-result";
+export const SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST = "inventory-item-action-request";
+export const SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT = "inventory-item-action-result";
 const DEFAULT_PARTY_ACTOR_NAME = "Инвентарь группы Rebreya";
 const DEFAULT_PARTY_ACTOR_IMAGE = "icons/svg/item-bag.svg";
 const LOOTGEN_CHAT_ACTOR_NAME = "Лут Rebreya";
@@ -439,6 +441,27 @@ function buildCurrencyUpdatePatch(currency) {
   };
 }
 
+function priceToCopper(price = {}) {
+  const value = Math.max(0, toNumber(price?.value, 0));
+  if (value <= 0) {
+    return 0;
+  }
+
+  const denomination = String(price?.denomination ?? "gp").toLowerCase();
+  const multiplier = CURRENCY_MULTIPLIERS[denomination] ?? CURRENCY_MULTIPLIERS.gp;
+  return Math.max(0, Math.floor(value * multiplier));
+}
+
+function isMagicalInventoryItem(itemData) {
+  const flags = foundry.utils.deepClone(itemData?.flags?.[MODULE_ID] ?? {});
+  return normalizeInventorySourceType(flags.sourceType) === "magicItem"
+    || normalizeInventorySourceType(flags.itemType) === "magicItem"
+    || normalizeInventorySourceType(flags.magicItemType) === "magicItem"
+    || Boolean(flags.magicItemId)
+    || Boolean(flags.magicId)
+    || Boolean(flags.magical);
+}
+
 function normalizeToolId(value) {
   const text = normalizeText(value);
   if (!text) {
@@ -794,6 +817,133 @@ export class InventoryService {
     }
   }
 
+  #resolveRecipientCharacter(actorId = "") {
+    const safeActorId = cleanId(actorId);
+    const explicitActor = safeActorId ? game.actors?.get?.(safeActorId) ?? null : null;
+    const controlledActors = (globalThis.canvas?.tokens?.controlled ?? [])
+      .map((token) => token?.actor)
+      .filter(Boolean);
+    const actor = [
+      explicitActor,
+      game.user?.character ?? null,
+      ...controlledActors
+    ].find((candidate) => candidate?.type === "character") ?? null;
+
+    if (!actor) {
+      throw new Error("Не выбран персонаж для получения предмета. Назначьте персонажа пользователю или выберите токен персонажа.");
+    }
+
+    if (!game.user?.isGM && actor.isOwner === false) {
+      throw new Error("У вас нет прав на персонажа, который получает предмет.");
+    }
+
+    return actor;
+  }
+
+  #assertInventoryActionSocketAvailable(actor) {
+    if (!this.canDropInventoryItems(actor)) {
+      throw new Error("У вас нет прав на действия с партийным складом.");
+    }
+
+    if (!cleanId(actor?.uuid) || typeof game.socket?.emit !== "function") {
+      throw new Error("Не удалось отправить действие склада мастеру.");
+    }
+  }
+
+  #emitInventoryItemActionRequest(action, payload = {}) {
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
+      payload: {
+        action,
+        ...foundry.utils.deepClone(payload)
+      },
+      senderId: game.user?.id ?? ""
+    });
+  }
+
+  #getInventoryItem(actor, itemId) {
+    const safeItemId = cleanId(itemId);
+    const item = safeItemId ? actor?.items?.get?.(safeItemId) ?? null : null;
+    if (!item) {
+      throw new Error("Предмет не найден в партийном инвентаре.");
+    }
+    return item;
+  }
+
+  async #depleteInventoryItem(item, quantity) {
+    const currentQuantity = getRawQuantity(item.toObject());
+    const safeQuantity = Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)));
+    const nextQuantity = roundNumber(currentQuantity - safeQuantity, 2);
+    if (nextQuantity <= 0) {
+      await item.delete();
+    }
+    else {
+      await item.update({
+        "system.quantity": nextQuantity
+      });
+    }
+
+    return safeQuantity;
+  }
+
+  async #takeInventoryItemFromActor(inventoryActor, itemId, targetActor, quantity = 1) {
+    if (!isActorDocument(targetActor) || targetActor.type !== "character") {
+      throw new Error("Предмет можно забрать только в лист персонажа.");
+    }
+
+    const item = this.#getInventoryItem(inventoryActor, itemId);
+    const itemData = sanitizeEmbeddedItemData(item.toObject());
+    const takeQuantity = Math.max(0.01, Math.min(getRawQuantity(itemData), roundNumber(toNumber(quantity, 1), 2)));
+    foundry.utils.setProperty(itemData, "system.quantity", takeQuantity);
+    const [createdItem] = await targetActor.createEmbeddedDocuments("Item", [itemData], {
+      renderSheet: false
+    });
+    await this.#depleteInventoryItem(item, takeQuantity);
+
+    return {
+      itemName: item.name,
+      quantity: takeQuantity,
+      actorId: targetActor.id,
+      createdItemId: createdItem?.id ?? ""
+    };
+  }
+
+  async #deleteInventoryItemFromActor(inventoryActor, itemId) {
+    const item = this.#getInventoryItem(inventoryActor, itemId);
+    await item.delete();
+    return {
+      itemId,
+      itemName: item.name
+    };
+  }
+
+  async #sellInventoryItemFromActor(inventoryActor, itemId, quantity = 1) {
+    const item = this.#getInventoryItem(inventoryActor, itemId);
+    const itemData = item.toObject();
+    if (isMagicalInventoryItem(itemData)) {
+      throw new Error("Магические предметы нельзя продать через партийный склад.");
+    }
+
+    const currentQuantity = getRawQuantity(itemData);
+    const sellQuantity = Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)));
+    const unitCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
+    const gainedCopper = Math.floor((unitCopper * sellQuantity) / 2);
+    if (gainedCopper <= 0) {
+      throw new Error("У предмета нет цены для продажи.");
+    }
+
+    const nextCurrency = copperToCurrency(actorCurrencyToCopper(inventoryActor) + gainedCopper);
+    await inventoryActor.update(buildCurrencyUpdatePatch(nextCurrency));
+    await this.#depleteInventoryItem(item, sellQuantity);
+
+    return {
+      itemName: item.name,
+      quantity: sellQuantity,
+      gainedCopper,
+      currency: buildCurrencySnapshot(inventoryActor)
+    };
+  }
+
   async #writeState(mutator) {
     if (!this.canManagePartyInventory()) {
       throw new Error("Партийным инвентарём управляют владельцы склада.");
@@ -1088,6 +1238,8 @@ export class InventoryService {
       ?? sourceFlags.predominantMaterialName
       ?? "";
 
+    const priceCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
+
     return {
       itemId: item.id,
       itemUuid: item.uuid,
@@ -1097,6 +1249,7 @@ export class InventoryService {
       weightEach,
       totalWeight,
       priceLabel: formatPriceLabel(foundry.utils.getProperty(itemData, "system.price") ?? {}),
+      priceCopper,
       sourceType,
       sourceTypeLabel: sourceType === "material"
         ? "Материал"
@@ -1113,7 +1266,8 @@ export class InventoryService {
       itemTypeLabel,
       materialLabel,
       isFood,
-      isWater
+      isWater,
+      canSell: !isMagicalInventoryItem(itemData) && priceCopper > 0
     };
   }
 
@@ -1803,14 +1957,77 @@ export class InventoryService {
 
   async deleteItem(itemId) {
     const actor = await this.getInventoryActor({ create: true });
-    this.#assertCanManagePartyInventory(actor);
-    const item = actor?.items.get(itemId) ?? null;
-    if (!item) {
-      throw new Error("Предмет не найден в партийном инвентаре.");
+    if (!actor) {
+      throw new Error("Не удалось получить партийный инвентарь.");
     }
 
-    await item.delete();
-    return itemId;
+    if (!this.canManagePartyInventory(actor)) {
+      this.#assertInventoryActionSocketAvailable(actor);
+      this.#emitInventoryItemActionRequest("delete", {
+        inventoryActorUuid: actor.uuid,
+        itemId: cleanId(itemId)
+      });
+      return {
+        requested: true,
+        action: "delete",
+        itemId: cleanId(itemId)
+      };
+    }
+
+    return this.#deleteInventoryItemFromActor(actor, itemId);
+  }
+
+  async takeInventoryItemToCharacter(itemId, { actorId = "", quantity = 1 } = {}) {
+    const actor = await this.getInventoryActor({ create: true });
+    if (!actor) {
+      throw new Error("Не удалось получить партийный инвентарь.");
+    }
+
+    const targetActor = this.#resolveRecipientCharacter(actorId);
+    if (!this.canManagePartyInventory(actor)) {
+      this.#assertInventoryActionSocketAvailable(actor);
+      if (!cleanId(targetActor.uuid)) {
+        throw new Error("Не удалось определить персонажа для получения предмета.");
+      }
+
+      this.#emitInventoryItemActionRequest("take", {
+        inventoryActorUuid: actor.uuid,
+        itemId: cleanId(itemId),
+        targetActorUuid: targetActor.uuid,
+        quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2))
+      });
+      return {
+        requested: true,
+        action: "take",
+        itemId: cleanId(itemId),
+        actorId: targetActor.id
+      };
+    }
+
+    return this.#takeInventoryItemFromActor(actor, itemId, targetActor, quantity);
+  }
+
+  async sellInventoryItem(itemId, quantity = 1) {
+    const actor = await this.getInventoryActor({ create: true });
+    if (!actor) {
+      throw new Error("Не удалось получить партийный инвентарь.");
+    }
+
+    if (!this.canManagePartyInventory(actor)) {
+      this.#assertInventoryActionSocketAvailable(actor);
+      this.#emitInventoryItemActionRequest("sell", {
+        inventoryActorUuid: actor.uuid,
+        itemId: cleanId(itemId),
+        quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2))
+      });
+      return {
+        requested: true,
+        action: "sell",
+        itemId: cleanId(itemId)
+      };
+    }
+
+    return this.#sellInventoryItemFromActor(actor, itemId, quantity);
   }
 
   async addSupply(resourceKey, quantity) {
@@ -2509,6 +2726,57 @@ export class InventoryService {
       sourceItemUuid: sourceItem.uuid,
       targetItemUuid: targetItem.uuid
     };
+  }
+
+  async handleInventoryItemActionSocketRequest(payload = {}, { senderId = "" } = {}) {
+    if (!isActiveGmClient()) {
+      return false;
+    }
+
+    const sender = getSocketUser(senderId);
+    const inventoryActor = await resolveUuid(payload.inventoryActorUuid);
+    if (!sender || !isActorDocument(inventoryActor)) {
+      throw new Error("Некорректный запрос действия со складом.");
+    }
+
+    if (!isManagedPartyGroup(inventoryActor)) {
+      throw new Error("Цель действия не является партийным складом.");
+    }
+
+    const context = this.moduleApi.groupContextService?.resolveForGroup?.(inventoryActor.id);
+    const members = context?.members ?? getGroupMemberActors(inventoryActor);
+    const senderCanManageGroup = Boolean(context?.canManage)
+      || members.some((memberActor) => userOwnsActor(memberActor, sender));
+    if (!senderCanManageGroup) {
+      throw new Error("Игрок не может управлять этим партийным складом.");
+    }
+
+    const action = cleanId(payload.action);
+    const itemId = cleanId(payload.itemId);
+    const quantity = Math.max(0.01, roundNumber(toNumber(payload.quantity, 1), 2));
+    if (action === "delete") {
+      return this.#deleteInventoryItemFromActor(inventoryActor, itemId);
+    }
+
+    if (action === "sell") {
+      return this.#sellInventoryItemFromActor(inventoryActor, itemId, quantity);
+    }
+
+    if (action === "take") {
+      const targetActor = await resolveUuid(payload.targetActorUuid);
+      if (!isActorDocument(targetActor) || targetActor.type !== "character" || !userOwnsActor(targetActor, sender)) {
+        throw new Error("Игрок не владеет персонажем, который получает предмет.");
+      }
+
+      const targetIsGroupMember = members.some((memberActor) => memberActor?.id === targetActor.id);
+      if (!targetIsGroupMember) {
+        throw new Error("Персонаж, получающий предмет, не входит в эту группу.");
+      }
+
+      return this.#takeInventoryItemFromActor(inventoryActor, itemId, targetActor, quantity);
+    }
+
+    throw new Error("Неизвестное действие со складом.");
   }
 
   async #importItemDocument(actor, itemDocument) {

@@ -969,6 +969,175 @@ test("canDropInventoryItems allows owners of native group members without full i
   }
 });
 
+test("takeInventoryItemToCharacter moves one party inventory item to a character", async () => {
+  const inventoryItem = createItem({
+    id: "item-a",
+    name: "Silver Mirror",
+    quantity: 2,
+    extra: {
+      system: {
+        quantity: 2,
+        price: {
+          value: 2,
+          denomination: "gp"
+        },
+        weight: {
+          value: 1
+        }
+      }
+    }
+  });
+  const groupActor = createActor({
+    id: "group-a",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [inventoryItem]
+  });
+  const heroActor = createActor({
+    id: "hero-a",
+    name: "Hero",
+    type: "character",
+    isOwner: true
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, heroActor]
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({ groupActor })
+    }
+  });
+
+  try {
+    const result = await service.takeInventoryItemToCharacter("item-a", {
+      actorId: "hero-a"
+    });
+
+    assert.equal(result.itemName, "Silver Mirror");
+    assert.equal(inventoryItem.system.quantity, 1);
+    assert.equal(heroActor.items.contents.length, 1);
+    assert.equal(heroActor.items.contents[0].name, "Silver Mirror");
+    assert.equal(heroActor.items.contents[0].system.quantity, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("sellInventoryItem sells a nonmagical item for half price into party currency", async () => {
+  const inventoryItem = createItem({
+    id: "item-a",
+    name: "Silver Mirror",
+    quantity: 2,
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear"
+      }
+    },
+    extra: {
+      system: {
+        quantity: 2,
+        price: {
+          value: 2,
+          denomination: "gp"
+        },
+        weight: {
+          value: 1
+        }
+      }
+    }
+  });
+  const groupActor = createActor({
+    id: "group-a",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    currency: {
+      gp: 1
+    },
+    items: [inventoryItem]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor]
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({ groupActor })
+    }
+  });
+
+  try {
+    const result = await service.sellInventoryItem("item-a", 2);
+
+    assert.equal(result.itemName, "Silver Mirror");
+    assert.equal(result.quantity, 2);
+    assert.equal(result.gainedCopper, 200);
+    assert.equal(groupActor.items.contents.includes(inventoryItem), false);
+    assert.deepEqual(groupActor.system.currency, {
+      pp: 0,
+      gp: 3,
+      ep: 0,
+      sp: 0,
+      cp: 0
+    });
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("sellInventoryItem rejects magical items", async () => {
+  const inventoryItem = createItem({
+    id: "item-a",
+    name: "Arcane Mirror",
+    quantity: 1,
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "magicItem",
+        magical: true
+      }
+    },
+    extra: {
+      system: {
+        quantity: 1,
+        price: {
+          value: 10,
+          denomination: "gp"
+        },
+        weight: {
+          value: 1
+        }
+      }
+    }
+  });
+  const groupActor = createActor({
+    id: "group-a",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [inventoryItem]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor]
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({ groupActor })
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () => service.sellInventoryItem("item-a", 1),
+      /[Мм]агичес/u
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("getPartySnapshot counts carried character inventory weight against party cargo", async () => {
   const groupItem = createItem({ id: "group-rope", name: "Rope", quantity: 2, weight: 5 });
   const memberItem = createItem({ id: "member-pack", name: "Pack", quantity: 3, weight: 4 });
