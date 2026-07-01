@@ -16,6 +16,9 @@ const GROUP_CONTEXT_FALLBACK_ERRORS = new Set([
   GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP,
   GROUP_CONTEXT_ERRORS.GROUP_NOT_FOUND
 ]);
+const DISABLED_TRAVEL_ROUTE_IDS = new Set([
+  "route-0464-land_plus_gray-орланис-фрех"
+]);
 
 const TRAVEL_MODE_CONFIG = Object.freeze({
   land: {
@@ -210,6 +213,7 @@ export function normalizeTravelNetwork(value = {}) {
       route.sourceId
       && route.targetId
       && route.sourceId !== route.targetId
+      && !DISABLED_TRAVEL_ROUTE_IDS.has(route.id)
       && cityById.has(route.sourceId)
       && cityById.has(route.targetId)
       && route.miles > 0

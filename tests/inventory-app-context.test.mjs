@@ -879,8 +879,8 @@ test("InventoryApp travel advance updates the progress strip without rendering t
     assert.equal(progressBar.style.width, "33.33%");
     assert.equal(progressToken.style.left, "33.33%");
     assert.equal(remainingMiles.textContent, "200 миль");
-    assert.equal(remainingTime.textContent, "8,33 дн. (66,67 ч.)");
-    assert.equal(progressLabel.textContent, "100 / 300 миль • осталось 8,33 дн. (66,67 ч.)");
+    assert.equal(remainingTime.textContent, "8 дн. (66,67 ч.)");
+    assert.equal(progressLabel.textContent, "100 / 300 миль • осталось 8 дн. (66,67 ч.)");
     assert.equal(rewindDayButton.disabled, false);
     assert.equal(rewindHourButton.disabled, false);
     assert.equal(advanceButton.disabled, true);
@@ -936,6 +936,8 @@ test("InventoryApp travel autocomplete and progress token have readable styles",
   assert.match(template, /data-action="travel-open-city"/u);
   assert.match(template, /data-hours="-8"/u);
   assert.match(template, /data-hours="-1"/u);
+  assert.match(template, /travel\.plan\.totalTravelDays precision=0/u);
+  assert.match(template, /travel\.progress\.remainingTravelDays precision=0/u);
   assert.match(css, /\.rm-travel-city-option\s*\{[\s\S]*justify-items:\s*start/u);
   assert.match(css, /\.rm-travel-city-option\s*\{[\s\S]*line-height:\s*1\.2/u);
   assert.match(css, /\.rm-travel-city-option span\s*\{[\s\S]*font-weight:\s*700/u);

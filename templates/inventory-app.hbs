@@ -603,11 +603,11 @@
 
               <div class="rm-travel-stats">
                 <p><span>Дистанция</span><strong>{{rmNum travel.plan.totalMiles}} миль</strong></p>
-                <p><span>В пути</span><strong>{{rmNum travel.plan.totalTravelDays}} дн. ({{rmNum travel.plan.totalHours}} ч.)</strong></p>
+                <p><span>В пути</span><strong>{{rmNum travel.plan.totalTravelDays precision=0}} дн. ({{rmNum travel.plan.totalHours}} ч.)</strong></p>
                 <p>
                   <span>Осталось</span>
                   <strong data-travel-remaining-miles>{{rmNum travel.progress.remainingMiles}} миль</strong>
-                  <small data-travel-remaining-time>{{rmNum travel.progress.remainingTravelDays}} дн. ({{rmNum travel.progress.remainingHours}} ч.)</small>
+                  <small data-travel-remaining-time>{{rmNum travel.progress.remainingTravelDays precision=0}} дн. ({{rmNum travel.progress.remainingHours}} ч.)</small>
                 </p>
               </div>
 
@@ -615,7 +615,7 @@
                 <div class="rm-progress__bar" data-travel-progress-bar style="width: {{travel.progress.percent}}%;"></div>
                 <span class="rm-travel-progress-token" data-travel-progress-token style="left: {{travel.progress.percent}}%;" aria-hidden="true"></span>
               </div>
-              <p class="rm-muted" data-travel-progress-label>{{travel.progress.label}} • осталось {{rmNum travel.progress.remainingTravelDays}} дн. ({{rmNum travel.progress.remainingHours}} ч.)</p>
+              <p class="rm-muted" data-travel-progress-label>{{travel.progress.label}} • осталось {{rmNum travel.progress.remainingTravelDays precision=0}} дн. ({{rmNum travel.progress.remainingHours}} ч.)</p>
 
               <div class="rm-travel-actions">
                 <label class="rm-travel-time-toggle">

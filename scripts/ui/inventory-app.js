@@ -1396,6 +1396,10 @@ function formatTravelNumber(value) {
   return formatNumber(value, 2);
 }
 
+function formatTravelDayNumber(value) {
+  return formatNumber(value, 0);
+}
+
 function resolveTravelDays(days, hours) {
   const numericDays = Number(days);
   if (Number.isFinite(numericDays)) {
@@ -1407,7 +1411,7 @@ function resolveTravelDays(days, hours) {
 
 function formatTravelDuration(days, hours) {
   const safeHours = roundNumber(toNumber(hours, 0), 2);
-  return `${formatTravelNumber(resolveTravelDays(days, safeHours))} дн. (${formatTravelNumber(safeHours)} ч.)`;
+  return `${formatTravelDayNumber(resolveTravelDays(days, safeHours))} дн. (${formatTravelNumber(safeHours)} ч.)`;
 }
 
 function prepareTravelContext(snapshot = {}, trackTime = false) {

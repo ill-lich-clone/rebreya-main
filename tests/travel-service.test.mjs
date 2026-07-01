@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import {
   advanceTravelProgress,
   buildTravelMapPosition,
   buildTravelPlan,
   buildTravelSnapshot,
+  normalizeLocationName,
+  normalizeTravelNetwork,
   normalizeTravelState
 } from "../scripts/data/travel-service.js";
 
@@ -114,6 +117,31 @@ test("buildTravelSnapshot exposes travel days and rewind availability", () => {
   assert.equal(snapshot.progress.remainingTravelDays, 1);
   assert.equal(snapshot.canAdvance, true);
   assert.equal(snapshot.canRewind, true);
+});
+
+test("actual travel network does not use the conflicting Orlanis-Freh land bridge", async () => {
+  const actualNetwork = JSON.parse(await readFile(new URL("../data/travel-network.json", import.meta.url), "utf8"));
+  const normalizedNetwork = normalizeTravelNetwork(actualNetwork);
+  const orlanis = normalizedNetwork.cityByName.get(normalizeLocationName("Орланис"));
+  const freh = normalizedNetwork.cityByName.get(normalizeLocationName("Фрех"));
+  const tsugengrim = normalizedNetwork.cityByName.get(normalizeLocationName("Цугенгрим"));
+  const velgard = normalizedNetwork.cityByName.get(normalizeLocationName("Вельгард"));
+  const orlanisFrehRoutes = normalizedNetwork.routes.filter((route) => (
+    new Set([route.sourceId, route.targetId]).size === 2
+    && route.sourceId && route.targetId
+    && [route.sourceId, route.targetId].includes(orlanis?.id)
+    && [route.sourceId, route.targetId].includes(freh?.id)
+  ));
+
+  assert.equal(orlanisFrehRoutes.some((route) => route.mode === "land"), false);
+
+  const plan = buildTravelPlan(actualNetwork, {
+    originCityId: tsugengrim?.id,
+    destinationCityId: velgard?.id,
+    mode: "land"
+  });
+
+  assert.equal(plan.legs.some((leg) => [leg.sourceCityId, leg.targetCityId].includes(freh?.id)), false);
 });
 
 test("buildTravelMapPosition follows route points and scales them to the world map scene", () => {
