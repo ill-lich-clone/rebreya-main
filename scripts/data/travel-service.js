@@ -4,6 +4,13 @@ import { GROUP_CONTEXT_ERRORS, normalizeGroupState } from "./group-context-servi
 const TRAVEL_NETWORK_PATH = `modules/${MODULE_ID}/data/travel-network.json`;
 const DEFAULT_TRAVEL_SPEED_MPH = 3;
 const TRAVEL_DAY_HOURS = 8;
+const DEFAULT_WORLD_MAP = Object.freeze({
+  sceneName: "Карта мира",
+  sourceWidth: 23906,
+  sourceHeight: 13448,
+  sceneWidth: 16000,
+  sceneHeight: 9000
+});
 const GROUP_CONTEXT_FALLBACK_ERRORS = new Set([
   GROUP_CONTEXT_ERRORS.GM_NO_ACTIVE_GROUP,
   GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP,
@@ -57,6 +64,37 @@ function toNumber(value, fallback = 0) {
 function roundNumber(value, precision = 2) {
   const factor = 10 ** precision;
   return Math.round((toNumber(value, 0) + Number.EPSILON) * factor) / factor;
+}
+
+function normalizePoint(value) {
+  if (!Array.isArray(value) || value.length < 2) {
+    return null;
+  }
+
+  const x = Number(value[0]);
+  const y = Number(value[1]);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+
+  return [x, y];
+}
+
+function normalizeRoutePoints(value) {
+  return Array.isArray(value)
+    ? value.map((point) => normalizePoint(point)).filter(Boolean)
+    : [];
+}
+
+function normalizeMapConfig(value = {}) {
+  const source = asObject(value);
+  return {
+    sceneName: String(source.sceneName ?? DEFAULT_WORLD_MAP.sceneName).trim() || DEFAULT_WORLD_MAP.sceneName,
+    sourceWidth: Math.max(1, toNumber(source.sourceWidth, DEFAULT_WORLD_MAP.sourceWidth)),
+    sourceHeight: Math.max(1, toNumber(source.sourceHeight, DEFAULT_WORLD_MAP.sourceHeight)),
+    sceneWidth: Math.max(1, toNumber(source.sceneWidth, DEFAULT_WORLD_MAP.sceneWidth)),
+    sceneHeight: Math.max(1, toNumber(source.sceneHeight, DEFAULT_WORLD_MAP.sceneHeight))
+  };
 }
 
 export function normalizeLocationName(value) {
@@ -153,7 +191,8 @@ function normalizeRoute(row = {}, cityByName = new Map()) {
     targetName: String(row.targetName ?? row.target ?? target?.name ?? "").trim(),
     mode,
     type: String(row.type ?? "").trim(),
-    miles
+    miles,
+    points: normalizeRoutePoints(row.points)
   };
 }
 
@@ -178,6 +217,7 @@ export function normalizeTravelNetwork(value = {}) {
 
   return {
     schema: value.schema ?? "rebreya-travel-network/v1",
+    map: normalizeMapConfig(value.map),
     speedMph: Math.max(0.01, toNumber(value.speedMph, DEFAULT_TRAVEL_SPEED_MPH)),
     cities,
     routes,
@@ -245,6 +285,14 @@ function buildMissingPlan(network, state, reason) {
 function buildPlanLeg(network, fromId, toId, route) {
   const fromCity = network.cityById.get(fromId) ?? null;
   const toCity = network.cityById.get(toId) ?? null;
+  const fallbackPoints = fromCity && toCity && Number.isFinite(fromCity.x) && Number.isFinite(fromCity.y) && Number.isFinite(toCity.x) && Number.isFinite(toCity.y)
+    ? [[fromCity.x, fromCity.y], [toCity.x, toCity.y]]
+    : [];
+  const routePoints = route.points.length >= 2 ? route.points : fallbackPoints;
+  const points = route.sourceId === fromId && route.targetId === toId
+    ? routePoints
+    : [...routePoints].reverse();
+
   return {
     routeId: route.id,
     sourceCityId: fromId,
@@ -254,7 +302,8 @@ function buildPlanLeg(network, fromId, toId, route) {
     mode: route.mode,
     type: route.type,
     miles: route.miles,
-    hours: roundNumber(route.miles / network.speedMph, 2)
+    hours: roundNumber(route.miles / network.speedMph, 2),
+    points
   };
 }
 
@@ -352,6 +401,121 @@ export function buildTravelPlan(rawNetwork, rawState = {}) {
   };
 }
 
+function buildMissingMapPosition(reason = "") {
+  return {
+    available: false,
+    reason,
+    sceneName: DEFAULT_WORLD_MAP.sceneName,
+    sourceX: 0,
+    sourceY: 0,
+    sceneX: 0,
+    sceneY: 0,
+    routeId: "",
+    legIndex: -1
+  };
+}
+
+function distanceBetweenPoints(left, right) {
+  return Math.hypot(toNumber(right?.[0], 0) - toNumber(left?.[0], 0), toNumber(right?.[1], 0) - toNumber(left?.[1], 0));
+}
+
+function pointAlongPolyline(points = [], ratio = 0) {
+  const safePoints = normalizeRoutePoints(points);
+  if (!safePoints.length) {
+    return null;
+  }
+  if (safePoints.length === 1) {
+    return safePoints[0];
+  }
+
+  const segments = [];
+  let totalPixels = 0;
+  for (let index = 1; index < safePoints.length; index += 1) {
+    const from = safePoints[index - 1];
+    const to = safePoints[index];
+    const length = distanceBetweenPoints(from, to);
+    if (length <= 0) {
+      continue;
+    }
+
+    segments.push({ from, to, length });
+    totalPixels += length;
+  }
+
+  if (totalPixels <= 0 || !segments.length) {
+    return safePoints[0];
+  }
+
+  let remainingPixels = totalPixels * Math.max(0, Math.min(1, toNumber(ratio, 0)));
+  for (const segment of segments) {
+    if (remainingPixels <= segment.length) {
+      const segmentRatio = segment.length > 0 ? remainingPixels / segment.length : 0;
+      return [
+        segment.from[0] + ((segment.to[0] - segment.from[0]) * segmentRatio),
+        segment.from[1] + ((segment.to[1] - segment.from[1]) * segmentRatio)
+      ];
+    }
+
+    remainingPixels -= segment.length;
+  }
+
+  return safePoints[safePoints.length - 1];
+}
+
+export function buildTravelMapPosition(rawNetwork = {}, rawPlan = {}, rawState = {}) {
+  const network = normalizeTravelNetwork(rawNetwork);
+  const state = normalizeTravelState(rawState);
+  const plan = rawPlan?.available ? rawPlan : buildTravelPlan(network, state);
+  if (!plan?.available) {
+    return buildMissingMapPosition(plan?.reason || "Маршрут для карты не выбран.");
+  }
+
+  const traveledMiles = Math.max(0, Math.min(plan.totalMiles, roundNumber(state.traveledMiles, 2)));
+  let cursorMiles = 0;
+  let activeLeg = null;
+  let activeLegIndex = -1;
+  let activeLegMiles = 0;
+
+  for (let index = 0; index < plan.legs.length; index += 1) {
+    const leg = plan.legs[index];
+    const nextCursor = cursorMiles + Math.max(0, toNumber(leg.miles, 0));
+    if (traveledMiles <= nextCursor || index === plan.legs.length - 1) {
+      activeLeg = leg;
+      activeLegIndex = index;
+      activeLegMiles = Math.max(0, traveledMiles - cursorMiles);
+      break;
+    }
+
+    cursorMiles = nextCursor;
+  }
+
+  if (!activeLeg) {
+    return buildMissingMapPosition("В маршруте нет участков для карты.");
+  }
+
+  const legMiles = Math.max(0.01, toNumber(activeLeg.miles, 0.01));
+  const point = pointAlongPolyline(activeLeg.points, activeLegMiles / legMiles);
+  if (!point) {
+    return buildMissingMapPosition("У участка маршрута нет координат карты.");
+  }
+
+  const map = network.map;
+  const sourceX = roundNumber(point[0], 2);
+  const sourceY = roundNumber(point[1], 2);
+  return {
+    available: true,
+    reason: "",
+    sceneName: map.sceneName,
+    sourceX,
+    sourceY,
+    sceneX: roundNumber(sourceX * (map.sceneWidth / map.sourceWidth), 2),
+    sceneY: roundNumber(sourceY * (map.sceneHeight / map.sourceHeight), 2),
+    routeId: activeLeg.routeId,
+    legIndex: activeLegIndex,
+    completed: traveledMiles + 1e-9 >= plan.totalMiles
+  };
+}
+
 export function advanceTravelProgress(rawState = {}, rawPlan = {}, hours = 0) {
   const state = normalizeTravelState(rawState);
   const totalMiles = Math.max(0, roundNumber(toNumber(rawPlan.totalMiles, 0), 2));
@@ -430,6 +594,9 @@ export function buildTravelSnapshot(rawNetwork = {}, rawState = {}, { warning = 
   const state = normalizeTravelState(rawState);
   const plan = buildTravelPlan(network, state);
   const progress = buildProgress(state, plan);
+  const mapPosition = buildTravelMapPosition(network, plan, state);
+  const originCity = network.cityById.get(state.originCityId) ?? null;
+  const destinationCity = network.cityById.get(state.destinationCityId) ?? null;
 
   return {
     available: !warning,
@@ -437,10 +604,15 @@ export function buildTravelSnapshot(rawNetwork = {}, rawState = {}, { warning = 
     canAdvance: Boolean(canAdvance && plan.available && !progress.completed),
     canSelectRoute: Boolean(canAdvance),
     mode: state.mode,
+    originCityId: state.originCityId,
+    originCityName: originCity?.name ?? "",
+    destinationCityId: state.destinationCityId,
+    destinationCityName: destinationCity?.name ?? "",
     cityOptions: buildCityOptions(network.cities, state),
     modeOptions: buildModeOptions(state),
     plan,
     progress,
+    mapPosition,
     emptyMessage: plan.reason || "Выберите города и способ пути.",
     speedMph: network.speedMph,
     speedLabel: `${network.speedMph} мили/час`

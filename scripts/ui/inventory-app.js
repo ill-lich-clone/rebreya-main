@@ -36,6 +36,7 @@ const DOWNTIME_STATUS_META = Object.freeze({
 
 const DOWNTIME_ARCHIVE_STATUSES = new Set(["completed", "rejected"]);
 const DOWNTIME_PAGE_SIZE = 5;
+const TRAVEL_CITY_PREVIEW_LIMIT = 8;
 const DOWNTIME_NON_ROLL_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "descriptionBlock", "downtimeResult"]);
 const DOWNTIME_NON_ROLL_ACTION_SUMMARY_LABELS = Object.freeze({
   resources: "Ресурсы",
@@ -1369,42 +1370,131 @@ function normalizeTravelCitySearchText(value) {
     .replace(/\s+/gu, " ");
 }
 
-function applyTravelCitySearch(select, query) {
-  if (!select?.querySelectorAll) {
+function setTravelCityOptionVisible(option, visible) {
+  option.hidden = !visible;
+  if (option.style) {
+    option.style.display = visible ? "" : "none";
+  }
+}
+
+function setTravelCityOptionActive(option, active) {
+  option.dataset.active = active ? "true" : "";
+  const className = String(option.className ?? "").replace(/\bis-active\b/gu, "").trim();
+  option.className = active ? `${className} is-active`.trim() : className;
+}
+
+function getTravelCityOptions(resultRoot, role) {
+  return Array.from(resultRoot?.querySelectorAll?.(`[data-action='travel-city-option'][data-role='${role}']`) ?? []);
+}
+
+function getVisibleTravelCityOptions(resultRoot, role) {
+  return getTravelCityOptions(resultRoot, role).filter((option) => option.hidden !== true);
+}
+
+function bindTravelCityAutocomplete(element, role, onSelectRoute, listenerOptions) {
+  const queryInput = element.querySelector(`[data-action='travel-${role}-query']`);
+  const valueInput = element.querySelector(`[data-action='travel-${role}']`);
+  const resultRoot = element.querySelector(`[data-travel-city-results='${role}']`);
+  if (!queryInput || !valueInput || !resultRoot) {
     return;
   }
 
-  const safeQuery = normalizeTravelCitySearchText(query);
-  Array.from(select.querySelectorAll("option")).forEach((option) => {
-    if (!cleanText(option.value)) {
-      option.hidden = false;
-      if (option.style) {
-        option.style.display = "";
+  let activeIndex = -1;
+
+  const updateActiveOption = () => {
+    const visibleOptions = getVisibleTravelCityOptions(resultRoot, role);
+    visibleOptions.forEach((option, index) => {
+      setTravelCityOptionActive(option, index === activeIndex);
+    });
+  };
+
+  const renderResults = () => {
+    const safeQuery = normalizeTravelCitySearchText(queryInput.value);
+    let visibleCount = 0;
+    for (const option of getTravelCityOptions(resultRoot, role)) {
+      const haystack = normalizeTravelCitySearchText(option.dataset?.search || option.textContent || option.dataset?.cityLabel || "");
+      const visible = Boolean(safeQuery && haystack.includes(safeQuery) && visibleCount < TRAVEL_CITY_PREVIEW_LIMIT);
+      setTravelCityOptionVisible(option, visible);
+      if (visible) {
+        visibleCount += 1;
       }
+    }
+
+    resultRoot.hidden = visibleCount === 0;
+    activeIndex = visibleCount > 0 ? 0 : -1;
+    updateActiveOption();
+  };
+
+  const selectOption = async (option) => {
+    if (!option) {
       return;
     }
 
-    const searchText = option.dataset?.search || option.textContent || option.label || option.value;
-    const matches = !safeQuery || normalizeTravelCitySearchText(searchText).includes(safeQuery);
-    const visible = matches || Boolean(option.selected);
-    option.hidden = !visible;
-    if (option.style) {
-      option.style.display = visible ? "" : "none";
+    const cityId = cleanText(option.dataset?.cityId);
+    const cityLabel = cleanText(option.dataset?.cityLabel || option.textContent);
+    if (!cityId) {
+      return;
     }
-  });
-}
 
-function bindTravelCitySearch(element, searchAction, selectAction, listenerOptions) {
-  const searchInput = element.querySelector(`[data-action='${searchAction}']`);
-  const select = element.querySelector(`[data-action='${selectAction}']`);
-  if (!searchInput || !select) {
-    return;
+    valueInput.value = cityId;
+    queryInput.value = cityLabel;
+    resultRoot.hidden = true;
+    for (const entry of getTravelCityOptions(resultRoot, role)) {
+      setTravelCityOptionVisible(entry, false);
+      setTravelCityOptionActive(entry, false);
+    }
+    await onSelectRoute?.();
+  };
+
+  queryInput.addEventListener("input", () => {
+    valueInput.value = "";
+    renderResults();
+  }, listenerOptions);
+
+  queryInput.addEventListener("focus", renderResults, listenerOptions);
+
+  queryInput.addEventListener("keydown", async (event) => {
+    const visibleOptions = getVisibleTravelCityOptions(resultRoot, role);
+    if (event.key === "ArrowDown") {
+      event.preventDefault?.();
+      activeIndex = visibleOptions.length ? Math.min(visibleOptions.length - 1, activeIndex + 1) : -1;
+      updateActiveOption();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault?.();
+      activeIndex = visibleOptions.length ? Math.max(0, activeIndex - 1) : -1;
+      updateActiveOption();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      resultRoot.hidden = true;
+      return;
+    }
+
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault?.();
+    const exactQuery = normalizeTravelCitySearchText(queryInput.value);
+    const exactOption = visibleOptions.find((option) => normalizeTravelCitySearchText(option.dataset?.cityLabel || option.textContent) === exactQuery) ?? null;
+    await selectOption(exactOption ?? visibleOptions[Math.max(0, activeIndex)] ?? visibleOptions[0] ?? null);
+  }, listenerOptions);
+
+  for (const option of getTravelCityOptions(resultRoot, role)) {
+    option.addEventListener("pointerdown", (event) => {
+      event.preventDefault?.();
+    }, listenerOptions);
+    option.addEventListener("click", async () => {
+      await selectOption(option);
+    }, listenerOptions);
+    setTravelCityOptionVisible(option, false);
   }
 
-  const applySearch = () => applyTravelCitySearch(select, searchInput.value);
-  searchInput.addEventListener("input", applySearch, listenerOptions);
-  searchInput.addEventListener("change", applySearch, listenerOptions);
-  applySearch();
+  resultRoot.hidden = true;
 }
 
 function buildEmptyTravelContext({ warning = "" } = {}) {
@@ -1415,6 +1505,10 @@ function buildEmptyTravelContext({ warning = "" } = {}) {
     canAdvance: false,
     canSelectRoute: false,
     mode: "land",
+    originCityId: "",
+    originCityName: "",
+    destinationCityId: "",
+    destinationCityName: "",
     cityOptions: [],
     modeOptions: [
       { value: "land", label: "Земля", selected: true, disabled: false },
@@ -4479,10 +4573,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
     };
 
-    bindTravelCitySearch(element, "travel-origin-search", "travel-origin", listenerOptions);
-    bindTravelCitySearch(element, "travel-destination-search", "travel-destination", listenerOptions);
+    bindTravelCityAutocomplete(element, "origin", updateTravelRoute, listenerOptions);
+    bindTravelCityAutocomplete(element, "destination", updateTravelRoute, listenerOptions);
 
-    ["travel-origin", "travel-destination", "travel-mode"].forEach((action) => {
+    ["travel-mode"].forEach((action) => {
       element.querySelector(`[data-action='${action}']`)?.addEventListener("change", updateTravelRoute, listenerOptions);
     });
 

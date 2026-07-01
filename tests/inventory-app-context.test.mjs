@@ -198,6 +198,18 @@ function createModuleApi({ getGroupContext, partySnapshot = {}, downtimeSnapshot
         }
       };
     },
+    async setTravelRoute(payload) {
+      calls.push(["setTravelRoute", payload]);
+      return {};
+    },
+    async advanceTravelHours(hours) {
+      calls.push(["advanceTravelHours", hours]);
+      return {};
+    },
+    async clearTravelRoute() {
+      calls.push(["clearTravelRoute"]);
+      return {};
+    },
     getDowntimeSnapshot() {
       calls.push(["getDowntimeSnapshot"]);
       if (downtimeError) {
@@ -692,29 +704,33 @@ test("InventoryApp allows travel tab and maps travel snapshot into context", asy
   }
 });
 
-test("InventoryApp travel city search filters select options", async () => {
+test("InventoryApp travel city autocomplete selects the preview with Enter", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
   const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-search=${Date.now()}`);
-  const searchInput = createFakeControl();
-  const originSelect = createFakeControl();
-  const placeholder = createFakeControl({ value: "" });
-  placeholder.textContent = "Выберите город";
-  const liara = createFakeControl({
-    value: "liara-ken",
-    dataset: { search: "Лиара’Кен Юлтан-Гласт Вэлин Луга" }
+  const calls = [];
+  const queryInput = createFakeControl();
+  const originValue = createFakeControl({ value: "" });
+  const destinationValue = createFakeControl({ value: "stranbu" });
+  const modeSelect = createFakeControl({ value: "land" });
+  const resultRoot = createFakeElement();
+  const aizenburg = createFakeControl({
+    dataset: { role: "origin", cityId: "aizenburg", cityLabel: "Айзенбург", search: "Айзенбург Западная степь Луга" }
   });
-  liara.textContent = "Лиара’Кен";
+  aizenburg.textContent = "Айзенбург";
   const riversted = createFakeControl({
-    value: "riversted",
-    dataset: { search: "Риверстед Марфорд Вэлин Луга" }
+    dataset: { role: "origin", cityId: "riversted", cityLabel: "Риверстед", search: "Риверстед Марфорд Вэлин Луга" }
   });
   riversted.textContent = "Риверстед";
-  originSelect.querySelectorAll = (selector) => (selector === "option" ? [placeholder, liara, riversted] : []);
+  resultRoot.querySelectorAll = (selector) => (selector === "[data-action='travel-city-option'][data-role='origin']" ? [aizenburg, riversted] : []);
 
   const controls = new Map([
-    ["[data-action='travel-origin-search']", searchInput],
-    ["[data-action='travel-origin']", originSelect]
+    ["[data-action='travel-origin-query']", queryInput],
+    ["[data-action='travel-origin']", originValue],
+    ["[data-action='travel-destination-query']", createFakeControl()],
+    ["[data-action='travel-destination']", destinationValue],
+    ["[data-action='travel-mode']", modeSelect],
+    ["[data-travel-city-results='origin']", resultRoot]
   ]);
   const root = createFakeElement({
     closest: () => root
@@ -722,20 +738,42 @@ test("InventoryApp travel city search filters select options", async () => {
   root.querySelector = (selector) => controls.get(selector) ?? null;
   root.querySelectorAll = () => [];
   const app = new InventoryApp(createModuleApi({
-    getGroupContext: () => null
+    getGroupContext: () => null,
+    calls
   }));
   app.element = root;
 
   try {
     await app._onRender({}, {});
 
-    assert.ok(searchInput.listeners.input?.length, "expected travel search input listener");
-    searchInput.value = "ривер";
-    searchInput.listeners.input[0]({ currentTarget: searchInput });
+    assert.ok(queryInput.listeners.input?.length, "expected travel autocomplete input listener");
+    assert.ok(queryInput.listeners.keydown?.length, "expected travel autocomplete keydown listener");
+    queryInput.value = "айзен";
+    queryInput.listeners.input[0]({ currentTarget: queryInput });
 
-    assert.equal(placeholder.hidden, false);
-    assert.equal(liara.hidden, true);
-    assert.equal(riversted.hidden, false);
+    assert.equal(aizenburg.hidden, false);
+    assert.equal(riversted.hidden, true);
+
+    let prevented = false;
+    await queryInput.listeners.keydown[0]({
+      key: "Enter",
+      currentTarget: queryInput,
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    assert.equal(prevented, true);
+    assert.equal(originValue.value, "aizenburg");
+    assert.equal(queryInput.value, "Айзенбург");
+    assert.deepEqual(calls.filter((call) => call[0] === "setTravelRoute"), [[
+      "setTravelRoute",
+      {
+        originCityId: "aizenburg",
+        destinationCityId: "stranbu",
+        mode: "land"
+      }
+    ]]);
   }
   finally {
     dom.restore();

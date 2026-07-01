@@ -16,6 +16,7 @@ import { GroupContextService } from "./data/group-context-service.js";
 import { DowntimeService } from "./data/downtime-service.js";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js";
 import { TravelService } from "./data/travel-service.js";
+import { TravelMapService } from "./data/travel-map-service.js";
 import {
   InventoryService,
   SOCKET_EVENT_INVENTORY_IMPORT_REQUEST,
@@ -82,6 +83,7 @@ const SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_RESULT = "downtime-project-continue
 const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST = "downtime-project-close-request";
 const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT = "downtime-project-close-result";
 const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
+const SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST = "travel-map-sync-request";
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
 let socketModuleApi = null;
 const queuedSocketMessages = [];
@@ -364,6 +366,7 @@ export class RebreyaMainModule {
     this.downtimeService = new DowntimeService(this);
     this.characterDowntimeService = new CharacterDowntimeService(this);
     this.travelService = new TravelService({ groupContextService: this.groupContextService });
+    this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
     this.heroDollService = new HeroDollService(this);
     this.craftingService = new CraftingService(this);
@@ -597,6 +600,13 @@ export class RebreyaMainModule {
     if (message.type === SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST) {
       if (game.user?.isGM) {
         await this.#handleDowntimeProjectCloseSocketRequest(message);
+      }
+      return;
+    }
+
+    if (message.type === SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST) {
+      if (game.user?.isGM) {
+        await this.#handleTravelMapSyncSocketRequest(message);
       }
       return;
     }
@@ -2343,14 +2353,76 @@ export class RebreyaMainModule {
     return result;
   }
 
+  async #syncTravelMapForSnapshot(snapshot = {}) {
+    const position = snapshot?.mapPosition;
+    if (!position?.available) {
+      return null;
+    }
+
+    let context = null;
+    try {
+      context = this.groupContextService.resolveForCurrentUser();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to resolve group for travel map sync.`, error);
+      return null;
+    }
+
+    return this.#syncTravelMapForGroup(context?.groupActor ?? null, position);
+  }
+
+  async #syncTravelMapForGroup(groupActor, position) {
+    if (!groupActor?.id || !position?.available) {
+      return null;
+    }
+
+    if (!game.user?.isGM) {
+      game.socket?.emit?.(SOCKET_CHANNEL, {
+        type: SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST,
+        senderId: game.user?.id ?? "",
+        groupActorId: groupActor.id,
+        position: cloneSocketPayload(position)
+      });
+      return {
+        queued: true
+      };
+    }
+
+    return this.travelMapService.syncGroupToken({
+      groupActor,
+      position
+    });
+  }
+
+  async #handleTravelMapSyncSocketRequest(message = {}) {
+    const groupActorId = cleanSocketId(message.groupActorId);
+    if (!groupActorId) {
+      return;
+    }
+
+    const context = this.groupContextService.resolveForGroup(groupActorId);
+    await this.travelMapService.syncGroupToken({
+      groupActor: context?.groupActor ?? null,
+      position: message.position ?? null
+    });
+  }
+
   async setTravelRoute(payload = {}) {
     const result = await this.travelService.setRoute(payload);
+    await this.#syncTravelMapForSnapshot(result).catch((error) => {
+      console.warn(`${MODULE_ID} | Failed to sync travel token after route update.`, error);
+      ui.notifications?.warn?.(error.message || "Не удалось синхронизировать токен группы на карте мира.");
+    });
     await this.refreshOpenApps();
     return result;
   }
 
   async advanceTravelHours(hours = 0) {
     const result = await this.travelService.advanceHours(hours);
+    await this.#syncTravelMapForSnapshot(result).catch((error) => {
+      console.warn(`${MODULE_ID} | Failed to sync travel token after travel progress.`, error);
+      ui.notifications?.warn?.(error.message || "Не удалось синхронизировать токен группы на карте мира.");
+    });
     await this.refreshOpenApps();
     return result;
   }

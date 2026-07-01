@@ -553,24 +553,34 @@
           <section class="rm-travel-controls">
             <div class="rm-field">
               <label>Город А</label>
-              <input type="search" class="rm-travel-city-search" data-action="travel-origin-search" placeholder="Поиск города" autocomplete="off" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
-              <select data-action="travel-origin" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
-                <option value="">Выберите город</option>
+              <div class="rm-travel-city-combobox">
+                <input type="search" class="rm-travel-city-input" data-action="travel-origin-query" value="{{travel.originCityName}}" placeholder="Начните вводить город" autocomplete="off" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
+                <input type="hidden" data-action="travel-origin" value="{{travel.originCityId}}">
+                <div class="rm-travel-city-results" data-travel-city-results="origin" hidden>
                 {{#each travel.cityOptions}}
-                  <option value="{{value}}" data-search="{{searchText}}" {{#if selectedOrigin}}selected{{/if}}>{{label}}</option>
+                    <button type="button" class="rm-travel-city-option" data-action="travel-city-option" data-role="origin" data-city-id="{{value}}" data-city-label="{{label}}" data-search="{{searchText}}">
+                      <span>{{label}}</span>
+                      {{#if subtitle}}<small>{{subtitle}}</small>{{/if}}
+                    </button>
                 {{/each}}
-              </select>
+                </div>
+              </div>
             </div>
 
             <div class="rm-field">
               <label>Город Б</label>
-              <input type="search" class="rm-travel-city-search" data-action="travel-destination-search" placeholder="Поиск города" autocomplete="off" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
-              <select data-action="travel-destination" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
-                <option value="">Выберите город</option>
+              <div class="rm-travel-city-combobox">
+                <input type="search" class="rm-travel-city-input" data-action="travel-destination-query" value="{{travel.destinationCityName}}" placeholder="Начните вводить город" autocomplete="off" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
+                <input type="hidden" data-action="travel-destination" value="{{travel.destinationCityId}}">
+                <div class="rm-travel-city-results" data-travel-city-results="destination" hidden>
                 {{#each travel.cityOptions}}
-                  <option value="{{value}}" data-search="{{searchText}}" {{#if selectedDestination}}selected{{/if}}>{{label}}</option>
+                    <button type="button" class="rm-travel-city-option" data-action="travel-city-option" data-role="destination" data-city-id="{{value}}" data-city-label="{{label}}" data-search="{{searchText}}">
+                      <span>{{label}}</span>
+                      {{#if subtitle}}<small>{{subtitle}}</small>{{/if}}
+                    </button>
                 {{/each}}
-              </select>
+                </div>
+              </div>
             </div>
 
             <div class="rm-field rm-field--narrow">
