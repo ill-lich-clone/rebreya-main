@@ -98,6 +98,20 @@ function toNumber(value) {
   return Number.isFinite(numericValue) ? numericValue : 0;
 }
 
+function toOptionalNumber(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const text = String(value).trim().replace(/\s+/gu, "").replace(",", ".");
+  if (!text) {
+    return null;
+  }
+
+  const numericValue = Number(text);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
 function normalizeContainerContents(value) {
   if (!Array.isArray(value)) {
     return [];
@@ -418,43 +432,53 @@ function normalizeConnectionCollection(rawConnections) {
     return [];
   }
 
+  const buildConnection = ({ targetName, targetCityIdRaw = "", connectionType = "", distance = null }) => {
+    const connection = {
+      targetName: cleanString(targetName),
+      targetCityIdRaw: cleanString(targetCityIdRaw),
+      connectionType: cleanString(connectionType)
+    };
+    const numericDistance = toOptionalNumber(distance);
+    if (numericDistance !== null) {
+      connection.distance = numericDistance;
+    }
+    return connection;
+  };
+
   if (Array.isArray(rawConnections)) {
     return rawConnections.map((entry) => {
       if (typeof entry === "string") {
-        return {
-          targetName: cleanString(entry),
-          targetCityIdRaw: "",
-          connectionType: ""
-        };
+        return buildConnection({ targetName: entry });
       }
 
-      return {
-        targetName: cleanString(getValue(entry, ["targetName", "target", "name", "city", "label"])),
-        targetCityIdRaw: cleanString(getValue(entry, ["targetCityId", "targetId", "cityId", "id", "slug", "key"])),
-        connectionType: cleanString(getValue(entry, ["connectionType", "type", "mode", "routeType"]))
-      };
+      return buildConnection({
+        targetName: getValue(entry, ["targetName", "target", "name", "city", "label"]),
+        targetCityIdRaw: getValue(entry, ["targetCityId", "targetId", "cityId", "id", "slug", "key"]),
+        connectionType: getValue(entry, ["connectionType", "type", "mode", "routeType"]),
+        distance: getValue(entry, ["distance", "distanceMiles", "miles", "routeDistance", "length"])
+      });
     }).filter((entry) => entry.targetName || entry.targetCityIdRaw);
   }
 
   if (isObject(rawConnections)) {
     return Object.entries(rawConnections).flatMap(([key, value]) => {
       if (typeof value === "string") {
-        return [{
-          targetName: cleanString(key),
-          targetCityIdRaw: "",
-          connectionType: cleanString(value)
-        }];
+        return [buildConnection({
+          targetName: key,
+          connectionType: value
+        })];
       }
 
       if (!isObject(value)) {
         return [];
       }
 
-      return [{
-        targetName: cleanString(getValue(value, ["targetName", "target", "name", "city", "label"], key)),
-        targetCityIdRaw: cleanString(getValue(value, ["targetCityId", "targetId", "cityId", "id", "slug", "key"])),
-        connectionType: cleanString(getValue(value, ["connectionType", "type", "mode", "routeType"]))
-      }];
+      return [buildConnection({
+        targetName: getValue(value, ["targetName", "target", "name", "city", "label"], key),
+        targetCityIdRaw: getValue(value, ["targetCityId", "targetId", "cityId", "id", "slug", "key"]),
+        connectionType: getValue(value, ["connectionType", "type", "mode", "routeType"]),
+        distance: getValue(value, ["distance", "distanceMiles", "miles", "routeDistance", "length"])
+      })];
     }).filter((entry) => entry.targetName || entry.targetCityIdRaw);
   }
 
@@ -470,11 +494,21 @@ function collectNumberedConnections(record) {
       continue;
     }
 
-    connections.push({
+    const connection = {
       targetName,
       targetCityIdRaw: "",
       connectionType
-    });
+    };
+    const distance = toOptionalNumber(
+      record?.[`distance${index}`]
+      ?? record?.[`distanceMiles${index}`]
+      ?? record?.[`miles${index}`]
+      ?? record?.[`routeDistance${index}`]
+    );
+    if (distance !== null) {
+      connection.distance = distance;
+    }
+    connections.push(connection);
   }
 
   return connections;

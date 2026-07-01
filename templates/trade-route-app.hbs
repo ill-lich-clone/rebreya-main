@@ -104,6 +104,10 @@
             <dd>{{route.connectionType}}</dd>
           </div>
           <div>
+            <dt>Расстояние</dt>
+            <dd>{{#if route.distance}}{{rmNum route.distance precision=0}} миль{{else}}—{{/if}}</dd>
+          </div>
+          <div>
             <dt>Базовая цена шага</dt>
             <dd>{{display.movementCost}}</dd>
           </div>

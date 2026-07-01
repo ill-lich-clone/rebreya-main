@@ -345,7 +345,7 @@ function Convert-ToNumber {
   }
 
   $isPercent = $text.EndsWith('%')
-  $text = $text.Replace('%', ').Replace(' ', ').Replace(',', '.')
+  $text = $text.Replace('%', '').Replace(' ', '').Replace(',', '.')
   $number = 0.0
   if ([double]::TryParse($text, [System.Globalization.NumberStyles]::Float, $InvariantCulture, [ref]$number)) {
     if ($isPercent) {
@@ -361,7 +361,7 @@ function Convert-ColumnIndexToName {
   param([int]$ColumnIndex)
 
   $value = $ColumnIndex
-  $columnName = '
+  $columnName = ''
   while ($value -gt 0) {
     $value -= 1
     $columnName = [char]([int](65 + ($value % 26))) + $columnName
@@ -377,7 +377,7 @@ function Convert-ToSlugBase {
   $map = @{
     'а'='a'; 'б'='b'; 'в'='v'; 'г'='g'; 'д'='d'; 'е'='e'; 'ё'='yo'; 'ж'='zh'; 'з'='z'; 'и'='i'; 'й'='y';
     'к'='k'; 'л'='l'; 'м'='m'; 'н'='n'; 'о'='o'; 'п'='p'; 'р'='r'; 'с'='s'; 'т'='t'; 'у'='u'; 'ф'='f';
-    'х'='kh'; 'ц'='ts'; 'ч'='ch'; 'ш'='sh'; 'щ'='shch'; 'ъ'='; 'ы'='y'; 'ь'='; 'э'='e'; 'ю'='yu'; 'я'='ya'
+    'х'='kh'; 'ц'='ts'; 'ч'='ch'; 'ш'='sh'; 'щ'='shch'; 'ъ'=''; 'ы'='y'; 'ь'=''; 'э'='e'; 'ю'='yu'; 'я'='ya'
   }
 
   $text = (Normalize-DisplayText -Value $Value).ToLowerInvariant()
@@ -455,28 +455,28 @@ function Resolve-Match {
 
   $strictMatches = @(Get-IndexEntries -Index $RecordData.strictIndex -Key (Get-MatchKey -Value $Name))
   if ($strictMatches.Count -eq 1) {
-    return [pscustomobject]@{ matched = $true; item = $strictMatches[0].item; method = 'strict'; reason = ' }
+    return [pscustomobject]@{ matched = $true; item = $strictMatches[0].item; method = 'strict'; reason = '' }
   }
   if ($strictMatches.Count -gt 1) {
-    return [pscustomobject]@{ matched = $false; item = $null; method = '; reason = 'ambiguous-target' }
+    return [pscustomobject]@{ matched = $false; item = $null; method = ''; reason = 'ambiguous-target' }
   }
 
   $looseKey = Get-LooseMatchKey -Value $Name
   $looseMatches = @(Get-IndexEntries -Index $RecordData.looseIndex -Key $looseKey)
   if ($looseMatches.Count -eq 1) {
-    return [pscustomobject]@{ matched = $true; item = $looseMatches[0].item; method = 'loose'; reason = ' }
+    return [pscustomobject]@{ matched = $true; item = $looseMatches[0].item; method = 'loose'; reason = '' }
   }
   if ($looseMatches.Count -gt 1) {
-    return [pscustomobject]@{ matched = $false; item = $null; method = '; reason = 'ambiguous-target' }
+    return [pscustomobject]@{ matched = $false; item = $null; method = ''; reason = 'ambiguous-target' }
   }
 
   if (-not $AllowFuzzy) {
-    return [pscustomobject]@{ matched = $false; item = $null; method = '; reason = 'missing-target' }
+    return [pscustomobject]@{ matched = $false; item = $null; method = ''; reason = 'missing-target' }
   }
 
   $maxDistance = Get-FuzzyMatchThreshold -Value $looseKey
   if ($maxDistance -le 0) {
-    return [pscustomobject]@{ matched = $false; item = $null; method = '; reason = 'missing-target' }
+    return [pscustomobject]@{ matched = $false; item = $null; method = ''; reason = 'missing-target' }
   }
 
   $best = $null
@@ -492,10 +492,10 @@ function Resolve-Match {
   }
 
   if ($best) {
-    return [pscustomobject]@{ matched = $true; item = $best.item; method = 'fuzzy'; reason = ' }
+    return [pscustomobject]@{ matched = $true; item = $best.item; method = 'fuzzy'; reason = '' }
   }
 
-  return [pscustomobject]@{ matched = $false; item = $null; method = '; reason = 'missing-target' }
+  return [pscustomobject]@{ matched = $false; item = $null; method = ''; reason = 'missing-target' }
 }
 
 function Write-JsonFile {
@@ -544,8 +544,12 @@ finally {
 }
 
 $cityHeader = Find-Row -Rows $cityRows -RowNumber 1
+$cityConnectionStartColumnIndex = 12
+$cityConnectionSlotWidth = 3
+$cityConnectionSlotCount = 9
+$cityGoodStartColumnIndex = 39
 $goodsInOrder = @()
-for ($columnIndex = 29; $columnIndex -le 73; $columnIndex += 1) {
+for ($columnIndex = $cityGoodStartColumnIndex; $columnIndex -lt ($cityGoodStartColumnIndex + 45); $columnIndex += 1) {
   $headerValue = Normalize-DisplayText -Value (Get-Value -Row $cityHeader -Column (Convert-ColumnIndexToName -ColumnIndex $columnIndex))
   if (-not [string]::IsNullOrWhiteSpace($headerValue)) {
     $goodsInOrder += $headerValue
@@ -682,16 +686,17 @@ foreach ($row in ($cityRows | Where-Object { $_.__row -ge 2 })) {
   $regionName = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'G')
   $production = [ordered]@{}
   for ($index = 0; $index -lt $goodsInOrder.Count; $index += 1) {
-    $production[$goodIdByName[$goodsInOrder[$index]]] = Convert-ToNumber -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex (29 + $index)))
+    $production[$goodIdByName[$goodsInOrder[$index]]] = Convert-ToNumber -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex ($cityGoodStartColumnIndex + $index)))
   }
   $connections = @()
-  foreach ($i in 0..8) {
-    $targetName = Normalize-DisplayText -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex (11 + ($i * 2))))
+  foreach ($i in 0..($cityConnectionSlotCount - 1)) {
+    $targetName = Normalize-DisplayText -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex ($cityConnectionStartColumnIndex + ($i * $cityConnectionSlotWidth))))
     if ([string]::IsNullOrWhiteSpace($targetName)) { continue }
     $connections += [pscustomobject][ordered]@{
       targetName = $targetName
       targetCityId = $null
-      connectionType = Normalize-DisplayText -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex (12 + ($i * 2))))
+      connectionType = Normalize-DisplayText -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex (($cityConnectionStartColumnIndex + 1) + ($i * $cityConnectionSlotWidth))))
+      distance = Convert-ToNumber -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex (($cityConnectionStartColumnIndex + 2) + ($i * $cityConnectionSlotWidth))))
       broken = $false
     }
   }
@@ -749,12 +754,46 @@ foreach ($city in $cities) {
     $match = Resolve-Match -Name $connection.targetName -RecordData $cityRecordData -AllowFuzzy
     if (-not $match.matched) {
       $brokenConnections += [pscustomobject]@{ cityId = $city.id; cityName = $city.name; targetName = $connection.targetName; connectionType = $connection.connectionType; reason = $match.reason }
-      $resolvedConnections += [pscustomobject][ordered]@{ targetName = $connection.targetName; targetCityId = $null; connectionType = $connection.connectionType; broken = $true; brokenReason = $match.reason }
+      $resolvedConnections += [pscustomobject][ordered]@{ targetName = $connection.targetName; targetCityId = $null; connectionType = $connection.connectionType; distance = $connection.distance; broken = $true; brokenReason = $match.reason }
       continue
     }
-    $resolvedConnections += [pscustomobject][ordered]@{ targetName = $connection.targetName; targetCityId = $match.item.id; connectionType = $connection.connectionType; broken = $false; resolvedBy = $match.method }
+    if ($match.item.id -eq $city.id) {
+      continue
+    }
+    $resolvedConnections += [pscustomobject][ordered]@{ targetName = $connection.targetName; targetCityId = $match.item.id; connectionType = $connection.connectionType; distance = $connection.distance; broken = $false; resolvedBy = $match.method }
   }
   $city.connections = $resolvedConnections
+}
+
+$cityById = @{}
+foreach ($city in $cities) {
+  $cityById[$city.id] = $city
+}
+
+foreach ($city in @($cities)) {
+  foreach ($connection in @($city.connections)) {
+    if ($connection.broken -or [string]::IsNullOrWhiteSpace($connection.targetCityId) -or -not $cityById.ContainsKey($connection.targetCityId)) {
+      continue
+    }
+
+    $targetCity = $cityById[$connection.targetCityId]
+    $reverseConnection = @($targetCity.connections | Where-Object {
+      -not $_.broken -and $_.targetCityId -eq $city.id -and $_.connectionType -eq $connection.connectionType
+    } | Select-Object -First 1)
+
+    if ($reverseConnection.Count) {
+      continue
+    }
+
+    $targetCity.connections += [pscustomobject][ordered]@{
+      targetName = $city.name
+      targetCityId = $city.id
+      connectionType = $connection.connectionType
+      distance = $connection.distance
+      broken = $false
+      resolvedBy = 'generated-reverse'
+    }
+  }
 }
 
 $workbookTransportModes = @()

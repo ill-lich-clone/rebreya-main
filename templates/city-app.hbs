@@ -116,6 +116,9 @@
                     {{else}}
                       {{connectionType}}
                     {{/if}}
+                    {{#if distance}}
+                      / {{rmNum distance precision=0}} миль
+                    {{/if}}
                     {{#unless broken}}
                       /
                       <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-state-info" data-state-id="{{targetStateId}}">{{targetState}}</button>
@@ -204,6 +207,9 @@
                       <button type="button" class="rm-link-button rm-link-button--accent" data-action="open-transport-mode-info" data-mode-id="{{transportModeId}}">{{connectionType}}</button>
                     {{else}}
                       {{connectionType}}
+                    {{/if}}
+                    {{#if distance}}
+                      / {{rmNum distance precision=0}} миль
                     {{/if}}
                     {{#unless broken}}
                       /

@@ -61,7 +61,7 @@
           <div class="rm-route-card__head">
             <div>
               <button type="button" class="rm-link-button" data-action="open-trade-route" data-connection-id="{{connectionId}}">{{sourceCityName}} → {{targetName}}</button>
-              <p class="rm-muted">{{connectionType}} / {{sourceState}} / {{sourceRegionName}}</p>
+              <p class="rm-muted">{{connectionType}}{{#if distance}} / {{rmNum distance precision=0}} миль{{/if}} / {{sourceState}} / {{sourceRegionName}}</p>
               {{#if isEventModified}}
                 <p class="rm-muted">Ивенты: {{eventSummary}}</p>
               {{/if}}
