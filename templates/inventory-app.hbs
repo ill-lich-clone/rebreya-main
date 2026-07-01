@@ -553,20 +553,22 @@
           <section class="rm-travel-controls">
             <div class="rm-field">
               <label>Город А</label>
+              <input type="search" class="rm-travel-city-search" data-action="travel-origin-search" placeholder="Поиск города" autocomplete="off" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
               <select data-action="travel-origin" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
                 <option value="">Выберите город</option>
                 {{#each travel.cityOptions}}
-                  <option value="{{value}}" {{#if selectedOrigin}}selected{{/if}}>{{label}}</option>
+                  <option value="{{value}}" data-search="{{searchText}}" {{#if selectedOrigin}}selected{{/if}}>{{label}}</option>
                 {{/each}}
               </select>
             </div>
 
             <div class="rm-field">
               <label>Город Б</label>
+              <input type="search" class="rm-travel-city-search" data-action="travel-destination-search" placeholder="Поиск города" autocomplete="off" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
               <select data-action="travel-destination" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
                 <option value="">Выберите город</option>
                 {{#each travel.cityOptions}}
-                  <option value="{{value}}" {{#if selectedDestination}}selected{{/if}}>{{label}}</option>
+                  <option value="{{value}}" data-search="{{searchText}}" {{#if selectedDestination}}selected{{/if}}>{{label}}</option>
                 {{/each}}
               </select>
             </div>

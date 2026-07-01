@@ -37,6 +37,19 @@ test("buildTravelPlan chooses the shortest land path and computes 3 mph timing",
   assert.deepEqual(plan.legs.map((leg) => leg.routeId), ["ab", "bc"]);
 });
 
+test("buildTravelPlan lets land travel use rail segments as walkable connections", () => {
+  const plan = buildTravelPlan(network, {
+    originCityId: "b",
+    destinationCityId: "d",
+    mode: "land"
+  });
+
+  assert.equal(plan.available, true);
+  assert.equal(plan.totalMiles, 21);
+  assert.deepEqual(plan.cityIds, ["b", "c", "d"]);
+  assert.deepEqual(plan.legs.map((leg) => leg.routeId), ["bc", "cd"]);
+});
+
 test("buildTravelPlan keeps non-land modes out of the first travel mode", () => {
   const plan = buildTravelPlan(network, {
     originCityId: "a",

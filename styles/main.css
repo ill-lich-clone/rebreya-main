@@ -4662,6 +4662,10 @@ summary:focus-visible {
   align-items: end;
 }
 
+.rm-travel-city-search {
+  margin-bottom: 6px;
+}
+
 .rm-travel-summary {
   display: grid;
   gap: 10px;

@@ -14,7 +14,7 @@ const TRAVEL_MODE_CONFIG = Object.freeze({
   land: {
     id: "land",
     label: "Земля",
-    routeModes: ["land", "land_plus_gray"],
+    routeModes: ["land", "land_plus_gray", "rail"],
     enabled: true
   },
   rail: {
@@ -409,6 +409,7 @@ function buildCityOptions(cities, state) {
       value: city.id,
       label: city.name,
       subtitle: [city.state, city.regionName].filter(Boolean).join(" • "),
+      searchText: [city.name, city.state, city.regionName, city.locationType].filter(Boolean).join(" "),
       selectedOrigin: city.id === state.originCityId,
       selectedDestination: city.id === state.destinationCityId
     }));

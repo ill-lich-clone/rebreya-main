@@ -692,6 +692,57 @@ test("InventoryApp allows travel tab and maps travel snapshot into context", asy
   }
 });
 
+test("InventoryApp travel city search filters select options", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-search=${Date.now()}`);
+  const searchInput = createFakeControl();
+  const originSelect = createFakeControl();
+  const placeholder = createFakeControl({ value: "" });
+  placeholder.textContent = "Выберите город";
+  const liara = createFakeControl({
+    value: "liara-ken",
+    dataset: { search: "Лиара’Кен Юлтан-Гласт Вэлин Луга" }
+  });
+  liara.textContent = "Лиара’Кен";
+  const riversted = createFakeControl({
+    value: "riversted",
+    dataset: { search: "Риверстед Марфорд Вэлин Луга" }
+  });
+  riversted.textContent = "Риверстед";
+  originSelect.querySelectorAll = (selector) => (selector === "option" ? [placeholder, liara, riversted] : []);
+
+  const controls = new Map([
+    ["[data-action='travel-origin-search']", searchInput],
+    ["[data-action='travel-origin']", originSelect]
+  ]);
+  const root = createFakeElement({
+    closest: () => root
+  });
+  root.querySelector = (selector) => controls.get(selector) ?? null;
+  root.querySelectorAll = () => [];
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null
+  }));
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+
+    assert.ok(searchInput.listeners.input?.length, "expected travel search input listener");
+    searchInput.value = "ривер";
+    searchInput.listeners.input[0]({ currentTarget: searchInput });
+
+    assert.equal(placeholder.hidden, false);
+    assert.equal(liara.hidden, true);
+    assert.equal(riversted.hidden, false);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp downtime context can switch queue pages to archive requests", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import("../scripts/ui/inventory-app.js");

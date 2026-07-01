@@ -1361,6 +1361,52 @@ function isKnownGroupContextError(error) {
   return KNOWN_GROUP_CONTEXT_ERROR_MESSAGES.has(error?.message);
 }
 
+function normalizeTravelCitySearchText(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/ё/gu, "е")
+    .replace(/[\u2019\u2018\u02bc\u02b9\u2032`´"]/gu, "'")
+    .replace(/\s+/gu, " ");
+}
+
+function applyTravelCitySearch(select, query) {
+  if (!select?.querySelectorAll) {
+    return;
+  }
+
+  const safeQuery = normalizeTravelCitySearchText(query);
+  Array.from(select.querySelectorAll("option")).forEach((option) => {
+    if (!cleanText(option.value)) {
+      option.hidden = false;
+      if (option.style) {
+        option.style.display = "";
+      }
+      return;
+    }
+
+    const searchText = option.dataset?.search || option.textContent || option.label || option.value;
+    const matches = !safeQuery || normalizeTravelCitySearchText(searchText).includes(safeQuery);
+    const visible = matches || Boolean(option.selected);
+    option.hidden = !visible;
+    if (option.style) {
+      option.style.display = visible ? "" : "none";
+    }
+  });
+}
+
+function bindTravelCitySearch(element, searchAction, selectAction, listenerOptions) {
+  const searchInput = element.querySelector(`[data-action='${searchAction}']`);
+  const select = element.querySelector(`[data-action='${selectAction}']`);
+  if (!searchInput || !select) {
+    return;
+  }
+
+  const applySearch = () => applyTravelCitySearch(select, searchInput.value);
+  searchInput.addEventListener("input", applySearch, listenerOptions);
+  searchInput.addEventListener("change", applySearch, listenerOptions);
+  applySearch();
+}
+
 function buildEmptyTravelContext({ warning = "" } = {}) {
   const safeWarning = cleanText(warning);
   return {
@@ -4432,6 +4478,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ui.notifications?.error(message);
       }
     };
+
+    bindTravelCitySearch(element, "travel-origin-search", "travel-origin", listenerOptions);
+    bindTravelCitySearch(element, "travel-destination-search", "travel-destination", listenerOptions);
 
     ["travel-origin", "travel-destination", "travel-mode"].forEach((action) => {
       element.querySelector(`[data-action='${action}']`)?.addEventListener("change", updateTravelRoute, listenerOptions);
