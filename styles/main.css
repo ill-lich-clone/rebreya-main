@@ -4651,6 +4651,118 @@ summary:focus-visible {
   background: var(--rm-surface-panel-strong);
 }
 
+.rm-travel-panel {
+  min-height: 420px;
+}
+
+.rm-travel-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 160px;
+  gap: 10px;
+  align-items: end;
+}
+
+.rm-travel-summary {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--rm-border-subtle);
+  border-radius: var(--rm-ui-section-radius);
+  background: var(--rm-surface-row);
+}
+
+.rm-travel-route {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.rm-travel-route strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rm-travel-route i {
+  flex: 0 0 auto;
+  color: var(--rm-accent);
+}
+
+.rm-travel-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rm-travel-stats p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--rm-border-subtle);
+  border-radius: var(--rm-ui-row-radius);
+  background: rgb(var(--rm-color-dark-rgb) / 0.44);
+}
+
+.rm-travel-stats span {
+  color: var(--rm-text-secondary);
+  font-size: 10px;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rm-travel-stats strong {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.rm-travel-progress {
+  min-height: 12px;
+}
+
+.rm-travel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.rm-travel-leg-list {
+  display: grid;
+  gap: 6px;
+}
+
+.rm-travel-leg {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) minmax(80px, auto);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--rm-border-subtle);
+  border-radius: var(--rm-ui-row-radius);
+  background: var(--rm-ui-row-bg);
+}
+
+.rm-travel-leg span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rm-travel-leg i {
+  color: var(--rm-accent);
+}
+
+.rm-travel-leg strong {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .rm-status-strip {
   display: flex;
   flex-wrap: wrap;
@@ -7516,6 +7628,19 @@ summary:focus-visible {
   .rm-compact-item {
     grid-template-columns: 1fr;
     align-items: start;
+  }
+
+  .rm-travel-controls,
+  .rm-travel-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .rm-travel-leg {
+    grid-template-columns: 1fr;
+  }
+
+  .rm-travel-leg strong {
+    text-align: left;
   }
 
   .rm-compact-item__side {

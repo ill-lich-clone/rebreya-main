@@ -15,6 +15,7 @@ import { TraderService } from "./data/trader-service.js";
 import { GroupContextService } from "./data/group-context-service.js";
 import { DowntimeService } from "./data/downtime-service.js";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js";
+import { TravelService } from "./data/travel-service.js";
 import {
   InventoryService,
   SOCKET_EVENT_INVENTORY_IMPORT_REQUEST,
@@ -362,6 +363,7 @@ export class RebreyaMainModule {
     this.groupContextService = new GroupContextService(this);
     this.downtimeService = new DowntimeService(this);
     this.characterDowntimeService = new CharacterDowntimeService(this);
+    this.travelService = new TravelService({ groupContextService: this.groupContextService });
     this.inventoryService = new InventoryService(this);
     this.heroDollService = new HeroDollService(this);
     this.craftingService = new CraftingService(this);
@@ -1560,6 +1562,10 @@ export class RebreyaMainModule {
     return this.inventoryService.getPartySnapshot(options);
   }
 
+  async getTravelSnapshot() {
+    return this.travelService.getSnapshot();
+  }
+
   getGroupRegistry() {
     return this.groupContextService.getRegistry();
   }
@@ -2333,6 +2339,24 @@ export class RebreyaMainModule {
 
   async removePartyMember(actorId) {
     const result = await this.inventoryService.removePartyMember(actorId);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async setTravelRoute(payload = {}) {
+    const result = await this.travelService.setRoute(payload);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async advanceTravelHours(hours = 0) {
+    const result = await this.travelService.advanceHours(hours);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async clearTravelRoute() {
+    const result = await this.travelService.clearRoute();
     await this.refreshOpenApps();
     return result;
   }

@@ -93,6 +93,7 @@
       <button type="button" class="rm-tab {{#if tabs.isParty}}is-active{{/if}}" data-action="switch-tab" data-tab="party">Группа</button>
       <button type="button" class="rm-tab {{#if tabs.isCraft}}is-active{{/if}}" data-action="switch-tab" data-tab="craft">Крафт</button>
       <button type="button" class="rm-tab {{#if tabs.isCalendar}}is-active{{/if}}" data-action="switch-tab" data-tab="calendar">Календарь</button>
+      <button type="button" class="rm-tab {{#if tabs.isTravel}}is-active{{/if}}" data-action="switch-tab" data-tab="travel">Путешествие</button>
       <button type="button" class="rm-tab {{#if tabs.isDowntime}}is-active{{/if}}" data-action="switch-tab" data-tab="downtime">Простой</button>
     </nav>
 
@@ -532,6 +533,103 @@
             {{/if}}
           </section>
         </div>
+      </section>
+    {{/if}}
+
+    {{#if tabs.isTravel}}
+      <section class="rm-panel rm-panel--full rm-panel--compact rm-travel-panel">
+        <div class="rm-panel__header rm-panel__header--compact">
+          <div>
+            <h3>Путешествие</h3>
+          </div>
+          <span class="rm-badge rm-status-badge rm-status-badge--info">{{travel.speedLabel}}</span>
+        </div>
+
+        {{#if travel.warning}}
+          <p class="rm-inline-status rm-inline-status--warning">
+            <span>{{travel.warning}}</span>
+          </p>
+        {{else}}
+          <section class="rm-travel-controls">
+            <div class="rm-field">
+              <label>Город А</label>
+              <select data-action="travel-origin" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
+                <option value="">Выберите город</option>
+                {{#each travel.cityOptions}}
+                  <option value="{{value}}" {{#if selectedOrigin}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </div>
+
+            <div class="rm-field">
+              <label>Город Б</label>
+              <select data-action="travel-destination" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
+                <option value="">Выберите город</option>
+                {{#each travel.cityOptions}}
+                  <option value="{{value}}" {{#if selectedDestination}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </div>
+
+            <div class="rm-field rm-field--narrow">
+              <label>Путь</label>
+              <select data-action="travel-mode" {{#unless travel.canSelectRoute}}disabled{{/unless}}>
+                {{#each travel.modeOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </div>
+          </section>
+
+          {{#if travel.plan.available}}
+            <section class="rm-travel-summary">
+              <div class="rm-travel-route">
+                <strong>{{travel.plan.originName}}</strong>
+                <i class="fa-solid fa-arrow-right-long"></i>
+                <strong>{{travel.plan.destinationName}}</strong>
+              </div>
+
+              <div class="rm-travel-stats">
+                <p><span>Дистанция</span><strong>{{rmNum travel.plan.totalMiles}} миль</strong></p>
+                <p><span>В пути</span><strong>{{rmNum travel.plan.totalHours}} ч.</strong></p>
+                <p><span>Осталось</span><strong>{{rmNum travel.progress.remainingMiles}} миль</strong></p>
+              </div>
+
+              <div class="rm-progress rm-travel-progress" aria-label="{{travel.progress.label}}">
+                <div class="rm-progress__bar" style="width: {{travel.progress.percent}}%;"></div>
+              </div>
+              <p class="rm-muted">{{travel.progress.label}} • осталось {{rmNum travel.progress.remainingHours}} ч.</p>
+
+              <div class="rm-travel-actions">
+                <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="travel-advance" data-hours="1" {{#unless travel.canAdvance}}disabled{{/unless}}>
+                  <i class="fa-solid fa-plus"></i>
+                  <span>1 ч.</span>
+                </button>
+                <button type="button" class="rm-button rm-button--small rm-button--primary" data-action="travel-advance" data-hours="8" {{#unless travel.canAdvance}}disabled{{/unless}}>
+                  <i class="fa-solid fa-forward-step"></i>
+                  <span>8 ч.</span>
+                </button>
+                <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="travel-clear">
+                  <i class="fa-solid fa-xmark"></i>
+                  <span>Сбросить</span>
+                </button>
+              </div>
+            </section>
+
+            <section class="rm-travel-leg-list">
+              {{#each travel.plan.legs}}
+                <article class="rm-travel-leg">
+                  <span>{{sourceName}}</span>
+                  <i class="fa-solid fa-route"></i>
+                  <span>{{targetName}}</span>
+                  <strong>{{rmNum miles}} миль</strong>
+                </article>
+              {{/each}}
+            </section>
+          {{else}}
+            <p class="rm-empty">{{travel.emptyMessage}}</p>
+          {{/if}}
+        {{/if}}
       </section>
     {{/if}}
 

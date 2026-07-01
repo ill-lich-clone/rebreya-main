@@ -135,6 +135,7 @@ export function buildDefaultGroupState(groupActorId, { now = Date.now() } = {}) 
     tradeAudit: [],
     globalEventsState: {},
     craftState: {},
+    travelState: {},
     downtimeState: {
       balancesByActorId: {},
       requests: [],
@@ -168,6 +169,7 @@ export function normalizeGroupState(groupActorId, value = {}) {
     tradeAudit: clone(asArray(source.tradeAudit)),
     globalEventsState: clone(asObject(source.globalEventsState)),
     craftState: clone(asObject(source.craftState)),
+    travelState: clone(asObject(source.travelState)),
     downtimeState: {
       balancesByActorId: clone(asObject(downtimeState.balancesByActorId)),
       requests: clone(downtimeRequests),

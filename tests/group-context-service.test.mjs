@@ -154,6 +154,7 @@ test("normalizeGroupRegistry preserves active group and per-group state", () => 
     tradeAudit: [{ id: "audit-a" }],
     globalEventsState: { season: "rain" },
     craftState: { queue: ["item-a"] },
+    travelState: {},
     downtimeState: {
       balancesByActorId: { "actor-a": 4 },
       requests: [{ id: "request-a" }],
@@ -484,6 +485,7 @@ test("buildDefaultGroupState creates file-backed empty runtime state without leg
     tradeAudit: [],
     globalEventsState: {},
     craftState: {},
+    travelState: {},
     downtimeState: {
       balancesByActorId: {},
       requests: [],

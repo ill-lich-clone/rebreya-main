@@ -124,7 +124,7 @@ function collectText(node) {
   ].join("");
 }
 
-function createModuleApi({ getGroupContext, partySnapshot = {}, downtimeSnapshot, downtimeError, calls = [] }) {
+function createModuleApi({ getGroupContext, partySnapshot = {}, downtimeSnapshot, downtimeError, travelSnapshot, calls = [] }) {
   return {
     async getInventorySnapshot() {
       return {
@@ -181,6 +181,21 @@ function createModuleApi({ getGroupContext, partySnapshot = {}, downtimeSnapshot
         year: 1,
         month: 1,
         day: 1
+      };
+    },
+    async getTravelSnapshot() {
+      calls.push(["getTravelSnapshot"]);
+      return travelSnapshot ?? {
+        available: true,
+        canAdvance: false,
+        cityOptions: [],
+        modeOptions: [],
+        plan: null,
+        progress: {
+          traveledMiles: 0,
+          remainingMiles: 0,
+          percent: 0
+        }
       };
     },
     getDowntimeSnapshot() {
@@ -610,6 +625,67 @@ test("InventoryApp allows downtime tab and maps downtime snapshot into context o
     assert.equal(context.downtime.selectedRequest.hasTemplateDescriptionHtml, true);
     assert.equal(context.downtime.selectedRequest.resourceActions[0].outcomeSummary, "10 зм");
     assert.equal(context.downtime.selectedRequest.checkActions[0].summary, "Проверка: Интеллект");
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp allows travel tab and maps travel snapshot into context", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-tab=${Date.now()}`);
+  const calls = [];
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => ({
+      groupActor: {
+        id: "group-a",
+        name: "Travel Group",
+        system: {
+          members: []
+        }
+      },
+      groupId: "group-a",
+      memberActorIds: []
+    }),
+    travelSnapshot: {
+      available: true,
+      canAdvance: true,
+      mode: "land",
+      cityOptions: [
+        { value: "liara-ken", label: "Лиара’Кен", selectedOrigin: true, selectedDestination: false },
+        { value: "stranbu", label: "Странбу", selectedOrigin: false, selectedDestination: true }
+      ],
+      modeOptions: [
+        { value: "land", label: "Земля", selected: true, disabled: false }
+      ],
+      plan: {
+        available: true,
+        originName: "Лиара’Кен",
+        destinationName: "Странбу",
+        totalMiles: 180,
+        totalHours: 60,
+        legs: []
+      },
+      progress: {
+        traveledMiles: 24,
+        remainingMiles: 156,
+        percent: 13.33,
+        label: "24 / 180 миль"
+      }
+    },
+    calls
+  }));
+
+  try {
+    app.setActiveTab("travel", { render: false });
+
+    const context = await app._prepareContext();
+
+    assert.equal(context.activeTab, "travel");
+    assert.equal(context.tabs.isTravel, true);
+    assert.equal(context.travel.plan.totalMiles, 180);
+    assert.equal(context.travel.progress.traveledMiles, 24);
+    assert.deepEqual(calls.filter((call) => call[0] === "getTravelSnapshot"), [["getTravelSnapshot"]]);
   }
   finally {
     restoreFoundry();

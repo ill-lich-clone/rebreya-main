@@ -1361,6 +1361,36 @@ function isKnownGroupContextError(error) {
   return KNOWN_GROUP_CONTEXT_ERROR_MESSAGES.has(error?.message);
 }
 
+function buildEmptyTravelContext({ warning = "" } = {}) {
+  const safeWarning = cleanText(warning);
+  return {
+    available: !safeWarning,
+    warning: safeWarning,
+    canAdvance: false,
+    canSelectRoute: false,
+    mode: "land",
+    cityOptions: [],
+    modeOptions: [
+      { value: "land", label: "Земля", selected: true, disabled: false },
+      { value: "rail", label: "ЖД", selected: false, disabled: true, disabledReason: "ЖД будет подключена следующим этапом." },
+      { value: "water", label: "Море", selected: false, disabled: true, disabledReason: "Море будет подключено следующим этапом." }
+    ],
+    plan: null,
+    progress: {
+      traveledMiles: 0,
+      remainingMiles: 0,
+      percent: 0,
+      traveledHours: 0,
+      remainingHours: 0,
+      label: "Маршрут не выбран",
+      completed: false
+    },
+    emptyMessage: safeWarning || "Выберите города и способ пути.",
+    speedMph: 3,
+    speedLabel: "3 мили/час"
+  };
+}
+
 function buildEmptyDowntimeContext({ warning = "", grantWeeks = 1, grantActorId = "all", requestActorId = "", requestActionId = "", requestWeeks = 1, requestTitle = "", requestDescription = "" } = {}) {
   const safeWarning = cleanText(warning);
   return {
@@ -2284,7 +2314,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   setActiveTab(tab, { render = true } = {}) {
-    const allowedTabs = new Set(["inventory", "party", "craft", "calendar", "downtime"]);
+    const allowedTabs = new Set(["inventory", "party", "craft", "calendar", "travel", "downtime"]);
     const nextTab = allowedTabs.has(tab) ? tab : "inventory";
     if (this.activeTab === nextTab) {
       return;
@@ -2782,6 +2812,18 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         crafterActorId: this.craftCrafterActorId
       });
       const calendarSnapshot = this.moduleApi.getCalendarSnapshot();
+      let travelSnapshot = null;
+      let travelWarning = "";
+      try {
+        travelSnapshot = await this.moduleApi.getTravelSnapshot?.();
+      }
+      catch (error) {
+        if (!isKnownGroupContextError(error)) {
+          throw error;
+        }
+
+        travelWarning = error.message || "Не удалось определить группу Rebreya.";
+      }
       let downtimeSnapshot = null;
       let downtimeWarning = "";
       try {
@@ -2936,6 +2978,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
 
       const downtime = this.#prepareDowntimeContext(downtimeSnapshot, downtimeWarning);
+      const travel = travelSnapshot ?? buildEmptyTravelContext({ warning: travelWarning });
 
       return {
         hasError: false,
@@ -3015,6 +3058,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           monthValue: calendarSnapshot.month,
           dayValue: calendarSnapshot.day
         },
+        travel,
         downtime,
         typeOptions: [
           { value: "all", label: "Все", selected: this.typeFilter === "all" },
@@ -3029,6 +3073,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           isParty: this.activeTab === "party",
           isCraft: this.activeTab === "craft",
           isCalendar: this.activeTab === "calendar",
+          isTravel: this.activeTab === "travel",
           isDowntime: this.activeTab === "downtime"
         },
         actionFeedback,
@@ -4365,6 +4410,65 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.setActiveTab(event.currentTarget.dataset.tab || "inventory");
       }, listenerOptions);
     });
+
+    const updateTravelRoute = async () => {
+      const originCityId = cleanText(element.querySelector("[data-action='travel-origin']")?.value);
+      const destinationCityId = cleanText(element.querySelector("[data-action='travel-destination']")?.value);
+      const mode = cleanText(element.querySelector("[data-action='travel-mode']")?.value) || "land";
+      try {
+        await this.moduleApi.setTravelRoute?.({
+          originCityId,
+          destinationCityId,
+          mode
+        });
+        this.#setActionFeedback("success", "Маршрут путешествия обновлён.");
+        bringAppToFront(this);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to update travel route.`, error);
+        const message = error.message || "Не удалось обновить маршрут путешествия.";
+        this.#setActionFeedback("error", message);
+        this.render({ force: true });
+        ui.notifications?.error(message);
+      }
+    };
+
+    ["travel-origin", "travel-destination", "travel-mode"].forEach((action) => {
+      element.querySelector(`[data-action='${action}']`)?.addEventListener("change", updateTravelRoute, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='travel-advance']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const hours = Math.max(0, toNumber(event.currentTarget.dataset.hours, 0));
+        try {
+          await this.moduleApi.advanceTravelHours?.(hours);
+          this.#setActionFeedback("success", `Путь продвинут на ${hours} ч.`);
+          bringAppToFront(this);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to advance travel.`, error);
+          const message = error.message || "Не удалось продвинуть путешествие.";
+          this.#setActionFeedback("error", message);
+          this.render({ force: true });
+          ui.notifications?.error(message);
+        }
+      }, listenerOptions);
+    });
+
+    element.querySelector("[data-action='travel-clear']")?.addEventListener("click", async () => {
+      try {
+        await this.moduleApi.clearTravelRoute?.();
+        this.#setActionFeedback("success", "Маршрут путешествия очищен.");
+        bringAppToFront(this);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to clear travel route.`, error);
+        const message = error.message || "Не удалось очистить маршрут путешествия.";
+        this.#setActionFeedback("error", message);
+        this.render({ force: true });
+        ui.notifications?.error(message);
+      }
+    }, listenerOptions);
 
     const bindDowntimeField = (selector, assign) => {
       element.querySelector(selector)?.addEventListener("change", (event) => {
