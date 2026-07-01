@@ -8,6 +8,9 @@ test("TravelMapService updates an existing group token on the world map scene", 
   const updates = [];
   const scene = {
     name: "Карта мира",
+    grid: {
+      size: 90
+    },
     tokens: [
       {
         id: "token-a",
@@ -52,8 +55,10 @@ test("TravelMapService updates an existing group token on the world map scene", 
     "Token",
     [{
       _id: "token-a",
-      x: 120,
-      y: 240,
+      x: 105.15,
+      y: 225.15,
+      width: 0.33,
+      height: 0.33,
       flags: {
         [MODULE_ID]: {
           travelGroupActorId: "group-a"
@@ -67,6 +72,9 @@ test("TravelMapService creates a group token when it is missing", async () => {
   const creates = [];
   const scene = {
     name: "Карта мира",
+    grid: {
+      size: 60
+    },
     tokens: [],
     async createEmbeddedDocuments(documentName, documents) {
       creates.push([documentName, documents]);
@@ -100,7 +108,9 @@ test("TravelMapService creates a group token when it is missing", async () => {
   assert.equal(creates[0][0], "Token");
   assert.equal(creates[0][1][0].actorId, "group-a");
   assert.equal(creates[0][1][0].name, "Рассвет порядка 1");
-  assert.equal(creates[0][1][0].x, 120);
-  assert.equal(creates[0][1][0].y, 240);
+  assert.equal(creates[0][1][0].x, 110.1);
+  assert.equal(creates[0][1][0].y, 230.1);
+  assert.equal(creates[0][1][0].width, 0.33);
+  assert.equal(creates[0][1][0].height, 0.33);
   assert.equal(creates[0][1][0].flags[MODULE_ID].travelGroupActorId, "group-a");
 });

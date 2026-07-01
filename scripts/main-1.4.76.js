@@ -2423,7 +2423,6 @@ export class RebreyaMainModule {
       console.warn(`${MODULE_ID} | Failed to sync travel token after travel progress.`, error);
       ui.notifications?.warn?.(error.message || "Не удалось синхронизировать токен группы на карте мира.");
     });
-    await this.refreshOpenApps();
     return result;
   }
 

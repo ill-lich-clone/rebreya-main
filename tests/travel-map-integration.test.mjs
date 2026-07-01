@@ -162,3 +162,80 @@ test("RebreyaMainModule asks the GM client to sync the travel token for player t
     globalThis.foundry = previousFoundry;
   }
 });
+
+test("RebreyaMainModule advances travel without forcing inventory rerender", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  const previousFoundry = globalThis.foundry;
+
+  globalThis.Hooks = {
+    once() {},
+    on() {}
+  };
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true
+    }
+  };
+  globalThis.ui = {
+    windows: {}
+  };
+  globalThis.foundry = {
+    applications: {
+      instances: new Map()
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?travel-map-no-refresh=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const groupActor = {
+      id: "group-a",
+      name: "Рассвет порядка 1",
+      img: "icons/group.webp"
+    };
+    const mapPosition = {
+      available: true,
+      sceneName: "Карта мира",
+      sceneX: 120,
+      sceneY: 240
+    };
+    let refreshCount = 0;
+    moduleApi.travelService.advanceHours = async () => ({
+      available: true,
+      canAdvance: true,
+      mapPosition,
+      progress: {
+        percent: 12,
+        remainingMiles: 88,
+        remainingHours: 29.33,
+        label: "12 / 100 миль"
+      }
+    });
+    moduleApi.groupContextService.resolveForCurrentUser = () => ({
+      groupActor,
+      groupId: groupActor.id
+    });
+    moduleApi.travelMapService = {
+      async syncGroupToken() {
+        return { synced: true };
+      }
+    };
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+
+    const snapshot = await moduleApi.advanceTravelHours(8);
+
+    assert.equal(snapshot.progress.percent, 12);
+    assert.equal(refreshCount, 0);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+    globalThis.foundry = previousFoundry;
+  }
+});

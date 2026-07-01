@@ -2,7 +2,7 @@
 import { REBREYA_TOOLS } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
 import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js";
-import { bringAppToFront, getAppElement } from "../ui.js";
+import { bringAppToFront, formatNumber, getAppElement } from "../ui.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -1389,6 +1389,46 @@ function getTravelCityOptions(resultRoot, role) {
 
 function getVisibleTravelCityOptions(resultRoot, role) {
   return getTravelCityOptions(resultRoot, role).filter((option) => option.hidden !== true);
+}
+
+function formatTravelNumber(value) {
+  return formatNumber(value, 2);
+}
+
+function applyTravelProgressSnapshot(element, snapshot = {}) {
+  if (!element || !snapshot?.progress || !snapshot?.plan?.available) {
+    return false;
+  }
+
+  const progress = snapshot.progress;
+  const percent = Math.max(0, Math.min(100, roundNumber(toNumber(progress.percent, 0), 2)));
+  const percentStyle = `${percent}%`;
+  const progressRoot = element.querySelector("[data-travel-progress]");
+  const progressBar = element.querySelector("[data-travel-progress-bar]");
+  const progressToken = element.querySelector("[data-travel-progress-token]");
+  const progressLabel = element.querySelector("[data-travel-progress-label]");
+  const remainingMiles = element.querySelector("[data-travel-remaining-miles]");
+  const safeLabel = cleanText(progress.label);
+  const remainingHoursLabel = `${formatTravelNumber(progress.remainingHours)} ч.`;
+
+  progressRoot?.setAttribute?.("aria-label", safeLabel);
+  if (progressBar?.style) {
+    progressBar.style.width = percentStyle;
+  }
+  if (progressToken?.style) {
+    progressToken.style.left = percentStyle;
+  }
+  if (remainingMiles) {
+    remainingMiles.textContent = `${formatTravelNumber(progress.remainingMiles)} миль`;
+  }
+  if (progressLabel) {
+    progressLabel.textContent = `${safeLabel} • осталось ${remainingHoursLabel}`;
+  }
+
+  element.querySelectorAll("[data-action='travel-advance']").forEach((button) => {
+    button.disabled = !snapshot.canAdvance;
+  });
+  return true;
 }
 
 function bindTravelCityAutocomplete(element, role, onSelectRoute, listenerOptions) {
@@ -4584,7 +4624,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       button.addEventListener("click", async (event) => {
         const hours = Math.max(0, toNumber(event.currentTarget.dataset.hours, 0));
         try {
-          await this.moduleApi.advanceTravelHours?.(hours);
+          const snapshot = await this.moduleApi.advanceTravelHours?.(hours);
+          applyTravelProgressSnapshot(element, snapshot);
           this.#setActionFeedback("success", `Путь продвинут на ${hours} ч.`);
           bringAppToFront(this);
         }

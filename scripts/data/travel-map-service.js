@@ -1,5 +1,8 @@
 import { MODULE_ID } from "../constants.js";
 
+const TRAVEL_TOKEN_GRID_UNITS = 0.33;
+const DEFAULT_GRID_SIZE = 100;
+
 function cleanText(value) {
   return String(value ?? "").trim();
 }
@@ -75,15 +78,39 @@ function buildTravelTokenFlags(groupActorId, baseFlags = {}) {
   };
 }
 
-function buildCreateTokenData(groupActor, position) {
+function getSceneGridSize(scene) {
+  return Math.max(1, toNumber(
+    scene?.grid?.size
+      ?? scene?.dimensions?.size
+      ?? scene?.gridSize,
+    DEFAULT_GRID_SIZE
+  ));
+}
+
+function buildTravelTokenPlacement(scene, position) {
+  const width = TRAVEL_TOKEN_GRID_UNITS;
+  const height = TRAVEL_TOKEN_GRID_UNITS;
+  const gridSize = getSceneGridSize(scene);
+  return {
+    x: roundNumber(toNumber(position?.sceneX, 0) - ((gridSize * width) / 2), 2),
+    y: roundNumber(toNumber(position?.sceneY, 0) - ((gridSize * height) / 2), 2),
+    width,
+    height
+  };
+}
+
+function buildCreateTokenData(groupActor, position, scene) {
   const prototype = groupActor?.prototypeToken?.toObject?.() ?? {};
   const texture = prototype.texture ?? (groupActor?.img ? { src: groupActor.img } : undefined);
+  const placement = buildTravelTokenPlacement(scene, position);
   const tokenData = {
     ...prototype,
     actorId: groupActor.id,
     name: groupActor.name ?? "Группа",
-    x: roundNumber(position.sceneX, 2),
-    y: roundNumber(position.sceneY, 2),
+    x: placement.x,
+    y: placement.y,
+    width: placement.width,
+    height: placement.height,
     flags: buildTravelTokenFlags(groupActor.id, prototype.flags ?? {})
   };
 
@@ -123,8 +150,7 @@ export class TravelMapService {
       throw new Error(`Сцена «${position.sceneName || "Карта мира"}» не найдена.`);
     }
 
-    const x = roundNumber(position.sceneX, 2);
-    const y = roundNumber(position.sceneY, 2);
+    const placement = buildTravelTokenPlacement(scene, position);
     const existingToken = findGroupToken(scene, groupActor.id);
     if (existingToken) {
       const tokenId = cleanText(existingToken.id ?? existingToken._id);
@@ -134,8 +160,10 @@ export class TravelMapService {
 
       await scene.updateEmbeddedDocuments?.("Token", [{
         _id: tokenId,
-        x,
-        y,
+        x: placement.x,
+        y: placement.y,
+        width: placement.width,
+        height: placement.height,
         flags: buildTravelTokenFlags(groupActor.id, existingToken.flags ?? {})
       }]);
       return {
@@ -143,19 +171,19 @@ export class TravelMapService {
         action: "updated",
         sceneName: scene.name,
         tokenId,
-        x,
-        y
+        x: placement.x,
+        y: placement.y
       };
     }
 
-    const [createdToken] = await scene.createEmbeddedDocuments?.("Token", [buildCreateTokenData(groupActor, { ...position, sceneX: x, sceneY: y })]) ?? [];
+    const [createdToken] = await scene.createEmbeddedDocuments?.("Token", [buildCreateTokenData(groupActor, position, scene)]) ?? [];
     return {
       synced: true,
       action: "created",
       sceneName: scene.name,
       tokenId: cleanText(createdToken?.id ?? createdToken?._id),
-      x,
-      y
+      x: placement.x,
+      y: placement.y
     };
   }
 }

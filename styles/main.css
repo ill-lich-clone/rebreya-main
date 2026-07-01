@@ -4672,35 +4672,44 @@ summary:focus-visible {
 
 .rm-travel-city-results {
   position: absolute;
-  z-index: 20;
+  z-index: 40;
   top: calc(100% + 4px);
   left: 0;
   right: 0;
   display: grid;
-  max-height: 260px;
+  gap: 2px;
+  max-height: min(320px, 46vh);
   overflow: auto;
+  padding: 4px;
   border: 1px solid var(--rm-border-strong);
   border-radius: var(--rm-ui-row-radius);
   background: var(--rm-surface-panel-strong);
   box-shadow: 0 14px 28px rgb(0 0 0 / 0.42);
 }
 
-.rm-travel-city-option {
-  display: grid;
-  gap: 2px;
-  width: 100%;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 0;
-  border-bottom: 1px solid var(--rm-border-subtle);
-  border-radius: 0;
-  color: var(--rm-text-primary);
-  background: transparent;
-  text-align: left;
+.rm-travel-city-results[hidden] {
+  display: none;
 }
 
-.rm-travel-city-option:last-child {
-  border-bottom: 0;
+.rm-travel-city-option {
+  appearance: none;
+  display: grid;
+  justify-items: start;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 44px;
+  min-width: 0;
+  margin: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--rm-ui-row-radius);
+  color: var(--rm-text-primary);
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  line-height: 1.2;
+  text-align: left;
 }
 
 .rm-travel-city-option:hover,
@@ -4709,13 +4718,16 @@ summary:focus-visible {
   background: rgb(var(--rm-color-gold-rgb) / 0.18);
 }
 
-.rm-travel-city-option span,
-.rm-travel-city-option small {
+.rm-travel-city-option span {
   min-width: 0;
+  font-weight: 700;
+  line-height: 1.15;
   overflow-wrap: anywhere;
 }
 
 .rm-travel-city-option small {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--rm-text-secondary);
   font-size: 11px;
   line-height: 1.2;
@@ -4782,7 +4794,28 @@ summary:focus-visible {
 }
 
 .rm-travel-progress {
+  position: relative;
   min-height: 12px;
+  overflow: visible;
+}
+
+.rm-travel-progress .rm-progress__bar {
+  border-radius: inherit;
+}
+
+.rm-travel-progress-token {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgb(var(--rm-color-gold-rgb) / 0.92);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, var(--rm-text-primary) 0 18%, rgb(var(--rm-color-dark-rgb) / 0.94) 20% 100%);
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.38), 0 3px 8px rgb(0 0 0 / 0.46);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
 }
 
 .rm-travel-actions {

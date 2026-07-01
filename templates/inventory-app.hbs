@@ -604,13 +604,14 @@
               <div class="rm-travel-stats">
                 <p><span>Дистанция</span><strong>{{rmNum travel.plan.totalMiles}} миль</strong></p>
                 <p><span>В пути</span><strong>{{rmNum travel.plan.totalHours}} ч.</strong></p>
-                <p><span>Осталось</span><strong>{{rmNum travel.progress.remainingMiles}} миль</strong></p>
+                <p><span>Осталось</span><strong data-travel-remaining-miles>{{rmNum travel.progress.remainingMiles}} миль</strong></p>
               </div>
 
-              <div class="rm-progress rm-travel-progress" aria-label="{{travel.progress.label}}">
-                <div class="rm-progress__bar" style="width: {{travel.progress.percent}}%;"></div>
+              <div class="rm-progress rm-travel-progress" data-travel-progress aria-label="{{travel.progress.label}}">
+                <div class="rm-progress__bar" data-travel-progress-bar style="width: {{travel.progress.percent}}%;"></div>
+                <span class="rm-travel-progress-token" data-travel-progress-token style="left: {{travel.progress.percent}}%;" aria-hidden="true"></span>
               </div>
-              <p class="rm-muted">{{travel.progress.label}} • осталось {{rmNum travel.progress.remainingHours}} ч.</p>
+              <p class="rm-muted" data-travel-progress-label>{{travel.progress.label}} • осталось {{rmNum travel.progress.remainingHours}} ч.</p>
 
               <div class="rm-travel-actions">
                 <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="travel-advance" data-hours="1" {{#unless travel.canAdvance}}disabled{{/unless}}>
