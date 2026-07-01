@@ -85,6 +85,9 @@ const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT = "downtime-project-close-resul
 const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
 const SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST = "travel-map-sync-request";
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
+const SECONDS_PER_HOUR = 3600;
+const SECONDS_PER_DAY = 86400;
+const TRAVEL_DAY_HOURS = 8;
 let socketModuleApi = null;
 const queuedSocketMessages = [];
 
@@ -332,6 +335,11 @@ function countMonthStartBoundaries(fromIsoDate, toIsoDate) {
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
   return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function normalizeTimeOfDaySeconds(seconds) {
+  const safeSeconds = Math.trunc(toNumber(seconds, 0));
+  return ((safeSeconds % SECONDS_PER_DAY) + SECONDS_PER_DAY) % SECONDS_PER_DAY;
 }
 
 function filterVisibleGlobalEvents(events = []) {
@@ -2417,12 +2425,62 @@ export class RebreyaMainModule {
     return result;
   }
 
-  async advanceTravelHours(hours = 0) {
+  async #applyTravelCalendarTime(hours = 0) {
+    const safeHours = toNumber(hours, 0);
+    if (Math.abs(safeHours) <= 0.001) {
+      return {
+        days: 0,
+        timeOfDaySeconds: null
+      };
+    }
+
+    const travelDayDelta = Math.trunc(safeHours / TRAVEL_DAY_HOURS);
+    const clockHourDelta = safeHours - (travelDayDelta * TRAVEL_DAY_HOURS);
+    let totalDayDelta = travelDayDelta;
+    let timeOfDaySeconds = null;
+
+    if (Math.abs(clockHourDelta) > 0.001) {
+      const snapshot = this.calendarService.getSnapshot();
+      const currentSeconds = toNumber(snapshot?.timeOfDaySeconds, 0);
+      const rawSeconds = currentSeconds + (clockHourDelta * SECONDS_PER_HOUR);
+      const clockDayDelta = Math.floor(rawSeconds / SECONDS_PER_DAY);
+      totalDayDelta += clockDayDelta;
+      timeOfDaySeconds = normalizeTimeOfDaySeconds(rawSeconds);
+    }
+
+    if (totalDayDelta !== 0) {
+      await this.shiftCalendarDays(totalDayDelta, {
+        processDailyCycles: false,
+        reason: "travel-time",
+        refreshApps: false,
+        refreshSmallTime: false
+      });
+    }
+
+    if (timeOfDaySeconds !== null) {
+      await this.setCalendarTimeOfDay(timeOfDaySeconds, {
+        reason: "travel-time",
+        refreshApps: false,
+        refreshSmallTime: false
+      });
+    }
+
+    await syncSmallTimeToCalendarTime(this);
+    return {
+      days: totalDayDelta,
+      timeOfDaySeconds
+    };
+  }
+
+  async advanceTravelHours(hours = 0, options = {}) {
     const result = await this.travelService.advanceHours(hours);
     await this.#syncTravelMapForSnapshot(result).catch((error) => {
       console.warn(`${MODULE_ID} | Failed to sync travel token after travel progress.`, error);
       ui.notifications?.warn?.(error.message || "Не удалось синхронизировать токен группы на карте мира.");
     });
+    if (options.trackTime === true) {
+      await this.#applyTravelCalendarTime(result?.travelChange?.appliedHours ?? hours);
+    }
     return result;
   }
 
@@ -2693,8 +2751,12 @@ export class RebreyaMainModule {
         }
       };
 
-    await this.refreshOpenApps();
-    await refreshSmallTimeDateDisplay();
+    if (options.refreshApps !== false) {
+      await this.refreshOpenApps();
+    }
+    if (options.refreshSmallTime !== false) {
+      await refreshSmallTimeDateDisplay();
+    }
     return {
       ...advance,
       eventActivation,

@@ -5,6 +5,7 @@ import {
   advanceTravelProgress,
   buildTravelMapPosition,
   buildTravelPlan,
+  buildTravelSnapshot,
   normalizeTravelState
 } from "../scripts/data/travel-service.js";
 
@@ -82,6 +83,37 @@ test("advanceTravelProgress adds three miles per hour and clamps at destination"
   assert.equal(next.traveledMiles, 27);
   assert.equal(next.completed, true);
   assert.equal(next.addedMiles, 3);
+});
+
+test("advanceTravelProgress can rewind travel progress", () => {
+  const current = normalizeTravelState({
+    originCityId: "a",
+    destinationCityId: "c",
+    mode: "land",
+    traveledMiles: 12
+  });
+  const next = advanceTravelProgress(current, { totalMiles: 27 }, -8);
+
+  assert.equal(next.traveledMiles, 0);
+  assert.equal(next.completed, false);
+  assert.equal(next.addedMiles, -12);
+  assert.equal(next.addedHours, -4);
+});
+
+test("buildTravelSnapshot exposes travel days and rewind availability", () => {
+  const snapshot = buildTravelSnapshot(network, {
+    originCityId: "a",
+    destinationCityId: "c",
+    mode: "land",
+    traveledMiles: 3
+  });
+
+  assert.equal(snapshot.plan.totalHours, 9);
+  assert.equal(snapshot.plan.totalTravelDays, 1.13);
+  assert.equal(snapshot.progress.remainingHours, 8);
+  assert.equal(snapshot.progress.remainingTravelDays, 1);
+  assert.equal(snapshot.canAdvance, true);
+  assert.equal(snapshot.canRewind, true);
 });
 
 test("buildTravelMapPosition follows route points and scales them to the world map scene", () => {

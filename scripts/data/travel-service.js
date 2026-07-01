@@ -520,16 +520,18 @@ export function advanceTravelProgress(rawState = {}, rawPlan = {}, hours = 0) {
   const state = normalizeTravelState(rawState);
   const totalMiles = Math.max(0, roundNumber(toNumber(rawPlan.totalMiles, 0), 2));
   const speedMph = Math.max(0.01, toNumber(rawPlan.speedMph, DEFAULT_TRAVEL_SPEED_MPH));
-  const safeHours = Math.max(0, roundNumber(toNumber(hours, 0), 2));
+  const requestedHours = roundNumber(toNumber(hours, 0), 2);
   const currentMiles = Math.max(0, Math.min(totalMiles, state.traveledMiles));
-  const requestedMiles = roundNumber(safeHours * speedMph, 2);
-  const addedMiles = Math.max(0, Math.min(requestedMiles, roundNumber(totalMiles - currentMiles, 2)));
-  const traveledMiles = roundNumber(currentMiles + addedMiles, 2);
+  const requestedMiles = roundNumber(requestedHours * speedMph, 2);
+  const traveledMiles = roundNumber(Math.max(0, Math.min(totalMiles, currentMiles + requestedMiles)), 2);
+  const addedMiles = roundNumber(traveledMiles - currentMiles, 2);
+  const addedHours = roundNumber(addedMiles / speedMph, 2);
 
   return {
     ...state,
     traveledMiles,
-    addedHours: safeHours,
+    requestedHours,
+    addedHours,
     addedMiles,
     completed: totalMiles > 0 && traveledMiles + 1e-9 >= totalMiles
   };
@@ -543,6 +545,8 @@ function buildProgress(state, plan) {
       percent: 0,
       traveledHours: 0,
       remainingHours: 0,
+      traveledTravelDays: 0,
+      remainingTravelDays: 0,
       label: "Маршрут не выбран",
       completed: false
     };
@@ -554,13 +558,17 @@ function buildProgress(state, plan) {
     ? roundNumber((traveledMiles / plan.totalMiles) * 100, 2)
     : 0;
   const completed = remainingMiles <= 0.001;
+  const traveledHours = roundNumber(traveledMiles / plan.speedMph, 2);
+  const remainingHours = roundNumber(remainingMiles / plan.speedMph, 2);
 
   return {
     traveledMiles,
     remainingMiles,
     percent,
-    traveledHours: roundNumber(traveledMiles / plan.speedMph, 2),
-    remainingHours: roundNumber(remainingMiles / plan.speedMph, 2),
+    traveledHours,
+    remainingHours,
+    traveledTravelDays: roundNumber(traveledHours / TRAVEL_DAY_HOURS, 2),
+    remainingTravelDays: roundNumber(remainingHours / TRAVEL_DAY_HOURS, 2),
     label: `${traveledMiles} / ${plan.totalMiles} миль`,
     completed
   };
@@ -602,6 +610,7 @@ export function buildTravelSnapshot(rawNetwork = {}, rawState = {}, { warning = 
     available: !warning,
     warning,
     canAdvance: Boolean(canAdvance && plan.available && !progress.completed),
+    canRewind: Boolean(canAdvance && plan.available && progress.traveledMiles > 0.001),
     canSelectRoute: Boolean(canAdvance),
     mode: state.mode,
     originCityId: state.originCityId,
@@ -726,6 +735,14 @@ export class TravelService {
 
     const nextState = advanceTravelProgress(currentState, plan, hours);
     await this.#writeGroupTravelState(context, nextState);
-    return this.getSnapshot();
+    const snapshot = await this.getSnapshot();
+    return {
+      ...snapshot,
+      travelChange: {
+        requestedHours: nextState.requestedHours,
+        appliedHours: nextState.addedHours,
+        appliedMiles: nextState.addedMiles
+      }
+    };
   }
 }

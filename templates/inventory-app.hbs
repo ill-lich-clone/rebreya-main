@@ -603,17 +603,33 @@
 
               <div class="rm-travel-stats">
                 <p><span>Дистанция</span><strong>{{rmNum travel.plan.totalMiles}} миль</strong></p>
-                <p><span>В пути</span><strong>{{rmNum travel.plan.totalHours}} ч.</strong></p>
-                <p><span>Осталось</span><strong data-travel-remaining-miles>{{rmNum travel.progress.remainingMiles}} миль</strong></p>
+                <p><span>В пути</span><strong>{{rmNum travel.plan.totalTravelDays}} дн. ({{rmNum travel.plan.totalHours}} ч.)</strong></p>
+                <p>
+                  <span>Осталось</span>
+                  <strong data-travel-remaining-miles>{{rmNum travel.progress.remainingMiles}} миль</strong>
+                  <small data-travel-remaining-time>{{rmNum travel.progress.remainingTravelDays}} дн. ({{rmNum travel.progress.remainingHours}} ч.)</small>
+                </p>
               </div>
 
               <div class="rm-progress rm-travel-progress" data-travel-progress aria-label="{{travel.progress.label}}">
                 <div class="rm-progress__bar" data-travel-progress-bar style="width: {{travel.progress.percent}}%;"></div>
                 <span class="rm-travel-progress-token" data-travel-progress-token style="left: {{travel.progress.percent}}%;" aria-hidden="true"></span>
               </div>
-              <p class="rm-muted" data-travel-progress-label>{{travel.progress.label}} • осталось {{rmNum travel.progress.remainingHours}} ч.</p>
+              <p class="rm-muted" data-travel-progress-label>{{travel.progress.label}} • осталось {{rmNum travel.progress.remainingTravelDays}} дн. ({{rmNum travel.progress.remainingHours}} ч.)</p>
 
               <div class="rm-travel-actions">
+                <label class="rm-travel-time-toggle">
+                  <input type="checkbox" data-action="travel-track-time" {{#if travel.trackTime}}checked{{/if}}>
+                  <span>Учитывать время</span>
+                </label>
+                <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="travel-advance" data-hours="-8" {{#unless travel.canRewind}}disabled{{/unless}}>
+                  <i class="fa-solid fa-backward-step"></i>
+                  <span>-8 ч.</span>
+                </button>
+                <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="travel-advance" data-hours="-1" {{#unless travel.canRewind}}disabled{{/unless}}>
+                  <i class="fa-solid fa-minus"></i>
+                  <span>-1 ч.</span>
+                </button>
                 <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="travel-advance" data-hours="1" {{#unless travel.canAdvance}}disabled{{/unless}}>
                   <i class="fa-solid fa-plus"></i>
                   <span>1 ч.</span>
@@ -632,9 +648,9 @@
             <section class="rm-travel-leg-list">
               {{#each travel.plan.legs}}
                 <article class="rm-travel-leg">
-                  <span>{{sourceName}}</span>
+                  <button type="button" class="rm-link-button rm-travel-city-link" data-action="travel-open-city" data-city-id="{{sourceCityId}}">{{sourceName}}</button>
                   <i class="fa-solid fa-route"></i>
-                  <span>{{targetName}}</span>
+                  <button type="button" class="rm-link-button rm-travel-city-link" data-action="travel-open-city" data-city-id="{{targetCityId}}">{{targetName}}</button>
                   <strong>{{rmNum miles}} миль</strong>
                 </article>
               {{/each}}

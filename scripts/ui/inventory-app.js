@@ -37,6 +37,7 @@ const DOWNTIME_STATUS_META = Object.freeze({
 const DOWNTIME_ARCHIVE_STATUSES = new Set(["completed", "rejected"]);
 const DOWNTIME_PAGE_SIZE = 5;
 const TRAVEL_CITY_PREVIEW_LIMIT = 8;
+const TRAVEL_DAY_HOURS = 8;
 const DOWNTIME_NON_ROLL_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "descriptionBlock", "downtimeResult"]);
 const DOWNTIME_NON_ROLL_ACTION_SUMMARY_LABELS = Object.freeze({
   resources: "Ресурсы",
@@ -1395,6 +1396,55 @@ function formatTravelNumber(value) {
   return formatNumber(value, 2);
 }
 
+function resolveTravelDays(days, hours) {
+  const numericDays = Number(days);
+  if (Number.isFinite(numericDays)) {
+    return roundNumber(numericDays, 2);
+  }
+
+  return roundNumber(toNumber(hours, 0) / TRAVEL_DAY_HOURS, 2);
+}
+
+function formatTravelDuration(days, hours) {
+  const safeHours = roundNumber(toNumber(hours, 0), 2);
+  return `${formatTravelNumber(resolveTravelDays(days, safeHours))} дн. (${formatTravelNumber(safeHours)} ч.)`;
+}
+
+function prepareTravelContext(snapshot = {}, trackTime = false) {
+  const source = snapshot && typeof snapshot === "object" ? snapshot : buildEmptyTravelContext();
+  const plan = source.plan && typeof source.plan === "object"
+    ? {
+        ...source.plan,
+        totalTravelDays: resolveTravelDays(source.plan.totalTravelDays, source.plan.totalHours)
+      }
+    : source.plan;
+  const progress = source.progress && typeof source.progress === "object"
+    ? {
+        ...source.progress,
+        traveledTravelDays: resolveTravelDays(source.progress.traveledTravelDays, source.progress.traveledHours),
+        remainingTravelDays: resolveTravelDays(source.progress.remainingTravelDays, source.progress.remainingHours)
+      }
+    : {
+        traveledMiles: 0,
+        remainingMiles: 0,
+        percent: 0,
+        traveledHours: 0,
+        remainingHours: 0,
+        traveledTravelDays: 0,
+        remainingTravelDays: 0,
+        label: "Маршрут не выбран",
+        completed: false
+      };
+
+  return {
+    ...source,
+    plan,
+    progress,
+    canRewind: Boolean(source.canRewind),
+    trackTime: Boolean(trackTime)
+  };
+}
+
 function applyTravelProgressSnapshot(element, snapshot = {}) {
   if (!element || !snapshot?.progress || !snapshot?.plan?.available) {
     return false;
@@ -1408,8 +1458,9 @@ function applyTravelProgressSnapshot(element, snapshot = {}) {
   const progressToken = element.querySelector("[data-travel-progress-token]");
   const progressLabel = element.querySelector("[data-travel-progress-label]");
   const remainingMiles = element.querySelector("[data-travel-remaining-miles]");
+  const remainingTime = element.querySelector("[data-travel-remaining-time]");
   const safeLabel = cleanText(progress.label);
-  const remainingHoursLabel = `${formatTravelNumber(progress.remainingHours)} ч.`;
+  const remainingTimeLabel = formatTravelDuration(progress.remainingTravelDays, progress.remainingHours);
 
   progressRoot?.setAttribute?.("aria-label", safeLabel);
   if (progressBar?.style) {
@@ -1421,12 +1472,16 @@ function applyTravelProgressSnapshot(element, snapshot = {}) {
   if (remainingMiles) {
     remainingMiles.textContent = `${formatTravelNumber(progress.remainingMiles)} миль`;
   }
+  if (remainingTime) {
+    remainingTime.textContent = remainingTimeLabel;
+  }
   if (progressLabel) {
-    progressLabel.textContent = `${safeLabel} • осталось ${remainingHoursLabel}`;
+    progressLabel.textContent = `${safeLabel} • осталось ${remainingTimeLabel}`;
   }
 
   element.querySelectorAll("[data-action='travel-advance']").forEach((button) => {
-    button.disabled = !snapshot.canAdvance;
+    const hours = toNumber(button.dataset?.hours, 0);
+    button.disabled = hours < 0 ? !snapshot.canRewind : !snapshot.canAdvance;
   });
   return true;
 }
@@ -1543,6 +1598,7 @@ function buildEmptyTravelContext({ warning = "" } = {}) {
     available: !safeWarning,
     warning: safeWarning,
     canAdvance: false,
+    canRewind: false,
     canSelectRoute: false,
     mode: "land",
     originCityId: "",
@@ -1562,6 +1618,8 @@ function buildEmptyTravelContext({ warning = "" } = {}) {
       percent: 0,
       traveledHours: 0,
       remainingHours: 0,
+      traveledTravelDays: 0,
+      remainingTravelDays: 0,
       label: "Маршрут не выбран",
       completed: false
     },
@@ -2475,6 +2533,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.downtimeSelectedRequestId = "";
     this.downtimeQueuePage = 1;
     this.downtimeArchivePage = 1;
+    this.travelTrackTime = false;
     this.expandedPartyMembers = new Set();
     this.searchRenderTimeout = null;
     this.craftSearchRenderTimeout = null;
@@ -3158,7 +3217,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
 
       const downtime = this.#prepareDowntimeContext(downtimeSnapshot, downtimeWarning);
-      const travel = travelSnapshot ?? buildEmptyTravelContext({ warning: travelWarning });
+      const travel = prepareTravelContext(travelSnapshot ?? buildEmptyTravelContext({ warning: travelWarning }), this.travelTrackTime);
 
       return {
         hasError: false,
@@ -4620,11 +4679,21 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       element.querySelector(`[data-action='${action}']`)?.addEventListener("change", updateTravelRoute, listenerOptions);
     });
 
+    const travelTrackTimeInput = element.querySelector("[data-action='travel-track-time']");
+    if (travelTrackTimeInput) {
+      this.travelTrackTime = Boolean(travelTrackTimeInput.checked);
+      travelTrackTimeInput.addEventListener("change", (event) => {
+        this.travelTrackTime = Boolean(event.currentTarget.checked);
+      }, listenerOptions);
+    }
+
     element.querySelectorAll("[data-action='travel-advance']").forEach((button) => {
       button.addEventListener("click", async (event) => {
-        const hours = Math.max(0, toNumber(event.currentTarget.dataset.hours, 0));
+        const hours = toNumber(event.currentTarget.dataset.hours, 0);
+        const trackTime = Boolean(element.querySelector("[data-action='travel-track-time']")?.checked);
+        this.travelTrackTime = trackTime;
         try {
-          const snapshot = await this.moduleApi.advanceTravelHours?.(hours);
+          const snapshot = await this.moduleApi.advanceTravelHours?.(hours, { trackTime });
           applyTravelProgressSnapshot(element, snapshot);
           this.#setActionFeedback("success", `Путь продвинут на ${hours} ч.`);
           bringAppToFront(this);
@@ -4636,6 +4705,17 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           this.render({ force: true });
           ui.notifications?.error(message);
         }
+      }, listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='travel-open-city']").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        const cityId = cleanText(event.currentTarget.dataset.cityId);
+        if (!cityId) {
+          return;
+        }
+        this.moduleApi.openCityApp?.(cityId);
+        bringAppToFront(this);
       }, listenerOptions);
     });
 

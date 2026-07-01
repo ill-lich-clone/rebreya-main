@@ -202,13 +202,16 @@ function createModuleApi({ getGroupContext, partySnapshot = {}, downtimeSnapshot
       calls.push(["setTravelRoute", payload]);
       return {};
     },
-    async advanceTravelHours(hours) {
-      calls.push(["advanceTravelHours", hours]);
+    async advanceTravelHours(hours, options) {
+      calls.push(["advanceTravelHours", hours, options]);
       return {};
     },
     async clearTravelRoute() {
       calls.push(["clearTravelRoute"]);
       return {};
+    },
+    openCityApp(cityId) {
+      calls.push(["openCityApp", cityId]);
     },
     getDowntimeSnapshot() {
       calls.push(["getDowntimeSnapshot"]);
@@ -795,24 +798,31 @@ test("InventoryApp travel advance updates the progress strip without rendering t
 
   const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-progress=${Date.now()}`);
   const calls = [];
+  const rewindDayButton = createFakeControl({ dataset: { hours: "-8" } });
+  const rewindHourButton = createFakeControl({ dataset: { hours: "-1" } });
   const advanceButton = createFakeControl({ dataset: { hours: "8" } });
   const secondAdvanceButton = createFakeControl({ dataset: { hours: "1" } });
+  const trackTimeToggle = createFakeControl();
+  trackTimeToggle.checked = true;
   const progressRoot = createFakeControl();
   const progressBar = createFakeControl();
   const progressToken = createFakeControl();
   const progressLabel = createFakeControl();
   const remainingMiles = createFakeControl();
+  const remainingTime = createFakeControl();
   const controls = new Map([
     ["[data-action='travel-origin-query']", createFakeControl()],
     ["[data-action='travel-origin']", createFakeControl({ value: "liara-ken" })],
     ["[data-action='travel-destination-query']", createFakeControl()],
     ["[data-action='travel-destination']", createFakeControl({ value: "stranbu" })],
     ["[data-action='travel-mode']", createFakeControl({ value: "land" })],
+    ["[data-action='travel-track-time']", trackTimeToggle],
     ["[data-travel-progress]", progressRoot],
     ["[data-travel-progress-bar]", progressBar],
     ["[data-travel-progress-token]", progressToken],
     ["[data-travel-progress-label]", progressLabel],
-    ["[data-travel-remaining-miles]", remainingMiles]
+    ["[data-travel-remaining-miles]", remainingMiles],
+    ["[data-travel-remaining-time]", remainingTime]
   ]);
   const root = createFakeElement({
     closest: () => root
@@ -820,7 +830,7 @@ test("InventoryApp travel advance updates the progress strip without rendering t
   root.querySelector = (selector) => controls.get(selector) ?? null;
   root.querySelectorAll = (selector) => {
     if (selector === "[data-action='travel-advance']") {
-      return [advanceButton, secondAdvanceButton];
+      return [rewindDayButton, rewindHourButton, advanceButton, secondAdvanceButton];
     }
     return [];
   };
@@ -828,11 +838,12 @@ test("InventoryApp travel advance updates the progress strip without rendering t
     getGroupContext: () => null,
     calls
   });
-  moduleApi.advanceTravelHours = async (hours) => {
-    calls.push(["advanceTravelHours", hours]);
+  moduleApi.advanceTravelHours = async (hours, options) => {
+    calls.push(["advanceTravelHours", hours, options]);
     return {
       available: true,
       canAdvance: false,
+      canRewind: true,
       plan: {
         available: true
       },
@@ -840,6 +851,7 @@ test("InventoryApp travel advance updates the progress strip without rendering t
         percent: 33.33,
         remainingMiles: 200,
         remainingHours: 66.67,
+        remainingTravelDays: 8.33,
         label: "100 / 300 миль"
       }
     };
@@ -856,11 +868,21 @@ test("InventoryApp travel advance updates the progress strip without rendering t
     await dispatchClick(advanceButton);
 
     assert.equal(renderCount, 0);
+    assert.deepEqual(calls.filter((call) => call[0] === "advanceTravelHours"), [[
+      "advanceTravelHours",
+      8,
+      {
+        trackTime: true
+      }
+    ]]);
     assert.equal(progressRoot["aria-label"], "100 / 300 миль");
     assert.equal(progressBar.style.width, "33.33%");
     assert.equal(progressToken.style.left, "33.33%");
     assert.equal(remainingMiles.textContent, "200 миль");
-    assert.equal(progressLabel.textContent, "100 / 300 миль • осталось 66,67 ч.");
+    assert.equal(remainingTime.textContent, "8,33 дн. (66,67 ч.)");
+    assert.equal(progressLabel.textContent, "100 / 300 миль • осталось 8,33 дн. (66,67 ч.)");
+    assert.equal(rewindDayButton.disabled, false);
+    assert.equal(rewindHourButton.disabled, false);
     assert.equal(advanceButton.disabled, true);
     assert.equal(secondAdvanceButton.disabled, true);
   }
@@ -871,15 +893,55 @@ test("InventoryApp travel advance updates the progress strip without rendering t
   }
 });
 
+test("InventoryApp travel leg city link opens the city database entry", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?travel-city-link=${Date.now()}`);
+  const calls = [];
+  const cityButton = createFakeControl({ dataset: { cityId: "aizenburg" } });
+  const root = createFakeElement({
+    closest: () => root
+  });
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => {
+    if (selector === "[data-action='travel-open-city']") {
+      return [cityButton];
+    }
+    return [];
+  };
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null,
+    calls
+  }));
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    await dispatchClick(cityButton);
+
+    assert.deepEqual(calls.filter((call) => call[0] === "openCityApp"), [["openCityApp", "aizenburg"]]);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp travel autocomplete and progress token have readable styles", async () => {
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
   assert.match(template, /data-travel-progress-token/u);
+  assert.match(template, /data-action="travel-track-time"/u);
+  assert.match(template, /data-action="travel-open-city"/u);
+  assert.match(template, /data-hours="-8"/u);
+  assert.match(template, /data-hours="-1"/u);
   assert.match(css, /\.rm-travel-city-option\s*\{[\s\S]*justify-items:\s*start/u);
   assert.match(css, /\.rm-travel-city-option\s*\{[\s\S]*line-height:\s*1\.2/u);
   assert.match(css, /\.rm-travel-city-option span\s*\{[\s\S]*font-weight:\s*700/u);
   assert.match(css, /\.rm-travel-progress-token\s*\{/u);
+  assert.match(css, /\.rm-travel-leg-list\s*\{[\s\S]*max-height:/u);
+  assert.match(css, /\.rm-travel-leg-list\s*\{[\s\S]*overflow-y:\s*auto/u);
 });
 
 test("InventoryApp downtime context can switch queue pages to archive requests", async () => {

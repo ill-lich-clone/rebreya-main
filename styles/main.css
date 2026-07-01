@@ -4793,6 +4793,14 @@ summary:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.rm-travel-stats small {
+  min-width: 0;
+  color: var(--rm-text-secondary);
+  font-size: 11px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
 .rm-travel-progress {
   position: relative;
   min-height: 12px;
@@ -4825,8 +4833,29 @@ summary:focus-visible {
   align-items: center;
 }
 
+.rm-travel-time-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  color: var(--rm-text-secondary);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.rm-travel-time-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--rm-accent);
+}
+
 .rm-travel-leg-list {
   display: grid;
+  max-height: min(320px, 34vh);
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
   gap: 6px;
 }
 
@@ -4841,9 +4870,19 @@ summary:focus-visible {
   background: var(--rm-ui-row-bg);
 }
 
-.rm-travel-leg span {
+.rm-travel-city-link {
   min-width: 0;
+  justify-self: start;
+  color: var(--rm-text-primary);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
   overflow-wrap: anywhere;
+}
+
+.rm-travel-city-link:hover,
+.rm-travel-city-link:focus-visible {
+  color: var(--rm-accent);
 }
 
 .rm-travel-leg i {

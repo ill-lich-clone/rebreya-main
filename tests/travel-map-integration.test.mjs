@@ -239,3 +239,126 @@ test("RebreyaMainModule advances travel without forcing inventory rerender", asy
     globalThis.foundry = previousFoundry;
   }
 });
+
+test("RebreyaMainModule applies tracked travel time to the calendar", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousUi = globalThis.ui;
+  const previousFoundry = globalThis.foundry;
+
+  globalThis.Hooks = {
+    once() {},
+    on() {}
+  };
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true
+    },
+    modules: {
+      get() {
+        return { active: false };
+      }
+    }
+  };
+  globalThis.ui = {
+    windows: {}
+  };
+  globalThis.foundry = {
+    applications: {
+      instances: new Map()
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?travel-time-track=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const groupActor = {
+      id: "group-a",
+      name: "Рассвет порядка 1",
+      img: "icons/group.webp"
+    };
+    const mapPosition = {
+      available: true,
+      sceneName: "Карта мира",
+      sceneX: 120,
+      sceneY: 240
+    };
+    const dayShifts = [];
+    const timeUpdates = [];
+    moduleApi.travelService.advanceHours = async (hours) => ({
+      available: true,
+      canAdvance: true,
+      canRewind: true,
+      mapPosition,
+      travelChange: {
+        appliedHours: hours
+      },
+      plan: {
+        available: true
+      },
+      progress: {
+        percent: 12,
+        remainingMiles: 88,
+        remainingHours: 29.33,
+        remainingTravelDays: 3.67,
+        label: "12 / 100 миль"
+      }
+    });
+    moduleApi.groupContextService.resolveForCurrentUser = () => ({
+      groupActor,
+      groupId: groupActor.id
+    });
+    moduleApi.travelMapService = {
+      async syncGroupToken() {
+        return { synced: true };
+      }
+    };
+    moduleApi.calendarService.getSnapshot = () => ({
+      timeOfDaySeconds: 23 * 3600
+    });
+    moduleApi.shiftCalendarDays = async (days, options) => {
+      dayShifts.push({ days, options });
+      return {};
+    };
+    moduleApi.setCalendarTimeOfDay = async (seconds, options) => {
+      timeUpdates.push({ seconds, options });
+      return { timeOfDaySeconds: seconds };
+    };
+
+    await moduleApi.advanceTravelHours(8, { trackTime: true });
+    await moduleApi.advanceTravelHours(1, { trackTime: true });
+
+    assert.deepEqual(dayShifts, [{
+      days: 1,
+      options: {
+        processDailyCycles: false,
+        reason: "travel-time",
+        refreshApps: false,
+        refreshSmallTime: false
+      }
+    }, {
+      days: 1,
+      options: {
+        processDailyCycles: false,
+        reason: "travel-time",
+        refreshApps: false,
+        refreshSmallTime: false
+      }
+    }]);
+    assert.deepEqual(timeUpdates, [{
+      seconds: 0,
+      options: {
+        reason: "travel-time",
+        refreshApps: false,
+        refreshSmallTime: false
+      }
+    }]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.ui = previousUi;
+    globalThis.foundry = previousFoundry;
+  }
+});
