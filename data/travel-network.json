@@ -1,7 +1,12 @@
 {
   "schema": "rebreya-travel-network/v1",
-  "generatedAt": "2026-07-01T19:38:27.175Z",
-  "source": "interactive-map-prototype",
+  "generatedAt": "2026-07-02T21:03:49.275Z",
+  "source": {
+    "tileProject": "D:\\ЛИЧный хлам\\🎲 ДнД для поляны\\Карты тейванкаля\\Фулл карта тайлы для интерактивной карты",
+    "metadataGeneratedAt": "2026-06-30T13:03:56.257957+00:00",
+    "routeSource": "interactive-map-data/routes.json",
+    "citySource": "interactive-map-data/cities.json"
+  },
   "speedMph": 3,
   "cities": [
     {
@@ -6009,9 +6014,9 @@
     {
       "id": "route-0039-all-одинокий-урул",
       "sourceId": "одинокий",
-      "targetId": "урул",
+      "targetId": "вурул",
       "sourceName": "Одинокий",
-      "targetName": "Урул",
+      "targetName": "Вурул",
       "mode": "rail",
       "type": "ЖД",
       "miles": 3452,
@@ -9284,9 +9289,9 @@
     },
     {
       "id": "route-0073-land_plus_gray-урул-бьернхейм",
-      "sourceId": "урул",
+      "sourceId": "вурул",
       "targetId": "бьернхейм",
-      "sourceName": "Урул",
+      "sourceName": "Вурул",
       "targetName": "Бьернхейм",
       "mode": "land",
       "type": "Земля",
@@ -14287,6 +14292,94 @@
       ]
     },
     {
+      "id": "route-0145-land_plus_gray-заброшенные-замки-стоянка-каменных-великанов",
+      "sourceId": "заброшенный-замок",
+      "targetId": "стоянка-каменных-великанов",
+      "sourceName": "Заброшенный замок",
+      "targetName": "Стоянка каменных великанов",
+      "mode": "land",
+      "type": "Песок",
+      "miles": 106,
+      "bbox": [
+        13268,
+        10976,
+        13567,
+        11002
+      ],
+      "points": [
+        [
+          13567,
+          10987
+        ],
+        [
+          13523,
+          10980
+        ],
+        [
+          13496,
+          10992
+        ],
+        [
+          13462,
+          10976
+        ],
+        [
+          13318,
+          10981
+        ],
+        [
+          13286,
+          10986
+        ],
+        [
+          13268,
+          11002
+        ]
+      ]
+    },
+    {
+      "id": "route-0146-land_plus_gray-заброшенные-замки-тир-алмар",
+      "sourceId": "заброшенный-замок",
+      "targetId": "тир-алмар",
+      "sourceName": "Заброшенный замок",
+      "targetName": "Тир’Алмар",
+      "mode": "land",
+      "type": "Земля",
+      "miles": 182,
+      "bbox": [
+        13567,
+        10554,
+        13823,
+        10987
+      ],
+      "points": [
+        [
+          13567,
+          10987
+        ],
+        [
+          13680,
+          10867
+        ],
+        [
+          13700,
+          10810
+        ],
+        [
+          13823,
+          10669
+        ],
+        [
+          13818,
+          10592
+        ],
+        [
+          13793,
+          10554
+        ]
+      ]
+    },
+    {
       "id": "route-0147-land_plus_gray-загос-эдей",
       "sourceId": "загос",
       "targetId": "эдей",
@@ -17692,9 +17785,9 @@
     },
     {
       "id": "route-0203-land_plus_gray-урул-ксай",
-      "sourceId": "урул",
+      "sourceId": "вурул",
       "targetId": "ксай",
-      "sourceName": "Урул",
+      "sourceName": "Вурул",
       "targetName": "Ксай",
       "mode": "land",
       "type": "Земля",
@@ -19439,9 +19532,9 @@
     {
       "id": "route-0228-land_plus_gray-мирополь-урул",
       "sourceId": "мирополь",
-      "targetId": "урул",
+      "targetId": "вурул",
       "sourceName": "Мирополь",
-      "targetName": "Урул",
+      "targetName": "Вурул",
       "mode": "land",
       "type": "Земля",
       "miles": 366,
@@ -30879,9 +30972,9 @@
     {
       "id": "route-0372-water-драскольн-урул",
       "sourceId": "драскольн",
-      "targetId": "урул",
+      "targetId": "вурул",
       "sourceName": "Драскольн",
-      "targetName": "Урул",
+      "targetName": "Вурул",
       "mode": "water",
       "type": "Море",
       "miles": 4820,
@@ -35122,9 +35215,9 @@
     },
     {
       "id": "route-0410-water-урул-фэртон",
-      "sourceId": "урул",
+      "sourceId": "вурул",
       "targetId": "фэртон",
-      "sourceName": "Урул",
+      "sourceName": "Вурул",
       "targetName": "Фэртон",
       "mode": "water",
       "type": "Река",
@@ -35656,9 +35749,9 @@
     },
     {
       "id": "route-0411-water-урул-шмыр",
-      "sourceId": "урул",
+      "sourceId": "вурул",
       "targetId": "шмыр",
-      "sourceName": "Урул",
+      "sourceName": "Вурул",
       "targetName": "Шмыр",
       "mode": "water",
       "type": "Море",
@@ -42292,9 +42385,9 @@
     },
     {
       "id": "route-0475-land_plus_gray-урул-хольмсвинн",
-      "sourceId": "урул",
+      "sourceId": "вурул",
       "targetId": "хольмсвинн",
-      "sourceName": "Урул",
+      "sourceName": "Вурул",
       "targetName": "Хольмсвинн",
       "mode": "land",
       "type": "Земля",
@@ -49032,9 +49125,9 @@
     },
     {
       "id": "route-0531-water-урул-столица-красных",
-      "sourceId": "урул",
+      "sourceId": "вурул",
       "targetId": "столица-красных",
-      "sourceName": "Урул",
+      "sourceName": "Вурул",
       "targetName": "Столица красных",
       "mode": "water",
       "type": "Река",
@@ -49917,26 +50010,15 @@
   ],
   "stats": {
     "cityCount": 300,
-    "routeCount": 528,
-    "skippedRouteCount": 2,
+    "routeCount": 530,
+    "unresolvedRouteCount": 0,
     "modeCounts": {
       "water": 119,
       "air": 32,
       "rail": 78,
-      "land": 299
+      "land": 301
     },
-    "skippedRoutes": [
-      {
-        "id": "route-0145-land_plus_gray-заброшенные-замки-стоянка-каменных-великанов",
-        "source": "Заброшенные замки",
-        "target": "Стоянка каменных великанов"
-      },
-      {
-        "id": "route-0146-land_plus_gray-заброшенные-замки-тир-алмар",
-        "source": "Заброшенные замки",
-        "target": "Тир’Алмар"
-      }
-    ]
+    "unresolvedRoutes": []
   },
   "map": {
     "sceneName": "Карта мира",

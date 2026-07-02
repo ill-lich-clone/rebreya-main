@@ -1,8 +1,9 @@
-﻿{
+{
     "source":  {
-                   "workbookPath":  "D:\\груз\\Шпаргалка мастера общий (1).xlsx",
-                   "workbookName":  "Шпаргалка мастера общий (1).xlsx",
-                   "importedAt":  "2026-03-15T19:31:48+02:00",
+                   "workbookPath":  "C:\\Users\\ill_lich\\AppData\\Local\\Temp\\rebreya-sheet.xlsx",
+                   "workbookName":  "rebreya-sheet.xlsx",
+                   "sourceUrl":  "https://docs.google.com/spreadsheets/d/1-8jTsZV_WOB612aXAj_e0_KuHH27bo-ngTpMfAwh5xA",
+                   "importedAt":  "2026-07-03T00:06:53+03:00",
                    "sheets":  [
                                   "Города и локации",
                                   "Спрос городов",
@@ -357,12 +358,7 @@
                    ],
     "warnings":  {
                      "missingDemandCities":  [
-                                                 {
-                                                     "cityId":  "vurul",
-                                                     "cityName":  "Вурул",
-                                                     "state":  "Азадранская империя",
-                                                     "region":  "Земли Аристея Остина"
-                                                 }
+
                                              ],
                      "unmatchedDemandRows":  [
 
@@ -373,13 +369,6 @@
                                                    "cityName":  "Тандарал",
                                                    "targetName":  "Зидхэнд",
                                                    "connectionType":  "Земля",
-                                                   "reason":  "missing-target"
-                                               },
-                                               {
-                                                   "cityId":  "flaso",
-                                                   "cityName":  "Фласо",
-                                                   "targetName":  "Только",
-                                                   "connectionType":  "ЖД",
                                                    "reason":  "missing-target"
                                                },
                                                {
@@ -411,13 +400,6 @@
                                                    "reason":  "missing-target"
                                                },
                                                {
-                                                   "cityId":  "steynvik",
-                                                   "cityName":  "Стейнвик",
-                                                   "targetName":  "Грай",
-                                                   "connectionType":  "Земля",
-                                                   "reason":  "missing-target"
-                                               },
-                                               {
                                                    "cityId":  "ayzenburg",
                                                    "cityName":  "Айзенбург",
                                                    "targetName":  "Флорансо",
@@ -429,13 +411,6 @@
                                                    "cityName":  "Фарренхоф",
                                                    "targetName":  "Штардольф",
                                                    "connectionType":  "Море",
-                                                   "reason":  "missing-target"
-                                               },
-                                               {
-                                                   "cityId":  "machi",
-                                                   "cityName":  "Мачи",
-                                                   "targetName":  "Тури",
-                                                   "connectionType":  "Земля",
                                                    "reason":  "missing-target"
                                                },
                                                {

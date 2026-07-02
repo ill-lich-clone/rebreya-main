@@ -20,6 +20,7 @@ const GROUP_CONTEXT_FALLBACK_ERRORS = new Set([
 const DISABLED_TRAVEL_ROUTE_IDS = new Set([
   "route-0464-land_plus_gray-орланис-фрех"
 ]);
+const ROUTE_ENDPOINT_SNAP_DISTANCE = 600;
 
 const TRAVEL_MODE_CONFIG = Object.freeze({
   land: {
@@ -90,6 +91,52 @@ function normalizeRoutePoints(value) {
     : [];
 }
 
+function hasCityCoordinates(city) {
+  return Number.isFinite(Number(city?.x)) && Number.isFinite(Number(city?.y));
+}
+
+function distancePointToCity(point, city) {
+  if (!point || !hasCityCoordinates(city)) {
+    return Infinity;
+  }
+
+  return Math.hypot(point[0] - Number(city.x), point[1] - Number(city.y));
+}
+
+function findNearestCityToPoint(point, cities = []) {
+  let nearestCity = null;
+  let nearestDistance = Infinity;
+  for (const city of cities) {
+    const distance = distancePointToCity(point, city);
+    if (distance < nearestDistance) {
+      nearestCity = city;
+      nearestDistance = distance;
+    }
+  }
+
+  return nearestCity ? { city: nearestCity, distance: nearestDistance } : null;
+}
+
+function snapRouteEndpointCity(declaredCity, point, cities = []) {
+  const nearest = findNearestCityToPoint(point, cities);
+  if (!nearest || nearest.distance > ROUTE_ENDPOINT_SNAP_DISTANCE) {
+    return declaredCity ?? null;
+  }
+
+  const declaredDistance = distancePointToCity(point, declaredCity);
+  if (!declaredCity || declaredDistance > ROUTE_ENDPOINT_SNAP_DISTANCE) {
+    return nearest.city;
+  }
+
+  return declaredCity;
+}
+
+function buildDirectRoutePoints(sourceCity, targetCity) {
+  return hasCityCoordinates(sourceCity) && hasCityCoordinates(targetCity)
+    ? [[Number(sourceCity.x), Number(sourceCity.y)], [Number(targetCity.x), Number(targetCity.y)]]
+    : [];
+}
+
 function normalizeMapConfig(value = {}) {
   const source = asObject(value);
   return {
@@ -108,6 +155,10 @@ export function normalizeLocationName(value) {
     .replace(/ё/gu, "е")
     .replace(/[\u2019\u2018\u02bc\u02b9\u2032`´"]/gu, "'")
     .replace(/\s+/gu, " ");
+}
+
+function normalizeLooseLocationName(value) {
+  return normalizeLocationName(value).replace(/[^a-zа-я0-9]+/gu, "");
 }
 
 function normalizeRouteMode(mode, type = "") {
@@ -173,20 +224,44 @@ function buildCityLookup(cities) {
     }
     cityById.set(city.id, city);
     cityByName.set(normalizeLocationName(city.name), city);
+    const looseName = normalizeLooseLocationName(city.name);
+    if (looseName && !cityByName.has(looseName)) {
+      cityByName.set(looseName, city);
+    }
     if (city.searchName) {
       cityByName.set(city.searchName, city);
+      const looseSearchName = normalizeLooseLocationName(city.searchName);
+      if (looseSearchName && !cityByName.has(looseSearchName)) {
+        cityByName.set(looseSearchName, city);
+      }
     }
   }
   return { cityById, cityByName };
 }
 
-function normalizeRoute(row = {}, cityByName = new Map()) {
+function getCityByName(cityByName, value) {
+  return cityByName.get(normalizeLocationName(value))
+    ?? cityByName.get(normalizeLooseLocationName(value));
+}
+
+function normalizeRoute(row = {}, cityById = new Map(), cityByName = new Map(), cities = []) {
   const explicitSourceId = cleanId(row.sourceId);
   const explicitTargetId = cleanId(row.targetId);
-  const source = explicitSourceId ? null : cityByName.get(normalizeLocationName(row.source));
-  const target = explicitTargetId ? null : cityByName.get(normalizeLocationName(row.target));
-  const sourceId = explicitSourceId || source?.id || "";
-  const targetId = explicitTargetId || target?.id || "";
+  const points = normalizeRoutePoints(row.points);
+  const declaredSource = explicitSourceId
+    ? cityById.get(explicitSourceId)
+    : getCityByName(cityByName, row.source);
+  const declaredTarget = explicitTargetId
+    ? cityById.get(explicitTargetId)
+    : getCityByName(cityByName, row.target);
+  const source = points.length >= 2
+    ? snapRouteEndpointCity(declaredSource, points[0], cities) ?? declaredSource
+    : declaredSource;
+  const target = points.length >= 2
+    ? snapRouteEndpointCity(declaredTarget, points.at(-1), cities) ?? declaredTarget
+    : declaredTarget;
+  const sourceId = source?.id || explicitSourceId || "";
+  const targetId = target?.id || explicitTargetId || "";
   const miles = roundNumber(toNumber(row.miles, 0), 2);
   const mode = normalizeRouteMode(row.mode, row.type);
 
@@ -194,12 +269,12 @@ function normalizeRoute(row = {}, cityByName = new Map()) {
     id: cleanId(row.id) || `${sourceId}-${targetId}-${mode}`,
     sourceId,
     targetId,
-    sourceName: String(row.sourceName ?? row.source ?? source?.name ?? "").trim(),
-    targetName: String(row.targetName ?? row.target ?? target?.name ?? "").trim(),
+    sourceName: String(source?.name ?? row.sourceName ?? row.source ?? "").trim(),
+    targetName: String(target?.name ?? row.targetName ?? row.target ?? "").trim(),
     mode,
     type: String(row.type ?? "").trim(),
     miles,
-    points: normalizeRoutePoints(row.points)
+    points
   };
 }
 
@@ -278,7 +353,7 @@ function buildCanonicalCityRoutes(economyCities = [], cityById = new Map(), city
   const canonicalRouteByKey = new Map();
 
   for (const economyCity of economyCities) {
-    const sourceCity = cityByName.get(normalizeLocationName(economyCity?.name));
+    const sourceCity = getCityByName(cityByName, economyCity?.name);
     if (!sourceCity) {
       continue;
     }
@@ -290,7 +365,7 @@ function buildCanonicalCityRoutes(economyCities = [], cityById = new Map(), city
 
       const targetEconomyCity = economyCityById.get(cleanId(connection.targetCityId));
       const targetName = targetEconomyCity?.name ?? connection.targetName;
-      const targetCity = cityByName.get(normalizeLocationName(targetName));
+      const targetCity = getCityByName(cityByName, targetName);
       if (!targetCity || targetCity.id === sourceCity.id) {
         continue;
       }
@@ -310,12 +385,15 @@ function buildCanonicalCityRoutes(economyCities = [], cityById = new Map(), city
       const targetId = existingRoute?.targetId ?? targetCity.id;
       const source = cityById.get(sourceId) ?? sourceCity;
       const target = cityById.get(targetId) ?? targetCity;
+      const routePoints = existingRoute?.points?.length >= 2
+        ? existingRoute.points
+        : buildDirectRoutePoints(sourceCity, targetCity);
       const currentRoute = canonicalRouteByKey.get(routeKey);
 
       if (currentRoute) {
         currentRoute.miles = Math.min(currentRoute.miles, miles);
-        if (existingRoute?.points?.length > currentRoute.points.length) {
-          currentRoute.points = existingRoute.points;
+        if (routePoints.length > currentRoute.points.length) {
+          currentRoute.points = routePoints;
           currentRoute.sourceId = sourceId;
           currentRoute.targetId = targetId;
           currentRoute.sourceName = source.name;
@@ -333,7 +411,7 @@ function buildCanonicalCityRoutes(economyCities = [], cityById = new Map(), city
         mode,
         type,
         miles,
-        points: existingRoute?.points ?? []
+        points: routePoints
       });
     }
   }
@@ -350,7 +428,7 @@ export function normalizeTravelNetwork(value = {}) {
 
   const rawRoutes = Array.isArray(value.routes) ? value.routes : [];
   const routes = rawRoutes
-    .map((row) => normalizeRoute(row, cityByName))
+    .map((row) => normalizeRoute(row, cityById, cityByName, cities))
     .filter((route) => (
       route.sourceId
       && route.targetId
@@ -360,18 +438,15 @@ export function normalizeTravelNetwork(value = {}) {
       && cityById.has(route.targetId)
       && route.miles > 0
     ));
+  const economyCities = value.economyCities ?? value.canonicalCities;
   const canonicalRoutes = buildCanonicalCityRoutes(
-    value.economyCities ?? value.canonicalCities,
+    economyCities,
     cityById,
     cityByName,
     routes
   );
-  const canonicalPairKeys = new Set(canonicalRoutes.map((route) => buildRoutePairKey(route.sourceId, route.targetId)));
-  const mergedRoutes = canonicalRoutes.length
-    ? [
-      ...routes.filter((route) => !canonicalPairKeys.has(buildRoutePairKey(route.sourceId, route.targetId))),
-      ...canonicalRoutes
-    ]
+  const mergedRoutes = Array.isArray(economyCities) && economyCities.length
+    ? canonicalRoutes
     : routes;
 
   return {

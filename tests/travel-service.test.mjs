@@ -255,6 +255,43 @@ test("actual canonical city connections bridge Veldoran into land travel", async
   assert.equal(fullPlan.cityIds.includes(veldoran?.id), true);
 });
 
+test("actual walkable canonical routes have geometry anchored to their cities", async () => {
+  const actualNetwork = JSON.parse(await readFile(new URL("../data/travel-network.json", import.meta.url), "utf8"));
+  const economyCities = JSON.parse(await readFile(new URL("../data/cities.json", import.meta.url), "utf8"));
+  const normalizedNetwork = normalizeTravelNetwork({ ...actualNetwork, economyCities });
+  const walkableModes = new Set(["land", "land_plus_gray", "rail"]);
+  const errors = [];
+  const distance = (point, city) => Math.hypot(point[0] - city.x, point[1] - city.y);
+
+  for (const route of normalizedNetwork.routes) {
+    if (!walkableModes.has(route.mode)) {
+      continue;
+    }
+
+    const source = normalizedNetwork.cityById.get(route.sourceId);
+    const target = normalizedNetwork.cityById.get(route.targetId);
+    if (!source || !target) {
+      errors.push(`${route.sourceName} -> ${route.targetName}: missing city`);
+      continue;
+    }
+
+    if (route.points.length < 2) {
+      errors.push(`${source.name} -> ${target.name} (${route.type}): no geometry`);
+      continue;
+    }
+
+    const first = route.points[0];
+    const last = route.points.at(-1);
+    const forwardDistance = distance(first, source) + distance(last, target);
+    const backwardDistance = distance(first, target) + distance(last, source);
+    if (Math.min(forwardDistance, backwardDistance) > 600) {
+      errors.push(`${source.name} -> ${target.name} (${route.type}): endpoints mismatch`);
+    }
+  }
+
+  assert.deepEqual(errors, []);
+});
+
 test("buildTravelMapPosition follows route points and scales them to the world map scene", () => {
   const state = normalizeTravelState({
     originCityId: "a",

@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$WorkbookPath = "D:\груз\Шпаргалка мастера общий (1).xlsx",
   [string]$OutputDir = "",
   [switch]$Quiet
@@ -158,6 +158,17 @@ function Find-Row {
   )
 
   return ($Rows | Where-Object { $_.__row -eq $RowNumber } | Select-Object -First 1)
+}
+
+function Find-FirstRowByColumnValue {
+  param(
+    [object[]]$Rows,
+    [string]$Column,
+    [string]$Value
+  )
+
+  $needle = Get-MatchKey -Value $Value
+  return ($Rows | Where-Object { (Get-MatchKey -Value (Get-Value -Row $_ -Column $Column)) -eq $needle } | Select-Object -First 1)
 }
 
 function Get-Value {
@@ -544,10 +555,25 @@ finally {
 }
 
 $cityHeader = Find-Row -Rows $cityRows -RowNumber 1
+$cityDataLastRow = 301
+$transportModeHeader = Find-FirstRowByColumnValue -Rows $productionRows -Column 'A' -Value 'Вид перемещения'
+$cityTypeStatsHeader = Find-FirstRowByColumnValue -Rows $productionRows -Column 'A' -Value 'Модификатор спроса / тип города'
+if (-not $transportModeHeader) {
+  throw 'Не найден заголовок блока транспорта в листе Производство регионов.'
+}
+if (-not $cityTypeStatsHeader) {
+  throw 'Не найден заголовок блока типов городов в листе Производство регионов.'
+}
+$transportModeStartRow = $transportModeHeader.__row + 1
+$transportModeEndRow = $transportModeStartRow + 6
+$cityTypeStatsStartRow = $cityTypeStatsHeader.__row + 1
+$cityTypeStatsEndRow = $cityTypeStatsStartRow + 7
+$baseStatsEndRow = $cityTypeStatsStartRow + 44
 $cityConnectionStartColumnIndex = 12
 $cityConnectionSlotWidth = 3
 $cityConnectionSlotCount = 9
 $cityGoodStartColumnIndex = 39
+$cityCoordinateStartColumnIndex = 129
 $goodsInOrder = @()
 for ($columnIndex = $cityGoodStartColumnIndex; $columnIndex -lt ($cityGoodStartColumnIndex + 45); $columnIndex += 1) {
   $headerValue = Normalize-DisplayText -Value (Get-Value -Row $cityHeader -Column (Convert-ColumnIndexToName -ColumnIndex $columnIndex))
@@ -559,7 +585,7 @@ for ($columnIndex = $cityGoodStartColumnIndex; $columnIndex -lt ($cityGoodStartC
 $groupByGood = @{}
 $goodGroups = @()
 $usedGroupIds = @{}
-foreach ($row in ($productionRows | Where-Object { $_.__row -ge 98 -and $_.__row -le 105 })) {
+foreach ($row in ($productionRows | Where-Object { $_.__row -ge $cityTypeStatsStartRow -and $_.__row -le $cityTypeStatsEndRow })) {
   $groupName = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'P')
   if ([string]::IsNullOrWhiteSpace($groupName)) { continue }
   $groupId = New-UniqueSlug -Value $groupName -UsedIds $usedGroupIds
@@ -574,7 +600,7 @@ foreach ($row in ($productionRows | Where-Object { $_.__row -ge 98 -and $_.__row
 }
 
 $baseStatsByGood = @{}
-foreach ($row in ($productionRows | Where-Object { $_.__row -ge 98 -and $_.__row -le 142 })) {
+foreach ($row in ($productionRows | Where-Object { $_.__row -ge $cityTypeStatsStartRow -and $_.__row -le $baseStatsEndRow })) {
   $goodName = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'K')
   if ([string]::IsNullOrWhiteSpace($goodName)) { continue }
   $baseStatsByGood[$goodName] = [pscustomobject]@{
@@ -610,6 +636,7 @@ foreach ($row in ($productionRows | Where-Object { $_.__row -ge 3 -and $_.__row 
   $name = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'A')
   if ([string]::IsNullOrWhiteSpace($name)) { continue }
   $state = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'B')
+  if ([string]::IsNullOrWhiteSpace($state)) { continue }
   $composite = Get-MatchKey -Value "$name|$state"
   $regionOrder.Add($composite)
   $coefficients = [ordered]@{}
@@ -623,6 +650,7 @@ foreach ($row in ($descriptionRows | Where-Object { $_.__row -ge 2 -and $_.__row
   $name = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'A')
   if ([string]::IsNullOrWhiteSpace($name)) { continue }
   $state = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'B')
+  if ([string]::IsNullOrWhiteSpace($state)) { continue }
   $composite = Get-MatchKey -Value "$name|$state"
   if (-not $regionsByComposite.ContainsKey($composite)) {
     $regionOrder.Add($composite)
@@ -640,9 +668,9 @@ foreach ($row in ($descriptionRows | Where-Object { $_.__row -ge 2 -and $_.__row
   }
 }
 
-foreach ($row in ($cityRows | Where-Object { $_.__row -ge 2 })) {
-  $regionName = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'G')
-  $state = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'F')
+foreach ($row in ($cityRows | Where-Object { $_.__row -ge 2 -and $_.__row -le $cityDataLastRow })) {
+  $regionName = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'H')
+  $state = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'G')
   if ([string]::IsNullOrWhiteSpace($regionName)) { continue }
   $composite = Get-MatchKey -Value "$regionName|$state"
   if ($regionsByComposite.ContainsKey($composite)) { continue }
@@ -679,11 +707,30 @@ foreach ($composite in $regionOrder) {
 
 $cities = @()
 $usedCityIds = @{}
-foreach ($row in ($cityRows | Where-Object { $_.__row -ge 2 })) {
+foreach ($row in ($cityRows | Where-Object { $_.__row -ge 2 -and $_.__row -le $cityDataLastRow })) {
   $name = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'A')
   if ([string]::IsNullOrWhiteSpace($name)) { continue }
-  $state = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'F')
-  $regionName = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'G')
+  $plane = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'F')
+  $state = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'G')
+  $regionName = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'H')
+  $mapLeft = Convert-ToNumber -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex $cityCoordinateStartColumnIndex)) -Default ([double]::NaN)
+  $mapRight = Convert-ToNumber -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex ($cityCoordinateStartColumnIndex + 1))) -Default ([double]::NaN)
+  $mapTop = Convert-ToNumber -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex ($cityCoordinateStartColumnIndex + 2))) -Default ([double]::NaN)
+  $mapBottom = Convert-ToNumber -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex ($cityCoordinateStartColumnIndex + 3))) -Default ([double]::NaN)
+  $hasMapBounds = -not [double]::IsNaN($mapLeft) -and -not [double]::IsInfinity($mapLeft) -and
+    -not [double]::IsNaN($mapRight) -and -not [double]::IsInfinity($mapRight) -and
+    -not [double]::IsNaN($mapTop) -and -not [double]::IsInfinity($mapTop) -and
+    -not [double]::IsNaN($mapBottom) -and -not [double]::IsInfinity($mapBottom)
+  $mapBounds = if ($hasMapBounds) {
+    [pscustomobject][ordered]@{
+      left = $mapLeft
+      right = $mapRight
+      top = $mapTop
+      bottom = $mapBottom
+    }
+  } else {
+    $null
+  }
   $production = [ordered]@{}
   for ($index = 0; $index -lt $goodsInOrder.Count; $index += 1) {
     $production[$goodIdByName[$goodsInOrder[$index]]] = Convert-ToNumber -Value (Get-Value -Row $row -Column (Convert-ColumnIndexToName -ColumnIndex ($cityGoodStartColumnIndex + $index)))
@@ -707,16 +754,38 @@ foreach ($row in ($cityRows | Where-Object { $_.__row -ge 2 })) {
     type = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'C')
     cityType = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'D')
     rank = Convert-ToNumber -Value (Get-Value -Row $row -Column 'E')
+    plane = $plane
     state = $state
     regionId = $regionIdByComposite[(Get-MatchKey -Value "$regionName|$state")]
     regionName = $regionName
-    locationType = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'H')
-    religion = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'I')
-    population = [int](Convert-ToNumber -Value (Get-Value -Row $row -Column 'J'))
+    locationType = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'I')
+    religion = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'J')
+    population = [int](Convert-ToNumber -Value (Get-Value -Row $row -Column 'K'))
+    x = if ($hasMapBounds) { ($mapLeft + $mapRight) / 2.0 } else { $null }
+    y = if ($hasMapBounds) { ($mapTop + $mapBottom) / 2.0 } else { $null }
+    mapBounds = $mapBounds
     consumptionModifier = $null
     connections = $connections
     production = $production
     demand = [ordered]@{}
+  }
+}
+
+$vurulCity = $cities | Where-Object { (Get-MatchKey -Value $_.name) -eq (Get-MatchKey -Value 'Вурул') } | Select-Object -First 1
+if ($vurulCity) {
+  foreach ($city in $cities) {
+    if ((Get-MatchKey -Value $city.name) -eq (Get-MatchKey -Value 'Вурул')) { continue }
+    foreach ($connection in $city.connections) {
+      if ((Get-MatchKey -Value $connection.targetName) -ne (Get-MatchKey -Value 'Урул')) { continue }
+      $hasVurulReverse = @($vurulCity.connections | Where-Object {
+        (Get-MatchKey -Value $_.targetName) -eq (Get-MatchKey -Value $city.name) -and
+        (Get-MatchKey -Value $_.connectionType) -eq (Get-MatchKey -Value $connection.connectionType) -and
+        [Math]::Abs($_.distance - $connection.distance) -lt 0.0001
+      } | Select-Object -First 1)
+      if ($hasVurulReverse.Count) {
+        $connection.targetName = 'Вурул'
+      }
+    }
   }
 }
 
@@ -797,7 +866,7 @@ foreach ($city in @($cities)) {
 }
 
 $workbookTransportModes = @()
-foreach ($row in ($productionRows | Where-Object { $_.__row -ge 89 -and $_.__row -le 95 })) {
+foreach ($row in ($productionRows | Where-Object { $_.__row -ge $transportModeStartRow -and $_.__row -le $transportModeEndRow })) {
   $name = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'A')
   if ([string]::IsNullOrWhiteSpace($name)) { continue }
   $workbookTransportModes += [pscustomobject][ordered]@{
@@ -827,7 +896,7 @@ foreach ($override in $transportModeOverrides) {
 
 $cityTypeDemandModifiers = @()
 $categoryIds = @('metally','dragmetally','stroyka','organika','tekstil-i-otdelka','pismo-i-byurokratiya','khimiya-i-toplivo','eda')
-foreach ($row in ($productionRows | Where-Object { $_.__row -ge 98 -and $_.__row -le 105 })) {
+foreach ($row in ($productionRows | Where-Object { $_.__row -ge $cityTypeStatsStartRow -and $_.__row -le $cityTypeStatsEndRow })) {
   $name = Normalize-DisplayText -Value (Get-Value -Row $row -Column 'A')
   if ([string]::IsNullOrWhiteSpace($name)) { continue }
   $categoryModifiers = [ordered]@{}
@@ -840,6 +909,7 @@ foreach ($row in ($productionRows | Where-Object { $_.__row -ge 98 -and $_.__row
 $source = [pscustomobject][ordered]@{
   workbookPath = $resolvedWorkbookPath
   workbookName = [System.IO.Path]::GetFileName($resolvedWorkbookPath)
+  sourceUrl = if ([string]::IsNullOrWhiteSpace($env:REBREYA_WORKBOOK_SOURCE_URL)) { $null } else { $env:REBREYA_WORKBOOK_SOURCE_URL }
   importedAt = (Get-Date).ToString('yyyy-MM-ddTHH:mm:ssK')
   sheets = @('Города и локации','Спрос городов','Производство регионов','Описание регионов')
 }

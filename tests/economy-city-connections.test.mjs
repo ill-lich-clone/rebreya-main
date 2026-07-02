@@ -72,3 +72,49 @@ test("Orlanis to Freh is not imported as a land bridge", async () => {
   assert.equal(orlanisToFreh.some((connection) => connection.connectionType === "Море"), true);
   assert.equal(frehToOrlanis.some((connection) => connection.connectionType === "Море"), true);
 });
+
+test("economy cities keep large-map geometry from spreadsheet bounds", async () => {
+  const cities = await loadCities();
+  const cityById = new Map(cities.map((city) => [city.id, city]));
+  const urul = cityById.get("urul");
+  const vurul = cityById.get("vurul");
+  const veldoran = cityById.get("veldoran");
+
+  assert.ok(urul);
+  assert.ok(vurul);
+  assert.ok(veldoran);
+  assert.equal(urul.state, "Республика Зомар");
+  assert.equal(vurul.state, "Азадранская империя");
+  assert.notEqual(urul.id, vurul.id);
+  assert.deepEqual(
+    [urul.x, urul.y, urul.mapBounds],
+    [8655, 4372, { left: 8630, right: 8680, top: 4347, bottom: 4397 }]
+  );
+  assert.deepEqual(
+    [vurul.x, vurul.y, vurul.mapBounds],
+    [15019, 2637, { left: 14994, right: 15044, top: 2612, bottom: 2662 }]
+  );
+  assert.deepEqual(
+    [veldoran.x, veldoran.y, veldoran.mapBounds],
+    [6696, 9075, { left: 6671, right: 6721, top: 9055, bottom: 9095 }]
+  );
+});
+
+test("Ksay land road targets Vurul, not the Zomar Urul", async () => {
+  const cities = await loadCities();
+  const cityById = new Map(cities.map((city) => [city.id, city]));
+  const ksay = cityById.get("ksay");
+  const urul = cityById.get("urul");
+  const vurul = cityById.get("vurul");
+
+  assert.ok(ksay);
+  assert.ok(urul);
+  assert.ok(vurul);
+
+  const ksayLandTargets = (ksay.connections ?? [])
+    .filter((connection) => !connection.broken && connection.connectionType === "Земля")
+    .map((connection) => connection.targetCityId);
+
+  assert.equal(ksayLandTargets.includes(vurul.id), true);
+  assert.equal(ksayLandTargets.includes(urul.id), false);
+});
