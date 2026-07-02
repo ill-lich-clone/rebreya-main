@@ -28,6 +28,7 @@
   --rm-surface-input: var(--rm-surface-0);
   --rm-surface-overlay: rgb(var(--rm-color-ink-rgb) / 0.94);
   --rm-surface-subtle: rgb(255 255 255 / 0.04);
+  --rm-character-sheet-header-image: url("/modules/rebreya-main/assets/ui/rebreya-character-header.webp");
   --rm-border-subtle: rgb(var(--rm-color-gold-rgb) / 0.1);
   --rm-border-default: rgb(var(--rm-color-gold-rgb) / 0.16);
   --rm-border-strong: rgb(var(--rm-color-gold-rgb) / 0.34);
@@ -265,6 +266,62 @@
   font-size: 14px;
   line-height: 1;
   pointer-events: none;
+}
+
+.dnd5e2.sheet.actor.character {
+  --dnd5e-character-header-image: var(--rm-character-sheet-header-image);
+  --dnd5e-character-background-image: var(--rm-character-sheet-header-image);
+}
+
+.dnd5e2.sheet.actor.character:not(.minimized) .window-content::before {
+  height: 275px;
+  opacity: 0.34;
+  background-position: center 34%;
+}
+
+.dnd5e2.sheet.actor.character .sheet-header {
+  background:
+    linear-gradient(90deg, rgb(6 8 12 / 0.82) 0%, rgb(6 8 12 / 0.5) 32%, rgb(6 8 12 / 0.34) 58%, rgb(6 8 12 / 0.68) 100%),
+    linear-gradient(180deg, rgb(6 8 12 / 0.18) 0%, rgb(6 8 12 / 0.3) 55%, rgb(6 8 12 / 0.72) 100%),
+    var(--rm-character-sheet-header-image) center 42% / cover no-repeat;
+}
+
+.dnd5e2.sheet.actor.character .sheet-header > .left {
+  justify-content: center;
+  gap: 0.3rem;
+  transform: translateY(12px);
+}
+
+.dnd5e2.sheet.actor.character .sheet-header .document-name {
+  margin-top: 0.15rem;
+}
+
+.rm-character-sheet-brand {
+  display: grid;
+  gap: 0;
+  max-width: 100%;
+  color: #f4f1e7;
+  font-family: var(--dnd5e-font-modesto);
+  font-weight: 700;
+  line-height: 0.94;
+  text-shadow:
+    0 2px 3px rgb(0 0 0 / 0.9),
+    0 0 14px rgb(0 0 0 / 0.8);
+  pointer-events: none;
+}
+
+.rm-character-sheet-brand__title,
+.rm-character-sheet-brand__subtitle {
+  display: block;
+  letter-spacing: 0;
+}
+
+.rm-character-sheet-brand__title {
+  font-size: 48px;
+}
+
+.rm-character-sheet-brand__subtitle {
+  font-size: 26px;
 }
 
 .dnd5e2.sheet.actor .tab[data-tab="inventory"] .containers .rm-universal-belt-slot {

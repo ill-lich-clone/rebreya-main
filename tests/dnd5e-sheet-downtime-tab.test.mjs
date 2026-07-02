@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 
 function installSheetExtensionStubs() {
   const previousActor = globalThis.Actor;
@@ -29,7 +29,15 @@ function installSheetExtensionStubs() {
       this.value = "";
       this.children = [];
       this.attributes = {};
-      this.style = {};
+      const styleProperties = new Map();
+      this.style = {
+        setProperty(name, value) {
+          styleProperties.set(name, value);
+        },
+        getPropertyValue(name) {
+          return styleProperties.get(name) ?? "";
+        }
+      };
       this.tagName = "DIV";
       this.classList = {
         values: new Set(),
@@ -302,6 +310,67 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime character sh
   finally {
     stubs.restore();
   }
+});
+
+test("registerDnd5eSheetExtensions adds Rebreya branding to character sheet headers", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?character-branding=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const nameInput = new stubs.HTMLElement();
+    nameInput.classList.add("document-name");
+    const leftHeader = new stubs.HTMLElement();
+    leftHeader.append(nameInput);
+    const header = new stubs.HTMLElement();
+    const root = new stubs.HTMLElement({
+      selectors: {
+        ".sheet-header": header,
+        ".sheet-header > .left": leftHeader
+      }
+    });
+    const app = {
+      actor,
+      async render() {}
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    const brand = leftHeader.children[0];
+    assert.equal(brand.dataset.rebreyaCharacterBrand, "true");
+    assert.equal(brand.classList.contains("rm-character-sheet-brand"), true);
+    assert.equal(brand.children[0].textContent, "Ребрея");
+    assert.equal(brand.children[1].textContent, "Тень прогресса");
+    assert.equal(leftHeader.children[1], nameInput);
+    assert.equal(root.style.getPropertyValue("--rm-character-sheet-header-image"), 'url("/modules/rebreya-main/assets/ui/rebreya-character-header.webp")');
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("main stylesheet applies Rebreya character header image and brand positioning", async () => {
+  const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  const headerAsset = await stat(new URL("../assets/ui/rebreya-character-header.webp", import.meta.url));
+
+  assert.ok(headerAsset.size < 100_000);
+  assert.match(styles, /--rm-character-sheet-header-image:\s*url\("\/modules\/rebreya-main\/assets\/ui\/rebreya-character-header\.webp"\)/u);
+  assert.match(styles, /\.dnd5e2\.sheet\.actor\.character\s*\{[^}]*--dnd5e-character-header-image:\s*var\(--rm-character-sheet-header-image\)/su);
+  assert.match(styles, /\.dnd5e2\.sheet\.actor\.character\s+\.sheet-header\s*>\s*\.left\s*\{[^}]*justify-content:\s*center/su);
+  assert.match(styles, /\.rm-character-sheet-brand\s*\{/u);
 });
 
 test("registerDnd5eSheetExtensions renders universal belt slots in the inventory container strip", async () => {

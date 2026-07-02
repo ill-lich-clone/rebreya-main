@@ -34,6 +34,7 @@ const CHARACTER_DOWNTIME_TAB_ID = "downtime";
 const CHARACTER_DOWNTIME_TAB_LABEL = "Простой";
 const CHARACTER_DOWNTIME_TAB_ICON = "fa-solid fa-hourglass-half";
 const CHARACTER_DOWNTIME_TEMPLATE = `modules/${MODULE_ID}/templates/character-downtime-tab.hbs`;
+const CHARACTER_SHEET_HEADER_IMAGE = `url("/modules/${MODULE_ID}/assets/ui/rebreya-character-header.webp")`;
 const HERO_DOLL_PATCH_FLAG = "__rebreyaHeroDollPatched";
 const HERO_DOLL_MOVE_DROP_PATCH_FLAG = "__rebreyaHeroDollMoveDropPatched";
 const HERO_DOLL_PAYLOAD_PATCH_FLAG = "__rebreyaHeroDollPayloadPatched";
@@ -760,6 +761,31 @@ function getActorFromSheetApp(app) {
 function getItemFromSheetApp(app) {
   const item = app?.item ?? app?.document ?? app?.object ?? null;
   return item instanceof Item ? item : null;
+}
+
+function bindCharacterSheetBranding(root) {
+  root?.style?.setProperty?.("--rm-character-sheet-header-image", CHARACTER_SHEET_HEADER_IMAGE);
+
+  const leftHeader = root?.querySelector?.(".sheet-header > .left") ?? null;
+  if (!leftHeader || leftHeader.querySelector?.("[data-rebreya-character-brand='true']")) {
+    return;
+  }
+
+  const brand = document.createElement("div");
+  brand.classList.add("rm-character-sheet-brand");
+  brand.dataset.rebreyaCharacterBrand = "true";
+  brand.setAttribute("aria-hidden", "true");
+
+  const title = document.createElement("span");
+  title.classList.add("rm-character-sheet-brand__title");
+  title.textContent = "Ребрея";
+
+  const subtitle = document.createElement("span");
+  subtitle.classList.add("rm-character-sheet-brand__subtitle");
+  subtitle.textContent = "Тень прогресса";
+
+  brand.append(title, subtitle);
+  leftHeader.prepend(brand);
 }
 
 function isSheetEditable(app, root = null) {
@@ -5936,6 +5962,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       return;
     }
 
+    bindCharacterSheetBranding(root);
     bindHeroDollPanel(root, app, moduleApi);
     bindCharacterDowntimePanel(root, app, moduleApi);
     try {
@@ -5997,6 +6024,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
 
     const actor = getActorFromSheetApp(app);
     if (actor?.type === "character") {
+      bindCharacterSheetBranding(root);
       bindHeroDollPanel(root, app, moduleApi);
       bindCharacterDowntimePanel(root, app, moduleApi);
       try {
