@@ -2,6 +2,39 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 
+function readWebpDimensions(bytes) {
+  assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
+  assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
+
+  for (let offset = 12; offset + 8 <= bytes.length;) {
+    const chunkType = bytes.toString("ascii", offset, offset + 4);
+    const chunkSize = bytes.readUInt32LE(offset + 4);
+    const payloadOffset = offset + 8;
+
+    if (chunkType === "VP8 ") {
+      assert.equal(bytes[payloadOffset + 3], 0x9d);
+      assert.equal(bytes[payloadOffset + 4], 0x01);
+      assert.equal(bytes[payloadOffset + 5], 0x2a);
+
+      return {
+        width: bytes.readUInt16LE(payloadOffset + 6) & 0x3fff,
+        height: bytes.readUInt16LE(payloadOffset + 8) & 0x3fff
+      };
+    }
+
+    if (chunkType === "VP8X") {
+      return {
+        width: 1 + bytes.readUIntLE(payloadOffset + 4, 3),
+        height: 1 + bytes.readUIntLE(payloadOffset + 7, 3)
+      };
+    }
+
+    offset = payloadOffset + chunkSize + (chunkSize % 2);
+  }
+
+  throw new Error("Unsupported WebP file without VP8 or VP8X dimensions");
+}
+
 function installSheetExtensionStubs() {
   const previousActor = globalThis.Actor;
   const previousItem = globalThis.Item;
@@ -352,8 +385,8 @@ test("registerDnd5eSheetExtensions adds Rebreya branding to character sheet head
     const brand = leftHeader.children[0];
     assert.equal(brand.dataset.rebreyaCharacterBrand, "true");
     assert.equal(brand.classList.contains("rm-character-sheet-brand"), true);
-    assert.equal(brand.children[0].textContent, "Ребрея");
-    assert.equal(brand.children[1].textContent, "Тень прогресса");
+    assert.equal(brand.textContent, "Ребрея: Тень прогресса");
+    assert.equal(brand.children.length, 0);
     assert.equal(leftHeader.children[1], nameInput);
     assert.equal(root.style.getPropertyValue("--rm-character-sheet-header-image"), 'url("/modules/rebreya-main/assets/ui/rebreya-character-header.webp")');
   }
@@ -364,14 +397,17 @@ test("registerDnd5eSheetExtensions adds Rebreya branding to character sheet head
 
 test("main stylesheet applies Rebreya character header image and brand positioning", async () => {
   const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
-  const headerAsset = await stat(new URL("../assets/ui/rebreya-character-header.webp", import.meta.url));
+  const headerAssetUrl = new URL("../assets/ui/rebreya-character-header.webp", import.meta.url);
+  const headerAsset = await stat(headerAssetUrl);
+  const headerDimensions = readWebpDimensions(await readFile(headerAssetUrl));
 
   assert.ok(headerAsset.size < 100_000);
+  assert.deepEqual(headerDimensions, { width: 1280, height: 560 });
   assert.match(styles, /--rm-character-sheet-header-image:\s*url\("\/modules\/rebreya-main\/assets\/ui\/rebreya-character-header\.webp"\)/u);
   assert.match(styles, /\.dnd5e2\.sheet\.actor\.character\s*\{[^}]*--dnd5e-character-header-image:\s*var\(--rm-character-sheet-header-image\)/su);
   assert.match(styles, /\.dnd5e2\.sheet\.actor\.character:not\(\.minimized\) \.window-content::before\s*\{[^}]*height:\s*380px/su);
-  assert.match(styles, /\.dnd5e2\.sheet\.actor\.character:not\(\.minimized\) \.window-content::before\s*\{[^}]*filter:\s*blur\(2px\)/su);
-  assert.match(styles, /\.dnd5e2\.sheet\.actor\.character:not\(\.minimized\) \.window-content::before\s*\{[^}]*mask-image:\s*linear-gradient/su);
+  assert.doesNotMatch(styles, /\.dnd5e2\.sheet\.actor\.character:not\(\.minimized\) \.window-content::before\s*\{[^}]*filter:\s*blur/su);
+  assert.doesNotMatch(styles, /\.dnd5e2\.sheet\.actor\.character:not\(\.minimized\) \.window-content::before\s*\{[^}]*mask-image:/su);
   assert.match(styles, /\.dnd5e2\.sheet\.actor\.character\s+\.sheet-header\s*>\s*\.left\s*\{[^}]*justify-content:\s*center/su);
   assert.match(styles, /\.rm-character-sheet-brand\s*\{/u);
 });

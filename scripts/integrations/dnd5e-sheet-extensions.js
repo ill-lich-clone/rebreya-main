@@ -767,7 +767,19 @@ function bindCharacterSheetBranding(root) {
   root?.style?.setProperty?.("--rm-character-sheet-header-image", CHARACTER_SHEET_HEADER_IMAGE);
 
   const leftHeader = root?.querySelector?.(".sheet-header > .left") ?? null;
-  if (!leftHeader || leftHeader.querySelector?.("[data-rebreya-character-brand='true']")) {
+  if (!leftHeader) {
+    return;
+  }
+
+  const existingBrand = leftHeader.querySelector?.("[data-rebreya-character-brand='true']") ?? null;
+  if (existingBrand) {
+    if (typeof existingBrand.replaceChildren === "function") {
+      existingBrand.replaceChildren();
+    }
+    else {
+      existingBrand.children = [];
+    }
+    existingBrand.textContent = "Ребрея: Тень прогресса";
     return;
   }
 
@@ -775,16 +787,7 @@ function bindCharacterSheetBranding(root) {
   brand.classList.add("rm-character-sheet-brand");
   brand.dataset.rebreyaCharacterBrand = "true";
   brand.setAttribute("aria-hidden", "true");
-
-  const title = document.createElement("span");
-  title.classList.add("rm-character-sheet-brand__title");
-  title.textContent = "Ребрея";
-
-  const subtitle = document.createElement("span");
-  subtitle.classList.add("rm-character-sheet-brand__subtitle");
-  subtitle.textContent = "Тень прогресса";
-
-  brand.append(title, subtitle);
+  brand.textContent = "Ребрея: Тень прогресса";
   leftHeader.prepend(brand);
 }
 
