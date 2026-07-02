@@ -274,16 +274,23 @@
 }
 
 .dnd5e2.sheet.actor.character:not(.minimized) .window-content::before {
-  height: 275px;
-  opacity: 0.34;
-  background-position: center 34%;
+  height: 380px;
+  opacity: 0.42;
+  background-image: var(--rm-character-sheet-header-image);
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: blur(2px);
+  transform: scale(1.025);
+  transform-origin: top center;
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0) 0%, rgb(0 0 0) 54%, rgb(0 0 0 / 0.78) 72%, transparent 100%);
+  mask-image: linear-gradient(to bottom, rgb(0 0 0) 0%, rgb(0 0 0) 54%, rgb(0 0 0 / 0.78) 72%, transparent 100%);
 }
 
 .dnd5e2.sheet.actor.character .sheet-header {
   background:
     linear-gradient(90deg, rgb(6 8 12 / 0.82) 0%, rgb(6 8 12 / 0.5) 32%, rgb(6 8 12 / 0.34) 58%, rgb(6 8 12 / 0.68) 100%),
-    linear-gradient(180deg, rgb(6 8 12 / 0.18) 0%, rgb(6 8 12 / 0.3) 55%, rgb(6 8 12 / 0.72) 100%),
-    var(--rm-character-sheet-header-image) center 42% / cover no-repeat;
+    linear-gradient(180deg, rgb(6 8 12 / 0.18) 0%, rgb(6 8 12 / 0.3) 55%, rgb(6 8 12 / 0.72) 100%);
 }
 
 .dnd5e2.sheet.actor.character .sheet-header > .left {
