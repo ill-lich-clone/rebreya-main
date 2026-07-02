@@ -404,10 +404,12 @@ test("main stylesheet applies Rebreya character header image and brand positioni
   assert.ok(headerAsset.size < 100_000);
   assert.deepEqual(headerDimensions, { width: 1280, height: 560 });
   assert.match(styles, /--rm-character-sheet-header-image:\s*url\("\/modules\/rebreya-main\/assets\/ui\/rebreya-character-header\.webp"\)/u);
-  assert.match(styles, /\.dnd5e2\.sheet\.actor\.character\s*\{[^}]*--dnd5e-character-header-image:\s*var\(--rm-character-sheet-header-image\)/su);
+  assert.doesNotMatch(styles, /--dnd5e-character-header-image:\s*var\(--rm-character-sheet-header-image\)/u);
+  assert.doesNotMatch(styles, /--dnd5e-character-background-image:\s*var\(--rm-character-sheet-header-image\)/u);
   assert.match(styles, /\.dnd5e2\.sheet\.actor\.character:not\(\.minimized\) \.window-content::before\s*\{[^}]*height:\s*380px/su);
+  assert.match(styles, /\.dnd5e2\.sheet\.actor\.character:not\(\.minimized\) \.window-content::before\s*\{[^}]*content:\s*""/su);
   assert.doesNotMatch(styles, /\.dnd5e2\.sheet\.actor\.character:not\(\.minimized\) \.window-content::before\s*\{[^}]*filter:\s*blur/su);
-  assert.doesNotMatch(styles, /\.dnd5e2\.sheet\.actor\.character:not\(\.minimized\) \.window-content::before\s*\{[^}]*mask-image:/su);
+  assert.match(styles, /\.dnd5e2\.sheet\.actor\.character:not\(\.minimized\) \.window-content::before\s*\{[^}]*mask-image:\s*none/su);
   assert.match(styles, /\.dnd5e2\.sheet\.actor\.character\s+\.sheet-header\s*>\s*\.left\s*\{[^}]*justify-content:\s*center/su);
   assert.match(styles, /\.rm-character-sheet-brand\s*\{/u);
 });

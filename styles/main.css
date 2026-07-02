@@ -268,18 +268,16 @@
   pointer-events: none;
 }
 
-.dnd5e2.sheet.actor.character {
-  --dnd5e-character-header-image: var(--rm-character-sheet-header-image);
-  --dnd5e-character-background-image: var(--rm-character-sheet-header-image);
-}
-
 .dnd5e2.sheet.actor.character:not(.minimized) .window-content::before {
+  content: "";
   height: 380px;
   opacity: 0.72;
   background-image: var(--rm-character-sheet-header-image);
   background-position: center top;
   background-repeat: no-repeat;
   background-size: cover;
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 .dnd5e2.sheet.actor.character .sheet-header {
