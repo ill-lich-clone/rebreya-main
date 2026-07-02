@@ -62,6 +62,52 @@ test("buildTravelPlan lets land travel use rail segments as walkable connections
   assert.deepEqual(plan.legs.map((leg) => leg.routeId), ["bc", "cd"]);
 });
 
+test("normalizeTravelNetwork derives travel routes from canonical city connections", () => {
+  const canonicalNetwork = normalizeTravelNetwork({
+    cities: network.cities,
+    routes: [
+      { id: "ab-old", sourceId: "a", targetId: "b", mode: "land", type: "Земля", miles: 99, points: [[0, 0], [5, 0], [10, 0]] }
+    ],
+    economyCities: [
+      {
+        id: "economy-a",
+        name: "Альфа",
+        connections: [
+          { targetName: "Бета", targetCityId: "economy-b", connectionType: "ЖД", distance: 10, broken: false }
+        ]
+      },
+      {
+        id: "economy-b",
+        name: "Бета",
+        connections: [
+          { targetName: "Альфа", targetCityId: "economy-a", connectionType: "ЖД", distance: 10, broken: false },
+          { targetName: "Гамма", targetCityId: "economy-c", connectionType: "Земля", distance: 20, broken: false }
+        ]
+      },
+      {
+        id: "economy-c",
+        name: "Гамма",
+        connections: [
+          { targetName: "Бета", targetCityId: "economy-b", connectionType: "Земля", distance: 20, broken: false }
+        ]
+      }
+    ]
+  });
+
+  const ab = canonicalNetwork.routes.find((route) => route.sourceId === "a" && route.targetId === "b");
+  const bc = canonicalNetwork.routes.find((route) => route.sourceId === "b" && route.targetId === "c");
+
+  assert.ok(ab);
+  assert.equal(ab.mode, "rail");
+  assert.equal(ab.type, "ЖД");
+  assert.equal(ab.miles, 10);
+  assert.deepEqual(ab.points, [[0, 0], [5, 0], [10, 0]]);
+  assert.ok(bc);
+  assert.equal(bc.mode, "land");
+  assert.equal(bc.type, "Земля");
+  assert.equal(bc.miles, 20);
+});
+
 test("buildTravelPlan keeps non-land modes out of the first travel mode", () => {
   const plan = buildTravelPlan(network, {
     originCityId: "a",
@@ -121,7 +167,9 @@ test("buildTravelSnapshot exposes travel days and rewind availability", () => {
 
 test("actual travel network does not use the conflicting Orlanis-Freh land bridge", async () => {
   const actualNetwork = JSON.parse(await readFile(new URL("../data/travel-network.json", import.meta.url), "utf8"));
-  const normalizedNetwork = normalizeTravelNetwork(actualNetwork);
+  const economyCities = JSON.parse(await readFile(new URL("../data/cities.json", import.meta.url), "utf8"));
+  const networkWithEconomy = { ...actualNetwork, economyCities };
+  const normalizedNetwork = normalizeTravelNetwork(networkWithEconomy);
   const orlanis = normalizedNetwork.cityByName.get(normalizeLocationName("Орланис"));
   const freh = normalizedNetwork.cityByName.get(normalizeLocationName("Фрех"));
   const tsugengrim = normalizedNetwork.cityByName.get(normalizeLocationName("Цугенгрим"));
@@ -135,13 +183,43 @@ test("actual travel network does not use the conflicting Orlanis-Freh land bridg
 
   assert.equal(orlanisFrehRoutes.some((route) => route.mode === "land"), false);
 
-  const plan = buildTravelPlan(actualNetwork, {
+  const plan = buildTravelPlan(networkWithEconomy, {
     originCityId: tsugengrim?.id,
     destinationCityId: velgard?.id,
     mode: "land"
   });
 
+  assert.equal(plan.available, true);
   assert.equal(plan.legs.some((leg) => [leg.sourceCityId, leg.targetCityId].includes(freh?.id)), false);
+});
+
+test("actual canonical city connections bridge Veldoran into land travel", async () => {
+  const actualNetwork = JSON.parse(await readFile(new URL("../data/travel-network.json", import.meta.url), "utf8"));
+  const economyCities = JSON.parse(await readFile(new URL("../data/cities.json", import.meta.url), "utf8"));
+  const networkWithEconomy = { ...actualNetwork, economyCities };
+  const normalizedNetwork = normalizeTravelNetwork(networkWithEconomy);
+  const dom = normalizedNetwork.cityByName.get(normalizeLocationName("Дом переговоров"));
+  const veldoran = normalizedNetwork.cityByName.get(normalizeLocationName("Велдоран"));
+  const alKazar = normalizedNetwork.cityByName.get(normalizeLocationName("Аль-Казар"));
+  const tsugengrim = normalizedNetwork.cityByName.get(normalizeLocationName("Цугенгрим"));
+  const velgard = normalizedNetwork.cityByName.get(normalizeLocationName("Вельгард"));
+
+  const localPlan = buildTravelPlan(networkWithEconomy, {
+    originCityId: dom?.id,
+    destinationCityId: alKazar?.id,
+    mode: "land"
+  });
+  const fullPlan = buildTravelPlan(networkWithEconomy, {
+    originCityId: tsugengrim?.id,
+    destinationCityId: velgard?.id,
+    mode: "land"
+  });
+
+  assert.equal(localPlan.available, true);
+  assert.deepEqual(localPlan.cityIds, [dom?.id, veldoran?.id, alKazar?.id]);
+  assert.deepEqual(localPlan.legs.map((leg) => [leg.mode, leg.miles]), [["rail", 164], ["land", 260]]);
+  assert.equal(fullPlan.available, true);
+  assert.equal(fullPlan.cityIds.includes(veldoran?.id), true);
 });
 
 test("buildTravelMapPosition follows route points and scales them to the world map scene", () => {

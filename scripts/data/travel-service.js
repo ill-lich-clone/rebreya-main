@@ -2,6 +2,7 @@ import { MODULE_ID } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS, normalizeGroupState } from "./group-context-service.js";
 
 const TRAVEL_NETWORK_PATH = `modules/${MODULE_ID}/data/travel-network.json`;
+const CANONICAL_CITY_CONNECTIONS_PATH = `modules/${MODULE_ID}/data/cities.json`;
 const DEFAULT_TRAVEL_SPEED_MPH = 3;
 const TRAVEL_DAY_HOURS = 8;
 const DEFAULT_WORLD_MAP = Object.freeze({
@@ -134,7 +135,10 @@ function normalizeRouteMode(mode, type = "") {
   if (text.includes("море") || text.includes("река") || text.includes("вода")) {
     return "water";
   }
-  if (text.includes("земля")) {
+  if (text.includes("воздух")) {
+    return "air";
+  }
+  if (text.includes("земля") || text.includes("песок") || text.includes("суша")) {
     return "land";
   }
   return rawMode || text;
@@ -199,6 +203,144 @@ function normalizeRoute(row = {}, cityByName = new Map()) {
   };
 }
 
+function buildRoutePairKey(sourceId, targetId) {
+  return [cleanId(sourceId), cleanId(targetId)].sort().join("\u0000");
+}
+
+function buildRouteVariantKey(sourceId, targetId, mode, type = "") {
+  return [
+    buildRoutePairKey(sourceId, targetId),
+    cleanId(mode),
+    normalizeLocationName(type)
+  ].join("\u0000");
+}
+
+function pickRouteWithGeometry(left = null, right = null) {
+  if (!left) {
+    return right ?? null;
+  }
+  if (!right) {
+    return left;
+  }
+
+  return right.points.length > left.points.length ? right : left;
+}
+
+function buildExistingRouteIndexes(routes = []) {
+  const byVariant = new Map();
+  const byMode = new Map();
+  const byPair = new Map();
+
+  for (const route of routes) {
+    const pairKey = buildRoutePairKey(route.sourceId, route.targetId);
+    const variantKey = buildRouteVariantKey(route.sourceId, route.targetId, route.mode, route.type);
+    const modeKey = [
+      pairKey,
+      route.mode
+    ].join("\u0000");
+    byVariant.set(variantKey, pickRouteWithGeometry(byVariant.get(variantKey), route));
+    byMode.set(modeKey, pickRouteWithGeometry(byMode.get(modeKey), route));
+    byPair.set(pairKey, pickRouteWithGeometry(byPair.get(pairKey), route));
+  }
+
+  return { byVariant, byMode, byPair };
+}
+
+function slugRoutePart(value) {
+  return normalizeLocationName(value)
+    .replace(/[^a-zа-я0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "") || "route";
+}
+
+function getCanonicalConnectionMode(connectionType) {
+  const mode = normalizeRouteMode("", connectionType);
+  if (mode === "rail" || mode === "water" || mode === "air") {
+    return mode;
+  }
+
+  return "land";
+}
+
+function buildCanonicalCityRoutes(economyCities = [], cityById = new Map(), cityByName = new Map(), existingRoutes = []) {
+  if (!Array.isArray(economyCities) || !economyCities.length) {
+    return [];
+  }
+
+  const economyCityById = new Map();
+  for (const city of economyCities) {
+    const id = cleanId(city?.id);
+    if (id) {
+      economyCityById.set(id, city);
+    }
+  }
+
+  const existingRouteIndexes = buildExistingRouteIndexes(existingRoutes);
+  const canonicalRouteByKey = new Map();
+
+  for (const economyCity of economyCities) {
+    const sourceCity = cityByName.get(normalizeLocationName(economyCity?.name));
+    if (!sourceCity) {
+      continue;
+    }
+
+    for (const connection of economyCity.connections ?? []) {
+      if (connection?.broken) {
+        continue;
+      }
+
+      const targetEconomyCity = economyCityById.get(cleanId(connection.targetCityId));
+      const targetName = targetEconomyCity?.name ?? connection.targetName;
+      const targetCity = cityByName.get(normalizeLocationName(targetName));
+      if (!targetCity || targetCity.id === sourceCity.id) {
+        continue;
+      }
+
+      const miles = roundNumber(toNumber(connection.distance, 0), 2);
+      if (miles <= 0) {
+        continue;
+      }
+
+      const type = String(connection.connectionType ?? "").trim();
+      const mode = getCanonicalConnectionMode(type);
+      const routeKey = buildRouteVariantKey(sourceCity.id, targetCity.id, mode, type);
+      const existingRoute = existingRouteIndexes.byVariant.get(routeKey)
+        ?? existingRouteIndexes.byMode.get([buildRoutePairKey(sourceCity.id, targetCity.id), mode].join("\u0000"))
+        ?? existingRouteIndexes.byPair.get(buildRoutePairKey(sourceCity.id, targetCity.id));
+      const sourceId = existingRoute?.sourceId ?? sourceCity.id;
+      const targetId = existingRoute?.targetId ?? targetCity.id;
+      const source = cityById.get(sourceId) ?? sourceCity;
+      const target = cityById.get(targetId) ?? targetCity;
+      const currentRoute = canonicalRouteByKey.get(routeKey);
+
+      if (currentRoute) {
+        currentRoute.miles = Math.min(currentRoute.miles, miles);
+        if (existingRoute?.points?.length > currentRoute.points.length) {
+          currentRoute.points = existingRoute.points;
+          currentRoute.sourceId = sourceId;
+          currentRoute.targetId = targetId;
+          currentRoute.sourceName = source.name;
+          currentRoute.targetName = target.name;
+        }
+        continue;
+      }
+
+      canonicalRouteByKey.set(routeKey, {
+        id: existingRoute?.id ?? `canonical-${mode}-${slugRoutePart(source.name)}-${slugRoutePart(target.name)}-${slugRoutePart(type)}`,
+        sourceId,
+        targetId,
+        sourceName: source.name,
+        targetName: target.name,
+        mode,
+        type,
+        miles,
+        points: existingRoute?.points ?? []
+      });
+    }
+  }
+
+  return [...canonicalRouteByKey.values()];
+}
+
 export function normalizeTravelNetwork(value = {}) {
   const rawCities = Array.isArray(value.cities) ? value.cities : [];
   const cities = rawCities
@@ -218,13 +360,26 @@ export function normalizeTravelNetwork(value = {}) {
       && cityById.has(route.targetId)
       && route.miles > 0
     ));
+  const canonicalRoutes = buildCanonicalCityRoutes(
+    value.economyCities ?? value.canonicalCities,
+    cityById,
+    cityByName,
+    routes
+  );
+  const canonicalPairKeys = new Set(canonicalRoutes.map((route) => buildRoutePairKey(route.sourceId, route.targetId)));
+  const mergedRoutes = canonicalRoutes.length
+    ? [
+      ...routes.filter((route) => !canonicalPairKeys.has(buildRoutePairKey(route.sourceId, route.targetId))),
+      ...canonicalRoutes
+    ]
+    : routes;
 
   return {
     schema: value.schema ?? "rebreya-travel-network/v1",
     map: normalizeMapConfig(value.map),
     speedMph: Math.max(0.01, toNumber(value.speedMph, DEFAULT_TRAVEL_SPEED_MPH)),
     cities,
-    routes,
+    routes: mergedRoutes,
     cityById,
     cityByName
   };
@@ -633,9 +788,10 @@ export function buildTravelSnapshot(rawNetwork = {}, rawState = {}, { warning = 
 }
 
 export class TravelService {
-  constructor({ groupContextService = null, networkPath = TRAVEL_NETWORK_PATH } = {}) {
+  constructor({ groupContextService = null, networkPath = TRAVEL_NETWORK_PATH, citiesPath = CANONICAL_CITY_CONNECTIONS_PATH } = {}) {
     this.groupContextService = groupContextService;
     this.networkPath = networkPath;
+    this.citiesPath = citiesPath;
     this.networkPromise = null;
   }
 
@@ -650,11 +806,20 @@ export class TravelService {
           return normalizeTravelNetwork({});
         }
 
-        const response = await fetch(this.networkPath);
-        if (!response?.ok) {
+        const [networkResponse, citiesResponse] = await Promise.all([
+          fetch(this.networkPath),
+          this.citiesPath ? fetch(this.citiesPath) : Promise.resolve(null)
+        ]);
+        if (!networkResponse?.ok) {
           throw new Error("Не удалось загрузить дорожную сеть путешествий.");
         }
-        return normalizeTravelNetwork(await response.json());
+        if (this.citiesPath && !citiesResponse?.ok) {
+          throw new Error("Не удалось загрузить канонические связи городов.");
+        }
+
+        const rawNetwork = await networkResponse.json();
+        const economyCities = citiesResponse ? await citiesResponse.json() : [];
+        return normalizeTravelNetwork({ ...rawNetwork, economyCities });
       })();
     }
 
