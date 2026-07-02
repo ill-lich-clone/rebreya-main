@@ -3,7 +3,7 @@
                    "workbookPath":  "C:\\Users\\ill_lich\\AppData\\Local\\Temp\\rebreya-sheet.xlsx",
                    "workbookName":  "rebreya-sheet.xlsx",
                    "sourceUrl":  "https://docs.google.com/spreadsheets/d/1-8jTsZV_WOB612aXAj_e0_KuHH27bo-ngTpMfAwh5xA",
-                   "importedAt":  "2026-07-03T00:06:53+03:00",
+                   "importedAt":  "2026-07-03T01:13:59+03:00",
                    "sheets":  [
                                   "Города и локации",
                                   "Спрос городов",
@@ -365,13 +365,6 @@
                                              ],
                      "brokenConnections":  [
                                                {
-                                                   "cityId":  "tandaral",
-                                                   "cityName":  "Тандарал",
-                                                   "targetName":  "Зидхэнд",
-                                                   "connectionType":  "Земля",
-                                                   "reason":  "missing-target"
-                                               },
-                                               {
                                                    "cityId":  "sordigon",
                                                    "cityName":  "Сордигон",
                                                    "targetName":  "Переща бродячих теней",
@@ -383,41 +376,6 @@
                                                    "cityName":  "Моус",
                                                    "targetName":  "Столица красных река",
                                                    "connectionType":  "Река",
-                                                   "reason":  "missing-target"
-                                               },
-                                               {
-                                                   "cityId":  "molansher",
-                                                   "cityName":  "Моланшер",
-                                                   "targetName":  "Флорансо",
-                                                   "connectionType":  "Воздух",
-                                                   "reason":  "missing-target"
-                                               },
-                                               {
-                                                   "cityId":  "remenser",
-                                                   "cityName":  "Ременсьер",
-                                                   "targetName":  "Флорансо",
-                                                   "connectionType":  "Земля",
-                                                   "reason":  "missing-target"
-                                               },
-                                               {
-                                                   "cityId":  "ayzenburg",
-                                                   "cityName":  "Айзенбург",
-                                                   "targetName":  "Флорансо",
-                                                   "connectionType":  "Воздух",
-                                                   "reason":  "missing-target"
-                                               },
-                                               {
-                                                   "cityId":  "farrenkhof",
-                                                   "cityName":  "Фарренхоф",
-                                                   "targetName":  "Штардольф",
-                                                   "connectionType":  "Море",
-                                                   "reason":  "missing-target"
-                                               },
-                                               {
-                                                   "cityId":  "yottenmark",
-                                                   "cityName":  "Йоттенмарк",
-                                                   "targetName":  "Варкельхольд",
-                                                   "connectionType":  "Земля",
                                                    "reason":  "missing-target"
                                                }
                                            ]

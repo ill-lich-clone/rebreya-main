@@ -2800,12 +2800,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Зидхэнд",
-                                "targetCityId":  null,
+                                "targetName":  "Зихдэнд",
+                                "targetCityId":  "zikhdend",
                                 "connectionType":  "Земля",
                                 "distance":  182,
-                                "broken":  true,
-                                "brokenReason":  "missing-target"
+                                "broken":  false,
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Огненный город",
@@ -2822,14 +2822,6 @@
                                 "distance":  299,
                                 "broken":  false,
                                 "resolvedBy":  "strict"
-                            },
-                            {
-                                "targetName":  "Зихдэнд",
-                                "targetCityId":  "zikhdend",
-                                "connectionType":  "Земля",
-                                "distance":  182,
-                                "broken":  false,
-                                "resolvedBy":  "generated-reverse"
                             }
                         ],
         "production":  {
@@ -19632,12 +19624,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Флорансо",
-                                "targetCityId":  null,
+                                "targetName":  "Фролансо",
+                                "targetCityId":  "frolanso",
                                 "connectionType":  "Воздух",
                                 "distance":  132,
-                                "broken":  true,
-                                "brokenReason":  "missing-target"
+                                "broken":  false,
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Элваньер",
@@ -19646,14 +19638,6 @@
                                 "distance":  140,
                                 "broken":  false,
                                 "resolvedBy":  "strict"
-                            },
-                            {
-                                "targetName":  "Фролансо",
-                                "targetCityId":  "frolanso",
-                                "connectionType":  "Воздух",
-                                "distance":  132,
-                                "broken":  false,
-                                "resolvedBy":  "generated-reverse"
                             }
                         ],
         "production":  {
@@ -20472,12 +20456,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Флорансо",
-                                "targetCityId":  null,
+                                "targetName":  "Фролансо",
+                                "targetCityId":  "frolanso",
                                 "connectionType":  "Земля",
                                 "distance":  269,
-                                "broken":  true,
-                                "brokenReason":  "missing-target"
+                                "broken":  false,
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Жирмонтель",
@@ -20494,14 +20478,6 @@
                                 "distance":  87,
                                 "broken":  false,
                                 "resolvedBy":  "strict"
-                            },
-                            {
-                                "targetName":  "Фролансо",
-                                "targetCityId":  "frolanso",
-                                "connectionType":  "Земля",
-                                "distance":  269,
-                                "broken":  false,
-                                "resolvedBy":  "generated-reverse"
                             }
                         ],
         "production":  {
@@ -28760,12 +28736,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Флорансо",
-                                "targetCityId":  null,
+                                "targetName":  "Фролансо",
+                                "targetCityId":  "frolanso",
                                 "connectionType":  "Воздух",
                                 "distance":  148,
-                                "broken":  true,
-                                "brokenReason":  "missing-target"
+                                "broken":  false,
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Бранхольд",
@@ -28782,14 +28758,6 @@
                                 "distance":  287,
                                 "broken":  false,
                                 "resolvedBy":  "strict"
-                            },
-                            {
-                                "targetName":  "Фролансо",
-                                "targetCityId":  "frolanso",
-                                "connectionType":  "Воздух",
-                                "distance":  148,
-                                "broken":  false,
-                                "resolvedBy":  "generated-reverse"
                             },
                             {
                                 "targetName":  "Риверстед",
@@ -29560,20 +29528,12 @@
                                 "resolvedBy":  "strict"
                             },
                             {
-                                "targetName":  "Штардольф",
-                                "targetCityId":  null,
-                                "connectionType":  "Море",
-                                "distance":  309,
-                                "broken":  true,
-                                "brokenReason":  "missing-target"
-                            },
-                            {
                                 "targetName":  "Штальдорф",
                                 "targetCityId":  "shtaldorf",
                                 "connectionType":  "Море",
                                 "distance":  309,
                                 "broken":  false,
-                                "resolvedBy":  "generated-reverse"
+                                "resolvedBy":  "strict"
                             }
                         ],
         "production":  {
@@ -42840,12 +42800,12 @@
         "consumptionModifier":  null,
         "connections":  [
                             {
-                                "targetName":  "Варкельхольд",
-                                "targetCityId":  null,
+                                "targetName":  "Валькерхольд",
+                                "targetCityId":  "valkerkhold",
                                 "connectionType":  "Земля",
                                 "distance":  213,
-                                "broken":  true,
-                                "brokenReason":  "missing-target"
+                                "broken":  false,
+                                "resolvedBy":  "strict"
                             },
                             {
                                 "targetName":  "Кальдвик",
@@ -42854,14 +42814,6 @@
                                 "distance":  229,
                                 "broken":  false,
                                 "resolvedBy":  "strict"
-                            },
-                            {
-                                "targetName":  "Валькерхольд",
-                                "targetCityId":  "valkerkhold",
-                                "connectionType":  "Земля",
-                                "distance":  213,
-                                "broken":  false,
-                                "resolvedBy":  "generated-reverse"
                             }
                         ],
         "production":  {
