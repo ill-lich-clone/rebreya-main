@@ -108,6 +108,39 @@ test("normalizeTravelNetwork derives travel routes from canonical city connectio
   assert.equal(bc.miles, 20);
 });
 
+test("buildTravelPlan keeps fallback points in the requested travel direction", () => {
+  const plan = buildTravelPlan({
+    cities: [
+      { id: "a", name: "Альфа", x: 0, y: 0 },
+      { id: "b", name: "Бета", x: 10, y: 0 }
+    ],
+    routes: [],
+    economyCities: [
+      {
+        id: "economy-b",
+        name: "Бета",
+        connections: [
+          { targetName: "Альфа", targetCityId: "economy-a", connectionType: "ЖД", distance: 10, broken: false }
+        ]
+      },
+      {
+        id: "economy-a",
+        name: "Альфа",
+        connections: [
+          { targetName: "Бета", targetCityId: "economy-b", connectionType: "ЖД", distance: 10, broken: false }
+        ]
+      }
+    ]
+  }, {
+    originCityId: "a",
+    destinationCityId: "b",
+    mode: "land"
+  });
+
+  assert.equal(plan.available, true);
+  assert.deepEqual(plan.legs[0].points, [[0, 0], [10, 0]]);
+});
+
 test("buildTravelPlan keeps non-land modes out of the first travel mode", () => {
   const plan = buildTravelPlan(network, {
     originCityId: "a",

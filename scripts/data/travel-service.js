@@ -447,10 +447,13 @@ function buildPlanLeg(network, fromId, toId, route) {
   const fallbackPoints = fromCity && toCity && Number.isFinite(fromCity.x) && Number.isFinite(fromCity.y) && Number.isFinite(toCity.x) && Number.isFinite(toCity.y)
     ? [[fromCity.x, fromCity.y], [toCity.x, toCity.y]]
     : [];
-  const routePoints = route.points.length >= 2 ? route.points : fallbackPoints;
-  const points = route.sourceId === fromId && route.targetId === toId
+  const hasRoutePoints = route.points.length >= 2;
+  const routePoints = hasRoutePoints ? route.points : fallbackPoints;
+  const points = hasRoutePoints && route.sourceId === fromId && route.targetId === toId
     ? routePoints
-    : [...routePoints].reverse();
+    : hasRoutePoints
+      ? [...routePoints].reverse()
+      : routePoints;
 
   return {
     routeId: route.id,
