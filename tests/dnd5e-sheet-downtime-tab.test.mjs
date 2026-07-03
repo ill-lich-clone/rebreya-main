@@ -415,9 +415,12 @@ test("main stylesheet applies Rebreya character header image and brand positioni
   assert.doesNotMatch(styles, /\.dnd5e2\.sheet\.actor\.character\s+\.sheet-header\s*\{[^}]*linear-gradient/su);
   assert.match(styles, /\.dnd5e2\.sheet\.actor\.character\s+\.sheet-header\s*>\s*\.left\s*\{[^}]*justify-content:\s*center/su);
   assert.match(styles, /\.rm-character-sheet-brand\s*\{/u);
-  assert.match(styles, /\.rm-character-sheet-brand\s*\{[^}]*background:\s*linear-gradient\(180deg,\s*#ffffff\s*0%,\s*#d8d8d8\s*46%,\s*#f3f3f3\s*100%\)/su);
+  assert.match(styles, /\.rm-character-sheet-brand\s*\{[^}]*background:\s*linear-gradient\(180deg,\s*#ffffff\s*0%,\s*#eeeeee\s*46%,\s*#ffffff\s*100%\)/su);
   assert.match(styles, /\.rm-character-sheet-brand\s*\{[^}]*background-clip:\s*text/su);
   assert.match(styles, /\.rm-character-sheet-brand\s*\{[^}]*-webkit-text-fill-color:\s*transparent/su);
+  assert.match(styles, /\.rm-character-sheet-brand\s*\{[^}]*-webkit-text-stroke:\s*0\.7px\s*rgb\(255 255 255 \/ 0\.88\)/su);
+  assert.match(styles, /\.rm-character-sheet-brand\s*\{[^}]*paint-order:\s*stroke fill/su);
+  assert.match(styles, /\.rm-character-sheet-brand\s*\{[^}]*text-shadow:[^}]*0 0 6px rgb\(255 255 255 \/ 0\.78\)[^}]*0 0 16px rgb\(255 255 255 \/ 0\.42\)/su);
 });
 
 test("registerDnd5eSheetExtensions renders universal belt slots in the inventory container strip", async () => {
