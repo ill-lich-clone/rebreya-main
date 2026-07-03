@@ -297,7 +297,11 @@
 .rm-character-sheet-brand {
   display: block;
   max-width: 100%;
-  color: #f4f1e7;
+  color: #f3f3f3;
+  background: linear-gradient(180deg, #ffffff 0%, #d8d8d8 46%, #f3f3f3 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
   font-family: var(--dnd5e-font-modesto);
   font-size: 34px;
   font-weight: 700;
