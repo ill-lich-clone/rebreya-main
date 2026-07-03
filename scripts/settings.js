@@ -1,4 +1,4 @@
-﻿import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, MODULE_ID, SETTINGS_KEYS } from "./constants.js";
+﻿import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, DEFAULT_SITE_BASE_URL, MODULE_ID, SETTINGS_KEYS, SITE_CATALOG_MODES, SITE_CHARACTER_SYNC_MODES } from "./constants.js";
 import { refreshEconomyLauncher } from "./hooks.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -342,5 +342,76 @@ export function registerSettings() {
       updatedAt: 0,
       draft: null
     }
+  });
+
+  // --- rebreya.com site integration (integration ТЗ §10.1) -------------------
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_INTEGRATION_ENABLED, {
+    name: "REBREYA_MAIN.Settings.SiteIntegrationEnabled.Name",
+    hint: "REBREYA_MAIN.Settings.SiteIntegrationEnabled.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_BASE_URL, {
+    name: "REBREYA_MAIN.Settings.SiteBaseUrl.Name",
+    hint: "REBREYA_MAIN.Settings.SiteBaseUrl.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    default: DEFAULT_SITE_BASE_URL
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_CATALOG_MODE, {
+    name: "REBREYA_MAIN.Settings.SiteCatalogMode.Name",
+    hint: "REBREYA_MAIN.Settings.SiteCatalogMode.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    default: SITE_CATALOG_MODES.HYBRID,
+    choices: {
+      [SITE_CATALOG_MODES.LOCAL]: "Только локальные данные модуля",
+      [SITE_CATALOG_MODES.SITE_API]: "Только данные сайта",
+      [SITE_CATALOG_MODES.HYBRID]: "Гибрид: локальные + обновления с сайта"
+    }
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_CHARACTER_SYNC_MODE, {
+    name: "REBREYA_MAIN.Settings.SiteCharacterSyncMode.Name",
+    hint: "REBREYA_MAIN.Settings.SiteCharacterSyncMode.Hint",
+    scope: "client",
+    config: true,
+    type: String,
+    default: SITE_CHARACTER_SYNC_MODES.MANUAL_STATE_PUSH,
+    choices: {
+      [SITE_CHARACTER_SYNC_MODES.OFF]: "Выключено",
+      [SITE_CHARACTER_SYNC_MODES.IMPORT_ONCE]: "Импорт с сайта один раз",
+      [SITE_CHARACTER_SYNC_MODES.SITE_TO_FOUNDRY]: "Сайт → Foundry",
+      [SITE_CHARACTER_SYNC_MODES.MANUAL_STATE_PUSH]: "Сайт → Foundry, состояние вручную обратно"
+    }
+  });
+
+  // Client-scoped secrets: a player's site token is stored only in their own
+  // client settings, never in world settings or the socket (integration ТЗ §9.4).
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_ACCESS_TOKEN, {
+    scope: "client",
+    config: false,
+    type: String,
+    default: ""
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_REFRESH_TOKEN, {
+    scope: "client",
+    config: false,
+    type: String,
+    default: ""
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.SITE_LAST_CATALOG_SYNC, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {}
   });
 }

@@ -96,12 +96,39 @@ export const SETTINGS_KEYS = {
   REFERENCE_NOTES: "referenceNotes",
   TRADE_ROUTE_OVERRIDES: "tradeRouteOverrides",
   STATE_POLICIES: "statePolicies",
-  GLOBAL_EVENTS_STATE: "globalEventsState"
+  GLOBAL_EVENTS_STATE: "globalEventsState",
+  // rebreya.com site integration (integration ТЗ §10.1)
+  SITE_INTEGRATION_ENABLED: "siteIntegrationEnabled",
+  SITE_BASE_URL: "siteBaseUrl",
+  SITE_CATALOG_MODE: "siteCatalogMode",
+  SITE_ACCESS_TOKEN: "siteAccessToken",
+  SITE_REFRESH_TOKEN: "siteRefreshToken",
+  SITE_CHARACTER_SYNC_MODE: "siteCharacterSyncMode",
+  SITE_LAST_CATALOG_SYNC: "siteLastCatalogSyncAt"
 };
 
 export const DATA_SOURCE_MODES = {
   BUILTIN: "builtin",
   CUSTOM: "custom"
+};
+
+export const DEFAULT_SITE_BASE_URL = "https://rebreya.com";
+
+// How catalogue data is sourced: local JSON only, site API only, or local with
+// the site allowed to refresh official catalogues (default).
+export const SITE_CATALOG_MODES = {
+  LOCAL: "local",
+  SITE_API: "site-api",
+  HYBRID: "hybrid"
+};
+
+// Character sync direction (MVP default: site owns the build, Foundry pushes
+// mutable state manually).
+export const SITE_CHARACTER_SYNC_MODES = {
+  OFF: "off",
+  IMPORT_ONCE: "import-once",
+  SITE_TO_FOUNDRY: "site-to-foundry",
+  MANUAL_STATE_PUSH: "manual-state-push"
 };
 
 export const BUILTIN_DATA_PATH = `modules/${MODULE_ID}/data`;
