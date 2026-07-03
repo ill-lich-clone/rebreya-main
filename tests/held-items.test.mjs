@@ -71,13 +71,24 @@ test("hand helpers read race capacity, occupied hand slots, and held-item requir
     }
   });
   const dagger = makeItem({ id: "dagger", equipped: true });
+  const shield = makeItem({
+    id: "shield",
+    equipped: true,
+    flags: {
+      "rebreya-main": {
+        heldHands: ["right"]
+      }
+    }
+  });
   const actor = makeActor([race, sword, dagger]);
+  const blockedActor = makeActor([race, sword, shield]);
 
   assert.equal(getActorHandCapacity(actor), 2);
   assert.deepEqual(getItemHeldHands(sword), ["left"]);
   assert.deepEqual(getFreeHandSlots(actor), ["right"]);
   assert.equal(canUseHeldItemForHandRequirement(actor, sword, { requiredHands: 1 }).ok, true);
-  assert.equal(canUseHeldItemForHandRequirement(actor, sword, { requiredHands: 2 }).ok, false);
+  assert.equal(canUseHeldItemForHandRequirement(actor, sword, { requiredHands: 2 }).ok, true);
+  assert.equal(canUseHeldItemForHandRequirement(blockedActor, sword, { requiredHands: 2 }).ok, false);
   assert.equal(canUseHeldItemForHandRequirement(actor, dagger, { requiredHands: 1 }).ok, false);
 });
 

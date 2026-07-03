@@ -499,7 +499,8 @@ export function getHeldItemEquipPresentation(item) {
 export function canUseHeldItemForHandRequirement(actor, item, { requiredHands = 1 } = {}) {
   const required = positiveInteger(requiredHands, 1);
   const heldHands = isItemEquipped(item) ? getItemHeldHands(item) : [];
-  const freeHands = getFreeHandSlots(actor, { exceptItem: item });
+  const heldHandSet = new Set(heldHands);
+  const freeHands = getFreeHandSlots(actor, { exceptItem: item }).filter((hand) => !heldHandSet.has(hand));
   if (required <= 0) {
     return {
       ok: true,
@@ -520,10 +521,10 @@ export function canUseHeldItemForHandRequirement(actor, item, { requiredHands = 
     };
   }
 
-  if (heldHands.length < required) {
+  if ((heldHands.length + freeHands.length) < required) {
     return {
       ok: false,
-      reason: "insufficientHeldHands",
+      reason: "insufficientAvailableHands",
       requiredHands: required,
       heldHands,
       freeHands

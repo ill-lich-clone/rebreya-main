@@ -237,7 +237,7 @@ test("weapon attack activities are allowed after the item was taken in hand", ()
   assert.equal(service.applyDnd5ePreUseActivity(activity), true);
 });
 
-test("two-handed weapon property requires two held hands even before hand flags are rebuilt", () => {
+test("two-handed weapon attacks can use a free second hand but not an occupied one", () => {
   const warnings = [];
   const previousWarn = globalThis.ui.notifications.warn;
   globalThis.ui.notifications.warn = (message) => warnings.push(message);
@@ -262,7 +262,34 @@ test("two-handed weapon property requires two held hands even before hand flags 
 
     const service = new CombatAttackService({});
 
-    assert.equal(service.applyDnd5ePreUseActivity(activity), false);
+    assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+    assert.equal(warnings.length, 0);
+
+    const occupiedWeapon = makeWeaponItem({
+      id: "occupied-bow",
+      heldHands: ["right"],
+      properties: ["two"]
+    });
+    const offhandItem = makeWeaponItem({
+      id: "offhand-item",
+      heldHands: ["left"]
+    });
+    const occupiedActor = makeActor([occupiedWeapon, offhandItem]);
+    occupiedWeapon.actor = occupiedActor;
+    offhandItem.actor = occupiedActor;
+    const blockedActivity = {
+      type: "attack",
+      actor: occupiedActor,
+      item: occupiedWeapon,
+      attack: {
+        type: {
+          value: "melee"
+        }
+      },
+      range: {}
+    };
+
+    assert.equal(service.applyDnd5ePreUseActivity(blockedActivity), false);
     assert.match(warnings.at(-1), /2/u);
   }
   finally {
