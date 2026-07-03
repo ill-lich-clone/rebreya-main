@@ -389,6 +389,126 @@ test("weapon usage cards keep a damage button for base weapon damage", () => {
   assert.ok(buttons.some((button) => button?.dataset?.action === "rollDamage"));
 });
 
+test("weapon usage card damage button survives dnd5e activity replacement", () => {
+  const weapon = makeWeaponItem({
+    heldHands: ["left", "right"],
+    handRequirement: {
+      requiredHands: 1,
+      allowedHands: [1, 2],
+      versatile: true
+    },
+    properties: ["ver"],
+    attackModes: [
+      { value: "oneHanded", label: "One-Handed" },
+      { value: "twoHanded", label: "Two-Handed" }
+    ]
+  });
+  weapon.system.damage = {
+    base: {
+      formula: "1d8 + @mod"
+    },
+    versatile: {
+      formula: "1d10"
+    }
+  };
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+
+  class ReplacementAttackActivity {
+    constructor(item) {
+      this.id = "attack-activity";
+      this.type = "attack";
+      this.actor = actor;
+      this.item = item;
+      this.damage = {
+        includeBase: true,
+        parts: []
+      };
+      this.attack = {
+        type: {
+          value: "melee"
+        }
+      };
+      this.range = {};
+    }
+
+    _usageChatButtons() {
+      return [
+        {
+          label: "Attack",
+          dataset: {
+            action: "rollAttack"
+          }
+        }
+      ];
+    }
+  }
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(new ReplacementAttackActivity(weapon), {}), true);
+  const replacementButtons = new ReplacementAttackActivity(weapon)._usageChatButtons({});
+  const damageButton = replacementButtons.find((button) => button?.dataset?.action === "rollDamage");
+  assert.ok(damageButton);
+  assert.equal(damageButton.dataset.attackMode, "twoHanded");
+});
+
+test("versatile held weapon damage rolls use two-handed damage when attack mode is missing", () => {
+  const weapon = makeWeaponItem({
+    heldHands: ["left", "right"],
+    handRequirement: {
+      requiredHands: 1,
+      allowedHands: [1, 2],
+      versatile: true
+    },
+    properties: ["ver"],
+    attackModes: [
+      { value: "oneHanded", label: "One-Handed" },
+      { value: "twoHanded", label: "Two-Handed" }
+    ]
+  });
+  weapon.system.damage = {
+    base: {
+      number: 1,
+      denomination: 8
+    },
+    versatile: {
+      number: 1,
+      denomination: 10
+    }
+  };
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+  const activity = {
+    id: "attack-activity",
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: {
+      type: {
+        value: "melee"
+      }
+    },
+    range: {}
+  };
+  const config = {
+    subject: activity,
+    rolls: [
+      {
+        base: true,
+        parts: ["1d8", "@mod"],
+        data: {}
+      }
+    ]
+  };
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5eDamageRollConfig(config, {}, {}), true);
+  assert.equal(config.attackMode, "twoHanded");
+  assert.deepEqual(config.rolls[0].parts, ["1d10", "@mod"]);
+});
+
 test("fighter dominance maneuvers retarget shared dominance dice item and creature targeting before use", () => {
   const dominanceItem = {
     id: "actualDominanceItemId",

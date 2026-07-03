@@ -19,6 +19,8 @@ const FIREARM_MAINTENANCE_TOOL_IDS = ["art:tinker", "tinker", "tink"];
 const REACTION_STATE_FLAG = "reactionState";
 const REACTION_DEFAULT_MAX_USES = 1;
 const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
+const PATCHED_USAGE_BUTTON_PROTOTYPES = new WeakSet();
+const LEADING_DAMAGE_DICE_PATTERN = /^\s*\d+\s*[dк]\s*\d+(?:k[hl]\d+)?/iu;
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -42,6 +44,59 @@ function signedNumber(value) {
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
+}
+
+function damagePartFormula(part) {
+  if (!part) {
+    return "";
+  }
+
+  if (typeof part === "string") {
+    return cleanText(part);
+  }
+
+  const directFormula = cleanText(part.formula ?? foundry.utils.getProperty(part, "custom.formula"));
+  if (directFormula) {
+    return directFormula;
+  }
+
+  const number = Math.max(0, Math.floor(toNumber(part.number, 0)));
+  const denomination = Math.max(0, Math.floor(toNumber(part.denomination, 0)));
+  if (!number || !denomination) {
+    return "";
+  }
+
+  const bonus = cleanText(part.bonus);
+  return bonus ? `${number}d${denomination} + ${bonus}` : `${number}d${denomination}`;
+}
+
+function replaceLeadingDamageDice(formula, replacement) {
+  const safeFormula = cleanText(formula);
+  const safeReplacement = cleanText(replacement);
+  if (!safeFormula || !safeReplacement || !LEADING_DAMAGE_DICE_PATTERN.test(safeFormula)) {
+    return safeFormula;
+  }
+
+  return safeFormula.replace(LEADING_DAMAGE_DICE_PATTERN, safeReplacement);
+}
+
+function replaceDamageRollBaseDice(rollConfig, replacement) {
+  const safeReplacement = cleanText(replacement);
+  if (!safeReplacement) {
+    return false;
+  }
+
+  if (!Array.isArray(rollConfig?.parts)) {
+    return false;
+  }
+
+  const index = rollConfig.parts.findIndex((part) => LEADING_DAMAGE_DICE_PATTERN.test(cleanText(part)));
+  if (index < 0) {
+    return false;
+  }
+
+  rollConfig.parts[index] = replaceLeadingDamageDice(rollConfig.parts[index], safeReplacement);
+  return true;
 }
 
 function isConfiguredDnd5eToolId(toolId) {
@@ -95,7 +150,10 @@ function normalizeLookupText(value) {
 
 function readDocumentFlag(document, scope, key) {
   if (typeof document?.getFlag === "function") {
-    return document.getFlag(scope, key);
+    const value = document.getFlag(scope, key);
+    if (value !== undefined) {
+      return value;
+    }
   }
 
   return foundry.utils.getProperty(document, `flags.${scope}.${key}`);
@@ -226,6 +284,81 @@ function getWeaponTypeValue(item) {
 
 function isWeaponItem(item) {
   return item instanceof Item && item.type === "weapon";
+}
+
+function isWeaponAttackActivity(activity) {
+  if (!activity) {
+    return false;
+  }
+
+  if (!isWeaponItem(activity.item ?? null)) {
+    return false;
+  }
+
+  return String(activity.type ?? "").trim().toLowerCase() === "attack";
+}
+
+function activityHasBaseWeaponDamage(activity) {
+  if (!isWeaponAttackActivity(activity)) {
+    return false;
+  }
+
+  if (foundry.utils.getProperty(activity, "damage.includeBase") === false) {
+    return false;
+  }
+
+  const item = activity.item ?? null;
+  if (foundry.utils.getProperty(item, "system.offersBaseDamage") === false) {
+    return false;
+  }
+
+  return Boolean(damagePartFormula(foundry.utils.getProperty(item, "system.damage.base")));
+}
+
+function readActivityAttackMode(activity) {
+  const activityId = cleanText(activity?.id ?? activity?._id);
+  if (!activityId) {
+    return "";
+  }
+
+  return cleanText(readDocumentFlag(activity?.item, "dnd5e", `last.${activityId}.attackMode`));
+}
+
+function ensureBaseDamageUsageButtons(activity, buttons) {
+  const safeButtons = Array.from(buttons ?? []);
+  if (!activityHasBaseWeaponDamage(activity)) {
+    return safeButtons;
+  }
+
+  const attackMode = readActivityAttackMode(activity);
+  const damageButton = safeButtons.find((button) => button?.dataset?.action === "rollDamage");
+  if (damageButton) {
+    damageButton.dataset ??= {};
+    if (attackMode && !damageButton.dataset.attackMode) {
+      damageButton.dataset.attackMode = attackMode;
+    }
+    return safeButtons;
+  }
+
+  const nextDamageButton = {
+    label: globalThis.game?.i18n?.localize?.("DND5E.Damage") ?? "Damage",
+    icon: '<i class="fa-solid fa-burst" inert></i>',
+    dataset: {
+      action: "rollDamage"
+    }
+  };
+  if (attackMode) {
+    nextDamageButton.dataset.attackMode = attackMode;
+  }
+
+  const attackButtonIndex = safeButtons.findIndex((button) => button?.dataset?.action === "rollAttack");
+  if (attackButtonIndex >= 0) {
+    safeButtons.splice(attackButtonIndex + 1, 0, nextDamageButton);
+  }
+  else {
+    safeButtons.unshift(nextDamageButton);
+  }
+  return safeButtons;
 }
 
 function isMeleeWeaponItem(item) {
@@ -1151,17 +1284,7 @@ export class CombatAttackService {
   }
 
   #isWeaponAttackActivity(activity) {
-    if (!activity) {
-      return false;
-    }
-
-    const item = activity.item ?? null;
-    if (!isWeaponItem(item)) {
-      return false;
-    }
-
-    const activityType = String(activity.type ?? "").trim().toLowerCase();
-    return activityType === "attack";
+    return isWeaponAttackActivity(activity);
   }
 
   #resolveRequiredHands(activity) {
@@ -1212,30 +1335,28 @@ export class CombatAttackService {
     }
   }
 
-  #hasBaseWeaponDamage(activity) {
-    if (!this.#isWeaponAttackActivity(activity)) {
-      return false;
+  #applyHeldVersatileDamageMode(activity, config = {}) {
+    if (!this.#isHeldVersatileTwoHandedAttack(activity)) {
+      return;
     }
 
-    if (foundry.utils.getProperty(activity, "damage.includeBase") === false) {
-      return false;
-    }
-
+    config.attackMode = "twoHanded";
     const item = activity.item ?? null;
-    if (foundry.utils.getProperty(item, "system.offersBaseDamage") === false) {
-      return false;
+    const versatileFormula = damagePartFormula(foundry.utils.getProperty(item, "system.damage.versatile"));
+    if (!versatileFormula) {
+      return;
     }
 
-    const baseDamage = foundry.utils.getProperty(item, "system.damage.base");
-    if (!baseDamage) {
-      return false;
+    const baseDamageRollConfig = (config?.rolls ?? []).find((entry) => entry?.base) ?? config?.rolls?.[0] ?? null;
+    if (!baseDamageRollConfig) {
+      return;
     }
 
-    if (cleanText(baseDamage.formula) || cleanText(foundry.utils.getProperty(baseDamage, "custom.formula"))) {
-      return true;
-    }
+    replaceDamageRollBaseDice(baseDamageRollConfig, versatileFormula);
+  }
 
-    return toNumber(baseDamage.number, 0) > 0 && toNumber(baseDamage.denomination, 0) > 0;
+  #hasBaseWeaponDamage(activity) {
+    return activityHasBaseWeaponDamage(activity);
   }
 
   #ensureBaseDamageUsageButton(activity) {
@@ -1243,33 +1364,28 @@ export class CombatAttackService {
       return;
     }
 
-    if (activity.__rebreyaBaseDamageUsageButton === true) {
-      return;
+    const prototype = Object.getPrototypeOf(activity);
+    if (
+      prototype
+      && prototype !== Object.prototype
+      && typeof prototype._usageChatButtons === "function"
+      && !PATCHED_USAGE_BUTTON_PROTOTYPES.has(prototype)
+    ) {
+      const originalUsageChatButtons = prototype._usageChatButtons;
+      Object.defineProperty(prototype, "_usageChatButtons", {
+        value(message) {
+          return ensureBaseDamageUsageButtons(this, originalUsageChatButtons.call(this, message));
+        },
+        configurable: true,
+        writable: true
+      });
+      PATCHED_USAGE_BUTTON_PROTOTYPES.add(prototype);
     }
 
-    const originalUsageChatButtons = activity._usageChatButtons.bind(activity);
-    activity._usageChatButtons = (message) => {
-      const buttons = Array.from(originalUsageChatButtons(message) ?? []);
-      if (buttons.some((button) => button?.dataset?.action === "rollDamage")) {
-        return buttons;
-      }
-
-      const damageButton = {
-        label: globalThis.game?.i18n?.localize?.("DND5E.Damage") ?? "Damage",
-        icon: '<i class="fa-solid fa-burst" inert></i>',
-        dataset: {
-          action: "rollDamage"
-        }
-      };
-      const attackButtonIndex = buttons.findIndex((button) => button?.dataset?.action === "rollAttack");
-      if (attackButtonIndex >= 0) {
-        buttons.splice(attackButtonIndex + 1, 0, damageButton);
-      }
-      else {
-        buttons.unshift(damageButton);
-      }
-      return buttons;
-    };
+    if (Object.hasOwn(activity, "_usageChatButtons") && activity.__rebreyaBaseDamageUsageButton !== true) {
+      const originalUsageChatButtons = activity._usageChatButtons.bind(activity);
+      activity._usageChatButtons = (message) => ensureBaseDamageUsageButtons(activity, originalUsageChatButtons(message));
+    }
     Object.defineProperty(activity, "__rebreyaBaseDamageUsageButton", {
       value: true,
       configurable: true
@@ -2009,6 +2125,8 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
+      this.#applyHeldVersatileDamageMode(activity, config);
+
       const automation = this.#getLichAutomationState(item);
       const mu = Math.max(0, Math.floor(toNumber(automation.mu, 0)));
       const mku = Math.max(0, Math.floor(toNumber(automation.mku, 0)));
