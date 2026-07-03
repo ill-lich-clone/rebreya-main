@@ -26,6 +26,7 @@ import {
 } from "./universal-belt.js";
 import {
   buildHeldItemEquipMenuActions,
+  getHeldItemEquipPresentation,
   isHeldItemEligible
 } from "./held-items.js";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
@@ -5740,6 +5741,28 @@ function findHeldItemEquipControl(row) {
   return null;
 }
 
+function applyHeldItemEquipPresentation(control, presentation) {
+  if (!(control instanceof HTMLElement) || !presentation) {
+    return;
+  }
+
+  const label = cleanText(presentation.label);
+  const icon = cleanText(presentation.icon);
+  if (label) {
+    control.setAttribute("title", label);
+    control.setAttribute("aria-label", label);
+    control.setAttribute("data-tooltip", label);
+    control.dataset.tooltip = label;
+  }
+
+  if (icon) {
+    const iconNode = control.querySelector?.("i");
+    if (iconNode instanceof HTMLElement) {
+      iconNode.className = icon;
+    }
+  }
+}
+
 function closeHeldItemContextMenu() {
   const existing = document.querySelector?.("[data-rebreya-held-item-context-menu='true']");
   existing?.remove?.();
@@ -5840,7 +5863,7 @@ function bindHeldItemEquipContextMenu(root, { actor, app, moduleApi } = {}) {
   }
 
   for (const row of Array.from(root.querySelectorAll?.("[data-item-id]") ?? [])) {
-    if (!(row instanceof HTMLElement) || row.dataset.rebreyaHeldItemContextBound === "true") {
+    if (!(row instanceof HTMLElement)) {
       continue;
     }
 
@@ -5854,6 +5877,12 @@ function bindHeldItemEquipContextMenu(root, { actor, app, moduleApi } = {}) {
       continue;
     }
 
+    applyHeldItemEquipPresentation(control, getHeldItemEquipPresentation(item));
+
+    if (row.dataset.rebreyaHeldItemContextBound === "true") {
+      continue;
+    }
+
     row.dataset.rebreyaHeldItemContextBound = "true";
     control.addEventListener("contextmenu", (event) => {
       event.preventDefault?.();
@@ -5862,6 +5891,7 @@ function bindHeldItemEquipContextMenu(root, { actor, app, moduleApi } = {}) {
         ...action,
         callback: async () => {
           await item.update?.(action.update);
+          applyHeldItemEquipPresentation(control, action);
           await moduleApi?.refreshOpenApps?.();
           await rerenderActorSheet(app, moduleApi);
         }

@@ -101,13 +101,32 @@ test("hand update patches equip items into a specific hand and can clear hand st
 
 test("equipment context menu actions keep native wear states and add both hands", async () => {
   const {
-    buildHeldItemEquipMenuActions
+    buildHeldItemEquipMenuActions,
+    getHeldItemEquipPresentation
   } = await import(`../scripts/integrations/held-items.js?menu=${Date.now()}`);
 
   const item = makeItem({ id: "sword", equipped: true });
   const actor = makeActor([item]);
   const actions = buildHeldItemEquipMenuActions(actor, item);
 
-  assert.deepEqual(actions.map((action) => action.id), ["worn", "unequipped", "left", "right"]);
-  assert.deepEqual(actions.map((action) => action.label), ["Надето", "Снято", "Левая рука", "Правая рука"]);
+  assert.deepEqual(actions.map((action) => action.id), ["worn", "unequipped", "left", "right", "both"]);
+  assert.deepEqual(actions.map((action) => action.label), ["Надето", "Снято", "Левая рука", "Правая рука", "Две руки"]);
+  assert.notEqual(actions.find((action) => action.id === "left").icon, actions.find((action) => action.id === "right").icon);
+  assert.deepEqual(actions.find((action) => action.id === "both").update, {
+    "system.equipped": true,
+    "flags.rebreya-main.heldHands": ["left", "right"]
+  });
+
+  assert.deepEqual(getHeldItemEquipPresentation(makeItem({
+    id: "sword",
+    equipped: true,
+    flags: {
+      "rebreya-main": {
+        heldHands: ["left", "right"]
+      }
+    }
+  })), {
+    label: "Две руки",
+    icon: "fa-solid fa-hands fa-fw"
+  });
 });

@@ -8,6 +8,28 @@ export const HAND_SLOT_LABELS = Object.freeze({
   left: "Левая рука",
   right: "Правая рука"
 });
+export const HELD_ITEM_PRESENTATIONS = Object.freeze({
+  worn: {
+    label: "Надето",
+    icon: "fa-solid fa-shirt fa-fw"
+  },
+  unequipped: {
+    label: "Снято",
+    icon: "fa-solid fa-box-open fa-fw"
+  },
+  left: {
+    label: HAND_SLOT_LABELS.left,
+    icon: "fa-solid fa-hand-point-left fa-fw"
+  },
+  right: {
+    label: HAND_SLOT_LABELS.right,
+    icon: "fa-solid fa-hand-point-right fa-fw"
+  },
+  both: {
+    label: "Две руки",
+    icon: "fa-solid fa-hands fa-fw"
+  }
+});
 export const HELD_ITEM_ELIGIBLE_TYPES = new Set(["weapon", "equipment", "consumable"]);
 
 const HAND_SLOT_SET = new Set(HAND_SLOTS);
@@ -231,6 +253,23 @@ export function buildHeldItemWornUpdate(equipped = true) {
   };
 }
 
+export function getHeldItemEquipPresentation(item) {
+  if (!isItemEquipped(item)) {
+    return HELD_ITEM_PRESENTATIONS.unequipped;
+  }
+
+  const heldHands = getItemHeldHands(item);
+  if (heldHands.includes("left") && heldHands.includes("right")) {
+    return HELD_ITEM_PRESENTATIONS.both;
+  }
+
+  if (heldHands[0] && HELD_ITEM_PRESENTATIONS[heldHands[0]]) {
+    return HELD_ITEM_PRESENTATIONS[heldHands[0]];
+  }
+
+  return HELD_ITEM_PRESENTATIONS.worn;
+}
+
 export function canUseHeldItemForHandRequirement(actor, item, { requiredHands = 1 } = {}) {
   const required = positiveInteger(requiredHands, 1);
   const heldHands = isItemEquipped(item) ? getItemHeldHands(item) : [];
@@ -276,26 +315,31 @@ export function canUseHeldItemForHandRequirement(actor, item, { requiredHands = 
 
 export function buildHeldItemEquipMenuActions(actor, item) {
   const occupied = getOccupiedHandSlots(actor, { exceptItem: item });
+  const bothDisabled = HAND_SLOTS.some((slot) => occupied.has(slot));
   return [
     {
       id: "worn",
-      label: "Надето",
-      icon: "fa-solid fa-shirt fa-fw",
+      ...HELD_ITEM_PRESENTATIONS.worn,
       update: buildHeldItemWornUpdate(true)
     },
     {
       id: "unequipped",
-      label: "Снято",
-      icon: "fa-solid fa-box-open fa-fw",
+      ...HELD_ITEM_PRESENTATIONS.unequipped,
       update: buildHeldItemWornUpdate(false)
     },
     ...HAND_SLOTS.map((slot) => ({
       id: slot,
-      label: HAND_SLOT_LABELS[slot],
-      icon: "fa-solid fa-hand fa-fw",
+      ...HELD_ITEM_PRESENTATIONS[slot],
       disabled: occupied.has(slot),
       disabledReason: occupied.has(slot) ? "occupied" : "",
       update: buildHeldItemHandUpdate(slot)
-    }))
+    })),
+    {
+      id: "both",
+      ...HELD_ITEM_PRESENTATIONS.both,
+      disabled: bothDisabled,
+      disabledReason: bothDisabled ? "occupied" : "",
+      update: buildHeldItemHandUpdate(HAND_SLOTS)
+    }
   ];
 }
