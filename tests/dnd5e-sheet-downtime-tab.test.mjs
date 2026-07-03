@@ -485,6 +485,103 @@ test("registerDnd5eSheetExtensions renders universal belt slots in the inventory
   }
 });
 
+test("registerDnd5eSheetExtensions adds right-click hand choices to equipped item controls", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?held-item-menu=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const updates = [];
+    const item = {
+      id: "sword",
+      _id: "sword",
+      name: "Sword",
+      type: "weapon",
+      system: { equipped: false },
+      flags: {},
+      getFlag(scope, key) {
+        return String(key ?? "").split(".").reduce((current, part) => (
+          current && typeof current === "object" ? current[part] : undefined
+        ), this.flags?.[scope]);
+      },
+      async update(patch) {
+        updates.push(patch);
+      }
+    };
+    actor.items = {
+      contents: [item],
+      get: (id) => (id === "sword" ? item : null)
+    };
+    const equipControl = new stubs.HTMLElement({
+      dataset: {
+        action: "equip"
+      }
+    });
+    const row = new stubs.HTMLElement({
+      dataset: {
+        itemId: "sword"
+      },
+      selectors: {
+        "[data-action='equip']": equipControl
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-item-id]": [row]
+      }
+    });
+    stubs.document.body = new stubs.HTMLElement();
+    globalThis.window.innerWidth = 800;
+    globalThis.window.innerHeight = 600;
+    const app = {
+      actor,
+      async render() {}
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    assert.equal(equipControl.listeners.contextmenu.length, 1);
+    await equipControl.listeners.contextmenu[0]({
+      clientX: 10,
+      clientY: 20,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const menu = stubs.document.body.children.find((child) => child.classList.contains("rm-context-menu"));
+    assert.ok(menu);
+    const rightHandButton = menu.children.find((child) => (
+      child.children?.some((node) => node.textContent === "Правая рука")
+    ));
+    assert.ok(rightHandButton);
+    await rightHandButton.listeners.click[0]({
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(updates.at(-1), {
+      "system.equipped": true,
+      "flags.rebreya-main.heldHands": ["right"]
+    });
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("registerDnd5eSheetExtensions augments actor sheet conditions with Rebreya statuses and valued inputs", async () => {
   const stubs = installSheetExtensionStubs();
   try {

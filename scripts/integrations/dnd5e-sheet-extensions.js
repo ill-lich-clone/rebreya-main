@@ -24,6 +24,10 @@ import {
   bindUniversalBeltSheet,
   registerUniversalBeltItemContextHook
 } from "./universal-belt.js";
+import {
+  buildHeldItemEquipMenuActions,
+  isHeldItemEligible
+} from "./held-items.js";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
@@ -728,6 +732,16 @@ const CHARACTER_DOWNTIME_ROLL_DEBOUNCE_MS = 750;
 const CHARACTER_DOWNTIME_PROJECT_ACTION_DEBOUNCE_MS = 750;
 const CHARACTER_DOWNTIME_ROLLABLE_SOURCE_TYPES = new Set(["skill", "ability", "save", "tool"]);
 const CHARACTER_DOWNTIME_ABILITY_KEYS = new Set(["str", "dex", "con", "int", "wis", "cha"]);
+const HELD_ITEM_EQUIP_CONTROL_SELECTORS = [
+  "[data-action='equip']",
+  "[data-action='toggle-equip']",
+  "[data-action='item-toggle']",
+  "[data-action='itemToggle']",
+  ".item-control.item-toggle",
+  "[data-tooltip*='Equipped']",
+  "[aria-label*='Надето']",
+  "[title*='Надето']"
+];
 
 function isDnd5eWorld() {
   return game.system?.id === "dnd5e";
@@ -5696,6 +5710,172 @@ function bindItemSheetEnhancements(root, app) {
   upsertWeaponAttackTraitsField(root, app);
 }
 
+function resolveActorItem(actor, itemId) {
+  const id = cleanText(itemId);
+  if (!actor || !id) {
+    return null;
+  }
+
+  const directItem = actor.items?.get?.(id);
+  if (directItem) {
+    return directItem;
+  }
+
+  const items = Array.isArray(actor.items?.contents)
+    ? actor.items.contents
+    : Array.isArray(actor.items)
+      ? actor.items
+      : [];
+  return items.find((item) => cleanText(item?.id ?? item?._id) === id) ?? null;
+}
+
+function findHeldItemEquipControl(row) {
+  for (const selector of HELD_ITEM_EQUIP_CONTROL_SELECTORS) {
+    const control = row.querySelector?.(selector);
+    if (control instanceof HTMLElement) {
+      return control;
+    }
+  }
+
+  return null;
+}
+
+function closeHeldItemContextMenu() {
+  const existing = document.querySelector?.("[data-rebreya-held-item-context-menu='true']");
+  existing?.remove?.();
+}
+
+function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [] } = {}) {
+  closeHeldItemContextMenu();
+  if (!Array.isArray(actions) || !actions.length || !document?.body) {
+    return null;
+  }
+
+  const menuRoot = document.createElement("div");
+  menuRoot.classList.add("rm-context-menu");
+  menuRoot.dataset.rebreyaHeldItemContextMenu = "true";
+  menuRoot.setAttribute("role", "menu");
+
+  if (title) {
+    const titleNode = document.createElement("p");
+    titleNode.classList.add("rm-context-menu__title");
+    titleNode.textContent = title;
+    menuRoot.append(titleNode);
+  }
+
+  for (const action of actions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.classList.add("rm-context-menu__item");
+    button.disabled = action.disabled === true;
+    button.dataset.action = action.id;
+    if (action.disabledReason) {
+      button.dataset.disabledReason = action.disabledReason;
+    }
+
+    if (action.icon) {
+      const iconNode = document.createElement("i");
+      iconNode.className = action.icon;
+      button.append(iconNode);
+    }
+
+    const labelNode = document.createElement("span");
+    labelNode.textContent = action.label ?? "";
+    button.append(labelNode);
+    button.addEventListener("click", async (event) => {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      if (button.disabled) {
+        return;
+      }
+
+      closeHeldItemContextMenu();
+      try {
+        await action.callback?.();
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to run held item context action.`, error);
+        ui.notifications?.error?.(error.message || "Не удалось изменить состояние предмета.");
+      }
+    });
+
+    menuRoot.append(button);
+  }
+
+  document.body.append(menuRoot);
+
+  const bounds = typeof menuRoot.getBoundingClientRect === "function"
+    ? menuRoot.getBoundingClientRect()
+    : { width: 220, height: 180 };
+  const maxLeft = Number.isFinite(window.innerWidth) ? window.innerWidth - bounds.width - 8 : x;
+  const maxTop = Number.isFinite(window.innerHeight) ? window.innerHeight - bounds.height - 8 : y;
+  const safeLeft = Math.max(8, Math.min(x, maxLeft));
+  const safeTop = Math.max(8, Math.min(y, maxTop));
+  menuRoot.style.left = `${safeLeft}px`;
+  menuRoot.style.top = `${safeTop}px`;
+
+  const closeOnPointerDown = (event) => {
+    if (!menuRoot.contains(event.target)) {
+      closeHeldItemContextMenu();
+      document.removeEventListener?.("pointerdown", closeOnPointerDown, true);
+      document.removeEventListener?.("keydown", closeOnKeyDown, true);
+    }
+  };
+  const closeOnKeyDown = (event) => {
+    if (event.key === "Escape") {
+      closeHeldItemContextMenu();
+      document.removeEventListener?.("pointerdown", closeOnPointerDown, true);
+      document.removeEventListener?.("keydown", closeOnKeyDown, true);
+    }
+  };
+
+  document.addEventListener?.("pointerdown", closeOnPointerDown, true);
+  document.addEventListener?.("keydown", closeOnKeyDown, true);
+  return menuRoot;
+}
+
+function bindHeldItemEquipContextMenu(root, { actor, app, moduleApi } = {}) {
+  if (!(root instanceof HTMLElement) || !actor) {
+    return;
+  }
+
+  for (const row of Array.from(root.querySelectorAll?.("[data-item-id]") ?? [])) {
+    if (!(row instanceof HTMLElement) || row.dataset.rebreyaHeldItemContextBound === "true") {
+      continue;
+    }
+
+    const item = resolveActorItem(actor, row.dataset.itemId);
+    if (!item || !isHeldItemEligible(item)) {
+      continue;
+    }
+
+    const control = findHeldItemEquipControl(row);
+    if (!(control instanceof HTMLElement)) {
+      continue;
+    }
+
+    row.dataset.rebreyaHeldItemContextBound = "true";
+    control.addEventListener("contextmenu", (event) => {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      const actions = buildHeldItemEquipMenuActions(actor, item).map((action) => ({
+        ...action,
+        callback: async () => {
+          await item.update?.(action.update);
+          await moduleApi?.refreshOpenApps?.();
+          await rerenderActorSheet(app, moduleApi);
+        }
+      }));
+      openHeldItemContextMenu({
+        x: Number(event.clientX ?? 0),
+        y: Number(event.clientY ?? 0),
+        title: item.name ?? "",
+        actions
+      });
+    }, { capture: true });
+  }
+}
+
 function cleanConfigString(value) {
   return String(value ?? "").trim();
 }
@@ -5975,6 +6155,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       console.error(`${MODULE_ID} | Failed to bind universal belt sheet controls.`, error);
     }
     try {
+      bindHeldItemEquipContextMenu(root, { actor, app, moduleApi });
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to bind held item sheet controls.`, error);
+    }
+    try {
       bindNativeStateCard(root, app);
     }
     catch (error) {
@@ -6035,6 +6221,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind universal belt sheet controls on ApplicationV2 render.`, error);
+      }
+      try {
+        bindHeldItemEquipContextMenu(root, { actor, app, moduleApi });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind held item sheet controls on ApplicationV2 render.`, error);
       }
       try {
         bindNativeStateCard(root, app);

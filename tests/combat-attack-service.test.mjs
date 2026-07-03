@@ -142,6 +142,94 @@ function makeFirearmItem({
   return item;
 }
 
+function makeWeaponItem({
+  id = "sword",
+  name = "Sword",
+  equipped = true,
+  heldHands = []
+} = {}) {
+  return new class extends Item {
+    constructor() {
+      super();
+      this.id = id;
+      this.name = name;
+      this.type = "weapon";
+      this.system = {
+        equipped,
+        type: {
+          value: "simpleM"
+        },
+        range: {
+          units: "ft",
+          reach: 5
+        },
+        properties: {}
+      };
+      this.flags = {
+        [MODULE_ID]: {}
+      };
+      if (heldHands.length) {
+        this.flags[MODULE_ID].heldHands = heldHands;
+      }
+    }
+
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  }();
+}
+
+test("weapon attack activities require the item to already be held in a hand", () => {
+  const warnings = [];
+  const previousWarn = globalThis.ui.notifications.warn;
+  globalThis.ui.notifications.warn = (message) => warnings.push(message);
+  try {
+    const weapon = makeWeaponItem();
+    const actor = makeActor([weapon]);
+    weapon.actor = actor;
+    const activity = {
+      type: "attack",
+      actor,
+      item: weapon,
+      attack: {
+        type: {
+          value: "melee"
+        }
+      },
+      range: {}
+    };
+
+    const service = new CombatAttackService({});
+
+    assert.equal(service.applyDnd5ePreUseActivity(activity), false);
+    assert.match(warnings.at(-1), /возьмите предмет в руку/u);
+  }
+  finally {
+    globalThis.ui.notifications.warn = previousWarn;
+  }
+});
+
+test("weapon attack activities are allowed after the item was taken in hand", () => {
+  const weapon = makeWeaponItem({ heldHands: ["right"] });
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+  const activity = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: {
+      type: {
+        value: "melee"
+      }
+    },
+    range: {}
+  };
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+});
+
 test("fighter dominance maneuvers retarget shared dominance dice item and creature targeting before use", () => {
   const dominanceItem = {
     id: "actualDominanceItemId",

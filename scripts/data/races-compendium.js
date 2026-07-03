@@ -32,9 +32,10 @@ const RACE_FEATURE_ROOT_FOLDER = "Расовые умения Тейванкал
 const DEFAULT_RACE_ICON = "icons/svg/mystery-man.svg";
 const DEFAULT_FEATURE_ICON = "icons/svg/book.svg";
 
-const RACES_TEMPLATE_VERSION = 1;
+const RACES_TEMPLATE_VERSION = 2;
 const RACE_FEATURE_TEMPLATE_VERSION = 1;
 const RACE_AUTOMATION_VERSION = "0.1-dnd5e-5.2.5";
+export const RACE_HANDS_DEFAULT = 2;
 
 const EFFECT_MODE_ADD = 2;
 
@@ -1666,6 +1667,22 @@ function getFixedRaceSize(race) {
   return sizeChoices.length === 1 ? sizeChoices[0] : null;
 }
 
+export function buildRaceFlags(race, signature = "") {
+  return {
+    [MODULE_ID]: {
+      managed: true,
+      sourceType: "race",
+      raceId: race?.id ?? "",
+      fixedSize: getFixedRaceSize(race),
+      hands: {
+        max: RACE_HANDS_DEFAULT
+      },
+      automation: buildFeatureAutomationFlag(race?.automation),
+      signature
+    }
+  };
+}
+
 function buildAdvancementItemGrant(race, itemUuids = []) {
   const items = unique(itemUuids).map((uuid) => ({ uuid, optional: false }));
   return {
@@ -1981,16 +1998,7 @@ function createRaceEntryData(entry, folderIdByPath, iconLookup = null) {
     },
     system: foundry.utils.deepClone(entry.system),
     effects: [],
-    flags: {
-      [MODULE_ID]: {
-        managed: true,
-        sourceType: "race",
-        raceId: entry.race.id,
-        fixedSize: getFixedRaceSize(entry.race),
-        automation: buildFeatureAutomationFlag(entry.race.automation),
-        signature: entry.signature
-      }
-    }
+    flags: buildRaceFlags(entry.race, entry.signature)
   };
 }
 

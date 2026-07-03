@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildRaceAdvancement,
+  buildRaceFlags,
   findStaleGeneratedDocumentIds,
   shouldRebuildManagedPack
 } from "../scripts/data/races-compendium.js";
@@ -117,4 +118,17 @@ test("variable-size races keep the size advancement step", () => {
   const sizeAdvancement = advancement.find((entry) => entry.type === "Size");
 
   assert.deepEqual(sizeAdvancement.configuration.sizes, ["med", "sm"]);
+});
+
+test("generated race flags expose the default two usable hands", () => {
+  const flags = buildRaceFlags({
+    id: "humans",
+    name: "Humans",
+    size: "med",
+    automation: null
+  }, "signature");
+
+  assert.deepEqual(flags["rebreya-main"].hands, {
+    max: 2
+  });
 });

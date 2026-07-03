@@ -1,5 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
+import { canUseHeldItemForHandRequirement } from "../integrations/held-items.js";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -98,6 +99,20 @@ function readDocumentFlag(document, scope, key) {
   }
 
   return foundry.utils.getProperty(document, `flags.${scope}.${key}`);
+}
+
+function readRequiredHands(document) {
+  const directValue = readDocumentFlag(document, MODULE_ID, "requiredHands");
+  if (directValue !== undefined && directValue !== null && directValue !== "") {
+    return directValue;
+  }
+
+  const requirement = readDocumentFlag(document, MODULE_ID, "handRequirement");
+  if (isPlainObject(requirement)) {
+    return requirement.requiredHands ?? requirement.hands ?? requirement.min;
+  }
+
+  return undefined;
 }
 
 function collectionValues(collection) {
@@ -1135,6 +1150,36 @@ export class CombatAttackService {
     return activityType === "attack";
   }
 
+  #resolveRequiredHands(activity) {
+    return clampInteger(
+      toNumber(
+        readRequiredHands(activity)
+        ?? readRequiredHands(activity?.item)
+        ?? 1,
+        1
+      ),
+      0,
+      99
+    );
+  }
+
+  #ensureHeldWeaponActivity(activity) {
+    const item = activity?.item ?? null;
+    const actor = activity?.actor ?? item?.actor ?? item?.parent ?? null;
+    const requiredHands = this.#resolveRequiredHands(activity);
+    const result = canUseHeldItemForHandRequirement(actor, item, { requiredHands });
+    if (result.ok) {
+      return true;
+    }
+
+    const itemName = cleanText(item?.name, "предмет");
+    const message = requiredHands > 1
+      ? `Чтобы использовать "${itemName}", возьмите предмет в ${requiredHands} руки.`
+      : `Чтобы использовать "${itemName}", возьмите предмет в руку.`;
+    ui.notifications?.warn?.(message);
+    return false;
+  }
+
   #resolveActivityKey(activity) {
     if (!activity) {
       return "";
@@ -1522,6 +1567,10 @@ export class CombatAttackService {
     try {
       const item = activity.item;
       if (this.#blockJammedFirearm(item)) {
+        return false;
+      }
+
+      if (!this.#ensureHeldWeaponActivity(activity)) {
         return false;
       }
 
