@@ -141,6 +141,72 @@ function getItemQuantity(item) {
   return positiveInteger(quantity, 1);
 }
 
+function cleanFormula(value) {
+  return String(value ?? "").trim();
+}
+
+function getDamagePartFormula(part) {
+  if (!part || typeof part !== "object") {
+    return "";
+  }
+
+  const explicitFormula = cleanFormula(part.formula);
+  if (explicitFormula) {
+    return explicitFormula;
+  }
+
+  const customFormula = cleanFormula(part.custom?.formula);
+  if (part.custom?.enabled === true && customFormula) {
+    return customFormula;
+  }
+
+  const denomination = positiveInteger(part.denomination, 0);
+  if (denomination <= 0) {
+    return customFormula;
+  }
+
+  const number = Math.max(1, positiveInteger(part.number, 1));
+  const bonus = cleanFormula(part.bonus);
+  return `${number}d${denomination}${bonus ? ` + ${bonus}` : ""}`;
+}
+
+function replaceLeadingDamageFormula(formula, replacement) {
+  const safeFormula = cleanFormula(formula);
+  const safeReplacement = cleanFormula(replacement);
+  if (!safeReplacement) {
+    return safeFormula;
+  }
+
+  if (!safeFormula) {
+    return safeReplacement;
+  }
+
+  const leadingDamagePattern = /^\s*\d+\s*[dк]\s*\d+(?:k[hl]\d+)?/iu;
+  if (!leadingDamagePattern.test(safeFormula)) {
+    return safeReplacement;
+  }
+
+  return safeFormula.replace(leadingDamagePattern, safeReplacement);
+}
+
+function itemReplacementDescriptor(slot, item) {
+  if (!item) {
+    return null;
+  }
+
+  return {
+    slot,
+    itemId: itemId(item),
+    itemName: String(item?.name ?? itemId(item) ?? "").trim()
+  };
+}
+
+function itemReplacementDescriptors(occupied, slots) {
+  return slots
+    .map((slot) => itemReplacementDescriptor(slot, occupied.get(slot)))
+    .filter(Boolean);
+}
+
 function collectionValues(collection) {
   if (!collection) {
     return [];
@@ -311,6 +377,24 @@ export function canHoldItemInTwoHands(item) {
   return true;
 }
 
+export function getHeldItemDamageFormulaPresentation(item, formula) {
+  const safeFormula = cleanFormula(formula);
+  if (getItemHeldHands(item).length < 2) {
+    return safeFormula;
+  }
+
+  const requirement = getItemHandRequirement(item);
+  const isVersatile = requirement?.versatile === true
+    || getProperty(item, "system.isVersatile") === true
+    || hasSystemProperty(item, "ver");
+  if (!isVersatile) {
+    return safeFormula;
+  }
+
+  const versatileFormula = getDamagePartFormula(getProperty(item, "system.damage.versatile"));
+  return versatileFormula ? replaceLeadingDamageFormula(safeFormula, versatileFormula) : safeFormula;
+}
+
 export function getActorHandCapacity(actor) {
   const actorCapacity = readHandCapacity(getDocumentFlag(actor, RACE_HANDS_FLAG));
   if (actorCapacity > 0) {
@@ -380,6 +464,12 @@ export function buildHeldItemWornUpdate(equipped = true) {
   };
 }
 
+export function buildHeldItemReleaseHandUpdate(item, hands) {
+  const releasedHands = new Set(normalizeHeldHands(hands));
+  const remainingHands = getItemHeldHands(item).filter((hand) => !releasedHands.has(hand));
+  return remainingHands.length ? buildHeldItemHandUpdate(remainingHands) : buildHeldItemWornUpdate(true);
+}
+
 export function getHeldItemEquipPresentation(item) {
   if (!isItemEquipped(item)) {
     return HELD_ITEM_PRESENTATIONS.unequipped;
@@ -442,7 +532,6 @@ export function canUseHeldItemForHandRequirement(actor, item, { requiredHands = 
 
 export function buildHeldItemEquipMenuActions(actor, item) {
   const occupied = getOccupiedHandSlots(actor, { exceptItem: item });
-  const bothDisabled = HAND_SLOTS.some((slot) => occupied.has(slot));
   const actions = [
     {
       id: "worn",
@@ -457,18 +546,25 @@ export function buildHeldItemEquipMenuActions(actor, item) {
     ...HAND_SLOTS.map((slot) => ({
       id: slot,
       ...HELD_ITEM_PRESENTATIONS[slot],
-      disabled: occupied.has(slot),
-      disabledReason: occupied.has(slot) ? "occupied" : "",
+      disabled: false,
+      occupied: occupied.has(slot),
+      replacements: itemReplacementDescriptors(occupied, [slot]),
+      tooltip: occupied.has(slot) ? `Заменить ${occupied.get(slot)?.name ?? "предмет"}` : "",
       update: buildHeldItemHandUpdate(slot)
     }))
   ];
 
   if (canHoldItemInTwoHands(item)) {
+    const replacements = itemReplacementDescriptors(occupied, HAND_SLOTS);
     actions.push({
       id: "both",
       ...HELD_ITEM_PRESENTATIONS.both,
-      disabled: bothDisabled,
-      disabledReason: bothDisabled ? "occupied" : "",
+      disabled: false,
+      occupied: replacements.length > 0,
+      replacements,
+      tooltip: replacements.length
+        ? `Заменить ${Array.from(new Set(replacements.map((entry) => entry.itemName))).join(", ")}`
+        : "",
       update: buildHeldItemHandUpdate(HAND_SLOTS)
     });
   }

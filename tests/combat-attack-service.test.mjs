@@ -287,6 +287,7 @@ test("versatile weapon attacks use two-handed mode when the item is held in both
   const actor = makeActor([weapon]);
   weapon.actor = actor;
   const activity = {
+    id: "attack-activity",
     type: "attack",
     actor,
     item: weapon,
@@ -303,6 +304,7 @@ test("versatile weapon attacks use two-handed mode when the item is held in both
 
   assert.equal(service.applyDnd5ePreUseActivity(activity, usageConfig), true);
   assert.equal(usageConfig.attackMode, "twoHanded");
+  assert.equal(weapon.flags.dnd5e?.last?.["attack-activity"]?.attackMode, "twoHanded");
 });
 
 test("fighter dominance maneuvers retarget shared dominance dice item and creature targeting before use", () => {

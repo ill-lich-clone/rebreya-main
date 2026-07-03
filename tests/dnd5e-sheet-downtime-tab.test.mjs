@@ -582,6 +582,141 @@ test("registerDnd5eSheetExtensions adds right-click hand choices to equipped ite
   }
 });
 
+test("held item context menu can replace an occupied hand slot after confirmation", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?held-item-replace=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const oldUpdates = [];
+    const newUpdates = [];
+    const occupiedItem = {
+      id: "mace",
+      _id: "mace",
+      name: "Mace",
+      type: "weapon",
+      system: { equipped: true },
+      flags: {
+        "rebreya-main": {
+          heldHands: ["left"]
+        }
+      },
+      getFlag(scope, key) {
+        return String(key ?? "").split(".").reduce((current, part) => (
+          current && typeof current === "object" ? current[part] : undefined
+        ), this.flags?.[scope]);
+      },
+      async update(patch) {
+        oldUpdates.push(patch);
+      }
+    };
+    const replacementItem = {
+      id: "sword",
+      _id: "sword",
+      name: "Sword",
+      type: "weapon",
+      system: { equipped: true },
+      flags: {},
+      getFlag(scope, key) {
+        return String(key ?? "").split(".").reduce((current, part) => (
+          current && typeof current === "object" ? current[part] : undefined
+        ), this.flags?.[scope]);
+      },
+      async update(patch) {
+        newUpdates.push(patch);
+      }
+    };
+    actor.items = {
+      contents: [occupiedItem, replacementItem],
+      get: (id) => [occupiedItem, replacementItem].find((item) => item.id === id) ?? null
+    };
+    const equipControl = new stubs.HTMLElement({
+      dataset: {
+        action: "equip"
+      }
+    });
+    const row = new stubs.HTMLElement({
+      dataset: {
+        itemId: "sword"
+      },
+      selectors: {
+        "[data-action='equip']": equipControl
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-item-id]": [row]
+      }
+    });
+    stubs.document.body = new stubs.HTMLElement();
+    globalThis.window.innerWidth = 800;
+    globalThis.window.innerHeight = 600;
+    const confirmations = [];
+    globalThis.foundry.applications = {
+      api: {
+        DialogV2: {
+          async confirm(config) {
+            confirmations.push(config);
+            return true;
+          }
+        }
+      }
+    };
+    const app = {
+      actor,
+      async render() {}
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    await equipControl.listeners.contextmenu[0]({
+      clientX: 10,
+      clientY: 20,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const menu = stubs.document.body.children.find((child) => child.classList.contains("rm-context-menu"));
+    const leftHandButton = menu.children.find((child) => (
+      child.children?.some((node) => node.textContent === "Левая рука")
+    ));
+    assert.ok(leftHandButton);
+    assert.equal(leftHandButton.disabled, false);
+    assert.equal(leftHandButton.classList.contains("is-muted"), true);
+
+    await leftHandButton.listeners.click[0]({
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.equal(confirmations.length, 1);
+    assert.deepEqual(oldUpdates.at(-1), {
+      "system.equipped": true,
+      "flags.rebreya-main.-=heldHands": null
+    });
+    assert.deepEqual(newUpdates.at(-1), {
+      "system.equipped": true,
+      "flags.rebreya-main.heldHands": ["left"]
+    });
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("registerDnd5eSheetExtensions reflects selected held state on the native equip control", async () => {
   const stubs = installSheetExtensionStubs();
   try {
@@ -658,6 +793,104 @@ test("registerDnd5eSheetExtensions reflects selected held state on the native eq
     assert.equal(equipControl.getAttribute("aria-label"), "Правая рука");
     assert.equal(equipControl.dataset.tooltip, "Правая рука");
     assert.equal(icon.className, "fa-solid fa-hand-point-right fa-fw");
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("registerDnd5eSheetExtensions shows versatile damage formula for two-handed held weapons", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?held-item-formula=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const item = {
+      id: "longsword",
+      _id: "longsword",
+      name: "Longsword",
+      type: "weapon",
+      system: {
+        equipped: true,
+        properties: ["ver"],
+        damage: {
+          versatile: {
+            number: 1,
+            denomination: 10,
+            bonus: "",
+            custom: {
+              enabled: false,
+              formula: ""
+            }
+          }
+        }
+      },
+      flags: {
+        "rebreya-main": {
+          heldHands: ["left", "right"],
+          handRequirement: {
+            requiredHands: 1,
+            allowedHands: [1, 2],
+            versatile: true
+          }
+        }
+      },
+      getFlag(scope, key) {
+        return String(key ?? "").split(".").reduce((current, part) => (
+          current && typeof current === "object" ? current[part] : undefined
+        ), this.flags?.[scope]);
+      }
+    };
+    actor.items = {
+      contents: [item],
+      get: (id) => (id === "longsword" ? item : null)
+    };
+    const formulaNode = new stubs.HTMLElement();
+    formulaNode.textContent = "1d8 + 10";
+    const equipControl = new stubs.HTMLElement({
+      dataset: {
+        action: "equip"
+      }
+    });
+    const row = new stubs.HTMLElement({
+      dataset: {
+        itemId: "longsword"
+      },
+      selectors: {
+        "[data-action='equip']": equipControl
+      },
+      selectorAll: {
+        "[data-column-id='formula'] .formula": [formulaNode],
+        ".item-formula .formula": [formulaNode]
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-item-id]": [row]
+      }
+    });
+    const app = {
+      actor,
+      async render() {}
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    assert.equal(formulaNode.textContent, "1d10 + 10");
+    assert.equal(formulaNode.dataset.rebreyaBaseFormula, "1d8 + 10");
   }
   finally {
     stubs.restore();

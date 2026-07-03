@@ -153,6 +153,26 @@ test("equipment context menu actions keep native wear states and add eligible tw
   assert.equal(canHoldItemInTwoHands(lightWeapon), true);
   assert.ok(buildHeldItemEquipMenuActions(makeActor([lightWeapon]), lightWeapon).some((action) => action.id === "both"));
 
+  const leftHandWeapon = makeItem({
+    id: "left-hand-weapon",
+    equipped: true,
+    flags: {
+      "rebreya-main": {
+        heldHands: ["left"]
+      }
+    }
+  });
+  const replacement = makeItem({ id: "replacement", equipped: true });
+  const replacementActions = buildHeldItemEquipMenuActions(makeActor([leftHandWeapon, replacement]), replacement);
+  const replaceLeftAction = replacementActions.find((action) => action.id === "left");
+  assert.equal(replaceLeftAction.disabled, false);
+  assert.equal(replaceLeftAction.occupied, true);
+  assert.deepEqual(replaceLeftAction.replacements, [{
+    slot: "left",
+    itemId: "left-hand-weapon",
+    itemName: "left-hand-weapon"
+  }]);
+
   assert.deepEqual(getHeldItemEquipPresentation(makeItem({
     id: "sword",
     equipped: true,

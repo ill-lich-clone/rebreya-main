@@ -26,6 +26,8 @@ import {
 } from "./universal-belt.js";
 import {
   buildHeldItemEquipMenuActions,
+  buildHeldItemReleaseHandUpdate,
+  getHeldItemDamageFormulaPresentation,
   getHeldItemEquipPresentation,
   isHeldItemEligible
 } from "./held-items.js";
@@ -5763,6 +5765,103 @@ function applyHeldItemEquipPresentation(control, presentation) {
   }
 }
 
+function getHeldItemFormulaNodes(row) {
+  const nodes = new Set();
+  for (const selector of ["[data-column-id='formula'] .formula", ".item-formula .formula"]) {
+    for (const node of Array.from(row?.querySelectorAll?.(selector) ?? [])) {
+      if (node instanceof HTMLElement) {
+        nodes.add(node);
+      }
+    }
+  }
+
+  return Array.from(nodes);
+}
+
+function applyHeldItemDamageFormulaPresentation(row, item) {
+  if (!(row instanceof HTMLElement) || !item) {
+    return;
+  }
+
+  for (const node of getHeldItemFormulaNodes(row)) {
+    const baseFormula = cleanText(node.dataset.rebreyaBaseFormula) || cleanText(node.textContent);
+    const displayFormula = getHeldItemDamageFormulaPresentation(item, baseFormula);
+    if (!displayFormula || displayFormula === baseFormula) {
+      if (node.dataset.rebreyaBaseFormula) {
+        node.textContent = node.dataset.rebreyaBaseFormula;
+        delete node.dataset.rebreyaBaseFormula;
+      }
+      continue;
+    }
+
+    node.dataset.rebreyaBaseFormula = baseFormula;
+    node.textContent = displayFormula;
+  }
+}
+
+async function confirmHeldItemReplacement(item, action) {
+  const replacements = Array.isArray(action?.replacements) ? action.replacements : [];
+  if (!replacements.length) {
+    return true;
+  }
+
+  const replacedNames = Array.from(new Set(replacements.map((entry) => cleanText(entry.itemName)).filter(Boolean)));
+  const itemName = cleanText(item?.name, "предмет");
+  const content = `<p>Заменить ${escapeHtml(replacedNames.join(", ") || "предмет")} на ${escapeHtml(itemName)}?</p>`;
+  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+  if (typeof DialogV2?.confirm === "function") {
+    return DialogV2.confirm({
+      window: {
+        title: "Заменить предмет в руке"
+      },
+      content,
+      yes: {
+        label: "Заменить"
+      },
+      no: {
+        label: "Отмена"
+      }
+    });
+  }
+
+  if (typeof globalThis.Dialog?.confirm === "function") {
+    return globalThis.Dialog.confirm({
+      title: "Заменить предмет в руке",
+      content,
+      yes: () => true,
+      no: () => false,
+      defaultYes: true
+    });
+  }
+
+  return true;
+}
+
+async function releaseHeldItemReplacementSlots(actor, action) {
+  const replacements = Array.isArray(action?.replacements) ? action.replacements : [];
+  const slotsByItemId = new Map();
+  for (const replacement of replacements) {
+    const itemId = cleanText(replacement.itemId);
+    const slot = cleanText(replacement.slot);
+    if (!itemId || !slot) {
+      continue;
+    }
+
+    const slots = slotsByItemId.get(itemId) ?? [];
+    slots.push(slot);
+    slotsByItemId.set(itemId, slots);
+  }
+
+  for (const [itemId, slots] of slotsByItemId) {
+    const replacementItem = resolveActorItem(actor, itemId);
+    if (!replacementItem) {
+      continue;
+    }
+
+    await replacementItem.update?.(buildHeldItemReleaseHandUpdate(replacementItem, slots));
+  }
+}
+
 function closeHeldItemContextMenu() {
   const existing = document.querySelector?.("[data-rebreya-held-item-context-menu='true']");
   existing?.remove?.();
@@ -5790,8 +5889,16 @@ function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [] } = {}
     const button = document.createElement("button");
     button.type = "button";
     button.classList.add("rm-context-menu__item");
+    if (action.occupied === true) {
+      button.classList.add("is-muted");
+    }
     button.disabled = action.disabled === true;
     button.dataset.action = action.id;
+    if (action.tooltip) {
+      button.setAttribute("title", action.tooltip);
+      button.setAttribute("data-tooltip", action.tooltip);
+      button.dataset.tooltip = action.tooltip;
+    }
     if (action.disabledReason) {
       button.dataset.disabledReason = action.disabledReason;
     }
@@ -5878,6 +5985,7 @@ function bindHeldItemEquipContextMenu(root, { actor, app, moduleApi } = {}) {
     }
 
     applyHeldItemEquipPresentation(control, getHeldItemEquipPresentation(item));
+    applyHeldItemDamageFormulaPresentation(row, item);
 
     if (row.dataset.rebreyaHeldItemContextBound === "true") {
       continue;
@@ -5890,8 +5998,14 @@ function bindHeldItemEquipContextMenu(root, { actor, app, moduleApi } = {}) {
       const actions = buildHeldItemEquipMenuActions(actor, item).map((action) => ({
         ...action,
         callback: async () => {
+          if (!await confirmHeldItemReplacement(item, action)) {
+            return;
+          }
+
+          await releaseHeldItemReplacementSlots(actor, action);
           await item.update?.(action.update);
           applyHeldItemEquipPresentation(control, action);
+          applyHeldItemDamageFormulaPresentation(row, item);
           await moduleApi?.refreshOpenApps?.();
           await rerenderActorSheet(app, moduleApi);
         }

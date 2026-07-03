@@ -115,6 +115,20 @@ function readRequiredHands(document) {
   return undefined;
 }
 
+function writeDocumentFlagSource(document, scope, key, value) {
+  if (!document || !scope || !key) {
+    return;
+  }
+
+  const path = `flags.${scope}.${key}`;
+  if (typeof document.updateSource === "function") {
+    document.updateSource({ [path]: value });
+    return;
+  }
+
+  foundry.utils.setProperty(document, path, value);
+}
+
 function collectionValues(collection) {
   if (!collection) {
     return [];
@@ -1192,6 +1206,10 @@ export class CombatAttackService {
     }
 
     usageConfig.attackMode = "twoHanded";
+    const activityId = cleanText(activity?.id ?? activity?._id);
+    if (activityId) {
+      writeDocumentFlagSource(activity.item, "dnd5e", `last.${activityId}.attackMode`, "twoHanded");
+    }
   }
 
   #ensureHeldWeaponActivity(activity) {

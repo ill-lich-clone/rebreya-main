@@ -564,6 +564,17 @@
   background: rgb(var(--rm-color-gold-rgb) / 0.12);
 }
 
+.rm-context-menu__item.is-muted {
+  opacity: 0.62;
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.35);
+  background: rgb(var(--rm-color-gold-rgb) / 0.08);
+}
+
+.rm-context-menu__item.is-muted:hover {
+  opacity: 0.9;
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.55);
+}
+
 .rm-context-menu__item.is-danger {
   border-color: rgba(229, 125, 112, 0.42);
   color: #ffd8d3;
