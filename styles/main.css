@@ -297,23 +297,15 @@
 .rm-character-sheet-brand {
   display: block;
   max-width: 100%;
-  color: #ffffff;
-  background: linear-gradient(180deg, #ffffff 0%, #eeeeee 46%, #ffffff 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  -webkit-text-stroke: 0.7px rgb(255 255 255 / 0.88);
-  paint-order: stroke fill;
+  color: #f4f1e7;
   font-family: var(--dnd5e-font-modesto);
   font-size: 34px;
   font-weight: 700;
   line-height: 0.94;
   white-space: nowrap;
   text-shadow:
-    0 0 6px rgb(255 255 255 / 0.78),
-    0 0 16px rgb(255 255 255 / 0.42),
-    0 2px 3px rgb(0 0 0 / 0.95),
-    0 0 18px rgb(0 0 0 / 0.9);
+    0 2px 3px rgb(0 0 0 / 0.9),
+    0 0 14px rgb(0 0 0 / 0.8);
   pointer-events: none;
 }
 
