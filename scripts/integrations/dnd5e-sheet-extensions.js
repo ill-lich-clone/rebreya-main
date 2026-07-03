@@ -5889,8 +5889,11 @@ function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [] } = {}
     const button = document.createElement("button");
     button.type = "button";
     button.classList.add("rm-context-menu__item");
-    if (action.occupied === true) {
+    if (action.occupied === true || action.carryOnly === true || action.muted === true) {
       button.classList.add("is-muted");
+    }
+    if (action.carryOnly === true) {
+      button.dataset.carryOnly = "true";
     }
     button.disabled = action.disabled === true;
     button.dataset.action = action.id;

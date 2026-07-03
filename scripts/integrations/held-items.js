@@ -377,6 +377,15 @@ export function canHoldItemInTwoHands(item) {
   return true;
 }
 
+export function itemRequiresTwoHandsForUse(item) {
+  if (!isHeldItemEligible(item)) {
+    return false;
+  }
+
+  const requirement = getItemHandRequirement(item);
+  return requirement?.requiredHands > 1 || hasSystemProperty(item, "two");
+}
+
 export function getHeldItemDamageFormulaPresentation(item, formula) {
   const safeFormula = cleanFormula(formula);
   if (getItemHeldHands(item).length < 2) {
@@ -532,6 +541,7 @@ export function canUseHeldItemForHandRequirement(actor, item, { requiredHands = 
 
 export function buildHeldItemEquipMenuActions(actor, item) {
   const occupied = getOccupiedHandSlots(actor, { exceptItem: item });
+  const singleHandCarryOnly = itemRequiresTwoHandsForUse(item);
   const actions = [
     {
       id: "worn",
@@ -547,9 +557,13 @@ export function buildHeldItemEquipMenuActions(actor, item) {
       id: slot,
       ...HELD_ITEM_PRESENTATIONS[slot],
       disabled: false,
+      carryOnly: singleHandCarryOnly,
       occupied: occupied.has(slot),
       replacements: itemReplacementDescriptors(occupied, [slot]),
-      tooltip: occupied.has(slot) ? `Заменить ${occupied.get(slot)?.name ?? "предмет"}` : "",
+      tooltip: [
+        singleHandCarryOnly ? "Только переноска: для атаки нужны две руки" : "",
+        occupied.has(slot) ? `Заменить ${occupied.get(slot)?.name ?? "предмет"}` : ""
+      ].filter(Boolean).join(". "),
       update: buildHeldItemHandUpdate(slot)
     }))
   ];
@@ -560,6 +574,7 @@ export function buildHeldItemEquipMenuActions(actor, item) {
       id: "both",
       ...HELD_ITEM_PRESENTATIONS.both,
       disabled: false,
+      carryOnly: false,
       occupied: replacements.length > 0,
       replacements,
       tooltip: replacements.length

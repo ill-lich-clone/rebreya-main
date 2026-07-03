@@ -717,6 +717,97 @@ test("held item context menu can replace an occupied hand slot after confirmatio
   }
 });
 
+test("held item context menu marks one-hand choices for two-handed weapons as carrying only", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?held-item-carry-only=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const item = {
+      id: "longbow",
+      _id: "longbow",
+      name: "Longbow",
+      type: "weapon",
+      system: {
+        equipped: true,
+        properties: ["two"]
+      },
+      flags: {},
+      getFlag(scope, key) {
+        return String(key ?? "").split(".").reduce((current, part) => (
+          current && typeof current === "object" ? current[part] : undefined
+        ), this.flags?.[scope]);
+      },
+      async update() {}
+    };
+    actor.items = {
+      contents: [item],
+      get: (id) => (id === "longbow" ? item : null)
+    };
+    const equipControl = new stubs.HTMLElement({
+      dataset: {
+        action: "equip"
+      }
+    });
+    const row = new stubs.HTMLElement({
+      dataset: {
+        itemId: "longbow"
+      },
+      selectors: {
+        "[data-action='equip']": equipControl
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-item-id]": [row]
+      }
+    });
+    stubs.document.body = new stubs.HTMLElement();
+    globalThis.window.innerWidth = 800;
+    globalThis.window.innerHeight = 600;
+    const app = {
+      actor,
+      async render() {}
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    await equipControl.listeners.contextmenu[0]({
+      clientX: 10,
+      clientY: 20,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const menu = stubs.document.body.children.find((child) => child.classList.contains("rm-context-menu"));
+    const leftHandButton = menu.children.find((child) => child.dataset.action === "left");
+    const bothHandsButton = menu.children.find((child) => child.dataset.action === "both");
+
+    assert.ok(leftHandButton);
+    assert.equal(leftHandButton.disabled, false);
+    assert.equal(leftHandButton.classList.contains("is-muted"), true);
+    assert.ok(leftHandButton.dataset.tooltip);
+    assert.ok(bothHandsButton);
+    assert.equal(bothHandsButton.classList.contains("is-muted"), false);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("registerDnd5eSheetExtensions reflects selected held state on the native equip control", async () => {
   const stubs = installSheetExtensionStubs();
   try {

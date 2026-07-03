@@ -1212,6 +1212,70 @@ export class CombatAttackService {
     }
   }
 
+  #hasBaseWeaponDamage(activity) {
+    if (!this.#isWeaponAttackActivity(activity)) {
+      return false;
+    }
+
+    if (foundry.utils.getProperty(activity, "damage.includeBase") === false) {
+      return false;
+    }
+
+    const item = activity.item ?? null;
+    if (foundry.utils.getProperty(item, "system.offersBaseDamage") === false) {
+      return false;
+    }
+
+    const baseDamage = foundry.utils.getProperty(item, "system.damage.base");
+    if (!baseDamage) {
+      return false;
+    }
+
+    if (cleanText(baseDamage.formula) || cleanText(foundry.utils.getProperty(baseDamage, "custom.formula"))) {
+      return true;
+    }
+
+    return toNumber(baseDamage.number, 0) > 0 && toNumber(baseDamage.denomination, 0) > 0;
+  }
+
+  #ensureBaseDamageUsageButton(activity) {
+    if (!this.#hasBaseWeaponDamage(activity) || typeof activity?._usageChatButtons !== "function") {
+      return;
+    }
+
+    if (activity.__rebreyaBaseDamageUsageButton === true) {
+      return;
+    }
+
+    const originalUsageChatButtons = activity._usageChatButtons.bind(activity);
+    activity._usageChatButtons = (message) => {
+      const buttons = Array.from(originalUsageChatButtons(message) ?? []);
+      if (buttons.some((button) => button?.dataset?.action === "rollDamage")) {
+        return buttons;
+      }
+
+      const damageButton = {
+        label: globalThis.game?.i18n?.localize?.("DND5E.Damage") ?? "Damage",
+        icon: '<i class="fa-solid fa-burst" inert></i>',
+        dataset: {
+          action: "rollDamage"
+        }
+      };
+      const attackButtonIndex = buttons.findIndex((button) => button?.dataset?.action === "rollAttack");
+      if (attackButtonIndex >= 0) {
+        buttons.splice(attackButtonIndex + 1, 0, damageButton);
+      }
+      else {
+        buttons.unshift(damageButton);
+      }
+      return buttons;
+    };
+    Object.defineProperty(activity, "__rebreyaBaseDamageUsageButton", {
+      value: true,
+      configurable: true
+    });
+  }
+
   #ensureHeldWeaponActivity(activity) {
     const item = activity?.item ?? null;
     const actor = activity?.actor ?? item?.actor ?? item?.parent ?? null;
@@ -1624,6 +1688,7 @@ export class CombatAttackService {
       }
 
       this.#applyHeldWeaponAttackMode(activity, usageConfig);
+      this.#ensureBaseDamageUsageButton(activity);
 
       const automation = this.#getLichAutomationState(item);
       if (automation.reachBonusFeet <= 0) {

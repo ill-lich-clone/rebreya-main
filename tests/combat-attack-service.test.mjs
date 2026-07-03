@@ -307,6 +307,61 @@ test("versatile weapon attacks use two-handed mode when the item is held in both
   assert.equal(weapon.flags.dnd5e?.last?.["attack-activity"]?.attackMode, "twoHanded");
 });
 
+test("weapon usage cards keep a damage button for base weapon damage", () => {
+  const weapon = makeWeaponItem({
+    heldHands: ["left", "right"],
+    handRequirement: {
+      requiredHands: 1,
+      allowedHands: [1, 2],
+      versatile: true
+    },
+    properties: ["ver"],
+    attackModes: [
+      { value: "oneHanded", label: "One-Handed" },
+      { value: "twoHanded", label: "Two-Handed" }
+    ]
+  });
+  weapon.system.damage = {
+    base: {
+      formula: "1d8 + @mod"
+    }
+  };
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+  const activity = {
+    id: "attack-activity",
+    type: "attack",
+    actor,
+    item: weapon,
+    damage: {
+      includeBase: true,
+      parts: []
+    },
+    attack: {
+      type: {
+        value: "melee"
+      }
+    },
+    range: {},
+    _usageChatButtons() {
+      return [
+        {
+          label: "Attack",
+          dataset: {
+            action: "rollAttack"
+          }
+        }
+      ];
+    }
+  };
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(activity, {}), true);
+  const buttons = activity._usageChatButtons({});
+  assert.ok(buttons.some((button) => button?.dataset?.action === "rollDamage"));
+});
+
 test("fighter dominance maneuvers retarget shared dominance dice item and creature targeting before use", () => {
   const dominanceItem = {
     id: "actualDominanceItemId",

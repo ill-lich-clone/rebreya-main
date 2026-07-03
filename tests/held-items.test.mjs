@@ -173,6 +173,21 @@ test("equipment context menu actions keep native wear states and add eligible tw
     itemName: "left-hand-weapon"
   }]);
 
+  const twoHandedWeapon = makeItem({
+    id: "longbow",
+    equipped: true,
+    system: {
+      properties: ["two"]
+    }
+  });
+  const twoHandedActions = buildHeldItemEquipMenuActions(makeActor([twoHandedWeapon]), twoHandedWeapon);
+  const carryLeftAction = twoHandedActions.find((action) => action.id === "left");
+  assert.equal(carryLeftAction.disabled, false);
+  assert.equal(carryLeftAction.carryOnly, true);
+  assert.equal(carryLeftAction.occupied, false);
+  assert.ok(carryLeftAction.tooltip);
+  assert.equal(twoHandedActions.find((action) => action.id === "both").carryOnly, false);
+
   assert.deepEqual(getHeldItemEquipPresentation(makeItem({
     id: "sword",
     equipped: true,
