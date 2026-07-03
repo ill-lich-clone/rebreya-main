@@ -2,6 +2,7 @@ import { MODULE_ID } from "../constants.js";
 
 export const DEFAULT_HAND_CAPACITY = 2;
 export const RACE_HANDS_FLAG = "hands";
+export const HAND_REQUIREMENT_FLAG = "handRequirement";
 export const HELD_ITEM_HANDS_FLAG = "heldHands";
 export const HAND_SLOTS = Object.freeze(["left", "right"]);
 export const HAND_SLOT_LABELS = Object.freeze({
@@ -79,6 +80,65 @@ function readHandCapacity(value) {
   }
 
   return positiveInteger(value, 0);
+}
+
+function normalizeHandCounts(value) {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value
+      .map((entry) => positiveInteger(entry, 0))
+      .filter((entry) => entry > 0)));
+  }
+
+  if (value && typeof value === "object") {
+    return normalizeHandCounts(value.allowedHands ?? value.allowed ?? value.options ?? value.values ?? value.slots);
+  }
+
+  if (typeof value === "string") {
+    const matches = value.match(/\d+/gu);
+    return normalizeHandCounts(matches ?? []);
+  }
+
+  const count = positiveInteger(value, 0);
+  return count > 0 ? [count] : [];
+}
+
+function hasSystemProperty(item, property) {
+  const properties = getProperty(item, "system.properties");
+  if (!properties || !property) {
+    return false;
+  }
+
+  if (Array.isArray(properties)) {
+    return properties.includes(property);
+  }
+
+  if (typeof properties.has === "function") {
+    return properties.has(property);
+  }
+
+  if (properties && typeof properties === "object") {
+    if (Array.isArray(properties.value)) {
+      return properties.value.includes(property);
+    }
+
+    const entry = properties[property];
+    if (entry && typeof entry === "object") {
+      return entry.value === true || entry.selected === true;
+    }
+
+    return entry === true || entry === 1 || entry === property;
+  }
+
+  return String(properties).split(/[,\s;]+/u).includes(property);
+}
+
+function getItemQuantity(item) {
+  const quantity = getProperty(item, "system.quantity");
+  if (quantity && typeof quantity === "object") {
+    return positiveInteger(quantity.value ?? quantity.count, 1);
+  }
+
+  return positiveInteger(quantity, 1);
 }
 
 function collectionValues(collection) {
@@ -171,6 +231,48 @@ export function getItemHeldHands(item) {
   return normalizeHeldHands(getDocumentFlag(item, HELD_ITEM_HANDS_FLAG));
 }
 
+export function getItemHandRequirement(item) {
+  const requirement = getDocumentFlag(item, HAND_REQUIREMENT_FLAG);
+  if (requirement === undefined || requirement === null || requirement === "") {
+    return null;
+  }
+
+  if (requirement && typeof requirement === "object" && !Array.isArray(requirement)) {
+    const requiredHands = positiveInteger(
+      requirement.requiredHands ?? requirement.hands ?? requirement.min ?? requirement.value,
+      0
+    );
+    const allowedHands = normalizeHandCounts(
+      requirement.allowedHands ?? requirement.allowed ?? requirement.options ?? requirement.values
+    );
+    const normalizedAllowedHands = allowedHands.length ? allowedHands : normalizeHandCounts(requiredHands);
+    const maxHands = positiveInteger(requirement.maxHands ?? requirement.max, Math.max(0, ...normalizedAllowedHands));
+    const canUseTwoHands = allowedHands.includes(2)
+      || maxHands >= 2
+      || requiredHands >= 2
+      || requirement.canUseTwoHands === true
+      || requirement.twoHanded === true
+      || requirement.versatile === true;
+
+    return {
+      ...requirement,
+      requiredHands,
+      allowedHands: normalizedAllowedHands,
+      maxHands,
+      canUseTwoHands
+    };
+  }
+
+  const allowedHands = normalizeHandCounts(requirement);
+  const requiredHands = allowedHands[0] ?? 0;
+  return {
+    requiredHands,
+    allowedHands,
+    maxHands: Math.max(0, ...allowedHands),
+    canUseTwoHands: allowedHands.includes(2)
+  };
+}
+
 export function isItemEquipped(item) {
   const equipped = getProperty(item, "system.equipped");
   if (equipped && typeof equipped === "object") {
@@ -182,6 +284,31 @@ export function isItemEquipped(item) {
 
 export function isHeldItemEligible(item) {
   return HELD_ITEM_ELIGIBLE_TYPES.has(String(item?.type ?? ""));
+}
+
+export function canHoldItemInTwoHands(item) {
+  if (!isHeldItemEligible(item)) {
+    return false;
+  }
+
+  const requirement = getItemHandRequirement(item);
+  if (requirement?.canUseTwoHands) {
+    return true;
+  }
+
+  if (hasSystemProperty(item, "two") || hasSystemProperty(item, "ver")) {
+    return true;
+  }
+
+  if (String(item?.type ?? "") !== "weapon" || !hasSystemProperty(item, "lgt") || getItemQuantity(item) < 2) {
+    return false;
+  }
+
+  if (requirement?.requiredHands > 1 || (requirement?.allowedHands?.length && !requirement.allowedHands.includes(1))) {
+    return false;
+  }
+
+  return true;
 }
 
 export function getActorHandCapacity(actor) {
@@ -316,7 +443,7 @@ export function canUseHeldItemForHandRequirement(actor, item, { requiredHands = 
 export function buildHeldItemEquipMenuActions(actor, item) {
   const occupied = getOccupiedHandSlots(actor, { exceptItem: item });
   const bothDisabled = HAND_SLOTS.some((slot) => occupied.has(slot));
-  return [
+  const actions = [
     {
       id: "worn",
       ...HELD_ITEM_PRESENTATIONS.worn,
@@ -333,13 +460,18 @@ export function buildHeldItemEquipMenuActions(actor, item) {
       disabled: occupied.has(slot),
       disabledReason: occupied.has(slot) ? "occupied" : "",
       update: buildHeldItemHandUpdate(slot)
-    })),
-    {
+    }))
+  ];
+
+  if (canHoldItemInTwoHands(item)) {
+    actions.push({
       id: "both",
       ...HELD_ITEM_PRESENTATIONS.both,
       disabled: bothDisabled,
       disabledReason: bothDisabled ? "occupied" : "",
       update: buildHeldItemHandUpdate(HAND_SLOTS)
-    }
-  ];
+    });
+  }
+
+  return actions;
 }

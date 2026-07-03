@@ -315,6 +315,17 @@ test("creates weapon compendium data with damage and Rebreya attack properties",
     rku: 1
   });
   assert.equal(created.flags["rebreya-main"].attackTraitsText, "Наскок 2d2; МКУ 1; РКУ 1");
+  assert.deepEqual(created.flags["rebreya-main"].handRequirement, {
+    requiredHands: 1,
+    allowedHands: [1, 2],
+    maxHands: 2,
+    canUseTwoHands: true,
+    mode: "versatile",
+    source: null,
+    special: false,
+    versatile: true,
+    versatileDamageFormula: "1d8"
+  });
 });
 
 test("real gear weapon data maps spreadsheet damage and properties to system keys", () => {
@@ -343,6 +354,40 @@ test("real gear weapon data maps spreadsheet damage and properties to system key
   assert.ok(byId.get("molot").weapon.properties.includes("lchPowerStrike"));
   assert.ok(byId.get("molot").weapon.properties.includes("lchPush"));
   assert.ok(byId.get("kavaleriyskaya-pika").weapon.properties.includes("lchMounted"));
+
+  assert.deepEqual(createDnd5eItemData(byId.get("boevoy-posokh"), new Map()).flags["rebreya-main"].handRequirement, {
+    requiredHands: 1,
+    allowedHands: [1, 2],
+    maxHands: 2,
+    canUseTwoHands: true,
+    mode: "versatile",
+    source: "Универсальное (1d8)",
+    special: false,
+    versatile: true,
+    versatileDamageFormula: "1d8"
+  });
+  assert.deepEqual(createDnd5eItemData(byId.get("kinzhal"), new Map()).flags["rebreya-main"].handRequirement, {
+    requiredHands: 1,
+    allowedHands: [1],
+    maxHands: 1,
+    canUseTwoHands: false,
+    mode: "oneHanded",
+    source: "Одноручное",
+    special: false,
+    versatile: false,
+    versatileDamageFormula: null
+  });
+  assert.deepEqual(createDnd5eItemData(byId.get("dvuruchnyy-mech"), new Map()).flags["rebreya-main"].handRequirement, {
+    requiredHands: 2,
+    allowedHands: [2],
+    maxHands: 2,
+    canUseTwoHands: true,
+    mode: "twoHanded",
+    source: "Двуручное",
+    special: false,
+    versatile: false,
+    versatileDamageFormula: null
+  });
 });
 
 test("real firearm gear data maps firearm sheet damage, properties, and attack activity", () => {
@@ -379,6 +424,17 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(createdMusket.system.damage.base.number, 2);
   assert.equal(createdMusket.system.damage.base.denomination, 8);
   assert.ok(createdMusket.system.properties.includes("lchFirearmMisfire"));
+  assert.deepEqual(createdMusket.flags["rebreya-main"].handRequirement, {
+    requiredHands: 2,
+    allowedHands: [2],
+    maxHands: 2,
+    canUseTwoHands: true,
+    mode: "twoHanded",
+    source: "Двуручное",
+    special: false,
+    versatile: false,
+    versatileDamageFormula: null
+  });
   assert.equal(musketActivityIds.length, 3);
   assert.ok(musketActivityIds.every((activityId) => /^[A-Za-z0-9]{16}$/u.test(activityId)));
   assert.equal(musketAttack._id, musketActivityIds[0]);

@@ -99,23 +99,59 @@ test("hand update patches equip items into a specific hand and can clear hand st
   });
 });
 
-test("equipment context menu actions keep native wear states and add both hands", async () => {
+test("equipment context menu actions keep native wear states and add eligible two-hand grips", async () => {
   const {
+    canHoldItemInTwoHands,
     buildHeldItemEquipMenuActions,
-    getHeldItemEquipPresentation
+    getHeldItemEquipPresentation,
+    HELD_ITEM_PRESENTATIONS
   } = await import(`../scripts/integrations/held-items.js?menu=${Date.now()}`);
 
   const item = makeItem({ id: "sword", equipped: true });
   const actor = makeActor([item]);
   const actions = buildHeldItemEquipMenuActions(actor, item);
 
-  assert.deepEqual(actions.map((action) => action.id), ["worn", "unequipped", "left", "right", "both"]);
-  assert.deepEqual(actions.map((action) => action.label), ["Надето", "Снято", "Левая рука", "Правая рука", "Две руки"]);
+  assert.deepEqual(actions.map((action) => action.id), ["worn", "unequipped", "left", "right"]);
+  assert.deepEqual(actions.map((action) => action.label), [
+    HELD_ITEM_PRESENTATIONS.worn.label,
+    HELD_ITEM_PRESENTATIONS.unequipped.label,
+    HELD_ITEM_PRESENTATIONS.left.label,
+    HELD_ITEM_PRESENTATIONS.right.label
+  ]);
   assert.notEqual(actions.find((action) => action.id === "left").icon, actions.find((action) => action.id === "right").icon);
-  assert.deepEqual(actions.find((action) => action.id === "both").update, {
+
+  const versatile = makeItem({
+    id: "versatile",
+    equipped: true,
+    flags: {
+      "rebreya-main": {
+        handRequirement: {
+          requiredHands: 1,
+          allowedHands: [1, 2],
+          versatile: true
+        }
+      }
+    }
+  });
+  const versatileActions = buildHeldItemEquipMenuActions(makeActor([versatile]), versatile);
+  assert.equal(canHoldItemInTwoHands(versatile), true);
+  assert.deepEqual(versatileActions.find((action) => action.id === "both").update, {
     "system.equipped": true,
     "flags.rebreya-main.heldHands": ["left", "right"]
   });
+
+  const lightWeapon = makeItem({
+    id: "dagger",
+    equipped: true,
+    system: {
+      quantity: 1,
+      properties: ["lgt"]
+    }
+  });
+  assert.equal(canHoldItemInTwoHands(lightWeapon), false);
+  lightWeapon.system.quantity = 2;
+  assert.equal(canHoldItemInTwoHands(lightWeapon), true);
+  assert.ok(buildHeldItemEquipMenuActions(makeActor([lightWeapon]), lightWeapon).some((action) => action.id === "both"));
 
   assert.deepEqual(getHeldItemEquipPresentation(makeItem({
     id: "sword",

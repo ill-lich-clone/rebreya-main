@@ -146,7 +146,10 @@ function makeWeaponItem({
   id = "sword",
   name = "Sword",
   equipped = true,
-  heldHands = []
+  heldHands = [],
+  handRequirement = null,
+  properties = {},
+  attackModes = []
 } = {}) {
   return new class extends Item {
     constructor() {
@@ -163,13 +166,17 @@ function makeWeaponItem({
           units: "ft",
           reach: 5
         },
-        properties: {}
+        properties,
+        attackModes
       };
       this.flags = {
         [MODULE_ID]: {}
       };
       if (heldHands.length) {
         this.flags[MODULE_ID].heldHands = heldHands;
+      }
+      if (handRequirement) {
+        this.flags[MODULE_ID].handRequirement = handRequirement;
       }
     }
 
@@ -228,6 +235,74 @@ test("weapon attack activities are allowed after the item was taken in hand", ()
   const service = new CombatAttackService({});
 
   assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+});
+
+test("two-handed weapon property requires two held hands even before hand flags are rebuilt", () => {
+  const warnings = [];
+  const previousWarn = globalThis.ui.notifications.warn;
+  globalThis.ui.notifications.warn = (message) => warnings.push(message);
+  try {
+    const weapon = makeWeaponItem({
+      heldHands: ["right"],
+      properties: ["two"]
+    });
+    const actor = makeActor([weapon]);
+    weapon.actor = actor;
+    const activity = {
+      type: "attack",
+      actor,
+      item: weapon,
+      attack: {
+        type: {
+          value: "melee"
+        }
+      },
+      range: {}
+    };
+
+    const service = new CombatAttackService({});
+
+    assert.equal(service.applyDnd5ePreUseActivity(activity), false);
+    assert.match(warnings.at(-1), /2/u);
+  }
+  finally {
+    globalThis.ui.notifications.warn = previousWarn;
+  }
+});
+
+test("versatile weapon attacks use two-handed mode when the item is held in both hands", () => {
+  const weapon = makeWeaponItem({
+    heldHands: ["left", "right"],
+    handRequirement: {
+      requiredHands: 1,
+      allowedHands: [1, 2],
+      versatile: true
+    },
+    properties: ["ver"],
+    attackModes: [
+      { value: "oneHanded", label: "One-Handed" },
+      { value: "twoHanded", label: "Two-Handed" }
+    ]
+  });
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+  const activity = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: {
+      type: {
+        value: "melee"
+      }
+    },
+    range: {}
+  };
+  const usageConfig = {};
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(activity, usageConfig), true);
+  assert.equal(usageConfig.attackMode, "twoHanded");
 });
 
 test("fighter dominance maneuvers retarget shared dominance dice item and creature targeting before use", () => {

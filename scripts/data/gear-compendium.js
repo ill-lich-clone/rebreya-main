@@ -25,7 +25,7 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 14;
+const GEAR_TEMPLATE_VERSION = 15;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk001";
 const FIREARM_CLEAR_JAM_ACTIVITY_ID = "lchClearBreech01";
@@ -65,6 +65,25 @@ function cleanArray(values = []) {
   return Array.from(new Set((Array.isArray(values) ? values : [])
     .map((value) => cleanString(value))
     .filter(Boolean)));
+}
+
+function normalizeHandCounts(value) {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value
+      .map((entry) => Math.max(0, Math.floor(toFiniteNumber(entry, 0))))
+      .filter((entry) => entry > 0)));
+  }
+
+  if (value && typeof value === "object") {
+    return normalizeHandCounts(value.allowedHands ?? value.allowed ?? value.options ?? value.values);
+  }
+
+  if (typeof value === "string") {
+    return normalizeHandCounts(value.match(/\d+/gu) ?? []);
+  }
+
+  const count = Math.max(0, Math.floor(toFiniteNumber(value, 0)));
+  return count > 0 ? [count] : [];
 }
 
 function toFiniteNumber(value, fallback = 0) {
@@ -225,9 +244,128 @@ function buildGearSignature(item) {
   });
 }
 
+function resolveWeaponHandRequirementSource(weapon) {
+  if (!isPlainObject(weapon)) {
+    return "";
+  }
+
+  const explicitSource = cleanString(
+    weapon.handRequirementText
+    ?? weapon.handsText
+    ?? weapon.hands
+    ?? weapon.handRequirementSource
+    ?? weapon.handRequirement?.source
+  );
+  if (explicitSource) {
+    return explicitSource;
+  }
+
+  const propertiesText = cleanString(weapon.propertiesText);
+  return cleanString(propertiesText.split(";")[0] ?? propertiesText);
+}
+
+function buildWeaponHandRequirement({
+  allowedHands,
+  canUseTwoHands,
+  mode,
+  requiredHands,
+  source,
+  special = false,
+  versatile = false,
+  versatileDamageFormula = ""
+}) {
+  const safeAllowedHands = normalizeHandCounts(allowedHands);
+  const safeRequiredHands = Math.max(0, Math.floor(toFiniteNumber(requiredHands, safeAllowedHands[0] ?? 1)));
+  const maxHands = Math.max(safeRequiredHands, ...safeAllowedHands, 0);
+  const safeSource = cleanString(source);
+
+  return {
+    requiredHands: safeRequiredHands,
+    allowedHands: safeAllowedHands.length ? safeAllowedHands : [safeRequiredHands || 1],
+    maxHands,
+    canUseTwoHands: canUseTwoHands === true || maxHands >= 2,
+    mode,
+    source: safeSource || null,
+    special: special === true,
+    versatile: versatile === true,
+    versatileDamageFormula: cleanString(versatileDamageFormula) || null
+  };
+}
+
+function resolveWeaponHandRequirement(weapon) {
+  if (!isPlainObject(weapon)) {
+    return null;
+  }
+
+  if (isPlainObject(weapon.handRequirement)) {
+    return buildWeaponHandRequirement({
+      allowedHands: weapon.handRequirement.allowedHands ?? weapon.handRequirement.allowed,
+      canUseTwoHands: weapon.handRequirement.canUseTwoHands,
+      mode: cleanString(weapon.handRequirement.mode, "custom"),
+      requiredHands: weapon.handRequirement.requiredHands ?? weapon.handRequirement.hands ?? weapon.handRequirement.min,
+      source: weapon.handRequirement.source ?? resolveWeaponHandRequirementSource(weapon),
+      special: weapon.handRequirement.special,
+      versatile: weapon.handRequirement.versatile,
+      versatileDamageFormula: weapon.handRequirement.versatileDamageFormula ?? weapon.versatileDamageFormula
+    });
+  }
+
+  const source = resolveWeaponHandRequirementSource(weapon);
+  const sourceKey = normalizeMatchText(source);
+  const properties = cleanArray(weapon.properties);
+  const hasTwoHandedProperty = properties.includes("two");
+  const hasVersatileProperty = properties.includes("ver") || Boolean(cleanString(weapon.versatileDamageFormula));
+
+  if (sourceKey.includes("универс") || hasVersatileProperty) {
+    return buildWeaponHandRequirement({
+      allowedHands: [1, 2],
+      canUseTwoHands: true,
+      mode: "versatile",
+      requiredHands: 1,
+      source,
+      versatile: true,
+      versatileDamageFormula: weapon.versatileDamageFormula
+    });
+  }
+
+  if (sourceKey.includes("двуруч") || hasTwoHandedProperty) {
+    return buildWeaponHandRequirement({
+      allowedHands: [2],
+      canUseTwoHands: true,
+      mode: "twoHanded",
+      requiredHands: 2,
+      source
+    });
+  }
+
+  if (sourceKey.includes("одноруч")) {
+    return buildWeaponHandRequirement({
+      allowedHands: [1],
+      canUseTwoHands: false,
+      mode: "oneHanded",
+      requiredHands: 1,
+      source
+    });
+  }
+
+  if (source) {
+    return buildWeaponHandRequirement({
+      allowedHands: [1],
+      canUseTwoHands: false,
+      mode: "special",
+      requiredHands: 1,
+      source,
+      special: true
+    });
+  }
+
+  return null;
+}
+
 function buildMetadataRows(item, classification) {
   const itemSlotGroup = resolveItemSlotGroup(item, classification);
   const weapon = isPlainObject(item.weapon) ? item.weapon : {};
+  const handRequirement = resolveWeaponHandRequirement(weapon);
   const itemSlotLabel = {
     head: "Голова",
     neck: "Шея",
@@ -281,6 +419,7 @@ function buildMetadataRows(item, classification) {
     ["Value", item.value],
     ["Урон", weapon.damageFormula],
     ["Тип урона", weapon.damageTypeLabel],
+    ["Руки", handRequirement?.source],
     ["Свойства оружия", weapon.propertiesText]
   ].filter(([, value]) => value !== null && value !== undefined && value !== "");
 }
@@ -661,6 +800,7 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
   const attackTraits = clonePlainObject(weapon.attackTraits);
   const lichWeaponPropertyValues = clonePlainObject(weapon.lichWeaponPropertyValues);
   const attackTraitsText = cleanString(weapon.attackTraitsText || weapon.propertiesText);
+  const handRequirement = resolveWeaponHandRequirement(weapon);
   const containerContents = cloneContainerContents(item.containerContents);
 
   return {
@@ -699,6 +839,7 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
         attackTraits: attackTraits && Object.keys(attackTraits).length ? attackTraits : null,
         attackTraitsText: attackTraitsText || null,
         attackProperties: attackTraitsText || null,
+        handRequirement: handRequirement ? clonePlainObject(handRequirement) : null,
         lichWeaponPropertyValues: lichWeaponPropertyValues && Object.keys(lichWeaponPropertyValues).length
           ? lichWeaponPropertyValues
           : null

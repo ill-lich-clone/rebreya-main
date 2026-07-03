@@ -1,6 +1,6 @@
 import { MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
-import { canUseHeldItemForHandRequirement } from "../integrations/held-items.js";
+import { canUseHeldItemForHandRequirement, getItemHeldHands } from "../integrations/held-items.js";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -1151,16 +1151,47 @@ export class CombatAttackService {
   }
 
   #resolveRequiredHands(activity) {
-    return clampInteger(
-      toNumber(
-        readRequiredHands(activity)
-        ?? readRequiredHands(activity?.item)
-        ?? 1,
-        1
-      ),
-      0,
-      99
-    );
+    const explicitRequirement = readRequiredHands(activity) ?? readRequiredHands(activity?.item);
+    if (explicitRequirement !== undefined && explicitRequirement !== null && explicitRequirement !== "") {
+      return clampInteger(toNumber(explicitRequirement, 1), 0, 99);
+    }
+
+    return this.#hasItemProperty(activity?.item, "two") ? 2 : 1;
+  }
+
+  #hasAttackMode(item, attackMode) {
+    const safeAttackMode = String(attackMode ?? "").trim();
+    if (!safeAttackMode) {
+      return false;
+    }
+
+    const attackModes = collectionValues(foundry.utils.getProperty(item, "system.attackModes"));
+    if (!attackModes.length) {
+      return true;
+    }
+
+    return attackModes.some((mode) => String(mode?.value ?? mode ?? "").trim() === safeAttackMode);
+  }
+
+  #isHeldVersatileTwoHandedAttack(activity) {
+    const item = activity?.item ?? null;
+    if (!item || getItemHeldHands(item).length < 2) {
+      return false;
+    }
+
+    const handRequirement = readDocumentFlag(item, MODULE_ID, "handRequirement");
+    const isVersatile = foundry.utils.getProperty(item, "system.isVersatile") === true
+      || this.#hasItemProperty(item, "ver")
+      || (isPlainObject(handRequirement) && handRequirement.versatile === true);
+    return isVersatile && this.#hasAttackMode(item, "twoHanded");
+  }
+
+  #applyHeldWeaponAttackMode(activity, usageConfig = {}) {
+    if (!this.#isHeldVersatileTwoHandedAttack(activity)) {
+      return;
+    }
+
+    usageConfig.attackMode = "twoHanded";
   }
 
   #ensureHeldWeaponActivity(activity) {
@@ -1573,6 +1604,8 @@ export class CombatAttackService {
       if (!this.#ensureHeldWeaponActivity(activity)) {
         return false;
       }
+
+      this.#applyHeldWeaponAttackMode(activity, usageConfig);
 
       const automation = this.#getLichAutomationState(item);
       if (automation.reachBonusFeet <= 0) {
