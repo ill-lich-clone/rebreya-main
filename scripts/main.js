@@ -31,7 +31,7 @@ import { CraftingService } from "./data/crafting-service.js";
 import { CalendarService } from "./data/calendar-service.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.86";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.86-base-damage-fields";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.86-npc-held-natural";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.86";
@@ -48,7 +48,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.86-base-damage-fields";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.86-npc-held-natural";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js";

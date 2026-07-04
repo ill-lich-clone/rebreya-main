@@ -237,6 +237,39 @@ test("weapon attack activities are allowed after the item was taken in hand", ()
   assert.equal(service.applyDnd5ePreUseActivity(activity), true);
 });
 
+test("natural weapon attack activities do not require held hands", () => {
+  const warnings = [];
+  const previousWarn = globalThis.ui.notifications.warn;
+  globalThis.ui.notifications.warn = (message) => warnings.push(message);
+  try {
+    const weapon = makeWeaponItem({
+      properties: ["two"]
+    });
+    weapon.system.type.value = "natural";
+    const actor = makeActor([weapon]);
+    weapon.actor = actor;
+    const activity = {
+      type: "attack",
+      actor,
+      item: weapon,
+      attack: {
+        type: {
+          value: "melee"
+        }
+      },
+      range: {}
+    };
+
+    const service = new CombatAttackService({});
+
+    assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+    assert.equal(warnings.length, 0);
+  }
+  finally {
+    globalThis.ui.notifications.warn = previousWarn;
+  }
+});
+
 test("two-handed weapon attacks can use a free second hand but not an occupied one", () => {
   const warnings = [];
   const previousWarn = globalThis.ui.notifications.warn;

@@ -266,13 +266,13 @@ function installSheetExtensionStubs() {
   };
 }
 
-function createActor(ActorClass, { id = "actor-a", name = "Hero" } = {}) {
+function createActor(ActorClass, { id = "actor-a", name = "Hero", type = "character" } = {}) {
   return new class extends ActorClass {
     constructor() {
       super();
       this.id = id;
       this.name = name;
-      this.type = "character";
+      this.type = type;
       this.items = [];
       this.system = {};
     }
@@ -572,6 +572,101 @@ test("registerDnd5eSheetExtensions adds right-click hand choices to equipped ite
     const rightHandButton = menu.children.find((child) => (
       child.children?.some((node) => node.textContent === "Правая рука")
     ));
+    assert.ok(rightHandButton);
+    await rightHandButton.listeners.click[0]({
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(updates.at(-1), {
+      "system.equipped": true,
+      "flags.rebreya-main.heldHands": ["right"]
+    });
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("registerDnd5eSheetExtensions adds right-click hand choices to npc item controls", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?held-item-menu-npc=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-npc", name: "Guard", type: "npc" });
+    const updates = [];
+    const item = {
+      id: "spear",
+      _id: "spear",
+      name: "Spear",
+      type: "weapon",
+      system: { equipped: false },
+      flags: {},
+      getFlag(scope, key) {
+        return String(key ?? "").split(".").reduce((current, part) => (
+          current && typeof current === "object" ? current[part] : undefined
+        ), this.flags?.[scope]);
+      },
+      async update(patch) {
+        updates.push(patch);
+      }
+    };
+    actor.items = {
+      contents: [item],
+      get: (id) => (id === "spear" ? item : null)
+    };
+    const equipControl = new stubs.HTMLElement({
+      dataset: {
+        action: "equip"
+      }
+    });
+    const row = new stubs.HTMLElement({
+      dataset: {
+        itemId: "spear"
+      },
+      selectors: {
+        "[data-action='equip']": equipControl
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-item-id]": [row]
+      }
+    });
+    stubs.document.body = new stubs.HTMLElement();
+    globalThis.window.innerWidth = 800;
+    globalThis.window.innerHeight = 600;
+    const app = {
+      actor,
+      async render() {}
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderActorSheet")(app, root);
+
+    assert.equal(equipControl.listeners.contextmenu.length, 1);
+    await equipControl.listeners.contextmenu[0]({
+      clientX: 10,
+      clientY: 20,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const menu = stubs.document.body.children.find((child) => child.classList.contains("rm-context-menu"));
+    assert.ok(menu);
+    const rightHandButton = menu.children.find((child) => child.dataset.action === "right");
     assert.ok(rightHandButton);
     await rightHandButton.listeners.click[0]({
       preventDefault() {},

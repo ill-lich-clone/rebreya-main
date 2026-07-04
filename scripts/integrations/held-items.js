@@ -36,6 +36,8 @@ export const HELD_ITEM_ELIGIBLE_TYPES = new Set(["weapon", "equipment", "consuma
 
 const HAND_SLOT_SET = new Set(HAND_SLOTS);
 const GENERIC_HAND_SLOT_PATTERN = /^hand([3-9]|\d{2,})$/u;
+const NATURAL_WEAPON_TYPE_VALUES = new Set(["natural", "naturalweapon", "naturalweapons"]);
+const NATURAL_WEAPON_PROPERTIES = ["natural", "nat", "naturalWeapon"];
 
 function getProperty(source, path) {
   if (!source || !path) {
@@ -152,6 +154,31 @@ function hasSystemProperty(item, property) {
   }
 
   return String(properties).split(/[,\s;]+/u).includes(property);
+}
+
+function normalizeNaturalWeaponValue(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/gu, "");
+}
+
+export function isNaturalWeapon(item) {
+  if (String(item?.type ?? "") !== "weapon") {
+    return false;
+  }
+
+  const typeValues = [
+    getProperty(item, "system.type.value"),
+    getProperty(item, "system.type.subtype"),
+    getProperty(item, "system.type.baseItem"),
+    getProperty(item, "system.baseItem")
+  ];
+  if (typeValues.some((value) => NATURAL_WEAPON_TYPE_VALUES.has(normalizeNaturalWeaponValue(value)))) {
+    return true;
+  }
+
+  return NATURAL_WEAPON_PROPERTIES.some((property) => hasSystemProperty(item, property));
 }
 
 function getItemQuantity(item) {
@@ -371,7 +398,7 @@ export function isItemEquipped(item) {
 }
 
 export function isHeldItemEligible(item) {
-  return HELD_ITEM_ELIGIBLE_TYPES.has(String(item?.type ?? ""));
+  return HELD_ITEM_ELIGIBLE_TYPES.has(String(item?.type ?? "")) && !isNaturalWeapon(item);
 }
 
 export function canHoldItemInTwoHands(item) {
@@ -586,7 +613,7 @@ export function getOccupiedHandSlots(actor, { exceptItem = null } = {}) {
       continue;
     }
 
-    if (!isItemEquipped(item)) {
+    if (!isHeldItemEligible(item) || !isItemEquipped(item)) {
       continue;
     }
 
@@ -644,6 +671,16 @@ export function getHeldItemEquipPresentation(item) {
 }
 
 export function canUseHeldItemForHandRequirement(actor, item, { requiredHands = 1 } = {}) {
+  if (!isHeldItemEligible(item)) {
+    return {
+      ok: true,
+      reason: "",
+      requiredHands: 0,
+      heldHands: [],
+      freeHands: []
+    };
+  }
+
   const required = positiveInteger(requiredHands, 1);
   const heldHands = isItemEquipped(item) ? getItemHeldHands(item) : [];
   const heldHandSet = new Set(heldHands);
@@ -688,6 +725,10 @@ export function canUseHeldItemForHandRequirement(actor, item, { requiredHands = 
 }
 
 export function buildHeldItemEquipMenuActions(actor, item) {
+  if (!isHeldItemEligible(item)) {
+    return [];
+  }
+
   const occupied = getOccupiedHandSlots(actor, { exceptItem: item });
   const singleHandCarryOnly = itemRequiresTwoHandsForUse(item);
   const actions = [

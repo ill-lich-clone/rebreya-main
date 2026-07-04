@@ -448,3 +448,40 @@ test("equipment context menu actions keep native wear states and add eligible tw
     icon: "fa-solid fa-hands fa-fw"
   });
 });
+
+test("natural weapons do not require held hands or expose hand choices", async () => {
+  const {
+    buildHeldItemEquipMenuActions,
+    canUseHeldItemForHandRequirement,
+    getFreeHandSlots,
+    isHeldItemEligible
+  } = await import(`../scripts/integrations/held-items.js?natural-weapons=${Date.now()}`);
+
+  const bite = makeItem({
+    id: "bite",
+    equipped: true,
+    system: {
+      type: {
+        value: "natural"
+      },
+      properties: ["two"]
+    },
+    flags: {
+      "rebreya-main": {
+        heldHands: ["left"]
+      }
+    }
+  });
+  const actor = makeActor([bite]);
+
+  assert.equal(isHeldItemEligible(bite), false);
+  assert.deepEqual(buildHeldItemEquipMenuActions(actor, bite), []);
+  assert.deepEqual(getFreeHandSlots(actor), ["left", "right"]);
+  assert.deepEqual(canUseHeldItemForHandRequirement(actor, bite, { requiredHands: 2 }), {
+    ok: true,
+    reason: "",
+    requiredHands: 0,
+    heldHands: [],
+    freeHands: []
+  });
+});

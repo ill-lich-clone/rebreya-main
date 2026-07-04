@@ -30,7 +30,7 @@ import {
   getHeldItemDamageFormulaPresentation,
   getHeldItemEquipPresentation,
   isHeldItemEligible
-} from "./held-items.js?v=1.4.86-base-damage-fields";
+} from "./held-items.js?v=1.4.86-npc-held-natural";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
@@ -6023,6 +6023,10 @@ function bindHeldItemEquipContextMenu(root, { actor, app, moduleApi } = {}) {
   }
 }
 
+function supportsHeldItemSheetControls(actor) {
+  return actor?.type === "character" || actor?.type === "npc";
+}
+
 function cleanConfigString(value) {
   return String(value ?? "").trim();
 }
@@ -6283,7 +6287,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
 
   const onRenderActorSheet = (app, html) => {
     const actor = getActorFromSheetApp(app);
-    if (!actor || actor.type !== "character") {
+    if (!actor) {
       return;
     }
 
@@ -6292,32 +6296,37 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       return;
     }
 
-    bindCharacterSheetBranding(root);
-    bindHeroDollPanel(root, app, moduleApi);
-    bindCharacterDowntimePanel(root, app, moduleApi);
-    try {
-      bindUniversalBeltSheet(root, { actor, app, moduleApi, rerenderActorSheet });
+    if (actor.type === "character") {
+      bindCharacterSheetBranding(root);
+      bindHeroDollPanel(root, app, moduleApi);
+      bindCharacterDowntimePanel(root, app, moduleApi);
+      try {
+        bindUniversalBeltSheet(root, { actor, app, moduleApi, rerenderActorSheet });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind universal belt sheet controls.`, error);
+      }
+      try {
+        bindNativeStateCard(root, app);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind native state card.`, error);
+      }
+      try {
+        bindCharacterCombatStatusPanel(root, app, moduleApi);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind character sheet combat statuses.`, error);
+      }
     }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to bind universal belt sheet controls.`, error);
-    }
-    try {
-      bindHeldItemEquipContextMenu(root, { actor, app, moduleApi });
-    }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to bind held item sheet controls.`, error);
-    }
-    try {
-      bindNativeStateCard(root, app);
-    }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to bind native state card.`, error);
-    }
-    try {
-      bindCharacterCombatStatusPanel(root, app, moduleApi);
-    }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to bind character sheet combat statuses.`, error);
+
+    if (supportsHeldItemSheetControls(actor)) {
+      try {
+        bindHeldItemEquipContextMenu(root, { actor, app, moduleApi });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind held item sheet controls.`, error);
+      }
     }
   };
 
@@ -6325,7 +6334,10 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     "renderActorSheet",
     "renderActorSheet5eCharacter2",
     "renderActorSheet5eCharacter",
-    "renderCharacterActorSheet"
+    "renderCharacterActorSheet",
+    "renderActorSheet5eNPC2",
+    "renderActorSheet5eNPC",
+    "renderNPCActorSheet"
   ]) {
     Hooks.on(hookName, onRenderActorSheet);
   }
@@ -6370,12 +6382,6 @@ export function registerDnd5eSheetExtensions(moduleApi) {
         console.error(`${MODULE_ID} | Failed to bind universal belt sheet controls on ApplicationV2 render.`, error);
       }
       try {
-        bindHeldItemEquipContextMenu(root, { actor, app, moduleApi });
-      }
-      catch (error) {
-        console.error(`${MODULE_ID} | Failed to bind held item sheet controls on ApplicationV2 render.`, error);
-      }
-      try {
         bindNativeStateCard(root, app);
       }
       catch (error) {
@@ -6386,6 +6392,15 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind character sheet combat statuses on ApplicationV2 render.`, error);
+      }
+    }
+
+    if (supportsHeldItemSheetControls(actor)) {
+      try {
+        bindHeldItemEquipContextMenu(root, { actor, app, moduleApi });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind held item sheet controls on ApplicationV2 render.`, error);
       }
     }
 
