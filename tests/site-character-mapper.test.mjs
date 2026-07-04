@@ -189,3 +189,37 @@ test("buildStatePatch on an empty system degrades safely", () => {
   assert.equal(p.usedSlots, undefined);
   assert.equal(p.clientSync.source, "foundry");
 });
+
+import { detectStateConflict, buildActorStateUpdate } from "../scripts/data/site-character-mapper.js";
+
+test("detectStateConflict: differing hashes conflict, matching / missing do not", () => {
+  assert.equal(detectStateConflict("sha256:b", "sha256:a"), true);
+  assert.equal(detectStateConflict("sha256:a", "sha256:a"), false);
+  assert.equal(detectStateConflict("sha256:b", ""), false); // never acknowledged → no conflict
+  assert.equal(detectStateConflict("", "sha256:a"), false); // site has no state → no conflict
+  assert.equal(detectStateConflict(null, null), false);
+});
+
+test("buildActorStateUpdate is the reverse of buildStatePatch for scalar state", () => {
+  const state = {
+    currentHp: 8, maxHp: 27,
+    deathSaves: { success: 2, failure: 1 },
+    inspiration: true, exhaustion: 4,
+    currency: { gp: 12, sp: 3, xp: 999 },
+    stateHash: "sha256:x",
+  };
+  const { system } = buildActorStateUpdate(state);
+  assert.equal(system.attributes.hp.value, 8);
+  assert.equal(system.attributes.hp.max, 27);
+  assert.deepEqual(system.attributes.death, { success: 2, failure: 1 });
+  assert.equal(system.attributes.inspiration, true);
+  assert.equal(system.attributes.exhaustion, 4);
+  assert.deepEqual(system.currency, { gp: 12, sp: 3 }); // xp dropped
+});
+
+test("buildActorStateUpdate clamps and degrades safely on empty state", () => {
+  assert.deepEqual(buildActorStateUpdate({}), { system: {} });
+  const { system } = buildActorStateUpdate({ exhaustion: 99, deathSaves: { success: 9, failure: -1 } });
+  assert.equal(system.attributes.exhaustion, 10);
+  assert.deepEqual(system.attributes.death, { success: 3, failure: 0 });
+});

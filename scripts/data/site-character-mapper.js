@@ -250,4 +250,54 @@ export function buildStatePatch(system = {}, { statuses = [], moduleId = "rebrey
   return patch;
 }
 
+/**
+ * Conflict test for the state push (integration ТЗ §9.3): the site's current
+ * `stateHash` differs from the one we last acknowledged, i.e. someone changed
+ * the site character since our last sync. No baseline (never pushed) or the site
+ * has no state yet → not a conflict, the push proceeds.
+ * @param {string} remoteHash the site's current stateHash
+ * @param {string} lastStateHash the stateHash this Actor last acknowledged
+ */
+export function detectStateConflict(remoteHash, lastStateHash) {
+  const remote = String(remoteHash ?? "").trim();
+  const known = String(lastStateHash ?? "").trim();
+  if (!remote || !known) return false;
+  return remote !== known;
+}
+
+/**
+ * Reverse of buildStatePatch: the site's mutable state → a dnd5e Actor `system`
+ * update, for «Принять сайт» (pull the fresher site state into Foundry, ТЗ
+ * §9.3). Pure over the state object — spell slots (need the Actor's slot max)
+ * and conditions (need status-effect toggles) are applied by the service.
+ */
+export function buildActorStateUpdate(state = {}) {
+  const attributes = {};
+  if (state.currentHp != null || state.maxHp != null) {
+    attributes.hp = {
+      ...(state.currentHp != null ? { value: Math.max(0, toInt(state.currentHp, 0) ?? 0) } : {}),
+      ...(state.maxHp != null ? { max: Math.max(0, toInt(state.maxHp, 0) ?? 0) } : {}),
+    };
+  }
+  if (state.deathSaves) {
+    attributes.death = {
+      success: Math.max(0, Math.min(3, toInt(state.deathSaves.success, 0) ?? 0)),
+      failure: Math.max(0, Math.min(3, toInt(state.deathSaves.failure, 0) ?? 0)),
+    };
+  }
+  if ("inspiration" in state) attributes.inspiration = Boolean(state.inspiration);
+  if ("exhaustion" in state) attributes.exhaustion = Math.max(0, Math.min(10, toInt(state.exhaustion, 0) ?? 0));
+
+  const currency = {};
+  for (const key of CURRENCY_KEYS) {
+    const v = toInt(state.currency?.[key]);
+    if (v != null) currency[key] = Math.max(0, v);
+  }
+
+  const system = {};
+  if (Object.keys(attributes).length) system.attributes = attributes;
+  if (Object.keys(currency).length) system.currency = currency;
+  return { system };
+}
+
 export { CURRENCY_KEYS };

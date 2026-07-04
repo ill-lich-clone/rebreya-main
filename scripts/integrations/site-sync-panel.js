@@ -27,6 +27,77 @@ async function notify(kind, message) {
   ui.notifications?.[kind]?.(message);
 }
 
+/** Yes/no dialog. Returns true on «Да». Defaults to true if DialogV2 is absent. */
+async function confirmDialog(title, message) {
+  const DV2 = dialogV2();
+  if (!DV2) return true;
+  const res = await DV2.wait({
+    window: { title },
+    content: `<p>${escapeHtml(message)}</p>`,
+    buttons: [
+      { action: "yes", label: "Да", default: true },
+      { action: "no", label: "Нет" },
+    ].map((b) => ({ ...b, callback: () => b.action })),
+    rejectClose: false,
+  });
+  return res === "yes";
+}
+
+/** One-line RU summary of a site state object for the conflict dialog. */
+function describeState(state) {
+  if (!state) return "";
+  const bits = [];
+  if (state.currentHp != null || state.maxHp != null) bits.push(`хиты ${state.currentHp ?? "?"}/${state.maxHp ?? "?"}`);
+  if (state.exhaustion) bits.push(`истощение ${state.exhaustion}`);
+  if (state.inspiration) bits.push("вдохновение");
+  const ds = state.deathSaves;
+  if (ds && (ds.success || ds.failure)) bits.push(`спасброски со смертью ${ds.success ?? 0}/${ds.failure ?? 0}`);
+  return escapeHtml(bits.join(", "));
+}
+
+/**
+ * State-push conflict resolution dialog (integration ТЗ §9.3). MVP actions:
+ * «Оставить Foundry» (force-push), «Принять сайт» (pull), «Отменить».
+ */
+async function resolveStateConflict(actor, moduleApi, conflict) {
+  const DV2 = dialogV2();
+  const characterSync = moduleApi?.characterSync;
+  if (!DV2) { await notify("error", "DialogV2 недоступен в этой версии Foundry."); return; }
+  const remote = conflict?.remote ?? null;
+  const summary = describeState(remote);
+  const decision = await DV2.wait({
+    window: { title: "Rebreya — конфликт состояния" },
+    content: `
+      <div class="rebreya-site-conflict">
+        <p>Состояние персонажа на <strong>rebreya.com изменилось</strong> после последней синхронизации.</p>
+        <ul>
+          <li><strong>Оставить Foundry</strong> — перезаписать сайт данными из Foundry.</li>
+          <li><strong>Принять сайт</strong> — загрузить состояние с сайта в Foundry.</li>
+        </ul>
+        ${summary ? `<p class="notes">Сейчас на сайте: ${summary}.</p>` : ""}
+      </div>`,
+    buttons: [
+      { action: "keep", label: "Оставить Foundry", default: true },
+      { action: "accept", label: "Принять сайт" },
+      { action: "cancel", label: "Отменить" },
+    ].map((b) => ({ ...b, callback: () => b.action })),
+    rejectClose: false,
+  });
+  if (!decision || decision === "cancel") return;
+  try {
+    if (decision === "keep") {
+      await characterSync.pushState(actor, { force: true });
+      await notify("info", "Состояние Foundry отправлено на сайт (перезапись).");
+    } else if (decision === "accept") {
+      const res = await characterSync.applySiteState(actor, remote);
+      await notify("info", "Состояние сайта загружено в Foundry.");
+      for (const w of res?.warnings ?? []) await notify("warn", w);
+    }
+  } catch (error) {
+    await notify("error", `Не удалось разрешить конфликт: ${error.message}`);
+  }
+}
+
 /** Ask for site credentials and log in. Returns true on success. */
 async function promptLogin(site) {
   const DV2 = dialogV2();
@@ -145,7 +216,11 @@ async function openSyncDialog(actor, moduleApi) {
   if (action === "push") {
     try {
       const res = await characterSync.pushState(actor);
-      await notify("info", "Состояние отправлено на сайт rebreya.com.");
+      if (res?.conflict) {
+        await resolveStateConflict(actor, moduleApi, res);
+      } else {
+        await notify("info", "Состояние отправлено на сайт rebreya.com.");
+      }
       return;
     } catch (error) {
       await notify("error", `Не удалось отправить состояние: ${error.message}`);
@@ -163,6 +238,24 @@ async function openSyncDialog(actor, moduleApi) {
     } else {
       character = await pickCharacter(characterSync);
       if (!character) return;
+      // Link conflicts (ТЗ §9.3): this Actor is already linked elsewhere, or the
+      // chosen site character is already linked to another Actor.
+      const existing = characterSync.getLink(actor);
+      if (existing?.id != null && Number(existing.id) !== Number(character.id)) {
+        const ok = await confirmDialog(
+          "Rebreya — перепривязка",
+          `Этот Actor уже связан с персонажем сайта #${existing.id}. Перепривязать к «${character.name}»?`,
+        );
+        if (!ok) return;
+      }
+      const other = characterSync.findActorLinkedTo(character.id, actor.id);
+      if (other) {
+        const ok = await confirmDialog(
+          "Rebreya — персонаж уже связан",
+          `Персонаж «${character.name}» уже связан с актёром «${other.name}». Всё равно связать текущий Actor?`,
+        );
+        if (!ok) return;
+      }
     }
     try {
       const res = await characterSync.importBuild(actor, character, { overrideAc: false });
