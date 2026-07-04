@@ -61,6 +61,16 @@ test("legacy module entrypoints forward cached Foundry sessions to the current l
   }
 });
 
+test("module stylesheet cache bust uses the live entrypoint version", async () => {
+  const manifestUrl = new URL("../module.json", import.meta.url);
+  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+  const entrypointSource = await readFile(new URL(manifest.esmodules[0], manifestUrl), "utf8");
+
+  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.85";/u);
+  assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
+  assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
+});
+
 test("module entrypoint registers the live magic weapon template hook", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
