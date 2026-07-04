@@ -8,6 +8,7 @@
 import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
 import { SITE_SPELLS_COMPENDIUM_NAME } from "../data/site-spells-compendium.js";
 import { SITE_ARTICLES_COMPENDIUM_NAME } from "../data/site-articles-compendium.js";
+import { SITE_BESTIARY_COMPENDIUM_NAME } from "../data/site-bestiary-compendium.js";
 
 // resource key → { label, pack collection, service getter }
 const RESOURCES = [
@@ -22,6 +23,12 @@ const RESOURCES = [
     label: "Статьи",
     pack: `world.${SITE_ARTICLES_COMPENDIUM_NAME}`,
     service: (api) => api?.siteArticlesCompendium,
+  },
+  {
+    key: "bestiary",
+    label: "Бестиарий",
+    pack: `world.${SITE_BESTIARY_COMPENDIUM_NAME}`,
+    service: (api) => api?.siteBestiaryCompendium,
   },
 ];
 
