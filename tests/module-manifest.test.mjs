@@ -85,3 +85,30 @@ test("module entrypoint registers the live magic weapon template hook", async ()
   );
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
 });
+
+test("held item integrations use the current module cache bust", async () => {
+  const manifestUrl = new URL("../module.json", import.meta.url);
+  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+  const entrypointPath = manifest.esmodules?.[0];
+  const entrypointSource = await readFile(new URL(`../${entrypointPath}`, import.meta.url), "utf8");
+  const sheetSource = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
+  const attackSource = await readFile(new URL("../scripts/combat/attack-service.js", import.meta.url), "utf8");
+  const escapedVersion = manifest.version.replaceAll(".", "\\.");
+
+  assert.match(
+    entrypointSource,
+    new RegExp(`dnd5e-sheet-extensions\\.js\\?v=${escapedVersion}-npc-held-natural`, "u"),
+  );
+  assert.match(
+    entrypointSource,
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-npc-held-natural`, "u"),
+  );
+  assert.match(
+    sheetSource,
+    new RegExp(`held-items\\.js\\?v=${escapedVersion}-npc-held-natural`, "u"),
+  );
+  assert.match(
+    attackSource,
+    new RegExp(`held-items\\.js\\?v=${escapedVersion}-npc-held-natural`, "u"),
+  );
+});

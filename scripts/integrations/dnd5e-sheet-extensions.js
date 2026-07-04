@@ -30,7 +30,7 @@ import {
   getHeldItemDamageFormulaPresentation,
   getHeldItemEquipPresentation,
   isHeldItemEligible
-} from "./held-items.js?v=1.4.86-npc-held-natural";
+} from "./held-items.js?v=1.4.87-npc-held-natural";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
@@ -6006,11 +6006,10 @@ function bindHeldItemEquipContextMenu(root, { actor, app, moduleApi } = {}) {
           }
 
           await releaseHeldItemReplacementSlots(actor, action);
-          await item.update?.(action.update);
+          const updatedItem = await item.update?.(action.update);
+          const presentationItem = updatedItem ?? item;
           applyHeldItemEquipPresentation(control, action);
-          applyHeldItemDamageFormulaPresentation(row, item);
-          await moduleApi?.refreshOpenApps?.();
-          await rerenderActorSheet(app, moduleApi);
+          applyHeldItemDamageFormulaPresentation(row, presentationItem);
         }
       }));
       openHeldItemContextMenu({
@@ -6415,5 +6414,4 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     }
   });
 }
-
 
