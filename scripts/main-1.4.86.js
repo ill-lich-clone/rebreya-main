@@ -43,7 +43,7 @@ import {
 import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.4.86";
 import { PerformerAutomationService } from "./combat/performer-automation-service.js?v=1.4.86";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
-import { registerSceneControlsHook } from "./hooks.js?v=1.4.86";
+import { registerSceneControlsHook } from "./hooks.js?v=1.4.86-bg3-piles";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,

@@ -8,8 +8,10 @@ const {
   ensurePlayerInventoryQuickButton,
   getBg3DeathSaveData,
   patchBg3HotbarDeathSavesContainer,
+  patchBg3HotbarItemPileCommonActions,
   registerSceneControlsHook,
   resolvePlayerInventoryButtonAnchor,
+  shouldSkipBg3HotbarCommonActionsForActor,
   shouldSuppressBg3HotbarAutoAdd
 } = await import("../scripts/hooks.js");
 
@@ -202,6 +204,57 @@ test("BG3 hotbar auto-add suppression leaves unrelated items alone", () => {
   assert.equal(shouldSuppressBg3HotbarAutoAdd(makeItem({ type: "feat" })), false);
   assert.equal(applyBg3HotbarAutoAddSuppression(makeItem({ type: "feat" }), options), false);
   assert.equal(options.noBG3AutoAdd, undefined);
+});
+
+test("BG3 hotbar common actions are skipped for Item Piles actors", async () => {
+  const created = [];
+  const actor = {
+    type: "npc",
+    flags: {
+      "item-piles": {
+        data: {
+          enabled: true,
+          type: "pile"
+        }
+      }
+    },
+    createEmbeddedDocuments: async (...args) => {
+      created.push(args);
+      return [{ uuid: "Actor.loot.Item.dash" }];
+    }
+  };
+  class AutoPopulateCreateToken {}
+  AutoPopulateCreateToken._getCombatActionsList = async (targetActor) => {
+    await targetActor.createEmbeddedDocuments("Item", [{ name: "Dash" }]);
+    return ["Actor.loot.Item.dash"];
+  };
+
+  assert.equal(shouldSkipBg3HotbarCommonActionsForActor(actor), true);
+  assert.equal(await patchBg3HotbarItemPileCommonActions({
+    force: true,
+    importModule: async () => ({ AutoPopulateCreateToken })
+  }), true);
+
+  assert.deepEqual(await AutoPopulateCreateToken._getCombatActionsList(actor), []);
+  assert.deepEqual(created, []);
+});
+
+test("BG3 hotbar common actions still populate regular actors", async () => {
+  const actor = {
+    type: "npc",
+    flags: {},
+    createEmbeddedDocuments: async () => [{ uuid: "Actor.guard.Item.dash" }]
+  };
+  class AutoPopulateCreateToken {}
+  AutoPopulateCreateToken._getCombatActionsList = async () => ["Actor.guard.Item.dash"];
+
+  assert.equal(shouldSkipBg3HotbarCommonActionsForActor(actor), false);
+  assert.equal(await patchBg3HotbarItemPileCommonActions({
+    force: true,
+    importModule: async () => ({ AutoPopulateCreateToken })
+  }), true);
+
+  assert.deepEqual(await AutoPopulateCreateToken._getCombatActionsList(actor), ["Actor.guard.Item.dash"]);
 });
 
 test("BG3 hotbar death save data tolerates actors without death saves", () => {
