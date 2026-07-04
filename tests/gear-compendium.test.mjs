@@ -232,6 +232,26 @@ const EXPECTED_ARMOR = new Map([
   ["ukreplennyy-shchit", { type: "shield", baseItem: "", value: 2, dex: null, strength: 13, stealth: false }],
   ["ballisticheskiy-shchit", { type: "shield", baseItem: "", value: 3, dex: null, strength: 15, stealth: true }]
 ]);
+const EXPECTED_AMMUNITION = new Map([
+  ["arbaletnye-bolty-20", { subtype: "crossbowBolt", priceGoldEquivalent: 1 }],
+  ["igly-dlya-trubki-50", { subtype: "blowgunNeedle", priceGoldEquivalent: 1 }],
+  ["snaryady-dlya-prashchi-20", { subtype: "slingBullet", priceGoldEquivalent: 0.04 }],
+  ["strely-20", { subtype: "arrow", priceGoldEquivalent: 1 }],
+  ["mushketnyy-patron-20", { subtype: "firearmBullet", priceGoldEquivalent: 20 }],
+  ["vintovochnyy-patron-10", { subtype: "firearmBullet", priceGoldEquivalent: 60 }],
+  ["kartechnyy-patron-20", { subtype: "firearmBullet", priceGoldEquivalent: 60 }],
+  ["pulevoy-patron-10", { subtype: "firearmBullet", priceGoldEquivalent: 50 }],
+  ["toplivnyy-bak-1", { subtype: "", priceGoldEquivalent: 12 }],
+  ["raketnyy-vystrel-3", { subtype: "", priceGoldEquivalent: 75 }],
+  ["pistoletnyy-patron-20", { subtype: "firearmBullet", priceGoldEquivalent: 40 }],
+  ["batareya-4", { subtype: "", priceGoldEquivalent: 20 }],
+  ["stal-noy-bolt-1", { subtype: "crossbowBolt", priceGoldEquivalent: 10 }],
+  ["zaryad-antimaterii-20", { subtype: "", priceGoldEquivalent: 400000 }],
+  ["teplovaya-batareya-20", { subtype: "", priceGoldEquivalent: 15000 }],
+  ["neletal-nye-puli-20", { subtype: "firearmBullet", priceGoldEquivalent: 80 }],
+  ["serebryannaya-pulya-10", { subtype: "firearmBullet", priceGoldEquivalent: 100 }],
+  ["adamantovaya-pulya-10", { subtype: "firearmBullet", priceGoldEquivalent: 1000 }]
+]);
 
 globalThis.foundry ??= {
   utils: {
@@ -520,6 +540,25 @@ test("real gear armor data maps every armor sheet row to dnd5e armor system keys
       expected.stealth,
       `${gearId} emits stealth disadvantage`
     );
+  }
+});
+
+test("real gear ammunition rows create dnd5e consumable ammo items", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+
+  for (const [gearId, expected] of EXPECTED_AMMUNITION) {
+    const item = byId.get(gearId);
+    assert.ok(item, `ammunition ${gearId} exists in Rebreya gear data`);
+    assert.equal(item.equipmentType, "Боеприпас", `${gearId} uses the ammunition equipment type from the sheet`);
+    assert.equal(item.priceGoldEquivalent, expected.priceGoldEquivalent, `${gearId} stores sheet price as gp equivalent`);
+
+    const created = createDnd5eItemData(item, new Map());
+    assert.equal(created.type, "consumable", `${gearId} is created as a dnd5e consumable`);
+    assert.equal(created.system.type.value, "ammo", `${gearId} uses dnd5e ammo type`);
+    assert.equal(created.system.type.subtype, expected.subtype, `${gearId} uses expected ammo subtype`);
+    assert.equal(created.flags["rebreya-main"].foundrySubtype, "ammo");
+    assert.equal(created.flags["rebreya-main"].foundrySubtypeExtra, expected.subtype);
   }
 });
 

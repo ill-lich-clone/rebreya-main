@@ -62,7 +62,7 @@
     {
         "id":  "arbaletnye-bolty-20",
         "name":  "Арбалетные болты (20)",
-        "equipmentType":  "Снаряжение",
+        "equipmentType":  "Боеприпас",
         "shopSubtype":  "Оружейная лавка",
         "priceText":  "1 зм",
         "priceValue":  1,
@@ -82,7 +82,7 @@
     {
         "id":  "igly-dlya-trubki-50",
         "name":  "Иглы для трубки (50)",
-        "equipmentType":  "Снаряжение",
+        "equipmentType":  "Боеприпас",
         "shopSubtype":  "Оружейная лавка",
         "priceText":  "1 зм",
         "priceValue":  1,
@@ -102,7 +102,7 @@
     {
         "id":  "snaryady-dlya-prashchi-20",
         "name":  "Снаряды для пращи (20)",
-        "equipmentType":  "Снаряжение",
+        "equipmentType":  "Боеприпас",
         "shopSubtype":  "Оружейная лавка",
         "priceText":  "4 мм",
         "priceValue":  4,
@@ -122,7 +122,7 @@
     {
         "id":  "strely-20",
         "name":  "Стрелы (20)",
-        "equipmentType":  "Снаряжение",
+        "equipmentType":  "Боеприпас",
         "shopSubtype":  "Оружейная лавка",
         "priceText":  "1 зм",
         "priceValue":  1,
@@ -1781,7 +1781,7 @@
     },
     {
         "id":  "totem-fokusirovka-druidov",
-        "name":  "Тотем  (фокусировка друидов)",
+        "name":  "Тотем (фокусировка друидов)",
         "equipmentType":  "Снаряжение",
         "shopSubtype":  "Художественный салон",
         "priceText":  "1 зм",
@@ -1929,7 +1929,7 @@
         "priceDenomination":  "cp",
         "priceGoldEquivalent":  0.05,
         "rank":  0,
-        "weight":  null,
+        "weight":  0.25,
         "volume":  "",
         "capacity":  "",
         "description":  "Металлический анкер для надёжного крепления верёвок в камне.",
@@ -2906,9 +2906,9 @@
         "volume":  "",
         "capacity":  "",
         "description":  "Длинный гибкий ремень или веревка с ручкой, используемый для нанесения ударов на большом расстоянии. Кнут часто использует для выбивания оружия или контроля движения противника с помощью своих личных качеств",
-        "predominantMaterialId":  "stal",
-        "predominantMaterialName":  "Сталь",
-        "linkedTool":  "Кузнеца",
+        "predominantMaterialId":  "kozha",
+        "predominantMaterialName":  "Кожа",
+        "linkedTool":  "Кожедела",
         "value":  "50",
         "source":  "gear-workbook",
         "weapon":  {
@@ -4062,7 +4062,7 @@
         "predominantMaterialId":  "zhelezo",
         "predominantMaterialName":  "Железо",
         "linkedTool":  "Кузнеца",
-        "value":  "15",
+        "value":  "13",
         "source":  "gear-workbook",
         "weapon":  {
             "damageFormula":  "1d8",
@@ -4418,7 +4418,7 @@
         "id":  "styoganyy-dospekh",
         "name":  "Стёганый доспех",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "5 зм",
         "priceValue":  5,
         "priceDenomination":  "gp",
@@ -4448,7 +4448,7 @@
         "id":  "kozhanyy-dospekh",
         "name":  "Кожаный доспех",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "10 зм",
         "priceValue":  10,
         "priceDenomination":  "gp",
@@ -4476,7 +4476,7 @@
         "id":  "proklyopannyy-kozhanyy-dospekh",
         "name":  "Проклёпанный кожаный доспех",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "45 зм",
         "priceValue":  45,
         "priceDenomination":  "gp",
@@ -4504,7 +4504,7 @@
         "id":  "boevaya-bronya-shef-povara",
         "name":  "Боевая броня шеф-повара",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "15 зм",
         "priceValue":  15,
         "priceDenomination":  "gp",
@@ -4532,7 +4532,7 @@
         "id":  "shkurnyy-dospekh",
         "name":  "Шкурный доспех",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "10 зм",
         "priceValue":  10,
         "priceDenomination":  "gp",
@@ -4560,7 +4560,7 @@
         "id":  "kol-chuzhnaya-rubakha",
         "name":  "Кольчужная рубаха",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "50 зм",
         "priceValue":  50,
         "priceDenomination":  "gp",
@@ -4588,7 +4588,7 @@
         "id":  "cheshuychatyy-dospekh",
         "name":  "Чешуйчатый доспех",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "50 зм",
         "priceValue":  50,
         "priceDenomination":  "gp",
@@ -4618,7 +4618,7 @@
         "id":  "kirasa",
         "name":  "Кираса",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "400 зм",
         "priceValue":  400,
         "priceDenomination":  "gp",
@@ -4646,7 +4646,7 @@
         "id":  "polulaty",
         "name":  "Полулаты",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "750 зм",
         "priceValue":  750,
         "priceDenomination":  "gp",
@@ -4676,7 +4676,7 @@
         "id":  "improvizirovannyy-dospekh",
         "name":  "Импровизированный доспех",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "0 зм",
         "priceValue":  0,
         "priceDenomination":  "gp",
@@ -4706,7 +4706,7 @@
         "id":  "kolechnyy-dospekh",
         "name":  "Колечный доспех",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "30 зм",
         "priceValue":  30,
         "priceDenomination":  "gp",
@@ -4736,7 +4736,7 @@
         "id":  "kol-chuga",
         "name":  "Кольчуга",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "75 зм",
         "priceValue":  75,
         "priceDenomination":  "gp",
@@ -4766,7 +4766,7 @@
         "id":  "nabornyy-dospekh",
         "name":  "Наборный доспех",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "200 зм",
         "priceValue":  200,
         "priceDenomination":  "gp",
@@ -4796,7 +4796,7 @@
         "id":  "laty",
         "name":  "Латы",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "1500 зм",
         "priceValue":  1500,
         "priceDenomination":  "gp",
@@ -4826,7 +4826,7 @@
         "id":  "pantsir-tortla",
         "name":  "Панцирь тортла",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "1000 зм",
         "priceValue":  1000,
         "priceDenomination":  "gp",
@@ -4856,7 +4856,7 @@
         "id":  "shchit",
         "name":  "Щит",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "10 зм",
         "priceValue":  10,
         "priceDenomination":  "gp",
@@ -4884,7 +4884,7 @@
         "id":  "bakler",
         "name":  "Баклер",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "8 зм",
         "priceValue":  8,
         "priceDenomination":  "gp",
@@ -4912,7 +4912,7 @@
         "id":  "bashennyy-shchit",
         "name":  "Башенный щит",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "300 зм",
         "priceValue":  300,
         "priceDenomination":  "gp",
@@ -4942,7 +4942,7 @@
         "id":  "tyazhelyy-plashch",
         "name":  "Тяжелый плащ",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "10 зм",
         "priceValue":  10,
         "priceDenomination":  "gp",
@@ -4972,7 +4972,7 @@
         "id":  "kozhanaya-kurtka",
         "name":  "Кожаная куртка",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "20 зм",
         "priceValue":  20,
         "priceDenomination":  "gp",
@@ -5000,7 +5000,7 @@
         "id":  "zashchitnaya-rubashka",
         "name":  "Защитная рубашка",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "30 зм",
         "priceValue":  30,
         "priceDenomination":  "gp",
@@ -5028,7 +5028,7 @@
         "id":  "listovoy-zhilet",
         "name":  "Листовой жилет",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "50 зм",
         "priceValue":  50,
         "priceDenomination":  "gp",
@@ -5058,7 +5058,7 @@
         "id":  "ukreplennyy-plashch",
         "name":  "Укрепленный плащ",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "70 зм",
         "priceValue":  70,
         "priceDenomination":  "gp",
@@ -5086,7 +5086,7 @@
         "id":  "mnogosloynyy-bronezhilet",
         "name":  "Многослойный бронежилет",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "30 зм",
         "priceValue":  30,
         "priceDenomination":  "gp",
@@ -5114,7 +5114,7 @@
         "id":  "lyogkaya-sluzhebnaya-bronya",
         "name":  "Лёгкая служебная броня",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "100 зм",
         "priceValue":  100,
         "priceDenomination":  "gp",
@@ -5142,7 +5142,7 @@
         "id":  "takticheskaya-bronya",
         "name":  "Тактическая броня",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "400 зм",
         "priceValue":  400,
         "priceDenomination":  "gp",
@@ -5172,7 +5172,7 @@
         "id":  "pekhotnaya-shturmovaya-bronya",
         "name":  "Пехотная штурмовая броня",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "800 зм",
         "priceValue":  800,
         "priceDenomination":  "gp",
@@ -5202,7 +5202,7 @@
         "id":  "tyazhelaya-sluzhebnaya-bronya",
         "name":  "Тяжелая служебная броня",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "1500 зм",
         "priceValue":  1500,
         "priceDenomination":  "gp",
@@ -5232,7 +5232,7 @@
         "id":  "sverkhtyazhelaya-shturmovaya-bronya",
         "name":  "Сверхтяжелая штурмовая броня",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "3000 зм",
         "priceValue":  3000,
         "priceDenomination":  "gp",
@@ -5262,7 +5262,7 @@
         "id":  "ukreplennyy-shchit",
         "name":  "Укрепленный щит",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "50 зм",
         "priceValue":  50,
         "priceDenomination":  "gp",
@@ -5290,7 +5290,7 @@
         "id":  "ballisticheskiy-shchit",
         "name":  "Баллистический щит",
         "equipmentType":  "Доспех",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "300 зм",
         "priceValue":  300,
         "priceDenomination":  "gp",
@@ -7267,7 +7267,7 @@
         "priceDenomination":  "gp",
         "priceGoldEquivalent":  4000,
         "rank":  5,
-        "weight":  1,
+        "weight":  -1,
         "volume":  "",
         "capacity":  "",
         "description":  "Ствол с уменьшенной массой, повышающий мобильность оружия.",
@@ -7327,7 +7327,7 @@
         "priceDenomination":  "gp",
         "priceGoldEquivalent":  0,
         "rank":  0,
-        "weight":  3,
+        "weight":  -3,
         "volume":  "",
         "capacity":  "",
         "description":  "Укороченный ствол, повышающий компактность оружия ценой дальности и точности.",
@@ -7421,7 +7421,7 @@
         "id":  "styoganyy-dospekh-dlya-skakuna",
         "name":  "Стёганый доспех для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "10 зм",
         "priceValue":  10,
         "priceDenomination":  "gp",
@@ -7441,7 +7441,7 @@
         "id":  "kozhanyy-dospekh-dlya-skakuna",
         "name":  "Кожаный доспех для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "40 зм",
         "priceValue":  40,
         "priceDenomination":  "gp",
@@ -7461,7 +7461,7 @@
         "id":  "proklyopannyy-kozhanyy-dospekh-dlya-skakuna",
         "name":  "Проклёпанный кожаный доспех для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "180 зм",
         "priceValue":  180,
         "priceDenomination":  "gp",
@@ -7481,7 +7481,7 @@
         "id":  "boevaya-bronya-shef-povara-dlya-skakuna",
         "name":  "Боевая броня шеф-повара для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "60 зм",
         "priceValue":  60,
         "priceDenomination":  "gp",
@@ -7501,7 +7501,7 @@
         "id":  "shkurnyy-dospekh-dlya-skakuna",
         "name":  "Шкурный доспех для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "40 зм",
         "priceValue":  40,
         "priceDenomination":  "gp",
@@ -7521,7 +7521,7 @@
         "id":  "kol-chuzhnaya-rubakha-dlya-skakuna",
         "name":  "Кольчужная рубаха для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "200 зм",
         "priceValue":  200,
         "priceDenomination":  "gp",
@@ -7541,7 +7541,7 @@
         "id":  "cheshuychatyy-dospekh-dlya-skakuna",
         "name":  "Чешуйчатый доспех для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "200 зм",
         "priceValue":  200,
         "priceDenomination":  "gp",
@@ -7561,7 +7561,7 @@
         "id":  "kirasa-dlya-skakuna",
         "name":  "Кираса для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "1600 зм",
         "priceValue":  1600,
         "priceDenomination":  "gp",
@@ -7581,7 +7581,7 @@
         "id":  "polulaty-dlya-skakuna",
         "name":  "Полулаты для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "3000 зм",
         "priceValue":  3000,
         "priceDenomination":  "gp",
@@ -7601,7 +7601,7 @@
         "id":  "improvizirovannyy-dospekh-dlya-skakuna",
         "name":  "Импровизированный доспех для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "0 зм",
         "priceValue":  0,
         "priceDenomination":  "gp",
@@ -7621,7 +7621,7 @@
         "id":  "kolechnyy-dospekh-dlya-skakuna",
         "name":  "Колечный доспех для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "120 зм",
         "priceValue":  120,
         "priceDenomination":  "gp",
@@ -7641,7 +7641,7 @@
         "id":  "kol-chuga-dlya-skakuna",
         "name":  "Кольчуга для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "300 зм",
         "priceValue":  300,
         "priceDenomination":  "gp",
@@ -7661,7 +7661,7 @@
         "id":  "nabornyy-dospekh-dlya-skakuna",
         "name":  "Наборный доспех для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "800 зм",
         "priceValue":  800,
         "priceDenomination":  "gp",
@@ -7681,7 +7681,7 @@
         "id":  "laty-dlya-skakuna",
         "name":  "Латы для скакуна",
         "equipmentType":  "Скакуны и транспорт",
-        "shopSubtype":  "Доспешная мастерская",
+        "shopSubtype":  "Мастерская доспехов",
         "priceText":  "6000 зм",
         "priceValue":  6000,
         "priceDenomination":  "gp",
@@ -7959,7 +7959,7 @@
     },
     {
         "id":  "instrumenty-grimyora-0-y-rang",
-        "name":  "Инструменты Гримёра  0-й ранг",
+        "name":  "Инструменты Гримёра 0-й ранг",
         "equipmentType":  "Инструменты",
         "shopSubtype":  "Портняжная лавка",
         "priceText":  "25 зм",
@@ -8039,7 +8039,7 @@
     },
     {
         "id":  "instrumenty-kamneloma-0-y-rang",
-        "name":  "Инструменты Камнелома  0-й ранг",
+        "name":  "Инструменты Камнелома 0-й ранг",
         "equipmentType":  "Инструменты",
         "shopSubtype":  "Скобяная лавка",
         "priceText":  "10 зм",
@@ -8059,7 +8059,7 @@
     },
     {
         "id":  "instrumenty-kozhedela-0-y-rang",
-        "name":  "Инструменты Кожедела  0-й ранг",
+        "name":  "Инструменты Кожедела 0-й ранг",
         "equipmentType":  "Инструменты",
         "shopSubtype":  "Кожевенная мастерская",
         "priceText":  "5 зм",
@@ -8119,7 +8119,7 @@
     },
     {
         "id":  "instrumenty-povara-0-y-rang",
-        "name":  "Инструменты Повара  0-й ранг",
+        "name":  "Инструменты Повара 0-й ранг",
         "equipmentType":  "Инструменты",
         "shopSubtype":  "Скобяная лавка",
         "priceText":  "1 зм",
@@ -10127,7 +10127,7 @@
         "priceDenomination":  "gp",
         "priceGoldEquivalent":  30000,
         "rank":  8,
-        "weight":  1,
+        "weight":  1200,
         "volume":  "",
         "capacity":  "",
         "description":  "масштабный рельеф для городской стены, арки, мемориала или фасада общественного здания.",
@@ -10207,7 +10207,7 @@
         "priceDenomination":  "gp",
         "priceGoldEquivalent":  100000,
         "rank":  9,
-        "weight":  3,
+        "weight":  3000,
         "volume":  "",
         "capacity":  "",
         "description":  "огромная заказная статуя для собора, городской площади или родового комплекса, рассчитанная на века.",
@@ -12655,12 +12655,30 @@
             "units":  "lb"
         },
         "containerContents":  [
-            { "gearId":  "spal-nik", "quantity":  1 },
-            { "gearId":  "odezhda-kostyum", "quantity":  2 },
-            { "gearId":  "svecha", "quantity":  5 },
-            { "gearId":  "ratsiony-1-den", "quantity":  5 },
-            { "gearId":  "burdyuk", "quantity":  1 },
-            { "gearId":  "instrumenty-grimyora-0-y-rang", "quantity":  1 }
+            {
+                "gearId":  "spal-nik",
+                "quantity":  1
+            },
+            {
+                "gearId":  "odezhda-kostyum",
+                "quantity":  2
+            },
+            {
+                "gearId":  "svecha",
+                "quantity":  5
+            },
+            {
+                "gearId":  "ratsiony-1-den",
+                "quantity":  5
+            },
+            {
+                "gearId":  "burdyuk",
+                "quantity":  1
+            },
+            {
+                "gearId":  "instrumenty-grimyora-0-y-rang",
+                "quantity":  1
+            }
         ],
         "description":  "Включает рюкзак, спальник, 2 костюма, 5 свечек, рационы на 5 дней, бурдюк и набор для грима.",
         "predominantMaterialId":  null,
@@ -12690,19 +12708,58 @@
             "units":  "lb"
         },
         "containerContents":  [
-            { "gearId":  "metallicheskie-shariki-1-000-sht-v-sumke", "quantity":  1 },
-            { "gearId":  "leska-10-futov", "quantity":  1 },
-            { "gearId":  "kolokol-chik", "quantity":  1 },
-            { "gearId":  "svecha", "quantity":  5 },
-            { "gearId":  "lomik", "quantity":  1 },
-            { "gearId":  "molotok", "quantity":  1 },
-            { "gearId":  "shlyambur", "quantity":  10 },
-            { "gearId":  "fonar-zakrytyy", "quantity":  1 },
-            { "gearId":  "maslo-flyaga", "quantity":  2 },
-            { "gearId":  "ratsiony-1-den", "quantity":  5 },
-            { "gearId":  "trutnitsa", "quantity":  1 },
-            { "gearId":  "burdyuk", "quantity":  1 },
-            { "gearId":  "veryovka-pen-kovaya-50-futov", "quantity":  1 }
+            {
+                "gearId":  "metallicheskie-shariki-1-000-sht-v-sumke",
+                "quantity":  1
+            },
+            {
+                "gearId":  "leska-10-futov",
+                "quantity":  1
+            },
+            {
+                "gearId":  "kolokol-chik",
+                "quantity":  1
+            },
+            {
+                "gearId":  "svecha",
+                "quantity":  5
+            },
+            {
+                "gearId":  "lomik",
+                "quantity":  1
+            },
+            {
+                "gearId":  "molotok",
+                "quantity":  1
+            },
+            {
+                "gearId":  "shlyambur",
+                "quantity":  10
+            },
+            {
+                "gearId":  "fonar-zakrytyy",
+                "quantity":  1
+            },
+            {
+                "gearId":  "maslo-flyaga",
+                "quantity":  2
+            },
+            {
+                "gearId":  "ratsiony-1-den",
+                "quantity":  5
+            },
+            {
+                "gearId":  "trutnitsa",
+                "quantity":  1
+            },
+            {
+                "gearId":  "burdyuk",
+                "quantity":  1
+            },
+            {
+                "gearId":  "veryovka-pen-kovaya-50-futov",
+                "quantity":  1
+            }
         ],
         "description":  "Включает рюкзак, сумку с 1 000 металлических шариков, 10 футов лески, колокольчик, 5 свечек, ломик, молоток, 10 шлямбуров, закрытый фонарь, 2 фляги масла, рационы на 5 дней, трутницу и бурдюк. В набор также входит 50-футовая пеньковая верёвка, закреплённая сбоку.",
         "predominantMaterialId":  null,
@@ -12732,16 +12789,46 @@
             "units":  "lb"
         },
         "containerContents":  [
-            { "gearId":  "konteyner-dlya-kart-i-svitkov", "quantity":  2 },
-            { "gearId":  "odezhda-otlichnaya", "quantity":  1 },
-            { "gearId":  "chernila-butylochka-30-gramm", "quantity":  1 },
-            { "gearId":  "pischee-pero", "quantity":  1 },
-            { "gearId":  "lampa", "quantity":  1 },
-            { "gearId":  "maslo-flyaga", "quantity":  2 },
-            { "gearId":  "bumaga-odin-list", "quantity":  5 },
-            { "gearId":  "dukhi-flakon", "quantity":  1 },
-            { "gearId":  "vosk", "quantity":  1 },
-            { "gearId":  "mylo", "quantity":  1 }
+            {
+                "gearId":  "konteyner-dlya-kart-i-svitkov",
+                "quantity":  2
+            },
+            {
+                "gearId":  "odezhda-otlichnaya",
+                "quantity":  1
+            },
+            {
+                "gearId":  "chernila-butylochka-30-gramm",
+                "quantity":  1
+            },
+            {
+                "gearId":  "pischee-pero",
+                "quantity":  1
+            },
+            {
+                "gearId":  "lampa",
+                "quantity":  1
+            },
+            {
+                "gearId":  "maslo-flyaga",
+                "quantity":  2
+            },
+            {
+                "gearId":  "bumaga-odin-list",
+                "quantity":  5
+            },
+            {
+                "gearId":  "dukhi-flakon",
+                "quantity":  1
+            },
+            {
+                "gearId":  "vosk",
+                "quantity":  1
+            },
+            {
+                "gearId":  "mylo",
+                "quantity":  1
+            }
         ],
         "description":  "Включает сундук, 2 контейнера для карт и свитков, комплект отличной одежды, бутылочку чернил, писчее перо, лампу, 2 фляги масла, 5 листов бумаги, флакон духов, воск и мыло.",
         "predominantMaterialId":  "derevo",
@@ -12771,14 +12858,38 @@
             "units":  "lb"
         },
         "containerContents":  [
-            { "gearId":  "lomik", "quantity":  1 },
-            { "gearId":  "molotok", "quantity":  1 },
-            { "gearId":  "shlyambur", "quantity":  10 },
-            { "gearId":  "fakel", "quantity":  10 },
-            { "gearId":  "trutnitsa", "quantity":  1 },
-            { "gearId":  "ratsiony-1-den", "quantity":  10 },
-            { "gearId":  "burdyuk", "quantity":  1 },
-            { "gearId":  "veryovka-pen-kovaya-50-futov", "quantity":  1 }
+            {
+                "gearId":  "lomik",
+                "quantity":  1
+            },
+            {
+                "gearId":  "molotok",
+                "quantity":  1
+            },
+            {
+                "gearId":  "shlyambur",
+                "quantity":  10
+            },
+            {
+                "gearId":  "fakel",
+                "quantity":  10
+            },
+            {
+                "gearId":  "trutnitsa",
+                "quantity":  1
+            },
+            {
+                "gearId":  "ratsiony-1-den",
+                "quantity":  10
+            },
+            {
+                "gearId":  "burdyuk",
+                "quantity":  1
+            },
+            {
+                "gearId":  "veryovka-pen-kovaya-50-futov",
+                "quantity":  1
+            }
         ],
         "description":  "Включает рюкзак, ломик, молоток, 10 шлямбуров, 10 факелов, трутницу, рационы на 10 дней и бурдюк. В набор также входит 50-футовая пеньковая верёвка, закреплённая сбоку.",
         "predominantMaterialId":  null,
@@ -12808,13 +12919,34 @@
             "units":  "lb"
         },
         "containerContents":  [
-            { "gearId":  "spal-nik", "quantity":  1 },
-            { "gearId":  "stolovyy-nabor", "quantity":  1 },
-            { "gearId":  "trutnitsa", "quantity":  1 },
-            { "gearId":  "fakel", "quantity":  10 },
-            { "gearId":  "ratsiony-1-den", "quantity":  10 },
-            { "gearId":  "burdyuk", "quantity":  1 },
-            { "gearId":  "veryovka-pen-kovaya-50-futov", "quantity":  1 }
+            {
+                "gearId":  "spal-nik",
+                "quantity":  1
+            },
+            {
+                "gearId":  "stolovyy-nabor",
+                "quantity":  1
+            },
+            {
+                "gearId":  "trutnitsa",
+                "quantity":  1
+            },
+            {
+                "gearId":  "fakel",
+                "quantity":  10
+            },
+            {
+                "gearId":  "ratsiony-1-den",
+                "quantity":  10
+            },
+            {
+                "gearId":  "burdyuk",
+                "quantity":  1
+            },
+            {
+                "gearId":  "veryovka-pen-kovaya-50-futov",
+                "quantity":  1
+            }
         ],
         "description":  "Включает рюкзак, спальник, столовый набор, трутницу, 10 факелов, рационы на 10 дней и бурдюк. В набор также входит 50-футовая пеньковая верёвка, закреплённая сбоку.",
         "predominantMaterialId":  null,
@@ -12844,15 +12976,42 @@
             "units":  "lb"
         },
         "containerContents":  [
-            { "gearId":  "odeyalo", "quantity":  1 },
-            { "gearId":  "svecha", "quantity":  10 },
-            { "gearId":  "trutnitsa", "quantity":  1 },
-            { "gearId":  "korobka-dlya-pozhertvovaniy", "quantity":  1 },
-            { "gearId":  "blagovoniya-upakovka", "quantity":  2 },
-            { "gearId":  "kadilo", "quantity":  1 },
-            { "gearId":  "oblachenie", "quantity":  1 },
-            { "gearId":  "ratsiony-1-den", "quantity":  2 },
-            { "gearId":  "burdyuk", "quantity":  1 }
+            {
+                "gearId":  "odeyalo",
+                "quantity":  1
+            },
+            {
+                "gearId":  "svecha",
+                "quantity":  10
+            },
+            {
+                "gearId":  "trutnitsa",
+                "quantity":  1
+            },
+            {
+                "gearId":  "korobka-dlya-pozhertvovaniy",
+                "quantity":  1
+            },
+            {
+                "gearId":  "blagovoniya-upakovka",
+                "quantity":  2
+            },
+            {
+                "gearId":  "kadilo",
+                "quantity":  1
+            },
+            {
+                "gearId":  "oblachenie",
+                "quantity":  1
+            },
+            {
+                "gearId":  "ratsiony-1-den",
+                "quantity":  2
+            },
+            {
+                "gearId":  "burdyuk",
+                "quantity":  1
+            }
         ],
         "description":  "Включает рюкзак, одеяло, 10 свечек, трутницу, коробку для пожертвований, 2 упаковки благовоний, кадило, облачение, рационы на 2 дня и бурдюк.",
         "predominantMaterialId":  null,
@@ -12882,12 +13041,30 @@
             "units":  "lb"
         },
         "containerContents":  [
-            { "gearId":  "nauchnaya-kniga", "quantity":  1 },
-            { "gearId":  "chernila-butylochka-30-gramm", "quantity":  1 },
-            { "gearId":  "pischee-pero", "quantity":  1 },
-            { "gearId":  "pergament-odin-list", "quantity":  10 },
-            { "gearId":  "sumochka-s-peskom", "quantity":  1 },
-            { "gearId":  "nozh-nebolshoy", "quantity":  1 }
+            {
+                "gearId":  "nauchnaya-kniga",
+                "quantity":  1
+            },
+            {
+                "gearId":  "chernila-butylochka-30-gramm",
+                "quantity":  1
+            },
+            {
+                "gearId":  "pischee-pero",
+                "quantity":  1
+            },
+            {
+                "gearId":  "pergament-odin-list",
+                "quantity":  10
+            },
+            {
+                "gearId":  "sumochka-s-peskom",
+                "quantity":  1
+            },
+            {
+                "gearId":  "nozh-nebolshoy",
+                "quantity":  1
+            }
         ],
         "description":  "Включает рюкзак, научную книгу, бутылочку чернил, писчее перо, 10 листов пергамента, небольшую сумочку с песком и небольшой нож.",
         "predominantMaterialId":  null,
@@ -12898,5 +13075,285 @@
         "foundrySubtype":  "backpack",
         "foundryFolder":  "Наборы снаряжения",
         "source":  "dnd5e-basic-equipment-pack"
+    },
+    {
+        "id":  "mushketnyy-patron-20",
+        "name":  "Мушкетный патрон (20)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "20 ЗМ",
+        "priceValue":  20,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  20,
+        "rank":  1,
+        "weight":  1,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "porokh",
+        "predominantMaterialName":  "Порох",
+        "linkedTool":  "Жестянщика",
+        "value":  "25",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "vintovochnyy-patron-10",
+        "name":  "Винтовочный патрон (10)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "60 ЗМ",
+        "priceValue":  60,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  60,
+        "rank":  2,
+        "weight":  1,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "porokh",
+        "predominantMaterialName":  "Порох",
+        "linkedTool":  "Жестянщика",
+        "value":  "75",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "kartechnyy-patron-20",
+        "name":  "Картечный патрон (20)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "60 ЗМ",
+        "priceValue":  60,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  60,
+        "rank":  2,
+        "weight":  2,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "porokh",
+        "predominantMaterialName":  "Порох",
+        "linkedTool":  "Жестянщика",
+        "value":  "75",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "pulevoy-patron-10",
+        "name":  "Пулевой патрон (10)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "50 ЗМ",
+        "priceValue":  50,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  50,
+        "rank":  2,
+        "weight":  3,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "porokh",
+        "predominantMaterialName":  "Порох",
+        "linkedTool":  "Жестянщика",
+        "value":  "63",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "toplivnyy-bak-1",
+        "name":  "Топливный бак (1)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "12 ЗМ",
+        "priceValue":  12,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  12,
+        "rank":  1,
+        "weight":  5,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "porokh",
+        "predominantMaterialName":  "Порох",
+        "linkedTool":  "Жестянщика",
+        "value":  "15",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "raketnyy-vystrel-3",
+        "name":  "Ракетный выстрел (3)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "75 ЗМ",
+        "priceValue":  75,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  75,
+        "rank":  3,
+        "weight":  9,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "porokh",
+        "predominantMaterialName":  "Порох",
+        "linkedTool":  "Жестянщика",
+        "value":  "94",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "pistoletnyy-patron-20",
+        "name":  "Пистолетный патрон (20)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "40 ЗМ",
+        "priceValue":  40,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  40,
+        "rank":  1,
+        "weight":  1,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "porokh",
+        "predominantMaterialName":  "Порох",
+        "linkedTool":  "Жестянщика",
+        "value":  "50",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "batareya-4",
+        "name":  "Батарея (4)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "20 ЗМ",
+        "priceValue":  20,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  20,
+        "rank":  1,
+        "weight":  3,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "porokh",
+        "predominantMaterialName":  "Порох",
+        "linkedTool":  "Жестянщика",
+        "value":  "25",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "stal-noy-bolt-1",
+        "name":  "Стальной болт (1)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "10 зм",
+        "priceValue":  10,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  10,
+        "rank":  1,
+        "weight":  2,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "porokh",
+        "predominantMaterialName":  "Порох",
+        "linkedTool":  "Жестянщика",
+        "value":  "13",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "zaryad-antimaterii-20",
+        "name":  "Заряд антиматерии (20)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "400 000 зм",
+        "priceValue":  400000,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  400000,
+        "rank":  10,
+        "weight":  15,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "porokh",
+        "predominantMaterialName":  "Порох",
+        "linkedTool":  "Жестянщика",
+        "value":  "500000",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "teplovaya-batareya-20",
+        "name":  "Тепловая батарея (20)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "15 000 зм",
+        "priceValue":  15000,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  15000,
+        "rank":  7,
+        "weight":  10,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "porokh",
+        "predominantMaterialName":  "Порох",
+        "linkedTool":  "Жестянщика",
+        "value":  "18750",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "neletal-nye-puli-20",
+        "name":  "Нелетальные пули (20)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "80 зм",
+        "priceValue":  80,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  80,
+        "rank":  1,
+        "weight":  1,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "stal",
+        "predominantMaterialName":  "Сталь",
+        "linkedTool":  "Жестянщика",
+        "value":  "100",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "serebryannaya-pulya-10",
+        "name":  "Серебрянная пуля (10)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "100 зм",
+        "priceValue":  100,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  100,
+        "rank":  2,
+        "weight":  1,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  "serebro",
+        "predominantMaterialName":  "Серебро",
+        "linkedTool":  "Жестянщика",
+        "value":  "125",
+        "source":  "gear-workbook"
+    },
+    {
+        "id":  "adamantovaya-pulya-10",
+        "name":  "Адамантовая пуля (10)",
+        "equipmentType":  "Боеприпас",
+        "shopSubtype":  "Стрелковая мастерская",
+        "priceText":  "1000 зм",
+        "priceValue":  1000,
+        "priceDenomination":  "gp",
+        "priceGoldEquivalent":  1000,
+        "rank":  1,
+        "weight":  1,
+        "volume":  "",
+        "capacity":  "",
+        "description":  "",
+        "predominantMaterialId":  null,
+        "predominantMaterialName":  "Адамантин",
+        "linkedTool":  "Кузнеца",
+        "value":  "1250",
+        "source":  "gear-workbook"
     }
 ]

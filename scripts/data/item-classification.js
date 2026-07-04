@@ -609,7 +609,7 @@ function buildFirearmProfile(name, firearmClass = "", fallbackBaseItem = "") {
 function buildConsumableAmmoProfile(name) {
   const text = normalizeText(name);
 
-  if (/стрел/u.test(text)) {
+  if (/(^|[\s(])стрел/u.test(text)) {
     return { systemTypeValue: "ammo", systemTypeSubtype: "arrow" };
   }
 
@@ -630,6 +630,13 @@ function buildConsumableAmmoProfile(name) {
   }
 
   return null;
+}
+
+function buildGenericAmmoProfile(name) {
+  return buildConsumableAmmoProfile(name) ?? {
+    systemTypeValue: "ammo",
+    systemTypeSubtype: ""
+  };
 }
 
 function buildToolProfile(name) {
@@ -786,6 +793,20 @@ export function classifyGearEntry(item = {}) {
       heroDollSlots: [],
       firearmClass: "",
       sourceCategory: "Зелье"
+    };
+  }
+
+  if (normalizedEquipmentType === normalizeText("Боеприпас") || normalizedEquipmentType === normalizeText("Боеприпасы")) {
+    const ammoProfile = buildGenericAmmoProfile(item.name);
+    return {
+      documentType: "consumable",
+      systemTypeValue: ammoProfile.systemTypeValue,
+      systemTypeSubtype: ammoProfile.systemTypeSubtype,
+      baseItem: "",
+      folderPath: equipmentType || "Боеприпасы",
+      heroDollSlots: [],
+      firearmClass: "",
+      sourceCategory: equipmentType || "Боеприпасы"
     };
   }
 
