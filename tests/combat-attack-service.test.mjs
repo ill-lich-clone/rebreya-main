@@ -334,6 +334,50 @@ test("versatile weapon attacks use two-handed mode when the item is held in both
   assert.equal(weapon.flags.dnd5e?.last?.["attack-activity"]?.attackMode, "twoHanded");
 });
 
+test("standalone held versatile sheet attack roll config uses two-handed mode", () => {
+  const weapon = makeWeaponItem({
+    heldHands: ["left", "right"],
+    handRequirement: {
+      requiredHands: 1,
+      allowedHands: [1, 2],
+      versatile: true
+    },
+    properties: ["ver"],
+    attackModes: [
+      { value: "oneHanded", label: "One-Handed" },
+      { value: "twoHanded", label: "Two-Handed" }
+    ]
+  });
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+  const activity = {
+    id: "attack-activity",
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: {
+      type: {
+        value: "melee"
+      }
+    },
+    range: {}
+  };
+  const config = {
+    subject: activity,
+    rolls: [
+      {
+        options: {}
+      }
+    ]
+  };
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5eAttackRollConfig(config, {}, {}), true);
+  assert.equal(config.attackMode, "twoHanded");
+  assert.equal(weapon.flags.dnd5e?.last?.["attack-activity"]?.attackMode, "twoHanded");
+});
+
 test("weapon usage cards keep a damage button for base weapon damage", () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
@@ -509,7 +553,7 @@ test("versatile held weapon damage rolls use two-handed damage when attack mode 
   assert.deepEqual(config.rolls[0].parts, ["1d10", "@mod"]);
 });
 
-test("standalone held versatile sheet attacks roll two-handed damage", async () => {
+test("standalone held versatile sheet attacks do not roll separate damage", async () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
     handRequirement: {
@@ -563,11 +607,7 @@ test("standalone held versatile sheet attacks roll two-handed damage", async () 
 
   assert.equal(service.applyDnd5ePostAttackRoll([roll], { subject: activity }), true);
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.ok(damageCall);
-  assert.equal(damageCall.config.attackMode, "twoHanded");
-  assert.equal(damageCall.dialog.configure, false);
-  assert.deepEqual(damageCall.config.rolls?.[0]?.parts, ["1d8"]);
-  assert.equal(damageCall.config.rolls?.[0]?.base, true);
+  assert.equal(damageCall, null);
 });
 
 test("fighter dominance maneuvers retarget shared dominance dice item and creature targeting before use", () => {

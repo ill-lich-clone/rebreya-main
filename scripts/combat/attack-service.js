@@ -99,61 +99,6 @@ function replaceDamageRollBaseDice(rollConfig, replacement) {
   return true;
 }
 
-function damagePartTypeList(part) {
-  const rawTypes = part?.types;
-  if (rawTypes instanceof Set) {
-    return Array.from(rawTypes).map(cleanText).filter(Boolean);
-  }
-  if (Array.isArray(rawTypes)) {
-    return rawTypes.map(cleanText).filter(Boolean);
-  }
-  if (rawTypes && typeof rawTypes === "object") {
-    return Object.entries(rawTypes)
-      .filter(([, value]) => value !== false && value !== null && value !== undefined)
-      .map(([key]) => cleanText(key))
-      .filter(Boolean);
-  }
-
-  const type = cleanText(part?.type);
-  return type ? [type] : [];
-}
-
-function createBaseWeaponDamageRollConfig(activity) {
-  const item = activity?.item ?? null;
-  const baseDamage = foundry.utils.getProperty(item, "system.damage.base");
-  const baseFormula = damagePartFormula(baseDamage);
-  if (!baseFormula) {
-    return null;
-  }
-
-  const rollData = activity?.getRollData?.()
-    ?? item?.getRollData?.()
-    ?? item?.actor?.getRollData?.()
-    ?? {};
-  const parts = [baseFormula];
-  const bonus = cleanText(baseDamage?.bonus);
-  if (bonus) {
-    parts.push(bonus);
-  }
-  else if (Object.hasOwn(rollData, "mod") && !/@mod\b/u.test(baseFormula)) {
-    parts.push("@mod");
-  }
-
-  const types = damagePartTypeList(baseDamage);
-  const properties = Array.from(foundry.utils.getProperty(item, "system.properties") ?? [])
-    .filter((property) => globalThis.CONFIG?.DND5E?.itemProperties?.[property]?.isPhysical);
-  return {
-    base: true,
-    parts,
-    data: rollData,
-    options: {
-      type: types[0] ?? null,
-      types,
-      properties
-    }
-  };
-}
-
 function isConfiguredDnd5eToolId(toolId) {
   const dnd5eConfig = globalThis.CONFIG?.DND5E;
   const tools = dnd5eConfig?.tools;
@@ -1411,39 +1356,6 @@ export class CombatAttackService {
     replaceDamageRollBaseDice(baseDamageRollConfig, versatileFormula);
   }
 
-  #isWorkflowAttackRoll(roll, context = {}) {
-    return Boolean(
-      context?.workflow
-      || roll?.options?.workflow
-      || roll?.options?.midiOptions?.workflow
-      || roll?.options?.midiOptions?.workflowOptions
-    );
-  }
-
-  async #rollHeldVersatileDamageAfterStandaloneAttack(activity, rolls = [], context = {}) {
-    if (!this.#isHeldVersatileTwoHandedAttack(activity) || typeof activity?.rollDamage !== "function") {
-      return;
-    }
-
-    const firstRoll = Array.isArray(rolls) ? (rolls[0] ?? null) : (rolls ?? null);
-    if (!firstRoll || this.#isWorkflowAttackRoll(firstRoll, context) || firstRoll?.isFumble === true) {
-      return;
-    }
-
-    this.#applyHeldWeaponAttackMode(activity, {});
-    const hasActivityDamageParts = collectionValues(activity?.damage?.parts).length > 0;
-    const baseDamageRollConfig = hasActivityDamageParts ? null : createBaseWeaponDamageRollConfig(activity);
-    const damageRolls = baseDamageRollConfig ? [baseDamageRollConfig] : [];
-    await activity.rollDamage({
-      attackMode: "twoHanded",
-      event: firstRoll?.options?.event,
-      rolls: damageRolls,
-      midiOptions: {
-        isCritical: firstRoll?.isCritical === true || firstRoll?.options?.isCritical === true
-      }
-    }, { configure: false }, { create: true });
-  }
-
   #hasBaseWeaponDamage(activity) {
     return activityHasBaseWeaponDamage(activity);
   }
@@ -1980,12 +1892,6 @@ export class CombatAttackService {
     }
 
     try {
-      setTimeout(() => {
-        this.#rollHeldVersatileDamageAfterStandaloneAttack(activity, rolls, context).catch((error) => {
-          console.error(`${MODULE_ID} | Failed to roll held versatile damage after sheet attack.`, error);
-        });
-      }, 0);
-
       const item = activity.item;
       const automation = this.#getLichAutomationState(item);
       const rku = Math.max(0, Math.floor(toNumber(automation.rku, 0)));
