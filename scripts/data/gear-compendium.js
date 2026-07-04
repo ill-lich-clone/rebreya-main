@@ -25,7 +25,7 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 15;
+const GEAR_TEMPLATE_VERSION = 16;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk001";
 const FIREARM_CLEAR_JAM_ACTIVITY_ID = "lchClearBreech01";
@@ -186,7 +186,7 @@ function resolveItemSlotGroup(item, classification) {
 }
 
 function goldToDnd5ePrice(priceGoldEquivalent) {
-  const totalCopper = Math.max(0, Math.round(Number(priceGoldEquivalent ?? 0) * 100));
+  const totalCopper = Math.max(0, roundDecimal(Number(priceGoldEquivalent ?? 0) * 100));
   if (totalCopper >= 100) {
     return {
       value: Math.round(((totalCopper / 100) + Number.EPSILON) * 100) / 100,
@@ -199,6 +199,57 @@ function goldToDnd5ePrice(priceGoldEquivalent) {
   }
 
   return { value: totalCopper / 10, denomination: "sp" };
+}
+
+function roundDecimal(value, precision = 6) {
+  const scale = 10 ** precision;
+  return Math.round((Number(value ?? 0) + Number.EPSILON) * scale) / scale;
+}
+
+function parseAmmunitionSourcePack(item, classification) {
+  if (classification.documentType !== "consumable" || classification.systemTypeValue !== "ammo") {
+    return null;
+  }
+
+  const name = cleanString(item.name);
+  const match = name.match(/\s*\((\d+)\)\s*$/u);
+  if (!match) {
+    return null;
+  }
+
+  const quantity = Math.max(1, Math.floor(toFiniteNumber(match[1], 1)));
+  const sourceWeight = Math.max(0, toFiniteNumber(item.weight, 0));
+  const sourcePriceGoldEquivalent = Math.max(0, toFiniteNumber(item.priceGoldEquivalent ?? item.priceValue, 0));
+
+  return {
+    quantity,
+    actorName: cleanString(name.replace(/\s*\(\d+\)\s*$/u, ""), name),
+    sourceWeight,
+    sourcePriceGoldEquivalent,
+    actorWeight: roundDecimal(sourceWeight / quantity),
+    actorPriceGoldEquivalent: roundDecimal(sourcePriceGoldEquivalent / quantity)
+  };
+}
+
+function buildDnd5eItemPresentation(item, classification) {
+  const sourcePack = parseAmmunitionSourcePack(item, classification);
+  if (!sourcePack) {
+    return {
+      name: item.name,
+      quantity: 1,
+      weight: Math.max(0, toFiniteNumber(item.weight, 0)),
+      priceGoldEquivalent: Math.max(0, toFiniteNumber(item.priceGoldEquivalent ?? item.priceValue, 0)),
+      sourcePack: null
+    };
+  }
+
+  return {
+    name: sourcePack.actorName,
+    quantity: sourcePack.quantity,
+    weight: sourcePack.actorWeight,
+    priceGoldEquivalent: sourcePack.actorPriceGoldEquivalent,
+    sourcePack
+  };
 }
 
 function buildFolderPath(classification) {
@@ -698,9 +749,10 @@ function applyArmorData(baseData, item, classification) {
   baseData.properties = normalizeArmorProperties(armor?.properties);
 }
 
-function buildSystemData(item, classification, descriptionHtml) {
-  const weightValue = Number.isFinite(Number(item.weight)) ? Number(item.weight) : 0;
-  const price = goldToDnd5ePrice(item.priceGoldEquivalent ?? item.priceValue ?? 0);
+function buildSystemData(item, classification, descriptionHtml, presentation = null) {
+  const itemPresentation = presentation ?? buildDnd5eItemPresentation(item, classification);
+  const weightValue = Number.isFinite(Number(itemPresentation.weight)) ? Number(itemPresentation.weight) : 0;
+  const price = goldToDnd5ePrice(itemPresentation.priceGoldEquivalent);
   const baseData = {
     description: {
       value: descriptionHtml,
@@ -709,7 +761,7 @@ function buildSystemData(item, classification, descriptionHtml) {
     unidentified: {
       description: ""
     },
-    quantity: 1,
+    quantity: Math.max(1, Math.floor(toFiniteNumber(itemPresentation.quantity, 1))),
     price: {
       value: price.value,
       denomination: price.denomination
@@ -791,6 +843,7 @@ function clonePlainObject(value) {
 
 export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
   const classification = classifyGearEntry(item);
+  const itemPresentation = buildDnd5eItemPresentation(item, classification);
   const itemSlot = resolveItemSlotGroup(item, classification);
   const heroDollSlots = mapSlotGroupToHeroDollSlots(itemSlot, classification.heroDollSlots);
   const signature = buildGearSignature(item);
@@ -805,14 +858,14 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
 
   return {
     _id: createStableGearDocumentId(item.id),
-    name: item.name,
+    name: itemPresentation.name,
     type: classification.documentType,
     img: resolveGearItemIcon(item, { classification, iconLookup }),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
     },
-    system: buildSystemData(item, classification, descriptionHtml),
+    system: buildSystemData(item, classification, descriptionHtml, itemPresentation),
     flags: {
       [MODULE_ID]: {
         managed: true,
@@ -833,7 +886,10 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
         predominantMaterialName: item.predominantMaterialName ?? "",
         linkedTool: item.linkedTool ?? "",
         value: item.value ?? "",
-        priceGoldEquivalent: Number(item.priceGoldEquivalent ?? 0),
+        priceGoldEquivalent: Number(itemPresentation.priceGoldEquivalent ?? 0),
+        sourcePackQuantity: itemPresentation.sourcePack?.quantity ?? null,
+        sourcePackPriceGoldEquivalent: itemPresentation.sourcePack?.sourcePriceGoldEquivalent ?? null,
+        sourcePackWeight: itemPresentation.sourcePack?.sourceWeight ?? null,
         containerCapacity: clonePlainObject(item.containerCapacity),
         containerContents,
         attackTraits: attackTraits && Object.keys(attackTraits).length ? attackTraits : null,
@@ -865,7 +921,8 @@ export function createDnd5eContainerContentData(containerItem, gearById, contain
       delete data._id;
       delete data.id;
       data.system ??= {};
-      data.system.quantity = entry.quantity;
+      const sourcePackQuantity = Math.max(1, Math.floor(toFiniteNumber(data.flags?.[MODULE_ID]?.sourcePackQuantity, 1)));
+      data.system.quantity = Math.max(1, Math.floor(toFiniteNumber(entry.quantity, 1))) * sourcePackQuantity;
       data.system.container = containerId;
 
       data.flags ??= {};
@@ -876,12 +933,14 @@ export function createDnd5eContainerContentData(containerItem, gearById, contain
       moduleFlags.containerGearId = cleanString(containerItem?.id);
       moduleFlags.containerContentGearId = entry.gearId;
       moduleFlags.containerContentQuantity = entry.quantity;
+      moduleFlags.containerContentResolvedQuantity = data.system.quantity;
       moduleFlags.signature = JSON.stringify({
         templateVersion: GEAR_TEMPLATE_VERSION,
         sourceType: GEAR_CONTAINER_CONTENT_SOURCE_TYPE,
         containerGearId: moduleFlags.containerGearId,
         containerContentGearId: entry.gearId,
         quantity: entry.quantity,
+        resolvedQuantity: data.system.quantity,
         sourceSignature: buildGearSignature(sourceItem)
       });
 

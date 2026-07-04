@@ -233,24 +233,24 @@ const EXPECTED_ARMOR = new Map([
   ["ballisticheskiy-shchit", { type: "shield", baseItem: "", value: 3, dex: null, strength: 15, stealth: true }]
 ]);
 const EXPECTED_AMMUNITION = new Map([
-  ["arbaletnye-bolty-20", { subtype: "crossbowBolt", priceGoldEquivalent: 1 }],
-  ["igly-dlya-trubki-50", { subtype: "blowgunNeedle", priceGoldEquivalent: 1 }],
-  ["snaryady-dlya-prashchi-20", { subtype: "slingBullet", priceGoldEquivalent: 0.04 }],
-  ["strely-20", { subtype: "arrow", priceGoldEquivalent: 1 }],
-  ["mushketnyy-patron-20", { subtype: "firearmBullet", priceGoldEquivalent: 20 }],
-  ["vintovochnyy-patron-10", { subtype: "firearmBullet", priceGoldEquivalent: 60 }],
-  ["kartechnyy-patron-20", { subtype: "firearmBullet", priceGoldEquivalent: 60 }],
-  ["pulevoy-patron-10", { subtype: "firearmBullet", priceGoldEquivalent: 50 }],
-  ["toplivnyy-bak-1", { subtype: "", priceGoldEquivalent: 12 }],
-  ["raketnyy-vystrel-3", { subtype: "", priceGoldEquivalent: 75 }],
-  ["pistoletnyy-patron-20", { subtype: "firearmBullet", priceGoldEquivalent: 40 }],
-  ["batareya-4", { subtype: "", priceGoldEquivalent: 20 }],
-  ["stal-noy-bolt-1", { subtype: "crossbowBolt", priceGoldEquivalent: 10 }],
-  ["zaryad-antimaterii-20", { subtype: "", priceGoldEquivalent: 400000 }],
-  ["teplovaya-batareya-20", { subtype: "", priceGoldEquivalent: 15000 }],
-  ["neletal-nye-puli-20", { subtype: "firearmBullet", priceGoldEquivalent: 80 }],
-  ["serebryannaya-pulya-10", { subtype: "firearmBullet", priceGoldEquivalent: 100 }],
-  ["adamantovaya-pulya-10", { subtype: "firearmBullet", priceGoldEquivalent: 1000 }]
+  ["arbaletnye-bolty-20", { sourceName: "Арбалетные болты (20)", sheetQuantity: 20, subtype: "crossbowBolt", sourcePriceGoldEquivalent: 1, sourceWeight: 1.5, actorName: "Арбалетные болты", actorPriceGoldEquivalent: 0.05, actorWeight: 0.075 }],
+  ["igly-dlya-trubki-50", { sourceName: "Иглы для трубки (50)", sheetQuantity: 50, subtype: "blowgunNeedle", sourcePriceGoldEquivalent: 1, sourceWeight: 1, actorName: "Иглы для трубки", actorPriceGoldEquivalent: 0.02, actorWeight: 0.02 }],
+  ["snaryady-dlya-prashchi-20", { sourceName: "Снаряды для пращи (20)", sheetQuantity: 20, subtype: "slingBullet", sourcePriceGoldEquivalent: 0.04, sourceWeight: 1.5, actorName: "Снаряды для пращи", actorPriceGoldEquivalent: 0.002, actorWeight: 0.075 }],
+  ["strely-20", { sourceName: "Стрелы (20)", sheetQuantity: 20, subtype: "arrow", sourcePriceGoldEquivalent: 1, sourceWeight: 1, actorName: "Стрелы", actorPriceGoldEquivalent: 0.05, actorWeight: 0.05 }],
+  ["mushketnyy-patron-20", { sourceName: "Мушкетный патрон (20)", sheetQuantity: 20, subtype: "firearmBullet", sourcePriceGoldEquivalent: 20, sourceWeight: 1, actorName: "Мушкетный патрон", actorPriceGoldEquivalent: 1, actorWeight: 0.05 }],
+  ["vintovochnyy-patron-10", { sourceName: "Винтовочный патрон (10)", sheetQuantity: 10, subtype: "firearmBullet", sourcePriceGoldEquivalent: 60, sourceWeight: 1, actorName: "Винтовочный патрон", actorPriceGoldEquivalent: 6, actorWeight: 0.1 }],
+  ["kartechnyy-patron-20", { sourceName: "Картечный патрон (20)", sheetQuantity: 20, subtype: "firearmBullet", sourcePriceGoldEquivalent: 60, sourceWeight: 2, actorName: "Картечный патрон", actorPriceGoldEquivalent: 3, actorWeight: 0.1 }],
+  ["pulevoy-patron-10", { sourceName: "Пулевой патрон (10)", sheetQuantity: 10, subtype: "firearmBullet", sourcePriceGoldEquivalent: 50, sourceWeight: 3, actorName: "Пулевой патрон", actorPriceGoldEquivalent: 5, actorWeight: 0.3 }],
+  ["toplivnyy-bak-1", { sourceName: "Топливный бак (1)", sheetQuantity: 1, subtype: "", sourcePriceGoldEquivalent: 12, sourceWeight: 5, actorName: "Топливный бак", actorPriceGoldEquivalent: 12, actorWeight: 5 }],
+  ["raketnyy-vystrel-3", { sourceName: "Ракетный выстрел (3)", sheetQuantity: 3, subtype: "", sourcePriceGoldEquivalent: 75, sourceWeight: 9, actorName: "Ракетный выстрел", actorPriceGoldEquivalent: 25, actorWeight: 3 }],
+  ["pistoletnyy-patron-20", { sourceName: "Пистолетный патрон (20)", sheetQuantity: 20, subtype: "firearmBullet", sourcePriceGoldEquivalent: 40, sourceWeight: 1, actorName: "Пистолетный патрон", actorPriceGoldEquivalent: 2, actorWeight: 0.05 }],
+  ["batareya-4", { sourceName: "Батарея (4)", sheetQuantity: 4, subtype: "", sourcePriceGoldEquivalent: 20, sourceWeight: 3, actorName: "Батарея", actorPriceGoldEquivalent: 5, actorWeight: 0.75 }],
+  ["stal-noy-bolt-1", { sourceName: "Стальной болт (1)", sheetQuantity: 1, subtype: "crossbowBolt", sourcePriceGoldEquivalent: 10, sourceWeight: 2, actorName: "Стальной болт", actorPriceGoldEquivalent: 10, actorWeight: 2 }],
+  ["zaryad-antimaterii-20", { sourceName: "Заряд антиматерии (20)", sheetQuantity: 20, subtype: "", sourcePriceGoldEquivalent: 400000, sourceWeight: 15, actorName: "Заряд антиматерии", actorPriceGoldEquivalent: 20000, actorWeight: 0.75 }],
+  ["teplovaya-batareya-20", { sourceName: "Тепловая батарея (20)", sheetQuantity: 20, subtype: "", sourcePriceGoldEquivalent: 15000, sourceWeight: 10, actorName: "Тепловая батарея", actorPriceGoldEquivalent: 750, actorWeight: 0.5 }],
+  ["neletal-nye-puli-20", { sourceName: "Нелетальные пули (20)", sheetQuantity: 20, subtype: "firearmBullet", sourcePriceGoldEquivalent: 80, sourceWeight: 1, actorName: "Нелетальные пули", actorPriceGoldEquivalent: 4, actorWeight: 0.05 }],
+  ["serebryannaya-pulya-10", { sourceName: "Серебрянная пуля (10)", sheetQuantity: 10, subtype: "firearmBullet", sourcePriceGoldEquivalent: 100, sourceWeight: 1, actorName: "Серебрянная пуля", actorPriceGoldEquivalent: 10, actorWeight: 0.1 }],
+  ["adamantovaya-pulya-10", { sourceName: "Адамантовая пуля (10)", sheetQuantity: 10, subtype: "firearmBullet", sourcePriceGoldEquivalent: 1000, sourceWeight: 1, actorName: "Адамантовая пуля", actorPriceGoldEquivalent: 100, actorWeight: 0.1 }]
 ]);
 
 globalThis.foundry ??= {
@@ -551,14 +551,23 @@ test("real gear ammunition rows create dnd5e consumable ammo items", () => {
     const item = byId.get(gearId);
     assert.ok(item, `ammunition ${gearId} exists in Rebreya gear data`);
     assert.equal(item.equipmentType, "Боеприпас", `${gearId} uses the ammunition equipment type from the sheet`);
-    assert.equal(item.priceGoldEquivalent, expected.priceGoldEquivalent, `${gearId} stores sheet price as gp equivalent`);
+    assert.equal(item.name, expected.sourceName, `${gearId} keeps the source pack size in Rebreya gear data`);
+    assert.equal(item.priceGoldEquivalent, expected.sourcePriceGoldEquivalent, `${gearId} stores source pack price as gp equivalent`);
+    assert.equal(item.weight, expected.sourceWeight, `${gearId} stores source pack weight`);
 
     const created = createDnd5eItemData(item, new Map());
+    assert.equal(created.name, expected.actorName, `${gearId} drops the pack suffix on the dnd5e item`);
     assert.equal(created.type, "consumable", `${gearId} is created as a dnd5e consumable`);
+    assert.equal(created.system.quantity, expected.sheetQuantity, `${gearId} creates one actor stack per source pack`);
+    assert.equal(created.system.weight.value, expected.actorWeight, `${gearId} creates dnd5e item with one-piece weight`);
     assert.equal(created.system.type.value, "ammo", `${gearId} uses dnd5e ammo type`);
     assert.equal(created.system.type.subtype, expected.subtype, `${gearId} uses expected ammo subtype`);
     assert.equal(created.flags["rebreya-main"].foundrySubtype, "ammo");
     assert.equal(created.flags["rebreya-main"].foundrySubtypeExtra, expected.subtype);
+    assert.equal(created.flags["rebreya-main"].sourcePackQuantity, expected.sheetQuantity);
+    assert.equal(created.flags["rebreya-main"].sourcePackPriceGoldEquivalent, expected.sourcePriceGoldEquivalent);
+    assert.equal(created.flags["rebreya-main"].sourcePackWeight, expected.sourceWeight);
+    assert.equal(created.flags["rebreya-main"].priceGoldEquivalent, expected.actorPriceGoldEquivalent);
   }
 });
 

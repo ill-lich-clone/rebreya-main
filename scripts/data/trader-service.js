@@ -9,6 +9,7 @@ import {
   getTraderPlanByKey
 } from "../engine/trader-engine.js";
 import { buildGearIconLookup, resolveGearItemIcon } from "./gear-icon-resolver.js";
+import { classifyGearEntry } from "./item-classification.js";
 import { formatPercent, formatSignedPercent } from "../ui.js";
 
 const MAX_ACTIVE_TRADERS = 21;
@@ -466,6 +467,62 @@ function buildInventoryEntryFromPlanItem(plan, planItem, { quantityMultiplier = 
   };
 }
 
+function buildTraderGearClassification(entry) {
+  if (entry.sourceType !== "gear") {
+    return null;
+  }
+
+  return classifyGearEntry({
+    id: entry.sourceId,
+    name: entry.name,
+    equipmentType: entry.itemTypeLabel
+  });
+}
+
+function parseTraderAmmunitionSourcePack(entry) {
+  const classification = buildTraderGearClassification(entry);
+  if (classification?.documentType !== "consumable" || classification.systemTypeValue !== "ammo") {
+    return null;
+  }
+
+  const sourceName = String(entry.name ?? "").trim();
+  const match = sourceName.match(/\s*\((\d+)\)\s*$/u);
+  if (!match) {
+    return null;
+  }
+
+  const quantity = Math.max(1, Math.floor(toNumber(match[1], 1)));
+  const sourcePackPriceGoldEquivalent = Math.max(0, toNumber(entry.basePriceGold, 0));
+  const sourcePackWeight = Math.max(0, toNumber(entry.baseWeight, 0));
+
+  return {
+    quantity,
+    classification,
+    actorName: sourceName.replace(/\s*\(\d+\)\s*$/u, "").trim() || sourceName,
+    actorBasePriceGold: roundNumber(sourcePackPriceGoldEquivalent / quantity, 6),
+    actorWeight: roundNumber(toNumber(entry.finalWeight, sourcePackWeight) / quantity, 6),
+    sourcePackPriceGoldEquivalent,
+    sourcePackWeight
+  };
+}
+
+function copperToDnd5ePrice(priceCopper) {
+  const safePriceCopper = Math.max(0, roundNumber(priceCopper, 6));
+  const denomination = safePriceCopper >= PRICE_IN_COPPER.gp
+    ? "gp"
+    : (safePriceCopper % PRICE_IN_COPPER.sp === 0 ? "sp" : "cp");
+  const value = denomination === "gp"
+    ? roundNumber(safePriceCopper / PRICE_IN_COPPER.gp, 2)
+    : (denomination === "sp"
+      ? roundNumber(safePriceCopper / PRICE_IN_COPPER.sp, 6)
+      : safePriceCopper);
+
+  return {
+    value,
+    denomination
+  };
+}
+
 function normalizeRestockMode(value) {
   const text = normalizeText(value);
   if (!text) {
@@ -839,6 +896,7 @@ function buildMarkupTooltip({
 }
 
 function buildCanonicalItemData(entry, quantity, finalPriceCopper) {
+  const sourcePack = parseTraderAmmunitionSourcePack(entry);
   const subtype = entry.sourceType === "material"
     ? entry.itemTypeLabel
     : entry.itemTypeLabel || "Снаряжение";
@@ -860,18 +918,24 @@ function buildCanonicalItemData(entry, quantity, finalPriceCopper) {
     descriptionLines.push(`<p>${escapeHtml(entry.description)}</p>`);
   }
 
-  const denomination = finalPriceCopper >= PRICE_IN_COPPER.gp
-    ? "gp"
-    : (finalPriceCopper % PRICE_IN_COPPER.sp === 0 ? "sp" : "cp");
-  const priceValue = denomination === "gp"
-    ? roundNumber(finalPriceCopper / PRICE_IN_COPPER.gp, 2)
-    : (denomination === "sp"
-      ? Math.floor(finalPriceCopper / PRICE_IN_COPPER.sp)
-      : finalPriceCopper);
+  const sourcePackQuantity = sourcePack?.quantity ?? 1;
+  const actorQuantity = Math.max(1, Math.floor(toNumber(quantity, 1))) * sourcePackQuantity;
+  const actorPriceCopper = finalPriceCopper / sourcePackQuantity;
+  const price = copperToDnd5ePrice(actorPriceCopper);
+  const itemType = sourcePack ? "consumable" : "loot";
+  const systemType = sourcePack
+    ? {
+      value: sourcePack.classification.systemTypeValue || "ammo",
+      subtype: sourcePack.classification.systemTypeSubtype || ""
+    }
+    : {
+      value: entry.sourceType === "material" ? "trade" : "loot",
+      subtype
+    };
 
   return {
-    name: entry.name,
-    type: "loot",
+    name: sourcePack?.actorName ?? entry.name,
+    type: itemType,
     img: getInventoryEntryIcon(entry),
     system: {
       description: {
@@ -881,35 +945,39 @@ function buildCanonicalItemData(entry, quantity, finalPriceCopper) {
       unidentified: {
         description: ""
       },
-      quantity,
+      quantity: actorQuantity,
       price: {
-        value: priceValue,
-        denomination
+        value: price.value,
+        denomination: price.denomination
       },
       weight: {
-        value: toNumber(entry.finalWeight, entry.baseWeight),
+        value: sourcePack?.actorWeight ?? toNumber(entry.finalWeight, entry.baseWeight),
         units: "lb"
       },
-      type: {
-        value: entry.sourceType === "material" ? "trade" : "loot",
-        subtype
-      }
+      type: systemType
     },
     flags: {
       [MODULE_ID]: {
         traderManaged: true,
         sourceType: entry.sourceType,
-          sourceId: entry.sourceId,
-          basePriceGold: entry.basePriceGold,
-          predominantMaterialId: entry.predominantMaterialId ?? null,
-          predominantMaterialName: entry.predominantMaterialName ?? "",
-          linkedGoodId: entry.linkedGoodId ?? null,
-          shopSubtype: entry.shopSubtype ?? "",
-          rarity: entry.rarity ?? ""
-        }
+        sourceId: entry.sourceId,
+        basePriceGold: sourcePack?.actorBasePriceGold ?? entry.basePriceGold,
+        priceGoldEquivalent: sourcePack?.actorBasePriceGold ?? entry.basePriceGold,
+        sourcePackQuantity: sourcePack?.quantity ?? null,
+        sourcePackPriceGoldEquivalent: sourcePack?.sourcePackPriceGoldEquivalent ?? null,
+        sourcePackWeight: sourcePack?.sourcePackWeight ?? null,
+        foundryType: itemType,
+        foundrySubtype: sourcePack?.classification.systemTypeValue ?? (entry.sourceType === "material" ? "trade" : "loot"),
+        foundrySubtypeExtra: sourcePack?.classification.systemTypeSubtype ?? "",
+        predominantMaterialId: entry.predominantMaterialId ?? null,
+        predominantMaterialName: entry.predominantMaterialName ?? "",
+        linkedGoodId: entry.linkedGoodId ?? null,
+        shopSubtype: entry.shopSubtype ?? "",
+        rarity: entry.rarity ?? ""
       }
-    };
-  }
+    }
+  };
+}
 
 export class TraderService {
   constructor(moduleApi) {
@@ -1798,10 +1866,24 @@ export class TraderService {
       }
     }
 
-    foundry.utils.setProperty(purchasedItemData, "system.quantity", purchaseQuantity);
+    const sourcePackQuantity = Math.max(
+      1,
+      Math.floor(toNumber(foundry.utils.getProperty(purchasedItemData, `flags.${MODULE_ID}.sourcePackQuantity`), 1))
+    );
+    const actorPurchaseQuantity = purchaseQuantity * sourcePackQuantity;
+    const actorBasePriceGold = sourcePackQuantity > 1
+      ? roundNumber(toNumber(inventoryItem.basePriceGold, 0) / sourcePackQuantity, 6)
+      : inventoryItem.basePriceGold;
+
+    foundry.utils.setProperty(purchasedItemData, "system.quantity", actorPurchaseQuantity);
     foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.sourceType`, inventoryItem.sourceType);
     foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.sourceId`, inventoryItem.sourceId);
-    foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.basePriceGold`, inventoryItem.basePriceGold);
+    foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.basePriceGold`, actorBasePriceGold);
+    foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.priceGoldEquivalent`, actorBasePriceGold);
+    if (sourcePackQuantity > 1) {
+      foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.sourcePackPriceGoldEquivalent`, inventoryItem.basePriceGold);
+      foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.sourcePackWeight`, inventoryItem.baseWeight);
+    }
     foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.predominantMaterialId`, inventoryItem.predominantMaterialId ?? null);
     foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.linkedGoodId`, inventoryItem.linkedGoodId ?? null);
     foundry.utils.setProperty(
@@ -1824,7 +1906,7 @@ export class TraderService {
     let purchasedItemDocument = matchItem ?? null;
 
     if (matchItem) {
-      const nextQuantity = getRawQuantity(matchItem.toObject()) + purchaseQuantity;
+      const nextQuantity = getRawQuantity(matchItem.toObject()) + actorPurchaseQuantity;
       await matchItem.update({
         "system.quantity": nextQuantity
       });
@@ -1855,7 +1937,7 @@ export class TraderService {
       currencyBeforeCopper: currentFundsCopper,
       currencyAfterCopper: currentFundsCopper - totalPriceCopper,
       itemQuantityBefore,
-      itemQuantityAfter: itemQuantityBefore + purchaseQuantity
+      itemQuantityAfter: itemQuantityBefore + actorPurchaseQuantity
     });
 
     return {
