@@ -12,6 +12,7 @@
 } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
+import { bindSiteSyncPanel } from "./site-sync-panel.js";
 import {
   getRebreyaWeaponBaseItemDefinitions,
   getHeroDollSlotGroups,
@@ -6201,6 +6202,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to bind character sheet combat statuses.`, error);
+    }
+    try {
+      bindSiteSyncPanel(root, app, moduleApi);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to bind Rebreya site sync panel.`, error);
     }
   };
 
