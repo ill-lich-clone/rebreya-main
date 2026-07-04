@@ -255,6 +255,29 @@ test("actual canonical city connections bridge Veldoran into land travel", async
   assert.equal(fullPlan.cityIds.includes(veldoran?.id), true);
 });
 
+test("actual Veldoran bridge follows the nearby road geometry instead of a direct lake line", async () => {
+  const actualNetwork = JSON.parse(await readFile(new URL("../data/travel-network.json", import.meta.url), "utf8"));
+  const economyCities = JSON.parse(await readFile(new URL("../data/cities.json", import.meta.url), "utf8"));
+  const networkWithEconomy = { ...actualNetwork, economyCities };
+  const normalizedNetwork = normalizeTravelNetwork(networkWithEconomy);
+  const dom = normalizedNetwork.cityByName.get(normalizeLocationName("Дом переговоров"));
+  const veldoran = normalizedNetwork.cityByName.get(normalizeLocationName("Велдоран"));
+
+  const plan = buildTravelPlan(networkWithEconomy, {
+    originCityId: dom?.id,
+    destinationCityId: veldoran?.id,
+    mode: "land"
+  });
+
+  assert.equal(plan.available, true);
+  assert.equal(plan.legs.length, 1);
+  assert.equal(plan.legs[0].sourceCityId, dom?.id);
+  assert.equal(plan.legs[0].targetCityId, veldoran?.id);
+  assert.ok(plan.legs[0].points.length > 2);
+  assert.deepEqual(plan.legs[0].points.slice(0, 3), [[6509, 8836], [6516, 8855], [6495, 8876]]);
+  assert.deepEqual(plan.legs[0].points.at(-1), [6682, 9078]);
+});
+
 test("actual walkable canonical routes have geometry anchored to their cities", async () => {
   const actualNetwork = JSON.parse(await readFile(new URL("../data/travel-network.json", import.meta.url), "utf8"));
   const economyCities = JSON.parse(await readFile(new URL("../data/cities.json", import.meta.url), "utf8"));
