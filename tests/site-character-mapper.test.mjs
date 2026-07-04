@@ -140,3 +140,52 @@ test("identity flags stamp site linkage", () => {
   assert.equal(f.ownerUserId, "u1");
   assert.equal(f.syncMode, "manual-state-push");
 });
+
+import { buildStatePatch } from "../scripts/data/site-character-mapper.js";
+
+const SYSTEM = {
+  attributes: {
+    hp: { value: 12, max: 27 },
+    death: { success: 1, failure: 2 },
+    inspiration: true,
+    exhaustion: 3,
+  },
+  spells: { spell1: { value: 1, max: 4 }, spell2: { value: 0, max: 3 }, spell3: { value: 2, max: 2 } },
+  currency: { gp: 30, sp: 5, cp: 0, xp: 999 },
+};
+
+test("buildStatePatch extracts hp/death/inspiration/exhaustion", () => {
+  const p = buildStatePatch(SYSTEM);
+  assert.equal(p.currentHp, 12);
+  assert.equal(p.maxHp, 27);
+  assert.deepEqual(p.deathSaves, { success: 1, failure: 2 });
+  assert.equal(p.inspiration, true);
+  assert.equal(p.exhaustion, 3);
+});
+
+test("buildStatePatch computes spent slots (max-value) per level", () => {
+  const p = buildStatePatch(SYSTEM);
+  assert.deepEqual(p.usedSlots, { spell1: 3, spell2: 3, spell3: 0 });
+});
+
+test("buildStatePatch copies only valid currency keys", () => {
+  const p = buildStatePatch(SYSTEM);
+  assert.deepEqual(p.currency, { gp: 30, sp: 5, cp: 0 });
+  assert.equal("xp" in p.currency, false);
+});
+
+test("buildStatePatch carries conditions + clientSync provenance", () => {
+  const p = buildStatePatch(SYSTEM, { statuses: ["poisoned", "prone"], moduleVersion: "1.4.84", actorUuid: "Actor.x", previousHash: "sha256:old" });
+  assert.deepEqual(p.conditions, ["poisoned", "prone"]);
+  assert.equal(p.clientSync.source, "foundry");
+  assert.equal(p.clientSync.moduleVersion, "1.4.84");
+  assert.equal(p.clientSync.actorUuid, "Actor.x");
+  assert.equal(p.clientSync.previousHash, "sha256:old");
+});
+
+test("buildStatePatch on an empty system degrades safely", () => {
+  const p = buildStatePatch({});
+  assert.equal(p.currentHp, undefined);
+  assert.equal(p.usedSlots, undefined);
+  assert.equal(p.clientSync.source, "foundry");
+});

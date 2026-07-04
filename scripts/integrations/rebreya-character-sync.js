@@ -11,6 +11,7 @@ import { MODULE_ID } from "../constants.js";
 import {
   buildCharacterActorUpdate,
   buildSiteCharacterFlags,
+  buildStatePatch,
 } from "../data/site-character-mapper.js";
 import { SITE_SPELLS_COMPENDIUM_NAME } from "../data/site-spells-compendium.js";
 
@@ -86,6 +87,35 @@ export class RebreyaCharacterSync {
       }
     }
     return { actorId: actor.id, spellsAdded, warnings };
+  }
+
+  /**
+   * Push the Actor's mutable in-session state to the linked site character
+   * (ТЗ §5.2, §9.2). Requires the Actor to be linked and the user authed.
+   * @returns {Promise<{ok:boolean, stateHash:string|null}>}
+   */
+  async pushState(actor) {
+    if (!actor) throw new Error("Не передан Actor.");
+    const site = this.#site;
+    if (!site?.isAuthenticated?.()) throw new Error("Требуется авторизация на сайте rebreya.com.");
+    const link = this.getLink(actor);
+    if (!link?.id) throw new Error("Actor не связан с персонажем сайта.");
+
+    const statuses = actor.statuses ? [...actor.statuses] : [];
+    const patch = buildStatePatch(actor.system ?? {}, {
+      statuses,
+      moduleId: MODULE_ID,
+      moduleVersion: game.modules?.get?.(MODULE_ID)?.version ?? "",
+      actorUuid: actor.uuid,
+      previousHash: link.lastSyncHash ?? "",
+    });
+
+    const result = await site.api.patchCharacterState(link.id, patch);
+    const newHash = result?.stateHash ?? "";
+    // Update linkage provenance with the acknowledged state hash + time.
+    const updatedLink = { ...link, lastSyncAt: new Date().toISOString(), lastSyncHash: newHash };
+    await actor.update({ [`flags.${MODULE_ID}.siteCharacter`]: updatedLink });
+    return { ok: true, stateHash: newHash };
   }
 
   async #embedSpells(actor, character) {

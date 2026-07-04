@@ -274,4 +274,18 @@ export class RebreyaSiteApi {
   async getCharacter(id) {
     return this.request(`/characters/${encodeURIComponent(id)}/`, { auth: true });
   }
+
+  /** Current mutable state (+ stateHash) of a linked character. */
+  async getCharacterState(id) {
+    return this.request(`/characters/${encodeURIComponent(id)}/state/`, { auth: true });
+  }
+
+  /** Push mutable in-session state (Foundry → site). Returns the new state + stateHash. */
+  async patchCharacterState(id, statePatch) {
+    return this.request(`/characters/${encodeURIComponent(id)}/state/`, {
+      method: "PATCH",
+      body: statePatch,
+      auth: true,
+    });
+  }
 }

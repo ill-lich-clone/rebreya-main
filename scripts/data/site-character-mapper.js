@@ -197,4 +197,57 @@ export function buildSiteCharacterFlags(character = {}, { moduleId = "rebreya-ma
   };
 }
 
+/**
+ * Extract the mutable in-session state from a dnd5e Actor's system data into the
+ * shape the site's PATCH /characters/{id}/state/ endpoint accepts (Foundry →
+ * site push, ТЗ §9.2). Pure over `system` + an optional list of active status
+ * ids, so it is unit tested with a fake system object.
+ */
+export function buildStatePatch(system = {}, { statuses = [], moduleId = "rebreya-main", moduleVersion = "", actorUuid = "", previousHash = "" } = {}) {
+  const attrs = system.attributes ?? {};
+  const patch = {};
+
+  if (attrs.hp) {
+    if (attrs.hp.value != null) patch.currentHp = toInt(attrs.hp.value, 0) ?? 0;
+    if (attrs.hp.max != null) patch.maxHp = Math.max(0, toInt(attrs.hp.max, 0) ?? 0);
+  }
+  if (attrs.death) {
+    patch.deathSaves = {
+      success: Math.max(0, Math.min(3, toInt(attrs.death.success, 0) ?? 0)),
+      failure: Math.max(0, Math.min(3, toInt(attrs.death.failure, 0) ?? 0)),
+    };
+  }
+  if ("inspiration" in attrs) patch.inspiration = Boolean(attrs.inspiration);
+  if ("exhaustion" in attrs) patch.exhaustion = Math.max(0, Math.min(10, toInt(attrs.exhaustion, 0) ?? 0));
+
+  // Spent spell slots per level: dnd5e stores {value=available, max}; used = max-value.
+  const spells = system.spells ?? {};
+  const usedSlots = {};
+  for (let level = 1; level <= 9; level += 1) {
+    const slot = spells[`spell${level}`];
+    if (slot && Number(slot.max) > 0) {
+      usedSlots[`spell${level}`] = Math.max(0, (toInt(slot.max, 0) ?? 0) - (toInt(slot.value, 0) ?? 0));
+    }
+  }
+  if (Object.keys(usedSlots).length) patch.usedSlots = usedSlots;
+
+  const currency = {};
+  for (const key of CURRENCY_KEYS) {
+    const v = toInt(system.currency?.[key]);
+    if (v != null) currency[key] = Math.max(0, v);
+  }
+  if (Object.keys(currency).length) patch.currency = currency;
+
+  if (Array.isArray(statuses) && statuses.length) patch.conditions = [...statuses];
+
+  patch.clientSync = {
+    source: "foundry",
+    moduleId,
+    moduleVersion,
+    actorUuid,
+    ...(previousHash ? { previousHash } : {}),
+  };
+  return patch;
+}
+
 export { CURRENCY_KEYS };

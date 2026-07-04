@@ -120,6 +120,7 @@ async function openSyncDialog(actor, moduleApi) {
   } else {
     buttons.push({ action: link ? "refresh" : "link", label: link ? "Обновить билд" : "Связать и импортировать", default: true });
   }
+  if (authed && link) buttons.push({ action: "push", label: "Отправить состояние" });
   if (link) buttons.push({ action: "open", label: "Открыть на сайте" });
   buttons.push({ action: "close", label: "Закрыть" });
 
@@ -140,6 +141,16 @@ async function openSyncDialog(actor, moduleApi) {
     const url = `${baseUrl}/characters/${link.id}`;
     globalThis.open?.(url, "_blank", "noopener");
     return;
+  }
+  if (action === "push") {
+    try {
+      const res = await characterSync.pushState(actor);
+      await notify("info", "Состояние отправлено на сайт rebreya.com.");
+      return;
+    } catch (error) {
+      await notify("error", `Не удалось отправить состояние: ${error.message}`);
+      return;
+    }
   }
   if (action === "link" || action === "refresh") {
     let character = null;
