@@ -4,6 +4,7 @@ export const DEFAULT_HAND_CAPACITY = 2;
 export const RACE_HANDS_FLAG = "hands";
 export const HAND_REQUIREMENT_FLAG = "handRequirement";
 export const HELD_ITEM_HANDS_FLAG = "heldHands";
+export const VERSATILE_BASE_DAMAGE_ORIGINAL_FLAG = "versatileBaseDamageOriginal";
 export const HAND_SLOTS = Object.freeze(["left", "right"]);
 export const HAND_SLOT_LABELS = Object.freeze({
   left: "Левая рука",
@@ -63,6 +64,26 @@ function getDocumentFlag(document, key) {
   }
 
   return getProperty(document, `flags.${MODULE_ID}.${key}`);
+}
+
+function cloneValue(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (globalThis.foundry?.utils?.deepClone) {
+    return foundry.utils.deepClone(value);
+  }
+
+  if (typeof globalThis.structuredClone === "function") {
+    return globalThis.structuredClone(value);
+  }
+
+  return JSON.parse(JSON.stringify(value));
+}
+
+function isPlainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value);
 }
 
 function positiveInteger(value, fallback = 0) {
@@ -386,6 +407,99 @@ export function itemRequiresTwoHandsForUse(item) {
   return requirement?.requiredHands > 1 || hasSystemProperty(item, "two");
 }
 
+function isVersatileWeapon(item) {
+  if (String(item?.type ?? "") !== "weapon") {
+    return false;
+  }
+
+  const requirement = getItemHandRequirement(item);
+  return requirement?.versatile === true
+    || getProperty(item, "system.isVersatile") === true
+    || hasSystemProperty(item, "ver");
+}
+
+function getOriginalBaseDamage(item) {
+  const originalBase = getDocumentFlag(item, VERSATILE_BASE_DAMAGE_ORIGINAL_FLAG);
+  return originalBase === undefined ? undefined : cloneValue(originalBase);
+}
+
+function isTwoHandGrip(hands) {
+  const heldHands = new Set(normalizeHeldHands(hands));
+  return heldHands.has("left") && heldHands.has("right");
+}
+
+function buildVersatileBaseDamage(item) {
+  if (!isVersatileWeapon(item)) {
+    return null;
+  }
+
+  const baseDamage = getProperty(item, "system.damage.base");
+  const versatileDamage = getProperty(item, "system.damage.versatile");
+  if (!isPlainObject(baseDamage) || !isPlainObject(versatileDamage)) {
+    return null;
+  }
+
+  const versatileFormula = getDamagePartFormula(versatileDamage);
+  if (!versatileFormula) {
+    return null;
+  }
+
+  const nextBaseDamage = cloneValue(baseDamage);
+  const versatileDenomination = positiveInteger(versatileDamage.denomination, 0);
+  if (versatileDenomination > 0) {
+    nextBaseDamage.number = Math.max(1, positiveInteger(versatileDamage.number, 1));
+    nextBaseDamage.denomination = versatileDenomination;
+  }
+
+  const baseFormula = cleanFormula(nextBaseDamage.formula);
+  if (baseFormula) {
+    nextBaseDamage.formula = replaceLeadingDamageFormula(baseFormula, versatileFormula);
+  }
+
+  if (isPlainObject(nextBaseDamage.custom)) {
+    const customFormula = cleanFormula(nextBaseDamage.custom.formula);
+    if (nextBaseDamage.custom.enabled === true || customFormula) {
+      nextBaseDamage.custom = {
+        ...nextBaseDamage.custom,
+        formula: replaceLeadingDamageFormula(customFormula || getDamagePartFormula(baseDamage), versatileFormula)
+      };
+    }
+  }
+
+  if (versatileDenomination <= 0 && !baseFormula && !cleanFormula(nextBaseDamage.custom?.formula)) {
+    nextBaseDamage.formula = replaceLeadingDamageFormula(getDamagePartFormula(baseDamage), versatileFormula);
+  }
+
+  return nextBaseDamage;
+}
+
+function applyVersatileBaseDamageUpdate(update, item, hands, equipped = true) {
+  if (!item) {
+    return update;
+  }
+
+  const originalBaseDamage = getOriginalBaseDamage(item);
+  const shouldUseVersatileDamage = equipped === true && isTwoHandGrip(hands);
+  if (shouldUseVersatileDamage) {
+    const versatileBaseDamage = buildVersatileBaseDamage(item);
+    if (!versatileBaseDamage) {
+      return update;
+    }
+
+    update["system.damage.base"] = versatileBaseDamage;
+    update[`flags.${MODULE_ID}.${VERSATILE_BASE_DAMAGE_ORIGINAL_FLAG}`] =
+      originalBaseDamage ?? cloneValue(getProperty(item, "system.damage.base"));
+    return update;
+  }
+
+  if (originalBaseDamage !== undefined) {
+    update["system.damage.base"] = originalBaseDamage;
+    update[`flags.${MODULE_ID}.-=${VERSATILE_BASE_DAMAGE_ORIGINAL_FLAG}`] = null;
+  }
+
+  return update;
+}
+
 export function getHeldItemDamageFormulaPresentation(item, formula) {
   const safeFormula = cleanFormula(formula);
   if (getItemHeldHands(item).length < 2) {
@@ -458,25 +572,25 @@ export function getFreeHandSlots(actor, { exceptItem = null } = {}) {
   return getActorHandSlots(actor).filter((slot) => !occupied.has(slot));
 }
 
-export function buildHeldItemHandUpdate(hands) {
+export function buildHeldItemHandUpdate(hands, item = null) {
   const heldHands = normalizeHeldHands(hands);
-  return {
+  return applyVersatileBaseDamageUpdate({
     "system.equipped": true,
     [`flags.${MODULE_ID}.${HELD_ITEM_HANDS_FLAG}`]: heldHands
-  };
+  }, item, heldHands, true);
 }
 
-export function buildHeldItemWornUpdate(equipped = true) {
-  return {
+export function buildHeldItemWornUpdate(equipped = true, item = null) {
+  return applyVersatileBaseDamageUpdate({
     "system.equipped": equipped === true,
     [`flags.${MODULE_ID}.-=${HELD_ITEM_HANDS_FLAG}`]: null
-  };
+  }, item, [], equipped === true);
 }
 
 export function buildHeldItemReleaseHandUpdate(item, hands) {
   const releasedHands = new Set(normalizeHeldHands(hands));
   const remainingHands = getItemHeldHands(item).filter((hand) => !releasedHands.has(hand));
-  return remainingHands.length ? buildHeldItemHandUpdate(remainingHands) : buildHeldItemWornUpdate(true);
+  return remainingHands.length ? buildHeldItemHandUpdate(remainingHands, item) : buildHeldItemWornUpdate(true, item);
 }
 
 export function getHeldItemEquipPresentation(item) {
@@ -547,12 +661,12 @@ export function buildHeldItemEquipMenuActions(actor, item) {
     {
       id: "worn",
       ...HELD_ITEM_PRESENTATIONS.worn,
-      update: buildHeldItemWornUpdate(true)
+      update: buildHeldItemWornUpdate(true, item)
     },
     {
       id: "unequipped",
       ...HELD_ITEM_PRESENTATIONS.unequipped,
-      update: buildHeldItemWornUpdate(false)
+      update: buildHeldItemWornUpdate(false, item)
     },
     ...HAND_SLOTS.map((slot) => ({
       id: slot,
@@ -565,7 +679,7 @@ export function buildHeldItemEquipMenuActions(actor, item) {
         singleHandCarryOnly ? "Только переноска: для атаки нужны две руки" : "",
         occupied.has(slot) ? `Заменить ${occupied.get(slot)?.name ?? "предмет"}` : ""
       ].filter(Boolean).join(". "),
-      update: buildHeldItemHandUpdate(slot)
+      update: buildHeldItemHandUpdate(slot, item)
     }))
   ];
 
@@ -581,7 +695,7 @@ export function buildHeldItemEquipMenuActions(actor, item) {
       tooltip: replacements.length
         ? `Заменить ${Array.from(new Set(replacements.map((entry) => entry.itemName))).join(", ")}`
         : "",
-      update: buildHeldItemHandUpdate(HAND_SLOTS)
+      update: buildHeldItemHandUpdate(HAND_SLOTS, item)
     });
   }
 

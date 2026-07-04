@@ -110,6 +110,116 @@ test("hand update patches equip items into a specific hand and can clear hand st
   });
 });
 
+test("two-hand versatile updates rewrite item base damage until grip changes back", async () => {
+  const {
+    buildHeldItemHandUpdate,
+    buildHeldItemWornUpdate
+  } = await import(`../scripts/integrations/held-items.js?versatile-damage=${Date.now()}`);
+
+  const baseDamage = {
+    number: 1,
+    denomination: 8,
+    types: ["slashing"],
+    custom: {
+      enabled: false,
+      formula: ""
+    }
+  };
+  const versatileWeapon = makeItem({
+    id: "longsword",
+    equipped: true,
+    flags: {
+      "rebreya-main": {
+        handRequirement: {
+          requiredHands: 1,
+          allowedHands: [1, 2],
+          versatile: true
+        }
+      }
+    },
+    system: {
+      properties: ["ver"],
+      damage: {
+        base: baseDamage,
+        versatile: {
+          number: 1,
+          denomination: 10,
+          custom: {
+            enabled: false,
+            formula: ""
+          }
+        }
+      }
+    }
+  });
+
+  assert.deepEqual(buildHeldItemHandUpdate(["left", "right"], versatileWeapon), {
+    "system.equipped": true,
+    "system.damage.base": {
+      number: 1,
+      denomination: 10,
+      types: ["slashing"],
+      custom: {
+        enabled: false,
+        formula: ""
+      }
+    },
+    "flags.rebreya-main.heldHands": ["left", "right"],
+    "flags.rebreya-main.versatileBaseDamageOriginal": baseDamage
+  });
+
+  const twoHandedWeapon = makeItem({
+    id: "longsword",
+    equipped: true,
+    flags: {
+      "rebreya-main": {
+        heldHands: ["left", "right"],
+        handRequirement: {
+          requiredHands: 1,
+          allowedHands: [1, 2],
+          versatile: true
+        },
+        versatileBaseDamageOriginal: baseDamage
+      }
+    },
+    system: {
+      properties: ["ver"],
+      damage: {
+        base: {
+          number: 1,
+          denomination: 10,
+          types: ["slashing"],
+          custom: {
+            enabled: false,
+            formula: ""
+          }
+        },
+        versatile: {
+          number: 1,
+          denomination: 10,
+          custom: {
+            enabled: false,
+            formula: ""
+          }
+        }
+      }
+    }
+  });
+
+  assert.deepEqual(buildHeldItemHandUpdate("left", twoHandedWeapon), {
+    "system.equipped": true,
+    "system.damage.base": baseDamage,
+    "flags.rebreya-main.heldHands": ["left"],
+    "flags.rebreya-main.-=versatileBaseDamageOriginal": null
+  });
+  assert.deepEqual(buildHeldItemWornUpdate(false, twoHandedWeapon), {
+    "system.equipped": false,
+    "system.damage.base": baseDamage,
+    "flags.rebreya-main.-=heldHands": null,
+    "flags.rebreya-main.-=versatileBaseDamageOriginal": null
+  });
+});
+
 test("equipment context menu actions keep native wear states and add eligible two-hand grips", async () => {
   const {
     canHoldItemInTwoHands,
