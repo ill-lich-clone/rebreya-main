@@ -1418,6 +1418,16 @@ export class CombatAttackService {
     }
 
     usageConfig.attackMode = "twoHanded";
+    usageConfig.midiOptions ??= {};
+    usageConfig.midiOptions.workflowOptions ??= {};
+    usageConfig.midiOptions.workflowOptions.versatile = true;
+    usageConfig.midiOptions.workflowOptions.attackMode = "twoHanded";
+    if (usageConfig.workflow) {
+      usageConfig.workflow.attackMode = "twoHanded";
+      usageConfig.workflow.workflowOptions ??= {};
+      usageConfig.workflow.workflowOptions.versatile = true;
+      usageConfig.workflow.workflowOptions.attackMode = "twoHanded";
+    }
     const activityId = cleanText(activity?.id ?? activity?._id);
     if (activityId) {
       writeDocumentFlagSource(activity.item, "dnd5e", `last.${activityId}.attackMode`, "twoHanded");

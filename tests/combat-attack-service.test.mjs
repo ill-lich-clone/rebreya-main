@@ -334,6 +334,53 @@ test("versatile weapon attacks use two-handed mode when the item is held in both
   assert.equal(weapon.flags.dnd5e?.last?.["attack-activity"]?.attackMode, "twoHanded");
 });
 
+test("versatile weapon attacks pass two-handed mode into midi workflow options", () => {
+  const weapon = makeWeaponItem({
+    heldHands: ["left", "right"],
+    handRequirement: {
+      requiredHands: 1,
+      allowedHands: [1, 2],
+      versatile: true
+    },
+    properties: ["ver"],
+    attackModes: [
+      { value: "oneHanded", label: "One-Handed" },
+      { value: "twoHanded", label: "Two-Handed" }
+    ]
+  });
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+  const activity = {
+    id: "attack-activity",
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: {
+      type: {
+        value: "melee"
+      }
+    },
+    range: {}
+  };
+  const usageConfig = {
+    midiOptions: {
+      workflowOptions: {}
+    },
+    workflow: {
+      workflowOptions: {}
+    }
+  };
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(activity, usageConfig), true);
+  assert.equal(usageConfig.midiOptions.workflowOptions.versatile, true);
+  assert.equal(usageConfig.midiOptions.workflowOptions.attackMode, "twoHanded");
+  assert.equal(usageConfig.workflow.attackMode, "twoHanded");
+  assert.equal(usageConfig.workflow.workflowOptions.versatile, true);
+  assert.equal(usageConfig.workflow.workflowOptions.attackMode, "twoHanded");
+});
+
 test("standalone held versatile sheet attack roll config uses two-handed mode", () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
