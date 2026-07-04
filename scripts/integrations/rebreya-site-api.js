@@ -182,6 +182,11 @@ export class RebreyaSiteApi {
     try {
       return await response.json();
     } catch (error) {
+      // A connection reset mid-body yields status 200 with a truncated stream —
+      // that's a transient network failure, not a schema problem: retry it.
+      if (retries > 0) {
+        return this.request(path, { method, body, auth, retries: retries - 1, _didRefresh });
+      }
       throw new SchemaMismatch("Сайт вернул не-JSON ответ.", { cause: error });
     }
   }

@@ -200,3 +200,18 @@ test("manifest returns a well-formed payload", async () => {
   const api = new RebreyaSiteApi({ fetchImpl });
   assert.deepEqual(await api.manifest(), payload);
 });
+
+test("truncated body (json parse failure) is retried, then succeeds", async () => {
+  const badBody = { status: 200, headers: { get: () => null }, json: async () => { throw new TypeError("terminated"); } };
+  const fetchImpl = mockFetch([badBody, jsonResponse({ ok: 1 })]);
+  const api = new RebreyaSiteApi({ fetchImpl, retries: 1 });
+  assert.deepEqual(await api.request("/spells/"), { ok: 1 });
+  assert.equal(fetchImpl.calls.length, 2);
+});
+
+test("persistent bad JSON still surfaces SchemaMismatch after retries", async () => {
+  const badBody = () => ({ status: 200, headers: { get: () => null }, json: async () => { throw new SyntaxError("bad"); } });
+  const fetchImpl = mockFetch([badBody(), badBody()]);
+  const api = new RebreyaSiteApi({ fetchImpl, retries: 1 });
+  await assert.rejects(() => api.request("/spells/"), SchemaMismatch);
+});
