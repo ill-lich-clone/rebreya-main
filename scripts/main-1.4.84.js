@@ -51,6 +51,7 @@ import {
 } from "./integrations/dnd5e-sheet-extensions.js?v=1.4.84";
 import { RebreyaSiteService, createFoundrySettingsAdapter } from "./integrations/rebreya-site-service.js?v=1.4.84";
 import { SiteSpellsCompendiumService } from "./data/site-spells-compendium.js?v=1.4.84";
+import { RebreyaCharacterSync } from "./integrations/rebreya-character-sync.js?v=1.4.84";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js";
@@ -407,6 +408,7 @@ export class RebreyaMainModule {
     // rebreya.com site integration entry point (game.rebreyaMain.site).
     this.site = new RebreyaSiteService({ adapter: createFoundrySettingsAdapter(globalThis.game) });
     this.siteSpellsCompendium = new SiteSpellsCompendiumService(this);
+    this.characterSync = new RebreyaCharacterSync(this);
     this.repository.setGlobalEventsService(this.globalEventsService);
     this.economyApp = null;
     this.worldTradeRoutesApp = null;
