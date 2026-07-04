@@ -9,8 +9,6 @@ import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
 import { SITE_SPELLS_COMPENDIUM_NAME } from "../data/site-spells-compendium.js";
 import { SITE_ARTICLES_COMPENDIUM_NAME } from "../data/site-articles-compendium.js";
 
-const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
-
 // resource key → { label, pack collection, service getter }
 const RESOURCES = [
   {
@@ -36,7 +34,17 @@ function formatDate(iso) {
   }
 }
 
-export class SiteCatalogSyncApp extends HandlebarsApplicationMixin(ApplicationV2) {
+// The class extends Foundry's ApplicationV2, which only exists inside Foundry.
+// Build it lazily (memoized) so this module stays importable under node tests
+// — settings.js is in many tests' import chain and must not touch `foundry` at
+// module-eval time.
+let _SiteCatalogSyncApp = null;
+
+export function getSiteCatalogSyncAppClass() {
+  if (_SiteCatalogSyncApp) return _SiteCatalogSyncApp;
+  const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
+  _SiteCatalogSyncApp = class SiteCatalogSyncApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: "rebreya-site-catalog-sync",
     classes: ["rebreya-main", "rebreya-site-catalog-sync-app"],
@@ -107,9 +115,12 @@ export class SiteCatalogSyncApp extends HandlebarsApplicationMixin(ApplicationV2
       await this._runSync(RESOURCES.map((r) => r.key));
     });
   }
+  };
+
+  return _SiteCatalogSyncApp;
 }
 
 /** Settings-menu entry point (registered from settings.js). */
 export function openSiteCatalogSyncApp() {
-  new SiteCatalogSyncApp().render(true);
+  new (getSiteCatalogSyncAppClass())().render(true);
 }

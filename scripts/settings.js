@@ -1,6 +1,6 @@
 ﻿import { DATA_SOURCE_MODES, DEFAULT_DISPLAY_PRECISION, DEFAULT_SITE_BASE_URL, MODULE_ID, SETTINGS_KEYS, SITE_CATALOG_MODES, SITE_CHARACTER_SYNC_MODES } from "./constants.js";
 import { refreshEconomyLauncher } from "./hooks.js";
-import { SiteCatalogSyncApp } from "./ui/site-catalog-sync-app.js";
+import { getSiteCatalogSyncAppClass } from "./ui/site-catalog-sync-app.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_SET_SETTING = "setSetting";
@@ -417,12 +417,16 @@ export function registerSettings() {
   });
 
   // GM control to import site catalogues (spells, articles) into compendia.
-  game.settings.registerMenu(MODULE_ID, "siteCatalogSyncMenu", {
-    name: "REBREYA_MAIN.Settings.SiteCatalogSync.Name",
-    label: "REBREYA_MAIN.Settings.SiteCatalogSync.Label",
-    hint: "REBREYA_MAIN.Settings.SiteCatalogSync.Hint",
-    icon: "fa-solid fa-cloud-arrow-down",
-    type: SiteCatalogSyncApp,
-    restricted: true
-  });
+  // Guarded on the ApplicationV2 API being present so registerSettings stays
+  // callable outside Foundry (unit tests mock game.settings, not foundry).
+  if (globalThis.foundry?.applications?.api && typeof game.settings.registerMenu === "function") {
+    game.settings.registerMenu(MODULE_ID, "siteCatalogSyncMenu", {
+      name: "REBREYA_MAIN.Settings.SiteCatalogSync.Name",
+      label: "REBREYA_MAIN.Settings.SiteCatalogSync.Label",
+      hint: "REBREYA_MAIN.Settings.SiteCatalogSync.Hint",
+      icon: "fa-solid fa-cloud-arrow-down",
+      type: getSiteCatalogSyncAppClass(),
+      restricted: true
+    });
+  }
 }
