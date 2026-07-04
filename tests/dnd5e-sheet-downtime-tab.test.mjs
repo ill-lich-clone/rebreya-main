@@ -419,7 +419,9 @@ test("main stylesheet applies Rebreya character header image and brand positioni
   assert.doesNotMatch(styles, /\.dnd5e2\.sheet\.actor\.character\s+\.sheet-header\s*\{[^}]*linear-gradient/su);
   assert.match(styles, /\.dnd5e2\.sheet\.actor\.character\s+\.sheet-header\s*>\s*\.left\s*\{[^}]*justify-content:\s*center/su);
   assert.match(styles, /\.rm-character-sheet-brand\s*\{/u);
-  assert.match(styles, /\.rm-character-sheet-brand\s*\{[^}]*color:\s*#f4f1e7/su);
+  assert.match(styles, /\.rm-character-sheet-brand\s*\{[^}]*color:\s*#d8dce2/su);
+  assert.match(styles, /\.rm-character-sheet-brand\s*\{[^}]*font-size:\s*36px/su);
+  assert.match(styles, /\.rm-character-sheet-brand\s*\{[^}]*letter-spacing:\s*0/su);
   assert.doesNotMatch(styles, /\.rm-character-sheet-brand\s*\{[^}]*background-clip:\s*text/su);
   assert.doesNotMatch(styles, /\.rm-character-sheet-brand\s*\{[^}]*-webkit-text-fill-color:\s*transparent/su);
   assert.doesNotMatch(styles, /\.rm-character-sheet-brand\s*\{[^}]*-webkit-text-stroke/su);

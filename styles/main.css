@@ -301,15 +301,17 @@
 .rm-character-sheet-brand {
   display: block;
   max-width: 100%;
-  color: #f4f1e7;
+  color: #d8dce2;
   font-family: var(--dnd5e-font-modesto);
-  font-size: 34px;
+  font-size: 36px;
   font-weight: 700;
+  letter-spacing: 0;
   line-height: 0.94;
   white-space: nowrap;
   text-shadow:
-    0 2px 3px rgb(0 0 0 / 0.9),
-    0 0 14px rgb(0 0 0 / 0.8);
+    0 1px 0 rgb(0 0 0 / 0.95),
+    0 2px 3px rgb(0 0 0 / 0.86),
+    0 0 10px rgb(0 0 0 / 0.62);
   pointer-events: none;
 }
 
