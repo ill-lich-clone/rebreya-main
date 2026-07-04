@@ -194,6 +194,63 @@ function cleanFormula(value) {
   return String(value ?? "").trim();
 }
 
+function getAutomaticDamagePartFormula(part) {
+  if (!part || typeof part !== "object") {
+    return "";
+  }
+
+  const denomination = positiveInteger(part.denomination, 0);
+  if (denomination <= 0) {
+    return "";
+  }
+
+  const number = Math.max(1, positiveInteger(part.number, 1));
+  const bonus = cleanFormula(part.bonus);
+  return `${number}d${denomination}${bonus ? ` + ${bonus}` : ""}`;
+}
+
+function normalizeFormulaForComparison(value) {
+  return cleanFormula(value).replace(/\s+/gu, " ").toLowerCase();
+}
+
+function isAutomaticDamagePartFormula(part, formula) {
+  const automaticFormula = normalizeFormulaForComparison(getAutomaticDamagePartFormula(part));
+  return Boolean(automaticFormula && normalizeFormulaForComparison(formula) === automaticFormula);
+}
+
+function isUnsafeCustomDamageFormula(formula) {
+  const safeFormula = cleanFormula(formula);
+  return !safeFormula
+    || safeFormula === "[object Object]"
+    || safeFormula.startsWith("{")
+    || /(^|[^.\w])@?mod($|[^\w])/iu.test(safeFormula);
+}
+
+function normalizeDamageCustom(source) {
+  if (!isPlainObject(source?.custom)) {
+    return undefined;
+  }
+
+  const custom = toPlainValue(source.custom);
+  const customFormula = cleanFormula(custom.formula);
+  if (
+    custom.enabled === true
+    && !isUnsafeCustomDamageFormula(customFormula)
+    && !isAutomaticDamagePartFormula(source, customFormula)
+  ) {
+    return {
+      ...custom,
+      formula: customFormula
+    };
+  }
+
+  return {
+    ...custom,
+    enabled: false,
+    formula: ""
+  };
+}
+
 function getDamagePartFormula(part) {
   if (!part || typeof part !== "object") {
     return "";
@@ -209,14 +266,7 @@ function getDamagePartFormula(part) {
     return customFormula;
   }
 
-  const denomination = positiveInteger(part.denomination, 0);
-  if (denomination <= 0) {
-    return customFormula;
-  }
-
-  const number = Math.max(1, positiveInteger(part.number, 1));
-  const bonus = cleanFormula(part.bonus);
-  return `${number}d${denomination}${bonus ? ` + ${bonus}` : ""}`;
+  return getAutomaticDamagePartFormula(part) || customFormula;
 }
 
 function replaceLeadingDamageFormula(formula, replacement) {
@@ -486,10 +536,21 @@ export function buildVersatileBaseDamage(item) {
 
   if (isPlainObject(nextBaseDamage.custom)) {
     const customFormula = cleanFormula(nextBaseDamage.custom.formula);
-    if (nextBaseDamage.custom.enabled === true || customFormula) {
+    if (
+      customFormula
+      && !isUnsafeCustomDamageFormula(customFormula)
+      && !isAutomaticDamagePartFormula(baseDamage, customFormula)
+    ) {
       nextBaseDamage.custom = {
         ...nextBaseDamage.custom,
-        formula: replaceLeadingDamageFormula(customFormula || getDamagePartFormula(baseDamage), versatileFormula)
+        formula: replaceLeadingDamageFormula(customFormula, versatileFormula)
+      };
+    }
+    else if (nextBaseDamage.custom.enabled === true || customFormula) {
+      nextBaseDamage.custom = {
+        ...nextBaseDamage.custom,
+        enabled: false,
+        formula: ""
       };
     }
   }
@@ -520,11 +581,15 @@ function writeBaseDamageUpdate(update, damage) {
     wrote = true;
   }
 
-  for (const key of ["custom", "scaling"]) {
-    if (source[key] !== undefined) {
-      update[`system.damage.base.${key}`] = toPlainValue(source[key]);
-      wrote = true;
-    }
+  const normalizedCustom = normalizeDamageCustom(source);
+  if (normalizedCustom !== undefined) {
+    update["system.damage.base.custom"] = normalizedCustom;
+    wrote = true;
+  }
+
+  if (source.scaling !== undefined) {
+    update["system.damage.base.scaling"] = toPlainValue(source.scaling);
+    wrote = true;
   }
 
   return wrote;

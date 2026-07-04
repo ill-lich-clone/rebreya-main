@@ -346,6 +346,89 @@ test("two-hand versatile updates tolerate dnd5e damage data with getter-only for
   }
 });
 
+test("two-hand versatile updates keep automatic bonuses out of custom damage formulas", async () => {
+  const {
+    buildHeldItemHandUpdate
+  } = await import(`../scripts/integrations/held-items.js?automatic-custom-damage=${Date.now()}`);
+
+  const baseDamage = {
+    number: 1,
+    denomination: 8,
+    bonus: "@mod",
+    types: ["slashing"],
+    custom: {
+      enabled: true,
+      formula: ""
+    },
+    toObject() {
+      return {
+        number: this.number,
+        denomination: this.denomination,
+        bonus: this.bonus,
+        types: this.types,
+        custom: { ...this.custom }
+      };
+    }
+  };
+  Object.defineProperty(baseDamage, "formula", {
+    get() {
+      return `${this.number}d${this.denomination} + ${this.bonus}`;
+    },
+    enumerable: true
+  });
+
+  const weapon = makeItem({
+    id: "custom-enabled-longsword",
+    equipped: true,
+    flags: {
+      "rebreya-main": {
+        handRequirement: {
+          requiredHands: 1,
+          allowedHands: [1, 2],
+          versatile: true
+        }
+      }
+    },
+    system: {
+      properties: ["ver"],
+      damage: {
+        base: baseDamage,
+        versatile: {
+          number: 1,
+          denomination: 10,
+          custom: {
+            enabled: false,
+            formula: ""
+          }
+        }
+      }
+    }
+  });
+
+  assert.deepEqual(buildHeldItemHandUpdate(["left", "right"], weapon), {
+    "system.equipped": true,
+    "system.damage.base.number": 1,
+    "system.damage.base.denomination": 10,
+    "system.damage.base.bonus": "@mod",
+    "system.damage.base.types": ["slashing"],
+    "system.damage.base.custom": {
+      enabled: false,
+      formula: ""
+    },
+    "flags.rebreya-main.heldHands": ["left", "right"],
+    "flags.rebreya-main.versatileBaseDamageOriginal": {
+      number: 1,
+      denomination: 8,
+      bonus: "@mod",
+      types: ["slashing"],
+      custom: {
+        enabled: true,
+        formula: ""
+      }
+    }
+  });
+});
+
 test("equipment context menu actions keep native wear states and add eligible two-hand grips", async () => {
   const {
     canHoldItemInTwoHands,
