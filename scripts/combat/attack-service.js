@@ -1,6 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
-import { canUseHeldItemForHandRequirement, getItemHeldHands } from "../integrations/held-items.js?v=1.4.86";
+import {
+  buildVersatileBaseDamage,
+  canUseHeldItemForHandRequirement,
+  getItemHeldHands
+} from "../integrations/held-items.js?v=1.4.86-activity-damage";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -96,6 +100,91 @@ function replaceDamageRollBaseDice(rollConfig, replacement) {
   }
 
   rollConfig.parts[index] = replaceLeadingDamageDice(rollConfig.parts[index], safeReplacement);
+  return true;
+}
+
+function cloneDamagePartValue(value) {
+  if (value === undefined || value === null || typeof value !== "object") {
+    return value;
+  }
+
+  if (value instanceof Set) {
+    return Array.from(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => cloneDamagePartValue(entry));
+  }
+
+  const source = typeof value.toObject === "function" ? value.toObject(false) : value;
+  return Object.fromEntries(Object.keys(source).map((key) => [key, cloneDamagePartValue(source[key])]));
+}
+
+function damageTypesArray(types) {
+  if (types instanceof Set) {
+    return Array.from(types);
+  }
+
+  if (Array.isArray(types)) {
+    return types;
+  }
+
+  if (typeof types?.values === "function") {
+    return Array.from(types.values());
+  }
+
+  return [];
+}
+
+function applyDamagePartSource(target, source) {
+  if (!target || !source) {
+    return false;
+  }
+
+  const update = {};
+  for (const key of ["number", "denomination", "bonus"]) {
+    if (source[key] !== undefined) {
+      update[key] = source[key];
+    }
+  }
+
+  const sourceTypes = damageTypesArray(source.types);
+  if (sourceTypes.length) {
+    update.types = sourceTypes;
+  }
+
+  for (const key of ["custom", "scaling"]) {
+    if (source[key] !== undefined) {
+      update[key] = cloneDamagePartValue(source[key]);
+    }
+  }
+
+  if (!Object.keys(update).length) {
+    return false;
+  }
+
+  if (typeof target.updateSource === "function") {
+    target.updateSource(update);
+  }
+  else {
+    for (const [key, value] of Object.entries(update)) {
+      if (key === "types" && target.types instanceof Set) {
+        target.types.clear();
+        for (const type of value) {
+          target.types.add(type);
+        }
+      }
+      else {
+        target[key] = cloneDamagePartValue(value);
+      }
+    }
+  }
+
+  target.base = true;
+  if (target.locked !== undefined) {
+    target.locked = true;
+  }
+
   return true;
 }
 
@@ -1356,6 +1445,30 @@ export class CombatAttackService {
     replaceDamageRollBaseDice(baseDamageRollConfig, versatileFormula);
   }
 
+  #syncActivityBaseDamagePart(activity) {
+    const item = activity?.item ?? null;
+    if (!item) {
+      return false;
+    }
+
+    const parts = foundry.utils.getProperty(activity, "damage.parts");
+    if (!Array.isArray(parts) || !parts.length) {
+      return false;
+    }
+
+    const basePart = parts.find((part) => part?.base === true)
+      ?? parts.find((part) => part?.locked === true)
+      ?? null;
+    if (!basePart) {
+      return false;
+    }
+
+    const source = this.#isHeldVersatileTwoHandedAttack(activity)
+      ? buildVersatileBaseDamage(item) ?? foundry.utils.getProperty(item, "system.damage.base")
+      : foundry.utils.getProperty(item, "system.damage.base");
+    return applyDamagePartSource(basePart, source);
+  }
+
   #hasBaseWeaponDamage(activity) {
     return activityHasBaseWeaponDamage(activity);
   }
@@ -1805,6 +1918,7 @@ export class CombatAttackService {
       }
 
       this.#applyHeldWeaponAttackMode(activity, usageConfig);
+      this.#syncActivityBaseDamagePart(activity);
       this.#ensureBaseDamageUsageButton(activity);
 
       const automation = this.#getLichAutomationState(item);

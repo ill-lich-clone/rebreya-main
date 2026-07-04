@@ -429,7 +429,7 @@ function isTwoHandGrip(hands) {
   return heldHands.has("left") && heldHands.has("right");
 }
 
-function buildVersatileBaseDamage(item) {
+export function buildVersatileBaseDamage(item) {
   if (!isVersatileWeapon(item)) {
     return null;
   }

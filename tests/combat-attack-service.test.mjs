@@ -497,6 +497,93 @@ test("weapon usage card damage button survives dnd5e activity replacement", () =
   assert.equal(damageButton.dataset.attackMode, "twoHanded");
 });
 
+test("pre-use held versatile attacks sync stale activity base damage before usage card", () => {
+  const weapon = makeWeaponItem({
+    heldHands: ["left", "right"],
+    handRequirement: {
+      requiredHands: 1,
+      allowedHands: [1, 2],
+      versatile: true
+    },
+    properties: ["ver"],
+    attackModes: [
+      { value: "oneHanded", label: "One-Handed" },
+      { value: "twoHanded", label: "Two-Handed" }
+    ]
+  });
+  weapon.system.damage = {
+    base: {
+      number: 1,
+      denomination: 10,
+      bonus: "",
+      types: new Set(["slashing"]),
+      custom: {
+        enabled: false,
+        formula: ""
+      },
+      scaling: {
+        mode: "",
+        number: 1,
+        formula: ""
+      }
+    },
+    versatile: {
+      number: 1,
+      denomination: 10
+    }
+  };
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+  const staleBasePart = {
+    base: true,
+    locked: true,
+    number: 1,
+    denomination: 8,
+    bonus: "",
+    types: new Set(["slashing"]),
+    custom: {
+      enabled: false,
+      formula: ""
+    },
+    scaling: {
+      mode: "",
+      number: 1,
+      formula: ""
+    }
+  };
+  Object.defineProperty(staleBasePart, "formula", {
+    get() {
+      return `${this.number}d${this.denomination}`;
+    },
+    enumerable: true
+  });
+  const activity = {
+    id: "attack-activity",
+    type: "attack",
+    actor,
+    item: weapon,
+    damage: {
+      includeBase: true,
+      parts: [staleBasePart]
+    },
+    attack: {
+      type: {
+        value: "melee"
+      }
+    },
+    range: {}
+  };
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(activity, {}), true);
+  assert.equal(activity.damage.parts[0].number, 1);
+  assert.equal(activity.damage.parts[0].denomination, 10);
+  assert.equal(activity.damage.parts[0].formula, "1d10");
+  assert.equal(activity.damage.parts[0].base, true);
+  assert.equal(activity.damage.parts[0].locked, true);
+});
+
 test("versatile held weapon damage rolls use two-handed damage when attack mode is missing", () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
