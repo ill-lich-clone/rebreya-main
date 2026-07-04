@@ -52,6 +52,7 @@ import {
 import { RebreyaSiteService, createFoundrySettingsAdapter } from "./integrations/rebreya-site-service.js?v=1.4.84";
 import { SiteSpellsCompendiumService } from "./data/site-spells-compendium.js?v=1.4.84";
 import { RebreyaCharacterSync } from "./integrations/rebreya-character-sync.js?v=1.4.84";
+import { SiteArticlesCompendiumService } from "./data/site-articles-compendium.js?v=1.4.84";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js";
@@ -409,6 +410,7 @@ export class RebreyaMainModule {
     this.site = new RebreyaSiteService({ adapter: createFoundrySettingsAdapter(globalThis.game) });
     this.siteSpellsCompendium = new SiteSpellsCompendiumService(this);
     this.characterSync = new RebreyaCharacterSync(this);
+    this.siteArticlesCompendium = new SiteArticlesCompendiumService(this);
     this.repository.setGlobalEventsService(this.globalEventsService);
     this.economyApp = null;
     this.worldTradeRoutesApp = null;

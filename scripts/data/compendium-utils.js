@@ -280,6 +280,9 @@ export async function ensureCompendiumFolders(pack, folderPaths = []) {
     return new Map();
   }
 
+  // Folder type must match the pack's document type (Item / JournalEntry / …),
+  // otherwise the folders are created but nothing can be filed under them.
+  const folderType = pack?.documentName ?? pack?.metadata?.type ?? "Item";
   const existingFolders = getPackFolders(pack);
   const byKey = new Map(
     existingFolders.map((folder) => [
@@ -300,7 +303,7 @@ export async function ensureCompendiumFolders(pack, folderPaths = []) {
       if (!currentFolder) {
         currentFolder = await Folder.create({
           name: segment,
-          type: "Item",
+          type: folderType,
           folder: parentId,
           sorting: "a"
         }, {
