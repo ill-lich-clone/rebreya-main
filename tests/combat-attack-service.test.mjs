@@ -297,44 +297,7 @@ test("two-handed weapon attacks can use a free second hand but not an occupied o
   }
 });
 
-test("versatile weapon attacks use two-handed mode when the item is held in both hands", () => {
-  const weapon = makeWeaponItem({
-    heldHands: ["left", "right"],
-    handRequirement: {
-      requiredHands: 1,
-      allowedHands: [1, 2],
-      versatile: true
-    },
-    properties: ["ver"],
-    attackModes: [
-      { value: "oneHanded", label: "One-Handed" },
-      { value: "twoHanded", label: "Two-Handed" }
-    ]
-  });
-  const actor = makeActor([weapon]);
-  weapon.actor = actor;
-  const activity = {
-    id: "attack-activity",
-    type: "attack",
-    actor,
-    item: weapon,
-    attack: {
-      type: {
-        value: "melee"
-      }
-    },
-    range: {}
-  };
-  const usageConfig = {};
-
-  const service = new CombatAttackService({});
-
-  assert.equal(service.applyDnd5ePreUseActivity(activity, usageConfig), true);
-  assert.equal(usageConfig.attackMode, "twoHanded");
-  assert.equal(weapon.flags.dnd5e?.last?.["attack-activity"]?.attackMode, "twoHanded");
-});
-
-test("versatile weapon attacks pass two-handed mode into midi workflow options", () => {
+test("held versatile attacks leave midi attack mode untouched", () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
     handRequirement: {
@@ -370,59 +333,18 @@ test("versatile weapon attacks pass two-handed mode into midi workflow options",
       workflowOptions: {}
     }
   };
+  const config = { subject: activity };
 
   const service = new CombatAttackService({});
 
   assert.equal(service.applyDnd5ePreUseActivity(activity, usageConfig), true);
-  assert.equal(usageConfig.midiOptions.workflowOptions.versatile, true);
-  assert.equal(usageConfig.midiOptions.workflowOptions.attackMode, "twoHanded");
-  assert.equal(usageConfig.workflow.attackMode, "twoHanded");
-  assert.equal(usageConfig.workflow.workflowOptions.versatile, true);
-  assert.equal(usageConfig.workflow.workflowOptions.attackMode, "twoHanded");
-});
-
-test("standalone held versatile sheet attack roll config uses two-handed mode", () => {
-  const weapon = makeWeaponItem({
-    heldHands: ["left", "right"],
-    handRequirement: {
-      requiredHands: 1,
-      allowedHands: [1, 2],
-      versatile: true
-    },
-    properties: ["ver"],
-    attackModes: [
-      { value: "oneHanded", label: "One-Handed" },
-      { value: "twoHanded", label: "Two-Handed" }
-    ]
-  });
-  const actor = makeActor([weapon]);
-  weapon.actor = actor;
-  const activity = {
-    id: "attack-activity",
-    type: "attack",
-    actor,
-    item: weapon,
-    attack: {
-      type: {
-        value: "melee"
-      }
-    },
-    range: {}
-  };
-  const config = {
-    subject: activity,
-    rolls: [
-      {
-        options: {}
-      }
-    ]
-  };
-
-  const service = new CombatAttackService({});
-
   assert.equal(service.applyDnd5eAttackRollConfig(config, {}, {}), true);
-  assert.equal(config.attackMode, "twoHanded");
-  assert.equal(weapon.flags.dnd5e?.last?.["attack-activity"]?.attackMode, "twoHanded");
+  assert.equal(usageConfig.attackMode, undefined);
+  assert.deepEqual(usageConfig.midiOptions.workflowOptions, {});
+  assert.equal(usageConfig.workflow.attackMode, undefined);
+  assert.deepEqual(usageConfig.workflow.workflowOptions, {});
+  assert.equal(config.attackMode, undefined);
+  assert.equal(weapon.flags.dnd5e, undefined);
 });
 
 test("weapon usage cards keep a damage button for base weapon damage", () => {
@@ -541,10 +463,10 @@ test("weapon usage card damage button survives dnd5e activity replacement", () =
   const replacementButtons = new ReplacementAttackActivity(weapon)._usageChatButtons({});
   const damageButton = replacementButtons.find((button) => button?.dataset?.action === "rollDamage");
   assert.ok(damageButton);
-  assert.equal(damageButton.dataset.attackMode, "twoHanded");
+  assert.equal(damageButton.dataset.attackMode, undefined);
 });
 
-test("pre-use held versatile attacks sync stale activity base damage before usage card", () => {
+test("pre-use held versatile attacks do not rewrite activity damage parts", () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
     handRequirement: {
@@ -625,13 +547,13 @@ test("pre-use held versatile attacks sync stale activity base damage before usag
 
   assert.equal(service.applyDnd5ePreUseActivity(activity, {}), true);
   assert.equal(activity.damage.parts[0].number, 1);
-  assert.equal(activity.damage.parts[0].denomination, 10);
-  assert.equal(activity.damage.parts[0].formula, "1d10");
+  assert.equal(activity.damage.parts[0].denomination, 8);
+  assert.equal(activity.damage.parts[0].formula, "1d8");
   assert.equal(activity.damage.parts[0].base, true);
   assert.equal(activity.damage.parts[0].locked, true);
 });
 
-test("versatile held weapon damage rolls use two-handed damage when attack mode is missing", () => {
+test("held versatile damage roll config uses the item-provided base damage as-is", () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
     handRequirement: {
@@ -683,8 +605,8 @@ test("versatile held weapon damage rolls use two-handed damage when attack mode 
   const service = new CombatAttackService({});
 
   assert.equal(service.applyDnd5eDamageRollConfig(config, {}, {}), true);
-  assert.equal(config.attackMode, "twoHanded");
-  assert.deepEqual(config.rolls[0].parts, ["1d10", "@mod"]);
+  assert.equal(config.attackMode, undefined);
+  assert.deepEqual(config.rolls[0].parts, ["1d8", "@mod"]);
 });
 
 test("standalone held versatile sheet attacks do not roll separate damage", async () => {

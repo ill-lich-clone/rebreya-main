@@ -1,10 +1,9 @@
 import { MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import {
-  buildVersatileBaseDamage,
   canUseHeldItemForHandRequirement,
   getItemHeldHands
-} from "../integrations/held-items.js?v=1.4.86-activity-damage";
+} from "../integrations/held-items.js?v=1.4.86-base-damage-fields";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -24,7 +23,6 @@ const REACTION_STATE_FLAG = "reactionState";
 const REACTION_DEFAULT_MAX_USES = 1;
 const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
 const PATCHED_USAGE_BUTTON_PROTOTYPES = new WeakSet();
-const LEADING_DAMAGE_DICE_PATTERN = /^\s*\d+\s*[dк]\s*\d+(?:k[hl]\d+)?/iu;
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -72,120 +70,6 @@ function damagePartFormula(part) {
 
   const bonus = cleanText(part.bonus);
   return bonus ? `${number}d${denomination} + ${bonus}` : `${number}d${denomination}`;
-}
-
-function replaceLeadingDamageDice(formula, replacement) {
-  const safeFormula = cleanText(formula);
-  const safeReplacement = cleanText(replacement);
-  if (!safeFormula || !safeReplacement || !LEADING_DAMAGE_DICE_PATTERN.test(safeFormula)) {
-    return safeFormula;
-  }
-
-  return safeFormula.replace(LEADING_DAMAGE_DICE_PATTERN, safeReplacement);
-}
-
-function replaceDamageRollBaseDice(rollConfig, replacement) {
-  const safeReplacement = cleanText(replacement);
-  if (!safeReplacement) {
-    return false;
-  }
-
-  if (!Array.isArray(rollConfig?.parts)) {
-    return false;
-  }
-
-  const index = rollConfig.parts.findIndex((part) => LEADING_DAMAGE_DICE_PATTERN.test(cleanText(part)));
-  if (index < 0) {
-    return false;
-  }
-
-  rollConfig.parts[index] = replaceLeadingDamageDice(rollConfig.parts[index], safeReplacement);
-  return true;
-}
-
-function cloneDamagePartValue(value) {
-  if (value === undefined || value === null || typeof value !== "object") {
-    return value;
-  }
-
-  if (value instanceof Set) {
-    return Array.from(value);
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((entry) => cloneDamagePartValue(entry));
-  }
-
-  const source = typeof value.toObject === "function" ? value.toObject(false) : value;
-  return Object.fromEntries(Object.keys(source).map((key) => [key, cloneDamagePartValue(source[key])]));
-}
-
-function damageTypesArray(types) {
-  if (types instanceof Set) {
-    return Array.from(types);
-  }
-
-  if (Array.isArray(types)) {
-    return types;
-  }
-
-  if (typeof types?.values === "function") {
-    return Array.from(types.values());
-  }
-
-  return [];
-}
-
-function applyDamagePartSource(target, source) {
-  if (!target || !source) {
-    return false;
-  }
-
-  const update = {};
-  for (const key of ["number", "denomination", "bonus"]) {
-    if (source[key] !== undefined) {
-      update[key] = source[key];
-    }
-  }
-
-  const sourceTypes = damageTypesArray(source.types);
-  if (sourceTypes.length) {
-    update.types = sourceTypes;
-  }
-
-  for (const key of ["custom", "scaling"]) {
-    if (source[key] !== undefined) {
-      update[key] = cloneDamagePartValue(source[key]);
-    }
-  }
-
-  if (!Object.keys(update).length) {
-    return false;
-  }
-
-  if (typeof target.updateSource === "function") {
-    target.updateSource(update);
-  }
-  else {
-    for (const [key, value] of Object.entries(update)) {
-      if (key === "types" && target.types instanceof Set) {
-        target.types.clear();
-        for (const type of value) {
-          target.types.add(type);
-        }
-      }
-      else {
-        target[key] = cloneDamagePartValue(value);
-      }
-    }
-  }
-
-  target.base = true;
-  if (target.locked !== undefined) {
-    target.locked = true;
-  }
-
-  return true;
 }
 
 function isConfiguredDnd5eToolId(toolId) {
@@ -260,20 +144,6 @@ function readRequiredHands(document) {
   }
 
   return undefined;
-}
-
-function writeDocumentFlagSource(document, scope, key, value) {
-  if (!document || !scope || !key) {
-    return;
-  }
-
-  const path = `flags.${scope}.${key}`;
-  if (typeof document.updateSource === "function") {
-    document.updateSource({ [path]: value });
-    return;
-  }
-
-  foundry.utils.setProperty(document, path, value);
 }
 
 function collectionValues(collection) {
@@ -1385,100 +1255,6 @@ export class CombatAttackService {
     return this.#hasItemProperty(activity?.item, "two") ? 2 : 1;
   }
 
-  #hasAttackMode(item, attackMode) {
-    const safeAttackMode = String(attackMode ?? "").trim();
-    if (!safeAttackMode) {
-      return false;
-    }
-
-    const attackModes = collectionValues(foundry.utils.getProperty(item, "system.attackModes"));
-    if (!attackModes.length) {
-      return true;
-    }
-
-    return attackModes.some((mode) => String(mode?.value ?? mode ?? "").trim() === safeAttackMode);
-  }
-
-  #isHeldVersatileTwoHandedAttack(activity) {
-    const item = activity?.item ?? null;
-    if (!item || getItemHeldHands(item).length < 2) {
-      return false;
-    }
-
-    const handRequirement = readDocumentFlag(item, MODULE_ID, "handRequirement");
-    const isVersatile = foundry.utils.getProperty(item, "system.isVersatile") === true
-      || this.#hasItemProperty(item, "ver")
-      || (isPlainObject(handRequirement) && handRequirement.versatile === true);
-    return isVersatile && this.#hasAttackMode(item, "twoHanded");
-  }
-
-  #applyHeldWeaponAttackMode(activity, usageConfig = {}) {
-    if (!this.#isHeldVersatileTwoHandedAttack(activity)) {
-      return false;
-    }
-
-    usageConfig.attackMode = "twoHanded";
-    usageConfig.midiOptions ??= {};
-    usageConfig.midiOptions.workflowOptions ??= {};
-    usageConfig.midiOptions.workflowOptions.versatile = true;
-    usageConfig.midiOptions.workflowOptions.attackMode = "twoHanded";
-    if (usageConfig.workflow) {
-      usageConfig.workflow.attackMode = "twoHanded";
-      usageConfig.workflow.workflowOptions ??= {};
-      usageConfig.workflow.workflowOptions.versatile = true;
-      usageConfig.workflow.workflowOptions.attackMode = "twoHanded";
-    }
-    const activityId = cleanText(activity?.id ?? activity?._id);
-    if (activityId) {
-      writeDocumentFlagSource(activity.item, "dnd5e", `last.${activityId}.attackMode`, "twoHanded");
-    }
-    return true;
-  }
-
-  #applyHeldVersatileDamageMode(activity, config = {}) {
-    if (!this.#isHeldVersatileTwoHandedAttack(activity)) {
-      return;
-    }
-
-    config.attackMode = "twoHanded";
-    const item = activity.item ?? null;
-    const versatileFormula = damagePartFormula(foundry.utils.getProperty(item, "system.damage.versatile"));
-    if (!versatileFormula) {
-      return;
-    }
-
-    const baseDamageRollConfig = (config?.rolls ?? []).find((entry) => entry?.base) ?? config?.rolls?.[0] ?? null;
-    if (!baseDamageRollConfig) {
-      return;
-    }
-
-    replaceDamageRollBaseDice(baseDamageRollConfig, versatileFormula);
-  }
-
-  #syncActivityBaseDamagePart(activity) {
-    const item = activity?.item ?? null;
-    if (!item) {
-      return false;
-    }
-
-    const parts = foundry.utils.getProperty(activity, "damage.parts");
-    if (!Array.isArray(parts) || !parts.length) {
-      return false;
-    }
-
-    const basePart = parts.find((part) => part?.base === true)
-      ?? parts.find((part) => part?.locked === true)
-      ?? null;
-    if (!basePart) {
-      return false;
-    }
-
-    const source = this.#isHeldVersatileTwoHandedAttack(activity)
-      ? buildVersatileBaseDamage(item) ?? foundry.utils.getProperty(item, "system.damage.base")
-      : foundry.utils.getProperty(item, "system.damage.base");
-    return applyDamagePartSource(basePart, source);
-  }
-
   #hasBaseWeaponDamage(activity) {
     return activityHasBaseWeaponDamage(activity);
   }
@@ -1927,8 +1703,6 @@ export class CombatAttackService {
         return false;
       }
 
-      this.#applyHeldWeaponAttackMode(activity, usageConfig);
-      this.#syncActivityBaseDamagePart(activity);
       this.#ensureBaseDamageUsageButton(activity);
 
       const automation = this.#getLichAutomationState(item);
@@ -1972,8 +1746,6 @@ export class CombatAttackService {
       if (this.#blockJammedFirearm(item)) {
         return false;
       }
-
-      this.#applyHeldWeaponAttackMode(activity, config);
 
       const misfire = this.#rollFirearmMisfire(activity.actor ?? item.actor ?? null, item, config);
       if (misfire.jammed) {
@@ -2252,8 +2024,6 @@ export class CombatAttackService {
 
     try {
       const item = activity.item;
-      this.#applyHeldVersatileDamageMode(activity, config);
-
       const automation = this.#getLichAutomationState(item);
       const mu = Math.max(0, Math.floor(toNumber(automation.mu, 0)));
       const mku = Math.max(0, Math.floor(toNumber(automation.mku, 0)));

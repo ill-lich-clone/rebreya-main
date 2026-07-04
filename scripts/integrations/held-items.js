@@ -474,6 +474,35 @@ export function buildVersatileBaseDamage(item) {
   return nextBaseDamage;
 }
 
+function writeBaseDamageUpdate(update, damage) {
+  const source = toPlainValue(damage);
+  if (!isPlainObject(source)) {
+    return false;
+  }
+
+  let wrote = false;
+  for (const key of ["number", "denomination", "bonus"]) {
+    if (source[key] !== undefined) {
+      update[`system.damage.base.${key}`] = source[key];
+      wrote = true;
+    }
+  }
+
+  if (source.types !== undefined) {
+    update["system.damage.base.types"] = toPlainValue(source.types);
+    wrote = true;
+  }
+
+  for (const key of ["custom", "scaling"]) {
+    if (source[key] !== undefined) {
+      update[`system.damage.base.${key}`] = toPlainValue(source[key]);
+      wrote = true;
+    }
+  }
+
+  return wrote;
+}
+
 function applyVersatileBaseDamageUpdate(update, item, hands, equipped = true) {
   if (!item) {
     return update;
@@ -487,14 +516,17 @@ function applyVersatileBaseDamageUpdate(update, item, hands, equipped = true) {
       return update;
     }
 
-    update["system.damage.base"] = versatileBaseDamage;
+    if (!writeBaseDamageUpdate(update, versatileBaseDamage)) {
+      return update;
+    }
+
     update[`flags.${MODULE_ID}.${VERSATILE_BASE_DAMAGE_ORIGINAL_FLAG}`] =
       originalBaseDamage ?? toPlainValue(getProperty(item, "system.damage.base"));
     return update;
   }
 
   if (originalBaseDamage !== undefined) {
-    update["system.damage.base"] = originalBaseDamage;
+    writeBaseDamageUpdate(update, originalBaseDamage);
     update[`flags.${MODULE_ID}.-=${VERSATILE_BASE_DAMAGE_ORIGINAL_FLAG}`] = null;
   }
 

@@ -155,14 +155,12 @@ test("two-hand versatile updates rewrite item base damage until grip changes bac
 
   assert.deepEqual(buildHeldItemHandUpdate(["left", "right"], versatileWeapon), {
     "system.equipped": true,
-    "system.damage.base": {
-      number: 1,
-      denomination: 10,
-      types: ["slashing"],
-      custom: {
-        enabled: false,
-        formula: ""
-      }
+    "system.damage.base.number": 1,
+    "system.damage.base.denomination": 10,
+    "system.damage.base.types": ["slashing"],
+    "system.damage.base.custom": {
+      enabled: false,
+      formula: ""
     },
     "flags.rebreya-main.heldHands": ["left", "right"],
     "flags.rebreya-main.versatileBaseDamageOriginal": baseDamage
@@ -208,13 +206,25 @@ test("two-hand versatile updates rewrite item base damage until grip changes bac
 
   assert.deepEqual(buildHeldItemHandUpdate("left", twoHandedWeapon), {
     "system.equipped": true,
-    "system.damage.base": baseDamage,
+    "system.damage.base.number": 1,
+    "system.damage.base.denomination": 8,
+    "system.damage.base.types": ["slashing"],
+    "system.damage.base.custom": {
+      enabled: false,
+      formula: ""
+    },
     "flags.rebreya-main.heldHands": ["left"],
     "flags.rebreya-main.-=versatileBaseDamageOriginal": null
   });
   assert.deepEqual(buildHeldItemWornUpdate(false, twoHandedWeapon), {
     "system.equipped": false,
-    "system.damage.base": baseDamage,
+    "system.damage.base.number": 1,
+    "system.damage.base.denomination": 8,
+    "system.damage.base.types": ["slashing"],
+    "system.damage.base.custom": {
+      enabled: false,
+      formula: ""
+    },
     "flags.rebreya-main.-=heldHands": null,
     "flags.rebreya-main.-=versatileBaseDamageOriginal": null
   });
@@ -295,20 +305,18 @@ test("two-hand versatile updates tolerate dnd5e damage data with getter-only for
 
     assert.deepEqual(buildHeldItemHandUpdate(["left", "right"], weapon), {
       "system.equipped": true,
-      "system.damage.base": {
+      "system.damage.base.number": 1,
+      "system.damage.base.denomination": 10,
+      "system.damage.base.bonus": "",
+      "system.damage.base.types": ["slashing"],
+      "system.damage.base.custom": {
+        enabled: false,
+        formula: ""
+      },
+      "system.damage.base.scaling": {
+        mode: "",
         number: 1,
-        denomination: 10,
-        bonus: "",
-        types: ["slashing"],
-        custom: {
-          enabled: false,
-          formula: ""
-        },
-        scaling: {
-          mode: "",
-          number: 1,
-          formula: ""
-        }
+        formula: ""
       },
       "flags.rebreya-main.heldHands": ["left", "right"],
       "flags.rebreya-main.versatileBaseDamageOriginal": {

@@ -51,7 +51,7 @@ test("legacy module entrypoints forward cached Foundry sessions to the current l
       && compareVersion(version, "1.4.67") >= 0
       && compareVersion(version, manifest.version) < 0)
     .sort((left, right) => compareVersion(left.version, right.version));
-  const expectedSource = `import "./main.js?v=${manifest.version}";\n`;
+  const expectedSource = `import "./main.js?v=${manifest.version}-base-damage-fields";\n`;
 
   assert.ok(legacyEntrypoints.length > 0);
   for (const { fileName } of legacyEntrypoints) {
