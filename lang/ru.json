@@ -77,5 +77,8 @@
   "REBREYA_MAIN.NativeState.SelectTitle": "Выбор родного государства",
   "REBREYA_MAIN.NativeState.SelectButton": "Выбрать",
   "REBREYA_MAIN.Combat.HeroicAdvantageButton": "ГЕРОИЧ. ПРЕИМУЩЕСТВО",
-  "REBREYA_MAIN.Combat.HeroicDisadvantageButton": "ГЕРОИЧ. ПОМЕХА"
+  "REBREYA_MAIN.Combat.HeroicDisadvantageButton": "ГЕРОИЧ. ПОМЕХА",
+  "REBREYA_MAIN.Settings.SiteCatalogSync.Name": "Синхронизация справочников с сайтом",
+  "REBREYA_MAIN.Settings.SiteCatalogSync.Label": "Открыть синхронизацию",
+  "REBREYA_MAIN.Settings.SiteCatalogSync.Hint": "Импорт официальных справочников rebreya.com (заклинания, статьи) в управляемые компендии модуля."
 }
