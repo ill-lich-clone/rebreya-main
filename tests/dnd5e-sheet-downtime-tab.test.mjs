@@ -606,8 +606,8 @@ test("registerDnd5eSheetExtensions adds right-click hand choices to npc item con
           current && typeof current === "object" ? current[part] : undefined
         ), this.flags?.[scope]);
       },
-      async update(patch) {
-        updates.push(patch);
+      async update(patch, options) {
+        updates.push({ patch, options });
       }
     };
     actor.items = {
@@ -674,8 +674,11 @@ test("registerDnd5eSheetExtensions adds right-click hand choices to npc item con
     });
 
     assert.deepEqual(updates.at(-1), {
-      "system.equipped": true,
-      "flags.rebreya-main.heldHands": ["right"]
+      patch: {
+        "system.equipped": true,
+        "flags.rebreya-main.heldHands": ["right"]
+      },
+      options: { render: false }
     });
   }
   finally {

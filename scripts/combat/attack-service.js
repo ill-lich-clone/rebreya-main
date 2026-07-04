@@ -3,7 +3,7 @@ import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import {
   canUseHeldItemForHandRequirement,
   getItemHeldHands
-} from "../integrations/held-items.js?v=1.4.87-npc-held-natural";
+} from "../integrations/held-items.js?v=1.4.88-npc-held-natural";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
