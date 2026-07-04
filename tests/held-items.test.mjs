@@ -220,6 +220,124 @@ test("two-hand versatile updates rewrite item base damage until grip changes bac
   });
 });
 
+test("two-hand versatile updates tolerate dnd5e damage data with getter-only formula", async () => {
+  const previousFoundry = globalThis.foundry;
+  globalThis.foundry = {
+    utils: {
+      deepClone: (value) => value
+    }
+  };
+
+  try {
+    const {
+      buildHeldItemHandUpdate
+    } = await import(`../scripts/integrations/held-items.js?readonly-damage=${Date.now()}`);
+
+    const baseDamage = {
+      number: 1,
+      denomination: 8,
+      bonus: "",
+      types: new Set(["slashing"]),
+      custom: {
+        enabled: false,
+        formula: ""
+      },
+      scaling: {
+        mode: "",
+        number: 1,
+        formula: ""
+      },
+      toObject() {
+        return {
+          number: this.number,
+          denomination: this.denomination,
+          bonus: this.bonus,
+          types: Array.from(this.types),
+          custom: { ...this.custom },
+          scaling: { ...this.scaling }
+        };
+      }
+    };
+    Object.defineProperty(baseDamage, "formula", {
+      get() {
+        return `${this.number}d${this.denomination}`;
+      },
+      enumerable: true
+    });
+
+    const weapon = makeItem({
+      id: "old-longsword",
+      equipped: true,
+      flags: {
+        "rebreya-main": {
+          handRequirement: {
+            requiredHands: 1,
+            allowedHands: [1, 2],
+            versatile: true
+          }
+        }
+      },
+      system: {
+        properties: ["ver"],
+        damage: {
+          base: baseDamage,
+          versatile: {
+            number: 1,
+            denomination: 10,
+            custom: {
+              enabled: false,
+              formula: ""
+            }
+          }
+        }
+      }
+    });
+
+    assert.deepEqual(buildHeldItemHandUpdate(["left", "right"], weapon), {
+      "system.equipped": true,
+      "system.damage.base": {
+        number: 1,
+        denomination: 10,
+        bonus: "",
+        types: ["slashing"],
+        custom: {
+          enabled: false,
+          formula: ""
+        },
+        scaling: {
+          mode: "",
+          number: 1,
+          formula: ""
+        }
+      },
+      "flags.rebreya-main.heldHands": ["left", "right"],
+      "flags.rebreya-main.versatileBaseDamageOriginal": {
+        number: 1,
+        denomination: 8,
+        bonus: "",
+        types: ["slashing"],
+        custom: {
+          enabled: false,
+          formula: ""
+        },
+        scaling: {
+          mode: "",
+          number: 1,
+          formula: ""
+        }
+      }
+    });
+  }
+  finally {
+    if (previousFoundry === undefined) {
+      delete globalThis.foundry;
+    }
+    else {
+      globalThis.foundry = previousFoundry;
+    }
+  }
+});
+
 test("equipment context menu actions keep native wear states and add eligible two-hand grips", async () => {
   const {
     canHoldItemInTwoHands,

@@ -66,24 +66,25 @@ function getDocumentFlag(document, key) {
   return getProperty(document, `flags.${MODULE_ID}.${key}`);
 }
 
-function cloneValue(value) {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (globalThis.foundry?.utils?.deepClone) {
-    return foundry.utils.deepClone(value);
-  }
-
-  if (typeof globalThis.structuredClone === "function") {
-    return globalThis.structuredClone(value);
-  }
-
-  return JSON.parse(JSON.stringify(value));
-}
-
 function isPlainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value);
+}
+
+function toPlainValue(value) {
+  if (value === undefined || value === null || typeof value !== "object") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => toPlainValue(entry));
+  }
+
+  if (value instanceof Set) {
+    return Array.from(value, (entry) => toPlainValue(entry));
+  }
+
+  const source = typeof value.toObject === "function" ? value.toObject() : value;
+  return Object.fromEntries(Object.keys(source).map((key) => [key, toPlainValue(source[key])]));
 }
 
 function positiveInteger(value, fallback = 0) {
@@ -420,7 +421,7 @@ function isVersatileWeapon(item) {
 
 function getOriginalBaseDamage(item) {
   const originalBase = getDocumentFlag(item, VERSATILE_BASE_DAMAGE_ORIGINAL_FLAG);
-  return originalBase === undefined ? undefined : cloneValue(originalBase);
+  return originalBase === undefined ? undefined : toPlainValue(originalBase);
 }
 
 function isTwoHandGrip(hands) {
@@ -444,7 +445,7 @@ function buildVersatileBaseDamage(item) {
     return null;
   }
 
-  const nextBaseDamage = cloneValue(baseDamage);
+  const nextBaseDamage = toPlainValue(baseDamage);
   const versatileDenomination = positiveInteger(versatileDamage.denomination, 0);
   if (versatileDenomination > 0) {
     nextBaseDamage.number = Math.max(1, positiveInteger(versatileDamage.number, 1));
@@ -488,7 +489,7 @@ function applyVersatileBaseDamageUpdate(update, item, hands, equipped = true) {
 
     update["system.damage.base"] = versatileBaseDamage;
     update[`flags.${MODULE_ID}.${VERSATILE_BASE_DAMAGE_ORIGINAL_FLAG}`] =
-      originalBaseDamage ?? cloneValue(getProperty(item, "system.damage.base"));
+      originalBaseDamage ?? toPlainValue(getProperty(item, "system.damage.base"));
     return update;
   }
 
