@@ -85,6 +85,78 @@ function getTermTotal(term) {
   }, 0);
 }
 
+function getTermModifiers(term) {
+  if (Array.isArray(term?.modifiers)) {
+    return term.modifiers.map((modifier) => String(modifier ?? "").trim().toLowerCase()).filter(Boolean);
+  }
+
+  const rawModifiers = String(term?.modifiers ?? "").trim().toLowerCase();
+  return rawModifiers ? [rawModifiers] : [];
+}
+
+function getD20KeepModifier(term) {
+  return getTermModifiers(term).find((modifier) => modifier.startsWith("kh") || modifier.startsWith("kl")) ?? "";
+}
+
+function getFirstResult(term) {
+  if (!Array.isArray(term?.results) || term.results.length === 0) {
+    return NaN;
+  }
+
+  return getResultValue(term.results[0]);
+}
+
+function getMechanusD20AdvantageBonus(term, roll) {
+  if (getTermFaces(term) !== 20 || getTermNumber(term) < 2) {
+    return null;
+  }
+
+  const keepModifier = getD20KeepModifier(term);
+  if (!keepModifier) {
+    return null;
+  }
+
+  const heroicMode = String(roll?.options?.rebreyaHeroicMode ?? "").trim().toLowerCase();
+  if (heroicMode === "advantage") {
+    return 5;
+  }
+
+  if (heroicMode === "disadvantage") {
+    return -5;
+  }
+
+  const heroicMagnitude = getTermNumber(term) >= 3 ? 5 : 2;
+  return keepModifier.startsWith("kh") ? heroicMagnitude : -heroicMagnitude;
+}
+
+function replaceD20AdvantageWithFlatBonus(term, firstResult, replacementTotal, bonus) {
+  setObjectNumberProperty(term, "number", 1);
+  setObjectNumberProperty(term, "_number", 1);
+
+  if (Array.isArray(term.modifiers)) {
+    term.modifiers = term.modifiers.filter((modifier) => {
+      const normalized = String(modifier ?? "").trim().toLowerCase();
+      return !normalized.startsWith("kh") && !normalized.startsWith("kl");
+    });
+  }
+
+  if (Array.isArray(term.results)) {
+    term.results.forEach((result, index) => {
+      result.active = index === 0;
+      result.discarded = index !== 0;
+      if (index === 0) {
+        result.result = firstResult;
+        result.value = firstResult;
+      }
+    });
+  }
+
+  term.options ??= {};
+  term.options.rebreyaMechanusAdvantageBonus = bonus;
+  setObjectNumberProperty(term, "_total", replacementTotal);
+  setObjectNumberProperty(term, "total", replacementTotal);
+}
+
 function setObjectNumberProperty(object, key, value) {
   if (!object || typeof object !== "object") {
     return;
@@ -234,6 +306,19 @@ export function applyMechanusAveragesToRoll(roll, { enabled = true } = {}) {
   let changed = false;
 
   for (const term of diceTerms) {
+    const d20AdvantageBonus = getMechanusD20AdvantageBonus(term, roll);
+    if (d20AdvantageBonus !== null) {
+      const currentTermTotal = getTermTotal(term);
+      const firstResult = getFirstResult(term);
+      if (Number.isFinite(currentTermTotal) && Number.isFinite(firstResult)) {
+        const replacementTotal = firstResult + d20AdvantageBonus;
+        delta += replacementTotal - currentTermTotal;
+        changed = true;
+        replaceD20AdvantageWithFlatBonus(term, firstResult, replacementTotal, d20AdvantageBonus);
+      }
+      continue;
+    }
+
     const average = getMechanusDieAverage(getTermNumber(term), getTermFaces(term));
     if (average === null) {
       continue;

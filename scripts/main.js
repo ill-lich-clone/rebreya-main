@@ -35,7 +35,7 @@ import { CombatAttackService } from "./combat/attack-service.js?v=1.4.91-npc-hel
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.91";
-import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.91-cosmology";
+import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.91-cosmology-advantage";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.91";
 import {
   PaladinAutomationService,

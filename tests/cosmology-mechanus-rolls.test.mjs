@@ -59,6 +59,55 @@ test("Mechanus roll patch replaces only eligible dice terms after evaluation", a
   }
 });
 
+test("Mechanus converts d20 advantage and disadvantage into flat bonuses", () => {
+  const advantageRoll = {
+    formula: "2d20kh",
+    total: 18,
+    _total: 18,
+    terms: [{
+      number: 2,
+      faces: 20,
+      modifiers: ["kh"],
+      total: 18,
+      results: [{ result: 10, active: false }, { result: 18, active: true }]
+    }]
+  };
+  assert.equal(applyMechanusAveragesToRoll(advantageRoll), true);
+  assert.equal(advantageRoll.total, 12);
+  assert.equal(advantageRoll.terms[0].number, 1);
+  assert.deepEqual(advantageRoll.terms[0].results.map((result) => result.active), [true, false]);
+
+  const heroicAdvantageRoll = {
+    formula: "3d20kh",
+    total: 20,
+    _total: 20,
+    terms: [{
+      number: 3,
+      faces: 20,
+      modifiers: ["kh"],
+      total: 20,
+      results: [{ result: 12, active: false }, { result: 20, active: true }, { result: 8, active: false }]
+    }]
+  };
+  assert.equal(applyMechanusAveragesToRoll(heroicAdvantageRoll), true);
+  assert.equal(heroicAdvantageRoll.total, 17);
+
+  const disadvantageRoll = {
+    formula: "2d20kl",
+    total: 4,
+    _total: 4,
+    terms: [{
+      number: 2,
+      faces: 20,
+      modifiers: ["kl"],
+      total: 4,
+      results: [{ result: 15, active: false }, { result: 4, active: true }]
+    }]
+  };
+  assert.equal(applyMechanusAveragesToRoll(disadvantageRoll), true);
+  assert.equal(disadvantageRoll.total, 13);
+});
+
 test("Mechanus roll patch leaves rolls untouched while disabled", async () => {
   class TestRoll {
     constructor() {
