@@ -588,6 +588,92 @@ test("registerDnd5eSheetExtensions adds right-click hand choices to equipped ite
   }
 });
 
+test("held item context menu opens above existing Foundry windows", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?held-item-menu-z-index=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const item = {
+      id: "sword",
+      _id: "sword",
+      name: "Sword",
+      type: "weapon",
+      system: { equipped: false },
+      flags: {},
+      getFlag(scope, key) {
+        return String(key ?? "").split(".").reduce((current, part) => (
+          current && typeof current === "object" ? current[part] : undefined
+        ), this.flags?.[scope]);
+      },
+      async update() {}
+    };
+    actor.items = {
+      contents: [item],
+      get: (id) => (id === "sword" ? item : null)
+    };
+    const equipControl = new stubs.HTMLElement({
+      dataset: {
+        action: "equip"
+      }
+    });
+    const row = new stubs.HTMLElement({
+      dataset: {
+        itemId: "sword"
+      },
+      selectors: {
+        "[data-action='equip']": equipControl
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-item-id]": [row]
+      }
+    });
+    const existingWindow = new stubs.HTMLElement();
+    existingWindow.style.zIndex = "500";
+    stubs.document.body = new stubs.HTMLElement();
+    stubs.document.selectorAll[".window-app, .application"] = [existingWindow];
+    globalThis.window.innerWidth = 800;
+    globalThis.window.innerHeight = 600;
+    globalThis.window.getComputedStyle = (node) => node.style ?? {};
+    const app = {
+      actor,
+      async render() {}
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    await equipControl.listeners.contextmenu[0]({
+      clientX: 10,
+      clientY: 20,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    const menu = stubs.document.body.children.find((child) => child.classList.contains("rm-context-menu"));
+
+    assert.ok(menu);
+    assert.equal(Number(menu.style.zIndex) > Number(existingWindow.style.zIndex), true);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("registerDnd5eSheetExtensions adds right-click hand choices to npc item controls", async () => {
   const stubs = installSheetExtensionStubs();
   try {

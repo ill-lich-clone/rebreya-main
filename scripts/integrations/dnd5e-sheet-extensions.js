@@ -6017,6 +6017,34 @@ function closeHeldItemContextMenu() {
   existing?.remove?.();
 }
 
+function parseZIndex(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getElementZIndex(element) {
+  const inlineZIndex = parseZIndex(element?.style?.zIndex);
+  if (inlineZIndex !== null) {
+    return inlineZIndex;
+  }
+
+  try {
+    return parseZIndex(window.getComputedStyle?.(element)?.zIndex);
+  }
+  catch (_error) {
+    return null;
+  }
+}
+
+function getTopFoundryWindowZIndex() {
+  const selectors = ".window-app, .application";
+  return Array.from(document.querySelectorAll?.(selectors) ?? [])
+    .reduce((maxZIndex, element) => {
+      const zIndex = getElementZIndex(element);
+      return zIndex === null ? maxZIndex : Math.max(maxZIndex, zIndex);
+    }, 110);
+}
+
 function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [] } = {}) {
   closeHeldItemContextMenu();
   if (!Array.isArray(actions) || !actions.length || !document?.body) {
@@ -6086,6 +6114,7 @@ function openHeldItemContextMenu({ x = 0, y = 0, title = "", actions = [] } = {}
   }
 
   document.body.append(menuRoot);
+  menuRoot.style.zIndex = String(getTopFoundryWindowZIndex() + 10);
 
   const bounds = typeof menuRoot.getBoundingClientRect === "function"
     ? menuRoot.getBoundingClientRect()
