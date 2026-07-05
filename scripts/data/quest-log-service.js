@@ -9,6 +9,34 @@ export const REBREYA_QUEST_FLAGS = Object.freeze({
 
 const QUEST_STATUS_VALUES = new Set(["active", "available", "completed", "failed", "inactive"]);
 const UNSAFE_OBJECT_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+const REQUIREMENT_TYPE_OPTIONS = Object.freeze([
+  {
+    value: "quest",
+    label: "Задание"
+  }
+]);
+const REQUIREMENT_STATUS_OPTIONS = Object.freeze([
+  {
+    value: "completed",
+    label: "Завершить"
+  },
+  {
+    value: "failed",
+    label: "Провалить"
+  },
+  {
+    value: "available",
+    label: "Сделать доступным"
+  },
+  {
+    value: "active",
+    label: "Активировать"
+  },
+  {
+    value: "inactive",
+    label: "Оставить неактивным"
+  }
+]);
 
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -149,6 +177,13 @@ function normalizeUnlockReward(value = {}) {
     requirementId,
     title: cleanText(source.title)
   };
+}
+
+function buildSelectedOptions(options, selectedValue) {
+  return options.map((option) => ({
+    ...option,
+    selected: option.value === selectedValue || option.id === selectedValue
+  }));
 }
 
 export function normalizeQuestMetadata(value = {}) {
@@ -307,6 +342,7 @@ export class RebreyaQuestLogService {
       .filter((entry) => entry?.id && entry.id !== quest.id)
       .map((entry) => ({
         id: entry.id,
+        value: entry.id,
         name: entry.name ?? entry.id,
         status: entry.status ?? ""
       }))
@@ -321,6 +357,12 @@ export class RebreyaQuestLogService {
         unlock: null,
         satisfied: false
       }));
+    const editableRequirements = requirements.map((requirement) => ({
+      ...requirement,
+      typeOptions: buildSelectedOptions(REQUIREMENT_TYPE_OPTIONS, requirement.type),
+      questOptions: buildSelectedOptions(questOptions, requirement.questId),
+      statusOptions: buildSelectedOptions(REQUIREMENT_STATUS_OPTIONS, requirement.status)
+    }));
     const unlockTargets = [];
 
     for (const targetQuest of quests) {
@@ -357,9 +399,11 @@ export class RebreyaQuestLogService {
       hasGroupContext: Boolean(groupId),
       assignedGroupIds: metadata.groupActorIds,
       assignedToCurrentGroup: Boolean(groupId && metadata.groupActorIds.includes(groupId)),
-      requirements,
+      requirements: editableRequirements,
       unlockRewards,
       questOptions,
+      requirementTypeOptions: REQUIREMENT_TYPE_OPTIONS.map((option) => ({ ...option })),
+      requirementStatusOptions: REQUIREMENT_STATUS_OPTIONS.map((option) => ({ ...option })),
       unlockTargets: unlockTargets.sort((left, right) =>
         `${left.questName} ${left.title}`.localeCompare(`${right.questName} ${right.title}`, "ru")
       )
@@ -458,19 +502,56 @@ export class RebreyaQuestLogService {
     };
   }
 
-  async addRequirement(questId, { requiredQuestId, title = "", status = "completed" } = {}) {
+  async addRequirement(questId, { type = "quest", requiredQuestId, title = "", status = "completed" } = {}) {
     const quest = this.getQuest(questId);
     const requiredQuest = this.getQuest(requiredQuestId);
     const metadata = this.getQuestMetadata(quest);
     const requirement = normalizeRequirement({
       id: this.idFactory("req"),
-      type: "quest",
+      type,
       questId: requiredQuest.id,
       title: title || requiredQuest.name || requiredQuest.id,
       status
     });
 
     metadata.requirements.push(requirement);
+    await this.setQuestMetadata(quest, metadata);
+    return requirement;
+  }
+
+  async updateRequirement(questId, requirementId, { type = "quest", requiredQuestId, title = "", status = "completed" } = {}) {
+    const quest = this.getQuest(questId);
+    const requiredQuest = this.getQuest(requiredQuestId);
+    const metadata = this.getQuestMetadata(quest);
+    const id = cleanId(requirementId);
+    const index = metadata.requirements.findIndex((requirement) => requirement.id === id);
+    if (index === -1) {
+      throw new Error("Quest requirement was not found.");
+    }
+
+    const requirement = normalizeRequirement({
+      id,
+      type,
+      questId: requiredQuest.id,
+      title: title || requiredQuest.name || requiredQuest.id,
+      status
+    });
+    metadata.requirements[index] = requirement;
+    await this.setQuestMetadata(quest, metadata);
+    return requirement;
+  }
+
+  async removeRequirement(questId, requirementId) {
+    const quest = this.getQuest(questId);
+    const metadata = this.getQuestMetadata(quest);
+    const id = cleanId(requirementId);
+    const requirement = metadata.requirements.find((entry) => entry.id === id);
+    if (!requirement) {
+      throw new Error("Quest requirement was not found.");
+    }
+
+    metadata.requirements = metadata.requirements.filter((entry) => entry.id !== id);
+    metadata.unlockRewards = metadata.unlockRewards.filter((reward) => reward.requirementId !== id || reward.targetQuestId !== quest.id);
     await this.setQuestMetadata(quest, metadata);
     return requirement;
   }
@@ -493,6 +574,20 @@ export class RebreyaQuestLogService {
     });
 
     metadata.unlockRewards.push(reward);
+    await this.setQuestMetadata(sourceQuest, metadata);
+    return reward;
+  }
+
+  async removeUnlockReward(sourceQuestId, rewardId) {
+    const sourceQuest = this.getQuest(sourceQuestId);
+    const metadata = this.getQuestMetadata(sourceQuest);
+    const id = cleanId(rewardId);
+    const reward = metadata.unlockRewards.find((entry) => entry.id === id);
+    if (!reward) {
+      throw new Error("Unlock reward was not found.");
+    }
+
+    metadata.unlockRewards = metadata.unlockRewards.filter((entry) => entry.id !== id);
     await this.setQuestMetadata(sourceQuest, metadata);
     return reward;
   }

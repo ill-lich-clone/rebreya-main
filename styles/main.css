@@ -10055,7 +10055,18 @@ summary:focus-visible {
   align-items: center;
 }
 
-.forien-quest-preview .rm-fql-overlay select {
+.forien-quest-preview .rm-fql-overlay__row--split {
+  grid-template-columns: minmax(120px, 0.72fr) minmax(150px, 1fr);
+}
+
+.forien-quest-preview .rm-fql-overlay__stack {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.forien-quest-preview .rm-fql-overlay select,
+.forien-quest-preview .rm-fql-overlay__search {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--rm-fql-overlay-border-strong);
@@ -10063,6 +10074,11 @@ summary:focus-visible {
   background: #fff8e8;
   color: var(--rm-fql-overlay-text);
   font-weight: 600;
+}
+
+.forien-quest-preview .rm-fql-overlay__search {
+  min-height: 30px;
+  padding: 4px 7px;
 }
 
 .forien-quest-preview .rm-fql-overlay__button,
@@ -10097,6 +10113,13 @@ summary:focus-visible {
   padding: 0;
 }
 
+.forien-quest-preview .rm-fql-overlay__actions {
+  display: inline-flex;
+  gap: 6px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
 .forien-quest-preview .rm-fql-overlay__badge {
   display: inline-flex;
   align-items: center;
@@ -10128,6 +10151,11 @@ summary:focus-visible {
   background: var(--rm-fql-overlay-row);
 }
 
+.forien-quest-preview .rm-fql-overlay__item--editable {
+  grid-template-columns: 18px minmax(0, 1fr) max-content;
+  align-items: start;
+}
+
 .forien-quest-preview .rm-fql-overlay__item span,
 .forien-quest-preview .rm-fql-overlay__item small {
   min-width: 0;
@@ -10145,7 +10173,12 @@ summary:focus-visible {
 @media (max-width: 760px) {
   .forien-quest-preview .rm-fql-overlay__grid,
   .forien-quest-preview .rm-fql-overlay__row,
+  .forien-quest-preview .rm-fql-overlay__row--split,
   .forien-quest-preview .rm-fql-overlay__item {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .forien-quest-preview .rm-fql-overlay__actions {
+    justify-content: start;
   }
 }

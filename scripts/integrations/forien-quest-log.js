@@ -146,8 +146,112 @@ function getSelectValue(container, name) {
   return String(container.querySelector(`[name="${name}"]`)?.value ?? "").trim();
 }
 
+function getApplicationInstances(value) {
+  if (!value) {
+    return [];
+  }
+
+  if (value instanceof Map) {
+    return Array.from(value.values());
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  return Object.values(value);
+}
+
+function getOpenForienApps() {
+  const apps = [
+    ...Object.values(globalThis.ui?.windows ?? {}),
+    ...getApplicationInstances(globalThis.foundry?.applications?.instances)
+  ];
+  const seen = new Set();
+
+  return apps.filter((app) => {
+    if (!app || seen.has(app) || !app.rendered || typeof app.render !== "function") {
+      return false;
+    }
+
+    const classes = app.options?.classes ?? [];
+    const id = String(app.id ?? app.options?.id ?? "");
+    const isForienApp = classes.includes(FQL_MODULE_ID)
+      || classes.includes("forien-quest-preview")
+      || id === FQL_MODULE_ID
+      || id.startsWith("quest-");
+    if (!isForienApp) {
+      return false;
+    }
+
+    seen.add(app);
+    return true;
+  });
+}
+
+function filterQuestSelectOptions(input) {
+  const container = input.closest(".rm-fql-overlay");
+  const targetName = input.dataset.rmFqlSearchTarget ?? "";
+  const select = container?.querySelector(`[name="${targetName}"]`);
+  if (!select) {
+    return;
+  }
+
+  const query = input.value.trim().toLocaleLowerCase("ru");
+  let firstVisible = null;
+  let selectedVisible = false;
+
+  for (const option of select.options) {
+    const matches = !query || option.textContent.toLocaleLowerCase("ru").includes(query);
+    option.hidden = !matches;
+    option.disabled = !matches;
+    if (matches && !firstVisible) {
+      firstVisible = option;
+    }
+    if (matches && option.selected) {
+      selectedVisible = true;
+    }
+  }
+
+  if (!selectedVisible && firstVisible) {
+    select.value = firstVisible.value;
+  }
+}
+
+function getRequirementRow(button) {
+  return button.closest("[data-requirement-id]");
+}
+
+function getRequirementFormData(row) {
+  return {
+    type: getSelectValue(row, "rm-fql-requirement-type"),
+    requiredQuestId: getSelectValue(row, "rm-fql-requirement-quest-id"),
+    status: getSelectValue(row, "rm-fql-requirement-status")
+  };
+}
+
+export async function refreshForienQuestLogApps() {
+  const forienModule = globalThis.game?.modules?.get?.(FQL_MODULE_ID);
+  if (!forienModule || forienModule.active === false) {
+    return;
+  }
+
+  try {
+    const { ViewManager } = await import("../../../forien-quest-log/src/control/index.js");
+    ViewManager.renderAll({ force: true, questPreview: true, focus: false });
+    return;
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Forien Quest Log ViewManager was not available for group refresh.`, error);
+  }
+
+  const tasks = getOpenForienApps().map((app) => app.render(true, { focus: false }));
+  await Promise.allSettled(tasks);
+}
+
 async function refreshQuestPreview(app, moduleApi) {
   await moduleApi?.refreshOpenApps?.();
+  await refreshForienQuestLogApps();
   if (typeof app?.render === "function") {
     app.render(true);
   }
@@ -175,8 +279,19 @@ async function handleOverlayAction(event, app, moduleApi) {
     }
     else if (action === "add-requirement") {
       const requiredQuestId = getSelectValue(container, "rm-fql-required-quest-id");
-      await service.addRequirement(quest.id, { requiredQuestId });
+      const type = getSelectValue(container, "rm-fql-required-type");
+      const status = getSelectValue(container, "rm-fql-required-status");
+      await service.addRequirement(quest.id, { type, requiredQuestId, status });
       notifyInfo("Rebreya: требование добавлено.");
+    }
+    else if (action === "update-requirement") {
+      const row = getRequirementRow(button);
+      await service.updateRequirement(quest.id, button.dataset.requirementId, getRequirementFormData(row));
+      notifyInfo("Rebreya: требование обновлено.");
+    }
+    else if (action === "remove-requirement") {
+      await service.removeRequirement(quest.id, button.dataset.requirementId);
+      notifyInfo("Rebreya: требование удалено.");
     }
     else if (action === "add-unlock-reward") {
       const [targetQuestId, requirementId] = getSelectValue(container, "rm-fql-unlock-target").split("::");
@@ -186,6 +301,10 @@ async function handleOverlayAction(event, app, moduleApi) {
     else if (action === "apply-unlock-reward") {
       await service.applyUnlockReward(quest.id, button.dataset.rewardId);
       notifyInfo("Rebreya: требование открыто для активной группы.");
+    }
+    else if (action === "remove-unlock-reward") {
+      await service.removeUnlockReward(quest.id, button.dataset.rewardId);
+      notifyInfo("Rebreya: награда-ключ удалена.");
     }
 
     await refreshQuestPreview(app, moduleApi);
@@ -215,6 +334,11 @@ async function injectQuestOverlay(app, html, moduleApi) {
   target.querySelectorAll("[data-rm-fql-action]").forEach((button) => {
     button.addEventListener("click", (event) => {
       void handleOverlayAction(event, app, moduleApi);
+    });
+  });
+  target.querySelectorAll("[data-rm-fql-search-target]").forEach((input) => {
+    input.addEventListener("input", () => {
+      filterQuestSelectOptions(input);
     });
   });
 }

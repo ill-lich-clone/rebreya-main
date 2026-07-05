@@ -307,6 +307,28 @@ test("filterQuestEntriesForGroup keeps only quests assigned to the active group"
   assert.deepEqual(result.map((entry) => entry.id), ["quest-a"]);
 });
 
+test("filterQuestCollectResult reflects the active group selected for each refresh", () => {
+  const groupAQuest = createQuest("quest-a", { metadata: { groupActorIds: ["group-a"] } });
+  const groupBQuest = createQuest("quest-b", { metadata: { groupActorIds: ["group-b"] } });
+  const service = new RebreyaQuestLogService();
+  const collectResult = {
+    active: [
+      { id: "quest-a", quest: groupAQuest },
+      { id: "quest-b", quest: groupBQuest }
+    ],
+    completed: []
+  };
+
+  assert.deepEqual(
+    service.filterQuestCollectResult(collectResult, "group-a").active.map((entry) => entry.id),
+    ["quest-a"]
+  );
+  assert.deepEqual(
+    service.filterQuestCollectResult(collectResult, "group-b").active.map((entry) => entry.id),
+    ["quest-b"]
+  );
+});
+
 test("requirements are satisfied by completed source quests or group unlock state", () => {
   const sourceQuest = createQuest("quest-a", { status: "completed" });
   const lockedQuest = createQuest("quest-b", {
@@ -406,6 +428,83 @@ test("unlock rewards open a target requirement for the selected group", async ()
       sourceQuestId: "quest-a",
       sourceRewardId: "reward-a"
     }
+  );
+});
+
+test("requirements can be edited and removed from quest metadata", async () => {
+  const sourceQuestA = createQuest("quest-a", { name: "Quest A", status: "completed" });
+  const sourceQuestB = createQuest("quest-b", { name: "Quest B", status: "active" });
+  const currentQuest = createQuest("quest-current", {
+    metadata: {
+      requirements: [
+        {
+          id: "req-a",
+          type: "quest",
+          questId: "quest-a",
+          title: "Old gate",
+          status: "completed"
+        }
+      ]
+    }
+  });
+  const quests = {
+    "quest-a": sourceQuestA,
+    "quest-b": sourceQuestB,
+    "quest-current": currentQuest
+  };
+  const service = new RebreyaQuestLogService({
+    getFqlApi: () => ({ DB: { getQuest: (questId) => quests[questId] ?? null } })
+  });
+
+  const updated = await service.updateRequirement("quest-current", "req-a", {
+    type: "quest",
+    requiredQuestId: "quest-b",
+    title: "Need B",
+    status: "active"
+  });
+
+  assert.deepEqual(updated, {
+    id: "req-a",
+    type: "quest",
+    questId: "quest-b",
+    title: "Need B",
+    status: "active"
+  });
+  assert.deepEqual(
+    currentQuest.entry.getFlag("rebreya-main", REBREYA_QUEST_FLAGS.METADATA).requirements,
+    [updated]
+  );
+
+  await service.removeRequirement("quest-current", "req-a");
+  assert.deepEqual(
+    currentQuest.entry.getFlag("rebreya-main", REBREYA_QUEST_FLAGS.METADATA).requirements,
+    []
+  );
+});
+
+test("unlock rewards can be removed from quest metadata", async () => {
+  const currentQuest = createQuest("quest-current", {
+    metadata: {
+      unlockRewards: [
+        {
+          id: "reward-a",
+          targetQuestId: "quest-target",
+          requirementId: "req-target",
+          title: "Open target"
+        }
+      ]
+    }
+  });
+  const service = new RebreyaQuestLogService({
+    getFqlApi: () => ({ DB: { getQuest: () => currentQuest } })
+  });
+
+  const removed = await service.removeUnlockReward("quest-current", "reward-a");
+
+  assert.equal(removed.id, "reward-a");
+  assert.deepEqual(
+    currentQuest.entry.getFlag("rebreya-main", REBREYA_QUEST_FLAGS.METADATA).unlockRewards,
+    []
   );
 });
 
@@ -535,5 +634,64 @@ test("getQuestOverlayContext builds selectable quests and unlock targets", () =>
       requirementTitle: "Target gate",
       applied: false
     }
+  ]);
+});
+
+test("getQuestOverlayContext exposes editable requirement type, quest, and status options", () => {
+  const currentQuest = createQuest("quest-current", {
+    metadata: {
+      groupActorIds: ["group-a"],
+      requirements: [
+        {
+          id: "req-current",
+          type: "quest",
+          questId: "quest-required",
+          title: "Current gate",
+          status: "failed"
+        }
+      ]
+    }
+  });
+  const requiredQuest = createQuest("quest-required", { name: "Required", status: "completed" });
+  const otherQuest = createQuest("quest-other", { name: "Other", status: "available" });
+  const groupState = buildDefaultGroupState("group-a", { now: 111 });
+  const service = new RebreyaQuestLogService({
+    groupContextService: createGroupContextService({
+      groupId: "group-a",
+      groupActor: { id: "group-a", name: "Party A", type: "group" },
+      members: [],
+      memberActorIds: [],
+      groupState
+    }),
+    getFqlApi: () => ({
+      DB: {
+        getAllQuests: () => [currentQuest, requiredQuest, otherQuest],
+        getQuest: (questId) => ({
+          "quest-current": currentQuest,
+          "quest-required": requiredQuest,
+          "quest-other": otherQuest
+        })[questId] ?? null
+      }
+    })
+  });
+
+  const context = service.getQuestOverlayContext("quest-current", "group-a");
+  const requirement = context.requirements[0];
+
+  assert.equal(requirement.typeOptions.find((option) => option.value === "quest").selected, true);
+  assert.equal(requirement.questOptions.find((option) => option.id === "quest-required").selected, true);
+  assert.equal(requirement.statusOptions.find((option) => option.value === "failed").selected, true);
+  assert.deepEqual(context.requirementTypeOptions, [
+    {
+      value: "quest",
+      label: "Задание"
+    }
+  ]);
+  assert.deepEqual(context.requirementStatusOptions.map((option) => option.value), [
+    "completed",
+    "failed",
+    "available",
+    "active",
+    "inactive"
   ]);
 });

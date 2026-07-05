@@ -9,8 +9,39 @@ test("Forien quest overlay template exposes group, import, requirement, and rewa
   assert.match(template, /data-rm-fql-action="assign-current-group"/u);
   assert.match(template, /data-rm-fql-action="import-subquest"/u);
   assert.match(template, /data-rm-fql-action="add-requirement"/u);
+  assert.match(template, /data-rm-fql-action="update-requirement"/u);
+  assert.match(template, /data-rm-fql-action="remove-requirement"/u);
   assert.match(template, /data-rm-fql-action="add-unlock-reward"/u);
   assert.match(template, /data-rm-fql-action="apply-unlock-reward"/u);
+  assert.match(template, /data-rm-fql-action="remove-unlock-reward"/u);
+  assert.match(template, /name="rm-fql-required-type"/u);
+  assert.match(template, /name="rm-fql-required-status"/u);
+  assert.match(template, /name="rm-fql-import-search"/u);
+  assert.match(template, /name="rm-fql-required-search"/u);
+  assert.match(template, /name="rm-fql-unlock-search"/u);
+});
+
+test("Forien quest overlay integration wires search filtering and editable row actions", async () => {
+  const source = await readFile(new URL("../scripts/integrations/forien-quest-log.js", import.meta.url), "utf8");
+
+  assert.match(source, /filterQuestSelectOptions/u);
+  assert.match(source, /data-rm-fql-search-target/u);
+  assert.match(source, /action === "update-requirement"/u);
+  assert.match(source, /action === "remove-requirement"/u);
+  assert.match(source, /action === "remove-unlock-reward"/u);
+});
+
+test("Forien quest log refreshes when the active Rebreya group changes", async () => {
+  const integrationSource = await readFile(new URL("../scripts/integrations/forien-quest-log.js", import.meta.url), "utf8");
+  const mainSource = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+
+  assert.match(integrationSource, /export\s+async\s+function\s+refreshForienQuestLogApps/u);
+  assert.match(integrationSource, /ViewManager\.renderAll\(\{\s*force:\s*true,\s*questPreview:\s*true/u);
+  assert.match(mainSource, /refreshForienQuestLogApps/u);
+  assert.match(
+    mainSource,
+    /async\s+setActivePartyGroup[\s\S]+?await\s+this\.refreshOpenApps\(\);[\s\S]+?await\s+refreshForienQuestLogApps\(\);/u
+  );
 });
 
 test("Forien quest overlay styles are scoped to the quest preview", async () => {

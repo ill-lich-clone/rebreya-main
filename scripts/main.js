@@ -58,7 +58,7 @@ import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTim
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.91";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
-import { registerForienQuestLogIntegration } from "./integrations/forien-quest-log.js?v=1.4.91";
+import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.91";
 import {
   SOCKET_EVENT_SET_SETTING,
   SOCKET_EVENT_SET_SETTING_RESULT,
@@ -2362,6 +2362,7 @@ export class RebreyaMainModule {
   async setActivePartyGroup(groupActorId) {
     const result = await this.groupContextService.setActiveGroup(groupActorId);
     await this.refreshOpenApps();
+    await refreshForienQuestLogApps();
     await syncSmallTimeToCalendarTime(this);
     return result;
   }
