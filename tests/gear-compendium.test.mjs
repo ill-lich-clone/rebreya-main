@@ -490,6 +490,8 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(automaticFire?.target.affects.type, "creature");
   assert.equal(automaticFire?.flags["rebreya-main"].automation, "firearm-automatic-fire");
   assert.match(automaticFire?.description.chatFlavor ?? "", /4d8/u);
+  assert.equal(automaticRifleActivitiesByName.get("Очистить затвор"), undefined);
+  assert.equal(automaticRifleActivitiesByName.get("Привести оружие в порядок"), undefined);
 
   const createdSemiAutomaticRifle = createDnd5eItemData(semiAutomaticRifle, new Map());
   const semiAutomaticRifleActivitiesByName = new Map(Object.values(createdSemiAutomaticRifle.system.activities ?? {})

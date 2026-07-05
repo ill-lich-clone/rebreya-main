@@ -86,6 +86,36 @@ test("module entrypoint registers the live magic weapon template hook", async ()
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
 });
 
+test("gear compendium import uses the firearm activity cache bust", async () => {
+  const manifestUrl = new URL("../module.json", import.meta.url);
+  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+  const entrypointPath = manifest.esmodules?.[0];
+  const entrypointSource = await readFile(new URL(`../${entrypointPath}`, import.meta.url), "utf8");
+  const escapedVersion = manifest.version.replaceAll(".", "\\.");
+
+  assert.match(
+    entrypointSource,
+    new RegExp(`gear-compendium\\.js\\?v=${escapedVersion}-firearm-misfire-actions`, "u"),
+  );
+});
+
+test("combat firearm activity repair uses the current cache bust", async () => {
+  const manifestUrl = new URL("../module.json", import.meta.url);
+  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+  const entrypointPath = manifest.esmodules?.[0];
+  const entrypointSource = await readFile(new URL(`../${entrypointPath}`, import.meta.url), "utf8");
+  const escapedVersion = manifest.version.replaceAll(".", "\\.");
+
+  assert.match(
+    entrypointSource,
+    new RegExp(`combat/hooks\\.js\\?v=${escapedVersion}-firearm-activity-repair`, "u"),
+  );
+  assert.match(
+    entrypointSource,
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-misfire-actions`, "u"),
+  );
+});
+
 test("held item integrations use the current module cache bust", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
@@ -101,7 +131,7 @@ test("held item integrations use the current module cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-ammo-consumption`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-misfire-actions`, "u"),
   );
   assert.match(
     sheetSource,

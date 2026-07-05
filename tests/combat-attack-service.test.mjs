@@ -1207,6 +1207,75 @@ test("firearm attack activities disable dnd5e item ammunition consumption before
   assert.equal(ammo.updateCalls.length, 0);
 });
 
+test("firearm actor repair removes jam maintenance activities from weapons without misfire", async () => {
+  const shotActivity = {
+    _id: "shot",
+    type: "attack",
+    name: "Выстрел"
+  };
+  const automaticFireActivity = {
+    _id: "automatic-fire",
+    type: "utility",
+    name: "Автоматический огонь",
+    flags: {
+      [MODULE_ID]: {
+        automation: "firearm-automatic-fire"
+      }
+    }
+  };
+  const weapon = makeFirearmItem({
+    name: "Автоматическая винтовка",
+    typeValue: "firearmAdvanced",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true,
+      lchFirearmAutomatic: true
+    },
+    values: {
+      ammunition: "Винтовочный",
+      reload: "Смена магазина 24"
+    }
+  });
+  weapon.system.activities = {
+    [shotActivity._id]: shotActivity,
+    lchClearBreech01: {
+      _id: "lchClearBreech01",
+      type: "utility",
+      name: "Очистить затвор",
+      flags: {
+        [MODULE_ID]: {
+          automation: "firearm-clear-jam"
+        }
+      }
+    },
+    [automaticFireActivity._id]: automaticFireActivity,
+    lchMaintainGun01: {
+      _id: "lchMaintainGun01",
+      type: "utility",
+      name: "Привести оружие в порядок",
+      flags: {
+        [MODULE_ID]: {
+          automation: "firearm-maintain"
+        }
+      }
+    }
+  };
+  const actor = makeActor([weapon]);
+  const service = new CombatAttackService({});
+
+  const result = await service.repairFirearmActivities(actor);
+
+  assert.equal(result.updated, 1);
+  assert.equal(result.removed, 2);
+  assert.deepEqual(Object.keys(weapon.system.activities).sort(), ["automatic-fire", "shot"]);
+  assert.deepEqual(weapon.updateCalls.at(-1), {
+    "system.activities": {
+      [shotActivity._id]: shotActivity,
+      [automaticFireActivity._id]: automaticFireActivity
+    }
+  });
+});
+
 test("firearm misfire rolls an extra d20 and jams the weapon before the attack", () => {
   TestRoll.queuedTotals = [2];
   TestRoll.messages = [];

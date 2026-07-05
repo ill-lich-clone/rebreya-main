@@ -18,6 +18,8 @@ const FIREARM_RUST_PROPERTY = "lchFirearmRust";
 const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
 const FIREARM_AMMO_STATE_FLAG = "firearmAmmoState";
 const FIREARM_JAM_NAME_SUFFIX = " (клин)";
+const FIREARM_CLEAR_JAM_ACTIVITY_ID = "lchClearBreech01";
+const FIREARM_MAINTAIN_ACTIVITY_ID = "lchMaintainGun01";
 const FIREARM_CLEAR_JAM_AUTOMATION = "firearm-clear-jam";
 const FIREARM_MAINTAIN_AUTOMATION = "firearm-maintain";
 const FIREARM_RELOAD_AUTOMATION = "firearm-reload";
@@ -275,6 +277,30 @@ function collectionValues(collection) {
 
   if (typeof collection.values === "function") {
     return Array.from(collection.values());
+  }
+
+  return [];
+}
+
+function collectionEntries(collection) {
+  if (!collection) {
+    return [];
+  }
+
+  if (collection instanceof Map) {
+    return Array.from(collection.entries());
+  }
+
+  if (typeof collection.entries === "function" && !Array.isArray(collection)) {
+    return Array.from(collection.entries());
+  }
+
+  if (Array.isArray(collection)) {
+    return collection.map((entry, index) => [entry?.id ?? entry?._id ?? String(index), entry]);
+  }
+
+  if (typeof collection === "object") {
+    return Object.entries(collection);
   }
 
   return [];
@@ -1255,6 +1281,78 @@ export class CombatAttackService {
     }
 
     return state?.value === true;
+  }
+
+  #hasFirearmMisfireMechanic(item) {
+    return this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)
+      || this.#hasItemProperty(item, FIREARM_RUST_PROPERTY);
+  }
+
+  #isFirearmMisfireMaintenanceActivity(activityId, activity) {
+    const safeActivityId = cleanText(activityId ?? activity?._id ?? activity?.id);
+    if ([FIREARM_CLEAR_JAM_ACTIVITY_ID, FIREARM_MAINTAIN_ACTIVITY_ID].includes(safeActivityId)) {
+      return true;
+    }
+
+    const automation = cleanText(foundry.utils.getProperty(activity, `flags.${MODULE_ID}.automation`));
+    return [FIREARM_CLEAR_JAM_AUTOMATION, FIREARM_MAINTAIN_AUTOMATION].includes(automation);
+  }
+
+  async repairFirearmActivities(actor) {
+    if (!(actor instanceof Actor)) {
+      return {
+        updated: 0,
+        removed: 0,
+        items: []
+      };
+    }
+
+    let updated = 0;
+    let removed = 0;
+    const items = [];
+    for (const item of collectionValues(actor.items)) {
+      if (!isFirearmItem(item) || this.#hasFirearmMisfireMechanic(item)) {
+        continue;
+      }
+
+      const activityEntries = collectionEntries(foundry.utils.getProperty(item, "system.activities"));
+      if (!activityEntries.length) {
+        continue;
+      }
+
+      const nextActivities = {};
+      const removedActivityIds = [];
+      for (const [activityId, activity] of activityEntries) {
+        const safeActivityId = cleanText(activityId ?? activity?._id ?? activity?.id);
+        if (this.#isFirearmMisfireMaintenanceActivity(safeActivityId, activity)) {
+          removedActivityIds.push(safeActivityId);
+          continue;
+        }
+
+        if (safeActivityId) {
+          nextActivities[safeActivityId] = activity;
+        }
+      }
+
+      if (!removedActivityIds.length) {
+        continue;
+      }
+
+      await item.update?.({ "system.activities": nextActivities }, { render: false });
+      updated += 1;
+      removed += removedActivityIds.length;
+      items.push({
+        itemId: item.id ?? "",
+        itemName: item.name ?? "",
+        removedActivityIds
+      });
+    }
+
+    return {
+      updated,
+      removed,
+      items
+    };
   }
 
   #resolveFirearmMisfireThreshold(item, options = {}) {

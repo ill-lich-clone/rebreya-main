@@ -100,6 +100,22 @@ export function registerCombatHooks(moduleApi) {
   });
 
   if (hasAttackService) {
+    const repairFirearmActor = (app) => {
+      const actor = app?.actor ?? app?.document ?? null;
+      moduleApi.combatAttackService.repairFirearmActivities(actor).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to repair firearm activities.`, error);
+      });
+    };
+
+    for (const hookName of [
+      "renderActorSheet",
+      "renderActorSheet5eCharacter2",
+      "renderActorSheet5eCharacter",
+      "renderCharacterActorSheet"
+    ]) {
+      Hooks.on(hookName, repairFirearmActor);
+    }
+
     Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
       try {
         if (

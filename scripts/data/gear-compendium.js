@@ -33,6 +33,8 @@ const FIREARM_AUTOMATIC_FIRE_ACTIVITY_ID = "lchAutoFire00001";
 const FIREARM_SEMI_AUTOMATIC_FIRE_ACTIVITY_ID = "lchSemiFire00001";
 const FIREARM_CLEAR_JAM_ACTIVITY_ID = "lchClearBreech01";
 const FIREARM_MAINTAIN_ACTIVITY_ID = "lchMaintainGun01";
+const FIREARM_MISFIRE_PROPERTY = "lchFirearmMisfire";
+const FIREARM_RUST_PROPERTY = "lchFirearmRust";
 
 function escapeHtml(value) {
   return foundry.utils.escapeHTML(String(value ?? ""));
@@ -577,6 +579,11 @@ function resolveFirearmReloadCapacity(item) {
   return parseFirstPositiveInteger(values.reload);
 }
 
+function hasFirearmMisfire(item) {
+  const properties = getFirearmProperties(item);
+  return properties.includes(FIREARM_MISFIRE_PROPERTY) || properties.includes(FIREARM_RUST_PROPERTY);
+}
+
 function resolveFirearmAreaFireMode(item) {
   const values = getFirearmPropertyValues(item);
   const properties = getFirearmProperties(item);
@@ -776,22 +783,23 @@ function buildFirearmActivities(item) {
     sort: 50
   }) : null;
   const areaFireActivity = buildFirearmAreaFireActivity(resolveFirearmAreaFireMode(item));
-  const clearJamActivity = buildSelfUtilityActivity({
+  const misfireTracked = hasFirearmMisfire(item);
+  const clearJamActivity = misfireTracked ? buildSelfUtilityActivity({
     activityId: FIREARM_CLEAR_JAM_ACTIVITY_ID,
     name: "Очистить затвор",
     activationType: "action",
     chatFlavor: "Очистить затворную раму: снять клин и увеличить текущий показатель осечки на 1, максимум до 10.",
     automation: "firearm-clear-jam",
     sort: 100
-  });
-  const maintainActivity = buildSelfUtilityActivity({
+  }) : null;
+  const maintainActivity = misfireTracked ? buildSelfUtilityActivity({
     activityId: FIREARM_MAINTAIN_ACTIVITY_ID,
     name: "Привести оружие в порядок",
     activationType: "minute",
     chatFlavor: "Проверка Ловкости или Интеллекта (инструменты жестянщика) против Сл 10 + текущий показатель осечки. При успехе осечка возвращается к базовому значению.",
     automation: "firearm-maintain",
     sort: 200
-  });
+  }) : null;
 
   const activities = {
     [attackActivity._id]: attackActivity
@@ -802,8 +810,12 @@ function buildFirearmActivities(item) {
   if (areaFireActivity) {
     activities[areaFireActivity._id] = areaFireActivity;
   }
-  activities[clearJamActivity._id] = clearJamActivity;
-  activities[maintainActivity._id] = maintainActivity;
+  if (clearJamActivity) {
+    activities[clearJamActivity._id] = clearJamActivity;
+  }
+  if (maintainActivity) {
+    activities[maintainActivity._id] = maintainActivity;
+  }
   return activities;
 }
 
