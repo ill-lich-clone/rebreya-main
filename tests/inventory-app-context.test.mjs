@@ -1056,6 +1056,80 @@ test("InventoryApp preserveScroll render restores scroll positions after rerende
   }
 });
 
+test("InventoryApp supply prompt opens above the inventory window", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousUi = globalThis.ui;
+  const dialogs = [];
+  const addFoodButton = createFakeElement();
+  const inventoryWindow = createFakeElement({
+    closest: () => inventoryWindow
+  });
+  inventoryWindow.style.zIndex = "500";
+  const root = inventoryWindow;
+  root.querySelector = (selector) => selector === "[data-action='add-food']"
+    ? addFoodButton
+    : null;
+  root.querySelectorAll = () => [];
+  globalThis.document.querySelectorAll = (selector) => selector === ".window-app, .application"
+    ? [inventoryWindow, ...dialogs.map((dialog) => dialog.element)]
+    : [];
+  globalThis.window.getComputedStyle = (node) => ({
+    zIndex: node?.style?.zIndex ?? "auto"
+  });
+  globalThis.window.setTimeout = (callback) => {
+    callback?.();
+    return 0;
+  };
+  globalThis.ui = {
+    notifications: {
+      error() {},
+      info() {}
+    }
+  };
+  globalThis.Dialog = class Dialog {
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      this.element = createFakeElement({
+        closest: () => this.element
+      });
+      this.element.style.zIndex = "100";
+      dialogs.push(this);
+    }
+
+    render() {}
+  };
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?supply-dialog-z=${Date.now()}`);
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null
+  }));
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    const clickPromise = addFoodButton.listeners.click[0]({
+      currentTarget: addFoodButton,
+      preventDefault() {}
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const dialog = dialogs.at(-1);
+    dialog.config.buttons.cancel.callback();
+    await clickPromise;
+
+    assert.ok(dialog);
+    assert.equal(Number(dialog.element.style.zIndex) > Number(inventoryWindow.style.zIndex), true);
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp exposes a full inventory drop surface to players who can contribute items", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?player-inventory-drop=${Date.now()}`);

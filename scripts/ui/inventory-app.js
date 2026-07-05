@@ -2283,6 +2283,16 @@ function getDialogRoot(html) {
   return null;
 }
 
+function renderDialogOnTop(dialog) {
+  dialog?.render?.(true);
+  if (typeof globalThis.window?.setTimeout === "function") {
+    globalThis.window.setTimeout(() => bringAppToFront(dialog), 0);
+  }
+  else {
+    bringAppToFront(dialog);
+  }
+}
+
 function hasOpenDowntimeTargetActionDialog() {
   return Boolean(globalThis.document?.querySelector?.(".rm-downtime-target-action-window"));
 }
@@ -2353,7 +2363,7 @@ async function promptNumericValue({ title, label, value = "", min = 0, step = "0
       classes: ["rebreya-main", "rebreya-trader-dialog", "rm-currency-dialog-window"]
     });
 
-    dialog.render(true);
+    renderDialogOnTop(dialog);
   });
 }
 
@@ -2490,7 +2500,7 @@ async function promptCurrencyDialog(currency = {}) {
       classes: ["rebreya-main", "rebreya-trader-dialog"]
     });
 
-    dialog.render(true);
+    renderDialogOnTop(dialog);
   });
 }
 
@@ -3499,10 +3509,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         classes: ["rebreya-main", "rebreya-trader-dialog"]
       });
 
-      dialog.render(true);
-      if (typeof globalThis.window?.setTimeout === "function") {
-        globalThis.window.setTimeout(() => bringAppToFront(dialog), 0);
-      }
+      renderDialogOnTop(dialog);
     });
   }
 
@@ -3579,7 +3586,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         height: 760
       });
 
-      dialog.render(true);
+      renderDialogOnTop(dialog);
     });
   }
 
@@ -4424,7 +4431,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         height: DOWNTIME_TARGET_DIALOG_DIMENSIONS.basis.height
       });
 
-      dialog.render(true);
+      renderDialogOnTop(dialog);
     });
   }
 
