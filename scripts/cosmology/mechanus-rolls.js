@@ -261,6 +261,49 @@ function replaceTermResultsWithAverage(term, averageTotal) {
   setObjectNumberProperty(term, "total", averageTotal);
 }
 
+function adjustActiveResultBy(term, delta) {
+  if (!Array.isArray(term?.results)) {
+    return false;
+  }
+
+  const result = [...term.results].reverse().find((entry) => isResultActive(entry));
+  if (!result) {
+    return false;
+  }
+
+  const current = getResultValue(result);
+  if (!Number.isFinite(current)) {
+    return false;
+  }
+
+  const next = current + delta;
+  result.result = next;
+  result.value = next;
+  return true;
+}
+
+function applyFinalTotalCorrectionToTerms(terms, correction) {
+  const safeCorrection = toFiniteNumber(correction, 0);
+  if (!Number.isFinite(safeCorrection) || safeCorrection <= 0) {
+    return false;
+  }
+
+  const targetTerm = [...terms].reverse().find((term) => {
+    const total = getTermTotal(term);
+    return Number.isFinite(total) && !Number.isInteger(total);
+  });
+  if (!targetTerm) {
+    return false;
+  }
+
+  const currentTotal = getTermTotal(targetTerm);
+  const nextTotal = currentTotal - safeCorrection;
+  adjustActiveResultBy(targetTerm, -safeCorrection);
+  setObjectNumberProperty(targetTerm, "_total", nextTotal);
+  setObjectNumberProperty(targetTerm, "total", nextTotal);
+  return true;
+}
+
 export function getMechanusDieAverage(number, faces) {
   const diceNumber = toPositiveInteger(number, 1);
   const diceFaces = toPositiveInteger(faces, 0);
@@ -302,6 +345,7 @@ export function applyMechanusAveragesToRoll(roll, { enabled = true } = {}) {
 
   const currentRollTotal = toFiniteNumber(roll.total ?? roll._total, NaN);
   const diceTerms = collectDiceTerms(roll);
+  const averagedTerms = [];
   let delta = 0;
   let changed = false;
 
@@ -332,11 +376,14 @@ export function applyMechanusAveragesToRoll(roll, { enabled = true } = {}) {
     delta += average - currentTermTotal;
     changed = true;
     replaceTermResultsWithAverage(term, average);
+    averagedTerms.push(term);
   }
 
   if (changed && Number.isFinite(currentRollTotal)) {
-    const nextTotal = finalizeMechanusTotal(currentRollTotal + delta);
+    const exactNextTotal = currentRollTotal + delta;
+    const nextTotal = finalizeMechanusTotal(exactNextTotal);
     if (nextTotal !== null) {
+      applyFinalTotalCorrectionToTerms(averagedTerms, exactNextTotal - nextTotal);
       setRollTotal(roll, nextTotal);
       markRollApplied(roll);
       return true;

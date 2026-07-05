@@ -59,6 +59,24 @@ test("Mechanus roll patch replaces only eligible dice terms after evaluation", a
   }
 });
 
+test("Mechanus floors a fractional final damage total inside the averaged dice term", () => {
+  const damageRoll = {
+    formula: "1d8 + 10",
+    total: 18,
+    _total: 18,
+    terms: [
+      { number: 1, faces: 8, total: 8, results: [{ result: 8, active: true }] },
+      "+",
+      { number: 10, total: 10 }
+    ]
+  };
+
+  assert.equal(applyMechanusAveragesToRoll(damageRoll), true);
+  assert.equal(damageRoll.total, 14);
+  assert.equal(damageRoll.terms[0].total, 4);
+  assert.equal(damageRoll.terms[0].results[0].result, 4);
+});
+
 test("Mechanus converts d20 advantage and disadvantage into flat bonuses", () => {
   const advantageRoll = {
     formula: "2d20kh",
