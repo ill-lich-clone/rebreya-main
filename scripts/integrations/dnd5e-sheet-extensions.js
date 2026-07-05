@@ -30,7 +30,7 @@ import {
   getHeldItemDamageFormulaPresentation,
   getHeldItemEquipPresentation,
   isHeldItemEligible
-} from "./held-items.js?v=1.4.88-npc-held-natural";
+} from "./held-items.js?v=1.4.89-npc-held-natural";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";

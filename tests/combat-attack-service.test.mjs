@@ -151,7 +151,8 @@ function makeWeaponItem({
   properties = {},
   attackModes = []
 } = {}) {
-  return new class extends Item {
+  const updateCalls = [];
+  const item = new class extends Item {
     constructor() {
       super();
       this.id = id;
@@ -183,10 +184,20 @@ function makeWeaponItem({
     getFlag(scope, key) {
       return this.flags?.[scope]?.[key];
     }
+
+    async update(updates, options = {}) {
+      updateCalls.push({ updates, options });
+      for (const [path, value] of Object.entries(updates)) {
+        foundry.utils.setProperty(this, path, value);
+      }
+      return this;
+    }
   }();
+  item.updateCalls = updateCalls;
+  return item;
 }
 
-test("weapon attack activities require the item to already be held in a hand", () => {
+test("weapon attack activities automatically take an unused item in the left hand", async () => {
   const warnings = [];
   const previousWarn = globalThis.ui.notifications.warn;
   globalThis.ui.notifications.warn = (message) => warnings.push(message);
@@ -208,15 +219,58 @@ test("weapon attack activities require the item to already be held in a hand", (
 
     const service = new CombatAttackService({});
 
-    assert.equal(service.applyDnd5ePreUseActivity(activity), false);
-    assert.match(warnings.at(-1), /возьмите предмет в руку/u);
+    assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+    assert.deepEqual(weapon.updateCalls.at(-1), {
+      updates: {
+        "system.equipped": true,
+        "flags.rebreya-main.heldHands": ["left"]
+      },
+      options: { render: false }
+    });
+    assert.deepEqual(weapon.flags[MODULE_ID].heldHands, ["left"]);
+    assert.equal(warnings.length, 0);
   }
   finally {
     globalThis.ui.notifications.warn = previousWarn;
   }
 });
 
-test("weapon attack activities are allowed after the item was taken in hand", () => {
+test("weapon attack activities warn when an unused item cannot find a free hand", async () => {
+  const warnings = [];
+  const previousWarn = globalThis.ui.notifications.warn;
+  globalThis.ui.notifications.warn = (message) => warnings.push(message);
+  try {
+    const weapon = makeWeaponItem({ id: "sword" });
+    const torch = makeWeaponItem({ id: "torch", heldHands: ["left"] });
+    const shield = makeWeaponItem({ id: "shield", heldHands: ["right"] });
+    const actor = makeActor([weapon, torch, shield]);
+    weapon.actor = actor;
+    torch.actor = actor;
+    shield.actor = actor;
+    const activity = {
+      type: "attack",
+      actor,
+      item: weapon,
+      attack: {
+        type: {
+          value: "melee"
+        }
+      },
+      range: {}
+    };
+
+    const service = new CombatAttackService({});
+
+    assert.equal(service.applyDnd5ePreUseActivity(activity), false);
+    assert.equal(weapon.updateCalls.length, 0);
+    assert.match(warnings.at(-1), /нет свободных рук/u);
+  }
+  finally {
+    globalThis.ui.notifications.warn = previousWarn;
+  }
+});
+
+test("weapon attack activities are allowed after the item was taken in hand", async () => {
   const weapon = makeWeaponItem({ heldHands: ["right"] });
   const actor = makeActor([weapon]);
   weapon.actor = actor;
@@ -234,10 +288,10 @@ test("weapon attack activities are allowed after the item was taken in hand", ()
 
   const service = new CombatAttackService({});
 
-  assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+  assert.equal(await service.applyDnd5ePreUseActivity(activity), true);
 });
 
-test("natural weapon attack activities do not require held hands", () => {
+test("natural weapon attack activities do not require held hands", async () => {
   const warnings = [];
   const previousWarn = globalThis.ui.notifications.warn;
   globalThis.ui.notifications.warn = (message) => warnings.push(message);
@@ -262,7 +316,7 @@ test("natural weapon attack activities do not require held hands", () => {
 
     const service = new CombatAttackService({});
 
-    assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+    assert.equal(await service.applyDnd5ePreUseActivity(activity), true);
     assert.equal(warnings.length, 0);
   }
   finally {
@@ -270,7 +324,7 @@ test("natural weapon attack activities do not require held hands", () => {
   }
 });
 
-test("two-handed weapon attacks can use a free second hand but not an occupied one", () => {
+test("two-handed weapon attacks can use a free second hand but not an occupied one", async () => {
   const warnings = [];
   const previousWarn = globalThis.ui.notifications.warn;
   globalThis.ui.notifications.warn = (message) => warnings.push(message);
@@ -295,7 +349,7 @@ test("two-handed weapon attacks can use a free second hand but not an occupied o
 
     const service = new CombatAttackService({});
 
-    assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+    assert.equal(await service.applyDnd5ePreUseActivity(activity), true);
     assert.equal(warnings.length, 0);
 
     const occupiedWeapon = makeWeaponItem({
@@ -323,14 +377,14 @@ test("two-handed weapon attacks can use a free second hand but not an occupied o
     };
 
     assert.equal(service.applyDnd5ePreUseActivity(blockedActivity), false);
-    assert.match(warnings.at(-1), /2/u);
+    assert.match(warnings.at(-1), /нет свободных рук/u);
   }
   finally {
     globalThis.ui.notifications.warn = previousWarn;
   }
 });
 
-test("held versatile attacks leave midi attack mode untouched", () => {
+test("held versatile attacks leave midi attack mode untouched", async () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
     handRequirement: {
@@ -370,7 +424,7 @@ test("held versatile attacks leave midi attack mode untouched", () => {
 
   const service = new CombatAttackService({});
 
-  assert.equal(service.applyDnd5ePreUseActivity(activity, usageConfig), true);
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, usageConfig), true);
   assert.equal(service.applyDnd5eAttackRollConfig(config, {}, {}), true);
   assert.equal(usageConfig.attackMode, undefined);
   assert.deepEqual(usageConfig.midiOptions.workflowOptions, {});
@@ -380,7 +434,7 @@ test("held versatile attacks leave midi attack mode untouched", () => {
   assert.equal(weapon.flags.dnd5e, undefined);
 });
 
-test("weapon usage cards keep a damage button for base weapon damage", () => {
+test("weapon usage cards keep a damage button for base weapon damage", async () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
     handRequirement: {
@@ -430,12 +484,12 @@ test("weapon usage cards keep a damage button for base weapon damage", () => {
 
   const service = new CombatAttackService({});
 
-  assert.equal(service.applyDnd5ePreUseActivity(activity, {}), true);
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {}), true);
   const buttons = activity._usageChatButtons({});
   assert.ok(buttons.some((button) => button?.dataset?.action === "rollDamage"));
 });
 
-test("weapon usage card damage button survives dnd5e activity replacement", () => {
+test("weapon usage card damage button survives dnd5e activity replacement", async () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
     handRequirement: {
@@ -492,14 +546,14 @@ test("weapon usage card damage button survives dnd5e activity replacement", () =
 
   const service = new CombatAttackService({});
 
-  assert.equal(service.applyDnd5ePreUseActivity(new ReplacementAttackActivity(weapon), {}), true);
+  assert.equal(await service.applyDnd5ePreUseActivity(new ReplacementAttackActivity(weapon), {}), true);
   const replacementButtons = new ReplacementAttackActivity(weapon)._usageChatButtons({});
   const damageButton = replacementButtons.find((button) => button?.dataset?.action === "rollDamage");
   assert.ok(damageButton);
   assert.equal(damageButton.dataset.attackMode, undefined);
 });
 
-test("pre-use held versatile attacks do not rewrite activity damage parts", () => {
+test("pre-use held versatile attacks do not rewrite activity damage parts", async () => {
   const weapon = makeWeaponItem({
     heldHands: ["left", "right"],
     handRequirement: {
@@ -578,7 +632,7 @@ test("pre-use held versatile attacks do not rewrite activity damage parts", () =
 
   const service = new CombatAttackService({});
 
-  assert.equal(service.applyDnd5ePreUseActivity(activity, {}), true);
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {}), true);
   assert.equal(activity.damage.parts[0].number, 1);
   assert.equal(activity.damage.parts[0].denomination, 8);
   assert.equal(activity.damage.parts[0].formula, "1d8");
@@ -699,7 +753,7 @@ test("standalone held versatile sheet attacks do not roll separate damage", asyn
   assert.equal(damageCall, null);
 });
 
-test("fighter dominance maneuvers retarget shared dominance dice item and creature targeting before use", () => {
+test("fighter dominance maneuvers retarget shared dominance dice item and creature targeting before use", async () => {
   const dominanceItem = {
     id: "actualDominanceItemId",
     name: "Стиль доминирования",
@@ -757,7 +811,7 @@ test("fighter dominance maneuvers retarget shared dominance dice item and creatu
   };
 
   const service = new CombatAttackService({});
-  service.applyDnd5ePreUseActivity(activity);
+  await service.applyDnd5ePreUseActivity(activity);
 
   assert.equal(target.target, dominanceItem.id);
   assert.equal(activity.target.affects.type, "creature");
@@ -765,7 +819,7 @@ test("fighter dominance maneuvers retarget shared dominance dice item and creatu
   assert.equal(activity.range.units, "");
 });
 
-test("fighter dominance maneuvers retarget blank or own-item use consumption before use", () => {
+test("fighter dominance maneuvers retarget blank or own-item use consumption before use", async () => {
   const dominanceItem = {
     id: "actualDominanceItemId",
     name: "Стиль доминирования",
@@ -830,7 +884,7 @@ test("fighter dominance maneuvers retarget blank or own-item use consumption bef
   };
 
   const service = new CombatAttackService({});
-  service.applyDnd5ePreUseActivity(activity);
+  await service.applyDnd5ePreUseActivity(activity);
 
   assert.equal(blankTarget.target, dominanceItem.id);
   assert.equal(ownItemTarget.target, dominanceItem.id);
@@ -838,7 +892,7 @@ test("fighter dominance maneuvers retarget blank or own-item use consumption bef
   assert.equal(activityUsesTarget.target, dominanceItem.id);
 });
 
-test("fighter dominance maneuvers retarget stale subtype-only owned items via activity source", () => {
+test("fighter dominance maneuvers retarget stale subtype-only owned items via activity source", async () => {
   const dominanceItem = {
     id: "actualDominanceItemId",
     name: "Стиль доминирования",
@@ -910,7 +964,7 @@ test("fighter dominance maneuvers retarget stale subtype-only owned items via ac
   };
 
   const service = new CombatAttackService({});
-  service.applyDnd5ePreUseActivity(activity, usageConfig, {}, messageConfig);
+  await service.applyDnd5ePreUseActivity(activity, usageConfig, {}, messageConfig);
 
   assert.equal(updates.length, 1);
   assert.deepEqual(updates[0]["consumption.targets"], [{
@@ -956,7 +1010,7 @@ test("firearm misfire rolls an extra d20 and jams the weapon before the attack",
   assert.match(TestRoll.messages[0].messageData.flavor, /Осечка/u);
 });
 
-test("already jammed firearms cannot be used for attack activities", () => {
+test("already jammed firearms cannot be used for attack activities", async () => {
   const warnings = [];
   const previousWarn = globalThis.ui.notifications.warn;
   globalThis.ui.notifications.warn = (message) => warnings.push(message);

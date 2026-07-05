@@ -1,9 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import {
+  buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
   getItemHeldHands
-} from "../integrations/held-items.js?v=1.4.88-npc-held-natural";
+} from "../integrations/held-items.js?v=1.4.89-npc-held-natural";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -23,6 +24,7 @@ const REACTION_STATE_FLAG = "reactionState";
 const REACTION_DEFAULT_MAX_USES = 1;
 const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
 const PATCHED_USAGE_BUTTON_PROTOTYPES = new WeakSet();
+const HELD_ITEM_UPDATE_OPTIONS = Object.freeze({ render: false });
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -1302,6 +1304,38 @@ export class CombatAttackService {
     }
 
     const itemName = cleanText(item?.name, "предмет");
+    if (result.reason === "notHeld") {
+      const required = Math.max(1, requiredHands);
+      const freeHands = Array.isArray(result.freeHands) ? result.freeHands : [];
+      if (freeHands.length >= required) {
+        const hands = freeHands.slice(0, required);
+        try {
+          const update = buildHeldItemHandUpdate(hands, item);
+          const updateResult = item.update?.(update, HELD_ITEM_UPDATE_OPTIONS);
+          if (typeof updateResult?.catch === "function") {
+            updateResult.catch((error) => {
+              console.error(`${MODULE_ID} | Failed to auto-hold weapon before use.`, error);
+              ui.notifications?.error?.(`Не удалось взять "${itemName}" в руку.`);
+            });
+          }
+          return true;
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to auto-hold weapon before use.`, error);
+          ui.notifications?.error?.(`Не удалось взять "${itemName}" в руку.`);
+          return false;
+        }
+      }
+
+      ui.notifications?.warn?.(`Чтобы использовать "${itemName}", нет свободных рук.`);
+      return false;
+    }
+
+    if (result.reason === "insufficientAvailableHands") {
+      ui.notifications?.warn?.(`Чтобы использовать "${itemName}", нет свободных рук.`);
+      return false;
+    }
+
     const message = requiredHands > 1
       ? `Чтобы использовать "${itemName}", возьмите предмет в ${requiredHands} руки.`
       : `Чтобы использовать "${itemName}", возьмите предмет в руку.`;
