@@ -416,6 +416,7 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   const musket = byId.get("mushket");
   const arquebus = byId.get("arkebuza");
   const automaticRifle = byId.get("avtomaticheskaya-vintovka");
+  const semiAutomaticRifle = byId.get("poluavtomaticheskaya-vintovka");
 
   assert.ok(musket?.weapon, "musket has firearm weapon data");
   assert.equal(musket.weapon.damageFormula, "2d8");
@@ -437,6 +438,9 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(automaticRifle.weapon.damageFormula, "2d8");
   assert.ok(automaticRifle.weapon.properties.includes("lchFirearmAutomatic"));
   assert.equal(automaticRifle.weapon.lichWeaponPropertyValues.automaticDamage, "4d8");
+  assert.ok(semiAutomaticRifle?.weapon, "semi automatic rifle has firearm weapon data");
+  assert.ok(semiAutomaticRifle.weapon.properties.includes("lchFirearmSemiAutomatic"));
+  assert.equal(semiAutomaticRifle.weapon.lichWeaponPropertyValues.semiAutomaticDamage, "2d12");
 
   const createdMusket = createDnd5eItemData(musket, new Map());
   const musketActivityIds = Object.keys(createdMusket.system.activities ?? {});
@@ -455,22 +459,49 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
     versatile: false,
     versatileDamageFormula: null
   });
-  assert.equal(musketActivityIds.length, 3);
+  assert.equal(musketActivityIds.length, 4);
   assert.ok(musketActivityIds.every((activityId) => /^[A-Za-z0-9]{16}$/u.test(activityId)));
   assert.equal(musketAttack._id, musketActivityIds[0]);
   assert.equal(musketAttack.type, "attack");
   assert.equal(musketAttack.attack.type.value, "firearm");
   assert.equal(musketAttack.attack.type.classification, "weapon");
-  assert.equal(musketAttack.attack.ability, "dex");
+  assert.equal(musketAttack.attack.ability, "str");
 
   const musketActivitiesByName = new Map(Object.values(createdMusket.system.activities ?? {})
     .map((activity) => [activity.name, activity]));
+  assert.equal(musketActivitiesByName.get("Перезарядить")?.type, "utility");
+  assert.equal(musketActivitiesByName.get("Перезарядить")?.activation.type, "action");
+  assert.equal(musketActivitiesByName.get("Перезарядить")?.flags["rebreya-main"].automation, "firearm-reload");
   assert.equal(musketActivitiesByName.get("Очистить затвор")?.type, "utility");
   assert.equal(musketActivitiesByName.get("Очистить затвор")?.activation.type, "action");
   assert.equal(musketActivitiesByName.get("Очистить затвор")?.flags["rebreya-main"].automation, "firearm-clear-jam");
   assert.equal(musketActivitiesByName.get("Привести оружие в порядок")?.type, "utility");
   assert.equal(musketActivitiesByName.get("Привести оружие в порядок")?.activation.type, "minute");
   assert.equal(musketActivitiesByName.get("Привести оружие в порядок")?.flags["rebreya-main"].automation, "firearm-maintain");
+
+  const createdAutomaticRifle = createDnd5eItemData(automaticRifle, new Map());
+  const automaticRifleActivitiesByName = new Map(Object.values(createdAutomaticRifle.system.activities ?? {})
+    .map((activity) => [activity.name, activity]));
+  const automaticFire = automaticRifleActivitiesByName.get("Автоматический огонь");
+  assert.equal(automaticFire?.type, "utility");
+  assert.equal(automaticFire?.activation.type, "action");
+  assert.equal(automaticFire?.target.template.type, "cone");
+  assert.equal(automaticFire?.target.template.size, 45);
+  assert.equal(automaticFire?.target.affects.type, "creature");
+  assert.equal(automaticFire?.flags["rebreya-main"].automation, "firearm-automatic-fire");
+  assert.match(automaticFire?.description.chatFlavor ?? "", /4d8/u);
+
+  const createdSemiAutomaticRifle = createDnd5eItemData(semiAutomaticRifle, new Map());
+  const semiAutomaticRifleActivitiesByName = new Map(Object.values(createdSemiAutomaticRifle.system.activities ?? {})
+    .map((activity) => [activity.name, activity]));
+  const semiAutomaticFire = semiAutomaticRifleActivitiesByName.get("Полуавтоматический огонь");
+  assert.equal(semiAutomaticFire?.type, "utility");
+  assert.equal(semiAutomaticFire?.activation.type, "action");
+  assert.equal(semiAutomaticFire?.target.template.type, "cone");
+  assert.equal(semiAutomaticFire?.target.template.size, 30);
+  assert.equal(semiAutomaticFire?.target.affects.type, "creature");
+  assert.equal(semiAutomaticFire?.flags["rebreya-main"].automation, "firearm-semi-automatic-fire");
+  assert.match(semiAutomaticFire?.description.chatFlavor ?? "", /2d12/u);
 
   const createdArquebus = createDnd5eItemData(arquebus, new Map());
   const arquebusAttack = Object.values(createdArquebus.system.activities ?? {})[0];

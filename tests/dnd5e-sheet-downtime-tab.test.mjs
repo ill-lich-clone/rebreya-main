@@ -1711,6 +1711,80 @@ test("extendDnd5eItemTypes registers firearm activity attack type and Midi actio
   }
 });
 
+test("registerDnd5eSheetExtensions updates firearm attack ability when weapon weight changes", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?firearm-weight-ability=${Date.now()}`);
+
+    const updates = [];
+    const item = new globalThis.Item();
+    item.type = "weapon";
+    item.system = {
+      type: {
+        value: "firearmAdvanced"
+      },
+      weight: {
+        value: 10,
+        units: "lb"
+      },
+      activities: {
+        shot: {
+          type: "attack",
+          attack: {
+            ability: "dex",
+            type: {
+              value: "firearm",
+              classification: "weapon"
+            }
+          }
+        },
+        normalRanged: {
+          type: "attack",
+          attack: {
+            ability: "dex",
+            type: {
+              value: "ranged",
+              classification: "weapon"
+            }
+          }
+        }
+      }
+    };
+    item.update = async (patch, options = {}) => {
+      updates.push({ patch, options });
+      for (const [path, value] of Object.entries(patch)) {
+        const keys = path.split(".");
+        let cursor = item;
+        while (keys.length > 1) {
+          const key = keys.shift();
+          cursor[key] ??= {};
+          cursor = cursor[key];
+        }
+        cursor[keys[0]] = value;
+      }
+      return item;
+    };
+
+    registerDnd5eSheetExtensions({});
+    assert.equal(typeof stubs.hooks.get("updateItem"), "function");
+    await stubs.hooks.get("updateItem")(item, { "system.weight.value": 10 }, {}, "user");
+
+    assert.deepEqual(updates.at(-1), {
+      patch: {
+        "system.activities.shot.attack.ability": "str"
+      },
+      options: {
+        render: false
+      }
+    });
+    assert.equal(item.system.activities.shot.attack.ability, "str");
+    assert.equal(item.system.activities.normalRanged.attack.ability, "dex");
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("weapon item sheet renders firearm-only properties in a separate details block", async () => {
   const stubs = installSheetExtensionStubs();
   try {

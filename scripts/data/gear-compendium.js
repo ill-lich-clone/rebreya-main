@@ -25,9 +25,12 @@ export { buildGearIconLookup };
 const PACK_ID = `world.${GEAR_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
-const GEAR_TEMPLATE_VERSION = 16;
+const GEAR_TEMPLATE_VERSION = 17;
 const GEAR_CONTAINER_CONTENT_SOURCE_TYPE = "gearContainerContent";
 const FIREARM_ATTACK_ACTIVITY_ID = "lchFirearmAtk001";
+const FIREARM_RELOAD_ACTIVITY_ID = "lchReloadGun0001";
+const FIREARM_AUTOMATIC_FIRE_ACTIVITY_ID = "lchAutoFire00001";
+const FIREARM_SEMI_AUTOMATIC_FIRE_ACTIVITY_ID = "lchSemiFire00001";
 const FIREARM_CLEAR_JAM_ACTIVITY_ID = "lchClearBreech01";
 const FIREARM_MAINTAIN_ACTIVITY_ID = "lchMaintainGun01";
 
@@ -547,7 +550,82 @@ function normalizeWeaponRange(range) {
 
 function resolveFirearmAttackAbility(item) {
   const weight = Number(item?.weight ?? item?.system?.weight?.value ?? 0);
-  return Number.isFinite(weight) && weight > 10 ? "str" : "dex";
+  return Number.isFinite(weight) && weight >= 10 ? "str" : "dex";
+}
+
+function getFirearmPropertyValues(item) {
+  const values = item?.weapon?.lichWeaponPropertyValues ?? item?.lichWeaponPropertyValues;
+  return isPlainObject(values) ? values : {};
+}
+
+function getFirearmProperties(item) {
+  return cleanArray(item?.weapon?.properties ?? item?.system?.properties ?? []);
+}
+
+function parseFirstPositiveInteger(value) {
+  const match = String(value ?? "").match(/\d+/u);
+  if (!match) {
+    return 0;
+  }
+
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+}
+
+function resolveFirearmReloadCapacity(item) {
+  const values = getFirearmPropertyValues(item);
+  return parseFirstPositiveInteger(values.reload);
+}
+
+function resolveFirearmAreaFireMode(item) {
+  const values = getFirearmPropertyValues(item);
+  const properties = getFirearmProperties(item);
+  const modeText = normalizeMatchText(values.fireMode);
+  if (modeText.includes("полуавтомат")) {
+    return {
+      type: "semi",
+      name: "Полуавтоматический огонь",
+      automation: "firearm-semi-automatic-fire",
+      activityId: FIREARM_SEMI_AUTOMATIC_FIRE_ACTIVITY_ID,
+      coneFeet: 30,
+      damageFormula: cleanString(values.semiAutomaticDamage ?? values.automaticDamage)
+    };
+  }
+
+  if (modeText.includes("автомат")) {
+    return {
+      type: "automatic",
+      name: "Автоматический огонь",
+      automation: "firearm-automatic-fire",
+      activityId: FIREARM_AUTOMATIC_FIRE_ACTIVITY_ID,
+      coneFeet: 45,
+      damageFormula: cleanString(values.automaticDamage)
+    };
+  }
+
+  if (properties.includes("lchFirearmSemiAutomatic")) {
+    return {
+      type: "semi",
+      name: "Полуавтоматический огонь",
+      automation: "firearm-semi-automatic-fire",
+      activityId: FIREARM_SEMI_AUTOMATIC_FIRE_ACTIVITY_ID,
+      coneFeet: 30,
+      damageFormula: cleanString(values.semiAutomaticDamage ?? values.automaticDamage)
+    };
+  }
+
+  if (properties.includes("lchFirearmAutomatic")) {
+    return {
+      type: "automatic",
+      name: "Автоматический огонь",
+      automation: "firearm-automatic-fire",
+      activityId: FIREARM_AUTOMATIC_FIRE_ACTIVITY_ID,
+      coneFeet: 45,
+      damageFormula: cleanString(values.automaticDamage)
+    };
+  }
+
+  return null;
 }
 
 function isFirearmClassification(classification) {
@@ -664,8 +742,40 @@ function buildSelfUtilityActivity({
   };
 }
 
+function buildFirearmAreaFireActivity(mode) {
+  if (!mode) {
+    return null;
+  }
+
+  const activity = buildSelfUtilityActivity({
+    activityId: mode.activityId,
+    name: mode.name,
+    activationType: "action",
+    chatFlavor: `${mode.name}: конус ${mode.coneFeet} фт., урон ${mode.damageFormula || "урон оружия"}.`,
+    automation: mode.automation,
+    sort: mode.type === "automatic" ? 90 : 95
+  });
+  activity.range.units = "self";
+  activity.target.template.type = "cone";
+  activity.target.template.size = mode.coneFeet;
+  activity.target.template.units = "ft";
+  activity.target.affects.type = "creature";
+  activity.target.prompt = true;
+  return activity;
+}
+
 function buildFirearmActivities(item) {
   const attackActivity = buildFirearmAttackActivity(item);
+  const reloadCapacity = resolveFirearmReloadCapacity(item);
+  const reloadActivity = reloadCapacity > 0 ? buildSelfUtilityActivity({
+    activityId: FIREARM_RELOAD_ACTIVITY_ID,
+    name: "Перезарядить",
+    activationType: "action",
+    chatFlavor: `Перезарядить оружие: заполнить боезапас до ${reloadCapacity}, списав подходящие боеприпасы из инвентаря.`,
+    automation: "firearm-reload",
+    sort: 50
+  }) : null;
+  const areaFireActivity = buildFirearmAreaFireActivity(resolveFirearmAreaFireMode(item));
   const clearJamActivity = buildSelfUtilityActivity({
     activityId: FIREARM_CLEAR_JAM_ACTIVITY_ID,
     name: "Очистить затвор",
@@ -683,11 +793,18 @@ function buildFirearmActivities(item) {
     sort: 200
   });
 
-  return {
-    [attackActivity._id]: attackActivity,
-    [clearJamActivity._id]: clearJamActivity,
-    [maintainActivity._id]: maintainActivity
+  const activities = {
+    [attackActivity._id]: attackActivity
   };
+  if (reloadActivity) {
+    activities[reloadActivity._id] = reloadActivity;
+  }
+  if (areaFireActivity) {
+    activities[areaFireActivity._id] = areaFireActivity;
+  }
+  activities[clearJamActivity._id] = clearJamActivity;
+  activities[maintainActivity._id] = maintainActivity;
+  return activities;
 }
 
 function applyWeaponData(baseData, weapon) {

@@ -23,6 +23,11 @@ globalThis.Item ??= class Item {};
 globalThis.ChatMessage ??= {
   getSpeaker: ({ actor } = {}) => ({ actor: actor?.id ?? "" })
 };
+globalThis.ChatMessage.messages ??= [];
+globalThis.ChatMessage.create ??= async (messageData = {}) => {
+  globalThis.ChatMessage.messages.push(messageData);
+  return messageData;
+};
 globalThis.game ??= {
   user: {
     id: "user"
@@ -70,13 +75,50 @@ globalThis.Roll = TestRoll;
 
 const { CombatAttackService } = await import("../scripts/combat/attack-service.js");
 
-function makeActor(items) {
-  return {
-    items: {
-      contents: items,
-      get: (id) => items.find((item) => item.id === id) ?? null
+function makeActor(items, {
+  id = "actor-a",
+  name = "Стрелок",
+  abilities = {
+    str: { mod: 1 },
+    dex: { mod: 3 },
+    int: { mod: 0 }
+  },
+  prof = 2
+} = {}) {
+  const actor = new class extends Actor {
+    constructor() {
+      super();
+      this.id = id;
+      this.name = name;
+      this.uuid = `Actor.${id}`;
+      this.system = {
+        abilities,
+        attributes: {
+          prof
+        }
+      };
+      this.flags = {
+        [MODULE_ID]: {}
+      };
+      this.items = {
+        contents: items,
+        get: (itemId) => items.find((item) => item.id === itemId) ?? null
+      };
     }
-  };
+
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  }();
+
+  for (const item of items) {
+    if (item && typeof item === "object") {
+      item.actor = actor;
+      item.parent = actor;
+    }
+  }
+
+  return actor;
 }
 
 function makeFirearmItem({
@@ -85,6 +127,8 @@ function makeFirearmItem({
   typeValue = "firearmPrimitive",
   properties = { lchFirearmMisfire: true },
   values = { misfire: 3 },
+  weight = 3,
+  ammoState = null,
   jammed = null
 } = {}) {
   const updateCalls = [];
@@ -98,6 +142,10 @@ function makeFirearmItem({
         type: {
           value: typeValue
         },
+        weight: {
+          value: weight,
+          units: "lb"
+        },
         properties
       };
       this.flags = {
@@ -105,6 +153,9 @@ function makeFirearmItem({
           lichWeaponPropertyValues: values
         }
       };
+      if (ammoState) {
+        this.flags[MODULE_ID].firearmAmmoState = ammoState;
+      }
       if (jammed) {
         this.flags[MODULE_ID].firearmJammed = jammed;
       }
@@ -123,6 +174,52 @@ function makeFirearmItem({
     async unsetFlag(scope, key) {
       delete this.flags?.[scope]?.[key];
       return this;
+    }
+
+    async update(updates = {}) {
+      updateCalls.push(updates);
+      for (const [path, value] of Object.entries(updates)) {
+        if (path === "name") {
+          this.name = value;
+        }
+        else {
+          foundry.utils.setProperty(this, path, value);
+        }
+      }
+      return this;
+    }
+  }();
+  item.updateCalls = updateCalls;
+  return item;
+}
+
+function makeAmmoItem({
+  id = "ammo",
+  name = "Винтовочный патрон",
+  quantity = 30,
+  subtype = "firearmBullet"
+} = {}) {
+  const updateCalls = [];
+  const item = new class extends Item {
+    constructor() {
+      super();
+      this.id = id;
+      this.name = name;
+      this.type = "consumable";
+      this.system = {
+        type: {
+          value: "ammo",
+          subtype
+        },
+        quantity
+      };
+      this.flags = {
+        [MODULE_ID]: {}
+      };
+    }
+
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
     }
 
     async update(updates = {}) {
@@ -1199,4 +1296,184 @@ test("maintaining firearm rolls tinker tools with the better dex or int ability"
   finally {
     globalThis.CONFIG = previousConfig;
   }
+});
+
+test("firearm attacks spend loaded ammunition and mark an empty magazine in the weapon name", async () => {
+  TestRoll.queuedTotals = [15];
+  TestRoll.messages = [];
+  globalThis.ChatMessage.messages = [];
+  const weapon = makeFirearmItem({
+    name: "Пистолет",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmFireMode: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Пистолетные",
+      fireMode: "Одиночные",
+      reload: "Смена магазина 1"
+    },
+    ammoState: {
+      current: 1,
+      capacity: 1,
+      ammunition: "Пистолетные"
+    }
+  });
+  const actor = makeActor([weapon]);
+  const service = new CombatAttackService({});
+
+  const result = await service.rollFirearmAttack(actor, weapon, { createMessage: false });
+
+  assert.equal(result.breakdown.abilityKey, "dex");
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
+  assert.match(weapon.name, /0\/1/u);
+  assert.match(weapon.name, /пуст/u);
+  assert.equal(TestRoll.queuedTotals.length, 0);
+});
+
+test("empty firearm magazines block firearm attacks before the attack roll", async () => {
+  TestRoll.queuedTotals = [15];
+  TestRoll.messages = [];
+  const weapon = makeFirearmItem({
+    name: "Револьвер",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Пистолетные",
+      fireMode: "Одиночные",
+      reload: "Смена магазина 6"
+    },
+    ammoState: {
+      current: 0,
+      capacity: 6,
+      ammunition: "Пистолетные"
+    }
+  });
+  const actor = makeActor([weapon]);
+  const service = new CombatAttackService({});
+
+  const result = await service.rollFirearmAttack(actor, weapon, { createMessage: false });
+
+  assert.equal(result.success, false);
+  assert.equal(result.reason, "firearmAmmoEmpty");
+  assert.equal(TestRoll.queuedTotals.length, 1);
+});
+
+test("automatic firearm attacks spend six loaded rounds", async () => {
+  TestRoll.queuedTotals = [18];
+  TestRoll.messages = [];
+  const weapon = makeFirearmItem({
+    name: "Автоматическая винтовка",
+    typeValue: "firearmAdvanced",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmFireMode: true,
+      lchFirearmAutomatic: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Винтовочный",
+      fireMode: "Автоматический (4d8)",
+      automaticDamage: "4d8",
+      reload: "Смена магазина 24"
+    },
+    ammoState: {
+      current: 8,
+      capacity: 24,
+      ammunition: "Винтовочный"
+    },
+    weight: 8
+  });
+  const actor = makeActor([weapon]);
+  const service = new CombatAttackService({});
+
+  const result = await service.rollFirearmAttack(actor, weapon, { createMessage: false });
+
+  assert.equal(result.breakdown.abilityKey, "dex");
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 2);
+  assert.match(weapon.name, /2\/24/u);
+});
+
+test("reloading a firearm consumes matching actor ammunition and fills the magazine", async () => {
+  globalThis.ChatMessage.messages = [];
+  const weapon = makeFirearmItem({
+    name: "Автоматическая винтовка",
+    typeValue: "firearmAdvanced",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Винтовочный",
+      reload: "Смена магазина 24"
+    },
+    ammoState: {
+      current: 0,
+      capacity: 24,
+      ammunition: "Винтовочный"
+    }
+  });
+  const ammo = makeAmmoItem({
+    id: "rifle-ammo",
+    name: "Винтовочный патрон",
+    quantity: 30
+  });
+  const actor = makeActor([weapon, ammo]);
+  const service = new CombatAttackService({});
+
+  const result = await service.reloadFirearm(actor, weapon);
+
+  assert.equal(result.loaded, 24);
+  assert.equal(result.current, 24);
+  assert.equal(ammo.system.quantity, 6);
+  assert.deepEqual(ammo.updateCalls.at(-1), {
+    "system.quantity": 6
+  });
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 24);
+  assert.match(weapon.name, /24\/24/u);
+  assert.ok(globalThis.ChatMessage.messages.some((message) => /перезар/i.test(String(message.content ?? ""))));
+});
+
+test("automatic fire area action empties the magazine and reports save data", async () => {
+  globalThis.ChatMessage.messages = [];
+  const weapon = makeFirearmItem({
+    name: "Автоматическая винтовка",
+    typeValue: "firearmAdvanced",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmFireMode: true,
+      lchFirearmAutomatic: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Винтовочный",
+      fireMode: "Автоматический (4d8)",
+      automaticDamage: "4d8",
+      reload: "Смена магазина 24"
+    },
+    ammoState: {
+      current: 7,
+      capacity: 24,
+      ammunition: "Винтовочный"
+    },
+    weight: 8
+  });
+  const actor = makeActor([weapon]);
+  const service = new CombatAttackService({});
+
+  const result = await service.resolveFirearmAreaFire(actor, weapon, {
+    mode: "automatic",
+    createMessage: false
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.mode, "automatic");
+  assert.equal(result.damageFormula, "4d8");
+  assert.equal(result.coneFeet, 45);
+  assert.equal(result.saveDC, 13);
+  assert.equal(result.ammoSpent, 7);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
 });

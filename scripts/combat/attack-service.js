@@ -16,9 +16,13 @@ const FIREARM_BASE_MISFIRE_FLAG = "firearmBaseMisfire";
 const FIREARM_MISFIRE_PROPERTY = "lchFirearmMisfire";
 const FIREARM_RUST_PROPERTY = "lchFirearmRust";
 const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
+const FIREARM_AMMO_STATE_FLAG = "firearmAmmoState";
 const FIREARM_JAM_NAME_SUFFIX = " (клин)";
 const FIREARM_CLEAR_JAM_AUTOMATION = "firearm-clear-jam";
 const FIREARM_MAINTAIN_AUTOMATION = "firearm-maintain";
+const FIREARM_RELOAD_AUTOMATION = "firearm-reload";
+const FIREARM_AUTOMATIC_FIRE_AUTOMATION = "firearm-automatic-fire";
+const FIREARM_SEMI_AUTOMATIC_FIRE_AUTOMATION = "firearm-semi-automatic-fire";
 const FIREARM_MAINTENANCE_TOOL_IDS = ["art:tinker", "tinker", "tink"];
 const REACTION_STATE_FLAG = "reactionState";
 const REACTION_DEFAULT_MAX_USES = 1;
@@ -176,6 +180,33 @@ function stripFirearmJamSuffix(name) {
 function withFirearmJamSuffix(name) {
   const baseName = stripFirearmJamSuffix(name);
   return `${baseName}${FIREARM_JAM_NAME_SUFFIX}`;
+}
+
+function hasFirearmJamSuffix(name) {
+  return /\s*\((?:клин|РєР»РёРЅ)\)\s*$/iu.test(cleanText(name));
+}
+
+function stripFirearmAmmoSuffix(name) {
+  const text = cleanText(name);
+  return text
+    .replace(/\s*\((?:боезапас|пусто|пустой магазин)\s*\d+\s*\/\s*\d+\)\s*/giu, " ")
+    .replace(/\s+/gu, " ")
+    .trim() || text;
+}
+
+function withFirearmAmmoSuffix(name, current, capacity) {
+  const safeCurrent = Math.max(0, Math.floor(toNumber(current, 0)));
+  const safeCapacity = Math.max(0, Math.floor(toNumber(capacity, 0)));
+  if (safeCapacity <= 0) {
+    return cleanText(name);
+  }
+
+  const wasJammed = hasFirearmJamSuffix(name);
+  const baseName = stripFirearmJamSuffix(stripFirearmAmmoSuffix(name));
+  const ammoSuffix = safeCurrent <= 0
+    ? ` (пусто ${safeCurrent}/${safeCapacity})`
+    : ` (боезапас ${safeCurrent}/${safeCapacity})`;
+  return `${baseName}${ammoSuffix}${wasJammed ? FIREARM_JAM_NAME_SUFFIX : ""}`;
 }
 
 function extractRollTotal(result) {
@@ -696,7 +727,7 @@ export class CombatAttackService {
     }
 
     const weight = getItemWeightLb(item);
-    if (weight > FIREARM_WEIGHT_THRESHOLD_LB) {
+    if (weight >= FIREARM_WEIGHT_THRESHOLD_LB) {
       return "str";
     }
 
@@ -780,6 +811,301 @@ export class CombatAttackService {
     }
 
     return {};
+  }
+
+  #parseFirstPositiveInteger(value) {
+    const match = String(value ?? "").match(/\d+/u);
+    if (!match) {
+      return 0;
+    }
+
+    const parsed = Number(match[0]);
+    return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+  }
+
+  #resolveFirearmReloadCapacity(item, options = {}) {
+    const explicit = toNumber(options.firearmAmmoCapacity ?? options.ammoCapacity, NaN);
+    if (Number.isFinite(explicit)) {
+      return Math.max(0, Math.floor(explicit));
+    }
+
+    const values = this.#getLichWeaponPropertyValues(item, options);
+    const fromReload = this.#parseFirstPositiveInteger(values.reload);
+    if (fromReload > 0) {
+      return fromReload;
+    }
+
+    const state = readDocumentFlag(item, MODULE_ID, FIREARM_AMMO_STATE_FLAG);
+    const fromState = toNumber(state?.capacity, NaN);
+    return Number.isFinite(fromState) ? Math.max(0, Math.floor(fromState)) : 0;
+  }
+
+  #resolveFirearmAmmoState(item, options = {}) {
+    const state = readDocumentFlag(item, MODULE_ID, FIREARM_AMMO_STATE_FLAG);
+    const values = this.#getLichWeaponPropertyValues(item, options);
+    const capacity = this.#resolveFirearmReloadCapacity(item, options);
+    const explicitCurrent = toNumber(options.firearmAmmoCurrent ?? options.ammoCurrent, NaN);
+    const stateCurrent = toNumber(state?.current, NaN);
+    const current = Number.isFinite(explicitCurrent)
+      ? explicitCurrent
+      : (Number.isFinite(stateCurrent) ? stateCurrent : capacity);
+
+    return {
+      tracked: capacity > 0,
+      current: capacity > 0 ? clampInteger(current, 0, capacity) : 0,
+      capacity,
+      ammunition: cleanText(options.ammunition ?? state?.ammunition ?? values.ammunition),
+      reload: cleanText(values.reload),
+      fireMode: cleanText(values.fireMode)
+    };
+  }
+
+  #resolveFirearmFireMode(item, options = {}) {
+    const values = this.#getLichWeaponPropertyValues(item, options);
+    const modeText = normalizeLookupText(values.fireMode);
+    if (modeText.includes("полуавтомат")) {
+      return "semi";
+    }
+
+    if (modeText.includes("автомат")) {
+      return "automatic";
+    }
+
+    if (this.#hasItemProperty(item, "lchFirearmSemiAutomatic")) {
+      return "semi";
+    }
+
+    if (this.#hasItemProperty(item, "lchFirearmAutomatic")) {
+      return "automatic";
+    }
+
+    return "single";
+  }
+
+  #resolveFirearmShotAmmoCost(item, options = {}) {
+    const explicit = toNumber(options.firearmAmmoCost ?? options.ammoCost, NaN);
+    if (Number.isFinite(explicit)) {
+      return Math.max(0, Math.floor(explicit));
+    }
+
+    const state = this.#resolveFirearmAmmoState(item, options);
+    const mode = this.#resolveFirearmFireMode(item, options);
+    if (mode === "semi") {
+      return state.capacity > 0 ? Math.min(3, state.capacity) : 3;
+    }
+
+    if (mode === "automatic") {
+      return state.capacity > 0 ? Math.min(6, state.capacity) : 6;
+    }
+
+    return 1;
+  }
+
+  #createFirearmChatMessage(actor, item, content, options = {}) {
+    if (options.createMessage === false) {
+      return;
+    }
+
+    const safeContent = cleanText(content);
+    if (!safeContent || typeof ChatMessage?.create !== "function") {
+      return;
+    }
+
+    const userId = String(game.user?.id ?? "").trim();
+    Promise.resolve(ChatMessage.create({
+      ...(userId ? { user: userId } : {}),
+      speaker: ChatMessage.getSpeaker?.({ actor }) ?? {},
+      content: safeContent,
+      flavor: item?.name ?? ""
+    })).catch((error) => {
+      console.error(`${MODULE_ID} | Failed to create firearm chat message.`, error);
+    });
+  }
+
+  #notifyFirearmAmmoEmpty(item) {
+    const weaponName = item?.name ?? "Оружие";
+    ui.notifications?.warn?.(`${weaponName}: магазин пуст. Перезарядите оружие перед выстрелом.`);
+  }
+
+  #notifyFirearmAmmoInsufficient(item, current, required) {
+    const weaponName = item?.name ?? "Оружие";
+    ui.notifications?.warn?.(`${weaponName}: не хватает патронов в магазине (${current}/${required}).`);
+  }
+
+  #setFirearmAmmoStateSync(item, state) {
+    const capacity = Math.max(0, Math.floor(toNumber(state?.capacity, 0)));
+    const current = capacity > 0 ? clampInteger(state?.current, 0, capacity) : 0;
+    const nextState = {
+      current,
+      capacity,
+      ammunition: cleanText(state?.ammunition),
+      updatedAt: new Date().toISOString()
+    };
+    this.#writeItemFlag(item, FIREARM_AMMO_STATE_FLAG, nextState);
+    this.#writeItemName(item, withFirearmAmmoSuffix(item?.name, current, capacity));
+    return nextState;
+  }
+
+  #consumeLoadedFirearmAmmo(actor, item, amount, options = {}) {
+    const state = this.#resolveFirearmAmmoState(item, options);
+    if (!state.tracked) {
+      return {
+        success: true,
+        tracked: false,
+        ammoSpent: 0,
+        current: 0,
+        capacity: 0
+      };
+    }
+
+    if (state.current <= 0) {
+      this.#setFirearmAmmoStateSync(item, state);
+      this.#notifyFirearmAmmoEmpty(item);
+      return {
+        success: false,
+        reason: "firearmAmmoEmpty",
+        tracked: true,
+        ammoSpent: 0,
+        current: 0,
+        capacity: state.capacity
+      };
+    }
+
+    const required = options.emptyMagazine === true
+      ? state.current
+      : Math.max(1, Math.floor(toNumber(amount, 1)));
+    if (state.current < required && options.allowPartial !== true) {
+      this.#notifyFirearmAmmoInsufficient(item, state.current, required);
+      return {
+        success: false,
+        reason: "firearmAmmoInsufficient",
+        tracked: true,
+        ammoSpent: 0,
+        current: state.current,
+        capacity: state.capacity,
+        required
+      };
+    }
+
+    const ammoSpent = Math.min(state.current, required);
+    const nextState = this.#setFirearmAmmoStateSync(item, {
+      ...state,
+      current: state.current - ammoSpent
+    });
+    if (nextState.current <= 0) {
+      this.#createFirearmChatMessage(
+        actor,
+        item,
+        `${item?.name ?? "Оружие"}: магазин пуст. Используйте действие «Перезарядить».`,
+        options
+      );
+    }
+
+    return {
+      success: true,
+      tracked: true,
+      ammoSpent,
+      current: nextState.current,
+      capacity: nextState.capacity
+    };
+  }
+
+  #ammunitionStem(value) {
+    const text = normalizeLookupText(value)
+      .replace(/\b(?:патрон|патроны|патронов|патрона|пуля|пули|пуль|заряд|заряды|зарядов)\b/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim();
+    const aliases = ["винтов", "пистолет", "мушкет", "картеч", "пулев", "ракет", "топлив", "батар", "болт", "антиматер"];
+    const alias = aliases.find((entry) => text.includes(entry));
+    if (alias) {
+      return alias;
+    }
+
+    const firstWord = text.split(" ").find(Boolean) ?? "";
+    return firstWord.length > 8 ? firstWord.slice(0, 8) : firstWord;
+  }
+
+  #isAmmunitionItem(item) {
+    if (!(item instanceof Item) || item.type !== "consumable") {
+      return false;
+    }
+
+    const typeValue = normalizeLookupText(foundry.utils.getProperty(item, "system.type.value"));
+    const subtype = normalizeLookupText(foundry.utils.getProperty(item, "system.type.subtype"));
+    return typeValue === "ammo"
+      || subtype.includes("ammo")
+      || subtype.includes("firearm")
+      || subtype.includes("bullet")
+      || /патрон|пуля|заряд/u.test(normalizeLookupText(item.name));
+  }
+
+  #getItemQuantity(item) {
+    const direct = toNumber(foundry.utils.getProperty(item, "system.quantity"), NaN);
+    if (Number.isFinite(direct)) {
+      return Math.max(0, Math.floor(direct));
+    }
+
+    const value = toNumber(foundry.utils.getProperty(item, "system.quantity.value"), NaN);
+    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  }
+
+  #itemQuantityUpdatePath(item) {
+    const direct = foundry.utils.getProperty(item, "system.quantity");
+    return direct && typeof direct === "object" ? "system.quantity.value" : "system.quantity";
+  }
+
+  #findMatchingAmmunition(actor, ammunitionLabel) {
+    const wantedStem = this.#ammunitionStem(ammunitionLabel);
+    if (!wantedStem) {
+      return [];
+    }
+
+    return collectionValues(actor?.items)
+      .filter((item) => this.#isAmmunitionItem(item))
+      .filter((item) => this.#getItemQuantity(item) > 0)
+      .filter((item) => this.#ammunitionStem(item.name).includes(wantedStem)
+        || wantedStem.includes(this.#ammunitionStem(item.name)));
+  }
+
+  async #spendActorAmmunition(actor, ammunitionLabel, amount) {
+    const requested = Math.max(0, Math.floor(toNumber(amount, 0)));
+    if (requested <= 0) {
+      return {
+        spent: 0,
+        updates: []
+      };
+    }
+
+    let remaining = requested;
+    const updates = [];
+    for (const ammoItem of this.#findMatchingAmmunition(actor, ammunitionLabel)) {
+      if (remaining <= 0) {
+        break;
+      }
+
+      const quantity = this.#getItemQuantity(ammoItem);
+      const spend = Math.min(quantity, remaining);
+      if (spend <= 0) {
+        continue;
+      }
+
+      const nextQuantity = quantity - spend;
+      const path = this.#itemQuantityUpdatePath(ammoItem);
+      await ammoItem.update?.({ [path]: nextQuantity });
+      updates.push({
+        item: ammoItem,
+        itemId: ammoItem.id,
+        itemName: ammoItem.name,
+        spent: spend,
+        remaining: nextQuantity
+      });
+      remaining -= spend;
+    }
+
+    return {
+      spent: requested - remaining,
+      updates
+    };
   }
 
   #resolveMinimumStrengthRequirement(actor, item, options = {}) {
@@ -1778,7 +2104,13 @@ export class CombatAttackService {
 
   #applyFirearmUtilityActivity(activity) {
     const automation = cleanText(foundry.utils.getProperty(activity, `flags.${MODULE_ID}.automation`));
-    if (![FIREARM_CLEAR_JAM_AUTOMATION, FIREARM_MAINTAIN_AUTOMATION].includes(automation)) {
+    if (![
+      FIREARM_CLEAR_JAM_AUTOMATION,
+      FIREARM_MAINTAIN_AUTOMATION,
+      FIREARM_RELOAD_AUTOMATION,
+      FIREARM_AUTOMATIC_FIRE_AUTOMATION,
+      FIREARM_SEMI_AUTOMATIC_FIRE_AUTOMATION
+    ].includes(automation)) {
       return null;
     }
 
@@ -1792,6 +2124,29 @@ export class CombatAttackService {
       this.clearFirearmJam(item).catch((error) => {
         console.error(`${MODULE_ID} | Failed to clear firearm jam from activity.`, error);
         ui.notifications?.error?.("Не удалось очистить затвор.");
+      });
+      return false;
+    }
+
+    if (automation === FIREARM_RELOAD_AUTOMATION) {
+      this.reloadFirearm(actor instanceof Actor ? actor : item, actor instanceof Actor ? item : null, { actor }).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to reload firearm from activity.`, error);
+        ui.notifications?.error?.("Не удалось перезарядить оружие.");
+      });
+      return false;
+    }
+
+    if ([FIREARM_AUTOMATIC_FIRE_AUTOMATION, FIREARM_SEMI_AUTOMATIC_FIRE_AUTOMATION].includes(automation)) {
+      if (!(actor instanceof Actor)) {
+        ui.notifications?.warn?.("Не удалось определить владельца огнестрела.");
+        return false;
+      }
+
+      this.resolveFirearmAreaFire(actor, item, {
+        mode: automation === FIREARM_AUTOMATIC_FIRE_AUTOMATION ? "automatic" : "semi"
+      }).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to resolve firearm area fire activity.`, error);
+        ui.notifications?.error?.("Не удалось выполнить огонь из оружия.");
       });
       return false;
     }
@@ -1868,6 +2223,14 @@ export class CombatAttackService {
       const item = activity.item;
       if (this.#blockJammedFirearm(item)) {
         return false;
+      }
+
+      if (isFirearmItem(item)) {
+        const actor = activity.actor ?? item.actor ?? null;
+        const ammo = this.#consumeLoadedFirearmAmmo(actor, item, this.#resolveFirearmShotAmmoCost(item), {});
+        if (!ammo.success) {
+          return false;
+        }
       }
 
       const misfire = this.#rollFirearmMisfire(activity.actor ?? item.actor ?? null, item, config);
@@ -2666,6 +3029,191 @@ export class CombatAttackService {
     };
   }
 
+  async reloadFirearm(actorOrItem, weaponOrId = null, options = {}) {
+    const weapon = this.#resolveFirearmWeapon(actorOrItem, weaponOrId);
+    const actor = options.actor instanceof Actor
+      ? options.actor
+      : (weapon.actor instanceof Actor ? weapon.actor : this.#resolveActor(actorOrItem));
+    const state = this.#resolveFirearmAmmoState(weapon, options);
+    if (!state.tracked) {
+      ui.notifications?.warn?.(`${weapon.name}: у оружия не задан размер магазина.`);
+      return {
+        success: false,
+        reason: "firearmAmmoUntracked",
+        weaponId: weapon.id,
+        weaponName: weapon.name,
+        loaded: 0,
+        current: state.current,
+        capacity: state.capacity
+      };
+    }
+
+    const missing = Math.max(0, state.capacity - state.current);
+    if (missing <= 0) {
+      this.#setFirearmAmmoStateSync(weapon, state);
+      this.#createFirearmChatMessage(actor, weapon, `${weapon.name}: магазин уже полон (${state.current}/${state.capacity}).`, options);
+      return {
+        success: true,
+        reason: "firearmMagazineFull",
+        weaponId: weapon.id,
+        weaponName: weapon.name,
+        loaded: 0,
+        current: state.current,
+        capacity: state.capacity
+      };
+    }
+
+    if (!(actor instanceof Actor)) {
+      ui.notifications?.warn?.(`${weapon.name}: не удалось найти владельца для списания боеприпасов.`);
+      return {
+        success: false,
+        reason: "actorUnavailable",
+        weaponId: weapon.id,
+        weaponName: weapon.name,
+        loaded: 0,
+        current: state.current,
+        capacity: state.capacity
+      };
+    }
+
+    const spent = await this.#spendActorAmmunition(actor, state.ammunition, missing);
+    if (spent.spent <= 0) {
+      ui.notifications?.warn?.(`${weapon.name}: нет подходящих боеприпасов (${state.ammunition || "тип не задан"}).`);
+      return {
+        success: false,
+        reason: "firearmAmmoUnavailable",
+        weaponId: weapon.id,
+        weaponName: weapon.name,
+        loaded: 0,
+        current: state.current,
+        capacity: state.capacity,
+        ammunition: state.ammunition
+      };
+    }
+
+    const nextState = this.#setFirearmAmmoStateSync(weapon, {
+      ...state,
+      current: Math.min(state.capacity, state.current + spent.spent)
+    });
+    this.#createFirearmChatMessage(
+      actor,
+      weapon,
+      `${weapon.name}: перезарядка, загружено ${spent.spent}/${missing}. Боезапас ${nextState.current}/${nextState.capacity}.`,
+      options
+    );
+
+    return {
+      success: true,
+      weaponId: weapon.id,
+      weaponName: weapon.name,
+      loaded: spent.spent,
+      requested: missing,
+      current: nextState.current,
+      capacity: nextState.capacity,
+      ammunition: state.ammunition,
+      ammoUpdates: spent.updates
+    };
+  }
+
+  async resolveFirearmAreaFire(actorOrId, weaponOrId, options = {}) {
+    const actor = this.#resolveActor(actorOrId);
+    if (!(actor instanceof Actor)) {
+      throw new Error("Failed to resolve actor for firearm area fire.");
+    }
+
+    const weapon = this.#resolveItem(actor, weaponOrId);
+    if (!(weapon instanceof Item)) {
+      throw new Error("Failed to resolve firearm weapon.");
+    }
+
+    if (!isFirearmItem(weapon)) {
+      throw new Error("Selected weapon is not classified as firearm.");
+    }
+
+    if (this.#blockJammedFirearm(weapon)) {
+      return {
+        success: false,
+        reason: "firearmJammed",
+        weaponId: weapon.id,
+        weaponName: weapon.name
+      };
+    }
+
+    const requestedMode = normalizeLookupText(options.mode);
+    const mode = requestedMode.includes("semi") || requestedMode.includes("полу")
+      ? "semi"
+      : (requestedMode.includes("auto") || requestedMode.includes("авто") ? "automatic" : this.#resolveFirearmFireMode(weapon, options));
+    if (!["automatic", "semi"].includes(mode)) {
+      return {
+        success: false,
+        reason: "firearmAreaModeUnavailable",
+        weaponId: weapon.id,
+        weaponName: weapon.name,
+        mode
+      };
+    }
+
+    const state = this.#resolveFirearmAmmoState(weapon, options);
+    const targetCount = Math.max(1, Math.floor(toNumber(
+      options.targetCount ?? globalThis.game?.user?.targets?.size,
+      1
+    )));
+    const ammoRequired = mode === "automatic" ? state.current : targetCount;
+    const ammo = this.#consumeLoadedFirearmAmmo(actor, weapon, ammoRequired, {
+      ...options,
+      allowPartial: mode === "automatic",
+      emptyMagazine: mode === "automatic"
+    });
+    if (!ammo.success) {
+      return {
+        success: false,
+        reason: ammo.reason,
+        weaponId: weapon.id,
+        weaponName: weapon.name,
+        mode,
+        ammo
+      };
+    }
+
+    const values = this.#getLichWeaponPropertyValues(weapon, options);
+    const fireModeDamage = cleanText(String(values.fireMode ?? "").match(/\(([^)]+)\)/u)?.[1]);
+    const damageFormula = mode === "automatic"
+      ? cleanText(values.automaticDamage ?? fireModeDamage)
+      : cleanText(values.semiAutomaticDamage ?? values.automaticDamage ?? fireModeDamage);
+    const coneFeet = mode === "automatic" ? 45 : 30;
+    const abilityKey = this.#resolveFirearmAbilityKey(weapon, "dex");
+    const abilityMod = getActorAbilityModifier(actor, abilityKey);
+    const proficiencyBonus = this.#isAttackProficient(actor, weapon, options)
+      ? getActorProficiencyBonus(actor)
+      : 0;
+    const attackBonus = abilityMod + proficiencyBonus + toNumber(options.bonus, 0);
+    const saveDC = 8 + attackBonus;
+
+    this.#createFirearmChatMessage(
+      actor,
+      weapon,
+      `${weapon.name}: ${mode === "automatic" ? "автоматический" : "полуавтоматический"} огонь, конус ${coneFeet} фт., Сл ${saveDC} Ловкости, урон ${damageFormula || "оружия"}. Потрачено ${ammo.ammoSpent} боеприпасов.`,
+      options
+    );
+
+    return {
+      success: true,
+      actorId: actor.id,
+      actorName: actor.name,
+      weaponId: weapon.id,
+      weaponName: weapon.name,
+      mode,
+      damageFormula,
+      coneFeet,
+      saveDC,
+      abilityKey,
+      attackBonus,
+      ammoSpent: ammo.ammoSpent,
+      current: ammo.current,
+      capacity: ammo.capacity
+    };
+  }
+
   async handleCombatTurnChange(combat, updateData = {}) {
     if (!game.user?.isGM) {
       return null;
@@ -2717,6 +3265,20 @@ export class CombatAttackService {
           weaponName: weapon.name,
           attackKind: String(options.attackKind ?? "weapon"),
           isJammed: true
+        };
+      }
+
+      const ammo = this.#consumeLoadedFirearmAmmo(actor, weapon, this.#resolveFirearmShotAmmoCost(weapon, options), options);
+      if (!ammo.success) {
+        return {
+          success: false,
+          reason: ammo.reason,
+          actorId: actor.id,
+          actorName: actor.name,
+          weaponId: weapon.id,
+          weaponName: weapon.name,
+          attackKind: String(options.attackKind ?? "weapon"),
+          ammo
         };
       }
 

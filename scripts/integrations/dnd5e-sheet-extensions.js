@@ -1138,7 +1138,74 @@ function findPrototypeDescriptor(prototype, propertyName) {
 
 function resolveFirearmAttackAbilityFromItem(item) {
   const weight = Number(foundry.utils.getProperty(item, "system.weight.value") ?? item?.system?.weight?.value ?? 0);
-  return Number.isFinite(weight) && weight > 10 ? "str" : "dex";
+  return Number.isFinite(weight) && weight >= 10 ? "str" : "dex";
+}
+
+function itemUpdateChangesWeight(updateData) {
+  if (!updateData || typeof updateData !== "object") {
+    return false;
+  }
+
+  if (Object.hasOwn(updateData, "system.weight.value") || Object.hasOwn(updateData, "system.weight")) {
+    return true;
+  }
+
+  return foundry.utils.hasProperty?.(updateData, "system.weight.value") === true
+    || foundry.utils.hasProperty?.(updateData, "system.weight") === true;
+}
+
+function getActivityEntries(activities) {
+  if (!activities) {
+    return [];
+  }
+
+  if (activities instanceof Map) {
+    return Array.from(activities.entries());
+  }
+
+  if (typeof activities.entries === "function" && !Array.isArray(activities)) {
+    return Array.from(activities.entries());
+  }
+
+  if (Array.isArray(activities)) {
+    return activities.map((activity, index) => [activity?.id ?? activity?._id ?? String(index), activity]);
+  }
+
+  if (typeof activities === "object") {
+    return Object.entries(activities);
+  }
+
+  return [];
+}
+
+async function syncFirearmAttackAbilityAfterWeightUpdate(item, updateData) {
+  if (!isFirearmWeaponItem(item) || !itemUpdateChangesWeight(updateData)) {
+    return;
+  }
+
+  const nextAbility = resolveFirearmAttackAbilityFromItem(item);
+  const updates = {};
+  for (const [activityId, activity] of getActivityEntries(item.system?.activities)) {
+    if (!activityId || activity?.type !== "attack") {
+      continue;
+    }
+
+    const attackType = cleanText(foundry.utils.getProperty(activity, "attack.type.value"));
+    const classification = cleanText(foundry.utils.getProperty(activity, "attack.type.classification"));
+    if (attackType !== FIREARM_ACTIVITY_ATTACK_TYPE || classification === "spell") {
+      continue;
+    }
+
+    if (cleanText(foundry.utils.getProperty(activity, "attack.ability")) === nextAbility) {
+      continue;
+    }
+
+    updates[`system.activities.${activityId}.attack.ability`] = nextAbility;
+  }
+
+  if (Object.keys(updates).length) {
+    await item.update?.(updates, { render: false });
+  }
 }
 
 function patchFirearmAttackActivityDocumentClass() {
@@ -6448,6 +6515,11 @@ export function registerDnd5eSheetExtensions(moduleApi) {
 
   Hooks.on("renderItemSheet", onRenderItemSheet);
   Hooks.on("renderItemSheet5e", onRenderItemSheet);
+  Hooks.on("updateItem", (item, updateData) => {
+    syncFirearmAttackAbilityAfterWeightUpdate(item, updateData).catch((error) => {
+      console.error(`${MODULE_ID} | Failed to sync firearm attack ability after weight update.`, error);
+    });
+  });
 
   Hooks.on("renderApplicationV2", (app, element) => {
     const root = getSheetRoot(element);
