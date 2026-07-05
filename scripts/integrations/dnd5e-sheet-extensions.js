@@ -30,7 +30,7 @@ import {
   getHeldItemDamageFormulaPresentation,
   getHeldItemEquipPresentation,
   isHeldItemEligible
-} from "./held-items.js?v=1.4.89-npc-held-natural";
+} from "./held-items.js?v=1.4.90-npc-held-natural";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
@@ -745,7 +745,9 @@ const HELD_ITEM_EQUIP_CONTROL_SELECTORS = [
   "[aria-label*='Надето']",
   "[title*='Надето']"
 ];
-const HELD_ITEM_UPDATE_OPTIONS = Object.freeze({ render: false });
+function heldItemUpdateOptions() {
+  return { render: false };
+}
 
 function isDnd5eWorld() {
   return game.system?.id === "dnd5e";
@@ -5859,7 +5861,7 @@ async function releaseHeldItemReplacementSlots(actor, action) {
       continue;
     }
 
-    await replacementItem.update?.(buildHeldItemReleaseHandUpdate(replacementItem, slots), HELD_ITEM_UPDATE_OPTIONS);
+    await replacementItem.update?.(buildHeldItemReleaseHandUpdate(replacementItem, slots), heldItemUpdateOptions());
   }
 }
 
@@ -6007,7 +6009,7 @@ function bindHeldItemEquipContextMenu(root, { actor, app, moduleApi } = {}) {
           }
 
           await releaseHeldItemReplacementSlots(actor, action);
-          const updatedItem = await item.update?.(action.update, HELD_ITEM_UPDATE_OPTIONS);
+          const updatedItem = await item.update?.(action.update, heldItemUpdateOptions());
           const presentationItem = updatedItem ?? item;
           applyHeldItemEquipPresentation(control, action);
           applyHeldItemDamageFormulaPresentation(row, presentationItem);

@@ -704,8 +704,9 @@ test("held item context menu updates npc hand state without forced sheet rerende
           current && typeof current === "object" ? current[part] : undefined
         ), this.flags?.[scope]);
       },
-      async update(patch) {
-        updates.push(patch);
+      async update(patch, options = {}) {
+        options.parent = actor;
+        updates.push({ patch, options });
       }
     };
     actor.items = {
@@ -773,10 +774,12 @@ test("held item context menu updates npc hand state without forced sheet rerende
       stopPropagation() {}
     });
 
-    assert.deepEqual(updates.at(-1), {
+    assert.deepEqual(updates.at(-1)?.patch, {
       "system.equipped": true,
       "flags.rebreya-main.heldHands": ["right"]
     });
+    assert.equal(updates.at(-1)?.options.render, false);
+    assert.equal(updates.at(-1)?.options.parent, actor);
     assert.equal(renderCount, 0);
     assert.equal(refreshCount, 0);
   }

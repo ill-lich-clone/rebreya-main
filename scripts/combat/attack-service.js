@@ -4,7 +4,7 @@ import {
   buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
   getItemHeldHands
-} from "../integrations/held-items.js?v=1.4.89-npc-held-natural";
+} from "../integrations/held-items.js?v=1.4.90-npc-held-natural";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -24,7 +24,9 @@ const REACTION_STATE_FLAG = "reactionState";
 const REACTION_DEFAULT_MAX_USES = 1;
 const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
 const PATCHED_USAGE_BUTTON_PROTOTYPES = new WeakSet();
-const HELD_ITEM_UPDATE_OPTIONS = Object.freeze({ render: false });
+function heldItemUpdateOptions() {
+  return { render: false };
+}
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -1311,7 +1313,7 @@ export class CombatAttackService {
         const hands = freeHands.slice(0, required);
         try {
           const update = buildHeldItemHandUpdate(hands, item);
-          const updateResult = item.update?.(update, HELD_ITEM_UPDATE_OPTIONS);
+          const updateResult = item.update?.(update, heldItemUpdateOptions());
           if (typeof updateResult?.catch === "function") {
             updateResult.catch((error) => {
               console.error(`${MODULE_ID} | Failed to auto-hold weapon before use.`, error);

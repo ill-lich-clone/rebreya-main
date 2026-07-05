@@ -186,6 +186,7 @@ function makeWeaponItem({
     }
 
     async update(updates, options = {}) {
+      options.parent = this.actor ?? null;
       updateCalls.push({ updates, options });
       for (const [path, value] of Object.entries(updates)) {
         foundry.utils.setProperty(this, path, value);
@@ -225,7 +226,7 @@ test("weapon attack activities automatically take an unused item in the left han
         "system.equipped": true,
         "flags.rebreya-main.heldHands": ["left"]
       },
-      options: { render: false }
+      options: { render: false, parent: actor }
     });
     assert.deepEqual(weapon.flags[MODULE_ID].heldHands, ["left"]);
     assert.equal(warnings.length, 0);
