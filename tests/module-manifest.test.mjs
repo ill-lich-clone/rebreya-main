@@ -101,7 +101,7 @@ test("held item integrations use the current module cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-npc-held-natural`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-ammo-consumption`, "u"),
   );
   assert.match(
     sheetSource,

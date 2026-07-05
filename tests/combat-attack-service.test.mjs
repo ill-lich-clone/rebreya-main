@@ -1129,6 +1129,84 @@ test("fighter dominance maneuvers retarget stale subtype-only owned items via ac
   assert.equal(activity.range.units, "");
 });
 
+test("firearm attack activities disable dnd5e item ammunition consumption before sheet use", async () => {
+  const weapon = makeFirearmItem({
+    name: "Автоматическая винтовка",
+    typeValue: "firearmAdvanced",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Винтовочный",
+      reload: "Смена магазина 24"
+    },
+    ammoState: {
+      current: 24,
+      capacity: 24,
+      ammunition: "Винтовочный"
+    }
+  });
+  weapon.flags[MODULE_ID].heldHands = ["right"];
+  const ammo = makeAmmoItem({
+    id: "rifle-ammo",
+    name: "Винтовочный патрон",
+    quantity: 236
+  });
+  const actor = makeActor([weapon, ammo]);
+  const updates = [];
+  const activity = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: {
+      type: {
+        value: "firearm"
+      }
+    },
+    consumption: {
+      targets: [{
+        type: "itemUses",
+        target: ammo.id,
+        value: "1",
+        scaling: {
+          mode: "",
+          formula: ""
+        }
+      }]
+    },
+    range: {},
+    updateSource(patch) {
+      updates.push(patch);
+      for (const [path, value] of Object.entries(patch)) {
+        foundry.utils.setProperty(this, path, value);
+      }
+      return this;
+    }
+  };
+  const usageConfig = {
+    consume: {
+      resources: [0]
+    },
+    hasConsumption: true
+  };
+  const messageConfig = {
+    hasConsumption: true
+  };
+  const service = new CombatAttackService({});
+
+  const result = await service.applyDnd5ePreUseActivity(activity, usageConfig, {}, messageConfig);
+
+  assert.equal(result, true);
+  assert.deepEqual(updates.at(-1), { "consumption.targets": [] });
+  assert.deepEqual(activity.consumption.targets, []);
+  assert.deepEqual(usageConfig.consume.resources, []);
+  assert.equal(usageConfig.hasConsumption, false);
+  assert.equal(messageConfig.hasConsumption, false);
+  assert.equal(ammo.system.quantity, 236);
+  assert.equal(ammo.updateCalls.length, 0);
+});
+
 test("firearm misfire rolls an extra d20 and jams the weapon before the attack", () => {
   TestRoll.queuedTotals = [2];
   TestRoll.messages = [];
@@ -1328,7 +1406,7 @@ test("firearm attacks spend loaded ammunition and mark an empty magazine in the 
   assert.equal(result.breakdown.abilityKey, "dex");
   assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
   assert.match(weapon.name, /0\/1/u);
-  assert.match(weapon.name, /пуст/u);
+  assert.doesNotMatch(weapon.name, /пуст|боезапас/iu);
   assert.equal(TestRoll.queuedTotals.length, 0);
 });
 
@@ -1434,7 +1512,11 @@ test("reloading a firearm consumes matching actor ammunition and fills the magaz
   });
   assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 24);
   assert.match(weapon.name, /24\/24/u);
-  assert.ok(globalThis.ChatMessage.messages.some((message) => /перезар/i.test(String(message.content ?? ""))));
+  assert.equal(
+    globalThis.ChatMessage.messages.at(-1)?.content,
+    "Автоматическая винтовка (24/24): перезарядка."
+  );
+  assert.doesNotMatch(globalThis.ChatMessage.messages.at(-1)?.content ?? "", /боезапас|загружено/iu);
 });
 
 test("automatic fire area action empties the magazine and reports save data", async () => {

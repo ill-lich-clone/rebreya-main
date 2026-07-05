@@ -189,7 +189,7 @@ function hasFirearmJamSuffix(name) {
 function stripFirearmAmmoSuffix(name) {
   const text = cleanText(name);
   return text
-    .replace(/\s*\((?:боезапас|пусто|пустой магазин)\s*\d+\s*\/\s*\d+\)\s*/giu, " ")
+    .replace(/\s*\((?:(?:боезапас|пусто|пустой магазин)\s*)?\d+\s*\/\s*\d+\)\s*/giu, " ")
     .replace(/\s+/gu, " ")
     .trim() || text;
 }
@@ -203,9 +203,7 @@ function withFirearmAmmoSuffix(name, current, capacity) {
 
   const wasJammed = hasFirearmJamSuffix(name);
   const baseName = stripFirearmJamSuffix(stripFirearmAmmoSuffix(name));
-  const ammoSuffix = safeCurrent <= 0
-    ? ` (пусто ${safeCurrent}/${safeCapacity})`
-    : ` (боезапас ${safeCurrent}/${safeCapacity})`;
+  const ammoSuffix = ` (${safeCurrent}/${safeCapacity})`;
   return `${baseName}${ammoSuffix}${wasJammed ? FIREARM_JAM_NAME_SUFFIX : ""}`;
 }
 
@@ -2000,6 +1998,18 @@ export class CombatAttackService {
     messageConfig.hasConsumption = true;
   }
 
+  #disableActivityConsumption(activity, usageConfig = {}, messageConfig = {}) {
+    if (foundry.utils.getProperty(activity, "consumption.targets") !== undefined) {
+      this.#applyActivitySourcePatch(activity, { "consumption.targets": [] });
+    }
+
+    if (isPlainObject(usageConfig.consume)) {
+      usageConfig.consume.resources = [];
+    }
+    usageConfig.hasConsumption = false;
+    messageConfig.hasConsumption = false;
+  }
+
   #applyActivitySourcePatch(activity, patch) {
     if (!isPlainObject(patch) || !Object.keys(patch).length) {
       return;
@@ -2175,6 +2185,10 @@ export class CombatAttackService {
       const item = activity.item;
       if (this.#blockJammedFirearm(item)) {
         return false;
+      }
+
+      if (isFirearmItem(item)) {
+        this.#disableActivityConsumption(activity, usageConfig, messageConfig);
       }
 
       if (!this.#ensureHeldWeaponActivity(activity)) {
@@ -3051,7 +3065,7 @@ export class CombatAttackService {
     const missing = Math.max(0, state.capacity - state.current);
     if (missing <= 0) {
       this.#setFirearmAmmoStateSync(weapon, state);
-      this.#createFirearmChatMessage(actor, weapon, `${weapon.name}: магазин уже полон (${state.current}/${state.capacity}).`, options);
+      this.#createFirearmChatMessage(actor, weapon, `${weapon.name}: магазин уже полон.`, options);
       return {
         success: true,
         reason: "firearmMagazineFull",
@@ -3098,7 +3112,7 @@ export class CombatAttackService {
     this.#createFirearmChatMessage(
       actor,
       weapon,
-      `${weapon.name}: перезарядка, загружено ${spent.spent}/${missing}. Боезапас ${nextState.current}/${nextState.capacity}.`,
+      `${weapon.name}: перезарядка.`,
       options
     );
 
