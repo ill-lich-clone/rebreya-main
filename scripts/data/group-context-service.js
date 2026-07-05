@@ -96,6 +96,44 @@ function normalizeLegacyInventoryMergePairs(value = {}) {
   return pairs;
 }
 
+function normalizeQuestUnlocksByQuestId(value = {}) {
+  const unlocksByQuestId = {};
+
+  for (const [rawQuestId, rawRequirementMap] of Object.entries(asObject(value))) {
+    const questId = cleanId(rawQuestId);
+    if (!questId || !isSafeObjectKey(questId)) {
+      continue;
+    }
+
+    const requirements = {};
+    for (const [rawRequirementId, rawUnlock] of Object.entries(asObject(rawRequirementMap))) {
+      const requirementId = cleanId(rawRequirementId);
+      if (!requirementId || !isSafeObjectKey(requirementId)) {
+        continue;
+      }
+
+      const unlock = asObject(rawUnlock);
+      requirements[requirementId] = {
+        unlockedAt: Number(unlock.unlockedAt) || 0,
+        sourceQuestId: cleanId(unlock.sourceQuestId),
+        sourceRewardId: cleanId(unlock.sourceRewardId)
+      };
+    }
+
+    unlocksByQuestId[questId] = requirements;
+  }
+
+  return unlocksByQuestId;
+}
+
+export function normalizeQuestState(value = {}) {
+  const source = asObject(value);
+
+  return {
+    unlocksByQuestId: normalizeQuestUnlocksByQuestId(source.unlocksByQuestId)
+  };
+}
+
 function getActorById(actorId) {
   const actors = globalThis.game?.actors;
   if (!actors) {
@@ -136,6 +174,9 @@ export function buildDefaultGroupState(groupActorId, { now = Date.now() } = {}) 
     globalEventsState: {},
     craftState: {},
     travelState: {},
+    questState: {
+      unlocksByQuestId: {}
+    },
     downtimeState: {
       balancesByActorId: {},
       requests: [],
@@ -170,6 +211,7 @@ export function normalizeGroupState(groupActorId, value = {}) {
     globalEventsState: clone(asObject(source.globalEventsState)),
     craftState: clone(asObject(source.craftState)),
     travelState: clone(asObject(source.travelState)),
+    questState: normalizeQuestState(source.questState),
     downtimeState: {
       balancesByActorId: clone(asObject(downtimeState.balancesByActorId)),
       requests: clone(downtimeRequests),

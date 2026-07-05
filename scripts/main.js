@@ -13,6 +13,7 @@ import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "
 import { EconomyRepository } from "./data/repository.js";
 import { TraderService } from "./data/trader-service.js";
 import { GroupContextService } from "./data/group-context-service.js";
+import { RebreyaQuestLogService } from "./data/quest-log-service.js";
 import { DowntimeService } from "./data/downtime-service.js";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js";
 import { TravelService } from "./data/travel-service.js";
@@ -57,6 +58,7 @@ import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTim
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.91";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
+import { registerForienQuestLogIntegration } from "./integrations/forien-quest-log.js?v=1.4.91";
 import {
   SOCKET_EVENT_SET_SETTING,
   SOCKET_EVENT_SET_SETTING_RESULT,
@@ -384,6 +386,7 @@ export class RebreyaMainModule {
     this.downtimeCompendium = new DowntimeCompendiumService();
     this.traderService = new TraderService(this);
     this.groupContextService = new GroupContextService(this);
+    this.questLogService = new RebreyaQuestLogService({ groupContextService: this.groupContextService });
     this.downtimeService = new DowntimeService(this);
     this.characterDowntimeService = new CharacterDowntimeService(this);
     this.travelService = new TravelService({ groupContextService: this.groupContextService });
@@ -3443,6 +3446,13 @@ Hooks.once("ready", async () => {
     module.api = moduleApi;
   }
   flushQueuedSocketMessages(moduleApi);
+
+  try {
+    await registerForienQuestLogIntegration(moduleApi);
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to register Forien Quest Log integration.`, error);
+  }
 
   try {
     registerCombatHooks(moduleApi);

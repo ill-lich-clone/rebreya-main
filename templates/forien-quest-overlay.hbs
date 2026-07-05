@@ -1,0 +1,103 @@
+<section class="rm-fql-overlay" data-rm-fql-quest-id="{{questId}}">
+  <header class="rm-fql-overlay__header">
+    <div>
+      <h2>Rebreya Quest Layer</h2>
+      <p class="rm-fql-overlay__muted">
+        {{#if hasGroupContext}}
+          Активная группа: {{groupName}}
+        {{else}}
+          Активная группа Rebreya не найдена.
+        {{/if}}
+      </p>
+    </div>
+    {{#if assignedToCurrentGroup}}
+      <span class="rm-fql-overlay__badge">В журнале группы</span>
+    {{else}}
+      <button type="button" class="rm-fql-overlay__button" data-rm-fql-action="assign-current-group" {{#unless hasGroupContext}}disabled{{/unless}}>
+        <i class="fas fa-users"></i>
+        <span>Добавить группе</span>
+      </button>
+    {{/if}}
+  </header>
+
+  <div class="rm-fql-overlay__grid">
+    <section class="rm-fql-overlay__panel">
+      <h3>Импорт внутрь квеста</h3>
+      <div class="rm-fql-overlay__row">
+        <select name="rm-fql-import-quest-id" {{#unless questOptions.length}}disabled{{/unless}}>
+          {{#each questOptions}}
+            <option value="{{id}}">{{name}} · {{status}}</option>
+          {{/each}}
+        </select>
+        <button type="button" class="rm-fql-overlay__button" data-rm-fql-action="import-subquest" {{#unless questOptions.length}}disabled{{/unless}}>
+          <i class="fas fa-file-import"></i>
+          <span>Импорт</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="rm-fql-overlay__panel">
+      <h3>Новое требование</h3>
+      <div class="rm-fql-overlay__row">
+        <select name="rm-fql-required-quest-id" {{#unless questOptions.length}}disabled{{/unless}}>
+          {{#each questOptions}}
+            <option value="{{id}}">{{name}} · {{status}}</option>
+          {{/each}}
+        </select>
+        <button type="button" class="rm-fql-overlay__button" data-rm-fql-action="add-requirement" {{#unless questOptions.length}}disabled{{/unless}}>
+          <i class="fas fa-lock"></i>
+          <span>Требование</span>
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <section class="rm-fql-overlay__panel">
+    <h3>Требования квеста</h3>
+    {{#if requirements.length}}
+      <ul class="rm-fql-overlay__list">
+        {{#each requirements}}
+          <li class="rm-fql-overlay__item {{#if satisfied}}is-open{{else}}is-locked{{/if}}">
+            <i class="fas {{#if satisfied}}fa-unlock{{else}}fa-lock{{/if}}"></i>
+            <span>{{title}}</span>
+            <small>{{sourceQuestName}} · {{sourceStatus}}{{#if unlocked}} · открыто наградой{{/if}}</small>
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p class="rm-fql-overlay__empty">Требований нет.</p>
+    {{/if}}
+  </section>
+
+  <section class="rm-fql-overlay__panel">
+    <h3>Награды, открывающие требования</h3>
+    <div class="rm-fql-overlay__row">
+      <select name="rm-fql-unlock-target" {{#unless unlockTargets.length}}disabled{{/unless}}>
+        {{#each unlockTargets}}
+          <option value="{{questId}}::{{requirementId}}">{{questName}} · {{title}}</option>
+        {{/each}}
+      </select>
+      <button type="button" class="rm-fql-overlay__button" data-rm-fql-action="add-unlock-reward" {{#unless unlockTargets.length}}disabled{{/unless}}>
+        <i class="fas fa-key"></i>
+        <span>Добавить</span>
+      </button>
+    </div>
+
+    {{#if unlockRewards.length}}
+      <ul class="rm-fql-overlay__list">
+        {{#each unlockRewards}}
+          <li class="rm-fql-overlay__item {{#if applied}}is-open{{/if}}">
+            <i class="fas fa-key"></i>
+            <span>{{title}}</span>
+            <small>{{targetQuestName}} · {{requirementTitle}}</small>
+            <button type="button" class="rm-fql-overlay__icon-button" data-rm-fql-action="apply-unlock-reward" data-reward-id="{{id}}" title="Открыть требование" {{#if applied}}disabled{{/if}}>
+              <i class="fas fa-unlock"></i>
+            </button>
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p class="rm-fql-overlay__empty">Наград-ключей нет.</p>
+    {{/if}}
+  </section>
+</section>
