@@ -97,6 +97,7 @@ export const SETTINGS_KEYS = {
   REFERENCE_NOTES: "referenceNotes",
   TRADE_ROUTE_OVERRIDES: "tradeRouteOverrides",
   STATE_POLICIES: "statePolicies",
+  COSMOLOGY_STATE: "cosmologyState",
   GLOBAL_EVENTS_STATE: "globalEventsState"
 };
 

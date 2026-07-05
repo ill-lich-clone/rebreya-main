@@ -1226,6 +1226,114 @@ summary:focus-visible {
   }
 }
 
+.rebreya-cosmology-app .window-content {
+  min-width: 0;
+}
+
+.rm-cosmology-shell {
+  gap: 14px;
+}
+
+.rm-cosmology-plane {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--rm-border-default);
+  border-top: 2px solid rgb(var(--rm-color-gold-rgb) / 0.5);
+  background:
+    linear-gradient(180deg, rgb(var(--rm-color-surface-raised-rgb) / 0.94), rgb(var(--rm-color-surface-rgb) / 0.96));
+  box-shadow: var(--rm-shadow-panel);
+}
+
+.rm-cosmology-plane.is-active {
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.42);
+  border-top-color: var(--rm-accent);
+}
+
+.rm-cosmology-plane__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.rm-cosmology-plane__header h3 {
+  margin: 2px 0 0;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.rm-cosmology-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 92px;
+  justify-content: flex-end;
+  color: var(--rm-text);
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+}
+
+.rm-cosmology-switch input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rm-cosmology-switch__track {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border: 1px solid var(--rm-border-default);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.42);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.rm-cosmology-switch__track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--rm-text-secondary);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.rm-cosmology-switch input:checked + .rm-cosmology-switch__track {
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.72);
+  background: rgb(var(--rm-color-gold-rgb) / 0.2);
+}
+
+.rm-cosmology-switch input:checked + .rm-cosmology-switch__track::after {
+  transform: translateX(20px);
+  background: var(--rm-accent-strong);
+}
+
+.rm-cosmology-switch input:disabled + .rm-cosmology-switch__track,
+.rm-cosmology-switch input:disabled ~ .rm-cosmology-switch__label {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.rm-cosmology-rules {
+  display: grid;
+  gap: 10px;
+  max-width: 68ch;
+  color: var(--rm-text);
+  font-size: 14px;
+  line-height: 1.48;
+}
+
+.rm-cosmology-rules p {
+  margin: 0;
+}
+
 .item.sheet [data-rebreya-item-field] .form-fields select,
 .item.sheet [data-rebreya-item-field] .form-fields input,
 .item.sheet [data-rebreya-item-field] .form-fields textarea {

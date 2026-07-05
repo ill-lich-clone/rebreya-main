@@ -1,0 +1,30 @@
+<section class="rm-shell rm-cosmology-shell scrollable">
+  <header class="rm-app-header rm-cosmology-header">
+    <div class="rm-app-title">
+      <p class="rm-eyebrow">Планы бытия</p>
+      <h2>Космология</h2>
+      <p class="rm-muted">Эффекты планов, которые меняют правила мира.</p>
+    </div>
+  </header>
+
+  <section class="rm-cosmology-plane {{#if mechanus.enabled}}is-active{{/if}}">
+    <header class="rm-cosmology-plane__header">
+      <div>
+        <p class="rm-eyebrow">План порядка</p>
+        <h3>Механус</h3>
+      </div>
+
+      <label class="rm-cosmology-switch">
+        <input type="checkbox" data-action="toggle-mechanus" {{#if mechanus.enabled}}checked{{/if}} {{#unless canManage}}disabled{{/unless}}>
+        <span class="rm-cosmology-switch__track" aria-hidden="true"></span>
+        <span class="rm-cosmology-switch__label">{{mechanus.statusLabel}}</span>
+      </label>
+    </header>
+
+    <div class="rm-cosmology-rules">
+      <p>Заклинания иллюзий, дикая магия и магия школы прорицания просто не работают на Механусе.</p>
+      <p>На Механусе никакие существа не совершают броски кроме к20, существуют только средние значения. Например, вместо броска кубика к4 для благословления необходимо добавить +2, а для броска урона от огненного шара использовать 28 урона огнём.</p>
+      <p>Преимущество и помеха вместо своей обычной работы предоставляют бонус/штраф +5/2/-2/-5 к броскам. Эти бонусы в отличии от обычных правил могут суммироваться.</p>
+    </div>
+  </section>
+</section>

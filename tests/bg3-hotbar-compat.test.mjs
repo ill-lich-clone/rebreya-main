@@ -443,11 +443,16 @@ test("scene controls create a separate Rebreya group for record controls", () =>
       "rebreya-main-inventory",
       "rebreya-main-groups",
       "rebreya-main-calendar",
+      "rebreya-main-cosmology",
       "rebreya-main-lootgen"
     ]);
     const groupsTool = controls["rebreya-main-rebreya"].tools["rebreya-main-groups"];
     assert.equal(groupsTool.title, "REBREYA_MAIN.Controls.OpenGroups");
     assert.equal(groupsTool.visible, true);
+    const cosmologyTool = controls["rebreya-main-rebreya"].tools["rebreya-main-cosmology"];
+    assert.equal(cosmologyTool.title, "REBREYA_MAIN.Controls.OpenCosmology");
+    assert.equal(cosmologyTool.icon, "fa-solid fa-solar-system");
+    assert.equal(cosmologyTool.visible, true);
   });
 });
 
@@ -491,11 +496,16 @@ test("scene controls create a separate Rebreya group for array controls", () => 
       "rebreya-main-inventory",
       "rebreya-main-groups",
       "rebreya-main-calendar",
+      "rebreya-main-cosmology",
       "rebreya-main-lootgen"
     ]);
     const groupsTool = controls[rebreyaIndex].tools.find((tool) => tool.name === "rebreya-main-groups");
     assert.equal(groupsTool.title, "REBREYA_MAIN.Controls.OpenGroups");
     assert.equal(groupsTool.visible, true);
+    const cosmologyTool = controls[rebreyaIndex].tools.find((tool) => tool.name === "rebreya-main-cosmology");
+    assert.equal(cosmologyTool.title, "REBREYA_MAIN.Controls.OpenCosmology");
+    assert.equal(cosmologyTool.icon, "fa-solid fa-solar-system");
+    assert.equal(cosmologyTool.visible, true);
   });
 });
 

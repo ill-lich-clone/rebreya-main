@@ -323,6 +323,17 @@ export function registerSettings() {
     default: {}
   });
 
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.COSMOLOGY_STATE, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {
+      version: 1,
+      mechanusEnabled: false
+    },
+    onChange: () => game.rebreyaMain?.refreshOpenApps?.()
+  });
+
   game.settings.register(MODULE_ID, SETTINGS_KEYS.GLOBAL_EVENTS_STATE, {
     scope: "world",
     config: false,

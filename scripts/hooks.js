@@ -527,6 +527,7 @@ function buildToolsRecord() {
   const inventoryToolName = `${MODULE_ID}-inventory`;
   const groupsToolName = `${MODULE_ID}-groups`;
   const calendarToolName = `${MODULE_ID}-calendar`;
+  const cosmologyToolName = `${MODULE_ID}-cosmology`;
   const lootgenToolName = `${MODULE_ID}-lootgen`;
   const showEconomyButton = isEconomyButtonVisible();
 
@@ -584,6 +585,18 @@ function buildToolsRecord() {
       onChange: createSafeAction(
         () => game.rebreyaMain?.openInventoryApp?.({ tab: "calendar" }),
         "Calendar control click failed."
+      )
+    },
+    [cosmologyToolName]: {
+      name: cosmologyToolName,
+      order: 35,
+      title: game.i18n.localize("REBREYA_MAIN.Controls.OpenCosmology"),
+      icon: "fa-solid fa-solar-system",
+      button: true,
+      visible: game.user?.isGM === true,
+      onChange: createSafeAction(
+        () => game.rebreyaMain?.openCosmologyApp?.(),
+        "Cosmology control click failed."
       )
     },
     [lootgenToolName]: {

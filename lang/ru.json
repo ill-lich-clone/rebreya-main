@@ -35,6 +35,7 @@
   "REBREYA_MAIN.Controls.OpenInventory": "Открыть партийный инвентарь",
   "REBREYA_MAIN.Controls.OpenGroups": "Группы",
   "REBREYA_MAIN.Controls.OpenCalendar": "Открыть календарь Rebreya",
+  "REBREYA_MAIN.Controls.OpenCosmology": "Космология",
   "REBREYA_MAIN.Controls.OpenLootgen": "Открыть лутген Rebreya",
   "REBREYA_MAIN.Notifications.DataReloaded": "Данные экономики перезагружены. Загружено городов: {count}.",
   "REBREYA_MAIN.Notifications.DataRestored": "Ручные изменения мира сброшены. Исходные данные восстановлены.",

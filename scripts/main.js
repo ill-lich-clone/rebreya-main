@@ -35,6 +35,7 @@ import { CombatAttackService } from "./combat/attack-service.js?v=1.4.91-npc-hel
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.91";
+import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.91-cosmology";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.91";
 import {
   PaladinAutomationService,
@@ -60,6 +61,7 @@ import {
   SOCKET_EVENT_SET_SETTING,
   SOCKET_EVENT_SET_SETTING_RESULT,
   handleSettingsUpdateSocketResponse,
+  requestSettingsUpdate,
   registerSettings
 } from "./settings.js";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js";
@@ -85,7 +87,7 @@ const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT = "downtime-project-close-resul
 const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
 const SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST = "travel-map-sync-request";
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.86-brand-title";
+const MODULE_STYLE_VERSION = "1.4.91-cosmology";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -407,6 +409,7 @@ export class RebreyaMainModule {
     this.globalEventsApp = null;
     this.inventoryApp = null;
     this.groupsApp = null;
+    this.cosmologyApp = null;
     this.lootgenApps = new Map();
     this.lootgenCounter = 0;
     this.latestLootgenResult = null;
@@ -2975,6 +2978,10 @@ export class RebreyaMainModule {
       tasks.push(rerenderApp(this.groupsApp));
     }
 
+    if (this.cosmologyApp?.rendered) {
+      tasks.push(rerenderApp(this.cosmologyApp));
+    }
+
     for (const app of this.lootgenApps.values()) {
       if (app?.rendered) {
         tasks.push(rerenderApp(app));
@@ -3111,6 +3118,66 @@ export class RebreyaMainModule {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open global events app.`, error);
       ui.notifications?.error("Не удалось открыть окно глобальных ивентов.");
+      throw error;
+    }
+  }
+
+  getCosmologyState() {
+    let rawState = {};
+    try {
+      rawState = game.settings.get(MODULE_ID, SETTINGS_KEYS.COSMOLOGY_STATE) ?? {};
+    }
+    catch (_error) {
+      rawState = {};
+    }
+
+    const state = rawState && typeof rawState === "object" && !Array.isArray(rawState) ? rawState : {};
+    return {
+      version: 1,
+      ...state,
+      mechanusEnabled: state.mechanusEnabled === true
+    };
+  }
+
+  isMechanusEnabled() {
+    return this.getCosmologyState().mechanusEnabled === true;
+  }
+
+  async setMechanusEnabled(enabled) {
+    if (!game.user?.isGM) {
+      throw new Error("Окно космологии доступно только мастеру.");
+    }
+
+    const nextState = {
+      ...this.getCosmologyState(),
+      version: 1,
+      mechanusEnabled: enabled === true
+    };
+
+    await requestSettingsUpdate(SETTINGS_KEYS.COSMOLOGY_STATE, nextState);
+    await this.refreshOpenApps();
+    return nextState;
+  }
+
+  async openCosmologyApp() {
+    try {
+      if (!game.user?.isGM) {
+        throw new Error("Окно космологии доступно только мастеру.");
+      }
+
+      const { CosmologyApp } = await import("./ui/cosmology-app.js?v=1.4.91-cosmology");
+
+      if (!this.cosmologyApp) {
+        this.cosmologyApp = new CosmologyApp(this);
+      }
+
+      await this.cosmologyApp.render({ force: true });
+      bringAppToFront(this.cosmologyApp);
+      return this.cosmologyApp;
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to open cosmology app.`, error);
+      ui.notifications?.error(error?.message || "Не удалось открыть окно космологии.");
       throw error;
     }
   }
@@ -3382,6 +3449,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register combat hooks.`, error);
+  }
+
+  try {
+    registerMechanusRollHooks(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register Mechanus roll hooks.`, error);
   }
 
   try {
