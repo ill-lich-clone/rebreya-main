@@ -149,7 +149,8 @@ function makeWeaponItem({
   heldHands = [],
   handRequirement = null,
   properties = {},
-  attackModes = []
+  attackModes = [],
+  deferUpdateMutation = false
 } = {}) {
   const updateCalls = [];
   const item = new class extends Item {
@@ -188,8 +189,17 @@ function makeWeaponItem({
     async update(updates, options = {}) {
       options.parent = this.actor ?? null;
       updateCalls.push({ updates, options });
-      for (const [path, value] of Object.entries(updates)) {
-        foundry.utils.setProperty(this, path, value);
+      const applyUpdates = () => {
+        for (const [path, value] of Object.entries(updates)) {
+          foundry.utils.setProperty(this, path, value);
+        }
+      };
+      if (deferUpdateMutation) {
+        await Promise.resolve();
+        applyUpdates();
+      }
+      else {
+        applyUpdates();
       }
       return this;
     }
@@ -201,7 +211,14 @@ function makeWeaponItem({
 test("weapon attack activities automatically take an unused item in the left hand", async () => {
   const warnings = [];
   const previousWarn = globalThis.ui.notifications.warn;
+  const previousHooks = globalThis.Hooks;
+  const hookCalls = [];
   globalThis.ui.notifications.warn = (message) => warnings.push(message);
+  globalThis.Hooks = {
+    callAll(name, payload) {
+      hookCalls.push({ name, payload });
+    }
+  };
   try {
     const weapon = makeWeaponItem();
     const actor = makeActor([weapon]);
@@ -221,6 +238,7 @@ test("weapon attack activities automatically take an unused item in the left han
     const service = new CombatAttackService({});
 
     assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+    await Promise.resolve();
     assert.deepEqual(weapon.updateCalls.at(-1), {
       updates: {
         "system.equipped": true,
@@ -229,11 +247,40 @@ test("weapon attack activities automatically take an unused item in the left han
       options: { render: false, parent: actor }
     });
     assert.deepEqual(weapon.flags[MODULE_ID].heldHands, ["left"]);
+    assert.equal(hookCalls.at(-1)?.name, "rebreya-main.heldItemUpdated");
+    assert.equal(hookCalls.at(-1)?.payload.actor, actor);
+    assert.equal(hookCalls.at(-1)?.payload.item, weapon);
+    assert.equal(hookCalls.at(-1)?.payload.itemId, weapon.id);
     assert.equal(warnings.length, 0);
   }
   finally {
     globalThis.ui.notifications.warn = previousWarn;
+    globalThis.Hooks = previousHooks;
   }
+});
+
+test("weapon attack activities mark auto-held items before activity use continues", async () => {
+  const weapon = makeWeaponItem({ deferUpdateMutation: true });
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+  const activity = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: {
+      type: {
+        value: "melee"
+      }
+    },
+    range: {}
+  };
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+  assert.equal(weapon.system.equipped, true);
+  assert.deepEqual(weapon.flags[MODULE_ID].heldHands, ["left"]);
+  await Promise.resolve();
 });
 
 test("weapon attack activities warn when an unused item cannot find a free hand", async () => {

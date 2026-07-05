@@ -2,6 +2,7 @@
   DOWNTIME_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
   GEAR_COMPENDIUM_NAME,
+  HELD_ITEM_UPDATED_HOOK,
   DOWNTIME_ITEM_TYPE,
   MODULE_ID,
   REBREYA_TOOLS,
@@ -30,7 +31,7 @@ import {
   getHeldItemDamageFormulaPresentation,
   getHeldItemEquipPresentation,
   isHeldItemEligible
-} from "./held-items.js?v=1.4.90-npc-held-natural";
+} from "./held-items.js?v=1.4.91-npc-held-natural";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
@@ -5735,6 +5736,85 @@ function resolveActorItem(actor, itemId) {
   return items.find((item) => cleanText(item?.id ?? item?._id) === id) ?? null;
 }
 
+const HELD_ITEM_SHEET_ROWS = new Map();
+const HELD_ITEM_ROW_KEYS = new WeakMap();
+let heldItemUpdatedHookRegistered = false;
+
+function getHeldItemSheetRowKey(actorId, itemId) {
+  const safeActorId = cleanText(actorId);
+  const safeItemId = cleanText(itemId);
+  return safeActorId && safeItemId ? `${safeActorId}::${safeItemId}` : "";
+}
+
+function registerHeldItemSheetRow(actor, item, row, control) {
+  if (!(row instanceof HTMLElement) || !(control instanceof HTMLElement)) {
+    return;
+  }
+
+  const key = getHeldItemSheetRowKey(actor?.id ?? actor?._id, item?.id ?? item?._id);
+  if (!key) {
+    return;
+  }
+
+  const previousKey = HELD_ITEM_ROW_KEYS.get(row);
+  if (previousKey && previousKey !== key) {
+    HELD_ITEM_SHEET_ROWS.get(previousKey)?.delete(row);
+  }
+
+  HELD_ITEM_ROW_KEYS.set(row, key);
+  const rows = HELD_ITEM_SHEET_ROWS.get(key) ?? new Map();
+  rows.set(row, {
+    actor,
+    control,
+    itemId: cleanText(item?.id ?? item?._id)
+  });
+  HELD_ITEM_SHEET_ROWS.set(key, rows);
+}
+
+function refreshHeldItemSheetRows({ actor, actorId, item, itemId } = {}) {
+  const safeActor = actor ?? item?.actor ?? item?.parent ?? null;
+  const key = getHeldItemSheetRowKey(actorId ?? safeActor?.id ?? safeActor?._id, itemId ?? item?.id ?? item?._id);
+  if (!key) {
+    return;
+  }
+
+  const rows = HELD_ITEM_SHEET_ROWS.get(key);
+  if (!rows) {
+    return;
+  }
+
+  for (const [row, entry] of Array.from(rows.entries())) {
+    const control = entry.control instanceof HTMLElement ? entry.control : findHeldItemEquipControl(row);
+    if (row?.isConnected === false || control?.isConnected === false) {
+      rows.delete(row);
+      HELD_ITEM_ROW_KEYS.delete(row);
+      continue;
+    }
+
+    const currentActor = safeActor ?? entry.actor ?? null;
+    const currentItem = item ?? resolveActorItem(currentActor, entry.itemId);
+    if (!currentItem || !(control instanceof HTMLElement)) {
+      continue;
+    }
+
+    applyHeldItemEquipPresentation(control, getHeldItemEquipPresentation(currentItem));
+    applyHeldItemDamageFormulaPresentation(row, currentItem);
+  }
+
+  if (!rows.size) {
+    HELD_ITEM_SHEET_ROWS.delete(key);
+  }
+}
+
+function registerHeldItemUpdatedHook() {
+  if (heldItemUpdatedHookRegistered || typeof globalThis.Hooks?.on !== "function") {
+    return;
+  }
+
+  globalThis.Hooks.on(HELD_ITEM_UPDATED_HOOK, refreshHeldItemSheetRows);
+  heldItemUpdatedHookRegistered = true;
+}
+
 function findHeldItemEquipControl(row) {
   for (const selector of HELD_ITEM_EQUIP_CONTROL_SELECTORS) {
     const control = row.querySelector?.(selector);
@@ -5992,6 +6072,7 @@ function bindHeldItemEquipContextMenu(root, { actor, app, moduleApi } = {}) {
 
     applyHeldItemEquipPresentation(control, getHeldItemEquipPresentation(item));
     applyHeldItemDamageFormulaPresentation(row, item);
+    registerHeldItemSheetRow(actor, item, row, control);
 
     if (row.dataset.rebreyaHeldItemContextBound === "true") {
       continue;
@@ -6271,6 +6352,8 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   if (!isDnd5eWorld() || !CONFIG.DND5E) {
     return;
   }
+
+  registerHeldItemUpdatedHook();
 
   const CharacterActorSheet = getCharacterActorSheetClass();
   if (CharacterActorSheet) {

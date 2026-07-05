@@ -1,10 +1,10 @@
-import { MODULE_ID } from "../constants.js";
+import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
 import {
   buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
   getItemHeldHands
-} from "../integrations/held-items.js?v=1.4.90-npc-held-natural";
+} from "../integrations/held-items.js?v=1.4.91-npc-held-natural";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -26,6 +26,87 @@ const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
 const PATCHED_USAGE_BUTTON_PROTOTYPES = new WeakSet();
 function heldItemUpdateOptions() {
   return { render: false };
+}
+
+function notifyHeldItemUpdated(actor, item) {
+  const safeItem = item ?? null;
+  const safeActor = actor ?? safeItem?.actor ?? safeItem?.parent ?? null;
+  const itemId = cleanText(safeItem?.id ?? safeItem?._id);
+  const actorId = cleanText(safeActor?.id ?? safeActor?._id);
+  if (!itemId) {
+    return;
+  }
+
+  globalThis.Hooks?.callAll?.(HELD_ITEM_UPDATED_HOOK, {
+    actor: safeActor,
+    actorId,
+    item: safeItem,
+    itemId
+  });
+}
+
+function setLocalDocumentProperty(document, path, value) {
+  const safePath = cleanText(path);
+  if (!document || !safePath) {
+    return;
+  }
+
+  const deletionMatch = safePath.match(/^(.*)\.-=([^.]+)$/u);
+  if (deletionMatch) {
+    const deletePath = `${deletionMatch[1]}.${deletionMatch[2]}`;
+    if (typeof globalThis.foundry?.utils?.unsetProperty === "function") {
+      globalThis.foundry.utils.unsetProperty(document, deletePath);
+      return;
+    }
+
+    const parts = deletePath.split(".").filter(Boolean);
+    const key = parts.pop();
+    const parent = parts.reduce((current, part) => (
+      current && typeof current === "object" ? current[part] : undefined
+    ), document);
+    if (parent && typeof parent === "object" && key) {
+      delete parent[key];
+    }
+    return;
+  }
+
+  if (typeof globalThis.foundry?.utils?.setProperty === "function") {
+    globalThis.foundry.utils.setProperty(document, safePath, value);
+    return;
+  }
+
+  const parts = safePath.split(".").filter(Boolean);
+  const key = parts.pop();
+  if (!key) {
+    return;
+  }
+
+  let cursor = document;
+  for (const part of parts) {
+    cursor[part] ??= {};
+    cursor = cursor[part];
+  }
+  cursor[key] = value;
+}
+
+function applyLocalHeldItemUpdate(item, update) {
+  if (!item || !isPlainObject(update)) {
+    return;
+  }
+
+  if (typeof item.updateSource === "function") {
+    try {
+      item.updateSource(update);
+      return;
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to apply local held item update source.`, error);
+    }
+  }
+
+  for (const [path, value] of Object.entries(update)) {
+    setLocalDocumentProperty(item, path, value);
+  }
 }
 
 function toNumber(value, fallback = 0) {
@@ -1314,11 +1395,17 @@ export class CombatAttackService {
         try {
           const update = buildHeldItemHandUpdate(hands, item);
           const updateResult = item.update?.(update, heldItemUpdateOptions());
-          if (typeof updateResult?.catch === "function") {
-            updateResult.catch((error) => {
+          applyLocalHeldItemUpdate(item, update);
+          if (typeof updateResult?.then === "function") {
+            updateResult.then((updatedItem) => {
+              notifyHeldItemUpdated(actor, updatedItem ?? item);
+            }).catch((error) => {
               console.error(`${MODULE_ID} | Failed to auto-hold weapon before use.`, error);
               ui.notifications?.error?.(`Не удалось взять "${itemName}" в руку.`);
             });
+          }
+          else if (updateResult) {
+            notifyHeldItemUpdated(actor, updateResult);
           }
           return true;
         }

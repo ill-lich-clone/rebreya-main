@@ -1096,6 +1096,92 @@ test("registerDnd5eSheetExtensions reflects selected held state on the native eq
   }
 });
 
+test("held item update hook refreshes already rendered equip controls", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?held-item-hook-refresh=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const item = {
+      id: "sword",
+      _id: "sword",
+      name: "Sword",
+      type: "weapon",
+      system: { equipped: false },
+      flags: {
+        "rebreya-main": {}
+      },
+      getFlag(scope, key) {
+        return String(key ?? "").split(".").reduce((current, part) => (
+          current && typeof current === "object" ? current[part] : undefined
+        ), this.flags?.[scope]);
+      }
+    };
+    actor.items = {
+      contents: [item],
+      get: (id) => (id === "sword" ? item : null)
+    };
+    const icon = new stubs.HTMLElement();
+    icon.tagName = "I";
+    icon.className = "fa-solid fa-shield";
+    const equipControl = new stubs.HTMLElement({
+      dataset: {
+        action: "equip"
+      },
+      selectors: {
+        "i": icon
+      }
+    });
+    equipControl.append(icon);
+    const row = new stubs.HTMLElement({
+      dataset: {
+        itemId: "sword"
+      },
+      selectors: {
+        "[data-action='equip']": equipControl
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-item-id]": [row]
+      }
+    });
+    const app = {
+      actor,
+      async render() {}
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    item.system.equipped = true;
+    item.flags["rebreya-main"].heldHands = ["left"];
+    stubs.hooks.get("rebreya-main.heldItemUpdated")({
+      actor,
+      item,
+      actorId: actor.id,
+      itemId: item.id
+    });
+
+    assert.equal(icon.className, "fa-solid fa-hand-point-left fa-fw");
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("registerDnd5eSheetExtensions shows versatile damage formula for two-handed held weapons", async () => {
   const stubs = installSheetExtensionStubs();
   try {
