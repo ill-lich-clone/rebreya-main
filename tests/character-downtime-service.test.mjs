@@ -1428,6 +1428,60 @@ test("CharacterDowntimeService keeps unfinished completed long projects in curre
   assert.match(resultAction.resultTooltip, /Сдвиг счётчика/u);
 });
 
+test("CharacterDowntimeService keeps legacy three-part project counters visible", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        actorName: "Asha",
+        canSubmit: true,
+        balance: {
+          availableWeeks: 1,
+          reservedWeeks: 0,
+          spentWeeks: 1,
+          totalGrantedWeeks: 2
+        }
+      }],
+      requests: [{
+        id: "downtime-project",
+        actorId: "actor-a",
+        actorName: "Asha",
+        actionId: "long-project",
+        actionLabel: "Long Project",
+        title: "Find a patron",
+        weeks: 1,
+        status: "completed",
+        checks: [{
+          id: "long-project-counter",
+          label: "Project counter",
+          actionType: "projectCounter",
+          projectCounter: {
+            current: 1,
+            max: 3
+          }
+        }, {
+          id: "long-project-check",
+          label: "Progress check",
+          actionType: "check",
+          sourceType: "skill",
+          ability: "int",
+          target: "arc",
+          targetLabel: "Arcana",
+          dc: 14
+        }]
+      }],
+      actionCatalog: []
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }));
+
+  assert.equal(context.currentProjects[0].projectCounter.hasImagePath, true);
+  assert.match(context.currentProjects[0].projectCounter.imagePath, /templates\/counters\/progress-3\/progress_1\.png$/u);
+});
+
 test("CharacterDowntimeService moves manually closed projects out of current projects", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     snapshot: {

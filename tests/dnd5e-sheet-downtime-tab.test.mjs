@@ -2950,6 +2950,8 @@ test("character downtime template renders current projects with a right-side cou
   assert.match(template, /data-action="character-downtime-continue"/u);
   assert.match(template, /data-request-id="\{\{id\}\}"/u);
   assert.match(template, /data-group-id="\{\{groupId\}\}"/u);
+  assert.match(template, /rm-character-downtime-project-counter__value/u);
+  assert.match(template, /\{\{projectCounter\.value\}\} \/ \{\{projectCounter\.max\}\}/u);
   assert.match(template, /data-tooltip="Завершить проект досрочно"/u);
   assert.match(template, /fa-solid fa-forward/u);
   assert.match(template, /fa-solid fa-flag-checkered/u);

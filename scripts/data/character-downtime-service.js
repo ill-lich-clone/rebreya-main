@@ -1425,7 +1425,7 @@ function buildProjectContinueRollTarget(actions = []) {
 
 function buildProjectCounterImagePath(max = 0, value = 0) {
   const safeMax = toInteger(max, 0);
-  if (![4, 6, 8].includes(safeMax)) {
+  if (![3, 4, 6, 8].includes(safeMax)) {
     return "";
   }
 

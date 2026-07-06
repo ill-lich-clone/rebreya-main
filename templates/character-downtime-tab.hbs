@@ -462,6 +462,10 @@
                   {{#if projectCounter.hasImagePath}}
                     <img src="{{projectCounter.imagePath}}" alt="{{projectCounter.value}} / {{projectCounter.max}}">
                   {{/if}}
+                  <div class="rm-character-downtime-project-counter__value" data-tooltip="{{projectCounter.label}}">
+                    <strong>{{projectCounter.value}} / {{projectCounter.max}}</strong>
+                    <span>{{projectCounter.label}}</span>
+                  </div>
                 </aside>
               {{/if}}
             </article>
@@ -536,6 +540,10 @@
                   {{#if projectCounter.hasImagePath}}
                     <img src="{{projectCounter.imagePath}}" alt="{{projectCounter.value}} / {{projectCounter.max}}">
                   {{/if}}
+                  <div class="rm-character-downtime-project-counter__value" data-tooltip="{{projectCounter.label}}">
+                    <strong>{{projectCounter.value}} / {{projectCounter.max}}</strong>
+                    <span>{{projectCounter.label}}</span>
+                  </div>
                   <div class="rm-character-downtime-project-actions">
                     {{#if projectCounter.canContinue}}
                       <button
