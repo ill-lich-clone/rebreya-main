@@ -309,6 +309,158 @@ test("frightened setStatus uses the native dnd5e status id for midi and dae", as
   }
 });
 
+test("surrounded setStatus applies a minus two armor class effect", async () => {
+  const previousActor = globalThis.Actor;
+  const previousActiveEffect = globalThis.ActiveEffect;
+  const previousConfig = globalThis.CONFIG;
+  const previousConst = globalThis.CONST;
+  const previousFoundry = globalThis.foundry;
+
+  class TestActor {}
+  class TestActiveEffect {}
+  globalThis.Actor = TestActor;
+  globalThis.ActiveEffect = TestActiveEffect;
+  globalThis.CONFIG = { statusEffects: [] };
+  globalThis.CONST = {
+    ACTIVE_EFFECT_MODES: {
+      ADD: 2
+    }
+  };
+  globalThis.foundry = {
+    utils: {
+      deepClone(value) {
+        return value == null ? value : JSON.parse(JSON.stringify(value));
+      }
+    }
+  };
+
+  try {
+    const service = new CombatStatusService({});
+    const createdEffects = [];
+    const actor = new TestActor();
+    actor.id = "actor-1";
+    actor.effects = { contents: createdEffects };
+    actor.createEmbeddedDocuments = async (_type, documents) => {
+      const created = documents.map((document, index) => ({
+        ...document,
+        id: `effect-${index}`,
+        _id: `effect-${index}`,
+        parent: actor,
+        getFlag(scope, key) {
+          return this.flags?.[scope]?.[key];
+        },
+        async update(patch) {
+          Object.assign(this, patch);
+        }
+      }));
+      createdEffects.push(...created);
+      return created;
+    };
+
+    const effect = await service.setStatus(actor, "rebreya-surrounded", {
+      active: true
+    });
+
+    assert.equal(effect.flags["rebreya-main"].statusId, "rebreya-surrounded");
+    assert.deepEqual([...effect.statuses], ["rebreya-surrounded"]);
+    assert.deepEqual(
+      effect.changes.map((change) => [change.key, change.value, change.mode, change.priority]),
+      [
+        ["system.attributes.ac.bonus", "-2", 2, 20]
+      ]
+    );
+  }
+  finally {
+    globalThis.Actor = previousActor;
+    globalThis.ActiveEffect = previousActiveEffect;
+    globalThis.CONFIG = previousConfig;
+    globalThis.CONST = previousConst;
+    globalThis.foundry = previousFoundry;
+  }
+});
+
+test("surrounded setStatus refreshes an existing marker with armor class changes", async () => {
+  const previousActor = globalThis.Actor;
+  const previousActiveEffect = globalThis.ActiveEffect;
+  const previousConfig = globalThis.CONFIG;
+  const previousConst = globalThis.CONST;
+  const previousFoundry = globalThis.foundry;
+
+  class TestActor {}
+  class TestActiveEffect {}
+  globalThis.Actor = TestActor;
+  globalThis.ActiveEffect = TestActiveEffect;
+  globalThis.CONFIG = { statusEffects: [] };
+  globalThis.CONST = {
+    ACTIVE_EFFECT_MODES: {
+      ADD: 2
+    }
+  };
+  globalThis.foundry = {
+    utils: {
+      deepClone(value) {
+        return value == null ? value : JSON.parse(JSON.stringify(value));
+      }
+    }
+  };
+
+  try {
+    const service = new CombatStatusService({});
+    const existingEffect = new TestActiveEffect();
+    Object.assign(existingEffect, {
+      id: "existing",
+      _id: "existing",
+      statuses: ["rebreya-surrounded"],
+      flags: {
+        core: { statusId: "rebreya-surrounded" },
+        "rebreya-main": { statusId: "rebreya-surrounded" }
+      },
+      changes: [],
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      },
+      async update(patch) {
+        Object.assign(this, patch);
+        for (const [key, value] of Object.entries(patch)) {
+          if (!key.includes(".")) continue;
+          key.split(".").reduce((target, part, partIndex, parts) => {
+            if (partIndex === parts.length - 1) {
+              target[part] = value;
+              return target;
+            }
+
+            target[part] ??= {};
+            return target[part];
+          }, this);
+        }
+      }
+    });
+    const actor = new TestActor();
+    actor.id = "actor-1";
+    actor.effects = { contents: [existingEffect] };
+
+    const effect = await service.setStatus(actor, "rebreya-surrounded", {
+      active: true,
+      meta: { source: "rebreya-environment" }
+    });
+
+    assert.equal(effect, existingEffect);
+    assert.deepEqual(
+      existingEffect.changes.map((change) => [change.key, change.value, change.mode, change.priority]),
+      [
+        ["system.attributes.ac.bonus", "-2", 2, 20]
+      ]
+    );
+  }
+  finally {
+    globalThis.Actor = previousActor;
+    globalThis.ActiveEffect = previousActiveEffect;
+    globalThis.CONFIG = previousConfig;
+    globalThis.CONST = previousConst;
+    globalThis.foundry = previousFoundry;
+  }
+});
+
 test("active frightened HUD click updates the value instead of clearing the status", async () => {
   const previousActor = globalThis.Actor;
   const previousActiveEffect = globalThis.ActiveEffect;

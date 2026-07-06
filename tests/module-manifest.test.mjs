@@ -104,6 +104,7 @@ test("combat automation imports use the current cache busts", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const entrypointPath = manifest.esmodules?.[0];
   const entrypointSource = await readFile(new URL(`../${entrypointPath}`, import.meta.url), "utf8");
+  const statusServiceSource = await readFile(new URL("../scripts/combat/status-service.js", import.meta.url), "utf8");
   const escapedVersion = manifest.version.replaceAll(".", "\\.");
 
   assert.match(
@@ -121,6 +122,14 @@ test("combat automation imports use the current cache busts", async () => {
   assert.match(
     entrypointSource,
     new RegExp(`mechanus-rolls\\.js\\?v=${escapedVersion}-mechanus-d20-advantage-mode`, "u"),
+  );
+  assert.match(
+    entrypointSource,
+    new RegExp(`status-service\\.js\\?v=${escapedVersion}-surrounded-ac`, "u"),
+  );
+  assert.match(
+    statusServiceSource,
+    new RegExp(`status-definitions\\.js\\?v=${escapedVersion}-surrounded-ac`, "u"),
   );
 });
 

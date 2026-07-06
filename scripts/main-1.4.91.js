@@ -34,7 +34,7 @@ import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.91-environment-statuses";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.91-firearm-native-area-fire-repair";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
-import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
+import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.91-surrounded-ac";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.91";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.91-environment-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.91-mechanus-d20-advantage-mode";

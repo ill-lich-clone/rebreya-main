@@ -7,7 +7,7 @@ import {
   buildRebreyaStatusConfig,
   getRebreyaStatusDefinition,
   normalizeRebreyaStatusId
-} from "./status-definitions.js";
+} from "./status-definitions.js?v=1.4.91-surrounded-ac";
 
 const STATUS_ID_FLAG = "statusId";
 const STATUS_VALUE_FLAG = "statusValue";
@@ -740,7 +740,7 @@ function buildCanonicalManagedStatusChanges(effect, statusId, value, { actor = n
       : buildDiscreetSpeedChanges(value);
   }
 
-  return [];
+  return buildDynamicStatusChanges(statusId, value) ?? [];
 }
 
 function buildCanonicalManagedStatusName(statusId, value, context = {}) {
@@ -928,12 +928,19 @@ export function buildDiscreetStatusSyncUpdates(effects = [], {
     });
 }
 
+function buildStaticStatusChanges(statusId) {
+  const changes = getRebreyaStatusDefinition(statusId)?.changes;
+  return Array.isArray(changes)
+    ? changes.map(cloneData).filter(Boolean)
+    : null;
+}
+
 function buildDynamicStatusChanges(statusId, value) {
   if (statusId === FRIGHTENED_STATUS_ID) {
     return buildFrightenedChanges(value);
   }
 
-  return null;
+  return buildStaticStatusChanges(statusId);
 }
 
 export function registerCombatStatusConfig() {
@@ -1516,18 +1523,15 @@ export class CombatStatusService {
     const patch = {
       [`flags.${MODULE_ID}.${STATUS_ID_FLAG}`]: statusId
     };
+    let statusValue = options.value;
     if (Object.hasOwn(options, "value")) {
-      const statusValue = statusId === FRIGHTENED_STATUS_ID
+      statusValue = statusId === FRIGHTENED_STATUS_ID
         ? normalizeFrightenedValue(options.value, {
           actor: options.actor ?? null,
           sourceActor: options.sourceActor ?? null
         })
         : (statusSupportsValue(statusId) ? normalizeStatusValue(options.value, 1) : options.value);
       patch[`flags.${MODULE_ID}.${STATUS_VALUE_FLAG}`] = statusValue;
-      const dynamicChanges = buildDynamicStatusChanges(statusId, statusValue);
-      if (Array.isArray(dynamicChanges)) {
-        patch.changes = dynamicChanges;
-      }
       if (statusSupportsValue(statusId)) {
         patch.name = buildCanonicalManagedStatusName(statusId, statusValue, {
           actor: options.actor ?? null,
@@ -1539,6 +1543,12 @@ export class CombatStatusService {
         patch["flags.core.statusId"] = statusId;
         patch[`flags.${STATUS_COUNTER_MODULE_ID}.value`] = statusValue;
         patch[`flags.${STATUS_COUNTER_MODULE_ID}.visible`] = true;
+      }
+    }
+    if (Object.hasOwn(options, "value") || !statusSupportsValue(statusId)) {
+      const dynamicChanges = buildDynamicStatusChanges(statusId, statusValue);
+      if (Array.isArray(dynamicChanges)) {
+        patch.changes = dynamicChanges;
       }
     }
     if (Object.hasOwn(options, "meta")) {

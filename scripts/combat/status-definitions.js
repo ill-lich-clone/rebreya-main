@@ -3,7 +3,11 @@ import { MODULE_ID } from "../constants.js";
 export const REBREYA_BLOODIED_STATUS_ID = "rebreya-bloodied";
 export const REBREYA_DISCREET_STATUS_ID = "rebreya-discreet";
 export const REBREYA_FRIGHTENED_STATUS_ID = "frightened";
+export const REBREYA_SURROUNDED_STATUS_ID = "rebreya-surrounded";
 export const LEGACY_REBREYA_FRIGHTENED_STATUS_ID = "rebreya-frightened";
+
+const ACTIVE_EFFECT_ADD_MODE = 2;
+const DEFAULT_STATUS_CHANGE_PRIORITY = 20;
 
 const STATUS_DEFINITIONS = Object.freeze([
   {
@@ -30,12 +34,18 @@ const STATUS_DEFINITIONS = Object.freeze([
     supportsValue: false
   },
   {
-    id: "rebreya-surrounded",
+    id: REBREYA_SURROUNDED_STATUS_ID,
     foundryId: "rbSurround",
     key: "surrounded",
     label: "Окружённый",
     icon: "icons/svg/target.svg",
-    supportsValue: false
+    supportsValue: false,
+    changes: [{
+      key: "system.attributes.ac.bonus",
+      mode: ACTIVE_EFFECT_ADD_MODE,
+      value: "-2",
+      priority: DEFAULT_STATUS_CHANGE_PRIORITY
+    }]
   },
   {
     id: "rebreya-open-position",
@@ -154,6 +164,19 @@ const STATUS_DEFINITIONS = Object.freeze([
 const STATUS_BY_ID = new Map(STATUS_DEFINITIONS.map((row) => [row.id, row]));
 const STATUS_ALIAS_TO_ID = new Map();
 
+function cloneStatusChanges(changes) {
+  return Array.isArray(changes)
+    ? changes.map((change) => ({ ...change }))
+    : undefined;
+}
+
+function cloneStatusDefinition(row) {
+  return {
+    ...row,
+    ...(Array.isArray(row?.changes) ? { changes: cloneStatusChanges(row.changes) } : {})
+  };
+}
+
 function buildDnd5eStatusEffectDocumentId(statusId) {
   const rawId = `dnd5e${String(statusId ?? "").trim()}`;
   return rawId.length >= 16 ? rawId.slice(0, 16) : rawId.padEnd(16, "0");
@@ -196,7 +219,7 @@ registerAlias("сдержанный", REBREYA_DISCREET_STATUS_ID);
 registerAlias("rebreya-restrained", REBREYA_DISCREET_STATUS_ID);
 registerAlias("газообразный", "rebreya-gaseous");
 
-export const REBREYA_STATUS_DEFINITIONS = STATUS_DEFINITIONS.map((row) => ({ ...row }));
+export const REBREYA_STATUS_DEFINITIONS = STATUS_DEFINITIONS.map(cloneStatusDefinition);
 
 export function normalizeRebreyaStatusId(value, fallback = "") {
   const normalized = normalizeLookupText(value);
@@ -210,7 +233,7 @@ export function normalizeRebreyaStatusId(value, fallback = "") {
 export function getRebreyaStatusDefinition(statusId) {
   const resolvedId = normalizeRebreyaStatusId(statusId, String(statusId ?? "").trim());
   const row = STATUS_BY_ID.get(resolvedId);
-  return row ? { ...row } : null;
+  return row ? cloneStatusDefinition(row) : null;
 }
 
 export function buildRebreyaStatusConfig(statusId) {
@@ -237,6 +260,10 @@ export function buildRebreyaStatusConfig(statusId) {
 
   if (foundryStatusId !== definition.id) {
     statusConfig.statuses = [definition.id];
+  }
+
+  if (Array.isArray(definition.changes)) {
+    statusConfig.changes = cloneStatusChanges(definition.changes);
   }
 
   return statusConfig;
