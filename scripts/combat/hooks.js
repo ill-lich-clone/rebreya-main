@@ -122,6 +122,17 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to repair firearm activities.`, error);
       });
     };
+    const repairFirearmItem = (app) => {
+      const item = app?.document ?? app?.item ?? null;
+      moduleApi.combatAttackService.repairFirearmActivities(item).then((result) => {
+        const isItemDocument = typeof Item !== "undefined" && item instanceof Item;
+        if (isItemDocument && result?.updated > 0 && typeof app?.render === "function") {
+          app.render(false);
+        }
+      }).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to repair firearm item activities.`, error);
+      });
+    };
 
     for (const hookName of [
       "renderActorSheet",
@@ -130,6 +141,12 @@ export function registerCombatHooks(moduleApi) {
       "renderCharacterActorSheet"
     ]) {
       Hooks.on(hookName, repairFirearmActor);
+    }
+    for (const hookName of [
+      "renderItemSheet",
+      "renderItemSheet5e"
+    ]) {
+      Hooks.on(hookName, repairFirearmItem);
     }
 
     Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {

@@ -1283,8 +1283,18 @@ export class CombatAttackService {
     return state?.value === true;
   }
 
+  #hasConfiguredFirearmMisfire(item, options = {}) {
+    if (!this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)) {
+      return false;
+    }
+
+    const values = this.#getLichWeaponPropertyValues(item, options);
+    const configured = toNumber(values.misfire ?? values.firearmMisfire, NaN);
+    return Number.isFinite(configured) && configured > 0;
+  }
+
   #hasFirearmMisfireMechanic(item) {
-    return this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)
+    return this.#hasConfiguredFirearmMisfire(item)
       || this.#hasItemProperty(item, FIREARM_RUST_PROPERTY);
   }
 
@@ -1499,8 +1509,11 @@ export class CombatAttackService {
     };
   }
 
-  async repairFirearmActivities(actor) {
-    if (!(actor instanceof Actor)) {
+  async repairFirearmActivities(document) {
+    const items = document instanceof Actor
+      ? collectionValues(document.items)
+      : (document instanceof Item ? [document] : []);
+    if (!items.length) {
       return {
         updated: 0,
         removed: 0,
@@ -1512,8 +1525,8 @@ export class CombatAttackService {
     let updated = 0;
     let removed = 0;
     let upgraded = 0;
-    const items = [];
-    for (const item of collectionValues(actor.items)) {
+    const changedItems = [];
+    for (const item of items) {
       if (!isFirearmItem(item)) {
         continue;
       }
@@ -1561,7 +1574,7 @@ export class CombatAttackService {
       updated += 1;
       removed += removedActivityIds.length;
       upgraded += upgradedActivityIds.length;
-      items.push({
+      changedItems.push({
         itemId: item.id ?? "",
         itemName: item.name ?? "",
         removedActivityIds,
@@ -1573,7 +1586,7 @@ export class CombatAttackService {
       updated,
       removed,
       upgraded,
-      items
+      items: changedItems
     };
   }
 
@@ -1595,7 +1608,7 @@ export class CombatAttackService {
     const values = this.#getLichWeaponPropertyValues(item, options);
     const fromValues = toNumber(values.misfire ?? values.firearmMisfire, NaN);
     if (this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)) {
-      return clampInteger(Number.isFinite(fromValues) ? fromValues : 1, 1, 20);
+      return Number.isFinite(fromValues) ? clampInteger(fromValues, 1, 20) : 0;
     }
 
     if (this.#hasItemProperty(item, FIREARM_RUST_PROPERTY)) {

@@ -581,7 +581,10 @@ function resolveFirearmReloadCapacity(item) {
 
 function hasFirearmMisfire(item) {
   const properties = getFirearmProperties(item);
-  return properties.includes(FIREARM_MISFIRE_PROPERTY) || properties.includes(FIREARM_RUST_PROPERTY);
+  const values = getFirearmPropertyValues(item);
+  const configuredMisfire = Number(values.misfire ?? values.firearmMisfire);
+  return (properties.includes(FIREARM_MISFIRE_PROPERTY) && Number.isFinite(configuredMisfire) && configuredMisfire > 0)
+    || properties.includes(FIREARM_RUST_PROPERTY);
 }
 
 function resolveFirearmAreaFireMode(item) {

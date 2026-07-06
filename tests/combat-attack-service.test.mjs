@@ -1284,7 +1284,8 @@ test("firearm actor repair removes jam maintenance activities from weapons witho
     properties: {
       lchFirearmAmmunition: true,
       lchFirearmReload: true,
-      lchFirearmAutomatic: true
+      lchFirearmAutomatic: true,
+      lchFirearmMisfire: true
     },
     values: {
       automaticDamage: "4d8",
@@ -1340,6 +1341,51 @@ test("firearm actor repair removes jam maintenance activities from weapons witho
   assert.equal(repairedAutomaticFire.damage.parts[0].denomination, 8);
   assert.deepEqual(repairedAutomaticFire.damage.parts[0].types, ["piercing"]);
   assert.deepEqual(weapon.updateCalls.at(-1)["system.activities"][shotActivity._id], shotActivity);
+});
+
+test("firearm item repair removes stale jam maintenance activities from item sheets", async () => {
+  const weapon = makeFirearmItem({
+    name: "Automatic Rifle",
+    typeValue: "firearmAdvanced",
+    properties: {
+      lchFirearmAutomatic: true,
+      lchFirearmMisfire: true
+    },
+    values: {
+      automaticDamage: "4d8"
+    }
+  });
+  weapon.system.activities = {
+    lchClearBreech01: {
+      _id: "lchClearBreech01",
+      type: "utility",
+      name: "Clear Breech",
+      flags: {
+        [MODULE_ID]: {
+          automation: "firearm-clear-jam"
+        }
+      }
+    },
+    lchMaintainGun01: {
+      _id: "lchMaintainGun01",
+      type: "utility",
+      name: "Maintain Firearm",
+      flags: {
+        [MODULE_ID]: {
+          automation: "firearm-maintain"
+        }
+      }
+    }
+  };
+  const service = new CombatAttackService({});
+
+  const result = await service.repairFirearmActivities(weapon);
+
+  assert.equal(result.updated, 1);
+  assert.equal(result.removed, 2);
+  assert.deepEqual(weapon.updateCalls.at(-1), {
+    "system.activities": {}
+  });
 });
 
 test("firearm misfire rolls an extra d20 and jams the weapon before the attack", () => {
