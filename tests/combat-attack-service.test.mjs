@@ -380,6 +380,77 @@ test("weapon attack activities mark auto-held items before activity use continue
   await Promise.resolve();
 });
 
+test("auto-held weapon activities refresh prepared base damage before usage card buttons", async () => {
+  const weapon = makeWeaponItem({ deferUpdateMutation: true });
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+  weapon.system.offersBaseDamage = true;
+  weapon.system.damage = {
+    base: {
+      formula: "1d8 + 10"
+    }
+  };
+  const activity = {
+    id: "attack-activity",
+    type: "attack",
+    actor,
+    item: weapon,
+    damage: {
+      includeBase: true,
+      parts: []
+    },
+    attack: {
+      type: {
+        value: "melee"
+      }
+    },
+    range: {},
+    _usageChatButtons() {
+      const buttons = [
+        {
+          label: "Attack",
+          dataset: {
+            action: "rollAttack"
+          }
+        }
+      ];
+      if (this.damage.parts.length) {
+        buttons.push({
+          label: "Damage",
+          dataset: {
+            action: "rollDamage"
+          }
+        });
+      }
+      return buttons;
+    }
+  };
+  weapon.system.activities = {
+    get(id) {
+      return id === activity.id ? activity : null;
+    }
+  };
+  weapon.prepareDataCalls = 0;
+  weapon.prepareData = () => {
+    weapon.prepareDataCalls += 1;
+    activity.damage.parts = [
+      {
+        formula: weapon.system.damage.base.formula,
+        base: true,
+        locked: true
+      }
+    ];
+  };
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+  assert.equal(weapon.prepareDataCalls, 1);
+  const buttons = activity._usageChatButtons({});
+  assert.ok(buttons.some((button) => button?.dataset?.action === "rollDamage"));
+  await Promise.resolve();
+});
+
 test("weapon attack activities warn when an unused item cannot find a free hand", async () => {
   const warnings = [];
   const previousWarn = globalThis.ui.notifications.warn;

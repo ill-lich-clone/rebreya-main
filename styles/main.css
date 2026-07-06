@@ -379,6 +379,16 @@
   display: none !important;
 }
 
+.rm-held-item-control.is-held {
+  color: var(--rm-accent) !important;
+  opacity: 1;
+}
+
+.rm-held-item-control.is-held i {
+  color: inherit !important;
+  opacity: 1;
+}
+
 .dnd5e2 .effects-element .conditions-list .condition.rm-sheet-status--valued {
   justify-content: space-between;
 }

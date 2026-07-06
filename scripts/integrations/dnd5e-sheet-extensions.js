@@ -28,10 +28,11 @@ import {
 import {
   buildHeldItemEquipMenuActions,
   buildHeldItemReleaseHandUpdate,
+  HELD_ITEM_PRESENTATIONS,
   getHeldItemDamageFormulaPresentation,
   getHeldItemEquipPresentation,
   isHeldItemEligible
-} from "./held-items.js?v=1.4.91-npc-held-natural";
+} from "./held-items.js?v=1.4.92-npc-held-natural";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
@@ -5930,6 +5931,39 @@ function findHeldItemEquipControl(row) {
   return null;
 }
 
+function getHeldItemPresentationState(presentation) {
+  const icon = cleanText(presentation?.icon);
+  for (const [state, knownPresentation] of Object.entries(HELD_ITEM_PRESENTATIONS)) {
+    if (presentation === knownPresentation || (icon && icon === cleanText(knownPresentation?.icon))) {
+      return state;
+    }
+  }
+
+  return "";
+}
+
+function applyHeldItemEquipState(control, presentation) {
+  const state = getHeldItemPresentationState(presentation);
+  control.classList.add("rm-held-item-control");
+  control.classList.remove("is-held", "is-worn", "is-unheld");
+  if (state) {
+    control.dataset.rebreyaHeldState = state;
+  }
+  else {
+    delete control.dataset.rebreyaHeldState;
+  }
+
+  if (state === "left" || state === "right" || state === "both") {
+    control.classList.add("is-held");
+  }
+  else if (state === "worn") {
+    control.classList.add("is-worn");
+  }
+  else {
+    control.classList.add("is-unheld");
+  }
+}
+
 function applyHeldItemEquipPresentation(control, presentation) {
   if (!(control instanceof HTMLElement) || !presentation) {
     return;
@@ -5950,6 +5984,8 @@ function applyHeldItemEquipPresentation(control, presentation) {
       iconNode.className = icon;
     }
   }
+
+  applyHeldItemEquipState(control, presentation);
 }
 
 function getHeldItemFormulaNodes(row) {

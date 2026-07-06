@@ -4,7 +4,7 @@ import {
   buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
   getItemHeldHands
-} from "../integrations/held-items.js?v=1.4.91-npc-held-natural";
+} from "../integrations/held-items.js?v=1.4.92-npc-held-natural";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -112,6 +112,40 @@ function applyLocalHeldItemUpdate(item, update) {
 
   for (const [path, value] of Object.entries(update)) {
     setLocalDocumentProperty(item, path, value);
+  }
+}
+
+function refreshLocalHeldItemActivityData(item, activity) {
+  let preparedItem = false;
+  if (typeof item?.prepareData === "function") {
+    try {
+      item.prepareData();
+      preparedItem = true;
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to refresh auto-held item data before use.`, error);
+    }
+  }
+
+  if (preparedItem) {
+    return;
+  }
+
+  const activityId = cleanText(activity?.id ?? activity?._id);
+  const preparedActivity = activityId ? item?.system?.activities?.get?.(activityId) : null;
+  const targetActivity = preparedActivity ?? activity;
+  for (const methodName of ["prepareData", "prepareFinalData"]) {
+    if (typeof targetActivity?.[methodName] !== "function") {
+      continue;
+    }
+
+    try {
+      targetActivity[methodName]();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to refresh auto-held activity data before use.`, error);
+      return;
+    }
   }
 }
 
@@ -2247,6 +2281,7 @@ export class CombatAttackService {
           const update = buildHeldItemHandUpdate(hands, item);
           const updateResult = item.update?.(update, heldItemUpdateOptions());
           applyLocalHeldItemUpdate(item, update);
+          refreshLocalHeldItemActivityData(item, activity);
           if (typeof updateResult?.then === "function") {
             updateResult.then((updatedItem) => {
               notifyHeldItemUpdated(actor, updatedItem ?? item);

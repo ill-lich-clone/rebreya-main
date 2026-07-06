@@ -1176,6 +1176,9 @@ test("registerDnd5eSheetExtensions reflects selected held state on the native eq
     assert.equal(equipControl.getAttribute("aria-label"), "Правая рука");
     assert.equal(equipControl.dataset.tooltip, "Правая рука");
     assert.equal(icon.className, "fa-solid fa-hand-point-right fa-fw");
+    assert.equal(equipControl.classList.contains("rm-held-item-control"), true);
+    assert.equal(equipControl.classList.contains("is-held"), true);
+    assert.equal(equipControl.dataset.rebreyaHeldState, "right");
   }
   finally {
     stubs.restore();
@@ -1262,10 +1265,21 @@ test("held item update hook refreshes already rendered equip controls", async ()
     });
 
     assert.equal(icon.className, "fa-solid fa-hand-point-left fa-fw");
+    assert.equal(equipControl.classList.contains("rm-held-item-control"), true);
+    assert.equal(equipControl.classList.contains("is-held"), true);
+    assert.equal(equipControl.dataset.rebreyaHeldState, "left");
   }
   finally {
     stubs.restore();
   }
+});
+
+test("main stylesheet highlights active held item equip controls", async () => {
+  const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(styles, /\.rm-held-item-control\.is-held\s*\{/u);
+  assert.match(styles, /\.rm-held-item-control\.is-held\s*\{[^}]*color:\s*var\(--rm-accent\)/su);
+  assert.match(styles, /\.rm-held-item-control\.is-held\s+i\s*\{[^}]*color:\s*inherit/su);
 });
 
 test("registerDnd5eSheetExtensions shows versatile damage formula for two-handed held weapons", async () => {

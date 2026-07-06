@@ -65,8 +65,9 @@ test("module stylesheet cache bust uses the live module style version", async ()
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const entrypointSource = await readFile(new URL(manifest.esmodules[0], manifestUrl), "utf8");
+  const escapedVersion = manifest.version.replaceAll(".", "\\.");
 
-  assert.match(entrypointSource, /const MODULE_STYLE_VERSION = "1\.4\.91-cosmology";/u);
+  assert.match(entrypointSource, new RegExp(`const MODULE_STYLE_VERSION = "${escapedVersion}-cosmology";`, "u"));
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
