@@ -1298,20 +1298,223 @@ export class CombatAttackService {
     return [FIREARM_CLEAR_JAM_AUTOMATION, FIREARM_MAINTAIN_AUTOMATION].includes(automation);
   }
 
+  #resolveFirearmAreaFireActivityMode(item, automation) {
+    const values = this.#getLichWeaponPropertyValues(item);
+    const fireModeDamage = cleanText(String(values.fireMode ?? "").match(/\(([^)]+)\)/u)?.[1]);
+    if (automation === FIREARM_AUTOMATIC_FIRE_AUTOMATION) {
+      return {
+        type: "automatic",
+        name: "Автоматический огонь",
+        coneFeet: 45,
+        damageFormula: cleanText(values.automaticDamage ?? fireModeDamage)
+      };
+    }
+
+    if (automation === FIREARM_SEMI_AUTOMATIC_FIRE_AUTOMATION) {
+      return {
+        type: "semi",
+        name: "Полуавтоматический огонь",
+        coneFeet: 30,
+        damageFormula: cleanText(values.semiAutomaticDamage ?? values.automaticDamage ?? fireModeDamage)
+      };
+    }
+
+    return null;
+  }
+
+  #resolveFirearmDamageType(item) {
+    for (const candidate of [
+      foundry.utils.getProperty(item, "system.damage.base.types"),
+      foundry.utils.getProperty(item, "system.damage.parts.0.types"),
+      foundry.utils.getProperty(item, "system.damage.base.type"),
+      foundry.utils.getProperty(item, "system.damage.type")
+    ]) {
+      if (candidate instanceof Set) {
+        return cleanText(Array.from(candidate)[0]);
+      }
+
+      if (Array.isArray(candidate)) {
+        return cleanText(candidate[0]);
+      }
+
+      const direct = cleanText(candidate);
+      if (direct) {
+        return direct;
+      }
+    }
+
+    return "";
+  }
+
+  #buildFirearmDamagePart(formula, damageType) {
+    const safeFormula = cleanText(formula);
+    const simpleFormulaMatch = safeFormula.match(/^(\d+)d(\d+)(?:\s*\+\s*(.+))?$/iu);
+    const damagePart = {
+      types: cleanText(damageType) ? [cleanText(damageType)] : [],
+      custom: {
+        enabled: Boolean(safeFormula),
+        formula: safeFormula
+      },
+      scaling: {
+        mode: "",
+        number: 1,
+        formula: ""
+      }
+    };
+
+    if (simpleFormulaMatch) {
+      damagePart.number = Number(simpleFormulaMatch[1]);
+      damagePart.denomination = Number(simpleFormulaMatch[2]);
+      damagePart.bonus = cleanText(simpleFormulaMatch[3]);
+      damagePart.custom = {
+        enabled: false,
+        formula: ""
+      };
+    }
+
+    if (!safeFormula) {
+      damagePart.custom = {
+        enabled: false,
+        formula: ""
+      };
+    }
+
+    return damagePart;
+  }
+
+  #needsFirearmAreaFireActivityRepair(item, activity, mode) {
+    if (!mode) {
+      return false;
+    }
+
+    if (cleanText(activity?.type) !== "save") {
+      return true;
+    }
+
+    const expectedDcAbility = this.#resolveFirearmAbilityKey(item, "dex");
+    const damageParts = foundry.utils.getProperty(activity, "damage.parts");
+    return foundry.utils.getProperty(activity, "target.template.type") !== "cone"
+      || toNumber(foundry.utils.getProperty(activity, "target.template.size"), 0) !== mode.coneFeet
+      || foundry.utils.getProperty(activity, "target.affects.type") !== "creature"
+      || foundry.utils.getProperty(activity, "target.prompt") !== true
+      || !Array.isArray(damageParts)
+      || (Boolean(mode.damageFormula) && damageParts.length === 0)
+      || foundry.utils.getProperty(activity, "save.dc.calculation") !== expectedDcAbility;
+  }
+
+  #buildFirearmAreaFireSaveActivity(item, activity, activityId, automation, mode) {
+    const safeActivityId = cleanText(activityId ?? activity?._id ?? activity?.id);
+    if (!safeActivityId || !mode) {
+      return null;
+    }
+
+    const damageFormula = cleanText(mode.damageFormula);
+    const existingFlags = isPlainObject(activity?.flags) ? activity.flags : {};
+    const existingModuleFlags = isPlainObject(existingFlags[MODULE_ID]) ? existingFlags[MODULE_ID] : {};
+    return {
+      _id: safeActivityId,
+      type: "save",
+      name: cleanText(activity?.name, mode.name),
+      img: "systems/dnd5e/icons/svg/activity/save.svg",
+      sort: toNumber(activity?.sort, mode.type === "automatic" ? 90 : 95),
+      activation: {
+        type: cleanText(foundry.utils.getProperty(activity, "activation.type"), "action"),
+        value: toNumber(foundry.utils.getProperty(activity, "activation.value"), 1),
+        condition: cleanText(foundry.utils.getProperty(activity, "activation.condition")),
+        override: foundry.utils.getProperty(activity, "activation.override") === true
+      },
+      consumption: {
+        scaling: {
+          allowed: false,
+          max: ""
+        },
+        spellSlot: false,
+        targets: []
+      },
+      damage: {
+        onSave: "half",
+        parts: damageFormula ? [
+          this.#buildFirearmDamagePart(damageFormula, this.#resolveFirearmDamageType(item))
+        ] : []
+      },
+      description: {
+        chatFlavor: cleanText(
+          foundry.utils.getProperty(activity, "description.chatFlavor"),
+          `${mode.name}: конус ${mode.coneFeet} фт., урон ${damageFormula || "урон оружия"}.`
+        )
+      },
+      duration: {
+        value: "",
+        units: "inst",
+        special: "",
+        concentration: false,
+        override: false
+      },
+      effects: [],
+      flags: {
+        ...existingFlags,
+        [MODULE_ID]: {
+          ...existingModuleFlags,
+          managed: true,
+          automation
+        }
+      },
+      range: {
+        value: null,
+        units: "self",
+        special: "",
+        override: false
+      },
+      save: {
+        ability: ["dex"],
+        dc: {
+          calculation: this.#resolveFirearmAbilityKey(item, "dex"),
+          formula: ""
+        }
+      },
+      target: {
+        template: {
+          count: "",
+          contiguous: false,
+          type: "cone",
+          size: mode.coneFeet,
+          width: "",
+          height: "",
+          units: "ft"
+        },
+        affects: {
+          count: "",
+          type: "creature",
+          choice: false,
+          special: ""
+        },
+        prompt: true,
+        override: false
+      },
+      uses: {
+        spent: toNumber(foundry.utils.getProperty(activity, "uses.spent"), 0),
+        max: cleanText(foundry.utils.getProperty(activity, "uses.max")),
+        recovery: []
+      }
+    };
+  }
+
   async repairFirearmActivities(actor) {
     if (!(actor instanceof Actor)) {
       return {
         updated: 0,
         removed: 0,
+        upgraded: 0,
         items: []
       };
     }
 
     let updated = 0;
     let removed = 0;
+    let upgraded = 0;
     const items = [];
     for (const item of collectionValues(actor.items)) {
-      if (!isFirearmItem(item) || this.#hasFirearmMisfireMechanic(item)) {
+      if (!isFirearmItem(item)) {
         continue;
       }
 
@@ -1322,35 +1525,54 @@ export class CombatAttackService {
 
       const nextActivities = {};
       const removedActivityIds = [];
+      const upgradedActivityIds = [];
+      const hasMisfireMechanic = this.#hasFirearmMisfireMechanic(item);
       for (const [activityId, activity] of activityEntries) {
         const safeActivityId = cleanText(activityId ?? activity?._id ?? activity?.id);
-        if (this.#isFirearmMisfireMaintenanceActivity(safeActivityId, activity)) {
+        if (!hasMisfireMechanic && this.#isFirearmMisfireMaintenanceActivity(safeActivityId, activity)) {
           removedActivityIds.push(safeActivityId);
           continue;
         }
 
         if (safeActivityId) {
-          nextActivities[safeActivityId] = activity;
+          const automation = cleanText(foundry.utils.getProperty(activity, `flags.${MODULE_ID}.automation`));
+          const mode = this.#resolveFirearmAreaFireActivityMode(item, automation);
+          if (this.#needsFirearmAreaFireActivityRepair(item, activity, mode)) {
+            nextActivities[safeActivityId] = this.#buildFirearmAreaFireSaveActivity(
+              item,
+              activity,
+              safeActivityId,
+              automation,
+              mode
+            );
+            upgradedActivityIds.push(safeActivityId);
+          }
+          else {
+            nextActivities[safeActivityId] = activity;
+          }
         }
       }
 
-      if (!removedActivityIds.length) {
+      if (!removedActivityIds.length && !upgradedActivityIds.length) {
         continue;
       }
 
       await item.update?.({ "system.activities": nextActivities }, { render: false });
       updated += 1;
       removed += removedActivityIds.length;
+      upgraded += upgradedActivityIds.length;
       items.push({
         itemId: item.id ?? "",
         itemName: item.name ?? "",
-        removedActivityIds
+        removedActivityIds,
+        upgradedActivityIds
       });
     }
 
     return {
       updated,
       removed,
+      upgraded,
       items
     };
   }

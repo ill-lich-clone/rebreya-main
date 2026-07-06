@@ -1287,10 +1287,16 @@ test("firearm actor repair removes jam maintenance activities from weapons witho
       lchFirearmAutomatic: true
     },
     values: {
+      automaticDamage: "4d8",
       ammunition: "Винтовочный",
       reload: "Смена магазина 24"
     }
   });
+  weapon.system.damage = {
+    base: {
+      types: ["piercing"]
+    }
+  };
   weapon.system.activities = {
     [shotActivity._id]: shotActivity,
     lchClearBreech01: {
@@ -1322,13 +1328,18 @@ test("firearm actor repair removes jam maintenance activities from weapons witho
 
   assert.equal(result.updated, 1);
   assert.equal(result.removed, 2);
+  assert.equal(result.upgraded, 1);
   assert.deepEqual(Object.keys(weapon.system.activities).sort(), ["automatic-fire", "shot"]);
-  assert.deepEqual(weapon.updateCalls.at(-1), {
-    "system.activities": {
-      [shotActivity._id]: shotActivity,
-      [automaticFireActivity._id]: automaticFireActivity
-    }
-  });
+  const repairedAutomaticFire = weapon.updateCalls.at(-1)["system.activities"][automaticFireActivity._id];
+  assert.equal(repairedAutomaticFire.type, "save");
+  assert.equal(repairedAutomaticFire.target.template.type, "cone");
+  assert.equal(repairedAutomaticFire.target.template.size, 45);
+  assert.equal(repairedAutomaticFire.target.prompt, true);
+  assert.equal(repairedAutomaticFire.damage.onSave, "half");
+  assert.equal(repairedAutomaticFire.damage.parts[0].number, 4);
+  assert.equal(repairedAutomaticFire.damage.parts[0].denomination, 8);
+  assert.deepEqual(repairedAutomaticFire.damage.parts[0].types, ["piercing"]);
+  assert.deepEqual(weapon.updateCalls.at(-1)["system.activities"][shotActivity._id], shotActivity);
 });
 
 test("firearm misfire rolls an extra d20 and jams the weapon before the attack", () => {

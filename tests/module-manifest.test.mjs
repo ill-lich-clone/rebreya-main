@@ -112,7 +112,7 @@ test("combat firearm activity repair uses the current cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-native-area-fire`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-native-area-fire-repair`, "u"),
   );
 });
 
@@ -131,7 +131,7 @@ test("held item integrations use the current module cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-native-area-fire`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-native-area-fire-repair`, "u"),
   );
   assert.match(
     sheetSource,
