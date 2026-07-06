@@ -135,6 +135,26 @@ function createGroupContextService(groupContext, registry = {}) {
   };
 }
 
+function createMemberActor(id, { name = id, level = 1, items = [] } = {}) {
+  return {
+    id,
+    name,
+    type: "character",
+    system: {
+      details: {
+        level
+      }
+    },
+    items: {
+      contents: items,
+      values: () => items.values(),
+      [Symbol.iterator]: function* iterateItems() {
+        yield* items;
+      }
+    }
+  };
+}
+
 test("group state preserves Rebreya quest unlock state", () => {
   const state = normalizeGroupState("group-a", {
     questState: {
@@ -207,6 +227,18 @@ test("quest metadata normalizes groups, requirements, and unlock rewards", () =>
         title: "Complete A",
         status: "completed"
       },
+      {
+        id: " req-level ",
+        type: "level",
+        level: "5",
+        title: "Level gate"
+      },
+      {
+        id: " req-item ",
+        type: "item",
+        itemName: "Silver Key",
+        title: "Item gate"
+      },
       { id: "", questId: "missing" }
     ],
     unlockRewards: [
@@ -230,6 +262,26 @@ test("quest metadata normalizes groups, requirements, and unlock rewards", () =>
         questId: "quest-a",
         title: "Complete A",
         status: "completed"
+      },
+      {
+        id: "req-level",
+        type: "level",
+        questId: "",
+        title: "Level gate",
+        status: "completed",
+        level: 5,
+        itemName: "",
+        itemId: ""
+      },
+      {
+        id: "req-item",
+        type: "item",
+        questId: "",
+        title: "Item gate",
+        status: "completed",
+        level: 0,
+        itemName: "Silver Key",
+        itemId: ""
       }
     ],
     unlockRewards: [
@@ -368,6 +420,44 @@ test("requirements are satisfied by completed source quests or group unlock stat
   assert.deepEqual(evaluation.requirements.map((requirement) => requirement.unlocked), [false, true]);
 });
 
+test("level and item requirements are evaluated against the active group", () => {
+  const lockedQuest = createQuest("quest-b", {
+    metadata: {
+      requirements: [
+        { id: "req-level", type: "level", title: "Average level", level: 4 },
+        { id: "req-item", type: "item", title: "Silver Key", itemName: "Silver Key" }
+      ]
+    }
+  });
+  const service = new RebreyaQuestLogService({
+    groupContextService: createGroupContextService({
+      groupId: "group-a",
+      groupActor: { id: "group-a", type: "group" },
+      members: [
+        createMemberActor("actor-a", {
+          level: 3,
+          items: [{ id: "item-a", name: "Torch" }]
+        }),
+        createMemberActor("actor-b", {
+          level: 5,
+          items: [{ id: "item-b", name: "Silver Key" }]
+        })
+      ],
+      memberActorIds: ["actor-a", "actor-b"],
+      groupState: buildDefaultGroupState("group-a")
+    }),
+    getFqlApi: () => ({ DB: { getQuest: () => lockedQuest } })
+  });
+
+  const evaluation = service.evaluateRequirements("quest-b", "group-a");
+
+  assert.equal(evaluation.satisfied, true);
+  assert.deepEqual(evaluation.requirements.map((requirement) => requirement.satisfied), [true, true]);
+  assert.equal(evaluation.requirements[0].currentLevel, 4);
+  assert.equal(evaluation.requirements[1].matchedItemName, "Silver Key");
+  assert.equal(evaluation.requirements[1].matchedActorName, "actor-b");
+});
+
 test("unlock rewards open a target requirement for the selected group", async () => {
   const sourceQuest = createQuest("quest-a", {
     metadata: {
@@ -480,6 +570,46 @@ test("requirements can be edited and removed from quest metadata", async () => {
     currentQuest.entry.getFlag("rebreya-main", REBREYA_QUEST_FLAGS.METADATA).requirements,
     []
   );
+});
+
+test("level and item requirements can be added and edited", async () => {
+  const currentQuest = createQuest("quest-current");
+  const service = new RebreyaQuestLogService({
+    idFactory: () => "req-a",
+    getFqlApi: () => ({ DB: { getQuest: () => currentQuest } })
+  });
+
+  const levelRequirement = await service.addRequirement("quest-current", {
+    type: "level",
+    level: 6
+  });
+
+  assert.deepEqual(levelRequirement, {
+    id: "req-a",
+    type: "level",
+    questId: "",
+    title: "Средний уровень группы 6+",
+    status: "completed",
+    level: 6,
+    itemName: "",
+    itemId: ""
+  });
+
+  const itemRequirement = await service.updateRequirement("quest-current", "req-a", {
+    type: "item",
+    itemName: "Ancient Seal"
+  });
+
+  assert.deepEqual(itemRequirement, {
+    id: "req-a",
+    type: "item",
+    questId: "",
+    title: "Ancient Seal",
+    status: "completed",
+    level: 0,
+    itemName: "Ancient Seal",
+    itemId: ""
+  });
 });
 
 test("unlock rewards can be removed from quest metadata", async () => {
@@ -637,6 +767,35 @@ test("getQuestOverlayContext builds selectable quests and unlock targets", () =>
   ]);
 });
 
+test("getQuestOverlayContext hides placeholder new quests from selectable quest lists", () => {
+  const currentQuest = createQuest("quest-current", { name: "Current" });
+  const placeholderQuest = createQuest("quest-new", { name: "Новое задание", status: "inactive" });
+  const realQuest = createQuest("quest-real", { name: "Real", status: "active" });
+  const service = new RebreyaQuestLogService({
+    groupContextService: createGroupContextService({
+      groupId: "group-a",
+      groupActor: { id: "group-a", name: "Party A", type: "group" },
+      members: [],
+      memberActorIds: [],
+      groupState: buildDefaultGroupState("group-a")
+    }),
+    getFqlApi: () => ({
+      DB: {
+        getAllQuests: () => [currentQuest, placeholderQuest, realQuest],
+        getQuest: (questId) => ({
+          "quest-current": currentQuest,
+          "quest-new": placeholderQuest,
+          "quest-real": realQuest
+        })[questId] ?? null
+      }
+    })
+  });
+
+  const context = service.getQuestOverlayContext("quest-current", "group-a");
+
+  assert.deepEqual(context.questOptions.map((quest) => quest.id), ["quest-real"]);
+});
+
 test("getQuestOverlayContext exposes editable requirement type, quest, and status options", () => {
   const currentQuest = createQuest("quest-current", {
     metadata: {
@@ -659,7 +818,12 @@ test("getQuestOverlayContext exposes editable requirement type, quest, and statu
     groupContextService: createGroupContextService({
       groupId: "group-a",
       groupActor: { id: "group-a", name: "Party A", type: "group" },
-      members: [],
+      members: [
+        createMemberActor("actor-a", {
+          name: "Hero",
+          items: [{ id: "item-a", name: "Silver Key" }]
+        })
+      ],
       memberActorIds: [],
       groupState
     }),
@@ -685,6 +849,14 @@ test("getQuestOverlayContext exposes editable requirement type, quest, and statu
     {
       value: "quest",
       label: "Задание"
+    },
+    {
+      value: "level",
+      label: "Уровень группы"
+    },
+    {
+      value: "item",
+      label: "Предмет у участника"
     }
   ]);
   assert.deepEqual(context.requirementStatusOptions.map((option) => option.value), [
@@ -694,4 +866,69 @@ test("getQuestOverlayContext exposes editable requirement type, quest, and statu
     "active",
     "inactive"
   ]);
+  assert.deepEqual(context.groupItemOptions.map((option) => option.name), ["Silver Key"]);
+});
+
+test("getQuestOverlayContext rebuilds requirement state for the selected group", () => {
+  const currentQuest = createQuest("quest-current", {
+    metadata: {
+      groupActorIds: ["group-a", "group-b"],
+      requirements: [
+        {
+          id: "req-item",
+          type: "item",
+          itemName: "Silver Key"
+        }
+      ]
+    }
+  });
+  const contexts = {
+    "group-a": {
+      groupId: "group-a",
+      groupActor: { id: "group-a", name: "Party A", type: "group" },
+      members: [
+        createMemberActor("actor-a", {
+          name: "Hero A",
+          items: [{ id: "item-a", name: "Silver Key" }]
+        })
+      ],
+      memberActorIds: ["actor-a"],
+      groupState: buildDefaultGroupState("group-a")
+    },
+    "group-b": {
+      groupId: "group-b",
+      groupActor: { id: "group-b", name: "Party B", type: "group" },
+      members: [
+        createMemberActor("actor-b", {
+          name: "Hero B",
+          items: [{ id: "item-b", name: "Bronze Key" }]
+        })
+      ],
+      memberActorIds: ["actor-b"],
+      groupState: buildDefaultGroupState("group-b")
+    }
+  };
+  const service = new RebreyaQuestLogService({
+    groupContextService: {
+      resolveForGroup(groupActorId) {
+        return contexts[groupActorId] ?? null;
+      }
+    },
+    getFqlApi: () => ({
+      DB: {
+        getAllQuests: () => [currentQuest],
+        getQuest: () => currentQuest
+      }
+    })
+  });
+
+  const partyAContext = service.getQuestOverlayContext("quest-current", "group-a");
+  const partyBContext = service.getQuestOverlayContext("quest-current", "group-b");
+
+  assert.equal(partyAContext.groupName, "Party A");
+  assert.equal(partyAContext.requirements[0].satisfied, true);
+  assert.deepEqual(partyAContext.groupItemOptions.map((option) => option.name), ["Silver Key"]);
+  assert.equal(partyBContext.groupName, "Party B");
+  assert.equal(partyBContext.requirements[0].satisfied, false);
+  assert.deepEqual(partyBContext.groupItemOptions.map((option) => option.name), ["Bronze Key"]);
 });

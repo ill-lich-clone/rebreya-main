@@ -16,6 +16,10 @@ test("Forien quest overlay template exposes group, import, requirement, and rewa
   assert.match(template, /data-rm-fql-action="remove-unlock-reward"/u);
   assert.match(template, /name="rm-fql-required-type"/u);
   assert.match(template, /name="rm-fql-required-status"/u);
+  assert.match(template, /name="rm-fql-required-level"/u);
+  assert.match(template, /name="rm-fql-required-item-name"/u);
+  assert.match(template, /data-rm-fql-requirement-field="level"/u);
+  assert.match(template, /data-rm-fql-requirement-field="item"/u);
   assert.match(template, /name="rm-fql-import-search"/u);
   assert.match(template, /name="rm-fql-required-search"/u);
   assert.match(template, /name="rm-fql-unlock-search"/u);
@@ -29,6 +33,8 @@ test("Forien quest overlay integration wires search filtering and editable row a
   assert.match(source, /action === "update-requirement"/u);
   assert.match(source, /action === "remove-requirement"/u);
   assert.match(source, /action === "remove-unlock-reward"/u);
+  assert.match(source, /syncRequirementTypeFields/u);
+  assert.match(source, /getRequirementPayload/u);
 });
 
 test("Forien quest log refreshes when the active Rebreya group changes", async () => {
@@ -49,6 +55,8 @@ test("Forien quest overlay styles are scoped to the quest preview", async () => 
 
   assert.match(css, /\.forien-quest-preview\s+\.rm-fql-overlay\s*\{/u);
   assert.match(css, /\.forien-quest-preview\s+\.rm-fql-overlay__grid\s*\{/u);
+  assert.match(css, /\.forien-quest-preview\s+\.rm-fql-overlay__panel--wide\s*\{/u);
+  assert.match(css, /grid-column:\s*1 \/ -1;/u);
 });
 
 test("Forien quest overlay uses high-contrast parchment-safe colors", async () => {

@@ -8,11 +8,20 @@ export const REBREYA_QUEST_FLAGS = Object.freeze({
 });
 
 const QUEST_STATUS_VALUES = new Set(["active", "available", "completed", "failed", "inactive"]);
+const REQUIREMENT_TYPES = new Set(["quest", "level", "item"]);
 const UNSAFE_OBJECT_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const REQUIREMENT_TYPE_OPTIONS = Object.freeze([
   {
     value: "quest",
     label: "Задание"
+  },
+  {
+    value: "level",
+    label: "Уровень группы"
+  },
+  {
+    value: "item",
+    label: "Предмет у участника"
   }
 ]);
 const REQUIREMENT_STATUS_OPTIONS = Object.freeze([
@@ -60,6 +69,162 @@ function cleanId(value) {
 
 function cleanText(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function cleanRequirementType(value) {
+  const type = cleanId(value) || "quest";
+  return REQUIREMENT_TYPES.has(type) ? type : "quest";
+}
+
+function toPositiveInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
+}
+
+function collectionValues(value) {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+
+  if (Array.isArray(value.contents)) {
+    return value.contents.filter(Boolean);
+  }
+
+  if (typeof value.values === "function") {
+    return Array.from(value.values()).filter(Boolean);
+  }
+
+  if (typeof value[Symbol.iterator] === "function") {
+    return Array.from(value).map((entry) => Array.isArray(entry) ? entry[1] : entry).filter(Boolean);
+  }
+
+  return Object.values(value).filter(Boolean);
+}
+
+function getActorLevel(actor) {
+  const system = actor?.system ?? {};
+  const candidates = [
+    system.details?.level,
+    system.attributes?.level,
+    system.level,
+    actor?.level
+  ];
+  const directLevel = candidates.map(Number).find((level) => Number.isFinite(level) && level > 0);
+  if (directLevel) {
+    return directLevel;
+  }
+
+  const classLevels = collectionValues(actor?.items)
+    .filter((item) => item?.type === "class" || item?.type === "subclass")
+    .map((item) => Number(item?.system?.levels ?? item?.system?.level ?? 0))
+    .filter((level) => Number.isFinite(level) && level > 0);
+
+  return classLevels.reduce((sum, level) => sum + level, 0);
+}
+
+function getAverageGroupLevel(members = []) {
+  const levels = asArray(members)
+    .map(getActorLevel)
+    .filter((level) => Number.isFinite(level) && level > 0);
+
+  if (levels.length === 0) {
+    return 0;
+  }
+
+  const total = levels.reduce((sum, level) => sum + level, 0);
+  return Math.floor(total / levels.length);
+}
+
+function getActorItems(actor) {
+  return collectionValues(actor?.items).map((item) => ({
+    id: cleanId(item?.id),
+    name: cleanText(item?.name),
+    actorId: cleanId(actor?.id),
+    actorName: cleanText(actor?.name)
+  })).filter((item) => item.id || item.name);
+}
+
+function buildGroupItemOptions(members = []) {
+  const seen = new Set();
+  const options = [];
+
+  for (const actor of asArray(members)) {
+    for (const item of getActorItems(actor)) {
+      const key = `${item.id}::${item.name}`.toLocaleLowerCase("ru");
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      options.push({
+        id: item.id,
+        value: item.name || item.id,
+        name: item.name || item.id,
+        actorId: item.actorId,
+        actorName: item.actorName
+      });
+    }
+  }
+
+  return options.sort((left, right) =>
+    `${left.name} ${left.actorName}`.localeCompare(`${right.name} ${right.actorName}`, "ru")
+  );
+}
+
+function buildRequirementItemOptions(groupItemOptions = [], requirement = {}) {
+  const selectedValue = cleanText(requirement.itemName) || cleanId(requirement.itemId);
+  const options = [...groupItemOptions];
+  const hasSelectedOption = !selectedValue || options.some((option) =>
+    option.value === selectedValue || option.id === selectedValue
+  );
+
+  if (!hasSelectedOption) {
+    options.push({
+      id: cleanId(requirement.itemId),
+      value: selectedValue,
+      name: selectedValue,
+      actorId: "",
+      actorName: ""
+    });
+  }
+
+  return buildSelectedOptions(options, selectedValue);
+}
+
+function findGroupItem(members = [], requirement = {}) {
+  const itemId = cleanId(requirement.itemId);
+  const itemName = cleanText(requirement.itemName).toLocaleLowerCase("ru");
+
+  for (const actor of asArray(members)) {
+    for (const item of getActorItems(actor)) {
+      const matchesId = itemId && item.id === itemId;
+      const matchesName = itemName && item.name.toLocaleLowerCase("ru") === itemName;
+      if (matchesId || matchesName) {
+        return item;
+      }
+    }
+  }
+
+  return null;
+}
+
+function isPlaceholderNewQuest(quest) {
+  const name = cleanText(quest?.name).toLocaleLowerCase("ru");
+  const status = cleanId(quest?.status);
+  if (status !== "inactive" || !["новое задание", "new quest"].includes(name)) {
+    return false;
+  }
+
+  const hasContent = asArray(quest?.tasks).length > 0
+    || asArray(quest?.subquests).length > 0
+    || asArray(quest?.rewards).length > 0
+    || Boolean(quest?.parent);
+
+  return !hasContent;
 }
 
 function isSafeObjectKey(value) {
@@ -144,20 +309,63 @@ function createId(prefix) {
 function normalizeRequirement(value = {}) {
   const source = asObject(value);
   const id = cleanId(source.id);
+  const type = cleanRequirementType(source.type);
   const questId = cleanId(source.questId);
 
-  if (!id || !questId) {
+  if (!id) {
     return null;
   }
 
   const status = cleanId(source.status);
+  const normalizedStatus = QUEST_STATUS_VALUES.has(status) ? status : "completed";
+
+  if (type === "level") {
+    const level = toPositiveInteger(source.level);
+    if (!level) {
+      return null;
+    }
+
+    return {
+      id,
+      type,
+      questId: "",
+      title: cleanText(source.title) || `Средний уровень группы ${level}+`,
+      status: "completed",
+      level,
+      itemName: "",
+      itemId: ""
+    };
+  }
+
+  if (type === "item") {
+    const itemName = cleanText(source.itemName);
+    const itemId = cleanId(source.itemId);
+    if (!itemName && !itemId) {
+      return null;
+    }
+
+    return {
+      id,
+      type,
+      questId: "",
+      title: cleanText(source.title) || itemName || itemId,
+      status: "completed",
+      level: 0,
+      itemName,
+      itemId
+    };
+  }
+
+  if (!questId) {
+    return null;
+  }
 
   return {
     id,
-    type: cleanId(source.type) || "quest",
+    type,
     questId,
     title: cleanText(source.title),
-    status: QUEST_STATUS_VALUES.has(status) ? status : "completed"
+    status: normalizedStatus
   };
 }
 
@@ -338,8 +546,9 @@ export class RebreyaQuestLogService {
     const groupState = normalizeGroupState(groupId, groupContext?.groupState ?? {});
     const metadata = this.getQuestMetadata(quest);
     const quests = this.getAllQuests();
+    const groupItemOptions = buildGroupItemOptions(groupContext?.members ?? []);
     const questOptions = quests
-      .filter((entry) => entry?.id && entry.id !== quest.id)
+      .filter((entry) => entry?.id && entry.id !== quest.id && !isPlaceholderNewQuest(entry))
       .map((entry) => ({
         id: entry.id,
         value: entry.id,
@@ -348,11 +557,15 @@ export class RebreyaQuestLogService {
       }))
       .sort((left, right) => left.name.localeCompare(right.name, "ru"));
     const requirements = groupId
-      ? this.evaluateRequirementsForGroupState(quest.id, groupId, groupState).requirements
+      ? this.evaluateRequirementsForGroupState(quest.id, groupId, groupState, { members: groupContext?.members ?? [] }).requirements
       : metadata.requirements.map((requirement) => ({
         ...requirement,
-        sourceQuestName: this.getFqlApi()?.DB?.getQuest?.(requirement.questId)?.name ?? "",
-        sourceStatus: this.getFqlApi()?.DB?.getQuest?.(requirement.questId)?.status ?? "",
+        sourceQuestName: requirement.type === "quest"
+          ? this.getFqlApi()?.DB?.getQuest?.(requirement.questId)?.name ?? ""
+          : requirement.title,
+        sourceStatus: requirement.type === "quest"
+          ? this.getFqlApi()?.DB?.getQuest?.(requirement.questId)?.status ?? ""
+          : "",
         unlocked: false,
         unlock: null,
         satisfied: false
@@ -361,11 +574,12 @@ export class RebreyaQuestLogService {
       ...requirement,
       typeOptions: buildSelectedOptions(REQUIREMENT_TYPE_OPTIONS, requirement.type),
       questOptions: buildSelectedOptions(questOptions, requirement.questId),
-      statusOptions: buildSelectedOptions(REQUIREMENT_STATUS_OPTIONS, requirement.status)
+      statusOptions: buildSelectedOptions(REQUIREMENT_STATUS_OPTIONS, requirement.status),
+      itemOptions: buildRequirementItemOptions(groupItemOptions, requirement)
     }));
     const unlockTargets = [];
 
-    for (const targetQuest of quests) {
+    for (const targetQuest of quests.filter((entry) => entry?.id && !isPlaceholderNewQuest(entry))) {
       const targetMetadata = this.getQuestMetadata(targetQuest);
       for (const requirement of targetMetadata.requirements) {
         unlockTargets.push({
@@ -402,6 +616,7 @@ export class RebreyaQuestLogService {
       requirements: editableRequirements,
       unlockRewards,
       questOptions,
+      groupItemOptions,
       requirementTypeOptions: REQUIREMENT_TYPE_OPTIONS.map((option) => ({ ...option })),
       requirementStatusOptions: REQUIREMENT_STATUS_OPTIONS.map((option) => ({ ...option })),
       unlockTargets: unlockTargets.sort((left, right) =>
@@ -470,27 +685,38 @@ export class RebreyaQuestLogService {
       };
     }
 
-    return this.evaluateRequirementsForGroupState(questId, context.groupId, context.groupState);
+    return this.evaluateRequirementsForGroupState(questId, context.groupId, context.groupState, {
+      members: context.members ?? []
+    });
   }
 
-  evaluateRequirementsForGroupState(questId, groupActorId, groupState = {}) {
+  evaluateRequirementsForGroupState(questId, groupActorId, groupState = {}, { members = [] } = {}) {
     const targetQuest = this.getQuest(questId);
     const metadata = this.getQuestMetadata(targetQuest);
     const normalizedState = normalizeGroupState(groupActorId, groupState);
     const unlocks = normalizedState.questState.unlocksByQuestId?.[targetQuest.id] ?? {};
 
     const requirements = metadata.requirements.map((requirement) => {
-      const linkedQuest = this.getFqlApi()?.DB?.getQuest?.(requirement.questId) ?? null;
+      const linkedQuest = requirement.type === "quest"
+        ? this.getFqlApi()?.DB?.getQuest?.(requirement.questId) ?? null
+        : null;
       const unlocked = Boolean(unlocks[requirement.id]);
       const completedByQuest = requirement.type === "quest" && linkedQuest?.status === requirement.status;
+      const currentLevel = requirement.type === "level" ? getAverageGroupLevel(members) : 0;
+      const matchedItem = requirement.type === "item" ? findGroupItem(members, requirement) : null;
+      const completedByLevel = requirement.type === "level" && currentLevel >= requirement.level;
+      const completedByItem = requirement.type === "item" && Boolean(matchedItem);
 
       return {
         ...requirement,
-        sourceQuestName: linkedQuest?.name ?? "",
-        sourceStatus: linkedQuest?.status ?? "",
+        sourceQuestName: requirement.type === "quest" ? linkedQuest?.name ?? "" : requirement.title,
+        sourceStatus: requirement.type === "quest" ? linkedQuest?.status ?? "" : "",
+        currentLevel,
+        matchedItemName: matchedItem?.name ?? "",
+        matchedActorName: matchedItem?.actorName ?? "",
         unlocked,
         unlock: unlocks[requirement.id] ?? null,
-        satisfied: unlocked || completedByQuest
+        satisfied: unlocked || completedByQuest || completedByLevel || completedByItem
       };
     });
 
@@ -502,26 +728,54 @@ export class RebreyaQuestLogService {
     };
   }
 
-  async addRequirement(questId, { type = "quest", requiredQuestId, title = "", status = "completed" } = {}) {
-    const quest = this.getQuest(questId);
+  buildRequirementData(id, { type = "quest", requiredQuestId, title = "", status = "completed", level = 0, itemName = "", itemId = "" } = {}) {
+    const requirementType = cleanRequirementType(type);
+    if (requirementType === "level") {
+      return normalizeRequirement({
+        id,
+        type: requirementType,
+        title,
+        level
+      });
+    }
+
+    if (requirementType === "item") {
+      const cleanItemName = cleanText(itemName);
+      const cleanItemId = cleanId(itemId);
+      return normalizeRequirement({
+        id,
+        type: requirementType,
+        title: title || cleanItemName || cleanItemId,
+        itemName: cleanItemName,
+        itemId: cleanItemId
+      });
+    }
+
     const requiredQuest = this.getQuest(requiredQuestId);
-    const metadata = this.getQuestMetadata(quest);
-    const requirement = normalizeRequirement({
-      id: this.idFactory("req"),
-      type,
+    return normalizeRequirement({
+      id,
+      type: requirementType,
       questId: requiredQuest.id,
       title: title || requiredQuest.name || requiredQuest.id,
       status
     });
+  }
+
+  async addRequirement(questId, data = {}) {
+    const quest = this.getQuest(questId);
+    const metadata = this.getQuestMetadata(quest);
+    const requirement = this.buildRequirementData(this.idFactory("req"), data);
+    if (!requirement) {
+      throw new Error("Quest requirement data is incomplete.");
+    }
 
     metadata.requirements.push(requirement);
     await this.setQuestMetadata(quest, metadata);
     return requirement;
   }
 
-  async updateRequirement(questId, requirementId, { type = "quest", requiredQuestId, title = "", status = "completed" } = {}) {
+  async updateRequirement(questId, requirementId, data = {}) {
     const quest = this.getQuest(questId);
-    const requiredQuest = this.getQuest(requiredQuestId);
     const metadata = this.getQuestMetadata(quest);
     const id = cleanId(requirementId);
     const index = metadata.requirements.findIndex((requirement) => requirement.id === id);
@@ -529,13 +783,11 @@ export class RebreyaQuestLogService {
       throw new Error("Quest requirement was not found.");
     }
 
-    const requirement = normalizeRequirement({
-      id,
-      type,
-      questId: requiredQuest.id,
-      title: title || requiredQuest.name || requiredQuest.id,
-      status
-    });
+    const requirement = this.buildRequirementData(id, data);
+    if (!requirement) {
+      throw new Error("Quest requirement data is incomplete.");
+    }
+
     metadata.requirements[index] = requirement;
     await this.setQuestMetadata(quest, metadata);
     return requirement;
@@ -622,7 +874,9 @@ export class RebreyaQuestLogService {
     await this.groupContextService?.setRegistry?.(registry);
 
     const targetQuest = this.getQuest(reward.targetQuestId);
-    const evaluation = this.evaluateRequirementsForGroupState(targetQuest.id, context.groupId, groupState);
+    const evaluation = this.evaluateRequirementsForGroupState(targetQuest.id, context.groupId, groupState, {
+      members: context.members ?? []
+    });
     if (evaluation.satisfied && targetQuest.status === "inactive") {
       if (typeof targetQuest.setStatus === "function") {
         await targetQuest.setStatus("available");

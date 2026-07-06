@@ -146,6 +146,15 @@ function getSelectValue(container, name) {
   return String(container.querySelector(`[name="${name}"]`)?.value ?? "").trim();
 }
 
+function getInputValue(container, name) {
+  return String(container.querySelector(`[name="${name}"]`)?.value ?? "").trim();
+}
+
+function getPositiveIntegerValue(container, name) {
+  const value = Number(getInputValue(container, name));
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
 function getApplicationInstances(value) {
   if (!value) {
     return [];
@@ -222,12 +231,49 @@ function getRequirementRow(button) {
   return button.closest("[data-requirement-id]");
 }
 
-function getRequirementFormData(row) {
+function getRequirementPayload(container, prefix = "rm-fql-required") {
+  const type = getSelectValue(container, `${prefix}-type`) || "quest";
+  if (type === "level") {
+    return {
+      type,
+      level: getPositiveIntegerValue(container, `${prefix}-level`)
+    };
+  }
+
+  if (type === "item") {
+    return {
+      type,
+      itemName: getSelectValue(container, `${prefix}-item-name`) || getInputValue(container, `${prefix}-item-search`)
+    };
+  }
+
   return {
-    type: getSelectValue(row, "rm-fql-requirement-type"),
-    requiredQuestId: getSelectValue(row, "rm-fql-requirement-quest-id"),
-    status: getSelectValue(row, "rm-fql-requirement-status")
+    type,
+    requiredQuestId: getSelectValue(container, `${prefix}-quest-id`),
+    status: getSelectValue(container, `${prefix}-status`)
   };
+}
+
+function syncRequirementTypeFields(scope) {
+  const root = scope?.querySelectorAll ? scope : globalThis.document;
+  const forms = root?.matches?.("[data-rm-fql-requirement-form]")
+    ? [root]
+    : Array.from(root?.querySelectorAll?.("[data-rm-fql-requirement-form]") ?? []);
+
+  forms.forEach((form) => {
+    const typeSelect = form.querySelector('[name="rm-fql-required-type"], [name="rm-fql-requirement-type"]');
+    const selectedType = String(typeSelect?.value ?? "quest");
+
+    form.querySelectorAll("[data-rm-fql-requirement-field]").forEach((field) => {
+      const active = field.dataset.rmFqlRequirementField === selectedType;
+      field.hidden = !active;
+
+      field.querySelectorAll("input, select, textarea, button").forEach((control) => {
+        control.dataset.rmFqlOriginalDisabled ??= String(control.disabled);
+        control.disabled = !active || control.dataset.rmFqlOriginalDisabled === "true";
+      });
+    });
+  });
 }
 
 export async function refreshForienQuestLogApps() {
@@ -278,15 +324,12 @@ async function handleOverlayAction(event, app, moduleApi) {
       notifyInfo("Rebreya: квест импортирован как подзадание.");
     }
     else if (action === "add-requirement") {
-      const requiredQuestId = getSelectValue(container, "rm-fql-required-quest-id");
-      const type = getSelectValue(container, "rm-fql-required-type");
-      const status = getSelectValue(container, "rm-fql-required-status");
-      await service.addRequirement(quest.id, { type, requiredQuestId, status });
+      await service.addRequirement(quest.id, getRequirementPayload(container, "rm-fql-required"));
       notifyInfo("Rebreya: требование добавлено.");
     }
     else if (action === "update-requirement") {
       const row = getRequirementRow(button);
-      await service.updateRequirement(quest.id, button.dataset.requirementId, getRequirementFormData(row));
+      await service.updateRequirement(quest.id, button.dataset.requirementId, getRequirementPayload(row, "rm-fql-requirement"));
       notifyInfo("Rebreya: требование обновлено.");
     }
     else if (action === "remove-requirement") {
@@ -341,6 +384,12 @@ async function injectQuestOverlay(app, html, moduleApi) {
       filterQuestSelectOptions(input);
     });
   });
+  target.querySelectorAll('[name="rm-fql-required-type"], [name="rm-fql-requirement-type"]').forEach((select) => {
+    select.addEventListener("change", () => {
+      syncRequirementTypeFields(select.closest("[data-rm-fql-requirement-form]") ?? target);
+    });
+  });
+  syncRequirementTypeFields(target);
 }
 
 function registerQuestPreviewOverlay(moduleApi) {

@@ -10048,6 +10048,10 @@ summary:focus-visible {
   background: var(--rm-fql-overlay-panel);
 }
 
+.forien-quest-preview .rm-fql-overlay__panel--wide {
+  grid-column: 1 / -1;
+}
+
 .forien-quest-preview .rm-fql-overlay__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
@@ -10065,7 +10069,18 @@ summary:focus-visible {
   min-width: 0;
 }
 
+.forien-quest-preview .rm-fql-overlay__field-group {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.forien-quest-preview .rm-fql-overlay__field-group[hidden] {
+  display: none !important;
+}
+
 .forien-quest-preview .rm-fql-overlay select,
+.forien-quest-preview .rm-fql-overlay input[type="number"],
 .forien-quest-preview .rm-fql-overlay__search {
   width: 100%;
   min-width: 0;
@@ -10074,6 +10089,11 @@ summary:focus-visible {
   background: #fff8e8;
   color: var(--rm-fql-overlay-text);
   font-weight: 600;
+}
+
+.forien-quest-preview .rm-fql-overlay input[type="number"] {
+  min-height: 30px;
+  padding: 4px 7px;
 }
 
 .forien-quest-preview .rm-fql-overlay__search {
