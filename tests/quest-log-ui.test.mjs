@@ -59,6 +59,14 @@ test("Forien quest overlay styles are scoped to the quest preview", async () => 
   assert.match(css, /grid-column:\s*1 \/ -1;/u);
 });
 
+test("Forien quest overlay layout stretches panels across the preview width", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(css, /\.forien-quest-preview\s+\.rm-fql-overlay\s*\{[^}]*width:\s*100%;/su);
+  assert.match(css, /\.forien-quest-preview\s+\.rm-fql-overlay__grid\s*\{[^}]*width:\s*100%;/su);
+  assert.match(css, /\.forien-quest-preview\s+\.rm-fql-overlay__panel\s*\{[^}]*width:\s*100%;/su);
+});
+
 test("Forien quest overlay uses high-contrast parchment-safe colors", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 

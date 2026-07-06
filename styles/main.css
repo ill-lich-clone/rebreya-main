@@ -9983,6 +9983,9 @@ summary:focus-visible {
   --rm-fql-overlay-warning: #9a5c08;
   display: grid;
   gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  justify-self: stretch;
   margin-top: 14px;
   padding: 12px;
   border: 1px solid var(--rm-fql-overlay-border);
@@ -10036,11 +10039,17 @@ summary:focus-visible {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  justify-self: stretch;
 }
 
 .forien-quest-preview .rm-fql-overlay__panel {
   display: grid;
   gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  justify-self: stretch;
   min-width: 0;
   padding: 10px;
   border: 1px solid var(--rm-fql-overlay-border);
