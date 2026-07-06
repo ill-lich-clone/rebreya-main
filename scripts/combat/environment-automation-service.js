@@ -4,6 +4,7 @@ export const REBREYA_SURROUNDED_STATUS_ID = "rebreya-surrounded";
 export const REBREYA_OPEN_POSITION_STATUS_ID = "rebreya-open-position";
 
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
+const ENVIRONMENT_STATUS_VERSION = "surrounded-ac-1";
 const MIN_SURROUNDING_ANGLE = 150 * Math.PI / 180;
 const DEFAULT_GRID_SIZE = 100;
 const DEFAULT_REACH_CELLS = 1;
@@ -223,6 +224,14 @@ function actorUuid(actor) {
   return String(actor?.uuid ?? "").trim();
 }
 
+function buildEnvironmentStatusMeta(sourceActor) {
+  return {
+    source: ENVIRONMENT_STATUS_SOURCE,
+    sourceActorUuid: actorUuid(sourceActor),
+    version: ENVIRONMENT_STATUS_VERSION
+  };
+}
+
 function tokenMatchesActor(token, actor) {
   const uuid = actorUuid(actor);
   return Boolean(uuid) && actorUuid(token?.actor) === uuid;
@@ -285,6 +294,7 @@ export class EnvironmentAutomationService {
       ? statusService.getStatus(actor, statusId)
       : null;
     const currentIsEnvironment = current?.meta?.source === ENVIRONMENT_STATUS_SOURCE;
+    const nextMeta = buildEnvironmentStatusMeta(sourceActor);
 
     if (!active) {
       if (!current?.active || !currentIsEnvironment) {
@@ -302,15 +312,20 @@ export class EnvironmentAutomationService {
       return true;
     }
 
+    if (
+      current?.active
+      && currentIsEnvironment
+      && current?.meta?.sourceActorUuid === nextMeta.sourceActorUuid
+      && current?.meta?.version === nextMeta.version
+    ) {
+      return true;
+    }
+
     return statusService.setStatus(actor, statusId, {
       active: true,
       durationRounds: 1,
       sourceActor,
-      meta: {
-        source: ENVIRONMENT_STATUS_SOURCE,
-        sourceActorUuid: actorUuid(sourceActor),
-        updatedAt: Date.now()
-      }
+      meta: nextMeta
     });
   }
 

@@ -117,7 +117,7 @@ test("combat automation imports use the current cache busts", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`environment-automation-service\\.js\\?v=${escapedVersion}-environment-statuses`, "u"),
+    new RegExp(`environment-automation-service\\.js\\?v=${escapedVersion}-environment-stable-statuses`, "u"),
   );
   assert.match(
     entrypointSource,

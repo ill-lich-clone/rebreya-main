@@ -36,7 +36,7 @@ import { CombatAttackService } from "./combat/attack-service.js?v=1.4.91-firearm
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.91-surrounded-ac";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.91";
-import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.91-environment-statuses";
+import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.91-environment-stable-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.91-mechanus-d20-advantage-mode";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.91";
 import {

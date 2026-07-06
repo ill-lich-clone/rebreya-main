@@ -66,6 +66,114 @@ test("Rebreya environment applies surrounded and open-position statuses", async 
     "rebreya-surrounded",
     "rebreya-open-position"
   ]);
+  assert.deepEqual(statusCalls.map(([, , options]) => options.meta), [
+    {
+      source: "rebreya-environment",
+      sourceActorUuid: "Actor.attacker",
+      version: "surrounded-ac-1"
+    },
+    {
+      source: "rebreya-environment",
+      sourceActorUuid: "Actor.attacker",
+      version: "surrounded-ac-1"
+    }
+  ]);
+});
+
+test("Rebreya environment does not rewrite current automatic statuses", async () => {
+  const targetActor = { uuid: "Actor.target" };
+  const target = createToken("target", 100, 100, 1, targetActor);
+  const attacker = createToken("attacker", 0, 100, -1);
+  const ally = createToken("ally", 200, 100, -1);
+  const statusCalls = [];
+  const moduleApi = {
+    combatStatusService: {
+      getStatus() {
+        return {
+          active: true,
+          meta: {
+            source: "rebreya-environment",
+            sourceActorUuid: "Actor.attacker",
+            version: "surrounded-ac-1"
+          }
+        };
+      },
+      async setStatus(...args) {
+        statusCalls.push(args);
+        return true;
+      }
+    }
+  };
+  const service = new EnvironmentAutomationService(moduleApi, {
+    getCanvas: () => ({
+      grid: { size: 100, sizeX: 100, sizeY: 100 },
+      tokens: { placeables: [target, attacker, ally] }
+    })
+  });
+
+  assert.equal(await service.updateTargetEnvironment(attacker, target), true);
+  assert.deepEqual(statusCalls, []);
+});
+
+test("Rebreya environment refreshes stale automatic status metadata once", async () => {
+  const targetActor = { uuid: "Actor.target" };
+  const target = createToken("target", 100, 100, 1, targetActor);
+  const attacker = createToken("attacker", 0, 100, -1);
+  const ally = createToken("ally", 200, 100, -1);
+  const statuses = new Map([
+    ["rebreya-surrounded", {
+      active: true,
+      meta: {
+        source: "rebreya-environment",
+        sourceActorUuid: "Actor.attacker"
+      }
+    }],
+    ["rebreya-open-position", {
+      active: true,
+      meta: {
+        source: "rebreya-environment",
+        sourceActorUuid: "Actor.attacker"
+      }
+    }]
+  ]);
+  const statusCalls = [];
+  const moduleApi = {
+    combatStatusService: {
+      getStatus(_actor, statusId) {
+        return statuses.get(statusId) ?? { active: false, meta: {} };
+      },
+      async setStatus(_actor, statusId, options) {
+        statusCalls.push([statusId, options]);
+        statuses.set(statusId, { active: true, meta: options.meta });
+        return true;
+      }
+    }
+  };
+  const service = new EnvironmentAutomationService(moduleApi, {
+    getCanvas: () => ({
+      grid: { size: 100, sizeX: 100, sizeY: 100 },
+      tokens: { placeables: [target, attacker, ally] }
+    })
+  });
+
+  assert.equal(await service.updateTargetEnvironment(attacker, target), true);
+  assert.equal(await service.updateTargetEnvironment(attacker, target), true);
+  assert.deepEqual(statusCalls.map(([statusId]) => statusId), [
+    "rebreya-surrounded",
+    "rebreya-open-position"
+  ]);
+  assert.deepEqual(statusCalls.map(([, options]) => options.meta), [
+    {
+      source: "rebreya-environment",
+      sourceActorUuid: "Actor.attacker",
+      version: "surrounded-ac-1"
+    },
+    {
+      source: "rebreya-environment",
+      sourceActorUuid: "Actor.attacker",
+      version: "surrounded-ac-1"
+    }
+  ]);
 });
 
 test("Rebreya environment registers target and attack hooks", async () => {
