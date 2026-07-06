@@ -124,12 +124,7 @@ export function registerCombatHooks(moduleApi) {
     };
     const repairFirearmItem = (app) => {
       const item = app?.document ?? app?.item ?? null;
-      moduleApi.combatAttackService.repairFirearmActivities(item).then((result) => {
-        const isItemDocument = typeof Item !== "undefined" && item instanceof Item;
-        if (isItemDocument && result?.updated > 0 && typeof app?.render === "function") {
-          app.render(false);
-        }
-      }).catch((error) => {
+      moduleApi.combatAttackService.repairFirearmActivities(item).catch((error) => {
         console.error(`${MODULE_ID} | Failed to repair firearm item activities.`, error);
       });
     };

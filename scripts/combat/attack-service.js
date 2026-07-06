@@ -1388,6 +1388,10 @@ export class CombatAttackService {
       return false;
     }
 
+    if (this.#resolveCanonicalFirearmMisfireThreshold(item) === 0) {
+      return false;
+    }
+
     const state = readDocumentFlag(item, MODULE_ID, FIREARM_JAMMED_FLAG);
     if (state === true) {
       return true;
@@ -1396,7 +1400,59 @@ export class CombatAttackService {
     return state?.value === true;
   }
 
+  #resolveCanonicalGearItem(item) {
+    const gearId = cleanText(readDocumentFlag(item, MODULE_ID, "gearId") ?? readDocumentFlag(item, MODULE_ID, "sourceId"));
+    if (!gearId) {
+      return null;
+    }
+
+    const fromModel = this.moduleApi?.repository?.model?.gearById?.get?.(gearId);
+    if (fromModel) {
+      return fromModel;
+    }
+
+    const datasetGear = this.moduleApi?.repository?.dataset?.gear;
+    if (Array.isArray(datasetGear)) {
+      return datasetGear.find((entry) => cleanText(entry?.id ?? entry?.gearId) === gearId) ?? null;
+    }
+
+    return null;
+  }
+
+  #resolveCanonicalFirearmMisfireThreshold(item) {
+    const gearItem = this.#resolveCanonicalGearItem(item);
+    if (!gearItem || !isPlainObject(gearItem.weapon)) {
+      return null;
+    }
+
+    const properties = Array.isArray(gearItem.weapon.properties) ? gearItem.weapon.properties : [];
+    const values = isPlainObject(gearItem.weapon.lichWeaponPropertyValues)
+      ? gearItem.weapon.lichWeaponPropertyValues
+      : {};
+    const configured = toNumber(values.misfire ?? values.firearmMisfire, NaN);
+
+    if (properties.includes(FIREARM_MISFIRE_PROPERTY)) {
+      return Number.isFinite(configured) && configured > 0
+        ? clampInteger(configured, 1, 20)
+        : 0;
+    }
+
+    if (properties.includes(FIREARM_RUST_PROPERTY)) {
+      return 1;
+    }
+
+    return 0;
+  }
+
   #hasConfiguredFirearmMisfire(item, options = {}) {
+    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
+    if (canonicalThreshold === 0) {
+      return false;
+    }
+    if (Number.isFinite(canonicalThreshold)) {
+      return true;
+    }
+
     if (!this.#hasItemProperty(item, FIREARM_MISFIRE_PROPERTY)) {
       return false;
     }
@@ -1407,6 +1463,14 @@ export class CombatAttackService {
   }
 
   #hasFirearmMisfireMechanic(item) {
+    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
+    if (canonicalThreshold === 0) {
+      return false;
+    }
+    if (Number.isFinite(canonicalThreshold)) {
+      return true;
+    }
+
     return this.#hasConfiguredFirearmMisfire(item)
       || this.#hasItemProperty(item, FIREARM_RUST_PROPERTY);
   }
@@ -1713,9 +1777,18 @@ export class CombatAttackService {
       return clampInteger(explicit, 0, 20);
     }
 
+    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
+    if (canonicalThreshold === 0) {
+      return 0;
+    }
+
     const directFlag = toNumber(readDocumentFlag(item, MODULE_ID, FIREARM_CURRENT_MISFIRE_FLAG), NaN);
     if (Number.isFinite(directFlag)) {
       return clampInteger(directFlag, 0, 20);
+    }
+
+    if (Number.isFinite(canonicalThreshold)) {
+      return clampInteger(canonicalThreshold, 1, 20);
     }
 
     const values = this.#getLichWeaponPropertyValues(item, options);
@@ -1879,6 +1952,14 @@ export class CombatAttackService {
     const baseFlag = toNumber(readDocumentFlag(item, MODULE_ID, FIREARM_BASE_MISFIRE_FLAG), NaN);
     if (Number.isFinite(baseFlag)) {
       return clampInteger(baseFlag, 1, 10);
+    }
+
+    const canonicalThreshold = this.#resolveCanonicalFirearmMisfireThreshold(item);
+    if (canonicalThreshold === 0) {
+      return 0;
+    }
+    if (Number.isFinite(canonicalThreshold)) {
+      return clampInteger(canonicalThreshold, 1, 10);
     }
 
     const values = this.#getLichWeaponPropertyValues(item);

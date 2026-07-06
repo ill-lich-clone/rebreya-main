@@ -222,3 +222,46 @@ test("Rebreya environment registers target and attack hooks", async () => {
     globalThis.game = previousGame;
   }
 });
+
+test("firearm item sheet repair hook does not rerender item sheets", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const listeners = [];
+  const repairedItems = [];
+
+  globalThis.Hooks = {
+    on(hookName, listener) {
+      listeners.push({ hookName, listener });
+      return listeners.length;
+    }
+  };
+  globalThis.game = {};
+
+  try {
+    registerCombatHooks({
+      combatAttackService: {
+        async repairFirearmActivities(item) {
+          repairedItems.push(item);
+          return { updated: 1 };
+        }
+      }
+    });
+
+    const item = { id: "rifle" };
+    let renderCalls = 0;
+    listeners.find((entry) => entry.hookName === "renderItemSheet").listener({
+      document: item,
+      render() {
+        renderCalls += 1;
+      }
+    });
+    await Promise.resolve();
+
+    assert.deepEqual(repairedItems, [item]);
+    assert.equal(renderCalls, 0);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});

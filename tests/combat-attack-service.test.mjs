@@ -1380,10 +1380,12 @@ test("firearm actor repair removes jam maintenance activities from weapons witho
     },
     values: {
       automaticDamage: "4d8",
+      misfire: 2,
       ammunition: "Винтовочный",
       reload: "Смена магазина 24"
     }
   });
+  weapon.flags[MODULE_ID].gearId = "avtomaticheskaya-vintovka";
   weapon.system.damage = {
     base: {
       types: ["piercing"]
@@ -1414,7 +1416,23 @@ test("firearm actor repair removes jam maintenance activities from weapons witho
     }
   };
   const actor = makeActor([weapon]);
-  const service = new CombatAttackService({});
+  const service = new CombatAttackService({
+    repository: {
+      model: {
+        gearById: new Map([[
+          "avtomaticheskaya-vintovka",
+          {
+            weapon: {
+              properties: ["lchFirearmAutomatic"],
+              lichWeaponPropertyValues: {
+                automaticDamage: "4d8"
+              }
+            }
+          }
+        ]])
+      }
+    }
+  });
 
   const result = await service.repairFirearmActivities(actor);
 
