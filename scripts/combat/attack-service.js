@@ -306,6 +306,69 @@ function collectionEntries(collection) {
   return [];
 }
 
+function clonePlainData(value) {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  if (typeof globalThis.foundry?.utils?.deepClone === "function") {
+    try {
+      return globalThis.foundry.utils.deepClone(value);
+    }
+    catch (_error) {
+      // Fall through to generic cloning below.
+    }
+  }
+
+  if (typeof globalThis.structuredClone === "function") {
+    try {
+      return globalThis.structuredClone(value);
+    }
+    catch (_error) {
+      // DataModel documents can contain non-cloneable methods or references.
+    }
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  }
+  catch (_error) {
+    if (Array.isArray(value)) {
+      return value.map((entry) => clonePlainData(entry));
+    }
+
+    const data = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (typeof entry !== "function") {
+        data[key] = clonePlainData(entry);
+      }
+    }
+    return data;
+  }
+}
+
+function sourceData(document) {
+  if (document === null || typeof document !== "object") {
+    return {};
+  }
+
+  if (typeof document.toObject === "function") {
+    try {
+      return clonePlainData(document.toObject(false));
+    }
+    catch (_error) {
+      try {
+        return clonePlainData(document.toObject());
+      }
+      catch (_innerError) {
+        // Fall back to enumerable data below.
+      }
+    }
+  }
+
+  return clonePlainData(document);
+}
+
 function activityConsumptionTargets(activity) {
   return collectionValues(foundry.utils.getProperty(activity, "consumption.targets"));
 }
@@ -923,6 +986,56 @@ export class CombatAttackService {
     }
 
     return 1;
+  }
+
+  #getFirearmAmmoShotBlock(item, options = {}) {
+    if (!isFirearmItem(item)) {
+      return null;
+    }
+
+    const state = this.#resolveFirearmAmmoState(item, options);
+    if (!state.tracked) {
+      return null;
+    }
+
+    const required = Math.max(1, this.#resolveFirearmShotAmmoCost(item, options));
+    if (state.current <= 0) {
+      return {
+        reason: "firearmAmmoEmpty",
+        current: 0,
+        capacity: state.capacity,
+        required,
+        state
+      };
+    }
+
+    if (state.current < required) {
+      return {
+        reason: "firearmAmmoInsufficient",
+        current: state.current,
+        capacity: state.capacity,
+        required,
+        state
+      };
+    }
+
+    return null;
+  }
+
+  #blockFirearmShotWithoutAmmo(item, options = {}) {
+    const block = this.#getFirearmAmmoShotBlock(item, options);
+    if (!block) {
+      return false;
+    }
+
+    this.#setFirearmAmmoStateSync(item, block.state);
+    if (block.reason === "firearmAmmoInsufficient") {
+      this.#notifyFirearmAmmoInsufficient(item, block.current, block.required);
+    }
+    else {
+      this.#notifyFirearmAmmoEmpty(item);
+    }
+    return true;
   }
 
   #createFirearmChatMessage(actor, item, content, options = {}) {
@@ -1561,7 +1674,7 @@ export class CombatAttackService {
             upgradedActivityIds.push(safeActivityId);
           }
           else {
-            nextActivities[safeActivityId] = activity;
+            nextActivities[safeActivityId] = sourceData(activity);
           }
         }
       }
@@ -2569,6 +2682,9 @@ export class CombatAttackService {
 
       if (isFirearmItem(item)) {
         this.#disableActivityConsumption(activity, usageConfig, messageConfig);
+        if (this.#blockFirearmShotWithoutAmmo(item)) {
+          return false;
+        }
       }
 
       if (!this.#ensureHeldWeaponActivity(activity)) {
@@ -2620,6 +2736,10 @@ export class CombatAttackService {
       }
 
       if (isFirearmItem(item)) {
+        if (this.#getFirearmAmmoShotBlock(item)) {
+          return true;
+        }
+
         const actor = activity.actor ?? item.actor ?? null;
         const ammo = this.#consumeLoadedFirearmAmmo(actor, item, this.#resolveFirearmShotAmmoCost(item), {});
         if (!ammo.success) {

@@ -1207,6 +1207,97 @@ test("firearm attack activities disable dnd5e item ammunition consumption before
   assert.equal(ammo.updateCalls.length, 0);
 });
 
+test("empty firearm magazines should stop native activity use before an attack roll workflow starts", async () => {
+  TestRoll.queuedTotals = [15];
+  const weapon = makeFirearmItem({
+    name: "Револьвер",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Пистолетные",
+      reload: "Смена магазина 6"
+    },
+    ammoState: {
+      current: 0,
+      capacity: 6,
+      ammunition: "Пистолетные"
+    }
+  });
+  weapon.flags[MODULE_ID].heldHands = ["right"];
+  const actor = makeActor([weapon]);
+  const activity = {
+    id: "attack-1",
+    type: "attack",
+    actor,
+    item: weapon,
+    activation: {
+      type: "action",
+      value: 1
+    },
+    attack: {
+      type: {
+        value: "firearm"
+      }
+    },
+    consumption: {
+      targets: []
+    },
+    range: {}
+  };
+  const service = new CombatAttackService({});
+
+  const result = await service.applyDnd5ePreUseActivity(activity, {}, {}, {});
+
+  assert.equal(result, false);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
+  assert.equal(TestRoll.queuedTotals.length, 1);
+});
+
+test("empty firearm magazines should not be first cancelled inside attack roll config", () => {
+  TestRoll.queuedTotals = [15];
+  const weapon = makeFirearmItem({
+    name: "Револьвер",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Пистолетные",
+      reload: "Смена магазина 6"
+    },
+    ammoState: {
+      current: 0,
+      capacity: 6,
+      ammunition: "Пистолетные"
+    }
+  });
+  const actor = makeActor([weapon]);
+  const activity = {
+    id: "attack-1",
+    type: "attack",
+    actor,
+    item: weapon,
+    activation: {
+      type: "action",
+      value: 1
+    },
+    attack: {
+      type: {
+        value: "firearm"
+      }
+    }
+  };
+  const service = new CombatAttackService({});
+
+  const result = service.applyDnd5eAttackRollConfig({ subject: activity }, {}, {});
+
+  assert.equal(result, true);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
+  assert.equal(TestRoll.queuedTotals.length, 1);
+});
+
 test("firearm area fire activities continue native save workflow after spending loaded ammo", async () => {
   globalThis.ChatMessage.messages = [];
   const weapon = makeFirearmItem({
@@ -1341,6 +1432,68 @@ test("firearm actor repair removes jam maintenance activities from weapons witho
   assert.equal(repairedAutomaticFire.damage.parts[0].denomination, 8);
   assert.deepEqual(repairedAutomaticFire.damage.parts[0].types, ["piercing"]);
   assert.deepEqual(weapon.updateCalls.at(-1)["system.activities"][shotActivity._id], shotActivity);
+});
+
+test("firearm activity repair writes plain source data for unchanged activity documents", async () => {
+  const shotSource = {
+    _id: "shot",
+    type: "attack",
+    name: "Выстрел",
+    activation: {
+      type: "action",
+      value: 1
+    },
+    attack: {
+      type: {
+        value: "firearm"
+      }
+    }
+  };
+  const shotActivityDocument = {
+    ...shotSource,
+    id: "shot",
+    _inferredSource: { stale: true },
+    toObject() {
+      return { ...shotSource };
+    }
+  };
+  const weapon = makeFirearmItem({
+    name: "Automatic Rifle",
+    typeValue: "firearmAdvanced",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true,
+      lchFirearmAutomatic: true,
+      lchFirearmMisfire: true
+    },
+    values: {
+      automaticDamage: "4d8",
+      ammunition: "Rifle",
+      reload: "Magazine 24"
+    }
+  });
+  weapon.system.activities = new Map([
+    ["shot", shotActivityDocument],
+    ["lchClearBreech01", {
+      _id: "lchClearBreech01",
+      type: "utility",
+      name: "Clear Breech",
+      flags: {
+        [MODULE_ID]: {
+          automation: "firearm-clear-jam"
+        }
+      }
+    }]
+  ]);
+  const actor = makeActor([weapon]);
+  const service = new CombatAttackService({});
+
+  await service.repairFirearmActivities(actor);
+
+  const repairedShot = weapon.updateCalls.at(-1)["system.activities"].shot;
+  assert.notEqual(repairedShot, shotActivityDocument);
+  assert.deepEqual(repairedShot, shotSource);
+  assert.equal("_inferredSource" in repairedShot, false);
 });
 
 test("firearm item repair removes stale jam maintenance activities from item sheets", async () => {
