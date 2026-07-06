@@ -749,26 +749,93 @@ function buildSelfUtilityActivity({
   };
 }
 
-function buildFirearmAreaFireActivity(mode) {
+function buildFirearmAreaFireActivity(item, mode) {
   if (!mode) {
     return null;
   }
 
-  const activity = buildSelfUtilityActivity({
-    activityId: mode.activityId,
+  const damageFormula = cleanString(mode.damageFormula ?? item?.weapon?.damageFormula);
+  return {
+    _id: mode.activityId,
+    type: "save",
     name: mode.name,
-    activationType: "action",
-    chatFlavor: `${mode.name}: конус ${mode.coneFeet} фт., урон ${mode.damageFormula || "урон оружия"}.`,
-    automation: mode.automation,
-    sort: mode.type === "automatic" ? 90 : 95
-  });
-  activity.range.units = "self";
-  activity.target.template.type = "cone";
-  activity.target.template.size = mode.coneFeet;
-  activity.target.template.units = "ft";
-  activity.target.affects.type = "creature";
-  activity.target.prompt = true;
-  return activity;
+    img: "systems/dnd5e/icons/svg/activity/save.svg",
+    sort: mode.type === "automatic" ? 90 : 95,
+    activation: {
+      type: "action",
+      value: 1,
+      condition: "",
+      override: false
+    },
+    consumption: {
+      scaling: {
+        allowed: false,
+        max: ""
+      },
+      spellSlot: false,
+      targets: []
+    },
+    damage: {
+      onSave: "half",
+      parts: damageFormula ? [
+        buildWeaponDamagePart(damageFormula, item?.weapon?.damageType)
+      ] : []
+    },
+    description: {
+      chatFlavor: `${mode.name}: конус ${mode.coneFeet} фт., урон ${damageFormula || "урон оружия"}.`
+    },
+    duration: {
+      value: "",
+      units: "inst",
+      special: "",
+      concentration: false,
+      override: false
+    },
+    effects: [],
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        automation: mode.automation
+      }
+    },
+    range: {
+      value: null,
+      units: "self",
+      special: "",
+      override: false
+    },
+    save: {
+      ability: ["dex"],
+      dc: {
+        calculation: resolveFirearmAttackAbility(item),
+        formula: ""
+      }
+    },
+    target: {
+      template: {
+        count: "",
+        contiguous: false,
+        type: "cone",
+        size: mode.coneFeet,
+        width: "",
+        height: "",
+        units: "ft"
+      },
+      affects: {
+        count: "",
+        type: "creature",
+        choice: false,
+        special: ""
+      },
+      prompt: true,
+      override: false
+    },
+    uses: {
+      spent: 0,
+      max: "",
+      recovery: []
+    }
+  };
 }
 
 function buildFirearmActivities(item) {
@@ -782,7 +849,7 @@ function buildFirearmActivities(item) {
     automation: "firearm-reload",
     sort: 50
   }) : null;
-  const areaFireActivity = buildFirearmAreaFireActivity(resolveFirearmAreaFireMode(item));
+  const areaFireActivity = buildFirearmAreaFireActivity(item, resolveFirearmAreaFireMode(item));
   const misfireTracked = hasFirearmMisfire(item);
   const clearJamActivity = misfireTracked ? buildSelfUtilityActivity({
     activityId: FIREARM_CLEAR_JAM_ACTIVITY_ID,

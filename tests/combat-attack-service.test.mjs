@@ -1207,6 +1207,61 @@ test("firearm attack activities disable dnd5e item ammunition consumption before
   assert.equal(ammo.updateCalls.length, 0);
 });
 
+test("firearm area fire activities continue native save workflow after spending loaded ammo", async () => {
+  globalThis.ChatMessage.messages = [];
+  const weapon = makeFirearmItem({
+    name: "Automatic Rifle",
+    typeValue: "firearmAdvanced",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmFireMode: true,
+      lchFirearmAutomatic: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Rifle",
+      fireMode: "Automatic (4d8)",
+      automaticDamage: "4d8",
+      reload: "Magazine 24"
+    },
+    ammoState: {
+      current: 12,
+      capacity: 24,
+      ammunition: "Rifle"
+    }
+  });
+  const actor = makeActor([weapon]);
+  const activity = {
+    type: "save",
+    actor,
+    item: weapon,
+    flags: {
+      [MODULE_ID]: {
+        automation: "firearm-automatic-fire"
+      }
+    },
+    target: {
+      template: {
+        type: "cone",
+        size: 45
+      },
+      affects: {
+        type: "creature"
+      },
+      prompt: true
+    }
+  };
+  const service = new CombatAttackService({});
+
+  const result = await service.applyDnd5ePreUseActivity(activity, {}, {}, {});
+
+  assert.equal(result, true);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
+  assert.equal(activity.target.template.type, "cone");
+  assert.equal(activity.target.prompt, true);
+  assert.equal(globalThis.ChatMessage.messages.some((message) => String(message.content ?? "").includes("4d8")), false);
+});
+
 test("firearm actor repair removes jam maintenance activities from weapons without misfire", async () => {
   const shotActivity = {
     _id: "shot",

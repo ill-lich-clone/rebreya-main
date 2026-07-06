@@ -95,7 +95,7 @@ test("gear compendium import uses the firearm activity cache bust", async () => 
 
   assert.match(
     entrypointSource,
-    new RegExp(`gear-compendium\\.js\\?v=${escapedVersion}-firearm-misfire-actions`, "u"),
+    new RegExp(`gear-compendium\\.js\\?v=${escapedVersion}-firearm-native-area-fire`, "u"),
   );
 });
 
@@ -112,7 +112,7 @@ test("combat firearm activity repair uses the current cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-misfire-actions`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-native-area-fire`, "u"),
   );
 });
 
@@ -131,7 +131,7 @@ test("held item integrations use the current module cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-misfire-actions`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-native-area-fire`, "u"),
   );
   assert.match(
     sheetSource,

@@ -2215,9 +2215,7 @@ export class CombatAttackService {
     if (![
       FIREARM_CLEAR_JAM_AUTOMATION,
       FIREARM_MAINTAIN_AUTOMATION,
-      FIREARM_RELOAD_AUTOMATION,
-      FIREARM_AUTOMATIC_FIRE_AUTOMATION,
-      FIREARM_SEMI_AUTOMATIC_FIRE_AUTOMATION
+      FIREARM_RELOAD_AUTOMATION
     ].includes(automation)) {
       return null;
     }
@@ -2266,10 +2264,59 @@ export class CombatAttackService {
     return false;
   }
 
+  #applyFirearmAreaFireActivity(activity, usageConfig = {}, messageConfig = {}) {
+    const automation = cleanText(foundry.utils.getProperty(activity, `flags.${MODULE_ID}.automation`));
+    if (![FIREARM_AUTOMATIC_FIRE_AUTOMATION, FIREARM_SEMI_AUTOMATIC_FIRE_AUTOMATION].includes(automation)) {
+      return null;
+    }
+
+    const item = activity?.item ?? null;
+    if (!isFirearmItem(item)) {
+      return true;
+    }
+
+    const actor = activity?.actor ?? item.actor ?? null;
+    if (!(actor instanceof Actor)) {
+      ui.notifications?.warn?.("РќРµ СѓРґР°Р»РѕСЃСЊ РѕРїСЂРµРґРµР»РёС‚СЊ РІР»Р°РґРµР»СЊС†Р° РѕРіРЅРµСЃС‚СЂРµР»Р°.");
+      return false;
+    }
+
+    if (this.#blockJammedFirearm(item)) {
+      return false;
+    }
+
+    this.#disableActivityConsumption(activity, usageConfig, messageConfig);
+
+    const mode = automation === FIREARM_AUTOMATIC_FIRE_AUTOMATION ? "automatic" : "semi";
+    const state = this.#resolveFirearmAmmoState(item);
+    const ammoRequired = mode === "automatic"
+      ? state.current
+      : (state.capacity > 0 ? Math.min(3, state.capacity) : 3);
+    const ammo = this.#consumeLoadedFirearmAmmo(actor, item, ammoRequired, {
+      allowPartial: mode === "automatic",
+      emptyMagazine: mode === "automatic"
+    });
+    if (!ammo.success) {
+      return false;
+    }
+
+    const misfire = this.#rollFirearmMisfire(actor, item, {});
+    if (misfire.jammed) {
+      return false;
+    }
+
+    return true;
+  }
+
   applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
     const firearmUtilityResult = this.#applyFirearmUtilityActivity(activity);
     if (firearmUtilityResult !== null) {
       return firearmUtilityResult;
+    }
+
+    const firearmAreaFireResult = this.#applyFirearmAreaFireActivity(activity, usageConfig, messageConfig);
+    if (firearmAreaFireResult !== null) {
+      return firearmAreaFireResult;
     }
 
     this.#retargetFighterDominanceConsumption(activity, usageConfig, messageConfig);

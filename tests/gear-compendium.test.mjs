@@ -483,11 +483,19 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   const automaticRifleActivitiesByName = new Map(Object.values(createdAutomaticRifle.system.activities ?? {})
     .map((activity) => [activity.name, activity]));
   const automaticFire = automaticRifleActivitiesByName.get("Автоматический огонь");
-  assert.equal(automaticFire?.type, "utility");
+  assert.equal(automaticFire?.type, "save");
   assert.equal(automaticFire?.activation.type, "action");
   assert.equal(automaticFire?.target.template.type, "cone");
   assert.equal(automaticFire?.target.template.size, 45);
   assert.equal(automaticFire?.target.affects.type, "creature");
+  assert.equal(automaticFire?.target.prompt, true);
+  assert.deepEqual(automaticFire?.save.ability, ["dex"]);
+  assert.equal(automaticFire?.save.dc.calculation, "dex");
+  assert.equal(automaticFire?.save.dc.formula, "");
+  assert.equal(automaticFire?.damage.onSave, "half");
+  assert.equal(automaticFire?.damage.parts[0].number, 4);
+  assert.equal(automaticFire?.damage.parts[0].denomination, 8);
+  assert.deepEqual(automaticFire?.damage.parts[0].types, ["piercing"]);
   assert.equal(automaticFire?.flags["rebreya-main"].automation, "firearm-automatic-fire");
   assert.match(automaticFire?.description.chatFlavor ?? "", /4d8/u);
   assert.equal(automaticRifleActivitiesByName.get("Очистить затвор"), undefined);
@@ -497,11 +505,19 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   const semiAutomaticRifleActivitiesByName = new Map(Object.values(createdSemiAutomaticRifle.system.activities ?? {})
     .map((activity) => [activity.name, activity]));
   const semiAutomaticFire = semiAutomaticRifleActivitiesByName.get("Полуавтоматический огонь");
-  assert.equal(semiAutomaticFire?.type, "utility");
+  assert.equal(semiAutomaticFire?.type, "save");
   assert.equal(semiAutomaticFire?.activation.type, "action");
   assert.equal(semiAutomaticFire?.target.template.type, "cone");
   assert.equal(semiAutomaticFire?.target.template.size, 30);
   assert.equal(semiAutomaticFire?.target.affects.type, "creature");
+  assert.equal(semiAutomaticFire?.target.prompt, true);
+  assert.deepEqual(semiAutomaticFire?.save.ability, ["dex"]);
+  assert.equal(semiAutomaticFire?.save.dc.calculation, "dex");
+  assert.equal(semiAutomaticFire?.save.dc.formula, "");
+  assert.equal(semiAutomaticFire?.damage.onSave, "half");
+  assert.equal(semiAutomaticFire?.damage.parts[0].number, 2);
+  assert.equal(semiAutomaticFire?.damage.parts[0].denomination, 12);
+  assert.deepEqual(semiAutomaticFire?.damage.parts[0].types, ["piercing"]);
   assert.equal(semiAutomaticFire?.flags["rebreya-main"].automation, "firearm-semi-automatic-fire");
   assert.match(semiAutomaticFire?.description.chatFlavor ?? "", /2d12/u);
 

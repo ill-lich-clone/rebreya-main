@@ -1,6 +1,6 @@
 import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.91-firearm-misfire-actions";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.91-firearm-native-area-fire";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
@@ -32,7 +32,7 @@ import { CraftingService } from "./data/crafting-service.js";
 import { CalendarService } from "./data/calendar-service.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.91-firearm-activity-repair";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.91-firearm-misfire-actions";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.91-firearm-native-area-fire";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.91";
