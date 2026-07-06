@@ -2342,6 +2342,75 @@ function getHeroicRollButtonLabels() {
   };
 }
 
+function applyHeroicD20RollModifiers(roll, D20Roll) {
+  const heroicMode = String(roll?.options?.rebreyaHeroicMode ?? "").trim().toLowerCase();
+  if (!roll?.validD20Roll || !["advantage", "disadvantage"].includes(heroicMode)) {
+    return;
+  }
+
+  const modifiers = Array.isArray(roll.d20?.modifiers) ? roll.d20.modifiers : null;
+  if (!modifiers) {
+    return;
+  }
+
+  const existingModifierIndex = modifiers.findIndex((modifier) => ["kh", "kl"].includes(modifier));
+  if (existingModifierIndex >= 0) {
+    modifiers.splice(existingModifierIndex, 1);
+  }
+
+  roll.d20.number = 3;
+  modifiers.push(heroicMode === "advantage" ? "kh" : "kl");
+  roll.resetFormula();
+}
+
+function registerHeroicD20RollConfigureModifiersPatch(D20Roll) {
+  if (D20Roll.prototype[HEROIC_D20_ROLL_PATCH_FLAG]) {
+    return;
+  }
+
+  const libWrapper = globalThis.libWrapper;
+  if (typeof libWrapper?.register === "function") {
+    try {
+      libWrapper.register(
+        MODULE_ID,
+        "CONFIG.Dice.D20Roll.prototype.configureModifiers",
+        function configureRebreyaHeroicD20Roll(wrapped, ...args) {
+          const result = wrapped(...args);
+          applyHeroicD20RollModifiers(this, D20Roll);
+          return result;
+        },
+        "WRAPPER"
+      );
+
+      Object.defineProperty(D20Roll.prototype, HEROIC_D20_ROLL_PATCH_FLAG, {
+        configurable: false,
+        enumerable: false,
+        writable: false,
+        value: "libWrapper"
+      });
+      return;
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to register heroic d20 libWrapper patch; falling back to direct patch.`, error);
+    }
+  }
+
+  const originalConfigureModifiers = D20Roll.prototype.configureModifiers;
+
+  D20Roll.prototype.configureModifiers = function (...args) {
+    const result = originalConfigureModifiers.call(this, ...args);
+    applyHeroicD20RollModifiers(this, D20Roll);
+    return result;
+  };
+
+  Object.defineProperty(D20Roll.prototype, HEROIC_D20_ROLL_PATCH_FLAG, {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: "direct"
+  });
+}
+
 function patchD20HeroicRollDialog() {
   const D20Roll = CONFIG?.Dice?.D20Roll ?? null;
   const D20Dialog = game.dnd5e?.applications?.dice?.D20RollConfigurationDialog ?? null;
@@ -2429,39 +2498,7 @@ function patchD20HeroicRollDialog() {
     });
   }
 
-  if (!D20Roll.prototype[HEROIC_D20_ROLL_PATCH_FLAG]) {
-    const originalConfigureModifiers = D20Roll.prototype.configureModifiers;
-
-    D20Roll.prototype.configureModifiers = function (...args) {
-      const result = originalConfigureModifiers.call(this, ...args);
-      const heroicMode = String(this.options?.rebreyaHeroicMode ?? "").trim().toLowerCase();
-      if (!this.validD20Roll || !["advantage", "disadvantage"].includes(heroicMode)) {
-        return result;
-      }
-
-      const modifiers = Array.isArray(this.d20?.modifiers) ? this.d20.modifiers : null;
-      if (!modifiers) {
-        return result;
-      }
-
-      const existingModifierIndex = modifiers.findIndex((modifier) => ["kh", "kl"].includes(modifier));
-      if (existingModifierIndex >= 0) {
-        modifiers.splice(existingModifierIndex, 1);
-      }
-
-      this.d20.number = 3;
-      modifiers.push(heroicMode === "advantage" ? "kh" : "kl");
-      this.resetFormula();
-      return result;
-    };
-
-    Object.defineProperty(D20Roll.prototype, HEROIC_D20_ROLL_PATCH_FLAG, {
-      configurable: false,
-      enumerable: false,
-      writable: false,
-      value: true
-    });
-  }
+  registerHeroicD20RollConfigureModifiersPatch(D20Roll);
 
   if (!D20Roll[HEROIC_D20_KEYBINDINGS_PATCH_FLAG]) {
     const originalApplyKeybindings = D20Roll.applyKeybindings;

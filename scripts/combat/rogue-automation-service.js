@@ -26,7 +26,6 @@ const CUNNING_STRIKE_TEXT = Object.freeze({
   effect: "\u042d\u0444\u0444\u0435\u043a\u0442",
   note: "\u0417\u0430\u043c\u0435\u0442\u043a\u0430",
   die: "\u043a6",
-  openPositionEffectName: "\u041e\u0442\u043a\u0440\u044b\u0442\u0430\u044f \u043f\u043e\u0437\u0438\u0446\u0438\u044f",
   speed: "\u0441\u043a\u043e\u0440\u043e\u0441\u0442\u044c",
   feet: "\u0444\u0442.",
   nextAttackDisadvantage: "\u0441\u043b\u0435\u0434\u0443\u044e\u0449\u0430\u044f \u0430\u0442\u0430\u043a\u0430 \u0441 \u043f\u043e\u043c\u0435\u0445\u043e\u0439"
@@ -41,15 +40,10 @@ const CUNNING_STRIKE_AUTOMATION = Object.freeze({
     }
   },
   "rogue-cunning-strike-open-position": {
-    convenientEffect: {
-      effectName: CUNNING_STRIKE_TEXT.openPositionEffectName,
+    status: {
+      id: "rebreya-open-position",
       durationRounds: 1,
-      expires: "sourceTurnStart",
-      fallbackStatus: {
-        id: "rebreya-open-position",
-        durationRounds: 1,
-        expires: "sourceTurnStart"
-      }
+      expires: "sourceTurnStart"
     }
   },
   "rogue-cunning-strike-disrupt-aim": {

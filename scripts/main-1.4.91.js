@@ -36,13 +36,13 @@ import { CombatAttackService } from "./combat/attack-service.js?v=1.4.91-firearm
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.91";
-import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.91-cosmology-floor-damage";
+import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.91-mechanus-libwrapper-advantage";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.91";
 import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
 } from "./combat/paladin-automation-service.js?v=1.4.91";
-import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.4.91";
+import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.4.91-rebreya-open-position";
 import { PerformerAutomationService } from "./combat/performer-automation-service.js?v=1.4.91";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
 import { registerSceneControlsHook } from "./hooks.js?v=1.4.91-bg3-piles";
@@ -50,7 +50,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.91-npc-held-natural";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.91-libwrapper-heroic-d20";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js";

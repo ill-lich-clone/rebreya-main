@@ -401,7 +401,7 @@ test("rogue cunning strike writes card info through the workflow item card uuid 
   assert.match(card.content, /data-rebreya-cunning-strike="rogue-cunning-strike-hamstring"/u);
 });
 
-test("rogue open position cunning strike applies through Convenient Effects when available", async () => {
+test("rogue open position cunning strike applies the Rebreya status before Convenient Effects", async () => {
   const previousDfreds = globalThis.game.dfreds;
   const sneakAttack = makeFeatureItem({
     id: "sneak-attack",
@@ -417,19 +417,16 @@ test("rogue open position cunning strike applies through Convenient Effects when
   });
   const rogue = new TestActor({ items: [sneakAttack, openPosition], level: 5 });
   const target = new TestActor({ id: "target", name: "Target", items: [] });
-  const appliedEffects = [];
-  const effectUpdates = [];
+  let convenientEffectCalls = 0;
   globalThis.game.dfreds = {
     effectInterface: {
-      findEffect: ({ effectName }) => (effectName === "\u041e\u0442\u043a\u0440\u044b\u0442\u0430\u044f \u043f\u043e\u0437\u0438\u0446\u0438\u044f" ? { name: effectName } : null),
-      addEffect: async (payload) => {
-        appliedEffects.push(payload);
-        return [{
-          async update(patch) {
-            effectUpdates.push(patch);
-            return this;
-          }
-        }];
+      findEffect: () => {
+        convenientEffectCalls += 1;
+        return { name: "\u041e\u0442\u043a\u0440\u044b\u0442\u0430\u044f \u043f\u043e\u0437\u0438\u0446\u0438\u044f" };
+      },
+      addEffect: async () => {
+        convenientEffectCalls += 1;
+        throw new Error("Convenient Effects should not handle Rebreya Open Position");
       }
     }
   };
@@ -457,16 +454,15 @@ test("rogue open position cunning strike applies through Convenient Effects when
     globalThis.game.dfreds = previousDfreds;
   }
 
-  assert.deepEqual(appliedEffects, [{
-    effectName: "\u041e\u0442\u043a\u0440\u044b\u0442\u0430\u044f \u043f\u043e\u0437\u0438\u0446\u0438\u044f",
-    uuid: target.uuid,
-    origin: rogue.uuid
-  }]);
-  assert.equal(statuses.length, 0);
-  assert.equal(effectUpdates.length, 1);
-  assert.equal(effectUpdates[0].origin, rogue.uuid);
-  assert.deepEqual(effectUpdates[0]["flags.dae.specialDuration"], ["turnStartSource", "combatEnd"]);
-  assert.equal(effectUpdates[0]["flags.rebreya-main.rogueAutomation.kind"], "cunningStrikeConvenientEffect");
+  assert.equal(convenientEffectCalls, 0);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0][0], target);
+  assert.equal(statuses[0][1], "rebreya-open-position");
+  assert.deepEqual(statuses[0][2], {
+    active: true,
+    durationRounds: 1,
+    sourceActor: rogue
+  });
 });
 
 test("rogue trip cunning strike rolls a dexterity save before applying prone", async () => {

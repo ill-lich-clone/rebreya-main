@@ -108,7 +108,7 @@ test("Mechanus converts d20 advantage and disadvantage into flat bonuses", () =>
     }]
   };
   assert.equal(applyMechanusAveragesToRoll(heroicAdvantageRoll), true);
-  assert.equal(heroicAdvantageRoll.total, 17);
+  assert.equal(heroicAdvantageRoll.total, 14);
 
   const disadvantageRoll = {
     formula: "2d20kl",
@@ -124,6 +124,53 @@ test("Mechanus converts d20 advantage and disadvantage into flat bonuses", () =>
   };
   assert.equal(applyMechanusAveragesToRoll(disadvantageRoll), true);
   assert.equal(disadvantageRoll.total, 13);
+});
+
+test("Mechanus roll patch registers global Roll hooks through libWrapper", () => {
+  const previousRoll = globalThis.Roll;
+  const previousLibWrapper = globalThis.libWrapper;
+  const registrations = [];
+  const unregistrations = [];
+
+  class TestRoll {
+    async evaluate() {
+      return this;
+    }
+
+    evaluateSync() {
+      return this;
+    }
+  }
+
+  globalThis.Roll = TestRoll;
+  globalThis.libWrapper = {
+    register(moduleId, target, wrapper, type) {
+      registrations.push({ moduleId, target, wrapper, type });
+    },
+    unregister(moduleId, target) {
+      unregistrations.push({ moduleId, target });
+    }
+  };
+
+  try {
+    assert.equal(patchMechanusRollClass(TestRoll, { isEnabled: () => true }), true);
+    assert.deepEqual(registrations.map(({ target, type }) => ({ target, type })), [
+      { target: "Roll.prototype.evaluate", type: "WRAPPER" },
+      { target: "Roll.prototype.evaluateSync", type: "WRAPPER" }
+    ]);
+    assert.equal(TestRoll.prototype.evaluate.name, "evaluate");
+
+    assert.equal(resetMechanusRollClassPatch(TestRoll), true);
+    assert.deepEqual(unregistrations.map(({ target }) => target), [
+      "Roll.prototype.evaluate",
+      "Roll.prototype.evaluateSync"
+    ]);
+  }
+  finally {
+    resetMechanusRollClassPatch(TestRoll);
+    globalThis.Roll = previousRoll;
+    globalThis.libWrapper = previousLibWrapper;
+  }
 });
 
 test("Mechanus roll patch leaves rolls untouched while disabled", async () => {

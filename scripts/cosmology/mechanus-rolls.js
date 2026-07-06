@@ -3,6 +3,8 @@ import { MODULE_ID } from "../constants.js";
 const IGNORED_FACES = new Set([20, 100]);
 const PATCH_STATE = Symbol.for(`${MODULE_ID}.mechanusRollPatch`);
 const ROLL_APPLIED = Symbol.for(`${MODULE_ID}.mechanusAverageApplied`);
+const ROLL_EVALUATE_TARGET = "Roll.prototype.evaluate";
+const ROLL_EVALUATE_SYNC_TARGET = "Roll.prototype.evaluateSync";
 
 function toFiniteNumber(value, fallback = NaN) {
   const numeric = Number(value);
@@ -106,7 +108,7 @@ function getFirstResult(term) {
   return getResultValue(term.results[0]);
 }
 
-function getMechanusD20AdvantageBonus(term, roll) {
+function getMechanusD20AdvantageBonus(term) {
   if (getTermFaces(term) !== 20 || getTermNumber(term) < 2) {
     return null;
   }
@@ -116,17 +118,7 @@ function getMechanusD20AdvantageBonus(term, roll) {
     return null;
   }
 
-  const heroicMode = String(roll?.options?.rebreyaHeroicMode ?? "").trim().toLowerCase();
-  if (heroicMode === "advantage") {
-    return 5;
-  }
-
-  if (heroicMode === "disadvantage") {
-    return -5;
-  }
-
-  const heroicMagnitude = getTermNumber(term) >= 3 ? 5 : 2;
-  return keepModifier.startsWith("kh") ? heroicMagnitude : -heroicMagnitude;
+  return keepModifier.startsWith("kh") ? 2 : -2;
 }
 
 function replaceD20AdvantageWithFlatBonus(term, firstResult, replacementTotal, bonus) {
@@ -400,6 +392,96 @@ export function applyMechanusAveragesToRoll(roll, { enabled = true } = {}) {
   return false;
 }
 
+function createMechanusAverageApplier(isEnabled) {
+  return (rollContext, result) => {
+    const roll = result && typeof result === "object" ? result : rollContext;
+    try {
+      applyMechanusAveragesToRoll(roll, { enabled: isEnabled() === true });
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to apply Mechanus roll averages.`, error);
+    }
+    return result;
+  };
+}
+
+function createMechanusEvaluateWrapper(isEnabled) {
+  const applyAverage = createMechanusAverageApplier(isEnabled);
+  return function evaluateWithMechanusAverages(wrapped, ...args) {
+    const result = wrapped(...args);
+    if (typeof result?.then === "function") {
+      return result.then((resolved) => applyAverage(this, resolved));
+    }
+
+    return applyAverage(this, result);
+  };
+}
+
+function createMechanusEvaluateSyncWrapper(isEnabled) {
+  const applyAverage = createMechanusAverageApplier(isEnabled);
+  return function evaluateSyncWithMechanusAverages(wrapped, ...args) {
+    const result = wrapped(...args);
+    return applyAverage(this, result);
+  };
+}
+
+function canUseLibWrapperForRollClass(RollClass) {
+  return RollClass
+    && RollClass === globalThis.Roll
+    && typeof globalThis.libWrapper?.register === "function";
+}
+
+function registerMechanusLibWrapperPatch(prototype, isEnabled) {
+  const targets = [];
+
+  try {
+    if (typeof prototype.evaluate === "function") {
+      globalThis.libWrapper.register(
+        MODULE_ID,
+        ROLL_EVALUATE_TARGET,
+        createMechanusEvaluateWrapper(isEnabled),
+        "WRAPPER"
+      );
+      targets.push(ROLL_EVALUATE_TARGET);
+    }
+
+    if (typeof prototype.evaluateSync === "function") {
+      globalThis.libWrapper.register(
+        MODULE_ID,
+        ROLL_EVALUATE_SYNC_TARGET,
+        createMechanusEvaluateSyncWrapper(isEnabled),
+        "WRAPPER"
+      );
+      targets.push(ROLL_EVALUATE_SYNC_TARGET);
+    }
+
+    Object.defineProperty(prototype, PATCH_STATE, {
+      value: { mode: "libWrapper", targets },
+      configurable: true
+    });
+    return true;
+  }
+  catch (error) {
+    unregisterMechanusLibWrapperTargets(targets);
+    throw error;
+  }
+}
+
+function unregisterMechanusLibWrapperTargets(targets) {
+  if (typeof globalThis.libWrapper?.unregister !== "function") {
+    return;
+  }
+
+  for (const target of targets ?? []) {
+    try {
+      globalThis.libWrapper.unregister(MODULE_ID, target);
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to unregister Mechanus libWrapper patch for ${target}.`, error);
+    }
+  }
+}
+
 export function patchMechanusRollClass(RollClass = globalThis.Roll, { isEnabled = () => false } = {}) {
   const prototype = RollClass?.prototype;
   if (!prototype || (typeof prototype.evaluate !== "function" && typeof prototype.evaluateSync !== "function")) {
@@ -410,16 +492,18 @@ export function patchMechanusRollClass(RollClass = globalThis.Roll, { isEnabled 
     return false;
   }
 
-  const applyAverage = (rollContext, result) => {
-    const roll = result && typeof result === "object" ? result : rollContext;
+  if (canUseLibWrapperForRollClass(RollClass)) {
     try {
-      applyMechanusAveragesToRoll(roll, { enabled: isEnabled() === true });
+      return registerMechanusLibWrapperPatch(prototype, isEnabled);
     }
     catch (error) {
-      console.warn(`${MODULE_ID} | Failed to apply Mechanus roll averages.`, error);
+      unregisterMechanusLibWrapperTargets(prototype[PATCH_STATE]?.targets);
+      delete prototype[PATCH_STATE];
+      console.warn(`${MODULE_ID} | Failed to register Mechanus libWrapper patch; falling back to direct patch.`, error);
     }
-    return result;
-  };
+  }
+
+  const applyAverage = createMechanusAverageApplier(isEnabled);
 
   const originalEvaluate = prototype.evaluate;
   const originalEvaluateSync = prototype.evaluateSync;
@@ -443,7 +527,7 @@ export function patchMechanusRollClass(RollClass = globalThis.Roll, { isEnabled 
   }
 
   Object.defineProperty(prototype, PATCH_STATE, {
-    value: { originalEvaluate, originalEvaluateSync },
+    value: { mode: "direct", originalEvaluate, originalEvaluateSync },
     configurable: true
   });
   return true;
@@ -454,6 +538,12 @@ export function resetMechanusRollClassPatch(RollClass = globalThis.Roll) {
   const state = prototype?.[PATCH_STATE];
   if (!prototype || !state) {
     return false;
+  }
+
+  if (state.mode === "libWrapper") {
+    unregisterMechanusLibWrapperTargets(state.targets);
+    delete prototype[PATCH_STATE];
+    return true;
   }
 
   if (typeof state.originalEvaluate === "function") {
