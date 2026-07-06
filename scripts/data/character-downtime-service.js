@@ -1423,6 +1423,16 @@ function buildProjectContinueRollTarget(actions = []) {
   return null;
 }
 
+function buildModuleAssetPath(relativePath = "") {
+  const safeRelativePath = cleanText(relativePath).replace(/^\/+/u, "");
+  if (!safeRelativePath) {
+    return "";
+  }
+
+  const modulePath = `modules/${MODULE_ID}/${safeRelativePath}`;
+  return globalThis.foundry?.utils?.getRoute?.(modulePath) ?? `/${modulePath}`;
+}
+
 function buildProjectCounterImagePath(max = 0, value = 0) {
   const safeMax = toInteger(max, 0);
   if (![3, 4, 6, 8].includes(safeMax)) {
@@ -1430,7 +1440,7 @@ function buildProjectCounterImagePath(max = 0, value = 0) {
   }
 
   const safeValue = Math.max(0, Math.min(safeMax, toInteger(value, 0)));
-  return `modules/${MODULE_ID}/templates/counters/progress-${safeMax}/progress_${safeValue}.png`;
+  return buildModuleAssetPath(`templates/counters/progress-${safeMax}/progress_${safeValue}.png`);
 }
 
 function getProjectCounterProgressSteps(actions = []) {

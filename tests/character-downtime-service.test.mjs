@@ -1428,6 +1428,70 @@ test("CharacterDowntimeService keeps unfinished completed long projects in curre
   assert.match(resultAction.resultTooltip, /Сдвиг счётчика/u);
 });
 
+test("CharacterDowntimeService builds route-safe project counter image paths", () => {
+  const previousFoundry = globalThis.foundry;
+  const routeCalls = [];
+  globalThis.foundry = {
+    utils: {
+      getRoute(path) {
+        routeCalls.push(path);
+        return `/foundry/${path}`;
+      }
+    }
+  };
+
+  try {
+    const service = new CharacterDowntimeService(createModuleApi({
+      snapshot: {
+        groupId: "group-a",
+        canSubmit: true,
+        members: [{
+          actorId: "actor-a",
+          actorName: "Asha",
+          canSubmit: true,
+          balance: {
+            availableWeeks: 1,
+            reservedWeeks: 0,
+            spentWeeks: 1,
+            totalGrantedWeeks: 2
+          }
+        }],
+        requests: [{
+          id: "downtime-project",
+          actorId: "actor-a",
+          actorName: "Asha",
+          actionId: "long-project",
+          actionLabel: "Long Project",
+          title: "Find a patron",
+          weeks: 1,
+          status: "completed",
+          checks: [{
+            id: "long-project-counter",
+            label: "Project counter",
+            actionType: "projectCounter",
+            projectCounter: {
+              current: 2,
+              max: 4
+            }
+          }]
+        }],
+        actionCatalog: []
+      }
+    }));
+
+    const context = service.getActorContext(createActor({ id: "actor-a", name: "Asha" }));
+
+    assert.equal(
+      context.currentProjects[0].projectCounter.imagePath,
+      "/foundry/modules/rebreya-main/templates/counters/progress-4/progress_2.png"
+    );
+    assert.deepEqual(routeCalls, ["modules/rebreya-main/templates/counters/progress-4/progress_2.png"]);
+  }
+  finally {
+    globalThis.foundry = previousFoundry;
+  }
+});
+
 test("CharacterDowntimeService keeps legacy three-part project counters visible", () => {
   const service = new CharacterDowntimeService(createModuleApi({
     snapshot: {
