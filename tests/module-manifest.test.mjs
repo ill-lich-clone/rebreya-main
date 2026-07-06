@@ -95,7 +95,7 @@ test("gear compendium import uses the firearm activity cache bust", async () => 
 
   assert.match(
     entrypointSource,
-    new RegExp(`gear-compendium\\.js\\?v=${escapedVersion}-firearm-stale-misfire-repair`, "u"),
+    new RegExp(`gear-compendium\\.js\\?v=${escapedVersion}-firearm-template-version-18`, "u"),
   );
 });
 

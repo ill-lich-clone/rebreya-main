@@ -480,6 +480,7 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.equal(musketActivitiesByName.get("Привести оружие в порядок")?.flags["rebreya-main"].automation, "firearm-maintain");
 
   const createdAutomaticRifle = createDnd5eItemData(automaticRifle, new Map());
+  const automaticRifleActivityIds = new Set(Object.keys(createdAutomaticRifle.system.activities ?? {}));
   const automaticRifleActivitiesByName = new Map(Object.values(createdAutomaticRifle.system.activities ?? {})
     .map((activity) => [activity.name, activity]));
   const automaticFire = automaticRifleActivitiesByName.get("Автоматический огонь");
@@ -498,6 +499,8 @@ test("real firearm gear data maps firearm sheet damage, properties, and attack a
   assert.deepEqual(automaticFire?.damage.parts[0].types, ["piercing"]);
   assert.equal(automaticFire?.flags["rebreya-main"].automation, "firearm-automatic-fire");
   assert.match(automaticFire?.description.chatFlavor ?? "", /4d8/u);
+  assert.equal(automaticRifleActivityIds.has("lchClearBreech01"), false);
+  assert.equal(automaticRifleActivityIds.has("lchMaintainGun01"), false);
   assert.equal(automaticRifleActivitiesByName.get("Очистить затвор"), undefined);
   assert.equal(automaticRifleActivitiesByName.get("Привести оружие в порядок"), undefined);
 
@@ -702,6 +705,7 @@ test("gear signatures include stable document ids so old compendium documents re
   const created = createDnd5eItemData(katana, new Map());
   const signature = JSON.parse(created.flags["rebreya-main"].signature);
 
+  assert.equal(signature.templateVersion, 18);
   assert.equal(created._id, createStableGearDocumentId("katana"));
   assert.equal(signature.stableDocumentId, created._id);
 });
