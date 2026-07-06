@@ -126,6 +126,94 @@ test("Mechanus converts d20 advantage and disadvantage into flat bonuses", () =>
   assert.equal(disadvantageRoll.total, 13);
 });
 
+test("Mechanus reads dnd5e d20 advantage mode when keep modifiers are absent", () => {
+  const advantageRoll = {
+    formula: "2d20kh + 3",
+    total: 23,
+    _total: 23,
+    options: { advantageMode: 1 },
+    terms: [
+      {
+        number: 2,
+        faces: 20,
+        total: 20,
+        results: [{ result: 2, active: false }, { result: 20, active: true }],
+        options: { advantageMode: 1 }
+      },
+      "+",
+      { number: 3, total: 3 }
+    ]
+  };
+
+  assert.equal(applyMechanusAveragesToRoll(advantageRoll), true);
+  assert.equal(advantageRoll.total, 7);
+  assert.equal(advantageRoll.terms[0].total, 4);
+  assert.deepEqual(advantageRoll.terms[0].results.map((result) => result.active), [true, false]);
+
+  const disadvantageRoll = {
+    formula: "2d20kl + 3",
+    total: 7,
+    _total: 7,
+    options: { advantageMode: -1 },
+    terms: [
+      {
+        number: 2,
+        faces: 20,
+        total: 4,
+        results: [{ result: 15, active: false }, { result: 4, active: true }],
+        options: { advantageMode: -1 }
+      },
+      "+",
+      { number: 3, total: 3 }
+    ]
+  };
+
+  assert.equal(applyMechanusAveragesToRoll(disadvantageRoll), true);
+  assert.equal(disadvantageRoll.total, 16);
+  assert.equal(disadvantageRoll.terms[0].total, 13);
+  assert.deepEqual(disadvantageRoll.terms[0].results.map((result) => result.active), [true, false]);
+});
+
+test("Mechanus reads d20 advantage mode from the roll formula as a fallback", () => {
+  const advantageRoll = {
+    formula: "2d20kh + 3",
+    total: 23,
+    _total: 23,
+    terms: [
+      {
+        number: 2,
+        faces: 20,
+        total: 20,
+        results: [{ result: 2, active: false }, { result: 20, active: true }]
+      },
+      "+",
+      { number: 3, total: 3 }
+    ]
+  };
+
+  assert.equal(applyMechanusAveragesToRoll(advantageRoll), true);
+  assert.equal(advantageRoll.total, 7);
+
+  const disadvantageRoll = {
+    formula: "2d20kl + 3",
+    total: 7,
+    _total: 7,
+    terms: [
+      {
+        number: 2,
+        faces: 20,
+        total: 4,
+        results: [{ result: 15, active: false }, { result: 4, active: true }]
+      },
+      "+",
+      { number: 3, total: 3 }
+    ]
+  };
+
+  assert.equal(applyMechanusAveragesToRoll(disadvantageRoll), true);
+  assert.equal(disadvantageRoll.total, 16);
+});
+
 test("Mechanus roll patch registers global Roll hooks through libWrapper", () => {
   const previousRoll = globalThis.Roll;
   const previousLibWrapper = globalThis.libWrapper;

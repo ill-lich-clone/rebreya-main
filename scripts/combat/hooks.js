@@ -11,7 +11,8 @@ export function registerCombatHooks(moduleApi) {
   const hasRogueService = Boolean(moduleApi?.rogueAutomationService);
   const hasAttackRollBoostService = Boolean(moduleApi?.attackRollBoostService);
   const hasPerformerService = Boolean(moduleApi?.performerAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService) {
+  const hasEnvironmentService = Boolean(moduleApi?.environmentAutomationService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasEnvironmentService) {
     return;
   }
 
@@ -68,6 +69,21 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to sync discreet status after effect deletion.`, error);
       });
     });
+  }
+
+  if (hasEnvironmentService) {
+    const applyCurrentEnvironment = async () => {
+      try {
+        await moduleApi.environmentAutomationService.updateCurrentTargetEnvironment();
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to update Rebreya environment statuses.`, error);
+      }
+      return true;
+    };
+
+    Hooks.on("targetToken", applyCurrentEnvironment);
+    Hooks.on("controlToken", applyCurrentEnvironment);
   }
 
   Hooks.on("combatTurn", (combat, updateData, updateOptions) => {
@@ -145,6 +161,16 @@ export function registerCombatHooks(moduleApi) {
 
     Hooks.on("dnd5e.preRollAttack", (rollConfig, dialogConfig, messageConfig) => {
       try {
+        if (hasEnvironmentService) {
+          moduleApi.environmentAutomationService.applyDnd5eAttackRollConfig(
+            rollConfig,
+            dialogConfig,
+            messageConfig
+          ).catch((error) => {
+            console.error(`${MODULE_ID} | Failed to update Rebreya environment before attack roll.`, error);
+          });
+        }
+
         if (hasRaceService) {
           moduleApi.raceAutomationService.applyDnd5eAttackRollConfig(
             rollConfig,
@@ -204,6 +230,11 @@ export function registerCombatHooks(moduleApi) {
             console.error(`${MODULE_ID} | Failed to apply dnd5e attack roll boost automation.`, error);
           });
         }
+        if (hasEnvironmentService) {
+          moduleApi.environmentAutomationService.applyDnd5eAttackRollConfig(context).catch((error) => {
+            console.error(`${MODULE_ID} | Failed to update Rebreya environment after attack roll.`, error);
+          });
+        }
         if (hasPerformerService) {
           moduleApi.performerAutomationService.applyDnd5eD20Roll(rolls, context, "attack").catch((error) => {
             console.error(`${MODULE_ID} | Failed to consume performer d20 effect after attack roll.`, error);
@@ -238,6 +269,34 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to apply MIDI roll-complete automation.`, error);
         return true;
       }
+    });
+  }
+
+  if (!hasAttackService && hasEnvironmentService) {
+    Hooks.on("dnd5e.preRollAttack", async (rollConfig, dialogConfig, messageConfig) => {
+      try {
+        await moduleApi.environmentAutomationService.applyDnd5eAttackRollConfig(
+          rollConfig,
+          dialogConfig,
+          messageConfig
+        );
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to update Rebreya environment before attack roll.`, error);
+      }
+      return true;
+    });
+  }
+
+  if (hasEnvironmentService) {
+    Hooks.on("midi-qol.preAttackRoll", async (workflow) => {
+      try {
+        await moduleApi.environmentAutomationService.applyMidiPreAttackRoll(workflow);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to update Rebreya environment before MIDI attack roll.`, error);
+      }
+      return true;
     });
   }
 

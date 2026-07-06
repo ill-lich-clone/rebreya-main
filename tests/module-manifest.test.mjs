@@ -99,7 +99,7 @@ test("gear compendium import uses the firearm activity cache bust", async () => 
   );
 });
 
-test("combat firearm activity repair uses the current cache bust", async () => {
+test("combat automation imports use the current cache busts", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const entrypointPath = manifest.esmodules?.[0];
@@ -108,11 +108,19 @@ test("combat firearm activity repair uses the current cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    new RegExp(`combat/hooks\\.js\\?v=${escapedVersion}-firearm-activity-repair`, "u"),
+    new RegExp(`combat/hooks\\.js\\?v=${escapedVersion}-environment-statuses`, "u"),
   );
   assert.match(
     entrypointSource,
     new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-native-area-fire-repair`, "u"),
+  );
+  assert.match(
+    entrypointSource,
+    new RegExp(`environment-automation-service\\.js\\?v=${escapedVersion}-environment-statuses`, "u"),
+  );
+  assert.match(
+    entrypointSource,
+    new RegExp(`mechanus-rolls\\.js\\?v=${escapedVersion}-mechanus-d20-advantage-mode`, "u"),
   );
 });
 

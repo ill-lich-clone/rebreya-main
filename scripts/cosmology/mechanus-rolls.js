@@ -92,12 +92,27 @@ function getTermModifiers(term) {
     return term.modifiers.map((modifier) => String(modifier ?? "").trim().toLowerCase()).filter(Boolean);
   }
 
+  if (term?.modifiers instanceof Set) {
+    return Array.from(term.modifiers, (modifier) => String(modifier ?? "").trim().toLowerCase()).filter(Boolean);
+  }
+
   const rawModifiers = String(term?.modifiers ?? "").trim().toLowerCase();
   return rawModifiers ? [rawModifiers] : [];
 }
 
 function getD20KeepModifier(term) {
   return getTermModifiers(term).find((modifier) => modifier.startsWith("kh") || modifier.startsWith("kl")) ?? "";
+}
+
+function getD20KeepModifierFromFormula(term, roll) {
+  for (const formula of [term?.expression, term?.formula, term?._formula, roll?.formula]) {
+    const match = String(formula ?? "").toLowerCase().match(/(?:^|[^\w])(?:\d+\s*)?d\s*20\s*(k[hl]\d*)/u);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  return "";
 }
 
 function getFirstResult(term) {
@@ -108,17 +123,54 @@ function getFirstResult(term) {
   return getResultValue(term.results[0]);
 }
 
-function getMechanusD20AdvantageBonus(term) {
+function getD20AdvantageMode(term, roll) {
+  const keepModifier = getD20KeepModifier(term);
+  if (keepModifier.startsWith("kh")) {
+    return 1;
+  }
+  if (keepModifier.startsWith("kl")) {
+    return -1;
+  }
+
+  const explicitMode = toFiniteNumber(term?.options?.advantageMode ?? roll?.options?.advantageMode, NaN);
+  if (explicitMode > 0) {
+    return 1;
+  }
+  if (explicitMode < 0) {
+    return -1;
+  }
+
+  const formulaModifier = getD20KeepModifierFromFormula(term, roll);
+  if (formulaModifier.startsWith("kh")) {
+    return 1;
+  }
+  if (formulaModifier.startsWith("kl")) {
+    return -1;
+  }
+
+  const hasAdvantage = term?.options?.advantage === true || roll?.options?.advantage === true || roll?.hasAdvantage === true;
+  const hasDisadvantage = term?.options?.disadvantage === true || roll?.options?.disadvantage === true || roll?.hasDisadvantage === true;
+  if (hasAdvantage && !hasDisadvantage) {
+    return 1;
+  }
+  if (hasDisadvantage && !hasAdvantage) {
+    return -1;
+  }
+
+  return 0;
+}
+
+function getMechanusD20AdvantageBonus(term, roll) {
   if (getTermFaces(term) !== 20 || getTermNumber(term) < 2) {
     return null;
   }
 
-  const keepModifier = getD20KeepModifier(term);
-  if (!keepModifier) {
+  const mode = getD20AdvantageMode(term, roll);
+  if (!mode) {
     return null;
   }
 
-  return keepModifier.startsWith("kh") ? 2 : -2;
+  return mode > 0 ? 2 : -2;
 }
 
 function replaceD20AdvantageWithFlatBonus(term, firstResult, replacementTotal, bonus) {

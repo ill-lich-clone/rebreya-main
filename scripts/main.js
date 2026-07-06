@@ -31,12 +31,13 @@ import { HeroDollService } from "./data/hero-doll-service.js";
 import { CraftingService } from "./data/crafting-service.js";
 import { CalendarService } from "./data/calendar-service.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.91-firearm-activity-repair";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.91-environment-statuses";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.91-firearm-native-area-fire-repair";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.91";
-import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.91-mechanus-libwrapper-advantage";
+import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.91-environment-statuses";
+import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.91-mechanus-d20-advantage-mode";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.91";
 import {
   PaladinAutomationService,
@@ -399,6 +400,7 @@ export class RebreyaMainModule {
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.attackRollBoostService = new AttackRollBoostService(this);
+    this.environmentAutomationService = new EnvironmentAutomationService(this);
     this.fighterAutomationService = new FighterAutomationService(this);
     this.paladinAutomationService = new PaladinAutomationService(this);
     this.rogueAutomationService = new RogueAutomationService(this);
