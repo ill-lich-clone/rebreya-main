@@ -114,7 +114,7 @@ test("combat automation imports use the current cache busts", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-canonical-misfire-repair`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-chat-notes`, "u"),
   );
   assert.match(
     entrypointSource,
@@ -149,7 +149,7 @@ test("held item integrations use the current module cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-canonical-misfire-repair`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-chat-notes`, "u"),
   );
   assert.match(
     sheetSource,

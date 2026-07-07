@@ -32,7 +32,7 @@ import { CraftingService } from "./data/crafting-service.js";
 import { CalendarService } from "./data/calendar-service.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.93-firearm-item-sheet-no-rerender";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.93-firearm-canonical-misfire-repair";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.93-firearm-chat-notes";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.93-surrounded-ac";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.93";

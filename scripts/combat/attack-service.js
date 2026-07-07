@@ -1096,7 +1096,15 @@ export class CombatAttackService {
     }
 
     const safeContent = cleanText(content);
-    if (!safeContent || typeof ChatMessage?.create !== "function") {
+    if (!safeContent) {
+      return;
+    }
+
+    if (this.#appendFirearmChatNote(options, safeContent)) {
+      return;
+    }
+
+    if (typeof ChatMessage?.create !== "function") {
       return;
     }
 
@@ -1109,6 +1117,21 @@ export class CombatAttackService {
     })).catch((error) => {
       console.error(`${MODULE_ID} | Failed to create firearm chat message.`, error);
     });
+  }
+
+  #appendFirearmChatNote(options = {}, content = "") {
+    const messageConfig = options?.messageConfig ?? null;
+    const safeContent = cleanText(content);
+    if (!safeContent || !isPlainObject(messageConfig)) {
+      return false;
+    }
+
+    if (!isPlainObject(messageConfig.data)) {
+      messageConfig.data = {};
+    }
+    const currentFlavor = cleanText(messageConfig.data.flavor ?? messageConfig.flavor);
+    messageConfig.data.flavor = [currentFlavor, safeContent].filter(Boolean).join("<br>");
+    return true;
   }
 
   #notifyFirearmAmmoEmpty(item) {
@@ -2052,6 +2075,12 @@ export class CombatAttackService {
     const weaponName = item?.name ?? "Оружие";
     const threshold = Math.max(1, Math.floor(toNumber(result?.threshold, 1)));
     const rollTotal = Math.max(1, Math.floor(toNumber(result?.rollTotal, 1)));
+    const outcome = result?.jammed === true ? "заклинено" : "без осечки";
+    const content = `${weaponName}: Осечка ${threshold}, d20 = ${rollTotal} (${outcome})`;
+    if (result?.jammed !== true && this.#appendFirearmChatNote(options, content)) {
+      return;
+    }
+
     const flavor = result?.jammed === true
       ? `${weaponName}: Осечка ${threshold} - оружие заклинено`
       : `${weaponName}: проверка осечки ${threshold}`;
@@ -2069,11 +2098,10 @@ export class CombatAttackService {
 
       const userId = String(game.user?.id ?? "").trim();
       if (typeof ChatMessage?.create === "function" && userId) {
-        const outcome = result?.jammed === true ? "заклинено" : "без осечки";
         Promise.resolve(ChatMessage.create({
           user: userId,
           speaker: ChatMessage.getSpeaker?.({ actor }) ?? {},
-          content: `${weaponName}: Осечка ${threshold}, d20 = ${rollTotal} (${outcome})`
+          content
         })).catch((error) => {
           console.error(`${MODULE_ID} | Failed to create firearm misfire chat message.`, error);
         });
@@ -2776,13 +2804,14 @@ export class CombatAttackService {
       : (state.capacity > 0 ? Math.min(3, state.capacity) : 3);
     const ammo = this.#consumeLoadedFirearmAmmo(actor, item, ammoRequired, {
       allowPartial: mode === "automatic",
-      emptyMagazine: mode === "automatic"
+      emptyMagazine: mode === "automatic",
+      messageConfig
     });
     if (!ammo.success) {
       return false;
     }
 
-    const misfire = this.#rollFirearmMisfire(actor, item, {});
+    const misfire = this.#rollFirearmMisfire(actor, item, { messageConfig });
     if (misfire.jammed) {
       return false;
     }
@@ -2869,19 +2898,26 @@ export class CombatAttackService {
         return false;
       }
 
-      if (isFirearmItem(item)) {
+      const isFirearm = isFirearmItem(item);
+      const actor = activity.actor ?? item.actor ?? null;
+      const firearmMessageOptions = isFirearm ? { ...config, messageConfig: message } : config;
+      if (isFirearm) {
         if (this.#getFirearmAmmoShotBlock(item)) {
           return true;
         }
 
-        const actor = activity.actor ?? item.actor ?? null;
-        const ammo = this.#consumeLoadedFirearmAmmo(actor, item, this.#resolveFirearmShotAmmoCost(item), {});
+        const ammo = this.#consumeLoadedFirearmAmmo(
+          actor,
+          item,
+          this.#resolveFirearmShotAmmoCost(item),
+          firearmMessageOptions
+        );
         if (!ammo.success) {
           return false;
         }
       }
 
-      const misfire = this.#rollFirearmMisfire(activity.actor ?? item.actor ?? null, item, config);
+      const misfire = this.#rollFirearmMisfire(actor, item, firearmMessageOptions);
       if (misfire.jammed) {
         return false;
       }

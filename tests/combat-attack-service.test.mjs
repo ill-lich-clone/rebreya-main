@@ -1751,6 +1751,53 @@ test("firearm misfire rolls an extra d20 and jams the weapon before the attack",
   assert.match(TestRoll.messages[0].messageData.flavor, /Осечка/u);
 });
 
+test("firearm attack roll notes ammo and misfire in the native attack message", () => {
+  TestRoll.queuedTotals = [13];
+  TestRoll.messages = [];
+  globalThis.ChatMessage.messages = [];
+  const weapon = makeFirearmItem({
+    name: "Musket",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true,
+      lchFirearmMisfire: true
+    },
+    values: {
+      ammunition: "Musket",
+      reload: "Reload 1",
+      misfire: 2
+    },
+    ammoState: {
+      current: 1,
+      capacity: 1,
+      ammunition: "Musket"
+    }
+  });
+  const actor = makeActor([weapon]);
+  const activity = {
+    id: "attack-1",
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: {
+      type: {
+        value: "firearm"
+      }
+    }
+  };
+  const messageConfig = {};
+  const service = new CombatAttackService({});
+
+  const result = service.applyDnd5eAttackRollConfig({ subject: activity }, {}, messageConfig);
+
+  assert.equal(result, true);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
+  assert.equal(globalThis.ChatMessage.messages.length, 0);
+  assert.equal(TestRoll.messages.length, 0);
+  assert.match(messageConfig.data.flavor, /Musket \(0\/1\)/u);
+  assert.match(messageConfig.data.flavor, /d20 = 13/u);
+});
+
 test("already jammed firearms cannot be used for attack activities", async () => {
   const warnings = [];
   const previousWarn = globalThis.ui.notifications.warn;
