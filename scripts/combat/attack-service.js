@@ -4,7 +4,7 @@ import {
   buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
   getItemHeldHands
-} from "../integrations/held-items.js?v=1.4.92-npc-held-natural";
+} from "../integrations/held-items.js?v=1.4.93-npc-held-natural";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";
@@ -127,25 +127,37 @@ function refreshLocalHeldItemActivityData(item, activity) {
     }
   }
 
-  if (preparedItem) {
-    return;
+  if (typeof item?.prepareFinalAttributes === "function") {
+    try {
+      item.prepareFinalAttributes();
+      return;
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to refresh auto-held item final data before use.`, error);
+    }
   }
 
   const activityId = cleanText(activity?.id ?? activity?._id);
   const preparedActivity = activityId ? item?.system?.activities?.get?.(activityId) : null;
   const targetActivity = preparedActivity ?? activity;
-  for (const methodName of ["prepareData", "prepareFinalData"]) {
-    if (typeof targetActivity?.[methodName] !== "function") {
-      continue;
-    }
-
+  if (!preparedItem && typeof targetActivity?.prepareData === "function") {
     try {
-      targetActivity[methodName]();
+      targetActivity.prepareData();
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to refresh auto-held activity data before use.`, error);
       return;
     }
+  }
+
+  if (typeof targetActivity?.prepareFinalData === "function") {
+    try {
+      targetActivity.prepareFinalData();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to refresh auto-held activity final data before use.`, error);
+    }
+    return;
   }
 }
 
@@ -555,6 +567,12 @@ function ensureBaseDamageUsageButtons(activity, buttons) {
     safeButtons.unshift(nextDamageButton);
   }
   return safeButtons;
+}
+
+function selectAutoHeldHandsForUse(freeHands, requiredHands) {
+  const hands = Array.isArray(freeHands) ? freeHands : [];
+  const heldHandCount = Math.max(1, Math.min(hands.length, requiredHands > 1 ? 1 : requiredHands));
+  return hands.slice(0, heldHandCount);
 }
 
 function isMeleeWeaponItem(item) {
@@ -2276,7 +2294,7 @@ export class CombatAttackService {
       const required = Math.max(1, requiredHands);
       const freeHands = Array.isArray(result.freeHands) ? result.freeHands : [];
       if (freeHands.length >= required) {
-        const hands = freeHands.slice(0, required);
+        const hands = selectAutoHeldHandsForUse(freeHands, required);
         try {
           const update = buildHeldItemHandUpdate(hands, item);
           const updateResult = item.update?.(update, heldItemUpdateOptions());

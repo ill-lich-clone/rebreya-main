@@ -380,6 +380,39 @@ test("weapon attack activities mark auto-held items before activity use continue
   await Promise.resolve();
 });
 
+test("two-handed weapon attack auto-holds the item in one hand and uses a free hand for the attack", async () => {
+  const weapon = makeWeaponItem({
+    deferUpdateMutation: true,
+    properties: ["two"]
+  });
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+  const activity = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: {
+      type: {
+        value: "ranged"
+      }
+    },
+    range: {}
+  };
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+  assert.deepEqual(weapon.updateCalls.at(-1), {
+    updates: {
+      "system.equipped": true,
+      "flags.rebreya-main.heldHands": ["left"]
+    },
+    options: { render: false, parent: actor }
+  });
+  assert.deepEqual(weapon.flags[MODULE_ID].heldHands, ["left"]);
+  await Promise.resolve();
+});
+
 test("auto-held weapon activities refresh prepared base damage before usage card buttons", async () => {
   const weapon = makeWeaponItem({ deferUpdateMutation: true });
   const actor = makeActor([weapon]);
@@ -448,6 +481,68 @@ test("auto-held weapon activities refresh prepared base damage before usage card
   assert.equal(weapon.prepareDataCalls, 1);
   const buttons = activity._usageChatButtons({});
   assert.ok(buttons.some((button) => button?.dataset?.action === "rollDamage"));
+  await Promise.resolve();
+});
+
+test("auto-held weapon activities run final dnd5e preparation before midi builds the first card", async () => {
+  const weapon = makeWeaponItem({ deferUpdateMutation: true });
+  const actor = makeActor([weapon]);
+  weapon.actor = actor;
+  weapon.system.offersBaseDamage = true;
+  weapon.system.damage = {
+    base: {
+      formula: "1d8 + 10"
+    }
+  };
+  const activity = {
+    id: "attack-activity",
+    type: "attack",
+    actor,
+    item: weapon,
+    damage: {
+      includeBase: true,
+      parts: []
+    },
+    attack: {
+      type: {
+        value: "melee"
+      }
+    },
+    range: {}
+  };
+  weapon.system.activities = {
+    get(id) {
+      return id === activity.id ? activity : null;
+    }
+  };
+  weapon.prepareDataCalls = 0;
+  weapon.prepareFinalAttributesCalls = 0;
+  weapon.prepareData = () => {
+    weapon.prepareDataCalls += 1;
+  };
+  weapon.prepareFinalAttributes = () => {
+    weapon.prepareFinalAttributesCalls += 1;
+    activity.damage.parts = [
+      {
+        formula: weapon.system.damage.base.formula,
+        base: true,
+        locked: true
+      }
+    ];
+  };
+
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(activity), true);
+  assert.equal(weapon.prepareDataCalls, 1);
+  assert.equal(weapon.prepareFinalAttributesCalls, 1);
+  assert.deepEqual(activity.damage.parts, [
+    {
+      formula: "1d8 + 10",
+      base: true,
+      locked: true
+    }
+  ]);
   await Promise.resolve();
 });
 

@@ -380,7 +380,7 @@
 }
 
 .rm-held-item-control.is-held {
-  color: var(--rm-accent) !important;
+  color: var(--item-control-active-color, var(--rm-accent)) !important;
   opacity: 1;
 }
 

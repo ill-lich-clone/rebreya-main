@@ -32,7 +32,7 @@ import {
   getHeldItemDamageFormulaPresentation,
   getHeldItemEquipPresentation,
   isHeldItemEligible
-} from "./held-items.js?v=1.4.92-npc-held-natural";
+} from "./held-items.js?v=1.4.93-npc-held-natural";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
@@ -6062,6 +6062,7 @@ async function confirmHeldItemReplacement(item, action) {
 
 async function releaseHeldItemReplacementSlots(actor, action) {
   const replacements = Array.isArray(action?.replacements) ? action.replacements : [];
+  const releasedItems = [];
   const slotsByItemId = new Map();
   for (const replacement of replacements) {
     const itemId = cleanText(replacement.itemId);
@@ -6082,7 +6083,14 @@ async function releaseHeldItemReplacementSlots(actor, action) {
     }
 
     await replacementItem.update?.(buildHeldItemReleaseHandUpdate(replacementItem, slots), heldItemUpdateOptions());
+    releasedItems.push(replacementItem);
   }
+
+  return releasedItems;
+}
+
+function isShieldEquipmentItem(item) {
+  return item?.type === "equipment" && cleanConfigString(item?.system?.type?.value).toLowerCase() === "shield";
 }
 
 function closeHeldItemContextMenu() {
@@ -6258,11 +6266,14 @@ function bindHeldItemEquipContextMenu(root, { actor, app, moduleApi } = {}) {
             return;
           }
 
-          await releaseHeldItemReplacementSlots(actor, action);
+          const releasedItems = await releaseHeldItemReplacementSlots(actor, action);
           const updatedItem = await item.update?.(action.update, heldItemUpdateOptions());
           const presentationItem = updatedItem ?? item;
           applyHeldItemEquipPresentation(control, action);
           applyHeldItemDamageFormulaPresentation(row, presentationItem);
+          if (isShieldEquipmentItem(presentationItem) || releasedItems.some((releasedItem) => isShieldEquipmentItem(releasedItem))) {
+            await rerenderActorSheet(app, moduleApi);
+          }
         }
       }));
       openHeldItemContextMenu({

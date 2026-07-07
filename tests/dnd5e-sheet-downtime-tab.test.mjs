@@ -874,6 +874,115 @@ test("held item context menu updates npc hand state without forced sheet rerende
   }
 });
 
+test("held shield context menu refreshes the current sheet so armor class reflects the hand state", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?held-shield-ac-refresh=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const updates = [];
+    const item = {
+      id: "shield",
+      _id: "shield",
+      name: "Shield",
+      type: "equipment",
+      system: {
+        equipped: false,
+        type: {
+          value: "shield"
+        },
+        armor: {
+          value: 2
+        }
+      },
+      flags: {},
+      getFlag(scope, key) {
+        return String(key ?? "").split(".").reduce((current, part) => (
+          current && typeof current === "object" ? current[part] : undefined
+        ), this.flags?.[scope]);
+      },
+      async update(patch, options = {}) {
+        updates.push({ patch, options });
+        this.system.equipped = patch["system.equipped"];
+        this.flags["rebreya-main"] = {
+          heldHands: patch["flags.rebreya-main.heldHands"]
+        };
+        return this;
+      }
+    };
+    actor.items = {
+      contents: [item],
+      get: (id) => (id === "shield" ? item : null)
+    };
+    const equipControl = new stubs.HTMLElement({
+      dataset: {
+        action: "equip"
+      }
+    });
+    const row = new stubs.HTMLElement({
+      dataset: {
+        itemId: "shield"
+      },
+      selectors: {
+        "[data-action='equip']": equipControl
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-item-id]": [row]
+      }
+    });
+    stubs.document.body = new stubs.HTMLElement();
+    globalThis.window.innerWidth = 800;
+    globalThis.window.innerHeight = 600;
+    const renderCalls = [];
+    const app = {
+      actor,
+      async render(options) {
+        renderCalls.push(options);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    await equipControl.listeners.contextmenu[0]({
+      clientX: 10,
+      clientY: 20,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+    const menu = stubs.document.body.children.find((child) => child.classList.contains("rm-context-menu"));
+    const leftHandButton = menu.children.find((child) => child.dataset.action === "left");
+    await leftHandButton.listeners.click[0]({
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(updates.at(-1)?.patch, {
+      "system.equipped": true,
+      "flags.rebreya-main.heldHands": ["left"]
+    });
+    assert.equal(updates.at(-1)?.options.render, false);
+    assert.deepEqual(renderCalls, [{ force: true }]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("held item context menu can replace an occupied hand slot after confirmation", async () => {
   const stubs = installSheetExtensionStubs();
   try {
@@ -1003,6 +1112,143 @@ test("held item context menu can replace an occupied hand slot after confirmatio
       "system.equipped": true,
       "flags.rebreya-main.heldHands": ["left"]
     });
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("held item context menu rerenders when replacing a shield in hand", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?held-shield-replace=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const shieldUpdates = [];
+    const swordUpdates = [];
+    const shield = {
+      id: "shield",
+      _id: "shield",
+      name: "Shield",
+      type: "equipment",
+      system: {
+        equipped: true,
+        type: {
+          value: "shield"
+        },
+        armor: {
+          value: 2
+        }
+      },
+      flags: {
+        "rebreya-main": {
+          heldHands: ["left"]
+        }
+      },
+      getFlag(scope, key) {
+        return String(key ?? "").split(".").reduce((current, part) => (
+          current && typeof current === "object" ? current[part] : undefined
+        ), this.flags?.[scope]);
+      },
+      async update(patch) {
+        shieldUpdates.push(patch);
+      }
+    };
+    const sword = {
+      id: "sword",
+      _id: "sword",
+      name: "Sword",
+      type: "weapon",
+      system: { equipped: false },
+      flags: {},
+      getFlag(scope, key) {
+        return String(key ?? "").split(".").reduce((current, part) => (
+          current && typeof current === "object" ? current[part] : undefined
+        ), this.flags?.[scope]);
+      },
+      async update(patch) {
+        swordUpdates.push(patch);
+      }
+    };
+    actor.items = {
+      contents: [shield, sword],
+      get: (id) => [shield, sword].find((item) => item.id === id) ?? null
+    };
+    const equipControl = new stubs.HTMLElement({
+      dataset: {
+        action: "equip"
+      }
+    });
+    const row = new stubs.HTMLElement({
+      dataset: {
+        itemId: "sword"
+      },
+      selectors: {
+        "[data-action='equip']": equipControl
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-item-id]": [row]
+      }
+    });
+    stubs.document.body = new stubs.HTMLElement();
+    globalThis.window.innerWidth = 800;
+    globalThis.window.innerHeight = 600;
+    globalThis.foundry.applications = {
+      api: {
+        DialogV2: {
+          async confirm() {
+            return true;
+          }
+        }
+      }
+    };
+    const renderCalls = [];
+    const app = {
+      actor,
+      async render(options) {
+        renderCalls.push(options);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+
+    await equipControl.listeners.contextmenu[0]({
+      clientX: 10,
+      clientY: 20,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+    const menu = stubs.document.body.children.find((child) => child.classList.contains("rm-context-menu"));
+    const leftHandButton = menu.children.find((child) => child.dataset.action === "left");
+    await leftHandButton.listeners.click[0]({
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(shieldUpdates.at(-1), {
+      "system.equipped": true,
+      "flags.rebreya-main.-=heldHands": null
+    });
+    assert.deepEqual(swordUpdates.at(-1), {
+      "system.equipped": true,
+      "flags.rebreya-main.heldHands": ["left"]
+    });
+    assert.deepEqual(renderCalls, [{ force: true }]);
   }
   finally {
     stubs.restore();
@@ -1278,7 +1524,7 @@ test("main stylesheet highlights active held item equip controls", async () => {
   const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
   assert.match(styles, /\.rm-held-item-control\.is-held\s*\{/u);
-  assert.match(styles, /\.rm-held-item-control\.is-held\s*\{[^}]*color:\s*var\(--rm-accent\)/su);
+  assert.match(styles, /\.rm-held-item-control\.is-held\s*\{[^}]*color:\s*var\(--item-control-active-color,\s*var\(--rm-accent\)\)/su);
   assert.match(styles, /\.rm-held-item-control\.is-held\s+i\s*\{[^}]*color:\s*inherit/su);
 });
 
