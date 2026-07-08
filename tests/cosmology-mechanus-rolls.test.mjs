@@ -17,6 +17,12 @@ test("Mechanus averages non-d20 and non-d100 dice at the whole roll level", () =
   assert.equal(computeMechanusAverageFormulaTotal("8d6"), 28);
 });
 
+test("Mechanus formula averaging respects non-d20 keep modifiers", () => {
+  assert.equal(computeMechanusAverageFormulaTotal("4d6kh3"), 10);
+  assert.equal(computeMechanusAverageFormulaTotal("4d6kl3"), 10);
+  assert.equal(computeMechanusAverageFormulaTotal("2d8kh + 1d4"), 7);
+});
+
 test("Mechanus formula averaging ignores d20 and d100 expressions", () => {
   assert.equal(computeMechanusAverageFormulaTotal("1d20 + 1d4"), null);
   assert.equal(computeMechanusAverageFormulaTotal("1d100 + 2d4"), null);
@@ -75,6 +81,54 @@ test("Mechanus floors a fractional final damage total inside the averaged dice t
   assert.equal(damageRoll.total, 14);
   assert.equal(damageRoll.terms[0].total, 4);
   assert.equal(damageRoll.terms[0].results[0].result, 4);
+});
+
+test("Mechanus roll averaging keeps Foundry non-d20 kh and kl active dice counts", () => {
+  const keepHighestRoll = {
+    formula: "4d6kh3",
+    total: 16,
+    _total: 16,
+    terms: [{
+      number: 4,
+      faces: 6,
+      modifiers: ["kh3"],
+      total: 16,
+      results: [
+        { result: 2, active: false, discarded: true },
+        { result: 5, active: true },
+        { result: 5, active: true },
+        { result: 6, active: true }
+      ]
+    }]
+  };
+
+  assert.equal(applyMechanusAveragesToRoll(keepHighestRoll), true);
+  assert.equal(keepHighestRoll.total, 10);
+  assert.equal(keepHighestRoll.terms[0].total, 10);
+  assert.deepEqual(keepHighestRoll.terms[0].results.map((result) => result.active), [false, true, true, true]);
+
+  const keepLowestRoll = {
+    formula: "4d6kl3",
+    total: 7,
+    _total: 7,
+    terms: [{
+      number: 4,
+      faces: 6,
+      modifiers: ["kl3"],
+      total: 7,
+      results: [
+        { result: 1, active: true },
+        { result: 2, active: true },
+        { result: 4, active: true },
+        { result: 6, active: false, discarded: true }
+      ]
+    }]
+  };
+
+  assert.equal(applyMechanusAveragesToRoll(keepLowestRoll), true);
+  assert.equal(keepLowestRoll.total, 10);
+  assert.equal(keepLowestRoll.terms[0].total, 10);
+  assert.deepEqual(keepLowestRoll.terms[0].results.map((result) => result.active), [true, true, true, false]);
 });
 
 test("Mechanus converts d20 advantage and disadvantage into flat bonuses", () => {

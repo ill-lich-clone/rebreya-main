@@ -17,7 +17,7 @@ function toPositiveInteger(value, fallback = 0) {
 }
 
 function diceTermPattern() {
-  return /(^|[^\w.])(\d*)d(\d+)(?![\w])/giu;
+  return /(^|[^\w.])(\d*)d(\d+)((?:k[hl]|d[hl])\d*)?(?![\w])/giu;
 }
 
 function finalizeMechanusTotal(value) {
@@ -98,6 +98,31 @@ function getTermModifiers(term) {
 
   const rawModifiers = String(term?.modifiers ?? "").trim().toLowerCase();
   return rawModifiers ? [rawModifiers] : [];
+}
+
+function getDiceSelectionModifier(term) {
+  return getTermModifiers(term).find((modifier) => /^(?:k[hl]|d[hl])\d*$/u.test(modifier)) ?? "";
+}
+
+function getSelectedDiceNumber(number, modifier = "") {
+  const diceNumber = Math.max(0, Math.floor(toFiniteNumber(number, 0)));
+  const normalizedModifier = String(modifier ?? "").trim().toLowerCase();
+  const match = normalizedModifier.match(/^([kd][hl])(\d*)$/u);
+  if (!match) {
+    return diceNumber;
+  }
+
+  const requested = match[2] ? Math.max(0, Math.floor(toFiniteNumber(match[2], 0))) : 1;
+  const count = Math.min(diceNumber, requested);
+  return match[1].startsWith("k") ? count : Math.max(0, diceNumber - count);
+}
+
+function getTermSelectedNumber(term) {
+  if (Array.isArray(term?.results) && term.results.length > 0) {
+    return term.results.reduce((count, result) => count + (isResultActive(result) ? 1 : 0), 0);
+  }
+
+  return getSelectedDiceNumber(getTermNumber(term), getDiceSelectionModifier(term));
 }
 
 function getD20KeepModifier(term) {
@@ -271,32 +296,37 @@ function collectDiceTerms(roll) {
   return terms;
 }
 
-function replaceTermResultsWithAverage(term, averageTotal) {
+function replaceTermResultsWithAverage(term, averageTotal, selectedNumber = getTermNumber(term)) {
   const faces = getTermFaces(term);
-  const number = getTermNumber(term);
+  const activeNumber = Math.max(0, Math.floor(toFiniteNumber(selectedNumber, 0)));
   const perDieAverage = faces > 0 ? ((faces + 1) / 2) : averageTotal;
 
   if (Array.isArray(term.results) && term.results.length > 0) {
     let activeIndex = 0;
     for (const result of term.results) {
-      if (!isResultActive(result)) {
+      const wasActive = isResultActive(result);
+      result.result = perDieAverage;
+      result.value = perDieAverage;
+
+      if (!wasActive || activeIndex >= activeNumber) {
+        result.active = false;
+        result.discarded = true;
         continue;
       }
 
-      result.result = perDieAverage;
-      result.value = perDieAverage;
       result.active = true;
+      result.discarded = false;
       activeIndex += 1;
     }
 
-    while (activeIndex < number) {
+    while (activeIndex < activeNumber) {
       term.results.push({ result: perDieAverage, value: perDieAverage, active: true });
       activeIndex += 1;
     }
   }
   else {
     term.results = Array.from(
-      { length: number },
+      { length: activeNumber },
       () => ({ result: perDieAverage, value: perDieAverage, active: true })
     );
   }
@@ -360,8 +390,10 @@ export function getMechanusDieAverage(number, faces) {
 
 export function buildMechanusAverageFormula(formula) {
   let changed = false;
-  const averaged = String(formula ?? "").replace(diceTermPattern(), (match, prefix, rawNumber, rawFaces) => {
-    const average = getMechanusDieAverage(rawNumber ? Number(rawNumber) : 1, Number(rawFaces));
+  const averaged = String(formula ?? "").replace(diceTermPattern(), (match, prefix, rawNumber, rawFaces, rawModifier = "") => {
+    const number = rawNumber ? Number(rawNumber) : 1;
+    const selectedNumber = getSelectedDiceNumber(number, rawModifier);
+    const average = getMechanusDieAverage(selectedNumber, Number(rawFaces));
     if (average === null) {
       return match;
     }
@@ -407,7 +439,8 @@ export function applyMechanusAveragesToRoll(roll, { enabled = true } = {}) {
       continue;
     }
 
-    const average = getMechanusDieAverage(getTermNumber(term), getTermFaces(term));
+    const selectedNumber = getTermSelectedNumber(term);
+    const average = getMechanusDieAverage(selectedNumber, getTermFaces(term));
     if (average === null) {
       continue;
     }
@@ -419,7 +452,7 @@ export function applyMechanusAveragesToRoll(roll, { enabled = true } = {}) {
 
     delta += average - currentTermTotal;
     changed = true;
-    replaceTermResultsWithAverage(term, average);
+    replaceTermResultsWithAverage(term, average, selectedNumber);
     averagedTerms.push(term);
   }
 
