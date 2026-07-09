@@ -27,8 +27,9 @@ import {
 } from "./universal-belt.js";
 import {
   bindItemUpgradeSheet,
-  hideInstalledUpgradeInventoryRows
-} from "./item-upgrade-sheet.js?v=1.4.93-item-upgrades";
+  hideInstalledUpgradeInventoryRows,
+  registerItemUpgradeFilterHook
+} from "./item-upgrade-sheet.js?v=1.4.93-item-upgrades-fix";
 import {
   buildHeldItemEquipMenuActions,
   buildHeldItemReleaseHandUpdate,
@@ -6769,6 +6770,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   }
 
   registerHeldItemUpdatedHook();
+  registerItemUpgradeFilterHook();
 
   const CharacterActorSheet = getCharacterActorSheetClass();
   if (CharacterActorSheet) {

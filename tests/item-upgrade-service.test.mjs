@@ -288,3 +288,44 @@ test("installed actor upgrade ids include items contained by upgraded hosts", as
     restore();
   }
 });
+
+test("dnd5e item filter hook hides installed upgrades before inventory rows render", async () => {
+  const restoreFoundry = installFoundryStubs();
+  const previousHooks = globalThis.Hooks;
+  const listeners = [];
+  globalThis.Hooks = {
+    on(hookName, listener) {
+      listeners.push({ hookName, listener });
+    }
+  };
+
+  try {
+    const {
+      registerItemUpgradeFilterHook
+    } = await import(`../scripts/integrations/item-upgrade-sheet.js?filter-hook=${Date.now()}`);
+    const { ItemUpgradeService } = await import(`../scripts/data/item-upgrade-service.js?filter-hook=${Date.now()}`);
+    const actor = new FakeActor();
+    const host = actor.addItem({
+      _id: "longsword",
+      name: "Longsword",
+      type: "weapon",
+      system: { quantity: 1 },
+      flags: {}
+    });
+    const upgrade = makeUpgrade(actor, { _id: "storm-stone" });
+
+    assert.equal(registerItemUpgradeFilterHook(), true);
+    const filter = listeners.find((entry) => entry.hookName === "dnd5e.filterItem")?.listener;
+    assert.equal(typeof filter, "function");
+
+    const service = new ItemUpgradeService();
+    await service.installUpgrade(host, upgrade);
+
+    assert.equal(filter({}, upgrade, new Set()), false);
+    assert.equal(filter({}, host, new Set()), undefined);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    restoreFoundry();
+  }
+});

@@ -3,6 +3,7 @@ import {
   getInstalledActorUpgradeItemIds,
   getInstalledUpgradeItems,
   getItemUpgradeHostState,
+  isInstalledUpgradeItem,
   isUpgradeableHostItem,
   isUpgradeItem,
   UPGRADE_HOLD_DURATION_MS
@@ -10,6 +11,7 @@ import {
 
 const DRAG_DATA_TYPES = ["text/plain", "text", "application/json"];
 const HOLD_STATES = new WeakMap();
+let filterHookRegistered = false;
 
 function cleanText(value) {
   return String(value ?? "").trim();
@@ -295,6 +297,21 @@ export function hideInstalledUpgradeInventoryRows(root, actor) {
       node.classList?.add?.("rm-item-upgrades-hidden-item");
     }
   }
+  return true;
+}
+
+export function registerItemUpgradeFilterHook() {
+  if (filterHookRegistered || !(globalThis.Hooks?.on instanceof Function)) {
+    return false;
+  }
+
+  filterHookRegistered = true;
+  globalThis.Hooks.on("dnd5e.filterItem", (_sheet, item) => {
+    if (isInstalledUpgradeItem(item)) {
+      return false;
+    }
+    return undefined;
+  });
   return true;
 }
 
