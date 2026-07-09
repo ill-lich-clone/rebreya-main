@@ -606,6 +606,29 @@ test("registerDnd5eSheetExtensions marks unavailable activity choice buttons", a
     assert.equal(badge.textContent, "Недоступно");
     assert.equal(button.classList.contains("rm-activity-unavailable"), true);
     assert.equal(button.classList.contains("rm-activity-unavailable--choice"), true);
+    assert.equal(button.disabled, true);
+    assert.equal(button.attributes["aria-disabled"], "true");
+    assert.ok(button.listeners.click?.length);
+    assert.ok(button.listenerOptions.click.some((options) => options?.capture === true));
+
+    const blockedEvent = {
+      defaultPrevented: false,
+      propagationStopped: false,
+      immediatePropagationStopped: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+      stopPropagation() {
+        this.propagationStopped = true;
+      },
+      stopImmediatePropagation() {
+        this.immediatePropagationStopped = true;
+      }
+    };
+    button.listeners.click.at(-1)(blockedEvent);
+    assert.equal(blockedEvent.defaultPrevented, true);
+    assert.equal(blockedEvent.propagationStopped, true);
+    assert.equal(blockedEvent.immediatePropagationStopped, true);
   }
   finally {
     stubs.restore();

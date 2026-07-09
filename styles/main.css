@@ -402,6 +402,11 @@
   gap: 2px;
 }
 
+.rm-activity-unavailable--choice[disabled] {
+  cursor: not-allowed;
+  opacity: 0.78;
+}
+
 .rm-activity-unavailable-badge {
   display: inline-flex;
   align-items: center;

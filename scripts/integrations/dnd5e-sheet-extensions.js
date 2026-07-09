@@ -5933,6 +5933,69 @@ function getActivityBadgeTarget(row) {
   return null;
 }
 
+function removeElementAttribute(element, name) {
+  if (typeof element?.removeAttribute === "function") {
+    element.removeAttribute(name);
+    return;
+  }
+
+  if (element?.attributes && typeof element.attributes === "object") {
+    delete element.attributes[name];
+  }
+}
+
+function blockUnavailableActivityChoiceEvent(event, row) {
+  if (row?.dataset?.rebreyaActivityUnavailable !== "true") {
+    return;
+  }
+
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  event?.stopImmediatePropagation?.();
+}
+
+function resetActivityUnavailableInteraction(row) {
+  row.classList.remove(
+    "rm-activity-unavailable",
+    "rm-activity-unavailable--row",
+    "rm-activity-unavailable--choice"
+  );
+  delete row.dataset.rebreyaActivityUnavailable;
+
+  if (row.dataset.rebreyaActivityChoiceGuardBound === "true") {
+    row.disabled = false;
+    row.tabIndex = 0;
+    removeElementAttribute(row, "disabled");
+    removeElementAttribute(row, "aria-disabled");
+  }
+}
+
+function applyActivityUnavailableInteraction(row, target) {
+  row.classList.add("rm-activity-unavailable");
+  row.classList.add(`rm-activity-unavailable--${target.kind}`);
+  row.dataset.rebreyaActivityUnavailable = "true";
+
+  if (target.kind !== "choice") {
+    return;
+  }
+
+  row.disabled = true;
+  row.tabIndex = -1;
+  row.setAttribute?.("disabled", "");
+  row.setAttribute?.("aria-disabled", "true");
+
+  if (row.dataset.rebreyaActivityChoiceGuardBound === "true") {
+    return;
+  }
+
+  row.dataset.rebreyaActivityChoiceGuardBound = "true";
+  for (const eventName of ["pointerdown", "click", "keydown"]) {
+    row.addEventListener?.(eventName, (event) => {
+      blockUnavailableActivityChoiceEvent(event, row);
+    }, { capture: true });
+  }
+}
+
 function bindActivityAvailabilityBadges(root, { actor = null, item = null, moduleApi } = {}) {
   const contextActor = actor instanceof Actor ? actor : getActorFromItem(item);
   const fallbackItem = item ?? null;
@@ -5949,8 +6012,7 @@ function bindActivityAvailabilityBadges(root, { actor = null, item = null, modul
     if (!(row instanceof HTMLElement)) {
       continue;
     }
-    row.classList.remove("rm-activity-unavailable");
-    delete row.dataset.rebreyaActivityUnavailable;
+    resetActivityUnavailableInteraction(row);
   }
 
   const service = moduleApi?.combatAttackService;
@@ -6005,9 +6067,7 @@ function bindActivityAvailabilityBadges(root, { actor = null, item = null, modul
     }
 
     target.element.append(badge);
-    row.classList.add("rm-activity-unavailable");
-    row.classList.add(`rm-activity-unavailable--${target.kind}`);
-    row.dataset.rebreyaActivityUnavailable = "true";
+    applyActivityUnavailableInteraction(row, target);
   }
 }
 

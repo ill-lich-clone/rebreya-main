@@ -2134,6 +2134,46 @@ test("reloading a firearm consumes matching actor ammunition and fills the magaz
   assert.doesNotMatch(globalThis.ChatMessage.messages.at(-1)?.content ?? "", /боезапас|загружено/iu);
 });
 
+test("reloading a firearm resolves selected ammunition item identifiers", async () => {
+  globalThis.ChatMessage.messages = [];
+  const ammoId = "yrYgqnZjyFUdqkpg";
+  const weapon = makeFirearmItem({
+    name: "Musket",
+    typeValue: "firearmPrimitive",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: ammoId,
+      reload: "Magazine 1"
+    },
+    ammoState: {
+      current: 0,
+      capacity: 1,
+      ammunition: ammoId
+    }
+  });
+  const ammo = makeAmmoItem({
+    id: ammoId,
+    name: "Musket Ammunition",
+    quantity: 3,
+    subtype: "firearmBullet"
+  });
+  const actor = makeActor([weapon, ammo]);
+  const service = new CombatAttackService({});
+
+  const result = await service.reloadFirearm(actor, weapon);
+
+  assert.equal(result.success, true);
+  assert.equal(result.loaded, 1);
+  assert.equal(result.current, 1);
+  assert.equal(ammo.system.quantity, 2);
+  assert.deepEqual(ammo.updateCalls.at(-1), {
+    "system.quantity": 2
+  });
+});
+
 test("automatic fire area action empties the magazine and reports save data", async () => {
   globalThis.ChatMessage.messages = [];
   const weapon = makeFirearmItem({

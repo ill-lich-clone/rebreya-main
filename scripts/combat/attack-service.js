@@ -1252,6 +1252,39 @@ export class CombatAttackService {
       || /патрон|пуля|заряд/u.test(normalizeLookupText(item.name));
   }
 
+  #resolveActorItemByIdentifier(actor, identifier) {
+    const safeIdentifier = cleanText(identifier);
+    if (!actor || !safeIdentifier) {
+      return null;
+    }
+
+    const direct = actor.items?.get?.(safeIdentifier);
+    if (direct instanceof Item) {
+      return direct;
+    }
+
+    return collectionValues(actor.items).find((item) => (
+      item instanceof Item
+      && [
+        item.id,
+        item._id,
+        item.uuid,
+        foundry.utils.getProperty(item, "flags.core.sourceId"),
+        foundry.utils.getProperty(item, `flags.${MODULE_ID}.sourceId`),
+        foundry.utils.getProperty(item, `flags.${MODULE_ID}.gearId`)
+      ].some((value) => cleanText(value) === safeIdentifier)
+    )) ?? null;
+  }
+
+  #resolveAmmunitionItemByIdentifier(actor, identifier) {
+    const item = this.#resolveActorItemByIdentifier(actor, identifier);
+    if (!this.#isAmmunitionItem(item) || this.#getItemQuantity(item) <= 0) {
+      return null;
+    }
+
+    return item;
+  }
+
   #getItemQuantity(item) {
     const direct = toNumber(foundry.utils.getProperty(item, "system.quantity"), NaN);
     if (Number.isFinite(direct)) {
@@ -1268,6 +1301,11 @@ export class CombatAttackService {
   }
 
   #findMatchingAmmunition(actor, ammunitionLabel) {
+    const directAmmunition = this.#resolveAmmunitionItemByIdentifier(actor, ammunitionLabel);
+    if (directAmmunition) {
+      return [directAmmunition];
+    }
+
     const wantedStem = this.#ammunitionStem(ammunitionLabel);
     if (!wantedStem) {
       return [];

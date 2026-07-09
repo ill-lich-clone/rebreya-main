@@ -114,7 +114,7 @@ test("combat automation imports use the current cache busts", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-chat-notes`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-ammo-id-activity-guard`, "u"),
   );
   assert.match(
     entrypointSource,
@@ -145,11 +145,11 @@ test("held item integrations use the current module cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    new RegExp(`dnd5e-sheet-extensions\\.js\\?v=${escapedVersion}-activity-unavailable-item-sheet`, "u"),
+    new RegExp(`dnd5e-sheet-extensions\\.js\\?v=${escapedVersion}-ammo-id-activity-guard`, "u"),
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-chat-notes`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-ammo-id-activity-guard`, "u"),
   );
   assert.match(
     sheetSource,
