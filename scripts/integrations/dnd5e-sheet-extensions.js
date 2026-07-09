@@ -791,6 +791,15 @@ function getItemFromSheetApp(app) {
   return item instanceof Item ? item : null;
 }
 
+function isActorSheetRenderApp(app) {
+  const document = app?.document ?? app?.object ?? null;
+  if (document instanceof Item) {
+    return false;
+  }
+
+  return document instanceof Actor || app?.actor instanceof Actor;
+}
+
 function bindCharacterSheetBranding(root) {
   root?.style?.setProperty?.("--rm-character-sheet-header-image", CHARACTER_SHEET_HEADER_IMAGE);
 
@@ -817,6 +826,13 @@ function bindCharacterSheetBranding(root) {
   brand.setAttribute("aria-hidden", "true");
   brand.textContent = "Ребрея: Тень прогресса";
   leftHeader.prepend(brand);
+}
+
+function removeCharacterSheetBranding(root) {
+  for (const brand of Array.from(root?.querySelectorAll?.("[data-rebreya-character-brand='true']") ?? [])) {
+    brand?.remove?.();
+  }
+  root?.style?.removeProperty?.("--rm-character-sheet-header-image");
 }
 
 function isSheetEditable(app, root = null) {
@@ -6867,6 +6883,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     if (!root) {
       return;
     }
+    removeCharacterSheetBranding(root);
 
     try {
       bindItemSheetEnhancements(root, app, moduleApi);
@@ -6896,8 +6913,13 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       return;
     }
 
+    const item = getItemFromSheetApp(app);
+    if (item) {
+      removeCharacterSheetBranding(root);
+    }
+
     const actor = getActorFromSheetApp(app);
-    if (actor?.type === "character") {
+    if (actor?.type === "character" && isActorSheetRenderApp(app)) {
       bindCharacterSheetBranding(root);
       bindHeroDollPanel(root, app, moduleApi);
       bindCharacterDowntimePanel(root, app, moduleApi);
@@ -6945,7 +6967,6 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
     }
 
-    const item = getItemFromSheetApp(app);
     if (item) {
       try {
         bindItemSheetEnhancements(root, app, moduleApi);
