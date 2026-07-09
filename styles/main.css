@@ -10302,6 +10302,14 @@ summary:focus-visible {
   color: rgb(38 35 30);
 }
 
+.rm-item-upgrades-tab {
+  min-height: 150px;
+}
+
+.rm-item-upgrades-tab .rm-item-upgrades {
+  margin: 0;
+}
+
 .rm-item-upgrades__header {
   display: flex;
   align-items: center;

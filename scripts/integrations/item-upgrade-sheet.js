@@ -39,7 +39,20 @@ function getItemActor(item) {
   return item?.actor ?? item?.parent ?? null;
 }
 
-function getDropData(event) {
+export function getItemUpgradeDropData(event) {
+  const dragDropPayload = globalThis.CONFIG?.ux?.DragDrop?.getPayload;
+  if (dragDropPayload instanceof Function) {
+    try {
+      const payload = dragDropPayload.call(globalThis.CONFIG.ux.DragDrop, event);
+      if (payload && typeof payload === "object") {
+        return payload;
+      }
+    }
+    catch (_error) {
+      // Fall back to the legacy data readers below.
+    }
+  }
+
   if (globalThis.TextEditor?.getDragEventData instanceof Function) {
     try {
       const dragData = TextEditor.getDragEventData(event);
@@ -94,19 +107,24 @@ async function resolveDropItem(dropData) {
   return document;
 }
 
-function isPotentialUpgradeDrop(dropData) {
+function hasPotentialDropDataTransfer(event) {
+  const types = Array.from(event?.dataTransfer?.types ?? []);
+  return types.some((type) => DRAG_DATA_TYPES.includes(type) || type === "text/uri-list");
+}
+
+function isPotentialUpgradeDrop(dropData, event = null) {
   const document = resolveDropDocumentSync(dropData);
   if (document) {
     return isUpgradeItem(document);
   }
-  return Boolean(dropData?.uuid || dropData?.id || dropData?.itemId);
+  return Boolean(dropData?.uuid || dropData?.id || dropData?.itemId || hasPotentialDropDataTransfer(event));
 }
 
 function getPanelContainer(root) {
-  return root?.querySelector?.(".sheet-body .tab[data-tab='details']")
-    ?? root?.querySelector?.(".sheet-body")
-    ?? root?.querySelector?.("form")
-    ?? root;
+  return root?.querySelector?.(".sheet-body .tab[data-tab='mods']")
+    ?? root?.querySelector?.(".tab[data-tab='mods']")
+    ?? root?.querySelector?.("[data-application-part='mods']")
+    ?? null;
 }
 
 function createPanelHtml(hostItem) {
@@ -180,6 +198,14 @@ function createPanelHtml(hostItem) {
   `;
 }
 
+export function createItemUpgradePanelHtml(hostItem) {
+  return isUpgradeableHostItem(hostItem) ? createPanelHtml(hostItem) : "";
+}
+
+export function isItemUpgradeHostItem(item) {
+  return isUpgradeableHostItem(item);
+}
+
 function cancelHold(panel) {
   const state = HOLD_STATES.get(panel);
   if (state?.timeoutId) {
@@ -225,7 +251,7 @@ function playSequencerHold(panel, token) {
   }
 }
 
-function startHold(panel, dragKey) {
+export function startItemUpgradeHold(panel, dragKey) {
   const current = HOLD_STATES.get(panel);
   if (current?.dragKey === dragKey) {
     return current;
@@ -242,7 +268,7 @@ function startHold(panel, dragKey) {
   };
   HOLD_STATES.set(panel, state);
   panel.style.setProperty("--rm-item-upgrade-hold-duration", `${UPGRADE_HOLD_DURATION_MS}ms`);
-  panel.classList.add("is-dragover");
+  panel.classList.add("is-dragover", "is-holding");
   playSequencerHold(panel, token);
   return state;
 }
@@ -322,14 +348,15 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     return false;
   }
 
-  const panel = renderItemUpgradePanel(root, hostItem);
+  const panel = root.querySelector?.("[data-rebreya-item-upgrades='true']")
+    ?? renderItemUpgradePanel(root, hostItem);
   if (!(panel instanceof HTMLElement)) {
     return false;
   }
 
   panel.addEventListener("dragover", (event) => {
-    const dropData = getDropData(event);
-    if (!isPotentialUpgradeDrop(dropData)) {
+    const dropData = getItemUpgradeDropData(event);
+    if (!isPotentialUpgradeDrop(dropData, event)) {
       return;
     }
 
@@ -338,7 +365,7 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = "move";
     }
-    startHold(panel, getDragKey(dropData));
+    startItemUpgradeHold(panel, getDragKey(dropData));
   }, { capture: true });
 
   panel.addEventListener("dragleave", (event) => {
@@ -350,7 +377,7 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
 
   panel.addEventListener("drop", async (event) => {
     const state = HOLD_STATES.get(panel);
-    const dropData = getDropData(event);
+    const dropData = getItemUpgradeDropData(event);
     if (!state || !state.ready) {
       event.preventDefault?.();
       event.stopPropagation?.();

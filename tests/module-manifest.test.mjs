@@ -67,7 +67,7 @@ test("module stylesheet cache bust uses the live module style version", async ()
   const entrypointSource = await readFile(new URL(manifest.esmodules[0], manifestUrl), "utf8");
   const escapedVersion = manifest.version.replaceAll(".", "\\.");
 
-  assert.match(entrypointSource, new RegExp(`const MODULE_STYLE_VERSION = "${escapedVersion}-item-upgrades-fix";`, "u"));
+  assert.match(entrypointSource, new RegExp(`const MODULE_STYLE_VERSION = "${escapedVersion}-item-mods-tab";`, "u"));
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
@@ -179,8 +179,9 @@ test("item upgrade service and sheet integration are wired into the live entrypo
   assert.match(entrypointSource, /setItemUpgradeCapacity\(hostItem, capacity\)/u);
   assert.match(
     sheetSource,
-    new RegExp(`item-upgrade-sheet\\.js\\?v=${escapedVersion}-item-upgrades-fix`, "u"),
+    new RegExp(`item-upgrade-sheet\\.js\\?v=${escapedVersion}-item-mods-tab`, "u"),
   );
+  assert.match(sheetSource, /item-mods-tab\.hbs/u);
   assert.match(sheetSource, /bindItemUpgradeSheet\(root, app, moduleApi/u);
   assert.match(sheetSource, /registerItemUpgradeFilterHook/u);
   assert.match(sheetSource, /registerItemUpgradeFilterHook\(\)/u);

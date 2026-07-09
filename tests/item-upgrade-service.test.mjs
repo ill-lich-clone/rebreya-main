@@ -329,3 +329,93 @@ test("dnd5e item filter hook hides installed upgrades before inventory rows rend
     restoreFoundry();
   }
 });
+
+test("item upgrade drop data reads Foundry v13 DragDrop payloads", async () => {
+  const previousConfig = globalThis.CONFIG;
+  const previousTextEditor = globalThis.TextEditor;
+  const payload = { uuid: "Actor.actor-a.Item.storm-stone", type: "Item" };
+  globalThis.CONFIG = {
+    ux: {
+      DragDrop: {
+        getPayload(event) {
+          return event.payload;
+        }
+      }
+    }
+  };
+  globalThis.TextEditor = {
+    getDragEventData() {
+      return null;
+    }
+  };
+
+  try {
+    const { getItemUpgradeDropData } = await import(`../scripts/integrations/item-upgrade-sheet.js?drop-payload=${Date.now()}`);
+    assert.deepEqual(getItemUpgradeDropData({ payload }), payload);
+  }
+  finally {
+    globalThis.CONFIG = previousConfig;
+    globalThis.TextEditor = previousTextEditor;
+  }
+});
+
+test("item upgrade hold ring is shown immediately when Sequencer is active", async () => {
+  const previousWindow = globalThis.window;
+  const previousGame = globalThis.game;
+  const previousSequence = globalThis.Sequence;
+  const classes = new Set();
+  const panel = {
+    classList: {
+      add(...names) {
+        names.forEach((name) => classes.add(name));
+      },
+      remove(...names) {
+        names.forEach((name) => classes.delete(name));
+      },
+      contains(name) {
+        return classes.has(name);
+      }
+    },
+    style: {
+      setProperty() {}
+    }
+  };
+  globalThis.window = {
+    setTimeout() {
+      return 1;
+    },
+    clearTimeout() {}
+  };
+  globalThis.game = {
+    modules: {
+      get(moduleName) {
+        return moduleName === "sequencer" ? { active: true } : null;
+      }
+    }
+  };
+  globalThis.Sequence = class {
+    thenDo() {
+      return this;
+    }
+
+    wait() {
+      return this;
+    }
+
+    play() {
+      return this;
+    }
+  };
+
+  try {
+    const { startItemUpgradeHold } = await import(`../scripts/integrations/item-upgrade-sheet.js?hold-ring=${Date.now()}`);
+    startItemUpgradeHold(panel, "Actor.actor-a.Item.storm-stone");
+    assert.equal(classes.has("is-dragover"), true);
+    assert.equal(classes.has("is-holding"), true);
+  }
+  finally {
+    globalThis.window = previousWindow;
+    globalThis.game = previousGame;
+    globalThis.Sequence = previousSequence;
+  }
+});

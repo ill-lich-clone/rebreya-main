@@ -14,6 +14,46 @@ function installStubs() {
 
   class FakeActor {}
   class FakeItem {}
+  class FakeItemSheet5e {
+    static TABS = [
+      { tab: "description", label: "DND5E.ITEM.SECTIONS.Description" },
+      { tab: "details", label: "DND5E.ITEM.SECTIONS.Details" },
+      { tab: "activities", label: "DND5E.ITEM.SECTIONS.Activities" },
+      { tab: "effects", label: "DND5E.ITEM.SECTIONS.Effects" },
+      { tab: "advancement", label: "DND5E.ITEM.SECTIONS.Advancement" }
+    ];
+
+    static PARTS = {
+      description: { template: "systems/dnd5e/templates/items/description.hbs" },
+      details: { template: "systems/dnd5e/templates/items/details.hbs" },
+      activities: { template: "systems/dnd5e/templates/items/activities.hbs" },
+      effects: { template: "systems/dnd5e/templates/items/effects.hbs" },
+      advancement: { template: "systems/dnd5e/templates/items/advancement.hbs" }
+    };
+
+    constructor(item) {
+      this.document = item;
+      this.item = item;
+      this.tabGroups = { primary: "mods" };
+    }
+
+    async _preparePartContext(_partId, context = {}) {
+      const tabs = this.constructor.TABS.reduce((acc, tab) => {
+        if (!tab.condition || tab.condition(this.document)) {
+          acc[tab.tab] = {
+            ...tab,
+            id: tab.tab,
+            group: "primary",
+            active: this.tabGroups.primary === tab.tab,
+            cssClass: this.tabGroups.primary === tab.tab ? "active" : ""
+          };
+        }
+        return acc;
+      }, {});
+      return { ...context, tabs };
+    }
+  }
+
   class FakeHTMLElement {
     constructor({ dataset = {}, selectors = {}, selectorAll = {} } = {}) {
       this.dataset = dataset;
@@ -82,7 +122,11 @@ function installStubs() {
       id: "dnd5e"
     },
     dnd5e: {
-      applications: {}
+      applications: {
+        item: {
+          ItemSheet5e: FakeItemSheet5e
+        }
+      }
     },
     i18n: {
       localize: (key) => key
@@ -123,6 +167,7 @@ function installStubs() {
   return {
     Actor: FakeActor,
     Item: FakeItem,
+    ItemSheet5e: FakeItemSheet5e,
     HTMLElement: FakeHTMLElement,
     hooks,
     restore() {
@@ -181,6 +226,52 @@ test("item sheets with an owning actor do not render character sheet branding", 
     assert.equal(staleBrand.removed, true);
     assert.deepEqual(leftHeader.children, [nameInput]);
     assert.equal(root.style.getPropertyValue("--rm-character-sheet-header-image"), "");
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("upgradeable item sheets expose upgrades in a separate Mods tab", async () => {
+  const stubs = installStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?item-mods-tab=${Date.now()}`);
+    const actor = new stubs.Actor();
+    actor.id = "actor-a";
+    const item = new stubs.Item();
+    item.id = "katana";
+    item.type = "weapon";
+    item.name = "Katana";
+    item.img = "icons/svg/sword.svg";
+    item.actor = actor;
+    item.parent = actor;
+    item.system = {
+      equipped: true,
+      type: {
+        baseItem: "katana",
+        value: "martialM"
+      }
+    };
+    item.flags = {};
+    item.getFlag = () => undefined;
+
+    registerDnd5eSheetExtensions({});
+
+    assert.deepEqual(
+      stubs.ItemSheet5e.TABS.map((tab) => tab.tab),
+      ["description", "details", "activities", "effects", "mods", "advancement"]
+    );
+
+    const modsTab = stubs.ItemSheet5e.TABS.find((tab) => tab.tab === "mods");
+    assert.equal(modsTab.label, "Моды");
+    assert.equal(modsTab.condition(item), true);
+    assert.equal(stubs.ItemSheet5e.PARTS.mods.template, "modules/rebreya-main/templates/item-mods-tab.hbs");
+
+    const sheet = new stubs.ItemSheet5e(item);
+    const context = await sheet._preparePartContext("mods", {});
+    assert.equal(context.itemUpgradeTab.id, "mods");
+    assert.match(context.itemUpgradePanelHtml, /data-rebreya-item-upgrades="true"/u);
+    assert.match(context.itemUpgradePanelHtml, /Усовершенствования/u);
   }
   finally {
     stubs.restore();

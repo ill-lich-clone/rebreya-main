@@ -27,9 +27,11 @@ import {
 } from "./universal-belt.js";
 import {
   bindItemUpgradeSheet,
+  createItemUpgradePanelHtml,
   hideInstalledUpgradeInventoryRows,
+  isItemUpgradeHostItem,
   registerItemUpgradeFilterHook
-} from "./item-upgrade-sheet.js?v=1.4.93-item-upgrades-fix";
+} from "./item-upgrade-sheet.js?v=1.4.93-item-mods-tab";
 import {
   buildHeldItemEquipMenuActions,
   buildHeldItemReleaseHandUpdate,
@@ -48,8 +50,12 @@ const CHARACTER_DOWNTIME_TAB_ID = "downtime";
 const CHARACTER_DOWNTIME_TAB_LABEL = "Простой";
 const CHARACTER_DOWNTIME_TAB_ICON = "fa-solid fa-hourglass-half";
 const CHARACTER_DOWNTIME_TEMPLATE = `modules/${MODULE_ID}/templates/character-downtime-tab.hbs`;
+const ITEM_MODS_TAB_ID = "mods";
+const ITEM_MODS_TAB_LABEL = "Моды";
+const ITEM_MODS_TEMPLATE = `modules/${MODULE_ID}/templates/item-mods-tab.hbs`;
 const CHARACTER_SHEET_HEADER_IMAGE = `url("/modules/${MODULE_ID}/assets/ui/rebreya-character-header.webp")`;
 const HERO_DOLL_PATCH_FLAG = "__rebreyaHeroDollPatched";
+const ITEM_MODS_PATCH_FLAG = "__rebreyaItemModsPatched";
 const HERO_DOLL_MOVE_DROP_PATCH_FLAG = "__rebreyaHeroDollMoveDropPatched";
 const HERO_DOLL_PAYLOAD_PATCH_FLAG = "__rebreyaHeroDollPayloadPatched";
 const HEROIC_D20_DIALOG_PATCH_FLAG = "__rebreyaHeroicD20DialogPatched";
@@ -2190,6 +2196,18 @@ function buildCharacterDowntimeTabState(app) {
   };
 }
 
+function buildItemModsTabState(app) {
+  const active = app.tabGroups?.primary === ITEM_MODS_TAB_ID;
+  return {
+    id: ITEM_MODS_TAB_ID,
+    tab: ITEM_MODS_TAB_ID,
+    group: "primary",
+    label: ITEM_MODS_TAB_LABEL,
+    active,
+    cssClass: active ? "active" : ""
+  };
+}
+
 function ensureHeroDollTabDefinition(CharacterActorSheet) {
   if (!Array.isArray(CharacterActorSheet.TABS)) {
     CharacterActorSheet.TABS = [];
@@ -2237,6 +2255,74 @@ function ensureHeroDollTabDefinition(CharacterActorSheet) {
       scrollable: [""]
     }
   };
+}
+
+function ensureItemModsTabDefinition(ItemSheet5e) {
+  if (!Array.isArray(ItemSheet5e?.TABS)) {
+    return;
+  }
+
+  const nextTabs = [...ItemSheet5e.TABS];
+  if (!nextTabs.some((tab) => tab?.tab === ITEM_MODS_TAB_ID)) {
+    const tabEntry = {
+      tab: ITEM_MODS_TAB_ID,
+      label: ITEM_MODS_TAB_LABEL,
+      condition: (item) => isItemUpgradeHostItem(item)
+    };
+    const effectsIndex = nextTabs.findIndex((tab) => tab?.tab === "effects");
+    const advancementIndex = nextTabs.findIndex((tab) => tab?.tab === "advancement");
+    if (effectsIndex >= 0) {
+      nextTabs.splice(effectsIndex + 1, 0, tabEntry);
+    }
+    else if (advancementIndex >= 0) {
+      nextTabs.splice(advancementIndex, 0, tabEntry);
+    }
+    else {
+      nextTabs.push(tabEntry);
+    }
+  }
+  ItemSheet5e.TABS = nextTabs;
+
+  ItemSheet5e.PARTS = {
+    ...(ItemSheet5e.PARTS ?? {}),
+    [ITEM_MODS_TAB_ID]: {
+      template: ITEM_MODS_TEMPLATE,
+      scrollable: [""]
+    }
+  };
+}
+
+function patchItemModsPartContext(ItemSheet5e) {
+  if (!ItemSheet5e?.prototype || ItemSheet5e.prototype[ITEM_MODS_PATCH_FLAG]) {
+    return;
+  }
+
+  const originalPreparePartContext = ItemSheet5e.prototype._preparePartContext;
+  if (!(originalPreparePartContext instanceof Function)) {
+    return;
+  }
+
+  ItemSheet5e.prototype._preparePartContext = async function (partId, context, options) {
+    const prepared = await originalPreparePartContext.call(this, partId, context, options);
+    if (partId !== ITEM_MODS_TAB_ID) {
+      return prepared;
+    }
+
+    const tab = prepared.tabs?.[ITEM_MODS_TAB_ID] ?? buildItemModsTabState(this);
+    return {
+      ...prepared,
+      tab,
+      itemUpgradeTab: tab,
+      itemUpgradePanelHtml: createItemUpgradePanelHtml(this.item ?? this.document)
+    };
+  };
+
+  Object.defineProperty(ItemSheet5e.prototype, ITEM_MODS_PATCH_FLAG, {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: true
+  });
 }
 
 function patchHeroDollPartContext(CharacterActorSheet, moduleApi) {
@@ -6792,6 +6878,13 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   if (CharacterActorSheet) {
     ensureHeroDollTabDefinition(CharacterActorSheet);
     patchHeroDollPartContext(CharacterActorSheet, moduleApi);
+  }
+  const ItemSheet5e = game.dnd5e?.applications?.item?.ItemSheet5e
+    ?? globalThis.dnd5e?.applications?.item?.ItemSheet5e
+    ?? null;
+  if (ItemSheet5e) {
+    ensureItemModsTabDefinition(ItemSheet5e);
+    patchItemModsPartContext(ItemSheet5e);
   }
   patchActorMoveDropBehavior();
   patchDnd5eDragPayloadFallback();
