@@ -11,6 +11,8 @@ import {
 
 const DRAG_DATA_TYPES = ["text/plain", "text", "application/json"];
 const HOLD_STATES = new WeakMap();
+const INVENTORY_ROW_DROP_BOUND_FLAG = "rebreyaItemUpgradeDropBound";
+const INVENTORY_ROW_DROP_TARGET_CLASS = "is-rebreya-upgrade-drop-target";
 let filterHookRegistered = false;
 
 function cleanText(value) {
@@ -39,12 +41,51 @@ function getItemActor(item) {
   return item?.actor ?? item?.parent ?? null;
 }
 
+function collectionValues(collection) {
+  if (!collection) {
+    return [];
+  }
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+  if (Array.isArray(collection.contents)) {
+    return collection.contents;
+  }
+  if (typeof collection.values === "function") {
+    return Array.from(collection.values());
+  }
+  return [];
+}
+
+function getActorItems(actor) {
+  return collectionValues(actor?.items);
+}
+
+function resolveActorItem(actor, itemId) {
+  const id = cleanText(itemId);
+  if (!actor || !id) {
+    return null;
+  }
+  return actor.items?.get?.(id)
+    ?? getActorItems(actor).find((item) => getItemId(item) === id)
+    ?? null;
+}
+
+function getItemIdFromUuid(uuid) {
+  const match = cleanText(uuid).match(/(?:^|\.)Item\.([^.]+)$/u);
+  return match?.[1] ?? "";
+}
+
+function hasDropDataPayload(value) {
+  return Boolean(value && typeof value === "object" && Object.keys(value).length);
+}
+
 export function getItemUpgradeDropData(event) {
   const dragDropPayload = globalThis.CONFIG?.ux?.DragDrop?.getPayload;
   if (dragDropPayload instanceof Function) {
     try {
       const payload = dragDropPayload.call(globalThis.CONFIG.ux.DragDrop, event);
-      if (payload && typeof payload === "object") {
+      if (hasDropDataPayload(payload)) {
         return payload;
       }
     }
@@ -56,7 +97,7 @@ export function getItemUpgradeDropData(event) {
   if (globalThis.TextEditor?.getDragEventData instanceof Function) {
     try {
       const dragData = TextEditor.getDragEventData(event);
-      if (dragData && typeof dragData === "object") {
+      if (hasDropDataPayload(dragData)) {
         return dragData;
       }
     }
@@ -96,7 +137,26 @@ function resolveDropDocumentSync(dropData) {
   }
 }
 
-async function resolveDropItem(dropData) {
+function resolveDropItemSync(dropData, actor = null) {
+  const directItem = resolveActorItem(actor, dropData?.itemId ?? dropData?.id);
+  if (directItem) {
+    return directItem;
+  }
+
+  const uuidItem = resolveActorItem(actor, getItemIdFromUuid(dropData?.uuid));
+  if (uuidItem) {
+    return uuidItem;
+  }
+
+  return resolveDropDocumentSync(dropData);
+}
+
+async function resolveDropItem(dropData, actor = null) {
+  const syncItem = resolveDropItemSync(dropData, actor);
+  if (syncItem) {
+    return syncItem;
+  }
+
   if (!dropData?.uuid || !(globalThis.fromUuid instanceof Function)) {
     throw new Error("Перетащенный предмет не найден.");
   }
@@ -113,11 +173,19 @@ function hasPotentialDropDataTransfer(event) {
 }
 
 function isPotentialUpgradeDrop(dropData, event = null) {
-  const document = resolveDropDocumentSync(dropData);
+  const document = resolveDropItemSync(dropData);
   if (document) {
     return isUpgradeItem(document);
   }
   return Boolean(dropData?.uuid || dropData?.id || dropData?.itemId || hasPotentialDropDataTransfer(event));
+}
+
+function isPotentialActorInventoryUpgradeDrop(dropData, actor, event = null) {
+  const document = resolveDropItemSync(dropData, actor);
+  if (document) {
+    return isUpgradeItem(document);
+  }
+  return isPotentialUpgradeDrop(dropData, event);
 }
 
 function getPanelContainer(root) {
@@ -283,6 +351,21 @@ async function rerenderItemSheet(app, moduleApi) {
   await moduleApi?.refreshOpenApps?.();
 }
 
+async function rerenderActorSheetAfterUpgrade(app, moduleApi, rerenderActorSheet) {
+  if (rerenderActorSheet instanceof Function) {
+    await rerenderActorSheet(app, moduleApi);
+    return;
+  }
+
+  try {
+    await app?.render?.({ force: true });
+  }
+  catch (_error) {
+    await app?.render?.(true);
+  }
+  await moduleApi?.refreshOpenApps?.();
+}
+
 export function renderItemUpgradePanel(root, hostItem) {
   if (!(root instanceof HTMLElement) || !isUpgradeableHostItem(hostItem)) {
     return null;
@@ -339,6 +422,72 @@ export function registerItemUpgradeFilterHook() {
     return undefined;
   });
   return true;
+}
+
+export function bindItemUpgradeInventoryRows(root, { actor, app, moduleApi, rerenderActorSheet } = {}) {
+  if (!(root instanceof HTMLElement) || !actor || !(moduleApi?.installItemUpgrade instanceof Function)) {
+    return false;
+  }
+
+  let bound = false;
+  for (const row of Array.from(root.querySelectorAll?.("[data-item-id]") ?? [])) {
+    if (!(row instanceof HTMLElement) || row.dataset[INVENTORY_ROW_DROP_BOUND_FLAG] === "true") {
+      continue;
+    }
+
+    const hostItem = resolveActorItem(actor, row.dataset.itemId);
+    if (!hostItem || !isUpgradeableHostItem(hostItem)) {
+      continue;
+    }
+
+    row.dataset[INVENTORY_ROW_DROP_BOUND_FLAG] = "true";
+    bound = true;
+
+    row.addEventListener("dragover", (event) => {
+      const dropData = getItemUpgradeDropData(event);
+      if (!isPotentialActorInventoryUpgradeDrop(dropData, actor, event)) {
+        return;
+      }
+
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "move";
+      }
+      row.classList?.add?.(INVENTORY_ROW_DROP_TARGET_CLASS);
+    }, { capture: true });
+
+    row.addEventListener("dragleave", (event) => {
+      if (event.relatedTarget && row.contains?.(event.relatedTarget)) {
+        return;
+      }
+      row.classList?.remove?.(INVENTORY_ROW_DROP_TARGET_CLASS);
+    }, { capture: true });
+
+    row.addEventListener("drop", async (event) => {
+      const dropData = getItemUpgradeDropData(event);
+      if (!isPotentialActorInventoryUpgradeDrop(dropData, actor, event)) {
+        return;
+      }
+
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      row.classList?.remove?.(INVENTORY_ROW_DROP_TARGET_CLASS);
+
+      try {
+        const upgradeItem = await resolveDropItem(dropData, actor);
+        const installed = await moduleApi.installItemUpgrade(hostItem, upgradeItem);
+        ui.notifications?.info?.(`Установлено: ${installed?.name ?? upgradeItem?.name ?? "усовершенствование"}.`);
+        await rerenderActorSheetAfterUpgrade(app, moduleApi, rerenderActorSheet);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to install item upgrade from actor sheet row.`, error);
+        ui.notifications?.error?.(error.message || "Не удалось установить усовершенствование.");
+      }
+    }, { capture: true });
+  }
+
+  return bound;
 }
 
 export function bindItemUpgradeSheet(root, app, moduleApi) {

@@ -26,12 +26,13 @@ import {
   registerUniversalBeltItemContextHook
 } from "./universal-belt.js";
 import {
+  bindItemUpgradeInventoryRows,
   bindItemUpgradeSheet,
   createItemUpgradePanelHtml,
   hideInstalledUpgradeInventoryRows,
   isItemUpgradeHostItem,
   registerItemUpgradeFilterHook
-} from "./item-upgrade-sheet.js?v=1.4.93-item-mods-tab";
+} from "./item-upgrade-sheet.js?v=1.4.93-item-upgrade-row-drop";
 import {
   buildHeldItemEquipMenuActions,
   buildHeldItemReleaseHandUpdate,
@@ -6924,6 +6925,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
         console.error(`${MODULE_ID} | Failed to hide installed item upgrades.`, error);
       }
       try {
+        bindItemUpgradeInventoryRows(root, { actor, app, moduleApi, rerenderActorSheet });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind actor sheet item upgrade drops.`, error);
+      }
+      try {
         bindNativeStateCard(root, app);
       }
       catch (error) {
@@ -7027,6 +7034,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to hide installed item upgrades on ApplicationV2 render.`, error);
+      }
+      try {
+        bindItemUpgradeInventoryRows(root, { actor, app, moduleApi, rerenderActorSheet });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind actor sheet item upgrade drops on ApplicationV2 render.`, error);
       }
       try {
         bindNativeStateCard(root, app);

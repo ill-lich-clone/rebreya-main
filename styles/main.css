@@ -10465,6 +10465,13 @@ summary:focus-visible {
   display: none !important;
 }
 
+.dnd5e2.sheet.actor [data-item-id].is-rebreya-upgrade-drop-target,
+.dnd5e.sheet.actor [data-item-id].is-rebreya-upgrade-drop-target {
+  outline: 1px solid rgb(236 197 92 / 0.95);
+  outline-offset: -2px;
+  background: linear-gradient(90deg, rgb(236 197 92 / 0.18), transparent 70%);
+}
+
 @keyframes rmItemUpgradeHoldFill {
   from {
     --rm-item-upgrade-hold-progress: 0deg;

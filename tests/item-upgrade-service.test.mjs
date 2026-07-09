@@ -359,6 +359,187 @@ test("item upgrade drop data reads Foundry v13 DragDrop payloads", async () => {
   }
 });
 
+test("item upgrade drop data falls back when Foundry DragDrop returns an empty object", async () => {
+  const previousConfig = globalThis.CONFIG;
+  const previousTextEditor = globalThis.TextEditor;
+  const payload = { uuid: "Actor.actor-a.Item.storm-stone", type: "Item" };
+  globalThis.CONFIG = {
+    ux: {
+      DragDrop: {
+        getPayload() {
+          return {};
+        }
+      }
+    }
+  };
+  globalThis.TextEditor = {
+    getDragEventData() {
+      return payload;
+    }
+  };
+
+  try {
+    const { getItemUpgradeDropData } = await import(`../scripts/integrations/item-upgrade-sheet.js?drop-payload-fallback=${Date.now()}`);
+    assert.deepEqual(getItemUpgradeDropData({}), payload);
+  }
+  finally {
+    globalThis.CONFIG = previousConfig;
+    globalThis.TextEditor = previousTextEditor;
+  }
+});
+
+test("actor sheet inventory rows install a dropped upgrade onto the target item", async () => {
+  const restoreFoundry = installFoundryStubs();
+  const previousHTMLElement = globalThis.HTMLElement;
+  const previousWindow = globalThis.window;
+  const previousUi = globalThis.ui;
+  const previousFromUuid = globalThis.fromUuid;
+  const previousConfig = globalThis.CONFIG;
+  const previousTextEditor = globalThis.TextEditor;
+
+  class FakeHTMLElement {
+    constructor({ dataset = {}, selectorAll = {} } = {}) {
+      this.dataset = dataset;
+      this.selectorAll = selectorAll;
+      this.listeners = {};
+      this.children = [];
+      this.classList = {
+        values: new Set(),
+        add: (...names) => names.forEach((name) => this.classList.values.add(name)),
+        remove: (...names) => names.forEach((name) => this.classList.values.delete(name)),
+        contains: (name) => this.classList.values.has(name)
+      };
+    }
+
+    querySelectorAll(selector) {
+      return this.selectorAll[selector] ?? [];
+    }
+
+    addEventListener(type, listener, options) {
+      this.listeners[type] ??= [];
+      this.listeners[type].push(listener);
+      this.listenerOptions ??= {};
+      this.listenerOptions[type] ??= [];
+      this.listenerOptions[type].push(options);
+    }
+
+    contains(target) {
+      return target === this || this.children.includes(target);
+    }
+
+    closest() {
+      return null;
+    }
+  }
+
+  const actor = new FakeActor();
+  const host = actor.addItem({
+    _id: "katana",
+    name: "Katana",
+    type: "weapon",
+    system: { quantity: 1 },
+    flags: {}
+  });
+  const upgrade = makeUpgrade(actor, { _id: "elven-steel" });
+  const hostRow = new FakeHTMLElement({ dataset: { itemId: host.id } });
+  const upgradeRow = new FakeHTMLElement({ dataset: { itemId: upgrade.id } });
+  const root = new FakeHTMLElement({
+    selectorAll: {
+      "[data-item-id]": [hostRow, upgradeRow]
+    }
+  });
+  const payload = { type: "Item", uuid: upgrade.uuid };
+  const calls = [];
+  let rendered = false;
+
+  globalThis.HTMLElement = FakeHTMLElement;
+  globalThis.window = {
+    setTimeout() {
+      return 1;
+    },
+    clearTimeout() {}
+  };
+  globalThis.ui = {
+    notifications: {
+      info() {},
+      error() {},
+      warn() {}
+    }
+  };
+  globalThis.fromUuid = async (uuid) => (uuid === upgrade.uuid ? upgrade : null);
+  globalThis.CONFIG = {};
+  globalThis.TextEditor = {
+    getDragEventData(event) {
+      return event.dragData ?? null;
+    }
+  };
+
+  try {
+    const {
+      bindItemUpgradeInventoryRows
+    } = await import(`../scripts/integrations/item-upgrade-sheet.js?inventory-row-drop=${Date.now()}`);
+    const bound = bindItemUpgradeInventoryRows(root, {
+      actor,
+      app: {},
+      moduleApi: {
+        async installItemUpgrade(targetItem, droppedItem) {
+          calls.push([targetItem, droppedItem]);
+          return droppedItem;
+        },
+        async refreshOpenApps() {}
+      },
+      async rerenderActorSheet() {
+        rendered = true;
+      }
+    });
+
+    assert.equal(bound, true);
+    assert.equal(hostRow.listeners.dragover.length, 1);
+    assert.equal(hostRow.listeners.drop.length, 1);
+    assert.equal(upgradeRow.listeners.drop, undefined);
+
+    const event = {
+      dragData: payload,
+      dataTransfer: {
+        dropEffect: "",
+        types: ["text/plain"],
+        getData() {
+          return JSON.stringify(payload);
+        }
+      },
+      preventDefaultCalled: false,
+      stopPropagationCalled: false,
+      preventDefault() {
+        this.preventDefaultCalled = true;
+      },
+      stopPropagation() {
+        this.stopPropagationCalled = true;
+      }
+    };
+
+    hostRow.listeners.dragover[0](event);
+    assert.equal(event.preventDefaultCalled, true);
+    assert.equal(event.stopPropagationCalled, true);
+    assert.equal(event.dataTransfer.dropEffect, "move");
+    assert.equal(hostRow.classList.contains("is-rebreya-upgrade-drop-target"), true);
+
+    await hostRow.listeners.drop[0](event);
+
+    assert.deepEqual(calls, [[host, upgrade]]);
+    assert.equal(rendered, true);
+    assert.equal(hostRow.classList.contains("is-rebreya-upgrade-drop-target"), false);
+  }
+  finally {
+    globalThis.HTMLElement = previousHTMLElement;
+    globalThis.window = previousWindow;
+    globalThis.ui = previousUi;
+    globalThis.fromUuid = previousFromUuid;
+    globalThis.CONFIG = previousConfig;
+    globalThis.TextEditor = previousTextEditor;
+    restoreFoundry();
+  }
+});
+
 test("item upgrade hold ring is shown immediately when Sequencer is active", async () => {
   const previousWindow = globalThis.window;
   const previousGame = globalThis.game;
