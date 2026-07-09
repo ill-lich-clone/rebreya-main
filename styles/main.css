@@ -395,6 +395,13 @@
   gap: 1px;
 }
 
+.rm-activity-unavailable--choice .name {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
 .rm-activity-unavailable-badge {
   display: inline-flex;
   align-items: center;

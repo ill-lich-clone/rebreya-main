@@ -145,7 +145,7 @@ test("held item integrations use the current module cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    new RegExp(`dnd5e-sheet-extensions\\.js\\?v=${escapedVersion}-libwrapper-heroic-d20`, "u"),
+    new RegExp(`dnd5e-sheet-extensions\\.js\\?v=${escapedVersion}-activity-unavailable-item-sheet`, "u"),
   );
   assert.match(
     entrypointSource,

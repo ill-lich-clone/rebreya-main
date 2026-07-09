@@ -479,6 +479,139 @@ test("registerDnd5eSheetExtensions marks unavailable actor sheet activities", as
   }
 });
 
+test("registerDnd5eSheetExtensions marks unavailable item sheet activities", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?item-activity-unavailable=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Стрелок" });
+    const activity = {
+      id: "shot",
+      _id: "shot",
+      type: "attack"
+    };
+    const item = new globalThis.Item();
+    item.id = "musket";
+    item._id = "musket";
+    item.name = "Мушкет";
+    item.actor = actor;
+    item.parent = actor;
+    item.system = {
+      activities: {
+        shot: activity
+      }
+    };
+
+    const nameStack = new stubs.HTMLElement();
+    const row = new stubs.HTMLElement({
+      dataset: {
+        activityId: activity.id
+      },
+      selectors: {
+        ".activity-name .name-stacked": nameStack,
+        ".name.name-stacked": nameStack,
+        ".name-stacked": nameStack
+      }
+    });
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-activity-id]": [row],
+        "[data-rebreya-activity-unavailable='true']": []
+      }
+    });
+    const seen = [];
+    const moduleApi = {
+      combatAttackService: {
+        getActivityAvailability(targetActivity) {
+          seen.push(targetActivity);
+          return {
+            available: false,
+            label: "Недоступно",
+            title: "Магазин пуст"
+          };
+        }
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderItemSheet")({ item }, root);
+
+    const badge = nameStack.children.find((child) => child.dataset.rebreyaActivityUnavailable === "true");
+    assert.ok(badge);
+    assert.equal(badge.textContent, "Недоступно");
+    assert.equal(row.classList.contains("rm-activity-unavailable"), true);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].id, activity.id);
+    assert.equal(seen[0].item, item);
+    assert.equal(seen[0].actor, actor);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("registerDnd5eSheetExtensions marks unavailable activity choice buttons", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?choice-activity-unavailable=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Стрелок" });
+    const activity = {
+      id: "shot",
+      _id: "shot",
+      type: "attack"
+    };
+    const item = new globalThis.Item();
+    item.id = "musket";
+    item._id = "musket";
+    item.name = "Мушкет";
+    item.actor = actor;
+    item.parent = actor;
+    item.system = {
+      activities: {
+        shot: activity
+      }
+    };
+
+    const buttonName = new stubs.HTMLElement();
+    const button = new stubs.HTMLElement({
+      dataset: {
+        activityId: activity.id
+      },
+      selectors: {
+        ".name": buttonName
+      }
+    });
+    button.tagName = "BUTTON";
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-activity-id]": [button],
+        "[data-rebreya-activity-unavailable='true']": []
+      }
+    });
+    const moduleApi = {
+      combatAttackService: {
+        getActivityAvailability() {
+          return {
+            available: false,
+            label: "Недоступно"
+          };
+        }
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderApplicationV2")({ item }, root);
+
+    const badge = buttonName.children.find((child) => child.dataset.rebreyaActivityUnavailable === "true");
+    assert.ok(badge);
+    assert.equal(badge.textContent, "Недоступно");
+    assert.equal(button.classList.contains("rm-activity-unavailable"), true);
+    assert.equal(button.classList.contains("rm-activity-unavailable--choice"), true);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("main stylesheet applies Rebreya character header image and brand positioning", async () => {
   const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
   const headerAssetUrl = new URL("../assets/ui/rebreya-character-header.webp", import.meta.url);

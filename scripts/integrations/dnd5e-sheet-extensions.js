@@ -5857,14 +5857,25 @@ function resolveItemActivity(item, activityId) {
   return null;
 }
 
-function resolveActivityRowItem(actor, row) {
+function getActorFromItem(item) {
+  const actor = item?.actor ?? item?.parent ?? null;
+  return actor instanceof Actor ? actor : null;
+}
+
+function resolveActivityRowItem(actor, row, fallbackItem = null) {
   if (!(row instanceof HTMLElement)) {
     return null;
   }
 
   const itemRow = row.closest?.("[data-item-id]")
     ?? findAncestorElement(row, (ancestor) => Boolean(cleanText(ancestor?.dataset?.itemId)));
-  return resolveActorItem(actor, itemRow?.dataset?.itemId);
+  const itemId = cleanText(itemRow?.dataset?.itemId);
+  if (!itemId) {
+    return fallbackItem ?? null;
+  }
+
+  return resolveActorItem(actor, itemId)
+    ?? (cleanText(fallbackItem?.id ?? fallbackItem?._id) === itemId ? fallbackItem : null);
 }
 
 function buildSheetActivityContext(activity, item, actor, activityId) {
@@ -5902,8 +5913,30 @@ function getActivityRowNameStack(row) {
     ?? null;
 }
 
-function bindActivityAvailabilityBadges(root, actor, moduleApi) {
-  if (!(root instanceof HTMLElement) || !(actor instanceof Actor)) {
+function getActivityBadgeTarget(row) {
+  const nameStack = getActivityRowNameStack(row);
+  if (nameStack instanceof HTMLElement) {
+    return {
+      element: nameStack,
+      kind: "row"
+    };
+  }
+
+  const buttonName = row.querySelector?.(".name") ?? null;
+  if (buttonName instanceof HTMLElement) {
+    return {
+      element: buttonName,
+      kind: "choice"
+    };
+  }
+
+  return null;
+}
+
+function bindActivityAvailabilityBadges(root, { actor = null, item = null, moduleApi } = {}) {
+  const contextActor = actor instanceof Actor ? actor : getActorFromItem(item);
+  const fallbackItem = item ?? null;
+  if (!(root instanceof HTMLElement) || (!contextActor && !fallbackItem)) {
     return;
   }
 
@@ -5935,9 +5968,10 @@ function bindActivityAvailabilityBadges(root, actor, moduleApi) {
       continue;
     }
 
-    const item = resolveActivityRowItem(actor, row);
-    const activity = resolveItemActivity(item, activityId);
-    const activityContext = buildSheetActivityContext(activity, item, actor, activityId);
+    const activityItem = resolveActivityRowItem(contextActor, row, fallbackItem);
+    const activity = resolveItemActivity(activityItem, activityId);
+    const activityActor = contextActor ?? getActorFromItem(activityItem);
+    const activityContext = buildSheetActivityContext(activity, activityItem, activityActor, activityId);
     if (!activityContext) {
       continue;
     }
@@ -5955,8 +5989,8 @@ function bindActivityAvailabilityBadges(root, actor, moduleApi) {
       continue;
     }
 
-    const nameStack = getActivityRowNameStack(row);
-    if (!(nameStack instanceof HTMLElement)) {
+    const target = getActivityBadgeTarget(row);
+    if (!target) {
       continue;
     }
 
@@ -5970,8 +6004,9 @@ function bindActivityAvailabilityBadges(root, actor, moduleApi) {
       badge.setAttribute("data-tooltip", title);
     }
 
-    nameStack.append(badge);
+    target.element.append(badge);
     row.classList.add("rm-activity-unavailable");
+    row.classList.add(`rm-activity-unavailable--${target.kind}`);
     row.dataset.rebreyaActivityUnavailable = "true";
   }
 }
@@ -6721,7 +6756,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     }
 
     try {
-      bindActivityAvailabilityBadges(root, actor, moduleApi);
+      bindActivityAvailabilityBadges(root, { actor, moduleApi });
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to bind activity availability badges.`, error);
@@ -6766,6 +6801,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to bind item sheet enhancements.`, error);
     }
+    try {
+      bindActivityAvailabilityBadges(root, { item, moduleApi });
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to bind item sheet activity availability badges.`, error);
+    }
   };
 
   Hooks.on("renderItemSheet", onRenderItemSheet);
@@ -6809,7 +6850,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
 
     if (actor) {
       try {
-        bindActivityAvailabilityBadges(root, actor, moduleApi);
+        bindActivityAvailabilityBadges(root, { actor, moduleApi });
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind activity availability badges on ApplicationV2 render.`, error);
@@ -6832,6 +6873,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind item sheet enhancements on ApplicationV2 render.`, error);
+      }
+      try {
+        bindActivityAvailabilityBadges(root, { item, moduleApi });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind item sheet activity availability badges on ApplicationV2 render.`, error);
       }
     }
   });
