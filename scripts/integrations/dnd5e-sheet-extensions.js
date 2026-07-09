@@ -66,6 +66,7 @@ const NATIVE_STATE_SELECT_BUTTON_KEY = "REBREYA_MAIN.NativeState.SelectButton";
 const STATES_PACK_ID = `world.${STATES_COMPENDIUM_NAME}`;
 const ITEM_RANK_MIN = 0;
 const ITEM_RANK_MAX = 10;
+const ACTIVITY_UNAVAILABLE_LABEL = "Недоступно";
 
 function cleanText(value) {
   return String(value ?? "").trim();
@@ -5841,6 +5842,140 @@ function resolveActorItem(actor, itemId) {
   return items.find((item) => cleanText(item?.id ?? item?._id) === id) ?? null;
 }
 
+function resolveItemActivity(item, activityId) {
+  const id = cleanText(activityId);
+  if (!item || !id) {
+    return null;
+  }
+
+  for (const [entryId, activity] of getActivityEntries(item.system?.activities)) {
+    if (cleanText(entryId) === id || cleanText(activity?.id ?? activity?._id) === id) {
+      return activity;
+    }
+  }
+
+  return null;
+}
+
+function resolveActivityRowItem(actor, row) {
+  if (!(row instanceof HTMLElement)) {
+    return null;
+  }
+
+  const itemRow = row.closest?.("[data-item-id]")
+    ?? findAncestorElement(row, (ancestor) => Boolean(cleanText(ancestor?.dataset?.itemId)));
+  return resolveActorItem(actor, itemRow?.dataset?.itemId);
+}
+
+function buildSheetActivityContext(activity, item, actor, activityId) {
+  if (!activity || typeof activity !== "object") {
+    return null;
+  }
+
+  const id = cleanText(activity.id ?? activity._id ?? activityId);
+  const context = Object.create(activity);
+  Object.defineProperties(context, {
+    id: {
+      value: id,
+      configurable: true
+    },
+    _id: {
+      value: cleanText(activity._id ?? activity.id ?? activityId),
+      configurable: true
+    },
+    item: {
+      value: activity.item ?? item,
+      configurable: true
+    },
+    actor: {
+      value: activity.actor ?? actor,
+      configurable: true
+    }
+  });
+  return context;
+}
+
+function getActivityRowNameStack(row) {
+  return row.querySelector?.(".activity-name .name-stacked")
+    ?? row.querySelector?.(".name.name-stacked")
+    ?? row.querySelector?.(".name-stacked")
+    ?? null;
+}
+
+function bindActivityAvailabilityBadges(root, actor, moduleApi) {
+  if (!(root instanceof HTMLElement) || !(actor instanceof Actor)) {
+    return;
+  }
+
+  for (const badge of Array.from(root.querySelectorAll?.("[data-rebreya-activity-unavailable='true']") ?? [])) {
+    badge?.remove?.();
+  }
+
+  const rows = Array.from(root.querySelectorAll?.("[data-activity-id]") ?? []);
+  for (const row of rows) {
+    if (!(row instanceof HTMLElement)) {
+      continue;
+    }
+    row.classList.remove("rm-activity-unavailable");
+    delete row.dataset.rebreyaActivityUnavailable;
+  }
+
+  const service = moduleApi?.combatAttackService;
+  if (typeof service?.getActivityAvailability !== "function") {
+    return;
+  }
+
+  for (const row of rows) {
+    if (!(row instanceof HTMLElement)) {
+      continue;
+    }
+
+    const activityId = cleanText(row.dataset.activityId);
+    if (!activityId) {
+      continue;
+    }
+
+    const item = resolveActivityRowItem(actor, row);
+    const activity = resolveItemActivity(item, activityId);
+    const activityContext = buildSheetActivityContext(activity, item, actor, activityId);
+    if (!activityContext) {
+      continue;
+    }
+
+    let availability = null;
+    try {
+      availability = service.getActivityAvailability(activityContext);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to resolve sheet activity availability.`, error);
+      continue;
+    }
+
+    if (availability?.available !== false) {
+      continue;
+    }
+
+    const nameStack = getActivityRowNameStack(row);
+    if (!(nameStack instanceof HTMLElement)) {
+      continue;
+    }
+
+    const badge = document.createElement("span");
+    badge.classList.add("rm-activity-unavailable-badge");
+    badge.dataset.rebreyaActivityUnavailable = "true";
+    badge.textContent = cleanText(availability.label) || ACTIVITY_UNAVAILABLE_LABEL;
+    const title = cleanText(availability.title ?? availability.tooltip);
+    if (title) {
+      badge.title = title;
+      badge.setAttribute("data-tooltip", title);
+    }
+
+    nameStack.append(badge);
+    row.classList.add("rm-activity-unavailable");
+    row.dataset.rebreyaActivityUnavailable = "true";
+  }
+}
+
 const HELD_ITEM_SHEET_ROWS = new Map();
 const HELD_ITEM_ROW_KEYS = new WeakMap();
 let heldItemUpdatedHookRegistered = false;
@@ -6585,6 +6720,13 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
     }
 
+    try {
+      bindActivityAvailabilityBadges(root, actor, moduleApi);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to bind activity availability badges.`, error);
+    }
+
     if (supportsHeldItemSheetControls(actor)) {
       try {
         bindHeldItemEquipContextMenu(root, { actor, app, moduleApi });
@@ -6662,6 +6804,15 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind character sheet combat statuses on ApplicationV2 render.`, error);
+      }
+    }
+
+    if (actor) {
+      try {
+        bindActivityAvailabilityBadges(root, actor, moduleApi);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to bind activity availability badges on ApplicationV2 render.`, error);
       }
     }
 

@@ -1421,6 +1421,56 @@ test("empty firearm magazines should stop native activity use before an attack r
   assert.equal(TestRoll.queuedTotals.length, 1);
 });
 
+test("empty firearm magazines are reported unavailable for activity sheet badges", () => {
+  TestRoll.queuedTotals = [15];
+  const weapon = makeFirearmItem({
+    name: "Р РµРІРѕР»СЊРІРµСЂ",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "РџРёСЃС‚РѕР»РµС‚РЅС‹Рµ",
+      reload: "РЎРјРµРЅР° РјР°РіР°Р·РёРЅР° 6"
+    },
+    ammoState: {
+      current: 0,
+      capacity: 6,
+      ammunition: "РџРёСЃС‚РѕР»РµС‚РЅС‹Рµ"
+    }
+  });
+  weapon.flags[MODULE_ID].heldHands = ["right"];
+  const actor = makeActor([weapon]);
+  const activity = {
+    id: "attack-1",
+    type: "attack",
+    actor,
+    item: weapon,
+    activation: {
+      type: "action",
+      value: 1
+    },
+    attack: {
+      type: {
+        value: "firearm"
+      }
+    },
+    consumption: {
+      targets: []
+    },
+    range: {}
+  };
+  const service = new CombatAttackService({});
+
+  const result = service.getActivityAvailability(activity);
+
+  assert.equal(result.available, false);
+  assert.equal(result.label, "Недоступно");
+  assert.equal(result.reason, "firearmAmmoEmpty");
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
+  assert.equal(TestRoll.queuedTotals.length, 1);
+});
+
 test("empty firearm magazines should not be first cancelled inside attack roll config", () => {
   TestRoll.queuedTotals = [15];
   const weapon = makeFirearmItem({

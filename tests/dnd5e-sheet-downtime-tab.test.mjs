@@ -395,6 +395,90 @@ test("registerDnd5eSheetExtensions adds Rebreya branding to character sheet head
   }
 });
 
+test("registerDnd5eSheetExtensions marks unavailable actor sheet activities", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?activity-unavailable=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Виверна", type: "npc" });
+    const activity = {
+      id: "attack-activity",
+      _id: "attack-activity",
+      type: "attack"
+    };
+    const item = {
+      id: "weapon-a",
+      _id: "weapon-a",
+      name: "Атака",
+      system: {
+        activities: {
+          "attack-activity": activity
+        }
+      }
+    };
+    actor.items = {
+      contents: [item],
+      get(itemId) {
+        return itemId === item.id ? item : null;
+      }
+    };
+
+    const nameStack = new stubs.HTMLElement();
+    const row = new stubs.HTMLElement({
+      dataset: {
+        activityId: activity.id
+      },
+      selectors: {
+        ".activity-name .name-stacked": nameStack,
+        ".name.name-stacked": nameStack,
+        ".name-stacked": nameStack
+      }
+    });
+    const itemRow = new stubs.HTMLElement({
+      dataset: {
+        itemId: item.id
+      }
+    });
+    row.closest = (selector) => selector === "[data-item-id]" ? itemRow : null;
+    const root = new stubs.HTMLElement({
+      selectorAll: {
+        "[data-activity-id]": [row],
+        "[data-rebreya-activity-unavailable='true']": []
+      }
+    });
+    const seen = [];
+    const moduleApi = {
+      combatAttackService: {
+        getActivityAvailability(targetActivity) {
+          seen.push(targetActivity);
+          return {
+            available: false,
+            label: "Недоступно",
+            title: "Магазин пуст"
+          };
+        }
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderActorSheet5eNPC2")({ actor }, root);
+
+    const badge = nameStack.children.find((child) => child.dataset.rebreyaActivityUnavailable === "true");
+    assert.ok(badge);
+    assert.equal(badge.textContent, "Недоступно");
+    assert.equal(badge.classList.contains("rm-activity-unavailable-badge"), true);
+    assert.equal(badge.attributes["data-tooltip"], "Магазин пуст");
+    assert.equal(row.classList.contains("rm-activity-unavailable"), true);
+    assert.equal(row.dataset.rebreyaActivityUnavailable, "true");
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].id, activity.id);
+    assert.equal(seen[0].item, item);
+    assert.equal(seen[0].actor, actor);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("main stylesheet applies Rebreya character header image and brand positioning", async () => {
   const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
   const headerAssetUrl = new URL("../assets/ui/rebreya-character-header.webp", import.meta.url);

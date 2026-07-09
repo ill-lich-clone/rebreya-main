@@ -26,6 +26,7 @@ const FIREARM_RELOAD_AUTOMATION = "firearm-reload";
 const FIREARM_AUTOMATIC_FIRE_AUTOMATION = "firearm-automatic-fire";
 const FIREARM_SEMI_AUTOMATIC_FIRE_AUTOMATION = "firearm-semi-automatic-fire";
 const FIREARM_MAINTENANCE_TOOL_IDS = ["art:tinker", "tinker", "tink"];
+const ACTIVITY_UNAVAILABLE_LABEL = "Недоступно";
 const REACTION_STATE_FLAG = "reactionState";
 const REACTION_DEFAULT_MAX_USES = 1;
 const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
@@ -2308,6 +2309,128 @@ export class CombatAttackService {
     });
   }
 
+  #activityUnavailable(reason, title = "", data = {}) {
+    return {
+      available: false,
+      label: ACTIVITY_UNAVAILABLE_LABEL,
+      reason: cleanText(reason),
+      title: cleanText(title),
+      ...data
+    };
+  }
+
+  #activityAvailable(data = {}) {
+    return {
+      available: true,
+      label: "",
+      reason: "",
+      title: "",
+      ...data
+    };
+  }
+
+  #getHeldWeaponActivityBlock(activity) {
+    const item = activity?.item ?? null;
+    const actor = activity?.actor ?? item?.actor ?? item?.parent ?? null;
+    const requiredHands = this.#resolveRequiredHands(activity);
+    const result = canUseHeldItemForHandRequirement(actor, item, { requiredHands });
+    if (result.ok) {
+      return null;
+    }
+
+    const required = Math.max(1, requiredHands);
+    if (result.reason === "notHeld") {
+      const freeHands = Array.isArray(result.freeHands) ? result.freeHands : [];
+      if (freeHands.length >= required) {
+        return null;
+      }
+
+      return this.#activityUnavailable(
+        "heldItemNoFreeHands",
+        "Нет свободных рук для атаки.",
+        { heldItem: result }
+      );
+    }
+
+    if (result.reason === "insufficientAvailableHands") {
+      return this.#activityUnavailable(
+        "heldItemNoFreeHands",
+        "Нет свободных рук для атаки.",
+        { heldItem: result }
+      );
+    }
+
+    return this.#activityUnavailable(
+      "heldItemUnavailable",
+      "Предмет нужно взять в руку.",
+      { heldItem: result }
+    );
+  }
+
+  #getFirearmAmmoActivityBlock(item, options = {}) {
+    const block = this.#getFirearmAmmoShotBlock(item, options);
+    if (!block) {
+      return null;
+    }
+
+    const title = block.reason === "firearmAmmoInsufficient"
+      ? "Не хватает патронов в магазине."
+      : "Магазин пуст.";
+    return this.#activityUnavailable(block.reason, title, {
+      current: block.current,
+      capacity: block.capacity,
+      required: block.required
+    });
+  }
+
+  #getFirearmAreaFireActivityBlock(activity) {
+    const automation = cleanText(foundry.utils.getProperty(activity, `flags.${MODULE_ID}.automation`));
+    if (![FIREARM_AUTOMATIC_FIRE_AUTOMATION, FIREARM_SEMI_AUTOMATIC_FIRE_AUTOMATION].includes(automation)) {
+      return null;
+    }
+
+    const item = activity?.item ?? null;
+    if (!isFirearmItem(item)) {
+      return null;
+    }
+
+    const actor = activity?.actor ?? item.actor ?? null;
+    if (!(actor instanceof Actor)) {
+      return this.#activityUnavailable("firearmActorMissing", "Не найден владелец оружия.");
+    }
+
+    if (this.#isFirearmJammed(item)) {
+      return this.#activityUnavailable("firearmJammed", "Оружие заклинено.");
+    }
+
+    const state = this.#resolveFirearmAmmoState(item);
+    if (!state.tracked) {
+      return null;
+    }
+
+    const mode = automation === FIREARM_AUTOMATIC_FIRE_AUTOMATION ? "automatic" : "semi";
+    const required = mode === "automatic"
+      ? state.current
+      : (state.capacity > 0 ? Math.min(3, state.capacity) : 3);
+    if (state.current <= 0) {
+      return this.#activityUnavailable("firearmAmmoEmpty", "Магазин пуст.", {
+        current: 0,
+        capacity: state.capacity,
+        required
+      });
+    }
+
+    if (mode !== "automatic" && state.current < required) {
+      return this.#activityUnavailable("firearmAmmoInsufficient", "Не хватает патронов в магазине.", {
+        current: state.current,
+        capacity: state.capacity,
+        required
+      });
+    }
+
+    return null;
+  }
+
   #ensureHeldWeaponActivity(activity) {
     const item = activity?.item ?? null;
     const actor = activity?.actor ?? item?.actor ?? item?.parent ?? null;
@@ -2817,6 +2940,42 @@ export class CombatAttackService {
     }
 
     return true;
+  }
+
+  getActivityAvailability(activity) {
+    try {
+      const areaFireBlock = this.#getFirearmAreaFireActivityBlock(activity);
+      if (areaFireBlock) {
+        return areaFireBlock;
+      }
+
+      if (!this.#isWeaponAttackActivity(activity)) {
+        return this.#activityAvailable();
+      }
+
+      const item = activity.item ?? null;
+      if (this.#isFirearmJammed(item)) {
+        return this.#activityUnavailable("firearmJammed", "Оружие заклинено.");
+      }
+
+      if (isFirearmItem(item)) {
+        const ammoBlock = this.#getFirearmAmmoActivityBlock(item);
+        if (ammoBlock) {
+          return ammoBlock;
+        }
+      }
+
+      const heldBlock = this.#getHeldWeaponActivityBlock(activity);
+      if (heldBlock) {
+        return heldBlock;
+      }
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to resolve activity availability.`, error);
+      return this.#activityAvailable();
+    }
+
+    return this.#activityAvailable();
   }
 
   applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {

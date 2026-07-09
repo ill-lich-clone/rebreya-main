@@ -389,6 +389,30 @@
   opacity: 1;
 }
 
+.rm-activity-unavailable .activity-name .name-stacked,
+.rm-activity-unavailable .item-name .name-stacked {
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.rm-activity-unavailable-badge {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 2px;
+  padding: 1px 6px 2px;
+  border: 1px solid rgb(135 38 54 / 0.22);
+  border-radius: 6px;
+  background: #efd2da;
+  color: #7f2432;
+  font-size: var(--font-size-10, 10px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 .dnd5e2 .effects-element .conditions-list .condition.rm-sheet-status--valued {
   justify-content: space-between;
 }
