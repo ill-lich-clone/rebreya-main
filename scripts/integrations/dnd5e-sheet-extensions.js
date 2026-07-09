@@ -26,6 +26,10 @@ import {
   registerUniversalBeltItemContextHook
 } from "./universal-belt.js";
 import {
+  bindItemUpgradeSheet,
+  hideInstalledUpgradeInventoryRows
+} from "./item-upgrade-sheet.js?v=1.4.93-item-upgrades";
+import {
   buildHeldItemEquipMenuActions,
   buildHeldItemReleaseHandUpdate,
   HELD_ITEM_PRESENTATIONS,
@@ -5808,7 +5812,7 @@ function upsertFirearmWeaponPropertiesField(root, app) {
   }
 }
 
-function bindItemSheetEnhancements(root, app) {
+function bindItemSheetEnhancements(root, app, moduleApi = null) {
   const item = getItemFromSheetApp(app);
   if (!item) {
     return;
@@ -5821,6 +5825,7 @@ function bindItemSheetEnhancements(root, app) {
   upsertItemSlotField(root, app);
   upsertFirearmWeaponPropertiesField(root, app);
   upsertWeaponAttackTraitsField(root, app);
+  bindItemUpgradeSheet(root, app, moduleApi);
 }
 
 function resolveActorItem(actor, itemId) {
@@ -6802,6 +6807,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
         console.error(`${MODULE_ID} | Failed to bind universal belt sheet controls.`, error);
       }
       try {
+        hideInstalledUpgradeInventoryRows(root, actor);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to hide installed item upgrades.`, error);
+      }
+      try {
         bindNativeStateCard(root, app);
       }
       catch (error) {
@@ -6856,7 +6867,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     }
 
     try {
-      bindItemSheetEnhancements(root, app);
+      bindItemSheetEnhancements(root, app, moduleApi);
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to bind item sheet enhancements.`, error);
@@ -6895,6 +6906,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
         console.error(`${MODULE_ID} | Failed to bind universal belt sheet controls on ApplicationV2 render.`, error);
       }
       try {
+        hideInstalledUpgradeInventoryRows(root, actor);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to hide installed item upgrades on ApplicationV2 render.`, error);
+      }
+      try {
         bindNativeStateCard(root, app);
       }
       catch (error) {
@@ -6929,7 +6946,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     const item = getItemFromSheetApp(app);
     if (item) {
       try {
-        bindItemSheetEnhancements(root, app);
+        bindItemSheetEnhancements(root, app, moduleApi);
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to bind item sheet enhancements on ApplicationV2 render.`, error);

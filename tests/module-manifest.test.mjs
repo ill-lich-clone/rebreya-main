@@ -160,3 +160,27 @@ test("held item integrations use the current module cache bust", async () => {
     new RegExp(`held-items\\.js\\?v=${escapedVersion}-npc-held-natural`, "u"),
   );
 });
+
+test("item upgrade service and sheet integration are wired into the live entrypoint", async () => {
+  const manifestUrl = new URL("../module.json", import.meta.url);
+  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+  const entrypointPath = manifest.esmodules?.[0];
+  const entrypointSource = await readFile(new URL(`../${entrypointPath}`, import.meta.url), "utf8");
+  const sheetSource = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
+  const escapedVersion = manifest.version.replaceAll(".", "\\.");
+
+  assert.match(
+    entrypointSource,
+    new RegExp(`item-upgrade-service\\.js\\?v=${escapedVersion}-item-upgrades`, "u"),
+  );
+  assert.match(entrypointSource, /this\.itemUpgradeService = new ItemUpgradeService\(this\)/u);
+  assert.match(entrypointSource, /installItemUpgrade\(hostItem, upgradeItem, options = \{\}\)/u);
+  assert.match(entrypointSource, /removeItemUpgrade\(hostItem, upgradeItemOrId\)/u);
+  assert.match(entrypointSource, /setItemUpgradeCapacity\(hostItem, capacity\)/u);
+  assert.match(
+    sheetSource,
+    new RegExp(`item-upgrade-sheet\\.js\\?v=${escapedVersion}-item-upgrades`, "u"),
+  );
+  assert.match(sheetSource, /bindItemUpgradeSheet\(root, app, moduleApi/u);
+  assert.match(sheetSource, /hideInstalledUpgradeInventoryRows\(root, actor\)/u);
+});

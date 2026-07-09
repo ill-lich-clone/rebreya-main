@@ -29,6 +29,7 @@ import {
 } from "./data/inventory-service.js";
 import { HeroDollService } from "./data/hero-doll-service.js";
 import { CraftingService } from "./data/crafting-service.js";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.93-item-upgrades";
 import { CalendarService } from "./data/calendar-service.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.93-firearm-item-sheet-no-rerender";
@@ -396,6 +397,7 @@ export class RebreyaMainModule {
     this.inventoryService = new InventoryService(this);
     this.heroDollService = new HeroDollService(this);
     this.craftingService = new CraftingService(this);
+    this.itemUpgradeService = new ItemUpgradeService(this);
     this.calendarService = new CalendarService({ groupContextService: this.groupContextService });
     this.globalEventsService = new GlobalEventsService(this);
     this.combatStatusService = new CombatStatusService(this);
@@ -2633,6 +2635,24 @@ export class RebreyaMainModule {
 
   async processCraftOneDay() {
     const result = await this.craftingService.processOneDay();
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async installItemUpgrade(hostItem, upgradeItem, options = {}) {
+    const result = await this.itemUpgradeService.installItemUpgrade(hostItem, upgradeItem, options);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async removeItemUpgrade(hostItem, upgradeItemOrId) {
+    const result = await this.itemUpgradeService.removeItemUpgrade(hostItem, upgradeItemOrId);
+    await this.refreshOpenApps();
+    return result;
+  }
+
+  async setItemUpgradeCapacity(hostItem, capacity) {
+    const result = await this.itemUpgradeService.setItemUpgradeCapacity(hostItem, capacity);
     await this.refreshOpenApps();
     return result;
   }

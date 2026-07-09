@@ -10283,3 +10283,186 @@ summary:focus-visible {
     justify-content: start;
   }
 }
+
+@property --rm-item-upgrade-hold-progress {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.rm-item-upgrades {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid rgb(99 84 57 / 0.38);
+  border-radius: 8px;
+  background: rgb(245 241 232 / 0.78);
+  color: rgb(38 35 30);
+}
+
+.rm-item-upgrades__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rm-item-upgrades__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.rm-item-upgrades__title span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rm-item-upgrades__capacity {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 30px);
+  gap: 4px;
+}
+
+.rm-item-upgrades__capacity-button,
+.rm-item-upgrades__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  border: 1px solid rgb(82 73 58 / 0.45);
+  border-radius: 6px;
+  background: rgb(255 252 245 / 0.88);
+  color: rgb(50 45 36);
+  font-weight: 700;
+}
+
+.rm-item-upgrades__capacity-button {
+  width: 30px;
+  height: 28px;
+  padding: 0;
+}
+
+.rm-item-upgrades__capacity-button.is-active {
+  border-color: rgb(142 95 27 / 0.72);
+  background: rgb(164 112 37 / 0.18);
+  color: rgb(91 58 17);
+}
+
+.rm-item-upgrades__slots {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rm-item-upgrades__slot {
+  display: grid;
+  grid-template-columns: 24px 32px minmax(0, 1fr) 28px;
+  gap: 7px;
+  align-items: center;
+  min-height: 38px;
+  padding: 5px 6px;
+  border: 1px solid rgb(100 86 62 / 0.24);
+  border-radius: 7px;
+  background: rgb(255 255 255 / 0.58);
+}
+
+.rm-item-upgrades__slot.is-empty {
+  grid-template-columns: 24px minmax(0, 1fr);
+  color: rgb(71 67 60 / 0.72);
+}
+
+.rm-item-upgrades__slot-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgb(80 74 64 / 0.12);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.rm-item-upgrades__icon {
+  width: 30px;
+  height: 30px;
+  object-fit: cover;
+  border: 1px solid rgb(70 62 50 / 0.24);
+  border-radius: 6px;
+}
+
+.rm-item-upgrades__name,
+.rm-item-upgrades__empty-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.84rem;
+}
+
+.rm-item-upgrades__remove {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.rm-item-upgrades.is-dragover {
+  border-color: rgb(35 112 92 / 0.72);
+  background: rgb(231 246 239 / 0.82);
+}
+
+.rm-item-upgrades__hold {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  border-radius: 8px;
+  background: rgb(18 28 25 / 0.28);
+  pointer-events: none;
+}
+
+.rm-item-upgrades.is-holding .rm-item-upgrades__hold {
+  display: grid;
+}
+
+.rm-item-upgrades__hold-ring {
+  width: 54px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    conic-gradient(
+      rgb(236 197 92) var(--rm-item-upgrade-hold-progress),
+      rgb(255 255 255 / 0.28) 0
+    );
+  -webkit-mask: radial-gradient(farthest-side, transparent 58%, #000 60%);
+  mask: radial-gradient(farthest-side, transparent 58%, #000 60%);
+  animation: rmItemUpgradeHoldFill var(--rm-item-upgrade-hold-duration, 3000ms) linear forwards;
+  filter: drop-shadow(0 0 10px rgb(236 197 92 / 0.55));
+}
+
+.rm-item-upgrades.is-hold-ready .rm-item-upgrades__hold-ring {
+  background: conic-gradient(rgb(66 168 115) 360deg, rgb(66 168 115) 0);
+  animation: none;
+  filter: drop-shadow(0 0 12px rgb(66 168 115 / 0.58));
+}
+
+.rm-item-upgrades-hidden-item {
+  display: none !important;
+}
+
+@keyframes rmItemUpgradeHoldFill {
+  from {
+    --rm-item-upgrade-hold-progress: 0deg;
+  }
+
+  to {
+    --rm-item-upgrade-hold-progress: 360deg;
+  }
+}
