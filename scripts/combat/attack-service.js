@@ -17,6 +17,7 @@ const FIREARM_MISFIRE_PROPERTY = "lchFirearmMisfire";
 const FIREARM_RUST_PROPERTY = "lchFirearmRust";
 const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
 const FIREARM_AMMO_STATE_FLAG = "firearmAmmoState";
+const FIREARM_CHAT_NOTES_FLAG = "firearmChatNotes";
 const FIREARM_JAM_NAME_SUFFIX = " (клин)";
 const FIREARM_CLEAR_JAM_ACTIVITY_ID = "lchClearBreech01";
 const FIREARM_MAINTAIN_ACTIVITY_ID = "lchMaintainGun01";
@@ -184,6 +185,21 @@ function signedNumber(value) {
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
+}
+
+function escapeHtml(value) {
+  const text = String(value ?? "");
+  if (typeof globalThis.foundry?.utils?.escapeHTML === "function") {
+    return globalThis.foundry.utils.escapeHTML(text);
+  }
+
+  return text.replace(/[&<>"']/gu, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  })[character] ?? character);
 }
 
 function damagePartFormula(part) {
@@ -1132,7 +1148,156 @@ export class CombatAttackService {
     }
     const currentFlavor = cleanText(messageConfig.data.flavor ?? messageConfig.flavor);
     messageConfig.data.flavor = [currentFlavor, safeContent].filter(Boolean).join("<br>");
+    const notes = this.#appendFirearmChatCardNote(messageConfig, safeContent);
+    this.#syncFirearmChatCardNotes(options, notes);
     return true;
+  }
+
+  #appendFirearmChatCardNote(messageConfig, content) {
+    const safeContent = cleanText(content);
+    if (!safeContent || !isPlainObject(messageConfig)) {
+      return [];
+    }
+
+    if (!isPlainObject(messageConfig.data)) {
+      messageConfig.data = {};
+    }
+
+    const notesPath = `flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`;
+    const existingNotes = foundry.utils.getProperty(messageConfig.data, notesPath);
+    const notes = Array.isArray(existingNotes)
+      ? existingNotes.map((note) => cleanText(note)).filter(Boolean)
+      : [];
+    if (!notes.includes(safeContent)) {
+      notes.push(safeContent);
+    }
+    foundry.utils.setProperty(messageConfig.data, notesPath, notes);
+    return notes;
+  }
+
+  #syncFirearmChatCardNotes(options = {}, notes = []) {
+    const safeNotes = Array.isArray(notes)
+      ? notes.map((note) => cleanText(note)).filter(Boolean)
+      : [];
+    if (!safeNotes.length) {
+      return false;
+    }
+
+    const message = this.#resolveFirearmOriginatingMessage(options);
+    if (!message || typeof message.update !== "function") {
+      return false;
+    }
+
+    const content = cleanText(message.content);
+    if (!content) {
+      return false;
+    }
+
+    const nextContent = this.#withFirearmChatCardNotes(content, safeNotes);
+    const update = {
+      [`flags.${MODULE_ID}.${FIREARM_CHAT_NOTES_FLAG}`]: safeNotes
+    };
+    if (nextContent !== content) {
+      update.content = nextContent;
+    }
+
+    Promise.resolve(message.update(update)).catch((error) => {
+      console.error(`${MODULE_ID} | Failed to update firearm attack chat card notes.`, error);
+    });
+    return true;
+  }
+
+  #resolveFirearmOriginatingMessage(options = {}) {
+    const messageConfig = options?.messageConfig ?? null;
+    const directMessage = options?.message ?? null;
+    if (directMessage && typeof directMessage.update === "function") {
+      return directMessage;
+    }
+
+    const itemCardUuids = [
+      foundry.utils.getProperty(options, "workflow.itemCardUuid"),
+      foundry.utils.getProperty(options, "midiOptions.workflow.itemCardUuid"),
+      foundry.utils.getProperty(options, "midiOptions.itemCardUuid")
+    ].map((value) => cleanText(value)).filter(Boolean);
+    for (const itemCardUuid of itemCardUuids) {
+      const message = this.#resolveFirearmMessageUuid(itemCardUuid);
+      if (message) {
+        return message;
+      }
+    }
+
+    const itemCardIds = [
+      foundry.utils.getProperty(messageConfig, "data.flags.dnd5e.originatingMessage"),
+      foundry.utils.getProperty(options, "workflow.itemCardId"),
+      foundry.utils.getProperty(options, "midiOptions.workflow.itemCardId"),
+      options?.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId
+    ].map((value) => cleanText(value)).filter(Boolean);
+    for (const itemCardId of itemCardIds) {
+      const message = game.messages?.get?.(itemCardId);
+      if (message) {
+        return message;
+      }
+    }
+
+    return null;
+  }
+
+  #resolveFirearmMessageUuid(uuid) {
+    const safeUuid = cleanText(uuid);
+    if (!safeUuid) {
+      return null;
+    }
+
+    try {
+      if (typeof globalThis.fromUuidSync === "function") {
+        const document = globalThis.fromUuidSync(safeUuid);
+        if (document) {
+          return document;
+        }
+      }
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to resolve firearm attack chat card UUID.`, error);
+    }
+
+    const match = safeUuid.match(/(?:^|\.)([^.]+)$/u);
+    const messageId = cleanText(match?.[1]);
+    return messageId ? (game.messages?.get?.(messageId) ?? null) : null;
+  }
+
+  #withFirearmChatCardNotes(content, notes = []) {
+    const safeContent = String(content ?? "");
+    const safeNotes = Array.isArray(notes)
+      ? notes.map((note) => cleanText(note)).filter(Boolean)
+      : [];
+    if (!safeContent || !safeNotes.length) {
+      return safeContent;
+    }
+
+    const html = this.#buildFirearmChatCardNotesHtml(safeNotes);
+    const existingPattern = /<p\b[^>]*data-rebreya-firearm-chat-notes=["']true["'][\s\S]*?<\/p>/u;
+    if (existingPattern.test(safeContent)) {
+      return safeContent.replace(existingPattern, html);
+    }
+
+    if (/<ul\b[^>]*class=["'][^"']*\bcard-footer\b/u.test(safeContent)) {
+      return safeContent.replace(/(\s*<ul\b[^>]*class=["'][^"']*\bcard-footer\b)/u, `\n${html}$1`);
+    }
+
+    if (/<\/div>\s*$/u.test(safeContent)) {
+      return safeContent.replace(/<\/div>\s*$/u, `${html}\n</div>`);
+    }
+
+    return `${safeContent}\n${html}`;
+  }
+
+  #buildFirearmChatCardNotesHtml(notes = []) {
+    const rows = notes
+      .map((note) => cleanText(note))
+      .filter(Boolean)
+      .map((note) => `<span>${escapeHtml(note)}</span>`)
+      .join("<br>");
+    return `<p class="supplement rebreya-firearm-chat-notes" data-rebreya-firearm-chat-notes="true"><strong>Огнестрел:</strong> ${rows}</p>`;
   }
 
   #notifyFirearmAmmoEmpty(item) {

@@ -1801,10 +1801,28 @@ test("firearm misfire rolls an extra d20 and jams the weapon before the attack",
   assert.match(TestRoll.messages[0].messageData.flavor, /Осечка/u);
 });
 
-test("firearm attack roll notes ammo and misfire in the native attack message", () => {
+test("firearm attack roll notes ammo and misfire in the originating attack card", () => {
   TestRoll.queuedTotals = [13];
   TestRoll.messages = [];
   globalThis.ChatMessage.messages = [];
+  const cardMessage = {
+    id: "card-a",
+    content: `
+      <div class="chat-card activation-card">
+        <div class="card-buttons"><button type="button" data-action="rollAttack">Attack</button></div>
+        <ul class="card-footer pills unlist"></ul>
+      </div>
+    `,
+    updateCalls: [],
+    update(update = {}) {
+      this.updateCalls.push(update);
+      if (typeof update.content === "string") {
+        this.content = update.content;
+      }
+      return this;
+    }
+  };
+  globalThis.game.messages = new Map([["card-a", cardMessage]]);
   const weapon = makeFirearmItem({
     name: "Musket",
     properties: {
@@ -1835,7 +1853,15 @@ test("firearm attack roll notes ammo and misfire in the native attack message", 
       }
     }
   };
-  const messageConfig = {};
+  const messageConfig = {
+    data: {
+      flags: {
+        dnd5e: {
+          originatingMessage: "card-a"
+        }
+      }
+    }
+  };
   const service = new CombatAttackService({});
 
   const result = service.applyDnd5eAttackRollConfig({ subject: activity }, {}, messageConfig);
@@ -1846,6 +1872,9 @@ test("firearm attack roll notes ammo and misfire in the native attack message", 
   assert.equal(TestRoll.messages.length, 0);
   assert.match(messageConfig.data.flavor, /Musket \(0\/1\)/u);
   assert.match(messageConfig.data.flavor, /d20 = 13/u);
+  assert.match(cardMessage.content, /data-rebreya-firearm-chat-notes/u);
+  assert.match(cardMessage.content, /Musket \(0\/1\)/u);
+  assert.match(cardMessage.content, /d20 = 13/u);
 });
 
 test("already jammed firearms cannot be used for attack activities", async () => {
