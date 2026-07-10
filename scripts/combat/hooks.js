@@ -7,13 +7,14 @@ export function registerCombatHooks(moduleApi) {
   const hasAttackService = Boolean(moduleApi?.combatAttackService);
   const hasRaceService = Boolean(moduleApi?.raceAutomationService);
   const hasFighterService = Boolean(moduleApi?.fighterAutomationService);
+  const hasSorcererService = Boolean(moduleApi?.sorcererAutomationService);
   const hasPaladinService = Boolean(moduleApi?.paladinAutomationService);
   const hasRogueService = Boolean(moduleApi?.rogueAutomationService);
   const hasAttackRollBoostService = Boolean(moduleApi?.attackRollBoostService);
   const hasPerformerService = Boolean(moduleApi?.performerAutomationService);
   const hasEnvironmentService = Boolean(moduleApi?.environmentAutomationService);
   const hasSpellService = Boolean(moduleApi?.spellAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasEnvironmentService && !hasSpellService) {
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasEnvironmentService && !hasSpellService) {
     return;
   }
 
@@ -147,36 +148,49 @@ export function registerCombatHooks(moduleApi) {
 
     Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
       try {
-        if (
-          hasPerformerService
-          && moduleApi.performerAutomationService.applyDnd5ePreUseActivity(
+        const continuePreUse = () => {
+          if (
+            hasPerformerService
+            && moduleApi.performerAutomationService.applyDnd5ePreUseActivity(
+              activity,
+              usageConfig,
+              dialogConfig,
+              messageConfig
+            ) === false
+          ) {
+            return false;
+          }
+
+          if (
+            hasSpellService
+            && moduleApi.spellAutomationService.deferDnd5ePreUseActivity(
+              activity,
+              usageConfig,
+              dialogConfig,
+              messageConfig
+            ) === false
+          ) {
+            return false;
+          }
+
+          return moduleApi.combatAttackService.applyDnd5ePreUseActivity(
             activity,
             usageConfig,
             dialogConfig,
             messageConfig
-          ) === false
-        ) {
-          return false;
+          );
+        };
+
+        if (!hasSorcererService) {
+          return continuePreUse();
         }
 
-        if (
-          hasSpellService
-          && moduleApi.spellAutomationService.deferDnd5ePreUseActivity(
-            activity,
-            usageConfig,
-            dialogConfig,
-            messageConfig
-          ) === false
-        ) {
-          return false;
-        }
-
-        return moduleApi.combatAttackService.applyDnd5ePreUseActivity(
+        return moduleApi.sorcererAutomationService.applyDnd5ePreUseActivity(
           activity,
           usageConfig,
           dialogConfig,
           messageConfig
-        );
+        ).then((result) => result === false ? false : continuePreUse());
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to apply pre-use activity automation.`, error);
@@ -313,15 +327,28 @@ export function registerCombatHooks(moduleApi) {
     });
   }
 
-  if (!hasAttackService && hasSpellService) {
+  if (!hasAttackService && (hasSorcererService || hasSpellService)) {
     Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
       try {
-        return moduleApi.spellAutomationService.deferDnd5ePreUseActivity(
+        const continuePreUse = () => hasSpellService
+          ? moduleApi.spellAutomationService.deferDnd5ePreUseActivity(
+            activity,
+            usageConfig,
+            dialogConfig,
+            messageConfig
+          )
+          : true;
+
+        if (!hasSorcererService) {
+          return continuePreUse();
+        }
+
+        return moduleApi.sorcererAutomationService.applyDnd5ePreUseActivity(
           activity,
           usageConfig,
           dialogConfig,
           messageConfig
-        );
+        ).then((result) => result === false ? false : continuePreUse());
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to apply spell reaction automation.`, error);
@@ -608,6 +635,26 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to capture fighter MIDI workflow.`, error);
         return true;
       }
+    });
+  }
+
+  if (hasSorcererService) {
+    Hooks.on("createItem", (item, options, userId) => {
+      moduleApi.sorcererAutomationService.handleCreatedItem(item, options, userId).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to synchronize Sorcery Points after item creation.`, error);
+      });
+    });
+
+    Hooks.on("updateItem", (item, changed, options, userId) => {
+      moduleApi.sorcererAutomationService.handleUpdatedItem(item, changed, options, userId).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to synchronize Sorcery Points after class update.`, error);
+      });
+    });
+
+    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
+      moduleApi.sorcererAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to restore Sorcery Points after rest.`, error);
+      });
     });
   }
 

@@ -165,6 +165,8 @@ test("sorcerer V0.11 is a full Charisma caster with source-table progressions", 
     featureUuidById,
     featureDefinitions
   });
+  const sorceryPointsFeature = featureDefinitions.find((definition) => definition.featureId === "sorcerer-rework-v011::class::sorcerer-sorcery-points");
+  const sorceryPointsEntry = createFeatureEntryData(sorceryPointsFeature, new Map());
 
   assert.equal(sorcerer.sourceLabel, "ЗоЗТ");
   assert.equal(sorcerer.classData.identifier, "sorcerer-rework-v011");
@@ -172,11 +174,15 @@ test("sorcerer V0.11 is a full Charisma caster with source-table progressions", 
   assert.equal(system.spellcasting.ability, "cha");
   assert.equal(sorcerer.classData.spellChoices.length, 2);
   assert.equal(sorceryPoints.progression[20], 153);
+  assert.equal(sorceryPointsFeature.levels[0], 1);
+  assert.equal(sorceryPointsEntry.system.uses.max, "@scale.sorcerer-rework-v011.sorcery-points");
+  assert.deepEqual(sorceryPointsEntry.system.uses.recovery, [{ period: "lr", type: "recoverAll", formula: "" }]);
   assert.equal(sorcerer.subclasses.length, 10);
   assert.equal(sorcerer.subclasses.some((entry) => entry.name === "Отмеченный феями"), false);
   assert.match(system.description.value, /<table>/u);
   assert.equal(subclassChoice.level, 1);
   assert.equal(levelOneGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("sorcerer-rework-v011::class::sorcerer-origin")), true);
+  assert.equal(levelOneGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("sorcerer-rework-v011::class::sorcerer-sorcery-points")), true);
   assert.equal(levelOneGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("sorcerer-rework-v011::class::sorcerer-spellcasting")), true);
   assert.equal(equipmentChoice.configuration.pool.length, 2);
   assert.match(sandShiftEntry.system.description.value, /@UUID\[.*\]\{Проявление духов\}/u);

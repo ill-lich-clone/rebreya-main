@@ -2571,6 +2571,19 @@ function createFeatureAutomation(feature, classIdentifier) {
     return createEmptyFeatureAutomation();
   }
 
+  if (classIdentifier === "sorcerer-rework-v011" && feature.featureId.endsWith("::sorcerer-sorcery-points")) {
+    return {
+      activities: {},
+      effects: [],
+      usesMax: `@scale.${classIdentifier}.sorcery-points`,
+      usesRecovery: [{
+        period: "lr",
+        type: "recoverAll",
+        formula: ""
+      }]
+    };
+  }
+
   const normalizedName = normalizeMatchText(feature.name);
   if (classIdentifier === "fighter-rework-v028" && normalizedName.startsWith("воинская мультиатака")) {
     return createFighterMultiattackAutomation(feature, classIdentifier);
@@ -2613,6 +2626,9 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null,
   const isDominanceFeature = feature.sourceType === "classFeature"
     && classIdentifier === "fighter-rework-v028"
     && normalizedName === "стиль доминирования";
+  const isSorceryPointsFeature = feature.sourceType === "classFeature"
+    && classIdentifier === "sorcerer-rework-v011"
+    && feature.featureId.endsWith("::sorcerer-sorcery-points");
   const automation = featureAutomation ?? createFeatureAutomation(feature, classIdentifier);
   const rageRecovery = isRageFeature
     ? [{
@@ -2642,7 +2658,9 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null,
       chat: ""
     },
     source: createSourceData(feature.sourceLabel),
-    identifier: buildAsciiIdentifier(feature.identifier, feature.featureId),
+    identifier: isSorceryPointsFeature
+      ? "sorcerer-sorcery-points"
+      : buildAsciiIdentifier(feature.identifier, feature.featureId),
     type: {
       value: ["fighterManeuver", "rogueCunningStrike"].includes(feature.sourceType) ? "feat" : "class",
       subtype: feature.sourceType === "fighterManeuver"
