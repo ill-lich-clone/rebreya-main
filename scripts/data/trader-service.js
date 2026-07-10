@@ -18,6 +18,13 @@ import {
 
 const MAX_ACTIVE_TRADERS = 21;
 const TRADE_AUDIT_LIMIT = 20;
+const TRADE_DOCUMENT_RECEIPT_LIMIT = 64;
+const NONTERMINAL_TRADE_STATUSES = new Set([
+  "prepared",
+  "applying",
+  "compensating",
+  "reconciliation-required"
+]);
 const MIN_PRICE_GOLD = 0.01;
 const GENERAL_TRADER_ICON = "icons/svg/item-bag.svg";
 const MATERIAL_TRADER_ICON = "icons/svg/coins.svg";
@@ -1015,6 +1022,526 @@ export class TraderService {
   constructor(moduleApi, { stateRepository = null } = {}) {
     this.moduleApi = moduleApi;
     this.stateRepository = stateRepository;
+    this.transactionService = null;
+  }
+
+  setTransactionService(service) {
+    this.transactionService = service;
+  }
+
+  createFoundryTradeOperations() {
+    return {
+      preparePurchase: (request, context) => this.#preparePurchase(request, context),
+      applyPurchaseItem: (transaction) => this.#applyPurchaseItem(transaction),
+      applyPurchaseCurrency: (transaction) => this.#applyPurchaseCurrency(transaction),
+      readPurchaseReceipts: (transaction) => this.#readPurchaseReceipts(transaction),
+      compensatePurchaseCurrency: (transaction) => this.#compensatePurchaseCurrency(transaction),
+      compensatePurchaseItem: (transaction) => this.#compensatePurchaseItem(transaction),
+      prepareSale: (request, context) => this.#prepareSale(request, context),
+      applySaleItem: (transaction) => this.#applySaleItem(transaction),
+      applySaleCurrency: (transaction) => this.#applySaleCurrency(transaction),
+      readSaleReceipts: (transaction) => this.#readSaleReceipts(transaction),
+      compensateSaleCurrency: (transaction) => this.#compensateSaleCurrency(transaction),
+      compensateSaleItem: (transaction) => this.#compensateSaleItem(transaction)
+    };
+  }
+
+  #getTradeMarkerMap(document, flagName) {
+    const value = foundry.utils.getProperty(document, `flags.${MODULE_ID}.${flagName}`);
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? foundry.utils.deepClone(value)
+      : {};
+  }
+
+  #pruneTradeMarkerMap(markers, activeTransactionId) {
+    const tradeLog = this.stateRepository
+      ? this.stateRepository.read()?.tradeLog
+      : [];
+    const statusByTransactionId = new Map(
+      (Array.isArray(tradeLog) ? tradeLog : []).map((row) => [
+        String(row?.transactionId ?? "").trim(),
+        String(row?.status ?? "").trim()
+      ])
+    );
+    const retained = [];
+    const terminal = [];
+    for (const [transactionId, marker] of Object.entries(markers)) {
+      if (transactionId === activeTransactionId
+        || NONTERMINAL_TRADE_STATUSES.has(statusByTransactionId.get(transactionId))) {
+        retained.push([transactionId, marker]);
+      }
+      else {
+        terminal.push([transactionId, marker]);
+      }
+    }
+    terminal.sort((left, right) => (
+      toNumber(right[1]?.updatedAt, 0) - toNumber(left[1]?.updatedAt, 0)
+        || right[0].localeCompare(left[0])
+    ));
+    return Object.fromEntries([
+      ...retained,
+      ...terminal.slice(0, TRADE_DOCUMENT_RECEIPT_LIMIT)
+    ]);
+  }
+
+  #buildItemMarker(transaction, item, { applied, phase }) {
+    return {
+      transactionId: transaction.transactionId,
+      kind: transaction.kind,
+      applied,
+      phase,
+      actorId: transaction.request.actorId,
+      itemId: transaction.item.created ? "" : item.id,
+      itemUuid: transaction.item.created ? "" : item.uuid,
+      created: transaction.item.created === true,
+      delta: transaction.item.delta,
+      before: transaction.item.beforeQuantity,
+      after: transaction.item.afterQuantity,
+      updatedAt: Date.now()
+    };
+  }
+
+  #buildCurrencyReceipt(transaction, { applied, phase }) {
+    return {
+      transactionId: transaction.transactionId,
+      kind: transaction.kind,
+      applied,
+      phase,
+      actorId: transaction.request.actorId,
+      deltaCopper: transaction.currency.deltaCopper,
+      beforeCopper: transaction.currency.beforeCopper,
+      afterCopper: transaction.currency.afterCopper,
+      updatedAt: Date.now()
+    };
+  }
+
+  #buildRecreatedSaleMarker(transaction) {
+    return {
+      transactionId: transaction.transactionId,
+      kind: "sale",
+      applied: false,
+      phase: "compensated",
+      actorId: transaction.request.actorId,
+      itemId: "",
+      itemUuid: "",
+      originalItemId: transaction.item.itemId,
+      originalItemUuid: transaction.item.itemUuid,
+      created: false,
+      recreated: true,
+      delta: transaction.item.delta,
+      before: transaction.item.beforeQuantity,
+      after: transaction.item.afterQuantity,
+      updatedAt: Date.now()
+    };
+  }
+
+  #itemMarkerMatches(marker, transaction, item, { applied }) {
+    if (!marker || typeof marker !== "object" || Array.isArray(marker)) return false;
+    const expectedCreated = transaction.item.created === true;
+    const recreatedCompensation = transaction.kind === "sale"
+      && applied === false
+      && marker.recreated === true;
+    const identityMatches = recreatedCompensation
+      ? marker.itemId === ""
+        && marker.itemUuid === ""
+        && marker.originalItemId === transaction.item.itemId
+        && marker.originalItemUuid === transaction.item.itemUuid
+        && item.parent?.id === transaction.request.actorId
+      : expectedCreated
+        ? (!marker.itemId || marker.itemId === item.id)
+          && (!marker.itemUuid || marker.itemUuid === item.uuid)
+        : marker.recreated !== true
+          && marker.itemId === transaction.item.itemId
+          && marker.itemUuid === transaction.item.itemUuid
+          && item.id === transaction.item.itemId
+          && item.uuid === transaction.item.itemUuid;
+    return marker.transactionId === transaction.transactionId
+      && marker.kind === transaction.kind
+      && marker.applied === applied
+      && marker.phase === (applied ? "applied" : "compensated")
+      && marker.actorId === transaction.request.actorId
+      && marker.created === expectedCreated
+      && marker.delta === transaction.item.delta
+      && marker.before === transaction.item.beforeQuantity
+      && marker.after === transaction.item.afterQuantity
+      && identityMatches;
+  }
+
+  #currencyReceiptMatches(receipt, transaction, { applied }) {
+    return Boolean(receipt) && typeof receipt === "object" && !Array.isArray(receipt)
+      && receipt.transactionId === transaction.transactionId
+      && receipt.kind === transaction.kind
+      && receipt.applied === applied
+      && receipt.phase === (applied ? "applied" : "compensated")
+      && receipt.actorId === transaction.request.actorId
+      && receipt.deltaCopper === transaction.currency.deltaCopper
+      && receipt.beforeCopper === transaction.currency.beforeCopper
+      && receipt.afterCopper === transaction.currency.afterCopper;
+  }
+
+  #findTransactionItem(actor, transaction) {
+    const directItem = transaction.item.itemId
+      ? actor.items?.get?.(transaction.item.itemId)
+        ?? actor.items?.contents?.find?.((item) => item.id === transaction.item.itemId)
+        ?? null
+      : null;
+    if (directItem) return directItem;
+
+    return actor.items?.contents?.find?.((item) => (
+      Object.hasOwn(
+        this.#getTradeMarkerMap(item, "tradeTransactions"),
+        transaction.transactionId
+      )
+    )) ?? null;
+  }
+
+  #assertNoConflictingMarker(marker, transaction, item) {
+    if (!marker) return;
+    if (this.#itemMarkerMatches(marker, transaction, item, { applied: true })
+      || this.#itemMarkerMatches(marker, transaction, item, { applied: false })) {
+      return;
+    }
+    throw new Error("Маркер торговой операции предмета конфликтует с транзакцией.");
+  }
+
+  #assertNoConflictingReceipt(receipt, transaction) {
+    if (!receipt) return;
+    if (this.#currencyReceiptMatches(receipt, transaction, { applied: true })
+      || this.#currencyReceiptMatches(receipt, transaction, { applied: false })) {
+      return;
+    }
+    throw new Error("Квитанция торговой операции конфликтует с транзакцией.");
+  }
+
+  async #applyPurchaseItem(transaction) {
+    const actor = this.#requireTransactionActor(
+      transaction.request.actorId,
+      transaction.request.requestedByUserId
+    );
+    let item = this.#findTransactionItem(actor, transaction);
+    if (item) {
+      const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
+      const marker = markers[transaction.transactionId];
+      this.#assertNoConflictingMarker(marker, transaction, item);
+      if (this.#itemMarkerMatches(marker, transaction, item, { applied: true })) return;
+      if (marker) {
+        throw new Error("Компенсированную покупку нельзя применить повторно.");
+      }
+    }
+
+    if (transaction.item.created === true) {
+      const itemData = sanitizeRawItemData(transaction.item.rawItemData);
+      foundry.utils.setProperty(itemData, "system.quantity", transaction.item.afterQuantity);
+      const markers = this.#getTradeMarkerMap(itemData, "tradeTransactions");
+      markers[transaction.transactionId] = this.#buildItemMarker(
+        transaction,
+        { id: "", uuid: "" },
+        { applied: true, phase: "applied" }
+      );
+      foundry.utils.setProperty(
+        itemData,
+        `flags.${MODULE_ID}.tradeTransactions`,
+        this.#pruneTradeMarkerMap(markers, transaction.transactionId)
+      );
+      await actor.createEmbeddedDocuments("Item", [itemData]);
+      return;
+    }
+
+    if (!item || item.parent?.id !== actor.id || item.uuid !== transaction.item.itemUuid) {
+      throw new Error("Предмет покупки больше недоступен.");
+    }
+    const currentQuantity = Math.max(
+      0,
+      Math.floor(toNumber(foundry.utils.getProperty(item, "system.quantity"), 0))
+    );
+    if (currentQuantity !== transaction.item.beforeQuantity) {
+      throw new Error("Количество предмета изменилось до применения покупки.");
+    }
+
+    const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
+    markers[transaction.transactionId] = this.#buildItemMarker(transaction, item, {
+      applied: true,
+      phase: "applied"
+    });
+    await item.update({
+      "system.quantity": transaction.item.afterQuantity,
+      [`flags.${MODULE_ID}.tradeTransactions`]: this.#pruneTradeMarkerMap(
+        markers,
+        transaction.transactionId
+      )
+    });
+  }
+
+  async #applyPurchaseCurrency(transaction) {
+    const actor = this.#requireTransactionActor(
+      transaction.request.actorId,
+      transaction.request.requestedByUserId
+    );
+    const receipts = this.#getTradeMarkerMap(actor, "tradeReceipts");
+    const receipt = receipts[transaction.transactionId];
+    this.#assertNoConflictingReceipt(receipt, transaction);
+    if (this.#currencyReceiptMatches(receipt, transaction, { applied: true })) return;
+    if (receipt) {
+      throw new Error("Компенсированную покупку нельзя списать повторно.");
+    }
+
+    const currentFunds = actorCurrencyToCopper(actor);
+    if (currentFunds !== transaction.currency.beforeCopper) {
+      throw new Error("Баланс персонажа изменился до списания покупки.");
+    }
+    receipts[transaction.transactionId] = this.#buildCurrencyReceipt(transaction, {
+      applied: true,
+      phase: "applied"
+    });
+    await actor.update({
+      ...buildCurrencyUpdate(transaction.currency.afterCopper),
+      [`flags.${MODULE_ID}.tradeReceipts`]: this.#pruneTradeMarkerMap(
+        receipts,
+        transaction.transactionId
+      )
+    });
+  }
+
+  async #readPurchaseReceipts(transaction) {
+    const actor = this.#requireTransactionActor(
+      transaction.request.actorId,
+      transaction.request.requestedByUserId
+    );
+    const item = this.#findTransactionItem(actor, transaction);
+    const marker = item
+      ? this.#getTradeMarkerMap(item, "tradeTransactions")[transaction.transactionId]
+      : null;
+    const receipt = this.#getTradeMarkerMap(actor, "tradeReceipts")[transaction.transactionId];
+    const itemApplied = Boolean(item)
+      && this.#itemMarkerMatches(marker, transaction, item, { applied: true });
+    const currencyApplied = this.#currencyReceiptMatches(receipt, transaction, { applied: true });
+    return {
+      itemApplied,
+      currencyApplied,
+      itemId: itemApplied ? item.id : "",
+      itemUuid: itemApplied ? item.uuid : ""
+    };
+  }
+
+  async #compensatePurchaseCurrency(transaction) {
+    const actor = this.#requireTransactionActor(
+      transaction.request.actorId,
+      transaction.request.requestedByUserId
+    );
+    const receipts = this.#getTradeMarkerMap(actor, "tradeReceipts");
+    const receipt = receipts[transaction.transactionId];
+    this.#assertNoConflictingReceipt(receipt, transaction);
+    if (!receipt || this.#currencyReceiptMatches(receipt, transaction, { applied: false })) return;
+
+    const compensatedFunds = actorCurrencyToCopper(actor) - transaction.currency.deltaCopper;
+    if (compensatedFunds < 0) {
+      throw new Error("Компенсация монет привела бы к отрицательному балансу.");
+    }
+    receipts[transaction.transactionId] = this.#buildCurrencyReceipt(transaction, {
+      applied: false,
+      phase: "compensated"
+    });
+    await actor.update({
+      ...buildCurrencyUpdate(compensatedFunds),
+      [`flags.${MODULE_ID}.tradeReceipts`]: this.#pruneTradeMarkerMap(
+        receipts,
+        transaction.transactionId
+      )
+    });
+  }
+
+  async #compensatePurchaseItem(transaction) {
+    const actor = this.#requireTransactionActor(
+      transaction.request.actorId,
+      transaction.request.requestedByUserId
+    );
+    const item = this.#findTransactionItem(actor, transaction);
+    if (!item) return;
+
+    const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
+    const marker = markers[transaction.transactionId];
+    this.#assertNoConflictingMarker(marker, transaction, item);
+    if (!marker || this.#itemMarkerMatches(marker, transaction, item, { applied: false })) return;
+
+    const currentQuantity = Math.max(
+      0,
+      Math.floor(toNumber(foundry.utils.getProperty(item, "system.quantity"), 0))
+    );
+    if (currentQuantity < transaction.item.delta) {
+      throw new Error("Количество предмета недостаточно для компенсации покупки.");
+    }
+    const remainder = currentQuantity - transaction.item.delta;
+    if (transaction.item.created === true && remainder === 0) {
+      await item.delete();
+      return;
+    }
+
+    markers[transaction.transactionId] = this.#buildItemMarker(transaction, item, {
+      applied: false,
+      phase: "compensated"
+    });
+    await item.update({
+      "system.quantity": remainder,
+      [`flags.${MODULE_ID}.tradeTransactions`]: this.#pruneTradeMarkerMap(
+        markers,
+        transaction.transactionId
+      )
+    });
+  }
+
+  async #applySaleItem(transaction) {
+    const actor = this.#requireTransactionActor(
+      transaction.request.actorId,
+      transaction.request.requestedByUserId
+    );
+    const item = this.#findTransactionItem(actor, transaction);
+    if (!item || item.parent?.id !== actor.id || item.uuid !== transaction.item.itemUuid) {
+      throw new Error("Предмет продажи больше недоступен.");
+    }
+
+    const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
+    const marker = markers[transaction.transactionId];
+    this.#assertNoConflictingMarker(marker, transaction, item);
+    if (this.#itemMarkerMatches(marker, transaction, item, { applied: true })) return;
+    if (marker) {
+      throw new Error("Компенсированную продажу нельзя применить повторно.");
+    }
+
+    const currentQuantity = Math.max(
+      0,
+      Math.floor(toNumber(foundry.utils.getProperty(item, "system.quantity"), 0))
+    );
+    if (currentQuantity !== transaction.item.beforeQuantity) {
+      throw new Error("Количество предмета изменилось до применения продажи.");
+    }
+    markers[transaction.transactionId] = this.#buildItemMarker(transaction, item, {
+      applied: true,
+      phase: "applied"
+    });
+    await item.update({
+      "system.quantity": transaction.item.afterQuantity,
+      [`flags.${MODULE_ID}.tradeTransactions`]: this.#pruneTradeMarkerMap(
+        markers,
+        transaction.transactionId
+      )
+    });
+  }
+
+  async #applySaleCurrency(transaction) {
+    const actor = this.#requireTransactionActor(
+      transaction.request.actorId,
+      transaction.request.requestedByUserId
+    );
+    const receipts = this.#getTradeMarkerMap(actor, "tradeReceipts");
+    const receipt = receipts[transaction.transactionId];
+    this.#assertNoConflictingReceipt(receipt, transaction);
+    if (this.#currencyReceiptMatches(receipt, transaction, { applied: true })) return;
+    if (receipt) {
+      throw new Error("Компенсированную продажу нельзя выплатить повторно.");
+    }
+
+    const currentFunds = actorCurrencyToCopper(actor);
+    if (currentFunds !== transaction.currency.beforeCopper) {
+      throw new Error("Баланс персонажа изменился до выплаты продажи.");
+    }
+    receipts[transaction.transactionId] = this.#buildCurrencyReceipt(transaction, {
+      applied: true,
+      phase: "applied"
+    });
+    await actor.update({
+      ...buildCurrencyUpdate(transaction.currency.afterCopper),
+      [`flags.${MODULE_ID}.tradeReceipts`]: this.#pruneTradeMarkerMap(
+        receipts,
+        transaction.transactionId
+      )
+    });
+  }
+
+  async #readSaleReceipts(transaction) {
+    const actor = this.#requireTransactionActor(
+      transaction.request.actorId,
+      transaction.request.requestedByUserId
+    );
+    const item = this.#findTransactionItem(actor, transaction);
+    const marker = item
+      ? this.#getTradeMarkerMap(item, "tradeTransactions")[transaction.transactionId]
+      : null;
+    const receipt = this.#getTradeMarkerMap(actor, "tradeReceipts")[transaction.transactionId];
+    return {
+      itemRemoved: Boolean(item)
+        && this.#itemMarkerMatches(marker, transaction, item, { applied: true }),
+      currencyApplied: this.#currencyReceiptMatches(receipt, transaction, { applied: true })
+    };
+  }
+
+  async #compensateSaleCurrency(transaction) {
+    const actor = this.#requireTransactionActor(
+      transaction.request.actorId,
+      transaction.request.requestedByUserId
+    );
+    const receipts = this.#getTradeMarkerMap(actor, "tradeReceipts");
+    const receipt = receipts[transaction.transactionId];
+    this.#assertNoConflictingReceipt(receipt, transaction);
+    if (!receipt || this.#currencyReceiptMatches(receipt, transaction, { applied: false })) return;
+
+    const compensatedFunds = actorCurrencyToCopper(actor) - transaction.currency.deltaCopper;
+    if (compensatedFunds < 0) {
+      throw new Error("У персонажа не хватает монет для отмены продажи.");
+    }
+    receipts[transaction.transactionId] = this.#buildCurrencyReceipt(transaction, {
+      applied: false,
+      phase: "compensated"
+    });
+    await actor.update({
+      ...buildCurrencyUpdate(compensatedFunds),
+      [`flags.${MODULE_ID}.tradeReceipts`]: this.#pruneTradeMarkerMap(
+        receipts,
+        transaction.transactionId
+      )
+    });
+  }
+
+  async #compensateSaleItem(transaction) {
+    const actor = this.#requireTransactionActor(
+      transaction.request.actorId,
+      transaction.request.requestedByUserId
+    );
+    const item = this.#findTransactionItem(actor, transaction);
+    if (!item) {
+      const itemData = sanitizeRawItemData(transaction.item.rawItemData);
+      foundry.utils.setProperty(itemData, "system.quantity", -transaction.item.delta);
+      const markers = this.#getTradeMarkerMap(itemData, "tradeTransactions");
+      markers[transaction.transactionId] = this.#buildRecreatedSaleMarker(transaction);
+      foundry.utils.setProperty(
+        itemData,
+        `flags.${MODULE_ID}.tradeTransactions`,
+        this.#pruneTradeMarkerMap(markers, transaction.transactionId)
+      );
+      await actor.createEmbeddedDocuments("Item", [itemData]);
+      return;
+    }
+
+    const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
+    const marker = markers[transaction.transactionId];
+    this.#assertNoConflictingMarker(marker, transaction, item);
+    if (!marker || this.#itemMarkerMatches(marker, transaction, item, { applied: false })) return;
+
+    const currentQuantity = Math.max(
+      0,
+      Math.floor(toNumber(foundry.utils.getProperty(item, "system.quantity"), 0))
+    );
+    const restoredQuantity = currentQuantity - transaction.item.delta;
+    markers[transaction.transactionId] = this.#buildItemMarker(transaction, item, {
+      applied: false,
+      phase: "compensated"
+    });
+    await item.update({
+      "system.quantity": restoredQuantity,
+      [`flags.${MODULE_ID}.tradeTransactions`]: this.#pruneTradeMarkerMap(
+        markers,
+        transaction.transactionId
+      )
+    });
   }
 
   invalidatePackCache() {}
@@ -1867,7 +2394,283 @@ export class TraderService {
     });
   }
 
-  async purchaseItem(cityId, traderKey, itemKey, quantity, { actorId = null, requestedByUserId = "" } = {}) {
+  #requireTransactionActor(actorId, requestedByUserId = "") {
+    const safeActorId = String(actorId ?? "").trim();
+    const actor = safeActorId ? game.actors?.get?.(safeActorId) ?? null : null;
+    if (!actor?.isOwner) {
+      throw new Error("Персонаж для торговой операции недоступен.");
+    }
+    assertUserCanTradeActor(actor, requestedByUserId);
+    return actor;
+  }
+
+  async #buildPurchasedItemData(inventoryItem, purchaseQuantity) {
+    let purchasedItemData = inventoryItem.sourceType === "custom" && inventoryItem.rawItemData
+      ? sanitizeRawItemData(inventoryItem.rawItemData)
+      : buildCanonicalItemData(inventoryItem, purchaseQuantity, inventoryItem.finalPriceCopper);
+
+    if (inventoryItem.sourceType === "magicItem") {
+      const magicDocument = await this.moduleApi.magicItemsCompendium?.getMagicItemDocument?.(
+        inventoryItem.sourceId,
+        inventoryItem.name
+      );
+      if (magicDocument) {
+        purchasedItemData = sanitizeRawItemData(magicDocument.toObject());
+      }
+    }
+
+    const sourcePackQuantity = Math.max(
+      1,
+      Math.floor(toNumber(foundry.utils.getProperty(
+        purchasedItemData,
+        `flags.${MODULE_ID}.sourcePackQuantity`
+      ), 1))
+    );
+    const actorPurchaseQuantity = purchaseQuantity * sourcePackQuantity;
+    const actorBasePriceGold = sourcePackQuantity > 1
+      ? roundNumber(toNumber(inventoryItem.basePriceGold, 0) / sourcePackQuantity, 6)
+      : inventoryItem.basePriceGold;
+
+    foundry.utils.setProperty(purchasedItemData, "system.quantity", actorPurchaseQuantity);
+    foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.sourceType`, inventoryItem.sourceType);
+    foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.sourceId`, inventoryItem.sourceId);
+    foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.basePriceGold`, actorBasePriceGold);
+    foundry.utils.setProperty(purchasedItemData, `flags.${MODULE_ID}.priceGoldEquivalent`, actorBasePriceGold);
+    if (sourcePackQuantity > 1) {
+      foundry.utils.setProperty(
+        purchasedItemData,
+        `flags.${MODULE_ID}.sourcePackPriceGoldEquivalent`,
+        inventoryItem.basePriceGold
+      );
+      foundry.utils.setProperty(
+        purchasedItemData,
+        `flags.${MODULE_ID}.sourcePackWeight`,
+        inventoryItem.baseWeight
+      );
+    }
+    foundry.utils.setProperty(
+      purchasedItemData,
+      `flags.${MODULE_ID}.predominantMaterialId`,
+      inventoryItem.predominantMaterialId ?? null
+    );
+    foundry.utils.setProperty(
+      purchasedItemData,
+      `flags.${MODULE_ID}.linkedGoodId`,
+      inventoryItem.linkedGoodId ?? null
+    );
+    foundry.utils.setProperty(
+      purchasedItemData,
+      `flags.${MODULE_ID}.materialId`,
+      inventoryItem.sourceType === "material" ? inventoryItem.sourceId : null
+    );
+    foundry.utils.setProperty(
+      purchasedItemData,
+      `flags.${MODULE_ID}.gearId`,
+      inventoryItem.sourceType === "gear" ? inventoryItem.sourceId : null
+    );
+
+    return {
+      actorPurchaseQuantity,
+      purchasedItemData: sanitizeRawItemData(purchasedItemData)
+    };
+  }
+
+  async #preparePurchase(request, _context = {}) {
+    const buyer = this.#requireTransactionActor(request?.actorId, request?.requestedByUserId);
+    const purchaseQuantity = Number(request?.quantity);
+    if (!Number.isInteger(purchaseQuantity) || purchaseQuantity < 1) {
+      throw new Error("Количество товара для покупки указано неверно.");
+    }
+
+    const snapshot = await this.getTraderSnapshot(request.cityId, request.traderKey, {
+      actorId: buyer.id,
+      persistState: false
+    });
+    const inventoryItem = snapshot.inventory.find((entry) => entry.itemKey === request.itemKey);
+    if (!inventoryItem) {
+      throw new Error("Товар больше недоступен у торговца.");
+    }
+    if (purchaseQuantity > inventoryItem.quantity) {
+      throw new Error("У торговца нет такого количества товара.");
+    }
+
+    const totalPriceCopper = inventoryItem.finalPriceCopper * purchaseQuantity;
+    const currentFundsCopper = actorCurrencyToCopper(buyer);
+    if (currentFundsCopper < totalPriceCopper) {
+      throw new Error("У персонажа не хватает монет на покупку.");
+    }
+
+    const { actorPurchaseQuantity, purchasedItemData } = await this.#buildPurchasedItemData(
+      inventoryItem,
+      purchaseQuantity
+    );
+    const matchItem = buyer.items?.contents?.find?.((item) => (
+      item.getFlag?.(MODULE_ID, "sourceType") === inventoryItem.sourceType
+      && item.getFlag?.(MODULE_ID, "sourceId") === inventoryItem.sourceId
+    )) ?? null;
+    const itemQuantityBefore = matchItem
+      ? Math.max(0, Math.floor(toNumber(foundry.utils.getProperty(matchItem, "system.quantity"), 0)))
+      : 0;
+    const itemQuantityAfter = itemQuantityBefore + actorPurchaseQuantity;
+
+    return {
+      traderId: snapshot.traderId,
+      stock: { itemKey: request.itemKey },
+      item: {
+        itemId: matchItem?.id ?? "",
+        itemUuid: matchItem?.uuid ?? "",
+        beforeQuantity: itemQuantityBefore,
+        afterQuantity: itemQuantityAfter,
+        delta: actorPurchaseQuantity,
+        created: !matchItem,
+        rawItemData: purchasedItemData
+      },
+      currency: {
+        beforeCopper: currentFundsCopper,
+        afterCopper: currentFundsCopper - totalPriceCopper,
+        deltaCopper: -totalPriceCopper
+      },
+      result: {
+        transactionId: request.transactionId,
+        actorName: buyer.name,
+        itemName: inventoryItem.name,
+        totalPriceCopper,
+        totalPriceLabel: formatCopper(totalPriceCopper)
+      },
+      audit: {
+        type: "purchase",
+        actorId: buyer.id,
+        actorName: buyer.name,
+        cityId: request.cityId,
+        cityName: snapshot.cityName,
+        traderKey: request.traderKey,
+        traderName: snapshot.name,
+        itemId: matchItem?.id ?? "",
+        itemUuid: matchItem?.uuid ?? "",
+        itemName: inventoryItem.name,
+        sourceType: inventoryItem.sourceType,
+        sourceId: inventoryItem.sourceId,
+        quantity: purchaseQuantity,
+        totalCopper: totalPriceCopper,
+        totalPriceCopper,
+        currencyBeforeCopper: currentFundsCopper,
+        currencyAfterCopper: currentFundsCopper - totalPriceCopper,
+        itemQuantityBefore,
+        itemQuantityAfter
+      }
+    };
+  }
+
+  async #prepareSale(request, _context = {}) {
+    const preview = await this.createSalePreview(
+      request.cityId,
+      request.traderKey,
+      { uuid: request.itemUuid }
+    );
+    const actor = this.#requireTransactionActor(request.actorId, request.requestedByUserId);
+    if (preview?.actorId !== actor.id || preview?.itemUuid !== request.itemUuid) {
+      throw new Error("Предмет продажи не принадлежит выбранному персонажу.");
+    }
+
+    const itemDocument = await fromUuid(request.itemUuid);
+    if (!(itemDocument instanceof Item) || itemDocument.parent?.id !== actor.id) {
+      throw new Error("Предмет для продажи уже недоступен.");
+    }
+
+    const sellQuantity = Number(request.quantity);
+    if (!Number.isInteger(sellQuantity) || sellQuantity < 1) {
+      throw new Error("Количество предмета для продажи указано неверно.");
+    }
+    const itemDataBeforeSale = itemDocument.toObject();
+    const currentQuantity = Math.max(
+      0,
+      Math.floor(toNumber(foundry.utils.getProperty(itemDataBeforeSale, "system.quantity"), 0))
+    );
+    if (sellQuantity > currentQuantity) {
+      throw new Error("У персонажа нет такого количества предмета.");
+    }
+
+    const grossOfferCopper = Math.max(0, Math.round(toNumber(preview.grossOfferCopper, 0)))
+      * sellQuantity;
+    const taxCopper = Math.max(0, Math.round(toNumber(preview.taxCopper, 0))) * sellQuantity;
+    const netPayoutCopper = Math.max(0, Math.round(toNumber(preview.netPayoutCopper, 0)))
+      * sellQuantity;
+    const actorFunds = actorCurrencyToCopper(actor);
+
+    return {
+      traderId: getTraderStateKey(request.cityId, request.traderKey),
+      item: {
+        itemId: itemDocument.id,
+        itemUuid: itemDocument.uuid,
+        beforeQuantity: currentQuantity,
+        afterQuantity: currentQuantity - sellQuantity,
+        delta: -sellQuantity,
+        created: false,
+        rawItemData: sanitizeRawItemData(itemDataBeforeSale)
+      },
+      currency: {
+        beforeCopper: actorFunds,
+        afterCopper: actorFunds + netPayoutCopper,
+        deltaCopper: netPayoutCopper
+      },
+      result: {
+        transactionId: request.transactionId,
+        actorName: actor.name,
+        itemName: preview.itemName,
+        sellQuantity,
+        grossOfferCopper,
+        taxCopper,
+        netPayoutCopper,
+        totalCopper: netPayoutCopper,
+        grossOfferLabel: formatCopper(grossOfferCopper),
+        taxLabel: formatCopper(taxCopper),
+        netPayoutLabel: formatCopper(netPayoutCopper)
+      },
+      audit: {
+        type: "sale",
+        actorId: actor.id,
+        actorName: actor.name,
+        cityId: request.cityId,
+        cityName: preview.cityName,
+        traderKey: request.traderKey,
+        traderName: preview.traderName,
+        itemId: itemDocument.id,
+        itemUuid: itemDocument.uuid,
+        itemName: preview.itemName,
+        sourceType: preview.sourceType,
+        sourceId: preview.sourceId,
+        quantity: sellQuantity,
+        totalCopper: netPayoutCopper,
+        grossOfferCopper,
+        taxCopper,
+        netPayoutCopper,
+        currencyBeforeCopper: actorFunds,
+        currencyAfterCopper: actorFunds + netPayoutCopper,
+        itemQuantityBefore: currentQuantity,
+        itemQuantityAfter: currentQuantity - sellQuantity,
+        rawItemData: sanitizeRawItemData(itemDataBeforeSale)
+      }
+    };
+  }
+
+  async purchaseItem(cityId, traderKey, itemKey, quantity, options = {}) {
+    if (this.transactionService) {
+      return this.transactionService.purchase({
+        transactionId: options.transactionId,
+        actorId: options.actorId,
+        cityId,
+        traderKey,
+        itemKey,
+        quantity,
+        requestedByUserId: options.requestedByUserId
+      }, { source: "trader-service" });
+    }
+
+    return this.purchaseItemLegacy(cityId, traderKey, itemKey, quantity, options);
+  }
+
+  /** @deprecated bootstrap fallback */
+  async purchaseItemLegacy(cityId, traderKey, itemKey, quantity, { actorId = null, requestedByUserId = "" } = {}) {
     const partyInventoryActor = await this.moduleApi.inventoryService?.getInventoryActor?.({
       create: game.user?.isGM === true
     }) ?? null;
@@ -2102,6 +2905,8 @@ export class TraderService {
     return {
       actorId: actor.id,
       actorName: actor.name,
+      cityName: traderSnapshot.cityName,
+      traderName: traderSnapshot.name,
       itemUuid: itemDocument.uuid,
       itemId: itemDocument.id,
       itemName: itemDocument.name,
@@ -2142,7 +2947,24 @@ export class TraderService {
     };
   }
 
-  async sellItem(cityId, traderKey, preview, quantity, { requestedByUserId = "" } = {}) {
+  async sellItem(cityId, traderKey, preview, quantity, options = {}) {
+    if (this.transactionService) {
+      return this.transactionService.sale({
+        transactionId: options.transactionId,
+        actorId: options.actorId ?? preview?.actorId,
+        cityId,
+        traderKey,
+        itemUuid: preview?.itemUuid,
+        quantity,
+        requestedByUserId: options.requestedByUserId
+      }, { source: "trader-service" });
+    }
+
+    return this.sellItemLegacy(cityId, traderKey, preview, quantity, options);
+  }
+
+  /** @deprecated bootstrap fallback */
+  async sellItemLegacy(cityId, traderKey, preview, quantity, { requestedByUserId = "" } = {}) {
     if (!preview?.actorId || !preview?.itemUuid) {
       throw new Error("Нет подготовленного предмета для продажи.");
     }
