@@ -50,19 +50,45 @@ test("trade transaction ids are sanitized, bounded, and valid", () => {
   assert.equal(isValidTradeTransactionId(null), false);
 });
 
+test("trade transaction ids preserve entropy after an oversized prefix", () => {
+  const oversizedPrefix = "x".repeat(256);
+
+  const first = createTradeTransactionId(oversizedPrefix);
+  const second = createTradeTransactionId(oversizedPrefix);
+
+  assert.notEqual(first, second);
+  assert.match(first, /_\d+_[A-Za-z0-9]+$/u);
+  assert.match(second, /_\d+_[A-Za-z0-9]+$/u);
+  assert.equal(isValidTradeTransactionId(first), true);
+  assert.equal(isValidTradeTransactionId(second), true);
+  assert.equal(first.length <= 128, true);
+  assert.equal(second.length <= 128, true);
+});
+
 test("requestsMatch compares only normalized request identity fields", () => {
   assert.equal(requestsMatch(
-    { actorId: " a ", itemKey: "i", quantity: "1.9", ignored: "left" },
+    { actorId: " a ", itemKey: "i", quantity: "1", ignored: "left" },
     { quantity: 1, itemKey: "i", actorId: "a", ignored: "right" }
-  ), true);
-  assert.equal(requestsMatch(
-    { actorId: "a", itemKey: "i", quantity: -1 },
-    { actorId: "a", itemKey: "i", quantity: 0 }
   ), true);
   assert.equal(requestsMatch(
     { actorId: "a", itemKey: "i", quantity: 1 },
     { actorId: "a", itemKey: "different", quantity: 1 }
   ), false);
+});
+
+test("requestsMatch rejects invalid quantities even when their coerced values match", () => {
+  for (const [leftQuantity, rightQuantity] of [
+    [1.9, 1],
+    [-1, 0],
+    [-1, -1],
+    [0, 0],
+    ["not-a-number", "not-a-number"]
+  ]) {
+    assert.equal(requestsMatch(
+      { actorId: "a", itemKey: "i", quantity: leftQuantity },
+      { actorId: "a", itemKey: "i", quantity: rightQuantity }
+    ), false, `${leftQuantity} must not match ${rightQuantity}`);
+  }
 });
 
 test("normalizeTradeTransaction upgrades and preserves legacy audit rows", () => {
@@ -93,6 +119,63 @@ test("normalizeTradeTransaction upgrades and preserves legacy audit rows", () =>
   assert.equal(normalizedAgain.legacy, true);
   assert.equal(normalizedAgain.transactionId, "legacy-1");
   assert.equal(normalizedAgain.status, "committed");
+});
+
+test("normalizeTradeTransaction sends malformed modern rows to reconciliation", () => {
+  const fixtures = [
+    {
+      name: "missing status",
+      source: {
+        transactionId: "modern_missing_status",
+        kind: "purchase",
+        request: { quantity: 1 }
+      }
+    },
+    {
+      name: "invalid status",
+      source: {
+        transactionId: "modern_invalid_status",
+        status: "done",
+        request: { quantity: 1 }
+      }
+    },
+    {
+      name: "missing explicit transaction id",
+      source: {
+        id: "partial_modern_0001",
+        type: "purchase",
+        status: "committed",
+        request: { quantity: 1 }
+      }
+    },
+    {
+      name: "modern phase on an audit-shaped row",
+      source: {
+        id: "partial_modern_0002",
+        type: "sale",
+        phase: "item-applied",
+        request: { quantity: 1 }
+      }
+    },
+    {
+      name: "invalid legacy audit type",
+      source: {
+        id: "ambiguous_legacy_01",
+        type: "refund",
+        quantity: 1
+      }
+    }
+  ];
+
+  for (const { name, source } of fixtures) {
+    const normalized = normalizeTradeTransaction(source);
+    assert.equal(normalized.legacy, false, name);
+    assert.equal(
+      normalized.status,
+      TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED,
+      name
+    );
+  }
 });
 
 test("normalizeTradeTransaction canonicalizes modern rows and clones nested data", () => {
@@ -196,4 +279,43 @@ test("retainTradeLog keeps all nonterminal rows and the newest twenty terminal r
   );
   assert.equal(retained.some((row) => row.transactionId === "terminal_00000000"), false);
   assert.equal(retained.every((row) => Object.hasOwn(row, "request")), true);
+});
+
+test("retainTradeLog never prunes malformed modern rows behind newer terminals", () => {
+  const malformedRows = [
+    {
+      transactionId: "malformed_status_001",
+      status: "unknown",
+      updatedAt: 1,
+      request: { quantity: 1 }
+    },
+    {
+      id: "partial_modern_0003",
+      type: "purchase",
+      status: "committed",
+      updatedAt: 2,
+      request: { quantity: 1 }
+    }
+  ];
+  const terminalRows = Array.from({ length: 23 }, (_value, index) => ({
+    transactionId: `new_terminal_${String(index).padStart(8, "0")}`,
+    status: "committed",
+    updatedAt: 100 + index,
+    request: { quantity: 1 }
+  }));
+
+  const retained = retainTradeLog([...malformedRows, ...terminalRows]);
+
+  assert.equal(retained.length, 22);
+  assert.deepEqual(
+    retained.slice(0, 2).map((row) => [row.transactionId, row.status]),
+    [
+      ["malformed_status_001", "reconciliation-required"],
+      ["partial_modern_0003", "reconciliation-required"]
+    ]
+  );
+  assert.equal(
+    retained.filter((row) => TERMINAL_TRADE_STATUSES.has(row.status)).length,
+    20
+  );
 });

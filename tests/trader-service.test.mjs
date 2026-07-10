@@ -1,8 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { WorldMutationCoordinator } from "../scripts/application/world-mutation-coordinator.js";
 import { resolveGearItemIcon } from "../scripts/data/gear-icon-resolver.js";
-import { TraderService } from "../scripts/data/trader-service.js";
+import {
+  TraderService,
+  normalizeTraderState
+} from "../scripts/data/trader-service.js";
+import { TraderStateRepository } from "../scripts/infrastructure/foundry/trader-state-repository.js";
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
+async function flushTasks() {
+  await new Promise((resolve) => setImmediate(resolve));
+}
 
 function installFoundryUtils() {
   const previousFoundry = globalThis.foundry;
@@ -319,5 +338,208 @@ test("trader purchase expands ammunition packs into actor item quantity", async 
     globalThis.game = previousGame;
     globalThis.canvas = previousCanvas;
     restoreFoundry();
+  }
+});
+
+test("recordTradeAudit retains every nonterminal row and only the newest twenty terminal rows", async () => {
+  const restoreFoundry = installFoundryUtils();
+  const previousGame = globalThis.game;
+  const nonterminalIds = ["prepared_service_001", "reconcile_service_01"];
+  let state = {
+    version: 1,
+    order: [],
+    traders: {},
+    tradeLog: [
+      {
+        transactionId: nonterminalIds[0],
+        status: "prepared",
+        updatedAt: 1,
+        request: { quantity: 1 }
+      },
+      {
+        transactionId: nonterminalIds[1],
+        status: "reconciliation-required",
+        updatedAt: 2,
+        request: { quantity: 1 }
+      },
+      ...Array.from({ length: 23 }, (_value, index) => ({
+        transactionId: `terminal_service_${String(index).padStart(8, "0")}`,
+        status: "committed",
+        createdAt: index + 1,
+        request: { quantity: 1 }
+      }))
+    ]
+  };
+
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    actors: { get: () => null },
+    settings: {
+      get: () => state,
+      set: async (_moduleId, _key, nextState) => {
+        state = nextState;
+      }
+    }
+  };
+
+  try {
+    const service = new TraderService({});
+    await service.recordTradeAudit({
+      id: "legacy-new-audit",
+      type: "purchase",
+      createdAt: 1000,
+      quantity: 1,
+      totalCopper: 10
+    });
+
+    const nonterminal = state.tradeLog.filter((row) => (
+      row.status === "prepared" || row.status === "reconciliation-required"
+    ));
+    const terminal = state.tradeLog.filter((row) => (
+      row.status === "committed" || row.status === "compensated"
+    ));
+
+    assert.deepEqual(nonterminal.map((row) => row.transactionId), nonterminalIds);
+    assert.equal(terminal.length, 20);
+    assert.equal(state.tradeLog.length, 22);
+    assert.equal(state.tradeLog.some((row) => row.transactionId === "legacy-new-audit"), true);
+    assert.equal(state.tradeLog.find((row) => row.transactionId === "legacy-new-audit")?.legacy, true);
+    assert.equal(state.tradeLog.some((row) => row.transactionId === "terminal_service_00000004"), true);
+    assert.equal(state.tradeLog.some((row) => row.transactionId === "terminal_service_00000003"), false);
+  }
+  finally {
+    globalThis.game = previousGame;
+    restoreFoundry();
+  }
+});
+
+test("injected Trader state repository serializes legacy audit and transaction writers", async () => {
+  const restoreFoundry = installFoundryUtils();
+  const previousGame = globalThis.game;
+  const transactionId = "transaction_queue_01";
+  const firstWriteGate = createDeferred();
+  let state = {
+    version: 1,
+    order: [],
+    traders: {},
+    tradeLog: [{
+      transactionId,
+      status: "prepared",
+      updatedAt: 1,
+      request: { quantity: 1 }
+    }]
+  };
+  let inFlightWrites = 0;
+  let maxInFlightWrites = 0;
+  const savedTransactionStatuses = [];
+
+  const game = {
+    user: { id: "gm", isGM: true },
+    actors: { get: () => null },
+    settings: {
+      get: () => state,
+      set: async (_moduleId, _key, nextState) => {
+        inFlightWrites += 1;
+        maxInFlightWrites = Math.max(maxInFlightWrites, inFlightWrites);
+        savedTransactionStatuses.push(
+          nextState.tradeLog.find((row) => row.transactionId === transactionId)?.status
+        );
+        if (savedTransactionStatuses.length === 1) {
+          await firstWriteGate.promise;
+        }
+        state = nextState;
+        inFlightWrites -= 1;
+        return nextState;
+      }
+    }
+  };
+  globalThis.game = game;
+  const repository = new TraderStateRepository({
+    coordinator: new WorldMutationCoordinator(),
+    gameProvider: () => game,
+    normalizeState: normalizeTraderState
+  });
+  const service = new TraderService({}, { stateRepository: repository });
+
+  try {
+    const legacyWrite = service.recordTradeAudit({
+      id: "legacy-queued-audit",
+      type: "purchase",
+      createdAt: 100,
+      quantity: 1,
+      totalCopper: 10
+    });
+    const transactionWrite = repository.mutateTransaction(transactionId, (row) => {
+      row.status = "applying";
+      row.phase = "item-applied";
+    });
+
+    await flushTasks();
+    assert.equal(maxInFlightWrites, 1);
+    assert.deepEqual(savedTransactionStatuses, ["prepared"]);
+
+    firstWriteGate.resolve();
+    await Promise.all([legacyWrite, transactionWrite]);
+
+    assert.equal(maxInFlightWrites, 1);
+    assert.deepEqual(savedTransactionStatuses, ["prepared", "applying"]);
+    assert.equal(
+      state.tradeLog.find((row) => row.transactionId === transactionId)?.status,
+      "applying"
+    );
+    assert.equal(
+      state.tradeLog.some((row) => row.transactionId === "legacy-queued-audit"),
+      true
+    );
+  }
+  finally {
+    globalThis.game = previousGame;
+    restoreFoundry();
+  }
+});
+
+test("resetState replaces state through the injected repository", async () => {
+  const previousGame = globalThis.game;
+  let repositoryMutations = 0;
+  let directWrites = 0;
+  const state = {
+    version: 9,
+    order: ["trader-a"],
+    traders: { "trader-a": { name: "Trader A" } },
+    tradeLog: [{ id: "legacy-reset-audit", type: "purchase" }],
+    extra: "remove-me"
+  };
+  const stateRepository = {
+    read: () => state,
+    async mutate(mutator) {
+      repositoryMutations += 1;
+      return mutator(state);
+    }
+  };
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    settings: {
+      get: () => state,
+      set: async () => {
+        directWrites += 1;
+      }
+    }
+  };
+
+  try {
+    const service = new TraderService({}, { stateRepository });
+    assert.equal(await service.resetState(), 0);
+
+    assert.equal(repositoryMutations, 1);
+    assert.equal(directWrites, 0);
+    assert.deepEqual(state, {
+      version: 1,
+      order: [],
+      traders: {},
+      tradeLog: []
+    });
+  }
+  finally {
+    globalThis.game = previousGame;
   }
 });

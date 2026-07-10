@@ -1012,8 +1012,9 @@ function buildCanonicalItemData(entry, quantity, finalPriceCopper) {
 }
 
 export class TraderService {
-  constructor(moduleApi) {
+  constructor(moduleApi, { stateRepository = null } = {}) {
     this.moduleApi = moduleApi;
+    this.stateRepository = stateRepository;
   }
 
   invalidatePackCache() {}
@@ -1023,10 +1024,24 @@ export class TraderService {
   }
 
   #getState() {
+    if (this.stateRepository) {
+      return this.stateRepository.read();
+    }
     return normalizeTraderState(game.settings.get(MODULE_ID, SETTINGS_KEYS.TRADER_STATE));
   }
 
   async #setState(nextState) {
+    if (this.stateRepository) {
+      const normalized = normalizeTraderState(nextState);
+      await this.stateRepository.mutate((state) => {
+        for (const key of Object.keys(state)) {
+          delete state[key];
+        }
+        Object.assign(state, cloneTraderState(normalized));
+      });
+      return normalized;
+    }
+
     await game.settings.set(MODULE_ID, SETTINGS_KEYS.TRADER_STATE, nextState);
     return nextState;
   }
@@ -1034,6 +1049,10 @@ export class TraderService {
   async #writeState(mutator) {
     if (!game.user?.isGM) {
       throw new Error("Торговые операции может сохранять только ГМ.");
+    }
+
+    if (this.stateRepository) {
+      return this.stateRepository.mutate(mutator);
     }
 
     const state = this.#getState();
@@ -1177,8 +1196,10 @@ export class TraderService {
 
     return this.#writeState((state) => {
       const record = this.#verifyAuditRecord(normalizeTradeAuditRecord(operation, { senderId }));
-      state.tradeLog = [record, ...(state.tradeLog ?? []).filter((entry) => entry.id !== record.id)]
-        .slice(0, TRADE_AUDIT_LIMIT);
+      state.tradeLog = retainTradeLog(
+        [record, ...(state.tradeLog ?? []).filter((entry) => entry.id !== record.id)],
+        { terminalLimit: TRADE_AUDIT_LIMIT }
+      );
       return buildAuditViewRecord(foundry.utils.deepClone(record));
     });
   }

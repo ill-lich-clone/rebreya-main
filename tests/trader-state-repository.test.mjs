@@ -144,6 +144,36 @@ test("TraderStateRepository read returns a detached normalized current state", (
   assert.equal(fixture.writes.length, 0);
 });
 
+test("TraderStateRepository fails closed before mutation when setting access is unavailable", async () => {
+  const fixtures = [
+    { name: "game", gameProvider: () => null },
+    { name: "settings", gameProvider: () => ({}) },
+    { name: "settings.get", gameProvider: () => ({ settings: { set: async () => {} } }) },
+    { name: "settings.set", gameProvider: () => ({ settings: { get: () => ({}) } }) }
+  ];
+
+  for (const { name, gameProvider } of fixtures) {
+    let mutatorCalls = 0;
+    const repository = new TraderStateRepository({
+      coordinator: new WorldMutationCoordinator(),
+      gameProvider,
+      normalizeState: normalizeTraderState
+    });
+
+    await assert.rejects(
+      repository.mutate(() => {
+        mutatorCalls += 1;
+      }),
+      (error) => {
+        assert.equal(error instanceof TradeTransactionError, true, name);
+        assert.equal(error.code, "trader-state-unavailable", name);
+        return true;
+      }
+    );
+    assert.equal(mutatorCalls, 0, name);
+  }
+});
+
 test("TraderStateRepository queues fresh reads through one completed setting write", async () => {
   const fixture = createRepositoryFixture({ mutationIds: [] });
   const firstWriteGate = createDeferred();

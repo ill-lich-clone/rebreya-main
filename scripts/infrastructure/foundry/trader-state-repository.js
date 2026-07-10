@@ -28,18 +28,18 @@ export class TraderStateRepository {
   }
 
   read() {
-    return this.#normalizeState(clone(
-      this.#gameProvider()?.settings?.get?.(MODULE_ID, SETTINGS_KEYS.TRADER_STATE) ?? {}
-    ));
+    const settings = this.#requireSettings();
+    return this.#readFrom(settings);
   }
 
   mutate(mutator) {
     return this.#coordinator.run("traderState", async () => {
-      const state = this.read();
+      const settings = this.#requireSettings({ write: true });
+      const state = this.#readFrom(settings);
       const result = await mutator(state);
       state.tradeLog = retainTradeLog(state.tradeLog);
       const committed = this.#normalizeState(clone(state));
-      await this.#gameProvider()?.settings?.set?.(
+      await settings.set(
         MODULE_ID,
         SETTINGS_KEYS.TRADER_STATE,
         committed
@@ -64,5 +64,22 @@ export class TraderStateRepository {
       }
       return mutator(row, state);
     });
+  }
+
+  #readFrom(settings) {
+    return this.#normalizeState(clone(
+      settings.get(MODULE_ID, SETTINGS_KEYS.TRADER_STATE) ?? {}
+    ));
+  }
+
+  #requireSettings({ write = false } = {}) {
+    const settings = this.#gameProvider()?.settings;
+    if (typeof settings?.get !== "function" || (write && typeof settings?.set !== "function")) {
+      throw new TradeTransactionError(
+        "trader-state-unavailable",
+        "Trader state setting is unavailable"
+      );
+    }
+    return settings;
   }
 }

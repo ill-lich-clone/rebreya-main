@@ -19,6 +19,17 @@ const REQUEST_KEYS = Object.freeze([
   "requestedByUserId"
 ]);
 
+const MODERN_TRANSACTION_KEYS = Object.freeze([
+  "transactionId",
+  "status",
+  "phase",
+  "kind",
+  "request",
+  "result",
+  "error",
+  "compensation"
+]);
+
 function clone(value) {
   if (typeof globalThis.foundry?.utils?.deepClone === "function") {
     return globalThis.foundry.utils.deepClone(value);
@@ -48,26 +59,52 @@ export function isValidTradeTransactionId(value) {
 export function createTradeTransactionId(prefix = "trade") {
   const random = globalThis.crypto?.randomUUID?.().replaceAll("-", "")
     ?? Math.random().toString(36).slice(2, 18);
-  return `${String(prefix).replace(/[^A-Za-z0-9_-]/gu, "_")}_${Date.now()}_${random}`.slice(0, 128);
+  const suffix = `${Date.now()}_${random}`;
+  const maxPrefixLength = Math.max(0, 128 - suffix.length - 1);
+  const normalizedPrefix = String(prefix)
+    .replace(/[^A-Za-z0-9_-]/gu, "_")
+    .slice(0, maxPrefixLength);
+  return `${normalizedPrefix}_${suffix}`;
+}
+
+function normalizeRequestQuantity(value) {
+  const quantity = Number(value);
+  return Number.isInteger(quantity) && quantity > 0 ? quantity : null;
 }
 
 export function requestsMatch(left = {}, right = {}) {
+  const leftQuantity = normalizeRequestQuantity(left.quantity);
+  const rightQuantity = normalizeRequestQuantity(right.quantity);
+  if (leftQuantity == null || rightQuantity == null) {
+    return false;
+  }
+
   return REQUEST_KEYS.every((key) => (
     key === "quantity"
-      ? Math.max(0, Math.floor(Number(left[key]) || 0)) === Math.max(0, Math.floor(Number(right[key]) || 0))
+      ? leftQuantity === rightQuantity
       : String(left[key] ?? "").trim() === String(right[key] ?? "").trim()
   ));
 }
 
 export function normalizeTradeTransaction(value = {}) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  const legacy = source.legacy === true
-    || (!Object.hasOwn(source, "transactionId") && !Object.hasOwn(source, "status"));
+  const legacyId = String(source.id ?? "").trim();
+  const legacyType = String(source.type ?? "").trim();
+  const hasLegacyAuditShape = Boolean(legacyId)
+    && (legacyType === "purchase" || legacyType === "sale");
+  const hasModernMarkers = MODERN_TRANSACTION_KEYS.some((key) => Object.hasOwn(source, key));
+  const legacy = hasLegacyAuditShape && (source.legacy === true || !hasModernMarkers);
   const transactionId = String(source.transactionId ?? source.id ?? "").trim();
   const requestedStatus = String(source.status ?? "").trim();
-  const status = Object.values(TRADE_TRANSACTION_STATUS).includes(requestedStatus)
-    ? requestedStatus
-    : TRADE_TRANSACTION_STATUS.COMMITTED;
+  const hasValidModernShape = Object.hasOwn(source, "transactionId")
+    && isValidTradeTransactionId(transactionId)
+    && Object.hasOwn(source, "status")
+    && Object.values(TRADE_TRANSACTION_STATUS).includes(requestedStatus);
+  const status = legacy
+    ? TRADE_TRANSACTION_STATUS.COMMITTED
+    : (hasValidModernShape
+      ? requestedStatus
+      : TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
 
   return {
     ...clone(source),
