@@ -356,6 +356,74 @@ test("does not reopen advancement for a feat with completed ItemChoice values", 
   }
 });
 
+test("does not open an incomplete feat choice again when the owned feat is updated", async () => {
+  const previousDnd5e = globalThis.dnd5e;
+  const previousGame = globalThis.game;
+  let managerCalls = 0;
+
+  globalThis.game = {
+    system: { id: "dnd5e" },
+    user: { id: "user-1", isGM: true },
+    settings: { get: () => false }
+  };
+  globalThis.dnd5e = {
+    applications: {
+      advancement: {
+        AdvancementManager: {
+          forModifyChoices: () => {
+            managerCalls += 1;
+            return { steps: [{ type: "forward" }], render: () => {} };
+          }
+        }
+      }
+    }
+  };
+
+  const advancement = buildItemChoiceAdvancementData({
+    identifier: "aristokratichnost",
+    choiceConfig: {
+      title: "Аристократичность: выберите преимущества",
+      type: "multiple",
+      min: 2,
+      max: 6,
+      options: [
+        { value: "etiquette", label: "Этикет", uuid: "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa" },
+        { value: "privilege", label: "Привилегия", uuid: "Compendium.world.rebreya-feats.Item.bbbbbbbbbbbbbbbb" }
+      ]
+    }
+  });
+  const actor = { documentName: "Actor", isOwner: true, items: [] };
+  const item = {
+    id: "feat-id",
+    name: "Аристократичность",
+    type: "feat",
+    parent: actor,
+    isOwner: true,
+    system: { advancement: [advancement] },
+    getFlag: () => ({
+      title: "Аристократичность: выберите преимущества",
+      type: "multiple",
+      min: 2,
+      max: 6,
+      options: [
+        { value: "etiquette", label: "Этикет", uuid: "Compendium.world.rebreya-feats.Item.aaaaaaaaaaaaaaaa" },
+        { value: "privilege", label: "Привилегия", uuid: "Compendium.world.rebreya-feats.Item.bbbbbbbbbbbbbbbb" }
+      ]
+    })
+  };
+
+  try {
+    const result = await new FeatChoiceAutomationService().handleItemUpdated(item, {}, {}, "user-1");
+
+    assert.equal(result, false);
+    assert.equal(managerCalls, 0);
+  }
+  finally {
+    globalThis.dnd5e = previousDnd5e;
+    globalThis.game = previousGame;
+  }
+});
+
 test("Aristocraticness uses native ItemChoice advancement backed by real option Items", () => {
   const items = loadBundleItems();
   const parent = byIdentifier(items, "aristokratichnost");

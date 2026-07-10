@@ -631,7 +631,7 @@ export class FeatChoiceAutomationService {
       return false;
     }
 
-    return this.configureItemChoice(item, { promptIfMissing: true });
+    return this.configureItemChoice(item);
   }
 
   async handleItemDeleted(item, options = {}, userId = "") {
