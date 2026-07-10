@@ -70,6 +70,51 @@ function withGamePacks(pack, callback) {
   });
 }
 
+test("class descriptions render escaped Markdown tables", () => {
+  const system = createClassSystem({
+    name: "Тест",
+    identifier: "table-test",
+    hitDie: "d6",
+    description: "| A | B |\n| :--- | ---: |\n| <x> | 2 |"
+  });
+
+  assert.match(system.description.value, /<table>/u);
+  assert.match(system.description.value, /<th>A<\/th>/u);
+  assert.match(system.description.value, /&lt;x&gt;/u);
+});
+
+test("class data exposes independent cantrip and spell selections", () => {
+  const normalized = normalizeClassCompendiumData({
+    class: {
+      name: "Тестовый кастер",
+      identifier: "test-caster",
+      hitDie: "d6",
+      spellChoices: [
+        {
+          title: "Заговоры",
+          level: 1,
+          choices: { 1: { count: 2 } },
+          restriction: { level: "0", list: ["class:sorcerer"] },
+          spell: { ability: ["cha"], uses: { requireSlot: false } }
+        },
+        {
+          title: "Заклинания",
+          level: 1,
+          choices: { 1: { count: 2 } },
+          restriction: { level: "available", list: ["class:sorcerer"] },
+          spell: { ability: ["cha"] }
+        }
+      ]
+    }
+  });
+  const choices = buildClassAdvancement(normalized.classData, {})
+    .filter((entry) => entry.type === "ItemChoice" && entry.configuration.type === "spell");
+
+  assert.equal(choices.length, 2);
+  assert.equal(choices[0].configuration.restriction.level, "0");
+  assert.deepEqual(choices[1].configuration.restriction.list, ["class:sorcerer"]);
+});
+
 test("barbarian and fighter reworks use the ZoZT source label", () => {
   const barbarian = normalizeClassCompendiumData(loadJson("data/barbarian-rework-v012.json"));
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));

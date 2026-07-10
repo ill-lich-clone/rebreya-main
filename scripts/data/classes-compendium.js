@@ -255,8 +255,77 @@ function toHtmlParagraphs(value) {
 
   return text
     .split(/\n{2,}/gu)
-    .map((paragraph) => `<p>${formatParagraphLines(paragraph)}</p>`)
+    .flatMap((paragraph) => formatDescriptionBlocks(paragraph))
     .join("");
+}
+
+function parseMarkdownTableRow(value) {
+  const text = String(value ?? "").trim();
+  if (!text.includes("|")) {
+    return null;
+  }
+
+  const normalized = text.replace(/^\|/u, "").replace(/\|$/u, "");
+  const cells = normalized.split("|").map((cell) => cleanString(cell));
+  return cells.length ? cells : null;
+}
+
+function isMarkdownTableDivider(value, columnCount) {
+  const cells = parseMarkdownTableRow(value);
+  return cells?.length === columnCount
+    && cells.every((cell) => /^:?-{3,}:?$/u.test(cell));
+}
+
+function formatMarkdownTable(header, rows) {
+  const headings = header.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("");
+  const body = rows
+    .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`)
+    .join("");
+
+  return `<table><thead><tr>${headings}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function formatDescriptionBlocks(paragraph) {
+  const lines = String(paragraph ?? "").split(/\n/gu);
+  const output = [];
+  const textLines = [];
+  const flushText = () => {
+    if (textLines.some((line) => cleanString(line))) {
+      output.push(`<p>${formatParagraphLines(textLines.join("\n"))}</p>`);
+    }
+    textLines.length = 0;
+  };
+
+  for (let index = 0; index < lines.length;) {
+    const header = parseMarkdownTableRow(lines[index]);
+    if (!header || !isMarkdownTableDivider(lines[index + 1], header.length)) {
+      textLines.push(lines[index]);
+      index += 1;
+      continue;
+    }
+
+    const rows = [];
+    index += 2;
+    while (index < lines.length) {
+      const row = parseMarkdownTableRow(lines[index]);
+      if (!row || row.length !== header.length) {
+        break;
+      }
+      rows.push(row);
+      index += 1;
+    }
+
+    if (!rows.length) {
+      textLines.push(lines[index - 2], lines[index - 1]);
+      continue;
+    }
+
+    flushText();
+    output.push(formatMarkdownTable(header, rows));
+  }
+
+  flushText();
+  return output;
 }
 
 function isTextListLine(line) {
@@ -759,6 +828,7 @@ function normalizeSpellChoiceData(value) {
     : [cleanString(spellData.ability)].filter(Boolean));
 
   return {
+    id: cleanString(value.id, "spells"),
     title: cleanString(value.title, "Заклинания"),
     hint: cleanString(value.hint, "Выберите заклинания класса."),
     level: Math.max(0, Math.floor(parseNumber(value.level, 1))),
@@ -820,7 +890,15 @@ export function normalizeClassCompendiumData(rawData) {
   const wealth = cleanString(rawClass.wealth, classIdentifier === "fighter-rework-v028" ? "5d4*10" : "2d4*10");
   const startingEquipment = normalizeStartingEquipment(rawClass.startingEquipment);
   const spellcasting = normalizeSpellcastingData(rawClass.spellcasting);
-  const spellChoice = normalizeSpellChoiceData(rawClass.spellChoice);
+  const spellChoices = (Array.isArray(rawClass.spellChoices) ? rawClass.spellChoices : [])
+    .map((entry) => normalizeSpellChoiceData(entry))
+    .filter(Boolean);
+  if (!spellChoices.length) {
+    const legacySpellChoice = normalizeSpellChoiceData(rawClass.spellChoice);
+    if (legacySpellChoice) {
+      spellChoices.push(legacySpellChoice);
+    }
+  }
   const subclassTitle = cleanString(rawClass.subclassTitle, classIdentifier === "fighter-rework-v028" ? "Воинский архетип" : "Путь дикости");
   const subclassHint = cleanString(rawClass.subclassHint, classIdentifier === "fighter-rework-v028" ? "Выберите архетип воина." : "Выберите архетип варвара.");
 
@@ -999,7 +1077,7 @@ export function normalizeClassCompendiumData(rawData) {
       wealth,
       startingEquipment,
       spellcasting,
-      spellChoice,
+      spellChoices,
       scaleAdvancements: normalizeScaleAdvancements(rawClass.scaleAdvancements),
       subclassTitle,
       subclassHint,
@@ -3097,15 +3175,16 @@ function buildStartingEquipmentChoiceAdvancements(classData, context = {}) {
   return [advancement];
 }
 
-function buildSpellChoiceAdvancement(classData) {
-  const spellChoice = isPlainObject(classData.spellChoice) ? classData.spellChoice : null;
-  if (!spellChoice) {
-    return null;
-  }
+function buildSpellChoiceAdvancements(classData) {
+  const spellChoices = Array.isArray(classData.spellChoices)
+    ? classData.spellChoices
+    : isPlainObject(classData.spellChoice)
+      ? [classData.spellChoice]
+      : [];
 
-  return buildItemChoiceAdvancement({
+  return spellChoices.map((spellChoice, index) => buildItemChoiceAdvancement({
     classIdentifier: classData.identifier,
-    seed: "spells",
+    seed: cleanString(spellChoice.id, index ? `spells-${index + 1}` : "spells"),
     title: spellChoice.title,
     hint: spellChoice.hint,
     level: spellChoice.level,
@@ -3115,7 +3194,7 @@ function buildSpellChoiceAdvancement(classData) {
     restriction: spellChoice.restriction,
     spell: spellChoice.spell,
     type: "spell"
-  });
+  }));
 }
 
 function pickPreferredFeat(records = [], preferredSection = "") {
@@ -3690,10 +3769,7 @@ export function buildClassAdvancement(classData, context = {}) {
     }));
   }
 
-  const spellChoiceAdvancement = buildSpellChoiceAdvancement(classData);
-  if (spellChoiceAdvancement) {
-    advancements.push(spellChoiceAdvancement);
-  }
+  advancements.push(...buildSpellChoiceAdvancements(classData));
 
   const fightingStyleFeaturePool = fightingStyleEntries
     .map((entry) => featureUuidById.get(`${classIdentifier}::fightingStyle::${entry.featureId}`))
