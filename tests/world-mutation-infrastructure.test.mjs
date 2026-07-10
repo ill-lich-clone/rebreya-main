@@ -285,6 +285,56 @@ test("SocketCommandBus correlates results by requestId, command, and forUserId",
   assert.deepEqual(timers.cleared, [1]);
 });
 
+test("SocketCommandBus ignores malformed correlated errors until a valid failure arrives", async () => {
+  const emitted = [];
+  const timers = createFakeTimers();
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => "malformed-result",
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn
+  });
+  const pending = bus.request("group.calendar.setDate", { day: 4 });
+  let settledError;
+  const observed = pending.catch((error) => {
+    settledError = error;
+  });
+  const correlation = {
+    type: COMMAND_RESULT_TYPE,
+    command: "group.calendar.setDate",
+    requestId: "malformed-result",
+    forUserId: player.id,
+    senderId: gm.id,
+    ok: false
+  };
+
+  for (const error of [
+    undefined,
+    "failure",
+    [],
+    { code: "", message: "failure" },
+    { code: "denied", message: " " }
+  ]) {
+    assert.equal(bus.handleMessage({ ...correlation, error }), true);
+  }
+  await flushTasks();
+  assert.equal(settledError, undefined);
+  assert.deepEqual(timers.cleared, []);
+  assert.equal(timers.pending.has(1), true);
+
+  assert.equal(bus.handleMessage({
+    ...correlation,
+    error: { code: "denied", message: "Request denied" }
+  }), true);
+  await observed;
+  assert.equal(settledError?.code, "denied");
+  assert.equal(settledError?.message, "Request denied");
+  assert.deepEqual(timers.cleared, [1]);
+});
+
 test("SocketCommandBus times requests out after exactly 10000 ms", async () => {
   const emitted = [];
   const timers = createFakeTimers();
@@ -302,6 +352,29 @@ test("SocketCommandBus times requests out after exactly 10000 ms", async () => {
   assert.equal(timers.pending.get(1).milliseconds, REQUEST_TIMEOUT_MS);
   timers.pending.get(1).callback();
   await assert.rejects(pending, (error) => error?.code === "request-timeout");
+});
+
+test("SocketCommandBus rejects a duplicate outbound pending key without replacing the first request", async () => {
+  const emitted = [];
+  const timers = createFakeTimers();
+  const player = { id: "player-a", isGM: false, active: true };
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: player.id, activeGmId: gm.id, emitted });
+  const bus = new SocketCommandBus({
+    gameProvider: () => game,
+    idFactory: () => "duplicate-outbound",
+    setTimeoutFn: timers.setTimeoutFn,
+    clearTimeoutFn: timers.clearTimeoutFn
+  });
+
+  const first = bus.request("group.calendar.setDate", { day: 4 });
+  const duplicate = bus.request("group.calendar.setDate", { day: 5 });
+
+  assert.equal(emitted.length, 1);
+  assert.equal(timers.pending.size, 1);
+  await assert.rejects(duplicate, (error) => error?.code === "duplicate-request");
+  timers.pending.get(1).callback();
+  await assert.rejects(first, (error) => error?.code === "request-timeout");
 });
 
 test("SocketCommandBus executes a duplicate typed request once and re-emits its settled result", async () => {
@@ -505,4 +578,32 @@ test("SocketCommandBus rejects oversized incoming requests without executing the
   assert.equal(emitted[0].message.requestId, request.requestId);
   assert.equal(emitted[0].message.command, request.command);
   assert.equal(emitted[0].message.forUserId, player.id);
+});
+
+test("SocketCommandBus never emits an oversized fallback result with long correlation fields", async () => {
+  const emitted = [];
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const player = { id: "player-a", isGM: false, active: true };
+  const game = createGame({ users: [player, gm], currentUserId: gm.id, activeGmId: gm.id, emitted });
+  const bus = new SocketCommandBus({ gameProvider: () => game });
+  const request = {
+    type: COMMAND_REQUEST_TYPE,
+    command: "",
+    requestId: "long-correlation",
+    senderId: player.id,
+    payload: {}
+  };
+  const baseSize = Buffer.byteLength(JSON.stringify(request), "utf8");
+  request.command = "c".repeat(MAX_SOCKET_ENVELOPE_BYTES - baseSize);
+  assert.equal(Buffer.byteLength(JSON.stringify(request), "utf8"), MAX_SOCKET_ENVELOPE_BYTES);
+  bus.register(request.command, {
+    execute: async () => ({ text: "x".repeat(MAX_SOCKET_ENVELOPE_BYTES) })
+  });
+
+  assert.equal(bus.handleMessage(request), true);
+  await flushTasks();
+
+  assert.ok(emitted.every(({ message }) => (
+    Buffer.byteLength(JSON.stringify(message), "utf8") <= MAX_SOCKET_ENVELOPE_BYTES
+  )));
 });

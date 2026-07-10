@@ -41,6 +41,22 @@ function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function isPlainObject(value) {
+  if (value == null || typeof value !== "object") {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isValidResultError(error) {
+  return Boolean(
+    isPlainObject(error)
+    && nonEmptyString(error.code)
+    && nonEmptyString(error.message)
+  );
+}
+
 function requestCorrelation(message) {
   if (
     !nonEmptyString(message?.command)
@@ -186,6 +202,12 @@ export class SocketCommandBus {
     }
 
     const pendingKey = this.#pendingKey(requestId, command, senderId);
+    if (this.#pending.has(pendingKey)) {
+      return Promise.reject(new SocketCommandError(
+        "duplicate-request",
+        "A matching socket command request is already pending"
+      ));
+    }
     return new Promise((resolve, reject) => {
       const entry = { resolve, reject, timeoutId: undefined };
       entry.timeoutId = this.#setTimeout(() => {
@@ -337,6 +359,7 @@ export class SocketCommandBus {
       || !nonEmptyString(message?.requestId)
       || !nonEmptyString(message?.forUserId)
       || typeof message?.ok !== "boolean"
+      || (message.ok === false && !isValidResultError(message.error))
     ) {
       return;
     }
@@ -400,6 +423,10 @@ export class SocketCommandBus {
           message: `Socket result exceeds ${this.#maxEnvelopeBytes} bytes`
         }
       };
+      const fallbackSize = serializedSize(result);
+      if (fallbackSize == null || fallbackSize > this.#maxEnvelopeBytes) {
+        return;
+      }
     }
     game.socket.emit(this.#socketChannel, result);
   }
