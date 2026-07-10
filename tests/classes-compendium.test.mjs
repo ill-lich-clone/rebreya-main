@@ -116,6 +116,21 @@ test("class data exposes independent cantrip and spell selections", () => {
   assert.deepEqual(choices[1].configuration.restriction.list, ["class:sorcerer"]);
 });
 
+test("Sorcerer known-spell choice includes the Rebreya Counterspell UUID", () => {
+  const sorcerer = normalizeClassCompendiumData(loadJson("data/sorcerer-rework-v011.json"));
+  const choices = buildClassAdvancement(sorcerer.classData, {
+    spellUuidById: new Map([["counterspell-rebreya", "Compendium.world.rebreya-spells.Item.counterspell0001"]])
+  });
+  const knownSpells = choices.find((entry) => (
+    entry.type === "ItemChoice" && entry.title === "Известные заклинания"
+  ));
+
+  assert.ok(knownSpells);
+  assert.equal(knownSpells.configuration.pool.length, 1);
+  assert.deepEqual(knownSpells.configuration.pool, [{ uuid: "Compendium.world.rebreya-spells.Item.counterspell0001" }]);
+  assert.equal(knownSpells.configuration.choices["5"].count, 1);
+});
+
 test("sorcerer packages expose both updated starting-equipment choices", () => {
   const config = getClassStartingEquipmentConfig("sorcerer-rework-v011");
 

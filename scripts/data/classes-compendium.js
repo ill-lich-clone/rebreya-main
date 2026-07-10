@@ -5,6 +5,7 @@ import {
   CLASSES_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
   MODULE_ID,
+  SPELLS_COMPENDIUM_NAME,
   SUBCLASSES_COMPENDIUM_LABEL,
   SUBCLASSES_COMPENDIUM_NAME
 } from "../constants.js";
@@ -49,6 +50,7 @@ const CLASS_ICON_SEARCH_PATHS = [
 ];
 
 const FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
+const SPELLS_PACK_ID = `world.${SPELLS_COMPENDIUM_NAME}`;
 const CLASS_FEATURES_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
 const SUBCLASSES_PACK_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
 const CLASSES_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
@@ -834,6 +836,9 @@ function normalizeSpellChoiceData(value) {
     hint: cleanString(value.hint, "Выберите заклинания класса."),
     level: Math.max(0, Math.floor(parseNumber(value.level, 1))),
     choices: normalizeItemChoiceChoices(value.choices, value.level, 1),
+    additionalSpellIds: unique(Array.isArray(value.additionalSpellIds)
+      ? value.additionalSpellIds.map((entry) => cleanString(entry))
+      : [cleanString(value.additionalSpellIds)].filter(Boolean)),
     restriction: {
       level: cleanString(restrictionData.level, "available"),
       list: restrictionList,
@@ -3178,13 +3183,14 @@ function buildStartingEquipmentChoiceAdvancements(classData, context = {}) {
   return [advancement];
 }
 
-function buildSpellChoiceAdvancements(classData) {
+function buildSpellChoiceAdvancements(classData, context = {}) {
   const spellChoices = Array.isArray(classData.spellChoices)
     ? classData.spellChoices
     : isPlainObject(classData.spellChoice)
       ? [classData.spellChoice]
       : [];
 
+  const spellUuidById = context.spellUuidById instanceof Map ? context.spellUuidById : new Map();
   return spellChoices.map((spellChoice, index) => buildItemChoiceAdvancement({
     classIdentifier: classData.identifier,
     seed: cleanString(spellChoice.id, index ? `spells-${index + 1}` : "spells"),
@@ -3192,7 +3198,9 @@ function buildSpellChoiceAdvancements(classData) {
     hint: spellChoice.hint,
     level: spellChoice.level,
     choices: spellChoice.choices,
-    pool: [],
+    pool: (spellChoice.additionalSpellIds ?? [])
+      .map((spellId) => spellUuidById.get(spellId))
+      .filter(Boolean),
     allowDrops: true,
     restriction: spellChoice.restriction,
     spell: spellChoice.spell,
@@ -3461,6 +3469,31 @@ async function buildFeatLookup() {
   };
 }
 
+async function buildSpellUuidMap() {
+  const pack = game.packs.get(SPELLS_PACK_ID);
+  if (!pack) {
+    return new Map();
+  }
+
+  const index = await pack.getIndex({
+    fields: [
+      "system.identifier",
+      `flags.${MODULE_ID}.spellId`
+    ]
+  });
+  const spellUuidById = new Map();
+  for (const entry of index) {
+    const spellId = cleanString(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.spellId`),
+      cleanString(foundry.utils.getProperty(entry, "system.identifier")));
+    const uuid = compendiumItemUuid(pack.collection, entry._id ?? entry.id);
+    if (spellId && uuid) {
+      spellUuidById.set(spellId, uuid);
+    }
+  }
+
+  return spellUuidById;
+}
+
 export async function buildMinorFeatPool() {
   return (await buildFeatLookup()).minorFeatUuids;
 }
@@ -3475,7 +3508,8 @@ export function buildClassAdvancement(classData, context = {}) {
     rageProgression = {},
     rageDamageProgression = {},
     fightingStyleEntries = [],
-    dominanceProgression = {}
+    dominanceProgression = {},
+    spellUuidById = new Map()
   } = context;
   const classIdentifier = classData.identifier;
   const advancements = [];
@@ -3772,7 +3806,7 @@ export function buildClassAdvancement(classData, context = {}) {
     }));
   }
 
-  advancements.push(...buildSpellChoiceAdvancements(classData));
+  advancements.push(...buildSpellChoiceAdvancements(classData, { spellUuidById }));
 
   const fightingStyleFeaturePool = fightingStyleEntries
     .map((entry) => featureUuidById.get(`${classIdentifier}::fightingStyle::${entry.featureId}`))
@@ -4448,6 +4482,7 @@ export class ClassesCompendiumService {
     const normalizedData = await loadData();
     const featureDefinitions = normalizedData.flatMap((classData) => buildFeatureDefinitions(classData));
     const featLookup = await buildFeatLookup();
+    const spellUuidById = await buildSpellUuidMap();
     const { pack: featuresPack, featureUuidById } = await syncClassFeaturePack(featureDefinitions, {
       iconLookup,
       featLookupByName: featLookup.byName,
@@ -4461,6 +4496,7 @@ export class ClassesCompendiumService {
       featureUuidById,
       minorFeatUuids: featLookup.minorFeatUuids,
       fightingStyleFeatUuids: featLookup.fightingStyleFeatUuids,
+      spellUuidById,
       iconLookup
     });
 

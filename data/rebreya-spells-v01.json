@@ -1,0 +1,10 @@
+{
+  "schema": "rebreya-spells-v01",
+  "sourcePack": "dnd5e.spells",
+  "spells": [
+    {
+      "id": "counterspell-rebreya",
+      "sourceIdentifier": "counterspell"
+    }
+  ]
+}

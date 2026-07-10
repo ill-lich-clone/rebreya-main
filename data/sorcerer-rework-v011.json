@@ -242,6 +242,9 @@
             "replacement": true
           }
         },
+        "additionalSpellIds": [
+          "counterspell-rebreya"
+        ],
         "restriction": {
           "level": "available",
           "list": [

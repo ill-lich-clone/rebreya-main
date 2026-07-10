@@ -8,6 +8,7 @@ import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
 import { StatesCompendiumService } from "./data/states-compendium.js";
 import { RacesCompendiumService } from "./data/races-compendium.js";
 import { ClassesCompendiumService } from "./data/classes-compendium.js";
+import { SpellsCompendiumService } from "./data/spells-compendium.js";
 import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
@@ -517,6 +518,7 @@ export class RebreyaMainModule {
     this.backgroundsCompendium = new BackgroundsCompendiumService();
     this.statesCompendium = new StatesCompendiumService();
     this.racesCompendium = new RacesCompendiumService();
+    this.spellsCompendium = new SpellsCompendiumService();
     this.classesCompendium = new ClassesCompendiumService();
     this.actionsCompendium = new ActionsCompendiumService();
     this.downtimeCompendium = new DowntimeCompendiumService();
@@ -1412,6 +1414,14 @@ export class RebreyaMainModule {
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync races compendium.`, error);
       ui.notifications?.warn(game.i18n.localize("REBREYA_MAIN.Notifications.RacesCompendiumSyncFailed"));
+    }
+
+    try {
+      await this.spellsCompendium.sync();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to sync spells compendium.`, error);
+      ui.notifications?.warn("Не удалось синхронизировать компендиум заклинаний Rebreya.");
     }
 
     try {
