@@ -187,6 +187,39 @@ test("RebreyaMainModule dispatches an authorized strict group.calendar.patch com
   }
 });
 
+test("group.calendar.patch accepts valid five- and six-digit calendar years", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const cases = [
+      ["calendar-year-10000", "10000-02-03"],
+      ["calendar-year-100000", "100000-02-03"]
+    ];
+
+    for (const [requestId, isoDate] of cases) {
+      await moduleApi.handleSocketMessage(commandRequest(
+        "group.calendar.patch",
+        fixture.users.playerA.id,
+        { groupActorId: fixture.groupA.id, patch: { isoDate } },
+        requestId
+      ));
+    }
+    await flushCommands();
+
+    for (const [requestId, isoDate] of cases) {
+      assert.equal(resultFor(fixture, requestId)?.ok, true);
+      assert.equal(resultFor(fixture, requestId)?.data?.isoDate, isoDate);
+    }
+    assert.equal(
+      fixture.store[SETTINGS_KEYS.GROUP_STATE].groupsById[fixture.groupA.id].calendar.isoDate,
+      "100000-02-03"
+    );
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("group.calendar.patch rejects invalid shapes and a sender outside the requested group", async () => {
   const fixture = installFixture();
   try {
