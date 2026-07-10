@@ -44,7 +44,7 @@ Introduce the first Strangler Rewrite slice without replacing working game featu
 
 ## Typed Protocol
 
-Requests use the existing `module.rebreya` channel:
+Requests use the existing `module.rebreya-main` channel (`module.${MODULE_ID}`):
 
 ```js
 {

@@ -14,7 +14,7 @@
 - Do not change the persisted `GROUP_STATE` schema or perform destructive migrations.
 - Keep existing unported features operational through the legacy handler.
 - Only the deterministically selected active GM may execute world-mutating socket requests.
-- Use the existing `module.rebreya` socket channel.
+- Use the existing `module.rebreya-main` socket channel (`module.${MODULE_ID}`).
 - The current versioned entrypoint imports exactly `./main.js?v=1.4.93-npc-held-natural`, the same canonical URL as supported 1.4.67-1.4.92 forwarders.
 - Typed request/result event names are exactly `rebreya.command` and `rebreya.command.result`.
 - Typed command names are exactly `group.calendar.setDate`, `group.calendar.setTime`, `group.travel.replaceState`, and `cosmology.setMechanus`.
