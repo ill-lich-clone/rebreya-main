@@ -711,6 +711,21 @@ export class TradeTransactionService {
             transactionError(identity.code, identity.message, transactionId)
           );
         }
+        if (identity.needsRepair) {
+          await this.#checkpoint(transactionId, (row) => {
+            row.item.itemId = identity.itemId;
+            row.item.itemUuid = identity.itemUuid;
+          }, {
+            status: transaction.status,
+            phase: transaction.phase,
+            matches: (row) => row?.status === transaction.status
+              && row?.phase === transaction.phase
+              && row.item?.itemId === identity.itemId
+              && row.item?.itemUuid === identity.itemUuid
+          });
+          recoveryAttempts = 0;
+          continue;
+        }
 
         if (transaction.phase === "compensating") {
           if (receipts.currencyApplied) {
@@ -726,39 +741,15 @@ export class TradeTransactionService {
             row.phase = "currency-compensated";
             row.compensation ??= { attempts: 1, error: null };
             row.compensation.phase = "currency-compensated";
-            if (identity.needsRepair) {
-              row.item.itemId = identity.itemId;
-              row.item.itemUuid = identity.itemUuid;
-            }
           }, {
             status: TRADE_TRANSACTION_STATUS.COMPENSATING,
-            phase: "currency-compensated",
-            matches: (row) => row?.status === TRADE_TRANSACTION_STATUS.COMPENSATING
-              && row?.phase === "currency-compensated"
-              && (!identity.needsRepair
-                || (row.item?.itemId === identity.itemId
-                  && row.item?.itemUuid === identity.itemUuid))
+            phase: "currency-compensated"
           });
           recoveryAttempts = 0;
           continue;
         }
 
         if (transaction.phase === "currency-compensated") {
-          if (identity.needsRepair) {
-            await this.#checkpoint(transactionId, (row) => {
-              row.item.itemId = identity.itemId;
-              row.item.itemUuid = identity.itemUuid;
-            }, {
-              status: TRADE_TRANSACTION_STATUS.COMPENSATING,
-              phase: "currency-compensated",
-              matches: (row) => row?.status === TRADE_TRANSACTION_STATUS.COMPENSATING
-                && row?.phase === "currency-compensated"
-                && row.item?.itemId === identity.itemId
-                && row.item?.itemUuid === identity.itemUuid
-            });
-            recoveryAttempts = 0;
-            continue;
-          }
           if (receipts.itemApplied) {
             try {
               await this.#operations.compensatePurchaseItem(clone(transaction));

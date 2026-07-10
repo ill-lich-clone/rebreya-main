@@ -187,6 +187,8 @@ function createOperations({
   };
   const trace = [];
   const currencyTransactions = [];
+  const compensatedCurrencyTransactions = [];
+  const compensatedItemTransactions = [];
   const receipts = new Map(Object.entries(initialReceipts).map(([transactionId, value]) => [
     transactionId,
     {
@@ -265,6 +267,7 @@ function createOperations({
     async compensatePurchaseCurrency(transaction) {
       counters.compensateCurrency += 1;
       trace.push("compensate-currency");
+      compensatedCurrencyTransactions.push(clone(transaction));
       maybeFail("compensate-currency");
       receiptFor(transaction.transactionId).currencyApplied = false;
       maybeFailAfterEffect("compensate-currency");
@@ -272,6 +275,7 @@ function createOperations({
     async compensatePurchaseItem(transaction) {
       counters.compensateItem += 1;
       trace.push("compensate-item");
+      compensatedItemTransactions.push(clone(transaction));
       maybeFail("compensate-item");
       receiptFor(transaction.transactionId).itemApplied = false;
       maybeFailAfterEffect("compensate-item");
@@ -279,6 +283,8 @@ function createOperations({
   };
 
   return {
+    compensatedCurrencyTransactions,
+    compensatedItemTransactions,
     counters,
     currencyTransactions,
     operations,
@@ -1351,5 +1357,81 @@ test("created item identity survives compensation after its receipt clears", asy
     harness.receiptFor(REQUEST.transactionId).itemUuid,
     "Actor.actor-a.Item.created-item-sword"
   );
+  assert.equal(stockQuantity(harness), 1);
+});
+
+test("compensation checkpoints created identity before a failing currency reversal", async () => {
+  const row = buildTransaction({
+    status: TRADE_TRANSACTION_STATUS.COMPENSATING,
+    phase: "compensating",
+    error: { code: "apply-currency-failed", message: "currency failed", phase: "item-applied" },
+    compensation: { phase: "pending", attempts: 1, error: null }
+  });
+  row.item = buildCreatedDescriptor().item;
+  const harness = createHarness({
+    state: buildState({ stockQuantity: 0, tradeLog: [row] }),
+    operationsOptions: {
+      failures: { "compensate-currency": 1 },
+      initialReceipts: {
+        [REQUEST.transactionId]: {
+          itemApplied: true,
+          currencyApplied: true,
+          itemId: "created-before-compensation",
+          itemUuid: "Actor.actor-a.Item.created-before-compensation"
+        }
+      }
+    }
+  });
+
+  await assert.rejects(
+    harness.service.purchase({ ...REQUEST }),
+    (error) => assertTradeError(error, "reconciliation-required")
+  );
+
+  const durable = findTransaction(harness);
+  assert.equal(durable.status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+  assert.equal(durable.item.itemId, "created-before-compensation");
+  assert.equal(durable.item.itemUuid, "Actor.actor-a.Item.created-before-compensation");
+  assert.equal(harness.compensatedCurrencyTransactions.length, 1);
+  assert.equal(
+    harness.compensatedCurrencyTransactions[0].item.itemId,
+    "created-before-compensation"
+  );
+  assert.equal(harness.counters.compensateItem, 0);
+  assert.deepEqual(harness.receiptFor(REQUEST.transactionId), {
+    itemApplied: true,
+    currencyApplied: true,
+    itemId: "created-before-compensation",
+    itemUuid: "Actor.actor-a.Item.created-before-compensation"
+  });
+  assert.equal(stockQuantity(harness), 0);
+});
+
+test("an ambiguous created item application compensates with its persisted receipt identity", async () => {
+  const harness = createHarness({
+    operationsOptions: {
+      descriptorFactory: (request) => buildCreatedDescriptor(request),
+      afterEffectFailures: { "apply-item": 1 }
+    }
+  });
+
+  await assert.rejects(
+    harness.service.purchase({ ...REQUEST }),
+    (error) => assertTradeError(error, "transaction-compensated")
+  );
+
+  const row = findTransaction(harness);
+  assert.equal(row.status, TRADE_TRANSACTION_STATUS.COMPENSATED);
+  assert.equal(row.item.itemId, "created-item-sword");
+  assert.equal(row.item.itemUuid, "Actor.actor-a.Item.created-item-sword");
+  assert.equal(harness.counters.compensateCurrency, 0);
+  assert.equal(harness.counters.compensateItem, 1);
+  assert.equal(harness.compensatedItemTransactions[0].item.itemId, "created-item-sword");
+  assert.equal(
+    harness.compensatedItemTransactions[0].item.itemUuid,
+    "Actor.actor-a.Item.created-item-sword"
+  );
+  assert.equal(harness.receiptFor(REQUEST.transactionId).itemApplied, false);
+  assert.equal(harness.receiptFor(REQUEST.transactionId).itemId, "created-item-sword");
   assert.equal(stockQuantity(harness), 1);
 });
