@@ -12,7 +12,8 @@ export function registerCombatHooks(moduleApi) {
   const hasAttackRollBoostService = Boolean(moduleApi?.attackRollBoostService);
   const hasPerformerService = Boolean(moduleApi?.performerAutomationService);
   const hasEnvironmentService = Boolean(moduleApi?.environmentAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasEnvironmentService) {
+  const hasSpellService = Boolean(moduleApi?.spellAutomationService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasEnvironmentService && !hasSpellService) {
     return;
   }
 
@@ -149,6 +150,18 @@ export function registerCombatHooks(moduleApi) {
         if (
           hasPerformerService
           && moduleApi.performerAutomationService.applyDnd5ePreUseActivity(
+            activity,
+            usageConfig,
+            dialogConfig,
+            messageConfig
+          ) === false
+        ) {
+          return false;
+        }
+
+        if (
+          hasSpellService
+          && moduleApi.spellAutomationService.deferDnd5ePreUseActivity(
             activity,
             usageConfig,
             dialogConfig,
@@ -297,6 +310,35 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to update Rebreya environment before attack roll.`, error);
       }
       return true;
+    });
+  }
+
+  if (!hasAttackService && hasSpellService) {
+    Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
+      try {
+        return moduleApi.spellAutomationService.deferDnd5ePreUseActivity(
+          activity,
+          usageConfig,
+          dialogConfig,
+          messageConfig
+        );
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply spell reaction automation.`, error);
+        return true;
+      }
+    });
+  }
+
+  if (hasSpellService) {
+    Hooks.on("midi-qol.preItemRoll", async (workflow) => {
+      try {
+        return await moduleApi.spellAutomationService.applyMidiWorkflow(workflow);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply MIDI spell reaction automation.`, error);
+        return true;
+      }
     });
   }
 

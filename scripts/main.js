@@ -51,6 +51,7 @@ import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.93-firearm-item-sheet-no-rerender";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.93-firearm-card-notes";
+import { SpellAutomationService } from "./combat/spell-automation-service.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.93-surrounded-ac";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.93";
@@ -546,6 +547,7 @@ export class RebreyaMainModule {
     this.globalEventsService = new GlobalEventsService(this);
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
+    this.spellAutomationService = new SpellAutomationService(this);
     this.attackRollBoostService = new AttackRollBoostService(this);
     this.environmentAutomationService = new EnvironmentAutomationService(this);
     this.fighterAutomationService = new FighterAutomationService(this);
@@ -655,6 +657,13 @@ export class RebreyaMainModule {
     }
 
     try {
+      await this.spellAutomationService.initialize();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to initialize spell reaction automation.`, error);
+    }
+
+    try {
       await this.fighterAutomationService.initialize();
     }
     catch (error) {
@@ -692,6 +701,10 @@ export class RebreyaMainModule {
 
   async handleSocketMessage(message) {
     if (!message || typeof message !== "object") {
+      return;
+    }
+
+    if (await this.spellAutomationService.handleSocketMessage(message)) {
       return;
     }
 
