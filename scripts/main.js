@@ -13,11 +13,22 @@ import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js";
 import { TraderService } from "./data/trader-service.js";
-import { GroupContextService } from "./data/group-context-service.js";
+import {
+  GroupContextService,
+  buildDefaultGroupState,
+  getGroupMemberActors,
+  isManagedPartyGroup,
+  normalizeGroupRegistry,
+  normalizeGroupState
+} from "./data/group-context-service.js";
 import { RebreyaQuestLogService } from "./data/quest-log-service.js";
 import { DowntimeService } from "./data/downtime-service.js";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js";
-import { TravelService } from "./data/travel-service.js";
+import {
+  GROUP_TRAVEL_REPLACE_STATE_COMMAND,
+  TravelService,
+  normalizeTravelState
+} from "./data/travel-service.js";
 import { TravelMapService } from "./data/travel-map-service.js";
 import {
   InventoryService,
@@ -31,7 +42,11 @@ import {
 import { HeroDollService } from "./data/hero-doll-service.js";
 import { CraftingService } from "./data/crafting-service.js";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.93-item-upgrades";
-import { CalendarService } from "./data/calendar-service.js";
+import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
+import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
+import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
+import { isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
+import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.93-firearm-item-sheet-no-rerender";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.93-firearm-card-notes";
@@ -67,7 +82,6 @@ import {
   SOCKET_EVENT_SET_SETTING,
   SOCKET_EVENT_SET_SETTING_RESULT,
   handleSettingsUpdateSocketResponse,
-  requestSettingsUpdate,
   registerSettings
 } from "./settings.js";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js";
@@ -97,6 +111,7 @@ const MODULE_STYLE_VERSION = "1.4.93-item-upgrade-row-drop";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
+const COSMOLOGY_SET_MECHANUS_COMMAND = "cosmology.setMechanus";
 let socketModuleApi = null;
 const queuedSocketMessages = [];
 
@@ -361,6 +376,74 @@ function normalizeTimeOfDaySeconds(seconds) {
   return ((safeSeconds % SECONDS_PER_DAY) + SECONDS_PER_DAY) % SECONDS_PER_DAY;
 }
 
+function isPlainObject(value) {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function hasExactKeys(value, expectedKeys) {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  const actualKeys = Object.keys(value).sort();
+  return actualKeys.length === expectedKeys.length
+    && actualKeys.every((key, index) => key === expectedKeys[index]);
+}
+
+function isValidIsoDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value) || value.startsWith("0000-")) {
+    return false;
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function isValidCalendarPatchPayload(payload) {
+  if (!hasExactKeys(payload, ["groupActorId", "patch"])) {
+    return false;
+  }
+  if (typeof payload.groupActorId !== "string" || !payload.groupActorId.trim() || !isPlainObject(payload.patch)) {
+    return false;
+  }
+  const patchKeys = Object.keys(payload.patch).sort();
+  if (!patchKeys.length || patchKeys.some((key) => key !== "isoDate" && key !== "timeOfDaySeconds")) {
+    return false;
+  }
+  if (patchKeys.includes("isoDate") && !isValidIsoDate(payload.patch.isoDate)) {
+    return false;
+  }
+  return !patchKeys.includes("timeOfDaySeconds")
+    || (Number.isInteger(payload.patch.timeOfDaySeconds)
+      && payload.patch.timeOfDaySeconds >= 0
+      && payload.patch.timeOfDaySeconds <= 86399);
+}
+
+function isValidTravelReplacePayload(payload) {
+  return hasExactKeys(payload, ["groupActorId", "travelState"])
+    && typeof payload.groupActorId === "string"
+    && payload.groupActorId.trim().length > 0
+    && isPlainObject(payload.travelState);
+}
+
+function isValidMechanusPayload(payload) {
+  return hasExactKeys(payload, ["enabled"])
+    && typeof payload.enabled === "boolean";
+}
+
+function actorIsOwnedByUser(actor, user) {
+  if (actor?.type !== "character" || !user) {
+    return false;
+  }
+  if (typeof actor.testUserPermission === "function") {
+    return actor.testUserPermission(user, "OWNER");
+  }
+  const ownership = actor.ownership ?? actor._source?.ownership ?? {};
+  return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
+}
+
 function filterVisibleGlobalEvents(events = []) {
   const rows = Array.isArray(events) ? events : [];
   if (game.user?.isGM) {
@@ -377,6 +460,18 @@ function filterVisibleGlobalEvents(events = []) {
 
 export class RebreyaMainModule {
   constructor() {
+    this.worldMutationCoordinator = new WorldMutationCoordinator();
+    this.groupStateRepository = new GroupStateRepository({
+      coordinator: this.worldMutationCoordinator,
+      gameProvider: () => globalThis.game,
+      normalizeRegistry: normalizeGroupRegistry,
+      normalizeGroupState,
+      buildDefaultGroupState
+    });
+    this.socketCommandBus = new SocketCommandBus({
+      coordinator: this.worldMutationCoordinator,
+      gameProvider: () => globalThis.game
+    });
     this.repository = new EconomyRepository();
     this.materialsCompendium = new MaterialsCompendiumService();
     this.gearCompendium = new GearCompendiumService();
@@ -389,17 +484,26 @@ export class RebreyaMainModule {
     this.actionsCompendium = new ActionsCompendiumService();
     this.downtimeCompendium = new DowntimeCompendiumService();
     this.traderService = new TraderService(this);
-    this.groupContextService = new GroupContextService(this);
+    this.groupContextService = new GroupContextService({
+      coordinator: this.worldMutationCoordinator,
+      groupStateRepository: this.groupStateRepository
+    });
     this.questLogService = new RebreyaQuestLogService({ groupContextService: this.groupContextService });
     this.downtimeService = new DowntimeService(this);
     this.characterDowntimeService = new CharacterDowntimeService(this);
-    this.travelService = new TravelService({ groupContextService: this.groupContextService });
+    this.travelService = new TravelService({
+      groupContextService: this.groupContextService,
+      commandBus: this.socketCommandBus
+    });
     this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
     this.heroDollService = new HeroDollService(this);
     this.craftingService = new CraftingService(this);
     this.itemUpgradeService = new ItemUpgradeService(this);
-    this.calendarService = new CalendarService({ groupContextService: this.groupContextService });
+    this.calendarService = new CalendarService({
+      groupContextService: this.groupContextService,
+      commandBus: this.socketCommandBus
+    });
     this.globalEventsService = new GlobalEventsService(this);
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
@@ -427,6 +531,47 @@ export class RebreyaMainModule {
     this.traderV2Apps = new Map();
     this.tradeRouteApps = new Map();
     this.referenceApps = new Map();
+    this.#registerTypedSocketCommands();
+  }
+
+  #registerTypedSocketCommands() {
+    const authorizeGroup = (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId);
+    this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
+      validate: isValidCalendarPatchPayload,
+      authorize: authorizeGroup,
+      execute: (payload) => this.calendarService.patchGroupCalendar(payload.groupActorId, payload.patch)
+    });
+    this.socketCommandBus.register(GROUP_TRAVEL_REPLACE_STATE_COMMAND, {
+      validate: isValidTravelReplacePayload,
+      authorize: authorizeGroup,
+      execute: (payload) => this.travelService.replaceGroupTravelState(
+        payload.groupActorId,
+        normalizeTravelState(payload.travelState)
+      )
+    });
+    this.socketCommandBus.register(COSMOLOGY_SET_MECHANUS_COMMAND, {
+      validate: isValidMechanusPayload,
+      authorize: (_payload, { sender }) => sender?.isGM === true,
+      execute: (payload) => this.#commitMechanusEnabled(payload.enabled)
+    });
+  }
+
+  #canSenderManageGroup(sender, groupActorId) {
+    const normalizedGroupActorId = String(groupActorId ?? "").trim();
+    const groupActor = globalThis.game?.actors?.get?.(normalizedGroupActorId)
+      ?? globalThis.game?.actors?.contents?.find?.((actor) => String(actor?.id) === normalizedGroupActorId)
+      ?? null;
+    if (!isManagedPartyGroup(groupActor)) {
+      return false;
+    }
+    const registry = this.groupContextService.getRegistry();
+    if (!registry.groupsById[normalizedGroupActorId]) {
+      return false;
+    }
+    if (sender?.isGM) {
+      return true;
+    }
+    return getGroupMemberActors(groupActor).some((actor) => actorIsOwnedByUser(actor, sender));
   }
 
   async initialize() {
@@ -508,6 +653,10 @@ export class RebreyaMainModule {
 
   async handleSocketMessage(message) {
     if (!message || typeof message !== "object") {
+      return;
+    }
+
+    if (this.socketCommandBus.handleMessage(message)) {
       return;
     }
 
@@ -766,37 +915,18 @@ export class RebreyaMainModule {
     }
 
     if (message.type === SOCKET_EVENT_SET_SETTING) {
-      if (game.user?.isGM) {
+      if (isActiveGmClient(game)) {
         const requestId = String(message.requestId ?? "").trim();
         const forUserId = String(message.senderId ?? "").trim();
-        try {
-          await game.settings.set(MODULE_ID, String(message.key ?? ""), message.data, message.options ?? {});
-          await this.refreshOpenApps();
-          if (requestId) {
-            game.socket?.emit?.(SOCKET_CHANNEL, {
-              type: SOCKET_EVENT_SET_SETTING_RESULT,
-              requestId,
-              forUserId,
-              senderId: game.user?.id ?? "",
-              ok: true,
-              data: cloneSocketPayload(message.data)
-            });
-          }
-        }
-        catch (error) {
-          if (requestId) {
-            game.socket?.emit?.(SOCKET_CHANNEL, {
-              type: SOCKET_EVENT_SET_SETTING_RESULT,
-              requestId,
-              forUserId,
-              senderId: game.user?.id ?? "",
-              ok: false,
-              error: error?.message ?? String(error)
-            });
-          }
-          else {
-            throw error;
-          }
+        if (requestId) {
+          game.socket?.emit?.(SOCKET_CHANNEL, {
+            type: SOCKET_EVENT_SET_SETTING_RESULT,
+            requestId,
+            forUserId,
+            senderId: game.user?.id ?? "",
+            ok: false,
+            errorCode: "raw-setting-disabled"
+          });
         }
       }
       return;
@@ -3176,13 +3306,25 @@ export class RebreyaMainModule {
       throw new Error("Окно космологии доступно только мастеру.");
     }
 
+    if (!isActiveGmClient(game)) {
+      const nextState = await this.socketCommandBus.request(COSMOLOGY_SET_MECHANUS_COMMAND, {
+        enabled: enabled === true
+      });
+      await this.refreshOpenApps();
+      return nextState;
+    }
+
+    return this.#commitMechanusEnabled(enabled === true);
+  }
+
+  async #commitMechanusEnabled(enabled) {
     const nextState = {
       ...this.getCosmologyState(),
       version: 1,
       mechanusEnabled: enabled === true
     };
 
-    await requestSettingsUpdate(SETTINGS_KEYS.COSMOLOGY_STATE, nextState);
+    await game.settings.set(MODULE_ID, SETTINGS_KEYS.COSMOLOGY_STATE, nextState);
     await this.refreshOpenApps();
     return nextState;
   }

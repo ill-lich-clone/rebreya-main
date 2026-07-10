@@ -1,5 +1,8 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
-import { GROUP_CONTEXT_ERRORS, normalizeGroupState } from "./group-context-service.js";
+import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+
+export const GROUP_CALENDAR_PATCH_COMMAND = "group.calendar.patch";
 
 const WEEKDAY_HEADERS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const MOON_CYCLE_DAYS = 28.8;
@@ -161,7 +164,7 @@ function buildDefaultState() {
   };
 }
 
-function normalizeCalendarState(value = {}, fallback = buildDefaultState()) {
+export function normalizeCalendarState(value = {}, fallback = buildDefaultState()) {
   const source = asObject(value);
   const fallbackState = asObject(fallback);
   const sourceDate = parseIsoDate(source.isoDate);
@@ -279,8 +282,9 @@ function buildCalendarCells(date) {
 }
 
 export class CalendarService {
-  constructor({ groupContextService = null } = {}) {
+  constructor({ groupContextService = null, commandBus = null } = {}) {
     this.groupContextService = groupContextService;
+    this.commandBus = commandBus;
   }
 
   setGroupContextService(groupContextService) {
@@ -328,17 +332,46 @@ export class CalendarService {
     };
   }
 
+  patchGroupCalendar(groupActorId, patch = {}) {
+    if (!this.groupContextService?.mutateGroupState) {
+      throw new Error("Group context service is unavailable.");
+    }
+
+    const worldState = this.#getWorldState();
+    return this.groupContextService.mutateGroupState(groupActorId, (groupState) => {
+      const currentState = normalizeCalendarState(groupState.calendar, worldState);
+      const nextState = normalizeCalendarState({ ...currentState, ...clone(patch) }, currentState);
+      groupState.calendar = clone(nextState);
+      return nextState;
+    });
+  }
+
   async #setState(scope, nextState) {
     const state = normalizeCalendarState(nextState);
 
     if (scope?.type === "group" && scope.groupId && this.groupContextService) {
-      const registry = this.groupContextService.getRegistry();
-      registry.groupsById[scope.groupId] = {
-        ...normalizeGroupState(scope.groupId, registry.groupsById[scope.groupId] ?? {}),
-        calendar: clone(state)
-      };
-      await this.groupContextService.setRegistry(registry);
-      return state;
+      const currentState = normalizeCalendarState(scope.state);
+      const patch = {};
+      if (state.isoDate !== currentState.isoDate) {
+        patch.isoDate = state.isoDate;
+      }
+      if (state.timeOfDaySeconds !== currentState.timeOfDaySeconds) {
+        patch.timeOfDaySeconds = state.timeOfDaySeconds;
+      }
+      if (!Object.keys(patch).length) {
+        return currentState;
+      }
+
+      const committedState = isActiveGmClient(globalThis.game)
+        ? await this.patchGroupCalendar(scope.groupId, patch)
+        : await this.commandBus?.request?.(GROUP_CALENDAR_PATCH_COMMAND, {
+          groupActorId: scope.groupId,
+          patch
+        });
+      if (!committedState) {
+        throw new Error("Calendar command bus is unavailable.");
+      }
+      return normalizeCalendarState(committedState, currentState);
     }
 
     await globalThis.game?.settings?.set?.(MODULE_ID, SETTINGS_KEYS.CALENDAR_STATE, state);
@@ -386,35 +419,35 @@ export class CalendarService {
       throw new Error("Некорректная дата календаря.");
     }
 
-    await this.#setState(scope, {
+    const committedState = await this.#setState(scope, {
       version: 1,
       isoDate: toIsoDate(date),
       timeOfDaySeconds: resolveTimeOfDaySeconds(scope.state, options)
     });
 
-    return this.getSnapshot();
+    return this.#buildSnapshot(committedState);
   }
 
   async setTimeOfDaySeconds(seconds) {
     const scope = this.#getStateScope();
-    await this.#setState(scope, {
+    const committedState = await this.#setState(scope, {
       version: 1,
       isoDate: scope.state.isoDate,
       timeOfDaySeconds: normalizeTimeOfDaySeconds(seconds, scope.state.timeOfDaySeconds ?? 0)
     });
 
-    return this.getSnapshot();
+    return this.#buildSnapshot(committedState);
   }
 
   async setTimeOfDay(options = {}) {
     const scope = this.#getStateScope();
-    await this.#setState(scope, {
+    const committedState = await this.#setState(scope, {
       version: 1,
       isoDate: scope.state.isoDate,
       timeOfDaySeconds: resolveTimeOfDaySeconds(scope.state, options)
     });
 
-    return this.getSnapshot();
+    return this.#buildSnapshot(committedState);
   }
 
   async shiftDays(days) {
@@ -425,7 +458,7 @@ export class CalendarService {
     const toDate = new Date(fromDate.getTime());
     toDate.setUTCDate(toDate.getUTCDate() + safeDays);
 
-    await this.#setState(scope, {
+    const committedState = await this.#setState(scope, {
       version: 1,
       isoDate: toIsoDate(toDate),
       timeOfDaySeconds: state.timeOfDaySeconds
@@ -436,7 +469,7 @@ export class CalendarService {
         isoDate: toIsoDate(fromDate),
         timeOfDaySeconds: state.timeOfDaySeconds
       }),
-      to: this.getSnapshot(),
+      to: this.#buildSnapshot(committedState),
       daysAdvanced: safeDays
     };
   }
@@ -460,7 +493,7 @@ export class CalendarService {
     toDate.setUTCMonth(toDate.getUTCMonth() + safeMonths);
     const daysAdvanced = Math.max(0, Math.round((toDate.getTime() - fromDate.getTime()) / 86400000));
 
-    await this.#setState(scope, {
+    const committedState = await this.#setState(scope, {
       version: 1,
       isoDate: toIsoDate(toDate),
       timeOfDaySeconds: state.timeOfDaySeconds
@@ -471,7 +504,7 @@ export class CalendarService {
         isoDate: toIsoDate(fromDate),
         timeOfDaySeconds: state.timeOfDaySeconds
       }),
-      to: this.getSnapshot(),
+      to: this.#buildSnapshot(committedState),
       daysAdvanced
     };
   }

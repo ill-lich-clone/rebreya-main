@@ -1,9 +1,6 @@
-import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../constants.js";
-import { requestSettingsUpdate } from "../settings.js";
+import { MODULE_ID, REBREYA_GROUP_FLAGS } from "../constants.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { GroupStateRepository } from "../infrastructure/foundry/group-state-repository.js";
-
-const groupStateCoordinator = new WorldMutationCoordinator();
 
 export const GROUP_CONTEXT_ERRORS = Object.freeze({
   GROUP_NOT_FOUND: "Группа Rebreya не найдена.",
@@ -250,9 +247,9 @@ export function normalizeGroupRegistry(value = {}) {
   };
 }
 
-function createDefaultGroupStateRepository() {
+function createDefaultGroupStateRepository(coordinator = new WorldMutationCoordinator()) {
   return new GroupStateRepository({
-    coordinator: groupStateCoordinator,
+    coordinator,
     gameProvider: () => globalThis.game,
     normalizeRegistry: normalizeGroupRegistry,
     normalizeGroupState,
@@ -304,22 +301,30 @@ export class GroupContextService {
   #groupStateRepository;
 
   constructor(options = {}) {
-    this.#groupStateRepository = options?.groupStateRepository ?? createDefaultGroupStateRepository();
+    this.#groupStateRepository = options?.groupStateRepository
+      ?? createDefaultGroupStateRepository(options?.coordinator);
   }
 
   getRegistry() {
     return this.#groupStateRepository.read();
   }
 
+  /**
+   * @deprecated Stale-unsafe whole-registry replacement for GM compatibility callers only.
+   */
   async setRegistry(value) {
-    const registry = normalizeGroupRegistry(value);
-
-    if (globalThis.game?.user?.isGM) {
-      return this.#groupStateRepository.replaceRegistry(registry);
+    if (!globalThis.game?.user?.isGM) {
+      const error = new Error("raw-setting-disabled");
+      error.code = "raw-setting-disabled";
+      throw error;
     }
 
-    await requestSettingsUpdate(SETTINGS_KEYS.GROUP_STATE, registry);
-    return registry;
+    const registry = normalizeGroupRegistry(value);
+    return this.#groupStateRepository.replaceRegistry(registry);
+  }
+
+  mutateGroupState(groupActorId, mutator, options) {
+    return this.#groupStateRepository.mutateGroupState(groupActorId, mutator, options);
   }
 
   getManagedGroupActors({ includeUnregistered = false } = {}) {

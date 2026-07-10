@@ -32,7 +32,7 @@ function withCalendarHarness(state, callback) {
     }
   };
   globalThis.game = {
-    user: { isGM: true },
+    user: { id: "gm", isGM: true, active: true },
     actors: {
       contents: [groupActor],
       get(id) {
@@ -157,4 +157,97 @@ test("calendar service stores time of day inside the active group calendar", asy
     assert.equal(setDate.isoDate, "1200-02-03");
     assert.equal(setDate.timeOfDaySeconds, 86399);
   });
+});
+
+test("calendar service concurrent date and time patches preserve both latest fields", async () => {
+  const state = {
+    [SETTINGS_KEYS.CALENDAR_STATE]: { version: 1, isoDate: "1300-01-01", timeOfDaySeconds: 0 },
+    [SETTINGS_KEYS.GROUP_STATE]: {
+      version: 1,
+      activeGroupActorId: "group-a",
+      groupsById: {
+        "group-a": {
+          version: 1,
+          groupActorId: "group-a",
+          calendar: { version: 1, isoDate: "1200-01-01", timeOfDaySeconds: 3600 }
+        }
+      }
+    }
+  };
+
+  await withCalendarHarness(state, async ({ calendarService, state: storedState }) => {
+    await Promise.all([
+      calendarService.setDate(1200, 2, 3),
+      calendarService.setTimeOfDaySeconds(86399)
+    ]);
+
+    assert.deepEqual(
+      storedState[SETTINGS_KEYS.GROUP_STATE].groupsById["group-a"].calendar,
+      { version: 1, isoDate: "1200-02-03", timeOfDaySeconds: 86399 }
+    );
+  });
+});
+
+test("calendar service sends only changed fields and builds its snapshot from the command result", async () => {
+  const previousGame = globalThis.game;
+  const player = { id: "player", isGM: false, active: true };
+  const gm = { id: "gm", isGM: true, active: true };
+  const users = new Map([[player.id, player], [gm.id, gm]]);
+  users.contents = [player, gm];
+  users.activeGM = gm;
+  globalThis.game = {
+    user: player,
+    users,
+    settings: {
+      get() {
+        return { version: 1, isoDate: "1300-01-01", timeOfDaySeconds: 0 };
+      }
+    }
+  };
+  const requests = [];
+  const commandResults = [
+    { version: 1, isoDate: "1200-02-03", timeOfDaySeconds: 3600 },
+    { version: 1, isoDate: "1200-01-01", timeOfDaySeconds: 86399 }
+  ];
+  const groupContextService = {
+    resolveForCurrentUser() {
+      return {
+        groupId: "group-a",
+        canManage: true,
+        groupState: {
+          calendar: { version: 1, isoDate: "1200-01-01", timeOfDaySeconds: 3600 }
+        }
+      };
+    }
+  };
+  const commandBus = {
+    async request(command, payload) {
+      requests.push({ command, payload: clone(payload) });
+      return commandResults[requests.length - 1];
+    }
+  };
+
+  try {
+    const service = new CalendarService({ groupContextService, commandBus });
+    const dateSnapshot = await service.setDate(1200, 2, 3);
+    const timeSnapshot = await service.setTimeOfDaySeconds(86399);
+
+    assert.deepEqual(requests, [
+      {
+        command: "group.calendar.patch",
+        payload: { groupActorId: "group-a", patch: { isoDate: "1200-02-03" } }
+      },
+      {
+        command: "group.calendar.patch",
+        payload: { groupActorId: "group-a", patch: { timeOfDaySeconds: 86399 } }
+      }
+    ]);
+    assert.equal(dateSnapshot.isoDate, "1200-02-03");
+    assert.equal(dateSnapshot.timeOfDaySeconds, 3600);
+    assert.equal(timeSnapshot.isoDate, "1200-01-01");
+    assert.equal(timeSnapshot.timeOfDaySeconds, 86399);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
 });

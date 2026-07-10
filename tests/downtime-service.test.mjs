@@ -2977,7 +2977,7 @@ test("RebreyaMainModule refreshes open actor sheets after downtime mutations", a
   }
 });
 
-test("RebreyaMainModule applies setSetting socket messages on the GM client", async () => {
+test("RebreyaMainModule rejects setSetting socket messages on the active GM client", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   globalThis.Hooks = {
@@ -2988,7 +2988,8 @@ test("RebreyaMainModule applies setSetting socket messages on the GM client", as
   globalThis.game = {
     user: {
       id: "gm",
-      isGM: true
+      isGM: true,
+      active: true
     },
     settings: {
       async set(moduleId, key, value, options) {
@@ -3025,16 +3026,8 @@ test("RebreyaMainModule applies setSetting socket messages on the GM client", as
       requestId: "settings-test-1"
     });
 
-    assert.deepEqual(settingsStore[`${MODULE_ID}.${SETTINGS_KEYS.GROUP_STATE}`], {
-      value: {
-        version: 1,
-        groupsById: {}
-      },
-      options: {
-        render: false
-      }
-    });
-    assert.equal(refreshCount, 1);
+    assert.deepEqual(settingsStore, {});
+    assert.equal(refreshCount, 0);
     assert.deepEqual(emitted, [[
       `module.${MODULE_ID}`,
       {
@@ -3042,11 +3035,8 @@ test("RebreyaMainModule applies setSetting socket messages on the GM client", as
         requestId: "settings-test-1",
         forUserId: "player-1",
         senderId: "gm",
-        ok: true,
-        data: {
-          version: 1,
-          groupsById: {}
-        }
+        ok: false,
+        errorCode: "raw-setting-disabled"
       }
     ]]);
   }

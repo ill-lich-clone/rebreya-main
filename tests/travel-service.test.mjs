@@ -9,7 +9,8 @@ import {
   buildTravelSnapshot,
   normalizeLocationName,
   normalizeTravelNetwork,
-  normalizeTravelState
+  normalizeTravelState,
+  TravelService
 } from "../scripts/data/travel-service.js";
 
 const network = Object.freeze({
@@ -332,4 +333,53 @@ test("buildTravelMapPosition follows route points and scales them to the world m
   assert.equal(position.sceneX, 20);
   assert.equal(position.sceneY, 5);
   assert.equal(position.routeId, "bc");
+});
+
+test("TravelService sends normalized replacement and builds its snapshot from the command result", async () => {
+  const previousGame = globalThis.game;
+  const player = { id: "player", isGM: false, active: true };
+  const gm = { id: "gm", isGM: true, active: true };
+  const users = new Map([[player.id, player], [gm.id, gm]]);
+  users.contents = [player, gm];
+  users.activeGM = gm;
+  globalThis.game = { user: player, users };
+  const requests = [];
+  const committedState = normalizeTravelState({
+    originCityId: "a",
+    destinationCityId: "c",
+    mode: "land",
+    traveledMiles: 0
+  });
+  const groupContextService = {
+    resolveForCurrentUser() {
+      return {
+        groupId: "group-a",
+        canManage: true,
+        groupState: { travelState: normalizeTravelState({}) }
+      };
+    }
+  };
+  const commandBus = {
+    async request(command, payload) {
+      requests.push({ command, payload });
+      return committedState;
+    }
+  };
+
+  try {
+    const service = new TravelService({ groupContextService, commandBus });
+    service.networkPromise = Promise.resolve(normalizeTravelNetwork(network));
+    const snapshot = await service.setRoute({ originCityId: "a", destinationCityId: "c", mode: "land" });
+
+    assert.deepEqual(requests, [{
+      command: "group.travel.replaceState",
+      payload: { groupActorId: "group-a", travelState: committedState }
+    }]);
+    assert.equal(snapshot.originCityId, "a");
+    assert.equal(snapshot.destinationCityId, "c");
+    assert.equal(snapshot.plan.available, true);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
 });

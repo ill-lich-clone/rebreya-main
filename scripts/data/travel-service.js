@@ -1,5 +1,8 @@
 import { MODULE_ID } from "../constants.js";
-import { GROUP_CONTEXT_ERRORS, normalizeGroupState } from "./group-context-service.js";
+import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+
+export const GROUP_TRAVEL_REPLACE_STATE_COMMAND = "group.travel.replaceState";
 
 const TRAVEL_NETWORK_PATH = `modules/${MODULE_ID}/data/travel-network.json`;
 const CANONICAL_CITY_CONNECTIONS_PATH = `modules/${MODULE_ID}/data/cities.json`;
@@ -978,8 +981,9 @@ export function buildTravelSnapshot(rawNetwork = {}, rawState = {}, { warning = 
 }
 
 export class TravelService {
-  constructor({ groupContextService = null, networkPath = TRAVEL_NETWORK_PATH, citiesPath = CANONICAL_CITY_CONNECTIONS_PATH } = {}) {
+  constructor({ groupContextService = null, commandBus = null, networkPath = TRAVEL_NETWORK_PATH, citiesPath = CANONICAL_CITY_CONNECTIONS_PATH } = {}) {
     this.groupContextService = groupContextService;
+    this.commandBus = commandBus;
     this.networkPath = networkPath;
     this.citiesPath = citiesPath;
     this.networkPromise = null;
@@ -1032,13 +1036,29 @@ export class TravelService {
       throw new Error("Путешествием управляют участники группы или мастер.");
     }
 
-    const registry = this.groupContextService.getRegistry();
-    registry.groupsById[context.groupId] = {
-      ...normalizeGroupState(context.groupId, registry.groupsById[context.groupId] ?? {}),
-      travelState: clone(normalizeTravelState(nextState))
-    };
-    await this.groupContextService.setRegistry(registry);
-    return normalizeTravelState(nextState);
+    const travelState = normalizeTravelState(nextState);
+    const committedState = isActiveGmClient(globalThis.game)
+      ? await this.replaceGroupTravelState(context.groupId, travelState)
+      : await this.commandBus?.request?.(GROUP_TRAVEL_REPLACE_STATE_COMMAND, {
+        groupActorId: context.groupId,
+        travelState
+      });
+    if (!committedState) {
+      throw new Error("Travel command bus is unavailable.");
+    }
+    return normalizeTravelState(committedState);
+  }
+
+  replaceGroupTravelState(groupActorId, nextState) {
+    if (!this.groupContextService?.mutateGroupState) {
+      throw new Error("Group context service is unavailable.");
+    }
+
+    const travelState = normalizeTravelState(nextState);
+    return this.groupContextService.mutateGroupState(groupActorId, (groupState) => {
+      groupState.travelState = clone(travelState);
+      return travelState;
+    });
   }
 
   async getSnapshot() {
@@ -1073,14 +1093,20 @@ export class TravelService {
       mode,
       traveledMiles: 0
     });
-    await this.#writeGroupTravelState(context, nextState);
-    return this.getSnapshot();
+    const committedState = await this.#writeGroupTravelState(context, nextState);
+    const network = await this.#loadNetwork();
+    return buildTravelSnapshot(network, committedState, {
+      canAdvance: Boolean(context?.canManage)
+    });
   }
 
   async clearRoute() {
     const context = this.#getCurrentGroupContext();
-    await this.#writeGroupTravelState(context, normalizeTravelState({}));
-    return this.getSnapshot();
+    const committedState = await this.#writeGroupTravelState(context, normalizeTravelState({}));
+    const network = await this.#loadNetwork();
+    return buildTravelSnapshot(network, committedState, {
+      canAdvance: Boolean(context?.canManage)
+    });
   }
 
   async advanceHours(hours = 0) {
@@ -1093,8 +1119,10 @@ export class TravelService {
     }
 
     const nextState = advanceTravelProgress(currentState, plan, hours);
-    await this.#writeGroupTravelState(context, nextState);
-    const snapshot = await this.getSnapshot();
+    const committedState = await this.#writeGroupTravelState(context, nextState);
+    const snapshot = buildTravelSnapshot(network, committedState, {
+      canAdvance: Boolean(context?.canManage)
+    });
     return {
       ...snapshot,
       travelChange: {

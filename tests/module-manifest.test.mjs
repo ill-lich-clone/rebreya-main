@@ -122,7 +122,7 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
 
     await assert.rejects(
       requestSettingsUpdate("groupState", { version: 1 }),
-      /Сокет Foundry недоступен/u
+      (error) => error?.code === "raw-setting-disabled" && error?.message === "raw-setting-disabled"
     );
   }
   finally {
