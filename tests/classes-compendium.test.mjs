@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { getClassStartingEquipmentConfig } from "../scripts/data/class-starting-equipment.js";
 
 globalThis.foundry ??= {
   utils: {
@@ -113,6 +114,20 @@ test("class data exposes independent cantrip and spell selections", () => {
   assert.equal(choices.length, 2);
   assert.equal(choices[0].configuration.restriction.level, "0");
   assert.deepEqual(choices[1].configuration.restriction.list, ["class:sorcerer"]);
+});
+
+test("sorcerer packages expose both updated starting-equipment choices", () => {
+  const config = getClassStartingEquipmentConfig("sorcerer-rework-v011");
+
+  assert.ok(config);
+  assert.deepEqual(config.getPackage("a").items.map((item) => [item.gearId, item.quantity ?? 1]), [
+    ["kop-e", 1],
+    ["kinzhal", 2],
+    ["kristall-fokusirovka", 1],
+    ["nabor-issledovatelya-podzemeliy", 1]
+  ]);
+  assert.deepEqual(config.getPackage("a").currency, { gp: 28 });
+  assert.deepEqual(config.getPackage("b").currency, { gp: 50 });
 });
 
 test("barbarian and fighter reworks use the ZoZT source label", () => {

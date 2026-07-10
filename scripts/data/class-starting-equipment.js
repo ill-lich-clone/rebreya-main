@@ -22,6 +22,12 @@ import {
   getRogueStartingEquipmentPackage,
   getRogueStartingEquipmentPackageChoices
 } from "./rogue-starting-equipment.js";
+import {
+  SORCERER_STARTING_EQUIPMENT_PACKAGES,
+  SORCERER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE,
+  getSorcererStartingEquipmentPackage,
+  getSorcererStartingEquipmentPackageChoices
+} from "./sorcerer-starting-equipment.js";
 
 export const CLASS_STARTING_EQUIPMENT_CONFIGS = Object.freeze([
   Object.freeze({
@@ -55,6 +61,14 @@ export const CLASS_STARTING_EQUIPMENT_CONFIGS = Object.freeze([
     choiceHint: "Выберите А или Б:",
     getPackage: getRogueStartingEquipmentPackage,
     getChoices: getRogueStartingEquipmentPackageChoices
+  }),
+  Object.freeze({
+    classIdentifier: "sorcerer-rework-v011",
+    sourceType: SORCERER_STARTING_EQUIPMENT_PACKAGE_SOURCE_TYPE,
+    packages: SORCERER_STARTING_EQUIPMENT_PACKAGES,
+    choiceHint: "Выберите А или Б:",
+    getPackage: getSorcererStartingEquipmentPackage,
+    getChoices: getSorcererStartingEquipmentPackageChoices
   })
 ]);
 
