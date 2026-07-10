@@ -11,6 +11,10 @@ import {
 import { buildGearIconLookup, resolveGearItemIcon } from "./gear-icon-resolver.js";
 import { classifyGearEntry } from "./item-classification.js";
 import { formatPercent, formatSignedPercent } from "../ui.js";
+import {
+  normalizeTradeTransaction,
+  retainTradeLog
+} from "../features/trading/trade-transaction-model.js";
 
 const MAX_ACTIVE_TRADERS = 21;
 const TRADE_AUDIT_LIMIT = 20;
@@ -119,13 +123,41 @@ function buildPlanSignature(plan) {
     .join("|");
 }
 
-function createEmptyTraderState() {
+export function createEmptyTraderState() {
   return {
     version: 1,
     order: [],
     traders: {},
     tradeLog: []
   };
+}
+
+function cloneTraderState(value) {
+  if (typeof globalThis.foundry?.utils?.deepClone === "function") {
+    return globalThis.foundry.utils.deepClone(value);
+  }
+
+  if (typeof globalThis.structuredClone === "function") {
+    return globalThis.structuredClone(value);
+  }
+
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+export function normalizeTraderState(value = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const state = {
+    ...createEmptyTraderState(),
+    ...cloneTraderState(source)
+  };
+
+  state.order = Array.isArray(state.order) ? state.order : [];
+  state.traders = state.traders && typeof state.traders === "object" ? state.traders : {};
+  const tradeLog = Array.isArray(state.tradeLog)
+    ? state.tradeLog.map((row) => normalizeTradeTransaction(row))
+    : [];
+  state.tradeLog = retainTradeLog(tradeLog);
+  return state;
 }
 
 function createTradeAuditId() {
@@ -991,16 +1023,7 @@ export class TraderService {
   }
 
   #getState() {
-    const state = game.settings.get(MODULE_ID, SETTINGS_KEYS.TRADER_STATE);
-    if (!state || typeof state !== "object") {
-      return createEmptyTraderState();
-    }
-
-    const nextState = foundry.utils.mergeObject(createEmptyTraderState(), foundry.utils.deepClone(state));
-    nextState.order = Array.isArray(nextState.order) ? nextState.order : [];
-    nextState.traders = nextState.traders && typeof nextState.traders === "object" ? nextState.traders : {};
-    nextState.tradeLog = Array.isArray(nextState.tradeLog) ? nextState.tradeLog : [];
-    return nextState;
+    return normalizeTraderState(game.settings.get(MODULE_ID, SETTINGS_KEYS.TRADER_STATE));
   }
 
   async #setState(nextState) {
