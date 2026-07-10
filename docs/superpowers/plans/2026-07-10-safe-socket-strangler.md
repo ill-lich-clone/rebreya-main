@@ -17,7 +17,7 @@
 - Use the existing `module.rebreya-main` socket channel (`module.${MODULE_ID}`).
 - The current versioned entrypoint imports exactly `./main.js?v=1.4.93-npc-held-natural`, the same canonical URL as supported 1.4.67-1.4.92 forwarders.
 - Typed request/result event names are exactly `rebreya.command` and `rebreya.command.result`.
-- Typed command names are exactly `group.calendar.setDate`, `group.calendar.setTime`, `group.travel.replaceState`, and `cosmology.setMechanus`.
+- Typed command names are exactly `group.calendar.patch`, `group.travel.replaceState`, and `cosmology.setMechanus`.
 - There is no remote registry-replacement or caller-selected setting/section command. The travel compatibility command may replace only normalized `travelState` for the sender's group.
 - Reject typed envelopes whose serialized form exceeds 65536 bytes.
 - Reject arbitrary legacy `setSetting` writes and answer a correlated `setSettingResult` failure when `requestId` is present.
@@ -61,28 +61,48 @@
 - [ ] Run the focused test and then the full suite.
 - [ ] Commit with a meaningful task-scoped message.
 
-### Task 3: Typed Group And Cosmology Mutations
+### Task 3: Atomic Group State Repository
 
 **Files:**
 - Create: `scripts/infrastructure/foundry/group-state-repository.js`
 - Modify: `scripts/data/group-context-service.js`
-- Modify: `scripts/data/calendar-service.js`
-- Modify: `scripts/data/travel-service.js`
-- Modify: `scripts/main.js`
+- Create: `tests/group-state-repository.test.mjs`
 - Modify: `tests/group-context-service.test.mjs`
-- Modify: `tests/downtime-service.test.mjs`
 
-- [ ] Replace the positive raw `setSetting` test with a failing test proving no setting is written and a correlated failure with code `raw-setting-disabled` is emitted.
-- [ ] Add failing tests for typed date/time commands, normalized travel-state replacement, unknown-command rejection, sender group authorization, and `Promise.all` date/time writes preserving both latest fields.
-- [ ] Run the focused tests and record RED before production edits.
-- [ ] Implement `GroupStateRepository` so the latest registry is read inside the coordinator and only one section is replaced.
-- [ ] Make player calendar writes use field-specific commands and player travel writes use `group.travel.replaceState`; keep `setRegistry` as a documented deprecated GM-only compatibility method for legacy GM-side writers.
-- [ ] Register `group.calendar.setDate`, `group.calendar.setTime`, `group.travel.replaceState`, and `cosmology.setMechanus` handlers in the composition root and use the typed client for non-active-GM requests.
-- [ ] Remove `requestSettingsUpdate` from the live composition root and group service.
+- [ ] Write failing tests proving the repository queue covers the complete fresh-read, mutation, normalization, and setting-write transaction; concurrent registrations of two groups must preserve both.
+- [ ] Add failure-recovery and different-group serialization tests; the setting is one global value, so the queue key is global rather than per group.
+- [ ] Run the focused tests and record RED because the repository does not exist and `registerGroup` still performs stale read-modify-write.
+- [ ] Implement `read`, `mutateRegistry`, `mutateGroupState`, and a clearly deprecated `replaceRegistry` compatibility method using the injected `WorldMutationCoordinator`.
+- [ ] Make `registerGroup` and `setActiveGroup` use mutation callbacks whose fresh read occurs inside the queue.
+- [ ] Do not change the registry schema. Keep the existing player `setRegistry` relay temporarily until Task 4 migrates its remaining player call sites.
 - [ ] Run focused tests and then the full suite.
 - [ ] Commit with a meaningful task-scoped message.
 
-### Task 4: Active-GM Legacy Socket Gate
+### Task 4: Typed Command Wiring And Raw Setting Shutdown
+
+**Files:**
+- Modify: `scripts/data/group-context-service.js`
+- Modify: `scripts/data/calendar-service.js`
+- Modify: `scripts/data/travel-service.js`
+- Modify: `scripts/main.js`
+- Modify: `scripts/legacy/settings-socket-relay.js`
+- Modify: `tests/group-context-service.test.mjs`
+- Modify: `tests/calendar-service.test.mjs`
+- Create: `tests/group-command-dispatch.test.mjs`
+
+- [ ] Replace the positive raw `setSetting` tests with failing tests proving no setting is written and a correlated failure with code `raw-setting-disabled` is emitted.
+- [ ] Add failing black-box tests for `group.calendar.patch`, normalized `group.travel.replaceState`, `cosmology.setMechanus`, unknown-command rejection, sender-group authorization, and `Promise.all` date/time patches preserving both latest fields.
+- [ ] Run the focused tests and record RED before production edits.
+- [ ] Construct one coordinator and one `SocketCommandBus` in `RebreyaMainModule`; pass the coordinator to the group repository and dispatch typed messages before legacy branches.
+- [ ] Make calendar send only changed `isoDate`/`timeOfDaySeconds` fields for non-active clients. Make travel use the normalized travel replacement command for non-active clients.
+- [ ] Validate calendar/travel payload shape on the active GM; authorize only GM senders or senders whose owned character belongs to the requested managed group. This is defense in depth, not cryptographic authentication.
+- [ ] Register `cosmology.setMechanus` as GM-only and route non-active GM calls through it.
+- [ ] Make `GroupContextService.setRegistry` a deprecated GM-only compatibility method and remove `requestSettingsUpdate` from the live composition root/group service.
+- [ ] Reject legacy `setSetting` without a write/refresh and emit correlated `setSettingResult { ok: false, errorCode: "raw-setting-disabled" }` when possible.
+- [ ] Run focused tests and then the full suite.
+- [ ] Commit with a meaningful task-scoped message.
+
+### Task 5: Active-GM Legacy Socket Gate
 
 **Files:**
 - Modify: `scripts/main.js`
@@ -97,12 +117,12 @@
 - [ ] Run focused tests and then `node --test tests/*.test.mjs`.
 - [ ] Commit with a meaningful task-scoped message.
 
-### Task 5: Whole-Branch Verification And Handoff
+### Task 6: Whole-Branch Verification And Handoff
 
 **Files:**
 - Modify only if review finds a concrete defect.
 
-- [ ] Generate task review packages and obtain clean spec-compliance and quality verdicts for Tasks 1-4.
+- [ ] Generate task review packages and obtain clean spec-compliance and quality verdicts for Tasks 1-5.
 - [ ] Obtain a final whole-branch code review.
 - [ ] Inspect `git diff origin/main...HEAD` and `git status --short --branch`.
 - [ ] Run `node --test tests/*.test.mjs` from a clean working tree.

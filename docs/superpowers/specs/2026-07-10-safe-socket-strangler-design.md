@@ -49,10 +49,10 @@ Requests use the existing `module.rebreya-main` channel (`module.${MODULE_ID}`):
 ```js
 {
   type: "rebreya.command",
-  command: "group.calendar.setDate",
+  command: "group.calendar.patch",
   requestId: "...",
   senderId: "...",
-  payload: { groupActorId, year, month, day }
+  payload: { groupActorId, patch: { isoDate: "1200-02-03" } }
 }
 ```
 
@@ -61,7 +61,7 @@ Results use:
 ```js
 {
   type: "rebreya.command.result",
-  command: "group.calendar.setDate",
+  command: "group.calendar.patch",
   requestId: "...",
   forUserId: "...",
   senderId: "...",
@@ -70,7 +70,7 @@ Results use:
 }
 ```
 
-The first allowlisted group commands are `group.calendar.setDate`, `group.calendar.setTime`, and `group.travel.replaceState`. Calendar commands mutate only their named fields on the latest calendar snapshot. The travel compatibility command accepts only a normalized `travelState` for the sender's own group; it exists to preserve the current player travel UI until route/progress commands are split further. There is no `group.registry.replace` or caller-selected section/key command. Downtime, inventory, trade, quest, migration, and balances continue through their dedicated GM-side application operations.
+The first allowlisted group commands are `group.calendar.patch` and `group.travel.replaceState`. A calendar patch accepts only `isoDate` and `timeOfDaySeconds`, validates them on the active GM, and applies only fields that changed on the client; it cannot select another setting or group-state section. The travel compatibility command accepts only a normalized `travelState` for the sender's own group; it exists to preserve the current player travel UI until route/progress commands are split further. There is no `group.registry.replace` or caller-selected section/key command. Downtime, inventory, trade, quest, migration, and balances continue through their dedicated GM-side application operations.
 
 The first GM-only command is `cosmology.setMechanus`. It replaces the only other caller of the legacy arbitrary setting relay.
 
@@ -78,7 +78,7 @@ The first GM-only command is `cosmology.setMechanus`. It replaces the only other
 
 The composition root classifies legacy socket requests that mutate world state. The active GM runs those handlers through the coordinator's single `world` queue. Result/display messages bypass the queue. Typed commands use the same queue. Duplicate typed `requestId` values return the cached result and do not execute a mutation twice.
 
-`GroupStateRepository.mutateGroupState` reads the latest registry inside the queue, runs a server-owned mutation callback, normalizes the resulting registry, and then persists it. Calendar commands update only date or time fields, so simultaneous calendar actions preserve each other. The travel compatibility command replaces only `travelState`; it cannot touch other group fields. Full-registry replacement remains a deprecated GM-only compatibility operation until each legacy writer is moved to a mutation callback.
+`GroupStateRepository.mutateGroupState` reads the latest registry inside the queue, runs a server-owned mutation callback, normalizes the resulting registry, and then persists it. Calendar commands patch only changed date/time fields, so simultaneous calendar actions preserve each other. The travel compatibility command replaces only `travelState`; it cannot touch other group fields. Full-registry replacement remains a deprecated GM-only compatibility operation until each legacy writer is moved to a mutation callback.
 
 ## Error Handling
 
