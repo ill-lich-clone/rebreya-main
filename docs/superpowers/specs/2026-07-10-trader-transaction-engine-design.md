@@ -73,6 +73,7 @@ Purchase payload:
 ```js
 {
   transactionId,
+  legacy: false,
   actorId,
   cityId,
   traderKey,
@@ -133,7 +134,7 @@ Transaction rows extend existing audit records with:
 }
 ```
 
-Legacy audit fields such as `type`, actor/trader/item labels, totals, verification, and `rolledBack` remain populated so existing UI keeps working.
+Rows that originally lack transaction fields normalize with `legacy: true`, `status: "committed"`, and `transactionId` derived from their audit ID. Legacy audit fields such as `type`, actor/trader/item labels, totals, verification, and `rolledBack` remain populated so existing UI keeps working.
 
 Retention keeps every nonterminal row (`prepared`, `applying`, `compensating`, `reconciliation-required`) plus the latest 20 terminal rows. Actor/item receipts are bounded to the latest 64 terminal transaction markers while all nonterminal markers are retained.
 
@@ -170,6 +171,7 @@ If payout fails, restore only the removed item quantity. If a later checkpoint f
 - A duplicate committed request returns the stored result without touching documents.
 - A duplicate compensated request returns the stored compensation error/result without reapplying.
 - A duplicate nonterminal request resumes from its persisted phase.
+- Legacy rows never enter the new resume state machine; they keep the compatibility rollback path.
 - Document receipts distinguish an applied side effect from a failed call when the following journal checkpoint did not persist.
 - Concurrent operations serialize through the active GM `world` queue and the repository `traderState` queue. The keys are different, so there is no self-deadlock.
 
@@ -232,4 +234,3 @@ TDD coverage must include:
 - Live composition selects the new transaction service when available; legacy is bootstrap fallback only.
 - There is no automatic per-operation fallback after `prepared` is persisted.
 - A live Foundry smoke test must cover player purchase/sale, two active GMs, failure notification, reload, and retry with the same transaction ID before merging this slice.
-

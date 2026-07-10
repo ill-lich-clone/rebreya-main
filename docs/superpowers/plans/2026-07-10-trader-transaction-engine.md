@@ -37,7 +37,7 @@
 
 **Interfaces:**
 - Consumes: `WorldMutationCoordinator.run(key, operation)` from `scripts/application/world-mutation-coordinator.js`.
-- Produces: `normalizeTraderState`, `normalizeTradeTransaction`, `retainTradeLog`, `requestsMatch`, `TradeTransactionError`, and `TraderStateRepository`.
+- Produces: `normalizeTraderState`, `normalizeTradeTransaction`, `retainTradeLog`, `requestsMatch`, `createTradeTransactionId`, `TradeTransactionError`, and `TraderStateRepository`.
 
 - [ ] **Step 1: Write model RED tests**
 
@@ -50,6 +50,7 @@ assert.equal(TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED, "reconciliation-r
 const legacy = normalizeTradeTransaction({ id: "legacy-1", type: "purchase" });
 assert.equal(legacy.status, "committed");
 assert.equal(legacy.transactionId, "legacy-1");
+assert.equal(legacy.legacy, true);
 
 assert.equal(requestsMatch(
   { actorId: "a", itemKey: "i", quantity: 1 },
@@ -103,6 +104,12 @@ export function isValidTradeTransactionId(value) {
     && /^[A-Za-z0-9_-]{8,128}$/u.test(value);
 }
 
+export function createTradeTransactionId(prefix = "trade") {
+  const random = globalThis.crypto?.randomUUID?.().replaceAll("-", "")
+    ?? Math.random().toString(36).slice(2, 18);
+  return `${String(prefix).replace(/[^A-Za-z0-9_-]/gu, "_")}_${Date.now()}_${random}`.slice(0, 128);
+}
+
 export function requestsMatch(left = {}, right = {}) {
   return REQUEST_KEYS.every((key) => (
     key === "quantity"
@@ -113,6 +120,8 @@ export function requestsMatch(left = {}, right = {}) {
 
 export function normalizeTradeTransaction(value = {}) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const legacy = source.legacy === true
+    || (!Object.hasOwn(source, "transactionId") && !Object.hasOwn(source, "status"));
   const transactionId = String(source.transactionId ?? source.id ?? "").trim();
   const requestedStatus = String(source.status ?? "").trim();
   const status = Object.values(TRADE_TRANSACTION_STATUS).includes(requestedStatus)
@@ -121,6 +130,7 @@ export function normalizeTradeTransaction(value = {}) {
   return {
     ...structuredClone(source),
     transactionId,
+    legacy,
     kind: source.kind === "sale" || source.type === "sale" ? "sale" : "purchase",
     status,
     phase: String(source.phase ?? (status === "committed" ? "committed" : "prepared")),
@@ -150,7 +160,7 @@ export function retainTradeLog(rows = [], { terminalLimit = 20 } = {}) {
 }
 ```
 
-Legacy rows without `status` normalize to `committed`; preserve legacy labels/totals/rollback fields via safe spread plus explicit normalized transaction fields.
+Legacy rows without `transactionId`/`status` normalize with `legacy: true` and `committed`; preserve legacy labels/totals/rollback fields via safe spread plus explicit normalized transaction fields.
 
 - [ ] **Step 4: Write repository RED tests**
 
@@ -459,7 +469,7 @@ async rollback(transactionId, {
 
 Store the nested rollback state on the original row. Checkpoint every phase and use original `item.afterQuantity - item.beforeQuantity`, currency delta, and stock delta. Only after all phases succeed set legacy `rolledBack`, `rolledBackAt`, and `rolledBackByUserId`.
 
-`TraderService.rollbackTradeAuditEntry(entryId, options = {})` delegates transaction rows to the new engine. Legacy rows retain the old compatibility implementation, explicitly marked deprecated.
+`TraderService.rollbackTradeAuditEntry(entryId, options = {})` delegates rows with `legacy !== true` to the new engine. Rows with `legacy === true` retain the old compatibility implementation, explicitly marked deprecated.
 
 - [ ] **Step 4: Update audit normalization/view**
 
