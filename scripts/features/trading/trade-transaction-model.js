@@ -19,7 +19,7 @@ const REQUEST_KEYS = Object.freeze([
   "requestedByUserId"
 ]);
 
-const MODERN_TRANSACTION_KEYS = Object.freeze([
+const CORE_MODERN_TRANSACTION_KEYS = Object.freeze([
   "transactionId",
   "status",
   "phase",
@@ -28,6 +28,15 @@ const MODERN_TRANSACTION_KEYS = Object.freeze([
   "result",
   "error",
   "compensation"
+]);
+
+const RECOVERY_ONLY_TRANSACTION_KEYS = Object.freeze([
+  "stock",
+  "item",
+  "currency",
+  "updatedAt",
+  "committedAt",
+  "compensatedAt"
 ]);
 
 function clone(value) {
@@ -92,8 +101,12 @@ export function normalizeTradeTransaction(value = {}) {
   const legacyType = String(source.type ?? "").trim();
   const hasLegacyAuditShape = Boolean(legacyId)
     && (legacyType === "purchase" || legacyType === "sale");
-  const hasModernMarkers = MODERN_TRANSACTION_KEYS.some((key) => Object.hasOwn(source, key));
-  const legacy = hasLegacyAuditShape && (source.legacy === true || !hasModernMarkers);
+  const hasCoreModernMarkers = CORE_MODERN_TRANSACTION_KEYS.some((key) => Object.hasOwn(source, key));
+  const hasRecoveryFields = RECOVERY_ONLY_TRANSACTION_KEYS.some((key) => Object.hasOwn(source, key));
+  const legacy = hasLegacyAuditShape
+    && source.legacy !== false
+    && !hasRecoveryFields
+    && (source.legacy === true || !hasCoreModernMarkers);
   const transactionId = String(source.transactionId ?? source.id ?? "").trim();
   const requestedStatus = String(source.status ?? "").trim();
   const hasValidModernShape = Object.hasOwn(source, "transactionId")

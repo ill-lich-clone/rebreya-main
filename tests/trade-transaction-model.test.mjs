@@ -319,3 +319,75 @@ test("retainTradeLog never prunes malformed modern rows behind newer terminals",
     20
   );
 });
+
+test("retainTradeLog keeps recovery-shaped and explicitly nonlegacy audit rows nonterminal", () => {
+  const malformedRows = [
+    {
+      id: "partial_stock_0001",
+      type: "purchase",
+      legacy: true,
+      stock: { before: 1, after: 0 }
+    },
+    {
+      id: "partial_item_00001",
+      type: "purchase",
+      legacy: true,
+      item: { beforeQuantity: 0, afterQuantity: 1 }
+    },
+    {
+      id: "partial_currency_1",
+      type: "sale",
+      legacy: true,
+      currency: { beforeCopper: 0, afterCopper: 10 }
+    },
+    {
+      id: "partial_committed_1",
+      type: "purchase",
+      legacy: true,
+      committedAt: 4
+    },
+    {
+      id: "partial_compensated_1",
+      type: "sale",
+      legacy: true,
+      compensatedAt: 5
+    },
+    {
+      id: "partial_updated_0001",
+      type: "purchase",
+      legacy: true,
+      updatedAt: 6
+    },
+    {
+      id: "explicit_nonlegacy_1",
+      type: "purchase",
+      legacy: false
+    }
+  ];
+  const terminalRows = Array.from({ length: 20 }, (_value, index) => ({
+    transactionId: `latest_terminal_${String(index).padStart(8, "0")}`,
+    status: "committed",
+    updatedAt: 100 + index,
+    request: { quantity: 1 }
+  }));
+
+  const retained = retainTradeLog([...malformedRows, ...terminalRows]);
+
+  assert.equal(retained.length, malformedRows.length + terminalRows.length);
+  assert.deepEqual(
+    retained.slice(0, malformedRows.length).map((row) => ({
+      legacy: row.legacy,
+      status: row.status,
+      transactionId: row.transactionId
+    })),
+    malformedRows.map((row) => ({
+      legacy: false,
+      status: "reconciliation-required",
+      transactionId: row.id
+    }))
+  );
+  assert.equal(
+    retained.filter((row) => TERMINAL_TRADE_STATUSES.has(row.status)).length,
+    20
+  );
+});
