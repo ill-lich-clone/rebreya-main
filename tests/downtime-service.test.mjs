@@ -3008,9 +3008,29 @@ test("RebreyaMainModule rejects setSetting socket messages on the active GM clie
     const { RebreyaMainModule } = await import(`../scripts/main.js?set-setting=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
     let refreshCount = 0;
+    let coordinatorCalls = 0;
+    const originalRun = moduleApi.worldMutationCoordinator.run.bind(moduleApi.worldMutationCoordinator);
+    moduleApi.worldMutationCoordinator.run = (key, operation) => {
+      coordinatorCalls += 1;
+      return originalRun(key, operation);
+    };
     moduleApi.refreshOpenApps = async () => {
       refreshCount += 1;
     };
+
+    await moduleApi.handleSocketMessage({
+      type: "downtime-create-result",
+      requestId: "downtime-create-result-1",
+      forUserId: "gm",
+      senderId: "player-1",
+      ok: true
+    });
+    await moduleApi.handleSocketMessage({
+      type: "downtime-updated",
+      senderId: "player-1",
+      actorIds: ["actor-1"]
+    });
+    const refreshCountBeforeSetting = refreshCount;
 
     await moduleApi.handleSocketMessage({
       type: "setSetting",
@@ -3027,7 +3047,9 @@ test("RebreyaMainModule rejects setSetting socket messages on the active GM clie
     });
 
     assert.deepEqual(settingsStore, {});
-    assert.equal(refreshCount, 0);
+    assert.equal(refreshCountBeforeSetting, 2);
+    assert.equal(refreshCount, refreshCountBeforeSetting);
+    assert.equal(coordinatorCalls, 0);
     assert.deepEqual(emitted, [[
       `module.${MODULE_ID}`,
       {
@@ -4002,6 +4024,18 @@ test("RebreyaMainModule only lets the active GM execute legacy world mutations",
       expectedCalls: 0
     },
     {
+      name: "current active GM with an empty users collection",
+      user: { id: "gm-missing", isGM: true, active: true },
+      users: [],
+      expectedCalls: 0
+    },
+    {
+      name: "current active GM with only a stale inactive collection entry",
+      user: { id: "gm-stale", isGM: true, active: true },
+      users: [{ id: "gm-stale", isGM: true, active: false }],
+      expectedCalls: 0
+    },
+    {
       name: "sole GM in a legacy harness without game.users",
       user: { id: "gm-only", isGM: true },
       expectedCalls: 1
@@ -4025,6 +4059,12 @@ test("RebreyaMainModule only lets the active GM execute legacy world mutations",
       };
       const moduleApi = new RebreyaMainModule();
       let calls = 0;
+      let coordinatorCalls = 0;
+      const originalRun = moduleApi.worldMutationCoordinator.run.bind(moduleApi.worldMutationCoordinator);
+      moduleApi.worldMutationCoordinator.run = (key, operation) => {
+        coordinatorCalls += 1;
+        return originalRun(key, operation);
+      };
       moduleApi.raceAutomationService.handleSocketMessage = async () => {
         calls += 1;
       };
@@ -4036,6 +4076,7 @@ test("RebreyaMainModule only lets the active GM execute legacy world mutations",
       });
 
       assert.equal(calls, scenario.expectedCalls, scenario.name);
+      assert.equal(coordinatorCalls, scenario.expectedCalls, `${scenario.name}: coordinator`);
     }
   }
   finally {
@@ -4050,66 +4091,190 @@ test("RebreyaMainModule routes the exact legacy mutation allowlist through the w
   globalThis.Hooks = {
     once() {}
   };
+  const emitted = [];
+  const player = { id: "player-1", isGM: false, active: true };
+  const actor = {
+    id: "actor-1",
+    type: "character",
+    testUserPermission(user, permission) {
+      return permission === "OWNER" && user?.id === player.id;
+    }
+  };
   globalThis.game = {
     user: { id: "gm", isGM: true, active: true },
     users: [
-      { id: "player-1", isGM: false, active: true },
+      player,
       { id: "gm", isGM: true, active: true }
     ],
     socket: {
-      emit() {}
+      emit(channel, message) {
+        emitted.push({ channel, message });
+      }
     }
   };
 
-  const mutationTypes = [
-    "downtime-create-request",
-    "downtime-update-request",
-    "downtime-check-result-request",
-    "downtime-project-continue-request",
-    "downtime-project-close-request",
-    "travel-map-sync-request",
-    "race-automation",
-    "character-class-automation",
-    "inventory-import-request",
-    "inventory-source-depletion-request",
-    "inventory-item-action-request",
-    "trader-audit",
-    "lootgen-claim-row",
-    "lootgen-claim-row-to-inventory",
-    "lootgen-claim-all-to-inventory",
-    "lootgen-claim-coins"
+  const mutationMessages = [
+    {
+      type: "downtime-create-request",
+      requestId: "socket-create",
+      payload: { groupId: "group-1", actorId: actor.id, actionId: "training", weeks: 1 }
+    },
+    {
+      type: "downtime-update-request",
+      requestId: "socket-update",
+      payload: { groupId: "group-1", actorId: actor.id, requestId: "downtime-1", weeks: 2 }
+    },
+    {
+      type: "downtime-check-result-request",
+      requestId: "socket-check",
+      payload: {
+        groupId: "group-1",
+        actorId: actor.id,
+        requestId: "downtime-1",
+        checkId: "check-1",
+        result: { total: 18 }
+      }
+    },
+    {
+      type: "downtime-project-continue-request",
+      requestId: "socket-continue",
+      payload: {
+        groupId: "group-1",
+        actorId: actor.id,
+        requestId: "downtime-1",
+        checkId: "check-1",
+        result: { total: 16 }
+      }
+    },
+    {
+      type: "downtime-project-close-request",
+      requestId: "socket-close",
+      payload: { groupId: "group-1", actorId: actor.id, requestId: "downtime-1" }
+    },
+    {
+      type: "travel-map-sync-request",
+      groupActorId: "group-1",
+      position: { available: true, x: 10, y: 20 }
+    },
+    { type: "race-automation", payload: { action: "race" } },
+    { type: "character-class-automation", payload: { action: "class" } },
+    { type: "inventory-import-request", payload: { itemUuid: "Item.source" } },
+    { type: "inventory-source-depletion-request", payload: { itemUuid: "Item.source" } },
+    { type: "inventory-item-action-request", payload: { action: "take", itemId: "item-1" } },
+    { type: "trader-audit", payload: { action: "purchase" } },
+    { type: "lootgen-claim-row", payload: { lootId: "loot-1", rowId: "row-1" } },
+    { type: "lootgen-claim-row-to-inventory", payload: { lootId: "loot-1", rowId: "row-1" } },
+    { type: "lootgen-claim-all-to-inventory", payload: { lootId: "loot-1" } },
+    { type: "lootgen-claim-coins", payload: { lootId: "loot-1" } }
   ];
 
   try {
     const { RebreyaMainModule } = await import(`../scripts/main.js?legacy-mutation-allowlist=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
     const coordinatorKeys = [];
+    const effects = [];
+    let openRefreshes = 0;
+    let inventoryRefreshes = 0;
     const originalRun = moduleApi.worldMutationCoordinator.run.bind(moduleApi.worldMutationCoordinator);
     moduleApi.worldMutationCoordinator.run = (key, operation) => {
       coordinatorKeys.push(key);
       return originalRun(key, operation);
     };
+    moduleApi.groupContextService.resolveForGroup = () => ({
+      groupId: "group-1",
+      groupActor: { id: "group-1" },
+      members: [actor],
+      memberActorIds: [actor.id]
+    });
+    moduleApi.downtimeService.createRequest = async () => {
+      effects.push("downtime-create-request");
+      return { id: "downtime-created", actorId: actor.id };
+    };
+    moduleApi.downtimeService.updateRequest = async () => {
+      effects.push("downtime-update-request");
+      return { id: "downtime-updated", actorId: actor.id };
+    };
+    moduleApi.downtimeService.recordCheckResult = async () => {
+      effects.push("downtime-check-result-request");
+      return { id: "downtime-checked", actorId: actor.id };
+    };
+    moduleApi.downtimeService.continueProject = async () => {
+      effects.push("downtime-project-continue-request");
+      return { id: "downtime-continued", actorId: actor.id };
+    };
+    moduleApi.downtimeService.closeProject = async () => {
+      effects.push("downtime-project-close-request");
+      return { id: "downtime-closed", actorId: actor.id };
+    };
+    moduleApi.travelMapService.syncGroupToken = async () => {
+      effects.push("travel-map-sync-request");
+    };
+    moduleApi.raceAutomationService.handleSocketMessage = async () => {
+      effects.push("race-automation");
+    };
+    moduleApi.paladinAutomationService.handleSocketMessage = async () => {
+      effects.push("character-class-automation");
+    };
+    moduleApi.inventoryService.handleImportDroppedItemSocketRequest = async () => {
+      effects.push("inventory-import-request");
+      return { id: "inventory-imported" };
+    };
+    moduleApi.inventoryService.handlePartyInventorySourceDepletionSocketRequest = async () => {
+      effects.push("inventory-source-depletion-request");
+      return { id: "inventory-depleted" };
+    };
+    moduleApi.inventoryService.handleInventoryItemActionSocketRequest = async () => {
+      effects.push("inventory-item-action-request");
+      return { id: "inventory-actioned" };
+    };
+    moduleApi.traderService.recordTradeAudit = async () => {
+      effects.push("trader-audit");
+    };
+    moduleApi.claimLootgenChatRow = async () => {
+      effects.push("lootgen-claim-row");
+    };
+    moduleApi.claimLootgenChatRowToInventory = async () => {
+      effects.push("lootgen-claim-row-to-inventory");
+    };
+    moduleApi.claimLootgenChatAllToInventory = async () => {
+      effects.push("lootgen-claim-all-to-inventory");
+    };
+    moduleApi.claimLootgenChatCoins = async () => {
+      effects.push("lootgen-claim-coins");
+    };
+    moduleApi.refreshOpenApps = async () => {
+      openRefreshes += 1;
+    };
+    moduleApi.refreshInventoryViews = async () => {
+      inventoryRefreshes += 1;
+    };
 
-    for (const type of mutationTypes) {
+    for (const message of mutationMessages) {
       await moduleApi.handleSocketMessage({
-        type,
-        senderId: "gm",
-        payload: {}
+        ...message,
+        senderId: player.id
       });
     }
-    await moduleApi.handleSocketMessage({
-      type: "downtime-create-result",
-      forUserId: "other-user",
-      senderId: "gm",
-      ok: true
-    });
-    await moduleApi.handleSocketMessage({
-      type: "lootgen-show-result",
-      senderId: "gm",
-      payload: {}
-    });
 
+    const mutationTypes = mutationMessages.map(({ type }) => type);
+    const responseTypes = emitted.map(({ message }) => message.type);
     assert.deepEqual(coordinatorKeys, mutationTypes.map(() => "world"));
+    assert.deepEqual(effects, mutationTypes);
+    assert.equal(openRefreshes, 3);
+    assert.equal(inventoryRefreshes, 1);
+    for (const responseType of [
+      "downtime-create-result",
+      "downtime-update-result",
+      "downtime-check-result-result",
+      "downtime-project-continue-result",
+      "downtime-project-close-result",
+      "inventory-import-result",
+      "inventory-source-depletion-result",
+      "inventory-item-action-result"
+    ]) {
+      assert.equal(responseTypes.includes(responseType), true, responseType);
+    }
+    assert.equal(responseTypes.filter((type) => type === "downtime-updated").length, 4);
   }
   finally {
     globalThis.Hooks = previousHooks;

@@ -141,11 +141,25 @@ function cloneSocketPayload(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function hasEligibleActiveGm(users) {
+  const eligible = (user) => Boolean(user?.isGM && user?.active && user?.id != null);
+  if (eligible(users?.activeGM)) {
+    return true;
+  }
+
+  const entries = Array.isArray(users?.contents)
+    ? users.contents
+    : (Array.isArray(users)
+      ? users
+      : (typeof users?.values === "function" ? Array.from(users.values()) : []));
+  return entries.some(eligible);
+}
+
 function isActiveLegacyMutationClient(foundryGame) {
   if (foundryGame?.users == null) {
     return Boolean(foundryGame?.user?.isGM && foundryGame.user.active !== false);
   }
-  return isActiveGmClient(foundryGame);
+  return hasEligibleActiveGm(foundryGame.users) && isActiveGmClient(foundryGame);
 }
 
 function createSocketRequestId(prefix) {
