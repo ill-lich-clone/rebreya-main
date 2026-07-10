@@ -257,6 +257,28 @@ function terminalResult(transaction) {
   return null;
 }
 
+function hasInvalidTerminalPhase(transaction) {
+  return (transaction?.status === TRADE_TRANSACTION_STATUS.COMMITTED
+      && transaction?.phase !== "committed")
+    || (transaction?.status === TRADE_TRANSACTION_STATUS.COMPENSATED
+      && transaction?.phase !== "compensated");
+}
+
+function durableReconciliationOutcome(transaction) {
+  if (transaction?.status === TRADE_TRANSACTION_STATUS.COMMITTED
+    && transaction?.phase === "committed") {
+    return { status: transaction.status, result: clone(transaction.result) };
+  }
+  if (transaction?.status === TRADE_TRANSACTION_STATUS.COMPENSATED
+    && transaction?.phase === "compensated") {
+    return { status: transaction.status };
+  }
+  if (transaction?.status === TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED) {
+    return { status: transaction.status };
+  }
+  return null;
+}
+
 export class TradeTransactionService {
   #inFlight = new Map();
   #now;
@@ -326,10 +348,10 @@ export class TradeTransactionService {
   }
 
   async #executePurchase(request, context) {
-    const persisted = this.#repository.findTransaction(request.transactionId);
+    const persisted = this.#readTransaction(request.transactionId);
     if (persisted) {
       assertMatchingRequest(persisted, request);
-      const result = terminalResult(persisted);
+      const result = await this.#terminalResult(persisted);
       if (persisted.status === TRADE_TRANSACTION_STATUS.COMMITTED) return result;
       if (persisted.status === TRADE_TRANSACTION_STATUS.COMPENSATING) {
         return this.#resumeCompensation(request.transactionId, { incrementAttempt: true });
@@ -421,7 +443,7 @@ export class TradeTransactionService {
 
       let durable = null;
       try {
-        durable = this.#repository.findTransaction(request.transactionId);
+        durable = this.#readTransaction(request.transactionId);
       }
       catch (readError) {
         throw transactionError(
@@ -441,7 +463,7 @@ export class TradeTransactionService {
       }
 
       assertMatchingRequest(durable, request);
-      const terminal = terminalResult(durable);
+      const terminal = await this.#terminalResult(durable);
       if (durable.status === TRADE_TRANSACTION_STATUS.COMMITTED) return terminal;
       if (durable.status === TRADE_TRANSACTION_STATUS.COMPENSATING) {
         return this.#resumeCompensation(request.transactionId, { incrementAttempt: true });
@@ -456,7 +478,7 @@ export class TradeTransactionService {
     while (true) {
       try {
         const transaction = this.#requireTransaction(transactionId);
-        const terminal = terminalResult(transaction);
+        const terminal = await this.#terminalResult(transaction);
         if (transaction.status === TRADE_TRANSACTION_STATUS.COMMITTED) return terminal;
         if (transaction.status === TRADE_TRANSACTION_STATUS.COMPENSATING) {
           return this.#resumeCompensation(transactionId, { incrementAttempt: true });
@@ -589,7 +611,9 @@ export class TradeTransactionService {
           && [
             "transaction-compensated",
             "reconciliation-required",
-            "transaction-conflict"
+            "transaction-conflict",
+            "transaction-state-unavailable",
+            "transaction-write-failed"
           ].includes(error.code)) {
           throw error;
         }
@@ -613,7 +637,7 @@ export class TradeTransactionService {
     let recoveryAttempts = 0;
     while (true) {
       const transaction = this.#requireTransaction(transactionId);
-      const terminal = terminalResult(transaction);
+      const terminal = await this.#terminalResult(transaction);
       if (transaction.status === TRADE_TRANSACTION_STATUS.COMMITTED) return terminal;
       if (transaction.status === TRADE_TRANSACTION_STATUS.COMPENSATING) {
         return this.#resumeCompensation(transactionId);
@@ -643,15 +667,9 @@ export class TradeTransactionService {
         return this.#resumeCompensation(transactionId);
       }
       catch (compensationStartError) {
-        let durable = null;
-        try {
-          durable = this.#repository.findTransaction(transactionId);
-        }
-        catch (_readError) {
-          durable = null;
-        }
+        const durable = this.#readTransaction(transactionId);
         if (durable) {
-          const durableTerminal = terminalResult(durable);
+          const durableTerminal = await this.#terminalResult(durable);
           if (durable.status === TRADE_TRANSACTION_STATUS.COMMITTED) return durableTerminal;
           if (durable.status === TRADE_TRANSACTION_STATUS.COMPENSATING) {
             return this.#resumeCompensation(transactionId);
@@ -706,7 +724,7 @@ export class TradeTransactionService {
     while (true) {
       try {
         const transaction = this.#requireTransaction(transactionId);
-        const terminal = terminalResult(transaction);
+        const terminal = await this.#terminalResult(transaction);
         if (transaction.status === TRADE_TRANSACTION_STATUS.COMMITTED) return terminal;
         if (transaction.status === TRADE_TRANSACTION_STATUS.COMPENSATED) return terminal;
         if (transaction.status !== TRADE_TRANSACTION_STATUS.COMPENSATING) {
@@ -830,7 +848,12 @@ export class TradeTransactionService {
       }
       catch (error) {
         if (error instanceof TradeTransactionError
-          && ["transaction-compensated", "reconciliation-required"].includes(error.code)) {
+          && [
+            "transaction-compensated",
+            "reconciliation-required",
+            "transaction-state-unavailable",
+            "transaction-write-failed"
+          ].includes(error.code)) {
           throw error;
         }
         if (error instanceof JournalCheckpointError) {
@@ -838,15 +861,12 @@ export class TradeTransactionService {
           if (recoveryAttempts <= MAX_JOURNAL_RECOVERY_ATTEMPTS) continue;
         }
 
-        let transaction = null;
-        try {
-          transaction = this.#repository.findTransaction(transactionId);
-        }
-        catch (_readError) {
-          transaction = null;
-        }
-        if (transaction?.status === TRADE_TRANSACTION_STATUS.COMMITTED) {
-          return clone(transaction.result);
+        const transaction = this.#readTransaction(transactionId);
+        if (transaction) {
+          const recoveredTerminal = await this.#terminalResult(transaction);
+          if (transaction.status === TRADE_TRANSACTION_STATUS.COMMITTED) {
+            return recoveredTerminal;
+          }
         }
         const originalError = transaction?.error ?? error;
         const compensationError = error instanceof CompensationStepError ? error.cause : error;
@@ -995,13 +1015,7 @@ export class TradeTransactionService {
       if (error instanceof TradeTransactionError) {
         throw new CompensationStepError("releasing-stock", error);
       }
-      let durable = null;
-      try {
-        durable = this.#repository.findTransaction(transactionId);
-      }
-      catch (_readError) {
-        durable = null;
-      }
+      const durable = this.#readTransaction(transactionId);
       if (durable?.status === TRADE_TRANSACTION_STATUS.COMPENSATING
         && durable.phase === "stock-released") {
         return durable;
@@ -1009,6 +1023,16 @@ export class TradeTransactionService {
       throw new JournalCheckpointError(transactionId, "stock-released", error);
     }
     return this.#requireTransaction(transactionId);
+  }
+
+  async #terminalResult(transaction) {
+    if (hasInvalidTerminalPhase(transaction)) {
+      return this.#failInconsistentRecovery(transaction, transaction.phase, {
+        code: "recovery-phase-invalid",
+        message: "Trade terminal status contradicts its persisted phase"
+      });
+    }
+    return terminalResult(transaction);
   }
 
   async #failInconsistentRecovery(transaction, phase, {
@@ -1020,82 +1044,77 @@ export class TradeTransactionService {
       message,
       transaction.transactionId
     );
-    try {
-      await this.#repository.mutateTransaction(transaction.transactionId, (row) => {
+    const outcome = await this.#persistReconciliationRequired(
+      transaction.transactionId,
+      (row) => {
         row.status = TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED;
         row.phase = "reconciliation-required";
         row.error = sanitizeError(error, phase, code);
         row.updatedAt = this.#timestamp();
-      });
-    }
-    catch (cause) {
-      throw transactionError(
-        "reconciliation-required",
-        "Trade transaction requires reconciliation",
-        transaction.transactionId,
-        cause
-      );
-    }
-    throw transactionError(
-      "reconciliation-required",
-      "Trade transaction requires reconciliation",
-      transaction.transactionId,
-      error
+      }
     );
+    return this.#finishReconciliationOutcome(outcome, transaction.transactionId, error);
   }
 
   async #markReconciliationRequired(transactionId, originalError, compensationError, phase) {
-    let outcome = null;
-    try {
-      outcome = await this.#repository.mutateTransaction(transactionId, (row) => {
-        if (row.status === TRADE_TRANSACTION_STATUS.COMMITTED) {
-          return { status: row.status, result: clone(row.result) };
-        }
-        if (row.status === TRADE_TRANSACTION_STATUS.COMPENSATED
-          || row.status === TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED) {
-          return { status: row.status };
-        }
-        const originalPhase = row.error?.phase ?? row.phase;
-        row.status = TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED;
-        row.phase = `${phase}-failed`;
-        row.error ??= sanitizeError(originalError, originalPhase);
-        row.compensation ??= { attempts: 1 };
-        row.compensation.phase = `${phase}-failed`;
-        row.compensation.error = sanitizeError(
-          compensationError,
-          phase,
-          "compensation-failed"
-        );
-        row.updatedAt = this.#timestamp();
-        return { status: row.status };
-      });
-    }
-    catch (cause) {
-      let durable = null;
-      try {
-        durable = this.#repository.findTransaction(transactionId);
-      }
-      catch (_readError) {
-        durable = null;
-      }
-      if (durable?.status === TRADE_TRANSACTION_STATUS.COMMITTED) {
-        return clone(durable.result);
-      }
-      if (durable?.status === TRADE_TRANSACTION_STATUS.COMPENSATED) {
-        throw transactionError(
-          "transaction-compensated",
-          "Trade transaction was compensated",
-          transactionId,
-          cause
-        );
-      }
-      throw transactionError(
-        "reconciliation-required",
-        "Trade transaction requires reconciliation",
-        transactionId,
-        cause
+    const outcome = await this.#persistReconciliationRequired(transactionId, (row) => {
+      const originalPhase = row.error?.phase ?? row.phase;
+      row.status = TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED;
+      row.phase = `${phase}-failed`;
+      row.error ??= sanitizeError(originalError, originalPhase);
+      row.compensation ??= { attempts: 1 };
+      row.compensation.phase = `${phase}-failed`;
+      row.compensation.error = sanitizeError(
+        compensationError,
+        phase,
+        "compensation-failed"
       );
+      row.updatedAt = this.#timestamp();
+    });
+    return this.#finishReconciliationOutcome(outcome, transactionId, compensationError);
+  }
+
+  async #persistReconciliationRequired(transactionId, mutator) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= MAX_JOURNAL_RECOVERY_ATTEMPTS; attempt += 1) {
+      try {
+        return await this.#repository.mutateTransaction(transactionId, (row) => {
+          const protectedOutcome = durableReconciliationOutcome(row);
+          if (protectedOutcome) return protectedOutcome;
+          mutator(row);
+          return { status: row.status };
+        });
+      }
+      catch (error) {
+        lastError = error;
+        let durable = null;
+        try {
+          durable = this.#readTransaction(transactionId);
+        }
+        catch (readError) {
+          lastError = readError;
+          if (attempt < MAX_JOURNAL_RECOVERY_ATTEMPTS) continue;
+          throw transactionError(
+            "transaction-state-unavailable",
+            "Trade reconciliation state could not be verified",
+            transactionId,
+            readError
+          );
+        }
+        const durableOutcome = durableReconciliationOutcome(durable);
+        if (durableOutcome) return durableOutcome;
+        if (attempt < MAX_JOURNAL_RECOVERY_ATTEMPTS) continue;
+      }
     }
+    throw transactionError(
+      "transaction-write-failed",
+      "Trade reconciliation state was not stored",
+      transactionId,
+      lastError
+    );
+  }
+
+  #finishReconciliationOutcome(outcome, transactionId, cause) {
     if (outcome?.status === TRADE_TRANSACTION_STATUS.COMMITTED) {
       return clone(outcome.result);
     }
@@ -1106,11 +1125,19 @@ export class TradeTransactionService {
         transactionId
       );
     }
+    if (outcome?.status === TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED) {
+      throw transactionError(
+        "reconciliation-required",
+        "Trade transaction requires reconciliation",
+        transactionId,
+        cause
+      );
+    }
     throw transactionError(
-      "reconciliation-required",
-      "Trade transaction requires reconciliation",
+      "transaction-write-failed",
+      "Trade reconciliation outcome was not durable",
       transactionId,
-      compensationError
+      cause
     );
   }
 
@@ -1143,20 +1170,28 @@ export class TradeTransactionService {
       });
     }
     catch (error) {
-      let durable = null;
-      try {
-        durable = this.#repository.findTransaction(transactionId);
-      }
-      catch (_readError) {
-        durable = null;
-      }
+      const durable = this.#readTransaction(transactionId);
       if (durable && expected(durable)) return durable;
       throw new JournalCheckpointError(transactionId, phase ?? "unknown", error);
     }
   }
 
+  #readTransaction(transactionId) {
+    try {
+      return this.#repository.findTransaction(transactionId);
+    }
+    catch (cause) {
+      throw transactionError(
+        "transaction-state-unavailable",
+        "Trade transaction state could not be read",
+        transactionId,
+        cause
+      );
+    }
+  }
+
   #requireTransaction(transactionId) {
-    const transaction = this.#repository.findTransaction(transactionId);
+    const transaction = this.#readTransaction(transactionId);
     if (!transaction) {
       throw transactionError(
         "transaction-not-found",

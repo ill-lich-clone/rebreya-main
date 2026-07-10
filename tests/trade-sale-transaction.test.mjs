@@ -253,12 +253,18 @@ function createOperations({
 function createHarness({
   state = buildState(),
   operationsOptions = {},
+  readFailures = {},
   writeFailures = {},
   nowStart = 2_000
 } = {}) {
   let storedState = clone(state);
   const writes = [];
+  let readAttempts = 0;
   let writeAttempts = 0;
+  const pendingReadFailures = new Map(Object.entries(readFailures).map(([ordinal, count]) => [
+    Number(ordinal),
+    count === true ? 1 : Number(count)
+  ]));
   const pendingWriteFailures = new Map(Object.entries(writeFailures).map(([ordinal, mode]) => [
     Number(ordinal),
     mode
@@ -268,6 +274,12 @@ function createHarness({
       get(moduleId, key) {
         assert.equal(moduleId, MODULE_ID);
         assert.equal(key, SETTINGS_KEYS.TRADER_STATE);
+        readAttempts += 1;
+        const remaining = pendingReadFailures.get(readAttempts) ?? 0;
+        if (remaining > 0) {
+          pendingReadFailures.set(readAttempts, remaining - 1);
+          throw new Error(`settings read ${readAttempts} failed`);
+        }
         return storedState;
       },
       async set(moduleId, key, value) {
@@ -308,6 +320,9 @@ function createHarness({
     writes,
     get state() {
       return clone(storedState);
+    },
+    get readAttempts() {
+      return readAttempts;
     },
     get writeAttempts() {
       return writeAttempts;
@@ -900,4 +915,184 @@ test("terminal compensated and reconciliation duplicates call no sale ports", as
       compensateItem: 0
     });
   }
+});
+
+test("direct sale reconciliation persists through before-store and lost-ACK writes", async () => {
+  for (const mode of ["before-store", "after-store"]) {
+    const row = buildTransaction({
+      status: TRADE_TRANSACTION_STATUS.PREPARED,
+      phase: "prepared"
+    });
+    const harness = createHarness({
+      state: buildState({ tradeLog: [row] }),
+      operationsOptions: {
+        initialReceipts: {
+          [REQUEST.transactionId]: { itemRemoved: false, currencyApplied: true }
+        }
+      },
+      writeFailures: { 1: mode }
+    });
+
+    await assert.rejects(
+      harness.service.sale({ ...REQUEST }),
+      (error) => assertTradeError(error, "reconciliation-required")
+    );
+    const durable = findTransaction(harness);
+    assert.equal(durable.status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED, mode);
+    assert.equal(durable.error.code, "recovery-receipt-missing", mode);
+    const stableEvidence = clone({ error: durable.error, compensation: durable.compensation });
+    const counters = clone(harness.counters);
+
+    await assert.rejects(
+      harness.service.sale({ ...REQUEST }),
+      (error) => assertTradeError(error, "reconciliation-required")
+    );
+    assert.deepEqual(
+      { error: findTransaction(harness).error, compensation: findTransaction(harness).compensation },
+      stableEvidence,
+      mode
+    );
+    assert.deepEqual(harness.counters, counters, mode);
+  }
+});
+
+test("persistent direct sale reconciliation write loss stays nonterminal and returns a write error", async () => {
+  const row = buildTransaction({
+    status: TRADE_TRANSACTION_STATUS.PREPARED,
+    phase: "prepared"
+  });
+  const harness = createHarness({
+    state: buildState({ tradeLog: [row] }),
+    operationsOptions: {
+      initialReceipts: {
+        [REQUEST.transactionId]: { itemRemoved: false, currencyApplied: true }
+      }
+    },
+    writeFailures: {
+      1: "before-store",
+      2: "before-store",
+      3: "before-store",
+      4: "before-store"
+    }
+  });
+
+  await assert.rejects(
+    harness.service.sale({ ...REQUEST }),
+    (error) => assertTradeError(error, "transaction-write-failed")
+  );
+  assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.PREPARED);
+  assert.equal(findTransaction(harness).phase, "prepared");
+  assert.equal(harness.counters.applyItem, 0);
+  assert.equal(harness.counters.applyCurrency, 0);
+
+  await assert.rejects(
+    harness.service.sale({ ...REQUEST }),
+    (error) => assertTradeError(error, "reconciliation-required")
+  );
+  assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+  assert.equal(harness.counters.applyItem, 0);
+  assert.equal(harness.counters.applyCurrency, 0);
+});
+
+test("sale compensation-failure reconciliation persists before-store and after-store evidence", async () => {
+  for (const mode of ["before-store", "after-store"]) {
+    const harness = createHarness({
+      operationsOptions: {
+        failures: { "apply-currency": 1, "compensate-item": 1 }
+      },
+      writeFailures: { 5: mode }
+    });
+
+    await assert.rejects(
+      harness.service.sale({ ...REQUEST }),
+      (error) => assertTradeError(error, "reconciliation-required")
+    );
+    const durable = findTransaction(harness);
+    assert.equal(durable.status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED, mode);
+    assert.equal(durable.error.code, "apply-currency-failed", mode);
+    assert.equal(durable.compensation.error.code, "compensate-item-failed", mode);
+    const stableEvidence = clone({ error: durable.error, compensation: durable.compensation });
+    const counters = clone(harness.counters);
+
+    await assert.rejects(
+      harness.service.sale({ ...REQUEST }),
+      (error) => assertTradeError(error, "reconciliation-required")
+    );
+    assert.deepEqual(
+      { error: findTransaction(harness).error, compensation: findTransaction(harness).compensation },
+      stableEvidence,
+      mode
+    );
+    assert.deepEqual(harness.counters, counters, mode);
+  }
+});
+
+test("persistent sale compensation reconciliation loss returns a typed nonterminal write error", async () => {
+  const harness = createHarness({
+    operationsOptions: {
+      failures: { "apply-currency": 1, "compensate-item": 1 }
+    },
+    writeFailures: {
+      5: "before-store",
+      6: "before-store",
+      7: "before-store",
+      8: "before-store"
+    }
+  });
+
+  await assert.rejects(
+    harness.service.sale({ ...REQUEST }),
+    (error) => assertTradeError(error, "transaction-write-failed")
+  );
+  const durable = findTransaction(harness);
+  assert.equal(durable.status, TRADE_TRANSACTION_STATUS.COMPENSATING);
+  assert.equal(durable.phase, "currency-compensated");
+  assert.notEqual(durable.status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+  assert.equal(durable.error.code, "apply-currency-failed");
+});
+
+test("sale repository read errors are ID-bearing and a durable prepared row resumes safely", async () => {
+  const initialRead = createHarness({ readFailures: { 1: true } });
+  await assert.rejects(
+    initialRead.service.sale({ ...REQUEST }),
+    (error) => assertTradeError(error, "transaction-state-unavailable")
+  );
+  assert.equal(initialRead.state.tradeLog.length, 0);
+  assert.equal(initialRead.counters.prepare, 0);
+
+  const afterPrepared = createHarness({ readFailures: { 3: true } });
+  await assert.rejects(
+    afterPrepared.service.sale({ ...REQUEST }),
+    (error) => assertTradeError(error, "transaction-state-unavailable")
+  );
+  assert.equal(findTransaction(afterPrepared).status, TRADE_TRANSACTION_STATUS.PREPARED);
+  assert.equal(findTransaction(afterPrepared).phase, "prepared");
+  assert.equal(afterPrepared.counters.applyItem, 0);
+  assert.equal(afterPrepared.counters.applyCurrency, 0);
+
+  assert.deepEqual(
+    await afterPrepared.service.sale({ ...REQUEST }),
+    buildDescriptor().result
+  );
+  assert.equal(afterPrepared.counters.applyItem, 1);
+  assert.equal(afterPrepared.counters.applyCurrency, 1);
+  assert.equal(findTransaction(afterPrepared).status, TRADE_TRANSACTION_STATUS.COMMITTED);
+});
+
+test("sale never returns a committed candidate from an impossible terminal phase", async () => {
+  const row = buildTransaction({
+    status: TRADE_TRANSACTION_STATUS.COMMITTED,
+    phase: "currency-applied"
+  });
+  const harness = createHarness({ state: buildState({ tradeLog: [row] }) });
+
+  await assert.rejects(
+    harness.service.sale({ ...REQUEST }),
+    (error) => assertTradeError(error, "reconciliation-required")
+  );
+  assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+  assert.equal(harness.counters.applyItem, 0);
+  assert.equal(harness.counters.applyCurrency, 0);
+  assert.equal(harness.counters.compensateItem, 0);
+  assert.equal(harness.counters.compensateCurrency, 0);
 });
