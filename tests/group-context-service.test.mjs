@@ -17,6 +17,20 @@ function nullProtoRecord(entries = []) {
   return Object.assign(Object.create(null), Object.fromEntries(entries));
 }
 
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
+async function flushTasks() {
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
 function createCharacter(id, { ownerUserId = "player-1", type = "character" } = {}) {
   return {
     id,
@@ -68,7 +82,14 @@ function createDowntimeTemplateItem({ groupId = "group-a", id = "downtime-test",
   };
 }
 
-function installGameFixture({ actors = [], user = { id: "gm", isGM: true }, registry = {}, socket = null } = {}) {
+function installGameFixture({
+  actors = [],
+  user = { id: "gm", isGM: true },
+  registry = {},
+  socket = null,
+  onGetSetting = null,
+  onSetSetting = null
+} = {}) {
   const originalGame = globalThis.game;
   const settingsStore = {
     [SETTINGS_KEYS.GROUP_STATE]: registry
@@ -84,8 +105,13 @@ function installGameFixture({ actors = [], user = { id: "gm", isGM: true }, regi
       settings: new Map([
         [`${MODULE_ID}.${SETTINGS_KEYS.GROUP_STATE}`, { scope: "world" }]
       ]),
-      get: (moduleId, key) => moduleId === MODULE_ID ? settingsStore[key] : undefined,
+      get: (moduleId, key) => {
+        const value = moduleId === MODULE_ID ? settingsStore[key] : undefined;
+        onGetSetting?.(moduleId, key, value);
+        return value;
+      },
       set: async (moduleId, key, value) => {
+        await onSetSetting?.(moduleId, key, value);
         if (moduleId === MODULE_ID) {
           settingsStore[key] = value;
         }
@@ -587,6 +613,139 @@ test("GroupContextService registerGroup sets managed flag, creates state, and se
   }
   finally {
     Date.now = originalNow;
+    fixture.restore();
+  }
+});
+
+test("GroupContextService concurrent registrations read fresh state inside one global transaction queue", async () => {
+  const firstWriteGate = createDeferred();
+  const groupA = createGroup("group-a", [], { managed: false });
+  const groupB = createGroup("group-b", [], { managed: false });
+  const readSnapshots = [];
+  const writesStarted = [];
+  const fixture = installGameFixture({
+    actors: [groupA, groupB],
+    registry: {},
+    onGetSetting(_moduleId, key, value) {
+      if (key === SETTINGS_KEYS.GROUP_STATE) {
+        readSnapshots.push(JSON.parse(JSON.stringify(value)));
+      }
+    },
+    async onSetSetting(_moduleId, key, value) {
+      if (key !== SETTINGS_KEYS.GROUP_STATE) {
+        return;
+      }
+      writesStarted.push(Object.keys(value.groupsById).sort());
+      if (writesStarted.length === 1) {
+        await firstWriteGate.promise;
+      }
+    }
+  });
+
+  try {
+    const service = new GroupContextService();
+    const first = service.registerGroup("group-a");
+    const second = service.registerGroup("group-b");
+
+    await flushTasks();
+    const readsWhileFirstWriteBlocked = readSnapshots.length;
+    const writesWhileFirstWriteBlocked = JSON.parse(JSON.stringify(writesStarted));
+
+    firstWriteGate.resolve();
+    const [contextA, contextB] = await Promise.all([first, second]);
+    const registry = fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE];
+
+    assert.equal(readsWhileFirstWriteBlocked, 1);
+    assert.deepEqual(writesWhileFirstWriteBlocked, [["group-a"]]);
+    assert.deepEqual(Object.keys(registry.groupsById).sort(), ["group-a", "group-b"]);
+    assert.equal(registry.activeGroupActorId, "group-a");
+    assert.equal(contextA.groupId, "group-a");
+    assert.equal(contextB.groupId, "group-b");
+  }
+  finally {
+    firstWriteGate.resolve();
+    fixture.restore();
+  }
+});
+
+test("GroupContextService setActiveGroup queues behind registration and preserves both fresh states", async () => {
+  const firstWriteGate = createDeferred();
+  const groupA = createGroup("group-a", [], { managed: false });
+  const groupB = createGroup("group-b", [], { managed: false });
+  const writesStarted = [];
+  const fixture = installGameFixture({
+    actors: [groupA, groupB],
+    registry: {},
+    async onSetSetting(_moduleId, key, value) {
+      if (key !== SETTINGS_KEYS.GROUP_STATE) {
+        return;
+      }
+      writesStarted.push({
+        activeGroupActorId: value.activeGroupActorId,
+        groupActorIds: Object.keys(value.groupsById).sort()
+      });
+      if (writesStarted.length === 1) {
+        await firstWriteGate.promise;
+      }
+    }
+  });
+
+  try {
+    const service = new GroupContextService();
+    const registered = service.registerGroup("group-a");
+    const activated = service.setActiveGroup("group-b");
+
+    await flushTasks();
+    const writesWhileFirstWriteBlocked = JSON.parse(JSON.stringify(writesStarted));
+    firstWriteGate.resolve();
+    await Promise.all([registered, activated]);
+    const registry = fixture.settingsStore[SETTINGS_KEYS.GROUP_STATE];
+
+    assert.deepEqual(writesWhileFirstWriteBlocked, [{
+      activeGroupActorId: "group-a",
+      groupActorIds: ["group-a"]
+    }]);
+    assert.deepEqual(Object.keys(registry.groupsById).sort(), ["group-a", "group-b"]);
+    assert.equal(registry.activeGroupActorId, "group-b");
+  }
+  finally {
+    firstWriteGate.resolve();
+    fixture.restore();
+  }
+});
+
+test("GroupContextService GM setRegistry uses the repository deprecated serialized replacement", async () => {
+  const firstWriteGate = createDeferred();
+  const writesStarted = [];
+  const fixture = installGameFixture({
+    registry: {},
+    async onSetSetting(_moduleId, key, value) {
+      if (key !== SETTINGS_KEYS.GROUP_STATE) {
+        return;
+      }
+      writesStarted.push(value.activeGroupActorId);
+      if (writesStarted.length === 1) {
+        await firstWriteGate.promise;
+      }
+    }
+  });
+
+  try {
+    const service = new GroupContextService();
+    const first = service.setRegistry({ activeGroupActorId: "group-a", groupsById: {} });
+    const second = service.setRegistry({ activeGroupActorId: "group-b", groupsById: {} });
+
+    await flushTasks();
+    const writesWhileFirstWriteBlocked = [...writesStarted];
+    firstWriteGate.resolve();
+
+    assert.equal((await first).activeGroupActorId, "group-a");
+    assert.equal((await second).activeGroupActorId, "group-b");
+    assert.deepEqual(writesWhileFirstWriteBlocked, ["group-a"]);
+    assert.deepEqual(writesStarted, ["group-a", "group-b"]);
+  }
+  finally {
+    firstWriteGate.resolve();
     fixture.restore();
   }
 });

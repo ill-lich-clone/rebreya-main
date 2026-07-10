@@ -1,5 +1,9 @@
 import { MODULE_ID, REBREYA_GROUP_FLAGS, SETTINGS_KEYS } from "../constants.js";
 import { requestSettingsUpdate } from "../settings.js";
+import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
+import { GroupStateRepository } from "../infrastructure/foundry/group-state-repository.js";
+
+const groupStateCoordinator = new WorldMutationCoordinator();
 
 export const GROUP_CONTEXT_ERRORS = Object.freeze({
   GROUP_NOT_FOUND: "Группа Rebreya не найдена.",
@@ -246,6 +250,16 @@ export function normalizeGroupRegistry(value = {}) {
   };
 }
 
+function createDefaultGroupStateRepository() {
+  return new GroupStateRepository({
+    coordinator: groupStateCoordinator,
+    gameProvider: () => globalThis.game,
+    normalizeRegistry: normalizeGroupRegistry,
+    normalizeGroupState,
+    buildDefaultGroupState
+  });
+}
+
 export function isManagedPartyGroup(actor) {
   return actor?.type === "group"
     && actor.getFlag?.(MODULE_ID, REBREYA_GROUP_FLAGS.MANAGED) === true;
@@ -287,14 +301,23 @@ export function resolvePlayerGroupActor(
 }
 
 export class GroupContextService {
+  #groupStateRepository;
+
+  constructor(options = {}) {
+    this.#groupStateRepository = options?.groupStateRepository ?? createDefaultGroupStateRepository();
+  }
+
   getRegistry() {
-    return normalizeGroupRegistry(
-      globalThis.game?.settings?.get?.(MODULE_ID, SETTINGS_KEYS.GROUP_STATE) ?? {}
-    );
+    return this.#groupStateRepository.read();
   }
 
   async setRegistry(value) {
     const registry = normalizeGroupRegistry(value);
+
+    if (globalThis.game?.user?.isGM) {
+      return this.#groupStateRepository.replaceRegistry(registry);
+    }
+
     await requestSettingsUpdate(SETTINGS_KEYS.GROUP_STATE, registry);
     return registry;
   }
@@ -312,16 +335,15 @@ export class GroupContextService {
       await groupActor.setFlag?.(MODULE_ID, REBREYA_GROUP_FLAGS.MANAGED, true);
     }
 
-    const registry = this.getRegistry();
-    registry.groupsById[groupActor.id] = registry.groupsById[groupActor.id]
-      ? normalizeGroupState(groupActor.id, registry.groupsById[groupActor.id])
-      : buildDefaultGroupState(groupActor.id);
+    await this.#groupStateRepository.mutateRegistry((registry) => {
+      registry.groupsById[groupActor.id] = registry.groupsById[groupActor.id]
+        ? normalizeGroupState(groupActor.id, registry.groupsById[groupActor.id])
+        : buildDefaultGroupState(groupActor.id);
 
-    if (!registry.activeGroupActorId) {
-      registry.activeGroupActorId = groupActor.id;
-    }
-
-    await this.setRegistry(registry);
+      if (!registry.activeGroupActorId) {
+        registry.activeGroupActorId = groupActor.id;
+      }
+    });
     return this.resolveForGroup(groupActor.id);
   }
 
@@ -332,14 +354,12 @@ export class GroupContextService {
       await groupActor.setFlag?.(MODULE_ID, REBREYA_GROUP_FLAGS.MANAGED, true);
     }
 
-    const registry = this.getRegistry();
-
-    registry.activeGroupActorId = groupActor.id;
-    registry.groupsById[groupActor.id] = registry.groupsById[groupActor.id]
-      ? normalizeGroupState(groupActor.id, registry.groupsById[groupActor.id])
-      : buildDefaultGroupState(groupActor.id);
-
-    await this.setRegistry(registry);
+    await this.#groupStateRepository.mutateRegistry((registry) => {
+      registry.activeGroupActorId = groupActor.id;
+      registry.groupsById[groupActor.id] = registry.groupsById[groupActor.id]
+        ? normalizeGroupState(groupActor.id, registry.groupsById[groupActor.id])
+        : buildDefaultGroupState(groupActor.id);
+    });
     return this.resolveForGroup(groupActor.id);
   }
 
