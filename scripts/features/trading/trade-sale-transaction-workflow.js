@@ -4,17 +4,13 @@ import {
   isValidTradeTransactionId,
   requestsMatch
 } from "./trade-transaction-model.js";
-import {
-  TradeSaleTransactionWorkflow,
-  canonicalizeSaleRequest
-} from "./trade-sale-transaction-workflow.js";
 
-const PURCHASE_REQUEST_KEYS = Object.freeze([
+const SALE_REQUEST_KEYS = Object.freeze([
   "transactionId",
   "actorId",
   "cityId",
   "traderKey",
-  "itemKey",
+  "itemUuid",
   "quantity",
   "requestedByUserId"
 ]);
@@ -44,7 +40,7 @@ const MAX_JOURNAL_RECOVERY_ATTEMPTS = 3;
 
 class JournalCheckpointError extends Error {
   constructor(transactionId, phase, cause) {
-    super(`Trade transaction checkpoint ${phase} was not acknowledged`, { cause });
+    super(`Sale transaction checkpoint ${phase} was not acknowledged`, { cause });
     this.name = "JournalCheckpointError";
     this.transactionId = transactionId;
     this.phase = phase;
@@ -53,7 +49,7 @@ class JournalCheckpointError extends Error {
 
 class CompensationStepError extends Error {
   constructor(phase, cause) {
-    super(`Trade transaction compensation failed during ${phase}`, { cause });
+    super(`Sale transaction compensation failed during ${phase}`, { cause });
     this.name = "CompensationStepError";
     this.phase = phase;
   }
@@ -63,52 +59,65 @@ function clone(value) {
   if (typeof globalThis.foundry?.utils?.deepClone === "function") {
     return globalThis.foundry.utils.deepClone(value);
   }
-
   if (typeof globalThis.structuredClone === "function") {
     return globalThis.structuredClone(value);
   }
-
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
-function invalidRequest(message, transactionId = "") {
-  return new TradeTransactionError("invalid-request", message, { transactionId });
+function transactionError(code, message, transactionId, cause = null) {
+  return new TradeTransactionError(code, message, { transactionId, cause });
 }
 
-function canonicalizePurchaseRequest(value) {
+function invalidRequest(message, transactionId = "") {
+  return transactionError("invalid-request", message, transactionId);
+}
+
+export function canonicalizeSaleRequest(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw invalidRequest("Purchase request must be an object");
+    throw invalidRequest("Sale request must be an object");
   }
 
   const keys = Object.keys(value).sort();
-  const expectedKeys = [...PURCHASE_REQUEST_KEYS].sort();
+  const expectedKeys = [...SALE_REQUEST_KEYS].sort();
   if (keys.length !== expectedKeys.length
     || keys.some((key, index) => key !== expectedKeys[index])) {
-    throw invalidRequest("Purchase request fields are invalid");
+    throw invalidRequest("Sale request fields are invalid");
   }
-
   if (!isValidTradeTransactionId(value.transactionId)) {
-    throw invalidRequest("Purchase transaction ID is invalid");
+    throw invalidRequest("Sale transaction ID is invalid");
   }
 
   const request = { transactionId: value.transactionId };
-  for (const key of PURCHASE_REQUEST_KEYS.slice(1, -2)) {
+  for (const key of [
+    "actorId",
+    "cityId",
+    "traderKey",
+    "itemUuid",
+    "requestedByUserId"
+  ]) {
     if (typeof value[key] !== "string" || !value[key].trim()) {
-      throw invalidRequest(`Purchase ${key} is invalid`, value.transactionId);
+      throw invalidRequest(`Sale ${key} is invalid`, value.transactionId);
     }
     request[key] = value[key].trim();
   }
-
   if (!Number.isInteger(value.quantity) || value.quantity < 1) {
-    throw invalidRequest("Purchase quantity must be a positive integer", value.transactionId);
+    throw invalidRequest("Sale quantity must be a positive integer", value.transactionId);
   }
   request.quantity = value.quantity;
-
-  if (typeof value.requestedByUserId !== "string" || !value.requestedByUserId.trim()) {
-    throw invalidRequest("Purchase requestedByUserId is invalid", value.transactionId);
-  }
-  request.requestedByUserId = value.requestedByUserId.trim();
   return Object.freeze(request);
+}
+
+function persistedRequest(request) {
+  return {
+    actorId: request.actorId,
+    cityId: request.cityId,
+    traderKey: request.traderKey,
+    itemKey: "",
+    itemUuid: request.itemUuid,
+    quantity: request.quantity,
+    requestedByUserId: request.requestedByUserId
+  };
 }
 
 function sanitizeAudit(value) {
@@ -118,78 +127,53 @@ function sanitizeAudit(value) {
   )));
 }
 
-function sanitizeError(error, phase, fallbackCode = "purchase-failed") {
+function sanitizeError(error, phase, fallbackCode = "sale-failed") {
   const code = typeof error?.code === "string" && error.code.trim()
     ? error.code.trim()
     : fallbackCode;
   const message = typeof error?.message === "string" && error.message.trim()
     ? error.message.trim()
-    : "Purchase transaction failed";
+    : "Sale transaction failed";
   return { code, message, phase: String(phase ?? "unknown") };
 }
 
-function transactionError(code, message, transactionId, cause = null) {
-  return new TradeTransactionError(code, message, { transactionId, cause });
-}
-
-/**
- * Validates the trusted server-side purchase descriptor returned by
- * `operations.preparePurchase(request, context)`.
- *
- * The descriptor contract is:
- * `{ traderId, stock: { itemKey }, item: { itemId, itemUuid, beforeQuantity,
- * afterQuantity, delta, created, rawItemData }, currency: { beforeCopper,
- * afterCopper, deltaCopper }, result, audit }`.
- */
 function normalizeDescriptor(value, request) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw transactionError(
-      "invalid-purchase-descriptor",
-      "Purchase preparation did not return a descriptor",
+      "invalid-sale-descriptor",
+      "Sale preparation did not return a descriptor",
       request.transactionId
     );
   }
 
   const traderId = typeof value.traderId === "string" ? value.traderId.trim() : "";
-  const stockItemKey = typeof value.stock?.itemKey === "string"
-    ? value.stock.itemKey.trim()
-    : "";
-  const hasItem = value.item && typeof value.item === "object" && !Array.isArray(value.item);
-  const hasCurrency = value.currency
-    && typeof value.currency === "object"
-    && !Array.isArray(value.currency);
-  const hasResult = value.result && typeof value.result === "object" && !Array.isArray(value.result);
-  if (!traderId || stockItemKey !== request.itemKey || !hasItem || !hasCurrency || !hasResult) {
+  const item = value.item;
+  const currency = value.currency;
+  const result = value.result;
+  const hasItem = item && typeof item === "object" && !Array.isArray(item);
+  const hasCurrency = currency && typeof currency === "object" && !Array.isArray(currency);
+  const hasResult = result && typeof result === "object" && !Array.isArray(result);
+  if (!traderId || !hasItem || !hasCurrency || !hasResult) {
     throw transactionError(
-      "invalid-purchase-descriptor",
-      "Purchase preparation returned an invalid descriptor",
+      "invalid-sale-descriptor",
+      "Sale preparation returned an invalid descriptor",
       request.transactionId
     );
   }
 
-  const item = value.item;
-  const currency = value.currency;
-  const hasStringItemId = typeof item.itemId === "string";
-  const hasStringItemUuid = typeof item.itemUuid === "string";
-  const itemId = hasStringItemId ? item.itemId.trim() : "";
-  const itemUuid = hasStringItemUuid ? item.itemUuid.trim() : "";
-  const hasItemId = Boolean(itemId);
-  const hasItemUuid = Boolean(itemUuid);
-  const validIdentity = hasStringItemId
-    && hasStringItemUuid
-    && typeof item.created === "boolean"
-    && (item.created
-      ? hasItemId === hasItemUuid
-      : hasItemId && hasItemUuid);
-  const validItem = validIdentity
+  const itemId = typeof item.itemId === "string" ? item.itemId.trim() : "";
+  const itemUuid = typeof item.itemUuid === "string" ? item.itemUuid.trim() : "";
+  const validItem = Boolean(itemId)
+    && itemUuid === request.itemUuid
     && Number.isInteger(item.beforeQuantity)
     && item.beforeQuantity >= 0
     && Number.isInteger(item.afterQuantity)
     && item.afterQuantity >= 0
     && Number.isInteger(item.delta)
-    && item.delta > 0
+    && item.delta < 0
     && item.afterQuantity - item.beforeQuantity === item.delta
-    && typeof item.created === "boolean"
+    && -item.delta === request.quantity
+    && item.created === false
     && item.rawItemData
     && typeof item.rawItemData === "object"
     && !Array.isArray(item.rawItemData);
@@ -198,36 +182,34 @@ function normalizeDescriptor(value, request) {
     && Number.isInteger(currency.afterCopper)
     && currency.afterCopper >= 0
     && Number.isInteger(currency.deltaCopper)
-    && currency.deltaCopper < 0
+    && currency.deltaCopper >= 0
     && currency.afterCopper - currency.beforeCopper === currency.deltaCopper;
-  const validResultTransaction = !Object.hasOwn(value.result, "transactionId")
-    || value.result.transactionId === request.transactionId;
-  const validResultTotal = !Object.hasOwn(value.result, "totalPriceCopper")
-    || value.result.totalPriceCopper === -currency.deltaCopper;
-  if (!validItem || !validCurrency || !validResultTransaction || !validResultTotal) {
+  const validResultTransaction = !Object.hasOwn(result, "transactionId")
+    || result.transactionId === request.transactionId;
+  const validResultPayout = !Object.hasOwn(result, "netPayoutCopper")
+    || result.netPayoutCopper === currency.deltaCopper;
+  const validResultTotal = !Object.hasOwn(result, "totalCopper")
+    || result.totalCopper === currency.deltaCopper;
+  if (!validItem || !validCurrency || !validResultTransaction
+    || !validResultPayout || !validResultTotal) {
     throw transactionError(
-      "invalid-purchase-descriptor",
-      "Purchase preparation returned invalid item, currency, or result deltas",
+      "invalid-sale-descriptor",
+      "Sale preparation returned invalid item, currency, or result deltas",
       request.transactionId
     );
   }
 
   return {
     traderId,
-    stock: { itemKey: stockItemKey },
-    item: {
-      ...clone(value.item),
-      itemId,
-      itemUuid
-    },
-    currency: clone(value.currency),
-    result: clone(value.result),
+    item: { ...clone(item), itemId, itemUuid },
+    currency: clone(currency),
+    result: clone(result),
     audit: sanitizeAudit(value.audit)
   };
 }
 
-function assertMatchingRequest(transaction, request) {
-  if (transaction?.kind !== "purchase" || !requestsMatch(transaction?.request, request)) {
+function assertSaleTransaction(transaction, request) {
+  if (transaction?.kind !== "sale" || !requestsMatch(transaction?.request, request)) {
     throw transactionError(
       "transaction-conflict",
       "Trade transaction ID belongs to a different request",
@@ -243,92 +225,35 @@ function terminalResult(transaction) {
   if (transaction.status === TRADE_TRANSACTION_STATUS.COMPENSATED) {
     throw transactionError(
       "transaction-compensated",
-      "Trade transaction was compensated",
+      "Sale transaction was compensated",
       transaction.transactionId
     );
   }
   if (transaction.status === TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED) {
     throw transactionError(
       "reconciliation-required",
-      "Trade transaction requires reconciliation",
+      "Sale transaction requires reconciliation",
       transaction.transactionId
     );
   }
   return null;
 }
 
-export class TradeTransactionService {
-  #inFlight = new Map();
+export class TradeSaleTransactionWorkflow {
   #now;
   #operations;
   #repository;
-  #saleWorkflow;
 
-  constructor({ repository, operations, now = () => Date.now() }) {
+  constructor({ repository, operations, now }) {
     this.#repository = repository;
     this.#operations = operations;
     this.#now = now;
-    this.#saleWorkflow = new TradeSaleTransactionWorkflow({ repository, operations, now });
   }
 
-  async purchase(request, context = {}) {
-    const canonicalRequest = canonicalizePurchaseRequest(request);
-    const transactionId = canonicalRequest.transactionId;
-    const active = this.#inFlight.get(transactionId);
-    if (active) {
-      if (active.kind !== "purchase" || !requestsMatch(active.request, canonicalRequest)) {
-        throw transactionError(
-          "transaction-conflict",
-          "Trade transaction ID belongs to a different request",
-          transactionId
-        );
-      }
-      return clone(await active.promise);
-    }
-
-    const promise = this.#executePurchase(canonicalRequest, context);
-    this.#inFlight.set(transactionId, { kind: "purchase", request: canonicalRequest, promise });
-    try {
-      return clone(await promise);
-    }
-    finally {
-      if (this.#inFlight.get(transactionId)?.promise === promise) {
-        this.#inFlight.delete(transactionId);
-      }
-    }
-  }
-
-  async sale(request, context = {}) {
-    const canonicalRequest = canonicalizeSaleRequest(request);
-    const transactionId = canonicalRequest.transactionId;
-    const active = this.#inFlight.get(transactionId);
-    if (active) {
-      if (active.kind !== "sale" || !requestsMatch(active.request, canonicalRequest)) {
-        throw transactionError(
-          "transaction-conflict",
-          "Trade transaction ID belongs to a different request",
-          transactionId
-        );
-      }
-      return clone(await active.promise);
-    }
-
-    const promise = this.#saleWorkflow.execute(canonicalRequest, context);
-    this.#inFlight.set(transactionId, { kind: "sale", request: canonicalRequest, promise });
-    try {
-      return clone(await promise);
-    }
-    finally {
-      if (this.#inFlight.get(transactionId)?.promise === promise) {
-        this.#inFlight.delete(transactionId);
-      }
-    }
-  }
-
-  async #executePurchase(request, context) {
+  async execute(request, context = {}) {
     const persisted = this.#repository.findTransaction(request.transactionId);
     if (persisted) {
-      assertMatchingRequest(persisted, request);
+      assertSaleTransaction(persisted, request);
       const result = terminalResult(persisted);
       if (persisted.status === TRADE_TRANSACTION_STATUS.COMMITTED) return result;
       if (persisted.status === TRADE_TRANSACTION_STATUS.COMPENSATING) {
@@ -340,15 +265,15 @@ export class TradeTransactionService {
     let descriptor;
     try {
       descriptor = normalizeDescriptor(
-        await this.#operations.preparePurchase(clone(request), context),
+        await this.#operations.prepareSale(clone(request), context),
         request
       );
     }
     catch (error) {
       if (error instanceof TradeTransactionError && error.transactionId) throw error;
       throw transactionError(
-        error?.code ?? "purchase-preparation-failed",
-        error?.message ?? "Purchase preparation failed",
+        error?.code ?? "sale-preparation-failed",
+        error?.message ?? "Sale preparation failed",
         request.transactionId,
         error
       );
@@ -358,50 +283,21 @@ export class TradeTransactionService {
       await this.#repository.mutate((state) => {
         const duplicate = state.tradeLog.find((row) => row.transactionId === request.transactionId);
         if (duplicate) {
-          assertMatchingRequest(duplicate, request);
+          assertSaleTransaction(duplicate, request);
           return;
         }
 
-        const trader = state.traders?.[descriptor.traderId];
-        const inventory = Array.isArray(trader?.inventory) ? trader.inventory : [];
-        const stock = inventory.find((entry) => (
-          entry?.itemKey === descriptor.stock.itemKey
-          && entry.itemKey === request.itemKey
-        ));
-        const before = stock?.quantity;
-        if (!Number.isInteger(before) || before < request.quantity) {
-          throw transactionError(
-            "stock-unavailable",
-            "Trader stock is unavailable",
-            request.transactionId
-          );
-        }
-
-        const after = before - request.quantity;
-        if (after < 0) {
-          throw transactionError(
-            "stock-unavailable",
-            "Trader stock is unavailable",
-            request.transactionId
-          );
-        }
-        stock.quantity = after;
         const timestamp = this.#timestamp();
         state.tradeLog.push({
           ...descriptor.audit,
           transactionId: request.transactionId,
           traderId: descriptor.traderId,
           legacy: false,
-          kind: "purchase",
+          kind: "sale",
           status: TRADE_TRANSACTION_STATUS.PREPARED,
-          phase: "stock-reserved",
-          request: clone(request),
-          stock: {
-            itemKey: request.itemKey,
-            before,
-            after,
-            delta: -request.quantity
-          },
+          phase: "prepared",
+          request: persistedRequest(request),
+          stock: null,
           item: clone(descriptor.item),
           currency: clone(descriptor.currency),
           result: clone(descriptor.result),
@@ -414,8 +310,7 @@ export class TradeTransactionService {
       });
     }
     catch (error) {
-      if (error instanceof TradeTransactionError
-        && ["stock-unavailable", "transaction-conflict"].includes(error.code)) {
+      if (error instanceof TradeTransactionError && error.code === "transaction-conflict") {
         throw error;
       }
 
@@ -426,7 +321,7 @@ export class TradeTransactionService {
       catch (readError) {
         throw transactionError(
           "transaction-write-failed",
-          "Trade transaction reservation could not be verified",
+          "Sale transaction preparation could not be verified",
           request.transactionId,
           readError
         );
@@ -434,13 +329,13 @@ export class TradeTransactionService {
       if (!durable) {
         throw transactionError(
           "transaction-write-failed",
-          "Trade transaction reservation was not stored",
+          "Sale transaction preparation was not stored",
           request.transactionId,
           error
         );
       }
 
-      assertMatchingRequest(durable, request);
+      assertSaleTransaction(durable, request);
       const terminal = terminalResult(durable);
       if (durable.status === TRADE_TRANSACTION_STATUS.COMMITTED) return terminal;
       if (durable.status === TRADE_TRANSACTION_STATUS.COMPENSATING) {
@@ -462,76 +357,37 @@ export class TradeTransactionService {
           return this.#resumeCompensation(transactionId, { incrementAttempt: true });
         }
 
-        if (transaction.phase === "stock-reserved") {
+        if (transaction.phase === "prepared") {
           let receipts = await this.#readReceipts(transaction);
-          if (!receipts.itemApplied && receipts.currencyApplied) {
-            return await this.#failInconsistentRecovery(transaction, "stock-reserved");
+          if (!this.#applicationReceiptsMatchPhase("prepared", receipts)) {
+            return this.#failInconsistentRecovery(transaction, "prepared");
           }
-          if (!receipts.itemApplied) {
-            await this.#operations.applyPurchaseItem(clone(transaction));
-            if (transaction.item?.created === true) {
-              receipts = await this.#readReceipts(transaction);
-              if (!receipts.itemApplied) {
-                return await this.#failInconsistentRecovery(transaction, "stock-reserved");
-              }
+          if (!receipts.itemRemoved) {
+            await this.#operations.applySaleItem(clone(transaction));
+            receipts = await this.#readReceipts(transaction);
+            if (!receipts.itemRemoved
+              || !this.#applicationReceiptsMatchPhase("prepared", receipts)) {
+              return this.#failInconsistentRecovery(transaction, "prepared");
             }
-          }
-          const identity = this.#resolveAppliedItemIdentity(transaction, receipts);
-          if (!identity.ok) {
-            return await this.#failInconsistentRecovery(transaction, "stock-reserved", {
-              code: identity.code,
-              message: identity.message
-            });
           }
           await this.#checkpoint(transactionId, (row) => {
             row.status = TRADE_TRANSACTION_STATUS.APPLYING;
-            row.phase = "item-applied";
-            if (row.item?.created === true) {
-              row.item.itemId = identity.itemId;
-              row.item.itemUuid = identity.itemUuid;
-            }
+            row.phase = "item-removed";
           }, {
             status: TRADE_TRANSACTION_STATUS.APPLYING,
-            phase: "item-applied",
-            matches: (row) => row?.status === TRADE_TRANSACTION_STATUS.APPLYING
-              && row?.phase === "item-applied"
-              && (transaction.item?.created !== true
-                || (row.item?.itemId === identity.itemId
-                  && row.item?.itemUuid === identity.itemUuid))
+            phase: "item-removed"
           });
           recoveryAttempts = 0;
           continue;
         }
 
-        if (transaction.phase === "item-applied") {
+        if (transaction.phase === "item-removed") {
           const receipts = await this.#readReceipts(transaction);
-          if (!receipts.itemApplied) {
-            return await this.#failInconsistentRecovery(transaction, "item-applied");
-          }
-          const identity = this.#resolveAppliedItemIdentity(transaction, receipts);
-          if (!identity.ok) {
-            return await this.#failInconsistentRecovery(transaction, "item-applied", {
-              code: identity.code,
-              message: identity.message
-            });
-          }
-          if (identity.needsRepair) {
-            await this.#checkpoint(transactionId, (row) => {
-              row.item.itemId = identity.itemId;
-              row.item.itemUuid = identity.itemUuid;
-            }, {
-              status: TRADE_TRANSACTION_STATUS.APPLYING,
-              phase: "item-applied",
-              matches: (row) => row?.status === TRADE_TRANSACTION_STATUS.APPLYING
-                && row?.phase === "item-applied"
-                && row.item?.itemId === identity.itemId
-                && row.item?.itemUuid === identity.itemUuid
-            });
-            recoveryAttempts = 0;
-            continue;
+          if (!this.#applicationReceiptsMatchPhase("item-removed", receipts)) {
+            return this.#failInconsistentRecovery(transaction, "item-removed");
           }
           if (!receipts.currencyApplied) {
-            await this.#operations.applyPurchaseCurrency(clone(transaction));
+            await this.#operations.applySaleCurrency(clone(transaction));
           }
           await this.#checkpoint(transactionId, (row) => {
             row.status = TRADE_TRANSACTION_STATUS.APPLYING;
@@ -546,30 +402,8 @@ export class TradeTransactionService {
 
         if (transaction.phase === "currency-applied") {
           const receipts = await this.#readReceipts(transaction);
-          if (!receipts.itemApplied || !receipts.currencyApplied) {
-            return await this.#failInconsistentRecovery(transaction, "currency-applied");
-          }
-          const identity = this.#resolveAppliedItemIdentity(transaction, receipts);
-          if (!identity.ok) {
-            return await this.#failInconsistentRecovery(transaction, "currency-applied", {
-              code: identity.code,
-              message: identity.message
-            });
-          }
-          if (identity.needsRepair) {
-            await this.#checkpoint(transactionId, (row) => {
-              row.item.itemId = identity.itemId;
-              row.item.itemUuid = identity.itemUuid;
-            }, {
-              status: TRADE_TRANSACTION_STATUS.APPLYING,
-              phase: "currency-applied",
-              matches: (row) => row?.status === TRADE_TRANSACTION_STATUS.APPLYING
-                && row?.phase === "currency-applied"
-                && row.item?.itemId === identity.itemId
-                && row.item?.itemUuid === identity.itemUuid
-            });
-            recoveryAttempts = 0;
-            continue;
+          if (!this.#applicationReceiptsMatchPhase("currency-applied", receipts)) {
+            return this.#failInconsistentRecovery(transaction, "currency-applied");
           }
           const committed = await this.#checkpoint(transactionId, (row) => {
             row.status = TRADE_TRANSACTION_STATUS.COMMITTED;
@@ -582,15 +416,12 @@ export class TradeTransactionService {
           return clone(committed.result);
         }
 
-        return await this.#failInconsistentRecovery(transaction, transaction.phase);
+        return this.#failInconsistentRecovery(transaction, transaction.phase);
       }
       catch (error) {
         if (error instanceof TradeTransactionError
-          && [
-            "transaction-compensated",
-            "reconciliation-required",
-            "transaction-conflict"
-          ].includes(error.code)) {
+          && ["transaction-compensated", "reconciliation-required", "transaction-conflict"]
+            .includes(error.code)) {
           throw error;
         }
         if (error instanceof JournalCheckpointError) {
@@ -598,7 +429,7 @@ export class TradeTransactionService {
           if (recoveryAttempts <= MAX_JOURNAL_RECOVERY_ATTEMPTS) continue;
           const exhausted = transactionError(
             "transaction-write-failed",
-            "Trade transaction checkpoint recovery was exhausted",
+            "Sale transaction checkpoint recovery was exhausted",
             transactionId,
             error
           );
@@ -607,6 +438,15 @@ export class TradeTransactionService {
         return this.#compensateFailure(transactionId, error);
       }
     }
+  }
+
+  #applicationReceiptsMatchPhase(phase, receipts) {
+    if (phase === "prepared") return receipts.itemRemoved || !receipts.currencyApplied;
+    if (phase === "item-removed") return receipts.itemRemoved;
+    if (phase === "currency-applied") {
+      return receipts.itemRemoved && receipts.currencyApplied;
+    }
+    return false;
   }
 
   async #compensateFailure(transactionId, failure) {
@@ -642,7 +482,7 @@ export class TradeTransactionService {
         if (outcome?.committed) return clone(outcome.result);
         return this.#resumeCompensation(transactionId);
       }
-      catch (compensationStartError) {
+      catch (startError) {
         let durable = null;
         try {
           durable = this.#repository.findTransaction(transactionId);
@@ -663,7 +503,7 @@ export class TradeTransactionService {
         return this.#markReconciliationRequired(
           transactionId,
           failure,
-          compensationStartError,
+          startError,
           "compensation-start"
         );
       }
@@ -708,13 +548,12 @@ export class TradeTransactionService {
         const transaction = this.#requireTransaction(transactionId);
         const terminal = terminalResult(transaction);
         if (transaction.status === TRADE_TRANSACTION_STATUS.COMMITTED) return terminal;
-        if (transaction.status === TRADE_TRANSACTION_STATUS.COMPENSATED) return terminal;
         if (transaction.status !== TRADE_TRANSACTION_STATUS.COMPENSATING) {
           throw new CompensationStepError(
             "validating-compensation-status",
             transactionError(
               "recovery-receipt-missing",
-              "Trade transaction is not in a compensating state",
+              "Sale transaction is not in a compensating state",
               transactionId
             )
           );
@@ -732,38 +571,16 @@ export class TradeTransactionService {
             "validating-compensation-receipts",
             transactionError(
               "recovery-receipt-missing",
-              "Compensation phase contradicts retained document receipts",
+              "Sale compensation phase contradicts retained document receipts",
               transactionId
             )
           );
-        }
-        const identity = this.#resolveAppliedItemIdentity(transaction, receipts);
-        if (!identity.ok) {
-          throw new CompensationStepError(
-            "validating-compensation-item-identity",
-            transactionError(identity.code, identity.message, transactionId)
-          );
-        }
-        if (identity.needsRepair) {
-          await this.#checkpoint(transactionId, (row) => {
-            row.item.itemId = identity.itemId;
-            row.item.itemUuid = identity.itemUuid;
-          }, {
-            status: transaction.status,
-            phase: transaction.phase,
-            matches: (row) => row?.status === transaction.status
-              && row?.phase === transaction.phase
-              && row.item?.itemId === identity.itemId
-              && row.item?.itemUuid === identity.itemUuid
-          });
-          recoveryAttempts = 0;
-          continue;
         }
 
         if (transaction.phase === "compensating") {
           if (receipts.currencyApplied) {
             try {
-              await this.#operations.compensatePurchaseCurrency(clone(transaction));
+              await this.#operations.compensateSaleCurrency(clone(transaction));
             }
             catch (error) {
               throw new CompensationStepError("compensating-currency", error);
@@ -783,9 +600,9 @@ export class TradeTransactionService {
         }
 
         if (transaction.phase === "currency-compensated") {
-          if (receipts.itemApplied) {
+          if (receipts.itemRemoved) {
             try {
-              await this.#operations.compensatePurchaseItem(clone(transaction));
+              await this.#operations.compensateSaleItem(clone(transaction));
             }
             catch (error) {
               throw new CompensationStepError("compensating-item", error);
@@ -805,12 +622,6 @@ export class TradeTransactionService {
         }
 
         if (transaction.phase === "item-compensated") {
-          await this.#releaseStock(transactionId);
-          recoveryAttempts = 0;
-          continue;
-        }
-
-        if (transaction.phase === "stock-released") {
           await this.#checkpoint(transactionId, (row) => {
             row.status = TRADE_TRANSACTION_STATUS.COMPENSATED;
             row.phase = "compensated";
@@ -823,10 +634,19 @@ export class TradeTransactionService {
           });
           throw transactionError(
             "transaction-compensated",
-            "Trade transaction was compensated",
+            "Sale transaction was compensated",
             transactionId
           );
         }
+
+        throw new CompensationStepError(
+          "validating-compensation-phase",
+          transactionError(
+            "recovery-receipt-missing",
+            "Sale compensation phase is invalid",
+            transactionId
+          )
+        );
       }
       catch (error) {
         if (error instanceof TradeTransactionError
@@ -864,181 +684,39 @@ export class TradeTransactionService {
   }
 
   #compensationReceiptsMatchPhase(phase, receipts) {
-    if (phase === "compensating") {
-      return receipts.itemApplied || !receipts.currencyApplied;
-    }
-    if (phase === "currency-compensated") {
-      return !receipts.currencyApplied;
-    }
-    if (phase === "item-compensated" || phase === "stock-released") {
-      return !receipts.itemApplied && !receipts.currencyApplied;
+    if (phase === "compensating") return receipts.itemRemoved || !receipts.currencyApplied;
+    if (phase === "currency-compensated") return !receipts.currencyApplied;
+    if (phase === "item-compensated") {
+      return !receipts.itemRemoved && !receipts.currencyApplied;
     }
     return false;
   }
 
-  #resolveAppliedItemIdentity(transaction, receipts) {
-    if (!receipts.itemApplied) {
-      return { ok: true, needsRepair: false, itemId: "", itemUuid: "" };
-    }
-
-    const rowItemId = String(transaction.item?.itemId ?? "").trim();
-    const rowItemUuid = String(transaction.item?.itemUuid ?? "").trim();
-    const receiptItemId = receipts.itemId;
-    const receiptItemUuid = receipts.itemUuid;
-    const receiptHasId = Boolean(receiptItemId);
-    const receiptHasUuid = Boolean(receiptItemUuid);
-    if (receiptHasId !== receiptHasUuid) {
-      return {
-        ok: false,
-        code: "recovery-item-identity-missing",
-        message: "Applied purchase item receipt has incomplete identity"
-      };
-    }
-
-    const conflicts = (receiptHasId && rowItemId && receiptItemId !== rowItemId)
-      || (receiptHasUuid && rowItemUuid && receiptItemUuid !== rowItemUuid);
-    if (conflicts) {
-      return {
-        ok: false,
-        code: "recovery-item-identity-conflict",
-        message: "Applied purchase item receipt conflicts with journal identity"
-      };
-    }
-
-    if (transaction.item?.created === true) {
-      if (!receiptHasId || !receiptHasUuid) {
-        return {
-          ok: false,
-          code: "recovery-item-identity-missing",
-          message: "Created purchase item receipt is missing document identity"
-        };
-      }
-      if (Boolean(rowItemId) !== Boolean(rowItemUuid)) {
-        return {
-          ok: false,
-          code: "recovery-item-identity-missing",
-          message: "Created purchase journal has incomplete document identity"
-        };
-      }
-      return {
-        ok: true,
-        needsRepair: !rowItemId,
-        itemId: receiptItemId,
-        itemUuid: receiptItemUuid
-      };
-    }
-
-    if (!rowItemId || !rowItemUuid) {
-      return {
-        ok: false,
-        code: "recovery-item-identity-missing",
-        message: "Existing purchase item journal is missing document identity"
-      };
-    }
-    return {
-      ok: true,
-      needsRepair: false,
-      itemId: rowItemId,
-      itemUuid: rowItemUuid
-    };
-  }
-
-  async #releaseStock(transactionId) {
-    try {
-      await this.#repository.mutate((state) => {
-        const row = state.tradeLog.find((entry) => entry.transactionId === transactionId);
-        if (!row) {
-          throw transactionError(
-            "transaction-not-found",
-            "Trade transaction was not found",
-            transactionId
-          );
-        }
-        if (row.phase === "stock-released" || row.compensation?.phase === "stock-released") {
-          return;
-        }
-        if (row.status !== TRADE_TRANSACTION_STATUS.COMPENSATING
-          || row.phase !== "item-compensated") {
-          throw transactionError(
-            "recovery-receipt-missing",
-            "Trade transaction is not ready to release stock",
-            transactionId
-          );
-        }
-
-        const traderId = String(
-          row.traderId ?? `${row.request?.cityId ?? ""}::${row.request?.traderKey ?? ""}`
-        ).trim();
-        const trader = state.traders?.[traderId];
-        const stock = Array.isArray(trader?.inventory)
-          ? trader.inventory.find((entry) => entry?.itemKey === row.stock?.itemKey)
-          : null;
-        const release = -Number(row.stock?.delta);
-        if (!stock || !Number.isInteger(stock.quantity)
-          || !Number.isInteger(release) || release < 1) {
-          throw transactionError(
-            "stock-release-unavailable",
-            "Reserved trader stock could not be released",
-            transactionId
-          );
-        }
-
-        stock.quantity += release;
-        row.status = TRADE_TRANSACTION_STATUS.COMPENSATING;
-        row.phase = "stock-released";
-        row.compensation ??= { attempts: 1, error: null };
-        row.compensation.phase = "stock-released";
-        row.updatedAt = this.#timestamp();
-      });
-    }
-    catch (error) {
-      if (error instanceof TradeTransactionError) {
-        throw new CompensationStepError("releasing-stock", error);
-      }
-      let durable = null;
-      try {
-        durable = this.#repository.findTransaction(transactionId);
-      }
-      catch (_readError) {
-        durable = null;
-      }
-      if (durable?.status === TRADE_TRANSACTION_STATUS.COMPENSATING
-        && durable.phase === "stock-released") {
-        return durable;
-      }
-      throw new JournalCheckpointError(transactionId, "stock-released", error);
-    }
-    return this.#requireTransaction(transactionId);
-  }
-
-  async #failInconsistentRecovery(transaction, phase, {
-    code = "recovery-receipt-missing",
-    message = "Persisted purchase phase is missing a required document receipt"
-  } = {}) {
+  async #failInconsistentRecovery(transaction, phase) {
     const error = transactionError(
-      code,
-      message,
+      "recovery-receipt-missing",
+      "Persisted sale phase contradicts required document receipts",
       transaction.transactionId
     );
     try {
       await this.#repository.mutateTransaction(transaction.transactionId, (row) => {
         row.status = TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED;
         row.phase = "reconciliation-required";
-        row.error = sanitizeError(error, phase, code);
+        row.error = sanitizeError(error, phase, "recovery-receipt-missing");
         row.updatedAt = this.#timestamp();
       });
     }
     catch (cause) {
       throw transactionError(
         "reconciliation-required",
-        "Trade transaction requires reconciliation",
+        "Sale transaction requires reconciliation",
         transaction.transactionId,
         cause
       );
     }
     throw transactionError(
       "reconciliation-required",
-      "Trade transaction requires reconciliation",
+      "Sale transaction requires reconciliation",
       transaction.transactionId,
       error
     );
@@ -1084,14 +762,14 @@ export class TradeTransactionService {
       if (durable?.status === TRADE_TRANSACTION_STATUS.COMPENSATED) {
         throw transactionError(
           "transaction-compensated",
-          "Trade transaction was compensated",
+          "Sale transaction was compensated",
           transactionId,
           cause
         );
       }
       throw transactionError(
         "reconciliation-required",
-        "Trade transaction requires reconciliation",
+        "Sale transaction requires reconciliation",
         transactionId,
         cause
       );
@@ -1102,32 +780,32 @@ export class TradeTransactionService {
     if (outcome?.status === TRADE_TRANSACTION_STATUS.COMPENSATED) {
       throw transactionError(
         "transaction-compensated",
-        "Trade transaction was compensated",
+        "Sale transaction was compensated",
         transactionId
       );
     }
     throw transactionError(
       "reconciliation-required",
-      "Trade transaction requires reconciliation",
+      "Sale transaction requires reconciliation",
       transactionId,
       compensationError
     );
   }
 
   async #readReceipts(transaction) {
-    const value = await this.#operations.readPurchaseReceipts(clone(transaction));
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
+    const value = await this.#operations.readSaleReceipts(clone(transaction));
+    if (!value || typeof value !== "object" || Array.isArray(value)
+      || typeof value.itemRemoved !== "boolean"
+      || typeof value.currencyApplied !== "boolean") {
       throw transactionError(
-        "purchase-receipts-invalid",
-        "Purchase receipts are invalid",
+        "sale-receipts-invalid",
+        "Sale receipts are invalid",
         transaction.transactionId
       );
     }
     return {
-      itemApplied: value.itemApplied === true,
-      currencyApplied: value.currencyApplied === true,
-      itemId: typeof value.itemId === "string" ? value.itemId.trim() : "",
-      itemUuid: typeof value.itemUuid === "string" ? value.itemUuid.trim() : ""
+      itemRemoved: value.itemRemoved,
+      currencyApplied: value.currencyApplied
     };
   }
 
@@ -1160,7 +838,7 @@ export class TradeTransactionService {
     if (!transaction) {
       throw transactionError(
         "transaction-not-found",
-        "Trade transaction was not found",
+        "Sale transaction was not found",
         transactionId
       );
     }
