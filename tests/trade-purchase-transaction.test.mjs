@@ -152,6 +152,7 @@ function buildTransaction({
 function createOperations({
   descriptorFactory = buildDescriptor,
   failures = {},
+  afterEffectFailures = {},
   initialReceipts = {},
   currencyGate = null
 } = {}) {
@@ -172,13 +173,20 @@ function createOperations({
     name,
     count === true ? 1 : Number(count)
   ]));
+  const remainingAfterEffectFailures = new Map(Object.entries(afterEffectFailures).map(([name, count]) => [
+    name,
+    count === true ? 1 : Number(count)
+  ]));
 
-  function maybeFail(name) {
-    const remaining = remainingFailures.get(name) ?? 0;
+  function maybeFailFrom(source, name) {
+    const remaining = source.get(name) ?? 0;
     if (remaining < 1) return;
-    remainingFailures.set(name, remaining - 1);
+    source.set(name, remaining - 1);
     throw new TradeTransactionError(`${name}-failed`, `${name} failed`);
   }
+
+  const maybeFail = (name) => maybeFailFrom(remainingFailures, name);
+  const maybeFailAfterEffect = (name) => maybeFailFrom(remainingAfterEffectFailures, name);
 
   function receiptFor(transactionId) {
     if (!receipts.has(transactionId)) {
@@ -200,6 +208,7 @@ function createOperations({
       trace.push("apply-item");
       maybeFail("apply-item");
       receiptFor(transaction.transactionId).itemApplied = true;
+      maybeFailAfterEffect("apply-item");
     },
     async applyPurchaseCurrency(transaction) {
       counters.applyCurrency += 1;
@@ -207,6 +216,7 @@ function createOperations({
       if (currencyGate) await currencyGate.promise;
       maybeFail("apply-currency");
       receiptFor(transaction.transactionId).currencyApplied = true;
+      maybeFailAfterEffect("apply-currency");
     },
     async readPurchaseReceipts(transaction) {
       counters.readReceipts += 1;
@@ -219,12 +229,14 @@ function createOperations({
       trace.push("compensate-currency");
       maybeFail("compensate-currency");
       receiptFor(transaction.transactionId).currencyApplied = false;
+      maybeFailAfterEffect("compensate-currency");
     },
     async compensatePurchaseItem(transaction) {
       counters.compensateItem += 1;
       trace.push("compensate-item");
       maybeFail("compensate-item");
       receiptFor(transaction.transactionId).itemApplied = false;
+      maybeFailAfterEffect("compensate-item");
     }
   };
 
@@ -239,10 +251,16 @@ function createOperations({
 function createHarness({
   state = buildState(),
   operationsOptions = {},
+  writeFailures = {},
   nowStart = 1_000
 } = {}) {
   let storedState = clone(state);
   const writes = [];
+  let writeAttempts = 0;
+  const pendingWriteFailures = new Map(Object.entries(writeFailures).map(([ordinal, mode]) => [
+    Number(ordinal),
+    mode
+  ]));
   const game = {
     settings: {
       get(moduleId, key) {
@@ -253,8 +271,17 @@ function createHarness({
       async set(moduleId, key, value) {
         assert.equal(moduleId, MODULE_ID);
         assert.equal(key, SETTINGS_KEYS.TRADER_STATE);
+        writeAttempts += 1;
+        const failureMode = pendingWriteFailures.get(writeAttempts);
+        pendingWriteFailures.delete(writeAttempts);
+        if (failureMode === "before-store") {
+          throw new Error(`settings write ${writeAttempts} rejected before store`);
+        }
         storedState = clone(value);
         writes.push(clone(value));
+        if (failureMode === "after-store") {
+          throw new Error(`settings write ${writeAttempts} rejected after store`);
+        }
         return value;
       }
     }
@@ -277,6 +304,9 @@ function createHarness({
     repository,
     service,
     writes,
+    get writeAttempts() {
+      return writeAttempts;
+    },
     get state() {
       return clone(storedState);
     }
@@ -328,7 +358,7 @@ test("purchase reserves stock and commits the trusted descriptor outcome", async
     prepare: 1,
     applyItem: 1,
     applyCurrency: 1,
-    readReceipts: 2,
+    readReceipts: 3,
     compensateCurrency: 0,
     compensateItem: 0
   });
@@ -691,6 +721,7 @@ test("resuming after a checkpointed stock release never releases stock twice", a
   );
   assert.equal(stockQuantity(harness), 1);
   assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.COMPENSATED);
+  assert.equal(harness.counters.readReceipts, 1);
 
   const countersAfterResume = clone(harness.counters);
   await assert.rejects(
@@ -792,4 +823,269 @@ test("a nonterminal persisted result is not returned before the commit checkpoin
   currencyGate.resolve();
   assert.deepEqual(await pending, buildDescriptor().result);
   assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.COMMITTED);
+});
+
+test("reservation write ambiguity is recovered after store and remains typed before store", async () => {
+  for (const mode of ["before-store", "after-store"]) {
+    const harness = createHarness({ writeFailures: { 1: mode } });
+
+    if (mode === "before-store") {
+      await assert.rejects(
+        harness.service.purchase({ ...REQUEST }),
+        (error) => assertTradeError(error, "transaction-write-failed")
+      );
+      assert.equal(findTransaction(harness), undefined);
+      assert.equal(stockQuantity(harness), 1);
+      assert.equal(harness.counters.applyItem, 0);
+      assert.equal(harness.counters.applyCurrency, 0);
+
+      const retried = await harness.service.purchase({ ...REQUEST });
+      assert.deepEqual(retried, buildDescriptor().result);
+      assert.equal(harness.counters.prepare, 2, "same-ID lock must be removed after rejection");
+    }
+    else {
+      const result = await harness.service.purchase({ ...REQUEST });
+      assert.deepEqual(result, buildDescriptor().result);
+      assert.equal(harness.counters.prepare, 1);
+    }
+
+    assert.equal(stockQuantity(harness), 0);
+    assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.COMMITTED);
+    assert.equal(harness.counters.applyItem, 1);
+    assert.equal(harness.counters.applyCurrency, 1);
+    assert.equal(harness.counters.compensateItem, 0);
+    assert.equal(harness.counters.compensateCurrency, 0);
+  }
+});
+
+test("application checkpoint write ambiguity resumes without compensating durable effects", async () => {
+  const checkpoints = [
+    { name: "item-applied", ordinal: 2 },
+    { name: "currency-applied", ordinal: 3 },
+    { name: "committed", ordinal: 4 }
+  ];
+
+  for (const checkpoint of checkpoints) {
+    for (const mode of ["before-store", "after-store"]) {
+      const harness = createHarness({ writeFailures: { [checkpoint.ordinal]: mode } });
+
+      const result = await harness.service.purchase({ ...REQUEST });
+
+      assert.deepEqual(result, buildDescriptor().result, `${checkpoint.name} ${mode}`);
+      assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.COMMITTED);
+      assert.equal(findTransaction(harness).phase, "committed");
+      assert.equal(stockQuantity(harness), 0);
+      assert.equal(harness.counters.applyItem, 1);
+      assert.equal(harness.counters.applyCurrency, 1);
+      assert.equal(harness.counters.compensateCurrency, 0);
+      assert.equal(harness.counters.compensateItem, 0);
+    }
+  }
+});
+
+test("an ambiguous currency side effect compensates currency then item then stock", async () => {
+  const harness = createHarness({
+    operationsOptions: {
+      afterEffectFailures: { "apply-currency": 1 }
+    }
+  });
+
+  await assert.rejects(
+    harness.service.purchase({ ...REQUEST }),
+    (error) => assertTradeError(error, "transaction-compensated")
+  );
+
+  assert.deepEqual(
+    harness.trace.filter((entry) => entry.startsWith("apply-") || entry.startsWith("compensate-")),
+    ["apply-item", "apply-currency", "compensate-currency", "compensate-item"]
+  );
+  assert.equal(harness.counters.compensateCurrency, 1);
+  assert.equal(harness.counters.compensateItem, 1);
+  assert.deepEqual(harness.receiptFor(REQUEST.transactionId), {
+    itemApplied: false,
+    currencyApplied: false
+  });
+  assert.equal(stockQuantity(harness), 1);
+  assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.COMPENSATED);
+});
+
+test("compensation checkpoint write ambiguity resumes from receipts without repeating effects", async () => {
+  const checkpoints = [
+    { name: "currency-compensated", ordinal: 4 },
+    { name: "item-compensated", ordinal: 5 },
+    { name: "stock-released", ordinal: 6 }
+  ];
+
+  for (const checkpoint of checkpoints) {
+    for (const mode of ["before-store", "after-store"]) {
+      const harness = createHarness({
+        operationsOptions: {
+          afterEffectFailures: { "apply-currency": 1 }
+        },
+        writeFailures: { [checkpoint.ordinal]: mode }
+      });
+
+      await assert.rejects(
+        harness.service.purchase({ ...REQUEST }),
+        (error) => assertTradeError(error, "transaction-compensated")
+      );
+
+      assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.COMPENSATED);
+      assert.equal(stockQuantity(harness), 1, `${checkpoint.name} ${mode}`);
+      assert.equal(harness.counters.compensateCurrency, 1);
+      assert.equal(harness.counters.compensateItem, 1);
+      assert.deepEqual(harness.receiptFor(REQUEST.transactionId), {
+        itemApplied: false,
+        currencyApplied: false
+      });
+    }
+  }
+});
+
+test("purchase descriptors are validated completely before stock reservation", async () => {
+  const invalidDescriptors = [
+    ["item id", (descriptor) => { descriptor.item.itemId = ""; }],
+    ["item uuid", (descriptor) => { descriptor.item.itemUuid = " "; }],
+    ["item before integer", (descriptor) => { descriptor.item.beforeQuantity = 1.5; }],
+    ["item after nonnegative", (descriptor) => { descriptor.item.afterQuantity = -1; }],
+    ["item positive delta", (descriptor) => { descriptor.item.delta = 0; }],
+    ["item delta equation", (descriptor) => { descriptor.item.afterQuantity = 4; }],
+    ["item created boolean", (descriptor) => { descriptor.item.created = "false"; }],
+    ["item raw data", (descriptor) => { descriptor.item.rawItemData = null; }],
+    ["currency before integer", (descriptor) => { descriptor.currency.beforeCopper = 500.5; }],
+    ["currency after nonnegative", (descriptor) => { descriptor.currency.afterCopper = -1; }],
+    ["currency negative purchase delta", (descriptor) => {
+      descriptor.currency.afterCopper = 500;
+      descriptor.currency.deltaCopper = 0;
+      descriptor.result.totalPriceCopper = 0;
+    }],
+    ["currency delta equation", (descriptor) => { descriptor.currency.afterCopper = 399; }],
+    ["result transaction id", (descriptor) => { descriptor.result.transactionId = "trade_purchase_other"; }],
+    ["result total", (descriptor) => { descriptor.result.totalPriceCopper = 99; }]
+  ];
+
+  for (const [name, mutateDescriptor] of invalidDescriptors) {
+    const harness = createHarness({
+      operationsOptions: {
+        descriptorFactory(request) {
+          const descriptor = buildDescriptor(request);
+          mutateDescriptor(descriptor);
+          return descriptor;
+        }
+      }
+    });
+
+    await assert.rejects(
+      harness.service.purchase({ ...REQUEST }),
+      (error) => {
+        assertTradeError(error, "invalid-purchase-descriptor");
+        return true;
+      },
+      name
+    );
+    assert.equal(stockQuantity(harness), 1, name);
+    assert.equal(harness.state.tradeLog.length, 0, name);
+    assert.equal(harness.counters.applyItem, 0, name);
+    assert.equal(harness.counters.applyCurrency, 0, name);
+  }
+});
+
+test("application phases reject every impossible receipt combination", async () => {
+  const scenarios = [
+    { phase: "stock-reserved", receipts: { itemApplied: false, currencyApplied: true } },
+    { phase: "item-applied", receipts: { itemApplied: false, currencyApplied: false } },
+    { phase: "item-applied", receipts: { itemApplied: false, currencyApplied: true } },
+    { phase: "currency-applied", receipts: { itemApplied: false, currencyApplied: false } },
+    { phase: "currency-applied", receipts: { itemApplied: false, currencyApplied: true } },
+    { phase: "currency-applied", receipts: { itemApplied: true, currencyApplied: false } }
+  ];
+
+  for (const scenario of scenarios) {
+    const row = buildTransaction({
+      status: scenario.phase === "stock-reserved"
+        ? TRADE_TRANSACTION_STATUS.PREPARED
+        : TRADE_TRANSACTION_STATUS.APPLYING,
+      phase: scenario.phase
+    });
+    const harness = createHarness({
+      state: buildState({ stockQuantity: 0, tradeLog: [row] }),
+      operationsOptions: {
+        initialReceipts: { [REQUEST.transactionId]: scenario.receipts }
+      }
+    });
+
+    await assert.rejects(
+      harness.service.purchase({ ...REQUEST }),
+      (error) => assertTradeError(error, "reconciliation-required")
+    );
+    assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+    assert.equal(findTransaction(harness).error.code, "recovery-receipt-missing");
+    assert.equal(harness.counters.applyItem, 0);
+    assert.equal(harness.counters.applyCurrency, 0);
+  }
+});
+
+test("application phases accept every recoverable receipt combination", async () => {
+  const scenarios = [
+    { phase: "stock-reserved", receipts: { itemApplied: true, currencyApplied: true } },
+    { phase: "item-applied", receipts: { itemApplied: true, currencyApplied: true } }
+  ];
+
+  for (const scenario of scenarios) {
+    const row = buildTransaction({
+      status: scenario.phase === "stock-reserved"
+        ? TRADE_TRANSACTION_STATUS.PREPARED
+        : TRADE_TRANSACTION_STATUS.APPLYING,
+      phase: scenario.phase
+    });
+    const harness = createHarness({
+      state: buildState({ stockQuantity: 0, tradeLog: [row] }),
+      operationsOptions: {
+        initialReceipts: { [REQUEST.transactionId]: scenario.receipts }
+      }
+    });
+
+    assert.deepEqual(await harness.service.purchase({ ...REQUEST }), buildDescriptor().result);
+    assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.COMMITTED);
+    assert.equal(harness.counters.applyItem, 0);
+    assert.equal(harness.counters.applyCurrency, 0);
+  }
+});
+
+test("compensation phases reject contradictory receipts without document mutation", async () => {
+  const scenarios = [
+    { phase: "compensating", receipts: { itemApplied: false, currencyApplied: true }, stock: 0 },
+    { phase: "currency-compensated", receipts: { itemApplied: false, currencyApplied: true }, stock: 0 },
+    { phase: "currency-compensated", receipts: { itemApplied: true, currencyApplied: true }, stock: 0 },
+    { phase: "item-compensated", receipts: { itemApplied: true, currencyApplied: false }, stock: 0 },
+    { phase: "item-compensated", receipts: { itemApplied: false, currencyApplied: true }, stock: 0 },
+    { phase: "item-compensated", receipts: { itemApplied: true, currencyApplied: true }, stock: 0 },
+    { phase: "stock-released", receipts: { itemApplied: true, currencyApplied: false }, stock: 1 },
+    { phase: "stock-released", receipts: { itemApplied: false, currencyApplied: true }, stock: 1 },
+    { phase: "stock-released", receipts: { itemApplied: true, currencyApplied: true }, stock: 1 }
+  ];
+
+  for (const scenario of scenarios) {
+    const row = buildTransaction({
+      status: TRADE_TRANSACTION_STATUS.COMPENSATING,
+      phase: scenario.phase,
+      error: { code: "apply-currency-failed", message: "currency failed", phase: "item-applied" },
+      compensation: { phase: scenario.phase, attempts: 1, error: null }
+    });
+    const harness = createHarness({
+      state: buildState({ stockQuantity: scenario.stock, tradeLog: [row] }),
+      operationsOptions: {
+        initialReceipts: { [REQUEST.transactionId]: scenario.receipts }
+      }
+    });
+
+    await assert.rejects(
+      harness.service.purchase({ ...REQUEST }),
+      (error) => assertTradeError(error, "reconciliation-required")
+    );
+    assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+    assert.equal(harness.counters.compensateCurrency, 0);
+    assert.equal(harness.counters.compensateItem, 0);
+    assert.equal(stockQuantity(harness), scenario.stock);
+  }
 });
