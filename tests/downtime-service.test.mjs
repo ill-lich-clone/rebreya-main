@@ -4018,6 +4018,18 @@ test("RebreyaMainModule only lets the active GM execute legacy world mutations",
       expectedCalls: 1
     },
     {
+      name: "elected GM in a generic iterable users collection",
+      user: electedGm,
+      users: {
+        *[Symbol.iterator]() {
+          yield player;
+          yield otherGm;
+          yield electedGm;
+        }
+      },
+      expectedCalls: 1
+    },
+    {
       name: "non-elected GM in a multi-user world",
       user: otherGm,
       users: [otherGm, player, electedGm],

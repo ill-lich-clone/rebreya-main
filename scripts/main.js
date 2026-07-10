@@ -151,7 +151,9 @@ function hasEligibleActiveGm(users) {
     ? users.contents
     : (Array.isArray(users)
       ? users
-      : (typeof users?.values === "function" ? Array.from(users.values()) : []));
+      : (typeof users?.values === "function"
+        ? Array.from(users.values())
+        : (typeof users?.[Symbol.iterator] === "function" ? Array.from(users) : [])));
   return entries.some(eligible);
 }
 
