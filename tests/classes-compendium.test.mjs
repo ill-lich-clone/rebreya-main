@@ -130,6 +130,43 @@ test("sorcerer packages expose both updated starting-equipment choices", () => {
   assert.deepEqual(config.getPackage("b").currency, { gp: 50 });
 });
 
+test("sorcerer V0.11 is a full Charisma caster with source-table progressions", () => {
+  const sorcerer = normalizeClassCompendiumData(loadJson("data/sorcerer-rework-v011.json"));
+  const featureDefinitions = buildFeatureDefinitions(sorcerer);
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const advancement = buildClassAdvancement(sorcerer.classData, {
+    featureUuidById,
+    classFeatureEntries: sorcerer.classData.features,
+    minorFeatUuids: ["Compendium.world.rebreya-feats.Item.minor"]
+  });
+  const system = createClassSystem(sorcerer.classData, advancement, sorcerer.sourceLabel);
+  const sorceryPoints = sorcerer.classData.scaleAdvancements
+    .find((scale) => scale.identifier === "sorcery-points");
+  const levelOneGrant = advancement.find((entry) => entry.type === "ItemGrant" && entry.level === 1);
+  const subclassChoice = advancement.find((entry) => entry.type === "Subclass");
+  const equipmentChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Стартовое снаряжение");
+  const sandShift = featureDefinitions.find((definition) => definition.name === "Смена диска");
+  const sandShiftEntry = createFeatureEntryData(sandShift, new Map(), null, {
+    featureUuidById,
+    featureDefinitions
+  });
+
+  assert.equal(sorcerer.sourceLabel, "ЗоЗТ");
+  assert.equal(sorcerer.classData.identifier, "sorcerer-rework-v011");
+  assert.equal(system.spellcasting.progression, "full");
+  assert.equal(system.spellcasting.ability, "cha");
+  assert.equal(sorcerer.classData.spellChoices.length, 2);
+  assert.equal(sorceryPoints.progression[20], 153);
+  assert.equal(sorcerer.subclasses.length, 10);
+  assert.equal(sorcerer.subclasses.some((entry) => entry.name === "Отмеченный феями"), false);
+  assert.match(system.description.value, /<table>/u);
+  assert.equal(subclassChoice.level, 1);
+  assert.equal(levelOneGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("sorcerer-rework-v011::class::sorcerer-origin")), true);
+  assert.equal(levelOneGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("sorcerer-rework-v011::class::sorcerer-spellcasting")), true);
+  assert.equal(equipmentChoice.configuration.pool.length, 2);
+  assert.match(sandShiftEntry.system.description.value, /@UUID\[.*\]\{Проявление духов\}/u);
+});
+
 test("barbarian and fighter reworks use the ZoZT source label", () => {
   const barbarian = normalizeClassCompendiumData(loadJson("data/barbarian-rework-v012.json"));
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));

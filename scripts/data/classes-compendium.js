@@ -32,7 +32,8 @@ const CLASS_DATA_PATHS = [
   `modules/${MODULE_ID}/data/barbarian-rework-v012.json`,
   `modules/${MODULE_ID}/data/fighter-rework-v028.json`,
   `modules/${MODULE_ID}/data/paladin-rework-v01.json`,
-  `modules/${MODULE_ID}/data/rogue-rework-v00.json`
+  `modules/${MODULE_ID}/data/rogue-rework-v00.json`,
+  `modules/${MODULE_ID}/data/sorcerer-rework-v011.json`
 ];
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const CLASS_ICON_SEARCH_PATHS = [
@@ -901,6 +902,7 @@ export function normalizeClassCompendiumData(rawData) {
   }
   const subclassTitle = cleanString(rawClass.subclassTitle, classIdentifier === "fighter-rework-v028" ? "Воинский архетип" : "Путь дикости");
   const subclassHint = cleanString(rawClass.subclassHint, classIdentifier === "fighter-rework-v028" ? "Выберите архетип воина." : "Выберите архетип варвара.");
+  const subclassLevel = Math.max(1, Math.min(20, Math.floor(parseNumber(rawClass.subclassLevel, 3))));
 
   const usedClassFeatureIds = new Set();
   const classFeatures = (Array.isArray(rawClass.features) ? rawClass.features : [])
@@ -1081,6 +1083,7 @@ export function normalizeClassCompendiumData(rawData) {
       scaleAdvancements: normalizeScaleAdvancements(rawClass.scaleAdvancements),
       subclassTitle,
       subclassHint,
+      subclassLevel,
       cunningStrikes,
       features: classFeatures
     },
@@ -3345,7 +3348,7 @@ function buildSubclassAdvancement(classIdentifier, classData = {}) {
     type: "Subclass",
     title: cleanString(classData.subclassTitle, "Архетип"),
     hint: cleanString(classData.subclassHint, "Выберите архетип."),
-    level: 3,
+    level: Math.max(1, Math.min(20, Math.floor(parseNumber(classData.subclassLevel, 3)))),
     configuration: {},
     value: {
       document: null,
