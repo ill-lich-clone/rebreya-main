@@ -82,7 +82,7 @@ function tokenFrom(subject) {
 
 function firstActiveToken(actor) {
   if (typeof actor?.getActiveTokens === "function") {
-    const tokens = actor.getActiveTokens(true);
+    const tokens = actor.getActiveTokens(false);
     if (Array.isArray(tokens) && tokens.length) {
       return tokens[0];
     }
@@ -252,14 +252,14 @@ export class SpellAutomationService {
     return true;
   }
 
-  async handleSocketMessage(message) {
+  async handleSocketMessage(message, senderId = "") {
     if (message?.type === COUNTERSPELL_RESULT_EVENT) {
-      this.#handleCounterspellResult(message);
+      this.#handleCounterspellResult(message, senderId);
       return true;
     }
 
     if (message?.type === COUNTERSPELL_REQUEST_EVENT) {
-      await this.#handleCounterspellRequest(message);
+      await this.#handleCounterspellRequest(message, senderId);
       return true;
     }
 
@@ -485,15 +485,15 @@ export class SpellAutomationService {
       }
 
       const attempt = this.#makeCounterspellAttempt(candidate, parent, choice.spellLevel);
-      const reaction = await this.#consumeReaction(candidate);
-      attempt.reaction = reaction;
-      if (reaction?.consumed !== true) {
-        continue;
-      }
-
       const paid = await this.#paySpell(candidate, attempt, parent);
       attempt.paid = paid === true;
       if (!attempt.paid) {
+        continue;
+      }
+
+      const reaction = await this.#consumeReaction(candidate);
+      attempt.reaction = reaction;
+      if (reaction?.consumed !== true) {
         continue;
       }
 
@@ -631,7 +631,11 @@ export class SpellAutomationService {
       return false;
     }
 
-    return !cast?.sourceToken || this.#isWithinCounterspellRange(candidate, cast);
+    if (!tokenCenter(cast?.sourceToken)) {
+      return false;
+    }
+
+    return this.#isWithinCounterspellRange(candidate, cast);
   }
 
   #currentUserOwnsActor(actor) {
@@ -804,7 +808,7 @@ export class SpellAutomationService {
     });
   }
 
-  #handleCounterspellResult(message) {
+  #handleCounterspellResult(message, senderId) {
     const currentUserId = cleanText(globalThis.game?.user?.id);
     const requestId = cleanText(message?.requestId);
     const entry = this._pendingCounterspellRequests.get(requestId);
@@ -812,17 +816,21 @@ export class SpellAutomationService {
       return;
     }
 
-    this._pendingCounterspellRequests.delete(requestId);
-    globalThis.clearTimeout(entry.timeoutId);
-    const matchesSource = cleanText(message?.senderId) === entry.forUserId
+    const matchesSource = cleanText(senderId) === entry.forUserId
       && cleanText(message?.actorId) === entry.actorId
       && cleanText(message?.itemId) === entry.itemId;
-    entry.resolve(matchesSource && message?.result && typeof message.result === "object"
+    if (!matchesSource) {
+      return;
+    }
+
+    this._pendingCounterspellRequests.delete(requestId);
+    globalThis.clearTimeout(entry.timeoutId);
+    entry.resolve(message?.result && typeof message.result === "object"
       ? message.result
       : { accepted: false, reason: "invalidResult" });
   }
 
-  async #handleCounterspellRequest(message) {
+  async #handleCounterspellRequest(message, senderId) {
     const currentUser = globalThis.game?.user;
     if (!currentUser || cleanText(message?.forUserId) !== cleanText(currentUser.id)) {
       return;
@@ -865,8 +873,10 @@ export class SpellAutomationService {
         }
         else {
           const attempt = this.#makeCounterspellAttempt(candidate, parent, choice.spellLevel);
-          const reaction = await this.#consumeReaction(candidate);
-          const paid = reaction?.consumed === true && await this.#paySpell(candidate, attempt, parent);
+          const paid = await this.#paySpell(candidate, attempt, parent);
+          const reaction = paid === true
+            ? await this.#consumeReaction(candidate)
+            : { consumed: false, reason: "paymentFailed" };
           if (reaction?.consumed !== true || paid !== true) {
             result = { accepted: false, reaction, paid: paid === true, reason: "paymentFailed" };
           }
@@ -901,10 +911,10 @@ export class SpellAutomationService {
       result = { accepted: false, reason: cleanText(error?.message, "error") };
     }
 
-    this.#emitCounterspellResult(message, result);
+    this.#emitCounterspellResult(message, result, senderId);
   }
 
-  #emitCounterspellResult(request, result) {
+  #emitCounterspellResult(request, result, senderId) {
     const game = globalThis.game;
     if (typeof game?.socket?.emit !== "function") {
       return;
@@ -913,7 +923,7 @@ export class SpellAutomationService {
     game.socket.emit(SOCKET_CHANNEL, {
       type: COUNTERSPELL_RESULT_EVENT,
       requestId: cleanText(request?.requestId),
-      forUserId: cleanText(request?.senderId),
+      forUserId: cleanText(senderId),
       senderId: cleanText(game?.user?.id),
       actorId: cleanText(request?.actorId),
       itemId: cleanText(request?.itemId),
@@ -986,7 +996,6 @@ export class SpellAutomationService {
     const baseLevel = resolveSpellLevel(activity, item, attempt.spellLevel);
     const slotLevel = Math.max(baseLevel, attempt.spellLevel);
     const usageConfig = {
-      configure: false,
       spell: {
         slot: `spell${slotLevel}`
       },
@@ -996,12 +1005,13 @@ export class SpellAutomationService {
         parentCastId: parent.id
       }
     };
+    const dialogConfig = { configure: false };
     if (typeof activity?.use === "function") {
-      return Boolean(await activity.use(usageConfig));
+      return Boolean(await activity.use(usageConfig, dialogConfig));
     }
 
     if (typeof item?.use === "function") {
-      return Boolean(await item.use(usageConfig));
+      return Boolean(await item.use(usageConfig, dialogConfig));
     }
 
     return false;

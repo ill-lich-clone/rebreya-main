@@ -262,7 +262,7 @@ test("a remote owner can resolve Counterspell for an actor they own", async () =
               dc: null,
               rollTotal: null
             }
-          });
+          }, "reactor-user");
         });
       }
     }
@@ -286,6 +286,65 @@ test("a remote owner can resolve Counterspell for an actor they own", async () =
       center: { x: 0, y: 0 },
       visible: true
     });
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("a forged Counterspell result with a spoofed payload sender cannot cancel the root cast", async () => {
+  const candidate = counterspellCandidate({ id: "remote-reactor" });
+  candidate.actor.isOwner = false;
+  candidate.actor.testUserPermission = (user) => user?.id === "reactor-user";
+  const previousGame = globalThis.game;
+  const service = makeService({ candidates: [candidate] });
+  globalThis.game = {
+    user: { id: "caster-user", active: true, isGM: false },
+    users: {
+      contents: [
+        { id: "caster-user", active: true, isGM: false },
+        { id: "reactor-user", active: true, isGM: false }
+      ]
+    },
+    socket: {
+      emit: (_channel, request) => {
+        queueMicrotask(() => {
+          void service.handleSocketMessage({
+            type: "rebreya-main.spellAutomation.counterspellResult",
+            requestId: request.requestId,
+            forUserId: "caster-user",
+            senderId: "reactor-user",
+            actorId: candidate.actor.id,
+            itemId: candidate.item.id,
+            result: {
+              accepted: true,
+              spellLevel: 3,
+              reaction: { consumed: true },
+              paid: true,
+              success: true,
+              dc: null,
+              rollTotal: null
+            }
+          }, "attacker-user");
+          queueMicrotask(() => {
+            void service.handleSocketMessage({
+              type: "rebreya-main.spellAutomation.counterspellResult",
+              requestId: request.requestId,
+              forUserId: "caster-user",
+              senderId: "reactor-user",
+              actorId: candidate.actor.id,
+              itemId: candidate.item.id,
+              result: { accepted: false, reason: "declined" }
+            }, "reactor-user");
+          });
+        });
+      }
+    }
+  };
+
+  try {
+    const result = await service.resolveCast(rootCast());
+    assert.equal(result.cancelled, false);
   }
   finally {
     globalThis.game = previousGame;
@@ -327,7 +386,7 @@ test("an active GM routes a player-owned Counterspell prompt to that player", as
               dc: null,
               rollTotal: null
             }
-          });
+          }, "reactor-user");
         });
       }
     }
@@ -379,7 +438,7 @@ test("remote owner visibility is not filtered by the caster client", async () =>
               dc: null,
               rollTotal: null
             }
-          });
+          }, "reactor-user");
         });
       }
     }
@@ -432,6 +491,7 @@ test("the targeted owner validates and returns a local Counterspell outcome", as
     }
   };
   const service = makeService({ candidates: [candidate] });
+  service._options.distanceFeet = () => 30;
 
   try {
     const handled = await service.handleSocketMessage({
@@ -441,8 +501,8 @@ test("the targeted owner validates and returns a local Counterspell outcome", as
       forUserId: "reactor-user",
       actorId: candidate.actor.id,
       itemId: candidate.item.id,
-      cast: rootCast()
-    });
+      cast: rootCast({ sourceToken: { center: { x: 0, y: 0 } } })
+    }, "caster-user");
     assert.equal(handled, true);
     assert.deepEqual(emitted, [{
       type: "rebreya-main.spellAutomation.counterspellResult",
@@ -461,6 +521,37 @@ test("the targeted owner validates and returns a local Counterspell outcome", as
         rollTotal: null
       }
     }]);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("a Counterspell result targets the authenticated request sender", async () => {
+  const candidate = counterspellCandidate({ id: "owned-reactor" });
+  candidate.actor.isOwner = true;
+  candidate.actor.testUserPermission = (user) => user?.id === "reactor-user";
+  const previousGame = globalThis.game;
+  const emitted = [];
+  globalThis.game = {
+    user: { id: "reactor-user", active: true, isGM: false },
+    actors: { get: (actorId) => actorId === candidate.actor.id ? candidate.actor : null },
+    socket: { emit: (_channel, message) => emitted.push(message) }
+  };
+  const service = makeService({ candidates: [candidate] });
+  service._options.distanceFeet = () => 30;
+
+  try {
+    await service.handleSocketMessage({
+      type: "rebreya-main.spellAutomation.counterspellRequest",
+      requestId: "request-transport-sender",
+      senderId: "forged-caster-user",
+      forUserId: "reactor-user",
+      actorId: candidate.actor.id,
+      itemId: candidate.item.id,
+      cast: rootCast({ sourceToken: { center: { x: 0, y: 0 } } })
+    }, "caster-user");
+    assert.equal(emitted[0].forUserId, "caster-user");
   }
   finally {
     globalThis.game = previousGame;
@@ -487,6 +578,7 @@ test("the targeted owner checks reaction availability before prompting", async (
       return { accepted: true, spellLevel: 3 };
     }
   });
+  service._options.distanceFeet = () => 30;
 
   try {
     await service.handleSocketMessage({
@@ -496,8 +588,8 @@ test("the targeted owner checks reaction availability before prompting", async (
       forUserId: "reactor-user",
       actorId: candidate.actor.id,
       itemId: candidate.item.id,
-      cast: rootCast()
-    });
+      cast: rootCast({ sourceToken: { center: { x: 0, y: 0 } } })
+    }, "caster-user");
     assert.equal(promptCalls, 0);
     assert.equal(emitted[0].result.accepted, false);
     assert.equal(emitted[0].result.reason, "noReaction");
@@ -552,13 +644,141 @@ test("the targeted owner rechecks visible Counterspell range before prompting", 
           isVisible: true
         }
       })
-    });
+    }, "caster-user");
     assert.equal(promptCalls, 0);
     assert.equal(emitted[0].result.reason, "notEligible");
   }
   finally {
     globalThis.game = previousGame;
     globalThis.canvas = previousCanvas;
+  }
+});
+
+test("an unlinked source token beyond Counterspell range does not prompt a remote owner", async () => {
+  const sourceToken = {
+    uuid: "Scene.scene.Token.caster",
+    getCenterPoint: () => ({ x: 0, y: 0 }),
+    visible: true,
+    isVisible: true
+  };
+  const candidate = counterspellCandidate({ id: "remote-reactor" });
+  candidate.actor.isOwner = false;
+  candidate.actor.testUserPermission = (user) => user?.id === "reactor-user";
+  candidate.actor.getActiveTokens = () => [{
+    getCenterPoint: () => ({ x: 1000, y: 0 }),
+    visible: true,
+    isVisible: true
+  }];
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+  let promptCalls = 0;
+  let request = null;
+  const sourceService = makeService({ candidates: [candidate] });
+  const remoteService = makeService({
+    prompt: async () => {
+      promptCalls += 1;
+      return { accepted: true, spellLevel: 3 };
+    }
+  });
+  const sourceGame = {
+    user: { id: "caster-user", active: true, isGM: false },
+    users: {
+      contents: [
+        { id: "caster-user", active: true, isGM: false },
+        { id: "reactor-user", active: true, isGM: false }
+      ]
+    },
+    socket: {
+      emit: (_channel, message) => {
+        request = message;
+        queueMicrotask(() => {
+          globalThis.game = remoteGame;
+          void remoteService.handleSocketMessage(message, "caster-user");
+        });
+      }
+    }
+  };
+  const remoteGame = {
+    user: { id: "reactor-user", active: true, isGM: false },
+    actors: { get: (actorId) => actorId === candidate.actor.id ? candidate.actor : null },
+    socket: {
+      emit: (_channel, message) => {
+        globalThis.game = sourceGame;
+        void sourceService.handleSocketMessage(message, "reactor-user");
+      }
+    }
+  };
+  const sourceActor = {
+    uuid: "Actor.caster",
+    getActiveTokens: (linked) => linked === false ? [sourceToken] : []
+  };
+  globalThis.game = sourceGame;
+  globalThis.canvas = {
+    grid: { measurePath: () => ({ distance: 1000 }) },
+    scene: { grid: { units: "ft" } }
+  };
+  const activity = {
+    id: "activity-root",
+    uuid: "Activity.root",
+    actor: sourceActor,
+    item: {
+      uuid: "Item.root",
+      system: { level: 3, components: { verbal: true, somatic: false } }
+    },
+    system: { range: { value: 90, units: "ft" } }
+  };
+
+  try {
+    assert.equal(await sourceService.applyDnd5ePreUseActivity(activity, {}), true);
+    assert.deepEqual(request.cast.sourceToken.center, { x: 0, y: 0 });
+    assert.equal(promptCalls, 0);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+  }
+});
+
+test("a missing source fails closed before a 1000-foot remote Counterspell prompt", async () => {
+  const candidate = counterspellCandidate({ id: "missing-source-reactor" });
+  candidate.actor.isOwner = true;
+  candidate.actor.testUserPermission = (user) => user?.id === "reactor-user";
+  const previousGame = globalThis.game;
+  const emitted = [];
+  let promptCalls = 0;
+  let distanceChecks = 0;
+  globalThis.game = {
+    user: { id: "reactor-user", active: true, isGM: false },
+    actors: { get: (actorId) => actorId === candidate.actor.id ? candidate.actor : null },
+    socket: { emit: (_channel, message) => emitted.push(message) }
+  };
+  const service = makeService({
+    prompt: async () => {
+      promptCalls += 1;
+      return { accepted: true, spellLevel: 3 };
+    }
+  });
+  service._options.distanceFeet = () => {
+    distanceChecks += 1;
+    return 1000;
+  };
+
+  try {
+    await service.handleSocketMessage({
+      type: "rebreya-main.spellAutomation.counterspellRequest",
+      requestId: "request-missing-source",
+      senderId: "caster-user",
+      forUserId: "reactor-user",
+      actorId: candidate.actor.id,
+      itemId: candidate.item.id,
+      cast: rootCast({ sourceToken: null })
+    }, "caster-user");
+    assert.equal(promptCalls, 0);
+    assert.equal(distanceChecks, 0);
+    assert.equal(emitted[0].result.reason, "notEligible");
+  }
+  finally {
+    globalThis.game = previousGame;
   }
 });
 
@@ -573,8 +793,8 @@ test("a selected Counterspell spends reaction and spell payment before resolving
 
   assert.equal(result.cancelled, true);
   assert.deepEqual(events, [
-    "reaction:reactor:counterspell",
-    "payment:reactor:root-cast"
+    "payment:reactor:root-cast",
+    "reaction:reactor:counterspell"
   ]);
 });
 
@@ -583,8 +803,8 @@ test("a selected Counterspell pays with its selected spell-slot level", async ()
   const paymentConfigs = [];
   candidate.activity = {
     item: candidate.item,
-    use: async (usageConfig) => {
-      paymentConfigs.push(usageConfig);
+    use: async (...args) => {
+      paymentConfigs.push(args);
       return { updates: [] };
     }
   };
@@ -596,8 +816,10 @@ test("a selected Counterspell pays with its selected spell-slot level", async ()
   const result = await service.resolveCast(rootCast({ spellLevel: 5 }));
 
   assert.equal(result.cancelled, true);
-  assert.equal(paymentConfigs[0].spell.slot, "spell5");
-  assert.equal(paymentConfigs[0].scaling, 2);
+  assert.equal(paymentConfigs[0][0].spell.slot, "spell5");
+  assert.equal(paymentConfigs[0][0].scaling, 2);
+  assert.equal(paymentConfigs[0][0].configure, undefined);
+  assert.deepEqual(paymentConfigs[0][1], { configure: false });
 });
 
 test("a Counterspell with failed native payment cannot cancel the root cast", async () => {
@@ -615,6 +837,31 @@ test("a Counterspell with failed native payment cannot cancel the root cast", as
 
   assert.equal(result.cancelled, false);
   assert.equal(result.chain.length, 1);
+});
+
+test("a declined or failed native Counterspell payment keeps the reaction available", async () => {
+  const declinedEvents = [];
+  const declined = makeService({
+    candidates: [counterspellCandidate()],
+    events: declinedEvents,
+    prompt: async () => ({ accepted: false })
+  });
+  const failedPaymentEvents = [];
+  const failedPaymentCandidate = counterspellCandidate();
+  failedPaymentCandidate.activity = {
+    item: failedPaymentCandidate.item,
+    use: async () => undefined
+  };
+  const failedPayment = makeService({
+    candidates: [failedPaymentCandidate],
+    events: failedPaymentEvents,
+    useActivityPayment: true
+  });
+
+  assert.equal((await declined.resolveCast(rootCast())).cancelled, false);
+  assert.deepEqual(declinedEvents, []);
+  assert.equal((await failedPayment.resolveCast(rootCast())).cancelled, false);
+  assert.deepEqual(failedPaymentEvents, []);
 });
 
 test("the default Counterspell prompt returns the selected available slot level", async () => {
@@ -856,5 +1103,8 @@ test("module API constructs and initializes the generic spell automation service
   assert.match(source, /import \{ SpellAutomationService \} from "\.\/combat\/spell-automation-service\.js/);
   assert.match(source, /this\.spellAutomationService = new SpellAutomationService\(this\);/);
   assert.match(source, /await this\.spellAutomationService\.initialize\(\);/);
-  assert.match(source, /await this\.spellAutomationService\.handleSocketMessage\(message\)/);
+  assert.match(source, /function dispatchSocketMessage\(message, senderId\)/);
+  assert.match(source, /queuedSocketMessages\.push\(\{ message, senderId \}\)/);
+  assert.match(source, /moduleApi\.handleSocketMessage\(queuedMessage\.message, queuedMessage\.senderId\)/);
+  assert.match(source, /await this\.spellAutomationService\.handleSocketMessage\(message, senderId\)/);
 });

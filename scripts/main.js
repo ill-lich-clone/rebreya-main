@@ -262,14 +262,14 @@ function getOpenActorSheetApps() {
   });
 }
 
-function dispatchSocketMessage(message) {
+function dispatchSocketMessage(message, senderId) {
   const moduleApi = socketModuleApi ?? globalThis.game?.rebreyaMain ?? null;
   if (!moduleApi) {
-    queuedSocketMessages.push(message);
+    queuedSocketMessages.push({ message, senderId });
     return;
   }
 
-  moduleApi.handleSocketMessage(message).catch((error) => {
+  moduleApi.handleSocketMessage(message, senderId).catch((error) => {
     console.error(`${MODULE_ID} | Failed to handle socket message.`, error);
   });
 }
@@ -280,8 +280,8 @@ function flushQueuedSocketMessages(moduleApi) {
   }
 
   while (queuedSocketMessages.length) {
-    const message = queuedSocketMessages.shift();
-    moduleApi.handleSocketMessage(message).catch((error) => {
+    const queuedMessage = queuedSocketMessages.shift();
+    moduleApi.handleSocketMessage(queuedMessage.message, queuedMessage.senderId).catch((error) => {
       console.error(`${MODULE_ID} | Failed to handle queued socket message.`, error);
     });
   }
@@ -699,12 +699,12 @@ export class RebreyaMainModule {
     }
   }
 
-  async handleSocketMessage(message) {
+  async handleSocketMessage(message, senderId) {
     if (!message || typeof message !== "object") {
       return;
     }
 
-    if (await this.spellAutomationService.handleSocketMessage(message)) {
+    if (await this.spellAutomationService.handleSocketMessage(message, senderId)) {
       return;
     }
 
