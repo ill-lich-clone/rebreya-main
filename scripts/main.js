@@ -106,6 +106,24 @@ const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST = "downtime-project-close-requ
 const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT = "downtime-project-close-result";
 const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
 const SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST = "travel-map-sync-request";
+const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
+  SOCKET_EVENT_DOWNTIME_CREATE_REQUEST,
+  SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST,
+  SOCKET_EVENT_DOWNTIME_CHECK_RESULT_REQUEST,
+  SOCKET_EVENT_DOWNTIME_PROJECT_CONTINUE_REQUEST,
+  SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST,
+  SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST,
+  SOCKET_EVENT_RACE_AUTOMATION,
+  SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION,
+  SOCKET_EVENT_INVENTORY_IMPORT_REQUEST,
+  SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST,
+  SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
+  SOCKET_EVENT_TRADER_AUDIT,
+  SOCKET_EVENT_LOOTGEN_CLAIM_ROW,
+  SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY,
+  SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY,
+  SOCKET_EVENT_LOOTGEN_CLAIM_COINS
+]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
 const MODULE_STYLE_VERSION = "1.4.93-item-upgrade-row-drop";
 const SECONDS_PER_HOUR = 3600;
@@ -121,6 +139,13 @@ function cloneSocketPayload(value) {
   }
 
   return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function isActiveLegacyMutationClient(foundryGame) {
+  if (foundryGame?.users == null) {
+    return Boolean(foundryGame?.user?.isGM && foundryGame.user.active !== false);
+  }
+  return isActiveGmClient(foundryGame);
 }
 
 function createSocketRequestId(prefix) {
@@ -656,6 +681,21 @@ export class RebreyaMainModule {
       return;
     }
 
+    if (!LEGACY_WORLD_MUTATION_SOCKET_TYPES.has(message.type)) {
+      return this.#handleLegacySocketMessage(message);
+    }
+
+    if (!isActiveLegacyMutationClient(game)) {
+      return;
+    }
+
+    return this.worldMutationCoordinator.run(
+      "world",
+      () => this.#handleLegacySocketMessage(message)
+    );
+  }
+
+  async #handleLegacySocketMessage(message) {
     if (message.type === SOCKET_EVENT_SET_SETTING_RESULT) {
       handleSettingsUpdateSocketResponse(message);
       return;

@@ -3693,7 +3693,8 @@ test("RebreyaMainModule GM records socket downtime check results for owned actor
   globalThis.game = {
     user: {
       id: "gm",
-      isGM: true
+      isGM: true,
+      active: true
     },
     users: [
       playerUser,
@@ -3812,7 +3813,8 @@ test("RebreyaMainModule GM creates socket downtime requests without activating i
   globalThis.game = {
     user: {
       id: "gm",
-      isGM: true
+      isGM: true,
+      active: true
     },
     users: [
       playerUser,
@@ -3925,7 +3927,8 @@ test("RebreyaMainModule GM rejects socket downtime requests for unowned actors",
   globalThis.game = {
     user: {
       id: "gm",
-      isGM: true
+      isGM: true,
+      active: true
     },
     users: [
       { id: "player-1", isGM: false, active: true },
@@ -3972,5 +3975,323 @@ test("RebreyaMainModule GM rejects socket downtime requests for unowned actors",
   finally {
     globalThis.Hooks = previousHooks;
     globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule only lets the active GM execute legacy world mutations", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {}
+  };
+
+  const electedGm = { id: "gm-a", isGM: true, active: true };
+  const otherGm = { id: "gm-b", isGM: true, active: true };
+  const player = { id: "player-1", isGM: false, active: true };
+  const cases = [
+    {
+      name: "elected GM in a multi-user world",
+      user: electedGm,
+      users: [otherGm, player, electedGm],
+      expectedCalls: 1
+    },
+    {
+      name: "non-elected GM in a multi-user world",
+      user: otherGm,
+      users: [otherGm, player, electedGm],
+      expectedCalls: 0
+    },
+    {
+      name: "sole GM in a legacy harness without game.users",
+      user: { id: "gm-only", isGM: true },
+      expectedCalls: 1
+    },
+    {
+      name: "explicitly inactive sole GM in a legacy harness",
+      user: { id: "gm-inactive", isGM: true, active: false },
+      expectedCalls: 0
+    }
+  ];
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?legacy-active-gm-gate=${Date.now()}`);
+    for (const scenario of cases) {
+      globalThis.game = {
+        user: scenario.user,
+        ...(scenario.users ? { users: scenario.users } : {}),
+        socket: {
+          emit() {}
+        }
+      };
+      const moduleApi = new RebreyaMainModule();
+      let calls = 0;
+      moduleApi.raceAutomationService.handleSocketMessage = async () => {
+        calls += 1;
+      };
+
+      await moduleApi.handleSocketMessage({
+        type: "race-automation",
+        senderId: "player-1",
+        payload: {}
+      });
+
+      assert.equal(calls, scenario.expectedCalls, scenario.name);
+    }
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule routes the exact legacy mutation allowlist through the world coordinator", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {}
+  };
+  globalThis.game = {
+    user: { id: "gm", isGM: true, active: true },
+    users: [
+      { id: "player-1", isGM: false, active: true },
+      { id: "gm", isGM: true, active: true }
+    ],
+    socket: {
+      emit() {}
+    }
+  };
+
+  const mutationTypes = [
+    "downtime-create-request",
+    "downtime-update-request",
+    "downtime-check-result-request",
+    "downtime-project-continue-request",
+    "downtime-project-close-request",
+    "travel-map-sync-request",
+    "race-automation",
+    "character-class-automation",
+    "inventory-import-request",
+    "inventory-source-depletion-request",
+    "inventory-item-action-request",
+    "trader-audit",
+    "lootgen-claim-row",
+    "lootgen-claim-row-to-inventory",
+    "lootgen-claim-all-to-inventory",
+    "lootgen-claim-coins"
+  ];
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?legacy-mutation-allowlist=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const coordinatorKeys = [];
+    const originalRun = moduleApi.worldMutationCoordinator.run.bind(moduleApi.worldMutationCoordinator);
+    moduleApi.worldMutationCoordinator.run = (key, operation) => {
+      coordinatorKeys.push(key);
+      return originalRun(key, operation);
+    };
+
+    for (const type of mutationTypes) {
+      await moduleApi.handleSocketMessage({
+        type,
+        senderId: "gm",
+        payload: {}
+      });
+    }
+    await moduleApi.handleSocketMessage({
+      type: "downtime-create-result",
+      forUserId: "other-user",
+      senderId: "gm",
+      ok: true
+    });
+    await moduleApi.handleSocketMessage({
+      type: "lootgen-show-result",
+      senderId: "gm",
+      payload: {}
+    });
+
+    assert.deepEqual(coordinatorKeys, mutationTypes.map(() => "world"));
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule serializes concurrent legacy world mutation requests", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {}
+  };
+  globalThis.game = {
+    user: { id: "gm", isGM: true, active: true },
+    users: [
+      { id: "player-1", isGM: false, active: true },
+      { id: "gm", isGM: true, active: true }
+    ],
+    socket: {
+      emit() {}
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?legacy-mutation-serialization=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const releases = [];
+    const started = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    moduleApi.raceAutomationService.handleSocketMessage = async (payload) => {
+      started.push(payload.id);
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => {
+        releases.push(resolve);
+      });
+      inFlight -= 1;
+    };
+
+    const first = moduleApi.handleSocketMessage({
+      type: "race-automation",
+      senderId: "player-1",
+      payload: { id: "first" }
+    });
+    const second = moduleApi.handleSocketMessage({
+      type: "race-automation",
+      senderId: "player-1",
+      payload: { id: "second" }
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.deepEqual(started, ["first"]);
+    assert.equal(maxInFlight, 1);
+    releases.shift()();
+    await first;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(started, ["first", "second"]);
+    releases.shift()();
+    await second;
+    assert.equal(maxInFlight, 1);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule propagates a failed legacy mutation without poisoning the queue", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = {
+    once() {}
+  };
+  globalThis.game = {
+    user: { id: "gm", isGM: true, active: true },
+    users: [
+      { id: "player-1", isGM: false, active: true },
+      { id: "gm", isGM: true, active: true }
+    ],
+    socket: {
+      emit() {}
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?legacy-mutation-failure=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const expectedError = new Error("legacy mutation failed");
+    let releaseFirst;
+    let secondStarted = false;
+    moduleApi.raceAutomationService.handleSocketMessage = async (payload) => {
+      if (payload.id === "first") {
+        await new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+        throw expectedError;
+      }
+      secondStarted = true;
+    };
+
+    const first = moduleApi.handleSocketMessage({
+      type: "race-automation",
+      senderId: "player-1",
+      payload: { id: "first" }
+    });
+    const second = moduleApi.handleSocketMessage({
+      type: "race-automation",
+      senderId: "player-1",
+      payload: { id: "second" }
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(secondStarted, false);
+    releaseFirst();
+    await assert.rejects(first, (error) => error === expectedError);
+    await second;
+    assert.equal(secondStarted, true);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule does not block legacy display messages behind queued mutations", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousFoundry = globalThis.foundry;
+  globalThis.Hooks = {
+    once() {}
+  };
+  globalThis.game = {
+    user: { id: "gm", isGM: true, active: true },
+    users: [
+      { id: "player-1", isGM: false, active: true },
+      { id: "gm", isGM: true, active: true }
+    ],
+    socket: {
+      emit() {}
+    }
+  };
+  globalThis.foundry = {
+    utils: {
+      deepClone: clone
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?legacy-display-bypass=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    let releaseMutation;
+    let displayCount = 0;
+    moduleApi.raceAutomationService.handleSocketMessage = async () => {
+      await new Promise((resolve) => {
+        releaseMutation = resolve;
+      });
+    };
+    moduleApi.openLootgenApp = async () => {
+      displayCount += 1;
+    };
+
+    const mutation = moduleApi.handleSocketMessage({
+      type: "race-automation",
+      senderId: "player-1",
+      payload: {}
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    await moduleApi.handleSocketMessage({
+      type: "lootgen-show-result",
+      senderId: "player-1",
+      payload: { rows: [] }
+    });
+
+    assert.equal(displayCount, 1);
+    releaseMutation();
+    await mutation;
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.foundry = previousFoundry;
   }
 });
