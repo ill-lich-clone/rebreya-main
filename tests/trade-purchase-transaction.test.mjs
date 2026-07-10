@@ -92,6 +92,23 @@ function buildDescriptor(request = REQUEST) {
   };
 }
 
+function buildCreatedDescriptor(request = REQUEST, {
+  itemId = "",
+  itemUuid = ""
+} = {}) {
+  const descriptor = buildDescriptor(request);
+  descriptor.item = {
+    ...descriptor.item,
+    itemId,
+    itemUuid,
+    beforeQuantity: 0,
+    afterQuantity: 1,
+    delta: 1,
+    created: true
+  };
+  return descriptor;
+}
+
 function buildState({ stockQuantity = 1, tradeLog = [] } = {}) {
   return {
     version: 1,
@@ -154,6 +171,10 @@ function createOperations({
   failures = {},
   afterEffectFailures = {},
   initialReceipts = {},
+  createdItemIdentity = {
+    itemId: "created-item-sword",
+    itemUuid: "Actor.actor-a.Item.created-item-sword"
+  },
   currencyGate = null
 } = {}) {
   const counters = {
@@ -165,9 +186,15 @@ function createOperations({
     compensateItem: 0
   };
   const trace = [];
+  const currencyTransactions = [];
   const receipts = new Map(Object.entries(initialReceipts).map(([transactionId, value]) => [
     transactionId,
-    { itemApplied: value.itemApplied === true, currencyApplied: value.currencyApplied === true }
+    {
+      itemApplied: value.itemApplied === true,
+      currencyApplied: value.currencyApplied === true,
+      itemId: String(value.itemId ?? ""),
+      itemUuid: String(value.itemUuid ?? "")
+    }
   ]));
   const remainingFailures = new Map(Object.entries(failures).map(([name, count]) => [
     name,
@@ -190,7 +217,12 @@ function createOperations({
 
   function receiptFor(transactionId) {
     if (!receipts.has(transactionId)) {
-      receipts.set(transactionId, { itemApplied: false, currencyApplied: false });
+      receipts.set(transactionId, {
+        itemApplied: false,
+        currencyApplied: false,
+        itemId: "",
+        itemUuid: ""
+      });
     }
     return receipts.get(transactionId);
   }
@@ -207,12 +239,18 @@ function createOperations({
       counters.applyItem += 1;
       trace.push("apply-item");
       maybeFail("apply-item");
-      receiptFor(transaction.transactionId).itemApplied = true;
+      const receipt = receiptFor(transaction.transactionId);
+      receipt.itemApplied = true;
+      if (transaction.item.created === true) {
+        receipt.itemId = createdItemIdentity.itemId;
+        receipt.itemUuid = createdItemIdentity.itemUuid;
+      }
       maybeFailAfterEffect("apply-item");
     },
     async applyPurchaseCurrency(transaction) {
       counters.applyCurrency += 1;
       trace.push("apply-currency");
+      currencyTransactions.push(clone(transaction));
       if (currencyGate) await currencyGate.promise;
       maybeFail("apply-currency");
       receiptFor(transaction.transactionId).currencyApplied = true;
@@ -242,6 +280,7 @@ function createOperations({
 
   return {
     counters,
+    currencyTransactions,
     operations,
     receiptFor,
     trace
@@ -903,7 +942,9 @@ test("an ambiguous currency side effect compensates currency then item then stoc
   assert.equal(harness.counters.compensateItem, 1);
   assert.deepEqual(harness.receiptFor(REQUEST.transactionId), {
     itemApplied: false,
-    currencyApplied: false
+    currencyApplied: false,
+    itemId: "",
+    itemUuid: ""
   });
   assert.equal(stockQuantity(harness), 1);
   assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.COMPENSATED);
@@ -936,7 +977,9 @@ test("compensation checkpoint write ambiguity resumes from receipts without repe
       assert.equal(harness.counters.compensateItem, 1);
       assert.deepEqual(harness.receiptFor(REQUEST.transactionId), {
         itemApplied: false,
-        currencyApplied: false
+        currencyApplied: false,
+        itemId: "",
+        itemUuid: ""
       });
     }
   }
@@ -1088,4 +1131,225 @@ test("compensation phases reject contradictory receipts without document mutatio
     assert.equal(harness.counters.compensateItem, 0);
     assert.equal(stockQuantity(harness), scenario.stock);
   }
+});
+
+test("a created purchase persists receipt item identity before debiting currency", async () => {
+  const harness = createHarness({
+    operationsOptions: {
+      descriptorFactory: (request) => buildCreatedDescriptor(request)
+    }
+  });
+
+  const result = await harness.service.purchase({ ...REQUEST });
+  const row = findTransaction(harness);
+
+  assert.deepEqual(result, buildDescriptor().result);
+  assert.equal(row.status, TRADE_TRANSACTION_STATUS.COMMITTED);
+  assert.equal(row.item.created, true);
+  assert.equal(row.item.itemId, "created-item-sword");
+  assert.equal(row.item.itemUuid, "Actor.actor-a.Item.created-item-sword");
+  assert.equal(harness.counters.applyItem, 1);
+  assert.equal(harness.counters.applyCurrency, 1);
+  assert.equal(harness.currencyTransactions[0].item.itemId, "created-item-sword");
+  assert.equal(
+    harness.currencyTransactions[0].item.itemUuid,
+    "Actor.actor-a.Item.created-item-sword"
+  );
+  assert.equal(stockQuantity(harness), 0);
+});
+
+test("a created receipt at stock-reserved repairs identity without applying the item twice", async () => {
+  const row = buildTransaction({
+    status: TRADE_TRANSACTION_STATUS.PREPARED,
+    phase: "stock-reserved"
+  });
+  row.item = buildCreatedDescriptor().item;
+  const harness = createHarness({
+    state: buildState({ stockQuantity: 0, tradeLog: [row] }),
+    operationsOptions: {
+      initialReceipts: {
+        [REQUEST.transactionId]: {
+          itemApplied: true,
+          currencyApplied: false,
+          itemId: "created-recovered",
+          itemUuid: "Actor.actor-a.Item.created-recovered"
+        }
+      }
+    }
+  });
+
+  await harness.service.purchase({ ...REQUEST });
+
+  assert.equal(harness.counters.applyItem, 0);
+  assert.equal(harness.counters.applyCurrency, 1);
+  assert.equal(findTransaction(harness).item.itemId, "created-recovered");
+  assert.equal(findTransaction(harness).item.itemUuid, "Actor.actor-a.Item.created-recovered");
+  assert.equal(harness.currencyTransactions[0].item.itemId, "created-recovered");
+  assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.COMMITTED);
+  assert.equal(stockQuantity(harness), 0);
+});
+
+test("a persisted created item-applied row is repaired from receipts before currency", async () => {
+  const row = buildTransaction({ phase: "item-applied" });
+  row.item = buildCreatedDescriptor().item;
+  const harness = createHarness({
+    state: buildState({ stockQuantity: 0, tradeLog: [row] }),
+    operationsOptions: {
+      initialReceipts: {
+        [REQUEST.transactionId]: {
+          itemApplied: true,
+          currencyApplied: false,
+          itemId: "created-checkpoint-repair",
+          itemUuid: "Actor.actor-a.Item.created-checkpoint-repair"
+        }
+      }
+    }
+  });
+
+  await harness.service.purchase({ ...REQUEST });
+
+  assert.equal(harness.counters.applyItem, 0);
+  assert.equal(harness.counters.applyCurrency, 1);
+  assert.equal(harness.currencyTransactions[0].item.itemId, "created-checkpoint-repair");
+  assert.equal(
+    harness.currencyTransactions[0].item.itemUuid,
+    "Actor.actor-a.Item.created-checkpoint-repair"
+  );
+  assert.equal(findTransaction(harness).item.itemId, "created-checkpoint-repair");
+  assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.COMMITTED);
+});
+
+test("a created item-applied receipt without identity reconciles before currency", async () => {
+  const row = buildTransaction({ phase: "item-applied" });
+  row.item = buildCreatedDescriptor().item;
+  const harness = createHarness({
+    state: buildState({ stockQuantity: 0, tradeLog: [row] }),
+    operationsOptions: {
+      initialReceipts: {
+        [REQUEST.transactionId]: {
+          itemApplied: true,
+          currencyApplied: false,
+          itemId: "",
+          itemUuid: ""
+        }
+      }
+    }
+  });
+
+  await assert.rejects(
+    harness.service.purchase({ ...REQUEST }),
+    (error) => assertTradeError(error, "reconciliation-required")
+  );
+
+  assert.equal(harness.counters.applyItem, 0);
+  assert.equal(harness.counters.applyCurrency, 0);
+  assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+  assert.equal(findTransaction(harness).error.code, "recovery-item-identity-missing");
+  assert.equal(stockQuantity(harness), 0);
+});
+
+test("an item-applied receipt with conflicting identity reconciles before currency", async () => {
+  const scenarios = [
+    buildTransaction({ phase: "item-applied" }),
+    (() => {
+      const row = buildTransaction({ phase: "item-applied" });
+      row.item = buildCreatedDescriptor(REQUEST, {
+        itemId: "created-original",
+        itemUuid: "Actor.actor-a.Item.created-original"
+      }).item;
+      return row;
+    })()
+  ];
+
+  for (const row of scenarios) {
+    const harness = createHarness({
+      state: buildState({ stockQuantity: 0, tradeLog: [row] }),
+      operationsOptions: {
+        initialReceipts: {
+          [REQUEST.transactionId]: {
+            itemApplied: true,
+            currencyApplied: false,
+            itemId: "conflicting-item",
+            itemUuid: "Actor.actor-a.Item.conflicting-item"
+          }
+        }
+      }
+    });
+
+    await assert.rejects(
+      harness.service.purchase({ ...REQUEST }),
+      (error) => assertTradeError(error, "reconciliation-required")
+    );
+    assert.equal(harness.counters.applyItem, 0);
+    assert.equal(harness.counters.applyCurrency, 0);
+    assert.equal(findTransaction(harness).status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+    assert.equal(findTransaction(harness).error.code, "recovery-item-identity-conflict");
+  }
+});
+
+test("created descriptors reject only one preallocated identity field", async () => {
+  for (const descriptor of [
+    buildCreatedDescriptor(REQUEST, { itemId: "only-id", itemUuid: "" }),
+    buildCreatedDescriptor(REQUEST, { itemId: "", itemUuid: "only-uuid" })
+  ]) {
+    const harness = createHarness({
+      operationsOptions: { descriptorFactory: () => descriptor }
+    });
+
+    await assert.rejects(
+      harness.service.purchase({ ...REQUEST }),
+      (error) => assertTradeError(error, "invalid-purchase-descriptor")
+    );
+    assert.equal(stockQuantity(harness), 1);
+    assert.equal(harness.state.tradeLog.length, 0);
+    assert.equal(harness.counters.applyItem, 0);
+  }
+});
+
+test("existing-item descriptors still require both prepared identity fields", async () => {
+  const harness = createHarness({
+    operationsOptions: {
+      descriptorFactory(request) {
+        const descriptor = buildDescriptor(request);
+        descriptor.item.itemId = "";
+        descriptor.item.itemUuid = "";
+        return descriptor;
+      }
+    }
+  });
+
+  await assert.rejects(
+    harness.service.purchase({ ...REQUEST }),
+    (error) => assertTradeError(error, "invalid-purchase-descriptor")
+  );
+  assert.equal(stockQuantity(harness), 1);
+  assert.equal(harness.state.tradeLog.length, 0);
+  assert.equal(harness.counters.applyItem, 0);
+  assert.equal(harness.counters.applyCurrency, 0);
+});
+
+test("created item identity survives compensation after its receipt clears", async () => {
+  const harness = createHarness({
+    operationsOptions: {
+      descriptorFactory: (request) => buildCreatedDescriptor(request),
+      failures: { "apply-currency": 1 }
+    }
+  });
+
+  await assert.rejects(
+    harness.service.purchase({ ...REQUEST }),
+    (error) => assertTradeError(error, "transaction-compensated")
+  );
+
+  const row = findTransaction(harness);
+  assert.equal(row.status, TRADE_TRANSACTION_STATUS.COMPENSATED);
+  assert.equal(row.item.itemId, "created-item-sword");
+  assert.equal(row.item.itemUuid, "Actor.actor-a.Item.created-item-sword");
+  assert.equal(harness.receiptFor(REQUEST.transactionId).itemApplied, false);
+  assert.equal(harness.receiptFor(REQUEST.transactionId).itemId, "created-item-sword");
+  assert.equal(
+    harness.receiptFor(REQUEST.transactionId).itemUuid,
+    "Actor.actor-a.Item.created-item-sword"
+  );
+  assert.equal(stockQuantity(harness), 1);
 });

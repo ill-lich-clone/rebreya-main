@@ -165,10 +165,19 @@ function normalizeDescriptor(value, request) {
 
   const item = value.item;
   const currency = value.currency;
-  const validItem = typeof item.itemId === "string"
-    && Boolean(item.itemId.trim())
-    && typeof item.itemUuid === "string"
-    && Boolean(item.itemUuid.trim())
+  const hasStringItemId = typeof item.itemId === "string";
+  const hasStringItemUuid = typeof item.itemUuid === "string";
+  const itemId = hasStringItemId ? item.itemId.trim() : "";
+  const itemUuid = hasStringItemUuid ? item.itemUuid.trim() : "";
+  const hasItemId = Boolean(itemId);
+  const hasItemUuid = Boolean(itemUuid);
+  const validIdentity = hasStringItemId
+    && hasStringItemUuid
+    && typeof item.created === "boolean"
+    && (item.created
+      ? hasItemId === hasItemUuid
+      : hasItemId && hasItemUuid);
+  const validItem = validIdentity
     && Number.isInteger(item.beforeQuantity)
     && item.beforeQuantity >= 0
     && Number.isInteger(item.afterQuantity)
@@ -202,7 +211,11 @@ function normalizeDescriptor(value, request) {
   return {
     traderId,
     stock: { itemKey: stockItemKey },
-    item: clone(value.item),
+    item: {
+      ...clone(value.item),
+      itemId,
+      itemUuid
+    },
     currency: clone(value.currency),
     result: clone(value.result),
     audit: sanitizeAudit(value.audit)
@@ -417,19 +430,41 @@ export class TradeTransactionService {
         }
 
         if (transaction.phase === "stock-reserved") {
-          const receipts = await this.#readReceipts(transaction);
+          let receipts = await this.#readReceipts(transaction);
           if (!receipts.itemApplied && receipts.currencyApplied) {
             return await this.#failInconsistentRecovery(transaction, "stock-reserved");
           }
           if (!receipts.itemApplied) {
             await this.#operations.applyPurchaseItem(clone(transaction));
+            if (transaction.item?.created === true) {
+              receipts = await this.#readReceipts(transaction);
+              if (!receipts.itemApplied) {
+                return await this.#failInconsistentRecovery(transaction, "stock-reserved");
+              }
+            }
+          }
+          const identity = this.#resolveAppliedItemIdentity(transaction, receipts);
+          if (!identity.ok) {
+            return await this.#failInconsistentRecovery(transaction, "stock-reserved", {
+              code: identity.code,
+              message: identity.message
+            });
           }
           await this.#checkpoint(transactionId, (row) => {
             row.status = TRADE_TRANSACTION_STATUS.APPLYING;
             row.phase = "item-applied";
+            if (row.item?.created === true) {
+              row.item.itemId = identity.itemId;
+              row.item.itemUuid = identity.itemUuid;
+            }
           }, {
             status: TRADE_TRANSACTION_STATUS.APPLYING,
-            phase: "item-applied"
+            phase: "item-applied",
+            matches: (row) => row?.status === TRADE_TRANSACTION_STATUS.APPLYING
+              && row?.phase === "item-applied"
+              && (transaction.item?.created !== true
+                || (row.item?.itemId === identity.itemId
+                  && row.item?.itemUuid === identity.itemUuid))
           });
           recoveryAttempts = 0;
           continue;
@@ -439,6 +474,28 @@ export class TradeTransactionService {
           const receipts = await this.#readReceipts(transaction);
           if (!receipts.itemApplied) {
             return await this.#failInconsistentRecovery(transaction, "item-applied");
+          }
+          const identity = this.#resolveAppliedItemIdentity(transaction, receipts);
+          if (!identity.ok) {
+            return await this.#failInconsistentRecovery(transaction, "item-applied", {
+              code: identity.code,
+              message: identity.message
+            });
+          }
+          if (identity.needsRepair) {
+            await this.#checkpoint(transactionId, (row) => {
+              row.item.itemId = identity.itemId;
+              row.item.itemUuid = identity.itemUuid;
+            }, {
+              status: TRADE_TRANSACTION_STATUS.APPLYING,
+              phase: "item-applied",
+              matches: (row) => row?.status === TRADE_TRANSACTION_STATUS.APPLYING
+                && row?.phase === "item-applied"
+                && row.item?.itemId === identity.itemId
+                && row.item?.itemUuid === identity.itemUuid
+            });
+            recoveryAttempts = 0;
+            continue;
           }
           if (!receipts.currencyApplied) {
             await this.#operations.applyPurchaseCurrency(clone(transaction));
@@ -458,6 +515,28 @@ export class TradeTransactionService {
           const receipts = await this.#readReceipts(transaction);
           if (!receipts.itemApplied || !receipts.currencyApplied) {
             return await this.#failInconsistentRecovery(transaction, "currency-applied");
+          }
+          const identity = this.#resolveAppliedItemIdentity(transaction, receipts);
+          if (!identity.ok) {
+            return await this.#failInconsistentRecovery(transaction, "currency-applied", {
+              code: identity.code,
+              message: identity.message
+            });
+          }
+          if (identity.needsRepair) {
+            await this.#checkpoint(transactionId, (row) => {
+              row.item.itemId = identity.itemId;
+              row.item.itemUuid = identity.itemUuid;
+            }, {
+              status: TRADE_TRANSACTION_STATUS.APPLYING,
+              phase: "currency-applied",
+              matches: (row) => row?.status === TRADE_TRANSACTION_STATUS.APPLYING
+                && row?.phase === "currency-applied"
+                && row.item?.itemId === identity.itemId
+                && row.item?.itemUuid === identity.itemUuid
+            });
+            recoveryAttempts = 0;
+            continue;
           }
           const committed = await this.#checkpoint(transactionId, (row) => {
             row.status = TRADE_TRANSACTION_STATUS.COMMITTED;
@@ -625,6 +704,13 @@ export class TradeTransactionService {
             )
           );
         }
+        const identity = this.#resolveAppliedItemIdentity(transaction, receipts);
+        if (!identity.ok) {
+          throw new CompensationStepError(
+            "validating-compensation-item-identity",
+            transactionError(identity.code, identity.message, transactionId)
+          );
+        }
 
         if (transaction.phase === "compensating") {
           if (receipts.currencyApplied) {
@@ -640,15 +726,39 @@ export class TradeTransactionService {
             row.phase = "currency-compensated";
             row.compensation ??= { attempts: 1, error: null };
             row.compensation.phase = "currency-compensated";
+            if (identity.needsRepair) {
+              row.item.itemId = identity.itemId;
+              row.item.itemUuid = identity.itemUuid;
+            }
           }, {
             status: TRADE_TRANSACTION_STATUS.COMPENSATING,
-            phase: "currency-compensated"
+            phase: "currency-compensated",
+            matches: (row) => row?.status === TRADE_TRANSACTION_STATUS.COMPENSATING
+              && row?.phase === "currency-compensated"
+              && (!identity.needsRepair
+                || (row.item?.itemId === identity.itemId
+                  && row.item?.itemUuid === identity.itemUuid))
           });
           recoveryAttempts = 0;
           continue;
         }
 
         if (transaction.phase === "currency-compensated") {
+          if (identity.needsRepair) {
+            await this.#checkpoint(transactionId, (row) => {
+              row.item.itemId = identity.itemId;
+              row.item.itemUuid = identity.itemUuid;
+            }, {
+              status: TRADE_TRANSACTION_STATUS.COMPENSATING,
+              phase: "currency-compensated",
+              matches: (row) => row?.status === TRADE_TRANSACTION_STATUS.COMPENSATING
+                && row?.phase === "currency-compensated"
+                && row.item?.itemId === identity.itemId
+                && row.item?.itemUuid === identity.itemUuid
+            });
+            recoveryAttempts = 0;
+            continue;
+          }
           if (receipts.itemApplied) {
             try {
               await this.#operations.compensatePurchaseItem(clone(transaction));
@@ -742,6 +852,73 @@ export class TradeTransactionService {
     return false;
   }
 
+  #resolveAppliedItemIdentity(transaction, receipts) {
+    if (!receipts.itemApplied) {
+      return { ok: true, needsRepair: false, itemId: "", itemUuid: "" };
+    }
+
+    const rowItemId = String(transaction.item?.itemId ?? "").trim();
+    const rowItemUuid = String(transaction.item?.itemUuid ?? "").trim();
+    const receiptItemId = receipts.itemId;
+    const receiptItemUuid = receipts.itemUuid;
+    const receiptHasId = Boolean(receiptItemId);
+    const receiptHasUuid = Boolean(receiptItemUuid);
+    if (receiptHasId !== receiptHasUuid) {
+      return {
+        ok: false,
+        code: "recovery-item-identity-missing",
+        message: "Applied purchase item receipt has incomplete identity"
+      };
+    }
+
+    const conflicts = (receiptHasId && rowItemId && receiptItemId !== rowItemId)
+      || (receiptHasUuid && rowItemUuid && receiptItemUuid !== rowItemUuid);
+    if (conflicts) {
+      return {
+        ok: false,
+        code: "recovery-item-identity-conflict",
+        message: "Applied purchase item receipt conflicts with journal identity"
+      };
+    }
+
+    if (transaction.item?.created === true) {
+      if (!receiptHasId || !receiptHasUuid) {
+        return {
+          ok: false,
+          code: "recovery-item-identity-missing",
+          message: "Created purchase item receipt is missing document identity"
+        };
+      }
+      if (Boolean(rowItemId) !== Boolean(rowItemUuid)) {
+        return {
+          ok: false,
+          code: "recovery-item-identity-missing",
+          message: "Created purchase journal has incomplete document identity"
+        };
+      }
+      return {
+        ok: true,
+        needsRepair: !rowItemId,
+        itemId: receiptItemId,
+        itemUuid: receiptItemUuid
+      };
+    }
+
+    if (!rowItemId || !rowItemUuid) {
+      return {
+        ok: false,
+        code: "recovery-item-identity-missing",
+        message: "Existing purchase item journal is missing document identity"
+      };
+    }
+    return {
+      ok: true,
+      needsRepair: false,
+      itemId: rowItemId,
+      itemUuid: rowItemUuid
+    };
+  }
+
   async #releaseStock(transactionId) {
     try {
       await this.#repository.mutate((state) => {
@@ -810,17 +987,20 @@ export class TradeTransactionService {
     return this.#requireTransaction(transactionId);
   }
 
-  async #failInconsistentRecovery(transaction, phase) {
+  async #failInconsistentRecovery(transaction, phase, {
+    code = "recovery-receipt-missing",
+    message = "Persisted purchase phase is missing a required document receipt"
+  } = {}) {
     const error = transactionError(
-      "recovery-receipt-missing",
-      "Persisted purchase phase is missing a required document receipt",
+      code,
+      message,
       transaction.transactionId
     );
     try {
       await this.#repository.mutateTransaction(transaction.transactionId, (row) => {
         row.status = TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED;
         row.phase = "reconciliation-required";
-        row.error = sanitizeError(error, phase, "recovery-receipt-missing");
+        row.error = sanitizeError(error, phase, code);
         row.updatedAt = this.#timestamp();
       });
     }
@@ -921,7 +1101,9 @@ export class TradeTransactionService {
     }
     return {
       itemApplied: value.itemApplied === true,
-      currencyApplied: value.currencyApplied === true
+      currencyApplied: value.currencyApplied === true,
+      itemId: typeof value.itemId === "string" ? value.itemId.trim() : "",
+      itemUuid: typeof value.itemUuid === "string" ? value.itemUuid.trim() : ""
     };
   }
 
