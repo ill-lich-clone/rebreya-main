@@ -1,3 +1,4 @@
+// @rebreya-role canonical-composition-root
 import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
 import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.93-firearm-template-version-18";

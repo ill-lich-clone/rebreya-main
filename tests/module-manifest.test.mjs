@@ -15,6 +15,10 @@ function compareVersion(a, b) {
   return 0;
 }
 
+async function readCanonicalEntrypointSource() {
+  return readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+}
+
 test("module manifest enables the Foundry module socket namespace", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
 
@@ -32,10 +36,16 @@ test("module manifest loads a cache-busted entrypoint for the current version", 
     .at(-1);
   const expectedEntrypoint = `scripts/main-${manifest.version}.js`;
   const entrypointSource = await readFile(new URL(expectedEntrypoint, manifestUrl), "utf8");
+  const expectedSource = [
+    "// @rebreya-role active-version-forwarder",
+    'import "./main.js?v=1.4.93-npc-held-natural";',
+    ""
+  ].join("\n");
 
   assert.equal(manifest.version, latestEntrypointVersion);
   assert.deepEqual(manifest.esmodules, [expectedEntrypoint]);
-  assert.match(entrypointSource, new RegExp(`\\?v=${manifest.version.replaceAll(".", "\\.")}`, "u"));
+  assert.equal(entrypointSource, expectedSource);
+  assert.doesNotMatch(entrypointSource, /(?:class\s+RebreyaMainModule|Hooks\.(?:once|on)\s*\()/u);
 });
 
 test("legacy module entrypoints forward cached Foundry sessions to the current live entrypoint", async () => {
@@ -61,10 +71,74 @@ test("legacy module entrypoints forward cached Foundry sessions to the current l
   }
 });
 
+test("canonical module entrypoint owns the live composition root", async () => {
+  const canonicalSource = await readCanonicalEntrypointSource();
+
+  assert.match(canonicalSource, /@rebreya-role canonical-composition-root/u);
+  assert.match(canonicalSource, /export class RebreyaMainModule/u);
+});
+
+test("legacy settings relay is an explicit deprecated compatibility boundary", async () => {
+  const compatibilitySymbols = [
+    "SOCKET_EVENT_SET_SETTING",
+    "SOCKET_EVENT_SET_SETTING_RESULT",
+    "handleSettingsUpdateSocketResponse",
+    "requestSettingsUpdate"
+  ].sort();
+  const settingsSource = await readFile(new URL("../scripts/settings.js", import.meta.url), "utf8");
+
+  assert.doesNotMatch(settingsSource, /pendingSettingUpdates|function\s+(?:handleSettingsUpdateSocketResponse|requestSettingsUpdate)/u);
+  assert.match(settingsSource, /from "\.\/legacy\/settings-socket-relay\.js";/u);
+
+  const [settingsModule, legacyModule, legacySource] = await Promise.all([
+    import("../scripts/settings.js"),
+    import("../scripts/legacy/settings-socket-relay.js"),
+    readFile(new URL("../scripts/legacy/settings-socket-relay.js", import.meta.url), "utf8")
+  ]);
+
+  assert.deepEqual(Object.keys(legacyModule).sort(), compatibilitySymbols);
+  assert.deepEqual(Object.keys(settingsModule).sort(), [...compatibilitySymbols, "registerSettings"].sort());
+  for (const symbol of compatibilitySymbols) {
+    assert.equal(settingsModule[symbol], legacyModule[symbol]);
+  }
+  assert.equal(Array.from(legacySource.matchAll(/@deprecated/gu)).length, compatibilitySymbols.length);
+});
+
+test("legacy settings relay fails closed when a world-setting socket is unavailable", async () => {
+  const originalGame = globalThis.game;
+  globalThis.game = {
+    user: { id: "player-1", isGM: false },
+    settings: {
+      settings: new Map([["rebreya.groupState", { scope: "world" }]]),
+      set() {
+        throw new Error("world setting must not be written locally");
+      }
+    },
+    socket: {}
+  };
+
+  try {
+    const { requestSettingsUpdate } = await import("../scripts/settings.js");
+
+    await assert.rejects(
+      requestSettingsUpdate("groupState", { version: 1 }),
+      /Сокет Foundry недоступен/u
+    );
+  }
+  finally {
+    if (originalGame === undefined) {
+      delete globalThis.game;
+    }
+    else {
+      globalThis.game = originalGame;
+    }
+  }
+});
+
 test("module stylesheet cache bust uses the live module style version", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
-  const entrypointSource = await readFile(new URL(manifest.esmodules[0], manifestUrl), "utf8");
+  const entrypointSource = await readCanonicalEntrypointSource();
   const escapedVersion = manifest.version.replaceAll(".", "\\.");
 
   assert.match(entrypointSource, new RegExp(`const MODULE_STYLE_VERSION = "${escapedVersion}-item-upgrade-row-drop";`, "u"));
@@ -75,8 +149,7 @@ test("module stylesheet cache bust uses the live module style version", async ()
 test("module entrypoint registers the live magic weapon template hook", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
-  const entrypointPath = manifest.esmodules?.[0];
-  const entrypointSource = await readFile(new URL(`../${entrypointPath}`, import.meta.url), "utf8");
+  const entrypointSource = await readCanonicalEntrypointSource();
   const escapedVersion = manifest.version.replaceAll(".", "\\.");
 
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook/u);
@@ -90,8 +163,7 @@ test("module entrypoint registers the live magic weapon template hook", async ()
 test("gear compendium import uses the firearm activity cache bust", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
-  const entrypointPath = manifest.esmodules?.[0];
-  const entrypointSource = await readFile(new URL(`../${entrypointPath}`, import.meta.url), "utf8");
+  const entrypointSource = await readCanonicalEntrypointSource();
   const escapedVersion = manifest.version.replaceAll(".", "\\.");
 
   assert.match(
@@ -103,8 +175,7 @@ test("gear compendium import uses the firearm activity cache bust", async () => 
 test("combat automation imports use the current cache busts", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
-  const entrypointPath = manifest.esmodules?.[0];
-  const entrypointSource = await readFile(new URL(`../${entrypointPath}`, import.meta.url), "utf8");
+  const entrypointSource = await readCanonicalEntrypointSource();
   const statusServiceSource = await readFile(new URL("../scripts/combat/status-service.js", import.meta.url), "utf8");
   const escapedVersion = manifest.version.replaceAll(".", "\\.");
 
@@ -137,8 +208,7 @@ test("combat automation imports use the current cache busts", async () => {
 test("held item integrations use the current module cache bust", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
-  const entrypointPath = manifest.esmodules?.[0];
-  const entrypointSource = await readFile(new URL(`../${entrypointPath}`, import.meta.url), "utf8");
+  const entrypointSource = await readCanonicalEntrypointSource();
   const sheetSource = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
   const attackSource = await readFile(new URL("../scripts/combat/attack-service.js", import.meta.url), "utf8");
   const escapedVersion = manifest.version.replaceAll(".", "\\.");
@@ -164,8 +234,7 @@ test("held item integrations use the current module cache bust", async () => {
 test("item upgrade service and sheet integration are wired into the live entrypoint", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
-  const entrypointPath = manifest.esmodules?.[0];
-  const entrypointSource = await readFile(new URL(`../${entrypointPath}`, import.meta.url), "utf8");
+  const entrypointSource = await readCanonicalEntrypointSource();
   const sheetSource = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
   const escapedVersion = manifest.version.replaceAll(".", "\\.");
 
