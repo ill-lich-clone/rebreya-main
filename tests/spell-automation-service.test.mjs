@@ -929,7 +929,7 @@ test("pre-use activity recognizes dnd5e vocal and somatic properties", async () 
   assert.equal(await service.applyDnd5ePreUseActivity(activity, {}), false);
 });
 
-test("pre-use activity honors neutral shared spellCast components before resolving reactions", async () => {
+test("pre-use activity honors neutral cast-context components before resolving reactions", async () => {
   const service = makeService({ candidates: [counterspellCandidate()] });
   const activity = {
     id: "activity-root",
@@ -942,8 +942,12 @@ test("pre-use activity honors neutral shared spellCast components before resolvi
     system: { range: { value: 90, units: "ft" } }
   };
   const usageConfig = {
-    spellCast: {
-      components: { verbal: false, somatic: false, material: true }
+    flags: {
+      [MODULE_ID]: {
+        castContext: {
+          components: { verbal: false, somatic: false, material: true }
+        }
+      }
     }
   };
 

@@ -70,6 +70,116 @@ function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function updateSource(document, patch) {
+  if (!document || !patch || !Object.keys(patch).length) {
+    return document;
+  }
+
+  if (typeof document.updateSource === "function") {
+    document.updateSource(patch);
+    return document;
+  }
+
+  for (const [path, value] of Object.entries(patch)) {
+    setProperty(document, path, value instanceof Set ? new Set(value) : deepClone(value));
+  }
+  return document;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formValues(form, name) {
+  const elements = form?.elements?.[name];
+  if (!elements) {
+    return [];
+  }
+
+  const inputs = typeof elements.length === "number" && !elements.tagName
+    ? Array.from(elements)
+    : [elements];
+  return inputs
+    .filter((input) => input?.checked !== false && input?.selected !== false)
+    .map((input) => cleanText(input?.value))
+    .filter(Boolean);
+}
+
+function tokenUuid(target) {
+  return cleanText(target?.document?.uuid ?? target?.uuid ?? target?.actor?.uuid ?? target);
+}
+
+function targetLabel(target) {
+  return cleanText(target?.name ?? target?.document?.name ?? target?.actor?.name ?? tokenUuid(target), "Target");
+}
+
+function availableTargets({ selectedOnly = false } = {}) {
+  const selected = collectionValues(globalThis.game?.user?.targets);
+  const candidates = selectedOnly
+    ? selected
+    : [...selected, ...collectionValues(globalThis.canvas?.tokens?.placeables)];
+  const seen = new Set();
+  return candidates.reduce((targets, target) => {
+    const uuid = tokenUuid(target);
+    if (!uuid || seen.has(uuid) || !(target?.actor ?? target?.document?.actor ?? target?.type === "Actor")) {
+      return targets;
+    }
+    seen.add(uuid);
+    targets.push({ uuid, label: targetLabel(target) });
+    return targets;
+  }, []);
+}
+
+function damageDieChoices(activity) {
+  const parts = activity?.damage?.parts ?? activity?.system?.damage?.parts ?? activity?.item?.system?.damage?.parts ?? [];
+  return Array.from(parts ?? []).flatMap((part, partIndex) => {
+    const formula = cleanText(part?.formula ?? part?.[0]);
+    const partId = cleanText(part?._id ?? part?.id, String(partIndex));
+    let dieIndex = 0;
+    return Array.from(formula.matchAll(/(\d*)d\d+/giu)).flatMap((match) => {
+      const count = Math.max(1, toInteger(match[1] || 1, 1));
+      return Array.from({ length: count }, () => ({
+        id: `${partId}:${dieIndex}`,
+        label: `${formula || "damage"} #${dieIndex + 1}`,
+        partIndex,
+        dieIndex: dieIndex++
+      }));
+    });
+  });
+}
+
+function normalizedDamageDice(activity, values) {
+  const valid = new Map(damageDieChoices(activity).map((choice) => [choice.id, choice]));
+  const ids = Array.from(new Set((values ?? []).map((value) => cleanText(value)).filter(Boolean)));
+  if (!ids.length || ids.some((id) => !valid.has(id))) {
+    return null;
+  }
+  return ids.map((id) => valid.get(id));
+}
+
+function notifyWarning(message) {
+  globalThis.ui?.notifications?.warn?.(message);
+}
+
+async function documentFromUuid(uuid) {
+  if (typeof globalThis.fromUuid === "function") {
+    return globalThis.fromUuid(uuid);
+  }
+  if (typeof globalThis.fromUuidSync === "function") {
+    return globalThis.fromUuidSync(uuid);
+  }
+  return null;
+}
+
+function targetActor(document) {
+  return document?.actor ?? document?.document?.actor ?? (document?.type === "Actor" ? document : null);
+}
+
 function collectionValues(collection) {
   if (!collection) {
     return [];
@@ -429,11 +539,14 @@ export class SorcererAutomationService {
     this.moduleApi = moduleApi;
     this._options = Object.keys(options).length
       ? options
-      : moduleApi?.chooseVirtualSpellLevel instanceof Function
-        ? moduleApi
-        : {};
+      : moduleApi ?? {};
     this._deferredActivities = new WeakSet();
     this._finalizingActivities = new WeakSet();
+    this._pendingSeekingAttacks = new WeakMap();
+    this._pendingEmpoweredDamage = new WeakMap();
+    this._saveOverridesByMessage = new Map();
+    this._metamagicRecordsByMessage = new Map();
+    this._paymentLocks = new WeakMap();
   }
 
   async initialize() {
@@ -522,19 +635,35 @@ export class SorcererAutomationService {
     const checkboxes = options.map(({ id, label, cost }) => (
       `<label><input type="checkbox" name="metamagic" value="${id}" data-cost="${cost === "spellLevel" ? spellLevel : cost}" onchange="${updateTotal}"> ${label} (${cost === "spellLevel" ? spellLevel : cost})</label>`
     )).join("");
+    const selectedTargets = availableTargets({ selectedOnly: true });
+    const targetOptions = selectedTargets.map(({ uuid, label }) => (
+      `<option value="${escapeHtml(uuid)}">${escapeHtml(label)}</option>`
+    )).join("");
+    const twinnedOptions = availableTargets().map(({ uuid, label }) => (
+      `<option value="${escapeHtml(uuid)}">${escapeHtml(label)}</option>`
+    )).join("");
+    const dieOptions = damageDieChoices(activity).map(({ id, label }) => (
+      `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`
+    )).join("");
     const result = await globalThis.DialogV2.wait({
       window: { title: "Метамагия" },
-      content: `<div class="rebreya-sorcerer-choice-row">${checkboxes}<output data-sorcerer-total>${virtualCost}</output></div>`,
+      content: `<div class="rebreya-sorcerer-choice-row">${checkboxes}<label>Careful <select name="carefulTargets" multiple>${targetOptions}</select></label><label>Heightened <select name="heightenedTarget">${targetOptions}</select></label><label>Twinned <select name="twinnedTarget">${twinnedOptions}</select></label><label>Empowered <select name="damageDice" multiple>${dieOptions}</select></label><output data-sorcerer-total>${virtualCost}</output></div>`,
       buttons: [{
         action: "confirm",
         label: "Применить",
         default: true,
-        callback: (_event, button) => ({
-          accepted: true,
-          ids: Array.from(button?.form?.elements?.metamagic ?? [])
-            .filter((input) => input.checked)
-            .map((input) => input.value)
-        })
+        callback: (_event, button) => {
+          const carefulTargets = formValues(button?.form, "carefulTargets");
+          const heightenedTarget = formValues(button?.form, "heightenedTarget").at(0) ?? "";
+          return {
+            accepted: true,
+            ids: formValues(button?.form, "metamagic"),
+            targetUuids: carefulTargets.length ? carefulTargets : [heightenedTarget].filter(Boolean),
+            currentTargets: selectedTargets.map(({ uuid }) => uuid),
+            secondTargetUuid: formValues(button?.form, "twinnedTarget").at(0) ?? "",
+            damageDice: formValues(button?.form, "damageDice")
+          };
+        }
       }, { action: "cancel", label: "Отмена" }]
     });
     if (!result || result.accepted === false) {
@@ -565,7 +694,10 @@ export class SorcererAutomationService {
 
     const targetUuids = selectedTargetUuids(request.targetUuids);
     const currentTargets = selectedTargetUuids(request.targets ?? request.currentTargets);
-    const selectedDamageDice = Array.from(new Set((request.damageDice ?? []).map((index) => toInteger(index, -1)).filter((index) => index >= 0)));
+    const requestedDamageDice = Array.from(new Set((request.damageDice ?? []).map((id) => cleanText(id)).filter(Boolean)));
+    const selectedDamageDice = ids.includes("empowered-spell")
+      ? normalizedDamageDice(activity, requestedDamageDice)
+      : [];
     const secondTargetUuid = cleanText(request.secondTargetUuid);
     for (const id of ids) {
       if (id === "careful-spell" && (!spellHasSave(activity) || targetUuids.length < 1 || targetUuids.length > charismaModifier(actor))) {
@@ -587,7 +719,7 @@ export class SorcererAutomationService {
           return null;
         }
       }
-      if (id === "empowered-spell" && (!spellHasDamage(activity) || selectedDamageDice.length < 1 || selectedDamageDice.length > charismaModifier(actor))) {
+      if (id === "empowered-spell" && (!spellHasDamage(activity) || !selectedDamageDice || selectedDamageDice.length < 1 || selectedDamageDice.length > charismaModifier(actor))) {
         return null;
       }
       if (id === "quickened-spell" && spellActivation(activity).type !== "action") {
@@ -612,9 +744,10 @@ export class SorcererAutomationService {
     };
   }
 
-  #applyMetamagicConfig(activity, usageConfig, plan) {
-    const meta = plan.metamagic;
+  #applyMetamagicConfig(activity, usageConfig, plan, messageConfig = {}) {
+    const meta = plan.metamagic ?? {};
     const modifiers = {};
+    const updates = {};
     let components = spellComponents(activity);
     for (const id of meta.ids) {
       if (id === "careful-spell") {
@@ -622,9 +755,11 @@ export class SorcererAutomationService {
       }
       else if (id === "distant-spell") {
         const range = spellRange(activity);
-        plan.range = range.units === "touch"
+        plan.range ??= range.units === "touch"
           ? { value: 30, units: "ft" }
           : { value: range.value * 2, units: range.units };
+        updates["range.value"] = plan.range.value;
+        updates["range.units"] = plan.range.units;
         modifiers.distant = true;
       }
       else if (id === "heightened-spell") {
@@ -632,11 +767,28 @@ export class SorcererAutomationService {
       }
       else if (id === "subtle-spell") {
         components = sharedSpellComponents(activity, { verbal: false, somatic: false });
+        const source = spellComponents(activity);
+        if (Object.hasOwn(source, "vocal")) updates["components.vocal"] = false;
+        else updates["components.verbal"] = false;
+        if (Object.hasOwn(source, "somatic")) updates["components.somatic"] = false;
+        else updates["components.s"] = false;
+        const properties = activity?.item?.system?.properties;
+        if (properties instanceof Set) {
+          const adjusted = new Set(properties);
+          adjusted.delete("vocal");
+          adjusted.delete("somatic");
+          updateSource(activity.item, { "system.properties": adjusted });
+        }
+        else if (Array.isArray(properties)) {
+          updateSource(activity.item, { "system.properties": properties.filter((property) => property !== "vocal" && property !== "somatic") });
+        }
         modifiers.subtle = true;
       }
       else if (id === "extended-spell") {
         const duration = spellDuration(activity);
-        plan.duration = durationFromSeconds(durationSeconds(duration) * 2, duration.units);
+        plan.duration ??= durationFromSeconds(durationSeconds(duration) * 2, duration.units);
+        updates["duration.value"] = plan.duration.value;
+        updates["duration.units"] = plan.duration.units;
         modifiers.extended = true;
       }
       else if (id === "twinned-spell") {
@@ -647,15 +799,172 @@ export class SorcererAutomationService {
         modifiers.empowered = { damageDice: meta.selectedDamageDice };
       }
       else if (id === "quickened-spell") {
-        plan.activation = { type: "bonus", value: 1 };
+        plan.activation ??= { type: "bonus", value: 1 };
         usageConfig.activation = deepClone(plan.activation);
+        updates["activation.type"] = "bonus";
+        updates["activation.value"] = 1;
         modifiers.quickened = true;
       }
       else if (id === "seeking-spell") {
-        modifiers.seeking = { pending: true, cost: this.#metamagicCost(meta.options.find((option) => option.id === id), plan.choice.spellLevel) };
+        const option = meta.options?.find((entry) => entry.id === id) ?? { cost: meta.seekingCost ?? 2 };
+        modifiers.seeking = { pending: true, cost: this.#metamagicCost(option, plan.choice.spellLevel) };
       }
     }
-    return { components, modifiers };
+    updateSource(activity, updates);
+
+    usageConfig.flags ??= {};
+    usageConfig.flags[MODULE_ID] ??= {};
+    usageConfig.flags[MODULE_ID].castContext = {
+      components: deepClone(components),
+      targetUuids: meta.ids?.includes("twinned-spell")
+        ? [...meta.currentTargets, meta.secondTargetUuid]
+        : undefined
+    };
+    if (meta.ids?.some((id) => id === "careful-spell" || id === "heightened-spell")) {
+      messageConfig.data ??= {};
+      messageConfig.data.flags ??= {};
+      messageConfig.data.flags[MODULE_ID] ??= {};
+      messageConfig.data.flags[MODULE_ID].saveOverrides = {
+        carefulTargetUuids: meta.ids.includes("careful-spell") ? [...meta.targetUuids] : [],
+        heightenedTargetUuid: meta.ids.includes("heightened-spell") ? meta.targetUuids[0] : null,
+        heightenedUsed: false
+      };
+    }
+    if (meta.ids?.includes("empowered-spell")) {
+      messageConfig.data ??= {};
+      messageConfig.data.flags ??= {};
+      messageConfig.data.flags[MODULE_ID] ??= {};
+      messageConfig.data.flags[MODULE_ID].damageReroll = {
+        selectedDamageDice: meta.selectedDamageDice.map((die) => die?.id ?? die)
+      };
+    }
+    if (meta.ids?.includes("seeking-spell")) {
+      messageConfig.data ??= {};
+      messageConfig.data.flags ??= {};
+      messageConfig.data.flags[MODULE_ID] ??= {};
+      messageConfig.data.flags[MODULE_ID].attackReroll = {
+        cost: modifiers.seeking.cost
+      };
+    }
+    if (meta.ids?.includes("seeking-spell") && spellHasAttack(activity)) {
+      this._pendingSeekingAttacks.set(activity, {
+        actor: plan.actor,
+        activity,
+        cost: modifiers.seeking.cost,
+        used: false,
+        charged: false
+      });
+    }
+    if (meta.ids?.includes("empowered-spell")) {
+      this._pendingEmpoweredDamage.set(activity, {
+        actor: plan.actor,
+        selectedDamageDice: deepClone(meta.selectedDamageDice),
+        used: false
+      });
+    }
+    return { components, modifiers, updates };
+  }
+
+  #persistResolvedPlan(usageConfig, plan) {
+    usageConfig[MODULE_ID] ??= {};
+    usageConfig[MODULE_ID][PREFLIGHT_FLAG] = {
+      accepted: true,
+      spellLevel: plan.choice.spellLevel,
+      exhaustionOverride: plan.override,
+      metamagic: {
+        ids: [...plan.metamagic.ids],
+        targetUuids: [...plan.metamagic.targetUuids],
+        currentTargets: [...plan.metamagic.currentTargets],
+        secondTargetUuid: plan.metamagic.secondTargetUuid,
+        damageDice: plan.metamagic.selectedDamageDice.map((die) => die?.id ?? die),
+        seekingCost: this.#metamagicCost(
+          plan.metamagic.options.find((option) => option.id === "seeking-spell"),
+          plan.choice.spellLevel
+        )
+      },
+      range: plan.range ? deepClone(plan.range) : null,
+      duration: plan.duration ? deepClone(plan.duration) : null,
+      activation: plan.activation ? deepClone(plan.activation) : null
+    };
+    return usageConfig[MODULE_ID][PREFLIGHT_FLAG];
+  }
+
+  #preflightPlan(activity, usageConfig = {}) {
+    const stored = usageConfig?.[MODULE_ID]?.[PREFLIGHT_FLAG];
+    if (!stored?.accepted) {
+      return null;
+    }
+    const actor = actorFrom(activity);
+    const metamagic = this.#validateMetamagic(activity, actor, toInteger(stored.spellLevel, spellBaseLevel(activity)), stored.metamagic);
+    if (!metamagic) {
+      return null;
+    }
+    return {
+      actor,
+      choice: { spellLevel: toInteger(stored.spellLevel, spellBaseLevel(activity)) },
+      metamagic,
+      override: stored.exhaustionOverride === true,
+      range: stored.range ? deepClone(stored.range) : null,
+      duration: stored.duration ? deepClone(stored.duration) : null,
+      activation: stored.activation ? deepClone(stored.activation) : null
+    };
+  }
+
+  async #validateSelectedDocuments(plan) {
+    const meta = plan.metamagic;
+    if (typeof globalThis.fromUuid !== "function" && typeof globalThis.fromUuidSync !== "function") {
+      return true;
+    }
+    const resolveCreature = async (uuid) => {
+      const document = await documentFromUuid(uuid);
+      const actor = targetActor(document);
+      return actor?.uuid ? { document, actor } : null;
+    };
+    if (meta.ids.some((id) => id === "careful-spell" || id === "heightened-spell")) {
+      const targets = await Promise.all(meta.targetUuids.map(resolveCreature));
+      if (targets.some((target) => !target)) {
+        return false;
+      }
+      meta.targetUuids = targets.map(({ actor }) => actor.uuid);
+    }
+    if (meta.ids.includes("twinned-spell")) {
+      const [first, second] = await Promise.all([
+        resolveCreature(meta.currentTargets[0]),
+        resolveCreature(meta.secondTargetUuid)
+      ]);
+      if (!first || !second || first.actor.uuid === second.actor.uuid) {
+        return false;
+      }
+      const firstId = cleanText(first.document?.id ?? first.document?._id);
+      const secondId = cleanText(second.document?.id ?? second.document?._id);
+      if (!firstId || !secondId) {
+        return false;
+      }
+      meta.targetIds = [firstId, secondId];
+    }
+    return true;
+  }
+
+  async #applyTwinnedTargets(plan) {
+    if (!plan.metamagic.ids.includes("twinned-spell")) {
+      return null;
+    }
+    const updateTargets = globalThis.game?.user?.updateTokenTargets;
+    if (typeof updateTargets !== "function") {
+      return (typeof globalThis.fromUuid !== "function" && typeof globalThis.fromUuidSync !== "function") ? null : false;
+    }
+    const previousTargetIds = collectionValues(globalThis.game?.user?.targets)
+      .map((target) => cleanText(target?.id ?? target?.document?.id))
+      .filter(Boolean);
+    await updateTargets.call(globalThis.game.user, new Set(plan.metamagic.targetIds ?? []));
+    return { previousTargetIds };
+  }
+
+  async #restoreTwinnedTargets(snapshot) {
+    if (!snapshot || typeof globalThis.game?.user?.updateTokenTargets !== "function") {
+      return;
+    }
+    await globalThis.game.user.updateTokenTargets(new Set(snapshot.previousTargetIds ?? []));
   }
 
   async #prepareCastPlan(activity, usageConfig = {}, dialogConfig = {}) {
@@ -692,7 +1001,9 @@ export class SorcererAutomationService {
     }
     const metamagic = this.#validateMetamagic(activity, actor, choice.spellLevel, {
       ...(request ?? {}),
-      targets: request?.targets ?? usageConfig?.targets ?? globalThis.game?.user?.targets
+      targets: stored
+        ? request?.targets
+        : request?.targets ?? usageConfig?.targets ?? globalThis.game?.user?.targets
     });
     if (!metamagic) {
       return null;
@@ -715,7 +1026,7 @@ export class SorcererAutomationService {
       return null;
     }
 
-    return {
+    const plan = {
       actor,
       baseLevel,
       choice,
@@ -728,6 +1039,33 @@ export class SorcererAutomationService {
       activeCooldown,
       highLevelRepeat
     };
+    plan.range = stored?.range ? deepClone(stored.range) : null;
+    plan.duration = stored?.duration ? deepClone(stored.duration) : null;
+    plan.activation = stored?.activation ? deepClone(stored.activation) : null;
+    this.#resolvePlannedActivityChanges(activity, plan);
+    if (!(await this.#validateSelectedDocuments(plan))) {
+      notifyWarning("Selected metamagic targets are no longer valid.");
+      return null;
+    }
+
+    return plan;
+  }
+
+  #resolvePlannedActivityChanges(activity, plan) {
+    const ids = plan.metamagic?.ids ?? [];
+    if (ids.includes("distant-spell") && !plan.range) {
+      const range = spellRange(activity);
+      plan.range = range.units === "touch"
+        ? { value: 30, units: "ft" }
+        : { value: range.value * 2, units: range.units };
+    }
+    if (ids.includes("extended-spell") && !plan.duration) {
+      const duration = spellDuration(activity);
+      plan.duration = durationFromSeconds(durationSeconds(duration) * 2, duration.units);
+    }
+    if (ids.includes("quickened-spell") && !plan.activation) {
+      plan.activation = { type: "bonus", value: 1 };
+    }
   }
 
   async handleCreatedItem(item, _options = {}, userId = "") {
@@ -800,11 +1138,21 @@ export class SorcererAutomationService {
   }
 
   deferDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
-    if (this.#isFinalDnd5eUse(usageConfig) || !isSorcererSpellActivity(activity)) {
+    if (!isSorcererSpellActivity(activity)) {
       return true;
     }
 
     if (usageConfig?.[MODULE_ID]?.[PREFLIGHT_FLAG]) {
+      const preflightPlan = this.#preflightPlan(activity, usageConfig);
+      if (!preflightPlan) {
+        notifyWarning("The stored Sorcerer spell plan is no longer valid.");
+        return false;
+      }
+      this.#applyMetamagicConfig(activity, usageConfig, preflightPlan, messageConfig);
+      return true;
+    }
+
+    if (this.#isFinalDnd5eUse(usageConfig)) {
       return true;
     }
 
@@ -835,60 +1183,288 @@ export class SorcererAutomationService {
     return false;
   }
 
-  async applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, _messageConfig = {}) {
+  async applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
     if (this.#isFinalDnd5eUse(usageConfig) || !isSorcererSpellActivity(activity)) {
       return true;
     }
 
-    return (await this.#applyVirtualSlotPayment(activity, usageConfig, dialogConfig)) !== null;
+    const result = await this.#applyVirtualSlotPayment(activity, usageConfig, dialogConfig, messageConfig);
+    return result !== null;
   }
 
   async applyDnd5ePostAttackRoll(rolls = [], context = {}) {
-    const usageConfig = context?.usageConfig ?? context?.config ?? {};
-    const seeking = usageConfig?.spellCast?.modifiers?.seeking;
-    const activity = context?.activity ?? context?.subject ?? null;
-    if (!seeking?.pending || !isSorcererSpellActivity(activity)) {
-      return true;
-    }
-
+    const activity = context?.subject ?? context?.activity ?? null;
     const safeRolls = Array.isArray(rolls) ? rolls : [rolls].filter(Boolean);
-    const targetAc = Math.max(0, toInteger(context?.targetAc ?? context?.ac, 0));
-    const hit = context?.isHit === true || (targetAc > 0 && safeRolls.some((roll) => toInteger(roll?.total, 0) >= targetAc));
-    if (hit) {
+    let pending = activity ? this._pendingSeekingAttacks.get(activity) : null;
+    if (!pending) {
+      const record = this.#rollUsageRecord(safeRolls)?.attackReroll;
+      if (record && activity) {
+        pending = {
+          actor: actorFrom(activity),
+          activity,
+          cost: Math.max(1, toInteger(record.cost, 2)),
+          used: false,
+          charged: false
+        };
+        this._pendingSeekingAttacks.set(activity, pending);
+      }
+    }
+    if (!pending || pending.used || !isSorcererSpellActivity(activity)) {
       return true;
     }
 
-    const actor = actorFrom(activity);
-    const points = pointsFeature(actor);
-    const cost = Math.max(1, toInteger(seeking.cost, 2));
+    if (!safeRolls.some((roll) => roll?.isFailure === true)) {
+      return true;
+    }
+
+    const points = pointsFeature(pending.actor);
+    const cost = Math.max(1, toInteger(pending.cost, 2));
     const spent = Math.max(0, toInteger(points?.system?.uses?.spent, 0));
     const max = Math.max(0, toInteger(points?.system?.uses?.max, 0));
     if (!points || max - spent < cost) {
       return true;
     }
 
-    const roll = safeRolls.find((entry) => entry?.reroll instanceof Function);
-    if (!roll) {
+    if (!(await this.#chooseSeekingReroll(activity, safeRolls))) {
       return true;
     }
-    await updateDocument(points, { "system.uses.spent": spent + cost });
-    const rerolled = await roll.reroll();
-    context.rerolled = rerolled;
-    seeking.pending = false;
-    seeking.used = true;
-    if (usageConfig?.flags?.[MODULE_ID]?.spellCast?.modifiers?.seeking) {
-      usageConfig.flags[MODULE_ID].spellCast.modifiers.seeking = deepClone(seeking);
+
+    pending.used = true;
+    try {
+      await updateDocument(points, { "system.uses.spent": spent + cost });
+      pending.charged = true;
+      const usageMessageId = this.#rollUsageMessageId(safeRolls);
+      const rerolled = await activity.rollAttack({}, {}, usageMessageId
+        ? { data: { "flags.dnd5e.originatingMessage": usageMessageId } }
+        : {});
+      if (!rerolled) {
+        await updateDocument(points, { "system.uses.spent": spent });
+        pending.charged = false;
+        pending.used = false;
+      }
+    }
+    catch (error) {
+      if (pending.charged) {
+        await updateDocument(points, { "system.uses.spent": spent });
+      }
+      pending.charged = false;
+      pending.used = false;
+      console.error(`${MODULE_ID} | Failed to reroll a missed Seeking Spell attack.`, error);
     }
     return true;
   }
 
-  async #applyVirtualSlotPayment(activity, usageConfig = {}, dialogConfig = {}) {
+  async #chooseSeekingReroll(activity, rolls) {
+    if (this._options.chooseSeekingReroll instanceof Function) {
+      return (await this._options.chooseSeekingReroll({ activity, rolls })) === true;
+    }
+    if (typeof globalThis.DialogV2?.wait !== "function") {
+      return false;
+    }
+    const result = await globalThis.DialogV2.wait({
+      window: { title: "Seeking Spell" },
+      content: "<p>Spend 2 Sorcery Points to reroll this missed spell attack?</p>",
+      buttons: [
+        { action: "reroll", label: "Reroll", default: true, callback: () => true },
+        { action: "cancel", label: "Cancel", callback: () => false }
+      ]
+    });
+    return result === true;
+  }
+
+  handleDnd5ePostCreateUsageMessage(_activity, message) {
+    const overrides = typeof message?.getFlag === "function"
+      ? message.getFlag(MODULE_ID, "saveOverrides")
+      : getProperty(message, `flags.${MODULE_ID}.saveOverrides`, null);
+    const id = cleanText(message?.id ?? message?._id);
+    if (id && overrides && typeof overrides === "object") {
+      this._saveOverridesByMessage.set(id, deepClone(overrides));
+    }
+    if (id) {
+      const record = typeof message?.getFlag === "function"
+        ? {
+          damageReroll: message.getFlag(MODULE_ID, "damageReroll"),
+          attackReroll: message.getFlag(MODULE_ID, "attackReroll")
+        }
+        : getProperty(message, `flags.${MODULE_ID}`, {});
+      if (record?.damageReroll || record?.attackReroll) {
+        this._metamagicRecordsByMessage.set(id, deepClone(record));
+      }
+    }
+    return true;
+  }
+
+  #rollUsageMessageId(rolls = []) {
+    const parent = (Array.isArray(rolls) ? rolls : [rolls])[0]?.parent ?? null;
+    return cleanText(
+      parent?.flags?.dnd5e?.originatingMessage
+      ?? getProperty(parent, "flags.dnd5e.originatingMessage", undefined)
+      ?? parent?.getFlag?.("dnd5e", "originatingMessage")
+    );
+  }
+
+  #rollUsageRecord(rolls = []) {
+    const usageMessageId = this.#rollUsageMessageId(rolls);
+    if (!usageMessageId) {
+      return null;
+    }
+    const cached = this._metamagicRecordsByMessage.get(usageMessageId);
+    if (cached) {
+      return cached;
+    }
+    const message = globalThis.game?.messages?.get?.(usageMessageId);
+    const record = typeof message?.getFlag === "function"
+      ? {
+        damageReroll: message.getFlag(MODULE_ID, "damageReroll"),
+        attackReroll: message.getFlag(MODULE_ID, "attackReroll")
+      }
+      : getProperty(message, `flags.${MODULE_ID}`, null);
+    if (record?.damageReroll || record?.attackReroll) {
+      this._metamagicRecordsByMessage.set(usageMessageId, deepClone(record));
+      return record;
+    }
+    return null;
+  }
+
+  applyDnd5ePreRollSavingThrow(rollConfig = {}) {
+    const messageId = cleanText(rollConfig?.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId);
+    let overrides = this._saveOverridesByMessage.get(messageId);
+    if (!overrides && messageId) {
+      const message = globalThis.game?.messages?.get?.(messageId);
+      const persisted = typeof message?.getFlag === "function"
+        ? message.getFlag(MODULE_ID, "saveOverrides")
+        : getProperty(message, `flags.${MODULE_ID}.saveOverrides`, null);
+      if (persisted && typeof persisted === "object") {
+        overrides = deepClone(persisted);
+        this._saveOverridesByMessage.set(messageId, overrides);
+      }
+    }
+    const actorUuid = cleanText(rollConfig?.subject?.uuid);
+    if (!overrides || !actorUuid) {
+      return true;
+    }
+
+    const targetMatches = (uuid) => cleanText(uuid) === actorUuid;
+    if ((overrides.carefulTargetUuids ?? []).some(targetMatches)) {
+      rollConfig.target = 0;
+      for (const roll of rollConfig.rolls ?? []) {
+        roll.options ??= {};
+        roll.options.target = 0;
+      }
+    }
+    if (!overrides.heightenedUsed && targetMatches(overrides.heightenedTargetUuid)) {
+      rollConfig.disadvantage = true;
+      for (const roll of rollConfig.rolls ?? []) {
+        roll.options ??= {};
+        roll.options.disadvantage = true;
+      }
+      overrides.heightenedUsed = true;
+      this._saveOverridesByMessage.set(messageId, overrides);
+    }
+    return true;
+  }
+
+  applyDnd5ePreRollDamage(_rollConfig = {}, _dialogConfig = {}, _messageConfig = {}) {
+    return true;
+  }
+
+  async applyDnd5ePostDamageRoll(rolls = [], context = {}) {
+    const activity = context?.subject ?? null;
+    const safeRolls = Array.isArray(rolls) ? rolls : [rolls].filter(Boolean);
+    let pending = activity ? this._pendingEmpoweredDamage.get(activity) : null;
+    if (!pending) {
+      const record = this.#rollUsageRecord(safeRolls)?.damageReroll;
+      const selectedDamageDice = record && activity
+        ? normalizedDamageDice(activity, record.selectedDamageDice)
+        : null;
+      if (selectedDamageDice?.length) {
+        pending = { actor: actorFrom(activity), selectedDamageDice, used: false };
+        this._pendingEmpoweredDamage.set(activity, pending);
+      }
+    }
+    if (!pending || pending.used) {
+      return true;
+    }
+    const selections = pending.selectedDamageDice.filter((choice) => choice && typeof choice === "object");
+    if (!selections.length) {
+      return true;
+    }
+
+    const diceFor = (roll) => {
+      const dice = [];
+      const collect = (terms = []) => {
+        for (const term of terms) {
+          if (Array.isArray(term?.results)) dice.push(term);
+          if (Array.isArray(term?.dice)) collect(term.dice);
+        }
+      };
+      collect(roll?.terms ?? []);
+      return dice;
+    };
+    let rerolled = false;
+    for (const selection of selections) {
+      const roll = safeRolls[selection.partIndex];
+      const die = diceFor(roll).flatMap((term) => term.results.map((result, index) => ({ term, result, index })))[selection.dieIndex];
+      if (!die?.result?.active || typeof die.term.roll !== "function") {
+        continue;
+      }
+      die.result.active = false;
+      die.result.rerolled = true;
+      await die.term.roll({ reroll: true });
+      if (typeof roll?._evaluateTotal === "function") {
+        roll._total = roll._evaluateTotal();
+      }
+      rerolled = true;
+    }
+    if (rerolled) {
+      pending.used = true;
+      const message = safeRolls.find((roll) => roll?.parent)?.parent;
+      if (typeof message?.update === "function") {
+        await message.update({ rolls: safeRolls.map((roll) => roll.toJSON?.() ?? roll) });
+      }
+    }
+    return true;
+  }
+
+  async #applyVirtualSlotPayment(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
+    const actor = actorFrom(activity);
+    return this.#withActorPaymentLock(actor, () => this.#applyVirtualSlotPaymentLocked(
+      activity,
+      usageConfig,
+      dialogConfig,
+      messageConfig
+    ));
+  }
+
+  async #withActorPaymentLock(actor, operation) {
+    if (!actor || typeof actor !== "object") {
+      return operation();
+    }
+    const previous = this._paymentLocks.get(actor) ?? Promise.resolve();
+    let release;
+    const next = new Promise((resolve) => { release = resolve; });
+    this._paymentLocks.set(actor, previous.catch(() => undefined).then(() => next));
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    }
+    finally {
+      release();
+    }
+  }
+
+  async #applyVirtualSlotPaymentLocked(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
     if (!isSorcererSpellActivity(activity)) {
       return null;
     }
 
     const plan = await this.#prepareCastPlan(activity, usageConfig, dialogConfig);
     if (!plan) {
+      return null;
+    }
+    const twinnedTargetSnapshot = await this.#applyTwinnedTargets(plan);
+    if (twinnedTargetSnapshot === false) {
+      notifyWarning("The selected Twinned Spell target could not be applied.");
       return null;
     }
 
@@ -921,10 +1497,12 @@ export class SorcererAutomationService {
       cooldownsChanged: false,
       highLevelCastsChanged: false,
       exhaustionChanged: false,
+      twinnedTargetSnapshot,
       rolledBack: false
     };
 
-    const metamagicConfig = this.#applyMetamagicConfig(activity, usageConfig, plan);
+    this.#persistResolvedPlan(usageConfig, plan);
+    const metamagicConfig = this.#applyMetamagicConfig(activity, usageConfig, plan, messageConfig);
     try {
       await updateDocument(points, { "system.uses.spent": spent + totalCost });
       state.pointsChanged = true;
@@ -1002,16 +1580,11 @@ export class SorcererAutomationService {
       const preflightUsageConfig = {
         ...usageConfig,
         [MODULE_ID]: {
-          ...(usageConfig?.[MODULE_ID] ?? {}),
-          [PREFLIGHT_FLAG]: {
-            accepted: true,
-            spellLevel: plan.choice.spellLevel,
-            exhaustionOverride: plan.override,
-            metamagic: this.#metamagicRequest(usageConfig, dialogConfig)
-          }
+          ...(usageConfig?.[MODULE_ID] ?? {})
         }
       };
-      const metamagicConfig = this.#applyMetamagicConfig(activity, preflightUsageConfig, plan);
+      this.#persistResolvedPlan(preflightUsageConfig, plan);
+      const metamagicConfig = this.#applyMetamagicConfig(activity, preflightUsageConfig, plan, messageConfig);
       preflightUsageConfig.spellCast = {
         spellLevel: plan.choice.spellLevel,
         components: metamagicConfig.components,
@@ -1039,28 +1612,32 @@ export class SorcererAutomationService {
   }
 
   async #resolveFinalDnd5eUse(activity, usageConfig, dialogConfig, messageConfig) {
-    let payment = null;
     try {
       if (typeof activity?.use !== "function") {
         return;
       }
-      payment = await this.#applyVirtualSlotPayment(activity, usageConfig, dialogConfig);
-      if (!payment) {
-        return;
-      }
-      const result = await activity.use(
-        this.#resumeUsageConfig(usageConfig),
-        this.#resumeDialogConfig(dialogConfig),
-        messageConfig
-      );
-      if (!result) {
-        await this.#rollbackVirtualSlotPayment(payment);
-      }
+      await this.#withActorPaymentLock(actorFrom(activity), async () => {
+        const payment = await this.#applyVirtualSlotPaymentLocked(activity, usageConfig, dialogConfig);
+        if (!payment) {
+          return;
+        }
+        try {
+          const result = await activity.use(
+            this.#resumeUsageConfig(usageConfig),
+            this.#resumeDialogConfig(dialogConfig),
+            messageConfig
+          );
+          if (!result) {
+            await this.#rollbackVirtualSlotPayment(payment);
+          }
+        }
+        catch (error) {
+          await this.#rollbackVirtualSlotPayment(payment);
+          throw error;
+        }
+      });
     }
     catch (error) {
-      if (payment) {
-        await this.#rollbackVirtualSlotPayment(payment);
-      }
       console.error(`${MODULE_ID} | Failed to resume paid Sorcerer spell use.`, error);
     }
     finally {
@@ -1086,6 +1663,9 @@ export class SorcererAutomationService {
     }
     if (state.exhaustionChanged) {
       updates.push(updateDocument(state.actor, { "system.attributes.exhaustion": state.exhaustion }));
+    }
+    if (state.twinnedTargetSnapshot) {
+      updates.push(this.#restoreTwinnedTargets(state.twinnedTargetSnapshot));
     }
 
     const results = await Promise.allSettled(updates);

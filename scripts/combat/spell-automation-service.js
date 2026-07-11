@@ -151,7 +151,7 @@ function resolveComponents(activity, item) {
 }
 
 function sharedSpellCastComponents(usageConfig = {}) {
-  const components = usageConfig?.spellCast?.components;
+  const components = usageConfig?.flags?.[MODULE_ID]?.castContext?.components;
   if (!components || typeof components !== "object") {
     return null;
   }

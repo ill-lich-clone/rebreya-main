@@ -339,7 +339,7 @@ test("Empowered Spell rerolls selected damage dice up to the Charisma modifier",
     sorcererVirtualSpellLevel: 1,
     sorcererMetamagic: {
       ids: ["empowered-spell"],
-      damageDice: [0, 2],
+      damageDice: ["0:0", "0:2"],
       rerollDamage: async (indices) => { rerolled = indices; }
     }
   };
@@ -347,8 +347,14 @@ test("Empowered Spell rerolls selected damage dice up to the Charisma modifier",
   assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor, {
     system: { damage: { parts: [["3d6", "fire"]] } }
   }), usageConfig, {}, {}), true);
-  assert.deepEqual(rerolled, [0, 2]);
-  assert.deepEqual(usageConfig.spellCast.modifiers.empowered.damageDice, [0, 2]);
+  assert.deepEqual(rerolled, [
+    { id: "0:0", label: "3d6 #1", partIndex: 0, dieIndex: 0 },
+    { id: "0:2", label: "3d6 #3", partIndex: 0, dieIndex: 2 }
+  ]);
+  assert.deepEqual(usageConfig.spellCast.modifiers.empowered.damageDice, [
+    { id: "0:0", label: "3d6 #1", partIndex: 0, dieIndex: 0 },
+    { id: "0:2", label: "3d6 #3", partIndex: 0, dieIndex: 2 }
+  ]);
 });
 
 test("Quickened Spell changes this cast from an action to a bonus action", async () => {
@@ -364,27 +370,24 @@ test("Quickened Spell changes this cast from an action to a bonus action", async
   assert.deepEqual(usageConfig.spellCast.activation, { type: "bonus", value: 1 });
 });
 
-test("Seeking Spell pays only after a missed spell attack and uses its reroll", async () => {
+test("Seeking Spell pays only after a missed spell attack through its real activity roll method", async () => {
   const actor = metamagicActor();
-  const service = new SorcererAutomationService({});
+  const service = new SorcererAutomationService({ chooseSeekingReroll: async () => true });
   await service.syncSorceryPoints(actor);
   const usageConfig = { sorcererVirtualSpellLevel: 1, sorcererMetamagic: { ids: ["seeking-spell"] } };
   let rerolls = 0;
-  const roll = {
-    total: 4,
-    async reroll() {
-      rerolls += 1;
-      return { total: 18 };
-    }
-  };
+  const roll = { total: 4, isFailure: true };
   const spell = makeSorcererSpell(actor, { system: { attack: { type: "spell" } } });
+  spell.rollAttack = async () => {
+    rerolls += 1;
+    return [{ total: 18 }];
+  };
 
   assert.equal(await service.applyDnd5ePreUseActivity(spell, usageConfig, {}, {}), true);
   assert.equal(pointsItem(actor).system.uses.spent, 2);
   assert.equal(await service.applyDnd5ePostAttackRoll([roll], {
-    activity: spell,
-    usageConfig,
-    targetAc: 10
+    subject: spell,
+    ammoUpdate: null
   }), true);
   assert.equal(rerolls, 1);
   assert.equal(pointsItem(actor).system.uses.spent, 4);
@@ -956,4 +959,525 @@ test("class item creation and level updates synchronize the owned Sorcery Points
   actor.system.scale[SORCERER_ROOT]["sorcery-points"] = 21;
   await service.handleUpdatedItem(classItem, { system: { levels: 4 } }, {}, "user");
   assert.equal(pointsItem(actor).system.uses.max, 21);
+});
+
+function makeDnd5eActivityClone(activity) {
+  for (const key of ["activation", "components", "duration", "range", "target", "damage", "attack"]) {
+    if (activity.system?.[key] !== undefined) {
+      activity[key] = structuredClone(activity.system[key]);
+    }
+  }
+  activity.updateSource = (patch) => {
+    for (const [path, value] of Object.entries(patch)) {
+      foundry.utils.setProperty(activity, path, structuredClone(value));
+    }
+    return activity;
+  };
+  return activity;
+}
+
+test("RED: resolved DialogV2 metamagic selection is persisted for the final virtual cast", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const previousDialog = globalThis.DialogV2;
+  const responses = [
+    { accepted: true, spellLevel: 1 },
+    { accepted: true, ids: ["subtle-spell"] }
+  ];
+  globalThis.DialogV2 = { wait: async () => responses.shift() };
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor));
+  const resumed = [];
+  activity.use = async (usageConfig) => {
+    resumed.push(usageConfig);
+    return { updates: [] };
+  };
+
+  try {
+    assert.equal(service.deferDnd5ePreUseActivity(activity, {}, {}, {}), false);
+    await waitForDeferredActivityUse();
+    assert.deepEqual(
+      resumed[0][MODULE_ID].sorcererAutomationPreflight.metamagic.ids,
+      ["subtle-spell"]
+    );
+  }
+  finally {
+    globalThis.DialogV2 = previousDialog;
+  }
+});
+
+test("RED: metamagic DialogV2 includes compact target and damage-die controls", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const previousDialog = globalThis.DialogV2;
+  const dialogs = [];
+  globalThis.DialogV2 = {
+    wait: async (config) => {
+      dialogs.push(config);
+      return dialogs.length === 1
+        ? { accepted: true, spellLevel: 1 }
+        : { accepted: true, ids: [] };
+    }
+  };
+  try {
+    await service.applyDnd5ePreUseActivity(makeDnd5eActivityClone(makeSorcererSpell(actor, {
+      system: {
+        save: { ability: "dex" },
+        target: { affects: { count: 1 } },
+        range: { value: 60, units: "ft" },
+        damage: { parts: [{ _id: "fire", formula: "2d6" }] }
+      }
+    })), {}, {}, {});
+    const content = dialogs[1].content;
+    for (const control of ["carefulTargets", "heightenedTarget", "twinnedTarget", "damageDice"]) {
+      assert.match(content, new RegExp(`name=\"${control}\"`, "u"));
+    }
+    assert.match(content, /rebreya-sorcerer-choice-row/u);
+  }
+  finally {
+    globalThis.DialogV2 = previousDialog;
+  }
+});
+
+test("RED: final dnd5e clone consumes actual Distant, Quickened, Extended, and Subtle activity fields", async () => {
+  const cases = [
+    {
+      id: "distant-spell",
+      system: { range: { value: 60, units: "ft" } },
+      actual: (activity) => assert.deepEqual(activity.range, { value: 120, units: "ft" })
+    },
+    {
+      id: "quickened-spell",
+      system: { activation: { type: "action", value: 1 } },
+      actual: (activity) => assert.deepEqual(activity.activation, { type: "bonus", value: 1 })
+    },
+    {
+      id: "extended-spell",
+      system: { duration: { value: 15, units: "hour" } },
+      actual: (activity) => assert.deepEqual(activity.duration, { value: 24, units: "hour" })
+    },
+    {
+      id: "subtle-spell",
+      system: { components: { vocal: true, somatic: true, material: true } },
+      actual: (activity) => assert.deepEqual(activity.components, { vocal: false, somatic: false, material: true })
+    }
+  ];
+
+  for (const entry of cases) {
+    const actor = metamagicActor();
+    const service = new SorcererAutomationService({});
+    await service.syncSorceryPoints(actor);
+    const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, { system: entry.system }));
+    assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+      sorcererVirtualSpellLevel: 1,
+      sorcererMetamagic: { ids: [entry.id] }
+    }, {}, {}), true);
+    entry.actual(activity);
+  }
+});
+
+test("RED: hooks use the installed dnd5e save, damage, and attack hook contracts", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
+  globalThis.Hooks = {
+    on: (name, callback) => handlers.set(name, callback)
+  };
+  globalThis.game = { user: { id: "user", isGM: true }, combat: { round: 1 } };
+  try {
+    const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
+    registerCombatHooks({ sorcererAutomationService: new SorcererAutomationService({}) });
+    assert.equal(typeof handlers.get("dnd5e.preRollSavingThrow"), "function");
+    assert.equal(typeof handlers.get("dnd5e.preRollDamage"), "function");
+    assert.equal(typeof handlers.get("dnd5e.rollAttack"), "function");
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RED: Seeking uses a pre-use pending record with the real rollAttack context shape", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({ chooseSeekingReroll: async () => true });
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, { system: { attack: { type: "spell" } } }));
+  activity.rollAttack = async () => [{ total: 18 }];
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["seeking-spell"] }
+  }, {}, {}), true);
+  const missedRoll = { isFailure: true, total: 4 };
+  assert.equal(await service.applyDnd5ePostAttackRoll([missedRoll], {
+    subject: activity,
+    ammoUpdate: null
+  }), true);
+  assert.equal(pointsItem(actor).system.uses.spent, 4);
+});
+
+test("real save-roll config consumes Careful success and one Heightened disadvantage from a usage message", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  const message = {
+    id: "usage-message",
+    getFlag: (_scope, key) => key === "saveOverrides"
+      ? {
+        carefulTargetUuids: ["Actor.ally"],
+        heightenedTargetUuid: "Actor.enemy",
+        heightenedUsed: false
+      }
+      : undefined
+  };
+  service.handleDnd5ePostCreateUsageMessage(null, message);
+  const eventFor = () => ({ target: { closest: () => ({ dataset: { messageId: "usage-message" } }) } });
+
+  const carefulConfig = { subject: { uuid: "Actor.ally" }, event: eventFor(), rolls: [{ options: { target: 17 } }] };
+  assert.equal(service.applyDnd5ePreRollSavingThrow(carefulConfig), true);
+  assert.equal(carefulConfig.target, 0);
+  assert.equal(carefulConfig.rolls[0].options.target, 0);
+
+  const heightenedConfig = { subject: { uuid: "Actor.enemy" }, event: eventFor(), rolls: [{ options: {} }] };
+  assert.equal(service.applyDnd5ePreRollSavingThrow(heightenedConfig), true);
+  assert.equal(heightenedConfig.disadvantage, true);
+  assert.equal(heightenedConfig.rolls[0].options.disadvantage, true);
+  const secondSave = { subject: { uuid: "Actor.enemy" }, event: eventFor(), rolls: [{ options: {} }] };
+  service.applyDnd5ePreRollSavingThrow(secondSave);
+  assert.equal(secondSave.disadvantage, undefined);
+});
+
+test("Twinned validates document ids and applies exactly the two native target ids before payment", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const previousFromUuid = globalThis.fromUuid;
+  const previousGame = globalThis.game;
+  const docs = new Map([
+    ["Token.first", { id: "first", actor: { uuid: "Actor.first" } }],
+    ["Token.second", { id: "second", actor: { uuid: "Actor.second" } }]
+  ]);
+  const targetSets = [];
+  globalThis.fromUuid = async (uuid) => docs.get(uuid) ?? null;
+  globalThis.game = {
+    ...previousGame,
+    user: {
+      ...(previousGame?.user ?? {}),
+      updateTokenTargets: async (ids) => targetSets.push(Array.from(ids).sort())
+    }
+  };
+  try {
+    const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+      baseLevel: 1,
+      system: { range: { value: 60, units: "ft" }, target: { affects: { count: 1 } } }
+    }));
+    assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+      sorcererVirtualSpellLevel: 1,
+      sorcererMetamagic: {
+        ids: ["twinned-spell"],
+        targets: ["Token.first"],
+        secondTargetUuid: "Token.second"
+      }
+    }, {}, {}), true);
+    assert.deepEqual(targetSets, [["first", "second"]]);
+    assert.equal(pointsItem(actor).system.uses.spent, 3);
+  }
+  finally {
+    globalThis.fromUuid = previousFromUuid;
+    globalThis.game = previousGame;
+  }
+});
+
+test("Empowered rerolls only selected real Die results and updates the real damage message", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "fire", formula: "1d6" }] } }
+  }));
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["empowered-spell"], damageDice: ["fire:0"] }
+  }, {}, {}), true);
+  let rerolls = 0;
+  let messageUpdate;
+  const term = {
+    results: [{ result: 1, active: true }],
+    async roll(options) {
+      rerolls += 1;
+      assert.deepEqual(options, { reroll: true });
+      this.results.push({ result: 6, active: true });
+    }
+  };
+  const roll = {
+    terms: [term],
+    _evaluateTotal: () => 6,
+    toJSON: () => ({ formula: "1d6", total: 6 }),
+    parent: { update: async (patch) => { messageUpdate = patch; } }
+  };
+  assert.equal(await service.applyDnd5ePostDamageRoll([roll], { subject: activity }), true);
+  assert.equal(rerolls, 1);
+  assert.equal(term.results[0].rerolled, true);
+  assert.equal(term.results[0].active, false);
+  assert.deepEqual(messageUpdate, { rolls: [{ formula: "1d6", total: 6 }] });
+});
+
+test("Empowered follows the originating dnd5e usage-message record when the damage activity is reloaded", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  const message = {
+    id: "usage-card",
+    getFlag: (_scope, key) => key === "damageReroll" ? { selectedDamageDice: ["fire:0"] } : undefined
+  };
+  service.handleDnd5ePostCreateUsageMessage(null, message);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "fire", formula: "1d6" }] } }
+  }));
+  let rerolls = 0;
+  const term = {
+    results: [{ result: 1, active: true }],
+    async roll() { rerolls += 1; this.results.push({ result: 5, active: true }); }
+  };
+  const roll = {
+    terms: [term],
+    _evaluateTotal: () => 5,
+    toJSON: () => ({}),
+    parent: { flags: { dnd5e: { originatingMessage: "usage-card" } }, update: async () => {} }
+  };
+  await service.applyDnd5ePostDamageRoll([roll], { subject: activity });
+  assert.equal(rerolls, 1);
+});
+
+test("forged target and damage-die ids fail before any Sorcery Point payment", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const previousFromUuid = globalThis.fromUuid;
+  globalThis.fromUuid = async () => null;
+  try {
+    const careful = makeDnd5eActivityClone(makeSorcererSpell(actor, { system: { save: { ability: "dex" } } }));
+    assert.equal(await service.applyDnd5ePreUseActivity(careful, {
+      sorcererVirtualSpellLevel: 1,
+      sorcererMetamagic: { ids: ["careful-spell"], targetUuids: ["Token.forged"] }
+    }, {}, {}), false);
+    const empowered = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+      system: { damage: { parts: [{ _id: "fire", formula: "1d6" }] } }
+    }));
+    assert.equal(await service.applyDnd5ePreUseActivity(empowered, {
+      sorcererVirtualSpellLevel: 1,
+      sorcererMetamagic: { ids: ["empowered-spell"], damageDice: ["fire:99"] }
+    }, {}, {}), false);
+    assert.equal(pointsItem(actor).system.uses.spent, 0);
+  }
+  finally {
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("RED: numeric forged Empowered die ids fail before payment", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "fire", formula: "1d6" }] } }
+  }));
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["empowered-spell"], damageDice: ["999"] }
+  }, {}, {}), false);
+  assert.equal(pointsItem(actor).system.uses.spent, 0);
+});
+
+test("RED: save overrides rehydrate from the persisted usage message on a target-owner client", () => {
+  const previousGame = globalThis.game;
+  const service = new SorcererAutomationService({});
+  const message = {
+    getFlag: (_scope, key) => key === "saveOverrides"
+      ? { carefulTargetUuids: ["Actor.ally"], heightenedTargetUuid: null, heightenedUsed: false }
+      : undefined
+  };
+  globalThis.game = { ...previousGame, messages: { get: (id) => id === "remote-usage" ? message : null } };
+  try {
+    const config = {
+      subject: { uuid: "Actor.ally" },
+      event: { target: { closest: () => ({ dataset: { messageId: "remote-usage" } }) } },
+      rolls: [{ options: { target: 14 } }]
+    };
+    service.applyDnd5ePreRollSavingThrow(config);
+    assert.equal(config.rolls[0].options.target, 0);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("RED: Subtle removes native dnd5e vocal and somatic item properties on the temporary clone", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { properties: new Set(["vocal", "somatic", "material"]) }
+  }));
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["subtle-spell"] }
+  }, {}, {}), true);
+  assert.deepEqual(Array.from(activity.item.system.properties).sort(), ["material"]);
+});
+
+test("RED: Seeking reroll retains dnd5e's originating usage-message reference", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({ chooseSeekingReroll: async () => true });
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, { system: { attack: { type: "spell" } } }));
+  let messageConfig;
+  activity.rollAttack = async (_config, _dialog, message) => { messageConfig = message; return [{ total: 18 }]; };
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["seeking-spell"] }
+  }, {}, {}), true);
+  await service.applyDnd5ePostAttackRoll([{ isFailure: true, parent: { flags: { dnd5e: { originatingMessage: "usage-card" } } } }], {
+    subject: activity,
+    ammoUpdate: null
+  });
+  assert.equal(messageConfig.data["flags.dnd5e.originatingMessage"], "usage-card");
+});
+
+test("RED: simultaneous virtual casts serialize Sorcery Point payment for one actor", async () => {
+  const actor = levelActor(3, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const first = makeDnd5eActivityClone(makeSorcererSpell(actor, { id: "first" }));
+  const second = makeDnd5eActivityClone(makeSorcererSpell(actor, { id: "second" }));
+  const results = await Promise.all([
+    service.applyDnd5ePreUseActivity(first, {}, {}, {}),
+    service.applyDnd5ePreUseActivity(second, {}, {}, {})
+  ]);
+  assert.deepEqual(results, [true, true]);
+  assert.equal(pointsItem(actor).system.uses.spent, 4);
+});
+
+test("RED: a canceled final cast holds its actor payment lock through rollback", async () => {
+  const actor = levelActor(3, { includePoints: true });
+  const service = new SorcererAutomationService({
+    chooseVirtualSpellLevel: async () => ({ accepted: true, spellLevel: 1 })
+  });
+  await service.syncSorceryPoints(actor);
+  let releaseFirstFinal;
+  const firstFinal = new Promise((resolve) => { releaseFirstFinal = resolve; });
+  let firstFinalStarted;
+  const firstStarted = new Promise((resolve) => { firstFinalStarted = resolve; });
+  let secondFinalStarted;
+  const secondStarted = new Promise((resolve) => { secondFinalStarted = resolve; });
+  const makeDeferredActivity = (id, finalUse) => {
+    const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, { id }));
+    let calls = 0;
+    let preflight;
+    activity.use = async (usageConfig) => {
+      calls += 1;
+      if (calls === 1) {
+        preflight = usageConfig;
+        return { updates: [] };
+      }
+      return finalUse();
+    };
+    return { activity, preflight: () => preflight };
+  };
+  const first = makeDeferredActivity("first-final", async () => {
+    firstFinalStarted();
+    return firstFinal;
+  });
+  const second = makeDeferredActivity("second-final", async () => {
+    secondFinalStarted();
+    return { updates: [] };
+  });
+
+  assert.equal(service.deferDnd5ePreUseActivity(first.activity, {}, {}, {}), false);
+  assert.equal(service.deferDnd5ePreUseActivity(second.activity, {}, {}, {}), false);
+  await waitForDeferredActivityUse();
+  assert.equal(service.finalizeDnd5ePreUseActivity(first.activity, completeReactionCheck(first.preflight()), {}, {}), false);
+  await firstStarted;
+  assert.equal(pointsItem(actor).system.uses.spent, 2);
+  assert.equal(service.finalizeDnd5ePreUseActivity(second.activity, completeReactionCheck(second.preflight()), {}, {}), false);
+  await waitForDeferredActivityUse();
+  assert.equal(pointsItem(actor).system.uses.spent, 2);
+
+  releaseFirstFinal(undefined);
+  await secondStarted;
+  await waitForDeferredActivityUse();
+  assert.equal(pointsItem(actor).system.uses.spent, 2);
+});
+
+test("deferred Distant plan keeps one resolved range across every temporary activity clone", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({
+    chooseVirtualSpellLevel: async () => ({ accepted: true, spellLevel: 1 }),
+    chooseMetamagic: async () => ({ accepted: true, ids: ["distant-spell"] })
+  });
+  await service.syncSorceryPoints(actor);
+  const initial = makeDnd5eActivityClone(makeSorcererSpell(actor, { system: { range: { value: 60, units: "ft" } } }));
+  const resumed = [];
+  initial.use = async (usageConfig) => { resumed.push(usageConfig); return { updates: [] }; };
+  assert.equal(service.deferDnd5ePreUseActivity(initial, {}, {}, {}), false);
+  await waitForDeferredActivityUse();
+  const preflight = resumed[0];
+  const firstClone = makeDnd5eActivityClone(makeSorcererSpell(actor, { system: { range: { value: 60, units: "ft" } } }));
+  const secondClone = makeDnd5eActivityClone(makeSorcererSpell(actor, { system: { range: { value: 120, units: "ft" } } }));
+  assert.equal(service.deferDnd5ePreUseActivity(firstClone, preflight, {}, {}), true);
+  assert.equal(service.deferDnd5ePreUseActivity(secondClone, preflight, {}, {}), true);
+  assert.deepEqual(firstClone.range, { value: 120, units: "ft" });
+  assert.deepEqual(secondClone.range, { value: 120, units: "ft" });
+});
+
+test("failed final Twinned cast restores the prior native target selection with its Sorcery Points", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({
+    chooseVirtualSpellLevel: async () => ({ accepted: true, spellLevel: 1 }),
+    chooseMetamagic: async () => ({
+      accepted: true,
+      ids: ["twinned-spell"],
+      targets: ["Token.first"],
+      secondTargetUuid: "Token.second"
+    })
+  });
+  await service.syncSorceryPoints(actor);
+  const previousFromUuid = globalThis.fromUuid;
+  const previousGame = globalThis.game;
+  const targetSets = [];
+  globalThis.fromUuid = async (uuid) => ({
+    id: uuid === "Token.first" ? "first" : "second",
+    actor: { uuid: uuid === "Token.first" ? "Actor.first" : "Actor.second" }
+  });
+  globalThis.game = {
+    ...previousGame,
+    user: {
+      ...(previousGame?.user ?? {}),
+      targets: new Set([{ id: "original" }]),
+      updateTokenTargets: async (ids) => targetSets.push(Array.from(ids).sort())
+    }
+  };
+  try {
+    const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+      system: { range: { value: 60, units: "ft" }, target: { affects: { count: 1 } } }
+    }));
+    let preflight;
+    let calls = 0;
+    activity.use = async (usageConfig) => {
+      calls += 1;
+      if (calls === 1) {
+        preflight = usageConfig;
+        return { updates: [] };
+      }
+      return undefined;
+    };
+    assert.equal(service.deferDnd5ePreUseActivity(activity, {}, {}, {}), false);
+    await waitForDeferredActivityUse();
+    assert.equal(service.finalizeDnd5ePreUseActivity(activity, completeReactionCheck(preflight), {}, {}), false);
+    await waitForDeferredActivityUse();
+    assert.deepEqual(targetSets, [["first", "second"], ["original"]]);
+    assert.equal(pointsItem(actor).system.uses.spent, 0);
+  }
+  finally {
+    globalThis.fromUuid = previousFromUuid;
+    globalThis.game = previousGame;
+  }
 });

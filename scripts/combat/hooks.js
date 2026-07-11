@@ -247,11 +247,19 @@ export function registerCombatHooks(moduleApi) {
 
     Hooks.on("dnd5e.preRollDamage", (rollConfig, dialogConfig, messageConfig) => {
       try {
-        return moduleApi.combatAttackService.applyDnd5eDamageRollConfig(
+        const result = moduleApi.combatAttackService.applyDnd5eDamageRollConfig(
           rollConfig,
           dialogConfig,
           messageConfig
         );
+        if (hasSorcererService) {
+          moduleApi.sorcererAutomationService.applyDnd5ePreRollDamage(
+            rollConfig,
+            dialogConfig,
+            messageConfig
+          );
+        }
+        return result;
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to apply damage roll automation.`, error);
@@ -344,6 +352,64 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to update Rebreya environment before attack roll.`, error);
       }
       return true;
+    });
+  }
+
+  if (hasSorcererService) {
+    Hooks.on("dnd5e.preRollSavingThrow", (rollConfig, dialogConfig, messageConfig) => {
+      try {
+        return moduleApi.sorcererAutomationService.applyDnd5ePreRollSavingThrow(
+          rollConfig,
+          dialogConfig,
+          messageConfig
+        );
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply Sorcerer save-roll automation.`, error);
+        return true;
+      }
+    });
+
+    if (!hasAttackService) {
+      Hooks.on("dnd5e.rollAttack", (rolls, context) => {
+        moduleApi.sorcererAutomationService.applyDnd5ePostAttackRoll(rolls, context).catch((error) => {
+          console.error(`${MODULE_ID} | Failed to apply Sorcerer seeking spell automation.`, error);
+        });
+        return true;
+      });
+    }
+
+    if (!hasAttackService) {
+      Hooks.on("dnd5e.preRollDamage", (rollConfig, dialogConfig, messageConfig) => {
+        try {
+          return moduleApi.sorcererAutomationService.applyDnd5ePreRollDamage(
+            rollConfig,
+            dialogConfig,
+            messageConfig
+          );
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to apply Sorcerer pre-damage automation.`, error);
+          return true;
+        }
+      });
+    }
+
+    Hooks.on("dnd5e.rollDamage", (rolls, context) => {
+      moduleApi.sorcererAutomationService.applyDnd5ePostDamageRoll(rolls, context).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply Sorcerer empowered spell automation.`, error);
+      });
+      return true;
+    });
+
+    Hooks.on("dnd5e.postCreateUsageMessage", (activity, message) => {
+      try {
+        return moduleApi.sorcererAutomationService.handleDnd5ePostCreateUsageMessage(activity, message);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to capture Sorcerer save overrides.`, error);
+        return true;
+      }
     });
   }
 
