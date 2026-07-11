@@ -559,14 +559,16 @@ function normalizeMetamagicOption(rawOption, index, options = {}) {
   const rawCost = rawOption?.cost;
   const cost = cleanString(rawCost).toLowerCase() === "spelllevel"
     ? "spellLevel"
-    : Math.max(1, Math.floor(parseNumber(rawCost, 1)));
+    : Math.max(0, Math.floor(parseNumber(rawCost, 1)));
   const rawCostMode = cleanString(rawOption?.costMode).toLowerCase();
   const costMode = rawCostMode === "variable"
     ? "variable"
     : cost === "spellLevel"
       ? "spellLevel"
       : "fixed";
-  const minCost = Math.max(1, Math.floor(parseNumber(rawOption?.minCost, 1)));
+  const minCost = costMode === "fixed"
+    ? Math.max(0, Math.floor(parseNumber(rawOption?.minCost, cost)))
+    : Math.max(1, Math.floor(parseNumber(rawOption?.minCost, 1)));
   const maxCost = cost === "spellLevel"
     ? undefined
     : Math.max(minCost, Math.floor(parseNumber(rawOption?.maxCost, cost)));
@@ -755,7 +757,7 @@ function parseExpandedMetamagicStacking(description) {
 
 const EXPANDED_METAMAGIC_SPECS = Object.freeze(new Map([
   [normalizeMatchText("Заклинание предка"), { id: "draconic-ancestral-spell", cost: 1 }],
-  [normalizeMatchText("Драконья защита"), { id: "draconic-dragon-protection", cost: 1 }],
+  [normalizeMatchText("Драконья защита"), { id: "draconic-dragon-protection", cost: 0 }],
   [normalizeMatchText("Драконье заклятье"), { id: "draconic-dragon-spell", cost: 3, costMode: "variable", minCost: 1, maxCost: 3 }],
   [normalizeMatchText("Крыло дракона"), { id: "draconic-dragon-wing", cost: 3, costMode: "variable", minCost: 1, maxCost: 3 }],
   [normalizeMatchText("Хаотическое заклинание"), { id: "wild-chaotic-spell", cost: 3, costMode: "variable", minCost: 1, maxCost: 3 }],

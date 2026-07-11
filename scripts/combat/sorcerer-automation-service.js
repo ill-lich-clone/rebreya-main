@@ -30,7 +30,10 @@ const METAMAGIC_SOURCE_TYPE = "sorcererMetamagic";
 const DRACONIC_ANCESTOR_SOURCE_TYPE = "sorcererDraconicAncestor";
 const MAX_EXTENDED_DURATION_SECONDS = 24 * 60 * 60;
 const SORCERER_CAST_DIALOG_WIDTH = 720;
+const EFFECT_MODE_ADD = globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
+const EFFECT_MODE_UPGRADE = globalThis.CONST?.ACTIVE_EFFECT_MODES?.UPGRADE ?? 4;
 const COMPONENT_PROPERTY_KEYS = Object.freeze(new Set(["vocal", "somatic", "verbal", "s"]));
+const DRACONIC_PROTECTION_DAMAGE_TYPES = Object.freeze(new Set(["acid", "cold", "fire", "lightning", "poison"]));
 const DAMAGE_TYPE_BY_LABEL = Object.freeze(new Map([
   ["огонь", "fire"],
   ["холод", "cold"],
@@ -184,6 +187,9 @@ function metamagicCostMode(option = {}) {
 }
 
 function metamagicMinCost(option = {}) {
+  if (metamagicCostMode(option) === "fixed") {
+    return Math.max(0, toInteger(option.minCost ?? option.cost, option.cost ?? 0));
+  }
   return Math.max(1, toInteger(option.minCost, 1));
 }
 
@@ -204,7 +210,7 @@ function metamagicCostForOption(option = {}, spellLevel = 1, requestedCost = und
     const max = metamagicMaxCost(option, spellLevel);
     return clampInteger(requestedCost ?? option.selectedCost ?? min, min, max);
   }
-  return Math.max(1, toInteger(option.cost, 1));
+  return Math.max(0, toInteger(option.cost, 0));
 }
 
 function metamagicDescription(item) {
@@ -285,7 +291,9 @@ export function updateSorcererCastDialogControls(root) {
 
   for (const input of inputs) {
     const label = input.closest?.(".rebreya-sorcerer-option");
-    const min = Math.max(1, toInteger(input.dataset.minCost, 1));
+    const min = input.dataset.costMode === "fixed"
+      ? Math.max(0, toInteger(input.dataset.minCost, input.dataset.cost ?? 0))
+      : Math.max(1, toInteger(input.dataset.minCost, 1));
     const max = Math.max(min, toInteger(input.dataset.maxCost, input.dataset.cost ?? min));
     const slider = label?.querySelector?.("[data-metamagic-cost-slider]");
     const requestedCost = slider ? slider.value : input.dataset.cost;
@@ -293,7 +301,7 @@ export function updateSorcererCastDialogControls(root) {
       ? Math.max(1, selectedLevel)
       : input.dataset.costMode === "variable"
         ? clampInteger(requestedCost, min, max)
-        : Math.max(1, toInteger(input.dataset.cost, 1));
+        : Math.max(0, toInteger(input.dataset.cost, 0));
     input.dataset.currentCost = String(currentCost);
     if (slider) {
       slider.value = String(currentCost);
@@ -669,17 +677,150 @@ function normalizedDamageType(value) {
 }
 
 function damagePartType(part = {}) {
-  return normalizedDamageType(part?.types?.[0] ?? part?.type ?? part?.damageType);
+  return normalizedDamageType(part?.types?.[0] ?? part?.[1] ?? part?.type ?? part?.damageType);
 }
 
 function firstSpellDamageType(activity) {
   return spellDamageParts(activity).map(damagePartType).find(Boolean) ?? "";
 }
 
+function spellDamageTypes(activity) {
+  return new Set(spellDamageParts(activity).map(damagePartType).filter(Boolean));
+}
+
+function spellHasDamageType(activity, damageType) {
+  const type = normalizedDamageType(damageType);
+  return Boolean(type && spellDamageTypes(activity).has(type));
+}
+
+function firstAllowedSpellDamageType(activity, allowedTypes) {
+  const allowed = allowedTypes instanceof Set
+    ? allowedTypes
+    : new Set(Array.from(allowedTypes ?? []).map(normalizedDamageType));
+  return spellDamageParts(activity).map(damagePartType).find((type) => allowed.has(type)) ?? "";
+}
+
+function spellDamagePartWithType(part, damageType) {
+  const type = normalizedDamageType(damageType);
+  const adjusted = deepClone(part);
+  if (Array.isArray(adjusted)) {
+    adjusted[1] = type;
+    return adjusted;
+  }
+
+  adjusted.types = [type];
+  if (Object.hasOwn(adjusted, "type")) adjusted.type = type;
+  if (Object.hasOwn(adjusted, "damageType")) adjusted.damageType = type;
+  if (adjusted.custom && typeof adjusted.custom === "object" && Object.hasOwn(adjusted.custom, "type")) {
+    adjusted.custom.type = type;
+  }
+  return adjusted;
+}
+
+function replaceSpellDamageTypes(activity, damageType) {
+  const parts = spellDamageParts(activity).map((part) => spellDamagePartWithType(part, damageType));
+  updateSource(activity, {
+    "damage.parts": parts,
+    "system.damage.parts": parts
+  });
+  updateSource(activity?.item, {
+    "system.damage.parts": parts
+  });
+  return parts;
+}
+
 function draconicAncestorDamageType(actor) {
   const ancestor = collectionValues(actor?.items)
     .find((item) => cleanText(documentFlag(item, MODULE_ID, "sourceType")) === DRACONIC_ANCESTOR_SOURCE_TYPE);
   return normalizedDamageType(documentFlag(ancestor, MODULE_ID, "damageType"));
+}
+
+function temporaryMetamagicEffectData(activity, { name, kind, changes, specialDuration, meta = {} } = {}) {
+  const item = activity?.item;
+  const origin = cleanText(item?.uuid ?? activity?.uuid);
+  return {
+    name,
+    img: cleanText(item?.img, "icons/svg/aura.svg"),
+    icon: cleanText(item?.img, "icons/svg/aura.svg"),
+    origin: origin || null,
+    disabled: false,
+    transfer: false,
+    changes: deepClone(changes ?? []),
+    duration: {
+      rounds: 1,
+      turns: 1,
+      startRound: currentRound(),
+      startTurn: Math.max(0, toInteger(globalThis.game?.combat?.turn, 0))
+    },
+    flags: {
+      dae: { specialDuration: [...(specialDuration ?? [])] },
+      [MODULE_ID]: {
+        sorcererAutomation: {
+          kind,
+          ...deepClone(meta)
+        }
+      }
+    }
+  };
+}
+
+function draconicProtectionEffectData(activity, damageType) {
+  const type = normalizedDamageType(damageType);
+  return temporaryMetamagicEffectData(activity, {
+    name: "Драконья защита",
+    kind: "draconicDragonProtection",
+    changes: [{
+      key: "system.traits.dr.value",
+      mode: EFFECT_MODE_ADD,
+      value: type,
+      priority: 20
+    }],
+    specialDuration: ["turnStartSource", "combatEnd"],
+    meta: { damageType: type }
+  });
+}
+
+function draconicDragonWingEffectData(activity, spent) {
+  const cost = Math.max(0, toInteger(spent, 0));
+  const flySpeed = cost * 10;
+  return temporaryMetamagicEffectData(activity, {
+    name: "Крыло дракона",
+    kind: "draconicDragonWing",
+    changes: [{
+      key: "system.attributes.movement.fly",
+      mode: EFFECT_MODE_UPGRADE,
+      value: String(flySpeed),
+      priority: 20
+    }],
+    specialDuration: ["turnEndSource", "combatEnd"],
+    meta: { flySpeed, cost }
+  });
+}
+
+async function createActorEffects(actor, effects = []) {
+  const rows = (effects ?? []).filter(Boolean).map((effect) => {
+    const data = deepClone(effect);
+    delete data._id;
+    return data;
+  });
+  if (!rows.length || typeof actor?.createEmbeddedDocuments !== "function") {
+    return [];
+  }
+  return actor.createEmbeddedDocuments("ActiveEffect", rows);
+}
+
+async function deleteActorEffects(actor, effects = []) {
+  const documents = collectionValues(effects).filter(Boolean);
+  const ids = documents.map((effect) => cleanText(effect?.id ?? effect?._id)).filter(Boolean);
+  if (ids.length && typeof actor?.deleteEmbeddedDocuments === "function") {
+    await actor.deleteEmbeddedDocuments("ActiveEffect", ids);
+    return true;
+  }
+
+  await Promise.all(documents
+    .filter((effect) => typeof effect?.delete === "function")
+    .map((effect) => effect.delete()));
+  return documents.length > 0;
 }
 
 function metamagicDamagePart({ id, formula, damageType }) {
@@ -726,16 +867,19 @@ function metamagicOptions(actor) {
     .filter((item) => cleanText(documentFlag(item, MODULE_ID, "sourceType")) === METAMAGIC_SOURCE_TYPE)
     .map((item) => {
       const cost = documentFlag(item, MODULE_ID, "cost");
-      const minCost = Math.max(1, toInteger(documentFlag(item, MODULE_ID, "minCost"), 1));
+      const costMode = cleanText(documentFlag(item, MODULE_ID, "costMode")).toLowerCase();
+      const minCost = costMode === "variable" || cost === "spellLevel"
+        ? Math.max(1, toInteger(documentFlag(item, MODULE_ID, "minCost"), 1))
+        : Math.max(0, toInteger(documentFlag(item, MODULE_ID, "minCost") ?? cost, cost ?? 0));
       const maxCost = cost === "spellLevel"
         ? undefined
-        : Math.max(minCost, toInteger(documentFlag(item, MODULE_ID, "maxCost") ?? cost, cost ?? 1));
+        : Math.max(minCost, toInteger(documentFlag(item, MODULE_ID, "maxCost") ?? cost, cost ?? minCost));
       return {
         id: cleanText(documentFlag(item, MODULE_ID, "metamagicId") ?? item?.system?.identifier),
         label: cleanText(item?.name, documentFlag(item, MODULE_ID, "metamagicId") ?? item?.system?.identifier),
         detail: metamagicDescription(item),
         cost,
-        costMode: cleanText(documentFlag(item, MODULE_ID, "costMode")).toLowerCase(),
+        costMode,
         minCost,
         maxCost,
         automation: cleanText(documentFlag(item, MODULE_ID, "metamagicAutomation") ?? documentFlag(item, MODULE_ID, "automation")),
@@ -1342,7 +1486,19 @@ export class SorcererAutomationService {
       if (id === "empowered-spell" && (!spellHasDamage(activity) || !selectedDamageDice || selectedDamageDice.length < 1 || selectedDamageDice.length > charismaModifier(actor))) {
         return null;
       }
-      if (id === "draconic-dragon-spell" && !spellHasDamage(activity)) {
+      if (id === "draconic-ancestral-spell" && (!spellHasDamage(activity) || !draconicAncestorDamageType(actor))) {
+        return null;
+      }
+      if (id === "draconic-dragon-protection" && !firstAllowedSpellDamageType(activity, DRACONIC_PROTECTION_DAMAGE_TYPES)) {
+        return null;
+      }
+      if (id === "draconic-dragon-spell") {
+        const ancestorDamageType = draconicAncestorDamageType(actor);
+        if (!ancestorDamageType || !spellHasDamageType(activity, ancestorDamageType)) {
+          return null;
+        }
+      }
+      if (id === "draconic-dragon-wing" && !actor) {
         return null;
       }
       if (id === "quickened-spell" && spellActivation(activity).type !== "action") {
@@ -1371,6 +1527,7 @@ export class SorcererAutomationService {
     const meta = plan.metamagic ?? {};
     const modifiers = {};
     const updates = {};
+    const actorEffects = [];
     let components = spellComponents(activity);
     for (const id of meta.ids) {
       if (id === "careful-spell") {
@@ -1421,6 +1578,16 @@ export class SorcererAutomationService {
         updateSource(activity.item, itemComponentUpdates);
         modifiers.subtle = true;
       }
+      else if (id === "draconic-ancestral-spell") {
+        const damageType = draconicAncestorDamageType(plan.actor);
+        replaceSpellDamageTypes(activity, damageType);
+        modifiers.draconicAncestralSpell = { damageType };
+      }
+      else if (id === "draconic-dragon-protection") {
+        const damageType = firstAllowedSpellDamageType(activity, DRACONIC_PROTECTION_DAMAGE_TYPES);
+        actorEffects.push(draconicProtectionEffectData(activity, damageType));
+        modifiers.draconicDragonProtection = { damageType };
+      }
       else if (id === "draconic-dragon-spell") {
         const option = meta.options?.find((entry) => entry.id === id) ?? { selectedCost: 1 };
         const diceCount = this.#metamagicCost(option, plan.choice.spellLevel, option.selectedCost);
@@ -1444,6 +1611,15 @@ export class SorcererAutomationService {
           formula,
           damageType: damagePartType(part),
           cost: diceCount
+        };
+      }
+      else if (id === "draconic-dragon-wing") {
+        const option = meta.options?.find((entry) => entry.id === id) ?? { selectedCost: 1 };
+        const cost = this.#metamagicCost(option, plan.choice.spellLevel, option.selectedCost);
+        actorEffects.push(draconicDragonWingEffectData(activity, cost));
+        modifiers.draconicDragonWing = {
+          flySpeed: cost * 10,
+          cost
         };
       }
       else if (id === "extended-spell") {
@@ -1535,7 +1711,7 @@ export class SorcererAutomationService {
         used: false
       });
     }
-    return { components, modifiers, updates };
+    return { components, modifiers, updates, actorEffects };
   }
 
   #applyCooldownCardConfig(messageConfig = {}, metadata = null) {
@@ -2375,6 +2551,7 @@ export class SorcererAutomationService {
       highLevelCastsChanged: false,
       exhaustionChanged: false,
       twinnedTargetSnapshot,
+      metamagicEffects: [],
       rolledBack: false
     };
 
@@ -2399,6 +2576,7 @@ export class SorcererAutomationService {
         await updateDocument(actor, { "system.attributes.exhaustion": state.exhaustion + exhaustion });
         state.exhaustionChanged = true;
       }
+      state.metamagicEffects = await createActorEffects(actor, metamagicConfig.actorEffects);
       if (metamagic.ids.includes("empowered-spell") && metamagic.rerollDamage) {
         await metamagic.rerollDamage(metamagic.selectedDamageDice);
       }
@@ -2548,6 +2726,9 @@ export class SorcererAutomationService {
     }
     if (state.exhaustionChanged) {
       updates.push(updateDocument(state.actor, { "system.attributes.exhaustion": state.exhaustion }));
+    }
+    if (state.metamagicEffects?.length) {
+      updates.push(deleteActorEffects(state.actor, state.metamagicEffects));
     }
     if (state.twinnedTargetSnapshot) {
       updates.push(this.#restoreTwinnedTargets(state.twinnedTargetSnapshot));

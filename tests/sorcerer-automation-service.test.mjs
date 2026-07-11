@@ -62,6 +62,7 @@ class TestActor {
     };
     this.flags = {};
     this.items = { contents: [] };
+    this.effects = { contents: [] };
     this.sorcererClassItem = makeItemFromData(this, {
       name: "Sorcerer",
       type: "class",
@@ -75,17 +76,47 @@ class TestActor {
     this.items.contents.push(this.sorcererClassItem, this.wizardClassItem);
     this.updates = [];
     this.createdItems = [];
+    this.createdEffects = [];
+    this.deletedEffects = [];
     if (includePoints) {
       this.items.contents.push(makePointsItem(this, { spent: pointsSpent }));
     }
   }
 
   async createEmbeddedDocuments(type, rows) {
-    assert.equal(type, "Item");
-    this.createdItems.push(rows);
-    const documents = rows.map((row, index) => makeItemFromData(this, row, `points-${index + 1}`));
-    this.items.contents.push(...documents);
+    if (type === "Item") {
+      this.createdItems.push(rows);
+      const documents = rows.map((row, index) => makeItemFromData(this, row, `points-${index + 1}`));
+      this.items.contents.push(...documents);
+      return documents;
+    }
+
+    assert.equal(type, "ActiveEffect");
+    this.createdEffects.push({ type, rows: structuredClone(rows) });
+    const documents = rows.map((row, index) => {
+      const id = row._id ?? `effect-${this.effects.contents.length + index + 1}`;
+      const effect = {
+        id,
+        _id: id,
+        uuid: `${this.uuid}.ActiveEffect.${id}`,
+        parent: this,
+        ...structuredClone(row),
+        async delete() {
+          await this.parent.deleteEmbeddedDocuments("ActiveEffect", [this.id]);
+          return this;
+        }
+      };
+      return effect;
+    });
+    this.effects.contents.push(...documents);
     return documents;
+  }
+
+  async deleteEmbeddedDocuments(type, ids) {
+    assert.equal(type, "ActiveEffect");
+    this.deletedEffects.push(...ids);
+    this.effects.contents = this.effects.contents.filter((effect) => !ids.includes(effect.id ?? effect._id));
+    return ids;
   }
 
   async update(patch) {
@@ -1110,8 +1141,29 @@ test("sorcerer cast dialog updater recalculates totals and locks incompatible op
   assert.equal(empoweredLabel.label.classes.has("is-locked"), false);
 });
 
+test("zero-cost metamagic contributes nothing to the live Sorcery Point total", () => {
+  const protection = {
+    checked: true,
+    disabled: false,
+    value: "draconic-dragon-protection",
+    dataset: { cost: "0", costMode: "fixed", minCost: "0", maxCost: "0", stacking: "base" }
+  };
+  const protectionLabel = makeFakeMetamagicLabel(protection);
+  const { root, total } = makeCastDialogRoot({
+    selectedLevel: 2,
+    slotCost: 3,
+    metamagicInputs: [protection]
+  });
+
+  assert.equal(updateSorcererCastDialogControls(root), true);
+  assert.equal(protection.dataset.currentCost, "0");
+  assert.equal(protectionLabel.costLabel.textContent, "0");
+  assert.equal(total.textContent, "3");
+});
+
 test("variable origin metamagic uses the selected slider cost for totals and payment", async () => {
   const actor = metamagicActor();
+  addDraconicAncestor(actor, "Огонь");
   addMetamagic(actor, "draconic-dragon-spell", 3, "base", {
     costMode: "variable",
     minCost: 1,
@@ -2137,6 +2189,137 @@ test("Draconic Dragon Spell adds one d6 damage per selected Sorcery Point", asyn
   assert.deepEqual(activity.system.damage.parts.at(-1), added);
   assert.deepEqual(activity.item.system.damage.parts.at(-1), added);
   assert.equal(pointsItem(actor).system.uses.spent, 4);
+});
+
+test("Draconic Ancestral Spell changes this cast's spell damage to the ancestor type", async () => {
+  const actor = metamagicActor();
+  addDraconicAncestor(actor, "Огонь");
+  addMetamagic(actor, "draconic-ancestral-spell", 1, "base", {
+    metamagicAutomation: "draconic-ancestral-spell"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: {
+      damage: {
+        parts: [
+          { _id: "cold-part", formula: "1d8", types: ["cold"] },
+          ["1d6", "acid"]
+        ]
+      }
+    }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["draconic-ancestral-spell"] }
+  }, {}, {}), true);
+
+  assert.deepEqual(activity.damage.parts.map((part) => Array.isArray(part) ? part[1] : part.types[0]), ["fire", "fire"]);
+  assert.deepEqual(activity.system.damage.parts.map((part) => Array.isArray(part) ? part[1] : part.types[0]), ["fire", "fire"]);
+  assert.deepEqual(activity.item.system.damage.parts.map((part) => Array.isArray(part) ? part[1] : part.types[0]), ["fire", "fire"]);
+  assert.equal(pointsItem(actor).system.uses.spent, 3);
+});
+
+test("Draconic Dragon Protection creates a temporary resistance effect without extra Sorcery Point cost", async () => {
+  const actor = metamagicActor();
+  addMetamagic(actor, "draconic-dragon-protection", 0, "base", {
+    metamagicAutomation: "draconic-dragon-protection"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "acid-part", formula: "2d6", types: ["acid"] }] } }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["draconic-dragon-protection"] }
+  }, {}, {}), true);
+
+  assert.equal(pointsItem(actor).system.uses.spent, 2);
+  assert.equal(actor.createdEffects.length, 1);
+  const effect = actor.createdEffects[0].rows[0];
+  const resistance = effect.changes.find((change) => change.key === "system.traits.dr.value");
+  assert.equal(resistance.mode, 2);
+  assert.equal(resistance.value, "acid");
+  assert.deepEqual(effect.flags.dae.specialDuration, ["turnStartSource", "combatEnd"]);
+  assert.equal(effect.flags[MODULE_ID].sorcererAutomation.kind, "draconicDragonProtection");
+});
+
+test("Draconic Dragon Protection rejects spell damage outside its elemental list before payment", async () => {
+  const actor = metamagicActor();
+  addMetamagic(actor, "draconic-dragon-protection", 0, "base", {
+    metamagicAutomation: "draconic-dragon-protection"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "force-part", formula: "1d10", types: ["force"] }] } }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["draconic-dragon-protection"] }
+  }, {}, {}), false);
+  assert.equal(pointsItem(actor).system.uses.spent, 0);
+  assert.equal(actor.createdEffects.length, 0);
+});
+
+test("Draconic Dragon Spell requires spell damage matching the dragon ancestor before payment", async () => {
+  const actor = metamagicActor();
+  addDraconicAncestor(actor, "Огонь");
+  addMetamagic(actor, "draconic-dragon-spell", 3, "base", {
+    costMode: "variable",
+    minCost: 1,
+    maxCost: 3,
+    metamagicAutomation: "draconic-dragon-spell"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "cold-part", formula: "1d8", types: ["cold"] }] } }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: {
+      ids: ["draconic-dragon-spell"],
+      costs: { "draconic-dragon-spell": 2 }
+    }
+  }, {}, {}), false);
+  assert.equal(pointsItem(actor).system.uses.spent, 0);
+  assert.equal(activity.damage.parts.some((part) => part._id === "rebreya-draconic-dragon-spell"), false);
+});
+
+test("Draconic Dragon Wing creates temporary flight equal to ten feet per selected Sorcery Point", async () => {
+  const actor = metamagicActor();
+  addMetamagic(actor, "draconic-dragon-wing", 3, "base", {
+    costMode: "variable",
+    minCost: 1,
+    maxCost: 3,
+    metamagicAutomation: "draconic-dragon-wing"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: {
+      ids: ["draconic-dragon-wing"],
+      costs: { "draconic-dragon-wing": 2 }
+    }
+  }, {}, {}), true);
+
+  assert.equal(pointsItem(actor).system.uses.spent, 4);
+  assert.equal(actor.createdEffects.length, 1);
+  const effect = actor.createdEffects[0].rows[0];
+  const flight = effect.changes.find((change) => change.key === "system.attributes.movement.fly");
+  assert.equal(flight.mode, 4);
+  assert.equal(flight.value, "20");
+  assert.deepEqual(effect.flags.dae.specialDuration, ["turnEndSource", "combatEnd"]);
+  assert.equal(effect.flags[MODULE_ID].sorcererAutomation.kind, "draconicDragonWing");
 });
 
 test("Subtle usage message names metamagic and replaces V/S component pills", async () => {

@@ -324,6 +324,7 @@ test("Sorcerer metamagic documents include base and origin-expanded options", ()
   const metamagic = definitions.filter((entry) => entry.sourceType === "sorcererMetamagic");
   const subtle = metamagic.find((entry) => entry.metamagicId === "subtle-spell");
   const ancestorSpell = metamagic.find((entry) => entry.name === "Заклинание предка");
+  const dragonProtection = metamagic.find((entry) => entry.name === "Драконья защита");
   const dragonSpell = metamagic.find((entry) => entry.name === "Драконье заклятье");
   const infection = metamagic.find((entry) => entry.name === "Заражение");
 
@@ -337,6 +338,8 @@ test("Sorcerer metamagic documents include base and origin-expanded options", ()
   assert.equal(createFeatureEntryData(ancestorSpell, new Map()).flags["rebreya-main"].metamagicId, "draconic-ancestral-spell");
   assert.equal(createFeatureEntryData(ancestorSpell, new Map()).flags["rebreya-main"].cost, 1);
   assert.equal(createFeatureEntryData(ancestorSpell, new Map()).flags["rebreya-main"].stacking, "base");
+  assert.equal(createFeatureEntryData(dragonProtection, new Map()).flags["rebreya-main"].metamagicId, "draconic-dragon-protection");
+  assert.equal(createFeatureEntryData(dragonProtection, new Map()).flags["rebreya-main"].cost, 0);
   assert.equal(createFeatureEntryData(dragonSpell, new Map()).flags["rebreya-main"].metamagicId, "draconic-dragon-spell");
   assert.equal(createFeatureEntryData(dragonSpell, new Map()).flags["rebreya-main"].costMode, "variable");
   assert.equal(createFeatureEntryData(dragonSpell, new Map()).flags["rebreya-main"].minCost, 1);
