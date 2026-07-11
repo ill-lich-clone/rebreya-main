@@ -22,6 +22,11 @@ const SORCERY_POINTS_RECOVERY = Object.freeze([{
 }]);
 const COOLDOWNS_FLAG = "sorcererAutomation.virtualSlotCooldowns";
 const HIGH_LEVEL_CASTS_FLAG = "sorcererAutomation.highLevelCasts";
+const PREFLIGHT_FLAG = "sorcererAutomationPreflight";
+const FINAL_BYPASS_FLAG = "sorcererAutomationBypass";
+const REACTION_CHECK_COMPLETE_FLAG = "reactionCheckComplete";
+const METAMAGIC_SOURCE_TYPE = "sorcererMetamagic";
+const MAX_EXTENDED_DURATION_SECONDS = 24 * 60 * 60;
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -185,6 +190,121 @@ function spellComponents(activity) {
   return deepClone(activity?.components ?? activity?.system?.components ?? activity?.item?.system?.components ?? {});
 }
 
+function sharedSpellComponents(activity, overrides = {}) {
+  const components = spellComponents(activity);
+  return {
+    verbal: overrides.verbal ?? (components.verbal === true || components.vocal === true || components.v === true),
+    somatic: overrides.somatic ?? (components.somatic === true || components.s === true),
+    material: overrides.material ?? (components.material === true || components.m === true)
+  };
+}
+
+function spellRange(activity) {
+  const range = activity?.range ?? activity?.system?.range ?? activity?.item?.system?.range ?? {};
+  return {
+    value: Math.max(0, toInteger(range?.value ?? range, 0)),
+    units: cleanText(range?.units, "ft").toLowerCase()
+  };
+}
+
+function spellDuration(activity) {
+  const duration = activity?.duration ?? activity?.system?.duration ?? activity?.item?.system?.duration ?? {};
+  return {
+    value: Math.max(0, toInteger(duration?.value ?? duration, 0)),
+    units: cleanText(duration?.units, "inst").toLowerCase()
+  };
+}
+
+function durationSeconds({ value, units }) {
+  const multipliers = {
+    round: 6,
+    rounds: 6,
+    turn: 6,
+    turns: 6,
+    minute: 60,
+    minutes: 60,
+    hour: 3600,
+    hours: 3600,
+    day: 86400,
+    days: 86400
+  };
+  return value * (multipliers[units] ?? 0);
+}
+
+function durationFromSeconds(seconds, preferredUnits) {
+  const normalizedSeconds = Math.min(MAX_EXTENDED_DURATION_SECONDS, Math.max(0, seconds));
+  const multipliers = {
+    round: 6,
+    rounds: 6,
+    turn: 6,
+    turns: 6,
+    minute: 60,
+    minutes: 60,
+    hour: 3600,
+    hours: 3600,
+    day: 86400,
+    days: 86400
+  };
+  const multiplier = multipliers[preferredUnits] ?? 0;
+  if (multiplier && normalizedSeconds % multiplier === 0) {
+    return { value: normalizedSeconds / multiplier, units: preferredUnits };
+  }
+  if (normalizedSeconds % 3600 === 0) {
+    return { value: normalizedSeconds / 3600, units: "hour" };
+  }
+  return { value: normalizedSeconds / 60, units: "minute" };
+}
+
+function spellHasSave(activity) {
+  const save = activity?.save ?? activity?.system?.save ?? activity?.item?.system?.save ?? {};
+  return Boolean(cleanText(save?.ability ?? save?.abilityId ?? save?.type));
+}
+
+function spellTargetCount(activity) {
+  const target = activity?.target ?? activity?.system?.target ?? activity?.item?.system?.target ?? {};
+  return Math.max(0, toInteger(target?.affects?.count ?? target?.count ?? target?.value, 0));
+}
+
+function spellActivation(activity) {
+  const activation = activity?.activation ?? activity?.system?.activation ?? activity?.item?.system?.activation ?? {};
+  return {
+    type: cleanText(activation?.type).toLowerCase(),
+    value: Math.max(0, toInteger(activation?.value, 1))
+  };
+}
+
+function spellHasDamage(activity) {
+  const damage = activity?.damage ?? activity?.system?.damage ?? activity?.item?.system?.damage ?? {};
+  return Array.isArray(damage?.parts) && damage.parts.length > 0;
+}
+
+function spellHasAttack(activity) {
+  const attack = activity?.attack ?? activity?.system?.attack ?? activity?.item?.system?.attack ?? null;
+  return Boolean(attack && typeof attack === "object");
+}
+
+function charismaModifier(actor) {
+  return Math.max(1, toInteger(actor?.system?.abilities?.cha?.mod ?? actor?.system?.abilities?.cha?.modifier, 1));
+}
+
+function metamagicOptions(actor) {
+  return collectionValues(actor?.items)
+    .filter((item) => cleanText(documentFlag(item, MODULE_ID, "sourceType")) === METAMAGIC_SOURCE_TYPE)
+    .map((item) => ({
+      id: cleanText(documentFlag(item, MODULE_ID, "metamagicId") ?? item?.system?.identifier),
+      label: cleanText(item?.name, documentFlag(item, MODULE_ID, "metamagicId") ?? item?.system?.identifier),
+      cost: documentFlag(item, MODULE_ID, "cost"),
+      stacking: cleanText(documentFlag(item, MODULE_ID, "stacking"), "base").toLowerCase(),
+      item
+    }))
+    .filter((option) => option.id);
+}
+
+function selectedTargetUuids(value) {
+  const targets = Array.isArray(value) ? value : value ? collectionValues(value) : [];
+  return targets.map((target) => cleanText(target?.uuid ?? target?.id ?? target)).filter(Boolean);
+}
+
 function isLongRest(result = {}, config = {}) {
   if (result?.longRest === true || config?.longRest === true) {
     return true;
@@ -313,6 +433,7 @@ export class SorcererAutomationService {
         ? moduleApi
         : {};
     this._deferredActivities = new WeakSet();
+    this._finalizingActivities = new WeakSet();
   }
 
   async initialize() {
@@ -338,11 +459,11 @@ export class SorcererAutomationService {
     }
 
     const options = choices.map(({ spellLevel, cost }) => (
-      `<option value="${spellLevel}"${spellLevel === baseLevel ? " selected" : ""}>${spellLevel} (${cost})</option>`
+      `<option value="${spellLevel}" data-sorcerer-cost="${cost}"${spellLevel === baseLevel ? " selected" : ""}>${spellLevel} (${cost})</option>`
     )).join("");
     const result = await globalThis.DialogV2.wait({
       window: { title: "Единицы чародейства" },
-      content: `<p>Выберите уровень виртуальной ячейки и её стоимость в единицах чародейства.</p><label>Уровень <select name="spellLevel">${options}</select></label><label><input type="checkbox" name="exhaustionOverride"> Игнорировать ограничение ценой истощения</label>`,
+      content: `<p>Выберите уровень виртуальной ячейки и её стоимость в единицах чародейства.</p><div class="rebreya-sorcerer-choice-row"><label>Уровень <select name="spellLevel" onchange="this.closest('.rebreya-sorcerer-choice-row').querySelector('[data-sorcerer-total]').textContent=this.selectedOptions[0].dataset.sorcererCost">${options}</select></label><label><input type="checkbox" name="exhaustionOverride"> Игнорировать ограничение ценой истощения</label><output data-sorcerer-total>${VIRTUAL_SLOT_COSTS[baseLevel]}</output></div>`,
       buttons: [{
         action: "cast",
         label: "Сотворить",
@@ -358,6 +479,255 @@ export class SorcererAutomationService {
       }]
     });
     return normalizeSelection(result, baseLevel);
+  }
+
+  #metamagicRequest(usageConfig = {}, dialogConfig = {}) {
+    const value = usageConfig?.sorcererMetamagic ?? dialogConfig?.sorcererMetamagic ?? {};
+    if (Array.isArray(value)) {
+      return { ids: value };
+    }
+    if (typeof value === "string") {
+      return { ids: [value] };
+    }
+    return value && typeof value === "object" ? value : {};
+  }
+
+  async #chooseMetamagic({ actor, activity, spellLevel, usageConfig, dialogConfig }) {
+    const configured = this.#metamagicRequest(usageConfig, dialogConfig);
+    if (Array.isArray(configured.ids) && configured.ids.length) {
+      return { accepted: true, ...configured, ids: configured.ids.map((id) => cleanText(id)).filter(Boolean) };
+    }
+
+    const options = metamagicOptions(actor);
+    if (this._options.chooseMetamagic instanceof Function) {
+      const result = await this._options.chooseMetamagic({
+        actor,
+        activity,
+        spellLevel,
+        options: deepClone(options.map(({ id, cost, stacking }) => ({ id, cost, stacking })))
+      });
+      if (result === false || result?.accepted === false || result?.confirmed === false) {
+        return { accepted: false, ids: [] };
+      }
+      const choice = Array.isArray(result) ? { ids: result } : (result ?? {});
+      return { accepted: true, ...choice, ids: (choice.ids ?? []).map((id) => cleanText(id)).filter(Boolean) };
+    }
+
+    if (typeof globalThis.DialogV2?.wait !== "function" || !options.length) {
+      return { accepted: true, ids: [] };
+    }
+
+    const virtualCost = VIRTUAL_SLOT_COSTS[spellLevel] ?? 0;
+    const updateTotal = "const row=this.closest('.rebreya-sorcerer-choice-row');row.querySelector('[data-sorcerer-total]').textContent=Array.from(row.querySelectorAll('input[name=metamagic]:checked')).reduce((total,input)=>total+Number(input.dataset.cost)," + virtualCost + ")";
+    const checkboxes = options.map(({ id, label, cost }) => (
+      `<label><input type="checkbox" name="metamagic" value="${id}" data-cost="${cost === "spellLevel" ? spellLevel : cost}" onchange="${updateTotal}"> ${label} (${cost === "spellLevel" ? spellLevel : cost})</label>`
+    )).join("");
+    const result = await globalThis.DialogV2.wait({
+      window: { title: "Метамагия" },
+      content: `<div class="rebreya-sorcerer-choice-row">${checkboxes}<output data-sorcerer-total>${virtualCost}</output></div>`,
+      buttons: [{
+        action: "confirm",
+        label: "Применить",
+        default: true,
+        callback: (_event, button) => ({
+          accepted: true,
+          ids: Array.from(button?.form?.elements?.metamagic ?? [])
+            .filter((input) => input.checked)
+            .map((input) => input.value)
+        })
+      }, { action: "cancel", label: "Отмена" }]
+    });
+    if (!result || result.accepted === false) {
+      return { accepted: false, ids: [] };
+    }
+    return { ...result, ids: (result.ids ?? []).map((id) => cleanText(id)).filter(Boolean) };
+  }
+
+  #metamagicCost(option, spellLevel) {
+    return option?.cost === "spellLevel"
+      ? Math.max(1, spellLevel)
+      : Math.max(1, toInteger(option?.cost, 1));
+  }
+
+  #validateMetamagic(activity, actor, spellLevel, request = {}) {
+    const ids = Array.from(new Set((request?.ids ?? []).map((id) => cleanText(id)).filter(Boolean)));
+    const ownedById = new Map(metamagicOptions(actor).map((option) => [option.id, option]));
+    const options = ids.map((id) => ownedById.get(id));
+    if (options.some((option) => !option)) {
+      return null;
+    }
+
+    const additive = options.filter((option) => option.stacking === "additive");
+    const base = options.filter((option) => option.stacking !== "additive");
+    if (base.length > 1 || additive.length > 1 || options.length > 2 || (options.length === 2 && (base.length !== 1 || additive.length !== 1))) {
+      return null;
+    }
+
+    const targetUuids = selectedTargetUuids(request.targetUuids);
+    const currentTargets = selectedTargetUuids(request.targets ?? request.currentTargets);
+    const selectedDamageDice = Array.from(new Set((request.damageDice ?? []).map((index) => toInteger(index, -1)).filter((index) => index >= 0)));
+    const secondTargetUuid = cleanText(request.secondTargetUuid);
+    for (const id of ids) {
+      if (id === "careful-spell" && (!spellHasSave(activity) || targetUuids.length < 1 || targetUuids.length > charismaModifier(actor))) {
+        return null;
+      }
+      if (id === "distant-spell") {
+        const range = spellRange(activity);
+        if (range.units !== "touch" && range.value < 5) return null;
+      }
+      if (id === "heightened-spell" && (!spellHasSave(activity) || targetUuids.length !== 1)) {
+        return null;
+      }
+      if (id === "extended-spell" && durationSeconds(spellDuration(activity)) < 60) {
+        return null;
+      }
+      if (id === "twinned-spell") {
+        const range = spellRange(activity);
+        if (spellTargetCount(activity) !== 1 || range.units === "self" || !secondTargetUuid || currentTargets.length !== 1 || currentTargets.includes(secondTargetUuid)) {
+          return null;
+        }
+      }
+      if (id === "empowered-spell" && (!spellHasDamage(activity) || selectedDamageDice.length < 1 || selectedDamageDice.length > charismaModifier(actor))) {
+        return null;
+      }
+      if (id === "quickened-spell" && spellActivation(activity).type !== "action") {
+        return null;
+      }
+      if (id === "seeking-spell" && !spellHasAttack(activity)) {
+        return null;
+      }
+    }
+
+    return {
+      ids,
+      options,
+      cost: options
+        .filter((option) => option.id !== "seeking-spell")
+        .reduce((total, option) => total + this.#metamagicCost(option, spellLevel), 0),
+      targetUuids,
+      currentTargets,
+      secondTargetUuid,
+      selectedDamageDice,
+      rerollDamage: request.rerollDamage instanceof Function ? request.rerollDamage : null
+    };
+  }
+
+  #applyMetamagicConfig(activity, usageConfig, plan) {
+    const meta = plan.metamagic;
+    const modifiers = {};
+    let components = spellComponents(activity);
+    for (const id of meta.ids) {
+      if (id === "careful-spell") {
+        modifiers.careful = { targets: meta.targetUuids };
+      }
+      else if (id === "distant-spell") {
+        const range = spellRange(activity);
+        plan.range = range.units === "touch"
+          ? { value: 30, units: "ft" }
+          : { value: range.value * 2, units: range.units };
+        modifiers.distant = true;
+      }
+      else if (id === "heightened-spell") {
+        modifiers.heightened = { targetUuid: meta.targetUuids[0], firstSaveDisadvantage: true };
+      }
+      else if (id === "subtle-spell") {
+        components = sharedSpellComponents(activity, { verbal: false, somatic: false });
+        modifiers.subtle = true;
+      }
+      else if (id === "extended-spell") {
+        const duration = spellDuration(activity);
+        plan.duration = durationFromSeconds(durationSeconds(duration) * 2, duration.units);
+        modifiers.extended = true;
+      }
+      else if (id === "twinned-spell") {
+        usageConfig.targets = [...meta.currentTargets, meta.secondTargetUuid];
+        modifiers.twinned = { secondTargetUuid: meta.secondTargetUuid };
+      }
+      else if (id === "empowered-spell") {
+        modifiers.empowered = { damageDice: meta.selectedDamageDice };
+      }
+      else if (id === "quickened-spell") {
+        plan.activation = { type: "bonus", value: 1 };
+        usageConfig.activation = deepClone(plan.activation);
+        modifiers.quickened = true;
+      }
+      else if (id === "seeking-spell") {
+        modifiers.seeking = { pending: true, cost: this.#metamagicCost(meta.options.find((option) => option.id === id), plan.choice.spellLevel) };
+      }
+    }
+    return { components, modifiers };
+  }
+
+  async #prepareCastPlan(activity, usageConfig = {}, dialogConfig = {}) {
+    const actor = actorFrom(activity);
+    const baseLevel = spellBaseLevel(activity);
+    const maxLevel = scaleValue(actor, MAXIMUM_SPELL_LEVEL_SCALE_ID);
+    if (!actor || baseLevel < 1 || maxLevel < baseLevel) {
+      return null;
+    }
+    const choices = Object.entries(VIRTUAL_SLOT_COSTS)
+      .map(([level, cost]) => ({ spellLevel: Number(level), cost }))
+      .filter(({ spellLevel }) => spellLevel >= baseLevel && spellLevel <= maxLevel);
+    const stored = usageConfig?.[MODULE_ID]?.[PREFLIGHT_FLAG];
+    const selected = stored
+      ? normalizeSelection(stored, baseLevel)
+      : await this.#chooseVirtualSpellLevel({ actor, activity, choices, usageConfig, dialogConfig, baseLevel });
+    if (!selected.accepted) {
+      return null;
+    }
+    const choice = choices.find(({ spellLevel }) => spellLevel === selected.spellLevel);
+    if (!choice) {
+      return null;
+    }
+
+    const request = stored?.metamagic ?? await this.#chooseMetamagic({
+      actor,
+      activity,
+      spellLevel: choice.spellLevel,
+      usageConfig,
+      dialogConfig
+    });
+    if (request?.accepted === false) {
+      return null;
+    }
+    const metamagic = this.#validateMetamagic(activity, actor, choice.spellLevel, {
+      ...(request ?? {}),
+      targets: request?.targets ?? usageConfig?.targets ?? globalThis.game?.user?.targets
+    });
+    if (!metamagic) {
+      return null;
+    }
+
+    const override = selected.exhaustionOverride || explicitExhaustionOverride(usageConfig, dialogConfig);
+    const cooldowns = actorFlag(actor, COOLDOWNS_FLAG);
+    const highLevelCasts = actorFlag(actor, HIGH_LEVEL_CASTS_FLAG);
+    const key = cooldownKey(activity, choice.spellLevel);
+    const activeCooldown = choice.spellLevel <= 5 && toInteger(cooldowns[key]?.expiresAtRound, 0) > currentRound();
+    const highLevelRepeat = choice.spellLevel >= 6 && highLevelCasts[String(choice.spellLevel)] === true;
+    if ((activeCooldown || highLevelRepeat) && !override) {
+      return null;
+    }
+    const points = pointsFeature(actor);
+    const spent = Math.max(0, toInteger(points?.system?.uses?.spent, 0));
+    const max = Math.max(0, toInteger(points?.system?.uses?.max, 0));
+    const totalCost = choice.cost + metamagic.cost;
+    if (!points || max - spent < totalCost) {
+      return null;
+    }
+
+    return {
+      actor,
+      baseLevel,
+      choice,
+      metamagic,
+      totalCost,
+      override,
+      cooldowns,
+      highLevelCasts,
+      key,
+      activeCooldown,
+      highLevelRepeat
+    };
   }
 
   async handleCreatedItem(item, _options = {}, userId = "") {
@@ -430,7 +800,11 @@ export class SorcererAutomationService {
   }
 
   deferDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
-    if (this.#isDeferredDnd5eUse(usageConfig) || !isSorcererSpellActivity(activity)) {
+    if (this.#isFinalDnd5eUse(usageConfig) || !isSorcererSpellActivity(activity)) {
+      return true;
+    }
+
+    if (usageConfig?.[MODULE_ID]?.[PREFLIGHT_FLAG]) {
       return true;
     }
 
@@ -439,16 +813,73 @@ export class SorcererAutomationService {
     }
 
     this._deferredActivities.add(activity);
-    void this.#resolveDeferredDnd5eUse(activity, usageConfig, dialogConfig, messageConfig);
+    void this.#resolvePreflightDnd5eUse(activity, usageConfig, dialogConfig, messageConfig);
+    return false;
+  }
+
+  finalizeDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
+    if (
+      this.#isFinalDnd5eUse(usageConfig)
+      || !isSorcererSpellActivity(activity)
+      || usageConfig?.[MODULE_ID]?.[PREFLIGHT_FLAG] === undefined
+      || usageConfig?.flags?.[MODULE_ID]?.[REACTION_CHECK_COMPLETE_FLAG] !== true
+    ) {
+      return true;
+    }
+    if (this._finalizingActivities.has(activity)) {
+      return false;
+    }
+
+    this._finalizingActivities.add(activity);
+    void this.#resolveFinalDnd5eUse(activity, usageConfig, dialogConfig, messageConfig);
     return false;
   }
 
   async applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, _messageConfig = {}) {
-    if (this.#isDeferredDnd5eUse(usageConfig) || !isSorcererSpellActivity(activity)) {
+    if (this.#isFinalDnd5eUse(usageConfig) || !isSorcererSpellActivity(activity)) {
       return true;
     }
 
     return (await this.#applyVirtualSlotPayment(activity, usageConfig, dialogConfig)) !== null;
+  }
+
+  async applyDnd5ePostAttackRoll(rolls = [], context = {}) {
+    const usageConfig = context?.usageConfig ?? context?.config ?? {};
+    const seeking = usageConfig?.spellCast?.modifiers?.seeking;
+    const activity = context?.activity ?? context?.subject ?? null;
+    if (!seeking?.pending || !isSorcererSpellActivity(activity)) {
+      return true;
+    }
+
+    const safeRolls = Array.isArray(rolls) ? rolls : [rolls].filter(Boolean);
+    const targetAc = Math.max(0, toInteger(context?.targetAc ?? context?.ac, 0));
+    const hit = context?.isHit === true || (targetAc > 0 && safeRolls.some((roll) => toInteger(roll?.total, 0) >= targetAc));
+    if (hit) {
+      return true;
+    }
+
+    const actor = actorFrom(activity);
+    const points = pointsFeature(actor);
+    const cost = Math.max(1, toInteger(seeking.cost, 2));
+    const spent = Math.max(0, toInteger(points?.system?.uses?.spent, 0));
+    const max = Math.max(0, toInteger(points?.system?.uses?.max, 0));
+    if (!points || max - spent < cost) {
+      return true;
+    }
+
+    const roll = safeRolls.find((entry) => entry?.reroll instanceof Function);
+    if (!roll) {
+      return true;
+    }
+    await updateDocument(points, { "system.uses.spent": spent + cost });
+    const rerolled = await roll.reroll();
+    context.rerolled = rerolled;
+    seeking.pending = false;
+    seeking.used = true;
+    if (usageConfig?.flags?.[MODULE_ID]?.spellCast?.modifiers?.seeking) {
+      usageConfig.flags[MODULE_ID].spellCast.modifiers.seeking = deepClone(seeking);
+    }
+    return true;
   }
 
   async #applyVirtualSlotPayment(activity, usageConfig = {}, dialogConfig = {}) {
@@ -456,58 +887,27 @@ export class SorcererAutomationService {
       return null;
     }
 
-    const actor = actorFrom(activity);
-    const baseLevel = spellBaseLevel(activity);
-    const maxLevel = scaleValue(actor, MAXIMUM_SPELL_LEVEL_SCALE_ID);
-    if (!actor || baseLevel < 1 || maxLevel < baseLevel) {
+    const plan = await this.#prepareCastPlan(activity, usageConfig, dialogConfig);
+    if (!plan) {
       return null;
     }
 
-    const choices = Object.entries(VIRTUAL_SLOT_COSTS)
-      .map(([level, cost]) => ({ spellLevel: Number(level), cost }))
-      .filter(({ spellLevel }) => spellLevel >= baseLevel && spellLevel <= maxLevel);
-    if (!choices.length) {
-      return null;
-    }
-    const selected = await this.#chooseVirtualSpellLevel({
+    const {
       actor,
-      activity,
-      choices,
-      usageConfig,
-      dialogConfig,
-      baseLevel
-    });
-    if (!selected.accepted) {
-      return null;
-    }
-
-    const choice = choices.find(({ spellLevel }) => spellLevel === selected.spellLevel);
-    if (!choice) {
-      return null;
-    }
-
-    const override = selected.exhaustionOverride || explicitExhaustionOverride(usageConfig, dialogConfig);
-    const cooldowns = actorFlag(actor, COOLDOWNS_FLAG);
-    const highLevelCasts = actorFlag(actor, HIGH_LEVEL_CASTS_FLAG);
-    const key = cooldownKey(activity, choice.spellLevel);
-    const activeCooldown = choice.spellLevel <= 5
-      && toInteger(cooldowns[key]?.expiresAtRound, 0) > currentRound();
-    const highLevelRepeat = choice.spellLevel >= 6 && highLevelCasts[String(choice.spellLevel)] === true;
-    if ((activeCooldown || highLevelRepeat) && !override) {
-      return null;
-    }
-
+      baseLevel,
+      choice,
+      metamagic,
+      totalCost,
+      override,
+      cooldowns,
+      highLevelCasts,
+      key,
+      activeCooldown,
+      highLevelRepeat
+    } = plan;
     const points = pointsFeature(actor);
-    if (!points) {
-      return null;
-    }
-
-    const uses = points.system?.uses ?? {};
+    const uses = points?.system?.uses ?? {};
     const spent = Math.max(0, toInteger(uses.spent, 0));
-    const max = Math.max(0, toInteger(uses.max, 0));
-    if (max - spent < choice.cost) {
-      return null;
-    }
 
     const exhaustion = override ? 1 : 0;
     const state = {
@@ -524,8 +924,9 @@ export class SorcererAutomationService {
       rolledBack: false
     };
 
+    const metamagicConfig = this.#applyMetamagicConfig(activity, usageConfig, plan);
     try {
-      await updateDocument(points, { "system.uses.spent": spent + choice.cost });
+      await updateDocument(points, { "system.uses.spent": spent + totalCost });
       state.pointsChanged = true;
       if (choice.spellLevel <= 5) {
         cooldowns[key] = { expiresAtRound: currentRound() + choice.spellLevel };
@@ -540,6 +941,9 @@ export class SorcererAutomationService {
       if (exhaustion) {
         await updateDocument(actor, { "system.attributes.exhaustion": state.exhaustion + exhaustion });
         state.exhaustionChanged = true;
+      }
+      if (metamagic.ids.includes("empowered-spell") && metamagic.rerollDamage) {
+        await metamagic.rerollDamage(metamagic.selectedDamageDice);
       }
     }
     catch (error) {
@@ -556,32 +960,94 @@ export class SorcererAutomationService {
     usageConfig.scaling = Math.max(0, choice.spellLevel - baseLevel);
     usageConfig.spellCast = {
       spellLevel: choice.spellLevel,
-      components: spellComponents(activity),
+      components: metamagicConfig.components,
       payment: {
         resource: "sorcery-points",
-        cost: choice.cost
+        cost: totalCost
       },
       modifiers: {
         cooldownOverride: activeCooldown && override,
         exhaustion,
-        highLevelOverride: highLevelRepeat && override
+        highLevelOverride: highLevelRepeat && override,
+        ...metamagicConfig.modifiers
       }
     };
+    if (plan.range) {
+      usageConfig.spellCast.range = deepClone(plan.range);
+    }
+    if (plan.duration) {
+      usageConfig.spellCast.duration = deepClone(plan.duration);
+    }
+    if (plan.activation) {
+      usageConfig.spellCast.activation = deepClone(plan.activation);
+    }
+    if (metamagic.ids.length) {
+      usageConfig.flags ??= {};
+      usageConfig.flags[MODULE_ID] ??= {};
+      usageConfig.flags[MODULE_ID].spellCast = deepClone(usageConfig.spellCast);
+    }
     return state;
   }
 
-  async #resolveDeferredDnd5eUse(activity, usageConfig, dialogConfig, messageConfig) {
-    let payment = null;
+  async #resolvePreflightDnd5eUse(activity, usageConfig, dialogConfig, messageConfig) {
     try {
       if (typeof activity?.use !== "function") {
         return;
       }
 
+      const plan = await this.#prepareCastPlan(activity, usageConfig, dialogConfig);
+      if (!plan) {
+        return;
+      }
+      const preflightUsageConfig = {
+        ...usageConfig,
+        [MODULE_ID]: {
+          ...(usageConfig?.[MODULE_ID] ?? {}),
+          [PREFLIGHT_FLAG]: {
+            accepted: true,
+            spellLevel: plan.choice.spellLevel,
+            exhaustionOverride: plan.override,
+            metamagic: this.#metamagicRequest(usageConfig, dialogConfig)
+          }
+        }
+      };
+      const metamagicConfig = this.#applyMetamagicConfig(activity, preflightUsageConfig, plan);
+      preflightUsageConfig.spellCast = {
+        spellLevel: plan.choice.spellLevel,
+        components: metamagicConfig.components,
+        payment: { resource: "sorcery-points", cost: plan.totalCost },
+        modifiers: metamagicConfig.modifiers
+      };
+      if (plan.range) preflightUsageConfig.spellCast.range = deepClone(plan.range);
+      if (plan.duration) preflightUsageConfig.spellCast.duration = deepClone(plan.duration);
+      if (plan.activation) preflightUsageConfig.spellCast.activation = deepClone(plan.activation);
+      preflightUsageConfig.flags ??= {};
+      preflightUsageConfig.flags[MODULE_ID] ??= {};
+      preflightUsageConfig.flags[MODULE_ID].spellCast = deepClone(preflightUsageConfig.spellCast);
+      await activity.use(
+        preflightUsageConfig,
+        this.#resumeDialogConfig(dialogConfig),
+        messageConfig
+      );
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to resume Sorcerer spell preflight.`, error);
+    }
+    finally {
+      this._deferredActivities.delete(activity);
+    }
+  }
+
+  async #resolveFinalDnd5eUse(activity, usageConfig, dialogConfig, messageConfig) {
+    let payment = null;
+    try {
+      if (typeof activity?.use !== "function") {
+        return;
+      }
       payment = await this.#applyVirtualSlotPayment(activity, usageConfig, dialogConfig);
       if (!payment) {
         return;
       }
-
       const result = await activity.use(
         this.#resumeUsageConfig(usageConfig),
         this.#resumeDialogConfig(dialogConfig),
@@ -595,10 +1061,10 @@ export class SorcererAutomationService {
       if (payment) {
         await this.#rollbackVirtualSlotPayment(payment);
       }
-      console.error(`${MODULE_ID} | Failed to resume deferred Sorcerer spell use.`, error);
+      console.error(`${MODULE_ID} | Failed to resume paid Sorcerer spell use.`, error);
     }
     finally {
-      this._deferredActivities.delete(activity);
+      this._finalizingActivities.delete(activity);
     }
   }
 
@@ -635,7 +1101,7 @@ export class SorcererAutomationService {
       ...usageConfig,
       [MODULE_ID]: {
         ...(usageConfig?.[MODULE_ID] ?? {}),
-        sorcererAutomationBypass: true
+        [FINAL_BYPASS_FLAG]: true
       }
     };
   }
@@ -647,7 +1113,7 @@ export class SorcererAutomationService {
     };
   }
 
-  #isDeferredDnd5eUse(usageConfig) {
-    return usageConfig?.[MODULE_ID]?.sorcererAutomationBypass === true;
+  #isFinalDnd5eUse(usageConfig) {
+    return usageConfig?.[MODULE_ID]?.[FINAL_BYPASS_FLAG] === true;
   }
 }

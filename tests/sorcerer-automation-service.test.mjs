@@ -132,7 +132,9 @@ function makePointsItem(actor, { spent = 0 } = {}) {
 function makeSorcererSpell(actor, {
   id = "chromatic-orb",
   baseLevel = 1,
-  root = `${actor.sorcererClassItem.id}.advancementKnownSpell`
+  root = `${actor.sorcererClassItem.id}.advancementKnownSpell`,
+  system = {},
+  activity = {}
 } = {}) {
   const item = makeItemFromData(actor, {
     name: "Spell",
@@ -141,7 +143,8 @@ function makeSorcererSpell(actor, {
     system: {
       identifier: id,
       level: baseLevel,
-      components: { vocal: true, somatic: true, material: false }
+      components: { vocal: true, somatic: true, material: false },
+      ...system
     }
   }, id);
   return {
@@ -149,8 +152,37 @@ function makeSorcererSpell(actor, {
     item,
     type: "spell",
     spellLevel: baseLevel,
-    system: item.system
+    system: item.system,
+    ...activity
   };
+}
+
+function addMetamagic(actor, metamagicId, cost, stacking = "base") {
+  const item = makeItemFromData(actor, {
+    name: metamagicId,
+    type: "feat",
+    flags: { [MODULE_ID]: { sourceType: "sorcererMetamagic", metamagicId, cost, stacking } },
+    system: { identifier: metamagicId }
+  }, metamagicId);
+  actor.items.contents.push(item);
+  return item;
+}
+
+function metamagicActor(level = 3) {
+  const actor = levelActor(level, { includePoints: true });
+  actor.system.abilities = { cha: { mod: 3 } };
+  for (const [id, cost, stacking] of [
+    ["careful-spell", 1, "base"],
+    ["distant-spell", 1, "base"],
+    ["heightened-spell", 3, "base"],
+    ["subtle-spell", 1, "base"],
+    ["extended-spell", 1, "base"],
+    ["twinned-spell", "spellLevel", "base"],
+    ["empowered-spell", 1, "additive"],
+    ["quickened-spell", 2, "base"],
+    ["seeking-spell", 2, "additive"]
+  ]) addMetamagic(actor, id, cost, stacking);
+  return actor;
 }
 
 function pointsItem(actor) {
@@ -176,6 +208,19 @@ async function waitForDeferredActivityUse() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+function completeReactionCheck(usageConfig) {
+  return {
+    ...usageConfig,
+    flags: {
+      ...(usageConfig?.flags ?? {}),
+      [MODULE_ID]: {
+        ...(usageConfig?.flags?.[MODULE_ID] ?? {}),
+        reactionCheckComplete: true
+      }
+    }
+  };
+}
+
 test("Sorcery Points synchronize to the level-three scale and recover on long rest", async () => {
   const actor = levelActor(3, { pointsSpent: 9, includePoints: true });
   const service = new SorcererAutomationService({});
@@ -187,6 +232,178 @@ test("Sorcery Points synchronize to the level-three scale and recover on long re
   assert.deepEqual(points.system.uses.recovery, [{ period: "lr", type: "recoverAll", formula: "" }]);
   await service.handleRestCompleted(actor, { longRest: true });
   assert.equal(points.system.uses.spent, 0);
+});
+
+test("Careful Spell makes selected legal targets automatically pass a save", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["careful-spell"], targetUuids: ["Token.ally-a", "Token.ally-b"] }
+  };
+  const spell = makeSorcererSpell(actor, { system: { save: { ability: "dex" } } });
+
+  assert.equal(await service.applyDnd5ePreUseActivity(spell, usageConfig, {}, {}), true);
+  assert.deepEqual(usageConfig.spellCast.modifiers.careful.targets, ["Token.ally-a", "Token.ally-b"]);
+  assert.equal(pointsItem(actor).system.uses.spent, 3);
+});
+
+test("Distant Spell doubles ranged spells and changes touch to thirty feet", async () => {
+  const rangedActor = metamagicActor();
+  const touchActor = metamagicActor();
+  const rangedUsage = { sorcererVirtualSpellLevel: 1, sorcererMetamagic: { ids: ["distant-spell"] } };
+  const touchUsage = { sorcererVirtualSpellLevel: 1, sorcererMetamagic: { ids: ["distant-spell"] } };
+  const rangedService = new SorcererAutomationService({});
+  const touchService = new SorcererAutomationService({});
+  await rangedService.syncSorceryPoints(rangedActor);
+  await touchService.syncSorceryPoints(touchActor);
+
+  assert.equal(await rangedService.applyDnd5ePreUseActivity(
+    makeSorcererSpell(rangedActor, { system: { range: { value: 60, units: "ft" } } }), rangedUsage, {}, {}
+  ), true);
+  assert.deepEqual(rangedUsage.spellCast.range, { value: 120, units: "ft" });
+  assert.equal(await touchService.applyDnd5ePreUseActivity(
+    makeSorcererSpell(touchActor, { system: { range: { value: null, units: "touch" } } }), touchUsage, {}, {}
+  ), true);
+  assert.deepEqual(touchUsage.spellCast.range, { value: 30, units: "ft" });
+});
+
+test("Heightened Spell gives one target disadvantage on its first spell save", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["heightened-spell"], targetUuids: ["Token.enemy"] }
+  };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { system: { save: { ability: "wis" } } }), usageConfig, {}, {}
+  ), true);
+  assert.equal(usageConfig.spellCast.modifiers.heightened.targetUuid, "Token.enemy");
+  assert.equal(usageConfig.spellCast.modifiers.heightened.firstSaveDisadvantage, true);
+  assert.equal(pointsItem(actor).system.uses.spent, 5);
+});
+
+test("Subtle Spell removes V and S from the shared cast context", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = { sorcererVirtualSpellLevel: 1, sorcererMetamagic: { ids: ["subtle-spell"] } };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor, {
+    system: { components: { vocal: true, somatic: true, material: true } }
+  }), usageConfig, {}, {}), true);
+  assert.deepEqual(usageConfig.spellCast.components, { verbal: false, somatic: false, material: true });
+  assert.deepEqual(usageConfig.flags[MODULE_ID].spellCast.components, { verbal: false, somatic: false, material: true });
+});
+
+test("Extended Spell doubles a legal duration without exceeding twenty-four hours", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = { sorcererVirtualSpellLevel: 1, sorcererMetamagic: { ids: ["extended-spell"] } };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor, {
+    system: { duration: { value: 15, units: "hour" } }
+  }), usageConfig, {}, {}), true);
+  assert.deepEqual(usageConfig.spellCast.duration, { value: 24, units: "hour" });
+});
+
+test("Twinned Spell adds exactly one valid second target at the selected spell level cost", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = {
+    sorcererVirtualSpellLevel: 2,
+    targets: ["Token.first"],
+    sorcererMetamagic: { ids: ["twinned-spell"], secondTargetUuid: "Token.second" }
+  };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor, {
+    baseLevel: 1,
+    system: { range: { value: 60, units: "ft" }, target: { affects: { count: "1" } } }
+  }), usageConfig, {}, {}), true);
+  assert.deepEqual(usageConfig.targets, ["Token.first", "Token.second"]);
+  assert.equal(usageConfig.spellCast.modifiers.twinned.secondTargetUuid, "Token.second");
+  assert.equal(pointsItem(actor).system.uses.spent, 5);
+});
+
+test("Empowered Spell rerolls selected damage dice up to the Charisma modifier", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  let rerolled = [];
+  const usageConfig = {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: {
+      ids: ["empowered-spell"],
+      damageDice: [0, 2],
+      rerollDamage: async (indices) => { rerolled = indices; }
+    }
+  };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor, {
+    system: { damage: { parts: [["3d6", "fire"]] } }
+  }), usageConfig, {}, {}), true);
+  assert.deepEqual(rerolled, [0, 2]);
+  assert.deepEqual(usageConfig.spellCast.modifiers.empowered.damageDice, [0, 2]);
+});
+
+test("Quickened Spell changes this cast from an action to a bonus action", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = { sorcererVirtualSpellLevel: 1, sorcererMetamagic: { ids: ["quickened-spell"] } };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor, {
+    system: { activation: { type: "action", value: 1 } }
+  }), usageConfig, {}, {}), true);
+  assert.deepEqual(usageConfig.activation, { type: "bonus", value: 1 });
+  assert.deepEqual(usageConfig.spellCast.activation, { type: "bonus", value: 1 });
+});
+
+test("Seeking Spell pays only after a missed spell attack and uses its reroll", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = { sorcererVirtualSpellLevel: 1, sorcererMetamagic: { ids: ["seeking-spell"] } };
+  let rerolls = 0;
+  const roll = {
+    total: 4,
+    async reroll() {
+      rerolls += 1;
+      return { total: 18 };
+    }
+  };
+  const spell = makeSorcererSpell(actor, { system: { attack: { type: "spell" } } });
+
+  assert.equal(await service.applyDnd5ePreUseActivity(spell, usageConfig, {}, {}), true);
+  assert.equal(pointsItem(actor).system.uses.spent, 2);
+  assert.equal(await service.applyDnd5ePostAttackRoll([roll], {
+    activity: spell,
+    usageConfig,
+    targetAc: 10
+  }), true);
+  assert.equal(rerolls, 1);
+  assert.equal(pointsItem(actor).system.uses.spent, 4);
+});
+
+test("Metamagic rejects incompatible stacking and unmet preconditions before payment", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+
+  assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor), {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["subtle-spell", "distant-spell"] }
+  }, {}, {}), false);
+  assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor), {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["heightened-spell"], targetUuids: ["Token.enemy"] }
+  }, {}, {}), false);
+  assert.equal(pointsItem(actor).system.uses.spent, 0);
 });
 
 test("Sorcerer casting spends points but preserves native slots", async () => {
@@ -261,7 +478,7 @@ test("a virtual level-three cast uses D&D5e slot, scaling, and consume fields wi
   });
 });
 
-test("a synchronous dnd5e pre-use hook defers a Sorcerer cast and resumes it once with a bypass marker", async () => {
+test("a synchronous dnd5e pre-use hook completes Sorcerer preflight before one paid final cast", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const handlers = new Map();
@@ -292,8 +509,11 @@ test("a synchronous dnd5e pre-use hook defers a Sorcerer cast and resumes it onc
     const moduleApi = {
       sorcererAutomationService: service,
       spellAutomationService: {
-        deferDnd5ePreUseActivity: () => {
+        deferDnd5ePreUseActivity: (_activity, usageConfig) => {
           genericHookCalls += 1;
+          usageConfig.flags ??= {};
+          usageConfig.flags[MODULE_ID] ??= {};
+          usageConfig.flags[MODULE_ID].reactionCheckComplete = true;
           return true;
         }
       },
@@ -318,8 +538,9 @@ test("a synchronous dnd5e pre-use hook defers a Sorcerer cast and resumes it onc
     await waitForDeferredActivityUse();
 
     assert.equal(prompts, 1);
-    assert.equal(resumedUses.length, 1);
-    assert.equal(resumedUses[0][0][MODULE_ID].sorcererAutomationBypass, true);
+    assert.equal(resumedUses.length, 2);
+    assert.equal(resumedUses[0][0][MODULE_ID].sorcererAutomationPreflight.accepted, true);
+    assert.equal(resumedUses[1][0][MODULE_ID].sorcererAutomationBypass, true);
     assert.equal(pointsItem(actor).system.uses.spent, 2);
     assert.equal(genericHookCalls, 2);
     assert.equal(attackHookCalls, 1);
@@ -330,7 +551,7 @@ test("a synchronous dnd5e pre-use hook defers a Sorcerer cast and resumes it onc
   }
 });
 
-test("a generic deferred cancellation happens before a Sorcerer prompt or payment", async () => {
+test("a generic deferred cancellation happens after Sorcerer preflight but before payment", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const handlers = new Map();
@@ -378,8 +599,8 @@ test("a generic deferred cancellation happens before a Sorcerer prompt or paymen
     await waitForDeferredActivityUse();
 
     assert.equal(genericHookCalls, 1);
-    assert.equal(prompts, 0);
-    assert.equal(resumedUses, 0);
+    assert.equal(prompts, 1);
+    assert.equal(resumedUses, 1);
     assert.equal(pointsItem(actor).system.uses.spent, 0);
   }
   finally {
@@ -388,7 +609,7 @@ test("a generic deferred cancellation happens before a Sorcerer prompt or paymen
   }
 });
 
-test("a generic deferred resume reaches a paid Sorcerer final cast with both bypass markers", async () => {
+test("a generic deferred resume reaches one paid Sorcerer final cast after neutral preflight", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const handlers = new Map();
@@ -424,7 +645,7 @@ test("a generic deferred resume reaches a paid Sorcerer final cast with both byp
       spellAutomationService: {
         deferDnd5ePreUseActivity: (activity, usageConfig, dialogConfig, messageConfig) => {
           genericHookCalls += 1;
-          if (usageConfig?.[MODULE_ID]?.spellAutomationBypass === true) {
+          if (usageConfig?.flags?.[MODULE_ID]?.reactionCheckComplete === true) {
             return true;
           }
 
@@ -434,6 +655,13 @@ test("a generic deferred resume reaches a paid Sorcerer final cast with both byp
               [MODULE_ID]: {
                 ...(usageConfig?.[MODULE_ID] ?? {}),
                 spellAutomationBypass: true
+              },
+              flags: {
+                ...(usageConfig?.flags ?? {}),
+                [MODULE_ID]: {
+                  ...(usageConfig?.flags?.[MODULE_ID] ?? {}),
+                  reactionCheckComplete: true
+                }
               }
             }, dialogConfig, messageConfig);
           });
@@ -459,11 +687,12 @@ test("a generic deferred resume reaches a paid Sorcerer final cast with both byp
 
     assert.equal(genericHookCalls, 3);
     assert.equal(prompts, 1);
-    assert.equal(resumedUses.length, 2);
-    assert.equal(resumedUses[0][0][MODULE_ID].spellAutomationBypass, true);
-    assert.equal(resumedUses[0][0][MODULE_ID].sorcererAutomationBypass, undefined);
+    assert.equal(resumedUses.length, 3);
+    assert.equal(resumedUses[0][0][MODULE_ID].sorcererAutomationPreflight.accepted, true);
+    assert.equal(resumedUses[0][0][MODULE_ID].spellAutomationBypass, undefined);
     assert.equal(resumedUses[1][0][MODULE_ID].spellAutomationBypass, true);
-    assert.equal(resumedUses[1][0][MODULE_ID].sorcererAutomationBypass, true);
+    assert.equal(resumedUses[1][0].flags[MODULE_ID].reactionCheckComplete, true);
+    assert.equal(resumedUses[2][0][MODULE_ID].sorcererAutomationBypass, true);
     assert.equal(pointsItem(actor).system.uses.spent, 5);
     assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
       "chromatic-orb:3": { expiresAtRound: 4 }
@@ -490,16 +719,27 @@ test("a deferred virtual cast locks the resumed dialog and virtual-cast usage co
   const dialogConfig = { configure: true, width: 480 };
   const messageConfig = { create: false };
   const activity = makeSorcererSpell(actor);
-  let resumedUse;
+  const resumedUses = [];
   activity.use = async (...args) => {
-    resumedUse = args;
+    resumedUses.push(args);
     return { updates: [] };
   };
 
   assert.equal(service.deferDnd5ePreUseActivity(activity, usageConfig, dialogConfig, messageConfig), false);
   await waitForDeferredActivityUse();
 
-  const [resumedUsageConfig, resumedDialogConfig, resumedMessageConfig] = resumedUse;
+  const [preflightUsageConfig, preflightDialogConfig, preflightMessageConfig] = resumedUses[0];
+  assert.equal(preflightUsageConfig[MODULE_ID].sorcererAutomationPreflight.accepted, true);
+  assert.equal(pointsItem(actor).system.uses.spent, 0);
+  assert.equal(service.finalizeDnd5ePreUseActivity(
+    activity,
+    completeReactionCheck(preflightUsageConfig),
+    preflightDialogConfig,
+    preflightMessageConfig
+  ), false);
+  await waitForDeferredActivityUse();
+
+  const [resumedUsageConfig, resumedDialogConfig, resumedMessageConfig] = resumedUses[1];
   assert.notStrictEqual(resumedDialogConfig, dialogConfig);
   assert.deepEqual(dialogConfig, { configure: true, width: 480 });
   assert.deepEqual(resumedDialogConfig, { configure: false, width: 480 });
@@ -525,9 +765,9 @@ test("a deferred virtual cast cannot open an editable dialog that overwrites its
   await service.syncSorceryPoints(actor);
   const activity = makeSorcererSpell(actor);
   let editableDialogs = 0;
-  let resumedUsageConfig;
+  const resumedUsageConfigs = [];
   activity.use = async (nextUsageConfig, nextDialogConfig) => {
-    resumedUsageConfig = nextUsageConfig;
+    resumedUsageConfigs.push(nextUsageConfig);
     if (nextDialogConfig.configure !== false) {
       editableDialogs += 1;
       nextUsageConfig.spell = { slot: "spell1" };
@@ -540,6 +780,15 @@ test("a deferred virtual cast cannot open an editable dialog that overwrites its
 
   assert.equal(service.deferDnd5ePreUseActivity(activity, {}, {}, {}), false);
   await waitForDeferredActivityUse();
+
+  assert.equal(service.finalizeDnd5ePreUseActivity(
+    activity,
+    completeReactionCheck(resumedUsageConfigs[0]),
+    { configure: false },
+    {}
+  ), false);
+  await waitForDeferredActivityUse();
+  const resumedUsageConfig = resumedUsageConfigs[1];
 
   assert.equal(editableDialogs, 0);
   assert.equal(resumedUsageConfig.spell.slot, "spell3");
@@ -558,9 +807,25 @@ test("a deferred virtual cast rolls back its payment when resumed D&D5e usage is
     });
     await service.syncSorceryPoints(actor);
     const activity = makeSorcererSpell(actor, { baseLevel: 3 });
-    activity.use = async () => resumedResult;
+    let preflightUsageConfig;
+    let calls = 0;
+    activity.use = async (nextUsageConfig) => {
+      calls += 1;
+      if (calls === 1) {
+        preflightUsageConfig = nextUsageConfig;
+        return { updates: [] };
+      }
+      return resumedResult;
+    };
 
     assert.equal(service.deferDnd5ePreUseActivity(activity, {}, {}, {}), false);
+    await waitForDeferredActivityUse();
+    assert.equal(service.finalizeDnd5ePreUseActivity(
+      activity,
+      completeReactionCheck(preflightUsageConfig),
+      { configure: false },
+      {}
+    ), false);
     await waitForDeferredActivityUse();
 
     assert.equal(pointsItem(actor).system.uses.spent, 0);
@@ -602,6 +867,8 @@ test("virtual-slot prompt shows each legal level with its exact Sorcery Point co
     assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor), {}, {}, {}), true);
     assert.match(dialog.content, /1.*2/u);
     assert.match(dialog.content, /2.*3/u);
+    assert.match(dialog.content, /rebreya-sorcerer-choice-row/u);
+    assert.match(dialog.content, /data-sorcerer-total/u);
     assert.equal(pointsItem(actor).system.uses.spent, 3);
   }
   finally {

@@ -10481,3 +10481,16 @@ summary:focus-visible {
     --rm-item-upgrade-hold-progress: 360deg;
   }
 }
+
+.rebreya-sorcerer-choice-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.rebreya-sorcerer-choice-row > * {
+  flex: 0 0 auto;
+}

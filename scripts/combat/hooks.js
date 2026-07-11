@@ -162,6 +162,18 @@ export function registerCombatHooks(moduleApi) {
           }
 
           if (
+            hasSorcererService
+            && moduleApi.sorcererAutomationService.deferDnd5ePreUseActivity(
+              activity,
+              usageConfig,
+              dialogConfig,
+              messageConfig
+            ) === false
+          ) {
+            return false;
+          }
+
+          if (
             hasSpellService
             && moduleApi.spellAutomationService.deferDnd5ePreUseActivity(
               activity,
@@ -175,7 +187,7 @@ export function registerCombatHooks(moduleApi) {
 
           if (
             hasSorcererService
-            && moduleApi.sorcererAutomationService.deferDnd5ePreUseActivity(
+            && moduleApi.sorcererAutomationService.finalizeDnd5ePreUseActivity(
               activity,
               usageConfig,
               dialogConfig,
@@ -272,6 +284,11 @@ export function registerCombatHooks(moduleApi) {
             console.error(`${MODULE_ID} | Failed to apply dnd5e attack roll boost automation.`, error);
           });
         }
+        if (hasSorcererService) {
+          moduleApi.sorcererAutomationService.applyDnd5ePostAttackRoll(rolls, context).catch((error) => {
+            console.error(`${MODULE_ID} | Failed to apply Sorcerer seeking spell automation.`, error);
+          });
+        }
         if (hasEnvironmentService) {
           moduleApi.environmentAutomationService.applyDnd5eAttackRollConfig(context).catch((error) => {
             console.error(`${MODULE_ID} | Failed to update Rebreya environment after attack roll.`, error);
@@ -334,6 +351,18 @@ export function registerCombatHooks(moduleApi) {
     Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
       try {
         if (
+          hasSorcererService
+          && moduleApi.sorcererAutomationService.deferDnd5ePreUseActivity(
+            activity,
+            usageConfig,
+            dialogConfig,
+            messageConfig
+          ) === false
+        ) {
+          return false;
+        }
+
+        if (
           hasSpellService
           && moduleApi.spellAutomationService.deferDnd5ePreUseActivity(
             activity,
@@ -347,7 +376,7 @@ export function registerCombatHooks(moduleApi) {
 
         if (
           hasSorcererService
-          && moduleApi.sorcererAutomationService.deferDnd5ePreUseActivity(
+          && moduleApi.sorcererAutomationService.finalizeDnd5ePreUseActivity(
             activity,
             usageConfig,
             dialogConfig,

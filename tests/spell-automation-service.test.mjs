@@ -929,6 +929,28 @@ test("pre-use activity recognizes dnd5e vocal and somatic properties", async () 
   assert.equal(await service.applyDnd5ePreUseActivity(activity, {}), false);
 });
 
+test("pre-use activity honors neutral shared spellCast components before resolving reactions", async () => {
+  const service = makeService({ candidates: [counterspellCandidate()] });
+  const activity = {
+    id: "activity-root",
+    uuid: "Activity.root",
+    actor: { uuid: "Actor.caster" },
+    item: {
+      uuid: "Item.root",
+      system: { level: 3, components: { vocal: true, somatic: true } }
+    },
+    system: { range: { value: 90, units: "ft" } }
+  };
+  const usageConfig = {
+    spellCast: {
+      components: { verbal: false, somatic: false, material: true }
+    }
+  };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, usageConfig), true);
+  assert.equal(usageConfig.flags?.["rebreya-main"]?.reactionCheckComplete, true);
+});
+
 test("default discovery measures TokenDocument centers for an in-range reactor", async () => {
   const candidate = counterspellCandidate();
   candidate.actor.isOwner = true;

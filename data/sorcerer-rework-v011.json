@@ -1038,5 +1038,16 @@
         }
       ]
     }
+  ],
+  "metamagicOptions": [
+    { "id": "careful-spell", "name": "Аккуратное заклинание", "levels": [3], "cost": 1, "stacking": "base", "description": "Выбранные существа автоматически преуспевают в спасброске." },
+    { "id": "distant-spell", "name": "Далёкое заклинание", "levels": [3], "cost": 1, "stacking": "base", "description": "Удваивает дистанцию или заменяет касание на 30 футов." },
+    { "id": "heightened-spell", "name": "Непреодолимое заклинание", "levels": [3], "cost": 3, "stacking": "base", "description": "Одна цель совершает первый спасбросок с помехой." },
+    { "id": "subtle-spell", "name": "Неуловимое заклинание", "levels": [3], "cost": 1, "stacking": "base", "description": "Заклинание накладывается без вербальных и соматических компонентов." },
+    { "id": "extended-spell", "name": "Продлённое заклинание", "levels": [3], "cost": 1, "stacking": "base", "description": "Удваивает длительность, но не более 24 часов." },
+    { "id": "twinned-spell", "name": "Удвоенное заклинание", "levels": [3], "cost": "spellLevel", "stacking": "base", "description": "Добавляет ровно одну допустимую вторую цель." },
+    { "id": "empowered-spell", "name": "Усиленное заклинание", "levels": [3], "cost": 1, "stacking": "additive", "description": "Перебрасывает выбранные кости урона." },
+    { "id": "quickened-spell", "name": "Ускоренное заклинание", "levels": [3], "cost": 2, "stacking": "base", "description": "Меняет время накладывания на бонусное действие." },
+    { "id": "seeking-spell", "name": "Ищущее заклинание", "levels": [3], "cost": 2, "stacking": "additive", "description": "После промаха перебрасывает атаку заклинанием." }
   ]
 }

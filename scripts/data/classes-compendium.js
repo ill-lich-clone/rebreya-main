@@ -546,6 +546,25 @@ function normalizeFeatureEntry(rawFeature, index, {
   };
 }
 
+function normalizeMetamagicOption(rawOption, index, options = {}) {
+  const entry = normalizeFeatureEntry(rawOption, index, {
+    fallbackName: "Метамагия",
+    fallbackLevel: 3,
+    ...options
+  });
+  const rawCost = rawOption?.cost;
+  return {
+    ...entry,
+    levels: [3],
+    requiredLevel: 3,
+    metamagicId: cleanString(rawOption?.metamagicId ?? rawOption?.id, entry.featureId),
+    cost: cleanString(rawCost).toLowerCase() === "spelllevel"
+      ? "spellLevel"
+      : Math.max(1, Math.floor(parseNumber(rawCost, 1))),
+    stacking: cleanString(rawOption?.stacking).toLowerCase() === "additive" ? "additive" : "base"
+  };
+}
+
 function normalizeCunningStrikeEntry(rawFeature, index, options = {}) {
   const entry = normalizeFeatureEntry(rawFeature, index, {
     fallbackName: "Хитрый удар",
@@ -927,6 +946,14 @@ export function normalizeClassCompendiumData(rawData) {
     })
     .filter((feature) => feature.name);
 
+  const usedMetamagicIds = new Set();
+  const metamagicOptions = (Array.isArray(data.metamagicOptions) ? data.metamagicOptions : [])
+    .map((option, index) => normalizeMetamagicOption(option, index, {
+      scopeId: `${classIdentifier}-metamagic`,
+      usedIds: usedMetamagicIds
+    }))
+    .filter((option) => option.name);
+
   const usedCunningStrikeIds = new Set();
   const rawCunningStrikes = Array.isArray(rawClass.cunningStrikes)
     ? rawClass.cunningStrikes
@@ -1090,6 +1117,7 @@ export function normalizeClassCompendiumData(rawData) {
       subclassHint,
       subclassLevel,
       cunningStrikes,
+      metamagicOptions,
       features: classFeatures
     },
     subclasses,
@@ -1182,6 +1210,20 @@ export function buildFeatureDefinitions(normalizedData) {
       identifier: buildAsciiIdentifier(`${classId}-${feature.featureId}`, `${classId}::${feature.featureId}`),
       folderPath: normalizeFolderPath([classFeatureRootFolder, "Базовые умения"]),
       sourceLabel
+    });
+  }
+
+  for (const option of normalizedData.classData.metamagicOptions ?? []) {
+    definitions.push({
+      ...buildBaseFeatureDefinition(
+        option,
+        "sorcererMetamagic",
+        normalizeFolderPath([classFeatureRootFolder, "Метамагия"]),
+        `${classId}-metamagic-${option.featureId}`
+      ),
+      metamagicId: option.metamagicId,
+      cost: option.cost,
+      stacking: option.stacking
     });
   }
 
@@ -1371,6 +1413,9 @@ function buildFeatureSignature(feature, context = {}) {
     maneuverFeatureIds: feature.maneuverFeatureIds ?? [],
     allManeuverFeatureIds: feature.allManeuverFeatureIds ?? [],
     cunningStrikeCost: feature.cunningStrikeCost ?? 0,
+    metamagicId: feature.metamagicId ?? "",
+    cost: feature.cost ?? 0,
+    stacking: feature.stacking ?? "",
     startingEquipmentPackage: feature.startingEquipmentPackage ?? null,
     descriptionHtml: createFeatureDescriptionValue(feature, context),
     advancement: buildFeatureItemAdvancements(feature, context),
@@ -2662,7 +2707,7 @@ function createFeatureSystem(feature, classIdentifier, featureAutomation = null,
       ? "sorcerer-sorcery-points"
       : buildAsciiIdentifier(feature.identifier, feature.featureId),
     type: {
-      value: ["fighterManeuver", "rogueCunningStrike"].includes(feature.sourceType) ? "feat" : "class",
+      value: ["fighterManeuver", "rogueCunningStrike", "sorcererMetamagic"].includes(feature.sourceType) ? "feat" : "class",
       subtype: feature.sourceType === "fighterManeuver"
         ? "fighterManeuver"
         : feature.sourceType === "rogueCunningStrike"
@@ -3223,6 +3268,30 @@ function buildSpellChoiceAdvancements(classData, context = {}) {
     restriction: spellChoice.restriction,
     spell: spellChoice.spell,
     type: "spell"
+  }));
+}
+
+function buildMetamagicChoiceAdvancements(classData, context = {}) {
+  if (classData.identifier !== "sorcerer-rework-v011") {
+    return [];
+  }
+
+  const featureUuidById = context.featureUuidById instanceof Map ? context.featureUuidById : new Map();
+  const pool = (classData.metamagicOptions ?? [])
+    .map((option) => featureUuidById.get(`${classData.identifier}::sorcererMetamagic::${option.featureId}`))
+    .filter(Boolean);
+  if (!pool.length) {
+    return [];
+  }
+
+  return [[3, 3], [10, 1], [17, 1]].map(([level, count]) => buildItemChoiceAdvancement({
+    classIdentifier: classData.identifier,
+    seed: `metamagic-${level}`,
+    title: "Метамагия",
+    hint: "Выберите доступные варианты метамагии чародея.",
+    level,
+    count,
+    pool
   }));
 }
 
@@ -3825,6 +3894,7 @@ export function buildClassAdvancement(classData, context = {}) {
   }
 
   advancements.push(...buildSpellChoiceAdvancements(classData, { spellUuidById }));
+  advancements.push(...buildMetamagicChoiceAdvancements(classData, { featureUuidById }));
 
   const fightingStyleFeaturePool = fightingStyleEntries
     .map((entry) => featureUuidById.get(`${classIdentifier}::fightingStyle::${entry.featureId}`))
@@ -4141,6 +4211,9 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
     startingEquipmentPackage: feature.startingEquipmentPackage
       ? foundry.utils.deepClone(feature.startingEquipmentPackage)
       : undefined,
+    metamagicId: feature.metamagicId,
+    cost: feature.cost,
+    stacking: feature.stacking,
     signature: buildFeatureSignature(feature, context),
     automation: feature.sourceType === "rageAction"
       ? { type: "rageAction", requiredLevel: feature.requiredLevel }

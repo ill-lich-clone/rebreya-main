@@ -150,6 +150,29 @@ function resolveComponents(activity, item) {
   };
 }
 
+function sharedSpellCastComponents(usageConfig = {}) {
+  const components = usageConfig?.spellCast?.components;
+  if (!components || typeof components !== "object") {
+    return null;
+  }
+
+  return {
+    verbal: components.verbal === true || components.vocal === true || components.v === true,
+    somatic: components.somatic === true || components.s === true
+  };
+}
+
+function reactionCheckComplete(usageConfig = {}) {
+  return usageConfig?.flags?.[MODULE_ID]?.reactionCheckComplete === true;
+}
+
+function markReactionCheckComplete(usageConfig = {}) {
+  usageConfig.flags ??= {};
+  usageConfig.flags[MODULE_ID] ??= {};
+  usageConfig.flags[MODULE_ID].reactionCheckComplete = true;
+  return usageConfig;
+}
+
 function hasVisibleComponents(cast) {
   return cast?.visible !== false && Boolean(cast?.components?.verbal || cast?.components?.somatic);
 }
@@ -273,21 +296,29 @@ export class SpellAutomationService {
       return true;
     }
 
+    if (reactionCheckComplete(usageConfig)) {
+      return true;
+    }
+
     const cast = this.#castFromActivity(activity, usageConfig);
     const result = await this.resolveCast(cast);
     if (activity && typeof activity === "object") {
       this._pendingActivityResults.set(activity, result);
     }
+    if (!result.cancelled) {
+      markReactionCheckComplete(usageConfig);
+    }
     return !result.cancelled;
   }
 
   deferDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
-    if (!activity || this.#isAutomatedChildUsage(usageConfig) || counterspellAutomation(activity?.item)) {
+    if (!activity || this.#isAutomatedChildUsage(usageConfig) || counterspellAutomation(activity?.item) || reactionCheckComplete(usageConfig)) {
       return true;
     }
 
     const cast = this.#castFromActivity(activity, usageConfig);
     if (!hasVisibleComponents(cast) || !this.#hasPotentialCounterspell(cast)) {
+      markReactionCheckComplete(usageConfig);
       return true;
     }
 
@@ -342,7 +373,7 @@ export class SpellAutomationService {
       spellUuid: documentUuid(item),
       spellLevel: resolveSpellLevel(activity, item),
       rangeFeet: resolveRangeFeet(activity, item),
-      components: resolveComponents(activity, item),
+      components: sharedSpellCastComponents(usageConfig) ?? resolveComponents(activity, item),
       visible: sourceToken?.visible !== false && sourceToken?.isVisible !== false,
       targetUuids: collectTargetUuids(usageConfig?.targets ?? globalThis.game?.user?.targets),
       cancelled: false,
@@ -383,6 +414,10 @@ export class SpellAutomationService {
     const actor = cast.actor ?? null;
     const item = cast.item ?? null;
     const activity = cast.activity ?? null;
+    const resolvedComponents = resolveComponents(activity, item);
+    const suppliedComponents = cast.components && typeof cast.components === "object" ? cast.components : null;
+    const hasSuppliedVerbal = suppliedComponents && (Object.hasOwn(suppliedComponents, "verbal") || Object.hasOwn(suppliedComponents, "vocal") || Object.hasOwn(suppliedComponents, "v"));
+    const hasSuppliedSomatic = suppliedComponents && (Object.hasOwn(suppliedComponents, "somatic") || Object.hasOwn(suppliedComponents, "s"));
     return {
       id: cleanText(cast.id) || `cast:${Date.now()}:${++this._attemptSequence}`,
       parentId: cleanText(cast.parentId) || null,
@@ -392,8 +427,12 @@ export class SpellAutomationService {
       spellLevel: Math.max(0, Math.floor(toNumber(cast.spellLevel, resolveSpellLevel(activity, item)))),
       rangeFeet: Math.max(0, toNumber(cast.rangeFeet, resolveRangeFeet(activity, item))),
       components: {
-        verbal: cast.components?.verbal === true || cast.components?.vocal === true || resolveComponents(activity, item).verbal,
-        somatic: cast.components?.somatic === true || resolveComponents(activity, item).somatic
+        verbal: hasSuppliedVerbal
+          ? (suppliedComponents.verbal === true || suppliedComponents.vocal === true || suppliedComponents.v === true)
+          : resolvedComponents.verbal,
+        somatic: hasSuppliedSomatic
+          ? (suppliedComponents.somatic === true || suppliedComponents.s === true)
+          : resolvedComponents.somatic
       },
       visible: cast.visible !== false,
       targetUuids: Array.isArray(cast.targetUuids) ? cast.targetUuids.filter(Boolean) : [],
@@ -435,6 +474,13 @@ export class SpellAutomationService {
       [MODULE_ID]: {
         ...(usageConfig?.[MODULE_ID] ?? {}),
         spellAutomationBypass: true
+      },
+      flags: {
+        ...(usageConfig?.flags ?? {}),
+        [MODULE_ID]: {
+          ...(usageConfig?.flags?.[MODULE_ID] ?? {}),
+          reactionCheckComplete: true
+        }
       }
     };
   }

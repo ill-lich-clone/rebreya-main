@@ -188,6 +188,27 @@ test("sorcerer V0.11 is a full Charisma caster with source-table progressions", 
   assert.match(sandShiftEntry.system.description.value, /@UUID\[.*\]\{Проявление духов\}/u);
 });
 
+test("Sorcerer gains three native metamagic choices at level three", () => {
+  const sorcerer = normalizeClassCompendiumData(loadJson("data/sorcerer-rework-v011.json"));
+  const definitions = buildFeatureDefinitions(sorcerer);
+  const featureUuidById = makeUuidMap(definitions);
+  const choices = buildClassAdvancement(sorcerer.classData, { featureUuidById })
+    .filter((entry) => entry.title === "Метамагия");
+  const metamagic = definitions.filter((entry) => entry.sourceType === "sorcererMetamagic");
+  const subtle = metamagic.find((entry) => entry.metamagicId === "subtle-spell");
+
+  assert.deepEqual(choices.map((entry) => [entry.level, entry.configuration.choices[String(entry.level)].count]), [
+    [3, 3],
+    [10, 1],
+    [17, 1]
+  ]);
+  assert.equal(metamagic.length, 9);
+  assert.equal(createFeatureEntryData(subtle, new Map()).flags["rebreya-main"].sourceType, "sorcererMetamagic");
+  assert.equal(createFeatureEntryData(subtle, new Map()).flags["rebreya-main"].metamagicId, "subtle-spell");
+  assert.equal(createFeatureEntryData(subtle, new Map()).flags["rebreya-main"].cost, 1);
+  assert.equal(createFeatureEntryData(subtle, new Map()).flags["rebreya-main"].stacking, "base");
+});
+
 test("barbarian and fighter reworks use the ZoZT source label", () => {
   const barbarian = normalizeClassCompendiumData(loadJson("data/barbarian-rework-v012.json"));
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
