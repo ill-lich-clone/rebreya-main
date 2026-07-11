@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { normalizeGroupState } from "./group-context-service.js";
+import { normalizeGroupState, normalizeQuestState } from "./group-context-service.js";
 
 export const FQL_MODULE_ID = "forien-quest-log";
 
@@ -387,6 +387,89 @@ function normalizeUnlockReward(value = {}) {
   };
 }
 
+function normalizeTaskSubtask(value = {}) {
+  const source = asObject(value);
+  const id = cleanId(source.id);
+  const title = cleanText(source.title);
+  if (!id || !title) {
+    return null;
+  }
+
+  const failed = source.failed === true;
+  return {
+    id,
+    title,
+    completed: failed ? false : source.completed === true,
+    failed
+  };
+}
+
+function normalizeTaskSubtasksById(value = {}) {
+  const subtasksById = {};
+
+  for (const [rawTaskId, rawSubtasks] of Object.entries(asObject(value))) {
+    const taskId = cleanId(rawTaskId);
+    if (!taskId || !isSafeObjectKey(taskId)) {
+      continue;
+    }
+
+    const subtasks = asArray(rawSubtasks).map(normalizeTaskSubtask).filter(Boolean);
+    if (subtasks.length > 0) {
+      subtasksById[taskId] = subtasks;
+    }
+  }
+
+  return subtasksById;
+}
+
+function getQuestTask(quest, taskId) {
+  const id = cleanId(taskId);
+  if (!id) {
+    return null;
+  }
+
+  return quest?.getTask?.(id)
+    ?? asArray(quest?.tasks).find((task) => task?.uuidv4 === id)
+    ?? null;
+}
+
+function normalizeRumorTopicInput(id, { title = "", tableUuid = "", entries = [] } = {}) {
+  const topic = {
+    id: cleanId(id),
+    title: cleanText(title),
+    tableUuid: cleanId(tableUuid),
+    entries: asArray(entries).map((entry) => ({
+      id: cleanId(entry?.id),
+      text: cleanText(entry?.text)
+    })).filter((entry) => entry.id && entry.text)
+  };
+
+  if (!topic.id || !topic.title) {
+    return null;
+  }
+
+  return topic;
+}
+
+function normalizeRumorEntryInput(id, { text = "" } = {}) {
+  const entry = {
+    id: cleanId(id),
+    text: cleanText(text)
+  };
+
+  return entry.id && entry.text ? entry : null;
+}
+
+function normalizeQuestEventInput(id, { title = "", text = "" } = {}) {
+  const event = {
+    id: cleanId(id),
+    title: cleanText(title),
+    text: cleanText(text)
+  };
+
+  return event.id && event.title ? event : null;
+}
+
 function buildSelectedOptions(options, selectedValue) {
   return options.map((option) => ({
     ...option,
@@ -401,7 +484,8 @@ export function normalizeQuestMetadata(value = {}) {
     version: 1,
     groupActorIds: uniqueCleanIds(source.groupActorIds),
     requirements: asArray(source.requirements).map(normalizeRequirement).filter(Boolean),
-    unlockRewards: asArray(source.unlockRewards).map(normalizeUnlockReward).filter(Boolean)
+    unlockRewards: asArray(source.unlockRewards).map(normalizeUnlockReward).filter(Boolean),
+    taskSubtasksById: normalizeTaskSubtasksById(source.taskSubtasksById)
   };
 }
 
@@ -808,6 +892,116 @@ export class RebreyaQuestLogService {
     return requirement;
   }
 
+  getTaskSubtasks(questId, taskId) {
+    const quest = this.getQuest(questId);
+    const task = getQuestTask(quest, taskId);
+    if (!task) {
+      throw new Error("Quest task was not found.");
+    }
+
+    const metadata = this.getQuestMetadata(quest);
+    return asArray(metadata.taskSubtasksById[task.uuidv4 ?? cleanId(taskId)]).map((subtask) => ({ ...subtask }));
+  }
+
+  async addTaskSubtask(questId, taskId, data = {}) {
+    const quest = this.getQuest(questId);
+    const task = getQuestTask(quest, taskId);
+    if (!task) {
+      throw new Error("Quest task was not found.");
+    }
+
+    const subtask = normalizeTaskSubtask({
+      id: this.idFactory("subtask"),
+      title: data.title,
+      completed: data.completed,
+      failed: data.failed
+    });
+    if (!subtask) {
+      throw new Error("Quest subtask data is incomplete.");
+    }
+
+    const metadata = this.getQuestMetadata(quest);
+    const normalizedTaskId = task.uuidv4 ?? cleanId(taskId);
+    metadata.taskSubtasksById[normalizedTaskId] ??= [];
+    metadata.taskSubtasksById[normalizedTaskId].push(subtask);
+    await this.setQuestMetadata(quest, metadata);
+    return subtask;
+  }
+
+  async updateTaskSubtask(questId, taskId, subtaskId, data = {}) {
+    const quest = this.getQuest(questId);
+    const task = getQuestTask(quest, taskId);
+    if (!task) {
+      throw new Error("Quest task was not found.");
+    }
+
+    const metadata = this.getQuestMetadata(quest);
+    const normalizedTaskId = task.uuidv4 ?? cleanId(taskId);
+    const subtasks = asArray(metadata.taskSubtasksById[normalizedTaskId]);
+    const id = cleanId(subtaskId);
+    const index = subtasks.findIndex((subtask) => subtask.id === id);
+    if (index === -1) {
+      throw new Error("Quest subtask was not found.");
+    }
+
+    const current = subtasks[index];
+    const subtask = normalizeTaskSubtask({
+      id,
+      title: data.title ?? current.title,
+      completed: data.failed === true ? false : data.completed ?? current.completed,
+      failed: data.failed ?? (data.completed === true ? false : current.failed)
+    });
+    if (!subtask) {
+      throw new Error("Quest subtask data is incomplete.");
+    }
+
+    metadata.taskSubtasksById[normalizedTaskId] = [
+      ...subtasks.slice(0, index),
+      subtask,
+      ...subtasks.slice(index + 1)
+    ];
+    await this.setQuestMetadata(quest, metadata);
+    return subtask;
+  }
+
+  async removeTaskSubtask(questId, taskId, subtaskId) {
+    const quest = this.getQuest(questId);
+    const task = getQuestTask(quest, taskId);
+    if (!task) {
+      throw new Error("Quest task was not found.");
+    }
+
+    const metadata = this.getQuestMetadata(quest);
+    const normalizedTaskId = task.uuidv4 ?? cleanId(taskId);
+    const subtasks = asArray(metadata.taskSubtasksById[normalizedTaskId]);
+    const id = cleanId(subtaskId);
+    const subtask = subtasks.find((entry) => entry.id === id);
+    if (!subtask) {
+      throw new Error("Quest subtask was not found.");
+    }
+
+    metadata.taskSubtasksById[normalizedTaskId] = subtasks.filter((entry) => entry.id !== id);
+    if (metadata.taskSubtasksById[normalizedTaskId].length === 0) {
+      delete metadata.taskSubtasksById[normalizedTaskId];
+    }
+
+    await this.setQuestMetadata(quest, metadata);
+    return subtask;
+  }
+
+  async markTaskFailed(questId, taskId) {
+    const quest = this.getQuest(questId);
+    const task = getQuestTask(quest, taskId);
+    if (!task) {
+      throw new Error("Quest task was not found.");
+    }
+
+    task.completed = false;
+    task.failed = true;
+    await quest.save?.();
+    return task;
+  }
+
   async addUnlockReward(sourceQuestId, { targetQuestId, requirementId, title = "" } = {}) {
     const sourceQuest = this.getQuest(sourceQuestId);
     const targetQuest = this.getQuest(targetQuestId);
@@ -892,6 +1086,135 @@ export class RebreyaQuestLogService {
       groupActorId: context.groupId,
       evaluation
     };
+  }
+
+  getQuestActivitiesContext(groupActorId = "") {
+    const context = this.getGroupContext(groupActorId);
+    if (!context?.groupId) {
+      return {
+        groupActorId: "",
+        groupName: "",
+        hasGroupContext: false,
+        activities: normalizeQuestState({}).activities
+      };
+    }
+
+    const groupState = normalizeGroupState(context.groupId, context.groupState ?? {});
+    return {
+      groupActorId: context.groupId,
+      groupName: context.groupActor?.name ?? "",
+      hasGroupContext: true,
+      activities: clone(groupState.questState.activities)
+    };
+  }
+
+  async updateGroupQuestActivities(groupActorId, updater) {
+    const context = this.getGroupContext(groupActorId);
+    if (!context?.groupId) {
+      throw new Error("Rebreya group context is not available.");
+    }
+
+    const registry = this.groupContextService?.getRegistry?.() ?? {
+      version: 1,
+      activeGroupActorId: context.groupId,
+      groupsById: {}
+    };
+    registry.groupsById ??= {};
+    const groupState = normalizeGroupState(context.groupId, registry.groupsById[context.groupId] ?? context.groupState ?? {});
+    const result = updater(groupState.questState.activities);
+    registry.activeGroupActorId ||= context.groupId;
+    registry.groupsById[context.groupId] = groupState;
+    await this.groupContextService?.setRegistry?.(registry);
+    return result;
+  }
+
+  async addRumorTopic(data = {}, groupActorId = "") {
+    const topic = normalizeRumorTopicInput(this.idFactory("rumor"), data);
+    if (!topic) {
+      throw new Error("Rumor data is incomplete.");
+    }
+
+    await this.updateGroupQuestActivities(groupActorId, (activities) => {
+      activities.rumors.push(topic);
+      return topic;
+    });
+    return topic;
+  }
+
+  async removeRumorTopic(rumorId, groupActorId = "") {
+    const id = cleanId(rumorId);
+    return this.updateGroupQuestActivities(groupActorId, (activities) => {
+      const rumor = activities.rumors.find((entry) => entry.id === id);
+      if (!rumor) {
+        throw new Error("Rumor topic was not found.");
+      }
+
+      activities.rumors = activities.rumors.filter((entry) => entry.id !== id);
+      return rumor;
+    });
+  }
+
+  async addRumorEntry(rumorId, data = {}, groupActorId = "") {
+    const entry = normalizeRumorEntryInput(this.idFactory("rumor-entry"), data);
+    if (!entry) {
+      throw new Error("Rumor entry data is incomplete.");
+    }
+
+    await this.updateGroupQuestActivities(groupActorId, (activities) => {
+      const rumor = activities.rumors.find((topic) => topic.id === cleanId(rumorId));
+      if (!rumor) {
+        throw new Error("Rumor topic was not found.");
+      }
+
+      rumor.entries.push(entry);
+      return entry;
+    });
+    return entry;
+  }
+
+  async removeRumorEntry(rumorId, entryId, groupActorId = "") {
+    const topicId = cleanId(rumorId);
+    const id = cleanId(entryId);
+    return this.updateGroupQuestActivities(groupActorId, (activities) => {
+      const rumor = activities.rumors.find((topic) => topic.id === topicId);
+      if (!rumor) {
+        throw new Error("Rumor topic was not found.");
+      }
+
+      const entry = rumor.entries.find((item) => item.id === id);
+      if (!entry) {
+        throw new Error("Rumor entry was not found.");
+      }
+
+      rumor.entries = rumor.entries.filter((item) => item.id !== id);
+      return entry;
+    });
+  }
+
+  async addQuestEvent(data = {}, groupActorId = "") {
+    const event = normalizeQuestEventInput(this.idFactory("event"), data);
+    if (!event) {
+      throw new Error("Quest event data is incomplete.");
+    }
+
+    await this.updateGroupQuestActivities(groupActorId, (activities) => {
+      activities.events.push(event);
+      return event;
+    });
+    return event;
+  }
+
+  async removeQuestEvent(eventId, groupActorId = "") {
+    const id = cleanId(eventId);
+    return this.updateGroupQuestActivities(groupActorId, (activities) => {
+      const event = activities.events.find((entry) => entry.id === id);
+      if (!event) {
+        throw new Error("Quest event was not found.");
+      }
+
+      activities.events = activities.events.filter((entry) => entry.id !== id);
+      return event;
+    });
   }
 
   cloneQuestDataForImport(sourceQuest) {

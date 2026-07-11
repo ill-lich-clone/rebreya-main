@@ -179,13 +179,77 @@ test("group state preserves Rebreya quest unlock state", () => {
           sourceRewardId: "reward-a"
         }
       }
+    },
+    activities: {
+      rumors: [],
+      events: []
     }
   });
 });
 
 test("default group state includes an empty quest state", () => {
   assert.deepEqual(buildDefaultGroupState("group-a", { now: 111 }).questState, {
-    unlocksByQuestId: {}
+    unlocksByQuestId: {},
+    activities: {
+      rumors: [],
+      events: []
+    }
+  });
+});
+
+test("group quest activities normalize rumors with entries and events", () => {
+  const state = normalizeGroupState("group-a", {
+    questState: {
+      activities: {
+        rumors: [
+          {
+            id: " rumor-a ",
+            title: " Tavern whispers ",
+            tableUuid: " RollTable.abc ",
+            entries: [
+              {
+                id: " entry-a ",
+                text: "There is a hidden cellar."
+              },
+              {
+                id: "",
+                text: "Broken"
+              }
+            ]
+          }
+        ],
+        events: [
+          {
+            id: " event-a ",
+            title: " Market burns ",
+            text: "The square is closed."
+          }
+        ]
+      }
+    }
+  });
+
+  assert.deepEqual(state.questState.activities, {
+    rumors: [
+      {
+        id: "rumor-a",
+        title: "Tavern whispers",
+        tableUuid: "RollTable.abc",
+        entries: [
+          {
+            id: "entry-a",
+            text: "There is a hidden cellar."
+          }
+        ]
+      }
+    ],
+    events: [
+      {
+        id: "event-a",
+        title: "Market burns",
+        text: "The square is closed."
+      }
+    ]
   });
 });
 
@@ -249,7 +313,20 @@ test("quest metadata normalizes groups, requirements, and unlock rewards", () =>
         title: "Open B"
       },
       { id: "", targetQuestId: "missing" }
-    ]
+    ],
+    taskSubtasksById: {
+      " task-a ": [
+        {
+          id: " sub-a ",
+          title: " First step ",
+          completed: true
+        },
+        {
+          id: "",
+          title: "Broken"
+        }
+      ]
+    }
   });
 
   assert.deepEqual(metadata, {
@@ -291,7 +368,17 @@ test("quest metadata normalizes groups, requirements, and unlock rewards", () =>
         requirementId: "req-b",
         title: "Open B"
       }
-    ]
+    ],
+    taskSubtasksById: {
+      "task-a": [
+        {
+          id: "sub-a",
+          title: "First step",
+          completed: true,
+          failed: false
+        }
+      ]
+    }
   });
 });
 
@@ -610,6 +697,103 @@ test("level and item requirements can be added and edited", async () => {
     itemName: "Ancient Seal",
     itemId: ""
   });
+});
+
+test("task subtasks can be added and toggled without changing Forien task data", async () => {
+  const currentQuest = createQuest("quest-current", {
+    tasks: [{ uuidv4: "task-a", name: "Main task", completed: false, failed: false }]
+  });
+  const service = new RebreyaQuestLogService({
+    idFactory: () => "sub-a",
+    getFqlApi: () => ({ DB: { getQuest: () => currentQuest } })
+  });
+
+  const subtask = await service.addTaskSubtask("quest-current", "task-a", {
+    title: "Find the key"
+  });
+  assert.deepEqual(subtask, {
+    id: "sub-a",
+    title: "Find the key",
+    completed: false,
+    failed: false
+  });
+
+  const completed = await service.updateTaskSubtask("quest-current", "task-a", "sub-a", {
+    completed: true
+  });
+  assert.equal(completed.completed, true);
+  assert.equal(completed.failed, false);
+
+  const failed = await service.updateTaskSubtask("quest-current", "task-a", "sub-a", {
+    failed: true
+  });
+  assert.equal(failed.completed, false);
+  assert.equal(failed.failed, true);
+  assert.deepEqual(currentQuest.tasks, [{ uuidv4: "task-a", name: "Main task", completed: false, failed: false }]);
+});
+
+test("Forien tasks can be marked failed directly", async () => {
+  const currentQuest = createQuest("quest-current", {
+    tasks: [{ uuidv4: "task-a", name: "Main task", completed: true, failed: false }]
+  });
+  let saved = 0;
+  currentQuest.save = async () => {
+    saved += 1;
+    return currentQuest.id;
+  };
+  const service = new RebreyaQuestLogService({
+    getFqlApi: () => ({ DB: { getQuest: () => currentQuest } })
+  });
+
+  const task = await service.markTaskFailed("quest-current", "task-a");
+
+  assert.equal(task.completed, false);
+  assert.equal(task.failed, true);
+  assert.equal(saved, 1);
+});
+
+test("rumors and events are stored in the selected group quest state", async () => {
+  const ids = ["rumor-a", "entry-a", "event-a"];
+  const groupContextService = createGroupContextService({
+    groupId: "group-a",
+    groupActor: { id: "group-a", name: "Party A", type: "group" },
+    members: [],
+    memberActorIds: [],
+    groupState: buildDefaultGroupState("group-a")
+  });
+  const service = new RebreyaQuestLogService({
+    groupContextService,
+    idFactory: () => ids.shift()
+  });
+
+  const rumor = await service.addRumorTopic({
+    title: "Tavern",
+    tableUuid: "RollTable.rumors"
+  }, "group-a");
+  const entry = await service.addRumorEntry("rumor-a", {
+    text: "The old well is watched."
+  }, "group-a");
+  const event = await service.addQuestEvent({
+    title: "Market fire",
+    text: "The east market is closed."
+  }, "group-a");
+
+  assert.deepEqual(rumor, {
+    id: "rumor-a",
+    title: "Tavern",
+    tableUuid: "RollTable.rumors",
+    entries: []
+  });
+  assert.deepEqual(entry, {
+    id: "entry-a",
+    text: "The old well is watched."
+  });
+  assert.deepEqual(event, {
+    id: "event-a",
+    title: "Market fire",
+    text: "The east market is closed."
+  });
+  assert.deepEqual(groupContextService.getRegistry().groupsById["group-a"].questState.activities.rumors[0].entries, [entry]);
 });
 
 test("unlock rewards can be removed from quest metadata", async () => {

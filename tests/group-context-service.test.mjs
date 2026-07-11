@@ -182,7 +182,11 @@ test("normalizeGroupRegistry preserves active group and per-group state", () => 
     craftState: { queue: ["item-a"] },
     travelState: {},
     questState: {
-      unlocksByQuestId: {}
+      unlocksByQuestId: {},
+      activities: {
+        rumors: [],
+        events: []
+      }
     },
     downtimeState: {
       balancesByActorId: { "actor-a": 4 },
@@ -516,7 +520,11 @@ test("buildDefaultGroupState creates file-backed empty runtime state without leg
     craftState: {},
     travelState: {},
     questState: {
-      unlocksByQuestId: {}
+      unlocksByQuestId: {},
+      activities: {
+        rumors: [],
+        events: []
+      }
     },
     downtimeState: {
       balancesByActorId: {},

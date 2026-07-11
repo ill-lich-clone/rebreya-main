@@ -37,6 +37,30 @@ test("Forien quest overlay integration wires search filtering and editable row a
   assert.match(source, /getRequirementPayload/u);
 });
 
+test("Forien quest integration wires subtasks, right-click task failure, and activity tabs", async () => {
+  const source = await readFile(new URL("../scripts/integrations/forien-quest-log.js", import.meta.url), "utf8");
+  const template = await readFile(new URL("../templates/forien-quest-log-activities.hbs", import.meta.url), "utf8");
+  const css = await readFile(new URL("../styles/quest-log-enhancements.css", import.meta.url), "utf8");
+  const manifest = await readFile(new URL("../module.json", import.meta.url), "utf8");
+  const resolveRollTableSource = source.slice(
+    source.indexOf("async function resolveRollTable"),
+    source.indexOf("async function rollRumorFromTable")
+  );
+
+  assert.match(source, /contextmenu/u);
+  assert.match(source, /markTaskFailed/u);
+  assert.match(source, /injectQuestTaskEnhancements/u);
+  assert.match(source, /injectQuestLogActivities/u);
+  assert.match(source, /roll-rumor-table/u);
+  assert.match(resolveRollTableSource, /try\s*\{[\s\S]*fromUuid[\s\S]*catch/u);
+  assert.match(template, /data-rm-fql-log-panel="rumors"/u);
+  assert.match(template, /data-rm-fql-log-panel="events"/u);
+  assert.match(template, /data-rm-fql-log-action="add-rumor-entry"/u);
+  assert.match(template, /data-rm-fql-log-action="add-event"/u);
+  assert.match(css, /\.forien-quest-log\s+\.rm-fql-log-panel/u);
+  assert.match(manifest, /styles\/quest-log-enhancements\.css/u);
+});
+
 test("Forien quest log refreshes when the active Rebreya group changes", async () => {
   const integrationSource = await readFile(new URL("../scripts/integrations/forien-quest-log.js", import.meta.url), "utf8");
   const mainSource = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");

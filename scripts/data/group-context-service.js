@@ -42,6 +42,10 @@ function cleanId(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function cleanText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 const UNSAFE_OBJECT_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 
 function isSafeObjectKey(value) {
@@ -127,11 +131,67 @@ function normalizeQuestUnlocksByQuestId(value = {}) {
   return unlocksByQuestId;
 }
 
+function normalizeRumorEntry(value = {}) {
+  const source = asObject(value);
+  const id = cleanId(source.id);
+  const text = cleanText(source.text);
+  if (!id || !text) {
+    return null;
+  }
+
+  return {
+    id,
+    text
+  };
+}
+
+function normalizeRumorTopic(value = {}) {
+  const source = asObject(value);
+  const id = cleanId(source.id);
+  const title = cleanText(source.title);
+  if (!id || !title) {
+    return null;
+  }
+
+  return {
+    id,
+    title,
+    tableUuid: cleanId(source.tableUuid),
+    entries: asArray(source.entries).map(normalizeRumorEntry).filter(Boolean)
+  };
+}
+
+function normalizeQuestEvent(value = {}) {
+  const source = asObject(value);
+  const id = cleanId(source.id);
+  const title = cleanText(source.title);
+  const text = cleanText(source.text);
+  if (!id || !title) {
+    return null;
+  }
+
+  return {
+    id,
+    title,
+    text
+  };
+}
+
+function normalizeQuestActivities(value = {}) {
+  const source = asObject(value);
+
+  return {
+    rumors: asArray(source.rumors).map(normalizeRumorTopic).filter(Boolean),
+    events: asArray(source.events).map(normalizeQuestEvent).filter(Boolean)
+  };
+}
+
 export function normalizeQuestState(value = {}) {
   const source = asObject(value);
 
   return {
-    unlocksByQuestId: normalizeQuestUnlocksByQuestId(source.unlocksByQuestId)
+    unlocksByQuestId: normalizeQuestUnlocksByQuestId(source.unlocksByQuestId),
+    activities: normalizeQuestActivities(source.activities)
   };
 }
 
@@ -176,7 +236,11 @@ export function buildDefaultGroupState(groupActorId, { now = Date.now() } = {}) 
     craftState: {},
     travelState: {},
     questState: {
-      unlocksByQuestId: {}
+      unlocksByQuestId: {},
+      activities: {
+        rumors: [],
+        events: []
+      }
     },
     downtimeState: {
       balancesByActorId: {},

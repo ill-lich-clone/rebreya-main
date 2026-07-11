@@ -1,0 +1,157 @@
+.forien-quest-preview .rm-fql-subtasks {
+  grid-column: 2 / -1;
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.forien-quest-preview .rm-fql-subtask {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 3px 5px;
+  border-left: 2px solid rgb(99 68 35 / 0.32);
+  background: rgb(255 255 255 / 0.32);
+}
+
+.forien-quest-preview .rm-fql-subtask__state,
+.forien-quest-preview .rm-fql-subtask button,
+.forien-quest-preview .rm-fql-task-add-subtask {
+  cursor: pointer;
+}
+
+.forien-quest-preview .rm-fql-subtask.is-completed .rm-fql-subtask__state {
+  color: #1f6f49;
+}
+
+.forien-quest-preview .rm-fql-subtask.is-failed .rm-fql-subtask__state,
+.forien-quest-preview .toggleState.rm-fql-task-failed {
+  color: #b92323;
+}
+
+.forien-quest-preview .rm-fql-subtask__title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.forien-quest-preview .rm-fql-subtask__actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.forien-quest-preview .rm-fql-subtask__actions button,
+.forien-quest-preview .rm-fql-task-add-subtask {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.forien-quest-log .rm-fql-log-panel {
+  padding: 8px;
+}
+
+.forien-quest-log .rm-fql-log-panel[hidden] {
+  display: none !important;
+}
+
+.forien-quest-log .rm-fql-log-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.forien-quest-log .rm-fql-log-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: start;
+  margin: 6px 0 10px;
+}
+
+.forien-quest-log .rm-fql-log-form--inline {
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: 8px 0 0;
+}
+
+.forien-quest-log .rm-fql-log-form--event {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.forien-quest-log .rm-fql-log-form--event textarea {
+  grid-column: 1 / -1;
+  resize: vertical;
+}
+
+.forien-quest-log .rm-fql-log-form input,
+.forien-quest-log .rm-fql-log-form textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.forien-quest-log .rm-fql-log-list {
+  display: grid;
+  gap: 8px;
+}
+
+.forien-quest-log .rm-fql-log-card {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgb(99 68 35 / 0.32);
+  background: rgb(255 250 235 / 0.72);
+}
+
+.forien-quest-log .rm-fql-log-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.forien-quest-log .rm-fql-log-card h2,
+.forien-quest-log .rm-fql-log-card p {
+  margin: 0;
+}
+
+.forien-quest-log .rm-fql-log-card__actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.forien-quest-log .rm-fql-rumor-entries {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.forien-quest-log .rm-fql-rumor-entries li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.forien-quest-log .rm-fql-log-muted,
+.forien-quest-log .rm-fql-log-empty {
+  opacity: 0.78;
+}
+
+@media (max-width: 760px) {
+  .forien-quest-log .rm-fql-log-form,
+  .forien-quest-log .rm-fql-log-form--event {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
