@@ -47,6 +47,17 @@ class TestActor {
     };
     this.flags = {};
     this.items = { contents: [] };
+    this.sorcererClassItem = makeItemFromData(this, {
+      name: "Sorcerer",
+      type: "class",
+      system: { identifier: SORCERER_ROOT }
+    }, "classSorcererItem");
+    this.wizardClassItem = makeItemFromData(this, {
+      name: "Wizard",
+      type: "class",
+      system: { identifier: "wizard" }
+    }, "classWizardItem");
+    this.items.contents.push(this.sorcererClassItem, this.wizardClassItem);
     this.updates = [];
     this.createdItems = [];
     if (includePoints) {
@@ -121,7 +132,7 @@ function makePointsItem(actor, { spent = 0 } = {}) {
 function makeSorcererSpell(actor, {
   id = "chromatic-orb",
   baseLevel = 1,
-  root = SORCERER_ROOT
+  root = `${actor.sorcererClassItem.id}.advancementKnownSpell`
 } = {}) {
   const item = makeItemFromData(actor, {
     name: "Spell",
@@ -150,6 +161,21 @@ function levelActor(level, options = {}) {
   return new TestActor({ level, ...options });
 }
 
+function consumeDnd5eSpellSlot(actor, usageConfig) {
+  if (!((usageConfig.consume === true) || usageConfig.consume?.spellSlot)) {
+    return;
+  }
+
+  const slot = actor.system.spells?.[usageConfig.spell?.slot];
+  if (slot?.value) {
+    slot.value = Math.max(0, slot.value - 1);
+  }
+}
+
+async function waitForDeferredActivityUse() {
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
 test("Sorcery Points synchronize to the level-three scale and recover on long rest", async () => {
   const actor = levelActor(3, { pointsSpent: 9, includePoints: true });
   const service = new SorcererAutomationService({});
@@ -173,7 +199,7 @@ test("Sorcerer casting spends points but preserves native slots", async () => {
 
   assert.equal(result, true);
   assert.equal(pointsItem(actor).system.uses.spent, 2);
-  assert.equal(usageConfig.consumeSpellSlot, false);
+  assert.equal(usageConfig.consume.spellSlot, false);
   assert.deepEqual(usageConfig.spellCast, {
     spellLevel: 1,
     components: { vocal: true, somatic: true, material: false },
@@ -182,23 +208,292 @@ test("Sorcerer casting spends points but preserves native slots", async () => {
   });
 });
 
-test("only Sorcerer-root spell advancements use virtual slots", async () => {
+test("only a Sorcerer class advancement root uses virtual slots on a multiclass actor", async () => {
   const actor = levelActor(3, { includePoints: true });
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
+  const sorcererUsageConfig = {};
   const usageConfig = { consumeSpellSlot: true };
 
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor),
+    sorcererUsageConfig,
+    {},
+    {}
+  ), true);
+  assert.equal(pointsItem(actor).system.uses.spent, 2);
+
   const result = await service.applyDnd5ePreUseActivity(
-    makeSorcererSpell(actor, { root: "wizard-rework" }),
+    makeSorcererSpell(actor, { root: `${actor.wizardClassItem.id}.advancementKnownSpell` }),
     usageConfig,
     {},
     {}
   );
 
   assert.equal(result, true);
-  assert.equal(pointsItem(actor).system.uses.spent, 0);
+  assert.equal(pointsItem(actor).system.uses.spent, 2);
   assert.equal(usageConfig.consumeSpellSlot, true);
   assert.equal(usageConfig.spellCast, undefined);
+});
+
+test("a virtual level-three cast uses D&D5e slot, scaling, and consume fields without consuming a native slot", async () => {
+  const actor = levelActor(5, { includePoints: true });
+  actor.system.spells = {
+    spell3: { level: 3, value: 1, max: 1 }
+  };
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = { sorcererVirtualSpellLevel: 3 };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor), usageConfig, {}, {}), true);
+  assert.equal(usageConfig.consume.spellSlot, false);
+  assert.equal(usageConfig.spell.slot, "spell3");
+  assert.equal(usageConfig.scaling, 2);
+  assert.equal(usageConfig.consumeSpellSlot, undefined);
+
+  consumeDnd5eSpellSlot(actor, usageConfig);
+  assert.equal(actor.system.spells.spell3.value, 1);
+  assert.deepEqual(usageConfig.spellCast, {
+    spellLevel: 3,
+    components: { vocal: true, somatic: true, material: false },
+    payment: { resource: "sorcery-points", cost: 5 },
+    modifiers: { cooldownOverride: false, exhaustion: 0, highLevelOverride: false }
+  });
+});
+
+test("a synchronous dnd5e pre-use hook defers a Sorcerer cast and resumes it once with a bypass marker", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
+  const actor = levelActor(1, { includePoints: true });
+  let prompts = 0;
+  let genericHookCalls = 0;
+  let attackHookCalls = 0;
+  const resumedUses = [];
+
+  globalThis.Hooks = {
+    on: (name, callback) => {
+      const callbacks = handlers.get(name) ?? [];
+      callbacks.push(callback);
+      handlers.set(name, callbacks);
+    }
+  };
+  globalThis.game = { user: { id: "user", isGM: true }, combat: { round: 1 } };
+
+  try {
+    const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
+    const service = new SorcererAutomationService({
+      chooseVirtualSpellLevel: async () => {
+        prompts += 1;
+        return { accepted: true, spellLevel: 1 };
+      }
+    });
+    await service.syncSorceryPoints(actor);
+    const moduleApi = {
+      sorcererAutomationService: service,
+      spellAutomationService: {
+        deferDnd5ePreUseActivity: () => {
+          genericHookCalls += 1;
+          return true;
+        }
+      },
+      combatAttackService: {
+        applyDnd5ePreUseActivity: () => {
+          attackHookCalls += 1;
+          return true;
+        }
+      }
+    };
+    registerCombatHooks(moduleApi);
+    const preUse = handlers.get("dnd5e.preUseActivity")?.[0];
+    const activity = makeSorcererSpell(actor);
+    activity.use = async (...args) => {
+      resumedUses.push(args);
+      return preUse(activity, ...args) === true ? { updates: [] } : undefined;
+    };
+
+    const firstResult = preUse(activity, {}, {}, {});
+    assert.equal(firstResult, false);
+    assert.equal(typeof firstResult, "boolean");
+    await waitForDeferredActivityUse();
+
+    assert.equal(prompts, 1);
+    assert.equal(resumedUses.length, 1);
+    assert.equal(resumedUses[0][0][MODULE_ID].sorcererAutomationBypass, true);
+    assert.equal(pointsItem(actor).system.uses.spent, 2);
+    assert.equal(genericHookCalls, 2);
+    assert.equal(attackHookCalls, 1);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("a generic deferred cancellation happens before a Sorcerer prompt or payment", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
+  const actor = levelActor(1, { includePoints: true });
+  let prompts = 0;
+  let genericHookCalls = 0;
+  let resumedUses = 0;
+
+  globalThis.Hooks = {
+    on: (name, callback) => {
+      const callbacks = handlers.get(name) ?? [];
+      callbacks.push(callback);
+      handlers.set(name, callbacks);
+    }
+  };
+  globalThis.game = { user: { id: "user", isGM: true }, combat: { round: 1 } };
+
+  try {
+    const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
+    const service = new SorcererAutomationService({
+      chooseVirtualSpellLevel: async () => {
+        prompts += 1;
+        return { accepted: true, spellLevel: 1 };
+      }
+    });
+    await service.syncSorceryPoints(actor);
+    registerCombatHooks({
+      sorcererAutomationService: service,
+      spellAutomationService: {
+        deferDnd5ePreUseActivity: () => {
+          genericHookCalls += 1;
+          return false;
+        }
+      },
+      combatAttackService: { applyDnd5ePreUseActivity: () => true }
+    });
+    const preUse = handlers.get("dnd5e.preUseActivity")?.[0];
+    const activity = makeSorcererSpell(actor);
+    activity.use = async (...args) => {
+      resumedUses += 1;
+      return preUse(activity, ...args) === true ? { updates: [] } : undefined;
+    };
+
+    assert.equal(preUse(activity, {}, {}, {}), false);
+    await waitForDeferredActivityUse();
+
+    assert.equal(genericHookCalls, 1);
+    assert.equal(prompts, 0);
+    assert.equal(resumedUses, 0);
+    assert.equal(pointsItem(actor).system.uses.spent, 0);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("a generic deferred resume reaches a paid Sorcerer final cast with both bypass markers", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
+  const actor = levelActor(5, { includePoints: true });
+  const resumedUses = [];
+  let prompts = 0;
+  let genericHookCalls = 0;
+  let attackHookCalls = 0;
+
+  globalThis.Hooks = {
+    on: (name, callback) => {
+      const callbacks = handlers.get(name) ?? [];
+      callbacks.push(callback);
+      handlers.set(name, callbacks);
+    }
+  };
+  globalThis.game = { user: { id: "user", isGM: true }, combat: { round: 1 } };
+
+  try {
+    const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
+    const service = new SorcererAutomationService({
+      chooseVirtualSpellLevel: async () => {
+        prompts += 1;
+        return { accepted: true, spellLevel: 3, exhaustionOverride: true };
+      }
+    });
+    await service.syncSorceryPoints(actor);
+    await actor.setFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns", {
+      "chromatic-orb:3": { expiresAtRound: 2 }
+    });
+    registerCombatHooks({
+      sorcererAutomationService: service,
+      spellAutomationService: {
+        deferDnd5ePreUseActivity: (activity, usageConfig, dialogConfig, messageConfig) => {
+          genericHookCalls += 1;
+          if (usageConfig?.[MODULE_ID]?.spellAutomationBypass === true) {
+            return true;
+          }
+
+          queueMicrotask(() => {
+            void activity.use({
+              ...usageConfig,
+              [MODULE_ID]: {
+                ...(usageConfig?.[MODULE_ID] ?? {}),
+                spellAutomationBypass: true
+              }
+            }, dialogConfig, messageConfig);
+          });
+          return false;
+        }
+      },
+      combatAttackService: {
+        applyDnd5ePreUseActivity: () => {
+          attackHookCalls += 1;
+          return true;
+        }
+      }
+    });
+    const preUse = handlers.get("dnd5e.preUseActivity")?.[0];
+    const activity = makeSorcererSpell(actor, { baseLevel: 3 });
+    activity.use = async (...args) => {
+      resumedUses.push(args);
+      return preUse(activity, ...args) === true ? { updates: [] } : undefined;
+    };
+
+    assert.equal(preUse(activity, {}, {}, {}), false);
+    await waitForDeferredActivityUse();
+
+    assert.equal(genericHookCalls, 3);
+    assert.equal(prompts, 1);
+    assert.equal(resumedUses.length, 2);
+    assert.equal(resumedUses[0][0][MODULE_ID].spellAutomationBypass, true);
+    assert.equal(resumedUses[0][0][MODULE_ID].sorcererAutomationBypass, undefined);
+    assert.equal(resumedUses[1][0][MODULE_ID].spellAutomationBypass, true);
+    assert.equal(resumedUses[1][0][MODULE_ID].sorcererAutomationBypass, true);
+    assert.equal(pointsItem(actor).system.uses.spent, 5);
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "chromatic-orb:3": { expiresAtRound: 4 }
+    });
+    assert.equal(actor.system.attributes.exhaustion, 1);
+    assert.equal(attackHookCalls, 1);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("a deferred virtual cast rolls back its payment when resumed D&D5e usage is cancelled or fails", async () => {
+  for (const resumedResult of [undefined, false]) {
+    const actor = levelActor(5, { includePoints: true });
+    const service = new SorcererAutomationService({
+      chooseVirtualSpellLevel: async () => ({ accepted: true, spellLevel: 3 })
+    });
+    await service.syncSorceryPoints(actor);
+    const activity = makeSorcererSpell(actor, { baseLevel: 3 });
+    activity.use = async () => resumedResult;
+
+    assert.equal(service.deferDnd5ePreUseActivity(activity, {}, {}, {}), false);
+    await waitForDeferredActivityUse();
+
+    assert.equal(pointsItem(actor).system.uses.spent, 0);
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {});
+    assert.equal(actor.system.attributes.exhaustion, 0);
+  }
 });
 
 test("virtual spell level selection uses the exact Sorcery Point table", async () => {

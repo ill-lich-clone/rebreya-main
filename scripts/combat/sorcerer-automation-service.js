@@ -132,7 +132,16 @@ function isSorcererSpellActivity(activity) {
     return false;
   }
 
-  return cleanText(documentFlag(item, "dnd5e", "advancementRoot")) === SORCERER_ADVANCEMENT_ROOT;
+  const advancementRoot = cleanText(documentFlag(item, "dnd5e", "advancementRoot"));
+  const [classItemId, advancementId] = advancementRoot.split(".", 2);
+  if (!classItemId || !advancementId) {
+    return false;
+  }
+
+  const classItem = collectionValues(actorFrom(activity)?.items)
+    .find((entry) => cleanText(entry?.id ?? entry?._id) === classItemId);
+  return classItem?.type === "class"
+    && cleanText(classItem?.system?.identifier) === SORCERER_ADVANCEMENT_ROOT;
 }
 
 function scaleValue(actor, scaleId) {
@@ -303,6 +312,7 @@ export class SorcererAutomationService {
       : moduleApi?.chooseVirtualSpellLevel instanceof Function
         ? moduleApi
         : {};
+    this._deferredActivities = new WeakSet();
   }
 
   async initialize() {
@@ -419,23 +429,45 @@ export class SorcererAutomationService {
     return true;
   }
 
-  async applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, _messageConfig = {}) {
-    if (!isSorcererSpellActivity(activity)) {
+  deferDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
+    if (this.#isDeferredDnd5eUse(usageConfig) || !isSorcererSpellActivity(activity)) {
       return true;
+    }
+
+    if (this._deferredActivities.has(activity)) {
+      return false;
+    }
+
+    this._deferredActivities.add(activity);
+    void this.#resolveDeferredDnd5eUse(activity, usageConfig, dialogConfig, messageConfig);
+    return false;
+  }
+
+  async applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, _messageConfig = {}) {
+    if (this.#isDeferredDnd5eUse(usageConfig) || !isSorcererSpellActivity(activity)) {
+      return true;
+    }
+
+    return (await this.#applyVirtualSlotPayment(activity, usageConfig, dialogConfig)) !== null;
+  }
+
+  async #applyVirtualSlotPayment(activity, usageConfig = {}, dialogConfig = {}) {
+    if (!isSorcererSpellActivity(activity)) {
+      return null;
     }
 
     const actor = actorFrom(activity);
     const baseLevel = spellBaseLevel(activity);
     const maxLevel = scaleValue(actor, MAXIMUM_SPELL_LEVEL_SCALE_ID);
     if (!actor || baseLevel < 1 || maxLevel < baseLevel) {
-      return false;
+      return null;
     }
 
     const choices = Object.entries(VIRTUAL_SLOT_COSTS)
       .map(([level, cost]) => ({ spellLevel: Number(level), cost }))
       .filter(({ spellLevel }) => spellLevel >= baseLevel && spellLevel <= maxLevel);
     if (!choices.length) {
-      return false;
+      return null;
     }
     const selected = await this.#chooseVirtualSpellLevel({
       actor,
@@ -446,12 +478,12 @@ export class SorcererAutomationService {
       baseLevel
     });
     if (!selected.accepted) {
-      return false;
+      return null;
     }
 
     const choice = choices.find(({ spellLevel }) => spellLevel === selected.spellLevel);
     if (!choice) {
-      return false;
+      return null;
     }
 
     const override = selected.exhaustionOverride || explicitExhaustionOverride(usageConfig, dialogConfig);
@@ -462,37 +494,66 @@ export class SorcererAutomationService {
       && toInteger(cooldowns[key]?.expiresAtRound, 0) > currentRound();
     const highLevelRepeat = choice.spellLevel >= 6 && highLevelCasts[String(choice.spellLevel)] === true;
     if ((activeCooldown || highLevelRepeat) && !override) {
-      return false;
+      return null;
     }
 
     const points = pointsFeature(actor);
     if (!points) {
-      return false;
+      return null;
     }
 
     const uses = points.system?.uses ?? {};
     const spent = Math.max(0, toInteger(uses.spent, 0));
     const max = Math.max(0, toInteger(uses.max, 0));
     if (max - spent < choice.cost) {
-      return false;
-    }
-
-    await updateDocument(points, { "system.uses.spent": spent + choice.cost });
-    if (choice.spellLevel <= 5) {
-      cooldowns[key] = { expiresAtRound: currentRound() + choice.spellLevel };
-      await setActorFlag(actor, COOLDOWNS_FLAG, cooldowns);
-    }
-    if (choice.spellLevel >= 6) {
-      highLevelCasts[String(choice.spellLevel)] = true;
-      await setActorFlag(actor, HIGH_LEVEL_CASTS_FLAG, highLevelCasts);
+      return null;
     }
 
     const exhaustion = override ? 1 : 0;
-    if (exhaustion) {
-      await updateDocument(actor, { "system.attributes.exhaustion": exhaustionLevel(actor) + exhaustion });
+    const state = {
+      actor,
+      points,
+      spent,
+      cooldowns: deepClone(cooldowns),
+      highLevelCasts: deepClone(highLevelCasts),
+      exhaustion: exhaustionLevel(actor),
+      pointsChanged: false,
+      cooldownsChanged: false,
+      highLevelCastsChanged: false,
+      exhaustionChanged: false,
+      rolledBack: false
+    };
+
+    try {
+      await updateDocument(points, { "system.uses.spent": spent + choice.cost });
+      state.pointsChanged = true;
+      if (choice.spellLevel <= 5) {
+        cooldowns[key] = { expiresAtRound: currentRound() + choice.spellLevel };
+        await setActorFlag(actor, COOLDOWNS_FLAG, cooldowns);
+        state.cooldownsChanged = true;
+      }
+      if (choice.spellLevel >= 6) {
+        highLevelCasts[String(choice.spellLevel)] = true;
+        await setActorFlag(actor, HIGH_LEVEL_CASTS_FLAG, highLevelCasts);
+        state.highLevelCastsChanged = true;
+      }
+      if (exhaustion) {
+        await updateDocument(actor, { "system.attributes.exhaustion": state.exhaustion + exhaustion });
+        state.exhaustionChanged = true;
+      }
+    }
+    catch (error) {
+      await this.#rollbackVirtualSlotPayment(state);
+      throw error;
     }
 
-    usageConfig.consumeSpellSlot = false;
+    const consume = usageConfig.consume && typeof usageConfig.consume === "object"
+      ? usageConfig.consume
+      : (usageConfig.consume = {});
+    consume.spellSlot = false;
+    usageConfig.spell ??= {};
+    usageConfig.spell.slot = `spell${choice.spellLevel}`;
+    usageConfig.scaling = Math.max(0, choice.spellLevel - baseLevel);
     usageConfig.spellCast = {
       spellLevel: choice.spellLevel,
       components: spellComponents(activity),
@@ -506,6 +567,80 @@ export class SorcererAutomationService {
         highLevelOverride: highLevelRepeat && override
       }
     };
-    return true;
+    return state;
+  }
+
+  async #resolveDeferredDnd5eUse(activity, usageConfig, dialogConfig, messageConfig) {
+    let payment = null;
+    try {
+      if (typeof activity?.use !== "function") {
+        return;
+      }
+
+      payment = await this.#applyVirtualSlotPayment(activity, usageConfig, dialogConfig);
+      if (!payment) {
+        return;
+      }
+
+      const result = await activity.use(
+        this.#resumeUsageConfig(usageConfig),
+        dialogConfig,
+        messageConfig
+      );
+      if (!result) {
+        await this.#rollbackVirtualSlotPayment(payment);
+      }
+    }
+    catch (error) {
+      if (payment) {
+        await this.#rollbackVirtualSlotPayment(payment);
+      }
+      console.error(`${MODULE_ID} | Failed to resume deferred Sorcerer spell use.`, error);
+    }
+    finally {
+      this._deferredActivities.delete(activity);
+    }
+  }
+
+  async #rollbackVirtualSlotPayment(state) {
+    if (!state || state.rolledBack) {
+      return;
+    }
+    state.rolledBack = true;
+
+    const updates = [];
+    if (state.pointsChanged) {
+      updates.push(updateDocument(state.points, { "system.uses.spent": state.spent }));
+    }
+    if (state.cooldownsChanged) {
+      updates.push(setActorFlag(state.actor, COOLDOWNS_FLAG, state.cooldowns));
+    }
+    if (state.highLevelCastsChanged) {
+      updates.push(setActorFlag(state.actor, HIGH_LEVEL_CASTS_FLAG, state.highLevelCasts));
+    }
+    if (state.exhaustionChanged) {
+      updates.push(updateDocument(state.actor, { "system.attributes.exhaustion": state.exhaustion }));
+    }
+
+    const results = await Promise.allSettled(updates);
+    for (const result of results) {
+      if (result.status === "rejected") {
+        console.error(`${MODULE_ID} | Failed to roll back Sorcerer virtual-slot payment.`, result.reason);
+      }
+    }
+  }
+
+  #resumeUsageConfig(usageConfig = {}) {
+    return {
+      ...usageConfig,
+      [MODULE_ID]: {
+        ...(usageConfig?.[MODULE_ID] ?? {}),
+        sorcererAutomationBypass: true
+      }
+    };
+  }
+
+  #isDeferredDnd5eUse(usageConfig) {
+    return usageConfig?.[MODULE_ID]?.sorcererAutomationBypass === true;
   }
 }

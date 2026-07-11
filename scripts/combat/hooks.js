@@ -173,6 +173,18 @@ export function registerCombatHooks(moduleApi) {
             return false;
           }
 
+          if (
+            hasSorcererService
+            && moduleApi.sorcererAutomationService.deferDnd5ePreUseActivity(
+              activity,
+              usageConfig,
+              dialogConfig,
+              messageConfig
+            ) === false
+          ) {
+            return false;
+          }
+
           return moduleApi.combatAttackService.applyDnd5ePreUseActivity(
             activity,
             usageConfig,
@@ -181,16 +193,7 @@ export function registerCombatHooks(moduleApi) {
           );
         };
 
-        if (!hasSorcererService) {
-          return continuePreUse();
-        }
-
-        return moduleApi.sorcererAutomationService.applyDnd5ePreUseActivity(
-          activity,
-          usageConfig,
-          dialogConfig,
-          messageConfig
-        ).then((result) => result === false ? false : continuePreUse());
+        return continuePreUse();
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to apply pre-use activity automation.`, error);
@@ -330,25 +333,31 @@ export function registerCombatHooks(moduleApi) {
   if (!hasAttackService && (hasSorcererService || hasSpellService)) {
     Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
       try {
-        const continuePreUse = () => hasSpellService
-          ? moduleApi.spellAutomationService.deferDnd5ePreUseActivity(
+        if (
+          hasSpellService
+          && moduleApi.spellAutomationService.deferDnd5ePreUseActivity(
             activity,
             usageConfig,
             dialogConfig,
             messageConfig
-          )
-          : true;
-
-        if (!hasSorcererService) {
-          return continuePreUse();
+          ) === false
+        ) {
+          return false;
         }
 
-        return moduleApi.sorcererAutomationService.applyDnd5ePreUseActivity(
-          activity,
-          usageConfig,
-          dialogConfig,
-          messageConfig
-        ).then((result) => result === false ? false : continuePreUse());
+        if (
+          hasSorcererService
+          && moduleApi.sorcererAutomationService.deferDnd5ePreUseActivity(
+            activity,
+            usageConfig,
+            dialogConfig,
+            messageConfig
+          ) === false
+        ) {
+          return false;
+        }
+
+        return true;
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to apply spell reaction automation.`, error);
