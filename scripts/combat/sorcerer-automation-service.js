@@ -27,8 +27,23 @@ const PREFLIGHT_FLAG = "sorcererAutomationPreflight";
 const FINAL_BYPASS_FLAG = "sorcererAutomationBypass";
 const REACTION_CHECK_COMPLETE_FLAG = "reactionCheckComplete";
 const METAMAGIC_SOURCE_TYPE = "sorcererMetamagic";
+const DRACONIC_ANCESTOR_SOURCE_TYPE = "sorcererDraconicAncestor";
 const MAX_EXTENDED_DURATION_SECONDS = 24 * 60 * 60;
 const SORCERER_CAST_DIALOG_WIDTH = 720;
+const COMPONENT_PROPERTY_KEYS = Object.freeze(new Set(["vocal", "somatic", "verbal", "s"]));
+const DAMAGE_TYPE_BY_LABEL = Object.freeze(new Map([
+  ["огонь", "fire"],
+  ["холод", "cold"],
+  ["электричество", "lightning"],
+  ["молния", "lightning"],
+  ["яд", "poison"],
+  ["кислота", "acid"],
+  ["fire", "fire"],
+  ["cold", "cold"],
+  ["lightning", "lightning"],
+  ["poison", "poison"],
+  ["acid", "acid"]
+]));
 const METAMAGIC_UI_TEXT = Object.freeze({
   "careful-spell": { name: "Аккуратное заклинание", detail: "Когда вы накладываете заклинание, которое вынуждает других существ совершить спасбросок, вы можете защитить некоторых из них от магического воздействия. Для этого вы тратите 1 единицу чародейства и выбираете существ в количестве, равном вашему модификатору Харизмы (минимум одно существо). Указанные существа автоматически преуспевают в спасброске от данного заклинания." },
   "distant-spell": { name: "Далёкое заклинание", detail: "При накладывании заклинания, дистанция которого 5 футов и более, вы можете потратить 1 единицу чародейства, чтобы удвоить это расстояние.\nПри накладывании заклинания с дистанцией «касание», вы можете потратить 1 единицу чародейства, чтобы увеличить это расстояние до 30 футов." },
@@ -108,6 +123,22 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function plainTextFromHtml(value) {
+  return String(value ?? "")
+    .replace(/<\s*br\s*\/?>/giu, "\n")
+    .replace(/<\s*\/p\s*>\s*<\s*p[^>]*>/giu, "\n")
+    .replace(/<[^>]*>/gu, "")
+    .replace(/&nbsp;/giu, " ")
+    .replace(/&lt;/giu, "<")
+    .replace(/&gt;/giu, ">")
+    .replace(/&quot;/giu, "\"")
+    .replace(/&#039;|&apos;/giu, "'")
+    .replace(/&amp;/giu, "&")
+    .replace(/[ \t]+\n/gu, "\n")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trim();
+}
+
 function dialogV2() {
   return globalThis.foundry?.applications?.api?.DialogV2 ?? globalThis.DialogV2 ?? null;
 }
@@ -177,12 +208,12 @@ function metamagicCostForOption(option = {}, spellLevel = 1, requestedCost = und
 }
 
 function metamagicDescription(item) {
-  return cleanText(
+  return cleanText(plainTextFromHtml(
     item?.system?.description?.value
       ?? item?.system?.description?.chat
       ?? item?.description?.value
       ?? item?.description
-  );
+  ));
 }
 
 function metamagicDisplayText(option = {}) {
@@ -531,6 +562,23 @@ function sharedSpellComponents(activity, overrides = {}) {
   };
 }
 
+function withoutVocalSomaticProperties(properties) {
+  if (properties instanceof Set) {
+    return new Set(Array.from(properties).filter((property) => !COMPONENT_PROPERTY_KEYS.has(cleanText(property))));
+  }
+  if (Array.isArray(properties)) {
+    return properties.filter((property) => !COMPONENT_PROPERTY_KEYS.has(cleanText(property)));
+  }
+  if (properties && typeof properties === "object") {
+    const adjusted = { ...properties };
+    for (const key of COMPONENT_PROPERTY_KEYS) {
+      delete adjusted[key];
+    }
+    return adjusted;
+  }
+  return undefined;
+}
+
 function spellRange(activity) {
   const range = activity?.range ?? activity?.system?.range ?? activity?.item?.system?.range ?? {};
   return {
@@ -608,6 +656,60 @@ function spellActivation(activity) {
 function spellHasDamage(activity) {
   const damage = activity?.damage ?? activity?.system?.damage ?? activity?.item?.system?.damage ?? {};
   return Array.isArray(damage?.parts) && damage.parts.length > 0;
+}
+
+function spellDamageParts(activity) {
+  const parts = activity?.damage?.parts ?? activity?.system?.damage?.parts ?? activity?.item?.system?.damage?.parts ?? [];
+  return Array.isArray(parts) ? deepClone(parts) : [];
+}
+
+function normalizedDamageType(value) {
+  const text = cleanText(value).toLowerCase();
+  return DAMAGE_TYPE_BY_LABEL.get(text) ?? text;
+}
+
+function damagePartType(part = {}) {
+  return normalizedDamageType(part?.types?.[0] ?? part?.type ?? part?.damageType);
+}
+
+function firstSpellDamageType(activity) {
+  return spellDamageParts(activity).map(damagePartType).find(Boolean) ?? "";
+}
+
+function draconicAncestorDamageType(actor) {
+  const ancestor = collectionValues(actor?.items)
+    .find((item) => cleanText(documentFlag(item, MODULE_ID, "sourceType")) === DRACONIC_ANCESTOR_SOURCE_TYPE);
+  return normalizedDamageType(documentFlag(ancestor, MODULE_ID, "damageType"));
+}
+
+function metamagicDamagePart({ id, formula, damageType }) {
+  const safeFormula = cleanText(formula);
+  const safeDamageType = normalizedDamageType(damageType);
+  return {
+    _id: cleanText(id, "rebreya-metamagic-damage"),
+    formula: safeFormula,
+    types: safeDamageType ? [safeDamageType] : [],
+    custom: {
+      enabled: true,
+      formula: safeFormula
+    }
+  };
+}
+
+function appendSpellDamagePart(activity, part) {
+  const safePart = deepClone(part);
+  const nextParts = [
+    ...spellDamageParts(activity).filter((entry) => cleanText(entry?._id ?? entry?.id) !== cleanText(safePart._id)),
+    safePart
+  ];
+  updateSource(activity, {
+    "damage.parts": nextParts,
+    "system.damage.parts": nextParts
+  });
+  updateSource(activity?.item, {
+    "system.damage.parts": nextParts
+  });
+  return safePart;
 }
 
 function spellHasAttack(activity) {
@@ -730,6 +832,25 @@ function spellCastCardFlag(message) {
     metamagic,
     components
   };
+}
+
+function rollConfigMessageId(rollConfig = {}) {
+  return cleanText(
+    rollConfig?.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId
+      ?? rollConfig?.message?.id
+      ?? rollConfig?.message?._id
+      ?? rollConfig?.messageId
+      ?? rollConfig?.options?.messageId
+      ?? rollConfig?.options?.originatingMessage
+      ?? rollConfig?.rolls?.[0]?.options?.messageId
+      ?? rollConfig?.rolls?.[0]?.options?.originatingMessage
+  );
+}
+
+function saveOverridesTargetMatches(overrides = {}, actorUuid = "") {
+  const targetMatches = (uuid) => cleanText(uuid) === actorUuid;
+  return Boolean((overrides.carefulTargetUuids ?? []).some(targetMatches)
+    || targetMatches(overrides.heightenedTargetUuid));
 }
 
 function isCooldownCardForActor(metadata, actor, cooldownKey) {
@@ -1029,14 +1150,14 @@ export class SorcererAutomationService {
       ? `<label class="rebreya-sorcerer-toggle" data-sorcerer-exhaustion-row${currentChoiceNeedsExhaustion ? "" : " hidden"}><input type="checkbox" name="exhaustionOverride"><span>Игнорировать ограничение ценой истощения</span></label>`
       : "";
     const metamagicSection = metamagicCheckboxes
-      ? `<section class="rebreya-sorcerer-metamagic"><h3>Метамагия</h3>${metamagicCheckboxes}<div class="rebreya-sorcerer-metamagic__fields"><label data-metamagic-fields="careful-spell" hidden>Аккуратное: существа, автоматически преуспевающие в спасброске<select name="carefulTargets" multiple>${targetOptions}</select></label><label data-metamagic-fields="heightened-spell" hidden>Непреодолимое: цель с помехой к первому спасброску<select name="heightenedTarget">${targetOptions}</select></label><p data-metamagic-fields="twinned-spell" hidden>Удвоенное: выберите две подходящие цели обычным инструментом выбора целей Foundry.</p><label data-metamagic-fields="empowered-spell" hidden>Усиленное: кубы для переброса<select name="damageDice" multiple>${dieOptions}</select></label></div></section>`
+      ? `<section class="rebreya-sorcerer-metamagic"><h3>Метамагия</h3>${metamagicCheckboxes}<div class="rebreya-sorcerer-metamagic__fields"><label data-metamagic-fields="careful-spell" hidden>Аккуратное: существа, автоматически преуспевающие в спасброске<select name="carefulTargets" multiple>${targetOptions}</select></label><label data-metamagic-fields="heightened-spell" hidden>Непреодолимое: цель с помехой к первому спасброску<select name="heightenedTarget">${targetOptions}</select></label><div class="rebreya-sorcerer-field-hint" data-metamagic-fields="twinned-spell" hidden>Удвоенное: выберите две подходящие цели обычным инструментом выбора целей Foundry.</div><label data-metamagic-fields="empowered-spell" hidden>Усиленное: кубы для переброса<select name="damageDice" multiple>${dieOptions}</select></label></div></section>`
       : "";
     const initialChoice = choices.find(({ spellLevel }) => spellLevel === baseLevel) ?? choices[0];
     const result = await DialogV2.wait({
       window: { title: "Единицы чародейства" },
       position: { width: SORCERER_CAST_DIALOG_WIDTH },
       render: (...args) => bindSorcererCastDialogControls(...args),
-      content: `<div class="rebreya-sorcerer-choice-row rebreya-sorcerer-cast-dialog" data-sorcerer-cast-dialog><p>Выберите уровень ячейки и её стоимость в единицах чародейства.</p><label class="rebreya-sorcerer-field">Уровень ячейки<select name="spellLevel">${options}</select></label><div class="rebreya-sorcerer-toggle-row"><label class="rebreya-sorcerer-toggle"><input type="checkbox" name="consumeResource" checked><span>Расходовать ресурс</span></label>${exhaustionOverride}</div>${metamagicSection}<output class="rebreya-sorcerer-total">итого: <strong data-sorcerer-total>${initialChoice?.cost ?? 0}</strong> единиц чародейства</output></div>`,
+      content: `<div class="rebreya-sorcerer-choice-row rebreya-sorcerer-cast-dialog" data-sorcerer-cast-dialog><div class="rebreya-sorcerer-dialog-copy">Выберите уровень ячейки и её стоимость в единицах чародейства.</div><label class="rebreya-sorcerer-field">Уровень ячейки<select name="spellLevel">${options}</select></label><div class="rebreya-sorcerer-toggle-row"><label class="rebreya-sorcerer-toggle"><input type="checkbox" name="consumeResource" checked><span>Расходовать ресурс</span></label>${exhaustionOverride}</div>${metamagicSection}<output class="rebreya-sorcerer-total">итого: <strong data-sorcerer-total>${initialChoice?.cost ?? 0}</strong> единиц чародейства</output></div>`,
       buttons: [{
         action: "cast",
         label: "Сотворить",
@@ -1131,7 +1252,7 @@ export class SorcererAutomationService {
       window: { title: "Метамагия" },
       position: { width: SORCERER_CAST_DIALOG_WIDTH },
       render: (...args) => bindSorcererCastDialogControls(...args),
-      content: `<div class="rebreya-sorcerer-choice-row" data-sorcerer-cast-dialog><input type="hidden" name="spellLevel" value="${spellLevel}" data-sorcerer-cost="${virtualCost}">${checkboxes}<label data-metamagic-fields="careful-spell" hidden>Аккуратное: существа, автоматически преуспевающие в спасброске<select name="carefulTargets" multiple>${targetOptions}</select></label><label data-metamagic-fields="heightened-spell" hidden>Непреодолимое: цель с помехой к первому спасброску<select name="heightenedTarget">${targetOptions}</select></label><p data-metamagic-fields="twinned-spell" hidden>Удвоенное: выберите две подходящие цели обычным инструментом выбора целей Foundry.</p><label data-metamagic-fields="empowered-spell" hidden>Усиленное: кубы для переброса<select name="damageDice" multiple>${dieOptions}</select></label><output>Итого: <strong data-sorcerer-total>${virtualCost}</strong> ед. чародейства</output></div>`,
+      content: `<div class="rebreya-sorcerer-choice-row" data-sorcerer-cast-dialog><input type="hidden" name="spellLevel" value="${spellLevel}" data-sorcerer-cost="${virtualCost}">${checkboxes}<label data-metamagic-fields="careful-spell" hidden>Аккуратное: существа, автоматически преуспевающие в спасброске<select name="carefulTargets" multiple>${targetOptions}</select></label><label data-metamagic-fields="heightened-spell" hidden>Непреодолимое: цель с помехой к первому спасброску<select name="heightenedTarget">${targetOptions}</select></label><div class="rebreya-sorcerer-field-hint" data-metamagic-fields="twinned-spell" hidden>Удвоенное: выберите две подходящие цели обычным инструментом выбора целей Foundry.</div><label data-metamagic-fields="empowered-spell" hidden>Усиленное: кубы для переброса<select name="damageDice" multiple>${dieOptions}</select></label><output>Итого: <strong data-sorcerer-total>${virtualCost}</strong> ед. чародейства</output></div>`,
       buttons: [{
         action: "confirm",
         label: "Применить",
@@ -1221,6 +1342,9 @@ export class SorcererAutomationService {
       if (id === "empowered-spell" && (!spellHasDamage(activity) || !selectedDamageDice || selectedDamageDice.length < 1 || selectedDamageDice.length > charismaModifier(actor))) {
         return null;
       }
+      if (id === "draconic-dragon-spell" && !spellHasDamage(activity)) {
+        return null;
+      }
       if (id === "quickened-spell" && spellActivation(activity).type !== "action") {
         return null;
       }
@@ -1278,6 +1402,10 @@ export class SorcererAutomationService {
           if (Object.hasOwn(systemComponents, "somatic")) updates["system.components.somatic"] = false;
           if (Object.hasOwn(systemComponents, "s")) updates["system.components.s"] = false;
         }
+        const systemProperties = withoutVocalSomaticProperties(activity?.system?.properties);
+        if (systemProperties !== undefined) {
+          updates["system.properties"] = systemProperties;
+        }
         const itemComponentUpdates = {};
         const itemComponents = activity?.item?.system?.components;
         if (itemComponents && typeof itemComponents === "object") {
@@ -1286,20 +1414,37 @@ export class SorcererAutomationService {
           if (Object.hasOwn(itemComponents, "somatic")) itemComponentUpdates["system.components.somatic"] = false;
           if (Object.hasOwn(itemComponents, "s")) itemComponentUpdates["system.components.s"] = false;
         }
-        const properties = activity?.item?.system?.properties;
-        if (properties instanceof Set) {
-          const adjusted = new Set(properties);
-          adjusted.delete("vocal");
-          adjusted.delete("somatic");
-          adjusted.delete("verbal");
-          adjusted.delete("s");
-          itemComponentUpdates["system.properties"] = adjusted;
-        }
-        else if (Array.isArray(properties)) {
-          itemComponentUpdates["system.properties"] = properties.filter((property) => !["vocal", "somatic", "verbal", "s"].includes(property));
+        const itemProperties = withoutVocalSomaticProperties(activity?.item?.system?.properties);
+        if (itemProperties !== undefined) {
+          itemComponentUpdates["system.properties"] = itemProperties;
         }
         updateSource(activity.item, itemComponentUpdates);
         modifiers.subtle = true;
+      }
+      else if (id === "draconic-dragon-spell") {
+        const option = meta.options?.find((entry) => entry.id === id) ?? { selectedCost: 1 };
+        const diceCount = this.#metamagicCost(option, plan.choice.spellLevel, option.selectedCost);
+        const formula = `${diceCount}d6`;
+        const damageType = draconicAncestorDamageType(plan.actor) || firstSpellDamageType(activity);
+        const part = appendSpellDamagePart(activity, metamagicDamagePart({
+          id: "rebreya-draconic-dragon-spell",
+          formula,
+          damageType
+        }));
+        modifiers.draconicDragonSpell = {
+          formula,
+          damageType: damagePartType(part),
+          cost: diceCount
+        };
+        messageConfig.data ??= {};
+        messageConfig.data.flags ??= {};
+        messageConfig.data.flags[MODULE_ID] ??= {};
+        messageConfig.data.flags[MODULE_ID].damageBonus = {
+          source: id,
+          formula,
+          damageType: damagePartType(part),
+          cost: diceCount
+        };
       }
       else if (id === "extended-spell") {
         const duration = spellDuration(activity);
@@ -1920,8 +2065,8 @@ export class SorcererAutomationService {
       return false;
     }
     const content = cost > 0
-      ? `<p>Spend ${cost} Sorcery Points to reroll this missed spell attack?</p>`
-      : "<p>Reroll this missed spell attack?</p>";
+      ? `<div class="rebreya-sorcerer-dialog-copy">Spend ${cost} Sorcery Points to reroll this missed spell attack?</div>`
+      : `<div class="rebreya-sorcerer-dialog-copy">Reroll this missed spell attack?</div>`;
     const result = await DialogV2.wait({
       window: { title: "Seeking Spell" },
       content,
@@ -1945,10 +2090,11 @@ export class SorcererAutomationService {
       const record = typeof message?.getFlag === "function"
         ? {
           damageReroll: message.getFlag(MODULE_ID, "damageReroll"),
+          damageBonus: message.getFlag(MODULE_ID, "damageBonus"),
           attackReroll: message.getFlag(MODULE_ID, "attackReroll")
         }
         : getProperty(message, `flags.${MODULE_ID}`, {});
-      if (record?.damageReroll || record?.attackReroll) {
+      if (record?.damageReroll || record?.damageBonus || record?.attackReroll) {
         this._metamagicRecordsByMessage.set(id, deepClone(record));
       }
     }
@@ -1996,10 +2142,11 @@ export class SorcererAutomationService {
     const record = typeof message?.getFlag === "function"
       ? {
         damageReroll: message.getFlag(MODULE_ID, "damageReroll"),
+        damageBonus: message.getFlag(MODULE_ID, "damageBonus"),
         attackReroll: message.getFlag(MODULE_ID, "attackReroll")
       }
       : getProperty(message, `flags.${MODULE_ID}`, null);
-    if (record?.damageReroll || record?.attackReroll) {
+    if (record?.damageReroll || record?.damageBonus || record?.attackReroll) {
       this._metamagicRecordsByMessage.set(usageMessageId, deepClone(record));
       return record;
     }
@@ -2007,19 +2154,29 @@ export class SorcererAutomationService {
   }
 
   applyDnd5ePreRollSavingThrow(rollConfig = {}) {
-    const messageId = cleanText(rollConfig?.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId);
+    const messageId = rollConfigMessageId(rollConfig);
     let overrides = this._saveOverridesByMessage.get(messageId);
     if (!overrides && messageId) {
       const message = globalThis.game?.messages?.get?.(messageId);
-      const persisted = typeof message?.getFlag === "function"
-        ? message.getFlag(MODULE_ID, "saveOverrides")
-        : getProperty(message, `flags.${MODULE_ID}.saveOverrides`, null);
+      const sourceMessage = message ?? rollConfig?.message;
+      const persisted = typeof sourceMessage?.getFlag === "function"
+        ? sourceMessage.getFlag(MODULE_ID, "saveOverrides")
+        : getProperty(sourceMessage, `flags.${MODULE_ID}.saveOverrides`, null);
       if (persisted && typeof persisted === "object") {
         overrides = deepClone(persisted);
         this._saveOverridesByMessage.set(messageId, overrides);
       }
     }
     const actorUuid = cleanText(rollConfig?.subject?.uuid);
+    let cacheKey = messageId;
+    if (!overrides && actorUuid) {
+      const cached = Array.from(this._saveOverridesByMessage.entries())
+        .reverse()
+        .find(([, entry]) => saveOverridesTargetMatches(entry, actorUuid));
+      if (cached) {
+        [cacheKey, overrides] = cached;
+      }
+    }
     if (!overrides || !actorUuid) {
       return true;
     }
@@ -2039,12 +2196,48 @@ export class SorcererAutomationService {
         roll.options.disadvantage = true;
       }
       overrides.heightenedUsed = true;
-      this._saveOverridesByMessage.set(messageId, overrides);
+      if (cacheKey) {
+        this._saveOverridesByMessage.set(cacheKey, overrides);
+      }
     }
     return true;
   }
 
-  applyDnd5ePreRollDamage(_rollConfig = {}, _dialogConfig = {}, _messageConfig = {}) {
+  applyDnd5ePreRollDamage(rollConfig = {}, _dialogConfig = {}, _messageConfig = {}) {
+    const messageId = rollConfigMessageId(rollConfig);
+    let record = messageId ? this._metamagicRecordsByMessage.get(messageId) : null;
+    if (!record && messageId) {
+      const message = globalThis.game?.messages?.get?.(messageId) ?? rollConfig?.message;
+      const damageBonus = typeof message?.getFlag === "function"
+        ? message.getFlag(MODULE_ID, "damageBonus")
+        : getProperty(message, `flags.${MODULE_ID}.damageBonus`, null);
+      if (damageBonus) {
+        record = { damageBonus };
+        this._metamagicRecordsByMessage.set(messageId, deepClone(record));
+      }
+    }
+
+    const bonus = record?.damageBonus;
+    if (!bonus?.formula) {
+      return true;
+    }
+    const activity = rollConfig?.subject ?? rollConfig?.activity ?? null;
+    const alreadyApplied = spellDamageParts(activity)
+      .some((part) => cleanText(part?._id ?? part?.id) === "rebreya-draconic-dragon-spell");
+    if (alreadyApplied) {
+      return true;
+    }
+    const damageType = normalizedDamageType(bonus.damageType);
+    rollConfig.rolls ??= [];
+    rollConfig.rolls.push({
+      data: actorFrom(activity)?.getRollData?.() ?? {},
+      parts: [cleanText(bonus.formula)],
+      options: {
+        type: damageType,
+        types: damageType ? [damageType] : [],
+        flavor: "Драконье заклятье"
+      }
+    });
     return true;
   }
 

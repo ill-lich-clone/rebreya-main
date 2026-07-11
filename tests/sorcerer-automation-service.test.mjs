@@ -204,6 +204,17 @@ function addMetamagic(actor, metamagicId, cost, stacking = "base", extraFlags = 
   return item;
 }
 
+function addDraconicAncestor(actor, damageType = "Огонь") {
+  const item = makeItemFromData(actor, {
+    name: "Красный дракон",
+    type: "feat",
+    flags: { [MODULE_ID]: { sourceType: "sorcererDraconicAncestor", damageType } },
+    system: { identifier: "red-dragon-ancestor" }
+  }, "red-dragon-ancestor");
+  actor.items.contents.push(item);
+  return item;
+}
+
 function metamagicActor(level = 3) {
   const actor = levelActor(level, { includePoints: true });
   actor.system.abilities = { cha: { mod: 3 } };
@@ -1106,7 +1117,7 @@ test("variable origin metamagic uses the selected slider cost for totals and pay
     minCost: 1,
     maxCost: 3,
     metamagicAutomation: "draconic-dragon-spell",
-    description: "Dragon spell full source text."
+    description: "<p>Dragon spell full source text.</p>"
   });
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
@@ -1134,9 +1145,13 @@ test("variable origin metamagic uses the selected slider cost for totals and pay
   try {
     const usageConfig = {};
     const messageConfig = {};
-    assert.equal(await service.applyDnd5ePreUseActivity(makeDnd5eActivityClone(makeSorcererSpell(actor)), usageConfig, {}, messageConfig), true);
+    assert.equal(await service.applyDnd5ePreUseActivity(makeDnd5eActivityClone(makeSorcererSpell(actor, {
+      system: { damage: { parts: [{ _id: "base-fire", formula: "1d6", types: ["fire"] }] } }
+    })), usageConfig, {}, messageConfig), true);
     assert.match(dialogs[0].content, /name="metamagicCost\.draconic-dragon-spell"/u);
     assert.match(dialogs[0].content, /type="range"/u);
+    assert.match(dialogs[0].content, /Dragon spell full source text\./u);
+    assert.doesNotMatch(dialogs[0].content, /(?:<|&lt;)\/?p(?:>|&gt;)/u);
     assert.equal(pointsItem(actor).system.uses.spent, 5);
     assert.deepEqual(usageConfig.spellCast.payment, { resource: "sorcery-points", cost: 5 });
     assert.deepEqual(usageConfig.spellCast.metamagic, [{
@@ -2044,13 +2059,84 @@ test("RED: Subtle removes native dnd5e vocal and somatic item properties on the 
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
   const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
-    system: { properties: new Set(["vocal", "somatic", "material"]) }
+    system: {
+      components: { vocal: true, somatic: true, material: true },
+      properties: new Set(["vocal", "somatic", "material"])
+    }
   }));
+  activity.system.properties = new Set(["vocal", "somatic", "material"]);
   assert.equal(await service.applyDnd5ePreUseActivity(activity, {
     sorcererVirtualSpellLevel: 1,
     sorcererMetamagic: { ids: ["subtle-spell"] }
   }, {}, {}), true);
+  assert.deepEqual(activity.components, { vocal: false, somatic: false, material: true });
+  assert.deepEqual(activity.system.components, { vocal: false, somatic: false, material: true });
+  assert.deepEqual(activity.item.system.components, { vocal: false, somatic: false, material: true });
+  assert.deepEqual(Array.from(activity.system.properties).sort(), ["material"]);
   assert.deepEqual(Array.from(activity.item.system.properties).sort(), ["material"]);
+});
+
+test("Heightened applies disadvantage to the first save from a persisted usage message", () => {
+  const service = new SorcererAutomationService({});
+  const message = {
+    id: "usage-card",
+    getFlag: (_scope, key) => key === "saveOverrides"
+      ? {
+        carefulTargetUuids: [],
+        heightenedTargetUuid: "Actor.enemy",
+        heightenedUsed: false
+      }
+      : undefined
+  };
+  service.handleDnd5ePostCreateUsageMessage(null, message);
+
+  const firstSave = {
+    subject: { uuid: "Actor.enemy" },
+    message: { id: "usage-card" },
+    rolls: [{ options: {} }]
+  };
+  assert.equal(service.applyDnd5ePreRollSavingThrow(firstSave), true);
+  assert.equal(firstSave.disadvantage, true);
+  assert.equal(firstSave.rolls[0].options.disadvantage, true);
+
+  const secondSave = {
+    subject: { uuid: "Actor.enemy" },
+    message: { id: "usage-card" },
+    rolls: [{ options: {} }]
+  };
+  service.applyDnd5ePreRollSavingThrow(secondSave);
+  assert.equal(secondSave.disadvantage, undefined);
+});
+
+test("Draconic Dragon Spell adds one d6 damage per selected Sorcery Point", async () => {
+  const actor = metamagicActor();
+  addDraconicAncestor(actor, "Огонь");
+  addMetamagic(actor, "draconic-dragon-spell", 3, "base", {
+    costMode: "variable",
+    minCost: 1,
+    maxCost: 3,
+    metamagicAutomation: "draconic-dragon-spell"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "base-fire", formula: "1d6", types: ["fire"] }] } }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: {
+      ids: ["draconic-dragon-spell"],
+      costs: { "draconic-dragon-spell": 2 }
+    }
+  }, {}, {}), true);
+
+  const added = activity.damage.parts.find((part) => part._id === "rebreya-draconic-dragon-spell");
+  assert.equal(added.formula, "2d6");
+  assert.deepEqual(added.types, ["fire"]);
+  assert.deepEqual(activity.system.damage.parts.at(-1), added);
+  assert.deepEqual(activity.item.system.damage.parts.at(-1), added);
+  assert.equal(pointsItem(actor).system.uses.spent, 4);
 });
 
 test("Subtle usage message names metamagic and replaces V/S component pills", async () => {

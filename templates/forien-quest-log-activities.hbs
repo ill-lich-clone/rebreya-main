@@ -1,74 +1,85 @@
-<div class="tab rm-fql-log-panel" data-group="primary" data-tab="rebreya-rumors" data-rm-fql-log-panel="rumors" hidden>
-  <header class="rm-fql-log-panel__header">
-    <h1>Слухи</h1>
+<div class="tab rebreya-rumors rm-fql-log-panel" data-group="primary" data-tab="rebreya-rumors" data-rm-fql-log-panel="rumors">
+  <header>
+    <h1 style="flex: 1;">Слухи</h1>
     {{#if canEdit}}
       <button type="button" data-rm-fql-log-action="add-rumor-topic"><i class="fas fa-plus"></i> Слух</button>
     {{/if}}
   </header>
 
-  {{#if hasGroupContext}}
-    <div class="rm-fql-log-list">
-      {{#each activities.rumors}}
-        <article class="rm-fql-log-card" data-rumor-id="{{id}}">
-          <header>
-            <h2><button type="button" class="rm-fql-log-link" data-rm-fql-log-action="open-rumor-topic" data-rumor-id="{{id}}">{{title}}</button></h2>
-            <div class="rm-fql-log-card__actions">
+  <div class="table">
+    {{#if hasGroupContext}}
+      <ul>
+        {{#each activities.rumors}}
+          <li class="drag-quest rm-fql-activity-row" data-rumor-id="{{id}}" draggable="false">
+            <i class="open-quest fas fa-comments pad-l-4" data-rm-fql-log-action="open-rumor-topic" data-rumor-id="{{id}}"></i>
+            <div class="open-quest title" data-rm-fql-log-action="open-rumor-topic" data-rumor-id="{{id}}">
+              <h2>{{title}}</h2>
+              {{#if tableUuid}}<p>{{tableUuid}}</p>{{/if}}
+            </div>
+            <div class="open-quest tasks" data-rm-fql-log-action="open-rumor-topic" data-rumor-id="{{id}}" title="Записи слухов">{{entries.length}}</div>
+            <div class="actions quest-status rm-fql-log-actions">
               {{#if ../canEdit}}
-                <button type="button" data-rm-fql-log-action="roll-rumor-table" data-rumor-id="{{id}}" data-table-uuid="{{tableUuid}}" {{#unless tableUuid}}disabled{{/unless}}><i class="fas fa-dice-d20"></i></button>
+                <i class="fas fa-dice-d20 {{#unless tableUuid}}is-disabled{{/unless}}" data-rm-fql-log-action="roll-rumor-table" data-rumor-id="{{id}}" data-table-uuid="{{tableUuid}}" title="Бросить из таблицы"></i>
               {{/if}}
-              <button type="button" data-rm-fql-log-action="open-rumor-topic" data-rumor-id="{{id}}"><i class="fas fa-folder-open"></i></button>
+              <i class="fas fa-folder-open" data-rm-fql-log-action="open-rumor-topic" data-rumor-id="{{id}}" title="Открыть"></i>
               {{#if ../canEdit}}
-                <button type="button" data-rm-fql-log-action="remove-rumor-topic" data-rumor-id="{{id}}"><i class="fas fa-trash"></i></button>
+                <i class="delete fas fa-trash" data-rm-fql-log-action="remove-rumor-topic" data-rumor-id="{{id}}" title="Удалить"></i>
               {{/if}}
             </div>
-          </header>
-          {{#if tableUuid}}<p class="rm-fql-log-muted">{{tableUuid}}</p>{{/if}}
-          <ul class="rm-fql-rumor-entries">
-            {{#each entries}}
-              <li class="{{#if hidden}}is-hidden{{/if}}" data-rumor-entry-id="{{id}}">
-                <i class="fas {{#if hidden}}fa-eye-slash{{else}}fa-eye{{/if}}"></i>
-                <span>{{text}}</span>
-              </li>
-            {{/each}}
-          </ul>
-        </article>
-      {{else}}
-        <p class="rm-fql-log-empty">Слухов нет.</p>
-      {{/each}}
-    </div>
-  {{else}}
-    <p class="rm-fql-log-empty">Активная группа Rebreya не найдена.</p>
-  {{/if}}
+          </li>
+        {{else}}
+          <li class="drag-quest rm-fql-activity-row rm-fql-log-empty">
+            <div class="title"><h2>Слухов нет.</h2></div>
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <ul>
+        <li class="drag-quest rm-fql-activity-row rm-fql-log-empty">
+          <div class="title"><h2>Активная группа Rebreya не найдена.</h2></div>
+        </li>
+      </ul>
+    {{/if}}
+  </div>
 </div>
 
-<div class="tab rm-fql-log-panel" data-group="primary" data-tab="rebreya-events" data-rm-fql-log-panel="events" hidden>
-  <header class="rm-fql-log-panel__header">
-    <h1>События</h1>
+<div class="tab rebreya-events rm-fql-log-panel" data-group="primary" data-tab="rebreya-events" data-rm-fql-log-panel="events">
+  <header>
+    <h1 style="flex: 1;">События</h1>
     {{#if canEdit}}
       <button type="button" data-rm-fql-log-action="add-event"><i class="fas fa-plus"></i> Событие</button>
     {{/if}}
   </header>
 
-  {{#if hasGroupContext}}
-    <div class="rm-fql-log-list">
-      {{#each activities.events}}
-        <article class="rm-fql-log-card" data-event-id="{{id}}">
-          <header>
-            <h2><button type="button" class="rm-fql-log-link" data-rm-fql-log-action="open-event" data-event-id="{{id}}">{{title}}</button></h2>
-            <div class="rm-fql-log-card__actions">
-              <button type="button" data-rm-fql-log-action="open-event" data-event-id="{{id}}"><i class="fas fa-folder-open"></i></button>
+  <div class="table">
+    {{#if hasGroupContext}}
+      <ul>
+        {{#each activities.events}}
+          <li class="drag-quest rm-fql-activity-row" data-event-id="{{id}}" draggable="false">
+            <i class="open-quest fas fa-calendar-day pad-l-4" data-rm-fql-log-action="open-event" data-event-id="{{id}}"></i>
+            <div class="open-quest title" data-rm-fql-log-action="open-event" data-event-id="{{id}}">
+              <h2>{{title}}</h2>
+              {{#if text}}<p>{{text}}</p>{{/if}}
+            </div>
+            <div class="actions quest-status rm-fql-log-actions">
+              <i class="fas fa-folder-open" data-rm-fql-log-action="open-event" data-event-id="{{id}}" title="Открыть"></i>
               {{#if ../canEdit}}
-                <button type="button" data-rm-fql-log-action="remove-event" data-event-id="{{id}}"><i class="fas fa-trash"></i></button>
+                <i class="delete fas fa-trash" data-rm-fql-log-action="remove-event" data-event-id="{{id}}" title="Удалить"></i>
               {{/if}}
             </div>
-          </header>
-          {{#if text}}<p>{{text}}</p>{{/if}}
-        </article>
-      {{else}}
-        <p class="rm-fql-log-empty">Событий нет.</p>
-      {{/each}}
-    </div>
-  {{else}}
-    <p class="rm-fql-log-empty">Активная группа Rebreya не найдена.</p>
-  {{/if}}
+          </li>
+        {{else}}
+          <li class="drag-quest rm-fql-activity-row rm-fql-log-empty">
+            <div class="title"><h2>Событий нет.</h2></div>
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <ul>
+        <li class="drag-quest rm-fql-activity-row rm-fql-log-empty">
+          <div class="title"><h2>Активная группа Rebreya не найдена.</h2></div>
+        </li>
+      </ul>
+    {{/if}}
+  </div>
 </div>

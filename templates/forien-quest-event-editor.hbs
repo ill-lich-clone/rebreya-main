@@ -1,18 +1,45 @@
-<form class="rm-fql-activity-editor rm-fql-event-editor" autocomplete="off">
-  <div class="rm-fql-editor-field">
-    <label>Название</label>
-    <input type="text" name="rm-fql-event-title" value="{{event.title}}" {{#unless canEdit}}readonly{{/unless}}>
-  </div>
+<form class="quest-preview rm-fql-activity-editor rm-fql-event-editor" autocomplete="off">
+  <nav class="quest-tabs tabs" data-group="primary">
+    <a class="item" data-tab="details">Подробности</a>
+  </nav>
 
-  <div class="rm-fql-editor-field rm-fql-editor-field--grow">
-    <label>Описание</label>
-    <textarea name="rm-fql-event-text" rows="12" {{#unless canEdit}}readonly{{/unless}}>{{event.text}}</textarea>
-  </div>
+  <section class="quest-body">
+    <div class="tab details" data-group="primary" data-tab="details">
+      <header class="details-header">
+        <div class="quest-giver-gc">
+          <span class="drop-info"><i class="fas fa-calendar-day"></i></span>
+        </div>
 
-  {{#if canEdit}}
-    <footer class="rm-fql-editor-actions">
-      <button type="button" data-rm-fql-editor-action="save-event"><i class="fas fa-save"></i> Сохранить</button>
-      <button type="button" data-rm-fql-editor-action="remove-event"><i class="fas fa-trash"></i> Удалить</button>
-    </footer>
-  {{/if}}
+        <div class="quest-setup">
+          <div class="quest-title">
+            <div class="editable-container">
+              <h1>{{event.title}}</h1>
+            </div>
+          </div>
+          <section>
+            <div class="quest-details">
+              <div class="rm-fql-editor-field">
+                <label>Название</label>
+                <input type="text" name="rm-fql-event-title" value="{{event.title}}" {{#unless canEdit}}readonly{{/unless}}>
+              </div>
+              <div class="quest-status"><p>Событие группы</p></div>
+            </div>
+            {{#if canEdit}}
+              <div class="actions quest-status">
+                <i class="fas fa-save" data-rm-fql-editor-action="save-event" title="Сохранить"></i>
+                <i class="delete fas fa-trash" data-rm-fql-editor-action="remove-event" title="Удалить"></i>
+              </div>
+            {{/if}}
+          </section>
+        </div>
+      </header>
+
+      <div class="quest-info rm-fql-editor-full">
+        <div class="quest-description">
+          <h2>Описание</h2>
+          <textarea name="rm-fql-event-text" rows="14" {{#unless canEdit}}readonly{{/unless}}>{{event.text}}</textarea>
+        </div>
+      </div>
+    </div>
+  </section>
 </form>

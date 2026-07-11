@@ -40,6 +40,7 @@ test("Forien quest overlay integration wires search filtering and editable row a
 test("Forien quest integration wires subtasks, right-click task failure, and activity tabs", async () => {
   const source = await readFile(new URL("../scripts/integrations/forien-quest-log.js", import.meta.url), "utf8");
   const template = await readFile(new URL("../templates/forien-quest-log-activities.hbs", import.meta.url), "utf8");
+  const logTemplate = await readFile(new URL("../templates/forien-quest-log.hbs", import.meta.url), "utf8");
   const rumorEditor = await readFile(new URL("../templates/forien-quest-rumor-editor.hbs", import.meta.url), "utf8");
   const eventEditor = await readFile(new URL("../templates/forien-quest-event-editor.hbs", import.meta.url), "utf8");
   const css = await readFile(new URL("../styles/quest-log-enhancements.css", import.meta.url), "utf8");
@@ -52,19 +53,39 @@ test("Forien quest integration wires subtasks, right-click task failure, and act
   assert.match(source, /contextmenu/u);
   assert.match(source, /markTaskFailed/u);
   assert.match(source, /injectQuestTaskEnhancements/u);
-  assert.match(source, /injectQuestLogActivities/u);
+  assert.match(source, /patchQuestLogApplication/u);
+  assert.match(source, /QuestLog\.prototype\.getData/u);
+  assert.match(source, /QuestLog\.prototype\.activateListeners/u);
+  assert.match(source, /QuestLog\.prototype\._render/u);
+  assert.match(source, /REBREYA_QUEST_LOG_TEMPLATE/u);
+  assert.doesNotMatch(source, /nav\.insertAdjacentHTML\("beforeend"/u);
   assert.match(source, /RebreyaRumorEditor/u);
   assert.match(source, /RebreyaQuestEventEditor/u);
   assert.match(source, /openQuestActivityEditor/u);
   assert.match(source, /rememberQuestLogTab/u);
   assert.match(source, /roll-rumor-table/u);
   assert.match(source, /toggle-rumor-entry-visibility/u);
+  assert.match(source, /rm-fql-subtask-row/u);
+  assert.match(source, /insertAdjacentHTML\("afterend"/u);
   assert.match(resolveRollTableSource, /try\s*\{[\s\S]*fromUuid[\s\S]*catch/u);
+  assert.match(logTemplate, /modules\/forien-quest-log\/templates\/partials\/quest-log\/tab\.html/u);
+  assert.match(logTemplate, /data-tab="rebreya-rumors"/u);
+  assert.match(logTemplate, /data-tab="rebreya-events"/u);
+  assert.match(logTemplate, /modules\/rebreya-main\/templates\/forien-quest-log-activities\.hbs/u);
   assert.match(template, /data-rm-fql-log-panel="rumors"/u);
   assert.match(template, /data-rm-fql-log-panel="events"/u);
   assert.match(template, /data-rm-fql-log-action="open-rumor-topic"/u);
   assert.match(template, /data-rm-fql-log-action="add-event"/u);
   assert.match(template, /data-rm-fql-log-action="open-event"/u);
+  assert.match(template, /class="drag-quest/u);
+  assert.match(template, /class="open-quest title"/u);
+  assert.match(template, /class="actions/u);
+  assert.match(rumorEditor, /class="quest-preview/u);
+  assert.match(rumorEditor, /class="details-header"/u);
+  assert.match(rumorEditor, /class="quest-info"/u);
+  assert.match(rumorEditor, /class="quest-tasks"/u);
+  assert.match(rumorEditor, /class="actions tasks/u);
+  assert.match(source, /#runLockedEditorAction/u);
   assert.match(rumorEditor, /data-rm-fql-editor-action="toggle-rumor-entry-visibility"/u);
   assert.match(rumorEditor, /name="rm-fql-rumor-table"/u);
   assert.match(eventEditor, /name="rm-fql-event-text"/u);
@@ -72,6 +93,8 @@ test("Forien quest integration wires subtasks, right-click task failure, and act
   assert.doesNotMatch(template, /name="rm-fql-rumor-title"/u);
   assert.doesNotMatch(template, /name="rm-fql-rumor-entry"/u);
   assert.match(css, /\.forien-quest-log\s+\.rm-fql-log-panel/u);
+  assert.match(css, /\.forien-quest-preview\s+\.quest-tasks\s+ul\s+li\.rm-fql-subtask-row/u);
+  assert.match(css, /margin-left:\s*32px/u);
   assert.match(manifest, /styles\/quest-log-enhancements\.css/u);
 });
 

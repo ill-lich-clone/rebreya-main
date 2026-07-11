@@ -1,277 +1,96 @@
-.forien-quest-preview .rm-fql-subtasks {
-  grid-column: 2 / -1;
-  display: grid;
-  gap: 4px;
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.forien-quest-preview .rm-fql-subtask {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  gap: 6px;
-  align-items: center;
-  min-width: 0;
-  padding: 3px 5px;
-  border-left: 2px solid rgb(99 68 35 / 0.32);
-  background: rgb(255 255 255 / 0.32);
-}
-
 .forien-quest-preview .rm-fql-subtask__state,
-.forien-quest-preview .rm-fql-subtask button,
 .forien-quest-preview .rm-fql-task-add-subtask {
   cursor: pointer;
 }
 
-.forien-quest-preview .rm-fql-subtask.is-completed .rm-fql-subtask__state {
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row {
+  margin-left: 32px;
+  min-height: 25px;
+  background: rgb(255 255 255 / 0.2);
+  border-left: 2px solid rgb(99 68 35 / 0.32);
+}
+
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row .toggleState {
+  flex: 0 0 28px;
+  font-size: 14px;
+}
+
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row .task-name {
+  min-width: 0;
+  max-width: 330px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.forien-quest-preview .rm-fql-subtask-row.is-completed .rm-fql-subtask__state {
   color: #1f6f49;
 }
 
-.forien-quest-preview .rm-fql-subtask.is-failed .rm-fql-subtask__state,
+.forien-quest-preview .rm-fql-subtask-row.is-failed .rm-fql-subtask__state,
 .forien-quest-preview .toggleState.rm-fql-task-failed {
   color: #b92323;
 }
 
-.forien-quest-preview .rm-fql-subtask__title {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.forien-quest-preview .rm-fql-subtask__actions {
-  display: inline-flex;
-  gap: 4px;
-}
-
-.forien-quest-preview .rm-fql-subtask__actions button,
-.forien-quest-preview .rm-fql-task-add-subtask {
-  width: 20px;
-  height: 20px;
-  display: inline-grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
+.forien-quest-log .rm-fql-log-empty,
+.forien-quest-log .rm-fql-log-actions .is-disabled {
+  opacity: 0.72;
 }
 
 .forien-quest-log .rm-fql-log-panel {
-  padding: 8px;
-}
-
-.forien-quest-log .rm-fql-log-panel[hidden] {
-  display: none !important;
-}
-
-.forien-quest-log .rm-fql-log-panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.forien-quest-log .rm-fql-log-panel__header button,
-.forien-quest-log .rm-fql-log-card button {
-  min-height: 24px;
-}
-
-.forien-quest-log .rm-fql-log-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  gap: 6px;
-  align-items: start;
-  margin: 6px 0 10px;
-}
-
-.forien-quest-log .rm-fql-log-form--inline {
-  grid-template-columns: minmax(0, 1fr) auto;
-  margin: 8px 0 0;
-}
-
-.forien-quest-log .rm-fql-log-form--event {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.forien-quest-log .rm-fql-log-form--event textarea {
-  grid-column: 1 / -1;
-  resize: vertical;
-}
-
-.forien-quest-log .rm-fql-log-form input,
-.forien-quest-log .rm-fql-log-form textarea {
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-.forien-quest-log .rm-fql-log-list {
-  display: grid;
-  gap: 8px;
-}
-
-.forien-quest-log .rm-fql-log-card {
-  display: grid;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid rgb(99 68 35 / 0.32);
-  background: rgb(255 250 235 / 0.72);
-}
-
-.forien-quest-log .rm-fql-log-card header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.forien-quest-log .rm-fql-log-card h2,
-.forien-quest-log .rm-fql-log-card p {
-  margin: 0;
-}
-
-.forien-quest-log .rm-fql-log-link {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.forien-quest-log .rm-fql-log-card__actions {
-  display: inline-flex;
-  gap: 4px;
-}
-
-.forien-quest-log .rm-fql-rumor-entries {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.forien-quest-log .rm-fql-rumor-entries li {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 6px;
-  align-items: center;
-}
-
-.forien-quest-log .rm-fql-rumor-entries li.is-hidden {
-  opacity: 0.56;
-}
-
-.forien-quest-log .rm-fql-log-muted,
-.forien-quest-log .rm-fql-log-empty {
-  opacity: 0.78;
-}
-
-.rm-fql-activity-editor {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 10px;
-  min-height: 100%;
-}
-
-.rm-fql-activity-editor .quest-tabs {
-  display: flex;
-  gap: 8px;
-  border-bottom: 1px solid rgb(120 28 24 / 0.6);
-}
-
-.rm-fql-activity-editor .quest-tabs .item {
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-.rm-fql-activity-editor .quest-tabs .item.active {
-  font-weight: 700;
-  text-decoration: underline;
-}
-
-.rm-fql-editor-body,
-.rm-fql-activity-editor .tab.active {
   min-height: 0;
 }
 
-.rm-fql-activity-editor .tab:not(.active) {
-  display: none;
+.forien-quest-log .rm-fql-log-actions .is-disabled {
+  pointer-events: none;
 }
 
 .rm-fql-editor-field {
   display: grid;
   gap: 4px;
-  margin-bottom: 10px;
-}
-
-.rm-fql-editor-field--grow {
-  min-height: 0;
+  margin-bottom: 8px;
 }
 
 .rm-fql-editor-field input,
 .rm-fql-editor-field textarea,
-.rm-fql-editor-entry textarea {
+.rm-fql-rumor-entry textarea,
+.rm-fql-event-editor textarea {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
 }
 
 .rm-fql-editor-field textarea,
-.rm-fql-editor-entry textarea {
+.rm-fql-rumor-entry textarea,
+.rm-fql-event-editor textarea {
   resize: vertical;
 }
 
-.rm-fql-editor-section-header,
-.rm-fql-editor-actions,
-.rm-fql-editor-entry__actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.rm-fql-editor-section-header {
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.rm-fql-editor-section-header h2 {
+.rm-fql-rumor-entry textarea.task-name {
+  max-width: none;
+  min-height: 54px;
   margin: 0;
+  background: rgb(255 255 255 / 0.5);
 }
 
-.rm-fql-editor-list {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.rm-fql-event-editor textarea {
+  min-height: 320px;
+  background: rgb(255 255 255 / 0.5);
 }
 
-.rm-fql-editor-entry {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: start;
-  padding: 6px;
-  border: 1px solid rgb(99 68 35 / 0.28);
-  background: rgb(255 250 235 / 0.64);
+.window-app.forien-quest-preview .quest-body .quest-info.rm-fql-editor-full .quest-col-right,
+.window-app.forien-quest-preview .quest-body .quest-info.rm-fql-editor-full .quest-description {
+  flex: 1 1 auto;
+  width: 100%;
+  margin-right: 0;
 }
 
-.rm-fql-editor-entry.is-hidden {
-  opacity: 0.62;
+.window-app.forien-quest-preview .quest-body .quest-info.rm-fql-editor-full .quest-tasks {
+  flex: 1 1 auto;
+  height: 100%;
 }
 
-.rm-fql-editor-icon {
-  width: 24px;
-  height: 24px;
-  display: inline-grid;
-  place-items: center;
-  padding: 0;
-}
-
-.rm-fql-editor-empty {
-  opacity: 0.78;
+.rm-fql-editor-help {
+  flex: 1 1 auto;
 }
 
 .rm-fql-activity-dialog {
@@ -294,11 +113,4 @@
 
 .rm-fql-activity-dialog__field textarea {
   resize: vertical;
-}
-
-@media (max-width: 760px) {
-  .forien-quest-log .rm-fql-log-form,
-  .forien-quest-log .rm-fql-log-form--event {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }

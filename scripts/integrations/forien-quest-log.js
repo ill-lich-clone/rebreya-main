@@ -3,10 +3,13 @@ import { FQL_MODULE_ID, REBREYA_QUEST_FLAGS } from "../data/quest-log-service.js
 
 const OVERLAY_TEMPLATE = `modules/${MODULE_ID}/templates/forien-quest-overlay.hbs`;
 const ACTIVITIES_TEMPLATE = `modules/${MODULE_ID}/templates/forien-quest-log-activities.hbs`;
+const REBREYA_QUEST_LOG_TEMPLATE = `modules/${MODULE_ID}/templates/forien-quest-log.hbs`;
 const RUMOR_EDITOR_TEMPLATE = `modules/${MODULE_ID}/templates/forien-quest-rumor-editor.hbs`;
 const EVENT_EDITOR_TEMPLATE = `modules/${MODULE_ID}/templates/forien-quest-event-editor.hbs`;
+const REBREYA_QUEST_LOG_TABS = new Set(["rebreya-rumors", "rebreya-events"]);
 let integrationRegistered = false;
 let questDbPatched = false;
+let questLogPatched = false;
 let RebreyaRumorEditor = null;
 let RebreyaQuestEventEditor = null;
 const activityEditors = new Map();
@@ -95,6 +98,137 @@ async function patchQuestDbFiltering(moduleApi) {
   questDbPatched = true;
 }
 
+async function preloadQuestLogTemplates() {
+  const loadTemplates = globalThis.foundry?.applications?.handlebars?.loadTemplates ?? globalThis.loadTemplates;
+  if (typeof loadTemplates === "function") {
+    await loadTemplates([ACTIVITIES_TEMPLATE, REBREYA_QUEST_LOG_TEMPLATE]);
+  }
+}
+
+function getQuestLogTabFromOptions(options = {}) {
+  return String(options?.tabId ?? options?.renderData?.tabId ?? "").trim();
+}
+
+function activateForienQuestLogTab(app, tabId) {
+  if (!REBREYA_QUEST_LOG_TABS.has(tabId)) {
+    return;
+  }
+
+  const tabController = app?._tabs?.[0];
+  if (typeof tabController?.activate === "function") {
+    tabController.activate(tabId);
+  }
+}
+
+function bindRebreyaQuestLogHandlers(app, html, moduleApi) {
+  const element = getHtmlElement(html);
+  if (!element || element.dataset.rebreyaQuestLogHandlers === "true") {
+    return;
+  }
+
+  element.dataset.rebreyaQuestLogHandlers = "true";
+  element.addEventListener("click", (event) => {
+    const tab = event.target.closest(".log-tabs .item[data-tab]");
+    if (tab) {
+      rememberQuestLogTab(app, tab.dataset.tab);
+    }
+  }, true);
+  element.addEventListener("click", (event) => {
+    const control = event.target.closest("[data-rm-fql-log-action]");
+    if (!control) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    void handleQuestLogActivityAction(event, app, moduleApi);
+  }, true);
+}
+
+async function patchQuestLogApplication(moduleApi) {
+  if (questLogPatched) {
+    return;
+  }
+
+  const forienModule = globalThis.game?.modules?.get?.(FQL_MODULE_ID);
+  if (!forienModule || forienModule.active === false) {
+    return;
+  }
+
+  let viewModule;
+  let controlModule;
+  try {
+    [viewModule, controlModule] = await Promise.all([
+      import("../../../forien-quest-log/src/view/log/QuestLog.js"),
+      import("../../../forien-quest-log/src/control/index.js")
+    ]);
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Forien Quest Log application was not available for Rebreya tabs.`, error);
+    return;
+  }
+
+  const QuestLog = viewModule?.QuestLog;
+  if (!QuestLog?.prototype) {
+    return;
+  }
+
+  await preloadQuestLogTemplates();
+
+  const originalGetData = QuestLog.prototype.getData;
+  const originalActivateListeners = QuestLog.prototype.activateListeners;
+  const originalRender = QuestLog.prototype._render;
+  const originalSetPosition = QuestLog.prototype.setPosition;
+
+  QuestLog.prototype.getData = async function getDataWithRebreyaActivities(options = {}) {
+    const data = await originalGetData.call(this, options);
+    return globalThis.foundry?.utils?.mergeObject?.(data, {
+      rebreyaActivities: moduleApi?.questLogService?.getQuestActivitiesContext?.()
+    }) ?? {
+      ...data,
+      rebreyaActivities: moduleApi?.questLogService?.getQuestActivitiesContext?.()
+    };
+  };
+
+  QuestLog.prototype.activateListeners = function activateListenersWithRebreyaActivities(html) {
+    originalActivateListeners.call(this, html);
+    bindRebreyaQuestLogHandlers(this, html, moduleApi);
+  };
+
+  QuestLog.prototype._render = async function renderWithRebreyaActivities(force = false, options = {}) {
+    this.options.template = REBREYA_QUEST_LOG_TEMPLATE;
+    await originalRender.call(this, force, options);
+
+    const tabId = getQuestLogTabFromOptions(options) || this._rebreyaQuestLogActiveTab || "";
+    activateForienQuestLogTab(this, tabId);
+  };
+
+  QuestLog.prototype.setPosition = function setPositionWithRebreyaActivities(opts) {
+    const position = originalSetPosition.call(this, opts);
+    if (REBREYA_QUEST_LOG_TABS.has(this?._tabs?.[0]?.active)) {
+      const root = getQuestLogElementFromApp(this);
+      const tables = root?.querySelectorAll?.(".table");
+      const activeTable = root?.querySelector?.(`.tab[data-tab="${escapeCss(this._tabs[0].active)}"] .table`);
+      if (activeTable && tables?.length) {
+        const appRect = root.getBoundingClientRect();
+        const tableRect = activeTable.getBoundingClientRect();
+        tables.forEach((table) => {
+          table.style.maxHeight = `${position.height - (tableRect.top - appRect.top + 16)}px`;
+        });
+      }
+    }
+    return position;
+  };
+
+  const questLog = controlModule?.ViewManager?.questLog;
+  if (questLog?.options) {
+    questLog.options.template = REBREYA_QUEST_LOG_TEMPLATE;
+  }
+
+  questLogPatched = true;
+}
+
 function registerQuestEntryAutoAssignment(moduleApi) {
   const fqlHooks = globalThis.game?.modules?.get?.(FQL_MODULE_ID)?.public?.QuestAPI?.DB?.hooks;
   const hookName = fqlHooks?.createQuestEntry ?? "createQuestEntry";
@@ -149,11 +283,11 @@ function registerQuestRequirementGuard(moduleApi) {
 }
 
 function getSelectValue(container, name) {
-  return String(container.querySelector(`[name="${name}"]`)?.value ?? "").trim();
+  return String(container?.querySelector?.(`[name="${name}"]`)?.value ?? "").trim();
 }
 
 function getInputValue(container, name) {
-  return String(container.querySelector(`[name="${name}"]`)?.value ?? "").trim();
+  return String(container?.querySelector?.(`[name="${name}"]`)?.value ?? "").trim();
 }
 
 function getPositiveIntegerValue(container, name) {
@@ -324,6 +458,8 @@ function getRebreyaRumorEditorClass() {
   }
 
   RebreyaRumorEditor = class RebreyaRumorEditor extends BaseApplication {
+    #actionLocked = false;
+
     constructor({ moduleApi, service, groupActorId, rumorId, logApp } = {}, options = {}) {
       super(options);
       this.moduleApi = moduleApi;
@@ -379,6 +515,7 @@ function getRebreyaRumorEditorClass() {
 
       element.querySelectorAll("[data-rm-fql-editor-action]").forEach((button) => {
         button.addEventListener("click", (event) => {
+          event.preventDefault();
           void this.#handleAction(event);
         });
       });
@@ -390,6 +527,7 @@ function getRebreyaRumorEditorClass() {
       const element = getHtmlElement(this.element) ?? getHtmlElement(this._element);
       event.preventDefault();
 
+      await this.#runLockedEditorAction(button, async () => {
       try {
         if (this.service?.getQuestActivitiesContext?.(this.groupActorId)?.canEdit !== true) {
           notifyWarn("Rebreya: только GM может редактировать слухи.");
@@ -454,6 +592,29 @@ function getRebreyaRumorEditorClass() {
       catch (error) {
         notifyError(error, "Forien Quest Log rumor editor action failed.");
       }
+      });
+    }
+
+    async #runLockedEditorAction(button, callback) {
+      if (this.#actionLocked) {
+        return;
+      }
+
+      this.#actionLocked = true;
+      const wasDisabled = button?.disabled === true;
+      if (button) {
+        button.disabled = true;
+      }
+
+      try {
+        await callback();
+      }
+      finally {
+        this.#actionLocked = false;
+        if (button) {
+          button.disabled = wasDisabled;
+        }
+      }
     }
 
     async close(options) {
@@ -476,6 +637,8 @@ function getRebreyaQuestEventEditorClass() {
   }
 
   RebreyaQuestEventEditor = class RebreyaQuestEventEditor extends BaseApplication {
+    #actionLocked = false;
+
     constructor({ moduleApi, service, groupActorId, eventId, logApp } = {}, options = {}) {
       super(options);
       this.moduleApi = moduleApi;
@@ -529,6 +692,7 @@ function getRebreyaQuestEventEditorClass() {
 
       element.querySelectorAll("[data-rm-fql-editor-action]").forEach((button) => {
         button.addEventListener("click", (event) => {
+          event.preventDefault();
           void this.#handleAction(event);
         });
       });
@@ -540,6 +704,7 @@ function getRebreyaQuestEventEditorClass() {
       const element = getHtmlElement(this.element) ?? getHtmlElement(this._element);
       event.preventDefault();
 
+      await this.#runLockedEditorAction(button, async () => {
       try {
         if (this.service?.getQuestActivitiesContext?.(this.groupActorId)?.canEdit !== true) {
           notifyWarn("Rebreya: только GM может редактировать события.");
@@ -567,6 +732,29 @@ function getRebreyaQuestEventEditorClass() {
       }
       catch (error) {
         notifyError(error, "Forien Quest Log event editor action failed.");
+      }
+      });
+    }
+
+    async #runLockedEditorAction(button, callback) {
+      if (this.#actionLocked) {
+        return;
+      }
+
+      this.#actionLocked = true;
+      const wasDisabled = button?.disabled === true;
+      if (button) {
+        button.disabled = true;
+      }
+
+      try {
+        await callback();
+      }
+      finally {
+        this.#actionLocked = false;
+        if (button) {
+          button.disabled = wasDisabled;
+        }
       }
     }
 
@@ -752,18 +940,20 @@ function renderSubtasksForTask(taskId, subtasks = []) {
     return "";
   }
 
-  const items = subtasks.map((subtask) => `
-    <li class="rm-fql-subtask ${getTaskSubtaskClass(subtask)}" data-subtask-id="${escapeHtml(subtask.id)}">
-      <i class="fas ${getTaskSubtaskIcon(subtask)} rm-fql-subtask__state" data-rm-fql-task-action="toggle-subtask" data-subtask-id="${escapeHtml(subtask.id)}" title="ЛКМ: выполнить, ПКМ: провалить"></i>
-      <span class="rm-fql-subtask__title">${escapeHtml(subtask.title)}</span>
-      <span class="rm-fql-subtask__actions">
-        <button type="button" data-rm-fql-task-action="edit-subtask" data-subtask-id="${escapeHtml(subtask.id)}" title="Редактировать"><i class="fas fa-pen"></i></button>
-        <button type="button" data-rm-fql-task-action="remove-subtask" data-subtask-id="${escapeHtml(subtask.id)}" title="Удалить"><i class="fas fa-trash"></i></button>
-      </span>
+  return subtasks.map((subtask) => `
+    <li class="task rm-fql-subtask-row ${getTaskSubtaskClass(subtask)}" data-uuidv4="${escapeHtml(taskId)}" data-parent-task-id="${escapeHtml(taskId)}" data-subtask-id="${escapeHtml(subtask.id)}">
+      <i class="toggleState fas ${getTaskSubtaskIcon(subtask)} rm-fql-subtask__state" data-rm-fql-task-action="toggle-subtask" data-subtask-id="${escapeHtml(subtask.id)}" title="ЛКМ: выполнить, ПКМ: провалить"></i>
+      <div class="editable-container">
+        <p class="task-name rm-fql-subtask__title">${escapeHtml(subtask.title)}</p>
+      </div>
+      <div class="actions tasks">
+        <span class="spacer"></span>
+        <i class="editable fas fa-pen" data-rm-fql-task-action="edit-subtask" data-subtask-id="${escapeHtml(subtask.id)}" title="Редактировать"></i>
+        <i class="delete fas fa-trash" data-rm-fql-task-action="remove-subtask" data-subtask-id="${escapeHtml(subtask.id)}" title="Удалить"></i>
+        <span class="justify-center"></span>
+      </div>
     </li>
   `).join("");
-
-  return `<ul class="rm-fql-subtasks" data-task-id="${escapeHtml(taskId)}">${items}</ul>`;
 }
 
 function getTaskRow(element) {
@@ -865,9 +1055,13 @@ function injectQuestTaskEnhancements(app, element, moduleApi) {
 
   const metadata = service.getQuestMetadata(quest);
   const details = element.querySelector(".tab.details") ?? element;
-  details.querySelectorAll(".rm-fql-subtasks, .rm-fql-task-add-subtask").forEach((node) => node.remove());
+  details.querySelectorAll(".rm-fql-subtask-row, .rm-fql-task-add-subtask").forEach((node) => node.remove());
 
   for (const row of details.querySelectorAll(".quest-tasks li.task[data-uuidv4]")) {
+    if (row.classList.contains("rm-fql-subtask-row")) {
+      continue;
+    }
+
     const taskId = row.dataset.uuidv4;
     const toggle = row.querySelector(".toggleState");
     if (toggle?.classList.contains("fa-minus-square")) {
@@ -878,20 +1072,18 @@ function injectQuestTaskEnhancements(app, element, moduleApi) {
     const actions = row.querySelector(".actions.tasks");
     if (actions) {
       const spacer = actions.querySelector(".spacer");
-      const button = globalThis.document?.createElement?.("button");
+      const button = globalThis.document?.createElement?.("i");
       if (button) {
-        button.type = "button";
-        button.className = "rm-fql-task-add-subtask";
+        button.className = "rm-fql-task-add-subtask fas fa-tasks";
         button.dataset.rmFqlTaskAction = "add-subtask";
         button.title = "Добавить подзадачу";
-        button.innerHTML = '<i class="fas fa-tasks"></i>';
         actions.insertBefore(button, spacer ?? actions.firstChild);
       }
     }
 
     const renderedSubtasks = renderSubtasksForTask(taskId, metadata.taskSubtasksById[taskId] ?? []);
     if (renderedSubtasks) {
-      row.insertAdjacentHTML("beforeend", renderedSubtasks);
+      row.insertAdjacentHTML("afterend", renderedSubtasks);
     }
   }
 
@@ -948,7 +1140,7 @@ async function refreshQuestLog(app, moduleApi, tabId = "") {
   await moduleApi?.refreshOpenApps?.();
   if (typeof app?.render === "function") {
     rememberQuestLogTab(app, tabId || getActiveQuestLogTab(getQuestLogElementFromApp(app)));
-    app.render(true, { focus: false });
+    app.render(true, { focus: false, tabId: app._rebreyaQuestLogActiveTab });
   }
 }
 
@@ -1043,30 +1235,6 @@ async function handleOverlayAction(event, app, moduleApi) {
   catch (error) {
     notifyError(error, "Forien Quest Log action failed.");
     await refreshQuestPreview(app, moduleApi);
-  }
-}
-
-function activateQuestLogTab(root, tabId) {
-  const nav = root.querySelector(".log-tabs");
-  const body = root.querySelector(".log-body");
-  if (!nav || !body) {
-    return;
-  }
-
-  nav.querySelectorAll(".item").forEach((item) => item.classList.remove("active"));
-  body.querySelectorAll(".tab").forEach((tab) => {
-    tab.classList.remove("active");
-    if (tab.classList.contains("rm-fql-log-panel")) {
-      tab.hidden = true;
-    }
-  });
-
-  const navItem = nav.querySelector(`[data-tab="${escapeCss(tabId)}"]`);
-  const panel = body.querySelector(`[data-tab="${escapeCss(tabId)}"]`);
-  navItem?.classList.add("active");
-  if (panel) {
-    panel.hidden = false;
-    panel.classList.add("active");
   }
 }
 
@@ -1259,57 +1427,6 @@ async function handleQuestLogActivityAction(event, app, moduleApi) {
   }
 }
 
-async function injectQuestLogActivities(app, html, moduleApi) {
-  const element = getHtmlElement(html);
-  const service = moduleApi?.questLogService;
-  if (!element || !service || typeof globalThis.renderTemplate !== "function") {
-    return;
-  }
-
-  const log = element.querySelector(".quest-log");
-  const nav = log?.querySelector(".log-tabs");
-  const body = log?.querySelector(".log-body");
-  if (!log || !nav || !body || nav.querySelector("[data-rm-fql-log-tab]")) {
-    return;
-  }
-
-  nav.insertAdjacentHTML("beforeend", `
-    <a class="item rm-fql-log-tab" data-tab="rebreya-rumors" data-rm-fql-log-tab="rumors">Слухи</a>
-    <a class="item rm-fql-log-tab" data-tab="rebreya-events" data-rm-fql-log-tab="events">События</a>
-  `);
-
-  const context = service.getQuestActivitiesContext();
-  const rendered = await globalThis.renderTemplate(ACTIVITIES_TEMPLATE, context);
-  body.insertAdjacentHTML("beforeend", rendered);
-
-  nav.querySelectorAll("[data-rm-fql-log-tab]").forEach((tab) => {
-    tab.addEventListener("click", (event) => {
-      event.preventDefault();
-      rememberQuestLogTab(app, tab.dataset.tab);
-      activateQuestLogTab(log, tab.dataset.tab);
-    });
-  });
-  nav.querySelectorAll(".item:not([data-rm-fql-log-tab])").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      rememberQuestLogTab(app, "");
-      body.querySelectorAll(".rm-fql-log-panel").forEach((panel) => {
-        panel.hidden = true;
-        panel.classList.remove("active");
-      });
-      nav.querySelectorAll("[data-rm-fql-log-tab]").forEach((item) => item.classList.remove("active"));
-    });
-  });
-  log.querySelectorAll("[data-rm-fql-log-action]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      void handleQuestLogActivityAction(event, app, moduleApi);
-    });
-  });
-
-  if (app?._rebreyaQuestLogActiveTab) {
-    activateQuestLogTab(log, app._rebreyaQuestLogActiveTab);
-  }
-}
-
 async function injectQuestOverlay(app, html, moduleApi) {
   const quest = getQuestFromApp(app);
   const element = getHtmlElement(html);
@@ -1353,14 +1470,6 @@ function registerQuestPreviewOverlay(moduleApi) {
   });
 }
 
-function registerQuestLogActivities(moduleApi) {
-  globalThis.Hooks?.on?.("renderQuestLog", (app, html) => {
-    injectQuestLogActivities(app, html, moduleApi).catch((error) => {
-      console.warn(`${MODULE_ID} | Failed to render Forien quest log activities.`, error);
-    });
-  });
-}
-
 export async function registerForienQuestLogIntegration(moduleApi) {
   if (integrationRegistered) {
     return;
@@ -1368,14 +1477,17 @@ export async function registerForienQuestLogIntegration(moduleApi) {
 
   integrationRegistered = true;
   await patchQuestDbFiltering(moduleApi);
+  await patchQuestLogApplication(moduleApi);
   registerQuestEntryAutoAssignment(moduleApi);
   registerQuestRequirementGuard(moduleApi);
   registerQuestPreviewOverlay(moduleApi);
-  registerQuestLogActivities(moduleApi);
 
   globalThis.Hooks?.once?.("ForienQuestLog.Lifecycle.ready", () => {
     patchQuestDbFiltering(moduleApi).catch((error) => {
       console.warn(`${MODULE_ID} | Failed to patch Forien Quest Log after lifecycle ready.`, error);
+    });
+    patchQuestLogApplication(moduleApi).catch((error) => {
+      console.warn(`${MODULE_ID} | Failed to patch Forien Quest Log application after lifecycle ready.`, error);
     });
   });
 }
