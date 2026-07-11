@@ -1154,6 +1154,29 @@ export class RebreyaQuestLogService {
     });
   }
 
+  async updateRumorTopic(rumorId, data = {}, groupActorId = "") {
+    const id = cleanId(rumorId);
+    return this.updateGroupQuestActivities(groupActorId, (activities) => {
+      const index = activities.rumors.findIndex((entry) => entry.id === id);
+      if (index === -1) {
+        throw new Error("Rumor topic was not found.");
+      }
+
+      const current = activities.rumors[index];
+      const topic = normalizeRumorTopicInput(id, {
+        title: data.title ?? current.title,
+        tableUuid: data.tableUuid ?? current.tableUuid,
+        entries: current.entries
+      });
+      if (!topic) {
+        throw new Error("Rumor data is incomplete.");
+      }
+
+      activities.rumors[index] = topic;
+      return topic;
+    });
+  }
+
   async addRumorEntry(rumorId, data = {}, groupActorId = "") {
     const entry = normalizeRumorEntryInput(this.idFactory("rumor-entry"), data);
     if (!entry) {
@@ -1170,6 +1193,33 @@ export class RebreyaQuestLogService {
       return entry;
     });
     return entry;
+  }
+
+  async updateRumorEntry(rumorId, entryId, data = {}, groupActorId = "") {
+    const topicId = cleanId(rumorId);
+    const id = cleanId(entryId);
+    return this.updateGroupQuestActivities(groupActorId, (activities) => {
+      const rumor = activities.rumors.find((topic) => topic.id === topicId);
+      if (!rumor) {
+        throw new Error("Rumor topic was not found.");
+      }
+
+      const index = rumor.entries.findIndex((item) => item.id === id);
+      if (index === -1) {
+        throw new Error("Rumor entry was not found.");
+      }
+
+      const current = rumor.entries[index];
+      const entry = normalizeRumorEntryInput(id, {
+        text: data.text ?? current.text
+      });
+      if (!entry) {
+        throw new Error("Rumor entry data is incomplete.");
+      }
+
+      rumor.entries[index] = entry;
+      return entry;
+    });
   }
 
   async removeRumorEntry(rumorId, entryId, groupActorId = "") {
@@ -1202,6 +1252,28 @@ export class RebreyaQuestLogService {
       return event;
     });
     return event;
+  }
+
+  async updateQuestEvent(eventId, data = {}, groupActorId = "") {
+    const id = cleanId(eventId);
+    return this.updateGroupQuestActivities(groupActorId, (activities) => {
+      const index = activities.events.findIndex((entry) => entry.id === id);
+      if (index === -1) {
+        throw new Error("Quest event was not found.");
+      }
+
+      const current = activities.events[index];
+      const event = normalizeQuestEventInput(id, {
+        title: data.title ?? current.title,
+        text: data.text ?? current.text
+      });
+      if (!event) {
+        throw new Error("Quest event data is incomplete.");
+      }
+
+      activities.events[index] = event;
+      return event;
+    });
   }
 
   async removeQuestEvent(eventId, groupActorId = "") {

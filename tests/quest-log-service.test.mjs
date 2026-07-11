@@ -796,6 +796,70 @@ test("rumors and events are stored in the selected group quest state", async () 
   assert.deepEqual(groupContextService.getRegistry().groupsById["group-a"].questState.activities.rumors[0].entries, [entry]);
 });
 
+test("rumors and events can be edited in the selected group quest state", async () => {
+  const groupContextService = createGroupContextService({
+    groupId: "group-a",
+    groupActor: { id: "group-a", name: "Party A", type: "group" },
+    members: [],
+    memberActorIds: [],
+    groupState: normalizeGroupState("group-a", {
+      questState: {
+        activities: {
+          rumors: [
+            {
+              id: "rumor-a",
+              title: "Tavern",
+              tableUuid: "RollTable.old",
+              entries: [{ id: "entry-a", text: "Old rumor" }]
+            }
+          ],
+          events: [{ id: "event-a", title: "Market fire", text: "Old event" }]
+        }
+      }
+    })
+  });
+  const service = new RebreyaQuestLogService({ groupContextService });
+
+  const rumor = await service.updateRumorTopic("rumor-a", {
+    title: "Harbor",
+    tableUuid: "RollTable.harbor"
+  }, "group-a");
+  const entry = await service.updateRumorEntry("rumor-a", "entry-a", {
+    text: "The harbor master is buying silence."
+  }, "group-a");
+  const event = await service.updateQuestEvent("event-a", {
+    title: "Festival",
+    text: "The city square is blocked."
+  }, "group-a");
+
+  assert.deepEqual(rumor, {
+    id: "rumor-a",
+    title: "Harbor",
+    tableUuid: "RollTable.harbor",
+    entries: [{ id: "entry-a", text: "Old rumor" }]
+  });
+  assert.deepEqual(entry, {
+    id: "entry-a",
+    text: "The harbor master is buying silence."
+  });
+  assert.deepEqual(event, {
+    id: "event-a",
+    title: "Festival",
+    text: "The city square is blocked."
+  });
+  assert.deepEqual(groupContextService.getRegistry().groupsById["group-a"].questState.activities, {
+    rumors: [
+      {
+        id: "rumor-a",
+        title: "Harbor",
+        tableUuid: "RollTable.harbor",
+        entries: [{ id: "entry-a", text: "The harbor master is buying silence." }]
+      }
+    ],
+    events: [{ id: "event-a", title: "Festival", text: "The city square is blocked." }]
+  });
+});
+
 test("unlock rewards can be removed from quest metadata", async () => {
   const currentQuest = createQuest("quest-current", {
     metadata: {

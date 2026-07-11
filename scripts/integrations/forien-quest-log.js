@@ -194,6 +194,99 @@ async function promptText({ title, label, value = "" } = {}) {
   return globalThis.window?.prompt?.(label, value) ?? "";
 }
 
+function renderQuestActivityField(field) {
+  const tag = field.type === "textarea"
+    ? `<textarea name="${escapeHtml(field.name)}" rows="${Number(field.rows) || 4}">${escapeHtml(field.value ?? "")}</textarea>`
+    : `<input type="text" name="${escapeHtml(field.name)}" value="${escapeHtml(field.value ?? "")}">`;
+
+  return `
+    <label class="rm-fql-activity-dialog__field">
+      <span>${escapeHtml(field.label)}</span>
+      ${tag}
+    </label>
+  `;
+}
+
+function readQuestActivityForm(form, fields = []) {
+  const result = {};
+  for (const field of fields) {
+    result[field.name] = getInputValue(form, field.name);
+  }
+  return result;
+}
+
+async function promptQuestActivityForm({ title, fields = [], submitLabel = "Сохранить" } = {}) {
+  const normalizedFields = fields.filter((field) => field?.name);
+  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2 ?? globalThis.DialogV2 ?? null;
+
+  if (typeof DialogV2?.wait === "function") {
+    const content = `<div class="rm-fql-activity-dialog">${normalizedFields.map(renderQuestActivityField).join("")}</div>`;
+    const result = await DialogV2.wait({
+      window: { title },
+      content,
+      buttons: [
+        {
+          action: "confirm",
+          label: submitLabel,
+          default: true,
+          callback: (_event, button) => readQuestActivityForm(button.form, normalizedFields)
+        },
+        {
+          action: "cancel",
+          label: "Отмена",
+          callback: () => null
+        }
+      ]
+    });
+
+    return result && typeof result === "object" ? result : null;
+  }
+
+  const prompt = globalThis.window?.prompt;
+  if (typeof prompt !== "function") {
+    return null;
+  }
+
+  const result = {};
+  for (const field of normalizedFields) {
+    const value = prompt(field.label, field.value ?? "");
+    if (value == null) {
+      return null;
+    }
+
+    result[field.name] = String(value).trim();
+  }
+  return result;
+}
+
+function getQuestActivities(service) {
+  return service?.getQuestActivitiesContext?.()?.activities ?? { rumors: [], events: [] };
+}
+
+function getRumorTopic(service, rumorId) {
+  const id = String(rumorId ?? "");
+  return getQuestActivities(service).rumors.find((rumor) => rumor.id === id) ?? null;
+}
+
+function getRumorEntry(service, rumorId, entryId) {
+  const entry = String(entryId ?? "");
+  return getRumorTopic(service, rumorId)?.entries.find((item) => item.id === entry) ?? null;
+}
+
+function getQuestEvent(service, eventId) {
+  const id = String(eventId ?? "");
+  return getQuestActivities(service).events.find((event) => event.id === id) ?? null;
+}
+
+function hasRequiredText(data, fieldName, label) {
+  if (String(data?.[fieldName] ?? "").trim()) {
+    return true;
+  }
+
+  notifyWarn(`Rebreya: ${label} не заполнено.`);
+  return false;
+}
+
 function getTaskSubtaskIcon(subtask) {
   if (subtask.failed) {
     return "fa-times";
@@ -647,24 +740,67 @@ async function handleQuestLogActivityAction(event, app, moduleApi) {
   }
 
   const action = button.dataset.rmFqlLogAction;
-  const root = button.closest(".quest-log") ?? button.closest(".window-content");
   event.preventDefault();
 
   try {
     if (action === "add-rumor-topic") {
-      await service.addRumorTopic({
-        title: getInputValue(root, "rm-fql-rumor-title"),
-        tableUuid: getInputValue(root, "rm-fql-rumor-table")
+      const data = await promptQuestActivityForm({
+        title: "Новый слух",
+        fields: [
+          { name: "title", label: "Источник или тема слухов" },
+          { name: "tableUuid", label: "UUID, id или имя таблицы слухов" }
+        ]
       });
+      if (!data || !hasRequiredText(data, "title", "тема слухов")) {
+        return;
+      }
+
+      await service.addRumorTopic(data);
+    }
+    else if (action === "edit-rumor-topic") {
+      const rumor = getRumorTopic(service, button.dataset.rumorId);
+      const data = await promptQuestActivityForm({
+        title: "Редактировать слух",
+        fields: [
+          { name: "title", label: "Источник или тема слухов", value: rumor?.title ?? "" },
+          { name: "tableUuid", label: "UUID, id или имя таблицы слухов", value: rumor?.tableUuid ?? "" }
+        ]
+      });
+      if (!data || !hasRequiredText(data, "title", "тема слухов")) {
+        return;
+      }
+
+      await service.updateRumorTopic(button.dataset.rumorId, data);
     }
     else if (action === "remove-rumor-topic") {
       await service.removeRumorTopic(button.dataset.rumorId);
     }
     else if (action === "add-rumor-entry") {
-      const card = button.closest("[data-rumor-id]");
-      await service.addRumorEntry(button.dataset.rumorId, {
-        text: getInputValue(card, "rm-fql-rumor-entry")
+      const data = await promptQuestActivityForm({
+        title: "Новая запись слуха",
+        fields: [
+          { name: "text", label: "Текст слуха", type: "textarea", rows: 5 }
+        ]
       });
+      if (!data || !hasRequiredText(data, "text", "текст слуха")) {
+        return;
+      }
+
+      await service.addRumorEntry(button.dataset.rumorId, data);
+    }
+    else if (action === "edit-rumor-entry") {
+      const entry = getRumorEntry(service, button.dataset.rumorId, button.dataset.rumorEntryId);
+      const data = await promptQuestActivityForm({
+        title: "Редактировать запись слуха",
+        fields: [
+          { name: "text", label: "Текст слуха", type: "textarea", rows: 5, value: entry?.text ?? "" }
+        ]
+      });
+      if (!data || !hasRequiredText(data, "text", "текст слуха")) {
+        return;
+      }
+
+      await service.updateRumorEntry(button.dataset.rumorId, button.dataset.rumorEntryId, data);
     }
     else if (action === "remove-rumor-entry") {
       await service.removeRumorEntry(button.dataset.rumorId, button.dataset.rumorEntryId);
@@ -674,10 +810,33 @@ async function handleQuestLogActivityAction(event, app, moduleApi) {
       await service.addRumorEntry(button.dataset.rumorId, { text });
     }
     else if (action === "add-event") {
-      await service.addQuestEvent({
-        title: getInputValue(root, "rm-fql-event-title"),
-        text: getInputValue(root, "rm-fql-event-text")
+      const data = await promptQuestActivityForm({
+        title: "Новое событие",
+        fields: [
+          { name: "title", label: "Название события" },
+          { name: "text", label: "Описание события", type: "textarea", rows: 6 }
+        ]
       });
+      if (!data || !hasRequiredText(data, "title", "название события")) {
+        return;
+      }
+
+      await service.addQuestEvent(data);
+    }
+    else if (action === "edit-event") {
+      const activityEvent = getQuestEvent(service, button.dataset.eventId);
+      const data = await promptQuestActivityForm({
+        title: "Редактировать событие",
+        fields: [
+          { name: "title", label: "Название события", value: activityEvent?.title ?? "" },
+          { name: "text", label: "Описание события", type: "textarea", rows: 6, value: activityEvent?.text ?? "" }
+        ]
+      });
+      if (!data || !hasRequiredText(data, "title", "название события")) {
+        return;
+      }
+
+      await service.updateQuestEvent(button.dataset.eventId, data);
     }
     else if (action === "remove-event") {
       await service.removeQuestEvent(button.dataset.eventId);

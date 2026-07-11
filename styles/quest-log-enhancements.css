@@ -70,6 +70,11 @@
   gap: 8px;
 }
 
+.forien-quest-log .rm-fql-log-panel__header button,
+.forien-quest-log .rm-fql-log-card button {
+  min-height: 24px;
+}
+
 .forien-quest-log .rm-fql-log-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
@@ -147,6 +152,28 @@
 .forien-quest-log .rm-fql-log-muted,
 .forien-quest-log .rm-fql-log-empty {
   opacity: 0.78;
+}
+
+.rm-fql-activity-dialog {
+  display: grid;
+  gap: 10px;
+  min-width: min(420px, 80vw);
+}
+
+.rm-fql-activity-dialog__field {
+  display: grid;
+  gap: 4px;
+}
+
+.rm-fql-activity-dialog__field input,
+.rm-fql-activity-dialog__field textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.rm-fql-activity-dialog__field textarea {
+  resize: vertical;
 }
 
 @media (max-width: 760px) {
