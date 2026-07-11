@@ -1,0 +1,56 @@
+<form class="rm-fql-activity-editor rm-fql-rumor-editor" autocomplete="off">
+  <nav class="quest-tabs rm-fql-editor-tabs tabs" data-group="primary">
+    <a class="item active" data-tab="details">Подробности</a>
+    <a class="item" data-tab="rumors">Слухи</a>
+  </nav>
+
+  <section class="quest-body rm-fql-editor-body">
+    <div class="tab active" data-group="primary" data-tab="details">
+      <div class="rm-fql-editor-field">
+        <label>Название</label>
+        <input type="text" name="rm-fql-rumor-title" value="{{rumor.title}}" {{#unless canEdit}}readonly{{/unless}}>
+      </div>
+      <div class="rm-fql-editor-field">
+        <label>Таблица слухов</label>
+        <input type="text" name="rm-fql-rumor-table" value="{{rumor.tableUuid}}" placeholder="UUID, id или имя таблицы" {{#unless canEdit}}readonly{{/unless}}>
+      </div>
+      {{#if canEdit}}
+        <footer class="rm-fql-editor-actions">
+          <button type="button" data-rm-fql-editor-action="save-rumor"><i class="fas fa-save"></i> Сохранить</button>
+          <button type="button" data-rm-fql-editor-action="remove-rumor-topic"><i class="fas fa-trash"></i> Удалить</button>
+        </footer>
+      {{/if}}
+    </div>
+
+    <div class="tab" data-group="primary" data-tab="rumors">
+      <header class="rm-fql-editor-section-header">
+        <h2>Записи слухов</h2>
+        {{#if canEdit}}
+          <div class="rm-fql-editor-actions">
+            <button type="button" data-rm-fql-editor-action="add-rumor-entry"><i class="fas fa-plus"></i> Слух</button>
+            <button type="button" data-rm-fql-editor-action="roll-rumor-table" {{#unless rumor.tableUuid}}disabled{{/unless}}><i class="fas fa-dice-d20"></i> Из таблицы</button>
+          </div>
+        {{/if}}
+      </header>
+
+      <ol class="rm-fql-editor-list">
+        {{#each rumor.entries}}
+          <li class="rm-fql-editor-entry {{#if hidden}}is-hidden{{/if}}" data-rumor-entry-id="{{id}}">
+            <button type="button" class="rm-fql-editor-icon" data-rm-fql-editor-action="toggle-rumor-entry-visibility" data-rumor-entry-id="{{id}}" title="{{#if hidden}}Скрыто{{else}}Видимо{{/if}}" {{#unless ../canEdit}}disabled{{/unless}}>
+              <i class="fas {{#if hidden}}fa-eye-slash{{else}}fa-eye{{/if}}"></i>
+            </button>
+            <textarea name="rm-fql-rumor-entry-text" rows="3" {{#unless ../canEdit}}readonly{{/unless}}>{{text}}</textarea>
+            {{#if ../canEdit}}
+              <div class="rm-fql-editor-entry__actions">
+                <button type="button" data-rm-fql-editor-action="save-rumor-entry" data-rumor-entry-id="{{id}}"><i class="fas fa-save"></i></button>
+                <button type="button" data-rm-fql-editor-action="remove-rumor-entry" data-rumor-entry-id="{{id}}"><i class="fas fa-trash"></i></button>
+              </div>
+            {{/if}}
+          </li>
+        {{else}}
+          <li class="rm-fql-editor-empty">Слухов пока нет.</li>
+        {{/each}}
+      </ol>
+    </div>
+  </section>
+</form>

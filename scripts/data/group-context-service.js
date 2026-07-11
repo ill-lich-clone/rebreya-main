@@ -141,7 +141,8 @@ function normalizeRumorEntry(value = {}) {
 
   return {
     id,
-    text
+    text,
+    hidden: source.hidden === true
   };
 }
 

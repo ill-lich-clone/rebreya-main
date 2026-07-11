@@ -40,6 +40,8 @@ test("Forien quest overlay integration wires search filtering and editable row a
 test("Forien quest integration wires subtasks, right-click task failure, and activity tabs", async () => {
   const source = await readFile(new URL("../scripts/integrations/forien-quest-log.js", import.meta.url), "utf8");
   const template = await readFile(new URL("../templates/forien-quest-log-activities.hbs", import.meta.url), "utf8");
+  const rumorEditor = await readFile(new URL("../templates/forien-quest-rumor-editor.hbs", import.meta.url), "utf8");
+  const eventEditor = await readFile(new URL("../templates/forien-quest-event-editor.hbs", import.meta.url), "utf8");
   const css = await readFile(new URL("../styles/quest-log-enhancements.css", import.meta.url), "utf8");
   const manifest = await readFile(new URL("../module.json", import.meta.url), "utf8");
   const resolveRollTableSource = source.slice(
@@ -51,17 +53,21 @@ test("Forien quest integration wires subtasks, right-click task failure, and act
   assert.match(source, /markTaskFailed/u);
   assert.match(source, /injectQuestTaskEnhancements/u);
   assert.match(source, /injectQuestLogActivities/u);
-  assert.match(source, /promptQuestActivityForm/u);
-  assert.match(source, /DialogV2\.wait/u);
+  assert.match(source, /RebreyaRumorEditor/u);
+  assert.match(source, /RebreyaQuestEventEditor/u);
+  assert.match(source, /openQuestActivityEditor/u);
+  assert.match(source, /rememberQuestLogTab/u);
   assert.match(source, /roll-rumor-table/u);
+  assert.match(source, /toggle-rumor-entry-visibility/u);
   assert.match(resolveRollTableSource, /try\s*\{[\s\S]*fromUuid[\s\S]*catch/u);
   assert.match(template, /data-rm-fql-log-panel="rumors"/u);
   assert.match(template, /data-rm-fql-log-panel="events"/u);
-  assert.match(template, /data-rm-fql-log-action="add-rumor-entry"/u);
-  assert.match(template, /data-rm-fql-log-action="edit-rumor-topic"/u);
-  assert.match(template, /data-rm-fql-log-action="edit-rumor-entry"/u);
+  assert.match(template, /data-rm-fql-log-action="open-rumor-topic"/u);
   assert.match(template, /data-rm-fql-log-action="add-event"/u);
-  assert.match(template, /data-rm-fql-log-action="edit-event"/u);
+  assert.match(template, /data-rm-fql-log-action="open-event"/u);
+  assert.match(rumorEditor, /data-rm-fql-editor-action="toggle-rumor-entry-visibility"/u);
+  assert.match(rumorEditor, /name="rm-fql-rumor-table"/u);
+  assert.match(eventEditor, /name="rm-fql-event-text"/u);
   assert.doesNotMatch(template, /name="rm-fql-event-title"/u);
   assert.doesNotMatch(template, /name="rm-fql-rumor-title"/u);
   assert.doesNotMatch(template, /name="rm-fql-rumor-entry"/u);

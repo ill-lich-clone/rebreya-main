@@ -3,8 +3,13 @@ import { FQL_MODULE_ID, REBREYA_QUEST_FLAGS } from "../data/quest-log-service.js
 
 const OVERLAY_TEMPLATE = `modules/${MODULE_ID}/templates/forien-quest-overlay.hbs`;
 const ACTIVITIES_TEMPLATE = `modules/${MODULE_ID}/templates/forien-quest-log-activities.hbs`;
+const RUMOR_EDITOR_TEMPLATE = `modules/${MODULE_ID}/templates/forien-quest-rumor-editor.hbs`;
+const EVENT_EDITOR_TEMPLATE = `modules/${MODULE_ID}/templates/forien-quest-event-editor.hbs`;
 let integrationRegistered = false;
 let questDbPatched = false;
+let RebreyaRumorEditor = null;
+let RebreyaQuestEventEditor = null;
+const activityEditors = new Map();
 
 function getHtmlElement(html) {
   if (!html) {
@@ -259,23 +264,23 @@ async function promptQuestActivityForm({ title, fields = [], submitLabel = "Со
   return result;
 }
 
-function getQuestActivities(service) {
-  return service?.getQuestActivitiesContext?.()?.activities ?? { rumors: [], events: [] };
+function getQuestActivities(service, groupActorId = "") {
+  return service?.getQuestActivitiesContext?.(groupActorId)?.activities ?? { rumors: [], events: [] };
 }
 
-function getRumorTopic(service, rumorId) {
+function getRumorTopic(service, rumorId, groupActorId = "") {
   const id = String(rumorId ?? "");
-  return getQuestActivities(service).rumors.find((rumor) => rumor.id === id) ?? null;
+  return getQuestActivities(service, groupActorId).rumors.find((rumor) => rumor.id === id) ?? null;
 }
 
-function getRumorEntry(service, rumorId, entryId) {
+function getRumorEntry(service, rumorId, entryId, groupActorId = "") {
   const entry = String(entryId ?? "");
-  return getRumorTopic(service, rumorId)?.entries.find((item) => item.id === entry) ?? null;
+  return getRumorTopic(service, rumorId, groupActorId)?.entries.find((item) => item.id === entry) ?? null;
 }
 
-function getQuestEvent(service, eventId) {
+function getQuestEvent(service, eventId, groupActorId = "") {
   const id = String(eventId ?? "");
-  return getQuestActivities(service).events.find((event) => event.id === id) ?? null;
+  return getQuestActivities(service, groupActorId).events.find((event) => event.id === id) ?? null;
 }
 
 function hasRequiredText(data, fieldName, label) {
@@ -285,6 +290,324 @@ function hasRequiredText(data, fieldName, label) {
 
   notifyWarn(`Rebreya: ${label} не заполнено.`);
   return false;
+}
+
+function getLegacyApplicationBase() {
+  return globalThis.foundry?.appv1?.api?.Application ?? globalThis.Application ?? null;
+}
+
+function mergeApplicationOptions(baseOptions, options) {
+  return globalThis.foundry?.utils?.mergeObject?.(baseOptions, options) ?? {
+    ...baseOptions,
+    ...options,
+    classes: [...(baseOptions.classes ?? []), ...(options.classes ?? [])],
+    tabs: options.tabs ?? baseOptions.tabs
+  };
+}
+
+function getEditorKey(kind, groupActorId, activityId) {
+  return `${kind}:${groupActorId}:${activityId}`;
+}
+
+async function refreshActivityEditorParent(app, moduleApi, tabId) {
+  await refreshQuestLog(app, moduleApi, tabId);
+}
+
+function getRebreyaRumorEditorClass() {
+  if (RebreyaRumorEditor) {
+    return RebreyaRumorEditor;
+  }
+
+  const BaseApplication = getLegacyApplicationBase();
+  if (!BaseApplication) {
+    return null;
+  }
+
+  RebreyaRumorEditor = class RebreyaRumorEditor extends BaseApplication {
+    constructor({ moduleApi, service, groupActorId, rumorId, logApp } = {}, options = {}) {
+      super(options);
+      this.moduleApi = moduleApi;
+      this.service = service;
+      this.groupActorId = groupActorId;
+      this.rumorId = rumorId;
+      this.logApp = logApp;
+      this.editorKey = getEditorKey("rumor", groupActorId, rumorId);
+    }
+
+    static get defaultOptions() {
+      return mergeApplicationOptions(super.defaultOptions, {
+        classes: ["forien-quest-preview", "rm-fql-activity-editor-window"],
+        template: RUMOR_EDITOR_TEMPLATE,
+        width: 820,
+        height: 560,
+        minimizable: true,
+        resizable: true,
+        title: "Слух",
+        tabs: [{ navSelector: ".quest-tabs", contentSelector: ".quest-body", initial: "details" }]
+      });
+    }
+
+    get id() {
+      return `${MODULE_ID}-rumor-${this.groupActorId}-${this.rumorId}`;
+    }
+
+    get title() {
+      return `Слух - ${getRumorTopic(this.service, this.rumorId, this.groupActorId)?.title ?? this.rumorId}`;
+    }
+
+    async getData(options = {}) {
+      const context = this.service?.getQuestActivitiesContext?.(this.groupActorId);
+      const rumor = getRumorTopic(this.service, this.rumorId, this.groupActorId) ?? {
+        id: this.rumorId,
+        title: "Слух не найден",
+        tableUuid: "",
+        entries: []
+      };
+      return {
+        ...(await super.getData(options)),
+        canEdit: context?.canEdit === true,
+        rumor
+      };
+    }
+
+    activateListeners(html) {
+      super.activateListeners(html);
+      const element = getHtmlElement(html);
+      if (!element) {
+        return;
+      }
+
+      element.querySelectorAll("[data-rm-fql-editor-action]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          void this.#handleAction(event);
+        });
+      });
+    }
+
+    async #handleAction(event) {
+      const button = event.currentTarget;
+      const action = button?.dataset?.rmFqlEditorAction ?? "";
+      const element = getHtmlElement(this.element) ?? getHtmlElement(this._element);
+      event.preventDefault();
+
+      try {
+        if (this.service?.getQuestActivitiesContext?.(this.groupActorId)?.canEdit !== true) {
+          notifyWarn("Rebreya: только GM может редактировать слухи.");
+          return;
+        }
+
+        if (action === "save-rumor") {
+          const data = {
+            title: getInputValue(element, "rm-fql-rumor-title"),
+            tableUuid: getInputValue(element, "rm-fql-rumor-table")
+          };
+          if (!hasRequiredText(data, "title", "тема слухов")) {
+            return;
+          }
+
+          await this.service.updateRumorTopic(this.rumorId, data, this.groupActorId);
+          await refreshActivityEditorParent(this.logApp, this.moduleApi, "rebreya-rumors");
+          this.render(true, { focus: false });
+        }
+        else if (action === "remove-rumor-topic") {
+          await this.service.removeRumorTopic(this.rumorId, this.groupActorId);
+          await refreshActivityEditorParent(this.logApp, this.moduleApi, "rebreya-rumors");
+          await this.close();
+        }
+        else if (action === "add-rumor-entry") {
+          await this.service.addRumorEntry(this.rumorId, { text: "Новый слух" }, this.groupActorId);
+          await refreshActivityEditorParent(this.logApp, this.moduleApi, "rebreya-rumors");
+          this.render(true, { focus: false });
+        }
+        else if (action === "roll-rumor-table") {
+          const rumor = getRumorTopic(this.service, this.rumorId, this.groupActorId);
+          const text = await rollRumorFromTable(rumor?.tableUuid);
+          await this.service.addRumorEntry(this.rumorId, { text }, this.groupActorId);
+          await refreshActivityEditorParent(this.logApp, this.moduleApi, "rebreya-rumors");
+          this.render(true, { focus: false });
+        }
+        else if (action === "save-rumor-entry") {
+          const row = button.closest("[data-rumor-entry-id]");
+          const text = getInputValue(row, "rm-fql-rumor-entry-text");
+          if (!hasRequiredText({ text }, "text", "текст слуха")) {
+            return;
+          }
+
+          await this.service.updateRumorEntry(this.rumorId, button.dataset.rumorEntryId, { text }, this.groupActorId);
+          await refreshActivityEditorParent(this.logApp, this.moduleApi, "rebreya-rumors");
+          this.render(true, { focus: false });
+        }
+        else if (action === "toggle-rumor-entry-visibility") {
+          const entry = getRumorEntry(this.service, this.rumorId, button.dataset.rumorEntryId, this.groupActorId);
+          await this.service.updateRumorEntry(this.rumorId, button.dataset.rumorEntryId, {
+            hidden: !entry?.hidden
+          }, this.groupActorId);
+          await refreshActivityEditorParent(this.logApp, this.moduleApi, "rebreya-rumors");
+          this.render(true, { focus: false });
+        }
+        else if (action === "remove-rumor-entry") {
+          await this.service.removeRumorEntry(this.rumorId, button.dataset.rumorEntryId, this.groupActorId);
+          await refreshActivityEditorParent(this.logApp, this.moduleApi, "rebreya-rumors");
+          this.render(true, { focus: false });
+        }
+      }
+      catch (error) {
+        notifyError(error, "Forien Quest Log rumor editor action failed.");
+      }
+    }
+
+    async close(options) {
+      activityEditors.delete(this.editorKey);
+      return super.close(options);
+    }
+  };
+
+  return RebreyaRumorEditor;
+}
+
+function getRebreyaQuestEventEditorClass() {
+  if (RebreyaQuestEventEditor) {
+    return RebreyaQuestEventEditor;
+  }
+
+  const BaseApplication = getLegacyApplicationBase();
+  if (!BaseApplication) {
+    return null;
+  }
+
+  RebreyaQuestEventEditor = class RebreyaQuestEventEditor extends BaseApplication {
+    constructor({ moduleApi, service, groupActorId, eventId, logApp } = {}, options = {}) {
+      super(options);
+      this.moduleApi = moduleApi;
+      this.service = service;
+      this.groupActorId = groupActorId;
+      this.eventId = eventId;
+      this.logApp = logApp;
+      this.editorKey = getEditorKey("event", groupActorId, eventId);
+    }
+
+    static get defaultOptions() {
+      return mergeApplicationOptions(super.defaultOptions, {
+        classes: ["forien-quest-preview", "rm-fql-activity-editor-window"],
+        template: EVENT_EDITOR_TEMPLATE,
+        width: 780,
+        height: 520,
+        minimizable: true,
+        resizable: true,
+        title: "Событие"
+      });
+    }
+
+    get id() {
+      return `${MODULE_ID}-event-${this.groupActorId}-${this.eventId}`;
+    }
+
+    get title() {
+      return `Событие - ${getQuestEvent(this.service, this.eventId, this.groupActorId)?.title ?? this.eventId}`;
+    }
+
+    async getData(options = {}) {
+      const context = this.service?.getQuestActivitiesContext?.(this.groupActorId);
+      const event = getQuestEvent(this.service, this.eventId, this.groupActorId) ?? {
+        id: this.eventId,
+        title: "Событие не найдено",
+        text: ""
+      };
+      return {
+        ...(await super.getData(options)),
+        canEdit: context?.canEdit === true,
+        event
+      };
+    }
+
+    activateListeners(html) {
+      super.activateListeners(html);
+      const element = getHtmlElement(html);
+      if (!element) {
+        return;
+      }
+
+      element.querySelectorAll("[data-rm-fql-editor-action]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          void this.#handleAction(event);
+        });
+      });
+    }
+
+    async #handleAction(event) {
+      const button = event.currentTarget;
+      const action = button?.dataset?.rmFqlEditorAction ?? "";
+      const element = getHtmlElement(this.element) ?? getHtmlElement(this._element);
+      event.preventDefault();
+
+      try {
+        if (this.service?.getQuestActivitiesContext?.(this.groupActorId)?.canEdit !== true) {
+          notifyWarn("Rebreya: только GM может редактировать события.");
+          return;
+        }
+
+        if (action === "save-event") {
+          const data = {
+            title: getInputValue(element, "rm-fql-event-title"),
+            text: getInputValue(element, "rm-fql-event-text")
+          };
+          if (!hasRequiredText(data, "title", "название события")) {
+            return;
+          }
+
+          await this.service.updateQuestEvent(this.eventId, data, this.groupActorId);
+          await refreshActivityEditorParent(this.logApp, this.moduleApi, "rebreya-events");
+          this.render(true, { focus: false });
+        }
+        else if (action === "remove-event") {
+          await this.service.removeQuestEvent(this.eventId, this.groupActorId);
+          await refreshActivityEditorParent(this.logApp, this.moduleApi, "rebreya-events");
+          await this.close();
+        }
+      }
+      catch (error) {
+        notifyError(error, "Forien Quest Log event editor action failed.");
+      }
+    }
+
+    async close(options) {
+      activityEditors.delete(this.editorKey);
+      return super.close(options);
+    }
+  };
+
+  return RebreyaQuestEventEditor;
+}
+
+function openQuestActivityEditor(kind, activityId, moduleApi, logApp, groupActorId = "") {
+  const service = moduleApi?.questLogService;
+  const context = service?.getQuestActivitiesContext?.(groupActorId);
+  const groupId = context?.groupActorId ?? "";
+  const id = String(activityId ?? "");
+  if (!service || !groupId || !id) {
+    notifyWarn("Rebreya: не найден журнал активной группы.");
+    return null;
+  }
+
+  const EditorClass = kind === "event" ? getRebreyaQuestEventEditorClass() : getRebreyaRumorEditorClass();
+  if (!EditorClass) {
+    notifyWarn("Rebreya: окно редактора Foundry недоступно.");
+    return null;
+  }
+
+  const key = getEditorKey(kind, groupId, id);
+  const existing = activityEditors.get(key);
+  if (existing) {
+    existing.render(true, { focus: true });
+    return existing;
+  }
+
+  const editor = kind === "event"
+    ? new EditorClass({ moduleApi, service, groupActorId: groupId, eventId: id, logApp })
+    : new EditorClass({ moduleApi, service, groupActorId: groupId, rumorId: id, logApp });
+  activityEditors.set(key, editor);
+  editor.render(true, { focus: true });
+  return editor;
 }
 
 function getTaskSubtaskIcon(subtask) {
@@ -607,9 +930,24 @@ async function refreshQuestPreview(app, moduleApi) {
   }
 }
 
-async function refreshQuestLog(app, moduleApi) {
+function getQuestLogElementFromApp(app) {
+  return getHtmlElement(app?.element) ?? getHtmlElement(app?._element);
+}
+
+function getActiveQuestLogTab(root) {
+  return root?.querySelector?.(".log-tabs .item.active")?.dataset?.tab ?? "";
+}
+
+function rememberQuestLogTab(app, tabId) {
+  if (app) {
+    app._rebreyaQuestLogActiveTab = tabId || "";
+  }
+}
+
+async function refreshQuestLog(app, moduleApi, tabId = "") {
   await moduleApi?.refreshOpenApps?.();
   if (typeof app?.render === "function") {
+    rememberQuestLogTab(app, tabId || getActiveQuestLogTab(getQuestLogElementFromApp(app)));
     app.render(true, { focus: false });
   }
 }
@@ -741,6 +1079,77 @@ async function handleQuestLogActivityAction(event, app, moduleApi) {
 
   const action = button.dataset.rmFqlLogAction;
   event.preventDefault();
+
+  try {
+    if (action === "add-rumor-topic") {
+      const rumor = await service.addRumorTopic({ title: "Новый слух" });
+      await refreshQuestLog(app, moduleApi, "rebreya-rumors");
+      openQuestActivityEditor("rumor", rumor.id, moduleApi, app);
+      return;
+    }
+
+    if (action === "open-rumor-topic" || action === "edit-rumor-topic") {
+      rememberQuestLogTab(app, "rebreya-rumors");
+      openQuestActivityEditor("rumor", button.dataset.rumorId, moduleApi, app);
+      return;
+    }
+
+    if (action === "remove-rumor-topic") {
+      await service.removeRumorTopic(button.dataset.rumorId);
+      await refreshQuestLog(app, moduleApi, "rebreya-rumors");
+      return;
+    }
+
+    if (action === "add-rumor-entry") {
+      await service.addRumorEntry(button.dataset.rumorId, { text: "Новый слух" });
+      await refreshQuestLog(app, moduleApi, "rebreya-rumors");
+      openQuestActivityEditor("rumor", button.dataset.rumorId, moduleApi, app);
+      return;
+    }
+
+    if (action === "edit-rumor-entry") {
+      rememberQuestLogTab(app, "rebreya-rumors");
+      openQuestActivityEditor("rumor", button.dataset.rumorId, moduleApi, app);
+      return;
+    }
+
+    if (action === "remove-rumor-entry") {
+      await service.removeRumorEntry(button.dataset.rumorId, button.dataset.rumorEntryId);
+      await refreshQuestLog(app, moduleApi, "rebreya-rumors");
+      return;
+    }
+
+    if (action === "roll-rumor-table") {
+      const text = await rollRumorFromTable(button.dataset.tableUuid);
+      await service.addRumorEntry(button.dataset.rumorId, { text });
+      await refreshQuestLog(app, moduleApi, "rebreya-rumors");
+      return;
+    }
+
+    if (action === "add-event") {
+      const activityEvent = await service.addQuestEvent({ title: "Новое событие" });
+      await refreshQuestLog(app, moduleApi, "rebreya-events");
+      openQuestActivityEditor("event", activityEvent.id, moduleApi, app);
+      return;
+    }
+
+    if (action === "open-event" || action === "edit-event") {
+      rememberQuestLogTab(app, "rebreya-events");
+      openQuestActivityEditor("event", button.dataset.eventId, moduleApi, app);
+      return;
+    }
+
+    if (action === "remove-event") {
+      await service.removeQuestEvent(button.dataset.eventId);
+      await refreshQuestLog(app, moduleApi, "rebreya-events");
+      return;
+    }
+  }
+  catch (error) {
+    notifyError(error, "Forien Quest Log activity action failed.");
+    await refreshQuestLog(app, moduleApi, getActiveQuestLogTab(button.closest(".quest-log")));
+    return;
+  }
 
   try {
     if (action === "add-rumor-topic") {
@@ -876,11 +1285,13 @@ async function injectQuestLogActivities(app, html, moduleApi) {
   nav.querySelectorAll("[data-rm-fql-log-tab]").forEach((tab) => {
     tab.addEventListener("click", (event) => {
       event.preventDefault();
+      rememberQuestLogTab(app, tab.dataset.tab);
       activateQuestLogTab(log, tab.dataset.tab);
     });
   });
   nav.querySelectorAll(".item:not([data-rm-fql-log-tab])").forEach((tab) => {
     tab.addEventListener("click", () => {
+      rememberQuestLogTab(app, "");
       body.querySelectorAll(".rm-fql-log-panel").forEach((panel) => {
         panel.hidden = true;
         panel.classList.remove("active");
@@ -893,6 +1304,10 @@ async function injectQuestLogActivities(app, html, moduleApi) {
       void handleQuestLogActivityAction(event, app, moduleApi);
     });
   });
+
+  if (app?._rebreyaQuestLogActiveTab) {
+    activateQuestLogTab(log, app._rebreyaQuestLogActiveTab);
+  }
 }
 
 async function injectQuestOverlay(app, html, moduleApi) {

@@ -129,6 +129,16 @@
   margin: 0;
 }
 
+.forien-quest-log .rm-fql-log-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .forien-quest-log .rm-fql-log-card__actions {
   display: inline-flex;
   gap: 4px;
@@ -144,13 +154,123 @@
 
 .forien-quest-log .rm-fql-rumor-entries li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr);
   gap: 6px;
   align-items: center;
 }
 
+.forien-quest-log .rm-fql-rumor-entries li.is-hidden {
+  opacity: 0.56;
+}
+
 .forien-quest-log .rm-fql-log-muted,
 .forien-quest-log .rm-fql-log-empty {
+  opacity: 0.78;
+}
+
+.rm-fql-activity-editor {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  min-height: 100%;
+}
+
+.rm-fql-activity-editor .quest-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid rgb(120 28 24 / 0.6);
+}
+
+.rm-fql-activity-editor .quest-tabs .item {
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.rm-fql-activity-editor .quest-tabs .item.active {
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.rm-fql-editor-body,
+.rm-fql-activity-editor .tab.active {
+  min-height: 0;
+}
+
+.rm-fql-activity-editor .tab:not(.active) {
+  display: none;
+}
+
+.rm-fql-editor-field {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.rm-fql-editor-field--grow {
+  min-height: 0;
+}
+
+.rm-fql-editor-field input,
+.rm-fql-editor-field textarea,
+.rm-fql-editor-entry textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.rm-fql-editor-field textarea,
+.rm-fql-editor-entry textarea {
+  resize: vertical;
+}
+
+.rm-fql-editor-section-header,
+.rm-fql-editor-actions,
+.rm-fql-editor-entry__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rm-fql-editor-section-header {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.rm-fql-editor-section-header h2 {
+  margin: 0;
+}
+
+.rm-fql-editor-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rm-fql-editor-entry {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 6px;
+  border: 1px solid rgb(99 68 35 / 0.28);
+  background: rgb(255 250 235 / 0.64);
+}
+
+.rm-fql-editor-entry.is-hidden {
+  opacity: 0.62;
+}
+
+.rm-fql-editor-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+}
+
+.rm-fql-editor-empty {
   opacity: 0.78;
 }
 

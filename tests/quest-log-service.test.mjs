@@ -209,7 +209,8 @@ test("group quest activities normalize rumors with entries and events", () => {
             entries: [
               {
                 id: " entry-a ",
-                text: "There is a hidden cellar."
+                text: "There is a hidden cellar.",
+                hidden: true
               },
               {
                 id: "",
@@ -238,7 +239,8 @@ test("group quest activities normalize rumors with entries and events", () => {
         entries: [
           {
             id: "entry-a",
-            text: "There is a hidden cellar."
+            text: "There is a hidden cellar.",
+            hidden: true
           }
         ]
       }
@@ -786,7 +788,8 @@ test("rumors and events are stored in the selected group quest state", async () 
   });
   assert.deepEqual(entry, {
     id: "entry-a",
-    text: "The old well is watched."
+    text: "The old well is watched.",
+    hidden: false
   });
   assert.deepEqual(event, {
     id: "event-a",
@@ -810,7 +813,7 @@ test("rumors and events can be edited in the selected group quest state", async 
               id: "rumor-a",
               title: "Tavern",
               tableUuid: "RollTable.old",
-              entries: [{ id: "entry-a", text: "Old rumor" }]
+              entries: [{ id: "entry-a", text: "Old rumor", hidden: false }]
             }
           ],
           events: [{ id: "event-a", title: "Market fire", text: "Old event" }]
@@ -825,7 +828,8 @@ test("rumors and events can be edited in the selected group quest state", async 
     tableUuid: "RollTable.harbor"
   }, "group-a");
   const entry = await service.updateRumorEntry("rumor-a", "entry-a", {
-    text: "The harbor master is buying silence."
+    text: "The harbor master is buying silence.",
+    hidden: true
   }, "group-a");
   const event = await service.updateQuestEvent("event-a", {
     title: "Festival",
@@ -836,11 +840,12 @@ test("rumors and events can be edited in the selected group quest state", async 
     id: "rumor-a",
     title: "Harbor",
     tableUuid: "RollTable.harbor",
-    entries: [{ id: "entry-a", text: "Old rumor" }]
+    entries: [{ id: "entry-a", text: "Old rumor", hidden: false }]
   });
   assert.deepEqual(entry, {
     id: "entry-a",
-    text: "The harbor master is buying silence."
+    text: "The harbor master is buying silence.",
+    hidden: true
   });
   assert.deepEqual(event, {
     id: "event-a",
@@ -853,7 +858,7 @@ test("rumors and events can be edited in the selected group quest state", async 
         id: "rumor-a",
         title: "Harbor",
         tableUuid: "RollTable.harbor",
-        entries: [{ id: "entry-a", text: "The harbor master is buying silence." }]
+        entries: [{ id: "entry-a", text: "The harbor master is buying silence.", hidden: true }]
       }
     ],
     events: [{ id: "event-a", title: "Festival", text: "The city square is blocked." }]

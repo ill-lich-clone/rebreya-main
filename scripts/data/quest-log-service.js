@@ -440,7 +440,8 @@ function normalizeRumorTopicInput(id, { title = "", tableUuid = "", entries = []
     tableUuid: cleanId(tableUuid),
     entries: asArray(entries).map((entry) => ({
       id: cleanId(entry?.id),
-      text: cleanText(entry?.text)
+      text: cleanText(entry?.text),
+      hidden: entry?.hidden === true
     })).filter((entry) => entry.id && entry.text)
   };
 
@@ -451,10 +452,11 @@ function normalizeRumorTopicInput(id, { title = "", tableUuid = "", entries = []
   return topic;
 }
 
-function normalizeRumorEntryInput(id, { text = "" } = {}) {
+function normalizeRumorEntryInput(id, { text = "", hidden = false } = {}) {
   const entry = {
     id: cleanId(id),
-    text: cleanText(text)
+    text: cleanText(text),
+    hidden: hidden === true
   };
 
   return entry.id && entry.text ? entry : null;
@@ -1095,16 +1097,27 @@ export class RebreyaQuestLogService {
         groupActorId: "",
         groupName: "",
         hasGroupContext: false,
+        canEdit: false,
         activities: normalizeQuestState({}).activities
       };
     }
 
     const groupState = normalizeGroupState(context.groupId, context.groupState ?? {});
+    const canEdit = globalThis.game?.user ? globalThis.game.user.isGM === true : true;
+    const activities = clone(groupState.questState.activities);
+    if (!canEdit) {
+      activities.rumors = activities.rumors.map((rumor) => ({
+        ...rumor,
+        entries: rumor.entries.filter((entry) => !entry.hidden)
+      }));
+    }
+
     return {
       groupActorId: context.groupId,
       groupName: context.groupActor?.name ?? "",
       hasGroupContext: true,
-      activities: clone(groupState.questState.activities)
+      canEdit,
+      activities
     };
   }
 
@@ -1211,7 +1224,8 @@ export class RebreyaQuestLogService {
 
       const current = rumor.entries[index];
       const entry = normalizeRumorEntryInput(id, {
-        text: data.text ?? current.text
+        text: data.text ?? current.text,
+        hidden: data.hidden ?? current.hidden
       });
       if (!entry) {
         throw new Error("Rumor entry data is incomplete.");

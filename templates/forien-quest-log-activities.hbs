@@ -1,7 +1,7 @@
 <div class="tab rm-fql-log-panel" data-group="primary" data-tab="rebreya-rumors" data-rm-fql-log-panel="rumors" hidden>
   <header class="rm-fql-log-panel__header">
     <h1>Слухи</h1>
-    {{#if hasGroupContext}}
+    {{#if canEdit}}
       <button type="button" data-rm-fql-log-action="add-rumor-topic"><i class="fas fa-plus"></i> Слух</button>
     {{/if}}
   </header>
@@ -11,23 +11,23 @@
       {{#each activities.rumors}}
         <article class="rm-fql-log-card" data-rumor-id="{{id}}">
           <header>
-            <h2>{{title}}</h2>
+            <h2><button type="button" class="rm-fql-log-link" data-rm-fql-log-action="open-rumor-topic" data-rumor-id="{{id}}">{{title}}</button></h2>
             <div class="rm-fql-log-card__actions">
-              <button type="button" data-rm-fql-log-action="roll-rumor-table" data-rumor-id="{{id}}" data-table-uuid="{{tableUuid}}" {{#unless tableUuid}}disabled{{/unless}}><i class="fas fa-dice-d20"></i></button>
-              <button type="button" data-rm-fql-log-action="add-rumor-entry" data-rumor-id="{{id}}"><i class="fas fa-plus"></i></button>
-              <button type="button" data-rm-fql-log-action="edit-rumor-topic" data-rumor-id="{{id}}"><i class="fas fa-pen"></i></button>
-              <button type="button" data-rm-fql-log-action="remove-rumor-topic" data-rumor-id="{{id}}"><i class="fas fa-trash"></i></button>
+              {{#if ../canEdit}}
+                <button type="button" data-rm-fql-log-action="roll-rumor-table" data-rumor-id="{{id}}" data-table-uuid="{{tableUuid}}" {{#unless tableUuid}}disabled{{/unless}}><i class="fas fa-dice-d20"></i></button>
+              {{/if}}
+              <button type="button" data-rm-fql-log-action="open-rumor-topic" data-rumor-id="{{id}}"><i class="fas fa-folder-open"></i></button>
+              {{#if ../canEdit}}
+                <button type="button" data-rm-fql-log-action="remove-rumor-topic" data-rumor-id="{{id}}"><i class="fas fa-trash"></i></button>
+              {{/if}}
             </div>
           </header>
           {{#if tableUuid}}<p class="rm-fql-log-muted">{{tableUuid}}</p>{{/if}}
           <ul class="rm-fql-rumor-entries">
             {{#each entries}}
-              <li data-rumor-entry-id="{{id}}">
+              <li class="{{#if hidden}}is-hidden{{/if}}" data-rumor-entry-id="{{id}}">
+                <i class="fas {{#if hidden}}fa-eye-slash{{else}}fa-eye{{/if}}"></i>
                 <span>{{text}}</span>
-                <span class="rm-fql-log-card__actions">
-                  <button type="button" data-rm-fql-log-action="edit-rumor-entry" data-rumor-id="{{../id}}" data-rumor-entry-id="{{id}}"><i class="fas fa-pen"></i></button>
-                  <button type="button" data-rm-fql-log-action="remove-rumor-entry" data-rumor-id="{{../id}}" data-rumor-entry-id="{{id}}"><i class="fas fa-trash"></i></button>
-                </span>
               </li>
             {{/each}}
           </ul>
@@ -44,7 +44,7 @@
 <div class="tab rm-fql-log-panel" data-group="primary" data-tab="rebreya-events" data-rm-fql-log-panel="events" hidden>
   <header class="rm-fql-log-panel__header">
     <h1>События</h1>
-    {{#if hasGroupContext}}
+    {{#if canEdit}}
       <button type="button" data-rm-fql-log-action="add-event"><i class="fas fa-plus"></i> Событие</button>
     {{/if}}
   </header>
@@ -54,10 +54,12 @@
       {{#each activities.events}}
         <article class="rm-fql-log-card" data-event-id="{{id}}">
           <header>
-            <h2>{{title}}</h2>
+            <h2><button type="button" class="rm-fql-log-link" data-rm-fql-log-action="open-event" data-event-id="{{id}}">{{title}}</button></h2>
             <div class="rm-fql-log-card__actions">
-              <button type="button" data-rm-fql-log-action="edit-event" data-event-id="{{id}}"><i class="fas fa-pen"></i></button>
-              <button type="button" data-rm-fql-log-action="remove-event" data-event-id="{{id}}"><i class="fas fa-trash"></i></button>
+              <button type="button" data-rm-fql-log-action="open-event" data-event-id="{{id}}"><i class="fas fa-folder-open"></i></button>
+              {{#if ../canEdit}}
+                <button type="button" data-rm-fql-log-action="remove-event" data-event-id="{{id}}"><i class="fas fa-trash"></i></button>
+              {{/if}}
             </div>
           </header>
           {{#if text}}<p>{{text}}</p>{{/if}}
