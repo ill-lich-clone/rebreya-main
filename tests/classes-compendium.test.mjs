@@ -318,25 +318,90 @@ test("sorcerer V0.11 ability descriptions are copied verbatim from the source ma
   });
 });
 
-test("Sorcerer gains three native metamagic choices at level three", () => {
+test("Sorcerer metamagic documents include base and origin-expanded options", () => {
   const sorcerer = normalizeClassCompendiumData(loadJson("data/sorcerer-rework-v011.json"));
   const definitions = buildFeatureDefinitions(sorcerer);
-  const featureUuidById = makeUuidMap(definitions);
-  const choices = buildClassAdvancement(sorcerer.classData, { featureUuidById })
-    .filter((entry) => entry.title === "Метамагия");
   const metamagic = definitions.filter((entry) => entry.sourceType === "sorcererMetamagic");
   const subtle = metamagic.find((entry) => entry.metamagicId === "subtle-spell");
+  const ancestorSpell = metamagic.find((entry) => entry.name === "Заклинание предка");
 
-  assert.deepEqual(choices.map((entry) => [entry.level, entry.configuration.choices[String(entry.level)].count]), [
-    [3, 3],
-    [10, 1],
-    [17, 1]
-  ]);
-  assert.equal(metamagic.length, 9);
+  assert.equal(metamagic.length, 24);
   assert.equal(createFeatureEntryData(subtle, new Map()).flags["rebreya-main"].sourceType, "sorcererMetamagic");
   assert.equal(createFeatureEntryData(subtle, new Map()).flags["rebreya-main"].metamagicId, "subtle-spell");
   assert.equal(createFeatureEntryData(subtle, new Map()).flags["rebreya-main"].cost, 1);
   assert.equal(createFeatureEntryData(subtle, new Map()).flags["rebreya-main"].stacking, "base");
+  assert.equal(ancestorSpell.subclassName, "Наследие драконьей крови");
+  assert.equal(createFeatureEntryData(ancestorSpell, new Map()).flags["rebreya-main"].sourceType, "sorcererMetamagic");
+  assert.equal(createFeatureEntryData(ancestorSpell, new Map()).flags["rebreya-main"].cost, 1);
+  assert.equal(createFeatureEntryData(ancestorSpell, new Map()).flags["rebreya-main"].stacking, "base");
+});
+
+test("Draconic sorcerer origin offers a dragon ancestor choice", () => {
+  const sorcerer = normalizeClassCompendiumData(loadJson("data/sorcerer-rework-v011.json"));
+  const definitions = buildFeatureDefinitions(sorcerer);
+  const featureUuidById = makeUuidMap(definitions);
+  const subclass = sorcerer.subclasses.find((entry) => entry.name === "Наследие драконьей крови");
+  const advancement = buildSubclassAdvancements(subclass, {
+    featureUuidById,
+    classIdentifier: sorcerer.classData.identifier,
+    draconicAncestorEntries: sorcerer.draconicAncestors
+  });
+  const ancestorChoice = advancement.find((entry) => entry.type === "ItemChoice" && entry.title === "Драконий предок");
+  const ancestors = definitions.filter((entry) => entry.sourceType === "sorcererDraconicAncestor");
+  const ancestorUuidByName = new Map(ancestors.map((entry) => [entry.name, featureUuidById.get(entry.featureId)]));
+  const pool = ancestorChoice?.configuration.pool.map((entry) => entry.uuid) ?? [];
+
+  assert.equal(ancestors.length, 10);
+  assert.equal(ancestorChoice.level, 1);
+  assert.equal(ancestorChoice.configuration.choices["1"].count, 1);
+  assert.equal(pool.length, 10);
+  assert.ok(pool.includes(ancestorUuidByName.get("Белый дракон")));
+  assert.ok(pool.includes(ancestorUuidByName.get("Чёрный дракон")));
+  assert.equal(ancestors.find((entry) => entry.name === "Красный дракон").damageType, "Огонь");
+});
+
+test("Sorcerer origin metamagic choices combine the base list with that origin's expanded list", () => {
+  const sorcerer = normalizeClassCompendiumData(loadJson("data/sorcerer-rework-v011.json"));
+  const definitions = buildFeatureDefinitions(sorcerer);
+  const featureUuidById = makeUuidMap(definitions);
+  const classChoices = buildClassAdvancement(sorcerer.classData, { featureUuidById })
+    .filter((entry) => entry.title === "Метамагия");
+  const draconic = sorcerer.subclasses.find((entry) => entry.name === "Наследие драконьей крови");
+  const wild = sorcerer.subclasses.find((entry) => entry.name === "Дикая магия");
+  const draconicAdvancement = buildSubclassAdvancements(draconic, {
+    featureUuidById,
+    classIdentifier: sorcerer.classData.identifier,
+    metamagicEntries: sorcerer.classData.metamagicOptions
+  });
+  const metamagicByName = new Map(
+    definitions
+      .filter((entry) => entry.sourceType === "sorcererMetamagic")
+      .map((entry) => [entry.name, featureUuidById.get(entry.featureId)])
+  );
+  const draconicChoices = draconicAdvancement.filter((entry) => entry.type === "ItemChoice" && entry.title === "Метамагия");
+  const draconicLevelThreePool = draconicChoices[0].configuration.pool.map((entry) => entry.uuid);
+
+  assert.deepEqual(classChoices, []);
+  assert.deepEqual(draconicChoices.map((entry) => [entry.level, entry.configuration.choices[String(entry.level)].count]), [
+    [3, 3],
+    [10, 1],
+    [17, 1]
+  ]);
+  assert.equal(draconicLevelThreePool.length, 13);
+  assert.ok(draconicLevelThreePool.includes(metamagicByName.get("Аккуратное заклинание")));
+  assert.ok(draconicLevelThreePool.includes(metamagicByName.get("Заклинание предка")));
+  assert.ok(draconicLevelThreePool.includes(metamagicByName.get("Крыло дракона")));
+  assert.equal(draconicLevelThreePool.includes(metamagicByName.get("Хаотическое заклинание")), false);
+  assert.deepEqual(draconic.metamagicOptions.map((entry) => entry.name), [
+    "Заклинание предка",
+    "Драконья защита",
+    "Драконье заклятье",
+    "Крыло дракона"
+  ]);
+  assert.deepEqual(wild.metamagicOptions.map((entry) => entry.name), [
+    "Хаотическое заклинание",
+    "Стремительное заклинание"
+  ]);
 });
 
 test("barbarian and fighter reworks use the ZoZT source label", () => {

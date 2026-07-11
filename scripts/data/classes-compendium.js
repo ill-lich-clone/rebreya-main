@@ -86,9 +86,13 @@ const FIGHTER_WEAPON_PROFICIENCIES = ["sim", "mar"];
 const ASI_LEVELS = [4, 8, 12, 16, 19];
 const BATTLE_MASTER_SUBCLASS_NAME = "мастер боевых искусств";
 const RUNE_KNIGHT_SUBCLASS_NAME = "рунный рыцарь";
+const DRACONIC_SORCERER_SUBCLASS_NAME = "наследие драконьей крови";
+const DRACONIC_ANCESTOR_FEATURE_NAME = "драконий предок";
+const SORCERER_EXPANDED_METAMAGIC_FEATURE_NAME = "расширенный список метамагии";
 const FIGHTING_STYLE_FEATS_SECTION = "черты боевых стилей";
 const MINOR_FEATS_SECTION = "младшие черты";
 const BATTLE_MASTER_MANEUVER_CHOICE_LEVELS = [3, 7, 10, 15, 18];
+const SORCERER_METAMAGIC_CHOICE_LEVELS = [[3, 3], [10, 1], [17, 1]];
 const RUNE_KNIGHT_RUNE_CHOICE_LEVELS = [
   { level: 3, count: 2 },
   { level: 7, count: 1 },
@@ -620,6 +624,152 @@ function deriveRuneKnightRunes(subclasses = []) {
   }));
 }
 
+function markdownTableCells(line) {
+  const text = String(line ?? "").trim();
+  if (!text.startsWith("|") || !text.endsWith("|")) {
+    return [];
+  }
+  return text
+    .split("|")
+    .slice(1, -1)
+    .map((cell) => cleanString(cell.replace(/\\([[\]])/gu, "$1")));
+}
+
+function isMarkdownSeparatorCell(value) {
+  return /^:?-{2,}:?$/u.test(cleanString(value));
+}
+
+function extractDraconicAncestorRows(description) {
+  const rows = [];
+  let readingAncestorTable = false;
+
+  for (const line of String(description ?? "").split(/\r?\n/u)) {
+    const cells = markdownTableCells(line);
+    if (cells.length < 3) {
+      continue;
+    }
+
+    const firstCell = normalizeMatchText(cells[0]);
+    if (firstCell === "дракон") {
+      readingAncestorTable = true;
+      continue;
+    }
+    if (!readingAncestorTable) {
+      continue;
+    }
+    if (firstCell === "уровень чародея") {
+      break;
+    }
+    if (cells.some(isMarkdownSeparatorCell)) {
+      continue;
+    }
+
+    rows.push({
+      dragon: cells[0],
+      damageType: cells[1],
+      savingThrow: cells[2]
+    });
+  }
+
+  return rows;
+}
+
+function normalizeDraconicAncestorRow(row, index, { scopeId = "", usedIds = new Set() } = {}) {
+  const dragon = cleanString(row?.dragon, `Дракон ${index + 1}`);
+  const damageType = cleanString(row?.damageType);
+  const savingThrow = cleanString(row?.savingThrow);
+  const name = `${dragon} дракон`;
+  const featureId = uniqueIdentifier(
+    buildAsciiIdentifier(`${scopeId}-${buildSlug(name, `ancestor-${index + 1}`)}`, `${scopeId}::${index + 1}`),
+    usedIds,
+    `${scopeId}::${index + 1}`
+  );
+
+  return {
+    featureId,
+    name,
+    description: [
+      `Драконий предок: ${dragon}`,
+      damageType ? `Вид урона: ${damageType}` : "",
+      savingThrow ? `Спасбросок: ${savingThrow}` : ""
+    ].filter(Boolean).join("\n"),
+    levels: [1],
+    requiredLevel: 1,
+    optional: false,
+    damageType,
+    savingThrow
+  };
+}
+
+function deriveDraconicAncestors(subclasses = []) {
+  const draconicSorcerer = (Array.isArray(subclasses) ? subclasses : [])
+    .find((subclass) => normalizeMatchText(subclass?.name) === DRACONIC_SORCERER_SUBCLASS_NAME);
+  const ancestorFeature = draconicSorcerer?.features?.find((feature) => (
+    normalizeMatchText(feature?.name) === DRACONIC_ANCESTOR_FEATURE_NAME
+  ));
+  if (!draconicSorcerer || !ancestorFeature) {
+    return [];
+  }
+
+  const usedIds = new Set();
+  return extractDraconicAncestorRows(ancestorFeature.description)
+    .map((row, index) => normalizeDraconicAncestorRow(row, index, {
+      scopeId: `${draconicSorcerer.subclassId}-draconic-ancestor`,
+      usedIds
+    }));
+}
+
+function parseExpandedMetamagicCost(description) {
+  const costMatch = /(?:потратить|потратив|расходуете|расходуя)\s+(?:вплоть до\s+|до\s+)?(\d+)/iu.exec(description);
+  if (costMatch) {
+    return Math.max(1, Math.floor(parseNumber(costMatch[1], 1)));
+  }
+
+  if (/уровн[ьяюе]* заклинани/iu.test(description)) {
+    return "spellLevel";
+  }
+
+  return 1;
+}
+
+function parseExpandedMetamagicStacking(description) {
+  return /даже если вы уже использовали другой вариант метамагии/iu.test(description)
+    ? "additive"
+    : "base";
+}
+
+function extractExpandedMetamagicOptions(subclass, usedIds = new Set()) {
+  const expandedFeature = (subclass?.features ?? []).find((feature) => (
+    normalizeMatchText(feature?.name) === SORCERER_EXPANDED_METAMAGIC_FEATURE_NAME
+  ));
+  if (!expandedFeature?.description) {
+    return [];
+  }
+
+  const matches = Array.from(expandedFeature.description.matchAll(/\*\*([^*]+)\*\*\.\s*/gu));
+  return matches.map((match, index) => {
+    const start = (match.index ?? 0) + match[0].length;
+    const end = matches[index + 1]?.index ?? expandedFeature.description.length;
+    const description = cleanString(
+      expandedFeature.description
+        .slice(start, end)
+        .replace(/\\([[\]])/gu, "$1")
+    );
+
+    return normalizeMetamagicOption({
+      name: cleanString(match[1], `Метамагия ${index + 1}`),
+      description,
+      levels: [3],
+      requiredLevel: 3,
+      cost: parseExpandedMetamagicCost(description),
+      stacking: parseExpandedMetamagicStacking(description)
+    }, index, {
+      scopeId: `${subclass.subclassId}-metamagic`,
+      usedIds
+    });
+  }).filter((option) => option.name);
+}
+
 function normalizeProgressionMap(value) {
   const progression = {};
   for (const [level, entry] of Object.entries(isPlainObject(value) ? value : {})) {
@@ -999,6 +1149,11 @@ export function normalizeClassCompendiumData(rawData) {
         usedIds: usedFeatureIds
       }))
       .filter((feature) => feature.name);
+    const subclassMetamagicOptions = extractExpandedMetamagicOptions({
+      subclassId,
+      name: subclassName,
+      features
+    });
     const usedSubclassCunningStrikeIds = new Set();
     const subclassCunningStrikes = (Array.isArray(rawSubclass?.cunningStrikes) ? rawSubclass.cunningStrikes : [])
       .map((strike, strikeIndex) => normalizeCunningStrikeEntry(strike, strikeIndex, {
@@ -1018,6 +1173,7 @@ export function normalizeClassCompendiumData(rawData) {
       name: subclassName,
       description: subclassDescription,
       features,
+      metamagicOptions: subclassMetamagicOptions,
       cunningStrikes: subclassCunningStrikes
     });
   }
@@ -1088,6 +1244,7 @@ export function normalizeClassCompendiumData(rawData) {
     }))
     .filter((rune) => rune.name);
 
+  const draconicAncestors = deriveDraconicAncestors(subclasses);
   const rawDominanceProgression = isPlainObject(data.dominanceProgression) ? data.dominanceProgression : {};
 
   return {
@@ -1127,6 +1284,7 @@ export function normalizeClassCompendiumData(rawData) {
     fightingStyles,
     maneuvers,
     runes,
+    draconicAncestors,
     dominanceProgression: {
       dice: normalizeProgressionMap(rawDominanceProgression.dice),
       die: normalizeDieProgressionMap(rawDominanceProgression.die)
@@ -1170,6 +1328,8 @@ export function buildFeatureDefinitions(normalizedData) {
   const allManeuverFeatureIds = Array.from(maneuverFeatureIdByName.values());
   const runeKnightSubclass = (normalizedData.subclasses ?? [])
     .find((subclass) => normalizeMatchText(subclass.name) === RUNE_KNIGHT_SUBCLASS_NAME);
+  const draconicSorcererSubclass = (normalizedData.subclasses ?? [])
+    .find((subclass) => normalizeMatchText(subclass.name) === DRACONIC_SORCERER_SUBCLASS_NAME);
 
   const buildBaseFeatureDefinition = (feature, sourceType, folderPath, identifierSeed) => {
     const featureId = `${classId}::${sourceType}::${feature.featureId}`;
@@ -1332,7 +1492,66 @@ export function buildFeatureDefinitions(normalizedData) {
     });
   }
 
+  for (const ancestor of normalizedData.draconicAncestors ?? []) {
+    const subclassId = draconicSorcererSubclass?.subclassId ?? classId;
+    const subclassName = draconicSorcererSubclass?.name ?? "Наследие драконьей крови";
+    const featureId = `${subclassId}::sorcererDraconicAncestor::${ancestor.featureId}`;
+    definitions.push({
+      featureId,
+      documentId: featureDocumentId(featureId),
+      sourceType: "sorcererDraconicAncestor",
+      classIdentifier: classId,
+      className,
+      subclassId,
+      subclassName,
+      name: ancestor.name,
+      description: ancestor.description,
+      levels: ancestor.levels,
+      requiredLevel: ancestor.requiredLevel,
+      optional: false,
+      identifier: buildAsciiIdentifier(`${subclassId}-draconic-ancestor-${ancestor.featureId}`, featureId),
+      folderPath: normalizeFolderPath([
+        classFeatureRootFolder,
+        "Архетипы",
+        subclassName,
+        "Драконий предок"
+      ]),
+      sourceLabel,
+      damageType: ancestor.damageType,
+      savingThrow: ancestor.savingThrow
+    });
+  }
+
   for (const subclass of normalizedData.subclasses) {
+    for (const option of subclass.metamagicOptions ?? []) {
+      const featureId = `${subclass.subclassId}::sorcererMetamagic::${option.featureId}`;
+      definitions.push({
+        featureId,
+        documentId: featureDocumentId(featureId),
+        sourceType: "sorcererMetamagic",
+        classIdentifier: classId,
+        className,
+        subclassId: subclass.subclassId,
+        subclassName: subclass.name,
+        name: option.name,
+        description: option.description,
+        levels: option.levels,
+        requiredLevel: option.requiredLevel,
+        optional: false,
+        identifier: buildAsciiIdentifier(`${subclass.subclassId}-metamagic-${option.featureId}`, featureId),
+        folderPath: normalizeFolderPath([
+          classFeatureRootFolder,
+          "Архетипы",
+          subclass.name,
+          "Метамагия"
+        ]),
+        sourceLabel,
+        metamagicId: option.metamagicId,
+        cost: option.cost,
+        stacking: option.stacking
+      });
+    }
+
     for (const strike of subclass.cunningStrikes ?? []) {
       const featureId = `${subclass.subclassId}::rogueCunningStrike::${strike.featureId}`;
       definitions.push({
@@ -1416,6 +1635,8 @@ function buildFeatureSignature(feature, context = {}) {
     metamagicId: feature.metamagicId ?? "",
     cost: feature.cost ?? 0,
     stacking: feature.stacking ?? "",
+    damageType: feature.damageType ?? "",
+    savingThrow: feature.savingThrow ?? "",
     startingEquipmentPackage: feature.startingEquipmentPackage ?? null,
     descriptionHtml: createFeatureDescriptionValue(feature, context),
     advancement: buildFeatureItemAdvancements(feature, context),
@@ -1451,6 +1672,10 @@ function buildSubtypeRequirementsLabel(feature) {
 
   if (feature.sourceType === "runeKnightRune") {
     return `${cleanString(feature.subclassName, "Рунный рыцарь")}, ${level}-й уровень`;
+  }
+
+  if (feature.sourceType === "sorcererDraconicAncestor") {
+    return `${cleanString(feature.subclassName, "Наследие драконьей крови")}, ${level}-й уровень`;
   }
 
   return `${cleanString(feature.className, "Класс")}, ${level}-й уровень`;
@@ -3361,6 +3586,31 @@ function runeUuidPoolFromContext(context = {}, maxRequiredLevel = 20) {
   return featureUuidsForIds(runeFeatureIds, context);
 }
 
+function sorcererMetamagicUuidPoolFromContext(context = {}, subclass = null) {
+  const classIdentifier = cleanString(context.classIdentifier, "sorcerer-rework-v011");
+  const baseFeatureIds = (Array.isArray(context.metamagicEntries) ? context.metamagicEntries : [])
+    .map((entry) => `${classIdentifier}::sorcererMetamagic::${entry.featureId}`)
+    .filter(Boolean);
+  const subclassFeatureIds = (Array.isArray(subclass?.metamagicOptions) ? subclass.metamagicOptions : [])
+    .map((entry) => `${subclass.subclassId}::sorcererMetamagic::${entry.featureId}`)
+    .filter(Boolean);
+
+  return featureUuidsForIds([...baseFeatureIds, ...subclassFeatureIds], context);
+}
+
+function draconicAncestorUuidPoolFromContext(context = {}, subclass = null) {
+  const subclassId = cleanString(subclass?.subclassId);
+  if (!subclassId) {
+    return [];
+  }
+
+  const ancestorFeatureIds = (Array.isArray(context.draconicAncestorEntries) ? context.draconicAncestorEntries : [])
+    .map((entry) => `${subclassId}::sorcererDraconicAncestor::${entry.featureId}`)
+    .filter(Boolean);
+
+  return featureUuidsForIds(ancestorFeatureIds, context);
+}
+
 function buildFeatureItemAdvancements(feature, context = {}) {
   const advancements = [];
 
@@ -3894,7 +4144,6 @@ export function buildClassAdvancement(classData, context = {}) {
   }
 
   advancements.push(...buildSpellChoiceAdvancements(classData, { spellUuidById }));
-  advancements.push(...buildMetamagicChoiceAdvancements(classData, { featureUuidById }));
 
   const fightingStyleFeaturePool = fightingStyleEntries
     .map((entry) => featureUuidById.get(`${classIdentifier}::fightingStyle::${entry.featureId}`))
@@ -3984,6 +4233,39 @@ export function buildSubclassAdvancements(subclass, context = {}) {
       itemUuids: uuids,
       optional: false
     }));
+  }
+
+  if (cleanString(context.classIdentifier) === "sorcerer-rework-v011") {
+    if (normalizeMatchText(subclass.name) === DRACONIC_SORCERER_SUBCLASS_NAME) {
+      const ancestorUuids = draconicAncestorUuidPoolFromContext(context, subclass);
+      if (ancestorUuids.length) {
+        advancements.push(buildItemChoiceAdvancement({
+          classIdentifier: subclass.subclassId,
+          seed: "draconic-ancestor",
+          title: "Драконий предок",
+          hint: "Выберите вид вашего драконьего предка.",
+          level: 1,
+          count: 1,
+          pool: ancestorUuids,
+          type: null
+        }));
+      }
+    }
+
+    const metamagicUuids = sorcererMetamagicUuidPoolFromContext(context, subclass);
+    if (metamagicUuids.length) {
+      for (const [level, count] of SORCERER_METAMAGIC_CHOICE_LEVELS) {
+        advancements.push(buildItemChoiceAdvancement({
+          classIdentifier: subclass.subclassId,
+          seed: `metamagic-${level}`,
+          title: "Метамагия",
+          hint: "Выберите доступные варианты Метамагии чародея.",
+          level,
+          count,
+          pool: metamagicUuids
+        }));
+      }
+    }
   }
 
   const maneuverUuids = maneuverUuidPoolFromContext(context);
@@ -4214,6 +4496,8 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
     metamagicId: feature.metamagicId,
     cost: feature.cost,
     stacking: feature.stacking,
+    damageType: feature.damageType,
+    savingThrow: feature.savingThrow,
     signature: buildFeatureSignature(feature, context),
     automation: feature.sourceType === "rageAction"
       ? { type: "rageAction", requiredLevel: feature.requiredLevel }
@@ -4444,7 +4728,9 @@ async function syncSubclassesPack(normalizedDataList, context) {
         ...context,
         classIdentifier,
         maneuverEntries: normalizedData.maneuvers,
-        runeEntries: normalizedData.runes
+        runeEntries: normalizedData.runes,
+        metamagicEntries: normalizedData.classData.metamagicOptions,
+        draconicAncestorEntries: normalizedData.draconicAncestors
       });
       const system = createSubclassSystem(subclass, classIdentifier, advancement, normalizedData.sourceLabel);
       subclassEntries.push({
