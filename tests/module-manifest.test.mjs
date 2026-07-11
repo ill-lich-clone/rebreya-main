@@ -141,7 +141,7 @@ test("module stylesheet cache bust uses the live module style version", async ()
   const entrypointSource = await readCanonicalEntrypointSource();
   const escapedVersion = manifest.version.replaceAll(".", "\\.");
 
-  assert.match(entrypointSource, new RegExp(`const MODULE_STYLE_VERSION = "${escapedVersion}-item-upgrade-row-drop";`, "u"));
+  assert.match(entrypointSource, new RegExp(`const MODULE_STYLE_VERSION = "${escapedVersion}-sorcerer-cast-dialog";`, "u"));
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
@@ -198,6 +198,10 @@ test("combat automation imports use the current cache busts", async () => {
   assert.match(
     entrypointSource,
     new RegExp(`status-service\\.js\\?v=${escapedVersion}-surrounded-ac`, "u"),
+  );
+  assert.match(
+    entrypointSource,
+    new RegExp(`sorcerer-automation-service\\.js\\?v=${escapedVersion}-sorcerer-cast-dialog`, "u"),
   );
   assert.match(
     statusServiceSource,

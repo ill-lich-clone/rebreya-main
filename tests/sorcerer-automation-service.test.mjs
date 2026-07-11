@@ -426,6 +426,35 @@ test("Seeking Spell pays only after a missed spell attack through its real activ
   assert.equal(pointsItem(actor).system.uses.spent, 4);
 });
 
+test("Seeking Spell does not spend points after a missed attack when resource spending is disabled", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({ chooseSeekingReroll: async () => true });
+  await service.syncSorceryPoints(actor);
+  const usageConfig = {
+    sorcererVirtualSpellLevel: 1,
+    sorcererConsumeResource: false,
+    sorcererMetamagic: { ids: ["seeking-spell"] }
+  };
+  let rerolls = 0;
+  const roll = { total: 4, isFailure: true };
+  const spell = makeSorcererSpell(actor, { system: { attack: { type: "spell" } } });
+  spell.rollAttack = async () => {
+    rerolls += 1;
+    return [{ total: 18 }];
+  };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(spell, usageConfig, {}, {}), true);
+  assert.equal(usageConfig.spellCast.payment.cost, 0);
+  assert.equal(usageConfig.spellCast.modifiers.seeking.cost, 0);
+  assert.equal(pointsItem(actor).system.uses.spent, 0);
+  assert.equal(await service.applyDnd5ePostAttackRoll([roll], {
+    subject: spell,
+    ammoUpdate: null
+  }), true);
+  assert.equal(rerolls, 1);
+  assert.equal(pointsItem(actor).system.uses.spent, 0);
+});
+
 test("Metamagic rejects incompatible stacking and unmet preconditions before payment", async () => {
   const actor = metamagicActor();
   const service = new SorcererAutomationService({});
@@ -906,6 +935,128 @@ test("virtual-slot prompt shows each legal level with its exact Sorcery Point co
     assert.match(dialog.content, /rebreya-sorcerer-choice-row/u);
     assert.match(dialog.content, /data-sorcerer-total/u);
     assert.equal(pointsItem(actor).system.uses.spent, 3);
+  }
+  finally {
+    globalThis.DialogV2 = originalDialog;
+  }
+});
+
+test("virtual-slot prompt combines resource, metamagic, and live total controls in one dialog", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const originalDialog = globalThis.DialogV2;
+  const dialogs = [];
+  globalThis.DialogV2 = {
+    wait: async (config) => {
+      dialogs.push(config);
+      const form = {
+        elements: {
+          spellLevel: {
+            value: "1",
+            selectedOptions: [{ dataset: { sorcererCost: "2" } }]
+          },
+          consumeResource: { checked: true },
+          exhaustionOverride: { checked: false },
+          metamagic: [
+            { tagName: "INPUT", checked: true, value: "subtle-spell" },
+            { tagName: "INPUT", checked: false, value: "distant-spell" }
+          ],
+          carefulTargets: { tagName: "SELECT", multiple: true, selectedOptions: [] },
+          heightenedTarget: { tagName: "SELECT", value: "" },
+          damageDice: { tagName: "SELECT", multiple: true, selectedOptions: [] }
+        }
+      };
+      return config.buttons.find((button) => button.action === "cast").callback(null, { form });
+    }
+  };
+
+  try {
+    const usageConfig = {};
+    assert.equal(await service.applyDnd5ePreUseActivity(makeDnd5eActivityClone(makeSorcererSpell(actor)), usageConfig, {}, {}), true);
+    assert.equal(dialogs.length, 1);
+    assert.match(dialogs[0].content, /Выберите уровень ячейки и её стоимость в единицах чародейства/u);
+    assert.doesNotMatch(dialogs[0].content, /виртуальной ячейки/u);
+    assert.match(dialogs[0].content, /name="consumeResource" checked/u);
+    assert.match(dialogs[0].content, /Расходовать ресурс/u);
+    assert.match(dialogs[0].content, /name="metamagic"/u);
+    assert.match(dialogs[0].content, /data-stacking="base"/u);
+    assert.match(dialogs[0].content, /data-stacking="additive"/u);
+    assert.match(dialogs[0].content, /rebreya-sorcerer-option__lock/u);
+    assert.match(dialogs[0].content, /input\.disabled=!!locked/u);
+    assert.match(dialogs[0].content, /classList\.toggle\('is-locked'/u);
+    assert.match(dialogs[0].content, /итого: <strong data-sorcerer-total>2<\/strong> единиц чародейства/u);
+    assert.match(dialogs[0].content, /data-sorcerer-refresh/u);
+    assert.doesNotMatch(dialogs[0].content, /Игнорировать ограничение ценой истощения/u);
+    assert.equal(pointsItem(actor).system.uses.spent, 3);
+    assert.deepEqual(usageConfig.spellCast.payment, { resource: "sorcery-points", cost: 3 });
+    assert.deepEqual(usageConfig.spellCast.modifiers.subtle, true);
+  }
+  finally {
+    globalThis.DialogV2 = originalDialog;
+  }
+});
+
+test("virtual-slot prompt can leave Sorcery Points unspent when resource spending is disabled", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const originalDialog = globalThis.DialogV2;
+  globalThis.DialogV2 = {
+    wait: async (config) => {
+      const form = {
+        elements: {
+          spellLevel: { value: "1", selectedOptions: [{ dataset: { sorcererCost: "2" } }] },
+          consumeResource: { checked: false },
+          exhaustionOverride: { checked: false },
+          metamagic: { tagName: "INPUT", checked: true, value: "subtle-spell" },
+          carefulTargets: { tagName: "SELECT", multiple: true, selectedOptions: [] },
+          heightenedTarget: { tagName: "SELECT", value: "" },
+          damageDice: { tagName: "SELECT", multiple: true, selectedOptions: [] }
+        }
+      };
+      return config.buttons.find((button) => button.action === "cast").callback(null, { form });
+    }
+  };
+
+  try {
+    const usageConfig = {};
+    assert.equal(await service.applyDnd5ePreUseActivity(makeDnd5eActivityClone(makeSorcererSpell(actor)), usageConfig, {}, {}), true);
+    assert.equal(pointsItem(actor).system.uses.spent, 0);
+    assert.deepEqual(usageConfig.spellCast.payment, { resource: "sorcery-points", cost: 0 });
+    assert.deepEqual(usageConfig.spellCast.modifiers.subtle, true);
+  }
+  finally {
+    globalThis.DialogV2 = originalDialog;
+  }
+});
+
+test("virtual-slot prompt shows exhaustion override only for an active cooldown", async () => {
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const originalDialog = globalThis.DialogV2;
+  const dialogs = [];
+  globalThis.DialogV2 = {
+    wait: async (config) => {
+      dialogs.push(config);
+      return { accepted: true, spellLevel: 3, consumeResource: true, metamagic: { ids: [] } };
+    }
+  };
+
+  try {
+    const spell = makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 });
+    assert.equal(await service.applyDnd5ePreUseActivity(spell, {}, {}, {}), true);
+    assert.doesNotMatch(dialogs[0].content, /Игнорировать ограничение ценой истощения/u);
+
+    dialogs.length = 0;
+    globalThis.DialogV2.wait = async (config) => {
+      dialogs.push(config);
+      return { accepted: true, spellLevel: 3, exhaustionOverride: true, consumeResource: true, metamagic: { ids: [] } };
+    };
+    assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }), {}, {}, {}), true);
+    assert.match(dialogs[0].content, /Игнорировать ограничение ценой истощения/u);
+    assert.match(dialogs[0].content, /data-sorcerer-exhaustion-row/u);
   }
   finally {
     globalThis.DialogV2 = originalDialog;

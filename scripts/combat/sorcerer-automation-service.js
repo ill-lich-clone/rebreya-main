@@ -542,22 +542,24 @@ function exhaustionLevel(actor) {
 
 function normalizeSelection(value, fallbackLevel) {
   if (value === false || value === null) {
-    return { accepted: false, spellLevel: fallbackLevel, exhaustionOverride: false };
+    return { accepted: false, spellLevel: fallbackLevel, exhaustionOverride: false, consumeResource: true };
   }
 
   if (typeof value === "number") {
-    return { accepted: true, spellLevel: toInteger(value, fallbackLevel), exhaustionOverride: false };
+    return { accepted: true, spellLevel: toInteger(value, fallbackLevel), exhaustionOverride: false, consumeResource: true };
   }
 
   if (value && typeof value === "object") {
     return {
       accepted: value.accepted !== false && value.confirmed !== false,
       spellLevel: toInteger(value.spellLevel ?? value.level, fallbackLevel),
-      exhaustionOverride: value.exhaustionOverride === true || value.override === true
+      exhaustionOverride: value.exhaustionOverride === true || value.override === true,
+      consumeResource: value.consumeResource !== false && value.spendResource !== false,
+      metamagic: value.metamagic && typeof value.metamagic === "object" ? value.metamagic : null
     };
   }
 
-  return { accepted: true, spellLevel: fallbackLevel, exhaustionOverride: false };
+  return { accepted: true, spellLevel: fallbackLevel, exhaustionOverride: false, consumeResource: true };
 }
 
 function explicitSelection(usageConfig, dialogConfig, fallbackLevel) {
@@ -565,7 +567,11 @@ function explicitSelection(usageConfig, dialogConfig, fallbackLevel) {
     ?? dialogConfig?.sorcererVirtualSpellLevel
     ?? usageConfig?.spellCast?.spellLevel
     ?? fallbackLevel;
-  return normalizeSelection(selected, fallbackLevel);
+  const selection = normalizeSelection(selected, fallbackLevel);
+  if (usageConfig?.sorcererConsumeResource === false || dialogConfig?.sorcererConsumeResource === false) {
+    selection.consumeResource = false;
+  }
+  return selection;
 }
 
 function hasExplicitSelection(usageConfig, dialogConfig) {
@@ -659,9 +665,16 @@ export class SorcererAutomationService {
     return true;
   }
 
-  async #chooseVirtualSpellLevel({ actor, activity, choices, usageConfig, dialogConfig, baseLevel }) {
-    void actor;
-    void activity;
+  async #chooseVirtualSpellLevel({
+    actor,
+    activity,
+    choices,
+    usageConfig,
+    dialogConfig,
+    baseLevel,
+    cooldowns = {},
+    highLevelCasts = {}
+  }) {
     if (this._options.chooseVirtualSpellLevel instanceof Function) {
       return normalizeSelection(
         await this._options.chooseVirtualSpellLevel({ actor, activity, choices: deepClone(choices) }),
@@ -679,20 +692,69 @@ export class SorcererAutomationService {
     }
 
     const options = choices.map(({ spellLevel, cost }) => (
-      `<option value="${spellLevel}" data-sorcerer-cost="${cost}"${spellLevel === baseLevel ? " selected" : ""}>${spellLevel} (${cost})</option>`
+      `<option value="${spellLevel}" data-sorcerer-cost="${cost}" data-sorcerer-exhaustion="${(
+        (spellLevel <= 5 && cooldownIsActive(cooldowns[cooldownKey(activity, spellLevel)]))
+        || (spellLevel >= 6 && highLevelCasts[String(spellLevel)] === true)
+      ) ? "true" : "false"}"${spellLevel === baseLevel ? " selected" : ""}>${spellLevel} (${cost})</option>`
     )).join("");
+    const availableMetamagic = metamagicOptions(actor);
+    const metamagicCheckboxes = availableMetamagic.map(({ id, label, cost, stacking }) => {
+      const text = METAMAGIC_UI_TEXT[id] ?? { name: label, detail: "" };
+      const actualCost = cost === "spellLevel" ? baseLevel : cost;
+      const costMode = cost === "spellLevel" ? "spellLevel" : "fixed";
+      const safeStacking = stacking === "additive" ? "additive" : "base";
+      return `<label class="rebreya-sorcerer-option"><input type="checkbox" name="metamagic" value="${escapeHtml(id)}" data-cost="${actualCost}" data-cost-mode="${costMode}" data-stacking="${safeStacking}"><span class="rebreya-sorcerer-option__body"><strong>${escapeHtml(text.name)}</strong><span class="rebreya-sorcerer-option__details">${escapeHtml(text.detail)}</span></span><span class="rebreya-sorcerer-option__cost"><span data-metamagic-cost-label>${actualCost}</span> ед.</span><i class="fa-solid fa-lock rebreya-sorcerer-option__lock" aria-hidden="true"></i></label>`;
+    }).join("");
+    const selectedTargets = availableTargets({ selectedOnly: true });
+    const targetOptions = selectedTargets.map(({ uuid, label }) => (
+      `<option value="${escapeHtml(uuid)}">${escapeHtml(label)}</option>`
+    )).join("");
+    const dieOptions = damageDieChoices(activity).map(({ id, label }) => (
+      `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`
+    )).join("");
+    const currentChoiceNeedsExhaustion = choices.some(({ spellLevel }) => (
+      spellLevel === baseLevel
+      && (
+        (spellLevel <= 5 && cooldownIsActive(cooldowns[cooldownKey(activity, spellLevel)]))
+        || (spellLevel >= 6 && highLevelCasts[String(spellLevel)] === true)
+      )
+    ));
+    const hasExhaustionChoice = choices.some(({ spellLevel }) => (
+      (spellLevel <= 5 && cooldownIsActive(cooldowns[cooldownKey(activity, spellLevel)]))
+      || (spellLevel >= 6 && highLevelCasts[String(spellLevel)] === true)
+    ));
+    const refreshScript = "(function(root){if(!root)return;var level=root.querySelector('[name=spellLevel]');var option=level&&level.selectedOptions?level.selectedOptions[0]:null;var selectedLevel=option?Number(option.value||0):0;var consume=root.querySelector('[name=consumeResource]');var spend=!consume||consume.checked;var inputs=Array.prototype.slice.call(root.querySelectorAll('input[name=metamagic]'));var selectedBase=inputs.find(function(input){return input.checked&&input.dataset.stacking!=='additive';});var selectedAdditive=inputs.find(function(input){return input.checked&&input.dataset.stacking==='additive';});inputs.forEach(function(input){var currentCost=input.dataset.costMode==='spellLevel'?Math.max(1,selectedLevel):Number(input.dataset.cost||0);input.dataset.currentCost=String(currentCost);var costLabel=input.closest('.rebreya-sorcerer-option')&&input.closest('.rebreya-sorcerer-option').querySelector('[data-metamagic-cost-label]');if(costLabel)costLabel.textContent=String(currentCost);var locked=input.dataset.stacking==='additive'?selectedAdditive&&input!==selectedAdditive:selectedBase&&input!==selectedBase;input.disabled=!!locked;var label=input.closest('.rebreya-sorcerer-option');if(label){label.classList.toggle('is-locked',!!locked);label.setAttribute('aria-disabled',locked?'true':'false');}});var checkedIds=inputs.filter(function(input){return input.checked;}).map(function(input){return input.value;});Array.prototype.slice.call(root.querySelectorAll('[data-metamagic-fields]')).forEach(function(row){var ids=(row.dataset.metamagicFields||'').split(' ');row.hidden=!ids.some(function(id){return checkedIds.indexOf(id)>=0;});});var exhaustionRow=root.querySelector('[data-sorcerer-exhaustion-row]');if(exhaustionRow){var show=option&&option.dataset.sorcererExhaustion==='true';exhaustionRow.hidden=!show;if(!show){var exhaustion=exhaustionRow.querySelector('input');if(exhaustion)exhaustion.checked=false;}}var slotCost=spend&&option?Number(option.dataset.sorcererCost||0):0;var metamagicCost=spend?inputs.filter(function(input){return input.checked;}).reduce(function(total,input){return total+Number(input.dataset.currentCost||input.dataset.cost||0);},0):0;var total=root.querySelector('[data-sorcerer-total]');if(total)total.textContent=String(slotCost+metamagicCost);})(this)";
+    const exhaustionOverride = hasExhaustionChoice
+      ? `<label class="rebreya-sorcerer-toggle" data-sorcerer-exhaustion-row${currentChoiceNeedsExhaustion ? "" : " hidden"}><input type="checkbox" name="exhaustionOverride"><span>Игнорировать ограничение ценой истощения</span></label>`
+      : "";
+    const metamagicSection = metamagicCheckboxes
+      ? `<section class="rebreya-sorcerer-metamagic"><h3>Метамагия</h3>${metamagicCheckboxes}<div class="rebreya-sorcerer-metamagic__fields"><label data-metamagic-fields="careful-spell" hidden>Аккуратное: существа, автоматически преуспевающие в спасброске<select name="carefulTargets" multiple>${targetOptions}</select></label><label data-metamagic-fields="heightened-spell" hidden>Непреодолимое: цель с помехой к первому спасброску<select name="heightenedTarget">${targetOptions}</select></label><p data-metamagic-fields="twinned-spell" hidden>Удвоенное: выберите две подходящие цели обычным инструментом выбора целей Foundry.</p><label data-metamagic-fields="empowered-spell" hidden>Усиленное: кубы для переброса<select name="damageDice" multiple>${dieOptions}</select></label></div></section>`
+      : "";
     const result = await DialogV2.wait({
       window: { title: "Единицы чародейства" },
-      content: `<p>Выберите уровень виртуальной ячейки и её стоимость в единицах чародейства.</p><div class="rebreya-sorcerer-choice-row"><label>Уровень <select name="spellLevel" onchange="this.closest('.rebreya-sorcerer-choice-row').querySelector('[data-sorcerer-total]').textContent=this.selectedOptions[0].dataset.sorcererCost">${options}</select></label><label><input type="checkbox" name="exhaustionOverride"> Игнорировать ограничение ценой истощения</label><output data-sorcerer-total>${VIRTUAL_SLOT_COSTS[baseLevel]}</output></div>`,
+      content: `<div class="rebreya-sorcerer-choice-row rebreya-sorcerer-cast-dialog" data-sorcerer-cast-dialog data-sorcerer-refresh="true" onchange="${refreshScript}"><p>Выберите уровень ячейки и её стоимость в единицах чародейства.</p><label class="rebreya-sorcerer-field">Уровень ячейки<select name="spellLevel">${options}</select></label><div class="rebreya-sorcerer-toggle-row"><label class="rebreya-sorcerer-toggle"><input type="checkbox" name="consumeResource" checked><span>Расходовать ресурс</span></label>${exhaustionOverride}</div>${metamagicSection}<output class="rebreya-sorcerer-total">итого: <strong data-sorcerer-total>${VIRTUAL_SLOT_COSTS[baseLevel]}</strong> единиц чародейства</output></div>`,
       buttons: [{
         action: "cast",
         label: "Сотворить",
         default: true,
-        callback: (_event, button) => ({
-          accepted: true,
-          spellLevel: toInteger(button?.form?.elements?.spellLevel?.value, baseLevel),
-          exhaustionOverride: button?.form?.elements?.exhaustionOverride?.checked === true
-        })
+        callback: (_event, button) => {
+          const carefulTargets = formValues(button?.form, "carefulTargets");
+          const heightenedTarget = formValues(button?.form, "heightenedTarget").at(0) ?? "";
+          return {
+            accepted: true,
+            spellLevel: toInteger(button?.form?.elements?.spellLevel?.value, baseLevel),
+            exhaustionOverride: button?.form?.elements?.exhaustionOverride?.checked === true,
+            consumeResource: button?.form?.elements?.consumeResource?.checked !== false,
+            metamagic: {
+              accepted: true,
+              ids: formValues(button?.form, "metamagic"),
+              targetUuids: carefulTargets.length ? carefulTargets : [heightenedTarget].filter(Boolean),
+              currentTargets: selectedTargets.map(({ uuid }) => uuid),
+              secondTargetUuid: "",
+              damageDice: formValues(button?.form, "damageDice")
+            }
+          };
+        }
       }, {
         action: "cancel",
         label: "Отмена"
@@ -925,7 +987,10 @@ export class SorcererAutomationService {
       }
       else if (id === "seeking-spell") {
         const option = meta.options?.find((entry) => entry.id === id) ?? { cost: meta.seekingCost ?? 2 };
-        modifiers.seeking = { pending: true, cost: this.#metamagicCost(option, plan.choice.spellLevel) };
+        modifiers.seeking = {
+          pending: true,
+          cost: plan.spendResource === false ? 0 : this.#metamagicCost(option, plan.choice.spellLevel)
+        };
       }
     }
     updateSource(activity, updates);
@@ -999,6 +1064,7 @@ export class SorcererAutomationService {
       accepted: true,
       spellLevel: plan.choice.spellLevel,
       exhaustionOverride: plan.override,
+      consumeResource: plan.spendResource !== false,
       metamagic: {
         ids: [...plan.metamagic.ids],
         targetUuids: [...plan.metamagic.targetUuids],
@@ -1032,6 +1098,7 @@ export class SorcererAutomationService {
       choice: { spellLevel: toInteger(stored.spellLevel, spellBaseLevel(activity)) },
       metamagic,
       override: stored.exhaustionOverride === true,
+      spendResource: stored.consumeResource !== false,
       range: stored.range ? deepClone(stored.range) : null,
       duration: stored.duration ? deepClone(stored.duration) : null,
       activation: stored.activation ? deepClone(stored.activation) : null
@@ -1117,10 +1184,21 @@ export class SorcererAutomationService {
     const choices = Object.entries(VIRTUAL_SLOT_COSTS)
       .map(([level, cost]) => ({ spellLevel: Number(level), cost }))
       .filter(({ spellLevel }) => spellLevel >= baseLevel && spellLevel <= maxLevel);
+    const cooldowns = actorFlag(actor, COOLDOWNS_FLAG);
+    const highLevelCasts = actorFlag(actor, HIGH_LEVEL_CASTS_FLAG);
     const stored = usageConfig?.[MODULE_ID]?.[PREFLIGHT_FLAG];
     const selected = stored
       ? normalizeSelection(stored, baseLevel)
-      : await this.#chooseVirtualSpellLevel({ actor, activity, choices, usageConfig, dialogConfig, baseLevel });
+      : await this.#chooseVirtualSpellLevel({
+        actor,
+        activity,
+        choices,
+        usageConfig,
+        dialogConfig,
+        baseLevel,
+        cooldowns,
+        highLevelCasts
+      });
     if (!selected.accepted) {
       return null;
     }
@@ -1129,7 +1207,7 @@ export class SorcererAutomationService {
       return null;
     }
 
-    const request = stored?.metamagic ?? await this.#chooseMetamagic({
+    const request = stored?.metamagic ?? selected.metamagic ?? await this.#chooseMetamagic({
       actor,
       activity,
       spellLevel: choice.spellLevel,
@@ -1150,8 +1228,6 @@ export class SorcererAutomationService {
     }
 
     const override = selected.exhaustionOverride || explicitExhaustionOverride(usageConfig, dialogConfig);
-    const cooldowns = actorFlag(actor, COOLDOWNS_FLAG);
-    const highLevelCasts = actorFlag(actor, HIGH_LEVEL_CASTS_FLAG);
     const key = cooldownKey(activity, choice.spellLevel);
     const activeCooldown = choice.spellLevel <= 5 && cooldownIsActive(cooldowns[key]);
     const highLevelRepeat = choice.spellLevel >= 6 && highLevelCasts[String(choice.spellLevel)] === true;
@@ -1161,8 +1237,10 @@ export class SorcererAutomationService {
     const points = pointsFeature(actor);
     const spent = Math.max(0, toInteger(points?.system?.uses?.spent, 0));
     const max = Math.max(0, toInteger(points?.system?.uses?.max, 0));
-    const totalCost = choice.cost + metamagic.cost;
-    if (!points || max - spent < totalCost) {
+    const resourceCost = choice.cost + metamagic.cost;
+    const spendResource = selected.consumeResource !== false;
+    const totalCost = spendResource ? resourceCost : 0;
+    if (spendResource && (!points || max - spent < totalCost)) {
       return null;
     }
 
@@ -1172,6 +1250,8 @@ export class SorcererAutomationService {
       choice,
       metamagic,
       totalCost,
+      resourceCost,
+      spendResource,
       override,
       cooldowns,
       highLevelCasts,
@@ -1417,7 +1497,7 @@ export class SorcererAutomationService {
         pending = {
           actor: actorFrom(activity),
           activity,
-          cost: Math.max(1, toInteger(record.cost, 2)),
+          cost: Math.max(0, toInteger(record.cost, 2)),
           used: false,
           charged: false
         };
@@ -1433,26 +1513,28 @@ export class SorcererAutomationService {
     }
 
     const points = pointsFeature(pending.actor);
-    const cost = Math.max(1, toInteger(pending.cost, 2));
+    const cost = Math.max(0, toInteger(pending.cost, 2));
     const spent = Math.max(0, toInteger(points?.system?.uses?.spent, 0));
     const max = Math.max(0, toInteger(points?.system?.uses?.max, 0));
-    if (!points || max - spent < cost) {
+    if (cost > 0 && (!points || max - spent < cost)) {
       return true;
     }
 
-    if (!(await this.#chooseSeekingReroll(activity, safeRolls))) {
+    if (!(await this.#chooseSeekingReroll(activity, safeRolls, cost))) {
       return true;
     }
 
     pending.used = true;
     try {
-      await updateDocument(points, { "system.uses.spent": spent + cost });
-      pending.charged = true;
+      if (cost > 0) {
+        await updateDocument(points, { "system.uses.spent": spent + cost });
+        pending.charged = true;
+      }
       const usageMessageId = this.#rollUsageMessageId(safeRolls);
       const rerolled = await activity.rollAttack({}, {}, usageMessageId
         ? { data: { "flags.dnd5e.originatingMessage": usageMessageId } }
         : {});
-      if (!rerolled) {
+      if (!rerolled && cost > 0) {
         await updateDocument(points, { "system.uses.spent": spent });
         pending.charged = false;
         pending.used = false;
@@ -1469,17 +1551,20 @@ export class SorcererAutomationService {
     return true;
   }
 
-  async #chooseSeekingReroll(activity, rolls) {
+  async #chooseSeekingReroll(activity, rolls, cost = 2) {
     if (this._options.chooseSeekingReroll instanceof Function) {
-      return (await this._options.chooseSeekingReroll({ activity, rolls })) === true;
+      return (await this._options.chooseSeekingReroll({ activity, rolls, cost })) === true;
     }
     const DialogV2 = dialogV2();
     if (typeof DialogV2?.wait !== "function") {
       return false;
     }
+    const content = cost > 0
+      ? `<p>Spend ${cost} Sorcery Points to reroll this missed spell attack?</p>`
+      : "<p>Reroll this missed spell attack?</p>";
     const result = await DialogV2.wait({
       window: { title: "Seeking Spell" },
-      content: "<p>Spend 2 Sorcery Points to reroll this missed spell attack?</p>",
+      content,
       buttons: [
         { action: "reroll", label: "Reroll", default: true, callback: () => true },
         { action: "cancel", label: "Cancel", callback: () => false }
@@ -1699,6 +1784,7 @@ export class SorcererAutomationService {
       choice,
       metamagic,
       totalCost,
+      spendResource,
       override,
       cooldowns,
       highLevelCasts,
@@ -1732,8 +1818,10 @@ export class SorcererAutomationService {
     this.#persistResolvedPlan(usageConfig, plan);
     const metamagicConfig = this.#applyMetamagicConfig(activity, usageConfig, plan, messageConfig);
     try {
-      await updateDocument(points, { "system.uses.spent": spent + totalCost });
-      state.pointsChanged = true;
+      if (spendResource) {
+        await updateDocument(points, { "system.uses.spent": spent + totalCost });
+        state.pointsChanged = true;
+      }
       if (choice.spellLevel <= 5) {
         cooldowns[key] = { remaining: choice.spellLevel };
         await setActorFlag(actor, COOLDOWNS_FLAG, cooldowns);

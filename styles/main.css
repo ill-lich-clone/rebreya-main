@@ -10487,17 +10487,66 @@ summary:focus-visible {
   flex-direction: column;
   align-items: stretch;
   gap: 0.45rem;
+  width: min(42rem, 100%);
   max-width: 100%;
   overflow: visible;
+}
+
+.rebreya-sorcerer-cast-dialog {
+  width: min(42rem, 100%);
+}
+
+.rebreya-sorcerer-cast-dialog p {
+  margin: 0 0 0.35rem;
 }
 
 .rebreya-sorcerer-choice-row > * {
   flex: 0 0 auto;
 }
 
+.rebreya-sorcerer-field {
+  display: grid;
+  gap: 0.25rem;
+  font-weight: 600;
+}
+
+.rebreya-sorcerer-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  align-items: center;
+}
+
+.rebreya-sorcerer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.75rem;
+  margin: 0;
+}
+
+.rebreya-sorcerer-toggle input {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.rebreya-sorcerer-metamagic {
+  display: grid;
+  gap: 0.45rem;
+  max-height: 18rem;
+  overflow: auto;
+  padding-right: 0.15rem;
+}
+
+.rebreya-sorcerer-metamagic h3 {
+  margin: 0.2rem 0 0;
+  font-size: var(--font-size-14);
+  font-weight: 700;
+}
+
 .rebreya-sorcerer-choice-row .rebreya-sorcerer-option {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: 0.35rem 0.6rem;
   align-items: start;
   padding: 0.55rem 0.65rem;
@@ -10510,14 +10559,44 @@ summary:focus-visible {
   margin-top: 0.2rem;
 }
 
+.rebreya-sorcerer-choice-row .rebreya-sorcerer-option.is-locked {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .rebreya-sorcerer-choice-row .rebreya-sorcerer-option__cost {
   white-space: nowrap;
   font-weight: 600;
 }
 
+.rebreya-sorcerer-choice-row .rebreya-sorcerer-option__lock {
+  visibility: hidden;
+  margin-top: 0.15rem;
+}
+
+.rebreya-sorcerer-choice-row .rebreya-sorcerer-option.is-locked .rebreya-sorcerer-option__lock {
+  visibility: visible;
+}
+
 .rebreya-sorcerer-choice-row .rebreya-sorcerer-option__details {
   display: block;
-  grid-column: 2 / -1;
+  grid-column: 1 / -1;
   margin: 0;
   color: var(--color-text-dark-secondary);
+  white-space: normal;
+}
+
+.rebreya-sorcerer-metamagic__fields {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.rebreya-sorcerer-metamagic__fields label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.rebreya-sorcerer-total {
+  margin-top: 0.2rem;
+  font-weight: 700;
 }

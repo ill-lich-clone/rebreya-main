@@ -58,7 +58,7 @@ import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.93-environment-stable-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.93-mechanus-d20-advantage-mode";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.93";
-import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.93";
+import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.93-sorcerer-cast-dialog";
 import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
@@ -128,7 +128,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.93-item-upgrade-row-drop";
+const MODULE_STYLE_VERSION = "1.4.93-sorcerer-cast-dialog";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
