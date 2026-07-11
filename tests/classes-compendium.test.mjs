@@ -35,6 +35,80 @@ function loadJson(path) {
   return JSON.parse(readFileSync(join(process.cwd(), path), "utf8").replace(/^\uFEFF/u, ""));
 }
 
+function loadSorcererSourceMarkdown() {
+  const path = "ДнД реворк чародея V0.11.md";
+  assert.equal(existsSync(join(process.cwd(), path)), true);
+  return readFileSync(join(process.cwd(), path), "utf8").replace(/^\uFEFF/u, "").split(/\r?\n/u);
+}
+
+function cleanSorcererHeading(value) {
+  return String(value ?? "")
+    .replace(/\{#[^}]+\}/gu, "")
+    .replace(/\\\*/gu, "")
+    .replace(/[*_]/gu, "")
+    .replace(/\s+/gu, " ")
+    .replace(/\s+⚡/gu, "⚡")
+    .trim();
+}
+
+function getSorcererSourceSections() {
+  const lines = loadSorcererSourceMarkdown();
+  const headings = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = /^(#{4,5})\s+(.+)$/u.exec(lines[index]);
+    if (!match) continue;
+    headings.push({
+      level: match[1].length,
+      name: cleanSorcererHeading(match[2]),
+      start: index + 1
+    });
+  }
+
+  return headings.map((heading, index) => {
+    const next = headings.slice(index + 1).find((candidate) => candidate.level <= heading.level);
+    return {
+      ...heading,
+      end: next?.start ?? lines.length,
+      body: lines.slice(heading.start, next?.start - 1).join("\n").trim()
+    };
+  });
+}
+
+function getSorcererSection(sections, name, level, { after = 0, before = Infinity } = {}) {
+  return sections.find((section) => (
+    section.level === level
+      && cleanSorcererHeading(section.name) === cleanSorcererHeading(name)
+      && section.start > after
+      && section.start < before
+  ));
+}
+
+function extractSorceryPointsSourceText(spellcastingBody) {
+  const lines = spellcastingBody.split("\n");
+  const boldLineIndexes = lines
+    .map((line, index) => line.trim().startsWith("**") ? index : -1)
+    .filter((index) => index >= 0);
+  assert.ok(boldLineIndexes.length >= 4);
+  return lines.slice(boldLineIndexes[1], boldLineIndexes[3]).join("\n").trim();
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function extractMetamagicOptionSourceText(metamagicBody, optionName, nextOptionName = null) {
+  const startPattern = new RegExp(`\\*\\*${escapeRegExp(optionName)}\\.\\*\\*\\s*`, "u");
+  const startMatch = startPattern.exec(metamagicBody);
+  assert.ok(startMatch, `Missing source markdown text for metamagic option ${optionName}`);
+  const start = startMatch.index + startMatch[0].length;
+  const endPattern = nextOptionName
+    ? new RegExp(`\\n\\*\\*${escapeRegExp(nextOptionName)}\\.\\*\\*`, "u")
+    : /\n\n####/u;
+  const endMatch = endPattern.exec(metamagicBody.slice(start));
+  const end = endMatch ? start + endMatch.index : metamagicBody.length;
+  return metamagicBody.slice(start, end).replace(/\\([\[\]])/gu, "$1").trim();
+}
+
 function makeUuidMap(definitions) {
   return new Map(definitions.map((definition) => [definition.featureId, `Compendium.world.rebreya-class-features.Item.${definition.documentId ?? definition.identifier}`]));
 }
@@ -186,6 +260,62 @@ test("sorcerer V0.11 is a full Charisma caster with source-table progressions", 
   assert.equal(levelOneGrant.configuration.items.some((item) => item.uuid === featureUuidById.get("sorcerer-rework-v011::class::sorcerer-spellcasting")), true);
   assert.equal(equipmentChoice.configuration.pool.length, 2);
   assert.match(sandShiftEntry.system.description.value, /@UUID\[.*\]\{Проявление духов\}/u);
+});
+
+test("sorcerer V0.11 ability descriptions are copied verbatim from the source markdown", () => {
+  const sourceData = loadJson("data/sorcerer-rework-v011.json");
+  const sorcerer = {
+    classData: sourceData.class,
+    subclasses: sourceData.subclasses
+  };
+  const sections = getSorcererSourceSections();
+  const spellcasting = getSorcererSection(sections, "Чародейское заклинательство", 4);
+  const expectedClassDescriptions = new Map([
+    ["Единицы чародейства", extractSorceryPointsSourceText(spellcasting.body)]
+  ]);
+
+  for (const feature of sorcerer.classData.features) {
+    const expected = expectedClassDescriptions.get(feature.name)
+      ?? getSorcererSection(sections, feature.name, 4)?.body;
+    assert.ok(expected, `Missing source markdown section for class feature ${feature.name}`);
+    assert.equal(feature.description, expected, `Class feature ${feature.name} must match the source markdown exactly`);
+  }
+
+  for (const subclass of sorcerer.subclasses) {
+    const subclassSection = getSorcererSection(sections, subclass.name, 4);
+    assert.ok(subclassSection, `Missing source markdown section for subclass ${subclass.name}`);
+    const nextSubclass = sections.find((section) => section.level === 4 && section.start > subclassSection.start);
+    const firstFeature = sections.find((section) => (
+      section.level === 5
+        && section.start > subclassSection.start
+        && section.start < (nextSubclass?.start ?? Infinity)
+    ));
+    const subclassIntro = loadSorcererSourceMarkdown()
+      .slice(subclassSection.start, (firstFeature?.start ?? nextSubclass?.start ?? subclassSection.end) - 1)
+      .join("\n")
+      .trim();
+    assert.equal(subclass.description, subclassIntro, `Subclass ${subclass.name} description must match the source markdown exactly`);
+
+    for (const feature of subclass.features) {
+      const source = getSorcererSection(sections, feature.name, 5, {
+        after: subclassSection.start,
+        before: nextSubclass?.start ?? Infinity
+      });
+      assert.ok(source, `Missing source markdown section for ${subclass.name} feature ${feature.name}`);
+      assert.equal(feature.description, source.body, `${subclass.name} feature ${feature.name} must match the source markdown exactly`);
+    }
+  }
+
+  const metamagicSection = getSorcererSection(sections, "Метамагия", 4);
+  assert.ok(metamagicSection);
+  sourceData.metamagicOptions.forEach((option, index, options) => {
+    const nextOption = options[index + 1];
+    assert.equal(
+      option.description,
+      extractMetamagicOptionSourceText(metamagicSection.body, option.name, nextOption?.name),
+      `Metamagic option ${option.name} must match the source markdown exactly`
+    );
+  });
 });
 
 test("Sorcerer gains three native metamagic choices at level three", () => {
