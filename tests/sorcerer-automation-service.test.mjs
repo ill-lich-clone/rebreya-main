@@ -25,7 +25,10 @@ globalThis.game ??= {
   combat: { round: 1 }
 };
 
-const { SorcererAutomationService } = await import("../scripts/combat/sorcerer-automation-service.js");
+const {
+  SorcererAutomationService,
+  updateSorcererCastDialogControls
+} = await import("../scripts/combat/sorcerer-automation-service.js");
 
 const MODULE_ID = "rebreya-main";
 const SORCERER_ROOT = "sorcerer-rework-v011";
@@ -190,12 +193,12 @@ function makeCooldownCardMessage({ id = "cooldown-card", content, flags = {} } =
   };
 }
 
-function addMetamagic(actor, metamagicId, cost, stacking = "base") {
+function addMetamagic(actor, metamagicId, cost, stacking = "base", extraFlags = {}) {
   const item = makeItemFromData(actor, {
     name: metamagicId,
     type: "feat",
-    flags: { [MODULE_ID]: { sourceType: "sorcererMetamagic", metamagicId, cost, stacking } },
-    system: { identifier: metamagicId }
+    flags: { [MODULE_ID]: { sourceType: "sorcererMetamagic", metamagicId, cost, stacking, ...extraFlags } },
+    system: { identifier: metamagicId, description: { value: extraFlags.description ?? "" } }
   }, metamagicId);
   actor.items.contents.push(item);
   return item;
@@ -252,6 +255,62 @@ function completeReactionCheck(usageConfig) {
       }
     }
   };
+}
+
+function makeFakeClassList(classes) {
+  return {
+    toggle(name, value) {
+      if (value) classes.add(name);
+      else classes.delete(name);
+    }
+  };
+}
+
+function makeFakeMetamagicLabel(input, slider = null) {
+  const costLabel = { textContent: "" };
+  const costOutput = slider ? { textContent: "" } : null;
+  const label = {
+    dataset: {},
+    classes: new Set(),
+    attributes: {},
+    classList: null,
+    setAttribute(name, value) { this.attributes[name] = value; },
+    querySelector(selector) {
+      if (selector === "[data-metamagic-cost-label]") return costLabel;
+      if (selector === "[data-metamagic-cost-slider]") return slider;
+      if (selector === "[data-metamagic-cost-output]") return costOutput;
+      return null;
+    }
+  };
+  label.classList = makeFakeClassList(label.classes);
+  input.closest = () => label;
+  return { label, costLabel, costOutput, slider };
+}
+
+function makeCastDialogRoot({ selectedLevel = 2, slotCost = 3, consume = true, metamagicInputs = [] } = {}) {
+  const level = {
+    value: String(selectedLevel),
+    selectedOptions: [{ value: String(selectedLevel), dataset: { sorcererCost: String(slotCost), sorcererExhaustion: "false" } }]
+  };
+  const consumeResource = { checked: consume };
+  const total = { textContent: "" };
+  const fields = [{ dataset: { metamagicFields: "careful-spell" }, hidden: false }];
+  const container = {
+    matches: (selector) => selector === "[data-sorcerer-cast-dialog]",
+    querySelector(selector) {
+      if (selector === "[name=spellLevel]") return level;
+      if (selector === "[name=consumeResource]") return consumeResource;
+      if (selector === "[data-sorcerer-total]") return total;
+      if (selector === "[data-sorcerer-exhaustion-row]") return null;
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === "input[name=metamagic]") return metamagicInputs;
+      if (selector === "[data-metamagic-fields]") return fields;
+      return [];
+    }
+  };
+  return { root: container, level, total, fields };
 }
 
 test("Sorcery Points synchronize to the level-three scale and recover on long rest", async () => {
@@ -324,12 +383,15 @@ test("Subtle Spell removes V and S from the shared cast context", async () => {
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
   const usageConfig = { sorcererVirtualSpellLevel: 1, sorcererMetamagic: { ids: ["subtle-spell"] } };
+  const messageConfig = {};
 
   assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor, {
     system: { components: { vocal: true, somatic: true, material: true } }
-  }), usageConfig, {}, {}), true);
+  }), usageConfig, {}, messageConfig), true);
   assert.deepEqual(usageConfig.spellCast.components, { verbal: false, somatic: false, material: true });
   assert.deepEqual(usageConfig.flags[MODULE_ID].spellCast.components, { verbal: false, somatic: false, material: true });
+  assert.equal(messageConfig.data.flags[MODULE_ID].spellCast.metamagic[0].id, "subtle-spell");
+  assert.deepEqual(messageConfig.data.flags[MODULE_ID].spellCast.components, { verbal: false, somatic: false, material: true });
 });
 
 test("Extended Spell doubles a legal duration without exceeding twenty-four hours", async () => {
@@ -486,6 +548,7 @@ test("Sorcerer casting spends points but preserves native slots", async () => {
     spellLevel: 1,
     components: { vocal: true, somatic: true, material: false },
     payment: { resource: "sorcery-points", cost: 2 },
+    metamagic: [],
     modifiers: { cooldownOverride: false, exhaustion: 0, highLevelOverride: false }
   });
 });
@@ -539,6 +602,7 @@ test("a virtual level-three cast uses D&D5e slot, scaling, and consume fields wi
     spellLevel: 3,
     components: { vocal: true, somatic: true, material: false },
     payment: { resource: "sorcery-points", cost: 5 },
+    metamagic: [],
     modifiers: { cooldownOverride: false, exhaustion: 0, highLevelOverride: false }
   });
 });
@@ -983,14 +1047,106 @@ test("virtual-slot prompt combines resource, metamagic, and live total controls 
     assert.match(dialogs[0].content, /data-stacking="base"/u);
     assert.match(dialogs[0].content, /data-stacking="additive"/u);
     assert.match(dialogs[0].content, /rebreya-sorcerer-option__lock/u);
-    assert.match(dialogs[0].content, /input\.disabled=!!locked/u);
-    assert.match(dialogs[0].content, /classList\.toggle\('is-locked'/u);
+    assert.doesNotMatch(dialogs[0].content, /onchange=/u);
+    assert.equal(dialogs[0].position.width, 720);
+    assert.equal(typeof dialogs[0].render, "function");
     assert.match(dialogs[0].content, /итого: <strong data-sorcerer-total>2<\/strong> единиц чародейства/u);
-    assert.match(dialogs[0].content, /data-sorcerer-refresh/u);
     assert.doesNotMatch(dialogs[0].content, /Игнорировать ограничение ценой истощения/u);
     assert.equal(pointsItem(actor).system.uses.spent, 3);
     assert.deepEqual(usageConfig.spellCast.payment, { resource: "sorcery-points", cost: 3 });
     assert.deepEqual(usageConfig.spellCast.modifiers.subtle, true);
+  }
+  finally {
+    globalThis.DialogV2 = originalDialog;
+  }
+});
+
+test("sorcerer cast dialog updater recalculates totals and locks incompatible options", () => {
+  const subtle = {
+    checked: true,
+    disabled: false,
+    value: "subtle-spell",
+    dataset: { cost: "1", costMode: "fixed", minCost: "1", maxCost: "1", stacking: "base" }
+  };
+  const quickened = {
+    checked: false,
+    disabled: false,
+    value: "quickened-spell",
+    dataset: { cost: "2", costMode: "fixed", minCost: "1", maxCost: "2", stacking: "base" }
+  };
+  const empowered = {
+    checked: false,
+    disabled: false,
+    value: "empowered-spell",
+    dataset: { cost: "1", costMode: "fixed", minCost: "1", maxCost: "1", stacking: "additive" }
+  };
+  const subtleLabel = makeFakeMetamagicLabel(subtle);
+  const quickenedLabel = makeFakeMetamagicLabel(quickened);
+  const empoweredLabel = makeFakeMetamagicLabel(empowered);
+  const { root, total } = makeCastDialogRoot({
+    selectedLevel: 2,
+    slotCost: 3,
+    metamagicInputs: [subtle, quickened, empowered]
+  });
+
+  assert.equal(updateSorcererCastDialogControls(root), true);
+  assert.equal(total.textContent, "4");
+  assert.equal(quickened.disabled, true);
+  assert.equal(quickenedLabel.label.classes.has("is-locked"), true);
+  assert.equal(subtle.disabled, false);
+  assert.equal(subtleLabel.label.classes.has("is-locked"), false);
+  assert.equal(empowered.disabled, false);
+  assert.equal(empoweredLabel.label.classes.has("is-locked"), false);
+});
+
+test("variable origin metamagic uses the selected slider cost for totals and payment", async () => {
+  const actor = metamagicActor();
+  addMetamagic(actor, "draconic-dragon-spell", 3, "base", {
+    costMode: "variable",
+    minCost: 1,
+    maxCost: 3,
+    metamagicAutomation: "draconic-dragon-spell",
+    description: "Dragon spell full source text."
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const originalDialog = globalThis.DialogV2;
+  const dialogs = [];
+  globalThis.DialogV2 = {
+    wait: async (config) => {
+      dialogs.push(config);
+      const form = {
+        elements: {
+          spellLevel: { value: "2", selectedOptions: [{ dataset: { sorcererCost: "3" } }] },
+          consumeResource: { checked: true },
+          exhaustionOverride: { checked: false },
+          metamagic: { tagName: "INPUT", checked: true, value: "draconic-dragon-spell" },
+          "metamagicCost.draconic-dragon-spell": { tagName: "INPUT", value: "2" },
+          carefulTargets: { tagName: "SELECT", multiple: true, selectedOptions: [] },
+          heightenedTarget: { tagName: "SELECT", value: "" },
+          damageDice: { tagName: "SELECT", multiple: true, selectedOptions: [] }
+        }
+      };
+      return config.buttons.find((button) => button.action === "cast").callback(null, { form });
+    }
+  };
+
+  try {
+    const usageConfig = {};
+    const messageConfig = {};
+    assert.equal(await service.applyDnd5ePreUseActivity(makeDnd5eActivityClone(makeSorcererSpell(actor)), usageConfig, {}, messageConfig), true);
+    assert.match(dialogs[0].content, /name="metamagicCost\.draconic-dragon-spell"/u);
+    assert.match(dialogs[0].content, /type="range"/u);
+    assert.equal(pointsItem(actor).system.uses.spent, 5);
+    assert.deepEqual(usageConfig.spellCast.payment, { resource: "sorcery-points", cost: 5 });
+    assert.deepEqual(usageConfig.spellCast.metamagic, [{
+      id: "draconic-dragon-spell",
+      name: "draconic-dragon-spell",
+      cost: 2,
+      stacking: "base",
+      automation: "draconic-dragon-spell"
+    }]);
+    assert.equal(messageConfig.data.flags[MODULE_ID].spellCast.metamagic[0].cost, 2);
   }
   finally {
     globalThis.DialogV2 = originalDialog;
@@ -1895,6 +2051,32 @@ test("RED: Subtle removes native dnd5e vocal and somatic item properties on the 
     sorcererMetamagic: { ids: ["subtle-spell"] }
   }, {}, {}), true);
   assert.deepEqual(Array.from(activity.item.system.properties).sort(), ["material"]);
+});
+
+test("Subtle usage message names metamagic and replaces V/S component pills", async () => {
+  const service = new SorcererAutomationService({});
+  let messageUpdate = null;
+  const message = {
+    id: "usage-card",
+    content: `<div class="dnd5e-card"><ul class="card-footer pills unlist"><li>В, С, М</li><li>ДЕЙСТВИЕ</li></ul></div>`,
+    getFlag: (_scope, key) => key === "spellCast"
+      ? {
+        components: { verbal: false, somatic: false, material: true },
+        metamagic: [{ id: "subtle-spell", name: "Неуловимое заклинание", cost: 1 }]
+      }
+      : undefined,
+    async update(patch) {
+      messageUpdate = patch;
+      this.content = patch.content ?? this.content;
+      return this;
+    }
+  };
+
+  assert.equal(service.handleDnd5ePostCreateUsageMessage(null, message), true);
+  await waitForDeferredActivityUse();
+  assert.ok(messageUpdate?.content.includes("Метамагия: Неуловимое заклинание"));
+  assert.ok(messageUpdate.content.includes("<li>М</li>"));
+  assert.doesNotMatch(messageUpdate.content, /В, С, М/u);
 });
 
 test("RED: Seeking reroll retains dnd5e's originating usage-message reference", async () => {

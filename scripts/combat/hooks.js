@@ -362,6 +362,17 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasSorcererService) {
+    for (const hookName of ["renderApplicationV2", "renderDialogV2"]) {
+      Hooks.on(hookName, (...args) => {
+        try {
+          moduleApi.sorcererAutomationService.bindSorcererCastDialogControls?.(...args);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to bind Sorcerer cast dialog controls.`, error);
+        }
+      });
+    }
+
     Hooks.on("dnd5e.preRollSavingThrow", (rollConfig, dialogConfig, messageConfig) => {
       try {
         return moduleApi.sorcererAutomationService.applyDnd5ePreRollSavingThrow(

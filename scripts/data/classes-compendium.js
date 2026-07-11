@@ -557,14 +557,29 @@ function normalizeMetamagicOption(rawOption, index, options = {}) {
     ...options
   });
   const rawCost = rawOption?.cost;
+  const cost = cleanString(rawCost).toLowerCase() === "spelllevel"
+    ? "spellLevel"
+    : Math.max(1, Math.floor(parseNumber(rawCost, 1)));
+  const rawCostMode = cleanString(rawOption?.costMode).toLowerCase();
+  const costMode = rawCostMode === "variable"
+    ? "variable"
+    : cost === "spellLevel"
+      ? "spellLevel"
+      : "fixed";
+  const minCost = Math.max(1, Math.floor(parseNumber(rawOption?.minCost, 1)));
+  const maxCost = cost === "spellLevel"
+    ? undefined
+    : Math.max(minCost, Math.floor(parseNumber(rawOption?.maxCost, cost)));
   return {
     ...entry,
     levels: [3],
     requiredLevel: 3,
     metamagicId: cleanString(rawOption?.metamagicId ?? rawOption?.id, entry.featureId),
-    cost: cleanString(rawCost).toLowerCase() === "spelllevel"
-      ? "spellLevel"
-      : Math.max(1, Math.floor(parseNumber(rawCost, 1))),
+    cost,
+    costMode,
+    minCost,
+    maxCost,
+    automation: cleanString(rawOption?.automation ?? rawOption?.automationId),
     stacking: cleanString(rawOption?.stacking).toLowerCase() === "additive" ? "additive" : "base"
   };
 }
@@ -738,6 +753,28 @@ function parseExpandedMetamagicStacking(description) {
     : "base";
 }
 
+const EXPANDED_METAMAGIC_SPECS = Object.freeze(new Map([
+  [normalizeMatchText("Заклинание предка"), { id: "draconic-ancestral-spell", cost: 1 }],
+  [normalizeMatchText("Драконья защита"), { id: "draconic-dragon-protection", cost: 1 }],
+  [normalizeMatchText("Драконье заклятье"), { id: "draconic-dragon-spell", cost: 3, costMode: "variable", minCost: 1, maxCost: 3 }],
+  [normalizeMatchText("Крыло дракона"), { id: "draconic-dragon-wing", cost: 3, costMode: "variable", minCost: 1, maxCost: 3 }],
+  [normalizeMatchText("Хаотическое заклинание"), { id: "wild-chaotic-spell", cost: 3, costMode: "variable", minCost: 1, maxCost: 3 }],
+  [normalizeMatchText("Стремительное заклинание"), { id: "wild-swift-spell", cost: 1 }],
+  [normalizeMatchText("Нелетальное заклинание"), { id: "divine-nonlethal-spell", cost: 1 }],
+  [normalizeMatchText("Божественное лечение"), { id: "divine-healing-spell", cost: 1 }],
+  [normalizeMatchText("Божественное правосудие"), { id: "divine-justice-spell", cost: 2 }],
+  [normalizeMatchText("Божественное сияние"), { id: "divine-radiance-spell", cost: 3 }],
+  [normalizeMatchText("Теневое заклинание"), { id: "shadow-shadow-spell", cost: 2 }],
+  [normalizeMatchText("Стремительность тени"), { id: "shadow-swiftness-spell", cost: 1 }],
+  [normalizeMatchText("Вихрь шторма"), { id: "storm-vortex-spell", cost: 3 }],
+  [normalizeMatchText("Гибкая магия"), { id: "chemtech-flexible-magic", cost: 2 }],
+  [normalizeMatchText("Заражение"), { id: "chemtech-infection-spell", cost: 3, costMode: "variable", minCost: 1, maxCost: 3 }]
+]));
+
+function isVariableExpandedMetamagicCost(description) {
+  return /(?:вплоть до|до)\s+\d+/iu.test(description);
+}
+
 function extractExpandedMetamagicOptions(subclass, usedIds = new Set()) {
   const expandedFeature = (subclass?.features ?? []).find((feature) => (
     normalizeMatchText(feature?.name) === SORCERER_EXPANDED_METAMAGIC_FEATURE_NAME
@@ -755,13 +792,23 @@ function extractExpandedMetamagicOptions(subclass, usedIds = new Set()) {
         .slice(start, end)
         .replace(/\\([[\]])/gu, "$1")
     );
+    const name = cleanString(match[1], `Метамагия ${index + 1}`);
+    const spec = EXPANDED_METAMAGIC_SPECS.get(normalizeMatchText(name)) ?? {};
+    const parsedCost = spec.cost ?? parseExpandedMetamagicCost(description);
+    const variableCost = spec.costMode === "variable" || isVariableExpandedMetamagicCost(description);
 
     return normalizeMetamagicOption({
-      name: cleanString(match[1], `Метамагия ${index + 1}`),
+      id: spec.id,
+      metamagicId: spec.id,
+      name,
       description,
       levels: [3],
       requiredLevel: 3,
-      cost: parseExpandedMetamagicCost(description),
+      cost: parsedCost,
+      costMode: variableCost ? "variable" : undefined,
+      minCost: spec.minCost ?? 1,
+      maxCost: spec.maxCost ?? (variableCost && typeof parsedCost === "number" ? parsedCost : undefined),
+      automation: spec.id,
       stacking: parseExpandedMetamagicStacking(description)
     }, index, {
       scopeId: `${subclass.subclassId}-metamagic`,
@@ -1383,6 +1430,10 @@ export function buildFeatureDefinitions(normalizedData) {
       ),
       metamagicId: option.metamagicId,
       cost: option.cost,
+      costMode: option.costMode,
+      minCost: option.minCost,
+      maxCost: option.maxCost,
+      automation: option.automation,
       stacking: option.stacking
     });
   }
@@ -1548,6 +1599,10 @@ export function buildFeatureDefinitions(normalizedData) {
         sourceLabel,
         metamagicId: option.metamagicId,
         cost: option.cost,
+        costMode: option.costMode,
+        minCost: option.minCost,
+        maxCost: option.maxCost,
+        automation: option.automation,
         stacking: option.stacking
       });
     }
@@ -4495,6 +4550,10 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
       : undefined,
     metamagicId: feature.metamagicId,
     cost: feature.cost,
+    costMode: feature.costMode,
+    minCost: feature.minCost,
+    maxCost: feature.maxCost,
+    metamagicAutomation: feature.automation,
     stacking: feature.stacking,
     damageType: feature.damageType,
     savingThrow: feature.savingThrow,
