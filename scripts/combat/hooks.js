@@ -115,6 +115,12 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to handle combat turn fighter automation.`, error);
       });
     }
+
+    if (hasSorcererService) {
+      moduleApi.sorcererAutomationService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to update Sorcerer virtual-slot cooldowns.`, error);
+      });
+    }
   });
 
   if (hasAttackService) {

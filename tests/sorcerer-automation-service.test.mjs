@@ -157,6 +157,27 @@ function makeSorcererSpell(actor, {
   };
 }
 
+function makeCooldownCardMessage({ id = "cooldown-card", content, flags = {} } = {}) {
+  return {
+    id,
+    _id: id,
+    content,
+    flags: structuredClone(flags),
+    updateCalls: [],
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key]
+        ?? foundry.utils.getProperty(this.flags, `${scope}.${key}`);
+    },
+    async update(patch = {}) {
+      this.updateCalls.push(patch);
+      for (const [path, value] of Object.entries(patch)) {
+        foundry.utils.setProperty(this, path, value);
+      }
+      return this;
+    }
+  };
+}
+
 function addMetamagic(actor, metamagicId, cost, stacking = "base") {
   const item = makeItemFromData(actor, {
     name: metamagicId,
@@ -698,7 +719,7 @@ test("a generic deferred resume reaches one paid Sorcerer final cast after neutr
     assert.equal(resumedUses[2][0][MODULE_ID].sorcererAutomationBypass, true);
     assert.equal(pointsItem(actor).system.uses.spent, 5);
     assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
-      "chromatic-orb:3": { expiresAtRound: 4 }
+      "chromatic-orb:3": { remaining: 3 }
     });
     assert.equal(actor.system.attributes.exhaustion, 1);
     assert.equal(attackHookCalls, 1);
@@ -903,7 +924,7 @@ test("cancelled, invalid, and unaffordable virtual casts do not mutate resources
   assert.equal(unaffordableUsage.spellCast, undefined);
 });
 
-test("low-level repeat casts require an exhaustion override until their cooldown expires", async () => {
+test("low-level repeat casts require an exhaustion override until their owner-turn cooldown expires", async () => {
   const actor = levelActor(5, { includePoints: true });
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
@@ -920,8 +941,147 @@ test("low-level repeat casts require an exhaustion override until their cooldown
   assert.equal(overrideUsage.spellCast.modifiers.cooldownOverride, true);
   assert.equal(overrideUsage.spellCast.modifiers.exhaustion, 1);
 
-  globalThis.game.combat = { round: 13 };
+  await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+  await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+  await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
   assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }), {}, {}, {}), true);
+});
+
+test("RED: level-three virtual-slot cooldown counts down on each owner turn", async () => {
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }),
+    {},
+    {},
+    {}
+  ), true);
+  assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+    "fireball:3": { remaining: 3 }
+  });
+
+  await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+  await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+  await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+
+  assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+    "fireball:3": { remaining: 0 }
+  });
+});
+
+test("RED: an unrelated combatant turn leaves another Sorcerer's cooldown unchanged", async () => {
+  const actor = levelActor(5, { includePoints: true });
+  const otherActor = levelActor(5, { includePoints: true });
+  otherActor.id = "other-sorcerer";
+  otherActor.uuid = "Actor.other-sorcerer";
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }),
+    {},
+    {},
+    {}
+  ), true);
+  await service.handleCombatTurnChange({ combatant: { actor: otherActor } }, { turn: 0 });
+
+  assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+    "fireball:3": { remaining: 3 }
+  });
+});
+
+test("RED: a reaction Shield cast is ready at the start of its owner's next turn", async () => {
+  const actor = levelActor(1, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { id: "shield", baseLevel: 1 }),
+    {},
+    {},
+    {}
+  ), true);
+  assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+    "shield:1": { remaining: 1 }
+  });
+
+  await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+  assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+    "shield:1": { remaining: 0 }
+  });
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { id: "shield", baseLevel: 1 }),
+    {},
+    {},
+    {}
+  ), true);
+});
+
+test("RED: a cooldown card stores stable metadata and keeps exactly one footer block", async () => {
+  const previousGame = globalThis.game;
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 });
+  const messageConfig = {};
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {}, {}, messageConfig), true);
+  const message = makeCooldownCardMessage({
+    content: '<div class="chat-card"><ul class="card-footer pills unlist"><li>native</li></ul></div>',
+    flags: messageConfig.data?.flags
+  });
+  globalThis.game = { ...previousGame, messages: new Map([[message.id, message]]) };
+  try {
+    await service.handleDnd5ePostCreateUsageMessage(activity, message);
+    await service.handleDnd5ePostCreateUsageMessage(activity, message);
+    assert.deepEqual(message.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldown"), {
+      actorUuid: actor.uuid,
+      actorId: actor.id,
+      cooldownKey: "fireball:3",
+      remaining: 3
+    });
+    assert.match(message.content, /Перезарядка: 3 раундов/u);
+    assert.equal((message.content.match(/data-rebreya-sorcerer-cooldown/gu) ?? []).length, 1);
+
+    await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+    assert.match(message.content, /Перезарядка: 2 раундов/u);
+    assert.equal((message.content.match(/data-rebreya-sorcerer-cooldown/gu) ?? []).length, 1);
+
+    await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+    await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+    assert.match(message.content, /Перезарядка: готово/u);
+    assert.equal((message.content.match(/data-rebreya-sorcerer-cooldown/gu) ?? []).length, 1);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("RED: a cooldown override does not flag a new spell card for cooldown display", async () => {
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }),
+    {},
+    {},
+    {}
+  ), true);
+  const messageConfig = {};
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }),
+    { sorcererExhaustionOverride: true },
+    {},
+    messageConfig
+  ), true);
+
+  assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+    "fireball:3": { remaining: 3 }
+  });
+  assert.equal(messageConfig.data?.flags?.[MODULE_ID]?.sorcererAutomation?.virtualSlotCooldown, undefined);
 });
 
 test("high-level virtual slots are limited once per level until long rest unless overridden", async () => {
@@ -1087,10 +1247,16 @@ test("RED: hooks use the installed dnd5e save, damage, and attack hook contracts
   globalThis.game = { user: { id: "user", isGM: true }, combat: { round: 1 } };
   try {
     const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
-    registerCombatHooks({ sorcererAutomationService: new SorcererAutomationService({}) });
+    const service = new SorcererAutomationService({});
+    let combatTurnCalls = 0;
+    service.handleCombatTurnChange = async () => { combatTurnCalls += 1; return true; };
+    registerCombatHooks({ sorcererAutomationService: service });
     assert.equal(typeof handlers.get("dnd5e.preRollSavingThrow"), "function");
     assert.equal(typeof handlers.get("dnd5e.preRollDamage"), "function");
     assert.equal(typeof handlers.get("dnd5e.rollAttack"), "function");
+    handlers.get("combatTurn")({ combatant: { actor: levelActor(1) } }, { turn: 0 }, {});
+    await waitForDeferredActivityUse();
+    assert.equal(combatTurnCalls, 1);
   }
   finally {
     globalThis.Hooks = previousHooks;

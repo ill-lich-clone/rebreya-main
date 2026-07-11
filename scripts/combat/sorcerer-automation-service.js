@@ -21,6 +21,7 @@ const SORCERY_POINTS_RECOVERY = Object.freeze([{
   formula: ""
 }]);
 const COOLDOWNS_FLAG = "sorcererAutomation.virtualSlotCooldowns";
+const COOLDOWN_CARD_FLAG = "sorcererAutomation.virtualSlotCooldown";
 const HIGH_LEVEL_CASTS_FLAG = "sorcererAutomation.highLevelCasts";
 const PREFLIGHT_FLAG = "sorcererAutomationPreflight";
 const FINAL_BYPASS_FLAG = "sorcererAutomationBypass";
@@ -427,6 +428,91 @@ function isLongRest(result = {}, config = {}) {
 
 function currentRound() {
   return Math.max(0, toInteger(globalThis.game?.combat?.round, 0));
+}
+
+function hasOwnerTurnCooldown(record) {
+  return Boolean(record && typeof record === "object"
+    && Object.hasOwn(record, "remaining")
+    && Number.isFinite(Number(record.remaining)));
+}
+
+function cooldownRemaining(record) {
+  return Math.max(0, toInteger(record?.remaining, 0));
+}
+
+function cooldownIsActive(record) {
+  if (hasOwnerTurnCooldown(record)) {
+    return cooldownRemaining(record) > 0;
+  }
+  return toInteger(record?.expiresAtRound, 0) > currentRound();
+}
+
+function cooldownCardMetadata(actor, cooldownKey, remaining) {
+  const actorUuid = cleanText(actor?.uuid);
+  const actorId = cleanText(actor?.id ?? actor?._id);
+  const key = cleanText(cooldownKey);
+  if (!key || (!actorUuid && !actorId)) {
+    return null;
+  }
+  return { actorUuid, actorId, cooldownKey: key, remaining: Math.max(0, toInteger(remaining, 0)) };
+}
+
+function cooldownCardFlag(message) {
+  let value;
+  if (typeof message?.getFlag === "function") {
+    value = message.getFlag(MODULE_ID, COOLDOWN_CARD_FLAG);
+  }
+  value ??= message?.flags?.[MODULE_ID]?.[COOLDOWN_CARD_FLAG]
+    ?? getProperty(message, `flags.${MODULE_ID}.${COOLDOWN_CARD_FLAG}`, undefined);
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const cooldownKey = cleanText(value.cooldownKey);
+  const actorUuid = cleanText(value.actorUuid);
+  const actorId = cleanText(value.actorId);
+  if (!cooldownKey || (!actorUuid && !actorId)) {
+    return null;
+  }
+  return { actorUuid, actorId, cooldownKey, remaining: Math.max(0, toInteger(value.remaining, 0)) };
+}
+
+function isCooldownCardForActor(metadata, actor, cooldownKey) {
+  if (!metadata || cleanText(metadata.cooldownKey) !== cleanText(cooldownKey)) {
+    return false;
+  }
+  const actorUuid = cleanText(actor?.uuid);
+  const actorId = cleanText(actor?.id ?? actor?._id);
+  return Boolean((actorUuid && actorUuid === cleanText(metadata.actorUuid))
+    || (actorId && actorId === cleanText(metadata.actorId)));
+}
+
+function cooldownCardFooter(remaining) {
+  const text = Math.max(0, toInteger(remaining, 0)) > 0
+    ? `Перезарядка: ${Math.max(0, toInteger(remaining, 0))} раундов`
+    : "Перезарядка: готово";
+  return `<li class="rebreya-sorcerer-cooldown" data-rebreya-sorcerer-cooldown="true">${text}</li>`;
+}
+
+function withCooldownCardFooter(content, remaining) {
+  const safeContent = String(content ?? "");
+  const footer = cooldownCardFooter(remaining);
+  const existing = /<li\b[^>]*\bdata-rebreya-sorcerer-cooldown(?:=["'][^"']*["'])?[^>]*>[\s\S]*?<\/li>/iu;
+  if (existing.test(safeContent)) {
+    return safeContent.replace(existing, footer);
+  }
+
+  const cardFooter = /<ul\b[^>]*class=["'][^"']*\bcard-footer\b[^"']*["'][^>]*>[\s\S]*?<\/ul>/iu;
+  const existingFooter = safeContent.match(cardFooter)?.[0];
+  if (existingFooter) {
+    return safeContent.replace(existingFooter, existingFooter.replace(/<\/ul>\s*$/iu, `${footer}</ul>`));
+  }
+
+  const newFooter = `<ul class="card-footer pills unlist">${footer}</ul>`;
+  if (/<\/div>\s*$/iu.test(safeContent)) {
+    return safeContent.replace(/<\/div>\s*$/iu, `${newFooter}</div>`);
+  }
+  return `${safeContent}${safeContent ? "\n" : ""}${newFooter}`;
 }
 
 function exhaustionLevel(actor) {
@@ -865,6 +951,16 @@ export class SorcererAutomationService {
     return { components, modifiers, updates };
   }
 
+  #applyCooldownCardConfig(messageConfig = {}, metadata = null) {
+    if (!metadata) {
+      return;
+    }
+    messageConfig.data ??= {};
+    messageConfig.data.flags ??= {};
+    messageConfig.data.flags[MODULE_ID] ??= {};
+    messageConfig.data.flags[MODULE_ID][COOLDOWN_CARD_FLAG] = deepClone(metadata);
+  }
+
   #persistResolvedPlan(usageConfig, plan) {
     usageConfig[MODULE_ID] ??= {};
     usageConfig[MODULE_ID][PREFLIGHT_FLAG] = {
@@ -1013,7 +1109,7 @@ export class SorcererAutomationService {
     const cooldowns = actorFlag(actor, COOLDOWNS_FLAG);
     const highLevelCasts = actorFlag(actor, HIGH_LEVEL_CASTS_FLAG);
     const key = cooldownKey(activity, choice.spellLevel);
-    const activeCooldown = choice.spellLevel <= 5 && toInteger(cooldowns[key]?.expiresAtRound, 0) > currentRound();
+    const activeCooldown = choice.spellLevel <= 5 && cooldownIsActive(cooldowns[key]);
     const highLevelRepeat = choice.spellLevel >= 6 && highLevelCasts[String(choice.spellLevel)] === true;
     if ((activeCooldown || highLevelRepeat) && !override) {
       return null;
@@ -1135,6 +1231,81 @@ export class SorcererAutomationService {
     await setActorFlag(actor, COOLDOWNS_FLAG, {});
     await setActorFlag(actor, HIGH_LEVEL_CASTS_FLAG, {});
     return true;
+  }
+
+  async handleCombatTurnChange(combat, updateData = {}) {
+    const actor = this.#resolveCombatTurnActor(combat, updateData);
+    if (!actor) {
+      return true;
+    }
+
+    const cooldowns = actorFlag(actor, COOLDOWNS_FLAG);
+    const changedCooldowns = [];
+    for (const [key, record] of Object.entries(cooldowns)) {
+      if (!hasOwnerTurnCooldown(record)) {
+        continue;
+      }
+      const remaining = cooldownRemaining(record);
+      if (remaining <= 0) {
+        continue;
+      }
+      const nextRemaining = remaining - 1;
+      cooldowns[key] = { ...record, remaining: nextRemaining };
+      changedCooldowns.push({ key, remaining: nextRemaining });
+    }
+    if (!changedCooldowns.length) {
+      return true;
+    }
+
+    await setActorFlag(actor, COOLDOWNS_FLAG, cooldowns);
+    await Promise.all(changedCooldowns.map(({ key, remaining }) => (
+      this.#updateCooldownCards(actor, key, remaining)
+    )));
+    return true;
+  }
+
+  #resolveCombatTurnActor(combat, updateData = {}) {
+    const directActor = updateData?.combatant?.actor;
+    if (directActor) {
+      return directActor;
+    }
+
+    const combatantId = cleanText(updateData?.combatantId);
+    if (combatantId) {
+      const combatant = combat?.combatants?.get?.(combatantId)
+        ?? collectionValues(combat?.combatants).find((entry) => cleanText(entry?.id) === combatantId);
+      if (combatant?.actor) {
+        return combatant.actor;
+      }
+    }
+
+    const turn = Number(updateData?.turn);
+    if (Number.isInteger(turn)) {
+      const combatant = collectionValues(combat?.turns)[turn];
+      if (combatant?.actor) {
+        return combatant.actor;
+      }
+    }
+    return combat?.combatant?.actor ?? null;
+  }
+
+  async #updateCooldownCards(actor, cooldownKey, remaining) {
+    const updates = collectionValues(globalThis.game?.messages)
+      .map((message) => ({ message, metadata: cooldownCardFlag(message) }))
+      .filter(({ metadata }) => isCooldownCardForActor(metadata, actor, cooldownKey))
+      .map(({ message, metadata }) => updateDocument(message, {
+        content: withCooldownCardFooter(message?.content, remaining),
+        [`flags.${MODULE_ID}.${COOLDOWN_CARD_FLAG}`]: {
+          ...metadata,
+          remaining: Math.max(0, toInteger(remaining, 0))
+        }
+      }));
+    const results = await Promise.allSettled(updates);
+    for (const result of results) {
+      if (result.status === "rejected") {
+        console.error(`${MODULE_ID} | Failed to update Sorcerer cooldown chat card.`, result.reason);
+      }
+    }
   }
 
   deferDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
@@ -1290,6 +1461,15 @@ export class SorcererAutomationService {
       if (record?.damageReroll || record?.attackReroll) {
         this._metamagicRecordsByMessage.set(id, deepClone(record));
       }
+    }
+    const cooldown = cooldownCardFlag(message);
+    if (cooldown) {
+      updateDocument(message, {
+        content: withCooldownCardFooter(message?.content, cooldown.remaining),
+        [`flags.${MODULE_ID}.${COOLDOWN_CARD_FLAG}`]: cooldown
+      }).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to create Sorcerer cooldown chat card.`, error);
+      });
     }
     return true;
   }
@@ -1481,6 +1661,9 @@ export class SorcererAutomationService {
       activeCooldown,
       highLevelRepeat
     } = plan;
+    const cooldownCard = choice.spellLevel <= 5 && !(activeCooldown && override)
+      ? cooldownCardMetadata(actor, key, choice.spellLevel)
+      : null;
     const points = pointsFeature(actor);
     const uses = points?.system?.uses ?? {};
     const spent = Math.max(0, toInteger(uses.spent, 0));
@@ -1507,7 +1690,7 @@ export class SorcererAutomationService {
       await updateDocument(points, { "system.uses.spent": spent + totalCost });
       state.pointsChanged = true;
       if (choice.spellLevel <= 5) {
-        cooldowns[key] = { expiresAtRound: currentRound() + choice.spellLevel };
+        cooldowns[key] = { remaining: choice.spellLevel };
         await setActorFlag(actor, COOLDOWNS_FLAG, cooldowns);
         state.cooldownsChanged = true;
       }
@@ -1528,6 +1711,8 @@ export class SorcererAutomationService {
       await this.#rollbackVirtualSlotPayment(state);
       throw error;
     }
+
+    this.#applyCooldownCardConfig(messageConfig, cooldownCard);
 
     const consume = usageConfig.consume && typeof usageConfig.consume === "object"
       ? usageConfig.consume
