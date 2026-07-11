@@ -2588,6 +2588,97 @@ test("selectDowntimeTemplateDocumentWithBrowser rejects non-downtime browser res
   }
 });
 
+test("registerDnd5eSheetExtensions excludes cantrips from available Rebreya spell choices", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const browserCalls = [];
+    class ItemChoiceFlow {
+      constructor(advancement) {
+        this.advancement = advancement;
+      }
+
+      _maxSpellSlotLevel() {
+        return 1;
+      }
+
+      async _onBrowseCompendium() {
+        const restrictionLevel = String(this.advancement.configuration.restriction.level ?? "");
+        return globalThis.dnd5e.applications.CompendiumBrowser.select({
+          filters: {
+            locked: {
+              additional: {
+                level: {
+                  min: restrictionLevel === "available" ? undefined : Number(restrictionLevel),
+                  max: restrictionLevel === "available" ? this._maxSpellSlotLevel() : Number(restrictionLevel)
+                }
+              },
+              documentClass: "Item",
+              types: new Set(["spell"])
+            }
+          }
+        });
+      }
+    }
+    const managedClassItem = {
+      flags: {
+        "rebreya-main": {
+          managed: true,
+          sourceType: "class"
+        }
+      },
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      }
+    };
+    globalThis.dnd5e = {
+      applications: {
+        advancement: {
+          ItemChoiceFlow
+        },
+        CompendiumBrowser: {
+          async select(options) {
+            browserCalls.push(options);
+            return new Set();
+          }
+        }
+      }
+    };
+
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?spell-choice-filter=${Date.now()}`);
+    registerDnd5eSheetExtensions({});
+
+    const availableSpellChoice = new ItemChoiceFlow({
+      item: managedClassItem,
+      configuration: {
+        type: "spell",
+        restriction: {
+          level: "available"
+        }
+      }
+    });
+    const cantripChoice = new ItemChoiceFlow({
+      item: managedClassItem,
+      configuration: {
+        type: "spell",
+        restriction: {
+          level: "0"
+        }
+      }
+    });
+
+    await availableSpellChoice._onBrowseCompendium();
+    await cantripChoice._onBrowseCompendium();
+
+    assert.equal(browserCalls[0].filters.locked.additional.level.min, 1);
+    assert.equal(browserCalls[0].filters.locked.additional.level.max, 1);
+    assert.equal(browserCalls[1].filters.locked.additional.level.min, 0);
+    assert.equal(browserCalls[1].filters.locked.additional.level.max, 0);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("character downtime library selection preserves full downtime description html", async () => {
   const stubs = installSheetExtensionStubs();
   try {

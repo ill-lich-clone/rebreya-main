@@ -62,6 +62,7 @@ const HERO_DOLL_PAYLOAD_PATCH_FLAG = "__rebreyaHeroDollPayloadPatched";
 const HEROIC_D20_DIALOG_PATCH_FLAG = "__rebreyaHeroicD20DialogPatched";
 const HEROIC_D20_ROLL_PATCH_FLAG = "__rebreyaHeroicD20RollPatched";
 const HEROIC_D20_KEYBINDINGS_PATCH_FLAG = "__rebreyaHeroicD20KeybindingsPatched";
+const ITEM_CHOICE_SPELL_FILTER_PATCH_FLAG = "__rebreyaItemChoiceSpellFilterPatched";
 const HEROIC_ADVANTAGE_ACTION = "heroic-advantage";
 const HEROIC_DISADVANTAGE_ACTION = "heroic-disadvantage";
 const NATIVE_STATE_ITEM_TYPE = STATE_ITEM_TYPE;
@@ -1599,6 +1600,84 @@ async function openNativeStatePackForManualSelection(pack) {
 
 function getCompendiumBrowserClass() {
   return globalThis.dnd5e?.applications?.CompendiumBrowser ?? null;
+}
+
+function getItemChoiceFlowClass() {
+  return globalThis.dnd5e?.applications?.advancement?.ItemChoiceFlow
+    ?? game.dnd5e?.applications?.advancement?.ItemChoiceFlow
+    ?? null;
+}
+
+function getRebreyaFlag(document, key) {
+  return document?.getFlag?.(MODULE_ID, key)
+    ?? document?.flags?.[MODULE_ID]?.[key];
+}
+
+function isManagedRebreyaAdvancementItem(item) {
+  return getRebreyaFlag(item, "managed") === true;
+}
+
+function shouldExcludeCantripsFromAvailableSpellChoice(advancement) {
+  const configuration = advancement?.configuration;
+  return isManagedRebreyaAdvancementItem(advancement?.item)
+    && configuration?.type === "spell"
+    && cleanText(configuration?.restriction?.level) === "available";
+}
+
+function applyAvailableSpellChoiceMinimumLevel(options) {
+  const levelFilter = options?.filters?.locked?.additional?.level;
+  if (!levelFilter || levelFilter.min != null) {
+    return;
+  }
+
+  const maxLevel = Number(levelFilter.max);
+  if (Number.isFinite(maxLevel) && maxLevel >= 1) {
+    levelFilter.min = 1;
+  }
+}
+
+function patchItemChoiceSpellLevelFilters() {
+  const ItemChoiceFlow = getItemChoiceFlowClass();
+  const prototype = ItemChoiceFlow?.prototype;
+  if (!prototype || prototype[ITEM_CHOICE_SPELL_FILTER_PATCH_FLAG]) {
+    return;
+  }
+
+  const originalOnBrowseCompendium = prototype._onBrowseCompendium;
+  if (typeof originalOnBrowseCompendium !== "function") {
+    return;
+  }
+
+  prototype._onBrowseCompendium = async function (...args) {
+    if (!shouldExcludeCantripsFromAvailableSpellChoice(this?.advancement)) {
+      return originalOnBrowseCompendium.call(this, ...args);
+    }
+
+    const CompendiumBrowser = getCompendiumBrowserClass();
+    const originalSelect = CompendiumBrowser?.select;
+    if (typeof originalSelect !== "function") {
+      return originalOnBrowseCompendium.call(this, ...args);
+    }
+
+    CompendiumBrowser.select = async function (options = {}, ...selectArgs) {
+      applyAvailableSpellChoiceMinimumLevel(options);
+      return originalSelect.call(this, options, ...selectArgs);
+    };
+
+    try {
+      return await originalOnBrowseCompendium.call(this, ...args);
+    }
+    finally {
+      CompendiumBrowser.select = originalSelect;
+    }
+  };
+
+  Object.defineProperty(prototype, ITEM_CHOICE_SPELL_FILTER_PATCH_FLAG, {
+    configurable: false,
+    enumerable: false,
+    writable: false,
+    value: true
+  });
 }
 
 async function selectNativeStateDocumentWithBrowser() {
@@ -6890,6 +6969,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   patchActorMoveDropBehavior();
   patchDnd5eDragPayloadFallback();
   patchD20HeroicRollDialog();
+  patchItemChoiceSpellLevelFilters();
   bindCharacterDowntimeDocumentSubmitDelegation(moduleApi);
   bindCharacterDowntimeDocumentRollDelegation(moduleApi);
   bindCharacterDowntimeDocumentEditDelegation(moduleApi);
