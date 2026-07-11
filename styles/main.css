@@ -10484,13 +10484,40 @@ summary:focus-visible {
 
 .rebreya-sorcerer-choice-row {
   display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
   max-width: 100%;
-  overflow-x: auto;
+  overflow: visible;
 }
 
 .rebreya-sorcerer-choice-row > * {
   flex: 0 0 auto;
+}
+
+.rebreya-sorcerer-choice-row .rebreya-sorcerer-option {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.35rem 0.6rem;
+  align-items: start;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--color-border-light-2);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.rebreya-sorcerer-choice-row .rebreya-sorcerer-option input {
+  margin-top: 0.2rem;
+}
+
+.rebreya-sorcerer-choice-row .rebreya-sorcerer-option__cost {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.rebreya-sorcerer-choice-row .rebreya-sorcerer-option__details {
+  display: block;
+  grid-column: 2 / -1;
+  margin: 0;
+  color: var(--color-text-dark-secondary);
 }

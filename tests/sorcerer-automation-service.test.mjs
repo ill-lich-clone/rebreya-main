@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 globalThis.foundry ??= {
   utils: {
@@ -28,6 +29,17 @@ const { SorcererAutomationService } = await import("../scripts/combat/sorcerer-a
 
 const MODULE_ID = "rebreya-main";
 const SORCERER_ROOT = "sorcerer-rework-v011";
+const FULL_METAMAGIC_DESCRIPTIONS = Object.freeze({
+  "careful-spell": "Когда вы накладываете заклинание, которое вынуждает других существ совершить спасбросок, вы можете защитить некоторых из них от магического воздействия. Для этого вы тратите 1 единицу чародейства и выбираете существ в количестве, равном вашему модификатору Харизмы (минимум одно существо). Указанные существа автоматически преуспевают в спасброске от данного заклинания.",
+  "distant-spell": "При накладывании заклинания, дистанция которого 5 футов и более, вы можете потратить 1 единицу чародейства, чтобы удвоить это расстояние.\nПри накладывании заклинания с дистанцией «касание», вы можете потратить 1 единицу чародейства, чтобы увеличить это расстояние до 30 футов.",
+  "heightened-spell": "Когда вы накладываете заклинание, которое вынуждает существо совершить спасбросок для защиты от его эффектов, вы можете потратить 3 единицы чародейства, чтобы одна из целей заклинания совершила первый спасбросок от этого заклинания с помехой.",
+  "subtle-spell": "Во время накладывания заклинания вы можете потратить 1 единицу чародейства, чтоб наложить его без вербальных и соматических компонентов.",
+  "extended-spell": "При накладывании заклинания с длительностью 1 минута или более, вы можете потратить 1 единицу чародейства, чтобы один раз удвоить это время, вплоть до максимального в 24 часа.",
+  "twinned-spell": "Если вы используете заклинание, нацеливаемое только на одно существо или объект и не имеющее дистанцию «на себя», вы можете потратить количество единиц чародейства, равное уровню заклинания (1 для заговоров), чтобы нацелиться им на второе существо или объект-цель в пределах дистанции этого заклинания.\nЧтобы применить этот вариант, заклинание не должно быть способно нацеливаться более чем на одну цель на текущем накладываемом уровне. Например, волшебная стрела [magic missile] и палящий луч [scorching ray] не могут быть усилены этой метамагией, а луч холода [ray of frost] и цветной шарик [chromatic orb] — могут.",
+  "empowered-spell": "При совершении броска урона от заклинания вы можете потратить 1 единицу чародейства, чтобы перебросить несколько костей урона в количестве не больше вашего модификатора Харизмы (минимум одна). Вы должны использовать новое выпавшее значение.\nВы можете использовать этот вариант метамагии, даже если вы уже использовали другой вариант метамагии во время накладывания заклинания.",
+  "quickened-spell": "Если вы накладываете заклинание со временем накладывания «1 действие», вы можете потратить 2 единицы чародейства, чтобы наложить это заклинание бонусным действием.",
+  "seeking-spell": "Если вы совершаете бросок атаки для заклинания и промахиваетесь, вы можете потратить 2 единицы чародейства, чтобы перебросить к20, и должны использовать новый бросок.\nВы можете использовать этот вариант метамагии, даже если вы уже использовали другой вариант метамагии во время накладывания заклинания."
+});
 
 class TestActor {
   constructor({ level = 1, pointsSpent = 0, includePoints = false } = {}) {
@@ -1136,6 +1148,207 @@ function makeDnd5eActivityClone(activity) {
   return activity;
 }
 
+test("RED: uses the Foundry V13 DialogV2 namespace when the legacy global is absent", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const previousDialog = globalThis.DialogV2;
+  const previousApplications = globalThis.foundry.applications;
+  const dialogs = [];
+  globalThis.DialogV2 = undefined;
+  globalThis.foundry.applications = {
+    api: {
+      DialogV2: {
+        wait: async (config) => {
+          dialogs.push(config);
+          return dialogs.length === 1
+            ? { accepted: true, spellLevel: 1 }
+            : { accepted: true, ids: [] };
+        }
+      }
+    }
+  };
+
+  try {
+    assert.equal(await service.applyDnd5ePreUseActivity(makeDnd5eActivityClone(makeSorcererSpell(actor)), {}, {}, {}), true);
+    assert.equal(dialogs.length, 2);
+  }
+  finally {
+    globalThis.DialogV2 = previousDialog;
+    globalThis.foundry.applications = previousApplications;
+  }
+});
+
+test("RED: metamagic form callback retains every Careful target and Empowered die selected in multiple selects", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const previousDialog = globalThis.DialogV2;
+  const previousFromUuid = globalThis.fromUuid;
+  const dialogs = [];
+  globalThis.fromUuid = undefined;
+  globalThis.DialogV2 = {
+    wait: async (config) => {
+      dialogs.push(config);
+      const form = {
+        elements: {
+          metamagic: [
+            { tagName: "INPUT", checked: true, value: "careful-spell" },
+            { tagName: "INPUT", checked: true, value: "empowered-spell" }
+          ],
+          carefulTargets: {
+            tagName: "SELECT",
+            multiple: true,
+            selectedOptions: [{ value: "Token.careful-a" }, { value: "Token.careful-b" }]
+          },
+          heightenedTarget: { tagName: "SELECT", value: "" },
+          twinnedTarget: { tagName: "SELECT", value: "" },
+          damageDice: {
+            tagName: "SELECT",
+            multiple: true,
+            selectedOptions: [{ value: "fire:0" }, { value: "fire:1" }]
+          }
+        }
+      };
+      return config.buttons.find((button) => button.action === "confirm").callback(null, { form });
+    }
+  };
+
+  try {
+    const usageConfig = { sorcererVirtualSpellLevel: 1 };
+    const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+      system: {
+        save: { ability: "dex" },
+        damage: { parts: [{ _id: "fire", formula: "2d6" }] }
+      }
+    }));
+    assert.equal(await service.applyDnd5ePreUseActivity(activity, usageConfig, {}, {}), true);
+    assert.equal(dialogs.length, 1);
+    assert.deepEqual(usageConfig.spellCast.modifiers.careful.targets, ["Token.careful-a", "Token.careful-b"]);
+    assert.deepEqual(usageConfig.spellCast.modifiers.empowered.damageDice.map((die) => die.id), ["fire:0", "fire:1"]);
+  }
+  finally {
+    globalThis.DialogV2 = previousDialog;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("RED: Twinned rejects Actor, off-scene, and non-placeable token documents before spending Sorcery Points", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const previousFromUuid = globalThis.fromUuid;
+  const previousCanvas = globalThis.canvas;
+  const previousGame = globalThis.game;
+  const currentScene = { id: "current", uuid: "Scene.current" };
+  const first = {
+    id: "first",
+    uuid: "Scene.current.Token.first",
+    documentName: "Token",
+    parent: currentScene,
+    actor: { uuid: "Actor.first" }
+  };
+  const firstPlaceable = { id: "first", document: first, actor: first.actor };
+  const invalidDocuments = [
+    { id: "actor", uuid: "Actor.forged", type: "Actor", documentName: "Actor", actor: undefined },
+    {
+      id: "off-scene",
+      uuid: "Scene.other.Token.off-scene",
+      documentName: "Token",
+      parent: { id: "other", uuid: "Scene.other" },
+      actor: { uuid: "Actor.off-scene" }
+    },
+    {
+      id: "not-placeable",
+      uuid: "Scene.current.Token.not-placeable",
+      documentName: "Token",
+      parent: currentScene,
+      actor: { uuid: "Actor.not-placeable" }
+    }
+  ];
+  const targetUpdates = [];
+  globalThis.fromUuid = async (uuid) => [first, ...invalidDocuments].find((document) => document.uuid === uuid) ?? null;
+  globalThis.canvas = { scene: currentScene, tokens: { placeables: [firstPlaceable] } };
+  globalThis.game = {
+    ...previousGame,
+    user: {
+      ...(previousGame?.user ?? {}),
+      targets: new Set([firstPlaceable]),
+      updateTokenTargets: async (ids) => targetUpdates.push(Array.from(ids))
+    }
+  };
+
+  try {
+    for (const secondTarget of invalidDocuments) {
+      const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+        id: `twinned-${secondTarget.id}`,
+        system: { range: { value: 60, units: "ft" }, target: { affects: { count: 1 } } }
+      }));
+      assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+        sorcererVirtualSpellLevel: 1,
+        sorcererMetamagic: {
+          ids: ["twinned-spell"],
+          targets: [first.uuid],
+          secondTargetUuid: secondTarget.uuid
+        }
+      }, {}, {}), false);
+    }
+    assert.deepEqual(targetUpdates, []);
+    assert.equal(pointsItem(actor).system.uses.spent, 0);
+  }
+  finally {
+    globalThis.fromUuid = previousFromUuid;
+    globalThis.canvas = previousCanvas;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RED: Extended doubles and caps non-concentration cloned ActiveEffect durations used to create effects", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { duration: { value: 12, units: "hour" } }
+  }));
+  const created = [];
+  const effect = {
+    name: "Lingering spell",
+    duration: { seconds: 50_000 },
+    flags: { dnd5e: {} },
+    toObject() {
+      return structuredClone({ name: this.name, duration: this.duration, flags: this.flags });
+    },
+    updateSource(patch) {
+      for (const [path, value] of Object.entries(patch)) foundry.utils.setProperty(this, path, value);
+    }
+  };
+  const concentrationEffect = {
+    name: "Concentration",
+    duration: { seconds: 50_000 },
+    flags: { dnd5e: { concentration: true } },
+    toObject() {
+      return structuredClone({ name: this.name, duration: this.duration, flags: this.flags });
+    },
+    updateSource(patch) {
+      for (const [path, value] of Object.entries(patch)) foundry.utils.setProperty(this, path, value);
+    }
+  };
+  activity.item.effects = { contents: [effect, concentrationEffect] };
+  actor.createEmbeddedDocuments = async (type, sources) => {
+    assert.equal(type, "ActiveEffect");
+    created.push(...sources);
+    return sources;
+  };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["extended-spell"] }
+  }, {}, {}), true);
+  await actor.createEmbeddedDocuments("ActiveEffect", activity.item.effects.contents.map((entry) => entry.toObject()));
+  assert.equal(created[0].duration.seconds, 86_400);
+  assert.equal(created[1].duration.seconds, 50_000);
+});
+
 test("RED: resolved DialogV2 metamagic selection is persisted for the final virtual cast", async () => {
   const actor = metamagicActor();
   const service = new SorcererAutomationService({});
@@ -1190,10 +1403,53 @@ test("RED: metamagic DialogV2 includes compact target and damage-die controls", 
       }
     })), {}, {}, {});
     const content = dialogs[1].content;
-    for (const control of ["carefulTargets", "heightenedTarget", "twinnedTarget", "damageDice"]) {
+    for (const control of ["carefulTargets", "heightenedTarget", "damageDice"]) {
       assert.match(content, new RegExp(`name=\"${control}\"`, "u"));
     }
+    assert.doesNotMatch(content, /twinnedTarget/u);
+    assert.match(content, /выберите две подходящие цели обычным инструментом выбора целей Foundry/u);
     assert.match(content, /rebreya-sorcerer-choice-row/u);
+  }
+  finally {
+    globalThis.DialogV2 = previousDialog;
+  }
+});
+
+test("RED: sorcerer metamagic option data keeps full source-file descriptions", () => {
+  const data = JSON.parse(readFileSync(new URL("../data/sorcerer-rework-v011.json", import.meta.url), "utf8"));
+  const descriptionsById = new Map(data.metamagicOptions.map((option) => [option.id, option.description]));
+  for (const [id, description] of Object.entries(FULL_METAMAGIC_DESCRIPTIONS)) {
+    assert.equal(descriptionsById.get(id), description);
+  }
+});
+
+test("RED: metamagic DialogV2 shows full source-file descriptions instead of summaries", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const previousDialog = globalThis.DialogV2;
+  const dialogs = [];
+  globalThis.DialogV2 = {
+    wait: async (config) => {
+      dialogs.push(config);
+      return dialogs.length === 1
+        ? { accepted: true, spellLevel: 1 }
+        : { accepted: true, ids: [] };
+    }
+  };
+  try {
+    await service.applyDnd5ePreUseActivity(makeDnd5eActivityClone(makeSorcererSpell(actor, {
+      system: {
+        save: { ability: "dex" },
+        target: { affects: { count: 1 } },
+        range: { value: 60, units: "ft" },
+        damage: { parts: [{ _id: "fire", formula: "2d6" }] }
+      }
+    })), {}, {}, {});
+    const content = dialogs[1].content;
+    for (const description of Object.values(FULL_METAMAGIC_DESCRIPTIONS)) {
+      assert.ok(content.includes(description), `Expected metamagic dialog to include: ${description}`);
+    }
   }
   finally {
     globalThis.DialogV2 = previousDialog;

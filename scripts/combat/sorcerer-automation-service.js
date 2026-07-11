@@ -28,6 +28,17 @@ const FINAL_BYPASS_FLAG = "sorcererAutomationBypass";
 const REACTION_CHECK_COMPLETE_FLAG = "reactionCheckComplete";
 const METAMAGIC_SOURCE_TYPE = "sorcererMetamagic";
 const MAX_EXTENDED_DURATION_SECONDS = 24 * 60 * 60;
+const METAMAGIC_UI_TEXT = Object.freeze({
+  "careful-spell": { name: "Аккуратное заклинание", detail: "Когда вы накладываете заклинание, которое вынуждает других существ совершить спасбросок, вы можете защитить некоторых из них от магического воздействия. Для этого вы тратите 1 единицу чародейства и выбираете существ в количестве, равном вашему модификатору Харизмы (минимум одно существо). Указанные существа автоматически преуспевают в спасброске от данного заклинания." },
+  "distant-spell": { name: "Далёкое заклинание", detail: "При накладывании заклинания, дистанция которого 5 футов и более, вы можете потратить 1 единицу чародейства, чтобы удвоить это расстояние.\nПри накладывании заклинания с дистанцией «касание», вы можете потратить 1 единицу чародейства, чтобы увеличить это расстояние до 30 футов." },
+  "heightened-spell": { name: "Непреодолимое заклинание", detail: "Когда вы накладываете заклинание, которое вынуждает существо совершить спасбросок для защиты от его эффектов, вы можете потратить 3 единицы чародейства, чтобы одна из целей заклинания совершила первый спасбросок от этого заклинания с помехой." },
+  "subtle-spell": { name: "Неуловимое заклинание", detail: "Во время накладывания заклинания вы можете потратить 1 единицу чародейства, чтоб наложить его без вербальных и соматических компонентов." },
+  "extended-spell": { name: "Продлённое заклинание", detail: "При накладывании заклинания с длительностью 1 минута или более, вы можете потратить 1 единицу чародейства, чтобы один раз удвоить это время, вплоть до максимального в 24 часа." },
+  "twinned-spell": { name: "Удвоенное заклинание", detail: "Если вы используете заклинание, нацеливаемое только на одно существо или объект и не имеющее дистанцию «на себя», вы можете потратить количество единиц чародейства, равное уровню заклинания (1 для заговоров), чтобы нацелиться им на второе существо или объект-цель в пределах дистанции этого заклинания.\nЧтобы применить этот вариант, заклинание не должно быть способно нацеливаться более чем на одну цель на текущем накладываемом уровне. Например, волшебная стрела [magic missile] и палящий луч [scorching ray] не могут быть усилены этой метамагией, а луч холода [ray of frost] и цветной шарик [chromatic orb] — могут." },
+  "empowered-spell": { name: "Усиленное заклинание", detail: "При совершении броска урона от заклинания вы можете потратить 1 единицу чародейства, чтобы перебросить несколько костей урона в количестве не больше вашего модификатора Харизмы (минимум одна). Вы должны использовать новое выпавшее значение.\nВы можете использовать этот вариант метамагии, даже если вы уже использовали другой вариант метамагии во время накладывания заклинания." },
+  "quickened-spell": { name: "Ускоренное заклинание", detail: "Если вы накладываете заклинание со временем накладывания «1 действие», вы можете потратить 2 единицы чародейства, чтобы наложить это заклинание бонусным действием." },
+  "seeking-spell": { name: "Ищущее заклинание", detail: "Если вы совершаете бросок атаки для заклинания и промахиваетесь, вы можете потратить 2 единицы чародейства, чтобы перебросить к20, и должны использовать новый бросок.\nВы можете использовать этот вариант метамагии, даже если вы уже использовали другой вариант метамагии во время накладывания заклинания." }
+});
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -96,12 +107,21 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function dialogV2() {
+  return globalThis.foundry?.applications?.api?.DialogV2 ?? globalThis.DialogV2 ?? null;
+}
+
 function formValues(form, name) {
   const elements = form?.elements?.[name];
   if (!elements) {
     return [];
   }
 
+  if (elements?.tagName === "SELECT" && elements.multiple) {
+    return Array.from(elements.selectedOptions ?? [])
+      .map((option) => cleanText(option?.value))
+      .filter(Boolean);
+  }
   const inputs = typeof elements.length === "number" && !elements.tagName
     ? Array.from(elements)
     : [elements];
@@ -653,14 +673,15 @@ export class SorcererAutomationService {
       return explicitSelection(usageConfig, dialogConfig, baseLevel);
     }
 
-    if (typeof globalThis.DialogV2?.wait !== "function") {
+    const DialogV2 = dialogV2();
+    if (typeof DialogV2?.wait !== "function") {
       return explicitSelection(usageConfig, dialogConfig, baseLevel);
     }
 
     const options = choices.map(({ spellLevel, cost }) => (
       `<option value="${spellLevel}" data-sorcerer-cost="${cost}"${spellLevel === baseLevel ? " selected" : ""}>${spellLevel} (${cost})</option>`
     )).join("");
-    const result = await globalThis.DialogV2.wait({
+    const result = await DialogV2.wait({
       window: { title: "Единицы чародейства" },
       content: `<p>Выберите уровень виртуальной ячейки и её стоимость в единицах чародейства.</p><div class="rebreya-sorcerer-choice-row"><label>Уровень <select name="spellLevel" onchange="this.closest('.rebreya-sorcerer-choice-row').querySelector('[data-sorcerer-total]').textContent=this.selectedOptions[0].dataset.sorcererCost">${options}</select></label><label><input type="checkbox" name="exhaustionOverride"> Игнорировать ограничение ценой истощения</label><output data-sorcerer-total>${VIRTUAL_SLOT_COSTS[baseLevel]}</output></div>`,
       buttons: [{
@@ -712,28 +733,27 @@ export class SorcererAutomationService {
       return { accepted: true, ...choice, ids: (choice.ids ?? []).map((id) => cleanText(id)).filter(Boolean) };
     }
 
-    if (typeof globalThis.DialogV2?.wait !== "function" || !options.length) {
+    const DialogV2 = dialogV2();
+    if (typeof DialogV2?.wait !== "function" || !options.length) {
       return { accepted: true, ids: [] };
     }
 
     const virtualCost = VIRTUAL_SLOT_COSTS[spellLevel] ?? 0;
-    const updateTotal = "const row=this.closest('.rebreya-sorcerer-choice-row');row.querySelector('[data-sorcerer-total]').textContent=Array.from(row.querySelectorAll('input[name=metamagic]:checked')).reduce((total,input)=>total+Number(input.dataset.cost)," + virtualCost + ")";
-    const checkboxes = options.map(({ id, label, cost }) => (
-      `<label><input type="checkbox" name="metamagic" value="${id}" data-cost="${cost === "spellLevel" ? spellLevel : cost}" onchange="${updateTotal}"> ${label} (${cost === "spellLevel" ? spellLevel : cost})</label>`
-    )).join("");
+    const checkboxes = options.map(({ id, label, cost }) => {
+      const text = METAMAGIC_UI_TEXT[id] ?? { name: label, detail: "" };
+      const actualCost = cost === "spellLevel" ? spellLevel : cost;
+      return `<label class="rebreya-sorcerer-option"><input type="checkbox" name="metamagic" value="${id}" data-cost="${actualCost}"><span><strong>${escapeHtml(text.name)}</strong><span class="rebreya-sorcerer-option__details">${escapeHtml(text.detail)}</span></span><span class="rebreya-sorcerer-option__cost">${actualCost} ед.</span></label>`;
+    }).join("");
     const selectedTargets = availableTargets({ selectedOnly: true });
     const targetOptions = selectedTargets.map(({ uuid, label }) => (
-      `<option value="${escapeHtml(uuid)}">${escapeHtml(label)}</option>`
-    )).join("");
-    const twinnedOptions = availableTargets().map(({ uuid, label }) => (
       `<option value="${escapeHtml(uuid)}">${escapeHtml(label)}</option>`
     )).join("");
     const dieOptions = damageDieChoices(activity).map(({ id, label }) => (
       `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`
     )).join("");
-    const result = await globalThis.DialogV2.wait({
+    const result = await DialogV2.wait({
       window: { title: "Метамагия" },
-      content: `<div class="rebreya-sorcerer-choice-row">${checkboxes}<label>Careful <select name="carefulTargets" multiple>${targetOptions}</select></label><label>Heightened <select name="heightenedTarget">${targetOptions}</select></label><label>Twinned <select name="twinnedTarget">${twinnedOptions}</select></label><label>Empowered <select name="damageDice" multiple>${dieOptions}</select></label><output data-sorcerer-total>${virtualCost}</output></div>`,
+      content: `<div class="rebreya-sorcerer-choice-row">${checkboxes}<label data-metamagic-fields="careful-spell" hidden>Аккуратное: существа, автоматически преуспевающие в спасброске<select name="carefulTargets" multiple>${targetOptions}</select></label><label data-metamagic-fields="heightened-spell" hidden>Непреодолимое: цель с помехой к первому спасброску<select name="heightenedTarget">${targetOptions}</select></label><p data-metamagic-fields="twinned-spell" hidden>Удвоенное: выберите две подходящие цели обычным инструментом выбора целей Foundry.</p><label data-metamagic-fields="empowered-spell" hidden>Усиленное: кубы для переброса<select name="damageDice" multiple>${dieOptions}</select></label><output>Итого: <strong data-sorcerer-total>${virtualCost}</strong> ед. чародейства</output></div>`,
       buttons: [{
         action: "confirm",
         label: "Применить",
@@ -746,7 +766,7 @@ export class SorcererAutomationService {
             ids: formValues(button?.form, "metamagic"),
             targetUuids: carefulTargets.length ? carefulTargets : [heightenedTarget].filter(Boolean),
             currentTargets: selectedTargets.map(({ uuid }) => uuid),
-            secondTargetUuid: formValues(button?.form, "twinnedTarget").at(0) ?? "",
+            secondTargetUuid: "",
             damageDice: formValues(button?.form, "damageDice")
           };
         }
@@ -784,7 +804,7 @@ export class SorcererAutomationService {
     const selectedDamageDice = ids.includes("empowered-spell")
       ? normalizedDamageDice(activity, requestedDamageDice)
       : [];
-    const secondTargetUuid = cleanText(request.secondTargetUuid);
+    let secondTargetUuid = cleanText(request.secondTargetUuid);
     for (const id of ids) {
       if (id === "careful-spell" && (!spellHasSave(activity) || targetUuids.length < 1 || targetUuids.length > charismaModifier(actor))) {
         return null;
@@ -801,7 +821,14 @@ export class SorcererAutomationService {
       }
       if (id === "twinned-spell") {
         const range = spellRange(activity);
-        if (spellTargetCount(activity) !== 1 || range.units === "self" || !secondTargetUuid || currentTargets.length !== 1 || currentTargets.includes(secondTargetUuid)) {
+        // Normal UI uses Foundry's native token targeting: two selected targets.
+        // The explicit second-target form remains only for programmatic callers.
+        if (!secondTargetUuid && currentTargets.length === 2) {
+          secondTargetUuid = currentTargets[1];
+        }
+        const nativeTargeting = currentTargets.length === 2 && currentTargets.includes(secondTargetUuid);
+        if (spellTargetCount(activity) !== 1 || range.units === "self" || !secondTargetUuid
+          || (!nativeTargeting && (currentTargets.length !== 1 || currentTargets.includes(secondTargetUuid)))) {
           return null;
         }
       }
@@ -875,6 +902,11 @@ export class SorcererAutomationService {
         plan.duration ??= durationFromSeconds(durationSeconds(duration) * 2, duration.units);
         updates["duration.value"] = plan.duration.value;
         updates["duration.units"] = plan.duration.units;
+        const seconds = Math.min(MAX_EXTENDED_DURATION_SECONDS, Math.max(0, durationSeconds(duration) * 2));
+        for (const effect of collectionValues(activity?.item?.effects)) {
+          if (getProperty(effect, "flags.dnd5e.concentration", false) === true) continue;
+          updateSource(effect, { "duration.seconds": seconds });
+        }
         modifiers.extended = true;
       }
       else if (id === "twinned-spell") {
@@ -1028,7 +1060,19 @@ export class SorcererAutomationService {
         resolveCreature(meta.currentTargets[0]),
         resolveCreature(meta.secondTargetUuid)
       ]);
-      if (!first || !second || first.actor.uuid === second.actor.uuid) {
+      const currentScene = globalThis.canvas?.scene;
+      const placeableIds = new Set(collectionValues(globalThis.canvas?.tokens?.placeables)
+        .map((token) => cleanText(token?.document?.id ?? token?.id)));
+      const isCurrentSceneToken = ({ document }) => {
+        if (document?.documentName !== "Token" && currentScene) return false;
+        // Canvas is always available in Foundry. The no-canvas fallback retains
+        // compatibility with plain unit-document fixtures only.
+        if (!currentScene) return Boolean(document?.actor && cleanText(document?.id ?? document?._id));
+        return (document.parent === currentScene || document.parent?.id === currentScene?.id)
+          && placeableIds.has(cleanText(document.id ?? document._id));
+      };
+      if (!first || !second || first.actor.uuid === second.actor.uuid
+        || !isCurrentSceneToken(first) || !isCurrentSceneToken(second)) {
         return false;
       }
       const firstId = cleanText(first.document?.id ?? first.document?._id);
@@ -1429,10 +1473,11 @@ export class SorcererAutomationService {
     if (this._options.chooseSeekingReroll instanceof Function) {
       return (await this._options.chooseSeekingReroll({ activity, rolls })) === true;
     }
-    if (typeof globalThis.DialogV2?.wait !== "function") {
+    const DialogV2 = dialogV2();
+    if (typeof DialogV2?.wait !== "function") {
       return false;
     }
-    const result = await globalThis.DialogV2.wait({
+    const result = await DialogV2.wait({
       window: { title: "Seeking Spell" },
       content: "<p>Spend 2 Sorcery Points to reroll this missed spell attack?</p>",
       buttons: [
