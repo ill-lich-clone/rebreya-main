@@ -477,6 +477,79 @@ test("a generic deferred resume reaches a paid Sorcerer final cast with both byp
   }
 });
 
+test("a deferred virtual cast locks the resumed dialog and virtual-cast usage configuration", async () => {
+  const actor = levelActor(5, { includePoints: true });
+  actor.system.spells = {
+    spell3: { level: 3, value: 1, max: 1 }
+  };
+  const service = new SorcererAutomationService({
+    chooseVirtualSpellLevel: async () => ({ accepted: true, spellLevel: 3 })
+  });
+  await service.syncSorceryPoints(actor);
+  const usageConfig = {};
+  const dialogConfig = { configure: true, width: 480 };
+  const messageConfig = { create: false };
+  const activity = makeSorcererSpell(actor);
+  let resumedUse;
+  activity.use = async (...args) => {
+    resumedUse = args;
+    return { updates: [] };
+  };
+
+  assert.equal(service.deferDnd5ePreUseActivity(activity, usageConfig, dialogConfig, messageConfig), false);
+  await waitForDeferredActivityUse();
+
+  const [resumedUsageConfig, resumedDialogConfig, resumedMessageConfig] = resumedUse;
+  assert.notStrictEqual(resumedDialogConfig, dialogConfig);
+  assert.deepEqual(dialogConfig, { configure: true, width: 480 });
+  assert.deepEqual(resumedDialogConfig, { configure: false, width: 480 });
+  assert.strictEqual(resumedMessageConfig, messageConfig);
+  assert.equal(resumedUsageConfig.spell.slot, "spell3");
+  assert.equal(resumedUsageConfig.scaling, 2);
+  assert.equal(resumedUsageConfig.consume.spellSlot, false);
+  assert.deepEqual(resumedUsageConfig.spellCast.payment, { resource: "sorcery-points", cost: 5 });
+  assert.equal(resumedUsageConfig[MODULE_ID].sorcererAutomationBypass, true);
+  assert.equal(pointsItem(actor).system.uses.spent, 5);
+  assert.equal(actor.system.spells.spell3.value, 1);
+});
+
+test("a deferred virtual cast cannot open an editable dialog that overwrites its selected slot", async () => {
+  const actor = levelActor(5, { includePoints: true });
+  actor.system.spells = {
+    spell1: { level: 1, value: 1, max: 1 },
+    spell3: { level: 3, value: 1, max: 1 }
+  };
+  const service = new SorcererAutomationService({
+    chooseVirtualSpellLevel: async () => ({ accepted: true, spellLevel: 3 })
+  });
+  await service.syncSorceryPoints(actor);
+  const activity = makeSorcererSpell(actor);
+  let editableDialogs = 0;
+  let resumedUsageConfig;
+  activity.use = async (nextUsageConfig, nextDialogConfig) => {
+    resumedUsageConfig = nextUsageConfig;
+    if (nextDialogConfig.configure !== false) {
+      editableDialogs += 1;
+      nextUsageConfig.spell = { slot: "spell1" };
+      nextUsageConfig.scaling = 0;
+      nextUsageConfig.consume = { spellSlot: true };
+    }
+    consumeDnd5eSpellSlot(actor, nextUsageConfig);
+    return { updates: [] };
+  };
+
+  assert.equal(service.deferDnd5ePreUseActivity(activity, {}, {}, {}), false);
+  await waitForDeferredActivityUse();
+
+  assert.equal(editableDialogs, 0);
+  assert.equal(resumedUsageConfig.spell.slot, "spell3");
+  assert.equal(resumedUsageConfig.scaling, 2);
+  assert.equal(resumedUsageConfig.consume.spellSlot, false);
+  assert.equal(pointsItem(actor).system.uses.spent, 5);
+  assert.equal(actor.system.spells.spell1.value, 1);
+  assert.equal(actor.system.spells.spell3.value, 1);
+});
+
 test("a deferred virtual cast rolls back its payment when resumed D&D5e usage is cancelled or fails", async () => {
   for (const resumedResult of [undefined, false]) {
     const actor = levelActor(5, { includePoints: true });

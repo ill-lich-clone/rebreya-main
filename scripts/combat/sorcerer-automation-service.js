@@ -584,7 +584,7 @@ export class SorcererAutomationService {
 
       const result = await activity.use(
         this.#resumeUsageConfig(usageConfig),
-        dialogConfig,
+        this.#resumeDialogConfig(dialogConfig),
         messageConfig
       );
       if (!result) {
@@ -637,6 +637,13 @@ export class SorcererAutomationService {
         ...(usageConfig?.[MODULE_ID] ?? {}),
         sorcererAutomationBypass: true
       }
+    };
+  }
+
+  #resumeDialogConfig(dialogConfig = {}) {
+    return {
+      ...dialogConfig,
+      configure: false
     };
   }
 
