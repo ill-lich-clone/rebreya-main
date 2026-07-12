@@ -58,6 +58,20 @@ function getActiveGroupId(moduleApi) {
   return moduleApi?.questLogService?.getCurrentGroupContext?.()?.groupId ?? "";
 }
 
+async function hasNativeForienRebreyaIntegration() {
+  if (globalThis.ForienQuestLogRebreyaNative === true) {
+    return true;
+  }
+
+  try {
+    const nativeModule = await import("../../../forien-quest-log/src/rebreya-quest-log.js");
+    return nativeModule?.FORIEN_REBREYA_NATIVE === true || globalThis.ForienQuestLogRebreyaNative === true;
+  }
+  catch (_error) {
+    return false;
+  }
+}
+
 async function patchQuestDbFiltering(moduleApi) {
   if (questDbPatched) {
     return;
@@ -1315,9 +1329,11 @@ async function injectQuestOverlay(app, html, moduleApi) {
   syncRequirementTypeFields(target);
 }
 
-function registerQuestPreviewOverlay(moduleApi) {
+function registerQuestPreviewOverlay(moduleApi, { nativeForien = false } = {}) {
   globalThis.Hooks?.on?.("renderQuestPreview", (app, html) => {
-    injectQuestTaskEnhancements(app, getHtmlElement(html), moduleApi);
+    if (!nativeForien) {
+      injectQuestTaskEnhancements(app, getHtmlElement(html), moduleApi);
+    }
     injectQuestOverlay(app, html, moduleApi).catch((error) => {
       console.warn(`${MODULE_ID} | Failed to render Forien quest overlay.`, error);
     });
@@ -1330,13 +1346,23 @@ export async function registerForienQuestLogIntegration(moduleApi) {
   }
 
   integrationRegistered = true;
-  await patchQuestDbFiltering(moduleApi);
-  await patchQuestLogApplication(moduleApi);
+  const nativeForien = await hasNativeForienRebreyaIntegration();
+  if (!nativeForien) {
+    await patchQuestDbFiltering(moduleApi);
+    await patchQuestLogApplication(moduleApi);
+  }
   registerQuestEntryAutoAssignment(moduleApi);
   registerQuestRequirementGuard(moduleApi);
-  registerQuestPreviewOverlay(moduleApi);
+  registerQuestPreviewOverlay(moduleApi, { nativeForien });
+  if (nativeForien) {
+    await refreshForienQuestLogApps();
+  }
 
-  globalThis.Hooks?.once?.("ForienQuestLog.Lifecycle.ready", () => {
+  globalThis.Hooks?.once?.("ForienQuestLog.Lifecycle.ready", async () => {
+    if (await hasNativeForienRebreyaIntegration()) {
+      return;
+    }
+
     patchQuestDbFiltering(moduleApi).catch((error) => {
       console.warn(`${MODULE_ID} | Failed to patch Forien Quest Log after lifecycle ready.`, error);
     });
