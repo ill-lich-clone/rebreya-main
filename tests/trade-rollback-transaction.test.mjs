@@ -476,6 +476,67 @@ test("a failed rollback phase durably reconciles and the same rollback ID resume
   assert.equal(harness.economic.currencyCopper, 500);
 });
 
+test("a typed compensation port failure is correlated, durably reconciled, and resumes with the same rollback ID", async () => {
+  const harness = createHarness();
+  const compensatePurchaseItem = harness.operations.compensatePurchaseItem;
+  let failTyped = true;
+  harness.operations.compensatePurchaseItem = async (transaction) => {
+    if (failTyped) {
+      failTyped = false;
+      throw new TradeTransactionError(
+        "port-failed",
+        "Typed purchase item reversal failed",
+        { transactionId: transaction.transactionId }
+      );
+    }
+    return compensatePurchaseItem(transaction);
+  };
+
+  await assert.rejects(
+    harness.service.rollback(ORIGINAL_ID, rollbackOptions()),
+    (error) => assertRollbackError(error, "reconciliation-required")
+  );
+  const failed = findRow(harness);
+  assert.equal(failed.status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+  assert.equal(failed.rollback.status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+  assert.equal(failed.rollback.phase, "prepared");
+  assert.equal(failed.rollback.error.code, "port-failed");
+  assert.equal(failed.rollback.error.transactionId, ORIGINAL_ID);
+  assert.equal(failed.rollback.error.rollbackTransactionId, ROLLBACK_ID);
+
+  const result = await harness.service.rollback(ORIGINAL_ID, rollbackOptions());
+  assert.equal(result.rolledBack, true);
+  assert.equal(harness.economic.itemQuantity, 7);
+  assert.equal(findRow(harness).rollback.status, TRADE_TRANSACTION_STATUS.COMMITTED);
+});
+
+test("an invalid persisted rollback phase fails closed through durable reconciliation", async () => {
+  const row = committedPurchase({
+    rollback: {
+      transactionId: ROLLBACK_ID,
+      status: "applying",
+      phase: "unknown-phase",
+      requestedByUserId: "gm-a",
+      result: null,
+      error: null,
+      startedAt: 1,
+      updatedAt: 1,
+      completedAt: 0
+    }
+  });
+  const harness = createHarness({ row });
+
+  await assert.rejects(
+    harness.service.rollback(ORIGINAL_ID, rollbackOptions()),
+    (error) => assertRollbackError(error, "reconciliation-required")
+  );
+  const failed = findRow(harness);
+  assert.equal(failed.status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+  assert.equal(failed.rollback.status, TRADE_TRANSACTION_STATUS.RECONCILIATION_REQUIRED);
+  assert.equal(failed.rollback.phase, "unknown-phase");
+  assert.equal(failed.rollback.error.code, "transaction-not-rollbackable");
+});
+
 test("persistent reconciliation write failure returns correlated transaction-write-failed and keeps nested rollback resumable", async () => {
   const harness = createHarness({
     operationsOptions: { failures: { purchaseItem: 1 } },

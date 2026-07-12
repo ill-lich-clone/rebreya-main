@@ -301,14 +301,14 @@ export class TradeRollbackWorkflow {
         );
       }
       catch (error) {
-        if (error instanceof TradeTransactionError && !error.rollbackTransactionId) {
-          throw correlateRollbackError(error, request);
+        const failure = error instanceof TradeTransactionError
+          ? correlateRollbackError(error, request)
+          : error;
+        if (failure instanceof TradeTransactionError
+          && ["transaction-conflict", "transaction-state-unavailable"].includes(failure.code)) {
+          throw failure;
         }
-        if (error instanceof TradeTransactionError
-          && ["transaction-conflict", "transaction-state-unavailable"].includes(error.code)) {
-          throw error;
-        }
-        return this.#markReconciliationRequired(request, phase, error);
+        return this.#markReconciliationRequired(request, phase, failure);
       }
     }
   }
