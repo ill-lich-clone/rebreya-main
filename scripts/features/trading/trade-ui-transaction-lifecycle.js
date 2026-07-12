@@ -10,7 +10,12 @@ const DEFINITIVE_FAILURE_CODES = new Set([
   "invalid-payload",
   "unauthorized",
   "transaction-not-found",
-  "transaction-not-rollbackable"
+  "transaction-not-rollbackable",
+  "sale-preparation-failed",
+  "invalid-sale-descriptor",
+  "purchase-preparation-failed",
+  "invalid-purchase-descriptor",
+  "stock-unavailable"
 ]);
 
 function semanticPart(value) {
@@ -47,6 +52,20 @@ export function isFrozenSaleBasketEntry(entry) {
 
 export function hasFrozenSaleBasketEntries(basket) {
   return Array.from(basket?.values?.() ?? []).some(isFrozenSaleBasketEntry);
+}
+
+export function summarizeCommittedSaleEntries(entries = []) {
+  return entries.reduce((summary, entry) => {
+    const quantity = Number(entry?.frozenQuantity);
+    const unitPayout = Number(entry?.preview?.netPayoutCopper);
+    if (!Number.isInteger(quantity) || quantity < 1
+      || !Number.isFinite(unitPayout) || unitPayout < 0) {
+      return summary;
+    }
+    summary.count += 1;
+    summary.netCopper += Math.round(unitPayout) * quantity;
+    return summary;
+  }, { count: 0, netCopper: 0 });
 }
 
 export function tradeErrorCorrelation(error, transactionId) {
@@ -98,6 +117,7 @@ export async function commitSaleBasket(basket, dispatch, {
   onDispatched = () => undefined,
   onSettledEntry = () => undefined
 } = {}) {
+  const committedEntries = [];
   for (const [itemUuid, entry] of Array.from(basket.entries())) {
     if (basket.get(itemUuid) !== entry) continue;
     entry.transactionId ??= idFactory("sale");
@@ -108,6 +128,7 @@ export async function commitSaleBasket(basket, dispatch, {
       await dispatch(entry);
       if (basket.get(itemUuid) === entry) {
         basket.delete(itemUuid);
+        committedEntries.push(entry);
         await onSettledEntry(entry, { committed: true });
       }
     }
@@ -124,4 +145,5 @@ export async function commitSaleBasket(basket, dispatch, {
       throw error;
     }
   }
+  return { committedEntries };
 }

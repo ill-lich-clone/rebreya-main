@@ -8,6 +8,7 @@ import {
   isFrozenSaleBasketEntry,
   purchaseSemanticKey,
   saleSemanticKey,
+  summarizeCommittedSaleEntries,
   tradeErrorCorrelation
 } from "../features/trading/trade-ui-transaction-lifecycle.js";
 
@@ -977,8 +978,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
 
-    const totals = this.#getSaleBasketTotals();
-    await commitSaleBasket(this.saleBasket, async (entry) => {
+    const outcome = await commitSaleBasket(this.saleBasket, async (entry) => {
       try {
         return await this.moduleApi.sellTraderItem(
           this.cityId,
@@ -1003,7 +1003,12 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     });
 
     this.#renderSaleBasket(element);
-    ui.notifications?.info(`Продано ${entries.length} поз. на ${formatCopper(totals.netCopper)}.`);
+    const committedSummary = summarizeCommittedSaleEntries(outcome.committedEntries);
+    if (committedSummary.count > 0) {
+      ui.notifications?.info(
+        `Продано ${committedSummary.count} поз. на ${formatCopper(committedSummary.netCopper)}.`
+      );
+    }
     await this.moduleApi.refreshOpenApps();
     bringAppToFront(this);
   }
@@ -1308,13 +1313,17 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
-  async _preClose(options) {
+  async close(options = {}) {
     if (hasFrozenSaleBasketEntries(this.saleBasket)) {
       this.isClosing = false;
       getAppElement(this)?.classList?.remove?.("is-closing");
       ui.notifications?.warn("Лавку нельзя закрыть, пока есть операция с неопределённым результатом. Повторите её с тем же ID.");
-      return false;
+      return undefined;
     }
+    return super.close(options);
+  }
+
+  async _preClose(options) {
     window.clearTimeout(this.searchRenderTimeout);
     this.searchRenderTimeout = null;
     window.clearTimeout(this.characterPokeTimeout);

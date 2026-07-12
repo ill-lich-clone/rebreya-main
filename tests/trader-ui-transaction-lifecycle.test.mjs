@@ -9,7 +9,8 @@ import {
   isFrozenSaleBasketEntry,
   purchaseSemanticKey,
   rollbackSemanticKey,
-  rollbackResumeIdentity
+  rollbackResumeIdentity,
+  summarizeCommittedSaleEntries
 } from "../scripts/features/trading/trade-ui-transaction-lifecycle.js";
 
 function deferred() {
@@ -162,7 +163,12 @@ test("pending lifecycle clears known terminal failures and retains ambiguous or 
     "invalid-payload",
     "unauthorized",
     "transaction-not-found",
-    "transaction-not-rollbackable"
+    "transaction-not-rollbackable",
+    "sale-preparation-failed",
+    "invalid-sale-descriptor",
+    "purchase-preparation-failed",
+    "invalid-purchase-descriptor",
+    "stock-unavailable"
   ];
   const retainedCodes = [
     "request-timeout",
@@ -184,6 +190,31 @@ test("pending lifecycle clears known terminal failures and retains ambiguous or 
     const before = lifecycle.acquire("trade", key);
     lifecycle.reject(key, { code });
     assert.equal(lifecycle.acquire("trade", key), before, code);
+  }
+});
+
+test("every proven pre-journal error releases the current frozen basket entry", async () => {
+  for (const code of [
+    "sale-preparation-failed",
+    "invalid-sale-descriptor",
+    "purchase-preparation-failed",
+    "invalid-purchase-descriptor",
+    "stock-unavailable"
+  ]) {
+    const entry = {
+      preview: { itemUuid: `Item.${code}` },
+      quantity: 1,
+      frozenQuantity: 1,
+      transactionId: `sale_${code.replaceAll("-", "_")}`
+    };
+    const basket = new Map([[entry.preview.itemUuid, entry]]);
+    await assert.rejects(() => commitSaleBasket(basket, async () => {
+      const error = new Error(code);
+      error.code = code;
+      throw error;
+    }), { code });
+    assert.equal(basket.has(entry.preview.itemUuid), false, code);
+    assert.equal(hasFrozenSaleBasketEntries(basket), false, code);
   }
 });
 
@@ -239,8 +270,13 @@ test("trader V2 blocks close and preserves a frozen ambiguous basket entry", asy
     window: globalThis.window
   };
   let warnings = 0;
+  let superCloseCalls = 0;
   class TestApplication {
     constructor() {}
+    async close() {
+      superCloseCalls += 1;
+      return "closed";
+    }
   }
   globalThis.foundry = {
     applications: {
@@ -269,10 +305,15 @@ test("trader V2 blocks close and preserves a frozen ambiguous basket entry", asy
     };
     app.saleBasket.set("Item.a", entry);
     app.isClosing = true;
-    assert.equal(await app._preClose({}), false);
+    assert.equal(await app.close({}), undefined);
     assert.equal(app.saleBasket.get("Item.a"), entry);
     assert.equal(app.isClosing, false);
     assert.equal(warnings, 1);
+    assert.equal(superCloseCalls, 0);
+
+    app.saleBasket.clear();
+    assert.equal(await app.close({}), "closed");
+    assert.equal(superCloseCalls, 1);
   }
   finally {
     globalThis.foundry = previous.foundry;
@@ -290,7 +331,40 @@ test("trader V2 and economy source wire frozen controls and durable rollback ado
   assert.match(traderSource, /isFrozenSaleBasketEntry\(entry\)/u);
   assert.match(traderSource, /data-action="sale-remove-item"[\s\S]*?\$\{disabled\}/u);
   assert.match(traderSource, /hasFrozenSaleBasketEntries\(this\.saleBasket\)/u);
+  assert.match(traderSource, /async close\(options[\s\S]*?super\.close/u);
   assert.match(traderSource, /onDispatched:[\s\S]*?#renderSaleBasket/u);
+  assert.match(traderSource, /committedSummary\.count > 0/u);
   assert.match(economySource, /rollbackResumeIdentity\(record\)/u);
   assert.match(economySource, /pendingTradeRollbacks\.adopt/u);
+});
+
+test("committed sale summary counts only actual settled entries at frozen quantities", () => {
+  const committed = [
+    { preview: { netPayoutCopper: 125 }, quantity: 99, frozenQuantity: 2 },
+    { preview: { netPayoutCopper: 40 }, quantity: 99, frozenQuantity: 3 }
+  ];
+  assert.deepEqual(summarizeCommittedSaleEntries(committed), {
+    count: 2,
+    netCopper: 370
+  });
+  assert.deepEqual(summarizeCommittedSaleEntries([]), { count: 0, netCopper: 0 });
+});
+
+test("basket outcome excludes a queued row removed while the first dispatch awaits", async () => {
+  const gate = deferred();
+  const first = { preview: { itemUuid: "Item.a", netPayoutCopper: 10 }, quantity: 2 };
+  const removed = { preview: { itemUuid: "Item.b", netPayoutCopper: 500 }, quantity: 4 };
+  const basket = new Map([["Item.a", first], ["Item.b", removed]]);
+  const running = commitSaleBasket(basket, async (entry) => {
+    if (entry === first) await gate.promise;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  basket.delete("Item.b");
+  gate.resolve();
+  const outcome = await running;
+  assert.deepEqual(outcome.committedEntries, [first]);
+  assert.deepEqual(summarizeCommittedSaleEntries(outcome.committedEntries), {
+    count: 1,
+    netCopper: 20
+  });
 });
