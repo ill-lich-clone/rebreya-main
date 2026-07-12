@@ -646,7 +646,8 @@ function installAuditGlobals(state, { actor = null } = {}) {
 test("modern audit views fall back to transaction ID and distinguish rollback and transaction states", () => {
   const rows = [
     committedPurchase({ id: "", rollback: { transactionId: ROLLBACK_ID, status: "applying", phase: "item-reversed" } }),
-    committedPurchase({ transactionId: "modern_nested_reconcile", id: "nested", rollback: { transactionId: "rollback_nested_rec", status: "reconciliation-required", phase: "prepared" } }),
+    committedPurchase({ transactionId: "modern_nested_reconcile", id: "nested", status: "reconciliation-required", phase: "rollback-reconciliation-required", rollback: { transactionId: "rollback_nested_rec", status: "reconciliation-required", phase: "prepared" } }),
+    committedPurchase({ transactionId: "modern_nested_invalid_01", id: "nested-invalid", rollback: { transactionId: "bad", status: "applying", phase: "prepared" } }),
     committedPurchase({ transactionId: "modern_rolled_back_01", id: "rolled", rolledBack: true, rollback: { transactionId: "rollback_committed_1", status: "committed", phase: "committed" } }),
     committedPurchase({ transactionId: "modern_compensated_01", id: "compensated", status: "compensated", phase: "compensated" }),
     committedPurchase({ transactionId: "modern_top_reconcile_1", id: "top-reconcile", status: "reconciliation-required", phase: "reconciliation-required" }),
@@ -666,7 +667,14 @@ test("modern audit views fall back to transaction ID and distinguish rollback an
     assert.equal(view.find((row) => row.id === "top-reconcile").statusLabel, "Транзакция требует сверки");
     assert.equal(view.find((row) => row.id === "top-prepared").statusLabel, "Транзакция выполняется");
     assert.equal(view.find((row) => row.id === "top-applying").statusLabel, "Транзакция выполняется");
-    assert.equal(view.every((row) => row.rollbackDisabled), true);
+    assert.equal(view.find((row) => row.transactionId === ORIGINAL_ID).rollbackDisabled, false);
+    assert.equal(view.find((row) => row.id === "nested").rollbackDisabled, false);
+    assert.match(view.find((row) => row.id === "nested").rollbackTitle, /Продолж/u);
+    assert.equal(view.find((row) => row.id === "nested-invalid").rollbackDisabled, true);
+    assert.equal(view.find((row) => row.id === "rolled").rollbackDisabled, true);
+    assert.equal(view.find((row) => row.id === "top-reconcile").rollbackDisabled, true);
+    assert.equal(view.find((row) => row.id === "top-prepared").rollbackDisabled, true);
+    assert.equal(view.find((row) => row.id === "top-applying").rollbackDisabled, true);
   }
   finally {
     restore();

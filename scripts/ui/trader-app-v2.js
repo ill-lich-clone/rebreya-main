@@ -4,6 +4,8 @@ import { createTradeTransactionId } from "../features/trading/trade-transaction-
 import {
   PendingTradeTransactions,
   commitSaleBasket,
+  hasFrozenSaleBasketEntries,
+  isFrozenSaleBasketEntry,
   purchaseSemanticKey,
   saleSemanticKey,
   tradeErrorCorrelation
@@ -853,15 +855,20 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     if (basket instanceof HTMLElement) {
       basket.innerHTML = entries.map((entry) => {
         const preview = entry.preview;
-        const quantity = Math.max(1, Math.min(entry.quantity, preview.quantityAvailable));
+        const frozen = isFrozenSaleBasketEntry(entry);
+        const quantity = Math.max(1, Math.min(
+          frozen ? entry.frozenQuantity : entry.quantity,
+          preview.quantityAvailable
+        ));
+        const disabled = frozen ? "disabled" : "";
         return `
-          <article class="rm-trader-v2-sale-picked" data-sale-basket-item="${escapeHtml(preview.itemUuid)}">
+          <article class="rm-trader-v2-sale-picked${frozen ? " is-pending" : ""}" data-sale-basket-item="${escapeHtml(preview.itemUuid)}">
             <img src="${escapeHtml(preview.img || "icons/svg/item-bag.svg")}" alt="">
             <div class="rm-trader-v2-sale-picked__main">
               <strong>${escapeHtml(preview.itemName)}</strong>
               <small>оригинал ${escapeHtml(preview.marketPriceLabel)} · выплата ${escapeHtml(preview.netPayoutLabel)} за шт.</small>
               <div class="rm-trader-v2-sale-picked__quantity">
-                <button type="button" data-action="sale-qty-dec" aria-label="Уменьшить количество">−</button>
+                <button type="button" data-action="sale-qty-dec" aria-label="Уменьшить количество" ${disabled}>−</button>
                 <input
                   type="number"
                   min="1"
@@ -870,12 +877,14 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
                   value="${quantity}"
                   data-action="sale-basket-quantity"
                   data-item-uuid="${escapeHtml(preview.itemUuid)}"
+                  ${disabled}
                 >
-                <button type="button" data-action="sale-qty-inc" aria-label="Увеличить количество">+</button>
+                <button type="button" data-action="sale-qty-inc" aria-label="Увеличить количество" ${disabled}>+</button>
               </div>
+              ${frozen ? "<small>Операция отправлена. Повтор использует тот же ID.</small>" : ""}
             </div>
             <strong class="rm-trader-v2-sale-picked__price">${escapeHtml(formatCopper(preview.netPayoutCopper * quantity))}</strong>
-            <button type="button" class="rm-trader-v2-sale-picked__remove" data-action="sale-remove-item" aria-label="Убрать из продажи">×</button>
+            <button type="button" class="rm-trader-v2-sale-picked__remove" data-action="sale-remove-item" aria-label="Убрать из продажи" ${disabled}>×</button>
           </article>
         `;
       }).join("");
@@ -984,6 +993,9 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         throw error;
       }
     }, {
+      onDispatched: async () => {
+        this.#renderSaleBasket(element);
+      },
       onSettledEntry: async (entry) => {
         this.salePreviewCache.delete(entry.preview.itemUuid);
         this.#renderSaleBasket(element);
@@ -1138,6 +1150,10 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       }
 
       if (actionButton.dataset.action === "sale-remove-item") {
+        if (isFrozenSaleBasketEntry(entry)) {
+          ui.notifications?.warn("Отправленную операцию нельзя удалить до получения окончательного результата.");
+          return;
+        }
         this.saleBasket.delete(itemUuid);
         this.#renderSaleBasket(element);
         return;
@@ -1293,6 +1309,12 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _preClose(options) {
+    if (hasFrozenSaleBasketEntries(this.saleBasket)) {
+      this.isClosing = false;
+      getAppElement(this)?.classList?.remove?.("is-closing");
+      ui.notifications?.warn("Лавку нельзя закрыть, пока есть операция с неопределённым результатом. Повторите её с тем же ID.");
+      return false;
+    }
     window.clearTimeout(this.searchRenderTimeout);
     this.searchRenderTimeout = null;
     window.clearTimeout(this.characterPokeTimeout);

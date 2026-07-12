@@ -11,6 +11,7 @@ import { getAppElement } from "../ui.js";
 import {
   PendingTradeTransactions,
   rollbackSemanticKey,
+  rollbackResumeIdentity,
   tradeErrorCorrelation
 } from "../features/trading/trade-ui-transaction-lifecycle.js";
 
@@ -363,6 +364,14 @@ export class EconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
 
         const semanticKey = rollbackSemanticKey(auditId);
+        const resumeIdentity = rollbackResumeIdentity(record);
+        if (resumeIdentity.kind === "unavailable") {
+          ui.notifications?.error("Сохранённый идентификатор отката повреждён. Требуется ручная сверка.");
+          return;
+        }
+        if (resumeIdentity.kind === "resume") {
+          this.pendingTradeRollbacks.adopt(semanticKey, resumeIdentity.transactionId);
+        }
         const rollbackTransactionId = this.pendingTradeRollbacks.acquire("rollback", semanticKey);
         try {
           const result = await this.moduleApi.rollbackTraderAuditEntry(auditId, {

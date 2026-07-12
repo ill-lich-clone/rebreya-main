@@ -12,6 +12,7 @@ import { buildGearIconLookup, resolveGearItemIcon } from "./gear-icon-resolver.j
 import { classifyGearEntry } from "./item-classification.js";
 import { formatPercent, formatSignedPercent } from "../ui.js";
 import {
+  isValidTradeTransactionId,
   normalizeTradeTransaction,
   retainTradeLog
 } from "../features/trading/trade-transaction-model.js";
@@ -441,11 +442,12 @@ function buildAuditViewRecord(record) {
   const rollbackInProgress = ["prepared", "applying"].includes(rollbackStatus);
   const rollbackReconciliation = rollbackStatus === "reconciliation-required";
   const rollbackCommitted = rollbackStatus === "committed";
-  const modernUnavailable = !legacy && (
-    rollbackInProgress
-    || rollbackReconciliation
-    || rollbackCommitted
-    || [
+  const rollbackTransactionId = String(record.rollback?.transactionId ?? "").trim();
+  const rollbackResumable = (rollbackInProgress || rollbackReconciliation)
+    && isValidTradeTransactionId(rollbackTransactionId)
+    && ["committed", "reconciliation-required"].includes(topLevelStatus);
+  const modernUnavailable = !legacy && !rollbackResumable && (
+    rollbackInProgress || rollbackReconciliation || rollbackCommitted || [
       "prepared",
       "applying",
       "compensating",
@@ -461,11 +463,15 @@ function buildAuditViewRecord(record) {
   }
   else if (rollbackReconciliation) {
     statusLabel = "Откат требует сверки";
-    rollbackTitle = "Откат требует ручной сверки";
+    rollbackTitle = rollbackResumable
+      ? "Продолжить откат после сверки"
+      : "Откат требует ручной сверки";
   }
   else if (rollbackInProgress) {
     statusLabel = "Откат выполняется";
-    rollbackTitle = "Откат уже выполняется";
+    rollbackTitle = rollbackResumable
+      ? "Продолжить незавершённый откат"
+      : "Откат уже выполняется";
   }
   else if (!legacy && topLevelStatus === "compensated") {
     statusLabel = "Транзакция компенсирована";
