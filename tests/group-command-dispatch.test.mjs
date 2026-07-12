@@ -121,6 +121,7 @@ function installFixture({ currentUserId = "gm-a" } = {}) {
   };
 
   return {
+    actors,
     emitted,
     groupA,
     memberA,
@@ -133,6 +134,95 @@ function installFixture({ currentUserId = "gm-a" } = {}) {
       globalThis.ui = previousUi;
     }
   };
+}
+
+function installCombatStatusGlobals() {
+  const previousActor = globalThis.Actor;
+  const previousActiveEffect = globalThis.ActiveEffect;
+  const previousConfig = globalThis.CONFIG;
+  const previousConst = globalThis.CONST;
+
+  class TestActor {}
+  class TestActiveEffect {}
+  globalThis.Actor = TestActor;
+  globalThis.ActiveEffect = TestActiveEffect;
+  globalThis.CONFIG = { statusEffects: [] };
+  globalThis.CONST = {
+    ACTIVE_EFFECT_MODES: {
+      ADD: 2
+    }
+  };
+
+  return {
+    Actor: TestActor,
+    ActiveEffect: TestActiveEffect,
+    restore() {
+      if (previousActor === undefined) {
+        delete globalThis.Actor;
+      }
+      else {
+        globalThis.Actor = previousActor;
+      }
+      if (previousActiveEffect === undefined) {
+        delete globalThis.ActiveEffect;
+      }
+      else {
+        globalThis.ActiveEffect = previousActiveEffect;
+      }
+      if (previousConfig === undefined) {
+        delete globalThis.CONFIG;
+      }
+      else {
+        globalThis.CONFIG = previousConfig;
+      }
+      if (previousConst === undefined) {
+        delete globalThis.CONST;
+      }
+      else {
+        globalThis.CONST = previousConst;
+      }
+    }
+  };
+}
+
+function createCombatActor(ActorClass, ActiveEffectClass, {
+  id,
+  type = "npc",
+  ownerId = "",
+  isOwner = false
+} = {}) {
+  const actor = new ActorClass();
+  actor.id = id;
+  actor.uuid = `Actor.${id}`;
+  actor.type = type;
+  actor.isOwner = isOwner;
+  actor.ownership = ownerId ? { [ownerId]: 3 } : {};
+  actor.effects = { contents: [] };
+  actor.createEmbeddedDocuments = async (_type, documents) => {
+    const created = documents.map((document, index) => {
+      const effect = new ActiveEffectClass();
+      Object.assign(effect, clone(document), {
+        id: `effect-${actor.effects.contents.length + index + 1}`,
+        _id: `effect-${actor.effects.contents.length + index + 1}`,
+        parent: actor,
+        getFlag(scope, key) {
+          return this.flags?.[scope]?.[key];
+        },
+        async update(patch) {
+          Object.assign(this, patch);
+          return this;
+        },
+        async delete() {
+          actor.effects.contents = actor.effects.contents.filter((entry) => entry !== this);
+          return this;
+        }
+      });
+      return effect;
+    });
+    actor.effects.contents.push(...created);
+    return created;
+  };
+  return actor;
 }
 
 function commandRequest(command, senderId, payload, requestId = `${command}-request`) {
@@ -328,6 +418,152 @@ test("cosmology.setMechanus accepts only an exact boolean payload from a GM send
   }
   finally {
     fixture.restore();
+  }
+});
+
+test("combat.status.set lets a character owner apply environment statuses through the active GM", async () => {
+  const globals = installCombatStatusGlobals();
+  const fixture = installFixture();
+  try {
+    const sourceActor = createCombatActor(globals.Actor, globals.ActiveEffect, {
+      id: "character-a",
+      type: "character",
+      ownerId: fixture.users.playerA.id
+    });
+    const enemyActor = createCombatActor(globals.Actor, globals.ActiveEffect, {
+      id: "enemy-a",
+      type: "npc"
+    });
+    fixture.actors.push(sourceActor, enemyActor);
+    const moduleApi = new RebreyaMainModule();
+    const request = commandRequest(
+      "combat.status.set",
+      fixture.users.playerA.id,
+      {
+        actorId: enemyActor.id,
+        statusId: "rebreya-surrounded",
+        options: {
+          active: true,
+          durationRounds: 1,
+          meta: {
+            source: "rebreya-environment",
+            sourceActorUuid: sourceActor.uuid,
+            version: "surrounded-ac-1"
+          }
+        }
+      },
+      "status-valid"
+    );
+
+    await moduleApi.handleSocketMessage(request);
+    await flushCommands();
+
+    const effect = enemyActor.effects.contents[0];
+    assert.equal(effect.flags["rebreya-main"].statusId, "rebreya-surrounded");
+    assert.deepEqual(resultFor(fixture, request.requestId), {
+      type: COMMAND_RESULT_TYPE,
+      command: request.command,
+      requestId: request.requestId,
+      forUserId: fixture.users.playerA.id,
+      senderId: fixture.users.gmA.id,
+      ok: true,
+      data: {
+        actorId: enemyActor.id,
+        statusId: "rebreya-surrounded",
+        active: true,
+        value: null,
+        meta: {
+          source: "rebreya-environment",
+          sourceActorUuid: sourceActor.uuid,
+          version: "surrounded-ac-1"
+        },
+        effectId: effect.id
+      }
+    });
+  }
+  finally {
+    fixture.restore();
+    globals.restore();
+  }
+});
+
+test("player setCombatStatus routes environment status changes for unowned actors through sockets", async () => {
+  const globals = installCombatStatusGlobals();
+  const fixture = installFixture({ currentUserId: "player-a" });
+  try {
+    const sourceActor = createCombatActor(globals.Actor, globals.ActiveEffect, {
+      id: "character-a",
+      type: "character",
+      ownerId: fixture.users.playerA.id,
+      isOwner: true
+    });
+    const enemyActor = createCombatActor(globals.Actor, globals.ActiveEffect, {
+      id: "enemy-a",
+      type: "npc",
+      isOwner: false
+    });
+    fixture.actors.push(sourceActor, enemyActor);
+    const moduleApi = new RebreyaMainModule();
+    let refreshCount = 0;
+    moduleApi.refreshOpenApps = async () => {
+      refreshCount += 1;
+    };
+
+    const pending = moduleApi.setCombatStatus(enemyActor, "rebreya-surrounded", {
+      active: true,
+      durationRounds: 1,
+      meta: {
+        source: "rebreya-environment",
+        sourceActorUuid: sourceActor.uuid,
+        version: "surrounded-ac-1"
+      }
+    });
+    const request = fixture.emitted[0]?.message;
+    assert.equal(request?.type, COMMAND_REQUEST_TYPE);
+    assert.equal(request?.command, "combat.status.set");
+    assert.equal(request?.senderId, fixture.users.playerA.id);
+    assert.deepEqual(request?.payload, {
+      actorId: enemyActor.id,
+      statusId: "rebreya-surrounded",
+      options: {
+        active: true,
+        durationRounds: 1,
+        meta: {
+          source: "rebreya-environment",
+          sourceActorUuid: sourceActor.uuid,
+          version: "surrounded-ac-1"
+        }
+      }
+    });
+
+    await moduleApi.handleSocketMessage({
+      type: COMMAND_RESULT_TYPE,
+      command: request.command,
+      requestId: request.requestId,
+      forUserId: fixture.users.playerA.id,
+      senderId: fixture.users.gmA.id,
+      ok: true,
+      data: {
+        actorId: enemyActor.id,
+        statusId: "rebreya-surrounded",
+        active: true,
+        value: null,
+        meta: {
+          source: "rebreya-environment",
+          sourceActorUuid: sourceActor.uuid,
+          version: "surrounded-ac-1"
+        },
+        effectId: "effect-1"
+      }
+    });
+
+    assert.equal((await pending).statusId, "rebreya-surrounded");
+    assert.equal(refreshCount, 1);
+    assert.equal(enemyActor.effects.contents.length, 0);
+  }
+  finally {
+    fixture.restore();
+    globals.restore();
   }
 });
 

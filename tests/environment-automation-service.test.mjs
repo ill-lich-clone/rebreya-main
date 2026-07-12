@@ -80,6 +80,43 @@ test("Rebreya environment applies surrounded and open-position statuses", async 
   ]);
 });
 
+test("Rebreya environment routes status changes through the module combat status API", async () => {
+  const targetActor = { id: "target", uuid: "Actor.target" };
+  const target = createToken("target", 100, 100, 1, targetActor);
+  const attacker = createToken("attacker", 0, 100, -1);
+  const ally = createToken("ally", 200, 100, -1);
+  const routedCalls = [];
+  const moduleApi = {
+    getCombatStatus() {
+      return { active: false, meta: {} };
+    },
+    async setCombatStatus(...args) {
+      routedCalls.push(args);
+      return true;
+    },
+    combatStatusService: {
+      getStatus() {
+        throw new Error("low-level status service should not be used");
+      },
+      async setStatus() {
+        throw new Error("low-level status service should not be used");
+      }
+    }
+  };
+  const service = new EnvironmentAutomationService(moduleApi, {
+    getCanvas: () => ({
+      grid: { size: 100, sizeX: 100, sizeY: 100 },
+      tokens: { placeables: [target, attacker, ally] }
+    })
+  });
+
+  assert.equal(await service.updateTargetEnvironment(attacker, target), true);
+  assert.deepEqual(routedCalls.map(([, statusId]) => statusId), [
+    "rebreya-surrounded",
+    "rebreya-open-position"
+  ]);
+});
+
 test("Rebreya environment does not rewrite current automatic statuses", async () => {
   const targetActor = { uuid: "Actor.target" };
   const target = createToken("target", 100, 100, 1, targetActor);

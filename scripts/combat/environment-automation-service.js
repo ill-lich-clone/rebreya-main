@@ -276,6 +276,36 @@ export class EnvironmentAutomationService {
     return this.moduleApi?.combatStatusService ?? null;
   }
 
+  #getCombatStatus(actor, statusId) {
+    if (typeof this.moduleApi?.getCombatStatus === "function") {
+      return this.moduleApi.getCombatStatus(actor, statusId);
+    }
+
+    return typeof this.statusService?.getStatus === "function"
+      ? this.statusService.getStatus(actor, statusId)
+      : null;
+  }
+
+  async #setCombatStatus(actor, statusId, options) {
+    if (typeof this.moduleApi?.setCombatStatus === "function") {
+      return this.moduleApi.setCombatStatus(actor, statusId, options);
+    }
+
+    return this.statusService?.setStatus?.(actor, statusId, options) ?? false;
+  }
+
+  async #clearCombatStatus(actor, statusId) {
+    if (typeof this.moduleApi?.clearCombatStatus === "function") {
+      return this.moduleApi.clearCombatStatus(actor, statusId);
+    }
+
+    if (typeof this.statusService?.clearStatus === "function") {
+      return this.statusService.clearStatus(actor, statusId);
+    }
+
+    return this.statusService?.setStatus?.(actor, statusId, { active: false }) ?? false;
+  }
+
   getCanvas() {
     if (typeof this._options.getCanvas === "function") {
       return this._options.getCanvas();
@@ -285,14 +315,14 @@ export class EnvironmentAutomationService {
   }
 
   async #setEnvironmentStatus(actor, statusId, active, sourceActor = null) {
-    const statusService = this.statusService;
-    if (typeof statusService?.setStatus !== "function") {
+    if (
+      typeof this.moduleApi?.setCombatStatus !== "function"
+      && typeof this.statusService?.setStatus !== "function"
+    ) {
       return false;
     }
 
-    const current = typeof statusService.getStatus === "function"
-      ? statusService.getStatus(actor, statusId)
-      : null;
+    const current = this.#getCombatStatus(actor, statusId);
     const currentIsEnvironment = current?.meta?.source === ENVIRONMENT_STATUS_SOURCE;
     const nextMeta = buildEnvironmentStatusMeta(sourceActor);
 
@@ -301,11 +331,7 @@ export class EnvironmentAutomationService {
         return false;
       }
 
-      if (typeof statusService.clearStatus === "function") {
-        return statusService.clearStatus(actor, statusId);
-      }
-
-      return statusService.setStatus(actor, statusId, { active: false });
+      return this.#clearCombatStatus(actor, statusId);
     }
 
     if (current?.active && !currentIsEnvironment) {
@@ -321,7 +347,7 @@ export class EnvironmentAutomationService {
       return true;
     }
 
-    return statusService.setStatus(actor, statusId, {
+    return this.#setCombatStatus(actor, statusId, {
       active: true,
       durationRounds: 1,
       sourceActor,
