@@ -1362,7 +1362,10 @@ test("Actor receipts and Item markers retain all nonterminal rows plus the lates
   const retainedMarkers = {
     ...terminalMarkers,
     nonterminal_prepared: { updatedAt: -2 },
-    nonterminal_reconciliation: { updatedAt: -1 }
+    nonterminal_reconciliation: { updatedAt: -1 },
+    nested_rollback_prepared: { updatedAt: -5 },
+    nested_rollback_applying: { updatedAt: -4 },
+    nested_rollback_reconciliation: { updatedAt: -3 }
   };
   const actor = new FakeActor({ id: "actor-1", copper: 1_000 });
   actor.flags = {
@@ -1388,6 +1391,21 @@ test("Actor receipts and Item markers retain all nonterminal rows plus the lates
           {
             transactionId: "nonterminal_reconciliation",
             status: "reconciliation-required"
+          },
+          {
+            transactionId: "nested_rollback_prepared",
+            status: "committed",
+            rollback: { transactionId: "rollback_nested_prepared", status: "prepared" }
+          },
+          {
+            transactionId: "nested_rollback_applying",
+            status: "committed",
+            rollback: { transactionId: "rollback_nested_applying", status: "applying" }
+          },
+          {
+            transactionId: "nested_rollback_reconciliation",
+            status: "reconciliation-required",
+            rollback: { transactionId: "rollback_nested_reconcile", status: "reconciliation-required" }
           }
         ]
       };
@@ -1405,10 +1423,13 @@ test("Actor receipts and Item markers retain all nonterminal rows plus the lates
     const itemMarkers = getProperty(item, `flags.${MODULE_ID}.tradeTransactions`);
     const actorReceipts = getProperty(actor, `flags.${MODULE_ID}.tradeReceipts`);
     for (const markers of [itemMarkers, actorReceipts]) {
-      assert.equal(Object.keys(markers).length, 67);
+      assert.equal(Object.keys(markers).length, 70);
       assert.ok(markers[transaction.transactionId]);
       assert.ok(markers.nonterminal_prepared);
       assert.ok(markers.nonterminal_reconciliation);
+      assert.ok(markers.nested_rollback_prepared);
+      assert.ok(markers.nested_rollback_applying);
+      assert.ok(markers.nested_rollback_reconciliation);
       assert.equal(markers.terminal_05, undefined);
       assert.ok(markers.terminal_06);
       assert.ok(markers.terminal_69);
@@ -1450,6 +1471,118 @@ test("marker pruning without a state repository retains the active transaction a
     assert.equal(markers.terminal_05, undefined);
     assert.ok(markers.terminal_06);
     assert.ok(markers.terminal_69);
+  }
+  finally {
+    restore();
+  }
+});
+
+test("nested rollback evidence survives later marker pruning and resumes with the same ID", async () => {
+  const actor = new FakeActor({
+    id: "actor-1",
+    copper: 1_000,
+    ownership: { "player-1": 3, "gm-a": 3, "gm-b": 3 }
+  });
+  const item = actor.addItem({
+    name: "Arrows",
+    type: "consumable",
+    system: { quantity: 5 },
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "arrows" } }
+  });
+  const original = createPurchaseTransaction({ transactionId: "purchase_nested_resume_01" });
+  const traderId = "city-1::shop-1";
+  const row = {
+    ...clone(original),
+    id: "audit-nested-resume",
+    type: "purchase",
+    traderId,
+    legacy: false,
+    status: "committed",
+    phase: "committed",
+    stock: { itemKey: "gear:arrows", before: 4, after: 3, delta: -1 },
+    result: { transactionId: original.transactionId },
+    error: null,
+    compensation: null,
+    rollback: null,
+    createdAt: 1,
+    updatedAt: 1,
+    committedAt: 1
+  };
+  const state = {
+    version: 1,
+    order: [traderId],
+    traders: {
+      [traderId]: { traderId, inventory: [{ itemKey: "gear:arrows", quantity: 3 }] }
+    },
+    tradeLog: [row]
+  };
+  const repository = {
+    read: () => state,
+    async mutate(mutator) { return mutator(state); },
+    findTransaction: (transactionId) => state.tradeLog.find((entry) => entry.transactionId === transactionId) ?? null,
+    async mutateTransaction(transactionId, mutator) {
+      const target = state.tradeLog.find((entry) => entry.transactionId === transactionId);
+      assert.ok(target);
+      return mutator(target, state);
+    }
+  };
+  const restore = installFoundry({ actors: [actor], stateRepository: repository });
+  const operations = new TraderService(createModuleApi(), { stateRepository: repository })
+    .createFoundryTradeOperations();
+  let failItemRollback = true;
+  const engine = new TradeTransactionService({
+    repository,
+    operations: {
+      ...operations,
+      async compensatePurchaseItem(transaction) {
+        if (failItemRollback) throw new Error("pause rollback before item reversal");
+        return operations.compensatePurchaseItem(transaction);
+      }
+    }
+  });
+
+  try {
+    await operations.applyPurchaseItem(original);
+    await operations.applyPurchaseCurrency(original);
+    await assert.rejects(engine.rollback(original.transactionId, {
+      rollbackTransactionId: "rollback_nested_resume_01",
+      requestedByUserId: "gm-a"
+    }), { code: "reconciliation-required" });
+
+    const terminalMarkers = Object.fromEntries(Array.from({ length: 70 }, (_, index) => [
+      `later_terminal_${String(index).padStart(2, "0")}`,
+      { updatedAt: 100 + index }
+    ]));
+    Object.assign(getProperty(item, `flags.${MODULE_ID}.tradeTransactions`), clone(terminalMarkers));
+    Object.assign(getProperty(actor, `flags.${MODULE_ID}.tradeReceipts`), clone(terminalMarkers));
+
+    const newer = createPurchaseTransaction({
+      transactionId: "purchase_later_prune_01",
+      item: {
+        ...createPurchaseTransaction().item,
+        beforeQuantity: 25,
+        afterQuantity: 26,
+        delta: 1,
+        rawItemData: { name: "Arrow", type: "consumable", system: { quantity: 1 } }
+      },
+      currency: { beforeCopper: 800, afterCopper: 700, deltaCopper: -100 }
+    });
+    await operations.applyPurchaseItem(newer);
+    await operations.applyPurchaseCurrency(newer);
+    assert.ok(getProperty(item, `flags.${MODULE_ID}.tradeTransactions.${original.transactionId}`));
+    assert.ok(getProperty(actor, `flags.${MODULE_ID}.tradeReceipts.${original.transactionId}`));
+
+    failItemRollback = false;
+    const result = await engine.rollback(original.transactionId, {
+      rollbackTransactionId: "rollback_nested_resume_01",
+      requestedByUserId: "gm-b"
+    });
+    assert.equal(result.rolledBack, true);
+    assert.equal(item.system.quantity, 6);
+    assert.equal(actor.system.currency.gp, 9);
+    assert.equal(state.traders[traderId].inventory[0].quantity, 4);
+    assert.equal(row.rollback.requestedByUserId, "gm-a");
+    assert.equal(row.rolledBackByUserId, "gm-b");
   }
   finally {
     restore();

@@ -1,9 +1,9 @@
 import { MODULE_ID } from "../constants.js";
 import { bringAppToFront, getAppElement } from "../ui.js";
-import { createTradeTransactionId } from "../features/trading/trade-transaction-model.js";
 import {
   PendingTradeTransactions,
   commitSaleBasket,
+  createTradePendingStorageOptions,
   hasFrozenSaleBasketEntries,
   isFrozenSaleBasketEntry,
   purchaseSemanticKey,
@@ -440,7 +440,9 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     this.saleSellerActorId = options.actorId ?? null;
     this.saleSearch = "";
     this.saleBasket = new Map();
-    this.pendingTradeTransactions = new PendingTradeTransactions();
+    this.pendingTradeTransactions = new PendingTradeTransactions(
+      createTradePendingStorageOptions({ moduleId: MODULE_ID, surface: "trader-direct" })
+    );
     this.salePreviewCache = new Map();
     this.usePartyFunds = options.usePartyFunds ?? game.user?.isGM === true;
     this.partyInventoryActorId = null;
@@ -940,7 +942,8 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       preview,
       quantity: 1,
       frozenQuantity: null,
-      transactionId: createTradeTransactionId("sale")
+      transactionId: null,
+      semanticKey: ""
     });
     this.#renderSaleBasket(element);
   }
@@ -993,10 +996,26 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         throw error;
       }
     }, {
+      prepareEntry: async (entry) => {
+        entry.semanticKey ||= saleSemanticKey({
+          actorId: entry.preview.actorId,
+          cityId: this.cityId,
+          traderKey: this.traderKey,
+          itemUuid: entry.preview.itemUuid,
+          quantity: entry.quantity
+        });
+        entry.transactionId ||= this.pendingTradeTransactions.acquire("sale", entry.semanticKey);
+      },
       onDispatched: async () => {
         this.#renderSaleBasket(element);
       },
-      onSettledEntry: async (entry) => {
+      onSettledEntry: async (entry, settlement) => {
+        if (settlement.committed) {
+          this.pendingTradeTransactions.resolve(entry.semanticKey);
+        }
+        else {
+          this.pendingTradeTransactions.reject(entry.semanticKey, { code: settlement.code });
+        }
         this.salePreviewCache.delete(entry.preview.itemUuid);
         this.#renderSaleBasket(element);
       }

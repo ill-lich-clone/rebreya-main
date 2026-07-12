@@ -2,6 +2,7 @@
 import { bringAppToFront, getAppElement } from "../ui.js";
 import {
   PendingTradeTransactions,
+  createTradePendingStorageOptions,
   purchaseSemanticKey,
   saleSemanticKey,
   tradeErrorCorrelation
@@ -254,7 +255,9 @@ export class TraderApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.traderKey = traderKey;
     this.selectedActorId = options.actorId ?? null;
     this.search = "";
-    this.pendingTradeTransactions = new PendingTradeTransactions();
+    this.pendingTradeTransactions = new PendingTradeTransactions(
+      createTradePendingStorageOptions({ moduleId: MODULE_ID, surface: "trader-direct" })
+    );
     this.renderListenersAbortController = null;
   }
 

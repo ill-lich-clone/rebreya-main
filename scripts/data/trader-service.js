@@ -13,6 +13,7 @@ import { classifyGearEntry } from "./item-classification.js";
 import { formatPercent, formatSignedPercent } from "../ui.js";
 import {
   isValidTradeTransactionId,
+  isNonterminalTradeTransaction,
   normalizeTradeTransaction,
   retainTradeLog
 } from "../features/trading/trade-transaction-model.js";
@@ -20,12 +21,6 @@ import {
 const MAX_ACTIVE_TRADERS = 21;
 const TRADE_AUDIT_LIMIT = 20;
 const TRADE_DOCUMENT_RECEIPT_LIMIT = 64;
-const NONTERMINAL_TRADE_STATUSES = new Set([
-  "prepared",
-  "applying",
-  "compensating",
-  "reconciliation-required"
-]);
 const MIN_PRICE_GOLD = 0.01;
 const GENERAL_TRADER_ICON = "icons/svg/item-bag.svg";
 const MATERIAL_TRADER_ICON = "icons/svg/coins.svg";
@@ -1175,10 +1170,10 @@ export class TraderService {
     const tradeLog = this.stateRepository
       ? this.stateRepository.read()?.tradeLog
       : [];
-    const statusByTransactionId = new Map(
+    const nonterminalByTransactionId = new Map(
       (Array.isArray(tradeLog) ? tradeLog : []).map((row) => [
         String(row?.transactionId ?? "").trim(),
-        String(row?.status ?? "").trim()
+        isNonterminalTradeTransaction(row)
       ])
     );
     const retained = [];
@@ -1186,7 +1181,7 @@ export class TraderService {
     for (const transactionId of Object.keys(markers)) {
       const marker = getOwn(markers, transactionId);
       if (transactionId === activeTransactionId
-        || NONTERMINAL_TRADE_STATUSES.has(statusByTransactionId.get(transactionId))) {
+        || nonterminalByTransactionId.get(transactionId) === true) {
         retained.push([transactionId, marker]);
       }
       else {

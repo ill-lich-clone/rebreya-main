@@ -366,8 +366,7 @@ export class TradeTransactionService {
     const request = canonicalizeRollbackRequest(transactionId, options);
     const active = this.#rollbackInFlight.get(request.transactionId);
     if (active) {
-      if (active.request.rollbackTransactionId !== request.rollbackTransactionId
-        || active.request.requestedByUserId !== request.requestedByUserId) {
+      if (active.request.rollbackTransactionId !== request.rollbackTransactionId) {
         throw createRollbackError(
           "transaction-conflict",
           "Trade transaction already has a different rollback request in progress",

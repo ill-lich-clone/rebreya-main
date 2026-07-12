@@ -10,6 +10,7 @@ import {
 import { getAppElement } from "../ui.js";
 import {
   PendingTradeTransactions,
+  createTradePendingStorageOptions,
   rollbackSemanticKey,
   rollbackResumeIdentity,
   tradeErrorCorrelation
@@ -200,7 +201,9 @@ export class EconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.moduleApi = moduleApi;
     this.searchRenderTimer = null;
     this.pendingFocus = null;
-    this.pendingTradeRollbacks = new PendingTradeTransactions();
+    this.pendingTradeRollbacks = new PendingTradeTransactions(
+      createTradePendingStorageOptions({ moduleId: MODULE_ID, surface: "economy-rollback" })
+    );
     this.filters = {
       search: "",
       state: "all",

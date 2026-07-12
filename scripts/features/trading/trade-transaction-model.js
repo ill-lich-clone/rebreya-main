@@ -153,16 +153,19 @@ export function normalizeTradeTransaction(value = {}) {
   };
 }
 
+export function isNonterminalTradeTransaction(row) {
+  if (!TERMINAL_TRADE_STATUSES.has(String(row?.status ?? ""))) return true;
+  if (!row?.rollback || typeof row.rollback !== "object" || Array.isArray(row.rollback)) {
+    return false;
+  }
+  return String(row.rollback.status ?? "") !== TRADE_TRANSACTION_STATUS.COMMITTED;
+}
+
 export function retainTradeLog(rows = [], { terminalLimit = 20 } = {}) {
   const normalized = rows.map((row) => normalizeTradeTransaction(row));
-  const hasNonterminalRollback = (row) => row.rollback
-    && typeof row.rollback === "object"
-    && !TERMINAL_TRADE_STATUSES.has(String(row.rollback.status ?? ""));
-  const nonterminal = normalized.filter((row) => (
-    !TERMINAL_TRADE_STATUSES.has(row.status) || hasNonterminalRollback(row)
-  ));
+  const nonterminal = normalized.filter(isNonterminalTradeTransaction);
   const terminal = normalized
-    .filter((row) => TERMINAL_TRADE_STATUSES.has(row.status) && !hasNonterminalRollback(row))
+    .filter((row) => !isNonterminalTradeTransaction(row))
     .sort((left, right) => (
       Number(right.updatedAt ?? right.createdAt ?? 0) - Number(left.updatedAt ?? left.createdAt ?? 0)
     ))

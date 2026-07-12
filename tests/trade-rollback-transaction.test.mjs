@@ -349,12 +349,12 @@ test("full-sale tombstone rollback restores the exact original quantity", async 
   assert.equal(harness.economic.itemQuantity, row.item.beforeQuantity);
 });
 
-test("concurrent calls with the same rollback ID coalesce and execute each phase once", async () => {
+test("concurrent calls with the same rollback ID coalesce across active GM failover", async () => {
   const gate = deferred();
   const harness = createHarness({ operationsOptions: { gate } });
 
   const first = harness.service.rollback(ORIGINAL_ID, rollbackOptions());
-  const second = harness.service.rollback(ORIGINAL_ID, rollbackOptions());
+  const second = harness.service.rollback(ORIGINAL_ID, rollbackOptions({ requestedByUserId: "gm-b" }));
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(harness.counters.purchaseItem, 1);
   gate.resolve();
@@ -368,6 +368,26 @@ test("concurrent calls with the same rollback ID coalesce and execute each phase
     saleCurrency: 0,
     saleItem: 0
   });
+});
+
+test("a new active GM resumes the same durable rollback ID from remaining phases", async () => {
+  const harness = createHarness({ operationsOptions: { failures: { purchaseCurrency: 1 } } });
+  await assert.rejects(
+    harness.service.rollback(ORIGINAL_ID, rollbackOptions()),
+    (error) => assertRollbackError(error, "reconciliation-required")
+  );
+  const reconciled = findRow(harness);
+  assert.equal(reconciled.rollback.requestedByUserId, "gm-a");
+  assert.equal(reconciled.rollback.phase, "item-reversed");
+
+  const result = await harness.service.rollback(ORIGINAL_ID, rollbackOptions({
+    requestedByUserId: "gm-b"
+  }));
+  const committed = findRow(harness);
+  assert.equal(result.rolledBack, true);
+  assert.equal(committed.rollback.requestedByUserId, "gm-a");
+  assert.equal(committed.rolledBackByUserId, "gm-b");
+  assert.equal(harness.seenTransactions.at(-1).request.requestedByUserId, "gm-b");
 });
 
 test("a different rollback ID conflicts while the original rollback owns the lock", async () => {

@@ -96,8 +96,7 @@ export function canonicalizeRollbackRequest(transactionId, options) {
 }
 
 function rollbackMatches(row, request) {
-  return row?.rollback?.transactionId === request.rollbackTransactionId
-    && row.rollback.requestedByUserId === request.requestedByUserId;
+  return row?.rollback?.transactionId === request.rollbackTransactionId;
 }
 
 function sanitizeRollbackError(error, phase, request) {

@@ -6,6 +6,7 @@ import {
   TERMINAL_TRADE_STATUSES,
   TradeTransactionError,
   createTradeTransactionId,
+  isNonterminalTradeTransaction,
   isValidTradeTransactionId,
   normalizeTradeTransaction,
   requestsMatch,
@@ -23,6 +24,21 @@ test("trade transaction statuses expose the durable state machine values", () =>
   });
   assert.equal(Object.isFrozen(TRADE_TRANSACTION_STATUS), true);
   assert.deepEqual([...TERMINAL_TRADE_STATUSES], ["committed", "compensated"]);
+});
+
+test("shared nonterminal predicate retains nested rollback evidence fail closed", () => {
+  assert.equal(isNonterminalTradeTransaction({ status: "prepared" }), true);
+  for (const status of ["prepared", "applying", "reconciliation-required", "compensated", "malformed"]) {
+    assert.equal(isNonterminalTradeTransaction({
+      status: "committed",
+      rollback: { transactionId: "rollback_nested_1", status }
+    }), true, status);
+  }
+  assert.equal(isNonterminalTradeTransaction({
+    status: "committed",
+    rollback: { transactionId: "rollback_nested_1", status: "committed" }
+  }), false);
+  assert.equal(isNonterminalTradeTransaction({ status: "committed", rollback: null }), false);
 });
 
 test("TradeTransactionError carries its code, transaction id, and cause", () => {
