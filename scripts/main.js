@@ -13,7 +13,12 @@ import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js";
-import { TraderService } from "./data/trader-service.js";
+import { TraderService, normalizeTraderState } from "./data/trader-service.js";
+import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
+import {
+  createTradeTransactionId,
+  isValidTradeTransactionId
+} from "./features/trading/trade-transaction-model.js";
 import {
   GroupContextService,
   buildDefaultGroupState,
@@ -46,6 +51,7 @@ import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.93-item
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
 import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
+import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
 import { isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
@@ -134,6 +140,8 @@ const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
 const COSMOLOGY_SET_MECHANUS_COMMAND = "cosmology.setMechanus";
 const COMBAT_STATUS_SET_COMMAND = "combat.status.set";
+const TRADER_PURCHASE_COMMAND = "trader.purchase";
+const TRADER_SELL_COMMAND = "trader.sell";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
 const ENVIRONMENT_STATUS_VERSION = "surrounded-ac-1";
@@ -441,6 +449,41 @@ function hasExactKeys(value, expectedKeys) {
     && actualKeys.every((key, index) => key === expectedKeys[index]);
 }
 
+function isTrimmedNonEmptyString(value) {
+  return typeof value === "string" && value.length > 0 && value === value.trim();
+}
+
+function isValidTraderPurchasePayload(payload) {
+  return hasExactKeys(payload, [
+    "actorId", "cityId", "itemKey", "legacy", "quantity", "traderKey", "transactionId"
+  ])
+    && payload.legacy === false
+    && isValidTradeTransactionId(payload.transactionId)
+    && [payload.actorId, payload.cityId, payload.traderKey, payload.itemKey].every(isTrimmedNonEmptyString)
+    && Number.isInteger(payload.quantity)
+    && payload.quantity > 0;
+}
+
+function isValidTraderSalePayload(payload) {
+  return hasExactKeys(payload, [
+    "actorId", "cityId", "itemUuid", "quantity", "traderKey", "transactionId"
+  ])
+    && isValidTradeTransactionId(payload.transactionId)
+    && [payload.actorId, payload.cityId, payload.traderKey, payload.itemUuid].every(isTrimmedNonEmptyString)
+    && Number.isInteger(payload.quantity)
+    && payload.quantity > 0;
+}
+
+function traderActorIsOwnedByUser(actor, user) {
+  if (!actor || !user) return false;
+  if (user.isGM === true) return true;
+  if (typeof actor.testUserPermission === "function") {
+    return actor.testUserPermission(user, "OWNER") === true;
+  }
+  const ownership = actor.ownership ?? actor._source?.ownership ?? {};
+  return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
+}
+
 function isValidIsoDate(value) {
   return parseCalendarIsoDate(value) != null;
 }
@@ -601,6 +644,11 @@ export class RebreyaMainModule {
       coordinator: this.worldMutationCoordinator,
       gameProvider: () => globalThis.game
     });
+    this.traderStateRepository = new TraderStateRepository({
+      coordinator: this.worldMutationCoordinator,
+      gameProvider: () => globalThis.game,
+      normalizeState: normalizeTraderState
+    });
     this.repository = new EconomyRepository();
     this.materialsCompendium = new MaterialsCompendiumService();
     this.gearCompendium = new GearCompendiumService();
@@ -613,7 +661,14 @@ export class RebreyaMainModule {
     this.classesCompendium = new ClassesCompendiumService();
     this.actionsCompendium = new ActionsCompendiumService();
     this.downtimeCompendium = new DowntimeCompendiumService();
-    this.traderService = new TraderService(this);
+    this.traderService = new TraderService(this, {
+      stateRepository: this.traderStateRepository
+    });
+    this.tradeTransactionService = new TradeTransactionService({
+      repository: this.traderStateRepository,
+      operations: this.traderService.createFoundryTradeOperations()
+    });
+    this.traderService.setTransactionService(this.tradeTransactionService);
     this.groupContextService = new GroupContextService({
       coordinator: this.worldMutationCoordinator,
       groupStateRepository: this.groupStateRepository
@@ -690,6 +745,37 @@ export class RebreyaMainModule {
       validate: isValidCombatStatusSetPayload,
       authorize: (payload, { sender }) => this.#canSenderSetCombatStatus(sender, payload),
       execute: (payload) => this.#executeCombatStatusSetCommand(payload)
+    });
+    const authorizeTradeActor = (payload, { sender }) => traderActorIsOwnedByUser(
+      globalThis.game?.actors?.get?.(payload.actorId)
+        ?? globalThis.game?.actors?.contents?.find?.((actor) => String(actor?.id) === payload.actorId),
+      sender
+    );
+    this.socketCommandBus.register(TRADER_PURCHASE_COMMAND, {
+      validate: isValidTraderPurchasePayload,
+      authorize: authorizeTradeActor,
+      execute: (payload, { sender }) => this.tradeTransactionService.purchase({
+        transactionId: payload.transactionId,
+        actorId: payload.actorId,
+        cityId: payload.cityId,
+        traderKey: payload.traderKey,
+        itemKey: payload.itemKey,
+        quantity: payload.quantity,
+        requestedByUserId: sender.id
+      }, { source: "typed-socket" })
+    });
+    this.socketCommandBus.register(TRADER_SELL_COMMAND, {
+      validate: isValidTraderSalePayload,
+      authorize: authorizeTradeActor,
+      execute: (payload, { sender }) => this.tradeTransactionService.sale({
+        transactionId: payload.transactionId,
+        actorId: payload.actorId,
+        cityId: payload.cityId,
+        traderKey: payload.traderKey,
+        itemUuid: payload.itemUuid,
+        quantity: payload.quantity,
+        requestedByUserId: sender.id
+      }, { source: "typed-socket" })
     });
   }
 
@@ -1923,15 +2009,58 @@ export class RebreyaMainModule {
   }
 
   async purchaseTraderItem(cityId, traderKey, itemKey, quantity, options = {}) {
-    return this.traderService.purchaseItem(cityId, traderKey, itemKey, quantity, options);
+    const transactionId = options.transactionId ?? createTradeTransactionId("purchase");
+    const actorId = String(options.actorId ?? "").trim();
+    const payload = {
+      transactionId,
+      legacy: false,
+      actorId,
+      cityId,
+      traderKey,
+      itemKey,
+      quantity
+    };
+    if (!isValidTraderPurchasePayload(payload)) {
+      throw new Error("Invalid trader purchase request");
+    }
+    if (isActiveGmClient(globalThis.game)) {
+      return this.tradeTransactionService.purchase({
+        transactionId,
+        actorId,
+        cityId,
+        traderKey,
+        itemKey,
+        quantity,
+        requestedByUserId: String(globalThis.game?.user?.id ?? "")
+      }, { source: "direct-active-gm" });
+    }
+    return this.socketCommandBus.request(TRADER_PURCHASE_COMMAND, payload);
   }
 
   async createTraderSalePreview(cityId, traderKey, dropData) {
     return this.traderService.createSalePreview(cityId, traderKey, dropData);
   }
 
-  async sellTraderItem(cityId, traderKey, preview, quantity) {
-    return this.traderService.sellItem(cityId, traderKey, preview, quantity);
+  async sellTraderItem(cityId, traderKey, preview, quantity, options = {}) {
+    const transactionId = options.transactionId ?? createTradeTransactionId("sale");
+    const payload = {
+      transactionId,
+      actorId: String(options.actorId ?? preview?.actorId ?? "").trim(),
+      cityId,
+      traderKey,
+      itemUuid: String(preview?.itemUuid ?? "").trim(),
+      quantity
+    };
+    if (!isValidTraderSalePayload(payload)) {
+      throw new Error("Invalid trader sale request");
+    }
+    if (isActiveGmClient(globalThis.game)) {
+      return this.tradeTransactionService.sale({
+        ...payload,
+        requestedByUserId: String(globalThis.game?.user?.id ?? "")
+      }, { source: "direct-active-gm" });
+    }
+    return this.socketCommandBus.request(TRADER_SELL_COMMAND, payload);
   }
 
   async recordTraderAudit(operation = {}) {
@@ -1955,8 +2084,16 @@ export class RebreyaMainModule {
     return this.traderService.getTradeAuditLog();
   }
 
-  async rollbackTraderAuditEntry(entryId) {
-    const result = await this.traderService.rollbackTradeAuditEntry(entryId);
+  async rollbackTraderAuditEntry(entryId, options = {}) {
+    if (!globalThis.game?.user?.isGM || !isActiveGmClient(globalThis.game)) {
+      throw new Error("Trader rollback requires the active GM client");
+    }
+    const rollbackTransactionId = options.rollbackTransactionId
+      ?? createTradeTransactionId("rollback");
+    const result = await this.traderService.rollbackTradeAuditEntry(entryId, {
+      rollbackTransactionId,
+      requestedByUserId: String(globalThis.game.user.id ?? "")
+    });
     await this.refreshOpenApps();
     return result;
   }

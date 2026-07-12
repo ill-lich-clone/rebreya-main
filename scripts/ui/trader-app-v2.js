@@ -1,5 +1,13 @@
 import { MODULE_ID } from "../constants.js";
 import { bringAppToFront, getAppElement } from "../ui.js";
+import { createTradeTransactionId } from "../features/trading/trade-transaction-model.js";
+import {
+  PendingTradeTransactions,
+  commitSaleBasket,
+  purchaseSemanticKey,
+  saleSemanticKey,
+  tradeErrorCorrelation
+} from "../features/trading/trade-ui-transaction-lifecycle.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -429,6 +437,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     this.saleSellerActorId = options.actorId ?? null;
     this.saleSearch = "";
     this.saleBasket = new Map();
+    this.pendingTradeTransactions = new PendingTradeTransactions();
     this.salePreviewCache = new Map();
     this.usePartyFunds = options.usePartyFunds ?? game.user?.isGM === true;
     this.partyInventoryActorId = null;
@@ -608,12 +617,30 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
 
-    const result = await this.moduleApi.sellTraderItem(
-      this.cityId,
-      this.traderKey,
-      preview,
+    const semanticKey = saleSemanticKey({
+      actorId: preview.actorId,
+      cityId: this.cityId,
+      traderKey: this.traderKey,
+      itemUuid: preview.itemUuid,
       quantity
-    );
+    });
+    const transactionId = this.pendingTradeTransactions.acquire("sale", semanticKey);
+    let result;
+    try {
+      result = await this.moduleApi.sellTraderItem(
+        this.cityId,
+        this.traderKey,
+        preview,
+        quantity,
+        { transactionId }
+      );
+      this.pendingTradeTransactions.resolve(semanticKey);
+    }
+    catch (error) {
+      this.pendingTradeTransactions.reject(semanticKey, error);
+      error.tradeTransactionId = transactionId;
+      throw error;
+    }
 
     ui.notifications?.info(
       `${result.actorName} продаёт «${result.itemName}» (${result.sellQuantity} шт.) и получает ${result.netPayoutLabel}.`
@@ -646,13 +673,30 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
 
     this.selectedActorId = actorId ?? null;
 
-    const result = await this.moduleApi.purchaseTraderItem(
-      this.cityId,
-      this.traderKey,
+    const semanticKey = purchaseSemanticKey({
+      actorId: this.selectedActorId,
+      cityId: this.cityId,
+      traderKey: this.traderKey,
       itemKey,
-      quantity,
-      { actorId: this.selectedActorId }
-    );
+      quantity
+    });
+    const transactionId = this.pendingTradeTransactions.acquire("purchase", semanticKey);
+    let result;
+    try {
+      result = await this.moduleApi.purchaseTraderItem(
+        this.cityId,
+        this.traderKey,
+        itemKey,
+        quantity,
+        { actorId: this.selectedActorId, transactionId }
+      );
+      this.pendingTradeTransactions.resolve(semanticKey);
+    }
+    catch (error) {
+      this.pendingTradeTransactions.reject(semanticKey, error);
+      error.tradeTransactionId = transactionId;
+      throw error;
+    }
     ui.notifications?.info(`${result.actorName} покупает «${result.itemName}» за ${result.totalPriceLabel}.`);
     await this.moduleApi.refreshOpenApps();
     bringAppToFront(this);
@@ -861,6 +905,9 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!entry) {
       return;
     }
+    if (entry.frozenQuantity != null) {
+      return;
+    }
 
     entry.quantity = Math.max(1, Math.min(
       Math.floor(toNumber(quantity, 1)),
@@ -881,7 +928,9 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     this.salePreviewCache.set(itemUuid, preview);
     this.saleBasket.set(itemUuid, {
       preview,
-      quantity: 1
+      quantity: 1,
+      frozenQuantity: null,
+      transactionId: createTradeTransactionId("sale")
     });
     this.#renderSaleBasket(element);
   }
@@ -920,12 +969,27 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     const totals = this.#getSaleBasketTotals();
-    for (const entry of entries) {
-      await this.moduleApi.sellTraderItem(this.cityId, this.traderKey, entry.preview, entry.quantity);
-    }
+    await commitSaleBasket(this.saleBasket, async (entry) => {
+      try {
+        return await this.moduleApi.sellTraderItem(
+          this.cityId,
+          this.traderKey,
+          entry.preview,
+          entry.frozenQuantity,
+          { transactionId: entry.transactionId }
+        );
+      }
+      catch (error) {
+        error.tradeTransactionId = entry.transactionId;
+        throw error;
+      }
+    }, {
+      onSettledEntry: async (entry) => {
+        this.salePreviewCache.delete(entry.preview.itemUuid);
+        this.#renderSaleBasket(element);
+      }
+    });
 
-    this.saleBasket.clear();
-    this.salePreviewCache.clear();
     this.#renderSaleBasket(element);
     ui.notifications?.info(`Продано ${entries.length} поз. на ${formatCopper(totals.netCopper)}.`);
     await this.moduleApi.refreshOpenApps();
@@ -1109,7 +1173,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to confirm sale basket.`, error);
-        ui.notifications?.error(error.message || "Не удалось завершить продажу.");
+        ui.notifications?.error(tradeErrorCorrelation(error, error.tradeTransactionId));
         event.currentTarget.disabled = false;
       }
     }, listenerOptions);
@@ -1197,7 +1261,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to buy selected item '${itemKey}'.`, error);
-          ui.notifications?.error(error.message || "Не удалось совершить покупку.");
+          ui.notifications?.error(tradeErrorCorrelation(error, error.tradeTransactionId));
         }
       }, listenerOptions);
     });
@@ -1222,7 +1286,7 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to complete dropped sale in trader v2.`, error);
-          ui.notifications?.error(error.message || "Не удалось завершить продажу.");
+          ui.notifications?.error(tradeErrorCorrelation(error, error.tradeTransactionId));
         }
       }, listenerOptions);
     }

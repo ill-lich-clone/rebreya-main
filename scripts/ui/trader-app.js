@@ -1,5 +1,11 @@
 ﻿import { MODULE_ID } from "../constants.js";
 import { bringAppToFront, getAppElement } from "../ui.js";
+import {
+  PendingTradeTransactions,
+  purchaseSemanticKey,
+  saleSemanticKey,
+  tradeErrorCorrelation
+} from "../features/trading/trade-ui-transaction-lifecycle.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -248,6 +254,7 @@ export class TraderApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.traderKey = traderKey;
     this.selectedActorId = options.actorId ?? null;
     this.search = "";
+    this.pendingTradeTransactions = new PendingTradeTransactions();
     this.renderListenersAbortController = null;
   }
 
@@ -301,12 +308,30 @@ export class TraderApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
 
-    const result = await this.moduleApi.sellTraderItem(
-      this.cityId,
-      this.traderKey,
-      preview,
+    const semanticKey = saleSemanticKey({
+      actorId: preview.actorId,
+      cityId: this.cityId,
+      traderKey: this.traderKey,
+      itemUuid: preview.itemUuid,
       quantity
-    );
+    });
+    const transactionId = this.pendingTradeTransactions.acquire("sale", semanticKey);
+    let result;
+    try {
+      result = await this.moduleApi.sellTraderItem(
+        this.cityId,
+        this.traderKey,
+        preview,
+        quantity,
+        { transactionId }
+      );
+      this.pendingTradeTransactions.resolve(semanticKey);
+    }
+    catch (error) {
+      this.pendingTradeTransactions.reject(semanticKey, error);
+      error.tradeTransactionId = transactionId;
+      throw error;
+    }
 
     ui.notifications?.info(
       `${result.actorName} продаёт «${result.itemName}» (${result.sellQuantity} шт.) и получает ${result.netPayoutLabel}.`
@@ -393,21 +418,31 @@ export class TraderApp extends HandlebarsApplicationMixin(ApplicationV2) {
           return;
         }
 
+        const semanticKey = purchaseSemanticKey({
+          actorId: this.selectedActorId,
+          cityId: this.cityId,
+          traderKey: this.traderKey,
+          itemKey,
+          quantity
+        });
+        const transactionId = this.pendingTradeTransactions.acquire("purchase", semanticKey);
         try {
           const result = await this.moduleApi.purchaseTraderItem(
             this.cityId,
             this.traderKey,
             itemKey,
             quantity,
-            { actorId: this.selectedActorId }
+            { actorId: this.selectedActorId, transactionId }
           );
+          this.pendingTradeTransactions.resolve(semanticKey);
           ui.notifications?.info(`${result.actorName} покупает «${result.itemName}» за ${result.totalPriceLabel}.`);
           await this.moduleApi.refreshOpenApps();
           bringAppToFront(this);
         }
         catch (error) {
+          this.pendingTradeTransactions.reject(semanticKey, error);
           console.error(`${MODULE_ID} | Failed to buy item '${itemKey}'.`, error);
-          ui.notifications?.error(error.message || "Не удалось совершить покупку.");
+          ui.notifications?.error(tradeErrorCorrelation(error, transactionId));
         }
       }, listenerOptions);
     });
@@ -432,7 +467,7 @@ export class TraderApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to complete dropped sale.`, error);
-          ui.notifications?.error(error.message || "Не удалось завершить продажу.");
+          ui.notifications?.error(tradeErrorCorrelation(error, error.tradeTransactionId));
         }
       }, listenerOptions);
     }

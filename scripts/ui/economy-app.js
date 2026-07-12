@@ -8,6 +8,11 @@ import {
   selectStateOverview
 } from "../engine/selectors.js";
 import { getAppElement } from "../ui.js";
+import {
+  PendingTradeTransactions,
+  rollbackSemanticKey,
+  tradeErrorCorrelation
+} from "../features/trading/trade-ui-transaction-lifecycle.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
@@ -194,6 +199,7 @@ export class EconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.moduleApi = moduleApi;
     this.searchRenderTimer = null;
     this.pendingFocus = null;
+    this.pendingTradeRollbacks = new PendingTradeTransactions();
     this.filters = {
       search: "",
       state: "all",
@@ -356,13 +362,19 @@ export class EconomyApp extends HandlebarsApplicationMixin(ApplicationV2) {
           return;
         }
 
+        const semanticKey = rollbackSemanticKey(auditId);
+        const rollbackTransactionId = this.pendingTradeRollbacks.acquire("rollback", semanticKey);
         try {
-          const result = await this.moduleApi.rollbackTraderAuditEntry(auditId);
+          const result = await this.moduleApi.rollbackTraderAuditEntry(auditId, {
+            rollbackTransactionId
+          });
+          this.pendingTradeRollbacks.resolve(semanticKey);
           ui.notifications?.info(`Операция «${result.itemName}» откачена.`);
         }
         catch (error) {
+          this.pendingTradeRollbacks.reject(semanticKey, error);
           console.error(`${MODULE_ID} | Failed to rollback trade audit '${auditId}'.`, error);
-          ui.notifications?.error(error.message || "Не удалось откатить торговую операцию.");
+          ui.notifications?.error(tradeErrorCorrelation(error, rollbackTransactionId));
         }
       });
     });
