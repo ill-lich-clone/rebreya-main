@@ -757,7 +757,7 @@ function parseExpandedMetamagicStacking(description) {
 
 const EXPANDED_METAMAGIC_SPECS = Object.freeze(new Map([
   [normalizeMatchText("Заклинание предка"), { id: "draconic-ancestral-spell", cost: 1 }],
-  [normalizeMatchText("Драконья защита"), { id: "draconic-dragon-protection", cost: 0 }],
+  [normalizeMatchText("Драконья защита"), { id: "draconic-dragon-protection", cost: 1 }],
   [normalizeMatchText("Драконье заклятье"), { id: "draconic-dragon-spell", cost: 3, costMode: "variable", minCost: 1, maxCost: 3 }],
   [normalizeMatchText("Крыло дракона"), { id: "draconic-dragon-wing", cost: 3, costMode: "variable", minCost: 1, maxCost: 3 }],
   [normalizeMatchText("Хаотическое заклинание"), { id: "wild-chaotic-spell", cost: 3, costMode: "variable", minCost: 1, maxCost: 3 }],

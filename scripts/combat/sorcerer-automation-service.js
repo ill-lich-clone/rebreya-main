@@ -1472,14 +1472,8 @@ export class SorcererAutomationService {
       }
       if (id === "twinned-spell") {
         const range = spellRange(activity);
-        // Normal UI uses Foundry's native token targeting: two selected targets.
-        // The explicit second-target form remains only for programmatic callers.
-        if (!secondTargetUuid && currentTargets.length === 2) {
-          secondTargetUuid = currentTargets[1];
-        }
-        const nativeTargeting = currentTargets.length === 2 && currentTargets.includes(secondTargetUuid);
-        if (spellTargetCount(activity) !== 1 || range.units === "self" || !secondTargetUuid
-          || (!nativeTargeting && (currentTargets.length !== 1 || currentTargets.includes(secondTargetUuid)))) {
+        const nativeTargeting = currentTargets.length === 2 && new Set(currentTargets).size === 2;
+        if (spellTargetCount(activity) !== 1 || range.units === "self" || !nativeTargeting) {
           return null;
         }
       }
@@ -1635,8 +1629,7 @@ export class SorcererAutomationService {
         modifiers.extended = true;
       }
       else if (id === "twinned-spell") {
-        usageConfig.targets = [...meta.currentTargets, meta.secondTargetUuid];
-        modifiers.twinned = { secondTargetUuid: meta.secondTargetUuid };
+        modifiers.twinned = { targetUuids: [...meta.currentTargets] };
       }
       else if (id === "empowered-spell") {
         modifiers.empowered = { damageDice: meta.selectedDamageDice };
@@ -1666,7 +1659,7 @@ export class SorcererAutomationService {
     usageConfig.flags[MODULE_ID].castContext = {
       components: deepClone(components),
       targetUuids: meta.ids?.includes("twinned-spell")
-        ? [...meta.currentTargets, meta.secondTargetUuid]
+        ? [...meta.currentTargets]
         : undefined
     };
     if (meta.ids?.some((id) => id === "careful-spell" || id === "heightened-spell")) {
@@ -1804,10 +1797,7 @@ export class SorcererAutomationService {
       meta.targetUuids = targets.map(({ actor }) => actor.uuid);
     }
     if (meta.ids.includes("twinned-spell")) {
-      const [first, second] = await Promise.all([
-        resolveCreature(meta.currentTargets[0]),
-        resolveCreature(meta.secondTargetUuid)
-      ]);
+      const targets = await Promise.all(meta.currentTargets.map(resolveCreature));
       const currentScene = globalThis.canvas?.scene;
       const placeableIds = new Set(collectionValues(globalThis.canvas?.tokens?.placeables)
         .map((token) => cleanText(token?.document?.id ?? token?.id)));
@@ -1819,40 +1809,18 @@ export class SorcererAutomationService {
         return (document.parent === currentScene || document.parent?.id === currentScene?.id)
           && placeableIds.has(cleanText(document.id ?? document._id));
       };
-      if (!first || !second || first.actor.uuid === second.actor.uuid
-        || !isCurrentSceneToken(first) || !isCurrentSceneToken(second)) {
+      if (targets.length !== 2 || targets.some((target) => !target)
+        || targets[0].actor.uuid === targets[1].actor.uuid
+        || targets.some((target) => !isCurrentSceneToken(target))) {
         return false;
       }
-      const firstId = cleanText(first.document?.id ?? first.document?._id);
-      const secondId = cleanText(second.document?.id ?? second.document?._id);
-      if (!firstId || !secondId) {
+      const targetIds = targets.map((target) => cleanText(target.document?.id ?? target.document?._id));
+      if (targetIds.some((id) => !id)) {
         return false;
       }
-      meta.targetIds = [firstId, secondId];
+      meta.targetIds = targetIds;
     }
     return true;
-  }
-
-  async #applyTwinnedTargets(plan) {
-    if (!plan.metamagic.ids.includes("twinned-spell")) {
-      return null;
-    }
-    const updateTargets = globalThis.game?.user?.updateTokenTargets;
-    if (typeof updateTargets !== "function") {
-      return (typeof globalThis.fromUuid !== "function" && typeof globalThis.fromUuidSync !== "function") ? null : false;
-    }
-    const previousTargetIds = collectionValues(globalThis.game?.user?.targets)
-      .map((target) => cleanText(target?.id ?? target?.document?.id))
-      .filter(Boolean);
-    await updateTargets.call(globalThis.game.user, new Set(plan.metamagic.targetIds ?? []));
-    return { previousTargetIds };
-  }
-
-  async #restoreTwinnedTargets(snapshot) {
-    if (!snapshot || typeof globalThis.game?.user?.updateTokenTargets !== "function") {
-      return;
-    }
-    await globalThis.game.user.updateTokenTargets(new Set(snapshot.previousTargetIds ?? []));
   }
 
   async #prepareCastPlan(activity, usageConfig = {}, dialogConfig = {}) {
@@ -2511,11 +2479,6 @@ export class SorcererAutomationService {
     if (!plan) {
       return null;
     }
-    const twinnedTargetSnapshot = await this.#applyTwinnedTargets(plan);
-    if (twinnedTargetSnapshot === false) {
-      notifyWarning("The selected Twinned Spell target could not be applied.");
-      return null;
-    }
 
     const {
       actor,
@@ -2550,7 +2513,6 @@ export class SorcererAutomationService {
       cooldownsChanged: false,
       highLevelCastsChanged: false,
       exhaustionChanged: false,
-      twinnedTargetSnapshot,
       metamagicEffects: [],
       rolledBack: false
     };
@@ -2730,10 +2692,6 @@ export class SorcererAutomationService {
     if (state.metamagicEffects?.length) {
       updates.push(deleteActorEffects(state.actor, state.metamagicEffects));
     }
-    if (state.twinnedTargetSnapshot) {
-      updates.push(this.#restoreTwinnedTargets(state.twinnedTargetSnapshot));
-    }
-
     const results = await Promise.allSettled(updates);
     for (const result of results) {
       if (result.status === "rejected") {

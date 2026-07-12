@@ -339,7 +339,7 @@ test("Sorcerer metamagic documents include base and origin-expanded options", ()
   assert.equal(createFeatureEntryData(ancestorSpell, new Map()).flags["rebreya-main"].cost, 1);
   assert.equal(createFeatureEntryData(ancestorSpell, new Map()).flags["rebreya-main"].stacking, "base");
   assert.equal(createFeatureEntryData(dragonProtection, new Map()).flags["rebreya-main"].metamagicId, "draconic-dragon-protection");
-  assert.equal(createFeatureEntryData(dragonProtection, new Map()).flags["rebreya-main"].cost, 0);
+  assert.equal(createFeatureEntryData(dragonProtection, new Map()).flags["rebreya-main"].cost, 1);
   assert.equal(createFeatureEntryData(dragonSpell, new Map()).flags["rebreya-main"].metamagicId, "draconic-dragon-spell");
   assert.equal(createFeatureEntryData(dragonSpell, new Map()).flags["rebreya-main"].costMode, "variable");
   assert.equal(createFeatureEntryData(dragonSpell, new Map()).flags["rebreya-main"].minCost, 1);

@@ -448,14 +448,14 @@ test("Extended Spell doubles a legal duration without exceeding twenty-four hour
   assert.deepEqual(usageConfig.spellCast.duration, { value: 24, units: "hour" });
 });
 
-test("Twinned Spell adds exactly one valid second target at the selected spell level cost", async () => {
+test("Twinned Spell charges at the selected spell level while preserving two native targets", async () => {
   const actor = metamagicActor();
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
   const usageConfig = {
     sorcererVirtualSpellLevel: 2,
-    targets: ["Token.first"],
-    sorcererMetamagic: { ids: ["twinned-spell"], secondTargetUuid: "Token.second" }
+    targets: ["Token.first", "Token.second"],
+    sorcererMetamagic: { ids: ["twinned-spell"], targets: ["Token.first", "Token.second"] }
   };
 
   assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor, {
@@ -463,8 +463,26 @@ test("Twinned Spell adds exactly one valid second target at the selected spell l
     system: { range: { value: 60, units: "ft" }, target: { affects: { count: "1" } } }
   }), usageConfig, {}, {}), true);
   assert.deepEqual(usageConfig.targets, ["Token.first", "Token.second"]);
-  assert.equal(usageConfig.spellCast.modifiers.twinned.secondTargetUuid, "Token.second");
+  assert.deepEqual(usageConfig.spellCast.modifiers.twinned.targetUuids, ["Token.first", "Token.second"]);
   assert.equal(pointsItem(actor).system.uses.spent, 5);
+});
+
+test("Twinned Spell rejects a programmatic second target that was not selected natively", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = {
+    sorcererVirtualSpellLevel: 1,
+    targets: ["Token.first"],
+    sorcererMetamagic: { ids: ["twinned-spell"], targets: ["Token.first"], secondTargetUuid: "Token.second" }
+  };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(makeSorcererSpell(actor, {
+    baseLevel: 1,
+    system: { range: { value: 60, units: "ft" }, target: { affects: { count: 1 } } }
+  }), usageConfig, {}, {}), false);
+  assert.deepEqual(usageConfig.targets, ["Token.first"]);
+  assert.equal(pointsItem(actor).system.uses.spent, 0);
 });
 
 test("Empowered Spell rerolls selected damage dice up to the Charisma modifier", async () => {
@@ -1662,8 +1680,7 @@ test("RED: Twinned rejects Actor, off-scene, and non-placeable token documents b
         sorcererVirtualSpellLevel: 1,
         sorcererMetamagic: {
           ids: ["twinned-spell"],
-          targets: [first.uuid],
-          secondTargetUuid: secondTarget.uuid
+          targets: [first.uuid, secondTarget.uuid]
         }
       }, {}, {}), false);
     }
@@ -1942,7 +1959,7 @@ test("real save-roll config consumes Careful success and one Heightened disadvan
   assert.equal(secondSave.disadvantage, undefined);
 });
 
-test("Twinned validates document ids and applies exactly the two native target ids before payment", async () => {
+test("Twinned validates native document ids without changing the selected targets", async () => {
   const actor = metamagicActor();
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
@@ -1970,11 +1987,11 @@ test("Twinned validates document ids and applies exactly the two native target i
       sorcererVirtualSpellLevel: 1,
       sorcererMetamagic: {
         ids: ["twinned-spell"],
-        targets: ["Token.first"],
-        secondTargetUuid: "Token.second"
+        targets: ["Token.first", "Token.second"]
       }
     }, {}, {}), true);
-    assert.deepEqual(targetSets, [["first", "second"]]);
+    assert.deepEqual(targetSets, []);
+    assert.equal(activity.target?.affects?.count, 1);
     assert.equal(pointsItem(actor).system.uses.spent, 3);
   }
   finally {
@@ -2221,9 +2238,9 @@ test("Draconic Ancestral Spell changes this cast's spell damage to the ancestor 
   assert.equal(pointsItem(actor).system.uses.spent, 3);
 });
 
-test("Draconic Dragon Protection creates a temporary resistance effect without extra Sorcery Point cost", async () => {
+test("Draconic Dragon Protection creates a temporary resistance effect with its Sorcery Point cost", async () => {
   const actor = metamagicActor();
-  addMetamagic(actor, "draconic-dragon-protection", 0, "base", {
+  addMetamagic(actor, "draconic-dragon-protection", 1, "base", {
     metamagicAutomation: "draconic-dragon-protection"
   });
   const service = new SorcererAutomationService({});
@@ -2237,7 +2254,7 @@ test("Draconic Dragon Protection creates a temporary resistance effect without e
     sorcererMetamagic: { ids: ["draconic-dragon-protection"] }
   }, {}, {}), true);
 
-  assert.equal(pointsItem(actor).system.uses.spent, 2);
+  assert.equal(pointsItem(actor).system.uses.spent, 3);
   assert.equal(actor.createdEffects.length, 1);
   const effect = actor.createdEffects[0].rows[0];
   const resistance = effect.changes.find((change) => change.key === "system.traits.dr.value");
@@ -2249,7 +2266,7 @@ test("Draconic Dragon Protection creates a temporary resistance effect without e
 
 test("Draconic Dragon Protection rejects spell damage outside its elemental list before payment", async () => {
   const actor = metamagicActor();
-  addMetamagic(actor, "draconic-dragon-protection", 0, "base", {
+  addMetamagic(actor, "draconic-dragon-protection", 1, "base", {
     metamagicAutomation: "draconic-dragon-protection"
   });
   const service = new SorcererAutomationService({});
@@ -2452,15 +2469,14 @@ test("deferred Distant plan keeps one resolved range across every temporary acti
   assert.deepEqual(secondClone.range, { value: 120, units: "ft" });
 });
 
-test("failed final Twinned cast restores the prior native target selection with its Sorcery Points", async () => {
+test("failed final Twinned cast leaves the native target selection alone while rolling back Sorcery Points", async () => {
   const actor = metamagicActor();
   const service = new SorcererAutomationService({
     chooseVirtualSpellLevel: async () => ({ accepted: true, spellLevel: 1 }),
     chooseMetamagic: async () => ({
       accepted: true,
       ids: ["twinned-spell"],
-      targets: ["Token.first"],
-      secondTargetUuid: "Token.second"
+      targets: ["Token.first", "Token.second"]
     })
   });
   await service.syncSorceryPoints(actor);
@@ -2497,7 +2513,7 @@ test("failed final Twinned cast restores the prior native target selection with 
     await waitForDeferredActivityUse();
     assert.equal(service.finalizeDnd5ePreUseActivity(activity, completeReactionCheck(preflight), {}, {}), false);
     await waitForDeferredActivityUse();
-    assert.deepEqual(targetSets, [["first", "second"], ["original"]]);
+    assert.deepEqual(targetSets, []);
     assert.equal(pointsItem(actor).system.uses.spent, 0);
   }
   finally {
