@@ -115,6 +115,10 @@ class FakeActor {
     return item;
   }
 
+  getFlag(moduleId, key) {
+    return this.flags?.[moduleId]?.[key];
+  }
+
   async update(patch) {
     this.updatePatches.push(clone(patch));
     applyPatch(this, patch);
@@ -143,6 +147,7 @@ function installFoundry({ actors = [], stateRepository = null } = {}) {
     Item: globalThis.Item,
     CONST: globalThis.CONST,
     canvas: globalThis.canvas,
+    document: globalThis.document,
     foundry: globalThis.foundry,
     fromUuid: globalThis.fromUuid,
     game: globalThis.game
@@ -152,6 +157,12 @@ function installFoundry({ actors = [], stateRepository = null } = {}) {
   globalThis.Item = FakeItem;
   globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OWNER: 3 } };
   globalThis.canvas = { tokens: { controlled: [] } };
+  globalThis.document = {
+    createElement: () => ({
+      innerHTML: "",
+      textContent: ""
+    })
+  };
   globalThis.foundry = {
     utils: {
       deepClone: clone,
@@ -198,6 +209,107 @@ function createModuleApi() {
         sourceEventNames: []
       })
     }
+  };
+}
+
+async function createRealPreparationFixture() {
+  const actor = new FakeActor({ id: "actor-1", copper: 1_000 });
+  const saleItem = actor.addItem({
+    name: "Arrows",
+    type: "consumable",
+    img: "arrows.webp",
+    system: {
+      quantity: 5,
+      price: { value: 1, denomination: "gp" },
+      weight: { value: 1 },
+      description: { value: "" }
+    },
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "strely-20", gearId: "strely-20" } }
+  });
+  const gearItem = {
+    id: "strely-20",
+    name: "Arrows",
+    equipmentType: "Боеприпас",
+    shopSubtype: "Оружейная лавка",
+    priceText: "1 gp",
+    priceGoldEquivalent: 1,
+    rank: 1,
+    weight: 1,
+    description: "Arrows",
+    predominantMaterialId: null,
+    predominantMaterialName: "",
+    linkedTool: ""
+  };
+  const model = {
+    materials: [],
+    materialById: new Map(),
+    materialByGoodId: new Map(),
+    gear: [gearItem],
+    gearById: new Map([[gearItem.id, gearItem]]),
+    reference: {},
+    goods: []
+  };
+  const citySnapshot = {
+    id: "city-1",
+    name: "City",
+    state: "state-1",
+    regionName: "Region",
+    rank: 1,
+    cityType: "военный",
+    goodsRows: [],
+    goodsRowById: {}
+  };
+  const state = { version: 1, order: [], traders: {}, tradeLog: [] };
+  const counters = { inventoryCalls: [], stateMutations: 0 };
+  const repository = {
+    read: () => state,
+    async mutate(mutator) {
+      counters.stateMutations += 1;
+      return mutator(state);
+    }
+  };
+  const restore = installFoundry({ actors: [actor], stateRepository: repository });
+  const moduleApi = {
+    getModel: async () => model,
+    getCitySnapshot: (cityId) => cityId === citySnapshot.id ? citySnapshot : null,
+    getCalendarSnapshot: () => ({ year: 1200, month: 3 }),
+    getGearIconLookup: async () => new Map(),
+    inventoryService: {
+      async getInventoryActor(options) {
+        counters.inventoryCalls.push(clone(options));
+        return null;
+      }
+    },
+    globalEventsService: {
+      collectMerchantModifiers: () => ({
+        buyPricePercent: 0,
+        sellPricePercent: 0,
+        stockPercent: 0,
+        blocked: false,
+        rarityShift: 0,
+        restockMode: "",
+        sourceEventNames: []
+      })
+    },
+    getEffectiveStatePolicy: () => ({
+      taxPercent: 0,
+      generalDutyPercent: 0,
+      bilateralDuties: {},
+      eventDelta: { sourceEventNames: [] }
+    })
+  };
+  const service = new TraderService(moduleApi, { stateRepository: repository });
+  await service.getTraderSnapshot(citySnapshot.id, "shop-armory", { actorId: actor.id });
+  counters.inventoryCalls.length = 0;
+  counters.stateMutations = 0;
+  return {
+    actor,
+    counters,
+    operations: service.createFoundryTradeOperations(),
+    restore,
+    saleItem,
+    state,
+    traderId: "city-1::shop-armory"
   };
 }
 
@@ -361,6 +473,33 @@ test("engine errors propagate without legacy fallback while no injection retains
   assert.equal(legacyCalls, 1);
 });
 
+test("sale engine rejection propagates without invoking the legacy sale", async () => {
+  const service = new TraderService(createModuleApi());
+  let legacyCalls = 0;
+  service.sellItemLegacy = async () => {
+    legacyCalls += 1;
+    return "legacy sale";
+  };
+  service.setTransactionService({
+    async sale() {
+      throw new Error("sale engine rejected");
+    }
+  });
+
+  await assert.rejects(
+    service.sellItem("city", "shop", {
+      actorId: "actor-1",
+      itemUuid: "Actor.actor-1.Item.item-1",
+      netPayoutCopper: 999_999
+    }, 1, {
+      transactionId: "sale_error_0001",
+      requestedByUserId: "player-1"
+    }),
+    /sale engine rejected/
+  );
+  assert.equal(legacyCalls, 0);
+});
+
 test("purchase preparation expands packs and describes new and existing actor items without mutation", async () => {
   const actor = new FakeActor({ id: "actor-1", copper: 1_000 });
   const restore = installFoundry({ actors: [actor] });
@@ -497,7 +636,12 @@ test("sale preparation reloads the current item and recomputes all totals from a
       grossOfferCopper: 99_999,
       netPayoutCopper: 99_999
     });
-    assert.deepEqual(previewCalls, [["city-1", "shop-1", { uuid: item.uuid }]]);
+    assert.deepEqual(previewCalls, [[
+      "city-1",
+      "shop-1",
+      { uuid: item.uuid },
+      { persistState: false }
+    ]]);
     assert.equal(descriptor.traderId, "city-1::shop-1");
     assert.deepEqual(descriptor.item, {
       itemId: item.id,
@@ -525,6 +669,56 @@ test("sale preparation reloads the current item and recomputes all totals from a
   }
   finally {
     restore();
+  }
+});
+
+test("purchase preparation fails on missing trader state without writes or party Actor creation", async () => {
+  const fixture = await createRealPreparationFixture();
+  delete fixture.state.traders[fixture.traderId];
+
+  try {
+    await assert.rejects(
+      fixture.operations.preparePurchase({
+        transactionId: "purchase_readonly_01",
+        actorId: fixture.actor.id,
+        cityId: "city-1",
+        traderKey: "shop-armory",
+        itemKey: "gear:strely-20",
+        quantity: 1,
+        requestedByUserId: "player-1"
+      }),
+      /state|assortment|trader|СЃРѕСЃС‚РѕСЏРЅ|Р°СЃСЃРѕСЂС‚РёРјРµРЅС‚|С‚РѕСЂРіРѕРІ/i
+    );
+    assert.equal(fixture.counters.stateMutations, 0);
+    assert.deepEqual(fixture.counters.inventoryCalls, []);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("sale preparation fails on stale trader state without writes or party Actor creation", async () => {
+  const fixture = await createRealPreparationFixture();
+  fixture.state.traders[fixture.traderId].planSignature = "stale-signature";
+
+  try {
+    await assert.rejects(
+      fixture.operations.prepareSale({
+        transactionId: "sale_readonly_0001",
+        actorId: fixture.actor.id,
+        cityId: "city-1",
+        traderKey: "shop-armory",
+        itemUuid: fixture.saleItem.uuid,
+        quantity: 1,
+        requestedByUserId: "player-1"
+      }),
+      /state|assortment|trader|СЃРѕСЃС‚РѕСЏРЅ|Р°СЃСЃРѕСЂС‚РёРјРµРЅС‚|С‚РѕСЂРіРѕРІ/i
+    );
+    assert.equal(fixture.counters.stateMutations, 0);
+    assert.deepEqual(fixture.counters.inventoryCalls, []);
+  }
+  finally {
+    fixture.restore();
   }
 });
 
@@ -620,6 +814,50 @@ test("new purchase Item creation includes its marker and receipt lookup returns 
     });
     await operations.applyPurchaseItem(transaction);
     assert.equal(actor.createdPayloads.length, 1);
+  }
+  finally {
+    restore();
+  }
+});
+
+test("direct purchase operations safely persist and read a reserved own marker key", async () => {
+  const actor = new FakeActor({ id: "actor-1", copper: 1_000 });
+  const restore = installFoundry({ actors: [actor] });
+  const operations = new TraderService(createModuleApi()).createFoundryTradeOperations();
+  const transaction = createPurchaseTransaction({
+    transactionId: "__proto__",
+    item: {
+      itemId: "",
+      itemUuid: "",
+      beforeQuantity: 0,
+      afterQuantity: 20,
+      delta: 20,
+      created: true,
+      rawItemData: {
+        name: "Arrows",
+        type: "consumable",
+        system: { quantity: 20 },
+        flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "arrows" } }
+      }
+    }
+  });
+
+  try {
+    await operations.applyPurchaseItem(transaction);
+    await operations.applyPurchaseCurrency(transaction);
+
+    const createdItem = actor.items.contents[0];
+    const itemMarkers = getProperty(createdItem, `flags.${MODULE_ID}.tradeTransactions`);
+    const actorReceipts = getProperty(actor, `flags.${MODULE_ID}.tradeReceipts`);
+    assert.equal(Object.hasOwn(itemMarkers, "__proto__"), true);
+    assert.equal(Object.keys(itemMarkers).includes("__proto__"), true);
+    assert.equal(Object.hasOwn(actorReceipts, "__proto__"), true);
+    assert.deepEqual(await operations.readPurchaseReceipts(transaction), {
+      itemApplied: true,
+      currencyApplied: true,
+      itemId: createdItem.id,
+      itemUuid: createdItem.uuid
+    });
   }
   finally {
     restore();
@@ -1115,6 +1353,88 @@ test("Actor receipts and Item markers retain all nonterminal rows plus the lates
       assert.ok(markers.terminal_06);
       assert.ok(markers.terminal_69);
     }
+  }
+  finally {
+    restore();
+  }
+});
+
+test("marker pruning without a state repository retains the active transaction and latest 64", async () => {
+  const terminalMarkers = Object.fromEntries(Array.from({ length: 70 }, (_, index) => [
+    `terminal_${String(index).padStart(2, "0")}`,
+    { updatedAt: index }
+  ]));
+  const actor = new FakeActor({ id: "actor-1", copper: 1_000 });
+  const item = actor.addItem({
+    name: "Arrows",
+    type: "consumable",
+    system: { quantity: 5 },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "arrows",
+        tradeTransactions: clone(terminalMarkers)
+      }
+    }
+  });
+  const restore = installFoundry({ actors: [actor] });
+  const operations = new TraderService(createModuleApi()).createFoundryTradeOperations();
+  const transaction = createPurchaseTransaction();
+
+  try {
+    await operations.applyPurchaseItem(transaction);
+
+    const markers = getProperty(item, `flags.${MODULE_ID}.tradeTransactions`);
+    assert.equal(Object.keys(markers).length, 65);
+    assert.ok(markers[transaction.transactionId]);
+    assert.equal(markers.terminal_05, undefined);
+    assert.ok(markers.terminal_06);
+    assert.ok(markers.terminal_69);
+  }
+  finally {
+    restore();
+  }
+});
+
+test("state repository read failure aborts document mutation without terminal pruning", async () => {
+  const terminalMarkers = Object.fromEntries(Array.from({ length: 70 }, (_, index) => [
+    `terminal_${String(index).padStart(2, "0")}`,
+    { updatedAt: index }
+  ]));
+  const actor = new FakeActor({ id: "actor-1", copper: 1_000 });
+  const item = actor.addItem({
+    name: "Arrows",
+    type: "consumable",
+    system: { quantity: 5 },
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        sourceId: "arrows",
+        tradeTransactions: clone(terminalMarkers)
+      }
+    }
+  });
+  const beforeMarkers = clone(getProperty(item, `flags.${MODULE_ID}.tradeTransactions`));
+  const stateRepository = {
+    read() {
+      throw new Error("state read failed");
+    }
+  };
+  const restore = installFoundry({ actors: [actor] });
+  const operations = new TraderService(createModuleApi(), { stateRepository })
+    .createFoundryTradeOperations();
+
+  try {
+    await assert.rejects(
+      operations.applyPurchaseItem(createPurchaseTransaction()),
+      /state read failed/
+    );
+    assert.equal(item.updatePatches.length, 0);
+    assert.equal(item.system.quantity, 5);
+    assert.deepEqual(
+      getProperty(item, `flags.${MODULE_ID}.tradeTransactions`),
+      beforeMarkers
+    );
   }
   finally {
     restore();

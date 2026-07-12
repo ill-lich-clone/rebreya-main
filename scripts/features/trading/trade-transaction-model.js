@@ -39,6 +39,12 @@ const RECOVERY_ONLY_TRANSACTION_KEYS = Object.freeze([
   "compensatedAt"
 ]);
 
+const RESERVED_TRANSACTION_IDS = new Set([
+  "__proto__",
+  "prototype",
+  "constructor"
+]);
+
 function clone(value) {
   if (typeof globalThis.foundry?.utils?.deepClone === "function") {
     return globalThis.foundry.utils.deepClone(value);
@@ -62,7 +68,8 @@ export class TradeTransactionError extends Error {
 
 export function isValidTradeTransactionId(value) {
   return typeof value === "string"
-    && /^[A-Za-z0-9_-]{8,128}$/u.test(value);
+    && /^[A-Za-z0-9_-]{8,128}$/u.test(value)
+    && !RESERVED_TRANSACTION_IDS.has(value.toLowerCase());
 }
 
 export function createTradeTransactionId(prefix = "trade") {

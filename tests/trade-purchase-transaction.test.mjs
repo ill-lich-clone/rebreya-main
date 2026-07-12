@@ -702,6 +702,38 @@ test("invalid purchase requests fail before repository and operation access", as
   assert.deepEqual(calls, { find: 0, mutate: 0, operation: 0 });
 });
 
+test("reserved transaction ids are rejected before purchase preparation or persistence", async () => {
+  const calls = { find: 0, mutate: 0, prepare: 0 };
+  const service = new TradeTransactionService({
+    repository: {
+      findTransaction() {
+        calls.find += 1;
+        throw new Error("repository must not be read");
+      },
+      mutate() {
+        calls.mutate += 1;
+        throw new Error("repository must not be mutated");
+      }
+    },
+    operations: {
+      preparePurchase() {
+        calls.prepare += 1;
+        throw new Error("purchase must not be prepared");
+      }
+    }
+  });
+
+  await assert.rejects(
+    service.purchase({ ...REQUEST, transactionId: "__proto__" }),
+    (error) => {
+      assert.equal(error instanceof TradeTransactionError, true);
+      assert.equal(error.code, "invalid-request");
+      return true;
+    }
+  );
+  assert.deepEqual(calls, { find: 0, mutate: 0, prepare: 0 });
+});
+
 test("trusted audit fields cannot overwrite protected transaction fields", async () => {
   const protectedKeys = [
     "transactionId",

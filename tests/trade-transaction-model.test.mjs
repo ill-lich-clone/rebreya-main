@@ -50,6 +50,12 @@ test("trade transaction ids are sanitized, bounded, and valid", () => {
   assert.equal(isValidTradeTransactionId(null), false);
 });
 
+test("trade transaction ids reject reserved object property names", () => {
+  for (const transactionId of ["__proto__", "prototype", "constructor", "CONSTRUCTOR"]) {
+    assert.equal(isValidTradeTransactionId(transactionId), false, transactionId);
+  }
+});
+
 test("trade transaction ids preserve entropy after an oversized prefix", () => {
   const oversizedPrefix = "x".repeat(256);
 

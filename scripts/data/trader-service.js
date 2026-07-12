@@ -29,6 +29,37 @@ const MIN_PRICE_GOLD = 0.01;
 const GENERAL_TRADER_ICON = "icons/svg/item-bag.svg";
 const MATERIAL_TRADER_ICON = "icons/svg/coins.svg";
 const MAGIC_TRADER_ICON = "icons/magic/symbols/runes-star-pentagon-blue.webp";
+
+function getOwn(record, key) {
+  return record && Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+function setOwn(record, key, value) {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true
+  });
+  return record;
+}
+
+function createSafeOwnMap(value = null) {
+  const result = Object.create(null);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return result;
+  for (const key of Object.keys(value)) {
+    setOwn(result, key, foundry.utils.deepClone(getOwn(value, key)));
+  }
+  return result;
+}
+
+function toSerializableOwnMap(entries = []) {
+  const result = {};
+  for (const [key, value] of entries) {
+    setOwn(result, key, value);
+  }
+  return result;
+}
 const PRICE_IN_COPPER = {
   pp: 1000,
   gp: 100,
@@ -1048,9 +1079,7 @@ export class TraderService {
 
   #getTradeMarkerMap(document, flagName) {
     const value = foundry.utils.getProperty(document, `flags.${MODULE_ID}.${flagName}`);
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? foundry.utils.deepClone(value)
-      : {};
+    return createSafeOwnMap(value);
   }
 
   #pruneTradeMarkerMap(markers, activeTransactionId) {
@@ -1065,7 +1094,8 @@ export class TraderService {
     );
     const retained = [];
     const terminal = [];
-    for (const [transactionId, marker] of Object.entries(markers)) {
+    for (const transactionId of Object.keys(markers)) {
+      const marker = getOwn(markers, transactionId);
       if (transactionId === activeTransactionId
         || NONTERMINAL_TRADE_STATUSES.has(statusByTransactionId.get(transactionId))) {
         retained.push([transactionId, marker]);
@@ -1078,7 +1108,7 @@ export class TraderService {
       toNumber(right[1]?.updatedAt, 0) - toNumber(left[1]?.updatedAt, 0)
         || right[0].localeCompare(left[0])
     ));
-    return Object.fromEntries([
+    return toSerializableOwnMap([
       ...retained,
       ...terminal.slice(0, TRADE_DOCUMENT_RECEIPT_LIMIT)
     ]);
@@ -1221,7 +1251,7 @@ export class TraderService {
     let item = this.#findTransactionItem(actor, transaction);
     if (item) {
       const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
-      const marker = markers[transaction.transactionId];
+      const marker = getOwn(markers, transaction.transactionId);
       this.#assertNoConflictingMarker(marker, transaction, item);
       if (this.#itemMarkerMatches(marker, transaction, item, { applied: true })) return;
       if (marker) {
@@ -1233,11 +1263,11 @@ export class TraderService {
       const itemData = sanitizeRawItemData(transaction.item.rawItemData);
       foundry.utils.setProperty(itemData, "system.quantity", transaction.item.afterQuantity);
       const markers = this.#getTradeMarkerMap(itemData, "tradeTransactions");
-      markers[transaction.transactionId] = this.#buildItemMarker(
+      setOwn(markers, transaction.transactionId, this.#buildItemMarker(
         transaction,
         { id: "", uuid: "" },
         { applied: true, phase: "applied" }
-      );
+      ));
       foundry.utils.setProperty(
         itemData,
         `flags.${MODULE_ID}.tradeTransactions`,
@@ -1259,10 +1289,10 @@ export class TraderService {
     }
 
     const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
-    markers[transaction.transactionId] = this.#buildItemMarker(transaction, item, {
+    setOwn(markers, transaction.transactionId, this.#buildItemMarker(transaction, item, {
       applied: true,
       phase: "applied"
-    });
+    }));
     await item.update({
       "system.quantity": transaction.item.afterQuantity,
       [`flags.${MODULE_ID}.tradeTransactions`]: this.#pruneTradeMarkerMap(
@@ -1278,7 +1308,7 @@ export class TraderService {
       transaction.request.requestedByUserId
     );
     const receipts = this.#getTradeMarkerMap(actor, "tradeReceipts");
-    const receipt = receipts[transaction.transactionId];
+    const receipt = getOwn(receipts, transaction.transactionId);
     this.#assertNoConflictingReceipt(receipt, transaction);
     if (this.#currencyReceiptMatches(receipt, transaction, { applied: true })) return;
     if (receipt) {
@@ -1289,10 +1319,10 @@ export class TraderService {
     if (currentFunds !== transaction.currency.beforeCopper) {
       throw new Error("Баланс персонажа изменился до списания покупки.");
     }
-    receipts[transaction.transactionId] = this.#buildCurrencyReceipt(transaction, {
+    setOwn(receipts, transaction.transactionId, this.#buildCurrencyReceipt(transaction, {
       applied: true,
       phase: "applied"
-    });
+    }));
     await actor.update({
       ...buildCurrencyUpdate(transaction.currency.afterCopper),
       [`flags.${MODULE_ID}.tradeReceipts`]: this.#pruneTradeMarkerMap(
@@ -1309,9 +1339,9 @@ export class TraderService {
     );
     const item = this.#findTransactionItem(actor, transaction);
     const marker = item
-      ? this.#getTradeMarkerMap(item, "tradeTransactions")[transaction.transactionId]
+      ? getOwn(this.#getTradeMarkerMap(item, "tradeTransactions"), transaction.transactionId)
       : null;
-    const receipt = this.#getTradeMarkerMap(actor, "tradeReceipts")[transaction.transactionId];
+    const receipt = getOwn(this.#getTradeMarkerMap(actor, "tradeReceipts"), transaction.transactionId);
     const itemApplied = Boolean(item)
       && this.#itemMarkerMatches(marker, transaction, item, { applied: true });
     const currencyApplied = this.#currencyReceiptMatches(receipt, transaction, { applied: true });
@@ -1329,7 +1359,7 @@ export class TraderService {
       transaction.request.requestedByUserId
     );
     const receipts = this.#getTradeMarkerMap(actor, "tradeReceipts");
-    const receipt = receipts[transaction.transactionId];
+    const receipt = getOwn(receipts, transaction.transactionId);
     this.#assertNoConflictingReceipt(receipt, transaction);
     if (!receipt || this.#currencyReceiptMatches(receipt, transaction, { applied: false })) return;
 
@@ -1337,10 +1367,10 @@ export class TraderService {
     if (compensatedFunds < 0) {
       throw new Error("Компенсация монет привела бы к отрицательному балансу.");
     }
-    receipts[transaction.transactionId] = this.#buildCurrencyReceipt(transaction, {
+    setOwn(receipts, transaction.transactionId, this.#buildCurrencyReceipt(transaction, {
       applied: false,
       phase: "compensated"
-    });
+    }));
     await actor.update({
       ...buildCurrencyUpdate(compensatedFunds),
       [`flags.${MODULE_ID}.tradeReceipts`]: this.#pruneTradeMarkerMap(
@@ -1359,7 +1389,7 @@ export class TraderService {
     if (!item) return;
 
     const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
-    const marker = markers[transaction.transactionId];
+    const marker = getOwn(markers, transaction.transactionId);
     this.#assertNoConflictingMarker(marker, transaction, item);
     if (!marker || this.#itemMarkerMatches(marker, transaction, item, { applied: false })) return;
 
@@ -1376,10 +1406,10 @@ export class TraderService {
       return;
     }
 
-    markers[transaction.transactionId] = this.#buildItemMarker(transaction, item, {
+    setOwn(markers, transaction.transactionId, this.#buildItemMarker(transaction, item, {
       applied: false,
       phase: "compensated"
-    });
+    }));
     await item.update({
       "system.quantity": remainder,
       [`flags.${MODULE_ID}.tradeTransactions`]: this.#pruneTradeMarkerMap(
@@ -1400,7 +1430,7 @@ export class TraderService {
     }
 
     const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
-    const marker = markers[transaction.transactionId];
+    const marker = getOwn(markers, transaction.transactionId);
     this.#assertNoConflictingMarker(marker, transaction, item);
     if (this.#itemMarkerMatches(marker, transaction, item, { applied: true })) return;
     if (marker) {
@@ -1414,10 +1444,10 @@ export class TraderService {
     if (currentQuantity !== transaction.item.beforeQuantity) {
       throw new Error("Количество предмета изменилось до применения продажи.");
     }
-    markers[transaction.transactionId] = this.#buildItemMarker(transaction, item, {
+    setOwn(markers, transaction.transactionId, this.#buildItemMarker(transaction, item, {
       applied: true,
       phase: "applied"
-    });
+    }));
     await item.update({
       "system.quantity": transaction.item.afterQuantity,
       [`flags.${MODULE_ID}.tradeTransactions`]: this.#pruneTradeMarkerMap(
@@ -1433,7 +1463,7 @@ export class TraderService {
       transaction.request.requestedByUserId
     );
     const receipts = this.#getTradeMarkerMap(actor, "tradeReceipts");
-    const receipt = receipts[transaction.transactionId];
+    const receipt = getOwn(receipts, transaction.transactionId);
     this.#assertNoConflictingReceipt(receipt, transaction);
     if (this.#currencyReceiptMatches(receipt, transaction, { applied: true })) return;
     if (receipt) {
@@ -1444,10 +1474,10 @@ export class TraderService {
     if (currentFunds !== transaction.currency.beforeCopper) {
       throw new Error("Баланс персонажа изменился до выплаты продажи.");
     }
-    receipts[transaction.transactionId] = this.#buildCurrencyReceipt(transaction, {
+    setOwn(receipts, transaction.transactionId, this.#buildCurrencyReceipt(transaction, {
       applied: true,
       phase: "applied"
-    });
+    }));
     await actor.update({
       ...buildCurrencyUpdate(transaction.currency.afterCopper),
       [`flags.${MODULE_ID}.tradeReceipts`]: this.#pruneTradeMarkerMap(
@@ -1464,9 +1494,9 @@ export class TraderService {
     );
     const item = this.#findTransactionItem(actor, transaction);
     const marker = item
-      ? this.#getTradeMarkerMap(item, "tradeTransactions")[transaction.transactionId]
+      ? getOwn(this.#getTradeMarkerMap(item, "tradeTransactions"), transaction.transactionId)
       : null;
-    const receipt = this.#getTradeMarkerMap(actor, "tradeReceipts")[transaction.transactionId];
+    const receipt = getOwn(this.#getTradeMarkerMap(actor, "tradeReceipts"), transaction.transactionId);
     return {
       itemRemoved: Boolean(item)
         && this.#itemMarkerMatches(marker, transaction, item, { applied: true }),
@@ -1480,7 +1510,7 @@ export class TraderService {
       transaction.request.requestedByUserId
     );
     const receipts = this.#getTradeMarkerMap(actor, "tradeReceipts");
-    const receipt = receipts[transaction.transactionId];
+    const receipt = getOwn(receipts, transaction.transactionId);
     this.#assertNoConflictingReceipt(receipt, transaction);
     if (!receipt || this.#currencyReceiptMatches(receipt, transaction, { applied: false })) return;
 
@@ -1488,10 +1518,10 @@ export class TraderService {
     if (compensatedFunds < 0) {
       throw new Error("У персонажа не хватает монет для отмены продажи.");
     }
-    receipts[transaction.transactionId] = this.#buildCurrencyReceipt(transaction, {
+    setOwn(receipts, transaction.transactionId, this.#buildCurrencyReceipt(transaction, {
       applied: false,
       phase: "compensated"
-    });
+    }));
     await actor.update({
       ...buildCurrencyUpdate(compensatedFunds),
       [`flags.${MODULE_ID}.tradeReceipts`]: this.#pruneTradeMarkerMap(
@@ -1511,7 +1541,7 @@ export class TraderService {
       const itemData = sanitizeRawItemData(transaction.item.rawItemData);
       foundry.utils.setProperty(itemData, "system.quantity", -transaction.item.delta);
       const markers = this.#getTradeMarkerMap(itemData, "tradeTransactions");
-      markers[transaction.transactionId] = this.#buildRecreatedSaleMarker(transaction);
+      setOwn(markers, transaction.transactionId, this.#buildRecreatedSaleMarker(transaction));
       foundry.utils.setProperty(
         itemData,
         `flags.${MODULE_ID}.tradeTransactions`,
@@ -1522,7 +1552,7 @@ export class TraderService {
     }
 
     const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
-    const marker = markers[transaction.transactionId];
+    const marker = getOwn(markers, transaction.transactionId);
     this.#assertNoConflictingMarker(marker, transaction, item);
     if (!marker || this.#itemMarkerMatches(marker, transaction, item, { applied: false })) return;
 
@@ -1531,10 +1561,10 @@ export class TraderService {
       Math.floor(toNumber(foundry.utils.getProperty(item, "system.quantity"), 0))
     );
     const restoredQuantity = currentQuantity - transaction.item.delta;
-    markers[transaction.transactionId] = this.#buildItemMarker(transaction, item, {
+    setOwn(markers, transaction.transactionId, this.#buildItemMarker(transaction, item, {
       applied: false,
       phase: "compensated"
-    });
+    }));
     await item.update({
       "system.quantity": restoredQuantity,
       [`flags.${MODULE_ID}.tradeTransactions`]: this.#pruneTradeMarkerMap(
@@ -2270,7 +2300,10 @@ export class TraderService {
     });
   }
 
-  async getTraderSnapshot(cityId, traderKey, { actorId = null } = {}) {
+  async getTraderSnapshot(cityId, traderKey, {
+    actorId = null,
+    persistState = true
+  } = {}) {
     const model = await this.moduleApi.getModel();
     const citySnapshot = this.moduleApi.getCitySnapshot(cityId);
     if (!citySnapshot) {
@@ -2287,8 +2320,11 @@ export class TraderService {
     let traderState = this.#getState().traders[traderId] ?? null;
     const expectedPlanSignature = buildPlanSignature(plan);
     const isSignatureCurrent = Boolean(traderState && String(traderState.planSignature ?? "") === expectedPlanSignature);
-    if (( !traderState || !isSignatureCurrent ) && game.user?.isGM) {
+    if ((!traderState || !isSignatureCurrent) && persistState && game.user?.isGM) {
       traderState = await this.#ensureTraderState(citySnapshot, traderKey);
+    }
+    if ((!traderState || !isSignatureCurrent) && !persistState) {
+      throw new Error("Trader state is unavailable or stale for read-only preparation.");
     }
     if (!traderState) {
       traderState = createStateFromPlan(citySnapshot, plan, {
@@ -2298,9 +2334,11 @@ export class TraderService {
       });
     }
 
-    const partyInventoryActor = await this.moduleApi.inventoryService?.getInventoryActor?.({
-      create: game.user?.isGM === true
-    }) ?? null;
+    const partyInventoryActor = actorId
+      ? null
+      : await this.moduleApi.inventoryService?.getInventoryActor?.({
+        create: persistState && game.user?.isGM === true
+      }) ?? null;
     const customerActor = resolveActorByPreference(actorId, {
       preferredActor: partyInventoryActor
     });
@@ -2565,7 +2603,8 @@ export class TraderService {
     const preview = await this.createSalePreview(
       request.cityId,
       request.traderKey,
-      { uuid: request.itemUuid }
+      { uuid: request.itemUuid },
+      { persistState: false }
     );
     const actor = this.#requireTransactionActor(request.actorId, request.requestedByUserId);
     if (preview?.actorId !== actor.id || preview?.itemUuid !== request.itemUuid) {
@@ -2795,7 +2834,7 @@ export class TraderService {
     };
   }
 
-  async createSalePreview(cityId, traderKey, dropData) {
+  async createSalePreview(cityId, traderKey, dropData, { persistState = true } = {}) {
     const citySnapshot = this.moduleApi.getCitySnapshot(cityId);
     if (!citySnapshot) {
       throw new Error("Город не найден.");
@@ -2812,7 +2851,10 @@ export class TraderService {
     }
 
     const model = await this.moduleApi.getModel();
-    const traderSnapshot = await this.getTraderSnapshot(cityId, traderKey, { actorId: actor.id });
+    const traderSnapshot = await this.getTraderSnapshot(cityId, traderKey, {
+      actorId: actor.id,
+      persistState
+    });
     const itemData = itemDocument.toObject();
     const sourceFlags = foundry.utils.deepClone(itemDocument.flags?.[MODULE_ID] ?? {});
     const quantityAvailable = getRawQuantity(itemData);
