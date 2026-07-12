@@ -1096,3 +1096,89 @@ test("sale never returns a committed candidate from an impossible terminal phase
   assert.equal(harness.counters.compensateItem, 0);
   assert.equal(harness.counters.compensateCurrency, 0);
 });
+
+test("different sale transaction IDs for the same Actor serialize the complete document workflow", async () => {
+  const entered = createDeferred();
+  const gate = createDeferred();
+  const harness = createHarness({
+    operationsOptions: {
+      currencyGate: { ...gate, entered }
+    }
+  });
+  const secondRequest = {
+    ...REQUEST,
+    transactionId: "trade_sale_actor_lock_2",
+    itemUuid: "Actor.actor-a.Item.other-sword"
+  };
+
+  const first = harness.service.sale({ ...REQUEST });
+  await entered.promise;
+  const second = harness.service.sale(secondRequest);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  try {
+    assert.equal(harness.counters.prepare, 1);
+    assert.equal(harness.counters.applyItem, 1);
+    assert.equal(harness.counters.applyCurrency, 1);
+  }
+  finally {
+    gate.resolve();
+    await Promise.allSettled([first, second]);
+  }
+  await Promise.all([first, second]);
+  assert.equal(harness.counters.prepare, 2);
+  assert.equal(harness.counters.applyCurrency, 2);
+});
+
+test("different Actors retain parallel sale document workflows", async () => {
+  const entered = createDeferred();
+  const gate = createDeferred();
+  const harness = createHarness({
+    operationsOptions: {
+      currencyGate: { ...gate, entered }
+    }
+  });
+  const secondRequest = {
+    ...REQUEST,
+    transactionId: "trade_sale_actor_parallel",
+    actorId: "actor-b",
+    itemUuid: "Actor.actor-b.Item.owned-sword"
+  };
+
+  const first = harness.service.sale({ ...REQUEST });
+  await entered.promise;
+  const second = harness.service.sale(secondRequest);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(harness.counters.prepare, 2);
+  assert.equal(harness.counters.applyCurrency, 2);
+
+  gate.resolve();
+  await Promise.all([first, second]);
+});
+
+test("the Actor mutation queue continues with the next trade after a rejection", async () => {
+  const entered = createDeferred();
+  const gate = createDeferred();
+  const currencyGate = { ...gate, entered };
+  const harness = createHarness({ operationsOptions: { currencyGate } });
+  const secondRequest = {
+    ...REQUEST,
+    transactionId: "trade_sale_actor_recovery",
+    itemUuid: "Actor.actor-a.Item.recovery-sword"
+  };
+
+  const first = harness.service.sale({ ...REQUEST });
+  await entered.promise;
+  const second = harness.service.sale(secondRequest);
+  currencyGate.promise = Promise.resolve();
+  gate.reject(new Error("first Actor mutation failed"));
+
+  await assert.rejects(
+    first,
+    (error) => assertTradeError(error, "transaction-compensated")
+  );
+  const result = await second;
+  assert.equal(result.transactionId, secondRequest.transactionId);
+  assert.equal(harness.counters.prepare, 2);
+});

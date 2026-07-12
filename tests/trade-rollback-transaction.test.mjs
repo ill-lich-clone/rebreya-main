@@ -588,7 +588,9 @@ test("modern audit views fall back to transaction ID and distinguish rollback an
     committedPurchase({ transactionId: "modern_nested_reconcile", id: "nested", rollback: { transactionId: "rollback_nested_rec", status: "reconciliation-required", phase: "prepared" } }),
     committedPurchase({ transactionId: "modern_rolled_back_01", id: "rolled", rolledBack: true, rollback: { transactionId: "rollback_committed_1", status: "committed", phase: "committed" } }),
     committedPurchase({ transactionId: "modern_compensated_01", id: "compensated", status: "compensated", phase: "compensated" }),
-    committedPurchase({ transactionId: "modern_top_reconcile_1", id: "top-reconcile", status: "reconciliation-required", phase: "reconciliation-required" })
+    committedPurchase({ transactionId: "modern_top_reconcile_1", id: "top-reconcile", status: "reconciliation-required", phase: "reconciliation-required" }),
+    committedPurchase({ transactionId: "modern_prepared_00001", id: "top-prepared", status: "prepared", phase: "stock-reserved" }),
+    committedPurchase({ transactionId: "modern_applying_00001", id: "top-applying", status: "applying", phase: "item-applied" })
   ];
   const state = { value: buildState({ row: rows[0] }) };
   state.value.tradeLog = rows;
@@ -601,6 +603,8 @@ test("modern audit views fall back to transaction ID and distinguish rollback an
     assert.equal(view.find((row) => row.id === "rolled").statusLabel, "Откат выполнен");
     assert.equal(view.find((row) => row.id === "compensated").statusLabel, "Транзакция компенсирована");
     assert.equal(view.find((row) => row.id === "top-reconcile").statusLabel, "Транзакция требует сверки");
+    assert.equal(view.find((row) => row.id === "top-prepared").statusLabel, "Транзакция выполняется");
+    assert.equal(view.find((row) => row.id === "top-applying").statusLabel, "Транзакция выполняется");
     assert.equal(view.every((row) => row.rollbackDisabled), true);
   }
   finally {
@@ -642,5 +646,44 @@ test("TraderService delegates modern rollback exactly, propagates errors, and fa
   }
   finally {
     restore();
+  }
+});
+
+test("rollback wraps repository transaction-not-found errors from start and checkpoint with both IDs", async () => {
+  for (const started of [false, true]) {
+    const row = committedPurchase(started ? {
+      rollback: {
+        transactionId: ROLLBACK_ID,
+        status: "prepared",
+        phase: "prepared",
+        requestedByUserId: "gm-a",
+        result: null,
+        error: null,
+        startedAt: 1,
+        updatedAt: 1,
+        completedAt: 0
+      }
+    } : {});
+    const repository = {
+      findTransaction: () => clone(row),
+      async mutateTransaction() {
+        throw new TradeTransactionError(
+          "transaction-not-found",
+          "Trade transaction was removed",
+          { transactionId: ORIGINAL_ID }
+        );
+      }
+    };
+    const service = new TradeTransactionService({
+      repository,
+      operations: {
+        compensatePurchaseItem: async () => {}
+      }
+    });
+
+    await assert.rejects(
+      service.rollback(ORIGINAL_ID, rollbackOptions()),
+      (error) => assertRollbackError(error, "transaction-not-found")
+    );
   }
 });

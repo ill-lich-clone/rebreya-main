@@ -445,7 +445,13 @@ function buildAuditViewRecord(record) {
     rollbackInProgress
     || rollbackReconciliation
     || rollbackCommitted
-    || ["compensating", "compensated", "reconciliation-required"].includes(topLevelStatus)
+    || [
+      "prepared",
+      "applying",
+      "compensating",
+      "compensated",
+      "reconciliation-required"
+    ].includes(topLevelStatus)
   );
   let statusLabel;
   let rollbackTitle;
@@ -468,6 +474,10 @@ function buildAuditViewRecord(record) {
   else if (!legacy && topLevelStatus === "compensating") {
     statusLabel = "Компенсация выполняется";
     rollbackTitle = "Компенсация транзакции ещё выполняется";
+  }
+  else if (!legacy && ["prepared", "applying"].includes(topLevelStatus)) {
+    statusLabel = "Транзакция выполняется";
+    rollbackTitle = "Транзакция ещё выполняется";
   }
   else if (!legacy && topLevelStatus === "reconciliation-required") {
     statusLabel = "Транзакция требует сверки";

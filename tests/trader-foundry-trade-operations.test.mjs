@@ -1581,3 +1581,158 @@ test("sale workflow pays only after the Foundry Item marker is durable", async (
     restore();
   }
 });
+
+test("two purchase rollbacks on one Actor serialize real currency receipts without lost updates", async () => {
+  const actor = new FakeActor({ id: "actor-1", copper: 550 });
+  const arrows = actor.addItem({
+    name: "Arrows",
+    type: "consumable",
+    system: { quantity: 5 },
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "arrows" } }
+  }, { id: "item-1" });
+  const bolts = actor.addItem({
+    name: "Bolts",
+    type: "consumable",
+    system: { quantity: 2 },
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "bolts" } }
+  }, { id: "item-2" });
+  const first = createPurchaseTransaction({
+    transactionId: "purchase_actor_lock_01",
+    currency: { beforeCopper: 550, afterCopper: 450, deltaCopper: -100 }
+  });
+  const second = createPurchaseTransaction({
+    transactionId: "purchase_actor_lock_02",
+    request: {
+      actorId: "actor-1",
+      cityId: "city-1",
+      traderKey: "shop-1",
+      itemKey: "gear:bolts",
+      quantity: 1,
+      requestedByUserId: "player-1"
+    },
+    stock: { itemKey: "gear:bolts", before: 5, after: 4, delta: -1 },
+    item: {
+      itemId: "item-2",
+      itemUuid: "Actor.actor-1.Item.item-2",
+      beforeQuantity: 2,
+      afterQuantity: 3,
+      delta: 1,
+      created: false,
+      rawItemData: {
+        name: "Bolts",
+        type: "consumable",
+        system: { quantity: 1 },
+        flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "bolts" } }
+      }
+    },
+    currency: { beforeCopper: 450, afterCopper: 400, deltaCopper: -50 }
+  });
+  const traderId = "city-1::shop-1";
+  const committedRow = (transaction, itemKey, stock) => ({
+    ...clone(transaction),
+    id: `audit-${transaction.transactionId}`,
+    type: "purchase",
+    traderId,
+    legacy: false,
+    status: "committed",
+    phase: "committed",
+    stock,
+    result: { transactionId: transaction.transactionId },
+    error: null,
+    compensation: null,
+    rollback: null,
+    createdAt: 1,
+    updatedAt: 1,
+    committedAt: 1,
+    itemName: itemKey
+  });
+  const state = {
+    version: 1,
+    order: [traderId],
+    traders: {
+      [traderId]: {
+        traderId,
+        inventory: [
+          { itemKey: "gear:arrows", quantity: 3 },
+          { itemKey: "gear:bolts", quantity: 4 }
+        ]
+      }
+    },
+    tradeLog: [
+      committedRow(first, "Arrows", { itemKey: "gear:arrows", before: 4, after: 3, delta: -1 }),
+      committedRow(second, "Bolts", { itemKey: "gear:bolts", before: 5, after: 4, delta: -1 })
+    ]
+  };
+  const repository = {
+    read: () => state,
+    async mutate(mutator) { return mutator(state); },
+    findTransaction(transactionId) {
+      return state.tradeLog.find((row) => row.transactionId === transactionId) ?? null;
+    },
+    async mutateTransaction(transactionId, mutator) {
+      const row = state.tradeLog.find((entry) => entry.transactionId === transactionId);
+      assert.ok(row);
+      return mutator(row, state);
+    }
+  };
+  const restore = installFoundry({ actors: [actor], stateRepository: repository });
+  const traderService = new TraderService(createModuleApi(), { stateRepository: repository });
+  const operations = traderService.createFoundryTradeOperations();
+  const engine = new TradeTransactionService({ repository, operations });
+
+  try {
+    await operations.applyPurchaseItem(first);
+    await operations.applyPurchaseCurrency(first);
+    await operations.applyPurchaseItem(second);
+    await operations.applyPurchaseCurrency(second);
+    assert.equal(actor.system.currency.gp, 4);
+
+    const firstEntered = Promise.withResolvers();
+    const releaseFirst = Promise.withResolvers();
+    const updateActor = actor.update.bind(actor);
+    let rollbackCurrencyUpdates = 0;
+    actor.update = async (patch) => {
+      rollbackCurrencyUpdates += 1;
+      if (rollbackCurrencyUpdates === 1) {
+        firstEntered.resolve();
+        await releaseFirst.promise;
+      }
+      return updateActor(patch);
+    };
+
+    const rollbacks = [
+      engine.rollback(first.transactionId, {
+        rollbackTransactionId: "rollback_actor_lock_01",
+        requestedByUserId: "player-1"
+      }),
+      engine.rollback(second.transactionId, {
+        rollbackTransactionId: "rollback_actor_lock_02",
+        requestedByUserId: "player-1"
+      })
+    ];
+    await firstEntered.promise;
+    await new Promise((resolve) => setImmediate(resolve));
+    try {
+      assert.equal(rollbackCurrencyUpdates, 1);
+    }
+    finally {
+      releaseFirst.resolve();
+      await Promise.allSettled(rollbacks);
+    }
+    await Promise.all(rollbacks);
+
+    assert.equal(actor.system.currency.gp, 5);
+    assert.equal(actor.system.currency.sp, 5);
+    assert.equal(arrows.system.quantity, 5);
+    assert.equal(bolts.system.quantity, 2);
+    const receipts = getProperty(actor, `flags.${MODULE_ID}.tradeReceipts`);
+    assert.equal(receipts[first.transactionId].applied, false);
+    assert.equal(receipts[second.transactionId].applied, false);
+    assert.equal(getProperty(arrows, `flags.${MODULE_ID}.tradeTransactions.${first.transactionId}.applied`), false);
+    assert.equal(getProperty(bolts, `flags.${MODULE_ID}.tradeTransactions.${second.transactionId}.applied`), false);
+    assert.equal(state.tradeLog.every((row) => row.rollback?.status === "committed"), true);
+  }
+  finally {
+    restore();
+  }
+});

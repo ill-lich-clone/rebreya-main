@@ -124,6 +124,19 @@ function isDomainError(error) {
     ].includes(error.code);
 }
 
+function correlateRollbackError(error, request) {
+  if (error instanceof TradeTransactionError
+    && error.transactionId === request.transactionId
+    && error.rollbackTransactionId === request.rollbackTransactionId) {
+    return error;
+  }
+  return createRollbackError(
+    error?.code ?? "rollback-failed",
+    error?.message ?? "Trade rollback failed",
+    { ...request, cause: error }
+  );
+}
+
 export class TradeRollbackWorkflow {
   #now;
   #operations;
@@ -221,7 +234,7 @@ export class TradeRollbackWorkflow {
         });
       }
       catch (error) {
-        if (isDomainError(error)) throw error;
+        if (isDomainError(error)) throw correlateRollbackError(error, request);
         lastError = error;
         const durable = this.#readTransaction(request);
         if (durable?.rollback) {
@@ -288,6 +301,9 @@ export class TradeRollbackWorkflow {
         );
       }
       catch (error) {
+        if (error instanceof TradeTransactionError && !error.rollbackTransactionId) {
+          throw correlateRollbackError(error, request);
+        }
         if (error instanceof TradeTransactionError
           && ["transaction-conflict", "transaction-state-unavailable"].includes(error.code)) {
           throw error;
@@ -416,7 +432,7 @@ export class TradeRollbackWorkflow {
         });
       }
       catch (error) {
-        if (isDomainError(error)) throw error;
+        if (isDomainError(error)) throw correlateRollbackError(error, request);
         lastError = error;
         const durable = this.#readTransaction(request);
         if (durable) {
@@ -461,6 +477,7 @@ export class TradeRollbackWorkflow {
         );
       }
       catch (error) {
+        if (isDomainError(error)) throw correlateRollbackError(error, request);
         if (error instanceof TradeTransactionError
           && ["reconciliation-required", "transaction-conflict", "transaction-state-unavailable"]
             .includes(error.code)) {
@@ -496,6 +513,9 @@ export class TradeRollbackWorkflow {
       return this.#repository.findTransaction(request.transactionId);
     }
     catch (cause) {
+      if (isDomainError(cause)) {
+        throw correlateRollbackError(cause, request);
+      }
       throw createRollbackError(
         "transaction-state-unavailable",
         "Trade rollback state could not be read",

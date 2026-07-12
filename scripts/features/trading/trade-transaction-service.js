@@ -285,6 +285,7 @@ function durableReconciliationOutcome(transaction) {
 }
 
 export class TradeTransactionService {
+  #actorMutationTails = new Map();
   #inFlight = new Map();
   #now;
   #operations;
@@ -316,7 +317,10 @@ export class TradeTransactionService {
       return clone(await active.promise);
     }
 
-    const promise = this.#executePurchase(canonicalRequest, context);
+    const promise = this.#runActorMutation(
+      canonicalRequest.actorId,
+      () => this.#executePurchase(canonicalRequest, context)
+    );
     this.#inFlight.set(transactionId, { kind: "purchase", request: canonicalRequest, promise });
     try {
       return clone(await promise);
@@ -343,7 +347,10 @@ export class TradeTransactionService {
       return clone(await active.promise);
     }
 
-    const promise = this.#saleWorkflow.execute(canonicalRequest, context);
+    const promise = this.#runActorMutation(
+      canonicalRequest.actorId,
+      () => this.#saleWorkflow.execute(canonicalRequest, context)
+    );
     this.#inFlight.set(transactionId, { kind: "sale", request: canonicalRequest, promise });
     try {
       return clone(await promise);
@@ -370,7 +377,11 @@ export class TradeTransactionService {
       return clone(await active.promise);
     }
 
-    const promise = this.#rollbackWorkflow.execute(request);
+    const actorId = this.#resolveRollbackActorId(request);
+    const promise = this.#runActorMutation(
+      actorId,
+      () => this.#rollbackWorkflow.execute(request)
+    );
     this.#rollbackInFlight.set(request.transactionId, { request, promise });
     try {
       return clone(await promise);
@@ -378,6 +389,53 @@ export class TradeTransactionService {
     finally {
       if (this.#rollbackInFlight.get(request.transactionId)?.promise === promise) {
         this.#rollbackInFlight.delete(request.transactionId);
+      }
+    }
+  }
+
+  #resolveRollbackActorId(request) {
+    let transaction;
+    try {
+      transaction = this.#repository.findTransaction(request.transactionId);
+    }
+    catch (cause) {
+      if (cause instanceof TradeTransactionError) {
+        throw createRollbackError(cause.code, cause.message, { ...request, cause });
+      }
+      throw createRollbackError(
+        "transaction-state-unavailable",
+        "Trade rollback Actor could not be resolved",
+        { ...request, cause }
+      );
+    }
+    if (!transaction) {
+      throw createRollbackError(
+        "transaction-not-found",
+        "Trade transaction was not found",
+        request
+      );
+    }
+    const actorId = String(transaction.request?.actorId ?? "").trim();
+    if (!actorId) {
+      throw createRollbackError(
+        "transaction-not-rollbackable",
+        "Trade transaction has no durable Actor identity",
+        request
+      );
+    }
+    return actorId;
+  }
+
+  async #runActorMutation(actorId, operation) {
+    const previous = this.#actorMutationTails.get(actorId) ?? Promise.resolve();
+    const promise = previous.catch(() => undefined).then(operation);
+    this.#actorMutationTails.set(actorId, promise);
+    try {
+      return await promise;
+    }
+    finally {
+      if (this.#actorMutationTails.get(actorId) === promise) {
+        this.#actorMutationTails.delete(actorId);
       }
     }
   }
