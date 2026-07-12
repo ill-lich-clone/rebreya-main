@@ -49,6 +49,10 @@ test("Forien quest integration wires subtasks, right-click task failure, and act
     source.indexOf("async function resolveRollTable"),
     source.indexOf("async function rollRumorFromTable")
   );
+  const renderSubtasksSource = source.slice(
+    source.indexOf("function renderSubtasksForTask"),
+    source.indexOf("function getTaskRow")
+  );
 
   assert.match(source, /contextmenu/u);
   assert.match(source, /markTaskFailed/u);
@@ -69,11 +73,17 @@ test("Forien quest integration wires subtasks, right-click task failure, and act
   assert.match(source, /const row = getRumorEntryRow\(button\)/u);
   assert.match(source, /rm-fql-subtask-row/u);
   assert.match(source, /getTaskInheritance/u);
+  assert.match(source, /getTaskContextFromControl/u);
   assert.match(source, /is-parent-hidden/u);
   assert.match(source, /is-parent-completed/u);
   assert.match(source, /is-parent-failed/u);
+  assert.match(source, /stopImmediatePropagation/u);
   assert.match(source, /callback:\s*\(\)\s*=>\s*null/u);
   assert.match(source, /insertAdjacentHTML\("afterend"/u);
+  assert.doesNotMatch(renderSubtasksSource, /class="task\s+rm-fql-subtask-row/u);
+  assert.doesNotMatch(renderSubtasksSource, /data-uuidv4=/u);
+  assert.doesNotMatch(renderSubtasksSource, /class="[^"]*\bdelete\b/u);
+  assert.doesNotMatch(renderSubtasksSource, /class="[^"]*\bactions tasks\b/u);
   assert.match(resolveRollTableSource, /try\s*\{[\s\S]*fromUuid[\s\S]*catch/u);
   assert.match(logTemplate, /modules\/forien-quest-log\/templates\/partials\/quest-log\/tab\.html/u);
   assert.match(logTemplate, /data-tab="rebreya-rumors"/u);
@@ -88,6 +98,8 @@ test("Forien quest integration wires subtasks, right-click task failure, and act
   assert.match(template, /class="open-quest title"/u);
   assert.match(template, /class="actions/u);
   assert.match(rumorEditor, /class="quest-preview/u);
+  assert.match(rumorEditor, /class="item active" data-tab="details"/u);
+  assert.match(rumorEditor, /class="tab details active"/u);
   assert.match(rumorEditor, /class="details-header"/u);
   assert.match(rumorEditor, /class="quest-info"/u);
   assert.match(rumorEditor, /class="quest-tasks"/u);
@@ -95,6 +107,9 @@ test("Forien quest integration wires subtasks, right-click task failure, and act
   assert.match(source, /#runLockedEditorAction/u);
   assert.match(rumorEditor, /data-rm-fql-editor-action="toggle-rumor-entry-visibility"/u);
   assert.match(rumorEditor, /name="rm-fql-rumor-table"/u);
+  assert.match(source, /tabs:\s*\[\{\s*navSelector:\s*"\.quest-tabs",\s*contentSelector:\s*"\.quest-body",\s*initial:\s*"details"\s*\}\]/u);
+  assert.match(eventEditor, /class="item active" data-tab="details"/u);
+  assert.match(eventEditor, /class="tab details active"/u);
   assert.match(eventEditor, /name="rm-fql-event-text"/u);
   assert.doesNotMatch(template, /name="rm-fql-event-title"/u);
   assert.doesNotMatch(template, /name="rm-fql-rumor-title"/u);

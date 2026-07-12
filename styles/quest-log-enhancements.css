@@ -4,23 +4,52 @@
 }
 
 .forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
   margin-left: 56px;
   width: calc(100% - 56px);
   min-height: 25px;
+  padding: 2px 4px;
   background: rgb(255 255 255 / 0.2);
   border-left: 2px solid rgb(99 68 35 / 0.32);
+  border-radius: 3px;
 }
 
-.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row .toggleState {
-  flex: 0 0 28px;
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row .rm-fql-subtask__state {
+  flex: 0 0 22px;
+  text-align: center;
   font-size: 14px;
 }
 
-.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row .task-name {
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row .rm-fql-subtask__body {
+  flex: 1 1 auto;
   min-width: 0;
+}
+
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row .rm-fql-subtask__title {
+  margin: 0;
   max-width: 330px;
   overflow-wrap: anywhere;
   font-size: 13px;
+  line-height: 20px;
+}
+
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row .rm-fql-subtask__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row .rm-fql-subtask__action {
+  cursor: pointer;
+  opacity: 0.86;
+}
+
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row .rm-fql-subtask__action--danger {
+  color: #ff4b4b;
 }
 
 .forien-quest-preview .rm-fql-subtask-row.is-completed .rm-fql-subtask__state {
