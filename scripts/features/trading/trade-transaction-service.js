@@ -8,6 +8,11 @@ import {
   TradeSaleTransactionWorkflow,
   canonicalizeSaleRequest
 } from "./trade-sale-transaction-workflow.js";
+import {
+  TradeRollbackWorkflow,
+  canonicalizeRollbackRequest,
+  createRollbackError
+} from "./trade-rollback-workflow.js";
 
 const PURCHASE_REQUEST_KEYS = Object.freeze([
   "transactionId",
@@ -284,12 +289,15 @@ export class TradeTransactionService {
   #now;
   #operations;
   #repository;
+  #rollbackInFlight = new Map();
+  #rollbackWorkflow;
   #saleWorkflow;
 
   constructor({ repository, operations, now = () => Date.now() }) {
     this.#repository = repository;
     this.#operations = operations;
     this.#now = now;
+    this.#rollbackWorkflow = new TradeRollbackWorkflow({ repository, operations, now });
     this.#saleWorkflow = new TradeSaleTransactionWorkflow({ repository, operations, now });
   }
 
@@ -343,6 +351,33 @@ export class TradeTransactionService {
     finally {
       if (this.#inFlight.get(transactionId)?.promise === promise) {
         this.#inFlight.delete(transactionId);
+      }
+    }
+  }
+
+  async rollback(transactionId, options = {}) {
+    const request = canonicalizeRollbackRequest(transactionId, options);
+    const active = this.#rollbackInFlight.get(request.transactionId);
+    if (active) {
+      if (active.request.rollbackTransactionId !== request.rollbackTransactionId
+        || active.request.requestedByUserId !== request.requestedByUserId) {
+        throw createRollbackError(
+          "transaction-conflict",
+          "Trade transaction already has a different rollback request in progress",
+          request
+        );
+      }
+      return clone(await active.promise);
+    }
+
+    const promise = this.#rollbackWorkflow.execute(request);
+    this.#rollbackInFlight.set(request.transactionId, { request, promise });
+    try {
+      return clone(await promise);
+    }
+    finally {
+      if (this.#rollbackInFlight.get(request.transactionId)?.promise === promise) {
+        this.#rollbackInFlight.delete(request.transactionId);
       }
     }
   }

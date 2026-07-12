@@ -980,6 +980,38 @@ test("purchase compensation removes only its exact deltas and preserves later It
   }
 });
 
+test("modern rollback compensation rejects missing original markers and receipts instead of guessing", async () => {
+  const actor = new FakeActor({ id: "actor-1", copper: 1_000 });
+  actor.addItem({
+    name: "Iron",
+    type: "loot",
+    system: { quantity: 5 },
+    flags: { [MODULE_ID]: { sourceType: "material", sourceId: "iron" } }
+  });
+  const restore = installFoundry({ actors: [actor] });
+  const operations = new TraderService(createModuleApi()).createFoundryTradeOperations();
+  const rollback = {
+    transactionId: "rollback_marker_check_1",
+    status: "prepared",
+    phase: "prepared",
+    requestedByUserId: "player-1"
+  };
+  const purchase = createPurchaseTransaction({ rollback });
+  const sale = createSaleTransaction({ rollback });
+
+  try {
+    await assert.rejects(operations.compensatePurchaseItem(purchase), /маркер|marker/i);
+    await assert.rejects(operations.compensatePurchaseCurrency(purchase), /квитанц|receipt/i);
+    await assert.rejects(operations.compensateSaleItem(sale), /маркер|marker/i);
+    await assert.rejects(operations.compensateSaleCurrency(sale), /квитанц|receipt/i);
+    assert.equal(actor.updatePatches.length, 0);
+    assert.equal(actor.items.contents[0].updatePatches.length, 0);
+  }
+  finally {
+    restore();
+  }
+});
+
 test("partial and full sales atomically retain quantity markers including a zero tombstone", async () => {
   const partialActor = new FakeActor({ id: "actor-1", copper: 100 });
   const partialItem = partialActor.addItem({

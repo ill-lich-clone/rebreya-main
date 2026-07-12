@@ -375,7 +375,7 @@ test("trade audit keeps the latest twenty rows and rollback reverses a purchase"
     },
     toObject: () => ({
       system: {
-        quantity: 1
+        quantity: 20
       }
     }),
     delete: async () => {
@@ -440,6 +440,8 @@ test("trade audit keeps the latest twenty rows and rollback reverses a purchase"
         sourceType: "material",
         sourceId: "iron",
         quantity: 1,
+        itemQuantityBefore: 0,
+        itemQuantityAfter: 20,
         totalCopper: 100,
         cityName: "City",
         traderName: "Trader"

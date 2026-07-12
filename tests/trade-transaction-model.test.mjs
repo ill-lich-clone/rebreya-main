@@ -287,6 +287,55 @@ test("retainTradeLog keeps all nonterminal rows and the newest twenty terminal r
   assert.equal(retained.every((row) => Object.hasOwn(row, "request")), true);
 });
 
+test("retainTradeLog keeps committed originals with nonterminal nested rollback beyond the terminal limit", () => {
+  const nestedRows = [
+    {
+      transactionId: "nested_prepared_001",
+      status: "committed",
+      phase: "committed",
+      updatedAt: 1,
+      request: { quantity: 1 },
+      rollback: {
+        transactionId: "rollback_nested_001",
+        status: "prepared",
+        phase: "prepared"
+      }
+    },
+    {
+      transactionId: "nested_reconcile_01",
+      status: "reconciliation-required",
+      phase: "committed",
+      updatedAt: 2,
+      request: { quantity: 1 },
+      rollback: {
+        transactionId: "rollback_nested_002",
+        status: "reconciliation-required",
+        phase: "item-reversed"
+      }
+    }
+  ];
+  const terminalRows = Array.from({ length: 23 }, (_value, index) => ({
+    transactionId: `rollback_terminal_${String(index).padStart(8, "0")}`,
+    status: "committed",
+    phase: "committed",
+    updatedAt: 100 + index,
+    request: { quantity: 1 },
+    rollback: null
+  }));
+
+  const retained = retainTradeLog([...nestedRows, ...terminalRows]);
+
+  assert.equal(retained.length, 22);
+  assert.deepEqual(
+    retained.slice(0, 2).map((row) => row.transactionId),
+    ["nested_prepared_001", "nested_reconcile_01"]
+  );
+  assert.equal(
+    retained.filter((row) => row.transactionId.startsWith("rollback_terminal_")).length,
+    20
+  );
+});
+
 test("retainTradeLog never prunes malformed modern rows behind newer terminals", () => {
   const malformedRows = [
     {

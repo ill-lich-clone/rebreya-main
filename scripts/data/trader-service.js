@@ -358,16 +358,35 @@ function formatAuditTimestamp(timestamp) {
 }
 
 function normalizeTradeAuditRecord(operation = {}, { senderId = "" } = {}) {
+  const hasModernTransactionShape = operation?.legacy === false
+    || [
+      "transactionId",
+      "status",
+      "phase",
+      "kind",
+      "request",
+      "stock",
+      "item",
+      "currency",
+      "compensation",
+      "rollback"
+    ].some((key) => Object.hasOwn(operation, key));
+  const normalizedTransaction = hasModernTransactionShape
+    ? normalizeTradeTransaction(operation)
+    : null;
   const type = String(operation.type ?? "").trim() === "sale" ? "sale" : "purchase";
-  const quantity = Math.max(1, Math.floor(toNumber(operation.quantity, 1)));
+  const quantity = Math.max(1, Math.floor(toNumber(
+    operation.quantity,
+    operation.request?.quantity ?? 1
+  )));
   const totalCopper = Math.max(0, Math.round(toNumber(
     operation.totalCopper,
     type === "sale" ? operation.netPayoutCopper : operation.totalPriceCopper
   )));
   const safeSenderId = String(senderId || operation.senderId || "").trim();
 
-  return {
-    id: String(operation.id ?? "").trim() || createTradeAuditId(),
+  const record = {
+    id: String(operation.id ?? operation.transactionId ?? "").trim() || createTradeAuditId(),
     type,
     createdAt: Math.max(0, Math.floor(toNumber(operation.createdAt, Date.now()))),
     senderId: safeSenderId,
@@ -399,6 +418,14 @@ function normalizeTradeAuditRecord(operation = {}, { senderId = "" } = {}) {
     rolledBackAt: Math.max(0, Math.floor(toNumber(operation.rolledBackAt, 0))),
     rolledBackByUserId: String(operation.rolledBackByUserId ?? "").trim()
   };
+
+  return normalizedTransaction
+    ? {
+        ...normalizedTransaction,
+        ...record,
+        id: record.id || normalizedTransaction.transactionId
+      }
+    : record;
 }
 
 function buildAuditViewRecord(record) {
@@ -408,9 +435,54 @@ function buildAuditViewRecord(record) {
     : toNumber(record.totalPriceCopper, record.totalCopper);
   const rolledBack = record.rolledBack === true;
   const verified = record.verified !== false;
+  const legacy = record.legacy === true;
+  const rollbackStatus = String(record.rollback?.status ?? "").trim();
+  const topLevelStatus = String(record.status ?? "").trim();
+  const rollbackInProgress = ["prepared", "applying"].includes(rollbackStatus);
+  const rollbackReconciliation = rollbackStatus === "reconciliation-required";
+  const rollbackCommitted = rollbackStatus === "committed";
+  const modernUnavailable = !legacy && (
+    rollbackInProgress
+    || rollbackReconciliation
+    || rollbackCommitted
+    || ["compensating", "compensated", "reconciliation-required"].includes(topLevelStatus)
+  );
+  let statusLabel;
+  let rollbackTitle;
+  if (rolledBack || rollbackCommitted) {
+    statusLabel = "Откат выполнен";
+    rollbackTitle = "Операция уже откачена";
+  }
+  else if (rollbackReconciliation) {
+    statusLabel = "Откат требует сверки";
+    rollbackTitle = "Откат требует ручной сверки";
+  }
+  else if (rollbackInProgress) {
+    statusLabel = "Откат выполняется";
+    rollbackTitle = "Откат уже выполняется";
+  }
+  else if (!legacy && topLevelStatus === "compensated") {
+    statusLabel = "Транзакция компенсирована";
+    rollbackTitle = "Компенсированную транзакцию нельзя откатить";
+  }
+  else if (!legacy && topLevelStatus === "compensating") {
+    statusLabel = "Компенсация выполняется";
+    rollbackTitle = "Компенсация транзакции ещё выполняется";
+  }
+  else if (!legacy && topLevelStatus === "reconciliation-required") {
+    statusLabel = "Транзакция требует сверки";
+    rollbackTitle = "Транзакция требует ручной сверки";
+  }
+  else {
+    statusLabel = verified ? "Активна" : "Проверить вручную";
+    rollbackTitle = verified
+      ? "Откатить операцию"
+      : "Нельзя откатить: владелец операции не подтверждён";
+  }
 
   return {
     ...record,
+    id: String(record.id ?? "").trim() || String(record.transactionId ?? "").trim(),
     typeLabel,
     timestampLabel: formatAuditTimestamp(record.createdAt),
     amountLabel: formatCopper(copper),
@@ -418,12 +490,13 @@ function buildAuditViewRecord(record) {
     actorLabel: record.actorName || record.actorId || "Персонаж",
     traderLabel: [record.cityName, record.traderName].filter(Boolean).join(" / "),
     userLabel: record.senderName || record.senderId || "Игрок",
-    statusLabel: rolledBack ? "Откат выполнен" : (verified ? "Активна" : "Проверить вручную"),
-    rolledBack,
-    rollbackDisabled: rolledBack || !verified || game.user?.isGM !== true,
-    rollbackTitle: rolledBack
-      ? "Операция уже откачена"
-      : (verified ? "Откатить операцию" : "Нельзя откатить: владелец операции не подтверждён")
+    statusLabel,
+    rolledBack: rolledBack || rollbackCommitted,
+    rollbackDisabled: rolledBack
+      || modernUnavailable
+      || !verified
+      || game.user?.isGM !== true,
+    rollbackTitle
   };
 }
 
@@ -1361,7 +1434,13 @@ export class TraderService {
     const receipts = this.#getTradeMarkerMap(actor, "tradeReceipts");
     const receipt = getOwn(receipts, transaction.transactionId);
     this.#assertNoConflictingReceipt(receipt, transaction);
-    if (!receipt || this.#currencyReceiptMatches(receipt, transaction, { applied: false })) return;
+    if (!receipt) {
+      if (transaction.rollback) {
+        throw new Error("Квитанция исходной покупки отсутствует для отката.");
+      }
+      return;
+    }
+    if (this.#currencyReceiptMatches(receipt, transaction, { applied: false })) return;
 
     const compensatedFunds = actorCurrencyToCopper(actor) - transaction.currency.deltaCopper;
     if (compensatedFunds < 0) {
@@ -1386,12 +1465,23 @@ export class TraderService {
       transaction.request.requestedByUserId
     );
     const item = this.#findTransactionItem(actor, transaction);
-    if (!item) return;
+    if (!item) {
+      if (transaction.rollback) {
+        throw new Error("Маркер исходного предмета покупки отсутствует для отката.");
+      }
+      return;
+    }
 
     const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
     const marker = getOwn(markers, transaction.transactionId);
     this.#assertNoConflictingMarker(marker, transaction, item);
-    if (!marker || this.#itemMarkerMatches(marker, transaction, item, { applied: false })) return;
+    if (!marker) {
+      if (transaction.rollback) {
+        throw new Error("Маркер исходного предмета покупки отсутствует для отката.");
+      }
+      return;
+    }
+    if (this.#itemMarkerMatches(marker, transaction, item, { applied: false })) return;
 
     const currentQuantity = Math.max(
       0,
@@ -1401,7 +1491,7 @@ export class TraderService {
       throw new Error("Количество предмета недостаточно для компенсации покупки.");
     }
     const remainder = currentQuantity - transaction.item.delta;
-    if (transaction.item.created === true && remainder === 0) {
+    if (transaction.item.created === true && remainder === 0 && !transaction.rollback) {
       await item.delete();
       return;
     }
@@ -1512,7 +1602,13 @@ export class TraderService {
     const receipts = this.#getTradeMarkerMap(actor, "tradeReceipts");
     const receipt = getOwn(receipts, transaction.transactionId);
     this.#assertNoConflictingReceipt(receipt, transaction);
-    if (!receipt || this.#currencyReceiptMatches(receipt, transaction, { applied: false })) return;
+    if (!receipt) {
+      if (transaction.rollback) {
+        throw new Error("Квитанция исходной продажи отсутствует для отката.");
+      }
+      return;
+    }
+    if (this.#currencyReceiptMatches(receipt, transaction, { applied: false })) return;
 
     const compensatedFunds = actorCurrencyToCopper(actor) - transaction.currency.deltaCopper;
     if (compensatedFunds < 0) {
@@ -1538,6 +1634,9 @@ export class TraderService {
     );
     const item = this.#findTransactionItem(actor, transaction);
     if (!item) {
+      if (transaction.rollback) {
+        throw new Error("Маркер исходного предмета продажи отсутствует для отката.");
+      }
       const itemData = sanitizeRawItemData(transaction.item.rawItemData);
       foundry.utils.setProperty(itemData, "system.quantity", -transaction.item.delta);
       const markers = this.#getTradeMarkerMap(itemData, "tradeTransactions");
@@ -1554,7 +1653,13 @@ export class TraderService {
     const markers = this.#getTradeMarkerMap(item, "tradeTransactions");
     const marker = getOwn(markers, transaction.transactionId);
     this.#assertNoConflictingMarker(marker, transaction, item);
-    if (!marker || this.#itemMarkerMatches(marker, transaction, item, { applied: false })) return;
+    if (!marker) {
+      if (transaction.rollback) {
+        throw new Error("Маркер исходного предмета продажи отсутствует для отката.");
+      }
+      return;
+    }
+    if (this.#itemMarkerMatches(marker, transaction, item, { applied: false })) return;
 
     const currentQuantity = Math.max(
       0,
@@ -1674,7 +1779,14 @@ export class TraderService {
   }
 
   async #rollbackPurchase(record, actor) {
-    const quantity = Math.max(1, Math.floor(toNumber(record.quantity, 1)));
+    const beforeQuantity = Number(record.itemQuantityBefore);
+    const afterQuantity = Number(record.itemQuantityAfter);
+    const actorDeltaAvailable = Number.isInteger(beforeQuantity)
+      && Number.isInteger(afterQuantity)
+      && afterQuantity > beforeQuantity;
+    const quantity = actorDeltaAvailable
+      ? afterQuantity - beforeQuantity
+      : Math.max(1, Math.floor(toNumber(record.quantity, 1)));
     const item = this.#findAuditItem(actor, record);
     if (!item) {
       throw new Error("Предмет покупки больше не найден у персонажа.");
@@ -1761,7 +1873,7 @@ export class TraderService {
     });
   }
 
-  async rollbackTradeAuditEntry(entryId) {
+  async rollbackTradeAuditEntry(entryId, options = {}) {
     if (!game.user?.isGM) {
       throw new Error("Откат торговых операций доступен только мастеру.");
     }
@@ -1771,32 +1883,57 @@ export class TraderService {
       throw new Error("Операция торговли не найдена.");
     }
 
+    const record = (this.#getState().tradeLog ?? []).find((entry) => (
+      entry.id === safeEntryId || entry.transactionId === safeEntryId
+    )) ?? null;
+    if (!record) {
+      throw new Error("Операция торговли не найдена.");
+    }
+    if (record.legacy !== true) {
+      if (typeof this.transactionService?.rollback !== "function") {
+        throw new Error("Modern trader transaction service is not installed.");
+      }
+      return this.transactionService.rollback(record.transactionId, {
+        rollbackTransactionId: options?.rollbackTransactionId,
+        requestedByUserId: options?.requestedByUserId
+      });
+    }
+    return this.rollbackTradeAuditEntryLegacy(safeEntryId);
+  }
+
+  /** @deprecated Compatibility rollback for legacy audit rows only. */
+  async rollbackTradeAuditEntryLegacy(entryId) {
+    if (!game.user?.isGM) {
+      throw new Error("Откат торговых операций доступен только мастеру.");
+    }
+    const safeEntryId = String(entryId ?? "").trim();
+    if (!safeEntryId) {
+      throw new Error("Операция торговли не найдена.");
+    }
+
     return this.#writeState(async (state) => {
-      const record = (state.tradeLog ?? []).find((entry) => entry.id === safeEntryId) ?? null;
-      if (!record) {
+      const record = (state.tradeLog ?? []).find((entry) => (
+        entry.id === safeEntryId || entry.transactionId === safeEntryId
+      )) ?? null;
+      if (!record || record.legacy !== true) {
         throw new Error("Операция торговли не найдена.");
       }
-
       if (record.rolledBack === true) {
         throw new Error("Эта операция уже откачена.");
       }
-
       if (record.verified === false) {
         throw new Error("Операция не подтверждена владельцем персонажа.");
       }
-
       const actor = game.actors?.get?.(record.actorId) ?? null;
       if (!actor) {
         throw new Error("Персонаж операции не найден.");
       }
-
       if (record.type === "sale") {
         await this.#rollbackSale(record, actor);
       }
       else {
         await this.#rollbackPurchase(record, actor);
       }
-
       record.rolledBack = true;
       record.rolledBackAt = Date.now();
       record.rolledBackByUserId = game.user?.id ?? "";

@@ -58,11 +58,16 @@ function clone(value) {
 }
 
 export class TradeTransactionError extends Error {
-  constructor(code, message, { transactionId = "", cause = null } = {}) {
+  constructor(code, message, {
+    transactionId = "",
+    rollbackTransactionId = "",
+    cause = null
+  } = {}) {
     super(message, cause ? { cause } : undefined);
     this.name = "TradeTransactionError";
     this.code = code;
     this.transactionId = transactionId;
+    this.rollbackTransactionId = rollbackTransactionId;
   }
 }
 
@@ -150,9 +155,14 @@ export function normalizeTradeTransaction(value = {}) {
 
 export function retainTradeLog(rows = [], { terminalLimit = 20 } = {}) {
   const normalized = rows.map((row) => normalizeTradeTransaction(row));
-  const nonterminal = normalized.filter((row) => !TERMINAL_TRADE_STATUSES.has(row.status));
+  const hasNonterminalRollback = (row) => row.rollback
+    && typeof row.rollback === "object"
+    && !TERMINAL_TRADE_STATUSES.has(String(row.rollback.status ?? ""));
+  const nonterminal = normalized.filter((row) => (
+    !TERMINAL_TRADE_STATUSES.has(row.status) || hasNonterminalRollback(row)
+  ));
   const terminal = normalized
-    .filter((row) => TERMINAL_TRADE_STATUSES.has(row.status))
+    .filter((row) => TERMINAL_TRADE_STATUSES.has(row.status) && !hasNonterminalRollback(row))
     .sort((left, right) => (
       Number(right.updatedAt ?? right.createdAt ?? 0) - Number(left.updatedAt ?? left.createdAt ?? 0)
     ))
