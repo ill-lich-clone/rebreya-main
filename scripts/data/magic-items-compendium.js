@@ -57,6 +57,28 @@ function normalizeBoolean(value) {
   return ["true", "1", "yes", "y", "да"].includes(text);
 }
 
+function isQuestionPlaceholder(value) {
+  return /^\?+(?:\s+\?+)*$/u.test(String(value ?? "").trim());
+}
+
+function normalizeOptionalMagicText(value) {
+  const text = String(value ?? "").trim();
+  return isQuestionPlaceholder(text) ? "" : text;
+}
+
+function normalizeMagicSourceType(value) {
+  return normalizeOptionalMagicText(value) || "Магический предмет";
+}
+
+function normalizeMagicItemType(value) {
+  const text = normalizeOptionalMagicText(value);
+  if (normalizeMatchText(text) === normalizeMatchText("Чудестный предмет")) {
+    return "Чудесный предмет";
+  }
+
+  return text;
+}
+
 function normalizeRarity(value) {
   switch (normalizeMatchText(value)) {
     case "обычный":
@@ -173,18 +195,18 @@ export function normalizeMagicItems(rawItems = MAGIC_ITEMS) {
       return {
         id,
         name,
-        type: String(rawItem.type ?? rawItem.Type ?? "Магический предмет").trim(),
-        rarity: String(rawItem.rarity ?? rawItem.itemRarity ?? "").trim(),
-        itemType: String(rawItem.itemType ?? rawItem.ItemType ?? "").trim(),
-        itemSubtype: String(rawItem.itemSubtype ?? "").trim(),
-        itemSlot: String(rawItem.itemSlot ?? "").trim(),
+        type: normalizeMagicSourceType(rawItem.type ?? rawItem.Type),
+        rarity: normalizeOptionalMagicText(rawItem.rarity ?? rawItem.itemRarity),
+        itemType: normalizeMagicItemType(rawItem.itemType ?? rawItem.ItemType),
+        itemSubtype: normalizeOptionalMagicText(rawItem.itemSubtype),
+        itemSlot: normalizeOptionalMagicText(rawItem.itemSlot),
         source: String(rawItem.source ?? rawItem.itemSourse ?? "").trim(),
         rank: clampRank(rawItem.rank),
-        materials: String(rawItem.materials ?? rawItem.item_materials ?? "").trim(),
-        bargaining: String(rawItem.bargaining ?? rawItem.itemBargaining ?? "").trim(),
-        costText: String(rawItem.costText ?? rawItem.itemCost ?? "").trim(),
-        impact: String(rawItem.impact ?? rawItem.item_impact ?? "").trim(),
-        attunement: String(rawItem.attunement ?? rawItem.itemAttunementDetails ?? "").trim(),
+        materials: normalizeOptionalMagicText(rawItem.materials ?? rawItem.item_materials),
+        bargaining: normalizeOptionalMagicText(rawItem.bargaining ?? rawItem.itemBargaining),
+        costText: normalizeOptionalMagicText(rawItem.costText ?? rawItem.itemCost),
+        impact: normalizeOptionalMagicText(rawItem.impact ?? rawItem.item_impact),
+        attunement: normalizeOptionalMagicText(rawItem.attunement ?? rawItem.itemAttunementDetails),
         isConsumable: normalizeBoolean(rawItem.isConsumable),
         description: String(rawItem.description ?? rawItem.Desc ?? "").trim(),
         priceGold: toNumber(rawItem.priceGold ?? rawItem.value, 0),
@@ -273,7 +295,6 @@ function buildMetadataRows(item, classification) {
     .filter(Boolean);
 
   return [
-    ["Тип", item.type],
     ["Редкость", item.rarity],
     ["Вид предмета", item.itemType],
     ["Подтип", item.itemSubtype || null],

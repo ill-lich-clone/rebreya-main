@@ -61,6 +61,29 @@ test("magic item compendium uses fixed costText as native price and keeps estima
   assert.match(created.system.description.value, /Оценка:<\/strong>\s*60000 зм/iu);
 });
 
+test("magic item compendium shows the item kind without the legacy magic type row", () => {
+  const [normalizedItem] = magicItemsCompendium.normalizeMagicItems([
+    makeMagicItem({
+      name: "Механистический амулет",
+      type: "?????????? ???????",
+      rarity: "Обычный",
+      itemType: "Чудесный предмет",
+      itemSubtype: "?",
+      itemSlot: "Шея",
+      costText: "70 зм",
+      value: 70
+    })
+  ]);
+  const created = magicItemsCompendium.createMagicItemData(normalizedItem, new Map());
+
+  assert.equal(normalizedItem.type, "Магический предмет");
+  assert.equal(normalizedItem.itemSubtype, "");
+  assert.doesNotMatch(created.system.description.value, /<strong>Тип:<\/strong>/iu);
+  assert.doesNotMatch(created.system.description.value, /<strong>Подтип:<\/strong>\s*\?/iu);
+  assert.match(created.system.description.value, /<strong>Вид предмета:<\/strong>\s*Чудесный предмет/iu);
+  assert.doesNotMatch(created.system.description.value, /\?{3,}/u);
+});
+
 test("magic item compendium leaves native price empty when costText is a formula", () => {
   const [normalizedItem] = magicItemsCompendium.normalizeMagicItems([
     makeMagicItem({
