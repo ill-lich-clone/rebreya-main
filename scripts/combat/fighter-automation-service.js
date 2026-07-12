@@ -103,6 +103,39 @@ function repairUpdateOptions() {
   return { render: false };
 }
 
+function documentId(document) {
+  return cleanText(document?.id ?? document?._id);
+}
+
+function applyLocalDocumentPatch(document, patch) {
+  for (const [path, value] of Object.entries(patch)) {
+    foundry.utils.setProperty(document, path, value);
+  }
+}
+
+async function updateRepairItem(item, patch, options = {}) {
+  if (!item || !patch || !Object.keys(patch).length) {
+    return false;
+  }
+
+  const itemId = documentId(item);
+  const actor = item?.parent instanceof Actor
+    ? item.parent
+    : (item?.actor instanceof Actor ? item.actor : null);
+  if (itemId && typeof actor?.updateEmbeddedDocuments === "function") {
+    await actor.updateEmbeddedDocuments("Item", [{ _id: itemId, ...patch }], options);
+    return true;
+  }
+
+  if (typeof item.update === "function") {
+    await item.update(patch, options);
+    return true;
+  }
+
+  applyLocalDocumentPatch(item, patch);
+  return true;
+}
+
 function getProperty(source, path, fallback = undefined) {
   const value = foundry.utils.getProperty(source, path);
   return value === undefined ? fallback : value;
@@ -976,14 +1009,7 @@ export class FighterAutomationService {
     }
 
     if (Object.keys(patch).length) {
-      if (typeof item.update === "function") {
-        await item.update(patch, render === false ? repairUpdateOptions() : {});
-      }
-      else {
-        for (const [path, value] of Object.entries(patch)) {
-          foundry.utils.setProperty(item, path, value);
-        }
-      }
+      await updateRepairItem(item, patch, render === false ? repairUpdateOptions() : {});
     }
 
     return maxUses;
@@ -1019,12 +1045,7 @@ export class FighterAutomationService {
       }
 
       const patch = { "system.advancement": mergedAdvancement };
-      if (typeof item.update === "function") {
-        await item.update(patch, repairUpdateOptions());
-      }
-      else {
-        foundry.utils.setProperty(item, "system.advancement", mergedAdvancement);
-      }
+      await updateRepairItem(item, patch, repairUpdateOptions());
       changed = true;
     }
 
@@ -1102,14 +1123,7 @@ export class FighterAutomationService {
         continue;
       }
 
-      if (typeof item.update === "function") {
-        await item.update(patch, repairUpdateOptions());
-      }
-      else {
-        for (const [path, value] of Object.entries(patch)) {
-          foundry.utils.setProperty(item, path, value);
-        }
-      }
+      await updateRepairItem(item, patch, repairUpdateOptions());
     }
   }
 
@@ -1154,12 +1168,7 @@ export class FighterAutomationService {
       }
 
       const patch = { "system.container": containerId };
-      if (typeof item.update === "function") {
-        await item.update(patch, repairUpdateOptions());
-      }
-      else {
-        foundry.utils.setProperty(item, "system.container", containerId);
-      }
+      await updateRepairItem(item, patch, repairUpdateOptions());
     }
 
     return true;

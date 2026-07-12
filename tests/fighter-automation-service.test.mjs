@@ -1159,6 +1159,68 @@ test("fighter actor repair restores second wind resources and moves maneuvers in
   assert.equal(maneuver.flags.teyvankal.section, "Воинские приёмы");
 });
 
+test("fighter actor repair includes item ids when updating owned item resources", async () => {
+  const secondWind = makeItem({
+    id: "second-wind",
+    name: "Second Wind",
+    featureId: "fighter-rework-v028::class::second-wind",
+    uses: {
+      spent: 0,
+      max: "",
+      recovery: []
+    }
+  });
+  const actor = new TestActor({
+    id: "fighter",
+    classes: {
+      "fighter-rework-v028": {
+        levels: 6
+      }
+    },
+    items: [secondWind]
+  });
+  const embeddedUpdates = [];
+  actor.updateEmbeddedDocuments = async function updateEmbeddedDocuments(type, rows, options = {}) {
+    assert.equal(type, "Item");
+    for (const row of rows) {
+      if (!row?._id) {
+        throw new Error("embedded item update is missing _id");
+      }
+
+      const item = this.items.get(row._id);
+      assert.ok(item);
+      for (const [path, value] of Object.entries(row)) {
+        if (path !== "_id") {
+          foundry.utils.setProperty(item, path, value);
+        }
+      }
+    }
+    embeddedUpdates.push({ type, rows, options });
+    return rows.map((row) => this.items.get(row._id));
+  };
+  secondWind.update = async function update(patch, options = {}) {
+    return actor.updateEmbeddedDocuments("Item", [patch], options);
+  };
+  const service = new FighterAutomationService({});
+
+  await service.repairActor(actor);
+
+  assert.equal(embeddedUpdates.length, 1);
+  assert.deepEqual(embeddedUpdates[0], {
+    type: "Item",
+    rows: [{
+      _id: "second-wind",
+      "system.uses.max": 6,
+      "system.uses.recovery": [{
+        period: "lr",
+        type: "recoverAll",
+        formula: ""
+      }]
+    }],
+    options: { render: false }
+  });
+});
+
 test("fighter actor repair does not mutate maneuver activity data during sheet render", async () => {
   const maneuver = makeItem({
     id: "riposte",
