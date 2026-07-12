@@ -315,20 +315,7 @@ test("quest metadata normalizes groups, requirements, and unlock rewards", () =>
         title: "Open B"
       },
       { id: "", targetQuestId: "missing" }
-    ],
-    taskSubtasksById: {
-      " task-a ": [
-        {
-          id: " sub-a ",
-          title: " First step ",
-          completed: true
-        },
-        {
-          id: "",
-          title: "Broken"
-        }
-      ]
-    }
+    ]
   });
 
   assert.deepEqual(metadata, {
@@ -370,17 +357,7 @@ test("quest metadata normalizes groups, requirements, and unlock rewards", () =>
         requirementId: "req-b",
         title: "Open B"
       }
-    ],
-    taskSubtasksById: {
-      "task-a": [
-        {
-          id: "sub-a",
-          title: "First step",
-          completed: true,
-          failed: false
-        }
-      ]
-    }
+    ]
   });
 });
 
@@ -701,37 +678,13 @@ test("level and item requirements can be added and edited", async () => {
   });
 });
 
-test("task subtasks can be added and toggled without changing Forien task data", async () => {
-  const currentQuest = createQuest("quest-current", {
-    tasks: [{ uuidv4: "task-a", name: "Main task", completed: false, failed: false }]
-  });
-  const service = new RebreyaQuestLogService({
-    idFactory: () => "sub-a",
-    getFqlApi: () => ({ DB: { getQuest: () => currentQuest } })
-  });
+test("task subtasks are not exposed by the quest log service", async () => {
+  const service = new RebreyaQuestLogService();
 
-  const subtask = await service.addTaskSubtask("quest-current", "task-a", {
-    title: "Find the key"
-  });
-  assert.deepEqual(subtask, {
-    id: "sub-a",
-    title: "Find the key",
-    completed: false,
-    failed: false
-  });
-
-  const completed = await service.updateTaskSubtask("quest-current", "task-a", "sub-a", {
-    completed: true
-  });
-  assert.equal(completed.completed, true);
-  assert.equal(completed.failed, false);
-
-  const failed = await service.updateTaskSubtask("quest-current", "task-a", "sub-a", {
-    failed: true
-  });
-  assert.equal(failed.completed, false);
-  assert.equal(failed.failed, true);
-  assert.deepEqual(currentQuest.tasks, [{ uuidv4: "task-a", name: "Main task", completed: false, failed: false }]);
+  assert.equal(service.getTaskSubtasks, undefined);
+  assert.equal(service.addTaskSubtask, undefined);
+  assert.equal(service.updateTaskSubtask, undefined);
+  assert.equal(service.removeTaskSubtask, undefined);
 });
 
 test("Forien tasks can be marked failed directly", async () => {

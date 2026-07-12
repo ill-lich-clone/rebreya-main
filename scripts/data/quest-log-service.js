@@ -387,41 +387,6 @@ function normalizeUnlockReward(value = {}) {
   };
 }
 
-function normalizeTaskSubtask(value = {}) {
-  const source = asObject(value);
-  const id = cleanId(source.id);
-  const title = cleanText(source.title);
-  if (!id || !title) {
-    return null;
-  }
-
-  const failed = source.failed === true;
-  return {
-    id,
-    title,
-    completed: failed ? false : source.completed === true,
-    failed
-  };
-}
-
-function normalizeTaskSubtasksById(value = {}) {
-  const subtasksById = {};
-
-  for (const [rawTaskId, rawSubtasks] of Object.entries(asObject(value))) {
-    const taskId = cleanId(rawTaskId);
-    if (!taskId || !isSafeObjectKey(taskId)) {
-      continue;
-    }
-
-    const subtasks = asArray(rawSubtasks).map(normalizeTaskSubtask).filter(Boolean);
-    if (subtasks.length > 0) {
-      subtasksById[taskId] = subtasks;
-    }
-  }
-
-  return subtasksById;
-}
-
 function getQuestTask(quest, taskId) {
   const id = cleanId(taskId);
   if (!id) {
@@ -486,8 +451,7 @@ export function normalizeQuestMetadata(value = {}) {
     version: 1,
     groupActorIds: uniqueCleanIds(source.groupActorIds),
     requirements: asArray(source.requirements).map(normalizeRequirement).filter(Boolean),
-    unlockRewards: asArray(source.unlockRewards).map(normalizeUnlockReward).filter(Boolean),
-    taskSubtasksById: normalizeTaskSubtasksById(source.taskSubtasksById)
+    unlockRewards: asArray(source.unlockRewards).map(normalizeUnlockReward).filter(Boolean)
   };
 }
 
@@ -892,103 +856,6 @@ export class RebreyaQuestLogService {
     metadata.unlockRewards = metadata.unlockRewards.filter((reward) => reward.requirementId !== id || reward.targetQuestId !== quest.id);
     await this.setQuestMetadata(quest, metadata);
     return requirement;
-  }
-
-  getTaskSubtasks(questId, taskId) {
-    const quest = this.getQuest(questId);
-    const task = getQuestTask(quest, taskId);
-    if (!task) {
-      throw new Error("Quest task was not found.");
-    }
-
-    const metadata = this.getQuestMetadata(quest);
-    return asArray(metadata.taskSubtasksById[task.uuidv4 ?? cleanId(taskId)]).map((subtask) => ({ ...subtask }));
-  }
-
-  async addTaskSubtask(questId, taskId, data = {}) {
-    const quest = this.getQuest(questId);
-    const task = getQuestTask(quest, taskId);
-    if (!task) {
-      throw new Error("Quest task was not found.");
-    }
-
-    const subtask = normalizeTaskSubtask({
-      id: this.idFactory("subtask"),
-      title: data.title,
-      completed: data.completed,
-      failed: data.failed
-    });
-    if (!subtask) {
-      throw new Error("Quest subtask data is incomplete.");
-    }
-
-    const metadata = this.getQuestMetadata(quest);
-    const normalizedTaskId = task.uuidv4 ?? cleanId(taskId);
-    metadata.taskSubtasksById[normalizedTaskId] ??= [];
-    metadata.taskSubtasksById[normalizedTaskId].push(subtask);
-    await this.setQuestMetadata(quest, metadata);
-    return subtask;
-  }
-
-  async updateTaskSubtask(questId, taskId, subtaskId, data = {}) {
-    const quest = this.getQuest(questId);
-    const task = getQuestTask(quest, taskId);
-    if (!task) {
-      throw new Error("Quest task was not found.");
-    }
-
-    const metadata = this.getQuestMetadata(quest);
-    const normalizedTaskId = task.uuidv4 ?? cleanId(taskId);
-    const subtasks = asArray(metadata.taskSubtasksById[normalizedTaskId]);
-    const id = cleanId(subtaskId);
-    const index = subtasks.findIndex((subtask) => subtask.id === id);
-    if (index === -1) {
-      throw new Error("Quest subtask was not found.");
-    }
-
-    const current = subtasks[index];
-    const subtask = normalizeTaskSubtask({
-      id,
-      title: data.title ?? current.title,
-      completed: data.failed === true ? false : data.completed ?? current.completed,
-      failed: data.failed ?? (data.completed === true ? false : current.failed)
-    });
-    if (!subtask) {
-      throw new Error("Quest subtask data is incomplete.");
-    }
-
-    metadata.taskSubtasksById[normalizedTaskId] = [
-      ...subtasks.slice(0, index),
-      subtask,
-      ...subtasks.slice(index + 1)
-    ];
-    await this.setQuestMetadata(quest, metadata);
-    return subtask;
-  }
-
-  async removeTaskSubtask(questId, taskId, subtaskId) {
-    const quest = this.getQuest(questId);
-    const task = getQuestTask(quest, taskId);
-    if (!task) {
-      throw new Error("Quest task was not found.");
-    }
-
-    const metadata = this.getQuestMetadata(quest);
-    const normalizedTaskId = task.uuidv4 ?? cleanId(taskId);
-    const subtasks = asArray(metadata.taskSubtasksById[normalizedTaskId]);
-    const id = cleanId(subtaskId);
-    const subtask = subtasks.find((entry) => entry.id === id);
-    if (!subtask) {
-      throw new Error("Quest subtask was not found.");
-    }
-
-    metadata.taskSubtasksById[normalizedTaskId] = subtasks.filter((entry) => entry.id !== id);
-    if (metadata.taskSubtasksById[normalizedTaskId].length === 0) {
-      delete metadata.taskSubtasksById[normalizedTaskId];
-    }
-
-    await this.setQuestMetadata(quest, metadata);
-    return subtask;
   }
 
   async markTaskFailed(questId, taskId) {

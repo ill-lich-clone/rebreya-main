@@ -309,31 +309,6 @@ function escapeCss(value) {
     ?? String(value ?? "").replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
 
-async function promptText({ title, label, value = "" } = {}) {
-  const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2 ?? globalThis.DialogV2 ?? null;
-  if (typeof DialogV2?.wait === "function") {
-    return DialogV2.wait({
-      window: { title },
-      content: `<label>${escapeHtml(label)} <input type="text" name="value" value="${escapeHtml(value)}"></label>`,
-      buttons: [
-        {
-          action: "confirm",
-          label: "Сохранить",
-          default: true,
-          callback: (_event, button) => getInputValue(button.form, "value")
-        },
-        {
-          action: "cancel",
-          label: "Отмена",
-          callback: () => null
-        }
-      ]
-    });
-  }
-
-  return globalThis.window?.prompt?.(label, value) ?? "";
-}
-
 function renderQuestActivityField(field) {
   const tag = field.type === "textarea"
     ? `<textarea name="${escapeHtml(field.name)}" rows="${Number(field.rows) || 4}">${escapeHtml(field.value ?? "")}</textarea>`
@@ -800,31 +775,6 @@ function openQuestActivityEditor(kind, activityId, moduleApi, logApp, groupActor
   return editor;
 }
 
-function getTaskSubtaskIcon(subtask) {
-  if (subtask.failed) {
-    return "fa-times";
-  }
-
-  return subtask.completed ? "fa-check" : "fa-square";
-}
-
-function getTaskSubtaskClass(subtask) {
-  if (subtask.failed) {
-    return "is-failed";
-  }
-
-  return subtask.completed ? "is-completed" : "";
-}
-
-function getTaskInheritance(row) {
-  const toggle = row?.querySelector?.(".toggleState");
-  return {
-    hidden: Boolean(row?.classList?.contains("task-hidden") || row?.querySelector?.(".toggleHidden.fa-eye-slash")),
-    completed: Boolean(toggle?.classList?.contains("fa-check-square") || toggle?.classList?.contains("fa-check")),
-    failed: Boolean(toggle?.classList?.contains("fa-times") || toggle?.classList?.contains("rm-fql-task-failed"))
-  };
-}
-
 function getApplicationInstances(value) {
   if (!value) {
     return [];
@@ -946,121 +896,20 @@ function syncRequirementTypeFields(scope) {
   });
 }
 
-function renderSubtasksForTask(taskId, subtasks = [], inheritance = {}) {
-  if (!subtasks.length) {
-    return "";
-  }
-
-  const inheritedClasses = [
-    inheritance.hidden ? "task-hidden is-parent-hidden" : "",
-    inheritance.completed ? "is-parent-completed" : "",
-    inheritance.failed ? "is-parent-failed" : ""
-  ].filter(Boolean).join(" ");
-
-  return subtasks.map((subtask) => `
-    <li class="rm-fql-subtask-row ${getTaskSubtaskClass(subtask)} ${inheritedClasses}" data-parent-task-id="${escapeHtml(taskId)}" data-subtask-id="${escapeHtml(subtask.id)}">
-      <i class="fas ${getTaskSubtaskIcon(subtask)} rm-fql-subtask__state" data-rm-fql-task-action="toggle-subtask" data-subtask-id="${escapeHtml(subtask.id)}" title="ЛКМ: выполнить, ПКМ: провалить"></i>
-      <div class="rm-fql-subtask__body">
-        <p class="rm-fql-subtask__title">${escapeHtml(subtask.title)}</p>
-      </div>
-      <div class="rm-fql-subtask__actions">
-        <i class="fas fa-pen rm-fql-subtask__action" data-rm-fql-task-action="edit-subtask" data-subtask-id="${escapeHtml(subtask.id)}" title="Редактировать"></i>
-        <i class="fas fa-trash rm-fql-subtask__action rm-fql-subtask__action--danger" data-rm-fql-task-action="remove-subtask" data-subtask-id="${escapeHtml(subtask.id)}" title="Удалить"></i>
-      </div>
-    </li>
-  `).join("");
-}
-
 function getTaskRow(element) {
   return element?.closest?.("li.task[data-uuidv4]") ?? null;
-}
-
-function getTaskContextFromControl(control) {
-  const subtaskRow = control?.closest?.(".rm-fql-subtask-row[data-parent-task-id]");
-  if (subtaskRow) {
-    return {
-      row: subtaskRow,
-      subtaskRow,
-      taskId: subtaskRow.dataset.parentTaskId ?? ""
-    };
-  }
-
-  const row = getTaskRow(control);
-  return {
-    row,
-    subtaskRow: null,
-    taskId: row?.dataset?.uuidv4 ?? ""
-  };
 }
 
 function getRumorEntryRow(element) {
   return element?.closest?.("li[data-rumor-entry-id]") ?? null;
 }
 
-async function handleTaskEnhancementClick(event, app, moduleApi) {
-  const control = event.target.closest("[data-rm-fql-task-action]");
-  if (!control) {
-    return;
-  }
-
-  const quest = getQuestFromApp(app);
-  const service = moduleApi?.questLogService;
-  const taskContext = getTaskContextFromControl(control);
-  if (!quest?.id || !service || !taskContext.taskId) {
-    return;
-  }
-
-  const action = control.dataset.rmFqlTaskAction;
-  const taskId = taskContext.taskId;
-  event.preventDefault();
-  event.stopPropagation();
-  event.stopImmediatePropagation();
-
-  try {
-    if (action === "add-subtask") {
-      const title = String(await promptText({ title: "Новая подзадача", label: "Подзадача" }) ?? "").trim();
-      if (title) {
-        await service.addTaskSubtask(quest.id, taskId, { title });
-      }
-    }
-    else if (action === "toggle-subtask") {
-      const subtaskId = control.dataset.subtaskId;
-      const failed = control.classList.contains("fa-times");
-      const completed = control.classList.contains("fa-check");
-      await service.updateTaskSubtask(quest.id, taskId, subtaskId, {
-        completed: failed || completed ? false : true,
-        failed: false
-      });
-    }
-    else if (action === "edit-subtask") {
-      const subtaskId = control.dataset.subtaskId;
-      const currentTitle = taskContext.subtaskRow?.querySelector(".rm-fql-subtask__title")?.textContent
-        ?? taskContext.row?.querySelector(`[data-subtask-id="${escapeCss(subtaskId)}"] .rm-fql-subtask__title`)?.textContent
-        ?? "";
-      const title = String(await promptText({ title: "Редактировать подзадачу", label: "Подзадача", value: currentTitle }) ?? "").trim();
-      if (title) {
-        await service.updateTaskSubtask(quest.id, taskId, subtaskId, { title });
-      }
-    }
-    else if (action === "remove-subtask") {
-      await service.removeTaskSubtask(quest.id, taskId, control.dataset.subtaskId);
-    }
-
-    await refreshQuestPreview(app, moduleApi);
-  }
-  catch (error) {
-    notifyError(error, "Forien Quest Log task enhancement failed.");
-    await refreshQuestPreview(app, moduleApi);
-  }
-}
-
 async function handleTaskEnhancementContextMenu(event, app, moduleApi) {
   const quest = getQuestFromApp(app);
   const service = moduleApi?.questLogService;
-  const subtaskControl = event.target.closest("[data-rm-fql-task-action='toggle-subtask']");
-  const taskControl = subtaskControl ? null : event.target.closest(".toggleState");
-  const taskContext = getTaskContextFromControl(subtaskControl ?? taskControl);
-  if (!quest?.id || !service || !taskContext.taskId || (!subtaskControl && !taskControl)) {
+  const taskControl = event.target.closest(".toggleState");
+  const row = getTaskRow(taskControl);
+  if (!quest?.id || !service || !row?.dataset.uuidv4 || !taskControl) {
     return;
   }
 
@@ -1069,16 +918,7 @@ async function handleTaskEnhancementContextMenu(event, app, moduleApi) {
   event.stopImmediatePropagation();
 
   try {
-    if (subtaskControl) {
-      await service.updateTaskSubtask(quest.id, taskContext.taskId, subtaskControl.dataset.subtaskId, {
-        completed: false,
-        failed: true
-      });
-    }
-    else {
-      await service.markTaskFailed(quest.id, taskContext.taskId);
-    }
-
+    await service.markTaskFailed(quest.id, row.dataset.uuidv4);
     await refreshQuestPreview(app, moduleApi);
   }
   catch (error) {
@@ -1094,43 +934,16 @@ function injectQuestTaskEnhancements(app, element, moduleApi) {
     return;
   }
 
-  const metadata = service.getQuestMetadata(quest);
   const details = element.querySelector(".tab.details") ?? element;
-  details.querySelectorAll(".rm-fql-subtask-row, .rm-fql-task-add-subtask").forEach((node) => node.remove());
 
   for (const row of details.querySelectorAll(".quest-tasks li.task[data-uuidv4]")) {
-    if (row.classList.contains("rm-fql-subtask-row")) {
-      continue;
-    }
-
-    const taskId = row.dataset.uuidv4;
     const toggle = row.querySelector(".toggleState");
     if (toggle?.classList.contains("fa-minus-square")) {
       toggle.classList.remove("fa-minus-square");
       toggle.classList.add("fa-times", "rm-fql-task-failed");
     }
-
-    const actions = row.querySelector(".actions.tasks");
-    if (actions) {
-      const spacer = actions.querySelector(".spacer");
-      const button = globalThis.document?.createElement?.("i");
-      if (button) {
-        button.className = "rm-fql-task-add-subtask fas fa-tasks";
-        button.dataset.rmFqlTaskAction = "add-subtask";
-        button.title = "Добавить подзадачу";
-        actions.insertBefore(button, spacer ?? actions.firstChild);
-      }
-    }
-
-    const renderedSubtasks = renderSubtasksForTask(taskId, metadata.taskSubtasksById[taskId] ?? [], getTaskInheritance(row));
-    if (renderedSubtasks) {
-      row.insertAdjacentHTML("afterend", renderedSubtasks);
-    }
   }
 
-  details.addEventListener("click", (event) => {
-    void handleTaskEnhancementClick(event, app, moduleApi);
-  }, true);
   details.addEventListener("contextmenu", (event) => {
     void handleTaskEnhancementContextMenu(event, app, moduleApi);
   }, true);
