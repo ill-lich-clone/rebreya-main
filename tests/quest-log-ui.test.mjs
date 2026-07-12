@@ -65,7 +65,14 @@ test("Forien quest integration wires subtasks, right-click task failure, and act
   assert.match(source, /rememberQuestLogTab/u);
   assert.match(source, /roll-rumor-table/u);
   assert.match(source, /toggle-rumor-entry-visibility/u);
+  assert.match(source, /function getRumorEntryRow[\s\S]+li\[data-rumor-entry-id\]/u);
+  assert.match(source, /const row = getRumorEntryRow\(button\)/u);
   assert.match(source, /rm-fql-subtask-row/u);
+  assert.match(source, /getTaskInheritance/u);
+  assert.match(source, /is-parent-hidden/u);
+  assert.match(source, /is-parent-completed/u);
+  assert.match(source, /is-parent-failed/u);
+  assert.match(source, /callback:\s*\(\)\s*=>\s*null/u);
   assert.match(source, /insertAdjacentHTML\("afterend"/u);
   assert.match(resolveRollTableSource, /try\s*\{[\s\S]*fromUuid[\s\S]*catch/u);
   assert.match(logTemplate, /modules\/forien-quest-log\/templates\/partials\/quest-log\/tab\.html/u);
@@ -94,7 +101,7 @@ test("Forien quest integration wires subtasks, right-click task failure, and act
   assert.doesNotMatch(template, /name="rm-fql-rumor-entry"/u);
   assert.match(css, /\.forien-quest-log\s+\.rm-fql-log-panel/u);
   assert.match(css, /\.forien-quest-preview\s+\.quest-tasks\s+ul\s+li\.rm-fql-subtask-row/u);
-  assert.match(css, /margin-left:\s*32px/u);
+  assert.match(css, /margin-left:\s*56px/u);
   assert.match(manifest, /styles\/quest-log-enhancements\.css/u);
 });
 

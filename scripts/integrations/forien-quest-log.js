@@ -324,7 +324,8 @@ async function promptText({ title, label, value = "" } = {}) {
         },
         {
           action: "cancel",
-          label: "Отмена"
+          label: "Отмена",
+          callback: () => null
         }
       ]
     });
@@ -565,7 +566,7 @@ function getRebreyaRumorEditorClass() {
           this.render(true, { focus: false });
         }
         else if (action === "save-rumor-entry") {
-          const row = button.closest("[data-rumor-entry-id]");
+          const row = getRumorEntryRow(button);
           const text = getInputValue(row, "rm-fql-rumor-entry-text");
           if (!hasRequiredText({ text }, "text", "текст слуха")) {
             return;
@@ -814,6 +815,15 @@ function getTaskSubtaskClass(subtask) {
   return subtask.completed ? "is-completed" : "";
 }
 
+function getTaskInheritance(row) {
+  const toggle = row?.querySelector?.(".toggleState");
+  return {
+    hidden: Boolean(row?.classList?.contains("task-hidden") || row?.querySelector?.(".toggleHidden.fa-eye-slash")),
+    completed: Boolean(toggle?.classList?.contains("fa-check-square") || toggle?.classList?.contains("fa-check")),
+    failed: Boolean(toggle?.classList?.contains("fa-times") || toggle?.classList?.contains("rm-fql-task-failed"))
+  };
+}
+
 function getApplicationInstances(value) {
   if (!value) {
     return [];
@@ -935,13 +945,19 @@ function syncRequirementTypeFields(scope) {
   });
 }
 
-function renderSubtasksForTask(taskId, subtasks = []) {
+function renderSubtasksForTask(taskId, subtasks = [], inheritance = {}) {
   if (!subtasks.length) {
     return "";
   }
 
+  const inheritedClasses = [
+    inheritance.hidden ? "task-hidden is-parent-hidden" : "",
+    inheritance.completed ? "is-parent-completed" : "",
+    inheritance.failed ? "is-parent-failed" : ""
+  ].filter(Boolean).join(" ");
+
   return subtasks.map((subtask) => `
-    <li class="task rm-fql-subtask-row ${getTaskSubtaskClass(subtask)}" data-uuidv4="${escapeHtml(taskId)}" data-parent-task-id="${escapeHtml(taskId)}" data-subtask-id="${escapeHtml(subtask.id)}">
+    <li class="task rm-fql-subtask-row ${getTaskSubtaskClass(subtask)} ${inheritedClasses}" data-uuidv4="${escapeHtml(taskId)}" data-parent-task-id="${escapeHtml(taskId)}" data-subtask-id="${escapeHtml(subtask.id)}">
       <i class="toggleState fas ${getTaskSubtaskIcon(subtask)} rm-fql-subtask__state" data-rm-fql-task-action="toggle-subtask" data-subtask-id="${escapeHtml(subtask.id)}" title="ЛКМ: выполнить, ПКМ: провалить"></i>
       <div class="editable-container">
         <p class="task-name rm-fql-subtask__title">${escapeHtml(subtask.title)}</p>
@@ -958,6 +974,10 @@ function renderSubtasksForTask(taskId, subtasks = []) {
 
 function getTaskRow(element) {
   return element?.closest?.("li.task[data-uuidv4]") ?? null;
+}
+
+function getRumorEntryRow(element) {
+  return element?.closest?.("li[data-rumor-entry-id]") ?? null;
 }
 
 async function handleTaskEnhancementClick(event, app, moduleApi) {
@@ -1081,7 +1101,7 @@ function injectQuestTaskEnhancements(app, element, moduleApi) {
       }
     }
 
-    const renderedSubtasks = renderSubtasksForTask(taskId, metadata.taskSubtasksById[taskId] ?? []);
+    const renderedSubtasks = renderSubtasksForTask(taskId, metadata.taskSubtasksById[taskId] ?? [], getTaskInheritance(row));
     if (renderedSubtasks) {
       row.insertAdjacentHTML("afterend", renderedSubtasks);
     }

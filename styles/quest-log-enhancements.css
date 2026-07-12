@@ -4,7 +4,8 @@
 }
 
 .forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row {
-  margin-left: 32px;
+  margin-left: 56px;
+  width: calc(100% - 56px);
   min-height: 25px;
   background: rgb(255 255 255 / 0.2);
   border-left: 2px solid rgb(99 68 35 / 0.32);
@@ -29,6 +30,19 @@
 .forien-quest-preview .rm-fql-subtask-row.is-failed .rm-fql-subtask__state,
 .forien-quest-preview .toggleState.rm-fql-task-failed {
   color: #b92323;
+}
+
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row.is-parent-hidden {
+  opacity: 0.54;
+}
+
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row.is-parent-completed,
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row.is-parent-failed {
+  background: rgb(255 255 255 / 0.14);
+}
+
+.forien-quest-preview .quest-tasks ul li.rm-fql-subtask-row.is-parent-failed {
+  border-left-color: rgb(185 35 35 / 0.55);
 }
 
 .forien-quest-log .rm-fql-log-empty,
