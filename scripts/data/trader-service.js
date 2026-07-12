@@ -2334,7 +2334,8 @@ export class TraderService {
       });
     }
 
-    const partyInventoryActor = actorId
+    const skipPartyInventoryLookup = !persistState && Boolean(actorId);
+    const partyInventoryActor = skipPartyInventoryLookup
       ? null
       : await this.moduleApi.inventoryService?.getInventoryActor?.({
         create: persistState && game.user?.isGM === true

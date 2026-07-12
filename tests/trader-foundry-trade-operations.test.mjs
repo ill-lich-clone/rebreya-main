@@ -212,8 +212,11 @@ function createModuleApi() {
   };
 }
 
-async function createRealPreparationFixture() {
+async function createRealPreparationFixture({ withPartyActor = false } = {}) {
   const actor = new FakeActor({ id: "actor-1", copper: 1_000 });
+  const partyActor = withPartyActor
+    ? new FakeActor({ id: "party-inventory", copper: 500 })
+    : null;
   const saleItem = actor.addItem({
     name: "Arrows",
     type: "consumable",
@@ -268,7 +271,8 @@ async function createRealPreparationFixture() {
       return mutator(state);
     }
   };
-  const restore = installFoundry({ actors: [actor], stateRepository: repository });
+  const actors = [actor, partyActor].filter(Boolean);
+  const restore = installFoundry({ actors, stateRepository: repository });
   const moduleApi = {
     getModel: async () => model,
     getCitySnapshot: (cityId) => cityId === citySnapshot.id ? citySnapshot : null,
@@ -277,7 +281,7 @@ async function createRealPreparationFixture() {
     inventoryService: {
       async getInventoryActor(options) {
         counters.inventoryCalls.push(clone(options));
-        return null;
+        return partyActor;
       }
     },
     globalEventsService: {
@@ -306,8 +310,10 @@ async function createRealPreparationFixture() {
     actor,
     counters,
     operations: service.createFoundryTradeOperations(),
+    partyActor,
     restore,
     saleItem,
+    service,
     state,
     traderId: "city-1::shop-armory"
   };
@@ -716,6 +722,28 @@ test("sale preparation fails on stale trader state without writes or party Actor
     );
     assert.equal(fixture.counters.stateMutations, 0);
     assert.deepEqual(fixture.counters.inventoryCalls, []);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("default explicit-customer snapshot preserves party inventory identity", async () => {
+  const fixture = await createRealPreparationFixture({ withPartyActor: true });
+
+  try {
+    const snapshot = await fixture.service.getTraderSnapshot("city-1", "shop-armory", {
+      actorId: fixture.actor.id
+    });
+
+    assert.deepEqual(fixture.counters.inventoryCalls, [{ create: true }]);
+    assert.equal(snapshot.customer.id, fixture.actor.id);
+    assert.equal(snapshot.partyInventoryActorId, fixture.partyActor.id);
+    const partyOption = snapshot.customerOptions.find((option) => (
+      option.value === fixture.partyActor.id
+    ));
+    assert.ok(partyOption);
+    assert.match(partyOption.label, /партийный склад/u);
   }
   finally {
     fixture.restore();
