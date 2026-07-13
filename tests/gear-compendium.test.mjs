@@ -699,6 +699,15 @@ test("primary gear compendium documents preserve stable ids when created", () =>
   );
 });
 
+test("gear compendium delegates managed lifecycle to the shared diff synchronizer", () => {
+  const source = readFileSync(new URL("../scripts/data/gear-compendium.js", import.meta.url), "utf8");
+
+  assert.match(source, /syncManagedDocuments/u);
+  assert.doesNotMatch(source, /function shouldRebuildPack/u);
+  assert.doesNotMatch(source, /async function deleteManagedDocuments/u);
+  assert.doesNotMatch(source, /async function createManagedDocuments/u);
+});
+
 test("gear signatures include stable document ids so old compendium documents rebuild", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const katana = gear.find((item) => item.id === "katana");
@@ -889,6 +898,7 @@ test("creates contained compendium documents linked to their parent container", 
   assert.equal(docs[0].flags["rebreya-main"].sourceType, "gearContainerContent");
   assert.equal(docs[0].flags["rebreya-main"].containerGearId, "test-pack");
   assert.equal(docs[0].flags["rebreya-main"].containerContentGearId, "svecha");
+  assert.equal(docs[0].flags["rebreya-main"].containerContentId, "test-pack::svecha");
   assert.equal(docs[0].flags["rebreya-main"].gearId, undefined);
 });
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getClassStartingEquipmentConfig } from "../scripts/data/class-starting-equipment.js";
+import { syncFlaggedManagedDocuments } from "../scripts/data/managed-compendium-sync.js";
 
 globalThis.foundry ??= {
   utils: {
@@ -112,6 +113,61 @@ function extractMetamagicOptionSourceText(metamagicBody, optionName, nextOptionN
 function makeUuidMap(definitions) {
   return new Map(definitions.map((definition) => [definition.featureId, `Compendium.world.rebreya-class-features.Item.${definition.documentId ?? definition.identifier}`]));
 }
+
+test("class compendiums delegate managed lifecycle to the shared diff synchronizer", () => {
+  const source = readFileSync(new URL("../scripts/data/classes-compendium.js", import.meta.url), "utf8");
+
+  assert.match(source, /syncFlaggedManagedDocuments/u);
+  assert.doesNotMatch(source, /function shouldRebuildManagedPack/u);
+  assert.doesNotMatch(source, /async function deleteManagedDocuments/u);
+  assert.doesNotMatch(source, /async function createManagedDocuments/u);
+});
+
+test("class feature signature changes update the stable document without pack-wide deletion", async () => {
+  const operations = [];
+  const document = {
+    id: "stableFeatureDoc",
+    getFlag(scope, key) {
+      if (scope !== "rebreya-main") return undefined;
+      if (key === "managed") return true;
+      if (key === "featureId") return "fighter-feature";
+      if (key === "signature") return "oldSignature";
+      return undefined;
+    },
+    async update(patch) {
+      operations.push(["update", patch]);
+    }
+  };
+  const pack = {
+    collection: "world.rebreya-class-features",
+    documentClass: {
+      async createDocuments(data) {
+        operations.push(["create", data]);
+      },
+      async deleteDocuments(ids) {
+        operations.push(["delete", ids]);
+      }
+    }
+  };
+
+  await syncFlaggedManagedDocuments({
+    pack,
+    entries: [{ featureId: "fighter-feature", documentId: "stableFeatureDoc", signature: "newSignature" }],
+    documents: [document],
+    moduleId: "rebreya-main",
+    sourceIdFlag: "featureId",
+    buildData: (entry) => ({
+      _id: entry.documentId,
+      name: "Updated feature",
+      flags: { "rebreya-main": { signature: entry.signature } }
+    })
+  });
+
+  assert.deepEqual(operations, [["update", {
+    name: "Updated feature",
+    flags: { "rebreya-main": { signature: "newSignature" } }
+  }]]);
+});
 
 function makeFeatIndexPack(rows) {
   return {

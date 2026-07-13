@@ -24,6 +24,7 @@ import {
 } from "./fighter-automation.js";
 import { getClassStartingEquipmentConfig } from "./class-starting-equipment.js";
 import { buildSlug } from "./item-classification.js";
+import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
 const DEFAULT_SOURCE_LABEL = "ЗоЗТ";
@@ -3389,18 +3390,6 @@ async function getPackDocuments(pack) {
   return Array.isArray(documents) ? documents : [];
 }
 
-async function deleteManagedDocuments(pack, documents) {
-  const managedIds = documents
-    .filter((document) => document.getFlag(MODULE_ID, "managed"))
-    .map((document) => document.id);
-
-  if (!managedIds.length) {
-    return;
-  }
-
-  await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
-}
-
 async function syncManagedDocumentIcons(pack, documents, resolveIcon) {
   if (typeof resolveIcon !== "function") {
     return;
@@ -3469,53 +3458,11 @@ async function clearPackFolderTree(pack, rootFolderName) {
   }
 }
 
-function shouldRebuildManagedPack(documents, entries, sourceIdFlag) {
-  const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
-  if (managedDocuments.length !== entries.length) {
-    return true;
-  }
-
-  const expectedBySourceId = new Map(entries.map((entry) => [entry[sourceIdFlag], entry]));
-  for (const document of managedDocuments) {
-    const sourceId = cleanString(document.getFlag(MODULE_ID, sourceIdFlag));
-    const expected = expectedBySourceId.get(sourceId);
-    if (!expected) {
-      return true;
-    }
-
-    if (document.getFlag(MODULE_ID, "signature") !== expected.signature) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 export function getManagedDocumentCreateOptions(pack) {
   return {
     pack: pack.collection,
     keepId: true
   };
-}
-
-async function createManagedDocuments(pack, entries, createData) {
-  if (!entries.length) {
-    return;
-  }
-
-  let folderIdByPath = new Map();
-  try {
-    folderIdByPath = await ensureCompendiumFolders(
-      pack,
-      entries.map((entry) => entry.folderPath)
-    );
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to prepare compendium folders for ${pack.collection}.`, error);
-  }
-
-  const documentsData = entries.map((entry) => createData(entry, folderIdByPath));
-  await Item.implementation.createDocuments(documentsData, getManagedDocumentCreateOptions(pack));
 }
 
 function buildTraitAdvancement({
@@ -5146,44 +5093,38 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
   }));
 
   const documents = await getPackDocuments(pack);
-  const comparisonFeatureContext = {
+  const stableFeatureContext = {
     ...context,
     featureDefinitions,
-    featureUuidById: buildFeatureUuidMap(featureDefinitions, pack.collection, documents)
+    featureUuidById: buildFeatureUuidMap(featureDefinitions, pack.collection)
   };
   const features = featureDefinitions.map((feature) => ({
     ...feature,
-    signature: buildFeatureSignature(feature, comparisonFeatureContext)
+    signature: buildFeatureSignature(feature, stableFeatureContext)
   }));
-  if (shouldRebuildManagedPack(documents, features, "featureId")) {
-    const creationFeatureContext = {
-      ...context,
-      featureDefinitions,
-      featureUuidById: buildFeatureUuidMap(featureDefinitions, pack.collection)
-    };
-    const creationFeatures = featureDefinitions.map((feature) => ({
-      ...feature,
-      signature: buildFeatureSignature(feature, creationFeatureContext)
-    }));
 
-    await deleteManagedDocuments(pack, documents);
-    for (const legacyRoot of LEGACY_CLASS_FEATURE_ROOT_FOLDERS) {
-      await clearPackFolderTree(pack, legacyRoot);
-    }
-    const rootFolders = unique([
-      CLASS_FEATURE_ROOT_FOLDER,
-      FIGHTER_CLASS_FEATURE_ROOT_FOLDER,
-      ...(Array.isArray(context.rootFolders) ? context.rootFolders : [])
-    ]);
-    for (const rootFolder of rootFolders) {
-      await clearPackFolderTree(pack, rootFolder);
-    }
-    await createManagedDocuments(
-      pack,
-      creationFeatures,
-      (entry, folderIdByPath) => createFeatureEntryData(entry, folderIdByPath, context.iconLookup, creationFeatureContext)
-    );
+  for (const legacyRoot of LEGACY_CLASS_FEATURE_ROOT_FOLDERS) {
+    await clearPackFolderTree(pack, legacyRoot);
   }
+  await syncFlaggedManagedDocuments({
+    pack,
+    entries: features,
+    documents,
+    moduleId: MODULE_ID,
+    sourceIdFlag: "featureId",
+    prepareFolders: async (entries) => {
+      try {
+        return await ensureCompendiumFolders(pack, entries.map((entry) => entry.folderPath));
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to prepare compendium folders for ${pack.collection}.`, error);
+        return new Map();
+      }
+    },
+    buildData: (entry, folderIdByPath) => (
+      createFeatureEntryData(entry, folderIdByPath, context.iconLookup, stableFeatureContext)
+    )
+  });
 
   const activePack = game.packs.get(CLASS_FEATURES_PACK_ID) ?? pack;
   const featureDocuments = await getPackDocuments(activePack);
@@ -5244,23 +5185,29 @@ async function syncSubclassesPack(normalizedDataList, context) {
   }
 
   const documents = await getPackDocuments(pack);
-  const entriesForComparison = subclassEntries.map((entry) => ({
-    subclassId: entry.subclass.subclassId,
-    signature: entry.signature
-  }));
-
-  if (shouldRebuildManagedPack(documents, entriesForComparison, "subclassId")) {
-    await deleteManagedDocuments(pack, documents);
-    for (const legacyRoot of LEGACY_SUBCLASS_ROOT_FOLDERS) {
-      await clearPackFolderTree(pack, legacyRoot);
-    }
-    await clearPackFolderTree(pack, SUBCLASS_ROOT_FOLDER);
-    await createManagedDocuments(
-      pack,
-      subclassEntries,
-      (entry, folderIdByPath) => createSubclassEntryData(entry, folderIdByPath, context.iconLookup)
-    );
+  for (const legacyRoot of LEGACY_SUBCLASS_ROOT_FOLDERS) {
+    await clearPackFolderTree(pack, legacyRoot);
   }
+  await syncFlaggedManagedDocuments({
+    pack,
+    entries: subclassEntries.map((entry) => ({
+      ...entry,
+      subclassId: entry.subclass.subclassId
+    })),
+    documents,
+    moduleId: MODULE_ID,
+    sourceIdFlag: "subclassId",
+    prepareFolders: async (entries) => {
+      try {
+        return await ensureCompendiumFolders(pack, entries.map((entry) => entry.folderPath));
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to prepare compendium folders for ${pack.collection}.`, error);
+        return new Map();
+      }
+    },
+    buildData: (entry, folderIdByPath) => createSubclassEntryData(entry, folderIdByPath, context.iconLookup)
+  });
 
   const activePack = game.packs.get(SUBCLASSES_PACK_ID) ?? pack;
   const activeDocuments = await getPackDocuments(activePack);
@@ -5307,22 +5254,29 @@ async function syncClassesPack(normalizedDataList, context) {
   }
 
   const documents = await getPackDocuments(pack);
-  const entriesForComparison = classEntries.map((entry) => ({
-    classIdentifier: entry.classData.identifier,
-    signature: entry.signature
-  }));
-  if (shouldRebuildManagedPack(documents, entriesForComparison, "classIdentifier")) {
-    await deleteManagedDocuments(pack, documents);
-    for (const legacyRoot of LEGACY_CLASS_ROOT_FOLDERS) {
-      await clearPackFolderTree(pack, legacyRoot);
-    }
-    await clearPackFolderTree(pack, CLASS_ROOT_FOLDER);
-    await createManagedDocuments(
-      pack,
-      classEntries,
-      (entry, folderIdByPath) => createClassEntryData(entry, folderIdByPath, context.iconLookup)
-    );
+  for (const legacyRoot of LEGACY_CLASS_ROOT_FOLDERS) {
+    await clearPackFolderTree(pack, legacyRoot);
   }
+  await syncFlaggedManagedDocuments({
+    pack,
+    entries: classEntries.map((entry) => ({
+      ...entry,
+      classIdentifier: entry.classData.identifier
+    })),
+    documents,
+    moduleId: MODULE_ID,
+    sourceIdFlag: "classIdentifier",
+    prepareFolders: async (entries) => {
+      try {
+        return await ensureCompendiumFolders(pack, entries.map((entry) => entry.folderPath));
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to prepare compendium folders for ${pack.collection}.`, error);
+        return new Map();
+      }
+    },
+    buildData: (entry, folderIdByPath) => createClassEntryData(entry, folderIdByPath, context.iconLookup)
+  });
 
   const activePack = game.packs.get(CLASSES_PACK_ID) ?? pack;
   const activeDocuments = await getPackDocuments(activePack);

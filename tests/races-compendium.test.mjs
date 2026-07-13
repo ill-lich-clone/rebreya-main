@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildRaceAdvancement,
   buildRaceFlags,
-  findStaleGeneratedDocumentIds,
-  shouldRebuildManagedPack
+  findStaleGeneratedDocumentIds
 } from "../scripts/data/races-compendium.js";
+import { syncFlaggedManagedDocuments } from "../scripts/data/managed-compendium-sync.js";
 
 function makeDocument({
   id,
@@ -49,28 +50,52 @@ function makeDocument({
   };
 }
 
-test("race pack rebuild detects duplicate managed source ids even when counts match", () => {
-  const entries = [
-    { raceId: "гоблины", documentId: "stableGoblins", signature: "goblinSignature" },
-    { raceId: "гномы", documentId: "stableGnomes", signature: "gnomeSignature" }
-  ];
-  const documents = [
-    makeDocument({ id: "oldA", sourceId: "гоблины", signature: "goblinSignature" }),
-    makeDocument({ id: "oldB", sourceId: "гоблины", signature: "goblinSignature" })
-  ];
+test("race compendium delegates managed lifecycle to the shared diff synchronizer", () => {
+  const source = readFileSync(new URL("../scripts/data/races-compendium.js", import.meta.url), "utf8");
 
-  assert.equal(shouldRebuildManagedPack(documents, entries, "raceId"), true);
+  assert.match(source, /syncFlaggedManagedDocuments/u);
+  assert.doesNotMatch(source, /function shouldRebuildManagedPack/u);
+  assert.doesNotMatch(source, /async function deleteManagedDocuments/u);
+  assert.doesNotMatch(source, /async function createManagedDocuments/u);
 });
 
-test("race pack rebuild migrates managed race documents to stable document ids", () => {
-  const entries = [
-    { raceId: "гоблины", documentId: "stableGoblins", signature: "goblinSignature" }
-  ];
-  const documents = [
-    makeDocument({ id: "randomOldId", sourceId: "гоблины", signature: "goblinSignature" })
-  ];
+test("race signature changes update the stable document without pack-wide deletion", async () => {
+  const operations = [];
+  const document = makeDocument({
+    id: "stableGoblins",
+    sourceId: "гоблины",
+    signature: "oldSignature"
+  });
+  document.update = async (patch) => operations.push(["update", patch]);
+  const pack = {
+    collection: "world.rebreya-races",
+    documentClass: {
+      async createDocuments(data) {
+        operations.push(["create", data]);
+      },
+      async deleteDocuments(ids) {
+        operations.push(["delete", ids]);
+      }
+    }
+  };
 
-  assert.equal(shouldRebuildManagedPack(documents, entries, "raceId"), true);
+  await syncFlaggedManagedDocuments({
+    pack,
+    entries: [{ raceId: "гоблины", documentId: "stableGoblins", signature: "newSignature" }],
+    documents: [document],
+    moduleId: "rebreya-main",
+    sourceIdFlag: "raceId",
+    buildData: (entry) => ({
+      _id: entry.documentId,
+      name: "Гоблины",
+      flags: { "rebreya-main": { signature: entry.signature } }
+    })
+  });
+
+  assert.deepEqual(operations, [["update", {
+    name: "Гоблины",
+    flags: { "rebreya-main": { signature: "newSignature" } }
+  }]]);
 });
 
 test("race pack cleanup finds legacy generated duplicates without managed flags", () => {

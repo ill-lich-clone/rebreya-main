@@ -14,6 +14,7 @@ import {
   resolveNamedIcon
 } from "./compendium-utils.js";
 import { buildSlug } from "./item-classification.js";
+import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
 const SOURCE_LABEL = "Расы Тейванкаля V0.1";
@@ -1451,18 +1452,6 @@ async function fetchJson(path, { optional = false } = {}) {
   return response.json();
 }
 
-async function deleteManagedDocuments(pack, documents) {
-  const managedIds = documents
-    .filter((document) => document.getFlag(MODULE_ID, "managed"))
-    .map((document) => document.id);
-
-  if (!managedIds.length) {
-    return;
-  }
-
-  await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
-}
-
 async function syncManagedDocumentIcons(pack, documents, resolveIcon) {
   if (typeof resolveIcon !== "function") {
     return;
@@ -1562,67 +1551,6 @@ async function deleteStaleGeneratedDocuments(pack, documents, entries, sourceIdF
 
   await Item.implementation.deleteDocuments(staleIds, { pack: pack.collection });
   return staleIds;
-}
-
-export function shouldRebuildManagedPack(documents, entries, sourceIdFlag) {
-  const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
-  if (managedDocuments.length !== entries.length) {
-    return true;
-  }
-
-  const normalizedEntries = entries.map((entry) => normalizeSyncEntry(entry, sourceIdFlag));
-  const expectedBySourceId = new Map();
-  for (const entry of normalizedEntries) {
-    if (!entry.sourceId || expectedBySourceId.has(entry.sourceId)) {
-      return true;
-    }
-
-    expectedBySourceId.set(entry.sourceId, entry);
-  }
-
-  const seenSourceIds = new Set();
-  for (const document of managedDocuments) {
-    const sourceId = cleanString(getDocumentFlag(document, sourceIdFlag));
-    if (seenSourceIds.has(sourceId)) {
-      return true;
-    }
-
-    seenSourceIds.add(sourceId);
-    const expected = expectedBySourceId.get(sourceId);
-    if (!expected) {
-      return true;
-    }
-
-    if (expected.documentId && getDocumentId(document) !== expected.documentId) {
-      return true;
-    }
-
-    if (document.getFlag(MODULE_ID, "signature") !== expected.signature) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-async function createManagedDocuments(pack, entries, createData) {
-  if (!entries.length) {
-    return;
-  }
-
-  let folderIdByPath = new Map();
-  try {
-    folderIdByPath = await ensureCompendiumFolders(
-      pack,
-      entries.map((entry) => entry.folderPath)
-    );
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to prepare compendium folders for ${pack.collection}.`, error);
-  }
-
-  const documentsData = entries.map((entry) => createData(entry, folderIdByPath));
-  await Item.implementation.createDocuments(documentsData, { pack: pack.collection });
 }
 
 function buildAdvancementSize(race) {
@@ -2052,14 +1980,23 @@ async function syncRaceFeaturePack(featureDefinitions, context = {}) {
     documents = await getPackDocuments(pack);
   }
 
-  if (shouldRebuildManagedPack(documents, features, "featureId")) {
-    await deleteManagedDocuments(pack, documents);
-    await createManagedDocuments(
-      pack,
-      features,
-      (entry, folderIdByPath) => createFeatureEntryData(entry, folderIdByPath, context.iconLookup)
-    );
-  }
+  await syncFlaggedManagedDocuments({
+    pack,
+    entries: features,
+    documents,
+    moduleId: MODULE_ID,
+    sourceIdFlag: "featureId",
+    prepareFolders: async (entries) => {
+      try {
+        return await ensureCompendiumFolders(pack, entries.map((entry) => entry.folderPath));
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to prepare compendium folders for ${pack.collection}.`, error);
+        return new Map();
+      }
+    },
+    buildData: (entry, folderIdByPath) => createFeatureEntryData(entry, folderIdByPath, context.iconLookup)
+  });
 
   const activePack = game.packs.get(RACE_FEATURES_PACK_ID) ?? pack;
   const featureDocuments = await getPackDocuments(activePack);
@@ -2129,14 +2066,26 @@ async function syncRacesPack(races, context) {
     activeDocuments = await getPackDocuments(pack);
   }
 
-  if (shouldRebuildManagedPack(activeDocuments, entriesForComparison, "raceId")) {
-    await deleteManagedDocuments(pack, activeDocuments);
-    await createManagedDocuments(
-      pack,
-      raceEntries,
-      (entry, folderIdByPath) => createRaceEntryData(entry, folderIdByPath, context.iconLookup)
-    );
-  }
+  await syncFlaggedManagedDocuments({
+    pack,
+    entries: raceEntries.map((entry) => ({
+      ...entry,
+      raceId: entry.race.id
+    })),
+    documents: activeDocuments,
+    moduleId: MODULE_ID,
+    sourceIdFlag: "raceId",
+    prepareFolders: async (entries) => {
+      try {
+        return await ensureCompendiumFolders(pack, entries.map((entry) => entry.folderPath));
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to prepare compendium folders for ${pack.collection}.`, error);
+        return new Map();
+      }
+    },
+    buildData: (entry, folderIdByPath) => createRaceEntryData(entry, folderIdByPath, context.iconLookup)
+  });
 
   const activePack = game.packs.get(RACES_PACK_ID) ?? pack;
   const syncedDocuments = await getPackDocuments(activePack);

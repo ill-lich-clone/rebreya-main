@@ -19,6 +19,7 @@ import {
   normalizeHeroDollSlotGroup
 } from "./item-classification.js";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
+import { syncManagedDocuments } from "./managed-compendium-sync.js";
 
 export { buildGearIconLookup };
 
@@ -122,26 +123,6 @@ function normalizeContainerContents(value) {
 
 function cloneContainerContents(value) {
   return normalizeContainerContents(value).map((entry) => ({ ...entry }));
-}
-
-function collectionValues(collection) {
-  if (!collection) {
-    return [];
-  }
-
-  if (Array.isArray(collection)) {
-    return collection;
-  }
-
-  if (Array.isArray(collection.contents)) {
-    return collection.contents;
-  }
-
-  if (typeof collection.values === "function") {
-    return Array.from(collection.values());
-  }
-
-  return [];
 }
 
 function normalizeContainerCapacity(value) {
@@ -1131,11 +1112,13 @@ export function createDnd5eContainerContentData(containerItem, gearById, contain
       moduleFlags.sourceType = GEAR_CONTAINER_CONTENT_SOURCE_TYPE;
       moduleFlags.containerGearId = cleanString(containerItem?.id);
       moduleFlags.containerContentGearId = entry.gearId;
+      moduleFlags.containerContentId = `${moduleFlags.containerGearId}::${entry.gearId}`;
       moduleFlags.containerContentQuantity = entry.quantity;
       moduleFlags.containerContentResolvedQuantity = data.system.quantity;
       moduleFlags.signature = JSON.stringify({
         templateVersion: GEAR_TEMPLATE_VERSION,
         sourceType: GEAR_CONTAINER_CONTENT_SOURCE_TYPE,
+        containerContentId: moduleFlags.containerContentId,
         containerGearId: moduleFlags.containerGearId,
         containerContentGearId: entry.gearId,
         quantity: entry.quantity,
@@ -1266,84 +1249,6 @@ async function findGearDocument(pack, gearItem) {
   }) ?? primaryDocuments.find((entry) => normalizeMatchText(entry.name) === normalizeMatchText(gearItem.name)) ?? null;
 }
 
-function getExpectedManagedDocumentCount(gear) {
-  const gearById = new Set(gear.map((item) => cleanString(item?.id)).filter(Boolean));
-  const contentCount = gear.reduce((total, item) => (
-    total + normalizeContainerContents(item?.containerContents)
-      .filter((entry) => gearById.has(entry.gearId))
-      .length
-  ), 0);
-  return gear.length + contentCount;
-}
-
-function shouldRebuildPack(gear, documents) {
-  if (getLegacyDuplicateDocumentIds(gear, documents).length) {
-    return true;
-  }
-
-  const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
-  if (managedDocuments.length !== getExpectedManagedDocumentCount(gear)) {
-    return true;
-  }
-
-  const primaryDocuments = managedDocuments
-    .filter((document) => document.getFlag(MODULE_ID, "sourceType") !== GEAR_CONTAINER_CONTENT_SOURCE_TYPE);
-  if (primaryDocuments.length !== gear.length) {
-    return true;
-  }
-
-  const gearById = new Map(gear.map((item) => [item.id, item]));
-  for (const document of primaryDocuments) {
-    const gearId = document.getFlag(MODULE_ID, "gearId");
-    const signature = document.getFlag(MODULE_ID, "signature");
-    const item = gearById.get(gearId);
-    if (!item) {
-      return true;
-    }
-
-    if (signature !== buildGearSignature(item)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function getLegacyDuplicateDocumentIds(gear, documents) {
-  const gearIds = new Set(
-    gear.map((item) => String(item?.id ?? "").trim()).filter(Boolean)
-  );
-  const gearNameKeys = new Set(
-    gear.map((item) => normalizeMatchText(item?.name ?? "")).filter(Boolean)
-  );
-
-  return documents
-    .filter((document) => !document.getFlag(MODULE_ID, "managed"))
-    .filter((document) => {
-      const legacyGearId = String(document.getFlag(MODULE_ID, "gearId") ?? "").trim();
-      if (legacyGearId && gearIds.has(legacyGearId)) {
-        return true;
-      }
-
-      return gearNameKeys.has(normalizeMatchText(document.name));
-    })
-    .map((document) => document.id);
-}
-
-async function deleteManagedDocuments(pack, documents, gear = []) {
-  const managedIds = documents
-    .filter((document) => document.getFlag(MODULE_ID, "managed"))
-    .map((document) => document.id);
-  const legacyDuplicateIds = getLegacyDuplicateDocumentIds(gear, documents);
-  const deleteIds = Array.from(new Set([...managedIds, ...legacyDuplicateIds]));
-
-  if (!deleteIds.length) {
-    return;
-  }
-
-  await Item.implementation.deleteDocuments(deleteIds, { pack: pack.collection });
-}
-
 async function syncManagedDocumentIcons(pack, documents, iconLookup) {
   const updates = [];
   for (const document of Array.isArray(documents) ? documents : []) {
@@ -1380,51 +1285,6 @@ export function getPrimaryGearDocumentCreateOptions(pack) {
   };
 }
 
-async function createManagedDocuments(pack, gear, iconLookup = null) {
-  if (!gear.length) {
-    return;
-  }
-
-  let folderIdByPath = new Map();
-  try {
-    folderIdByPath = await ensureCompendiumFolders(
-      pack,
-      gear.map((item) => buildFolderPath(classifyGearEntry(item)))
-    );
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to prepare compendium folders for gear pack.`, error);
-  }
-
-  const createdDocuments = await Item.implementation.createDocuments(
-    gear.map((item) => createDnd5eItemData(item, folderIdByPath, iconLookup)),
-    getPrimaryGearDocumentCreateOptions(pack)
-  );
-  const createdByGearId = new Map(
-    collectionValues(createdDocuments)
-      .map((document) => [document.getFlag?.(MODULE_ID, "gearId"), document])
-      .filter(([gearId]) => gearId)
-  );
-  const gearById = new Map(gear.map((item) => [item.id, item]));
-  const containedDocumentsData = gear.flatMap((item) => {
-    if (!normalizeContainerContents(item.containerContents).length) {
-      return [];
-    }
-
-    const containerDocumentId = cleanString(createdByGearId.get(item.id)?.id);
-    if (!containerDocumentId) {
-      console.warn(`${MODULE_ID} | Failed to create contents for gear container '${item.id}': missing created container document.`);
-      return [];
-    }
-
-    return createDnd5eContainerContentData(item, gearById, containerDocumentId, folderIdByPath, iconLookup);
-  });
-
-  if (containedDocumentsData.length) {
-    await Item.implementation.createDocuments(containedDocumentsData, { pack: pack.collection });
-  }
-}
-
 export class GearCompendiumService {
   async sync(gear = []) {
     if (!game.user?.isGM || !isDnd5eWorld()) {
@@ -1436,13 +1296,96 @@ export class GearCompendiumService {
     await deduplicateCompendiumFolders(pack, ["Обвес", "Обвесы", "Огнестрельное оружие", "Примитивное", "Продвинутое"]);
     const documents = await getPackDocuments(pack);
     const iconLookup = await buildGearIconLookup({ forceRefresh: true });
-    if (!shouldRebuildPack(safeGear, documents)) {
-      await syncManagedDocumentIcons(pack, documents, iconLookup);
-      return pack;
+    let folderIdByPath = new Map();
+    try {
+      folderIdByPath = await ensureCompendiumFolders(
+        pack,
+        safeGear.map((item) => buildFolderPath(classifyGearEntry(item)))
+      );
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to prepare compendium folders for gear pack.`, error);
     }
 
-    await deleteManagedDocuments(pack, documents, safeGear);
-    await createManagedDocuments(pack, safeGear, iconLookup);
+    const gearById = new Map(safeGear.map((item) => [cleanString(item?.id), item]).filter(([gearId]) => gearId));
+    const gearIdByName = new Map(
+      safeGear
+        .map((item) => [normalizeMatchText(item?.name), cleanString(item?.id)])
+        .filter(([name, gearId]) => name && gearId)
+    );
+    await syncManagedDocuments({
+      pack,
+      entries: safeGear,
+      documents,
+      sourceIdOfEntry: (item) => item?.id,
+      sourceIdOfDocument: (document) => {
+        if (document?.getFlag?.(MODULE_ID, "sourceType") === GEAR_CONTAINER_CONTENT_SOURCE_TYPE) {
+          return "";
+        }
+
+        const gearId = cleanString(document?.getFlag?.(MODULE_ID, "gearId"));
+        if (document?.getFlag?.(MODULE_ID, "managed")) {
+          return gearId || `managed-primary:${cleanString(document?.id ?? document?._id)}`;
+        }
+        if (gearId && gearById.has(gearId)) {
+          return gearId;
+        }
+        return gearIdByName.get(normalizeMatchText(document?.name)) ?? "";
+      },
+      signatureOfEntry: (item) => buildGearSignature(item),
+      signatureOfDocument: (document) => document?.getFlag?.(MODULE_ID, "signature"),
+      documentIdOfEntry: (item) => createStableGearDocumentId(item?.id),
+      createData: (item) => createDnd5eItemData(item, folderIdByPath, iconLookup),
+      updateData: (_document, item) => {
+        const data = createDnd5eItemData(item, folderIdByPath, iconLookup);
+        delete data._id;
+        delete data.id;
+        return data;
+      }
+    });
+
+    const primarySyncedDocuments = await getPackDocuments(pack);
+    const containedEntries = safeGear.flatMap((item) => (
+      createDnd5eContainerContentData(
+        item,
+        gearById,
+        createStableGearDocumentId(item?.id),
+        folderIdByPath,
+        iconLookup
+      ).map((data) => ({
+        sourceId: data.flags?.[MODULE_ID]?.containerContentId,
+        signature: data.flags?.[MODULE_ID]?.signature,
+        data
+      }))
+    ));
+    await syncManagedDocuments({
+      pack,
+      entries: containedEntries,
+      documents: primarySyncedDocuments,
+      sourceIdOfEntry: (entry) => entry.sourceId,
+      sourceIdOfDocument: (document) => {
+        if (document?.getFlag?.(MODULE_ID, "sourceType") !== GEAR_CONTAINER_CONTENT_SOURCE_TYPE) {
+          return "";
+        }
+
+        const explicitId = cleanString(document.getFlag(MODULE_ID, "containerContentId"));
+        if (explicitId) {
+          return explicitId;
+        }
+        const containerGearId = cleanString(document.getFlag(MODULE_ID, "containerGearId"));
+        const contentGearId = cleanString(document.getFlag(MODULE_ID, "containerContentGearId"));
+        return containerGearId && contentGearId
+          ? `${containerGearId}::${contentGearId}`
+          : `managed-content:${cleanString(document?.id ?? document?._id)}`;
+      },
+      signatureOfEntry: (entry) => entry.signature,
+      signatureOfDocument: (document) => document?.getFlag?.(MODULE_ID, "signature"),
+      createData: (entry) => entry.data,
+      updateData: (_document, entry) => entry.data
+    });
+
+    const syncedDocuments = await getPackDocuments(pack);
+    await syncManagedDocumentIcons(pack, syncedDocuments, iconLookup);
 
     return game.packs.get(PACK_ID) ?? pack;
   }

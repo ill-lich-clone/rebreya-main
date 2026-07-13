@@ -22,6 +22,7 @@ export async function syncManagedDocuments({
   sourceIdOfDocument,
   signatureOfEntry,
   signatureOfDocument,
+  documentIdOfEntry = null,
   createData,
   updateData,
   prepareFolders = null
@@ -40,6 +41,7 @@ export async function syncManagedDocuments({
     requireFunction(operation, name);
   }
   if (prepareFolders != null) requireFunction(prepareFolders, "prepareFolders");
+  if (documentIdOfEntry != null) requireFunction(documentIdOfEntry, "documentIdOfEntry");
   const sourceEntries = Array.isArray(entries) ? entries : [];
   const currentDocuments = Array.isArray(documents) ? documents : [];
   const entriesById = new Map();
@@ -55,23 +57,31 @@ export async function syncManagedDocuments({
   for (const document of currentDocuments) {
     const sourceId = cleanId(sourceIdOfDocument(document));
     if (!sourceId) continue;
-    if (documentsById.has(sourceId)) {
-      obsolete.push(document);
-      continue;
-    }
-    documentsById.set(sourceId, document);
+    const matches = documentsById.get(sourceId) ?? [];
+    matches.push(document);
+    documentsById.set(sourceId, matches);
   }
 
   const creates = [];
   const updates = [];
   let unchanged = 0;
   for (const [sourceId, entry] of entriesById) {
-    const document = documentsById.get(sourceId);
+    const candidates = documentsById.get(sourceId) ?? [];
+    const expectedDocumentId = cleanId(documentIdOfEntry?.(entry));
+    const document = expectedDocumentId
+      ? candidates.find((candidate) => documentId(candidate) === expectedDocumentId) ?? candidates[0]
+      : candidates[0];
     if (!document) {
       creates.push(entry);
       continue;
     }
     documentsById.delete(sourceId);
+    obsolete.push(...candidates.filter((candidate) => candidate !== document));
+    if (expectedDocumentId && documentId(document) !== expectedDocumentId) {
+      creates.push(entry);
+      obsolete.push(document);
+      continue;
+    }
     if (String(signatureOfDocument(document) ?? "") === String(signatureOfEntry(entry) ?? "")) {
       unchanged += 1;
     }
@@ -79,7 +89,7 @@ export async function syncManagedDocuments({
       updates.push([document, entry]);
     }
   }
-  obsolete.push(...documentsById.values());
+  obsolete.push(...Array.from(documentsById.values()).flat());
 
   if (prepareFolders) {
     await prepareFolders(sourceEntries);
@@ -116,6 +126,52 @@ export async function syncManagedDocuments({
     updated: updates.length,
     deleted: obsoleteIds.length
   };
+}
+
+export async function syncFlaggedManagedDocuments({
+  pack,
+  entries = [],
+  documents = [],
+  moduleId,
+  sourceIdFlag,
+  buildData,
+  prepareFolders = null,
+  documentIdOfEntry = (entry) => entry?.documentId
+} = {}) {
+  requireFunction(buildData, "buildData");
+  if (prepareFolders != null) requireFunction(prepareFolders, "prepareFolders");
+  const scope = cleanId(moduleId);
+  const flag = cleanId(sourceIdFlag);
+  if (!scope || !flag) {
+    throw new TypeError("moduleId and sourceIdFlag are required");
+  }
+
+  let folderContext;
+  const build = (entry) => buildData(entry, folderContext);
+  return syncManagedDocuments({
+    pack,
+    entries,
+    documents,
+    sourceIdOfEntry: (entry) => entry?.[flag],
+    sourceIdOfDocument: (document) => (
+      document?.getFlag?.(scope, "managed") ? document.getFlag(scope, flag) : ""
+    ),
+    signatureOfEntry: (entry) => entry?.signature,
+    signatureOfDocument: (document) => document?.getFlag?.(scope, "signature"),
+    documentIdOfEntry,
+    prepareFolders: prepareFolders
+      ? async (sourceEntries) => {
+        folderContext = await prepareFolders(sourceEntries);
+      }
+      : null,
+    createData: build,
+    updateData: async (_document, entry) => {
+      const data = await build(entry);
+      delete data?._id;
+      delete data?.id;
+      return data;
+    }
+  });
 }
 
 export async function syncManagedDocumentsOnActiveGm(game, options) {
