@@ -88,6 +88,16 @@ export function registerCombatHooks(moduleApi) {
     Hooks.on("controlToken", applyCurrentEnvironment);
   }
 
+  const advanceSorcererCooldowns = (combat, updateData, updateOptions) => {
+    moduleApi.sorcererAutomationService.handleCombatTurnChange(
+      combat,
+      updateData,
+      updateOptions
+    ).catch((error) => {
+      console.error(`${MODULE_ID} | Failed to update Sorcerer virtual-slot cooldowns.`, error);
+    });
+  };
+
   Hooks.on("combatTurn", (combat, updateData, updateOptions) => {
     if (hasStatusService) {
       moduleApi.combatStatusService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
@@ -117,11 +127,13 @@ export function registerCombatHooks(moduleApi) {
     }
 
     if (hasSorcererService) {
-      moduleApi.sorcererAutomationService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to update Sorcerer virtual-slot cooldowns.`, error);
-      });
+      advanceSorcererCooldowns(combat, updateData, updateOptions);
     }
   });
+
+  if (hasSorcererService) {
+    Hooks.on("combatRound", advanceSorcererCooldowns);
+  }
 
   if (hasAttackService) {
     const repairFirearmActor = (app) => {

@@ -2243,7 +2243,10 @@ export class SorcererAutomationService {
     return true;
   }
 
-  async handleCombatTurnChange(combat, updateData = {}) {
+  async handleCombatTurnChange(combat, updateData = {}, updateOptions = {}) {
+    if (toInteger(updateOptions?.direction, 1) < 0) {
+      return true;
+    }
     const actor = this.#resolveCombatTurnActor(combat, updateData);
     if (!actor) {
       return true;

@@ -1597,6 +1597,55 @@ test("RED: a reaction Shield cast is ready at the start of its owner's next turn
   ), true);
 });
 
+test("combatRound advances a first-in-initiative Sorcerer cooldown", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }), {}, {}, {}
+  );
+  globalThis.Hooks = {
+    on: (name, callback) => handlers.set(name, [...(handlers.get(name) ?? []), callback])
+  };
+  globalThis.game = { user: { id: "user", isGM: true }, messages: new Map() };
+
+  try {
+    const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
+    registerCombatHooks({ sorcererAutomationService: service });
+    const combat = { turns: [{ actor }], combatant: { actor } };
+    handlers.get("combatRound")?.[0](combat, { round: 2, turn: 0 }, { direction: 1 });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "fireball:3": { remaining: 2 }
+    });
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("rewinding combat does not decrement a Sorcerer cooldown", async () => {
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 }), {}, {}, {}
+  );
+
+  await service.handleCombatTurnChange(
+    { turns: [{ actor }], combatant: { actor } },
+    { round: 1, turn: 0 },
+    { direction: -1 }
+  );
+  assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+    "fireball:3": { remaining: 3 }
+  });
+});
+
 test("RED: a cooldown card stores stable metadata and keeps exactly one footer block", async () => {
   const previousGame = globalThis.game;
   const actor = levelActor(5, { includePoints: true });
