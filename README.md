@@ -1,821 +1,348 @@
-﻿# Rebreya Main
+# Rebreya Main
 
-Модуль экономической подсистемы сеттинга Rebreya для Foundry VTT.
+Модуль экономики, партийного состояния и автоматизаций Rebreya для Foundry VTT.
 
-README описывает **актуальную механику из кода модуля**: окна интерфейса, формулы, роли ГМа/игроков, структуру данных и API.
+Этот README — техническая спецификация актуального runtime. Его задача — показать, где уже реализована нужная логика, чтобы следующая правка не создавала второй сервис, второй socket-протокол или ещё один вариант синхронизации компендиума.
 
-## 1. Совместимость
+## Совместимость и точка входа
 
-- Foundry VTT: `v13` (minimum/verified).
-- Основной сценарий: `dnd5e`.
 - Module ID: `rebreya-main`.
-- Точка входа: `scripts/main.js`.
+- Версия: `1.4.93`.
+- Foundry VTT: minimum/verified `13`.
+- Основная система: `dnd5e`.
+- Обязательная зависимость: `statuscounter >= 3.0.4`.
+- Manifest загружает только `scripts/main-1.4.93.js`.
+- `scripts/main-1.4.93.js` — тонкий version forwarder; единственный composition root находится в `scripts/main.js`.
+- Runtime API публикуется как `game.rebreyaMain` и `game.modules.get("rebreya-main")?.api`.
 
-## 2. Что умеет модуль
+В репозитории должна оставаться только текущая версия `scripts/main-<version>.js`. Исторические entrypoint-файлы не являются исходниками и не должны храниться рядом с runtime.
 
-- Загружает и нормализует экономические данные мира (`goods/regions/cities/reference/materials/gear`).
-- Строит экономическую модель: производство, спрос, дефицит/профицит, самообеспечение, маршруты импорта.
-- Отображает окна:
-  - экономика мира;
-  - экономика города;
-  - мировые торговые связи;
-  - карточка отдельной связи;
-  - государства (налоги/пошлины/описания);
-  - глобальные ивенты;
-  - партийный склад, группа, крафт, календарь, простой;
-  - лавки города;
-  - лутген;
-  - справочные карточки.
-- Ведет состояние мира через world-settings (перекрытия связей, политика государств, состояния торговцев, партия/крафт/календарь, ивенты).
-- Синхронизирует world-компендиумы:
-  - `world.rebreya-materials`;
-  - `world.rebreya-gear`;
-  - `world.rebreya-magic-items`;
-  - `world.rebreya-feats`.
-- Расширяет dnd5e-листы персонажа/предметов (вкладки «Кукла героя» и «Простой», дополнительные поля ранга/слотов и типы предметов).
+## Что принадлежит модулю
 
-## 3. Быстрый старт
+- Импорт и нормализация экономических JSON.
+- Расчёт городского производства, спроса, маршрутов, цен, налогов и глобальных событий.
+- Лавки, покупки, продажи, аудит и откат торговых транзакций.
+- Реестр dnd5e-групп, партийный инвентарь, валюты, запасы, энергия, путешествия, календарь, крафт и простой.
+- Лутген и идемпотентная выдача лута из ChatMessage.
+- Управляемые world-компендиумы Rebreya.
+- Расширения листов dnd5e: кукла героя, простой, статусы, удержание предметов, пояс, модификации предметов и дополнительные типы Item.
+- Боевые, классовые, расовые, spell- и feat-автоматизации, перечисленные ниже.
 
-1. Активируйте модуль в мире.
-2. На `ready` модуль загрузит датасет и синхронизирует компендиумы.
-3. Откройте отдельную панель `Ребрея` в инструментах сцены:
-   - `Экономика` (ГМ);
-   - `Инвентарь` (все);
-   - `Календарь` (все);
-   - `Лутген` (ГМ).
-4. В «Экономике» откройте город/связи/государства/ивенты/инвентарь.
+## Жизненный цикл
 
-## 4. Архитектура
+### `init`
 
-- `scripts/data/importer.js`: загрузка JSON из встроенной папки модуля или custom-пути.
-- `scripts/data/normalizer.js`: нормализация и alias-маппинг входных полей.
-- `scripts/engine/economy-engine.js`: расчет модели экономики и маршрутов.
-- `scripts/data/repository.js`: кэш/пересборка модели и сохранение ручных override-данных.
-- `scripts/data/global-events-service.js`: жизненный цикл и модификаторы глобальных ивентов.
-- `scripts/data/trader-service.js` + `scripts/engine/trader-engine.js`: генерация и обслуживание лавок.
-- `scripts/data/inventory-service.js`: партийный склад/группа/монеты/запасы/энергия.
-- `scripts/data/crafting-service.js`: очередь крафта.
-- `scripts/data/calendar-service.js`: календарь и лунные фазы.
-- `scripts/data/downtime-service.js`: недели простоя, заявки игроков и целевые действия мастера.
-- `scripts/data/character-downtime-service.js`: player-facing контекст простоя для вкладки персонажа.
+`scripts/main.js` регистрирует настройки, Handlebars helpers, scene controls, дополнительные dnd5e Item types, статусы, радиальное отображение эффектов и совместимость AC щита/SM Airship.
 
-## 5. Окна и интерфейс
+### `setup`
 
-### 5.1 Экономика мира
+На канале `module.rebreya-main` регистрируется единый socket-dispatcher. Сообщения, пришедшие до создания API, временно ставятся в очередь.
 
-Файл: `scripts/ui/economy-app.js`
+### `ready`
 
-- Сводка по городам и фильтры (поиск, государство, регион, тип, сортировка).
-- Кнопки:
-  - «Восстановить данные» (сброс ручных правок мира);
-  - «Перезагрузить данные»;
-  - переходы к связям, государствам, ивентам, инвентарю.
-- Отдельные блоки:
-  - активные глобальные ивенты;
-  - топ дефицитов/профицитов;
-  - обзор по государствам/регионам.
+1. Патчатся EffectMacro и transform-cleanup.
+2. Создаётся один экземпляр `RebreyaMainModule`.
+3. API публикуется в `game.rebreyaMain` и module API.
+4. Регистрируются Forien Quest Log, combat hooks, Mechanus, SmallTime, feat choices, dnd5e sheets, loot chat, ration conversion, inventory sync и magic item templates.
+5. `initialize()` загружает модель, синхронизирует компендиумы и инициализирует runtime-сервисы.
 
-### 5.2 Экономика города
+Повторную регистрацию hook-ов внутри UI или отдельных сервисов добавлять нельзя. Регистрация принадлежит `main.js`, `scripts/hooks.js`, `scripts/combat/hooks.js` или явно названной integration-функции.
 
-Файл: `scripts/ui/city-app.js`
+## Карта архитектуры
 
-Табы:
-- `Обзор`: паспорт города, активные ивенты, критические дефициты/профициты, ключевые связи.
-- `Товары`: баланс по каждой товарной позиции.
-- `Торговые связи`: импорт/экспорт, переключение активности связи.
-- `Торговля`: список городских лавок.
-- `Debug`: коэффициенты региона, модификаторы, предупреждения импорта.
-
-### 5.3 Мировые торговые связи
-
-Файл: `scripts/ui/trade-routes-app.js`
-
-- Поиск и фильтры по государству/статусу.
-- Сортировки: полезность, доп. цена, имя.
-- На карточке связи:
-  - toggle on/off;
-  - редактирование доп. цены (%);
-  - отображение ивент-источников и риск-заметок.
-
-### 5.4 Карточка торговой связи
-
-Файл: `scripts/ui/trade-route-app.js`
-
-- Паспорт маршрута (источник/цель/тип).
-- Ручные параметры (описание, доп. цена).
-- Глобальная аналитика: что и куда проходит по этой связи.
-
-### 5.5 Государства
-
-Файл: `scripts/ui/states-app.js`
-
-- Редактирование описания государства.
-- Поля политики:
-  - налог государства;
-  - общая пошлина;
-  - двусторонние пошлины по выбранным государствам.
-- Отдельно показываются эффективные значения с учетом ивентов и их дельта.
-
-### 5.6 Глобальные ивенты
-
-Файл: `scripts/ui/global-events-app.js`
-
-- Список ивентов: поиск, фильтр статуса, действия (редактировать, дублировать, включить/выключить, активировать/деактивировать, удалить).
-- Импорт стартовых шаблонов.
-- Редактор в формате **пошагового мастера (5 шагов)**:
-  - шаг 1: что произошло;
-  - шаг 2: где действует (scope);
-  - шаг 3: товары/категории;
-  - шаг 4: эффекты;
-  - шаг 5: даты и продвинутые параметры.
-- Есть быстрое создание (30 сек) и черновики.
-
-### 5.7 Инвентарь группы
-
-Файл: `scripts/ui/inventory-app.js`
-
-Табы:
-- `Инвентарь`: склад, монеты, дроп предметов, разбор на материалы.
-- `Группа`: участники, роли, суточный расход еды/воды, груз, энергия, инструменты.
-- `Крафт`: очередь задач, выбор крафтера, прогресс по дням.
-- `Календарь`: дата, фазы луны, переход дней/недель/месяцев.
-- `Простой`: балансы недель по участникам, выдача недель мастером, заявки игроков, статусы и целевые действия.
-
-Инвентарь и состав группы берутся из текущего dnd5e `Actor` типа `group`. Для ГМа это активная зарегистрированная группа мира; для игрока группа определяется по owned-персонажу в составе зарегистрированной группы. Если контекст не найден, окно показывает предупреждение вместо молчаливой работы со старым складом.
-
-### 5.8 Лавка
-
-Файл: `scripts/ui/trader-app.js`
-
-- Ассортимент лавки (цены, количество, категории).
-- Покупка предметов у лавки выбранным персонажем.
-- Продажа в лавку drag-and-drop из листа персонажа с предпросмотром цены и налога.
-- Редактирование портрета и описания лавочника.
-
-### 5.9 Лутген
-
-Файл: `scripts/ui/lootgen-app.js`
-
-- Параметры генерации: ранги, число строк, бюджет value.
-- Источники: снаряжение, материалы, магические предметы, монеты.
-- Результат можно переносить в партийный склад построчно или целиком.
-- Результат можно отправить в чат: игроки перетаскивают предметы из чат-карточки в лист персонажа, после чего строка лута помечается забранной.
-- Монеты из чат-карточки добавляются отдельной кнопкой в партийный склад.
-- Для ГМа есть шаринг результата в окно-«просмотрщик» через сокет.
-
-### 5.10 Справочная карточка
-
-Файл: `scripts/ui/reference-info-app.js`
-
-- Сводные факты по государству/региону/режиму перемещения.
-- Редактируемое описание (ГМ).
-
-### 5.11 Кукла героя (dnd5e)
-
-Файлы: `scripts/integrations/dnd5e-sheet-extensions.js`, `scripts/data/hero-doll-service.js`
-
-- Добавляет вкладку «Кукла героя» на лист персонажа.
-- Drag-and-drop экипировки по слотам.
-- Поддерживает перенос из партийного склада в инвентарь персонажа и резервирование слотов.
-
-### 5.12 Простой на листе персонажа (dnd5e)
-
-Файлы: `scripts/integrations/dnd5e-sheet-extensions.js`, `scripts/data/character-downtime-service.js`, `templates/character-downtime-tab.hbs`
-
-- Добавляет отдельную вкладку «Простой» на лист персонажа.
-- Показывает баланс недель только текущего персонажа: свободно, в резерве, потрачено.
-- Игрок отправляет заявку прямо из чарника: действие, недели, название, описание.
-- Список заявок на этой вкладке фильтруется по текущему персонажу и показывает статусы, комментарии результата и назначенные целевые действия.
-- Мастерская выдача недель, смена статусов и назначение целевых действий остаются в `Инвентарь -> Простой`.
-
-## 6. Экономическая механика
-
-### 6.1 Базовые метрики
-
-Для каждой товарной строки в городе:
-
-- `balance = production - demand`
-- `deficit = max(0, demand - production)`
-- `surplus = max(0, production - demand)`
-
-Для города/государства/региона:
-
-- `totalProduction = sum(production)`
-- `totalDemand = sum(demand)`
-- `totalDeficit = sum(deficit)`
-- `totalSurplus = sum(surplus)`
-- `selfSufficiencyRate = min(totalProduction / totalDemand, 1)` (если спрос > 0, иначе 1)
-
-### 6.2 Локальная цена и импорт
-
-Локальный коэффициент цены для товара:
-
-- если `localSupply <= demand`: `1`
-- если `localSupply > demand`: `clamp(demand / localSupply, 0.2, 1)`
-
-Для маршрута считается суммарная наценка пути:
-
-- `totalMarkupPercent = sum(stepMarkupPercent + additionalPricePercent по каждому плечу)`
-
-Финальный ценовой модификатор товара в городе:
-
-- средневзвешенная цена локального предложения + импорта;
-- `routePriceModifierPercent = averagePriceMultiplier - 1`;
-- `priceModifierPercent = clamp(routePriceModifierPercent + eventPriceModifierPercent, -0.8, +∞)`.
-
-### 6.3 Торговые связи
-
-- Связь может быть выключена вручную (`CONNECTION_STATES`) или ивентом (`disableRoute`).
-- У связи есть ручная доп. цена (`TRADE_ROUTE_OVERRIDES.additionalPricePercent`).
-- Аналитика связи строится по фактическому использованию в импортных цепочках.
-
-## 7. Лавки и торговля
-
-### 7.1 Формирование лавок
-
-- Число профильных лавок города: `1 + (ранг города * 2)`.
-- Всегда добавляются еще 2 спец-лавки:
-  - лавка материалов;
-  - лавка магических предметов.
-- Ожидаемое число лавок: `profileSlots + 2`.
-
-### 7.2 Бюджет ассортимента по рангу
-
-`TRADER_RANK_VALUE_MAP`:
-
-| Ранг | Бюджет value |
-|---|---:|
-| 1 | 1 000 |
-| 2 | 2 500 |
-| 3 | 5 000 |
-| 4 | 10 000 |
-| 5 | 15 000 |
-| 6 | 25 000 |
-| 7 | 35 000 |
-| 8 | 40 000 |
-| 9 | 75 000 |
-
-### 7.3 Приоритет профильной лавки
-
-- `priorityScore = basePriority + profileModifier - effectiveRarityPenalty`
-- `effectiveRarityPenalty = max(0, rarityPenalty - floor((max(1, cityRank)-1)/3))`
-
-### 7.4 Ограничение инструментов
-
-При генерации ассортимента инструментальные товары ограничены:
-
-- суммарная доля value инструментов <= `20%` бюджета (`TOOL_VALUE_SHARE_LIMIT = 0.2`).
-
-### 7.5 Цены в лавке
-
-Цена позиции рассчитывается через `applyMarketPrice(basePriceGold, modifierPercent, baseWeight)`:
-
-- `rawPrice = basePriceGold * (1 + modifierPercent)`;
-- если `rawPrice >= 0.01`: цена = `rawPrice`;
-- если `rawPrice < 0.01`: цена фиксируется в `0.01`, а вес увеличивается пропорционально.
-
-### 7.6 Покупка у лавки
-
-- Игрок выбирает покупателя (Actor).
-- Проверяется количество и монеты покупателя.
-- Предмет переносится в инвентарь покупателя (со слиянием по sourceType/sourceId).
-
-### 7.7 Продажа в лавку
-
-- Предмет перетаскивается в dropzone.
-- Строится предпросмотр:
-  - рыночная цена города;
-  - налог государства;
-  - чистая выплата.
-- Формулы:
-  - `grossOffer = marketPrice`
-  - `tax = grossOffer * taxPercent`
-  - `netPayout = grossOffer - tax`
-
-## 8. Партийный склад, группа, энергия
-
-### 8.1 Склад
-
-- Источник состава и inventory: существующий dnd5e `Actor` типа `group`.
-- Group actor создается и управляется обычными средствами Foundry/dnd5e; окно Rebreya не создает группы.
-- `Ребрея -> Группы` доступно только ГМу: регистрация существующей group, выбор активной группы мира, открытие штатного листа группы и явный merge legacy-инвентаря.
-- `Инвентарь группы Rebreya` остается только compatibility-источником. Его можно явно слить в зарегистрированную группу; actor не удаляется автоматически, а повторный merge идемпотентен и может продолжить частично выполненное слияние.
-- Базовый state группы создается из данных/defaults модуля, а не из старого inventory actor.
-- Поддержка валют `pp/gp/sp/cp` и конвертации.
-- Запасы:
-  - еда (`фнт.`);
-  - вода (`галлоны`, 1 галлон = 8 фнт веса).
-
-### 8.2 Роли и расход
-
-Роли участников группы:
-
-- `member`: 1 еда/день, 1 вода/день
-- `mount`: 4 еда/день, 4 вода/день
-- `transport`: 0/0
-
-### 8.3 Энергия
-
-- База: `3` дня.
-- `energyMax = max(1, 3 + CON_mod)` (или override).
-- При дневном списании, если участнику не хватило еды/воды, энергия уменьшается.
-- Восстановление энергии возможно за счет расхода запасов.
-
-### 8.4 Простой
-
-Состояние простоя хранится отдельно для каждой зарегистрированной группы:
-
-`groupState.groupsById[groupId].downtimeState`
-
-Состав участников берется из native dnd5e group actor (`system.members`). Балансы хранятся по `actorId` участника:
-
-- `availableWeeks`: свободные недели, которые можно потратить на заявку.
-- `reservedWeeks`: недели, уже зарезервированные активными заявками.
-- `spentWeeks`: завершенные недели.
-- `totalGrantedWeeks`: сколько недель всего выдавалось персонажу.
-
-Рабочий поток:
-
-1. ГМ открывает `Инвентарь -> Простой` для активной группы и выдает недели всем участникам или одному персонажу.
-2. Игрок открывает вкладку «Простой» на листе своего персонажа, выбирает действие, число недель, название и описание заявки.
-3. Создание заявки резервирует недели: они уходят из `availableWeeks` в `reservedWeeks`.
-4. ГМ может одобрить заявку, вернуть на доработку, отклонить, завершить или назначить до пяти целевых действий.
-5. Возврат/отклонение освобождают недели обратно в `availableWeeks`; завершение переносит их в `spentWeeks`.
-
-Статусы заявок:
-
-- `pending`: заявка отправлена, недели зарезервированы.
-- `approved`: мастер одобрил план, недели остаются зарезервированными.
-- `returned`: мастер вернул заявку, недели освобождены.
-- `rejected`: мастер отклонил заявку, недели освобождены.
-- `completed`: заявка завершена, недели потрачены.
-
-Целевые действия мастера сейчас сохраняются как данные заявки; результат действия можно записать через API. Автоматических кнопок бросков из листа персонажа для этих действий пока нет.
-
-## 9. Крафт
-
-### 9.1 Запуск задачи
-
-Для предмета снаряжения:
-
-- требуется материал `~50%` от веса предмета (`min 0.1 lb`);
-- при нехватке материала задача не ставится;
-- если нужен инструмент и его нет у крафтера, задача блокируется.
-
-### 9.2 Прогресс
-
-- `progressTarget = priceGold * quantity`
-- `progressPerDay = max(1, 5 + tool.mod + (tool.prof ? 2 : 0))`
-
-### 9.3 Завершение
-
-- Каждый день прогресс увеличивается.
-- По достижении цели предмет добавляется в партийный склад.
-- При отмене задачи материал возвращается.
-
-## 10. Календарь
-
-- Формат даты: `YYYY-MM-DD` (UTC).
-- Переходы: день/неделя/месяц.
-- Лунный цикл: `28.8` дня, вывод текущей фазы.
-- При переходе по времени:
-  - обновляется активация глобальных ивентов;
-  - запускаются суточные циклы (запасы/энергия/крафт, если включено);
-  - в начале каждого месяца выполняется обновление ассортимента лавок.
-
-## 11. Глобальные ивенты: логика
-
-### 11.1 Scope
-
-Ивент может быть на:
-
-- весь мир;
-- конкретные государства/регионы/города;
-- конкретные товары или товарные категории;
-- конкретные маршруты (from -> to).
-
-При сборке payload из мастера:
-
-- если выбран хотя бы 1 город, используются города;
-- иначе если выбран хотя бы 1 регион, используются регионы;
-- иначе используются государства;
-- для товаров: если выбраны товары, категории игнорируются; иначе берутся категории.
-
-### 11.2 Триггер и длительность
-
-- `manual` / `date` / `dateRange`.
-- Длительность: `instant` / `untilDisabled` / `dateRange`.
-
-### 11.3 Сложение эффектов
-
-Режимы stacking:
-
-- `stack`: эффекты суммируются;
-- `highestOnly`: берется только максимальное значение;
-- `lowestOnly`: берется только минимальное;
-- `overrideByPriority`: берется один по приоритету/updatedAt.
-
-### 11.4 Режимы числовых эффектов
-
-- `flat`: прибавить абсолютное значение.
-- `addPercent`: умножить на `(1 + value)`.
-- `multiply`: умножить на `value`.
-- `override`: жестко установить значение.
-
-## 12. HELP для мастера: эффекты глобальных ивентов
-
-Список соответствует редактору ивентов.
-
-| Эффект в UI | Влияние | Где видно/применяется |
+| Слой | Ответственность | Основные файлы |
 |---|---|---|
-| Производство товаров | Меняет `production` выбранных товаров в зоне ивента. | Экономика города/мира, дефицит/профицит. |
-| Спрос на товары | Меняет `demand`. | Экономика города/мира, дефицит/профицит. |
-| Цена товаров | Добавляет ценовой модификатор товара. | Импортная аналитика и цены материалов/снаряги через связанный товар. |
-| Налоги государства | Меняет `taxPercent` политики государства. | В окне государств (эффективные ставки), в продаже предметов в лавку. |
-| Торговые пошлины | Меняет `generalDutyPercent`. | Эффективная ставка в окне государств, наценка импортных маршрутов и витринная цена в лавках (через импортную долю). |
-| Двусторонняя пошлина | Меняет bilateral duty с целевыми государствами. | Окно государств + наценка импорта между конкретными парами государств и влияние на цены в лавках при импорте этих товаров. |
-| Цена выкупа у торговца | Модификатор цены, по которой лавка выкупает предмет у персонажа. | Sale preview в окне лавки. |
-| Цена продажи у торговца | Модификатор витринной цены покупки у лавки. | Список товаров лавки. |
-| Размер ассортимента торговцев | Модификатор количества (`stockPercent`). | Объем ассортимента лавки при построении snapshot. |
-| Скрыть товары из продажи | Блокирует товар у лавок (`blockedByEvents`). | Позиции скрываются из окна лавки. |
-| Сделать товары доступнее | Снимает/ослабляет блокировку доступности (противовес block). | Влияет на доступность у лавок. |
-| Редкость товаров | Сдвиг редкости (метаданные/модификатор). | Учитывается в merchant modifiers и отображении. |
-| Стоимость маршрутов | Увеличивает/уменьшает наценку связи (`additionalPricePercent`). | Мировые связи, карточка связи, импортные цены. |
-| Пропускная способность маршрутов | Меняет `eventRouteCapacityPercent` и лимит импорта по пути. | Показ в карточках маршрутов и прямое ограничение доступного объёма импорта. |
-| Полностью перекрыть маршруты | Делает связь неактивной на время действия. | Мировые связи/городские связи. |
+| Composition | создание сервисов, публичный API, lifecycle, socket dispatch | `scripts/main.js` |
+| Application | сериализация, идемпотентность, журналы и use-case orchestration | `scripts/application/`, `scripts/features/trading/` |
+| Domain/data | экономика, группы, крафт, простой, путешествия, компендиумы | `scripts/data/`, `scripts/engine/` |
+| Infrastructure | Foundry settings/repositories, active-GM election, sockets, UI refresh | `scripts/infrastructure/` |
+| Automation | боевые/классовые/расовые реакции на Foundry hooks | `scripts/combat/`, `scripts/automation/`, `scripts/cosmology/` |
+| Integration | адаптеры dnd5e и сторонних модулей | `scripts/integrations/` |
+| UI | ApplicationV2, шаблоны и DOM binding | `scripts/ui/`, `templates/`, `scripts/ui.js` |
+| Shared | только доказанно одинаковые примитивы без доменной семантики | `scripts/shared/foundry-values.js` |
 
-Дополнительно в движке есть типы `routeRiskNote`, `merchantRestockMode`, `merchantCategoryBoost`, `selfSufficiencyModifier`, `importNeedMultiplier`:
+Ключевые владельцы логики:
 
-- `routeRiskNote`: текстовая риск-заметка на связи.
-- `merchantCategoryBoost`: доп. буст ассортимента по merchant-фильтрам.
-- `importNeedMultiplier`: добавка к спросу через канал importNeed.
-- `selfSufficiencyModifier`: влияет на `importNeedMultiplier` товара и итоговую самообеспеченность (включая сводки state/region).
-- `merchantRestockMode`: участвует в runtime-сбросе ассортимента (`updated` / `merged` / `frozen`) при месячном обновлении торговцев.
+- `EconomyRepository` загружает/кэширует модель; `economy-engine.js` и `selectors.js` считают представления.
+- `GroupContextService` определяет зарегистрированную группу и её участников.
+- `GroupStateRepository` и `TraderStateRepository` — единственные владельцы соответствующих world-state записей.
+- `WorldMutationCoordinator` сериализует мутации по ключу и дедуплицирует request ID; хранит до 256 завершённых результатов.
+- `DurableMutationJournal` хранит фазу многошаговой операции и до 64 terminal-записей.
+- `UiRefreshCoordinator` объединяет повторные render-запросы и не крадёт фокус окна.
+- `SocketCommandBus` — основной протокол новых привилегированных команд.
 
-## 13. Компендиумы
+## Сохранность состояния и «база»
 
-### 13.1 Материалы
+Отдельной SQL/NoSQL базы здесь нет: постоянное состояние хранится в Foundry world settings, Actor/Item/ActiveEffect/ChatMessage и world-компендиумах. Главный риск — частичная многошаговая запись, а не падение процесса БД.
 
-- Пак: `world.rebreya-materials`.
-- Тип документов: `Item` (`loot`).
-- Синхронизация на инициализации и на перезагрузке данных.
+### Правила мутаций
 
-### 13.2 Немагическое снаряжение
+- Все конкурирующие изменения одного world-state проходят через `WorldMutationCoordinator` или repository, который его использует.
+- Повтор запроса с тем же operation/request ID должен вернуть прежний результат, а не повторить списание.
+- Нельзя делать новый `get setting -> mutate -> set setting` напрямую из UI.
+- Порядок нескольких документных записей должен иметь журнал фаз и компенсацию либо специализированный transaction workflow.
 
-- Пак: `world.rebreya-gear`.
-- Классификация в `weapon/equipment/tool/consumable/loot` с dnd5e-совместимыми subtype/baseItem.
-- Для предметов выставляются служебные flags Rebreya (rank, material, slot, subtype и т.д.).
+### Журналы
 
-### 13.3 Магические предметы
+- `craftMutationJournal`: постановка, отмена и завершение крафта. Основные фазы: `prepared -> materials-debited -> task-persisted -> output-created/committed`; при ошибке — `compensated` или `reconciliation-required`.
+- `inventoryMutationJournal`: перенос, продажа, импорт и выдача лута. Основные фазы: `prepared -> target-created/currency-credited -> source-debited -> committed`; при ошибке — компенсация или явная сверка.
+- Торговля использует `TradeTransactionService`, `trade-sale-transaction-workflow.js` и `trade-rollback-workflow.js`; состояние транзакции и audit принадлежат `TraderStateRepository`.
+- Chat-loot использует `LootClaimService`, координатор и флаг `flags.rebreya-main.lootgenChat`, поэтому одна строка/монеты не выдаются дважды.
 
-- Пак: `world.rebreya-magic-items`.
-- Источник: `magicItem.js`.
-- В flags сохраняются `magicItemId`, `rank`, `value`, `rarity`, `itemSlot`, `heroDollSlots` и др.
+Незавершённую запись `reconciliation-required` нельзя молча удалять: она означает, что автоматическая компенсация не доказала совпадение состояния и нужна ручная сверка.
 
-### 13.4 Черты (D&D 5e 2014)
+## Socket-модель и права
 
-- Пак: `world.rebreya-feats`.
-- Источник: `cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-bundle.json` (fallback: `...-items.json`).
-- Автоматически строятся папки компендиума по `section/subsection` из `flags.teyvankal`.
-- В `flags.rebreya-main` сохраняются `featId`, `section`, `subsection`, `signature`.
+### Typed commands
 
-## 14. Настройки модуля
+`scripts/infrastructure/foundry/socket-command-bus.js` задаёт envelope `rebreya.command`/`rebreya.command.result`, лимит 65 536 сериализованных байт и timeout 10 секунд.
 
-World settings:
+Зарегистрированные команды:
 
-- `showEconomyButton`: показывать кнопку экономики.
-- `debugMode`: расширенные debug-данные.
-- `dataSourceMode`: `builtin` или `custom`.
-- `customDataPath`: путь к пользовательским JSON.
-- `displayPrecision`: точность отображения чисел.
-- `globalEventsEnabled`: включить подсистему ивентов.
-- `globalEventsNotifications`: уведомления по ивентам.
-- `globalEventsAutoRecalc`: пересборка модели при смене ивентов.
-- `globalEventsShowPublic`: видимость публичных ивентов игрокам.
-- `globalEventsDebug`: debug-лог модификаторов ивентов.
+| Command | Владелец | Авторизация |
+|---|---|---|
+| `group.calendar.patch` | `CalendarService` | GM или владелец участника зарегистрированной группы |
+| `group.travel.replaceState` | `TravelService` | та же проверка группы |
+| `cosmology.setMechanus` | composition root | только GM |
+| `combat.status.set` | `CombatStatusService` | GM; для environment-status допускается владелец source Actor |
+| `performer.activePerformance.apply` | `PerformerAutomationService` | отправитель владеет Actor-исполнителем |
+| `inventory.take` | `InventoryService` | отправитель владеет target Actor в этой группе |
+| `inventory.sale` | `InventoryService` | управление зарегистрированной группой |
+| `inventory.import` | `InventoryService` | отправитель владеет source Actor и состоит в группе |
+| `trader.purchase` | `TradeTransactionService` | отправитель владеет Actor-покупателем |
+| `trader.sell` | `TradeTransactionService` | отправитель владеет Actor-продавцом |
 
-Скрытые state settings (хранилище runtime):
+Команду исполняет только избранный active GM. `senderId` внутри payload/envelope не является доказательством личности: bus сверяет его с transport sender, после чего передаёт найденного Foundry User в `authorize`. Request ID коррелируется с command и user ID.
 
-- `traderState`, `partyState`, `groupState`, `craftState`, `calendarState`;
-- `connectionStates`, `tradeRouteOverrides`, `statePolicies`, `referenceNotes`;
-- `globalEventsState`, `globalEventsDraft`.
+В `main.js` ещё есть compatibility-dispatch старых событий простоя, лута, части классовых/расовых операций и settings relay. Новую мутацию туда добавлять нельзя: её следует регистрировать как typed command с `validate`, `authorize` и `execute`. При изменении legacy-команды обязательно связывать payload sender с transport sender.
 
-`groupState` хранит реестр зарегистрированных group actor, world-level active group для ГМа и per-group state простоя (`groupsById[groupId].downtimeState`).
+## Управляемые компендиумы
 
-## 15. Права доступа
+Синхронизация запускается при `ready` и `reloadData()`. Запись выполняет только active GM.
 
-### Только ГМ
+| Pack | Сервис/источник |
+|---|---|
+| `world.rebreya-materials` | `materials-compendium.js`, `data/materials.json` |
+| `world.rebreya-gear` | `gear-compendium.js`, `data/gear.json` |
+| `world.rebreya-magic-items` | `magic-items-compendium.js`, `magicItem.js` |
+| `world.rebreya-feats` | `feats-compendium.js`, `feat.js` и overrides |
+| `world.rebreya-states` | `states-compendium.js`, `data/states-teyvankal-v02.json` |
+| `world.rebreya-backgrounds` | `backgrounds-compendium.js`, `data/backgrounds-v012.json` |
+| `world.rebreya-race-features` | `races-compendium.js`, `data/races-teyvankal-v01.json` |
+| `world.rebreya-races` | `races-compendium.js`, тот же источник |
+| `world.rebreya-spells` | `spells-compendium.js`, `data/rebreya-spells-v01.json` |
+| `world.rebreya-class-features` | `classes-compendium.js`, class JSON |
+| `world.rebreya-subclasses` | `classes-compendium.js`, class JSON |
+| `world.rebreya-classes` | `classes-compendium.js`, class JSON |
+| `world.rebreya-actions` | `actions-compendium.js`, class/race actions |
+| `world.rebreya-downtime` | `downtime-compendium.js`, `data/downtime-activities-teyvankal-v01.json` |
 
-- Глобальные ивенты (окно и редактирование).
-- Лутген (генерация и перенос результатов).
-- Сброс/восстановление world override-данных.
-- Управление партийным state (большинство операций склада/группы/крафта).
-- Выдача недель простоя, смена статусов заявок и назначение проверок простоя.
-- `Ребрея -> Группы`: регистрация существующих dnd5e group actor, выбор активной группы, открытие native group sheet, merge legacy-инвентаря.
+Общий lifecycle находится в `scripts/data/managed-compendium-sync.js`:
 
-### Игроки (при наличии прав на актеров/предметы)
+- source ID обязателен и уникален;
+- signature определяет, нужен ли update;
+- стабильный document ID сохраняет UUID;
+- создаются отсутствующие, обновляются изменённые, удаляются только stale managed-документы;
+- пользовательские документы без managed-флага не удаляются;
+- legacy-дубликаты с тем же source ID сворачиваются;
+- папки готовятся до create/update.
 
-- Открытие склад/календарь/часть UI окон.
-- Создание заявок простоя с вкладки «Простой» на owned-персонаже своей зарегистрированной группы.
-- Торговля в лавке выбранным персонажем.
-- Просмотр публичных ивентов (если включено в настройках и ивент не `gmOnly`).
+Зависимости синхронизируются в порядке: race features перед races; class features перед subclasses/classes; primary gear перед container contents. UUID-ссылки строятся из стабильных ID. Возвращать схему `delete all -> create all` запрещено: она ломает UUID, advancements и внешние ссылки.
 
-## 16. API для макросов (`game.rebreyaMain`)
+## Основные UI
 
-Примеры:
+| UI | Файл | Назначение |
+|---|---|---|
+| Экономика | `scripts/ui/economy-app.js` | города, дефициты, события, навигация |
+| Город | `scripts/ui/city-app.js` | overview/goods/routes/traders/debug |
+| Маршруты | `trade-routes-app.js`, `trade-route-app.js` | аналитика и ручные overrides |
+| Государства | `states-app.js` | налоги, пошлины, описания |
+| Глобальные события | `global-events-app.js` | scope, modifiers, даты и видимость |
+| Группы | `groups-app.js` | регистрация native dnd5e group, active group, legacy merge |
+| Инвентарь | `inventory-app.js` | inventory/party/craft/calendar/downtime/travel |
+| Лавка | `trader-app-v2.js` | покупка, продажа, метаданные и audit |
+| Лутген | `lootgen-app.js`, `lootgen-chat.js` | генерация, шаринг и claims |
+| Космология | `cosmology-app.js` | world-флаг Mechanus |
+| Справка | `reference-info-app.js` | материалы, снаряжение и reference cards |
+
+Старого `trader-app.js` и `templates/trader-app.hbs` больше нет. `openTrader()` и `openTraderSheet()` являются compatibility-алиасами `openTraderV2()`; второй Trader UI создавать не нужно.
+
+## Каталог автоматизаций
+
+### Общий контракт
+
+- Центральная регистрация: `scripts/combat/hooks.js`.
+- Автоматизация должна сначала идентифицировать документ по стабильному `system.identifier`, `flags.rebreya-main.sourceType/sourceId/automation` или activity runtime; имя — только migration fallback.
+- Мутация чужого Actor выполняется владельцем документа или через проверенный active-GM socket path.
+- Hook обязан быть идемпотентным: Foundry, dnd5e и Midi-QOL могут сообщить об одном workflow несколькими событиями.
+- Временные Active Effects должны иметь origin, duration/specialDuration и cleanup на turn/rest/consumption.
+- Новая automation добавляет focused test и запись в этот каталог.
+
+### Статусы и общий бой
+
+| Сервис | Hooks/входы | Идентификаторы и эффект | Cleanup/маршрутизация | Тест |
+|---|---|---|---|---|
+| `CombatStatusService` | `updateActor`, Token HUD, ActiveEffect create/update/delete, `combatTurn` | статусы `rebreya-*` и native `frightened`; флаги `statusId/statusValue/statusMeta`; bloodied, discreet, frightened, surrounded, decaying damage | синхронизация дублей оставляет сильнейший числовой эффект; environment status может идти через `combat.status.set` | `combat-status.test.mjs` |
+| `CombatAttackService` | sheet render, `dnd5e.preUseActivity`, attack/damage hooks, `midi-qol.hitsChecked`, `midi-qol.RollComplete`, `combatTurn` | удержание оружия; reaction state; provoked/parry/interception; firearm ammo, misfire, jam, reload, maintenance и area fire | не тратит ammo/uses дважды; reaction обновляется по ходу; jam/empty state хранится во флагах предмета | `combat-attack-service.test.mjs` |
+| `AttackRollBoostService` | `dnd5e.rollAttack`, `midi-qol.hitsChecked` | `flags.rebreya-main.attackRollBoosts`, `d20Bonus`, fighter `fighter-dominance` | объединяет выбранные кости, тратит sources один раз и удаляет одноразовый effect | `attack-roll-boost-service.test.mjs` |
+| `EnvironmentAutomationService` | target/control token, dnd5e/Midi pre-attack | `rebreya-surrounded` (-2 AC), `rebreya-open-position`; source `rebreya-environment` | обновляет только собственные markers; для чужой цели использует combat status API/socket | `environment-automation-service.test.mjs` |
+| `SpellAutomationService` | deferred `dnd5e.preUseActivity`, `midi-qol.preItemRoll`, module socket | Counterspell и Sorcerer Spell Shatter; V/S visibility, 60 ft, reaction и slot/SP payment | prompt отправляется владельцу reactor; результат проверяет authenticated sender; отмена root cast только после успешной оплаты/проверки | `spell-automation-service.test.mjs` |
+
+### Классы, черты и расы
+
+| Сервис | Hooks/идентификаторы | Автоматизация | Cleanup/права | Тест |
+|---|---|---|---|---|
+| `FighterAutomationService` | `createItem`, sheet render, combat turn, post-use, damage, rest, Midi RollComplete; class `fighter-rework-v028` | starting equipment, dominance maneuvers, precise attack, second wind, iron will, multiattack choice и repair advancement/container links | prompt выполняет создающий/владеющий клиент; расход dominance/second-wind защищён от дубля; turn/rest эффекты завершаются по source turn/long rest | `fighter-automation-service.test.mjs` |
+| `SorcererAutomationService` | item create/update, cast dialogs, pre-use, attack/save/damage hooks, post message, combat turn, rest | Sorcery Points, virtual slots/cooldowns, metamagic (Careful, Distant, Empowered, Extended, Heightened, Quickened, Seeking, Subtle, Twinned), draconic options, Mana Storm и Transcendence | платежи сериализованы по Actor и откатываются при отмене cast; cooldown идёт по ходу владельца; high-level virtual slots сбрасываются long rest | `sorcerer-automation-service.test.mjs` |
+| `PaladinAutomationService` | item/actor updates, post-use, rest, `midi-qol.preDamageRoll` | prepared spells, Lay on Hands, Divine Smite; class `paladin-rework-v01` | чужая цель Lay on Hands идёт active GM; socket sender должен владеть source Actor; smite once/turn, prepared spells — long rest | `paladin-automation-service.test.mjs` |
+| `RogueAutomationService` | `midi-qol.preDamageRoll`; class `rogue-rework-v00` | Sneak Attack и Cunning Strike: Hamstring, Disrupt Aim, Open Position, Trip, Break Tempo и данные sourceType `rogueCunningStrike` | один Sneak Attack на combat turn; добавляет damage config до roll, статусы/карточку — после выбора | `rogue-automation-service.test.mjs` |
+| `PerformerAutomationService` | pre/post activity, d20 attack/skill/tool/ability/save, rest; feat identifier `ispolnitel`, action `activePerformance` | Активное выступление: проверка, союзный `d5` bonus или hostile penalty; два последовательных провала блокируют черту | игрок отправляет `performer.activePerformance.apply`; active GM проверяет владение исполнителем и создаёт эффект на target; effect удаляется после выбранного d20, streak — long rest | `performer-automation-service.test.mjs` |
+| `RaceAutomationService` | attack config, post-use, pre/post damage, d20 rolls, pre/rest, movement blocking, Midi RollComplete, combat turn | runtime actions из race feature flags: linked/custom effects, elemental/demonic choices, pack tactics, damage reduction, relentless endurance, lucky reroll, rest rules, Fury of the Small, Keen Eye, Surprise/Celestial damage и временное игнорирование hostile spaces | remote damage/effect/heal исполняет active GM; once-turn damage имеет turn key; rest features чистятся/восстанавливаются по long rest | `race-automation-service.test.mjs` |
+| `FeatChoiceAutomationService` | owned feat create/update/delete | `flags.rebreya-main.choiceConfig`; создаёт native dnd5e ItemChoice advancement, разрешает UUID options, зеркалит выбор и удаляет advancement children | работает только на текущем клиенте-владельце/GM; при отсутствующих options может синхронизировать feats pack | `feat-choice-automation.test.mjs` |
+| Mechanus | libWrapper Roll evaluation hooks | при включённом `cosmologyState.mechanusEnabled` усредняет eligible dice; d20 advantage/disadvantage переводит в flat modifier; d20/d100 не усредняет как обычные dice | world toggle — typed GM command; выключенный режим не меняет Roll | `cosmology-mechanus-rolls.test.mjs` |
+
+### EffectMacro
+
+`scripts/integrations/effectmacro-compat.js` патчит только узнаваемый `updateCombat` hook EffectMacro. Actorless failure игрока пересылается active GM; невыбранные GM подавляют локальное исполнение. Запрос дедуплицируется по combat/sender/request ID, а envelope sender сверяется с transport sender. Таким образом один combat update не исполняется каждым активным GM. Тест: `effectmacro-compat.test.mjs`.
+
+## Остальные integrations
+
+| Integration | Файл | Контракт |
+|---|---|---|
+| dnd5e sheets | `dnd5e-sheet-extensions.js` | Hero Doll, downtime, combat statuses, item mods, held items, universal belt, activity availability, heroic d20 controls, state card |
+| Held items/AC | `held-items.js`, `held-shield-ac.js` | занятые руки, versatile presentation, AC только от удерживаемого щита |
+| Universal Belt | `universal-belt.js` | 3 слота, 1 открыт по умолчанию, цена открытия 500 gp |
+| Item upgrades | `item-upgrade-sheet.js`, `item-upgrade-service.js` | установка/снятие mods и capacity через owned Items |
+| Inventory sync | `inventory-sync.js` | после Item/Actor mutations обновляет только связанные inventory views |
+| SmallTime | `smalltime-compat.js` | отображение календаря Rebreya и подтверждение расхода запасов при сдвиге world time |
+| Forien Quest Log | `forien-quest-log.js`, `quest-log-service.js` | metadata, requirements, grouped quests, rumors/events и UI overlays |
+| Rations | `ration-food-conversion.js` | созданные ration Items можно конвертировать в партийную еду |
+| Magic templates | `magic-weapon-template.js` | шаблон базового оружия/доспеха/щита для magic item |
+| BG3 Hotbar | `scripts/hooks.js` | подавляет auto-add служебных Items, чинит item-pile common actions/death saves |
+| transform-cleanup / SM Airship | соответствующие `*-compat.js` | узкие defensive patches, без владения доменной логикой |
+
+`scripts/integrations/item-piles-dnd5e.js` содержит helper `ensureItemPilesDnD5eIntegration`, но не регистрируется composition root. Не считать эту интеграцию активной, пока в `main.js` не появился явный вызов и тест.
+
+## Публичный API
+
+Поддерживаемая точка вызова макросов:
 
 ```js
-// Экономика
-await game.rebreyaMain.openEconomyApp();
-await game.rebreyaMain.openCityApp("city-id");
-
-// Глобальные ивенты
-await game.rebreyaMain.openGlobalEventsApp();
-await game.rebreyaMain.createGlobalEvent(payload);
-
-// Инвентарь и календарь
-await game.rebreyaMain.openInventoryApp({ tab: "inventory" });
-await game.rebreyaMain.advanceCalendarDays(1, { consumeSupplies: true, applyEnergy: true, processCraft: true });
-
-// Простой
-await game.rebreyaMain.openInventoryApp({ tab: "downtime" });
-game.rebreyaMain.getDowntimeSnapshot();
-await game.rebreyaMain.createDowntimeRequest({ actorId: "actor-id", actionId: "training", weeks: 1, title: "Тренировка" });
-
-// Лавки
-await game.rebreyaMain.openTrader("city-id", "shop-food-store");
-
-// Лутген
-await game.rebreyaMain.openLootgenApp({ newWindow: true });
+const api = game.rebreyaMain;
+await api.openInventoryApp({ tab: "inventory" });
+await api.openTrader("city-id", "shop-key", { actorId: "actor-id" });
+await api.setCombatStatus("actor-id", "frightened", { value: 2 });
 ```
 
-### 16.1 Полный каталог методов API
+### Модель и окна
 
-Объект API доступен как:
+- `getModel`, `reloadData`, `resetWorldData`, `refreshOpenApps`.
+- `openEconomyApp`, `openCityApp`, `openWorldTradeRoutesApp`, `openTradeRouteApp`, `openStatesApp`, `openGlobalEventsApp`, `openReferenceInfoApp`.
+- `openInventoryApp`, `openGroupsApp`, `openPartyInventorySheet`, `openLootgenApp`, `openCosmologyApp`.
+- `openTrader`, `openTraderV2`, `openTraderSheet` — все открывают единственный Trader V2.
 
-- `game.rebreyaMain`
-- `game.modules.get("rebreya-main")?.api`
+### Экономика, события и reference
 
-Группы методов:
+- `getCitySnapshot`, `getTradeRouteSnapshot`, `getTradeRouteBaseSnapshot`, `getTradeRoutes`, `prepareTradeRouteAnalytics`, `hasTradeRouteAnalytics`.
+- `setConnectionActive`, `updateTradeRouteMetadata`, `getStatePolicies`, `getEffectiveStatePolicy`, `updateStatePolicy`, `getReferenceEntrySnapshot`, `updateReferenceDescription`.
+- `getAllGlobalEvents`, `getActiveGlobalEvents`, `getEventsAffectingCity`, `getEventsAffectingCityGood`, `getEventsAffectingRoute`, `getEventsAffectingState`.
+- `createGlobalEvent`, `updateGlobalEvent`, `deleteGlobalEvent`, `duplicateGlobalEvent`, `importDefaultGlobalEventTemplates`.
+- `getMaterialByGoodId`, `openMaterialByGoodId`, `openMaterialById`, `openGearById`, `openMagicItemById`, `openFeatById`, `openBackgroundById`, `openStateById`, `openTradeEntry`.
 
-- Экономика и окна:
-  - `getModel(options?)`
-  - `reloadData(options?)`
-  - `resetWorldData(options?)`
-  - `refreshOpenApps()`
-  - `openEconomyApp()`
-  - `openCityApp(cityId)`
-  - `openWorldTradeRoutesApp()`
-  - `openTradeRouteApp(connectionId)`
-  - `openStatesApp()`
-  - `openReferenceInfoApp(entryType, entryId)`
-- Города/связи/государства:
-  - `getCitySnapshot(cityId)`
-  - `getTradeRouteSnapshot(connectionId)`
-  - `getTradeRouteBaseSnapshot(connectionId)`
-  - `getTradeRoutes()`
-  - `hasTradeRouteAnalytics()`
-  - `prepareTradeRouteAnalytics(options?)`
-  - `setConnectionActive(connectionId, isActive)`
-  - `updateTradeRouteMetadata(connectionId, patch)`
-  - `getStatePolicies()`
-  - `getEffectiveStatePolicy(stateId, targetStateId?, currentDate?)`
-  - `updateStatePolicy(stateId, patch)`
-  - `updateReferenceDescription(entryType, entryId, description)`
-- Глобальные ивенты:
-  - `handleGlobalEventsConfigChange()`
-  - `getAllGlobalEvents()`
-  - `getActiveGlobalEvents(currentDate?)`
-  - `getEventsAffectingCity(cityId, currentDate?)`
-  - `getEventsAffectingCityGood(cityId, goodId, currentDate?)`
-  - `getEventsAffectingRoute(fromCityId, toCityId, currentDate?, connectionId?)`
-  - `getEventsAffectingState(stateId, currentDate?)`
-  - `createGlobalEvent(data)`
-  - `updateGlobalEvent(id, patch)`
-  - `deleteGlobalEvent(id)`
-  - `duplicateGlobalEvent(id)`
-  - `importDefaultGlobalEventTemplates()`
-  - `openGlobalEventsApp()`
-- Бой:
-  - `getCombatStatusDefinitions()`
-  - `normalizeCombatStatusId(statusInput, fallback?)`
-  - `getCombatStatus(actorOrId, statusInput)`
-  - `setCombatStatus(actorOrId, statusInput, options?)`
-  - `clearCombatStatus(actorOrId, statusInput, options?)`
-  - `setCombatStatusValue(actorOrId, statusInput, value, meta?)`
-  - `applyDecayingDamage(actorOrId, amount, options?)`
-  - `syncBloodiedStatuses()`
-  - `getReactionState(actorOrId)`
-  - `canUseReaction(actorOrId, requiredUses?)`
-  - `refreshReaction(actorOrId, options?)`
-  - `consumeReaction(actorOrId, options?)`
-  - `rollWeaponAttack(actorOrId, weaponOrId, options?)`
-  - `rollFirearmAttack(actorOrId, weaponOrId, options?)`
-  - `resolveProvokedAttack(reactorOrId, targetOrId, options?)`
-  - `resolveParry(defenderOrId, incomingAttackTotal, options?)`
-  - `resolveInterception(guardianOrId, targetOrId, incomingDamage, options?)`
-- Лавки:
-  - `isTraderIntegrationAvailable()`
-  - `getCityTraderSummaries(cityId)`
-  - `getTraderSnapshot(cityId, traderKey, options?)`
-  - `openTrader(cityId, traderKey, options?)`
-  - `openTraderSheet(cityId, traderKey, options?)`
-  - `purchaseTraderItem(cityId, traderKey, itemKey, quantity, options?)`
-  - `createTraderSalePreview(cityId, traderKey, dropData)`
-  - `sellTraderItem(cityId, traderKey, preview, quantity)`
-  - `updateTraderMetadata(cityId, traderKey, patch)`
-- Инвентарь/группа:
-  - `openInventoryApp(options?)`
-  - `openGroupsApp()`
-  - `openPartyInventorySheet()`
-  - `getGroupRegistry()`
-  - `getGroupContext(options?)`
-  - `registerPartyGroup(groupActorId)`
-  - `setActivePartyGroup(groupActorId)`
-  - `mergeLegacyInventoryIntoGroup(groupActorId)`
-  - `getInventorySnapshot(options?)`
-  - `getPartySnapshot(options?)`
-  - `getDowntimeSnapshot(options?)`
-  - `getDowntimeActionCatalog()`
-  - `addPartyMember(actorId)`
-  - `removePartyMember(actorId)`
-  - `updatePartyDefaults(patch)`
-  - `updatePartyMember(actorId, patch)`
-  - `updatePartyMemberTool(actorId, toolId, patch?)`
-  - `setPartyMemberEnergy(actorId, currentEnergy)`
-  - `restorePartyMemberEnergy(actorId, days?)`
-  - `updateInventoryItemQuantity(itemId, nextQuantity)`
-  - `deleteInventoryItem(itemId)`
-  - `importInventoryDrop(dropData)`
-  - `addModelItemToInventory(sourceType, sourceId, quantity?)`
-  - `breakInventoryItemToMaterial(itemId, quantity?)`
-  - `addPartySupply(resourceKey, quantity)`
-  - `consumePartySuppliesOneDay(options?)`
-  - `updatePartyCurrency(values)`
-  - `convertPartyCurrency(mode?)`
-  - `getRebreyaToolCatalog()`
-- Простой:
-  - `grantDowntimeWeeks(payload?)`
-  - `createDowntimeRequest(payload?)`
-  - `setDowntimeRequestStatus(requestId, status, options?)`
-  - `setDowntimeRequestChecks(requestId, checks?)`
-  - `recordDowntimeCheckResult(requestId, checkId, result?)`
+### Группы, inventory, travel, craft и downtime
 
-### Целевые действия простоя
+- `getGroupRegistry`, `getGroupContext`, `registerPartyGroup`, `setActivePartyGroup`, `mergeLegacyInventoryIntoGroup`.
+- `getInventorySnapshot`, `getPartySnapshot`, `addPartyMember`, `removePartyMember`, `updatePartyDefaults`, `updatePartyMember`, `updatePartyMemberTool`.
+- `updateInventoryItemQuantity`, `deleteInventoryItem`, `takeInventoryItemToCharacter`, `sellInventoryItem`, `importInventoryDrop`, `addModelItemToInventory`, `breakInventoryItemToMaterial`.
+- `addPartySupply`, `consumePartySuppliesOneDay`, `updatePartyCurrency`, `convertPartyCurrency`, `setPartyMemberEnergy`, `restorePartyMemberEnergy`, `getRebreyaToolCatalog`.
+- `getTravelSnapshot`, `setTravelRoute`, `advanceTravelHours`, `clearTravelRoute`.
+- `getCraftSnapshot`, `queueCraftTask`, `cancelCraftTask`, `processCraftOneDay`.
+- `getDowntimeSnapshot`, `getDowntimeActionCatalog`, `grantDowntimeWeeks`, `revokeDowntimeWeeks`, `clearDowntimeHistory`, `createDowntimeRequest`, `updateDowntimeRequest`, `setDowntimeRequestStatus`, `setDowntimeRequestChecks`, `recordDowntimeCheckResult`, `continueDowntimeProject`, `closeDowntimeProject`.
+- `getCalendarSnapshot`, `setCalendarTimeOfDay`, `setCalendarDate`, `shiftCalendarDays`, `advanceCalendarDays`, `advanceCalendarWeeks`, `advanceCalendarMonths`.
 
-Во вкладке `Простой` мастер назначает заявке до пяти целевых действий. В данных они пока хранятся в поле `checks` для совместимости со старым API, но UI показывает их как структурные действия вместо ручного текста.
+### Trader, loot и item upgrades
 
-- `Тип действия`
-  - `Проверка`: одна проверка характеристики, навыка, инструмента, действия или атаки.
-  - `Выбор проверки`: мастер задаёт допустимые варианты, игрок выбирает один перед броском.
-  - `Инструмент`: запрос владения инструментом из листа персонажа.
-  - `Действие листа`: запрос готового действия с чарника.
-  - `Атака листа`: атака оружием, заклинанием или другим атакующим действием; целевой путь для Midi/dnd5e workflow.
-  - `Свободный итог`: задача без фиксированного броска, итог оценивает мастер.
-- `Источник`
-  - `Навык листа`: навык из чарника, включая замену характеристики.
-  - `Характеристика`: чистая проверка характеристики.
-  - `Инструмент листа`: инструмент или владение с чарника.
-  - `Спасбросок`: спасбросок выбранной характеристики.
-  - `Действие листа`: существующее действие на листе персонажа.
-  - `Атака листа`: существующая атака на листе персонажа.
-- `Характеристика`: `Из листа` использует системную характеристику выбранного действия; конкретная характеристика позволяет собрать нестандартное сочетание вроде `Телосложение (Запугивание)`.
-- `Итог`
-  - `DC`: сравнить total с порогом сложности.
-  - `Сумма`: сохранить total для накопления суммы.
-  - `DC + сумма`: одновременно проверить DC и добавить total в сумму.
-  - `Свободный`: сохранить результат без автоматической оценки успеха.
-- `Записать`
-  - `Total и успех`: сохранить total и успех/провал.
-  - `Только total`: сохранить только число броска.
-  - `Сумма группы`: добавить результат к общей сумме заявки.
-  - `Решение мастера`: оставить итог на ручное решение мастера.
-- `Эффект проверки`: срабатывает после конкретного целевого действия.
-- `Эффект простоя`: срабатывает при итоговом решении по всей заявке.
-- `Исполнитель эффекта`
-  - `Rebreya Main`: меняет состояние Rebreya, например прогресс, торговцев, события или награды.
-  - `DAE`: выдаёт или снимает Active Effect через DAE.
-  - `Midi-QOL`: запускает Midi/dnd5e workflow или макрос.
-  - `Без эффекта`: слот выключен.
-- Крафт:
-  - `getCraftSnapshot(options?)`
-  - `queueCraftTask(payload?)`
-  - `cancelCraftTask(taskId)`
-  - `processCraftOneDay()`
-- Календарь:
-  - `getCalendarSnapshot()`
-  - `setCalendarDate(year, month, day)`
-  - `advanceCalendarDays(days?, options?)`
-  - `advanceCalendarWeeks(weeks?, options?)`
-  - `advanceCalendarMonths(months?, options?)`
-- Лутген:
-  - `openLootgenApp(options?)`
-  - `shareLootgenResult(payload)`
-  - `unregisterLootgenApp(appKey)`
-- Открытие справочных записей:
-  - `getMaterialByGoodId(goodId)`
-  - `openMaterialByGoodId(goodId)`
-  - `openMaterialById(materialId, fallbackName?)`
-  - `openGearById(gearId, fallbackName?)`
-  - `openMagicItemById(magicItemId, fallbackName?)`
-  - `openFeatById(featId, fallbackName?)`
-  - `openTradeEntry(sourceType, sourceId, sourceName?)`
+- `isTraderIntegrationAvailable`, `getCityTraderSummaries`, `getTraderSnapshot`, `purchaseTraderItem`, `createTraderSalePreview`, `sellTraderItem`, `updateTraderMetadata`.
+- `recordTraderAudit`, `getTradeAuditLog`, `rollbackTraderAuditEntry`.
+- `shareLootgenResult`, `createLootgenChatMessage`, `claimLootgenChatRow`, `claimLootgenChatCoins`, `claimLootgenChatRowToInventory`, `claimLootgenChatAllToInventory`, `restoreLootgenClearFromChat`.
+- `installItemUpgrade`, `removeItemUpgrade`, `setItemUpgradeCapacity`.
 
-## 17. Структура данных
+### Бой и космология
 
-Основные файлы `data/`:
+- `getCombatStatusDefinitions`, `normalizeCombatStatusId`, `getCombatStatus`, `setCombatStatus`, `clearCombatStatus`, `setCombatStatusValue`, `applyDecayingDamage`, `syncBloodiedStatuses`.
+- `getReactionState`, `canUseReaction`, `refreshReaction`, `consumeReaction`.
+- `rollWeaponAttack`, `rollFirearmAttack`, `clearFirearmJam`, `maintainFirearm`, `resolveProvokedAttack`, `resolveParry`, `resolveInterception`.
+- `getCosmologyState`, `isMechanusEnabled`, `setMechanusEnabled`.
 
-- `goods.json`
-- `regions.json`
-- `cities.json`
-- `reference.json`
-- `materials.json`
-- `gear.json`
+`initialize`, `handleSocketMessage`, `handleLootgenChatItemCreated`, `handleGlobalEventsConfigChange`, `syncFeatsFromWorldCompendium`, `refreshInventoryViews`, `refreshDowntimeViews`, `refreshCosmologyViews`, `runInventoryMutation` и `unregisterLootgenApp` — lifecycle/internal coordination surface; не использовать их как доменный API макроса без отдельной причины.
 
-`reference.json` хранит, в том числе, режимы транспорта, служебную статистику импорта и предупреждения.
+## Settings и данные
 
-## 18. Импорт данных
+Configurable world settings:
 
-Скрипты в `tools/`:
+- `showEconomyButton`, `debugMode`, `dataSourceMode`, `customDataPath`, `displayPrecision`, `radialStatusEffects`.
+- `globalEventsEnabled`, `globalEventsNotifications`, `globalEventsAutoRecalc`, `globalEventsShowPublic`, `globalEventsDebug`.
 
-- `import-xlsx.ps1` — основной импорт экономики в `goods/regions/cities/reference`.
-- `import-materials.ps1` — импорт материалов + синтетические материалы для отсутствующих goods.
-- `import-gear.ps1` — импорт снаряжения (включая `shopSubtype`) в `gear.json`.
+Hidden world state:
 
-Примеры запуска:
+- `traderState`, `partyState` (legacy compatibility), `groupState`, `craftState`, `calendarState`.
+- `craftMutationJournal`, `inventoryMutationJournal`.
+- `connectionStates`, `referenceNotes`, `tradeRouteOverrides`, `statePolicies`, `cosmologyState`, `globalEventsState`, `globalEventsDraft`.
+
+Основные источники в `data/`:
+
+- экономика: `goods.json`, `regions.json`, `cities.json`, `reference.json`, `materials.json`, `gear.json`;
+- контент: races/backgrounds/states/spells/downtime и class rework JSON;
+- путешествия: `travel-network.json`;
+- magic items: корневой `magicItem.js`; feats: корневой `feat.js` плюс `feats-world-overrides.json`.
+
+Импортные инструменты: `tools/import-xlsx.ps1`, `import-materials.ps1`, `import-gear.ps1`, `sync-travel-network.mjs`, `apply-feat-automation.mjs`, `apply-race-automation.mjs`. Формат item-полей дополнительно описан в `docs/foundry-item-fields.md`.
+
+## Проверки разработки
+
+Проект использует Node test runner и не требует test framework:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\import-xlsx.ps1 -WorkbookPath "D:\path\economy.xlsx" -OutputDir ".\data"
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\import-materials.ps1 -WorkbookPath "D:\path\materials.xlsx" -GoodsPath ".\data\goods.json" -OutputPath ".\data\materials.json"
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\import-gear.ps1 -WorkbookPath "D:\path\gear.xlsx" -MaterialsPath ".\data\materials.json" -OutputPath ".\data\gear.json"
+node --test tests/*.test.mjs
 ```
 
-Подробности по колонкам импорта предметов: `docs/foundry-item-fields.md`.
+Минимум перед commit:
 
-## 19. Важные ограничения текущей версии
+```powershell
+git diff --check
 
-- В репозитории есть интеграционный файл `scripts/integrations/item-piles-dnd5e.js`; если он не вызван из `main.js`, интеграция не активируется автоматически.
-- Импорт в текущей модели считается покомпонентно для каждого города; глобальная конкуренция городов за один и тот же экспортный излишек источника пока не симулируется.
-- Простой реализует workflow выдачи недель, заявок, статусов и сохраненных проверок; автоматическое исполнение таблиц главы 9 и кнопки бросков проверок из чарника пока не включены.
+$files = git ls-files '*.js' '*.mjs'
+foreach ($file in $files) { node --check $file }
 
-## 20. Диагностика
+$json = git ls-files '*.json'
+foreach ($file in $json) { Get-Content -Raw $file | ConvertFrom-Json | Out-Null }
+```
 
-Если интерфейс работает некорректно:
+Focused tests названы по владельцу: `*-automation-service.test.mjs`, `*-compendium.test.mjs`, transaction/recovery tests и compatibility tests. Исправление бага сначала должно воспроизводиться focused test; затем обязательно запускается весь набор.
 
-- Проверьте, что модуль активирован и `game.rebreyaMain` существует.
-- Нажмите «Перезагрузить данные» в окне экономики.
-- Проверьте world settings источника данных (`builtin/custom`).
-- Смотрите консоль Foundry: большинство ошибок логируются с префиксом `rebreya-main | ...`.
+## Правила против дублей
 
-### 20.1 Ошибка `You must define at least one entry in config.buttons`
+Перед добавлением функции или сервиса:
 
-Симптом:
+1. Найти владельца термина: `rg -n "имя|флаг|command|hook" scripts tests README.md`.
+2. Проверить `RebreyaMainModule`, существующий domain service и `scripts/shared/foundry-values.js`.
+3. Расширить существующий сервис; новый сервис допустим только при новой ответственности, а не новом UI.
+4. Не переносить helper в shared только из-за одинакового имени. Должны совпасть null/undefined semantics, trim, Foundry fallback, HTML escaping, collection precedence и формат ошибок.
+5. Не копировать compendium lifecycle: использовать `syncManagedDocuments`, `syncFlaggedManagedDocuments` или `syncManagedDocumentsOnActiveGm`.
+6. Не создавать второй Trader/Inventory/Sheet app. Compatibility-метод должен делегировать канонической реализации.
+7. Не регистрировать один Hook в нескольких местах. `combat/hooks.js` уже объединяет dnd5e и Midi paths и содержит guards для отсутствующих сервисов.
+8. Не писать world setting напрямую из UI и не добавлять неавторизованный socket event.
+9. Локальную функцию удалять только после поиска declaration/call sites и проверки callback/hook/string references.
+10. Обновить focused tests и раздел автоматизаций этого README.
 
-- не открывается создание/редактирование в «Глобальных ивентах»;
-- в консоли ошибка `Failed to open global event editor ... config.buttons`.
+## Диагностика
 
-Причина:
+- Нет `game.rebreyaMain`: проверить активацию модуля, manifest entrypoint и ошибки `ready` в консоли.
+- Не обновился компендиум: нужен активный GM; проверить managed/source/signature flags и ошибки соответствующего `*-compendium.js`.
+- Не сработала automation: проверить identifier/sourceType/runtime flags, нужный dnd5e/Midi hook и владение Actor; имя предмета часто является только fallback.
+- Не создался эффект на чужом Actor: локальный клиент, вероятно, не владелец; для поддержанных операций должен существовать active-GM socket route.
+- Повторное списание или зависшая операция: найти operation ID в mutation journal/transaction state; `reconciliation-required` требует ручной сверки.
+- UI показывает старое состояние: использовать `refreshInventoryViews`/`refreshOpenApps` через composition root, а не прямой массовый render.
+- Общий префикс логов: `rebreya-main |`.
 
-- несовместимая конфигурация диалога (разный формат `buttons` для разных классов Dialog).
-
-Проверка/решение:
-
-- убедиться, что используется актуальный `scripts/ui/global-events-app.js`, где кнопки редактора формируются через адаптер `buildEditorDialogButtons(...)`;
-- перезапустить Foundry после обновления файла;
-- если мир открывался долго без перезагрузки клиента, закрыть и заново открыть браузерную вкладку Foundry.
-
-### 20.2 Лутген не добавляет магические предметы
-
-Проверьте по порядку:
-
-- в лутгене включен флаг `Магические предметы`;
-- `magicPercent` больше `0` (при `0` шанс магии нулевой);
-- диапазон рангов (`Мин/Макс`) пересекается с рангами в магическом компендиуме;
-- существует и заполнен компендиум `world.rebreya-magic-items` (после `Перезагрузить данные` в экономике);
-- бюджет `value` достаточно большой для выбранных рангов.
-
-Важно:
-
-- если в выбранном диапазоне нет доступных предметов (с учетом фильтров/бюджета), генератор берет только доступные обычные позиции или завершает подбор.
-
-### 20.3 Почему в описании магпредмета не видно `value`
-
-Это не обязательно ошибка.
-
-- В лутгене используется поле `flags.rebreya-main.value` (или fallback от цены).
-- В карточке магпредмета строка «Оценка» показывается от `priceGold` и может отсутствовать, если у источника `priceGold = 0`/пусто.
-- Поэтому отсутствие «Оценки» в тексте описания и расчет `value` в лутгене могут расходиться.
-
-Практика:
-
-- для прозрачности экономики держите заполненным `value`/`priceGold` в исходнике `magicItem.js`.
-
-### 20.4 Быстрая проверка синхронизации магического компендиума
-
-1. Откройте «Экономика» -> «Перезагрузить данные».
-2. Проверьте наличие пака `world.rebreya-magic-items`.
-3. Откройте любой магический предмет и убедитесь, что у него есть флаги `rebreya-main.magicItemId`, `rank`, `value`.
-
----
-
-README поддерживается как рабочая документация к текущей кодовой базе. При изменении механик обновляйте этот файл синхронно с кодом.
+README изменяется вместе с архитектурой, публичным API, socket command, pack или automation hook. Если код и этот файл расходятся, источником поведения остаётся код, а расхождение считается дефектом документации.
