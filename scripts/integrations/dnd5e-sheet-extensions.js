@@ -32,7 +32,7 @@ import {
   hideInstalledUpgradeInventoryRows,
   isItemUpgradeHostItem,
   registerItemUpgradeFilterHook
-} from "./item-upgrade-sheet.js?v=1.4.93-item-upgrade-row-drop";
+} from "./item-upgrade-sheet.js?v=1.4.93-item-upgrade-visuals";
 import {
   buildHeldItemEquipMenuActions,
   buildHeldItemReleaseHandUpdate,

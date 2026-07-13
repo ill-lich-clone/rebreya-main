@@ -10296,10 +10296,13 @@ summary:focus-visible {
   gap: 8px;
   margin: 10px 0;
   padding: 10px;
-  border: 1px solid rgb(99 84 57 / 0.38);
+  border: 1px solid var(--rm-border-strong);
   border-radius: 8px;
-  background: rgb(245 241 232 / 0.78);
-  color: rgb(38 35 30);
+  background: linear-gradient(180deg, rgb(var(--rm-color-surface-raised-rgb) / 0.92), rgb(var(--rm-color-surface-rgb) / 0.96));
+  color: var(--rm-text-primary);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.04),
+    0 10px 24px rgb(0 0 0 / 0.24);
 }
 
 .rm-item-upgrades-tab {
@@ -10344,10 +10347,10 @@ summary:focus-visible {
   align-items: center;
   justify-content: center;
   min-width: 0;
-  border: 1px solid rgb(82 73 58 / 0.45);
+  border: 1px solid var(--rm-border-default);
   border-radius: 6px;
-  background: rgb(255 252 245 / 0.88);
-  color: rgb(50 45 36);
+  background: rgb(var(--rm-color-ink-rgb) / 0.55);
+  color: var(--rm-text-secondary);
   font-weight: 700;
 }
 
@@ -10358,9 +10361,9 @@ summary:focus-visible {
 }
 
 .rm-item-upgrades__capacity-button.is-active {
-  border-color: rgb(142 95 27 / 0.72);
-  background: rgb(164 112 37 / 0.18);
-  color: rgb(91 58 17);
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.72);
+  background: rgb(var(--rm-color-gold-rgb) / 0.16);
+  color: var(--rm-accent-strong);
 }
 
 .rm-item-upgrades__slots {
@@ -10378,14 +10381,14 @@ summary:focus-visible {
   align-items: center;
   min-height: 38px;
   padding: 5px 6px;
-  border: 1px solid rgb(100 86 62 / 0.24);
+  border: 1px solid var(--rm-border-subtle);
   border-radius: 7px;
-  background: rgb(255 255 255 / 0.58);
+  background: rgb(var(--rm-color-ink-rgb) / 0.34);
 }
 
 .rm-item-upgrades__slot.is-empty {
   grid-template-columns: 24px minmax(0, 1fr);
-  color: rgb(71 67 60 / 0.72);
+  color: var(--rm-text-dim);
 }
 
 .rm-item-upgrades__slot-index {
@@ -10395,7 +10398,9 @@ summary:focus-visible {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: rgb(80 74 64 / 0.12);
+  border: 1px solid var(--rm-border-default);
+  background: rgb(var(--rm-color-gold-rgb) / 0.12);
+  color: var(--rm-accent-strong);
   font-size: 0.76rem;
   font-weight: 800;
 }
@@ -10404,8 +10409,9 @@ summary:focus-visible {
   width: 30px;
   height: 30px;
   object-fit: cover;
-  border: 1px solid rgb(70 62 50 / 0.24);
+  border: 1px solid var(--rm-border-strong);
   border-radius: 6px;
+  background: var(--rm-surface-0);
 }
 
 .rm-item-upgrades__name,
@@ -10415,6 +10421,14 @@ summary:focus-visible {
   font-size: 0.84rem;
 }
 
+.rm-item-upgrades__name {
+  color: var(--rm-text-primary);
+}
+
+.rm-item-upgrades__empty-label {
+  color: var(--rm-text-dim);
+}
+
 .rm-item-upgrades__remove {
   width: 28px;
   height: 28px;
@@ -10422,8 +10436,11 @@ summary:focus-visible {
 }
 
 .rm-item-upgrades.is-dragover {
-  border-color: rgb(35 112 92 / 0.72);
-  background: rgb(231 246 239 / 0.82);
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.74);
+  background: linear-gradient(180deg, rgb(var(--rm-color-surface-raised-rgb) / 0.98), rgb(var(--rm-color-ink-rgb) / 0.92));
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--rm-color-gold-rgb) / 0.24),
+    0 0 18px rgb(var(--rm-color-gold-rgb) / 0.14);
 }
 
 .rm-item-upgrades__hold {
@@ -10432,7 +10449,7 @@ summary:focus-visible {
   display: none;
   place-items: center;
   border-radius: 8px;
-  background: rgb(18 28 25 / 0.28);
+  background: rgb(var(--rm-color-ink-rgb) / 0.46);
   pointer-events: none;
 }
 
@@ -10465,11 +10482,25 @@ summary:focus-visible {
   display: none !important;
 }
 
+.dnd5e2.sheet.actor [data-item-id].has-rebreya-installed-upgrades,
+.dnd5e.sheet.actor [data-item-id].has-rebreya-installed-upgrades {
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--rm-color-gold-rgb) / 0.9),
+    inset 4px 0 0 rgb(var(--rm-color-gold-rgb) / 0.84),
+    0 0 10px rgb(var(--rm-color-gold-rgb) / 0.16);
+}
+
 .dnd5e2.sheet.actor [data-item-id].is-rebreya-upgrade-drop-target,
 .dnd5e.sheet.actor [data-item-id].is-rebreya-upgrade-drop-target {
   outline: 1px solid rgb(236 197 92 / 0.95);
   outline-offset: -2px;
   background: linear-gradient(90deg, rgb(236 197 92 / 0.18), transparent 70%);
+  animation: rmItemUpgradeDropTargetPulse 950ms ease-in-out infinite;
+}
+
+.dnd5e2.sheet.actor [data-item-id].is-rebreya-upgrade-installing,
+.dnd5e.sheet.actor [data-item-id].is-rebreya-upgrade-installing {
+  animation: rmItemUpgradeInstallPulse 700ms ease-out both;
 }
 
 @keyframes rmItemUpgradeHoldFill {
@@ -10479,6 +10510,47 @@ summary:focus-visible {
 
   to {
     --rm-item-upgrade-hold-progress: 360deg;
+  }
+}
+
+@keyframes rmItemUpgradeDropTargetPulse {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgb(var(--rm-color-gold-rgb) / 0.62),
+      0 0 8px rgb(var(--rm-color-gold-rgb) / 0.18);
+  }
+
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgb(var(--rm-color-gold-rgb) / 0.96),
+      0 0 16px rgb(var(--rm-color-gold-rgb) / 0.34);
+  }
+}
+
+@keyframes rmItemUpgradeInstallPulse {
+  0% {
+    box-shadow:
+      inset 0 0 0 1px rgb(var(--rm-color-gold-rgb) / 0.96),
+      inset 4px 0 0 rgb(var(--rm-color-gold-rgb) / 0.9),
+      0 0 0 rgb(var(--rm-color-gold-rgb) / 0);
+    filter: brightness(1);
+  }
+
+  36% {
+    box-shadow:
+      inset 0 0 0 1px rgb(var(--rm-color-gold-rgb) / 1),
+      inset 4px 0 0 rgb(var(--rm-color-gold-rgb) / 1),
+      0 0 22px rgb(var(--rm-color-gold-rgb) / 0.48);
+    filter: brightness(1.18);
+  }
+
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgb(var(--rm-color-gold-rgb) / 0.9),
+      inset 4px 0 0 rgb(var(--rm-color-gold-rgb) / 0.84),
+      0 0 10px rgb(var(--rm-color-gold-rgb) / 0.16);
+    filter: brightness(1);
   }
 }
 

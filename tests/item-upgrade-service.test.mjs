@@ -330,6 +330,71 @@ test("dnd5e item filter hook hides installed upgrades before inventory rows rend
   }
 });
 
+test("actor sheet inventory rows mark upgraded host items with a persistent frame", async () => {
+  const restoreFoundry = installFoundryStubs();
+  const previousHTMLElement = globalThis.HTMLElement;
+
+  class FakeHTMLElement {
+    constructor({ dataset = {}, selectorAll = {} } = {}) {
+      this.dataset = dataset;
+      this.selectorAll = selectorAll;
+      this.hidden = false;
+      this.classList = {
+        values: new Set(),
+        add: (...names) => names.forEach((name) => this.classList.values.add(name)),
+        remove: (...names) => names.forEach((name) => this.classList.values.delete(name)),
+        contains: (name) => this.classList.values.has(name)
+      };
+    }
+
+    querySelectorAll(selector) {
+      return this.selectorAll[selector] ?? [];
+    }
+
+    closest() {
+      return null;
+    }
+  }
+
+  globalThis.HTMLElement = FakeHTMLElement;
+
+  try {
+    const {
+      ItemUpgradeService
+    } = await import(`../scripts/data/item-upgrade-service.js?inventory-host-frame=${Date.now()}`);
+    const {
+      hideInstalledUpgradeInventoryRows
+    } = await import(`../scripts/integrations/item-upgrade-sheet.js?inventory-host-frame=${Date.now()}`);
+    const actor = new FakeActor();
+    const host = actor.addItem({
+      _id: "katana",
+      name: "Katana",
+      type: "weapon",
+      system: { quantity: 1 },
+      flags: {}
+    });
+    const upgrade = makeUpgrade(actor, { _id: "elven-steel" });
+    const hostRow = new FakeHTMLElement({ dataset: { itemId: host.id } });
+    const upgradeRow = new FakeHTMLElement({ dataset: { itemId: upgrade.id } });
+    const root = new FakeHTMLElement({
+      selectorAll: {
+        "[data-item-id]": [hostRow, upgradeRow]
+      }
+    });
+
+    await new ItemUpgradeService().installUpgrade(host, upgrade);
+    assert.equal(hideInstalledUpgradeInventoryRows(root, actor), true);
+
+    assert.equal(upgradeRow.hidden, true);
+    assert.equal(upgradeRow.classList.contains("rm-item-upgrades-hidden-item"), true);
+    assert.equal(hostRow.classList.contains("has-rebreya-installed-upgrades"), true);
+  }
+  finally {
+    globalThis.HTMLElement = previousHTMLElement;
+    restoreFoundry();
+  }
+});
+
 test("item upgrade drop data reads Foundry v13 DragDrop payloads", async () => {
   const previousConfig = globalThis.CONFIG;
   const previousTextEditor = globalThis.TextEditor;
@@ -450,12 +515,14 @@ test("actor sheet inventory rows install a dropped upgrade onto the target item"
   });
   const payload = { type: "Item", uuid: upgrade.uuid };
   const calls = [];
+  const scheduledTimers = [];
   let rendered = false;
 
   globalThis.HTMLElement = FakeHTMLElement;
   globalThis.window = {
-    setTimeout() {
-      return 1;
+    setTimeout(callback, delay) {
+      scheduledTimers.push({ callback, delay });
+      return scheduledTimers.length;
     },
     clearTimeout() {}
   };
@@ -526,8 +593,16 @@ test("actor sheet inventory rows install a dropped upgrade onto the target item"
     await hostRow.listeners.drop[0](event);
 
     assert.deepEqual(calls, [[host, upgrade]]);
-    assert.equal(rendered, true);
     assert.equal(hostRow.classList.contains("is-rebreya-upgrade-drop-target"), false);
+    assert.equal(hostRow.classList.contains("is-rebreya-upgrade-installing"), true);
+    assert.equal(rendered, false);
+    assert.equal(scheduledTimers.length, 1);
+    assert.equal(scheduledTimers[0].delay, 700);
+
+    await scheduledTimers[0].callback();
+
+    assert.equal(rendered, true);
+    assert.equal(hostRow.classList.contains("is-rebreya-upgrade-installing"), false);
   }
   finally {
     globalThis.HTMLElement = previousHTMLElement;

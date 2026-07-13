@@ -13,6 +13,9 @@ const DRAG_DATA_TYPES = ["text/plain", "text", "application/json"];
 const HOLD_STATES = new WeakMap();
 const INVENTORY_ROW_DROP_BOUND_FLAG = "rebreyaItemUpgradeDropBound";
 const INVENTORY_ROW_DROP_TARGET_CLASS = "is-rebreya-upgrade-drop-target";
+const INVENTORY_ROW_HAS_UPGRADES_CLASS = "has-rebreya-installed-upgrades";
+const INVENTORY_ROW_INSTALLING_CLASS = "is-rebreya-upgrade-installing";
+const UPGRADE_INSTALL_ANIMATION_MS = 700;
 let filterHookRegistered = false;
 
 function cleanText(value) {
@@ -186,6 +189,10 @@ function isPotentialActorInventoryUpgradeDrop(dropData, actor, event = null) {
     return isUpgradeItem(document);
   }
   return isPotentialUpgradeDrop(dropData, event);
+}
+
+function hasInstalledUpgrade(hostItem) {
+  return getInstalledUpgradeItems(hostItem).length > 0;
 }
 
 function getPanelContainer(root) {
@@ -366,6 +373,29 @@ async function rerenderActorSheetAfterUpgrade(app, moduleApi, rerenderActorSheet
   await moduleApi?.refreshOpenApps?.();
 }
 
+function playInventoryInstallAnimation(row, callback) {
+  row.classList?.add?.(INVENTORY_ROW_INSTALLING_CLASS);
+  const runAfterAnimation = async () => {
+    try {
+      await callback();
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to refresh actor sheet after item upgrade animation.`, error);
+    }
+    finally {
+      row.classList?.remove?.(INVENTORY_ROW_INSTALLING_CLASS);
+    }
+  };
+
+  const setTimeoutFn = globalThis.window?.setTimeout ?? globalThis.setTimeout;
+  if (setTimeoutFn instanceof Function) {
+    setTimeoutFn(runAfterAnimation, UPGRADE_INSTALL_ANIMATION_MS);
+  }
+  else {
+    void runAfterAnimation();
+  }
+}
+
 export function renderItemUpgradePanel(root, hostItem) {
   if (!(root instanceof HTMLElement) || !isUpgradeableHostItem(hostItem)) {
     return null;
@@ -393,9 +423,7 @@ export function hideInstalledUpgradeInventoryRows(root, actor) {
   }
 
   const installedIds = getInstalledActorUpgradeItemIds(actor);
-  if (!installedIds.size) {
-    return false;
-  }
+  let changed = false;
 
   for (const node of Array.from(root.querySelectorAll?.("[data-item-id]") ?? [])) {
     if (!(node instanceof HTMLElement) || node.closest?.("[data-rebreya-item-upgrades='true']")) {
@@ -404,9 +432,20 @@ export function hideInstalledUpgradeInventoryRows(root, actor) {
     if (installedIds.has(cleanText(node.dataset.itemId))) {
       node.hidden = true;
       node.classList?.add?.("rm-item-upgrades-hidden-item");
+      changed = true;
+      continue;
+    }
+
+    const item = resolveActorItem(actor, node.dataset.itemId);
+    if (item && hasInstalledUpgrade(item)) {
+      node.classList?.add?.(INVENTORY_ROW_HAS_UPGRADES_CLASS);
+      changed = true;
+    }
+    else {
+      node.classList?.remove?.(INVENTORY_ROW_HAS_UPGRADES_CLASS);
     }
   }
-  return true;
+  return changed;
 }
 
 export function registerItemUpgradeFilterHook() {
@@ -478,7 +517,8 @@ export function bindItemUpgradeInventoryRows(root, { actor, app, moduleApi, rere
         const upgradeItem = await resolveDropItem(dropData, actor);
         const installed = await moduleApi.installItemUpgrade(hostItem, upgradeItem);
         ui.notifications?.info?.(`Установлено: ${installed?.name ?? upgradeItem?.name ?? "усовершенствование"}.`);
-        await rerenderActorSheetAfterUpgrade(app, moduleApi, rerenderActorSheet);
+        row.classList?.add?.(INVENTORY_ROW_HAS_UPGRADES_CLASS);
+        playInventoryInstallAnimation(row, () => rerenderActorSheetAfterUpgrade(app, moduleApi, rerenderActorSheet));
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to install item upgrade from actor sheet row.`, error);

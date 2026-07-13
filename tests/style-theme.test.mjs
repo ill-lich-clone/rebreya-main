@@ -133,6 +133,20 @@ test("Shared components consume the graphite and brass redesign primitives", asy
   assert.match(css, /\.rm-field input:focus,\s*\.rm-field select:focus,\s*\.rm-textarea:focus\s*\{[^}]*box-shadow:\s*0 0 0 3px rgba\(224, 178, 94, 0\.18\);/su);
 });
 
+test("item upgrade controls match the dark character sheet style", async () => {
+  const css = await readFile(stylesheetUrl, "utf8");
+  const itemUpgradeBlock = css.match(/\.rm-item-upgrades\s*\{(?<body>[^}]*)\}/su)?.groups?.body ?? "";
+
+  assert.match(itemUpgradeBlock, /background:\s*linear-gradient\(180deg,\s*rgb\(var\(--rm-color-surface-raised-rgb\) \/ 0\.92\),\s*rgb\(var\(--rm-color-surface-rgb\) \/ 0\.96\)\);/su);
+  assert.match(itemUpgradeBlock, /border:\s*1px solid var\(--rm-border-strong\);/su);
+  assert.match(itemUpgradeBlock, /color:\s*var\(--rm-text-primary\);/su);
+  assert.doesNotMatch(itemUpgradeBlock, /245 241 232|255 252 245|255 255 255 \/ 0\.58/u);
+
+  assert.match(css, /\.dnd5e2\.sheet\.actor \[data-item-id\]\.has-rebreya-installed-upgrades/u);
+  assert.match(css, /\.dnd5e2\.sheet\.actor \[data-item-id\]\.is-rebreya-upgrade-installing/u);
+  assert.match(css, /@keyframes rmItemUpgradeInstallPulse/u);
+});
+
 test("Trader v2 keeps its standalone parchment theme", async () => {
   const css = await readFile(stylesheetUrl, "utf8");
 
