@@ -58,16 +58,6 @@ function cleanText(value, fallback = "") {
   return text || String(fallback ?? "").trim();
 }
 
-function normalizeText(value) {
-  return cleanText(value)
-    .toLowerCase()
-    .replace(/\u0451/gu, "\u0435")
-    .replace(/['"\u2019\u2018\u02BC\u02B9\u2032\u201C\u201D\u00AB\u00BB]/gu, "")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-}
-
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
   return Number.isFinite(numericValue) ? numericValue : fallback;

@@ -3782,30 +3782,6 @@ function buildSpellChoiceAdvancements(classData, context = {}) {
   }));
 }
 
-function buildMetamagicChoiceAdvancements(classData, context = {}) {
-  if (classData.identifier !== "sorcerer-rework-v011") {
-    return [];
-  }
-
-  const featureUuidById = context.featureUuidById instanceof Map ? context.featureUuidById : new Map();
-  const pool = (classData.metamagicOptions ?? [])
-    .map((option) => featureUuidById.get(`${classData.identifier}::sorcererMetamagic::${option.featureId}`))
-    .filter(Boolean);
-  if (!pool.length) {
-    return [];
-  }
-
-  return [[3, 3], [10, 1], [17, 1]].map(([level, count]) => buildItemChoiceAdvancement({
-    classIdentifier: classData.identifier,
-    seed: `metamagic-${level}`,
-    title: "Метамагия",
-    hint: "Выберите доступные варианты метамагии чародея.",
-    level,
-    count,
-    pool
-  }));
-}
-
 function pickPreferredFeat(records = [], preferredSection = "") {
   const list = Array.isArray(records) ? records.filter((entry) => entry?.uuid) : [];
   if (!list.length) {

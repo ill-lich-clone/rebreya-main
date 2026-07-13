@@ -292,10 +292,6 @@ function getQuestEntry(questOrEntry) {
   return questOrEntry?.quest?.entry ?? questOrEntry?.entry ?? questOrEntry ?? null;
 }
 
-function getQuestFromEntry(questOrEntry) {
-  return questOrEntry?.quest ?? questOrEntry ?? null;
-}
-
 function defaultGetFqlApi() {
   return globalThis.game?.modules?.get?.(FQL_MODULE_ID)?.public?.QuestAPI ?? null;
 }

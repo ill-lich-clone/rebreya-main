@@ -454,23 +454,6 @@ function getTargetOptionGroupsForSourceType(sourceType, actor = null) {
     .filter((group) => group.options.length);
 }
 
-function getTargetOptionForSourceType(value, sourceType = "", actor = null) {
-  const safeValue = cleanText(value);
-  if (!safeValue) {
-    return null;
-  }
-  const groups = cleanText(sourceType)
-    ? getTargetOptionGroupsForSourceType(sourceType, actor)
-    : DOWNTIME_TARGET_OPTION_GROUPS;
-  for (const group of groups) {
-    const option = group.options.find((entry) => entry.value === safeValue);
-    if (option) {
-      return option;
-    }
-  }
-  return null;
-}
-
 function getDefaultTargetOption(sourceType = "skill", actor = null) {
   return getTargetOptionGroupsForSourceType(sourceType, actor)[0]?.options?.[0] ?? null;
 }

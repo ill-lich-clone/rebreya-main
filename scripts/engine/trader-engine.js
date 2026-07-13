@@ -500,20 +500,6 @@ function buildMagicItemId(item, index) {
   return buildMagicSlug(item?.id ?? item?.name ?? `magic-item-${index + 1}`, `magic-item-${index + 1}`);
 }
 
-function getMagicBasePriceGold(item) {
-  const valuePrice = toNumber(item?.value, 0);
-  if (valuePrice > EPSILON) {
-    return valuePrice;
-  }
-
-  const parsedCost = parseGoldValueFromPriceText(item?.costText ?? "");
-  if (parsedCost !== null) {
-    return parsedCost;
-  }
-
-  return MIN_ITEM_PRICE_GOLD;
-}
-
 function buildCityProfileShopRows(citySnapshot) {
   const cityRank = getCityRank(citySnapshot);
   const cityProfileKey = getCityProfileKey(citySnapshot);

@@ -61,14 +61,6 @@ function getProperty(source, path, fallback = undefined) {
   return value === undefined ? fallback : value;
 }
 
-function normalizeLookupText(value) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
-    .replace(/\s+/gu, " ");
-}
-
 function buildEffectStatusesSet(statusId) {
   return new Set([String(statusId ?? "").trim()].filter(Boolean));
 }
@@ -449,18 +441,6 @@ function buildSyncedFrightenedChanges(effect, value, { isStrongest = false } = {
     ...preserveFrightenedPassthroughChanges(effect),
     ...(isStrongest ? buildFrightenedChanges(value) : [])
   ];
-}
-
-function getExplicitEffectStatuses(effect) {
-  if (effect?.statuses instanceof Set) {
-    return [...effect.statuses].map((entry) => String(entry ?? "").trim()).filter(Boolean);
-  }
-
-  if (Array.isArray(effect?.statuses)) {
-    return effect.statuses.map((entry) => String(entry ?? "").trim()).filter(Boolean);
-  }
-
-  return null;
 }
 
 function buildSyncedFrightenedStatuses(effect, { isStrongest = true } = {}) {
