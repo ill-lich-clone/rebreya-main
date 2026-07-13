@@ -58,6 +58,7 @@ const {
   createMagicArmorTemplateUpdate,
   createMagicShieldTemplateUpdate,
   createMagicWeaponTemplateUpdate,
+  handleCreatedMagicAmmunitionItem,
   handleCreatedMagicArmorItem,
   handleActorRenderMagicWeapons,
   handleCreatedMagicWeaponItem,
@@ -122,6 +123,26 @@ function makeDagger() {
   };
 }
 
+function makeGreatsword() {
+  return {
+    id: "greatsword",
+    name: "Двуручный меч",
+    equipmentType: "Оружие",
+    itemType: "Воинское рукопашное",
+    cost: {
+      gold: 50,
+      silver: 0,
+      copper: 0,
+    },
+    weight: 6,
+    weapon: {
+      damageFormula: "2d6",
+      damageType: "slashing",
+      properties: ["hvy", "two"],
+    },
+  };
+}
+
 function makeFirearm() {
   return {
     id: "automatic-rifle",
@@ -132,6 +153,22 @@ function makeFirearm() {
     weapon: {
       damageFormula: "2d8",
       damageType: "piercing",
+      properties: [],
+    },
+  };
+}
+
+function makeHideArmor() {
+  return {
+    id: "hide-armor",
+    name: "Шкурный доспех",
+    equipmentType: "Доспех",
+    armor: {
+      type: "medium",
+      baseItem: "hide",
+      value: 12,
+      dex: 2,
+      strength: 0,
       properties: [],
     },
   };
@@ -211,6 +248,51 @@ function makeModernArmor() {
       strength: 0,
       properties: [],
     },
+  };
+}
+
+function makeArrows() {
+  return {
+    id: "arrows",
+    name: "Стрелы (20)",
+    equipmentType: "Боеприпас",
+    cost: {
+      gold: 1,
+      silver: 0,
+      copper: 0,
+    },
+    priceGoldEquivalent: 1,
+    weight: 1,
+  };
+}
+
+function makeSlingBullets() {
+  return {
+    id: "sling-bullets",
+    name: "Снаряды для пращи (20)",
+    equipmentType: "Боеприпас",
+    cost: {
+      gold: 0,
+      silver: 0,
+      copper: 4,
+    },
+    priceGoldEquivalent: 0.04,
+    weight: 1.5,
+  };
+}
+
+function makeCrossbowBolts() {
+  return {
+    id: "crossbow-bolts",
+    name: "Арбалетные болты (20)",
+    equipmentType: "Боеприпас",
+    cost: {
+      gold: 1,
+      silver: 0,
+      copper: 0,
+    },
+    priceGoldEquivalent: 1,
+    weight: 1.5,
   };
 }
 
@@ -610,6 +692,53 @@ test("handleCreatedMagicWeaponItem prompts and updates only current user's chara
   assert.equal(item.updates[0].options["rebreya-main"].skipMagicWeaponTemplate, true);
 });
 
+test("handleCreatedMagicWeaponItem adapts named magic weapons by manual subtype list", async () => {
+  const item = new FakeItem({
+    name: "Вор девяти жизней",
+    type: "weapon",
+    flags: {
+      "rebreya-main": {
+        sourceType: "magicItem",
+        magicItemId: "vor-devyati-zhizney",
+        itemType: "Оружие",
+        itemSubtype: "Меч",
+        signature: JSON.stringify({
+          description: "Вы получаете бонус +2 к броскам атаки и урона, совершённым этим магическим оружием.",
+        }),
+      },
+    },
+  });
+  const moduleApi = {
+    getModel: async () => ({
+      gear: [makeLongsword(), makeGreatsword(), makeDagger()],
+    }),
+  };
+
+  const handled = await handleCreatedMagicWeaponItem(
+    item,
+    {},
+    "player-1",
+    moduleApi,
+    {
+      prompt: async ({ bonus, weapons }) => {
+        assert.equal(bonus, 2);
+        assert.deepEqual(
+          weapons.map((weapon) => weapon.id),
+          ["greatsword", "longsword"],
+        );
+        return "longsword";
+      },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(item.updates.length, 1);
+  assert.equal(item.updates[0].data.name, "Вор девяти жизней (Длинный меч)");
+  assert.equal(item.updates[0].data.system.magicalBonus, 2);
+  assert.equal(item.updates[0].data.flags["rebreya-main"].magicEquipmentTemplate, true);
+  assert.equal(item.updates[0].data.flags["rebreya-main"].magicWeaponGearId, "longsword");
+});
+
 test("handleCreatedMagicWeaponItem still prompts on the current user's create hook even if actor ownership is not yet reflected", async () => {
   const item = new FakeItem();
   item.parent = { type: "character", isOwner: false };
@@ -720,6 +849,99 @@ test("handleCreatedMagicArmorItem prompts and updates generic armor and shield i
   ]);
   assert.equal(armorItem.updates[0].data.name, "Боевая броня шеф-повара +2");
   assert.equal(shieldItem.updates[0].data.name, "Баклер +1");
+});
+
+test("handleCreatedMagicArmorItem adapts armor by manual subtype restrictions", async () => {
+  const armorItem = new FakeItem({
+    name: "Миззиевый доспех",
+    type: "equipment",
+    flags: {
+      "rebreya-main": {
+        sourceType: "magicItem",
+        magicItemId: "mizzium-armor",
+        itemType: "Доспех",
+        itemSubtype: "Средний, Тяжёлый",
+      },
+    },
+  });
+  const moduleApi = {
+    getModel: async () => ({
+      gear: [makeChefArmor(), makeHideArmor(), makeArmor()],
+    }),
+  };
+
+  const handled = await handleCreatedMagicArmorItem(
+    armorItem,
+    {},
+    "player-1",
+    moduleApi,
+    {
+      prompt: async (context) => {
+        assert.equal(context.bonus, null);
+        assert.equal(context.itemLabel, "Доспех");
+        assert.deepEqual(
+          context.options.map((option) => option.id),
+          ["chain-mail", "hide-armor"],
+        );
+        return "hide-armor";
+      },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(armorItem.updates.length, 1);
+  assert.equal(armorItem.updates[0].data.name, "Миззиевый доспех (Шкурный доспех)");
+  assert.equal(armorItem.updates[0].data.system.type.value, "medium");
+  assert.equal(armorItem.updates[0].data.system.armor.magicalBonus, null);
+  assert.equal(armorItem.updates[0].data.flags["rebreya-main"].magicArmorGearId, "hide-armor");
+});
+
+test("handleCreatedMagicAmmunitionItem adapts magic arrows and preserves magic source data", async () => {
+  const arrowItem = new FakeItem({
+    name: "Стрела убийства",
+    type: "consumable",
+    flags: {
+      "rebreya-main": {
+        sourceType: "magicItem",
+        magicItemId: "strela-ubiystva",
+        itemType: "Оружие",
+        itemSubtype: "Стрела",
+      },
+    },
+  });
+  const moduleApi = {
+    getModel: async () => ({
+      gear: [makeArrows(), makeSlingBullets(), makeCrossbowBolts()],
+    }),
+  };
+
+  const handled = await handleCreatedMagicAmmunitionItem(
+    arrowItem,
+    {},
+    "player-1",
+    moduleApi,
+    {
+      prompt: async (context) => {
+        assert.equal(context.bonus, null);
+        assert.equal(context.itemLabel, "Боеприпас");
+        assert.deepEqual(
+          context.options.map((option) => option.id),
+          ["arrows"],
+        );
+        return "arrows";
+      },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(arrowItem.updates.length, 1);
+  assert.equal(arrowItem.updates[0].data.name, "Стрела убийства (Стрелы)");
+  assert.equal(arrowItem.updates[0].data.type, "consumable");
+  assert.equal(arrowItem.updates[0].data.system.type.value, "ammo");
+  assert.equal(arrowItem.updates[0].data.system.type.subtype, "arrow");
+  assert.equal(arrowItem.updates[0].data.system.quantity, 1);
+  assert.equal(arrowItem.updates[0].data.flags["rebreya-main"].magicAmmunitionTemplate, true);
+  assert.equal(arrowItem.updates[0].data.flags["rebreya-main"].magicAmmunitionGearId, "arrows");
 });
 
 test("handleActorRenderMagicWeapons applies a fallback prompt for unresolved generic magic weapons on owned sheets", async () => {

@@ -881,14 +881,30 @@ function normalizeMagicConsumableType(item) {
   return { systemTypeValue: "potion", systemTypeSubtype: "" };
 }
 
+function isMagicAmmunitionSubtype(value) {
+  return /боеприпас|стрел/u.test(normalizeText(value));
+}
+
+function buildMagicAmmunitionProfile(item) {
+  const subtype = normalizeText(item.itemSubtype ?? item.ItemSubtype ?? "");
+  if (/стрел/u.test(subtype)) {
+    return { systemTypeValue: "ammo", systemTypeSubtype: "arrow" };
+  }
+
+  return buildConsumableAmmoProfile(item.name) ?? { systemTypeValue: "ammo", systemTypeSubtype: "" };
+}
+
 export function classifyMagicItem(item = {}) {
   const itemType = normalizeText(item.itemType ?? item.ItemType ?? "");
+  const itemSubtype = normalizeText(item.itemSubtype ?? item.ItemSubtype ?? "");
   const explicitSlots = normalizeHeroDollSlots(item.heroDollSlots ?? item.itemSlot ?? "");
   const isConsumable = item.isConsumable === true || normalizeText(item.isConsumable) === "true";
   const slotFallback = inferSlotsFromName(item.name, []);
 
   if (isConsumable) {
-    const consumable = normalizeMagicConsumableType(item);
+    const consumable = itemType === normalizeText("Оружие") && isMagicAmmunitionSubtype(itemSubtype)
+      ? buildMagicAmmunitionProfile(item)
+      : normalizeMagicConsumableType(item);
     return {
       documentType: "consumable",
       systemTypeValue: consumable.systemTypeValue,
@@ -901,10 +917,38 @@ export function classifyMagicItem(item = {}) {
     };
   }
 
+  if (itemType === normalizeText("Оружие") && isMagicAmmunitionSubtype(itemSubtype)) {
+    const consumable = buildMagicAmmunitionProfile(item);
+    return {
+      documentType: "consumable",
+      systemTypeValue: consumable.systemTypeValue,
+      systemTypeSubtype: consumable.systemTypeSubtype,
+      baseItem: "",
+      folderPath: String(item.rarity ?? item.itemRarity ?? "Без редкости").trim() || "Без редкости",
+      heroDollSlots: buildHeroDollSlots(explicitSlots, []),
+      firearmClass: "",
+      sourceCategory: String(item.itemType ?? item.ItemType ?? "Магический предмет").trim() || "Магический предмет"
+    };
+  }
+
+  if (itemType === normalizeText("Посох") && normalizeText(item.itemSubtype) === normalizeText("Боевой посох")) {
+    const weaponProfile = buildWeaponProfile(item.itemSubtype, item.id);
+    return {
+      documentType: "weapon",
+      systemTypeValue: weaponProfile.systemTypeValue,
+      systemTypeSubtype: "",
+      baseItem: weaponProfile.baseItem,
+      folderPath: String(item.rarity ?? item.itemRarity ?? "Без редкости").trim() || "Без редкости",
+      heroDollSlots: buildHeroDollSlots(explicitSlots, weaponProfile.heroDollSlots),
+      firearmClass: "",
+      sourceCategory: "Магическое оружие"
+    };
+  }
+
   if (itemType === normalizeText("Оружие")) {
     const subtypeProfile = /пистолет|мушкет|аркебуз|руж/u.test(normalizeText(item.itemSubtype))
       ? buildFirearmProfile(item.name)
-      : buildWeaponProfile(item.name);
+      : buildWeaponProfile(item.itemSubtype || item.name, item.id);
     return {
       documentType: "weapon",
       systemTypeValue: subtypeProfile.systemTypeValue,
@@ -917,8 +961,8 @@ export function classifyMagicItem(item = {}) {
     };
   }
 
-  if (itemType === normalizeText("Доспех")) {
-    const armorProfile = buildArmorProfile(item.name);
+  if (itemType === normalizeText("Доспех") || itemType === normalizeText("Доспехи")) {
+    const armorProfile = buildArmorProfile(item.itemSubtype || item.name);
     return {
       documentType: "equipment",
       systemTypeValue: armorProfile.systemTypeValue,

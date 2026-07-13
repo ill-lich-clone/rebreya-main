@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { MAGIC_ITEMS } from "../magicItem.js";
+
 globalThis.foundry ??= {
   utils: {
     deepClone: (value) => structuredClone(value),
@@ -105,4 +107,37 @@ test("magic item compendium leaves native price empty when costText is a formula
   assert.equal(created.flags["rebreya-main"].value, 60000);
   assert.match(created.system.description.value, /\(2d8kh1\+1\)\*5000 зм/iu);
   assert.match(created.system.description.value, /Оценка:<\/strong>\s*60000 зм/iu);
+});
+
+test("magic item compendium treats subtype-backed staves and ammunition as adaptable base items", () => {
+  const sourceItems = new Map(MAGIC_ITEMS.map((item) => [item.name, item]));
+  const normalizedItems = magicItemsCompendium.normalizeMagicItems([
+    sourceItems.get("Солнечный посох"),
+    sourceItems.get("Стрела убийства"),
+    sourceItems.get("Крылатые боеприпасы"),
+    sourceItems.get("Лунный клинок"),
+  ]);
+  const byName = new Map(normalizedItems.map((item) => [item.name, item]));
+
+  assert.equal(byName.get("Крылатые боеприпасы").itemType, "Оружие");
+  assert.equal(byName.get("Крылатые боеприпасы").itemSubtype, "Боеприпас");
+  assert.equal(byName.get("Крылатые боеприпасы").isConsumable, true);
+  assert.equal(byName.get("Лунный клинок").itemType, "Оружие");
+
+  const solarStaff = magicItemsCompendium.createMagicItemData(byName.get("Солнечный посох"), new Map());
+  assert.equal(solarStaff.type, "weapon");
+  assert.equal(solarStaff.system.type.value, "simpleM");
+  assert.equal(solarStaff.system.type.baseItem, "quarterstaff");
+
+  const slayingArrow = magicItemsCompendium.createMagicItemData(byName.get("Стрела убийства"), new Map());
+  assert.equal(slayingArrow.type, "consumable");
+  assert.equal(slayingArrow.system.type.value, "ammo");
+  assert.equal(slayingArrow.system.type.subtype, "arrow");
+
+  const wingedAmmo = magicItemsCompendium.createMagicItemData(byName.get("Крылатые боеприпасы"), new Map());
+  assert.equal(wingedAmmo.type, "consumable");
+  assert.equal(wingedAmmo.system.type.value, "ammo");
+
+  const moonblade = magicItemsCompendium.createMagicItemData(byName.get("Лунный клинок"), new Map());
+  assert.equal(moonblade.type, "weapon");
 });
