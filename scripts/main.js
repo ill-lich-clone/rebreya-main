@@ -71,7 +71,10 @@ import {
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
 } from "./combat/paladin-automation-service.js?v=1.4.93";
 import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.4.93-rebreya-open-position";
-import { PerformerAutomationService } from "./combat/performer-automation-service.js?v=1.4.93";
+import {
+  PERFORMER_APPLY_RESULT_COMMAND,
+  PerformerAutomationService
+} from "./combat/performer-automation-service.js?v=1.4.93";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
 import { registerSceneControlsHook } from "./hooks.js?v=1.4.93-bg3-piles";
 import {
@@ -476,6 +479,16 @@ function isValidTraderSalePayload(payload) {
     && payload.quantity > 0;
 }
 
+function isValidPerformerApplyResultPayload(payload) {
+  return hasExactKeys(payload, [
+    "sourceActorId", "sourceItemId", "targetActorId", "targetTokenUuid", "total"
+  ])
+    && [payload.sourceActorId, payload.sourceItemId, payload.targetActorId].every(isTrimmedNonEmptyString)
+    && typeof payload.targetTokenUuid === "string"
+    && payload.targetTokenUuid === payload.targetTokenUuid.trim()
+    && Number.isFinite(payload.total);
+}
+
 function traderActorIsOwnedByUser(actor, user) {
   if (!actor || !user) return false;
   if (user.isGM === true) return true;
@@ -752,6 +765,14 @@ export class RebreyaMainModule {
       validate: isValidCombatStatusSetPayload,
       authorize: (payload, { sender }) => this.#canSenderSetCombatStatus(sender, payload),
       execute: (payload) => this.#executeCombatStatusSetCommand(payload)
+    });
+    this.socketCommandBus.register(PERFORMER_APPLY_RESULT_COMMAND, {
+      validate: isValidPerformerApplyResultPayload,
+      authorize: (payload, { sender }) => traderActorIsOwnedByUser(
+        resolveActorById(payload.sourceActorId),
+        sender
+      ),
+      execute: (payload) => this.performerAutomationService.commitActivePerformance(payload)
     });
     const authorizeTradeActor = (payload, { sender }) => traderActorIsOwnedByUser(
       globalThis.game?.actors?.get?.(payload.actorId)

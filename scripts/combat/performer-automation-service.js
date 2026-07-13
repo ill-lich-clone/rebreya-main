@@ -8,6 +8,8 @@ const PERFORMER_EFFECT_KIND = "activePerformanceDie";
 const D20_BONUS_FLAG = "d20Bonus";
 const DEFAULT_FAILURE_LIMIT = 2;
 
+export const PERFORMER_APPLY_RESULT_COMMAND = "performer.activePerformance.apply";
+
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || String(fallback ?? "").trim();
@@ -198,6 +200,32 @@ function resolveUuidSync(uuid) {
   }
 }
 
+function resolveActorById(actorId) {
+  const safeActorId = cleanText(actorId);
+  if (!safeActorId) {
+    return null;
+  }
+
+  return globalThis.game?.actors?.get?.(safeActorId)
+    ?? collectionValues(globalThis.game?.actors).find((actor) => cleanText(actor?.id) === safeActorId)
+    ?? null;
+}
+
+function resolveItemById(actor, itemId) {
+  const safeItemId = cleanText(itemId);
+  if (!safeItemId) {
+    return null;
+  }
+
+  return actor?.items?.get?.(safeItemId)
+    ?? collectionValues(actor?.items).find((item) => cleanText(item?.id ?? item?._id) === safeItemId)
+    ?? null;
+}
+
+function activePerformanceActivityFromItem(item) {
+  return collectionValues(item?.system?.activities).find(isActivePerformanceActivity) ?? null;
+}
+
 function tokenDisposition(token) {
   return token?.document?.disposition ?? token?.disposition ?? 0;
 }
@@ -312,26 +340,55 @@ export class PerformerAutomationService {
       return true;
     }
 
-    const success = total >= dc;
-    const formula = cleanText(success ? runtime.successFormula : runtime.failureFormula, success ? "1d5" : "1d3");
-    const mode = isHostileTarget(actor, target.token) ? "subtract" : "add";
+    if (globalThis.game?.user?.isGM !== true && typeof this.moduleApi?.socketCommandBus?.request === "function") {
+      return this.moduleApi.socketCommandBus.request(PERFORMER_APPLY_RESULT_COMMAND, {
+        sourceActorId: cleanText(actor.id),
+        sourceItemId: cleanText(activity?.item?.id ?? activity?.item?._id),
+        targetActorId: cleanText(target.actor.id),
+        targetTokenUuid: cleanText(target.token?.document?.uuid ?? target.token?.uuid),
+        total
+      });
+    }
 
-    await this.#updateActivePerformanceUses(activity?.item, success);
-    await this.#applyPerformanceDie(target.actor, {
-      sourceActor: actor,
-      sourceItem: activity?.item,
-      formula,
-      mode,
-      seconds: Math.max(1, Math.floor(toNumber(runtime.durationSeconds, 60)))
-    });
-    await this.#postActivePerformanceMessage(actor, target.actor, {
-      success,
+    return this.#commitResolvedActivePerformance({
+      actor,
+      item: activity?.item,
+      targetActor: target.actor,
+      targetToken: target.token,
       total,
-      dc,
-      formula,
-      mode
+      runtime
     });
-    return true;
+  }
+
+  async commitActivePerformance(payload = {}) {
+    const actor = resolveActorById(payload.sourceActorId);
+    const targetActor = resolveActorById(payload.targetActorId);
+    const item = resolveItemById(actor, payload.sourceItemId);
+    const activity = activePerformanceActivityFromItem(item);
+    const total = toNumber(payload.total, NaN);
+    if (!isActorDocument(actor) || !isActorDocument(targetActor) || !item || !activity || !Number.isFinite(total)) {
+      const error = new Error("Invalid Performer active performance documents");
+      error.code = "invalid-performer-documents";
+      throw error;
+    }
+    if (!this.#isPerformerItem(item)) {
+      const error = new Error("Source Item is not the Performer feat");
+      error.code = "invalid-performer-item";
+      throw error;
+    }
+
+    const resolvedTargetToken = resolveUuidSync(payload.targetTokenUuid);
+    const targetToken = resolveActorFromTarget(resolvedTargetToken) === targetActor
+      ? resolveTokenFromTarget(resolvedTargetToken)
+      : resolveTokenFromActor(targetActor);
+    return this.#commitResolvedActivePerformance({
+      actor,
+      item,
+      targetActor,
+      targetToken,
+      total,
+      runtime: activityRuntime(activity) ?? {}
+    });
   }
 
   applyDnd5ePreRollD20Test(config = {}, _dialogConfig = {}, messageConfig = {}) {
@@ -441,7 +498,42 @@ export class PerformerAutomationService {
   }
 
   #isPerformerItem(item) {
-    return normalizeKey(item?.system?.identifier) === PERFORMER_FEAT_IDENTIFIER;
+    const identifier = normalizeKey(item?.system?.identifier);
+    const featId = normalizeKey(
+      item?.getFlag?.(MODULE_ID, "featId")
+      ?? getProperty(item, `flags.${MODULE_ID}.featId`)
+    );
+    return identifier === PERFORMER_FEAT_IDENTIFIER || featId === PERFORMER_FEAT_IDENTIFIER;
+  }
+
+  async #commitResolvedActivePerformance({ actor, item, targetActor, targetToken, total, runtime }) {
+    const dc = Math.max(1, Math.floor(toNumber(runtime?.dc, 20)));
+    const success = total >= dc;
+    const formula = cleanText(success ? runtime?.successFormula : runtime?.failureFormula, success ? "1d5" : "1d3");
+    const mode = isHostileTarget(actor, targetToken) ? "subtract" : "add";
+
+    await this.#applyPerformanceDie(targetActor, {
+      sourceActor: actor,
+      sourceItem: item,
+      formula,
+      mode,
+      seconds: Math.max(1, Math.floor(toNumber(runtime?.durationSeconds, 60)))
+    });
+    await this.#updateActivePerformanceUses(item, success);
+    await this.#postActivePerformanceMessage(actor, targetActor, {
+      success,
+      total,
+      dc,
+      formula,
+      mode
+    });
+    return {
+      applied: true,
+      success,
+      formula,
+      mode,
+      targetActorId: cleanText(targetActor.id)
+    };
   }
 
   #performerItemMigrationPatch(item, activity) {

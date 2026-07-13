@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { MODULE_ID } from "../scripts/constants.js";
 
 globalThis.foundry ??= {
   utils: {
@@ -47,7 +48,10 @@ globalThis.ui ??= {
 };
 globalThis.fromUuidSync ??= () => null;
 
-const { PerformerAutomationService } = await import("../scripts/combat/performer-automation-service.js");
+const {
+  PERFORMER_APPLY_RESULT_COMMAND,
+  PerformerAutomationService
+} = await import("../scripts/combat/performer-automation-service.js");
 
 class TestActor extends Actor {
   constructor({ id, name = id, disposition = 1, flags = {}, effects = [], rollTotal = 20 } = {}) {
@@ -290,6 +294,51 @@ test("initialize migrates owned performer activity to automated utility activity
   }
 });
 
+test("initialize recognizes an older managed Performer feat without a system identifier", async () => {
+  const previousActors = globalThis.game.actors;
+  const previousIsGM = globalThis.game.user.isGM;
+  const actor = new TestActor({ id: "legacy-performer" });
+  const item = makePerformerItem();
+  item.type = "feat";
+  item.system.identifier = "";
+  item.flags = {
+    [MODULE_ID]: {
+      managed: true,
+      featId: "ispolnitel"
+    }
+  };
+  item.getFlag = function getFlag(scope, key) {
+    return foundry.utils.getProperty(this, `flags.${scope}.${key}`);
+  };
+  item.system.activities = {
+    bd37d8496d0f0415: {
+      _id: "bd37d8496d0f0415",
+      type: "check",
+      flags: {
+        [MODULE_ID]: {
+          runtime: {
+            action: "activePerformance"
+          }
+        }
+      }
+    }
+  };
+  actor.items = makeActorCollection([item]);
+  globalThis.game.user.isGM = true;
+  globalThis.game.actors = makeActorCollection([actor]);
+
+  try {
+    await new PerformerAutomationService({}).initialize();
+
+    assert.equal(item.system.activities.bd37d8496d0f0415.type, "utility");
+    assert.equal(item.updates.length, 1);
+  }
+  finally {
+    globalThis.game.actors = previousActors;
+    globalThis.game.user.isGM = previousIsGM;
+  }
+});
+
 test("active performance success applies a d5 die to the selected ally and clears failure streak", async () => {
   const previousTargets = globalThis.game.user.targets;
   const performerItem = makePerformerItem({ spent: 1 });
@@ -321,6 +370,47 @@ test("active performance success applies a d5 die to the selected ally and clear
   }
   finally {
     globalThis.game.user.targets = previousTargets;
+  }
+});
+
+test("player performer routes an unowned target effect through the active GM", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const previousIsGm = globalThis.game.user.isGM;
+  const performerItem = makePerformerItem({ spent: 1 });
+  const performer = new TestActor({ id: "performer", disposition: 1, rollTotal: 24 });
+  const target = new TestActor({ id: "ally", disposition: 1 });
+  target.isOwner = false;
+  const requests = [];
+  const service = new PerformerAutomationService({
+    socketCommandBus: {
+      async request(command, payload) {
+        requests.push({ command, payload });
+        return { applied: true };
+      }
+    }
+  });
+  globalThis.game.user.isGM = false;
+  globalThis.game.user.targets = new Set([target.token]);
+
+  try {
+    await service.applyDnd5ePostUseActivity(makeActivity(performer, performerItem), {}, {});
+
+    assert.deepEqual(requests, [{
+      command: PERFORMER_APPLY_RESULT_COMMAND,
+      payload: {
+        sourceActorId: performer.id,
+        sourceItemId: performerItem.id,
+        targetActorId: target.id,
+        targetTokenUuid: target.token.document.uuid,
+        total: 24
+      }
+    }]);
+    assert.equal(target.created.length, 0);
+    assert.equal(performerItem.system.uses.spent, 1);
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+    globalThis.game.user.isGM = previousIsGm;
   }
 });
 

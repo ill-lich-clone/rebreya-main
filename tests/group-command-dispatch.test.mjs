@@ -487,6 +487,50 @@ test("combat.status.set lets a character owner apply environment statuses throug
   }
 });
 
+test("performer.activePerformance.apply accepts only the source actor owner", async () => {
+  const fixture = installFixture();
+  try {
+    const performerActor = createCharacter("performer-a", fixture.users.playerA.id);
+    fixture.actors.push(performerActor);
+    const moduleApi = new RebreyaMainModule();
+    const commits = [];
+    moduleApi.performerAutomationService.commitActivePerformance = async (payload) => {
+      commits.push(clone(payload));
+      return { applied: true, targetActorId: payload.targetActorId };
+    };
+    const payload = {
+      sourceActorId: performerActor.id,
+      sourceItemId: "performer-item",
+      targetActorId: "ally-a",
+      targetTokenUuid: "Scene.scene-a.Token.ally-a",
+      total: 24
+    };
+    const authorized = commandRequest(
+      "performer.activePerformance.apply",
+      fixture.users.playerA.id,
+      payload,
+      "performer-authorized"
+    );
+    const unauthorized = commandRequest(
+      "performer.activePerformance.apply",
+      fixture.users.playerB.id,
+      payload,
+      "performer-unauthorized"
+    );
+
+    await moduleApi.handleSocketMessage(authorized);
+    await moduleApi.handleSocketMessage(unauthorized);
+    await flushCommands();
+
+    assert.deepEqual(commits, [payload]);
+    assert.equal(resultFor(fixture, authorized.requestId)?.ok, true);
+    assert.equal(resultFor(fixture, unauthorized.requestId)?.error?.code, "unauthorized");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("player setCombatStatus routes environment status changes for unowned actors through sockets", async () => {
   const globals = installCombatStatusGlobals();
   const fixture = installFixture({ currentUserId: "player-a" });
