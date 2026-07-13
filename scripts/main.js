@@ -788,7 +788,6 @@ export class RebreyaMainModule {
     this.lootgenCounter = 0;
     this.latestLootgenResult = null;
     this.cityApps = new Map();
-    this.traderApps = new Map();
     this.traderV2Apps = new Map();
     this.tradeRouteApps = new Map();
     this.referenceApps = new Map();
@@ -3589,28 +3588,7 @@ export class RebreyaMainModule {
     }
   }
   async openTrader(cityId, traderKey, options = {}) {
-    try {
-      const { TraderApp } = await import("./ui/trader-app.js");
-      const appKey = `${cityId}::${traderKey}`;
-
-      let app = this.traderApps.get(appKey);
-      if (!app) {
-        app = new TraderApp(this, cityId, traderKey, options);
-        this.traderApps.set(appKey, app);
-      }
-      else if (options?.actorId !== undefined) {
-        app.selectedActorId = options.actorId;
-      }
-
-      await app.render({ force: true });
-      bringAppToFront(app);
-      return app;
-    }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to open trader '${cityId}:${traderKey}'.`, error);
-      ui.notifications?.error("Не удалось открыть окно лавки.");
-      throw error;
-    }
+    return this.openTraderV2(cityId, traderKey, options);
   }
 
   async openTraderV2(cityId, traderKey, options = {}) {
@@ -3639,7 +3617,7 @@ export class RebreyaMainModule {
   }
 
   async openTraderSheet(cityId, traderKey, options = {}) {
-    return this.openTrader(cityId, traderKey, options);
+    return this.openTraderV2(cityId, traderKey, options);
   }
 
   async reloadData({ notify = false, rerender = true } = {}) {
@@ -3808,7 +3786,6 @@ export class RebreyaMainModule {
       this.cosmologyApp,
       ...this.lootgenApps.values(),
       ...this.cityApps.values(),
-      ...this.traderApps.values(),
       ...this.traderV2Apps.values(),
       ...this.tradeRouteApps.values(),
       ...this.referenceApps.values(),

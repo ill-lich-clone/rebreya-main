@@ -493,9 +493,8 @@ test("trader V2 blocks close and preserves a frozen ambiguous basket entry", asy
 });
 
 test("trader V2 and economy source wire frozen controls and durable rollback adoption", async () => {
-  const [traderSource, classicSource, economySource] = await Promise.all([
+  const [traderSource, economySource] = await Promise.all([
     readFile(new URL("../scripts/ui/trader-app-v2.js", import.meta.url), "utf8"),
-    readFile(new URL("../scripts/ui/trader-app.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/ui/economy-app.js", import.meta.url), "utf8")
   ]);
   assert.match(traderSource, /isFrozenSaleBasketEntry\(entry\)/u);
@@ -506,10 +505,13 @@ test("trader V2 and economy source wire frozen controls and durable rollback ado
   assert.match(traderSource, /committedSummary\.count > 0/u);
   assert.match(traderSource, /createTradePendingStorageOptions/u);
   assert.match(traderSource, /surface: "trader-direct"/u);
-  assert.match(classicSource, /surface: "trader-direct"/u);
   assert.match(economySource, /surface: "economy-rollback"/u);
   assert.match(economySource, /rollbackResumeIdentity\(record\)/u);
   assert.match(economySource, /pendingTradeRollbacks\.adopt/u);
+  await assert.rejects(
+    readFile(new URL("../scripts/ui/trader-app.js", import.meta.url), "utf8"),
+    (error) => error?.code === "ENOENT"
+  );
 });
 
 test("committed sale summary counts only actual settled entries at frozen quantities", () => {

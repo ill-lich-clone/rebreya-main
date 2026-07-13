@@ -175,7 +175,7 @@ test("cosmology refresh does not render unrelated open applications", async () =
   try {
     fixture.moduleApi.cosmologyApp = fixture.createApp("cosmology");
     fixture.moduleApi.inventoryApp = fixture.createApp("inventory");
-    fixture.moduleApi.traderApps.set("trader", fixture.createApp("trader"));
+    fixture.moduleApi.traderV2Apps.set("trader", fixture.createApp("trader"));
 
     await fixture.moduleApi.refreshCosmologyViews();
 
