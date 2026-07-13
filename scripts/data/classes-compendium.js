@@ -43,6 +43,7 @@ const CLASS_ICON_SEARCH_PATHS = [
   `${MODULE_ICONS_BASE_PATH}/Classes/Barbarian`,
   `${MODULE_ICONS_BASE_PATH}/Classes/Paladin`,
   `${MODULE_ICONS_BASE_PATH}/Classes/Rogue`,
+  `${MODULE_ICONS_BASE_PATH}/Classes/Sorcerer`,
   `${MODULE_ICONS_BASE_PATH}/Fighter`,
   `${MODULE_ICONS_BASE_PATH}/Barbarian`,
   `${MODULE_ICONS_BASE_PATH}/Rogue`,
