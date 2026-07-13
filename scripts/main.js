@@ -950,7 +950,7 @@ export class RebreyaMainModule {
       return;
     }
 
-    if (this.socketCommandBus.handleMessage(message)) {
+    if (this.socketCommandBus.handleMessage(message, { transportSenderId: senderId })) {
       return;
     }
 

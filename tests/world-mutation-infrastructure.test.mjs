@@ -421,6 +421,49 @@ test("SocketCommandBus executes a duplicate typed request once and re-emits its 
   });
 });
 
+test("SocketCommandBus rejects an envelope sender that differs from the transport sender", async () => {
+  const emitted = [];
+  const gm = { id: "gm-a", isGM: true, active: true };
+  const player = { id: "player-a", isGM: false, active: true };
+  const game = createGame({ users: [gm, player], currentUserId: gm.id, activeGmId: gm.id, emitted });
+  const bus = new SocketCommandBus({ gameProvider: () => game });
+  let executions = 0;
+  bus.register("world.gmOnlyMutation", {
+    authorize: (_payload, context) => context.sender.isGM === true,
+    execute: async () => {
+      executions += 1;
+      return { changed: true };
+    }
+  });
+  const request = {
+    type: COMMAND_REQUEST_TYPE,
+    command: "world.gmOnlyMutation",
+    requestId: "forged-sender-a",
+    senderId: gm.id,
+    payload: {}
+  };
+
+  assert.equal(bus.handleMessage(request, { transportSenderId: player.id }), true);
+  await flushTasks();
+
+  assert.equal(executions, 0);
+  assert.deepEqual(emitted, [{
+    channel: SOCKET_CHANNEL,
+    message: {
+      type: COMMAND_RESULT_TYPE,
+      command: request.command,
+      requestId: request.requestId,
+      forUserId: gm.id,
+      senderId: gm.id,
+      ok: false,
+      error: {
+        code: "sender-mismatch",
+        message: "Socket command sender does not match the authenticated transport sender"
+      }
+    }
+  }]);
+});
+
 test("SocketCommandBus emits a correlated unknown-command error only from the active GM", async () => {
   const gmA = { id: "gm-a", isGM: true, active: true };
   const gmB = { id: "gm-b", isGM: true, active: true };

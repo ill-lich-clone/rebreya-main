@@ -232,7 +232,7 @@ export class SocketCommandBus {
     });
   }
 
-  handleMessage(message) {
+  handleMessage(message, { transportSenderId = "" } = {}) {
     if (message?.type === COMMAND_RESULT_TYPE) {
       this.#handleResult(message);
       return true;
@@ -241,11 +241,11 @@ export class SocketCommandBus {
       return false;
     }
 
-    this.#handleRequest(message).catch(() => undefined);
+    this.#handleRequest(message, String(transportSenderId ?? "").trim()).catch(() => undefined);
     return true;
   }
 
-  async #handleRequest(message) {
+  async #handleRequest(message, transportSenderId = "") {
     const game = this.#gameProvider();
     if (!isActiveGmClient(game)) {
       return;
@@ -278,6 +278,13 @@ export class SocketCommandBus {
           "Invalid socket command envelope"
         ), game);
       }
+      return;
+    }
+    if (transportSenderId && transportSenderId !== message.senderId) {
+      this.#emitOutcome(correlation, errorOutcome(
+        "sender-mismatch",
+        "Socket command sender does not match the authenticated transport sender"
+      ), game);
       return;
     }
 
