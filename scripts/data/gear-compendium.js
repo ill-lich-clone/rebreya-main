@@ -20,6 +20,10 @@ import {
 } from "./item-classification.js";
 import { createStableGearDocumentId } from "./gear-document-ids.js";
 import { syncManagedDocuments } from "./managed-compendium-sync.js";
+import {
+  escapeFoundryHtml as escapeHtml,
+  finiteNumber as toFiniteNumber
+} from "../shared/foundry-values.js";
 
 export { buildGearIconLookup };
 
@@ -36,10 +40,6 @@ const FIREARM_CLEAR_JAM_ACTIVITY_ID = "lchClearBreech01";
 const FIREARM_MAINTAIN_ACTIVITY_ID = "lchMaintainGun01";
 const FIREARM_MISFIRE_PROPERTY = "lchFirearmMisfire";
 const FIREARM_RUST_PROPERTY = "lchFirearmRust";
-
-function escapeHtml(value) {
-  return foundry.utils.escapeHTML(String(value ?? ""));
-}
 
 function renderValue(value, fallback = "&mdash;") {
   if (value === null || value === undefined || value === "") {
@@ -90,11 +90,6 @@ function normalizeHandCounts(value) {
 
   const count = Math.max(0, Math.floor(toFiniteNumber(value, 0)));
   return count > 0 ? [count] : [];
-}
-
-function toFiniteNumber(value, fallback = 0) {
-  const numericValue = Number(value ?? fallback);
-  return Number.isFinite(numericValue) ? numericValue : fallback;
 }
 
 function normalizeContainerContents(value) {

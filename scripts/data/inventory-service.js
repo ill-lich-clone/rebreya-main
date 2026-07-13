@@ -12,6 +12,7 @@
 import { GROUP_CONTEXT_ERRORS, getGroupMemberActors, isManagedPartyGroup } from "./group-context-service.js";
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
+import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
@@ -97,11 +98,6 @@ const PARTY_ROLE_DEFAULTS = {
     waterGalPerDay: 0
   }
 };
-
-function toNumber(value, fallback = 0) {
-  const numericValue = Number(value ?? fallback);
-  return Number.isFinite(numericValue) ? numericValue : fallback;
-}
 
 function roundNumber(value, precision = 2) {
   const factor = 10 ** precision;

@@ -1,5 +1,6 @@
 ﻿import { CITY_TABS, MODULE_ID } from "../constants.js";
 import { getAppElement } from "../ui.js";
+import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -43,11 +44,6 @@ function mapConnectionRows(connections) {
     ...connection,
     ...buildConnectionStatus(connection)
   }));
-}
-
-function toNumber(value, fallback = 0) {
-  const numericValue = Number(value ?? fallback);
-  return Number.isFinite(numericValue) ? numericValue : fallback;
 }
 
 function formatSignedPercent(value, precision = 1) {

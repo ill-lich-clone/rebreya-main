@@ -1,5 +1,6 @@
 ﻿import { MATERIALS_COMPENDIUM_LABEL, MATERIALS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
+import { escapeFoundryHtml as escapeHtml } from "../shared/foundry-values.js";
 import { buildNamedIconLookup, ensurePackSidebarFolder, resolveNamedIcon } from "./compendium-utils.js";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 
@@ -28,10 +29,6 @@ function normalizeMatchText(value) {
     .toLowerCase()
     .replace(/['\u2019\u2018\u02BC\u02B9\u2032"\u201C\u201D\u00AB\u00BB]/gu, "")
     .replace(/\s+/gu, " ");
-}
-
-function escapeHtml(value) {
-  return foundry.utils.escapeHTML(String(value ?? ""));
 }
 
 function renderValue(value, fallback = "&mdash;") {

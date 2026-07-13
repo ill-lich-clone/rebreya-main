@@ -3,6 +3,10 @@ import { REBREYA_TOOLS } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../data/group-context-service.js";
 import { buildPartyInventoryItemDragData } from "../integrations/inventory-sync.js";
 import { bringAppToFront, formatNumber, getAppElement } from "../ui.js";
+import {
+  cleanText,
+  finiteNumber as toNumber
+} from "../shared/foundry-values.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -268,17 +272,8 @@ const DOWNTIME_REQUEST_EFFECT_TEMPLATE_OPTIONS = Object.freeze([
   { value: "active-effect", label: "Выдать Active Effect", help: "Создать эффект после завершения простоя." }
 ]);
 
-function toNumber(value, fallback = 0) {
-  const numericValue = Number(value ?? fallback);
-  return Number.isFinite(numericValue) ? numericValue : fallback;
-}
-
 function toInteger(value, fallback = 0) {
   return Math.floor(toNumber(value, fallback));
-}
-
-function cleanText(value) {
-  return String(value ?? "").trim();
 }
 
 function escapeHtml(value) {

@@ -1,5 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 import { createPerformerActivePerformanceActivity } from "../data/feats-compendium.js";
+import {
+  cleanText,
+  collectionValues,
+  finiteNumber as toNumber
+} from "../shared/foundry-values.js";
 
 const ACTIVE_PERFORMANCE_ACTION = "activePerformance";
 const PERFORMER_FEAT_IDENTIFIER = "ispolnitel";
@@ -10,46 +15,8 @@ const DEFAULT_FAILURE_LIMIT = 2;
 
 export const PERFORMER_APPLY_RESULT_COMMAND = "performer.activePerformance.apply";
 
-function cleanText(value, fallback = "") {
-  const text = String(value ?? "").trim();
-  return text || String(fallback ?? "").trim();
-}
-
 function normalizeKey(value) {
   return cleanText(value).toLowerCase();
-}
-
-function toNumber(value, fallback = 0) {
-  const numericValue = Number(value ?? fallback);
-  return Number.isFinite(numericValue) ? numericValue : fallback;
-}
-
-function collectionValues(collection) {
-  if (!collection) {
-    return [];
-  }
-
-  if (Array.isArray(collection)) {
-    return collection;
-  }
-
-  if (Array.isArray(collection.contents)) {
-    return collection.contents;
-  }
-
-  if (typeof collection.values === "function") {
-    return Array.from(collection.values());
-  }
-
-  if (collection instanceof Set) {
-    return Array.from(collection);
-  }
-
-  if (typeof collection === "object") {
-    return Object.values(collection);
-  }
-
-  return [];
 }
 
 function getProperty(source, path, fallback = undefined) {

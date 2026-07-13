@@ -17,6 +17,10 @@ import {
   normalizeTradeTransaction,
   retainTradeLog
 } from "../features/trading/trade-transaction-model.js";
+import {
+  escapeFoundryHtml as escapeHtml,
+  finiteNumber as toNumber
+} from "../shared/foundry-values.js";
 
 const MAX_ACTIVE_TRADERS = 21;
 const TRADE_AUDIT_LIMIT = 20;
@@ -77,11 +81,6 @@ const TRADER_RESTOCK_MODES = {
 };
 
 let sharedGearIconLookupPromise = null;
-
-function toNumber(value, fallback = 0) {
-  const numericValue = Number(value ?? fallback);
-  return Number.isFinite(numericValue) ? numericValue : fallback;
-}
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, toNumber(value, min)));
@@ -199,10 +198,6 @@ function createTradeAuditId() {
     ? randomID()
     : Math.random().toString(36).slice(2, 10);
   return `trade-${Date.now()}-${randomPart}`;
-}
-
-function escapeHtml(value) {
-  return foundry.utils.escapeHTML(String(value ?? ""));
 }
 
 function getTraderStateKey(cityId, traderKey) {

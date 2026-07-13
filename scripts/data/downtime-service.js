@@ -1,4 +1,8 @@
 import { DOWNTIME_COMPENDIUM_NAME, DOWNTIME_ITEM_TYPE, MODULE_ID } from "../constants.js";
+import {
+  cloneFoundryValue as clone,
+  collectionValues as collectionContents
+} from "../shared/foundry-values.js";
 
 const OPEN_RESERVED_STATUSES = new Set(["pending", "approved"]);
 const RELEASED_STATUSES = new Set(["rejected", "returned"]);
@@ -8,44 +12,12 @@ const DOWNTIME_TEMPLATE_FLAG = "downtime";
 const DOWNTIME_COMPENDIUM_PACK_ID = `world.${DOWNTIME_COMPENDIUM_NAME}`;
 const ROLLABLE_DOWNTIME_ACTION_TYPES = new Set(["check", "choice"]);
 
-function clone(value) {
-  if (globalThis.foundry?.utils?.deepClone) {
-    return globalThis.foundry.utils.deepClone(value);
-  }
-
-  return value == null ? value : JSON.parse(JSON.stringify(value));
-}
-
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
-}
-
-function collectionContents(collection) {
-  if (!collection) {
-    return [];
-  }
-
-  if (Array.isArray(collection)) {
-    return collection;
-  }
-
-  if (Array.isArray(collection.contents)) {
-    return collection.contents;
-  }
-
-  if (typeof collection.values === "function") {
-    return [...collection.values()];
-  }
-
-  if (typeof collection === "object") {
-    return Object.values(collection);
-  }
-
-  return [];
 }
 
 function cleanId(value) {

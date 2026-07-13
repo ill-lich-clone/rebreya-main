@@ -11,6 +11,7 @@ import {
   normalizeFolderPath
 } from "./compendium-utils.js";
 import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
+import { cloneFoundryValue as clone } from "../shared/foundry-values.js";
 
 const PACK_ID = `world.${DOWNTIME_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -21,14 +22,6 @@ const DOWNTIME_ROOT_FOLDER = "Простой";
 const DEFAULT_DOWNTIME_ICON = "systems/dnd5e/icons/svg/activity/utility.svg";
 const DOWNTIME_TEMPLATE_VERSION = 1;
 const FALLBACK_OBSERVER_OWNERSHIP = 2;
-
-function clone(value) {
-  if (globalThis.foundry?.utils?.deepClone) {
-    return globalThis.foundry.utils.deepClone(value);
-  }
-
-  return value == null ? value : JSON.parse(JSON.stringify(value));
-}
 
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};

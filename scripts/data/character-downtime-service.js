@@ -1,5 +1,9 @@
 import { MODULE_ID, REBREYA_TOOLS } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS } from "./group-context-service.js";
+import {
+  cleanText,
+  cloneFoundryValue as clone
+} from "../shared/foundry-values.js";
 
 const KNOWN_GROUP_CONTEXT_ERROR_MESSAGES = new Set(Object.values(GROUP_CONTEXT_ERRORS));
 
@@ -104,18 +108,6 @@ const CHECK_TOOL_OPTIONS = Object.freeze(REBREYA_TOOLS.map((tool) => ({
   label: tool.label,
   ability: ""
 })));
-
-function cleanText(value) {
-  return String(value ?? "").trim();
-}
-
-function clone(value) {
-  if (globalThis.foundry?.utils?.deepClone) {
-    return globalThis.foundry.utils.deepClone(value);
-  }
-
-  return value == null ? value : JSON.parse(JSON.stringify(value));
-}
 
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};

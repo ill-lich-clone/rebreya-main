@@ -1,6 +1,10 @@
 import { MODULE_ID } from "../constants.js";
 import { bringAppToFront, getAppElement } from "../ui.js";
 import {
+  escapeFoundryHtml as escapeHtml,
+  finiteNumber as toNumber
+} from "../shared/foundry-values.js";
+import {
   PendingTradeTransactions,
   commitSaleBasket,
   createTradePendingStorageOptions,
@@ -51,11 +55,6 @@ function toSafeId(value) {
     .join("-");
 }
 
-function toNumber(value, fallback = 0) {
-  const numericValue = Number(value ?? fallback);
-  return Number.isFinite(numericValue) ? numericValue : fallback;
-}
-
 function normalizeText(value) {
   return String(value ?? "")
     .trim()
@@ -88,10 +87,6 @@ function actorCurrencyToCopperLocal(actor) {
     + Math.round(toNumber(currency.sp, 0) * DND5E_PRICE_IN_COPPER.sp)
     + Math.round(toNumber(currency.cp, 0) * DND5E_PRICE_IN_COPPER.cp)
   );
-}
-
-function escapeHtml(value) {
-  return foundry.utils.escapeHTML(String(value ?? ""));
 }
 
 function getItemQuantity(itemData) {

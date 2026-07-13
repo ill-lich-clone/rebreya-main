@@ -1,5 +1,7 @@
 ﻿import { MAGIC_ITEMS } from "../../magicItem.js";
 
+import { finiteNumber as toNumber } from "../shared/foundry-values.js";
+
 const EPSILON = 1e-6;
 const MIN_ITEM_PRICE_GOLD = 0.01;
 const MATERIAL_STOCK_BASE = 500;
@@ -302,11 +304,6 @@ const FALLBACK_SHOP_BY_EQUIPMENT_TYPE = new Map([
 const SHOP_SUBTYPE_ALIAS_BY_LABEL = new Map([
   ["мастерская доспехов", "Доспешная мастерская"]
 ]);
-
-function toNumber(value, fallback = 0) {
-  const numericValue = Number(value ?? fallback);
-  return Number.isFinite(numericValue) ? numericValue : fallback;
-}
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));

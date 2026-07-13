@@ -15,6 +15,10 @@ import {
   normalizeHeroDollSlotGroup
 } from "./item-classification.js";
 import { MAGIC_ITEMS } from "../../magicItem.js";
+import {
+  escapeFoundryHtml as escapeHtml,
+  finiteNumber as toNumber
+} from "../shared/foundry-values.js";
 
 const PACK_ID = `world.${MAGIC_ITEMS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -23,10 +27,6 @@ const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 const MAGIC_TEMPLATE_VERSION = 3;
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const MAGIC_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Magic Items`, MODULE_ICONS_BASE_PATH];
-
-function escapeHtml(value) {
-  return foundry.utils.escapeHTML(String(value ?? ""));
-}
 
 function normalizeMatchText(value) {
   return String(value ?? "")
@@ -38,11 +38,6 @@ function normalizeMatchText(value) {
 
 function isDnd5eWorld() {
   return game.system?.id === DND5E_SYSTEM_ID;
-}
-
-function toNumber(value, fallback = 0) {
-  const numericValue = Number(value ?? fallback);
-  return Number.isFinite(numericValue) ? numericValue : fallback;
 }
 
 function clampRank(value) {
