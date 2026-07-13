@@ -531,6 +531,72 @@ test("performer.activePerformance.apply accepts only the source actor owner", as
   }
 });
 
+test("typed inventory mutations authorize group members and dispatch strict payloads", async () => {
+  const fixture = installFixture();
+  const previousFromUuid = globalThis.fromUuid;
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.inventoryService.executeTakeMutation = async (payload) => {
+      calls.push(["take", clone(payload)]);
+      return { action: "take" };
+    };
+    moduleApi.inventoryService.executeSaleMutation = async (payload) => {
+      calls.push(["sale", clone(payload)]);
+      return { action: "sale" };
+    };
+    moduleApi.inventoryService.executeImportMutation = async (payload) => {
+      calls.push(["import", clone(payload)]);
+      return { action: "import" };
+    };
+    const sourceItem = { parent: fixture.memberA };
+    globalThis.fromUuid = async (uuid) => uuid === "Actor.character-a.Item.source"
+      ? sourceItem
+      : null;
+    const requests = [
+      commandRequest("inventory.take", fixture.users.playerA.id, {
+        inventoryActorId: fixture.groupA.id,
+        itemId: "stock-item",
+        mutationId: "inventory-take-1",
+        quantity: 1,
+        targetActorId: fixture.memberA.id
+      }, "inventory-take"),
+      commandRequest("inventory.sale", fixture.users.playerA.id, {
+        inventoryActorId: fixture.groupA.id,
+        itemId: "stock-item",
+        mutationId: "inventory-sale-1",
+        quantity: 1
+      }, "inventory-sale"),
+      commandRequest("inventory.import", fixture.users.playerA.id, {
+        inventoryActorId: fixture.groupA.id,
+        itemUuid: "Actor.character-a.Item.source",
+        mutationId: "inventory-import-1"
+      }, "inventory-import")
+    ];
+
+    for (const request of requests) {
+      await moduleApi.handleSocketMessage(request);
+    }
+    await moduleApi.handleSocketMessage(commandRequest("inventory.sale", fixture.users.playerB.id, {
+      inventoryActorId: fixture.groupA.id,
+      itemId: "stock-item",
+      mutationId: "inventory-sale-denied",
+      quantity: 1
+    }, "inventory-sale-denied"));
+    await flushCommands();
+
+    assert.deepEqual(calls.map(([kind]) => kind), ["take", "sale", "import"]);
+    for (const request of requests) {
+      assert.equal(resultFor(fixture, request.requestId)?.ok, true);
+    }
+    assert.equal(resultFor(fixture, "inventory-sale-denied")?.error?.code, "unauthorized");
+  }
+  finally {
+    globalThis.fromUuid = previousFromUuid;
+    fixture.restore();
+  }
+});
+
 test("player setCombatStatus routes environment status changes for unowned actors through sockets", async () => {
   const globals = installCombatStatusGlobals();
   const fixture = installFixture({ currentUserId: "player-a" });

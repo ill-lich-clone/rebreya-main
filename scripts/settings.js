@@ -200,6 +200,13 @@ export function registerSettings() {
     default: {}
   });
 
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
   game.settings.register(MODULE_ID, SETTINGS_KEYS.CALENDAR_STATE, {
     scope: "world",
     config: false,

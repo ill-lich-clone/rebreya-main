@@ -10,6 +10,8 @@
   SETTINGS_KEYS
 } from "../constants.js";
 import { GROUP_CONTEXT_ERRORS, getGroupMemberActors, isManagedPartyGroup } from "./group-context-service.js";
+import { DurableMutationJournal } from "../application/durable-mutation-journal.js";
+import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
@@ -18,6 +20,9 @@ export const SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST = "inventory-source
 export const SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT = "inventory-source-depletion-result";
 export const SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST = "inventory-item-action-request";
 export const SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT = "inventory-item-action-result";
+export const INVENTORY_TAKE_COMMAND = "inventory.take";
+export const INVENTORY_SALE_COMMAND = "inventory.sale";
+export const INVENTORY_IMPORT_COMMAND = "inventory.import";
 const DEFAULT_PARTY_ACTOR_NAME = "Инвентарь группы Rebreya";
 const DEFAULT_PARTY_ACTOR_IMAGE = "icons/svg/item-bag.svg";
 const LOOTGEN_CHAT_ACTOR_NAME = "Лут Rebreya";
@@ -50,6 +55,7 @@ const GROUP_CONTEXT_FALLBACK_ERRORS = new Set([
   GROUP_CONTEXT_ERRORS.PLAYER_NO_GROUP
 ]);
 const NATIVE_GROUP_MEMBERSHIP_MESSAGE = "Состав группы управляется листом dnd5e группы. Откройте лист группы, чтобы добавить или удалить участников.";
+const INVENTORY_MUTATION_FLAG = "inventoryMutation";
 const LEGACY_REBREYA_TOOL_LABEL_ALIASES = [
   ["Воровские", "thieves"],
   ["Алхимические", "alchemy"],
@@ -144,6 +150,29 @@ function normalizeText(value) {
 
 function cleanId(value) {
   return String(value ?? "").trim();
+}
+
+function createInventoryMutationId(prefix, requestedId = "") {
+  const explicit = cleanId(requestedId);
+  if (explicit) {
+    return explicit;
+  }
+  const randomPart = globalThis.crypto?.randomUUID?.()
+    ?? Math.random().toString(36).slice(2);
+  return `${prefix}-${Date.now()}-${randomPart}`;
+}
+
+function normalizeInventoryMutationJournal(value) {
+  return {
+    version: 1,
+    records: Array.isArray(value?.records)
+      ? foundry.utils.deepClone(value.records)
+      : []
+  };
+}
+
+function inventoryQuantitiesMatch(left, right) {
+  return Math.abs(toNumber(left, 0) - toNumber(right, 0)) <= 1e-9;
 }
 
 function collectionValues(collection) {
@@ -711,6 +740,12 @@ export class InventoryService {
   constructor(moduleApi) {
     this.moduleApi = moduleApi;
     this.lastGroupContextError = "";
+    this.mutationCoordinator = moduleApi.worldMutationCoordinator ?? new WorldMutationCoordinator();
+    this.mutationJournal = new DurableMutationJournal({
+      readState: () => game.settings.get(MODULE_ID, SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL),
+      writeState: (state) => game.settings.set(MODULE_ID, SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL, state),
+      normalizeState: normalizeInventoryMutationJournal
+    });
   }
 
   #normalizeMemberState(member, fallbackRole = "member") {
@@ -886,26 +921,210 @@ export class InventoryService {
     return safeQuantity;
   }
 
-  async #takeInventoryItemFromActor(inventoryActor, itemId, targetActor, quantity = 1) {
+  #findMutationItem(actor, mutationId) {
+    return actor?.items?.contents?.find((item) => (
+      cleanId(item.getFlag?.(MODULE_ID, INVENTORY_MUTATION_FLAG)?.id
+        ?? item.flags?.[MODULE_ID]?.[INVENTORY_MUTATION_FLAG]?.id) === mutationId
+    )) ?? null;
+  }
+
+  #readInventoryTerminal(record) {
+    if (record?.terminal !== true) {
+      return { terminal: false, value: undefined };
+    }
+    if (record.result?.ok === false) {
+      const error = new Error(record.result.error || "Inventory mutation was compensated.");
+      error.code = record.result.code || "inventory-mutation-failed";
+      throw error;
+    }
+    return {
+      terminal: true,
+      value: foundry.utils.deepClone(record.result?.value)
+    };
+  }
+
+  #inventoryReconciliationError(message) {
+    const error = new Error(message);
+    error.code = "reconciliation-required";
+    return error;
+  }
+
+  #sourceReceiptState(actor, receipt) {
+    const item = actor?.items?.get?.(receipt.itemId)
+      ?? actor?.items?.contents?.find?.((candidate) => candidate.id === receipt.itemId)
+      ?? null;
+    if (!item) {
+      return {
+        item: null,
+        applied: receipt.afterQuantity <= 0,
+        before: false
+      };
+    }
+    const quantity = getRawQuantity(item.toObject());
+    return {
+      item,
+      applied: inventoryQuantitiesMatch(quantity, receipt.afterQuantity),
+      before: inventoryQuantitiesMatch(quantity, receipt.beforeQuantity)
+    };
+  }
+
+  async #applySourceReceipt(actor, receipt) {
+    let state = this.#sourceReceiptState(actor, receipt);
+    if (state.applied) {
+      return;
+    }
+    if (!state.before || !state.item) {
+      throw this.#inventoryReconciliationError("Inventory source quantity no longer matches the prepared receipt.");
+    }
+    try {
+      await this.#depleteInventoryItem(state.item, receipt.delta);
+    }
+    catch (error) {
+      state = this.#sourceReceiptState(actor, receipt);
+      if (state.applied) {
+        return;
+      }
+      throw error;
+    }
+    state = this.#sourceReceiptState(actor, receipt);
+    if (!state.applied) {
+      throw this.#inventoryReconciliationError("Inventory source debit was not observed after mutation.");
+    }
+  }
+
+  async #compensateCreatedMutationItem(actor, mutationId, expectedQuantity) {
+    const created = this.#findMutationItem(actor, mutationId);
+    if (!created) {
+      return;
+    }
+    if (!inventoryQuantitiesMatch(getRawQuantity(created.toObject()), expectedQuantity)) {
+      throw this.#inventoryReconciliationError("Created inventory target changed before compensation.");
+    }
+    try {
+      await created.delete();
+    }
+    catch (error) {
+      if (this.#findMutationItem(actor, mutationId)) {
+        throw error;
+      }
+    }
+    if (this.#findMutationItem(actor, mutationId)) {
+      throw this.#inventoryReconciliationError("Created inventory target still exists after compensation.");
+    }
+  }
+
+  #takeInventoryItemFromActor(inventoryActor, itemId, targetActor, quantity = 1, options = {}) {
+    return this.mutationCoordinator.run(
+      "inventory",
+      () => this.#executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity, options)
+    );
+  }
+
+  async #executeTakeInventoryItem(inventoryActor, itemId, targetActor, quantity = 1, { mutationId = "" } = {}) {
     if (!isActorDocument(targetActor) || targetActor.type !== "character") {
       throw new Error("Предмет можно забрать только в лист персонажа.");
     }
+    const operationId = createInventoryMutationId("inventory-take", mutationId);
+    let record = await this.mutationJournal.find(operationId);
+    if (!record) {
+      const item = this.#getInventoryItem(inventoryActor, itemId);
+      const itemData = sanitizeEmbeddedItemData(item.toObject());
+      const beforeQuantity = getRawQuantity(itemData);
+      const takeQuantity = Math.max(0.01, Math.min(beforeQuantity, roundNumber(toNumber(quantity, 1), 2)));
+      foundry.utils.setProperty(itemData, "system.quantity", takeQuantity);
+      foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
+        id: operationId,
+        kind: "take"
+      });
+      record = await this.mutationJournal.start({
+        id: operationId,
+        kind: "take",
+        phase: "prepared",
+        sourceActorId: inventoryActor.id,
+        targetActorId: targetActor.id,
+        itemName: item.name,
+        targetItemData: itemData,
+        sourceReceipt: {
+          itemId: item.id,
+          beforeQuantity,
+          afterQuantity: roundNumber(beforeQuantity - takeQuantity, 2),
+          delta: takeQuantity
+        }
+      });
+    }
 
-    const item = this.#getInventoryItem(inventoryActor, itemId);
-    const itemData = sanitizeEmbeddedItemData(item.toObject());
-    const takeQuantity = Math.max(0.01, Math.min(getRawQuantity(itemData), roundNumber(toNumber(quantity, 1), 2)));
-    foundry.utils.setProperty(itemData, "system.quantity", takeQuantity);
-    const [createdItem] = await targetActor.createEmbeddedDocuments("Item", [itemData], {
-      renderSheet: false
-    });
-    await this.#depleteInventoryItem(item, takeQuantity);
-
-    return {
-      itemName: item.name,
-      quantity: takeQuantity,
+    const terminal = this.#readInventoryTerminal(record);
+    if (terminal.terminal) {
+      return terminal.value;
+    }
+    if (record.phase === "prepared") {
+      let createdItem = this.#findMutationItem(targetActor, operationId);
+      if (!createdItem) {
+        try {
+          [createdItem] = await targetActor.createEmbeddedDocuments("Item", [record.targetItemData], {
+            renderSheet: false
+          });
+        }
+        catch (error) {
+          createdItem = this.#findMutationItem(targetActor, operationId);
+          if (!createdItem) throw error;
+        }
+      }
+      if (!createdItem) {
+        throw this.#inventoryReconciliationError("Created inventory target could not be resolved.");
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "prepared", "target-created", {
+        createdItemId: createdItem.id
+      });
+    }
+    if (record.phase === "target-created") {
+      try {
+        await this.#applySourceReceipt(inventoryActor, record.sourceReceipt);
+      }
+      catch (error) {
+        try {
+          await this.#compensateCreatedMutationItem(
+            targetActor,
+            operationId,
+            record.sourceReceipt.delta
+          );
+          record = await this.mutationJournal.checkpoint(operationId, "target-created", "compensated", {
+            failure: { code: error.code ?? "source-debit-failed", message: error.message }
+          });
+          await this.mutationJournal.finish(operationId, {
+            ok: false,
+            code: error.code ?? "source-debit-failed",
+            error: error.message
+          });
+        }
+        catch (compensationError) {
+          try {
+            await this.mutationJournal.checkpoint(operationId, "target-created", "reconciliation-required", {
+              failure: { code: error.code ?? "source-debit-failed", message: error.message },
+              compensationFailure: { code: compensationError.code ?? "target-compensation-failed", message: compensationError.message }
+            });
+          }
+          catch {
+            // Preserve the compound failure below.
+          }
+          throw new AggregateError([error, compensationError], "Inventory take and compensation both failed.");
+        }
+        throw error;
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "target-created", "source-debited");
+    }
+    if (record.phase === "source-debited") {
+      record = await this.mutationJournal.checkpoint(operationId, "source-debited", "committed");
+    }
+    const createdItem = this.#findMutationItem(targetActor, operationId);
+    const result = {
+      itemName: record.itemName,
+      quantity: record.sourceReceipt.delta,
       actorId: targetActor.id,
-      createdItemId: createdItem?.id ?? ""
+      createdItemId: createdItem?.id ?? record.createdItemId ?? ""
     };
+    await this.mutationJournal.finish(operationId, { ok: true, value: result });
+    return foundry.utils.deepClone(result);
   }
 
   async #deleteInventoryItemFromActor(inventoryActor, itemId) {
@@ -917,31 +1136,130 @@ export class InventoryService {
     };
   }
 
-  async #sellInventoryItemFromActor(inventoryActor, itemId, quantity = 1) {
-    const item = this.#getInventoryItem(inventoryActor, itemId);
-    const itemData = item.toObject();
-    if (isMagicalInventoryItem(itemData)) {
-      throw new Error("Магические предметы нельзя продать через партийный склад.");
+  #sellInventoryItemFromActor(inventoryActor, itemId, quantity = 1, options = {}) {
+    return this.mutationCoordinator.run(
+      "inventory",
+      () => this.#executeSellInventoryItem(inventoryActor, itemId, quantity, options)
+    );
+  }
+
+  async #executeSellInventoryItem(inventoryActor, itemId, quantity = 1, { mutationId = "" } = {}) {
+    const operationId = createInventoryMutationId("inventory-sale", mutationId);
+    let record = await this.mutationJournal.find(operationId);
+    if (!record) {
+      const item = this.#getInventoryItem(inventoryActor, itemId);
+      const itemData = item.toObject();
+      if (isMagicalInventoryItem(itemData)) {
+        throw new Error("Магические предметы нельзя продать через партийный склад.");
+      }
+      const currentQuantity = getRawQuantity(itemData);
+      const sellQuantity = Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)));
+      const unitCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
+      const gainedCopper = Math.floor((unitCopper * sellQuantity) / 2);
+      if (gainedCopper <= 0) {
+        throw new Error("У предмета нет цены для продажи.");
+      }
+      const beforeCopper = actorCurrencyToCopper(inventoryActor);
+      record = await this.mutationJournal.start({
+        id: operationId,
+        kind: "sale",
+        phase: "prepared",
+        actorId: inventoryActor.id,
+        itemName: item.name,
+        gainedCopper,
+        sourceReceipt: {
+          itemId: item.id,
+          beforeQuantity: currentQuantity,
+          afterQuantity: roundNumber(currentQuantity - sellQuantity, 2),
+          delta: sellQuantity,
+          rawItemData: itemData
+        },
+        currencyReceipt: {
+          beforeCopper,
+          afterCopper: beforeCopper + gainedCopper
+        }
+      });
     }
 
-    const currentQuantity = getRawQuantity(itemData);
-    const sellQuantity = Math.max(0.01, Math.min(currentQuantity, roundNumber(toNumber(quantity, 1), 2)));
-    const unitCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
-    const gainedCopper = Math.floor((unitCopper * sellQuantity) / 2);
-    if (gainedCopper <= 0) {
-      throw new Error("У предмета нет цены для продажи.");
+    const terminal = this.#readInventoryTerminal(record);
+    if (terminal.terminal) {
+      return terminal.value;
     }
-
-    const nextCurrency = copperToCurrency(actorCurrencyToCopper(inventoryActor) + gainedCopper);
-    await inventoryActor.update(buildCurrencyUpdatePatch(nextCurrency));
-    await this.#depleteInventoryItem(item, sellQuantity);
-
-    return {
-      itemName: item.name,
-      quantity: sellQuantity,
-      gainedCopper,
+    if (record.phase === "prepared") {
+      const receipt = record.currencyReceipt;
+      const currentCopper = actorCurrencyToCopper(inventoryActor);
+      if (currentCopper !== receipt.afterCopper) {
+        if (currentCopper !== receipt.beforeCopper) {
+          throw this.#inventoryReconciliationError("Inventory sale currency no longer matches the prepared receipt.");
+        }
+        try {
+          await inventoryActor.update(buildCurrencyUpdatePatch(copperToCurrency(receipt.afterCopper)));
+        }
+        catch (error) {
+          if (actorCurrencyToCopper(inventoryActor) !== receipt.afterCopper) throw error;
+        }
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "prepared", "currency-credited");
+    }
+    if (record.phase === "currency-credited") {
+      try {
+        await this.#applySourceReceipt(inventoryActor, record.sourceReceipt);
+      }
+      catch (error) {
+        try {
+          const currentCopper = actorCurrencyToCopper(inventoryActor);
+          if (currentCopper === record.currencyReceipt.afterCopper) {
+            try {
+              await inventoryActor.update(buildCurrencyUpdatePatch(copperToCurrency(record.currencyReceipt.beforeCopper)));
+            }
+            catch (compensationError) {
+              if (actorCurrencyToCopper(inventoryActor) !== record.currencyReceipt.beforeCopper) {
+                throw compensationError;
+              }
+            }
+          }
+          else if (currentCopper !== record.currencyReceipt.beforeCopper) {
+            throw this.#inventoryReconciliationError("Inventory sale currency changed before compensation.");
+          }
+          if (actorCurrencyToCopper(inventoryActor) !== record.currencyReceipt.beforeCopper) {
+            throw this.#inventoryReconciliationError("Inventory sale currency was not restored by compensation.");
+          }
+          record = await this.mutationJournal.checkpoint(operationId, "currency-credited", "compensated", {
+            failure: { code: error.code ?? "source-debit-failed", message: error.message }
+          });
+          await this.mutationJournal.finish(operationId, {
+            ok: false,
+            code: error.code ?? "source-debit-failed",
+            error: error.message
+          });
+        }
+        catch (compensationError) {
+          try {
+            await this.mutationJournal.checkpoint(operationId, "currency-credited", "reconciliation-required", {
+              failure: { code: error.code ?? "source-debit-failed", message: error.message },
+              compensationFailure: { code: compensationError.code ?? "currency-compensation-failed", message: compensationError.message }
+            });
+          }
+          catch {
+            // Preserve the compound failure below.
+          }
+          throw new AggregateError([error, compensationError], "Inventory sale and compensation both failed.");
+        }
+        throw error;
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "currency-credited", "source-debited");
+    }
+    if (record.phase === "source-debited") {
+      record = await this.mutationJournal.checkpoint(operationId, "source-debited", "committed");
+    }
+    const result = {
+      itemName: record.itemName,
+      quantity: record.sourceReceipt.delta,
+      gainedCopper: record.gainedCopper,
       currency: buildCurrencySnapshot(inventoryActor)
     };
+    await this.mutationJournal.finish(operationId, { ok: true, value: result });
+    return foundry.utils.deepClone(result);
   }
 
   async #writeState(mutator) {
@@ -1977,13 +2295,23 @@ export class InventoryService {
     return this.#deleteInventoryItemFromActor(actor, itemId);
   }
 
-  async takeInventoryItemToCharacter(itemId, { actorId = "", quantity = 1 } = {}) {
+  async takeInventoryItemToCharacter(itemId, { actorId = "", quantity = 1, mutationId = "" } = {}) {
     const actor = await this.getInventoryActor({ create: true });
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
     const targetActor = this.#resolveRecipientCharacter(actorId);
+    const operationId = createInventoryMutationId("inventory-take", mutationId);
+    if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
+      return this.moduleApi.socketCommandBus.request(INVENTORY_TAKE_COMMAND, {
+        inventoryActorId: actor.id,
+        itemId: cleanId(itemId),
+        mutationId: operationId,
+        quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2)),
+        targetActorId: targetActor.id
+      });
+    }
     if (!this.canManagePartyInventory(actor)) {
       this.#assertInventoryActionSocketAvailable(actor);
       if (!cleanId(targetActor.uuid)) {
@@ -2004,15 +2332,24 @@ export class InventoryService {
       };
     }
 
-    return this.#takeInventoryItemFromActor(actor, itemId, targetActor, quantity);
+    return this.#takeInventoryItemFromActor(actor, itemId, targetActor, quantity, { mutationId: operationId });
   }
 
-  async sellInventoryItem(itemId, quantity = 1) {
+  async sellInventoryItem(itemId, quantity = 1, { mutationId = "" } = {}) {
     const actor = await this.getInventoryActor({ create: true });
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
+    const operationId = createInventoryMutationId("inventory-sale", mutationId);
+    if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
+      return this.moduleApi.socketCommandBus.request(INVENTORY_SALE_COMMAND, {
+        inventoryActorId: actor.id,
+        itemId: cleanId(itemId),
+        mutationId: operationId,
+        quantity: Math.max(0.01, roundNumber(toNumber(quantity, 1), 2))
+      });
+    }
     if (!this.canManagePartyInventory(actor)) {
       this.#assertInventoryActionSocketAvailable(actor);
       this.#emitInventoryItemActionRequest("sell", {
@@ -2027,7 +2364,7 @@ export class InventoryService {
       };
     }
 
-    return this.#sellInventoryItemFromActor(actor, itemId, quantity);
+    return this.#sellInventoryItemFromActor(actor, itemId, quantity, { mutationId: operationId });
   }
 
   async addSupply(resourceKey, quantity) {
@@ -2550,6 +2887,15 @@ export class InventoryService {
       return itemDocument;
     }
 
+    const operationId = createInventoryMutationId("inventory-import", dropData?.mutationId);
+    if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
+      return this.moduleApi.socketCommandBus.request(INVENTORY_IMPORT_COMMAND, {
+        inventoryActorId: actor.id,
+        itemUuid: itemDocument.uuid,
+        mutationId: operationId
+      });
+    }
+
     if (!this.canManagePartyInventory(actor)) {
       if (!this.canDropInventoryItems(actor) || !sourceActor) {
         throw new Error("У вас нет прав на добавление предметов в партийный склад.");
@@ -2570,7 +2916,52 @@ export class InventoryService {
       return actor;
     }
 
-    return this.#importItemDocument(actor, itemDocument);
+    return this.#importItemDocument(actor, itemDocument, {
+      mutationId: operationId
+    });
+  }
+
+  async executeTakeMutation(payload = {}) {
+    const inventoryActor = game.actors?.get?.(cleanId(payload.inventoryActorId)) ?? null;
+    const targetActor = game.actors?.get?.(cleanId(payload.targetActorId)) ?? null;
+    if (!isManagedPartyGroup(inventoryActor) || !isActorDocument(targetActor) || targetActor.type !== "character") {
+      throw new Error("Некорректные документы переноса предмета.");
+    }
+    return this.#takeInventoryItemFromActor(
+      inventoryActor,
+      cleanId(payload.itemId),
+      targetActor,
+      payload.quantity,
+      { mutationId: cleanId(payload.mutationId) }
+    );
+  }
+
+  async executeSaleMutation(payload = {}) {
+    const inventoryActor = game.actors?.get?.(cleanId(payload.inventoryActorId)) ?? null;
+    if (!isManagedPartyGroup(inventoryActor)) {
+      throw new Error("Некорректный партийный склад для продажи.");
+    }
+    return this.#sellInventoryItemFromActor(
+      inventoryActor,
+      cleanId(payload.itemId),
+      payload.quantity,
+      { mutationId: cleanId(payload.mutationId) }
+    );
+  }
+
+  async executeImportMutation(payload = {}) {
+    const inventoryActor = game.actors?.get?.(cleanId(payload.inventoryActorId)) ?? null;
+    const itemDocument = await resolveUuid(payload.itemUuid);
+    if (!isManagedPartyGroup(inventoryActor) || !(itemDocument instanceof Item)) {
+      throw new Error("Некорректные документы импорта предмета.");
+    }
+    await this.#importItemDocument(inventoryActor, itemDocument, {
+      mutationId: cleanId(payload.mutationId)
+    });
+    return {
+      actorId: inventoryActor.id,
+      itemUuid: cleanId(payload.itemUuid)
+    };
   }
 
   async handleImportDroppedItemSocketRequest(payload = {}, { senderId = "" } = {}) {
@@ -2603,7 +2994,9 @@ export class InventoryService {
       throw new Error("Исходный персонаж не входит в эту группу.");
     }
 
-    return this.#importItemDocument(targetActor, itemDocument);
+    return this.#importItemDocument(targetActor, itemDocument, {
+      mutationId: cleanId(payload.mutationId)
+    });
   }
 
   async handleAcceptedPartyInventoryItem(itemDocument, { sourceItemUuid = "" } = {}) {
@@ -2759,7 +3152,9 @@ export class InventoryService {
     }
 
     if (action === "sell") {
-      return this.#sellInventoryItemFromActor(inventoryActor, itemId, quantity);
+      return this.#sellInventoryItemFromActor(inventoryActor, itemId, quantity, {
+        mutationId: cleanId(payload.mutationId)
+      });
     }
 
     if (action === "take") {
@@ -2773,44 +3168,182 @@ export class InventoryService {
         throw new Error("Персонаж, получающий предмет, не входит в эту группу.");
       }
 
-      return this.#takeInventoryItemFromActor(inventoryActor, itemId, targetActor, quantity);
+      return this.#takeInventoryItemFromActor(inventoryActor, itemId, targetActor, quantity, {
+        mutationId: cleanId(payload.mutationId)
+      });
     }
 
     throw new Error("Неизвестное действие со складом.");
   }
 
-  async #importItemDocument(actor, itemDocument) {
-    const sourceItemData = itemDocument.toObject();
-    const importedItemData = sanitizeEmbeddedItemData(sourceItemData);
-    const importedQuantity = Math.max(0, getRawQuantity(importedItemData));
-    if (importedQuantity <= 0) {
-      throw new Error("У предмета нет количества для переноса.");
-    }
+  #importItemDocument(actor, itemDocument, options = {}) {
+    return this.mutationCoordinator.run(
+      "inventory",
+      () => this.#executeImportItemDocument(actor, itemDocument, options)
+    );
+  }
 
-    const sourceFlags = foundry.utils.deepClone(importedItemData.flags?.[MODULE_ID] ?? {});
-    const mergeCandidate = actor.items.contents.find((candidate) => {
-      const candidateFlags = foundry.utils.deepClone(candidate.flags?.[MODULE_ID] ?? {});
-      if (sourceFlags.sourceType && sourceFlags.sourceId) {
-        return candidateFlags.sourceType === sourceFlags.sourceType && candidateFlags.sourceId === sourceFlags.sourceId;
+  async #executeImportItemDocument(actor, itemDocument, { mutationId = "" } = {}) {
+    const operationId = createInventoryMutationId("inventory-import", mutationId);
+    let record = await this.mutationJournal.find(operationId);
+    if (!record) {
+      const sourceItemData = itemDocument.toObject();
+      const importedItemData = sanitizeEmbeddedItemData(sourceItemData);
+      const importedQuantity = Math.max(0, getRawQuantity(importedItemData));
+      if (importedQuantity <= 0) {
+        throw new Error("У предмета нет количества для переноса.");
       }
-
-      return normalizeText(candidate.name) === normalizeText(importedItemData.name) && candidate.type === importedItemData.type;
-    }) ?? null;
-
-    if (mergeCandidate) {
-      const nextQuantity = roundNumber(getRawQuantity(mergeCandidate.toObject()) + importedQuantity, 2);
-      await mergeCandidate.update({
-        "system.quantity": nextQuantity
+      const sourceFlags = foundry.utils.deepClone(importedItemData.flags?.[MODULE_ID] ?? {});
+      const mergeCandidate = actor.items.contents.find((candidate) => {
+        const candidateFlags = foundry.utils.deepClone(candidate.flags?.[MODULE_ID] ?? {});
+        if (sourceFlags.sourceType && sourceFlags.sourceId) {
+          return candidateFlags.sourceType === sourceFlags.sourceType && candidateFlags.sourceId === sourceFlags.sourceId;
+        }
+        return normalizeText(candidate.name) === normalizeText(importedItemData.name)
+          && candidate.type === importedItemData.type;
+      }) ?? null;
+      if (!mergeCandidate) {
+        foundry.utils.setProperty(importedItemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
+          id: operationId,
+          kind: "import"
+        });
+      }
+      record = await this.mutationJournal.start({
+        id: operationId,
+        kind: "import",
+        phase: "prepared",
+        targetActorId: actor.id,
+        sourceItemUuid: itemDocument.uuid,
+        sourceActorId: isActorDocument(itemDocument.parent) ? itemDocument.parent.id : "",
+        importedItemData,
+        targetReceipt: {
+          itemId: mergeCandidate?.id ?? "",
+          created: !mergeCandidate,
+          beforeQuantity: mergeCandidate ? getRawQuantity(mergeCandidate.toObject()) : 0,
+          afterQuantity: mergeCandidate
+            ? roundNumber(getRawQuantity(mergeCandidate.toObject()) + importedQuantity, 2)
+            : importedQuantity,
+          delta: importedQuantity
+        }
       });
     }
-    else {
-      await actor.createEmbeddedDocuments("Item", [importedItemData]);
-    }
 
-    if (isActorDocument(itemDocument.parent)) {
-      await itemDocument.delete();
+    const terminal = this.#readInventoryTerminal(record);
+    if (terminal.terminal) {
+      return actor;
     }
-
+    if (record.phase === "prepared") {
+      let targetItem = record.targetReceipt.created
+        ? this.#findMutationItem(actor, operationId)
+        : actor.items.get(record.targetReceipt.itemId);
+      if (record.targetReceipt.created) {
+        if (!targetItem) {
+          try {
+            [targetItem] = await actor.createEmbeddedDocuments("Item", [record.importedItemData]);
+          }
+          catch (error) {
+            targetItem = this.#findMutationItem(actor, operationId);
+            if (!targetItem) throw error;
+          }
+        }
+      }
+      else {
+        if (!targetItem) {
+          throw this.#inventoryReconciliationError("Inventory import merge target disappeared.");
+        }
+        const currentQuantity = getRawQuantity(targetItem.toObject());
+        if (!inventoryQuantitiesMatch(currentQuantity, record.targetReceipt.afterQuantity)) {
+          if (!inventoryQuantitiesMatch(currentQuantity, record.targetReceipt.beforeQuantity)) {
+            throw this.#inventoryReconciliationError("Inventory import merge target changed before update.");
+          }
+          try {
+            await targetItem.update({ "system.quantity": record.targetReceipt.afterQuantity });
+          }
+          catch (error) {
+            if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), record.targetReceipt.afterQuantity)) {
+              throw error;
+            }
+          }
+        }
+      }
+      if (!targetItem) {
+        throw this.#inventoryReconciliationError("Inventory import target could not be resolved.");
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "prepared", "target-created", {
+        targetItemId: targetItem.id
+      });
+    }
+    if (record.phase === "target-created") {
+      const sourceActor = isActorDocument(itemDocument.parent) ? itemDocument.parent : null;
+      if (sourceActor) {
+        const sourceStillExists = () => sourceActor.items?.get?.(itemDocument.id)
+          ?? sourceActor.items?.contents?.find?.((candidate) => candidate.id === itemDocument.id)
+          ?? null;
+        try {
+          if (sourceStillExists()) {
+            await itemDocument.delete();
+          }
+        }
+        catch (error) {
+          if (!sourceStillExists()) {
+            // A lost acknowledgement still means the source debit committed.
+          }
+          else {
+            try {
+              const targetItem = record.targetReceipt.created
+                ? this.#findMutationItem(actor, operationId)
+                : actor.items.get(record.targetReceipt.itemId);
+              if (record.targetReceipt.created) {
+                await this.#compensateCreatedMutationItem(actor, operationId, record.targetReceipt.afterQuantity);
+              }
+              else if (targetItem) {
+                const currentQuantity = getRawQuantity(targetItem.toObject());
+                if (!inventoryQuantitiesMatch(currentQuantity, record.targetReceipt.afterQuantity)) {
+                  throw this.#inventoryReconciliationError("Inventory import merge target changed before compensation.");
+                }
+                try {
+                  await targetItem.update({ "system.quantity": record.targetReceipt.beforeQuantity });
+                }
+                catch (compensationError) {
+                  if (!inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), record.targetReceipt.beforeQuantity)) {
+                    throw compensationError;
+                  }
+                }
+              }
+              record = await this.mutationJournal.checkpoint(operationId, "target-created", "compensated", {
+                failure: { code: error.code ?? "source-delete-failed", message: error.message }
+              });
+              await this.mutationJournal.finish(operationId, {
+                ok: false,
+                code: error.code ?? "source-delete-failed",
+                error: error.message
+              });
+            }
+            catch (compensationError) {
+              try {
+                await this.mutationJournal.checkpoint(operationId, "target-created", "reconciliation-required", {
+                  failure: { code: error.code ?? "source-delete-failed", message: error.message },
+                  compensationFailure: { code: compensationError.code ?? "target-compensation-failed", message: compensationError.message }
+                });
+              }
+              catch {
+                // Preserve the compound failure below.
+              }
+              throw new AggregateError([error, compensationError], "Inventory import and compensation both failed.");
+            }
+            throw error;
+          }
+        }
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "target-created", "source-debited");
+    }
+    if (record.phase === "source-debited") {
+      record = await this.mutationJournal.checkpoint(operationId, "source-debited", "committed");
+    }
+    await this.mutationJournal.finish(operationId, {
+      ok: true,
+      value: { actorId: actor.id, targetItemId: record.targetItemId ?? "" }
+    });
     return actor;
   }
 }

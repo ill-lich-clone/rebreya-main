@@ -37,6 +37,9 @@ import {
 } from "./data/travel-service.js";
 import { TravelMapService } from "./data/travel-map-service.js";
 import {
+  INVENTORY_IMPORT_COMMAND,
+  INVENTORY_SALE_COMMAND,
+  INVENTORY_TAKE_COMMAND,
   InventoryService,
   SOCKET_EVENT_INVENTORY_IMPORT_REQUEST,
   SOCKET_EVENT_INVENTORY_IMPORT_RESULT,
@@ -489,6 +492,34 @@ function isValidPerformerApplyResultPayload(payload) {
     && Number.isFinite(payload.total);
 }
 
+function isValidInventoryMutationId(value) {
+  return isTrimmedNonEmptyString(value) && value.length <= 160;
+}
+
+function isValidInventoryTakePayload(payload) {
+  return hasExactKeys(payload, [
+    "inventoryActorId", "itemId", "mutationId", "quantity", "targetActorId"
+  ])
+    && [payload.inventoryActorId, payload.itemId, payload.targetActorId].every(isTrimmedNonEmptyString)
+    && isValidInventoryMutationId(payload.mutationId)
+    && Number.isFinite(payload.quantity)
+    && payload.quantity > 0;
+}
+
+function isValidInventorySalePayload(payload) {
+  return hasExactKeys(payload, ["inventoryActorId", "itemId", "mutationId", "quantity"])
+    && [payload.inventoryActorId, payload.itemId].every(isTrimmedNonEmptyString)
+    && isValidInventoryMutationId(payload.mutationId)
+    && Number.isFinite(payload.quantity)
+    && payload.quantity > 0;
+}
+
+function isValidInventoryImportPayload(payload) {
+  return hasExactKeys(payload, ["inventoryActorId", "itemUuid", "mutationId"])
+    && [payload.inventoryActorId, payload.itemUuid].every(isTrimmedNonEmptyString)
+    && isValidInventoryMutationId(payload.mutationId);
+}
+
 function traderActorIsOwnedByUser(actor, user) {
   if (!actor || !user) return false;
   if (user.isGM === true) return true;
@@ -774,6 +805,21 @@ export class RebreyaMainModule {
       ),
       execute: (payload) => this.performerAutomationService.commitActivePerformance(payload)
     });
+    this.socketCommandBus.register(INVENTORY_TAKE_COMMAND, {
+      validate: isValidInventoryTakePayload,
+      authorize: (payload, { sender }) => this.#canSenderTakeInventoryItem(sender, payload),
+      execute: (payload) => this.inventoryService.executeTakeMutation(payload)
+    });
+    this.socketCommandBus.register(INVENTORY_SALE_COMMAND, {
+      validate: isValidInventorySalePayload,
+      authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      execute: (payload) => this.inventoryService.executeSaleMutation(payload)
+    });
+    this.socketCommandBus.register(INVENTORY_IMPORT_COMMAND, {
+      validate: isValidInventoryImportPayload,
+      authorize: (payload, { sender }) => this.#canSenderImportInventoryItem(sender, payload),
+      execute: (payload) => this.inventoryService.executeImportMutation(payload)
+    });
     const authorizeTradeActor = (payload, { sender }) => traderActorIsOwnedByUser(
       globalThis.game?.actors?.get?.(payload.actorId)
         ?? globalThis.game?.actors?.contents?.find?.((actor) => String(actor?.id) === payload.actorId),
@@ -876,6 +922,29 @@ export class RebreyaMainModule {
       return true;
     }
     return getGroupMemberActors(groupActor).some((actor) => actorIsOwnedByUser(actor, sender));
+  }
+
+  #canSenderTakeInventoryItem(sender, payload) {
+    if (!this.#canSenderManageGroup(sender, payload.inventoryActorId)) {
+      return false;
+    }
+    const groupActor = resolveActorById(payload.inventoryActorId);
+    const targetActor = resolveActorById(payload.targetActorId);
+    return actorIsOwnedByUser(targetActor, sender)
+      && getGroupMemberActors(groupActor).some((actor) => actor?.id === targetActor?.id);
+  }
+
+  async #canSenderImportInventoryItem(sender, payload) {
+    if (!this.#canSenderManageGroup(sender, payload.inventoryActorId)) {
+      return false;
+    }
+    const item = typeof globalThis.fromUuid === "function"
+      ? await globalThis.fromUuid(payload.itemUuid)
+      : null;
+    const sourceActor = item?.parent ?? null;
+    const groupActor = resolveActorById(payload.inventoryActorId);
+    return traderActorIsOwnedByUser(sourceActor, sender)
+      && getGroupMemberActors(groupActor).some((actor) => actor?.id === sourceActor?.id);
   }
 
   async initialize() {
