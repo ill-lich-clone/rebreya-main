@@ -1354,13 +1354,23 @@ export class InventoryService {
     }
   }
 
+  #findInventoryMergeCandidate(actor, itemData) {
+    const sourceFlags = foundry.utils.deepClone(itemData?.flags?.[MODULE_ID] ?? {});
+    return actor?.items?.contents?.find((candidate) => {
+      const candidateFlags = foundry.utils.deepClone(candidate.flags?.[MODULE_ID] ?? {});
+      if (sourceFlags.sourceType && sourceFlags.sourceId) {
+        return candidateFlags.sourceType === sourceFlags.sourceType && candidateFlags.sourceId === sourceFlags.sourceId;
+      }
+      return normalizeText(candidate.name) === normalizeText(itemData?.name) && candidate.type === itemData?.type;
+    }) ?? null;
+  }
+
   async #upsertInventoryItem(actor, itemData, quantity = null) {
     if (!(actor instanceof Actor)) {
       throw new Error("Не удалось определить актёра партийного инвентаря.");
     }
 
     const source = sanitizeEmbeddedItemData(itemData);
-    const sourceFlags = foundry.utils.deepClone(source.flags?.[MODULE_ID] ?? {});
     const targetQuantity = quantity === null
       ? Math.max(0, getRawQuantity(source))
       : Math.max(0, roundNumber(toNumber(quantity, 0), 2));
@@ -1368,14 +1378,7 @@ export class InventoryService {
       return null;
     }
 
-    const mergeCandidate = actor.items.contents.find((candidate) => {
-      const candidateFlags = foundry.utils.deepClone(candidate.flags?.[MODULE_ID] ?? {});
-      if (sourceFlags.sourceType && sourceFlags.sourceId) {
-        return candidateFlags.sourceType === sourceFlags.sourceType && candidateFlags.sourceId === sourceFlags.sourceId;
-      }
-
-      return normalizeText(candidate.name) === normalizeText(source.name) && candidate.type === source.type;
-    }) ?? null;
+    const mergeCandidate = this.#findInventoryMergeCandidate(actor, source);
 
     if (mergeCandidate) {
       const nextQuantity = roundNumber(getRawQuantity(mergeCandidate.toObject()) + targetQuantity, 2);
@@ -2431,6 +2434,152 @@ export class InventoryService {
     const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
     const itemData = await this.buildModelItemData(sourceType, sourceId, safeQuantity);
     return this.#upsertInventoryItem(actor, itemData, safeQuantity);
+  }
+
+  addModelItemToInventoryOnce(sourceType, sourceId, quantity, mutationId) {
+    return this.mutationCoordinator.run(
+      "inventory",
+      () => this.#executeAddModelItemOnce(sourceType, sourceId, quantity, mutationId)
+    );
+  }
+
+  async #executeAddModelItemOnce(sourceType, sourceId, quantity, mutationId) {
+    const operationId = createInventoryMutationId("inventory-grant", mutationId);
+    let record = await this.mutationJournal.find(operationId);
+    const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
+    if (!actor) throw new Error("Не удалось получить партийный инвентарь.");
+    if (!record) {
+      const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
+      const itemData = await this.buildModelItemData(sourceType, sourceId, safeQuantity);
+      const candidate = this.#findInventoryMergeCandidate(actor, itemData);
+      if (!candidate) {
+        foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
+          id: operationId,
+          kind: "grant"
+        });
+      }
+      const beforeQuantity = candidate ? getRawQuantity(candidate.toObject()) : 0;
+      record = await this.mutationJournal.start({
+        id: operationId,
+        kind: "grant",
+        phase: "prepared",
+        actorId: actor.id,
+        itemData,
+        targetReceipt: {
+          itemId: candidate?.id ?? "",
+          created: !candidate,
+          beforeQuantity,
+          afterQuantity: roundNumber(beforeQuantity + safeQuantity, 2),
+          delta: safeQuantity
+        }
+      });
+    }
+    const terminal = this.#readInventoryTerminal(record);
+    if (terminal.terminal) return terminal.value;
+    if (record.phase === "prepared") {
+      let item = record.targetReceipt.created
+        ? this.#findMutationItem(actor, operationId)
+        : actor.items.get(record.targetReceipt.itemId);
+      if (record.targetReceipt.created) {
+        if (!item) {
+          try {
+            [item] = await actor.createEmbeddedDocuments("Item", [record.itemData]);
+          }
+          catch (error) {
+            item = this.#findMutationItem(actor, operationId);
+            if (!item) throw error;
+          }
+        }
+      }
+      else {
+        if (!item) throw this.#inventoryReconciliationError("Inventory grant target disappeared.");
+        const current = getRawQuantity(item.toObject());
+        if (!inventoryQuantitiesMatch(current, record.targetReceipt.afterQuantity)) {
+          if (!inventoryQuantitiesMatch(current, record.targetReceipt.beforeQuantity)) {
+            throw this.#inventoryReconciliationError("Inventory grant target quantity changed.");
+          }
+          try {
+            await item.update({ "system.quantity": record.targetReceipt.afterQuantity });
+          }
+          catch (error) {
+            if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), record.targetReceipt.afterQuantity)) throw error;
+          }
+        }
+      }
+      if (!item) throw this.#inventoryReconciliationError("Inventory grant target was not observed.");
+      record = await this.mutationJournal.checkpoint(operationId, "prepared", "target-created", {
+        targetItemId: item.id
+      });
+    }
+    if (record.phase === "target-created") {
+      record = await this.mutationJournal.checkpoint(operationId, "target-created", "committed");
+    }
+    const result = {
+      actorId: actor.id,
+      itemId: record.targetItemId ?? record.targetReceipt.itemId,
+      quantity: record.targetReceipt.delta
+    };
+    await this.mutationJournal.finish(operationId, { ok: true, value: result });
+    return foundry.utils.deepClone(result);
+  }
+
+  addCurrencyToInventoryOnce(coins = {}, mutationId = "") {
+    return this.mutationCoordinator.run(
+      "inventory",
+      () => this.#executeAddCurrencyOnce(coins, mutationId)
+    );
+  }
+
+  async #executeAddCurrencyOnce(coins, mutationId) {
+    const operationId = createInventoryMutationId("inventory-currency-grant", mutationId);
+    let record = await this.mutationJournal.find(operationId);
+    const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
+    if (!actor) throw new Error("Не удалось получить партийный инвентарь.");
+    if (!record) {
+      const before = buildCurrencySnapshot(actor);
+      const after = {
+        pp: before.pp + Math.max(0, Math.floor(toNumber(coins.pp, 0))),
+        gp: before.gp + Math.max(0, Math.floor(toNumber(coins.gp, 0))),
+        sp: before.sp + Math.max(0, Math.floor(toNumber(coins.sp, 0))),
+        cp: before.cp + Math.max(0, Math.floor(toNumber(coins.cp, 0)))
+      };
+      record = await this.mutationJournal.start({
+        id: operationId,
+        kind: "currency-grant",
+        phase: "prepared",
+        actorId: actor.id,
+        before: { pp: before.pp, gp: before.gp, sp: before.sp, cp: before.cp },
+        after
+      });
+    }
+    const terminal = this.#readInventoryTerminal(record);
+    if (terminal.terminal) return terminal.value;
+    if (record.phase === "prepared") {
+      const current = buildCurrencySnapshot(actor);
+      const keys = ["pp", "gp", "sp", "cp"];
+      const matches = (expected) => keys.every((key) => current[key] === expected[key]);
+      if (!matches(record.after)) {
+        if (!matches(record.before)) {
+          throw this.#inventoryReconciliationError("Inventory currency changed before loot grant.");
+        }
+        try {
+          await actor.update(buildCurrencyUpdatePatch(record.after));
+        }
+        catch (error) {
+          const observed = buildCurrencySnapshot(actor);
+          if (!keys.every((key) => observed[key] === record.after[key])) throw error;
+        }
+      }
+      record = await this.mutationJournal.checkpoint(operationId, "prepared", "currency-credited");
+    }
+    if (record.phase === "currency-credited") {
+      record = await this.mutationJournal.checkpoint(operationId, "currency-credited", "committed");
+    }
+    const result = buildCurrencySnapshot(actor);
+    await this.mutationJournal.finish(operationId, { ok: true, value: result });
+    return foundry.utils.deepClone(result);
   }
 
   async breakItemToMaterial(itemId, quantity = 1) {

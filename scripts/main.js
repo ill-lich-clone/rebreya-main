@@ -53,6 +53,7 @@ import { CraftingService } from "./data/crafting-service.js";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.93-item-upgrades";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
+import { LootClaimService } from "./application/loot-claim-service.js";
 import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
 import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
 import { isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
@@ -733,6 +734,28 @@ export class RebreyaMainModule {
     });
     this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
+    this.lootClaimService = new LootClaimService({
+      getMessage: ({ messageId, lootId }) => (
+        (messageId ? globalThis.game?.messages?.get?.(messageId) : null)
+        ?? this.#findLootgenChatMessage(lootId)
+      ),
+      readState: (message) => message.getFlag(MODULE_ID, "lootgenChat") ?? {},
+      writeState: (message, state) => message.update({
+        content: buildLootgenChatContent(state),
+        [`flags.${MODULE_ID}.lootgenChat`]: state
+      }),
+      grantRow: ({ claimId, row }) => this.inventoryService.addModelItemToInventoryOnce(
+        row.sourceType,
+        row.sourceId,
+        row.quantity,
+        `loot-row:${claimId}`
+      ),
+      grantCoins: ({ claimId, coins }) => this.inventoryService.addCurrencyToInventoryOnce(
+        coins,
+        `loot-coins:${claimId}`
+      ),
+      coordinator: this.worldMutationCoordinator
+    });
     this.heroDollService = new HeroDollService(this);
     this.craftingService = new CraftingService(this);
     this.itemUpgradeService = new ItemUpgradeService(this);
@@ -1351,17 +1374,29 @@ export class RebreyaMainModule {
     }
 
     if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY && game.user?.isGM) {
-      await this.claimLootgenChatRowToInventory(message.payload?.lootId, message.payload?.rowId, { quiet: true, fromSocket: true });
+      await this.claimLootgenChatRowToInventory(message.payload?.lootId, message.payload?.rowId, {
+        quiet: true,
+        fromSocket: true,
+        claimId: message.payload?.claimId
+      });
       return;
     }
 
     if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY && game.user?.isGM) {
-      await this.claimLootgenChatAllToInventory(message.payload?.lootId, { quiet: true, fromSocket: true });
+      await this.claimLootgenChatAllToInventory(message.payload?.lootId, {
+        quiet: true,
+        fromSocket: true,
+        claimId: message.payload?.claimId
+      });
       return;
     }
 
     if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_COINS && game.user?.isGM) {
-      await this.claimLootgenChatCoins(message.payload?.lootId, { quiet: true, fromSocket: true });
+      await this.claimLootgenChatCoins(message.payload?.lootId, {
+        quiet: true,
+        fromSocket: true,
+        claimId: message.payload?.claimId
+      });
     }
   }
 
@@ -1499,46 +1534,68 @@ export class RebreyaMainModule {
     };
   }
 
-  async claimLootgenChatRowToInventory(lootId, rowId, { quiet = false, fromSocket = false } = {}) {
+  async claimLootgenChatRowToInventory(lootId, rowId, {
+    quiet = false,
+    fromSocket = false,
+    claimId = ""
+  } = {}) {
     const safeLootId = String(lootId ?? "").trim();
     const safeRowId = String(rowId ?? "").trim();
+    const safeClaimId = String(claimId ?? "").trim() || createSocketRequestId("loot-row-claim");
     if (!safeLootId || !safeRowId) {
       return false;
     }
 
     if (!game.user?.isGM) {
       if (!fromSocket) {
-        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY, { lootId: safeLootId, rowId: safeRowId });
+        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY, {
+          lootId: safeLootId,
+          rowId: safeRowId,
+          claimId: safeClaimId
+        });
       }
       ui.notifications?.info("Запрос на добавление добычи в склад отправлен мастеру.");
       return true;
     }
 
     const message = this.#findLootgenChatMessage(safeLootId);
-    const state = foundry.utils.deepClone(message?.getFlag(MODULE_ID, "lootgenChat") ?? {});
-    const rows = Array.isArray(state.rows) ? state.rows : [];
-    const row = rows.find((entry) => String(entry.rowId ?? "") === safeRowId) ?? null;
-    if (!message || !row || row.claimed) {
+    if (!message) {
       return false;
     }
-
-    await this.addModelItemToInventory(row.sourceType, row.sourceId, row.quantity);
-    const claimed = await this.claimLootgenChatRow(safeLootId, safeRowId, { quiet: true });
+    const state = foundry.utils.deepClone(message.getFlag(MODULE_ID, "lootgenChat") ?? {});
+    const row = (state.rows ?? []).find((entry) => String(entry.rowId ?? "") === safeRowId) ?? null;
+    const claimed = await this.lootClaimService.claimRow({
+      messageId: message.id,
+      lootId: safeLootId,
+      rowId: safeRowId,
+      claimId: safeClaimId
+    });
+    if (claimed) {
+      this.#notifyLootgenChatClaim(safeLootId, safeRowId, "row");
+    }
     if (claimed && !quiet) {
-      ui.notifications?.info(`Лут "${row.name ?? "предмет"}" добавлен в партийный склад.`);
+      ui.notifications?.info(`Лут "${row?.name ?? "предмет"}" добавлен в партийный склад.`);
     }
     return claimed;
   }
 
-  async claimLootgenChatAllToInventory(lootId, { quiet = false, fromSocket = false } = {}) {
+  async claimLootgenChatAllToInventory(lootId, {
+    quiet = false,
+    fromSocket = false,
+    claimId = ""
+  } = {}) {
     const safeLootId = String(lootId ?? "").trim();
     if (!safeLootId) {
       return false;
     }
 
+    const batchClaimId = String(claimId ?? "").trim() || createSocketRequestId("loot-all-claim");
     if (!game.user?.isGM) {
       if (!fromSocket) {
-        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY, { lootId: safeLootId });
+        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY, {
+          lootId: safeLootId,
+          claimId: batchClaimId
+        });
       }
       ui.notifications?.info("Запрос на добавление всей добычи в склад отправлен мастеру.");
       return true;
@@ -1553,13 +1610,21 @@ export class RebreyaMainModule {
         continue;
       }
 
-      const claimed = await this.claimLootgenChatRowToInventory(safeLootId, row.rowId, { quiet: true, fromSocket: true });
+      const claimed = await this.claimLootgenChatRowToInventory(safeLootId, row.rowId, {
+        quiet: true,
+        fromSocket: true,
+        claimId: `${batchClaimId}:row:${row.rowId}`
+      });
       if (claimed) {
         claimedRows += 1;
       }
     }
 
-    const claimedCoins = await this.claimLootgenChatCoins(safeLootId, { quiet: true, fromSocket: true });
+    const claimedCoins = await this.claimLootgenChatCoins(safeLootId, {
+      quiet: true,
+      fromSocket: true,
+      claimId: `${batchClaimId}:coins`
+    });
     const changed = claimedRows > 0 || claimedCoins;
     if (changed && !quiet) {
       ui.notifications?.info("Вся доступная добыча добавлена в партийный склад.");
@@ -1605,56 +1670,44 @@ export class RebreyaMainModule {
     return true;
   }
 
-  async #addLootgenCoinsToInventory(coins = {}) {
-    const inventory = await this.getInventorySnapshot({ createActor: true });
-    const current = inventory?.summary?.currency ?? {
-      pp: 0,
-      gp: 0,
-      sp: 0,
-      cp: 0
-    };
-
-    await this.updatePartyCurrency({
-      pp: toNumber(current.pp, 0) + toNumber(coins.pp, 0),
-      gp: toNumber(current.gp, 0) + toNumber(coins.gp, 0),
-      sp: toNumber(current.sp, 0) + toNumber(coins.sp, 0),
-      cp: toNumber(current.cp, 0) + toNumber(coins.cp, 0)
-    });
-  }
-
-  async claimLootgenChatCoins(lootId, { quiet = false, fromSocket = false } = {}) {
+  async claimLootgenChatCoins(lootId, {
+    quiet = false,
+    fromSocket = false,
+    claimId = ""
+  } = {}) {
     const safeLootId = String(lootId ?? "").trim();
+    const safeClaimId = String(claimId ?? "").trim() || createSocketRequestId("loot-coins-claim");
     if (!safeLootId) {
       return false;
     }
 
     if (!game.user?.isGM) {
       if (!fromSocket) {
-        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_COINS, { lootId: safeLootId });
+        this.#emitLootgenClaimRequest(SOCKET_EVENT_LOOTGEN_CLAIM_COINS, {
+          lootId: safeLootId,
+          claimId: safeClaimId
+        });
       }
       ui.notifications?.info("Запрос на добавление монет отправлен мастеру.");
       return true;
     }
 
     const message = this.#findLootgenChatMessage(safeLootId);
-    const state = foundry.utils.deepClone(message?.getFlag(MODULE_ID, "lootgenChat") ?? {});
-    if (!message || state.coinsClaimed) {
+    if (!message) {
       return false;
     }
-
-    const claimedCoins = foundry.utils.deepClone(state.coins ?? {});
-    await this.#addLootgenCoinsToInventory(claimedCoins);
-    state.coinsClaimed = true;
-    await message.update({
-      content: buildLootgenChatContent(state),
-      [`flags.${MODULE_ID}.lootgenChat`]: state
+    const claimed = await this.lootClaimService.claimCoins({
+      messageId: message.id,
+      lootId: safeLootId,
+      claimId: safeClaimId
     });
-
-    this.#notifyLootgenChatClaim(safeLootId, "", "coins");
-    if (!quiet) {
+    if (claimed) {
+      this.#notifyLootgenChatClaim(safeLootId, "", "coins");
+    }
+    if (claimed && !quiet) {
       ui.notifications?.info("Монеты из чат-лута добавлены в партийный склад.");
     }
-    return true;
+    return claimed;
   }
 
   async handleLootgenChatItemCreated(item, _userId) {
