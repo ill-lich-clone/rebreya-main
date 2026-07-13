@@ -8,6 +8,7 @@ import {
   normalizeFolderPath,
   resolveNamedIcon
 } from "./compendium-utils.js";
+import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { buildSlug } from "./item-classification.js";
 
 const PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
@@ -536,88 +537,6 @@ async function getPackDocuments(pack) {
   return Array.isArray(documents) ? documents : [];
 }
 
-function shouldRebuildPack(feats, documents) {
-  const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
-  if (managedDocuments.length !== feats.length) {
-    return true;
-  }
-
-  const byId = new Map(feats.map((feat) => [feat.featId, feat]));
-  for (const document of managedDocuments) {
-    const featId = document.getFlag(MODULE_ID, "featId");
-    const feat = byId.get(featId);
-    if (!feat) {
-      return true;
-    }
-
-    if (document.getFlag(MODULE_ID, "signature") !== buildFeatSignature(feat)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-async function deleteManagedDocuments(pack, documents) {
-  const managedIds = documents
-    .filter((document) => document.getFlag(MODULE_ID, "managed"))
-    .map((document) => document.id);
-
-  if (!managedIds.length) {
-    return;
-  }
-
-  await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
-}
-
-async function syncManagedDocumentIcons(pack, documents, iconLookup) {
-  const updates = [];
-  for (const document of Array.isArray(documents) ? documents : []) {
-    if (!document?.getFlag?.(MODULE_ID, "managed")) {
-      continue;
-    }
-
-    const currentIcon = cleanString(document.img, DEFAULT_FEAT_ICON);
-    const nextIcon = resolveNamedIcon(document.name, iconLookup, currentIcon);
-    if (!nextIcon || nextIcon === currentIcon) {
-      continue;
-    }
-
-    updates.push({
-      _id: document.id,
-      img: nextIcon
-    });
-  }
-
-  if (!updates.length) {
-    return;
-  }
-
-  await Item.implementation.updateDocuments(updates, { pack: pack.collection });
-}
-
-async function createManagedDocuments(pack, feats, iconLookup = null) {
-  if (!feats.length) {
-    return;
-  }
-
-  let folderIdByPath = new Map();
-  try {
-    folderIdByPath = await ensureCompendiumFolders(
-      pack,
-      feats.map((feat) => buildFeatFolderPath(feat))
-    );
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to prepare compendium folders for feats pack.`, error);
-  }
-
-  await Item.implementation.createDocuments(
-    feats.map((feat) => createFeatItemData(feat, folderIdByPath, iconLookup)),
-    { pack: pack.collection }
-  );
-}
-
 async function findFeatDocument(pack, featId, fallbackName = "") {
   const normalizedFeatId = cleanString(featId);
   const normalizedFallbackName = normalizeMatchText(fallbackName);
@@ -661,18 +580,42 @@ export class FeatsCompendiumService {
     await deduplicateCompendiumFolders(pack);
     const documents = await getPackDocuments(pack);
     const iconLookup = await buildNamedIconLookup(FEAT_ICON_SEARCH_PATHS, { forceRefresh: true });
-    if (!shouldRebuildPack(feats, documents)) {
-      await syncManagedDocumentIcons(pack, documents, iconLookup);
-      return game.packs.get(PACK_ID) ?? pack;
-    }
-
-    await deleteManagedDocuments(pack, documents);
-    await createManagedDocuments(pack, feats, iconLookup);
-    const activePack = game.packs.get(PACK_ID) ?? pack;
-    const activeDocuments = await getPackDocuments(activePack);
-    await syncManagedDocumentIcons(activePack, activeDocuments, iconLookup);
-
-    return activePack;
+    let folderIdByPath = new Map();
+    await syncManagedDocumentsOnActiveGm(game, {
+      pack,
+      entries: feats,
+      documents,
+      sourceIdOfEntry: (feat) => feat.featId,
+      sourceIdOfDocument: (document) => document.getFlag(MODULE_ID, "managed")
+        ? document.getFlag(MODULE_ID, "featId")
+        : "",
+      signatureOfEntry: (feat) => JSON.stringify([
+        buildFeatSignature(feat),
+        resolveNamedIcon(feat.name, iconLookup, DEFAULT_FEAT_ICON)
+      ]),
+      signatureOfDocument: (document) => JSON.stringify([
+        document.getFlag(MODULE_ID, "signature"),
+        cleanString(document.img, DEFAULT_FEAT_ICON)
+      ]),
+      prepareFolders: async () => {
+        try {
+          folderIdByPath = await ensureCompendiumFolders(
+            pack,
+            feats.map((feat) => buildFeatFolderPath(feat))
+          );
+        }
+        catch (error) {
+          console.warn(`${MODULE_ID} | Failed to prepare compendium folders for feats pack.`, error);
+        }
+      },
+      createData: (feat) => createFeatItemData(feat, folderIdByPath, iconLookup),
+      updateData: (_document, feat) => {
+        const data = createFeatItemData(feat, folderIdByPath, iconLookup);
+        delete data._id;
+        return data;
+      }
+    });
+    return game.packs.get(PACK_ID) ?? pack;
   }
 
   async syncFromWorldCompendium({ notify = true, runSync = true } = {}) {

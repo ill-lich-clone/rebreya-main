@@ -11,6 +11,7 @@ import {
   normalizeFolderPath,
   resolveNamedIcon
 } from "./compendium-utils.js";
+import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 
 const PACK_ID = `world.${ACTIONS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -355,40 +356,6 @@ async function ensurePack() {
   return pack;
 }
 
-function shouldRebuildPack(entries, documents) {
-  const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
-  if (managedDocuments.length !== entries.length) {
-    return true;
-  }
-
-  const entriesById = new Map(entries.map((entry) => [entry.actionId, entry]));
-  for (const document of managedDocuments) {
-    const actionId = cleanString(document.getFlag(MODULE_ID, "actionId"));
-    const sourceEntry = entriesById.get(actionId);
-    if (!sourceEntry) {
-      return true;
-    }
-
-    if (document.getFlag(MODULE_ID, "signature") !== buildActionSignature(sourceEntry)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-async function deleteManagedDocuments(pack, documents) {
-  const managedIds = documents
-    .filter((document) => document.getFlag(MODULE_ID, "managed"))
-    .map((document) => document.id);
-
-  if (!managedIds.length) {
-    return;
-  }
-
-  await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
-}
-
 async function syncManagedDocumentIcons(pack, documents, iconLookup) {
   const updates = [];
   for (const document of Array.isArray(documents) ? documents : []) {
@@ -413,28 +380,6 @@ async function syncManagedDocumentIcons(pack, documents, iconLookup) {
   }
 
   await Item.implementation.updateDocuments(updates, { pack: pack.collection });
-}
-
-async function createManagedDocuments(pack, entries, iconLookup = null) {
-  if (!entries.length) {
-    return;
-  }
-
-  let folderIdByPath = new Map();
-  try {
-    folderIdByPath = await ensureCompendiumFolders(
-      pack,
-      entries.map((entry) => buildActionFolderPath(entry))
-    );
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to prepare compendium folders for actions pack.`, error);
-  }
-
-  await Item.implementation.createDocuments(
-    entries.map((entry) => createActionItemData(entry, folderIdByPath, iconLookup)),
-    { pack: pack.collection }
-  );
 }
 
 async function ensureManagedIdentifiers(pack, documents) {
@@ -483,14 +428,34 @@ export class ActionsCompendiumService {
       return game.packs.get(PACK_ID) ?? pack;
     }
 
-    if (!shouldRebuildPack(entries, documents)) {
-      await ensureManagedIdentifiers(pack, documents);
-      await syncManagedDocumentIcons(pack, documents, iconLookup);
-      return game.packs.get(PACK_ID) ?? pack;
-    }
-
-    await deleteManagedDocuments(pack, documents);
-    await createManagedDocuments(pack, entries, iconLookup);
+    let folderIdByPath = new Map();
+    await syncManagedDocumentsOnActiveGm(game, {
+      pack,
+      entries,
+      documents,
+      sourceIdOfEntry: (entry) => entry.actionId,
+      sourceIdOfDocument: (document) => document.getFlag(MODULE_ID, "managed")
+        ? document.getFlag(MODULE_ID, "actionId")
+        : "",
+      signatureOfEntry: (entry) => JSON.stringify([
+        buildActionSignature(entry),
+        resolveNamedIcon(entry.name, iconLookup, DEFAULT_ACTION_ICON)
+      ]),
+      signatureOfDocument: (document) => JSON.stringify([
+        document.getFlag(MODULE_ID, "signature"),
+        cleanString(document.img, DEFAULT_ACTION_ICON)
+      ]),
+      prepareFolders: async () => {
+        try {
+          folderIdByPath = await ensureCompendiumFolders(pack, entries.map((entry) => buildActionFolderPath(entry)));
+        }
+        catch (error) {
+          console.warn(`${MODULE_ID} | Failed to prepare compendium folders for actions pack.`, error);
+        }
+      },
+      createData: (entry) => createActionItemData(entry, folderIdByPath, iconLookup),
+      updateData: (_document, entry) => createActionItemData(entry, folderIdByPath, iconLookup)
+    });
     const activePack = game.packs.get(PACK_ID) ?? pack;
     await deduplicateCompendiumFolders(activePack, [ACTION_ROOT_FOLDER, "Действия", "Реакции"]);
     const activeDocuments = await getPackDocuments(activePack);

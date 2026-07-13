@@ -13,6 +13,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath
 } from "./compendium-utils.js";
+import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { buildSlug } from "./item-classification.js";
 
 const PACK_ID = `world.${STATES_COMPENDIUM_NAME}`;
@@ -413,40 +414,6 @@ async function getPackDocuments(pack) {
   return Array.isArray(documents) ? documents : [];
 }
 
-async function deleteManagedDocuments(pack, documents) {
-  const managedIds = documents
-    .filter((document) => document.getFlag(MODULE_ID, "managed"))
-    .map((document) => document.id);
-
-  if (!managedIds.length) {
-    return;
-  }
-
-  await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
-}
-
-function shouldRebuildPack(entries, documents) {
-  const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
-  if (managedDocuments.length !== entries.length) {
-    return true;
-  }
-
-  const byId = new Map(entries.map((entry) => [entry.state.id, entry]));
-  for (const document of managedDocuments) {
-    const stateId = cleanString(document.getFlag(MODULE_ID, "stateId"));
-    const expected = byId.get(stateId);
-    if (!expected) {
-      return true;
-    }
-
-    if (document.getFlag(MODULE_ID, "signature") !== expected.signature) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 function createStateItemData(entry, folderIdByPath) {
   const folderPath = entry.folderPath.join("/");
   const missingCulturalFeats = entry.culturalFeatResolution.missingNames;
@@ -476,28 +443,6 @@ function createStateItemData(entry, folderIdByPath) {
       }
     }
   };
-}
-
-async function createManagedDocuments(pack, entries) {
-  if (!entries.length) {
-    return;
-  }
-
-  let folderIdByPath = new Map();
-  try {
-    folderIdByPath = await ensureCompendiumFolders(
-      pack,
-      entries.map((entry) => entry.folderPath)
-    );
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to prepare compendium folders for states pack.`, error);
-  }
-
-  await Item.implementation.createDocuments(
-    entries.map((entry) => createStateItemData(entry, folderIdByPath)),
-    { pack: pack.collection }
-  );
 }
 
 function normalizeFeatIndexRecord(record, pack) {
@@ -683,12 +628,28 @@ export class StatesCompendiumService {
     const pack = await ensurePack();
     const documents = await getPackDocuments(pack);
 
-    if (!shouldRebuildPack(entries, documents)) {
-      return game.packs.get(PACK_ID) ?? pack;
-    }
-
-    await deleteManagedDocuments(pack, documents);
-    await createManagedDocuments(pack, entries);
+    let folderIdByPath = new Map();
+    await syncManagedDocumentsOnActiveGm(game, {
+      pack,
+      entries,
+      documents,
+      sourceIdOfEntry: (entry) => entry.state.id,
+      sourceIdOfDocument: (document) => document.getFlag(MODULE_ID, "managed")
+        ? document.getFlag(MODULE_ID, "stateId")
+        : "",
+      signatureOfEntry: (entry) => entry.signature,
+      signatureOfDocument: (document) => document.getFlag(MODULE_ID, "signature"),
+      prepareFolders: async () => {
+        try {
+          folderIdByPath = await ensureCompendiumFolders(pack, entries.map((entry) => entry.folderPath));
+        }
+        catch (error) {
+          console.warn(`${MODULE_ID} | Failed to prepare compendium folders for states pack.`, error);
+        }
+      },
+      createData: (entry) => createStateItemData(entry, folderIdByPath),
+      updateData: (_document, entry) => createStateItemData(entry, folderIdByPath)
+    });
     return game.packs.get(PACK_ID) ?? pack;
   }
 

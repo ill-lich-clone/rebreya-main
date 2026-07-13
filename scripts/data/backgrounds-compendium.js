@@ -12,6 +12,7 @@ import {
   normalizeFolderPath,
   resolveNamedIcon
 } from "./compendium-utils.js";
+import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 import { buildSlug } from "./item-classification.js";
 
 const PACK_ID = `world.${BACKGROUNDS_COMPENDIUM_NAME}`;
@@ -484,66 +485,6 @@ async function getPackDocuments(pack) {
   return Array.isArray(documents) ? documents : [];
 }
 
-async function deleteManagedDocuments(pack, documents) {
-  const managedIds = documents
-    .filter((document) => document.getFlag(MODULE_ID, "managed"))
-    .map((document) => document.id);
-
-  if (!managedIds.length) {
-    return;
-  }
-
-  await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
-}
-
-function shouldRebuildPack(entries, documents) {
-  const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
-  if (managedDocuments.length !== entries.length) {
-    return true;
-  }
-
-  const byId = new Map(entries.map((entry) => [entry.background.id, entry]));
-  for (const document of managedDocuments) {
-    const backgroundId = cleanString(document.getFlag(MODULE_ID, "backgroundId"));
-    const expected = byId.get(backgroundId);
-    if (!expected) {
-      return true;
-    }
-
-    if (document.getFlag(MODULE_ID, "signature") !== expected.signature) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-async function syncManagedDocumentIcons(pack, documents, iconLookup) {
-  const updates = [];
-  for (const document of Array.isArray(documents) ? documents : []) {
-    if (!document?.getFlag?.(MODULE_ID, "managed")) {
-      continue;
-    }
-
-    const currentIcon = cleanString(document.img, DEFAULT_BACKGROUND_ICON);
-    const nextIcon = resolveNamedIcon(document.name, iconLookup, currentIcon);
-    if (!nextIcon || nextIcon === currentIcon) {
-      continue;
-    }
-
-    updates.push({
-      _id: document.id,
-      img: nextIcon
-    });
-  }
-
-  if (!updates.length) {
-    return;
-  }
-
-  await Item.implementation.updateDocuments(updates, { pack: pack.collection });
-}
-
 function createBackgroundItemData(entry, folderIdByPath, iconLookup = null) {
   const folderPath = entry.folderPath.join("/");
   const resolvedIcon = resolveNamedIcon(entry.background.name, iconLookup, DEFAULT_BACKGROUND_ICON);
@@ -571,28 +512,6 @@ function createBackgroundItemData(entry, folderIdByPath, iconLookup = null) {
       }
     }
   };
-}
-
-async function createManagedDocuments(pack, entries, iconLookup = null) {
-  if (!entries.length) {
-    return;
-  }
-
-  let folderIdByPath = new Map();
-  try {
-    folderIdByPath = await ensureCompendiumFolders(
-      pack,
-      entries.map((entry) => entry.folderPath)
-    );
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to prepare compendium folders for backgrounds pack.`, error);
-  }
-
-  await Item.implementation.createDocuments(
-    entries.map((entry) => createBackgroundItemData(entry, folderIdByPath, iconLookup)),
-    { pack: pack.collection }
-  );
 }
 
 function normalizeFeatIndexRecord(record, pack) {
@@ -739,18 +658,35 @@ export class BackgroundsCompendiumService {
     const documents = await getPackDocuments(pack);
     const iconLookup = await buildNamedIconLookup(BACKGROUND_ICON_SEARCH_PATHS, { forceRefresh: true });
 
-    if (!shouldRebuildPack(entries, documents)) {
-      await syncManagedDocumentIcons(pack, documents, iconLookup);
-      return game.packs.get(PACK_ID) ?? pack;
-    }
-
-    await deleteManagedDocuments(pack, documents);
-    await createManagedDocuments(pack, entries, iconLookup);
-    const activePack = game.packs.get(PACK_ID) ?? pack;
-    const activeDocuments = await getPackDocuments(activePack);
-    await syncManagedDocumentIcons(activePack, activeDocuments, iconLookup);
-
-    return activePack;
+    let folderIdByPath = new Map();
+    await syncManagedDocumentsOnActiveGm(game, {
+      pack,
+      entries,
+      documents,
+      sourceIdOfEntry: (entry) => entry.background.id,
+      sourceIdOfDocument: (document) => document.getFlag(MODULE_ID, "managed")
+        ? document.getFlag(MODULE_ID, "backgroundId")
+        : "",
+      signatureOfEntry: (entry) => JSON.stringify([
+        entry.signature,
+        resolveNamedIcon(entry.background.name, iconLookup, DEFAULT_BACKGROUND_ICON)
+      ]),
+      signatureOfDocument: (document) => JSON.stringify([
+        document.getFlag(MODULE_ID, "signature"),
+        cleanString(document.img, DEFAULT_BACKGROUND_ICON)
+      ]),
+      prepareFolders: async () => {
+        try {
+          folderIdByPath = await ensureCompendiumFolders(pack, entries.map((entry) => entry.folderPath));
+        }
+        catch (error) {
+          console.warn(`${MODULE_ID} | Failed to prepare compendium folders for backgrounds pack.`, error);
+        }
+      },
+      createData: (entry) => createBackgroundItemData(entry, folderIdByPath, iconLookup),
+      updateData: (_document, entry) => createBackgroundItemData(entry, folderIdByPath, iconLookup)
+    });
+    return game.packs.get(PACK_ID) ?? pack;
   }
 
   async getBackgroundDocument(backgroundId, fallbackName = "") {

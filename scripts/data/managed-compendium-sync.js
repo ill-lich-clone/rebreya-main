@@ -85,7 +85,7 @@ export async function syncManagedDocuments({
     await prepareFolders(sourceEntries);
   }
 
-  const documentClass = pack.documentClass;
+  const documentClass = pack.documentClass ?? globalThis.Item?.implementation;
   if (creates.length > 0) {
     if (typeof documentClass?.createDocuments !== "function") {
       throw new TypeError("pack.documentClass.createDocuments is required for creates");

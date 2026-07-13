@@ -1,6 +1,7 @@
 ﻿import { MATERIALS_COMPENDIUM_LABEL, MATERIALS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import { buildNamedIconLookup, ensurePackSidebarFolder, resolveNamedIcon } from "./compendium-utils.js";
+import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 
 const PACK_ID = `world.${MATERIALS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -298,78 +299,6 @@ async function findMaterialDocument(pack, material) {
   }) ?? null;
 }
 
-function shouldRebuildPack(materials, documents) {
-  const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
-  if (managedDocuments.length !== materials.length) {
-    return true;
-  }
-
-  const materialById = new Map(materials.map((material) => [material.id, material]));
-  for (const document of managedDocuments) {
-    const materialId = document.getFlag(MODULE_ID, "materialId");
-    const signature = document.getFlag(MODULE_ID, "signature");
-    const material = materialById.get(materialId);
-    if (!material) {
-      return true;
-    }
-
-    if (signature !== buildMaterialSignature(material)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-async function deleteManagedDocuments(pack, documents) {
-  const managedIds = documents
-    .filter((document) => document.getFlag(MODULE_ID, "managed"))
-    .map((document) => document.id);
-
-  if (!managedIds.length) {
-    return;
-  }
-
-  await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
-}
-
-async function syncManagedDocumentIcons(pack, documents, iconLookup) {
-  const updates = [];
-  for (const document of Array.isArray(documents) ? documents : []) {
-    if (!document?.getFlag?.(MODULE_ID, "managed")) {
-      continue;
-    }
-
-    const currentIcon = String(document.img ?? "").trim() || DEFAULT_ITEM_ICON;
-    const nextIcon = resolveNamedIcon(document.name, iconLookup, currentIcon);
-    if (!nextIcon || nextIcon === currentIcon) {
-      continue;
-    }
-
-    updates.push({
-      _id: document.id,
-      img: nextIcon
-    });
-  }
-
-  if (!updates.length) {
-    return;
-  }
-
-  await Item.implementation.updateDocuments(updates, { pack: pack.collection });
-}
-
-async function createManagedDocuments(pack, materials, iconLookup = null) {
-  if (!materials.length) {
-    return;
-  }
-
-  await Item.implementation.createDocuments(
-    materials.map((material) => createDnd5eItemData(material, iconLookup)),
-    { pack: pack.collection }
-  );
-}
-
 export class MaterialsCompendiumService {
   async sync(materials = []) {
     if (!game.user?.isGM || !isDnd5eWorld()) {
@@ -380,18 +309,30 @@ export class MaterialsCompendiumService {
     const pack = await ensureMaterialsPack();
     const documents = await getPackDocuments(pack);
     const iconLookup = await buildNamedIconLookup(MATERIAL_ICON_SEARCH_PATHS, { forceRefresh: true });
-    if (!shouldRebuildPack(safeMaterials, documents)) {
-      await syncManagedDocumentIcons(pack, documents, iconLookup);
-      return game.packs.get(PACK_ID) ?? pack;
-    }
-
-    await deleteManagedDocuments(pack, documents);
-    await createManagedDocuments(pack, safeMaterials, iconLookup);
-    const activePack = game.packs.get(PACK_ID) ?? pack;
-    const activeDocuments = await getPackDocuments(activePack);
-    await syncManagedDocumentIcons(activePack, activeDocuments, iconLookup);
-
-    return activePack;
+    await syncManagedDocumentsOnActiveGm(game, {
+      pack,
+      entries: safeMaterials,
+      documents,
+      sourceIdOfEntry: (material) => material.id,
+      sourceIdOfDocument: (document) => document.getFlag(MODULE_ID, "managed")
+        ? document.getFlag(MODULE_ID, "materialId")
+        : "",
+      signatureOfEntry: (material) => JSON.stringify([
+        buildMaterialSignature(material),
+        resolveNamedIcon(material.name, iconLookup, DEFAULT_ITEM_ICON)
+      ]),
+      signatureOfDocument: (document) => JSON.stringify([
+        document.getFlag(MODULE_ID, "signature"),
+        String(document.img ?? "").trim() || DEFAULT_ITEM_ICON
+      ]),
+      createData: (material) => createDnd5eItemData(material, iconLookup),
+      updateData: (_document, material) => {
+        const data = createDnd5eItemData(material, iconLookup);
+        delete data._id;
+        return data;
+      }
+    });
+    return game.packs.get(PACK_ID) ?? pack;
   }
 
   async openMaterial(material) {

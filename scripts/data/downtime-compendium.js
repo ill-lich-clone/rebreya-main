@@ -10,6 +10,7 @@ import {
   ensurePackSidebarFolder,
   normalizeFolderPath
 } from "./compendium-utils.js";
+import { syncManagedDocumentsOnActiveGm } from "./managed-compendium-sync.js";
 
 const PACK_ID = `world.${DOWNTIME_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -375,62 +376,6 @@ async function ensurePack() {
   return pack;
 }
 
-function shouldRebuildPack(activities, documents) {
-  const managedDocuments = documents.filter((document) => document.getFlag(MODULE_ID, "managed"));
-  if (managedDocuments.length !== activities.length) {
-    return true;
-  }
-
-  const activityById = new Map(activities.map((activity) => [activity.id, activity]));
-  for (const document of managedDocuments) {
-    const downtimeId = cleanString(document.getFlag(MODULE_ID, "downtimeId"));
-    const activity = activityById.get(downtimeId);
-    if (!activity) {
-      return true;
-    }
-
-    if (document.getFlag(MODULE_ID, "signature") !== buildDowntimeSignature(activity)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-async function deleteManagedDocuments(pack, documents) {
-  const managedIds = documents
-    .filter((document) => document.getFlag(MODULE_ID, "managed"))
-    .map((document) => document.id);
-
-  if (!managedIds.length) {
-    return;
-  }
-
-  await Item.implementation.deleteDocuments(managedIds, { pack: pack.collection });
-}
-
-async function createManagedDocuments(pack, activities) {
-  if (!activities.length) {
-    return;
-  }
-
-  let folderIdByPath = new Map();
-  try {
-    folderIdByPath = await ensureCompendiumFolders(
-      pack,
-      activities.map((activity) => activity.folderPath)
-    );
-  }
-  catch (error) {
-    console.warn(`${MODULE_ID} | Failed to prepare compendium folders for downtime pack.`, error);
-  }
-
-  await Item.implementation.createDocuments(
-    activities.map((activity) => createDowntimeItemData(activity, folderIdByPath)),
-    { pack: pack.collection }
-  );
-}
-
 export class DowntimeCompendiumService {
   async sync() {
     if (!game.user?.isGM || !isDnd5eWorld()) {
@@ -448,12 +393,28 @@ export class DowntimeCompendiumService {
     await deduplicateCompendiumFolders(pack, [DOWNTIME_ROOT_FOLDER]);
     const documents = await getPackDocuments(pack);
 
-    if (!shouldRebuildPack(activities, documents)) {
-      return game.packs.get(PACK_ID) ?? pack;
-    }
-
-    await deleteManagedDocuments(pack, documents);
-    await createManagedDocuments(pack, activities);
+    let folderIdByPath = new Map();
+    await syncManagedDocumentsOnActiveGm(game, {
+      pack,
+      entries: activities,
+      documents,
+      sourceIdOfEntry: (activity) => activity.id,
+      sourceIdOfDocument: (document) => document.getFlag(MODULE_ID, "managed")
+        ? document.getFlag(MODULE_ID, "downtimeId")
+        : "",
+      signatureOfEntry: buildDowntimeSignature,
+      signatureOfDocument: (document) => document.getFlag(MODULE_ID, "signature"),
+      prepareFolders: async () => {
+        try {
+          folderIdByPath = await ensureCompendiumFolders(pack, activities.map((activity) => activity.folderPath));
+        }
+        catch (error) {
+          console.warn(`${MODULE_ID} | Failed to prepare compendium folders for downtime pack.`, error);
+        }
+      },
+      createData: (activity) => createDowntimeItemData(activity, folderIdByPath),
+      updateData: (_document, activity) => createDowntimeItemData(activity, folderIdByPath)
+    });
     const activePack = game.packs.get(PACK_ID) ?? pack;
     await deduplicateCompendiumFolders(activePack, [DOWNTIME_ROOT_FOLDER]);
     return activePack;
