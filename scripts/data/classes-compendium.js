@@ -1238,6 +1238,7 @@ export function normalizeClassCompendiumData(rawData) {
       `${classIdentifier}::subclass::${subclassIndex + 1}`
     );
     const subclassDescription = cleanString(rawSubclass?.description, `Архетип варвара: ${subclassName}.`);
+    const subclassSpellcasting = normalizeSpellcastingData(rawSubclass?.spellcasting);
     const usedFeatureIds = new Set();
     const features = (Array.isArray(rawSubclass?.features) ? rawSubclass.features : [])
       .map((feature, featureIndex) => normalizeFeatureEntry(feature, featureIndex, {
@@ -1270,6 +1271,7 @@ export function normalizeClassCompendiumData(rawData) {
       subclassId,
       name: subclassName,
       description: subclassDescription,
+      spellcasting: subclassSpellcasting,
       features,
       metamagicOptions: subclassMetamagicOptions,
       cunningStrikes: subclassCunningStrikes
@@ -4824,6 +4826,7 @@ export function createClassSystem(classData, advancement = [], sourceLabel = DEF
 }
 
 export function createSubclassSystem(subclass, classIdentifier, advancement = [], sourceLabel = DEFAULT_SOURCE_LABEL) {
+  const spellcasting = normalizeSpellcastingData(subclass.spellcasting);
   return {
     description: {
       value: toHtmlParagraphs(subclass.description),
@@ -4832,10 +4835,7 @@ export function createSubclassSystem(subclass, classIdentifier, advancement = []
     source: createSourceData(sourceLabel),
     identifier: buildAsciiIdentifier(subclass.subclassId, subclass.name),
     classIdentifier: buildAsciiIdentifier(classIdentifier, classIdentifier),
-    spellcasting: {
-      progression: "none",
-      ability: ""
-    },
+    spellcasting,
     advancement: foundry.utils.deepClone(advancement)
   };
 }

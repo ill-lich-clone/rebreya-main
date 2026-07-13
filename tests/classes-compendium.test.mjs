@@ -805,9 +805,11 @@ test("barbarian advancement exposes one native item choice for preset starting e
   );
 });
 
-test("rogue rework data defines ZoZT class basics and the thief subclass", () => {
+test("rogue rework data defines ZoZT class basics and rogue specializations", () => {
   const rogue = normalizeClassCompendiumData(loadJson("data/rogue-rework-v00.json"));
   const system = createClassSystem(rogue.classData, [], rogue.sourceLabel);
+  const thief = rogue.subclasses.find((subclass) => subclass.name === "Вор");
+  const mysticTrickster = rogue.subclasses.find((subclass) => subclass.name === "Мистический ловкач");
 
   assert.equal(rogue.sourceLabel, "ЗоЗТ");
   assert.equal(rogue.classData.identifier, "rogue-rework-v00");
@@ -820,13 +822,77 @@ test("rogue rework data defines ZoZT class basics and the thief subclass", () =>
   assert.equal(rogue.classData.features.some((feature) => feature.name === "Компетентность"), true);
   assert.equal(rogue.classData.features.some((feature) => feature.name === "Скрытая атака"), true);
   assert.equal(rogue.classData.features.some((feature) => feature.name === "Хитрое действие"), true);
-  assert.equal(rogue.subclasses.length, 1);
-  assert.equal(rogue.subclasses[0].name, "Вор");
-  assert.equal(rogue.subclasses[0].features.some((feature) => feature.name === "Мастер взлома"), true);
-  assert.equal(rogue.subclasses[0].features.some((feature) => feature.name === "Украсть невозможное"), true);
+  assert.equal(rogue.subclasses.length, 2);
+  assert.ok(thief);
+  assert.equal(thief.features.some((feature) => feature.name === "Мастер взлома"), true);
+  assert.equal(thief.features.some((feature) => feature.name === "Украсть невозможное"), true);
+  assert.ok(mysticTrickster);
+  assert.equal(mysticTrickster.subclassId, "rogue-mystic-trickster");
+  assert.deepEqual(mysticTrickster.features.map((feature) => [feature.name, feature.requiredLevel]), [
+    ["Мистические заклинания", 3],
+    ["Магические воровские инструменты", 3],
+    ["Варианты хитрого удара", 3],
+    ["Мистическая подготовка", 6],
+    ["Варианты хитрого действия", 9],
+    ["Воровство формул", 13],
+    ["Укравший плетение", 20]
+  ]);
+  assert.deepEqual(mysticTrickster.cunningStrikes.map((strike) => [strike.name, strike.cunningStrikeCost]), [
+    ["Волшебная скрытая атака", 1],
+    ["Заклинательная скрытая атака", 2]
+  ]);
   assert.equal(system.source.book, "ЗоЗТ");
   assert.equal(system.wealth, "100");
   assert.deepEqual(system.startingEquipment, []);
+});
+
+test("rogue mystic trickster subclass exposes third-caster spellcasting and grants its features", () => {
+  const rogue = normalizeClassCompendiumData(loadJson("data/rogue-rework-v00.json"));
+  const definitions = buildFeatureDefinitions(rogue);
+  const featureUuidById = makeUuidMap(definitions);
+  const mysticTrickster = rogue.subclasses.find((subclass) => subclass.name === "Мистический ловкач");
+  const system = createSubclassSystem(mysticTrickster, rogue.classData.identifier, [], rogue.sourceLabel);
+  const advancement = buildSubclassAdvancements(mysticTrickster, { featureUuidById });
+  const magicalSneakAttack = featureUuidById.get(
+    "rogue-mystic-trickster::rogueCunningStrike::mystic-trickster-cunning-strike-magical-sneak-attack"
+  );
+  const spellSneakAttack = featureUuidById.get(
+    "rogue-mystic-trickster::rogueCunningStrike::mystic-trickster-cunning-strike-spell-sneak-attack"
+  );
+  const spellcasting = featureUuidById.get(
+    "rogue-mystic-trickster::subclass::mystic-trickster-spellcasting"
+  );
+  const magicalThievesTools = featureUuidById.get(
+    "rogue-mystic-trickster::subclass::mystic-trickster-magical-thieves-tools"
+  );
+  const weaveThief = featureUuidById.get(
+    "rogue-mystic-trickster::subclass::mystic-trickster-weave-thief"
+  );
+  const levelThreeFeatures = advancement.find((entry) =>
+    entry.type === "ItemGrant"
+    && entry.level === 3
+    && entry.title === "Мистический ловкач: умения (3-й уровень)"
+  );
+  const levelThreeCunningStrikes = advancement.find((entry) =>
+    entry.type === "ItemGrant"
+    && entry.level === 3
+    && entry.title === "Мистический ловкач: Хитрые удары (3-й уровень)"
+  );
+  const levelTwentyFeatures = advancement.find((entry) =>
+    entry.type === "ItemGrant"
+    && entry.level === 20
+    && entry.configuration.items.some((item) => item.uuid === weaveThief)
+  );
+
+  assert.equal(system.spellcasting.progression, "third");
+  assert.equal(system.spellcasting.ability, "int");
+  assert.ok(levelThreeFeatures.configuration.items.some((item) => item.uuid === spellcasting));
+  assert.ok(levelThreeFeatures.configuration.items.some((item) => item.uuid === magicalThievesTools));
+  assert.deepEqual(levelThreeCunningStrikes.configuration.items.map((item) => item.uuid), [
+    magicalSneakAttack,
+    spellSneakAttack
+  ]);
+  assert.ok(levelTwentyFeatures);
 });
 
 test("rogue advancements expose proficiencies, scales, class grants, and equipment package choice", () => {
@@ -954,7 +1020,9 @@ test("rogue cunning strike options are separate feature items in their sheet sec
     "Ослепить",
     "Сорвать ремень",
     "Рассыпать припасы",
-    "Сорвать снаряжение"
+    "Сорвать снаряжение",
+    "Волшебная скрытая атака",
+    "Заклинательная скрытая атака"
   ]);
   assert.equal(hamstring.cunningStrikeCost, 1);
   assert.equal(spillSupplies.cunningStrikeCost, 2);
