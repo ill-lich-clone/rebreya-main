@@ -1,6 +1,6 @@
 ﻿import { MAGIC_ITEMS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { buildLootgenStatusContent } from "./lootgen-chat.js";
-import { bringAppToFront, getAppElement } from "../ui.js";
+import { getAppElement } from "../ui.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -823,8 +823,6 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.renderListenersAbortController?.abort();
     this.renderListenersAbortController = new AbortController();
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
-
-    bringAppToFront(this);
 
     element.querySelectorAll("[data-action='lootgen-open-entry']").forEach((button) => {
       button.addEventListener("click", async (event) => {

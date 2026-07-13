@@ -3273,8 +3273,6 @@ async function rerenderActorSheet(app, moduleApi) {
   catch (_error) {
     await app.render(true);
   }
-
-  await moduleApi.refreshOpenApps();
 }
 
 function parseAllowedSlots(value) {

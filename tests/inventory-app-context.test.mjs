@@ -290,6 +290,37 @@ test("InventoryApp _prepareContext surfaces known no-group display context error
   }
 });
 
+test("InventoryApp _prepareContext never creates Foundry documents while rendering", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const calls = [];
+  const moduleApi = createModuleApi({
+    calls,
+    getGroupContext: () => null
+  });
+  const getInventorySnapshot = moduleApi.getInventorySnapshot.bind(moduleApi);
+  moduleApi.getInventorySnapshot = async (options) => {
+    calls.push(["getInventorySnapshot", options]);
+    return getInventorySnapshot(options);
+  };
+  const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
+  const app = new InventoryApp(moduleApi);
+
+  try {
+    await app._prepareContext();
+    assert.deepEqual(calls.find((call) => call[0] === "getInventorySnapshot"), [
+      "getInventorySnapshot",
+      {
+        search: "",
+        typeFilter: "all",
+        createActor: false
+      }
+    ]);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp keeps the wide party inventory window size", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import("../scripts/ui/inventory-app.js");

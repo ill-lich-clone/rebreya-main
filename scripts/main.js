@@ -54,6 +54,7 @@ import { GroupStateRepository } from "./infrastructure/foundry/group-state-repos
 import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
 import { isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
+import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.93-firearm-item-sheet-no-rerender";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.93-firearm-card-notes";
@@ -115,6 +116,7 @@ const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST = "downtime-project-close-requ
 const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT = "downtime-project-close-result";
 const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
 const SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST = "travel-map-sync-request";
+const INVENTORY_REFRESH_SETTLE_MS = 80;
 const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_DOWNTIME_CREATE_REQUEST,
   SOCKET_EVENT_DOWNTIME_UPDATE_REQUEST,
@@ -633,6 +635,11 @@ function filterVisibleGlobalEvents(events = []) {
 export class RebreyaMainModule {
   constructor() {
     this.worldMutationCoordinator = new WorldMutationCoordinator();
+    this.uiRefreshCoordinator = new UiRefreshCoordinator();
+    this.inventoryRefreshActorIds = new Set();
+    this.inventoryRefreshHoldCount = 0;
+    this.inventoryRefreshTimer = null;
+    this.inventoryRefreshWaiters = [];
     this.groupStateRepository = new GroupStateRepository({
       coordinator: this.worldMutationCoordinator,
       gameProvider: () => globalThis.game,
@@ -998,7 +1005,7 @@ export class RebreyaMainModule {
       }
 
       if (message.ok) {
-        await this.refreshOpenApps();
+        await this.refreshInventoryViews();
         ui.notifications?.info("Предмет перенесён в партийный склад.");
       }
       else {
@@ -1027,7 +1034,7 @@ export class RebreyaMainModule {
       }
 
       if (message.ok) {
-        await this.refreshOpenApps();
+        await this.refreshInventoryViews({ actorIds: [message.actorId] });
         const action = String(message.action ?? "");
         const labels = {
           take: "Предмет забран из партийного склада.",
@@ -1111,14 +1118,15 @@ export class RebreyaMainModule {
       if (game.user?.isGM) {
         const forUserId = String(message.senderId ?? "").trim();
         try {
-          const result = await this.inventoryService.handleImportDroppedItemSocketRequest(message.payload ?? {}, {
-            senderId: forUserId
-          });
+          const result = await this.runInventoryMutation(
+            () => this.inventoryService.handleImportDroppedItemSocketRequest(message.payload ?? {}, {
+              senderId: forUserId
+            })
+          );
           if (!result) {
             return;
           }
 
-          await this.refreshOpenApps();
           game.socket?.emit?.(SOCKET_CHANNEL, {
             type: SOCKET_EVENT_INVENTORY_IMPORT_RESULT,
             forUserId,
@@ -1143,14 +1151,15 @@ export class RebreyaMainModule {
       if (game.user?.isGM) {
         const forUserId = String(message.senderId ?? "").trim();
         try {
-          const result = await this.inventoryService.handlePartyInventorySourceDepletionSocketRequest(message.payload ?? {}, {
-            senderId: forUserId
-          });
+          const result = await this.runInventoryMutation(
+            () => this.inventoryService.handlePartyInventorySourceDepletionSocketRequest(message.payload ?? {}, {
+              senderId: forUserId
+            })
+          );
           if (!result) {
             return;
           }
 
-          await this.refreshInventoryViews();
           game.socket?.emit?.(SOCKET_CHANNEL, {
             type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
             forUserId,
@@ -1176,19 +1185,21 @@ export class RebreyaMainModule {
         const forUserId = String(message.senderId ?? "").trim();
         const action = String(message.payload?.action ?? "");
         try {
-          const result = await this.inventoryService.handleInventoryItemActionSocketRequest(message.payload ?? {}, {
-            senderId: forUserId
-          });
+          const result = await this.runInventoryMutation(
+            () => this.inventoryService.handleInventoryItemActionSocketRequest(message.payload ?? {}, {
+              senderId: forUserId
+            })
+          );
           if (!result) {
             return;
           }
 
-          await this.refreshOpenApps();
           game.socket?.emit?.(SOCKET_CHANNEL, {
             type: SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT,
             forUserId,
             senderId: game.user?.id ?? "",
             action,
+            ...(result.actorId ? { actorId: result.actorId } : {}),
             ok: true
           });
         }
@@ -2133,55 +2144,59 @@ export class RebreyaMainModule {
 
   async grantDowntimeWeeks(payload = {}) {
     const result = await this.downtimeService.grantWeeks(payload);
-    await this.refreshOpenApps();
     this.#emitDowntimeUpdated({
       actorIds: result.actorIds
     });
+    await this.refreshDowntimeViews({ actorIds: result.actorIds });
     return result;
   }
 
   async revokeDowntimeWeeks(payload = {}) {
     const result = await this.downtimeService.revokeWeeks(payload);
-    await this.refreshOpenApps();
     this.#emitDowntimeUpdated({
       actorIds: result.actorIds
     });
+    await this.refreshDowntimeViews({ actorIds: result.actorIds });
     return result;
   }
 
   async clearDowntimeHistory() {
     const result = await this.downtimeService.clearHistory();
-    await this.refreshOpenApps();
     this.#emitDowntimeUpdated({
       actorIds: result.actorIds
     });
+    await this.refreshDowntimeViews({ actorIds: result.actorIds });
     return result;
   }
 
-  async createDowntimeRequest(payload = {}) {
+  async createDowntimeRequest(payload = {}, { refreshActorSheets = true } = {}) {
     if (!game.user?.isGM) {
       return this.#requestDowntimeCreateViaGm(payload);
     }
 
     const result = await this.downtimeService.createRequest(payload);
-    await this.refreshOpenApps();
     this.#emitDowntimeUpdated({
       actorIds: [result.actorId],
       requestId: result.id
     });
+    await this.refreshDowntimeViews({
+      actorIds: refreshActorSheets ? [result.actorId] : []
+    });
     return result;
   }
 
-  async updateDowntimeRequest(payload = {}) {
+  async updateDowntimeRequest(payload = {}, { refreshActorSheets = true } = {}) {
     if (!game.user?.isGM) {
       return this.#requestDowntimeUpdateViaGm(payload);
     }
 
     const result = await this.downtimeService.updateRequest(payload);
-    await this.refreshOpenApps();
     this.#emitDowntimeUpdated({
       actorIds: [result.actorId],
       requestId: result.id
+    });
+    await this.refreshDowntimeViews({
+      actorIds: refreshActorSheets ? [result.actorId] : []
     });
     return result;
   }
@@ -2244,7 +2259,6 @@ export class RebreyaMainModule {
       return;
     }
 
-    await this.refreshOpenApps();
   }
 
   async #handleDowntimeUpdateSocketResult(message = {}) {
@@ -2258,11 +2272,19 @@ export class RebreyaMainModule {
       return;
     }
 
-    await this.refreshOpenApps();
   }
 
-  async #handleDowntimeUpdatedSocketMessage(_message = {}) {
-    await this.refreshOpenApps();
+  async #handleDowntimeUpdatedSocketMessage(message = {}) {
+    await this.refreshDowntimeViews({ actorIds: message.actorIds });
+  }
+
+  async #refreshDowntimeViewsSafely(options = {}) {
+    try {
+      await this.refreshDowntimeViews(options);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to refresh downtime views after a committed socket mutation.`, error);
+    }
   }
 
   async #handleDowntimeCreateSocketRequest(message = {}) {
@@ -2285,6 +2307,12 @@ export class RebreyaMainModule {
           data: cloneSocketPayload(result)
         });
       }
+
+      this.#emitDowntimeUpdated({
+        actorIds: [result.actorId],
+        requestId: result.id
+      });
+      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
     }
     catch (error) {
       if (requestId) {
@@ -2327,6 +2355,7 @@ export class RebreyaMainModule {
         actorIds: [result.actorId],
         requestId: result.id
       });
+      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
     }
     catch (error) {
       if (requestId) {
@@ -2444,7 +2473,6 @@ export class RebreyaMainModule {
       return;
     }
 
-    await this.refreshOpenApps();
   }
 
   async #handleDowntimeCheckResultSocketRequest(message = {}) {
@@ -2471,6 +2499,7 @@ export class RebreyaMainModule {
         actorIds: [result.actorId],
         requestId: result.id
       });
+      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
     }
     catch (error) {
       if (requestId) {
@@ -2541,11 +2570,11 @@ export class RebreyaMainModule {
     }
 
     const continuedRequest = await this.downtimeService.continueProject(cleanSocketId(requestId), options);
-    await this.refreshOpenApps();
     this.#emitDowntimeUpdated({
       actorIds: [continuedRequest.actorId],
       requestId: continuedRequest.id
     });
+    await this.refreshDowntimeViews({ actorIds: [continuedRequest.actorId] });
     return continuedRequest;
   }
 
@@ -2587,7 +2616,6 @@ export class RebreyaMainModule {
       return;
     }
 
-    await this.refreshOpenApps();
   }
 
   async #handleDowntimeProjectContinueSocketRequest(message = {}) {
@@ -2614,6 +2642,7 @@ export class RebreyaMainModule {
         actorIds: [result.actorId],
         requestId: result.id
       });
+      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
     }
     catch (error) {
       if (requestId) {
@@ -2679,11 +2708,11 @@ export class RebreyaMainModule {
     }
 
     const result = await this.downtimeService.closeProject(cleanSocketId(requestId), options);
-    await this.refreshOpenApps();
     this.#emitDowntimeUpdated({
       actorIds: [result.actorId],
       requestId: result.id
     });
+    await this.refreshDowntimeViews({ actorIds: [result.actorId] });
     return result;
   }
 
@@ -2723,7 +2752,6 @@ export class RebreyaMainModule {
       return;
     }
 
-    await this.refreshOpenApps();
   }
 
   async #handleDowntimeProjectCloseSocketRequest(message = {}) {
@@ -2750,6 +2778,7 @@ export class RebreyaMainModule {
         actorIds: [result.actorId],
         requestId: result.id
       });
+      await this.#refreshDowntimeViewsSafely({ actorIds: [result.actorId] });
     }
     catch (error) {
       if (requestId) {
@@ -2826,21 +2855,21 @@ export class RebreyaMainModule {
 
   async setDowntimeRequestStatus(requestId, status, options = {}) {
     const result = await this.downtimeService.setRequestStatus(requestId, status, options);
-    await this.refreshOpenApps();
     this.#emitDowntimeUpdated({
       actorIds: [result.actorId],
       requestId: result.id
     });
+    await this.refreshDowntimeViews({ actorIds: [result.actorId] });
     return result;
   }
 
   async setDowntimeRequestChecks(requestId, checks = []) {
     const result = await this.downtimeService.setRequestChecks(requestId, checks);
-    await this.refreshOpenApps();
     this.#emitDowntimeUpdated({
       actorIds: [result.actorId],
       requestId: result.id
     });
+    await this.refreshDowntimeViews({ actorIds: [result.actorId] });
     return result;
   }
 
@@ -2850,11 +2879,11 @@ export class RebreyaMainModule {
     }
 
     const updatedRequest = await this.downtimeService.recordCheckResult(requestId, checkId, result, options);
-    await this.refreshOpenApps();
     this.#emitDowntimeUpdated({
       actorIds: [updatedRequest.actorId],
       requestId: updatedRequest.id
     });
+    await this.refreshDowntimeViews({ actorIds: [updatedRequest.actorId] });
     return updatedRequest;
   }
 
@@ -2869,9 +2898,9 @@ export class RebreyaMainModule {
   }
 
   async mergeLegacyInventoryIntoGroup(groupActorId) {
-    const result = await this.inventoryService.mergeLegacyInventoryIntoGroup(groupActorId);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.mergeLegacyInventoryIntoGroup(groupActorId)
+    );
   }
 
   async setActivePartyGroup(groupActorId) {
@@ -2883,15 +2912,17 @@ export class RebreyaMainModule {
   }
 
   async addPartyMember(actorId) {
-    const result = await this.inventoryService.addPartyMember(actorId);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.addPartyMember(actorId),
+      { actorIdsFromResult: () => [actorId] }
+    );
   }
 
   async removePartyMember(actorId) {
-    const result = await this.inventoryService.removePartyMember(actorId);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.removePartyMember(actorId),
+      { actorIdsFromResult: () => [actorId] }
+    );
   }
 
   async #syncTravelMapForSnapshot(snapshot = {}) {
@@ -3024,57 +3055,58 @@ export class RebreyaMainModule {
   }
 
   async updatePartyDefaults(patch = {}) {
-    const result = await this.inventoryService.updatePartyDefaults(patch);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.updatePartyDefaults(patch)
+    );
   }
 
   async updatePartyMember(actorId, patch = {}) {
-    const result = await this.inventoryService.updatePartyMember(actorId, patch);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.updatePartyMember(actorId, patch),
+      { actorIdsFromResult: () => [actorId] }
+    );
   }
 
   async updateInventoryItemQuantity(itemId, nextQuantity) {
-    const result = await this.inventoryService.updateItemQuantity(itemId, nextQuantity);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.updateItemQuantity(itemId, nextQuantity)
+    );
   }
 
   async deleteInventoryItem(itemId) {
-    const result = await this.inventoryService.deleteItem(itemId);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.deleteItem(itemId)
+    );
   }
 
   async takeInventoryItemToCharacter(itemId, options = {}) {
-    const result = await this.inventoryService.takeInventoryItemToCharacter(itemId, options);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.takeInventoryItemToCharacter(itemId, options)
+    );
   }
 
   async sellInventoryItem(itemId, quantity = 1) {
-    const result = await this.inventoryService.sellInventoryItem(itemId, quantity);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.sellInventoryItem(itemId, quantity)
+    );
   }
 
   async addPartySupply(resourceKey, quantity) {
-    const result = await this.inventoryService.addSupply(resourceKey, quantity);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.addSupply(resourceKey, quantity)
+    );
   }
 
   async consumePartySuppliesOneDay(options = {}) {
-    const result = await this.inventoryService.consumeSuppliesOneDay(options);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.consumeSuppliesOneDay(options)
+    );
   }
 
   async importInventoryDrop(dropData) {
-    const result = await this.inventoryService.importDroppedItem(dropData);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.importDroppedItem(dropData)
+    );
   }
 
   async openPartyInventorySheet() {
@@ -3082,27 +3114,27 @@ export class RebreyaMainModule {
   }
 
   async updatePartyCurrency(values = {}) {
-    const result = await this.inventoryService.updateCurrency(values);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.updateCurrency(values)
+    );
   }
 
   async convertPartyCurrency(mode = "normalized") {
-    const result = await this.inventoryService.convertCurrency(mode);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.convertCurrency(mode)
+    );
   }
 
   async breakInventoryItemToMaterial(itemId, quantity = 1) {
-    const result = await this.inventoryService.breakItemToMaterial(itemId, quantity);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.breakItemToMaterial(itemId, quantity)
+    );
   }
 
   async addModelItemToInventory(sourceType, sourceId, quantity = 1) {
-    const result = await this.inventoryService.addModelItemToInventory(sourceType, sourceId, quantity);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.addModelItemToInventory(sourceType, sourceId, quantity)
+    );
   }
 
   getRebreyaToolCatalog() {
@@ -3110,21 +3142,24 @@ export class RebreyaMainModule {
   }
 
   async updatePartyMemberTool(actorId, toolId, patch = {}) {
-    const result = await this.inventoryService.updatePartyMemberTool(actorId, toolId, patch);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.updatePartyMemberTool(actorId, toolId, patch),
+      { actorIdsFromResult: () => [actorId] }
+    );
   }
 
   async setPartyMemberEnergy(actorId, currentEnergy) {
-    const result = await this.inventoryService.setMemberEnergy(actorId, currentEnergy);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.setMemberEnergy(actorId, currentEnergy),
+      { actorIdsFromResult: () => [actorId] }
+    );
   }
 
   async restorePartyMemberEnergy(actorId, days = 1) {
-    const result = await this.inventoryService.restoreMemberEnergy(actorId, days);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.inventoryService.restoreMemberEnergy(actorId, days),
+      { actorIdsFromResult: () => [actorId] }
+    );
   }
 
   async getCraftSnapshot(options = {}) {
@@ -3132,21 +3167,21 @@ export class RebreyaMainModule {
   }
 
   async queueCraftTask(payload = {}) {
-    const result = await this.craftingService.queueTask(payload);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.craftingService.queueTask(payload)
+    );
   }
 
   async cancelCraftTask(taskId) {
-    const result = await this.craftingService.cancelTask(taskId);
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.craftingService.cancelTask(taskId)
+    );
   }
 
   async processCraftOneDay() {
-    const result = await this.craftingService.processOneDay();
-    await this.refreshOpenApps();
-    return result;
+    return this.runInventoryMutation(
+      () => this.craftingService.processOneDay()
+    );
   }
 
   async installItemUpgrade(hostItem, upgradeItem, options = {}) {
@@ -3479,87 +3514,172 @@ export class RebreyaMainModule {
     return model;
   }
 
-  async refreshInventoryViews() {
-    const tasks = [];
-    if (this.inventoryApp?.rendered) {
-      tasks.push(rerenderApp(this.inventoryApp, { preserveScroll: true, focus: false }));
+  #appRefreshTask(app, options = {}) {
+    if (!app?.rendered || typeof app.render !== "function") {
+      return null;
     }
 
-    await Promise.allSettled(tasks);
+    return {
+      key: app,
+      run: () => rerenderApp(app, { ...options, focus: false })
+    };
+  }
+
+  #actorSheetRefreshTasks(actorIds = [], { allWhenEmpty = true } = {}) {
+    const normalizedActorIds = new Set(
+      Array.from(actorIds ?? [], (actorId) => String(actorId ?? "").trim()).filter(Boolean)
+    );
+    const refreshAllActorSheets = normalizedActorIds.size === 0;
+
+    if (refreshAllActorSheets && !allWhenEmpty) {
+      return [];
+    }
+
+    return getOpenActorSheetApps()
+      .filter((app) => {
+        const actorId = String(app.actor?.id ?? app.document?.id ?? "").trim();
+        return refreshAllActorSheets || normalizedActorIds.has(actorId);
+      })
+      .map((app) => this.#appRefreshTask(app))
+      .filter(Boolean);
+  }
+
+  #scheduleInventoryRefresh() {
+    if (this.inventoryRefreshHoldCount > 0) {
+      return;
+    }
+
+    if (this.inventoryRefreshTimer) {
+      globalThis.clearTimeout(this.inventoryRefreshTimer);
+    }
+
+    this.inventoryRefreshTimer = globalThis.setTimeout(() => {
+      this.inventoryRefreshTimer = null;
+      void this.#flushInventoryViews();
+    }, INVENTORY_REFRESH_SETTLE_MS);
+  }
+
+  async #flushInventoryViews() {
+    const actorIds = Array.from(this.inventoryRefreshActorIds);
+    const waiters = this.inventoryRefreshWaiters.splice(0);
+    this.inventoryRefreshActorIds.clear();
+
+    const tasks = [
+      this.#appRefreshTask(this.inventoryApp, { preserveScroll: true }),
+      ...this.#actorSheetRefreshTasks(actorIds, { allWhenEmpty: false })
+    ].filter(Boolean);
+
+    try {
+      const result = await this.uiRefreshCoordinator.request(tasks);
+      waiters.forEach(({ resolve }) => resolve(result));
+    }
+    catch (error) {
+      waiters.forEach(({ reject }) => reject(error));
+    }
+
+    if (this.inventoryRefreshWaiters.length > 0) {
+      this.#scheduleInventoryRefresh();
+    }
+  }
+
+  refreshInventoryViews({ actorIds = [] } = {}) {
+    for (const actorId of actorIds ?? []) {
+      const normalizedActorId = String(actorId ?? "").trim();
+      if (normalizedActorId) {
+        this.inventoryRefreshActorIds.add(normalizedActorId);
+      }
+    }
+
+    const completion = new Promise((resolve, reject) => {
+      this.inventoryRefreshWaiters.push({ resolve, reject });
+    });
+    this.#scheduleInventoryRefresh();
+    return completion;
+  }
+
+  async runInventoryMutation(operation, { actorIdsFromResult } = {}) {
+    if (typeof operation !== "function") {
+      throw new TypeError("Inventory mutation operation must be a function.");
+    }
+
+    if (this.inventoryRefreshTimer) {
+      globalThis.clearTimeout(this.inventoryRefreshTimer);
+      this.inventoryRefreshTimer = null;
+    }
+    this.inventoryRefreshHoldCount += 1;
+    let result;
+    let operationError = null;
+    try {
+      result = await operation();
+    }
+    catch (error) {
+      operationError = error;
+    }
+
+    let actorIds = [];
+    try {
+      actorIds = typeof actorIdsFromResult === "function"
+        ? actorIdsFromResult(result)
+        : [result?.actorId];
+    }
+    catch (error) {
+      operationError ??= error;
+    }
+    this.inventoryRefreshHoldCount = Math.max(0, this.inventoryRefreshHoldCount - 1);
+    try {
+      await this.refreshInventoryViews({ actorIds });
+    }
+    catch (refreshError) {
+      if (!operationError) {
+        throw refreshError;
+      }
+    }
+
+    if (operationError) {
+      throw operationError;
+    }
+    return result;
+  }
+
+  async refreshDowntimeViews({ actorIds = [] } = {}) {
+    const tasks = [
+      this.#appRefreshTask(this.inventoryApp, { preserveScroll: true }),
+      ...this.#actorSheetRefreshTasks(actorIds, { allWhenEmpty: false })
+    ].filter(Boolean);
+
+    await this.uiRefreshCoordinator.request(tasks);
+  }
+
+  async refreshCosmologyViews() {
+    const task = this.#appRefreshTask(this.cosmologyApp);
+    await this.uiRefreshCoordinator.request(task ? [task] : []);
   }
 
   async refreshOpenApps() {
-    const tasks = [];
-
-    if (this.economyApp?.rendered) {
-      tasks.push(rerenderApp(this.economyApp));
+    const standardApps = [
+      this.economyApp,
+      this.worldTradeRoutesApp,
+      this.statesApp,
+      this.globalEventsApp,
+      this.groupsApp,
+      this.cosmologyApp,
+      ...this.lootgenApps.values(),
+      ...this.cityApps.values(),
+      ...this.traderApps.values(),
+      ...this.traderV2Apps.values(),
+      ...this.tradeRouteApps.values(),
+      ...this.referenceApps.values(),
+      ...getOpenActorSheetApps()
+    ];
+    const tasks = standardApps
+      .map((app) => this.#appRefreshTask(app))
+      .filter(Boolean);
+    const inventoryTask = this.#appRefreshTask(this.inventoryApp, { preserveScroll: true });
+    if (inventoryTask) {
+      tasks.push(inventoryTask);
     }
 
-    if (this.worldTradeRoutesApp?.rendered) {
-      tasks.push(rerenderApp(this.worldTradeRoutesApp));
-    }
-
-    if (this.statesApp?.rendered) {
-      tasks.push(rerenderApp(this.statesApp));
-    }
-
-    if (this.globalEventsApp?.rendered) {
-      tasks.push(rerenderApp(this.globalEventsApp));
-    }
-
-    if (this.inventoryApp?.rendered) {
-      tasks.push(rerenderApp(this.inventoryApp, { preserveScroll: true }));
-    }
-
-    if (this.groupsApp?.rendered) {
-      tasks.push(rerenderApp(this.groupsApp));
-    }
-
-    if (this.cosmologyApp?.rendered) {
-      tasks.push(rerenderApp(this.cosmologyApp));
-    }
-
-    for (const app of this.lootgenApps.values()) {
-      if (app?.rendered) {
-        tasks.push(rerenderApp(app));
-      }
-    }
-
-    for (const app of this.cityApps.values()) {
-      if (app?.rendered) {
-        tasks.push(rerenderApp(app));
-      }
-    }
-
-    for (const app of this.traderApps.values()) {
-      if (app?.rendered) {
-        tasks.push(rerenderApp(app));
-      }
-    }
-
-    for (const app of this.traderV2Apps.values()) {
-      if (app?.rendered) {
-        tasks.push(rerenderApp(app));
-      }
-    }
-
-    for (const app of this.tradeRouteApps.values()) {
-      if (app?.rendered) {
-        tasks.push(rerenderApp(app));
-      }
-    }
-
-    for (const app of this.referenceApps.values()) {
-      if (app?.rendered) {
-        tasks.push(rerenderApp(app));
-      }
-    }
-
-    for (const app of getOpenActorSheetApps()) {
-      tasks.push(rerenderApp(app, { focus: false }));
-    }
-
-    await Promise.allSettled(tasks);
+    await this.uiRefreshCoordinator.request(tasks);
   }
 
   async openEconomyApp() {
@@ -3689,7 +3809,6 @@ export class RebreyaMainModule {
       const nextState = await this.socketCommandBus.request(COSMOLOGY_SET_MECHANUS_COMMAND, {
         enabled: enabled === true
       });
-      await this.refreshOpenApps();
       return nextState;
     }
 
@@ -3704,7 +3823,6 @@ export class RebreyaMainModule {
     };
 
     await game.settings.set(MODULE_ID, SETTINGS_KEYS.COSMOLOGY_STATE, nextState);
-    await this.refreshOpenApps();
     return nextState;
   }
 
@@ -3744,6 +3862,7 @@ export class RebreyaMainModule {
         this.inventoryApp.setActiveTab(options.tab, { render: false });
       }
 
+      await this.inventoryService.getInventoryActor({ create: true });
       await this.inventoryApp.render({ force: true });
       bringAppToFront(this.inventoryApp);
       return this.inventoryApp;

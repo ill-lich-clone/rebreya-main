@@ -1043,7 +1043,6 @@ export class TraderAppV2 extends HandlebarsApplicationMixin(ApplicationV2) {
     this.renderListenersAbortController = new AbortController();
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
 
-    bringAppToFront(this);
     this.#playSequencerEntrance(element);
     this.#fitToViewport();
     window.addEventListener("resize", () => this.#fitToViewport(), listenerOptions);

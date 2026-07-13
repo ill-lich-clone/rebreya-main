@@ -2763,7 +2763,7 @@ test("createRequest resolves managed downtime compendium ids", async () => {
   }
 });
 
-test("RebreyaMainModule exposes downtime service API and refreshes after mutations", async () => {
+test("RebreyaMainModule exposes downtime service API and scopes refreshes after mutations", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   globalThis.Hooks = {
@@ -2828,7 +2828,7 @@ test("RebreyaMainModule exposes downtime service API and refreshes after mutatio
     };
 
     let refreshCount = 0;
-    moduleApi.refreshOpenApps = async () => {
+    moduleApi.refreshDowntimeViews = async () => {
       refreshCount += 1;
     };
 
@@ -3008,6 +3008,7 @@ test("RebreyaMainModule rejects setSetting socket messages on the active GM clie
     const { RebreyaMainModule } = await import(`../scripts/main.js?set-setting=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
     let refreshCount = 0;
+    let downtimeRefreshCount = 0;
     let coordinatorCalls = 0;
     const originalRun = moduleApi.worldMutationCoordinator.run.bind(moduleApi.worldMutationCoordinator);
     moduleApi.worldMutationCoordinator.run = (key, operation) => {
@@ -3016,6 +3017,9 @@ test("RebreyaMainModule rejects setSetting socket messages on the active GM clie
     };
     moduleApi.refreshOpenApps = async () => {
       refreshCount += 1;
+    };
+    moduleApi.refreshDowntimeViews = async () => {
+      downtimeRefreshCount += 1;
     };
 
     await moduleApi.handleSocketMessage({
@@ -3047,8 +3051,9 @@ test("RebreyaMainModule rejects setSetting socket messages on the active GM clie
     });
 
     assert.deepEqual(settingsStore, {});
-    assert.equal(refreshCountBeforeSetting, 2);
+    assert.equal(refreshCountBeforeSetting, 0);
     assert.equal(refreshCount, refreshCountBeforeSetting);
+    assert.equal(downtimeRefreshCount, 1);
     assert.equal(coordinatorCalls, 0);
     assert.deepEqual(emitted, [[
       `module.${MODULE_ID}`,
@@ -3179,12 +3184,16 @@ test("RebreyaMainModule routes player inventory imports through the active GM", 
     const moduleApi = new RebreyaMainModule();
     let handled = null;
     let refreshCount = 0;
+    let inventoryRefreshCount = 0;
     moduleApi.inventoryService.handleImportDroppedItemSocketRequest = async (payload, options) => {
       handled = { payload, options };
       return { id: "group-1" };
     };
     moduleApi.refreshOpenApps = async () => {
       refreshCount += 1;
+    };
+    moduleApi.refreshInventoryViews = async () => {
+      inventoryRefreshCount += 1;
     };
 
     await moduleApi.handleSocketMessage({
@@ -3205,7 +3214,8 @@ test("RebreyaMainModule routes player inventory imports through the active GM", 
         senderId: "player-1"
       }
     });
-    assert.equal(refreshCount, 1);
+    assert.equal(refreshCount, 0);
+    assert.equal(inventoryRefreshCount, 1);
     assert.deepEqual(emitted, [{
       channel: `module.${MODULE_ID}`,
       message: {
@@ -3568,7 +3578,7 @@ test("RebreyaMainModule does not render player sheets when GM reports downtime c
       }
     });
 
-    assert.equal(refreshCount, 1);
+    assert.equal(refreshCount, 0);
     assert.equal(renderCount, 0);
   }
   finally {
@@ -3578,7 +3588,7 @@ test("RebreyaMainModule does not render player sheets when GM reports downtime c
   }
 });
 
-test("RebreyaMainModule does not render player sheets when GM updates a downtime request", async () => {
+test("RebreyaMainModule renders only the affected player sheet when downtime is updated", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
@@ -3628,8 +3638,8 @@ test("RebreyaMainModule does not render player sheets when GM updates a downtime
       requestId: "downtime-1"
     });
 
-    assert.equal(refreshCount, 1);
-    assert.equal(renderCount, 0);
+    assert.equal(refreshCount, 0);
+    assert.equal(renderCount, 1);
   }
   finally {
     globalThis.Hooks = previousHooks;
@@ -3661,7 +3671,7 @@ test("RebreyaMainModule notifies players when a GM changes downtime request stat
     const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-gm-update=${Date.now()}`);
     const moduleApi = new RebreyaMainModule();
     let refreshCount = 0;
-    moduleApi.refreshOpenApps = async () => {
+    moduleApi.refreshDowntimeViews = async () => {
       refreshCount += 1;
     };
     moduleApi.downtimeService.setRequestStatus = async (requestId, status, options) => ({
@@ -3814,13 +3824,15 @@ test("RebreyaMainModule GM records socket downtime check results for owned actor
   }
 });
 
-test("RebreyaMainModule GM creates socket downtime requests without activating inventory windows", async () => {
+test("RebreyaMainModule broadcasts committed socket downtime creation even when local refresh fails", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const previousUi = globalThis.ui;
+  const previousConsoleError = console.error;
   globalThis.Hooks = {
     once() {}
   };
+  console.error = () => {};
   const emitted = [];
   let renderCount = 0;
   const playerUser = { id: "player-1", isGM: false, active: true };
@@ -3886,6 +3898,9 @@ test("RebreyaMainModule GM creates socket downtime requests without activating i
     moduleApi.refreshOpenApps = async () => {
       refreshCount += 1;
     };
+    moduleApi.refreshDowntimeViews = async () => {
+      throw new Error("render failed");
+    };
 
     await moduleApi.handleSocketMessage({
       type: "downtime-create-request",
@@ -3922,12 +3937,21 @@ test("RebreyaMainModule GM creates socket downtime requests without activating i
           submittedByUserId: "player-1"
         }
       }
+    ], [
+      `module.${MODULE_ID}`,
+      {
+        type: "downtime-updated",
+        senderId: "gm",
+        actorIds: ["actor-a"],
+        requestId: "downtime-7"
+      }
     ]]);
   }
   finally {
     globalThis.Hooks = previousHooks;
     globalThis.game = previousGame;
     globalThis.ui = previousUi;
+    console.error = previousConsoleError;
   }
 });
 
@@ -4237,7 +4261,7 @@ test("RebreyaMainModule routes the exact legacy mutation allowlist through the w
     };
     moduleApi.inventoryService.handleInventoryItemActionSocketRequest = async () => {
       effects.push("inventory-item-action-request");
-      return { id: "inventory-actioned" };
+      return { id: "inventory-actioned", actorId: actor.id };
     };
     moduleApi.traderService.recordTradeAudit = async () => {
       effects.push("trader-audit");
@@ -4272,8 +4296,8 @@ test("RebreyaMainModule routes the exact legacy mutation allowlist through the w
     const responseTypes = emitted.map(({ message }) => message.type);
     assert.deepEqual(coordinatorKeys, mutationTypes.map(() => "world"));
     assert.deepEqual(effects, mutationTypes);
-    assert.equal(openRefreshes, 3);
-    assert.equal(inventoryRefreshes, 1);
+    assert.equal(openRefreshes, 1);
+    assert.equal(inventoryRefreshes, 3);
     for (const responseType of [
       "downtime-create-result",
       "downtime-update-result",
@@ -4286,7 +4310,11 @@ test("RebreyaMainModule routes the exact legacy mutation allowlist through the w
     ]) {
       assert.equal(responseTypes.includes(responseType), true, responseType);
     }
-    assert.equal(responseTypes.filter((type) => type === "downtime-updated").length, 4);
+    assert.equal(responseTypes.filter((type) => type === "downtime-updated").length, 5);
+    assert.equal(
+      emitted.find(({ message }) => message.type === "inventory-item-action-result")?.message?.actorId,
+      actor.id
+    );
   }
   finally {
     globalThis.Hooks = previousHooks;

@@ -236,7 +236,7 @@ export function registerSettings() {
       version: 1,
       mechanusEnabled: false
     },
-    onChange: () => game.rebreyaMain?.refreshOpenApps?.()
+    onChange: () => game.rebreyaMain?.refreshCosmologyViews?.()
   });
 
   game.settings.register(MODULE_ID, SETTINGS_KEYS.GLOBAL_EVENTS_STATE, {

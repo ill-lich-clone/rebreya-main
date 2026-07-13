@@ -354,8 +354,6 @@ export class TraderApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.renderListenersAbortController = new AbortController();
     const listenerOptions = { signal: this.renderListenersAbortController.signal };
 
-    bringAppToFront(this);
-
     const inventoryByKey = new Map((context.inventory ?? []).map((entry) => [entry.itemKey, entry]));
 
     element.querySelector("[data-action='search']")?.addEventListener("input", (event) => {

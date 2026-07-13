@@ -3028,7 +3028,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const inventorySnapshot = await this.moduleApi.getInventorySnapshot({
         search: this.search,
         typeFilter: this.typeFilter,
-        createActor: true
+        createActor: false
       });
       let group = null;
       let groupContextError = String(inventorySnapshot.groupContextError ?? "").trim();

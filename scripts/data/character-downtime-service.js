@@ -1923,7 +1923,7 @@ export class CharacterDowntimeService {
       requestPayload.targetActionSelections = targetActionSelections;
     }
     return requestId
-      ? this.moduleApi.updateDowntimeRequest(requestPayload)
-      : this.moduleApi.createDowntimeRequest(requestPayload);
+      ? this.moduleApi.updateDowntimeRequest(requestPayload, { refreshActorSheets: false })
+      : this.moduleApi.createDowntimeRequest(requestPayload, { refreshActorSheets: false });
   }
 }

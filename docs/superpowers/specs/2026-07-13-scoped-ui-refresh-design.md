@@ -56,9 +56,11 @@ inventory downtime view.
 
 ### Inventory
 
-Socket handlers use the inventory scope. Foundry Item/Actor hooks continue to request that
-scope and are coalesced by the coordinator. Opening inventory explicitly ensures its backing
-Actor before rendering; `_prepareContext` is read-only and never creates documents.
+Socket handlers use the inventory scope. Foundry Item/Actor hooks, direct mutations, and socket
+completion paths feed one trailing scheduler that unions affected Actor IDs. A mutation boundary
+holds the scheduler until every document write finishes, then sends one batch to the coordinator.
+Opening inventory explicitly ensures its backing Actor before rendering; `_prepareContext` is
+read-only and never creates documents.
 
 ### Window focus
 

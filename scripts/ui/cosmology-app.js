@@ -1,5 +1,5 @@
 import { MODULE_ID } from "../constants.js";
-import { bringAppToFront, getAppElement } from "../ui.js";
+import { getAppElement } from "../ui.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -45,8 +45,6 @@ export class CosmologyApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async #setMechanusEnabled(enabled) {
     try {
       await this.moduleApi?.setMechanusEnabled?.(enabled);
-      await this.render({ force: true });
-      bringAppToFront(this);
       ui.notifications?.info(enabled ? "Механус включён." : "Механус выключен.");
     }
     catch (error) {

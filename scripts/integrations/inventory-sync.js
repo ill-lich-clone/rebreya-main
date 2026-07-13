@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 
 const PARTY_INVENTORY_TRANSFER_FLAG = "partyInventoryTransfer";
-const DEFAULT_REFRESH_DEBOUNCE_MS = 80;
+const DEFAULT_REFRESH_DEBOUNCE_MS = 0;
 const TRANSFER_TTL_MS = 30_000;
 
 let hookRegistered = false;
@@ -88,9 +88,14 @@ export async function handleAcceptedPartyInventoryItem(item, _options = {}, user
   }
 
   clearPendingTransfer();
-  const result = await moduleApi?.inventoryService?.handleAcceptedPartyInventoryItem?.(item, transfer);
+  const operation = () => moduleApi?.inventoryService?.handleAcceptedPartyInventoryItem?.(item, transfer);
+  const result = typeof moduleApi?.runInventoryMutation === "function"
+    ? await moduleApi.runInventoryMutation(operation)
+    : await operation();
   if (result?.handled) {
-    await moduleApi?.refreshInventoryViews?.();
+    if (typeof moduleApi?.runInventoryMutation !== "function") {
+      await moduleApi?.refreshInventoryViews?.();
+    }
     return true;
   }
 
@@ -145,8 +150,8 @@ export function registerInventorySyncHooks(moduleApi, { Hooks = globalThis.Hooks
 
   hookRegistered = true;
   const onItemChange = async (item, options = {}, userId = "") => {
-    await handleAcceptedPartyInventoryItem(item, options, userId, moduleApi);
-    if (isInventoryRelevantItem(item)) {
+    const handledTransfer = await handleAcceptedPartyInventoryItem(item, options, userId, moduleApi);
+    if (!handledTransfer && isInventoryRelevantItem(item)) {
       await scheduleInventoryRefresh(moduleApi, debounceMs);
     }
   };

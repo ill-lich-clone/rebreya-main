@@ -8,8 +8,9 @@
    setting callback refresh cosmology only.
 4. Add failing downtime tests, then make the sheet helper local-only, route refreshes by Actor,
    and make `downtime-updated` the sole success refresh broadcast, including create requests.
-5. Add failing inventory tests, then route socket mutations to inventory views and make render
-   context document-read-only by ensuring the backing Actor on explicit open.
+5. Add failing inventory tests, then route socket mutations and document hooks through one
+   trailing mutation-aware scheduler; make render context document-read-only by ensuring the
+   backing Actor on explicit open.
 6. Add failing background-render focus tests, then remove implicit bring-to-front behaviour
    from trader and loot generator render hooks.
 7. Run focused tests, the complete available test suite, syntax/lint checks, and inspect the

@@ -644,7 +644,7 @@ test("an inactive GM routes setMechanusEnabled through the typed command result"
 
     assert.deepEqual(await pending, { version: 1, mechanusEnabled: true, retained: "yes" });
     assert.equal(fixture.writes.length, 0);
-    assert.equal(refreshCount, 1);
+    assert.equal(refreshCount, 0);
   }
   finally {
     fixture.restore();

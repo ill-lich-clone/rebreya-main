@@ -2879,7 +2879,7 @@ test("character downtime clear action removes selected template from form state"
     assert.equal(contextCall[2].actionId, "");
     assert.equal(contextCall[2].selectedTemplate, null);
     assert.deepEqual(calls.filter((call) => call[0] === "render"), [["render", { force: true }]]);
-    assert.deepEqual(calls.filter((call) => call[0] === "refreshOpenApps"), [["refreshOpenApps"]]);
+    assert.deepEqual(calls.filter((call) => call[0] === "refreshOpenApps"), []);
   }
   finally {
     stubs.restore();
@@ -2969,8 +2969,7 @@ test("character downtime render hook submits requests for the current sheet acto
           choiceId: "wealthy"
         }]
       }],
-      ["render", { force: true }],
-      ["refreshOpenApps"]
+      ["render", { force: true }]
     ]);
 
     const sheet = new stubs.CharacterActorSheet(actor);
@@ -4023,8 +4022,7 @@ test("character downtime item clear removes stale item formula selections", asyn
     assert.equal(formulaInput.value, "");
     assert.equal(tradeSelect.value, "");
     assert.deepEqual(calls, [
-      ["render", { force: true }],
-      ["refreshOpenApps"]
+      ["render", { force: true }]
     ]);
   }
   finally {
@@ -4213,8 +4211,7 @@ test("character downtime submit works when the downtime tab is rendered lazily",
         title: "",
         description: ""
       }],
-      ["render", { force: true }],
-      ["refreshOpenApps"]
+      ["render", { force: true }]
     ]);
   }
   finally {
@@ -4390,7 +4387,7 @@ test("character downtime submit leaves rollable checks for explicit player click
     assert.deepEqual(calls.filter((call) => call[0] === "rollSkill"), []);
     assert.deepEqual(calls.filter((call) => call[0] === "recordDowntimeCheckResult"), []);
     assert.deepEqual(calls.filter((call) => call[0] === "render"), [["render", { force: true }]]);
-    assert.deepEqual(calls.filter((call) => call[0] === "refreshOpenApps"), [["refreshOpenApps"]]);
+    assert.deepEqual(calls.filter((call) => call[0] === "refreshOpenApps"), []);
   }
   finally {
     stubs.restore();
@@ -4481,8 +4478,7 @@ test("character downtime document fallback lets sheet root handle unresolved cli
         title: "",
         description: ""
       }],
-      ["render", { force: true }],
-      ["refreshOpenApps"]
+      ["render", { force: true }]
     ]);
   }
   finally {
@@ -4571,8 +4567,7 @@ test("character downtime submit handles pointerup before sheet click handlers ca
         title: "",
         description: ""
       }],
-      ["render", { force: true }],
-      ["refreshOpenApps"]
+      ["render", { force: true }]
     ]);
   }
   finally {
@@ -4662,8 +4657,7 @@ test("character downtime submit button is also bound directly when the panel exi
         title: "",
         description: ""
       }],
-      ["render", { force: true }],
-      ["refreshOpenApps"]
+      ["render", { force: true }]
     ]);
   }
   finally {
@@ -4752,8 +4746,7 @@ test("character downtime submit resolves text-node click targets inside the butt
         title: "",
         description: ""
       }],
-      ["render", { force: true }],
-      ["refreshOpenApps"]
+      ["render", { force: true }]
     ]);
   }
   finally {
@@ -4841,8 +4834,7 @@ test("character downtime submit is delegated from document when sheet render bin
         title: "",
         description: ""
       }],
-      ["render", { force: true }],
-      ["refreshOpenApps"]
+      ["render", { force: true }]
     ]);
   }
   finally {
@@ -4952,7 +4944,7 @@ test("character downtime roll buttons use native dnd5e skill rolls and record th
       }
     ]]);
     assert.deepEqual(calls.filter((call) => call[0] === "render"), [["render", { force: true }]]);
-    assert.deepEqual(calls.filter((call) => call[0] === "refreshOpenApps"), [["refreshOpenApps"]]);
+    assert.deepEqual(calls.filter((call) => call[0] === "refreshOpenApps"), []);
   }
   finally {
     stubs.restore();
