@@ -94,6 +94,7 @@ export const SETTINGS_KEYS = {
   PARTY_STATE: "partyState",
   GROUP_STATE: "groupState",
   CRAFT_STATE: "craftState",
+  CRAFT_MUTATION_JOURNAL: "craftMutationJournal",
   CALENDAR_STATE: "calendarState",
   CONNECTION_STATES: "connectionStates",
   REFERENCE_NOTES: "referenceNotes",

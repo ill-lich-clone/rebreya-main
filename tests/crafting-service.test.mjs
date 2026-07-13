@@ -78,12 +78,19 @@ function createActor({
   return actor;
 }
 
-function installFixture({ actors = [], partyState = {}, craftState = {} } = {}) {
+function installFixture({
+  actors = [],
+  partyState = {},
+  craftState = {},
+  craftMutationJournal = {},
+  onSettingSet = null
+} = {}) {
   const restoreFoundry = installFoundryUtils();
   const previousGame = globalThis.game;
   const settingsStore = {
     [SETTINGS_KEYS.PARTY_STATE]: partyState,
-    [SETTINGS_KEYS.CRAFT_STATE]: craftState
+    [SETTINGS_KEYS.CRAFT_STATE]: craftState,
+    [SETTINGS_KEYS.CRAFT_MUTATION_JOURNAL]: craftMutationJournal
   };
 
   globalThis.game = {
@@ -99,7 +106,12 @@ function installFixture({ actors = [], partyState = {}, craftState = {} } = {}) 
       get: (moduleId, key) => moduleId === MODULE_ID ? settingsStore[key] : undefined,
       set: async (moduleId, key, value) => {
         if (moduleId === MODULE_ID) {
-          settingsStore[key] = value;
+          if (typeof onSettingSet === "function") {
+            await onSettingSet({ key, value: clone(value), settingsStore });
+          }
+          else {
+            settingsStore[key] = clone(value);
+          }
         }
         return value;
       }
@@ -113,6 +125,86 @@ function installFixture({ actors = [], partyState = {}, craftState = {} } = {}) 
       restoreFoundry();
     }
   };
+}
+
+function createCraftModel() {
+  const material = { id: "iron", name: "Iron" };
+  const gear = {
+    id: "iron-gear",
+    name: "Iron Gear",
+    linkedTool: "",
+    predominantMaterialId: material.id,
+    priceGoldEquivalent: 10,
+    weight: 4
+  };
+  return {
+    materials: [material],
+    materialById: new Map([[material.id, material]]),
+    gear: [gear],
+    gearById: new Map([[gear.id, gear]])
+  };
+}
+
+function createCraftModuleApi({ materialQuantity = 10, onUpdateQuantity, onAddModelItem } = {}) {
+  const model = createCraftModel();
+  const state = {
+    materialQuantity,
+    gearQuantity: 0,
+    updates: [],
+    additions: []
+  };
+  const moduleApi = {
+    inventoryService: {
+      canManagePartyInventory: () => true,
+      resolveRebreyaToolId: () => "",
+      getRebreyaToolLabel: () => ""
+    },
+    getModel: async () => model,
+    getPartySnapshot: async () => ({
+      members: [{
+        actorId: "crafter",
+        actorName: "Crafter",
+        actorImg: "",
+        tools: []
+      }]
+    }),
+    getInventorySnapshot: async () => ({
+      allItems: [
+        {
+          itemId: "material-item",
+          sourceType: "material",
+          sourceId: "iron",
+          quantity: state.materialQuantity
+        },
+        ...(state.gearQuantity > 0 ? [{
+          itemId: "gear-item",
+          sourceType: "gear",
+          sourceId: "iron-gear",
+          quantity: state.gearQuantity
+        }] : [])
+      ]
+    }),
+    async updateInventoryItemQuantity(itemId, quantity) {
+      state.updates.push({ itemId, quantity });
+      if (typeof onUpdateQuantity === "function") {
+        await onUpdateQuantity({ itemId, quantity, state });
+      }
+      else {
+        state.materialQuantity = quantity;
+      }
+      return { itemId, quantity };
+    },
+    async addModelItemToInventory(sourceType, sourceId, quantity) {
+      state.additions.push({ sourceType, sourceId, quantity });
+      if (typeof onAddModelItem === "function") {
+        return onAddModelItem({ sourceType, sourceId, quantity, state });
+      }
+      if (sourceType === "material") state.materialQuantity += quantity;
+      if (sourceType === "gear") state.gearQuantity += quantity;
+      return { sourceType, sourceId, quantity };
+    }
+  };
+  return { model, moduleApi, state };
 }
 
 test("CraftingService crafters and queueTask use native group members from getPartySnapshot", async () => {
@@ -184,6 +276,183 @@ test("CraftingService crafters and queueTask use native group members from getPa
     assert.equal(queuedTask.crafterActorId, "native-member");
     assert.equal(queuedTask.crafterName, "Native Crafter");
     assert.equal(fixture.settingsStore[SETTINGS_KEYS.CRAFT_STATE].queue[0].crafterActorId, "native-member");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("queueTask restores debited materials when craft state persistence fails", async () => {
+  let failCraftWrite = true;
+  const fixture = installFixture({
+    craftState: { version: 1, counter: 0, queue: [] },
+    onSettingSet({ key, value, settingsStore }) {
+      if (key === SETTINGS_KEYS.CRAFT_STATE && failCraftWrite) {
+        failCraftWrite = false;
+        throw new Error("craft state unavailable");
+      }
+      settingsStore[key] = clone(value);
+    }
+  });
+  const { moduleApi, state } = createCraftModuleApi();
+  const service = new CraftingService(moduleApi);
+
+  try {
+    await assert.rejects(
+      service.queueTask({ gearId: "iron-gear", quantity: 1, mutationId: "queue-failure" }),
+      /craft state unavailable/u
+    );
+    assert.equal(state.materialQuantity, 10);
+    assert.deepEqual(fixture.settingsStore[SETTINGS_KEYS.CRAFT_STATE].queue, []);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("cancelTask leaves the task available when its material refund fails", async () => {
+  const task = {
+    id: "craft-cancel",
+    gearId: "iron-gear",
+    quantity: 1,
+    materialId: "iron",
+    materialSpentLb: 2,
+    progress: 0,
+    progressTarget: 10,
+    progressPerDay: 5
+  };
+  const fixture = installFixture({
+    craftState: { version: 1, counter: 1, queue: [clone(task)] }
+  });
+  const { moduleApi } = createCraftModuleApi({
+    materialQuantity: 8,
+    onAddModelItem() {
+      throw new Error("refund failed");
+    }
+  });
+  const service = new CraftingService(moduleApi);
+
+  try {
+    await assert.rejects(service.cancelTask(task.id), /refund failed/u);
+    assert.deepEqual(fixture.settingsStore[SETTINGS_KEYS.CRAFT_STATE].queue, [task]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("processOneDay preserves a completed task until output creation succeeds", async () => {
+  const task = {
+    id: "craft-output",
+    gearId: "iron-gear",
+    gearName: "Iron Gear",
+    quantity: 1,
+    materialId: "iron",
+    materialSpentLb: 2,
+    progress: 5,
+    progressTarget: 10,
+    progressPerDay: 5
+  };
+  const fixture = installFixture({
+    craftState: { version: 1, counter: 1, queue: [clone(task)] }
+  });
+  const { moduleApi } = createCraftModuleApi({
+    onAddModelItem() {
+      throw new Error("output failed");
+    }
+  });
+  const service = new CraftingService(moduleApi);
+
+  try {
+    await assert.rejects(service.processOneDay({ mutationId: "day-output-failure" }), /output failed/u);
+    assert.equal(fixture.settingsStore[SETTINGS_KEYS.CRAFT_STATE].queue.length, 1);
+    assert.equal(fixture.settingsStore[SETTINGS_KEYS.CRAFT_STATE].queue[0].id, task.id);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("queueTask retry with the same mutation id never debits materials twice", async () => {
+  let ambiguousWrite = true;
+  const fixture = installFixture({
+    craftState: { version: 1, counter: 0, queue: [] },
+    onSettingSet({ key, value, settingsStore }) {
+      settingsStore[key] = clone(value);
+      if (key === SETTINGS_KEYS.CRAFT_STATE && ambiguousWrite) {
+        ambiguousWrite = false;
+        throw new Error("response lost after craft persistence");
+      }
+    }
+  });
+  const { moduleApi, state } = createCraftModuleApi();
+  const service = new CraftingService(moduleApi);
+
+  try {
+    const first = await service.queueTask({ gearId: "iron-gear", quantity: 1, mutationId: "queue-retry" });
+    const second = await service.queueTask({ gearId: "iron-gear", quantity: 1, mutationId: "queue-retry" });
+
+    assert.equal(first.id, second.id);
+    assert.equal(state.materialQuantity, 8);
+    assert.equal(state.updates.length, 1);
+    assert.equal(fixture.settingsStore[SETTINGS_KEYS.CRAFT_STATE].queue.length, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("cancel and completion retries inspect receipts before granting value again", async () => {
+  const cancelTask = {
+    id: "craft-refund-retry",
+    gearId: "iron-gear",
+    quantity: 1,
+    materialId: "iron",
+    materialSpentLb: 2,
+    progress: 0,
+    progressTarget: 10,
+    progressPerDay: 5
+  };
+  const outputTask = {
+    id: "craft-output-retry",
+    gearId: "iron-gear",
+    quantity: 1,
+    materialId: "iron",
+    materialSpentLb: 2,
+    progress: 5,
+    progressTarget: 10,
+    progressPerDay: 5
+  };
+  const fixture = installFixture({
+    craftState: { version: 1, counter: 2, queue: [clone(cancelTask), clone(outputTask)] }
+  });
+  const thrown = new Set();
+  const { moduleApi, state } = createCraftModuleApi({
+    materialQuantity: 8,
+    onAddModelItem({ sourceType, quantity, state: inventoryState }) {
+      if (sourceType === "material") inventoryState.materialQuantity += quantity;
+      if (sourceType === "gear") inventoryState.gearQuantity += quantity;
+      if (!thrown.has(sourceType)) {
+        thrown.add(sourceType);
+        throw new Error(`lost ${sourceType} response`);
+      }
+      return { sourceType, quantity };
+    }
+  });
+  const service = new CraftingService(moduleApi);
+
+  try {
+    assert.equal(await service.cancelTask(cancelTask.id), true);
+    assert.equal(await service.cancelTask(cancelTask.id), true);
+    const firstDay = await service.processOneDay({ mutationId: "completion-retry" });
+    const secondDay = await service.processOneDay({ mutationId: "completion-retry" });
+
+    assert.equal(firstDay.completedCount, 1);
+    assert.equal(secondDay.completedCount, 1);
+    assert.equal(state.materialQuantity, 10);
+    assert.equal(state.gearQuantity, 1);
+    assert.equal(state.additions.filter((entry) => entry.sourceType === "material").length, 1);
+    assert.equal(state.additions.filter((entry) => entry.sourceType === "gear").length, 1);
   }
   finally {
     fixture.restore();
