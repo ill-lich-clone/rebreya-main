@@ -617,6 +617,7 @@ test("Sorcerer casting spends points but preserves native slots", async () => {
   assert.equal(usageConfig.consume.spellSlot, false);
   assert.deepEqual(usageConfig.spellCast, {
     spellLevel: 1,
+    castingMode: "sorcery",
     components: { vocal: true, somatic: true, material: false },
     payment: { resource: "sorcery-points", cost: 2 },
     metamagic: [],
@@ -624,32 +625,100 @@ test("Sorcerer casting spends points but preserves native slots", async () => {
   });
 });
 
-test("only a Sorcerer class advancement root uses virtual slots on a multiclass actor", async () => {
+test("an external-source spell can use Sorcery Points on a Sorcerer actor", async () => {
   const actor = levelActor(3, { includePoints: true });
   const service = new SorcererAutomationService({});
   await service.syncSorceryPoints(actor);
-  const sorcererUsageConfig = {};
-  const usageConfig = { consumeSpellSlot: true };
+  const usageConfig = {
+    sorcererCastingMode: "sorcery",
+    sorcererVirtualSpellLevel: 1,
+    consume: { spellSlot: true, resources: [0] },
+    cause: { activity: ".Item.scroll.Activity.cast", resources: [0] }
+  };
 
   assert.equal(await service.applyDnd5ePreUseActivity(
-    makeSorcererSpell(actor),
-    sorcererUsageConfig,
-    {},
-    {}
+    makeSorcererSpell(actor, { root: "" }), usageConfig, {}, {}
   ), true);
   assert.equal(pointsItem(actor).system.uses.spent, 2);
+  assert.equal(usageConfig.spellCast.castingMode, "sorcery");
+  assert.equal(usageConfig.consume.spellSlot, false);
+  assert.equal(usageConfig.consume.resources, false);
+  assert.equal(usageConfig.cause.resources, false);
+  assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+    "chromatic-orb:1": { remaining: 1 }
+  });
+});
 
-  const result = await service.applyDnd5ePreUseActivity(
-    makeSorcererSpell(actor, { root: `${actor.wizardClassItem.id}.advancementKnownSpell` }),
-    usageConfig,
-    {},
-    {}
-  );
+test("normal casting preserves native consumption when no Sorcery Points remain", async () => {
+  const actor = levelActor(3, { includePoints: true, pointsSpent: 17 });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = {
+    sorcererCastingMode: "normal",
+    consume: { spellSlot: true, resources: [0] },
+    cause: { activity: ".Item.scroll.Activity.cast", resources: [0] }
+  };
 
-  assert.equal(result, true);
-  assert.equal(pointsItem(actor).system.uses.spent, 2);
-  assert.equal(usageConfig.consumeSpellSlot, true);
-  assert.equal(usageConfig.spellCast, undefined);
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { root: "" }), usageConfig, {}, {}
+  ), true);
+  assert.equal(pointsItem(actor).system.uses.spent, 17);
+  assert.equal(usageConfig.spellCast.castingMode, "normal");
+  assert.deepEqual(usageConfig.consume, { spellSlot: true, resources: [0] });
+  assert.deepEqual(usageConfig.cause, { activity: ".Item.scroll.Activity.cast", resources: [0] });
+  assert.equal(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), undefined);
+});
+
+test("normal casting spends only metamagic points", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = {
+    sorcererCastingMode: "normal",
+    sorcererMetamagic: { ids: ["subtle-spell"] },
+    consume: { spellSlot: true }
+  };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { root: "" }), usageConfig, {}, {}
+  ), true);
+  assert.equal(pointsItem(actor).system.uses.spent, 1);
+  assert.equal(usageConfig.spellCast.castingMode, "normal");
+  assert.deepEqual(usageConfig.spellCast.payment, { resource: "sorcery-points", cost: 1 });
+  assert.equal(usageConfig.consume.spellSlot, true);
+  assert.equal(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), undefined);
+});
+
+test("a Sorcerer cantrip casts normally and still supports metamagic", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const usageConfig = {
+    sorcererMetamagic: { ids: ["subtle-spell"] },
+    consume: { spellSlot: false }
+  };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { id: "ray-of-frost", baseLevel: 0, root: "" }), usageConfig, {}, {}
+  ), true);
+  assert.equal(pointsItem(actor).system.uses.spent, 1);
+  assert.equal(usageConfig.spellCast.castingMode, "normal");
+  assert.equal(usageConfig.spellCast.spellLevel, 0);
+  assert.equal(usageConfig.consume.spellSlot, false);
+});
+
+test("a non-Sorcerer spell bypasses Sorcerer casting modes", async () => {
+  const actor = levelActor(3, { includePoints: true });
+  actor.items.contents = actor.items.contents.filter((item) => item !== actor.sorcererClassItem);
+  delete actor.system.classes[SORCERER_ROOT];
+  const service = new SorcererAutomationService({});
+  const usageConfig = { consume: { spellSlot: true } };
+
+  assert.equal(await service.applyDnd5ePreUseActivity(
+    makeSorcererSpell(actor, { root: "" }), usageConfig, {}, {}
+  ), true);
+  assert.deepEqual(usageConfig, { consume: { spellSlot: true } });
+  assert.equal(pointsItem(actor).system.uses.spent, 0);
 });
 
 test("a virtual level-three cast uses D&D5e slot, scaling, and consume fields without consuming a native slot", async () => {
@@ -671,6 +740,7 @@ test("a virtual level-three cast uses D&D5e slot, scaling, and consume fields wi
   assert.equal(actor.system.spells.spell3.value, 1);
   assert.deepEqual(usageConfig.spellCast, {
     spellLevel: 3,
+    castingMode: "sorcery",
     components: { vocal: true, somatic: true, material: false },
     payment: { resource: "sorcery-points", cost: 5 },
     metamagic: [],
@@ -1032,6 +1102,48 @@ test("a deferred virtual cast rolls back its payment when resumed D&D5e usage is
     assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {});
     assert.equal(actor.system.attributes.exhaustion, 0);
   }
+});
+
+test("a cancelled final normal cast rolls back metamagic payment", async () => {
+  const actor = metamagicActor();
+  const service = new SorcererAutomationService({
+    chooseVirtualSpellLevel: async () => ({
+      accepted: true,
+      spellLevel: 1,
+      castingMode: "normal"
+    }),
+    chooseMetamagic: async () => ({ accepted: true, ids: ["subtle-spell"] })
+  });
+  await service.syncSorceryPoints(actor);
+  const activity = makeSorcererSpell(actor, { root: "" });
+  let preflightUsageConfig;
+  let finalUsageConfig;
+  let calls = 0;
+  activity.use = async (usageConfig) => {
+    calls += 1;
+    if (calls === 1) {
+      preflightUsageConfig = usageConfig;
+      return { updates: [] };
+    }
+    finalUsageConfig = usageConfig;
+    return undefined;
+  };
+
+  assert.equal(service.deferDnd5ePreUseActivity(activity, {
+    consume: { spellSlot: true }
+  }, {}, {}), false);
+  await waitForDeferredActivityUse();
+  assert.equal(service.finalizeDnd5ePreUseActivity(
+    activity,
+    completeReactionCheck(preflightUsageConfig),
+    {},
+    {}
+  ), false);
+  await waitForDeferredActivityUse();
+
+  assert.equal(pointsItem(actor).system.uses.spent, 0);
+  assert.equal(finalUsageConfig.consume.spellSlot, true);
+  assert.equal(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), undefined);
 });
 
 test("virtual spell level selection uses the exact Sorcery Point table", async () => {

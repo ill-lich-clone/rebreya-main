@@ -517,22 +517,16 @@ function isSorcererClassItem(item) {
   return item?.type === "class" && classIdentifier(item) === SORCERER_ADVANCEMENT_ROOT;
 }
 
+function actorHasSorcererClass(actor) {
+  return collectionValues(actor?.items).some(isSorcererClassItem);
+}
+
 function isSorcererSpellActivity(activity) {
   const item = activity?.item;
-  if (item?.type !== "spell" && activity?.type !== "spell") {
+  if (item?.type !== "spell") {
     return false;
   }
-
-  const advancementRoot = cleanText(documentFlag(item, "dnd5e", "advancementRoot"));
-  const [classItemId, advancementId] = advancementRoot.split(".", 2);
-  if (!classItemId || !advancementId) {
-    return false;
-  }
-
-  const classItem = collectionValues(actorFrom(activity)?.items)
-    .find((entry) => cleanText(entry?.id ?? entry?._id) === classItemId);
-  return classItem?.type === "class"
-    && cleanText(classItem?.system?.identifier) === SORCERER_ADVANCEMENT_ROOT;
+  return actorHasSorcererClass(actorFrom(activity));
 }
 
 function scaleValue(actor, scaleId) {
@@ -1170,26 +1164,52 @@ function exhaustionLevel(actor) {
   return Math.max(0, toInteger(value?.value ?? value, 0));
 }
 
+function normalizeCastingMode(value, baseLevel) {
+  if (baseLevel <= 0) {
+    return "normal";
+  }
+  return cleanText(value).toLowerCase() === "normal" ? "normal" : "sorcery";
+}
+
 function normalizeSelection(value, fallbackLevel) {
   if (value === false || value === null) {
-    return { accepted: false, spellLevel: fallbackLevel, exhaustionOverride: false, consumeResource: true };
+    return {
+      accepted: false,
+      spellLevel: fallbackLevel,
+      castingMode: normalizeCastingMode(undefined, fallbackLevel),
+      exhaustionOverride: false,
+      consumeResource: true
+    };
   }
 
   if (typeof value === "number") {
-    return { accepted: true, spellLevel: toInteger(value, fallbackLevel), exhaustionOverride: false, consumeResource: true };
+    return {
+      accepted: true,
+      spellLevel: toInteger(value, fallbackLevel),
+      castingMode: normalizeCastingMode(undefined, fallbackLevel),
+      exhaustionOverride: false,
+      consumeResource: true
+    };
   }
 
   if (value && typeof value === "object") {
     return {
       accepted: value.accepted !== false && value.confirmed !== false,
       spellLevel: toInteger(value.spellLevel ?? value.level, fallbackLevel),
+      castingMode: normalizeCastingMode(value.castingMode ?? value.mode, fallbackLevel),
       exhaustionOverride: value.exhaustionOverride === true || value.override === true,
       consumeResource: value.consumeResource !== false && value.spendResource !== false,
       metamagic: value.metamagic && typeof value.metamagic === "object" ? value.metamagic : null
     };
   }
 
-  return { accepted: true, spellLevel: fallbackLevel, exhaustionOverride: false, consumeResource: true };
+  return {
+    accepted: true,
+    spellLevel: fallbackLevel,
+    castingMode: normalizeCastingMode(undefined, fallbackLevel),
+    exhaustionOverride: false,
+    consumeResource: true
+  };
 }
 
 function explicitSelection(usageConfig, dialogConfig, fallbackLevel) {
@@ -1198,6 +1218,13 @@ function explicitSelection(usageConfig, dialogConfig, fallbackLevel) {
     ?? usageConfig?.spellCast?.spellLevel
     ?? fallbackLevel;
   const selection = normalizeSelection(selected, fallbackLevel);
+  selection.castingMode = normalizeCastingMode(
+    usageConfig?.sorcererCastingMode
+      ?? dialogConfig?.sorcererCastingMode
+      ?? usageConfig?.spellCast?.castingMode
+      ?? selection.castingMode,
+    fallbackLevel
+  );
   if (usageConfig?.sorcererConsumeResource === false || dialogConfig?.sorcererConsumeResource === false) {
     selection.consumeResource = false;
   }
@@ -1207,6 +1234,8 @@ function explicitSelection(usageConfig, dialogConfig, fallbackLevel) {
 function hasExplicitSelection(usageConfig, dialogConfig) {
   return Object.hasOwn(usageConfig ?? {}, "sorcererVirtualSpellLevel")
     || Object.hasOwn(dialogConfig ?? {}, "sorcererVirtualSpellLevel")
+    || Object.hasOwn(usageConfig ?? {}, "sorcererCastingMode")
+    || Object.hasOwn(dialogConfig ?? {}, "sorcererCastingMode")
     || getProperty(usageConfig, "spellCast.spellLevel", undefined) !== undefined;
 }
 
@@ -1856,6 +1885,7 @@ export class SorcererAutomationService {
     usageConfig[MODULE_ID][PREFLIGHT_FLAG] = {
       accepted: true,
       spellLevel: plan.choice.spellLevel,
+      castingMode: plan.castingMode,
       exhaustionOverride: plan.override,
       consumeResource: plan.spendResource !== false,
       metamagic: {
@@ -1887,13 +1917,18 @@ export class SorcererAutomationService {
       return null;
     }
     const actor = actorFrom(activity);
-    const metamagic = this.#validateMetamagic(activity, actor, toInteger(stored.spellLevel, spellBaseLevel(activity)), stored.metamagic);
+    const baseLevel = spellBaseLevel(activity);
+    const spellLevel = toInteger(stored.spellLevel, baseLevel);
+    const castingMode = normalizeCastingMode(stored.castingMode, baseLevel);
+    const metamagic = this.#validateMetamagic(activity, actor, spellLevel, stored.metamagic);
     if (!metamagic) {
       return null;
     }
     return {
       actor,
-      choice: { spellLevel: toInteger(stored.spellLevel, spellBaseLevel(activity)) },
+      choice: { spellLevel },
+      castingMode,
+      usesSorcerySlot: castingMode === "sorcery",
       metamagic,
       override: stored.exhaustionOverride === true,
       spendResource: stored.consumeResource !== false,
@@ -1951,12 +1986,14 @@ export class SorcererAutomationService {
     const actor = actorFrom(activity);
     const baseLevel = spellBaseLevel(activity);
     const maxLevel = scaleValue(actor, MAXIMUM_SPELL_LEVEL_SCALE_ID);
-    if (!actor || baseLevel < 1 || maxLevel < baseLevel) {
+    if (!actor || baseLevel < 0 || maxLevel < baseLevel) {
       return null;
     }
-    const choices = Object.entries(VIRTUAL_SLOT_COSTS)
-      .map(([level, cost]) => ({ spellLevel: Number(level), cost }))
-      .filter(({ spellLevel }) => spellLevel >= baseLevel && spellLevel <= maxLevel);
+    const choices = baseLevel === 0
+      ? [{ spellLevel: 0, cost: 0 }]
+      : Object.entries(VIRTUAL_SLOT_COSTS)
+        .map(([level, cost]) => ({ spellLevel: Number(level), cost }))
+        .filter(({ spellLevel }) => spellLevel >= baseLevel && spellLevel <= maxLevel);
     const cooldowns = actorFlag(actor, COOLDOWNS_FLAG);
     const highLevelCasts = actorFlag(actor, HIGH_LEVEL_CASTS_FLAG);
     const stored = usageConfig?.[MODULE_ID]?.[PREFLIGHT_FLAG];
@@ -2000,20 +2037,28 @@ export class SorcererAutomationService {
       return null;
     }
 
-    const override = selected.exhaustionOverride || explicitExhaustionOverride(usageConfig, dialogConfig);
+    const castingMode = normalizeCastingMode(selected.castingMode, baseLevel);
+    const usesSorcerySlot = castingMode === "sorcery";
+    const override = usesSorcerySlot
+      && (selected.exhaustionOverride || explicitExhaustionOverride(usageConfig, dialogConfig));
     const key = cooldownKey(activity, choice.spellLevel);
-    const activeCooldown = choice.spellLevel <= 5 && cooldownIsActive(cooldowns[key]);
-    const highLevelRepeat = choice.spellLevel >= 6 && highLevelCasts[String(choice.spellLevel)] === true;
+    const activeCooldown = usesSorcerySlot
+      && choice.spellLevel <= 5
+      && cooldownIsActive(cooldowns[key]);
+    const highLevelRepeat = usesSorcerySlot
+      && choice.spellLevel >= 6
+      && highLevelCasts[String(choice.spellLevel)] === true;
     if ((activeCooldown || highLevelRepeat) && !override) {
       return null;
     }
     const points = pointsFeature(actor);
     const spent = Math.max(0, toInteger(points?.system?.uses?.spent, 0));
     const max = Math.max(0, toInteger(points?.system?.uses?.max, 0));
-    const resourceCost = choice.cost + metamagic.cost;
+    const virtualSlotCost = usesSorcerySlot ? choice.cost : 0;
+    const resourceCost = virtualSlotCost + metamagic.cost;
     const spendResource = selected.consumeResource !== false;
     const totalCost = spendResource ? resourceCost : 0;
-    if (spendResource && (!points || max - spent < totalCost)) {
+    if (totalCost > 0 && (!points || max - spent < totalCost)) {
       return null;
     }
 
@@ -2021,6 +2066,8 @@ export class SorcererAutomationService {
       actor,
       baseLevel,
       choice,
+      castingMode,
+      usesSorcerySlot,
       metamagic,
       totalCost,
       resourceCost,
@@ -2646,9 +2693,10 @@ export class SorcererAutomationService {
       actor,
       baseLevel,
       choice,
+      castingMode,
+      usesSorcerySlot,
       metamagic,
       totalCost,
-      spendResource,
       override,
       cooldowns,
       highLevelCasts,
@@ -2656,7 +2704,9 @@ export class SorcererAutomationService {
       activeCooldown,
       highLevelRepeat
     } = plan;
-    const cooldownCard = choice.spellLevel <= 5 && !(activeCooldown && override)
+    const cooldownCard = usesSorcerySlot
+      && choice.spellLevel <= 5
+      && !(activeCooldown && override)
       ? cooldownCardMetadata(actor, key, choice.spellLevel)
       : null;
     const points = pointsFeature(actor);
@@ -2685,16 +2735,16 @@ export class SorcererAutomationService {
     const metamagicConfig = this.#applyMetamagicConfig(activity, usageConfig, plan, messageConfig);
     const passiveConfig = this.#applyPassiveSorcererFeatureConfig(activity, plan, messageConfig);
     try {
-      if (spendResource) {
+      if (totalCost > 0) {
         await updateDocument(points, { "system.uses.spent": spent + totalCost });
         state.pointsChanged = true;
       }
-      if (choice.spellLevel <= 5) {
+      if (usesSorcerySlot && choice.spellLevel <= 5) {
         cooldowns[key] = { remaining: choice.spellLevel };
         await setActorFlag(actor, COOLDOWNS_FLAG, cooldowns);
         state.cooldownsChanged = true;
       }
-      if (choice.spellLevel >= 6) {
+      if (usesSorcerySlot && choice.spellLevel >= 6) {
         highLevelCasts[String(choice.spellLevel)] = true;
         await setActorFlag(actor, HIGH_LEVEL_CASTS_FLAG, highLevelCasts);
         state.highLevelCastsChanged = true;
@@ -2722,15 +2772,22 @@ export class SorcererAutomationService {
 
     this.#applyCooldownCardConfig(messageConfig, cooldownCard);
 
-    const consume = usageConfig.consume && typeof usageConfig.consume === "object"
-      ? usageConfig.consume
-      : (usageConfig.consume = {});
-    consume.spellSlot = false;
-    usageConfig.spell ??= {};
-    usageConfig.spell.slot = `spell${choice.spellLevel}`;
-    usageConfig.scaling = Math.max(0, choice.spellLevel - baseLevel);
+    if (usesSorcerySlot) {
+      const consume = usageConfig.consume && typeof usageConfig.consume === "object"
+        ? usageConfig.consume
+        : (usageConfig.consume = {});
+      consume.spellSlot = false;
+      consume.resources = false;
+      if (usageConfig.cause && typeof usageConfig.cause === "object") {
+        usageConfig.cause.resources = false;
+      }
+      usageConfig.spell ??= {};
+      usageConfig.spell.slot = `spell${choice.spellLevel}`;
+      usageConfig.scaling = Math.max(0, choice.spellLevel - baseLevel);
+    }
     usageConfig.spellCast = {
       spellLevel: choice.spellLevel,
+      castingMode,
       components: metamagicConfig.components,
       payment: {
         resource: "sorcery-points",
@@ -2783,6 +2840,7 @@ export class SorcererAutomationService {
       const metamagicConfig = this.#applyMetamagicConfig(activity, preflightUsageConfig, plan, messageConfig);
       preflightUsageConfig.spellCast = {
         spellLevel: plan.choice.spellLevel,
+        castingMode: plan.castingMode,
         components: metamagicConfig.components,
         payment: { resource: "sorcery-points", cost: plan.totalCost },
         metamagic: metamagicSummary(plan.metamagic, plan.choice.spellLevel),
