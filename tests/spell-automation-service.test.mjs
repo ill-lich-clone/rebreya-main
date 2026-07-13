@@ -44,6 +44,22 @@ function counterspellItem() {
   };
 }
 
+function spellShatterItem() {
+  return {
+    id: "spell-shatter",
+    uuid: "Item.spell-shatter",
+    flags: {
+      [MODULE_ID]: {
+        spellAutomation: { kind: "spell-shatter" }
+      }
+    },
+    system: {
+      level: 0,
+      ability: "cha"
+    }
+  };
+}
+
 function counterspellCandidate({
   id = "reactor",
   initiative = 0,
@@ -59,6 +75,27 @@ function counterspellCandidate({
     actorUuid: actor.uuid,
     item,
     spellLevel: selectedLevel,
+    visible,
+    rangeFeet,
+    combatOrder: initiative
+  };
+}
+
+function spellShatterCandidate({
+  id = "reactor",
+  initiative = 0,
+  visible = true,
+  rangeFeet = 30
+} = {}) {
+  const item = spellShatterItem();
+  const actor = new TestActor({ id, initiative, items: [item] });
+  actor.system.abilities.cha = { mod: 4 };
+  return {
+    id,
+    actor,
+    actorUuid: actor.uuid,
+    item,
+    spellLevel: 1,
     visible,
     rangeFeet,
     combatOrder: initiative
@@ -105,10 +142,12 @@ function makeService({
   events = [],
   prompt = null,
   paySpell = null,
-  useActivityPayment = false
+  useActivityPayment = false,
+  moduleApiExtras = {}
 } = {}) {
   const moduleApi = {
-    combatAttackService: reactionLedger({ available, events })
+    combatAttackService: reactionLedger({ available, events }),
+    ...moduleApiExtras
   };
   const options = {
     getCounterspellCandidates: async (cast) => typeof candidates === "function" ? candidates(cast) : candidates,
@@ -795,6 +834,77 @@ test("a selected Counterspell spends reaction and spell payment before resolving
   assert.deepEqual(events, [
     "payment:reactor:root-cast",
     "reaction:reactor:counterspell"
+  ]);
+});
+
+test("Spell Shatter spends Sorcery Points and cancels when the caster fails its check", async () => {
+  const events = [];
+  let checked = null;
+  const service = makeService({
+    candidates: [spellShatterCandidate()],
+    events,
+    useActivityPayment: true,
+    moduleApiExtras: {
+      sorcererAutomationService: {
+        spendSorceryPoints: async (actor, amount) => {
+          events.push(`spend:${actor.id}:${amount}`);
+          return true;
+        },
+        restoreSorceryPoints: async (actor, amount) => {
+          events.push(`restore:${actor.id}:${amount}`);
+          return true;
+        }
+      }
+    }
+  });
+  service._options.rollAbilityCheck = async (attempt, dc, parent) => {
+    checked = { kind: attempt.kind, dc, caster: parent.actorUuid };
+    return 13;
+  };
+
+  const result = await service.resolveCast(rootCast({ spellLevel: 4, actorUuid: "Actor.enemy-caster" }));
+
+  assert.equal(result.cancelled, true);
+  assert.equal(result.chain[1].kind, "spell-shatter");
+  assert.equal(result.chain[1].dc, 14);
+  assert.equal(result.chain[1].rollTotal, 13);
+  assert.deepEqual(checked, { kind: "spell-shatter", dc: 14, caster: "Actor.enemy-caster" });
+  assert.deepEqual(events, [
+    "spend:reactor:5",
+    "reaction:reactor:spell-shatter",
+    "restore:reactor:2"
+  ]);
+});
+
+test("Spell Shatter leaves the spell active when the caster passes its check", async () => {
+  const events = [];
+  const service = makeService({
+    candidates: [spellShatterCandidate()],
+    events,
+    useActivityPayment: true,
+    rollTotal: 15,
+    moduleApiExtras: {
+      sorcererAutomationService: {
+        spendSorceryPoints: async (actor, amount) => {
+          events.push(`spend:${actor.id}:${amount}`);
+          return true;
+        },
+        restoreSorceryPoints: async (actor, amount) => {
+          events.push(`restore:${actor.id}:${amount}`);
+          return true;
+        }
+      }
+    }
+  });
+
+  const result = await service.resolveCast(rootCast({ spellLevel: 4 }));
+
+  assert.equal(result.cancelled, false);
+  assert.equal(result.chain[1].kind, "spell-shatter");
+  assert.equal(result.chain[1].success, false);
+  assert.deepEqual(events, [
+    "spend:reactor:5",
+    "reaction:reactor:spell-shatter"
   ]);
 });
 

@@ -109,6 +109,7 @@ const RUNE_KNIGHT_RUNE_SPECS = [
 ];
 const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
+const EFFECT_MODE_UPGRADE = 4;
 const EFFECT_MODE_OVERRIDE = 5;
 const STARTING_EQUIPMENT_TYPES = new Set(["OR", "AND", "armor", "tool", "weapon", "focus", "currency", "linked"]);
 const STARTING_EQUIPMENT_KEYED_TYPES = new Set(["armor", "tool", "weapon", "focus", "currency", "linked"]);
@@ -556,6 +557,10 @@ function normalizeMetamagicOption(rawOption, index, options = {}) {
     fallbackLevel: 3,
     ...options
   });
+  const requiredLevel = Math.max(
+    1,
+    Math.floor(parseNumber(rawOption?.requiredLevel ?? rawOption?.levels?.[0] ?? entry.requiredLevel, 3))
+  );
   const rawCost = rawOption?.cost;
   const cost = cleanString(rawCost).toLowerCase() === "spelllevel"
     ? "spellLevel"
@@ -574,8 +579,8 @@ function normalizeMetamagicOption(rawOption, index, options = {}) {
     : Math.max(minCost, Math.floor(parseNumber(rawOption?.maxCost, cost)));
   return {
     ...entry,
-    levels: [3],
-    requiredLevel: 3,
+    levels: [requiredLevel],
+    requiredLevel,
     metamagicId: cleanString(rawOption?.metamagicId ?? rawOption?.id, entry.featureId),
     cost,
     costMode,
@@ -773,6 +778,11 @@ const EXPANDED_METAMAGIC_SPECS = Object.freeze(new Map([
   [normalizeMatchText("Заражение"), { id: "chemtech-infection-spell", cost: 3, costMode: "variable", minCost: 1, maxCost: 3 }]
 ]));
 
+const ADVANCED_METAMAGIC_SPECS = Object.freeze(new Map([
+  [normalizeMatchText("Мана-шторм"), { id: "advanced-mana-storm", cost: 2 }],
+  [normalizeMatchText("Раскол заклинания"), { id: "advanced-spell-shatter", cost: 5 }]
+]));
+
 function isVariableExpandedMetamagicCost(description) {
   return /(?:вплоть до|до)\s+\d+/iu.test(description);
 }
@@ -814,6 +824,44 @@ function extractExpandedMetamagicOptions(subclass, usedIds = new Set()) {
       stacking: parseExpandedMetamagicStacking(description)
     }, index, {
       scopeId: `${subclass.subclassId}-metamagic`,
+      usedIds
+    });
+  }).filter((option) => option.name);
+}
+
+function extractAdvancedMetamagicOptions(classFeatures = [], classIdentifier = "sorcerer-rework-v011", usedIds = new Set()) {
+  const advancedFeature = (Array.isArray(classFeatures) ? classFeatures : []).find((feature) => (
+    normalizeMatchText(feature?.name) === "продвинутая метамагия"
+  ));
+  if (!advancedFeature?.description) {
+    return [];
+  }
+
+  const matches = Array.from(advancedFeature.description.matchAll(/\*\*([^*]+)\*\*\.\s*/gu));
+  return matches.map((match, index) => {
+    const start = (match.index ?? 0) + match[0].length;
+    const end = matches[index + 1]?.index ?? advancedFeature.description.length;
+    const description = cleanString(
+      advancedFeature.description
+        .slice(start, end)
+        .replace(/\\([[\]])/gu, "$1")
+    );
+    const name = cleanString(match[1], `Продвинутая метамагия ${index + 1}`).replace(/[⚡]/gu, "").trim();
+    const spec = ADVANCED_METAMAGIC_SPECS.get(normalizeMatchText(name)) ?? {};
+    const parsedCost = spec.cost ?? parseExpandedMetamagicCost(description);
+
+    return normalizeMetamagicOption({
+      id: spec.id,
+      metamagicId: spec.id,
+      name,
+      description,
+      levels: [10],
+      requiredLevel: 10,
+      cost: parsedCost,
+      automation: spec.id,
+      stacking: parseExpandedMetamagicStacking(description)
+    }, index, {
+      scopeId: `${classIdentifier}-advanced-metamagic`,
       usedIds
     });
   }).filter((option) => option.name);
@@ -1152,6 +1200,7 @@ export function normalizeClassCompendiumData(rawData) {
       usedIds: usedMetamagicIds
     }))
     .filter((option) => option.name);
+  metamagicOptions.push(...extractAdvancedMetamagicOptions(classFeatures, classIdentifier, usedMetamagicIds));
 
   const usedCunningStrikeIds = new Set();
   const rawCunningStrikes = Array.isArray(rawClass.cunningStrikes)
@@ -2278,6 +2327,223 @@ function createRageActionAutomation(feature, classIdentifier) {
   };
 }
 
+function passiveFeatureEffect({
+  id,
+  name,
+  description = "",
+  changes = [],
+  transfer = true,
+  flags = {},
+  img = DEFAULT_FEATURE_ICON
+}) {
+  return {
+    _id: id,
+    name,
+    type: "base",
+    img,
+    system: {},
+    changes,
+    disabled: false,
+    duration: {
+      startTime: null,
+      seconds: null,
+      combat: null,
+      rounds: null,
+      turns: null,
+      startRound: null,
+      startTurn: null
+    },
+    description: toHtmlParagraphs(description),
+    origin: null,
+    transfer,
+    statuses: [],
+    sort: 0,
+    flags
+  };
+}
+
+function createSorcererMagicSenseAutomation(feature, classIdentifier) {
+  const effectId = stableHashId(`${classIdentifier}:${feature.featureId}:magic-sense`, "effect");
+  return {
+    activities: {},
+    effects: [passiveFeatureEffect({
+      id: effectId,
+      name: feature.name,
+      description: feature.description,
+      changes: [{
+        key: "system.skills.arc.bonuses.check",
+        mode: EFFECT_MODE_ADD,
+        value: "+@abilities.cha.mod",
+        priority: 20
+      }],
+      flags: {
+        dae: {
+          transfer: true,
+          stackable: "noneName"
+        },
+        [MODULE_ID]: {
+          managed: true,
+          automation: "sorcerer-magic-sense"
+        }
+      }
+    })],
+    usesRecovery: []
+  };
+}
+
+function createDraconicResilienceAutomation(feature, classIdentifier) {
+  const hpEffectId = stableHashId(`${classIdentifier}:${feature.featureId}:draconic-resilience-hp`, "effect");
+  const acEffectId = stableHashId(`${classIdentifier}:${feature.featureId}:draconic-resilience-ac`, "effect");
+  return {
+    activities: {},
+    effects: [
+      passiveFeatureEffect({
+        id: hpEffectId,
+        name: `${feature.name}: хиты`,
+        description: feature.description,
+        changes: [{
+          key: "system.attributes.hp.bonuses.level",
+          mode: EFFECT_MODE_ADD,
+          value: `+@classes.${classIdentifier}.levels`,
+          priority: 20
+        }],
+        flags: {
+          dae: {
+            transfer: true,
+            stackable: "noneName"
+          },
+          [MODULE_ID]: {
+            managed: true,
+            automation: "sorcerer-draconic-resilience-hp"
+          }
+        }
+      }),
+      passiveFeatureEffect({
+        id: acEffectId,
+        name: `${feature.name}: чешуя`,
+        description: feature.description,
+        changes: [{
+          key: "system.attributes.ac.bonus",
+          mode: EFFECT_MODE_ADD,
+          value: "3",
+          priority: 20
+        }],
+        flags: {
+          dae: {
+            disableCondition: "@attributes.ac.armor > 10",
+            transfer: true,
+            stackable: "noneName"
+          },
+          [MODULE_ID]: {
+            managed: true,
+            automation: "sorcerer-draconic-resilience-ac"
+          }
+        }
+      })
+    ],
+    usesRecovery: []
+  };
+}
+
+function createDraconicWingsAutomation(feature, classIdentifier) {
+  const effectId = stableHashId(`${classIdentifier}:${feature.featureId}:draconic-wings`, "effect");
+  const activityId = stableHashId(`${classIdentifier}:${feature.featureId}:draconic-wings-activity`, "activity");
+  return {
+    activities: {
+      [activityId]: {
+        _id: activityId,
+        type: "utility",
+        name: feature.name,
+        img: RAGE_ACTION_ACTIVITY_IMAGE.utility,
+        sort: 0,
+        activation: {
+          type: "bonus",
+          value: 1,
+          condition: "",
+          override: false
+        },
+        consumption: {
+          scaling: {
+            allowed: false,
+            max: ""
+          },
+          spellSlot: false,
+          targets: []
+        },
+        description: {
+          chatFlavor: cleanString(feature.description)
+        },
+        duration: {
+          value: "",
+          units: "inst",
+          special: "",
+          concentration: false,
+          override: false
+        },
+        effects: [{ _id: effectId }],
+        flags: {
+          [MODULE_ID]: {
+            managed: true,
+            automation: "sorcerer-draconic-wings"
+          }
+        },
+        range: {
+          value: null,
+          units: "self",
+          special: "",
+          override: false
+        },
+        target: {
+          template: {
+            count: "",
+            contiguous: false,
+            type: "",
+            size: "",
+            width: "",
+            height: "",
+            units: ""
+          },
+          affects: {
+            count: "",
+            type: "self",
+            choice: false,
+            special: ""
+          },
+          prompt: false,
+          override: false
+        },
+        uses: {
+          spent: 0,
+          max: "",
+          recovery: []
+        }
+      }
+    },
+    effects: [passiveFeatureEffect({
+      id: effectId,
+      name: feature.name,
+      description: feature.description,
+      transfer: false,
+      changes: [{
+        key: "system.attributes.movement.fly",
+        mode: EFFECT_MODE_UPGRADE,
+        value: "@attributes.movement.walk",
+        priority: 20
+      }],
+      flags: {
+        dae: {
+          stackable: "noneName"
+        },
+        [MODULE_ID]: {
+          managed: true,
+          automation: "sorcerer-draconic-wings-effect"
+        }
+      }
+    })],
+    usesRecovery: []
+  };
+}
+
 function createDominanceManeuverAutomation(feature, classIdentifier) {
   const activityId = stableHashId(`${classIdentifier}:${feature.featureId}:dominance-maneuver`, "activity");
   const description = cleanString(feature.description, feature.name);
@@ -2894,6 +3160,21 @@ function createFeatureAutomation(feature, classIdentifier) {
     return createDominanceManeuverAutomation(feature, classIdentifier);
   }
 
+  const normalizedName = normalizeMatchText(feature.name);
+  if (classIdentifier === "sorcerer-rework-v011") {
+    if (feature.sourceType === "classFeature" && normalizedName === "чувство магии") {
+      return createSorcererMagicSenseAutomation(feature, classIdentifier);
+    }
+
+    if (feature.sourceType === "subclassFeature" && normalizedName === "драконья устойчивость") {
+      return createDraconicResilienceAutomation(feature, classIdentifier);
+    }
+
+    if (feature.sourceType === "subclassFeature" && normalizedName === "крылья дракона") {
+      return createDraconicWingsAutomation(feature, classIdentifier);
+    }
+  }
+
   if (feature.sourceType !== "classFeature") {
     return createEmptyFeatureAutomation();
   }
@@ -2911,7 +3192,6 @@ function createFeatureAutomation(feature, classIdentifier) {
     };
   }
 
-  const normalizedName = normalizeMatchText(feature.name);
   if (classIdentifier === "fighter-rework-v028" && normalizedName.startsWith("воинская мультиатака")) {
     return createFighterMultiattackAutomation(feature, classIdentifier);
   }
@@ -3643,12 +3923,15 @@ function runeUuidPoolFromContext(context = {}, maxRequiredLevel = 20) {
   return featureUuidsForIds(runeFeatureIds, context);
 }
 
-function sorcererMetamagicUuidPoolFromContext(context = {}, subclass = null) {
+function sorcererMetamagicUuidPoolFromContext(context = {}, subclass = null, maxRequiredLevel = 20) {
   const classIdentifier = cleanString(context.classIdentifier, "sorcerer-rework-v011");
+  const maxLevel = Math.max(1, Math.floor(parseNumber(maxRequiredLevel, 20)));
   const baseFeatureIds = (Array.isArray(context.metamagicEntries) ? context.metamagicEntries : [])
+    .filter((entry) => Math.max(1, Math.floor(parseNumber(entry?.requiredLevel, entry?.levels?.[0] ?? 3))) <= maxLevel)
     .map((entry) => `${classIdentifier}::sorcererMetamagic::${entry.featureId}`)
     .filter(Boolean);
   const subclassFeatureIds = (Array.isArray(subclass?.metamagicOptions) ? subclass.metamagicOptions : [])
+    .filter((entry) => Math.max(1, Math.floor(parseNumber(entry?.requiredLevel, entry?.levels?.[0] ?? 3))) <= maxLevel)
     .map((entry) => `${subclass.subclassId}::sorcererMetamagic::${entry.featureId}`)
     .filter(Boolean);
 
@@ -3666,6 +3949,107 @@ function draconicAncestorUuidPoolFromContext(context = {}, subclass = null) {
     .filter(Boolean);
 
   return featureUuidsForIds(ancestorFeatureIds, context);
+}
+
+function spellIdentifierFromEnglishName(value) {
+  const identifier = String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[^\x00-\x7F]/gu, "")
+    .toLowerCase()
+    .replace(/['`]/gu, "")
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/-{2,}/gu, "-")
+    .replace(/^-|-$/gu, "");
+  return new Map([
+    ["dissonant-whisper", "dissonant-whispers"]
+  ]).get(identifier) ?? identifier;
+}
+
+function extractSpellIdentifiersFromCell(cell) {
+  const text = String(cell ?? "");
+  const identifiers = [];
+  const bracketPattern = /\\?\[([A-Za-z][A-Za-z0-9'`’\s/-]+)\\?\]/gu;
+  for (const match of text.matchAll(bracketPattern)) {
+    const identifier = spellIdentifierFromEnglishName(match[1]);
+    if (identifier) {
+      identifiers.push(identifier);
+    }
+  }
+
+  return unique(identifiers);
+}
+
+function spellGrantLevel(value) {
+  const match = cleanString(value).match(/\d+/u);
+  if (!match) {
+    return 0;
+  }
+
+  return Math.max(1, Math.min(20, Math.floor(parseNumber(match[0], 0))));
+}
+
+function subclassSpellGrantUuidsByLevel(subclass, spellUuidById = new Map()) {
+  if (!(spellUuidById instanceof Map) || !spellUuidById.size) {
+    return new Map();
+  }
+
+  const byLevel = new Map();
+  for (const feature of subclass?.features ?? []) {
+    let readingSpellTable = false;
+    for (const line of String(feature?.description ?? "").split(/\r?\n/u)) {
+      const cells = markdownTableCells(line);
+      if (cells.length < 2) {
+        readingSpellTable = false;
+        continue;
+      }
+
+      const firstCell = normalizeMatchText(cells[0]);
+      if (firstCell.includes("уровень") && cells.slice(1).some((cell) => (
+        normalizeMatchText(cell).includes("заклин")
+          || extractSpellIdentifiersFromCell(cell).length > 0
+      ))) {
+        readingSpellTable = true;
+        continue;
+      }
+      if (!readingSpellTable || cells.some(isMarkdownSeparatorCell)) {
+        continue;
+      }
+
+      const level = spellGrantLevel(cells[0]);
+      if (!level) {
+        continue;
+      }
+
+      const uuids = cells
+        .slice(1)
+        .flatMap(extractSpellIdentifiersFromCell)
+        .map((identifier) => spellUuidById.get(identifier))
+        .filter(Boolean);
+      if (!uuids.length) {
+        continue;
+      }
+
+      byLevel.set(level, unique([...(byLevel.get(level) ?? []), ...uuids]));
+    }
+  }
+
+  return byLevel;
+}
+
+function buildSubclassSpellGrantAdvancements(subclass, context = {}) {
+  const spellUuidById = context.spellUuidById instanceof Map ? context.spellUuidById : new Map();
+  const byLevel = subclassSpellGrantUuidsByLevel(subclass, spellUuidById);
+  return Array.from(byLevel.entries())
+    .sort((left, right) => left[0] - right[0])
+    .map(([level, itemUuids]) => buildItemGrantAdvancement({
+      classIdentifier: subclass.subclassId,
+      seed: `origin-spells-${level}`,
+      title: `${subclass.name}: заклинания происхождения (${level}-й уровень)`,
+      hint: "Заклинания, которые происхождение чародея добавляет по мере прокачки.",
+      level,
+      itemUuids,
+      optional: false
+    }));
 }
 
 function buildFeatureItemAdvancements(feature, context = {}) {
@@ -3864,24 +4248,27 @@ async function buildFeatLookup() {
 }
 
 async function buildSpellUuidMap() {
-  const pack = game.packs.get(SPELLS_PACK_ID);
-  if (!pack) {
-    return new Map();
-  }
-
-  const index = await pack.getIndex({
-    fields: [
-      "system.identifier",
-      `flags.${MODULE_ID}.spellId`
-    ]
-  });
   const spellUuidById = new Map();
-  for (const entry of index) {
-    const spellId = cleanString(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.spellId`),
-      cleanString(foundry.utils.getProperty(entry, "system.identifier")));
-    const uuid = compendiumItemUuid(pack.collection, entry._id ?? entry.id);
-    if (spellId && uuid) {
-      spellUuidById.set(spellId, uuid);
+
+  for (const packId of [SPELLS_PACK_ID, "dnd5e.spells"]) {
+    const pack = game.packs.get(packId);
+    if (!pack) {
+      continue;
+    }
+
+    const index = await pack.getIndex({
+      fields: [
+        "system.identifier",
+        `flags.${MODULE_ID}.spellId`
+      ]
+    });
+    for (const entry of index) {
+      const spellId = cleanString(foundry.utils.getProperty(entry, `flags.${MODULE_ID}.spellId`),
+        cleanString(foundry.utils.getProperty(entry, "system.identifier")));
+      const uuid = compendiumItemUuid(pack.collection, entry._id ?? entry.id);
+      if (spellId && uuid && !spellUuidById.has(spellId)) {
+        spellUuidById.set(spellId, uuid);
+      }
     }
   }
 
@@ -4292,6 +4679,8 @@ export function buildSubclassAdvancements(subclass, context = {}) {
     }));
   }
 
+  advancements.push(...buildSubclassSpellGrantAdvancements(subclass, context));
+
   if (cleanString(context.classIdentifier) === "sorcerer-rework-v011") {
     if (normalizeMatchText(subclass.name) === DRACONIC_SORCERER_SUBCLASS_NAME) {
       const ancestorUuids = draconicAncestorUuidPoolFromContext(context, subclass);
@@ -4309,9 +4698,9 @@ export function buildSubclassAdvancements(subclass, context = {}) {
       }
     }
 
-    const metamagicUuids = sorcererMetamagicUuidPoolFromContext(context, subclass);
-    if (metamagicUuids.length) {
-      for (const [level, count] of SORCERER_METAMAGIC_CHOICE_LEVELS) {
+    for (const [level, count] of SORCERER_METAMAGIC_CHOICE_LEVELS) {
+      const metamagicUuids = sorcererMetamagicUuidPoolFromContext(context, subclass, level);
+      if (metamagicUuids.length) {
         advancements.push(buildItemChoiceAdvancement({
           classIdentifier: subclass.subclassId,
           seed: `metamagic-${level}`,
@@ -4322,6 +4711,49 @@ export function buildSubclassAdvancements(subclass, context = {}) {
           pool: metamagicUuids
         }));
       }
+    }
+
+    const levelTwentyMetamagicUuids = sorcererMetamagicUuidPoolFromContext(context, subclass, 20);
+    const originMetamagicUuids = featureUuidsForIds(
+      (Array.isArray(subclass?.metamagicOptions) ? subclass.metamagicOptions : [])
+        .map((entry) => `${subclass.subclassId}::sorcererMetamagic::${entry.featureId}`),
+      context
+    );
+    if (originMetamagicUuids.length) {
+      advancements.push(buildItemGrantAdvancement({
+        classIdentifier: subclass.subclassId,
+        seed: "transcendence-origin-metamagic",
+        title: `${subclass.name}: трансцендентность - расширенная метамагия`,
+        hint: "На 20-м уровне вы изучаете все варианты метамагии из расширенного списка происхождения.",
+        level: 20,
+        itemUuids: originMetamagicUuids,
+        optional: false
+      }));
+    }
+    if (levelTwentyMetamagicUuids.length) {
+      const knownMetamagicCount = SORCERER_METAMAGIC_CHOICE_LEVELS
+        .reduce((total, [, count]) => total + count, 0);
+      advancements.push(buildItemChoiceAdvancement({
+        classIdentifier: subclass.subclassId,
+        seed: "transcendence-metamagic-replacement",
+        title: "Трансцендентность: замена метамагии",
+        hint: "Можете заменить все известные варианты метамагии.",
+        level: 20,
+        count: knownMetamagicCount,
+        choices: {
+          20: { count: knownMetamagicCount, replacement: true }
+        },
+        pool: levelTwentyMetamagicUuids
+      }));
+      advancements.push(buildItemChoiceAdvancement({
+        classIdentifier: subclass.subclassId,
+        seed: "transcendence-metamagic-discount",
+        title: "Трансцендентность: сниженная стоимость",
+        hint: "Выберите 4 известных варианта метамагии; их стоимость уменьшается на 1, минимум до 1, и они совместимы с другим вариантом.",
+        level: 20,
+        count: 4,
+        pool: levelTwentyMetamagicUuids
+      }));
     }
   }
 
@@ -4556,6 +4988,9 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
     minCost: feature.minCost,
     maxCost: feature.maxCost,
     metamagicAutomation: feature.automation,
+    spellAutomation: feature.automation === "advanced-spell-shatter"
+      ? { kind: "spell-shatter" }
+      : undefined,
     stacking: feature.stacking,
     damageType: feature.damageType,
     savingThrow: feature.savingThrow,
@@ -4928,7 +5363,8 @@ export class ClassesCompendiumService {
     });
     const subclassesPack = await syncSubclassesPack(normalizedData, {
       featureUuidById,
-      iconLookup
+      iconLookup,
+      spellUuidById
     });
     const classesPack = await syncClassesPack(normalizedData, {
       featureUuidById,

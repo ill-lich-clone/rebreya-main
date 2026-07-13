@@ -246,6 +246,17 @@ function addDraconicAncestor(actor, damageType = "Огонь") {
   return item;
 }
 
+function addSubclassFeature(actor, name, featureId = name) {
+  const item = makeItemFromData(actor, {
+    name,
+    type: "feat",
+    flags: { [MODULE_ID]: { sourceType: "subclassFeature", featureId } },
+    system: { identifier: featureId }
+  }, featureId);
+  actor.items.contents.push(item);
+  return item;
+}
+
 function metamagicActor(level = 3) {
   const actor = levelActor(level, { includePoints: true });
   actor.system.abilities = { cha: { mod: 3 } };
@@ -1525,6 +1536,18 @@ test("class item creation and level updates synchronize the owned Sorcery Points
   assert.equal(pointsItem(actor).system.uses.max, 21);
 });
 
+test("public Sorcery Point spend and restore helpers use the owned resource", async () => {
+  const actor = levelActor(3, { includePoints: true });
+  const service = new SorcererAutomationService({});
+
+  assert.equal(await service.spendSorceryPoints(actor, 5), true);
+  assert.equal(pointsItem(actor).system.uses.spent, 5);
+  assert.equal(await service.restoreSorceryPoints(actor, 2), true);
+  assert.equal(pointsItem(actor).system.uses.spent, 3);
+  assert.equal(await service.spendSorceryPoints(actor, 99), false);
+  assert.equal(pointsItem(actor).system.uses.spent, 3);
+});
+
 function makeDnd5eActivityClone(activity) {
   for (const key of ["activation", "components", "duration", "range", "target", "damage", "attack"]) {
     if (activity.system?.[key] !== undefined) {
@@ -2238,6 +2261,46 @@ test("Draconic Ancestral Spell changes this cast's spell damage to the ancestor 
   assert.equal(pointsItem(actor).system.uses.spent, 3);
 });
 
+test("Elemental Affinity adds Charisma modifier once to matching draconic spell damage", async () => {
+  const actor = metamagicActor();
+  actor.system.abilities.cha.mod = 4;
+  addDraconicAncestor(actor, "Огонь");
+  addSubclassFeature(actor, "Родство со стихией", "draconic-elemental-affinity");
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const messageConfig = {};
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "base-fire", formula: "2d6", types: ["fire"] }] } }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1
+  }, {}, messageConfig), true);
+
+  const added = activity.damage.parts.find((part) => part._id === "rebreya-draconic-elemental-affinity");
+  assert.equal(added.formula, "4");
+  assert.deepEqual(added.types, ["fire"]);
+  assert.equal(messageConfig.data.flags[MODULE_ID].damageBonus.source, "draconic-elemental-affinity");
+  assert.equal(pointsItem(actor).system.uses.spent, 2);
+});
+
+test("Elemental Affinity ignores spells that do not match the draconic damage type", async () => {
+  const actor = metamagicActor();
+  addDraconicAncestor(actor, "Огонь");
+  addSubclassFeature(actor, "Родство со стихией", "draconic-elemental-affinity");
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "base-cold", formula: "2d6", types: ["cold"] }] } }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1
+  }, {}, {}), true);
+
+  assert.equal(activity.damage.parts.some((part) => part._id === "rebreya-draconic-elemental-affinity"), false);
+});
+
 test("Draconic Dragon Protection creates a temporary resistance effect with its Sorcery Point cost", async () => {
   const actor = metamagicActor();
   addMetamagic(actor, "draconic-dragon-protection", 1, "base", {
@@ -2337,6 +2400,58 @@ test("Draconic Dragon Wing creates temporary flight equal to ten feet per select
   assert.equal(flight.value, "20");
   assert.deepEqual(effect.flags.dae.specialDuration, ["turnEndSource", "combatEnd"]);
   assert.equal(effect.flags[MODULE_ID].sorcererAutomation.kind, "draconicDragonWing");
+});
+
+test("Mana Storm grants temporary hit points and creates a delayed damage marker", async () => {
+  const actor = metamagicActor(5);
+  actor.system.attributes.hp = { temp: 1 };
+  addMetamagic(actor, "advanced-mana-storm", 2, "base", {
+    metamagicAutomation: "advanced-mana-storm"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, { baseLevel: 3 }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 3,
+    sorcererMetamagic: { ids: ["advanced-mana-storm"] }
+  }, {}, {}), true);
+
+  assert.equal(pointsItem(actor).system.uses.spent, 7);
+  assert.equal(actor.system.attributes.hp.temp, 3);
+  assert.equal(actor.createdEffects.length, 1);
+  const effect = actor.createdEffects[0].rows[0];
+  assert.deepEqual(effect.flags.dae.specialDuration, ["combatEnd"]);
+  assert.deepEqual(effect.flags[MODULE_ID].sorcererAutomation, {
+    kind: "advancedManaStorm",
+    radius: 10,
+    damage: 3,
+    damageType: "force"
+  });
+});
+
+test("Transcendence discounted metamagic costs one less and can stack with any other option", async () => {
+  const actor = metamagicActor();
+  addSubclassFeature(actor, "РўСЂР°РЅСЃС†РµРЅРґРµРЅС‚РЅРѕСЃС‚СЊ", "sorcerer-transcendence");
+  addMetamagic(actor, "quickened-spell", 2, "base");
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: {
+      activation: { type: "action", value: 1 },
+      components: { vocal: true, somatic: true, material: false }
+    }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: { ids: ["quickened-spell", "subtle-spell"] }
+  }, {}, {}), true);
+
+  assert.equal(pointsItem(actor).system.uses.spent, 4);
+  assert.deepEqual(activity.activation, { type: "bonus", value: 1 });
+  assert.deepEqual(activity.components, { vocal: false, somatic: false, material: false });
+  assert.deepEqual(activity.item.system.components, { vocal: false, somatic: false, material: false });
 });
 
 test("Subtle usage message names metamagic and replaces V/S component pills", async () => {

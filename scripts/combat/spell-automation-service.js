@@ -1,8 +1,12 @@
 import { MODULE_ID } from "../constants.js";
 
 const COUNTERSPELL_KIND = "counterspell";
+const SPELL_SHATTER_KIND = "spell-shatter";
 const COUNTERSPELL_RANGE_FEET = 60;
 const COUNTERSPELL_REACTION_TYPE = "counterspell";
+const SPELL_SHATTER_REACTION_TYPE = "spell-shatter";
+const SPELL_SHATTER_COST = 5;
+const SPELL_SHATTER_REFUND = 2;
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const COUNTERSPELL_REQUEST_EVENT = `${MODULE_ID}.spellAutomation.counterspellRequest`;
 const COUNTERSPELL_RESULT_EVENT = `${MODULE_ID}.spellAutomation.counterspellResult`;
@@ -214,9 +218,18 @@ function collectTargetUuids(targets) {
     .filter(Boolean);
 }
 
-function counterspellAutomation(item) {
+function spellReactionKind(item) {
   const automation = readDocumentFlag(item, "spellAutomation");
-  return automation && typeof automation === "object" && cleanText(automation.kind).toLowerCase() === COUNTERSPELL_KIND;
+  const kind = cleanText(automation?.kind).toLowerCase();
+  return kind === COUNTERSPELL_KIND || kind === SPELL_SHATTER_KIND ? kind : "";
+}
+
+function counterspellAutomation(item) {
+  return Boolean(spellReactionKind(item));
+}
+
+function spellReactionType(kind) {
+  return kind === SPELL_SHATTER_KIND ? SPELL_SHATTER_REACTION_TYPE : COUNTERSPELL_REACTION_TYPE;
 }
 
 function itemActivities(item) {
@@ -438,6 +451,7 @@ export class SpellAutomationService {
       targetUuids: Array.isArray(cast.targetUuids) ? cast.targetUuids.filter(Boolean) : [],
       cancelled: cast.cancelled === true,
       modifiers: cast.modifiers && typeof cast.modifiers === "object" ? cast.modifiers : {},
+      kind: cleanText(cast.kind).toLowerCase(),
       actor,
       item,
       activity,
@@ -555,6 +569,14 @@ export class SpellAutomationService {
       attempt.dc = resolved.dc ?? null;
       attempt.rollTotal = resolved.rollTotal ?? null;
     }
+    else if (attempt.kind === SPELL_SHATTER_KIND) {
+      attempt.dc = 10 + parent.spellLevel;
+      attempt.rollTotal = await this.#rollSpellShatterCheck(parent, attempt.dc, attempt);
+      attempt.success = Number.isFinite(attempt.rollTotal) && attempt.rollTotal < attempt.dc;
+      if (attempt.success) {
+        attempt.refunded = await this.#restoreSpellShatterRefund(attempt);
+      }
+    }
     else if (attempt.spellLevel >= parent.spellLevel) {
       attempt.success = true;
       attempt.dc = null;
@@ -573,23 +595,25 @@ export class SpellAutomationService {
     const item = candidate.item ?? candidate.source ?? null;
     const activity = candidate.activity ?? counterspellActivity(item);
     const actor = candidate.actor ?? actorFrom(item);
+    const kind = spellReactionKind(item) || COUNTERSPELL_KIND;
     const detectedComponents = candidate.components ?? resolveComponents(activity, item);
     const components = detectedComponents?.verbal || detectedComponents?.somatic
       ? detectedComponents
       : { verbal: true, somatic: true };
     return this.#normalizeCast({
-      id: `${parent.id}:counterspell:${cleanText(candidate.id ?? documentUuid(actor) ?? "reactor")}:${++this._attemptSequence}`,
+      id: `${parent.id}:${kind}:${cleanText(candidate.id ?? documentUuid(actor) ?? "reactor")}:${++this._attemptSequence}`,
       parentId: parent.id,
       actorUuid: cleanText(candidate.actorUuid) || documentUuid(actor),
       activityUuid: documentUuid(activity),
       spellUuid: documentUuid(item),
-      spellLevel,
+      spellLevel: kind === SPELL_SHATTER_KIND ? Math.max(1, toNumber(spellLevel, 1)) : spellLevel,
       rangeFeet: resolveRangeFeet(activity, item),
       components,
       visible: candidate.visible !== false,
       targetUuids: [parent.actorUuid].filter(Boolean),
       cancelled: false,
       modifiers: {},
+      kind,
       actor,
       item,
       activity,
@@ -778,6 +802,10 @@ export class SpellAutomationService {
   }
 
   #candidateSpellLevel(candidate) {
+    if (spellReactionKind(candidate?.item ?? candidate?.source) === SPELL_SHATTER_KIND) {
+      return Math.max(1, Math.floor(toNumber(candidate?.spellLevel ?? candidate?.selectedLevel, 1)));
+    }
+
     return Math.max(0, Math.floor(toNumber(
       candidate?.spellLevel
       ?? candidate?.selectedLevel
@@ -926,6 +954,22 @@ export class SpellAutomationService {
           if (reaction?.consumed !== true || paid !== true) {
             result = { accepted: false, reaction, paid: paid === true, reason: "paymentFailed" };
           }
+          else if (attempt.kind === SPELL_SHATTER_KIND) {
+            const dc = 10 + parent.spellLevel;
+            const rollTotal = await this.#rollSpellShatterCheck(parent, dc, attempt);
+            const success = Number.isFinite(rollTotal) && rollTotal < dc;
+            const refunded = success ? await this.#restoreSpellShatterRefund(attempt) : false;
+            result = {
+              accepted: true,
+              spellLevel: attempt.spellLevel,
+              reaction,
+              paid: true,
+              success,
+              dc,
+              rollTotal,
+              refunded
+            };
+          }
           else if (attempt.spellLevel >= parent.spellLevel) {
             result = {
               accepted: true,
@@ -1028,13 +1072,20 @@ export class SpellAutomationService {
 
   async #consumeReaction(candidate) {
     return this.moduleApi?.combatAttackService?.consumeReaction?.(candidate.actor, {
-      reactionType: COUNTERSPELL_REACTION_TYPE
+      reactionType: spellReactionType(spellReactionKind(candidate?.item ?? candidate?.source))
     }) ?? { consumed: false, reason: "reactionLedgerUnavailable" };
   }
 
   async #paySpell(candidate, attempt, parent) {
     if (typeof this._options.paySpell === "function") {
       return (await this._options.paySpell(candidate, parent, attempt)) !== false;
+    }
+
+    if (attempt.kind === SPELL_SHATTER_KIND || spellReactionKind(candidate?.item ?? candidate?.source) === SPELL_SHATTER_KIND) {
+      return (await this.moduleApi?.sorcererAutomationService?.spendSorceryPoints?.(
+        candidate.actor,
+        SPELL_SHATTER_COST
+      )) === true;
     }
 
     const activity = attempt.activity ?? candidate.activity ?? counterspellActivity(attempt.item ?? candidate.item);
@@ -1078,6 +1129,32 @@ export class SpellAutomationService {
     return Number.NaN;
   }
 
+  async #rollSpellShatterCheck(parent, dc, attempt) {
+    if (typeof this._options.rollSpellShatterCheck === "function") {
+      return toNumber(await this._options.rollSpellShatterCheck(parent, dc, attempt), NaN);
+    }
+
+    if (typeof this._options.rollAbilityCheck === "function") {
+      return toNumber(await this._options.rollAbilityCheck(attempt, dc, parent), NaN);
+    }
+
+    const actor = parent.actor;
+    const ability = abilityKey(actor, parent.item);
+    if (typeof actor?.rollAbilityTest === "function") {
+      const roll = await actor.rollAbilityTest(ability, { fastForward: true, targetValue: dc });
+      return toNumber(roll?.total ?? roll, NaN);
+    }
+
+    return Number.NaN;
+  }
+
+  async #restoreSpellShatterRefund(attempt) {
+    return (await this.moduleApi?.sorcererAutomationService?.restoreSorceryPoints?.(
+      attempt.actor,
+      SPELL_SHATTER_REFUND
+    )) === true;
+  }
+
   #finalizeCancellation(node) {
     for (const child of node.children) {
       this.#finalizeCancellation(child);
@@ -1102,6 +1179,28 @@ export class SpellAutomationService {
     const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
     if (typeof DialogV2?.wait !== "function") {
       return false;
+    }
+
+    if (spellReactionKind(candidate?.item ?? candidate?.source) === SPELL_SHATTER_KIND) {
+      return DialogV2.wait({
+        window: { title: "Раскол заклинания" },
+        content: `<p>Использовать Раскол заклинания против заклинания ${cast.spellLevel}-го уровня за ${SPELL_SHATTER_COST} единиц чародейства?</p>`,
+        buttons: [
+          {
+            action: "counter",
+            label: "Расколоть",
+            default: true,
+            callback: () => ({ accepted: true, spellLevel: 1 })
+          },
+          {
+            action: "decline",
+            label: "Отмена",
+            callback: () => ({ accepted: false })
+          }
+        ],
+        rejectClose: false,
+        modal: true
+      });
     }
 
     const selectedLevel = this.#candidateSpellLevel(candidate);

@@ -59,7 +59,7 @@
         "choices": {
           "1": {
             "count": 4,
-            "replacement": true
+            "replacement": false
           },
           "2": {
             "count": 0,
@@ -163,7 +163,7 @@
         "choices": {
           "1": {
             "count": 2,
-            "replacement": true
+            "replacement": false
           },
           "2": {
             "count": 1,

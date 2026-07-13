@@ -203,6 +203,11 @@ test("Sorcerer known-spell choice includes the Rebreya Counterspell UUID", () =>
   assert.equal(knownSpells.configuration.pool.length, 1);
   assert.deepEqual(knownSpells.configuration.pool, [{ uuid: "Compendium.world.rebreya-spells.Item.counterspell0001" }]);
   assert.equal(knownSpells.configuration.choices["5"].count, 1);
+  assert.equal(knownSpells.configuration.choices["1"].replacement, false);
+  const cantrips = choices.find((entry) => (
+    entry.type === "ItemChoice" && entry.title === "Известные заговоры"
+  ));
+  assert.equal(cantrips.configuration.choices["1"].replacement, false);
 });
 
 test("sorcerer packages expose both updated starting-equipment choices", () => {
@@ -327,8 +332,10 @@ test("Sorcerer metamagic documents include base and origin-expanded options", ()
   const dragonProtection = metamagic.find((entry) => entry.name === "Драконья защита");
   const dragonSpell = metamagic.find((entry) => entry.name === "Драконье заклятье");
   const infection = metamagic.find((entry) => entry.name === "Заражение");
+  const manaStorm = metamagic.find((entry) => entry.name === "Мана-шторм");
+  const spellShatter = metamagic.find((entry) => entry.name === "Раскол заклинания");
 
-  assert.equal(metamagic.length, 24);
+  assert.equal(metamagic.length, 26);
   assert.equal(createFeatureEntryData(subtle, new Map()).flags["rebreya-main"].sourceType, "sorcererMetamagic");
   assert.equal(createFeatureEntryData(subtle, new Map()).flags["rebreya-main"].metamagicId, "subtle-spell");
   assert.equal(createFeatureEntryData(subtle, new Map()).flags["rebreya-main"].cost, 1);
@@ -346,6 +353,13 @@ test("Sorcerer metamagic documents include base and origin-expanded options", ()
   assert.equal(createFeatureEntryData(dragonSpell, new Map()).flags["rebreya-main"].maxCost, 3);
   assert.equal(createFeatureEntryData(infection, new Map()).flags["rebreya-main"].metamagicId, "chemtech-infection-spell");
   assert.equal(createFeatureEntryData(infection, new Map()).flags["rebreya-main"].costMode, "variable");
+  assert.equal(createFeatureEntryData(manaStorm, new Map()).flags["rebreya-main"].metamagicId, "advanced-mana-storm");
+  assert.equal(createFeatureEntryData(manaStorm, new Map()).flags["rebreya-main"].cost, 2);
+  assert.equal(manaStorm.requiredLevel, 10);
+  assert.equal(createFeatureEntryData(spellShatter, new Map()).flags["rebreya-main"].metamagicId, "advanced-spell-shatter");
+  assert.equal(createFeatureEntryData(spellShatter, new Map()).flags["rebreya-main"].cost, 5);
+  assert.deepEqual(createFeatureEntryData(spellShatter, new Map()).flags["rebreya-main"].spellAutomation, { kind: "spell-shatter" });
+  assert.equal(spellShatter.requiredLevel, 10);
 });
 
 test("Draconic sorcerer origin offers a dragon ancestor choice", () => {
@@ -392,6 +406,12 @@ test("Sorcerer origin metamagic choices combine the base list with that origin's
   );
   const draconicChoices = draconicAdvancement.filter((entry) => entry.type === "ItemChoice" && entry.title === "Метамагия");
   const draconicLevelThreePool = draconicChoices[0].configuration.pool.map((entry) => entry.uuid);
+  const draconicLevelTenPool = draconicChoices[1].configuration.pool.map((entry) => entry.uuid);
+  const transcendenceReplacement = draconicAdvancement.find((entry) => entry.title === "Трансцендентность: замена метамагии");
+  const transcendenceDiscount = draconicAdvancement.find((entry) => entry.title === "Трансцендентность: сниженная стоимость");
+  const transcendenceOriginGrant = draconicAdvancement.find((entry) => (
+    entry.title === "Наследие драконьей крови: трансцендентность - расширенная метамагия"
+  ));
 
   assert.deepEqual(classChoices, []);
   assert.deepEqual(draconicChoices.map((entry) => [entry.level, entry.configuration.choices[String(entry.level)].count]), [
@@ -404,6 +424,15 @@ test("Sorcerer origin metamagic choices combine the base list with that origin's
   assert.ok(draconicLevelThreePool.includes(metamagicByName.get("Заклинание предка")));
   assert.ok(draconicLevelThreePool.includes(metamagicByName.get("Крыло дракона")));
   assert.equal(draconicLevelThreePool.includes(metamagicByName.get("Хаотическое заклинание")), false);
+  assert.equal(draconicLevelThreePool.includes(metamagicByName.get("Мана-шторм")), false);
+  assert.ok(draconicLevelTenPool.includes(metamagicByName.get("Мана-шторм")));
+  assert.ok(draconicLevelTenPool.includes(metamagicByName.get("Раскол заклинания")));
+  assert.equal(transcendenceReplacement.level, 20);
+  assert.equal(transcendenceReplacement.configuration.choices["20"].count, 5);
+  assert.equal(transcendenceReplacement.configuration.choices["20"].replacement, true);
+  assert.equal(transcendenceDiscount.level, 20);
+  assert.equal(transcendenceDiscount.configuration.choices["20"].count, 4);
+  assert.equal(transcendenceOriginGrant.configuration.items.length, 4);
   assert.deepEqual(draconic.metamagicOptions.map((entry) => entry.name), [
     "Заклинание предка",
     "Драконья защита",
@@ -413,6 +442,101 @@ test("Sorcerer origin metamagic choices combine the base list with that origin's
   assert.deepEqual(wild.metamagicOptions.map((entry) => entry.name), [
     "Хаотическое заклинание",
     "Стремительное заклинание"
+  ]);
+});
+
+test("sorcerer feature automation covers magic sense and draconic origin passives", () => {
+  const sorcerer = normalizeClassCompendiumData(loadJson("data/sorcerer-rework-v011.json"));
+  const definitions = buildFeatureDefinitions(sorcerer);
+  const magicSense = definitions.find((entry) => entry.name === "Чувство магии");
+  const resilience = definitions.find((entry) => entry.name === "Драконья устойчивость");
+  const wings = definitions.find((entry) => entry.name === "Крылья дракона");
+  const magicEntry = createFeatureEntryData(magicSense, new Map());
+  const resilienceEntry = createFeatureEntryData(resilience, new Map());
+  const wingsEntry = createFeatureEntryData(wings, new Map());
+
+  assert.deepEqual(magicEntry.effects[0].changes, [{
+    key: "system.skills.arc.bonuses.check",
+    mode: 2,
+    value: "+@abilities.cha.mod",
+    priority: 20
+  }]);
+  assert.equal(magicEntry.effects[0].transfer, true);
+
+  const resilienceHp = resilienceEntry.effects.find((effect) => (
+    effect.changes.some((change) => change.key === "system.attributes.hp.bonuses.level")
+  ));
+  const resilienceAc = resilienceEntry.effects.find((effect) => (
+    effect.changes.some((change) => change.key === "system.attributes.ac.bonus")
+  ));
+  assert.ok(resilienceHp.changes.some((change) => (
+    change.key === "system.attributes.hp.bonuses.level"
+      && change.value === "+@classes.sorcerer-rework-v011.levels"
+  )));
+  assert.equal(resilienceHp.transfer, true);
+  assert.ok(resilienceAc.changes.some((change) => (
+    change.key === "system.attributes.ac.bonus"
+      && change.value === "3"
+  )));
+  assert.equal(resilienceAc.flags.dae.disableCondition, "@attributes.ac.armor > 10");
+
+  const wingActivity = Object.values(wingsEntry.system.activities)[0];
+  assert.equal(wingActivity.activation.type, "bonus");
+  assert.equal(wingActivity.target.affects.type, "self");
+  assert.equal(wingsEntry.effects[0].changes[0].key, "system.attributes.movement.fly");
+  assert.equal(wingsEntry.effects[0].changes[0].value, "@attributes.movement.walk");
+});
+
+test("sorcerer origin spell tables grant subclass spells by level", () => {
+  const sorcerer = normalizeClassCompendiumData(loadJson("data/sorcerer-rework-v011.json"));
+  const definitions = buildFeatureDefinitions(sorcerer);
+  const featureUuidById = makeUuidMap(definitions);
+  const spellUuidById = new Map([
+    ["burning-hands", "Compendium.dnd5e.spells.Item.burningHands"],
+    ["guiding-bolt", "Compendium.dnd5e.spells.Item.guidingBolt"],
+    ["flame-blade", "Compendium.dnd5e.spells.Item.flameBlade"],
+    ["mirror-image", "Compendium.dnd5e.spells.Item.mirrorImage"],
+    ["dissonant-whispers", "Compendium.dnd5e.spells.Item.dissonantWhispers"],
+    ["mind-sliver", "Compendium.dnd5e.spells.Item.mindSliver"],
+    ["arms-of-hadar", "Compendium.dnd5e.spells.Item.armsOfHadar"]
+  ]);
+  const draconic = sorcerer.subclasses.find((entry) => entry.name === "Наследие драконьей крови");
+  const aberrant = sorcerer.subclasses.find((entry) => entry.name === "Аберрантный разум");
+  const draconicAdvancement = buildSubclassAdvancements(draconic, {
+    featureUuidById,
+    classIdentifier: sorcerer.classData.identifier,
+    spellUuidById
+  });
+  const aberrantAdvancement = buildSubclassAdvancements(aberrant, {
+    featureUuidById,
+    classIdentifier: sorcerer.classData.identifier,
+    spellUuidById
+  });
+  const draconicLevelOne = draconicAdvancement.find((entry) => (
+    entry.type === "ItemGrant"
+      && entry.title === "Наследие драконьей крови: заклинания происхождения (1-й уровень)"
+  ));
+  const draconicLevelThree = draconicAdvancement.find((entry) => (
+    entry.type === "ItemGrant"
+      && entry.title === "Наследие драконьей крови: заклинания происхождения (3-й уровень)"
+  ));
+  const aberrantLevelOne = aberrantAdvancement.find((entry) => (
+    entry.type === "ItemGrant"
+      && entry.title === "Аберрантный разум: заклинания происхождения (1-й уровень)"
+  ));
+
+  assert.deepEqual(draconicLevelOne.configuration.items.map((entry) => entry.uuid), [
+    "Compendium.dnd5e.spells.Item.burningHands",
+    "Compendium.dnd5e.spells.Item.guidingBolt"
+  ]);
+  assert.deepEqual(draconicLevelThree.configuration.items.map((entry) => entry.uuid), [
+    "Compendium.dnd5e.spells.Item.flameBlade",
+    "Compendium.dnd5e.spells.Item.mirrorImage"
+  ]);
+  assert.deepEqual(aberrantLevelOne.configuration.items.map((entry) => entry.uuid), [
+    "Compendium.dnd5e.spells.Item.dissonantWhispers",
+    "Compendium.dnd5e.spells.Item.mindSliver",
+    "Compendium.dnd5e.spells.Item.armsOfHadar"
   ]);
 });
 

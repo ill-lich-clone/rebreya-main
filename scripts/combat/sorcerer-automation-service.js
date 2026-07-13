@@ -28,6 +28,7 @@ const FINAL_BYPASS_FLAG = "sorcererAutomationBypass";
 const REACTION_CHECK_COMPLETE_FLAG = "reactionCheckComplete";
 const METAMAGIC_SOURCE_TYPE = "sorcererMetamagic";
 const DRACONIC_ANCESTOR_SOURCE_TYPE = "sorcererDraconicAncestor";
+const DRACONIC_ELEMENTAL_AFFINITY_PART_ID = "rebreya-draconic-elemental-affinity";
 const MAX_EXTENDED_DURATION_SECONDS = 24 * 60 * 60;
 const SORCERER_CAST_DIALOG_WIDTH = 720;
 const EFFECT_MODE_ADD = globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
@@ -62,6 +63,16 @@ const METAMAGIC_UI_TEXT = Object.freeze({
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
+}
+
+function normalizeMatchText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\u0451/gu, "\u0435")
+    .replace(/['"\u2019\u2018\u02BC\u02B9\u2032\u201C\u201D\u00AB\u00BB]/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
 }
 
 function toInteger(value, fallback = 0) {
@@ -202,15 +213,17 @@ function metamagicMaxCost(option = {}, spellLevel = 1) {
 
 function metamagicCostForOption(option = {}, spellLevel = 1, requestedCost = undefined) {
   const mode = metamagicCostMode(option);
+  const discount = Math.max(0, toInteger(option.discount, 0));
+  const applyDiscount = (cost) => discount > 0 ? Math.max(1, cost - discount) : cost;
   if (mode === "spellLevel") {
-    return Math.max(1, toInteger(spellLevel, 1));
+    return applyDiscount(Math.max(1, toInteger(spellLevel, 1)));
   }
   if (mode === "variable") {
     const min = metamagicMinCost(option);
     const max = metamagicMaxCost(option, spellLevel);
-    return clampInteger(requestedCost ?? option.selectedCost ?? min, min, max);
+    return applyDiscount(clampInteger(requestedCost ?? option.selectedCost ?? min, min, max));
   }
-  return Math.max(0, toInteger(option.cost, 0));
+  return applyDiscount(Math.max(0, toInteger(option.cost, 0)));
 }
 
 function metamagicDescription(item) {
@@ -295,13 +308,15 @@ export function updateSorcererCastDialogControls(root) {
       ? Math.max(0, toInteger(input.dataset.minCost, input.dataset.cost ?? 0))
       : Math.max(1, toInteger(input.dataset.minCost, 1));
     const max = Math.max(min, toInteger(input.dataset.maxCost, input.dataset.cost ?? min));
+    const discount = Math.max(0, toInteger(input.dataset.discount, 0));
+    const applyDiscount = (cost) => discount > 0 ? Math.max(1, cost - discount) : cost;
     const slider = label?.querySelector?.("[data-metamagic-cost-slider]");
     const requestedCost = slider ? slider.value : input.dataset.cost;
     const currentCost = input.dataset.costMode === "spellLevel"
-      ? Math.max(1, selectedLevel)
+      ? applyDiscount(Math.max(1, selectedLevel))
       : input.dataset.costMode === "variable"
-        ? clampInteger(requestedCost, min, max)
-        : Math.max(0, toInteger(input.dataset.cost, 0));
+        ? applyDiscount(clampInteger(requestedCost, min, max))
+        : applyDiscount(Math.max(0, toInteger(input.dataset.cost, 0)));
     input.dataset.currentCost = String(currentCost);
     if (slider) {
       slider.value = String(currentCost);
@@ -735,6 +750,23 @@ function draconicAncestorDamageType(actor) {
   return normalizedDamageType(documentFlag(ancestor, MODULE_ID, "damageType"));
 }
 
+function actorHasFeatureNamed(actor, name) {
+  const normalized = normalizeMatchText(name);
+  return collectionValues(actor?.items).some((item) => (
+    normalizeMatchText(item?.name) === normalized
+      || normalizeMatchText(documentFlag(item, MODULE_ID, "featureId")) === normalized
+      || normalizeMatchText(item?.system?.identifier) === normalized
+  ));
+}
+
+function actorHasFeatureId(actor, featureId) {
+  const normalized = normalizeMatchText(featureId);
+  return collectionValues(actor?.items).some((item) => (
+    normalizeMatchText(documentFlag(item, MODULE_ID, "featureId")) === normalized
+      || normalizeMatchText(item?.system?.identifier) === normalized
+  ));
+}
+
 function temporaryMetamagicEffectData(activity, { name, kind, changes, specialDuration, meta = {} } = {}) {
   const item = activity?.item;
   const origin = cleanText(item?.uuid ?? activity?.uuid);
@@ -794,6 +826,21 @@ function draconicDragonWingEffectData(activity, spent) {
     }],
     specialDuration: ["turnEndSource", "combatEnd"],
     meta: { flySpeed, cost }
+  });
+}
+
+function manaStormEffectData(activity, spellLevel) {
+  const damage = Math.max(1, toInteger(spellLevel, 1));
+  return temporaryMetamagicEffectData(activity, {
+    name: "Мана-шторм",
+    kind: "advancedManaStorm",
+    changes: [],
+    specialDuration: ["combatEnd"],
+    meta: {
+      radius: 10,
+      damage,
+      damageType: "force"
+    }
   });
 }
 
@@ -863,31 +910,57 @@ function charismaModifier(actor) {
 }
 
 function metamagicOptions(actor) {
-  return collectionValues(actor?.items)
-    .filter((item) => cleanText(documentFlag(item, MODULE_ID, "sourceType")) === METAMAGIC_SOURCE_TYPE)
-    .map((item) => {
-      const cost = documentFlag(item, MODULE_ID, "cost");
-      const costMode = cleanText(documentFlag(item, MODULE_ID, "costMode")).toLowerCase();
-      const minCost = costMode === "variable" || cost === "spellLevel"
-        ? Math.max(1, toInteger(documentFlag(item, MODULE_ID, "minCost"), 1))
-        : Math.max(0, toInteger(documentFlag(item, MODULE_ID, "minCost") ?? cost, cost ?? 0));
-      const maxCost = cost === "spellLevel"
-        ? undefined
-        : Math.max(minCost, toInteger(documentFlag(item, MODULE_ID, "maxCost") ?? cost, cost ?? minCost));
+  const hasTranscendence = actorHasFeatureNamed(actor, "Трансцендентность")
+    || actorHasFeatureId(actor, "sorcerer-transcendence");
+  const byId = new Map();
+  for (const item of collectionValues(actor?.items)
+    .filter((entry) => cleanText(documentFlag(entry, MODULE_ID, "sourceType")) === METAMAGIC_SOURCE_TYPE)
+  ) {
+    const cost = documentFlag(item, MODULE_ID, "cost");
+    const costMode = cleanText(documentFlag(item, MODULE_ID, "costMode")).toLowerCase();
+    const minCost = costMode === "variable" || cost === "spellLevel"
+      ? Math.max(1, toInteger(documentFlag(item, MODULE_ID, "minCost"), 1))
+      : Math.max(0, toInteger(documentFlag(item, MODULE_ID, "minCost") ?? cost, cost ?? 0));
+    const maxCost = cost === "spellLevel"
+      ? undefined
+      : Math.max(minCost, toInteger(documentFlag(item, MODULE_ID, "maxCost") ?? cost, cost ?? minCost));
+    const id = cleanText(documentFlag(item, MODULE_ID, "metamagicId") ?? item?.system?.identifier);
+    if (!id) {
+      continue;
+    }
+
+    const existing = byId.get(id);
+    if (existing) {
+      existing.ownedCount += 1;
+      continue;
+    }
+
+    byId.set(id, {
+      id,
+      label: cleanText(item?.name, documentFlag(item, MODULE_ID, "metamagicId") ?? item?.system?.identifier),
+      detail: metamagicDescription(item),
+      cost,
+      costMode,
+      minCost,
+      maxCost,
+      automation: cleanText(documentFlag(item, MODULE_ID, "metamagicAutomation") ?? documentFlag(item, MODULE_ID, "automation")),
+      stacking: cleanText(documentFlag(item, MODULE_ID, "stacking"), "base").toLowerCase(),
+      item,
+      ownedCount: 1
+    });
+  }
+
+  return Array.from(byId.values()).map((option) => {
+    if (hasTranscendence && option.ownedCount > 1) {
       return {
-        id: cleanText(documentFlag(item, MODULE_ID, "metamagicId") ?? item?.system?.identifier),
-        label: cleanText(item?.name, documentFlag(item, MODULE_ID, "metamagicId") ?? item?.system?.identifier),
-        detail: metamagicDescription(item),
-        cost,
-        costMode,
-        minCost,
-        maxCost,
-        automation: cleanText(documentFlag(item, MODULE_ID, "metamagicAutomation") ?? documentFlag(item, MODULE_ID, "automation")),
-        stacking: cleanText(documentFlag(item, MODULE_ID, "stacking"), "base").toLowerCase(),
-        item
+        ...option,
+        discount: 1,
+        stacking: "additive",
+        transcendentDiscount: true
       };
-    })
-    .filter((option) => option.id);
+    }
+    return option;
+  });
 }
 
 function selectedTargetUuids(value) {
@@ -1270,7 +1343,7 @@ export class SorcererAutomationService {
       const variableCost = costMode === "variable"
         ? `<span class="rebreya-sorcerer-option__slider"><span>Стоимость</span><input type="range" name="metamagicCost.${escapeHtml(id)}" min="${minCost}" max="${maxCost}" value="${actualCost}" data-metamagic-cost-slider><output data-metamagic-cost-output>${actualCost}</output></span>`
         : "";
-      return `<label class="rebreya-sorcerer-option"><input type="checkbox" name="metamagic" value="${escapeHtml(id)}" data-cost="${actualCost}" data-cost-mode="${costMode}" data-min-cost="${minCost}" data-max-cost="${maxCost}" data-stacking="${safeStacking}"><span class="rebreya-sorcerer-option__body"><strong>${escapeHtml(text.name)}</strong><span class="rebreya-sorcerer-option__details">${escapeHtml(text.detail)}</span>${variableCost}</span><span class="rebreya-sorcerer-option__cost"><span data-metamagic-cost-label>${actualCost}</span> ед.</span><i class="fa-solid fa-lock rebreya-sorcerer-option__lock" aria-hidden="true"></i></label>`;
+      return `<label class="rebreya-sorcerer-option"><input type="checkbox" name="metamagic" value="${escapeHtml(id)}" data-cost="${actualCost}" data-cost-mode="${costMode}" data-min-cost="${minCost}" data-max-cost="${maxCost}" data-discount="${Math.max(0, toInteger(option.discount, 0))}" data-stacking="${safeStacking}"><span class="rebreya-sorcerer-option__body"><strong>${escapeHtml(text.name)}</strong><span class="rebreya-sorcerer-option__details">${escapeHtml(text.detail)}</span>${variableCost}</span><span class="rebreya-sorcerer-option__cost"><span data-metamagic-cost-label>${actualCost}</span> ед.</span><i class="fa-solid fa-lock rebreya-sorcerer-option__lock" aria-hidden="true"></i></label>`;
     }).join("");
     const selectedTargets = availableTargets({ selectedOnly: true });
     const targetOptions = selectedTargets.map(({ uuid, label }) => (
@@ -1517,10 +1590,47 @@ export class SorcererAutomationService {
     };
   }
 
+  #applyPassiveSorcererFeatureConfig(activity, plan, messageConfig = {}) {
+    const modifiers = {};
+    const actor = plan.actor;
+    if (actorHasFeatureNamed(actor, "Родство со стихией")) {
+      const damageType = draconicAncestorDamageType(actor);
+      const charismaBonus = toInteger(
+        actor?.system?.abilities?.cha?.mod ?? actor?.system?.abilities?.cha?.modifier,
+        0
+      );
+      const alreadyApplied = spellDamageParts(activity)
+        .some((part) => cleanText(part?._id ?? part?.id) === DRACONIC_ELEMENTAL_AFFINITY_PART_ID);
+      if (damageType && charismaBonus !== 0 && spellHasDamageType(activity, damageType) && !alreadyApplied) {
+        const formula = String(charismaBonus);
+        const part = appendSpellDamagePart(activity, metamagicDamagePart({
+          id: DRACONIC_ELEMENTAL_AFFINITY_PART_ID,
+          formula,
+          damageType
+        }));
+        modifiers.draconicElementalAffinity = {
+          formula,
+          damageType: damagePartType(part)
+        };
+        messageConfig.data ??= {};
+        messageConfig.data.flags ??= {};
+        messageConfig.data.flags[MODULE_ID] ??= {};
+        messageConfig.data.flags[MODULE_ID].damageBonus = {
+          source: "draconic-elemental-affinity",
+          formula,
+          damageType: damagePartType(part)
+        };
+      }
+    }
+
+    return { modifiers };
+  }
+
   #applyMetamagicConfig(activity, usageConfig, plan, messageConfig = {}) {
     const meta = plan.metamagic ?? {};
     const modifiers = {};
     const updates = {};
+    const actorUpdates = {};
     const actorEffects = [];
     let components = spellComponents(activity);
     for (const id of meta.ids) {
@@ -1616,6 +1726,20 @@ export class SorcererAutomationService {
           cost
         };
       }
+      else if (id === "advanced-mana-storm") {
+        const tempHp = Math.max(1, toInteger(plan.choice.spellLevel, 1));
+        const currentTempHp = Math.max(0, toInteger(plan.actor?.system?.attributes?.hp?.temp, 0));
+        if (tempHp > currentTempHp) {
+          actorUpdates["system.attributes.hp.temp"] = tempHp;
+        }
+        actorEffects.push(manaStormEffectData(activity, tempHp));
+        modifiers.manaStorm = {
+          tempHp,
+          radius: 10,
+          damage: tempHp,
+          damageType: "force"
+        };
+      }
       else if (id === "extended-spell") {
         const duration = spellDuration(activity);
         plan.duration ??= durationFromSeconds(durationSeconds(duration) * 2, duration.units);
@@ -1704,7 +1828,7 @@ export class SorcererAutomationService {
         used: false
       });
     }
-    return { components, modifiers, updates, actorEffects };
+    return { components, modifiers, updates, actorUpdates, actorEffects };
   }
 
   #applyCooldownCardConfig(messageConfig = {}, metadata = null) {
@@ -1990,6 +2114,44 @@ export class SorcererAutomationService {
     }
     await updateDocument(points, patch);
     return points;
+  }
+
+  async spendSorceryPoints(actor, amount = 0) {
+    const cost = Math.max(0, toInteger(amount, 0));
+    if (!cost) {
+      return true;
+    }
+
+    const points = await this.syncSorceryPoints(actor) ?? pointsFeature(actor);
+    if (!points) {
+      return false;
+    }
+
+    const uses = points.system?.uses ?? {};
+    const max = Math.max(0, toInteger(uses.max, scaleValue(actor, SORCERY_POINTS_SCALE_ID)));
+    const spent = Math.max(0, toInteger(uses.spent, 0));
+    if (max - spent < cost) {
+      return false;
+    }
+
+    await updateDocument(points, { "system.uses.spent": spent + cost });
+    return true;
+  }
+
+  async restoreSorceryPoints(actor, amount = 0) {
+    const refund = Math.max(0, toInteger(amount, 0));
+    if (!refund) {
+      return true;
+    }
+
+    const points = await this.syncSorceryPoints(actor) ?? pointsFeature(actor);
+    if (!points) {
+      return false;
+    }
+
+    const spent = Math.max(0, toInteger(points.system?.uses?.spent, 0));
+    await updateDocument(points, { "system.uses.spent": Math.max(0, spent - refund) });
+    return true;
   }
 
   async handleRestCompleted(actor, result = {}, config = {}) {
@@ -2513,12 +2675,15 @@ export class SorcererAutomationService {
       cooldownsChanged: false,
       highLevelCastsChanged: false,
       exhaustionChanged: false,
+      actorUpdatesChanged: false,
+      actorRollbackUpdates: {},
       metamagicEffects: [],
       rolledBack: false
     };
 
     this.#persistResolvedPlan(usageConfig, plan);
     const metamagicConfig = this.#applyMetamagicConfig(activity, usageConfig, plan, messageConfig);
+    const passiveConfig = this.#applyPassiveSorcererFeatureConfig(activity, plan, messageConfig);
     try {
       if (spendResource) {
         await updateDocument(points, { "system.uses.spent": spent + totalCost });
@@ -2537,6 +2702,13 @@ export class SorcererAutomationService {
       if (exhaustion) {
         await updateDocument(actor, { "system.attributes.exhaustion": state.exhaustion + exhaustion });
         state.exhaustionChanged = true;
+      }
+      if (Object.keys(metamagicConfig.actorUpdates ?? {}).length) {
+        for (const path of Object.keys(metamagicConfig.actorUpdates)) {
+          state.actorRollbackUpdates[path] = deepClone(getProperty(actor, path));
+        }
+        await updateDocument(actor, metamagicConfig.actorUpdates);
+        state.actorUpdatesChanged = true;
       }
       state.metamagicEffects = await createActorEffects(actor, metamagicConfig.actorEffects);
       if (metamagic.ids.includes("empowered-spell") && metamagic.rerollDamage) {
@@ -2569,7 +2741,8 @@ export class SorcererAutomationService {
         cooldownOverride: activeCooldown && override,
         exhaustion,
         highLevelOverride: highLevelRepeat && override,
-        ...metamagicConfig.modifiers
+        ...metamagicConfig.modifiers,
+        ...passiveConfig.modifiers
       }
     };
     if (plan.range) {
@@ -2688,6 +2861,9 @@ export class SorcererAutomationService {
     }
     if (state.exhaustionChanged) {
       updates.push(updateDocument(state.actor, { "system.attributes.exhaustion": state.exhaustion }));
+    }
+    if (state.actorUpdatesChanged) {
+      updates.push(updateDocument(state.actor, state.actorRollbackUpdates));
     }
     if (state.metamagicEffects?.length) {
       updates.push(deleteActorEffects(state.actor, state.metamagicEffects));
