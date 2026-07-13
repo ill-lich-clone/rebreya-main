@@ -48,27 +48,15 @@ test("module manifest loads a cache-busted entrypoint for the current version", 
   assert.doesNotMatch(entrypointSource, /(?:class\s+RebreyaMainModule|Hooks\.(?:once|on)\s*\()/u);
 });
 
-test("legacy module entrypoints forward cached Foundry sessions to the current live entrypoint", async () => {
+test("obsolete versioned module entrypoints are absent", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const scripts = await readdir(new URL("../scripts/", import.meta.url));
-  const legacyEntrypoints = scripts
-    .map((fileName) => ({
-      fileName,
-      version: fileName.match(/^main-(\d+\.\d+\.\d+)\.js$/u)?.[1] ?? "",
-    }))
-    .filter(({ version }) => version
-      && compareVersion(version, "1.4.67") >= 0
-      && compareVersion(version, manifest.version) < 0)
-    .sort((left, right) => compareVersion(left.version, right.version));
-  const expectedSource = `import "./main.js?v=${manifest.version}-npc-held-natural";\n`;
+  const versionedEntrypoints = scripts
+    .filter((fileName) => /^main-\d+\.\d+\.\d+\.js$/u.test(fileName))
+    .sort();
 
-  assert.ok(legacyEntrypoints.length > 0);
-  for (const { fileName } of legacyEntrypoints) {
-    const source = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
-
-    assert.equal(source, expectedSource, `${fileName} should delegate to current main.js`);
-  }
+  assert.deepEqual(versionedEntrypoints, [`main-${manifest.version}.js`]);
 });
 
 test("canonical module entrypoint owns the live composition root", async () => {
