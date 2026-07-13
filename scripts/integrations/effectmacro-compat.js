@@ -1,4 +1,6 @@
 import { MODULE_ID } from "../constants.js";
+import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
 const UPDATE_COMBAT_HOOK = "updateCombat";
 const PATCHED_MARKER = "__rebreyaEffectMacroCombatCompatPatched";
@@ -9,9 +11,16 @@ const ACTORLESS_TEST_USER_PERMISSION_PATTERN = /Cannot read properties of undefi
 
 let effectMacroCombatSocketHook = null;
 let effectMacroCombatSocketRegistered = false;
+const effectMacroCombatCoordinator = new WorldMutationCoordinator();
 
 function cleanString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function createRequestId() {
+  const randomPart = globalThis.crypto?.randomUUID?.()
+    ?? Math.random().toString(36).slice(2);
+  return `effectmacro-${Date.now()}-${randomPart}`;
 }
 
 function cloneSocketData(value) {
@@ -118,13 +127,21 @@ function requestGmEffectMacroCombatUpdate(args) {
 
   globalThis.game?.socket?.emit?.(SOCKET_CHANNEL, {
     type: SOCKET_EVENT_EFFECTMACRO_UPDATE_COMBAT,
+    requestId: createRequestId(),
     payload,
     senderId: cleanString(globalThis.game?.user?.id)
   });
 }
 
-async function handleEffectMacroCombatSocketMessage(message) {
-  if (message?.type !== SOCKET_EVENT_EFFECTMACRO_UPDATE_COMBAT || !globalThis.game?.user?.isGM) {
+async function handleEffectMacroCombatSocketMessage(message, transportSenderId) {
+  if (message?.type !== SOCKET_EVENT_EFFECTMACRO_UPDATE_COMBAT || !isActiveGmClient(globalThis.game)) {
+    return;
+  }
+
+  const requestId = cleanString(message.requestId);
+  const senderId = cleanString(message.senderId);
+  const authenticatedSenderId = cleanString(transportSenderId);
+  if (!requestId || !senderId || !authenticatedSenderId || authenticatedSenderId !== senderId) {
     return;
   }
 
@@ -134,10 +151,14 @@ async function handleEffectMacroCombatSocketMessage(message) {
   }
 
   try {
-    await effectMacroCombatSocketHook(
-      combat,
-      cloneSocketData(message.payload?.update),
-      cloneSocketData(message.payload?.options)
+    await effectMacroCombatCoordinator.runIdempotent(
+      `effectmacro-combat:${cleanString(combat.id ?? combat.uuid)}`,
+      `${senderId}\u0000${SOCKET_EVENT_EFFECTMACRO_UPDATE_COMBAT}\u0000${requestId}`,
+      () => effectMacroCombatSocketHook(
+        combat,
+        cloneSocketData(message.payload?.update),
+        cloneSocketData(message.payload?.options)
+      )
     );
   }
   catch (error) {
@@ -178,6 +199,10 @@ function handleEffectMacroActorlessError(error, args) {
 
 function createSafeEffectMacroCombatHook(originalHook) {
   const safeHook = function rebreyaEffectMacroUpdateCombatCompat(...args) {
+    if (globalThis.game?.user?.isGM === true && !isActiveGmClient(globalThis.game)) {
+      return undefined;
+    }
+
     try {
       const result = originalHook.call(this, ...args);
       if (result && typeof result.catch === "function") {
