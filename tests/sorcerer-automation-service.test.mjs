@@ -340,18 +340,34 @@ function makeFakeMetamagicLabel(input, slider = null) {
   return { label, costLabel, costOutput, slider };
 }
 
-function makeCastDialogRoot({ selectedLevel = 2, slotCost = 3, consume = true, metamagicInputs = [] } = {}) {
+function makeCastDialogRoot({
+  selectedLevel = 2,
+  slotCost = 3,
+  consume = true,
+  castingMode = "sorcery",
+  availablePoints = 20,
+  metamagicInputs = []
+} = {}) {
   const level = {
     value: String(selectedLevel),
     selectedOptions: [{ value: String(selectedLevel), dataset: { sorcererCost: String(slotCost), sorcererExhaustion: "false" } }]
   };
+  const mode = { value: castingMode };
   const consumeResource = { checked: consume };
   const total = { textContent: "" };
+  const castButton = { disabled: false };
+  const appWindow = {
+    style: {},
+    querySelector: (selector) => selector === '[data-action="cast"]' ? castButton : null
+  };
   const fields = [{ dataset: { metamagicFields: "careful-spell" }, hidden: false }];
   const container = {
+    dataset: { sorcererAvailablePoints: String(availablePoints) },
     matches: (selector) => selector === "[data-sorcerer-cast-dialog]",
+    closest: () => appWindow,
     querySelector(selector) {
       if (selector === "[name=spellLevel]") return level;
+      if (selector === "[name=castingMode]") return mode;
       if (selector === "[name=consumeResource]") return consumeResource;
       if (selector === "[data-sorcerer-total]") return total;
       if (selector === "[data-sorcerer-exhaustion-row]") return null;
@@ -363,7 +379,7 @@ function makeCastDialogRoot({ selectedLevel = 2, slotCost = 3, consume = true, m
       return [];
     }
   };
-  return { root: container, level, total, fields };
+  return { root: container, level, mode, total, castButton, appWindow, fields };
 }
 
 test("Sorcery Points synchronize to the level-three scale and recover on long rest", async () => {
@@ -1199,6 +1215,7 @@ test("virtual-slot prompt combines resource, metamagic, and live total controls 
       dialogs.push(config);
       const form = {
         elements: {
+          castingMode: { value: "normal" },
           spellLevel: {
             value: "1",
             selectedOptions: [{ dataset: { sorcererCost: "2" } }]
@@ -1222,9 +1239,10 @@ test("virtual-slot prompt combines resource, metamagic, and live total controls 
     const usageConfig = {};
     assert.equal(await service.applyDnd5ePreUseActivity(makeDnd5eActivityClone(makeSorcererSpell(actor)), usageConfig, {}, {}), true);
     assert.equal(dialogs.length, 1);
-    assert.match(dialogs[0].content, /Выберите уровень ячейки и её стоимость в единицах чародейства/u);
+    assert.match(dialogs[0].content, /Выберите способ каста, уровень и метамагию/u);
     assert.doesNotMatch(dialogs[0].content, /виртуальной ячейки/u);
     assert.match(dialogs[0].content, /name="consumeResource" checked/u);
+    assert.match(dialogs[0].content, /name="castingMode"/u);
     assert.match(dialogs[0].content, /Расходовать ресурс/u);
     assert.match(dialogs[0].content, /name="metamagic"/u);
     assert.match(dialogs[0].content, /data-stacking="base"/u);
@@ -1235,8 +1253,9 @@ test("virtual-slot prompt combines resource, metamagic, and live total controls 
     assert.equal(typeof dialogs[0].render, "function");
     assert.match(dialogs[0].content, /итого: <strong data-sorcerer-total>2<\/strong> единиц чародейства/u);
     assert.doesNotMatch(dialogs[0].content, /Игнорировать ограничение ценой истощения/u);
-    assert.equal(pointsItem(actor).system.uses.spent, 3);
-    assert.deepEqual(usageConfig.spellCast.payment, { resource: "sorcery-points", cost: 3 });
+    assert.equal(pointsItem(actor).system.uses.spent, 1);
+    assert.equal(usageConfig.spellCast.castingMode, "normal");
+    assert.deepEqual(usageConfig.spellCast.payment, { resource: "sorcery-points", cost: 1 });
     assert.deepEqual(usageConfig.spellCast.modifiers.subtle, true);
   }
   finally {
@@ -1280,6 +1299,38 @@ test("sorcerer cast dialog updater recalculates totals and locks incompatible op
   assert.equal(subtleLabel.label.classes.has("is-locked"), false);
   assert.equal(empowered.disabled, false);
   assert.equal(empoweredLabel.label.classes.has("is-locked"), false);
+});
+
+test("normal mode total contains metamagic cost but not virtual-slot cost", () => {
+  const subtle = {
+    checked: true,
+    disabled: false,
+    value: "subtle-spell",
+    dataset: { cost: "1", minCost: "1", maxCost: "1", costMode: "fixed", stacking: "base" }
+  };
+  makeFakeMetamagicLabel(subtle);
+  const { root, total, castButton } = makeCastDialogRoot({
+    castingMode: "normal",
+    slotCost: 5,
+    availablePoints: 1,
+    metamagicInputs: [subtle]
+  });
+
+  assert.equal(updateSorcererCastDialogControls(root), true);
+  assert.equal(total.textContent, "1");
+  assert.equal(castButton.disabled, false);
+});
+
+test("Sorcery Points mode disables confirmation when its live total exceeds the budget", () => {
+  const { root, total, castButton } = makeCastDialogRoot({
+    castingMode: "sorcery",
+    slotCost: 5,
+    availablePoints: 4
+  });
+
+  assert.equal(updateSorcererCastDialogControls(root), true);
+  assert.equal(total.textContent, "5");
+  assert.equal(castButton.disabled, true);
 });
 
 test("zero-cost metamagic contributes nothing to the live Sorcery Point total", () => {

@@ -292,10 +292,14 @@ export function updateSorcererCastDialogControls(root) {
     return false;
   }
 
-  fitSorcererCastDialogWindow(container);
   const level = container.querySelector("[name=spellLevel]");
   const option = selectedOptionForLevel(level);
   const selectedLevel = toInteger(option?.value ?? level?.value, 0);
+  const castingMode = cleanText(
+    container.querySelector("[name=castingMode]")?.value,
+    selectedLevel > 0 ? "sorcery" : "normal"
+  );
+  const usesSorcerySlot = castingMode === "sorcery" && selectedLevel > 0;
   const consume = container.querySelector("[name=consumeResource]");
   const spend = !consume || consume.checked !== false;
   const inputs = Array.from(container.querySelectorAll("input[name=metamagic]"));
@@ -347,7 +351,10 @@ export function updateSorcererCastDialogControls(root) {
 
   const exhaustionRow = container.querySelector("[data-sorcerer-exhaustion-row]");
   if (exhaustionRow) {
-    const show = option?.dataset?.sorcererExhaustion === "true" || level?.dataset?.sorcererExhaustion === "true";
+    const show = usesSorcerySlot && (
+      option?.dataset?.sorcererExhaustion === "true"
+      || level?.dataset?.sorcererExhaustion === "true"
+    );
     exhaustionRow.hidden = !show;
     if (!show) {
       const exhaustion = exhaustionRow.querySelector?.("input");
@@ -355,13 +362,22 @@ export function updateSorcererCastDialogControls(root) {
     }
   }
 
-  const slotCost = spend ? toInteger(option?.dataset?.sorcererCost ?? level?.dataset?.sorcererCost, 0) : 0;
+  const slotCost = spend && usesSorcerySlot
+    ? toInteger(option?.dataset?.sorcererCost ?? level?.dataset?.sorcererCost, 0)
+    : 0;
   const metamagicCost = spend
     ? inputs.filter((input) => input.checked).reduce((total, input) => total + toInteger(input.dataset.currentCost ?? input.dataset.cost, 0), 0)
     : 0;
   const total = container.querySelector("[data-sorcerer-total]");
+  const totalCost = slotCost + metamagicCost;
   if (total) {
-    total.textContent = String(slotCost + metamagicCost);
+    total.textContent = String(totalCost);
+  }
+  const availablePoints = Math.max(0, toInteger(container.dataset.sorcererAvailablePoints, 0));
+  const appWindow = container.closest?.(".application, .window-app");
+  const castButton = appWindow?.querySelector?.('[data-action="cast"]');
+  if (castButton) {
+    castButton.disabled = spend && totalCost > availablePoints;
   }
   return true;
 }
@@ -375,6 +391,7 @@ export function bindSorcererCastDialogControls(...candidates) {
     ? [root]
     : Array.from(root.querySelectorAll?.("[data-sorcerer-cast-dialog]") ?? []);
   for (const container of containers) {
+    fitSorcererCastDialogWindow(container);
     if (!container.dataset.sorcererControlsBound) {
       const refresh = () => updateSorcererCastDialogControls(container);
       container.addEventListener?.("change", refresh);
@@ -1360,6 +1377,15 @@ export class SorcererAutomationService {
         || (spellLevel >= 6 && highLevelCasts[String(spellLevel)] === true)
       ) ? "true" : "false"}"${spellLevel === baseLevel ? " selected" : ""}>${spellLevel} (${cost})</option>`
     )).join("");
+    const points = pointsFeature(actor);
+    const availablePoints = Math.max(
+      0,
+      toInteger(points?.system?.uses?.max, 0) - toInteger(points?.system?.uses?.spent, 0)
+    );
+    const canUseSorceryMode = baseLevel > 0 && choices.some(({ cost }) => cost <= availablePoints);
+    const modeControl = baseLevel > 0
+      ? `<label class="rebreya-sorcerer-field">Способ каста<select name="castingMode"><option value="sorcery"${canUseSorceryMode ? "" : " disabled"}>Единицы чародейства</option><option value="normal"${canUseSorceryMode ? "" : " selected"}>Обычный каст</option></select></label>`
+      : `<input type="hidden" name="castingMode" value="normal">`;
     const availableMetamagic = metamagicOptions(actor);
     const metamagicCheckboxes = availableMetamagic.map((option) => {
       const { id, stacking } = option;
@@ -1399,11 +1425,12 @@ export class SorcererAutomationService {
       ? `<section class="rebreya-sorcerer-metamagic"><h3>Метамагия</h3>${metamagicCheckboxes}<div class="rebreya-sorcerer-metamagic__fields"><label data-metamagic-fields="careful-spell" hidden>Аккуратное: существа, автоматически преуспевающие в спасброске<select name="carefulTargets" multiple>${targetOptions}</select></label><label data-metamagic-fields="heightened-spell" hidden>Непреодолимое: цель с помехой к первому спасброску<select name="heightenedTarget">${targetOptions}</select></label><div class="rebreya-sorcerer-field-hint" data-metamagic-fields="twinned-spell" hidden>Удвоенное: выберите две подходящие цели обычным инструментом выбора целей Foundry.</div><label data-metamagic-fields="empowered-spell" hidden>Усиленное: кубы для переброса<select name="damageDice" multiple>${dieOptions}</select></label></div></section>`
       : "";
     const initialChoice = choices.find(({ spellLevel }) => spellLevel === baseLevel) ?? choices[0];
+    const initialCost = canUseSorceryMode ? initialChoice?.cost ?? 0 : 0;
     const result = await DialogV2.wait({
       window: { title: "Единицы чародейства" },
       position: { width: SORCERER_CAST_DIALOG_WIDTH },
       render: (...args) => bindSorcererCastDialogControls(...args),
-      content: `<div class="rebreya-sorcerer-choice-row rebreya-sorcerer-cast-dialog" data-sorcerer-cast-dialog><div class="rebreya-sorcerer-dialog-copy">Выберите уровень ячейки и её стоимость в единицах чародейства.</div><label class="rebreya-sorcerer-field">Уровень ячейки<select name="spellLevel">${options}</select></label><div class="rebreya-sorcerer-toggle-row"><label class="rebreya-sorcerer-toggle"><input type="checkbox" name="consumeResource" checked><span>Расходовать ресурс</span></label>${exhaustionOverride}</div>${metamagicSection}<output class="rebreya-sorcerer-total">итого: <strong data-sorcerer-total>${initialChoice?.cost ?? 0}</strong> единиц чародейства</output></div>`,
+      content: `<div class="rebreya-sorcerer-choice-row rebreya-sorcerer-cast-dialog" data-sorcerer-cast-dialog data-sorcerer-available-points="${availablePoints}"><div class="rebreya-sorcerer-dialog-copy">Выберите способ каста, уровень и метамагию.</div>${modeControl}<label class="rebreya-sorcerer-field">Уровень ячейки<select name="spellLevel">${options}</select></label><div class="rebreya-sorcerer-toggle-row"><label class="rebreya-sorcerer-toggle"><input type="checkbox" name="consumeResource" checked><span>Расходовать ресурс</span></label>${exhaustionOverride}</div>${metamagicSection}<output class="rebreya-sorcerer-total">итого: <strong data-sorcerer-total>${initialCost}</strong> единиц чародейства</output></div>`,
       buttons: [{
         action: "cast",
         label: "Сотворить",
@@ -1415,6 +1442,7 @@ export class SorcererAutomationService {
           return {
             accepted: true,
             spellLevel: toInteger(button?.form?.elements?.spellLevel?.value, baseLevel),
+            castingMode: normalizeCastingMode(button?.form?.elements?.castingMode?.value, baseLevel),
             exhaustionOverride: button?.form?.elements?.exhaustionOverride?.checked === true,
             consumeResource: button?.form?.elements?.consumeResource?.checked !== false,
             metamagic: {
