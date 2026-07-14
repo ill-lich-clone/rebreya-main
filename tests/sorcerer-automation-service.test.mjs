@@ -1832,6 +1832,10 @@ test("RED: actor spell rows show active Sorcerer virtual-slot cooldowns", () => 
       this.attributes[name] = String(value);
     }
 
+    removeAttribute(name) {
+      delete this.attributes[name];
+    }
+
     querySelector(selector) {
       return this.selectors[selector] ?? null;
     }
@@ -1885,13 +1889,87 @@ test("RED: actor spell rows show active Sorcerer virtual-slot cooldowns", () => 
     assert.equal(service.bindActorSheetCooldownBadges(root, actor), true);
     assert.equal(row.classList.contains("has-rebreya-sorcerer-cooldown"), true);
     assert.equal(row.dataset.rebreyaSorcererCooldownRemaining, "2");
-    assert.equal(nameStack.children.length, 1);
-    assert.equal(nameStack.children[0].textContent, "Перезарядка: 2 раунда");
-    assert.equal(nameStack.children[0].attributes.title, "Виртуальная ячейка чародея перезаряжается: 2 раунда");
+    assert.equal(row.dataset.rebreyaSorcererCooldownLabel, "Перезарядка: 2 раунда");
+    assert.equal(row.dataset.rebreyaSorcererCooldownShort, "2р");
+    assert.equal(row.attributes["aria-label"], "Перезарядка: 2 раунда");
+    assert.equal(nameStack.children.length, 0);
   }
   finally {
     globalThis.HTMLElement = previousHTMLElement;
     globalThis.document = previousDocument;
+  }
+});
+
+test("RED: actor spell cooldown indicator ignores nested item rows for the same spell", () => {
+  const previousHTMLElement = globalThis.HTMLElement;
+
+  class FakeElement {
+    constructor({ dataset = {}, selectorAll = {} } = {}) {
+      this.dataset = dataset;
+      this.selectorAll = selectorAll;
+      this.children = [];
+      this.attributes = {};
+      this.classList = {
+        values: new Set(),
+        add: (...names) => names.forEach((name) => this.classList.values.add(name)),
+        remove: (...names) => names.forEach((name) => this.classList.values.delete(name)),
+        contains: (name) => this.classList.values.has(name)
+      };
+    }
+
+    append(...children) {
+      for (const child of children) {
+        child.parentElement = this;
+        this.children.push(child);
+      }
+    }
+
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    }
+
+    removeAttribute(name) {
+      delete this.attributes[name];
+    }
+
+    querySelectorAll(selector) {
+      return this.selectorAll[selector] ?? [];
+    }
+  }
+
+  globalThis.HTMLElement = FakeElement;
+
+  try {
+    const actor = levelActor(3, { includePoints: true });
+    actor.items.contents.push(makeItemFromData(actor, {
+      name: "Witch Bolt",
+      type: "spell",
+      system: { identifier: "witch-bolt", level: 1 }
+    }, "witch-bolt-item"));
+    actor.flags[MODULE_ID] = {
+      "sorcererAutomation.virtualSlotCooldowns": {
+        "witch-bolt:2": { remaining: 2 }
+      }
+    };
+
+    const row = new FakeElement({ dataset: { itemId: "witch-bolt-item" } });
+    const nestedRow = new FakeElement({ dataset: { itemId: "witch-bolt-item" } });
+    row.append(nestedRow);
+    const root = new FakeElement({
+      selectorAll: {
+        "[data-item-id]": [row, nestedRow]
+      }
+    });
+
+    const service = new SorcererAutomationService({});
+
+    assert.equal(service.bindActorSheetCooldownBadges(root, actor), true);
+    assert.equal(row.classList.contains("has-rebreya-sorcerer-cooldown"), true);
+    assert.equal(nestedRow.classList.contains("has-rebreya-sorcerer-cooldown"), false);
+    assert.equal(nestedRow.dataset.rebreyaSorcererCooldownRemaining, undefined);
+  }
+  finally {
+    globalThis.HTMLElement = previousHTMLElement;
   }
 });
 
@@ -2669,6 +2747,62 @@ test("RED: Draconic Dragon Spell forwards its selected damage dice into the dama
 
   assert.equal(service.applyDnd5ePreRollDamage(rollConfig), true);
   assert.equal(rollConfig.rolls.length, 1);
+});
+
+test("RED: Draconic Dragon Spell damage hook resolves the usage card from currentTarget", async () => {
+  const previousGame = globalThis.game;
+  const actor = metamagicActor();
+  addDraconicAncestor(actor, "Огонь");
+  addMetamagic(actor, "draconic-dragon-spell", 3, "base", {
+    costMode: "variable",
+    minCost: 1,
+    maxCost: 3,
+    metamagicAutomation: "draconic-dragon-spell"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const messageConfig = {};
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "base-fire", formula: "1d6", types: ["fire"] }] } }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: {
+      ids: ["draconic-dragon-spell"],
+      costs: { "draconic-dragon-spell": 2 }
+    }
+  }, {}, messageConfig), true);
+
+  const usageMessage = makeCooldownCardMessage({
+    id: "draconic-usage",
+    content: "",
+    flags: messageConfig.data?.flags
+  });
+  globalThis.game = {
+    ...previousGame,
+    messages: new Map([["draconic-usage", usageMessage]])
+  };
+
+  try {
+    const rollConfig = {
+      subject: activity,
+      event: {
+        currentTarget: {
+          closest: () => ({ dataset: { messageId: "draconic-usage" } })
+        }
+      },
+      rolls: []
+    };
+
+    assert.equal(service.applyDnd5ePreRollDamage(rollConfig), true);
+    assert.equal(rollConfig.rolls.length, 1);
+    assert.deepEqual(rollConfig.rolls[0].parts, ["2d6"]);
+    assert.deepEqual(rollConfig.rolls[0].options.types, ["fire"]);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
 });
 
 test("Draconic Ancestral Spell changes this cast's spell damage to the ancestor type", async () => {

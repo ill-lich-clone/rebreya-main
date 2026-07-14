@@ -4862,8 +4862,40 @@ function resolveClassFeatureIcon(featureOrName, iconLookup) {
   return DEFAULT_FEATURE_ICON;
 }
 
-function resolveSubclassIcon(subclassName, iconLookup) {
-  return resolveNamedIcon(subclassName, iconLookup, DEFAULT_SUBCLASS_ICON);
+const SUBCLASS_ICON_ALIASES_BY_CLASS = Object.freeze({
+  [normalizeMatchText("sorcerer-rework-v011")]: Object.freeze({
+    [normalizeMatchText("Наследие драконьей крови")]: ["Драконий предок"],
+    [normalizeMatchText("Дикая магия")]: ["Волна дикой магии"],
+    [normalizeMatchText("Божественная душа")]: ["Божественная магия"],
+    [normalizeMatchText("Теневая магия")]: ["Мрачная форма"],
+    [normalizeMatchText("Штормовое колдовство")]: ["Штормовое сердце", "Шёпот ветров"],
+    [normalizeMatchText("Аберрантный разум")]: ["Телепатическая речь"],
+    [normalizeMatchText("Заводная душа")]: ["Заводная магия"],
+    [normalizeMatchText("Лунное чародейство")]: ["Лунное воплощение"],
+    [normalizeMatchText("Дитя песков")]: ["Песчаный покров"]
+  }),
+  [normalizeMatchText("rogue-rework-v00")]: Object.freeze({
+    [normalizeMatchText("Вор")]: ["Мастер подготовки"],
+    [normalizeMatchText("Мистический ловкач")]: ["Мистическая подготовка"]
+  })
+});
+
+export function resolveSubclassIcon(subclassName, iconLookup, classIdentifier = "") {
+  const direct = resolveNamedIcon(subclassName, iconLookup);
+  if (direct) {
+    return direct;
+  }
+
+  const aliases = SUBCLASS_ICON_ALIASES_BY_CLASS[normalizeMatchText(classIdentifier)]
+    ?.[normalizeMatchText(subclassName)] ?? [];
+  for (const alias of aliases) {
+    const icon = resolveNamedIcon(alias, iconLookup);
+    if (icon) {
+      return icon;
+    }
+  }
+
+  return DEFAULT_SUBCLASS_ICON;
 }
 
 function resolveClassIcon(className, iconLookup) {
@@ -4978,7 +5010,7 @@ function createSubclassEntryData(entry, folderIdByPath, iconLookup = null) {
   return {
     name: entry.subclass.name,
     type: "subclass",
-    img: resolveSubclassIcon(entry.subclass.name, iconLookup),
+    img: resolveSubclassIcon(entry.subclass.name, iconLookup, entry.classIdentifier),
     folder: folderIdByPath.get(folderPath) ?? null,
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
@@ -5191,7 +5223,12 @@ async function syncSubclassesPack(normalizedDataList, context) {
   await syncManagedDocumentIcons(
     activePack,
     activeDocuments,
-    (document) => resolveSubclassIcon(document.name, context.iconLookup)
+    (document) => resolveSubclassIcon(
+      document.name,
+      context.iconLookup,
+      document.getFlag?.(MODULE_ID, "classIdentifier")
+        ?? foundry.utils.getProperty(document, `flags.${MODULE_ID}.classIdentifier`, "")
+    )
   );
 
   return activePack;

@@ -1099,10 +1099,21 @@ function spellCastCardFlag(message) {
 }
 
 function rollConfigMessageId(rollConfig = {}) {
+  const optionalText = (value) => cleanText(value) || undefined;
+  const messageIdFromElement = (element) => optionalText(element?.dataset?.messageId)
+    ?? optionalText(element?.closest?.("[data-message-id]")?.dataset?.messageId);
+  const event = rollConfig?.event ?? {};
+  const originatingMessage = rollConfig?.message?.getFlag?.("dnd5e", "originatingMessage")
+    ?? getProperty(rollConfig?.message, "flags.dnd5e.originatingMessage", undefined);
   return cleanText(
-    rollConfig?.event?.target?.closest?.("[data-message-id]")?.dataset?.messageId
+    messageIdFromElement(event.target)
+      ?? messageIdFromElement(event.currentTarget)
+      ?? messageIdFromElement(event.delegateTarget)
+      ?? messageIdFromElement(event.originalEvent?.target)
+      ?? messageIdFromElement(event.originalEvent?.currentTarget)
       ?? rollConfig?.message?.id
       ?? rollConfig?.message?._id
+      ?? originatingMessage
       ?? rollConfig?.messageId
       ?? rollConfig?.options?.messageId
       ?? rollConfig?.options?.originatingMessage
@@ -1385,20 +1396,26 @@ function activeCooldownsByIdentifier(actor) {
   return result;
 }
 
-function removeCooldownSheetBadges(row) {
+function resetCooldownSheetRow(row) {
   for (const badge of Array.from(row.querySelectorAll?.("[data-rebreya-sorcerer-cooldown-badge='true']") ?? [])) {
     badge.remove?.();
   }
   row.classList?.remove?.("has-rebreya-sorcerer-cooldown");
   delete row.dataset.rebreyaSorcererCooldownRemaining;
+  delete row.dataset.rebreyaSorcererCooldownLabel;
+  delete row.dataset.rebreyaSorcererCooldownShort;
+  row.removeAttribute?.("aria-label");
 }
 
-function cooldownBadgeTarget(row) {
-  return row.querySelector?.(".item-name .name-stacked")
-    ?? row.querySelector?.(".name.name-stacked")
-    ?? row.querySelector?.(".name-stacked")
-    ?? row.querySelector?.(".item-name")
-    ?? row;
+function hasAncestorItemRow(row, root) {
+  let candidate = row.parentElement;
+  while (candidate && candidate !== root) {
+    if (cleanText(candidate.dataset?.itemId)) {
+      return true;
+    }
+    candidate = candidate.parentElement;
+  }
+  return false;
 }
 
 export function bindSorcererVirtualSlotCooldownBadges(root, actor) {
@@ -1407,11 +1424,19 @@ export function bindSorcererVirtualSlotCooldownBadges(root, actor) {
   }
   const active = activeCooldownsByIdentifier(actor);
   let changed = false;
-  for (const row of Array.from(root.querySelectorAll?.("[data-item-id]") ?? [])) {
+  const rows = Array.from(root.querySelectorAll?.("[data-item-id]") ?? []);
+  for (const row of rows) {
+    if (row instanceof globalThis.HTMLElement) {
+      resetCooldownSheetRow(row);
+    }
+  }
+  for (const row of rows) {
     if (!(row instanceof globalThis.HTMLElement)) {
       continue;
     }
-    removeCooldownSheetBadges(row);
+    if (hasAncestorItemRow(row, root)) {
+      continue;
+    }
 
     const item = actorItemById(actor, row.dataset?.itemId);
     if (item?.type !== "spell") {
@@ -1424,21 +1449,12 @@ export function bindSorcererVirtualSlotCooldownBadges(root, actor) {
       continue;
     }
 
-    const badge = globalThis.document?.createElement?.("span");
-    if (!(badge instanceof globalThis.HTMLElement)) {
-      continue;
-    }
     const text = cooldownActiveText(cooldown.remaining);
-    badge.classList.add("rebreya-sorcerer-cooldown-badge");
-    badge.dataset.rebreyaSorcererCooldownBadge = "true";
-    badge.textContent = text;
-    badge.setAttribute("title", `Виртуальная ячейка чародея перезаряжается: ${cooldown.remaining} ${cooldownRoundLabel(cooldown.remaining)}`);
-    badge.setAttribute("aria-label", text);
-
-    const target = cooldownBadgeTarget(row);
-    target.append?.(badge);
     row.classList.add("has-rebreya-sorcerer-cooldown");
     row.dataset.rebreyaSorcererCooldownRemaining = String(cooldown.remaining);
+    row.dataset.rebreyaSorcererCooldownLabel = text;
+    row.dataset.rebreyaSorcererCooldownShort = `${cooldown.remaining}р`;
+    row.setAttribute?.("aria-label", text);
     changed = true;
   }
   return changed;

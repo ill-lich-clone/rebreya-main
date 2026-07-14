@@ -28,6 +28,7 @@ const {
   createFeatureEntryData,
   getManagedDocumentCreateOptions,
   createPackMetadata,
+  resolveSubclassIcon,
   createSubclassSystem,
   normalizeClassCompendiumData
 } = await import("../scripts/data/classes-compendium.js");
@@ -264,6 +265,67 @@ test("Sorcerer known-spell choice includes the Rebreya Counterspell UUID", () =>
     entry.type === "ItemChoice" && entry.title === "Известные заговоры"
   ));
   assert.equal(cantrips.configuration.choices["1"].replacement, false);
+});
+
+test("RED: subclass icons resolve from class-specific themed feature aliases", () => {
+  const iconLookup = new Map([
+    ["драконий предок", "modules/rebreya-main/templates/icons/Classes/Sorcerer/Драконий%20предок.webp"],
+    ["волна дикой магии", "modules/rebreya-main/templates/icons/Classes/Sorcerer/Волна%20дикой%20магии.webp"],
+    ["божественная магия", "modules/rebreya-main/templates/icons/Classes/Sorcerer/Божественная%20магия.webp"],
+    ["мрачная форма", "modules/rebreya-main/templates/icons/Classes/Sorcerer/Мрачная%20форма.webp"],
+    ["штормовое сердце", "modules/rebreya-main/templates/icons/Classes/Sorcerer/Штормовое%20сердце.webp"],
+    ["телепатическая речь", "modules/rebreya-main/templates/icons/Classes/Sorcerer/Телепатическая%20речь.webp"],
+    ["заводная магия", "modules/rebreya-main/templates/icons/Classes/Sorcerer/Заводная%20магия.webp"],
+    ["лунное воплощение", "modules/rebreya-main/templates/icons/Classes/Sorcerer/Лунное%20воплощение.webp"],
+    ["песчаный покров", "modules/rebreya-main/templates/icons/Classes/Sorcerer/Песчаный%20покров.webp"],
+    ["мастер подготовки", "modules/rebreya-main/templates/icons/Classes/Rogue/Мастер%20подготовки.webp"],
+    ["мистическая подготовка", "modules/rebreya-main/templates/icons/Classes/Rogue/Мистическая%20подготовка.webp"]
+  ]);
+
+  assert.equal(
+    resolveSubclassIcon("Наследие драконьей крови", iconLookup, "sorcerer-rework-v011"),
+    "modules/rebreya-main/templates/icons/Classes/Sorcerer/Драконий%20предок.webp"
+  );
+  assert.equal(
+    resolveSubclassIcon("Дикая магия", iconLookup, "sorcerer-rework-v011"),
+    "modules/rebreya-main/templates/icons/Classes/Sorcerer/Волна%20дикой%20магии.webp"
+  );
+  assert.equal(
+    resolveSubclassIcon("Божественная душа", iconLookup, "sorcerer-rework-v011"),
+    "modules/rebreya-main/templates/icons/Classes/Sorcerer/Божественная%20магия.webp"
+  );
+  assert.equal(
+    resolveSubclassIcon("Теневая магия", iconLookup, "sorcerer-rework-v011"),
+    "modules/rebreya-main/templates/icons/Classes/Sorcerer/Мрачная%20форма.webp"
+  );
+  assert.equal(
+    resolveSubclassIcon("Штормовое колдовство", iconLookup, "sorcerer-rework-v011"),
+    "modules/rebreya-main/templates/icons/Classes/Sorcerer/Штормовое%20сердце.webp"
+  );
+  assert.equal(
+    resolveSubclassIcon("Аберрантный разум", iconLookup, "sorcerer-rework-v011"),
+    "modules/rebreya-main/templates/icons/Classes/Sorcerer/Телепатическая%20речь.webp"
+  );
+  assert.equal(
+    resolveSubclassIcon("Заводная душа", iconLookup, "sorcerer-rework-v011"),
+    "modules/rebreya-main/templates/icons/Classes/Sorcerer/Заводная%20магия.webp"
+  );
+  assert.equal(
+    resolveSubclassIcon("Лунное чародейство", iconLookup, "sorcerer-rework-v011"),
+    "modules/rebreya-main/templates/icons/Classes/Sorcerer/Лунное%20воплощение.webp"
+  );
+  assert.equal(
+    resolveSubclassIcon("Дитя песков", iconLookup, "sorcerer-rework-v011"),
+    "modules/rebreya-main/templates/icons/Classes/Sorcerer/Песчаный%20покров.webp"
+  );
+  assert.equal(
+    resolveSubclassIcon("Вор", iconLookup, "rogue-rework-v00"),
+    "modules/rebreya-main/templates/icons/Classes/Rogue/Мастер%20подготовки.webp"
+  );
+  assert.equal(
+    resolveSubclassIcon("Мистический ловкач", iconLookup, "rogue-rework-v00"),
+    "modules/rebreya-main/templates/icons/Classes/Rogue/Мистическая%20подготовка.webp"
+  );
 });
 
 test("sorcerer packages expose both updated starting-equipment choices", () => {
