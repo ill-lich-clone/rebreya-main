@@ -828,6 +828,32 @@ test("registerDnd5eSheetExtensions adds right-click hand choices to equipped ite
   }
 });
 
+test("actor sheet render delegates Sorcerer virtual-slot cooldown badges", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?sorcerer-cooldown-badges=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "sorcerer", name: "Sorcerer" });
+    const root = new stubs.HTMLElement();
+    const calls = [];
+
+    registerDnd5eSheetExtensions({
+      sorcererAutomationService: {
+        bindActorSheetCooldownBadges(sheetRoot, sheetActor) {
+          calls.push({ sheetRoot, sheetActor });
+        }
+      }
+    });
+    stubs.hooks.get("renderCharacterActorSheet")({ actor }, root);
+
+    assert.equal(calls.length, 1);
+    assert.strictEqual(calls[0].sheetRoot, root);
+    assert.strictEqual(calls[0].sheetActor, actor);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("held item context menu opens above existing Foundry windows", async () => {
   const stubs = installSheetExtensionStubs();
   try {

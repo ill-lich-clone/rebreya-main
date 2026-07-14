@@ -6986,6 +6986,13 @@ export function registerDnd5eSheetExtensions(moduleApi) {
       return;
     }
 
+    try {
+      moduleApi?.sorcererAutomationService?.bindActorSheetCooldownBadges?.(root, actor);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to bind Sorcerer cooldown badges.`, error);
+    }
+
     if (actor.type === "character") {
       bindCharacterSheetBranding(root);
       bindHeroDollPanel(root, app, moduleApi);

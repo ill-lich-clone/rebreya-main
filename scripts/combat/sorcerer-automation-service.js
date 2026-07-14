@@ -716,6 +716,32 @@ function damagePartType(part = {}) {
   return normalizedDamageType(part?.types?.[0] ?? part?.[1] ?? part?.type ?? part?.damageType);
 }
 
+function damageBonusSource(bonus = {}) {
+  return cleanText(bonus.source ?? bonus.id ?? bonus.flavor);
+}
+
+function damageBonusFlavor(bonus = {}) {
+  const source = damageBonusSource(bonus);
+  if (source === "draconic-elemental-affinity") {
+    return "Родство со стихией";
+  }
+  if (source === "draconic-dragon-spell") {
+    return "Драконье заклятье";
+  }
+  return cleanText(bonus.flavor, "Драконье заклятье");
+}
+
+function damageRollConfigHasBonus(rollConfig = {}, bonus = {}) {
+  const source = damageBonusSource(bonus);
+  if (!source) {
+    return false;
+  }
+  return (rollConfig.rolls ?? []).some((roll) => (
+    cleanText(roll?.options?.rebreyaDamageBonusSource) === source
+      || cleanText(roll?.options?.[MODULE_ID]?.damageBonusSource) === source
+  ));
+}
+
 function firstSpellDamageType(activity) {
   return spellDamageParts(activity).map(damagePartType).find(Boolean) ?? "";
 }
@@ -1101,19 +1127,28 @@ function isCooldownCardForActor(metadata, actor, cooldownKey) {
     || (actorId && actorId === cleanText(metadata.actorId)));
 }
 
-function cooldownCardFooter(remaining) {
+function cooldownRoundLabel(remaining) {
   const rounds = Math.max(0, toInteger(remaining, 0));
   const lastTwoDigits = rounds % 100;
   const lastDigit = rounds % 10;
-  const roundLabel = lastTwoDigits >= 11 && lastTwoDigits <= 14
+  return lastTwoDigits >= 11 && lastTwoDigits <= 14
     ? "раундов"
     : lastDigit === 1
       ? "раунд"
       : lastDigit >= 2 && lastDigit <= 4
         ? "раунда"
         : "раундов";
+}
+
+function cooldownActiveText(remaining) {
+  const rounds = Math.max(0, toInteger(remaining, 0));
+  return `Перезарядка: ${rounds} ${cooldownRoundLabel(rounds)}`;
+}
+
+function cooldownCardFooter(remaining) {
+  const rounds = Math.max(0, toInteger(remaining, 0));
   const text = rounds > 0
-    ? `Перезарядка: ${rounds} ${roundLabel}`
+    ? cooldownActiveText(rounds)
     : "Перезарядка: готово";
   return `<li class="rebreya-sorcerer-cooldown" data-rebreya-sorcerer-cooldown="true">${text}</li>`;
 }
@@ -1286,11 +1321,127 @@ function cooldownKey(activity, virtualLevel) {
   return `${spellIdentifier(activity)}:${virtualLevel}`;
 }
 
+function splitCooldownKey(key) {
+  const value = cleanText(key);
+  const separator = value.lastIndexOf(":");
+  if (separator <= 0) {
+    return null;
+  }
+  const identifier = cleanText(value.slice(0, separator));
+  const level = toInteger(value.slice(separator + 1), 0);
+  return identifier ? { identifier, level } : null;
+}
+
 function actorFlag(actor, key, fallback = {}) {
   const value = typeof actor?.getFlag === "function"
     ? actor.getFlag(MODULE_ID, key)
     : getProperty(actor, `flags.${MODULE_ID}.${key}`, undefined);
   return value && typeof value === "object" ? deepClone(value) : fallback;
+}
+
+function actorItemById(actor, itemId) {
+  const id = cleanText(itemId);
+  if (!actor || !id) {
+    return null;
+  }
+  const direct = actor.items?.get?.(id);
+  if (direct) {
+    return direct;
+  }
+  return collectionValues(actor.items)
+    .find((item) => cleanText(item?.id ?? item?._id) === id) ?? null;
+}
+
+function spellItemIdentifiers(item) {
+  return new Set([
+    item?.system?.identifier,
+    item?.identifier,
+    item?.id,
+    item?._id,
+    item?.uuid
+  ].map((value) => cleanText(value)).filter(Boolean));
+}
+
+function activeCooldownsByIdentifier(actor) {
+  const result = new Map();
+  const cooldowns = actorFlag(actor, COOLDOWNS_FLAG);
+  for (const [key, record] of Object.entries(cooldowns)) {
+    const remaining = cooldownRemaining(record);
+    if (remaining <= 0) {
+      continue;
+    }
+    const parsed = splitCooldownKey(key);
+    if (!parsed) {
+      continue;
+    }
+    const previous = result.get(parsed.identifier);
+    if (!previous || remaining > previous.remaining) {
+      result.set(parsed.identifier, {
+        ...parsed,
+        remaining
+      });
+    }
+  }
+  return result;
+}
+
+function removeCooldownSheetBadges(row) {
+  for (const badge of Array.from(row.querySelectorAll?.("[data-rebreya-sorcerer-cooldown-badge='true']") ?? [])) {
+    badge.remove?.();
+  }
+  row.classList?.remove?.("has-rebreya-sorcerer-cooldown");
+  delete row.dataset.rebreyaSorcererCooldownRemaining;
+}
+
+function cooldownBadgeTarget(row) {
+  return row.querySelector?.(".item-name .name-stacked")
+    ?? row.querySelector?.(".name.name-stacked")
+    ?? row.querySelector?.(".name-stacked")
+    ?? row.querySelector?.(".item-name")
+    ?? row;
+}
+
+export function bindSorcererVirtualSlotCooldownBadges(root, actor) {
+  if (typeof globalThis.HTMLElement === "undefined" || !(root instanceof globalThis.HTMLElement)) {
+    return false;
+  }
+  const active = activeCooldownsByIdentifier(actor);
+  let changed = false;
+  for (const row of Array.from(root.querySelectorAll?.("[data-item-id]") ?? [])) {
+    if (!(row instanceof globalThis.HTMLElement)) {
+      continue;
+    }
+    removeCooldownSheetBadges(row);
+
+    const item = actorItemById(actor, row.dataset?.itemId);
+    if (item?.type !== "spell") {
+      continue;
+    }
+    const cooldown = Array.from(spellItemIdentifiers(item))
+      .map((identifier) => active.get(identifier))
+      .find(Boolean);
+    if (!cooldown) {
+      continue;
+    }
+
+    const badge = globalThis.document?.createElement?.("span");
+    if (!(badge instanceof globalThis.HTMLElement)) {
+      continue;
+    }
+    const text = cooldownActiveText(cooldown.remaining);
+    badge.classList.add("rebreya-sorcerer-cooldown-badge");
+    badge.dataset.rebreyaSorcererCooldownBadge = "true";
+    badge.textContent = text;
+    badge.setAttribute("title", `Виртуальная ячейка чародея перезаряжается: ${cooldown.remaining} ${cooldownRoundLabel(cooldown.remaining)}`);
+    badge.setAttribute("aria-label", text);
+
+    const target = cooldownBadgeTarget(row);
+    target.append?.(badge);
+    row.classList.add("has-rebreya-sorcerer-cooldown");
+    row.dataset.rebreyaSorcererCooldownRemaining = String(cooldown.remaining);
+    changed = true;
+  }
+  return changed;
 }
 
 async function setActorFlag(actor, key, value) {
@@ -1363,6 +1514,10 @@ export class SorcererAutomationService {
 
   bindSorcererCastDialogControls(...args) {
     return bindSorcererCastDialogControls(...args);
+  }
+
+  bindActorSheetCooldownBadges(root, actor) {
+    return bindSorcererVirtualSlotCooldownBadges(root, actor);
   }
 
   async #chooseVirtualSpellLevel({
@@ -2625,13 +2780,12 @@ export class SorcererAutomationService {
     if (!bonus?.formula) {
       return true;
     }
-    const activity = rollConfig?.subject ?? rollConfig?.activity ?? null;
-    const alreadyApplied = spellDamageParts(activity)
-      .some((part) => cleanText(part?._id ?? part?.id) === "rebreya-draconic-dragon-spell");
-    if (alreadyApplied) {
+    if (damageRollConfigHasBonus(rollConfig, bonus)) {
       return true;
     }
+    const activity = rollConfig?.subject ?? rollConfig?.activity ?? null;
     const damageType = normalizedDamageType(bonus.damageType);
+    const source = damageBonusSource(bonus);
     rollConfig.rolls ??= [];
     rollConfig.rolls.push({
       data: actorFrom(activity)?.getRollData?.() ?? {},
@@ -2639,7 +2793,11 @@ export class SorcererAutomationService {
       options: {
         type: damageType,
         types: damageType ? [damageType] : [],
-        flavor: "Драконье заклятье"
+        flavor: damageBonusFlavor(bonus),
+        rebreyaDamageBonusSource: source,
+        [MODULE_ID]: {
+          damageBonusSource: source
+        }
       }
     });
     return true;
