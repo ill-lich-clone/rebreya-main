@@ -349,17 +349,27 @@ export function updateSorcererCastDialogControls(root) {
     row.hidden = !ids.some((id) => checkedIds.includes(id));
   }
 
+  const requiresExhaustion = usesSorcerySlot && (
+    option?.dataset?.sorcererExhaustion === "true"
+    || level?.dataset?.sorcererExhaustion === "true"
+  );
   const exhaustionRow = container.querySelector("[data-sorcerer-exhaustion-row]");
+  let exhaustionOverride = false;
   if (exhaustionRow) {
-    const show = usesSorcerySlot && (
-      option?.dataset?.sorcererExhaustion === "true"
-      || level?.dataset?.sorcererExhaustion === "true"
-    );
-    exhaustionRow.hidden = !show;
-    if (!show) {
-      const exhaustion = exhaustionRow.querySelector?.("input");
+    const exhaustion = exhaustionRow.querySelector?.("input");
+    exhaustionRow.hidden = !requiresExhaustion;
+    if (!requiresExhaustion) {
       if (exhaustion) exhaustion.checked = false;
     }
+    exhaustionOverride = requiresExhaustion && exhaustion?.checked === true;
+  }
+  const cooldownBlocked = requiresExhaustion && !exhaustionOverride;
+  const blocked = container.querySelector("[data-sorcerer-blocked]");
+  if (blocked) {
+    blocked.hidden = !cooldownBlocked;
+    blocked.textContent = cooldownBlocked
+      ? "Лимит чародейского каста активен: выберите обычный каст или разрешите истощение."
+      : "";
   }
 
   const slotCost = spend && usesSorcerySlot
@@ -377,7 +387,7 @@ export function updateSorcererCastDialogControls(root) {
   const appWindow = container.closest?.(".application, .window-app");
   const castButton = appWindow?.querySelector?.('[data-action="cast"]');
   if (castButton) {
-    castButton.disabled = spend && totalCost > availablePoints;
+    castButton.disabled = (spend && totalCost > availablePoints) || cooldownBlocked;
   }
   return true;
 }
@@ -1092,8 +1102,18 @@ function isCooldownCardForActor(metadata, actor, cooldownKey) {
 }
 
 function cooldownCardFooter(remaining) {
-  const text = Math.max(0, toInteger(remaining, 0)) > 0
-    ? `Перезарядка: ${Math.max(0, toInteger(remaining, 0))} раундов`
+  const rounds = Math.max(0, toInteger(remaining, 0));
+  const lastTwoDigits = rounds % 100;
+  const lastDigit = rounds % 10;
+  const roundLabel = lastTwoDigits >= 11 && lastTwoDigits <= 14
+    ? "раундов"
+    : lastDigit === 1
+      ? "раунд"
+      : lastDigit >= 2 && lastDigit <= 4
+        ? "раунда"
+        : "раундов";
+  const text = rounds > 0
+    ? `Перезарядка: ${rounds} ${roundLabel}`
     : "Перезарядка: готово";
   return `<li class="rebreya-sorcerer-cooldown" data-rebreya-sorcerer-cooldown="true">${text}</li>`;
 }
@@ -1430,7 +1450,7 @@ export class SorcererAutomationService {
       window: { title: "Единицы чародейства" },
       position: { width: SORCERER_CAST_DIALOG_WIDTH },
       render: (...args) => bindSorcererCastDialogControls(...args),
-      content: `<div class="rebreya-sorcerer-choice-row rebreya-sorcerer-cast-dialog" data-sorcerer-cast-dialog data-sorcerer-available-points="${availablePoints}"><div class="rebreya-sorcerer-dialog-copy">Выберите способ каста, уровень и метамагию.</div>${modeControl}<label class="rebreya-sorcerer-field">Уровень ячейки<select name="spellLevel">${options}</select></label><div class="rebreya-sorcerer-toggle-row"><label class="rebreya-sorcerer-toggle"><input type="checkbox" name="consumeResource" checked><span>Расходовать ресурс</span></label>${exhaustionOverride}</div>${metamagicSection}<output class="rebreya-sorcerer-total">итого: <strong data-sorcerer-total>${initialCost}</strong> единиц чародейства</output></div>`,
+      content: `<div class="rebreya-sorcerer-choice-row rebreya-sorcerer-cast-dialog" data-sorcerer-cast-dialog data-sorcerer-available-points="${availablePoints}"><div class="rebreya-sorcerer-dialog-copy">Выберите способ каста, уровень и метамагию.</div>${modeControl}<label class="rebreya-sorcerer-field">Уровень ячейки<select name="spellLevel">${options}</select></label><div class="rebreya-sorcerer-toggle-row"><label class="rebreya-sorcerer-toggle"><input type="checkbox" name="consumeResource" checked><span>Расходовать ресурс</span></label>${exhaustionOverride}</div><output class="rebreya-sorcerer-blocked" data-sorcerer-blocked role="status" hidden></output>${metamagicSection}<output class="rebreya-sorcerer-total">итого: <strong data-sorcerer-total>${initialCost}</strong> единиц чародейства</output></div>`,
       buttons: [{
         action: "cast",
         label: "Сотворить",
@@ -2904,7 +2924,12 @@ export class SorcererAutomationService {
         return;
       }
       await this.#withActorPaymentLock(actorFrom(activity), async () => {
-        const payment = await this.#applyVirtualSlotPaymentLocked(activity, usageConfig, dialogConfig);
+        const payment = await this.#applyVirtualSlotPaymentLocked(
+          activity,
+          usageConfig,
+          dialogConfig,
+          messageConfig
+        );
         if (!payment) {
           return;
         }

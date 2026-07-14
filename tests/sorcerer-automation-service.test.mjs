@@ -346,14 +346,25 @@ function makeCastDialogRoot({
   consume = true,
   castingMode = "sorcery",
   availablePoints = 20,
+  requiresExhaustion = false,
+  exhaustionOverride = false,
   metamagicInputs = []
 } = {}) {
   const level = {
     value: String(selectedLevel),
-    selectedOptions: [{ value: String(selectedLevel), dataset: { sorcererCost: String(slotCost), sorcererExhaustion: "false" } }]
+    selectedOptions: [{ value: String(selectedLevel), dataset: {
+      sorcererCost: String(slotCost),
+      sorcererExhaustion: String(requiresExhaustion)
+    } }]
   };
   const mode = { value: castingMode };
   const consumeResource = { checked: consume };
+  const exhaustionInput = { checked: exhaustionOverride };
+  const exhaustionRow = {
+    hidden: false,
+    querySelector: (selector) => selector === "input" ? exhaustionInput : null
+  };
+  const blocked = { hidden: true, textContent: "" };
   const total = { textContent: "" };
   const castButton = { disabled: false };
   const appWindow = {
@@ -370,7 +381,8 @@ function makeCastDialogRoot({
       if (selector === "[name=castingMode]") return mode;
       if (selector === "[name=consumeResource]") return consumeResource;
       if (selector === "[data-sorcerer-total]") return total;
-      if (selector === "[data-sorcerer-exhaustion-row]") return null;
+      if (selector === "[data-sorcerer-exhaustion-row]") return exhaustionRow;
+      if (selector === "[data-sorcerer-blocked]") return blocked;
       return null;
     },
     querySelectorAll(selector) {
@@ -379,7 +391,18 @@ function makeCastDialogRoot({
       return [];
     }
   };
-  return { root: container, level, mode, total, castButton, appWindow, fields };
+  return {
+    root: container,
+    level,
+    mode,
+    total,
+    castButton,
+    appWindow,
+    fields,
+    exhaustionInput,
+    exhaustionRow,
+    blocked
+  };
 }
 
 test("Sorcery Points synchronize to the level-three scale and recover on long rest", async () => {
@@ -1039,6 +1062,47 @@ test("a deferred virtual cast locks the resumed dialog and virtual-cast usage co
   assert.equal(actor.system.spells.spell3.value, 1);
 });
 
+test("a deferred virtual cast forwards cooldown metadata to the final usage message", async () => {
+  const actor = levelActor(5, { includePoints: true });
+  const service = new SorcererAutomationService({
+    chooseVirtualSpellLevel: async () => ({
+      accepted: true,
+      spellLevel: 3,
+      castingMode: "sorcery"
+    })
+  });
+  await service.syncSorceryPoints(actor);
+  const activity = makeSorcererSpell(actor, { id: "fireball", baseLevel: 3 });
+  const resumedUses = [];
+  activity.use = async (...args) => {
+    resumedUses.push(args);
+    return { updates: [] };
+  };
+
+  assert.equal(service.deferDnd5ePreUseActivity(activity, {}, {}, {}), false);
+  await waitForDeferredActivityUse();
+
+  const [preflightUsageConfig, preflightDialogConfig, preflightMessageConfig] = resumedUses[0];
+  assert.equal(service.finalizeDnd5ePreUseActivity(
+    activity,
+    completeReactionCheck(preflightUsageConfig),
+    preflightDialogConfig,
+    preflightMessageConfig
+  ), false);
+  await waitForDeferredActivityUse();
+
+  const finalMessageConfig = resumedUses[1][2];
+  assert.deepEqual(
+    finalMessageConfig.data?.flags?.[MODULE_ID]?.["sorcererAutomation.virtualSlotCooldown"],
+    {
+      actorUuid: actor.uuid,
+      actorId: actor.id,
+      cooldownKey: "fireball:3",
+      remaining: 3
+    }
+  );
+});
+
 test("a deferred virtual cast cannot open an editable dialog that overwrites its selected slot", async () => {
   const actor = levelActor(5, { includePoints: true });
   actor.system.spells = {
@@ -1331,6 +1395,29 @@ test("Sorcery Points mode disables confirmation when its live total exceeds the 
   assert.equal(updateSorcererCastDialogControls(root), true);
   assert.equal(total.textContent, "5");
   assert.equal(castButton.disabled, true);
+});
+
+test("an active cooldown explains how to cast instead of silently accepting an invalid Sorcery cast", () => {
+  const { root, mode, castButton, exhaustionInput, blocked } = makeCastDialogRoot({
+    castingMode: "sorcery",
+    requiresExhaustion: true
+  });
+
+  assert.equal(updateSorcererCastDialogControls(root), true);
+  assert.equal(castButton.disabled, true);
+  assert.equal(blocked.hidden, false);
+  assert.match(blocked.textContent, /обычный каст|истощени/iu);
+
+  exhaustionInput.checked = true;
+  assert.equal(updateSorcererCastDialogControls(root), true);
+  assert.equal(castButton.disabled, false);
+  assert.equal(blocked.hidden, true);
+
+  exhaustionInput.checked = false;
+  mode.value = "normal";
+  assert.equal(updateSorcererCastDialogControls(root), true);
+  assert.equal(castButton.disabled, false);
+  assert.equal(blocked.hidden, true);
 });
 
 test("zero-cost metamagic contributes nothing to the live Sorcery Point total", () => {
@@ -1669,14 +1756,17 @@ test("RED: a cooldown card stores stable metadata and keeps exactly one footer b
       cooldownKey: "fireball:3",
       remaining: 3
     });
-    assert.match(message.content, /Перезарядка: 3 раундов/u);
+    assert.match(message.content, /Перезарядка: 3 раунда/u);
     assert.equal((message.content.match(/data-rebreya-sorcerer-cooldown/gu) ?? []).length, 1);
 
     await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
-    assert.match(message.content, /Перезарядка: 2 раундов/u);
+    assert.match(message.content, /Перезарядка: 2 раунда/u);
     assert.equal((message.content.match(/data-rebreya-sorcerer-cooldown/gu) ?? []).length, 1);
 
     await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
+    assert.match(message.content, /Перезарядка: 1 раунд/u);
+    assert.equal((message.content.match(/data-rebreya-sorcerer-cooldown/gu) ?? []).length, 1);
+
     await service.handleCombatTurnChange({ combatant: { actor } }, { turn: 0 });
     assert.match(message.content, /Перезарядка: готово/u);
     assert.equal((message.content.match(/data-rebreya-sorcerer-cooldown/gu) ?? []).length, 1);

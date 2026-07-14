@@ -38,7 +38,7 @@ test("module manifest loads a cache-busted entrypoint for the current version", 
   const entrypointSource = await readFile(new URL(expectedEntrypoint, manifestUrl), "utf8");
   const expectedSource = [
     "// @rebreya-role active-version-forwarder",
-    'import "./main.js?v=1.4.93-npc-held-natural";',
+    'import "./main.js?v=1.4.93-sorcerer-cooldown-card";',
     ""
   ].join("\n");
 
@@ -189,7 +189,7 @@ test("combat automation imports use the current cache busts", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`sorcerer-automation-service\\.js\\?v=${escapedVersion}-sorcerer-cast-dialog`, "u"),
+    new RegExp(`sorcerer-automation-service\\.js\\?v=${escapedVersion}-sorcerer-cooldown-card`, "u"),
   );
   assert.match(
     statusServiceSource,

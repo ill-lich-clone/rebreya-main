@@ -69,7 +69,7 @@ import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.93-environment-stable-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.93-mechanus-d20-advantage-mode";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.93";
-import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.93-sorcerer-cast-dialog";
+import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.93-sorcerer-cooldown-card";
 import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
