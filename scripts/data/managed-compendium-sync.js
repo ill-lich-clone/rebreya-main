@@ -14,6 +14,18 @@ function documentId(document) {
   return cleanId(document?.id ?? document?._id);
 }
 
+function prepareDocumentUpdateData(document, data) {
+  if (!data || typeof data !== "object") return data;
+  const currentType = cleanId(document?.type);
+  const nextType = cleanId(data.type);
+  if (!currentType || !nextType || currentType === nextType) return data;
+  if (!Object.hasOwn(data, "system")) return data;
+
+  const update = { ...data, "==system": data.system };
+  delete update.system;
+  return update;
+}
+
 export async function syncManagedDocuments({
   pack,
   entries = [],
@@ -109,7 +121,8 @@ export async function syncManagedDocuments({
     if (typeof document?.update !== "function") {
       throw new TypeError(`Managed compendium document ${documentId(document)} cannot be updated`);
     }
-    await document.update(await updateData(document, entry));
+    const data = await updateData(document, entry);
+    await document.update(prepareDocumentUpdateData(document, data));
   }
 
   const obsoleteIds = obsolete.map(documentId).filter(Boolean);

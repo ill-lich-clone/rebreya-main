@@ -91,6 +91,46 @@ test("managed compendium sync creates, updates, then deletes in dependency-safe 
   assert.deepEqual(result, { unchanged: 0, created: 1, updated: 1, deleted: 1 });
 });
 
+test("managed compendium sync force-replaces system when updating a document type", async () => {
+  const operations = [];
+  const document = {
+    id: "legacy-magic-item",
+    sourceId: "magic-item",
+    signature: "v1",
+    managed: true,
+    type: "equipment",
+    async update(patch) {
+      if (patch.type !== this.type && Object.hasOwn(patch, "system")) {
+        throw new Error("The type of a Document can be changed only if the system field is force-replaced");
+      }
+      operations.push(["update", patch]);
+      return this;
+    }
+  };
+  const fixture = createFixture([]);
+
+  const result = await syncManagedDocuments({
+    ...options(fixture, [
+      { sourceId: "magic-item", signature: "v2" }
+    ], [document]),
+    updateData: (_document, entry) => ({
+      type: "weapon",
+      system: { type: { value: "martialM", baseItem: "longsword" } },
+      signature: entry.signature
+    })
+  });
+
+  assert.deepEqual(operations, [[
+    "update",
+    {
+      type: "weapon",
+      "==system": { type: { value: "martialM", baseItem: "longsword" } },
+      signature: "v2"
+    }
+  ]]);
+  assert.deepEqual(result, { unchanged: 0, created: 0, updated: 1, deleted: 0 });
+});
+
 test("managed compendium sync prefers the stable document id and removes only legacy duplicates", async () => {
   const documents = [
     { id: "legacy-random-id", sourceId: "feature", signature: "v2", managed: true },
