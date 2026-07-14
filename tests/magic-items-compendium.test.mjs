@@ -63,6 +63,29 @@ test("magic item compendium uses fixed costText as native price and keeps estima
   assert.match(created.system.description.value, /Оценка:<\/strong>\s*60000 зм/iu);
 });
 
+test("magic item compendium keeps named weapon subtypes aligned with their source text", () => {
+  const sourceItems = new Map(MAGIC_ITEMS.map((item) => [item.name, item]));
+  const normalizedItems = magicItemsCompendium.normalizeMagicItems([
+    sourceItems.get("\u0412\u043e\u043b\u043d\u0430"),
+    sourceItems.get("\u0426\u0435\u043f \u0422\u0438\u0430\u043c\u0430\u0442"),
+  ]);
+  const byName = new Map(normalizedItems.map((item) => [item.name, item]));
+
+  const wave = byName.get("\u0412\u043e\u043b\u043d\u0430");
+  assert.equal(wave.itemSubtype, "\u0422\u0440\u0435\u0437\u0443\u0431\u0435\u0446");
+  const waveData = magicItemsCompendium.createMagicItemData(wave, new Map());
+  assert.equal(waveData.type, "weapon");
+  assert.equal(waveData.system.type.value, "martialM");
+  assert.equal(waveData.system.type.baseItem, "trident");
+
+  const tiamatFlail = byName.get("\u0426\u0435\u043f \u0422\u0438\u0430\u043c\u0430\u0442");
+  assert.equal(tiamatFlail.itemSubtype, "\u0426\u0435\u043f");
+  const tiamatFlailData = magicItemsCompendium.createMagicItemData(tiamatFlail, new Map());
+  assert.equal(tiamatFlailData.type, "weapon");
+  assert.equal(tiamatFlailData.system.type.value, "martialM");
+  assert.equal(tiamatFlailData.system.type.baseItem, "flail");
+});
+
 test("magic item compendium shows the item kind without the legacy magic type row", () => {
   const [normalizedItem] = magicItemsCompendium.normalizeMagicItems([
     makeMagicItem({

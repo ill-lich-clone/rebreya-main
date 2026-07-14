@@ -66,6 +66,7 @@ const {
   parseMagicShieldBonus,
   parseMagicWeaponBonus,
   promptMagicWeaponTemplate,
+  registerMagicWeaponTemplateHook,
 } = await import("../scripts/integrations/magic-weapon-template.js");
 
 function makeLongsword() {
@@ -358,6 +359,18 @@ test("parseMagicWeaponBonus matches only generic +1/+2/+3 weapon templates", () 
   assert.equal(parseMagicWeaponBonus({ name: "Weapon +2" }), 2);
   assert.equal(parseMagicWeaponBonus({ name: "Длинный меч +2" }), null);
   assert.equal(parseMagicWeaponBonus({ name: "Оружие +4" }), null);
+});
+
+test("registerMagicWeaponTemplateHook createItem callback does not call the promise chain", () => {
+  const callbacks = new Map();
+  const Hooks = {
+    on(name, callback) {
+      callbacks.set(name, callback);
+    },
+  };
+
+  assert.equal(registerMagicWeaponTemplateHook({ getModel: async () => ({ gear: [] }) }, { Hooks }), true);
+  assert.doesNotThrow(() => callbacks.get("createItem")?.(new FakeItem({ actorType: "npc" }), {}, "player-1"));
 });
 
 test("parseMagicWeaponBonus can resolve generic magic weapons from Rebreya flags", () => {

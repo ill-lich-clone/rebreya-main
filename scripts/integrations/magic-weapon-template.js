@@ -1423,14 +1423,11 @@ export function registerMagicWeaponTemplateHook(moduleApi, { Hooks = globalThis.
   magicWeaponTemplateHookRegistered = true;
   Hooks.on("createItem", (item, options, userId) => {
     (async () => {
-      const handledWeapon = await handleCreatedMagicWeaponItem(item, options, userId, moduleApi);
-      if (handledWeapon) {
+      if (await handleCreatedMagicWeaponItem(item, options, userId, moduleApi)) {
         return true;
       }
 
-      return handleCreatedMagicArmorItem(item, options, userId, moduleApi);
-    })().then((handledArmor) => {
-      if (handledArmor) {
+      if (await handleCreatedMagicArmorItem(item, options, userId, moduleApi)) {
         return true;
       }
 
