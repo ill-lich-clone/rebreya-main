@@ -312,6 +312,20 @@ test("Rebreya material and goods stack markers are excluded while functional loo
   }), true);
 });
 
+test("actual party supply flags never initialize durability", () => {
+  for (const flags of [
+    { managedPartySupply: true, resourceKey: "food" },
+    { sourceType: "supply", resourceKey: "water" },
+    { resourceKey: "food" }
+  ]) {
+    assert.equal(isDurabilityEligible({
+      type: "loot",
+      system: { properties: [], rarity: "" },
+      flags: { "rebreya-main": flags }
+    }), false);
+  }
+});
+
 test("dnd5e magical properties and rarity always exclude durability", () => {
   const magicalItems = [
     { type: "weapon", system: { properties: new Set(["mgc"]), rarity: "" } },

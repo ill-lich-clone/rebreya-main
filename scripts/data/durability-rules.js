@@ -1,6 +1,6 @@
 const MODULE_ID = "rebreya-main";
 const DURABLE_ITEM_TYPES = new Set(["weapon", "equipment", "tool", "container", "consumable", "loot"]);
-const NON_DURABLE_STACK_SOURCE_TYPES = new Set(["material", "good", "resource"]);
+const NON_DURABLE_STACK_SOURCE_TYPES = new Set(["material", "good", "resource", "supply"]);
 const MAGIC_PROPERTY_KEYS = new Set([
   "mgc",
   "magic",
@@ -235,6 +235,8 @@ function hasMagicMarker(itemData) {
 function isNonDurableStack(flags) {
   return Boolean(flags.materialId)
     || Boolean(flags.linkedGoodId)
+    || flags.managedPartySupply === true
+    || Boolean(flags.resourceKey)
     || NON_DURABLE_STACK_SOURCE_TYPES.has(normalizeToken(flags.sourceType));
 }
 
