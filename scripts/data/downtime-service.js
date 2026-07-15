@@ -3,14 +3,25 @@ import {
   cloneFoundryValue as clone,
   collectionValues as collectionContents
 } from "../shared/foundry-values.js";
+import {
+  allocateRequestSlots,
+  buildGrantSlots,
+  nearestMonday,
+  releaseFutureRequestSlots,
+  summarizeScheduleByDate
+} from "./downtime-scheduler.js";
 
 const OPEN_RESERVED_STATUSES = new Set(["pending", "approved"]);
-const RELEASED_STATUSES = new Set(["rejected", "returned"]);
-const REQUEST_STATUSES = new Set(["pending", "approved", "returned", "rejected", "completed"]);
+const RELEASED_STATUSES = new Set(["rejected", "returned", "cancelled"]);
+const REQUEST_STATUSES = new Set(["pending", "approved", "returned", "rejected", "cancelled", "completed"]);
 const MAX_TARGET_CHOICES = 5;
 const DOWNTIME_TEMPLATE_FLAG = "downtime";
 const DOWNTIME_COMPENDIUM_PACK_ID = `world.${DOWNTIME_COMPENDIUM_NAME}`;
 const ROLLABLE_DOWNTIME_ACTION_TYPES = new Set(["check", "choice"]);
+const WORKDAYS_PER_WEEK = 5;
+const DOWNTIME_STATE_VERSION = 2;
+const DOWNTIME_V2_MIGRATION_ID = "downtime-v1-to-v2";
+const DOWNTIME_V2_ENVELOPE_ID = "downtime-state-v2-envelope";
 
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -214,19 +225,31 @@ function resolveFormulaRollFormula(action = {}, selection = {}, selectedActionsB
 
 function buildDefaultBalance() {
   return {
-    availableWeeks: 0,
-    reservedWeeks: 0,
-    spentWeeks: 0,
-    totalGrantedWeeks: 0
+    availableWorkdays: 0,
+    reservedWorkdays: 0,
+    spentWorkdays: 0,
+    totalGrantedWorkdays: 0
   };
 }
 
-function normalizeBalance(value = {}) {
+function normalizeWorkdayBalance(value = {}, { legacyWeeks = false } = {}) {
+  const multiplier = legacyWeeks ? WORKDAYS_PER_WEEK : 1;
   return {
-    availableWeeks: toWeeks(value.availableWeeks),
-    reservedWeeks: toWeeks(value.reservedWeeks),
-    spentWeeks: toWeeks(value.spentWeeks),
-    totalGrantedWeeks: toWeeks(value.totalGrantedWeeks)
+    availableWorkdays: toWeeks(legacyWeeks ? value.availableWeeks : value.availableWorkdays) * multiplier,
+    reservedWorkdays: toWeeks(legacyWeeks ? value.reservedWeeks : value.reservedWorkdays) * multiplier,
+    spentWorkdays: toWeeks(legacyWeeks ? value.spentWeeks : value.spentWorkdays) * multiplier,
+    totalGrantedWorkdays: toWeeks(legacyWeeks ? value.totalGrantedWeeks : value.totalGrantedWorkdays) * multiplier
+  };
+}
+
+function buildBalanceView(value = {}) {
+  const balance = normalizeWorkdayBalance(value);
+  return {
+    ...balance,
+    availableWeeks: Math.floor(balance.availableWorkdays / WORKDAYS_PER_WEEK),
+    reservedWeeks: Math.floor(balance.reservedWorkdays / WORKDAYS_PER_WEEK),
+    spentWeeks: Math.floor(balance.spentWorkdays / WORKDAYS_PER_WEEK),
+    totalGrantedWeeks: Math.floor(balance.totalGrantedWorkdays / WORKDAYS_PER_WEEK)
   };
 }
 
@@ -1216,10 +1239,13 @@ async function resolveDowntimeCompendiumAction(actionId = "") {
 }
 
 function normalizeRequest(value = {}) {
+  const source = asObject(value);
   const requestedActionId = cleanId(value.actionId);
   const actionId = requestedActionId || cleanId(value.templateUuid);
   const status = REQUEST_STATUSES.has(cleanId(value.status)) ? cleanId(value.status) : "pending";
+  const weeks = Math.max(1, toWeeks(value.weeks, 1));
   const normalized = {
+    ...clone(source),
     id: cleanId(value.id),
     actorId: cleanId(value.actorId),
     actorName: cleanString(value.actorName),
@@ -1227,7 +1253,8 @@ function normalizeRequest(value = {}) {
     actionLabel: cleanString(value.actionLabel) || cleanString(value.title) || actionId,
     title: cleanString(value.title),
     description: cleanString(value.description),
-    weeks: Math.max(1, toWeeks(value.weeks, 1)),
+    weeks,
+    workdays: Math.max(1, toWeeks(value.workdays, weeks * WORKDAYS_PER_WEEK)),
     status,
     checks: asArray(value.checks).map((check) => normalizeCheck(check)),
     result: cleanString(value.result),
@@ -1615,26 +1642,201 @@ function getMaxRequestCounter(requests = []) {
   }, 0);
 }
 
-function normalizeDowntimeState(value = {}) {
+function normalizeGrant(value = {}) {
   const source = asObject(value);
+  return {
+    ...clone(source),
+    id: cleanId(source.id),
+    actorId: cleanId(source.actorId),
+    workdays: toWeeks(source.workdays),
+    anchorMonday: cleanString(source.anchorMonday),
+    createdAt: Number(source.createdAt) || 0,
+    reason: cleanString(source.reason)
+  };
+}
+
+function normalizeScheduleSlot(value = {}) {
+  const source = asObject(value);
+  const status = ["free", "pending", "approved", "processed", "blocked"].includes(cleanId(source.status))
+    ? cleanId(source.status)
+    : "free";
+  return {
+    ...clone(source),
+    id: cleanId(source.id),
+    actorId: cleanId(source.actorId),
+    isoDate: cleanString(source.isoDate),
+    status,
+    grantId: cleanId(source.grantId),
+    requestId: cleanId(source.requestId) || null,
+    projectId: cleanId(source.projectId) || null,
+    activityId: cleanId(source.activityId) || null,
+    hours: source.hours == null ? null : toFiniteNumber(source.hours, null),
+    blockReason: cleanString(source.blockReason) || null,
+    processedTransitionId: cleanId(source.processedTransitionId) || null
+  };
+}
+
+function normalizeWorkLogEntry(value = {}) {
+  const source = asObject(value);
+  return {
+    ...clone(source),
+    id: cleanId(source.id),
+    actorId: cleanId(source.actorId),
+    isoDate: cleanString(source.isoDate),
+    requestId: cleanId(source.requestId) || null,
+    projectId: cleanId(source.projectId) || null,
+    transitionId: cleanId(source.transitionId),
+    createdAt: Number(source.createdAt) || 0
+  };
+}
+
+function getDowntimeStateSource(value = {}) {
+  const raw = asObject(value);
+  const history = asArray(raw.history);
+  const envelope = history.find((entry) => entry?.id === DOWNTIME_V2_ENVELOPE_ID);
+  if (!envelope) {
+    return raw;
+  }
+
+  return {
+    ...clone(raw),
+    version: Number(envelope.version) || DOWNTIME_STATE_VERSION,
+    grants: clone(asArray(envelope.grants)),
+    scheduleSlots: clone(asArray(envelope.scheduleSlots)),
+    workLog: clone(asArray(envelope.workLog)),
+    history: clone(history.filter((entry) => entry?.id !== DOWNTIME_V2_ENVELOPE_ID))
+  };
+}
+
+function buildPersistedDowntimeStateV2(state) {
+  const source = clone(asObject(state));
+  const history = asArray(source.history)
+    .filter((entry) => entry?.id !== DOWNTIME_V2_ENVELOPE_ID);
+  return {
+    ...source,
+    history: [
+      ...history,
+      {
+        id: DOWNTIME_V2_ENVELOPE_ID,
+        type: "state-envelope",
+        version: DOWNTIME_STATE_VERSION,
+        grants: clone(asArray(source.grants)),
+        scheduleSlots: clone(asArray(source.scheduleSlots)),
+        workLog: clone(asArray(source.workLog))
+      }
+    ]
+  };
+}
+
+function migrateLegacySchedule(state, currentIsoDate) {
+  for (const [actorId, balance] of Object.entries(state.balancesByActorId)) {
+    if (state.scheduleSlots.some((slot) => slot.actorId === actorId)) {
+      continue;
+    }
+
+    const unspentWorkdays = balance.availableWorkdays + balance.reservedWorkdays;
+    if (unspentWorkdays <= 0) {
+      continue;
+    }
+
+    const grantId = `downtime-migration-${actorId}`;
+    if (!state.grants.some((grant) => grant.id === grantId)) {
+      state.grants.push({
+        id: grantId,
+        actorId,
+        workdays: balance.totalGrantedWorkdays,
+        anchorMonday: nearestMonday(currentIsoDate),
+        createdAt: 0,
+        reason: "Migrated from downtime state v1"
+      });
+    }
+
+    const occupiedDates = new Set(state.scheduleSlots
+      .filter((slot) => slot.actorId === actorId)
+      .map((slot) => slot.isoDate));
+    const generatedSlots = buildGrantSlots({
+      actorId,
+      grantId,
+      weeks: Math.ceil(unspentWorkdays / WORKDAYS_PER_WEEK),
+      fromIsoDate: currentIsoDate,
+      occupiedDates
+    }).slice(0, unspentWorkdays);
+    state.scheduleSlots.push(...generatedSlots);
+
+    for (const request of state.requests.filter((entry) => (
+      entry.actorId === actorId && OPEN_RESERVED_STATUSES.has(entry.status)
+    ))) {
+      try {
+        state.scheduleSlots = allocateRequestSlots({
+          slots: state.scheduleSlots,
+          actorId,
+          requestId: request.id,
+          workdays: request.workdays,
+          ownedWorkshop: request.ownedWorkshop === true
+        }).map((slot) => (
+          slot.requestId === request.id && request.status === "approved"
+            ? { ...slot, status: "approved" }
+            : slot
+        ));
+      }
+      catch (_error) {
+        break;
+      }
+    }
+  }
+}
+
+function normalizeDowntimeStateV2(value = {}, currentIsoDate) {
+  const source = getDowntimeStateSource(value);
+  const sourceBalances = asObject(source.balancesByActorId);
+  const hasWorkdayBalances = Object.values(sourceBalances).some((balance) => (
+    Object.hasOwn(asObject(balance), "availableWorkdays")
+    || Object.hasOwn(asObject(balance), "reservedWorkdays")
+    || Object.hasOwn(asObject(balance), "spentWorkdays")
+    || Object.hasOwn(asObject(balance), "totalGrantedWorkdays")
+  ));
+  const isV2 = Number(source.version) >= DOWNTIME_STATE_VERSION || hasWorkdayBalances;
   const balancesByActorId = {};
-  for (const [rawActorId, rawBalance] of Object.entries(asObject(source.balancesByActorId))) {
+  for (const [rawActorId, rawBalance] of Object.entries(sourceBalances)) {
     const actorId = cleanId(rawActorId);
     if (actorId) {
-      balancesByActorId[actorId] = normalizeBalance(rawBalance);
+      balancesByActorId[actorId] = normalizeWorkdayBalance(rawBalance, { legacyWeeks: !isV2 });
     }
   }
 
   const requests = asArray(source.requests).map((request) => normalizeRequest(request)).filter((request) => request.id);
   const counter = Math.max(toWeeks(source.counter), getMaxRequestCounter(requests));
+  const history = clone(asArray(source.history));
+  if (!isV2 && !history.some((entry) => entry?.migrationId === DOWNTIME_V2_MIGRATION_ID)) {
+    history.push({
+      id: "downtime-history-migration-v2",
+      type: "migration",
+      migrationId: DOWNTIME_V2_MIGRATION_ID,
+      fromVersion: Number(source.version) || 1,
+      toVersion: DOWNTIME_STATE_VERSION,
+      createdAt: Date.now()
+    });
+  }
 
-  return {
+  const state = {
+    ...clone(source),
+    version: DOWNTIME_STATE_VERSION,
     balancesByActorId,
+    grants: asArray(source.grants).map((grant) => normalizeGrant(grant)).filter((grant) => grant.id),
     requests,
     checks: asArray(source.checks).map((check) => normalizeCheck(check)),
-    history: clone(asArray(source.history)),
+    scheduleSlots: asArray(source.scheduleSlots)
+      .map((slot) => normalizeScheduleSlot(slot))
+      .filter((slot) => slot.id && slot.actorId && slot.isoDate),
+    workLog: asArray(source.workLog).map((entry) => normalizeWorkLogEntry(entry)).filter((entry) => entry.id),
+    history,
     counter
   };
+
+  if (!isV2) {
+    migrateLegacySchedule(state, currentIsoDate);
+  }
+  return state;
 }
 
 function getCurrentUser() {
@@ -1690,7 +1892,10 @@ export class DowntimeService {
 
   getSnapshot({ actorId = "" } = {}) {
     const context = this.#resolveContext();
-    const state = normalizeDowntimeState(context.groupState?.downtimeState);
+    const state = normalizeDowntimeStateV2(
+      context.groupState?.downtimeState,
+      this.#resolveCurrentIsoDate()
+    );
     const selectedActorId = cleanId(actorId);
     const memberActorIds = new Set(context.memberActorIds ?? []);
     const currentMembers = asArray(context.members).filter((actor) => memberActorIds.has(actor?.id));
@@ -1701,26 +1906,37 @@ export class DowntimeService {
       actorImg: actor.img ?? "",
       selected: selectedActorId ? actor.id === selectedActorId : false,
       canSubmit: this.#canSubmitForActor(actor, context),
-      balance: normalizeBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance())
+      balance: buildBalanceView(state.balancesByActorId[actor.id] ?? buildDefaultBalance())
     }));
 
     if (members.length && selectedActorId && !members.some((member) => member.selected)) {
       members[0].selected = true;
     }
 
+    const selectedMember = members.find((member) => member.selected) ?? members[0] ?? null;
+    const calendarByIsoDate = Object.fromEntries(summarizeScheduleByDate(state.scheduleSlots));
     return {
+      version: state.version,
       groupId: context.groupId,
       canManage: this.#canManage(context),
       canSubmit: members.some((member) => member.canSubmit),
       members,
-      balancesByActorId: clone(state.balancesByActorId),
+      balance: selectedMember?.balance ?? buildBalanceView(),
+      balancesByActorId: Object.fromEntries(Object.entries(state.balancesByActorId)
+        .map(([balanceActorId, balance]) => [balanceActorId, buildBalanceView(balance)])),
+      grants: clone(state.grants),
       requests: state.requests.map((request) => clone(request)),
+      scheduleSlots: clone(state.scheduleSlots),
+      calendarByIsoDate: clone(calendarByIsoDate),
+      workLog: clone(state.workLog),
+      checks: clone(state.checks),
+      history: clone(state.history),
       actionCatalog: this.#getActionCatalog(context),
       counter: state.counter
     };
   }
 
-  async grantWeeks({ actorIds = [], weeks = 0, reason = "" } = {}) {
+  async grantWeeks({ actorIds = [], weeks = 0, reason = "", fromIsoDate = "" } = {}) {
     const context = this.#resolveContext();
     this.#assertCanManage(context);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
@@ -1734,12 +1950,34 @@ export class DowntimeService {
       throw new Error("No current group members selected.");
     }
 
+    const grantFromIsoDate = this.#resolveCurrentIsoDate(fromIsoDate);
     return this.#writeGroupState(context, (state) => {
       for (const actorId of targetActorIds) {
-        const balance = normalizeBalance(state.balancesByActorId[actorId] ?? buildDefaultBalance());
-        balance.availableWeeks += safeWeeks;
-        balance.totalGrantedWeeks += safeWeeks;
+        const grantId = `downtime-grant-${Date.now()}-${actorId}-${state.grants.length + 1}`;
+        const workdays = safeWeeks * WORKDAYS_PER_WEEK;
+        const occupiedDates = new Set(state.scheduleSlots
+          .filter((slot) => slot.actorId === actorId)
+          .map((slot) => slot.isoDate));
+        const grantSlots = buildGrantSlots({
+          actorId,
+          grantId,
+          weeks: safeWeeks,
+          fromIsoDate: grantFromIsoDate,
+          occupiedDates
+        });
+        const balance = normalizeWorkdayBalance(state.balancesByActorId[actorId] ?? buildDefaultBalance());
+        balance.availableWorkdays += workdays;
+        balance.totalGrantedWorkdays += workdays;
         state.balancesByActorId[actorId] = balance;
+        state.grants.push({
+          id: grantId,
+          actorId,
+          workdays,
+          anchorMonday: nearestMonday(grantFromIsoDate),
+          createdAt: Date.now(),
+          reason: cleanString(reason)
+        });
+        state.scheduleSlots.push(...grantSlots);
       }
 
       state.history.push({
@@ -1755,6 +1993,7 @@ export class DowntimeService {
       return {
         actorIds: [...targetActorIds],
         weeks: safeWeeks,
+        workdays: safeWeeks * WORKDAYS_PER_WEEK,
         reason: cleanString(reason)
       };
     });
@@ -1778,31 +2017,44 @@ export class DowntimeService {
     return this.#writeGroupState(context, (state) => {
       const revocations = [];
       const skippedActorIds = [];
+      const requestedWorkdays = safeWeeks * WORKDAYS_PER_WEEK;
 
       for (const actorId of targetActorIds) {
-        const balance = normalizeBalance(state.balancesByActorId[actorId] ?? buildDefaultBalance());
-        if (hasExplicitTargets && balance.availableWeeks < safeWeeks) {
+        const balance = normalizeWorkdayBalance(state.balancesByActorId[actorId] ?? buildDefaultBalance());
+        if (hasExplicitTargets && balance.availableWorkdays < requestedWorkdays) {
           throw new Error("Not enough available downtime weeks.");
         }
 
-        const revokedWeeks = hasExplicitTargets ? safeWeeks : Math.min(balance.availableWeeks, safeWeeks);
-        if (revokedWeeks <= 0) {
+        const revokedWorkdays = hasExplicitTargets
+          ? requestedWorkdays
+          : Math.min(balance.availableWorkdays, requestedWorkdays);
+        if (revokedWorkdays <= 0) {
           skippedActorIds.push(actorId);
           continue;
         }
 
         revocations.push({
           actorId,
-          weeks: revokedWeeks
+          weeks: revokedWorkdays / WORKDAYS_PER_WEEK,
+          workdays: revokedWorkdays
         });
       }
 
       for (const revocation of revocations) {
-        const balance = normalizeBalance(state.balancesByActorId[revocation.actorId] ?? buildDefaultBalance());
-        balance.availableWeeks -= revocation.weeks;
-        balance.totalGrantedWeeks = Math.max(
-          balance.availableWeeks + balance.reservedWeeks + balance.spentWeeks,
-          balance.totalGrantedWeeks - revocation.weeks
+        const freeSlots = state.scheduleSlots
+          .filter((slot) => slot.actorId === revocation.actorId && slot.status === "free")
+          .sort((left, right) => right.isoDate.localeCompare(left.isoDate));
+        if (freeSlots.length < revocation.workdays) {
+          throw new Error("Available downtime workdays have no matching free schedule slots.");
+        }
+        const removedSlotIds = new Set(freeSlots.slice(0, revocation.workdays).map((slot) => slot.id));
+        state.scheduleSlots = state.scheduleSlots.filter((slot) => !removedSlotIds.has(slot.id));
+
+        const balance = normalizeWorkdayBalance(state.balancesByActorId[revocation.actorId] ?? buildDefaultBalance());
+        balance.availableWorkdays -= revocation.workdays;
+        balance.totalGrantedWorkdays = Math.max(
+          balance.availableWorkdays + balance.reservedWorkdays + balance.spentWorkdays,
+          balance.totalGrantedWorkdays - revocation.workdays
         );
         state.balancesByActorId[revocation.actorId] = balance;
       }
@@ -1816,7 +2068,9 @@ export class DowntimeService {
           actorIds: revokedActorIds,
           skippedActorIds,
           weeks: safeWeeks,
+          workdays: requestedWorkdays,
           totalRevokedWeeks,
+          totalRevokedWorkdays: revocations.reduce((total, revocation) => total + revocation.workdays, 0),
           reason: cleanString(reason),
           userId: cleanId(getCurrentUser()?.id),
           createdAt: Date.now()
@@ -1844,14 +2098,24 @@ export class DowntimeService {
           continue;
         }
 
-        const balance = normalizeBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
-        const requestWeeks = Math.max(1, toWeeks(request.weeks, 1));
-        const released = Math.min(balance.reservedWeeks, requestWeeks);
-        balance.reservedWeeks = Math.max(0, balance.reservedWeeks - released);
-        balance.availableWeeks += released;
-        releasedWeeks += released;
+        const balance = normalizeWorkdayBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
+        const released = state.scheduleSlots.filter((slot) => (
+          slot.requestId === request.id && slot.status !== "processed"
+        )).length;
+        if (balance.reservedWorkdays < released) {
+          throw new Error("Reserved downtime workdays are lower than the request cost.");
+        }
+        balance.reservedWorkdays -= released;
+        balance.availableWorkdays += released;
+        releasedWeeks += released / WORKDAYS_PER_WEEK;
         state.balancesByActorId[request.actorId] = balance;
       }
+
+      state.scheduleSlots = state.scheduleSlots.map((slot) => (
+        slot.status !== "processed" && slot.requestId
+          ? { ...slot, status: "free", requestId: null, projectId: null, activityId: null, hours: null, blockReason: null, processedTransitionId: null }
+          : slot
+      ));
 
       const removedRequests = state.requests.length;
       const actorIds = [
@@ -1889,6 +2153,7 @@ export class DowntimeService {
     const actor = this.#requireCurrentMemberActor(context, actorId);
     this.#assertCanSubmitForActor(actor, context);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
+    const workdays = safeWeeks * WORKDAYS_PER_WEEK;
     const action = await this.#resolveAction(context, actionId);
     const resolvedActionId = action.id;
     const safeTitle = cleanString(title) || action.label;
@@ -1896,14 +2161,11 @@ export class DowntimeService {
     const actionSelections = normalizeTargetActionSelections(targetActionSelections);
 
     return this.#writeGroupState(context, (state) => {
-      const balance = normalizeBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance());
-      if (balance.availableWeeks < safeWeeks) {
+      const balance = normalizeWorkdayBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance());
+      if (balance.availableWorkdays < workdays) {
         throw new Error("Not enough available downtime weeks.");
       }
 
-      balance.availableWeeks -= safeWeeks;
-      balance.reservedWeeks += safeWeeks;
-      state.balancesByActorId[actor.id] = balance;
       state.counter += 1;
       const audit = buildAuditFields();
       const checks = buildSelectedRequestChecks(action, actionSelections);
@@ -1917,6 +2179,7 @@ export class DowntimeService {
         title: safeTitle,
         description: cleanString(description),
         weeks: safeWeeks,
+        workdays,
         status: "pending",
         checks,
         result: "",
@@ -1926,6 +2189,16 @@ export class DowntimeService {
       };
       applyRequestTemplateMetadata(request, action, resolvedActionId);
       refreshMappedDowntimeResults(request);
+      state.scheduleSlots = allocateRequestSlots({
+        slots: state.scheduleSlots,
+        actorId: actor.id,
+        requestId: request.id,
+        workdays,
+        ownedWorkshop: request.ownedWorkshop === true
+      });
+      balance.availableWorkdays -= workdays;
+      balance.reservedWorkdays += workdays;
+      state.balancesByActorId[actor.id] = balance;
       state.requests.push(request);
       return clone(request);
     });
@@ -1948,6 +2221,7 @@ export class DowntimeService {
     this.#assertCanSubmitForActor(actor, context);
     const safeRequestId = cleanId(requestId);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
+    const workdays = safeWeeks * WORKDAYS_PER_WEEK;
     const action = await this.#resolveAction(context, actionId);
     const resolvedActionId = action.id;
     const safeTitle = cleanString(title) || action.label;
@@ -1965,18 +2239,34 @@ export class DowntimeService {
         throw new Error("Downtime request already has recorded results.");
       }
 
-      const previousWeeks = Math.max(1, toWeeks(request.weeks, 1));
-      const balance = normalizeBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance());
-      if (balance.reservedWeeks < previousWeeks) {
+      const previousWorkdays = Math.max(1, toWeeks(request.workdays, request.weeks * WORKDAYS_PER_WEEK));
+      const balance = normalizeWorkdayBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance());
+      if (balance.reservedWorkdays < previousWorkdays) {
         throw new Error("Reserved downtime weeks are lower than the request cost.");
       }
-      const weekDelta = safeWeeks - previousWeeks;
-      if (weekDelta > 0 && balance.availableWeeks < weekDelta) {
+      const workdayDelta = workdays - previousWorkdays;
+      if (workdayDelta > 0 && balance.availableWorkdays < workdayDelta) {
         throw new Error("Not enough available downtime weeks.");
       }
 
-      balance.availableWeeks -= weekDelta;
-      balance.reservedWeeks += weekDelta;
+      const currentIsoDate = this.#resolveCurrentIsoDate();
+      state.scheduleSlots = releaseFutureRequestSlots({
+        slots: state.scheduleSlots,
+        requestId: request.id,
+        currentIsoDate
+      });
+      const retainedWorkdays = state.scheduleSlots.filter((slot) => (
+        slot.requestId === request.id && slot.status !== "processed"
+      )).length;
+      state.scheduleSlots = allocateRequestSlots({
+        slots: state.scheduleSlots,
+        actorId: actor.id,
+        requestId: request.id,
+        workdays: Math.max(0, workdays - retainedWorkdays),
+        ownedWorkshop: request.ownedWorkshop === true
+      });
+      balance.availableWorkdays -= workdayDelta;
+      balance.reservedWorkdays += workdayDelta;
       state.balancesByActorId[actor.id] = balance;
 
       request.actionId = resolvedActionId;
@@ -1984,6 +2274,7 @@ export class DowntimeService {
       request.title = safeTitle;
       request.description = cleanString(description);
       request.weeks = safeWeeks;
+      request.workdays = workdays;
       request.checks = buildSelectedRequestChecks(action, actionSelections);
       request.result = "";
       request.reviewedByUserId = "";
@@ -2061,13 +2352,30 @@ export class DowntimeService {
         throw new Error("Downtime project check not found.");
       }
 
-      const balance = normalizeBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
-      if (balance.availableWeeks < 1) {
+      const balance = normalizeWorkdayBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
+      if (balance.availableWorkdays < WORKDAYS_PER_WEEK) {
         throw new Error("Not enough available downtime weeks.");
       }
 
-      balance.availableWeeks -= 1;
-      balance.spentWeeks += 1;
+      const freeSlots = state.scheduleSlots
+        .filter((slot) => slot.actorId === request.actorId && slot.status === "free")
+        .sort((left, right) => left.isoDate.localeCompare(right.isoDate));
+      if (freeSlots.length < WORKDAYS_PER_WEEK) {
+        throw new Error("Available downtime workdays have no matching free schedule slots.");
+      }
+      const spentSlotIds = new Set(freeSlots.slice(0, WORKDAYS_PER_WEEK).map((slot) => slot.id));
+      state.scheduleSlots = state.scheduleSlots.map((slot) => (
+        spentSlotIds.has(slot.id)
+          ? {
+            ...slot,
+            status: "processed",
+            requestId: request.id,
+            processedTransitionId: `legacy-continue-${request.id}-${Date.now()}`
+          }
+          : slot
+      ));
+      balance.availableWorkdays -= WORKDAYS_PER_WEEK;
+      balance.spentWorkdays += WORKDAYS_PER_WEEK;
       state.balancesByActorId[request.actorId] = balance;
 
       projectCounter.check.projectCounter = {
@@ -2098,14 +2406,184 @@ export class DowntimeService {
       const effectiveStatus = nextStatus === "approved" && hasCompletedRollTargets(request)
         ? "completed"
         : nextStatus;
-      const balance = normalizeBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
-      this.#applyStatusAccounting(balance, request.status, effectiveStatus, request.weeks);
+      const currentStatus = request.status;
+      const balance = normalizeWorkdayBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
+      const requestWorkdays = Math.max(1, toWeeks(request.workdays, request.weeks * WORKDAYS_PER_WEEK));
+      const requestSlots = state.scheduleSlots.filter((slot) => slot.requestId === request.id);
+      const processedWorkdays = requestSlots.filter((slot) => slot.status === "processed").length;
+      const reservedWorkdays = requestSlots.filter((slot) => slot.status !== "processed").length;
+      const expectedReservedWorkdays = processedWorkdays > 0 ? reservedWorkdays : requestWorkdays;
+
+      if (OPEN_RESERVED_STATUSES.has(currentStatus) && RELEASED_STATUSES.has(effectiveStatus)) {
+        if (balance.reservedWorkdays < expectedReservedWorkdays) {
+          throw new Error("Reserved downtime weeks are lower than the request cost.");
+        }
+        const beforeRelease = reservedWorkdays;
+        state.scheduleSlots = releaseFutureRequestSlots({
+          slots: state.scheduleSlots,
+          requestId: request.id,
+          currentIsoDate: this.#resolveCurrentIsoDate()
+        });
+        const retained = state.scheduleSlots.filter((slot) => (
+          slot.requestId === request.id && slot.status !== "processed"
+        )).length;
+        this.#applyStatusAccounting(balance, currentStatus, effectiveStatus, beforeRelease - retained);
+      }
+      else if (OPEN_RESERVED_STATUSES.has(currentStatus) && effectiveStatus === "completed") {
+        if (balance.reservedWorkdays < expectedReservedWorkdays) {
+          throw new Error("Reserved downtime weeks are lower than the request cost.");
+        }
+        this.#applyStatusAccounting(balance, currentStatus, effectiveStatus, reservedWorkdays);
+        const transitionId = `legacy-status-${request.id}-${Date.now()}`;
+        state.scheduleSlots = state.scheduleSlots.map((slot) => (
+          slot.requestId === request.id && slot.status !== "processed"
+            ? { ...slot, status: "processed", blockReason: null, processedTransitionId: transitionId }
+            : slot
+        ));
+      }
+      else if (RELEASED_STATUSES.has(currentStatus) && OPEN_RESERVED_STATUSES.has(effectiveStatus)) {
+        this.#applyStatusAccounting(balance, currentStatus, effectiveStatus, requestWorkdays);
+        state.scheduleSlots = allocateRequestSlots({
+          slots: state.scheduleSlots,
+          actorId: request.actorId,
+          requestId: request.id,
+          workdays: requestWorkdays,
+          ownedWorkshop: request.ownedWorkshop === true
+        });
+      }
+      else {
+        this.#applyStatusAccounting(balance, currentStatus, effectiveStatus, requestWorkdays);
+      }
+
+      if (OPEN_RESERVED_STATUSES.has(effectiveStatus)) {
+        state.scheduleSlots = state.scheduleSlots.map((slot) => (
+          slot.requestId === request.id && slot.status !== "processed"
+            ? { ...slot, status: effectiveStatus, blockReason: null, processedTransitionId: null }
+            : slot
+        ));
+      }
       request.status = effectiveStatus;
       request.result = cleanString(result);
       request.reviewedByUserId = cleanId(getCurrentUser()?.id);
       request.updatedAt = Date.now();
       state.balancesByActorId[request.actorId] = balance;
       return clone(request);
+    });
+  }
+
+  async processScheduledDate(isoDate, { transitionId, activityProcessor } = {}) {
+    const context = this.#resolveContext();
+    this.#assertCanManage(context);
+    const safeIsoDate = cleanString(isoDate);
+    nearestMonday(safeIsoDate);
+    const safeTransitionId = cleanId(transitionId);
+    if (!safeTransitionId) {
+      throw new Error("Downtime processing requires a transition ID.");
+    }
+    const processor = typeof activityProcessor === "function"
+      ? activityProcessor
+      : async () => ({ result: null });
+
+    return this.#writeGroupState(context, async (state) => {
+      const processed = [];
+      const blocked = [];
+      const skipped = [];
+      const eligibleSlots = state.scheduleSlots
+        .filter((slot) => slot.isoDate === safeIsoDate && ["approved", "blocked"].includes(slot.status))
+        .sort((left, right) => left.actorId.localeCompare(right.actorId) || left.id.localeCompare(right.id));
+
+      for (const slot of eligibleSlots) {
+        const existingLog = state.workLog.find((entry) => (
+          entry.slotId === slot.id
+          && entry.isoDate === safeIsoDate
+          && entry.transitionId === safeTransitionId
+        ));
+        if (existingLog || slot.status === "processed") {
+          skipped.push(clone(slot));
+          continue;
+        }
+
+        let outcome;
+        try {
+          outcome = asObject(await processor(clone(slot), {
+            isoDate: safeIsoDate,
+            transitionId: safeTransitionId
+          }));
+        }
+        catch (error) {
+          outcome = {
+            blocked: true,
+            blockReason: cleanString(error?.message) || "Downtime activity failed."
+          };
+        }
+
+        const logEntry = {
+          id: `downtime-work-${slot.id}-${safeTransitionId}`,
+          slotId: slot.id,
+          actorId: slot.actorId,
+          isoDate: safeIsoDate,
+          requestId: slot.requestId,
+          projectId: cleanId(outcome.projectId) || slot.projectId || null,
+          result: null,
+          transitionId: safeTransitionId,
+          createdAt: Date.now()
+        };
+        const isBlocked = outcome.blocked === true || cleanId(outcome.status) === "blocked";
+        if (isBlocked) {
+          slot.status = "blocked";
+          slot.blockReason = cleanString(outcome.blockReason) || "Downtime activity blocked.";
+          slot.processedTransitionId = safeTransitionId;
+          logEntry.result = {
+            status: "blocked",
+            blockReason: slot.blockReason,
+            ...(outcome.result === undefined ? {} : { activityResult: clone(outcome.result) })
+          };
+          state.workLog.push(logEntry);
+          blocked.push(clone(slot));
+          continue;
+        }
+
+        const balance = normalizeWorkdayBalance(state.balancesByActorId[slot.actorId] ?? buildDefaultBalance());
+        if (balance.reservedWorkdays < 1) {
+          slot.status = "blocked";
+          slot.blockReason = "Reserved downtime workdays are lower than the scheduled cost.";
+          slot.processedTransitionId = safeTransitionId;
+          logEntry.result = { status: "blocked", blockReason: slot.blockReason };
+          state.workLog.push(logEntry);
+          blocked.push(clone(slot));
+          continue;
+        }
+
+        balance.reservedWorkdays -= 1;
+        balance.spentWorkdays += 1;
+        state.balancesByActorId[slot.actorId] = balance;
+        slot.status = "processed";
+        slot.projectId = cleanId(outcome.projectId) || slot.projectId || null;
+        slot.activityId = cleanId(outcome.activityId) || slot.activityId || null;
+        slot.hours = toFiniteNumber(outcome.hours, slot.hours);
+        slot.blockReason = null;
+        slot.processedTransitionId = safeTransitionId;
+        logEntry.projectId = slot.projectId;
+        logEntry.result = {
+          status: "processed",
+          activityResult: outcome.result === undefined ? null : clone(outcome.result)
+        };
+        state.workLog.push(logEntry);
+        processed.push(clone(slot));
+
+        const request = state.requests.find((entry) => entry.id === slot.requestId);
+        if (request) {
+          const remaining = state.scheduleSlots.some((entry) => (
+            entry.requestId === request.id && entry.status !== "processed"
+          ));
+          if (!remaining) {
+            request.status = "completed";
+            request.updatedAt = Date.now();
+          }
+        }
+      }
+
+      return { isoDate: safeIsoDate, transitionId: safeTransitionId, processed, blocked, skipped };
     });
   }
 
@@ -2164,6 +2642,15 @@ export class DowntimeService {
     }
 
     return context;
+  }
+
+  #resolveCurrentIsoDate(explicitIsoDate = "") {
+    const isoDate = cleanString(explicitIsoDate)
+      || cleanString(this.moduleApi?.getCalendarSnapshot?.()?.isoDate)
+      || cleanString(this.#resolveContext()?.groupState?.calendar?.isoDate)
+      || new Date().toISOString().slice(0, 10);
+    nearestMonday(isoDate);
+    return isoDate;
   }
 
   #getMemberActorIds(context) {
@@ -2254,7 +2741,23 @@ export class DowntimeService {
   }
 
   async #writeGroupState(context, mutator) {
-    const registry = this.moduleApi?.groupContextService?.getRegistry?.();
+    const groupContextService = this.moduleApi?.groupContextService;
+    const applyMutation = async (groupState) => {
+      groupState.groupActorId = context.groupId;
+      const state = normalizeDowntimeStateV2(
+        groupState.downtimeState,
+        this.#resolveCurrentIsoDate()
+      );
+      const result = await mutator(state);
+      groupState.downtimeState = buildPersistedDowntimeStateV2(state);
+      return result;
+    };
+
+    if (typeof groupContextService?.mutateGroupState === "function") {
+      return groupContextService.mutateGroupState(context.groupId, applyMutation);
+    }
+
+    const registry = groupContextService?.getRegistry?.();
     if (!registry || typeof registry !== "object") {
       throw new Error("Downtime registry is unavailable.");
     }
@@ -2265,11 +2768,8 @@ export class DowntimeService {
       groupActorId: context.groupId
     };
     const groupState = registry.groupsById[context.groupId];
-    groupState.groupActorId = context.groupId;
-    const state = normalizeDowntimeState(groupState.downtimeState);
-    const result = await mutator(state);
-    groupState.downtimeState = state;
-    await this.moduleApi.groupContextService.setRegistry(registry);
+    const result = await applyMutation(groupState);
+    await groupContextService.setRegistry(registry);
     return result;
   }
 
@@ -2288,39 +2788,39 @@ export class DowntimeService {
     }
   }
 
-  #applyStatusAccounting(balance, currentStatus, nextStatus, weeks) {
+  #applyStatusAccounting(balance, currentStatus, nextStatus, workdays) {
     if (currentStatus === nextStatus) {
       return;
     }
 
-    const safeWeeks = Math.max(1, toWeeks(weeks, 1));
+    const safeWorkdays = toWeeks(workdays);
     if (OPEN_RESERVED_STATUSES.has(currentStatus) && RELEASED_STATUSES.has(nextStatus)) {
-      if (balance.reservedWeeks < safeWeeks) {
+      if (balance.reservedWorkdays < safeWorkdays) {
         throw new Error("Reserved downtime weeks are lower than the request cost.");
       }
 
-      balance.reservedWeeks = Math.max(0, balance.reservedWeeks - safeWeeks);
-      balance.availableWeeks += safeWeeks;
+      balance.reservedWorkdays -= safeWorkdays;
+      balance.availableWorkdays += safeWorkdays;
       return;
     }
 
     if (OPEN_RESERVED_STATUSES.has(currentStatus) && nextStatus === "completed") {
-      if (balance.reservedWeeks < safeWeeks) {
+      if (balance.reservedWorkdays < safeWorkdays) {
         throw new Error("Reserved downtime weeks are lower than the request cost.");
       }
 
-      balance.reservedWeeks = Math.max(0, balance.reservedWeeks - safeWeeks);
-      balance.spentWeeks += safeWeeks;
+      balance.reservedWorkdays -= safeWorkdays;
+      balance.spentWorkdays += safeWorkdays;
       return;
     }
 
     if (RELEASED_STATUSES.has(currentStatus) && OPEN_RESERVED_STATUSES.has(nextStatus)) {
-      if (balance.availableWeeks < safeWeeks) {
+      if (balance.availableWorkdays < safeWorkdays) {
         throw new Error("Not enough available downtime weeks.");
       }
 
-      balance.availableWeeks -= safeWeeks;
-      balance.reservedWeeks += safeWeeks;
+      balance.availableWorkdays -= safeWorkdays;
+      balance.reservedWorkdays += safeWorkdays;
       return;
     }
 

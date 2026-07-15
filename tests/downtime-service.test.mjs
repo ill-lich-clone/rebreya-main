@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { MODULE_ID, SETTINGS_KEYS } from "../scripts/constants.js";
 import { DowntimeService } from "../scripts/data/downtime-service.js";
+import { normalizeGroupState } from "../scripts/data/group-context-service.js";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -64,12 +65,15 @@ function createHarness({
   members = [],
   groupItems = [],
   downtimeState = {},
-  packs = null
+  packs = null,
+  calendarIsoDate = "2026-07-16",
+  queuedMutations = true
 } = {}) {
   const previousGame = globalThis.game;
   const groupActor = createGroup("group-1", members, groupItems);
   let registry = createRegistry(groupActor.id, clone(downtimeState));
   let setRegistryCalls = 0;
+  let mutateGroupStateCalls = 0;
 
   globalThis.game = {
     user,
@@ -111,14 +115,38 @@ function createHarness({
     }
   };
 
+  if (queuedMutations) {
+    groupContextService.mutateGroupState = async (groupActorId, mutator, { create = false } = {}) => {
+      mutateGroupStateCalls += 1;
+      if (!registry.groupsById[groupActorId] && !create) {
+        throw new Error(`Group state not found: ${groupActorId}`);
+      }
+      registry.groupsById[groupActorId] ??= {
+        version: 1,
+        groupActorId
+      };
+      return mutator(registry.groupsById[groupActorId]);
+    };
+  }
+
+  const moduleApi = {
+    groupContextService,
+    getCalendarSnapshot() {
+      return { isoDate: calendarIsoDate };
+    }
+  };
+
   return {
-    service: new DowntimeService({ groupContextService }),
+    service: new DowntimeService(moduleApi),
     groupActor,
     get registry() {
       return registry;
     },
     get setRegistryCalls() {
       return setRegistryCalls;
+    },
+    get mutateGroupStateCalls() {
+      return mutateGroupStateCalls;
     },
     restore() {
       globalThis.game = previousGame;
@@ -146,6 +174,301 @@ function createDowntimeTemplateItem({
 function getDowntimeState(harness) {
   return harness.registry.groupsById["group-1"].downtimeState;
 }
+
+test("v1 downtime migrates to v2 workdays once without dropping scheduler or request data", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    downtimeState: {
+      version: 1,
+      balancesByActorId: {
+        "actor-a": {
+          availableWeeks: 2,
+          reservedWeeks: 1,
+          spentWeeks: 1,
+          totalGrantedWeeks: 4
+        }
+      },
+      grants: [{ id: "legacy-grant", actorId: "actor-a", customGrantField: "kept" }],
+      requests: [{
+        id: "downtime-1",
+        actorId: "actor-a",
+        actionId: "legacy-action",
+        title: "Legacy request",
+        weeks: 1,
+        status: "pending",
+        customRequestField: "kept",
+        checks: [{ id: "legacy-check", label: "Check", customCheckField: "kept" }]
+      }],
+      scheduleSlots: [{
+        id: "legacy-slot",
+        actorId: "actor-a",
+        isoDate: "2026-07-20",
+        status: "pending",
+        grantId: "legacy-grant",
+        requestId: "downtime-1",
+        customSlotField: "kept"
+      }],
+      workLog: [{
+        id: "legacy-log",
+        actorId: "actor-a",
+        isoDate: "2026-07-10",
+        transitionId: "legacy-transition",
+        customLogField: "kept"
+      }],
+      history: [{ id: "legacy-history", type: "legacy", customHistoryField: "kept" }],
+      counter: 1
+    }
+  });
+
+  try {
+    const snapshot = harness.service.getSnapshot({ actorId: "actor-a" });
+    assert.equal(snapshot.version, 2);
+    assert.deepEqual({
+      availableWorkdays: snapshot.balance.availableWorkdays,
+      reservedWorkdays: snapshot.balance.reservedWorkdays,
+      spentWorkdays: snapshot.balance.spentWorkdays,
+      totalGrantedWorkdays: snapshot.balance.totalGrantedWorkdays
+    }, {
+      availableWorkdays: 10,
+      reservedWorkdays: 5,
+      spentWorkdays: 5,
+      totalGrantedWorkdays: 20
+    });
+    assert.equal(snapshot.grants[0].customGrantField, "kept");
+    assert.equal(snapshot.requests[0].customRequestField, "kept");
+    assert.equal(snapshot.requests[0].checks[0].customCheckField, "kept");
+    assert.equal(snapshot.scheduleSlots[0].customSlotField, "kept");
+    assert.equal(snapshot.workLog[0].customLogField, "kept");
+    assert.equal(snapshot.history[0].customHistoryField, "kept");
+    assert.equal(snapshot.history.filter((entry) => entry.migrationId === "downtime-v1-to-v2").length, 1);
+
+    await harness.service.grantWeeks({ actorIds: ["actor-a"], weeks: 1, fromIsoDate: "2026-08-03" });
+    const persisted = getDowntimeState(harness);
+    assert.equal(persisted.version, 2);
+    assert.equal(Object.hasOwn(persisted.balancesByActorId["actor-a"], "availableWeeks"), false);
+    assert.equal(persisted.history.filter((entry) => entry.migrationId === "downtime-v1-to-v2").length, 1);
+    assert.equal(harness.mutateGroupStateCalls, 1);
+    assert.equal(harness.setRegistryCalls, 0);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("downtime v2 survives the existing legacy group-state normalizer", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const writer = createHarness({ members: [actor], downtimeState: { version: 2 } });
+
+  try {
+    await writer.service.grantWeeks({ actorIds: ["actor-a"], weeks: 1 });
+    const normalizedGroupState = normalizeGroupState("group-1", {
+      groupActorId: "group-1",
+      downtimeState: clone(getDowntimeState(writer))
+    });
+    const reader = createHarness({ members: [actor], downtimeState: normalizedGroupState.downtimeState });
+    try {
+      const snapshot = reader.service.getSnapshot({ actorId: "actor-a" });
+      assert.equal(snapshot.version, 2);
+      assert.equal(snapshot.grants.length, 1);
+      assert.equal(snapshot.scheduleSlots.length, 5);
+      assert.equal(snapshot.balance.availableWorkdays, 5);
+    }
+    finally {
+      reader.restore();
+    }
+  }
+  finally {
+    writer.restore();
+  }
+});
+
+test("grantWeeks creates five calendar slots per week from the module calendar or explicit date", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    calendarIsoDate: "2026-07-16",
+    downtimeState: { version: 2 }
+  });
+
+  try {
+    await harness.service.grantWeeks({ actorIds: ["actor-a"], weeks: 1, reason: "calendar grant" });
+    await harness.service.grantWeeks({
+      actorIds: ["actor-a"],
+      weeks: 1,
+      reason: "explicit grant",
+      fromIsoDate: "2026-08-01"
+    });
+
+    const state = getDowntimeState(harness);
+    assert.deepEqual(state.grants.map((grant) => grant.anchorMonday), ["2026-07-20", "2026-08-03"]);
+    assert.deepEqual(state.scheduleSlots.map((slot) => slot.isoDate), [
+      "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24",
+      "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07"
+    ]);
+    assert.equal(state.scheduleSlots.every((slot) => slot.hours === null), true);
+    assert.equal(state.balancesByActorId["actor-a"].availableWorkdays, 10);
+    assert.equal(state.balancesByActorId["actor-a"].totalGrantedWorkdays, 10);
+    assert.equal(harness.mutateGroupStateCalls, 2);
+    assert.equal(harness.setRegistryCalls, 0);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("createRequest allocates pending workdays and approval propagates to its slots", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-training", name: "Training" });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+
+  try {
+    await harness.service.grantWeeks({ actorIds: ["actor-a"], weeks: 1 });
+    const request = await harness.service.createRequest({
+      actorId: "actor-a",
+      actionId: templateItem.uuid,
+      title: "Train",
+      weeks: 1
+    });
+    let state = getDowntimeState(harness);
+    assert.equal(request.workdays, 5);
+    assert.equal(state.scheduleSlots.filter((slot) => slot.requestId === request.id).length, 5);
+    assert.equal(state.scheduleSlots.every((slot) => slot.status === "pending"), true);
+    assert.equal(state.balancesByActorId["actor-a"].availableWorkdays, 0);
+    assert.equal(state.balancesByActorId["actor-a"].reservedWorkdays, 5);
+
+    await harness.service.setRequestStatus(request.id, "approved");
+    state = getDowntimeState(harness);
+    assert.equal(state.scheduleSlots.every((slot) => slot.status === "approved"), true);
+    assert.equal(state.balancesByActorId["actor-a"].reservedWorkdays, 5);
+    assert.equal(state.balancesByActorId["actor-a"].spentWorkdays, 0);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("returned rejected and cancelled requests release their unprocessed future slots", async () => {
+  for (const status of ["returned", "rejected", "cancelled"]) {
+    const actor = createActor({ id: "actor-a", name: "Hero A" });
+    const templateItem = createDowntimeTemplateItem({ id: "downtime-training", name: "Training" });
+    const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+
+    try {
+      await harness.service.grantWeeks({ actorIds: ["actor-a"], weeks: 1 });
+      const request = await harness.service.createRequest({
+        actorId: "actor-a",
+        actionId: templateItem.uuid,
+        weeks: 1
+      });
+      await harness.service.setRequestStatus(request.id, status);
+
+      const state = getDowntimeState(harness);
+      assert.equal(state.scheduleSlots.every((slot) => slot.status === "free" && slot.requestId === null), true, status);
+      assert.equal(state.balancesByActorId["actor-a"].availableWorkdays, 5, status);
+      assert.equal(state.balancesByActorId["actor-a"].reservedWorkdays, 0, status);
+    }
+    finally {
+      harness.restore();
+    }
+  }
+});
+
+test("processScheduledDate spends an approved slot once and release keeps it immutable", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+  let processorCalls = 0;
+
+  try {
+    await harness.service.grantWeeks({ actorIds: ["actor-a"], weeks: 1 });
+    const request = await harness.service.createRequest({ actorId: "actor-a", actionId: templateItem.uuid, weeks: 1 });
+    await harness.service.setRequestStatus(request.id, "approved");
+    const isoDate = getDowntimeState(harness).scheduleSlots[0].isoDate;
+    const activityProcessor = async (slot, context) => {
+      processorCalls += 1;
+      assert.equal(slot.requestId, request.id);
+      assert.deepEqual(context, { isoDate, transitionId: "transition-1" });
+      return { result: { progressGold: 5 }, projectId: "project-1", activityId: "craft", hours: 8 };
+    };
+
+    const first = await harness.service.processScheduledDate(isoDate, {
+      transitionId: "transition-1",
+      activityProcessor
+    });
+    const retry = await harness.service.processScheduledDate(isoDate, {
+      transitionId: "transition-1",
+      activityProcessor
+    });
+    await harness.service.processScheduledDate(isoDate, {
+      transitionId: "transition-2",
+      activityProcessor
+    });
+
+    let state = getDowntimeState(harness);
+    assert.equal(first.processed.length, 1);
+    assert.equal(retry.processed.length, 0);
+    assert.equal(processorCalls, 1);
+    assert.equal(state.balancesByActorId["actor-a"].reservedWorkdays, 4);
+    assert.equal(state.balancesByActorId["actor-a"].spentWorkdays, 1);
+    assert.equal(state.scheduleSlots[0].status, "processed");
+    assert.equal(state.scheduleSlots[0].processedTransitionId, "transition-1");
+    assert.equal(state.workLog.length, 1);
+
+    await harness.service.setRequestStatus(request.id, "returned");
+    state = getDowntimeState(harness);
+    assert.equal(state.scheduleSlots[0].status, "processed");
+    assert.equal(state.scheduleSlots.slice(1).every((slot) => slot.status === "free"), true);
+    assert.equal(state.balancesByActorId["actor-a"].availableWorkdays, 4);
+    assert.equal(state.balancesByActorId["actor-a"].reservedWorkdays, 0);
+    assert.equal(state.balancesByActorId["actor-a"].spentWorkdays, 1);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("processScheduledDate records blocked slots idempotently without spending credits", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+  let processorCalls = 0;
+
+  try {
+    await harness.service.grantWeeks({ actorIds: ["actor-a"], weeks: 1 });
+    const request = await harness.service.createRequest({ actorId: "actor-a", actionId: templateItem.uuid, weeks: 1 });
+    await harness.service.setRequestStatus(request.id, "approved");
+    const isoDate = getDowntimeState(harness).scheduleSlots[0].isoDate;
+    const activityProcessor = async () => {
+      processorCalls += 1;
+      return { blocked: true, blockReason: "Missing materials" };
+    };
+
+    const first = await harness.service.processScheduledDate(isoDate, {
+      transitionId: "transition-blocked",
+      activityProcessor
+    });
+    const retry = await harness.service.processScheduledDate(isoDate, {
+      transitionId: "transition-blocked",
+      activityProcessor
+    });
+
+    const state = getDowntimeState(harness);
+    assert.equal(first.blocked.length, 1);
+    assert.equal(retry.blocked.length, 0);
+    assert.equal(processorCalls, 1);
+    assert.equal(state.scheduleSlots[0].status, "blocked");
+    assert.equal(state.scheduleSlots[0].blockReason, "Missing materials");
+    assert.equal(state.scheduleSlots[0].processedTransitionId, "transition-blocked");
+    assert.equal(state.balancesByActorId["actor-a"].reservedWorkdays, 5);
+    assert.equal(state.balancesByActorId["actor-a"].spentWorkdays, 0);
+    assert.equal(state.workLog.length, 1);
+    assert.equal(state.workLog[0].result.status, "blocked");
+  }
+  finally {
+    harness.restore();
+  }
+});
 
 test("getSnapshot uses native group members and excludes stale balance keys from current members", () => {
   const nativeMember = createActor({ id: "actor-a", name: "Native Member" });
@@ -211,12 +534,13 @@ test("grantWeeks as GM grants all current native members by default", async () =
     const balances = getDowntimeState(harness).balancesByActorId;
 
     assert.deepEqual(result.actorIds, ["actor-a", "actor-b"]);
-    assert.equal(balances["actor-a"].availableWeeks, 3);
-    assert.equal(balances["actor-a"].totalGrantedWeeks, 3);
-    assert.equal(balances["actor-b"].availableWeeks, 2);
-    assert.equal(balances["actor-b"].totalGrantedWeeks, 2);
-    assert.equal(balances["stale-actor"].availableWeeks, 5);
-    assert.equal(harness.setRegistryCalls, 1);
+    assert.equal(balances["actor-a"].availableWorkdays, 15);
+    assert.equal(balances["actor-a"].totalGrantedWorkdays, 15);
+    assert.equal(balances["actor-b"].availableWorkdays, 10);
+    assert.equal(balances["actor-b"].totalGrantedWorkdays, 10);
+    assert.equal(balances["stale-actor"].availableWorkdays, 25);
+    assert.equal(harness.mutateGroupStateCalls, 1);
+    assert.equal(harness.setRegistryCalls, 0);
   }
   finally {
     harness.restore();
@@ -251,13 +575,13 @@ test("revokeWeeks as GM removes only available weeks from current members", asyn
     const balances = getDowntimeState(harness).balancesByActorId;
 
     assert.deepEqual(result.actorIds, ["actor-a"]);
-    assert.equal(balances["actor-a"].availableWeeks, 1);
-    assert.equal(balances["actor-a"].reservedWeeks, 1);
-    assert.equal(balances["actor-a"].spentWeeks, 2);
-    assert.equal(balances["actor-a"].totalGrantedWeeks, 4);
-    assert.equal(balances["actor-b"].availableWeeks, 1);
-    assert.equal(balances["actor-b"].totalGrantedWeeks, 1);
-    assert.equal(getDowntimeState(harness).history[0].type, "revoke");
+    assert.equal(balances["actor-a"].availableWorkdays, 5);
+    assert.equal(balances["actor-a"].reservedWorkdays, 5);
+    assert.equal(balances["actor-a"].spentWorkdays, 10);
+    assert.equal(balances["actor-a"].totalGrantedWorkdays, 20);
+    assert.equal(balances["actor-b"].availableWorkdays, 5);
+    assert.equal(balances["actor-b"].totalGrantedWorkdays, 5);
+    assert.equal(getDowntimeState(harness).history.find((entry) => entry.type === "revoke")?.type, "revoke");
 
     await assert.rejects(
       () => harness.service.revokeWeeks({ actorIds: ["actor-b"], weeks: 2 }),
@@ -307,16 +631,16 @@ test("revokeWeeks for all current members skips members without available weeks"
     assert.deepEqual(result.actorIds, ["actor-b", "actor-c"]);
     assert.deepEqual(result.skippedActorIds, ["actor-a"]);
     assert.equal(result.totalRevokedWeeks, 3);
-    assert.equal(balances["actor-a"].availableWeeks, 0);
-    assert.equal(balances["actor-a"].totalGrantedWeeks, 1);
-    assert.equal(balances["actor-b"].availableWeeks, 0);
-    assert.equal(balances["actor-b"].totalGrantedWeeks, 0);
-    assert.equal(balances["actor-c"].availableWeeks, 1);
-    assert.equal(balances["actor-c"].totalGrantedWeeks, 1);
-    assert.equal(state.history[0].type, "revoke");
-    assert.deepEqual(state.history[0].actorIds, ["actor-b", "actor-c"]);
-    assert.deepEqual(state.history[0].skippedActorIds, ["actor-a"]);
-    assert.equal(state.history[0].totalRevokedWeeks, 3);
+    assert.equal(balances["actor-a"].availableWorkdays, 0);
+    assert.equal(balances["actor-a"].totalGrantedWorkdays, 5);
+    assert.equal(balances["actor-b"].availableWorkdays, 0);
+    assert.equal(balances["actor-b"].totalGrantedWorkdays, 0);
+    assert.equal(balances["actor-c"].availableWorkdays, 5);
+    assert.equal(balances["actor-c"].totalGrantedWorkdays, 5);
+    const revokeHistory = state.history.find((entry) => entry.type === "revoke");
+    assert.deepEqual(revokeHistory.actorIds, ["actor-b", "actor-c"]);
+    assert.deepEqual(revokeHistory.skippedActorIds, ["actor-a"]);
+    assert.equal(revokeHistory.totalRevokedWeeks, 3);
   }
   finally {
     harness.restore();
@@ -362,8 +686,8 @@ test("createRequest by player reserves weeks for an owned current member", async
     assert.equal(request.actionId, templateItem.uuid);
     assert.equal(request.status, "pending");
     assert.equal(request.submittedByUserId, "player-1");
-    assert.equal(state.balancesByActorId["actor-a"].availableWeeks, 1);
-    assert.equal(state.balancesByActorId["actor-a"].reservedWeeks, 2);
+    assert.equal(state.balancesByActorId["actor-a"].availableWorkdays, 5);
+    assert.equal(state.balancesByActorId["actor-a"].reservedWorkdays, 10);
   }
   finally {
     harness.restore();
@@ -453,8 +777,8 @@ test("updateRequest edits a pending request without duplicating or losing week a
     assert.equal(updated.checks.find((check) => check.id === "project-rank").selectedRank, 5);
     assert.equal(updated.checks.find((check) => check.id === "project-check").target, "prc");
     assert.equal(updated.checks.find((check) => check.id === "project-check").dc, 18);
-    assert.equal(state.balancesByActorId["actor-a"].availableWeeks, 2);
-    assert.equal(state.balancesByActorId["actor-a"].reservedWeeks, 1);
+    assert.equal(state.balancesByActorId["actor-a"].availableWorkdays, 10);
+    assert.equal(state.balancesByActorId["actor-a"].reservedWorkdays, 5);
 
     await harness.service.recordCheckResult(request.id, "project-check", {
       total: 20
@@ -509,8 +833,8 @@ test("createRequest can target an explicit group and preserve player submitter o
 
     assert.equal(request.actorId, "actor-a");
     assert.equal(request.submittedByUserId, "player-1");
-    assert.equal(getDowntimeState(harness).balancesByActorId["actor-a"].availableWeeks, 1);
-    assert.equal(getDowntimeState(harness).balancesByActorId["actor-a"].reservedWeeks, 1);
+    assert.equal(getDowntimeState(harness).balancesByActorId["actor-a"].availableWorkdays, 5);
+    assert.equal(getDowntimeState(harness).balancesByActorId["actor-a"].reservedWorkdays, 5);
   }
   finally {
     harness.restore();
@@ -601,9 +925,9 @@ test("reject and return release reserved request weeks back to available", async
 
       assert.equal(request.status, status);
       assert.equal(request.result, "No");
-      assert.equal(balance.availableWeeks, 3);
-      assert.equal(balance.reservedWeeks, 0);
-      assert.equal(balance.spentWeeks, 0);
+      assert.equal(balance.availableWorkdays, 15);
+      assert.equal(balance.reservedWorkdays, 0);
+      assert.equal(balance.spentWorkdays, 0);
     }
     finally {
       harness.restore();
@@ -650,9 +974,9 @@ test("complete spends reserved request weeks", async () => {
 
     assert.equal(request.status, "completed");
     assert.equal(request.result, "Done");
-    assert.equal(balance.availableWeeks, 1);
-    assert.equal(balance.reservedWeeks, 0);
-    assert.equal(balance.spentWeeks, 2);
+    assert.equal(balance.availableWorkdays, 5);
+    assert.equal(balance.reservedWorkdays, 0);
+    assert.equal(balance.spentWorkdays, 10);
   }
   finally {
     harness.restore();
@@ -763,9 +1087,9 @@ test("closeProject closes an unfinished completed project without week accountin
 
     assert.equal(request.projectClosed, true);
     assert.equal(request.projectClosedByUserId, "gm");
-    assert.equal(balance.availableWeeks, 0);
-    assert.equal(balance.reservedWeeks, 0);
-    assert.equal(balance.spentWeeks, 1);
+    assert.equal(balance.availableWorkdays, 0);
+    assert.equal(balance.reservedWorkdays, 0);
+    assert.equal(balance.spentWorkdays, 5);
   }
   finally {
     harness.restore();
@@ -862,9 +1186,9 @@ test("continueProject spends a week and records a new long project roll without 
     assert.equal(request.checks.find((check) => check.id === "long-project-check").result.dc, 14);
     assert.equal(request.checks.find((check) => check.id === "long-project-result").result, null);
     assert.equal(request.checks.find((check) => check.id === "long-project-result-fresh").result.progressSteps, 2);
-    assert.equal(balance.availableWeeks, 0);
-    assert.equal(balance.reservedWeeks, 0);
-    assert.equal(balance.spentWeeks, 2);
+    assert.equal(balance.availableWorkdays, 0);
+    assert.equal(balance.reservedWorkdays, 0);
+    assert.equal(balance.spentWorkdays, 10);
   }
   finally {
     harness.restore();
@@ -1250,14 +1574,14 @@ test("clearHistory removes downtime requests and releases open reservations", as
     });
     assert.deepEqual(state.requests, []);
     assert.deepEqual(state.checks, []);
-    assert.deepEqual(state.history, []);
+    assert.deepEqual(harness.service.getSnapshot().history, []);
     assert.equal(state.counter, 0);
-    assert.equal(state.balancesByActorId["actor-a"].availableWeeks, 2);
-    assert.equal(state.balancesByActorId["actor-a"].reservedWeeks, 0);
-    assert.equal(state.balancesByActorId["actor-a"].spentWeeks, 1);
-    assert.equal(state.balancesByActorId["actor-a"].totalGrantedWeeks, 3);
-    assert.equal(state.balancesByActorId["actor-b"].availableWeeks, 2);
-    assert.equal(state.balancesByActorId["actor-b"].spentWeeks, 1);
+    assert.equal(state.balancesByActorId["actor-a"].availableWorkdays, 10);
+    assert.equal(state.balancesByActorId["actor-a"].reservedWorkdays, 0);
+    assert.equal(state.balancesByActorId["actor-a"].spentWorkdays, 5);
+    assert.equal(state.balancesByActorId["actor-a"].totalGrantedWorkdays, 15);
+    assert.equal(state.balancesByActorId["actor-b"].availableWorkdays, 10);
+    assert.equal(state.balancesByActorId["actor-b"].spentWorkdays, 5);
   }
   finally {
     harness.restore();
@@ -2584,8 +2908,8 @@ test("approving a request with completed roll targets archives it as completed",
     const balance = getDowntimeState(harness).balancesByActorId["actor-a"];
 
     assert.equal(request.status, "completed");
-    assert.equal(balance.reservedWeeks, 0);
-    assert.equal(balance.spentWeeks, 1);
+    assert.equal(balance.reservedWorkdays, 0);
+    assert.equal(balance.spentWorkdays, 5);
   }
   finally {
     harness.restore();
@@ -2632,8 +2956,8 @@ test("approving a request without completed roll targets keeps it active", async
     const balance = getDowntimeState(harness).balancesByActorId["actor-a"];
 
     assert.equal(request.status, "approved");
-    assert.equal(balance.reservedWeeks, 1);
-    assert.equal(balance.spentWeeks, 0);
+    assert.equal(balance.reservedWorkdays, 5);
+    assert.equal(balance.spentWorkdays, 0);
   }
   finally {
     harness.restore();
