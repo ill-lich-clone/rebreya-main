@@ -1,7 +1,11 @@
 ﻿param(
   [string]$WorkbookPath = "",
+  [string]$CsvPath = "",
+  [string]$SourcePath = "",
   [string]$GoodsPath = "",
   [string]$OutputPath = "",
+  [string]$ExistingMaterialsPath = "",
+  [string]$ExpectedCsvSha256 = "AF2E69169C70CB4165A671502C87AC96CD9D549B6E3E19BEDDF401FEEC5DEE82",
   [switch]$Quiet
 )
 
@@ -9,6 +13,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $InvariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
+$SpreadsheetId = "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk"
+$SheetName = "Энциклопедия материалов"
+$ExpectedSourceMaterialCount = 247
 
 function Write-Info([string]$Message) {
   if (-not $Quiet) { Write-Host $Message }
@@ -22,6 +29,13 @@ function Resolve-GoodsPath([string]$ConfiguredPath) {
 function Resolve-OutputPath([string]$ConfiguredPath) {
   if (-not [string]::IsNullOrWhiteSpace($ConfiguredPath)) { return [System.IO.Path]::GetFullPath($ConfiguredPath) }
   return (Join-Path (Resolve-ModuleRoot) "data\materials.json")
+}
+function Resolve-SourceFilePath([string]$ConfiguredSourcePath, [string]$ConfiguredCsvPath, [string]$ConfiguredWorkbookPath) {
+  $configuredPaths = @(@($ConfiguredSourcePath, $ConfiguredCsvPath, $ConfiguredWorkbookPath) |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  if ($configuredPaths.Count -eq 0) { throw "SourcePath, CsvPath, or WorkbookPath is required." }
+  if ($configuredPaths.Count -gt 1) { throw "Specify only one of SourcePath, CsvPath, or WorkbookPath." }
+  return [System.IO.Path]::GetFullPath($configuredPaths[0])
 }
 function Normalize-DisplayText([string]$Value) {
   if ([string]::IsNullOrWhiteSpace($Value)) { return "" }
@@ -41,16 +55,18 @@ function Convert-ToNumber($Value, [switch]$AllowNull) {
   if ($null -eq $Value) { return $(if ($AllowNull) { $null } else { 0 }) }
   $text = Normalize-DisplayText ([string]$Value)
   if ([string]::IsNullOrWhiteSpace($text)) { return $(if ($AllowNull) { $null } else { 0 }) }
+  $text = $text -replace "\s+(?:зм|фнт)$", ""
   $text = $text.Replace(' ', '').Replace(',', '.')
   $number = 0.0
   if ([double]::TryParse($text, [System.Globalization.NumberStyles]::Float, $InvariantCulture, [ref]$number)) { return $number }
   return $(if ($AllowNull) { $null } else { 0 })
 }
 function New-UniqueId([string]$Preferred, [hashtable]$UsedIds, [string]$FallbackPrefix = "material") {
-  $candidate = if ([string]::IsNullOrWhiteSpace($Preferred)) { $FallbackPrefix } else { $Preferred }
+  $baseId = if ([string]::IsNullOrWhiteSpace($Preferred)) { $FallbackPrefix } else { $Preferred }
+  $candidate = $baseId
   $index = 2
   while ($UsedIds.ContainsKey($candidate)) {
-    $candidate = "$FallbackPrefix-$index"
+    $candidate = "$baseId-$index"
     $index += 1
   }
   $UsedIds[$candidate] = $true
@@ -122,6 +138,33 @@ function Read-WorksheetRows([System.IO.Compression.ZipArchive]$Zip, [string]$Ent
   }
   return ,$rows.ToArray()
 }
+function Read-CsvRows([string]$Path) {
+  Add-Type -AssemblyName Microsoft.VisualBasic
+  $parser = [Microsoft.VisualBasic.FileIO.TextFieldParser]::new($Path, [System.Text.Encoding]::UTF8, $true)
+  $parser.TextFieldType = [Microsoft.VisualBasic.FileIO.FieldType]::Delimited
+  $parser.SetDelimiters(',')
+  $parser.HasFieldsEnclosedInQuotes = $true
+  $parser.TrimWhiteSpace = $false
+  $columns = @('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M')
+  $rows = New-Object System.Collections.Generic.List[object]
+  $rowNumber = 0
+  try {
+    while (-not $parser.EndOfData) {
+      $fields = $parser.ReadFields()
+      $rowNumber += 1
+      if ($fields.Count -ne $columns.Count) {
+        throw "CSV row $rowNumber has $($fields.Count) columns; expected $($columns.Count)."
+      }
+      $map = [ordered]@{ __row = $rowNumber }
+      for ($index = 0; $index -lt $columns.Count; $index += 1) {
+        $map[$columns[$index]] = [string]$fields[$index]
+      }
+      $rows.Add([pscustomobject]$map)
+    }
+  }
+  finally { $parser.Dispose() }
+  return ,$rows.ToArray()
+}
 function Get-Value($Row, [string]$Column) {
   $property = $Row.PSObject.Properties[$Column]
   if ($property) { return $property.Value }
@@ -136,37 +179,100 @@ function Resolve-GoodMatch([string]$Name, [object[]]$Goods) {
   if ($looseMatches.Count -eq 1) { return $looseMatches[0] }
   return $null
 }
+function Read-ExistingMaterials([string]$Path) {
+  if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return @() }
+  $existing = Get-Content -Raw -Encoding UTF8 $Path | ConvertFrom-Json
+  if ($null -eq $existing) { return @() }
+  return @($existing)
+}
+function Build-ExistingMaterialIndexes([object[]]$ExistingMaterials) {
+  $byName = @{}
+  $byGoodId = @{}
+  foreach ($material in $ExistingMaterials) {
+    $nameKey = Get-MatchKey ([string]$material.name)
+    if (-not [string]::IsNullOrWhiteSpace($nameKey) -and -not $byName.ContainsKey($nameKey)) {
+      $byName[$nameKey] = $material
+    }
+    $goodId = [string]$material.linkedGoodId
+    if (-not [string]::IsNullOrWhiteSpace($goodId) -and -not $byGoodId.ContainsKey($goodId)) {
+      $byGoodId[$goodId] = $material
+    }
+  }
+  return [pscustomobject]@{ byName = $byName; byGoodId = $byGoodId }
+}
+function Resolve-ExistingMaterial([string]$Name, $Good, $Indexes) {
+  $nameKey = Get-MatchKey $Name
+  if (-not [string]::IsNullOrWhiteSpace($nameKey) -and $Indexes.byName.ContainsKey($nameKey)) {
+    return $Indexes.byName[$nameKey]
+  }
+  if ($Good -and $Indexes.byGoodId.ContainsKey([string]$Good.id)) {
+    return $Indexes.byGoodId[[string]$Good.id]
+  }
+  return $null
+}
 function Write-JsonFile([string]$Path, $Data) {
   [System.IO.File]::WriteAllText($Path, ($Data | ConvertTo-Json -Depth 50), [System.Text.UTF8Encoding]::new($false))
 }
 
-if ([string]::IsNullOrWhiteSpace($WorkbookPath)) { throw "WorkbookPath is required." }
+$resolvedSourcePath = Resolve-SourceFilePath $SourcePath $CsvPath $WorkbookPath
 $resolvedGoodsPath = Resolve-GoodsPath $GoodsPath
 $resolvedOutputPath = Resolve-OutputPath $OutputPath
+$resolvedExistingMaterialsPath = if ([string]::IsNullOrWhiteSpace($ExistingMaterialsPath)) {
+  $resolvedOutputPath
+}
+else {
+  [System.IO.Path]::GetFullPath($ExistingMaterialsPath)
+}
 $outputDirectory = [System.IO.Path]::GetDirectoryName($resolvedOutputPath)
 if (-not (Test-Path -LiteralPath $outputDirectory)) { New-Item -ItemType Directory -Path $outputDirectory | Out-Null }
 
 $goods = Get-Content -Raw -Encoding UTF8 $resolvedGoodsPath | ConvertFrom-Json
-$zip = [System.IO.Compression.ZipFile]::OpenRead($WorkbookPath)
-try {
-  $sharedStrings = Load-SharedStrings $zip
-  $worksheetPath = Get-FirstWorksheetPath $zip
-  $rows = Read-WorksheetRows $zip $worksheetPath $sharedStrings
+$existingMaterials = Read-ExistingMaterials $resolvedExistingMaterialsPath
+$existingIndexes = Build-ExistingMaterialIndexes $existingMaterials
+$sourceExtension = [System.IO.Path]::GetExtension($resolvedSourcePath).ToLowerInvariant()
+if ($sourceExtension -eq '.csv') {
+  if (-not [string]::IsNullOrWhiteSpace($ExpectedCsvSha256)) {
+    $actualCsvSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $resolvedSourcePath).Hash
+    if ($actualCsvSha256 -ne $ExpectedCsvSha256.ToUpperInvariant()) {
+      throw "CSV SHA256 mismatch. Expected $ExpectedCsvSha256, got $actualCsvSha256."
+    }
+  }
+  $rows = Read-CsvRows $resolvedSourcePath
 }
-finally { $zip.Dispose() }
+elseif ($sourceExtension -eq '.xlsx') {
+  $zip = [System.IO.Compression.ZipFile]::OpenRead($resolvedSourcePath)
+  try {
+    $sharedStrings = Load-SharedStrings $zip
+    $worksheetPath = Get-FirstWorksheetPath $zip
+    $rows = Read-WorksheetRows $zip $worksheetPath $sharedStrings
+  }
+  finally { $zip.Dispose() }
+}
+else {
+  throw "Unsupported materials source '$resolvedSourcePath'. Expected .csv or .xlsx."
+}
 
 $materials = @()
 $usedIds = @{}
 $linkedGoodIds = @{}
-$rowCounter = 1
+$sourceMaterialCount = 0
 foreach ($row in ($rows | Where-Object { $_.__row -ge 2 })) {
   $name = Normalize-DisplayText (Get-Value $row 'A')
   if ([string]::IsNullOrWhiteSpace($name)) { continue }
   $good = Resolve-GoodMatch $name $goods
   if ($good) { $linkedGoodIds[$good.id] = $true }
-  $preferredId = if ($good) { $good.id } else { "material-$rowCounter" }
+  $existingMaterial = Resolve-ExistingMaterial $name $good $existingIndexes
+  $preferredId = if ($existingMaterial -and -not [string]::IsNullOrWhiteSpace([string]$existingMaterial.id)) {
+    [string]$existingMaterial.id
+  }
+  elseif ($good) {
+    [string]$good.id
+  }
+  else {
+    "material-$($row.__row)"
+  }
   $materials += [pscustomobject][ordered]@{
-    id = New-UniqueId $preferredId $usedIds
+    id = New-UniqueId $preferredId $usedIds "material-$($row.__row)"
     name = $name
     type = Normalize-DisplayText (Get-Value $row 'B')
     subtype = Normalize-DisplayText (Get-Value $row 'C')
@@ -176,15 +282,37 @@ foreach ($row in ($rows | Where-Object { $_.__row -ge 2 })) {
     description = Normalize-DisplayText (Get-Value $row 'G')
     linkedGoodId = if ($good) { $good.id } else { $null }
     linkedGoodName = if ($good) { $good.name } else { $null }
-    source = 'materials-workbook'
+    applications = [pscustomobject][ordered]@{
+      upgrade = [string](Get-Value $row 'H')
+      implant = [string](Get-Value $row 'I')
+      crafting = [string](Get-Value $row 'J')
+      alchemy = [string](Get-Value $row 'K')
+      knowledge = [string](Get-Value $row 'L')
+    }
+    alchemyAspects = [string](Get-Value $row 'M')
+    source = [pscustomobject][ordered]@{
+      spreadsheetId = $SpreadsheetId
+      sheetName = $SheetName
+      row = [int]$row.__row
+    }
     isSynthetic = $false
   }
-  $rowCounter += 1
+  $sourceMaterialCount += 1
+}
+if ($sourceMaterialCount -ne $ExpectedSourceMaterialCount) {
+  throw "Expected $ExpectedSourceMaterialCount source materials, found $sourceMaterialCount."
 }
 foreach ($good in $goods) {
   if ($linkedGoodIds.ContainsKey($good.id)) { continue }
+  $existingMaterial = Resolve-ExistingMaterial ([string]$good.name) $good $existingIndexes
+  $preferredId = if ($existingMaterial -and -not [string]::IsNullOrWhiteSpace([string]$existingMaterial.id)) {
+    [string]$existingMaterial.id
+  }
+  else {
+    [string]$good.id
+  }
   $materials += [pscustomobject][ordered]@{
-    id = New-UniqueId $good.id $usedIds 'material'
+    id = New-UniqueId $preferredId $usedIds 'material'
     name = $good.name
     type = 'Ресурс'
     subtype = ''
@@ -194,6 +322,14 @@ foreach ($good in $goods) {
     description = "Материал создан автоматически, потому что для товара «$($good.name)» нет отдельной строки в таблице материалов."
     linkedGoodId = $good.id
     linkedGoodName = $good.name
+    applications = [pscustomobject][ordered]@{
+      upgrade = ''
+      implant = ''
+      crafting = ''
+      alchemy = ''
+      knowledge = ''
+    }
+    alchemyAspects = ''
     source = 'synthetic-from-goods'
     isSynthetic = $true
   }
@@ -201,4 +337,6 @@ foreach ($good in $goods) {
 Write-JsonFile $resolvedOutputPath $materials
 Write-Info 'Materials import complete.'
 Write-Info "Materials: $($materials.Count)"
+Write-Info "Source materials: $sourceMaterialCount"
+Write-Info "Synthetic materials: $($materials.Count - $sourceMaterialCount)"
 Write-Info "Path: $resolvedOutputPath"
