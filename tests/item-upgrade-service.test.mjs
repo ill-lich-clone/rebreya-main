@@ -330,7 +330,7 @@ test("dnd5e item filter hook hides installed upgrades before inventory rows rend
   }
 });
 
-test("actor sheet inventory rows mark upgraded host items with a persistent frame", async () => {
+test("actor sheet inventory rows mark upgraded host items with compact slot usage", async () => {
   const restoreFoundry = installFoundryStubs();
   const previousHTMLElement = globalThis.HTMLElement;
 
@@ -339,12 +339,21 @@ test("actor sheet inventory rows mark upgraded host items with a persistent fram
       this.dataset = dataset;
       this.selectorAll = selectorAll;
       this.hidden = false;
+      this.attributes = {};
       this.classList = {
         values: new Set(),
         add: (...names) => names.forEach((name) => this.classList.values.add(name)),
         remove: (...names) => names.forEach((name) => this.classList.values.delete(name)),
         contains: (name) => this.classList.values.has(name)
       };
+    }
+
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    }
+
+    removeAttribute(name) {
+      delete this.attributes[name];
     }
 
     querySelectorAll(selector) {
@@ -382,12 +391,16 @@ test("actor sheet inventory rows mark upgraded host items with a persistent fram
       }
     });
 
-    await new ItemUpgradeService().installUpgrade(host, upgrade);
+    const service = new ItemUpgradeService();
+    await service.setUpgradeCapacity(host, 3);
+    await service.installUpgrade(host, upgrade);
     assert.equal(hideInstalledUpgradeInventoryRows(root, actor), true);
 
     assert.equal(upgradeRow.hidden, true);
     assert.equal(upgradeRow.classList.contains("rm-item-upgrades-hidden-item"), true);
     assert.equal(hostRow.classList.contains("has-rebreya-installed-upgrades"), true);
+    assert.equal(hostRow.dataset.rebreyaItemUpgradesSlotsShort, "1/3");
+    assert.equal(hostRow.dataset.rebreyaItemUpgradesSlotsLabel, "Усовершенствования: 1/3");
   }
   finally {
     globalThis.HTMLElement = previousHTMLElement;

@@ -142,7 +142,20 @@ test("item upgrade controls match the dark character sheet style", async () => {
   assert.match(itemUpgradeBlock, /color:\s*var\(--rm-text-primary\);/su);
   assert.doesNotMatch(itemUpgradeBlock, /245 241 232|255 252 245|255 255 255 \/ 0\.58/u);
 
-  assert.match(css, /\.dnd5e2\.sheet\.actor \[data-item-id\]\.has-rebreya-installed-upgrades/u);
+  const itemUpgradeInventoryBlock = css.match(
+    /\.dnd5e2\.sheet\.actor \[data-item-id\]\.has-rebreya-installed-upgrades,\s*\.dnd5e\.sheet\.actor \[data-item-id\]\.has-rebreya-installed-upgrades\s*\{(?<body>[^}]*)\}/su
+  )?.groups?.body ?? "";
+  const itemUpgradeInventoryBadgeBlock = css.match(
+    /\.dnd5e2\.sheet\.actor \[data-item-id\]\.has-rebreya-installed-upgrades::after,\s*\.dnd5e\.sheet\.actor \[data-item-id\]\.has-rebreya-installed-upgrades::after\s*\{(?<body>[^}]*)\}/su
+  )?.groups?.body ?? "";
+
+  assert.match(itemUpgradeInventoryBlock, /position:\s*relative;/u);
+  assert.match(itemUpgradeInventoryBlock, /inset 3px 0 0 rgb\(var\(--rm-color-gold-rgb\) \/ 0\.78\)/u);
+  assert.doesNotMatch(itemUpgradeInventoryBlock, /inset 0 0 0 1px/u);
+  assert.match(itemUpgradeInventoryBadgeBlock, /content:\s*attr\(data-rebreya-item-upgrades-slots-short\);/u);
+  assert.match(itemUpgradeInventoryBadgeBlock, /position:\s*absolute;/u);
+  assert.match(itemUpgradeInventoryBadgeBlock, /border-radius:\s*4px;/u);
+  assert.match(itemUpgradeInventoryBadgeBlock, /background:\s*rgb\(38 31 18 \/ 0\.92\);/u);
   assert.match(css, /\.dnd5e2\.sheet\.actor \[data-item-id\]\.is-rebreya-upgrade-installing/u);
   assert.match(css, /@keyframes rmItemUpgradeInstallPulse/u);
 });

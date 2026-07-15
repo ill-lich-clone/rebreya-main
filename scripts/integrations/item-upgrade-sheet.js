@@ -191,8 +191,31 @@ function isPotentialActorInventoryUpgradeDrop(dropData, actor, event = null) {
   return isPotentialUpgradeDrop(dropData, event);
 }
 
-function hasInstalledUpgrade(hostItem) {
-  return getInstalledUpgradeItems(hostItem).length > 0;
+function clearInventoryUpgradeIndicator(row) {
+  row.classList?.remove?.(INVENTORY_ROW_HAS_UPGRADES_CLASS);
+  delete row.dataset.rebreyaItemUpgradesSlotsShort;
+  delete row.dataset.rebreyaItemUpgradesSlotsLabel;
+  row.removeAttribute?.("data-rebreya-item-upgrades-slots-short");
+  row.removeAttribute?.("data-rebreya-item-upgrades-slots-label");
+}
+
+function renderInventoryUpgradeIndicator(row, hostItem) {
+  const state = getItemUpgradeHostState(hostItem);
+  const installedCount = getInstalledUpgradeItems(hostItem).length;
+  if (installedCount <= 0) {
+    clearInventoryUpgradeIndicator(row);
+    return false;
+  }
+
+  const capacity = Math.max(1, Number.isFinite(Number(state.capacity)) ? Number(state.capacity) : 1, installedCount);
+  const shortLabel = `${installedCount}/${capacity}`;
+  const fullLabel = `Усовершенствования: ${shortLabel}`;
+  row.classList?.add?.(INVENTORY_ROW_HAS_UPGRADES_CLASS);
+  row.dataset.rebreyaItemUpgradesSlotsShort = shortLabel;
+  row.dataset.rebreyaItemUpgradesSlotsLabel = fullLabel;
+  row.setAttribute?.("data-rebreya-item-upgrades-slots-short", shortLabel);
+  row.setAttribute?.("data-rebreya-item-upgrades-slots-label", fullLabel);
+  return true;
 }
 
 function getPanelContainer(root) {
@@ -437,12 +460,11 @@ export function hideInstalledUpgradeInventoryRows(root, actor) {
     }
 
     const item = resolveActorItem(actor, node.dataset.itemId);
-    if (item && hasInstalledUpgrade(item)) {
-      node.classList?.add?.(INVENTORY_ROW_HAS_UPGRADES_CLASS);
+    if (item && renderInventoryUpgradeIndicator(node, item)) {
       changed = true;
     }
     else {
-      node.classList?.remove?.(INVENTORY_ROW_HAS_UPGRADES_CLASS);
+      clearInventoryUpgradeIndicator(node);
     }
   }
   return changed;
