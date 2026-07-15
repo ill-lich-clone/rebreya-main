@@ -332,6 +332,7 @@ test("RebreyaMainModule applies tracked travel time to the calendar", async () =
     assert.deepEqual(dayShifts, [{
       days: 1,
       options: {
+        processDowntime: false,
         processDailyCycles: false,
         reason: "travel-time",
         refreshApps: false,
@@ -340,6 +341,7 @@ test("RebreyaMainModule applies tracked travel time to the calendar", async () =
     }, {
       days: 1,
       options: {
+        processDowntime: false,
         processDailyCycles: false,
         reason: "travel-time",
         refreshApps: false,

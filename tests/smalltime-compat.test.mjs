@@ -122,7 +122,11 @@ test("smalltime world time updates shift the Rebreya calendar only on the GM cli
       {
         days: 1,
         options: {
+          processDowntime: true,
+          processSupplies: false,
           processDailyCycles: false,
+          consumeSupplies: false,
+          applyEnergy: false,
           reason: "smalltime-world-time"
         }
       },
@@ -172,6 +176,8 @@ test("smalltime asks before consuming supplies when world time advances the date
       {
         days: 1,
         options: {
+          processDowntime: true,
+          processSupplies: true,
           processDailyCycles: true,
           consumeSupplies: true,
           applyEnergy: true,
@@ -181,6 +187,46 @@ test("smalltime asks before consuming supplies when world time advances the date
       },
       { refreshed: true }
     ]);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("smalltime moves backward without processing downtime or supplies", async () => {
+  const previousGame = globalThis.game;
+  const calls = [];
+  const moduleApi = {
+    async setCalendarTimeOfDay(seconds, options) {
+      calls.push({ seconds, options });
+    },
+    async shiftCalendarDays(days, options) {
+      calls.push({ days, options });
+    }
+  };
+
+  try {
+    globalThis.game = { user: { isGM: true } };
+    const dayDelta = await handleSmallTimeWorldTimeUpdate(23 * 3600, -2 * 3600, {
+      moduleApi,
+      confirmSupplyConsumption: async () => {
+        throw new Error("Backward movement must not ask about supplies.");
+      },
+      refreshSmallTimeDateDisplay: () => {}
+    });
+
+    assert.equal(dayDelta, -1);
+    assert.deepEqual(calls.at(-1), {
+      days: -1,
+      options: {
+        processDowntime: false,
+        processSupplies: false,
+        processDailyCycles: false,
+        consumeSupplies: false,
+        applyEnergy: false,
+        reason: "smalltime-world-time"
+      }
+    });
   }
   finally {
     globalThis.game = previousGame;

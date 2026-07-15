@@ -3150,6 +3150,7 @@ export class RebreyaMainModule {
 
     if (totalDayDelta !== 0) {
       await this.shiftCalendarDays(totalDayDelta, {
+        processDowntime: false,
         processDailyCycles: false,
         reason: "travel-time",
         refreshApps: false,

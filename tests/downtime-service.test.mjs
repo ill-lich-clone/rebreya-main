@@ -572,6 +572,163 @@ test("processScheduledDate journals an empty slot snapshot and never discovers l
   }
 });
 
+test("processScheduledDate never invokes the processor for retained slots on released requests", async () => {
+  for (const status of ["returned", "rejected", "cancelled"]) {
+    const actor = createActor({ id: "actor-a", name: "Hero A" });
+    const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+    const harness = createHarness({
+      members: [actor],
+      groupItems: [templateItem],
+      calendarIsoDate: "2026-07-16",
+      downtimeState: { version: 2 }
+    });
+    let processorCalls = 0;
+
+    try {
+      await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 1, fromIsoDate: "2026-07-13" });
+      const request = await harness.service.createRequest({ actorId: actor.id, actionId: templateItem.uuid, weeks: 1 });
+      await harness.service.setRequestStatus(request.id, "approved");
+      await harness.service.setRequestStatus(request.id, status);
+
+      const result = await harness.service.processScheduledDate("2026-07-16", {
+        transitionId: `transition-released-${status}`,
+        activityProcessor: async () => {
+          processorCalls += 1;
+          return { result: { progress: 1 } };
+        }
+      });
+
+      const state = getDowntimeState(harness);
+      assert.equal(processorCalls, 0, status);
+      assert.equal(result.reconciliation.length, 1, status);
+      assert.equal(result.journalStatus, "reconciliation-required", status);
+      assert.equal(state.scheduleSlots.find((slot) => slot.isoDate === "2026-07-16").status, "approved", status);
+      assert.equal(state.balancesByActorId[actor.id].reservedWorkdays, 4, status);
+      assert.equal(state.balancesByActorId[actor.id].spentWorkdays, 0, status);
+    }
+    finally {
+      harness.restore();
+    }
+  }
+});
+
+test("processScheduledDate preflights request existence and slot status before the processor", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const invalidStates = [{
+    label: "missing request",
+    requestId: "missing-request",
+    requests: []
+  }, {
+    label: "pending request with approved slot",
+    requestId: "downtime-1",
+    requests: [{
+      id: "downtime-1",
+      actorId: actor.id,
+      actionId: "craft",
+      weeks: 1,
+      workdays: 1,
+      status: "pending"
+    }]
+  }];
+
+  for (const invalidState of invalidStates) {
+    const harness = createHarness({
+      members: [actor],
+      downtimeState: {
+        version: 2,
+        balancesByActorId: {
+          [actor.id]: {
+            availableWorkdays: 0,
+            reservedWorkdays: 1,
+            spentWorkdays: 0,
+            totalGrantedWorkdays: 1
+          }
+        },
+        requests: invalidState.requests,
+        scheduleSlots: [{
+          id: `slot-${invalidState.requestId}`,
+          actorId: actor.id,
+          isoDate: "2026-07-16",
+          status: "approved",
+          grantId: "grant-1",
+          requestId: invalidState.requestId
+        }]
+      }
+    });
+    let processorCalls = 0;
+
+    try {
+      const result = await harness.service.processScheduledDate("2026-07-16", {
+        transitionId: `transition-${invalidState.requestId}`,
+        activityProcessor: async () => {
+          processorCalls += 1;
+          return { result: { progress: 1 } };
+        }
+      });
+
+      assert.equal(processorCalls, 0, invalidState.label);
+      assert.equal(result.reconciliation.length, 1, invalidState.label);
+      assert.equal(result.journalStatus, "reconciliation-required", invalidState.label);
+    }
+    finally {
+      harness.restore();
+    }
+  }
+});
+
+test("processScheduledDate preflights the actor reservation before the processor", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    downtimeState: {
+      version: 2,
+      balancesByActorId: {
+        [actor.id]: {
+          availableWorkdays: 1,
+          reservedWorkdays: 0,
+          spentWorkdays: 0,
+          totalGrantedWorkdays: 1
+        }
+      },
+      requests: [{
+        id: "downtime-1",
+        actorId: actor.id,
+        actionId: "craft",
+        weeks: 1,
+        workdays: 1,
+        status: "approved"
+      }],
+      scheduleSlots: [{
+        id: "slot-unreserved",
+        actorId: actor.id,
+        isoDate: "2026-07-16",
+        status: "approved",
+        grantId: "grant-1",
+        requestId: "downtime-1"
+      }]
+    }
+  });
+  let processorCalls = 0;
+
+  try {
+    const result = await harness.service.processScheduledDate("2026-07-16", {
+      transitionId: "transition-unreserved",
+      activityProcessor: async () => {
+        processorCalls += 1;
+        return { result: { progress: 1 } };
+      }
+    });
+
+    assert.equal(processorCalls, 0);
+    assert.equal(result.reconciliation.length, 1);
+    assert.equal(result.journalStatus, "reconciliation-required");
+    assert.equal(getDowntimeState(harness).balancesByActorId[actor.id].spentWorkdays, 0);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("processScheduledDate releases the mutation queue while the domain processor is running", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
   const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
@@ -707,6 +864,156 @@ test("request status mutation fails busy while a claimed slot processor is delay
   }
   finally {
     releaseProcessor.resolve();
+    harness.restore();
+  }
+});
+
+test("same-status approval fails busy without mutation while a slot processor is delayed", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+  const processorStarted = createDeferred();
+  const releaseProcessor = createDeferred();
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 1 });
+    const request = await harness.service.createRequest({ actorId: actor.id, actionId: templateItem.uuid, weeks: 1 });
+    await harness.service.setRequestStatus(request.id, "approved", { result: "Original" });
+    const slot = getDowntimeState(harness).scheduleSlots[0];
+    const processing = harness.service.processScheduledDate(slot.isoDate, {
+      transitionId: "transition-same-status-busy",
+      activityProcessor: async () => {
+        processorStarted.resolve();
+        await releaseProcessor.promise;
+        return { result: { progress: 1 } };
+      }
+    });
+    await processorStarted.promise;
+    const stateBeforeMutation = clone(getDowntimeState(harness));
+
+    await assert.rejects(
+      harness.service.setRequestStatus(request.id, "approved", { result: "Mutated" }),
+      /busy.*retry/iu
+    );
+    assert.deepEqual(getDowntimeState(harness), stateBeforeMutation);
+
+    releaseProcessor.resolve();
+    await processing;
+  }
+  finally {
+    releaseProcessor.resolve();
+    harness.restore();
+  }
+});
+
+test("setRequestStatus prioritizes a nonterminal slot claim over request status validation", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    downtimeState: {
+      version: 2,
+      balancesByActorId: {
+        [actor.id]: {
+          availableWorkdays: 0,
+          reservedWorkdays: 1,
+          spentWorkdays: 0,
+          totalGrantedWorkdays: 1
+        }
+      },
+      requests: [{
+        id: "downtime-1",
+        actorId: actor.id,
+        actionId: "craft",
+        weeks: 1,
+        workdays: 1,
+        status: "completed"
+      }],
+      scheduleSlots: [{
+        id: "slot-claimed",
+        actorId: actor.id,
+        isoDate: "2026-07-16",
+        status: "blocked",
+        grantId: "grant-1",
+        requestId: "downtime-1",
+        processingTransitionId: "transition-completed-busy"
+      }],
+      transitionJournal: [{
+        transitionId: "transition-completed-busy",
+        isoDate: "2026-07-16",
+        slotIds: ["slot-claimed"],
+        status: "processing",
+        resultsBySlotId: {
+          "slot-claimed": {
+            status: "processing",
+            claimedActorId: actor.id,
+            claimedRequestId: "downtime-1",
+            claimedStatus: "blocked"
+          }
+        },
+        createdAt: 1,
+        updatedAt: 1
+      }]
+    }
+  });
+
+  try {
+    const stateBeforeMutation = clone(getDowntimeState(harness));
+    await assert.rejects(
+      harness.service.setRequestStatus("downtime-1", "returned"),
+      /busy.*retry/iu
+    );
+    assert.deepEqual(getDowntimeState(harness), stateBeforeMutation);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("updateRequest fails busy without mutation for a claimed blocked slot", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 1 });
+    const request = await harness.service.createRequest({ actorId: actor.id, actionId: templateItem.uuid, weeks: 1 });
+    const slot = getDowntimeState(harness).scheduleSlots[0];
+    await harness.mutateDowntimeState((state) => {
+      const claimedSlot = state.scheduleSlots.find((entry) => entry.id === slot.id);
+      claimedSlot.status = "blocked";
+      claimedSlot.processingTransitionId = "transition-blocked-busy";
+      state.transitionJournal.push({
+        transitionId: "transition-blocked-busy",
+        isoDate: slot.isoDate,
+        slotIds: [slot.id],
+        status: "processing",
+        resultsBySlotId: {
+          [slot.id]: {
+            status: "processing",
+            claimedActorId: actor.id,
+            claimedRequestId: request.id,
+            claimedStatus: "blocked"
+          }
+        },
+        createdAt: 1,
+        updatedAt: 1
+      });
+    });
+    const stateBeforeMutation = clone(getDowntimeState(harness));
+
+    await assert.rejects(
+      harness.service.updateRequest({
+        requestId: request.id,
+        actorId: actor.id,
+        actionId: templateItem.uuid,
+        title: "Mutated",
+        weeks: 1
+      }),
+      /busy.*retry/iu
+    );
+    assert.deepEqual(getDowntimeState(harness), stateBeforeMutation);
+  }
+  finally {
     harness.restore();
   }
 });
@@ -1436,6 +1743,44 @@ test("updateRequest edits a pending request without duplicating or losing week a
       }),
       /already has recorded results/u
     );
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("updateRequest rejects shrinking below retained past and current slots without mutation", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({
+    members: [actor],
+    groupItems: [templateItem],
+    calendarIsoDate: "2026-07-16",
+    downtimeState: { version: 2 }
+  });
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 2, fromIsoDate: "2026-07-06" });
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      title: "Two weeks",
+      weeks: 2
+    });
+    const stateBeforeMutation = clone(getDowntimeState(harness));
+
+    await assert.rejects(
+      harness.service.updateRequest({
+        requestId: request.id,
+        actorId: actor.id,
+        actionId: templateItem.uuid,
+        title: "One week",
+        weeks: 1
+      }),
+      /retained.*past.*current/iu
+    );
+
+    assert.deepEqual(getDowntimeState(harness), stateBeforeMutation);
   }
   finally {
     harness.restore();
@@ -2229,6 +2574,117 @@ test("clearHistory removes downtime requests and releases open reservations", as
   }
   finally {
     harness.restore();
+  }
+});
+
+test("clearHistory releases every open and released unprocessed reservation", async () => {
+  const actorA = createActor({ id: "actor-a", name: "Hero A" });
+  const actorB = createActor({ id: "actor-b", name: "Hero B" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({
+    members: [actorA, actorB],
+    groupItems: [templateItem],
+    calendarIsoDate: "2026-07-16",
+    downtimeState: { version: 2 }
+  });
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actorA.id, actorB.id], weeks: 1, fromIsoDate: "2026-07-13" });
+    const openRequest = await harness.service.createRequest({ actorId: actorA.id, actionId: templateItem.uuid, weeks: 1 });
+    const releasedRequest = await harness.service.createRequest({ actorId: actorB.id, actionId: templateItem.uuid, weeks: 1 });
+    await harness.service.setRequestStatus(openRequest.id, "approved");
+    await harness.service.setRequestStatus(releasedRequest.id, "approved");
+    await harness.service.setRequestStatus(releasedRequest.id, "returned");
+    await harness.mutateDowntimeState((state) => {
+      state.scheduleSlots.find((slot) => slot.requestId === openRequest.id).status = "blocked";
+    });
+
+    await harness.service.clearHistory();
+
+    const state = getDowntimeState(harness);
+    assert.deepEqual(state.requests, []);
+    assert.equal(state.scheduleSlots.every((slot) => slot.status === "free" && slot.requestId === null), true);
+    assert.deepEqual(state.balancesByActorId[actorA.id], {
+      availableWorkdays: 5,
+      reservedWorkdays: 0,
+      spentWorkdays: 0,
+      totalGrantedWorkdays: 5
+    });
+    assert.deepEqual(state.balancesByActorId[actorB.id], {
+      availableWorkdays: 5,
+      reservedWorkdays: 0,
+      spentWorkdays: 0,
+      totalGrantedWorkdays: 5
+    });
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("clearHistory fails busy without mutation for every claimed request status", async () => {
+  for (const status of ["approved", "returned"]) {
+    const actor = createActor({ id: "actor-a", name: "Hero A" });
+    const harness = createHarness({
+      members: [actor],
+      downtimeState: {
+        version: 2,
+        balancesByActorId: {
+          [actor.id]: {
+            availableWorkdays: 0,
+            reservedWorkdays: 1,
+            spentWorkdays: 0,
+            totalGrantedWorkdays: 1
+          }
+        },
+        requests: [{
+          id: "downtime-1",
+          actorId: actor.id,
+          actionId: "craft",
+          weeks: 1,
+          workdays: 1,
+          status
+        }],
+        scheduleSlots: [{
+          id: "slot-claimed",
+          actorId: actor.id,
+          isoDate: "2026-07-16",
+          status: "approved",
+          grantId: "grant-1",
+          requestId: "downtime-1",
+          processingTransitionId: "transition-clear-busy"
+        }],
+        transitionJournal: [{
+          transitionId: "transition-clear-busy",
+          isoDate: "2026-07-16",
+          slotIds: ["slot-claimed"],
+          status: "processing",
+          resultsBySlotId: {
+            "slot-claimed": {
+              status: "processing",
+              claimedActorId: actor.id,
+              claimedRequestId: "downtime-1",
+              claimedStatus: "approved"
+            }
+          },
+          createdAt: 1,
+          updatedAt: 1
+        }]
+      }
+    });
+
+    try {
+      const stateBeforeMutation = clone(getDowntimeState(harness));
+      await assert.rejects(
+        harness.service.clearHistory(),
+        /busy.*retry/iu,
+        status
+      );
+      assert.deepEqual(getDowntimeState(harness), stateBeforeMutation, status);
+    }
+    finally {
+      harness.restore();
+    }
   }
 });
 

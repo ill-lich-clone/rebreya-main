@@ -353,6 +353,8 @@ export async function handleSmallTimeWorldTimeUpdate(
       const shouldConsumeSupplies = await shouldConsumeSuppliesForSmallTimeDayDelta(dayDelta, confirmSupplyConsumption);
       const shiftOptions = shouldConsumeSupplies
         ? {
+            processDowntime: dayDelta > 0,
+            processSupplies: true,
             processDailyCycles: true,
             consumeSupplies: true,
             applyEnergy: true,
@@ -360,7 +362,11 @@ export async function handleSmallTimeWorldTimeUpdate(
             reason: "smalltime-world-time"
           }
         : {
+            processDowntime: dayDelta > 0,
+            processSupplies: false,
             processDailyCycles: false,
+            consumeSupplies: false,
+            applyEnergy: false,
             reason: "smalltime-world-time"
           };
 

@@ -1768,6 +1768,31 @@ function buildSlotClaimMetadata(slot) {
   };
 }
 
+function getScheduledSlotPreparationFailure(state, slot, preparedReservationsByActorId) {
+  const requestId = cleanId(slot?.requestId);
+  const request = state.requests.find((entry) => entry.id === requestId);
+  if (!request) {
+    return "Downtime slot request is unavailable before processing.";
+  }
+  if (!OPEN_RESERVED_STATUSES.has(request.status)) {
+    return "Downtime slot request no longer has an open reservation.";
+  }
+  if (request.actorId !== slot.actorId) {
+    return "Downtime slot actor does not match its request.";
+  }
+  if (request.status !== "approved" || !PROCESSABLE_SLOT_STATUSES.has(slot.status)) {
+    return "Downtime slot status does not match its request.";
+  }
+
+  const balance = normalizeWorkdayBalance(state.balancesByActorId[slot.actorId] ?? buildDefaultBalance());
+  const preparedReservations = preparedReservationsByActorId.get(slot.actorId) ?? 0;
+  if (balance.reservedWorkdays <= preparedReservations) {
+    return "Reserved downtime workdays are lower than the scheduled cost.";
+  }
+  preparedReservationsByActorId.set(slot.actorId, preparedReservations + 1);
+  return "";
+}
+
 function getDowntimeStateSource(value = {}) {
   const raw = asObject(value);
   const history = asArray(raw.history);
@@ -2205,13 +2230,16 @@ export class DowntimeService {
     this.#assertCanManage(context);
 
     return this.#writeGroupState(context, (state) => {
+      for (const request of state.requests) {
+        this.#assertRequestAccountingAvailable(state, request.id);
+      }
+
       let releasedWeeks = 0;
       for (const request of state.requests) {
-        if (!OPEN_RESERVED_STATUSES.has(request.status)) {
+        if (request.status === "completed") {
           continue;
         }
 
-        this.#assertRequestAccountingAvailable(state, request.id);
         const balance = normalizeWorkdayBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
         const released = state.scheduleSlots.filter((slot) => (
           slot.requestId === request.id && slot.status !== "processed"
@@ -2227,7 +2255,7 @@ export class DowntimeService {
 
       state.scheduleSlots = state.scheduleSlots.map((slot) => (
         slot.status !== "processed" && slot.requestId
-          ? { ...slot, status: "free", requestId: null, projectId: null, activityId: null, hours: null, blockReason: null, processedTransitionId: null }
+          ? { ...slot, status: "free", requestId: null, projectId: null, activityId: null, hours: null, blockReason: null, processedTransitionId: null, processingTransitionId: null }
           : slot
       ));
 
@@ -2355,6 +2383,15 @@ export class DowntimeService {
       }
 
       const previousWorkdays = Math.max(1, toWeeks(request.workdays, request.weeks * WORKDAYS_PER_WEEK));
+      const currentIsoDate = this.#resolveCurrentIsoDate();
+      const retainedPastOrCurrentWorkdays = state.scheduleSlots.filter((slot) => (
+        slot.requestId === request.id
+        && slot.status !== "processed"
+        && slot.isoDate <= currentIsoDate
+      )).length;
+      if (workdays < retainedPastOrCurrentWorkdays) {
+        throw new Error("Downtime request cannot be shorter than its retained past and current workdays.");
+      }
       const balance = normalizeWorkdayBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance());
       if (balance.reservedWorkdays < previousWorkdays) {
         throw new Error("Reserved downtime weeks are lower than the request cost.");
@@ -2364,7 +2401,6 @@ export class DowntimeService {
         throw new Error("Not enough available downtime weeks.");
       }
 
-      const currentIsoDate = this.#resolveCurrentIsoDate();
       state.scheduleSlots = releaseFutureRequestSlots({
         slots: state.scheduleSlots,
         requestId: request.id,
@@ -2516,15 +2552,13 @@ export class DowntimeService {
 
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
+      this.#assertRequestAccountingAvailable(state, request.id);
       this.#assertRequestIsMutable(request);
 
       const effectiveStatus = nextStatus === "approved" && hasCompletedRollTargets(request)
         ? "completed"
         : nextStatus;
       const currentStatus = request.status;
-      if (currentStatus !== effectiveStatus) {
-        this.#assertRequestAccountingAvailable(state, request.id);
-      }
       const balance = normalizeWorkdayBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
       const requestWorkdays = Math.max(1, toWeeks(request.workdays, request.weeks * WORKDAYS_PER_WEEK));
       const requestSlots = state.scheduleSlots.filter((slot) => slot.requestId === request.id);
@@ -2638,6 +2672,7 @@ export class DowntimeService {
         journal.status = "processing";
         journal.updatedAt = now;
       }
+      const preparedReservationsByActorId = new Map();
       for (const slotId of journal.slotIds) {
         if (!isTerminalTransitionResult(journal.resultsBySlotId[slotId])) {
           const slot = state.scheduleSlots.find((entry) => entry.id === slotId);
@@ -2661,6 +2696,24 @@ export class DowntimeService {
               status: "reconciliation-required",
               operationId: buildDowntimeOperationId(safeTransitionId, slotId),
               reason: "Downtime slot claim changed before processing could resume.",
+              updatedAt: now
+            };
+            journal.status = "reconciliation-required";
+            continue;
+          }
+
+          const preparationFailure = getScheduledSlotPreparationFailure(
+            state,
+            slot,
+            preparedReservationsByActorId
+          );
+          if (preparationFailure) {
+            journal.resultsBySlotId[slotId] = {
+              ...clone(previousResult),
+              ...buildSlotClaimMetadata(slot),
+              status: "reconciliation-required",
+              operationId: buildDowntimeOperationId(safeTransitionId, slotId),
+              reason: preparationFailure,
               updatedAt: now
             };
             journal.status = "reconciliation-required";
