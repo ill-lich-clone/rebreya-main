@@ -28,6 +28,10 @@ function shiftIsoDate(isoDate, days) {
   return toIsoDate(new Date(parseIsoDate(isoDate).getTime() + (days * DAY_MS)));
 }
 
+function isWeekend(isoDate) {
+  return [0, 6].includes(parseIsoDate(isoDate).getUTCDay());
+}
+
 function cloneSlots(slots) {
   return structuredClone(slots ?? []);
 }
@@ -108,12 +112,22 @@ export function allocateRequestSlots({
 }) {
   const source = cloneSlots(slots);
   const requestedWorkdays = Math.max(0, Math.trunc(Number(workdays) || 0));
-  const eligible = source
+  const occupiedDates = new Set(source
+    .filter((slot) => slot.actorId === actorId && slot.status !== "free")
+    .map((slot) => slot.isoDate));
+  const freeSlots = source
     .filter((slot) => slot.actorId === actorId && slot.status === "free")
     .sort(compareSlots);
+  const eligible = ownedWorkshop
+    ? freeSlots
+    : freeSlots.filter((slot, index, sortedSlots) => (
+      !isWeekend(slot.isoDate)
+      && !occupiedDates.has(slot.isoDate)
+      && (index === 0 || sortedSlots[index - 1].isoDate !== slot.isoDate)
+    ));
 
   if (eligible.length < requestedWorkdays) {
-    throw new Error("Недостаточно свободных рабочих дней.");
+    throw new Error("Insufficient free workdays.");
   }
 
   const selected = eligible.slice(0, requestedWorkdays);
@@ -123,18 +137,18 @@ export function allocateRequestSlots({
   }
 
   const selectedSlots = new Set(selected);
-  const occupiedDates = new Set(source
+  const reflowOccupiedDates = new Set(source
     .filter((slot) => slot.actorId === actorId && !selectedSlots.has(slot))
     .map((slot) => slot.isoDate));
   let candidateDate = selected[0].isoDate;
 
   for (const slot of selected) {
-    while (occupiedDates.has(candidateDate)) {
+    while (reflowOccupiedDates.has(candidateDate)) {
       candidateDate = shiftIsoDate(candidateDate, 1);
     }
     slot.isoDate = candidateDate;
     assignRequest(slot, requestId);
-    occupiedDates.add(candidateDate);
+    reflowOccupiedDates.add(candidateDate);
     candidateDate = shiftIsoDate(candidateDate, 1);
   }
 

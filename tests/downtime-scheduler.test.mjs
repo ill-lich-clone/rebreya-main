@@ -72,6 +72,55 @@ test("city allocation reserves weekdays without mutating the grant slots", () =>
   assert.ok(requestSlots.every((slot) => slot.status === "pending"));
 });
 
+test("city allocation never uses released owned-workshop weekend credits", () => {
+  const slots = [
+    { id: "weekend-credit", actorId: "actor-1", isoDate: "2026-07-25", status: "free", requestId: null },
+    { id: "weekday-credit", actorId: "actor-1", isoDate: "2026-07-27", status: "free", requestId: null }
+  ];
+
+  const allocated = allocateRequestSlots({
+    slots,
+    actorId: "actor-1",
+    requestId: "request-1",
+    workdays: 1,
+    ownedWorkshop: false
+  });
+
+  assert.equal(allocated.find((slot) => slot.id === "weekend-credit").status, "free");
+  assert.equal(allocated.find((slot) => slot.id === "weekday-credit").requestId, "request-1");
+});
+
+test("city allocation keeps one primary activity per actor and day", () => {
+  const slots = [
+    { id: "occupied-credit", actorId: "actor-1", isoDate: "2026-07-20", status: "free", requestId: null },
+    { id: "existing-activity", actorId: "actor-1", isoDate: "2026-07-20", status: "approved", requestId: "existing-request" },
+    { id: "available-credit", actorId: "actor-1", isoDate: "2026-07-21", status: "free", requestId: null }
+  ];
+
+  const allocated = allocateRequestSlots({
+    slots,
+    actorId: "actor-1",
+    requestId: "request-1",
+    workdays: 1,
+    ownedWorkshop: false
+  });
+
+  assert.equal(allocated.find((slot) => slot.id === "occupied-credit").status, "free");
+  assert.equal(allocated.find((slot) => slot.id === "available-credit").requestId, "request-1");
+});
+
+test("allocation reports insufficient free workdays with readable text", () => {
+  assert.throws(
+    () => allocateRequestSlots({
+      slots: [],
+      actorId: "actor-1",
+      requestId: "request-1",
+      workdays: 1
+    }),
+    { message: "Insufficient free workdays." }
+  );
+});
+
 test("owned workshop compacts the same twenty credits into weekends", () => {
   const slots = buildGrantSlots({
     actorId: "actor-1",
