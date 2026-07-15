@@ -16,11 +16,13 @@
 - Second zero HP destroys the item through a durable GM-owned mutation.
 - Objects ignore poison and psychic damage.
 - Damage at or below the threshold causes zero durability loss.
+- Size-scaled durability HP is rounded up to a minimum integer value of `1` for dnd5e and Item Piles actor data.
 - Broken items retain identity, quantity, weight, value, image, and description but provide no mechanics.
 - Broken items may be carried or held.
 - Repair is not implemented.
 - Intact, broken, and destroyed instances never merge into one stack.
-- Only a single-item Item Pile receives item-derived HP/AC/threshold; mixed piles remain ordinary piles.
+- Only an Item Pile containing one item document with quantity exactly `1` receives item-derived HP/AC/threshold; multi-quantity and mixed piles remain ordinary piles.
+- Item Piles `3.2.32` actor HP/AC writes occur in `item-piles-createItemPile`; pre-create can only attach the pending token marker.
 
 ---
 
@@ -35,7 +37,7 @@
 - Modify `scripts/main.js`: instantiate/expose durability APIs and register integrations.
 - Modify `scripts/hooks.js`: register safe Foundry/Item Piles lifecycle hooks.
 - Modify `scripts/data/inventory-service.js`: durability-aware item similarity, split/merge preservation, and source initialization.
-- Modify `scripts/integrations/item-piles-dnd5e.js`: include durability signature in Item Piles similarities.
+- Modify `scripts/integrations/item-piles-dnd5e.js`: append durability signature to existing Item Piles similarities without replacing unrelated configured paths, and register the integration from `main.js`.
 - Modify `scripts/ui/lootgen-app.js`: broken chance setting and per-row flagging.
 - Modify `templates/lootgen-app.hbs`: percentage stepper and broken status marker.
 - Modify `scripts/ui/lootgen-chat.js`: preserve/display broken state in shared loot.
@@ -293,7 +295,7 @@ git commit -m "feat: generate broken mundane equipment"
 
 - [ ] **Step 1: Write failing projection tests**
 
-Cover one eligible item, broken item, magic item, multiple quantities of the same homogeneous stack, mixed items, HP/AC/threshold paths, token bar path, actor damage synchronization, first break, and second-zero pile/item deletion.
+Cover one eligible quantity-one item, broken item, magic item, multiple quantities of the same homogeneous stack, mixed items, HP/AC/threshold paths, token bar path, actor damage synchronization, first break, and second-zero pile/item deletion. Multi-quantity and mixed inputs return `null`.
 
 ```js
 assert.deepEqual(buildItemPileDurabilityProjection([steelSword]), {
@@ -313,7 +315,7 @@ Expected: FAIL because the projection integration does not exist.
 
 - [ ] **Step 3: Implement single-item pile creation**
 
-Before pile creation, project to dnd5e actor paths:
+Before pile creation, accept exactly one item document with quantity `1` and store a pending projection plus authoritative item UUID in token override flags. In `item-piles-createItemPile`, resolve the new actor and project to dnd5e actor/token paths:
 
 ```js
 actorUpdates["system.attributes.hp"] = projection.hp;

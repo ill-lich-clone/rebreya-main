@@ -21,6 +21,7 @@
 - Remaining material value is reserved as the tool-specific `Базовое сырье для Инструменты ...` item from group inventory.
 - All 247 named rows from the `Энциклопедия материалов` sheet are represented in `data/materials.json`; source blanks remain null.
 - Source spreadsheet ID is `1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk`, tab `Энциклопедия материалов`, rows `1-249`, observed Drive update `2026-07-14T16:02:48.626Z`.
+- Keep the existing single `world.rebreya-gear` compendium for functional equipment and the existing single `world.rebreya-materials` compendium for materials; do not create another gear or material pack.
 - Crafted output must be a functional managed dnd5e item, intact, unequipped, and not held.
 - Repair is absent from this implementation.
 

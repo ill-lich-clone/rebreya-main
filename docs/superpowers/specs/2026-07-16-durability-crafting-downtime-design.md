@@ -39,6 +39,7 @@ The design must preserve existing Foundry item functionality, group isolation, c
 - The `Энциклопедия материалов` sheet in `Ребрея: Оружие, огнестрел и снаряжение` is the source of truth for the Rebreya material catalog.
 - Every named material row is imported, including tool-specific base raw materials and `Алхимические реагенты`.
 - Base raw material is a real inventory material selected by the required tool, not an abstract currency charge.
+- Functional equipment remains in the single existing `world.rebreya-gear` compendium. Material additions update the single existing `world.rebreya-materials` compendium; no parallel gear or material compendium is created.
 
 ## Non-Goals
 
@@ -173,6 +174,15 @@ Downtime and craft remain scoped to the active dnd5e group actor through the gro
     blockReason,
     processedTransitionId
   }],
+  transitionJournal: [{
+    transitionId,
+    isoDate,
+    slotIds: [],
+    status: "processing" | "completed" | "reconciliation-required",
+    resultsBySlotId: {},
+    createdAt,
+    updatedAt
+  }],
   workLog: [{
     id,
     actorId,
@@ -292,6 +302,9 @@ The transition journal and per-date work log make retries idempotent. Repeating 
 
 - Calendar time still passes if a scheduled workday is blocked.
 - A blocked slot records a reason and does not spend materials or workday credit.
+- The exact slot set for a date/transition pair is journaled before any domain processor runs, including an empty set. A retry reuses that snapshot and cannot discover newly approved slots.
+- Domain processors run outside the group-state mutation lock with a stable operation ID derived from transition and slot IDs. Each processor owns durable idempotency for its external effects.
+- Only an explicit blocked result with no resource receipt becomes `blocked`. A thrown or ambiguous processor result remains `reconciliation-required` for retry and cannot be mislabeled as a no-spend block.
 - The GM can resolve the cause and explicitly retry that slot or let the scheduler place the remaining work on a later date.
 - A craft output or resource mutation failure is handled by the durable craft mutation journal and cannot silently duplicate value.
 
@@ -500,7 +513,7 @@ flags["rebreya-main"].durability = {
 | Mithral | 6 | 12 | 15 | 5 |
 | Crystal | 4 | 11 | 12 | 4 |
 
-Size multipliers are `0.5`, `1`, `2`, `3`, `4`, and `6` from Tiny through Gargantuan.
+Size multipliers are `0.5`, `1`, `2`, `3`, `4`, and `6` from Tiny through Gargantuan. The resulting maximum HP is `Math.max(1, Math.ceil(baseHp * sizeMultiplier))`; durability HP stays integral for dnd5e actor and Item Piles projection paths.
 
 ### Resolution defaults
 
@@ -555,7 +568,7 @@ The Lootgen result and chat card show a broken-status marker without renaming th
 
 ### Single-item piles
 
-When an Item Piles actor/token contains exactly one eligible durable item, Rebreya projects item durability onto the pile actor:
+When an Item Piles actor/token contains exactly one eligible durable item document with quantity exactly `1`, Rebreya projects item durability onto the pile actor:
 
 - flat AC from item durability;
 - HP value/max from item durability;
@@ -567,11 +580,11 @@ Damage to the pile actor synchronizes back to the contained item durability. Fir
 
 ### Multi-item piles
 
-No aggregate HP or AC is invented for mixed piles. Each contained item retains its own durability flags, while the container token keeps normal Item Piles behavior. To attack an individual object, it must be placed as a single-item pile.
+No aggregate HP or AC is invented for mixed piles or stacks whose quantity is greater than `1`. Each contained item retains its own durability flags, while the container token keeps normal Item Piles behavior. To attack an individual object, it must be placed as a quantity-one single-item pile.
 
 ### Creation hook
 
-The `item-piles-preCreateItemPile` hook enriches mutable actor/token overrides before creation. Post-create hooks reconcile item and actor flags and install the stable item/pile linkage needed for damage synchronization.
+Installed Item Piles `3.2.32` exposes only token overrides and source items to `item-piles-preCreateItemPile`, so this hook stores a pending token-side projection marker. `item-piles-createItemPile` resolves the created token and actor, applies HP/AC/threshold, configures the HP bar, clears the pending marker, and installs the stable item/pile linkage needed for damage synchronization.
 
 ## Permissions and Trust
 
