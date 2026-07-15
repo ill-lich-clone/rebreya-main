@@ -22,6 +22,7 @@ const WORKDAYS_PER_WEEK = 5;
 const DOWNTIME_STATE_VERSION = 2;
 const DOWNTIME_V2_MIGRATION_ID = "downtime-v1-to-v2";
 const DOWNTIME_V2_ENVELOPE_ID = "downtime-state-v2-envelope";
+const PROCESSABLE_SLOT_STATUSES = new Set(["approved", "blocked"]);
 
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -1672,7 +1673,8 @@ function normalizeScheduleSlot(value = {}) {
     activityId: cleanId(source.activityId) || null,
     hours: source.hours == null ? null : toFiniteNumber(source.hours, null),
     blockReason: cleanString(source.blockReason) || null,
-    processedTransitionId: cleanId(source.processedTransitionId) || null
+    processedTransitionId: cleanId(source.processedTransitionId) || null,
+    processingTransitionId: cleanId(source.processingTransitionId) || null
   };
 }
 
@@ -1745,6 +1747,25 @@ function findTransitionJournalEntry(state, isoDate, transitionId) {
 
 function isTerminalTransitionResult(result) {
   return ["processed", "blocked"].includes(cleanId(result?.status));
+}
+
+function findNonterminalSlotClaim(state, slotId, { excludeTransitionId = "" } = {}) {
+  const safeSlotId = cleanId(slotId);
+  const excludedId = cleanId(excludeTransitionId);
+  return state.transitionJournal.find((journal) => (
+    journal.transitionId !== excludedId
+    && journal.status !== "completed"
+    && journal.slotIds.includes(safeSlotId)
+    && !isTerminalTransitionResult(journal.resultsBySlotId[safeSlotId])
+  )) ?? null;
+}
+
+function buildSlotClaimMetadata(slot) {
+  return {
+    claimedActorId: cleanId(slot?.actorId),
+    claimedRequestId: cleanId(slot?.requestId),
+    claimedStatus: cleanId(slot?.status)
+  };
 }
 
 function getDowntimeStateSource(value = {}) {
@@ -2190,6 +2211,7 @@ export class DowntimeService {
           continue;
         }
 
+        this.#assertRequestAccountingAvailable(state, request.id);
         const balance = normalizeWorkdayBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
         const released = state.scheduleSlots.filter((slot) => (
           slot.requestId === request.id && slot.status !== "processed"
@@ -2321,6 +2343,7 @@ export class DowntimeService {
 
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
+      this.#assertRequestAccountingAvailable(state, request.id);
       if (request.actorId !== actor.id) {
         throw new Error("Downtime request does not belong to this character.");
       }
@@ -2499,6 +2522,9 @@ export class DowntimeService {
         ? "completed"
         : nextStatus;
       const currentStatus = request.status;
+      if (currentStatus !== effectiveStatus) {
+        this.#assertRequestAccountingAvailable(state, request.id);
+      }
       const balance = normalizeWorkdayBalance(state.balancesByActorId[request.actorId] ?? buildDefaultBalance());
       const requestWorkdays = Math.max(1, toWeeks(request.workdays, request.weeks * WORKDAYS_PER_WEEK));
       const requestSlots = state.scheduleSlots.filter((slot) => slot.requestId === request.id);
@@ -2534,13 +2560,10 @@ export class DowntimeService {
         ));
       }
       else if (RELEASED_STATUSES.has(currentStatus) && OPEN_RESERVED_STATUSES.has(effectiveStatus)) {
-        const currentIsoDate = this.#resolveCurrentIsoDate();
-        const existingFutureReservedSlots = requestSlots.filter((slot) => (
-          slot.status !== "processed" && slot.isoDate > currentIsoDate
-        )).length;
+        const retainedUnprocessedSlots = requestSlots.filter((slot) => slot.status !== "processed").length;
         const workdaysToReserve = Math.max(
           0,
-          requestWorkdays - processedWorkdays - existingFutureReservedSlots
+          requestWorkdays - processedWorkdays - retainedUnprocessedSlots
         );
         this.#applyStatusAccounting(balance, currentStatus, effectiveStatus, workdaysToReserve);
         state.scheduleSlots = allocateRequestSlots({
@@ -2588,10 +2611,14 @@ export class DowntimeService {
       let journal = findTransitionJournalEntry(state, safeIsoDate, safeTransitionId);
       const now = Date.now();
       if (!journal) {
-        const slotIds = state.scheduleSlots
-          .filter((slot) => slot.isoDate === safeIsoDate && ["approved", "blocked"].includes(slot.status))
+        const slots = state.scheduleSlots
+          .filter((slot) => (
+            slot.isoDate === safeIsoDate
+            && PROCESSABLE_SLOT_STATUSES.has(slot.status)
+            && !findNonterminalSlotClaim(state, slot.id)
+          ))
           .sort((left, right) => left.actorId.localeCompare(right.actorId) || left.id.localeCompare(right.id))
-          .map((slot) => slot.id);
+        const slotIds = slots.map((slot) => slot.id);
         journal = {
           transitionId: safeTransitionId,
           isoDate: safeIsoDate,
@@ -2602,6 +2629,9 @@ export class DowntimeService {
           updatedAt: now
         };
         state.transitionJournal.push(journal);
+        for (const slot of slots) {
+          slot.processingTransitionId = safeTransitionId;
+        }
       }
 
       if (journal.status !== "completed") {
@@ -2610,8 +2640,37 @@ export class DowntimeService {
       }
       for (const slotId of journal.slotIds) {
         if (!isTerminalTransitionResult(journal.resultsBySlotId[slotId])) {
+          const slot = state.scheduleSlots.find((entry) => entry.id === slotId);
+          const previousResult = asObject(journal.resultsBySlotId[slotId]);
+          const competingClaim = findNonterminalSlotClaim(state, slotId, {
+            excludeTransitionId: safeTransitionId
+          });
+          const previousRequestId = cleanId(previousResult.claimedRequestId);
+          const previousActorId = cleanId(previousResult.claimedActorId);
+          const previousStatus = cleanId(previousResult.claimedStatus);
+          const claimMismatch = !slot
+            || Boolean(competingClaim)
+            || !PROCESSABLE_SLOT_STATUSES.has(slot.status)
+            || (slot.processingTransitionId && slot.processingTransitionId !== safeTransitionId)
+            || (previousRequestId && slot.requestId !== previousRequestId)
+            || (previousActorId && slot.actorId !== previousActorId)
+            || (previousStatus && slot.status !== previousStatus);
+          if (claimMismatch) {
+            journal.resultsBySlotId[slotId] = {
+              ...clone(previousResult),
+              status: "reconciliation-required",
+              operationId: buildDowntimeOperationId(safeTransitionId, slotId),
+              reason: "Downtime slot claim changed before processing could resume.",
+              updatedAt: now
+            };
+            journal.status = "reconciliation-required";
+            continue;
+          }
+
+          slot.processingTransitionId = safeTransitionId;
           journal.resultsBySlotId[slotId] = {
-            ...clone(asObject(journal.resultsBySlotId[slotId])),
+            ...clone(previousResult),
+            ...buildSlotClaimMetadata(slot),
             status: "processing",
             operationId: buildDowntimeOperationId(safeTransitionId, slotId),
             updatedAt: now
@@ -2641,6 +2700,10 @@ export class DowntimeService {
       }
 
       const operationId = buildDowntimeOperationId(safeTransitionId, slotId);
+      if (cleanId(preparation.resultsBySlotId[slotId]?.status) !== "processing") {
+        reconciliation.push({ slot: clone(slotSnapshot), operationId });
+        continue;
+      }
       let classification = "reconciliation-required";
       let outcome = null;
       let reconciliationReason = "Downtime processor returned an ambiguous result.";
@@ -2679,13 +2742,42 @@ export class DowntimeService {
 
         const now = Date.now();
         const slot = state.scheduleSlots.find((entry) => entry.id === slotId);
-        if (!slot) {
-          classification = "reconciliation-required";
-          reconciliationReason = "Snapshotted downtime slot is missing.";
+        const claimResult = asObject(journal.resultsBySlotId[slotId]);
+        const claimedActorId = cleanId(claimResult.claimedActorId);
+        const claimedRequestId = cleanId(claimResult.claimedRequestId);
+        const claimedStatus = cleanId(claimResult.claimedStatus);
+        const claimedRequest = state.requests.find((entry) => entry.id === claimedRequestId);
+        if (classification !== "reconciliation-required") {
+          if (!slot) {
+            classification = "reconciliation-required";
+            reconciliationReason = "Snapshotted downtime slot is missing.";
+          }
+          else if (slot.processingTransitionId !== safeTransitionId) {
+            classification = "reconciliation-required";
+            reconciliationReason = "Downtime slot is no longer claimed by this transition.";
+          }
+          else if (!PROCESSABLE_SLOT_STATUSES.has(claimedStatus) || slot.status !== claimedStatus) {
+            classification = "reconciliation-required";
+            reconciliationReason = "Downtime slot status changed after the transition claim.";
+          }
+          else if (
+            !claimedRequestId
+            || slot.requestId !== claimedRequestId
+            || !claimedRequest
+            || !OPEN_RESERVED_STATUSES.has(claimedRequest.status)
+          ) {
+            classification = "reconciliation-required";
+            reconciliationReason = "Downtime slot request changed after the transition claim.";
+          }
+          else if (!claimedActorId || slot.actorId !== claimedActorId || claimedRequest.actorId !== claimedActorId) {
+            classification = "reconciliation-required";
+            reconciliationReason = "Downtime slot actor changed after the transition claim.";
+          }
         }
 
         if (classification === "reconciliation-required") {
           journal.resultsBySlotId[slotId] = {
+            ...clone(claimResult),
             status: "reconciliation-required",
             operationId,
             reason: reconciliationReason,
@@ -2714,6 +2806,7 @@ export class DowntimeService {
           slot.status = "blocked";
           slot.blockReason = cleanString(outcome?.blockReason) || "Downtime activity blocked.";
           slot.processedTransitionId = safeTransitionId;
+          slot.processingTransitionId = null;
           logEntry.result = {
             status: "blocked",
             blockReason: slot.blockReason,
@@ -2723,6 +2816,7 @@ export class DowntimeService {
             state.workLog.push(logEntry);
           }
           journal.resultsBySlotId[slotId] = {
+            ...clone(claimResult),
             status: "blocked",
             operationId,
             blockReason: slot.blockReason,
@@ -2733,14 +2827,12 @@ export class DowntimeService {
         }
 
         const balance = normalizeWorkdayBalance(state.balancesByActorId[slot.actorId] ?? buildDefaultBalance());
-        if (slot.status === "processed" || balance.reservedWorkdays < 1) {
-          const reason = slot.status === "processed"
-            ? "Snapshotted downtime slot was processed by another transition."
-            : "Reserved downtime workdays are lower than the scheduled cost.";
+        if (balance.reservedWorkdays < 1) {
           journal.resultsBySlotId[slotId] = {
+            ...clone(claimResult),
             status: "reconciliation-required",
             operationId,
-            reason,
+            reason: "Reserved downtime workdays are lower than the scheduled cost.",
             activityResult: clone(outcome),
             updatedAt: now
           };
@@ -2758,6 +2850,7 @@ export class DowntimeService {
         slot.hours = toFiniteNumber(outcome?.hours, slot.hours);
         slot.blockReason = null;
         slot.processedTransitionId = safeTransitionId;
+        slot.processingTransitionId = null;
         logEntry.projectId = slot.projectId;
         logEntry.result = {
           status: "processed",
@@ -2767,13 +2860,14 @@ export class DowntimeService {
           state.workLog.push(logEntry);
         }
         journal.resultsBySlotId[slotId] = {
+          ...clone(claimResult),
           status: "processed",
           operationId,
           updatedAt: now
         };
         journal.updatedAt = now;
 
-        const request = state.requests.find((entry) => entry.id === slot.requestId);
+        const request = claimedRequest;
         if (request && !state.scheduleSlots.some((entry) => (
           entry.requestId === request.id && entry.status !== "processed"
         ))) {
@@ -3003,6 +3097,16 @@ export class DowntimeService {
   #assertRequestIsMutable(request) {
     if (request?.status === "completed") {
       throw new Error("A completed request is terminal for this downtime slice.");
+    }
+  }
+
+  #assertRequestAccountingAvailable(state, requestId) {
+    const claimed = state.scheduleSlots.some((slot) => (
+      slot.requestId === requestId
+      && findNonterminalSlotClaim(state, slot.id)
+    ));
+    if (claimed) {
+      throw new Error("Downtime request is busy processing scheduled work; retry after processing or reconciliation completes.");
     }
   }
 
