@@ -1,6 +1,6 @@
 const ZERO_SPEND = Object.freeze({
   predominantMaterialLb: 0,
-  baseRawMaterialQuantity: 0
+  baseRawQuantity: 0
 });
 
 function clone(value) {
@@ -57,19 +57,21 @@ function normalizeReservation(value = {}) {
       reservation.predominantMaterialLbSpent ?? 0,
       "Predominant material spend"
     ),
-    baseRawMaterialQuantityReserved: requireNonnegative(
-      reservation.baseRawMaterialQuantityReserved ?? 0,
+    baseRawQuantityReserved: requireNonnegative(
+      reservation.baseRawQuantityReserved ?? 0,
       "Base raw material reservation"
     ),
-    baseRawMaterialQuantitySpent: requireNonnegative(
-      reservation.baseRawMaterialQuantitySpent ?? 0,
+    baseRawQuantitySpent: requireNonnegative(
+      reservation.baseRawQuantitySpent ?? 0,
       "Base raw material spend"
     )
   };
+  delete normalized.baseRawMaterialQuantityReserved;
+  delete normalized.baseRawMaterialQuantitySpent;
 
   if (
     normalized.predominantMaterialLbSpent > normalized.predominantMaterialLbReserved
-    || normalized.baseRawMaterialQuantitySpent > normalized.baseRawMaterialQuantityReserved
+    || normalized.baseRawQuantitySpent > normalized.baseRawQuantityReserved
   ) {
     throw new Error("Craft reservation spend exceeds the reserved quantity.");
   }
@@ -81,17 +83,17 @@ function buildProportionalSpend(reservation, nextProgressGold, targetGold, compl
     ? reservation.predominantMaterialLbReserved
     : roundFive(reservation.predominantMaterialLbReserved * (nextProgressGold / targetGold));
   const baseRawTarget = completion
-    ? reservation.baseRawMaterialQuantityReserved
-    : roundFive(reservation.baseRawMaterialQuantityReserved * (nextProgressGold / targetGold));
+    ? reservation.baseRawQuantityReserved
+    : roundFive(reservation.baseRawQuantityReserved * (nextProgressGold / targetGold));
 
   return {
     predominantMaterialLb: roundFive(Math.max(
       0,
       predominantTarget - reservation.predominantMaterialLbSpent
     )),
-    baseRawMaterialQuantity: roundFive(Math.max(
+    baseRawQuantity: roundFive(Math.max(
       0,
-      baseRawTarget - reservation.baseRawMaterialQuantitySpent
+      baseRawTarget - reservation.baseRawQuantitySpent
     ))
   };
 }
@@ -116,13 +118,15 @@ export function processCraftProjectWorkday(project, {
   const processedWorkdays = Array.isArray(source.processedWorkdays)
     ? source.processedWorkdays
     : [];
+  const operationId = `${safeIsoDate}:${safeTransitionId}`;
   const previousWorkday = processedWorkdays.find((entry) => (
-    cleanText(entry?.transitionId) === safeTransitionId
+    cleanText(entry?.isoDate) === safeIsoDate
+    || cleanText(entry?.operationId) === operationId
   ));
   if (previousWorkday) {
     return {
       project: clone(source),
-      spend: clone(previousWorkday.spend ?? ZERO_SPEND),
+      spend: clone(ZERO_SPEND),
       completion: false,
       alreadyProcessed: true,
       alreadyCompleted: false,
@@ -173,13 +177,14 @@ export function processCraftProjectWorkday(project, {
     predominantMaterialLbSpent: completion
       ? reservation.predominantMaterialLbReserved
       : roundFive(reservation.predominantMaterialLbSpent + spend.predominantMaterialLb),
-    baseRawMaterialQuantitySpent: completion
-      ? reservation.baseRawMaterialQuantityReserved
-      : roundFive(reservation.baseRawMaterialQuantitySpent + spend.baseRawMaterialQuantity)
+    baseRawQuantitySpent: completion
+      ? reservation.baseRawQuantityReserved
+      : roundFive(reservation.baseRawQuantitySpent + spend.baseRawQuantity)
   };
   const workday = {
     isoDate: safeIsoDate,
     transitionId: safeTransitionId,
+    operationId,
     progressGold: appliedProgressGold,
     spend: clone(spend)
   };
@@ -201,4 +206,3 @@ export function processCraftProjectWorkday(project, {
     blockReason: ""
   };
 }
-
