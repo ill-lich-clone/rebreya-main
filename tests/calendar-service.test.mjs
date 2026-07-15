@@ -251,3 +251,64 @@ test("calendar service sends only changed fields and builds its snapshot from th
     globalThis.game = previousGame;
   }
 });
+
+test("calendar transition preview enumerates both directions chronologically without persistence", async () => {
+  const state = {
+    [SETTINGS_KEYS.CALENDAR_STATE]: { version: 1, isoDate: "1300-01-01" },
+    [SETTINGS_KEYS.GROUP_STATE]: {
+      version: 1,
+      activeGroupActorId: "group-a",
+      groupsById: {
+        "group-a": {
+          version: 1,
+          groupActorId: "group-a",
+          calendar: { version: 1, isoDate: "2026-01-30", timeOfDaySeconds: 3600 }
+        }
+      }
+    }
+  };
+
+  await withCalendarHarness(state, async ({ calendarService, state: storedState }) => {
+    const before = clone(storedState);
+    const forward = calendarService.previewTransition("2026-02-02");
+    const backward = calendarService.previewTransition("2026-01-27");
+
+    assert.equal(forward.direction, "forward");
+    assert.equal(forward.from.isoDate, "2026-01-30");
+    assert.equal(forward.to.isoDate, "2026-02-02");
+    assert.equal(forward.daysAdvanced, 3);
+    assert.deepEqual(forward.crossedDates, ["2026-01-31", "2026-02-01", "2026-02-02"]);
+    assert.deepEqual(forward.monthStartDates, ["2026-02-01"]);
+
+    assert.equal(backward.direction, "backward");
+    assert.equal(backward.daysAdvanced, -3);
+    assert.deepEqual(backward.crossedDates, ["2026-01-27", "2026-01-28", "2026-01-29"]);
+    assert.deepEqual(storedState, before);
+  });
+});
+
+test("calendar target previews preserve shift and month arithmetic without mutation", async () => {
+  const state = {
+    [SETTINGS_KEYS.CALENDAR_STATE]: { version: 1, isoDate: "1300-01-01" },
+    [SETTINGS_KEYS.GROUP_STATE]: {
+      version: 1,
+      activeGroupActorId: "group-a",
+      groupsById: {
+        "group-a": {
+          version: 1,
+          groupActorId: "group-a",
+          calendar: { version: 1, isoDate: "2026-01-31", timeOfDaySeconds: 86399 }
+        }
+      }
+    }
+  };
+
+  await withCalendarHarness(state, async ({ calendarService, state: storedState }) => {
+    const before = clone(storedState);
+
+    assert.equal(calendarService.previewDate(2026, 2, 3).to.isoDate, "2026-02-03");
+    assert.equal(calendarService.previewShiftDays(-2).to.isoDate, "2026-01-29");
+    assert.equal(calendarService.previewAdvanceMonths(1).to.isoDate, "2026-03-03");
+    assert.deepEqual(storedState, before);
+  });
+});

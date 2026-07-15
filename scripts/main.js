@@ -52,6 +52,7 @@ import { HeroDollService } from "./data/hero-doll-service.js";
 import { CraftingService } from "./data/crafting-service.js";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.93-item-upgrades";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
+import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
 import { LootClaimService } from "./application/loot-claim-service.js";
 import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
@@ -412,25 +413,6 @@ function parseCalendarIsoDate(value) {
   return date;
 }
 
-function countMonthStartBoundaries(fromIsoDate, toIsoDate) {
-  const fromDate = parseCalendarIsoDate(fromIsoDate);
-  const toDate = parseCalendarIsoDate(toIsoDate);
-  if (!fromDate || !toDate || toDate.getTime() <= fromDate.getTime()) {
-    return 0;
-  }
-
-  let count = 0;
-  const cursor = new Date(fromDate.getTime());
-  while (cursor.getTime() < toDate.getTime()) {
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-    if (cursor.getUTCDate() === 1) {
-      count += 1;
-    }
-  }
-
-  return count;
-}
-
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
   return Number.isFinite(numericValue) ? numericValue : fallback;
@@ -764,6 +746,18 @@ export class RebreyaMainModule {
       commandBus: this.socketCommandBus
     });
     this.globalEventsService = new GlobalEventsService(this);
+    this.calendarTransitionCoordinator = new CalendarTransitionCoordinator({
+      calendarService: this.calendarService,
+      downtimeService: this.downtimeService,
+      groupContextService: this.groupContextService,
+      refreshGlobalEvents: (currentIsoDate, previousIsoDate) => (
+        this.#refreshGlobalEventsByCalendarTransition(currentIsoDate, previousIsoDate)
+      ),
+      resetTraderMonth: (monthResetCount, reason) => this.#applyTraderMonthlyReset(monthResetCount, reason),
+      processDayCycles: (days, options) => this.#runDayCycles(days, options),
+      refreshApps: () => this.refreshOpenApps(),
+      refreshSmallTime: () => refreshSmallTimeDateDisplay()
+    });
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.spellAutomationService = new SpellAutomationService(this);
@@ -3348,6 +3342,10 @@ export class RebreyaMainModule {
     return this.calendarService.getSnapshot();
   }
 
+  previewCalendarTransition(options = {}) {
+    return this.calendarTransitionCoordinator.preview(options);
+  }
+
   async setCalendarTimeOfDay(seconds, options = {}) {
     const result = await this.calendarService.setTimeOfDaySeconds(seconds);
     const shouldRefreshApps = options.refreshApps !== false && options.reason !== "smalltime-world-time";
@@ -3395,39 +3393,33 @@ export class RebreyaMainModule {
   }
 
   async setCalendarDate(year, month, day, options = {}) {
-    const previousSnapshot = this.calendarService.getSnapshot();
-    const result = await this.calendarService.setDate(year, month, day, options);
-    const eventActivation = await this.#refreshGlobalEventsByCalendarTransition(result?.isoDate, previousSnapshot?.isoDate);
-    const monthResetCount = (
-      previousSnapshot?.isoDate !== result?.isoDate
-      && Number(result?.day ?? 0) === 1
-    ) ? 1 : 0;
-    const traderReset = await this.#applyTraderMonthlyReset(monthResetCount, "set-date");
-    await this.refreshOpenApps();
-    await refreshSmallTimeDateDisplay();
+    const target = this.calendarService.previewDate(year, month, day);
+    const processDailyCycles = options.processDailyCycles === true;
+    const result = await this.calendarTransitionCoordinator.moveTo({
+      ...options,
+      toIsoDate: target.to.isoDate,
+      processDowntime: options.processDowntime !== false,
+      processSupplies: options.processSupplies !== undefined
+        ? options.processSupplies === true
+        : processDailyCycles && options.consumeSupplies !== false,
+      processDailyCycles,
+      monthResetMode: "target-first",
+      reason: options.reason ?? "set-date"
+    });
     return {
-      ...result,
-      eventActivation,
-      traderReset
+      ...result.calendar,
+      ...result
     };
   }
 
-  async #runDayCycles(days, { consumeSupplies = true, applyEnergy = true, processCraft = true } = {}) {
+  async #runDayCycles(days, { consumeSupplies = true, applyEnergy = true } = {}) {
     const safeDays = Math.max(0, Math.floor(Number(days ?? 0)));
     const supplies = [];
-    let craftCompleted = [];
-    let craftCompletedCount = 0;
 
     for (let index = 0; index < safeDays; index += 1) {
       if (consumeSupplies) {
         const supplyResult = await this.inventoryService.consumeSuppliesOneDay({ applyEnergy });
         supplies.push(supplyResult);
-      }
-
-      if (processCraft) {
-        const craftResult = await this.craftingService.processOneDay();
-        craftCompleted = craftCompleted.concat(craftResult.completed ?? []);
-        craftCompletedCount += Number(craftResult.completedCount ?? 0);
       }
     }
 
@@ -3448,65 +3440,51 @@ export class RebreyaMainModule {
       supplies,
       supplyTotals,
       craft: {
-        completed: craftCompleted,
-        completedCount: craftCompletedCount
+        completed: [],
+        completedCount: 0
       }
     };
   }
 
   async shiftCalendarDays(days = 0, options = {}) {
-    const safeDays = Math.trunc(Number(days ?? 0));
-    const advance = await this.calendarService.shiftDays(safeDays);
-    const eventActivation = await this.#refreshGlobalEventsByCalendarTransition(advance?.to?.isoDate, advance?.from?.isoDate);
-    const monthResetCount = safeDays > 0
-      ? countMonthStartBoundaries(advance?.from?.isoDate, advance?.to?.isoDate)
-      : 0;
-    const traderReset = await this.#applyTraderMonthlyReset(monthResetCount, options.reason ?? "shift-days");
-    const cycles = options.processDailyCycles === true && safeDays > 0
-      ? await this.#runDayCycles(safeDays, options)
-      : {
-        days: 0,
-        supplies: [],
-        supplyTotals: {
-          foodSpent: 0,
-          waterSpent: 0,
-          foodShortage: 0,
-          waterShortage: 0
-        },
-        craft: {
-          completed: [],
-          completedCount: 0
-        }
-      };
-
-    if (options.refreshApps !== false) {
-      await this.refreshOpenApps();
-    }
-    if (options.refreshSmallTime !== false) {
-      await refreshSmallTimeDateDisplay();
-    }
+    const safeDays = Math.trunc(toNumber(days, 0));
+    const target = this.calendarService.previewShiftDays(safeDays);
+    const processDailyCycles = options.processDailyCycles === true;
+    const result = await this.calendarTransitionCoordinator.moveTo({
+      ...options,
+      toIsoDate: target.to.isoDate,
+      processDowntime: options.processDowntime !== false,
+      processSupplies: options.processSupplies !== undefined
+        ? options.processSupplies === true
+        : processDailyCycles && options.consumeSupplies !== false,
+      processDailyCycles,
+      monthResetMode: "crossed",
+      reason: options.reason ?? "shift-days"
+    });
     return {
-      ...advance,
-      eventActivation,
-      cycles,
-      traderReset
+      ...result.calendar,
+      ...result
     };
   }
 
   async advanceCalendarDays(days = 1, options = {}) {
-    const safeDays = Math.max(0, Math.floor(Number(days ?? 0)));
-    const advance = await this.calendarService.advanceDays(safeDays);
-    const eventActivation = await this.#refreshGlobalEventsByCalendarTransition(advance?.to?.isoDate, advance?.from?.isoDate);
-    const monthResetCount = countMonthStartBoundaries(advance?.from?.isoDate, advance?.to?.isoDate);
-    const traderReset = await this.#applyTraderMonthlyReset(monthResetCount, "advance-days");
-    const cycles = await this.#runDayCycles(safeDays, options);
-    await this.refreshOpenApps();
-    await refreshSmallTimeDateDisplay();
+    const safeDays = Math.max(0, Math.floor(toNumber(days, 0)));
+    const target = this.calendarService.previewShiftDays(safeDays);
+    const processDailyCycles = options.processDailyCycles !== false;
+    const result = await this.calendarTransitionCoordinator.moveTo({
+      ...options,
+      toIsoDate: target.to.isoDate,
+      processDowntime: options.processDowntime !== false,
+      processSupplies: options.processSupplies !== undefined
+        ? options.processSupplies === true
+        : processDailyCycles && options.consumeSupplies !== false,
+      processDailyCycles,
+      monthResetMode: "crossed",
+      reason: options.reason ?? "advance-days"
+    });
     return {
-      ...advance,
-      eventActivation,
-      cycles,
-      traderReset
+      ...result.calendar,
+      ...result
     };
   }
 
@@ -3516,18 +3494,23 @@ export class RebreyaMainModule {
   }
 
   async advanceCalendarMonths(months = 1, options = {}) {
-    const advance = await this.calendarService.advanceMonths(months);
-    const eventActivation = await this.#refreshGlobalEventsByCalendarTransition(advance?.to?.isoDate, advance?.from?.isoDate);
-    const monthResetCount = countMonthStartBoundaries(advance?.from?.isoDate, advance?.to?.isoDate);
-    const traderReset = await this.#applyTraderMonthlyReset(monthResetCount, "advance-months");
-    const cycles = await this.#runDayCycles(advance.daysAdvanced, options);
-    await this.refreshOpenApps();
-    await refreshSmallTimeDateDisplay();
+    const safeMonths = Math.max(0, Math.floor(toNumber(months, 0)));
+    const target = this.calendarService.previewAdvanceMonths(safeMonths);
+    const processDailyCycles = options.processDailyCycles !== false;
+    const result = await this.calendarTransitionCoordinator.moveTo({
+      ...options,
+      toIsoDate: target.to.isoDate,
+      processDowntime: options.processDowntime !== false,
+      processSupplies: options.processSupplies !== undefined
+        ? options.processSupplies === true
+        : processDailyCycles && options.consumeSupplies !== false,
+      processDailyCycles,
+      monthResetMode: "crossed",
+      reason: options.reason ?? "advance-months"
+    });
     return {
-      ...advance,
-      eventActivation,
-      cycles,
-      traderReset
+      ...result.calendar,
+      ...result
     };
   }
 

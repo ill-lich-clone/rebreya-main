@@ -113,6 +113,51 @@ function parseIsoDate(value) {
   return date;
 }
 
+function requireDateParts(year, month, day) {
+  const safeYear = Math.max(1, Math.floor(toNumber(year, 1)));
+  const safeMonth = Math.max(1, Math.min(12, Math.floor(toNumber(month, 1))));
+  const safeDay = Math.max(1, Math.min(31, Math.floor(toNumber(day, 1))));
+  const date = new Date(Date.UTC(safeYear, safeMonth - 1, safeDay));
+  if (
+    date.getUTCFullYear() !== safeYear
+    || date.getUTCMonth() !== safeMonth - 1
+    || date.getUTCDate() !== safeDay
+  ) {
+    throw new Error("Некорректная дата календаря.");
+  }
+
+  return date;
+}
+
+function requireIsoDate(value) {
+  const date = parseIsoDate(value);
+  if (!date) {
+    throw new Error("Некорректная дата календаря.");
+  }
+
+  return date;
+}
+
+function enumerateCrossedDates(fromDate, toDate) {
+  const fromTime = fromDate.getTime();
+  const toTime = toDate.getTime();
+  if (fromTime === toTime) {
+    return [];
+  }
+
+  const firstDate = fromTime < toTime
+    ? new Date(fromTime + 86400000)
+    : new Date(toTime);
+  const lastTime = fromTime < toTime
+    ? toTime
+    : fromTime - 86400000;
+  const crossedDates = [];
+  for (const cursor = firstDate; cursor.getTime() <= lastTime; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    crossedDates.push(toIsoDate(cursor));
+  }
+  return crossedDates;
+}
+
 function formatWeekday(date) {
   return new Intl.DateTimeFormat("ru-RU", {
     weekday: "long",
@@ -339,9 +384,13 @@ export class CalendarService {
 
     const worldState = this.#getWorldState();
     return this.groupContextService.mutateGroupState(groupActorId, (groupState) => {
-      const currentState = normalizeCalendarState(groupState.calendar, worldState);
+      const currentCalendar = clone(asObject(groupState.calendar));
+      const currentState = normalizeCalendarState(currentCalendar, worldState);
       const nextState = normalizeCalendarState({ ...currentState, ...clone(patch) }, currentState);
-      groupState.calendar = clone(nextState);
+      groupState.calendar = {
+        ...currentCalendar,
+        ...clone(nextState)
+      };
       return nextState;
     });
   }
@@ -405,19 +454,60 @@ export class CalendarService {
     return this.#buildSnapshot(this.#getStateScope().state);
   }
 
+  previewTransition(toIsoDate) {
+    const scope = this.#getStateScope();
+    const fromState = normalizeCalendarState(scope.state);
+    const fromDate = requireIsoDate(fromState.isoDate);
+    const toDate = requireIsoDate(toIsoDate);
+    const crossedDates = enumerateCrossedDates(fromDate, toDate);
+    const daysAdvanced = Math.round((toDate.getTime() - fromDate.getTime()) / 86400000);
+    const monthStartDates = crossedDates.filter((isoDate) => requireIsoDate(isoDate).getUTCDate() === 1);
+
+    return {
+      from: this.#buildSnapshot(fromState),
+      to: this.#buildSnapshot({
+        version: 1,
+        isoDate: toIsoDate,
+        timeOfDaySeconds: fromState.timeOfDaySeconds
+      }),
+      fromIsoDate: fromState.isoDate,
+      toIsoDate: toIsoDate,
+      direction: daysAdvanced > 0 ? "forward" : daysAdvanced < 0 ? "backward" : "same",
+      crossedDates,
+      crossedDateCount: crossedDates.length,
+      daysAdvanced,
+      monthStartDates,
+      monthResetCount: monthStartDates.length,
+      counts: {
+        crossedDates: crossedDates.length,
+        monthBoundaries: monthStartDates.length
+      }
+    };
+  }
+
+  previewDate(year, month, day) {
+    return this.previewTransition(toIsoDate(requireDateParts(year, month, day)));
+  }
+
+  previewShiftDays(days = 0) {
+    const safeDays = Math.trunc(toNumber(days, 0));
+    const fromDate = requireIsoDate(this.#getStateScope().state.isoDate);
+    const toDate = new Date(fromDate.getTime());
+    toDate.setUTCDate(toDate.getUTCDate() + safeDays);
+    return this.previewTransition(toIsoDate(toDate));
+  }
+
+  previewAdvanceMonths(months = 1) {
+    const safeMonths = Math.max(0, Math.floor(toNumber(months, 0)));
+    const fromDate = requireIsoDate(this.#getStateScope().state.isoDate);
+    const toDate = new Date(fromDate.getTime());
+    toDate.setUTCMonth(toDate.getUTCMonth() + safeMonths);
+    return this.previewTransition(toIsoDate(toDate));
+  }
+
   async setDate(year, month, day, options = {}) {
     const scope = this.#getStateScope();
-    const safeYear = Math.max(1, Math.floor(toNumber(year, 1)));
-    const safeMonth = Math.max(1, Math.min(12, Math.floor(toNumber(month, 1))));
-    const safeDay = Math.max(1, Math.min(31, Math.floor(toNumber(day, 1))));
-    const date = new Date(Date.UTC(safeYear, safeMonth - 1, safeDay));
-    if (
-      date.getUTCFullYear() !== safeYear
-      || date.getUTCMonth() !== safeMonth - 1
-      || date.getUTCDate() !== safeDay
-    ) {
-      throw new Error("Некорректная дата календаря.");
-    }
+    const date = requireDateParts(year, month, day);
 
     const committedState = await this.#setState(scope, {
       version: 1,
