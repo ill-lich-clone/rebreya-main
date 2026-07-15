@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   applyDurabilityDamage,
@@ -8,6 +9,9 @@ import {
   isDurabilityEligible,
   resolveDurabilityProfile
 } from "../scripts/data/durability-rules.js";
+
+const MATERIALS_URL = new URL("../data/materials.json", import.meta.url);
+const MATERIALS = JSON.parse(readFileSync(MATERIALS_URL, "utf8"));
 
 const MATERIAL_ROWS = [
   ["fabric", "Ткань", 1, 3, 9, 0],
@@ -79,26 +83,41 @@ test("every durability material row resolves both fragile and sturdy values", ()
   }
 });
 
-test("all six size multipliers scale sturdy object HP", () => {
+test("all six size multipliers return integer steel HP for sturdy and fragile construction", () => {
   const expectedBySize = {
-    tiny: 3,
-    small: 6,
-    medium: 12,
-    large: 18,
-    huge: 24,
-    gargantuan: 36
+    tiny: { sturdy: 8, fragile: 4 },
+    small: { sturdy: 15, fragile: 7 },
+    medium: { sturdy: 30, fragile: 14 },
+    large: { sturdy: 45, fragile: 21 },
+    huge: { sturdy: 60, fragile: 28 },
+    gargantuan: { sturdy: 90, fragile: 42 }
   };
 
-  for (const [size, hpMax] of Object.entries(expectedBySize)) {
-    const profile = resolveFromMaterialName("wood", {
-      gear: {
-        predominantMaterialName: "wood",
-        durability: { size }
-      }
-    });
-    assert.equal(profile.size, size);
-    assert.equal(profile.hpMax, hpMax);
+  for (const [size, expected] of Object.entries(expectedBySize)) {
+    for (const construction of ["sturdy", "fragile"]) {
+      const profile = resolveFromMaterialName("Сталь", {
+        gear: {
+          predominantMaterialName: "Сталь",
+          durability: { size, construction }
+        }
+      });
+      assert.equal(profile.size, size);
+      assert.equal(profile.construction, construction);
+      assert.equal(profile.hpMax, expected[construction], `${size} ${construction}`);
+      assert.equal(Number.isInteger(profile.hpMax), true, `${size} ${construction}`);
+    }
   }
+});
+
+test("fragile Tiny objects have at least one integer HP", () => {
+  const profile = resolveFromMaterialName("Ткань", {
+    gear: {
+      predominantMaterialName: "Ткань",
+      durability: { size: "tiny", construction: "fragile" }
+    }
+  });
+
+  assert.equal(profile.hpMax, 1);
 });
 
 test("explicit item metadata wins over gear, material record, and material aliases", () => {
@@ -172,6 +191,30 @@ test("exact Russian and English material aliases cover each durability category"
   }
 });
 
+test("curated exact aliases cover current catalog representatives from all durability profiles", () => {
+  const catalogByName = new Map(MATERIALS.map((material) => [material.name, material]));
+  const catalogAliases = [
+    ["fabric", "Шерсть чудовища"],
+    ["wood", "Осколок кости чудовища"],
+    ["glass", "Обсидиановый осколок"],
+    ["leather", "Шкура чудовища"],
+    ["iron", "Железо"],
+    ["steel", "Эльфийская сталь"],
+    ["adamantine", "Освящённый адамантий"],
+    ["stone", "Грозовой камень"],
+    ["mithral", "Мифрил"],
+    ["crystal", "Чистый кристалл маны"]
+  ];
+
+  for (const [expectedProfile, materialName] of catalogAliases) {
+    const material = catalogByName.get(materialName);
+    assert.ok(material && material.isSynthetic === false, `${materialName} is a source row`);
+    assert.equal(resolveFromMaterialName(material.name).materialProfile, expectedProfile, materialName);
+  }
+
+  assert.equal(catalogByName.get("Шерсть чудовища")?.type, "Существо");
+});
+
 test("material aliases are exact and never use fuzzy substring matches", () => {
   const profile = resolveFromMaterialName("steelwood composite");
 
@@ -204,6 +247,69 @@ test("ordinary physical gear is eligible and non-gear document types are not", (
   for (const type of ["spell", "feat", "class", "subclass", "background"]) {
     assert.equal(isDurabilityEligible({ type, system: { properties: new Set(), rarity: "" } }), false, type);
   }
+});
+
+test("materials-compendium source and linked-good loot forms are not durability eligible", () => {
+  const sourceMaterial = MATERIALS.find((material) => material.name === "Шерсть чудовища");
+  const linkedGoodMaterial = MATERIALS.find((material) => material.name === "Железо");
+  assert.ok(sourceMaterial);
+  assert.equal(sourceMaterial.linkedGoodId, null);
+  assert.ok(linkedGoodMaterial?.linkedGoodId);
+
+  for (const material of [sourceMaterial, linkedGoodMaterial]) {
+    const itemData = {
+      name: material.name,
+      type: "loot",
+      system: {
+        properties: [],
+        rarity: "",
+        type: {
+          value: "trade",
+          subtype: String(material.subtype ?? "").trim()
+        }
+      },
+      flags: {
+        "rebreya-main": {
+          managed: true,
+          materialId: material.id,
+          linkedGoodId: material.linkedGoodId ?? null,
+          source: material.source ?? "",
+          isSynthetic: Boolean(material.isSynthetic)
+        }
+      }
+    };
+
+    assert.equal(isDurabilityEligible(itemData), false, material.name);
+  }
+});
+
+test("Rebreya material and goods stack markers are excluded while functional loot gear remains eligible", () => {
+  const excludedFlags = [
+    { sourceType: "material", sourceId: "material-3" },
+    { linkedGoodId: "zhelezo" },
+    { sourceType: "good", sourceId: "zhelezo" },
+    { sourceType: "resource", sourceId: "supplies" }
+  ];
+
+  for (const flags of excludedFlags) {
+    assert.equal(isDurabilityEligible({
+      type: "loot",
+      system: { properties: [], rarity: "" },
+      flags: { "rebreya-main": flags }
+    }), false, JSON.stringify(flags));
+  }
+
+  assert.equal(isDurabilityEligible({
+    type: "loot",
+    system: { properties: [], rarity: "" },
+    flags: {
+      "rebreya-main": {
+        sourceType: "gear",
+        sourceId: "pohodnyy-nabor",
+        gearId: "pohodnyy-nabor"
+      }
+    }
+  }), true);
 });
 
 test("dnd5e magical properties and rarity always exclude durability", () => {

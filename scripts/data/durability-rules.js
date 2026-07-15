@@ -1,5 +1,6 @@
 const MODULE_ID = "rebreya-main";
 const DURABLE_ITEM_TYPES = new Set(["weapon", "equipment", "tool", "container", "consumable", "loot"]);
+const NON_DURABLE_STACK_SOURCE_TYPES = new Set(["material", "good", "resource"]);
 const MAGIC_PROPERTY_KEYS = new Set([
   "mgc",
   "magic",
@@ -39,7 +40,7 @@ const MATERIAL_ALIASES = Object.freeze({
     "fabric", "fabrics", "cloth", "textile", "textiles", "thread", "silk", "wool", "linen",
     "flax", "cotton", "canvas", "hemp", "rope", "paper", "parchment", "ткань", "ткани",
     "текстиль", "нить", "шелк", "шерсть", "лен", "хлопок", "холст", "пенька", "веревка",
-    "бумага", "пергамент", "паутина гиганского паука", "шерсть гриффона"
+    "бумага", "пергамент", "паутина гиганского паука", "шерсть гриффона", "шерсть чудовища"
   ]),
   wood: Object.freeze([
     "wood", "wooden", "timber", "lumber", "oak", "pine", "ash wood", "yew", "bamboo", "cork",
@@ -47,10 +48,10 @@ const MATERIAL_ALIASES = Object.freeze({
     "ясень", "тис", "бамбук", "пробка", "кость", "кости", "слоновая кость", "бивень", "рог",
     "бивень чудовища", "гиганский коготь", "жало чудовища", "коготь чудовища", "кости мантикоры",
     "кость мантикоры", "коготь", "осколок черепа чудовища", "рог чудовища", "сердцевина древня",
-    "фейское дерево", "хребет чудовища", "ядовитый шип"
+    "фейское дерево", "хребет чудовища", "ядовитый шип", "осколок кости чудовища"
   ]),
   glass: Object.freeze([
-    "glass", "glassware", "obsidian", "стекло", "стеклянный", "обсидиан"
+    "glass", "glassware", "obsidian", "стекло", "стеклянный", "обсидиан", "обсидиановый осколок"
   ]),
   leather: Object.freeze([
     "leather", "hide", "skin", "fur", "pelt", "rawhide", "chitin", "carapace", "scale", "scales",
@@ -69,7 +70,7 @@ const MATERIAL_ALIASES = Object.freeze({
     "коричневая сталь", "лунный металл", "ночная сталь", "радужный металл", "эльфийская сталь"
   ]),
   adamantine: Object.freeze([
-    "adamantine", "adamant", "adamantium", "адамантин", "адамантий", "адамант"
+    "adamantine", "adamant", "adamantium", "адамантин", "адамантий", "адамант", "освященный адамантий"
   ]),
   stone: Object.freeze([
     "stone", "rock", "slate", "clay", "brick", "limestone", "lime", "masonry", "marble", "granite",
@@ -86,7 +87,7 @@ const MATERIAL_ALIASES = Object.freeze({
     "самоцвет", "драгоценный камень", "кварц", "алмаз", "бриллиант", "рубин", "сапфир", "изумруд",
     "аметист", "опал", "великий осколок души", "грозовой кристалл", "кристалы забытых титанов",
     "кристаллы забытых титанов", "кристальный левиафан", "крупный кристал маны", "крупный кристалл маны",
-    "малый осколок души", "осколок маны", "осколок тени"
+    "малый осколок души", "осколок маны", "осколок тени", "чистый кристалл маны"
   ])
 });
 
@@ -231,6 +232,12 @@ function hasMagicMarker(itemData) {
     || isMagicSourceType(flags.magicItemType);
 }
 
+function isNonDurableStack(flags) {
+  return Boolean(flags.materialId)
+    || Boolean(flags.linkedGoodId)
+    || NON_DURABLE_STACK_SOURCE_TYPES.has(normalizeToken(flags.sourceType));
+}
+
 export function isDurabilityEligible(itemData) {
   if (!itemData || typeof itemData !== "object") {
     return false;
@@ -241,7 +248,8 @@ export function isDurabilityEligible(itemData) {
     return false;
   }
 
-  if (moduleFlags(itemData)?.durability?.eligible === false) {
+  const flags = moduleFlags(itemData);
+  if (flags?.durability?.eligible === false || isNonDurableStack(flags)) {
     return false;
   }
 
@@ -302,7 +310,7 @@ export function resolveDurabilityProfile({ itemData = {}, gear = {}, material = 
     materialProfile,
     construction,
     size,
-    hpMax: baseProfile[construction] * SIZE_MULTIPLIERS[size],
+    hpMax: Math.max(1, Math.ceil(baseProfile[construction] * SIZE_MULTIPLIERS[size])),
     ac: baseProfile.ac,
     damageThreshold: baseProfile.threshold
   };
