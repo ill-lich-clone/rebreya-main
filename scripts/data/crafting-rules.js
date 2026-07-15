@@ -42,16 +42,22 @@ function hasProperty(properties, key) {
 }
 
 function isMagicGear(gear = {}) {
-  const sourceType = normalizeText(gear.sourceType ?? gear.category);
+  const moduleFlags = getPath(gear, "flags.rebreya-main") ?? {};
+  const sourceTypes = [gear.sourceType, gear.category, moduleFlags.sourceType].map(normalizeText);
+  const itemTypes = [gear.type, gear.equipmentType].map(normalizeText);
   const rarity = normalizeText(gear.rarity ?? getPath(gear, "system.rarity"));
   const properties = gear.properties ?? getPath(gear, "system.properties");
   return gear.isMagic === true
     || gear.magic === true
-    || sourceType === "magicitem"
-    || sourceType === "magic-item"
+    || gear.magical === true
+    || sourceTypes.some((value) => ["magicitem", "magic-item", "magic item"].includes(value))
+    || itemTypes.includes("магический предмет")
+    || Boolean(cleanText(gear.magicItemId ?? moduleFlags.magicItemId))
+    || moduleFlags.magical === true
+    || moduleFlags.isMagic === true
     || hasProperty(properties, "mgc")
     || Boolean(rarity && !["mundane", "none", "обычный", "немагический"].includes(rarity))
-    || getPath(gear, "flags.rebreya-main.magicItem") === true;
+    || moduleFlags.magicItem === true;
 }
 
 function isFirearmGear(gear = {}) {
@@ -92,6 +98,15 @@ function resolveToolAccess(toolAccess, toolId) {
   return toolAccess && typeof toolAccess === "object" ? toolAccess : null;
 }
 
+function hasToolAccess(access) {
+  return Boolean(access && typeof access === "object" && (
+    access.available === true
+    || cleanText(access.source)
+    || cleanText(access.itemUuid)
+    || cleanText(access.toolId)
+  ));
+}
+
 export function buildCraftBatch(outputs, gearById) {
   if (!Array.isArray(outputs) || outputs.length === 0) {
     throw new Error("A craft batch requires at least one output.");
@@ -113,7 +128,10 @@ export function buildCraftBatch(outputs, gearById) {
     }
 
     const priceGold = toFiniteNumber(gear.priceGoldEquivalent ?? gear.priceGold ?? gear.priceValue, Number.NaN);
-    const weightLb = toFiniteNumber(gear.weightLb ?? gear.weight, Number.NaN);
+    const sourceWeight = gear.weightLb ?? gear.weight;
+    const weightLb = typeof sourceWeight === "number" && Number.isFinite(sourceWeight)
+      ? sourceWeight
+      : Number.NaN;
     if (!Number.isFinite(priceGold) || priceGold < 0) {
       throw new Error(`Craft gear '${sourceId}' has an invalid price.`);
     }
@@ -208,12 +226,15 @@ export function calculateMaterialReservation({
   }
 
   const baseRawPrice = toFiniteNumber(baseRawMaterial?.priceGold, Number.NaN);
-  const baseRawUnitWeight = toFiniteNumber(baseRawMaterial?.weightLb ?? baseRawMaterial?.weight, 0);
+  const baseRawUnitWeight = toFiniteNumber(
+    baseRawMaterial?.weightLb ?? baseRawMaterial?.weight,
+    Number.NaN
+  );
   if (!Number.isFinite(baseRawPrice) || baseRawPrice <= 0) {
     throw new Error("Base raw material price must be greater than zero.");
   }
-  if (!Number.isFinite(baseRawUnitWeight) || baseRawUnitWeight < 0) {
-    throw new Error("Base raw material weight must be nonnegative.");
+  if (!Number.isFinite(baseRawUnitWeight) || baseRawUnitWeight <= 0) {
+    throw new Error("Base raw material weight must be greater than zero.");
   }
 
   const materialValueGold = safeTotalPrice / 2;
@@ -255,10 +276,21 @@ export function validateCraftEligibility({
 } = {}) {
   const source = batch && typeof batch === "object" ? batch : {};
   const errors = [];
+  const outputs = Array.isArray(source.outputs) ? source.outputs : [];
   const requiredToolIds = Array.isArray(source.requiredToolIds) ? source.requiredToolIds : [];
 
-  if (!Array.isArray(source.outputs) || source.outputs.length === 0) {
+  if (outputs.length === 0) {
     errors.push(buildError("empty-batch", "The craft batch has no outputs."));
+  }
+  const unresolvedToolSourceIds = outputs
+    .filter((output) => !cleanText(output?.requiredToolId))
+    .map((output) => cleanText(output?.sourceId))
+    .filter(Boolean);
+  if (unresolvedToolSourceIds.length) {
+    errors.push(buildError(
+      "tool-unresolved",
+      `Craft tool metadata is missing for: ${unresolvedToolSourceIds.join(", ")}.`
+    ));
   }
   if (source.hasMagicItems === true) {
     errors.push(buildError("magic-item", "Magical items cannot be crafted by this project."));
@@ -269,8 +301,11 @@ export function validateCraftEligibility({
 
   const requiredToolId = cleanText(source.requiredToolId ?? requiredToolIds[0]);
   const access = resolveToolAccess(toolAccess, requiredToolId);
-  const accessToolId = cleanText(access?.toolId ?? requiredToolId);
-  if (requiredToolId && (access?.owned !== true || accessToolId !== requiredToolId)) {
+  const accessToolId = cleanText(access?.toolId);
+  if (requiredToolId && (
+    !hasToolAccess(access)
+    || (accessToolId && accessToolId !== requiredToolId)
+  )) {
     errors.push(buildError("tool-required", `The '${requiredToolId}' tool is required.`));
   }
 
@@ -297,4 +332,3 @@ export function validateCraftEligibility({
     errors
   };
 }
-

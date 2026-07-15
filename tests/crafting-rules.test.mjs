@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildCraftBatch,
@@ -8,6 +9,11 @@ import {
   resolveDailyProgressGold,
   validateCraftEligibility
 } from "../scripts/data/crafting-rules.js";
+
+const realGear = JSON.parse(
+  readFileSync(new URL("../data/gear.json", import.meta.url), "utf8").replace(/^\uFEFF/u, "")
+);
+const realGearById = new Map(realGear.map((gear) => [gear.id, gear]));
 
 const gearById = new Map([
   ["sword", {
@@ -78,10 +84,85 @@ test("buildCraftBatch records incompatible tools and firearm requirements", () =
   assert.deepEqual(batch.firearmSourceIds, ["musket"]);
 });
 
+test("empty linkedTool remains unresolved and makes the batch ineligible", () => {
+  const sourceGear = realGearById.get("nauchnaya-kniga");
+  assert.equal(sourceGear.linkedTool, "");
+
+  const batch = buildCraftBatch([{ sourceId: sourceGear.id, quantity: 1 }], realGearById);
+  assert.equal(batch.requiredToolId, null);
+  assert.deepEqual(batch.requiredToolIds, []);
+
+  const eligibility = validateCraftEligibility({ batch, workshopApproved: true });
+  assert.equal(eligibility.valid, false);
+  assert.deepEqual(eligibility.errors.map((error) => error.code), ["tool-unresolved"]);
+});
+
 test("buildCraftBatch rejects missing gear and invalid quantities", () => {
   assert.throws(() => buildCraftBatch([{ sourceId: "missing", quantity: 1 }], gearById), /not found/i);
   assert.throws(() => buildCraftBatch([{ sourceId: "sword", quantity: 0 }], gearById), /quantity/i);
   assert.throws(() => buildCraftBatch([], gearById), /at least one/i);
+});
+
+test("buildCraftBatch rejects null and missing gear weight", () => {
+  const nullWeightGear = realGearById.get("bumaga-odin-list");
+  assert.equal(nullWeightGear.weight, null);
+  assert.throws(
+    () => buildCraftBatch([{ sourceId: nullWeightGear.id, quantity: 1 }], realGearById),
+    /invalid weight/i
+  );
+
+  const missingWeightGear = { ...gearById.get("sword"), id: "missing-weight" };
+  delete missingWeightGear.weight;
+  assert.throws(
+    () => buildCraftBatch([{ sourceId: missingWeightGear.id, quantity: 1 }], [missingWeightGear]),
+    /invalid weight/i
+  );
+});
+
+test("buildCraftBatch accepts only an explicit numeric zero for weightless gear", () => {
+  const weightlessGear = { ...gearById.get("sword"), id: "weightless", weight: 0 };
+  const batch = buildCraftBatch([{ sourceId: weightlessGear.id, quantity: 1 }], [weightlessGear]);
+  assert.equal(batch.outputs[0].weightLb, 0);
+
+  const stringZeroGear = { ...weightlessGear, id: "string-zero-weight", weight: "0" };
+  assert.throws(
+    () => buildCraftBatch([{ sourceId: stringZeroGear.id, quantity: 1 }], [stringZeroGear]),
+    /invalid weight/i
+  );
+});
+
+test("buildCraftBatch recognizes repository magic-item markers", () => {
+  const baseGear = realGearById.get("nauchnaya-kniga");
+  const markerCases = [
+    ["type", { type: "Магический предмет" }],
+    ["equipmentType", { equipmentType: "Магический предмет" }],
+    ["module sourceType", { flags: { "rebreya-main": { sourceType: "magicItem" } } }],
+    ["root magicItemId", { magicItemId: "magic-book" }],
+    ["module magicItemId", { flags: { "rebreya-main": { magicItemId: "magic-book" } } }],
+    ["root magical", { magical: true }],
+    ["module magical", { flags: { "rebreya-main": { magical: true } } }],
+    ["module isMagic", { flags: { "rebreya-main": { isMagic: true } } }]
+  ];
+
+  for (const [label, marker] of markerCases) {
+    const gear = { ...baseGear, ...marker, id: `magic-${label}` };
+    const batch = buildCraftBatch([{ sourceId: gear.id, quantity: 1 }], [gear]);
+    assert.equal(batch.hasMagicItems, true, label);
+  }
+});
+
+test("buildCraftBatch preserves dnd5e magic markers", () => {
+  const baseGear = realGearById.get("nauchnaya-kniga");
+  const markerCases = [
+    ["mgc property", { system: { properties: new Set(["mgc"]) } }],
+    ["rarity", { system: { rarity: "rare" } }]
+  ];
+
+  for (const [label, marker] of markerCases) {
+    const gear = { ...baseGear, ...marker, id: `dnd5e-magic-${label}` };
+    const batch = buildCraftBatch([{ sourceId: gear.id, quantity: 1 }], [gear]);
+    assert.equal(batch.hasMagicItems, true, label);
+  }
 });
 
 test("resolveDailyProgressGold covers the full 8-16 hour table", () => {
@@ -163,6 +244,24 @@ test("material quote rejects missing or invalid prices", () => {
   }), /base raw material price/i);
 });
 
+test("material quote rejects missing or nonpositive base raw material weight", () => {
+  const invalidBaseMaterials = [
+    ["missing", { priceGold: 1 }],
+    ["null", { priceGold: 1, weightLb: null }],
+    ["zero", { priceGold: 1, weightLb: 0 }],
+    ["negative", { priceGold: 1, weightLb: -0.1 }]
+  ];
+
+  for (const [label, baseRawMaterial] of invalidBaseMaterials) {
+    assert.throws(() => calculateMaterialReservation({
+      totalPriceGold: 10,
+      totalWeightLb: 1,
+      predominantMaterial: { priceGold: 1, weightLb: 1 },
+      baseRawMaterial
+    }), /base raw material weight.*greater than zero/i, label);
+  }
+});
+
 test("calculateProjectWorkdays rounds up from the selected daily progress", () => {
   assert.equal(calculateProjectWorkdays({ targetGold: 11, hours: 8 }), 3);
   assert.equal(calculateProjectWorkdays({ targetGold: 100, hours: 8, profile: "firearm" }), 4);
@@ -173,16 +272,44 @@ test("validateCraftEligibility accepts a compatible mundane batch", () => {
   const batch = buildCraftBatch([{ sourceId: "sword", quantity: 1 }], gearById);
   assert.deepEqual(validateCraftEligibility({
     batch,
-    toolAccess: { toolId: "smiths", rank: 2, owned: true },
+    toolAccess: {
+      rank: 2,
+      source: "actor",
+      itemUuid: "Actor.crafter.Item.smiths-tools"
+    },
     workshopApproved: true
   }), { valid: true, errors: [] });
+});
+
+test("validateCraftEligibility recognizes tool access identity without owned", () => {
+  const batch = buildCraftBatch([{ sourceId: "sword", quantity: 1 }], gearById);
+  const accessCases = [
+    ["source", { rank: 2, source: "actor" }],
+    ["itemUuid", { rank: 2, itemUuid: "Actor.crafter.Item.smiths-tools" }],
+    ["toolId", { rank: 2, toolId: "smiths" }],
+    ["available", { rank: 2, available: true }]
+  ];
+
+  for (const [label, toolAccess] of accessCases) {
+    const result = validateCraftEligibility({ batch, toolAccess, workshopApproved: true });
+    assert.deepEqual(result, { valid: true, errors: [] }, label);
+  }
+});
+
+test("validateCraftEligibility rejects absent tool access metadata", () => {
+  const batch = buildCraftBatch([{ sourceId: "sword", quantity: 1 }], gearById);
+  for (const toolAccess of [null, { rank: 2 }]) {
+    const result = validateCraftEligibility({ batch, toolAccess, workshopApproved: true });
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.code === "tool-required"));
+  }
 });
 
 test("validateCraftEligibility reports magic, tool, rank, workshop, and firearm blueprint failures", () => {
   const magicBatch = buildCraftBatch([{ sourceId: "wand", quantity: 1 }], gearById);
   const magic = validateCraftEligibility({
     batch: magicBatch,
-    toolAccess: { toolId: "woodcarvers", rank: 5, owned: true },
+    toolAccess: { rank: 5, source: "actor", itemUuid: "Actor.crafter.Item.woodcarvers-tools" },
     workshopApproved: true
   });
   assert.equal(magic.valid, false);
@@ -194,7 +321,7 @@ test("validateCraftEligibility reports magic, tool, rank, workshop, and firearm 
   ], gearById);
   const invalid = validateCraftEligibility({
     batch: mixedBatch,
-    toolAccess: { toolId: "smiths", rank: 1, owned: true },
+    toolAccess: { toolId: "smiths", rank: 1, source: "actor" },
     workshopApproved: false,
     blueprintIds: []
   });
@@ -206,4 +333,3 @@ test("validateCraftEligibility reports magic, tool, rank, workshop, and firearm 
     "blueprint-required"
   ]));
 });
-
