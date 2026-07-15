@@ -1690,6 +1690,63 @@ function normalizeWorkLogEntry(value = {}) {
   };
 }
 
+function normalizeTransitionJournalEntry(value = {}) {
+  const source = asObject(value);
+  const status = ["processing", "completed", "reconciliation-required"].includes(cleanId(source.status))
+    ? cleanId(source.status)
+    : "reconciliation-required";
+  return {
+    ...clone(source),
+    transitionId: cleanId(source.transitionId),
+    isoDate: cleanString(source.isoDate),
+    slotIds: asArray(source.slotIds).map((slotId) => cleanId(slotId)).filter(Boolean),
+    status,
+    resultsBySlotId: clone(asObject(source.resultsBySlotId)),
+    createdAt: Number(source.createdAt) || 0,
+    updatedAt: Number(source.updatedAt) || 0
+  };
+}
+
+function hasMeaningfulValue(value) {
+  if (value == null || value === false || value === 0 || value === "") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((entry) => hasMeaningfulValue(entry));
+  }
+  if (typeof value === "object") {
+    return Object.values(value).some((entry) => hasMeaningfulValue(entry));
+  }
+  return true;
+}
+
+function hasResourceMutationEvidence(outcome) {
+  if (Array.isArray(outcome)) {
+    return outcome.some((entry) => hasResourceMutationEvidence(entry));
+  }
+  if (!outcome || typeof outcome !== "object") {
+    return false;
+  }
+  return Object.entries(outcome).some(([key, value]) => (
+    (/(?:receipt|spend|spent|debit|consum)/iu.test(key) && hasMeaningfulValue(value))
+    || hasResourceMutationEvidence(value)
+  ));
+}
+
+function buildDowntimeOperationId(transitionId, slotId) {
+  return `downtime:${transitionId}:${slotId}`;
+}
+
+function findTransitionJournalEntry(state, isoDate, transitionId) {
+  return state.transitionJournal.find((entry) => (
+    entry.isoDate === isoDate && entry.transitionId === transitionId
+  ));
+}
+
+function isTerminalTransitionResult(result) {
+  return ["processed", "blocked"].includes(cleanId(result?.status));
+}
+
 function getDowntimeStateSource(value = {}) {
   const raw = asObject(value);
   const history = asArray(raw.history);
@@ -1703,6 +1760,7 @@ function getDowntimeStateSource(value = {}) {
     version: Number(envelope.version) || DOWNTIME_STATE_VERSION,
     grants: clone(asArray(envelope.grants)),
     scheduleSlots: clone(asArray(envelope.scheduleSlots)),
+    transitionJournal: clone(asArray(envelope.transitionJournal)),
     workLog: clone(asArray(envelope.workLog)),
     history: clone(history.filter((entry) => entry?.id !== DOWNTIME_V2_ENVELOPE_ID))
   };
@@ -1722,66 +1780,84 @@ function buildPersistedDowntimeStateV2(state) {
         version: DOWNTIME_STATE_VERSION,
         grants: clone(asArray(source.grants)),
         scheduleSlots: clone(asArray(source.scheduleSlots)),
+        transitionJournal: clone(asArray(source.transitionJournal)),
         workLog: clone(asArray(source.workLog))
       }
     ]
   };
 }
 
-function migrateLegacySchedule(state, currentIsoDate) {
-  for (const [actorId, balance] of Object.entries(state.balancesByActorId)) {
-    if (state.scheduleSlots.some((slot) => slot.actorId === actorId)) {
-      continue;
-    }
-
+function migrateLegacySchedule(state, currentIsoDate, legacyActorIds) {
+  for (const actorId of legacyActorIds) {
+    const balance = state.balancesByActorId[actorId];
     const unspentWorkdays = balance.availableWorkdays + balance.reservedWorkdays;
     if (unspentWorkdays <= 0) {
       continue;
     }
 
     const grantId = `downtime-migration-${actorId}`;
+    const actorSlots = state.scheduleSlots.filter((slot) => slot.actorId === actorId);
+    const occupiedDates = new Set(actorSlots
+      .map((slot) => slot.isoDate));
+    const existingUnspentWorkdays = actorSlots.filter((slot) => slot.status !== "processed").length;
+    const missingWorkdays = Math.max(0, unspentWorkdays - existingUnspentWorkdays);
+    const generatedSlots = buildGrantSlots({
+      actorId,
+      grantId,
+      weeks: Math.ceil(missingWorkdays / WORKDAYS_PER_WEEK),
+      fromIsoDate: currentIsoDate,
+      occupiedDates
+    }).slice(0, missingWorkdays);
+    state.scheduleSlots.push(...generatedSlots);
+
     if (!state.grants.some((grant) => grant.id === grantId)) {
+      const firstActualSlotDate = generatedSlots[0]?.isoDate
+        ?? actorSlots.map((slot) => slot.isoDate).sort()[0]
+        ?? nearestMonday(currentIsoDate);
       state.grants.push({
         id: grantId,
         actorId,
         workdays: balance.totalGrantedWorkdays,
-        anchorMonday: nearestMonday(currentIsoDate),
+        anchorMonday: firstActualSlotDate,
         createdAt: 0,
         reason: "Migrated from downtime state v1"
       });
     }
 
-    const occupiedDates = new Set(state.scheduleSlots
-      .filter((slot) => slot.actorId === actorId)
-      .map((slot) => slot.isoDate));
-    const generatedSlots = buildGrantSlots({
-      actorId,
-      grantId,
-      weeks: Math.ceil(unspentWorkdays / WORKDAYS_PER_WEEK),
-      fromIsoDate: currentIsoDate,
-      occupiedDates
-    }).slice(0, unspentWorkdays);
-    state.scheduleSlots.push(...generatedSlots);
+    let reservedSlots = state.scheduleSlots.filter((slot) => (
+      slot.actorId === actorId && slot.requestId && slot.status !== "processed"
+    )).length;
 
     for (const request of state.requests.filter((entry) => (
       entry.actorId === actorId && OPEN_RESERVED_STATUSES.has(entry.status)
     ))) {
-      try {
+      const processedSlots = state.scheduleSlots.filter((slot) => (
+        slot.requestId === request.id && slot.status === "processed"
+      )).length;
+      const existingReservedSlots = state.scheduleSlots.filter((slot) => (
+        slot.requestId === request.id && slot.status !== "processed"
+      )).length;
+      const requestWorkdays = Math.max(1, toWeeks(request.workdays, request.weeks * WORKDAYS_PER_WEEK));
+      const missingRequestSlots = Math.max(0, requestWorkdays - processedSlots - existingReservedSlots);
+      const allocationCount = Math.min(
+        missingRequestSlots,
+        Math.max(0, balance.reservedWorkdays - reservedSlots)
+      );
+      if (allocationCount > 0) {
         state.scheduleSlots = allocateRequestSlots({
           slots: state.scheduleSlots,
           actorId,
           requestId: request.id,
-          workdays: request.workdays,
+          workdays: allocationCount,
           ownedWorkshop: request.ownedWorkshop === true
-        }).map((slot) => (
-          slot.requestId === request.id && request.status === "approved"
-            ? { ...slot, status: "approved" }
-            : slot
-        ));
+        });
+        reservedSlots += allocationCount;
       }
-      catch (_error) {
-        break;
-      }
+      state.scheduleSlots = state.scheduleSlots.map((slot) => (
+        slot.requestId === request.id && slot.status !== "processed"
+          ? { ...slot, status: request.status }
+          : slot
+      ));
     }
   }
 }
@@ -1789,25 +1865,37 @@ function migrateLegacySchedule(state, currentIsoDate) {
 function normalizeDowntimeStateV2(value = {}, currentIsoDate) {
   const source = getDowntimeStateSource(value);
   const sourceBalances = asObject(source.balancesByActorId);
-  const hasWorkdayBalances = Object.values(sourceBalances).some((balance) => (
-    Object.hasOwn(asObject(balance), "availableWorkdays")
-    || Object.hasOwn(asObject(balance), "reservedWorkdays")
-    || Object.hasOwn(asObject(balance), "spentWorkdays")
-    || Object.hasOwn(asObject(balance), "totalGrantedWorkdays")
-  ));
-  const isV2 = Number(source.version) >= DOWNTIME_STATE_VERSION || hasWorkdayBalances;
   const balancesByActorId = {};
+  const legacyActorIds = new Set();
   for (const [rawActorId, rawBalance] of Object.entries(sourceBalances)) {
     const actorId = cleanId(rawActorId);
     if (actorId) {
-      balancesByActorId[actorId] = normalizeWorkdayBalance(rawBalance, { legacyWeeks: !isV2 });
+      const balance = asObject(rawBalance);
+      const hasWorkdayBalance = [
+        "availableWorkdays",
+        "reservedWorkdays",
+        "spentWorkdays",
+        "totalGrantedWorkdays"
+      ].some((field) => Object.hasOwn(balance, field));
+      const hasLegacyWeekBalance = [
+        "availableWeeks",
+        "reservedWeeks",
+        "spentWeeks",
+        "totalGrantedWeeks"
+      ].some((field) => Object.hasOwn(balance, field));
+      const legacyWeeks = !hasWorkdayBalance
+        && (hasLegacyWeekBalance || Number(source.version) < DOWNTIME_STATE_VERSION);
+      balancesByActorId[actorId] = normalizeWorkdayBalance(balance, { legacyWeeks });
+      if (legacyWeeks) {
+        legacyActorIds.add(actorId);
+      }
     }
   }
 
   const requests = asArray(source.requests).map((request) => normalizeRequest(request)).filter((request) => request.id);
   const counter = Math.max(toWeeks(source.counter), getMaxRequestCounter(requests));
   const history = clone(asArray(source.history));
-  if (!isV2 && !history.some((entry) => entry?.migrationId === DOWNTIME_V2_MIGRATION_ID)) {
+  if (legacyActorIds.size && !history.some((entry) => entry?.migrationId === DOWNTIME_V2_MIGRATION_ID)) {
     history.push({
       id: "downtime-history-migration-v2",
       type: "migration",
@@ -1828,13 +1916,16 @@ function normalizeDowntimeStateV2(value = {}, currentIsoDate) {
     scheduleSlots: asArray(source.scheduleSlots)
       .map((slot) => normalizeScheduleSlot(slot))
       .filter((slot) => slot.id && slot.actorId && slot.isoDate),
+    transitionJournal: asArray(source.transitionJournal)
+      .map((entry) => normalizeTransitionJournalEntry(entry))
+      .filter((entry) => entry.transitionId && entry.isoDate),
     workLog: asArray(source.workLog).map((entry) => normalizeWorkLogEntry(entry)).filter((entry) => entry.id),
     history,
     counter
   };
 
-  if (!isV2) {
-    migrateLegacySchedule(state, currentIsoDate);
+  if (legacyActorIds.size) {
+    migrateLegacySchedule(state, currentIsoDate, legacyActorIds);
   }
   return state;
 }
@@ -1928,6 +2019,7 @@ export class DowntimeService {
       requests: state.requests.map((request) => clone(request)),
       scheduleSlots: clone(state.scheduleSlots),
       calendarByIsoDate: clone(calendarByIsoDate),
+      transitionJournal: clone(state.transitionJournal),
       workLog: clone(state.workLog),
       checks: clone(state.checks),
       history: clone(state.history),
@@ -1973,7 +2065,7 @@ export class DowntimeService {
           id: grantId,
           actorId,
           workdays,
-          anchorMonday: nearestMonday(grantFromIsoDate),
+          anchorMonday: grantSlots[0]?.isoDate ?? nearestMonday(grantFromIsoDate),
           createdAt: Date.now(),
           reason: cleanString(reason)
         });
@@ -2442,12 +2534,20 @@ export class DowntimeService {
         ));
       }
       else if (RELEASED_STATUSES.has(currentStatus) && OPEN_RESERVED_STATUSES.has(effectiveStatus)) {
-        this.#applyStatusAccounting(balance, currentStatus, effectiveStatus, requestWorkdays);
+        const currentIsoDate = this.#resolveCurrentIsoDate();
+        const existingFutureReservedSlots = requestSlots.filter((slot) => (
+          slot.status !== "processed" && slot.isoDate > currentIsoDate
+        )).length;
+        const workdaysToReserve = Math.max(
+          0,
+          requestWorkdays - processedWorkdays - existingFutureReservedSlots
+        );
+        this.#applyStatusAccounting(balance, currentStatus, effectiveStatus, workdaysToReserve);
         state.scheduleSlots = allocateRequestSlots({
           slots: state.scheduleSlots,
           actorId: request.actorId,
           requestId: request.id,
-          workdays: requestWorkdays,
+          workdays: workdaysToReserve,
           ownedWorkshop: request.ownedWorkshop === true
         });
       }
@@ -2484,37 +2584,117 @@ export class DowntimeService {
       ? activityProcessor
       : async () => ({ result: null });
 
-    return this.#writeGroupState(context, async (state) => {
-      const processed = [];
-      const blocked = [];
-      const skipped = [];
-      const eligibleSlots = state.scheduleSlots
-        .filter((slot) => slot.isoDate === safeIsoDate && ["approved", "blocked"].includes(slot.status))
-        .sort((left, right) => left.actorId.localeCompare(right.actorId) || left.id.localeCompare(right.id));
+    const preparation = await this.#writeGroupState(context, (state) => {
+      let journal = findTransitionJournalEntry(state, safeIsoDate, safeTransitionId);
+      const now = Date.now();
+      if (!journal) {
+        const slotIds = state.scheduleSlots
+          .filter((slot) => slot.isoDate === safeIsoDate && ["approved", "blocked"].includes(slot.status))
+          .sort((left, right) => left.actorId.localeCompare(right.actorId) || left.id.localeCompare(right.id))
+          .map((slot) => slot.id);
+        journal = {
+          transitionId: safeTransitionId,
+          isoDate: safeIsoDate,
+          slotIds,
+          status: "processing",
+          resultsBySlotId: {},
+          createdAt: now,
+          updatedAt: now
+        };
+        state.transitionJournal.push(journal);
+      }
 
-      for (const slot of eligibleSlots) {
-        const existingLog = state.workLog.find((entry) => (
-          entry.slotId === slot.id
-          && entry.isoDate === safeIsoDate
-          && entry.transitionId === safeTransitionId
-        ));
-        if (existingLog || slot.status === "processed") {
-          skipped.push(clone(slot));
-          continue;
-        }
-
-        let outcome;
-        try {
-          outcome = asObject(await processor(clone(slot), {
-            isoDate: safeIsoDate,
-            transitionId: safeTransitionId
-          }));
-        }
-        catch (error) {
-          outcome = {
-            blocked: true,
-            blockReason: cleanString(error?.message) || "Downtime activity failed."
+      if (journal.status !== "completed") {
+        journal.status = "processing";
+        journal.updatedAt = now;
+      }
+      for (const slotId of journal.slotIds) {
+        if (!isTerminalTransitionResult(journal.resultsBySlotId[slotId])) {
+          journal.resultsBySlotId[slotId] = {
+            ...clone(asObject(journal.resultsBySlotId[slotId])),
+            status: "processing",
+            operationId: buildDowntimeOperationId(safeTransitionId, slotId),
+            updatedAt: now
           };
+        }
+      }
+
+      return {
+        slotIds: clone(journal.slotIds),
+        slotsById: Object.fromEntries(state.scheduleSlots
+          .filter((slot) => journal.slotIds.includes(slot.id))
+          .map((slot) => [slot.id, clone(slot)])),
+        resultsBySlotId: clone(journal.resultsBySlotId)
+      };
+    });
+
+    const processed = [];
+    const blocked = [];
+    const reconciliation = [];
+    const skipped = [];
+
+    for (const slotId of preparation.slotIds) {
+      const slotSnapshot = preparation.slotsById[slotId] ?? { id: slotId };
+      if (isTerminalTransitionResult(preparation.resultsBySlotId[slotId])) {
+        skipped.push(clone(slotSnapshot));
+        continue;
+      }
+
+      const operationId = buildDowntimeOperationId(safeTransitionId, slotId);
+      let classification = "reconciliation-required";
+      let outcome = null;
+      let reconciliationReason = "Downtime processor returned an ambiguous result.";
+      try {
+        const rawOutcome = await processor(clone(slotSnapshot), {
+          isoDate: safeIsoDate,
+          transitionId: safeTransitionId,
+          operationId
+        });
+        if (rawOutcome && typeof rawOutcome === "object" && !Array.isArray(rawOutcome)) {
+          outcome = clone(rawOutcome);
+          const explicitBlocked = outcome.blocked === true || cleanId(outcome.status) === "blocked";
+          if (explicitBlocked && !hasResourceMutationEvidence(outcome)) {
+            classification = "blocked";
+          }
+          else if (explicitBlocked) {
+            reconciliationReason = "Blocked downtime result included resource mutation evidence.";
+          }
+          else if (cleanId(outcome.status) === "processed" || Object.hasOwn(outcome, "result")) {
+            classification = "processed";
+          }
+        }
+      }
+      catch (error) {
+        reconciliationReason = cleanString(error?.message) || "Downtime activity processor failed.";
+      }
+
+      const finalized = await this.#writeGroupState(context, (state) => {
+        const journal = findTransitionJournalEntry(state, safeIsoDate, safeTransitionId);
+        if (!journal || !journal.slotIds.includes(slotId)) {
+          throw new Error("Downtime transition journal is unavailable for finalization.");
+        }
+        if (isTerminalTransitionResult(journal.resultsBySlotId[slotId])) {
+          return { kind: "skipped", slot: clone(state.scheduleSlots.find((slot) => slot.id === slotId) ?? slotSnapshot) };
+        }
+
+        const now = Date.now();
+        const slot = state.scheduleSlots.find((entry) => entry.id === slotId);
+        if (!slot) {
+          classification = "reconciliation-required";
+          reconciliationReason = "Snapshotted downtime slot is missing.";
+        }
+
+        if (classification === "reconciliation-required") {
+          journal.resultsBySlotId[slotId] = {
+            status: "reconciliation-required",
+            operationId,
+            reason: reconciliationReason,
+            ...(outcome == null ? {} : { activityResult: clone(outcome) }),
+            updatedAt: now
+          };
+          journal.status = "reconciliation-required";
+          journal.updatedAt = now;
+          return { kind: "reconciliation-required", slot: clone(slot ?? slotSnapshot), operationId };
         }
 
         const logEntry = {
@@ -2523,68 +2703,120 @@ export class DowntimeService {
           actorId: slot.actorId,
           isoDate: safeIsoDate,
           requestId: slot.requestId,
-          projectId: cleanId(outcome.projectId) || slot.projectId || null,
+          projectId: cleanId(outcome?.projectId) || slot.projectId || null,
           result: null,
           transitionId: safeTransitionId,
-          createdAt: Date.now()
+          operationId,
+          createdAt: now
         };
-        const isBlocked = outcome.blocked === true || cleanId(outcome.status) === "blocked";
-        if (isBlocked) {
+
+        if (classification === "blocked") {
           slot.status = "blocked";
-          slot.blockReason = cleanString(outcome.blockReason) || "Downtime activity blocked.";
+          slot.blockReason = cleanString(outcome?.blockReason) || "Downtime activity blocked.";
           slot.processedTransitionId = safeTransitionId;
           logEntry.result = {
             status: "blocked",
             blockReason: slot.blockReason,
-            ...(outcome.result === undefined ? {} : { activityResult: clone(outcome.result) })
+            ...(outcome?.result === undefined ? {} : { activityResult: clone(outcome.result) })
           };
-          state.workLog.push(logEntry);
-          blocked.push(clone(slot));
-          continue;
+          if (!state.workLog.some((entry) => entry.id === logEntry.id)) {
+            state.workLog.push(logEntry);
+          }
+          journal.resultsBySlotId[slotId] = {
+            status: "blocked",
+            operationId,
+            blockReason: slot.blockReason,
+            updatedAt: now
+          };
+          journal.updatedAt = now;
+          return { kind: "blocked", slot: clone(slot) };
         }
 
         const balance = normalizeWorkdayBalance(state.balancesByActorId[slot.actorId] ?? buildDefaultBalance());
-        if (balance.reservedWorkdays < 1) {
-          slot.status = "blocked";
-          slot.blockReason = "Reserved downtime workdays are lower than the scheduled cost.";
-          slot.processedTransitionId = safeTransitionId;
-          logEntry.result = { status: "blocked", blockReason: slot.blockReason };
-          state.workLog.push(logEntry);
-          blocked.push(clone(slot));
-          continue;
+        if (slot.status === "processed" || balance.reservedWorkdays < 1) {
+          const reason = slot.status === "processed"
+            ? "Snapshotted downtime slot was processed by another transition."
+            : "Reserved downtime workdays are lower than the scheduled cost.";
+          journal.resultsBySlotId[slotId] = {
+            status: "reconciliation-required",
+            operationId,
+            reason,
+            activityResult: clone(outcome),
+            updatedAt: now
+          };
+          journal.status = "reconciliation-required";
+          journal.updatedAt = now;
+          return { kind: "reconciliation-required", slot: clone(slot), operationId };
         }
 
         balance.reservedWorkdays -= 1;
         balance.spentWorkdays += 1;
         state.balancesByActorId[slot.actorId] = balance;
         slot.status = "processed";
-        slot.projectId = cleanId(outcome.projectId) || slot.projectId || null;
-        slot.activityId = cleanId(outcome.activityId) || slot.activityId || null;
-        slot.hours = toFiniteNumber(outcome.hours, slot.hours);
+        slot.projectId = cleanId(outcome?.projectId) || slot.projectId || null;
+        slot.activityId = cleanId(outcome?.activityId) || slot.activityId || null;
+        slot.hours = toFiniteNumber(outcome?.hours, slot.hours);
         slot.blockReason = null;
         slot.processedTransitionId = safeTransitionId;
         logEntry.projectId = slot.projectId;
         logEntry.result = {
           status: "processed",
-          activityResult: outcome.result === undefined ? null : clone(outcome.result)
+          activityResult: outcome?.result === undefined ? null : clone(outcome.result)
         };
-        state.workLog.push(logEntry);
-        processed.push(clone(slot));
+        if (!state.workLog.some((entry) => entry.id === logEntry.id)) {
+          state.workLog.push(logEntry);
+        }
+        journal.resultsBySlotId[slotId] = {
+          status: "processed",
+          operationId,
+          updatedAt: now
+        };
+        journal.updatedAt = now;
 
         const request = state.requests.find((entry) => entry.id === slot.requestId);
-        if (request) {
-          const remaining = state.scheduleSlots.some((entry) => (
-            entry.requestId === request.id && entry.status !== "processed"
-          ));
-          if (!remaining) {
-            request.status = "completed";
-            request.updatedAt = Date.now();
-          }
+        if (request && !state.scheduleSlots.some((entry) => (
+          entry.requestId === request.id && entry.status !== "processed"
+        ))) {
+          request.status = "completed";
+          request.updatedAt = now;
         }
-      }
+        return { kind: "processed", slot: clone(slot) };
+      });
 
-      return { isoDate: safeIsoDate, transitionId: safeTransitionId, processed, blocked, skipped };
+      if (finalized.kind === "processed") {
+        processed.push(finalized.slot);
+      }
+      else if (finalized.kind === "blocked") {
+        blocked.push(finalized.slot);
+      }
+      else if (finalized.kind === "reconciliation-required") {
+        reconciliation.push(finalized);
+      }
+      else {
+        skipped.push(finalized.slot);
+      }
+    }
+
+    const journalStatus = await this.#writeGroupState(context, (state) => {
+      const journal = findTransitionJournalEntry(state, safeIsoDate, safeTransitionId);
+      if (!journal) {
+        throw new Error("Downtime transition journal is unavailable for completion.");
+      }
+      const completed = journal.slotIds.every((slotId) => isTerminalTransitionResult(journal.resultsBySlotId[slotId]));
+      journal.status = completed ? "completed" : "reconciliation-required";
+      journal.updatedAt = Date.now();
+      return journal.status;
     });
+
+    return {
+      isoDate: safeIsoDate,
+      transitionId: safeTransitionId,
+      journalStatus,
+      processed,
+      blocked,
+      reconciliation,
+      skipped
+    };
   }
 
   async setRequestChecks(requestId, checks = []) {
@@ -2753,24 +2985,10 @@ export class DowntimeService {
       return result;
     };
 
-    if (typeof groupContextService?.mutateGroupState === "function") {
-      return groupContextService.mutateGroupState(context.groupId, applyMutation);
+    if (typeof groupContextService?.mutateGroupState !== "function") {
+      throw new Error("Downtime writes require groupContextService.mutateGroupState.");
     }
-
-    const registry = groupContextService?.getRegistry?.();
-    if (!registry || typeof registry !== "object") {
-      throw new Error("Downtime registry is unavailable.");
-    }
-
-    registry.groupsById ??= {};
-    registry.groupsById[context.groupId] ??= {
-      version: 1,
-      groupActorId: context.groupId
-    };
-    const groupState = registry.groupsById[context.groupId];
-    const result = await applyMutation(groupState);
-    await groupContextService.setRegistry(registry);
-    return result;
+    return groupContextService.mutateGroupState(context.groupId, applyMutation);
   }
 
   #findRequest(state, requestId) {
