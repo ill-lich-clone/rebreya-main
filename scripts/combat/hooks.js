@@ -772,9 +772,25 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasSorcererService) {
+    const repairSorcererActor = (app) => {
+      const actor = app?.actor ?? app?.document ?? null;
+      moduleApi.sorcererAutomationService.repairActor(actor).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to repair Sorcerer actor items.`, error);
+      });
+    };
+
+    for (const hookName of [
+      "renderActorSheet",
+      "renderActorSheet5eCharacter2",
+      "renderActorSheet5eCharacter",
+      "renderCharacterActorSheet"
+    ]) {
+      Hooks.on(hookName, repairSorcererActor);
+    }
+
     Hooks.on("createItem", (item, options, userId) => {
       moduleApi.sorcererAutomationService.handleCreatedItem(item, options, userId).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to synchronize Sorcery Points after item creation.`, error);
+        console.error(`${MODULE_ID} | Failed to process Sorcerer item creation.`, error);
       });
     });
 

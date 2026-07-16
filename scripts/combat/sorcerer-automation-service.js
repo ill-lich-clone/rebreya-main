@@ -1,6 +1,7 @@
-import { MODULE_ID } from "../constants.js";
+import { MODULE_ID, SUBCLASSES_COMPENDIUM_NAME } from "../constants.js";
 
 const SORCERER_ADVANCEMENT_ROOT = "sorcerer-rework-v011";
+const REBREYA_SUBCLASSES_PACK_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
 const SORCERY_POINTS_FEATURE_ID = "sorcerer-sorcery-points";
 const SORCERY_POINTS_SCALE_ID = "sorcery-points";
 const MAXIMUM_SPELL_LEVEL_SCALE_ID = "maximum-spell-level";
@@ -530,7 +531,7 @@ function isCurrentUserHook(userId) {
 }
 
 function actorFrom(subject) {
-  return subject?.actor ?? subject?.item?.actor ?? subject?.item?.parent ?? null;
+  return subject?.actor ?? subject?.parent ?? subject?.item?.actor ?? subject?.item?.parent ?? null;
 }
 
 function classIdentifier(item) {
@@ -542,6 +543,25 @@ function classIdentifier(item) {
 
 function isSorcererClassItem(item) {
   return item?.type === "class" && classIdentifier(item) === SORCERER_ADVANCEMENT_ROOT;
+}
+
+function subclassClassIdentifier(item) {
+  return cleanText(
+    documentFlag(item, MODULE_ID, "classIdentifier")
+    ?? item?.system?.classIdentifier
+    ?? item?.system?.class?.identifier
+  );
+}
+
+function subclassIdentifier(item) {
+  return cleanText(
+    documentFlag(item, MODULE_ID, "subclassId")
+    ?? item?.system?.identifier
+  );
+}
+
+function isSorcererSubclassItem(item) {
+  return item?.type === "subclass" && subclassClassIdentifier(item) === SORCERER_ADVANCEMENT_ROOT;
 }
 
 function actorHasSorcererClass(actor) {
@@ -1507,6 +1527,62 @@ async function updateDocument(document, patch) {
   return document;
 }
 
+function documentId(document) {
+  return cleanText(document?.id ?? document?._id);
+}
+
+async function updateOwnedItem(item, patch, options = {}) {
+  if (!item || !patch || !Object.keys(patch).length) {
+    return false;
+  }
+
+  const itemId = documentId(item);
+  const actor = item?.actor ?? item?.parent ?? null;
+  if (itemId && typeof actor?.updateEmbeddedDocuments === "function") {
+    await actor.updateEmbeddedDocuments("Item", [{ _id: itemId, ...patch }], options);
+    return true;
+  }
+
+  await updateDocument(item, patch);
+  return true;
+}
+
+function advancementDataArray(value) {
+  return collectionValues(value)
+    .map((entry) => {
+      if (typeof entry?.toObject === "function") {
+        return entry.toObject();
+      }
+      if (typeof entry?.toJSON === "function") {
+        return entry.toJSON();
+      }
+      return entry;
+    })
+    .filter(Boolean);
+}
+
+function advancementId(advancement) {
+  return cleanText(advancement?._id ?? advancement?.id);
+}
+
+function mergeAdvancementData(currentAdvancements, sourceAdvancements) {
+  const currentById = new Map(
+    advancementDataArray(currentAdvancements)
+      .map((advancement) => [advancementId(advancement), advancement])
+      .filter(([id]) => id)
+  );
+
+  return advancementDataArray(sourceAdvancements)
+    .map((sourceAdvancement) => {
+      const nextAdvancement = deepClone(sourceAdvancement);
+      const currentAdvancement = currentById.get(advancementId(sourceAdvancement));
+      if (currentAdvancement && Object.hasOwn(currentAdvancement, "value")) {
+        nextAdvancement.value = deepClone(currentAdvancement.value ?? {});
+      }
+      return nextAdvancement;
+    });
+}
+
 function resourceData(max) {
   return {
     name: "Единицы чародейства",
@@ -1540,6 +1616,8 @@ export class SorcererAutomationService {
     this._saveOverridesByMessage = new Map();
     this._metamagicRecordsByMessage = new Map();
     this._paymentLocks = new WeakMap();
+    this._subclassAdvancementSourcesPromise = null;
+    this._repairActorPromises = new Map();
   }
 
   async initialize() {
@@ -2346,11 +2424,17 @@ export class SorcererAutomationService {
   }
 
   async handleCreatedItem(item, _options = {}, userId = "") {
-    if (!isCurrentUserHook(userId) || (!isSorcererClassItem(item) && !isSorceryPointsItem(item))) {
+    if (!isCurrentUserHook(userId) || (!isSorcererClassItem(item) && !isSorceryPointsItem(item) && !isSorcererSubclassItem(item))) {
       return true;
     }
 
-    await this.syncSorceryPoints(actorFrom(item));
+    const actor = actorFrom(item);
+    if (isSorcererClassItem(item) || isSorceryPointsItem(item)) {
+      await this.syncSorceryPoints(actor);
+    }
+    if (isSorcererClassItem(item) || isSorcererSubclassItem(item)) {
+      await this.repairActor(actor);
+    }
     return true;
   }
 
@@ -2366,6 +2450,104 @@ export class SorcererAutomationService {
       await this.syncSorceryPoints(actorFrom(item));
     }
     return true;
+  }
+
+  async repairActor(actor) {
+    if (!actor) {
+      return false;
+    }
+
+    const repairKey = cleanText(actor?.uuid ?? actor?.id) || actor;
+    const currentRepair = this._repairActorPromises.get(repairKey);
+    if (currentRepair) {
+      return currentRepair;
+    }
+
+    const repairPromise = this.#repairActorNow(actor);
+    this._repairActorPromises.set(repairKey, repairPromise);
+    try {
+      return await repairPromise;
+    }
+    finally {
+      if (this._repairActorPromises.get(repairKey) === repairPromise) {
+        this._repairActorPromises.delete(repairKey);
+      }
+    }
+  }
+
+  async #repairActorNow(actor) {
+    return this.#repairSubclassAdvancementLinks(actor);
+  }
+
+  async #repairSubclassAdvancementLinks(actor) {
+    const subclassItems = collectionValues(actor?.items)
+      .filter(isSorcererSubclassItem)
+      .map((item) => [item, subclassIdentifier(item)])
+      .filter(([, identifier]) => identifier);
+    if (!subclassItems.length) {
+      return false;
+    }
+
+    const sourceAdvancementBySubclass = await this.#subclassAdvancementSources();
+    if (!sourceAdvancementBySubclass.size) {
+      return false;
+    }
+
+    let changed = false;
+    for (const [item, identifier] of subclassItems) {
+      const sourceAdvancement = sourceAdvancementBySubclass.get(identifier);
+      if (!sourceAdvancement?.length) {
+        continue;
+      }
+
+      const mergedAdvancement = mergeAdvancementData(item.system?.advancement, sourceAdvancement);
+      if (
+        !mergedAdvancement.length
+        || JSON.stringify(advancementDataArray(item.system?.advancement)) === JSON.stringify(mergedAdvancement)
+      ) {
+        continue;
+      }
+
+      await updateOwnedItem(item, { "system.advancement": mergedAdvancement }, { render: false });
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  async #subclassAdvancementSources() {
+    if (typeof this._options.resolveSubclassAdvancementSources === "function") {
+      return this._options.resolveSubclassAdvancementSources();
+    }
+
+    this._subclassAdvancementSourcesPromise ??= this.#loadSubclassAdvancementSources();
+    const sources = await this._subclassAdvancementSourcesPromise;
+    if (!sources.size) {
+      this._subclassAdvancementSourcesPromise = null;
+    }
+    return sources;
+  }
+
+  async #loadSubclassAdvancementSources() {
+    const pack = globalThis.game?.packs?.get?.(REBREYA_SUBCLASSES_PACK_ID) ?? null;
+    if (!pack || typeof pack.getDocuments !== "function") {
+      return new Map();
+    }
+
+    const documents = await pack.getDocuments();
+    const advancementBySubclass = new Map();
+    for (const document of collectionValues(documents)) {
+      if (!isSorcererSubclassItem(document)) {
+        continue;
+      }
+
+      const identifier = subclassIdentifier(document);
+      const advancement = advancementDataArray(document.system?.advancement);
+      if (identifier && advancement.length) {
+        advancementBySubclass.set(identifier, deepClone(advancement));
+      }
+    }
+    return advancementBySubclass;
   }
 
   async syncSorceryPoints(actor) {

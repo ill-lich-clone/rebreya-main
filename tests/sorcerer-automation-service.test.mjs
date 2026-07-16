@@ -2062,6 +2062,71 @@ test("class item creation and level updates synchronize the owned Sorcery Points
   assert.equal(pointsItem(actor).system.uses.max, 21);
 });
 
+test("RED: owned Sorcerer subclass items repair stale metamagic advancement pools", async () => {
+  const actor = levelActor(3, { includePoints: true });
+  const staleAdvancement = [{
+    _id: "metamagic-3",
+    type: "ItemChoice",
+    title: "Метамагия",
+    configuration: {
+      pool: [
+        { uuid: "Compendium.world.rebreya-class-features.Item.base" },
+        { uuid: "Compendium.world.rebreya-class-features.Item.ancestor" },
+        { uuid: "Compendium.world.rebreya-class-features.Item.protection" },
+        { uuid: "Compendium.world.rebreya-class-features.Item.wing" }
+      ],
+      choices: { 3: { count: 3 } }
+    },
+    value: {
+      added: ["Compendium.world.rebreya-class-features.Item.base"]
+    }
+  }];
+  const sourceAdvancement = [{
+    _id: "metamagic-3",
+    type: "ItemChoice",
+    title: "Метамагия",
+    configuration: {
+      pool: [
+        { uuid: "Compendium.world.rebreya-class-features.Item.base" },
+        { uuid: "Compendium.world.rebreya-class-features.Item.ancestor" },
+        { uuid: "Compendium.world.rebreya-class-features.Item.protection" },
+        { uuid: "Compendium.world.rebreya-class-features.Item.dragonSpell" },
+        { uuid: "Compendium.world.rebreya-class-features.Item.wing" }
+      ],
+      choices: { 3: { count: 3 } }
+    }
+  }];
+  const subclassItem = makeItemFromData(actor, {
+    name: "Наследие драконьей крови",
+    type: "subclass",
+    flags: {
+      [MODULE_ID]: {
+        classIdentifier: SORCERER_ROOT,
+        subclassId: "sorcerer-rework-v011-subclass-001"
+      }
+    },
+    system: {
+      advancement: structuredClone(staleAdvancement)
+    }
+  }, "draconic-subclass");
+  actor.items.contents.push(subclassItem);
+  const service = new SorcererAutomationService({}, {
+    resolveSubclassAdvancementSources: async () => new Map([
+      ["sorcerer-rework-v011-subclass-001", structuredClone(sourceAdvancement)]
+    ])
+  });
+
+  assert.equal(await service.repairActor(actor), true);
+  assert.deepEqual(
+    subclassItem.system.advancement[0].configuration.pool,
+    sourceAdvancement[0].configuration.pool
+  );
+  assert.deepEqual(
+    subclassItem.system.advancement[0].value,
+    staleAdvancement[0].value
+  );
+});
+
 test("public Sorcery Point spend and restore helpers use the owned resource", async () => {
   const actor = levelActor(3, { includePoints: true });
   const service = new SorcererAutomationService({});

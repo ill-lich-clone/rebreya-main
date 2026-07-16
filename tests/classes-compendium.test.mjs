@@ -540,6 +540,7 @@ test("Sorcerer origin metamagic choices combine the base list with that origin's
   assert.equal(draconicLevelThreePool.length, 13);
   assert.ok(draconicLevelThreePool.includes(metamagicByName.get("Аккуратное заклинание")));
   assert.ok(draconicLevelThreePool.includes(metamagicByName.get("Заклинание предка")));
+  assert.ok(draconicLevelThreePool.includes(metamagicByName.get("Драконье заклятье")));
   assert.ok(draconicLevelThreePool.includes(metamagicByName.get("Крыло дракона")));
   assert.equal(draconicLevelThreePool.includes(metamagicByName.get("Хаотическое заклинание")), false);
   assert.equal(draconicLevelThreePool.includes(metamagicByName.get("Мана-шторм")), false);
