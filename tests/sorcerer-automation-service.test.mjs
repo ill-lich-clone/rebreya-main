@@ -1103,6 +1103,58 @@ test("a deferred virtual cast forwards cooldown metadata to the final usage mess
   );
 });
 
+test("RED: a deferred Draconic Dragon Spell cast forwards its bonus dice to the final usage message", async () => {
+  const actor = metamagicActor();
+  addDraconicAncestor(actor, "Огонь");
+  addMetamagic(actor, "draconic-dragon-spell", 3, "base", {
+    costMode: "variable",
+    minCost: 1,
+    maxCost: 3,
+    metamagicAutomation: "draconic-dragon-spell"
+  });
+  const service = new SorcererAutomationService({
+    chooseVirtualSpellLevel: async () => ({
+      accepted: true,
+      spellLevel: 1,
+      castingMode: "sorcery",
+      metamagic: {
+        ids: ["draconic-dragon-spell"],
+        costs: { "draconic-dragon-spell": 3 }
+      }
+    })
+  });
+  await service.syncSorceryPoints(actor);
+  const activity = makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "base-fire", formula: "1d6", types: ["fire"] }] } }
+  });
+  const resumedUses = [];
+  activity.use = async (...args) => {
+    resumedUses.push(args);
+    return { updates: [] };
+  };
+
+  assert.equal(service.deferDnd5ePreUseActivity(activity, {}, {}, {}), false);
+  await waitForDeferredActivityUse();
+
+  const [preflightUsageConfig, preflightDialogConfig, preflightMessageConfig] = resumedUses[0];
+  assert.equal(service.finalizeDnd5ePreUseActivity(
+    activity,
+    completeReactionCheck(preflightUsageConfig),
+    preflightDialogConfig,
+    preflightMessageConfig
+  ), false);
+  await waitForDeferredActivityUse();
+
+  const finalMessageConfig = resumedUses[1][2];
+  assert.deepEqual(finalMessageConfig.data?.flags?.[MODULE_ID]?.damageBonus, {
+    source: "draconic-dragon-spell",
+    formula: "3d6",
+    damageType: "fire",
+    cost: 3
+  });
+  assert.equal(pointsItem(actor).system.uses.spent, 5);
+});
+
 test("a deferred virtual cast cannot open an editable dialog that overwrites its selected slot", async () => {
   const actor = levelActor(5, { includePoints: true });
   actor.system.spells = {
@@ -2798,6 +2850,70 @@ test("RED: Draconic Dragon Spell damage hook resolves the usage card from curren
     assert.equal(service.applyDnd5ePreRollDamage(rollConfig), true);
     assert.equal(rollConfig.rolls.length, 1);
     assert.deepEqual(rollConfig.rolls[0].parts, ["2d6"]);
+    assert.deepEqual(rollConfig.rolls[0].options.types, ["fire"]);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("RED: Draconic Dragon Spell damage hook follows attack roll messages back to the usage card", async () => {
+  const previousGame = globalThis.game;
+  const actor = metamagicActor();
+  addDraconicAncestor(actor, "Огонь");
+  addMetamagic(actor, "draconic-dragon-spell", 3, "base", {
+    costMode: "variable",
+    minCost: 1,
+    maxCost: 3,
+    metamagicAutomation: "draconic-dragon-spell"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const messageConfig = {};
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "base-fire", formula: "1d6", types: ["fire"] }] } }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: {
+      ids: ["draconic-dragon-spell"],
+      costs: { "draconic-dragon-spell": 3 }
+    }
+  }, {}, messageConfig), true);
+
+  const usageMessage = makeCooldownCardMessage({
+    id: "draconic-usage",
+    content: "",
+    flags: messageConfig.data?.flags
+  });
+  const attackMessage = makeCooldownCardMessage({
+    id: "draconic-attack",
+    content: "",
+    flags: { dnd5e: { originatingMessage: "draconic-usage" } }
+  });
+  globalThis.game = {
+    ...previousGame,
+    messages: new Map([
+      ["draconic-usage", usageMessage],
+      ["draconic-attack", attackMessage]
+    ])
+  };
+
+  try {
+    const rollConfig = {
+      subject: activity,
+      event: {
+        target: {
+          closest: () => ({ dataset: { messageId: "draconic-attack" } })
+        }
+      },
+      rolls: []
+    };
+
+    assert.equal(service.applyDnd5ePreRollDamage(rollConfig), true);
+    assert.equal(rollConfig.rolls.length, 1);
+    assert.deepEqual(rollConfig.rolls[0].parts, ["3d6"]);
     assert.deepEqual(rollConfig.rolls[0].options.types, ["fire"]);
   }
   finally {

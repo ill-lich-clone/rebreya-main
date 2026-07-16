@@ -1122,6 +1122,24 @@ function rollConfigMessageId(rollConfig = {}) {
   );
 }
 
+function messageOriginatingMessageId(message) {
+  return cleanText(
+    message?.getFlag?.("dnd5e", "originatingMessage")
+      ?? getProperty(message, "flags.dnd5e.originatingMessage", undefined)
+  );
+}
+
+function messageMetamagicRecord(message) {
+  if (typeof message?.getFlag === "function") {
+    return {
+      damageReroll: message.getFlag(MODULE_ID, "damageReroll"),
+      damageBonus: message.getFlag(MODULE_ID, "damageBonus"),
+      attackReroll: message.getFlag(MODULE_ID, "attackReroll")
+    };
+  }
+  return getProperty(message, `flags.${MODULE_ID}`, {});
+}
+
 function saveOverridesTargetMatches(overrides = {}, actorUuid = "") {
   const targetMatches = (uuid) => cleanText(uuid) === actorUuid;
   return Boolean((overrides.carefulTargetUuids ?? []).some(targetMatches)
@@ -2662,13 +2680,7 @@ export class SorcererAutomationService {
       this._saveOverridesByMessage.set(id, deepClone(overrides));
     }
     if (id) {
-      const record = typeof message?.getFlag === "function"
-        ? {
-          damageReroll: message.getFlag(MODULE_ID, "damageReroll"),
-          damageBonus: message.getFlag(MODULE_ID, "damageBonus"),
-          attackReroll: message.getFlag(MODULE_ID, "attackReroll")
-        }
-        : getProperty(message, `flags.${MODULE_ID}`, {});
+      const record = messageMetamagicRecord(message);
       if (record?.damageReroll || record?.damageBonus || record?.attackReroll) {
         this._metamagicRecordsByMessage.set(id, deepClone(record));
       }
@@ -2698,9 +2710,7 @@ export class SorcererAutomationService {
   #rollUsageMessageId(rolls = []) {
     const parent = (Array.isArray(rolls) ? rolls : [rolls])[0]?.parent ?? null;
     return cleanText(
-      parent?.flags?.dnd5e?.originatingMessage
-      ?? getProperty(parent, "flags.dnd5e.originatingMessage", undefined)
-      ?? parent?.getFlag?.("dnd5e", "originatingMessage")
+      messageOriginatingMessageId(parent)
     );
   }
 
@@ -2714,13 +2724,7 @@ export class SorcererAutomationService {
       return cached;
     }
     const message = globalThis.game?.messages?.get?.(usageMessageId);
-    const record = typeof message?.getFlag === "function"
-      ? {
-        damageReroll: message.getFlag(MODULE_ID, "damageReroll"),
-        damageBonus: message.getFlag(MODULE_ID, "damageBonus"),
-        attackReroll: message.getFlag(MODULE_ID, "attackReroll")
-      }
-      : getProperty(message, `flags.${MODULE_ID}`, null);
+    const record = messageMetamagicRecord(message);
     if (record?.damageReroll || record?.damageBonus || record?.attackReroll) {
       this._metamagicRecordsByMessage.set(usageMessageId, deepClone(record));
       return record;
@@ -2783,11 +2787,21 @@ export class SorcererAutomationService {
     let record = messageId ? this._metamagicRecordsByMessage.get(messageId) : null;
     if (!record && messageId) {
       const message = globalThis.game?.messages?.get?.(messageId) ?? rollConfig?.message;
-      const damageBonus = typeof message?.getFlag === "function"
-        ? message.getFlag(MODULE_ID, "damageBonus")
-        : getProperty(message, `flags.${MODULE_ID}.damageBonus`, null);
-      if (damageBonus) {
-        record = { damageBonus };
+      record = messageMetamagicRecord(message);
+      if (!record?.damageBonus) {
+        const originMessageId = messageOriginatingMessageId(message);
+        if (originMessageId && originMessageId !== messageId) {
+          record = this._metamagicRecordsByMessage.get(originMessageId) ?? null;
+          if (!record) {
+            const originMessage = globalThis.game?.messages?.get?.(originMessageId);
+            record = messageMetamagicRecord(originMessage);
+            if (record?.damageReroll || record?.damageBonus || record?.attackReroll) {
+              this._metamagicRecordsByMessage.set(originMessageId, deepClone(record));
+            }
+          }
+        }
+      }
+      if (record?.damageReroll || record?.damageBonus || record?.attackReroll) {
         this._metamagicRecordsByMessage.set(messageId, deepClone(record));
       }
     }
