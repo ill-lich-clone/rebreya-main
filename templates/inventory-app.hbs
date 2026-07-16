@@ -435,13 +435,13 @@
       <section class="rm-panel rm-panel--full rm-panel--compact">
         <div class="rm-panel__header rm-panel__header--compact">
           <h3>Крафт</h3>
-          <span class="rm-muted">Очередь: {{rmNum craft.queueCount precision=0}}</span>
+          <span class="rm-muted">Заявки: {{rmNum craft.pendingRequestCount precision=0}} • Проекты: {{rmNum craft.projectCount precision=0}}</span>
         </div>
 
         <section class="rm-craft-toolbar">
           <div class="rm-field">
-            <label>Поиск предметов</label>
-            <input type="search" value="{{craftSearch}}" placeholder="Название, инструмент, материал" data-action="craft-search">
+            <label>Поиск проектов</label>
+            <input type="search" value="{{craftSearch}}" placeholder="Предмет или персонаж" data-action="craft-search">
           </div>
           <div class="rm-field">
             <label>Крафтит</label>
@@ -459,55 +459,71 @@
 
         <div class="rm-craft-layout">
           <section class="rm-craft-column">
-            <h4>Доступно для крафта</h4>
-            <div class="rm-craft-item-list">
-              {{#each craft.craftableEntries}}
-                <article class="rm-craft-item-row">
-                  <div>
-                    <strong>{{name}}</strong>
-                    <p class="rm-muted">Ранг {{rank}} • {{rmNum priceGold}} зм • {{requiredToolLabel}} • {{materialName}}</p>
-                  </div>
-                  <button
-                    type="button"
-                    class="rm-button rm-button--small rm-button--primary"
-                    data-action="craft-queue"
-                    data-gear-id="{{id}}"
-                    data-gear-name="{{name}}"
-                    title="{{#if ../craft.queueDisabledReason}}{{../craft.queueDisabledReason}}{{else}}Поставить в очередь крафта{{/if}}"
-                    {{#unless ../craft.hasCrafters}}disabled{{/unless}}
-                    {{#unless ../canManage}}disabled{{/unless}}
-                  >
-                    Крафт
-                  </button>
-                </article>
-              {{/each}}
-            </div>
-          </section>
-
-          <section class="rm-craft-column">
-            <h4>Очередь крафта</h4>
-            {{#if craft.hasQueue}}
-              <div class="rm-craft-queue-list">
-                {{#each craft.queue}}
-                  <article class="rm-craft-queue-row">
+            <h4>Заявки игроков</h4>
+            {{#if craft.hasPendingRequests}}
+              <div class="rm-craft-item-list">
+                {{#each craft.pendingRequests}}
+                  <article class="rm-craft-item-row">
                     <div>
-                      <strong>{{gearName}} x{{rmNum quantity precision=0}}</strong>
-                      <p class="rm-muted">{{crafterName}} • {{requiredToolLabel}}</p>
-                      <div class="rm-progress">
-                        <div class="rm-progress__bar" style="width: {{percent}}%;"></div>
-                      </div>
-                      <p class="rm-muted">{{percent}}% • осталось {{rmNum remaining}} зм • {{rmNum daysLeft precision=0}} дн.</p>
+                      <strong>{{outputLabel}}</strong>
+                      <p class="rm-muted">{{actorName}} • {{rmNum workdays precision=0}} раб. дн. • {{rmNum hoursPerDay precision=0}} ч. • {{workshopLabel}}</p>
                     </div>
                     {{#if ../canManage}}
-                      <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="craft-cancel" data-task-id="{{id}}" data-task-name="{{gearName}}" title="Отменить крафт">
-                        <i class="fa-solid fa-ban"></i>
-                      </button>
+                      <div class="rm-inline-actions">
+                        <button type="button" class="rm-icon-button" data-action="craft-approve-request" data-request-id="{{id}}" title="Одобрить проект">
+                          <i class="fa-solid fa-check"></i>
+                        </button>
+                        <button type="button" class="rm-icon-button" data-action="craft-return-request" data-request-id="{{id}}" title="Вернуть игроку">
+                          <i class="fa-solid fa-rotate-left"></i>
+                        </button>
+                        <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="craft-reject-request" data-request-id="{{id}}" title="Отклонить проект">
+                          <i class="fa-solid fa-xmark"></i>
+                        </button>
+                      </div>
                     {{/if}}
                   </article>
                 {{/each}}
               </div>
             {{else}}
-              <p class="rm-empty">Очередь крафта пустая.</p>
+              <p class="rm-empty">Новых заявок на крафт нет.</p>
+            {{/if}}
+          </section>
+
+          <section class="rm-craft-column">
+            <h4>Проекты</h4>
+            {{#if craft.hasProjects}}
+              <div class="rm-craft-queue-list">
+                {{#each craft.projects}}
+                  <article class="rm-craft-queue-row">
+                    <div>
+                      <strong>{{outputLabel}}</strong>
+                      <p class="rm-muted">{{statusLabel}} • {{rmNum hoursPerDay precision=0}} ч. • {{workshopLabel}}</p>
+                      <div class="rm-progress">
+                        <div class="rm-progress__bar" style="width: {{progressPercent}}%;"></div>
+                      </div>
+                      <p class="rm-muted">{{rmNum progressPercent}}% • осталось {{rmNum remainingGold}} зм</p>
+                    </div>
+                    {{#if ../canManage}}
+                      <div class="rm-inline-actions">
+                        {{#if canPause}}
+                          <button type="button" class="rm-icon-button" data-action="craft-pause-project" data-project-id="{{id}}" title="Поставить на паузу"><i class="fa-solid fa-pause"></i></button>
+                        {{/if}}
+                        {{#if canResume}}
+                          <button type="button" class="rm-icon-button" data-action="craft-resume-project" data-project-id="{{id}}" title="Продолжить"><i class="fa-solid fa-play"></i></button>
+                        {{/if}}
+                        {{#if canReconcile}}
+                          <button type="button" class="rm-icon-button" data-action="craft-reconcile-project" data-project-id="{{id}}" title="Сверить проект"><i class="fa-solid fa-scale-balanced"></i></button>
+                        {{/if}}
+                        {{#if canCancel}}
+                          <button type="button" class="rm-icon-button rm-icon-button--danger" data-action="craft-cancel-project" data-project-id="{{id}}" data-project-name="{{outputLabel}}" title="Отменить проект"><i class="fa-solid fa-ban"></i></button>
+                        {{/if}}
+                      </div>
+                    {{/if}}
+                  </article>
+                {{/each}}
+              </div>
+            {{else}}
+              <p class="rm-empty">Проектов крафта пока нет.</p>
             {{/if}}
           </section>
         </div>

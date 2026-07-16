@@ -13,7 +13,8 @@ function makeShield({
   id = "shield",
   equipped = true,
   heldHands = [],
-  value = 2
+  value = 2,
+  broken = false
 } = {}) {
   return {
     id,
@@ -29,9 +30,15 @@ function makeShield({
         value
       }
     },
-    flags: heldHands.length ? {
+    flags: (heldHands.length || broken) ? {
       [MODULE_ID]: {
-        heldHands
+        heldHands,
+        ...(broken ? {
+          durability: {
+            eligible: true,
+            state: "broken"
+          }
+        } : {})
       }
     } : {},
     getFlag(scope, key) {
@@ -186,6 +193,40 @@ test("held shield armor class patch does not double-count an equipped held shiel
     assert.equal(data.attributes.ac.shield, 3);
     assert.equal(data.attributes.ac.value, 18);
     assert.equal(data.attributes.ac.equippedShield, shield);
+  }
+  finally {
+    restoreConfig();
+  }
+});
+
+test("held shield armor class patch removes all AC from a broken held shield", async () => {
+  const { registerHeldShieldArmorClassPatch } = await import(`../scripts/integrations/held-shield-ac.js?broken=${Date.now()}`);
+  const shield = makeShield({ equipped: true, heldHands: ["left"], value: 3, broken: true });
+  class CharacterData {
+    constructor(parent) {
+      this.parent = parent;
+      this.attributes = { ac: {} };
+    }
+
+    prepareDerivedData() {
+      this.attributes.ac = {
+        min: 0,
+        value: 18,
+        shield: 3,
+        equippedShield: shield
+      };
+    }
+  }
+  const restoreConfig = installConfig(CharacterData);
+  try {
+    registerHeldShieldArmorClassPatch();
+    const data = new CharacterData(makeActor([shield]));
+
+    data.prepareDerivedData();
+
+    assert.equal(data.attributes.ac.shield, 0);
+    assert.equal(data.attributes.ac.value, 15);
+    assert.equal(data.attributes.ac.equippedShield, null);
   }
   finally {
     restoreConfig();

@@ -2704,6 +2704,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.expandedPartyMembers = new Set();
     this.searchRenderTimeout = null;
     this.craftSearchRenderTimeout = null;
+    this.craftMutationIds = new Map();
     this.actionFeedbackTimeout = null;
     this.contextMenuCleanup = null;
     this.focusRestore = null;
@@ -3389,6 +3390,55 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
 
       const downtime = this.#prepareDowntimeContext(downtimeSnapshot, downtimeWarning);
+      const craftPendingRequests = (downtimeSnapshot?.requests ?? [])
+        .filter((request) => request?.craftProject && request.status === "pending")
+        .map((request) => {
+          const outputs = Array.isArray(request.craftProject?.outputs) ? request.craftProject.outputs : [];
+          return {
+            ...request,
+            outputLabel: outputs.map((output) => {
+              const label = cleanText(output?.name) || cleanText(output?.sourceId) || "Предмет";
+              const quantity = Math.max(1, toInteger(output?.quantity, 1));
+              return quantity > 1 ? `${label} x${quantity}` : label;
+            }).join(", ") || "Предмет",
+            hoursPerDay: Math.max(8, toInteger(request.craftProject?.hoursPerDay, 8)),
+            workshopLabel: request.craftProject?.ownedWorkshop === true ? "Собственная" : "Городская"
+          };
+        });
+      const craftProjects = (craftSnapshot.projects ?? []).map((project) => {
+        const targetGold = Math.max(0, toNumber(project.targetGold, 0));
+        const progressGold = Math.max(0, toNumber(project.progressGold, 0));
+        const progressPercent = targetGold > 0
+          ? Math.max(0, Math.min(100, roundNumber((progressGold / targetGold) * 100, 1)))
+          : (project.status === "completed" ? 100 : 0);
+        const operationalStatus = cleanText(project.operationalStatus);
+        const status = cleanText(project.status);
+        const reconciliationRequired = project.reconciliation?.required === true;
+        return {
+          ...project,
+          outputLabel: (project.outputs ?? []).map((output) => {
+            const label = cleanText(output?.name) || cleanText(output?.sourceId) || "Предмет";
+            const quantity = Math.max(1, toInteger(output?.quantity, 1));
+            return quantity > 1 ? `${label} x${quantity}` : label;
+          }).join(", ") || project.id,
+          progressPercent,
+          remainingGold: Math.max(0, roundNumber(targetGold - progressGold, 2)),
+          workshopLabel: project.ownedWorkshop === true ? "Собственная" : "Городская",
+          statusLabel: status === "completed"
+            ? "Завершён"
+            : status === "cancelled"
+              ? "Отменён"
+              : operationalStatus === "paused"
+                ? "На паузе"
+                : operationalStatus === "blocked"
+                  ? "Заблокирован"
+                  : "В работе",
+          canPause: ["active", "blocked"].includes(operationalStatus) && !["completed", "cancelled"].includes(status),
+          canResume: ["paused", "blocked"].includes(operationalStatus) && !reconciliationRequired,
+          canReconcile: reconciliationRequired,
+          canCancel: !["completed", "cancelled"].includes(status)
+        };
+      });
       const travel = prepareTravelContext(travelSnapshot ?? buildEmptyTravelContext({ warning: travelWarning }), this.travelTrackTime);
       const calendarCells = buildCalendarDowntimeCells(calendarSnapshot, downtimeSnapshot);
       this.calendarDowntimeByIsoDate = Object.fromEntries(calendarCells.map((cell) => [cell.isoDate, cell.downtime]));
@@ -3451,7 +3501,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             ...entry,
             selected: entry.actorId === this.craftCrafterActorId
           })),
-          hasQueue: (craftSnapshot.queue ?? []).length > 0,
+          pendingRequests: craftPendingRequests,
+          pendingRequestCount: craftPendingRequests.length,
+          hasPendingRequests: craftPendingRequests.length > 0,
+          projects: craftProjects,
+          projectCount: craftProjects.length,
+          hasProjects: craftProjects.length > 0,
+          hasQueue: false,
           hasCrafters: craftHasCrafters,
           queueDisabledReason: craftHasCrafters
             ? ""
@@ -4895,6 +4951,168 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     ui.notifications?.info("Целевое действие удалено.");
   }
 
+  #getCraftMutation(action, documentId) {
+    const safeAction = cleanText(action);
+    const safeDocumentId = cleanText(documentId);
+    if (!safeAction || !safeDocumentId) {
+      throw new Error("Для операции крафта нужен стабильный идентификатор.");
+    }
+
+    const key = `${safeAction}:${safeDocumentId}`;
+    let mutationId = this.craftMutationIds.get(key);
+    if (!mutationId) {
+      const nonce = globalThis.crypto?.randomUUID?.()
+        ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      mutationId = `craft-ui:${safeAction}:${safeDocumentId}:${nonce}`;
+      this.craftMutationIds.set(key, mutationId);
+    }
+    return { key, mutationId };
+  }
+
+  async #runCraftMutation({ action, documentId, successMessage, errorMessage, callback }) {
+    const { key, mutationId } = this.#getCraftMutation(action, documentId);
+    try {
+      const result = await callback(mutationId);
+      this.craftMutationIds.delete(key);
+      this.#setActionFeedback("success", successMessage);
+      ui.notifications?.info(successMessage);
+      this.render?.({ force: true });
+      bringAppToFront(this);
+      return result;
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to run craft ${action} action.`, error);
+      const message = error.message || errorMessage;
+      this.#setActionFeedback("error", message);
+      ui.notifications?.error(message);
+      this.render?.({ force: true });
+      return null;
+    }
+  }
+
+  async #handleCraftApproval(button) {
+    const requestId = cleanText(button?.dataset?.requestId);
+    if (!requestId) {
+      return;
+    }
+
+    await this.#runCraftMutation({
+      action: "approve",
+      documentId: requestId,
+      successMessage: "Проект крафта одобрен и поставлен в календарь.",
+      errorMessage: "Не удалось одобрить проект крафта.",
+      callback: (mutationId) => this.moduleApi.approveCraftDowntimeRequest({
+        requestId,
+        mutationId
+      })
+    });
+  }
+
+  async #handleCraftRequestDecision(button, status) {
+    const requestId = cleanText(button?.dataset?.requestId);
+    if (!requestId) {
+      return;
+    }
+
+    const result = await this.#promptDowntimeText(
+      status === "returned" ? "Вернуть заявку" : "Отклонить заявку",
+      "Комментарий игроку:",
+      ""
+    );
+    if (result === null) {
+      return;
+    }
+
+    try {
+      await this.moduleApi.setDowntimeRequestStatus(requestId, status, {
+        result: cleanText(result)
+      });
+      const message = status === "returned" ? "Заявка возвращена игроку." : "Заявка отклонена.";
+      this.#setActionFeedback("success", message);
+      ui.notifications?.info(message);
+      this.render?.({ force: true });
+      bringAppToFront(this);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to update craft request.`, error);
+      const message = error.message || "Не удалось обновить заявку крафта.";
+      this.#setActionFeedback("error", message);
+      ui.notifications?.error(message);
+      this.render?.({ force: true });
+    }
+  }
+
+  async #handleCraftProjectLifecycle(button, action) {
+    const projectId = cleanText(button?.dataset?.projectId);
+    if (!projectId) {
+      return;
+    }
+
+    if (action === "pause") {
+      const reason = await this.#promptDowntimeText("Пауза проекта", "Причина паузы:", "");
+      if (reason === null) {
+        return;
+      }
+      await this.#runCraftMutation({
+        action,
+        documentId: projectId,
+        successMessage: "Проект крафта поставлен на паузу.",
+        errorMessage: "Не удалось поставить проект на паузу.",
+        callback: (mutationId) => this.moduleApi.pauseCraftProject(projectId, {
+          mutationId,
+          reason: cleanText(reason)
+        })
+      });
+      return;
+    }
+
+    if (action === "reconcile") {
+      const note = await this.#promptDowntimeText("Сверка проекта", "Комментарий к сверке:", "");
+      if (note === null) {
+        return;
+      }
+      await this.#runCraftMutation({
+        action,
+        documentId: projectId,
+        successMessage: "Проект крафта сверен и продолжен.",
+        errorMessage: "Не удалось сверить проект крафта.",
+        callback: (mutationId) => this.moduleApi.reconcileCraftProject(projectId, {
+          mutationId,
+          note: cleanText(note),
+          resume: true
+        })
+      });
+      return;
+    }
+
+    if (action === "cancel") {
+      const projectName = cleanText(button?.dataset?.projectName) || "проект";
+      const confirmed = await confirmAction(
+        "Отменить проект крафта",
+        `<p>Отменить «${foundry.utils.escapeHTML(projectName)}» и вернуть зарезервированные ресурсы?</p>`
+      );
+      if (!confirmed) {
+        return;
+      }
+      await this.#runCraftMutation({
+        action,
+        documentId: projectId,
+        successMessage: "Проект крафта отменён, ресурсы возвращены.",
+        errorMessage: "Не удалось отменить проект крафта.",
+        callback: (mutationId) => this.moduleApi.cancelCraftProject(projectId, { mutationId })
+      });
+      return;
+    }
+
+    await this.#runCraftMutation({
+      action: "resume",
+      documentId: projectId,
+      successMessage: "Проект крафта продолжен.",
+      errorMessage: "Не удалось продолжить проект крафта.",
+      callback: (mutationId) => this.moduleApi.resumeCraftProject(projectId, { mutationId })
+    });
+  }
+
   async _onRender(context, options) {
     await super._onRender(context, options);
     const element = getAppElement(this);
@@ -5739,41 +5957,29 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this.render({ force: true });
     }, listenerOptions);
 
-    element.querySelectorAll("[data-action='craft-queue']").forEach((button) => {
-      button.addEventListener("click", async (event) => {
-        const gearId = event.currentTarget.dataset.gearId;
-        const gearName = event.currentTarget.dataset.gearName ?? "предмет";
-        try {
-          const quantityValue = await promptNumericValue({
-            title: `Крафт: ${gearName}`,
-            label: "Сколько единиц поставить в крафт",
-            value: "1",
-            min: 1,
-            step: "1",
-            confirmLabel: "Запустить"
-          });
-          if (quantityValue === null) {
-            return;
-          }
-
-          await this.moduleApi.queueCraftTask({
-            gearId,
-            quantity: Math.max(1, toInteger(quantityValue, 1)),
-            crafterActorId: this.craftCrafterActorId
-          });
-          this.#setActionFeedback("success", `Крафт «${gearName}» добавлен в очередь.`);
-          ui.notifications?.info(`Крафт «${gearName}» добавлен в очередь.`);
-          bringAppToFront(this);
-        }
-        catch (error) {
-          console.error(`${MODULE_ID} | Failed to queue craft task.`, error);
-          const message = error.message || "Не удалось запустить крафт.";
-          this.#setActionFeedback("error", message);
-          this.render({ force: true });
-          ui.notifications?.error(message);
-        }
-      }, listenerOptions);
+    element.querySelectorAll("[data-action='craft-approve-request']").forEach((button) => {
+      button.addEventListener("click", (event) => this.#handleCraftApproval(event.currentTarget), listenerOptions);
     });
+
+    element.querySelectorAll("[data-action='craft-return-request']").forEach((button) => {
+      button.addEventListener("click", (event) => (
+        this.#handleCraftRequestDecision(event.currentTarget, "returned")
+      ), listenerOptions);
+    });
+
+    element.querySelectorAll("[data-action='craft-reject-request']").forEach((button) => {
+      button.addEventListener("click", (event) => (
+        this.#handleCraftRequestDecision(event.currentTarget, "rejected")
+      ), listenerOptions);
+    });
+
+    for (const action of ["pause", "resume", "reconcile", "cancel"]) {
+      element.querySelectorAll(`[data-action='craft-${action}-project']`).forEach((button) => {
+        button.addEventListener("click", (event) => (
+          this.#handleCraftProjectLifecycle(event.currentTarget, action)
+        ), listenerOptions);
+      });
+    }
 
     element.querySelectorAll(".rm-party-row__summary").forEach((summaryNode) => {
       summaryNode.addEventListener("contextmenu", (event) => {
@@ -5855,29 +6061,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           x: event.clientX,
           y: event.clientY
         });
-      }, listenerOptions);
-    });
-
-    element.querySelectorAll("[data-action='craft-cancel']").forEach((button) => {
-      button.addEventListener("click", async (event) => {
-        const taskId = event.currentTarget.dataset.taskId;
-        const taskName = event.currentTarget.dataset.taskName ?? "задача";
-        const confirmed = await confirmAction(
-          "Отменить крафт",
-          `<p>Отменить «${foundry.utils.escapeHTML(taskName)}»?</p>`
-        );
-        if (!confirmed) {
-          return;
-        }
-
-        try {
-          await this.moduleApi.cancelCraftTask(taskId);
-          ui.notifications?.info("Задача крафта отменена.");
-        }
-        catch (error) {
-          console.error(`${MODULE_ID} | Failed to cancel craft task.`, error);
-          ui.notifications?.error(error.message || "Не удалось отменить крафт.");
-        }
       }, listenerOptions);
     });
 

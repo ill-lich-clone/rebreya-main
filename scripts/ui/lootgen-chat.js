@@ -122,6 +122,8 @@ function findLootgenRow(message, rowId) {
 
 function renderRow(row) {
   const claimed = Boolean(row.claimed);
+  const durabilityState = String(row?.itemData?.flags?.[MODULE_ID]?.durability?.state ?? "").trim();
+  const isBroken = row.isBroken === true || durabilityState === "broken";
   const rowId = String(row.rowId ?? "");
   const image = String(row.img ?? "icons/svg/item-bag.svg");
   const quantity = Math.max(1, Number(row.quantity ?? 1));
@@ -144,6 +146,7 @@ function renderRow(row) {
       <div class="rm-chat-loot__row-main">
         <strong>${escapeHtml(row.name || "Предмет")}</strong>
         <span>${escapeHtml(metaParts.filter(Boolean).join(" • "))}</span>
+        ${isBroken ? `<span class="rm-chat-loot__condition rm-chat-loot__condition--broken">Сломано</span>` : ""}
       </div>
       <button
         type="button"

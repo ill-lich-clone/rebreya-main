@@ -1,6 +1,12 @@
+import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
+import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
+
 const JOURNAL_VERSION = 1;
 const MAX_JOURNAL_ENTRIES = 100;
 const DOWNTIME_STATUSES = ["free", "pending", "approved", "processed", "blocked"];
+const DEFAULT_MUTATION_COORDINATOR = new WorldMutationCoordinator();
+const TRANSITION_QUEUE_PREFIX = "calendar-transition";
+const SECONDS_PER_DAY = 86400;
 
 function clone(value) {
   if (globalThis.foundry?.utils?.deepClone) {
@@ -20,6 +26,52 @@ function asArray(value) {
 
 function cleanText(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeTimeOfDaySeconds(value, fallback = 0) {
+  const numericValue = Number(value);
+  const fallbackValue = Number(fallback);
+  const seconds = Math.floor(Number.isFinite(numericValue)
+    ? numericValue
+    : (Number.isFinite(fallbackValue) ? fallbackValue : 0));
+  return ((seconds % SECONDS_PER_DAY) + SECONDS_PER_DAY) % SECONDS_PER_DAY;
+}
+
+function buildTimeOfDayParts(value) {
+  const timeOfDaySeconds = normalizeTimeOfDaySeconds(value);
+  const hour = Math.floor(timeOfDaySeconds / 3600);
+  const minute = Math.floor((timeOfDaySeconds % 3600) / 60);
+  const second = timeOfDaySeconds % 60;
+  const timeLabel = [hour, minute, second]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+  return {
+    timeOfDaySeconds,
+    hour,
+    minute,
+    second,
+    timeLabel,
+    timeShortLabel: timeLabel.slice(0, 5)
+  };
+}
+
+function resolveTargetTimeOfDaySeconds(baseSeconds, options = {}) {
+  const source = asObject(options);
+  if (Object.hasOwn(source, "timeOfDaySeconds")) {
+    return normalizeTimeOfDaySeconds(source.timeOfDaySeconds, baseSeconds);
+  }
+  if (!["hour", "minute", "second"].some((key) => Object.hasOwn(source, key))) {
+    return normalizeTimeOfDaySeconds(baseSeconds);
+  }
+  const current = buildTimeOfDayParts(baseSeconds);
+  const clampPart = (value, fallback, maximum) => {
+    const number = Number(value);
+    return Math.max(0, Math.min(maximum, Math.floor(Number.isFinite(number) ? number : fallback)));
+  };
+  const hour = clampPart(source.hour, current.hour, 23);
+  const minute = clampPart(source.minute, current.minute, 59);
+  const second = clampPart(source.second, current.second, 59);
+  return normalizeTimeOfDaySeconds((hour * 3600) + (minute * 60) + second);
 }
 
 function errorMessage(error) {
@@ -109,12 +161,13 @@ function normalizeMoveOptions(options = {}) {
     refreshApps: source.refreshApps !== false,
     refreshSmallTime: source.refreshSmallTime !== false,
     monthResetMode: cleanText(source.monthResetMode) || "crossed",
-    reason: cleanText(source.reason) || "calendar"
+    reason: cleanText(source.reason) || "calendar",
+    targetTimeOfDaySeconds: normalizeTimeOfDaySeconds(source.targetTimeOfDaySeconds)
   };
 }
 
-function operationMatches(entry, preview, options) {
-  const sameOptions = entry.reason === options.reason
+function operationOptionsMatch(entry, options) {
+  return entry.reason === options.reason
     && entry.processDowntime === options.processDowntime
     && entry.processSupplies === options.processSupplies
     && entry.processDailyCycles === options.processDailyCycles
@@ -122,13 +175,26 @@ function operationMatches(entry, preview, options) {
     && entry.applyEnergy === options.applyEnergy
     && entry.refreshApps === options.refreshApps
     && entry.refreshSmallTime === options.refreshSmallTime
-    && entry.monthResetMode === options.monthResetMode;
-  if (!sameOptions || entry.toIsoDate !== preview.toIsoDate || entry.status === "completed") {
+    && entry.monthResetMode === options.monthResetMode
+    && normalizeTimeOfDaySeconds(entry.targetTimeOfDaySeconds ?? entry.to?.timeOfDaySeconds)
+      === options.targetTimeOfDaySeconds;
+}
+
+function operationMatches(entry, preview, options) {
+  if (!operationOptionsMatch(entry, options) || entry.toIsoDate !== preview.toIsoDate || entry.status === "completed") {
     return false;
   }
 
   return entry.fromIsoDate === preview.fromIsoDate
     || (preview.direction === "same" && preview.fromIsoDate === entry.toIsoDate);
+}
+
+function completedOperationMatches(entry, preview, options) {
+  return entry.status === "completed"
+    && operationOptionsMatch(entry, options)
+    && preview.direction === "same"
+    && preview.fromIsoDate === entry.toIsoDate
+    && preview.toIsoDate === entry.toIsoDate;
 }
 
 function classifyDowntimeResult(result) {
@@ -154,13 +220,17 @@ export class CalendarTransitionCoordinator {
     processDayCycles = null,
     refreshApps = null,
     refreshSmallTime = null,
-    activityProcessor = null
+    activityProcessor = null,
+    coordinator = DEFAULT_MUTATION_COORDINATOR
   } = {}) {
     if (!calendarService?.previewTransition || !calendarService?.setDate) {
       throw new Error("Calendar transition coordinator requires CalendarService.");
     }
     if (!groupContextService?.resolveForCurrentUser || !groupContextService?.mutateGroupState) {
       throw new Error("Calendar transition coordinator requires queued group state mutations.");
+    }
+    if (!coordinator?.run) {
+      throw new Error("Calendar transition coordinator requires WorldMutationCoordinator.");
     }
 
     this.calendarService = calendarService;
@@ -172,36 +242,65 @@ export class CalendarTransitionCoordinator {
     this.refreshApps = typeof refreshApps === "function" ? refreshApps : null;
     this.refreshSmallTime = typeof refreshSmallTime === "function" ? refreshSmallTime : null;
     this.activityProcessor = typeof activityProcessor === "function" ? activityProcessor : null;
+    this.coordinator = coordinator;
   }
 
-  preview({
-    toIsoDate,
-    processDowntime = true,
-    processSupplies = false,
-    reason = "calendar"
-  } = {}) {
-    const calendarPreview = this.calendarService.previewTransition(toIsoDate);
-    return this.#enrichPreview(calendarPreview, {
-      processDowntime,
-      processSupplies,
-      reason
-    });
+  preview(options = {}) {
+    const basePreview = this.calendarService.previewTransition(options.toIsoDate);
+    const targetTimeOfDaySeconds = resolveTargetTimeOfDaySeconds(
+      basePreview.from?.timeOfDaySeconds,
+      options
+    );
+    const calendarPreview = {
+      ...basePreview,
+      to: {
+        ...basePreview.to,
+        ...buildTimeOfDayParts(targetTimeOfDaySeconds)
+      }
+    };
+    const normalizedOptions = normalizeMoveOptions({ ...options, targetTimeOfDaySeconds });
+    const resumableEntry = this.#findResumableEntry(calendarPreview, normalizedOptions);
+    return resumableEntry
+      ? this.#previewFromEntry(resumableEntry)
+      : this.#enrichPreview(calendarPreview, normalizedOptions);
   }
 
   async moveTo(options = {}) {
-    const normalizedOptions = normalizeMoveOptions(options);
-    const requestedPreview = this.preview({
-      toIsoDate: options.toIsoDate,
-      processDowntime: normalizedOptions.processDowntime,
-      processSupplies: normalizedOptions.processSupplies,
-      reason: normalizedOptions.reason
-    });
+    if (!isActiveGmClient(globalThis.game)) {
+      throw new Error("Calendar transitions must execute on the active GM client.");
+    }
+
     const context = this.groupContextService.resolveForCurrentUser();
     if (!context?.groupId) {
       throw new Error("Calendar transitions require an active Rebreya group.");
     }
+    const executionUserId = cleanText(globalThis.game?.user?.id);
 
-    const claim = await this.#claimTransition(context.groupId, requestedPreview, normalizedOptions, options);
+    return this.coordinator.run(`${TRANSITION_QUEUE_PREFIX}:${context.groupId}`, async () => {
+      this.#assertExecutionContext(context.groupId, executionUserId);
+      return this.#moveTo(context.groupId, options, executionUserId);
+    });
+  }
+
+  async #moveTo(groupId, options, executionUserId) {
+    this.#assertExecutionContext(groupId, executionUserId);
+    const requestedPreview = this.preview(options);
+    const normalizedOptions = normalizeMoveOptions({
+      ...options,
+      targetTimeOfDaySeconds: requestedPreview.to?.timeOfDaySeconds
+    });
+
+    const claim = await this.#claimTransition(
+      groupId,
+      requestedPreview,
+      normalizedOptions,
+      options,
+      executionUserId
+    );
+    this.#assertExecutionContext(groupId, executionUserId);
+    if (claim.replayedCompletion) {
+      return this.#buildCompletedReplay(claim.entry, normalizedOptions);
+    }
     const preview = claim.resumed
       ? this.#previewFromEntry(claim.entry)
       : requestedPreview;
@@ -209,73 +308,103 @@ export class CalendarTransitionCoordinator {
     let calendar;
 
     try {
-      calendar = await this.#persistCalendar(context.groupId, transitionId, preview.toIsoDate, options);
+      calendar = await this.#persistCalendar(
+        groupId,
+        transitionId,
+        preview.toIsoDate,
+        preview.to?.timeOfDaySeconds,
+        options,
+        executionUserId
+      );
     }
     catch (error) {
-      await this.#setTransitionStatus(context.groupId, transitionId, "reconciliation-required", errorMessage(error))
+      this.#assertExecutionContext(groupId, executionUserId);
+      await this.#setTransitionStatus(
+        groupId,
+        transitionId,
+        "reconciliation-required",
+        errorMessage(error),
+        executionUserId
+      )
         .catch(() => undefined);
       throw error;
     }
 
-    const downtime = await this.#processDowntimeDates(context.groupId, claim.entry, preview);
+    const downtime = await this.#processDowntimeDates(groupId, claim.entry, preview, executionUserId);
     const eventStage = await this.#runExternalStage({
-      groupId: context.groupId,
+      groupId,
       transitionId,
+      executionUserId,
       name: "globalEvents",
       callback: this.refreshGlobalEvents
-        ? () => this.refreshGlobalEvents(preview.toIsoDate, preview.fromIsoDate, {
+        ? (executionContext) => this.refreshGlobalEvents(preview.toIsoDate, preview.fromIsoDate, {
+          ...executionContext,
           operationId: `${transitionId}:global-events`
         })
         : null
     });
-    const monthResetCount = claim.entry.monthResetCount;
-    const traderStage = await this.#runExternalStage({
-      groupId: context.groupId,
-      transitionId,
-      name: "traderMonthlyReset",
-      callback: this.resetTraderMonth
-        ? () => this.resetTraderMonth(monthResetCount, normalizedOptions.reason, {
-          operationId: `${transitionId}:trader-monthly-reset`
-        })
-        : null
-    });
+    const monthResetCount = preview.direction === "forward" ? claim.entry.monthResetCount : 0;
+    const traderStage = preview.direction === "forward"
+      ? await this.#runExternalStage({
+        groupId,
+        transitionId,
+        executionUserId,
+        name: "traderMonthlyReset",
+        callback: this.resetTraderMonth
+          ? (executionContext) => this.resetTraderMonth(monthResetCount, normalizedOptions.reason, {
+            ...executionContext,
+            operationId: `${transitionId}:trader-monthly-reset`
+          })
+          : null
+      })
+      : await this.#skipStage(groupId, transitionId, "traderMonthlyReset", executionUserId);
     const cyclesStage = preview.direction === "forward" && normalizedOptions.processDailyCycles
       ? await this.#runExternalStage({
-        groupId: context.groupId,
+        groupId,
         transitionId,
+        executionUserId,
         name: "dayCycles",
         callback: this.processDayCycles
-          ? () => this.processDayCycles(preview.crossedDates.length, {
+          ? (executionContext) => this.processDayCycles(preview.crossedDates.length, {
             ...options,
             processDowntime: normalizedOptions.processDowntime,
             processSupplies: normalizedOptions.processSupplies,
             consumeSupplies: normalizedOptions.processSupplies && normalizedOptions.consumeSupplies,
             applyEnergy: normalizedOptions.applyEnergy,
+            ...executionContext,
             operationId: `${transitionId}:day-cycles`
           })
           : null
       })
-      : await this.#skipStage(context.groupId, transitionId, "dayCycles");
+      : await this.#skipStage(groupId, transitionId, "dayCycles", executionUserId);
     const refreshAppsStage = normalizedOptions.refreshApps
       ? await this.#runExternalStage({
-        groupId: context.groupId,
+        groupId,
         transitionId,
+        executionUserId,
         name: "refreshApps",
         callback: this.refreshApps
-          ? () => this.refreshApps({ operationId: `${transitionId}:refresh-apps` })
+          ? (executionContext) => this.refreshApps({
+            ...executionContext,
+            operationId: `${transitionId}:refresh-apps`
+          })
           : null
       })
-      : await this.#skipStage(context.groupId, transitionId, "refreshApps");
+      : await this.#skipStage(groupId, transitionId, "refreshApps", executionUserId);
     const refreshSmallTimeStage = normalizedOptions.refreshSmallTime
       ? await this.#runExternalStage({
-        groupId: context.groupId,
+        groupId,
         transitionId,
+        executionUserId,
         name: "refreshSmallTime",
         callback: this.refreshSmallTime
-          ? () => this.refreshSmallTime({ operationId: `${transitionId}:refresh-smalltime` })
+          ? (executionContext) => this.refreshSmallTime({
+            ...executionContext,
+            operationId: `${transitionId}:refresh-smalltime`
+          })
           : null
       })
-      : await this.#skipStage(context.groupId, transitionId, "refreshSmallTime");
+      : await this.#skipStage(groupId, transitionId, "refreshSmallTime", executionUserId);
 
     const reconciliation = [
       ...downtime.filter((entry) => entry.status === "reconciliation-required"),
@@ -283,7 +412,13 @@ export class CalendarTransitionCoordinator {
         .filter((stage) => stage.status === "reconciliation-required")
     ];
     const status = reconciliation.length ? "reconciliation-required" : "completed";
-    await this.#setTransitionStatus(context.groupId, transitionId, status);
+    if (status === "completed") {
+      await this.#prepareCompletion(groupId, transitionId, executionUserId);
+      await this.#acknowledgeCompletion(groupId, transitionId, executionUserId);
+    }
+    else {
+      await this.#setTransitionStatus(groupId, transitionId, status, "", executionUserId);
+    }
 
     return {
       ...preview,
@@ -355,7 +490,20 @@ export class CalendarTransitionCoordinator {
     }, entry);
   }
 
-  async #claimTransition(groupId, preview, options, rawOptions) {
+  #findResumableEntry(preview, options) {
+    let context;
+    try {
+      context = this.groupContextService.resolveForCurrentUser();
+    }
+    catch (_error) {
+      return null;
+    }
+
+    const journal = normalizeJournal(context?.groupState?.calendar?.transitionJournal);
+    return [...journal.entries].reverse().find((entry) => operationMatches(entry, preview, options)) ?? null;
+  }
+
+  async #claimTransition(groupId, preview, options, rawOptions, executionUserId) {
     return this.#mutateJournal(groupId, (journal) => {
       const existing = [...journal.entries].reverse().find((entry) => operationMatches(entry, preview, options));
       if (existing) {
@@ -363,14 +511,22 @@ export class CalendarTransitionCoordinator {
         return { entry: clone(existing), resumed: true };
       }
 
+      const completed = [...journal.entries].reverse()
+        .find((entry) => completedOperationMatches(entry, preview, options));
+      if (completed) {
+        return { entry: clone(completed), resumed: true, replayedCompletion: true };
+      }
+
       const counter = journal.counter + 1;
       const transitionId = `calendar:${groupId}:${counter}:${preview.fromIsoDate}:${preview.toIsoDate}`;
       const explicitMonthResetCount = Number(rawOptions.monthResetCount);
-      const monthResetCount = Number.isFinite(explicitMonthResetCount)
-        ? Math.max(0, Math.floor(explicitMonthResetCount))
-        : options.monthResetMode === "target-first"
-          ? (preview.fromIsoDate !== preview.toIsoDate && Number(preview.to?.day ?? 0) === 1 ? 1 : 0)
-          : preview.monthStartDates.length;
+      const monthResetCount = preview.direction === "forward"
+        ? Number.isFinite(explicitMonthResetCount)
+          ? Math.max(0, Math.floor(explicitMonthResetCount))
+          : options.monthResetMode === "target-first"
+            ? (preview.fromIsoDate !== preview.toIsoDate && Number(preview.to?.day ?? 0) === 1 ? 1 : 0)
+            : preview.monthStartDates.length
+        : 0;
       const now = Date.now();
       const entry = {
         counter,
@@ -408,13 +564,26 @@ export class CalendarTransitionCoordinator {
       journal.entries.push(entry);
       journal.entries = journal.entries.slice(-MAX_JOURNAL_ENTRIES);
       return { entry: clone(entry), resumed: false };
-    });
+    }, executionUserId);
   }
 
-  async #persistCalendar(groupId, transitionId, toIsoDate, calendarOptions = {}) {
+  async #persistCalendar(
+    groupId,
+    transitionId,
+    toIsoDate,
+    targetTimeOfDaySeconds,
+    calendarOptions = {},
+    executionUserId = ""
+  ) {
+    this.#assertExecutionContext(groupId, executionUserId);
+    const currentCalendar = this.calendarService.getSnapshot();
     const claim = await this.#mutateEntry(groupId, transitionId, (entry) => {
       const stage = asObject(entry.stages.calendar);
-      if (stage.status === "completed") {
+      if (
+        stage.status === "completed"
+        && currentCalendar.isoDate === toIsoDate
+        && currentCalendar.timeOfDaySeconds === normalizeTimeOfDaySeconds(targetTimeOfDaySeconds)
+      ) {
         return { completed: true };
       }
       entry.stages.calendar = {
@@ -423,29 +592,34 @@ export class CalendarTransitionCoordinator {
         startedAt: Number(stage.startedAt) || Date.now()
       };
       return { completed: false };
-    });
+    }, executionUserId);
+    this.#assertExecutionContext(groupId, executionUserId);
     if (claim.completed) {
-      return this.calendarService.getSnapshot();
+      return currentCalendar;
     }
 
     const calendar = await this.calendarService.setDate(...isoDateParts(toIsoDate), calendarOptions);
+    this.#assertExecutionContext(groupId, executionUserId);
     await this.#mutateEntry(groupId, transitionId, (entry) => {
       entry.stages.calendar = {
         status: "completed",
         result: { isoDate: calendar.isoDate },
         completedAt: Date.now()
       };
-    });
+    }, executionUserId);
+    this.#assertExecutionContext(groupId, executionUserId);
     return calendar;
   }
 
-  async #processDowntimeDates(groupId, entry, preview) {
+  async #processDowntimeDates(groupId, entry, preview, executionUserId = "") {
+    this.#assertExecutionContext(groupId, executionUserId);
     if (!entry.processDowntime || preview.direction !== "forward") {
       return [];
     }
 
     const results = [];
     for (const isoDate of preview.crossedDates) {
+      this.#assertExecutionContext(groupId, executionUserId);
       const claim = await this.#mutateEntry(groupId, entry.transitionId, (journalEntry) => {
         const current = asObject(journalEntry.downtimeByIsoDate[isoDate]);
         if (current.status === "completed" || current.status === "blocked") {
@@ -457,7 +631,8 @@ export class CalendarTransitionCoordinator {
           startedAt: Number(current.startedAt) || Date.now()
         };
         return { run: true };
-      });
+      }, executionUserId);
+      this.#assertExecutionContext(groupId, executionUserId);
 
       if (!claim.run) {
         results.push({ isoDate, ...claim.entry });
@@ -467,16 +642,20 @@ export class CalendarTransitionCoordinator {
       let status = "reconciliation-required";
       let result = null;
       let error = "";
+      const executionContext = this.#createCallbackContext(groupId, entry.transitionId, executionUserId);
+      this.#assertExecutionContext(groupId, executionUserId);
       try {
         result = await this.downtimeService?.processScheduledDate?.(isoDate, {
           transitionId: entry.transitionId,
-          activityProcessor: this.activityProcessor
+          activityProcessor: this.activityProcessor,
+          ...executionContext
         });
         status = classifyDowntimeResult(result);
       }
       catch (caughtError) {
         error = errorMessage(caughtError);
       }
+      this.#assertExecutionContext(groupId, executionUserId);
 
       const persisted = {
         status,
@@ -486,15 +665,17 @@ export class CalendarTransitionCoordinator {
       };
       await this.#mutateEntry(groupId, entry.transitionId, (journalEntry) => {
         journalEntry.downtimeByIsoDate[isoDate] = clone(persisted);
-      });
+      }, executionUserId);
+      this.#assertExecutionContext(groupId, executionUserId);
       results.push({ isoDate, ...persisted });
     }
     return results;
   }
 
-  async #runExternalStage({ groupId, transitionId, name, callback }) {
+  async #runExternalStage({ groupId, transitionId, executionUserId = "", name, callback }) {
+    this.#assertExecutionContext(groupId, executionUserId);
     if (!callback) {
-      return this.#skipStage(groupId, transitionId, name);
+      return this.#skipStage(groupId, transitionId, name, executionUserId);
     }
 
     const claim = await this.#mutateEntry(groupId, transitionId, (entry) => {
@@ -518,7 +699,8 @@ export class CalendarTransitionCoordinator {
         startedAt: Date.now()
       };
       return { run: true };
-    });
+    }, executionUserId);
+    this.#assertExecutionContext(groupId, executionUserId);
     if (!claim.run) {
       return { name, ...claim.stage };
     }
@@ -526,13 +708,16 @@ export class CalendarTransitionCoordinator {
     let status = "completed";
     let result = null;
     let error = "";
+    const executionContext = this.#createCallbackContext(groupId, transitionId, executionUserId);
+    executionContext.guard();
     try {
-      result = await callback();
+      result = await callback(executionContext);
     }
     catch (caughtError) {
       status = "reconciliation-required";
       error = errorMessage(caughtError);
     }
+    this.#assertExecutionContext(groupId, executionUserId);
 
     const stage = {
       status,
@@ -542,11 +727,13 @@ export class CalendarTransitionCoordinator {
     };
     await this.#mutateEntry(groupId, transitionId, (entry) => {
       entry.stages[name] = clone(stage);
-    });
+    }, executionUserId);
+    this.#assertExecutionContext(groupId, executionUserId);
     return { name, ...stage };
   }
 
-  async #skipStage(groupId, transitionId, name) {
+  async #skipStage(groupId, transitionId, name, executionUserId = "") {
+    this.#assertExecutionContext(groupId, executionUserId);
     const stage = await this.#mutateEntry(groupId, transitionId, (entry) => {
       const current = asObject(entry.stages[name]);
       if (current.status === "completed" || current.status === "reconciliation-required") {
@@ -555,11 +742,24 @@ export class CalendarTransitionCoordinator {
       const skipped = { status: "skipped", result: null, completedAt: Date.now() };
       entry.stages[name] = skipped;
       return clone(skipped);
-    });
+    }, executionUserId);
+    this.#assertExecutionContext(groupId, executionUserId);
     return { name, ...stage };
   }
 
-  #setTransitionStatus(groupId, transitionId, status, error = "") {
+  async #setTransitionStatus(groupId, transitionId, status, error = "", executionUserId = "") {
+    const result = await this.#writeTransitionStatus(
+      groupId,
+      transitionId,
+      status,
+      error,
+      executionUserId
+    );
+    this.#assertExecutionContext(groupId, executionUserId);
+    return result;
+  }
+
+  #writeTransitionStatus(groupId, transitionId, status, error = "", executionUserId = "") {
     return this.#mutateEntry(groupId, transitionId, (entry) => {
       entry.status = status;
       entry.error = cleanText(error);
@@ -567,10 +767,92 @@ export class CalendarTransitionCoordinator {
       if (status === "completed") {
         entry.completedAt = Date.now();
       }
-    });
+      else {
+        delete entry.completedAt;
+      }
+    }, executionUserId);
   }
 
-  #mutateEntry(groupId, transitionId, mutator) {
+  async #prepareCompletion(groupId, transitionId, executionUserId = "") {
+    this.#assertExecutionContext(groupId, executionUserId);
+    const result = await this.#mutateEntry(groupId, transitionId, (entry) => {
+      if (entry.status === "completed") {
+        return {
+          completionToken: cleanText(entry.completionToken),
+          status: entry.status
+        };
+      }
+
+      const completionToken = cleanText(entry.completionToken) || `${transitionId}:completion`;
+      entry.status = "completion-pending";
+      entry.error = "";
+      entry.completionToken = completionToken;
+      entry.completionPreparedAt = Number(entry.completionPreparedAt) || Date.now();
+      delete entry.completedAt;
+      return { completionToken, status: entry.status };
+    }, executionUserId);
+    this.#assertExecutionContext(groupId, executionUserId);
+    return result;
+  }
+
+  async #acknowledgeCompletion(groupId, transitionId, executionUserId = "") {
+    this.#assertExecutionContext(groupId, executionUserId);
+    const completionToken = `${transitionId}:completion`;
+    try {
+      return await this.#mutateEntry(groupId, transitionId, (entry) => {
+        if (entry.status === "completed" && cleanText(entry.completionToken) === completionToken) {
+          return clone(entry);
+        }
+        if (entry.status !== "completion-pending" || cleanText(entry.completionToken) !== completionToken) {
+          throw new Error("Calendar transition completion intent is unavailable.");
+        }
+
+        entry.status = "completed";
+        entry.error = "";
+        entry.completedAt = Date.now();
+        return clone(entry);
+      }, executionUserId);
+    }
+    catch (error) {
+      const durableEntry = this.#readTransitionEntry(groupId, transitionId);
+      if (
+        durableEntry?.status === "completed"
+        && cleanText(durableEntry.completionToken) === completionToken
+      ) {
+        return durableEntry;
+      }
+      throw error;
+    }
+  }
+
+  #readTransitionEntry(groupId, transitionId) {
+    const registry = this.groupContextService.getRegistry?.();
+    const calendar = asObject(registry?.groupsById?.[groupId]?.calendar);
+    const journal = normalizeJournal(calendar.transitionJournal);
+    const entry = journal.entries.find((candidate) => candidate.transitionId === transitionId);
+    return entry ? clone(entry) : null;
+  }
+
+  #buildCompletedReplay(entry, options) {
+    const preview = this.#previewFromEntry(entry);
+    const downtime = Object.entries(asObject(entry.downtimeByIsoDate))
+      .map(([isoDate, result]) => ({ isoDate, ...clone(asObject(result)) }));
+    const stage = (name) => asObject(entry.stages?.[name]);
+    return {
+      ...preview,
+      transitionId: entry.transitionId,
+      status: "completed",
+      calendar: this.calendarService.getSnapshot(),
+      downtime,
+      eventActivation: clone(stage("globalEvents").result) ?? { changed: false },
+      traderReset: clone(stage("traderMonthlyReset").result)
+        ?? createEmptyTraderReset(options.reason, entry.monthResetCount),
+      cycles: clone(stage("dayCycles").result) ?? createEmptyCycles(),
+      reconciliation: []
+    };
+  }
+
+  #mutateEntry(groupId, transitionId, mutator, executionUserId = "") {
     return this.#mutateJournal(groupId, (journal) => {
       const entry = journal.entries.find((candidate) => candidate.transitionId === transitionId);
       if (!entry) {
@@ -579,11 +861,13 @@ export class CalendarTransitionCoordinator {
       const result = mutator(entry);
       entry.updatedAt = Date.now();
       return clone(result);
-    });
+    }, executionUserId);
   }
 
-  #mutateJournal(groupId, mutator) {
+  #mutateJournal(groupId, mutator, executionUserId = "") {
+    this.#assertExecutionContext(groupId, executionUserId);
     return this.groupContextService.mutateGroupState(groupId, (groupState) => {
+      this.#assertExecutionContext(groupId, executionUserId);
       const calendar = asObject(groupState.calendar);
       const journal = normalizeJournal(calendar.transitionJournal);
       const result = mutator(journal);
@@ -593,5 +877,39 @@ export class CalendarTransitionCoordinator {
       };
       return clone(result);
     });
+  }
+
+  #createCallbackContext(groupId, transitionId, executionUserId = "") {
+    const guard = () => this.#assertExecutionContext(groupId, executionUserId);
+    return Object.freeze({
+      groupId: cleanText(groupId),
+      transitionId: cleanText(transitionId),
+      userId: cleanText(executionUserId),
+      assertExecutionContext: guard,
+      guard
+    });
+  }
+
+  #assertExecutionContext(groupId, executionUserId = "") {
+    if (executionUserId && cleanText(globalThis.game?.user?.id) !== cleanText(executionUserId)) {
+      throw new Error("Calendar transition execution changed to another GM client.");
+    }
+    if (!isActiveGmClient(globalThis.game)) {
+      throw new Error("Calendar transitions must execute on the active GM client.");
+    }
+
+    let currentGroupId = "";
+    try {
+      currentGroupId = cleanText(this.groupContextService.resolveForCurrentUser()?.groupId);
+    }
+    catch (cause) {
+      const error = new Error("Calendar transition aborted because the active Rebreya group changed.");
+      error.cause = cause;
+      throw error;
+    }
+
+    if (currentGroupId !== cleanText(groupId)) {
+      throw new Error("Calendar transition aborted because the active Rebreya group changed.");
+    }
   }
 }

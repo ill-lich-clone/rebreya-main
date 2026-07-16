@@ -1,6 +1,7 @@
 ﻿export const MODULE_ID = "rebreya-main";
 export const MODULE_TITLE = "Rebreya Main";
 export const HELD_ITEM_UPDATED_HOOK = `${MODULE_ID}.heldItemUpdated`;
+export const DURABILITY_UPDATED_HOOK = `${MODULE_ID}.durabilityUpdated`;
 
 export const MATERIALS_COMPENDIUM_NAME = "rebreya-materials";
 export const MATERIALS_COMPENDIUM_LABEL = "Материалы Rebreya";
@@ -96,6 +97,7 @@ export const SETTINGS_KEYS = {
   CRAFT_STATE: "craftState",
   CRAFT_MUTATION_JOURNAL: "craftMutationJournal",
   INVENTORY_MUTATION_JOURNAL: "inventoryMutationJournal",
+  DURABILITY_MUTATION_JOURNAL: "durabilityMutationJournal",
   CALENDAR_STATE: "calendarState",
   CONNECTION_STATES: "connectionStates",
   REFERENCE_NOTES: "referenceNotes",

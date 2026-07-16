@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 
 import { DOWNTIME_ITEM_TYPE, MODULE_ID } from "../scripts/constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
-import { InventoryService } from "../scripts/data/inventory-service.js";
+import {
+  InventoryService,
+  captureInventoryTransferIdentity
+} from "../scripts/data/inventory-service.js";
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -1283,13 +1286,19 @@ test("accepted party inventory item deletes the source item when the user manage
   });
   const fixture = installInventoryFixture({
     actors: [groupActor, memberActor],
-    user: { id: "player-1", isGM: false }
+    user: { id: "gm", isGM: true, active: true }
   });
+  globalThis.game.users = {
+    activeGM: globalThis.game.user,
+    get: (userId) => userId === globalThis.game.user.id ? globalThis.game.user : null
+  };
   globalThis.Item = Object;
-  globalThis.fromUuid = async (uuid) => ({
-    [sourceItem.uuid]: sourceItem,
-    [acceptedItem.uuid]: acceptedItem
-  })[uuid] ?? null;
+  globalThis.fromUuid = async (uuid) => {
+    if (uuid === sourceItem.uuid) {
+      return groupActor.items.contents.includes(sourceItem) ? sourceItem : null;
+    }
+    return uuid === acceptedItem.uuid ? acceptedItem : null;
+  };
   const service = new InventoryService({
     groupContextService: {
       resolveForCurrentUser: () => ({
@@ -1301,8 +1310,20 @@ test("accepted party inventory item deletes the source item when the user manage
   });
 
   try {
+    const expectedIdentity = captureInventoryTransferIdentity(sourceItem);
     const result = await service.handleAcceptedPartyInventoryItem(acceptedItem, {
-      sourceItemUuid: sourceItem.uuid
+      sourceItemUuid: sourceItem.uuid,
+      transferId: "party-transfer:gm-direct",
+      targetItemUuid: acceptedItem.uuid,
+      expectedIdentity,
+      expectedQuantity: 2,
+      targetReceipt: {
+        targetItemUuid: acceptedItem.uuid,
+        created: true,
+        beforeQuantity: 0,
+        afterQuantity: 2,
+        delta: 2
+      }
     });
 
     assert.equal(result.handled, true);
@@ -1345,6 +1366,9 @@ test("accepted party inventory item routes source deletion through the GM when t
     actors: [groupActor, memberActor],
     user: { id: "player-1", isGM: false }
   });
+  globalThis.game.users = {
+    activeGM: { id: "gm", isGM: true, active: true }
+  };
   globalThis.Item = Object;
   globalThis.fromUuid = async (uuid) => ({
     [sourceItem.uuid]: sourceItem,
@@ -1366,8 +1390,21 @@ test("accepted party inventory item routes source deletion through the GM when t
   });
 
   try {
+    const expectedIdentity = captureInventoryTransferIdentity(sourceItem);
+    const targetReceipt = {
+      targetItemUuid: acceptedItem.uuid,
+      created: true,
+      beforeQuantity: 0,
+      afterQuantity: 2,
+      delta: 2
+    };
     const result = await service.handleAcceptedPartyInventoryItem(acceptedItem, {
-      sourceItemUuid: sourceItem.uuid
+      sourceItemUuid: sourceItem.uuid,
+      transferId: "party-transfer:player-request",
+      targetItemUuid: acceptedItem.uuid,
+      expectedIdentity,
+      expectedQuantity: 2,
+      targetReceipt
     });
 
     assert.equal(result.handled, true);
@@ -1378,9 +1415,13 @@ test("accepted party inventory item routes source deletion through the GM when t
       message: {
         type: "inventory-source-depletion-request",
         payload: {
+          transferId: "party-transfer:player-request",
           sourceItemUuid: sourceItem.uuid,
           targetItemUuid: acceptedItem.uuid,
-          targetActorUuid: memberActor.uuid
+          targetActorUuid: memberActor.uuid,
+          expectedIdentity,
+          expectedQuantity: 2,
+          targetReceipt
         },
         senderId: "player-1"
       }

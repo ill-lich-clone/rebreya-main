@@ -14,6 +14,7 @@ import { DurableMutationJournal } from "../application/durable-mutation-journal.
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
 import { buildDurabilitySignature, isDurabilityEligible } from "./durability-rules.js";
+import { applyLootgenRowDurability } from "./lootgen-durability.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 export const SOCKET_EVENT_INVENTORY_IMPORT_REQUEST = "inventory-import-request";
@@ -59,6 +60,7 @@ const GROUP_CONTEXT_FALLBACK_ERRORS = new Set([
 const NATIVE_GROUP_MEMBERSHIP_MESSAGE = "Состав группы управляется листом dnd5e группы. Откройте лист группы, чтобы добавить или удалить участников.";
 const INVENTORY_MUTATION_FLAG = "inventoryMutation";
 const CRAFT_QUANTITY_PRECISION = 5;
+const CRAFT_EXECUTION_CONTEXT_ERRORS = new WeakSet();
 const LEGACY_REBREYA_TOOL_LABEL_ALIASES = [
   ["Воровские", "thieves"],
   ["Алхимические", "alchemy"],
@@ -345,6 +347,13 @@ function getSocketUser(senderId) {
 
   return game.users?.get?.(safeSenderId)
     ?? collectionValues(game.users).find((user) => user?.id === safeSenderId)
+    ?? (game.user?.id === safeSenderId ? game.user : null)
+    ?? null;
+}
+
+function getActiveGm() {
+  return game.users?.activeGM
+    ?? collectionValues(game.users).find((user) => user?.isGM && user?.active)
     ?? null;
 }
 
@@ -353,10 +362,16 @@ function isActiveGmClient() {
     return false;
   }
 
-  const activeGm = game.users?.activeGM
-    ?? collectionValues(game.users).find((user) => user?.isGM && user?.active)
-    ?? null;
+  const activeGm = getActiveGm();
   return !activeGm?.id || activeGm.id === game.user.id;
+}
+
+function isExplicitActiveGmClient() {
+  const activeGm = getActiveGm();
+  return Boolean(game.user?.isGM)
+    && Boolean(activeGm?.id)
+    && activeGm.active !== false
+    && activeGm.id === game.user.id;
 }
 
 function userOwnsActor(actor, user) {
@@ -453,6 +468,89 @@ export function itemsCanRepresentSameTransfer(sourceItem, acceptedItem) {
       && normalizeText(sourceData.name) === normalizeText(acceptedData.name);
   return Boolean(sameSource)
     && durabilityTransferSignature(sourceItem) === durabilityTransferSignature(acceptedItem);
+}
+
+export function captureInventoryTransferIdentity(item) {
+  if (!item) {
+    return null;
+  }
+  const itemData = item?.toObject?.() ?? item;
+  const flags = itemData?.flags?.[MODULE_ID] ?? {};
+  const sourceType = cleanId(flags.sourceType);
+  const sourceId = cleanId(flags.sourceId);
+  const hasManagedIdentity = Boolean(sourceType && sourceId);
+  return {
+    sourceType: hasManagedIdentity ? sourceType : "",
+    sourceId: hasManagedIdentity ? sourceId : "",
+    itemType: hasManagedIdentity ? "" : cleanId(itemData?.type),
+    normalizedName: hasManagedIdentity ? "" : normalizeText(itemData?.name),
+    durability: durabilityTransferSignature(item)
+  };
+}
+
+function normalizeInventoryTransferIdentity(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const identity = {
+    sourceType: cleanId(value.sourceType),
+    sourceId: cleanId(value.sourceId),
+    itemType: cleanId(value.itemType),
+    normalizedName: normalizeText(value.normalizedName),
+    durability: cleanId(value.durability)
+  };
+  const hasManagedIdentity = Boolean(identity.sourceType && identity.sourceId);
+  const hasFallbackIdentity = Boolean(identity.itemType && identity.normalizedName);
+  if (hasManagedIdentity === hasFallbackIdentity) {
+    return null;
+  }
+  if (hasManagedIdentity) {
+    identity.itemType = "";
+    identity.normalizedName = "";
+  }
+  else {
+    identity.sourceType = "";
+    identity.sourceId = "";
+  }
+  return identity;
+}
+
+export function inventoryTransferIdentityMatches(item, expectedIdentity) {
+  const actualIdentity = captureInventoryTransferIdentity(item);
+  const normalizedExpected = normalizeInventoryTransferIdentity(expectedIdentity);
+  return Boolean(actualIdentity && normalizedExpected)
+    && JSON.stringify(actualIdentity) === JSON.stringify(normalizedExpected);
+}
+
+function normalizeInventoryTransferTargetReceipt(value, targetItemUuid, expectedQuantity) {
+  const safeTargetItemUuid = cleanId(targetItemUuid);
+  const beforeQuantity = roundNumber(value?.beforeQuantity, 2);
+  const afterQuantity = roundNumber(value?.afterQuantity, 2);
+  const delta = roundNumber(value?.delta, 2);
+  if (!value
+    || typeof value.created !== "boolean"
+    || typeof value.beforeQuantity !== "number"
+    || typeof value.afterQuantity !== "number"
+    || typeof value.delta !== "number"
+    || !Number.isFinite(value.beforeQuantity)
+    || !Number.isFinite(value.afterQuantity)
+    || !Number.isFinite(value.delta)
+    || cleanId(value.targetItemUuid) !== safeTargetItemUuid
+    || beforeQuantity < 0
+    || afterQuantity <= 0
+    || delta <= 0
+    || !inventoryQuantitiesMatch(afterQuantity - beforeQuantity, delta)
+    || !inventoryQuantitiesMatch(delta, expectedQuantity)
+    || (value.created === true && beforeQuantity !== 0)) {
+    return null;
+  }
+  return {
+    targetItemUuid: safeTargetItemUuid,
+    created: value.created,
+    beforeQuantity,
+    afterQuantity,
+    delta
+  };
 }
 
 function isRationItemName(value) {
@@ -1089,6 +1187,111 @@ export class InventoryService {
     }
   }
 
+  #craftExecutionContextError(error) {
+    const normalized = error instanceof Error
+      ? error
+      : new Error(String(error ?? "Craft execution context changed."));
+    CRAFT_EXECUTION_CONTEXT_ERRORS.add(normalized);
+    return normalized;
+  }
+
+  #isCraftExecutionContextError(error) {
+    return error instanceof Error && CRAFT_EXECUTION_CONTEXT_ERRORS.has(error);
+  }
+
+  #resolveCraftExecutionContext(options = {}) {
+    const source = options && typeof options === "object" ? options : {};
+    const requestedGroupId = cleanId(source.groupId);
+    const guards = [...new Set([source.guard, source.assertExecutionContext].filter((guard) => guard != null))];
+    if (guards.some((guard) => typeof guard !== "function")) {
+      throw new TypeError("Craft execution guards must be functions.");
+    }
+    const groupContextService = this.moduleApi.groupContextService;
+    if (typeof groupContextService?.resolveForGroup !== "function") {
+      throw new Error("Craft inventory mutations require groupContextService.resolveForGroup().");
+    }
+
+    let resolved;
+    try {
+      this.#assertActiveGmCraftMutation();
+      for (const guard of guards) guard();
+      resolved = groupContextService.resolveForGroup(requestedGroupId);
+    }
+    catch (error) {
+      throw this.#craftExecutionContextError(error);
+    }
+
+    const actor = resolved?.groupActor ?? null;
+    const groupId = requestedGroupId || cleanId(resolved?.groupId) || cleanId(actor?.id);
+    if (!actor?.id || !groupId || cleanId(actor.id) !== groupId) {
+      throw this.#craftExecutionContextError(
+        this.#inventoryReconciliationError("Craft execution group actor does not match the captured group.")
+      );
+    }
+    const execution = Object.freeze({
+      groupId,
+      actorId: cleanId(actor.id),
+      actor,
+      guards: Object.freeze(guards)
+    });
+    this.#assertCraftExecutionContext(execution);
+    return execution;
+  }
+
+  #assertCraftExecutionContext(execution) {
+    try {
+      this.#assertActiveGmCraftMutation();
+      for (const guard of execution.guards) guard();
+      const resolved = this.moduleApi.groupContextService.resolveForGroup(execution.groupId);
+      if (cleanId(resolved?.groupId ?? resolved?.groupActor?.id) !== execution.groupId
+        || cleanId(resolved?.groupActor?.id) !== execution.actorId) {
+        throw this.#inventoryReconciliationError("Craft execution group changed during mutation.");
+      }
+    }
+    catch (error) {
+      throw this.#craftExecutionContextError(error);
+    }
+  }
+
+  async #awaitCraftExecution(execution, operation) {
+    this.#assertCraftExecutionContext(execution);
+    let result;
+    try {
+      result = await operation();
+    }
+    catch (error) {
+      this.#assertCraftExecutionContext(execution);
+      throw error;
+    }
+    this.#assertCraftExecutionContext(execution);
+    return result;
+  }
+
+  #findCraftMutationRecord(execution, operationId) {
+    return this.#awaitCraftExecution(execution, () => this.mutationJournal.find(operationId));
+  }
+
+  #startCraftMutationRecord(execution, record) {
+    return this.#awaitCraftExecution(execution, () => this.mutationJournal.start(record));
+  }
+
+  #checkpointCraftMutationRecord(execution, operationId, expectedPhase, nextPhase, patch = {}) {
+    return this.#awaitCraftExecution(
+      execution,
+      () => this.mutationJournal.checkpoint(operationId, expectedPhase, nextPhase, patch)
+    );
+  }
+
+  #finishCraftMutationRecord(execution, operationId, result) {
+    return this.#awaitCraftExecution(execution, () => this.mutationJournal.finish(operationId, result));
+  }
+
+  #assertCraftMutationScope(record, execution, label) {
+    if (cleanId(record?.groupId) !== execution.groupId || cleanId(record?.actorId) !== execution.actorId) {
+      throw this.#inventoryReconciliationError(`${label} party inventory group or actor changed.`);
+    }
+  }
+
   #resolveRecipientCharacter(actorId = "") {
     const safeActorId = cleanId(actorId);
     const explicitActor = safeActorId ? game.actors?.get?.(safeActorId) ?? null : null;
@@ -1300,18 +1503,25 @@ export class InventoryService {
       ?? null;
   }
 
-  async #updateCraftItemQuantity(item, quantity) {
+  async #updateCraftItemQuantity(item, quantity, execution) {
     try {
-      await item.update({ "system.quantity": roundCraftQuantity(quantity) });
+      await this.#awaitCraftExecution(
+        execution,
+        () => item.update({ "system.quantity": roundCraftQuantity(quantity) })
+      );
     }
     catch (error) {
+      if (this.#isCraftExecutionContextError(error)) {
+        throw error;
+      }
       if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), quantity)) {
         throw error;
       }
     }
   }
 
-  async #applyCraftDebitReceipt(actor, receipt) {
+  async #applyCraftDebitReceipt(actor, receipt, execution) {
+    this.#assertCraftExecutionContext(execution);
     const item = this.#craftReceiptItem(actor, receipt);
     if (!item) {
       throw this.#inventoryReconciliationError("Craft reservation source item disappeared.");
@@ -1323,14 +1533,15 @@ export class InventoryService {
     if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
       throw this.#inventoryReconciliationError("Craft reservation source quantity changed before debit.");
     }
-    await this.#updateCraftItemQuantity(item, receipt.afterQuantity);
+    await this.#updateCraftItemQuantity(item, receipt.afterQuantity, execution);
     if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
       throw this.#inventoryReconciliationError("Craft reservation debit was not observed.");
     }
     return null;
   }
 
-  async #compensateCraftDebitReceipt(actor, receipt) {
+  async #compensateCraftDebitReceipt(actor, receipt, execution) {
+    this.#assertCraftExecutionContext(execution);
     const item = this.#craftReceiptItem(actor, receipt);
     if (!item) {
       throw this.#inventoryReconciliationError("Craft reservation source item disappeared before compensation.");
@@ -1342,7 +1553,7 @@ export class InventoryService {
     if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
       throw this.#inventoryReconciliationError("Craft reservation source changed before compensation.");
     }
-    await this.#updateCraftItemQuantity(item, receipt.beforeQuantity);
+    await this.#updateCraftItemQuantity(item, receipt.beforeQuantity, execution);
     if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.beforeQuantity)) {
       throw this.#inventoryReconciliationError("Craft reservation compensation was not observed.");
     }
@@ -1357,7 +1568,7 @@ export class InventoryService {
     }) ?? null;
   }
 
-  async #prepareCraftCreditReceipts(actor, request, mutationId) {
+  async #prepareCraftCreditReceipts(actor, request, mutationId, execution) {
     const receipts = [];
     const receiptByTarget = new Map();
 
@@ -1381,7 +1592,10 @@ export class InventoryService {
       let itemData = null;
       if (!item) {
         const receiptIndex = receipts.length;
-        itemData = await this.buildModelItemData("material", resource.sourceId, resource.quantity);
+        itemData = await this.#awaitCraftExecution(
+          execution,
+          () => this.buildModelItemData("material", resource.sourceId, resource.quantity)
+        );
         foundry.utils.setProperty(itemData, "system.quantity", afterQuantity);
         foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
           id: mutationId,
@@ -1406,16 +1620,23 @@ export class InventoryService {
     return receipts;
   }
 
-  async #applyCraftCreditReceipt(actor, mutationId, receipt, receiptIndex) {
+  async #applyCraftCreditReceipt(actor, mutationId, receipt, receiptIndex, execution) {
+    this.#assertCraftExecutionContext(execution);
     let item = receipt.created
       ? this.#findCraftMutationItem(actor, mutationId, receiptIndex)
       : this.#craftReceiptItem(actor, receipt);
     if (receipt.created) {
       if (!item) {
         try {
-          [item] = await actor.createEmbeddedDocuments("Item", [receipt.itemData], { renderSheet: false });
-        }
-        catch (error) {
+            [item] = await this.#awaitCraftExecution(
+              execution,
+              () => actor.createEmbeddedDocuments("Item", [receipt.itemData], { renderSheet: false })
+            );
+          }
+          catch (error) {
+            if (this.#isCraftExecutionContextError(error)) {
+              throw error;
+            }
           item = this.#findCraftMutationItem(actor, mutationId, receiptIndex);
           if (!item) {
             throw error;
@@ -1439,7 +1660,7 @@ export class InventoryService {
       if (!inventoryQuantitiesMatch(currentQuantity, receipt.beforeQuantity)) {
         throw this.#inventoryReconciliationError("Craft release target quantity changed before credit.");
       }
-      await this.#updateCraftItemQuantity(item, receipt.afterQuantity);
+      await this.#updateCraftItemQuantity(item, receipt.afterQuantity, execution);
     }
     if (!inventoryQuantitiesMatch(getRawQuantity(item.toObject()), receipt.afterQuantity)) {
       throw this.#inventoryReconciliationError("Craft release credit was not observed.");
@@ -1447,7 +1668,8 @@ export class InventoryService {
     return null;
   }
 
-  async #compensateCraftCreditReceipt(actor, mutationId, receipt, receiptIndex) {
+  async #compensateCraftCreditReceipt(actor, mutationId, receipt, receiptIndex, execution) {
+    this.#assertCraftExecutionContext(execution);
     const item = receipt.created
       ? this.#findCraftMutationItem(actor, mutationId, receiptIndex)
       : this.#craftReceiptItem(actor, receipt);
@@ -1459,9 +1681,12 @@ export class InventoryService {
         throw this.#inventoryReconciliationError("Created craft release item changed before compensation.");
       }
       try {
-        await item.delete();
+        await this.#awaitCraftExecution(execution, () => item.delete());
       }
       catch (error) {
+        if (this.#isCraftExecutionContextError(error)) {
+          throw error;
+        }
         if (this.#findCraftMutationItem(actor, mutationId, receiptIndex)) {
           throw error;
         }
@@ -1479,7 +1704,7 @@ export class InventoryService {
     if (!inventoryQuantitiesMatch(currentQuantity, receipt.afterQuantity)) {
       throw this.#inventoryReconciliationError("Craft release target changed before compensation.");
     }
-    await this.#updateCraftItemQuantity(item, receipt.beforeQuantity);
+    await this.#updateCraftItemQuantity(item, receipt.beforeQuantity, execution);
   }
 
   #craftReceiptAppliedCount(record) {
@@ -1493,13 +1718,13 @@ export class InventoryService {
     return match ? Number(match[1]) : null;
   }
 
-  async #compensateAtomicCraftReceipts(actor, record, error, compensateReceipt) {
+  async #compensateAtomicCraftReceipts(actor, record, error, compensateReceipt, execution) {
     const originalError = error ?? Object.assign(
       new Error(record.failure?.message || "Craft inventory mutation failed."),
       { code: record.failure?.code || "craft-inventory-failed" }
     );
     if (record.phase === "compensated") {
-      await this.mutationJournal.finish(record.id, {
+      await this.#finishCraftMutationRecord(execution, record.id, {
         ok: false,
         code: originalError.code ?? "craft-inventory-failed",
         error: originalError.message
@@ -1509,7 +1734,7 @@ export class InventoryService {
 
     try {
       if (record.phase !== "compensating") {
-        record = await this.mutationJournal.checkpoint(record.id, record.phase, "compensating", {
+        record = await this.#checkpointCraftMutationRecord(execution, record.id, record.phase, "compensating", {
           failure: {
             code: originalError.code ?? "craft-inventory-failed",
             message: originalError.message
@@ -1517,16 +1742,22 @@ export class InventoryService {
         });
       }
       for (let index = record.receipts.length - 1; index >= 0; index -= 1) {
-        await compensateReceipt(record.receipts[index], index);
-        record = await this.mutationJournal.checkpoint(record.id, "compensating", "compensating", {
+        await this.#awaitCraftExecution(
+          execution,
+          () => compensateReceipt(record.receipts[index], index)
+        );
+        record = await this.#checkpointCraftMutationRecord(execution, record.id, "compensating", "compensating", {
           compensatedThrough: index
         });
       }
-      record = await this.mutationJournal.checkpoint(record.id, "compensating", "compensated");
+      record = await this.#checkpointCraftMutationRecord(execution, record.id, "compensating", "compensated");
     }
     catch (compensationError) {
+      if (this.#isCraftExecutionContextError(compensationError)) {
+        throw compensationError;
+      }
       try {
-        await this.mutationJournal.checkpoint(record.id, record.phase, "reconciliation-required", {
+        await this.#checkpointCraftMutationRecord(execution, record.id, record.phase, "reconciliation-required", {
           compensationFailure: {
             code: compensationError.code ?? "craft-compensation-failed",
             message: compensationError.message
@@ -1539,7 +1770,7 @@ export class InventoryService {
       throw new AggregateError([originalError, compensationError], "Craft inventory mutation and compensation both failed.");
     }
 
-    await this.mutationJournal.finish(record.id, {
+    await this.#finishCraftMutationRecord(execution, record.id, {
       ok: false,
       code: originalError.code ?? "craft-inventory-failed",
       error: originalError.message
@@ -1547,7 +1778,7 @@ export class InventoryService {
     throw originalError;
   }
 
-  async #executeAtomicCraftReceipts(actor, record, { applyReceipt, compensateReceipt }) {
+  async #executeAtomicCraftReceipts(actor, record, execution, { applyReceipt, compensateReceipt }) {
     const terminal = this.#readInventoryTerminal(record);
     if (terminal.terminal) {
       return terminal.value;
@@ -1556,7 +1787,7 @@ export class InventoryService {
       throw this.#inventoryReconciliationError("Craft inventory mutation requires reconciliation.");
     }
     if (record.phase === "compensating" || record.phase === "compensated") {
-      return this.#compensateAtomicCraftReceipts(actor, record, null, compensateReceipt);
+      return this.#compensateAtomicCraftReceipts(actor, record, null, compensateReceipt, execution);
     }
 
     let completedCount = this.#craftReceiptAppliedCount(record);
@@ -1566,7 +1797,10 @@ export class InventoryService {
     try {
       while (completedCount < record.receipts.length) {
         const receiptIndex = completedCount;
-        const receiptPatch = await applyReceipt(record.receipts[receiptIndex], receiptIndex);
+        const receiptPatch = await this.#awaitCraftExecution(
+          execution,
+          () => applyReceipt(record.receipts[receiptIndex], receiptIndex)
+        );
         const nextReceipts = foundry.utils.deepClone(record.receipts);
         if (receiptPatch) {
           nextReceipts[receiptIndex] = {
@@ -1574,7 +1808,8 @@ export class InventoryService {
             ...receiptPatch
           };
         }
-        record = await this.mutationJournal.checkpoint(
+        record = await this.#checkpointCraftMutationRecord(
+          execution,
           record.id,
           record.phase,
           `receipt-${receiptIndex + 1}-applied`,
@@ -1584,14 +1819,17 @@ export class InventoryService {
       }
     }
     catch (error) {
-      return this.#compensateAtomicCraftReceipts(actor, record, error, compensateReceipt);
+      if (this.#isCraftExecutionContextError(error)) {
+        throw error;
+      }
+      return this.#compensateAtomicCraftReceipts(actor, record, error, compensateReceipt, execution);
     }
 
     if (record.phase !== "committed") {
-      record = await this.mutationJournal.checkpoint(record.id, record.phase, "committed");
+      record = await this.#checkpointCraftMutationRecord(execution, record.id, record.phase, "committed");
     }
     const result = record.receipts.map(({ itemData: _itemData, ...receipt }) => receipt);
-    await this.mutationJournal.finish(record.id, { ok: true, value: result });
+    await this.#finishCraftMutationRecord(execution, record.id, { ok: true, value: result });
     return foundry.utils.deepClone(result);
   }
 
@@ -1606,7 +1844,10 @@ export class InventoryService {
     }) ?? null;
   }
 
-  async #loadCraftGearSourceData(output) {
+  async #loadCraftGearSourceData(output, execution = null) {
+    const run = (operation) => execution
+      ? this.#awaitCraftExecution(execution, operation)
+      : operation();
     const packId = `world.${GEAR_COMPENDIUM_NAME}`;
     const pack = game.packs?.get?.(packId) ?? null;
     const actualPackId = cleanId(pack?.collection ?? pack?.metadata?.id);
@@ -1616,20 +1857,20 @@ export class InventoryService {
 
     let document = null;
     if (output.sourceDocumentId) {
-      document = await pack.getDocument(output.sourceDocumentId);
+      document = await run(() => pack.getDocument(output.sourceDocumentId));
       if (!document) {
         throw new Error(`Craft gear source document '${output.sourceDocumentId}' was not found in ${packId}.`);
       }
     }
     else {
-      const index = await pack.getIndex({
+      const index = await run(() => pack.getIndex({
         fields: [
           `flags.${MODULE_ID}.managed`,
           `flags.${MODULE_ID}.gearId`,
           `flags.${MODULE_ID}.sourceId`,
           `flags.${MODULE_ID}.sourceType`
         ]
-      });
+      }));
       const entry = collectionValues(index).find((candidate) => {
         const flags = foundry.utils.deepClone(candidate?.flags?.[MODULE_ID] ?? {});
         const sourceType = normalizeInventorySourceType(flags.sourceType);
@@ -1639,7 +1880,7 @@ export class InventoryService {
           && sourceIds.length > 0
           && sourceIds.every((sourceId) => sourceId === output.sourceId);
       }) ?? null;
-      document = entry ? await pack.getDocument(entry._id ?? entry.id) : null;
+      document = entry ? await run(() => pack.getDocument(entry._id ?? entry.id)) : null;
     }
     if (!document) {
       throw new Error(`Craft gear '${output.sourceId}' was not found in ${packId}.`);
@@ -1991,14 +2232,17 @@ export class InventoryService {
     return foundry.utils.deepClone(result);
   }
 
-  async #writeState(mutator) {
+  async #writeState(mutator, { guard } = {}) {
+    guard?.();
     if (!this.canManagePartyInventory()) {
       throw new Error("Партийным инвентарём управляют владельцы склада.");
     }
 
     const state = this.#getState();
     const result = await mutator(state);
+    guard?.();
     await this.#setState(state);
+    guard?.();
     return result;
   }
 
@@ -2710,7 +2954,7 @@ export class InventoryService {
       throw new Error("Отправлять лут в чат может только ГМ.");
     }
 
-    const itemData = await this.buildModelItemData(row.sourceType, row.sourceId, row.quantity);
+    const itemData = await this.buildLootgenItemData(row);
     itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
     itemData.flags[MODULE_ID] = {
       ...(itemData.flags[MODULE_ID] ?? {}),
@@ -2723,6 +2967,52 @@ export class InventoryService {
     };
 
     return itemData;
+  }
+
+  async buildLootgenItemData(row = {}, { allowPersistedItemData = false } = {}) {
+    const safeQuantity = Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
+    if (allowPersistedItemData && row.itemData && typeof row.itemData === "object") {
+      const persistedItemData = sanitizeEmbeddedItemData(row.itemData);
+      foundry.utils.setProperty(persistedItemData, "system.quantity", safeQuantity);
+      return persistedItemData;
+    }
+
+    let itemData;
+    if (normalizeInventorySourceType(row.sourceType) === "gear") {
+      const sourceData = await this.#loadCraftGearSourceData({
+        sourceId: cleanId(row.sourceId),
+        sourceDocumentId: cleanId(row.sourceDocumentId)
+      });
+      itemData = sanitizeEmbeddedItemData(sourceData);
+      foundry.utils.setProperty(itemData, "system.quantity", safeQuantity);
+      foundry.utils.setProperty(itemData, "system.equipped", false);
+      clearCraftOutputAttunement(itemData);
+      itemData.flags = itemData.flags && typeof itemData.flags === "object" ? itemData.flags : {};
+      itemData.flags[MODULE_ID] = {
+        ...(itemData.flags[MODULE_ID] ?? {}),
+        sourceType: "gear",
+        sourceId: cleanId(row.sourceId),
+        gearId: cleanId(row.sourceId)
+      };
+      delete itemData.flags[MODULE_ID].held;
+      delete itemData.flags[MODULE_ID].isHeld;
+      delete itemData.flags[MODULE_ID].heldHands;
+      delete itemData.flags[MODULE_ID].versatileBaseDamageOriginal;
+      delete itemData.flags[MODULE_ID].durability;
+      delete itemData.flags[MODULE_ID][INVENTORY_MUTATION_FLAG];
+    }
+    else {
+      itemData = await this.buildModelItemData(row.sourceType, row.sourceId, safeQuantity);
+    }
+    if (row.isBroken !== true || normalizeInventorySourceType(row.sourceType) !== "gear") {
+      return itemData;
+    }
+
+    const model = await this.moduleApi.getModel();
+    return applyLootgenRowDurability(itemData, row, {
+      model,
+      updatedAt: new Date().toISOString()
+    });
   }
 
   async createLootgenChatItem(row, lootMeta = {}) {
@@ -3159,6 +3449,18 @@ export class InventoryService {
     return this.#upsertInventoryItem(actor, itemData, safeQuantity);
   }
 
+  async addLootgenRowToInventory(row = {}) {
+    const actor = await this.getInventoryActor({ create: true });
+    this.#assertCanManagePartyInventory(actor);
+    if (!actor) {
+      throw new Error("Не удалось получить партийный инвентарь.");
+    }
+
+    const safeQuantity = Math.max(0.01, roundNumber(toNumber(row.quantity, 1), 2));
+    const itemData = await this.buildLootgenItemData(row);
+    return this.#upsertInventoryItem(actor, itemData, safeQuantity);
+  }
+
   addModelItemToInventoryOnce(sourceType, sourceId, quantity, mutationId) {
     return this.mutationCoordinator.run(
       "inventory",
@@ -3166,7 +3468,44 @@ export class InventoryService {
     );
   }
 
+  addLootgenRowToInventoryOnce(row, mutationId) {
+    const frozenRow = foundry.utils.deepClone(row ?? {});
+    return this.mutationCoordinator.run(
+      "inventory",
+      () => this.#executeInventoryGrantOnce({
+        quantity: frozenRow.quantity,
+        mutationId,
+        buildItemData: () => this.buildLootgenItemData(frozenRow)
+      })
+    );
+  }
+
+  addLootgenChatRowToInventoryOnce(row, mutationId) {
+    const frozenRow = foundry.utils.deepClone(row ?? {});
+    return this.mutationCoordinator.run(
+      "inventory",
+      () => {
+        if (!isActiveGmClient()) {
+          throw new Error("Only the active GM can grant persisted Lootgen chat items.");
+        }
+        return this.#executeInventoryGrantOnce({
+          quantity: frozenRow.quantity,
+          mutationId,
+          buildItemData: () => this.buildLootgenItemData(frozenRow, { allowPersistedItemData: true })
+        });
+      }
+    );
+  }
+
   async #executeAddModelItemOnce(sourceType, sourceId, quantity, mutationId) {
+    return this.#executeInventoryGrantOnce({
+      quantity,
+      mutationId,
+      buildItemData: (safeQuantity) => this.buildModelItemData(sourceType, sourceId, safeQuantity)
+    });
+  }
+
+  async #executeInventoryGrantOnce({ quantity, mutationId, buildItemData }) {
     const operationId = createInventoryMutationId("inventory-grant", mutationId);
     let record = await this.mutationJournal.find(operationId);
     const actor = await this.getInventoryActor({ create: true });
@@ -3174,7 +3513,7 @@ export class InventoryService {
     if (!actor) throw new Error("Не удалось получить партийный инвентарь.");
     if (!record) {
       const safeQuantity = Math.max(0.01, roundNumber(toNumber(quantity, 1), 2));
-      const itemData = await this.buildModelItemData(sourceType, sourceId, safeQuantity);
+      const itemData = await buildItemData(safeQuantity);
       const candidate = this.#findInventoryMergeCandidate(actor, itemData);
       if (!candidate) {
         foundry.utils.setProperty(itemData, `flags.${MODULE_ID}.${INVENTORY_MUTATION_FLAG}`, {
@@ -3305,20 +3644,20 @@ export class InventoryService {
     return foundry.utils.deepClone(result);
   }
 
-  reserveCraftResourcesOnce(quote, mutationId) {
+  reserveCraftResourcesOnce(quote, mutationId, options = {}) {
     return this.mutationCoordinator.run(
       "inventory",
-      () => this.#executeReserveCraftResourcesOnce(quote, mutationId)
+      () => this.#executeReserveCraftResourcesOnce(quote, mutationId, options)
     );
   }
 
-  async #executeReserveCraftResourcesOnce(quote, mutationId) {
-    this.#assertActiveGmCraftMutation();
+  async #executeReserveCraftResourcesOnce(quote, mutationId, options) {
+    const execution = this.#resolveCraftExecutionContext(options);
     const stableMutationId = requireCraftMutationId(mutationId);
     const request = normalizeCraftResourceRequest(quote);
     const operationId = createInventoryMutationId("craft-reservation", stableMutationId);
-    let record = await this.mutationJournal.find(operationId);
-    const actor = await this.getInventoryActor({ create: true });
+    let record = await this.#findCraftMutationRecord(execution, operationId);
+    const actor = execution.actor;
     this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Party inventory is unavailable for craft reservation.");
@@ -3326,53 +3665,55 @@ export class InventoryService {
 
     if (record) {
       this.#assertCraftMutationIdentity(record, "craft-reservation", request);
-      if (record.actorId !== actor.id) {
-        throw this.#inventoryReconciliationError("Craft reservation party inventory actor changed.");
-      }
+      this.#assertCraftMutationScope(record, execution, "Craft reservation");
     }
     else {
       const receipts = this.#prepareCraftDebitReceipts(actor, request);
-      record = await this.mutationJournal.start({
+      record = await this.#startCraftMutationRecord(execution, {
         id: operationId,
         kind: "craft-reservation",
         phase: "prepared",
         actorId: actor.id,
+        groupId: execution.groupId,
         projectId: request.projectId,
         request,
         receipts
       });
     }
 
-    return this.#executeAtomicCraftReceipts(actor, record, {
-      applyReceipt: (receipt) => this.#applyCraftDebitReceipt(actor, receipt),
-      compensateReceipt: (receipt) => this.#compensateCraftDebitReceipt(actor, receipt)
+    return this.#executeAtomicCraftReceipts(actor, record, execution, {
+      applyReceipt: (receipt) => this.#applyCraftDebitReceipt(actor, receipt, execution),
+      compensateReceipt: (receipt) => this.#compensateCraftDebitReceipt(actor, receipt, execution)
     });
   }
 
-  spendCraftReservationOnce(projectId, spend, mutationId) {
+  spendCraftReservationOnce(projectId, spend, mutationId, options = {}) {
     return this.mutationCoordinator.run(
       "inventory",
-      () => this.#executeSpendCraftReservationOnce(projectId, spend, mutationId)
+      () => this.#executeSpendCraftReservationOnce(projectId, spend, mutationId, options)
     );
   }
 
-  async #executeSpendCraftReservationOnce(projectId, spend, mutationId) {
-    this.#assertActiveGmCraftMutation();
+  async #executeSpendCraftReservationOnce(projectId, spend, mutationId, options) {
+    const execution = this.#resolveCraftExecutionContext(options);
     const stableMutationId = requireCraftMutationId(mutationId);
     const request = normalizeCraftSpendRequest(projectId, spend);
     if (!request.projectId) {
       throw new Error("Craft project ID is required.");
     }
     const operationId = createInventoryMutationId("craft-spend", stableMutationId);
-    let record = await this.mutationJournal.find(operationId);
+    let record = await this.#findCraftMutationRecord(execution, operationId);
     if (record) {
       this.#assertCraftMutationIdentity(record, "craft-spend", request);
+      this.#assertCraftMutationScope(record, execution, "Craft spend");
     }
     else {
-      record = await this.mutationJournal.start({
+      record = await this.#startCraftMutationRecord(execution, {
         id: operationId,
         kind: "craft-spend",
         phase: "prepared",
+        actorId: execution.actorId,
+        groupId: execution.groupId,
         projectId: request.projectId,
         request
       });
@@ -3383,25 +3724,25 @@ export class InventoryService {
       return terminal.value;
     }
     if (record.phase === "prepared") {
-      record = await this.mutationJournal.checkpoint(operationId, "prepared", "committed");
+      record = await this.#checkpointCraftMutationRecord(execution, operationId, "prepared", "committed");
     }
     if (record.phase !== "committed") {
       throw this.#inventoryReconciliationError("Craft spend mutation has an unknown journal phase.");
     }
     const result = foundry.utils.deepClone(request);
-    await this.mutationJournal.finish(operationId, { ok: true, value: result });
+    await this.#finishCraftMutationRecord(execution, operationId, { ok: true, value: result });
     return result;
   }
 
-  releaseCraftReservationOnce(projectId, remaining, mutationId) {
+  releaseCraftReservationOnce(projectId, remaining, mutationId, options = {}) {
     return this.mutationCoordinator.run(
       "inventory",
-      () => this.#executeReleaseCraftReservationOnce(projectId, remaining, mutationId)
+      () => this.#executeReleaseCraftReservationOnce(projectId, remaining, mutationId, options)
     );
   }
 
-  async #executeReleaseCraftReservationOnce(projectId, remaining, mutationId) {
-    this.#assertActiveGmCraftMutation();
+  async #executeReleaseCraftReservationOnce(projectId, remaining, mutationId, options) {
+    const execution = this.#resolveCraftExecutionContext(options);
     const stableMutationId = requireCraftMutationId(mutationId);
     const source = remaining && typeof remaining === "object" ? remaining : {};
     const request = normalizeCraftResourceRequest({
@@ -3409,8 +3750,8 @@ export class InventoryService {
       projectId
     });
     const operationId = createInventoryMutationId("craft-release", stableMutationId);
-    let record = await this.mutationJournal.find(operationId);
-    const actor = await this.getInventoryActor({ create: true });
+    let record = await this.#findCraftMutationRecord(execution, operationId);
+    const actor = execution.actor;
     this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Party inventory is unavailable for craft release.");
@@ -3418,53 +3759,54 @@ export class InventoryService {
 
     if (record) {
       this.#assertCraftMutationIdentity(record, "craft-release", request);
-      if (record.actorId !== actor.id) {
-        throw this.#inventoryReconciliationError("Craft release party inventory actor changed.");
-      }
+      this.#assertCraftMutationScope(record, execution, "Craft release");
     }
     else {
-      const receipts = await this.#prepareCraftCreditReceipts(actor, request, operationId);
-      record = await this.mutationJournal.start({
+      const receipts = await this.#prepareCraftCreditReceipts(actor, request, operationId, execution);
+      record = await this.#startCraftMutationRecord(execution, {
         id: operationId,
         kind: "craft-release",
         phase: "prepared",
         actorId: actor.id,
+        groupId: execution.groupId,
         projectId: request.projectId,
         request,
         receipts
       });
     }
 
-    return this.#executeAtomicCraftReceipts(actor, record, {
+    return this.#executeAtomicCraftReceipts(actor, record, execution, {
       applyReceipt: (receipt, receiptIndex) => this.#applyCraftCreditReceipt(
         actor,
         operationId,
         receipt,
-        receiptIndex
+        receiptIndex,
+        execution
       ),
       compensateReceipt: (receipt, receiptIndex) => this.#compensateCraftCreditReceipt(
         actor,
         operationId,
         receipt,
-        receiptIndex
+        receiptIndex,
+        execution
       )
     });
   }
 
-  createCraftOutputsOnce(outputs, mutationId) {
+  createCraftOutputsOnce(outputs, mutationId, options = {}) {
     return this.mutationCoordinator.run(
       "inventory",
-      () => this.#executeCreateCraftOutputsOnce(outputs, mutationId)
+      () => this.#executeCreateCraftOutputsOnce(outputs, mutationId, options)
     );
   }
 
-  async #executeCreateCraftOutputsOnce(outputs, mutationId) {
-    this.#assertActiveGmCraftMutation();
+  async #executeCreateCraftOutputsOnce(outputs, mutationId, options) {
+    const execution = this.#resolveCraftExecutionContext(options);
     const stableMutationId = requireCraftMutationId(mutationId);
     const request = normalizeCraftOutputs(outputs);
     const operationId = createInventoryMutationId("craft-output", stableMutationId);
-    let record = await this.mutationJournal.find(operationId);
-    const actor = await this.getInventoryActor({ create: true });
+    let record = await this.#findCraftMutationRecord(execution, operationId);
+    const actor = execution.actor;
     this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Party inventory is unavailable for craft output.");
@@ -3472,14 +3814,12 @@ export class InventoryService {
 
     if (record) {
       this.#assertCraftMutationIdentity(record, "craft-output", request);
-      if (record.actorId !== actor.id) {
-        throw this.#inventoryReconciliationError("Craft output party inventory actor changed.");
-      }
+      this.#assertCraftMutationScope(record, execution, "Craft output");
     }
     else {
       const preparedOutputs = [];
       for (const [outputIndex, output] of request.entries()) {
-        const sourceData = await this.#loadCraftGearSourceData(output);
+        const sourceData = await this.#loadCraftGearSourceData(output, execution);
         preparedOutputs.push({
           ...output,
           itemId: "",
@@ -3487,11 +3827,12 @@ export class InventoryService {
           itemData: this.#buildCraftOutputItemData(sourceData, output, operationId, outputIndex)
         });
       }
-      record = await this.mutationJournal.start({
+      record = await this.#startCraftMutationRecord(execution, {
         id: operationId,
         kind: "craft-output",
         phase: "prepared",
         actorId: actor.id,
+        groupId: execution.groupId,
         request,
         outputs: preparedOutputs
       });
@@ -3515,9 +3856,15 @@ export class InventoryService {
       let item = this.#findCraftOutputItem(actor, operationId, outputIndex);
       if (!item) {
         try {
-          [item] = await actor.createEmbeddedDocuments("Item", [output.itemData], { renderSheet: false });
+          [item] = await this.#awaitCraftExecution(
+            execution,
+            () => actor.createEmbeddedDocuments("Item", [output.itemData], { renderSheet: false })
+          );
         }
         catch (error) {
+          if (this.#isCraftExecutionContextError(error)) {
+            throw error;
+          }
           item = this.#findCraftOutputItem(actor, operationId, outputIndex);
           if (!item) {
             throw error;
@@ -3532,7 +3879,14 @@ export class InventoryService {
       const durabilityIsIntact = durability?.state === "intact"
         && inventoryQuantitiesMatch(durability?.hp?.value, durability?.hp?.max);
       if (!durabilityIsIntact && typeof this.moduleApi.durabilityService?.initializeItem === "function") {
-        await this.moduleApi.durabilityService.initializeItem(item, { force: true });
+        await this.#awaitCraftExecution(
+          execution,
+          () => this.moduleApi.durabilityService.initializeItem(item, {
+            force: true,
+            guard: () => this.#assertCraftExecutionContext(execution),
+            assertExecutionContext: () => this.#assertCraftExecutionContext(execution)
+          })
+        );
       }
 
       const nextOutputs = foundry.utils.deepClone(record.outputs);
@@ -3541,7 +3895,8 @@ export class InventoryService {
         itemId: item.id,
         itemUuid: cleanId(item.uuid)
       };
-      record = await this.mutationJournal.checkpoint(
+      record = await this.#checkpointCraftMutationRecord(
+        execution,
         operationId,
         record.phase,
         `output-${outputIndex + 1}-created`,
@@ -3551,13 +3906,13 @@ export class InventoryService {
     }
 
     if (record.phase !== "committed") {
-      record = await this.mutationJournal.checkpoint(operationId, record.phase, "committed");
+      record = await this.#checkpointCraftMutationRecord(execution, operationId, record.phase, "committed");
     }
     const result = record.outputs.map(({ itemData: _itemData, sourceDocumentId: _sourceDocumentId, ...output }) => ({
       ...output,
       mutationId: operationId
     }));
-    await this.mutationJournal.finish(operationId, { ok: true, value: result });
+    await this.#finishCraftMutationRecord(execution, operationId, { ok: true, value: result });
     return this.#resolveCraftOutputItems(actor, result);
   }
 
@@ -3812,14 +4167,36 @@ export class InventoryService {
     };
   }
 
-  async consumeSuppliesOneDay({ applyEnergy = true } = {}) {
-    const actor = await this.getInventoryActor({ create: true });
+  async consumeSuppliesOneDay(options = {}) {
+    const { applyEnergy = true } = options;
+    const requestedGroupId = cleanId(options.groupId);
+    const guard = options.guard ?? options.assertExecutionContext;
+    if (guard !== undefined && typeof guard !== "function") {
+      throw new TypeError("calendar execution guard must be a function");
+    }
+    guard?.();
+    const actor = requestedGroupId
+      ? (() => {
+          const context = this.moduleApi.groupContextService?.resolveForGroup?.(requestedGroupId);
+          const groupActor = context?.groupActor ?? null;
+          if (
+            cleanId(context?.groupId) !== requestedGroupId
+            || cleanId(groupActor?.id) !== requestedGroupId
+            || groupActor?.type !== "group"
+          ) {
+            throw new Error("Calendar supply mutation group does not match its captured group.");
+          }
+          return groupActor;
+        })()
+      : await this.getInventoryActor({ create: true });
+    guard?.();
     this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
     const partySnapshot = await this.getPartySnapshot({ actor });
+    guard?.();
     const foodItem = this.#findSupplyItem(actor, "food");
     const waterItem = this.#findSupplyItem(actor, "water");
     const currentFood = foodItem ? getRawQuantity(foodItem.toObject()) : 0;
@@ -3830,21 +4207,25 @@ export class InventoryService {
     const nextWater = roundNumber(currentWater - waterSpent, 2);
 
     if (foodItem) {
+      guard?.();
       if (nextFood <= 0) {
         await foodItem.delete();
       }
       else {
         await foodItem.update({ "system.quantity": nextFood });
       }
+      guard?.();
     }
 
     if (waterItem) {
+      guard?.();
       if (nextWater <= 0) {
         await waterItem.delete();
       }
       else {
         await waterItem.update({ "system.quantity": nextWater });
       }
+      guard?.();
     }
 
     let energyUpdates = [];
@@ -3905,8 +4286,10 @@ export class InventoryService {
         }
 
         return updates;
-      });
+      }, { guard });
     }
+
+    guard?.();
 
     return {
       memberCount: partySnapshot.memberCount,
@@ -4194,7 +4577,14 @@ export class InventoryService {
     });
   }
 
-  async handleAcceptedPartyInventoryItem(itemDocument, { sourceItemUuid = "" } = {}) {
+  async handleAcceptedPartyInventoryItem(itemDocument, {
+    sourceItemUuid = "",
+    transferId = "",
+    targetItemUuid = "",
+    expectedIdentity = null,
+    expectedQuantity = 0,
+    targetReceipt = null
+  } = {}) {
     if (!isItemDocument(itemDocument)) {
       return {
         handled: false,
@@ -4211,10 +4601,26 @@ export class InventoryService {
     }
 
     const safeSourceItemUuid = cleanId(sourceItemUuid);
-    if (!safeSourceItemUuid) {
+    const safeTransferId = cleanId(transferId);
+    const safeTargetItemUuid = cleanId(targetItemUuid);
+    const normalizedIdentity = normalizeInventoryTransferIdentity(expectedIdentity);
+    const safeExpectedQuantity = roundNumber(Number(expectedQuantity), 2);
+    const normalizedTargetReceipt = normalizeInventoryTransferTargetReceipt(
+      targetReceipt,
+      safeTargetItemUuid,
+      safeExpectedQuantity
+    );
+    if (!safeSourceItemUuid
+      || !safeTransferId
+      || !safeTargetItemUuid
+      || safeTargetItemUuid !== cleanId(itemDocument.uuid)
+      || !normalizedIdentity
+      || !Number.isFinite(safeExpectedQuantity)
+      || safeExpectedQuantity <= 0
+      || !normalizedTargetReceipt) {
       return {
         handled: false,
-        reason: "sourceItemMissing"
+        reason: "capturedTransferMissing"
       };
     }
 
@@ -4241,79 +4647,255 @@ export class InventoryService {
         reason: "itemMismatch"
       };
     }
+    if (!inventoryTransferIdentityMatches(sourceItem, normalizedIdentity)
+      || !inventoryTransferIdentityMatches(itemDocument, normalizedIdentity)
+      || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), safeExpectedQuantity)
+      || !inventoryQuantitiesMatch(getRawQuantity(itemDocument.toObject()), normalizedTargetReceipt.afterQuantity)) {
+      return {
+        handled: false,
+        reason: "capturedTransferMismatch"
+      };
+    }
+
+    const requestPayload = {
+      transferId: safeTransferId,
+      sourceItemUuid: safeSourceItemUuid,
+      targetItemUuid: safeTargetItemUuid,
+      targetActorUuid: cleanId(targetActor.uuid),
+      expectedIdentity: normalizedIdentity,
+      expectedQuantity: safeExpectedQuantity,
+      targetReceipt: normalizedTargetReceipt
+    };
 
     if (!this.canManagePartyInventory(inventoryActor)) {
-      if (!cleanId(sourceItem.uuid) || !cleanId(itemDocument.uuid) || !cleanId(targetActor.uuid) || typeof game.socket?.emit !== "function") {
+      if (!getActiveGm()?.id || getActiveGm()?.active === false || typeof game.socket?.emit !== "function") {
         throw new Error("Не удалось отправить запрос на удаление исходного предмета мастеру.");
       }
 
       game.socket.emit(SOCKET_CHANNEL, {
         type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST,
-        payload: {
-          sourceItemUuid: sourceItem.uuid,
-          targetItemUuid: itemDocument.uuid,
-          targetActorUuid: targetActor.uuid
-        },
+        payload: requestPayload,
         senderId: game.user?.id ?? ""
       });
       return {
         handled: true,
         requested: true,
+        transferId: safeTransferId,
         sourceItemUuid: sourceItem.uuid,
-        targetItemUuid: itemDocument.uuid
+        targetItemUuid: itemDocument.uuid,
+        targetReceipt: normalizedTargetReceipt
       };
     }
 
-    await sourceItem.delete();
+    const result = await this.handlePartyInventorySourceDepletionSocketRequest(requestPayload, {
+      senderId: game.user?.id ?? ""
+    });
+    if (!result) {
+      throw new Error("Only the active GM can deplete a party inventory source item.");
+    }
     return {
-      handled: true,
+      ...result,
       requested: false,
-      sourceItemUuid: sourceItem.uuid,
-      targetItemUuid: itemDocument.uuid
+      targetReceipt: normalizedTargetReceipt
     };
   }
 
-  async handlePartyInventorySourceDepletionSocketRequest(payload = {}, { senderId = "" } = {}) {
-    if (!isActiveGmClient()) {
-      return false;
-    }
+  #sourceDepletionAuthorityError() {
+    return new Error("Only the active GM can complete party inventory source depletion.");
+  }
 
-    const sender = getSocketUser(senderId);
-    const sourceItem = await resolveUuid(payload.sourceItemUuid);
-    const targetItem = await resolveUuid(payload.targetItemUuid);
+  #assertSourceDepletionAuthority() {
+    if (!isExplicitActiveGmClient()) {
+      throw this.#sourceDepletionAuthorityError();
+    }
+  }
+
+  async #awaitSourceDepletionAuthority(operation) {
+    this.#assertSourceDepletionAuthority();
+    let result;
+    try {
+      result = await operation();
+    }
+    catch (error) {
+      this.#assertSourceDepletionAuthority();
+      throw error;
+    }
+    this.#assertSourceDepletionAuthority();
+    return result;
+  }
+
+  #normalizeSourceDepletionRequest(payload, senderId) {
+    const transferId = cleanId(payload?.transferId);
+    const sourceItemUuid = cleanId(payload?.sourceItemUuid);
+    const targetItemUuid = cleanId(payload?.targetItemUuid);
+    const targetActorUuid = cleanId(payload?.targetActorUuid);
+    const safeSenderId = cleanId(senderId);
+    const expectedIdentity = normalizeInventoryTransferIdentity(payload?.expectedIdentity);
+    const expectedQuantity = roundNumber(Number(payload?.expectedQuantity), 2);
+    const targetReceipt = normalizeInventoryTransferTargetReceipt(
+      payload?.targetReceipt,
+      targetItemUuid,
+      expectedQuantity
+    );
+    if (!transferId
+      || !sourceItemUuid
+      || !targetItemUuid
+      || !targetActorUuid
+      || !safeSenderId
+      || !expectedIdentity
+      || !Number.isFinite(expectedQuantity)
+      || expectedQuantity <= 0
+      || !targetReceipt) {
+      throw new Error("Party inventory source depletion requires a captured identity and quantity receipt.");
+    }
+    return {
+      transferId,
+      senderId: safeSenderId,
+      sourceItemUuid,
+      targetItemUuid,
+      targetActorUuid,
+      expectedIdentity,
+      expectedQuantity,
+      targetReceipt
+    };
+  }
+
+  #assertSourceDepletionMutationIdentity(record, request) {
+    if (record?.kind === "party-inventory-source-depletion"
+      && JSON.stringify(record.request) === JSON.stringify(request)) {
+      return;
+    }
+    const error = new Error(`Inventory transfer '${request.transferId}' conflicts with the durable source-depletion record.`);
+    error.code = "mutation-conflict";
+    throw error;
+  }
+
+  async #resolveSourceDepletionParticipants(request, sourceActorId = "") {
+    const sender = getSocketUser(request.senderId);
+    const targetItem = await resolveUuid(request.targetItemUuid);
     const targetActor = isActorDocument(targetItem?.parent)
       ? targetItem.parent
-      : await resolveUuid(payload.targetActorUuid);
-    if (!sender || !isItemDocument(sourceItem) || !isItemDocument(targetItem) || !isActorDocument(targetActor)) {
+      : await resolveUuid(request.targetActorUuid);
+    const sourceActor = cleanId(sourceActorId)
+      ? game.actors?.get?.(cleanId(sourceActorId)) ?? null
+      : null;
+    if (!sender
+      || !isItemDocument(targetItem)
+      || !isActorDocument(targetActor)
+      || cleanId(targetItem.uuid) !== request.targetItemUuid
+      || cleanId(targetActor.uuid) !== request.targetActorUuid
+      || (sourceActorId && !isManagedPartyGroup(sourceActor))) {
       throw new Error("Некорректный запрос на удаление исходного предмета.");
     }
-
     if (targetActor.type !== "character" || !userOwnsActor(targetActor, sender)) {
       throw new Error("Игрок не владеет персонажем, получившим предмет.");
     }
+    if (sourceActor) {
+      const context = this.moduleApi.groupContextService?.resolveForGroup?.(sourceActor.id);
+      const members = context?.members ?? getGroupMemberActors(sourceActor);
+      if (!members.some((memberActor) => memberActor?.id === targetActor.id)) {
+        throw new Error("Персонаж, получивший предмет, не входит в эту группу.");
+      }
+    }
+    return { sender, sourceActor, targetActor, targetItem };
+  }
 
+  async #prepareSourceDepletionRecord(request) {
+    const sourceItem = await resolveUuid(request.sourceItemUuid);
+    if (!isItemDocument(sourceItem)) {
+      throw new Error("Исходный предмет партийного склада не найден.");
+    }
     const sourceActor = isActorDocument(sourceItem.parent) ? sourceItem.parent : null;
     if (!sourceActor || !isManagedPartyGroup(sourceActor)) {
       throw new Error("Исходный предмет не находится в партийном складе.");
     }
+    const { targetItem } = await this.#resolveSourceDepletionParticipants(request, sourceActor.id);
+    if (!itemsCanRepresentSameTransfer(sourceItem, targetItem)
+      || !inventoryTransferIdentityMatches(sourceItem, request.expectedIdentity)
+      || !inventoryTransferIdentityMatches(targetItem, request.expectedIdentity)
+      || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), request.expectedQuantity)
+      || !inventoryQuantitiesMatch(getRawQuantity(targetItem.toObject()), request.targetReceipt.afterQuantity)) {
+      throw new Error("Полученный предмет не совпадает с captured identity или quantity исходного предмета склада.");
+    }
+    return this.#awaitSourceDepletionAuthority(() => this.mutationJournal.start({
+      id: request.transferId,
+      kind: "party-inventory-source-depletion",
+      phase: "prepared",
+      request,
+      sourceActorId: sourceActor.id,
+      targetActorId: targetItem.parent.id
+    }));
+  }
 
-    const context = this.moduleApi.groupContextService?.resolveForGroup?.(sourceActor.id);
-    const members = context?.members ?? getGroupMemberActors(sourceActor);
-    const targetIsGroupMember = members.some((memberActor) => memberActor?.id === targetActor.id);
-    if (!targetIsGroupMember) {
-      throw new Error("Персонаж, получивший предмет, не входит в эту группу.");
+  async #executePartyInventorySourceDepletion(request) {
+    this.#assertSourceDepletionAuthority();
+    let record = await this.#awaitSourceDepletionAuthority(
+      () => this.mutationJournal.find(request.transferId)
+    );
+    if (!record) {
+      record = await this.#prepareSourceDepletionRecord(request);
+    }
+    this.#assertSourceDepletionMutationIdentity(record, request);
+    const terminal = this.#readInventoryTerminal(record);
+    if (terminal.terminal) {
+      return terminal.value;
+    }
+    if (!["prepared", "source-depleted"].includes(record.phase)) {
+      throw this.#inventoryReconciliationError("Party inventory source depletion requires reconciliation.");
     }
 
-    if (!itemsCanRepresentSameTransfer(sourceItem, targetItem)) {
-      throw new Error("Полученный предмет не совпадает с исходным предметом склада.");
+    await this.#resolveSourceDepletionParticipants(request, record.sourceActorId);
+    if (record.phase === "prepared") {
+      const sourceItem = await resolveUuid(request.sourceItemUuid);
+      if (sourceItem) {
+        const sourceActor = isActorDocument(sourceItem.parent) ? sourceItem.parent : null;
+        if (!isItemDocument(sourceItem)
+          || cleanId(sourceActor?.id) !== cleanId(record.sourceActorId)
+          || !inventoryTransferIdentityMatches(sourceItem, request.expectedIdentity)
+          || !inventoryQuantitiesMatch(getRawQuantity(sourceItem.toObject()), request.expectedQuantity)) {
+          throw this.#inventoryReconciliationError("Party inventory source changed after depletion was prepared.");
+        }
+        try {
+          await sourceItem.delete();
+        }
+        catch (error) {
+          this.#assertSourceDepletionAuthority();
+          if (await resolveUuid(request.sourceItemUuid)) {
+            throw error;
+          }
+        }
+        this.#assertSourceDepletionAuthority();
+      }
+      if (await resolveUuid(request.sourceItemUuid)) {
+        throw this.#inventoryReconciliationError("Party inventory source deletion was not observed.");
+      }
+      record = await this.#awaitSourceDepletionAuthority(
+        () => this.mutationJournal.checkpoint(request.transferId, "prepared", "source-depleted")
+      );
     }
 
-    await sourceItem.delete();
-    return {
+    const result = {
       handled: true,
-      sourceItemUuid: sourceItem.uuid,
-      targetItemUuid: targetItem.uuid
+      transferId: request.transferId,
+      sourceItemUuid: request.sourceItemUuid,
+      targetItemUuid: request.targetItemUuid,
+      targetReceipt: request.targetReceipt
     };
+    await this.#awaitSourceDepletionAuthority(
+      () => this.mutationJournal.finish(request.transferId, { ok: true, value: result })
+    );
+    return foundry.utils.deepClone(result);
+  }
+
+  async handlePartyInventorySourceDepletionSocketRequest(payload = {}, { senderId = "" } = {}) {
+    if (!isExplicitActiveGmClient()) {
+      return false;
+    }
+    const request = this.#normalizeSourceDepletionRequest(payload, senderId);
+    return this.mutationCoordinator.run(
+      "inventory",
+      () => this.#executePartyInventorySourceDepletion(request)
+    );
   }
 
   async handleInventoryItemActionSocketRequest(payload = {}, { senderId = "" } = {}) {

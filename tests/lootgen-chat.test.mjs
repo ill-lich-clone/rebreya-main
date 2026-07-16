@@ -146,6 +146,39 @@ test("lootgen chat rows render a real claim button without dnd5e item uuid hooks
   }
 });
 
+test("lootgen chat renders broken condition from persisted item data without renaming the item", async () => {
+  const restoreFoundry = installLootgenChatFoundryStubs();
+
+  try {
+    const { buildLootgenChatContent } = await import(`../scripts/ui/lootgen-chat.js?render-broken=${Date.now()}`);
+    const content = buildLootgenChatContent({
+      lootId: "loot-broken",
+      rows: [{
+        rowId: "row-broken",
+        name: "Длинный меч",
+        quantity: 1,
+        itemData: {
+          name: "Длинный меч",
+          type: "weapon",
+          flags: {
+            "rebreya-main": {
+              durability: { state: "broken", breakStage: 1 }
+            }
+          }
+        }
+      }]
+    });
+
+    assert.match(content, />Длинный меч</u);
+    assert.match(content, /Сломано/u);
+    assert.match(content, /rm-chat-loot__condition--broken/u);
+    assert.doesNotMatch(content, /Длинный меч \(сломано\)/iu);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
 test("lootgen chat claim button takes a row through the module API", async () => {
   const restoreFoundry = installLootgenChatFoundryStubs();
   const previousHooks = globalThis.Hooks;
@@ -362,4 +395,33 @@ test("LootgenApp does not post the old extra chat status after sending loot", as
   const source = await readFile(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8");
 
   assert.doesNotMatch(source, /Добыча отправлена в чат\. Предметы можно перетаскивать в лист персонажа\./u);
+});
+
+test("only the active GM handles economic lootgen socket claims", async () => {
+  const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+  for (const eventName of [
+    "SOCKET_EVENT_LOOTGEN_CLAIM_ROW",
+    "SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY",
+    "SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY",
+    "SOCKET_EVENT_LOOTGEN_CLAIM_COINS"
+  ]) {
+    assert.match(source, new RegExp(`message\\.type === ${eventName} && isActiveGmClient\\(game\\)`, "u"));
+    assert.doesNotMatch(source, new RegExp(`message\\.type === ${eventName} && game\\.user\\?\\.isGM`, "u"));
+  }
+});
+
+test("lootgen trusts only GM-authored chat state and journals direct grants", async () => {
+  const [mainSource, appSource] = await Promise.all([
+    readFile(new URL("../scripts/main.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8")
+  ]);
+
+  assert.match(mainSource, /const createdBy = String\(state\?\.createdBy/u);
+  assert.match(mainSource, /messageUserId === createdBy/u);
+  assert.match(mainSource, /author\?\.isGM === true/u);
+  assert.match(mainSource, /addLootgenRowToInventoryOnce\(row, mutationId\)/u);
+  assert.match(mainSource, /addCurrencyToInventoryOnce\(coins, stableMutationId\)/u);
+  assert.match(appSource, /directGrantId: `lootgen:\$\{directBatchId\}:row:\$\{index\}`/u);
+  assert.match(appSource, /directCoinGrantId: `lootgen:\$\{directBatchId\}:coins`/u);
+  assert.doesNotMatch(appSource, /updatePartyCurrency\(\{/u);
 });

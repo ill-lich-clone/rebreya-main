@@ -9,7 +9,7 @@ import {
   nearestMonday,
   releaseFutureRequestSlots,
   summarizeScheduleByDate
-} from "./downtime-scheduler.js";
+} from "./downtime-scheduler.js?v=1.4.95-early-year-calendar";
 
 const OPEN_RESERVED_STATUSES = new Set(["pending", "approved"]);
 const RELEASED_STATUSES = new Set(["rejected", "returned", "cancelled"]);
@@ -23,6 +23,8 @@ const DOWNTIME_STATE_VERSION = 2;
 const DOWNTIME_V2_MIGRATION_ID = "downtime-v1-to-v2";
 const DOWNTIME_V2_ENVELOPE_ID = "downtime-state-v2-envelope";
 const PROCESSABLE_SLOT_STATUSES = new Set(["approved", "blocked"]);
+const DOWNTIME_PROCESSOR_LEASE_MS = 30_000;
+let downtimeProcessorLeaseCounter = 0;
 
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -1739,6 +1741,23 @@ function buildDowntimeOperationId(transitionId, slotId) {
   return `downtime:${transitionId}:${slotId}`;
 }
 
+function buildDowntimeProcessorLeaseId(transitionId, userId) {
+  downtimeProcessorLeaseCounter += 1;
+  return `${transitionId}:${userId || "unknown"}:${Date.now()}:${downtimeProcessorLeaseCounter}`;
+}
+
+function getDowntimeProcessorLeaseExpiresAt(result) {
+  const source = asObject(result);
+  const explicitExpiry = Number(source.processorLeaseExpiresAt);
+  if (Number.isFinite(explicitExpiry) && explicitExpiry > 0) {
+    return explicitExpiry;
+  }
+  const updatedAt = Number(source.updatedAt);
+  return Number.isFinite(updatedAt) && updatedAt > 0
+    ? updatedAt + DOWNTIME_PROCESSOR_LEASE_MS
+    : 0;
+}
+
 function findTransitionJournalEntry(state, isoDate, transitionId) {
   return state.transitionJournal.find((entry) => (
     entry.isoDate === isoDate && entry.transitionId === transitionId
@@ -2286,6 +2305,7 @@ export class DowntimeService {
     title = "",
     description = "",
     weeks = 1,
+    craftProject = null,
     targetActionSelections = [],
     submittedByUserId = ""
   } = {}) {
@@ -2301,6 +2321,9 @@ export class DowntimeService {
     const safeTitle = cleanString(title) || action.label;
     const userId = cleanId(submittedByUserId) || cleanId(getCurrentUser()?.id);
     const actionSelections = normalizeTargetActionSelections(targetActionSelections);
+    const craftPayload = Object.keys(asObject(craftProject)).length
+      ? clone(asObject(craftProject))
+      : null;
 
     return this.#writeGroupState(context, (state) => {
       const balance = normalizeWorkdayBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance());
@@ -2329,6 +2352,10 @@ export class DowntimeService {
         submittedByUserId: userId,
         reviewedByUserId: ""
       };
+      if (craftPayload) {
+        request.craftProject = clone(craftPayload);
+        request.ownedWorkshop = craftPayload.ownedWorkshop === true;
+      }
       applyRequestTemplateMetadata(request, action, resolvedActionId);
       refreshMappedDowntimeResults(request);
       state.scheduleSlots = allocateRequestSlots({
@@ -2354,6 +2381,7 @@ export class DowntimeService {
     title = "",
     description = "",
     weeks = 1,
+    craftProject = null,
     targetActionSelections = []
   } = {}) {
     const context = cleanId(groupId)
@@ -2368,6 +2396,10 @@ export class DowntimeService {
     const resolvedActionId = action.id;
     const safeTitle = cleanString(title) || action.label;
     const actionSelections = normalizeTargetActionSelections(targetActionSelections);
+    const craftPayload = Object.keys(asObject(craftProject)).length
+      ? clone(asObject(craftProject))
+      : null;
+    const ownedWorkshop = craftPayload?.ownedWorkshop === true;
 
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
@@ -2414,7 +2446,7 @@ export class DowntimeService {
         actorId: actor.id,
         requestId: request.id,
         workdays: Math.max(0, workdays - retainedWorkdays),
-        ownedWorkshop: request.ownedWorkshop === true
+        ownedWorkshop
       });
       balance.availableWorkdays -= workdayDelta;
       balance.reservedWorkdays += workdayDelta;
@@ -2430,8 +2462,87 @@ export class DowntimeService {
       request.result = "";
       request.reviewedByUserId = "";
       request.updatedAt = Date.now();
+      if (craftPayload) {
+        request.craftProject = clone(craftPayload);
+        request.ownedWorkshop = ownedWorkshop;
+      }
+      else {
+        delete request.craftProject;
+        delete request.craftProjectId;
+        delete request.craftApprovalMutationId;
+        request.ownedWorkshop = false;
+      }
       applyRequestTemplateMetadata(request, action, resolvedActionId);
       refreshMappedDowntimeResults(request);
+      return clone(request);
+    });
+  }
+
+  async linkCraftProject(requestId, {
+    groupId = "",
+    projectId = "",
+    hoursPerDay = 8,
+    ownedWorkshop = false,
+    mutationId = ""
+  } = {}) {
+    const context = cleanId(groupId)
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(cleanId(groupId))
+      : this.#resolveContext();
+    this.#assertCanManage(context);
+    const safeRequestId = cleanId(requestId);
+    const safeProjectId = cleanId(projectId);
+    const safeMutationId = cleanId(mutationId);
+    const safeHoursPerDay = Number(hoursPerDay);
+    if (!safeRequestId || !safeProjectId || !safeMutationId) {
+      throw new Error("Craft request linking requires stable request, project, and mutation IDs.");
+    }
+    if (!Number.isInteger(safeHoursPerDay) || safeHoursPerDay < 8 || safeHoursPerDay > 16) {
+      throw new Error("Craft request linking requires whole work hours from 8 to 16.");
+    }
+
+    return this.#writeGroupState(context, (state) => {
+      const request = this.#findRequest(state, safeRequestId);
+      this.#assertRequestAccountingAvailable(state, request.id);
+      const existingProjectId = cleanId(request.craftProjectId);
+      if (existingProjectId) {
+        if (
+          existingProjectId === safeProjectId
+          && cleanId(request.craftApprovalMutationId) === safeMutationId
+        ) {
+          return clone(request);
+        }
+        throw new Error("Downtime craft request is already linked to another project.");
+      }
+      if (!asObject(request.craftProject).outputs) {
+        throw new Error("Downtime request does not contain a craft project.");
+      }
+      if (!["pending", "approved"].includes(request.status)) {
+        throw new Error(`Downtime craft request cannot be approved from status '${request.status}'.`);
+      }
+
+      const slots = state.scheduleSlots.filter((slot) => (
+        slot.requestId === request.id && slot.status !== "processed"
+      ));
+      if (!slots.length) {
+        throw new Error("Downtime craft request has no reserved workdays.");
+      }
+      for (const slot of slots) {
+        if (!["pending", "approved", "blocked"].includes(slot.status)) {
+          throw new Error("Downtime craft request contains an unavailable workday.");
+        }
+        slot.status = "approved";
+        slot.projectId = safeProjectId;
+        slot.activityId = "craft";
+        slot.hours = safeHoursPerDay;
+        slot.blockReason = null;
+        slot.processedTransitionId = null;
+      }
+      request.status = "approved";
+      request.craftProjectId = safeProjectId;
+      request.craftApprovalMutationId = safeMutationId;
+      request.ownedWorkshop = ownedWorkshop === true;
+      request.reviewedByUserId = cleanId(getCurrentUser()?.id);
+      request.updatedAt = Date.now();
       return clone(request);
     });
   }
@@ -2553,6 +2664,13 @@ export class DowntimeService {
     return this.#writeGroupState(context, (state) => {
       const request = this.#findRequest(state, safeRequestId);
       this.#assertRequestAccountingAvailable(state, request.id);
+      if (
+        nextStatus === "approved"
+        && Array.isArray(asObject(request.craftProject).outputs)
+        && !cleanId(request.craftProjectId)
+      ) {
+        throw new Error("Craft project approval must create and link its project first.");
+      }
       this.#assertRequestIsMutable(request);
 
       const effectiveStatus = nextStatus === "approved" && hasCompletedRollTargets(request)
@@ -2628,8 +2746,20 @@ export class DowntimeService {
     });
   }
 
-  async processScheduledDate(isoDate, { transitionId, activityProcessor } = {}) {
-    const context = this.#resolveContext();
+  async processScheduledDate(isoDate, {
+    transitionId,
+    activityProcessor,
+    groupId = "",
+    guard = null,
+    assertExecutionContext = null
+  } = {}) {
+    const requestedGroupId = cleanId(groupId);
+    const context = requestedGroupId
+      ? this.moduleApi?.groupContextService?.resolveForGroup?.(requestedGroupId)
+      : this.#resolveContext();
+    if (!context?.groupId || (requestedGroupId && cleanId(context.groupId) !== requestedGroupId)) {
+      throw new Error("Downtime processing requires its captured group context.");
+    }
     this.#assertCanManage(context);
     const safeIsoDate = cleanString(isoDate);
     nearestMonday(safeIsoDate);
@@ -2637,11 +2767,26 @@ export class DowntimeService {
     if (!safeTransitionId) {
       throw new Error("Downtime processing requires a transition ID.");
     }
+    const executionUserId = cleanId(getCurrentUser()?.id);
+    const processorLeaseId = buildDowntimeProcessorLeaseId(safeTransitionId, executionUserId);
+    const executionGuard = typeof guard === "function"
+      ? guard
+      : typeof assertExecutionContext === "function"
+        ? assertExecutionContext
+        : null;
+    const executionContext = Object.freeze({
+      groupId: cleanId(context.groupId),
+      transitionId: safeTransitionId,
+      assertExecutionContext: executionGuard,
+      guard: executionGuard
+    });
     const processor = typeof activityProcessor === "function"
       ? activityProcessor
       : async () => ({ result: null });
 
+    executionGuard?.();
     const preparation = await this.#writeGroupState(context, (state) => {
+      const claimedSlotIds = [];
       let journal = findTransitionJournalEntry(state, safeIsoDate, safeTransitionId);
       const now = Date.now();
       if (!journal) {
@@ -2677,6 +2822,12 @@ export class DowntimeService {
         if (!isTerminalTransitionResult(journal.resultsBySlotId[slotId])) {
           const slot = state.scheduleSlots.find((entry) => entry.id === slotId);
           const previousResult = asObject(journal.resultsBySlotId[slotId]);
+          if (
+            cleanId(previousResult.status) === "processing"
+            && now < getDowntimeProcessorLeaseExpiresAt(previousResult)
+          ) {
+            continue;
+          }
           const competingClaim = findNonterminalSlotClaim(state, slotId, {
             excludeTransitionId: safeTransitionId
           });
@@ -2726,19 +2877,25 @@ export class DowntimeService {
             ...buildSlotClaimMetadata(slot),
             status: "processing",
             operationId: buildDowntimeOperationId(safeTransitionId, slotId),
+            processorLeaseId,
+            processorOwnerUserId: executionUserId,
+            processorLeaseExpiresAt: now + DOWNTIME_PROCESSOR_LEASE_MS,
             updatedAt: now
           };
+          claimedSlotIds.push(slotId);
         }
       }
 
       return {
+        claimedSlotIds,
         slotIds: clone(journal.slotIds),
         slotsById: Object.fromEntries(state.scheduleSlots
           .filter((slot) => journal.slotIds.includes(slot.id))
           .map((slot) => [slot.id, clone(slot)])),
         resultsBySlotId: clone(journal.resultsBySlotId)
       };
-    });
+    }, { guard: executionGuard });
+    executionGuard?.();
 
     const processed = [];
     const blocked = [];
@@ -2753,19 +2910,31 @@ export class DowntimeService {
       }
 
       const operationId = buildDowntimeOperationId(safeTransitionId, slotId);
-      if (cleanId(preparation.resultsBySlotId[slotId]?.status) !== "processing") {
-        reconciliation.push({ slot: clone(slotSnapshot), operationId });
+      const preparedResult = asObject(preparation.resultsBySlotId[slotId]);
+      if (
+        cleanId(preparedResult.status) !== "processing"
+        || !preparation.claimedSlotIds.includes(slotId)
+        || cleanId(preparedResult.processorLeaseId) !== processorLeaseId
+      ) {
+        reconciliation.push({
+          slot: clone(slotSnapshot),
+          operationId,
+          reason: cleanId(preparedResult.status) === "processing"
+            ? "Downtime processor is already running under a durable lease."
+            : "Downtime slot could not be claimed for processing."
+        });
         continue;
       }
       let classification = "reconciliation-required";
       let outcome = null;
       let reconciliationReason = "Downtime processor returned an ambiguous result.";
       try {
-        const rawOutcome = await processor(clone(slotSnapshot), {
+        executionGuard?.();
+        const rawOutcome = await processor(clone(slotSnapshot), Object.freeze({
+          ...executionContext,
           isoDate: safeIsoDate,
-          transitionId: safeTransitionId,
           operationId
-        });
+        }));
         if (rawOutcome && typeof rawOutcome === "object" && !Array.isArray(rawOutcome)) {
           outcome = clone(rawOutcome);
           const explicitBlocked = outcome.blocked === true || cleanId(outcome.status) === "blocked";
@@ -2783,152 +2952,212 @@ export class DowntimeService {
       catch (error) {
         reconciliationReason = cleanString(error?.message) || "Downtime activity processor failed.";
       }
-
-      const finalized = await this.#writeGroupState(context, (state) => {
-        const journal = findTransitionJournalEntry(state, safeIsoDate, safeTransitionId);
-        if (!journal || !journal.slotIds.includes(slotId)) {
-          throw new Error("Downtime transition journal is unavailable for finalization.");
-        }
-        if (isTerminalTransitionResult(journal.resultsBySlotId[slotId])) {
-          return { kind: "skipped", slot: clone(state.scheduleSlots.find((slot) => slot.id === slotId) ?? slotSnapshot) };
-        }
-
-        const now = Date.now();
-        const slot = state.scheduleSlots.find((entry) => entry.id === slotId);
-        const claimResult = asObject(journal.resultsBySlotId[slotId]);
-        const claimedActorId = cleanId(claimResult.claimedActorId);
-        const claimedRequestId = cleanId(claimResult.claimedRequestId);
-        const claimedStatus = cleanId(claimResult.claimedStatus);
-        const claimedRequest = state.requests.find((entry) => entry.id === claimedRequestId);
-        if (classification !== "reconciliation-required") {
-          if (!slot) {
-            classification = "reconciliation-required";
-            reconciliationReason = "Snapshotted downtime slot is missing.";
-          }
-          else if (slot.processingTransitionId !== safeTransitionId) {
-            classification = "reconciliation-required";
-            reconciliationReason = "Downtime slot is no longer claimed by this transition.";
-          }
-          else if (!PROCESSABLE_SLOT_STATUSES.has(claimedStatus) || slot.status !== claimedStatus) {
-            classification = "reconciliation-required";
-            reconciliationReason = "Downtime slot status changed after the transition claim.";
-          }
-          else if (
-            !claimedRequestId
-            || slot.requestId !== claimedRequestId
-            || !claimedRequest
-            || !OPEN_RESERVED_STATUSES.has(claimedRequest.status)
-          ) {
-            classification = "reconciliation-required";
-            reconciliationReason = "Downtime slot request changed after the transition claim.";
-          }
-          else if (!claimedActorId || slot.actorId !== claimedActorId || claimedRequest.actorId !== claimedActorId) {
-            classification = "reconciliation-required";
-            reconciliationReason = "Downtime slot actor changed after the transition claim.";
-          }
-        }
-
-        if (classification === "reconciliation-required") {
-          journal.resultsBySlotId[slotId] = {
-            ...clone(claimResult),
-            status: "reconciliation-required",
-            operationId,
-            reason: reconciliationReason,
-            ...(outcome == null ? {} : { activityResult: clone(outcome) }),
-            updatedAt: now
-          };
-          journal.status = "reconciliation-required";
-          journal.updatedAt = now;
-          return { kind: "reconciliation-required", slot: clone(slot ?? slotSnapshot), operationId };
-        }
-
-        const logEntry = {
-          id: `downtime-work-${slot.id}-${safeTransitionId}`,
-          slotId: slot.id,
-          actorId: slot.actorId,
+      try {
+        executionGuard?.();
+      }
+      catch (error) {
+        await this.#releaseSettledProcessorLease(context, {
           isoDate: safeIsoDate,
-          requestId: slot.requestId,
-          projectId: cleanId(outcome?.projectId) || slot.projectId || null,
-          result: null,
           transitionId: safeTransitionId,
-          operationId,
-          createdAt: now
-        };
+          slotId,
+          processorLeaseId,
+          processorOwnerUserId: executionUserId
+        }).catch(() => undefined);
+        throw error;
+      }
 
-        if (classification === "blocked") {
-          slot.status = "blocked";
-          slot.blockReason = cleanString(outcome?.blockReason) || "Downtime activity blocked.";
+      let finalized;
+      try {
+        finalized = await this.#writeGroupState(context, (state) => {
+          const journal = findTransitionJournalEntry(state, safeIsoDate, safeTransitionId);
+          if (!journal || !journal.slotIds.includes(slotId)) {
+            throw new Error("Downtime transition journal is unavailable for finalization.");
+          }
+          if (isTerminalTransitionResult(journal.resultsBySlotId[slotId])) {
+            return { kind: "skipped", slot: clone(state.scheduleSlots.find((slot) => slot.id === slotId) ?? slotSnapshot) };
+          }
+
+          const now = Date.now();
+          const slot = state.scheduleSlots.find((entry) => entry.id === slotId);
+          const claimResult = asObject(journal.resultsBySlotId[slotId]);
+          const claimedActorId = cleanId(claimResult.claimedActorId);
+          const claimedRequestId = cleanId(claimResult.claimedRequestId);
+          const claimedStatus = cleanId(claimResult.claimedStatus);
+          const claimedRequest = state.requests.find((entry) => entry.id === claimedRequestId);
+          if (classification !== "reconciliation-required") {
+            if (!slot) {
+              classification = "reconciliation-required";
+              reconciliationReason = "Snapshotted downtime slot is missing.";
+            }
+            else if (slot.processingTransitionId !== safeTransitionId) {
+              classification = "reconciliation-required";
+              reconciliationReason = "Downtime slot is no longer claimed by this transition.";
+            }
+            else if (
+              cleanId(claimResult.processorLeaseId) !== processorLeaseId
+              || cleanId(claimResult.processorOwnerUserId) !== executionUserId
+            ) {
+              classification = "reconciliation-required";
+              reconciliationReason = "Downtime processor lease changed before finalization.";
+            }
+            else if (!PROCESSABLE_SLOT_STATUSES.has(claimedStatus) || slot.status !== claimedStatus) {
+              classification = "reconciliation-required";
+              reconciliationReason = "Downtime slot status changed after the transition claim.";
+            }
+            else if (
+              !claimedRequestId
+              || slot.requestId !== claimedRequestId
+              || !claimedRequest
+              || !OPEN_RESERVED_STATUSES.has(claimedRequest.status)
+            ) {
+              classification = "reconciliation-required";
+              reconciliationReason = "Downtime slot request changed after the transition claim.";
+            }
+            else if (!claimedActorId || slot.actorId !== claimedActorId || claimedRequest.actorId !== claimedActorId) {
+              classification = "reconciliation-required";
+              reconciliationReason = "Downtime slot actor changed after the transition claim.";
+            }
+          }
+
+          if (classification === "reconciliation-required") {
+            journal.resultsBySlotId[slotId] = {
+              ...clone(claimResult),
+              status: "reconciliation-required",
+              operationId,
+              reason: reconciliationReason,
+              ...(outcome == null ? {} : { activityResult: clone(outcome) }),
+              updatedAt: now
+            };
+            journal.status = "reconciliation-required";
+            journal.updatedAt = now;
+            return { kind: "reconciliation-required", slot: clone(slot ?? slotSnapshot), operationId };
+          }
+
+          const logEntry = {
+            id: `downtime-work-${slot.id}-${safeTransitionId}`,
+            slotId: slot.id,
+            actorId: slot.actorId,
+            isoDate: safeIsoDate,
+            requestId: slot.requestId,
+            projectId: cleanId(outcome?.projectId) || slot.projectId || null,
+            result: null,
+            transitionId: safeTransitionId,
+            operationId,
+            createdAt: now
+          };
+
+          if (classification === "blocked") {
+            slot.status = "blocked";
+            slot.blockReason = cleanString(outcome?.blockReason) || "Downtime activity blocked.";
+            slot.processedTransitionId = safeTransitionId;
+            slot.processingTransitionId = null;
+            logEntry.result = {
+              status: "blocked",
+              blockReason: slot.blockReason,
+              ...(outcome?.result === undefined ? {} : { activityResult: clone(outcome.result) })
+            };
+            if (!state.workLog.some((entry) => entry.id === logEntry.id)) {
+              state.workLog.push(logEntry);
+            }
+            journal.resultsBySlotId[slotId] = {
+              ...clone(claimResult),
+              status: "blocked",
+              operationId,
+              blockReason: slot.blockReason,
+              updatedAt: now
+            };
+            journal.updatedAt = now;
+            return { kind: "blocked", slot: clone(slot) };
+          }
+
+          const balance = normalizeWorkdayBalance(state.balancesByActorId[slot.actorId] ?? buildDefaultBalance());
+          if (balance.reservedWorkdays < 1) {
+            journal.resultsBySlotId[slotId] = {
+              ...clone(claimResult),
+              status: "reconciliation-required",
+              operationId,
+              reason: "Reserved downtime workdays are lower than the scheduled cost.",
+              activityResult: clone(outcome),
+              updatedAt: now
+            };
+            journal.status = "reconciliation-required";
+            journal.updatedAt = now;
+            return { kind: "reconciliation-required", slot: clone(slot), operationId };
+          }
+
+          balance.reservedWorkdays -= 1;
+          balance.spentWorkdays += 1;
+          state.balancesByActorId[slot.actorId] = balance;
+          slot.status = "processed";
+          slot.projectId = cleanId(outcome?.projectId) || slot.projectId || null;
+          slot.activityId = cleanId(outcome?.activityId) || slot.activityId || null;
+          slot.hours = toFiniteNumber(outcome?.hours, slot.hours);
+          slot.blockReason = null;
           slot.processedTransitionId = safeTransitionId;
           slot.processingTransitionId = null;
+          logEntry.projectId = slot.projectId;
           logEntry.result = {
-            status: "blocked",
-            blockReason: slot.blockReason,
-            ...(outcome?.result === undefined ? {} : { activityResult: clone(outcome.result) })
+            status: "processed",
+            activityResult: outcome?.result === undefined ? null : clone(outcome.result)
           };
           if (!state.workLog.some((entry) => entry.id === logEntry.id)) {
             state.workLog.push(logEntry);
           }
           journal.resultsBySlotId[slotId] = {
             ...clone(claimResult),
-            status: "blocked",
+            status: "processed",
             operationId,
-            blockReason: slot.blockReason,
             updatedAt: now
           };
           journal.updatedAt = now;
-          return { kind: "blocked", slot: clone(slot) };
-        }
 
-        const balance = normalizeWorkdayBalance(state.balancesByActorId[slot.actorId] ?? buildDefaultBalance());
-        if (balance.reservedWorkdays < 1) {
-          journal.resultsBySlotId[slotId] = {
-            ...clone(claimResult),
-            status: "reconciliation-required",
-            operationId,
-            reason: "Reserved downtime workdays are lower than the scheduled cost.",
-            activityResult: clone(outcome),
-            updatedAt: now
-          };
-          journal.status = "reconciliation-required";
-          journal.updatedAt = now;
-          return { kind: "reconciliation-required", slot: clone(slot), operationId };
-        }
+          const request = claimedRequest;
+          if (request && !state.scheduleSlots.some((entry) => (
+            entry.requestId === request.id && entry.status !== "processed"
+          ))) {
+            request.status = "completed";
+            request.updatedAt = now;
+          }
+          return { kind: "processed", slot: clone(slot) };
+        }, { guard: executionGuard });
+      }
+      catch (error) {
+        try {
+          executionGuard?.();
+          await this.#writeGroupState(context, (state) => {
+            const journal = findTransitionJournalEntry(state, safeIsoDate, safeTransitionId);
+            const currentResult = asObject(journal?.resultsBySlotId?.[slotId]);
+            if (
+              !journal
+              || isTerminalTransitionResult(currentResult)
+              || cleanId(currentResult.status) !== "processing"
+              || cleanId(currentResult.processorLeaseId) !== processorLeaseId
+              || cleanId(currentResult.processorOwnerUserId) !== executionUserId
+            ) {
+              return false;
+            }
 
-        balance.reservedWorkdays -= 1;
-        balance.spentWorkdays += 1;
-        state.balancesByActorId[slot.actorId] = balance;
-        slot.status = "processed";
-        slot.projectId = cleanId(outcome?.projectId) || slot.projectId || null;
-        slot.activityId = cleanId(outcome?.activityId) || slot.activityId || null;
-        slot.hours = toFiniteNumber(outcome?.hours, slot.hours);
-        slot.blockReason = null;
-        slot.processedTransitionId = safeTransitionId;
-        slot.processingTransitionId = null;
-        logEntry.projectId = slot.projectId;
-        logEntry.result = {
-          status: "processed",
-          activityResult: outcome?.result === undefined ? null : clone(outcome.result)
-        };
-        if (!state.workLog.some((entry) => entry.id === logEntry.id)) {
-          state.workLog.push(logEntry);
+            const retryableResult = {
+              ...clone(currentResult),
+              status: "reconciliation-required",
+              reason: "Downtime finalization was not durably confirmed and may be retried.",
+              updatedAt: Date.now()
+            };
+            delete retryableResult.processorLeaseId;
+            delete retryableResult.processorOwnerUserId;
+            delete retryableResult.processorLeaseExpiresAt;
+            journal.resultsBySlotId[slotId] = retryableResult;
+            journal.status = "reconciliation-required";
+            journal.updatedAt = Date.now();
+            return true;
+          }, { guard: executionGuard });
         }
-        journal.resultsBySlotId[slotId] = {
-          ...clone(claimResult),
-          status: "processed",
-          operationId,
-          updatedAt: now
-        };
-        journal.updatedAt = now;
-
-        const request = claimedRequest;
-        if (request && !state.scheduleSlots.some((entry) => (
-          entry.requestId === request.id && entry.status !== "processed"
-        ))) {
-          request.status = "completed";
-          request.updatedAt = now;
+        catch {
+          // Preserve the original failure; an unreleased durable lease prevents duplicate processing.
         }
-        return { kind: "processed", slot: clone(slot) };
-      });
+        throw error;
+      }
+      executionGuard?.();
 
       if (finalized.kind === "processed") {
         processed.push(finalized.slot);
@@ -2944,6 +3173,7 @@ export class DowntimeService {
       }
     }
 
+    executionGuard?.();
     const journalStatus = await this.#writeGroupState(context, (state) => {
       const journal = findTransitionJournalEntry(state, safeIsoDate, safeTransitionId);
       if (!journal) {
@@ -2953,7 +3183,7 @@ export class DowntimeService {
       journal.status = completed ? "completed" : "reconciliation-required";
       journal.updatedAt = Date.now();
       return journal.status;
-    });
+    }, { guard: executionGuard });
 
     return {
       isoDate: safeIsoDate,
@@ -2964,6 +3194,40 @@ export class DowntimeService {
       reconciliation,
       skipped
     };
+  }
+
+  async #releaseSettledProcessorLease(context, {
+    isoDate,
+    transitionId,
+    slotId,
+    processorLeaseId,
+    processorOwnerUserId
+  }) {
+    return this.#writeGroupState(context, (state) => {
+      const journal = findTransitionJournalEntry(state, isoDate, transitionId);
+      const currentResult = asObject(journal?.resultsBySlotId?.[slotId]);
+      if (
+        !journal
+        || cleanId(currentResult.status) !== "processing"
+        || cleanId(currentResult.processorLeaseId) !== cleanId(processorLeaseId)
+        || cleanId(currentResult.processorOwnerUserId) !== cleanId(processorOwnerUserId)
+      ) {
+        return false;
+      }
+      const retryableResult = {
+        ...clone(currentResult),
+        status: "reconciliation-required",
+        reason: "Downtime processor lost authority after returning; retry with the stable operation ID.",
+        updatedAt: Date.now()
+      };
+      delete retryableResult.processorLeaseId;
+      delete retryableResult.processorOwnerUserId;
+      delete retryableResult.processorLeaseExpiresAt;
+      journal.resultsBySlotId[slotId] = retryableResult;
+      journal.status = "reconciliation-required";
+      journal.updatedAt = Date.now();
+      return true;
+    });
   }
 
   async setRequestChecks(requestId, checks = []) {
@@ -3119,15 +3383,20 @@ export class DowntimeService {
     return weeks;
   }
 
-  async #writeGroupState(context, mutator) {
+  async #writeGroupState(context, mutator, { guard = null } = {}) {
     const groupContextService = this.moduleApi?.groupContextService;
+    const executionGuard = typeof guard === "function" ? guard : null;
+    const capturedGroupId = cleanId(context?.groupId);
     const applyMutation = async (groupState) => {
-      groupState.groupActorId = context.groupId;
+      executionGuard?.();
+      groupState.groupActorId = capturedGroupId;
       const state = normalizeDowntimeStateV2(
         groupState.downtimeState,
         this.#resolveCurrentIsoDate()
       );
+      executionGuard?.();
       const result = await mutator(state);
+      executionGuard?.();
       groupState.downtimeState = buildPersistedDowntimeStateV2(state);
       return result;
     };
@@ -3135,7 +3404,8 @@ export class DowntimeService {
     if (typeof groupContextService?.mutateGroupState !== "function") {
       throw new Error("Downtime writes require groupContextService.mutateGroupState.");
     }
-    return groupContextService.mutateGroupState(context.groupId, applyMutation);
+    executionGuard?.();
+    return groupContextService.mutateGroupState(capturedGroupId, applyMutation);
   }
 
   #findRequest(state, requestId) {

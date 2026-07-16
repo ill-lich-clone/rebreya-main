@@ -4,7 +4,7 @@ import {
   buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
   getItemHeldHands
-} from "../integrations/held-items.js?v=1.4.93-npc-held-natural";
+} from "../integrations/held-items.js?v=1.4.95-npc-held-natural";
 
 const FIREARM_WEAPON_TYPES = new Set(["firearmPrimitive", "firearmAdvanced"]);
 const WEAPON_TYPE_SIMPLE_PREFIX = "simple";

@@ -9,6 +9,7 @@ globalThis.Actor = class TestActorDocument {};
 globalThis.Item = class TestItemDocument {};
 
 const {
+  captureInventoryTransferIdentity,
   InventoryService,
   itemsCanRepresentSameTransfer
 } = await import(`../scripts/data/inventory-service.js?mutation-recovery=${Date.now()}`);
@@ -65,6 +66,232 @@ test("inventory transfer identity keeps durability-homogeneous stacks separate",
   assert.equal(itemsCanRepresentSameTransfer(makeData(durability), makeData(null)), false);
 });
 
+test("broken lootgen grants persist full durability exactly once and do not merge with intact gear", async () => {
+  const steel = { id: "steel", name: "Сталь" };
+  const gear = {
+    id: "steel-sword",
+    name: "Стальной меч",
+    equipmentType: "Оружие",
+    predominantMaterialId: steel.id,
+    predominantMaterialName: steel.name,
+    weight: 3,
+    priceGoldEquivalent: 15
+  };
+  const model = {
+    gear: [gear],
+    gearById: new Map([[gear.id, gear]]),
+    materials: [steel],
+    materialById: new Map([[steel.id, steel]]),
+    materialByGoodId: new Map()
+  };
+  const sourceData = {
+    name: gear.name,
+    type: "weapon",
+    system: {
+      quantity: 1,
+      equipped: false,
+      damage: { base: { number: 1, denomination: 8, bonus: "" } }
+    },
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        sourceType: "gear",
+        sourceId: gear.id,
+        gearId: gear.id
+      }
+    }
+  };
+  const sourceDocument = {
+    id: "steel-sword-doc",
+    uuid: "Compendium.world.rebreya-gear.Item.steel-sword-doc",
+    toObject: () => clone({ ...sourceData, _id: "steel-sword-doc" })
+  };
+  const gearPack = {
+    collection: "world.rebreya-gear",
+    async getIndex() {
+      return [{ _id: sourceDocument.id, flags: clone(sourceData.flags) }];
+    },
+    async getDocument(documentId) {
+      return documentId === sourceDocument.id ? sourceDocument : null;
+    }
+  };
+  const group = createActor({ id: "loot-group", type: "group", managed: true });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    packs: new Map([["world.rebreya-gear", gearPack]]),
+    moduleApi: { getModel: async () => model }
+  });
+
+  try {
+    const brokenRow = {
+      sourceType: "gear",
+      sourceId: gear.id,
+      quantity: 1,
+      isBroken: true
+    };
+    await fixture.service.addLootgenRowToInventoryOnce(brokenRow, "loot-broken-1");
+    await fixture.service.addLootgenRowToInventoryOnce(brokenRow, "loot-broken-1");
+
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(group.items.contents[0].type, "weapon");
+    assert.deepEqual(group.items.contents[0].system.damage, sourceData.system.damage);
+    assert.equal(group.items.contents[0].system.quantity, 1);
+    assert.equal(group.items.contents[0].flags[MODULE_ID].durability.state, "broken");
+    assert.equal(group.items.contents[0].flags[MODULE_ID].durability.breakStage, 1);
+    assert.equal(
+      group.items.contents[0].flags[MODULE_ID].durability.hp.value,
+      group.items.contents[0].flags[MODULE_ID].durability.hp.max
+    );
+
+    await fixture.service.addLootgenRowToInventoryOnce({
+      ...brokenRow,
+      isBroken: false
+    }, "loot-intact-1");
+
+    assert.equal(group.items.contents.length, 2);
+    await fixture.service.addLootgenRowToInventory({
+      ...brokenRow,
+      isBroken: false,
+      itemData: {
+        name: "Поддельный артефакт",
+        type: "weapon",
+        system: { rarity: "legendary", quantity: 1 },
+        flags: { [MODULE_ID]: { magical: true } }
+      }
+    });
+
+    assert.equal(group.items.contents.length, 2);
+    assert.equal(group.items.contents.every((item) => item.name === gear.name && item.type === "weapon"), true);
+    assert.equal(group.items.contents.some((item) => item.flags[MODULE_ID].magical === true), false);
+    const states = group.items.contents.map((item) => item.flags[MODULE_ID].durability?.state ?? "uninitialized");
+    assert.deepEqual(states.sort(), ["broken", "uninitialized"]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("calendar execution guard stops supply mutations before the next persistent side effect", async () => {
+  let authority = true;
+  let foodUpdates = 0;
+  let waterUpdates = 0;
+  const food = createItem({
+    id: "food",
+    name: "Еда",
+    quantity: 5,
+    flags: { [MODULE_ID]: { resourceKey: "food", sourceType: "supply" } },
+    onUpdate: () => {
+      foodUpdates += 1;
+      authority = false;
+    }
+  });
+  const water = createItem({
+    id: "water",
+    name: "Галлоны воды",
+    quantity: 5,
+    flags: { [MODULE_ID]: { resourceKey: "water", sourceType: "supply" } },
+    onUpdate: () => {
+      waterUpdates += 1;
+    }
+  });
+  const group = createActor({
+    id: "guard-group",
+    type: "group",
+    managed: true,
+    items: [food, water],
+    members: []
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    moduleApi: {
+      getModel: async () => ({ materials: [], materialById: new Map(), materialByGoodId: new Map(), gear: [], gearById: new Map() })
+    }
+  });
+  const guard = () => {
+    if (!authority) {
+      throw new Error("calendar execution context changed");
+    }
+  };
+
+  try {
+    await assert.rejects(
+      fixture.service.consumeSuppliesOneDay({ guard, assertExecutionContext: guard }),
+      /execution context changed/iu
+    );
+    assert.equal(foodUpdates, 1);
+    assert.equal(waterUpdates, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("calendar supply consumption stays pinned to its captured group", async () => {
+  const foodA = createItem({
+    id: "food-a",
+    name: "Еда",
+    quantity: 5,
+    flags: { [MODULE_ID]: { resourceKey: "food", sourceType: "supply" } }
+  });
+  const foodB = createItem({
+    id: "food-b",
+    name: "Еда",
+    quantity: 9,
+    flags: { [MODULE_ID]: { resourceKey: "food", sourceType: "supply" } }
+  });
+  const memberA = createActor({ id: "member-a", type: "character" });
+  const memberB = createActor({ id: "member-b", type: "character" });
+  const groupA = createActor({
+    id: "supply-group-a",
+    type: "group",
+    managed: true,
+    items: [foodA],
+    members: [{ actor: memberA }]
+  });
+  const groupB = createActor({
+    id: "supply-group-b",
+    type: "group",
+    managed: true,
+    items: [foodB],
+    members: [{ actor: memberB }]
+  });
+  const fixture = installFixture({
+    group: groupB,
+    actors: [groupA, groupB, memberA, memberB],
+    moduleApi: {
+      getModel: async () => ({
+        materials: [],
+        materialById: new Map(),
+        materialByGoodId: new Map(),
+        gear: [],
+        gearById: new Map()
+      })
+    },
+    partyState: {
+      members: {
+        [memberA.id]: { role: "member", foodPerDay: 1, waterGalPerDay: 0 },
+        [memberB.id]: { role: "member", foodPerDay: 1, waterGalPerDay: 0 }
+      }
+    }
+  });
+
+  try {
+    await fixture.service.consumeSuppliesOneDay({
+      groupId: groupA.id,
+      applyEnergy: false,
+      guard: () => true
+    });
+
+    assert.equal(foodA.system.quantity, 4);
+    assert.equal(foodB.system.quantity, 9);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 function setProperty(source, path, value) {
   const parts = String(path ?? "").split(".");
   let cursor = source;
@@ -98,10 +325,13 @@ function createItem({
   failUpdate = false,
   failDelete = false,
   throwAfterUpdateOnce = false,
-  onUpdate = null
+  throwAfterDeleteOnce = false,
+  onUpdate = null,
+  onDelete = null
 } = {}) {
   const item = new globalThis.Item();
   let updateAckLost = false;
+  let deleteAckLost = false;
   const itemSystem = system ? clone(system) : {
     quantity,
     price: clone(price),
@@ -143,6 +373,11 @@ function createItem({
       if (failDelete) throw new Error("source delete failed");
       const index = this.parent?.items?.contents?.indexOf(this) ?? -1;
       if (index >= 0) this.parent.items.contents.splice(index, 1);
+      onDelete?.(this);
+      if (throwAfterDeleteOnce && !deleteAckLost) {
+        deleteAckLost = true;
+        throw new Error("source delete acknowledgment lost");
+      }
       return this;
     },
     getFlag(scope, key) {
@@ -160,7 +395,9 @@ function createActor({
   currency = {},
   managed = false,
   members = [],
-  throwAfterCreateOnce = false
+  owners = [],
+  throwAfterCreateOnce = false,
+  onCreate = null
 } = {}) {
   const actor = new globalThis.Actor();
   let createAckLost = false;
@@ -184,6 +421,9 @@ function createActor({
     },
     getFlag(scope, key) {
       return this.flags?.[scope]?.[key];
+    },
+    testUserPermission(user, permission) {
+      return permission === "OWNER" && (user?.isGM === true || owners.includes(user?.id));
     },
     async update(patch) {
       applyPatch(this, patch);
@@ -209,6 +449,7 @@ function createActor({
         item.uuid = `${this.uuid}.Item.${item.id}`;
         this.items.contents.push(item);
       }
+      onCreate?.(created);
       if (throwAfterCreateOnce && !createAckLost) {
         createAckLost = true;
         throw new Error("item creation acknowledgment lost");
@@ -232,6 +473,8 @@ function installFixture({
   moduleApi: moduleApiOverrides = {},
   user = { id: "gm", isGM: true, active: true },
   activeGM = { id: "gm", isGM: true, active: true },
+  users = [],
+  hideDeletedUuidDocuments = false,
   beforeSettingsSet = null,
   afterSettingsSet = null
 }) {
@@ -252,9 +495,16 @@ function installFixture({
       flattenObject: (source) => clone(source)
     }
   };
+  const knownUsers = [...new Map([user, activeGM, ...users]
+    .filter(Boolean)
+    .map((entry) => [entry.id, entry])).values()];
   globalThis.game = {
     user,
-    users: { activeGM },
+    users: {
+      activeGM,
+      contents: knownUsers,
+      get: (userId) => knownUsers.find((entry) => entry.id === userId) ?? null
+    },
     actors: {
       contents: actors,
       get: (actorId) => actors.find((actor) => actor.id === actorId) ?? null
@@ -274,11 +524,33 @@ function installFixture({
       }
     }
   };
-  globalThis.fromUuid = async (uuid) => uuidDocuments.get(uuid) ?? null;
+  globalThis.fromUuid = async (uuid) => {
+    const document = uuidDocuments.get(uuid) ?? null;
+    if (hideDeletedUuidDocuments
+      && document instanceof globalThis.Item
+      && document.parent
+      && !document.parent.items?.contents?.includes(document)) {
+      return null;
+    }
+    return document;
+  };
   const moduleApi = {
     groupContextService: {
-      resolveForCurrentUser: () => ({ groupActor: group, canManage: true }),
-      resolveForGroup: () => ({ groupActor: group, canManage: true, members: group.system.members.map((row) => row.actor) })
+      resolveForCurrentUser: () => ({
+        groupActor: group,
+        groupId: group.id,
+        canManage: true,
+        members: group.system.members.map((row) => row.actor)
+      }),
+      resolveForGroup: (groupId) => {
+        const resolvedGroup = actors.find((actor) => actor.id === groupId && actor.type === "group") ?? group;
+        return {
+          groupActor: resolvedGroup,
+          groupId: resolvedGroup.id,
+          canManage: true,
+          members: resolvedGroup.system.members.map((row) => row.actor)
+        };
+      }
     },
     ...moduleApiOverrides
   };
@@ -294,6 +566,271 @@ function installFixture({
     }
   };
 }
+
+function buildSourceDepletionPayload(sourceItem, targetItem, transferId) {
+  const quantity = sourceItem.system.quantity;
+  return {
+    transferId,
+    sourceItemUuid: sourceItem.uuid,
+    targetItemUuid: targetItem.uuid,
+    targetActorUuid: targetItem.parent.uuid,
+    expectedIdentity: captureInventoryTransferIdentity(sourceItem),
+    expectedQuantity: quantity,
+    targetReceipt: {
+      targetItemUuid: targetItem.uuid,
+      created: true,
+      beforeQuantity: 0,
+      afterQuantity: quantity,
+      delta: quantity
+    }
+  };
+}
+
+test("distributed source depletion requires a captured identity and quantity", async () => {
+  const gm = { id: "gm", isGM: true, active: true };
+  const player = { id: "player", isGM: false, active: true };
+  let deleteCalls = 0;
+  const source = createItem({
+    id: "captured-source",
+    name: "Captured source",
+    quantity: 1,
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "captured-source" } },
+    onDelete: () => { deleteCalls += 1; }
+  });
+  const target = createItem({
+    id: "captured-target",
+    name: source.name,
+    quantity: 1,
+    flags: clone(source.flags)
+  });
+  const hero = createActor({ id: "hero", items: [target], owners: [player.id] });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    items: [source],
+    members: [{ actor: hero }]
+  });
+  const uuidDocuments = new Map([[source.uuid, source], [target.uuid, target], [hero.uuid, hero]]);
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments,
+    user: gm,
+    activeGM: gm,
+    users: [player],
+    hideDeletedUuidDocuments: true
+  });
+  const payload = buildSourceDepletionPayload(source, target, "party-transfer:captured-required");
+  delete payload.expectedIdentity;
+
+  try {
+    await assert.rejects(
+      fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id }),
+      /captured identity|identity and quantity/iu
+    );
+    assert.equal(deleteCalls, 0);
+    assert.equal(group.items.contents.includes(source), true);
+    assert.deepEqual(fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL], {});
+
+    const malformedReceiptPayload = buildSourceDepletionPayload(
+      source,
+      target,
+      "party-transfer:captured-receipt-required"
+    );
+    delete malformedReceiptPayload.targetReceipt.beforeQuantity;
+    await assert.rejects(
+      fixture.service.handlePartyInventorySourceDepletionSocketRequest(
+        malformedReceiptPayload,
+        { senderId: player.id }
+      ),
+      /target receipt|captured identity and quantity receipt/iu
+    );
+    assert.equal(deleteCalls, 0);
+    assert.equal(group.items.contents.includes(source), true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("distributed source depletion observes a delete whose acknowledgment was lost", async () => {
+  const gm = { id: "gm", isGM: true, active: true };
+  const player = { id: "player", isGM: false, active: true };
+  let deleteCalls = 0;
+  const source = createItem({
+    id: "ack-source",
+    name: "ACK source",
+    quantity: 1,
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "ack-source" } },
+    throwAfterDeleteOnce: true,
+    onDelete: () => { deleteCalls += 1; }
+  });
+  const target = createItem({
+    id: "ack-target",
+    name: source.name,
+    quantity: 1,
+    flags: clone(source.flags)
+  });
+  const hero = createActor({ id: "hero", items: [target], owners: [player.id] });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    items: [source],
+    members: [{ actor: hero }]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments: new Map([[source.uuid, source], [target.uuid, target], [hero.uuid, hero]]),
+    user: gm,
+    activeGM: gm,
+    users: [player],
+    hideDeletedUuidDocuments: true
+  });
+  const payload = buildSourceDepletionPayload(source, target, "party-transfer:delete-ack-lost");
+
+  try {
+    const first = await fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id });
+    const retry = await fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id });
+
+    assert.deepEqual(retry, first);
+    assert.equal(deleteCalls, 1);
+    assert.equal(group.items.contents.includes(source), false);
+    const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+      .find((entry) => entry.id === payload.transferId);
+    assert.equal(record.terminal, true);
+    assert.equal(record.kind, "party-inventory-source-depletion");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("distributed source depletion survives source-deleted journal ACK loss", async () => {
+  const gm = { id: "gm", isGM: true, active: true };
+  const player = { id: "player", isGM: false, active: true };
+  let deleteCalls = 0;
+  let checkpointAckLost = false;
+  const source = createItem({
+    id: "journal-source",
+    name: "Journal source",
+    quantity: 1,
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "journal-source" } },
+    onDelete: () => { deleteCalls += 1; }
+  });
+  const target = createItem({
+    id: "journal-target",
+    name: source.name,
+    quantity: 1,
+    flags: clone(source.flags)
+  });
+  const hero = createActor({ id: "hero", items: [target], owners: [player.id] });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    items: [source],
+    members: [{ actor: hero }]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments: new Map([[source.uuid, source], [target.uuid, target], [hero.uuid, hero]]),
+    user: gm,
+    activeGM: gm,
+    users: [player],
+    hideDeletedUuidDocuments: true,
+    afterSettingsSet: ({ key, value }) => {
+      const phase = value?.records?.find((entry) => entry.id === "party-transfer:journal-ack-lost")?.phase;
+      if (key === SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL
+        && phase === "source-depleted"
+        && !checkpointAckLost) {
+        checkpointAckLost = true;
+        throw new Error("source-deleted journal acknowledgment lost");
+      }
+    }
+  });
+  const payload = buildSourceDepletionPayload(source, target, "party-transfer:journal-ack-lost");
+
+  try {
+    const first = await fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id });
+    const retry = await fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id });
+
+    assert.deepEqual(retry, first);
+    assert.equal(checkpointAckLost, true);
+    assert.equal(retry.handled, true);
+    assert.equal(deleteCalls, 1);
+    assert.equal(group.items.contents.includes(source), false);
+    const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+      .find((entry) => entry.id === payload.transferId);
+    assert.equal(record.terminal, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("a new active GM completes a prepared source deletion without a second effect", async () => {
+  const oldGm = { id: "old-gm", isGM: true, active: true };
+  const newGm = { id: "new-gm", isGM: true, active: true };
+  const player = { id: "player", isGM: false, active: true };
+  let deleteCalls = 0;
+  const source = createItem({
+    id: "failover-source",
+    name: "Failover source",
+    quantity: 1,
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "failover-source" } },
+    onDelete: () => {
+      deleteCalls += 1;
+      globalThis.game.users.activeGM = newGm;
+    }
+  });
+  const target = createItem({
+    id: "failover-target",
+    name: source.name,
+    quantity: 1,
+    flags: clone(source.flags)
+  });
+  const hero = createActor({ id: "hero", items: [target], owners: [player.id] });
+  const group = createActor({
+    id: "group",
+    type: "group",
+    managed: true,
+    items: [source],
+    members: [{ actor: hero }]
+  });
+  const fixture = installFixture({
+    group,
+    actors: [group, hero],
+    uuidDocuments: new Map([[source.uuid, source], [target.uuid, target], [hero.uuid, hero]]),
+    user: oldGm,
+    activeGM: oldGm,
+    users: [newGm, player],
+    hideDeletedUuidDocuments: true
+  });
+  const payload = buildSourceDepletionPayload(source, target, "party-transfer:gm-failover");
+
+  try {
+    await assert.rejects(
+      fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id }),
+      /active GM/iu
+    );
+    globalThis.game.user = newGm;
+    const retry = await fixture.service.handlePartyInventorySourceDepletionSocketRequest(payload, { senderId: player.id });
+
+    assert.equal(retry.handled, true);
+    assert.equal(deleteCalls, 1);
+    assert.equal(group.items.contents.includes(source), false);
+    const record = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+      .find((entry) => entry.id === payload.transferId);
+    assert.equal(record.terminal, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
 
 test("craft Once APIs require the active GM before touching durable or world state", async () => {
   const group = createActor({ id: "group", type: "group", managed: true });
@@ -357,6 +894,251 @@ test("craft Once APIs require an explicit nonempty stable mutation ID", async ()
     assert.deepEqual(fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL], {});
     assert.deepEqual(fixture.settingsWrites, []);
     assert.equal(group.items.contents.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("all craft Once APIs stay pinned to the captured group instead of the currently selected group", async () => {
+  const ironA = createItem({
+    id: "iron-a",
+    quantity: 5,
+    flags: { [MODULE_ID]: { sourceType: "material", sourceId: "iron", materialId: "iron" } }
+  });
+  const ironB = createItem({
+    id: "iron-b",
+    quantity: 50,
+    flags: { [MODULE_ID]: { sourceType: "material", sourceId: "iron", materialId: "iron" } }
+  });
+  const groupA = createActor({ id: "group-a", type: "group", managed: true, items: [ironA] });
+  const groupB = createActor({ id: "group-b", type: "group", managed: true, items: [ironB] });
+  const sourceData = {
+    _id: "gear-captured",
+    name: "Captured Gear",
+    type: "weapon",
+    system: { quantity: 1, equipped: false },
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        sourceType: "gear",
+        gearId: "captured-gear"
+      }
+    }
+  };
+  const sourceDocument = {
+    id: sourceData._id,
+    uuid: `Compendium.world.rebreya-gear.Item.${sourceData._id}`,
+    toObject: () => clone(sourceData)
+  };
+  const gearPack = {
+    collection: "world.rebreya-gear",
+    async getDocument(documentId) {
+      return documentId === sourceDocument.id ? sourceDocument : null;
+    }
+  };
+  const fixture = installFixture({
+    group: groupB,
+    actors: [groupA, groupB],
+    packs: new Map([["world.rebreya-gear", gearPack]])
+  });
+  const executionOptions = {
+    groupId: groupA.id,
+    guard: () => true,
+    assertExecutionContext: () => true
+  };
+
+  try {
+    await fixture.service.reserveCraftResourcesOnce({
+      projectId: "captured-project",
+      predominantMaterialId: "iron",
+      predominantMaterialLb: 1
+    }, "captured-reserve", executionOptions);
+    await fixture.service.spendCraftReservationOnce(
+      "captured-project",
+      { predominantMaterialLb: 0.25 },
+      "captured-spend",
+      executionOptions
+    );
+    await fixture.service.releaseCraftReservationOnce(
+      "captured-project",
+      { predominantMaterialId: "iron", predominantMaterialLb: 0.5 },
+      "captured-release",
+      executionOptions
+    );
+    await fixture.service.createCraftOutputsOnce([{
+      sourceType: "gear",
+      sourceId: "captured-gear",
+      sourceDocumentId: sourceDocument.id,
+      quantity: 1
+    }], "captured-output", executionOptions);
+
+    assert.equal(ironA.system.quantity, 4.5);
+    assert.equal(ironB.system.quantity, 50);
+    assert.equal(groupA.items.contents.filter((item) => item.name === sourceData.name).length, 1);
+    assert.equal(groupB.items.contents.filter((item) => item.name === sourceData.name).length, 0);
+    const records = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+      .filter((record) => record.id.startsWith("captured-"));
+    assert.equal(records.length, 4);
+    assert.equal(records.every((record) => record.groupId === groupA.id), true);
+    assert.equal(records.every((record) => record.actorId === groupA.id), true);
+
+    await assert.rejects(
+      fixture.service.reserveCraftResourcesOnce({
+        projectId: "captured-project",
+        predominantMaterialId: "iron",
+        predominantMaterialLb: 1
+      }, "captured-reserve", {
+        ...executionOptions,
+        groupId: groupB.id
+      }),
+      /group|actor|reconciliation/iu
+    );
+    assert.equal(ironB.system.quantity, 50);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("craft reservation retry observes an update completed after the old guard became stale", async () => {
+  let oldGuardCurrent = true;
+  let updateCalls = 0;
+  const iron = createItem({
+    id: "guarded-iron",
+    quantity: 5,
+    flags: { [MODULE_ID]: { sourceType: "material", sourceId: "iron", materialId: "iron" } },
+    onUpdate: () => {
+      updateCalls += 1;
+      oldGuardCurrent = false;
+    }
+  });
+  const group = createActor({ id: "guarded-group", type: "group", managed: true, items: [iron] });
+  const fixture = installFixture({ group, actors: [group] });
+  const request = {
+    projectId: "guarded-project",
+    predominantMaterialId: "iron",
+    predominantMaterialLb: 1
+  };
+  const oldGuard = () => {
+    if (!oldGuardCurrent) throw new Error("craft execution context changed");
+  };
+
+  try {
+    await assert.rejects(
+      fixture.service.reserveCraftResourcesOnce(request, "guarded-reserve", {
+        groupId: group.id,
+        guard: oldGuard,
+        assertExecutionContext: oldGuard
+      }),
+      /execution context changed/iu
+    );
+    assert.equal(iron.system.quantity, 4);
+    assert.equal(updateCalls, 1);
+    const prepared = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+      .find((record) => record.id === "guarded-reserve");
+    assert.equal(prepared.phase, "prepared");
+    assert.equal(prepared.terminal, false);
+
+    const result = await fixture.service.reserveCraftResourcesOnce(request, "guarded-reserve", {
+      groupId: group.id,
+      guard: () => true,
+      assertExecutionContext: () => true
+    });
+    assert.equal(result.length, 1);
+    assert.equal(iron.system.quantity, 4);
+    assert.equal(updateCalls, 1);
+    const committed = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+      .find((record) => record.id === "guarded-reserve");
+    assert.equal(committed.terminal, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("craft output retry adopts the item created while the old GM lost authority", async () => {
+  const oldGm = { id: "old-gm", isGM: true, active: true };
+  const newGm = { id: "new-gm", isGM: true, active: true };
+  let createCalls = 0;
+  const group = createActor({
+    id: "output-group",
+    type: "group",
+    managed: true,
+    onCreate: () => {
+      createCalls += 1;
+      globalThis.game.users.activeGM = newGm;
+    }
+  });
+  const sourceData = {
+    _id: "failover-gear-document",
+    name: "Failover Gear",
+    type: "weapon",
+    system: { quantity: 1, equipped: false },
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        sourceType: "gear",
+        gearId: "failover-gear"
+      }
+    }
+  };
+  const sourceDocument = {
+    id: sourceData._id,
+    uuid: `Compendium.world.rebreya-gear.Item.${sourceData._id}`,
+    toObject: () => clone(sourceData)
+  };
+  const fixture = installFixture({
+    group,
+    actors: [group],
+    user: oldGm,
+    activeGM: oldGm,
+    packs: new Map([["world.rebreya-gear", {
+      collection: "world.rebreya-gear",
+      async getDocument(documentId) {
+        return documentId === sourceDocument.id ? sourceDocument : null;
+      }
+    }]])
+  });
+  const outputs = [{
+    sourceType: "gear",
+    sourceId: "failover-gear",
+    sourceDocumentId: sourceDocument.id,
+    quantity: 1
+  }];
+  const oldGuard = () => {
+    if (globalThis.game.users.activeGM.id !== oldGm.id) {
+      throw new Error("craft execution authority changed");
+    }
+  };
+
+  try {
+    await assert.rejects(
+      fixture.service.createCraftOutputsOnce(outputs, "failover-output", {
+        groupId: group.id,
+        guard: oldGuard,
+        assertExecutionContext: oldGuard
+      }),
+      /active GM|execution authority changed/iu
+    );
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(createCalls, 1);
+    const prepared = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+      .find((record) => record.id === "failover-output");
+    assert.equal(prepared.phase, "prepared");
+
+    globalThis.game.user = newGm;
+    const result = await fixture.service.createCraftOutputsOnce(outputs, "failover-output", {
+      groupId: group.id,
+      guard: () => true,
+      assertExecutionContext: () => true
+    });
+    assert.equal(result.length, 1);
+    assert.equal(group.items.contents.length, 1);
+    assert.equal(createCalls, 1);
+    const committed = fixture.settingsStore[SETTINGS_KEYS.INVENTORY_MUTATION_JOURNAL].records
+      .find((record) => record.id === "failover-output");
+    assert.equal(committed.terminal, true);
   }
   finally {
     fixture.restore();

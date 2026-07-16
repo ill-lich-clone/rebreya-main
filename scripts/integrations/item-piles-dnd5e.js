@@ -1,6 +1,22 @@
 ﻿import { ITEM_PILES_MODULE_ID, MODULE_ID } from "../constants.js";
 
 const ITEM_PILES_DND5E_MODULE_ID = "itempilesdnd5e";
+const BASE_ITEM_SIMILARITIES = ["name", "type"];
+const REGISTERED_ITEM_PILES_APIS = new WeakSet();
+const REGISTERED_REPAIR_HOOK_TARGETS = new WeakSet();
+export const DURABILITY_ITEM_SIMILARITIES = [
+  `flags.${MODULE_ID}.durability.version`,
+  `flags.${MODULE_ID}.durability.eligible`,
+  `flags.${MODULE_ID}.durability.state`,
+  `flags.${MODULE_ID}.durability.breakStage`,
+  `flags.${MODULE_ID}.durability.materialProfile`,
+  `flags.${MODULE_ID}.durability.construction`,
+  `flags.${MODULE_ID}.durability.size`,
+  `flags.${MODULE_ID}.durability.hp.value`,
+  `flags.${MODULE_ID}.durability.hp.max`,
+  `flags.${MODULE_ID}.durability.ac`,
+  `flags.${MODULE_ID}.durability.damageThreshold`
+];
 
 const ITEM_PILES_SETTINGS = {
   ACTOR_CLASS_TYPE: "actorClassType",
@@ -108,42 +124,103 @@ async function ensureSetting(key, value, predicate) {
   return true;
 }
 
+export function buildItemSimilarityPaths(current = []) {
+  return [...new Set([
+    ...(Array.isArray(current) ? current : []),
+    ...BASE_ITEM_SIMILARITIES,
+    ...DURABILITY_ITEM_SIMILARITIES
+  ])];
+}
+
+async function ensureDurabilitySimilaritySetting() {
+  const currentSimilarities = getSettingValue(ITEM_PILES_SETTINGS.ITEM_SIMILARITIES);
+  const nextSimilarities = buildItemSimilarityPaths(currentSimilarities);
+  return ensureSetting(
+    ITEM_PILES_SETTINGS.ITEM_SIMILARITIES,
+    nextSimilarities,
+    (current) => JSON.stringify(buildItemSimilarityPaths(current)) !== JSON.stringify(current)
+  );
+}
+
+export function registerItemPilesSimilarityRepairHook({ Hooks = globalThis.Hooks } = {}) {
+  if (!Hooks?.on || (typeof Hooks !== "object" && typeof Hooks !== "function")) {
+    return false;
+  }
+  if (REGISTERED_REPAIR_HOOK_TARGETS.has(Hooks)) {
+    return false;
+  }
+  REGISTERED_REPAIR_HOOK_TARGETS.add(Hooks);
+
+  Hooks.on("updateSetting", (setting) => {
+    const key = String(setting?.key ?? setting?.id ?? "").trim();
+    const namespace = String(setting?.namespace ?? "").trim();
+    const isSimilaritySetting = key === `${ITEM_PILES_MODULE_ID}.${ITEM_PILES_SETTINGS.ITEM_SIMILARITIES}`
+      || (namespace === ITEM_PILES_MODULE_ID && key === ITEM_PILES_SETTINGS.ITEM_SIMILARITIES);
+    if (!isSimilaritySetting) {
+      return false;
+    }
+    if (game.system?.id !== "dnd5e"
+      || game.modules.get(ITEM_PILES_MODULE_ID)?.active !== true
+      || !game.itempiles?.API
+      || !game.user?.isGM) {
+      return false;
+    }
+    return ensureDurabilitySimilaritySetting().catch((error) => {
+      console.warn(`${MODULE_ID} | Failed to restore Item Piles durability similarities.`, error);
+      return false;
+    });
+  });
+  return true;
+}
+
 export async function ensureItemPilesDnD5eIntegration() {
   if (game.system.id !== "dnd5e") {
     return false;
   }
 
-  if (!game.modules.get(ITEM_PILES_MODULE_ID)?.active || !game.itempiles?.API) {
+  const itemPilesApi = game.itempiles?.API;
+  if (!game.modules.get(ITEM_PILES_MODULE_ID)?.active || !itemPilesApi) {
     return false;
   }
 
-  if (game.modules.get(ITEM_PILES_DND5E_MODULE_ID)?.active) {
-    return false;
-  }
+  const hasDnD5eCompanion = game.modules.get(ITEM_PILES_DND5E_MODULE_ID)?.active === true;
+  const canTrackApi = typeof itemPilesApi === "object" || typeof itemPilesApi === "function";
 
-  game.itempiles.API.addSystemIntegration({
-    VERSION: game.system.version ?? "latest",
-    ACTOR_CLASS_TYPE: "npc",
-    ITEM_CLASS_LOOT_TYPE: "loot",
-    ITEM_CLASS_WEAPON_TYPE: "weapon",
-    ITEM_CLASS_EQUIPMENT_TYPE: "equipment",
-    ITEM_QUANTITY_ATTRIBUTE: "system.quantity",
-    ITEM_PRICE_ATTRIBUTE: "system.price",
-    ITEM_SIMILARITIES: ["name", "type"],
-    ITEM_FILTERS: [
-      { path: "system.container", filters: "null|undefined" }
-    ],
-    ITEM_COST_TRANSFORMER: parsePriceToGold,
-    CURRENCIES,
-    SECONDARY_CURRENCIES: [],
-    CURRENCY_DECIMAL_DIGITS: 1e-5
-  });
+  if (!hasDnD5eCompanion && (!canTrackApi || !REGISTERED_ITEM_PILES_APIS.has(itemPilesApi))) {
+    itemPilesApi.addSystemIntegration({
+      VERSION: game.system.version ?? "latest",
+      ACTOR_CLASS_TYPE: "npc",
+      ITEM_CLASS_LOOT_TYPE: "loot",
+      ITEM_CLASS_WEAPON_TYPE: "weapon",
+      ITEM_CLASS_EQUIPMENT_TYPE: "equipment",
+      ITEM_QUANTITY_ATTRIBUTE: "system.quantity",
+      ITEM_PRICE_ATTRIBUTE: "system.price",
+      ITEM_SIMILARITIES: buildItemSimilarityPaths(),
+      ITEM_FILTERS: [
+        { path: "system.container", filters: "null|undefined" }
+      ],
+      ITEM_COST_TRANSFORMER: parsePriceToGold,
+      CURRENCIES,
+      SECONDARY_CURRENCIES: [],
+      CURRENCY_DECIMAL_DIGITS: 1e-5
+    });
+    if (canTrackApi) {
+      REGISTERED_ITEM_PILES_APIS.add(itemPilesApi);
+    }
+  }
 
   if (!game.user?.isGM) {
     return true;
   }
 
   const writes = [];
+
+  writes.push(ensureDurabilitySimilaritySetting());
+
+  if (hasDnD5eCompanion) {
+    await Promise.allSettled(writes);
+    return true;
+  }
 
   writes.push(ensureSetting(
     ITEM_PILES_SETTINGS.ACTOR_CLASS_TYPE,
@@ -173,11 +250,6 @@ export async function ensureItemPilesDnD5eIntegration() {
   writes.push(ensureSetting(
     ITEM_PILES_SETTINGS.ITEM_PRICE_ATTRIBUTE,
     "system.price",
-    () => true
-  ));
-  writes.push(ensureSetting(
-    ITEM_PILES_SETTINGS.ITEM_SIMILARITIES,
-    ["name", "type"],
     () => true
   ));
   writes.push(ensureSetting(

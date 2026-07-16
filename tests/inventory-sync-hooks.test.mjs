@@ -6,16 +6,97 @@ import {
   handleAcceptedPartyInventoryItem,
   registerInventorySyncHooks
 } from "../scripts/integrations/inventory-sync.js";
+import {
+  SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT
+} from "../scripts/data/inventory-service.js";
+
+const SOCKET_CHANNEL = "module.rebreya-main";
+
+function flushAsyncHooks() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+function createTransferItem({
+  id,
+  uuid,
+  sourceId = id,
+  quantity = 1,
+  parentType = "character",
+  calls = []
+}) {
+  return {
+    id,
+    uuid,
+    name: sourceId,
+    type: "loot",
+    parent: { type: parentType },
+    system: { quantity },
+    flags: {
+      ["rebreya-main"]: {
+        sourceType: "gear",
+        sourceId
+      }
+    },
+    toObject() {
+      return {
+        name: this.name,
+        type: this.type,
+        system: { quantity: this.system.quantity },
+        flags: structuredClone(this.flags)
+      };
+    },
+    async update(patch) {
+      calls.push(["update", this.uuid, patch["system.quantity"]]);
+      this.system.quantity = patch["system.quantity"];
+      return this;
+    },
+    async delete() {
+      calls.push(["delete", this.uuid]);
+      return this;
+    }
+  };
+}
+
+test("party inventory drag requires an explicit active GM", () => {
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    user: { id: "player-no-gm" },
+    users: { activeGM: null }
+  };
+  const sourceItemUuid = "Actor.group.Item.no-active-gm";
+  const sourceItem = createTransferItem({
+    id: "no-active-gm",
+    uuid: sourceItemUuid,
+    parentType: "group"
+  });
+
+  try {
+    assert.throws(
+      () => buildPartyInventoryItemDragData(sourceItemUuid, sourceItem),
+      /active GM/iu
+    );
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
 
 test("party inventory drag data marks the source item and accepted character item depletes it", async () => {
   const previousGame = globalThis.game;
   globalThis.game = {
     user: {
       id: "player-1"
-    }
+    },
+    users: { activeGM: { id: "gm", isGM: true, active: true } }
   };
   const sourceItemUuid = "Actor.group-1.Item.torch";
-  const dragData = buildPartyInventoryItemDragData(sourceItemUuid);
+  const sourceItem = createTransferItem({
+    id: "torch",
+    uuid: sourceItemUuid,
+    sourceId: "torch",
+    parentType: "group"
+  });
+  const dragData = buildPartyInventoryItemDragData(sourceItemUuid, sourceItem);
   const calls = [];
   const moduleApi = {
     inventoryService: {
@@ -28,21 +109,31 @@ test("party inventory drag data marks the source item and accepted character ite
       calls.push(["refresh"]);
     }
   };
-  const acceptedItem = {
+  const acceptedItem = createTransferItem({
+    id: "torch-copy",
     uuid: "Actor.hero.Item.torch-copy",
-    parent: {
-      type: "character"
-    }
-  };
+    sourceId: "torch"
+  });
 
   try {
+    const transferId = dragData.flags["rebreya-main"].partyInventoryTransfer.transferId;
+    assert.match(transferId, /^party-transfer:/u);
     assert.deepEqual(dragData, {
       type: "Item",
       uuid: sourceItemUuid,
       flags: {
         "rebreya-main": {
           partyInventoryTransfer: {
-            sourceItemUuid
+            sourceItemUuid,
+            transferId,
+            expectedIdentity: {
+              sourceType: "gear",
+              sourceId: "torch",
+              itemType: "",
+              normalizedName: "",
+              durability: "uninitialized"
+            },
+            expectedQuantity: 1
           }
         }
       }
@@ -61,6 +152,101 @@ test("party inventory drag data marks the source item and accepted character ite
   }
 });
 
+test("a mismatched target identity does not consume the pending transfer", async () => {
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    user: { id: "player-identity" },
+    users: { activeGM: { id: "gm", isGM: true, active: true } }
+  };
+  const sourceItemUuid = "Actor.group.Item.identity-source";
+  const sourceItem = createTransferItem({
+    id: "identity-source",
+    uuid: sourceItemUuid,
+    sourceId: "identity-source",
+    parentType: "group"
+  });
+  const calls = [];
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem(item) {
+        calls.push(item.uuid);
+        return { handled: true };
+      }
+    },
+    async initializeItem() {}
+  };
+
+  try {
+    buildPartyInventoryItemDragData(sourceItemUuid, sourceItem);
+    const mismatched = await handleAcceptedPartyInventoryItem(createTransferItem({
+      id: "wrong-target",
+      uuid: "Actor.hero.Item.wrong-target",
+      sourceId: "different-source"
+    }), { eventType: "createItem" }, "player-identity", moduleApi);
+    const matched = await handleAcceptedPartyInventoryItem(createTransferItem({
+      id: "right-target",
+      uuid: "Actor.hero.Item.right-target",
+      sourceId: "identity-source"
+    }), { eventType: "createItem" }, "player-identity", moduleApi);
+
+    assert.equal(mismatched, false);
+    assert.equal(matched, true);
+    assert.deepEqual(calls, ["Actor.hero.Item.right-target"]);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("a mismatched target quantity does not consume the pending transfer", async () => {
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    user: { id: "player-quantity" },
+    users: { activeGM: { id: "gm", isGM: true, active: true } }
+  };
+  const sourceItemUuid = "Actor.group.Item.quantity-source";
+  const sourceItem = createTransferItem({
+    id: "quantity-source",
+    uuid: sourceItemUuid,
+    sourceId: "quantity-source",
+    quantity: 2,
+    parentType: "group"
+  });
+  const calls = [];
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem(item) {
+        calls.push(item.uuid);
+        return { handled: true };
+      }
+    },
+    async initializeItem() {}
+  };
+
+  try {
+    buildPartyInventoryItemDragData(sourceItemUuid, sourceItem);
+    const mismatched = await handleAcceptedPartyInventoryItem(createTransferItem({
+      id: "wrong-quantity",
+      uuid: "Actor.hero.Item.wrong-quantity",
+      sourceId: "quantity-source",
+      quantity: 1
+    }), { eventType: "createItem" }, "player-quantity", moduleApi);
+    const matched = await handleAcceptedPartyInventoryItem(createTransferItem({
+      id: "right-quantity",
+      uuid: "Actor.hero.Item.right-quantity",
+      sourceId: "quantity-source",
+      quantity: 2
+    }), { eventType: "createItem" }, "player-quantity", moduleApi);
+
+    assert.equal(mismatched, false);
+    assert.equal(matched, true);
+    assert.deepEqual(calls, ["Actor.hero.Item.right-quantity"]);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
 test("inventory sync hooks refresh inventory views for item and actor changes", async () => {
   const calls = [];
   const hooks = {
@@ -71,6 +257,9 @@ test("inventory sync hooks refresh inventory views for item and actor changes", 
     }
   };
   const moduleApi = {
+    async initializeItem(item) {
+      calls.push(`initialize:${item.id ?? "item"}`);
+    },
     async refreshInventoryViews() {
       calls.push("refresh");
     }
@@ -83,8 +272,543 @@ test("inventory sync hooks refresh inventory views for item and actor changes", 
   });
 
   assert.equal(registered, true);
-  await hooks.listeners.createItem[0]({ parent: { type: "character" } }, {}, "user-1");
-  await hooks.listeners.updateActor[0]({ type: "character" }, { system: { attributes: { encumbrance: {} } } }, {}, "user-1");
+  hooks.listeners.createItem[0]({ id: "sword", parent: { type: "character" } }, {}, "user-1");
+  await flushAsyncHooks();
+  hooks.listeners.updateActor[0]({ type: "character" }, { system: { attributes: { encumbrance: {} } } }, {}, "user-1");
+  await flushAsyncHooks();
 
-  assert.deepEqual(calls, ["refresh", "refresh"]);
+  assert.deepEqual(calls, ["initialize:sword", "refresh", "refresh"]);
+});
+
+test("createItem defers legacy durability until delayed GM source depletion is observable", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const socketListeners = new Map();
+  globalThis.game = {
+    user: {
+      id: "player-legacy"
+    },
+    users: { activeGM: { id: "gm", isGM: true, active: true } },
+    socket: {
+      on(channel, listener) {
+        socketListeners.set(channel, listener);
+      }
+    }
+  };
+  const sourceItemUuid = "Actor.group-1.Item.legacy-sword";
+  const sourceItem = createTransferItem({
+    id: "legacy-sword",
+    uuid: sourceItemUuid,
+    sourceId: "legacy-sword",
+    parentType: "group"
+  });
+  let sourceExists = true;
+  globalThis.fromUuid = async (uuid) => uuid === sourceItemUuid && sourceExists
+    ? sourceItem
+    : null;
+  const transferId = buildPartyInventoryItemDragData(sourceItemUuid, sourceItem)
+    .flags["rebreya-main"].partyInventoryTransfer.transferId;
+  const calls = [];
+  const hooks = {
+    listeners: {},
+    on(hookName, listener) {
+      this.listeners[hookName] ??= [];
+      this.listeners[hookName].push(listener);
+    }
+  };
+  const acceptedItem = createTransferItem({
+    id: "legacy-sword-copy",
+    uuid: "Actor.hero.Item.legacy-sword-copy",
+    sourceId: "legacy-sword"
+  });
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem(item, transfer) {
+        calls.push(["transfer", item.flags["rebreya-main"]?.durability ?? null, transfer.sourceItemUuid]);
+        return {
+          handled: true,
+          requested: true,
+          transferId: transfer.transferId,
+          sourceItemUuid: transfer.sourceItemUuid,
+          targetItemUuid: item.uuid,
+          targetReceipt: transfer.targetReceipt
+        };
+      }
+    },
+    async initializeItem(item) {
+      calls.push(["initialize", item.id]);
+      item.flags["rebreya-main"] = {
+        durability: {
+          state: "intact"
+        }
+      };
+    },
+    async refreshInventoryViews() {
+      calls.push(["refresh"]);
+    }
+  };
+
+  try {
+    registerInventorySyncHooks(moduleApi, {
+      Hooks: hooks,
+      debounceMs: 0,
+      force: true
+    });
+
+    hooks.listeners.createItem[0](acceptedItem, {}, "player-legacy");
+    await flushAsyncHooks();
+
+    assert.deepEqual(calls, [
+      ["transfer", null, sourceItemUuid],
+      ["refresh"]
+    ]);
+
+    socketListeners.get(SOCKET_CHANNEL)?.({
+      type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
+      forUserId: "player-legacy",
+      transferId,
+      sourceItemUuid,
+      targetItemUuid: acceptedItem.uuid,
+      ok: true
+    });
+    await flushAsyncHooks();
+    assert.equal(calls.some(([kind]) => kind === "initialize"), false);
+
+    sourceExists = false;
+    hooks.listeners.deleteItem[0]({ uuid: sourceItemUuid, parent: { type: "group" } });
+    await flushAsyncHooks();
+    await flushAsyncHooks();
+
+    assert.equal(calls.some(([kind, id]) => kind === "initialize" && id === acceptedItem.id), true);
+    assert.equal(acceptedItem.flags["rebreya-main"].durability.state, "intact");
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("failed delayed source depletion removes the uninitialized accepted legacy copy", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const socketListeners = new Map();
+  globalThis.game = {
+    user: { id: "player-failed-transfer" },
+    users: { activeGM: { id: "gm", isGM: true, active: true } },
+    socket: {
+      on(channel, listener) {
+        socketListeners.set(channel, listener);
+      }
+    }
+  };
+  const sourceItemUuid = "Actor.group-1.Item.failed-sword";
+  const sourceItem = createTransferItem({
+    id: "failed-sword",
+    uuid: sourceItemUuid,
+    sourceId: "failed-sword",
+    parentType: "group"
+  });
+  globalThis.fromUuid = async (uuid) => uuid === sourceItemUuid ? sourceItem : null;
+  const transferId = buildPartyInventoryItemDragData(sourceItemUuid, sourceItem)
+    .flags["rebreya-main"].partyInventoryTransfer.transferId;
+  const calls = [];
+  const hooks = {
+    listeners: {},
+    on(hookName, listener) {
+      this.listeners[hookName] ??= [];
+      this.listeners[hookName].push(listener);
+    }
+  };
+  const acceptedItem = createTransferItem({
+    id: "failed-sword-copy",
+    uuid: "Actor.hero.Item.failed-sword-copy",
+    sourceId: "failed-sword",
+    calls
+  });
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem(item, transfer) {
+        calls.push(["transfer", transfer.sourceItemUuid]);
+        return {
+          handled: true,
+          requested: true,
+          transferId: transfer.transferId,
+          sourceItemUuid: transfer.sourceItemUuid,
+          targetItemUuid: item.uuid,
+          targetReceipt: transfer.targetReceipt
+        };
+      }
+    },
+    async initializeItem(item) {
+      calls.push(["initialize", item.id]);
+    },
+    async refreshInventoryViews() {
+      calls.push(["refresh"]);
+    }
+  };
+
+  try {
+    registerInventorySyncHooks(moduleApi, { Hooks: hooks, debounceMs: 0, force: true });
+    hooks.listeners.createItem[0](acceptedItem, {}, "player-failed-transfer");
+    await flushAsyncHooks();
+
+    socketListeners.get(SOCKET_CHANNEL)?.({
+      type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
+      forUserId: "player-failed-transfer",
+      transferId,
+      sourceItemUuid,
+      targetItemUuid: acceptedItem.uuid,
+      ok: false,
+      error: "rejected"
+    });
+    await flushAsyncHooks();
+
+    assert.deepEqual(calls, [
+      ["transfer", sourceItemUuid],
+      ["refresh"],
+      ["delete", acceptedItem.uuid]
+    ]);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("failed updateItem depletion restores the merge receipt without deleting the target stack", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const socketListeners = new Map();
+  globalThis.game = {
+    user: { id: "player-merge-rollback" },
+    users: { activeGM: { id: "gm", isGM: true, active: true } },
+    socket: {
+      on(channel, listener) {
+        socketListeners.set(channel, listener);
+      }
+    }
+  };
+  const calls = [];
+  const sourceItemUuid = "Actor.group.Item.merge-source";
+  const sourceItem = createTransferItem({
+    id: "merge-source",
+    uuid: sourceItemUuid,
+    sourceId: "merge-source",
+    quantity: 2,
+    parentType: "group"
+  });
+  globalThis.fromUuid = async (uuid) => uuid === sourceItemUuid ? sourceItem : null;
+  const transferId = buildPartyInventoryItemDragData(sourceItemUuid, sourceItem)
+    .flags["rebreya-main"].partyInventoryTransfer.transferId;
+  const targetItem = createTransferItem({
+    id: "merge-target",
+    uuid: "Actor.hero.Item.merge-target",
+    sourceId: "merge-source",
+    quantity: 5,
+    calls
+  });
+  const hooks = {
+    listeners: {},
+    on(hookName, listener) {
+      this.listeners[hookName] ??= [];
+      this.listeners[hookName].push(listener);
+    }
+  };
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem(_item, transfer) {
+        calls.push(["transfer", structuredClone(transfer.targetReceipt)]);
+        return {
+          handled: true,
+          requested: true,
+          transferId: transfer.transferId,
+          sourceItemUuid: transfer.sourceItemUuid,
+          targetItemUuid: transfer.targetItemUuid,
+          targetReceipt: transfer.targetReceipt
+        };
+      }
+    },
+    async refreshInventoryViews() {
+      calls.push(["refresh"]);
+    }
+  };
+
+  try {
+    registerInventorySyncHooks(moduleApi, { Hooks: hooks, debounceMs: 0, force: true });
+    hooks.listeners.updateItem[0](targetItem, { "system.quantity": 5 }, {}, "player-merge-rollback");
+    await flushAsyncHooks();
+
+    socketListeners.get(SOCKET_CHANNEL)?.({
+      type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
+      forUserId: "player-merge-rollback",
+      transferId,
+      sourceItemUuid,
+      targetItemUuid: targetItem.uuid,
+      ok: false
+    });
+    await flushAsyncHooks();
+
+    assert.deepEqual(calls, [
+      ["transfer", {
+        targetItemUuid: targetItem.uuid,
+        created: false,
+        beforeQuantity: 3,
+        afterQuantity: 5,
+        delta: 2
+      }],
+      ["refresh"],
+      ["update", targetItem.uuid, 3]
+    ]);
+    assert.equal(targetItem.system.quantity, 3);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("an observed source delete settles once before its delayed response", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const socketListeners = new Map();
+  globalThis.game = {
+    user: { id: "player-observed-delete" },
+    users: { activeGM: { id: "gm", isGM: true, active: true } },
+    socket: {
+      on(channel, listener) {
+        socketListeners.set(channel, listener);
+      }
+    }
+  };
+  const calls = [];
+  const sourceItemUuid = "Actor.group.Item.observed-source";
+  const sourceItem = createTransferItem({
+    id: "observed-source",
+    uuid: sourceItemUuid,
+    sourceId: "observed-source",
+    parentType: "group"
+  });
+  let sourceExists = true;
+  globalThis.fromUuid = async (uuid) => uuid === sourceItemUuid && sourceExists ? sourceItem : null;
+  const transferId = buildPartyInventoryItemDragData(sourceItemUuid, sourceItem)
+    .flags["rebreya-main"].partyInventoryTransfer.transferId;
+  const targetItem = createTransferItem({
+    id: "observed-target",
+    uuid: "Actor.hero.Item.observed-target",
+    sourceId: "observed-source"
+  });
+  const hooks = {
+    listeners: {},
+    on(hookName, listener) {
+      this.listeners[hookName] ??= [];
+      this.listeners[hookName].push(listener);
+    }
+  };
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem(_item, transfer) {
+        return {
+          handled: true,
+          requested: true,
+          transferId: transfer.transferId,
+          sourceItemUuid: transfer.sourceItemUuid,
+          targetItemUuid: transfer.targetItemUuid,
+          targetReceipt: transfer.targetReceipt
+        };
+      }
+    },
+    async initializeItem(item) {
+      calls.push(["initialize", item.uuid]);
+    },
+    async refreshInventoryViews() {}
+  };
+
+  try {
+    registerInventorySyncHooks(moduleApi, { Hooks: hooks, debounceMs: 0, force: true });
+    hooks.listeners.createItem[0](targetItem, {}, "player-observed-delete");
+    await flushAsyncHooks();
+
+    sourceExists = false;
+    hooks.listeners.deleteItem[0](sourceItem);
+    await flushAsyncHooks();
+    await flushAsyncHooks();
+
+    const response = {
+      type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
+      forUserId: "player-observed-delete",
+      transferId,
+      sourceItemUuid,
+      targetItemUuid: targetItem.uuid,
+      ok: true
+    };
+    socketListeners.get(SOCKET_CHANNEL)?.(response);
+    socketListeners.get(SOCKET_CHANNEL)?.(response);
+    await flushAsyncHooks();
+
+    assert.deepEqual(calls, [["initialize", targetItem.uuid]]);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("out-of-order depletion responses settle only their exact accepted transfer", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const socketListeners = new Map();
+  globalThis.game = {
+    user: { id: "player-two-transfers" },
+    users: { activeGM: { id: "gm", isGM: true, active: true } },
+    socket: {
+      on(channel, listener) {
+        socketListeners.set(channel, listener);
+      }
+    }
+  };
+  const sourceA = "Actor.group-1.Item.source-a";
+  const sourceB = "Actor.group-1.Item.source-b";
+  const targetA = "Actor.hero.Item.target-a";
+  const targetB = "Actor.hero.Item.target-b";
+  const calls = [];
+  const sourceItemA = createTransferItem({
+    id: "source-a",
+    uuid: sourceA,
+    sourceId: "source-a",
+    parentType: "group"
+  });
+  const sourceItemB = createTransferItem({
+    id: "source-b",
+    uuid: sourceB,
+    sourceId: "source-b",
+    parentType: "group"
+  });
+  const existingSources = new Map([[sourceB, sourceItemB]]);
+  globalThis.fromUuid = async (uuid) => existingSources.get(uuid) ?? null;
+  const hooks = {
+    listeners: {},
+    on(hookName, listener) {
+      this.listeners[hookName] ??= [];
+      this.listeners[hookName].push(listener);
+    }
+  };
+  const acceptedA = createTransferItem({
+    id: "target-a",
+    uuid: targetA,
+    sourceId: "source-a",
+    calls
+  });
+  const acceptedB = createTransferItem({
+    id: "target-b",
+    uuid: targetB,
+    sourceId: "source-b",
+    calls
+  });
+  const moduleApi = {
+    inventoryService: {
+      async handleAcceptedPartyInventoryItem(item, transfer) {
+        return {
+          handled: true,
+          requested: true,
+          transferId: transfer.transferId,
+          sourceItemUuid: transfer.sourceItemUuid,
+          targetItemUuid: item.uuid,
+          targetReceipt: transfer.targetReceipt
+        };
+      }
+    },
+    async initializeItem(item) {
+      calls.push(["initialize", item.uuid]);
+    },
+    async refreshInventoryViews() {}
+  };
+
+  try {
+    registerInventorySyncHooks(moduleApi, { Hooks: hooks, debounceMs: 0, force: true });
+    const dragA = buildPartyInventoryItemDragData(sourceA, sourceItemA);
+    hooks.listeners.createItem[0](acceptedA, {}, "player-two-transfers");
+    await flushAsyncHooks();
+    const dragB = buildPartyInventoryItemDragData(sourceB, sourceItemB);
+    hooks.listeners.createItem[0](acceptedB, {}, "player-two-transfers");
+    await flushAsyncHooks();
+
+    const transferA = dragA.flags["rebreya-main"].partyInventoryTransfer.transferId;
+    const transferB = dragB.flags["rebreya-main"].partyInventoryTransfer.transferId;
+    assert.notEqual(transferA, transferB);
+
+    socketListeners.get(SOCKET_CHANNEL)?.({
+      type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
+      forUserId: "player-two-transfers",
+      transferId: transferB,
+      sourceItemUuid: sourceB,
+      targetItemUuid: targetB,
+      ok: false
+    });
+    socketListeners.get(SOCKET_CHANNEL)?.({
+      type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
+      forUserId: "player-two-transfers",
+      transferId: transferA,
+      sourceItemUuid: sourceA,
+      targetItemUuid: targetA,
+      ok: true
+    });
+    await flushAsyncHooks();
+    await flushAsyncHooks();
+
+    assert.deepEqual(calls.toSorted(([left], [right]) => left.localeCompare(right)), [
+      ["delete", targetB],
+      ["initialize", targetA]
+    ]);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("createItem initializes an ordinary embedded item only on the current client", async () => {
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    user: {
+      id: "player-current"
+    }
+  };
+  const hooks = {
+    listeners: {},
+    on(hookName, listener) {
+      this.listeners[hookName] ??= [];
+      this.listeners[hookName].push(listener);
+    }
+  };
+  const calls = [];
+  const moduleApi = {
+    async initializeItem(item) {
+      calls.push(`initialize:${item.id}`);
+    },
+    async refreshInventoryViews() {
+      calls.push("refresh");
+    }
+  };
+
+  try {
+    registerInventorySyncHooks(moduleApi, {
+      Hooks: hooks,
+      debounceMs: 0,
+      force: true
+    });
+
+    hooks.listeners.createItem[0]({ id: "remote", parent: { type: "character" } }, {}, "player-remote");
+    await flushAsyncHooks();
+    hooks.listeners.createItem[0]({ id: "current", parent: { type: "character" } }, {}, "player-current");
+    await flushAsyncHooks();
+
+    assert.deepEqual(calls, [
+      "refresh",
+      "initialize:current",
+      "refresh"
+    ]);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
 });

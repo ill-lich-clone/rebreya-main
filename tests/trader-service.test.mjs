@@ -5,6 +5,7 @@ import { WorldMutationCoordinator } from "../scripts/application/world-mutation-
 import { resolveGearItemIcon } from "../scripts/data/gear-icon-resolver.js";
 import {
   TraderService,
+  createEmptyTraderState,
   normalizeTraderState
 } from "../scripts/data/trader-service.js";
 import { TraderStateRepository } from "../scripts/infrastructure/foundry/trader-state-repository.js";
@@ -55,6 +56,55 @@ function installFoundryUtils() {
     globalThis.foundry = previousFoundry;
   };
 }
+
+test("resetAssortments aborts before persistence when authority changes during model loading", async () => {
+  const restoreFoundry = installFoundryUtils();
+  const previousGame = globalThis.game;
+  const modelRequested = createDeferred();
+  const releaseModel = createDeferred();
+  let settingWrites = 0;
+  let authorityActive = true;
+  const guard = () => {
+    if (!authorityActive) {
+      throw new Error("calendar execution context changed");
+    }
+  };
+
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    settings: {
+      get: () => createEmptyTraderState(),
+      set: async () => {
+        settingWrites += 1;
+      }
+    }
+  };
+  const service = new TraderService({
+    async getModel() {
+      modelRequested.resolve();
+      return releaseModel.promise;
+    }
+  });
+
+  try {
+    const resetting = service.resetAssortments({
+      groupId: "group-1",
+      guard,
+      assertExecutionContext: guard
+    });
+    await modelRequested.promise;
+    authorityActive = false;
+    releaseModel.resolve({});
+
+    await assert.rejects(resetting, /calendar execution context changed/u);
+    assert.equal(settingWrites, 0);
+  }
+  finally {
+    releaseModel.resolve({});
+    globalThis.game = previousGame;
+    restoreFoundry();
+  }
+});
 
 test("trader snapshot resolves gear icons from the shared gear icon lookup", async () => {
   const restoreFoundry = installFoundryUtils();

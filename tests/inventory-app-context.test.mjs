@@ -132,6 +132,7 @@ function collectText(node) {
 function createModuleApi({
   getGroupContext,
   partySnapshot = {},
+  craftSnapshot,
   downtimeSnapshot,
   downtimeError,
   travelSnapshot,
@@ -185,9 +186,10 @@ function createModuleApi({
       };
     },
     async getCraftSnapshot() {
-      return {
+      return craftSnapshot ?? {
         crafters: [],
-        queue: []
+        queue: [],
+        projects: []
       };
     },
     getCalendarSnapshot() {
@@ -287,6 +289,26 @@ function createModuleApi({
     async setDowntimeRequestChecks(requestId, checks) {
       calls.push(["setDowntimeRequestChecks", requestId, checks]);
       return {};
+    },
+    async approveCraftDowntimeRequest(payload) {
+      calls.push(["approveCraftDowntimeRequest", payload]);
+      return { id: "craft-project-1" };
+    },
+    async pauseCraftProject(projectId, options) {
+      calls.push(["pauseCraftProject", projectId, options]);
+      return { id: projectId };
+    },
+    async resumeCraftProject(projectId, options) {
+      calls.push(["resumeCraftProject", projectId, options]);
+      return { id: projectId };
+    },
+    async cancelCraftProject(projectId, options) {
+      calls.push(["cancelCraftProject", projectId, options]);
+      return { id: projectId };
+    },
+    async reconcileCraftProject(projectId, options) {
+      calls.push(["reconcileCraftProject", projectId, options]);
+      return { id: projectId };
     },
     getGroupContext
   };
@@ -2880,6 +2902,167 @@ test("InventoryApp calendar template renders fixed status markers, workday balan
   assert.match(template, /<label>Недели<\/label>[\s\S]*data-action="downtime-grant-weeks"/u);
   assert.doesNotMatch(template, /data-action="(?:craft-process-day|consume-day)"/u);
   assert.doesNotMatch(template, /Списать день/u);
+});
+
+test("InventoryApp craft context separates pending requests from active projects", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?craft-project-context=${Date.now()}`);
+    const app = new InventoryApp(createModuleApi({
+      getGroupContext: () => null,
+      craftSnapshot: {
+        crafters: [{ actorId: "actor-a", actorName: "Asha", selected: true }],
+        projects: [{
+          id: "craft-project-1",
+          requestId: "downtime-2",
+          crafterActorId: "actor-a",
+          status: "in-progress",
+          operationalStatus: "active",
+          outputs: [{ name: "Longsword", quantity: 1 }],
+          targetGold: 20,
+          progressGold: 5,
+          hoursPerDay: 12,
+          ownedWorkshop: true,
+          reservationSummary: {},
+          reconciliation: { required: false }
+        }]
+      },
+      downtimeSnapshot: {
+        canManage: true,
+        members: [{ actorId: "actor-a", actorName: "Asha", canSubmit: true, balance: {} }],
+        actionCatalog: [],
+        calendarByIsoDate: {},
+        scheduleSlots: [],
+        requests: [{
+          id: "downtime-1",
+          actorId: "actor-a",
+          actorName: "Asha",
+          status: "pending",
+          weeks: 2,
+          workdays: 10,
+          craftProject: {
+            outputs: [{ sourceType: "gear", sourceId: "longsword", quantity: 2 }],
+            hoursPerDay: 12,
+            ownedWorkshop: true
+          }
+        }]
+      }
+    }));
+
+    const context = await app._prepareContext();
+
+    assert.equal(context.craft.pendingRequestCount, 1);
+    assert.equal(context.craft.pendingRequests[0].outputLabel, "longsword x2");
+    assert.equal(context.craft.pendingRequests[0].workshopLabel, "Собственная");
+    assert.equal(context.craft.projects[0].outputLabel, "Longsword");
+    assert.equal(context.craft.projects[0].progressPercent, 25);
+    assert.equal(context.craft.projects[0].canPause, true);
+    assert.equal(context.craft.projects[0].canResume, false);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp craft template uses downtime project actions instead of the legacy queue", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+
+  assert.match(template, /data-action="craft-approve-request"/u);
+  assert.match(template, /data-action="craft-return-request"/u);
+  assert.match(template, /data-action="craft-reject-request"/u);
+  assert.match(template, /data-action="craft-pause-project"/u);
+  assert.match(template, /data-action="craft-resume-project"/u);
+  assert.match(template, /data-action="craft-cancel-project"/u);
+  assert.doesNotMatch(template, /data-action="craft-queue"/u);
+  assert.doesNotMatch(template, /Очередь крафта/u);
+});
+
+test("InventoryApp retries craft approval with the same mutation identity", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const previousConsoleError = console.error;
+  globalThis.ui = { notifications: { info() {}, error() {} } };
+  console.error = () => {};
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?craft-approval-retry=${Date.now()}`);
+    const approveButton = createFakeControl({
+      dataset: { requestId: "downtime-1", requestName: "Длинный меч" }
+    });
+    const root = createFakeElement();
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => (
+      selector === "[data-action='craft-approve-request']" ? [approveButton] : []
+    );
+    const calls = [];
+    const api = createModuleApi({ getGroupContext: () => null });
+    api.approveCraftDowntimeRequest = async (payload) => {
+      calls.push(payload);
+      if (calls.length === 1) {
+        throw new Error("lost response");
+      }
+      return { id: "craft-project-1" };
+    };
+    const app = new InventoryApp(api);
+    app.element = root;
+    app.render = () => {};
+
+    await app._onRender({}, {});
+    await dispatchClick(approveButton);
+    await dispatchClick(approveButton);
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].requestId, "downtime-1");
+    assert.equal(calls[0].mutationId, calls[1].mutationId);
+    assert.match(calls[0].mutationId, /^craft-ui:approve:downtime-1:/u);
+  }
+  finally {
+    console.error = previousConsoleError;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp binds project resume to the craft downtime lifecycle API", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  globalThis.ui = { notifications: { info() {}, error() {} } };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?craft-resume=${Date.now()}`);
+    const resumeButton = createFakeControl({
+      dataset: { projectId: "craft-project-1", projectName: "Длинный меч" }
+    });
+    const root = createFakeElement();
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => (
+      selector === "[data-action='craft-resume-project']" ? [resumeButton] : []
+    );
+    const calls = [];
+    const api = createModuleApi({ getGroupContext: () => null });
+    api.resumeCraftProject = async (projectId, options) => {
+      calls.push([projectId, options]);
+      return { id: projectId };
+    };
+    const app = new InventoryApp(api);
+    app.element = root;
+    app.render = () => {};
+
+    await app._onRender({}, {});
+    await dispatchClick(resumeButton);
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], "craft-project-1");
+    assert.match(calls[0][1].mutationId, /^craft-ui:resume:craft-project-1:/u);
+  }
+  finally {
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
 });
 
 test("InventoryApp previews and confirms set, pick, day, week, and month calendar changes before mutation", async () => {

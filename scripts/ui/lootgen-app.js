@@ -1,5 +1,13 @@
 ﻿import { MAGIC_ITEMS_COMPENDIUM_NAME, MODULE_ID } from "../constants.js";
 import { buildLootgenStatusContent } from "./lootgen-chat.js";
+import { GEAR_COMPENDIUM_NAME } from "../constants.js";
+import {
+  buildLootgenRowIdentity,
+  collectBreakableManagedGearIds,
+  normalizeBrokenEquipmentChance,
+  normalizeLootgenBrokenMarker,
+  rollLootgenBrokenState
+} from "../data/lootgen-durability.js";
 import { getAppElement } from "../ui.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -125,7 +133,7 @@ function isBargainingBlocked(value) {
 function aggregateRows(rows) {
   const map = new Map();
   for (const row of rows) {
-    const key = `${row.sourceType}:${row.sourceId}`;
+    const key = buildLootgenRowIdentity(row);
     const isStackable = row.stackable === undefined
       ? ["material", "gear"].includes(String(row.sourceType ?? ""))
       : Boolean(row.stackable);
@@ -137,6 +145,7 @@ function aggregateRows(rows) {
       value: row.value,
       typeLabel: row.typeLabel,
       stackable: isStackable,
+      isBroken: normalizeLootgenBrokenMarker(row),
       quantity: 0,
       totalValue: 0
     };
@@ -174,6 +183,8 @@ function normalizeGeneratedRows(rows = []) {
       stackable: row.stackable === undefined
         ? ["material", "gear"].includes(String(row.sourceType ?? ""))
         : Boolean(row.stackable),
+      isBroken: normalizeLootgenBrokenMarker(row),
+      directGrantId: String(row.directGrantId ?? ""),
       quantity: Math.max(1, toInteger(row.quantity, 1)),
       totalValue: Math.max(1, toInteger(row.totalValue, toInteger(row.value, 1)))
     }))
@@ -306,6 +317,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.includeCoins = true;
     this.includeMagicItems = false;
     this.magicPercent = 25;
+    this.brokenEquipmentChance = 0;
     this.generated = this.#createEmptyGenerated();
     this.chatLootId = "";
     this.renderListenersAbortController = null;
@@ -336,6 +348,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       budgetValue: 0,
       totalItems: 0,
       generatedAt: "",
+      directCoinGrantId: "",
       hasResult: false
     };
   }
@@ -356,6 +369,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       budgetValue,
       totalItems,
       generatedAt: String(payload.generatedAt ?? ""),
+      directCoinGrantId: String(payload.directCoinGrantId ?? ""),
       hasResult: rows.length > 0 || coins.totalCopper > 0
     };
   }
@@ -368,6 +382,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       budgetValue: this.generated.budgetValue,
       totalItems: this.generated.totalItems,
       generatedAt: this.generated.generatedAt,
+      directCoinGrantId: this.generated.directCoinGrantId,
       hasResult: this.generated.hasResult
     });
   }
@@ -423,10 +438,38 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return Math.max(1, toInteger(Math.round(Math.max(0, toNumber(fallbackGold, 0)) * 100), 1));
   }
 
-  #buildMundanePool(model) {
+  async #getBreakableGearSourceIds() {
+    const pack = game.packs.get(`world.${GEAR_COMPENDIUM_NAME}`) ?? null;
+    if (!pack) {
+      return new Set();
+    }
+
+    const index = await pack.getIndex({
+      fields: [
+        "type",
+        "system.rarity",
+        "system.properties",
+        `flags.${MODULE_ID}.managed`,
+        `flags.${MODULE_ID}.sourceType`,
+        `flags.${MODULE_ID}.sourceId`,
+        `flags.${MODULE_ID}.gearId`,
+        `flags.${MODULE_ID}.magical`,
+        `flags.${MODULE_ID}.isMagical`,
+        `flags.${MODULE_ID}.magic`,
+        `flags.${MODULE_ID}.magicItemId`,
+        `flags.${MODULE_ID}.magicId`
+      ]
+    });
+    return collectBreakableManagedGearIds(index);
+  }
+
+  async #buildMundanePool(model) {
     const minRank = Math.max(0, Math.min(this.rankMin, this.rankMax));
     const maxRank = Math.max(minRank, Math.max(this.rankMin, this.rankMax));
     const pool = [];
+    const breakableGearIds = this.includeGear
+      ? await this.#getBreakableGearSourceIds()
+      : new Set();
 
     if (this.includeGear) {
       for (const gearItem of model.gear ?? []) {
@@ -449,7 +492,8 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           rank,
           value,
           typeLabel: String(gearItem.equipmentType ?? "Снаряжение"),
-          stackable: true
+          stackable: true,
+          breakable: breakableGearIds.has(String(gearItem.id))
         });
       }
     }
@@ -554,7 +598,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async #generateLoot() {
     const model = await this.moduleApi.getModel();
-    const mundanePool = this.#buildMundanePool(model);
+    const mundanePool = await this.#buildMundanePool(model);
     const magicPool = this.includeMagicItems ? await this.#buildMagicPool() : [];
     if (!mundanePool.length && !magicPool.length) {
       throw new Error("Для выбранных параметров нет доступных предметов.");
@@ -631,6 +675,11 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       picks.push({
         ...picked,
+        isBroken: rollLootgenBrokenState({
+          sourceType: picked.sourceType,
+          chance: this.brokenEquipmentChance,
+          isEligible: picked.breakable === true
+        }),
         quantity,
         totalValue
       });
@@ -648,6 +697,11 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const spentValue = rows.reduce((sum, row) => sum + row.totalValue, 0);
     const coinValue = this.includeCoins ? remainingValue : 0;
     const coins = randomCoinsFromValue(coinValue);
+    const directBatchId = randomID();
+    rows = rows.map((row, index) => ({
+      ...row,
+      directGrantId: `lootgen:${directBatchId}:row:${index}`
+    }));
     this.generated = {
       rows,
       coins,
@@ -658,6 +712,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         dateStyle: "short",
         timeStyle: "medium"
       }).format(new Date()),
+      directCoinGrantId: `lootgen:${directBatchId}:coins`,
       hasResult: rows.length > 0 || coins.totalCopper > 0
     };
     this.chatLootId = "";
@@ -670,7 +725,8 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       spentValue: this.generated.spentValue,
       budgetValue: this.generated.budgetValue,
       totalItems: this.generated.totalItems,
-      generatedAt: this.generated.generatedAt
+      generatedAt: this.generated.generatedAt,
+      directCoinGrantId: this.generated.directCoinGrantId
     });
   }
 
@@ -689,7 +745,11 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       throw new Error("Строка лутгена не найдена.");
     }
 
-    await this.moduleApi.addModelItemToInventory(row.sourceType, row.sourceId, row.quantity);
+    if (typeof this.moduleApi.addLootgenRowToInventory === "function") {
+      await this.moduleApi.addLootgenRowToInventory(row);
+      return;
+    }
+    throw new Error("Текущая версия склада не поддерживает безопасную выдачу Lootgen.");
   }
 
   async #addCoinsToInventory() {
@@ -698,27 +758,22 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return false;
     }
 
-    const inventory = await this.moduleApi.getInventorySnapshot({ createActor: true });
-    const current = inventory?.summary?.currency ?? {
-      pp: 0,
-      gp: 0,
-      sp: 0,
-      cp: 0
-    };
-
-    await this.moduleApi.updatePartyCurrency({
-      pp: toInteger(current.pp, 0) + coins.pp,
-      gp: toInteger(current.gp, 0) + coins.gp,
-      sp: toInteger(current.sp, 0) + coins.sp,
-      cp: toInteger(current.cp, 0) + coins.cp
-    });
+    if (typeof this.moduleApi.addLootgenCoinsToInventory !== "function") {
+      throw new Error("Текущая версия склада не поддерживает безопасную выдачу монет Lootgen.");
+    }
+    await this.moduleApi.addLootgenCoinsToInventory(coins, this.generated.directCoinGrantId);
 
     return true;
   }
 
   async #takeAllToInventory() {
     for (const row of this.generated.rows) {
-      await this.moduleApi.addModelItemToInventory(row.sourceType, row.sourceId, row.quantity);
+      if (typeof this.moduleApi.addLootgenRowToInventory === "function") {
+        await this.moduleApi.addLootgenRowToInventory(row);
+      }
+      else {
+        throw new Error("Текущая версия склада не поддерживает безопасную выдачу Lootgen.");
+      }
     }
 
     await this.#addCoinsToInventory();
@@ -797,6 +852,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         includeCoins: this.includeCoins,
         includeMagicItems: this.includeMagicItems,
         magicPercent: this.magicPercent,
+        brokenEquipmentChance: this.brokenEquipmentChance,
         hasItemSources,
         generateDisabled,
         generateDisabledReason: generateDisabled
@@ -851,8 +907,10 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             return;
           }
 
-          if (fieldName === "magicPercent") {
-            this[fieldName] = Math.min(100, Math.max(0, toInteger(input.value, this[fieldName])));
+          if (fieldName === "magicPercent" || fieldName === "brokenEquipmentChance") {
+            this[fieldName] = fieldName === "brokenEquipmentChance"
+              ? normalizeBrokenEquipmentChance(input.value)
+              : Math.min(100, Math.max(0, toInteger(input.value, this[fieldName])));
             input.value = String(this[fieldName]);
             return;
           }

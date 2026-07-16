@@ -7,12 +7,12 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.4.93`.
+- Версия: `1.4.95`.
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
-- Manifest загружает только `scripts/main-1.4.93.js`.
-- `scripts/main-1.4.93.js` — тонкий version forwarder; единственный composition root находится в `scripts/main.js`.
+- Manifest загружает только `scripts/main-1.4.95.js`.
+- `scripts/main-1.4.95.js` — тонкий version forwarder; единственный composition root находится в `scripts/main.js`.
 - Runtime API публикуется как `game.rebreyaMain` и `game.modules.get("rebreya-main")?.api`.
 
 В репозитории должна оставаться только текущая версия `scripts/main-<version>.js`. Исторические entrypoint-файлы не являются исходниками и не должны храниться рядом с runtime.

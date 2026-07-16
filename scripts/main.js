@@ -1,7 +1,7 @@
 // @rebreya-role canonical-composition-root
 import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.93-firearm-template-version-18";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.95-firearm-template-version-18";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
@@ -13,7 +13,7 @@ import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js";
-import { TraderService, normalizeTraderState } from "./data/trader-service.js";
+import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.95-durability";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import {
   createTradeTransactionId,
@@ -28,7 +28,7 @@ import {
   normalizeGroupState
 } from "./data/group-context-service.js";
 import { RebreyaQuestLogService } from "./data/quest-log-service.js";
-import { DowntimeService } from "./data/downtime-service.js";
+import { DowntimeService } from "./data/downtime-service.js?v=1.4.95-craft-calendar";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js";
 import {
   GROUP_TRAVEL_REPLACE_STATE_COMMAND,
@@ -47,12 +47,14 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js";
+} from "./data/inventory-service.js?v=1.4.95-durable-transfer";
+import { DurabilityService } from "./data/durability-service.js?v=1.4.95-durability";
 import { HeroDollService } from "./data/hero-doll-service.js";
-import { CraftingService } from "./data/crafting-service.js";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.93-item-upgrades";
+import { CraftingService } from "./data/crafting-service.js?v=1.4.95-craft-calendar";
+import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.95-craft-calendar";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.95-item-upgrades";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
-import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js";
+import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.95-craft-calendar";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
 import { LootClaimService } from "./application/loot-claim-service.js";
 import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
@@ -61,48 +63,57 @@ import { isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.93-firearm-item-sheet-no-rerender";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.93-firearm-card-notes";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.95-firearm-item-sheet-no-rerender";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.95-firearm-card-notes";
 import { SpellAutomationService } from "./combat/spell-automation-service.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
-import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.93-surrounded-ac";
-import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.93";
-import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.93-environment-stable-statuses";
-import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.93-mechanus-d20-advantage-mode";
-import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.93";
-import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.93-sorcerer-cooldown-card";
+import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.95-surrounded-ac";
+import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.95";
+import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.95-environment-stable-statuses";
+import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.95-mechanus-d20-advantage-mode";
+import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.95";
+import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.95-sorcerer-cooldown-card";
 import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
-} from "./combat/paladin-automation-service.js?v=1.4.93";
-import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.4.93-rebreya-open-position";
+} from "./combat/paladin-automation-service.js?v=1.4.95";
+import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.4.95-rebreya-open-position";
 import {
   PERFORMER_APPLY_RESULT_COMMAND,
   PerformerAutomationService
-} from "./combat/performer-automation-service.js?v=1.4.93";
+} from "./combat/performer-automation-service.js?v=1.4.95";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
-import { registerSceneControlsHook } from "./hooks.js?v=1.4.93-bg3-piles";
+import { registerSceneControlsHook } from "./hooks.js?v=1.4.95-bg3-piles";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.93-item-upgrade-slots";
-import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.93";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.95-item-upgrade-slots";
+import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.95";
+import {
+  patchDurabilityItemEffectSuppression,
+  reconcileBrokenEquippedArmor,
+  registerDurabilityHooks
+} from "./integrations/durability-hooks.js?v=1.4.95-durability-piles";
+import {
+  ensureItemPilesDnD5eIntegration,
+  registerItemPilesSimilarityRepairHook
+} from "./integrations/item-piles-dnd5e.js?v=1.4.95-durability-piles";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.95-durable-transfer";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
-import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.93";
+import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.95";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
-import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.93";
+import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.95";
 import {
   SOCKET_EVENT_SET_SETTING,
   SOCKET_EVENT_SET_SETTING_RESULT,
   handleSettingsUpdateSocketResponse,
   registerSettings
 } from "./settings.js";
-import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js";
+import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.95-durability";
 import { bringAppToFront, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -144,7 +155,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.93-item-upgrade-slots";
+const MODULE_STYLE_VERSION = "1.4.95-item-upgrade-slots";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -157,6 +168,18 @@ const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
 const ENVIRONMENT_STATUS_VERSION = "surrounded-ac-1";
 let socketModuleApi = null;
 const queuedSocketMessages = [];
+
+function registerDurabilitySettings() {
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.DURABILITY_MUTATION_JOURNAL, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {
+      version: 1,
+      records: []
+    }
+  });
+}
 
 function cloneSocketPayload(value) {
   if (globalThis.foundry?.utils?.deepClone) {
@@ -716,6 +739,7 @@ export class RebreyaMainModule {
     });
     this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
+    this.durabilityService = new DurabilityService(this);
     this.lootClaimService = new LootClaimService({
       getMessage: ({ messageId, lootId }) => (
         (messageId ? globalThis.game?.messages?.get?.(messageId) : null)
@@ -726,10 +750,8 @@ export class RebreyaMainModule {
         content: buildLootgenChatContent(state),
         [`flags.${MODULE_ID}.lootgenChat`]: state
       }),
-      grantRow: ({ claimId, row }) => this.inventoryService.addModelItemToInventoryOnce(
-        row.sourceType,
-        row.sourceId,
-        row.quantity,
+      grantRow: ({ claimId, row }) => this.inventoryService.addLootgenChatRowToInventoryOnce(
+        row,
         `loot-row:${claimId}`
       ),
       grantCoins: ({ claimId, coins }) => this.inventoryService.addCurrencyToInventoryOnce(
@@ -740,6 +762,10 @@ export class RebreyaMainModule {
     });
     this.heroDollService = new HeroDollService(this);
     this.craftingService = new CraftingService(this);
+    this.craftDowntimeService = new CraftDowntimeService({
+      craftingService: this.craftingService,
+      downtimeService: this.downtimeService
+    });
     this.itemUpgradeService = new ItemUpgradeService(this);
     this.calendarService = new CalendarService({
       groupContextService: this.groupContextService,
@@ -750,13 +776,20 @@ export class RebreyaMainModule {
       calendarService: this.calendarService,
       downtimeService: this.downtimeService,
       groupContextService: this.groupContextService,
-      refreshGlobalEvents: (currentIsoDate, previousIsoDate) => (
-        this.#refreshGlobalEventsByCalendarTransition(currentIsoDate, previousIsoDate)
+      refreshGlobalEvents: (currentIsoDate, previousIsoDate, executionContext) => (
+        this.#refreshGlobalEventsByCalendarTransition(currentIsoDate, previousIsoDate, executionContext)
       ),
-      resetTraderMonth: (monthResetCount, reason) => this.#applyTraderMonthlyReset(monthResetCount, reason),
+      resetTraderMonth: (monthResetCount, reason, executionContext) => (
+        this.#applyTraderMonthlyReset(monthResetCount, reason, executionContext)
+      ),
       processDayCycles: (days, options) => this.#runDayCycles(days, options),
-      refreshApps: () => this.refreshOpenApps(),
-      refreshSmallTime: () => refreshSmallTimeDateDisplay()
+      refreshApps: (executionContext) => this.#refreshAppsByCalendarTransition(executionContext),
+      refreshSmallTime: (executionContext) => this.#refreshSmallTimeByCalendarTransition(executionContext),
+      activityProcessor: (slot, executionContext) => (
+        cleanSocketId(slot?.activityId) === "craft"
+          ? this.craftDowntimeService.processScheduledSlot(slot, executionContext)
+          : { result: null }
+      )
     });
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
@@ -1256,6 +1289,9 @@ export class RebreyaMainModule {
     if (message.type === SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_REQUEST) {
       if (game.user?.isGM) {
         const forUserId = String(message.senderId ?? "").trim();
+        const transferId = String(message.payload?.transferId ?? "").trim();
+        const sourceItemUuid = String(message.payload?.sourceItemUuid ?? "").trim();
+        const targetItemUuid = String(message.payload?.targetItemUuid ?? "").trim();
         try {
           const result = await this.runInventoryMutation(
             () => this.inventoryService.handlePartyInventorySourceDepletionSocketRequest(message.payload ?? {}, {
@@ -1270,6 +1306,9 @@ export class RebreyaMainModule {
             type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
             forUserId,
             senderId: game.user?.id ?? "",
+            transferId,
+            sourceItemUuid,
+            targetItemUuid,
             ok: true
           });
         }
@@ -1278,6 +1317,9 @@ export class RebreyaMainModule {
             type: SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
             forUserId,
             senderId: game.user?.id ?? "",
+            transferId,
+            sourceItemUuid,
+            targetItemUuid,
             ok: false,
             error: error?.message ?? String(error)
           });
@@ -1361,12 +1403,12 @@ export class RebreyaMainModule {
       });
     }
 
-    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ROW && game.user?.isGM) {
+    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ROW && isActiveGmClient(game)) {
       await this.claimLootgenChatRow(message.payload?.lootId, message.payload?.rowId, { quiet: true, fromSocket: true });
       return;
     }
 
-    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY && game.user?.isGM) {
+    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ROW_TO_INVENTORY && isActiveGmClient(game)) {
       await this.claimLootgenChatRowToInventory(message.payload?.lootId, message.payload?.rowId, {
         quiet: true,
         fromSocket: true,
@@ -1375,7 +1417,7 @@ export class RebreyaMainModule {
       return;
     }
 
-    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY && game.user?.isGM) {
+    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ALL_TO_INVENTORY && isActiveGmClient(game)) {
       await this.claimLootgenChatAllToInventory(message.payload?.lootId, {
         quiet: true,
         fromSocket: true,
@@ -1384,7 +1426,7 @@ export class RebreyaMainModule {
       return;
     }
 
-    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_COINS && game.user?.isGM) {
+    if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_COINS && isActiveGmClient(game)) {
       await this.claimLootgenChatCoins(message.payload?.lootId, {
         quiet: true,
         fromSocket: true,
@@ -1412,7 +1454,20 @@ export class RebreyaMainModule {
 
     return game.messages.contents.find((message) => {
       const state = message.getFlag(MODULE_ID, "lootgenChat") ?? null;
-      return String(state?.lootId ?? "") === safeLootId;
+      const createdBy = String(state?.createdBy ?? "").trim();
+      const messageUserId = String(
+        message?.author?.id
+        ?? message?.user?.id
+        ?? message?.user
+        ?? ""
+      ).trim();
+      const author = game.users?.get?.(createdBy)
+        ?? Array.from(game.users?.contents ?? []).find((user) => user?.id === createdBy)
+        ?? null;
+      return String(state?.lootId ?? "") === safeLootId
+        && Boolean(createdBy)
+        && messageUserId === createdBy
+        && author?.isGM === true;
     }) ?? null;
   }
 
@@ -1492,6 +1547,7 @@ export class RebreyaMainModule {
         quantity: row.quantity,
         value: row.value,
         totalValue: row.totalValue,
+        isBroken: itemData?.flags?.[MODULE_ID]?.durability?.state === "broken",
         claimed: false
       });
     }
@@ -1550,6 +1606,9 @@ export class RebreyaMainModule {
       ui.notifications?.info("Запрос на добавление добычи в склад отправлен мастеру.");
       return true;
     }
+    if (!isActiveGmClient(game)) {
+      throw new Error("Только активный мастер может добавлять добычу в склад.");
+    }
 
     const message = this.#findLootgenChatMessage(safeLootId);
     if (!message) {
@@ -1592,6 +1651,9 @@ export class RebreyaMainModule {
       }
       ui.notifications?.info("Запрос на добавление всей добычи в склад отправлен мастеру.");
       return true;
+    }
+    if (!isActiveGmClient(game)) {
+      throw new Error("Только активный мастер может добавлять добычу в склад.");
     }
 
     const message = this.#findLootgenChatMessage(safeLootId);
@@ -1638,6 +1700,9 @@ export class RebreyaMainModule {
       }
       return true;
     }
+    if (!isActiveGmClient(game)) {
+      throw new Error("Только активный мастер может изменять состояние добычи.");
+    }
 
     let claimedRow = null;
     const result = await this.#updateLootgenChatState(safeLootId, (state) => {
@@ -1683,6 +1748,9 @@ export class RebreyaMainModule {
       }
       ui.notifications?.info("Запрос на добавление монет отправлен мастеру.");
       return true;
+    }
+    if (!isActiveGmClient(game)) {
+      throw new Error("Только активный мастер может добавлять монеты в склад.");
     }
 
     const message = this.#findLootgenChatMessage(safeLootId);
@@ -1846,6 +1914,30 @@ export class RebreyaMainModule {
 
   async getModel(options = {}) {
     return this.repository.load(options);
+  }
+
+  initializeItem(item, options = {}) {
+    return this.durabilityService.initializeItem(item, options);
+  }
+
+  damageItem(item, options = {}) {
+    return this.durabilityService.damageItem(item, options);
+  }
+
+  breakItem(item, options = {}) {
+    return this.durabilityService.breakItem(item, options);
+  }
+
+  destroyItem(item, options = {}) {
+    return this.durabilityService.destroyItem(item, options);
+  }
+
+  getDurability(item) {
+    return this.durabilityService.getDurability(item);
+  }
+
+  isBroken(item) {
+    return this.durabilityService.isBroken(item);
   }
 
   getCombatStatusDefinitions() {
@@ -3274,6 +3366,29 @@ export class RebreyaMainModule {
     );
   }
 
+  async addLootgenRowToInventory(row = {}) {
+    const mutationId = String(row.directGrantId ?? "").trim();
+    if (!mutationId) {
+      throw new Error("Для выдачи строки Lootgen нужен стабильный идентификатор.");
+    }
+    return this.runInventoryMutation(
+      () => this.inventoryService.addLootgenRowToInventoryOnce(row, mutationId)
+    );
+  }
+
+  async addLootgenCoinsToInventory(coins = {}, mutationId = "") {
+    const stableMutationId = String(mutationId ?? "").trim();
+    if (!stableMutationId) {
+      throw new Error("Для выдачи монет Lootgen нужен стабильный идентификатор.");
+    }
+    if (!isActiveGmClient(game)) {
+      throw new Error("Только активный мастер может добавлять монеты Lootgen.");
+    }
+    return this.runInventoryMutation(
+      () => this.inventoryService.addCurrencyToInventoryOnce(coins, stableMutationId)
+    );
+  }
+
   getRebreyaToolCatalog() {
     return this.inventoryService.getRebreyaToolCatalog();
   }
@@ -3300,7 +3415,37 @@ export class RebreyaMainModule {
   }
 
   async getCraftSnapshot(options = {}) {
-    return this.craftingService.getSnapshot(options);
+    return this.craftDowntimeService.getSnapshot(options);
+  }
+
+  async getCraftApprovalQuote(input = {}) {
+    return this.craftDowntimeService.getApprovalQuote(input);
+  }
+
+  async #refreshCraftProject(project) {
+    const actorId = cleanSocketId(project?.crafterActorId);
+    await this.refreshDowntimeViews({ actorIds: actorId ? [actorId] : [] });
+    return project;
+  }
+
+  async approveCraftDowntimeRequest(input = {}) {
+    return this.#refreshCraftProject(await this.craftDowntimeService.approveRequest(input));
+  }
+
+  async pauseCraftProject(projectId, options = {}) {
+    return this.#refreshCraftProject(await this.craftDowntimeService.pause(projectId, options));
+  }
+
+  async resumeCraftProject(projectId, options = {}) {
+    return this.#refreshCraftProject(await this.craftDowntimeService.resume(projectId, options));
+  }
+
+  async cancelCraftProject(projectId, options = {}) {
+    return this.#refreshCraftProject(await this.craftDowntimeService.cancel(projectId, options));
+  }
+
+  async reconcileCraftProject(projectId, options = {}) {
+    return this.#refreshCraftProject(await this.craftDowntimeService.reconcile(projectId, options));
   }
 
   async queueCraftTask(payload = {}) {
@@ -3362,16 +3507,23 @@ export class RebreyaMainModule {
     return result;
   }
 
-  async #refreshGlobalEventsByCalendarTransition(currentIsoDate, previousIsoDate) {
+  async #refreshGlobalEventsByCalendarTransition(currentIsoDate, previousIsoDate, executionContext = {}) {
+    const guard = executionContext.guard ?? executionContext.assertExecutionContext;
+    guard?.();
     const activation = await this.globalEventsService.refreshEventActivationByDate(currentIsoDate, previousIsoDate);
+    guard?.();
     if (activation.changed && this.globalEventsService.isAutoRecalculateEnabled()) {
+      guard?.();
       await this.repository.rebuildModel();
+      guard?.();
     }
 
     return activation;
   }
 
-  async #applyTraderMonthlyReset(monthResetCount, reason = "calendar") {
+  async #applyTraderMonthlyReset(monthResetCount, reason = "calendar", executionContext = {}) {
+    const guard = executionContext.guard ?? executionContext.assertExecutionContext;
+    guard?.();
     const safeResetCount = Math.max(0, Math.floor(Number(monthResetCount ?? 0)));
     if (safeResetCount <= 0 || !game.user?.isGM) {
       return {
@@ -3383,7 +3535,9 @@ export class RebreyaMainModule {
       };
     }
 
-    const resetResult = await this.traderService.resetAssortments();
+    guard?.();
+    const resetResult = await this.traderService.resetAssortments(executionContext);
+    guard?.();
     return {
       triggered: true,
       reason,
@@ -3413,13 +3567,32 @@ export class RebreyaMainModule {
     };
   }
 
-  async #runDayCycles(days, { consumeSupplies = true, applyEnergy = true } = {}) {
+  async #runDayCycles(days, options = {}) {
+    const {
+      consumeSupplies = true,
+      applyEnergy = true,
+      groupId = "",
+      transitionId = ""
+    } = options;
+    const guard = options.guard ?? options.assertExecutionContext;
+    const executionContext = {
+      groupId,
+      transitionId,
+      assertExecutionContext: guard,
+      guard
+    };
     const safeDays = Math.max(0, Math.floor(Number(days ?? 0)));
     const supplies = [];
 
+    guard?.();
     for (let index = 0; index < safeDays; index += 1) {
+      guard?.();
       if (consumeSupplies) {
-        const supplyResult = await this.inventoryService.consumeSuppliesOneDay({ applyEnergy });
+        const supplyResult = await this.inventoryService.consumeSuppliesOneDay({
+          applyEnergy,
+          ...executionContext
+        });
+        guard?.();
         supplies.push(supplyResult);
       }
     }
@@ -3445,6 +3618,22 @@ export class RebreyaMainModule {
         completedCount: 0
       }
     };
+  }
+
+  async #refreshAppsByCalendarTransition(executionContext = {}) {
+    const guard = executionContext.guard ?? executionContext.assertExecutionContext;
+    guard?.();
+    const result = await this.refreshOpenApps();
+    guard?.();
+    return result;
+  }
+
+  async #refreshSmallTimeByCalendarTransition(executionContext = {}) {
+    const guard = executionContext.guard ?? executionContext.assertExecutionContext;
+    guard?.();
+    const result = await refreshSmallTimeDateDisplay();
+    guard?.();
+    return result;
   }
 
   async shiftCalendarDays(days = 0, options = {}) {
@@ -3529,7 +3718,8 @@ export class RebreyaMainModule {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const { LootgenApp } = await import("./ui/lootgen-app.js");
+      const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.95";
+      const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(moduleVersion)}`);
       let app = null;
 
       if (!viewer && !newWindow) {
@@ -3936,7 +4126,7 @@ export class RebreyaMainModule {
         throw new Error("Окно космологии доступно только мастеру.");
       }
 
-      const { CosmologyApp } = await import("./ui/cosmology-app.js?v=1.4.93-cosmology");
+      const { CosmologyApp } = await import("./ui/cosmology-app.js?v=1.4.95-cosmology");
 
       if (!this.cosmologyApp) {
         this.cosmologyApp = new CosmologyApp(this);
@@ -4129,6 +4319,7 @@ Hooks.once("init", () => {
 
   try {
     registerSettings();
+    registerDurabilitySettings();
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register settings.`, error);
@@ -4177,6 +4368,23 @@ Hooks.once("init", () => {
   }
 
   try {
+    patchDurabilityItemEffectSuppression();
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to patch broken-item effect suppression.`, error);
+  }
+
+  try {
+    registerItemPilesSimilarityRepairHook({ Hooks });
+    void ensureItemPilesDnD5eIntegration().catch((error) => {
+      console.warn(`${MODULE_ID} | Failed to initialize Item Piles integration.`, error);
+    });
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to initialize Item Piles integration.`, error);
+  }
+
+  try {
     patchSmAirshipRenderSettingsHook();
   }
   catch (error) {
@@ -4191,6 +4399,13 @@ if (Hooks.on instanceof Function) {
 }
 
 Hooks.once("ready", async () => {
+  try {
+    await ensureItemPilesDnD5eIntegration();
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to finalize Item Piles integration.`, error);
+  }
+
   try {
     patchEffectMacroCombatHooks();
   }
@@ -4228,6 +4443,14 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.warn(`${MODULE_ID} | Failed to register Forien Quest Log integration.`, error);
+  }
+
+  try {
+    registerDurabilityHooks(moduleApi);
+    await reconcileBrokenEquippedArmor();
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register durability hooks.`, error);
   }
 
   try {

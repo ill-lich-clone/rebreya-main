@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID, SETTINGS_KEYS } from "../scripts/constants.js";
-import { DowntimeService } from "../scripts/data/downtime-service.js";
+import { DowntimeService } from "../scripts/data/downtime-service.js?v=1.4.95-craft-calendar";
 import { normalizeGroupState } from "../scripts/data/group-context-service.js";
 
 function clone(value) {
@@ -170,6 +170,7 @@ function createHarness({
   return {
     service: new DowntimeService(moduleApi),
     groupActor,
+    groupContextService,
     get registry() {
       return registry;
     },
@@ -375,6 +376,30 @@ test("grantWeeks creates five calendar slots per week from the module calendar o
   }
 });
 
+test("grantWeeks accepts the unpadded early-year dates used by the world calendar", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const harness = createHarness({
+    members: [actor],
+    calendarIsoDate: "402-03-13",
+    downtimeState: { version: 2 }
+  });
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 1 });
+    const state = getDowntimeState(harness);
+    assert.deepEqual(state.scheduleSlots.map((slot) => slot.isoDate), [
+      "402-03-18",
+      "402-03-19",
+      "402-03-20",
+      "402-03-21",
+      "402-03-22"
+    ]);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("createRequest allocates pending workdays and approval propagates to its slots", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
   const templateItem = createDowntimeTemplateItem({ id: "downtime-training", name: "Training" });
@@ -400,6 +425,132 @@ test("createRequest allocates pending workdays and approval propagates to its sl
     assert.equal(state.scheduleSlots.every((slot) => slot.status === "approved"), true);
     assert.equal(state.balancesByActorId["actor-a"].reservedWorkdays, 5);
     assert.equal(state.balancesByActorId["actor-a"].spentWorkdays, 0);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("createRequest preserves a canonical craft project and reflows owned-workshop days", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+  const craftProject = {
+    outputs: [{ sourceType: "gear", sourceId: "longsword", quantity: 1 }],
+    predominantMaterialId: "steel",
+    hoursPerDay: 12,
+    ownedWorkshop: true
+  };
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 2 });
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      weeks: 2,
+      craftProject
+    });
+
+    assert.deepEqual(request.craftProject, craftProject);
+    assert.equal(request.ownedWorkshop, true);
+    const slots = getDowntimeState(harness).scheduleSlots
+      .filter((slot) => slot.requestId === request.id)
+      .sort((left, right) => left.isoDate.localeCompare(right.isoDate));
+    assert.equal(slots.length, 10);
+    assert.deepEqual(slots.map((slot) => slot.isoDate), [
+      "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24",
+      "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29"
+    ]);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("generic request status cannot approve a craft request without linking its project", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 1 });
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      weeks: 1,
+      craftProject: {
+        outputs: [{ sourceType: "gear", sourceId: "longsword", quantity: 1 }],
+        predominantMaterialId: "steel",
+        hoursPerDay: 8,
+        ownedWorkshop: false
+      }
+    });
+
+    await assert.rejects(
+      harness.service.setRequestStatus(request.id, "approved"),
+      /craft project approval/iu
+    );
+
+    const state = getDowntimeState(harness);
+    assert.equal(state.requests[0].status, "pending");
+    assert.equal(state.requests[0].craftProjectId, undefined);
+    assert.equal(state.scheduleSlots.every((slot) => slot.status === "pending"), true);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("linkCraftProject atomically approves the request and binds every reserved slot", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 1 });
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      weeks: 1,
+      craftProject: {
+        outputs: [{ sourceType: "gear", sourceId: "longsword", quantity: 1 }],
+        predominantMaterialId: "steel",
+        hoursPerDay: 12,
+        ownedWorkshop: false
+      }
+    });
+    const link = {
+      projectId: "craft-project-1",
+      hoursPerDay: 12,
+      ownedWorkshop: false,
+      mutationId: "approve-craft-request-1"
+    };
+
+    const approved = await harness.service.linkCraftProject(request.id, link);
+    const repeated = await harness.service.linkCraftProject(request.id, link);
+    const state = getDowntimeState(harness);
+
+    assert.equal(approved.status, "approved");
+    assert.equal(repeated.craftProjectId, link.projectId);
+    assert.equal(state.requests[0].craftProjectId, link.projectId);
+    assert.equal(state.requests[0].craftApprovalMutationId, link.mutationId);
+    assert.equal(state.scheduleSlots.every((slot) => (
+      slot.requestId === request.id
+      && slot.status === "approved"
+      && slot.projectId === link.projectId
+      && slot.activityId === "craft"
+      && slot.hours === 12
+    )), true);
+    assert.equal(state.balancesByActorId[actor.id].reservedWorkdays, 5);
+
+    await assert.rejects(
+      harness.service.linkCraftProject(request.id, {
+        ...link,
+        projectId: "craft-project-2",
+        mutationId: "approve-craft-request-2"
+      }),
+      /already linked/iu
+    );
   }
   finally {
     harness.restore();
@@ -446,9 +597,13 @@ test("processScheduledDate spends an approved slot once and release keeps it imm
     const activityProcessor = async (slot, context) => {
       processorCalls += 1;
       assert.equal(slot.requestId, request.id);
+      assert.equal(Object.isFrozen(context), true);
       assert.deepEqual(context, {
-        isoDate,
+        groupId: "group-1",
         transitionId: "transition-1",
+        assertExecutionContext: null,
+        guard: null,
+        isoDate,
         operationId: `downtime:transition-1:${slot.id}`
       });
       return { result: { progressGold: 5 }, projectId: "project-1", activityId: "craft", hours: 8 };
@@ -772,6 +927,268 @@ test("processScheduledDate releases the mutation queue while the domain processo
   }
   finally {
     releaseProcessor.resolve();
+    harness.restore();
+  }
+});
+
+test("processScheduledDate freezes captured execution context and guards finalization after processor await", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+  let authorityActive = true;
+  const guard = () => {
+    if (!authorityActive) {
+      throw new Error("calendar execution context changed");
+    }
+  };
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 1 });
+    const request = await harness.service.createRequest({ actorId: actor.id, actionId: templateItem.uuid, weeks: 1 });
+    await harness.service.setRequestStatus(request.id, "approved");
+    const slot = getDowntimeState(harness).scheduleSlots[0];
+
+    await assert.rejects(
+      harness.service.processScheduledDate(slot.isoDate, {
+        transitionId: "transition-guarded-domain",
+        groupId: "group-1",
+        guard,
+        assertExecutionContext: guard,
+        activityProcessor: async (_slot, context) => {
+          assert.equal(Object.isFrozen(context), true);
+          assert.equal(context.groupId, "group-1");
+          assert.equal(context.transitionId, "transition-guarded-domain");
+          assert.equal(context.guard, guard);
+          assert.equal(context.assertExecutionContext, guard);
+          authorityActive = false;
+          return { result: { progress: 1 } };
+        }
+      }),
+      /calendar execution context changed/u
+    );
+
+    const state = getDowntimeState(harness);
+    assert.equal(state.scheduleSlots[0].status, "approved");
+    assert.equal(state.balancesByActorId[actor.id].reservedWorkdays, 5);
+    assert.equal(state.balancesByActorId[actor.id].spentWorkdays, 0);
+    assert.deepEqual(state.workLog, []);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("same transition failover never invokes an in-flight downtime processor twice", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+  const processorStarted = createDeferred();
+  const releaseProcessor = createDeferred();
+  let processorCalls = 0;
+  let oldRun = null;
+  let oldOutcome = null;
+  const guardForUser = (userId) => () => {
+    if (globalThis.game?.user?.id !== userId) {
+      throw new Error("calendar execution context changed");
+    }
+  };
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 1 });
+    const request = await harness.service.createRequest({ actorId: actor.id, actionId: templateItem.uuid, weeks: 1 });
+    await harness.service.setRequestStatus(request.id, "approved");
+    const slot = getDowntimeState(harness).scheduleSlots[0];
+    const oldGuard = guardForUser("gm-old");
+    globalThis.game.user = { id: "gm-old", isGM: true };
+
+    oldRun = harness.service.processScheduledDate(slot.isoDate, {
+      transitionId: "transition-failover-in-flight",
+      groupId: "group-1",
+      guard: oldGuard,
+      assertExecutionContext: oldGuard,
+      activityProcessor: async (_slot, context) => {
+        processorCalls += 1;
+        assert.equal(context.operationId, `downtime:transition-failover-in-flight:${slot.id}`);
+        processorStarted.resolve();
+        await releaseProcessor.promise;
+        return { result: { progress: 1 } };
+      }
+    });
+    oldOutcome = oldRun.then(
+      (value) => ({ status: "fulfilled", value }),
+      (reason) => ({ status: "rejected", reason })
+    );
+    await processorStarted.promise;
+
+    globalThis.game.user = { id: "gm-new", isGM: true };
+    const newGuard = guardForUser("gm-new");
+    const newRun = await harness.service.processScheduledDate(slot.isoDate, {
+      transitionId: "transition-failover-in-flight",
+      groupId: "group-1",
+      guard: newGuard,
+      assertExecutionContext: newGuard,
+      activityProcessor: async () => {
+        processorCalls += 1;
+        return { result: { progress: 2 } };
+      }
+    });
+
+    assert.equal(processorCalls, 1);
+    assert.equal(newRun.journalStatus, "reconciliation-required");
+    assert.equal(newRun.reconciliation.length, 1);
+    assert.equal(
+      newRun.reconciliation[0].operationId,
+      `downtime:transition-failover-in-flight:${slot.id}`
+    );
+
+    const stillInFlight = await harness.service.processScheduledDate(slot.isoDate, {
+      transitionId: "transition-failover-in-flight",
+      groupId: "group-1",
+      guard: newGuard,
+      assertExecutionContext: newGuard,
+      activityProcessor: async () => {
+        processorCalls += 1;
+        return { result: { progress: 3 } };
+      }
+    });
+    assert.equal(processorCalls, 1);
+    assert.equal(stillInFlight.journalStatus, "reconciliation-required");
+    assert.equal(stillInFlight.reconciliation.length, 1);
+
+    releaseProcessor.resolve();
+    const interrupted = await oldOutcome;
+    assert.equal(interrupted.status, "rejected");
+    assert.match(interrupted.reason.message, /calendar execution context changed/u);
+
+    const state = getDowntimeState(harness);
+    assert.equal(state.scheduleSlots[0].status, "approved");
+    assert.equal(state.balancesByActorId[actor.id].spentWorkdays, 0);
+    assert.equal(state.transitionJournal[0].status, "reconciliation-required");
+
+    const resumed = await harness.service.processScheduledDate(slot.isoDate, {
+      transitionId: "transition-failover-in-flight",
+      groupId: "group-1",
+      guard: newGuard,
+      assertExecutionContext: newGuard,
+      activityProcessor: async (_slot, context) => {
+        processorCalls += 1;
+        assert.equal(context.operationId, `downtime:transition-failover-in-flight:${slot.id}`);
+        return { result: { progress: 2 } };
+      }
+    });
+
+    assert.equal(processorCalls, 2);
+    assert.equal(resumed.journalStatus, "completed");
+    assert.equal(resumed.processed.length, 1);
+    assert.equal(getDowntimeState(harness).balancesByActorId[actor.id].spentWorkdays, 1);
+  }
+  finally {
+    releaseProcessor.resolve();
+    await Promise.allSettled([oldRun, oldOutcome].filter(Boolean));
+    harness.restore();
+  }
+});
+
+test("same transition reclaims an expired processor lease after the owning GM disappears", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+  const transitionId = "transition-expired-lease";
+  let processorCalls = 0;
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 1 });
+    const request = await harness.service.createRequest({ actorId: actor.id, actionId: templateItem.uuid, weeks: 1 });
+    await harness.service.setRequestStatus(request.id, "approved");
+    const slot = getDowntimeState(harness).scheduleSlots[0];
+    const expiredAt = Date.now() - 1;
+
+    await harness.mutateDowntimeState((state) => {
+      const claimedSlot = state.scheduleSlots.find((entry) => entry.id === slot.id);
+      claimedSlot.processingTransitionId = transitionId;
+      state.transitionJournal.push({
+        transitionId,
+        isoDate: slot.isoDate,
+        slotIds: [slot.id],
+        status: "processing",
+        resultsBySlotId: {
+          [slot.id]: {
+            status: "processing",
+            operationId: `downtime:${transitionId}:${slot.id}`,
+            claimedActorId: actor.id,
+            claimedRequestId: request.id,
+            claimedStatus: "approved",
+            processorLeaseId: "old-lease",
+            processorOwnerUserId: "gm-old",
+            processorLeaseExpiresAt: expiredAt,
+            updatedAt: expiredAt - 30_000
+          }
+        },
+        createdAt: expiredAt - 30_000,
+        updatedAt: expiredAt - 30_000
+      });
+    });
+    globalThis.game.user = { id: "gm-new", isGM: true };
+
+    const result = await harness.service.processScheduledDate(slot.isoDate, {
+      transitionId,
+      groupId: "group-1",
+      activityProcessor: async (_slot, context) => {
+        processorCalls += 1;
+        assert.equal(context.operationId, `downtime:${transitionId}:${slot.id}`);
+        return { result: { progress: 1 } };
+      }
+    });
+
+    assert.equal(processorCalls, 1);
+    assert.equal(result.journalStatus, "completed");
+    assert.equal(result.processed.length, 1);
+    const state = getDowntimeState(harness);
+    assert.equal(state.scheduleSlots[0].status, "processed");
+    assert.equal(state.balancesByActorId[actor.id].spentWorkdays, 1);
+    assert.equal(state.transitionJournal[0].resultsBySlotId[slot.id].processorOwnerUserId, "gm-new");
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("processScheduledDate guards the final journal write after preparation commits", async () => {
+  const harness = createHarness({ downtimeState: { version: 2 } });
+  let authorityActive = true;
+  const guard = () => {
+    if (!authorityActive) {
+      throw new Error("calendar execution context changed");
+    }
+  };
+  const mutateGroupState = harness.groupContextService.mutateGroupState.bind(harness.groupContextService);
+  let writes = 0;
+  harness.groupContextService.mutateGroupState = async (...args) => {
+    const result = await mutateGroupState(...args);
+    writes += 1;
+    if (writes === 1) {
+      authorityActive = false;
+    }
+    return result;
+  };
+
+  try {
+    await assert.rejects(
+      harness.service.processScheduledDate("2026-07-16", {
+        transitionId: "transition-guarded-empty",
+        groupId: "group-1",
+        guard,
+        assertExecutionContext: guard
+      }),
+      /calendar execution context changed/u
+    );
+
+    const journal = getDowntimeState(harness).transitionJournal
+      .find((entry) => entry.transitionId === "transition-guarded-empty");
+    assert.equal(writes, 1);
+    assert.equal(journal.status, "processing");
+  }
+  finally {
     harness.restore();
   }
 });
@@ -4649,6 +5066,7 @@ test("RebreyaMainModule routes player inventory imports through the active GM", 
         ok: true
       }
     }]);
+
   }
   finally {
     globalThis.Hooks = previousHooks;
@@ -4692,6 +5110,7 @@ test("RebreyaMainModule routes party inventory source depletion through the acti
     await moduleApi.handleSocketMessage({
       type: "inventory-source-depletion-request",
       payload: {
+        transferId: "party-transfer:source-to-target",
         sourceItemUuid: "Actor.group-1.Item.item-1",
         targetItemUuid: "Actor.member-1.Item.item-1",
         targetActorUuid: "Actor.member-1"
@@ -4701,6 +5120,7 @@ test("RebreyaMainModule routes party inventory source depletion through the acti
 
     assert.deepEqual(handled, {
       payload: {
+        transferId: "party-transfer:source-to-target",
         sourceItemUuid: "Actor.group-1.Item.item-1",
         targetItemUuid: "Actor.member-1.Item.item-1",
         targetActorUuid: "Actor.member-1"
@@ -4716,9 +5136,39 @@ test("RebreyaMainModule routes party inventory source depletion through the acti
         type: "inventory-source-depletion-result",
         forUserId: "player-1",
         senderId: "gm",
+        transferId: "party-transfer:source-to-target",
+        sourceItemUuid: "Actor.group-1.Item.item-1",
+        targetItemUuid: "Actor.member-1.Item.item-1",
         ok: true
       }
     }]);
+
+    moduleApi.inventoryService.handlePartyInventorySourceDepletionSocketRequest = async () => {
+      throw new Error("depletion rejected");
+    };
+    await moduleApi.handleSocketMessage({
+      type: "inventory-source-depletion-request",
+      payload: {
+        transferId: "party-transfer:rejected",
+        sourceItemUuid: "Actor.group-1.Item.item-2",
+        targetItemUuid: "Actor.member-1.Item.item-2",
+        targetActorUuid: "Actor.member-1"
+      },
+      senderId: "player-1"
+    });
+    assert.deepEqual(emitted[1], {
+      channel: `module.${MODULE_ID}`,
+      message: {
+        type: "inventory-source-depletion-result",
+        forUserId: "player-1",
+        senderId: "gm",
+        transferId: "party-transfer:rejected",
+        sourceItemUuid: "Actor.group-1.Item.item-2",
+        targetItemUuid: "Actor.member-1.Item.item-2",
+        ok: false,
+        error: "depletion rejected"
+      }
+    });
   }
   finally {
     globalThis.Hooks = previousHooks;

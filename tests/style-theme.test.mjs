@@ -216,3 +216,18 @@ test("Craft toolbar no longer reserves space for the removed process-day control
   assert.match(css, /\.rm-craft-toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1\.5fr\) minmax\(200px, 0\.7fr\);/su);
   assert.doesNotMatch(css, /\.rm-craft-toolbar__actions/u);
 });
+
+test("Lootgen exposes broken equipment as a visible condition without renaming entries", async () => {
+  const [css, template, chat] = await Promise.all([
+    readFile(stylesheetUrl, "utf8"),
+    readFile(new URL("../templates/lootgen-app.hbs", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/ui/lootgen-chat.js", import.meta.url), "utf8")
+  ]);
+
+  assert.match(template, /data-field="brokenEquipmentChance"/u);
+  assert.match(template, /rm-lootgen-condition--broken[\s\S]*Сломано/u);
+  assert.match(chat, /rm-chat-loot__condition--broken[\s\S]*Сломано/u);
+  assert.match(css, /\.rm-lootgen-condition--broken\s*\{[^}]*color:\s*var\(--rm-warning\);/su);
+  assert.match(css, /\.rm-chat-loot__row-main \.rm-chat-loot__condition--broken\s*\{[^}]*color:\s*var\(--rm-warning\) !important;/su);
+  assert.doesNotMatch(template, /\{\{name\}\}\s*\(сломано\)/iu);
+});

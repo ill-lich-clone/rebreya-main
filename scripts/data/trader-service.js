@@ -1714,18 +1714,27 @@ export class TraderService {
     return nextState;
   }
 
-  async #writeState(mutator) {
+  async #writeState(mutator, { guard = null } = {}) {
     if (!game.user?.isGM) {
       throw new Error("Торговые операции может сохранять только ГМ.");
     }
+    const executionGuard = typeof guard === "function" ? guard : null;
+    executionGuard?.();
 
     if (this.stateRepository) {
-      return this.stateRepository.mutate(mutator);
+      return this.stateRepository.mutate(async (state) => {
+        executionGuard?.();
+        const result = await mutator(state);
+        executionGuard?.();
+        return result;
+      });
     }
 
     const state = this.#getState();
     const result = await mutator(state);
+    executionGuard?.();
     await this.#setState(state);
+    executionGuard?.();
     return result;
   }
 
@@ -1956,7 +1965,7 @@ export class TraderService {
     return 0;
   }
 
-  async resetAssortments() {
+  async resetAssortments({ guard = null, assertExecutionContext = null } = {}) {
     if (!game.user?.isGM) {
       return {
         refreshedTraderCount: 0,
@@ -1964,8 +1973,16 @@ export class TraderService {
       };
     }
 
+    const executionGuard = typeof guard === "function"
+      ? guard
+      : typeof assertExecutionContext === "function"
+        ? assertExecutionContext
+        : null;
+    executionGuard?.();
     const model = await this.moduleApi.getModel();
+    executionGuard?.();
     return this.#writeState(async (state) => {
+      executionGuard?.();
       const sourceTraders = Object.entries(state.traders ?? {});
       const nextTraders = {};
       let refreshedTraderCount = 0;
@@ -2063,7 +2080,7 @@ export class TraderService {
         refreshedTraderCount,
         removedTraderCount
       };
-    });
+    }, { guard: executionGuard });
   }
 
   async cleanupLegacyManagedTraders() {

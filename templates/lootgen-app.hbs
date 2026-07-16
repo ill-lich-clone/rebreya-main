@@ -42,6 +42,10 @@
               <label title="Шанс включить магический предмет в выдачу (0-100%).">% магических предметов</label>
               <input type="number" min="0" max="100" step="1" value="{{form.magicPercent}}" data-field="magicPercent">
             </div>
+            <div class="rm-field">
+              <label title="Независимый шанс для каждой строки обычного снаряжения появиться уже сломанной (0-100%).">% сломанного снаряжения</label>
+              <input type="number" min="0" max="100" step="1" value="{{form.brokenEquipmentChance}}" data-field="brokenEquipmentChance">
+            </div>
 
             <div class="rm-lootgen-switches">
               <label class="rm-lootgen-check">
@@ -143,6 +147,12 @@
                   <p class="rm-muted">
                     {{typeLabel}} • ранг {{rank}} • {{rmNum value precision=0}} value • x{{rmNum quantity precision=0}}
                   </p>
+                  {{#if isBroken}}
+                    <span class="rm-lootgen-condition rm-lootgen-condition--broken">
+                      <i class="fa-solid fa-link-slash"></i>
+                      Сломано
+                    </span>
+                  {{/if}}
                 </div>
                 <div class="rm-lootgen-result-row__side">
                   <span>{{rmNum totalValue precision=0}} value</span>

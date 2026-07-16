@@ -38,7 +38,7 @@ test("module manifest loads a cache-busted entrypoint for the current version", 
   const entrypointSource = await readFile(new URL(expectedEntrypoint, manifestUrl), "utf8");
   const expectedSource = [
     "// @rebreya-role active-version-forwarder",
-    'import "./main.js?v=1.4.93-item-upgrade-slots";',
+    'import "./main.js?v=1.4.95-craft-durability";',
     ""
   ].join("\n");
 
@@ -46,6 +46,29 @@ test("module manifest loads a cache-busted entrypoint for the current version", 
   assert.deepEqual(manifest.esmodules, [expectedEntrypoint]);
   assert.equal(entrypointSource, expectedSource);
   assert.doesNotMatch(entrypointSource, /(?:class\s+RebreyaMainModule|Hooks\.(?:once|on)\s*\()/u);
+});
+
+test("current entrypoint cache-busts the changed craft durability and transfer graph", async () => {
+  const canonicalSource = await readCanonicalEntrypointSource();
+
+  for (const importPath of [
+    "data/downtime-service.js?v=1.4.95-craft-calendar",
+    "data/inventory-service.js?v=1.4.95-durable-transfer",
+    "data/durability-service.js?v=1.4.95-durability",
+    "data/crafting-service.js?v=1.4.95-craft-calendar",
+    "data/craft-downtime-service.js?v=1.4.95-craft-calendar",
+    "data/calendar-transition-coordinator.js?v=1.4.95-craft-calendar",
+    "integrations/durability-hooks.js?v=1.4.95-durability-piles",
+    "integrations/item-piles-dnd5e.js?v=1.4.95-durability-piles",
+    "integrations/inventory-sync.js?v=1.4.95-durable-transfer"
+  ]) {
+    assert.equal(canonicalSource.includes(importPath), true, importPath);
+  }
+
+  assert.match(
+    canonicalSource,
+    /import\(`\.\/ui\/lootgen-app\.js\?v=\$\{encodeURIComponent\(moduleVersion\)\}`\)/u
+  );
 });
 
 test("obsolete versioned module entrypoints are absent", async () => {
@@ -64,6 +87,32 @@ test("canonical module entrypoint owns the live composition root", async () => {
 
   assert.match(canonicalSource, /@rebreya-role canonical-composition-root/u);
   assert.match(canonicalSource, /export class RebreyaMainModule/u);
+});
+
+test("durability service and its persisted mutation journal are wired into the live module", async () => {
+  const canonicalSource = await readCanonicalEntrypointSource();
+  const constantsModule = await import("../scripts/constants.js");
+
+  assert.equal(constantsModule.DURABILITY_UPDATED_HOOK, "rebreya-main.durabilityUpdated");
+  assert.equal(constantsModule.SETTINGS_KEYS.DURABILITY_MUTATION_JOURNAL, "durabilityMutationJournal");
+  assert.match(canonicalSource, /import \{ DurabilityService \} from "\.\/data\/durability-service\.js\?v=1\.4\.95-durability";/u);
+  assert.match(canonicalSource, /this\.inventoryService = new InventoryService\(this\);\s+this\.durabilityService = new DurabilityService\(this\);/u);
+  assert.match(canonicalSource, /game\.settings\.register\(MODULE_ID, SETTINGS_KEYS\.DURABILITY_MUTATION_JOURNAL,/u);
+  for (const method of ["initializeItem", "damageItem", "breakItem", "destroyItem", "getDurability", "isBroken"]) {
+    assert.match(canonicalSource, new RegExp(`\\n  ${method}\\(item`, "u"));
+  }
+});
+
+test("Item Piles integration is invoked from both init and ready lifecycle call sites", async () => {
+  const canonicalSource = await readCanonicalEntrypointSource();
+  const initStart = canonicalSource.indexOf('Hooks.once("init"');
+  const readyStart = canonicalSource.indexOf('Hooks.once("ready"');
+  const initSource = canonicalSource.slice(initStart, readyStart);
+  const readySource = canonicalSource.slice(readyStart);
+
+  assert.match(canonicalSource, /import\s+\{[^}]*ensureItemPilesDnD5eIntegration[^}]*\}\s+from "\.\/integrations\/item-piles-dnd5e\.js(?:\?[^"\s]+)?";/u);
+  assert.match(initSource, /ensureItemPilesDnD5eIntegration\(\)/u);
+  assert.match(readySource, /await ensureItemPilesDnD5eIntegration\(\)/u);
 });
 
 test("legacy settings relay is an explicit deprecated compatibility boundary", async () => {

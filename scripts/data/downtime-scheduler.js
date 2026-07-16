@@ -2,13 +2,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const SUMMARY_STATUSES = ["free", "pending", "approved", "processed", "blocked"];
 
 function parseIsoDate(isoDate) {
-  const match = String(isoDate ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/u);
+  const match = String(isoDate ?? "").match(/^(\d{1,6})-(\d{2})-(\d{2})$/u);
   if (!match) {
     throw new Error(`Invalid ISO date: ${isoDate}`);
   }
 
   const [, yearText, monthText, dayText] = match;
-  const date = new Date(Date.UTC(Number(yearText), Number(monthText) - 1, Number(dayText)));
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(Number(yearText), Number(monthText) - 1, Number(dayText));
   if (
     date.getUTCFullYear() !== Number(yearText)
     || date.getUTCMonth() !== Number(monthText) - 1
@@ -21,7 +23,11 @@ function parseIsoDate(isoDate) {
 }
 
 function toIsoDate(date) {
-  return date.toISOString().slice(0, 10);
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0")
+  ].join("-");
 }
 
 function shiftIsoDate(isoDate, days) {
