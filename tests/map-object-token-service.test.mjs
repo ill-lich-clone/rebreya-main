@@ -144,6 +144,7 @@ test("buildMapObjectTemplateActorData builds the hidden managed NPC template", (
       texture: { src: TRANSPARENT_OBJECT_TOKEN_PATH },
       displayName: 50,
       displayBars: 50,
+      bar1: { attribute: "attributes.hp" },
       sight: { enabled: false },
       width: 1,
       height: 1
@@ -212,6 +213,7 @@ test("buildMapObjectTokenData builds an unlinked neutral object token with delta
     texture: { src: TRANSPARENT_OBJECT_TOKEN_PATH },
     displayName: 50,
     displayBars: 50,
+    bar1: { attribute: "attributes.hp" },
     sight: { enabled: false },
     width: 1.5,
     height: 1.5,
@@ -234,6 +236,19 @@ test("buildMapObjectTokenData builds an unlinked neutral object token with delta
       }
     }
   });
+});
+
+test("transparent template and placed tokens bind bar1 to HP", () => {
+  const template = buildMapObjectTemplateActorData();
+  const token = buildMapObjectTokenData({
+    actor: { id: "template-actor" },
+    input: {},
+    point: { x: 100, y: 100 },
+    gridSize: 100
+  });
+
+  assert.deepEqual(template.prototypeToken.bar1, { attribute: "attributes.hp" });
+  assert.deepEqual(token.bar1, { attribute: "attributes.hp" });
 });
 
 test("syncManagedDocuments skips writes for a non-active GM client", async () => {

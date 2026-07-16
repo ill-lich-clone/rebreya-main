@@ -72,6 +72,7 @@ function transparentTokenDefaults() {
     texture: { src: TRANSPARENT_OBJECT_TOKEN_PATH },
     displayName: displayAlways,
     displayBars: displayAlways,
+    bar1: { attribute: "attributes.hp" },
     sight: { enabled: false },
     width: 1,
     height: 1
