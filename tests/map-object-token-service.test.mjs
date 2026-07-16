@@ -282,6 +282,7 @@ test("syncManagedDocuments updates and reuses managed documents without creating
   const first = await environment.service.syncManagedDocuments();
   first.actor.name = "Old managed actor";
   first.macro.command = "old command";
+  first.macro.type = "chat";
 
   const second = await environment.service.syncManagedDocuments();
 
@@ -296,7 +297,8 @@ test("syncManagedDocuments updates and reuses managed documents without creating
   assert.equal(Object.hasOwn(environment.actorUpdates[0], "type"), false);
   assert.equal(Object.hasOwn(environment.macroUpdates[0], "id"), false);
   assert.equal(Object.hasOwn(environment.macroUpdates[0], "_id"), false);
-  assert.equal(Object.hasOwn(environment.macroUpdates[0], "type"), false);
+  assert.equal(environment.macroUpdates[0].type, "script");
+  assert.equal(first.macro.type, "script");
 });
 
 test("syncManagedDocuments ignores unrelated document flags when managed fields match", async () => {

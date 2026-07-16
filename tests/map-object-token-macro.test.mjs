@@ -82,6 +82,8 @@ function createPlacementEnvironment({ grid = null } = {}) {
   const documentTarget = createDocumentTarget();
   const view = { oncontextmenu: null };
   const canvas = {
+    ready: true,
+    scene: { id: "scene-1" },
     stage,
     tokens: { id: "token-layer" },
     app: { view },
@@ -342,6 +344,29 @@ test("runMapObjectTokenMacro rejects an unavailable canvas before opening the fo
     service: { createToken() {} },
     game: { user: { isGM: true }, scenes: { active: activeScene } },
     canvas: { scene: activeScene },
+    DialogV2: dialog.DialogV2,
+    notifications: { error: (message) => errors.push(message) }
+  }), /canvas/u);
+
+  assert.equal(dialog.options, null);
+  assert.deepEqual(errors, ["Для создания объекта нужен открытый canvas активной сцены."]);
+});
+
+test("runMapObjectTokenMacro rejects a blank not-ready canvas before opening the form", async () => {
+  const dialog = createDialogV2(() => {
+    throw new Error("dialog should not open");
+  });
+  const errors = [];
+
+  await assert.rejects(runMapObjectTokenMacro({
+    service: { createToken() {} },
+    game: { user: { isGM: true }, scenes: { active: { id: "scene-1" } } },
+    canvas: {
+      ready: false,
+      scene: null,
+      grid: null,
+      stage: createEmitter()
+    },
     DialogV2: dialog.DialogV2,
     notifications: { error: (message) => errors.push(message) }
   }), /canvas/u);

@@ -229,8 +229,13 @@ export async function runMapObjectTokenMacro({
     notify(notifications, "error", error.message);
     throw error;
   }
+  const gridSize = Number(canvas?.grid?.size);
   if (
-    typeof canvas?.stage?.on !== "function"
+    canvas?.ready !== true
+    || !canvas?.scene
+    || !Number.isFinite(gridSize)
+    || gridSize <= 0
+    || typeof canvas?.stage?.on !== "function"
     || typeof canvas?.stage?.off !== "function"
   ) {
     const error = new Error("Для создания объекта нужен открытый canvas активной сцены.");

@@ -178,6 +178,7 @@ function macroUpdateData() {
   const data = buildMapObjectMacroData();
   return {
     name: data.name,
+    type: data.type,
     scope: data.scope,
     command: data.command,
     ownership: data.ownership,
@@ -197,6 +198,7 @@ function actorMatchesManagedData(actor, data) {
 function macroMatchesManagedData(macro, data) {
   return equalData({
     name: macro?.name,
+    type: macro?.type,
     scope: macro?.scope,
     command: macro?.command,
     ownership: ownershipSnapshot(macro),
