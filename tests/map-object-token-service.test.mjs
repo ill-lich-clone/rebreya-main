@@ -126,11 +126,10 @@ test("normalizeMapObjectInput rejects invalid names, ranges, and non-quarter siz
   assert.throws(() => normalizeMapObjectInput({ size: 1.1 }), /size must be from 0.25 to 20 in 0.25 increments/u);
 });
 
-test("buildMapObjectTemplateActorData builds the hidden managed NPC template", () => {
+test("buildMapObjectTemplateActorData builds the player-hidden managed NPC template", () => {
   assert.deepEqual(buildMapObjectTemplateActorData(), {
     name: MAP_OBJECT_TEMPLATE_ACTOR_NAME,
     type: "npc",
-    hidden: true,
     ownership: { default: 0 },
     flags: {
       "rebreya-main": {
@@ -323,6 +322,43 @@ test("syncManagedDocuments ignores unrelated document flags when managed fields 
 
   assert.equal(environment.actorCreates.length, 0);
   assert.equal(environment.macroCreates.length, 0);
+  assert.equal(actorUpdates.length, 0);
+  assert.equal(macroUpdates.length, 0);
+});
+
+test("syncManagedDocuments ignores Foundry-expanded defaults and creator ownership", async () => {
+  const actorUpdates = [];
+  const macroUpdates = [];
+  const actorData = buildMapObjectTemplateActorData();
+  const macroData = buildMapObjectMacroData();
+  const actor = createDocument({
+    ...actorData,
+    ownership: { default: actorData.ownership.default, creator: 3 },
+    prototypeToken: {
+      ...actorData.prototypeToken,
+      texture: {
+        ...actorData.prototypeToken.texture,
+        anchorX: 0.5,
+        anchorY: 0.5,
+        fit: "contain"
+      },
+      sight: {
+        ...actorData.prototypeToken.sight,
+        range: 0,
+        angle: 360
+      },
+      alpha: 1,
+      hidden: false
+    }
+  }, actorUpdates);
+  const macro = createDocument({
+    ...macroData,
+    ownership: { default: macroData.ownership.default, creator: 3 }
+  }, macroUpdates);
+  const environment = createServiceEnvironment({ actors: [actor], macros: [macro] });
+
+  await environment.service.syncManagedDocuments();
+
   assert.equal(actorUpdates.length, 0);
   assert.equal(macroUpdates.length, 0);
 });

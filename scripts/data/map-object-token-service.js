@@ -137,11 +137,37 @@ function equalData(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function managedFlagsSnapshot(document) {
+  return {
+    [MODULE_ID]: {
+      [MODULE_FLAGS.MANAGED]: documentFlag(document, MODULE_FLAGS.MANAGED),
+      [MODULE_FLAGS.SOURCE_ID]: documentFlag(document, MODULE_FLAGS.SOURCE_ID)
+    }
+  };
+}
+
+function ownershipSnapshot(document) {
+  return { default: document?.ownership?.default };
+}
+
+function prototypeTokenSnapshot(prototypeToken) {
+  return {
+    actorLink: prototypeToken?.actorLink,
+    disposition: prototypeToken?.disposition,
+    texture: { src: prototypeToken?.texture?.src },
+    displayName: prototypeToken?.displayName,
+    displayBars: prototypeToken?.displayBars,
+    bar1: { attribute: prototypeToken?.bar1?.attribute },
+    sight: { enabled: prototypeToken?.sight?.enabled },
+    width: prototypeToken?.width,
+    height: prototypeToken?.height
+  };
+}
+
 function actorUpdateData() {
   const data = buildMapObjectTemplateActorData();
   return {
     name: data.name,
-    hidden: data.hidden,
     ownership: data.ownership,
     flags: data.flags,
     prototypeToken: data.prototypeToken
@@ -162,10 +188,9 @@ function macroUpdateData() {
 function actorMatchesManagedData(actor, data) {
   return equalData({
     name: actor?.name,
-    hidden: actor?.hidden,
-    ownership: actor?.ownership,
-    flags: { [MODULE_ID]: actor?.flags?.[MODULE_ID] },
-    prototypeToken: actor?.prototypeToken
+    ownership: ownershipSnapshot(actor),
+    flags: managedFlagsSnapshot(actor),
+    prototypeToken: prototypeTokenSnapshot(actor?.prototypeToken)
   }, data);
 }
 
@@ -174,8 +199,8 @@ function macroMatchesManagedData(macro, data) {
     name: macro?.name,
     scope: macro?.scope,
     command: macro?.command,
-    ownership: macro?.ownership,
-    flags: { [MODULE_ID]: macro?.flags?.[MODULE_ID] }
+    ownership: ownershipSnapshot(macro),
+    flags: managedFlagsSnapshot(macro)
   }, data);
 }
 
@@ -204,7 +229,6 @@ export function buildMapObjectTemplateActorData() {
   return {
     name: MAP_OBJECT_TEMPLATE_ACTOR_NAME,
     type: "npc",
-    hidden: true,
     ownership: defaultOwnership(),
     flags: managedFlags(MAP_OBJECT_ACTOR_SOURCE_ID),
     prototypeToken: transparentTokenDefaults()

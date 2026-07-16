@@ -229,6 +229,14 @@ export async function runMapObjectTokenMacro({
     notify(notifications, "error", error.message);
     throw error;
   }
+  if (
+    typeof canvas?.stage?.on !== "function"
+    || typeof canvas?.stage?.off !== "function"
+  ) {
+    const error = new Error("Для создания объекта нужен открытый canvas активной сцены.");
+    notify(notifications, "error", error.message);
+    throw error;
+  }
   if (typeof service?.createToken !== "function") {
     const error = new TypeError("Сервис создания объектов недоступен.");
     notify(notifications, "error", error.message);

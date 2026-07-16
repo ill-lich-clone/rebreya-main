@@ -331,6 +331,25 @@ test("runMapObjectTokenMacro rejects non-GM users and missing active scenes", as
   assert.deepEqual(missingSceneErrors, ["Для создания объекта нужна активная сцена."]);
 });
 
+test("runMapObjectTokenMacro rejects an unavailable canvas before opening the form", async () => {
+  const dialog = createDialogV2(() => {
+    throw new Error("dialog should not open");
+  });
+  const errors = [];
+  const activeScene = { id: "scene-1" };
+
+  await assert.rejects(runMapObjectTokenMacro({
+    service: { createToken() {} },
+    game: { user: { isGM: true }, scenes: { active: activeScene } },
+    canvas: { scene: activeScene },
+    DialogV2: dialog.DialogV2,
+    notifications: { error: (message) => errors.push(message) }
+  }), /canvas/u);
+
+  assert.equal(dialog.options, null);
+  assert.deepEqual(errors, ["Для создания объекта нужен открытый canvas активной сцены."]);
+});
+
 test("runMapObjectTokenMacro chains the prompt, placement, service, and success notification", async () => {
   const environment = createPlacementEnvironment();
   const dialog = createDialogV2((options) => options.buttons[0].callback(null, {

@@ -36,7 +36,7 @@ Add tests that import the service module and assert:
 - omitted values normalize to the documented defaults;
 - numeric strings normalize to numbers;
 - empty names, out-of-range values, and sizes outside quarter-cell increments fail with clear errors;
-- `buildMapObjectTemplateActorData()` produces a hidden/default-ownership `npc` Actor with the managed source flag and transparent prototype token defaults;
+- `buildMapObjectTemplateActorData()` produces a player-hidden `npc` Actor through default ownership `NONE`, with the managed source flag and transparent prototype token defaults;
 - `buildMapObjectTokenData()` produces an unlinked neutral token, uses the transparent texture, always displays name and HP bar, disables sight, stores HP/AC/damage threshold in `delta.system.attributes`, and carries the managed object flag;
 - token coordinates center the requested token size on the supplied snapped point.
 
@@ -226,7 +226,7 @@ Expected: all tests PASS.
 Restart the local Foundry world and verify through the in-app browser:
 
 - `main-1.4.97.js` loads with no `rebreya-main` console error;
-- the world Macros directory contains one `Создать объект на карте` macro and one hidden managed Actor exists;
+- the world Macros directory contains one `Создать объект на карте` macro and one managed Actor with default ownership `NONE` exists;
 - running the macro opens the five-field form;
 - entering test values, confirming, and clicking the scene creates one transparent token whose name and HP bar are visible and whose synthetic Actor has the chosen HP, AC, and damage threshold;
 - Escape and right click cancel placement without leaving a later click armed;
