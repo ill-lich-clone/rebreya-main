@@ -1480,6 +1480,185 @@ test("craft reservation atomically debits fractional predominant and base raw ma
   }
 });
 
+test("craft resource availability reads and coalesces canonical material stacks without mutations", async () => {
+  const wrongType = createItem({
+    id: "iron-gear",
+    name: "Iron Gear",
+    quantity: 999,
+    flags: { [MODULE_ID]: { sourceType: "gear", sourceId: "iron" } }
+  });
+  const iron = createItem({
+    id: "iron-stack",
+    name: "Iron",
+    quantity: 1,
+    flags: { [MODULE_ID]: { sourceType: "material", sourceId: "iron", materialId: "iron" } }
+  });
+  const ironSecond = createItem({
+    id: "iron-stack-2",
+    name: "Iron",
+    quantity: 2,
+    flags: { [MODULE_ID]: { sourceType: "material", sourceId: "iron", materialId: "iron" } }
+  });
+  const group = createActor({ id: "group", type: "group", managed: true, items: [wrongType, iron, ironSecond] });
+  const fixture = installFixture({ group, actors: [group] });
+
+  try {
+    const result = await fixture.service.getCraftResourceAvailability({
+      projectId: "project-preview",
+      craftProject: {
+        materialReservation: {
+          predominantMaterialId: "iron",
+          predominantMaterialLbReserved: 1.25,
+          baseRawMaterialId: "iron",
+          baseRawQuantityReserved: 0.5
+        }
+      }
+    });
+
+    assert.deepEqual(result, {
+      sufficient: true,
+      inventoryActorId: group.id,
+      rows: [{
+        sourceId: "iron",
+        required: 1.75,
+        available: 3,
+        sufficient: true,
+        components: [
+          { resource: "predominant", sourceId: "iron", quantity: 1.25 },
+          { resource: "baseRaw", sourceId: "iron", quantity: 0.5 }
+        ]
+      }]
+    });
+    assert.equal(iron.system.quantity, 1);
+    assert.equal(ironSecond.system.quantity, 2);
+    assert.equal(wrongType.system.quantity, 999);
+    assert.equal(fixture.settingsWrites.length, 0);
+    assert.equal(group.items.contents.length, 3);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("craft resource availability reads the explicitly requested group instead of the GM active group", async () => {
+  const activeIron = createItem({
+    id: "active-iron",
+    name: "Iron",
+    quantity: 99,
+    flags: { [MODULE_ID]: { sourceType: "material", sourceId: "iron" } }
+  });
+  const requestedIron = createItem({
+    id: "requested-iron",
+    name: "Iron",
+    quantity: 0.25,
+    flags: { [MODULE_ID]: { sourceType: "material", sourceId: "iron" } }
+  });
+  const activeGroup = createActor({ id: "group-active", type: "group", managed: true, items: [activeIron] });
+  const requestedGroup = createActor({ id: "group-requested", type: "group", managed: true, items: [requestedIron] });
+  const fixture = installFixture({
+    group: activeGroup,
+    actors: [activeGroup, requestedGroup]
+  });
+
+  try {
+    const result = await fixture.service.getCraftResourceAvailability({
+      groupId: requestedGroup.id,
+      materialReservation: {
+        predominantMaterialId: "iron",
+        predominantMaterialLb: 1
+      }
+    });
+
+    assert.equal(result.inventoryActorId, requestedGroup.id);
+    assert.equal(result.rows[0].available, 0.25);
+    assert.equal(result.sufficient, false);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("craft reservation debits one material requirement across multiple canonical stacks", async () => {
+  const first = createItem({
+    id: "iron-first",
+    name: "Iron",
+    quantity: 1,
+    flags: { [MODULE_ID]: { sourceType: "material", sourceId: "iron" } }
+  });
+  const second = createItem({
+    id: "iron-second",
+    name: "Iron",
+    quantity: 3,
+    flags: { [MODULE_ID]: { sourceType: "material", sourceId: "iron" } }
+  });
+  const group = createActor({ id: "group", type: "group", managed: true, items: [first, second] });
+  const fixture = installFixture({ group, actors: [group] });
+
+  try {
+    const receipts = await fixture.service.reserveCraftResourcesOnce({
+      projectId: "project-multi-stack",
+      predominantMaterialId: "iron",
+      predominantMaterialLb: 2.5
+    }, "reserve-multi-stack");
+
+    assert.equal(first.system.quantity, 0);
+    assert.equal(second.system.quantity, 1.5);
+    assert.equal(receipts.length, 2);
+    assert.equal(receipts.reduce((total, receipt) => total + receipt.quantity, 0), 2.5);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("craft resource availability reports zero when the inventory actor is unavailable", async () => {
+  const fixture = installFixture({
+    group: createActor({ id: "unused", type: "group", managed: true }),
+    actors: [],
+    moduleApi: {
+      groupContextService: {
+        resolveForCurrentUser: () => ({ groupActor: null })
+      }
+    }
+  });
+
+  try {
+    const result = await fixture.service.getCraftResourceAvailability({
+      materialReservation: {
+        predominantMaterialId: "iron",
+        predominantMaterialLb: 1.25,
+        baseRawMaterialId: "wood",
+        baseRawQuantity: 0.5
+      }
+    });
+
+    assert.deepEqual(result, {
+      sufficient: false,
+      inventoryActorId: "",
+      rows: [
+        {
+          sourceId: "iron",
+          required: 1.25,
+          available: 0,
+          sufficient: false,
+          components: [{ resource: "predominant", sourceId: "iron", quantity: 1.25 }]
+        },
+        {
+          sourceId: "wood",
+          required: 0.5,
+          available: 0,
+          sufficient: false,
+          components: [{ resource: "baseRaw", sourceId: "wood", quantity: 0.5 }]
+        }
+      ]
+    });
+    assert.equal(fixture.settingsWrites.length, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("exact craft reservation zero stacks cannot be taken, sold, or minted", async () => {
   const takeMaterial = createItem({
     id: "take-zero-stack",

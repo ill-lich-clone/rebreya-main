@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CraftDowntimeService } from "../scripts/data/craft-downtime-service.js?v=1.4.95-craft-calendar";
+import { CraftDowntimeService } from "../scripts/data/craft-downtime-service.js?v=1.4.96-craft-calendar";
 
 function createHarness({
   quote = {

@@ -170,7 +170,8 @@ function installFixture({
   loseLegacyClaimResponseOnce = false,
   failCancellationPersistBeforeWriteOnce = false,
   loseReleaseResponseOnce = false,
-  onInventoryOperation = null
+  onInventoryOperation = null,
+  materialAvailability = null
 } = {}) {
   const restoreFoundry = installFoundryUtils();
   const previousGame = globalThis.game;
@@ -326,6 +327,36 @@ function installFixture({
         ? { rank: 1, source: "manual", itemUuid: "" }
         : null
     ),
+    async getCraftResourceAvailability(request) {
+      if (materialAvailability) {
+        return clone(materialAvailability);
+      }
+      return {
+        sufficient: true,
+        inventoryActorId: groupActor.id,
+        rows: [{
+          sourceId: request.predominantMaterialId,
+          required: request.predominantMaterialLbReserved,
+          available: request.predominantMaterialLbReserved,
+          sufficient: true,
+          components: [{
+            resource: "predominant",
+            sourceId: request.predominantMaterialId,
+            quantity: request.predominantMaterialLbReserved
+          }]
+        }, {
+          sourceId: request.baseRawMaterialId,
+          required: request.baseRawQuantityReserved,
+          available: request.baseRawQuantityReserved,
+          sufficient: true,
+          components: [{
+            resource: "baseRaw",
+            sourceId: request.baseRawMaterialId,
+            quantity: request.baseRawQuantityReserved
+          }]
+        }].filter((row) => row.required > 0)
+      };
+    },
     async reserveCraftResourcesOnce(quote, mutationId, options) {
       calls.reserve.push({ quote: clone(quote), mutationId, options });
       await onInventoryOperation?.("reserve", options);
@@ -606,6 +637,94 @@ test("craft quote accepts the pending status persisted by DowntimeService", asyn
 
     assert.equal(quote.requestId, "request-1");
     assert.equal(quote.eligibility.valid, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("draft craft preview calculates workdays and reports current material stocks", async () => {
+  const fixture = installFixture({
+    model: createCraftModel({ priceGold: 30 })
+  });
+  try {
+    const preview = await fixture.service.previewRequest({
+      actorId: "crafter",
+      craftProject: {
+        outputs: [{ sourceType: "gear", sourceId: "iron-gear", quantity: 1 }],
+        hoursPerDay: 12,
+        ownedWorkshop: true,
+        predominantMaterialId: "iron"
+      }
+    });
+
+    assert.equal(preview.ready, true);
+    assert.equal(preview.dailyProgressGold, 7);
+    assert.equal(preview.requiredWorkdays, 5);
+    assert.equal(preview.requiredDowntimeWeeks, 1);
+    assert.equal(preview.calendarWeeks, 1);
+    assert.equal(preview.materialAvailability.sufficient, true);
+    assert.equal(preview.materials.every((row) => row.required <= row.available), true);
+    assert.equal(preview.canSubmit, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("draft craft preview blocks submission when party materials are insufficient", async () => {
+  const fixture = installFixture({
+    materialAvailability: {
+      sufficient: false,
+      inventoryActorId: "group-1",
+      rows: [{
+        sourceId: "iron",
+        required: 1,
+        available: 0.25,
+        sufficient: false,
+        components: [{ resource: "predominant", sourceId: "iron", quantity: 1 }]
+      }]
+    }
+  });
+  try {
+    const preview = await fixture.service.previewRequest({
+      actorId: "crafter",
+      craftProject: {
+        outputs: [{ sourceType: "gear", sourceId: "iron-gear", quantity: 1 }],
+        hoursPerDay: 8,
+        ownedWorkshop: false,
+        predominantMaterialId: "iron"
+      }
+    });
+
+    assert.equal(preview.materialAvailability.sufficient, false);
+    assert.equal(preview.materials[0].name, "Iron");
+    assert.equal(preview.materials[0].required, 1);
+    assert.equal(preview.materials[0].available, 0.25);
+    assert.equal(preview.canSubmit, false);
+    assert.match(preview.message, /material/i);
+    assert.equal(preview.errors.some((error) => error.code === "insufficient-materials"), true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("draft craft preview reserves one workday for zero-price gear consistently", async () => {
+  const fixture = installFixture({ model: createCraftModel({ priceGold: 0 }) });
+  try {
+    const preview = await fixture.service.previewRequest({
+      actorId: "crafter",
+      craftProject: {
+        outputs: [{ sourceType: "gear", sourceId: "iron-gear", quantity: 1 }],
+        hoursPerDay: 8,
+        ownedWorkshop: false,
+        predominantMaterialId: "iron"
+      }
+    });
+
+    assert.equal(preview.requiredWorkdays, 1);
+    assert.equal(preview.requiredDowntimeWeeks, 1);
   }
   finally {
     fixture.restore();

@@ -9,7 +9,7 @@ import {
   nearestMonday,
   releaseFutureRequestSlots,
   summarizeScheduleByDate
-} from "./downtime-scheduler.js?v=1.4.95-early-year-calendar";
+} from "./downtime-scheduler.js?v=1.4.96-early-year-calendar";
 
 const OPEN_RESERVED_STATUSES = new Set(["pending", "approved"]);
 const RELEASED_STATUSES = new Set(["rejected", "returned", "cancelled"]);
@@ -55,6 +55,22 @@ function getObjectPath(source, path) {
 function toWeeks(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
   return Number.isFinite(numericValue) ? Math.max(0, Math.floor(numericValue)) : fallback;
+}
+
+function resolveRequestDuration(weeks, craftProject = null) {
+  const safeWeeks = Math.max(1, toWeeks(weeks, 1));
+  const craftPayload = asObject(craftProject);
+  const requiredWorkdays = toWeeks(craftPayload.requiredWorkdays, 0);
+  if (Object.keys(craftPayload).length && requiredWorkdays > 0) {
+    return {
+      weeks: Math.max(1, Math.ceil(requiredWorkdays / WORKDAYS_PER_WEEK)),
+      workdays: requiredWorkdays
+    };
+  }
+  return {
+    weeks: safeWeeks,
+    workdays: safeWeeks * WORKDAYS_PER_WEEK
+  };
 }
 
 function toFiniteNumber(value, fallback = undefined) {
@@ -2315,7 +2331,6 @@ export class DowntimeService {
     const actor = this.#requireCurrentMemberActor(context, actorId);
     this.#assertCanSubmitForActor(actor, context);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
-    const workdays = safeWeeks * WORKDAYS_PER_WEEK;
     const action = await this.#resolveAction(context, actionId);
     const resolvedActionId = action.id;
     const safeTitle = cleanString(title) || action.label;
@@ -2324,6 +2339,16 @@ export class DowntimeService {
     const craftPayload = Object.keys(asObject(craftProject)).length
       ? clone(asObject(craftProject))
       : null;
+    const craftAction = cleanId(action.downtimeId) === "craft";
+    if (craftAction && !craftPayload) {
+      throw new Error("Craft downtime requires a canonical craft project payload.");
+    }
+    if (!craftAction && craftPayload) {
+      throw new Error("A craft project payload may only be attached to the craft action.");
+    }
+    const duration = resolveRequestDuration(safeWeeks, craftPayload);
+    const requestWeeks = duration.weeks;
+    const workdays = duration.workdays;
 
     return this.#writeGroupState(context, (state) => {
       const balance = normalizeWorkdayBalance(state.balancesByActorId[actor.id] ?? buildDefaultBalance());
@@ -2343,7 +2368,7 @@ export class DowntimeService {
         actionLabel: action.label,
         title: safeTitle,
         description: cleanString(description),
-        weeks: safeWeeks,
+        weeks: requestWeeks,
         workdays,
         status: "pending",
         checks,
@@ -2391,7 +2416,6 @@ export class DowntimeService {
     this.#assertCanSubmitForActor(actor, context);
     const safeRequestId = cleanId(requestId);
     const safeWeeks = this.#requirePositiveWeeks(weeks);
-    const workdays = safeWeeks * WORKDAYS_PER_WEEK;
     const action = await this.#resolveAction(context, actionId);
     const resolvedActionId = action.id;
     const safeTitle = cleanString(title) || action.label;
@@ -2399,6 +2423,16 @@ export class DowntimeService {
     const craftPayload = Object.keys(asObject(craftProject)).length
       ? clone(asObject(craftProject))
       : null;
+    const craftAction = cleanId(action.downtimeId) === "craft";
+    if (craftAction && !craftPayload) {
+      throw new Error("Craft downtime requires a canonical craft project payload.");
+    }
+    if (!craftAction && craftPayload) {
+      throw new Error("A craft project payload may only be attached to the craft action.");
+    }
+    const duration = resolveRequestDuration(safeWeeks, craftPayload);
+    const requestWeeks = duration.weeks;
+    const workdays = duration.workdays;
     const ownedWorkshop = craftPayload?.ownedWorkshop === true;
 
     return this.#writeGroupState(context, (state) => {
@@ -2456,7 +2490,7 @@ export class DowntimeService {
       request.actionLabel = action.label;
       request.title = safeTitle;
       request.description = cleanString(description);
-      request.weeks = safeWeeks;
+      request.weeks = requestWeeks;
       request.workdays = workdays;
       request.checks = buildSelectedRequestChecks(action, actionSelections);
       request.result = "";

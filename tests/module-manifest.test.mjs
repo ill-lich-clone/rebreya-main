@@ -38,7 +38,7 @@ test("module manifest loads a cache-busted entrypoint for the current version", 
   const entrypointSource = await readFile(new URL(expectedEntrypoint, manifestUrl), "utf8");
   const expectedSource = [
     "// @rebreya-role active-version-forwarder",
-    'import "./main.js?v=1.4.95-craft-durability";',
+    'import "./main.js?v=1.4.96-craft-durability";',
     ""
   ].join("\n");
 
@@ -52,15 +52,15 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   const canonicalSource = await readCanonicalEntrypointSource();
 
   for (const importPath of [
-    "data/downtime-service.js?v=1.4.95-craft-calendar",
-    "data/inventory-service.js?v=1.4.95-durable-transfer",
-    "data/durability-service.js?v=1.4.95-durability",
-    "data/crafting-service.js?v=1.4.95-craft-calendar",
-    "data/craft-downtime-service.js?v=1.4.95-craft-calendar",
-    "data/calendar-transition-coordinator.js?v=1.4.95-craft-calendar",
-    "integrations/durability-hooks.js?v=1.4.95-durability-piles",
-    "integrations/item-piles-dnd5e.js?v=1.4.95-durability-piles",
-    "integrations/inventory-sync.js?v=1.4.95-durable-transfer"
+    "data/downtime-service.js?v=1.4.96-craft-calendar",
+    "data/inventory-service.js?v=1.4.96-durable-transfer",
+    "data/durability-service.js?v=1.4.96-durability",
+    "data/crafting-service.js?v=1.4.96-craft-calendar",
+    "data/craft-downtime-service.js?v=1.4.96-craft-calendar",
+    "data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar",
+    "integrations/durability-hooks.js?v=1.4.96-durability-piles",
+    "integrations/item-piles-dnd5e.js?v=1.4.96-durability-piles",
+    "integrations/inventory-sync.js?v=1.4.96-durable-transfer"
   ]) {
     assert.equal(canonicalSource.includes(importPath), true, importPath);
   }
@@ -95,7 +95,7 @@ test("durability service and its persisted mutation journal are wired into the l
 
   assert.equal(constantsModule.DURABILITY_UPDATED_HOOK, "rebreya-main.durabilityUpdated");
   assert.equal(constantsModule.SETTINGS_KEYS.DURABILITY_MUTATION_JOURNAL, "durabilityMutationJournal");
-  assert.match(canonicalSource, /import \{ DurabilityService \} from "\.\/data\/durability-service\.js\?v=1\.4\.95-durability";/u);
+  assert.match(canonicalSource, /import \{ DurabilityService \} from "\.\/data\/durability-service\.js\?v=1\.4\.96-durability";/u);
   assert.match(canonicalSource, /this\.inventoryService = new InventoryService\(this\);\s+this\.durabilityService = new DurabilityService\(this\);/u);
   assert.match(canonicalSource, /game\.settings\.register\(MODULE_ID, SETTINGS_KEYS\.DURABILITY_MUTATION_JOURNAL,/u);
   for (const method of ["initializeItem", "damageItem", "breakItem", "destroyItem", "getDurability", "isBroken"]) {

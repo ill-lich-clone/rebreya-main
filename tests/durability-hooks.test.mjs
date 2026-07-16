@@ -285,7 +285,13 @@ test("Item Piles pre-create and create lifecycle projects item durability onto t
     itempiles: { API: { isValidItemPile: () => true } }
   };
 
-  registerDurabilityHooks({}, { Hooks, notifications: { warn() {} }, CONFIG: {}, game });
+  registerDurabilityHooks({}, {
+    Hooks,
+    notifications: { warn() {} },
+    CONFIG: {},
+    game,
+    isActiveGm: () => true
+  });
   const preCreatePile = Hooks.callbacks.get("item-piles-preCreateItemPile");
   const createPile = Hooks.callbacks.get("item-piles-createItemPile");
   assert.equal(typeof preCreatePile, "function");
@@ -310,6 +316,159 @@ test("Item Piles pre-create and create lifecycle projects item durability onto t
     }
   }]);
   assert.deepEqual(tokenUpdates, [{ "bar1.attribute": "attributes.hp" }]);
+});
+
+test("updating an Item Pile item after durability appears synchronizes pile HP and AC", async () => {
+  const { registerDurabilityHooks } = await import(`../scripts/integrations/durability-hooks.js?pile-item-update=${Date.now()}`);
+  const Hooks = createHooks();
+  const item = makeItem({ id: "bow", hpValue: 7, hpMax: 11, ac: 16, damageThreshold: 2 });
+  const actorUpdates = [];
+  const actor = {
+    id: "pile-actor",
+    uuid: "Scene.scene.Token.pile.Actor.delta",
+    items: { contents: [item] },
+    async update(payload) {
+      actorUpdates.push(payload);
+    }
+  };
+  item.parent = actor;
+  actor.token = { id: "pile", uuid: "Scene.scene.Token.pile", actor, async update() {} };
+  const game = {
+    modules: new Map([["item-piles", { active: true }]]),
+    itempiles: { API: { isValidItemPile: () => true } }
+  };
+
+  registerDurabilityHooks({}, {
+    Hooks,
+    notifications: { warn() {} },
+    CONFIG: {},
+    game,
+    isActiveGm: () => true
+  });
+  const updateItem = Hooks.callbacks.get("updateItem");
+  assert.equal(typeof updateItem, "function");
+
+  await updateItem(item, {
+    [`flags.${MODULE_ID}.durability`]: item.flags[MODULE_ID].durability
+  });
+
+  assert.deepEqual(actorUpdates, [{
+    "system.attributes.hp.value": 7,
+    "system.attributes.hp.max": 11,
+    "system.attributes.hp.dt": 2,
+    "system.attributes.ac.calc": "flat",
+    "system.attributes.ac.flat": 16,
+    [`flags.${MODULE_ID}.durabilityPile`]: {
+      itemId: "bow",
+      itemUuid: "Actor.hero.Item.bow"
+    }
+  }]);
+});
+
+test("Item Piles item updates synchronize durability only on the active GM client", async () => {
+  const { registerDurabilityHooks } = await import(`../scripts/integrations/durability-hooks.js?pile-item-update-authority=${Date.now()}`);
+  const Hooks = createHooks();
+  const item = makeItem({ id: "bow", hpValue: 7, hpMax: 11, ac: 16, damageThreshold: 2 });
+  const actorUpdates = [];
+  const actor = {
+    id: "pile-actor",
+    items: { contents: [item] },
+    async update(payload) {
+      actorUpdates.push(payload);
+    }
+  };
+  item.parent = actor;
+  actor.token = { id: "pile", actor, async update() {} };
+  const game = {
+    modules: new Map([["item-piles", { active: true }]]),
+    itempiles: { API: { isValidItemPile: () => true } }
+  };
+
+  registerDurabilityHooks({}, {
+    Hooks,
+    notifications: { warn() {} },
+    CONFIG: {},
+    game,
+    isActiveGm: () => false
+  });
+  await Hooks.callbacks.get("updateItem")(item);
+
+  assert.deepEqual(actorUpdates, []);
+});
+
+test("loaded Item Piles reconcile persisted zero HP from their durable item", async () => {
+  const { reconcileItemPileDurability } = await import(`../scripts/integrations/durability-hooks.js?pile-reconcile=${Date.now()}`);
+  const item = makeItem({ id: "bow", hpValue: 7, hpMax: 11, ac: 16, damageThreshold: 2 });
+  const actorUpdates = [];
+  const actor = {
+    id: "pile-actor",
+    uuid: "Actor.pile-actor",
+    items: { contents: [item] },
+    system: { attributes: { hp: { value: 0, max: 0 }, ac: { calc: "flat", flat: 0 } } },
+    async update(payload) {
+      actorUpdates.push(payload);
+    }
+  };
+  item.parent = actor;
+  actor.token = { id: "pile", actor, async update() {} };
+  const game = {
+    actors: { contents: [actor] },
+    scenes: { contents: [] },
+    modules: new Map([["item-piles", { active: true }]]),
+    itempiles: { API: { isValidItemPile: () => true } }
+  };
+
+  const reconciled = await reconcileItemPileDurability({
+    game,
+    canvas: {},
+    isActiveGm: () => true
+  });
+
+  assert.deepEqual(reconciled, [actor.id]);
+  assert.equal(actorUpdates[0]["system.attributes.hp.value"], 7);
+  assert.equal(actorUpdates[0]["system.attributes.hp.max"], 11);
+  assert.equal(actorUpdates[0]["system.attributes.ac.flat"], 16);
+});
+
+test("Item Pile projection stops writing when active GM authority changes mid-sync", async () => {
+  const { reconcileItemPileDurability } = await import(`../scripts/integrations/durability-hooks.js?pile-authority-change=${Date.now()}`);
+  const item = makeItem({ id: "bow", hpValue: 7, hpMax: 11, ac: 16, damageThreshold: 2 });
+  const actorUpdates = [];
+  const tokenUpdates = [];
+  let activeGm = true;
+  const actor = {
+    id: "pile-actor",
+    uuid: "Actor.pile-actor",
+    items: { contents: [item] },
+    async update(payload) {
+      actorUpdates.push(payload);
+      activeGm = false;
+    }
+  };
+  item.parent = actor;
+  actor.token = {
+    id: "pile",
+    actor,
+    async update(payload) {
+      tokenUpdates.push(payload);
+    }
+  };
+  const game = {
+    actors: { contents: [actor] },
+    scenes: { contents: [] },
+    modules: new Map([["item-piles", { active: true }]]),
+    itempiles: { API: { isValidItemPile: () => true } }
+  };
+
+  const reconciled = await reconcileItemPileDurability({
+    game,
+    canvas: {},
+    isActiveGm: () => activeGm
+  });
+
+  assert.equal(actorUpdates.length, 1);
+  assert.deepEqual(tokenUpdates, []);
+  assert.deepEqual(reconciled, []);
 });
 
 test("dnd5e pile damage is cancelled on the actor and applied to the durable item", async () => {
@@ -344,7 +503,13 @@ test("dnd5e pile damage is cancelled on the actor and applied to the durable ite
     itempiles: { API: { isValidItemPile: () => true } }
   };
 
-  registerDurabilityHooks(moduleApi, { Hooks, notifications: { warn() {} }, CONFIG: {}, game });
+  registerDurabilityHooks(moduleApi, {
+    Hooks,
+    notifications: { warn() {} },
+    CONFIG: {},
+    game,
+    isActiveGm: () => true
+  });
   const preApplyDamage = Hooks.callbacks.get("dnd5e.preApplyDamage");
   assert.equal(typeof preApplyDamage, "function");
   assert.equal(preApplyDamage(actor, 5, {
@@ -356,6 +521,232 @@ test("dnd5e pile damage is cancelled on the actor and applied to the durable ite
   assert.equal(damageCalls[0][0], item);
   assert.deepEqual(damageCalls[0][1], { amount: 5, damageType: "slashing" });
   assert.equal(actorUpdates.at(-1)["system.attributes.hp.value"], 3);
+});
+
+test("parallel Item Pile damage waits on one shared durability queue", async () => {
+  const { registerDurabilityHooks } = await import(`../scripts/integrations/durability-hooks.js?pile-damage-queue=${Date.now()}`);
+  const Hooks = createHooks();
+  const item = makeItem({ id: "barrel", hpValue: 8, hpMax: 8, ac: 14, damageThreshold: 2 });
+  const actor = {
+    id: "pile-actor",
+    uuid: "Scene.scene.Token.pile.Actor.delta",
+    items: { contents: [item] },
+    system: { attributes: { hp: { value: 8, max: 8, dt: 2 }, ac: { calc: "flat", flat: 14 } } },
+    async update() {}
+  };
+  item.parent = actor;
+  actor.token = { id: "pile", uuid: "Scene.scene.Token.pile", actor };
+  const releases = [];
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let damageCalls = 0;
+  const moduleApi = {
+    async damageItem(damagedItem, options) {
+      damageCalls += 1;
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => releases.push(resolve));
+      damagedItem.flags[MODULE_ID].durability.hp.value -= options.amount;
+      inFlight -= 1;
+      return {
+        outcome: "damaged",
+        nextFlag: damagedItem.flags[MODULE_ID].durability
+      };
+    }
+  };
+  const game = {
+    modules: new Map([["item-piles", { active: true }]]),
+    itempiles: { API: { isValidItemPile: () => true } }
+  };
+
+  registerDurabilityHooks(moduleApi, {
+    Hooks,
+    notifications: { warn() {} },
+    CONFIG: {},
+    game,
+    isActiveGm: () => true
+  });
+  const preApplyDamage = Hooks.callbacks.get("dnd5e.preApplyDamage");
+  assert.equal(preApplyDamage(actor, 1, {}, { damageType: "slashing" }), false);
+  assert.equal(preApplyDamage(actor, 1, {}, { damageType: "slashing" }), false);
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(damageCalls, 1);
+  releases.shift()();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(damageCalls, 2);
+  releases.shift()();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(maxInFlight, 1);
+  assert.equal(item.flags[MODULE_ID].durability.hp.value, 6);
+});
+
+test("inactive clients still route Item Pile HP loss through item durability", async () => {
+  const { registerDurabilityHooks } = await import(`../scripts/integrations/durability-hooks.js?pile-damage-authority=${Date.now()}`);
+  const Hooks = createHooks();
+  const item = makeItem({ id: "barrel", hpValue: 8, hpMax: 8 });
+  const actor = {
+    id: "pile-actor",
+    items: { contents: [item] },
+    system: { attributes: { hp: { value: 8, max: 8 } } }
+  };
+  item.parent = actor;
+  actor.token = { id: "pile", actor };
+  let damageCalls = 0;
+  const actorUpdates = [];
+  actor.update = async (payload) => actorUpdates.push(payload);
+  const game = {
+    modules: new Map([["item-piles", { active: true }]]),
+    itempiles: { API: { isValidItemPile: () => true } }
+  };
+  registerDurabilityHooks({
+    async damageItem() {
+      throw new Error("pile damage should use the routed module API");
+    },
+    async damageItemPile() {
+      damageCalls += 1;
+      return { outcome: "damaged", nextFlag: item.flags[MODULE_ID].durability };
+    }
+  }, {
+    Hooks,
+    notifications: { warn() {} },
+    CONFIG: {},
+    game,
+    isActiveGm: () => false
+  });
+
+  assert.equal(Hooks.callbacks.get("dnd5e.preApplyDamage")(actor, 1, {}, {}), false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(damageCalls, 1);
+  assert.deepEqual(actorUpdates, []);
+});
+
+test("inactive GM Item Pile damage is routed to the active GM command bus", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const emitted = [];
+  const inactiveGm = { id: "gm-b", isGM: true, active: true };
+  const activeGm = { id: "gm-a", isGM: true, active: true };
+  globalThis.Hooks = { once() {} };
+  globalThis.game = {
+    user: inactiveGm,
+    users: {
+      activeGM: activeGm,
+      contents: [activeGm, inactiveGm],
+      get(id) {
+        return this.contents.find((user) => user.id === id) ?? null;
+      }
+    },
+    socket: {
+      emit(channel, message) {
+        emitted.push([channel, message]);
+      }
+    }
+  };
+
+  try {
+    const { ITEM_PILE_DAMAGE_COMMAND, RebreyaMainModule } = await import(`../scripts/main.js?pile-damage-request=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const item = makeItem({ id: "barrel" });
+    const pending = moduleApi.damageItemPile(item, { amount: 9, damageType: "force" });
+
+    assert.equal(emitted.length, 1);
+    const [channel, request] = emitted[0];
+    assert.equal(channel, `module.${MODULE_ID}`);
+    assert.equal(request.command, ITEM_PILE_DAMAGE_COMMAND);
+    assert.equal(request.payload.itemUuid, item.uuid);
+    assert.equal(request.payload.amount, 9);
+    assert.equal(request.payload.damageType, "force");
+    assert.match(request.payload.mutationId, /^durability-pile-/u);
+
+    await moduleApi.handleSocketMessage({
+      type: "rebreya.command.result",
+      command: request.command,
+      requestId: request.requestId,
+      forUserId: inactiveGm.id,
+      senderId: activeGm.id,
+      ok: true,
+      data: { outcome: "destroyed" }
+    }, activeGm.id);
+    assert.deepEqual(await pending, { outcome: "destroyed" });
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("active GM validates and executes routed Item Pile destruction", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousFromUuid = globalThis.fromUuid;
+  const emitted = [];
+  const activeGm = { id: "gm-a", isGM: true, active: true };
+  const inactiveGm = { id: "gm-b", isGM: true, active: true };
+  const item = makeItem({ id: "barrel", state: "broken", hpValue: 1, hpMax: 8 });
+  const actor = {
+    id: "pile-actor",
+    items: { contents: [item] },
+    token: { id: "pile-token" }
+  };
+  item.parent = actor;
+  globalThis.Hooks = { once() {} };
+  globalThis.fromUuid = async (uuid) => uuid === item.uuid ? item : null;
+  globalThis.game = {
+    user: activeGm,
+    users: {
+      activeGM: activeGm,
+      contents: [activeGm, inactiveGm],
+      get(id) {
+        return this.contents.find((user) => user.id === id) ?? null;
+      }
+    },
+    modules: new Map([["item-piles", { active: true }]]),
+    itempiles: { API: { isValidItemPile: () => true } },
+    socket: {
+      emit(channel, message) {
+        emitted.push([channel, message]);
+      }
+    }
+  };
+
+  try {
+    const { ITEM_PILE_DAMAGE_COMMAND, RebreyaMainModule } = await import(`../scripts/main.js?pile-damage-execute=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.durabilityService.damageItem = async (target, options) => {
+      calls.push([target, options]);
+      return { outcome: "destroyed" };
+    };
+    await moduleApi.handleSocketMessage({
+      type: "rebreya.command",
+      command: ITEM_PILE_DAMAGE_COMMAND,
+      requestId: "pile-damage-1",
+      senderId: inactiveGm.id,
+      payload: {
+        itemUuid: item.uuid,
+        amount: 9,
+        damageType: "force",
+        mutationId: "pile-damage-mutation-1"
+      }
+    }, inactiveGm.id);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.deepEqual(calls, [[item, {
+      amount: 9,
+      damageType: "force",
+      mutationId: "pile-damage-mutation-1"
+    }]]);
+    assert.equal(emitted.length, 1);
+    assert.equal(emitted[0][1].ok, true);
+    assert.deepEqual(emitted[0][1].data, { outcome: "destroyed" });
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.fromUuid = previousFromUuid;
+  }
 });
 
 test("direct pile HP loss is neutralized and routed to item durability", async () => {
@@ -381,7 +772,13 @@ test("direct pile HP loss is neutralized and routed to item durability", async (
       damageCalls.push(options);
       return { outcome: "damaged", nextFlag: item.flags[MODULE_ID].durability };
     }
-  }, { Hooks, notifications: { warn() {} }, CONFIG: {}, game });
+  }, {
+    Hooks,
+    notifications: { warn() {} },
+    CONFIG: {},
+    game,
+    isActiveGm: () => true
+  });
 
   const preUpdateActor = Hooks.callbacks.get("preUpdateActor");
   assert.equal(typeof preUpdateActor, "function");

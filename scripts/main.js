@@ -1,7 +1,7 @@
 // @rebreya-role canonical-composition-root
 import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.95-firearm-template-version-18";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.96-firearm-template-version-18";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
@@ -13,7 +13,7 @@ import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js";
-import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.95-durability";
+import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.96-durability";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import {
   createTradeTransactionId,
@@ -28,7 +28,7 @@ import {
   normalizeGroupState
 } from "./data/group-context-service.js";
 import { RebreyaQuestLogService } from "./data/quest-log-service.js";
-import { DowntimeService } from "./data/downtime-service.js?v=1.4.95-craft-calendar";
+import { DowntimeService } from "./data/downtime-service.js?v=1.4.96-craft-calendar";
 import { CharacterDowntimeService } from "./data/character-downtime-service.js";
 import {
   GROUP_TRAVEL_REPLACE_STATE_COMMAND,
@@ -47,14 +47,14 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.95-durable-transfer";
-import { DurabilityService } from "./data/durability-service.js?v=1.4.95-durability";
+} from "./data/inventory-service.js?v=1.4.96-durable-transfer";
+import { DurabilityService } from "./data/durability-service.js?v=1.4.96-durability";
 import { HeroDollService } from "./data/hero-doll-service.js";
-import { CraftingService } from "./data/crafting-service.js?v=1.4.95-craft-calendar";
-import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.95-craft-calendar";
-import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.95-item-upgrades";
+import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
+import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
+import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.96-item-upgrades";
 import { GROUP_CALENDAR_PATCH_COMMAND, CalendarService } from "./data/calendar-service.js";
-import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.95-craft-calendar";
+import { CalendarTransitionCoordinator } from "./data/calendar-transition-coordinator.js?v=1.4.96-craft-calendar";
 import { WorldMutationCoordinator } from "./application/world-mutation-coordinator.js";
 import { LootClaimService } from "./application/loot-claim-service.js";
 import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
@@ -63,57 +63,58 @@ import { isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.95-firearm-item-sheet-no-rerender";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.95-firearm-card-notes";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.96-firearm-item-sheet-no-rerender";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.96-firearm-card-notes";
 import { SpellAutomationService } from "./combat/spell-automation-service.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
-import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.95-surrounded-ac";
-import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.95";
-import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.95-environment-stable-statuses";
-import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.95-mechanus-d20-advantage-mode";
-import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.95";
-import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.95-sorcerer-cooldown-card";
+import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.96-surrounded-ac";
+import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
+import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.96-environment-stable-statuses";
+import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.96-mechanus-d20-advantage-mode";
+import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.96";
+import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.96-sorcerer-cooldown-card";
 import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
-} from "./combat/paladin-automation-service.js?v=1.4.95";
-import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.4.95-rebreya-open-position";
+} from "./combat/paladin-automation-service.js?v=1.4.96";
+import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.4.96-rebreya-open-position";
 import {
   PERFORMER_APPLY_RESULT_COMMAND,
   PerformerAutomationService
-} from "./combat/performer-automation-service.js?v=1.4.95";
+} from "./combat/performer-automation-service.js?v=1.4.96";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
-import { registerSceneControlsHook } from "./hooks.js?v=1.4.95-bg3-piles";
+import { registerSceneControlsHook } from "./hooks.js?v=1.4.96-bg3-piles";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.95-item-upgrade-slots";
-import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.95";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.96-item-upgrade-slots";
+import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
 import {
   patchDurabilityItemEffectSuppression,
   reconcileBrokenEquippedArmor,
+  reconcileItemPileDurability,
   registerDurabilityHooks
-} from "./integrations/durability-hooks.js?v=1.4.95-durability-piles";
+} from "./integrations/durability-hooks.js?v=1.4.96-durability-piles";
 import {
   ensureItemPilesDnD5eIntegration,
   registerItemPilesSimilarityRepairHook
-} from "./integrations/item-piles-dnd5e.js?v=1.4.95-durability-piles";
+} from "./integrations/item-piles-dnd5e.js?v=1.4.96-durability-piles";
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
-import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.95-durable-transfer";
+import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.96-durable-transfer";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
-import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.95";
+import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
-import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.95";
+import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.96";
 import {
   SOCKET_EVENT_SET_SETTING,
   SOCKET_EVENT_SET_SETTING_RESULT,
   handleSettingsUpdateSocketResponse,
   registerSettings
 } from "./settings.js";
-import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.95-durability";
+import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.96-durability";
 import { bringAppToFront, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -155,7 +156,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.95-item-upgrade-slots";
+const MODULE_STYLE_VERSION = "1.4.96-item-upgrade-slots";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -163,6 +164,7 @@ const COSMOLOGY_SET_MECHANUS_COMMAND = "cosmology.setMechanus";
 const COMBAT_STATUS_SET_COMMAND = "combat.status.set";
 const TRADER_PURCHASE_COMMAND = "trader.purchase";
 const TRADER_SELL_COMMAND = "trader.sell";
+export const ITEM_PILE_DAMAGE_COMMAND = "durability.item-pile.damage";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
 const ENVIRONMENT_STATUS_VERSION = "surrounded-ac-1";
@@ -526,6 +528,44 @@ function isValidInventoryImportPayload(payload) {
     && isValidInventoryMutationId(payload.mutationId);
 }
 
+function isValidItemPileDamagePayload(payload) {
+  return hasExactKeys(payload, ["amount", "damageType", "itemUuid", "mutationId"])
+    && isTrimmedNonEmptyString(payload.itemUuid)
+    && payload.itemUuid.length <= 512
+    && Number.isFinite(payload.amount)
+    && payload.amount > 0
+    && typeof payload.damageType === "string"
+    && payload.damageType === payload.damageType.trim()
+    && payload.damageType.length <= 100
+    && isValidInventoryMutationId(payload.mutationId);
+}
+
+function itemPilesApi() {
+  return globalThis.game?.itempiles?.API
+    ?? globalThis.game?.modules?.get?.("item-piles")?.api
+    ?? null;
+}
+
+async function resolveItemPileDurabilityItem(itemUuid) {
+  const item = typeof globalThis.fromUuid === "function"
+    ? await globalThis.fromUuid(itemUuid)
+    : null;
+  const actor = item?.parent ?? item?.actor ?? null;
+  const api = itemPilesApi();
+  if (!item || !actor || !api || !item?.flags?.[MODULE_ID]?.durability) {
+    return null;
+  }
+  const target = actor?.token?.document ?? actor?.token ?? actor;
+  try {
+    return api.isValidItemPile?.(target) === true || (target !== actor && api.isValidItemPile?.(actor) === true)
+      ? item
+      : null;
+  }
+  catch (_error) {
+    return null;
+  }
+}
+
 function traderActorIsOwnedByUser(actor, user) {
   if (!actor || !user) return false;
   if (user.isGM === true) return true;
@@ -868,6 +908,24 @@ export class RebreyaMainModule {
       validate: isValidInventoryImportPayload,
       authorize: (payload, { sender }) => this.#canSenderImportInventoryItem(sender, payload),
       execute: (payload) => this.inventoryService.executeImportMutation(payload)
+    });
+    this.socketCommandBus.register(ITEM_PILE_DAMAGE_COMMAND, {
+      validate: isValidItemPileDamagePayload,
+      authorize: async (payload, { sender }) => {
+        const item = await resolveItemPileDurabilityItem(payload.itemUuid);
+        return traderActorIsOwnedByUser(item?.parent ?? item?.actor, sender);
+      },
+      execute: async (payload) => {
+        const item = await resolveItemPileDurabilityItem(payload.itemUuid);
+        if (!item) {
+          throw new Error("Item Pile durability target was not found.");
+        }
+        return this.durabilityService.damageItem(item, {
+          amount: payload.amount,
+          damageType: payload.damageType,
+          mutationId: payload.mutationId
+        });
+      }
     });
     const authorizeTradeActor = (payload, { sender }) => traderActorIsOwnedByUser(
       globalThis.game?.actors?.get?.(payload.actorId)
@@ -1924,6 +1982,22 @@ export class RebreyaMainModule {
     return this.durabilityService.damageItem(item, options);
   }
 
+  damageItemPile(item, options = {}) {
+    if (isActiveGmClient(globalThis.game)) {
+      return this.durabilityService.damageItem(item, options);
+    }
+    const payload = {
+      itemUuid: cleanSocketId(item?.uuid),
+      amount: Number(options.amount),
+      damageType: cleanSocketId(options.damageType),
+      mutationId: cleanSocketId(options.mutationId) || createSocketRequestId("durability-pile")
+    };
+    if (!isValidItemPileDamagePayload(payload)) {
+      throw new Error("Invalid Item Pile durability damage request.");
+    }
+    return this.socketCommandBus.request(ITEM_PILE_DAMAGE_COMMAND, payload);
+  }
+
   breakItem(item, options = {}) {
     return this.durabilityService.breakItem(item, options);
   }
@@ -2402,7 +2476,8 @@ export class RebreyaMainModule {
       return this.#requestDowntimeCreateViaGm(payload);
     }
 
-    const result = await this.downtimeService.createRequest(payload);
+    const validatedPayload = await this.#prepareDowntimeCraftPayload(payload);
+    const result = await this.downtimeService.createRequest(validatedPayload);
     this.#emitDowntimeUpdated({
       actorIds: [result.actorId],
       requestId: result.id
@@ -2418,7 +2493,8 @@ export class RebreyaMainModule {
       return this.#requestDowntimeUpdateViaGm(payload);
     }
 
-    const result = await this.downtimeService.updateRequest(payload);
+    const validatedPayload = await this.#prepareDowntimeCraftPayload(payload);
+    const result = await this.downtimeService.updateRequest(validatedPayload);
     this.#emitDowntimeUpdated({
       actorIds: [result.actorId],
       requestId: result.id
@@ -2427,6 +2503,42 @@ export class RebreyaMainModule {
       actorIds: refreshActorSheets ? [result.actorId] : []
     });
     return result;
+  }
+
+  previewCraftDowntimeRequest(payload = {}) {
+    return this.craftingService.previewRequest(payload);
+  }
+
+  async #prepareDowntimeCraftPayload(payload = {}) {
+    const safePayload = cloneSocketPayload(payload);
+    const craftProject = safePayload.craftProject && typeof safePayload.craftProject === "object"
+      ? safePayload.craftProject
+      : null;
+    if (!craftProject || Object.keys(craftProject).length === 0) {
+      return safePayload;
+    }
+
+    const preview = await this.previewCraftDowntimeRequest({
+      groupId: cleanSocketId(safePayload.groupId),
+      actorId: cleanSocketId(safePayload.actorId),
+      craftProject
+    });
+    if (!preview || preview.canSubmit !== true) {
+      throw new Error(
+        String(preview?.message ?? preview?.errors?.[0]?.message ?? "Craft request validation failed.").trim()
+      );
+    }
+    return {
+      ...safePayload,
+      weeks: Math.max(1, Math.floor(Number(preview.requiredDowntimeWeeks) || 1)),
+      craftProject: {
+        ...craftProject,
+        requiredWorkdays: Math.max(1, Math.floor(Number(preview.requiredWorkdays) || 1)),
+        requiredDowntimeWeeks: Math.max(1, Math.floor(Number(preview.requiredDowntimeWeeks) || 1)),
+        calendarWeeks: Math.max(1, Math.floor(Number(preview.calendarWeeks) || 1)),
+        dailyProgressGold: Math.max(0, Number(preview.dailyProgressGold) || 0)
+      }
+    };
   }
 
   async #requestDowntimeCreateViaGm(payload = {}) {
@@ -2624,12 +2736,13 @@ export class RebreyaMainModule {
       throw new Error("Игрок может отправлять простой только за своего персонажа.");
     }
 
-    const result = await this.downtimeService.createRequest({
+    const validatedPayload = await this.#prepareDowntimeCraftPayload({
       ...cloneSocketPayload(payload),
       groupId,
       actorId,
       submittedByUserId: senderUser.id
     });
+    const result = await this.downtimeService.createRequest(validatedPayload);
     return result;
   }
 
@@ -2655,11 +2768,12 @@ export class RebreyaMainModule {
       throw new Error("Игрок может обновлять простой только за своего персонажа.");
     }
 
-    return this.downtimeService.updateRequest({
+    const validatedPayload = await this.#prepareDowntimeCraftPayload({
       ...cloneSocketPayload(payload),
       groupId,
       actorId
     });
+    return this.downtimeService.updateRequest(validatedPayload);
   }
 
   async #requestDowntimeCheckResultViaGm(requestId, checkId, result = {}, options = {}) {
@@ -3718,7 +3832,7 @@ export class RebreyaMainModule {
         throw new Error("Лутген доступен только мастеру.");
       }
 
-      const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.95";
+      const moduleVersion = game.modules.get(MODULE_ID)?.version ?? "1.4.96";
       const { LootgenApp } = await import(`./ui/lootgen-app.js?v=${encodeURIComponent(moduleVersion)}`);
       let app = null;
 
@@ -4126,7 +4240,7 @@ export class RebreyaMainModule {
         throw new Error("Окно космологии доступно только мастеру.");
       }
 
-      const { CosmologyApp } = await import("./ui/cosmology-app.js?v=1.4.95-cosmology");
+      const { CosmologyApp } = await import("./ui/cosmology-app.js?v=1.4.96-cosmology");
 
       if (!this.cosmologyApp) {
         this.cosmologyApp = new CosmologyApp(this);
@@ -4448,6 +4562,7 @@ Hooks.once("ready", async () => {
   try {
     registerDurabilityHooks(moduleApi);
     await reconcileBrokenEquippedArmor();
+    await reconcileItemPileDurability();
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register durability hooks.`, error);

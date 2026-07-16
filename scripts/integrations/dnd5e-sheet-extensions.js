@@ -1,4 +1,4 @@
-﻿import {
+import {
   DOWNTIME_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
   GEAR_COMPENDIUM_NAME,
@@ -32,7 +32,7 @@ import {
   hideInstalledUpgradeInventoryRows,
   isItemUpgradeHostItem,
   registerItemUpgradeFilterHook
-} from "./item-upgrade-sheet.js?v=1.4.95-item-upgrade-slots";
+} from "./item-upgrade-sheet.js?v=1.4.96-item-upgrade-slots";
 import {
   buildHeldItemEquipMenuActions,
   buildHeldItemReleaseHandUpdate,
@@ -40,7 +40,7 @@ import {
   getHeldItemDamageFormulaPresentation,
   getHeldItemEquipPresentation,
   isHeldItemEligible
-} from "./held-items.js?v=1.4.95-npc-held-natural";
+} from "./held-items.js?v=1.4.96-npc-held-natural";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
@@ -2422,7 +2422,14 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi) {
 
     if (partId === CHARACTER_DOWNTIME_TAB_ID) {
       const tab = buildCharacterDowntimeTabState(this);
-      const formState = characterDowntimeFormStateByActorId.get(this.actor?.id) ?? {};
+      const formState = await prepareCharacterDowntimeFormState(
+        this.actor,
+        characterDowntimeFormStateByActorId.get(this.actor?.id) ?? {},
+        moduleApi.characterDowntimeService
+      );
+      if (this.actor?.id) {
+        characterDowntimeFormStateByActorId.set(this.actor.id, formState);
+      }
       return {
         ...preparedWithFeatGroups,
         tab,
@@ -3704,6 +3711,45 @@ function updateCharacterDowntimeFormState(actor, patch = {}) {
   };
   characterDowntimeFormStateByActorId.set(actor.id, state);
   return state;
+}
+
+export async function prepareCharacterDowntimeFormState(actor, formState = {}, characterDowntimeService = null) {
+  const nextState = {
+    ...formState,
+    targetActionSelections: Array.isArray(formState.targetActionSelections)
+      ? formState.targetActionSelections
+      : []
+  };
+  if (typeof characterDowntimeService?.previewCraftRequest !== "function") {
+    return nextState;
+  }
+
+  try {
+    const craftPreview = await characterDowntimeService.previewCraftRequest(actor, {
+      actionId: cleanText(nextState.actionId),
+      targetActionSelections: nextState.targetActionSelections
+    });
+    if (craftPreview) {
+      nextState.craftPreview = craftPreview;
+    }
+    else {
+      delete nextState.craftPreview;
+    }
+  }
+  catch (error) {
+    const rawMessage = cleanText(error?.message);
+    const message = /managed gear selection|выбор.*снаряж/iu.test(rawMessage)
+      ? "Выберите предмет для крафта."
+      : (rawMessage || "Не удалось рассчитать заявку крафта.");
+    nextState.craftPreview = {
+      ready: false,
+      canSubmit: false,
+      message,
+      materials: [],
+      errors: [{ code: "craft-preview-failed", message }]
+    };
+  }
+  return nextState;
 }
 
 function readCharacterDowntimeFormStateFromPanel(panel, actor) {
@@ -5099,7 +5145,12 @@ function bindCharacterDowntimeStateControls(panel, app, moduleApi) {
         targetActionSelections: readCharacterDowntimeTargetActionSelections(panel)
       });
       const action = cleanText(control?.dataset?.action);
-      if (action === "character-downtime-check-source" || action === "character-downtime-rank-choice") {
+      const targetActionId = cleanText(control?.dataset?.targetActionId);
+      if (
+        action === "character-downtime-check-source"
+        || action === "character-downtime-rank-choice"
+        || targetActionId.startsWith("craft-")
+      ) {
         await rerenderActorSheet(app, moduleApi);
       }
     }, listenerOptions);

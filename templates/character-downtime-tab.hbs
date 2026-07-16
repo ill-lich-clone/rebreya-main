@@ -45,8 +45,8 @@
         </div>
       </div>
       <div class="rm-field rm-field--narrow">
-        <label>Недели</label>
-        <input type="number" min="1" step="1" value="{{characterDowntime.form.weeks}}" data-action="character-downtime-weeks" {{#if characterDowntime.submitDisabled}}disabled{{/if}}>
+        <label>{{#if characterDowntime.isCraftRequest}}Недель простоя{{else}}Недели{{/if}}</label>
+        <input type="number" min="1" step="1" value="{{characterDowntime.form.weeks}}" data-action="character-downtime-weeks" {{#if characterDowntime.isCraftRequest}}readonly aria-readonly="true"{{/if}} {{#if characterDowntime.submitDisabled}}disabled{{/if}}>
       </div>
 
       {{#if characterDowntime.selectedTemplate}}
@@ -340,6 +340,57 @@
                 <span>{{stepCost}}</span>
               {{/each}}
             </div>
+          {{/if}}
+
+          {{#if characterDowntime.isCraftRequest}}
+            <section class="rm-character-downtime-craft-preview">
+              {{#if characterDowntime.craftPreview.ready}}
+                <dl class="rm-character-downtime-craft-preview__metrics">
+                  <div>
+                    <dt>Рабочих дней</dt>
+                    <dd>{{rmNum characterDowntime.craftPreview.requiredWorkdays precision=0}}</dd>
+                  </div>
+                  <div>
+                    <dt>Недель простоя</dt>
+                    <dd>{{rmNum characterDowntime.craftPreview.requiredDowntimeWeeks precision=0}}</dd>
+                  </div>
+                  <div>
+                    <dt>Работа в день</dt>
+                    <dd>{{rmNum characterDowntime.craftPreview.hoursPerDay precision=0}} ч</dd>
+                  </div>
+                  <div>
+                    <dt>Прогресс в день</dt>
+                    <dd>{{rmNum characterDowntime.craftPreview.dailyProgressGold precision=2}} зм</dd>
+                  </div>
+                </dl>
+                <p class="rm-muted rm-character-downtime-craft-preview__workshop">
+                  {{characterDowntime.craftPreview.workshopLabel}} · до {{rmNum characterDowntime.craftPreview.calendarWeeks precision=0}} календ. нед.
+                </p>
+
+                {{#if characterDowntime.craftPreview.hasMaterials}}
+                  <div class="rm-character-downtime-craft-materials">
+                    <div class="rm-character-downtime-craft-materials__header">
+                      <span>Материал</span>
+                      <span>Нужно</span>
+                      <span>Есть</span>
+                    </div>
+                    {{#each characterDowntime.craftPreview.materials}}
+                      <div class="rm-character-downtime-craft-material {{#unless sufficient}}is-insufficient{{/unless}}">
+                        <strong>{{name}}</strong>
+                        <span>{{rmNum required precision=3}} {{unitLabel}}</span>
+                        <span>{{rmNum available precision=3}} {{unitLabel}}</span>
+                      </div>
+                    {{/each}}
+                  </div>
+                {{/if}}
+              {{/if}}
+
+              {{#if characterDowntime.submitDisabledReason}}
+                <p class="rm-inline-status rm-inline-status--warning">
+                  <span>{{characterDowntime.submitDisabledReason}}</span>
+                </p>
+              {{/if}}
+            </section>
           {{/if}}
         </section>
 

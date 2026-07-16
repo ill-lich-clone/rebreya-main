@@ -7,6 +7,7 @@ import { processCraftProjectWorkday } from "./craft-project-processor.js";
 import {
   buildCraftBatch,
   calculateMaterialReservation,
+  calculateProjectWorkdays,
   resolveDailyProgressGold,
   validateCraftEligibility
 } from "./crafting-rules.js";
@@ -781,12 +782,10 @@ export class CraftingService {
     );
   }
 
-  async #buildQuote(context, rawInput = {}) {
-    const input = normalizeApprovalInput(rawInput);
-    if (!input.requestId) {
-      throw new Error("Craft approval requires a downtime request ID.");
-    }
-    const request = this.#findDowntimeRequest(context, input.requestId);
+  async #buildRequestQuote(context, request, {
+    requestId = "",
+    workshopApproved = isActiveGmClient(globalThis.game)
+  } = {}) {
     const requestPayload = this.#requestCraftPayload(request);
     const crafterActorId = cleanText(request.actorId);
     const memberActorIds = new Set(asArray(context.memberActorIds).map((actorId) => cleanText(actorId)));
@@ -844,7 +843,7 @@ export class CraftingService {
       batch.requiredToolId
     );
     const workshopApproval = {
-      confirmedByUserId: isActiveGmClient(globalThis.game)
+      confirmedByUserId: workshopApproved
         ? cleanText(globalThis.game?.user?.id)
         : ""
     };
@@ -865,7 +864,7 @@ export class CraftingService {
     }));
     const signaturePayload = {
       groupId: context.groupId,
-      requestId: input.requestId,
+      requestId,
       crafterActorId,
       outputs: normalizedOutputs,
       targetGold: batch.totalPriceGold,
@@ -897,7 +896,7 @@ export class CraftingService {
 
     return {
       groupId: context.groupId,
-      requestId: input.requestId,
+      requestId,
       crafterActorId,
       outputs: normalizedOutputs,
       targetGold: batch.totalPriceGold,
@@ -925,6 +924,107 @@ export class CraftingService {
       eligibility,
       signature: stableSignature(signaturePayload)
     };
+  }
+
+  async #buildQuote(context, rawInput = {}) {
+    const input = normalizeApprovalInput(rawInput);
+    if (!input.requestId) {
+      throw new Error("Craft approval requires a downtime request ID.");
+    }
+    const request = this.#findDowntimeRequest(context, input.requestId);
+    return this.#buildRequestQuote(context, request, {
+      requestId: input.requestId,
+      workshopApproved: isActiveGmClient(globalThis.game)
+    });
+  }
+
+  async previewRequest({ groupId = "", actorId = "", craftProject = null } = {}) {
+    const context = cleanText(groupId)
+      ? this.#resolveFreshContext(cleanText(groupId))
+      : this.#resolveContext();
+    const quote = await this.#buildRequestQuote(context, {
+      actorId: cleanText(actorId),
+      craftProject: cloneValue(asObject(craftProject))
+    }, {
+      workshopApproved: false
+    });
+    const effectiveBaseGold = typeof this.moduleApi.resolveCraftProgressBase === "function"
+      ? await this.moduleApi.resolveCraftProgressBase({
+        actorId: quote.crafterActorId,
+        requiredToolId: quote.requiredToolId,
+        requiredRank: quote.requiredRank,
+        profile: quote.profile
+      })
+      : 5;
+    const dailyProgressGold = resolveDailyProgressGold({
+      hours: quote.hoursPerDay,
+      profile: quote.profile,
+      effectiveBaseGold
+    });
+    const requiredWorkdays = Math.max(1, calculateProjectWorkdays({
+      targetGold: quote.targetGold,
+      hours: quote.hoursPerDay,
+      profile: quote.profile,
+      effectiveBaseGold
+    }));
+    const requiredDowntimeWeeks = Math.max(1, Math.ceil(requiredWorkdays / 5));
+    const calendarWeeks = Math.max(1, Math.ceil(requiredWorkdays / (quote.ownedWorkshop ? 7 : 5)));
+    const materialAvailability = await this.moduleApi.inventoryService.getCraftResourceAvailability({
+      groupId: quote.groupId,
+      reservation: quote.reservation
+    });
+    const model = await this.moduleApi.getModel();
+    const materialById = model?.materialById instanceof Map
+      ? model.materialById
+      : new Map(asArray(model?.materials).map((material) => [cleanText(material?.id), material]));
+    const materials = asArray(materialAvailability?.rows).map((row) => {
+      const material = materialById.get(cleanText(row?.sourceId)) ?? null;
+      const components = asArray(row?.components);
+      const componentTypes = new Set(components.map((component) => cleanText(component?.resource)));
+      const unit = componentTypes.size === 1 && componentTypes.has("predominant") ? "lb" : "unit";
+      return {
+        sourceId: cleanText(row?.sourceId),
+        name: cleanText(material?.name) || cleanText(row?.sourceId),
+        required: roundFive(toNonnegativeNumber(row?.required, 0)),
+        available: roundFive(toNonnegativeNumber(row?.available, 0)),
+        sufficient: row?.sufficient === true,
+        unit,
+        components: cloneValue(components)
+      };
+    });
+    const errors = asArray(quote.eligibility?.errors)
+      .filter((error) => cleanText(error?.code) !== "workshop-required")
+      .map((error) => cloneValue(error));
+    if (materialAvailability?.sufficient !== true) {
+      errors.push({
+        code: "insufficient-materials",
+        message: "Not enough materials in party inventory."
+      });
+    }
+
+    return cloneValue({
+      ready: true,
+      groupId: quote.groupId,
+      actorId: quote.crafterActorId,
+      outputs: quote.outputs,
+      targetGold: quote.targetGold,
+      profile: quote.profile,
+      requiredToolId: quote.requiredToolId,
+      requiredToolRank: quote.requiredToolRank,
+      toolAccess: quote.toolAccess,
+      hoursPerDay: quote.hoursPerDay,
+      ownedWorkshop: quote.ownedWorkshop,
+      dailyProgressGold,
+      requiredWorkdays,
+      requiredDowntimeWeeks,
+      calendarWeeks,
+      reservation: quote.reservation,
+      materialAvailability,
+      materials,
+      errors,
+      message: cleanText(errors[0]?.message),
+      canSubmit: errors.length === 0
+    });
   }
 
   async getQuote(input = {}) {

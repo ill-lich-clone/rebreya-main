@@ -1,7 +1,7 @@
 import { MODULE_ID } from "../constants.js";
 import { isDurabilityEligible } from "../data/durability-rules.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
-import { isNaturalWeapon } from "./held-items.js?v=1.4.95-npc-held-natural";
+import { isNaturalWeapon } from "./held-items.js?v=1.4.96-npc-held-natural";
 
 const EFFECT_SUPPRESSION_PATCH = Symbol.for(`${MODULE_ID}.durabilityEffectSuppression`);
 const REGISTERED_HOOK_TARGETS = new WeakSet();
@@ -12,6 +12,7 @@ const ITEM_PILES_CREATE_HOOK = "item-piles-createItemPile";
 const PILE_PROJECTION_OPTION = "durabilityPileProjection";
 const CLEANED_EMPTY_PILES = new WeakSet();
 const EMPTY_PILE_CLEANUP_TASKS = new WeakMap();
+const PILE_SYNC_TASKS = new WeakMap();
 
 function cleanText(value) {
   return String(value ?? "").trim();
@@ -291,17 +292,20 @@ function projectDurabilityOntoTokenData(tokenData, item) {
   return true;
 }
 
-async function syncPileDurability(target, foundryGame) {
+async function syncPileDurability(target, foundryGame, isActiveGm = () => isActiveGmClient(foundryGame)) {
   const api = itemPilesApi(foundryGame);
   const actor = actorOfPileTarget(target);
   const pileTarget = target?.actor ? target : pileTargetForActor(actor);
-  if (!api || !actor || !isValidPile(api, pileTarget, actor)) {
+  if (!api || !actor || !isActiveGm() || !isValidPile(api, pileTarget, actor)) {
     return false;
   }
 
   const item = singleDurabilityItem(actor.items);
   if (item && typeof actor.update === "function") {
     const projection = durabilityProjectionForItem(item);
+    if (!isActiveGm()) {
+      return false;
+    }
     await actor.update(pileActorUpdate(projection), {
       [MODULE_ID]: { [PILE_PROJECTION_OPTION]: true }
     });
@@ -309,11 +313,42 @@ async function syncPileDurability(target, foundryGame) {
 
   const token = tokenDocumentOf(pileTarget) ?? tokenDocumentOf(actor.token);
   if (token && typeof token.update === "function") {
+    if (!isActiveGm()) {
+      return false;
+    }
     await token.update({ "bar1.attribute": "attributes.hp" }, {
       [MODULE_ID]: { [PILE_PROJECTION_OPTION]: true }
     });
   }
   return Boolean(item || token);
+}
+
+function queuePileTask(target, callback) {
+  const actor = actorOfPileTarget(target);
+  if (!actor || typeof actor !== "object") {
+    return Promise.resolve(false);
+  }
+  const previous = PILE_SYNC_TASKS.get(actor) ?? Promise.resolve();
+  const task = previous.catch(() => false).then(callback);
+  PILE_SYNC_TASKS.set(actor, task);
+  void task.then(() => {
+    if (PILE_SYNC_TASKS.get(actor) === task) {
+      PILE_SYNC_TASKS.delete(actor);
+    }
+  }, () => {
+    if (PILE_SYNC_TASKS.get(actor) === task) {
+      PILE_SYNC_TASKS.delete(actor);
+    }
+  });
+  return task;
+}
+
+function queuePileDurabilitySync(
+  target,
+  foundryGame,
+  isActiveGm = () => isActiveGmClient(foundryGame)
+) {
+  return queuePileTask(target, () => syncPileDurability(target, foundryGame, isActiveGm));
 }
 
 function resolveDamageType(options = {}) {
@@ -330,7 +365,7 @@ function resolveDamageType(options = {}) {
 function pileDurabilityContext(moduleApi, actor, foundryGame) {
   const api = itemPilesApi(foundryGame);
   const pileTarget = pileTargetForActor(actor);
-  if (!api || typeof moduleApi?.damageItem !== "function") {
+  if (!api || (typeof moduleApi?.damageItemPile !== "function" && typeof moduleApi?.damageItem !== "function")) {
     return null;
   }
   if (!isValidPile(api, pileTarget, actor)) {
@@ -449,7 +484,10 @@ async function cleanupDestroyedPileItem(item, {
 }
 
 async function applyPileDamage(context, moduleApi, options, dependencies) {
-  const transition = await moduleApi.damageItem(context.item, {
+  const damageItem = typeof moduleApi.damageItemPile === "function"
+    ? moduleApi.damageItemPile.bind(moduleApi)
+    : moduleApi.damageItem.bind(moduleApi);
+  const transition = await damageItem(context.item, {
     amount: context.damage,
     damageType: resolveDamageType(options)
   });
@@ -458,8 +496,15 @@ async function applyPileDamage(context, moduleApi, options, dependencies) {
     await cleanupDestroyedPileItem(context.item, dependencies);
     return transition;
   }
-  await syncPileDurability(context.pileTarget, dependencies.game);
+  await syncPileDurability(context.pileTarget, dependencies.game, dependencies.isActiveGm);
   return transition;
+}
+
+function queuePileDamage(context, moduleApi, options, dependencies) {
+  return queuePileTask(
+    context.pileTarget,
+    () => applyPileDamage(context, moduleApi, options, dependencies)
+  );
 }
 
 function reportPileTask(task, label) {
@@ -534,6 +579,29 @@ function collectLoadedActors(foundryGame, foundryCanvas) {
     }
   }
   return actors;
+}
+
+export async function reconcileItemPileDurability({
+  game: foundryGame = globalThis.game,
+  canvas: foundryCanvas = globalThis.canvas,
+  isActiveGm = () => isActiveGmClient(foundryGame)
+} = {}) {
+  const api = itemPilesApi(foundryGame);
+  if (!api || !isActiveGm()) {
+    return [];
+  }
+
+  const reconciled = [];
+  for (const actor of collectLoadedActors(foundryGame, foundryCanvas)) {
+    const target = pileTargetForActor(actor);
+    if (!isValidPile(api, target, actor) || !singleDurabilityItem(actor?.items)) {
+      continue;
+    }
+    if (await queuePileDurabilitySync(target, foundryGame, isActiveGm)) {
+      reconciled.push(cleanText(actor.id ?? actor.uuid));
+    }
+  }
+  return reconciled.filter(Boolean);
 }
 
 export async function reconcileBrokenEquippedArmor({
@@ -613,18 +681,32 @@ export function registerDurabilityHooks(moduleApi, {
     }
     return true;
   });
-  Hooks.on(ITEM_PILES_CREATE_HOOK, (target) => reportPileTask(
-    syncPileDurability(target, foundryGame),
-    "Failed to project durability onto a newly-created Item Pile."
+  Hooks.on(ITEM_PILES_CREATE_HOOK, (target) => (
+    isActiveGm()
+      ? reportPileTask(
+        queuePileDurabilitySync(target, foundryGame, isActiveGm),
+        "Failed to project durability onto a newly-created Item Pile."
+      )
+      : true
   ));
   Hooks.on("createItem", (item) => {
     const actor = item?.parent ?? item?.actor;
-    if (!actor || !itemPilesApi(foundryGame)) {
+    if (!actor || !isActiveGm() || !itemPilesApi(foundryGame)) {
       return true;
     }
     return reportPileTask(
-      syncPileDurability(pileTargetForActor(actor), foundryGame),
+      queuePileDurabilitySync(pileTargetForActor(actor), foundryGame, isActiveGm),
       "Failed to refresh Item Pile durability after item creation."
+    );
+  });
+  Hooks.on("updateItem", (item) => {
+    const actor = item?.parent ?? item?.actor;
+    if (!actor || !isActiveGm() || !durabilityOf(item) || !itemPilesApi(foundryGame)) {
+      return true;
+    }
+    return reportPileTask(
+      queuePileDurabilitySync(pileTargetForActor(actor), foundryGame, isActiveGm),
+      "Failed to refresh Item Pile durability after item update."
     );
   });
   Hooks.on("dnd5e.preApplyDamage", (actor, amount, _updates, options = {}) => {
@@ -633,7 +715,7 @@ export function registerDurabilityHooks(moduleApi, {
       return true;
     }
     void reportPileTask(
-      applyPileDamage(context, moduleApi, options, { game: foundryGame, isActiveGm }),
+      queuePileDamage(context, moduleApi, options, { game: foundryGame, isActiveGm }),
       "Failed to apply Item Pile damage to item durability."
     );
     return false;
@@ -657,7 +739,7 @@ export function registerDurabilityHooks(moduleApi, {
     }
     const context = { ...pileContext, damage: currentHp - nextHp };
     void reportPileTask(
-      applyPileDamage(context, moduleApi, options, { game: foundryGame, isActiveGm }),
+      queuePileDamage(context, moduleApi, options, { game: foundryGame, isActiveGm }),
       "Failed to route an Item Pile HP update to item durability."
     );
     return true;

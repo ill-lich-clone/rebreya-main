@@ -334,11 +334,19 @@ function isKnownGroupContextError(error) {
 }
 
 function buildBalance(value = {}) {
+  const availableWeeks = toInteger(value.availableWeeks, 0);
+  const reservedWeeks = toInteger(value.reservedWeeks, 0);
+  const spentWeeks = toInteger(value.spentWeeks, 0);
+  const totalGrantedWeeks = toInteger(value.totalGrantedWeeks, 0);
   return {
-    availableWeeks: toInteger(value.availableWeeks, 0),
-    reservedWeeks: toInteger(value.reservedWeeks, 0),
-    spentWeeks: toInteger(value.spentWeeks, 0),
-    totalGrantedWeeks: toInteger(value.totalGrantedWeeks, 0)
+    availableWorkdays: toInteger(value.availableWorkdays, availableWeeks * 5),
+    reservedWorkdays: toInteger(value.reservedWorkdays, reservedWeeks * 5),
+    spentWorkdays: toInteger(value.spentWorkdays, spentWeeks * 5),
+    totalGrantedWorkdays: toInteger(value.totalGrantedWorkdays, totalGrantedWeeks * 5),
+    availableWeeks,
+    reservedWeeks,
+    spentWeeks,
+    totalGrantedWeeks
   };
 }
 
@@ -803,6 +811,59 @@ function buildCanonicalCraftProject(targetActionSelections, model = {}) {
     craftProject.predominantMaterialId = predominantMaterialId;
   }
   return craftProject;
+}
+
+function craftPreviewErrorMessage(preview = {}) {
+  const errors = asArray(preview?.errors);
+  const firstCode = cleanText(errors[0]?.code);
+  if (firstCode === "insufficient-materials") {
+    return "Недостаточно материалов на партийном складе.";
+  }
+  if (firstCode === "tool-required") {
+    return "У персонажа нет нужного инструмента для крафта.";
+  }
+  if (firstCode === "insufficient-tool-rank") {
+    return "Ранг инструмента недостаточен для этого предмета.";
+  }
+  return cleanText(preview?.message) || cleanText(errors[0]?.message) || "Заявка крафта не прошла проверку.";
+}
+
+function applyCraftPreview(craftProject, preview = {}) {
+  return {
+    ...craftProject,
+    requiredWorkdays: Math.max(1, toInteger(preview.requiredWorkdays, 1)),
+    requiredDowntimeWeeks: Math.max(1, toInteger(preview.requiredDowntimeWeeks, 1)),
+    calendarWeeks: Math.max(1, toInteger(preview.calendarWeeks, 1)),
+    dailyProgressGold: Math.max(0, toFiniteNumber(preview.dailyProgressGold, 0))
+  };
+}
+
+function buildCraftPreviewView(value = {}) {
+  const preview = asObject(value);
+  const ready = preview.ready === true;
+  const materials = asArray(preview.materials).map((material) => ({
+    sourceId: cleanText(material?.sourceId),
+    name: cleanText(material?.name) || cleanText(material?.sourceId),
+    required: Math.max(0, toFiniteNumber(material?.required, 0)),
+    available: Math.max(0, toFiniteNumber(material?.available, 0)),
+    sufficient: material?.sufficient === true,
+    unit: cleanText(material?.unit) || "unit",
+    unitLabel: cleanText(material?.unit) === "lb" ? "фнт" : "ед."
+  }));
+  return {
+    ready,
+    canSubmit: ready && preview.canSubmit === true,
+    requiredWorkdays: Math.max(0, toInteger(preview.requiredWorkdays, 0)),
+    requiredDowntimeWeeks: Math.max(0, toInteger(preview.requiredDowntimeWeeks, 0)),
+    calendarWeeks: Math.max(0, toInteger(preview.calendarWeeks, 0)),
+    dailyProgressGold: Math.max(0, toFiniteNumber(preview.dailyProgressGold, 0)),
+    hoursPerDay: Math.max(0, toInteger(preview.hoursPerDay, 0)),
+    ownedWorkshop: preview.ownedWorkshop === true,
+    workshopLabel: preview.ownedWorkshop === true ? "Своя мастерская" : "Городская мастерская",
+    materials,
+    hasMaterials: materials.length > 0,
+    message: ready && preview.canSubmit === true ? "" : craftPreviewErrorMessage(preview)
+  };
 }
 
 function buildResourceChoices(action = {}, selectedChoiceId = "") {
@@ -1977,22 +2038,41 @@ export class CharacterDowntimeService {
     const actionId = cleanText(formState.actionId);
     const editRequestId = cleanText(formState.editRequestId);
 
-    const weeks = normalizeWeeks(formState.weeks, 1);
     const balance = buildBalance(member.balance ?? member);
     const actorRequests = (Array.isArray(snapshot?.requests) ? snapshot.requests : [])
       .filter((request) => request?.actorId === actor.id);
     const editingRequest = editRequestId
       ? actorRequests.find((request) => cleanText(request?.id) === editRequestId && cleanText(request?.status) === "pending")
       : null;
+    const selectedAction = actionCatalog.find((action) => action.id === actionId) ?? null;
+    const isCraftRequest = isCraftDowntimeAction(actionId, snapshot);
+    const craftPreview = isCraftRequest ? buildCraftPreviewView(formState.craftPreview) : null;
+    const weeks = isCraftRequest && craftPreview?.requiredDowntimeWeeks > 0
+      ? craftPreview.requiredDowntimeWeeks
+      : normalizeWeeks(formState.weeks, 1);
     const effectiveAvailableWeeks = balance.availableWeeks + (editingRequest ? normalizeWeeks(editingRequest.weeks, 1) : 0);
+    const effectiveAvailableWorkdays = balance.availableWorkdays
+      + (editingRequest ? Math.max(0, toInteger(editingRequest.workdays, normalizeWeeks(editingRequest.weeks, 1) * 5)) : 0);
     const canSubmit = Boolean(member.canSubmit && snapshot?.canSubmit);
-    const submitDisabled = !canSubmit || !actionId || effectiveAvailableWeeks < weeks;
+    const insufficientCraftWorkdays = isCraftRequest
+      && craftPreview?.requiredWorkdays > effectiveAvailableWorkdays;
+    const submitDisabled = !canSubmit
+      || !actionId
+      || (isCraftRequest
+        ? !craftPreview?.ready || !craftPreview?.canSubmit || insufficientCraftWorkdays
+        : effectiveAvailableWeeks < weeks);
     const submitDisabledReason = submitDisabled
       ? (!canSubmit
         ? "У вас нет прав отправлять заявки за этого персонажа."
         : (!actionId
           ? "Выберите простой из библиотеки."
-          : "Недостаточно свободных недель простоя."))
+          : (isCraftRequest && !craftPreview?.ready
+            ? craftPreview?.message || "Выберите предмет для крафта."
+            : (isCraftRequest && !craftPreview?.canSubmit
+              ? craftPreview?.message || "Заявка крафта не прошла проверку."
+              : (insufficientCraftWorkdays
+                ? "Недостаточно свободных рабочих дней простоя."
+                : "Недостаточно свободных недель простоя.")))))
       : "";
     const requests = actorRequests
       .map((request) => mapRequest(request, {
@@ -2007,7 +2087,6 @@ export class CharacterDowntimeService {
     const currentProjectPage = paginate(currentProjects, formState.currentProjectPage);
     const archivePage = paginate(archivedRequests, formState.archivePage);
 
-    const selectedAction = actionCatalog.find((action) => action.id === actionId) ?? null;
     const selectedTemplate = buildTemplateView(selectedAction, formState) ?? buildTemplateView(formState.selectedTemplate, formState);
     const actionOptions = actionCatalog.map((action) => ({
       value: action.id,
@@ -2027,6 +2106,8 @@ export class CharacterDowntimeService {
       libraryDisabled: !canSubmit,
       selectedActionLabel: selectedTemplate?.label || cleanText(selectedAction?.label) || "Выбрать простой",
       selectedTemplate,
+      isCraftRequest,
+      craftPreview,
       requests: activePage.items,
       currentProjects: currentProjectPage.items,
       archiveRequests: archivePage.items,
@@ -2052,6 +2133,37 @@ export class CharacterDowntimeService {
       },
       submitDisabled,
       submitDisabledReason
+    };
+  }
+
+  async previewCraftRequest(actor, payload = {}) {
+    if (!actor?.id) {
+      throw new Error("Персонаж для заявки простоя не найден.");
+    }
+
+    const downtimeSnapshot = payload.downtimeSnapshot
+      ?? this.moduleApi?.getDowntimeSnapshot?.({ actorId: actor.id })
+      ?? null;
+    const actionId = cleanText(payload.actionId);
+    if (!isCraftDowntimeAction(actionId, downtimeSnapshot)) {
+      return null;
+    }
+    const model = payload.model ?? await this.moduleApi?.getModel?.();
+    if (!model) {
+      throw new Error("Craft gear validation requires the current Rebreya model.");
+    }
+    const craftProject = buildCanonicalCraftProject(payload.targetActionSelections, model);
+    const preview = await this.moduleApi?.previewCraftDowntimeRequest?.({
+      groupId: cleanText(downtimeSnapshot?.groupId),
+      actorId: actor.id,
+      craftProject
+    });
+    if (!preview) {
+      throw new Error("Предпросмотр крафта недоступен.");
+    }
+    return {
+      ...preview,
+      craftProject: applyCraftPreview(craftProject, preview)
     };
   }
 
@@ -2093,7 +2205,17 @@ export class CharacterDowntimeService {
       if (!model) {
         throw new Error("Craft gear validation requires the current Rebreya model.");
       }
-      requestPayload.craftProject = buildCanonicalCraftProject(targetActionSelections, model);
+      const craftProject = buildCanonicalCraftProject(targetActionSelections, model);
+      const preview = await this.moduleApi?.previewCraftDowntimeRequest?.({
+        groupId,
+        actorId: actor.id,
+        craftProject
+      });
+      if (!preview || preview.canSubmit !== true) {
+        throw new Error(craftPreviewErrorMessage(preview));
+      }
+      requestPayload.weeks = Math.max(1, toInteger(preview.requiredDowntimeWeeks, 1));
+      requestPayload.craftProject = applyCraftPreview(craftProject, preview);
     }
     else if (targetActionSelections.length || requestId) {
       requestPayload.targetActionSelections = targetActionSelections;

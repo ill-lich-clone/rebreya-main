@@ -197,10 +197,19 @@ function requireCraftQuantity(value, label) {
 
 function normalizeCraftResourceRequest(value = {}, { requireProjectId = true } = {}) {
   const source = value && typeof value === "object" ? value : {};
-  const nested = source.reservation && typeof source.reservation === "object"
-    ? source.reservation
-    : source;
-  const projectId = cleanId(source.projectId ?? nested.projectId);
+  const craftProject = source.craftProject && typeof source.craftProject === "object"
+    ? source.craftProject
+    : {};
+  const nested = source.materialReservation && typeof source.materialReservation === "object"
+    ? source.materialReservation
+    : (craftProject.materialReservation && typeof craftProject.materialReservation === "object"
+      ? craftProject.materialReservation
+      : (source.reservation && typeof source.reservation === "object"
+        ? source.reservation
+        : (craftProject.reservation && typeof craftProject.reservation === "object"
+          ? craftProject.reservation
+          : (Object.keys(craftProject).length ? craftProject : source))));
+  const projectId = cleanId(source.projectId ?? craftProject.projectId ?? nested.projectId);
   if (requireProjectId && !projectId) {
     throw new Error("Craft project ID is required.");
   }
@@ -291,6 +300,28 @@ function collectCraftMaterialResources(request) {
     });
   }
   return Array.from(resourcesBySourceId.values());
+}
+
+function takeCraftMaterialComponents(pendingComponents, quantity) {
+  let remaining = roundCraftQuantity(quantity);
+  const allocated = [];
+  for (const component of pendingComponents) {
+    if (remaining <= 1e-9) {
+      break;
+    }
+    const available = roundCraftQuantity(component.quantity);
+    if (available <= 0) {
+      continue;
+    }
+    const taken = roundCraftQuantity(Math.min(available, remaining));
+    allocated.push({ ...foundry.utils.deepClone(component), quantity: taken });
+    component.quantity = roundCraftQuantity(available - taken);
+    remaining = roundCraftQuantity(remaining - taken);
+  }
+  if (remaining > 1e-9) {
+    throw new Error("Craft material components do not match their total quantity.");
+  }
+  return allocated;
 }
 
 function normalizeCraftOutputs(outputs) {
@@ -1445,54 +1476,74 @@ export class InventoryService {
     throw error;
   }
 
-  #findMaterialInventoryItem(actor, sourceId) {
+  #findMaterialInventoryItems(actor, sourceId) {
     const safeSourceId = cleanId(sourceId);
     if (!safeSourceId) {
-      return null;
+      return [];
     }
-    return collectionValues(actor?.items).find((item) => {
+    return collectionValues(actor?.items).filter((item) => {
       const flags = foundry.utils.deepClone(item?.flags?.[MODULE_ID] ?? {});
       const candidateIds = [flags.sourceId, flags.materialId, flags.predominantMaterialId]
         .map(cleanId)
         .filter(Boolean);
       return candidateIds.includes(safeSourceId)
         && normalizeInventorySourceType(flags.sourceType ?? "material") === "material";
-    }) ?? null;
+    });
+  }
+
+  #findMaterialInventoryItem(actor, sourceId) {
+    return this.#findMaterialInventoryItems(actor, sourceId)[0] ?? null;
   }
 
   #prepareCraftDebitReceipts(actor, request) {
     const receipts = [];
     const receiptByItemId = new Map();
     for (const resource of collectCraftMaterialResources(request)) {
-      const item = this.#findMaterialInventoryItem(actor, resource.sourceId);
-      if (!item) {
+      const items = this.#findMaterialInventoryItems(actor, resource.sourceId);
+      if (!items.length) {
         throw new Error(`Craft material '${resource.sourceId}' was not found in party inventory.`);
       }
-      const existing = receiptByItemId.get(item.id);
-      const beforeQuantity = existing?.afterQuantity
-        ?? roundCraftQuantity(getRawQuantity(item.toObject()));
-      if (beforeQuantity + 1e-9 < resource.quantity) {
+      let remaining = roundCraftQuantity(resource.quantity);
+      const pendingComponents = resource.components.map((component) => foundry.utils.deepClone(component));
+      for (const item of items) {
+        if (remaining <= 1e-9) {
+          break;
+        }
+        const existing = receiptByItemId.get(item.id);
+        const beforeQuantity = existing?.afterQuantity
+          ?? roundCraftQuantity(getRawQuantity(item.toObject()));
+        const quantity = roundCraftQuantity(Math.min(beforeQuantity, remaining));
+        if (quantity <= 0) {
+          continue;
+        }
+        const afterQuantity = roundCraftQuantity(beforeQuantity - quantity);
+        const components = takeCraftMaterialComponents(pendingComponents, quantity);
+        if (existing) {
+          existing.quantity = roundCraftQuantity(existing.quantity + quantity);
+          existing.delta = existing.quantity;
+          existing.afterQuantity = afterQuantity;
+          existing.components.push(...components);
+        }
+        else {
+          const receipt = {
+            ...resource,
+            quantity,
+            components,
+            sourceType: "material",
+            itemId: item.id,
+            itemUuid: cleanId(item.uuid),
+            beforeQuantity,
+            afterQuantity,
+            delta: quantity
+          };
+          receipts.push(receipt);
+          receiptByItemId.set(item.id, receipt);
+        }
+        remaining = roundCraftQuantity(remaining - quantity);
+      }
+      if (remaining > 1e-9) {
         throw new Error(`Not enough craft material '${resource.sourceId}' in party inventory.`);
       }
-      const afterQuantity = roundCraftQuantity(beforeQuantity - resource.quantity);
-      if (existing) {
-        existing.quantity = roundCraftQuantity(existing.quantity + resource.quantity);
-        existing.delta = existing.quantity;
-        existing.afterQuantity = afterQuantity;
-        existing.components.push(...resource.components);
-        continue;
-      }
-      const receipt = {
-        ...resource,
-        sourceType: "material",
-        itemId: item.id,
-        itemUuid: cleanId(item.uuid),
-        beforeQuantity,
-        afterQuantity,
-        delta: resource.quantity
-      };
-      receipts.push(receipt);
-      receiptByItemId.set(item.id, receipt);
     }
     return receipts;
   }
@@ -3649,6 +3700,33 @@ export class InventoryService {
       "inventory",
       () => this.#executeReserveCraftResourcesOnce(quote, mutationId, options)
     );
+  }
+
+  async getCraftResourceAvailability(request = {}) {
+    const normalizedRequest = normalizeCraftResourceRequest(request, { requireProjectId: false });
+    const requestedGroupId = cleanId(request?.groupId);
+    const actor = requestedGroupId
+      ? this.moduleApi.groupContextService?.resolveForGroup?.(requestedGroupId)?.groupActor ?? null
+      : await this.getInventoryActor({ create: false });
+    const rows = collectCraftMaterialResources(normalizedRequest).map((resource) => {
+      const available = actor
+        ? this.#findMaterialInventoryItems(actor, resource.sourceId).reduce((total, item) => (
+          roundCraftQuantity(total + Math.max(0, getRawQuantity(item.toObject())))
+        ), 0)
+        : 0;
+      return {
+        sourceId: resource.sourceId,
+        required: resource.quantity,
+        available,
+        sufficient: available + 1e-9 >= resource.quantity,
+        components: foundry.utils.deepClone(resource.components)
+      };
+    });
+    return {
+      sufficient: rows.every((row) => row.sufficient),
+      inventoryActorId: cleanId(actor?.id),
+      rows
+    };
   }
 
   async #executeReserveCraftResourcesOnce(quote, mutationId, options) {

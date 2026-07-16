@@ -12,7 +12,7 @@ function createActor({ id = "actor-a", name = "Hero", type = "character" } = {})
   };
 }
 
-function createModuleApi({ snapshot, error, calls = [], model } = {}) {
+function createModuleApi({ snapshot, error, calls = [], model, craftPreview } = {}) {
   return {
     getDowntimeSnapshot(options) {
       calls.push(["getDowntimeSnapshot", options]);
@@ -41,6 +41,21 @@ function createModuleApi({ snapshot, error, calls = [], model } = {}) {
         gearById: new Map(),
         materials: [],
         materialById: new Map()
+      };
+    },
+    async previewCraftDowntimeRequest(payload) {
+      calls.push(["previewCraftDowntimeRequest", payload]);
+      return craftPreview ?? {
+        ready: true,
+        canSubmit: true,
+        requiredWorkdays: 5,
+        requiredDowntimeWeeks: 1,
+        calendarWeeks: 1,
+        dailyProgressGold: 5,
+        hoursPerDay: payload.craftProject?.hoursPerDay ?? 8,
+        ownedWorkshop: payload.craftProject?.ownedWorkshop === true,
+        materials: [],
+        errors: []
       };
     }
   };
@@ -126,6 +141,10 @@ test("CharacterDowntimeService maps current actor downtime into a player-facing 
   assert.equal(context.canSubmit, true);
   assert.equal(context.submitDisabled, false);
   assert.deepEqual(context.balance, {
+    availableWorkdays: 20,
+    reservedWorkdays: 10,
+    spentWorkdays: 5,
+    totalGrantedWorkdays: 35,
     availableWeeks: 4,
     reservedWeeks: 2,
     spentWeeks: 1,
@@ -1714,6 +1733,201 @@ test("CharacterDowntimeService creates requests for the current sheet actor only
   ]]);
 });
 
+test("CharacterDowntimeService maps craft preview materials and duration into form state", () => {
+  const service = new CharacterDowntimeService(createModuleApi({
+    snapshot: {
+      groupId: "group-a",
+      canSubmit: true,
+      members: [{
+        actorId: "actor-a",
+        canSubmit: true,
+        balance: {
+          availableWorkdays: 10,
+          reservedWorkdays: 0,
+          spentWorkdays: 0,
+          totalGrantedWorkdays: 10,
+          availableWeeks: 2,
+          reservedWeeks: 0,
+          spentWeeks: 0,
+          totalGrantedWeeks: 2
+        }
+      }],
+      requests: [],
+      actionCatalog: [{ id: "craft", downtimeId: "craft", label: "Крафт" }]
+    }
+  }));
+
+  const context = service.getActorContext(createActor({ id: "actor-a" }), {
+    actionId: "craft",
+    weeks: 99,
+    craftPreview: {
+      ready: true,
+      canSubmit: false,
+      requiredWorkdays: 3,
+      requiredDowntimeWeeks: 1,
+      calendarWeeks: 1,
+      dailyProgressGold: 5,
+      hoursPerDay: 8,
+      ownedWorkshop: false,
+      materials: [{
+        sourceId: "steel",
+        name: "Сталь",
+        required: 2,
+        available: 1,
+        sufficient: false,
+        unit: "lb"
+      }],
+      errors: [{ code: "insufficient-materials", message: "Not enough materials." }]
+    }
+  });
+
+  assert.equal(context.isCraftRequest, true);
+  assert.equal(context.form.weeks, 1);
+  assert.equal(context.craftPreview.requiredWorkdays, 3);
+  assert.equal(context.craftPreview.materials[0].unitLabel, "фнт");
+  assert.equal(context.submitDisabled, true);
+  assert.match(context.submitDisabledReason, /материал/iu);
+});
+
+test("CharacterDowntimeService exposes a craft preview and blocks an insufficient request", async () => {
+  const calls = [];
+  const gear = {
+    id: "longsword",
+    name: "Длинный меч",
+    predominantMaterialId: "steel"
+  };
+  const service = new CharacterDowntimeService(createModuleApi({
+    calls,
+    craftPreview: {
+      ready: true,
+      canSubmit: false,
+      requiredWorkdays: 3,
+      requiredDowntimeWeeks: 1,
+      calendarWeeks: 1,
+      dailyProgressGold: 5,
+      hoursPerDay: 8,
+      ownedWorkshop: false,
+      materials: [{
+        sourceId: "steel",
+        name: "Сталь",
+        required: 2,
+        available: 1,
+        sufficient: false,
+        unit: "lb"
+      }],
+      errors: [{ code: "insufficient-materials", message: "Not enough materials." }]
+    },
+    snapshot: {
+      groupId: "group-a",
+      members: [],
+      requests: [],
+      actionCatalog: [{ id: "craft", downtimeId: "craft" }],
+      canSubmit: true
+    },
+    model: {
+      gear: [gear],
+      gearById: new Map([[gear.id, gear]]),
+      materials: [{ id: "steel", name: "Сталь" }],
+      materialById: new Map([["steel", { id: "steel", name: "Сталь" }]])
+    }
+  }));
+  const payload = {
+    actionId: "craft",
+    targetActionSelections: [{
+      actionId: "craft-item",
+      item: {
+        name: gear.name,
+        sourceType: "gear",
+        sourceId: gear.id,
+        rebreya: {
+          managed: true,
+          sourceType: "gear",
+          sourceId: gear.id,
+          gearId: gear.id
+        }
+      }
+    }]
+  };
+
+  const preview = await service.previewCraftRequest(createActor({ id: "actor-a" }), payload);
+  assert.equal(preview.canSubmit, false);
+  assert.equal(preview.materials[0].available, 1);
+  await assert.rejects(
+    service.createRequest(createActor({ id: "actor-a" }), payload),
+    /материал/iu
+  );
+  assert.equal(calls.some((call) => call[0] === "createDowntimeRequest"), false);
+});
+
+test("CharacterDowntimeService persists authoritative craft duration from preview", async () => {
+  const calls = [];
+  const gear = {
+    id: "longsword",
+    name: "Длинный меч",
+    predominantMaterialId: "steel"
+  };
+  const service = new CharacterDowntimeService(createModuleApi({
+    calls,
+    craftPreview: {
+      ready: true,
+      canSubmit: true,
+      requiredWorkdays: 7,
+      requiredDowntimeWeeks: 2,
+      calendarWeeks: 1,
+      dailyProgressGold: 10,
+      hoursPerDay: 16,
+      ownedWorkshop: true,
+      materials: [],
+      errors: []
+    },
+    snapshot: {
+      groupId: "group-a",
+      members: [],
+      requests: [],
+      actionCatalog: [{ id: "craft", downtimeId: "craft" }],
+      canSubmit: true
+    },
+    model: {
+      gear: [gear],
+      gearById: new Map([[gear.id, gear]]),
+      materials: [{ id: "steel", name: "Сталь" }],
+      materialById: new Map([["steel", { id: "steel", name: "Сталь" }]])
+    }
+  }));
+
+  await service.createRequest(createActor({ id: "actor-a" }), {
+    actionId: "craft",
+    weeks: 99,
+    targetActionSelections: [{
+      actionId: "craft-item",
+      item: {
+        name: gear.name,
+        sourceType: "gear",
+        sourceId: gear.id,
+        rebreya: {
+          managed: true,
+          sourceType: "gear",
+          sourceId: gear.id,
+          gearId: gear.id
+        }
+      }
+    }, {
+      actionId: "craft-hours",
+      value: 16
+    }, {
+      actionId: "craft-workshop",
+      optionIds: ["owned"]
+    }]
+  });
+
+  const request = calls.find((call) => call[0] === "createDowntimeRequest")[1];
+  assert.equal(request.weeks, 2);
+  assert.equal(request.craftProject.requiredWorkdays, 7);
+  assert.equal(request.craftProject.requiredDowntimeWeeks, 2);
+  assert.equal(request.craftProject.calendarWeeks, 1);
+  assert.equal(request.craftProject.dailyProgressGold, 10);
+});
+
 test("CharacterDowntimeService stores a canonical craft project from current managed gear", async () => {
   const calls = [];
   const craftActionId = "Compendium.world.rebreya-downtime.Item.craft-doc";
@@ -1795,7 +2009,7 @@ test("CharacterDowntimeService stores a canonical craft project from current man
       groupId: "group-a",
       actorId: "actor-a",
       actionId: craftActionId,
-      weeks: 3,
+      weeks: 1,
       title: "Меч для похода",
       description: "Обычная работа",
       craftProject: {
@@ -1804,7 +2018,11 @@ test("CharacterDowntimeService stores a canonical craft project from current man
         hoursPerDay: 12,
         ownedWorkshop: true,
         predominantMaterialId: "steel",
-        blueprintIds: []
+        blueprintIds: [],
+        requiredWorkdays: 5,
+        requiredDowntimeWeeks: 1,
+        calendarWeeks: 1,
+        dailyProgressGold: 5
       }
     }
   ]);
@@ -2039,7 +2257,11 @@ test("CharacterDowntimeService omits an unresolved predominant material and defa
     outputs: [{ sourceType: "gear", sourceId: gear.id, quantity: 1 }],
     hoursPerDay: 8,
     ownedWorkshop: false,
-    blueprintIds: []
+    blueprintIds: [],
+    requiredWorkdays: 5,
+    requiredDowntimeWeeks: 1,
+    calendarWeeks: 1,
+    dailyProgressGold: 5
   });
 });
 

@@ -3687,6 +3687,52 @@ test("character downtime template locks rank-driven project DC fields", async ()
   assert.match(template, /\{\{#if configurableCheck\.isDcLocked\}\}readonly aria-readonly="true"\{\{\/if\}\}/u);
 });
 
+test("character downtime form preparation stores the latest craft preview", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { prepareCharacterDowntimeFormState } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?craft-preview-state=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const state = await prepareCharacterDowntimeFormState(actor, {
+      actionId: "craft",
+      targetActionSelections: [{ actionId: "craft-hours", value: 12 }]
+    }, {
+      async previewCraftRequest(targetActor, payload) {
+        calls.push([targetActor.id, payload]);
+        return {
+          ready: true,
+          canSubmit: false,
+          requiredWorkdays: 4,
+          materials: [{ sourceId: "steel", required: 2, available: 1 }]
+        };
+      }
+    });
+
+    assert.equal(state.craftPreview.requiredWorkdays, 4);
+    assert.equal(state.craftPreview.materials[0].available, 1);
+    assert.deepEqual(calls, [["actor-a", {
+      actionId: "craft",
+      targetActionSelections: [{ actionId: "craft-hours", value: 12 }]
+    }]]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("character downtime template renders calculated craft days and material availability", async () => {
+  const template = await readFile(new URL("../templates/character-downtime-tab.hbs", import.meta.url), "utf8");
+
+  assert.match(template, /characterDowntime\.isCraftRequest/u);
+  assert.match(template, /characterDowntime\.craftPreview\.requiredWorkdays/u);
+  assert.match(template, /characterDowntime\.craftPreview\.dailyProgressGold/u);
+  assert.match(template, /characterDowntime\.craftPreview\.materials/u);
+  assert.match(template, /rmNum required precision=3/u);
+  assert.match(template, /rmNum available precision=3/u);
+  assert.match(template, /\{\{unitLabel\}\}/u);
+  assert.match(template, /Недостаточно|submitDisabledReason/u);
+});
+
 test("character downtime template renders current projects with a right-side counter", async () => {
   const template = await readFile(new URL("../templates/character-downtime-tab.hbs", import.meta.url), "utf8");
   const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");

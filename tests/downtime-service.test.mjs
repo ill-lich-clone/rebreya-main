@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { MODULE_ID, SETTINGS_KEYS } from "../scripts/constants.js";
-import { DowntimeService } from "../scripts/data/downtime-service.js?v=1.4.95-craft-calendar";
+import { DowntimeService } from "../scripts/data/downtime-service.js?v=1.4.96-craft-calendar";
 import { normalizeGroupState } from "../scripts/data/group-context-service.js";
 
 function clone(value) {
@@ -433,7 +433,11 @@ test("createRequest allocates pending workdays and approval propagates to its sl
 
 test("createRequest preserves a canonical craft project and reflows owned-workshop days", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
-  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-craft",
+    name: "Craft",
+    config: { downtimeId: "craft" }
+  });
   const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
   const craftProject = {
     outputs: [{ sourceType: "gear", sourceId: "longsword", quantity: 1 }],
@@ -467,9 +471,97 @@ test("createRequest preserves a canonical craft project and reflows owned-worksh
   }
 });
 
+test("craft request reserves its exact calculated workdays instead of whole week blocks", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-craft",
+    name: "Craft",
+    config: { downtimeId: "craft" }
+  });
+  const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 2 });
+    const request = await harness.service.createRequest({
+      actorId: actor.id,
+      actionId: templateItem.uuid,
+      weeks: 2,
+      craftProject: {
+        outputs: [{ sourceType: "gear", sourceId: "longsword", quantity: 1 }],
+        predominantMaterialId: "steel",
+        hoursPerDay: 8,
+        ownedWorkshop: true,
+        requiredWorkdays: 7,
+        requiredDowntimeWeeks: 2
+      }
+    });
+
+    const state = getDowntimeState(harness);
+    const slots = state.scheduleSlots.filter((slot) => slot.requestId === request.id);
+    assert.equal(request.weeks, 2);
+    assert.equal(request.workdays, 7);
+    assert.equal(slots.length, 7);
+    assert.equal(state.balancesByActorId[actor.id].availableWorkdays, 3);
+    assert.equal(state.balancesByActorId[actor.id].reservedWorkdays, 7);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("createRequest requires craft payload only for the authoritative craft action", async () => {
+  const actor = createActor({ id: "actor-a", name: "Hero A" });
+  const craftItem = createDowntimeTemplateItem({
+    id: "downtime-craft",
+    name: "Craft",
+    config: { downtimeId: "craft" }
+  });
+  const trainingItem = createDowntimeTemplateItem({ id: "downtime-training", name: "Training" });
+  const harness = createHarness({
+    members: [actor],
+    groupItems: [craftItem, trainingItem],
+    downtimeState: { version: 2 }
+  });
+
+  try {
+    await harness.service.grantWeeks({ actorIds: [actor.id], weeks: 2 });
+    await assert.rejects(
+      harness.service.createRequest({
+        actorId: actor.id,
+        actionId: craftItem.uuid,
+        weeks: 1,
+        craftProject: {}
+      }),
+      /craft project payload/iu
+    );
+    await assert.rejects(
+      harness.service.createRequest({
+        actorId: actor.id,
+        actionId: trainingItem.uuid,
+        weeks: 1,
+        craftProject: {
+          outputs: [{ sourceType: "gear", sourceId: "longsword", quantity: 1 }],
+          requiredWorkdays: 1
+        }
+      }),
+      /only be attached to the craft action/iu
+    );
+    const state = getDowntimeState(harness);
+    assert.equal(state.requests.length, 0);
+    assert.equal(state.balancesByActorId[actor.id].availableWorkdays, 10);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
 test("generic request status cannot approve a craft request without linking its project", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
-  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-craft",
+    name: "Craft",
+    config: { downtimeId: "craft" }
+  });
   const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
 
   try {
@@ -503,7 +595,11 @@ test("generic request status cannot approve a craft request without linking its 
 
 test("linkCraftProject atomically approves the request and binds every reserved slot", async () => {
   const actor = createActor({ id: "actor-a", name: "Hero A" });
-  const templateItem = createDowntimeTemplateItem({ id: "downtime-craft", name: "Craft" });
+  const templateItem = createDowntimeTemplateItem({
+    id: "downtime-craft",
+    name: "Craft",
+    config: { downtimeId: "craft" }
+  });
   const harness = createHarness({ members: [actor], groupItems: [templateItem], downtimeState: { version: 2 } });
 
   try {
@@ -5227,6 +5323,94 @@ test("RebreyaMainModule routes player downtime creation through the GM socket", 
     assert.equal(emitted[0][1].payload.groupId, "group-a");
     assert.equal(emitted[0][1].payload.actorId, "actor-a");
     assert.match(emitted[0][1].requestId, /^downtime-create-/u);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("RebreyaMainModule revalidates craft materials and duration before GM request creation", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  globalThis.Hooks = { once() {} };
+  globalThis.game = {
+    user: { id: "gm", isGM: true, active: true },
+    users: {
+      activeGM: { id: "gm", isGM: true, active: true },
+      contents: [{ id: "gm", isGM: true, active: true }]
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?downtime-craft-validation=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.craftingService = {
+      async previewRequest(payload) {
+        calls.push(["previewRequest", payload]);
+        return {
+          ready: true,
+          canSubmit: true,
+          requiredWorkdays: 7,
+          requiredDowntimeWeeks: 2,
+          calendarWeeks: 1,
+          dailyProgressGold: 10,
+          hoursPerDay: 16,
+          ownedWorkshop: true,
+          materials: [],
+          errors: []
+        };
+      }
+    };
+    moduleApi.downtimeService = {
+      async createRequest(payload) {
+        calls.push(["createRequest", payload]);
+        return { id: "downtime-1", actorId: payload.actorId, ...payload };
+      }
+    };
+    moduleApi.refreshDowntimeViews = async () => {};
+
+    const preview = await moduleApi.previewCraftDowntimeRequest({
+      groupId: "group-a",
+      actorId: "actor-a",
+      craftProject: { outputs: [] }
+    });
+    assert.equal(preview.requiredWorkdays, 7);
+
+    await moduleApi.createDowntimeRequest({
+      groupId: "group-a",
+      actorId: "actor-a",
+      actionId: "craft",
+      weeks: 99,
+      craftProject: {
+        outputs: [{ sourceType: "gear", sourceId: "longsword", quantity: 1 }],
+        hoursPerDay: 16,
+        ownedWorkshop: true
+      }
+    });
+
+    const createdPayload = calls.find((call) => call[0] === "createRequest")[1];
+    assert.equal(createdPayload.weeks, 2);
+    assert.equal(createdPayload.craftProject.requiredWorkdays, 7);
+    assert.equal(createdPayload.craftProject.requiredDowntimeWeeks, 2);
+    assert.equal(createdPayload.craftProject.dailyProgressGold, 10);
+
+    moduleApi.craftingService.previewRequest = async () => ({
+      ready: true,
+      canSubmit: false,
+      errors: [{ code: "insufficient-materials", message: "Not enough materials." }]
+    });
+    await assert.rejects(
+      moduleApi.createDowntimeRequest({
+        groupId: "group-a",
+        actorId: "actor-a",
+        actionId: "craft",
+        craftProject: { outputs: [{ sourceType: "gear", sourceId: "longsword", quantity: 1 }] }
+      }),
+      /material/i
+    );
+    assert.equal(calls.filter((call) => call[0] === "createRequest").length, 1);
   }
   finally {
     globalThis.Hooks = previousHooks;
