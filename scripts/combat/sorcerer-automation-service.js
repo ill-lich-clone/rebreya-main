@@ -1547,6 +1547,53 @@ async function updateOwnedItem(item, patch, options = {}) {
   return true;
 }
 
+async function deleteOwnedItems(actor, ids = [], options = {}) {
+  const safeIds = ids.map((id) => cleanText(id)).filter(Boolean);
+  if (!safeIds.length) {
+    return false;
+  }
+
+  if (typeof actor?.deleteEmbeddedDocuments === "function") {
+    await actor.deleteEmbeddedDocuments("Item", safeIds, options);
+    return true;
+  }
+
+  const itemsById = new Map(collectionValues(actor?.items)
+    .map((item) => [documentId(item), item])
+    .filter(([id]) => id));
+  await Promise.all(safeIds
+    .map((id) => itemsById.get(id))
+    .filter((item) => typeof item?.delete === "function")
+    .map((item) => item.delete()));
+  return true;
+}
+
+function actorCanModify(actor) {
+  if (!actor) {
+    return false;
+  }
+
+  if (typeof actor.canUserModify === "function") {
+    try {
+      return actor.canUserModify(globalThis.game?.user, "update");
+    }
+    catch (_error) {
+      // Fall through to the older permission helper or plain test fixtures.
+    }
+  }
+
+  if (typeof actor.testUserPermission === "function") {
+    try {
+      return actor.testUserPermission(globalThis.game?.user, "OWNER");
+    }
+    catch (_error) {
+      // Plain documents without a Foundry user are treated like writable test fixtures.
+    }
+  }
+
+  return true;
+}
+
 function advancementDataArray(value) {
   return collectionValues(value)
     .map((entry) => {
@@ -1563,6 +1610,142 @@ function advancementDataArray(value) {
 
 function advancementId(advancement) {
   return cleanText(advancement?._id ?? advancement?.id);
+}
+
+function advancementPoolUuids(advancement) {
+  return collectionValues(advancement?.configuration?.pool)
+    .map((entry) => cleanText(typeof entry === "string" ? entry : entry?.uuid))
+    .filter(Boolean);
+}
+
+function isNumericKey(value) {
+  return /^\d+$/u.test(cleanText(value));
+}
+
+function isUuidReference(value) {
+  return /^(Actor|Compendium|Item|Scene)\./u.test(cleanText(value));
+}
+
+function collectAddedReferences(value, refs) {
+  if (typeof value === "string") {
+    if (isUuidReference(value)) refs.sourceUuids.add(cleanText(value));
+    else refs.itemIds.add(cleanText(value));
+    return refs;
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectAddedReferences(entry, refs);
+    }
+    return refs;
+  }
+
+  if (!value || typeof value !== "object") {
+    return refs;
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    const itemId = cleanText(key);
+    if (itemId && !isNumericKey(itemId) && (
+      typeof entry === "string"
+      || typeof entry?.uuid === "string"
+    )) {
+      refs.itemIds.add(itemId);
+    }
+    collectAddedReferences(entry?.uuid ?? entry, refs);
+  }
+  return refs;
+}
+
+function sorcererAdvancementData(actor) {
+  return collectionValues(actor?.items)
+    .filter((item) => isSorcererClassItem(item) || isSorcererSubclassItem(item))
+    .flatMap((item) => advancementDataArray(item?.system?.advancement));
+}
+
+function sorcererClassLevel(actor) {
+  const classLevels = toInteger(actor?.system?.classes?.[SORCERER_ADVANCEMENT_ROOT]?.levels, 0);
+  const ownedClassLevels = collectionValues(actor?.items)
+    .filter(isSorcererClassItem)
+    .map((item) => toInteger(item?.system?.levels ?? item?.system?.level, 0));
+  return Math.max(classLevels, ...ownedClassLevels, 0);
+}
+
+function advancementLevel(advancement) {
+  return toInteger(advancement?.level, 0);
+}
+
+function activeSorcererAdvancementData(actor) {
+  const level = sorcererClassLevel(actor);
+  return sorcererAdvancementData(actor)
+    .filter((advancement) => level <= 0 || advancementLevel(advancement) <= level);
+}
+
+function sorcererItemChoicePoolUuids(actor) {
+  const uuids = new Set();
+  for (const advancement of activeSorcererAdvancementData(actor)) {
+    if (advancement?.type !== "ItemChoice") {
+      continue;
+    }
+    for (const uuid of advancementPoolUuids(advancement)) {
+      uuids.add(uuid);
+    }
+  }
+  return uuids;
+}
+
+function sorcererActiveGrantedSourceUuids(actor) {
+  const uuids = new Set();
+  for (const advancement of activeSorcererAdvancementData(actor)) {
+    if (advancement?.type !== "ItemGrant") {
+      continue;
+    }
+    for (const entry of collectionValues(advancement?.configuration?.items)) {
+      const uuid = cleanText(typeof entry === "string" ? entry : entry?.uuid);
+      if (uuid) {
+        uuids.add(uuid);
+      }
+    }
+  }
+  return uuids;
+}
+
+function sorcererAddedChoiceReferences(actor) {
+  const refs = { itemIds: new Set(), sourceUuids: new Set() };
+  for (const advancement of sorcererAdvancementData(actor)) {
+    collectAddedReferences(advancement?.value?.added, refs);
+  }
+  return refs;
+}
+
+function documentSourceUuid(document) {
+  return cleanText(
+    documentFlag(document, "dnd5e", "sourceId")
+    ?? documentFlag(document, "core", "sourceId")
+    ?? documentFlag(document, MODULE_ID, "sourceId")
+    ?? getProperty(document, "_stats.compendiumSource", undefined)
+    ?? getProperty(document, "_stats.duplicateSource", undefined)
+    ?? getProperty(document, "_source.flags.dnd5e.sourceId", undefined)
+    ?? getProperty(document, "_source.flags.core.sourceId", undefined)
+    ?? getProperty(document, `_source.flags.${MODULE_ID}.sourceId`, undefined)
+    ?? getProperty(document, "_source._stats.compendiumSource", undefined)
+    ?? getProperty(document, "_source._stats.duplicateSource", undefined)
+  );
+}
+
+function isSorcererMetamagicItem(item, poolUuids) {
+  if (item?.type !== "feat") {
+    return false;
+  }
+
+  if (cleanText(documentFlag(item, MODULE_ID, "sourceType")) === METAMAGIC_SOURCE_TYPE) {
+    return true;
+  }
+
+  return Boolean(
+    cleanText(documentFlag(item, MODULE_ID, "metamagicId"))
+    && poolUuids.has(documentSourceUuid(item))
+  );
 }
 
 function mergeAdvancementData(currentAdvancements, sourceAdvancements) {
@@ -2476,7 +2659,13 @@ export class SorcererAutomationService {
   }
 
   async #repairActorNow(actor) {
-    return this.#repairSubclassAdvancementLinks(actor);
+    if (!actorCanModify(actor)) {
+      return false;
+    }
+
+    const repairedAdvancements = await this.#repairSubclassAdvancementLinks(actor);
+    const removedOrphans = await this.#removeOrphanMetamagicChoiceItems(actor);
+    return repairedAdvancements || removedOrphans;
   }
 
   async #repairSubclassAdvancementLinks(actor) {
@@ -2513,6 +2702,37 @@ export class SorcererAutomationService {
     }
 
     return changed;
+  }
+
+  async #removeOrphanMetamagicChoiceItems(actor) {
+    const poolUuids = sorcererItemChoicePoolUuids(actor);
+    if (!poolUuids.size) {
+      return false;
+    }
+
+    const refs = sorcererAddedChoiceReferences(actor);
+    const activeGrants = sorcererActiveGrantedSourceUuids(actor);
+    const orphanIds = [];
+    for (const item of collectionValues(actor?.items)) {
+      if (!isSorcererMetamagicItem(item, poolUuids)) {
+        continue;
+      }
+
+      const itemId = documentId(item);
+      const sourceUuid = documentSourceUuid(item);
+      if (!itemId || !sourceUuid || !poolUuids.has(sourceUuid)) {
+        continue;
+      }
+      if (activeGrants.has(sourceUuid)) {
+        continue;
+      }
+      if (refs.itemIds.has(itemId) || refs.sourceUuids.has(sourceUuid)) {
+        continue;
+      }
+      orphanIds.push(itemId);
+    }
+
+    return deleteOwnedItems(actor, orphanIds, { render: false });
   }
 
   async #subclassAdvancementSources() {

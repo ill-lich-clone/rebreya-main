@@ -77,6 +77,7 @@ class TestActor {
     this.updates = [];
     this.createdItems = [];
     this.createdEffects = [];
+    this.deletedItems = [];
     this.deletedEffects = [];
     if (includePoints) {
       this.items.contents.push(makePointsItem(this, { spent: pointsSpent }));
@@ -113,6 +114,12 @@ class TestActor {
   }
 
   async deleteEmbeddedDocuments(type, ids) {
+    if (type === "Item") {
+      this.deletedItems.push(...ids);
+      this.items.contents = this.items.contents.filter((item) => !ids.includes(item.id ?? item._id));
+      return ids;
+    }
+
     assert.equal(type, "ActiveEffect");
     this.deletedEffects.push(...ids);
     this.effects.contents = this.effects.contents.filter((effect) => !ids.includes(effect.id ?? effect._id));
@@ -2125,6 +2132,130 @@ test("RED: owned Sorcerer subclass items repair stale metamagic advancement pool
     subclassItem.system.advancement[0].value,
     staleAdvancement[0].value
   );
+});
+
+test("RED: orphan owned metamagic choices from Sorcerer advancement pools are removed", async () => {
+  const actor = levelActor(3, { includePoints: true });
+  const metamagicAdvancement = [{
+    _id: "metamagic-3",
+    type: "ItemChoice",
+    title: "РњРµС‚Р°РјР°РіРёСЏ",
+    configuration: {
+      pool: [
+        { uuid: "Compendium.world.rebreya-class-features.Item.seeking" },
+        { uuid: "Compendium.world.rebreya-class-features.Item.dragonSpell" }
+      ],
+      choices: { 3: { count: 3 } }
+    },
+    value: {
+      added: {
+        3: {
+          selectedSeeking: "Compendium.world.rebreya-class-features.Item.seeking"
+        }
+      }
+    }
+  }];
+  const subclassItem = makeItemFromData(actor, {
+    name: "РќР°СЃР»РµРґРёРµ РґСЂР°РєРѕРЅСЊРµР№ РєСЂРѕРІРё",
+    type: "subclass",
+    flags: {
+      [MODULE_ID]: {
+        classIdentifier: SORCERER_ROOT,
+        subclassId: SORCERER_ROOT
+      }
+    },
+    system: {
+      advancement: structuredClone(metamagicAdvancement)
+    }
+  }, "draconic-subclass");
+  const selectedSeeking = makeItemFromData(actor, {
+    name: "РС‰СѓС‰РµРµ Р·Р°РєР»РёРЅР°РЅРёРµ",
+    type: "feat",
+    flags: {
+      dnd5e: { sourceId: "Compendium.world.rebreya-class-features.Item.seeking" },
+      [MODULE_ID]: {
+        sourceType: "sorcererMetamagic",
+        metamagicId: "seeking-spell"
+      }
+    }
+  }, "selectedSeeking");
+  const orphanDragonSpell = makeItemFromData(actor, {
+    name: "Р”СЂР°РєРѕРЅСЊРµ Р·Р°РєР»СЏС‚СЊРµ",
+    type: "feat",
+    flags: {
+      dnd5e: { sourceId: "Compendium.world.rebreya-class-features.Item.dragonSpell" },
+      [MODULE_ID]: {
+        sourceType: "sorcererMetamagic",
+        metamagicId: "draconic-dragon-spell"
+      }
+    }
+  }, "orphanDragonSpell");
+  actor.items.contents.push(subclassItem, selectedSeeking, orphanDragonSpell);
+  const service = new SorcererAutomationService({}, {
+    resolveSubclassAdvancementSources: async () => new Map()
+  });
+
+  assert.equal(await service.repairActor(actor), true);
+  assert.deepEqual(actor.deletedItems, ["orphanDragonSpell"]);
+  assert.equal(actor.items.contents.includes(selectedSeeking), true);
+  assert.equal(actor.items.contents.includes(orphanDragonSpell), false);
+});
+
+test("RED: repair keeps metamagic granted by active Sorcerer ItemGrant advancements", async () => {
+  const actor = levelActor(20, { includePoints: true });
+  const dragonSource = "Compendium.world.rebreya-class-features.Item.dragonSpell";
+  const subclassItem = makeItemFromData(actor, {
+    name: "РќР°СЃР»РµРґРёРµ РґСЂР°РєРѕРЅСЊРµР№ РєСЂРѕРІРё",
+    type: "subclass",
+    flags: {
+      [MODULE_ID]: {
+        classIdentifier: SORCERER_ROOT,
+        subclassId: SORCERER_ROOT
+      }
+    },
+    system: {
+      advancement: [{
+        _id: "metamagic-3",
+        type: "ItemChoice",
+        title: "РњРµС‚Р°РјР°РіРёСЏ",
+        level: 3,
+        configuration: {
+          pool: [{ uuid: dragonSource }],
+          choices: { 3: { count: 3 } }
+        },
+        value: { added: {} }
+      }, {
+        _id: "transcendence-origin-metamagic",
+        type: "ItemGrant",
+        title: "РќР°СЃР»РµРґРёРµ РґСЂР°РєРѕРЅСЊРµР№ РєСЂРѕРІРё: С‚СЂР°РЅСЃС†РµРЅРґРµРЅС‚РЅРѕСЃС‚СЊ",
+        level: 20,
+        configuration: {
+          items: [{ uuid: dragonSource, optional: false }],
+          optional: false
+        },
+        value: {}
+      }]
+    }
+  }, "draconic-subclass");
+  const grantedDragonSpell = makeItemFromData(actor, {
+    name: "Р”СЂР°РєРѕРЅСЊРµ Р·Р°РєР»СЏС‚СЊРµ",
+    type: "feat",
+    flags: {
+      dnd5e: { sourceId: dragonSource },
+      [MODULE_ID]: {
+        sourceType: "sorcererMetamagic",
+        metamagicId: "draconic-dragon-spell"
+      }
+    }
+  }, "grantedDragonSpell");
+  actor.items.contents.push(subclassItem, grantedDragonSpell);
+  const service = new SorcererAutomationService({}, {
+    resolveSubclassAdvancementSources: async () => new Map()
+  });
+
+  assert.equal(await service.repairActor(actor), false);
+  assert.deepEqual(actor.deletedItems, []);
+  assert.equal(actor.items.contents.includes(grantedDragonSpell), true);
 });
 
 test("public Sorcery Point spend and restore helpers use the owned resource", async () => {
