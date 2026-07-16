@@ -4,142 +4,167 @@ import { readFileSync } from "node:fs";
 import { TextDecoder } from "node:util";
 
 const MATERIALS_URL = new URL("../data/materials.json", import.meta.url);
-const GOODS_URL = new URL("../data/goods.json", import.meta.url);
+const FIXTURE_URL = new URL("./fixtures/materials-encyclopedia.json", import.meta.url);
 const SPREADSHEET_ID = "1G-UCW00vsjON05fr0CgyK03YaF82oYJemlqNKdv1JBk";
 const SHEET_NAME = "Энциклопедия материалов";
+const CSV_SHA256 = "AF2E69169C70CB4165A671502C87AC96CD9D549B6E3E19BEDDF401FEEC5DEE82";
 const SOURCE_ROW_COUNT = 247;
+const ORIGINAL_MATERIAL_COUNT = 45;
 
 const materialBytes = readFileSync(MATERIALS_URL);
 const materialText = new TextDecoder("utf-8", { fatal: true }).decode(materialBytes);
-const goods = JSON.parse(readFileSync(GOODS_URL, "utf8"));
+const materials = JSON.parse(materialText);
+const fixture = JSON.parse(readFileSync(FIXTURE_URL, "utf8"));
 
-let materials = null;
-let materialParseError = null;
-try {
-  materials = JSON.parse(materialText);
-}
-catch (error) {
-  materialParseError = error;
+function normalizeIdentifier(value) {
+  return String(value ?? "").replace(/\s+/gu, " ").trim();
 }
 
-test("materials data is a valid UTF-8 JSON array without mojibake", () => {
-  assert.equal(materialParseError, null);
-  assert.ok(Array.isArray(materials));
-  assert.doesNotMatch(materialText, /Р[Ўњ]|\uFFFD/u);
-});
+function parseNullableNumber(value) {
+  const text = String(value ?? "")
+    .trim()
+    .replace(/\s+(?:зм|фнт)$/u, "")
+    .replace(/\s+/gu, "")
+    .replace(",", ".");
 
-test("materials data contains all source rows and only necessary synthetic goods", () => {
-  assert.ok(Array.isArray(materials));
+  if (!text) {
+    return null;
+  }
 
-  const sourceMaterials = materials.filter((material) => material.isSynthetic === false);
-  const syntheticMaterials = materials.filter((material) => material.isSynthetic === true);
-  const sourceGoodIds = new Set(sourceMaterials.map((material) => material.linkedGoodId).filter(Boolean));
-  const expectedSyntheticGoodIds = goods
-    .filter((good) => !sourceGoodIds.has(good.id))
-    .map((good) => good.id)
-    .sort();
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
-  assert.equal(sourceMaterials.length, SOURCE_ROW_COUNT);
-  assert.equal(materials.length, SOURCE_ROW_COUNT + expectedSyntheticGoodIds.length);
-  assert.deepEqual(
-    syntheticMaterials.map((material) => material.linkedGoodId).sort(),
-    expectedSyntheticGoodIds
-  );
-});
-
-test("materials data has unique non-empty ids and names", () => {
-  assert.ok(Array.isArray(materials));
-
-  const ids = materials.map((material) => String(material.id ?? "").trim());
-  const names = materials.map((material) => String(material.name ?? "").trim());
-  assert.ok(ids.every(Boolean));
-  assert.ok(names.every(Boolean));
-  assert.equal(new Set(ids).size, ids.length);
-  assert.equal(new Set(names.map((name) => name.toLowerCase())).size, names.length);
-});
-
-test("source metadata and synthetic flags are consistent", () => {
-  assert.ok(Array.isArray(materials));
-
-  const sourceRows = [];
-  for (const material of materials) {
-    if (material.isSynthetic) {
-      assert.equal(material.source, "synthetic-from-goods", material.name);
-      continue;
-    }
-
-    assert.deepEqual(material.source, {
+function expectedSourceMaterial({ row, cells }) {
+  return {
+    name: normalizeIdentifier(cells[0]),
+    type: normalizeIdentifier(cells[1]),
+    subtype: normalizeIdentifier(cells[2]),
+    priceGold: parseNullableNumber(cells[3]),
+    weight: parseNullableNumber(cells[4]),
+    rank: parseNullableNumber(cells[5]),
+    description: cells[6],
+    applications: {
+      upgrade: cells[7],
+      implant: cells[8],
+      crafting: cells[9],
+      alchemy: cells[10],
+      knowledge: cells[11]
+    },
+    alchemyAspects: cells[12],
+    source: {
       spreadsheetId: SPREADSHEET_ID,
       sheetName: SHEET_NAME,
-      row: material.source?.row
-    }, material.name);
-    assert.ok(Number.isInteger(material.source.row), material.name);
-    sourceRows.push(material.source.row);
-  }
+      row
+    },
+    isSynthetic: false
+  };
+}
 
-  assert.deepEqual(sourceRows, Array.from({ length: SOURCE_ROW_COUNT }, (_, index) => index + 3));
-});
+function sourceProjection(material) {
+  return {
+    name: material.name,
+    type: material.type,
+    subtype: material.subtype,
+    priceGold: material.priceGold,
+    weight: material.weight,
+    rank: material.rank,
+    description: material.description,
+    applications: material.applications,
+    alchemyAspects: material.alchemyAspects,
+    source: material.source,
+    isSynthetic: material.isSynthetic
+  };
+}
 
-test("source materials preserve positional application and alchemy columns", () => {
-  assert.ok(Array.isArray(materials));
-
-  for (const material of materials.filter((entry) => !entry.isSynthetic)) {
-    assert.deepEqual(Object.keys(material.applications ?? {}), [
-      "upgrade",
-      "implant",
-      "crafting",
-      "alchemy",
-      "knowledge"
-    ], material.name);
-    assert.ok(Object.values(material.applications).every((value) => typeof value === "string"), material.name);
-    assert.equal(typeof material.alchemyAspects, "string", material.name);
-  }
-
-  const wool = materials.find((material) => material.name === "Шерсть чудовища");
-  assert.deepEqual(wool?.applications, {
-    upgrade: "Недоступно",
-    implant: "Недоступно",
-    crafting: "Немагическая одежда",
-    alchemy: "Компонент согревающих и защитных мазей",
-    knowledge: "Недоступно"
-  });
-  assert.equal(wool?.alchemyAspects, "—");
-  assert.equal(wool?.source.row, 3);
-
-  const manaShard = materials.find((material) => material.name === "Осколок маны");
-  assert.equal(
-    manaShard?.applications.upgrade,
-    "Малое зачарование  остроты, защиты и стойкости",
-    "application text keeps the source cell's double space"
-  );
-  assert.equal(manaShard?.source.row, 43);
-});
-
-test("base raw materials are present and existing ids stay stable", () => {
-  assert.ok(Array.isArray(materials));
-
-  const byName = new Map(materials.map((material) => [material.name, material]));
-  for (const name of [
-    "Базовое сырье для Инструменты Кузнеца",
-    "Железо",
-    "Глина",
-    "Дерево",
-    "Хлопок",
-    "Алхимические реагенты"
-  ]) {
-    assert.ok(byName.has(name), `${name} is present`);
-  }
-
+test("materials fixture is a raw positional snapshot of CSV rows 3-249", () => {
+  assert.equal(fixture.spreadsheetId, SPREADSHEET_ID);
+  assert.equal(fixture.sheetName, SHEET_NAME);
+  assert.equal(fixture.csvSha256, CSV_SHA256);
+  assert.deepEqual(fixture.columns, [..."ABCDEFGHIJKLM"]);
+  assert.equal(fixture.sourceRows.length, SOURCE_ROW_COUNT);
   assert.deepEqual(
-    Object.fromEntries(["Железо", "Сталь", "Дерево", "Кожа", "Порох", "Мёд"]
-      .map((name) => [name, byName.get(name)?.id])),
-    {
-      "Железо": "zhelezo",
-      "Сталь": "stal",
-      "Дерево": "derevo",
-      "Кожа": "kozha",
-      "Порох": "porokh",
-      "Мёд": "myod"
-    }
+    fixture.sourceRows.map(({ row }) => row),
+    Array.from({ length: SOURCE_ROW_COUNT }, (_, index) => index + 3)
   );
+  assert.ok(fixture.sourceRows.every(({ cells }) => Array.isArray(cells) && cells.length === 13));
+  assert.equal(Object.keys(fixture.originalMaterialIds).length, ORIGINAL_MATERIAL_COUNT);
+
+  assert.equal(fixture.sourceRows.find(({ row }) => row === 43).cells[7], "Малое зачарование  остроты, защиты и стойкости");
+  assert.equal(fixture.sourceRows.find(({ row }) => row === 171).cells[6].endsWith(" "), true);
+});
+
+test("materials data is valid UTF-8 and matches every raw source row", () => {
+  assert.ok(Array.isArray(materials));
+  assert.equal(materials.length, SOURCE_ROW_COUNT);
+  assert.doesNotMatch(materialText, /\uFFFD/u);
+
+  const bySourceRow = new Map(materials.map((material) => [material.source?.row, material]));
+  for (const sourceRow of fixture.sourceRows) {
+    const actual = bySourceRow.get(sourceRow.row);
+    assert.ok(actual, `source row ${sourceRow.row} is present`);
+    assert.deepEqual(
+      sourceProjection(actual),
+      expectedSourceMaterial(sourceRow),
+      `source row ${sourceRow.row} preserves A:M`
+    );
+  }
+});
+
+test("materials data adds 202 records and preserves all 45 historical ids", () => {
+  const byName = new Map(materials.map((material) => [material.name, material]));
+  const originalEntries = Object.entries(fixture.originalMaterialIds);
+  const additions = materials.filter((material) => !Object.hasOwn(fixture.originalMaterialIds, material.name));
+
+  assert.equal(originalEntries.length, ORIGINAL_MATERIAL_COUNT);
+  assert.equal(additions.length, SOURCE_ROW_COUNT - ORIGINAL_MATERIAL_COUNT);
+  for (const [name, id] of originalEntries) {
+    assert.equal(byName.get(name)?.id, id, `${name} keeps historical id ${id}`);
+  }
+});
+
+test("materials ids and names are non-empty and unique", () => {
+  const ids = materials.map((material) => String(material.id ?? "").trim());
+  const names = materials.map((material) => String(material.name ?? "").trim().toLocaleLowerCase("ru"));
+
+  assert.ok(ids.every(Boolean));
+  assert.ok(names.every(Boolean));
+  assert.equal(new Set(ids).size, SOURCE_ROW_COUNT);
+  assert.equal(new Set(names).size, SOURCE_ROW_COUNT);
+});
+
+test("catalog includes all base raw rows, alchemy reagents, and nullable/decorated numbers", () => {
+  const byName = new Map(materials.map((material) => [material.name, material]));
+  const toolLabels = [
+    "Воровские",
+    "Алхимические",
+    "Кузнеца",
+    "Каллиграфа",
+    "Поддельщика",
+    "Гримёра",
+    "Художественные",
+    "Исследователя",
+    "Жестянщика",
+    "Камнелома",
+    "Кожедела",
+    "Пивовара",
+    "Деревянщика",
+    "Повара",
+    "Ювелира"
+  ];
+
+  for (const label of toolLabels) {
+    assert.ok(byName.has(`Базовое сырье для Инструменты ${label}`), `${label} base raw material exists`);
+  }
+  assert.ok(byName.has("Алхимические реагенты"));
+
+  const trollBones = byName.get("Кости тролля");
+  assert.equal(trollBones.priceGold, null);
+  assert.equal(trollBones.weight, null);
+  assert.equal(trollBones.rank, null);
+
+  const thievesRaw = byName.get("Базовое сырье для Инструменты Воровские");
+  assert.equal(thievesRaw.priceGold, 1, "decorated '1 зм' parses to 1");
+  assert.equal(thievesRaw.weight, 0.1, "decorated '0,1 фнт' parses to 0.1");
+  assert.equal(thievesRaw.rank, null);
 });

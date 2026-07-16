@@ -218,7 +218,7 @@ $resolvedSourcePath = Resolve-SourceFilePath $SourcePath $CsvPath $WorkbookPath
 $resolvedGoodsPath = Resolve-GoodsPath $GoodsPath
 $resolvedOutputPath = Resolve-OutputPath $OutputPath
 $resolvedExistingMaterialsPath = if ([string]::IsNullOrWhiteSpace($ExistingMaterialsPath)) {
-  $resolvedOutputPath
+  Join-Path (Resolve-ModuleRoot) "data\materials.json"
 }
 else {
   [System.IO.Path]::GetFullPath($ExistingMaterialsPath)
@@ -252,11 +252,34 @@ else {
   throw "Unsupported materials source '$resolvedSourcePath'. Expected .csv or .xlsx."
 }
 
+$sourceRows = @($rows | Where-Object { $_.__row -ge 2 })
+$linkedGoodIds = @{}
+$reservedHistoricalIds = @{}
+foreach ($row in $sourceRows) {
+  $name = Normalize-DisplayText (Get-Value $row 'A')
+  if ([string]::IsNullOrWhiteSpace($name)) { continue }
+  $good = Resolve-GoodMatch $name $goods
+  if ($good) { $linkedGoodIds[$good.id] = $true }
+  $existingMaterial = Resolve-ExistingMaterial $name $good $existingIndexes
+  $existingId = if ($existingMaterial) { [string]$existingMaterial.id } else { "" }
+  if (-not [string]::IsNullOrWhiteSpace($existingId)) {
+    $reservedHistoricalIds[$existingId] = $true
+  }
+}
+foreach ($good in $goods) {
+  if ($linkedGoodIds.ContainsKey($good.id)) { continue }
+  $existingMaterial = Resolve-ExistingMaterial ([string]$good.name) $good $existingIndexes
+  $existingId = if ($existingMaterial) { [string]$existingMaterial.id } else { "" }
+  if (-not [string]::IsNullOrWhiteSpace($existingId)) {
+    $reservedHistoricalIds[$existingId] = $true
+  }
+}
+
 $materials = @()
 $usedIds = @{}
-$linkedGoodIds = @{}
+foreach ($reservedId in $reservedHistoricalIds.Keys) { $usedIds[$reservedId] = $true }
 $sourceMaterialCount = 0
-foreach ($row in ($rows | Where-Object { $_.__row -ge 2 })) {
+foreach ($row in $sourceRows) {
   $name = Normalize-DisplayText (Get-Value $row 'A')
   if ([string]::IsNullOrWhiteSpace($name)) { continue }
   $good = Resolve-GoodMatch $name $goods
@@ -271,15 +294,23 @@ foreach ($row in ($rows | Where-Object { $_.__row -ge 2 })) {
   else {
     "material-$($row.__row)"
   }
+  $id = if ($existingMaterial -and $reservedHistoricalIds.ContainsKey([string]$existingMaterial.id)) {
+    $existingId = [string]$existingMaterial.id
+    $null = $reservedHistoricalIds.Remove($existingId)
+    $existingId
+  }
+  else {
+    New-UniqueId $preferredId $usedIds "material-$($row.__row)"
+  }
   $materials += [pscustomobject][ordered]@{
-    id = New-UniqueId $preferredId $usedIds "material-$($row.__row)"
+    id = $id
     name = $name
     type = Normalize-DisplayText (Get-Value $row 'B')
     subtype = Normalize-DisplayText (Get-Value $row 'C')
     priceGold = Convert-ToNumber (Get-Value $row 'D') -AllowNull
     weight = Convert-ToNumber (Get-Value $row 'E') -AllowNull
     rank = Convert-ToNumber (Get-Value $row 'F') -AllowNull
-    description = Normalize-DisplayText (Get-Value $row 'G')
+    description = [string](Get-Value $row 'G')
     linkedGoodId = if ($good) { $good.id } else { $null }
     linkedGoodName = if ($good) { $good.name } else { $null }
     applications = [pscustomobject][ordered]@{
@@ -311,8 +342,16 @@ foreach ($good in $goods) {
   else {
     [string]$good.id
   }
+  $id = if ($existingMaterial -and $reservedHistoricalIds.ContainsKey([string]$existingMaterial.id)) {
+    $existingId = [string]$existingMaterial.id
+    $null = $reservedHistoricalIds.Remove($existingId)
+    $existingId
+  }
+  else {
+    New-UniqueId $preferredId $usedIds 'material'
+  }
   $materials += [pscustomobject][ordered]@{
-    id = New-UniqueId $preferredId $usedIds 'material'
+    id = $id
     name = $good.name
     type = 'Ресурс'
     subtype = ''

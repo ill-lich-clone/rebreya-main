@@ -8,7 +8,7 @@ const PACK_ID = `world.${MATERIALS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
 const DEFAULT_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const MATERIALS_TEMPLATE_VERSION = 3;
+const MATERIALS_TEMPLATE_VERSION = 4;
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const MATERIAL_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Materials`, MODULE_ICONS_BASE_PATH];
 const FOOD_GOOD_IDS = new Set([
@@ -37,6 +37,16 @@ function renderValue(value, fallback = "&mdash;") {
   }
 
   return escapeHtml(value);
+}
+
+function normalizeApplications(material) {
+  return {
+    upgrade: String(material?.applications?.upgrade ?? ""),
+    implant: String(material?.applications?.implant ?? ""),
+    crafting: String(material?.applications?.crafting ?? ""),
+    alchemy: String(material?.applications?.alchemy ?? ""),
+    knowledge: String(material?.applications?.knowledge ?? "")
+  };
 }
 
 function isDnd5eWorld() {
@@ -69,6 +79,8 @@ function buildMaterialSignature(material) {
     weight: material.weight ?? null,
     rank: material.rank ?? null,
     description: material.description ?? "",
+    applications: normalizeApplications(material),
+    alchemyAspects: String(material.alchemyAspects ?? ""),
     linkedGoodId: material.linkedGoodId ?? null,
     linkedGoodName: material.linkedGoodName ?? "",
     source: material.source ?? "",
@@ -155,7 +167,19 @@ function buildSyntheticDescription(material) {
 
 function buildDescriptionHtml(material) {
   const metadataRows = buildMetadataRows(material);
-  const descriptionText = String(material.description ?? "").trim() || (material.isSynthetic ? buildSyntheticDescription(material) : "");
+  const sourceDescription = String(material.description ?? "");
+  const descriptionText = sourceDescription.trim()
+    ? sourceDescription
+    : (material.isSynthetic ? buildSyntheticDescription(material) : "");
+  const applications = normalizeApplications(material);
+  const applicationRows = [
+    ["Усовершенствование", applications.upgrade],
+    ["Имплант", applications.implant],
+    ["Создание и снаряжение", applications.crafting],
+    ["Алхимия", applications.alchemy],
+    ["Знания", applications.knowledge],
+    ["Аспекты (алхимия)", String(material.alchemyAspects ?? "")]
+  ];
 
   return `
     <section class="rebreya-material-item">
@@ -167,11 +191,15 @@ function buildDescriptionHtml(material) {
       ${descriptionText
         ? `<p>${escapeHtml(descriptionText)}</p>`
         : "<p>Описание материала пока не заполнено.</p>"}
+      <h3>Применение</h3>
+      <ul>
+        ${applicationRows.map(([label, value]) => `<li><strong>${escapeHtml(label)}:</strong> ${renderValue(value)}</li>`).join("")}
+      </ul>
     </section>
   `.trim();
 }
 
-function createDnd5eItemData(material, iconLookup = null) {
+export function createDnd5eItemData(material, iconLookup = null) {
   const signature = buildMaterialSignature(material);
   const weightValue = Number.isFinite(Number(material.weight)) ? Number(material.weight) : 0;
   const price = goldToDnd5ePrice(material.priceGold);
@@ -212,6 +240,11 @@ function createDnd5eItemData(material, iconLookup = null) {
         managed: true,
         materialId: material.id,
         linkedGoodId: material.linkedGoodId ?? null,
+        priceGold: material.priceGold ?? null,
+        weight: material.weight ?? null,
+        rank: material.rank ?? null,
+        applications: normalizeApplications(material),
+        alchemyAspects: String(material.alchemyAspects ?? ""),
         signature,
         source: material.source ?? "",
         isSynthetic: Boolean(material.isSynthetic)
