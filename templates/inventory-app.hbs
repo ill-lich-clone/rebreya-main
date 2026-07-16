@@ -306,8 +306,8 @@
               </div>
             {{/if}}
 
-            <div class="rm-party-toolbar__actions">
-              {{#unless party.membershipManagedByNativeGroup}}
+            {{#unless party.membershipManagedByNativeGroup}}
+              <div class="rm-party-toolbar__actions">
                 <button
                   type="button"
                   class="rm-button rm-button--small rm-button--primary"
@@ -318,18 +318,8 @@
                   <i class="fa-solid fa-user-plus"></i>
                   <span>Добавить участника</span>
                 </button>
-              {{/unless}}
-              <button
-                type="button"
-                class="rm-button rm-button--small rm-button--secondary"
-                data-action="consume-day"
-                title="{{#if party.consumeDayDisabled}}{{party.consumeDayDisabledReason}}{{else}}Списать день (запасы, энергия, крафт){{/if}}"
-                {{#if party.consumeDayDisabled}}disabled{{/if}}
-              >
-                <i class="fa-solid fa-hourglass-half"></i>
-                <span>Списать день</span>
-              </button>
-            </div>
+              </div>
+            {{/unless}}
           </section>
         {{/if}}
 
@@ -464,18 +454,6 @@
                 <option value="">Нет участников</option>
               {{/if}}
             </select>
-          </div>
-          <div class="rm-craft-toolbar__actions">
-            <button
-              type="button"
-              class="rm-button rm-button--small rm-button--secondary"
-              data-action="craft-process-day"
-              title="{{#if craft.processDayDisabled}}{{craft.processDayDisabledReason}}{{else}}Продвинуть крафт на 1 день{{/if}}"
-              {{#if craft.processDayDisabled}}disabled{{/if}}
-              {{#unless canManage}}disabled{{/unless}}
-            >
-              Продвинуть крафт на 1 день
-            </button>
           </div>
         </section>
 
@@ -692,13 +670,13 @@
                   <article class="rm-downtime-member">
                     <div class="rm-downtime-member__main">
                       <strong>{{actorName}}</strong>
-                      <span class="rm-muted">всего {{rmNum totalGrantedWeeks precision=0}} нед.</span>
+                      <span class="rm-muted">всего {{rmNum totalGrantedWorkdays precision=0}} раб. дн.</span>
                     </div>
                     <div class="rm-downtime-member__weeks">
-                      <strong>{{rmNum availableWeeks precision=0}}</strong>
-                      <span>своб.</span>
+                      <strong>{{rmNum availableWorkdays precision=0}}</strong>
+                      <span>своб. дн.</span>
                     </div>
-                    <p class="rm-downtime-member__meta">рез. {{rmNum reservedWeeks precision=0}} • потрач. {{rmNum spentWeeks precision=0}}</p>
+                    <p class="rm-downtime-member__meta">рез. {{rmNum reservedWorkdays precision=0}} дн. • потрач. {{rmNum spentWorkdays precision=0}} дн.</p>
                   </article>
                 {{/each}}
               </div>
@@ -914,13 +892,22 @@
             {{#each calendar.cells}}
               <button
                 type="button"
-                class="rm-calendar-grid__day {{#if isOutsideMonth}}is-outside{{/if}} {{#if isCurrentDay}}is-current{{/if}}"
+                class="rm-calendar-grid__day {{#if isOutsideMonth}}is-outside{{/if}} {{#if isCurrentDay}}is-current{{/if}} {{#if downtime.total}}has-downtime is-downtime-{{downtime.dominantStatus}}{{/if}}"
                 data-action="calendar-pick-day"
+                data-iso-date="{{isoDate}}"
                 data-year="{{year}}"
                 data-month="{{month}}"
                 data-day="{{day}}"
               >
-                {{day}}
+                <span class="rm-calendar-grid__day-number">{{day}}</span>
+                {{#if downtime.total}}
+                  <span class="rm-calendar-grid__total">{{downtime.total}}</span>
+                {{/if}}
+                <span class="rm-calendar-grid__markers">
+                  {{#each downtime.markers}}
+                    <span class="rm-calendar-grid__marker is-{{status}}" data-status="{{status}}" data-tooltip="{{label}}: {{count}}" aria-label="{{label}}: {{count}}">{{count}}</span>
+                  {{/each}}
+                </span>
               </button>
             {{/each}}
           </div>

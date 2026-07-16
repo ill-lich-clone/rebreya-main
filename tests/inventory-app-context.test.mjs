@@ -9,6 +9,11 @@ function installFoundryApplicationStub() {
   globalThis.foundry = {
     utils: {
       escapeHTML: (value) => String(value ?? "")
+        .replace(/&/gu, "&amp;")
+        .replace(/</gu, "&lt;")
+        .replace(/>/gu, "&gt;")
+        .replace(/"/gu, "&quot;")
+        .replace(/'/gu, "&#039;")
     },
     applications: {
       api: {
@@ -124,7 +129,16 @@ function collectText(node) {
   ].join("");
 }
 
-function createModuleApi({ getGroupContext, partySnapshot = {}, downtimeSnapshot, downtimeError, travelSnapshot, calls = [] }) {
+function createModuleApi({
+  getGroupContext,
+  partySnapshot = {},
+  downtimeSnapshot,
+  downtimeError,
+  travelSnapshot,
+  calendarSnapshot,
+  calendarPreview,
+  calls = []
+}) {
   return {
     async getInventorySnapshot() {
       return {
@@ -177,11 +191,35 @@ function createModuleApi({ getGroupContext, partySnapshot = {}, downtimeSnapshot
       };
     },
     getCalendarSnapshot() {
-      return {
+      return calendarSnapshot ?? {
+        isoDate: "0001-01-01",
         year: 1,
         month: 1,
-        day: 1
+        day: 1,
+        cells: []
       };
+    },
+    previewCalendarTransition(options) {
+      calls.push(["previewCalendarTransition", options]);
+      return typeof calendarPreview === "function"
+        ? calendarPreview(options)
+        : calendarPreview;
+    },
+    async setCalendarDate(year, month, day, options) {
+      calls.push(["setCalendarDate", year, month, day, options]);
+      return {};
+    },
+    async advanceCalendarDays(value, options) {
+      calls.push(["advanceCalendarDays", value, options]);
+      return { daysAdvanced: value, cycles: {} };
+    },
+    async advanceCalendarWeeks(value, options) {
+      calls.push(["advanceCalendarWeeks", value, options]);
+      return { daysAdvanced: value * 7, cycles: {} };
+    },
+    async advanceCalendarMonths(value, options) {
+      calls.push(["advanceCalendarMonths", value, options]);
+      return { daysAdvanced: value * 30, cycles: {} };
     },
     async getTravelSnapshot() {
       calls.push(["getTravelSnapshot"]);
@@ -2709,6 +2747,613 @@ test("InventoryApp downtime target dialog renders actor actions and attacks from
     globalThis.Dialog = previousDialog;
     globalThis.game = previousGame;
     globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp joins every scheduled downtime status into calendar cells with stable dominance and entries", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?calendar-context=${Date.now()}`);
+  const statuses = ["free", "pending", "approved", "processed", "blocked"];
+  const isoDates = statuses.map((_, index) => `2026-07-${String(20 + index).padStart(2, "0")}`);
+  const mixedIsoDate = "2026-07-25";
+  const requests = statuses
+    .filter((status) => status !== "free")
+    .map((status) => ({
+      id: `request-${status}`,
+      actorId: `actor-${status}`,
+      actorName: status === "pending" ? "Asha" : `Actor ${status}`,
+      actionLabel: "Craft",
+      title: status === "pending" ? "Build compass" : `Request ${status}`,
+      status,
+      ownedWorkshop: status === "pending",
+      hoursPerDay: 8,
+      checks: []
+    }));
+  const scheduleSlots = statuses.map((status, index) => ({
+    id: `slot-${status}`,
+    actorId: `actor-${status}`,
+    isoDate: isoDates[index],
+    status,
+    requestId: status === "free" ? null : `request-${status}`,
+    hours: status === "pending" ? 10 : null,
+    blockReason: status === "blocked" ? "Missing materials" : null
+  }));
+  scheduleSlots.push(...statuses.map((status) => ({
+    id: `slot-mixed-${status}`,
+    actorId: `actor-mixed-${status}`,
+    isoDate: mixedIsoDate,
+    status,
+    requestId: null,
+    hours: null,
+    blockReason: null
+  })));
+  const calendarByIsoDate = Object.fromEntries(isoDates.map((isoDate, index) => [isoDate, {
+    isoDate,
+    total: 1,
+    counts: Object.fromEntries(statuses.map((status) => [status, status === statuses[index] ? 1 : 0]))
+  }]));
+  calendarByIsoDate[mixedIsoDate] = {
+    isoDate: mixedIsoDate,
+    total: 5,
+    counts: Object.fromEntries(statuses.map((status) => [status, 1]))
+  };
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null,
+    calendarSnapshot: {
+      isoDate: "2026-07-20",
+      year: 2026,
+      month: 7,
+      day: 20,
+      cells: [...isoDates, mixedIsoDate].map((isoDate, index) => ({
+        isoDate,
+        year: 2026,
+        month: 7,
+        day: 20 + index,
+        isOutsideMonth: false,
+        isCurrentDay: index === 0
+      }))
+    },
+    downtimeSnapshot: {
+      canManage: true,
+      canSubmit: false,
+      members: [],
+      requests,
+      actionCatalog: [],
+      calendarByIsoDate,
+      scheduleSlots
+    }
+  }));
+
+  try {
+    const context = await app._prepareContext();
+
+    assert.deepEqual(
+      context.calendar.cells.slice(0, statuses.length).map((cell) => cell.downtime.dominantStatus),
+      statuses
+    );
+    assert.equal(context.calendar.cells.at(-1).downtime.total, 5);
+    assert.equal(context.calendar.cells.at(-1).downtime.dominantStatus, "blocked");
+    assert.deepEqual(
+      context.calendar.cells.at(-1).downtime.markers.map(({ status, count }) => ({ status, count })),
+      statuses.map((status) => ({ status, count: 1 }))
+    );
+    assert.deepEqual(context.calendar.cells[1].downtime.counts, {
+      free: 0,
+      pending: 1,
+      approved: 0,
+      processed: 0,
+      blocked: 0
+    });
+    assert.deepEqual(context.calendar.cells[1].downtime.entries[0], {
+      actorName: "Asha",
+      title: "Build compass",
+      status: "pending",
+      statusLabel: "Ожидает",
+      hours: 10,
+      workshop: "owned",
+      workshopLabel: "Собственная мастерская",
+      blockReason: ""
+    });
+    assert.equal(context.calendar.cells[4].downtime.entries[0].blockReason, "Missing materials");
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp calendar template renders fixed status markers, workday balances, and no legacy day controls", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+
+  assert.match(template, /rm-calendar-grid__day-number/u);
+  assert.match(template, /rm-calendar-grid__total/u);
+  assert.match(template, /rm-calendar-grid__markers/u);
+  assert.match(template, /\{\{#each downtime\.markers\}\}[\s\S]*is-\{\{status\}\}[\s\S]*\{\{count\}\}/u);
+  assert.match(template, /aria-label="\{\{label\}\}: \{\{count\}\}"/u);
+  assert.match(template, /is-downtime-\{\{downtime\.dominantStatus\}\}/u);
+  assert.match(template, /data-iso-date="\{\{isoDate\}\}"/u);
+  assert.match(template, /totalGrantedWorkdays precision=0/u);
+  assert.match(template, /availableWorkdays precision=0/u);
+  assert.match(template, /reservedWorkdays precision=0/u);
+  assert.match(template, /spentWorkdays precision=0/u);
+  assert.match(template, /<label>Недели<\/label>[\s\S]*data-action="downtime-grant-weeks"/u);
+  assert.doesNotMatch(template, /data-action="(?:craft-process-day|consume-day)"/u);
+  assert.doesNotMatch(template, /Списать день/u);
+});
+
+test("InventoryApp previews and confirms set, pick, day, week, and month calendar changes before mutation", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const calls = [];
+  globalThis.ui = { notifications: { info() {}, error() {} } };
+  globalThis.foundry.applications.api.DialogV2.confirm = async (config) => {
+    calls.push(["confirmCalendarTransition", config]);
+    return true;
+  };
+  const calendarPreview = ({ toIsoDate }) => ({
+    from: { isoDate: "2026-07-20", dateLabel: "20 июля 2026" },
+    to: { isoDate: toIsoDate, dateLabel: toIsoDate },
+    fromIsoDate: "2026-07-20",
+    toIsoDate,
+    direction: "forward",
+    crossedDates: ["2026-07-21", "2026-07-22", "2026-07-23"],
+    monthResetCount: toIsoDate === "2026-08-20" ? 1 : 0,
+    counts: {
+      crossedDates: 3,
+      affectedDowntimeRequests: 2
+    }
+  });
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?calendar-confirm=${Date.now()}`);
+    const setButton = createFakeControl();
+    const pickButton = createFakeControl({ dataset: { year: "2026", month: "7", day: "21", isoDate: "2026-07-21" } });
+    const dayButton = createFakeControl({ dataset: { unit: "day", value: "1" } });
+    const weekButton = createFakeControl({ dataset: { unit: "week", value: "1" } });
+    const monthButton = createFakeControl({ dataset: { unit: "month", value: "1" } });
+    const fields = new Map([
+      ["[data-action='calendar-set']", setButton],
+      ["[data-field='calendar-year']", createFakeControl({ value: "2026" })],
+      ["[data-field='calendar-month']", createFakeControl({ value: "7" })],
+      ["[data-field='calendar-day']", createFakeControl({ value: "25" })]
+    ]);
+    const root = createFakeElement();
+    root.querySelector = (selector) => fields.get(selector) ?? null;
+    root.querySelectorAll = (selector) => {
+      if (selector === "[data-action='calendar-pick-day']") return [pickButton];
+      if (selector === "[data-action='calendar-advance']") return [dayButton, weekButton, monthButton];
+      return [];
+    };
+    const app = new InventoryApp(createModuleApi({
+      getGroupContext: () => null,
+      calls,
+      calendarPreview,
+      calendarSnapshot: {
+        isoDate: "2026-07-20",
+        year: 2026,
+        month: 7,
+        day: 20,
+        cells: []
+      }
+    }));
+    app.element = root;
+
+    await app._onRender({}, {});
+    await dispatchClick(setButton);
+    await dispatchClick(pickButton);
+    await dispatchClick(dayButton);
+    await dispatchClick(weekButton);
+    await dispatchClick(monthButton);
+
+    assert.deepEqual(calls.map((call) => call[0]), [
+      "previewCalendarTransition", "confirmCalendarTransition", "setCalendarDate",
+      "previewCalendarTransition", "confirmCalendarTransition", "setCalendarDate",
+      "previewCalendarTransition", "confirmCalendarTransition", "setCalendarDate",
+      "previewCalendarTransition", "confirmCalendarTransition", "setCalendarDate",
+      "previewCalendarTransition", "confirmCalendarTransition", "setCalendarDate"
+    ]);
+    assert.deepEqual(
+      calls.filter((call) => call[0] === "previewCalendarTransition").map((call) => call[1].toIsoDate),
+      ["2026-07-25", "2026-07-21", "2026-07-21", "2026-07-27", "2026-08-20"]
+    );
+    assert.deepEqual(
+      calls.filter((call) => call[0] === "previewCalendarTransition").map((call) => call[1].processSupplies),
+      [false, false, true, true, true]
+    );
+    for (const previewCall of calls.filter((call) => call[0] === "previewCalendarTransition")) {
+      assert.equal(previewCall[1].processDowntime, true);
+      assert.equal(previewCall[1].reason, "calendar-ui");
+    }
+    for (const confirmCall of calls.filter((call) => call[0] === "confirmCalendarTransition")) {
+      assert.match(confirmCall[1].content, /20 июля 2026/u);
+      assert.match(confirmCall[1].content, /Направление:[\s\S]*Вперёд/u);
+      assert.match(confirmCall[1].content, /Пересечено дней:[\s\S]*3/u);
+      assert.match(confirmCall[1].content, /Затронуто заявок:[\s\S]*2/u);
+    }
+    assert.deepEqual(
+      calls.filter((call) => call[0] === "setCalendarDate").map((call) => call.slice(1, 4)),
+      [
+        [2026, 7, 25],
+        [2026, 7, 21],
+        [2026, 7, 21],
+        [2026, 7, 27],
+        [2026, 8, 20]
+      ]
+    );
+    assert.equal(calls.some((call) => /^advanceCalendar/u.test(call[0])), false);
+    for (const mutationCall of calls.filter((call) => call[0] === "setCalendarDate").slice(2)) {
+      assert.equal(mutationCall[4].processDailyCycles, true);
+      assert.equal(mutationCall[4].processSupplies, true);
+      assert.equal(mutationCall[4].consumeSupplies, true);
+      assert.equal(mutationCall[4].applyEnergy, true);
+      assert.equal(mutationCall[4].processCraft, true);
+    }
+    assert.equal(calls.filter((call) => call[0] === "setCalendarDate").at(-1)[4].monthResetCount, 1);
+  }
+  finally {
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp commits a confirmed relative transition once to its absolute preview target", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const calls = [];
+  const confirmResolvers = [];
+  globalThis.ui = { notifications: { info() {}, error() {} } };
+  globalThis.foundry.applications.api.DialogV2.confirm = (config) => {
+    calls.push(["confirmCalendarTransition", config]);
+    return new Promise((resolve) => confirmResolvers.push(resolve));
+  };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?calendar-double-click=${Date.now()}`);
+    const dayButton = createFakeControl({ dataset: { unit: "day", value: "1" } });
+    const root = createFakeElement();
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => selector === "[data-action='calendar-advance']" ? [dayButton] : [];
+    const app = new InventoryApp(createModuleApi({
+      getGroupContext: () => null,
+      calls,
+      calendarPreview: ({ toIsoDate }) => ({
+        from: { isoDate: "2026-07-20" },
+        to: { isoDate: toIsoDate },
+        fromIsoDate: "2026-07-20",
+        toIsoDate,
+        direction: "forward",
+        crossedDates: [toIsoDate],
+        monthResetCount: 0,
+        counts: { crossedDates: 1, affectedDowntimeRequests: 0 }
+      }),
+      calendarSnapshot: {
+        isoDate: "2026-07-20",
+        year: 2026,
+        month: 7,
+        day: 20,
+        cells: []
+      }
+    }));
+    app.element = root;
+    await app._onRender({}, {});
+
+    const firstClick = dispatchClick(dayButton);
+    const secondClick = dispatchClick(dayButton);
+    await Promise.resolve();
+    for (const resolve of confirmResolvers) {
+      resolve(true);
+    }
+    await Promise.all([firstClick, secondClick]);
+
+    assert.deepEqual(calls.map((call) => call[0]), [
+      "previewCalendarTransition",
+      "confirmCalendarTransition",
+      "setCalendarDate"
+    ]);
+    assert.deepEqual(calls.at(-1).slice(1, 4), [2026, 7, 21]);
+  }
+  finally {
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp rejects a confirmed calendar preview when the current date changed during confirmation", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const calls = [];
+  const warnings = [];
+  const calendarSnapshot = {
+    isoDate: "2026-07-20",
+    year: 2026,
+    month: 7,
+    day: 20,
+    cells: []
+  };
+  globalThis.ui = {
+    notifications: {
+      info() {},
+      error() {},
+      warn(message) { warnings.push(message); }
+    }
+  };
+  globalThis.foundry.applications.api.DialogV2.confirm = async (config) => {
+    calls.push(["confirmCalendarTransition", config]);
+    calendarSnapshot.isoDate = "2026-07-22";
+    calendarSnapshot.year = 2026;
+    calendarSnapshot.month = 7;
+    calendarSnapshot.day = 22;
+    return true;
+  };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?calendar-stale-preview=${Date.now()}`);
+    const dayButton = createFakeControl({ dataset: { unit: "day", value: "1" } });
+    const root = createFakeElement();
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => selector === "[data-action='calendar-advance']" ? [dayButton] : [];
+    const app = new InventoryApp(createModuleApi({
+      getGroupContext: () => null,
+      calls,
+      calendarPreview: ({ toIsoDate }) => ({
+        from: { isoDate: "2026-07-20" },
+        to: { isoDate: toIsoDate },
+        fromIsoDate: "2026-07-20",
+        toIsoDate,
+        direction: "forward",
+        crossedDates: [toIsoDate],
+        monthResetCount: 0,
+        counts: { crossedDates: 1, affectedDowntimeRequests: 0 }
+      }),
+      calendarSnapshot
+    }));
+    app.element = root;
+    await app._onRender({}, {});
+
+    await dispatchClick(dayButton);
+
+    assert.deepEqual(calls.map((call) => call[0]), [
+      "previewCalendarTransition",
+      "confirmCalendarTransition"
+    ]);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /дата календаря изменилась/iu);
+  }
+  finally {
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp calendar advance parses ISO years with one or more digits", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousUi = globalThis.ui;
+  const calls = [];
+  globalThis.ui = { notifications: { info() {}, error() {} } };
+  globalThis.foundry.applications.api.DialogV2.confirm = async (config) => {
+    calls.push(["confirmCalendarTransition", config]);
+    return true;
+  };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?calendar-year-100=${Date.now()}`);
+    const dayButton = createFakeControl({ dataset: { unit: "day", value: "1" } });
+    const root = createFakeElement();
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => selector === "[data-action='calendar-advance']" ? [dayButton] : [];
+    const app = new InventoryApp(createModuleApi({
+      getGroupContext: () => null,
+      calls,
+      calendarPreview: ({ toIsoDate }) => ({
+        from: { isoDate: "100-01-01" },
+        to: { isoDate: toIsoDate },
+        fromIsoDate: "100-01-01",
+        toIsoDate,
+        direction: "forward",
+        crossedDates: [toIsoDate],
+        monthResetCount: 0,
+        counts: { crossedDates: 1, affectedDowntimeRequests: 0 }
+      }),
+      calendarSnapshot: {
+        isoDate: "100-01-01",
+        year: 100,
+        month: 1,
+        day: 1,
+        cells: []
+      }
+    }));
+    app.element = root;
+    await app._onRender({}, {});
+    await dispatchClick(dayButton);
+
+    assert.equal(calls[0][1].toIsoDate, "100-01-02");
+    assert.deepEqual(calls.at(-1).slice(0, 4), ["setCalendarDate", 100, 1, 2]);
+  }
+  finally {
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp cancel after calendar preview performs no mutation", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const calls = [];
+  globalThis.foundry.applications.api.DialogV2.confirm = async (config) => {
+    calls.push(["confirmCalendarTransition", config]);
+    return false;
+  };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?calendar-cancel=${Date.now()}`);
+    const pickButton = createFakeControl({ dataset: { year: "2026", month: "7", day: "21", isoDate: "2026-07-21" } });
+    const root = createFakeElement();
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => selector === "[data-action='calendar-pick-day']" ? [pickButton] : [];
+    const app = new InventoryApp(createModuleApi({
+      getGroupContext: () => null,
+      calls,
+      calendarPreview: ({ toIsoDate }) => ({
+        from: { isoDate: "2026-07-20" },
+        to: { isoDate: toIsoDate },
+        direction: "forward",
+        crossedDates: [toIsoDate],
+        counts: { crossedDates: 1, affectedDowntimeRequests: 0 }
+      })
+    }));
+    app.element = root;
+
+    await app._onRender({}, {});
+    await dispatchClick(pickButton);
+
+    assert.deepEqual(calls.map((call) => call[0]), ["previewCalendarTransition", "confirmCalendarTransition"]);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp calendar contextmenu prevents the browser menu and opens populated or empty compact dialogs safely", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      Dialog.instances.push(this);
+    }
+
+    render() {}
+  };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?calendar-contextmenu=${Date.now()}`);
+    const populatedButton = createFakeControl({ dataset: { isoDate: "2026-07-21" } });
+    const emptyButton = createFakeControl({ dataset: { isoDate: "2026-07-22" } });
+    const root = createFakeElement();
+    root.querySelector = () => null;
+    root.querySelectorAll = (selector) => selector === "[data-action='calendar-pick-day']"
+      ? [populatedButton, emptyButton]
+      : [];
+    const app = new InventoryApp(createModuleApi({
+      getGroupContext: () => null,
+      calendarSnapshot: {
+        isoDate: "2026-07-20",
+        year: 2026,
+        month: 7,
+        day: 20,
+        cells: [
+          { isoDate: "2026-07-21", year: 2026, month: 7, day: 21 },
+          { isoDate: "2026-07-22", year: 2026, month: 7, day: 22 }
+        ]
+      },
+      downtimeSnapshot: {
+        canManage: false,
+        canSubmit: false,
+        members: [],
+        actionCatalog: [],
+        requests: [{
+          id: "request-a",
+          actorId: "actor-a",
+          actorName: '<img src=x onerror="alert(1)">Asha',
+          title: "</p><script>alert(2)</script>Build compass",
+          actionLabel: "Craft",
+          ownedWorkshop: true,
+          checks: []
+        }],
+        calendarByIsoDate: {
+          "2026-07-21": {
+            isoDate: "2026-07-21",
+            total: 1,
+            counts: { free: 0, pending: 0, approved: 0, processed: 0, blocked: 1 }
+          }
+        },
+        scheduleSlots: [{
+          id: "slot-a",
+          actorId: "actor-a",
+          isoDate: "2026-07-21",
+          requestId: "request-a",
+          status: "blocked",
+          hours: 12,
+          blockReason: '"><svg onload="alert(3)">Missing materials'
+        }]
+      }
+    }));
+    app.element = root;
+    await app._prepareContext();
+    await app._onRender({}, {});
+
+    let prevented = false;
+    populatedButton.listeners.contextmenu[0]({
+      currentTarget: populatedButton,
+      preventDefault() { prevented = true; },
+      stopPropagation() {}
+    });
+    emptyButton.listeners.contextmenu[0]({
+      currentTarget: emptyButton,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.equal(prevented, true);
+    assert.equal(globalThis.Dialog.instances.length, 2);
+    assert.equal(globalThis.Dialog.instances[0].options.classes.includes("rm-calendar-day-dialog-window"), true);
+    assert.match(globalThis.Dialog.instances[0].config.content, /Asha/u);
+    assert.match(globalThis.Dialog.instances[0].config.content, /Build compass/u);
+    assert.match(globalThis.Dialog.instances[0].config.content, /Заблокировано/u);
+    assert.match(globalThis.Dialog.instances[0].config.content, /12 ч\./u);
+    assert.match(globalThis.Dialog.instances[0].config.content, /Собственная мастерская/u);
+    assert.match(globalThis.Dialog.instances[0].config.content, /Missing materials/u);
+    assert.doesNotMatch(globalThis.Dialog.instances[0].config.content, /<(?:img|script|svg)\b/iu);
+    assert.match(globalThis.Dialog.instances[0].config.content, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;Asha/u);
+    assert.match(globalThis.Dialog.instances[0].config.content, /&lt;\/p&gt;&lt;script&gt;alert\(2\)&lt;\/script&gt;Build compass/u);
+    assert.match(globalThis.Dialog.instances[0].config.content, /&quot;&gt;&lt;svg onload=&quot;alert\(3\)&quot;&gt;Missing materials/u);
+    assert.match(globalThis.Dialog.instances[1].config.content, /Нет запланированного простоя/u);
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp no longer binds independent legacy day controls", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?no-craft-day=${Date.now()}`);
+    const craftProcessButton = createFakeControl();
+    const consumeDayButton = createFakeControl();
+    const root = createFakeElement();
+    root.querySelector = (selector) => {
+      if (selector === "[data-action='craft-process-day']") return craftProcessButton;
+      if (selector === "[data-action='consume-day']") return consumeDayButton;
+      return null;
+    };
+    root.querySelectorAll = () => [];
+    const app = new InventoryApp(createModuleApi({ getGroupContext: () => null }));
+    app.element = root;
+
+    await app._onRender({}, {});
+
+    assert.equal(craftProcessButton.listeners.click, undefined);
+    assert.equal(consumeDayButton.listeners.click, undefined);
+  }
+  finally {
     dom.restore();
     restoreFoundry();
   }

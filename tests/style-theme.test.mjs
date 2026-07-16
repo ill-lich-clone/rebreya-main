@@ -186,3 +186,33 @@ test("Character sheet valued combat statuses use compact numeric inputs instead 
   assert.match(css, /\.dnd5e2 \.effects-element \.conditions-list \.condition \.name-stacked \.title\s*\{[^}]*hyphens:\s*auto;[^}]*word-break:\s*normal;[^}]*overflow-wrap:\s*break-word;[^}]*text-wrap:\s*pretty;/su);
   assert.match(css, /\.dnd5e2 \.effects-element \.conditions-list \.condition \.name-stacked \.title\.rm-sheet-status-title--compact\s*\{[^}]*font-size:\s*var\(--font-size-12,\s*12px\);/su);
 });
+
+test("Calendar downtime statuses keep every compact marker visible in a narrow resizable window", async () => {
+  const css = await readFile(stylesheetUrl, "utf8");
+
+  assert.match(css, /\.rm-calendar-grid__day\s*\{[^}]*position:\s*relative;[^}]*box-sizing:\s*border-box;[^}]*overflow:\s*hidden;/su);
+  assert.match(css, /\.rm-calendar-grid__total\s*\{[^}]*position:\s*absolute;[^}]*min-width:\s*16px;[^}]*height:\s*16px;/su);
+  assert.match(css, /\.rm-calendar-grid\s*\{[^}]*grid-template-columns:\s*repeat\(7,\s*minmax\(60px,\s*1fr\)\);[^}]*overflow-x:\s*auto;/su);
+  assert.match(css, /\.rm-calendar-grid__markers\s*\{[^}]*position:\s*absolute;[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*grid-auto-rows:\s*14px;[^}]*max-height:\s*46px;/su);
+  assert.match(css, /\.rm-calendar-grid__marker\s*\{[^}]*min-width:\s*0;[^}]*height:\s*14px;[^}]*white-space:\s*nowrap;/su);
+  assert.match(css, /\.rm-calendar-grid__day\s*\{[^}]*min-height:\s*76px;[^}]*padding:\s*6px 20px 50px 6px;/su);
+  assert.match(css, /\.rm-calendar-grid__marker\s*\{[^}]*font-size:\s*8px;[^}]*overflow:\s*hidden;/su);
+  assert.match(css, /\.rm-calendar-grid__day\.is-current\s*\{[^}]*border-color:\s*var\(--rm-border-strong\);[^}]*box-shadow:\s*inset 0 0 0 1px var\(--rm-accent\);/su);
+
+  for (const status of ["free", "pending", "approved", "processed", "blocked"]) {
+    assert.match(css, new RegExp(`\\.rm-calendar-grid__day\\.is-downtime-${status}\\s*\\{`, "u"));
+    assert.match(css, new RegExp(`\\.rm-calendar-grid__marker\\.is-${status}\\s*\\{`, "u"));
+  }
+
+  assert.match(css, /\.rm-calendar-day-dialog\s*\{[^}]*display:\s*grid;/su);
+  assert.match(css, /\.rm-calendar-day-entry\s*\{[^}]*border-left:\s*3px solid/u);
+  assert.match(css, /\.rm-calendar-grid__day\s*\{\s*min-height:\s*76px;\s*font-size:\s*12px;/su);
+  assert.doesNotMatch(css, /\.rm-calendar-grid__day\s*\{[^}]*min-height:\s*28px;/su);
+});
+
+test("Craft toolbar no longer reserves space for the removed process-day control", async () => {
+  const css = await readFile(stylesheetUrl, "utf8");
+
+  assert.match(css, /\.rm-craft-toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1\.5fr\) minmax\(200px, 0\.7fr\);/su);
+  assert.doesNotMatch(css, /\.rm-craft-toolbar__actions/u);
+});

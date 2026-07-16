@@ -38,6 +38,16 @@ const DOWNTIME_STATUS_META = Object.freeze({
   }
 });
 
+const CALENDAR_DOWNTIME_STATUS_META = Object.freeze({
+  free: { label: "Свободно" },
+  pending: { label: "Ожидает" },
+  approved: { label: "Одобрено" },
+  processed: { label: "Обработано" },
+  blocked: { label: "Заблокировано" }
+});
+const CALENDAR_DOWNTIME_STATUSES = Object.freeze(["free", "pending", "approved", "processed", "blocked"]);
+const CALENDAR_DOWNTIME_DOMINANCE = Object.freeze(["blocked", "pending", "approved", "processed", "free"]);
+
 const DOWNTIME_ARCHIVE_STATUSES = new Set(["completed", "rejected"]);
 const DOWNTIME_PAGE_SIZE = 5;
 const TRAVEL_CITY_PREVIEW_LIMIT = 8;
@@ -1654,6 +1664,114 @@ function buildEmptyDowntimeContext({ warning = "", grantWeeks = 1, grantActorId 
   };
 }
 
+function buildCalendarDowntimeCells(calendarSnapshot = {}, downtimeSnapshot = {}) {
+  const snapshot = downtimeSnapshot && typeof downtimeSnapshot === "object" ? downtimeSnapshot : {};
+  const calendarByIsoDate = snapshot.calendarByIsoDate && typeof snapshot.calendarByIsoDate === "object"
+    ? snapshot.calendarByIsoDate
+    : {};
+  const requestsById = new Map((snapshot.requests ?? [])
+    .map((request) => [cleanText(request?.id), request])
+    .filter(([requestId]) => requestId));
+  const actorNamesById = new Map((snapshot.members ?? [])
+    .map((member) => [cleanText(member?.actorId), cleanText(member?.actorName)])
+    .filter(([actorId]) => actorId));
+  const slotsByIsoDate = new Map();
+
+  for (const slot of snapshot.scheduleSlots ?? []) {
+    const isoDate = cleanText(slot?.isoDate);
+    if (!isoDate) {
+      continue;
+    }
+    if (!slotsByIsoDate.has(isoDate)) {
+      slotsByIsoDate.set(isoDate, []);
+    }
+    slotsByIsoDate.get(isoDate).push(slot);
+  }
+
+  return (calendarSnapshot.cells ?? []).map((cell) => {
+    const isoDate = cleanText(cell?.isoDate);
+    const summary = calendarByIsoDate[isoDate] ?? {};
+    const slots = slotsByIsoDate.get(isoDate) ?? [];
+    const counts = Object.fromEntries(CALENDAR_DOWNTIME_STATUSES.map((status) => [
+      status,
+      Math.max(0, toInteger(summary?.counts?.[status], 0))
+    ]));
+    if (Object.values(counts).every((count) => count === 0) && slots.length > 0) {
+      for (const slot of slots) {
+        const status = cleanText(slot?.status);
+        if (status in counts) {
+          counts[status] += 1;
+        }
+      }
+    }
+
+    const countedTotal = Object.values(counts).reduce((total, count) => total + count, 0);
+    const total = Math.max(0, toInteger(summary?.total, 0), countedTotal, slots.length);
+    let dominantStatus = "";
+    let dominantCount = 0;
+    for (const status of CALENDAR_DOWNTIME_DOMINANCE) {
+      if (counts[status] > dominantCount) {
+        dominantStatus = status;
+        dominantCount = counts[status];
+      }
+    }
+
+    const markers = CALENDAR_DOWNTIME_STATUSES
+      .filter((status) => counts[status] > 0)
+      .map((status) => ({
+        status,
+        count: counts[status],
+        label: CALENDAR_DOWNTIME_STATUS_META[status].label
+      }));
+    const entries = slots.map((slot) => {
+      const request = requestsById.get(cleanText(slot?.requestId)) ?? null;
+      const status = CALENDAR_DOWNTIME_STATUS_META[cleanText(slot?.status)]
+        ? cleanText(slot.status)
+        : "free";
+      const actorId = cleanText(slot?.actorId || request?.actorId);
+      const actorName = cleanText(request?.actorName)
+        || actorNamesById.get(actorId)
+        || cleanText(slot?.actorName)
+        || actorId
+        || "Неизвестный персонаж";
+      const title = cleanText(slot?.activityTitle)
+        || cleanText(slot?.requestTitle)
+        || cleanText(request?.title)
+        || cleanText(request?.actionLabel)
+        || cleanText(slot?.activityId)
+        || (status === "free" ? "Свободный рабочий день" : "Заявка простоя");
+      const slotHours = Number(slot?.hours);
+      const requestHours = Number(request?.hoursPerDay);
+      const hours = slot?.hours != null && Number.isFinite(slotHours)
+        ? slotHours
+        : (request?.hoursPerDay != null && Number.isFinite(requestHours) ? requestHours : null);
+      const ownedWorkshop = slot?.ownedWorkshop === true || request?.ownedWorkshop === true;
+
+      return {
+        actorName,
+        title,
+        status,
+        statusLabel: CALENDAR_DOWNTIME_STATUS_META[status].label,
+        hours,
+        workshop: ownedWorkshop ? "owned" : "city",
+        workshopLabel: ownedWorkshop ? "Собственная мастерская" : "Городская мастерская",
+        blockReason: cleanText(slot?.blockReason)
+      };
+    });
+
+    return {
+      ...cell,
+      downtime: {
+        total,
+        dominantStatus,
+        counts,
+        entries,
+        markers
+      }
+    };
+  });
+}
+
 function buildCheckSummary(check) {
   const actionType = cleanText(check?.actionType);
   if (DOWNTIME_NON_ROLL_ACTION_TYPES.has(actionType)) {
@@ -2482,6 +2600,63 @@ async function promptCurrencyDialog(currency = {}) {
   });
 }
 
+function parseCalendarIsoDate(isoDate, errorMessage = "Некорректная дата календаря.") {
+  const match = /^(\d+)-(\d{2})-(\d{2})$/u.exec(cleanText(isoDate));
+  if (!match) {
+    throw new Error(errorMessage);
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(year, month - 1, day);
+  if (
+    !Number.isSafeInteger(year)
+    || year < 1
+    || date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) {
+    throw new Error(errorMessage);
+  }
+
+  return { year, month, day, date };
+}
+
+function formatCalendarIsoDate(date) {
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0")
+  ].join("-");
+}
+
+function buildCalendarIsoDate(year, month, day) {
+  const safeYear = toInteger(year, 0);
+  const safeMonth = toInteger(month, 0);
+  const safeDay = toInteger(day, 0);
+  const { date } = parseCalendarIsoDate([
+    safeYear,
+    String(safeMonth).padStart(2, "0"),
+    String(safeDay).padStart(2, "0")
+  ].join("-"));
+  return formatCalendarIsoDate(date);
+}
+
+function buildCalendarAdvanceIsoDate(isoDate, unit, value) {
+  const { date } = parseCalendarIsoDate(isoDate, "Некорректная текущая дата календаря.");
+  const safeValue = Math.max(1, toInteger(value, 1));
+  if (unit === "month") {
+    date.setUTCMonth(date.getUTCMonth() + safeValue);
+  }
+  else {
+    date.setUTCDate(date.getUTCDate() + (unit === "week" ? safeValue * 7 : safeValue));
+  }
+  return formatCalendarIsoDate(date);
+}
+
 export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     classes: ["rebreya-main", "rebreya-inventory-app"],
@@ -2538,6 +2713,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.canDropInventoryItems = false;
     this.partyMembershipManagedByNativeGroup = false;
     this.scrollRestore = null;
+    this.calendarDowntimeByIsoDate = {};
+    this.calendarTransitionPending = false;
   }
 
   get id() {
@@ -2887,6 +3064,10 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const balance = member.balance ?? {};
       return {
         ...member,
+        availableWorkdays: toInteger(balance.availableWorkdays, toInteger(balance.availableWeeks, 0) * 5),
+        reservedWorkdays: toInteger(balance.reservedWorkdays, toInteger(balance.reservedWeeks, 0) * 5),
+        spentWorkdays: toInteger(balance.spentWorkdays, toInteger(balance.spentWeeks, 0) * 5),
+        totalGrantedWorkdays: toInteger(balance.totalGrantedWorkdays, toInteger(balance.totalGrantedWeeks, 0) * 5),
         availableWeeks: toInteger(balance.availableWeeks, 0),
         reservedWeeks: toInteger(balance.reservedWeeks, 0),
         spentWeeks: toInteger(balance.spentWeeks, 0),
@@ -3002,6 +3183,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext() {
+    this.calendarDowntimeByIsoDate = {};
     try {
       const inventorySnapshot = await this.moduleApi.getInventorySnapshot({
         search: this.search,
@@ -3152,9 +3334,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }));
       const membershipManagedByNativeGroup = Boolean(partySnapshot.membershipManagedByNativeGroup);
       const addMemberDisabled = membershipManagedByNativeGroup || availableActors.length === 0;
-      const consumeDayDisabled = toInteger(partySnapshot.memberCount, 0) <= 0;
       const craftHasCrafters = (craftSnapshot.crafters ?? []).length > 0;
-      const processDayDisabled = (craftSnapshot.queue ?? []).length === 0;
       const partyAlerts = [];
       if (freeCapacityLb < 0) {
         partyAlerts.push({
@@ -3210,6 +3390,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       const downtime = this.#prepareDowntimeContext(downtimeSnapshot, downtimeWarning);
       const travel = prepareTravelContext(travelSnapshot ?? buildEmptyTravelContext({ warning: travelWarning }), this.travelTrackTime);
+      const calendarCells = buildCalendarDowntimeCells(calendarSnapshot, downtimeSnapshot);
+      this.calendarDowntimeByIsoDate = Object.fromEntries(calendarCells.map((cell) => [cell.isoDate, cell.downtime]));
 
       return {
         hasError: false,
@@ -3255,10 +3437,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             : (addMemberDisabled
               ? "Нет доступных актёров для добавления в группу."
               : ""),
-          consumeDayDisabled,
-          consumeDayDisabledReason: consumeDayDisabled
-            ? "Добавьте хотя бы одного участника, чтобы списать день."
-            : "",
           availableActors: availableActors.map((actor) => ({
             ...actor,
             selected: actor.id === this.selectedNewMemberId
@@ -3277,14 +3455,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           hasCrafters: craftHasCrafters,
           queueDisabledReason: craftHasCrafters
             ? ""
-            : "Добавьте участника в группу, чтобы запустить крафт.",
-          processDayDisabled,
-          processDayDisabledReason: processDayDisabled
-            ? "Очередь крафта пуста."
-            : ""
+            : "Добавьте участника в группу, чтобы запустить крафт."
         },
         calendar: {
           ...calendarSnapshot,
+          cells: calendarCells,
           yearValue: calendarSnapshot.year,
           monthValue: calendarSnapshot.month,
           dayValue: calendarSnapshot.day
@@ -3427,6 +3602,144 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const message = `Пропущено ${result.daysAdvanced} дн.: еда -${roundNumber(supplyTotals.foodSpent ?? 0, 2)}, вода -${roundNumber(supplyTotals.waterSpent ?? 0, 2)}, завершено крафта ${craftCompleted}.${shortageText}${dateLabel}${traderResetText}${eventText}`;
     this.#setActionFeedback("success", message);
     ui.notifications?.info(message);
+  }
+
+  async #confirmCalendarTransition(toIsoDate, { processSupplies = false } = {}) {
+    const preview = await this.moduleApi.previewCalendarTransition({
+      toIsoDate,
+      processDowntime: true,
+      processSupplies,
+      reason: "calendar-ui"
+    });
+    if (!preview || typeof preview !== "object") {
+      throw new Error("Не удалось подготовить изменение даты календаря.");
+    }
+
+    const fromLabel = cleanText(preview.from?.dateLabel)
+      || cleanText(preview.from?.isoDate)
+      || cleanText(preview.fromIsoDate)
+      || "—";
+    const toLabel = cleanText(preview.to?.dateLabel)
+      || cleanText(preview.to?.isoDate)
+      || cleanText(preview.toIsoDate)
+      || toIsoDate;
+    const directionLabel = preview.direction === "backward"
+      ? "Назад"
+      : (preview.direction === "same" ? "Без изменения" : "Вперёд");
+    const crossedCount = Math.max(0, toInteger(
+      preview.counts?.crossedDates,
+      Array.isArray(preview.crossedDates) ? preview.crossedDates.length : 0
+    ));
+    const affectedCount = Math.max(0, toInteger(
+      preview.counts?.affectedDowntimeRequests,
+      preview.affectedRequestCount ?? 0
+    ));
+    const content = `
+      <section class="rm-calendar-transition-confirm">
+        <p><strong>Откуда:</strong> ${escapeHtml(fromLabel)}</p>
+        <p><strong>Куда:</strong> ${escapeHtml(toLabel)}</p>
+        <p><strong>Направление:</strong> ${escapeHtml(directionLabel)}</p>
+        <p><strong>Пересечено дней:</strong> ${crossedCount}</p>
+        <p><strong>Затронуто заявок:</strong> ${affectedCount}</p>
+      </section>
+    `;
+    const confirmed = await confirmAction("Изменить дату календаря", content);
+    return confirmed ? preview : null;
+  }
+
+  async #runCalendarTransition(toIsoDate, { processSupplies = false } = {}) {
+    if (this.calendarTransitionPending) {
+      return null;
+    }
+
+    this.calendarTransitionPending = true;
+    try {
+      const preview = await this.#confirmCalendarTransition(toIsoDate, { processSupplies });
+      if (!preview) {
+        return null;
+      }
+
+      const expectedFromIsoDate = cleanText(preview.fromIsoDate) || cleanText(preview.from?.isoDate);
+      const currentIsoDate = cleanText(this.moduleApi.getCalendarSnapshot()?.isoDate);
+      if (!expectedFromIsoDate || currentIsoDate !== expectedFromIsoDate) {
+        const message = "Дата календаря изменилась во время подтверждения. Повторите действие с актуальной датой.";
+        this.#setActionFeedback("warning", message);
+        ui.notifications?.warn?.(message);
+        return null;
+      }
+
+      const confirmedToIsoDate = cleanText(preview.toIsoDate) || cleanText(preview.to?.isoDate);
+      const { year, month, day } = parseCalendarIsoDate(confirmedToIsoDate);
+      const options = {
+        expectedFromIsoDate,
+        processDowntime: true,
+        processSupplies,
+        processDailyCycles: processSupplies,
+        consumeSupplies: processSupplies,
+        applyEnergy: processSupplies,
+        processCraft: processSupplies,
+        reason: "calendar-ui"
+      };
+      if (processSupplies) {
+        options.monthResetCount = Math.max(0, toInteger(
+          preview.monthResetCount,
+          preview.counts?.monthBoundaries ?? 0
+        ));
+      }
+
+      const result = await this.moduleApi.setCalendarDate(year, month, day, options);
+      return { preview, result };
+    }
+    finally {
+      this.calendarTransitionPending = false;
+    }
+  }
+
+  #openCalendarDayInfo(isoDate) {
+    const DialogClass = globalThis.Dialog;
+    if (typeof DialogClass !== "function") {
+      return;
+    }
+
+    const downtime = this.calendarDowntimeByIsoDate[isoDate] ?? { entries: [] };
+    const entries = Array.isArray(downtime.entries) ? downtime.entries : [];
+    const entryHtml = entries.map((entry) => {
+      const hoursLabel = entry.hours == null ? "Часы не указаны" : `${entry.hours} ч.`;
+      const blockReason = cleanText(entry.blockReason);
+      return `
+        <article class="rm-calendar-day-entry is-${escapeHtml(entry.status)}">
+          <header class="rm-calendar-day-entry__header">
+            <strong>${escapeHtml(entry.actorName)}</strong>
+            <span class="rm-badge rm-status-badge">${escapeHtml(entry.statusLabel)}</span>
+          </header>
+          <p>${escapeHtml(entry.title)}</p>
+          <div class="rm-calendar-day-entry__meta">
+            <span>${escapeHtml(hoursLabel)}</span>
+            <span>${escapeHtml(entry.workshopLabel)}</span>
+          </div>
+          ${blockReason ? `<p class="rm-calendar-day-entry__block-reason"><strong>Причина блокировки:</strong> ${escapeHtml(blockReason)}</p>` : ""}
+        </article>
+      `;
+    }).join("");
+    const content = `
+      <section class="rm-calendar-day-dialog" data-iso-date="${escapeHtml(isoDate)}">
+        ${entryHtml || '<p class="rm-empty">Нет запланированного простоя.</p>'}
+      </section>
+    `;
+    const dialog = new DialogClass({
+      title: `Простой: ${escapeHtml(isoDate)}`,
+      content,
+      buttons: {
+        close: {
+          label: "Закрыть"
+        }
+      },
+      default: "close"
+    }, {
+      classes: ["rebreya-main", "rebreya-trader-dialog", "rm-calendar-day-dialog-window"],
+      width: 440
+    });
+    renderDialogOnTop(dialog);
   }
 
   async #promptDowntimeText(title, message, initialValue = "") {
@@ -5408,25 +5721,6 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelector("[data-action='consume-day']")?.addEventListener("click", async () => {
-      try {
-        const result = await this.moduleApi.advanceCalendarDays(1, {
-          consumeSupplies: true,
-          applyEnergy: true,
-          processCraft: true
-        });
-        await this.#notifyAdvanceResult(result);
-        bringAppToFront(this);
-      }
-      catch (error) {
-        console.error(`${MODULE_ID} | Failed to consume party day.`, error);
-        const message = error.message || "Не удалось списать день группы.";
-        this.#setActionFeedback("error", message);
-        this.render({ force: true });
-        ui.notifications?.error(message);
-      }
-    }, listenerOptions);
-
     element.querySelector("[data-action='craft-search']")?.addEventListener("input", (event) => {
       this.craftSearch = event.currentTarget.value ?? "";
       this.focusRestore = {
@@ -5587,27 +5881,16 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }, listenerOptions);
     });
 
-    element.querySelector("[data-action='craft-process-day']")?.addEventListener("click", async () => {
-      try {
-        const result = await this.moduleApi.processCraftOneDay();
-        this.#setActionFeedback("success", `Продвинут день крафта. Завершено: ${result.completedCount}.`);
-        ui.notifications?.info(`Продвинут день крафта. Завершено: ${result.completedCount}.`);
-      }
-      catch (error) {
-        console.error(`${MODULE_ID} | Failed to process craft day.`, error);
-        const message = error.message || "Не удалось продвинуть крафт на день.";
-        this.#setActionFeedback("error", message);
-        this.render({ force: true });
-        ui.notifications?.error(message);
-      }
-    }, listenerOptions);
-
     element.querySelector("[data-action='calendar-set']")?.addEventListener("click", async () => {
       try {
         const year = toInteger(element.querySelector("[data-field='calendar-year']")?.value, 1);
         const month = toInteger(element.querySelector("[data-field='calendar-month']")?.value, 1);
         const day = toInteger(element.querySelector("[data-field='calendar-day']")?.value, 1);
-        await this.moduleApi.setCalendarDate(year, month, day);
+        const toIsoDate = buildCalendarIsoDate(year, month, day);
+        const transition = await this.#runCalendarTransition(toIsoDate);
+        if (!transition) {
+          return;
+        }
         ui.notifications?.info("Календарь обновлён.");
       }
       catch (error) {
@@ -5622,13 +5905,24 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           const year = toInteger(event.currentTarget.dataset.year, 1);
           const month = toInteger(event.currentTarget.dataset.month, 1);
           const day = toInteger(event.currentTarget.dataset.day, 1);
-          await this.moduleApi.setCalendarDate(year, month, day);
+          const toIsoDate = cleanText(event.currentTarget.dataset.isoDate) || buildCalendarIsoDate(year, month, day);
+          const transition = await this.#runCalendarTransition(toIsoDate);
+          if (!transition) {
+            return;
+          }
           bringAppToFront(this);
         }
         catch (error) {
           console.error(`${MODULE_ID} | Failed to pick calendar day.`, error);
           ui.notifications?.error(error.message || "Не удалось выбрать дату календаря.");
         }
+      }, listenerOptions);
+
+      button.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const isoDate = cleanText(event.currentTarget.dataset.isoDate);
+        this.#openCalendarDayInfo(isoDate);
       }, listenerOptions);
     });
 
@@ -5637,30 +5931,14 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const unit = event.currentTarget.dataset.unit || "day";
         const value = Math.max(1, toInteger(event.currentTarget.dataset.value, 1));
         try {
-          let result = null;
-          if (unit === "week") {
-            result = await this.moduleApi.advanceCalendarWeeks(value, {
-              consumeSupplies: true,
-              applyEnergy: true,
-              processCraft: true
-            });
-          }
-          else if (unit === "month") {
-            result = await this.moduleApi.advanceCalendarMonths(value, {
-              consumeSupplies: true,
-              applyEnergy: true,
-              processCraft: true
-            });
-          }
-          else {
-            result = await this.moduleApi.advanceCalendarDays(value, {
-              consumeSupplies: true,
-              applyEnergy: true,
-              processCraft: true
-            });
+          const currentIsoDate = cleanText(this.moduleApi.getCalendarSnapshot()?.isoDate);
+          const toIsoDate = buildCalendarAdvanceIsoDate(currentIsoDate, unit, value);
+          const transition = await this.#runCalendarTransition(toIsoDate, { processSupplies: true });
+          if (!transition) {
+            return;
           }
 
-          await this.#notifyAdvanceResult(result);
+          await this.#notifyAdvanceResult(transition.result);
           bringAppToFront(this);
         }
         catch (error) {
