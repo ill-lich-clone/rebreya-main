@@ -157,7 +157,7 @@ test("buildMapObjectMacroData builds the managed creation macro", () => {
     name: MAP_OBJECT_MACRO_NAME,
     type: "script",
     scope: "global",
-    command: "game.rebreyaMain.createMapObjectToken();",
+    command: "await game.rebreyaMain?.createMapObjectToken?.();",
     ownership: { default: 0 },
     flags: {
       "rebreya-main": {

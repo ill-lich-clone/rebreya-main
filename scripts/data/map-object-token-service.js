@@ -216,7 +216,7 @@ export function buildMapObjectMacroData() {
     name: MAP_OBJECT_MACRO_NAME,
     type: "script",
     scope: "global",
-    command: "game.rebreyaMain.createMapObjectToken();",
+    command: "await game.rebreyaMain?.createMapObjectToken?.();",
     ownership: defaultOwnership(),
     flags: managedFlags(MAP_OBJECT_MACRO_SOURCE_ID)
   };
