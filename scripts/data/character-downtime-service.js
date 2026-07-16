@@ -633,6 +633,178 @@ function normalizeTargetActionSelections(value = []) {
   return selections;
 }
 
+function normalizeCraftSourceType(value = "") {
+  const normalized = cleanText(value).toLocaleLowerCase("ru-RU").replace(/[\s_-]+/gu, "");
+  if (normalized === "gear") {
+    return "gear";
+  }
+  if ([
+    "magicitem",
+    "magicitems",
+    "magic",
+    "magical",
+    "магия",
+    "магическийпредмет"
+  ].includes(normalized)) {
+    return "magicItem";
+  }
+  return normalized;
+}
+
+function hasMagicPropertyMarker(properties) {
+  if (properties instanceof Set || Array.isArray(properties)) {
+    return Array.from(properties).some((entry) => hasMagicPropertyMarker(entry));
+  }
+  if (typeof properties === "string") {
+    return ["mgc", "magic", "magical", "магия", "магический"]
+      .includes(properties.trim().toLocaleLowerCase("ru-RU"));
+  }
+  if (!properties || typeof properties !== "object") {
+    return false;
+  }
+  return hasMagicPropertyMarker(properties.value)
+    || Object.entries(properties).some(([key, enabled]) => (
+      key !== "value" && enabled === true && hasMagicPropertyMarker(key)
+    ));
+}
+
+function isMagicCraftGear(gear = {}) {
+  const moduleFlags = asObject(gear?.flags?.[MODULE_ID]);
+  const dnd5eFlags = asObject(gear?.flags?.dnd5e);
+  const sourceTypes = [
+    gear.sourceType,
+    gear.category,
+    gear.itemType,
+    moduleFlags.sourceType,
+    moduleFlags.itemType,
+    moduleFlags.magicItemType
+  ].map((value) => normalizeCraftSourceType(value));
+  const itemTypes = [gear.type, gear.equipmentType]
+    .map((value) => cleanText(value).toLocaleLowerCase("ru-RU"));
+  const rarityValue = gear.rarity ?? gear?.system?.rarity;
+  const rarity = cleanText(
+    rarityValue && typeof rarityValue === "object"
+      ? rarityValue.value ?? rarityValue.id ?? rarityValue.key ?? rarityValue.slug
+      : rarityValue
+  ).toLocaleLowerCase("ru-RU");
+  const magicMarkers = [
+    gear.isMagic,
+    gear.isMagical,
+    gear.magic,
+    gear.magical,
+    gear.magicItemId,
+    gear.magicId,
+    moduleFlags.magical,
+    moduleFlags.isMagical,
+    moduleFlags.isMagic,
+    moduleFlags.magic,
+    moduleFlags.magicItemId,
+    moduleFlags.magicId,
+    moduleFlags.magicItem,
+    moduleFlags.magicWeaponTemplate,
+    moduleFlags.magicArmorTemplate,
+    moduleFlags.magicShieldTemplate,
+    moduleFlags.magicEquipmentTemplate,
+    moduleFlags.magicAmmunitionTemplate,
+    dnd5eFlags.magical,
+    dnd5eFlags.isMagical,
+    dnd5eFlags.isMagic,
+    dnd5eFlags.magic
+  ];
+  return sourceTypes.includes("magicItem")
+    || itemTypes.some((value) => value.includes("magic item") || value.includes("магический предмет"))
+    || hasMagicPropertyMarker(gear.properties ?? gear?.system?.properties)
+    || Boolean(rarity && !["mundane", "none", "обычный", "немагический"].includes(rarity))
+    || magicMarkers.some(Boolean);
+}
+
+function resolveCurrentModelEntry(byId, entries, sourceId) {
+  return byId?.get?.(sourceId)
+    ?? asArray(entries).find((entry) => cleanText(entry?.id) === sourceId)
+    ?? null;
+}
+
+function isCraftDowntimeAction(actionId, snapshot = {}) {
+  const safeActionId = cleanText(actionId);
+  if (safeActionId === "craft") {
+    return true;
+  }
+  const action = asArray(snapshot?.actionCatalog).find((entry) => cleanText(entry?.id) === safeActionId);
+  return cleanText(action?.downtimeId) === "craft";
+}
+
+function buildCanonicalCraftProject(targetActionSelections, model = {}) {
+  const selections = normalizeTargetActionSelections(targetActionSelections);
+  const selectedItem = selections.get("craft-item")?.item;
+  if (!selectedItem) {
+    throw new Error("Craft requires a managed gear selection.");
+  }
+
+  const snapshotFlags = asObject(selectedItem?.documentSnapshot?.flags?.[MODULE_ID]);
+  const selectionFlags = {
+    ...snapshotFlags,
+    ...asObject(selectedItem.rebreya)
+  };
+  if (selectionFlags.managed !== true) {
+    throw new Error("Craft requires a managed gear selection.");
+  }
+
+  const sourceTypes = [
+    selectedItem.sourceType,
+    selectionFlags.sourceType,
+    snapshotFlags.sourceType
+  ].map((value) => normalizeCraftSourceType(value)).filter(Boolean);
+  if (!sourceTypes.length || sourceTypes.some((sourceType) => sourceType !== "gear")) {
+    throw new Error("Craft requires managed ordinary gear, not a magic item.");
+  }
+
+  const sourceIds = [
+    selectedItem.sourceId,
+    selectedItem.gearId,
+    selectionFlags.sourceId,
+    selectionFlags.gearId,
+    snapshotFlags.sourceId,
+    snapshotFlags.gearId
+  ].map((value) => cleanText(value)).filter(Boolean);
+  const sourceId = sourceIds[0] ?? "";
+  if (!sourceId || sourceIds.some((candidate) => candidate !== sourceId)) {
+    throw new Error("Craft managed gear source IDs do not match.");
+  }
+
+  const gear = resolveCurrentModelEntry(model?.gearById, model?.gear, sourceId);
+  if (!gear) {
+    throw new Error(`Craft gear '${sourceId}' was not found in the current model.`);
+  }
+  if (isMagicCraftGear(gear)) {
+    throw new Error("Magic items cannot be selected for ordinary crafting.");
+  }
+
+  const quantity = selections.get("craft-quantity")?.value ?? 1;
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw new Error("Craft quantity must be a positive integer.");
+  }
+  const hoursPerDay = selections.get("craft-hours")?.value ?? 8;
+  if (!Number.isInteger(hoursPerDay) || hoursPerDay < 8 || hoursPerDay > 16) {
+    throw new Error("Craft hours per day must be an integer from 8 to 16.");
+  }
+
+  const workshopSelection = selections.get("craft-workshop") ?? {};
+  const ownedWorkshop = cleanText(workshopSelection.optionId) === "owned"
+    || asArray(workshopSelection.optionIds).some((optionId) => cleanText(optionId) === "owned");
+  const craftProject = {
+    version: 1,
+    outputs: [{ sourceType: "gear", sourceId, quantity }],
+    hoursPerDay,
+    ownedWorkshop,
+    blueprintIds: []
+  };
+  const predominantMaterialId = cleanText(gear.predominantMaterialId);
+  if (predominantMaterialId && resolveCurrentModelEntry(model?.materialById, model?.materials, predominantMaterialId)) {
+    craftProject.predominantMaterialId = predominantMaterialId;
+  }
+  return craftProject;
+}
+
 function buildResourceChoices(action = {}, selectedChoiceId = "") {
   const resources = action?.resources && typeof action.resources === "object" && !Array.isArray(action.resources)
     ? action.resources
@@ -1889,21 +2061,26 @@ export class CharacterDowntimeService {
     }
 
     let groupId = "";
+    let downtimeSnapshot = null;
     try {
-      groupId = cleanText(this.moduleApi?.getDowntimeSnapshot?.({ actorId: actor.id })?.groupId);
+      downtimeSnapshot = this.moduleApi?.getDowntimeSnapshot?.({ actorId: actor.id }) ?? null;
+      groupId = cleanText(downtimeSnapshot?.groupId);
     }
     catch (_error) {
       groupId = "";
+      downtimeSnapshot = null;
     }
 
     const targetActionSelections = Array.isArray(payload.targetActionSelections)
       ? payload.targetActionSelections.map((entry) => normalizeSelectionEntry(entry)).filter(Boolean)
       : [];
     const requestId = cleanText(payload.requestId);
+    const actionId = cleanText(payload.actionId);
+    const craftRequest = isCraftDowntimeAction(actionId, downtimeSnapshot);
     const requestPayload = {
       groupId,
       actorId: actor.id,
-      actionId: cleanText(payload.actionId),
+      actionId,
       weeks: normalizeWeeks(payload.weeks, 1),
       title: cleanText(payload.title),
       description: cleanText(payload.description)
@@ -1911,7 +2088,14 @@ export class CharacterDowntimeService {
     if (requestId) {
       requestPayload.requestId = requestId;
     }
-    if (targetActionSelections.length || requestId) {
+    if (craftRequest) {
+      const model = await this.moduleApi?.getModel?.();
+      if (!model) {
+        throw new Error("Craft gear validation requires the current Rebreya model.");
+      }
+      requestPayload.craftProject = buildCanonicalCraftProject(targetActionSelections, model);
+    }
+    else if (targetActionSelections.length || requestId) {
       requestPayload.targetActionSelections = targetActionSelections;
     }
     return requestId

@@ -291,8 +291,35 @@ test("core automated downtimes expose structured player inputs", () => {
   const byId = new Map(activities.map((activity) => [activity.id, createDowntimeItemData(activity, new Map()).flags[MODULE_ID].downtime]));
 
   const craft = byId.get("craft");
-  assert.equal(craft.targetActions.find((action) => action.id === "craft-item")?.actionType, "itemChoice");
-  assert.equal(craft.targetActions.find((action) => action.id === "craft-days")?.input?.unit, "дн.");
+  const craftItem = craft.targetActions.find((action) => action.id === "craft-item");
+  const craftQuantity = craft.targetActions.find((action) => action.id === "craft-quantity");
+  const craftHours = craft.targetActions.find((action) => action.id === "craft-hours");
+  const craftWorkshop = craft.targetActions.find((action) => action.id === "craft-workshop");
+  assert.equal(craftItem?.actionType, "itemChoice");
+  assert.equal(craftItem?.itemChoice?.sourceType, "gear");
+  assert.equal(craftItem?.itemChoice?.managedOnly, true);
+  assert.equal(craftItem?.itemChoice?.allowMagic, false);
+  assert.deepEqual(craftQuantity?.input, {
+    min: 1,
+    step: 1,
+    default: 1,
+    unit: "шт."
+  });
+  assert.deepEqual(craftHours?.input, {
+    min: 8,
+    max: 16,
+    step: 1,
+    default: 8,
+    unit: "ч."
+  });
+  assert.equal(craftWorkshop?.actionType, "optionChoice");
+  assert.equal(craftWorkshop?.selectionMode, "multiple");
+  assert.deepEqual(craftWorkshop?.options, [{
+    id: "owned",
+    label: "Своя мастерская",
+    value: true
+  }]);
+  assert.equal(craft.targetActions.some((action) => ["craft-resources", "craft-days", "craft-progress"].includes(action.id)), false);
 
   const firearmCrafting = byId.get("firearm-crafting");
   assert.equal(firearmCrafting.targetActions.find((action) => action.id === "firearm-crafting-item")?.itemChoice?.subtype, "firearm");

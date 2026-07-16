@@ -3336,6 +3336,139 @@ test("character downtime submit reads structured target action controls", async 
   }
 });
 
+test("character downtime submit reads craft item quantity hours and owned workshop checkbox", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-submit-craft=${Date.now()}`);
+    const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    const calls = [];
+    const submitButton = new stubs.HTMLElement();
+    const itemChoice = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "craft-item",
+        itemId: "longsword-document",
+        itemName: "Длинный меч",
+        itemType: "weapon",
+        itemSourceType: "gear",
+        itemSnapshot: JSON.stringify({
+          name: "Длинный меч",
+          sourceType: "gear",
+          sourceId: "longsword",
+          rebreya: {
+            managed: true,
+            sourceType: "gear",
+            sourceId: "longsword",
+            gearId: "longsword"
+          }
+        })
+      }
+    });
+    const quantityInput = new stubs.HTMLElement({
+      dataset: { targetActionId: "craft-quantity" }
+    });
+    quantityInput.value = "2";
+    const hoursInput = new stubs.HTMLElement({
+      dataset: { targetActionId: "craft-hours" }
+    });
+    hoursInput.value = "12";
+    const workshopCheckbox = new stubs.HTMLElement({
+      dataset: {
+        targetActionId: "craft-workshop",
+        optionId: "owned"
+      }
+    });
+    workshopCheckbox.value = "owned";
+    workshopCheckbox.checked = true;
+    const panel = new stubs.HTMLElement({
+      selectors: {
+        "[data-action='character-downtime-action']": { value: "craft" },
+        "[data-action='character-downtime-weeks']": { value: "2" },
+        "[data-action='character-downtime-title']": { value: "" },
+        "[data-action='character-downtime-description']": { value: "" },
+        "[data-action='character-downtime-submit']": submitButton
+      },
+      selectorAll: {
+        "[data-action='character-downtime-item-choice']": [itemChoice],
+        "[data-action='character-downtime-numeric-input']": [quantityInput, hoursInput],
+        "[data-action='character-downtime-option-checkbox']": [workshopCheckbox]
+      }
+    });
+    submitButton.closest = (selector) => {
+      if (selector === "[data-action='character-downtime-submit']") return submitButton;
+      if (selector === ".rm-character-downtime-tab") return panel;
+      return null;
+    };
+    const root = new stubs.HTMLElement({
+      selectors: {
+        "[data-application-part='downtime'] .rm-character-downtime-tab": panel
+      }
+    });
+    root.children.push(submitButton);
+    const app = {
+      actor,
+      async render(options) {
+        calls.push(["render", options]);
+      }
+    };
+    const moduleApi = {
+      heroDollService: {
+        getActorSnapshot() {
+          return {};
+        }
+      },
+      characterDowntimeService: {
+        getActorContext() {
+          return {};
+        },
+        async createRequest(targetActor, payload) {
+          calls.push(["createRequest", targetActor.id, payload]);
+          return { id: "downtime-craft" };
+        }
+      },
+      async refreshOpenApps() {}
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+    stubs.hooks.get("renderCharacterActorSheet")(app, root);
+    for (const listener of root.listeners.click) {
+      await listener({ target: submitButton });
+    }
+
+    const payload = calls.find((call) => call[0] === "createRequest")[2];
+    assert.equal(payload.actionId, "craft");
+    assert.equal(payload.weeks, 2);
+    assert.deepEqual(payload.targetActionSelections.map((selection) => ({
+      actionId: selection.actionId,
+      value: selection.value,
+      optionIds: selection.optionIds,
+      sourceId: selection.item?.sourceId
+    })), [{
+      actionId: "craft-item",
+      value: undefined,
+      optionIds: undefined,
+      sourceId: "longsword"
+    }, {
+      actionId: "craft-workshop",
+      value: undefined,
+      optionIds: ["owned"],
+      sourceId: undefined
+    }, {
+      actionId: "craft-quantity",
+      value: 2,
+      optionIds: undefined,
+      sourceId: undefined
+    }, {
+      actionId: "craft-hours",
+      value: 12,
+      optionIds: undefined,
+      sourceId: undefined
+    }]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("character downtime submit reads description block controls", async () => {
   const stubs = installSheetExtensionStubs();
   try {

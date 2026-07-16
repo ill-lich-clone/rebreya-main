@@ -12,7 +12,7 @@ function createActor({ id = "actor-a", name = "Hero", type = "character" } = {})
   };
 }
 
-function createModuleApi({ snapshot, error, calls = [] } = {}) {
+function createModuleApi({ snapshot, error, calls = [], model } = {}) {
   return {
     getDowntimeSnapshot(options) {
       calls.push(["getDowntimeSnapshot", options]);
@@ -32,6 +32,15 @@ function createModuleApi({ snapshot, error, calls = [] } = {}) {
       return {
         id: "downtime-2",
         ...payload
+      };
+    },
+    async getModel() {
+      calls.push(["getModel"]);
+      return model ?? {
+        gear: [],
+        gearById: new Map(),
+        materials: [],
+        materialById: new Map()
       };
     }
   };
@@ -1703,6 +1712,335 @@ test("CharacterDowntimeService creates requests for the current sheet actor only
       description: "Найти наставника"
     }
   ]]);
+});
+
+test("CharacterDowntimeService stores a canonical craft project from current managed gear", async () => {
+  const calls = [];
+  const craftActionId = "Compendium.world.rebreya-downtime.Item.craft-doc";
+  const gear = {
+    id: "longsword",
+    name: "Длинный меч",
+    predominantMaterialId: "steel",
+    priceGoldEquivalent: 15,
+    rank: 3
+  };
+  const service = new CharacterDowntimeService(createModuleApi({
+    calls,
+    snapshot: {
+      groupId: "group-a",
+      members: [],
+      requests: [],
+      actionCatalog: [{ id: craftActionId, downtimeId: "craft" }],
+      canSubmit: true
+    },
+    model: {
+      gear: [gear],
+      gearById: new Map([[gear.id, gear]]),
+      materials: [{ id: "steel", name: "Сталь" }],
+      materialById: new Map([["steel", { id: "steel", name: "Сталь" }]])
+    }
+  }));
+
+  await service.createRequest(createActor({ id: "actor-a" }), {
+    actionId: craftActionId,
+    weeks: 3,
+    title: "Меч для похода",
+    description: "Обычная работа",
+    workdays: 999,
+    progressGold: 999,
+    rank: 99,
+    priceGold: 1,
+    craftProject: {
+      outputs: [{ sourceType: "magicItem", sourceId: "forged", quantity: 99 }],
+      workdays: 1,
+      progressGold: 999
+    },
+    targetActionSelections: [{
+      actionId: "craft-item",
+      item: {
+        name: "Подложенное имя",
+        sourceType: "gear",
+        sourceId: "longsword",
+        priceGold: 9999,
+        rarity: "legendary",
+        rebreya: {
+          managed: true,
+          sourceType: "gear",
+          sourceId: "longsword",
+          gearId: "longsword"
+        },
+        documentSnapshot: {
+          system: { price: { value: 9999 }, rarity: "legendary" }
+        }
+      }
+    }, {
+      actionId: "craft-quantity",
+      value: 2
+    }, {
+      actionId: "craft-hours",
+      value: 12
+    }, {
+      actionId: "craft-workshop",
+      optionIds: ["owned"]
+    }, {
+      actionId: "craft-progress",
+      value: 999
+    }]
+  });
+
+  const createCall = calls.find((call) => call[0] === "createDowntimeRequest");
+  assert.deepEqual(createCall, [
+    "createDowntimeRequest",
+    {
+      groupId: "group-a",
+      actorId: "actor-a",
+      actionId: craftActionId,
+      weeks: 3,
+      title: "Меч для похода",
+      description: "Обычная работа",
+      craftProject: {
+        version: 1,
+        outputs: [{ sourceType: "gear", sourceId: "longsword", quantity: 2 }],
+        hoursPerDay: 12,
+        ownedWorkshop: true,
+        predominantMaterialId: "steel",
+        blueprintIds: []
+      }
+    }
+  ]);
+  assert.equal(Object.hasOwn(createCall[1], "targetActionSelections"), false);
+  assert.equal(Object.hasOwn(createCall[1], "workdays"), false);
+  assert.equal(Object.hasOwn(createCall[1].craftProject, "priceGold"), false);
+  assert.equal(Object.hasOwn(createCall[1].craftProject, "rank"), false);
+  assert.equal(Object.hasOwn(createCall[1].craftProject, "progressGold"), false);
+  assert.equal(Object.hasOwn(createCall[1].craftProject, "workdays"), false);
+});
+
+test("CharacterDowntimeService requires a managed gear selection that exists in the current model", async (t) => {
+  const makePayload = (managed = true, sourceId = "longsword") => ({
+    actionId: "craft",
+    weeks: 1,
+    targetActionSelections: [{
+      actionId: "craft-item",
+      item: {
+        name: "Длинный меч",
+        sourceType: "gear",
+        sourceId,
+        rebreya: {
+          managed,
+          sourceType: "gear",
+          sourceId,
+          gearId: sourceId
+        }
+      }
+    }, {
+      actionId: "craft-quantity",
+      value: 1
+    }, {
+      actionId: "craft-hours",
+      value: 8
+    }]
+  });
+  const model = {
+    gear: [{ id: "longsword", name: "Длинный меч" }],
+    gearById: new Map([["longsword", { id: "longsword", name: "Длинный меч" }]]),
+    materials: [],
+    materialById: new Map()
+  };
+
+  await t.test("rejects an unmanaged selection", async () => {
+    const service = new CharacterDowntimeService(createModuleApi({ model }));
+    await assert.rejects(
+      service.createRequest(createActor({ id: "actor-a" }), makePayload(false)),
+      /managed/i
+    );
+  });
+
+  await t.test("rejects a source missing from the current model", async () => {
+    const service = new CharacterDowntimeService(createModuleApi({ model }));
+    await assert.rejects(
+      service.createRequest(createActor({ id: "actor-a" }), makePayload(true, "missing")),
+      /current model|not found/i
+    );
+  });
+});
+
+test("CharacterDowntimeService rejects current gear with magic markers", async () => {
+  const magicVariants = [
+    ...[
+      "magic",
+      "magical",
+      "magicItems",
+      "magicItem",
+      "магия",
+      "магический предмет"
+    ].map((sourceType) => ({
+      label: `source type alias: ${sourceType}`,
+      marker: { sourceType }
+    })),
+    {
+      label: "root magic marker",
+      marker: { isMagic: true }
+    }, {
+      label: "Rebreya source type marker",
+      marker: { flags: { "rebreya-main": { sourceType: "magicItems" } } }
+    }, {
+      label: "Rebreya magic item id marker",
+      marker: { flags: { "rebreya-main": { magicItemId: "magic-sword" } } }
+    }, {
+      label: "dnd5e magic marker",
+      marker: { flags: { dnd5e: { magical: true } } }
+    }, {
+      label: "dnd5e magic property",
+      marker: { system: { properties: { mgc: true } } }
+    }, {
+      label: "dnd5e magic rarity",
+      marker: { system: { rarity: "rare" } }
+    }
+  ];
+
+  for (const [index, { label, marker }] of magicVariants.entries()) {
+    const sourceId = `magic-${index}`;
+    const gear = { id: sourceId, name: "Магический предмет", ...marker };
+    const service = new CharacterDowntimeService(createModuleApi({
+      model: {
+        gear: [gear],
+        gearById: new Map([[sourceId, gear]]),
+        materials: [],
+        materialById: new Map()
+      }
+    }));
+    await assert.rejects(
+      service.createRequest(createActor({ id: "actor-a" }), {
+        actionId: "craft",
+        targetActionSelections: [{
+          actionId: "craft-item",
+          item: {
+            name: "Магический предмет",
+            sourceType: "gear",
+            sourceId,
+            rebreya: {
+              managed: true,
+              sourceType: "gear",
+              sourceId,
+              gearId: sourceId
+            }
+          }
+        }, {
+          actionId: "craft-quantity",
+          value: 1
+        }, {
+          actionId: "craft-hours",
+          value: 8
+        }]
+      }),
+      /magic/i,
+      `${label} must be rejected`
+    );
+  }
+});
+
+test("CharacterDowntimeService validates craft quantity and daily hours", async () => {
+  const gear = { id: "longsword", name: "Длинный меч" };
+  const model = {
+    gear: [gear],
+    gearById: new Map([[gear.id, gear]]),
+    materials: [],
+    materialById: new Map()
+  };
+  const baseSelections = [{
+    actionId: "craft-item",
+    item: {
+      name: "Длинный меч",
+      sourceType: "gear",
+      sourceId: gear.id,
+      rebreya: {
+        managed: true,
+        sourceType: "gear",
+        sourceId: gear.id,
+        gearId: gear.id
+      }
+    }
+  }];
+  const invalidCases = [{ quantity: 0, hours: 8, error: /quantity/i }, {
+    quantity: 1.5,
+    hours: 8,
+    error: /quantity/i
+  }, {
+    quantity: 1,
+    hours: 7,
+    error: /hours/i
+  }, {
+    quantity: 1,
+    hours: 17,
+    error: /hours/i
+  }, {
+    quantity: 1,
+    hours: 8.5,
+    error: /hours/i
+  }];
+
+  for (const entry of invalidCases) {
+    const service = new CharacterDowntimeService(createModuleApi({ model }));
+    await assert.rejects(
+      service.createRequest(createActor({ id: "actor-a" }), {
+        actionId: "craft",
+        targetActionSelections: [...baseSelections, {
+          actionId: "craft-quantity",
+          value: entry.quantity
+        }, {
+          actionId: "craft-hours",
+          value: entry.hours
+        }]
+      }),
+      entry.error
+    );
+  }
+});
+
+test("CharacterDowntimeService omits an unresolved predominant material and defaults optional craft choices", async () => {
+  const gear = {
+    id: "longsword",
+    name: "Длинный меч",
+    predominantMaterialId: "missing-material"
+  };
+  const calls = [];
+  const service = new CharacterDowntimeService(createModuleApi({
+    calls,
+    model: {
+      gear: [gear],
+      gearById: new Map([[gear.id, gear]]),
+      materials: [],
+      materialById: new Map()
+    }
+  }));
+
+  await service.createRequest(createActor({ id: "actor-a" }), {
+    actionId: "craft",
+    targetActionSelections: [{
+      actionId: "craft-item",
+      item: {
+        name: "Длинный меч",
+        sourceType: "gear",
+        sourceId: gear.id,
+        rebreya: {
+          managed: true,
+          sourceType: "gear",
+          sourceId: gear.id,
+          gearId: gear.id
+        }
+      }
+    }]
+  });
+
+  const craftProject = calls.find((call) => call[0] === "createDowntimeRequest")[1].craftProject;
+  assert.deepEqual(craftProject, {
+    version: 1,
+    outputs: [{ sourceType: "gear", sourceId: gear.id, quantity: 1 }],
+    hoursPerDay: 8,
+    ownedWorkshop: false,
+    blueprintIds: []
+  });
 });
 
 test("RebreyaMainModule exposes character downtime service for dnd5e sheet parts", async () => {
