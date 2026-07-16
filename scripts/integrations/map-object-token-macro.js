@@ -7,6 +7,7 @@ const DEFAULT_INPUT = Object.freeze({
   damageThreshold: 0,
   size: 1
 });
+const INVALID_INPUT = Symbol("invalid-map-object-input");
 
 function escapeHtml(value) {
   return String(value)
@@ -28,13 +29,13 @@ function readMapObjectForm(form) {
 }
 
 function mapObjectFormContent() {
-  return `<form class="rebreya-map-object-token-form">
-    <label>Name<input name="name" type="text" value="${escapeHtml(DEFAULT_INPUT.name)}" required></label>
-    <label>HP<input name="hp" type="number" value="${escapeHtml(DEFAULT_INPUT.hp)}" min="1" max="1000000" step="1" required></label>
-    <label>AC<input name="ac" type="number" value="${escapeHtml(DEFAULT_INPUT.ac)}" min="0" max="100" step="1" required></label>
-    <label>Damage threshold<input name="damageThreshold" type="number" value="${escapeHtml(DEFAULT_INPUT.damageThreshold)}" min="0" max="1000000" step="1" required></label>
-    <label>Size<input name="size" type="number" value="${escapeHtml(DEFAULT_INPUT.size)}" min="0.25" max="20" step="0.25" required></label>
-  </form>`;
+  return `<div class="rebreya-map-object-token-form">
+    <label>Название<input name="name" type="text" value="${escapeHtml(DEFAULT_INPUT.name)}"></label>
+    <label>ОЗ<input name="hp" type="number" value="${escapeHtml(DEFAULT_INPUT.hp)}"></label>
+    <label>Класс доспеха<input name="ac" type="number" value="${escapeHtml(DEFAULT_INPUT.ac)}"></label>
+    <label>Порог урона<input name="damageThreshold" type="number" value="${escapeHtml(DEFAULT_INPUT.damageThreshold)}"></label>
+    <label>Размер в клетках<input name="size" type="number" value="${escapeHtml(DEFAULT_INPUT.size)}"></label>
+  </div>`;
 }
 
 export async function promptMapObjectInput({
@@ -46,16 +47,16 @@ export async function promptMapObjectInput({
   }
 
   const rawInput = await DialogV2.wait({
-    window: { title: "Create map object" },
+    window: { title: "Создать объект на карте" },
     content: mapObjectFormContent(),
     buttons: [{
       action: "place",
-      label: "Place",
+      label: "Разместить",
       default: true,
       callback: (_event, button, _dialog) => readMapObjectForm(button?.form)
     }, {
       action: "cancel",
-      label: "Cancel",
+      label: "Отмена",
       callback: () => null
     }]
   });
@@ -67,9 +68,9 @@ export async function promptMapObjectInput({
   try {
     return normalizeMapObjectInput(rawInput);
   }
-  catch (error) {
-    notifyError?.(error?.message ?? "Invalid map object input");
-    return null;
+  catch {
+    notifyError?.("Некорректные параметры объекта.");
+    return INVALID_INPUT;
   }
 }
 
@@ -94,7 +95,10 @@ function getLocalScenePoint(event, canvas) {
 
 function snapScenePoint(point, grid) {
   if (typeof grid?.getSnappedPoint === "function") {
-    const snapped = grid.getSnappedPoint(point);
+    const snapped = grid.getSnappedPoint(point, {
+      mode: globalThis.CONST?.GRID_SNAPPING_MODES?.CENTER ?? 0x1,
+      resolution: 1
+    });
     const x = Number(snapped?.x);
     const y = Number(snapped?.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
@@ -214,19 +218,19 @@ export async function runMapObjectTokenMacro({
   notifications = globalThis.ui?.notifications
 } = {}) {
   if (!game?.user?.isGM) {
-    const error = new Error("Only a GM can create map objects.");
+    const error = new Error("Создавать объекты на карте может только мастер.");
     notify(notifications, "error", error.message);
     throw error;
   }
 
   const scene = canvas?.scene ?? game?.scenes?.active;
   if (!scene) {
-    const error = new Error("An active scene is required to create a map object.");
+    const error = new Error("Для создания объекта нужна активная сцена.");
     notify(notifications, "error", error.message);
     throw error;
   }
   if (typeof service?.createToken !== "function") {
-    const error = new TypeError("service.createToken is required");
+    const error = new TypeError("Сервис создания объектов недоступен.");
     notify(notifications, "error", error.message);
     throw error;
   }
@@ -236,14 +240,17 @@ export async function runMapObjectTokenMacro({
       DialogV2,
       notifyError: (message) => notify(notifications, "error", message)
     });
-    if (!input) {
-      notify(notifications, "info", "Map object creation cancelled.");
+    if (input === INVALID_INPUT) {
+      return undefined;
+    }
+    if (input === null) {
+      notify(notifications, "info", "Создание объекта отменено.");
       return null;
     }
 
     const point = await waitForMapObjectPlacement({ canvas, documentTarget });
     if (!point) {
-      notify(notifications, "info", "Map object creation cancelled.");
+      notify(notifications, "info", "Создание объекта отменено.");
       return null;
     }
 
@@ -252,11 +259,11 @@ export async function runMapObjectTokenMacro({
       point,
       gridSize: canvas?.grid?.size
     });
-    notify(notifications, "info", "Map object created.");
+    notify(notifications, "info", "Объект создан.");
     return token;
   }
   catch (error) {
-    notify(notifications, "error", `Map object creation failed: ${error?.message ?? "Unknown error"}`);
+    notify(notifications, "error", `Не удалось создать объект: ${error?.message ?? "неизвестная ошибка"}`);
     throw error;
   }
 }

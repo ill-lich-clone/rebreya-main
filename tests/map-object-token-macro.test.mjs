@@ -31,9 +31,11 @@ function createDialogV2(respond) {
 
 function createEmitter() {
   const listeners = new Map();
+  const registrations = new Map();
   return {
     on(event, listener) {
       listeners.set(event, listener);
+      registrations.set(event, (registrations.get(event) ?? 0) + 1);
     },
     off(event, listener) {
       if (listeners.get(event) === listener) {
@@ -48,6 +50,9 @@ function createEmitter() {
     },
     listenerCount() {
       return listeners.size;
+    },
+    registrationCount(event) {
+      return registrations.get(event) ?? 0;
     }
   };
 }
@@ -104,7 +109,7 @@ async function waitForStageListener(stage) {
   throw new Error("placement listener was not registered");
 }
 
-test("promptMapObjectInput opens the documented fields with their defaults and normalizes submitted values", async () => {
+test("promptMapObjectInput opens one unconstrained Russian form surface with documented defaults and normalizes submitted values", async () => {
   const dialog = createDialogV2((options) => options.buttons[0].callback(null, {
     form: createForm({
       name: "  Portcullis  ",
@@ -124,7 +129,14 @@ test("promptMapObjectInput opens the documented fields with their defaults and n
     damageThreshold: 10,
     size: 1.5
   });
-  assert.equal(dialog.options.window.title, "Create map object");
+  assert.equal(dialog.options.window.title, "Создать объект на карте");
+  assert.equal(dialog.options.buttons[0].label, "Разместить");
+  assert.equal(dialog.options.buttons[1].label, "Отмена");
+  assert.doesNotMatch(dialog.options.content, /<form\b/u);
+  assert.doesNotMatch(dialog.options.content, /\s(?:required|min|max|step)(?:=|\s|>)/u);
+  for (const label of ["Название", "ОЗ", "Класс доспеха", "Порог урона", "Размер в клетках"]) {
+    assert.match(dialog.options.content, new RegExp(label, "u"));
+  }
   for (const field of ["name", "hp", "ac", "damageThreshold", "size"]) {
     assert.match(dialog.options.content, new RegExp(`name="${field}"`, "u"));
   }
@@ -155,8 +167,8 @@ test("promptMapObjectInput reports normalizer failures and does not return inval
     notifyError: (message) => errors.push(message)
   });
 
-  assert.equal(result, null);
-  assert.deepEqual(errors, ["hp must be an integer from 1 to 1000000"]);
+  assert.notEqual(result, null);
+  assert.deepEqual(errors, ["Некорректные параметры объекта."]);
 });
 
 test("waitForMapObjectPlacement resolves the first primary mousedown to a snapped v13 scene point", async () => {
@@ -177,6 +189,37 @@ test("waitForMapObjectPlacement resolves the first primary mousedown to a snappe
 
   assert.deepEqual(await placement, { x: 100, y: 250 });
   assertPlacementListenersRemoved(environment);
+});
+
+test("waitForMapObjectPlacement passes Foundry v13 center snapping options", async () => {
+  const originalConst = globalThis.CONST;
+  globalThis.CONST = {
+    ...originalConst,
+    GRID_SNAPPING_MODES: { CENTER: 77 }
+  };
+  const environment = createPlacementEnvironment({
+    grid: {
+      size: 100,
+      getSnappedPoint(point, options) {
+        assert.deepEqual(options, { mode: 77, resolution: 1 });
+        return { x: point.x - 18, y: point.y + 4 };
+      }
+    }
+  });
+
+  try {
+    const placement = waitForMapObjectPlacement(environment);
+    environment.stage.emit("mousedown", {
+      button: 0,
+      data: { getLocalPosition: () => ({ x: 118, y: 246 }) }
+    });
+
+    assert.deepEqual(await placement, { x: 100, y: 250 });
+    assertPlacementListenersRemoved(environment);
+  }
+  finally {
+    globalThis.CONST = originalConst;
+  }
 });
 
 test("waitForMapObjectPlacement supports direct local-position events and grid-size rounding", async () => {
@@ -269,21 +312,23 @@ test("runMapObjectTokenMacro rejects non-GM users and missing active scenes", as
     canvas: {},
     DialogV2: nonGmDialog.DialogV2,
     notifications: { error: (message) => errors.push(message) }
-  }), /GM/u);
+  }), /мастер/u);
   assert.equal(nonGmDialog.options, null);
-  assert.deepEqual(errors, ["Only a GM can create map objects."]);
+  assert.deepEqual(errors, ["Создавать объекты на карте может только мастер."]);
 
   const missingSceneDialog = createDialogV2(() => {
     throw new Error("dialog should not open");
   });
+  const missingSceneErrors = [];
   await assert.rejects(runMapObjectTokenMacro({
     service: { createToken() {} },
     game: { user: { isGM: true }, scenes: { active: null } },
     canvas: {},
     DialogV2: missingSceneDialog.DialogV2,
-    notifications: { error() {} }
-  }), /active scene/u);
+    notifications: { error: (message) => missingSceneErrors.push(message) }
+  }), /активная сцена/u);
   assert.equal(missingSceneDialog.options, null);
+  assert.deepEqual(missingSceneErrors, ["Для создания объекта нужна активная сцена."]);
 });
 
 test("runMapObjectTokenMacro chains the prompt, placement, service, and success notification", async () => {
@@ -322,40 +367,67 @@ test("runMapObjectTokenMacro chains the prompt, placement, service, and success 
       gridSize: 100
     }
   }]);
-  assert.deepEqual(messages, ["Map object created."]);
+  assert.deepEqual(messages, ["Объект создан."]);
   assertPlacementListenersRemoved(environment);
 });
 
-test("runMapObjectTokenMacro cancels without registering placement listeners after a cancelled or invalid form", async () => {
-  for (const respond of [
-    () => null,
-    (options) => options.buttons[0].callback(null, {
-      form: createForm({ name: "Broken", hp: "0", ac: "10", damageThreshold: "0", size: "1" })
-    })
-  ]) {
-    const environment = createPlacementEnvironment();
-    const dialog = createDialogV2(respond);
-    const info = [];
-    const errors = [];
-    const result = await runMapObjectTokenMacro({
-      service: { async createToken() { throw new Error("service should not run"); } },
-      game: { user: { isGM: true }, scenes: { active: { id: "scene-1" } } },
-      canvas: environment.canvas,
-      DialogV2: dialog.DialogV2,
-      documentTarget: environment.documentTarget,
-      notifications: {
-        info: (message) => info.push(message),
-        error: (message) => errors.push(message)
-      }
-    });
+test("runMapObjectTokenMacro reports exactly one cancellation for an explicitly cancelled form", async () => {
+  const environment = createPlacementEnvironment();
+  const dialog = createDialogV2(() => null);
+  const info = [];
+  const errors = [];
 
-    assert.equal(result, null);
-    assert.deepEqual(info, ["Map object creation cancelled."]);
-    assertPlacementListenersRemoved(environment);
-    if (errors.length) {
-      assert.deepEqual(errors, ["hp must be an integer from 1 to 1000000"]);
+  const result = await runMapObjectTokenMacro({
+    service: { async createToken() { throw new Error("service should not run"); } },
+    game: { user: { isGM: true }, scenes: { active: { id: "scene-1" } } },
+    canvas: environment.canvas,
+    DialogV2: dialog.DialogV2,
+    documentTarget: environment.documentTarget,
+    notifications: {
+      info: (message) => info.push(message),
+      error: (message) => errors.push(message)
     }
+  });
+
+  assert.equal(result, null);
+  assert.deepEqual(info, ["Создание объекта отменено."]);
+  assert.deepEqual(errors, []);
+  assert.equal(environment.stage.registrationCount("mousedown"), 0);
+  assertPlacementListenersRemoved(environment);
+});
+
+test("runMapObjectTokenMacro reports exactly one error and never starts placement for invalid input", async () => {
+  const environment = createPlacementEnvironment();
+  const dialog = createDialogV2((options) => options.buttons[0].callback(null, {
+    form: createForm({ name: "Broken", hp: "0", ac: "10", damageThreshold: "0", size: "1" })
+  }));
+  const info = [];
+  const errors = [];
+  const runner = runMapObjectTokenMacro({
+    service: { async createToken() { throw new Error("service should not run"); } },
+    game: { user: { isGM: true }, scenes: { active: { id: "scene-1" } } },
+    canvas: environment.canvas,
+    DialogV2: dialog.DialogV2,
+    documentTarget: environment.documentTarget,
+    notifications: {
+      info: (message) => info.push(message),
+      error: (message) => errors.push(message)
+    }
+  });
+
+  for (let attempt = 0; attempt < 10 && errors.length === 0; attempt += 1) {
+    await Promise.resolve();
   }
+  await Promise.resolve();
+  if (environment.stage.listenerCount() > 0) {
+    environment.documentTarget.emit("keydown", { key: "Escape" });
+  }
+
+  assert.equal(await runner, undefined);
+  assert.deepEqual(errors, ["Некорректные параметры объекта."]);
+  assert.deepEqual(info, []);
+  assert.equal(environment.stage.registrationCount("mousedown"), 0);
+  assertPlacementListenersRemoved(environment);
 });
 
 test("runMapObjectTokenMacro reports and rethrows service errors", async () => {
@@ -379,6 +451,6 @@ test("runMapObjectTokenMacro reports and rethrows service errors", async () => {
   });
 
   await assert.rejects(runner, /creation failed/u);
-  assert.deepEqual(errors, ["Map object creation failed: creation failed"]);
+  assert.deepEqual(errors, ["Не удалось создать объект: creation failed"]);
   assertPlacementListenersRemoved(environment);
 });
