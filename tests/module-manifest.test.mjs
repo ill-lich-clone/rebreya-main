@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 
+const RELEASED_CACHE_VERSION = "1\\.4\\.96";
+
 function compareVersion(a, b) {
   const left = String(a).split(".").map((part) => Number.parseInt(part, 10) || 0);
   const right = String(b).split(".").map((part) => Number.parseInt(part, 10) || 0);
@@ -38,10 +40,11 @@ test("module manifest loads a cache-busted entrypoint for the current version", 
   const entrypointSource = await readFile(new URL(expectedEntrypoint, manifestUrl), "utf8");
   const expectedSource = [
     "// @rebreya-role active-version-forwarder",
-    'import "./main.js?v=1.4.96-craft-durability";',
+    'import "./main.js?v=1.4.97-map-object-token";',
     ""
   ].join("\n");
 
+  assert.equal(manifest.version, "1.4.97");
   assert.equal(manifest.version, latestEntrypointVersion);
   assert.deepEqual(manifest.esmodules, [expectedEntrypoint]);
   assert.equal(entrypointSource, expectedSource);
@@ -172,22 +175,18 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
   }
 });
 
-test("module stylesheet cache bust uses the live module style version", async () => {
-  const manifestUrl = new URL("../module.json", import.meta.url);
-  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+test("module stylesheet cache bust preserves the released item upgrade version", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
-  const escapedVersion = manifest.version.replaceAll(".", "\\.");
+  const escapedVersion = RELEASED_CACHE_VERSION;
 
   assert.match(entrypointSource, new RegExp(`const MODULE_STYLE_VERSION = "${escapedVersion}-item-upgrade-slots";`, "u"));
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
 
-test("module entrypoint registers the live magic weapon template hook", async () => {
-  const manifestUrl = new URL("../module.json", import.meta.url);
-  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+test("module entrypoint preserves the released magic weapon template cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
-  const escapedVersion = manifest.version.replaceAll(".", "\\.");
+  const escapedVersion = RELEASED_CACHE_VERSION;
 
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook/u);
   assert.match(
@@ -197,11 +196,9 @@ test("module entrypoint registers the live magic weapon template hook", async ()
   assert.match(entrypointSource, /registerMagicWeaponTemplateHook\(moduleApi\)/u);
 });
 
-test("gear compendium import uses the firearm activity cache bust", async () => {
-  const manifestUrl = new URL("../module.json", import.meta.url);
-  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+test("gear compendium import preserves the released firearm activity cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
-  const escapedVersion = manifest.version.replaceAll(".", "\\.");
+  const escapedVersion = RELEASED_CACHE_VERSION;
 
   assert.match(
     entrypointSource,
@@ -209,12 +206,10 @@ test("gear compendium import uses the firearm activity cache bust", async () => 
   );
 });
 
-test("combat automation imports use the current cache busts", async () => {
-  const manifestUrl = new URL("../module.json", import.meta.url);
-  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+test("combat automation imports preserve their released cache busts", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
   const statusServiceSource = await readFile(new URL("../scripts/combat/status-service.js", import.meta.url), "utf8");
-  const escapedVersion = manifest.version.replaceAll(".", "\\.");
+  const escapedVersion = RELEASED_CACHE_VERSION;
 
   assert.match(
     entrypointSource,
@@ -246,13 +241,11 @@ test("combat automation imports use the current cache busts", async () => {
   );
 });
 
-test("held item integrations use the current module cache bust", async () => {
-  const manifestUrl = new URL("../module.json", import.meta.url);
-  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+test("held item integrations preserve their released cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
   const sheetSource = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
   const attackSource = await readFile(new URL("../scripts/combat/attack-service.js", import.meta.url), "utf8");
-  const escapedVersion = manifest.version.replaceAll(".", "\\.");
+  const escapedVersion = RELEASED_CACHE_VERSION;
 
   assert.match(
     entrypointSource,
@@ -272,12 +265,10 @@ test("held item integrations use the current module cache bust", async () => {
   );
 });
 
-test("item upgrade service and sheet integration are wired into the live entrypoint", async () => {
-  const manifestUrl = new URL("../module.json", import.meta.url);
-  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+test("item upgrade service and sheet integration preserve their released cache bust", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
   const sheetSource = await readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8");
-  const escapedVersion = manifest.version.replaceAll(".", "\\.");
+  const escapedVersion = RELEASED_CACHE_VERSION;
 
   assert.match(
     entrypointSource,

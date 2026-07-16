@@ -49,6 +49,7 @@ import {
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
 } from "./data/inventory-service.js?v=1.4.96-durable-transfer";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.96-durability";
+import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService } from "./data/hero-doll-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
@@ -103,6 +104,7 @@ import {
 import { patchEffectMacroCombatHooks } from "./integrations/effectmacro-compat.js";
 import { patchSmAirshipRenderSettingsHook } from "./integrations/sm-airship-compat.js";
 import { registerInventorySyncHooks } from "./integrations/inventory-sync.js?v=1.4.96-durable-transfer";
+import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js?v=1.4.97-map-object-token";
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
@@ -780,6 +782,12 @@ export class RebreyaMainModule {
     this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
     this.durabilityService = new DurabilityService(this);
+    this.mapObjectTokenService = new MapObjectTokenService({
+      gameProvider: () => globalThis.game,
+      actorProvider: () => globalThis.Actor,
+      macroProvider: () => globalThis.Macro,
+      isActiveGmClient
+    });
     this.lootClaimService = new LootClaimService({
       getMessage: ({ messageId, lootId }) => (
         (messageId ? globalThis.game?.messages?.get?.(messageId) : null)
@@ -859,6 +867,13 @@ export class RebreyaMainModule {
     this.tradeRouteApps = new Map();
     this.referenceApps = new Map();
     this.#registerTypedSocketCommands();
+  }
+
+  createMapObjectToken(options = {}) {
+    return runMapObjectTokenMacro({
+      service: this.mapObjectTokenService,
+      ...options
+    });
   }
 
   #registerTypedSocketCommands() {
@@ -1074,6 +1089,12 @@ export class RebreyaMainModule {
     });
 
     await this.#syncManagedCompendia(model);
+    try {
+      await this.mapObjectTokenService.syncManagedDocuments();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to sync managed map object documents.`, error);
+    }
     try {
       await this.traderService.cleanupLegacyManagedTraders();
     }
