@@ -27,6 +27,7 @@ globalThis.foundry ??= {
 };
 
 const { RuneKnightAutomationService } = await import("../scripts/combat/rune-knight-automation-service.js");
+const { ReactionQueueService } = await import("../scripts/combat/reaction-queue-service.js");
 
 function createItem({ id, automation, spent = 0, max = "", delay = null, type = "feat", identifier = "" }) {
   const item = {
@@ -65,7 +66,10 @@ function createActor({ level = 15, prof = 5, items = [], effects = [] } = {}) {
   const actor = {
     id: "hero",
     uuid: "Actor.hero",
-    system: { attributes: { prof } },
+    system: {
+      attributes: { prof },
+      abilities: { con: { mod: 3 } }
+    },
     items: [classItem, ...items],
     effects,
     statuses: new Set(),
@@ -259,6 +263,165 @@ test("Fire tool expertise, Hill poison saves, and Storm surprise immunity are co
   assert.equal(service.prepareActiveEffectCreate(surprised), false);
   actor.statuses.add("incapacitated");
   assert.equal(service.prepareActiveEffectCreate(surprised), true);
+});
+
+function createStoneHarness({ promptAccepted = true, reactionConsumed = true, capabilityAvailable = true } = {}) {
+  const stone = createItem({ id: "stone", automation: "stone", spent: 0, max: 1 });
+  const reactor = createActor({ level: 10, prof: 4, items: [stone] });
+  reactor.name = "Rune Knight";
+  const target = createActor({ level: 1, prof: 2 });
+  target.id = "target";
+  target.uuid = "Actor.target";
+  target.name = "Target";
+  const reactorToken = { id: "reactor-token", uuid: "Scene.scene.Token.reactor", actor: reactor, name: reactor.name };
+  const targetToken = { id: "target-token", uuid: "Scene.scene.Token.target", actor: target, name: target.name };
+  const candidate = {
+    id: reactor.id,
+    actor: reactor,
+    actorUuid: reactor.uuid,
+    token: reactorToken,
+    tokenUuid: reactorToken.uuid,
+    item: stone,
+    itemUuid: stone.uuid,
+    ownerUserIds: ["owner"]
+  };
+  const capabilityIndex = {
+    provider: null,
+    hasCalls: 0,
+    registerProvider(kind, provider) {
+      assert.equal(kind, "rune-stone");
+      this.provider = provider;
+      return this;
+    },
+    has(kind) {
+      assert.equal(kind, "rune-stone");
+      this.hasCalls += 1;
+      return capabilityAvailable;
+    },
+    list(kind) {
+      assert.equal(kind, "rune-stone");
+      return capabilityAvailable ? [candidate] : [];
+    }
+  };
+  const calls = { distance: 0, visibility: 0, saves: 0, reactions: 0 };
+  const moduleApi = {
+    reactionCapabilityIndex: capabilityIndex,
+    combatAttackService: {
+      async consumeReaction() {
+        calls.reactions += 1;
+        return { consumed: reactionConsumed };
+      }
+    }
+  };
+  const combat = {
+    id: "combat",
+    round: 2,
+    turn: 1,
+    turns: [{ actor: reactor, token: reactorToken }, { actor: target, token: targetToken }]
+  };
+  const queue = new ReactionQueueService(moduleApi, {
+    capabilityIndex,
+    isCoordinator: () => true,
+    combatProvider: () => combat,
+    promptCandidate: async () => ({ accepted: promptAccepted }),
+    setTimeoutFn: () => 1,
+    clearTimeoutFn: () => {}
+  });
+  moduleApi.reactionQueueService = queue;
+  const saveResults = [false, true];
+  const service = new RuneKnightAutomationService(moduleApi, {
+    distanceFeet() {
+      calls.distance += 1;
+      return 25;
+    },
+    isVisible() {
+      calls.visibility += 1;
+      return true;
+    },
+    async rollSave() {
+      calls.saves += 1;
+      return saveResults.shift() ?? true;
+    }
+  });
+  return {
+    service,
+    queue,
+    capabilityIndex,
+    calls,
+    stone,
+    reactor,
+    reactorToken,
+    target,
+    targetToken,
+    combat
+  };
+}
+
+test("Stone Rune uses the shared reaction queue and applies its failed-save stupor", async () => {
+  const harness = createStoneHarness();
+  await harness.queue.initialize();
+  await harness.service.initialize();
+
+  const indexed = harness.capabilityIndex.provider({
+    actor: harness.reactor,
+    token: harness.reactorToken
+  });
+  assert.equal(indexed.length, 1);
+  const result = await harness.service.handleCombatTurnChange(harness.combat, {
+    previous: { combatant: { actor: harness.target, token: harness.targetToken }, round: 2, turn: 0 }
+  });
+
+  assert.equal(result.accepted.length, 1);
+  assert.equal(harness.stone.system.uses.spent, 1);
+  assert.equal(harness.calls.reactions, 1);
+  assert.equal(harness.calls.saves, 1);
+  const effect = harness.target.createdEffects[0];
+  assert.equal(effect.duration.seconds, 60);
+  assert.deepEqual(effect.statuses, ["charmed", "incapacitated"]);
+  assert.equal(effect.flags["rebreya-main"].runeKnight.saveDC, 15);
+  assert.equal(effect.flags["rebreya-main"].runeKnight.sourceItemUuid, harness.stone.uuid);
+  assert.ok(effect.changes.some((change) => change.key === "system.attributes.movement.walk" && change.value === "0"));
+  assert.ok(effect.changes.some((change) => change.key === "flags.midi-qol.OverTime"));
+
+  await harness.service.handleCombatTurnChange(harness.combat, {
+    previous: { combatant: { actor: harness.target, token: harness.targetToken }, round: 2, turn: 1 }
+  });
+  assert.equal(harness.calls.saves, 2);
+  assert.deepEqual(harness.target.effects, []);
+});
+
+test("Stone Rune timeout and failed ordinary-reaction payment roll back all state", async () => {
+  const declined = createStoneHarness({ promptAccepted: false });
+  await declined.service.initialize();
+  const declineResult = await declined.service.handleCombatTurnChange(declined.combat, {
+    previous: { combatant: { actor: declined.target, token: declined.targetToken }, round: 2, turn: 0 }
+  });
+  assert.equal(declineResult.accepted.length, 0);
+  assert.equal(declined.stone.system.uses.spent, 0);
+  assert.equal(declined.calls.reactions, 0);
+  assert.equal(declined.target.createdEffects.length, 0);
+
+  const reactionFailure = createStoneHarness({ reactionConsumed: false });
+  await reactionFailure.service.initialize();
+  const failedResult = await reactionFailure.service.handleCombatTurnChange(reactionFailure.combat, {
+    previous: { combatant: { actor: reactionFailure.target, token: reactionFailure.targetToken }, round: 2, turn: 0 }
+  });
+  assert.equal(failedResult.accepted.length, 0);
+  assert.equal(reactionFailure.stone.system.uses.spent, 0);
+  assert.deepEqual(reactionFailure.target.effects, []);
+});
+
+test("Stone Rune capability guard performs zero geometry when no reactor exists", async () => {
+  const harness = createStoneHarness({ capabilityAvailable: false });
+  await harness.service.initialize();
+
+  const result = await harness.service.handleCombatTurnChange(harness.combat, {
+    previous: { combatant: { actor: harness.target, token: harness.targetToken }, round: 2, turn: 0 }
+  });
+
+  assert.equal(result, true);
+  assert.equal(harness.calls.distance, 0);
+  assert.equal(harness.calls.visibility, 0);
 });
 
 test("Rune Knight hooks stay actor-local", async () => {

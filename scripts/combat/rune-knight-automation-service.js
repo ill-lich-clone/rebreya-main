@@ -2,6 +2,18 @@ import { MODULE_ID } from "../constants.js";
 
 const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
 const EFFECT_MODE_ADD = 2;
+const EFFECT_MODE_CUSTOM = 0;
+const EFFECT_MODE_OVERRIDE = 5;
+const STONE_REACTION_KIND = "rune-stone";
+const STONE_PROVIDER_ID = "rune-knight-stone";
+const STONE_RANGE_FEET = 30;
+const MOVEMENT_PATHS = Object.freeze([
+  "walk",
+  "fly",
+  "swim",
+  "climb",
+  "burrow"
+]);
 const RUNE_IDS = new Set(["stone", "frost", "cloud", "fire", "hill", "storm"]);
 const SELF_ACTIVATION_IDS = new Set(["frost", "hill", "storm"]);
 const RUNE_RECOVERY = Object.freeze([
@@ -23,8 +35,9 @@ const MIGRATION_AUTOMATION_BY_NAME = new Map([
   ["мастер рун", "master-of-runes"]
 ]);
 
-function cleanText(value) {
-  return String(value ?? "").trim();
+function cleanText(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || String(fallback ?? "").trim();
 }
 
 function normalizeText(value) {
@@ -96,6 +109,42 @@ function actorKey(actor) {
 
 function documentId(document) {
   return cleanText(document?.id ?? document?._id);
+}
+
+function documentUuid(document) {
+  return cleanText(document?.uuid ?? document?.document?.uuid);
+}
+
+function tokenActor(token) {
+  return token?.actor ?? token?.document?.actor ?? null;
+}
+
+function tokenCenter(token) {
+  const target = token?.object ?? token;
+  if (target?.center && Number.isFinite(Number(target.center.x)) && Number.isFinite(Number(target.center.y))) {
+    return target.center;
+  }
+  if (Number.isFinite(Number(target?.x)) && Number.isFinite(Number(target?.y))) {
+    return { x: Number(target.x), y: Number(target.y) };
+  }
+  return null;
+}
+
+function firstActivityId(item) {
+  return documentId(collectionValues(item?.system?.activities)[0]);
+}
+
+function ownerUserIds(actor) {
+  return collectionValues(globalThis.game?.users)
+    .filter((user) => {
+      if (!user?.id || user?.active === false) return false;
+      if (typeof actor?.testUserPermission === "function") {
+        return actor.testUserPermission(user, "OWNER") === true;
+      }
+      const ownership = actor?.ownership ?? actor?._source?.ownership ?? {};
+      return Number(ownership[user.id] ?? ownership.default ?? 0) >= 3;
+    })
+    .map((user) => cleanText(user.id));
 }
 
 function automationId(document) {
@@ -227,9 +276,22 @@ export class RuneKnightAutomationService {
     this._repairActorPromises = new Map();
     this._pendingRepairOptions = new Map();
     this._actorFeatureCache = new Map();
+    this._stoneTriggers = new Map();
   }
 
   async initialize() {
+    const capabilityIndex = this.moduleApi?.reactionCapabilityIndex;
+    if (typeof capabilityIndex?.registerProvider === "function") {
+      capabilityIndex.registerProvider(
+        STONE_REACTION_KIND,
+        ({ actor, token }) => this.#stoneCapabilitiesForActor(actor, token),
+        { providerId: STONE_PROVIDER_ID }
+      );
+    }
+    const queue = this.moduleApi?.reactionQueueService;
+    if (typeof queue?.registerType === "function") {
+      queue.registerType(STONE_REACTION_KIND, this.#stoneReactionProvider());
+    }
     return true;
   }
 
@@ -412,6 +474,344 @@ export class RuneKnightAutomationService {
     const actor = actorFromEmbeddedDocument(effect);
     if (!actor || !this.#actorHasFeature(actor, "storm") || actorIsIncapacitated(actor)) return true;
     return statusIds(effect).has("surprised") ? false : true;
+  }
+
+  async handleCombatTurnChange(combat, updateData = {}, updateOptions = {}) {
+    const ended = this.#endedTurnCombatant(combat, updateData, updateOptions);
+    const targetActor = ended?.actor ?? tokenActor(ended?.token);
+    const targetToken = ended?.token ?? ended?.tokenDocument ?? null;
+    if (!isActorDocument(targetActor)) return true;
+
+    await this.#resolveStoneRepeatSave(targetActor);
+
+    const capabilityIndex = this.moduleApi?.reactionCapabilityIndex;
+    if (typeof capabilityIndex?.has !== "function" || !capabilityIndex.has(STONE_REACTION_KIND)) {
+      return true;
+    }
+    const queue = this.moduleApi?.reactionQueueService;
+    if (typeof queue?.resolve !== "function") return true;
+
+    const round = Math.max(0, Math.floor(numberValue(
+      updateData?.previous?.round ?? updateOptions?.previous?.round ?? combat?.round,
+      0
+    )));
+    const turn = Math.max(-1, Math.floor(numberValue(
+      updateData?.previous?.turn ?? updateOptions?.previous?.turn ?? combat?.turn,
+      -1
+    )));
+    const combatId = cleanText(combat?.uuid ?? combat?.id ?? combat?._id ?? "combat");
+    const targetActorUuid = documentUuid(targetActor) || actorKey(targetActor);
+    const targetTokenUuid = documentUuid(targetToken);
+    const triggerId = `${combatId}:${round}:${turn}:${targetTokenUuid || targetActorUuid}:stone-end-turn`;
+    this._stoneTriggers.set(triggerId, { targetActor, targetToken, active: true });
+    try {
+      return await queue.resolve({
+        triggerId,
+        kind: STONE_REACTION_KIND,
+        context: {
+          triggerId,
+          combatId,
+          round,
+          turn,
+          targetActorUuid,
+          targetTokenUuid,
+          triggerActive: true
+        }
+      });
+    }
+    finally {
+      this._stoneTriggers.delete(triggerId);
+    }
+  }
+
+  #stoneCapabilitiesForActor(actor, token) {
+    if (!isActorDocument(actor) || actorIsIncapacitated(actor)) return [];
+    const item = collectionValues(actor?.items).find((entry) => (
+      automationId(entry) === "stone" && this.#itemHasUse(entry)
+    ));
+    if (!item) return [];
+    return [{
+      actorUuid: documentUuid(actor) || actorKey(actor),
+      tokenUuid: documentUuid(token),
+      itemUuid: documentUuid(item),
+      activityId: firstActivityId(item),
+      ownerUserIds: ownerUserIds(actor)
+    }];
+  }
+
+  #stoneReactionProvider() {
+    return {
+      listCandidates: (_context, capabilityIndex) => capabilityIndex?.list?.(STONE_REACTION_KIND) ?? [],
+      isTriggerValid: (context) => this.#stoneTrigger(context)?.active !== false,
+      revalidateCandidate: (candidate, context) => this.#canUseStoneReaction(
+        this.#normalizeStoneCandidate(candidate),
+        this.#stoneTrigger(context)
+      ),
+      buildPrompt: (candidate, context) => {
+        const normalized = this.#normalizeStoneCandidate(candidate);
+        const trigger = this.#stoneTrigger(context);
+        return {
+          title: "Каменная руна",
+          body: `Пробудить Каменную руну против ${cleanText(trigger?.targetActor?.name, "завершившего ход существа")}?`,
+          acceptLabel: "Пробудить руну",
+          declineLabel: "Пропустить"
+        };
+      },
+      pay: (candidate) => this.#payStoneReaction(this.#normalizeStoneCandidate(candidate)),
+      apply: (candidate, _choice, context) => this.#applyStoneReaction(
+        this.#normalizeStoneCandidate(candidate),
+        this.#stoneTrigger(context)
+      ),
+      rollback: (candidate, transaction) => this.#rollbackStoneReaction(
+        this.#normalizeStoneCandidate(candidate),
+        transaction
+      ),
+      serializeEffect: (effect) => ({
+        applied: effect?.applied === true,
+        saved: effect?.saved === true,
+        effectUuid: cleanText(effect?.effectUuid)
+      })
+    };
+  }
+
+  #normalizeStoneCandidate(candidate = {}) {
+    const item = candidate.item
+      ?? globalThis.fromUuidSync?.(candidate.itemUuid)
+      ?? null;
+    const actor = candidate.actor
+      ?? actorFromEmbeddedDocument(item)
+      ?? globalThis.fromUuidSync?.(candidate.actorUuid)
+      ?? null;
+    const resolvedItem = item ?? collectionValues(actor?.items).find((entry) => (
+      documentUuid(entry) === cleanText(candidate.itemUuid)
+    ));
+    const token = candidate.token
+      ?? globalThis.fromUuidSync?.(candidate.tokenUuid)
+      ?? null;
+    return {
+      ...candidate,
+      id: cleanText(candidate.id, actorKey(actor)),
+      actor,
+      actorUuid: cleanText(candidate.actorUuid, documentUuid(actor) || actorKey(actor)),
+      token,
+      tokenUuid: cleanText(candidate.tokenUuid, documentUuid(token)),
+      item: resolvedItem,
+      itemUuid: cleanText(candidate.itemUuid, documentUuid(resolvedItem)),
+      reactionType: STONE_REACTION_KIND
+    };
+  }
+
+  #stoneTrigger(context = {}) {
+    const triggerId = cleanText(context?.triggerId);
+    const local = this._stoneTriggers.get(triggerId);
+    if (local) return local;
+    const targetActor = globalThis.fromUuidSync?.(context?.targetActorUuid) ?? null;
+    const targetToken = globalThis.fromUuidSync?.(context?.targetTokenUuid) ?? null;
+    return {
+      targetActor: targetActor ?? tokenActor(targetToken),
+      targetToken,
+      active: context?.triggerActive !== false
+    };
+  }
+
+  async #canUseStoneReaction(candidate, trigger) {
+    const actor = candidate?.actor;
+    const item = candidate?.item;
+    if (!isActorDocument(actor) || !item || automationId(item) !== "stone" || !this.#itemHasUse(item)) {
+      return false;
+    }
+    if (actorIsIncapacitated(actor) || !isActorDocument(trigger?.targetActor)) return false;
+    const reactionState = this.moduleApi?.combatAttackService?.canUseReaction?.(actor, 1);
+    if (reactionState && reactionState.canUse === false) return false;
+    if (!this.#isVisible(candidate, trigger)) return false;
+    return this.#distanceFeet(candidate?.token, trigger?.targetToken) <= STONE_RANGE_FEET;
+  }
+
+  #itemHasUse(item) {
+    const uses = item?.system?.uses ?? {};
+    return Math.max(0, Math.floor(numberValue(uses.spent, 0)))
+      < Math.max(0, Math.floor(numberValue(uses.max, 0)));
+  }
+
+  #isVisible(candidate, trigger) {
+    if (typeof this.options.isVisible === "function") {
+      return this.options.isVisible(candidate, trigger) === true;
+    }
+    return candidate?.token?.visible !== false
+      && candidate?.token?.isVisible !== false
+      && trigger?.targetToken?.visible !== false
+      && trigger?.targetToken?.isVisible !== false;
+  }
+
+  #distanceFeet(leftToken, rightToken) {
+    if (typeof this.options.distanceFeet === "function") {
+      return numberValue(this.options.distanceFeet(leftToken, rightToken), Number.POSITIVE_INFINITY);
+    }
+    const left = tokenCenter(leftToken);
+    const right = tokenCenter(rightToken);
+    if (!left || !right) return Number.POSITIVE_INFINITY;
+    const grid = globalThis.canvas?.grid;
+    if (typeof grid?.measurePath === "function") {
+      const measured = grid.measurePath([left, right]);
+      return numberValue(measured?.distance, Number.POSITIVE_INFINITY);
+    }
+    if (typeof grid?.measureDistance === "function") {
+      return numberValue(grid.measureDistance(left, right), Number.POSITIVE_INFINITY);
+    }
+    return Number.POSITIVE_INFINITY;
+  }
+
+  async #payStoneReaction(candidate) {
+    const rollback = await this.#consumeItemUse(candidate?.item);
+    return rollback ? { paid: true, rollback } : { paid: false };
+  }
+
+  async #applyStoneReaction(candidate, trigger) {
+    const targetActor = trigger?.targetActor;
+    if (!isActorDocument(targetActor)) return { applied: false };
+    const dc = 8
+      + proficiencyBonus(candidate?.actor)
+      + Math.floor(numberValue(candidate?.actor?.system?.abilities?.con?.mod, 0));
+    const saved = await this.#rollSave(targetActor, "wis", dc);
+    if (saved === true) return { applied: true, saved: true, effectUuid: "" };
+
+    const effect = await this.#createStoneStupor(targetActor, candidate, dc);
+    if (!effect) return { applied: false };
+    return {
+      applied: true,
+      saved: false,
+      effect,
+      effectUuid: documentUuid(effect),
+      effectId: documentId(effect),
+      targetActor
+    };
+  }
+
+  async #rollbackStoneReaction(_candidate, transaction) {
+    const effect = transaction?.effect;
+    if (effect?.effect && effect?.targetActor) {
+      await this.#deleteActorEffect(effect.targetActor, effect.effect);
+    }
+    await transaction?.payment?.rollback?.();
+  }
+
+  async #createStoneStupor(targetActor, candidate, dc) {
+    if (typeof targetActor?.createEmbeddedDocuments !== "function") return null;
+    const movementChanges = MOVEMENT_PATHS.map((movement) => ({
+      key: `system.attributes.movement.${movement}`,
+      mode: EFFECT_MODE_OVERRIDE,
+      value: "0",
+      priority: 30
+    }));
+    const effectData = {
+      name: "Каменная руна: магический ступор",
+      type: "base",
+      img: cleanText(candidate?.item?.img, "icons/svg/daze.svg"),
+      origin: documentUuid(candidate?.item),
+      disabled: false,
+      transfer: false,
+      duration: {
+        seconds: 60,
+        rounds: 10,
+        turns: null,
+        startRound: null,
+        startTurn: null,
+        combat: null,
+        startTime: globalThis.game?.time?.worldTime ?? null
+      },
+      statuses: ["charmed", "incapacitated"],
+      changes: [
+        ...movementChanges,
+        {
+          key: "flags.midi-qol.OverTime",
+          mode: EFFECT_MODE_CUSTOM,
+          value: `turn=end,saveAbility=wis,saveDC=${dc},label=Каменная руна`,
+          priority: 20
+        }
+      ],
+      flags: {
+        dae: { stackable: "noneName" },
+        [MODULE_ID]: {
+          managed: true,
+          runeKnight: {
+            id: "stone",
+            automation: "stone-stupor",
+            sourceActorUuid: documentUuid(candidate?.actor) || actorKey(candidate?.actor),
+            sourceItemUuid: documentUuid(candidate?.item),
+            saveDC: dc
+          }
+        }
+      },
+      description: "Скорость равна 0; цель очарована и недееспособна. Спасбросок Мудрости повторяется в конце каждого хода."
+    };
+    const created = await targetActor.createEmbeddedDocuments("ActiveEffect", [effectData], { render: false });
+    return Array.isArray(created) ? created[0] ?? null : created ?? null;
+  }
+
+  async #resolveStoneRepeatSave(actor) {
+    if (globalThis.game?.modules?.get?.("midi-qol")?.active === true) return false;
+    const effects = collectionValues(actor?.effects).filter((effect) => (
+      cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.automation`)) === "stone-stupor"
+    ));
+    let removed = false;
+    for (const effect of effects) {
+      const dc = Math.max(1, Math.floor(numberValue(
+        getProperty(effect, `flags.${MODULE_ID}.runeKnight.saveDC`),
+        8
+      )));
+      if (await this.#rollSave(actor, "wis", dc)) {
+        removed = (await this.#deleteActorEffect(actor, effect)) || removed;
+      }
+    }
+    return removed;
+  }
+
+  async #rollSave(actor, ability, dc) {
+    if (typeof this.options.rollSave === "function") {
+      return this.options.rollSave(actor, ability, dc);
+    }
+    if (typeof actor?.rollSavingThrow !== "function") return false;
+    const rolls = await actor.rollSavingThrow({ ability, target: dc }, { configure: false }, {
+      data: { flavor: `Каменная руна: спасбросок ${ability.toUpperCase()} Сл ${dc}` }
+    });
+    const roll = Array.isArray(rolls) ? rolls[0] : rolls;
+    return Number.isFinite(Number(roll?.total)) ? Number(roll.total) >= dc : false;
+  }
+
+  async #deleteActorEffect(actor, effect) {
+    const id = documentId(effect);
+    if (id && typeof actor?.deleteEmbeddedDocuments === "function") {
+      await actor.deleteEmbeddedDocuments("ActiveEffect", [id], { render: false });
+      return true;
+    }
+    if (typeof effect?.delete === "function") {
+      await effect.delete({ render: false });
+      return true;
+    }
+    return false;
+  }
+
+  #endedTurnCombatant(combat, updateData = {}, updateOptions = {}) {
+    const direct = updateData?.previous?.combatant
+      ?? updateOptions?.previous?.combatant
+      ?? updateData?.previousCombatant
+      ?? updateOptions?.previousCombatant
+      ?? updateData?.endedCombatant
+      ?? updateOptions?.endedCombatant
+      ?? combat?.previous?.combatant
+      ?? null;
+    if (direct) return direct;
+
+    const previousTurn = numberValue(
+      updateData?.previous?.turn
+        ?? updateOptions?.previous?.turn
+        ?? combat?.previous?.turn,
+      Number.NaN
+    );
+    if (Number.isInteger(previousTurn)) {
+      return collectionValues(combat?.turns)[previousTurn] ?? null;
+    }
+    return null;
   }
 
   #cacheActorFeatures(actor, items = collectionValues(actor?.items)) {

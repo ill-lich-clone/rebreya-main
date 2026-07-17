@@ -216,6 +216,12 @@ export function registerCombatHooks(moduleApi) {
       });
     }
 
+    if (hasRuneKnightService) {
+      moduleApi.runeKnightAutomationService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to handle Rune Knight turn-end automation.`, error);
+      });
+    }
+
     if (hasSorcererService) {
       advanceSorcererCooldowns(combat, updateData, updateOptions);
     }
