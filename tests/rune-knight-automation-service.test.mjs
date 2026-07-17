@@ -424,6 +424,143 @@ test("Stone Rune capability guard performs zero geometry when no reactor exists"
   assert.equal(harness.calls.visibility, 0);
 });
 
+function createFireHarness({ weapon = true, damageFails = false } = {}) {
+  const fire = createItem({ id: "fire", automation: "fire", spent: 0, max: 1 });
+  const actor = createActor({ level: 10, prof: 4, items: [fire] });
+  actor.name = "Rune Knight";
+  const target = createActor({ level: 1, prof: 2 });
+  target.id = "fire-target";
+  target.uuid = "Actor.fire-target";
+  target.name = "Fire Target";
+  const targetToken = { id: "fire-target-token", uuid: "Scene.scene.Token.fire-target", actor: target };
+  const calls = { prompts: 0, rolls: 0, saves: 0, damage: 0 };
+  const moduleApi = {
+    reactionCapabilityIndex: { has: () => false },
+    reactionQueueService: {
+      async promptDecision({ prompt }) {
+        calls.prompts += 1;
+        assert.equal(prompt.title, "Огненная руна");
+        return { accepted: true };
+      }
+    },
+    combatAttackService: {
+      async consumeReaction() {
+        throw new Error("Fire Rune must not consume an ordinary reaction");
+      }
+    }
+  };
+  const saveResults = [false, true];
+  const service = new RuneKnightAutomationService(moduleApi, {
+    async createDamageRoll(formula, damageType) {
+      calls.rolls += 1;
+      assert.equal(formula, "2d6");
+      assert.equal(damageType, "fire");
+      if (damageFails) throw new Error("damage roll failed");
+      return { formula, total: 7, options: { type: damageType, flavor: "Огненная руна" } };
+    },
+    async rollSave() {
+      calls.saves += 1;
+      return saveResults.shift() ?? true;
+    },
+    async applyDamage(damageTarget, formula, damageType) {
+      assert.equal(damageTarget, target);
+      assert.equal(formula, "2d6");
+      assert.equal(damageType, "fire");
+      calls.damage += 1;
+      return true;
+    }
+  });
+  const workflow = {
+    id: "fire-workflow",
+    actor,
+    item: { id: "weapon", type: weapon ? "weapon" : "spell", name: "Sword" },
+    activity: { item: { type: weapon ? "weapon" : "spell" } },
+    hitTargets: new Set([targetToken]),
+    bonusDamageRolls: [],
+    async setBonusDamageRolls(rolls) {
+      this.bonusDamageRolls = rolls;
+      return rolls;
+    }
+  };
+  return { service, fire, actor, target, targetToken, workflow, calls };
+}
+
+test("Fire Rune prompts once on a weapon hit and adds one fire roll plus shackles", async () => {
+  const harness = createFireHarness();
+  await harness.service.repairActor(harness.actor);
+
+  await Promise.all([
+    harness.service.applyMidiHitsChecked(harness.workflow),
+    harness.service.applyMidiHitsChecked(harness.workflow)
+  ]);
+  assert.equal(harness.calls.prompts, 1);
+  assert.equal(harness.fire.system.uses.spent, 1);
+
+  await harness.service.applyMidiPreDamageRollComplete(harness.workflow);
+  await harness.service.applyMidiPreDamageRollComplete(harness.workflow);
+  assert.equal(harness.calls.rolls, 1);
+  assert.equal(harness.workflow.bonusDamageRolls.length, 1);
+  assert.equal(harness.workflow.bonusDamageRolls[0].formula, "2d6");
+  assert.equal(harness.calls.saves, 1);
+  const shackles = harness.target.effects.find((effect) => (
+    effect.flags?.["rebreya-main"]?.runeKnight?.automation === "fire-shackles"
+  ));
+  assert.ok(shackles);
+  assert.deepEqual(shackles.statuses, ["restrained"]);
+  assert.equal(shackles.duration.seconds, 60);
+  assert.equal(shackles.changes.filter((change) => change.key === "flags.midi-qol.OverTime").length, 2);
+  assert.equal(shackles.flags["rebreya-main"].runeKnight.sourceItemUuid, harness.fire.uuid);
+});
+
+test("Fire Rune is weapon-only and rolls back payment when damage integration fails", async () => {
+  const spellHarness = createFireHarness({ weapon: false });
+  await spellHarness.service.repairActor(spellHarness.actor);
+  await spellHarness.service.applyMidiHitsChecked(spellHarness.workflow);
+  assert.equal(spellHarness.calls.prompts, 0);
+  assert.equal(spellHarness.fire.system.uses.spent, 0);
+
+  const failed = createFireHarness({ damageFails: true });
+  await failed.service.repairActor(failed.actor);
+  await failed.service.applyMidiHitsChecked(failed.workflow);
+  assert.equal(await failed.service.applyMidiPreDamageRollComplete(failed.workflow), false);
+  assert.equal(failed.fire.system.uses.spent, 0);
+  assert.deepEqual(failed.target.effects, []);
+
+  const aborted = createFireHarness();
+  await aborted.service.repairActor(aborted.actor);
+  await aborted.service.applyMidiHitsChecked(aborted.workflow);
+  await aborted.service.applyMidiRollComplete(aborted.workflow);
+  assert.equal(aborted.fire.system.uses.spent, 0);
+});
+
+test("Fire shackles deal start-turn damage and repeat the STR save at turn end", async () => {
+  const harness = createFireHarness();
+  await harness.service.repairActor(harness.actor);
+  await harness.service.applyMidiHitsChecked(harness.workflow);
+  await harness.service.applyMidiPreDamageRollComplete(harness.workflow);
+  const other = createActor({ level: 1, prof: 2 });
+  const otherToken = { id: "other", uuid: "Scene.scene.Token.other", actor: other };
+  const combat = {
+    id: "fire-combat",
+    round: 1,
+    turn: 1,
+    turns: [{ actor: other, token: otherToken }, { actor: harness.target, token: harness.targetToken }]
+  };
+
+  await harness.service.handleCombatTurnChange(combat, {
+    previous: { combatant: { actor: other, token: otherToken }, turn: 0 },
+    current: { combatant: { actor: harness.target, token: harness.targetToken }, turn: 1 }
+  });
+  assert.equal(harness.calls.damage, 1);
+
+  await harness.service.handleCombatTurnChange(combat, {
+    previous: { combatant: { actor: harness.target, token: harness.targetToken }, turn: 1 },
+    current: { combatant: { actor: other, token: otherToken }, turn: 0 }
+  });
+  assert.equal(harness.calls.saves, 2);
+  assert.deepEqual(harness.target.effects, []);
+});
+
 test("Rune Knight hooks stay actor-local", async () => {
   const source = await readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8");
 

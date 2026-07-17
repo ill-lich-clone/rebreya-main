@@ -7,6 +7,7 @@ const EFFECT_MODE_OVERRIDE = 5;
 const STONE_REACTION_KIND = "rune-stone";
 const STONE_PROVIDER_ID = "rune-knight-stone";
 const STONE_RANGE_FEET = 30;
+const MAX_WORKFLOW_STATES = 128;
 const MOVEMENT_PATHS = Object.freeze([
   "walk",
   "fly",
@@ -277,6 +278,9 @@ export class RuneKnightAutomationService {
     this._pendingRepairOptions = new Map();
     this._actorFeatureCache = new Map();
     this._stoneTriggers = new Map();
+    this._fireWorkflowStates = new Map();
+    this._fireWorkflowPromises = new Map();
+    this._fireTurnKeys = new Set();
   }
 
   async initialize() {
@@ -480,6 +484,18 @@ export class RuneKnightAutomationService {
     const ended = this.#endedTurnCombatant(combat, updateData, updateOptions);
     const targetActor = ended?.actor ?? tokenActor(ended?.token);
     const targetToken = ended?.token ?? ended?.tokenDocument ?? null;
+    const current = this.#currentTurnCombatant(combat, updateData, updateOptions);
+    const currentActor = current?.actor ?? tokenActor(current?.token);
+
+    if (!this.#midiIsActive()) {
+      if (isActorDocument(targetActor)) {
+        await this.#resolveFireRepeatSave(targetActor, this.#turnEventKey(combat, updateData, updateOptions, targetActor, "fire-end"));
+      }
+      if (isActorDocument(currentActor)) {
+        await this.#applyFireStartTurnDamage(currentActor, this.#turnEventKey(combat, updateData, updateOptions, currentActor, "fire-start"));
+      }
+    }
+
     if (!isActorDocument(targetActor)) return true;
 
     await this.#resolveStoneRepeatSave(targetActor);
@@ -537,6 +553,299 @@ export class RuneKnightAutomationService {
       activityId: firstActivityId(item),
       ownerUserIds: ownerUserIds(actor)
     }];
+  }
+
+  applyMidiHitsChecked(workflow) {
+    const key = this.#workflowKey(workflow);
+    if (!key || this._fireWorkflowStates.has(key)) return Promise.resolve(true);
+    const current = this._fireWorkflowPromises.get(key);
+    if (current) return current;
+
+    const operation = this.#prepareFireRune(workflow, key).finally(() => {
+      if (this._fireWorkflowPromises.get(key) === operation) {
+        this._fireWorkflowPromises.delete(key);
+      }
+    });
+    this._fireWorkflowPromises.set(key, operation);
+    return operation;
+  }
+
+  async #prepareFireRune(workflow, key) {
+    const actor = workflow?.actor ?? workflow?.activity?.actor ?? null;
+    const sourceItem = workflow?.item ?? workflow?.activity?.item ?? null;
+    const hitTargets = collectionValues(workflow?.hitTargets ?? workflow?.hitTargetsEC);
+    if (
+      !isActorDocument(actor)
+      || sourceItem?.type !== "weapon"
+      || !hitTargets.length
+      || !this.#actorHasFeature(actor, "fire")
+    ) {
+      return true;
+    }
+
+    const runeItem = collectionValues(actor?.items).find((item) => automationId(item) === "fire");
+    if (!runeItem || !this.#itemHasUse(runeItem)) return true;
+    const targetToken = hitTargets[0];
+    const targetActor = tokenActor(targetToken);
+    if (!isActorDocument(targetActor)) return true;
+
+    const queue = this.moduleApi?.reactionQueueService;
+    if (typeof queue?.promptDecision !== "function") return true;
+    const choice = await queue.promptDecision({
+      candidate: {
+        actorUuid: documentUuid(actor) || actorKey(actor),
+        tokenUuid: documentUuid(workflow?.token),
+        itemUuid: documentUuid(runeItem),
+        ownerUserIds: ownerUserIds(actor)
+      },
+      prompt: {
+        title: "Огненная руна",
+        body: `Пробудить Огненную руну при попадании по ${cleanText(targetActor?.name, "цели")}?`,
+        acceptLabel: "Призвать кандалы",
+        declineLabel: "Пропустить"
+      }
+    });
+    if (choice?.accepted !== true) return true;
+
+    const rollback = await this.#consumeItemUse(runeItem);
+    if (!rollback) return false;
+    this.#rememberWorkflowState(this._fireWorkflowStates, key, {
+      key,
+      actor,
+      runeItem,
+      targetActor,
+      targetToken,
+      rollback,
+      applied: false,
+      effect: null,
+      processing: null
+    });
+    return true;
+  }
+
+  applyMidiPreDamageRollComplete(workflow) {
+    const key = this.#workflowKey(workflow);
+    const state = this._fireWorkflowStates.get(key);
+    if (!state || state.applied === true) return Promise.resolve(true);
+    if (state.processing) return state.processing;
+    const operation = this.#applyPendingFireRune(workflow, state).finally(() => {
+      if (state.processing === operation) state.processing = null;
+    });
+    state.processing = operation;
+    return operation;
+  }
+
+  async #applyPendingFireRune(workflow, state) {
+    const previousRolls = [...(workflow?.bonusDamageRolls ?? [])];
+    try {
+      const roll = await this.#createDamageRoll("2d6", "fire", state.actor, "Огненная руна");
+      const nextRolls = [...previousRolls, roll];
+      if (typeof workflow?.setBonusDamageRolls === "function") {
+        await workflow.setBonusDamageRolls(nextRolls);
+      }
+      else {
+        workflow.bonusDamageRolls = nextRolls;
+      }
+
+      const dc = 8
+        + proficiencyBonus(state.actor)
+        + Math.floor(numberValue(state.actor?.system?.abilities?.con?.mod, 0));
+      const saved = await this.#rollSave(state.targetActor, "str", dc);
+      if (!saved) {
+        state.effect = await this.#createFireShackles(state.targetActor, state, dc);
+        if (!state.effect) throw new Error("Fire Rune shackles could not be created");
+      }
+      state.applied = true;
+      state.rollback = null;
+      return true;
+    }
+    catch (error) {
+      if (state.effect) await this.#deleteActorEffect(state.targetActor, state.effect);
+      if (typeof workflow?.setBonusDamageRolls === "function") {
+        await workflow.setBonusDamageRolls(previousRolls);
+      }
+      else if (workflow) {
+        workflow.bonusDamageRolls = previousRolls;
+      }
+      await state.rollback?.();
+      this._fireWorkflowStates.delete(state.key);
+      this.options.logger?.error?.("Fire Rune workflow failed", { error, workflowId: state.key });
+      return false;
+    }
+  }
+
+  async applyMidiRollComplete(workflow) {
+    const key = this.#workflowKey(workflow);
+    if (key) {
+      const state = this._fireWorkflowStates.get(key);
+      if (state && state.applied !== true) {
+        await state.rollback?.();
+      }
+      this._fireWorkflowStates.delete(key);
+      this._fireWorkflowPromises.delete(key);
+    }
+    return true;
+  }
+
+  async #createDamageRoll(formula, damageType, actor, flavor) {
+    if (typeof this.options.createDamageRoll === "function") {
+      return this.options.createDamageRoll(formula, damageType, actor, flavor);
+    }
+    const RollClass = globalThis.CONFIG?.Dice?.DamageRoll ?? globalThis.Roll;
+    if (typeof RollClass !== "function") throw new Error("Damage roll class is unavailable");
+    const roll = new RollClass(`${formula}[${damageType}]`, actor?.getRollData?.() ?? {}, {
+      type: damageType,
+      flavor
+    });
+    if (typeof roll.evaluate === "function" && !roll._evaluated) await roll.evaluate();
+    return roll;
+  }
+
+  async #createFireShackles(targetActor, state, dc) {
+    if (typeof targetActor?.createEmbeddedDocuments !== "function") return null;
+    const effectData = {
+      name: "Огненная руна: огненные кандалы",
+      type: "base",
+      img: cleanText(state.runeItem?.img, "icons/svg/net.svg"),
+      origin: documentUuid(state.runeItem),
+      disabled: false,
+      transfer: false,
+      duration: {
+        seconds: 60,
+        rounds: 10,
+        turns: null,
+        startRound: null,
+        startTurn: null,
+        combat: null,
+        startTime: globalThis.game?.time?.worldTime ?? null
+      },
+      statuses: ["restrained"],
+      changes: [{
+        key: "flags.midi-qol.OverTime",
+        mode: EFFECT_MODE_CUSTOM,
+        value: "turn=start,damageRoll=2d6,damageType=fire,label=Огненная руна",
+        priority: 20
+      }, {
+        key: "flags.midi-qol.OverTime",
+        mode: EFFECT_MODE_CUSTOM,
+        value: `turn=end,saveAbility=str,saveDC=${dc},label=Огненная руна`,
+        priority: 20
+      }],
+      flags: {
+        dae: { stackable: "noneName" },
+        [MODULE_ID]: {
+          managed: true,
+          runeKnight: {
+            id: "fire",
+            automation: "fire-shackles",
+            sourceActorUuid: documentUuid(state.actor) || actorKey(state.actor),
+            sourceItemUuid: documentUuid(state.runeItem),
+            saveDC: dc
+          }
+        }
+      },
+      description: "Цель опутана; получает 2d6 урона огнём в начале хода и повторяет спасбросок Силы в конце хода."
+    };
+    const created = await targetActor.createEmbeddedDocuments("ActiveEffect", [effectData], { render: false });
+    return Array.isArray(created) ? created[0] ?? null : created ?? null;
+  }
+
+  async #resolveFireRepeatSave(actor, eventKey) {
+    const effects = this.#fireShackleEffects(actor);
+    if (!effects.length || !this.#claimTurnEvent(eventKey)) return false;
+    let removed = false;
+    for (const effect of effects) {
+      const dc = Math.max(1, Math.floor(numberValue(
+        getProperty(effect, `flags.${MODULE_ID}.runeKnight.saveDC`),
+        8
+      )));
+      if (await this.#rollSave(actor, "str", dc)) {
+        removed = (await this.#deleteActorEffect(actor, effect)) || removed;
+      }
+    }
+    return removed;
+  }
+
+  async #applyFireStartTurnDamage(actor, eventKey) {
+    if (!this.#fireShackleEffects(actor).length || !this.#claimTurnEvent(eventKey)) return false;
+    if (typeof this.options.applyDamage === "function") {
+      return this.options.applyDamage(actor, "2d6", "fire", { label: "Огненная руна" });
+    }
+    if (typeof actor?.applyDamage !== "function") return false;
+    const roll = await this.#createDamageRoll("2d6", "fire", actor, "Огненная руна");
+    await actor.applyDamage([{ value: Math.max(0, numberValue(roll?.total, 0)), type: "fire" }], {
+      flavor: "Огненная руна"
+    });
+    return true;
+  }
+
+  #fireShackleEffects(actor) {
+    return collectionValues(actor?.effects).filter((effect) => (
+      cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.automation`)) === "fire-shackles"
+    ));
+  }
+
+  #midiIsActive() {
+    return globalThis.game?.modules?.get?.("midi-qol")?.active === true;
+  }
+
+  #turnEventKey(combat, updateData, updateOptions, actor, suffix) {
+    const current = updateData?.current ?? updateOptions?.current ?? {};
+    const previous = updateData?.previous ?? updateOptions?.previous ?? {};
+    const turn = suffix.endsWith("start")
+      ? current.turn ?? combat?.turn
+      : previous.turn ?? combat?.turn;
+    return [
+      cleanText(combat?.uuid ?? combat?.id ?? combat?._id),
+      current.round ?? previous.round ?? combat?.round ?? 0,
+      turn ?? -1,
+      actorKey(actor),
+      suffix
+    ].join(":");
+  }
+
+  #claimTurnEvent(key) {
+    const normalized = cleanText(key);
+    if (!normalized || this._fireTurnKeys.has(normalized)) return false;
+    this._fireTurnKeys.add(normalized);
+    while (this._fireTurnKeys.size > 256) {
+      this._fireTurnKeys.delete(this._fireTurnKeys.values().next().value);
+    }
+    return true;
+  }
+
+  #currentTurnCombatant(combat, updateData = {}, updateOptions = {}) {
+    const direct = updateData?.current?.combatant
+      ?? updateOptions?.current?.combatant
+      ?? updateData?.combatant
+      ?? updateOptions?.combatant
+      ?? combat?.combatant
+      ?? null;
+    if (direct) return direct;
+    const turn = numberValue(
+      updateData?.current?.turn ?? updateOptions?.current?.turn ?? combat?.turn,
+      Number.NaN
+    );
+    return Number.isInteger(turn) ? collectionValues(combat?.turns)[turn] ?? null : null;
+  }
+
+  #workflowKey(workflow) {
+    if (!workflow || typeof workflow !== "object") return "";
+    if (!workflow._rebreyaRuneKnightWorkflowId) {
+      workflow._rebreyaRuneKnightWorkflowId = cleanText(
+        workflow.id ?? workflow.uuid ?? workflow.workflowId,
+        `workflow-${Math.random().toString(36).slice(2, 12)}`
+      );
+    }
+    return cleanText(workflow._rebreyaRuneKnightWorkflowId);
+  }
+
+  #rememberWorkflowState(map, key, state) {
+    map.delete(key);
+    map.set(key, state);
+    while (map.size > MAX_WORKFLOW_STATES) {
+      map.delete(map.keys().next().value);
+    }
   }
 
   #stoneReactionProvider() {

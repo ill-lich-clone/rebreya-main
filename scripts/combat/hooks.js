@@ -111,6 +111,33 @@ export function registerCombatHooks(moduleApi) {
         return true;
       }
     });
+    Hooks.on("midi-qol.hitsChecked", async (workflow) => {
+      try {
+        return await moduleApi.runeKnightAutomationService.applyMidiHitsChecked(workflow);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to prepare Rune Knight hit automation.`, error);
+        return true;
+      }
+    });
+    Hooks.on("midi-qol.preDamageRollComplete", async (workflow) => {
+      try {
+        return await moduleApi.runeKnightAutomationService.applyMidiPreDamageRollComplete(workflow);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply Rune Knight bonus damage.`, error);
+        return true;
+      }
+    });
+    Hooks.on("midi-qol.RollComplete", async (workflow) => {
+      try {
+        return await moduleApi.runeKnightAutomationService.applyMidiRollComplete(workflow);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to clear Rune Knight workflow state.`, error);
+        return true;
+      }
+    });
   }
 
   if (hasStatusService) {

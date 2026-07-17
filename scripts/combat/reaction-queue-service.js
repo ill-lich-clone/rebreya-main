@@ -314,6 +314,30 @@ export class ReactionQueueService {
   }
 
   async promptDecision({ candidate = {}, prompt = {}, signal, forUserId = "" } = {}) {
+    if (!signal) {
+      const setTimeoutFn = this._options.setTimeoutFn
+        ?? ((callback, delay) => globalThis.setTimeout(callback, delay));
+      const clearTimeoutFn = this._options.clearTimeoutFn
+        ?? ((timeoutId) => globalThis.clearTimeout(timeoutId));
+      const controller = new AbortController();
+      let timeoutId;
+      const timeout = new Promise((resolve) => {
+        timeoutId = setTimeoutFn(() => {
+          controller.abort("timeout");
+          resolve({ accepted: false, reason: "timeout" });
+        }, REACTION_PROMPT_TIMEOUT_MS);
+      });
+      try {
+        return await Promise.race([
+          this.promptDecision({ candidate, prompt, signal: controller.signal, forUserId }),
+          timeout
+        ]);
+      }
+      finally {
+        clearTimeoutFn(timeoutId);
+      }
+    }
+
     const game = this._options.gameProvider?.() ?? globalThis.game;
     const currentUserId = cleanString(game?.user?.id);
     const promptUserId = cleanString(forUserId) || this._promptUserId(candidate, game);

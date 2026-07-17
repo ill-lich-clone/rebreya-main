@@ -22,6 +22,33 @@ test("reaction queue initialization is explicit and idempotent", async () => {
   assert.strictEqual(await queue.initialize(), queue);
 });
 
+test("standalone triggered decisions also expire after exactly ten seconds", async () => {
+  const gmUser = { id: "gm", isGM: true, active: true };
+  const users = [gmUser];
+  users.activeGM = gmUser;
+  let timeoutCallback;
+  let timeoutDelay;
+  const queue = new ReactionQueueService({}, {
+    gameProvider: () => ({ user: gmUser, users }),
+    promptRenderer: () => new Promise(() => {}),
+    setTimeoutFn: (callback, delay) => {
+      timeoutCallback = callback;
+      timeoutDelay = delay;
+      return "standalone-timeout";
+    },
+    clearTimeoutFn: () => undefined
+  });
+
+  const pending = queue.promptDecision({
+    candidate: { ownerUserIds: [gmUser.id] },
+    prompt: { title: "Fire Rune", body: "Use it?" }
+  });
+  await Promise.resolve();
+  assert.equal(timeoutDelay, 10_000);
+  timeoutCallback();
+  assert.deepEqual(await pending, { accepted: false, reason: "timeout" });
+});
+
 test("reaction queue prompts candidates in current combat turn order", async () => {
   const prompted = [];
   const high = candidate("high");
