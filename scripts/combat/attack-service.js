@@ -30,6 +30,9 @@ const FIREARM_MAINTENANCE_TOOL_IDS = ["art:tinker", "tinker", "tink"];
 const ACTIVITY_UNAVAILABLE_LABEL = "Недоступно";
 const REACTION_STATE_FLAG = "reactionState";
 const REACTION_DEFAULT_MAX_USES = 1;
+const PROVOKED_ATTACK_REACTION_KIND = "provoked-attack";
+const PARRY_REACTION_KIND = "parry";
+const INTERCEPTION_REACTION_KIND = "interception";
 const FIGHTER_DOMINANCE_TARGET = "fighter-dominance";
 const PATCHED_USAGE_BUTTON_PROTOTYPES = new WeakSet();
 function heldItemUpdateOptions() {
@@ -787,10 +790,18 @@ export class CombatAttackService {
     this._activityAttackOutcomes = new Map();
     this._pendingDeadlyExecutions = new Map();
     this._processedDeadlyWorkflowTargets = new Set();
+    this._reactionTriggerSequence = 0;
+    this._reactionTriggerContexts = new Map();
   }
 
   async initialize() {
-    return null;
+    const queue = this.moduleApi?.reactionQueueService;
+    if (typeof queue?.registerType === "function") {
+      queue.registerType(PROVOKED_ATTACK_REACTION_KIND, this.#attackReactionProvider(PROVOKED_ATTACK_REACTION_KIND));
+      queue.registerType(PARRY_REACTION_KIND, this.#attackReactionProvider(PARRY_REACTION_KIND));
+      queue.registerType(INTERCEPTION_REACTION_KIND, this.#attackReactionProvider(INTERCEPTION_REACTION_KIND));
+    }
+    return queue ?? null;
   }
 
   #resolveActor(actorOrId) {
@@ -4432,6 +4443,365 @@ export class CombatAttackService {
     });
   }
 
+  #attackReactionProvider(kind) {
+    return {
+      listCandidates: (context) => {
+        const state = this.#attackReactionState(context);
+        return collectionValues(state.reactors)
+          .filter((reactor) => reactor instanceof Actor)
+          .map((reactor) => ({
+            actor: reactor,
+            actorUuid: cleanText(reactor.uuid, reactor.id),
+            ownerUserIds: this.#reactionOwnerUserIds(reactor),
+            reactionType: kind === PROVOKED_ATTACK_REACTION_KIND ? "provokedAttack" : kind
+          }));
+      },
+      isTriggerValid: (context) => this.#attackReactionState(context).triggerActive !== false,
+      revalidateCandidate: (candidate, context) => this.#canResolveAttackReaction(
+        kind,
+        this.#attackReactionCandidateState(context, candidate)
+      ),
+      buildPrompt: (candidate, context) => this.#attackReactionPrompt(
+        kind,
+        this.#attackReactionCandidateState(context, candidate)
+      ),
+      pay: async () => ({ paid: true }),
+      apply: (candidate, _choice, context) => this.#applyAttackReaction(
+        kind,
+        this.#attackReactionCandidateState(context, candidate)
+      ),
+      rollback: (candidate, transaction, context) => this.#rollbackAttackReaction(
+        kind,
+        transaction,
+        this.#attackReactionCandidateState(context, candidate)
+      ),
+      serializeEffect: (effect) => this.#serializeAttackReactionEffect(effect)
+    };
+  }
+
+  #attackReactionState(context = {}) {
+    const triggerId = cleanText(context.triggerId);
+    const local = this._reactionTriggerContexts.get(triggerId) ?? context._resolvedAttackReaction;
+    if (local) {
+      return local;
+    }
+
+    const reactorReferences = [
+      ...collectionValues(context.reactorUuids),
+      ...collectionValues(context.reactorIds)
+    ];
+    if (!reactorReferences.length) {
+      reactorReferences.push(context.reactorUuid ?? context.reactorId);
+    }
+    const reactors = Array.from(new Set(reactorReferences.filter(Boolean)))
+      .map((reference) => this.#resolveReactionActor(reference))
+      .filter((reactor) => reactor instanceof Actor);
+    const reactor = reactors[0] ?? null;
+    const target = this.#resolveReactionActor(context.targetUuid ?? context.targetId);
+    const state = {
+      reactor,
+      reactors,
+      target,
+      incomingAttackTotal: toNumber(context.incomingAttackTotal, NaN),
+      incomingDamage: Math.max(0, Math.floor(toNumber(context.incomingDamage, 0))),
+      options: context.options && typeof context.options === "object" ? context.options : {},
+      triggerActive: context.triggerActive !== false,
+      serializedContext: context
+    };
+    context._resolvedAttackReaction = state;
+    return state;
+  }
+
+  #attackReactionCandidateState(context, candidate = {}) {
+    const rootState = this.#attackReactionState(context);
+    const reactor = candidate.actor instanceof Actor
+      ? candidate.actor
+      : this.#resolveReactionActor(candidate.actorUuid);
+    return {
+      ...rootState,
+      reactor,
+      rootState
+    };
+  }
+
+  #resolveReactionActor(reference) {
+    const direct = this.#resolveActor(reference);
+    if (direct instanceof Actor) {
+      return direct;
+    }
+    const resolved = typeof reference === "string" ? globalThis.fromUuidSync?.(reference) : null;
+    return resolved instanceof Actor ? resolved : resolved?.actor instanceof Actor ? resolved.actor : null;
+  }
+
+  #reactionOwnerUserIds(actor) {
+    return collectionValues(globalThis.game?.users)
+      .filter((user) => {
+        if (user?.active === false) {
+          return false;
+        }
+        if (user?.isGM === true) {
+          return true;
+        }
+        if (typeof actor?.testUserPermission === "function") {
+          return actor.testUserPermission(user, "OWNER") === true;
+        }
+        const ownership = actor?.ownership ?? actor?._source?.ownership ?? {};
+        return Number(ownership[user?.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
+      })
+      .sort((left, right) => Number(left?.isGM === true) - Number(right?.isGM === true)
+        || cleanText(left?.id).localeCompare(cleanText(right?.id)))
+      .map((user) => cleanText(user?.id))
+      .filter(Boolean);
+  }
+
+  #canResolveAttackReaction(kind, state) {
+    const reactor = state.reactor;
+    if (!(reactor instanceof Actor) || !this.canUseReaction(reactor, 1).canUse) {
+      return false;
+    }
+
+    if (kind === PROVOKED_ATTACK_REACTION_KIND) {
+      const weapon = this.#resolveItem(
+        reactor,
+        state.options.weaponId ?? state.options.weaponName ?? state.options.weapon ?? ""
+      ) ?? this.#findDefaultMeleeWeapon(reactor);
+      return state.target instanceof Actor && weapon instanceof Item;
+    }
+    if (kind === PARRY_REACTION_KIND) {
+      return Number.isFinite(state.incomingAttackTotal) && this.#hasParryEquipment(reactor);
+    }
+    if (kind === INTERCEPTION_REACTION_KIND) {
+      return state.target instanceof Actor && this.#hasInterceptionEquipment(reactor);
+    }
+    return false;
+  }
+
+  #attackReactionPrompt(kind, state) {
+    if (kind === PROVOKED_ATTACK_REACTION_KIND) {
+      return {
+        title: "Провоцированная атака",
+        body: `Атаковать ${cleanText(state.target?.name, "цель")} реакцией?`,
+        acceptLabel: "Атаковать",
+        declineLabel: "Пропустить"
+      };
+    }
+    if (kind === PARRY_REACTION_KIND) {
+      return {
+        title: "Парирование",
+        body: `Попытаться парировать атаку с результатом ${state.incomingAttackTotal}?`,
+        acceptLabel: "Парировать",
+        declineLabel: "Пропустить"
+      };
+    }
+    return {
+      title: "Перехват",
+      body: `Уменьшить ${state.incomingDamage} урона по ${cleanText(state.target?.name, "цели")}?`,
+      acceptLabel: "Перехватить",
+      declineLabel: "Пропустить"
+    };
+  }
+
+  async #applyAttackReaction(kind, state) {
+    let effect;
+    if (kind === PROVOKED_ATTACK_REACTION_KIND) {
+      effect = await this.#executeProvokedAttack(state);
+    }
+    else if (kind === PARRY_REACTION_KIND) {
+      effect = this.#executeParry(state);
+    }
+    else {
+      effect = await this.#executeInterception(state);
+    }
+    if (effect?.success !== true) {
+      return { applied: false, ...effect };
+    }
+    if (
+      (kind === PARRY_REACTION_KIND && effect.preventedHit === true)
+      || (kind === INTERCEPTION_REACTION_KIND && effect.reducedDamage <= 0)
+    ) {
+      const rootState = state.rootState ?? state;
+      rootState.triggerActive = false;
+      if (rootState.serializedContext) {
+        rootState.serializedContext.triggerActive = false;
+      }
+    }
+    return { applied: true, ...effect };
+  }
+
+  async #rollbackAttackReaction(kind, transaction, state) {
+    if (kind !== INTERCEPTION_REACTION_KIND) {
+      return;
+    }
+    const previousHp = Number(transaction?.effect?.previousHp);
+    if (Number.isFinite(previousHp) && state.target instanceof Actor) {
+      await state.target.update({ "system.attributes.hp.value": previousHp });
+    }
+  }
+
+  #serializeAttackReactionEffect(effect = {}) {
+    const serialized = { ...effect };
+    delete serialized.previousHp;
+    if (serialized.roll && typeof serialized.roll === "object") {
+      serialized.roll = {
+        total: toNumber(serialized.roll.total, 0),
+        naturalRoll: toNumber(serialized.roll.naturalRoll, 0),
+        isHit: serialized.roll.isHit === true,
+        isCriticalHit: serialized.roll.isCriticalHit === true,
+        targetAc: Number.isFinite(Number(serialized.roll.targetAc)) ? Number(serialized.roll.targetAc) : null
+      };
+    }
+    return serialized;
+  }
+
+  async #executeProvokedAttack(state) {
+    const reactor = state.reactor;
+    const target = state.target;
+    const explicitWeapon = this.#resolveItem(
+      reactor,
+      state.options.weaponId ?? state.options.weaponName ?? state.options.weapon ?? ""
+    );
+    const weapon = explicitWeapon ?? this.#findDefaultMeleeWeapon(reactor);
+    if (!(weapon instanceof Item)) {
+      return { success: false, reason: "noMeleeWeapon", actorId: reactor.id, targetId: target.id };
+    }
+    const rollResult = await this.rollWeaponAttack(reactor, weapon, {
+      ...state.options,
+      attackKind: "provoked",
+      targetActor: target
+    });
+    return {
+      success: true,
+      actorId: reactor.id,
+      targetId: target.id,
+      weaponId: weapon.id,
+      roll: rollResult,
+      interrupted: rollResult.isHit === true
+    };
+  }
+
+  #executeParry(state) {
+    const defender = state.reactor;
+    const baseAc = Number.isFinite(Number(state.options.baseAc))
+      ? Number(state.options.baseAc)
+      : getActorAcValue(defender);
+    if (!Number.isFinite(baseAc)) {
+      return { success: false, reason: "armorClassUnavailable", actorId: defender.id };
+    }
+    const proficiencyBonus = getActorProficiencyBonus(defender);
+    const adjustedAc = baseAc + proficiencyBonus;
+    return {
+      success: true,
+      actorId: defender.id,
+      attackTotal: state.incomingAttackTotal,
+      baseAc,
+      proficiencyBonus,
+      adjustedAc,
+      preventedHit: state.incomingAttackTotal < adjustedAc
+    };
+  }
+
+  async #executeInterception(state) {
+    const guardian = state.reactor;
+    const target = state.target;
+    const reduction = Math.max(0, this.#getHitDiceMaximum(guardian));
+    const reducedDamage = Math.max(0, state.incomingDamage - reduction);
+    let previousHp = null;
+    if (state.options.applyDamage === true) {
+      previousHp = toNumber(foundry.utils.getProperty(target, "system.attributes.hp.value"), NaN);
+      if (Number.isFinite(previousHp)) {
+        await target.update({
+          "system.attributes.hp.value": Math.max(0, previousHp - reducedDamage)
+        });
+      }
+    }
+    return {
+      success: true,
+      actorId: guardian.id,
+      targetId: target.id,
+      incomingDamage: state.incomingDamage,
+      reduction,
+      reducedDamage,
+      previousHp
+    };
+  }
+
+  #serializableReactionOptions(options = {}) {
+    try {
+      return JSON.parse(JSON.stringify({
+        weaponId: cleanText(options.weaponId ?? options.weapon?.id),
+        weaponName: cleanText(options.weaponName),
+        rollMode: cleanText(options.rollMode),
+        advantage: options.advantage === true,
+        disadvantage: options.disadvantage === true,
+        bonus: toNumber(options.bonus, 0),
+        targetAc: Number.isFinite(Number(options.targetAc)) ? Number(options.targetAc) : null,
+        baseAc: Number.isFinite(Number(options.baseAc)) ? Number(options.baseAc) : null,
+        applyDamage: options.applyDamage === true,
+        createMessage: options.createMessage !== false,
+        flavor: cleanText(options.flavor)
+      }));
+    }
+    catch {
+      return {};
+    }
+  }
+
+  async #resolveQueuedAttackReaction(kind, reactor, target, values = {}, options = {}) {
+    const queue = this.moduleApi?.reactionQueueService;
+    if (typeof queue?.resolve !== "function") {
+      return {
+        success: false,
+        reason: "reactionQueueUnavailable",
+        actorId: reactor?.id ?? null,
+        targetId: target?.id ?? null
+      };
+    }
+    const triggerId = cleanText(options.triggerId)
+      || `${kind}:${cleanText(reactor?.id)}:${Date.now()}:${++this._reactionTriggerSequence}`;
+    const context = {
+      triggerId,
+      reactorId: cleanText(reactor?.id),
+      reactorUuid: cleanText(reactor?.uuid),
+      targetId: cleanText(target?.id),
+      targetUuid: cleanText(target?.uuid),
+      incomingAttackTotal: values.incomingAttackTotal,
+      incomingDamage: values.incomingDamage,
+      options: this.#serializableReactionOptions(options),
+      triggerActive: true
+    };
+    const state = {
+      reactor,
+      reactors: [reactor],
+      target,
+      incomingAttackTotal: toNumber(values.incomingAttackTotal, NaN),
+      incomingDamage: Math.max(0, Math.floor(toNumber(values.incomingDamage, 0))),
+      options,
+      triggerActive: true,
+      serializedContext: context
+    };
+    this._reactionTriggerContexts.set(triggerId, state);
+    try {
+      const result = await queue.resolve({ triggerId, kind, context });
+      const accepted = collectionValues(result?.accepted).at(-1);
+      const effect = accepted?.transaction?.effect ?? accepted?.effect;
+      if (!effect || effect.applied === false) {
+        return {
+          success: false,
+          reason: cleanText(result?.status, "declined"),
+          actorId: reactor?.id ?? null,
+          targetId: target?.id ?? null
+        };
+      }
+      return {
+        ...effect,
+        reaction: accepted?.transaction?.reaction ?? { consumed: true }
+      };
+    }
+    finally {
+      this._reactionTriggerContexts.delete(triggerId);
+    }
+  }
+
   async resolveProvokedAttack(reactorOrId, targetOrId, options = {}) {
     const reactor = this.#resolveActor(reactorOrId);
     if (!(reactor instanceof Actor)) {
@@ -4442,49 +4812,7 @@ export class CombatAttackService {
     if (!(target instanceof Actor)) {
       throw new Error("Failed to resolve target actor for provoked attack.");
     }
-
-    const reactionCheck = this.canUseReaction(reactor, 1);
-    if (!reactionCheck.canUse) {
-      return {
-        success: false,
-        reason: "noReactionUses",
-        actorId: reactor.id,
-        targetId: target.id,
-        state: reactionCheck.state
-      };
-    }
-
-    const explicitWeapon = this.#resolveItem(reactor, options.weaponId ?? options.weaponName ?? options.weapon ?? "");
-    const weapon = explicitWeapon ?? this.#findDefaultMeleeWeapon(reactor);
-    if (!(weapon instanceof Item)) {
-      return {
-        success: false,
-        reason: "noMeleeWeapon",
-        actorId: reactor.id,
-        targetId: target.id,
-        state: reactionCheck.state
-      };
-    }
-
-    const rollResult = await this.rollWeaponAttack(reactor, weapon, {
-      ...options,
-      attackKind: "provoked",
-      targetActor: target
-    });
-
-    const consumeResult = await this.consumeReaction(reactor, {
-      reactionType: "provokedAttack"
-    });
-
-    return {
-      success: true,
-      actorId: reactor.id,
-      targetId: target.id,
-      weaponId: weapon.id,
-      roll: rollResult,
-      interrupted: rollResult.isHit === true,
-      reaction: consumeResult
-    };
+    return this.#resolveQueuedAttackReaction(PROVOKED_ATTACK_REACTION_KIND, reactor, target, {}, options);
   }
 
   async resolveParry(defenderOrId, incomingAttackTotal, options = {}) {
@@ -4498,49 +4826,13 @@ export class CombatAttackService {
       throw new Error("Incoming attack total must be a number.");
     }
 
-    const reactionCheck = this.canUseReaction(defender, 1);
-    if (!reactionCheck.canUse) {
-      return {
-        success: false,
-        reason: "noReactionUses",
-        actorId: defender.id,
-        state: reactionCheck.state
-      };
-    }
-
-    if (!this.#hasParryEquipment(defender)) {
-      return {
-        success: false,
-        reason: "requirementsNotMet",
-        actorId: defender.id,
-        state: reactionCheck.state
-      };
-    }
-
-    const baseAc = Number.isFinite(Number(options.baseAc))
-      ? Number(options.baseAc)
-      : getActorAcValue(defender);
-    if (!Number.isFinite(baseAc)) {
-      throw new Error("Failed to resolve defender AC for parry.");
-    }
-
-    const proficiencyBonus = getActorProficiencyBonus(defender);
-    const adjustedAc = baseAc + proficiencyBonus;
-    const preventedHit = attackTotal < adjustedAc;
-    const consumeResult = await this.consumeReaction(defender, {
-      reactionType: "parry"
-    });
-
-    return {
-      success: true,
-      actorId: defender.id,
-      attackTotal,
-      baseAc,
-      proficiencyBonus,
-      adjustedAc,
-      preventedHit,
-      reaction: consumeResult
-    };
+    return this.#resolveQueuedAttackReaction(
+      PARRY_REACTION_KIND,
+      defender,
+      null,
+      { incomingAttackTotal: attackTotal },
+      options
+    );
   }
 
   async resolveInterception(guardianOrId, targetOrId, incomingDamage, options = {}) {
@@ -4554,51 +4846,12 @@ export class CombatAttackService {
       throw new Error("Failed to resolve target actor for interception.");
     }
 
-    const safeDamage = Math.max(0, Math.floor(toNumber(incomingDamage, 0)));
-    const reactionCheck = this.canUseReaction(guardian, 1);
-    if (!reactionCheck.canUse) {
-      return {
-        success: false,
-        reason: "noReactionUses",
-        actorId: guardian.id,
-        targetId: target.id,
-        state: reactionCheck.state
-      };
-    }
-
-    if (!this.#hasInterceptionEquipment(guardian)) {
-      return {
-        success: false,
-        reason: "requirementsNotMet",
-        actorId: guardian.id,
-        targetId: target.id,
-        state: reactionCheck.state
-      };
-    }
-
-    const reduction = Math.max(0, this.#getHitDiceMaximum(guardian));
-    const reducedDamage = Math.max(0, safeDamage - reduction);
-    const consumeResult = await this.consumeReaction(guardian, {
-      reactionType: "interception"
-    });
-
-    if (options.applyDamage === true) {
-      const currentHp = toNumber(foundry.utils.getProperty(target, "system.attributes.hp.value"), NaN);
-      if (Number.isFinite(currentHp)) {
-        await target.update({
-          "system.attributes.hp.value": Math.max(0, currentHp - reducedDamage)
-        });
-      }
-    }
-
-    return {
-      success: true,
-      actorId: guardian.id,
-      targetId: target.id,
-      incomingDamage: safeDamage,
-      reduction,
-      reducedDamage,
-      reaction: consumeResult
-    };
+    return this.#resolveQueuedAttackReaction(
+      INTERCEPTION_REACTION_KIND,
+      guardian,
+      target,
+      { incomingDamage },
+      options
+    );
   }
 }

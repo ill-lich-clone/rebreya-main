@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 globalThis.foundry ??= {
   utils: {
     getProperty: (object, path) => String(path ?? "").split(".").reduce((value, key) => value?.[key], object),
+    deepClone: (value) => JSON.parse(JSON.stringify(value)),
     setProperty: (object, path, value) => {
       const keys = String(path ?? "").split(".").filter(Boolean);
       let cursor = object;
@@ -74,6 +75,7 @@ TestRoll.messages = [];
 globalThis.Roll = TestRoll;
 
 const { CombatAttackService } = await import("../scripts/combat/attack-service.js");
+const { ReactionQueueService } = await import("../scripts/combat/reaction-queue-service.js");
 
 function makeActor(items, {
   id = "actor-a",
@@ -2242,4 +2244,106 @@ test("automatic fire area action empties the magazine and reports save data", as
   assert.equal(result.saveDC, 13);
   assert.equal(result.ammoSpent, 7);
   assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 0);
+});
+
+test("attack reactions register with the global reaction queue", async () => {
+  const registered = [];
+  const service = new CombatAttackService({
+    reactionQueueService: {
+      registerType: (kind) => registered.push(kind)
+    }
+  });
+
+  await service.initialize();
+
+  assert.deepEqual(registered, ["provoked-attack", "parry", "interception"]);
+});
+
+test("manual parry resolution uses the global ten-second reaction workflow", async () => {
+  const weapon = makeWeaponItem();
+  const defender = makeActor([weapon], { id: "defender", prof: 2 });
+  defender.system.attributes.ac = { value: 15 };
+  defender.setFlag = async (scope, key, value) => {
+    defender.flags[scope] ??= {};
+    defender.flags[scope][key] = value;
+    return defender;
+  };
+  const moduleApi = {};
+  const service = new CombatAttackService(moduleApi);
+  moduleApi.combatAttackService = service;
+  let promptCalls = 0;
+  moduleApi.reactionQueueService = new ReactionQueueService(moduleApi, {
+    actorResolver: () => defender,
+    isCoordinator: () => true,
+    promptCandidate: async () => {
+      promptCalls += 1;
+      return { accepted: true };
+    }
+  });
+  await service.initialize();
+
+  const result = await service.resolveParry(defender, 16, { baseAc: 15 });
+
+  assert.equal(promptCalls, 1);
+  assert.equal(result.success, true);
+  assert.equal(result.preventedHit, true);
+  assert.equal(result.reaction.consumed, true);
+  assert.equal(service.getReactionState(defender).usesRemaining, 0);
+});
+
+test("one provoked-attack trigger lets every eligible reactor act in initiative order", async () => {
+  const first = makeActor([makeWeaponItem({ id: "first-sword" })], { id: "first-reactor" });
+  const second = makeActor([makeWeaponItem({ id: "second-sword" })], { id: "second-reactor" });
+  const target = makeActor([], { id: "moving-target" });
+  for (const actor of [first, second]) {
+    actor.setFlag = async (scope, key, value) => {
+      actor.flags[scope] ??= {};
+      actor.flags[scope][key] = value;
+      return actor;
+    };
+  }
+  const previousGame = globalThis.game;
+  const actors = new Map([first, second, target].map((actor) => [actor.id, actor]));
+  const gm = { id: "gm", active: true, isGM: true };
+  const users = [gm];
+  users.activeGM = gm;
+  globalThis.game = {
+    user: gm,
+    users,
+    actors: { get: (id) => actors.get(id) ?? null }
+  };
+  const moduleApi = {};
+  const service = new CombatAttackService(moduleApi);
+  moduleApi.combatAttackService = service;
+  moduleApi.reactionQueueService = new ReactionQueueService(moduleApi, {
+    combatProvider: () => ({
+      started: true,
+      turns: [{ actor: first }, { actor: second }]
+    }),
+    isCoordinator: () => true,
+    promptCandidate: async () => ({ accepted: true })
+  });
+  await service.initialize();
+  TestRoll.queuedTotals.push(15, 16);
+
+  try {
+    const result = await moduleApi.reactionQueueService.resolve({
+      triggerId: "shared-provoked-trigger",
+      kind: "provoked-attack",
+      context: {
+        triggerId: "shared-provoked-trigger",
+        reactorIds: [first.id, second.id],
+        targetId: target.id,
+        options: { targetAc: 10, createMessage: false }
+      }
+    });
+
+    assert.equal(result.accepted.length, 2);
+    assert.deepEqual(result.accepted.map((entry) => entry.candidate.actorUuid), [first.uuid, second.uuid]);
+    assert.equal(service.getReactionState(first).usesRemaining, 0);
+    assert.equal(service.getReactionState(second).usesRemaining, 0);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
 });
