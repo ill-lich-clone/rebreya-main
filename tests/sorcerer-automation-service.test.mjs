@@ -2953,6 +2953,35 @@ test("Draconic Dragon Spell adds one d6 damage per selected Sorcery Point", asyn
   assert.equal(pointsItem(actor).system.uses.spent, 4);
 });
 
+test("Draconic Dragon Spell accepts dnd5e damage parts whose types are Sets", async () => {
+  const actor = metamagicActor();
+  addDraconicAncestor(actor, "Огонь");
+  addMetamagic(actor, "draconic-dragon-spell", 3, "base", {
+    costMode: "variable",
+    minCost: 1,
+    maxCost: 3,
+    metamagicAutomation: "draconic-dragon-spell"
+  });
+  const service = new SorcererAutomationService({});
+  await service.syncSorceryPoints(actor);
+  const activity = makeDnd5eActivityClone(makeSorcererSpell(actor, {
+    system: { damage: { parts: [{ _id: "base-fire", number: 1, denomination: 10, types: new Set(["fire"]) }] } }
+  }));
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, {
+    sorcererVirtualSpellLevel: 1,
+    sorcererMetamagic: {
+      ids: ["draconic-dragon-spell"],
+      costs: { "draconic-dragon-spell": 3 }
+    }
+  }, {}, {}), true);
+
+  const added = activity.damage.parts.find((part) => part._id === "rebreya-draconic-dragon-spell");
+  assert.equal(added.formula, "3d6");
+  assert.deepEqual(added.types, ["fire"]);
+  assert.equal(pointsItem(actor).system.uses.spent, 5);
+});
+
 test("RED: Draconic Dragon Spell forwards its selected damage dice into the damage roll hook", async () => {
   const actor = metamagicActor();
   addDraconicAncestor(actor, "Огонь");

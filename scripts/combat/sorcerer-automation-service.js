@@ -724,7 +724,7 @@ function spellHasDamage(activity) {
 
 function spellDamageParts(activity) {
   const parts = activity?.damage?.parts ?? activity?.system?.damage?.parts ?? activity?.item?.system?.damage?.parts ?? [];
-  return Array.isArray(parts) ? deepClone(parts) : [];
+  return Array.isArray(parts) ? parts.map(cloneDamagePart) : [];
 }
 
 function normalizedDamageType(value) {
@@ -732,8 +732,39 @@ function normalizedDamageType(value) {
   return DAMAGE_TYPE_BY_LABEL.get(text) ?? text;
 }
 
+function damagePartTypes(part = {}) {
+  if (Array.isArray(part)) {
+    return [part[1]];
+  }
+
+  const raw = part?.types ?? part?.type ?? part?.damageType ?? part?.custom?.type;
+  if (raw instanceof Set) {
+    return Array.from(raw);
+  }
+  if (Array.isArray(raw)) {
+    return raw;
+  }
+  if (raw && typeof raw === "object") {
+    return Object.entries(raw)
+      .filter(([, enabled]) => enabled === true || enabled?.value === true)
+      .map(([type]) => type);
+  }
+  return [raw];
+}
+
+function cloneDamagePart(part = {}) {
+  const cloned = deepClone(part);
+  if (!Array.isArray(cloned) && cloned && typeof cloned === "object") {
+    const types = damagePartTypes(part).map(normalizedDamageType).filter(Boolean);
+    if (types.length) {
+      cloned.types = types;
+    }
+  }
+  return cloned;
+}
+
 function damagePartType(part = {}) {
-  return normalizedDamageType(part?.types?.[0] ?? part?.[1] ?? part?.type ?? part?.damageType);
+  return damagePartTypes(part).map(normalizedDamageType).find(Boolean) ?? "";
 }
 
 function damageBonusSource(bonus = {}) {
