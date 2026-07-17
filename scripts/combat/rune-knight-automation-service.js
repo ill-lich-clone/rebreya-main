@@ -1,7 +1,9 @@
 import { MODULE_ID } from "../constants.js";
 
 const FIGHTER_CLASS_IDENTIFIER = "fighter-rework-v028";
+const EFFECT_MODE_ADD = 2;
 const RUNE_IDS = new Set(["stone", "frost", "cloud", "fire", "hill", "storm"]);
+const SELF_ACTIVATION_IDS = new Set(["frost", "hill", "storm"]);
 const RUNE_RECOVERY = Object.freeze([
   Object.freeze({ period: "sr", type: "recoverAll", formula: "" }),
   Object.freeze({ period: "lr", type: "recoverAll", formula: "" })
@@ -101,6 +103,52 @@ function automationId(document) {
   return flagged || MIGRATION_AUTOMATION_BY_NAME.get(normalizeText(document?.name)) || "";
 }
 
+function contextActor(...contexts) {
+  for (const context of contexts) {
+    const actor = context?.actor
+      ?? context?.subject
+      ?? context?.item?.actor
+      ?? context?.activity?.actor
+      ?? context?.data?.actor
+      ?? null;
+    if (isActorDocument(actor)) return actor;
+  }
+  return null;
+}
+
+function contextIsPoison(...contexts) {
+  for (const context of contexts) {
+    if (context?.isPoison === true || context?.options?.isPoison === true) return true;
+    const values = [
+      context?.damageType,
+      context?.type,
+      context?.options?.damageType,
+      context?.options?.type,
+      context?.options?.sourceType,
+      context?.flavor,
+      context?.data?.flavor
+    ];
+    if (values.some((value) => /(?:^|\W)(?:poison|яд)(?:$|\W)/iu.test(cleanText(value)))) return true;
+  }
+  return false;
+}
+
+function statusIds(document) {
+  const ids = new Set();
+  const statuses = document?.statuses;
+  if (statuses instanceof Set || Array.isArray(statuses)) {
+    for (const status of statuses) ids.add(normalizeText(status));
+  }
+  const coreStatus = cleanText(getProperty(document, "flags.core.statusId"));
+  if (coreStatus) ids.add(normalizeText(coreStatus));
+  return ids;
+}
+
+function actorIsIncapacitated(actor) {
+  if (statusIds(actor).has("incapacitated")) return true;
+  return collectionValues(actor?.effects).some((effect) => statusIds(effect).has("incapacitated"));
+}
+
 function classIdentifier(item) {
   return cleanText(
     getProperty(item, "system.identifier")
@@ -178,6 +226,7 @@ export class RuneKnightAutomationService {
     this.options = options;
     this._repairActorPromises = new Map();
     this._pendingRepairOptions = new Map();
+    this._actorFeatureCache = new Map();
   }
 
   async initialize() {
@@ -221,6 +270,7 @@ export class RuneKnightAutomationService {
 
   async #repairActorNow(actor, { restoreRunes = false, restoreLongRest = false } = {}) {
     const items = collectionValues(actor?.items);
+    this.#cacheActorFeatures(actor, items);
     const level = fighterLevel(actor);
     const hasMasterOfRunes = level >= 15 && items.some((item) => automationId(item) === "master-of-runes");
     const runeMaximum = hasMasterOfRunes ? 2 : 1;
@@ -273,6 +323,7 @@ export class RuneKnightAutomationService {
     if (!actor) return true;
 
     const id = automationId(item);
+    this._actorFeatureCache.delete(actorKey(actor));
     if (RUNE_IDS.has(id) && !this.#actorStillOwnsItem(actor, item)) {
       await this.#deleteSourceEffects(actor, cleanText(item?.uuid));
     }
@@ -284,6 +335,178 @@ export class RuneKnightAutomationService {
     const actor = actorFromEmbeddedDocument(effect);
     if (actor) await this.repairActor(actor);
     return true;
+  }
+
+  async applyDnd5ePostUseActivity(activity, usageConfig = {}, results = {}) {
+    void usageConfig;
+    void results;
+    const id = automationId(activity);
+    if (!SELF_ACTIVATION_IDS.has(id)) return true;
+
+    const actor = contextActor(activity, activity?.item);
+    const item = activity?.item;
+    if (!actor || !item || this.#hasRuntimeEffect(actor, item, id)) return true;
+
+    const rollback = await this.#consumeItemUse(item);
+    if (!rollback) return false;
+    try {
+      const created = await this.#createRuneActivationEffect(actor, item, id);
+      if (!created) {
+        await rollback();
+        return false;
+      }
+      return true;
+    }
+    catch (error) {
+      await rollback();
+      throw error;
+    }
+  }
+
+  applyDnd5ePreRollToolCheck(rollConfig = {}, dialogConfig = {}, messageConfig = {}) {
+    const actor = contextActor(rollConfig, dialogConfig, messageConfig);
+    if (!actor || !this.#actorHasFeature(actor, "fire") || rollConfig._rebreyaRuneToolExpertise) {
+      return true;
+    }
+
+    const proficiency = rollConfig.proficiency
+      ?? actor?.system?.tools?.[rollConfig.tool]?.prof
+      ?? rollConfig.tool?.system?.proficient
+      ?? rollConfig.item?.system?.proficient
+      ?? 0;
+    const multiplier = typeof proficiency === "object"
+      ? numberValue(
+        proficiency.multiplier
+          ?? proficiency.value
+          ?? (proficiency.hasProficiency === true ? 1 : 0),
+        0
+      )
+      : numberValue(proficiency, 0);
+    if (multiplier <= 0) return true;
+
+    const currentBonus = cleanText(rollConfig.bonus);
+    if (!/(?:^|\W)@prof(?:$|\W)/u.test(currentBonus)) {
+      rollConfig.bonus = currentBonus ? `${currentBonus} + @prof` : "@prof";
+    }
+    if (typeof rollConfig.proficiency === "object" && rollConfig.proficiency) {
+      rollConfig.proficiency.multiplier = Math.max(2, multiplier);
+    }
+    else if (Object.hasOwn(rollConfig, "proficiency")) {
+      rollConfig.proficiency = Math.max(2, multiplier);
+    }
+    rollConfig._rebreyaRuneToolExpertise = true;
+    return true;
+  }
+
+  applyDnd5ePreRollSavingThrow(rollConfig = {}, dialogConfig = {}, messageConfig = {}) {
+    const actor = contextActor(rollConfig, dialogConfig, messageConfig);
+    if (!actor || !this.#actorHasFeature(actor, "hill") || !contextIsPoison(rollConfig, dialogConfig, messageConfig)) {
+      return true;
+    }
+    rollConfig.advantage = true;
+    if (dialogConfig && typeof dialogConfig === "object") dialogConfig.advantage = true;
+    return true;
+  }
+
+  prepareActiveEffectCreate(effect) {
+    const actor = actorFromEmbeddedDocument(effect);
+    if (!actor || !this.#actorHasFeature(actor, "storm") || actorIsIncapacitated(actor)) return true;
+    return statusIds(effect).has("surprised") ? false : true;
+  }
+
+  #cacheActorFeatures(actor, items = collectionValues(actor?.items)) {
+    const ids = new Set(items.map(automationId).filter(Boolean));
+    this._actorFeatureCache.set(actorKey(actor), ids);
+    return ids;
+  }
+
+  #actorHasFeature(actor, id) {
+    const key = actorKey(actor);
+    const cached = this._actorFeatureCache.get(key) ?? this.#cacheActorFeatures(actor);
+    return cached.has(id);
+  }
+
+  #hasRuntimeEffect(actor, item, id) {
+    const sourceItemUuid = cleanText(item?.uuid);
+    return collectionValues(actor?.effects).some((effect) => (
+      cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.id`)) === id
+        && cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.sourceItemUuid`)) === sourceItemUuid
+    ));
+  }
+
+  async #consumeItemUse(item) {
+    const uses = item?.system?.uses ?? {};
+    const spent = Math.max(0, Math.floor(numberValue(uses.spent, 0)));
+    const maximum = Math.max(0, Math.floor(numberValue(uses.max, 0)));
+    if (spent >= maximum) return null;
+    await updateItem(item, { "system.uses.spent": spent + 1 });
+    return async () => updateItem(item, { "system.uses.spent": spent });
+  }
+
+  async #createRuneActivationEffect(actor, item, id) {
+    if (typeof actor?.createEmbeddedDocuments !== "function") return false;
+    const configurations = {
+      frost: {
+        name: "Ледяная руна: стойкость",
+        seconds: 600,
+        changes: [
+          "system.abilities.str.bonuses.check",
+          "system.abilities.str.bonuses.save",
+          "system.abilities.con.bonuses.check",
+          "system.abilities.con.bonuses.save"
+        ].map((key) => ({ key, mode: EFFECT_MODE_ADD, value: "+2", priority: 20 }))
+      },
+      hill: {
+        name: "Холмовая руна: стойкость великана",
+        seconds: 60,
+        changes: ["bludgeoning", "piercing", "slashing"].map((value) => ({
+          key: "system.traits.dr.value",
+          mode: EFFECT_MODE_ADD,
+          value,
+          priority: 20
+        }))
+      },
+      storm: {
+        name: "Штормовая руна: пророческое состояние",
+        seconds: 60,
+        changes: []
+      }
+    };
+    const configuration = configurations[id];
+    if (!configuration) return false;
+    const effect = {
+      name: configuration.name,
+      type: "base",
+      img: cleanText(item?.img, "icons/svg/aura.svg"),
+      origin: cleanText(item?.uuid),
+      disabled: false,
+      transfer: false,
+      duration: {
+        seconds: configuration.seconds,
+        rounds: null,
+        turns: null,
+        startRound: null,
+        startTurn: null,
+        combat: null,
+        startTime: globalThis.game?.time?.worldTime ?? null
+      },
+      statuses: [],
+      changes: configuration.changes,
+      flags: {
+        dae: { stackable: "noneName" },
+        [MODULE_ID]: {
+          managed: true,
+          runeKnight: {
+            id,
+            sourceItemUuid: cleanText(item?.uuid),
+            propheticState: id === "storm"
+          }
+        }
+      },
+      description: cleanText(item?.system?.description?.value)
+    };
+    const created = await actor.createEmbeddedDocuments("ActiveEffect", [effect], { render: false });
+    return Array.isArray(created) ? created.length > 0 : created !== false;
   }
 
   #actorStillOwnsItem(actor, sourceItem) {

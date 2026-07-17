@@ -78,6 +78,39 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to restore Rune Knight resources.`, error);
       });
     });
+    Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
+      moduleApi.runeKnightAutomationService.applyDnd5ePostUseActivity(activity, usageConfig, results).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to apply Rune Knight activity automation.`, error);
+      });
+      return true;
+    });
+    Hooks.on("dnd5e.preRollTool", (rollConfig, dialogConfig, messageConfig) => {
+      try {
+        return moduleApi.runeKnightAutomationService.applyDnd5ePreRollToolCheck(rollConfig, dialogConfig, messageConfig);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply Fire Rune tool expertise.`, error);
+        return true;
+      }
+    });
+    Hooks.on("dnd5e.preRollSavingThrow", (rollConfig, dialogConfig, messageConfig) => {
+      try {
+        return moduleApi.runeKnightAutomationService.applyDnd5ePreRollSavingThrow(rollConfig, dialogConfig, messageConfig);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply Hill Rune poison-save advantage.`, error);
+        return true;
+      }
+    });
+    Hooks.on("preCreateActiveEffect", (effect, data, options) => {
+      try {
+        return moduleApi.runeKnightAutomationService.prepareActiveEffectCreate(effect, data, options);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply Storm Rune surprise immunity.`, error);
+        return true;
+      }
+    });
   }
 
   if (hasStatusService) {

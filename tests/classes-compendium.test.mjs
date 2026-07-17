@@ -1940,6 +1940,34 @@ test("rune knight generated items expose stable automation metadata and recharge
   }
 });
 
+test("rune knight passive effects expose DAE and MIDI changes without equipment gates", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const entries = new Map(definitions
+    .filter((definition) => definition.sourceType === "runeKnightRune")
+    .map((definition) => {
+      const metadata = getRuneKnightRuneAutomation(definition);
+      return [metadata.id, createFeatureEntryData(definition, new Map())];
+    }));
+  const changeKeys = (id) => entries.get(id).effects[0].changes.map((change) => change.key);
+
+  assert.ok(changeKeys("stone").includes("flags.midi-qol.advantage.skill.ins"));
+  assert.ok(changeKeys("stone").includes("system.attributes.senses.darkvision"));
+  assert.ok(changeKeys("frost").includes("flags.midi-qol.advantage.skill.ani"));
+  assert.ok(changeKeys("frost").includes("flags.midi-qol.advantage.skill.prf"));
+  assert.ok(changeKeys("cloud").includes("flags.midi-qol.advantage.skill.slt"));
+  assert.ok(changeKeys("cloud").includes("flags.midi-qol.advantage.skill.dec"));
+  assert.ok(changeKeys("hill").includes("system.traits.dr.value"));
+  assert.ok(changeKeys("storm").includes("flags.midi-qol.advantage.skill.arc"));
+  assert.equal(entries.get("fire").flags["rebreya-main"].runeKnightAutomation.passive.toolExpertise, true);
+
+  for (const entry of entries.values()) {
+    assert.equal(entry.effects[0].transfer, true);
+    assert.equal(entry.effects[0].flags.dae.transfer, true);
+    assert.equal(entry.effects[0].flags.dae.disableCondition, undefined);
+  }
+});
+
 test("rune knight core generated items use proficiency-bonus resources", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
   const definitions = buildFeatureDefinitions(fighter);

@@ -2471,12 +2471,15 @@ function createRuneKnightAutomation(feature, classIdentifier, runeKnightAutomati
       id: effectId,
       name: `${feature.name}: постоянная сила`,
       description: feature.description,
-      changes: [{
-        key: `flags.${MODULE_ID}.runeKnight.passive.${runeKnightAutomation.id}`,
-        mode: EFFECT_MODE_OVERRIDE,
-        value: JSON.stringify(runeKnightAutomation.passive ?? {}),
-        priority: 20
-      }],
+      changes: [
+        ...foundry.utils.deepClone(runeKnightAutomation.passive?.changes ?? []),
+        {
+          key: `flags.${MODULE_ID}.runeKnight.passive.${runeKnightAutomation.id}`,
+          mode: EFFECT_MODE_OVERRIDE,
+          value: "1",
+          priority: 20
+        }
+      ],
       flags: {
         dae: {
           transfer: true,

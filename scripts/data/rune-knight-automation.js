@@ -27,12 +27,18 @@ const LONG_REST = Object.freeze([
   Object.freeze({ period: "lr", type: "recoverAll", formula: "" })
 ]);
 
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+}
+
 function freezeAutomation(specification) {
-  return Object.freeze({
+  return deepFreeze({
     ...specification,
-    save: specification.save ? Object.freeze({ ...specification.save }) : null,
-    recovery: Object.freeze((specification.recovery ?? []).map((entry) => Object.freeze({ ...entry }))),
-    passive: specification.passive ? Object.freeze({ ...specification.passive }) : null
+    save: specification.save ? { ...specification.save } : null,
+    recovery: (specification.recovery ?? []).map((entry) => ({ ...entry })),
+    passive: specification.passive ? { ...specification.passive } : null
   });
 }
 
@@ -49,7 +55,14 @@ const RUNE_AUTOMATION = Object.freeze({
     usesMax: "1",
     recovery: SHORT_OR_LONG_REST,
     runtimeManagedPayment: true,
-    passive: { insightAdvantage: true, darkvision: 120 }
+    passive: {
+      insightAdvantage: true,
+      darkvision: 120,
+      changes: [
+        { key: "flags.midi-qol.advantage.skill.ins", mode: 0, value: "1", priority: 20 },
+        { key: "system.attributes.senses.darkvision", mode: 4, value: "120", priority: 20 }
+      ]
+    }
   }),
   frost: freezeAutomation({
     kind: "rune",
@@ -63,7 +76,14 @@ const RUNE_AUTOMATION = Object.freeze({
     usesMax: "1",
     recovery: SHORT_OR_LONG_REST,
     runtimeManagedPayment: true,
-    passive: { animalHandlingAdvantage: true, performanceAdvantage: true }
+    passive: {
+      animalHandlingAdvantage: true,
+      performanceAdvantage: true,
+      changes: [
+        { key: "flags.midi-qol.advantage.skill.ani", mode: 0, value: "1", priority: 20 },
+        { key: "flags.midi-qol.advantage.skill.prf", mode: 0, value: "1", priority: 20 }
+      ]
+    }
   }),
   cloud: freezeAutomation({
     kind: "rune",
@@ -77,7 +97,14 @@ const RUNE_AUTOMATION = Object.freeze({
     usesMax: "1",
     recovery: SHORT_OR_LONG_REST,
     runtimeManagedPayment: true,
-    passive: { sleightOfHandAdvantage: true, deceptionAdvantage: true }
+    passive: {
+      sleightOfHandAdvantage: true,
+      deceptionAdvantage: true,
+      changes: [
+        { key: "flags.midi-qol.advantage.skill.slt", mode: 0, value: "1", priority: 20 },
+        { key: "flags.midi-qol.advantage.skill.dec", mode: 0, value: "1", priority: 20 }
+      ]
+    }
   }),
   fire: freezeAutomation({
     kind: "rune",
@@ -105,7 +132,13 @@ const RUNE_AUTOMATION = Object.freeze({
     usesMax: "1",
     recovery: SHORT_OR_LONG_REST,
     runtimeManagedPayment: true,
-    passive: { poisonSaveAdvantage: true, poisonResistance: true }
+    passive: {
+      poisonSaveAdvantage: true,
+      poisonResistance: true,
+      changes: [
+        { key: "system.traits.dr.value", mode: 2, value: "poison", priority: 20 }
+      ]
+    }
   }),
   storm: freezeAutomation({
     kind: "rune",
@@ -119,7 +152,13 @@ const RUNE_AUTOMATION = Object.freeze({
     usesMax: "1",
     recovery: SHORT_OR_LONG_REST,
     runtimeManagedPayment: true,
-    passive: { arcanaAdvantage: true, cannotBeSurprised: true }
+    passive: {
+      arcanaAdvantage: true,
+      cannotBeSurprised: true,
+      changes: [
+        { key: "flags.midi-qol.advantage.skill.arc", mode: 0, value: "1", priority: 20 }
+      ]
+    }
   })
 });
 
