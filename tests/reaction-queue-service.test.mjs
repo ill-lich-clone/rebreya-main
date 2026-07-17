@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  MAX_COMPLETED_REACTION_RESULTS,
   REACTION_PROMPT_EVENT,
   REACTION_PROMPT_RESULT_EVENT,
   ReactionQueueService
@@ -295,6 +296,58 @@ test("reaction queue reuses completed trigger results only within the bounded tt
   now += 60_001;
   await queue.resolve(request);
   assert.equal(promptCalls, 2);
+});
+
+test("reaction queue bounds and prunes completed trigger results", async () => {
+  let now = 5_000;
+  const queue = new ReactionQueueService({}, {
+    isCoordinator: () => true,
+    now: () => now
+  });
+  queue.registerType("empty", {
+    listCandidates: () => [],
+    isTriggerValid: () => true
+  });
+
+  for (let index = 0; index < MAX_COMPLETED_REACTION_RESULTS + 40; index += 1) {
+    await queue.resolve({ triggerId: `bounded-${index}`, kind: "empty" });
+  }
+  assert.equal(queue._completed.size, MAX_COMPLETED_REACTION_RESULTS);
+
+  now += 60_001;
+  await queue.resolve({ triggerId: "after-ttl", kind: "empty" });
+  assert.equal(queue._completed.size, 1);
+});
+
+test("one reaction queue keeps at most one candidate timer active", async () => {
+  const candidates = [candidate("timer-a"), candidate("timer-b"), candidate("timer-c")];
+  let activeTimers = 0;
+  let maximumActiveTimers = 0;
+  let timerSequence = 0;
+  const queue = new ReactionQueueService({}, {
+    isCoordinator: () => true,
+    promptCandidate: async () => ({ accepted: false }),
+    setTimeoutFn: () => {
+      activeTimers += 1;
+      maximumActiveTimers = Math.max(maximumActiveTimers, activeTimers);
+      timerSequence += 1;
+      return timerSequence;
+    },
+    clearTimeoutFn: () => {
+      activeTimers -= 1;
+    }
+  });
+  queue.registerType("timers", {
+    listCandidates: () => candidates,
+    isTriggerValid: () => true,
+    revalidateCandidate: () => true,
+    buildPrompt: () => ({})
+  });
+
+  await queue.resolve({ triggerId: "timer-trigger", kind: "timers" });
+
+  assert.equal(maximumActiveTimers, 1);
+  assert.equal(activeTimers, 0);
 });
 
 test("reaction queue releases a failed provider and advances when rollback also fails", async () => {

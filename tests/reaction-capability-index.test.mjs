@@ -142,3 +142,22 @@ test("reaction capability index adds one new token and removes one deleted actor
   index.removeActor(first.uuid);
   assert.deepEqual(index.list("guard").map((entry) => entry.actorUuid), [second.uuid]);
 });
+
+test("one thousand empty capability checks do not rerun providers", () => {
+  const watcher = actor("watcher");
+  const scene = { id: "scene-1", tokens: [token("watcher-token", watcher)] };
+  let providerCalls = 0;
+  const index = new ReactionCapabilityIndex({ sceneProvider: () => scene });
+  index.registerProvider("unused", () => {
+    providerCalls += 1;
+    return [];
+  });
+
+  assert.equal(index.has("unused"), false);
+  assert.equal(providerCalls, 1);
+  providerCalls = 0;
+  for (let indexValue = 0; indexValue < 1_000; indexValue += 1) {
+    assert.equal(index.has("missing-reaction"), false);
+  }
+  assert.equal(providerCalls, 0);
+});
