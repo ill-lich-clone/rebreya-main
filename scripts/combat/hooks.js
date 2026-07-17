@@ -15,7 +15,8 @@ export function registerCombatHooks(moduleApi) {
   const hasEnvironmentService = Boolean(moduleApi?.environmentAutomationService);
   const hasSpellService = Boolean(moduleApi?.spellAutomationService);
   const hasReactionCapabilityIndex = Boolean(moduleApi?.reactionCapabilityIndex);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex) {
+  const hasRuneKnightService = Boolean(moduleApi?.runeKnightAutomationService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService) {
     return;
   }
 
@@ -53,6 +54,30 @@ export function registerCombatHooks(moduleApi) {
     Hooks.on("deleteCombat", (combat) => index.invalidateScene(
       combat?.scene?.id ?? combat?.scene?._id ?? combat?.scene ?? globalThis.canvas?.scene?.id
     ));
+  }
+
+  if (hasRuneKnightService) {
+    const handleRuneKnightItem = (item) => {
+      moduleApi.runeKnightAutomationService.handleEmbeddedItemChange(item).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to synchronize Rune Knight item resources.`, error);
+      });
+    };
+    const handleRuneKnightEffect = (effect) => {
+      moduleApi.runeKnightAutomationService.handleEmbeddedEffectChange(effect).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to synchronize Rune Knight source effects.`, error);
+      });
+    };
+    for (const hookName of ["createItem", "updateItem", "deleteItem"]) {
+      Hooks.on(hookName, handleRuneKnightItem);
+    }
+    for (const hookName of ["createActiveEffect", "updateActiveEffect", "deleteActiveEffect"]) {
+      Hooks.on(hookName, handleRuneKnightEffect);
+    }
+    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
+      moduleApi.runeKnightAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to restore Rune Knight resources.`, error);
+      });
+    });
   }
 
   if (hasStatusService) {

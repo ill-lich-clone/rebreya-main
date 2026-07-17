@@ -68,6 +68,7 @@ import { registerCombatHooks } from "./combat/hooks.js?v=1.4.96-firearm-item-she
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.96-firearm-card-notes";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js";
+import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.96-surrounded-ac";
@@ -846,6 +847,7 @@ export class RebreyaMainModule {
       capabilityIndex: this.reactionCapabilityIndex,
       logger: console
     });
+    this.runeKnightAutomationService = new RuneKnightAutomationService(this);
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.spellAutomationService = new SpellAutomationService(this);
@@ -1114,6 +1116,13 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize global reaction queue.`, error);
+    }
+
+    try {
+      await this.runeKnightAutomationService.initialize();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to initialize Rune Knight automation.`, error);
     }
 
     try {

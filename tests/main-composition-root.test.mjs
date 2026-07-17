@@ -41,6 +41,17 @@ test("global reaction services are composed before combat providers", async () =
   assert.match(source, /this\.reactionCapabilityIndex\.rebuildScene\(globalThis\.canvas\?\.scene\);/u);
 });
 
+test("Rune Knight automation is composed on the shared reaction foundation", async () => {
+  const source = await readCanonicalEntrypointSource();
+
+  assert.match(source, /import \{ RuneKnightAutomationService \} from "\.\/combat\/rune-knight-automation-service\.js";/u);
+  const queuePosition = source.indexOf("this.reactionQueueService = new ReactionQueueService(this");
+  const runePosition = source.indexOf("this.runeKnightAutomationService = new RuneKnightAutomationService(this)");
+  assert.ok(queuePosition >= 0);
+  assert.ok(runePosition > queuePosition);
+  assert.match(source, /await this\.runeKnightAutomationService\.initialize\(\);/u);
+});
+
 test("global reactions own socket routing and public trigger registration", async () => {
   const source = await readCanonicalEntrypointSource();
 
