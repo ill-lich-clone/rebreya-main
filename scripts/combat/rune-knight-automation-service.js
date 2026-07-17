@@ -7,6 +7,12 @@ const EFFECT_MODE_OVERRIDE = 5;
 const STONE_REACTION_KIND = "rune-stone";
 const STONE_PROVIDER_ID = "rune-knight-stone";
 const STONE_RANGE_FEET = 30;
+const CLOUD_REACTION_KIND = "rune-cloud";
+const CLOUD_PROVIDER_ID = "rune-knight-cloud";
+const CLOUD_RANGE_FEET = 30;
+const RUNIC_SHIELD_REACTION_KIND = "runic-shield";
+const RUNIC_SHIELD_PROVIDER_ID = "rune-knight-runic-shield";
+const RUNIC_SHIELD_RANGE_FEET = 60;
 const MAX_WORKFLOW_STATES = 128;
 const MOVEMENT_PATHS = Object.freeze([
   "walk",
@@ -281,6 +287,7 @@ export class RuneKnightAutomationService {
     this._fireWorkflowStates = new Map();
     this._fireWorkflowPromises = new Map();
     this._fireTurnKeys = new Set();
+    this._hitReactionTriggers = new Map();
   }
 
   async initialize() {
@@ -291,10 +298,22 @@ export class RuneKnightAutomationService {
         ({ actor, token }) => this.#stoneCapabilitiesForActor(actor, token),
         { providerId: STONE_PROVIDER_ID }
       );
+      capabilityIndex.registerProvider(
+        CLOUD_REACTION_KIND,
+        ({ actor, token }) => this.#hitReactionCapabilitiesForActor(actor, token, "cloud"),
+        { providerId: CLOUD_PROVIDER_ID }
+      );
+      capabilityIndex.registerProvider(
+        RUNIC_SHIELD_REACTION_KIND,
+        ({ actor, token }) => this.#hitReactionCapabilitiesForActor(actor, token, "runic-shield"),
+        { providerId: RUNIC_SHIELD_PROVIDER_ID }
+      );
     }
     const queue = this.moduleApi?.reactionQueueService;
     if (typeof queue?.registerType === "function") {
       queue.registerType(STONE_REACTION_KIND, this.#stoneReactionProvider());
+      queue.registerType(CLOUD_REACTION_KIND, this.#cloudReactionProvider());
+      queue.registerType(RUNIC_SHIELD_REACTION_KIND, this.#runicShieldReactionProvider());
     }
     return true;
   }
@@ -561,13 +580,404 @@ export class RuneKnightAutomationService {
     const current = this._fireWorkflowPromises.get(key);
     if (current) return current;
 
-    const operation = this.#prepareFireRune(workflow, key).finally(() => {
+    const operation = this.#applyMidiHitPipeline(workflow, key).finally(() => {
       if (this._fireWorkflowPromises.get(key) === operation) {
         this._fireWorkflowPromises.delete(key);
       }
     });
     this._fireWorkflowPromises.set(key, operation);
     return operation;
+  }
+
+  async #applyMidiHitPipeline(workflow, key) {
+    await this.#resolveCloudReaction(workflow, key);
+    await this.#resolveRunicShieldReaction(workflow, key);
+    return this.#prepareFireRune(workflow, key);
+  }
+
+  #hitReactionCapabilitiesForActor(actor, token, id) {
+    if (!isActorDocument(actor) || actorIsIncapacitated(actor)) return [];
+    const item = collectionValues(actor?.items).find((entry) => (
+      automationId(entry) === id && this.#itemHasUse(entry)
+    ));
+    if (!item) return [];
+    return [{
+      actorUuid: documentUuid(actor) || actorKey(actor),
+      tokenUuid: documentUuid(token),
+      itemUuid: documentUuid(item),
+      activityId: firstActivityId(item),
+      ownerUserIds: ownerUserIds(actor)
+    }];
+  }
+
+  async #resolveCloudReaction(workflow, key) {
+    const capabilityIndex = this.moduleApi?.reactionCapabilityIndex;
+    const queue = this.moduleApi?.reactionQueueService;
+    if (
+      typeof capabilityIndex?.has !== "function"
+      || !capabilityIndex.has(CLOUD_REACTION_KIND)
+      || typeof queue?.resolve !== "function"
+    ) return true;
+    const originalTarget = collectionValues(workflow?.hitTargets)[0];
+    if (!originalTarget) return true;
+
+    const triggerId = `${key}:cloud-rune-hit`;
+    const trigger = {
+      kind: CLOUD_REACTION_KIND,
+      workflow,
+      targetToken: originalTarget,
+      targetActor: tokenActor(originalTarget),
+      attackerToken: workflow?.token ?? workflow?.tokenDocument ?? null,
+      active: true
+    };
+    this.#rememberWorkflowState(this._hitReactionTriggers, triggerId, trigger);
+    const context = {
+      triggerId,
+      workflowId: key,
+      targetTokenUuid: documentUuid(originalTarget),
+      attackerTokenUuid: documentUuid(trigger.attackerToken),
+      triggerActive: true
+    };
+    try {
+      return await queue.resolve({ triggerId, kind: CLOUD_REACTION_KIND, context });
+    }
+    finally {
+      this._hitReactionTriggers.delete(triggerId);
+    }
+  }
+
+  async #resolveRunicShieldReaction(workflow, key) {
+    const capabilityIndex = this.moduleApi?.reactionCapabilityIndex;
+    const queue = this.moduleApi?.reactionQueueService;
+    if (
+      typeof capabilityIndex?.has !== "function"
+      || !capabilityIndex.has(RUNIC_SHIELD_REACTION_KIND)
+      || typeof queue?.resolve !== "function"
+    ) return true;
+    const hitTarget = collectionValues(workflow?.hitTargets)[0];
+    if (!hitTarget) return true;
+
+    const triggerId = `${key}:runic-shield-hit`;
+    const trigger = {
+      kind: RUNIC_SHIELD_REACTION_KIND,
+      workflow,
+      targetToken: hitTarget,
+      targetActor: tokenActor(hitTarget),
+      attackerToken: workflow?.token ?? workflow?.tokenDocument ?? null,
+      active: true
+    };
+    this.#rememberWorkflowState(this._hitReactionTriggers, triggerId, trigger);
+    const context = {
+      triggerId,
+      workflowId: key,
+      targetTokenUuid: documentUuid(hitTarget),
+      attackerTokenUuid: documentUuid(trigger.attackerToken),
+      triggerActive: true
+    };
+    try {
+      return await queue.resolve({ triggerId, kind: RUNIC_SHIELD_REACTION_KIND, context });
+    }
+    finally {
+      this._hitReactionTriggers.delete(triggerId);
+    }
+  }
+
+  #cloudReactionProvider() {
+    return {
+      listCandidates: (_context, capabilityIndex) => capabilityIndex?.list?.(CLOUD_REACTION_KIND) ?? [],
+      isTriggerValid: (context) => this.#hitReactionTrigger(context, CLOUD_REACTION_KIND)?.active !== false,
+      revalidateCandidate: (candidate, context) => this.#canUseHitReaction(
+        this.#normalizeHitReactionCandidate(candidate, "cloud"),
+        this.#hitReactionTrigger(context, CLOUD_REACTION_KIND),
+        CLOUD_RANGE_FEET,
+        true
+      ),
+      buildPrompt: (candidate, context) => this.#cloudReactionPrompt(
+        this.#normalizeHitReactionCandidate(candidate, "cloud"),
+        this.#hitReactionTrigger(context, CLOUD_REACTION_KIND)
+      ),
+      pay: (candidate) => this.#payHitReaction(this.#normalizeHitReactionCandidate(candidate, "cloud")),
+      apply: (candidate, choice, context, transaction) => this.#applyCloudReaction(
+        this.#normalizeHitReactionCandidate(candidate, "cloud"),
+        choice,
+        this.#hitReactionTrigger(context, CLOUD_REACTION_KIND),
+        transaction
+      ),
+      rollback: (_candidate, transaction) => this.#rollbackHitReaction(transaction),
+      serializeEffect: (effect) => ({
+        applied: effect?.applied === true,
+        redirectedTokenUuid: documentUuid(effect?.redirectedToken)
+      })
+    };
+  }
+
+  #runicShieldReactionProvider() {
+    return {
+      listCandidates: (_context, capabilityIndex) => capabilityIndex?.list?.(RUNIC_SHIELD_REACTION_KIND) ?? [],
+      isTriggerValid: (context) => {
+        const trigger = this.#hitReactionTrigger(context, RUNIC_SHIELD_REACTION_KIND);
+        return trigger?.active !== false && this.#workflowHasHitTarget(trigger?.workflow, trigger?.targetToken);
+      },
+      revalidateCandidate: (candidate, context) => this.#canUseHitReaction(
+        this.#normalizeHitReactionCandidate(candidate, "runic-shield"),
+        this.#hitReactionTrigger(context, RUNIC_SHIELD_REACTION_KIND),
+        RUNIC_SHIELD_RANGE_FEET,
+        false
+      ),
+      buildPrompt: (_candidate, context) => ({
+        title: "Рунический щит",
+        body: `Заставить атакующего перебросить попадание по ${cleanText(
+          this.#hitReactionTrigger(context, RUNIC_SHIELD_REACTION_KIND)?.targetActor?.name,
+          "цели"
+        )}?`,
+        acceptLabel: "Перебросить атаку",
+        declineLabel: "Пропустить"
+      }),
+      pay: (candidate) => this.#payHitReaction(this.#normalizeHitReactionCandidate(candidate, "runic-shield")),
+      apply: (candidate, _choice, context, transaction) => this.#applyRunicShieldReaction(
+        this.#normalizeHitReactionCandidate(candidate, "runic-shield"),
+        this.#hitReactionTrigger(context, RUNIC_SHIELD_REACTION_KIND),
+        transaction
+      ),
+      rollback: (_candidate, transaction) => this.#rollbackHitReaction(transaction),
+      serializeEffect: (effect) => ({
+        applied: effect?.applied === true,
+        attackTotal: numberValue(effect?.newRoll?.total, 0)
+      })
+    };
+  }
+
+  #normalizeHitReactionCandidate(candidate = {}, expectedId) {
+    const item = candidate.item ?? globalThis.fromUuidSync?.(candidate.itemUuid) ?? null;
+    const actor = candidate.actor
+      ?? actorFromEmbeddedDocument(item)
+      ?? globalThis.fromUuidSync?.(candidate.actorUuid)
+      ?? null;
+    const resolvedItem = item ?? collectionValues(actor?.items).find((entry) => (
+      documentUuid(entry) === cleanText(candidate.itemUuid) || automationId(entry) === expectedId
+    ));
+    const token = candidate.token ?? globalThis.fromUuidSync?.(candidate.tokenUuid) ?? null;
+    return {
+      ...candidate,
+      id: cleanText(candidate.id, actorKey(actor)),
+      actor,
+      actorUuid: cleanText(candidate.actorUuid, documentUuid(actor) || actorKey(actor)),
+      token,
+      tokenUuid: cleanText(candidate.tokenUuid, documentUuid(token)),
+      item: resolvedItem,
+      itemUuid: cleanText(candidate.itemUuid, documentUuid(resolvedItem))
+    };
+  }
+
+  #hitReactionTrigger(context = {}, kind) {
+    if (context._runeKnightHitTrigger?.kind === kind) return context._runeKnightHitTrigger;
+    const triggerId = cleanText(context.triggerId);
+    const local = this._hitReactionTriggers.get(triggerId);
+    if (local) {
+      context._runeKnightHitTrigger = local;
+      return local;
+    }
+
+    const workflow = globalThis.MidiQOL?.Workflow?.getWorkflow?.(context.workflowId)
+      ?? globalThis.MidiQOL?.Workflow?.getWorkflow?.(triggerId)
+      ?? null;
+    const targetToken = globalThis.fromUuidSync?.(context.targetTokenUuid) ?? null;
+    const trigger = {
+      kind,
+      workflow,
+      targetToken,
+      targetActor: tokenActor(targetToken),
+      attackerToken: globalThis.fromUuidSync?.(context.attackerTokenUuid) ?? workflow?.token ?? null,
+      active: context.triggerActive !== false
+    };
+    context._runeKnightHitTrigger = trigger;
+    return trigger;
+  }
+
+  async #canUseHitReaction(candidate, trigger, rangeFeet, requireRedirectTarget) {
+    const actor = candidate?.actor;
+    const item = candidate?.item;
+    if (
+      !isActorDocument(actor)
+      || !item
+      || !this.#itemHasUse(item)
+      || actorIsIncapacitated(actor)
+      || !isActorDocument(trigger?.targetActor)
+      || trigger?.active === false
+    ) return false;
+    const reactionState = this.moduleApi?.combatAttackService?.canUseReaction?.(actor, 1);
+    if (reactionState && reactionState.canUse === false) return false;
+    if (!this.#isVisible(candidate, trigger)) return false;
+    if (this.#distanceFeet(candidate.token, trigger.targetToken) > rangeFeet) return false;
+    return !requireRedirectTarget || this.#cloudRedirectTargets(candidate, trigger).length > 0;
+  }
+
+  #cloudReactionPrompt(candidate, trigger) {
+    const options = this.#cloudRedirectTargets(candidate, trigger).map((token) => ({
+      value: documentUuid(token),
+      label: cleanText(token?.name ?? tokenActor(token)?.name, documentUuid(token))
+    }));
+    return {
+      title: "Облачная руна",
+      body: `Перенаправить атаку, попавшую по ${cleanText(trigger?.targetActor?.name, "цели")}?`,
+      acceptLabel: "Перенаправить",
+      declineLabel: "Пропустить",
+      fields: [{
+        name: "targetTokenUuid",
+        type: "select",
+        label: "Новая цель",
+        options
+      }]
+    };
+  }
+
+  #cloudRedirectTargets(candidate, trigger) {
+    const tokens = typeof this.options.sceneTokens === "function"
+      ? collectionValues(this.options.sceneTokens(candidate, trigger))
+      : collectionValues(globalThis.canvas?.scene?.tokens).map((token) => token?.object ?? token);
+    return tokens.filter((token) => (
+      isActorDocument(tokenActor(token))
+      && !this.#sameToken(token, trigger?.attackerToken)
+      && this.#distanceFeet(candidate?.token, token) <= CLOUD_RANGE_FEET
+    ));
+  }
+
+  async #payHitReaction(candidate) {
+    const rollback = await this.#consumeItemUse(candidate?.item);
+    return rollback ? { paid: true, rollback } : { paid: false };
+  }
+
+  async #applyCloudReaction(_candidate, choice, trigger, transaction) {
+    const workflow = trigger?.workflow;
+    const originalTarget = trigger?.targetToken;
+    const redirectedToken = this.#cloudRedirectTargets(_candidate, trigger).find((token) => (
+      documentUuid(token) === cleanText(choice?.targetTokenUuid)
+    ));
+    if (!workflow || !originalTarget || !redirectedToken) return { applied: false };
+
+    const snapshot = this.#workflowSnapshot(workflow);
+    const effect = { applied: false, workflow, trigger, snapshot, redirectedToken };
+    if (transaction) transaction.effect = effect;
+    const hit = this.#attackHitsToken(workflow.attackRoll, redirectedToken);
+    workflow.targets = this.#replaceToken(workflow.targets, originalTarget, redirectedToken, true);
+    workflow.hitTargets = this.#replaceToken(workflow.hitTargets, originalTarget, redirectedToken, hit);
+    workflow.hitTargetsEC = this.#replaceToken(workflow.hitTargetsEC, originalTarget, redirectedToken, false);
+    this.#removeDamageRecipient(workflow, originalTarget);
+    trigger.active = false;
+    effect.applied = true;
+    return effect;
+  }
+
+  async #applyRunicShieldReaction(_candidate, trigger, transaction) {
+    const workflow = trigger?.workflow;
+    const attackRoll = workflow?.attackRoll;
+    if (!workflow || typeof attackRoll?.reroll !== "function") return { applied: false };
+    const snapshot = this.#workflowSnapshot(workflow);
+    const effect = { applied: false, workflow, trigger, snapshot, newRoll: null };
+    if (transaction) transaction.effect = effect;
+    const newRoll = await attackRoll.reroll();
+    if (!newRoll) return { applied: false };
+    if (typeof workflow.setAttackRoll === "function") await workflow.setAttackRoll(newRoll);
+    else workflow.attackRoll = newRoll;
+    this.#recalculateWorkflowHits(workflow);
+    effect.applied = true;
+    effect.newRoll = newRoll;
+    return effect;
+  }
+
+  async #rollbackHitReaction(transaction) {
+    const effect = transaction?.effect;
+    if (effect?.workflow && effect?.snapshot) {
+      await this.#restoreWorkflowSnapshot(effect.workflow, effect.snapshot);
+      if (effect.trigger) effect.trigger.active = true;
+    }
+    await transaction?.payment?.rollback?.();
+  }
+
+  #workflowSnapshot(workflow) {
+    return {
+      attackRoll: workflow?.attackRoll,
+      targets: new Set(collectionValues(workflow?.targets)),
+      hitTargets: new Set(collectionValues(workflow?.hitTargets)),
+      hitTargetsEC: new Set(collectionValues(workflow?.hitTargetsEC)),
+      damageList: Array.isArray(workflow?.damageList) ? [...workflow.damageList] : null,
+      damageRecipients: workflow?.damageRecipients
+        ? [...collectionValues(workflow.damageRecipients)]
+        : null,
+      damageRecipientsWasSet: workflow?.damageRecipients instanceof Set
+    };
+  }
+
+  async #restoreWorkflowSnapshot(workflow, snapshot) {
+    if (snapshot.attackRoll && workflow.attackRoll !== snapshot.attackRoll) {
+      if (typeof workflow.setAttackRoll === "function") await workflow.setAttackRoll(snapshot.attackRoll);
+      else workflow.attackRoll = snapshot.attackRoll;
+    }
+    workflow.targets = new Set(snapshot.targets);
+    workflow.hitTargets = new Set(snapshot.hitTargets);
+    workflow.hitTargetsEC = new Set(snapshot.hitTargetsEC);
+    if (snapshot.damageList) workflow.damageList = [...snapshot.damageList];
+    if (snapshot.damageRecipients) {
+      workflow.damageRecipients = snapshot.damageRecipientsWasSet
+        ? new Set(snapshot.damageRecipients)
+        : [...snapshot.damageRecipients];
+    }
+  }
+
+  #replaceToken(collection, oldToken, newToken, includeNew) {
+    const next = new Set(collectionValues(collection).filter((token) => !this.#sameToken(token, oldToken)));
+    if (includeNew) next.add(newToken);
+    return next;
+  }
+
+  #sameToken(left, right) {
+    if (!left || !right) return false;
+    if (left === right) return true;
+    const leftUuid = documentUuid(left);
+    const rightUuid = documentUuid(right);
+    if (leftUuid && rightUuid) return leftUuid === rightUuid;
+    return documentId(left) && documentId(left) === documentId(right);
+  }
+
+  #attackHitsToken(attackRoll, token) {
+    if (!attackRoll || attackRoll.isFumble === true) return false;
+    if (attackRoll.isCritical === true) return true;
+    const ac = numberValue(tokenActor(token)?.system?.attributes?.ac?.value, Number.POSITIVE_INFINITY);
+    return numberValue(attackRoll.total, Number.NEGATIVE_INFINITY) >= ac;
+  }
+
+  #workflowHasHitTarget(workflow, targetToken) {
+    return collectionValues(workflow?.hitTargets).some((token) => this.#sameToken(token, targetToken));
+  }
+
+  #recalculateWorkflowHits(workflow) {
+    const targets = collectionValues(workflow?.targets);
+    const hits = targets.filter((token) => this.#attackHitsToken(workflow.attackRoll, token));
+    workflow.hitTargets = new Set(hits);
+    workflow.hitTargetsEC = new Set();
+    const hitUuids = new Set(hits.map(documentUuid).filter(Boolean));
+    if (Array.isArray(workflow.damageList)) {
+      workflow.damageList = workflow.damageList.filter((row) => {
+        const tokenUuid = cleanText(row?.tokenUuid ?? row?.token?.uuid);
+        return !tokenUuid || hitUuids.has(tokenUuid);
+      });
+    }
+  }
+
+  #removeDamageRecipient(workflow, token) {
+    const tokenUuid = documentUuid(token);
+    const actorUuid = documentUuid(tokenActor(token)) || actorKey(tokenActor(token));
+    for (const key of ["damageList", "damageRecipients"]) {
+      const current = workflow?.[key];
+      if (!current) continue;
+      const filtered = collectionValues(current).filter((row) => {
+        const rowToken = row?.token ?? row;
+        const rowActor = row?.actor ?? tokenActor(rowToken);
+        return cleanText(row?.tokenUuid ?? documentUuid(rowToken)) !== tokenUuid
+          && cleanText(row?.actorUuid ?? documentUuid(rowActor) ?? actorKey(rowActor)) !== actorUuid;
+      });
+      workflow[key] = current instanceof Set ? new Set(filtered) : filtered;
+    }
   }
 
   async #prepareFireRune(workflow, key) {

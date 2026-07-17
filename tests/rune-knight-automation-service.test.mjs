@@ -287,19 +287,20 @@ function createStoneHarness({ promptAccepted = true, reactionConsumed = true, ca
   };
   const capabilityIndex = {
     provider: null,
+    providers: new Map(),
     hasCalls: 0,
     registerProvider(kind, provider) {
-      assert.equal(kind, "rune-stone");
-      this.provider = provider;
+      this.providers.set(kind, provider);
+      if (kind === "rune-stone") this.provider = provider;
       return this;
     },
     has(kind) {
-      assert.equal(kind, "rune-stone");
+      if (kind !== "rune-stone") return false;
       this.hasCalls += 1;
       return capabilityAvailable;
     },
     list(kind) {
-      assert.equal(kind, "rune-stone");
+      if (kind !== "rune-stone") return [];
       return capabilityAvailable ? [candidate] : [];
     }
   };
@@ -559,6 +560,203 @@ test("Fire shackles deal start-turn damage and repeat the STR save at turn end",
   });
   assert.equal(harness.calls.saves, 2);
   assert.deepEqual(harness.target.effects, []);
+});
+
+function assignActorIdentity(actor, id, name = id) {
+  actor.id = id;
+  actor.uuid = `Actor.${id}`;
+  actor.name = name;
+  return actor;
+}
+
+function createHitRewriteHarness({ consumeReaction = true, failShieldApply = false } = {}) {
+  const cloudItem = createItem({ id: "cloud", automation: "cloud", spent: 0, max: 1 });
+  const shieldItem = createItem({ id: "shield", automation: "runic-shield", spent: 0, max: 4 });
+  const cloudActor = assignActorIdentity(createActor({ items: [cloudItem] }), "cloud-actor", "Cloud Knight");
+  const shieldActor = assignActorIdentity(createActor({ items: [shieldItem] }), "shield-actor", "Shield Knight");
+  const attacker = assignActorIdentity(createActor({ level: 1, prof: 2 }), "attacker", "Attacker");
+  const original = assignActorIdentity(createActor({ level: 1, prof: 2 }), "original", "Original Target");
+  const redirected = assignActorIdentity(createActor({ level: 1, prof: 2 }), "redirected", "Redirected Target");
+  original.system.attributes.ac = { value: 15 };
+  redirected.system.attributes.ac = { value: 16 };
+  const token = (id, actor) => ({ id, uuid: `Scene.scene.Token.${id}`, actor, name: actor.name });
+  const cloudToken = token("cloud", cloudActor);
+  const shieldToken = token("shield", shieldActor);
+  const attackerToken = token("attacker", attacker);
+  const originalToken = token("original", original);
+  const redirectedToken = token("redirected", redirected);
+  const candidates = {
+    "rune-cloud": [{
+      id: cloudActor.id,
+      actor: cloudActor,
+      actorUuid: cloudActor.uuid,
+      token: cloudToken,
+      tokenUuid: cloudToken.uuid,
+      item: cloudItem,
+      itemUuid: cloudItem.uuid,
+      ownerUserIds: ["owner"]
+    }],
+    "runic-shield": [{
+      id: shieldActor.id,
+      actor: shieldActor,
+      actorUuid: shieldActor.uuid,
+      token: shieldToken,
+      tokenUuid: shieldToken.uuid,
+      item: shieldItem,
+      itemUuid: shieldItem.uuid,
+      ownerUserIds: ["owner"]
+    }]
+  };
+  const capabilityIndex = {
+    providers: new Map(),
+    registerProvider(kind, provider) {
+      this.providers.set(kind, provider);
+      return this;
+    },
+    has(kind) {
+      return Boolean(candidates[kind]?.length);
+    },
+    list(kind) {
+      return candidates[kind] ?? [];
+    }
+  };
+  const calls = { prompts: [], reactions: 0, rerolls: 0 };
+  const moduleApi = {
+    reactionCapabilityIndex: capabilityIndex,
+    combatAttackService: {
+      canUseReaction: () => ({ canUse: true }),
+      async consumeReaction() {
+        calls.reactions += 1;
+        return { consumed: consumeReaction };
+      }
+    }
+  };
+  const combat = {
+    id: "rewrite-combat",
+    started: true,
+    turns: [
+      { actor: cloudActor, token: cloudToken },
+      { actor: shieldActor, token: shieldToken }
+    ]
+  };
+  const queue = new ReactionQueueService(moduleApi, {
+    capabilityIndex,
+    isCoordinator: () => true,
+    combatProvider: () => combat,
+    promptCandidate: async ({ prompt }) => {
+      calls.prompts.push(prompt);
+      if (prompt.title === "Облачная руна") {
+        const options = prompt.fields[0].options;
+        assert.equal(options.some((option) => option.value === attackerToken.uuid), false);
+        assert.ok(options.some((option) => option.value === redirectedToken.uuid));
+        return { accepted: true, targetTokenUuid: redirectedToken.uuid };
+      }
+      return { accepted: true };
+    },
+    setTimeoutFn: () => 1,
+    clearTimeoutFn: () => {}
+  });
+  moduleApi.reactionQueueService = queue;
+  const rerolledAttack = { total: 10, isCritical: false, isFumble: false };
+  const originalAttack = {
+    total: 18,
+    isCritical: false,
+    isFumble: false,
+    async reroll() {
+      calls.rerolls += 1;
+      return rerolledAttack;
+    }
+  };
+  const workflow = {
+    id: "rewrite-workflow",
+    actor: attacker,
+    token: attackerToken,
+    item: { id: "weapon", type: "weapon", name: "Sword" },
+    attackRoll: originalAttack,
+    targets: new Set([originalToken]),
+    hitTargets: new Set([originalToken]),
+    hitTargetsEC: new Set(),
+    damageList: [{ tokenUuid: originalToken.uuid, actorUuid: original.uuid }],
+    async setAttackRoll(roll) {
+      this.attackRoll = roll;
+      if (failShieldApply && roll === rerolledAttack) throw new Error("shield apply failed");
+      return roll;
+    }
+  };
+  const service = new RuneKnightAutomationService(moduleApi, {
+    distanceFeet: () => 25,
+    isVisible: () => true,
+    sceneTokens: () => [cloudToken, shieldToken, attackerToken, originalToken, redirectedToken]
+  });
+  return {
+    service,
+    queue,
+    capabilityIndex,
+    workflow,
+    calls,
+    cloudItem,
+    shieldItem,
+    cloudActor,
+    shieldActor,
+    attackerToken,
+    originalToken,
+    redirectedToken,
+    rerolledAttack
+  };
+}
+
+test("Cloud Rune rewrites the target before Runic Shield rerolls and recalculates the hit", async () => {
+  const harness = createHitRewriteHarness();
+  await harness.queue.initialize();
+  await harness.service.initialize();
+
+  assert.ok(harness.capabilityIndex.providers.has("rune-cloud"));
+  assert.ok(harness.capabilityIndex.providers.has("runic-shield"));
+  await harness.service.applyMidiHitsChecked(harness.workflow);
+
+  assert.deepEqual(harness.calls.prompts.map((prompt) => prompt.title), ["Облачная руна", "Рунический щит"]);
+  assert.equal(harness.cloudItem.system.uses.spent, 1);
+  assert.equal(harness.shieldItem.system.uses.spent, 1);
+  assert.equal(harness.calls.reactions, 2);
+  assert.equal(harness.calls.rerolls, 1);
+  assert.equal(harness.workflow.targets.has(harness.originalToken), false);
+  assert.equal(harness.workflow.targets.has(harness.redirectedToken), true);
+  assert.equal(harness.workflow.hitTargets.has(harness.originalToken), false);
+  assert.equal(harness.workflow.hitTargets.has(harness.redirectedToken), false);
+  assert.strictEqual(harness.workflow.attackRoll, harness.rerolledAttack);
+  assert.equal(harness.workflow.damageList.some((row) => row.tokenUuid === harness.originalToken.uuid), false);
+});
+
+test("Cloud and Runic Shield restore workflow and uses when ordinary reaction payment fails", async () => {
+  const harness = createHitRewriteHarness({ consumeReaction: false });
+  await harness.service.initialize();
+  const originalRoll = harness.workflow.attackRoll;
+
+  await harness.service.applyMidiHitsChecked(harness.workflow);
+
+  assert.equal(harness.cloudItem.system.uses.spent, 0);
+  assert.equal(harness.shieldItem.system.uses.spent, 0);
+  assert.equal(harness.workflow.targets.has(harness.originalToken), true);
+  assert.equal(harness.workflow.hitTargets.has(harness.originalToken), true);
+  assert.strictEqual(harness.workflow.attackRoll, originalRoll);
+});
+
+test("Runic Shield restores its reroll and use when applying the reroll fails", async () => {
+  const harness = createHitRewriteHarness({ failShieldApply: true });
+  await harness.queue.initialize();
+  await harness.service.initialize();
+  const originalRoll = harness.workflow.attackRoll;
+
+  await harness.service.applyMidiHitsChecked(harness.workflow);
+
+  assert.equal(harness.cloudItem.system.uses.spent, 1);
+  assert.equal(harness.shieldItem.system.uses.spent, 0);
+  assert.equal(harness.calls.reactions, 1);
+  assert.equal(harness.calls.rerolls, 1);
+  assert.equal(harness.workflow.targets.has(harness.originalToken), false);
+  assert.equal(harness.workflow.targets.has(harness.redirectedToken), true);
+  assert.equal(harness.workflow.hitTargets.has(harness.redirectedToken), true);
+  assert.strictEqual(harness.workflow.attackRoll, originalRoll);
 });
 
 test("Rune Knight hooks stay actor-local", async () => {
