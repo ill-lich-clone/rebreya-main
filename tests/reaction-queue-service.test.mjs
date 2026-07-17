@@ -324,6 +324,36 @@ test("reaction queue releases a failed provider and advances when rollback also 
   assert.equal(result.accepted.length, 1);
 });
 
+test("reaction providers receive the payment transaction while applying an accepted choice", async () => {
+  const reactor = candidate("transaction-aware");
+  let observedPayment = null;
+  const queue = new ReactionQueueService({
+    combatAttackService: {
+      consumeReaction: async () => ({ consumed: true })
+    }
+  }, {
+    actorResolver: (uuid) => ({ uuid }),
+    isCoordinator: () => true,
+    promptCandidate: async () => ({ accepted: true })
+  });
+  queue.registerType("transaction-aware", {
+    listCandidates: () => [reactor],
+    isTriggerValid: () => true,
+    revalidateCandidate: () => true,
+    buildPrompt: () => ({}),
+    pay: async () => ({ paid: true, marker: "paid-once" }),
+    apply: async (_current, _choice, _context, transaction) => {
+      observedPayment = transaction.payment;
+      return { applied: true };
+    }
+  });
+
+  const result = await queue.resolve({ triggerId: "transaction-trigger", kind: "transaction-aware" });
+
+  assert.equal(result.accepted.length, 1);
+  assert.equal(observedPayment?.marker, "paid-once");
+});
+
 test("active GM routes one reaction prompt to the active actor owner", async () => {
   const reactor = {
     ...candidate("owned"),
@@ -564,7 +594,8 @@ test("non-GM reaction triggers are coordinated and resolved by the active GM", a
     revalidateCandidate: () => true,
     buildPrompt: () => ({ title: "GM coordinated", body: "React?" }),
     pay: async () => ({ paid: true }),
-    apply: async () => ({ applied: true })
+    apply: async () => ({ applied: true, summary: { cancelled: true } }),
+    serializeEffect: (effect) => effect
   });
 
   const result = await sourceQueue.resolve({
@@ -577,6 +608,10 @@ test("non-GM reaction triggers are coordinated and resolved by the active GM", a
   assert.equal(result.status, "completed");
   assert.equal(result.accepted.length, 1);
   assert.equal(result.accepted[0].candidate.actorUuid, reactor.actorUuid);
+  assert.deepEqual(result.accepted[0].effect, {
+    applied: true,
+    summary: { cancelled: true }
+  });
 });
 
 test("reaction prompt transport is bounded and destroy releases pending requests", async () => {

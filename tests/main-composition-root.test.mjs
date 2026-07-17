@@ -47,7 +47,7 @@ test("global reactions own socket routing and public trigger registration", asyn
   const reactionSocketPosition = source.indexOf("this.reactionQueueService.handleSocketMessage(message, senderId)");
   const spellSocketPosition = source.indexOf("this.spellAutomationService.handleSocketMessage(message, senderId)");
   assert.ok(reactionSocketPosition >= 0);
-  assert.ok(spellSocketPosition > reactionSocketPosition);
+  assert.equal(spellSocketPosition, -1);
   assert.match(source, /resolveReactionTrigger\(request = \{\}\) \{\s+return this\.reactionQueueService\.resolve\(request\);\s+\}/u);
   assert.match(source, /registerReactionType\(kind, provider\) \{\s+return this\.reactionQueueService\.registerType\(kind, provider\);\s+\}/u);
   assert.match(source, /registerReactionCapability\(kind, resolver, options = \{\}\) \{\s+return this\.reactionCapabilityIndex\.registerProvider\(kind, resolver, options\);\s+\}/u);

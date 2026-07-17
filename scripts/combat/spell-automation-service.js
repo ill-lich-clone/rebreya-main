@@ -5,12 +5,11 @@ const SPELL_SHATTER_KIND = "spell-shatter";
 const COUNTERSPELL_RANGE_FEET = 60;
 const COUNTERSPELL_REACTION_TYPE = "counterspell";
 const SPELL_SHATTER_REACTION_TYPE = "spell-shatter";
+const SPELL_REACTION_TRIGGER_KIND = "spell-reaction";
+const SPELL_REACTION_CAPABILITY_KIND = "spell-reaction";
+const SPELL_REACTION_PROVIDER_ID = "spell-automation";
 const SPELL_SHATTER_COST = 5;
 const SPELL_SHATTER_REFUND = 2;
-const SOCKET_CHANNEL = `module.${MODULE_ID}`;
-const COUNTERSPELL_REQUEST_EVENT = `${MODULE_ID}.spellAutomation.counterspellRequest`;
-const COUNTERSPELL_RESULT_EVENT = `${MODULE_ID}.spellAutomation.counterspellResult`;
-const COUNTERSPELL_REQUEST_TIMEOUT_MS = 30000;
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -281,25 +280,24 @@ export class SpellAutomationService {
     this._options = options;
     this._pendingActivityResults = new WeakMap();
     this._attemptSequence = 0;
-    this._pendingCounterspellRequests = new Map();
+    this._castSequence = 0;
+    this._reactionCasts = new Map();
   }
 
   async initialize() {
-    return true;
-  }
-
-  async handleSocketMessage(message, senderId = "") {
-    if (message?.type === COUNTERSPELL_RESULT_EVENT) {
-      this.#handleCounterspellResult(message, senderId);
-      return true;
+    const capabilityIndex = this.moduleApi?.reactionCapabilityIndex;
+    if (typeof capabilityIndex?.registerProvider === "function") {
+      capabilityIndex.registerProvider(
+        SPELL_REACTION_CAPABILITY_KIND,
+        ({ actor, token }) => this.#capabilitiesForActor(actor, token),
+        { providerId: SPELL_REACTION_PROVIDER_ID }
+      );
     }
-
-    if (message?.type === COUNTERSPELL_REQUEST_EVENT) {
-      await this.#handleCounterspellRequest(message, senderId);
-      return true;
+    const reactionQueueService = this.moduleApi?.reactionQueueService;
+    if (typeof reactionQueueService?.registerType === "function") {
+      reactionQueueService.registerType(SPELL_REACTION_TRIGGER_KIND, this.#reactionProvider());
     }
-
-    return false;
+    return Boolean(reactionQueueService);
   }
 
   async applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {
@@ -363,7 +361,8 @@ export class SpellAutomationService {
   async resolveCast(castContext = {}) {
     this._attemptSequence = 0;
     const root = this.#normalizeCast(castContext);
-    await this.#resolveNode(root);
+    const resolutionId = `${root.id}:spell-reaction:${Date.now()}:${++this._castSequence}`;
+    await this.#resolveNode(root, resolutionId);
     this.#finalizeCancellation(root);
     const chain = [];
     this.#collectChain(root, chain);
@@ -504,72 +503,39 @@ export class SpellAutomationService {
       return true;
     }
 
-    return this.#discoverCounterspellCandidates(cast)
-      .some((candidate) => this.#canReact(candidate, cast));
+    void cast;
+    return this.moduleApi?.reactionCapabilityIndex?.has?.(SPELL_REACTION_CAPABILITY_KIND) === true;
   }
 
-  async #resolveNode(parent) {
-    if (!hasVisibleComponents(parent)) {
+  async #resolveNode(parent, resolutionId) {
+    const queue = this.moduleApi?.reactionQueueService;
+    if (!hasVisibleComponents(parent) || typeof queue?.resolve !== "function") {
       return;
     }
 
-    const candidates = await this.#counterspellCandidates(parent);
-    for (const candidate of candidates) {
-      if (!this.#canReact(candidate, parent)) {
-        continue;
-      }
-
-      const remoteOwnerId = this.#remoteOwnerUserId(candidate.actor);
-      if (remoteOwnerId) {
-        const remote = await this.#requestRemoteCounterspell(candidate, parent, remoteOwnerId);
-        if (remote?.accepted !== true) {
-          continue;
-        }
-
-        const attempt = this.#makeCounterspellAttempt(candidate, parent, remote.spellLevel);
-        attempt.reaction = remote.reaction ?? { consumed: false };
-        attempt.paid = remote.paid === true;
-        if (attempt.reaction.consumed !== true || !attempt.paid) {
-          continue;
-        }
-
-        parent.children.push(attempt);
-        await this.#resolveCounterspellAttempt(attempt, parent, remote);
-        return;
-      }
-
-      const fallbackLevel = this.#candidateSpellLevel(candidate);
-      const choice = normalizeChoice(await this.promptCounterspell(candidate, parent), fallbackLevel);
-      if (!choice.accepted || choice.spellLevel < 1) {
-        continue;
-      }
-
-      const attempt = this.#makeCounterspellAttempt(candidate, parent, choice.spellLevel);
-      const paid = await this.#paySpell(candidate, attempt, parent);
-      attempt.paid = paid === true;
-      if (!attempt.paid) {
-        continue;
-      }
-
-      const reaction = await this.#consumeReaction(candidate);
-      attempt.reaction = reaction;
-      if (reaction?.consumed !== true) {
-        continue;
-      }
-
-      parent.children.push(attempt);
-      await this.#resolveCounterspellAttempt(attempt, parent);
-      return;
+    const triggerId = `${resolutionId}:${parent.id}`;
+    const context = {
+      triggerId,
+      resolutionId,
+      cast: this.#serializeCast(parent)
+    };
+    this._reactionCasts.set(triggerId, parent);
+    try {
+      const result = await queue.resolve({
+        triggerId,
+        kind: SPELL_REACTION_TRIGGER_KIND,
+        workflowId: resolutionId,
+        context
+      });
+      this.#mergeReactionResult(parent, result);
+    }
+    finally {
+      this._reactionCasts.delete(triggerId);
     }
   }
 
-  async #resolveCounterspellAttempt(attempt, parent, resolved = null) {
-    if (resolved && typeof resolved === "object") {
-      attempt.success = resolved.success === true;
-      attempt.dc = resolved.dc ?? null;
-      attempt.rollTotal = resolved.rollTotal ?? null;
-    }
-    else if (attempt.kind === SPELL_SHATTER_KIND) {
+  async #resolveCounterspellAttempt(attempt, parent, resolutionId) {
+    if (attempt.kind === SPELL_SHATTER_KIND) {
       attempt.dc = 10 + parent.spellLevel;
       attempt.rollTotal = await this.#rollSpellShatterCheck(parent, attempt.dc, attempt);
       attempt.success = Number.isFinite(attempt.rollTotal) && attempt.rollTotal < attempt.dc;
@@ -588,7 +554,8 @@ export class SpellAutomationService {
       attempt.success = Number.isFinite(attempt.rollTotal) && attempt.rollTotal >= attempt.dc;
     }
 
-    await this.#resolveNode(attempt);
+    await this.#resolveNode(attempt, resolutionId);
+    this.#finalizeCancellation(attempt);
   }
 
   #makeCounterspellAttempt(candidate, parent, spellLevel) {
@@ -621,45 +588,17 @@ export class SpellAutomationService {
     });
   }
 
-  async #counterspellCandidates(cast) {
+  async #counterspellCandidates(cast, capabilityIndex = this.moduleApi?.reactionCapabilityIndex) {
     const provided = typeof this._options.getCounterspellCandidates === "function"
       ? await this._options.getCounterspellCandidates(cast)
-      : this.#discoverCounterspellCandidates(cast);
+      : this.#discoverCounterspellCandidates(capabilityIndex);
     return collectionValues(provided)
-      .filter((candidate) => counterspellAutomation(candidate?.item ?? candidate?.source))
-      .sort((left, right) => this.#candidateOrder(left) - this.#candidateOrder(right)
-        || cleanText(left?.actor?.id ?? left?.id).localeCompare(cleanText(right?.actor?.id ?? right?.id)));
+      .map((candidate) => this.#normalizeReactionCandidate(candidate))
+      .filter((candidate) => counterspellAutomation(candidate?.item ?? candidate?.source));
   }
 
-  #discoverCounterspellCandidates(cast) {
-    const actors = collectionValues(globalThis.game?.actors);
-    return actors.flatMap((actor) => collectionValues(actor?.items)
-      .filter((item) => counterspellAutomation(item))
-      .map((item) => ({
-        id: actor?.id,
-        actor,
-        actorUuid: documentUuid(actor),
-        item,
-        activity: counterspellActivity(item),
-        token: firstActiveToken(actor),
-        combatOrder: this.#combatOrder(actor)
-      }))
-    ).filter((candidate) => cleanText(candidate.actorUuid) !== cleanText(cast.actorUuid));
-  }
-
-  #candidateOrder(candidate) {
-    const explicit = toNumber(candidate?.combatOrder, NaN);
-    if (Number.isFinite(explicit)) {
-      return explicit;
-    }
-
-    return this.#combatOrder(candidate?.actor);
-  }
-
-  #combatOrder(actor) {
-    const combatants = collectionValues(globalThis.game?.combat?.combatants);
-    const index = combatants.findIndex((combatant) => combatant?.actor === actor || combatant?.actorId === actor?.id);
-    return index >= 0 ? index : Number.MAX_SAFE_INTEGER;
+  #discoverCounterspellCandidates(capabilityIndex) {
+    return collectionValues(capabilityIndex?.list?.(SPELL_REACTION_CAPABILITY_KIND));
   }
 
   #canReact(candidate, cast) {
@@ -669,14 +608,6 @@ export class SpellAutomationService {
     }
 
     if (cleanText(documentUuid(actor)) && cleanText(documentUuid(actor)) === cleanText(cast.actorUuid)) {
-      return false;
-    }
-
-    if (this.#remoteOwnerUserId(actor)) {
-      return hasVisibleComponents(cast);
-    }
-
-    if (!this.#currentUserOwnsActor(actor)) {
       return false;
     }
 
@@ -696,31 +627,6 @@ export class SpellAutomationService {
     return Number.isFinite(distance) && distance <= COUNTERSPELL_RANGE_FEET;
   }
 
-  #isRemoteCandidateEligible(candidate, cast) {
-    if (!hasVisibleComponents(cast) || !this.#isVisible(candidate, cast)) {
-      return false;
-    }
-
-    if (!tokenCenter(cast?.sourceToken)) {
-      return false;
-    }
-
-    return this.#isWithinCounterspellRange(candidate, cast);
-  }
-
-  #currentUserOwnsActor(actor) {
-    const user = globalThis.game?.user;
-    if (!actor || !user) {
-      return false;
-    }
-
-    if (actor.isOwner === true) {
-      return true;
-    }
-
-    return this.#actorOwnedByUser(actor, user);
-  }
-
   #actorOwnedByUser(actor, user) {
     if (!actor || !user) {
       return false;
@@ -738,23 +644,251 @@ export class SpellAutomationService {
     return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
   }
 
-  #remoteOwnerUserId(actor) {
-    const currentUser = globalThis.game?.user;
-    const users = collectionValues(globalThis.game?.users)
-      .filter((user) => user?.active !== false && this.#actorOwnedByUser(actor, user))
-      .sort((left, right) => Number(left?.isGM === true) - Number(right?.isGM === true)
-        || cleanText(left?.id).localeCompare(cleanText(right?.id)));
-    if (currentUser?.isGM === true) {
-      const playerOwner = users.find((user) => user?.isGM !== true && cleanText(user?.id) !== cleanText(currentUser.id));
-      if (playerOwner) {
-        return cleanText(playerOwner.id);
-      }
+  #reactionProvider() {
+    return {
+      listCandidates: async (context, capabilityIndex) => {
+        const cast = this.#reactionCast(context);
+        const candidates = await this.#counterspellCandidates(cast, capabilityIndex);
+        return candidates.filter((candidate) => this.#canReact(candidate, cast));
+      },
+      isTriggerValid: (context) => {
+        const cast = this.#reactionCast(context);
+        return hasVisibleComponents(cast) && cast.cancelled !== true;
+      },
+      revalidateCandidate: (candidate, context) => this.#canReact(
+        this.#normalizeReactionCandidate(candidate),
+        this.#reactionCast(context)
+      ),
+      buildPrompt: (candidate, context) => this.#buildReactionPrompt(
+        this.#normalizeReactionCandidate(candidate),
+        this.#reactionCast(context)
+      ),
+      pay: (candidate, choice, context) => this.#payReaction(
+        this.#normalizeReactionCandidate(candidate),
+        choice,
+        this.#reactionCast(context)
+      ),
+      apply: (candidate, choice, context, transaction) => this.#applyReaction(
+        this.#normalizeReactionCandidate(candidate),
+        choice,
+        context,
+        transaction
+      ),
+      rollback: (candidate, transaction, context) => this.#rollbackReaction(
+        this.#normalizeReactionCandidate(candidate),
+        transaction,
+        context
+      ),
+      serializeEffect: (effect) => effect
+    };
+  }
+
+  #reactionCast(context = {}) {
+    const triggerId = cleanText(context?.triggerId);
+    const active = this._reactionCasts.get(triggerId) ?? context._resolvedCast;
+    if (active) {
+      return active;
     }
 
-    if (this.#currentUserOwnsActor(actor)) {
-      return "";
+    const cast = this.#normalizeCast(context?.cast ?? {});
+    cast.sourceToken = this.#resolveSerializedSourceToken(context?.cast?.sourceToken);
+    context._resolvedCast = cast;
+    return cast;
+  }
+
+  #capabilitiesForActor(actor, token) {
+    if (!actor) {
+      return [];
     }
-    return cleanText(users[0]?.id);
+
+    return collectionValues(actor.items)
+      .filter((item) => counterspellAutomation(item))
+      .map((item) => {
+        const activity = counterspellActivity(item);
+        return {
+          actorUuid: documentUuid(actor),
+          tokenUuid: documentUuid(token) || documentUuid(token?.document),
+          itemUuid: documentUuid(item),
+          activityId: documentId(activity),
+          ownerUserIds: this.#ownerUserIds(actor)
+        };
+      });
+  }
+
+  #ownerUserIds(actor) {
+    return collectionValues(globalThis.game?.users)
+      .filter((user) => user?.active !== false && this.#actorOwnedByUser(actor, user))
+      .sort((left, right) => Number(left?.isGM === true) - Number(right?.isGM === true)
+        || cleanText(left?.id).localeCompare(cleanText(right?.id)))
+      .map((user) => cleanText(user?.id))
+      .filter(Boolean);
+  }
+
+  #normalizeReactionCandidate(candidate = {}) {
+    const actorUuid = cleanText(candidate.actorUuid);
+    const itemUuid = cleanText(candidate.itemUuid);
+    const tokenUuid = cleanText(candidate.tokenUuid);
+    const resolvedItem = candidate.item
+      ?? candidate.source
+      ?? globalThis.fromUuidSync?.(itemUuid)
+      ?? null;
+    const actor = candidate.actor
+      ?? actorFrom(resolvedItem)
+      ?? globalThis.fromUuidSync?.(actorUuid)
+      ?? null;
+    const item = resolvedItem
+      ?? collectionValues(actor?.items).find((entry) => documentUuid(entry) === itemUuid)
+      ?? null;
+    const token = candidate.token
+      ?? globalThis.fromUuidSync?.(tokenUuid)
+      ?? firstActiveToken(actor);
+    const activityId = cleanText(candidate.activityId);
+    const activity = candidate.activity
+      ?? itemActivities(item).find((entry) => documentId(entry) === activityId)
+      ?? counterspellActivity(item);
+    const kind = spellReactionKind(item);
+    return {
+      ...candidate,
+      id: cleanText(candidate.id, documentId(actor)),
+      actor,
+      actorUuid: actorUuid || documentUuid(actor),
+      token,
+      tokenUuid: tokenUuid || documentUuid(token) || documentUuid(token?.document),
+      item,
+      itemUuid: itemUuid || documentUuid(item),
+      activity,
+      activityId: activityId || documentId(activity),
+      ownerUserIds: collectionValues(candidate.ownerUserIds).length
+        ? collectionValues(candidate.ownerUserIds)
+        : this.#ownerUserIds(actor),
+      reactionType: spellReactionType(kind)
+    };
+  }
+
+  #buildReactionPrompt(candidate, cast) {
+    if (spellReactionKind(candidate?.item ?? candidate?.source) === SPELL_SHATTER_KIND) {
+      return {
+        title: "Раскол заклинания",
+        body: `Использовать Раскол заклинания против заклинания ${cast.spellLevel}-го уровня за ${SPELL_SHATTER_COST} единиц чародейства?`,
+        acceptLabel: "Расколоть",
+        declineLabel: "Пропустить"
+      };
+    }
+
+    const availableLevels = this.#availableSpellLevels(candidate);
+    return {
+      title: "Контрзаклинание",
+      body: `Использовать Контрзаклинание против заклинания ${cast.spellLevel}-го уровня?`,
+      acceptLabel: "Контрзаклинание",
+      declineLabel: "Пропустить",
+      fields: [{
+        name: "spellLevel",
+        type: "select",
+        label: "Уровень ячейки",
+        options: availableLevels.map((level) => ({ value: level, label: String(level) }))
+      }]
+    };
+  }
+
+  async #payReaction(candidate, choice, parent) {
+    const normalized = normalizeChoice(choice, this.#candidateSpellLevel(candidate));
+    if (!normalized.accepted || normalized.spellLevel < 1) {
+      return { paid: false };
+    }
+
+    const attempt = this.#makeCounterspellAttempt(candidate, parent, normalized.spellLevel);
+    const slotSnapshot = this.#slotPaymentSnapshot(candidate, attempt);
+    const paid = await this.#paySpell(candidate, attempt, parent);
+    attempt.paid = paid === true;
+    let rollback = null;
+    if (attempt.paid && attempt.kind === SPELL_SHATTER_KIND) {
+      rollback = () => this.moduleApi?.sorcererAutomationService?.restoreSorceryPoints?.(
+        attempt.actor,
+        SPELL_SHATTER_COST
+      );
+    }
+    else if (attempt.paid && typeof this._options.refundSpell === "function") {
+      rollback = () => this._options.refundSpell(candidate, parent, attempt);
+    }
+    else if (attempt.paid && slotSnapshot) {
+      rollback = () => slotSnapshot.actor.update?.({
+        [`system.spells.${slotSnapshot.slotKey}.value`]: slotSnapshot.value
+      });
+    }
+    return { paid: attempt.paid, attempt, rollback };
+  }
+
+  async #applyReaction(_candidate, _choice, context, transaction) {
+    const parent = this.#reactionCast(context);
+    const attempt = transaction?.payment?.attempt;
+    if (!attempt) {
+      return { applied: false };
+    }
+
+    if (!parent.children.some((child) => child.id === attempt.id)) {
+      parent.children.push(attempt);
+    }
+    await this.#resolveCounterspellAttempt(attempt, parent, cleanText(context?.resolutionId, parent.id));
+    parent.cancelled = parent.children.some((child) => child.success === true && child.cancelled !== true);
+    return {
+      applied: true,
+      attempt: this.#serializeResolvedCast(attempt)
+    };
+  }
+
+  async #rollbackReaction(_candidate, transaction, context) {
+    const parent = this.#reactionCast(context);
+    const attempt = transaction?.payment?.attempt;
+    if (attempt) {
+      parent.children = parent.children.filter((child) => child.id !== attempt.id);
+      this.#finalizeCancellation(parent);
+      if (attempt.refunded === true) {
+        await this.moduleApi?.sorcererAutomationService?.spendSorceryPoints?.(
+          attempt.actor,
+          SPELL_SHATTER_REFUND
+        );
+        attempt.refunded = false;
+      }
+    }
+    await transaction?.payment?.rollback?.();
+  }
+
+  #slotPaymentSnapshot(candidate, attempt) {
+    if (
+      typeof this._options.paySpell === "function"
+      || attempt.kind === SPELL_SHATTER_KIND
+      || spellReactionKind(candidate?.item ?? candidate?.source) === SPELL_SHATTER_KIND
+    ) {
+      return null;
+    }
+
+    const activity = attempt.activity ?? candidate.activity ?? counterspellActivity(attempt.item ?? candidate.item);
+    const item = attempt.item ?? candidate.item;
+    const baseLevel = resolveSpellLevel(activity, item, attempt.spellLevel);
+    const slotLevel = Math.max(baseLevel, attempt.spellLevel);
+    const slotKey = `spell${slotLevel}`;
+    const value = Number(attempt.actor?.system?.spells?.[slotKey]?.value);
+    if (!attempt.actor || !Number.isFinite(value)) {
+      return null;
+    }
+    return { actor: attempt.actor, slotKey, value };
+  }
+
+  #mergeReactionResult(parent, result) {
+    for (const accepted of collectionValues(result?.accepted)) {
+      const serializedAttempt = accepted?.effect?.attempt
+        ?? accepted?.transaction?.effect?.attempt;
+      const attemptId = cleanText(serializedAttempt?.id);
+      const localAttempt = parent.children.find((child) => cleanText(child.id) === attemptId);
+      if (localAttempt) {
+        localAttempt.reaction = accepted?.transaction?.reaction ?? localAttempt.reaction;
+        continue;
+      }
+      if (serializedAttempt) {
+        parent.children.push(this.#deserializeResolvedCast(serializedAttempt));
+      }
+    }
+    this.#finalizeCancellation(parent);
   }
 
   #isVisible(candidate, cast) {
@@ -837,190 +971,6 @@ export class SpellAutomationService {
     return Array.from(levels).sort((left, right) => left - right);
   }
 
-  async #requestRemoteCounterspell(candidate, parent, forUserId) {
-    const game = globalThis.game;
-    const senderId = cleanText(game?.user?.id);
-    const actorId = documentId(candidate?.actor);
-    const itemId = documentId(candidate?.item);
-    if (!senderId || !forUserId || !actorId || !itemId || typeof game?.socket?.emit !== "function") {
-      return { accepted: false };
-    }
-
-    const requestId = `${senderId}:counterspell:${Date.now()}:${++this._attemptSequence}`;
-    return new Promise((resolve) => {
-      const entry = {
-        actorId,
-        itemId,
-        forUserId,
-        resolve,
-        timeoutId: null
-      };
-      entry.timeoutId = globalThis.setTimeout(() => {
-        if (this._pendingCounterspellRequests.get(requestId) === entry) {
-          this._pendingCounterspellRequests.delete(requestId);
-          resolve({ accepted: false, reason: "timeout" });
-        }
-      }, COUNTERSPELL_REQUEST_TIMEOUT_MS);
-      this._pendingCounterspellRequests.set(requestId, entry);
-
-      try {
-        game.socket.emit(SOCKET_CHANNEL, {
-          type: COUNTERSPELL_REQUEST_EVENT,
-          requestId,
-          senderId,
-          forUserId,
-          actorId,
-          itemId,
-          cast: this.#serializeCast(parent)
-        });
-      }
-      catch (_error) {
-        this._pendingCounterspellRequests.delete(requestId);
-        globalThis.clearTimeout(entry.timeoutId);
-        resolve({ accepted: false, reason: "socketUnavailable" });
-      }
-    });
-  }
-
-  #handleCounterspellResult(message, senderId) {
-    const currentUserId = cleanText(globalThis.game?.user?.id);
-    const requestId = cleanText(message?.requestId);
-    const entry = this._pendingCounterspellRequests.get(requestId);
-    if (!entry || cleanText(message?.forUserId) !== currentUserId) {
-      return;
-    }
-
-    const matchesSource = cleanText(senderId) === entry.forUserId
-      && cleanText(message?.actorId) === entry.actorId
-      && cleanText(message?.itemId) === entry.itemId;
-    if (!matchesSource) {
-      return;
-    }
-
-    this._pendingCounterspellRequests.delete(requestId);
-    globalThis.clearTimeout(entry.timeoutId);
-    entry.resolve(message?.result && typeof message.result === "object"
-      ? message.result
-      : { accepted: false, reason: "invalidResult" });
-  }
-
-  async #handleCounterspellRequest(message, senderId) {
-    const currentUser = globalThis.game?.user;
-    if (!currentUser || cleanText(message?.forUserId) !== cleanText(currentUser.id)) {
-      return;
-    }
-
-    const actor = globalThis.game?.actors?.get?.(cleanText(message?.actorId)) ?? null;
-    const item = actor?.items?.get?.(cleanText(message?.itemId))
-      ?? collectionValues(actor?.items).find((entry) => documentId(entry) === cleanText(message?.itemId))
-      ?? null;
-    const parent = this.#normalizeCast(message?.cast ?? {});
-    parent.sourceToken = this.#resolveSerializedSourceToken(message?.cast?.sourceToken);
-    const candidate = actor && item && counterspellAutomation(item)
-      ? {
-        id: actor.id,
-        actor,
-        actorUuid: documentUuid(actor),
-        item,
-        activity: counterspellActivity(item),
-        token: firstActiveToken(actor),
-        visible: true
-      }
-      : null;
-    let result = { accepted: false, reason: "notAvailable" };
-
-    try {
-      if (!candidate || !this.#actorOwnedByUser(actor, currentUser)) {
-        throw new Error("Counterspell source is not owned by the requested user.");
-      }
-
-      if (!this.#isRemoteCandidateEligible(candidate, parent)) {
-        result = { accepted: false, reason: "notEligible" };
-      }
-      else if (this.moduleApi?.combatAttackService?.canUseReaction?.(actor, 1)?.canUse !== true) {
-        result = { accepted: false, reason: "noReaction" };
-      }
-      else {
-        const choice = normalizeChoice(await this.promptCounterspell(candidate, parent), this.#candidateSpellLevel(candidate));
-        if (!choice.accepted || choice.spellLevel < 1) {
-          result = { accepted: false, reason: "declined" };
-        }
-        else {
-          const attempt = this.#makeCounterspellAttempt(candidate, parent, choice.spellLevel);
-          const paid = await this.#paySpell(candidate, attempt, parent);
-          const reaction = paid === true
-            ? await this.#consumeReaction(candidate)
-            : { consumed: false, reason: "paymentFailed" };
-          if (reaction?.consumed !== true || paid !== true) {
-            result = { accepted: false, reaction, paid: paid === true, reason: "paymentFailed" };
-          }
-          else if (attempt.kind === SPELL_SHATTER_KIND) {
-            const dc = 10 + parent.spellLevel;
-            const rollTotal = await this.#rollSpellShatterCheck(parent, dc, attempt);
-            const success = Number.isFinite(rollTotal) && rollTotal < dc;
-            const refunded = success ? await this.#restoreSpellShatterRefund(attempt) : false;
-            result = {
-              accepted: true,
-              spellLevel: attempt.spellLevel,
-              reaction,
-              paid: true,
-              success,
-              dc,
-              rollTotal,
-              refunded
-            };
-          }
-          else if (attempt.spellLevel >= parent.spellLevel) {
-            result = {
-              accepted: true,
-              spellLevel: attempt.spellLevel,
-              reaction,
-              paid: true,
-              success: true,
-              dc: null,
-              rollTotal: null
-            };
-          }
-          else {
-            const dc = 10 + parent.spellLevel;
-            const rollTotal = await this.#rollAbilityCheck(attempt, dc, parent);
-            result = {
-              accepted: true,
-              spellLevel: attempt.spellLevel,
-              reaction,
-              paid: true,
-              success: Number.isFinite(rollTotal) && rollTotal >= dc,
-              dc,
-              rollTotal
-            };
-          }
-        }
-      }
-    }
-    catch (error) {
-      result = { accepted: false, reason: cleanText(error?.message, "error") };
-    }
-
-    this.#emitCounterspellResult(message, result, senderId);
-  }
-
-  #emitCounterspellResult(request, result, senderId) {
-    const game = globalThis.game;
-    if (typeof game?.socket?.emit !== "function") {
-      return;
-    }
-
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: COUNTERSPELL_RESULT_EVENT,
-      requestId: cleanText(request?.requestId),
-      forUserId: cleanText(senderId),
-      senderId: cleanText(game?.user?.id),
-      actorId: cleanText(request?.actorId),
-      itemId: cleanText(request?.itemId),
-      result
-    });
-  }
-
   #serializeCast(cast) {
     return {
       id: cleanText(cast?.id),
@@ -1040,6 +990,33 @@ export class SpellAutomationService {
       modifiers: cast?.modifiers && typeof cast.modifiers === "object" ? cast.modifiers : {},
       sourceToken: this.#serializeSourceToken(cast?.sourceToken)
     };
+  }
+
+  #serializeResolvedCast(cast) {
+    return {
+      ...this.#serializeCast(cast),
+      kind: cleanText(cast?.kind),
+      paid: cast?.paid === true,
+      success: cast?.success === true,
+      dc: Number.isFinite(Number(cast?.dc)) ? Number(cast.dc) : null,
+      rollTotal: Number.isFinite(Number(cast?.rollTotal)) ? Number(cast.rollTotal) : null,
+      refunded: cast?.refunded === true,
+      children: collectionValues(cast?.children).map((child) => this.#serializeResolvedCast(child))
+    };
+  }
+
+  #deserializeResolvedCast(serialized = {}) {
+    const cast = this.#normalizeCast(serialized);
+    cast.kind = cleanText(serialized.kind);
+    cast.paid = serialized.paid === true;
+    cast.success = serialized.success === true;
+    cast.dc = Number.isFinite(Number(serialized.dc)) ? Number(serialized.dc) : null;
+    cast.rollTotal = Number.isFinite(Number(serialized.rollTotal)) ? Number(serialized.rollTotal) : null;
+    cast.refunded = serialized.refunded === true;
+    cast.sourceToken = this.#resolveSerializedSourceToken(serialized.sourceToken);
+    cast.children = collectionValues(serialized.children)
+      .map((child) => this.#deserializeResolvedCast(child));
+    return cast;
   }
 
   #serializeSourceToken(token) {
@@ -1068,12 +1045,6 @@ export class SpellAutomationService {
     const matchingToken = collectionValues(globalThis.canvas?.tokens?.placeables)
       .find((token) => documentUuid(token) === sourceUuid || documentUuid(token?.document) === sourceUuid);
     return matchingToken ?? sourceToken;
-  }
-
-  async #consumeReaction(candidate) {
-    return this.moduleApi?.combatAttackService?.consumeReaction?.(candidate.actor, {
-      reactionType: spellReactionType(spellReactionKind(candidate?.item ?? candidate?.source))
-    }) ?? { consumed: false, reason: "reactionLedgerUnavailable" };
   }
 
   async #paySpell(candidate, attempt, parent) {
@@ -1169,73 +1140,6 @@ export class SpellAutomationService {
     for (const child of node.children) {
       this.#collectChain(child, chain);
     }
-  }
-
-  async promptCounterspell(candidate, cast) {
-    if (typeof this._options.promptCounterspell === "function") {
-      return this._options.promptCounterspell(candidate, cast);
-    }
-
-    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
-    if (typeof DialogV2?.wait !== "function") {
-      return false;
-    }
-
-    if (spellReactionKind(candidate?.item ?? candidate?.source) === SPELL_SHATTER_KIND) {
-      return DialogV2.wait({
-        window: { title: "Раскол заклинания" },
-        content: `<p>Использовать Раскол заклинания против заклинания ${cast.spellLevel}-го уровня за ${SPELL_SHATTER_COST} единиц чародейства?</p>`,
-        buttons: [
-          {
-            action: "counter",
-            label: "Расколоть",
-            default: true,
-            callback: () => ({ accepted: true, spellLevel: 1 })
-          },
-          {
-            action: "decline",
-            label: "Отмена",
-            callback: () => ({ accepted: false })
-          }
-        ],
-        rejectClose: false,
-        modal: true
-      });
-    }
-
-    const selectedLevel = this.#candidateSpellLevel(candidate);
-    const availableLevels = this.#availableSpellLevels(candidate);
-    if (!availableLevels.length) {
-      return false;
-    }
-    const options = availableLevels.map((level) => (
-      `<option value="${level}"${level === selectedLevel ? " selected" : ""}>Level ${level}</option>`
-    )).join("");
-    return DialogV2.wait({
-      window: { title: "Counterspell" },
-      content: `<p>Use Counterspell against a level ${cast.spellLevel} spell?</p><label>Slot <select name="spellLevel">${options}</select></label>`,
-      buttons: [
-        {
-          action: "counter",
-          label: "Counterspell",
-          default: true,
-          callback: (_event, button) => ({
-            accepted: true,
-            spellLevel: Math.max(1, Math.floor(toNumber(
-              button?.form?.elements?.spellLevel?.value,
-              selectedLevel
-            )))
-          })
-        },
-        {
-          action: "decline",
-          label: "Decline",
-          callback: () => ({ accepted: false })
-        }
-      ],
-      rejectClose: false,
-      modal: true
-    });
   }
 
   #isAutomatedChildUsage(usageConfig) {

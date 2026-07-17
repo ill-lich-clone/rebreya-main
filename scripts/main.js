@@ -1189,10 +1189,6 @@ export class RebreyaMainModule {
       return;
     }
 
-    if (await this.spellAutomationService.handleSocketMessage(message, senderId)) {
-      return;
-    }
-
     if (this.socketCommandBus.handleMessage(message, { transportSenderId: senderId })) {
       return;
     }

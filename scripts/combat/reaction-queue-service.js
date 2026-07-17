@@ -108,7 +108,8 @@ function publicReactionResult(result = {}) {
         itemUuid: cleanString(entry?.candidate?.itemUuid),
         activityId: cleanString(entry?.candidate?.activityId)
       },
-      choice: serializableCopy(entry?.choice, { accepted: true })
+      choice: serializableCopy(entry?.choice, { accepted: true }),
+      effect: serializableCopy(entry?.effect, { applied: true })
     }))
   };
 }
@@ -269,7 +270,10 @@ export class ReactionQueueService {
         if (transaction.accepted !== true) {
           continue;
         }
-        accepted.push({ candidate, choice, transaction });
+        const effect = typeof provider.serializeEffect === "function"
+          ? await provider.serializeEffect(transaction.effect, candidate, context)
+          : { applied: true };
+        accepted.push({ candidate, choice, transaction, effect });
         if (await provider.isTriggerValid?.(context) === false) {
           return { triggerId, kind, status: "invalidated", accepted };
         }
@@ -653,14 +657,14 @@ export class ReactionQueueService {
     const transaction = { payment: null, effect: null, reaction: null };
     try {
       transaction.payment = typeof provider.pay === "function"
-        ? await provider.pay(candidate, choice, context)
+        ? await provider.pay(candidate, choice, context, transaction)
         : { paid: true };
       if (transaction.payment === false || transaction.payment?.paid === false) {
         return { accepted: false, reason: "paymentFailed", ...transaction };
       }
 
       transaction.effect = typeof provider.apply === "function"
-        ? await provider.apply(candidate, choice, context)
+        ? await provider.apply(candidate, choice, context, transaction)
         : { applied: true };
       if (transaction.effect === false || transaction.effect?.applied === false) {
         await this._rollback(provider, candidate, transaction, context);
