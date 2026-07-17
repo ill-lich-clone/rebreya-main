@@ -70,9 +70,14 @@ export function registerCombatHooks(moduleApi) {
     for (const hookName of ["createItem", "updateItem", "deleteItem"]) {
       Hooks.on(hookName, handleRuneKnightItem);
     }
-    for (const hookName of ["createActiveEffect", "updateActiveEffect", "deleteActiveEffect"]) {
+    for (const hookName of ["createActiveEffect", "updateActiveEffect"]) {
       Hooks.on(hookName, handleRuneKnightEffect);
     }
+    Hooks.on("deleteActiveEffect", (effect) => {
+      moduleApi.runeKnightAutomationService.handleEmbeddedEffectDeletion(effect).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to restore Rune Knight form state.`, error);
+      });
+    });
     Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
       moduleApi.runeKnightAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
         console.error(`${MODULE_ID} | Failed to restore Rune Knight resources.`, error);
@@ -118,6 +123,19 @@ export function registerCombatHooks(moduleApi) {
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to apply the resolved Storm Rune check mode.`, error);
+        return true;
+      }
+    });
+    Hooks.on("dnd5e.preRollDamage", (rollConfig, dialogConfig, messageConfig) => {
+      try {
+        return moduleApi.runeKnightAutomationService.applyDnd5eGiantMightDamage(
+          rollConfig,
+          dialogConfig,
+          messageConfig
+        );
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply Giant's Might native damage.`, error);
         return true;
       }
     });

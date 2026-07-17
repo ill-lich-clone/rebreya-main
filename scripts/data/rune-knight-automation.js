@@ -185,7 +185,13 @@ const FEATURE_AUTOMATION = Object.freeze({
     duration: { value: 1, units: "minute" },
     usesMax: "@prof",
     recovery: LONG_REST,
-    runtimeManagedPayment: true
+    runtimeManagedPayment: true,
+    dominanceFallback: true,
+    damage: {
+      formula: "1d6",
+      oncePerTurn: true,
+      weaponOrUnarmed: true
+    }
   }),
   [RUNE_KNIGHT_AUTOMATION_IDS.runicShield]: freezeAutomation({
     kind: "feature",

@@ -68,13 +68,18 @@ function createActor({ level = 15, prof = 5, items = [], effects = [] } = {}) {
     uuid: "Actor.hero",
     system: {
       attributes: { prof },
-      abilities: { con: { mod: 3 } }
+      abilities: { str: { mod: 3 }, con: { mod: 3 } },
+      traits: { size: "med" }
     },
     items: [classItem, ...items],
     effects,
     statuses: new Set(),
     createdEffects: [],
     deletedEffects: [],
+    async update(patch) {
+      for (const [path, value] of Object.entries(patch)) setProperty(this, path, value);
+      return this;
+    },
     async createEmbeddedDocuments(type, rows) {
       assert.equal(type, "ActiveEffect");
       const created = rows.map((row, index) => ({
@@ -928,6 +933,234 @@ test("Storm capability requires prophetic state and native hooks apply only a pr
   assert.equal(rollConfig._rebreyaStormRuneApplied, true);
 });
 
+function createGiantMightHarness({
+  giantSpent = 0,
+  dominanceSpent = 0,
+  dominanceMax = 4,
+  fallbackAccepted = true,
+  canGrow = true,
+  effectFails = false
+} = {}) {
+  const giantItem = createItem({ id: "giant-might", automation: "giant-might", spent: giantSpent, max: 4 });
+  const dominanceItem = createItem({ id: "dominance", spent: dominanceSpent, max: dominanceMax, identifier: "fighter-dominance" });
+  const actor = assignActorIdentity(createActor({ level: 10, prof: 4, items: [giantItem, dominanceItem] }), "giant-actor", "Rune Giant");
+  actor.getRollData = () => ({
+    scale: {
+      "fighter-rework-v028": {
+        "dominance-dice": { value: 4 }
+      }
+    }
+  });
+  const token = {
+    id: "giant-token",
+    uuid: "Scene.scene.Token.giant",
+    actor,
+    x: 100,
+    y: 100,
+    width: 1,
+    height: 1,
+    async update(patch) {
+      Object.assign(this, patch);
+      return this;
+    }
+  };
+  if (effectFails) {
+    actor.createEmbeddedDocuments = async () => {
+      throw new Error("giant form failed");
+    };
+  }
+  const calls = { prompts: 0, damage: 0 };
+  const moduleApi = {
+    reactionQueueService: {
+      async promptDecision({ prompt }) {
+        calls.prompts += 1;
+        assert.equal(prompt.title, "Мощь великана");
+        return { accepted: fallbackAccepted };
+      }
+    }
+  };
+  const service = new RuneKnightAutomationService(moduleApi, {
+    canGrowToken: () => canGrow,
+    createDamageRoll: async (formula, damageType, sourceActor, flavor) => {
+      calls.damage += 1;
+      return { formula, damageType, actor: sourceActor, flavor, total: 4 };
+    }
+  });
+  const activity = {
+    actor,
+    item: giantItem,
+    flags: {
+      "rebreya-main": {
+        runeKnightAutomation: { id: "giant-might" }
+      }
+    }
+  };
+  return { service, activity, actor, token, giantItem, dominanceItem, calls };
+}
+
+test("Giant's Might spends its PB resource, creates the form, and restores owned size values", async () => {
+  const harness = createGiantMightHarness();
+
+  assert.equal(await harness.service.applyDnd5ePostUseActivity(harness.activity, { token: harness.token }), true);
+  assert.equal(harness.giantItem.system.uses.spent, 1);
+  assert.equal(harness.dominanceItem.system.uses.spent, 0);
+  assert.equal(harness.calls.prompts, 0);
+  assert.equal(harness.actor.system.traits.size, "lg");
+  assert.equal(harness.token.width, 2);
+  assert.equal(harness.token.height, 2);
+  const effect = harness.actor.createdEffects[0];
+  assert.equal(effect.duration.seconds, 60);
+  assert.equal(effect.flags["rebreya-main"].runeKnight.automation, "giant-might-form");
+  assert.deepEqual(effect.flags["rebreya-main"].runeKnight.form.originalToken, {
+    x: 100,
+    y: 100,
+    width: 1,
+    height: 1
+  });
+  assert.ok(effect.changes.some((change) => change.key === "flags.midi-qol.advantage.ability.check.str"));
+  assert.ok(effect.changes.some((change) => change.key === "flags.midi-qol.advantage.ability.save.str"));
+
+  harness.actor.effects = harness.actor.effects.filter((entry) => entry !== effect);
+  await harness.service.handleEmbeddedEffectDeletion(effect);
+  assert.equal(harness.actor.system.traits.size, "med");
+  assert.equal(harness.token.width, 1);
+  assert.equal(harness.token.height, 1);
+  assert.equal(harness.token.x, 100);
+  assert.equal(harness.token.y, 100);
+});
+
+test("Giant's Might keeps its combat benefits when there is no room to grow", async () => {
+  const harness = createGiantMightHarness({ canGrow: false });
+
+  assert.equal(await harness.service.applyDnd5ePostUseActivity(harness.activity, { token: harness.token }), true);
+  assert.equal(harness.actor.system.traits.size, "med");
+  assert.equal(harness.token.width, 1);
+  assert.equal(harness.actor.createdEffects.length, 1);
+  assert.equal(harness.actor.createdEffects[0].flags["rebreya-main"].runeKnight.form.grew, false);
+});
+
+test("Giant's Might cleanup does not overwrite size values changed by another source", async () => {
+  const harness = createGiantMightHarness();
+  await harness.service.applyDnd5ePostUseActivity(harness.activity, { token: harness.token });
+  const effect = harness.actor.createdEffects[0];
+  harness.actor.system.traits.size = "huge";
+  harness.token.width = 3;
+  harness.actor.effects = [];
+
+  await harness.service.handleEmbeddedEffectDeletion(effect);
+
+  assert.equal(harness.actor.system.traits.size, "huge");
+  assert.equal(harness.token.width, 3);
+});
+
+test("Giant's Might offers one dominance die only when its own PB uses are empty", async () => {
+  const fallback = createGiantMightHarness({
+    giantSpent: 4,
+    dominanceMax: "@scale.fighter-rework-v028.dominance-dice"
+  });
+  assert.equal(await fallback.service.applyDnd5ePostUseActivity(fallback.activity, { token: fallback.token }), true);
+  assert.equal(fallback.giantItem.system.uses.spent, 4);
+  assert.equal(fallback.dominanceItem.system.uses.spent, 1);
+  assert.equal(fallback.calls.prompts, 1);
+
+  const empty = createGiantMightHarness({ giantSpent: 4, dominanceSpent: 4 });
+  assert.equal(await empty.service.applyDnd5ePostUseActivity(empty.activity, { token: empty.token }), false);
+  assert.equal(empty.actor.createdEffects.length, 0);
+  assert.equal(empty.calls.prompts, 0);
+});
+
+test("Giant's Might rolls back the chosen resource when form creation fails", async () => {
+  const harness = createGiantMightHarness({ giantSpent: 4, effectFails: true });
+
+  await assert.rejects(
+    harness.service.applyDnd5ePostUseActivity(harness.activity, { token: harness.token }),
+    /giant form failed/u
+  );
+  assert.equal(harness.giantItem.system.uses.spent, 4);
+  assert.equal(harness.dominanceItem.system.uses.spent, 0);
+  assert.equal(harness.actor.system.traits.size, "med");
+  assert.equal(harness.token.width, 1);
+});
+
+test("Giant's Might adds damage to the first weapon hit on the actor's turn only", async () => {
+  const harness = createGiantMightHarness();
+  await harness.service.applyDnd5ePostUseActivity(harness.activity, { token: harness.token });
+  const previousGameDescriptor = Object.getOwnPropertyDescriptor(globalThis, "game");
+  Object.defineProperty(globalThis, "game", {
+    configurable: true,
+    writable: true,
+    value: {
+    id: "giant-combat",
+    combat: {
+      id: "giant-combat",
+      round: 2,
+      turn: 1,
+      combatant: { actor: harness.actor, token: harness.token }
+    }
+    }
+  });
+  const workflow = {
+    id: "giant-damage",
+    actor: harness.actor,
+    token: harness.token,
+    item: { id: "greatsword", type: "weapon", name: "Greatsword" },
+    hitTargets: new Set([{ id: "target", uuid: "Scene.scene.Token.target", actor: createActor() }]),
+    bonusDamageRolls: [],
+    async setBonusDamageRolls(rolls) {
+      this.bonusDamageRolls = rolls;
+    }
+  };
+  try {
+    await harness.service.applyMidiPreDamageRollComplete(workflow);
+    await harness.service.applyMidiPreDamageRollComplete(workflow);
+    assert.equal(harness.calls.damage, 1);
+    assert.equal(workflow.bonusDamageRolls.length, 1);
+    assert.equal(workflow.bonusDamageRolls[0].formula, "1d6");
+
+    globalThis.game.combat.combatant = { actor: createActor(), token: null };
+    const outOfTurn = { ...workflow, id: "giant-out-of-turn", bonusDamageRolls: [] };
+    await harness.service.applyMidiPreDamageRollComplete(outOfTurn);
+    assert.equal(outOfTurn.bonusDamageRolls.length, 0);
+  }
+  finally {
+    if (previousGameDescriptor) Object.defineProperty(globalThis, "game", previousGameDescriptor);
+    else delete globalThis.game;
+  }
+});
+
+test("Giant's Might native damage fallback uses the same once-per-turn key", async () => {
+  const harness = createGiantMightHarness();
+  await harness.service.applyDnd5ePostUseActivity(harness.activity, { token: harness.token });
+  const previousGameDescriptor = Object.getOwnPropertyDescriptor(globalThis, "game");
+  Object.defineProperty(globalThis, "game", {
+    configurable: true,
+    writable: true,
+    value: {
+      combat: {
+        id: "giant-native-combat",
+        round: 1,
+        turn: 0,
+        combatant: { actor: harness.actor, token: harness.token }
+      }
+    }
+  });
+  const weapon = { id: "maul", type: "weapon", name: "Maul", actor: harness.actor };
+  const activity = { id: "maul-activity", actor: harness.actor, item: weapon };
+  const first = { subject: activity, rolls: [] };
+  const second = { subject: activity, rolls: [] };
+  try {
+    assert.equal(harness.service.applyDnd5eGiantMightDamage(first, {}, {}), true);
+    assert.equal(harness.service.applyDnd5eGiantMightDamage(second, {}, {}), true);
+    assert.equal(first.rolls.length, 1);
+    assert.deepEqual(first.rolls[0].parts, ["1d6"]);
+    assert.equal(second.rolls.length, 0);
+  }
+  finally {
+    if (previousGameDescriptor) Object.defineProperty(globalThis, "game", previousGameDescriptor);
+    else delete globalThis.game;
+  }
+});
+
 test("Rune Knight hooks stay actor-local", async () => {
   const source = await readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8");
 
@@ -942,5 +1175,7 @@ test("Rune Knight hooks stay actor-local", async () => {
   assert.match(source, /runeKnightAutomationService\.applyDnd5eStormRollMode/u);
   assert.match(source, /midi-qol\.preTargetSave/u);
   assert.match(source, /dnd5e\.preRollD20Test/u);
+  assert.match(source, /runeKnightAutomationService\.applyDnd5eGiantMightDamage/u);
+  assert.match(source, /runeKnightAutomationService\.handleEmbeddedEffectDeletion/u);
   assert.match(source, /runeKnightAutomationService\.prepareActiveEffectCreate/u);
 });

@@ -1978,7 +1978,14 @@ test("rune knight core generated items use proficiency-bonus resources", () => {
   const giantActivity = Object.values(giantEntry.system.activities)[0];
   const shieldActivity = Object.values(shieldEntry.system.activities)[0];
 
-  assert.equal(getRuneKnightFeatureAutomation(giantMight).id, "giant-might");
+  const giantAutomation = getRuneKnightFeatureAutomation(giantMight);
+  assert.equal(giantAutomation.id, "giant-might");
+  assert.equal(giantAutomation.dominanceFallback, true);
+  assert.deepEqual(giantAutomation.damage, {
+    formula: "1d6",
+    oncePerTurn: true,
+    weaponOrUnarmed: true
+  });
   assert.equal(giantEntry.system.uses.max, "@prof");
   assert.equal(giantEntry.system.uses.recovery[0].period, "lr");
   assert.equal(giantActivity.activation.type, "bonus");

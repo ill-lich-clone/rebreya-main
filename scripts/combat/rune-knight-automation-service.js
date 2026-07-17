@@ -17,6 +17,11 @@ const STORM_REACTION_KIND = "rune-storm";
 const STORM_PROVIDER_ID = "rune-knight-storm";
 const STORM_RANGE_FEET = 60;
 const STORM_ROLL_TYPES = new Set(["attack", "save", "check"]);
+const FIGHTER_DOMINANCE_IDENTIFIER = "fighter-dominance";
+const GIANT_MIGHT_FORM_AUTOMATION = "giant-might-form";
+const GIANT_MIGHT_DAMAGE_FORMULA = "1d6";
+const SIZE_ORDER = Object.freeze(["tiny", "sm", "med", "lg", "huge", "grg"]);
+const TOKEN_SIZE_BY_ACTOR_SIZE = Object.freeze({ tiny: 0.5, sm: 1, med: 1, lg: 2, huge: 3, grg: 4 });
 const MAX_WORKFLOW_STATES = 128;
 const MOVEMENT_PATHS = Object.freeze([
   "walk",
@@ -307,6 +312,8 @@ export class RuneKnightAutomationService {
     this._stormRollTriggers = new Map();
     this._stormRollResults = new WeakMap();
     this._stormRollSequence = 0;
+    this._giantMightDamageKeys = new Set();
+    this._giantMightDamageWorkflows = new WeakMap();
   }
 
   async initialize() {
@@ -447,10 +454,28 @@ export class RuneKnightAutomationService {
     return true;
   }
 
+  async handleEmbeddedEffectDeletion(effect) {
+    const actor = actorFromEmbeddedDocument(effect);
+    if (actor && cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.automation`)) === GIANT_MIGHT_FORM_AUTOMATION) {
+      await this.#restoreGiantMightForm(actor, effect);
+    }
+    if (actor) await this.repairActor(actor);
+    return true;
+  }
+
   async applyDnd5ePostUseActivity(activity, usageConfig = {}, results = {}) {
-    void usageConfig;
     void results;
     const id = automationId(activity);
+    if (id === "giant-might") {
+      const actor = contextActor(activity, activity?.item, usageConfig);
+      const item = activity?.item;
+      const token = contextToken(usageConfig, activity)
+        ?? this.options.tokenForActor?.(actor)
+        ?? actor?.getActiveTokens?.(true, true)?.[0]
+        ?? null;
+      if (!actor || !item) return false;
+      return this.#activateGiantMight(actor, item, token);
+    }
     if (!SELF_ACTIVATION_IDS.has(id)) return true;
 
     const actor = contextActor(activity, activity?.item);
@@ -599,6 +624,42 @@ export class RuneKnightAutomationService {
     this.#setStormRollMode(rollConfig, mode);
     if (dialogConfig && typeof dialogConfig === "object") this.#setStormRollMode(dialogConfig, mode);
     rollConfig._rebreyaStormRuneApplied = true;
+    return true;
+  }
+
+  applyDnd5eGiantMightDamage(rollConfig = {}, dialogConfig = {}, messageConfig = {}) {
+    void dialogConfig;
+    void messageConfig;
+    if (rollConfig?._rebreyaGiantMightDamageApplied === true) return true;
+    const activity = rollConfig?.subject ?? rollConfig?.activity ?? null;
+    const item = activity?.item ?? rollConfig?.item ?? null;
+    const actor = activity?.actor ?? item?.actor ?? rollConfig?.actor ?? null;
+    if (!isActorDocument(actor) || !this.#giantMightFormEffect(actor) || !this.#isWeaponOrUnarmed(item)) {
+      return true;
+    }
+    const damageKey = this.#giantMightDamageKey(rollConfig, actor);
+    if (!damageKey || this._giantMightDamageKeys.has(damageKey)) return true;
+    if ((rollConfig.rolls ?? []).some((roll) => (
+      cleanText(roll?.options?.[MODULE_ID]?.damageSource) === "giant-might"
+    ))) return true;
+
+    this._giantMightDamageKeys.add(damageKey);
+    while (this._giantMightDamageKeys.size > 256) {
+      this._giantMightDamageKeys.delete(this._giantMightDamageKeys.values().next().value);
+    }
+    const damageType = cleanText(collectionValues(item?.system?.damage?.base?.types)[0]);
+    rollConfig.rolls ??= [];
+    rollConfig.rolls.push({
+      data: actor?.getRollData?.() ?? {},
+      parts: [GIANT_MIGHT_DAMAGE_FORMULA],
+      options: {
+        type: damageType,
+        types: damageType ? [damageType] : [],
+        flavor: "Мощь великана",
+        [MODULE_ID]: { damageSource: "giant-might" }
+      }
+    });
+    rollConfig._rebreyaGiantMightDamageApplied = true;
     return true;
   }
 
@@ -1302,16 +1363,118 @@ export class RuneKnightAutomationService {
     return true;
   }
 
-  applyMidiPreDamageRollComplete(workflow) {
+  async applyMidiPreDamageRollComplete(workflow) {
     const key = this.#workflowKey(workflow);
     const state = this._fireWorkflowStates.get(key);
-    if (!state || state.applied === true) return Promise.resolve(true);
-    if (state.processing) return state.processing;
-    const operation = this.#applyPendingFireRune(workflow, state).finally(() => {
-      if (state.processing === operation) state.processing = null;
+    let fireResult = true;
+    if (state && state.applied !== true) {
+      if (!state.processing) {
+        const operation = this.#applyPendingFireRune(workflow, state).finally(() => {
+          if (state.processing === operation) state.processing = null;
+        });
+        state.processing = operation;
+      }
+      fireResult = await state.processing;
+    }
+    const giantResult = await this.#applyGiantMightDamageOnce(workflow);
+    return fireResult !== false && giantResult !== false;
+  }
+
+  #applyGiantMightDamageOnce(workflow) {
+    if (!workflow || typeof workflow !== "object") return Promise.resolve(true);
+    const current = this._giantMightDamageWorkflows.get(workflow);
+    if (current) return current;
+    const operation = this.#applyGiantMightDamage(workflow).catch((error) => {
+      this.options.logger?.error?.("Giant's Might damage failed", {
+        error,
+        workflowId: this.#workflowKey(workflow)
+      });
+      return false;
     });
-    state.processing = operation;
+    this._giantMightDamageWorkflows.set(workflow, operation);
     return operation;
+  }
+
+  async #applyGiantMightDamage(workflow) {
+    const actor = workflow?.actor ?? workflow?.activity?.actor ?? null;
+    const item = workflow?.item ?? workflow?.activity?.item ?? null;
+    if (
+      !isActorDocument(actor)
+      || !this.#giantMightFormEffect(actor)
+      || !this.#isWeaponOrUnarmed(item)
+      || !collectionValues(workflow?.hitTargets ?? workflow?.hitTargetsEC).length
+    ) return true;
+    const damageKey = this.#giantMightDamageKey(workflow, actor);
+    if (!damageKey || this._giantMightDamageKeys.has(damageKey)) return true;
+    this._giantMightDamageKeys.add(damageKey);
+    while (this._giantMightDamageKeys.size > 256) {
+      this._giantMightDamageKeys.delete(this._giantMightDamageKeys.values().next().value);
+    }
+
+    const previousRolls = [...(workflow?.bonusDamageRolls ?? [])];
+    try {
+      const damageType = this.#workflowDamageType(workflow);
+      const roll = await this.#createDamageRoll(
+        GIANT_MIGHT_DAMAGE_FORMULA,
+        damageType,
+        actor,
+        "Мощь великана"
+      );
+      const nextRolls = [...previousRolls, roll];
+      if (typeof workflow?.setBonusDamageRolls === "function") {
+        await workflow.setBonusDamageRolls(nextRolls);
+      }
+      else {
+        workflow.bonusDamageRolls = nextRolls;
+      }
+      return true;
+    }
+    catch (error) {
+      this._giantMightDamageKeys.delete(damageKey);
+      if (typeof workflow?.setBonusDamageRolls === "function") {
+        await workflow.setBonusDamageRolls(previousRolls);
+      }
+      else if (workflow) {
+        workflow.bonusDamageRolls = previousRolls;
+      }
+      throw error;
+    }
+  }
+
+  #giantMightDamageKey(workflow, actor) {
+    const combat = globalThis.game?.combat;
+    if (combat) {
+      const currentActor = combat?.combatant?.actor ?? tokenActor(combat?.combatant?.token);
+      if (!isActorDocument(currentActor) || actorKey(currentActor) !== actorKey(actor)) return "";
+      return [
+        cleanText(combat.uuid ?? combat.id ?? combat._id),
+        numberValue(combat.round, 0),
+        numberValue(combat.turn, -1),
+        actorKey(actor),
+        "giant-might-damage"
+      ].join(":");
+    }
+    return `${this.#workflowKey(workflow)}:${actorKey(actor)}:giant-might-damage`;
+  }
+
+  #isWeaponOrUnarmed(item) {
+    if (!item) return false;
+    if (item.type === "weapon") return true;
+    const identifier = cleanText(item?.system?.identifier).toLowerCase();
+    const actionType = cleanText(item?.system?.actionType ?? item?.system?.type?.value).toLowerCase();
+    return identifier === "unarmed-strike"
+      || identifier.endsWith("-unarmed-strike")
+      || (["mwak", "rwak"].includes(actionType) && /(?:unarmed|безоруж)/iu.test(cleanText(item?.name)));
+  }
+
+  #workflowDamageType(workflow) {
+    const values = [
+      workflow?.defaultDamageType,
+      workflow?.damageType,
+      collectionValues(workflow?.damageDetail)[0]?.type,
+      collectionValues(workflow?.item?.system?.damage?.base?.types)[0]
+    ];
+    return cleanText(values.find((value) => cleanText(value)));
   }
 
   async #applyPendingFireRune(workflow, state) {
@@ -1372,7 +1535,8 @@ export class RuneKnightAutomationService {
     }
     const RollClass = globalThis.CONFIG?.Dice?.DamageRoll ?? globalThis.Roll;
     if (typeof RollClass !== "function") throw new Error("Damage roll class is unavailable");
-    const roll = new RollClass(`${formula}[${damageType}]`, actor?.getRollData?.() ?? {}, {
+    const typedFormula = damageType ? `${formula}[${damageType}]` : formula;
+    const roll = new RollClass(typedFormula, actor?.getRollData?.() ?? {}, {
       type: damageType,
       flavor
     });
@@ -1618,7 +1782,27 @@ export class RuneKnightAutomationService {
   #itemHasUse(item) {
     const uses = item?.system?.uses ?? {};
     return Math.max(0, Math.floor(numberValue(uses.spent, 0)))
-      < Math.max(0, Math.floor(numberValue(uses.max, 0)));
+      < this.#itemUseMaximum(item);
+  }
+
+  #itemUseMaximum(item) {
+    const rawMaximum = item?.system?.uses?.max;
+    if (Number.isFinite(Number(rawMaximum))) {
+      return Math.max(0, Math.floor(Number(rawMaximum)));
+    }
+    const actor = actorFromEmbeddedDocument(item);
+    const rollData = actor?.getRollData?.() ?? actor?.system ?? {};
+    const formula = cleanText(rawMaximum);
+    if (!formula) return 0;
+    const scalePath = formula.startsWith("@") ? formula.slice(1) : formula;
+    const direct = getProperty(rollData, scalePath);
+    const directValue = numberValue(direct?.value ?? direct, Number.NaN);
+    if (Number.isFinite(directValue)) return Math.max(0, Math.floor(directValue));
+    const replaced = globalThis.Roll?.replaceFormulaData?.(formula, rollData, {
+      missing: "0",
+      warn: false
+    });
+    return Math.max(0, Math.floor(numberValue(replaced, 0)));
   }
 
   #isVisible(candidate, trigger) {
@@ -1814,6 +1998,243 @@ export class RuneKnightAutomationService {
     return cached.has(id);
   }
 
+  async #activateGiantMight(actor, item, token) {
+    if (this.#giantMightFormEffect(actor)) return true;
+    const payment = await this.#payGiantMight(actor, item, token);
+    if (!payment) return false;
+
+    let effect = null;
+    try {
+      const form = await this.#giantMightFormPlan(actor, token);
+      effect = await this.#createGiantMightFormEffect(actor, item, form);
+      if (!effect) throw new Error("Giant's Might form could not be created");
+      effect._rebreyaGiantMightToken = token?.document ?? token ?? null;
+      if (form.grew) await this.#applyGiantMightGrowth(actor, token, form);
+      return true;
+    }
+    catch (error) {
+      if (effect) {
+        await this.#restoreGiantMightForm(actor, effect);
+        await this.#deleteActorEffect(actor, effect);
+      }
+      await payment.rollback?.();
+      throw error;
+    }
+  }
+
+  async #payGiantMight(actor, item, token) {
+    if (this.#itemHasUse(item)) {
+      const rollback = await this.#consumeItemUse(item);
+      return rollback ? { item, resource: "giant-might", rollback } : null;
+    }
+
+    const dominanceItem = this.#findDominanceItem(actor);
+    if (!dominanceItem || !this.#itemHasUse(dominanceItem)) return null;
+    const queue = this.moduleApi?.reactionQueueService;
+    if (typeof queue?.promptDecision !== "function") return null;
+    const choice = await queue.promptDecision({
+      candidate: {
+        actorUuid: documentUuid(actor) || actorKey(actor),
+        tokenUuid: documentUuid(token),
+        itemUuid: documentUuid(dominanceItem),
+        ownerUserIds: ownerUserIds(actor)
+      },
+      prompt: {
+        title: "Мощь великана",
+        body: "Применения Мощи великана закончились. Потратить одну кость доминирования?",
+        acceptLabel: "Потратить кость",
+        declineLabel: "Отмена"
+      }
+    });
+    if (choice?.accepted !== true) return null;
+    const rollback = await this.#consumeItemUse(dominanceItem);
+    return rollback ? { item: dominanceItem, resource: "dominance", rollback } : null;
+  }
+
+  #findDominanceItem(actor) {
+    return collectionValues(actor?.items).find((item) => {
+      const identifier = cleanText(item?.system?.identifier);
+      if (identifier === FIGHTER_DOMINANCE_IDENTIFIER || identifier.endsWith(`-${FIGHTER_DOMINANCE_IDENTIFIER}`)) {
+        return true;
+      }
+      return normalizeText(item?.name) === "стиль доминирования";
+    }) ?? null;
+  }
+
+  async #giantMightFormPlan(actor, token) {
+    const tokenDocument = token?.document ?? token ?? null;
+    const originalActorSize = cleanText(actor?.system?.traits?.size, "med").toLowerCase();
+    const sizeIndex = Math.max(0, SIZE_ORDER.indexOf(originalActorSize));
+    const appliedActorSize = SIZE_ORDER[Math.min(sizeIndex + 1, SIZE_ORDER.length - 1)];
+    const originalToken = tokenDocument ? {
+      x: numberValue(tokenDocument.x, 0),
+      y: numberValue(tokenDocument.y, 0),
+      width: numberValue(tokenDocument.width, 1),
+      height: numberValue(tokenDocument.height, 1)
+    } : null;
+    const footprint = TOKEN_SIZE_BY_ACTOR_SIZE[appliedActorSize]
+      ?? Math.max(numberValue(originalToken?.width, 1), numberValue(originalToken?.height, 1));
+    const gridSize = Math.max(1, numberValue(
+      globalThis.canvas?.dimensions?.size ?? globalThis.canvas?.grid?.size,
+      1
+    ));
+    const appliedToken = originalToken ? {
+      x: originalToken.x - ((footprint - originalToken.width) * gridSize / 2),
+      y: originalToken.y - ((footprint - originalToken.height) * gridSize / 2),
+      width: footprint,
+      height: footprint
+    } : null;
+    const canGrow = Boolean(tokenDocument && appliedActorSize !== originalActorSize)
+      && await this.#canGrowGiantToken(tokenDocument, appliedToken, originalToken, gridSize);
+    return {
+      grew: canGrow,
+      tokenUuid: documentUuid(tokenDocument),
+      originalActorSize,
+      appliedActorSize,
+      originalToken,
+      appliedToken
+    };
+  }
+
+  async #canGrowGiantToken(token, applied, original, gridSize) {
+    if (!token || !applied || !original) return false;
+    if (typeof this.options.canGrowToken === "function") {
+      return await this.options.canGrowToken(token, applied, original) === true;
+    }
+    const sceneRect = globalThis.canvas?.dimensions?.sceneRect;
+    if (sceneRect && (
+      applied.x < sceneRect.x
+      || applied.y < sceneRect.y
+      || applied.x + (applied.width * gridSize) > sceneRect.x + sceneRect.width
+      || applied.y + (applied.height * gridSize) > sceneRect.y + sceneRect.height
+    )) return false;
+
+    const overlaps = collectionValues(globalThis.canvas?.scene?.tokens).some((other) => {
+      const otherDocument = other?.document ?? other;
+      if (this.#sameToken(token, otherDocument)) return false;
+      const left = numberValue(otherDocument?.x, Number.NaN);
+      const top = numberValue(otherDocument?.y, Number.NaN);
+      if (!Number.isFinite(left) || !Number.isFinite(top)) return false;
+      const right = left + (Math.max(0, numberValue(otherDocument?.width, 1)) * gridSize);
+      const bottom = top + (Math.max(0, numberValue(otherDocument?.height, 1)) * gridSize);
+      const appliedRight = applied.x + (applied.width * gridSize);
+      const appliedBottom = applied.y + (applied.height * gridSize);
+      return applied.x < right && appliedRight > left && applied.y < bottom && appliedBottom > top;
+    });
+    if (overlaps) return false;
+
+    const tokenObject = token?.object ?? token;
+    if (typeof tokenObject?.checkCollision === "function") {
+      const origin = tokenObject.center ?? {
+        x: original.x + (original.width * gridSize / 2),
+        y: original.y + (original.height * gridSize / 2)
+      };
+      const inset = Math.max(1, gridSize * 0.05);
+      const corners = [
+        { x: applied.x + inset, y: applied.y + inset },
+        { x: applied.x + (applied.width * gridSize) - inset, y: applied.y + inset },
+        { x: applied.x + inset, y: applied.y + (applied.height * gridSize) - inset },
+        {
+          x: applied.x + (applied.width * gridSize) - inset,
+          y: applied.y + (applied.height * gridSize) - inset
+        }
+      ];
+      if (corners.some((destination) => tokenObject.checkCollision(destination, {
+        origin,
+        type: "move",
+        mode: "any"
+      }) === true)) return false;
+    }
+    return true;
+  }
+
+  async #createGiantMightFormEffect(actor, item, form) {
+    if (typeof actor?.createEmbeddedDocuments !== "function") return null;
+    const effectData = {
+      name: "Мощь великана",
+      type: "base",
+      img: cleanText(item?.img, "icons/magic/control/buff-strength-muscle-damage-orange.webp"),
+      origin: documentUuid(item),
+      disabled: false,
+      transfer: false,
+      duration: {
+        seconds: 60,
+        rounds: null,
+        turns: null,
+        startRound: null,
+        startTurn: null,
+        combat: null,
+        startTime: globalThis.game?.time?.worldTime ?? null
+      },
+      statuses: [],
+      changes: [
+        { key: "flags.midi-qol.advantage.ability.check.str", mode: EFFECT_MODE_CUSTOM, value: "1", priority: 20 },
+        { key: "flags.midi-qol.advantage.ability.save.str", mode: EFFECT_MODE_CUSTOM, value: "1", priority: 20 },
+        { key: "system.abilities.str.check.roll.mode", mode: EFFECT_MODE_OVERRIDE, value: "1", priority: 20 },
+        { key: "system.abilities.str.save.roll.mode", mode: EFFECT_MODE_OVERRIDE, value: "1", priority: 20 }
+      ],
+      flags: {
+        dae: { stackable: "noneName" },
+        [MODULE_ID]: {
+          managed: true,
+          runeKnight: {
+            id: "giant-might",
+            automation: GIANT_MIGHT_FORM_AUTOMATION,
+            sourceItemUuid: documentUuid(item),
+            form: clone(form)
+          }
+        }
+      },
+      description: "Преимущество на проверки и спасброски Силы; дополнительный урон один раз за ход."
+    };
+    const created = await actor.createEmbeddedDocuments("ActiveEffect", [effectData], { render: false });
+    return Array.isArray(created) ? created[0] ?? null : created ?? null;
+  }
+
+  async #applyGiantMightGrowth(actor, token, form) {
+    await this.#updateDocument(actor, { "system.traits.size": form.appliedActorSize });
+    await this.#updateDocument(token?.document ?? token, form.appliedToken);
+  }
+
+  async #restoreGiantMightForm(actor, effect) {
+    const form = getProperty(effect, `flags.${MODULE_ID}.runeKnight.form`);
+    if (!form?.grew) return false;
+    let restored = false;
+    if (cleanText(actor?.system?.traits?.size) === cleanText(form.appliedActorSize)) {
+      restored = (await this.#updateDocument(actor, { "system.traits.size": form.originalActorSize })) || restored;
+    }
+    const token = effect?._rebreyaGiantMightToken
+      ?? globalThis.fromUuidSync?.(form.tokenUuid)
+      ?? null;
+    const tokenDocument = token?.document ?? token;
+    if (tokenDocument && form.originalToken && form.appliedToken) {
+      const patch = {};
+      for (const key of ["x", "y", "width", "height"]) {
+        if (numberValue(tokenDocument[key], Number.NaN) === numberValue(form.appliedToken[key], Number.NaN)) {
+          patch[key] = form.originalToken[key];
+        }
+      }
+      restored = (await this.#updateDocument(tokenDocument, patch)) || restored;
+    }
+    return restored;
+  }
+
+  async #updateDocument(document, patch = {}) {
+    if (!document || !Object.keys(patch).length) return false;
+    if (typeof document.update === "function") {
+      await document.update(patch, { render: false });
+    }
+    for (const [path, value] of Object.entries(patch)) setProperty(document, path, clone(value));
+    return true;
+  }
+
+  #giantMightFormEffect(actor) {
+    return collectionValues(actor?.effects).find((effect) => (
+      effect?.disabled !== true
+      && cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.automation`)) === GIANT_MIGHT_FORM_AUTOMATION
+    )) ?? null;
+  }
+
   #hasRuntimeEffect(actor, item, id) {
     const sourceItemUuid = cleanText(item?.uuid);
     return collectionValues(actor?.effects).some((effect) => (
@@ -1825,7 +2246,7 @@ export class RuneKnightAutomationService {
   async #consumeItemUse(item) {
     const uses = item?.system?.uses ?? {};
     const spent = Math.max(0, Math.floor(numberValue(uses.spent, 0)));
-    const maximum = Math.max(0, Math.floor(numberValue(uses.max, 0)));
+    const maximum = this.#itemUseMaximum(item);
     if (spent >= maximum) return null;
     await updateItem(item, { "system.uses.spent": spent + 1 });
     return async () => updateItem(item, { "system.uses.spent": spent });
