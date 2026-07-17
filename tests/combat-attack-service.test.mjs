@@ -382,6 +382,56 @@ test("weapon attack activities mark auto-held items before activity use continue
   await Promise.resolve();
 });
 
+test("Runic Juggernaut reach comes only from its active Huge form and only affects melee", () => {
+  const weapon = makeWeaponItem({ heldHands: ["left"] });
+  const actor = makeActor([weapon]);
+  actor.effects = [{
+    id: "giant-form",
+    disabled: false,
+    flags: {
+      [MODULE_ID]: {
+        runeKnight: {
+          automation: "giant-might-form",
+          reachBonus: 5,
+          form: { appliedActorSize: "huge" }
+        }
+      }
+    }
+  }];
+  const melee = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: { type: { value: "melee" } },
+    range: {}
+  };
+  const ranged = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: { type: { value: "ranged" } },
+    range: {}
+  };
+  const service = new CombatAttackService({});
+
+  assert.equal(service.applyDnd5ePreUseActivity(melee), true);
+  assert.equal(melee.range.reach, 10);
+  assert.equal(weapon.system.range.reach, 5);
+  assert.equal(service.applyDnd5ePreUseActivity(ranged), true);
+  assert.equal(ranged.range.reach, undefined);
+
+  actor.effects[0].disabled = true;
+  const inactive = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: { type: { value: "melee" } },
+    range: {}
+  };
+  assert.equal(service.applyDnd5ePreUseActivity(inactive), true);
+  assert.equal(inactive.range.reach, undefined);
+});
+
 test("two-handed weapon attack auto-holds the item in one hand and uses a free hand for the attack", async () => {
   const weapon = makeWeaponItem({
     deferUpdateMutation: true,

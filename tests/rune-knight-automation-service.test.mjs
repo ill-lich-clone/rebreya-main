@@ -939,11 +939,17 @@ function createGiantMightHarness({
   dominanceMax = 4,
   fallbackAccepted = true,
   canGrow = true,
-  effectFails = false
+  effectFails = false,
+  features = [],
+  hugeAccepted = true
 } = {}) {
   const giantItem = createItem({ id: "giant-might", automation: "giant-might", spent: giantSpent, max: 4 });
   const dominanceItem = createItem({ id: "dominance", spent: dominanceSpent, max: dominanceMax, identifier: "fighter-dominance" });
-  const actor = assignActorIdentity(createActor({ level: 10, prof: 4, items: [giantItem, dominanceItem] }), "giant-actor", "Rune Giant");
+  const actor = assignActorIdentity(createActor({
+    level: features.some((item) => item.flags?.["rebreya-main"]?.runeKnightAutomation?.id === "runic-juggernaut") ? 18 : 10,
+    prof: 4,
+    items: [giantItem, dominanceItem, ...features]
+  }), "giant-actor", "Rune Giant");
   actor.getRollData = () => ({
     scale: {
       "fighter-rework-v028": {
@@ -969,13 +975,17 @@ function createGiantMightHarness({
       throw new Error("giant form failed");
     };
   }
-  const calls = { prompts: 0, damage: 0 };
+  const calls = { prompts: 0, promptTitles: [], damage: 0, damageFormulas: [] };
   const moduleApi = {
     reactionQueueService: {
       async promptDecision({ prompt }) {
         calls.prompts += 1;
-        assert.equal(prompt.title, "Мощь великана");
-        return { accepted: fallbackAccepted };
+        calls.promptTitles.push(prompt.title);
+        if (prompt.title === "Мощь великана") return { accepted: fallbackAccepted };
+        if (prompt.title === "Рунический исполин") {
+          return { accepted: hugeAccepted, size: "huge" };
+        }
+        return { accepted: false };
       }
     }
   };
@@ -983,6 +993,7 @@ function createGiantMightHarness({
     canGrowToken: () => canGrow,
     createDamageRoll: async (formula, damageType, sourceActor, flavor) => {
       calls.damage += 1;
+      calls.damageFormulas.push(formula);
       return { formula, damageType, actor: sourceActor, flavor, total: 4 };
     }
   });
@@ -1159,6 +1170,87 @@ test("Giant's Might native damage fallback uses the same once-per-turn key", asy
     if (previousGameDescriptor) Object.defineProperty(globalThis, "game", previousGameDescriptor);
     else delete globalThis.game;
   }
+});
+
+test("Great Stature records one 3d4 height increase and never rerolls during repair", async () => {
+  const greatStature = createItem({ id: "great-stature", automation: "great-stature" });
+  const actor = assignActorIdentity(createActor({ level: 10, prof: 4, items: [greatStature] }), "stature-actor", "Tall Knight");
+  const calls = { rolls: 0, chats: [] };
+  const service = new RuneKnightAutomationService({}, {
+    async rollFormula(formula) {
+      calls.rolls += 1;
+      assert.equal(formula, "3d4");
+      return { formula, total: 9 };
+    },
+    async createChatMessage(data) {
+      calls.chats.push(data);
+      return data;
+    }
+  });
+
+  await service.repairActor(actor);
+  await service.repairActor(actor);
+
+  assert.equal(getProperty(actor, "flags.rebreya-main.runeKnight.heightIncreaseInches"), 9);
+  assert.equal(calls.rolls, 1);
+  assert.equal(calls.chats.length, 1);
+  assert.match(calls.chats[0].content, /9/u);
+});
+
+test("Master of Runes synchronizes and restores every owned rune to two uses", async () => {
+  const runes = ["stone", "frost", "cloud", "fire", "hill", "storm"].map((id) => (
+    createItem({ id, automation: id, spent: 2, max: 1 })
+  ));
+  const master = createItem({ id: "master", automation: "master-of-runes" });
+  const actor = createActor({ level: 15, prof: 5, items: [...runes, master] });
+  const service = new RuneKnightAutomationService({});
+
+  await service.repairActor(actor);
+  assert.deepEqual(runes.map((item) => item.system.uses.max), [2, 2, 2, 2, 2, 2]);
+  await service.handleRestCompleted(actor, { type: "short" });
+  assert.deepEqual(runes.map((item) => item.system.uses.spent), [0, 0, 0, 0, 0, 0]);
+});
+
+test("Great Stature and Runic Juggernaut progress Giant's Might damage dice", async () => {
+  const great = createItem({ id: "great-stature", automation: "great-stature" });
+  const stature = createGiantMightHarness({ features: [great] });
+  await stature.service.applyDnd5ePostUseActivity(stature.activity, { token: stature.token });
+  const statureConfig = {
+    subject: { id: "stature-attack", actor: stature.actor, item: { id: "sword", type: "weapon", actor: stature.actor } },
+    rolls: []
+  };
+  stature.service.applyDnd5eGiantMightDamage(statureConfig);
+  assert.deepEqual(statureConfig.rolls[0].parts, ["1d8"]);
+
+  const juggernaut = createItem({ id: "runic-juggernaut", automation: "runic-juggernaut" });
+  const huge = createGiantMightHarness({ features: [juggernaut] });
+  await huge.service.applyDnd5ePostUseActivity(huge.activity, { token: huge.token });
+  const hugeConfig = {
+    subject: { id: "huge-attack", actor: huge.actor, item: { id: "maul", type: "weapon", actor: huge.actor } },
+    rolls: []
+  };
+  huge.service.applyDnd5eGiantMightDamage(hugeConfig);
+  assert.deepEqual(hugeConfig.rolls[0].parts, ["1d10"]);
+});
+
+test("Runic Juggernaut can create a Huge form with source-owned reach", async () => {
+  const juggernaut = createItem({ id: "runic-juggernaut", automation: "runic-juggernaut" });
+  const huge = createGiantMightHarness({ features: [juggernaut], hugeAccepted: true });
+  await huge.service.applyDnd5ePostUseActivity(huge.activity, { token: huge.token });
+  const effect = huge.actor.createdEffects[0];
+
+  assert.deepEqual(huge.calls.promptTitles, ["Рунический исполин"]);
+  assert.equal(huge.actor.system.traits.size, "huge");
+  assert.equal(huge.token.width, 3);
+  assert.equal(effect.flags["rebreya-main"].runeKnight.reachBonus, 5);
+  assert.equal(effect.flags["rebreya-main"].runeKnight.form.appliedActorSize, "huge");
+
+  const large = createGiantMightHarness({ features: [
+    createItem({ id: "runic-juggernaut", automation: "runic-juggernaut" })
+  ], hugeAccepted: false });
+  await large.service.applyDnd5ePostUseActivity(large.activity, { token: large.token });
+  assert.equal(large.actor.system.traits.size, "lg");
+  assert.equal(large.actor.createdEffects[0].flags["rebreya-main"].runeKnight.reachBonus, 0);
 });
 
 test("Rune Knight hooks stay actor-local", async () => {

@@ -48,12 +48,23 @@ const MIGRATION_AUTOMATION_BY_NAME = new Map([
   ["штормовая руна", "storm"],
   ["мощь великана", "giant-might"],
   ["рунический щит", "runic-shield"],
-  ["мастер рун", "master-of-runes"]
+  ["великанский рост", "great-stature"],
+  ["мастер рун", "master-of-runes"],
+  ["рунический исполин", "runic-juggernaut"]
 ]);
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || String(fallback ?? "").trim();
+}
+
+function escapeHtml(value) {
+  return cleanText(value)
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/"/gu, "&quot;")
+    .replace(/'/gu, "&#039;");
 }
 
 function normalizeText(value) {
@@ -392,7 +403,7 @@ export class RuneKnightAutomationService {
     const hasMasterOfRunes = level >= 15 && items.some((item) => automationId(item) === "master-of-runes");
     const runeMaximum = hasMasterOfRunes ? 2 : 1;
     const pb = proficiencyBonus(actor);
-    let changed = false;
+    let changed = await this.#ensureGreatStature(actor, items, level);
 
     for (const item of items) {
       const id = automationId(item);
@@ -423,6 +434,49 @@ export class RuneKnightAutomationService {
       patch["system.uses.spent"] = nextSpent;
     }
     return updateItem(item, patch);
+  }
+
+  async #ensureGreatStature(actor, items, level) {
+    if (level < 10 || !items.some((item) => automationId(item) === "great-stature")) return false;
+    const flagPath = `flags.${MODULE_ID}.runeKnight.heightIncreaseInches`;
+    const current = numberValue(getProperty(actor, flagPath), Number.NaN);
+    if (Number.isFinite(current) && current > 0) return false;
+
+    const roll = await this.#rollFormula("3d4", actor, "Великанский рост");
+    const inches = Math.min(12, Math.max(3, Math.floor(numberValue(roll?.total, 3))));
+    await this.#updateDocument(actor, { [flagPath]: inches });
+    const chatData = {
+      speaker: globalThis.ChatMessage?.getSpeaker?.({ actor }) ?? { actor: actorKey(actor) },
+      content: `<p><strong>Великанский рост:</strong> ${escapeHtml(actor?.name || "Рунный рыцарь")} становится выше на ${inches} дюйм.</p>`,
+      flags: {
+        [MODULE_ID]: {
+          runeKnight: { greatStature: true, heightIncreaseInches: inches }
+        }
+      }
+    };
+    try {
+      if (typeof this.options.createChatMessage === "function") {
+        await this.options.createChatMessage(chatData);
+      }
+      else {
+        await globalThis.ChatMessage?.create?.(chatData);
+      }
+    }
+    catch (error) {
+      this.options.logger?.error?.("Great Stature chat message failed", { error, actorUuid: actorKey(actor) });
+    }
+    return true;
+  }
+
+  async #rollFormula(formula, actor, flavor) {
+    if (typeof this.options.rollFormula === "function") {
+      return this.options.rollFormula(formula, actor, flavor);
+    }
+    const RollClass = globalThis.Roll;
+    if (typeof RollClass !== "function") throw new Error("Roll class is unavailable");
+    const roll = new RollClass(formula, actor?.getRollData?.() ?? {}, { flavor });
+    if (typeof roll.evaluate === "function" && !roll._evaluated) await roll.evaluate();
+    return roll;
   }
 
   async handleRestCompleted(actor, result = {}, config = {}) {
@@ -651,7 +705,7 @@ export class RuneKnightAutomationService {
     rollConfig.rolls ??= [];
     rollConfig.rolls.push({
       data: actor?.getRollData?.() ?? {},
-      parts: [GIANT_MIGHT_DAMAGE_FORMULA],
+      parts: [this.#giantMightDamageFormula(actor)],
       options: {
         type: damageType,
         types: damageType ? [damageType] : [],
@@ -1415,7 +1469,7 @@ export class RuneKnightAutomationService {
     try {
       const damageType = this.#workflowDamageType(workflow);
       const roll = await this.#createDamageRoll(
-        GIANT_MIGHT_DAMAGE_FORMULA,
+        this.#giantMightDamageFormula(actor),
         damageType,
         actor,
         "Мощь великана"
@@ -1465,6 +1519,12 @@ export class RuneKnightAutomationService {
     return identifier === "unarmed-strike"
       || identifier.endsWith("-unarmed-strike")
       || (["mwak", "rwak"].includes(actionType) && /(?:unarmed|безоруж)/iu.test(cleanText(item?.name)));
+  }
+
+  #giantMightDamageFormula(actor) {
+    if (this.#actorHasFeature(actor, "runic-juggernaut")) return "1d10";
+    if (this.#actorHasFeature(actor, "great-stature")) return "1d8";
+    return GIANT_MIGHT_DAMAGE_FORMULA;
   }
 
   #workflowDamageType(workflow) {
@@ -2005,7 +2065,8 @@ export class RuneKnightAutomationService {
 
     let effect = null;
     try {
-      const form = await this.#giantMightFormPlan(actor, token);
+      const targetSize = await this.#chooseGiantMightSize(actor, item, token);
+      const form = await this.#giantMightFormPlan(actor, token, targetSize);
       effect = await this.#createGiantMightFormEffect(actor, item, form);
       if (!effect) throw new Error("Giant's Might form could not be created");
       effect._rebreyaGiantMightToken = token?.document ?? token ?? null;
@@ -2061,11 +2122,43 @@ export class RuneKnightAutomationService {
     }) ?? null;
   }
 
-  async #giantMightFormPlan(actor, token) {
+  async #chooseGiantMightSize(actor, item, token) {
+    if (!this.#actorHasFeature(actor, "runic-juggernaut")) return "";
+    const queue = this.moduleApi?.reactionQueueService;
+    if (typeof queue?.promptDecision !== "function") return "";
+    const choice = await queue.promptDecision({
+      candidate: {
+        actorUuid: documentUuid(actor) || actorKey(actor),
+        tokenUuid: documentUuid(token),
+        itemUuid: documentUuid(item),
+        ownerUserIds: ownerUserIds(actor)
+      },
+      prompt: {
+        title: "Рунический исполин",
+        body: "Увеличить размер формы сразу до Огромного, если для неё достаточно места?",
+        acceptLabel: "Стать Огромным",
+        declineLabel: "Обычный рост",
+        fields: [{
+          name: "size",
+          type: "select",
+          label: "Размер формы",
+          options: [{ value: "huge", label: "Огромный" }]
+        }]
+      }
+    });
+    return choice?.accepted === true && cleanText(choice?.size, "huge") === "huge" ? "huge" : "";
+  }
+
+  async #giantMightFormPlan(actor, token, targetSize = "") {
     const tokenDocument = token?.document ?? token ?? null;
     const originalActorSize = cleanText(actor?.system?.traits?.size, "med").toLowerCase();
     const sizeIndex = Math.max(0, SIZE_ORDER.indexOf(originalActorSize));
-    const appliedActorSize = SIZE_ORDER[Math.min(sizeIndex + 1, SIZE_ORDER.length - 1)];
+    const ordinarySizeIndex = Math.min(sizeIndex + 1, SIZE_ORDER.length - 1);
+    const requestedSizeIndex = SIZE_ORDER.indexOf(cleanText(targetSize).toLowerCase());
+    const appliedActorSize = SIZE_ORDER[Math.max(
+      ordinarySizeIndex,
+      requestedSizeIndex >= 0 ? requestedSizeIndex : ordinarySizeIndex
+    )];
     const originalToken = tokenDocument ? {
       x: numberValue(tokenDocument.x, 0),
       y: numberValue(tokenDocument.y, 0),
@@ -2086,8 +2179,10 @@ export class RuneKnightAutomationService {
     } : null;
     const canGrow = Boolean(tokenDocument && appliedActorSize !== originalActorSize)
       && await this.#canGrowGiantToken(tokenDocument, appliedToken, originalToken, gridSize);
+    const reachBonus = appliedActorSize === "huge" && (canGrow || originalActorSize === "huge") ? 5 : 0;
     return {
       grew: canGrow,
+      reachBonus,
       tokenUuid: documentUuid(tokenDocument),
       originalActorSize,
       appliedActorSize,
@@ -2181,6 +2276,7 @@ export class RuneKnightAutomationService {
             id: "giant-might",
             automation: GIANT_MIGHT_FORM_AUTOMATION,
             sourceItemUuid: documentUuid(item),
+            reachBonus: numberValue(form?.reachBonus, 0),
             form: clone(form)
           }
         }

@@ -1653,16 +1653,38 @@ export class CombatAttackService {
       return Math.max(0, explicit);
     }
     const actorBonus = toNumber(item.actor?.getFlag?.(MODULE_ID, "racialReachBonusFeet"), NaN);
+    const runeKnightBonus = this.#resolveRuneKnightReachBonusFeet(item.actor);
 
     if (!this.#hasItemProperty(item, "lchReach")) {
-      return Number.isFinite(actorBonus) ? Math.max(0, actorBonus) : 0;
+      return Math.max(Number.isFinite(actorBonus) ? Math.max(0, actorBonus) : 0, runeKnightBonus);
     }
 
     const values = this.#getLichWeaponPropertyValues(item, options);
     const parsed = toNumber(values.reachBonus, NaN);
     const itemBonus = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 
-    return Math.max(itemBonus, Number.isFinite(actorBonus) ? Math.max(0, actorBonus) : 0);
+    return Math.max(itemBonus, Number.isFinite(actorBonus) ? Math.max(0, actorBonus) : 0, runeKnightBonus);
+  }
+
+  #resolveRuneKnightReachBonusFeet(actor) {
+    let maximum = 0;
+    for (const effect of collectionValues(actor?.effects)) {
+      if (effect?.disabled === true || effect?.isSuppressed === true) continue;
+      const automation = cleanText(foundry.utils.getProperty(
+        effect,
+        `flags.${MODULE_ID}.runeKnight.automation`
+      ));
+      const appliedSize = cleanText(foundry.utils.getProperty(
+        effect,
+        `flags.${MODULE_ID}.runeKnight.form.appliedActorSize`
+      )).toLowerCase();
+      if (automation !== "giant-might-form" || appliedSize !== "huge") continue;
+      maximum = Math.max(maximum, Math.max(0, toNumber(foundry.utils.getProperty(
+        effect,
+        `flags.${MODULE_ID}.runeKnight.reachBonus`
+      ), 0)));
+    }
+    return maximum;
   }
 
   #getLichAutomationState(item, options = {}) {
