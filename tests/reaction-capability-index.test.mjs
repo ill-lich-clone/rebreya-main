@@ -111,3 +111,34 @@ test("reaction capability index rebuilds lazily after the active scene is invali
   assert.equal(index.has("storm"), false);
   assert.deepEqual(index.list("storm"), []);
 });
+
+test("reaction capability index adds one new token and removes one deleted actor", () => {
+  const first = actor("first", [{ uuid: "Actor.first.Item.guard" }]);
+  const second = actor("second", [{ uuid: "Actor.second.Item.guard" }]);
+  const firstToken = token("first-token", first);
+  const secondToken = token("second-token", second);
+  const scene = { id: "scene-1", tokens: [firstToken] };
+  const calls = new Map();
+  const index = new ReactionCapabilityIndex({ sceneProvider: () => scene });
+  index.registerProvider("guard", ({ actor: indexedActor, token: indexedToken }) => {
+    calls.set(indexedActor.uuid, (calls.get(indexedActor.uuid) ?? 0) + 1);
+    return [{
+      actorUuid: indexedActor.uuid,
+      tokenUuid: indexedToken.uuid,
+      itemUuid: indexedActor.items[0].uuid
+    }];
+  });
+
+  assert.equal(index.list("guard").length, 1);
+  scene.tokens.push(secondToken);
+  index.refreshToken(secondToken);
+  assert.deepEqual(index.list("guard").map((entry) => entry.actorUuid), [
+    first.uuid,
+    second.uuid
+  ]);
+  assert.equal(calls.get(first.uuid), 1);
+  assert.equal(calls.get(second.uuid), 1);
+
+  index.removeActor(first.uuid);
+  assert.deepEqual(index.list("guard").map((entry) => entry.actorUuid), [second.uuid]);
+});

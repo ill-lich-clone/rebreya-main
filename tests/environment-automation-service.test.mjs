@@ -302,3 +302,86 @@ test("firearm item sheet repair hook does not rerender item sheets", async () =>
     globalThis.game = previousGame;
   }
 });
+
+test("reaction capability index receives targeted document invalidation hooks", () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+  const listeners = new Map();
+  const calls = [];
+  const activeScene = { id: "scene-1" };
+  globalThis.Hooks = {
+    on(hookName, listener) {
+      listeners.set(hookName, listener);
+      return listeners.size;
+    }
+  };
+  globalThis.game = {};
+  globalThis.canvas = { scene: activeScene };
+
+  try {
+    registerCombatHooks({
+      reactionCapabilityIndex: {
+        rebuildScene: (scene) => calls.push(["rebuildScene", scene]),
+        refreshActor: (actor) => calls.push(["refreshActor", actor]),
+        removeActor: (actor) => calls.push(["removeActor", actor]),
+        refreshToken: (token) => calls.push(["refreshToken", token]),
+        removeToken: (uuid) => calls.push(["removeToken", uuid]),
+        invalidateScene: (sceneId) => calls.push(["invalidateScene", sceneId])
+      }
+    });
+
+    for (const hookName of [
+      "canvasReady",
+      "createActor",
+      "updateActor",
+      "deleteActor",
+      "createItem",
+      "updateItem",
+      "deleteItem",
+      "createActiveEffect",
+      "updateActiveEffect",
+      "deleteActiveEffect",
+      "createToken",
+      "updateToken",
+      "deleteToken",
+      "updateUser",
+      "deleteCombat"
+    ]) {
+      assert.equal(typeof listeners.get(hookName), "function", hookName);
+    }
+
+    const actor = { uuid: "Actor.hero" };
+    const item = { parent: actor };
+    const effect = { parent: actor };
+    const tokenDocument = { uuid: "Scene.scene-1.Token.hero", actor, parent: activeScene };
+    listeners.get("canvasReady")(activeScene);
+    listeners.get("createActor")(actor);
+    listeners.get("updateActor")(actor);
+    listeners.get("deleteActor")(actor);
+    listeners.get("createItem")(item);
+    listeners.get("updateActiveEffect")(effect);
+    listeners.get("createToken")(tokenDocument);
+    listeners.get("deleteToken")(tokenDocument);
+    listeners.get("updateUser")({ id: "owner" });
+    listeners.get("deleteCombat")({ scene: { id: "scene-1" } });
+
+    assert.deepEqual(calls, [
+      ["rebuildScene", activeScene],
+      ["refreshActor", actor],
+      ["refreshActor", actor],
+      ["removeActor", actor],
+      ["refreshActor", actor],
+      ["refreshActor", actor],
+      ["refreshToken", tokenDocument],
+      ["removeToken", tokenDocument.uuid],
+      ["rebuildScene", activeScene],
+      ["invalidateScene", "scene-1"]
+    ]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+  }
+});

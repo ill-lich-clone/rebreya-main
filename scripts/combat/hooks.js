@@ -14,7 +14,8 @@ export function registerCombatHooks(moduleApi) {
   const hasPerformerService = Boolean(moduleApi?.performerAutomationService);
   const hasEnvironmentService = Boolean(moduleApi?.environmentAutomationService);
   const hasSpellService = Boolean(moduleApi?.spellAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasEnvironmentService && !hasSpellService) {
+  const hasReactionCapabilityIndex = Boolean(moduleApi?.reactionCapabilityIndex);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex) {
     return;
   }
 
@@ -22,6 +23,37 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (hasReactionCapabilityIndex) {
+    const index = moduleApi.reactionCapabilityIndex;
+    const parentActor = (document) => document?.actor ?? document?.parent ?? null;
+    const refreshParentActor = (document) => {
+      const actor = parentActor(document);
+      if (actor) {
+        index.refreshActor(actor);
+      }
+    };
+
+    Hooks.on("canvasReady", (scene) => index.rebuildScene(scene ?? globalThis.canvas?.scene));
+    Hooks.on("createActor", (actor) => index.refreshActor(actor));
+    Hooks.on("updateActor", (actor) => index.refreshActor(actor));
+    Hooks.on("deleteActor", (actor) => index.removeActor(actor));
+    for (const hookName of ["createItem", "updateItem", "deleteItem"]) {
+      Hooks.on(hookName, refreshParentActor);
+    }
+    for (const hookName of ["createActiveEffect", "updateActiveEffect", "deleteActiveEffect"]) {
+      Hooks.on(hookName, refreshParentActor);
+    }
+    Hooks.on("createToken", (tokenDocument) => index.refreshToken(tokenDocument));
+    Hooks.on("updateToken", (tokenDocument) => index.refreshToken(tokenDocument));
+    Hooks.on("deleteToken", (tokenDocument) => index.removeToken(
+      tokenDocument?.uuid ?? tokenDocument?.document?.uuid ?? tokenDocument?.id
+    ));
+    Hooks.on("updateUser", () => index.rebuildScene(globalThis.canvas?.scene));
+    Hooks.on("deleteCombat", (combat) => index.invalidateScene(
+      combat?.scene?.id ?? combat?.scene?._id ?? combat?.scene ?? globalThis.canvas?.scene?.id
+    ));
+  }
 
   if (hasStatusService) {
     Hooks.on("updateActor", (actor, changed) => {

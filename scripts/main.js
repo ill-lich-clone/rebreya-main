@@ -66,6 +66,8 @@ import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.96-firearm-item-sheet-no-rerender";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.96-firearm-card-notes";
+import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
+import { ReactionQueueService } from "./combat/reaction-queue-service.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.96-surrounded-ac";
@@ -839,6 +841,11 @@ export class RebreyaMainModule {
           : { result: null }
       )
     });
+    this.reactionCapabilityIndex = new ReactionCapabilityIndex();
+    this.reactionQueueService = new ReactionQueueService(this, {
+      capabilityIndex: this.reactionCapabilityIndex,
+      logger: console
+    });
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.spellAutomationService = new SpellAutomationService(this);
@@ -1103,6 +1110,13 @@ export class RebreyaMainModule {
     }
 
     try {
+      await this.reactionQueueService.initialize();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to initialize global reaction queue.`, error);
+    }
+
+    try {
       await this.combatStatusService.initialize();
     }
     catch (error) {
@@ -1157,10 +1171,21 @@ export class RebreyaMainModule {
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize race automation service.`, error);
     }
+
+    try {
+      this.reactionCapabilityIndex.rebuildScene(globalThis.canvas?.scene);
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to build reaction capability index.`, error);
+    }
   }
 
   async handleSocketMessage(message, senderId) {
     if (!message || typeof message !== "object") {
+      return;
+    }
+
+    if (await this.reactionQueueService.handleSocketMessage(message, senderId)) {
       return;
     }
 
@@ -2093,6 +2118,22 @@ export class RebreyaMainModule {
     const result = await this.combatStatusService.syncBloodiedForAllActors();
     await this.refreshOpenApps();
     return result;
+  }
+
+  resolveReactionTrigger(request = {}) {
+    return this.reactionQueueService.resolve(request);
+  }
+
+  registerReactionType(kind, provider) {
+    return this.reactionQueueService.registerType(kind, provider);
+  }
+
+  registerReactionCapability(kind, resolver, options = {}) {
+    return this.reactionCapabilityIndex.registerProvider(kind, resolver, options);
+  }
+
+  invalidateReactionActor(actor) {
+    return this.reactionCapabilityIndex.refreshActor(actor);
   }
 
   getReactionState(actorOrId) {

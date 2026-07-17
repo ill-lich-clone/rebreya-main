@@ -145,6 +145,39 @@ export class ReactionCapabilityIndex {
     return this;
   }
 
+  refreshToken(token) {
+    this._ensureBuilt();
+    const tokenUuid = cleanString(token?.uuid ?? token?.document?.uuid ?? token?.id ?? token?._id);
+    if (!tokenUuid) {
+      return this;
+    }
+    this.removeToken(tokenUuid);
+    const actor = token?.actor ?? token?.document?.actor ?? null;
+    const actorUuid = cleanString(actor?.uuid ?? actor?.id ?? actor?._id);
+    if (!actor || !actorUuid) {
+      return this;
+    }
+    const tokens = this._tokensByActor.get(actorUuid) ?? new Map();
+    tokens.set(tokenUuid, token);
+    this._tokensByActor.set(actorUuid, tokens);
+    this._indexActorToken(actor, token, this._scene);
+    return this;
+  }
+
+  removeActor(actorOrUuid) {
+    this._ensureBuilt();
+    const actorUuid = cleanString(actorOrUuid?.uuid ?? actorOrUuid?.id ?? actorOrUuid?._id ?? actorOrUuid);
+    if (!actorUuid) {
+      return this;
+    }
+    this._removeActorEntries(actorUuid);
+    for (const tokenUuid of this._tokensByActor.get(actorUuid)?.keys() ?? []) {
+      this._keysByToken.delete(tokenUuid);
+    }
+    this._tokensByActor.delete(actorUuid);
+    return this;
+  }
+
   invalidateScene(sceneId = this._sceneId) {
     const normalizedSceneId = cleanString(sceneId);
     if (normalizedSceneId && this._sceneId && normalizedSceneId !== this._sceneId) {
