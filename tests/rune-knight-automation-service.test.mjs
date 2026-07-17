@@ -759,6 +759,175 @@ test("Runic Shield restores its reroll and use when applying the reroll fails", 
   assert.strictEqual(harness.workflow.attackRoll, originalRoll);
 });
 
+function createStormHarness({ mode = "disadvantage", reactionConsumed = true, prophetic = true } = {}) {
+  const stormItem = createItem({ id: "storm", automation: "storm", spent: 1, max: 1 });
+  const effect = prophetic ? {
+    id: "storm-prophetic",
+    disabled: false,
+    flags: {
+      "rebreya-main": {
+        runeKnight: {
+          id: "storm",
+          sourceItemUuid: stormItem.uuid,
+          propheticState: true
+        }
+      }
+    }
+  } : null;
+  const stormActor = assignActorIdentity(createActor({ items: [stormItem], effects: effect ? [effect] : [] }), "storm-actor", "Storm Knight");
+  const rollingActor = assignActorIdentity(createActor({ level: 1, prof: 2 }), "rolling-actor", "Rolling Creature");
+  const stormToken = { id: "storm-token", uuid: "Scene.scene.Token.storm", actor: stormActor, name: stormActor.name };
+  const rollingToken = { id: "rolling-token", uuid: "Scene.scene.Token.rolling", actor: rollingActor, name: rollingActor.name };
+  const providers = new Map();
+  const candidates = [];
+  const capabilityIndex = {
+    registerProvider(kind, provider) {
+      providers.set(kind, provider);
+      if (kind === "rune-storm") {
+        candidates.splice(0, candidates.length, ...provider({ actor: stormActor, token: stormToken }));
+      }
+      return this;
+    },
+    has(kind) {
+      return kind === "rune-storm" && candidates.length > 0;
+    },
+    list(kind) {
+      return kind === "rune-storm" ? candidates : [];
+    }
+  };
+  const calls = { prompts: 0, reactions: 0, distance: 0, visibility: 0 };
+  const moduleApi = {
+    reactionCapabilityIndex: capabilityIndex,
+    combatAttackService: {
+      canUseReaction: () => ({ canUse: true }),
+      async consumeReaction() {
+        calls.reactions += 1;
+        return { consumed: reactionConsumed };
+      }
+    }
+  };
+  const queue = new ReactionQueueService(moduleApi, {
+    capabilityIndex,
+    isCoordinator: () => true,
+    promptCandidate: async ({ prompt }) => {
+      calls.prompts += 1;
+      assert.equal(prompt.fields[0].name, "mode");
+      return { accepted: true, mode };
+    },
+    setTimeoutFn: () => 1,
+    clearTimeoutFn: () => {}
+  });
+  moduleApi.reactionQueueService = queue;
+  const service = new RuneKnightAutomationService(moduleApi, {
+    distanceFeet: () => {
+      calls.distance += 1;
+      return 40;
+    },
+    isVisible: () => {
+      calls.visibility += 1;
+      return true;
+    }
+  });
+  const workflow = {
+    id: "storm-roll",
+    uuid: "Workflow.storm-roll",
+    actor: rollingActor,
+    token: rollingToken,
+    options: {},
+    attackRoll: null
+  };
+  return {
+    service,
+    queue,
+    providers,
+    candidates,
+    calls,
+    stormItem,
+    stormActor,
+    stormToken,
+    rollingActor,
+    rollingToken,
+    workflow
+  };
+}
+
+for (const rollType of ["attack", "save", "check"]) {
+  test(`Storm prophetic state controls a ${rollType} roll before it is finalized`, async () => {
+    const harness = createStormHarness();
+    await harness.queue.initialize();
+    await harness.service.initialize();
+
+    assert.ok(harness.providers.has("rune-storm"));
+    const result = await harness.service.applyMidiStormPreRoll(harness.workflow, rollType);
+
+    assert.equal(result.accepted.length, 1);
+    assert.equal(harness.workflow.disadvantage, true);
+    assert.equal(harness.workflow.options.disadvantage, true);
+    assert.equal(harness.stormItem.system.uses.spent, 1);
+    assert.equal(harness.calls.reactions, 1);
+    assert.equal(harness.calls.prompts, 1);
+    assert.equal(harness.calls.distance, 1);
+    assert.equal(harness.calls.visibility, 1);
+  });
+}
+
+test("Storm pre-roll handling is idempotent and rolls back when reaction payment fails", async () => {
+  const harness = createStormHarness({ mode: "advantage", reactionConsumed: false });
+  await harness.queue.initialize();
+  await harness.service.initialize();
+
+  const first = await harness.service.applyMidiStormPreRoll(harness.workflow, "attack");
+  const second = await harness.service.applyMidiStormPreRoll(harness.workflow, "attack");
+
+  assert.equal(first.accepted.length, 0);
+  assert.equal(second.accepted.length, 0);
+  assert.equal(harness.workflow.advantage, undefined);
+  assert.equal(harness.workflow.options.advantage, undefined);
+  assert.equal(harness.stormItem.system.uses.spent, 1);
+  assert.equal(harness.calls.prompts, 1);
+  assert.equal(harness.calls.reactions, 1);
+});
+
+test("Storm applies an accepted roll mode once and ignores a roll that already finished", async () => {
+  const accepted = createStormHarness({ mode: "advantage" });
+  await accepted.queue.initialize();
+  await accepted.service.initialize();
+  const first = await accepted.service.applyMidiStormPreRoll(accepted.workflow, "attack");
+  const duplicate = await accepted.service.applyMidiStormPreRoll(accepted.workflow, "attack");
+
+  assert.strictEqual(duplicate, first);
+  assert.equal(accepted.workflow.advantage, true);
+  assert.equal(accepted.workflow.workflowOptions.advantage, true);
+  assert.equal(accepted.calls.prompts, 1);
+  assert.equal(accepted.calls.reactions, 1);
+
+  const finished = createStormHarness();
+  await finished.service.initialize();
+  finished.workflow.completed = true;
+  assert.equal(await finished.service.applyMidiStormPreRoll(finished.workflow, "check"), true);
+  assert.equal(finished.calls.prompts, 0);
+  assert.equal(finished.calls.distance, 0);
+});
+
+test("Storm capability requires prophetic state and native hooks apply only a pre-resolved mode", async () => {
+  const dormant = createStormHarness({ prophetic: false });
+  await dormant.service.initialize();
+  assert.equal(dormant.candidates.length, 0);
+  const result = await dormant.service.applyMidiStormPreRoll(dormant.workflow, "save");
+  assert.equal(result, true);
+  assert.equal(dormant.calls.distance, 0);
+
+  const service = new RuneKnightAutomationService({});
+  const rollConfig = { _rebreyaStormRuneMode: "advantage" };
+  const dialogConfig = {};
+  assert.equal(service.applyDnd5eStormRollMode(rollConfig, dialogConfig, {}, "check"), true);
+  assert.equal(rollConfig.advantage, true);
+  assert.equal(dialogConfig.advantage, true);
+  assert.equal(rollConfig._rebreyaStormRuneApplied, true);
+  service.applyDnd5eStormRollMode(rollConfig, dialogConfig, {}, "check");
+  assert.equal(rollConfig._rebreyaStormRuneApplied, true);
+});
+
 test("Rune Knight hooks stay actor-local", async () => {
   const source = await readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8");
 
@@ -769,5 +938,9 @@ test("Rune Knight hooks stay actor-local", async () => {
   assert.match(source, /runeKnightAutomationService\.applyDnd5ePostUseActivity/u);
   assert.match(source, /runeKnightAutomationService\.applyDnd5ePreRollToolCheck/u);
   assert.match(source, /runeKnightAutomationService\.applyDnd5ePreRollSavingThrow/u);
+  assert.match(source, /runeKnightAutomationService\.applyMidiStormPreRoll/u);
+  assert.match(source, /runeKnightAutomationService\.applyDnd5eStormRollMode/u);
+  assert.match(source, /midi-qol\.preTargetSave/u);
+  assert.match(source, /dnd5e\.preRollD20Test/u);
   assert.match(source, /runeKnightAutomationService\.prepareActiveEffectCreate/u);
 });

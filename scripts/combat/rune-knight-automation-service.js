@@ -13,6 +13,10 @@ const CLOUD_RANGE_FEET = 30;
 const RUNIC_SHIELD_REACTION_KIND = "runic-shield";
 const RUNIC_SHIELD_PROVIDER_ID = "rune-knight-runic-shield";
 const RUNIC_SHIELD_RANGE_FEET = 60;
+const STORM_REACTION_KIND = "rune-storm";
+const STORM_PROVIDER_ID = "rune-knight-storm";
+const STORM_RANGE_FEET = 60;
+const STORM_ROLL_TYPES = new Set(["attack", "save", "check"]);
 const MAX_WORKFLOW_STATES = 128;
 const MOVEMENT_PATHS = Object.freeze([
   "walk",
@@ -172,6 +176,18 @@ function contextActor(...contexts) {
   return null;
 }
 
+function contextToken(...contexts) {
+  for (const context of contexts) {
+    const token = context?.token
+      ?? context?.tokenDocument
+      ?? context?.subject?.token
+      ?? context?.data?.token
+      ?? null;
+    if (token) return token?.object ?? token;
+  }
+  return null;
+}
+
 function contextIsPoison(...contexts) {
   for (const context of contexts) {
     if (context?.isPoison === true || context?.options?.isPoison === true) return true;
@@ -288,6 +304,9 @@ export class RuneKnightAutomationService {
     this._fireWorkflowPromises = new Map();
     this._fireTurnKeys = new Set();
     this._hitReactionTriggers = new Map();
+    this._stormRollTriggers = new Map();
+    this._stormRollResults = new WeakMap();
+    this._stormRollSequence = 0;
   }
 
   async initialize() {
@@ -308,12 +327,18 @@ export class RuneKnightAutomationService {
         ({ actor, token }) => this.#hitReactionCapabilitiesForActor(actor, token, "runic-shield"),
         { providerId: RUNIC_SHIELD_PROVIDER_ID }
       );
+      capabilityIndex.registerProvider(
+        STORM_REACTION_KIND,
+        ({ actor, token }) => this.#stormCapabilitiesForActor(actor, token),
+        { providerId: STORM_PROVIDER_ID }
+      );
     }
     const queue = this.moduleApi?.reactionQueueService;
     if (typeof queue?.registerType === "function") {
       queue.registerType(STONE_REACTION_KIND, this.#stoneReactionProvider());
       queue.registerType(CLOUD_REACTION_KIND, this.#cloudReactionProvider());
       queue.registerType(RUNIC_SHIELD_REACTION_KIND, this.#runicShieldReactionProvider());
+      queue.registerType(STORM_REACTION_KIND, this.#stormReactionProvider());
     }
     return true;
   }
@@ -499,6 +524,84 @@ export class RuneKnightAutomationService {
     return statusIds(effect).has("surprised") ? false : true;
   }
 
+  async applyMidiStormPreRoll(rollContext = {}, rollType = "attack", options = {}) {
+    const normalizedType = cleanText(rollType).toLowerCase();
+    if (!STORM_ROLL_TYPES.has(normalizedType) || !rollContext || typeof rollContext !== "object") {
+      return true;
+    }
+    const capabilityIndex = this.moduleApi?.reactionCapabilityIndex;
+    const queue = this.moduleApi?.reactionQueueService;
+    if (
+      typeof capabilityIndex?.has !== "function"
+      || !capabilityIndex.has(STORM_REACTION_KIND)
+      || typeof queue?.resolve !== "function"
+    ) return true;
+
+    const cached = this._stormRollResults.get(rollContext);
+    if (cached) return cached;
+    const workflow = options.workflow ?? rollContext.workflow ?? rollContext;
+    const targetActor = options.actor ?? contextActor(rollContext, options, workflow);
+    const targetToken = options.token ?? contextToken(rollContext, options, workflow);
+    if (!isActorDocument(targetActor) || !targetToken || this.#stormRollFinished(rollContext, normalizedType)) {
+      return true;
+    }
+
+    const workflowId = cleanText(documentUuid(workflow) || documentId(workflow));
+    const targetActorUuid = documentUuid(targetActor) || actorKey(targetActor);
+    const triggerId = `${workflowId || `native-${++this._stormRollSequence}`}:${targetActorUuid}:${normalizedType}:storm-rune`;
+    const trigger = {
+      kind: STORM_REACTION_KIND,
+      rollType: normalizedType,
+      rollContext,
+      workflow,
+      targetActor,
+      targetToken,
+      active: true,
+      finished: false
+    };
+    this.#rememberWorkflowState(this._stormRollTriggers, triggerId, trigger);
+    const context = {
+      triggerId,
+      workflowId,
+      rollType: normalizedType,
+      targetActorUuid,
+      targetTokenUuid: documentUuid(targetToken),
+      triggerActive: true,
+      rollFinished: false
+    };
+
+    let result;
+    try {
+      result = await queue.resolve({ triggerId, kind: STORM_REACTION_KIND, context });
+    }
+    finally {
+      this._stormRollTriggers.delete(triggerId);
+    }
+    const accepted = collectionValues(result?.accepted)[0];
+    const mode = this.#stormMode(accepted?.effect?.mode ?? accepted?.choice?.mode);
+    if (mode) this.#setStormRollMode(rollContext, mode);
+    this._stormRollResults.set(rollContext, result);
+    return result;
+  }
+
+  applyDnd5eStormRollMode(rollConfig = {}, dialogConfig = {}, messageConfig = {}, rollType = "check") {
+    if (!STORM_ROLL_TYPES.has(cleanText(rollType).toLowerCase())) return true;
+    if (rollConfig?._rebreyaStormRuneApplied === true) return true;
+    const mode = this.#stormMode(
+      rollConfig?._rebreyaStormRuneMode
+        ?? dialogConfig?._rebreyaStormRuneMode
+        ?? messageConfig?._rebreyaStormRuneMode
+        ?? getProperty(rollConfig, `flags.${MODULE_ID}.stormRuneMode`)
+        ?? getProperty(dialogConfig, `flags.${MODULE_ID}.stormRuneMode`)
+        ?? getProperty(messageConfig, `flags.${MODULE_ID}.stormRuneMode`)
+    );
+    if (!mode) return true;
+    this.#setStormRollMode(rollConfig, mode);
+    if (dialogConfig && typeof dialogConfig === "object") this.#setStormRollMode(dialogConfig, mode);
+    rollConfig._rebreyaStormRuneApplied = true;
+    return true;
+  }
+
   async handleCombatTurnChange(combat, updateData = {}, updateOptions = {}) {
     const ended = this.#endedTurnCombatant(combat, updateData, updateOptions);
     const targetActor = ended?.actor ?? tokenActor(ended?.token);
@@ -593,6 +696,172 @@ export class RuneKnightAutomationService {
     await this.#resolveCloudReaction(workflow, key);
     await this.#resolveRunicShieldReaction(workflow, key);
     return this.#prepareFireRune(workflow, key);
+  }
+
+  #stormCapabilitiesForActor(actor, token) {
+    if (!isActorDocument(actor) || actorIsIncapacitated(actor)) return [];
+    const item = collectionValues(actor?.items).find((entry) => automationId(entry) === "storm");
+    if (!item || !this.#hasPropheticState(actor, item)) return [];
+    return [{
+      actor,
+      actorUuid: documentUuid(actor) || actorKey(actor),
+      token,
+      tokenUuid: documentUuid(token),
+      item,
+      itemUuid: documentUuid(item),
+      activityId: firstActivityId(item),
+      ownerUserIds: ownerUserIds(actor)
+    }];
+  }
+
+  #hasPropheticState(actor, item) {
+    const sourceItemUuid = documentUuid(item);
+    return collectionValues(actor?.effects).some((effect) => {
+      if (effect?.disabled === true || effect?.isSuppressed === true) return false;
+      if (getProperty(effect, `flags.${MODULE_ID}.runeKnight.propheticState`) !== true) return false;
+      const effectSource = cleanText(getProperty(effect, `flags.${MODULE_ID}.runeKnight.sourceItemUuid`));
+      return !effectSource || !sourceItemUuid || effectSource === sourceItemUuid;
+    });
+  }
+
+  #stormReactionProvider() {
+    return {
+      listCandidates: (_context, capabilityIndex) => capabilityIndex?.list?.(STORM_REACTION_KIND) ?? [],
+      isTriggerValid: (context) => {
+        const trigger = this.#stormTrigger(context);
+        return trigger?.active !== false && trigger?.finished !== true
+          && !this.#stormRollFinished(trigger?.rollContext ?? trigger?.workflow, trigger?.rollType);
+      },
+      revalidateCandidate: (candidate, context) => this.#canUseStormReaction(
+        this.#normalizeHitReactionCandidate(candidate, "storm"),
+        this.#stormTrigger(context)
+      ),
+      buildPrompt: (_candidate, context) => ({
+        title: "Штормовая руна",
+        body: `Изменить ${this.#stormRollLabel(this.#stormTrigger(context)?.rollType)} существа ${cleanText(
+          this.#stormTrigger(context)?.targetActor?.name,
+          "в пределах 60 футов"
+        )}?`,
+        acceptLabel: "Изменить бросок",
+        declineLabel: "Пропустить",
+        fields: [{
+          name: "mode",
+          type: "select",
+          label: "Режим",
+          options: [
+            { value: "advantage", label: "Преимущество" },
+            { value: "disadvantage", label: "Помеха" }
+          ]
+        }]
+      }),
+      pay: () => ({ paid: true }),
+      apply: (_candidate, choice, context, transaction) => this.#applyStormReaction(
+        choice,
+        this.#stormTrigger(context),
+        transaction
+      ),
+      rollback: (_candidate, transaction) => this.#rollbackStormReaction(transaction),
+      serializeEffect: (effect) => ({
+        applied: effect?.applied === true,
+        mode: this.#stormMode(effect?.mode)
+      })
+    };
+  }
+
+  #stormTrigger(context = {}) {
+    const triggerId = cleanText(context?.triggerId);
+    const local = this._stormRollTriggers.get(triggerId);
+    if (local) return local;
+    const workflow = globalThis.MidiQOL?.Workflow?.getWorkflow?.(context.workflowId) ?? null;
+    const targetToken = globalThis.fromUuidSync?.(context.targetTokenUuid) ?? null;
+    const targetActor = globalThis.fromUuidSync?.(context.targetActorUuid) ?? tokenActor(targetToken);
+    return {
+      kind: STORM_REACTION_KIND,
+      rollType: cleanText(context.rollType, "check"),
+      rollContext: workflow,
+      workflow,
+      targetActor,
+      targetToken,
+      active: context.triggerActive !== false,
+      finished: context.rollFinished === true
+    };
+  }
+
+  async #canUseStormReaction(candidate, trigger) {
+    const actor = candidate?.actor;
+    const item = candidate?.item;
+    if (
+      !isActorDocument(actor)
+      || !item
+      || automationId(item) !== "storm"
+      || !this.#hasPropheticState(actor, item)
+      || actorIsIncapacitated(actor)
+      || !isActorDocument(trigger?.targetActor)
+      || !trigger?.targetToken
+      || trigger?.active === false
+      || trigger?.finished === true
+    ) return false;
+    const reactionState = this.moduleApi?.combatAttackService?.canUseReaction?.(actor, 1);
+    if (reactionState && reactionState.canUse === false) return false;
+    const affectsSelf = actorKey(actor) === actorKey(trigger.targetActor);
+    if (!affectsSelf && !this.#isVisible(candidate, trigger)) return false;
+    return this.#distanceFeet(candidate.token, trigger.targetToken) <= STORM_RANGE_FEET;
+  }
+
+  #applyStormReaction(choice, trigger, transaction) {
+    const mode = this.#stormMode(choice?.mode);
+    if (!mode || !trigger || trigger.active === false || trigger.finished === true) {
+      return { applied: false };
+    }
+    const effect = { applied: false, trigger, mode };
+    if (transaction) transaction.effect = effect;
+    trigger.active = false;
+    effect.applied = true;
+    return effect;
+  }
+
+  #rollbackStormReaction(transaction) {
+    if (transaction?.effect?.trigger) transaction.effect.trigger.active = true;
+    return true;
+  }
+
+  #stormMode(value) {
+    const mode = cleanText(value).toLowerCase();
+    return mode === "advantage" || mode === "disadvantage" ? mode : "";
+  }
+
+  #stormRollLabel(rollType) {
+    if (rollType === "attack") return "бросок атаки";
+    if (rollType === "save") return "спасбросок";
+    return "проверку характеристики";
+  }
+
+  #setStormRollMode(rollContext, mode) {
+    if (!rollContext || typeof rollContext !== "object" || !this.#stormMode(mode)) return false;
+    rollContext[mode] = true;
+    if (!rollContext.options || typeof rollContext.options !== "object") rollContext.options = {};
+    rollContext.options[mode] = true;
+    if (!rollContext.workflowOptions || typeof rollContext.workflowOptions !== "object") {
+      rollContext.workflowOptions = {};
+    }
+    rollContext.workflowOptions[mode] = true;
+    rollContext._rebreyaStormRuneMode = mode;
+    rollContext._rebreyaStormRuneApplied = true;
+    return true;
+  }
+
+  #stormRollFinished(rollContext, rollType) {
+    if (!rollContext || typeof rollContext !== "object") return false;
+    if (
+      rollContext._rebreyaStormRuneFinalized === true
+      || rollContext.finished === true
+      || rollContext.completed === true
+      || rollContext.aborted === true
+    ) return true;
+    if (rollType === "attack") {
+      return Boolean(rollContext.attackRoll && numberValue(rollContext.attackRollCount, 0) > 0);
+    }
+    return Boolean(rollContext.roll ?? rollContext.result ?? rollContext.rollResult);
   }
 
   #hitReactionCapabilitiesForActor(actor, token, id) {

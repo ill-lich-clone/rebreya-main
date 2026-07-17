@@ -93,12 +93,46 @@ export function registerCombatHooks(moduleApi) {
         return true;
       }
     });
-    Hooks.on("dnd5e.preRollSavingThrow", (rollConfig, dialogConfig, messageConfig) => {
+    Hooks.on("dnd5e.preRollAttack", (rollConfig, dialogConfig, messageConfig) => {
       try {
-        return moduleApi.runeKnightAutomationService.applyDnd5ePreRollSavingThrow(rollConfig, dialogConfig, messageConfig);
+        return moduleApi.runeKnightAutomationService.applyDnd5eStormRollMode(
+          rollConfig,
+          dialogConfig,
+          messageConfig,
+          "attack"
+        );
       }
       catch (error) {
-        console.error(`${MODULE_ID} | Failed to apply Hill Rune poison-save advantage.`, error);
+        console.error(`${MODULE_ID} | Failed to apply the resolved Storm Rune attack mode.`, error);
+        return true;
+      }
+    });
+    Hooks.on("dnd5e.preRollD20Test", (rollConfig, dialogConfig, messageConfig) => {
+      try {
+        return moduleApi.runeKnightAutomationService.applyDnd5eStormRollMode(
+          rollConfig,
+          dialogConfig,
+          messageConfig,
+          "check"
+        );
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply the resolved Storm Rune check mode.`, error);
+        return true;
+      }
+    });
+    Hooks.on("dnd5e.preRollSavingThrow", (rollConfig, dialogConfig, messageConfig) => {
+      try {
+        moduleApi.runeKnightAutomationService.applyDnd5ePreRollSavingThrow(rollConfig, dialogConfig, messageConfig);
+        return moduleApi.runeKnightAutomationService.applyDnd5eStormRollMode(
+          rollConfig,
+          dialogConfig,
+          messageConfig,
+          "save"
+        );
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply Rune Knight saving-throw modifiers.`, error);
         return true;
       }
     });
@@ -110,6 +144,28 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to apply Storm Rune surprise immunity.`, error);
         return true;
       }
+    });
+    Hooks.on("midi-qol.preAttackRoll", async (workflow) => {
+      try {
+        await moduleApi.runeKnightAutomationService.applyMidiStormPreRoll(workflow, "attack");
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to resolve Storm Rune before an attack roll.`, error);
+      }
+      return true;
+    });
+    Hooks.on("midi-qol.preTargetSave", async (target, workflow, saveDetails) => {
+      try {
+        await moduleApi.runeKnightAutomationService.applyMidiStormPreRoll(saveDetails, "save", {
+          actor: target?.actor ?? target?.document?.actor,
+          token: target,
+          workflow
+        });
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to resolve Storm Rune before a saving throw.`, error);
+      }
+      return true;
     });
     Hooks.on("midi-qol.hitsChecked", async (workflow) => {
       try {
