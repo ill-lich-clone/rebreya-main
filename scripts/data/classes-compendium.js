@@ -25,6 +25,10 @@ import {
 import { getClassStartingEquipmentConfig } from "./class-starting-equipment.js";
 import { buildSlug } from "./item-classification.js";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
+import {
+  getRuneKnightFeatureAutomation,
+  getRuneKnightRuneAutomation
+} from "./rune-knight-automation.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
 const DEFAULT_SOURCE_LABEL = "ЗоЗТ";
@@ -2366,6 +2370,134 @@ function passiveFeatureEffect({
   };
 }
 
+function createRuneKnightActivity(feature, classIdentifier, runeKnightAutomation) {
+  const activityId = stableHashId(
+    `${classIdentifier}:${feature.featureId}:rune-knight:${runeKnightAutomation.id}`,
+    "activity"
+  );
+  const activationType = cleanString(runeKnightAutomation.activation, "special");
+  const rangeValue = runeKnightAutomation.range !== null
+    && runeKnightAutomation.range !== undefined
+    && Number.isFinite(Number(runeKnightAutomation.range))
+    ? Number(runeKnightAutomation.range)
+    : null;
+  const targetsCreature = rangeValue !== null || ["stone", "cloud", "fire", "runic-shield"].includes(runeKnightAutomation.id);
+  const duration = runeKnightAutomation.duration ?? {};
+
+  return {
+    _id: activityId,
+    type: "utility",
+    name: feature.name,
+    img: RAGE_ACTION_ACTIVITY_IMAGE.utility,
+    sort: 0,
+    activation: {
+      type: activationType,
+      value: activationValue(activationType),
+      condition: cleanString(runeKnightAutomation.trigger),
+      override: false
+    },
+    consumption: {
+      scaling: {
+        allowed: false,
+        max: ""
+      },
+      spellSlot: false,
+      targets: []
+    },
+    description: {
+      chatFlavor: cleanString(feature.description)
+    },
+    duration: {
+      value: duration.value ?? "",
+      units: cleanString(duration.units, "inst"),
+      special: "",
+      concentration: false,
+      override: false
+    },
+    effects: [],
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        runeKnightAutomation: foundry.utils.deepClone(runeKnightAutomation)
+      }
+    },
+    range: {
+      value: rangeValue,
+      units: rangeValue === null ? "self" : "ft",
+      special: "",
+      override: false
+    },
+    target: {
+      template: {
+        count: "",
+        contiguous: false,
+        type: "",
+        size: "",
+        width: "",
+        height: "",
+        units: ""
+      },
+      affects: {
+        count: targetsCreature ? "1" : "",
+        type: targetsCreature ? "creature" : "self",
+        choice: targetsCreature,
+        special: ""
+      },
+      prompt: targetsCreature,
+      override: false
+    },
+    uses: {
+      spent: 0,
+      max: "",
+      recovery: []
+    }
+  };
+}
+
+function createRuneKnightAutomation(feature, classIdentifier, runeKnightAutomation) {
+  const activities = {};
+  if (runeKnightAutomation.activation) {
+    const activity = createRuneKnightActivity(feature, classIdentifier, runeKnightAutomation);
+    activities[activity._id] = activity;
+  }
+
+  const effects = [];
+  if (runeKnightAutomation.kind === "rune") {
+    const effectId = stableHashId(
+      `${classIdentifier}:${feature.featureId}:rune-knight-passive:${runeKnightAutomation.id}`,
+      "effect"
+    );
+    effects.push(passiveFeatureEffect({
+      id: effectId,
+      name: `${feature.name}: постоянная сила`,
+      description: feature.description,
+      changes: [{
+        key: `flags.${MODULE_ID}.runeKnight.passive.${runeKnightAutomation.id}`,
+        mode: EFFECT_MODE_OVERRIDE,
+        value: JSON.stringify(runeKnightAutomation.passive ?? {}),
+        priority: 20
+      }],
+      flags: {
+        dae: {
+          transfer: true,
+          stackable: "noneName"
+        },
+        [MODULE_ID]: {
+          managed: true,
+          runeKnightAutomation: foundry.utils.deepClone(runeKnightAutomation)
+        }
+      }
+    }));
+  }
+
+  return {
+    activities,
+    effects,
+    usesMax: cleanString(runeKnightAutomation.usesMax),
+    usesRecovery: foundry.utils.deepClone(runeKnightAutomation.recovery ?? [])
+  };
+}
+
 function createSorcererMagicSenseAutomation(feature, classIdentifier) {
   const effectId = stableHashId(`${classIdentifier}:${feature.featureId}:magic-sense`, "effect");
   return {
@@ -3162,6 +3294,12 @@ function createFeatureAutomation(feature, classIdentifier) {
 
   if (feature.sourceType === "fighterManeuver") {
     return createDominanceManeuverAutomation(feature, classIdentifier);
+  }
+
+  const runeKnightAutomation = getRuneKnightRuneAutomation(feature)
+    ?? getRuneKnightFeatureAutomation(feature);
+  if (runeKnightAutomation) {
+    return createRuneKnightAutomation(feature, classIdentifier, runeKnightAutomation);
   }
 
   const normalizedName = normalizeMatchText(feature.name);
@@ -3980,6 +4118,19 @@ function buildSubclassSpellGrantAdvancements(subclass, context = {}) {
 
 function buildFeatureItemAdvancements(feature, context = {}) {
   const advancements = [];
+
+  const runeKnightAutomation = getRuneKnightFeatureAutomation(feature);
+  if (runeKnightAutomation?.id === "bonus-proficiencies") {
+    advancements.push(buildTraitAdvancement({
+      classIdentifier: cleanString(feature.featureId, feature.classIdentifier),
+      seed: "rune-knight-bonus-proficiencies",
+      title: "Бонусные владения Рунного рыцаря",
+      hint: "Владение инструментами кузнеца и Великаньим языком.",
+      level: 0,
+      grants: ["tool:art:smith", "languages:standard:giant"]
+    }));
+    return advancements;
+  }
 
   if (feature.sourceType !== "fightingStyle") {
     return advancements;
@@ -4922,6 +5073,8 @@ function resolveClassIcon(className, iconLookup) {
 export function createFeatureEntryData(feature, folderIdByPath, iconLookup = null, context = {}) {
   const folderPath = feature.folderPath.join("/");
   const featureAutomation = createFeatureAutomation(feature, feature.classIdentifier);
+  const runeKnightAutomation = getRuneKnightRuneAutomation(feature)
+    ?? getRuneKnightFeatureAutomation(feature);
   const moduleFlags = {
     managed: true,
     sourceType: feature.sourceType,
@@ -4950,6 +5103,9 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
     stacking: feature.stacking,
     damageType: feature.damageType,
     savingThrow: feature.savingThrow,
+    runeKnightAutomation: runeKnightAutomation
+      ? foundry.utils.deepClone(runeKnightAutomation)
+      : undefined,
     signature: buildFeatureSignature(feature, context),
     automation: feature.sourceType === "rageAction"
       ? { type: "rageAction", requiredLevel: feature.requiredLevel }

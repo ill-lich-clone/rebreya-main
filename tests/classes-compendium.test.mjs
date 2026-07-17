@@ -4,6 +4,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getClassStartingEquipmentConfig } from "../scripts/data/class-starting-equipment.js";
 import { syncFlaggedManagedDocuments } from "../scripts/data/managed-compendium-sync.js";
+import {
+  RUNE_KNIGHT_AUTOMATION_IDS,
+  getRuneKnightFeatureAutomation,
+  getRuneKnightRuneAutomation
+} from "../scripts/data/rune-knight-automation.js";
 
 globalThis.foundry ??= {
   utils: {
@@ -1901,6 +1906,74 @@ test("rune knight subclass offers rune choices at its progression levels", () =>
   assert.equal(poolUuidsByLevel.get(3).includes(runeUuidByName.get("Холмовая руна")), false);
   assert.ok(poolUuidsByLevel.get(7).includes(runeUuidByName.get("Холмовая руна")));
   assert.ok(poolUuidsByLevel.get(7).includes(runeUuidByName.get("Штормовая руна")));
+});
+
+test("rune knight generated items expose stable automation metadata and recharge", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const runeDefinitions = definitions.filter((definition) => definition.sourceType === "runeKnightRune");
+  const expectedActivation = new Map([
+    ["stone", "reaction"],
+    ["frost", "bonus"],
+    ["cloud", "reaction"],
+    ["fire", "special"],
+    ["hill", "bonus"],
+    ["storm", "bonus"]
+  ]);
+
+  assert.equal(runeDefinitions.length, 6);
+  for (const definition of runeDefinitions) {
+    const metadata = getRuneKnightRuneAutomation(definition);
+    const entry = createFeatureEntryData(definition, new Map());
+    const activity = Object.values(entry.system.activities)[0];
+
+    assert.ok(metadata);
+    assert.equal(entry.flags["rebreya-main"].runeKnightAutomation.id, metadata.id);
+    assert.equal(activity.flags["rebreya-main"].runeKnightAutomation.id, metadata.id);
+    assert.equal(activity.activation.type, expectedActivation.get(metadata.id));
+    assert.equal(entry.effects.length, 1);
+    assert.equal(entry.effects[0].transfer, true);
+    assert.equal(entry.effects[0].flags["rebreya-main"].runeKnightAutomation.id, metadata.id);
+    assert.equal(entry.flags["rebreya-main"].runeKnightAutomation.save.dc, "8 + @prof + @abilities.con.mod");
+    assert.equal(entry.system.uses.max, "1");
+    assert.deepEqual(entry.system.uses.recovery.map((recovery) => recovery.period), ["sr", "lr"]);
+  }
+});
+
+test("rune knight core generated items use proficiency-bonus resources", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const giantMight = definitions.find((definition) => definition.featureId.endsWith(RUNE_KNIGHT_AUTOMATION_IDS.giantMight));
+  const runicShield = definitions.find((definition) => definition.featureId.endsWith(RUNE_KNIGHT_AUTOMATION_IDS.runicShield));
+  const giantEntry = createFeatureEntryData(giantMight, new Map());
+  const shieldEntry = createFeatureEntryData(runicShield, new Map());
+  const giantActivity = Object.values(giantEntry.system.activities)[0];
+  const shieldActivity = Object.values(shieldEntry.system.activities)[0];
+
+  assert.equal(getRuneKnightFeatureAutomation(giantMight).id, "giant-might");
+  assert.equal(giantEntry.system.uses.max, "@prof");
+  assert.equal(giantEntry.system.uses.recovery[0].period, "lr");
+  assert.equal(giantActivity.activation.type, "bonus");
+  assert.deepEqual(giantActivity.consumption.targets, []);
+  assert.equal(giantActivity.flags["rebreya-main"].runeKnightAutomation.runtimeManagedPayment, true);
+
+  assert.equal(getRuneKnightFeatureAutomation(runicShield).id, "runic-shield");
+  assert.equal(shieldEntry.system.uses.max, "@prof");
+  assert.equal(shieldEntry.system.uses.recovery[0].period, "lr");
+  assert.equal(shieldActivity.activation.type, "reaction");
+});
+
+test("rune knight bonus proficiencies grant smith tools and Giant once", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const bonusProficiencies = definitions.find((definition) => (
+    definition.subclassId === "rb_eoot83" && definition.featureId.endsWith("rb_18bu0at")
+  ));
+  const entry = createFeatureEntryData(bonusProficiencies, new Map());
+  const grants = entry.system.advancement.flatMap((advancement) => advancement.configuration.grants ?? []);
+
+  assert.deepEqual(grants, ["tool:art:smith", "languages:standard:giant"]);
+  assert.equal(new Set(grants).size, grants.length);
 });
 
 test("fighter multiattack variants are activatable feature items", () => {
