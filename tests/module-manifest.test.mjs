@@ -40,11 +40,11 @@ test("module manifest loads a cache-busted entrypoint for the current version", 
   const entrypointSource = await readFile(new URL(expectedEntrypoint, manifestUrl), "utf8");
   const expectedSource = [
     "// @rebreya-role active-version-forwarder",
-    'import "./main.js?v=1.4.97-map-object-token";',
+    'import "./main.js?v=1.4.98-global-reactions-rune-knight";',
     ""
   ].join("\n");
 
-  assert.equal(manifest.version, "1.4.97");
+  assert.equal(manifest.version, "1.4.98");
   assert.equal(manifest.version, latestEntrypointVersion);
   assert.deepEqual(manifest.esmodules, [expectedEntrypoint]);
   assert.equal(entrypointSource, expectedSource);
