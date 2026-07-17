@@ -588,15 +588,18 @@ test("sorcerer feature automation covers magic sense and draconic origin passive
   assert.equal(magicEntry.effects[0].transfer, true);
 
   const resilienceHp = resilienceEntry.effects.find((effect) => (
-    effect.changes.some((change) => change.key === "system.attributes.hp.bonuses.level")
+    effect.changes.some((change) => change.key === "system.attributes.hp.bonuses.overall")
   ));
   const resilienceAc = resilienceEntry.effects.find((effect) => (
     effect.changes.some((change) => change.key === "system.attributes.ac.bonus")
   ));
   assert.ok(resilienceHp.changes.some((change) => (
-    change.key === "system.attributes.hp.bonuses.level"
+    change.key === "system.attributes.hp.bonuses.overall"
       && change.value === "+@classes.sorcerer-rework-v011.levels"
   )));
+  assert.equal(resilienceHp.changes.some((change) => (
+    change.key === "system.attributes.hp.bonuses.level"
+  )), false);
   assert.equal(resilienceHp.transfer, true);
   assert.ok(resilienceAc.changes.some((change) => (
     change.key === "system.attributes.ac.bonus"

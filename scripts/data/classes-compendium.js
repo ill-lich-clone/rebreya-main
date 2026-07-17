@@ -2541,7 +2541,7 @@ function createDraconicResilienceAutomation(feature, classIdentifier) {
         name: `${feature.name}: хиты`,
         description: feature.description,
         changes: [{
-          key: "system.attributes.hp.bonuses.level",
+          key: "system.attributes.hp.bonuses.overall",
           mode: EFFECT_MODE_ADD,
           value: `+@classes.${classIdentifier}.levels`,
           priority: 20
