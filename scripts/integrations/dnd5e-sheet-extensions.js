@@ -1169,7 +1169,7 @@ function findPrototypeDescriptor(prototype, propertyName) {
 
 function resolveFirearmAttackAbilityFromItem(item) {
   const weight = Number(foundry.utils.getProperty(item, "system.weight.value") ?? item?.system?.weight?.value ?? 0);
-  return Number.isFinite(weight) && weight >= 10 ? "str" : "dex";
+  return Number.isFinite(weight) && weight > 10 ? "str" : "dex";
 }
 
 function itemUpdateChangesWeight(updateData) {

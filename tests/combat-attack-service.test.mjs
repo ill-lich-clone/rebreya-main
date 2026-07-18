@@ -2106,6 +2106,29 @@ test("firearm attacks spend loaded ammunition and mark an empty magazine in the 
   assert.equal(TestRoll.queuedTotals.length, 0);
 });
 
+test("firearm attacks use dexterity at exactly ten pounds and strength above ten pounds", async () => {
+  TestRoll.queuedTotals = [15, 15];
+  TestRoll.messages = [];
+  const service = new CombatAttackService({});
+
+  const tenPoundWeapon = makeFirearmItem({
+    name: "Ten Pound Firearm",
+    weight: 10
+  });
+  const tenPoundActor = makeActor([tenPoundWeapon]);
+  const tenPoundResult = await service.rollFirearmAttack(tenPoundActor, tenPoundWeapon, { createMessage: false });
+
+  const heavyWeapon = makeFirearmItem({
+    name: "Heavy Firearm",
+    weight: 10.01
+  });
+  const heavyActor = makeActor([heavyWeapon]);
+  const heavyResult = await service.rollFirearmAttack(heavyActor, heavyWeapon, { createMessage: false });
+
+  assert.equal(tenPoundResult.breakdown.abilityKey, "dex");
+  assert.equal(heavyResult.breakdown.abilityKey, "str");
+});
+
 test("empty firearm magazines block firearm attacks before the attack roll", async () => {
   TestRoll.queuedTotals = [15];
   TestRoll.messages = [];

@@ -65,7 +65,7 @@ import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.96-firearm-item-sheet-no-rerender";
-import { CombatAttackService } from "./combat/attack-service.js?v=1.4.96-firearm-card-notes";
+import { CombatAttackService } from "./combat/attack-service.js?v=1.4.96-firearm-weight-threshold";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
@@ -92,7 +92,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.96-item-upgrade-slots";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.96-firearm-weight-threshold";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
 import {
   patchDurabilityItemEffectSuppression,

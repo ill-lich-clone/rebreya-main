@@ -894,7 +894,7 @@ export class CombatAttackService {
     }
 
     const weight = getItemWeightLb(item);
-    if (weight >= FIREARM_WEIGHT_THRESHOLD_LB) {
+    if (weight > FIREARM_WEIGHT_THRESHOLD_LB) {
       return "str";
     }
 

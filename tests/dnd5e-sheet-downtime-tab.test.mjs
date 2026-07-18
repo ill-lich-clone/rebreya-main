@@ -2381,6 +2381,13 @@ test("registerDnd5eSheetExtensions updates firearm attack ability when weapon we
     assert.equal(typeof stubs.hooks.get("updateItem"), "function");
     await stubs.hooks.get("updateItem")(item, { "system.weight.value": 10 }, {}, "user");
 
+    assert.equal(updates.length, 0);
+    assert.equal(item.system.activities.shot.attack.ability, "dex");
+    assert.equal(item.system.activities.normalRanged.attack.ability, "dex");
+
+    item.system.weight.value = 10.01;
+    await stubs.hooks.get("updateItem")(item, { "system.weight.value": 10.01 }, {}, "user");
+
     assert.deepEqual(updates.at(-1), {
       patch: {
         "system.activities.shot.attack.ability": "str"
@@ -2390,7 +2397,6 @@ test("registerDnd5eSheetExtensions updates firearm attack ability when weapon we
       }
     });
     assert.equal(item.system.activities.shot.attack.ability, "str");
-    assert.equal(item.system.activities.normalRanged.attack.ability, "dex");
   }
   finally {
     stubs.restore();

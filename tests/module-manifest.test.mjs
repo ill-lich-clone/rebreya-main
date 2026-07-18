@@ -217,7 +217,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-card-notes`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-weight-threshold`, "u"),
   );
   assert.match(
     entrypointSource,
@@ -249,11 +249,11 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    new RegExp(`dnd5e-sheet-extensions\\.js\\?v=${escapedVersion}-item-upgrade-slots`, "u"),
+    new RegExp(`dnd5e-sheet-extensions\\.js\\?v=${escapedVersion}-firearm-weight-threshold`, "u"),
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-card-notes`, "u"),
+    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-weight-threshold`, "u"),
   );
   assert.match(
     sheetSource,
