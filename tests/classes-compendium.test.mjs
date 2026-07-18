@@ -1943,6 +1943,18 @@ test("rune knight generated items expose stable automation metadata and recharge
   }
 });
 
+test("rune knight automation participates in managed feature signatures", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  const definitions = buildFeatureDefinitions(fighter);
+  const stoneRune = definitions.find((definition) => (
+    getRuneKnightRuneAutomation(definition)?.id === "stone"
+  ));
+  const entry = createFeatureEntryData(stoneRune, new Map());
+  const signature = JSON.parse(entry.flags["rebreya-main"].signature);
+
+  assert.deepEqual(signature.runeKnightAutomation, getRuneKnightRuneAutomation(stoneRune));
+});
+
 test("rune knight passive effects expose DAE and MIDI changes without equipment gates", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
   const definitions = buildFeatureDefinitions(fighter);

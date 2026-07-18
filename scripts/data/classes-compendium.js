@@ -1725,6 +1725,8 @@ export function buildFeatureDefinitions(normalizedData) {
 }
 
 function buildFeatureSignature(feature, context = {}) {
+  const runeKnightAutomation = getRuneKnightRuneAutomation(feature)
+    ?? getRuneKnightFeatureAutomation(feature);
   return JSON.stringify({
     templateVersion: CLASS_FEATURE_TEMPLATE_VERSION,
     featureId: feature.featureId,
@@ -1751,6 +1753,7 @@ function buildFeatureSignature(feature, context = {}) {
     stacking: feature.stacking ?? "",
     damageType: feature.damageType ?? "",
     savingThrow: feature.savingThrow ?? "",
+    runeKnightAutomation: runeKnightAutomation ?? null,
     startingEquipmentPackage: feature.startingEquipmentPackage ?? null,
     descriptionHtml: createFeatureDescriptionValue(feature, context),
     advancement: buildFeatureItemAdvancements(feature, context),
