@@ -23,6 +23,7 @@ const COIN_MULTIPLIERS = {
   sp: 10,
   cp: 1
 };
+const MATERIAL_LOOTGEN_TYPE_LABEL = "Материал";
 
 function toNumber(value, fallback = 0) {
   const numericValue = Number(value ?? fallback);
@@ -471,7 +472,10 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   #buildGearTypeOptions(model) {
     return buildLootgenTypeFilterOptions(
-      (model?.gear ?? []).map((item) => item?.equipmentType ?? "Снаряжение"),
+      [
+        ...(model?.gear ?? []).map((item) => item?.equipmentType ?? "Снаряжение"),
+        ...((model?.materials ?? []).length ? [MATERIAL_LOOTGEN_TYPE_LABEL] : [])
+      ],
       this.gearTypeFilters
     );
   }
@@ -530,6 +534,32 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           stackable: true,
           breakable: breakableGearIds.has(String(gearItem.id))
         });
+      }
+
+      if (isLootgenTypeAllowed(MATERIAL_LOOTGEN_TYPE_LABEL, gearTypeOptions)) {
+        for (const material of model.materials ?? []) {
+          const bargaining = material.bargaining ?? material.itemBargaining ?? "";
+          if (isBargainingBlocked(bargaining)) {
+            continue;
+          }
+
+          const rank = Math.max(0, toInteger(material.rank, 0));
+          if (rank < minRank || rank > maxRank) {
+            continue;
+          }
+
+          const fallbackGold = toNumber(material.priceGold, 0);
+          const value = this.#toValue(material.value, fallbackGold);
+          pool.push({
+            sourceType: "material",
+            sourceId: String(material.id),
+            name: String(material.name ?? MATERIAL_LOOTGEN_TYPE_LABEL),
+            rank,
+            value,
+            typeLabel: MATERIAL_LOOTGEN_TYPE_LABEL,
+            stackable: true
+          });
+        }
       }
     }
 

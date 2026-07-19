@@ -7437,9 +7437,6 @@ summary:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  max-height: 118px;
-  overflow: auto;
-  padding-right: 4px;
 }
 
 .rm-lootgen-actions {

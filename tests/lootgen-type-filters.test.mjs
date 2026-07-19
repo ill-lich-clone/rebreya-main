@@ -80,3 +80,21 @@ test("lootgen app no longer exposes materials as a generation source", async () 
   assert.doesNotMatch(source, /this\.includeMaterials\s*=/u);
   assert.doesNotMatch(source, /if\s*\(\s*this\.includeMaterials\s*\)/u);
 });
+
+test("lootgen app treats materials as an equipment type filter", async () => {
+  const source = await readFile(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8");
+
+  assert.match(source, /model\.materials\s*\?\?\s*\[\]/u);
+  assert.match(source, /sourceType:\s*"material"/u);
+  assert.match(source, /MATERIAL_LOOTGEN_TYPE_LABEL\s*=\s*"Материал"/u);
+  assert.match(source, /typeLabel:\s*MATERIAL_LOOTGEN_TYPE_LABEL/u);
+});
+
+test("lootgen type filter sections grow without their own scrollbars", async () => {
+  const styles = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  const match = styles.match(/\.rm-lootgen-type-filter__options\s*\{(?<body>[^}]+)\}/u);
+
+  assert.ok(match?.groups?.body);
+  assert.doesNotMatch(match.groups.body, /max-height/u);
+  assert.doesNotMatch(match.groups.body, /overflow/u);
+});
