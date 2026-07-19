@@ -74,15 +74,19 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   );
 });
 
-test("obsolete versioned module entrypoints are absent", async () => {
+test("module keeps the previous version forwarder for already-running Foundry instances", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const scripts = await readdir(new URL("../scripts/", import.meta.url));
   const versionedEntrypoints = scripts
     .filter((fileName) => /^main-\d+\.\d+\.\d+\.js$/u.test(fileName))
     .sort();
+  const legacyEntrypoint = "main-1.4.98.js";
+  const legacySource = await readFile(new URL(`../scripts/${legacyEntrypoint}`, import.meta.url), "utf8");
 
-  assert.deepEqual(versionedEntrypoints, [`main-${manifest.version}.js`]);
+  assert.deepEqual(versionedEntrypoints, [legacyEntrypoint, `main-${manifest.version}.js`]);
+  assert.match(legacySource, /@rebreya-role legacy-version-forwarder/u);
+  assert.match(legacySource, /import "\.\/main\.js\?v=1\.4\.99-legacy-main-1\.4\.98";/u);
 });
 
 test("canonical module entrypoint owns the live composition root", async () => {
