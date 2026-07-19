@@ -4,19 +4,6 @@ import { readFile, readdir } from "node:fs/promises";
 
 const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
-function compareVersion(a, b) {
-  const left = String(a).split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const right = String(b).split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index += 1) {
-    const delta = (left[index] ?? 0) - (right[index] ?? 0);
-    if (delta) {
-      return delta;
-    }
-  }
-  return 0;
-}
-
 async function readCanonicalEntrypointSource() {
   return readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
 }
@@ -27,28 +14,15 @@ test("module manifest enables the Foundry module socket namespace", async () => 
   assert.equal(manifest.socket, true);
 });
 
-test("module manifest loads a cache-busted entrypoint for the current version", async () => {
+test("module manifest loads the stable canonical entrypoint", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
-  const scripts = await readdir(new URL("../scripts/", import.meta.url));
-  const latestEntrypointVersion = scripts
-    .map((fileName) => fileName.match(/^main-(\d+\.\d+\.\d+)\.js$/u)?.[1] ?? "")
-    .filter(Boolean)
-    .sort(compareVersion)
-    .at(-1);
-  const expectedEntrypoint = `scripts/main-${manifest.version}.js`;
-  const entrypointSource = await readFile(new URL(expectedEntrypoint, manifestUrl), "utf8");
-  const expectedSource = [
-    "// @rebreya-role active-version-forwarder",
-    'import "./main.js?v=1.4.100-stale-active-effect-delete";',
-    ""
-  ].join("\n");
+  const entrypointSource = await readFile(new URL("scripts/main.js", manifestUrl), "utf8");
 
-  assert.equal(manifest.version, "1.4.100");
-  assert.equal(manifest.version, latestEntrypointVersion);
-  assert.deepEqual(manifest.esmodules, [expectedEntrypoint]);
-  assert.equal(entrypointSource, expectedSource);
-  assert.doesNotMatch(entrypointSource, /(?:class\s+RebreyaMainModule|Hooks\.(?:once|on)\s*\()/u);
+  assert.equal(manifest.version, "1.4.101");
+  assert.deepEqual(manifest.esmodules, ["scripts/main.js"]);
+  assert.match(entrypointSource, /@rebreya-role canonical-composition-root/u);
+  assert.match(entrypointSource, /export class RebreyaMainModule/u);
 });
 
 test("current entrypoint cache-busts the changed craft durability and transfer graph", async () => {
@@ -74,25 +48,12 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   );
 });
 
-test("module keeps recent version forwarders for already-running Foundry instances", async () => {
-  const manifestUrl = new URL("../module.json", import.meta.url);
-  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+test("module does not ship versioned main entrypoint shims", async () => {
   const scripts = await readdir(new URL("../scripts/", import.meta.url));
   const versionedEntrypoints = scripts
-    .filter((fileName) => /^main-\d+\.\d+\.\d+\.js$/u.test(fileName))
-    .sort((left, right) => {
-      const leftVersion = left.match(/^main-(\d+\.\d+\.\d+)\.js$/u)?.[1] ?? "";
-      const rightVersion = right.match(/^main-(\d+\.\d+\.\d+)\.js$/u)?.[1] ?? "";
-      return compareVersion(leftVersion, rightVersion);
-    });
-  const legacyEntrypoints = ["main-1.4.98.js", "main-1.4.99.js"];
+    .filter((fileName) => /^main-\d+\.\d+\.\d+\.js$/u.test(fileName));
 
-  assert.deepEqual(versionedEntrypoints, [...legacyEntrypoints, `main-${manifest.version}.js`]);
-  for (const legacyEntrypoint of legacyEntrypoints) {
-    const legacySource = await readFile(new URL(`../scripts/${legacyEntrypoint}`, import.meta.url), "utf8");
-    assert.match(legacySource, /@rebreya-role legacy-version-forwarder/u);
-    assert.match(legacySource, /import "\.\/main\.js\?v=1\.4\.100-legacy-main-1\.4\.(?:98|99)";/u);
-  }
+  assert.deepEqual(versionedEntrypoints, []);
 });
 
 test("module entrypoint cache-busts stale ActiveEffect deletion handling", async () => {
