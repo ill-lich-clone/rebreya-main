@@ -65,6 +65,54 @@
                 <span>Остаток в монеты</span>
               </label>
             </div>
+
+            <div class="rm-lootgen-type-filters">
+              {{#if form.hasGearTypeOptions}}
+                <section class="rm-lootgen-type-filter">
+                  <div class="rm-lootgen-type-filter__header">
+                    <i class="fa-solid fa-toolbox"></i>
+                    <span>Типы снаряжения</span>
+                  </div>
+                  <div class="rm-lootgen-type-filter__options">
+                    {{#each form.gearTypeOptions}}
+                      <label class="rm-lootgen-check rm-lootgen-check--compact">
+                        <input
+                          type="checkbox"
+                          {{#if checked}}checked{{/if}}
+                          data-action="lootgen-type-filter"
+                          data-filter-group="gear"
+                          data-type-key="{{key}}"
+                        >
+                        <span>{{label}}</span>
+                      </label>
+                    {{/each}}
+                  </div>
+                </section>
+              {{/if}}
+
+              {{#if form.hasMagicTypeOptions}}
+                <section class="rm-lootgen-type-filter">
+                  <div class="rm-lootgen-type-filter__header">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <span>Типы магических предметов</span>
+                  </div>
+                  <div class="rm-lootgen-type-filter__options">
+                    {{#each form.magicTypeOptions}}
+                      <label class="rm-lootgen-check rm-lootgen-check--compact">
+                        <input
+                          type="checkbox"
+                          {{#if checked}}checked{{/if}}
+                          data-action="lootgen-type-filter"
+                          data-filter-group="magic"
+                          data-type-key="{{key}}"
+                        >
+                        <span>{{label}}</span>
+                      </label>
+                    {{/each}}
+                  </div>
+                </section>
+              {{/if}}
+            </div>
           </div>
         </details>
 

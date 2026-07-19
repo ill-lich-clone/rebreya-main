@@ -9,6 +9,11 @@ import {
   rollLootgenBrokenState
 } from "../data/lootgen-durability.js";
 import { getAppElement } from "../ui.js";
+import {
+  buildLootgenTypeFilterOptions,
+  isLootgenTypeAllowed,
+  resolveMagicLootgenTypeLabel
+} from "./lootgen-type-filters.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -316,6 +321,8 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.includeMaterials = true;
     this.includeCoins = true;
     this.includeMagicItems = false;
+    this.gearTypeFilters = {};
+    this.magicTypeFilters = {};
     this.magicPercent = 25;
     this.brokenEquipmentChance = 0;
     this.generated = this.#createEmptyGenerated();
@@ -463,10 +470,34 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return collectBreakableManagedGearIds(index);
   }
 
+  #buildGearTypeOptions(model) {
+    return buildLootgenTypeFilterOptions(
+      (model?.gear ?? []).map((item) => item?.equipmentType ?? "Снаряжение"),
+      this.gearTypeFilters
+    );
+  }
+
+  async #getMagicDocuments() {
+    const pack = game.packs.get(`world.${MAGIC_ITEMS_COMPENDIUM_NAME}`) ?? null;
+    if (!pack) {
+      return [];
+    }
+
+    return pack.getDocuments();
+  }
+
+  #buildMagicTypeOptions(documents = []) {
+    return buildLootgenTypeFilterOptions(
+      (Array.isArray(documents) ? documents : []).map((document) => resolveMagicLootgenTypeLabel(document)),
+      this.magicTypeFilters
+    );
+  }
+
   async #buildMundanePool(model) {
     const minRank = Math.max(0, Math.min(this.rankMin, this.rankMax));
     const maxRank = Math.max(minRank, Math.max(this.rankMin, this.rankMax));
     const pool = [];
+    const gearTypeOptions = this.#buildGearTypeOptions(model);
     const breakableGearIds = this.includeGear
       ? await this.#getBreakableGearSourceIds()
       : new Set();
@@ -483,6 +514,11 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           continue;
         }
 
+        const typeLabel = String(gearItem.equipmentType ?? "Снаряжение");
+        if (!isLootgenTypeAllowed(typeLabel, gearTypeOptions)) {
+          continue;
+        }
+
         const fallbackGold = toNumber(gearItem.priceGoldEquivalent, toNumber(gearItem.priceValue, 0));
         const value = this.#toValue(gearItem.value, fallbackGold);
         pool.push({
@@ -491,7 +527,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           name: String(gearItem.name ?? "Снаряжение"),
           rank,
           value,
-          typeLabel: String(gearItem.equipmentType ?? "Снаряжение"),
+          typeLabel,
           stackable: true,
           breakable: breakableGearIds.has(String(gearItem.id))
         });
@@ -535,7 +571,8 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return [];
     }
 
-    const documents = await pack.getDocuments();
+    const documents = await this.#getMagicDocuments();
+    const magicTypeOptions = this.#buildMagicTypeOptions(documents);
     const pool = [];
     for (const document of documents) {
       const flags = foundry.utils.getProperty(document, `flags.${MODULE_ID}`) ?? {};
@@ -582,13 +619,18 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const isConsumable = document.type === "consumable"
         || Boolean(flags.isConsumable)
         || String(flags.foundryType ?? "").trim().toLowerCase() === "consumable";
+      const typeLabel = resolveMagicLootgenTypeLabel(document);
+      if (!isLootgenTypeAllowed(typeLabel, magicTypeOptions)) {
+        continue;
+      }
+
       pool.push({
         sourceType: "magicItem",
         sourceId,
         name: String(document.name ?? "Магический предмет"),
         rank,
         value,
-        typeLabel: "Магический предмет",
+        typeLabel,
         stackable: isConsumable
       });
     }
@@ -835,7 +877,29 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async _prepareContext() {
     const isGM = game.user?.isGM === true;
     const canManage = isGM && !this.viewer;
-    const hasItemSources = this.includeGear || this.includeMaterials || this.includeMagicItems;
+    let model = {};
+    let magicDocuments = [];
+    if (canManage) {
+      try {
+        model = await this.moduleApi.getModel();
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to prepare lootgen gear type filters.`, error);
+      }
+
+      try {
+        magicDocuments = await this.#getMagicDocuments();
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to prepare lootgen magic type filters.`, error);
+      }
+    }
+
+    const gearTypeOptions = this.#buildGearTypeOptions(model);
+    const magicTypeOptions = this.#buildMagicTypeOptions(magicDocuments);
+    const hasGearSource = this.includeGear && gearTypeOptions.some((option) => option.checked);
+    const hasMagicSource = this.includeMagicItems && magicTypeOptions.some((option) => option.checked);
+    const hasItemSources = hasGearSource || this.includeMaterials || hasMagicSource;
     const generateDisabled = !hasItemSources;
     return {
       isGM,
@@ -851,6 +915,10 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         includeMaterials: this.includeMaterials,
         includeCoins: this.includeCoins,
         includeMagicItems: this.includeMagicItems,
+        gearTypeOptions,
+        magicTypeOptions,
+        hasGearTypeOptions: gearTypeOptions.length > 0,
+        hasMagicTypeOptions: magicTypeOptions.length > 0,
         magicPercent: this.magicPercent,
         brokenEquipmentChance: this.brokenEquipmentChance,
         hasItemSources,
@@ -894,6 +962,26 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
 
     if (!this.viewer) {
+      element.querySelectorAll("[data-action='lootgen-type-filter']").forEach((field) => {
+        field.addEventListener("change", (event) => {
+          const input = event.currentTarget;
+          const group = String(input.dataset.filterGroup ?? "");
+          const typeKey = String(input.dataset.typeKey ?? "");
+          if (!typeKey) {
+            return;
+          }
+
+          const state = group === "magic"
+            ? this.magicTypeFilters
+            : (group === "gear" ? this.gearTypeFilters : null);
+          if (!state) {
+            return;
+          }
+
+          state[typeKey] = Boolean(input.checked);
+        }, listenerOptions);
+      });
+
       element.querySelectorAll("[data-field]").forEach((field) => {
         field.addEventListener("change", (event) => {
           const input = event.currentTarget;

@@ -7404,6 +7404,44 @@ summary:focus-visible {
   margin: 0;
 }
 
+.rm-lootgen-check--compact {
+  padding: 5px 8px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.rm-lootgen-type-filters {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.rm-lootgen-type-filter {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rm-border-subtle);
+}
+
+.rm-lootgen-type-filter__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--rm-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.rm-lootgen-type-filter__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 118px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
 .rm-lootgen-actions {
   display: flex;
   gap: 8px;
