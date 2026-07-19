@@ -384,10 +384,12 @@ test("actor sheet inventory rows mark upgraded host items with compact slot usag
     });
     const upgrade = makeUpgrade(actor, { _id: "elven-steel" });
     const hostRow = new FakeHTMLElement({ dataset: { itemId: host.id } });
+    const nestedHostControl = new FakeHTMLElement({ dataset: { itemId: host.id } });
+    nestedHostControl.parentElement = hostRow;
     const upgradeRow = new FakeHTMLElement({ dataset: { itemId: upgrade.id } });
     const root = new FakeHTMLElement({
       selectorAll: {
-        "[data-item-id]": [hostRow, upgradeRow]
+        "[data-item-id]": [hostRow, nestedHostControl, upgradeRow]
       }
     });
 
@@ -401,6 +403,8 @@ test("actor sheet inventory rows mark upgraded host items with compact slot usag
     assert.equal(hostRow.classList.contains("has-rebreya-installed-upgrades"), true);
     assert.equal(hostRow.dataset.rebreyaItemUpgradesSlotsShort, "1/3");
     assert.equal(hostRow.dataset.rebreyaItemUpgradesSlotsLabel, "Усовершенствования: 1/3");
+    assert.equal(nestedHostControl.classList.contains("has-rebreya-installed-upgrades"), false);
+    assert.equal(nestedHostControl.dataset.rebreyaItemUpgradesSlotsShort, undefined);
   }
   finally {
     globalThis.HTMLElement = previousHTMLElement;
@@ -520,10 +524,12 @@ test("actor sheet inventory rows install a dropped upgrade onto the target item"
   });
   const upgrade = makeUpgrade(actor, { _id: "elven-steel" });
   const hostRow = new FakeHTMLElement({ dataset: { itemId: host.id } });
+  const nestedHostControl = new FakeHTMLElement({ dataset: { itemId: host.id } });
+  nestedHostControl.parentElement = hostRow;
   const upgradeRow = new FakeHTMLElement({ dataset: { itemId: upgrade.id } });
   const root = new FakeHTMLElement({
     selectorAll: {
-      "[data-item-id]": [hostRow, upgradeRow]
+      "[data-item-id]": [hostRow, nestedHostControl, upgradeRow]
     }
   });
   const payload = { type: "Item", uuid: upgrade.uuid };
@@ -576,6 +582,7 @@ test("actor sheet inventory rows install a dropped upgrade onto the target item"
     assert.equal(bound, true);
     assert.equal(hostRow.listeners.dragover.length, 1);
     assert.equal(hostRow.listeners.drop.length, 1);
+    assert.equal(nestedHostControl.listeners.drop, undefined);
     assert.equal(upgradeRow.listeners.drop, undefined);
 
     const event = {

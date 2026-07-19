@@ -191,6 +191,20 @@ function isPotentialActorInventoryUpgradeDrop(dropData, actor, event = null) {
   return isPotentialUpgradeDrop(dropData, event);
 }
 
+function isDuplicateInventoryItemNode(node, root) {
+  const itemId = cleanText(node?.dataset?.itemId);
+  if (!itemId) {
+    return false;
+  }
+
+  for (let parent = node.parentElement; parent && parent !== root; parent = parent.parentElement) {
+    if (cleanText(parent.dataset?.itemId) === itemId) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function clearInventoryUpgradeIndicator(row) {
   row.classList?.remove?.(INVENTORY_ROW_HAS_UPGRADES_CLASS);
   delete row.dataset.rebreyaItemUpgradesSlotsShort;
@@ -449,7 +463,11 @@ export function hideInstalledUpgradeInventoryRows(root, actor) {
   let changed = false;
 
   for (const node of Array.from(root.querySelectorAll?.("[data-item-id]") ?? [])) {
-    if (!(node instanceof HTMLElement) || node.closest?.("[data-rebreya-item-upgrades='true']")) {
+    if (
+      !(node instanceof HTMLElement)
+      || node.closest?.("[data-rebreya-item-upgrades='true']")
+      || isDuplicateInventoryItemNode(node, root)
+    ) {
       continue;
     }
     if (installedIds.has(cleanText(node.dataset.itemId))) {
@@ -492,7 +510,11 @@ export function bindItemUpgradeInventoryRows(root, { actor, app, moduleApi, rere
 
   let bound = false;
   for (const row of Array.from(root.querySelectorAll?.("[data-item-id]") ?? [])) {
-    if (!(row instanceof HTMLElement) || row.dataset[INVENTORY_ROW_DROP_BOUND_FLAG] === "true") {
+    if (
+      !(row instanceof HTMLElement)
+      || row.dataset[INVENTORY_ROW_DROP_BOUND_FLAG] === "true"
+      || isDuplicateInventoryItemNode(row, root)
+    ) {
       continue;
     }
 

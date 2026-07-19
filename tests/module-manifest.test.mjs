@@ -40,11 +40,11 @@ test("module manifest loads a cache-busted entrypoint for the current version", 
   const entrypointSource = await readFile(new URL(expectedEntrypoint, manifestUrl), "utf8");
   const expectedSource = [
     "// @rebreya-role active-version-forwarder",
-    'import "./main.js?v=1.4.98-global-reactions-rune-knight";',
+    'import "./main.js?v=1.4.99-item-upgrade-row-root";',
     ""
   ].join("\n");
 
-  assert.equal(manifest.version, "1.4.98");
+  assert.equal(manifest.version, "1.4.99");
   assert.equal(manifest.version, latestEntrypointVersion);
   assert.deepEqual(manifest.esmodules, [expectedEntrypoint]);
   assert.equal(entrypointSource, expectedSource);
@@ -249,7 +249,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    new RegExp(`dnd5e-sheet-extensions\\.js\\?v=${escapedVersion}-firearm-weight-threshold`, "u"),
+    new RegExp(`dnd5e-sheet-extensions\\.js\\?v=${escapedVersion}-item-upgrade-row-root`, "u"),
   );
   assert.match(
     entrypointSource,
@@ -280,7 +280,7 @@ test("item upgrade service and sheet integration preserve their released cache b
   assert.match(entrypointSource, /setItemUpgradeCapacity\(hostItem, capacity\)/u);
   assert.match(
     sheetSource,
-    new RegExp(`item-upgrade-sheet\\.js\\?v=${escapedVersion}-item-upgrade-slots`, "u"),
+    new RegExp(`item-upgrade-sheet\\.js\\?v=${escapedVersion}-item-upgrade-row-root`, "u"),
   );
   assert.match(sheetSource, /item-mods-tab\.hbs/u);
   assert.match(sheetSource, /bindItemUpgradeSheet\(root, app, moduleApi/u);

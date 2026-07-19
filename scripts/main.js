@@ -92,7 +92,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.96-firearm-weight-threshold";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.96-item-upgrade-row-root";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
 import {
   patchDurabilityItemEffectSuppression,
