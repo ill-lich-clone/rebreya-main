@@ -71,7 +71,7 @@ import { ReactionQueueService } from "./combat/reaction-queue-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
-import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.96-surrounded-ac";
+import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.100-stale-active-effect-delete";
 import { AttackRollBoostService } from "./combat/attack-roll-boost-service.js?v=1.4.96";
 import { EnvironmentAutomationService } from "./combat/environment-automation-service.js?v=1.4.96-environment-stable-statuses";
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.96-mechanus-d20-advantage-mode";

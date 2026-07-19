@@ -40,11 +40,11 @@ test("module manifest loads a cache-busted entrypoint for the current version", 
   const entrypointSource = await readFile(new URL(expectedEntrypoint, manifestUrl), "utf8");
   const expectedSource = [
     "// @rebreya-role active-version-forwarder",
-    'import "./main.js?v=1.4.99-item-upgrade-row-root";',
+    'import "./main.js?v=1.4.100-stale-active-effect-delete";',
     ""
   ].join("\n");
 
-  assert.equal(manifest.version, "1.4.99");
+  assert.equal(manifest.version, "1.4.100");
   assert.equal(manifest.version, latestEntrypointVersion);
   assert.deepEqual(manifest.esmodules, [expectedEntrypoint]);
   assert.equal(entrypointSource, expectedSource);
@@ -74,19 +74,34 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   );
 });
 
-test("module keeps the previous version forwarder for already-running Foundry instances", async () => {
+test("module keeps recent version forwarders for already-running Foundry instances", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const scripts = await readdir(new URL("../scripts/", import.meta.url));
   const versionedEntrypoints = scripts
     .filter((fileName) => /^main-\d+\.\d+\.\d+\.js$/u.test(fileName))
-    .sort();
-  const legacyEntrypoint = "main-1.4.98.js";
-  const legacySource = await readFile(new URL(`../scripts/${legacyEntrypoint}`, import.meta.url), "utf8");
+    .sort((left, right) => {
+      const leftVersion = left.match(/^main-(\d+\.\d+\.\d+)\.js$/u)?.[1] ?? "";
+      const rightVersion = right.match(/^main-(\d+\.\d+\.\d+)\.js$/u)?.[1] ?? "";
+      return compareVersion(leftVersion, rightVersion);
+    });
+  const legacyEntrypoints = ["main-1.4.98.js", "main-1.4.99.js"];
 
-  assert.deepEqual(versionedEntrypoints, [legacyEntrypoint, `main-${manifest.version}.js`]);
-  assert.match(legacySource, /@rebreya-role legacy-version-forwarder/u);
-  assert.match(legacySource, /import "\.\/main\.js\?v=1\.4\.99-legacy-main-1\.4\.98";/u);
+  assert.deepEqual(versionedEntrypoints, [...legacyEntrypoints, `main-${manifest.version}.js`]);
+  for (const legacyEntrypoint of legacyEntrypoints) {
+    const legacySource = await readFile(new URL(`../scripts/${legacyEntrypoint}`, import.meta.url), "utf8");
+    assert.match(legacySource, /@rebreya-role legacy-version-forwarder/u);
+    assert.match(legacySource, /import "\.\/main\.js\?v=1\.4\.100-legacy-main-1\.4\.(?:98|99)";/u);
+  }
+});
+
+test("module entrypoint cache-busts stale ActiveEffect deletion handling", async () => {
+  const entrypointSource = await readCanonicalEntrypointSource();
+
+  assert.match(
+    entrypointSource,
+    /combat\/status-service\.js\?v=1\.4\.100-stale-active-effect-delete/u
+  );
 });
 
 test("canonical module entrypoint owns the live composition root", async () => {
@@ -233,7 +248,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    new RegExp(`status-service\\.js\\?v=${escapedVersion}-surrounded-ac`, "u"),
+    /status-service\.js\?v=1\.4\.100-stale-active-effect-delete/u,
   );
   assert.match(
     entrypointSource,
