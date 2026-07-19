@@ -124,6 +124,12 @@ function canUseNativeStatusToggle(actor, statusId) {
   );
 }
 
+function isMissingActiveEffectError(error) {
+  const message = String(error?.message ?? "");
+  return message.includes("ActiveEffect")
+    && message.includes("does not exist");
+}
+
 function shouldRegisterDnd5eStatusEffect(statusId) {
   return String(statusId ?? "").trim().startsWith("rebreya-");
 }
@@ -1584,11 +1590,18 @@ export class CombatStatusService {
       const currentIsLegacyFrightened = statusId === FRIGHTENED_STATUS_ID
         && currentStatusIds.includes(LEGACY_REBREYA_FRIGHTENED_STATUS_ID)
         && !currentStatusIds.includes(FRIGHTENED_STATUS_ID);
-      if (!currentIsLegacyFrightened && canUseNativeStatusToggle(actor, statusId)) {
-        await actor.toggleStatusEffect(statusId, { active: false, overlay });
+      try {
+        if (!currentIsLegacyFrightened && canUseNativeStatusToggle(actor, statusId)) {
+          await actor.toggleStatusEffect(statusId, { active: false, overlay });
+        }
+        else {
+          await current.delete();
+        }
       }
-      else {
-        await current.delete();
+      catch (error) {
+        if (!isMissingActiveEffectError(error)) {
+          throw error;
+        }
       }
 
       return true;

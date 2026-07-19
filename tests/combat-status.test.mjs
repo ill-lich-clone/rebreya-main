@@ -461,6 +461,56 @@ test("surrounded setStatus refreshes an existing marker with armor class changes
   }
 });
 
+test("clearStatus treats already-deleted Rebreya effects as cleared", async () => {
+  const previousActor = globalThis.Actor;
+  const previousActiveEffect = globalThis.ActiveEffect;
+  const previousConfig = globalThis.CONFIG;
+  const previousFoundry = globalThis.foundry;
+
+  class TestActor {}
+  class TestActiveEffect {}
+  globalThis.Actor = TestActor;
+  globalThis.ActiveEffect = TestActiveEffect;
+  globalThis.CONFIG = { statusEffects: [] };
+  globalThis.foundry = {
+    utils: {
+      deepClone(value) {
+        return value == null ? value : JSON.parse(JSON.stringify(value));
+      }
+    }
+  };
+
+  try {
+    const service = new CombatStatusService({});
+    const effect = new TestActiveEffect();
+    Object.assign(effect, {
+      id: "stale-effect",
+      statuses: ["rebreya-open-position"],
+      flags: {
+        core: { statusId: "rebreya-open-position" },
+        "rebreya-main": { statusId: "rebreya-open-position" }
+      },
+      getFlag(scope, key) {
+        return this.flags?.[scope]?.[key];
+      },
+      async delete() {
+        throw new Error('ActiveEffect "stale-effect" does not exist!');
+      }
+    });
+    const actor = new TestActor();
+    actor.id = "actor-1";
+    actor.effects = { contents: [effect] };
+
+    assert.equal(await service.clearStatus(actor, "rebreya-open-position"), true);
+  }
+  finally {
+    globalThis.Actor = previousActor;
+    globalThis.ActiveEffect = previousActiveEffect;
+    globalThis.CONFIG = previousConfig;
+    globalThis.foundry = previousFoundry;
+  }
+});
+
 test("active frightened HUD click updates the value instead of clearing the status", async () => {
   const previousActor = globalThis.Actor;
   const previousActiveEffect = globalThis.ActiveEffect;
