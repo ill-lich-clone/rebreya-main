@@ -68,3 +68,15 @@ test("lootgen app exposes equipment and magic type filter checkboxes", async () 
   assert.match(template, /data-filter-group="gear"/u);
   assert.match(template, /data-filter-group="magic"/u);
 });
+
+test("lootgen app no longer exposes materials as a generation source", async () => {
+  const [source, template] = await Promise.all([
+    readFile(new URL("../scripts/ui/lootgen-app.js", import.meta.url), "utf8"),
+    readFile(new URL("../templates/lootgen-app.hbs", import.meta.url), "utf8")
+  ]);
+
+  assert.doesNotMatch(template, /data-field="includeMaterials"/u);
+  assert.doesNotMatch(template, />\s*Материалы\s*</u);
+  assert.doesNotMatch(source, /this\.includeMaterials\s*=/u);
+  assert.doesNotMatch(source, /if\s*\(\s*this\.includeMaterials\s*\)/u);
+});

@@ -318,7 +318,6 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.itemCount = 8;
     this.budgetValue = 5000;
     this.includeGear = true;
-    this.includeMaterials = true;
     this.includeCoins = true;
     this.includeMagicItems = false;
     this.gearTypeFilters = {};
@@ -530,32 +529,6 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
           typeLabel,
           stackable: true,
           breakable: breakableGearIds.has(String(gearItem.id))
-        });
-      }
-    }
-
-    if (this.includeMaterials) {
-      for (const material of model.materials ?? []) {
-        const bargaining = material.bargaining ?? material.itemBargaining ?? "";
-        if (isBargainingBlocked(bargaining)) {
-          continue;
-        }
-
-        const rank = Math.max(0, toInteger(material.rank, 0));
-        if (rank < minRank || rank > maxRank) {
-          continue;
-        }
-
-        const fallbackGold = toNumber(material.priceGold, 0);
-        const value = this.#toValue(material.value, fallbackGold);
-        pool.push({
-          sourceType: "material",
-          sourceId: String(material.id),
-          name: String(material.name ?? "Материал"),
-          rank,
-          value,
-          typeLabel: String(material.type ?? "Материал"),
-          stackable: true
         });
       }
     }
@@ -899,7 +872,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const magicTypeOptions = this.#buildMagicTypeOptions(magicDocuments);
     const hasGearSource = this.includeGear && gearTypeOptions.some((option) => option.checked);
     const hasMagicSource = this.includeMagicItems && magicTypeOptions.some((option) => option.checked);
-    const hasItemSources = hasGearSource || this.includeMaterials || hasMagicSource;
+    const hasItemSources = hasGearSource || hasMagicSource;
     const generateDisabled = !hasItemSources;
     return {
       isGM,
@@ -912,7 +885,6 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         itemCount: this.itemCount,
         budgetValue: this.budgetValue,
         includeGear: this.includeGear,
-        includeMaterials: this.includeMaterials,
         includeCoins: this.includeCoins,
         includeMagicItems: this.includeMagicItems,
         gearTypeOptions,
@@ -924,7 +896,7 @@ export class LootgenApp extends HandlebarsApplicationMixin(ApplicationV2) {
         hasItemSources,
         generateDisabled,
         generateDisabledReason: generateDisabled
-          ? "Выберите хотя бы один источник предметов: снаряжение, материалы или магические предметы."
+          ? "Выберите хотя бы один источник предметов: снаряжение или магические предметы."
           : ""
       },
       generated: {
