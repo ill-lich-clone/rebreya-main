@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 
 const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
@@ -19,7 +19,7 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const entrypointSource = await readFile(new URL("scripts/main.js", manifestUrl), "utf8");
 
-  assert.equal(manifest.version, "1.4.101");
+  assert.equal(manifest.version, "1.4.102");
   assert.deepEqual(manifest.esmodules, ["scripts/main.js"]);
   assert.match(entrypointSource, /@rebreya-role canonical-composition-root/u);
   assert.match(entrypointSource, /export class RebreyaMainModule/u);
@@ -48,12 +48,26 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   );
 });
 
-test("module does not ship versioned main entrypoint shims", async () => {
-  const scripts = await readdir(new URL("../scripts/", import.meta.url));
-  const versionedEntrypoints = scripts
-    .filter((fileName) => /^main-\d+\.\d+\.\d+\.js$/u.test(fileName));
+test("module keeps recent published entrypoint URLs as canonical compatibility forwarders", async () => {
+  const manifestUrl = new URL("../module.json", import.meta.url);
+  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
 
-  assert.deepEqual(versionedEntrypoints, []);
+  assert.deepEqual(manifest.esmodules, ["scripts/main.js"]);
+
+  for (const fileName of ["main-1.4.98.js", "main-1.4.99.js", "main-1.4.100.js"]) {
+    const forwarderSource = await readFile(new URL(`../scripts/${fileName}`, import.meta.url), "utf8");
+
+    assert.equal(
+      forwarderSource,
+      [
+        "// @rebreya-role legacy-entrypoint-compatibility-forwarder",
+        'import "./main.js";',
+        ""
+      ].join("\n"),
+      fileName
+    );
+    assert.doesNotMatch(forwarderSource, /\?v=/u, `${fileName} must not instantiate a second composition root`);
+  }
 });
 
 test("module entrypoint cache-busts stale ActiveEffect deletion handling", async () => {

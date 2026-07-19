@@ -18,7 +18,7 @@
 - сокетные сообщения и обработчики в `scripts/main.js`;
 - сервисы экономики, инвентаря, календаря и простоя;
 - `module.json`, если задача не связана с выпуском новой версии;
-- `scripts/main-1.4.*.js` вручную: это копии entrypoint для cache busting;
+- `scripts/main-1.4.*.js` вручную, если задача не связана с совместимостью загрузки: manifest должен грузить `scripts/main.js`, а legacy-файлы должны быть только тонкими forwarder-ами на него;
 - структуру данных, флаги Foundry, UUID и права пользователей.
 
 ## Слои UI
@@ -202,5 +202,5 @@ node --test tests/dnd5e-sheet-downtime-tab.test.mjs
 4. Сохрани все контракты `data-*`, `name`, Handlebars и drag-and-drop.
 5. Ограничь новые стили корневым классом окна.
 6. Не затрагивай Trader v2 при общей переработке темы.
-7. Не редактируй versioned `scripts/main-1.4.*.js` вручную.
+7. Не создавай новые versioned `scripts/main-1.4.*.js`; legacy-файлы держи только как совместимые forwarder-ы на `scripts/main.js`.
 8. Запусти тесты и проверь окно в Foundry.
