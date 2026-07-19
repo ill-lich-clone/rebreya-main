@@ -1505,11 +1505,11 @@ export class RebreyaMainModule {
     if (message.type === SOCKET_EVENT_LOOTGEN_SHOW) {
       const payload = foundry.utils.deepClone(message.payload ?? {});
       this.latestLootgenResult = payload;
-      await this.openLootgenApp({
-        newWindow: false,
-        viewer: true,
-        sharedResult: payload
-      });
+      const viewerApp = this.lootgenApps.get("lootgen-viewer") ?? null;
+      if (viewerApp?.rendered && typeof viewerApp.setSharedResult === "function") {
+        viewerApp.setSharedResult(payload);
+      }
+      return;
     }
 
     if (message.type === SOCKET_EVENT_LOOTGEN_CLAIM_ROW && isActiveGmClient(game)) {

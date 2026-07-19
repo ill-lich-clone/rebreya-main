@@ -52,6 +52,26 @@ const DOWNTIME_ARCHIVE_STATUSES = new Set(["completed", "rejected"]);
 const DOWNTIME_PAGE_SIZE = 5;
 const TRAVEL_CITY_PREVIEW_LIMIT = 8;
 const TRAVEL_DAY_HOURS = 8;
+const INVENTORY_SORT_OPTIONS = Object.freeze([
+  { value: "name", label: "Сортировка: название" },
+  { value: "weight-desc", label: "Сортировка: вес" },
+  { value: "price-desc", label: "Сортировка: цена" },
+  { value: "category", label: "Сортировка: категория" },
+  { value: "quantity-desc", label: "Сортировка: количество" }
+]);
+const INVENTORY_SORT_MODES = new Set(INVENTORY_SORT_OPTIONS.map((option) => option.value));
+const COIN_LABELS = Object.freeze({
+  pp: "пм",
+  gp: "зм",
+  sp: "см",
+  cp: "мм"
+});
+const CURRENCY_MULTIPLIERS = Object.freeze({
+  pp: 1000,
+  gp: 100,
+  sp: 10,
+  cp: 1
+});
 const DOWNTIME_NON_ROLL_ACTION_TYPES = new Set(["resources", "itemChoice", "numericInput", "optionChoice", "rankChoice", "formulaRoll", "descriptionBlock", "downtimeResult"]);
 const DOWNTIME_NON_ROLL_ACTION_SUMMARY_LABELS = Object.freeze({
   resources: "Ресурсы",
@@ -2312,6 +2332,71 @@ function roundNumber(value, precision = 2) {
   return Math.round((toNumber(value, 0) + Number.EPSILON) * factor) / factor;
 }
 
+function normalizeInventorySortMode(value) {
+  const mode = cleanText(value);
+  return INVENTORY_SORT_MODES.has(mode) ? mode : "name";
+}
+
+function formatCopperValue(totalCopper) {
+  let remaining = Math.max(0, Math.floor(toNumber(totalCopper, 0)));
+  const pp = Math.floor(remaining / CURRENCY_MULTIPLIERS.pp);
+  remaining -= pp * CURRENCY_MULTIPLIERS.pp;
+  const gp = Math.floor(remaining / CURRENCY_MULTIPLIERS.gp);
+  remaining -= gp * CURRENCY_MULTIPLIERS.gp;
+  const sp = Math.floor(remaining / CURRENCY_MULTIPLIERS.sp);
+  remaining -= sp * CURRENCY_MULTIPLIERS.sp;
+  const cp = remaining;
+  const parts = [
+    pp > 0 ? `${pp} ${COIN_LABELS.pp}` : "",
+    gp > 0 ? `${gp} ${COIN_LABELS.gp}` : "",
+    sp > 0 ? `${sp} ${COIN_LABELS.sp}` : "",
+    cp > 0 ? `${cp} ${COIN_LABELS.cp}` : ""
+  ].filter(Boolean);
+  return parts.length ? parts.join(" ") : `0 ${COIN_LABELS.cp}`;
+}
+
+function getInventoryEntryItemValueCopper(entry) {
+  return Math.max(0, Math.floor(toNumber(entry?.priceCopper, 0) * Math.max(0, toNumber(entry?.quantity, 0))));
+}
+
+function sortInventoryEntries(entries, sortMode) {
+  const mode = normalizeInventorySortMode(sortMode);
+  const compareName = (left, right) => cleanText(left?.name).localeCompare(cleanText(right?.name), "ru");
+  return [...(Array.isArray(entries) ? entries : [])].sort((left, right) => {
+    switch (mode) {
+      case "weight-desc": {
+        const result = toNumber(right?.totalWeight, 0) - toNumber(left?.totalWeight, 0);
+        return result || compareName(left, right);
+      }
+      case "price-desc": {
+        const result = getInventoryEntryItemValueCopper(right) - getInventoryEntryItemValueCopper(left);
+        return result || compareName(left, right);
+      }
+      case "category": {
+        const categoryResult = cleanText(left?.sourceTypeLabel).localeCompare(cleanText(right?.sourceTypeLabel), "ru")
+          || cleanText(left?.itemTypeLabel).localeCompare(cleanText(right?.itemTypeLabel), "ru");
+        return categoryResult || compareName(left, right);
+      }
+      case "quantity-desc": {
+        const result = toNumber(right?.quantity, 0) - toNumber(left?.quantity, 0);
+        return result || compareName(left, right);
+      }
+      case "name":
+      default:
+        return compareName(left, right);
+    }
+  });
+}
+
+function buildInventoryValueSummary(entries) {
+  const totalItemValueCopper = Math.max(0, Math.floor((Array.isArray(entries) ? entries : [])
+    .reduce((sum, entry) => sum + getInventoryEntryItemValueCopper(entry), 0)));
+  return {
+    totalItemValueCopper,
+    totalItemValueLabel: formatCopperValue(totalItemValueCopper)
+  };
+}
+
 function resolveCapacitySeverity(freeCapacityLb, usedPercentRaw) {
   if (toNumber(freeCapacityLb, 0) < 0) {
     return "danger";
@@ -2684,6 +2769,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.activeTab = "inventory";
     this.search = "";
     this.typeFilter = "all";
+    this.sortMode = "name";
     this.selectedNewMemberId = "";
     this.newMemberQuery = "";
     this.availablePartyActors = [];
@@ -3329,6 +3415,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         totalCopper: 0,
         label: inventorySnapshot.summary.currencyLabel
       };
+      this.sortMode = normalizeInventorySortMode(this.sortMode);
+      const sortedInventoryItems = sortInventoryEntries(inventorySnapshot.items, this.sortMode);
+      const itemValueSummary = buildInventoryValueSummary(inventorySnapshot.allItems ?? inventorySnapshot.items);
       const partyMembers = (partySnapshot.members ?? []).map((member) => ({
         ...member,
         expanded: this.expandedPartyMembers.has(member.actorId)
@@ -3460,12 +3549,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         craftCrafterActorId: this.craftCrafterActorId,
         group,
         groupContextError,
-        inventory: inventorySnapshot.items,
-        inventoryCount: inventorySnapshot.items.length,
+        inventory: sortedInventoryItems,
+        inventoryCount: sortedInventoryItems.length,
         emptyInventory: inventorySnapshot.emptyInventory,
         summary: {
           ...inventorySnapshot.summary,
           currency,
+          ...itemValueSummary,
           partyCapacityLb: partySnapshot.totalCapacityLb,
           freeCapacityLb,
           freeCapacityClass: freeCapacityLb < 0 ? "rm-negative" : "rm-positive"
@@ -3530,6 +3620,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           { value: "downtime", label: "Простой", selected: this.typeFilter === "downtime" },
           { value: "custom", label: "Прочее", selected: this.typeFilter === "custom" }
         ],
+        sortMode: this.sortMode,
+        sortOptions: INVENTORY_SORT_OPTIONS.map((option) => ({
+          ...option,
+          selected: option.value === this.sortMode
+        })),
         tabs: {
           isInventory: this.activeTab === "inventory",
           isParty: this.activeTab === "party",
@@ -5480,6 +5575,11 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     element.querySelector("[data-action='type-filter']")?.addEventListener("change", (event) => {
       this.typeFilter = event.currentTarget.value || "all";
+      this.render({ force: true });
+    }, listenerOptions);
+
+    element.querySelector("[data-action='sort-mode']")?.addEventListener("change", (event) => {
+      this.sortMode = normalizeInventorySortMode(event.currentTarget.value);
       this.render({ force: true });
     }, listenerOptions);
 

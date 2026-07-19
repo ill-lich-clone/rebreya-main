@@ -131,6 +131,7 @@ function collectText(node) {
 
 function createModuleApi({
   getGroupContext,
+  inventorySnapshot,
   partySnapshot = {},
   craftSnapshot,
   downtimeSnapshot,
@@ -142,7 +143,7 @@ function createModuleApi({
 }) {
   return {
     async getInventorySnapshot() {
-      return {
+      return inventorySnapshot ?? {
         actor: null,
         hasActor: false,
         items: [],
@@ -392,6 +393,91 @@ test("InventoryApp keeps the wide party inventory window size", async () => {
   finally {
     restoreFoundry();
   }
+});
+
+test("InventoryApp sorts party inventory rows and exposes item value totals", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const items = [
+    {
+      itemId: "item-light",
+      name: "Бета",
+      quantity: 2,
+      totalWeight: 1,
+      priceCopper: 100,
+      sourceTypeLabel: "Материал",
+      itemTypeLabel: "Материал"
+    },
+    {
+      itemId: "item-heavy",
+      name: "Альфа",
+      quantity: 1,
+      totalWeight: 6,
+      priceCopper: 20,
+      sourceTypeLabel: "Снаряжение",
+      itemTypeLabel: "Оружие"
+    },
+    {
+      itemId: "item-supply",
+      name: "Гамма",
+      quantity: 5,
+      totalWeight: 3,
+      priceCopper: 0,
+      sourceTypeLabel: "Запасы",
+      itemTypeLabel: "Запасы"
+    }
+  ];
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?inventory-sort=${Date.now()}`);
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null,
+    inventorySnapshot: {
+      actor: null,
+      hasActor: true,
+      items,
+      allItems: items,
+      emptyInventory: false,
+      groupContextError: "",
+      summary: {
+        distinctCount: 3,
+        totalQuantity: 8,
+        totalWeight: 10,
+        foodLb: 0,
+        waterGal: 0,
+        currencyLabel: "0 мм",
+        currency: {
+          pp: 0,
+          gp: 0,
+          sp: 0,
+          cp: 0,
+          totalCopper: 0,
+          label: "0 мм"
+        }
+      }
+    }
+  }));
+  app.sortMode = "weight-desc";
+
+  try {
+    const context = await app._prepareContext();
+
+    assert.deepEqual(context.inventory.map((entry) => entry.name), ["Альфа", "Гамма", "Бета"]);
+    assert.equal(context.sortMode, "weight-desc");
+    assert.equal(context.sortOptions.find((option) => option.value === "weight-desc")?.selected, true);
+    assert.equal(context.summary.totalItemValueCopper, 220);
+    assert.equal(context.summary.totalItemValueLabel, "2 зм 2 см");
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp inventory toolbar exposes sorting and total item value controls", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(template, /data-action="sort-mode"/u);
+  assert.match(template, /sortOptions/u);
+  assert.match(template, /summary\.totalItemValueLabel/u);
+  assert.match(css, /\.rm-inventory-value-summary/u);
 });
 
 test("InventoryApp CSS does not cap the party inventory below its configured size", async () => {

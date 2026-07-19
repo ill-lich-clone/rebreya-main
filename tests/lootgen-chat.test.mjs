@@ -57,6 +57,12 @@ function createBoundLootgenChatCard({ state, rowDataset = {} }) {
       lootgenChatRowId: state.rows[0].rowId
     }
   });
+  const viewButton = new FakeElement({
+    dataset: {
+      lootgenChatId: state.lootId,
+      lootgenChatRowId: state.rows[0].rowId
+    }
+  });
   const claimAllButton = new FakeElement({
     dataset: {
       lootgenChatId: state.lootId
@@ -69,6 +75,7 @@ function createBoundLootgenChatCard({ state, rowDataset = {} }) {
     },
     queryMap: {
       "[data-lootgen-chat-drag='true']": [row],
+      "[data-lootgen-chat-action='view-row']": [viewButton],
       "[data-lootgen-chat-action='claim-row']": [claimButton],
       "[data-lootgen-chat-action='claim-coins']": [],
       "[data-lootgen-chat-action='claim-all']": [claimAllButton]
@@ -76,7 +83,7 @@ function createBoundLootgenChatCard({ state, rowDataset = {} }) {
   });
   card.queryMap["[data-lootgen-chat-action='undo-clear']"] = [];
 
-  return { card, row, claimButton, claimAllButton };
+  return { card, row, viewButton, claimButton, claimAllButton };
 }
 
 test("lootgen chat createItem hook ignores item drops from other users", async () => {
@@ -306,6 +313,90 @@ test("lootgen chat renders and binds a take all button for the party inventory",
     globalThis.game = previousGame;
     restoreFoundry();
   }
+});
+
+test("lootgen chat renders and opens a persisted item preview button", async () => {
+  const restoreFoundry = installLootgenChatFoundryStubs();
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousItem = globalThis.Item;
+  const listeners = [];
+  const rendered = [];
+  const state = {
+    lootId: "loot-1",
+    rows: [{
+      rowId: "row-1",
+      name: "Long Magic Thing",
+      quantity: 1,
+      itemData: {
+        name: "Long Magic Thing",
+        type: "loot"
+      }
+    }]
+  };
+
+  globalThis.Hooks = {
+    on(hookName, listener) {
+      listeners.push({ hookName, listener });
+    }
+  };
+  globalThis.game = {
+    user: {
+      id: "player-1"
+    }
+  };
+  globalThis.Item = class FakeItem {
+    constructor(data, options = {}) {
+      this.data = data;
+      this.options = options;
+      this.sheet = {
+        render: async (force) => {
+          rendered.push({ data, options, force });
+        }
+      };
+    }
+  };
+
+  try {
+    const { buildLootgenChatContent, registerLootgenChatHooks } = await import(`../scripts/ui/lootgen-chat.js?view-row=${Date.now()}`);
+    const content = buildLootgenChatContent(state);
+
+    assert.match(content, /data-lootgen-chat-action="view-row"/u);
+    assert.match(content, /data-lootgen-chat-row-id="row-1"/u);
+
+    registerLootgenChatHooks({});
+    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessage")?.listener;
+    const { card, viewButton } = createBoundLootgenChatCard({ state });
+
+    renderListener({
+      getFlag: () => state
+    }, card);
+
+    assert.equal(typeof viewButton.listeners.click?.[0], "function");
+    await viewButton.listeners.click[0]({
+      currentTarget: viewButton,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.equal(rendered.length, 1);
+    assert.equal(rendered[0].data.name, "Long Magic Thing");
+    assert.equal(rendered[0].options.temporary, true);
+    assert.equal(rendered[0].force, true);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.Item = previousItem;
+    restoreFoundry();
+  }
+});
+
+test("lootgen chat item metadata wraps instead of clipping long descriptions", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(css, /\.rm-chat-loot__meta\s*\{[\s\S]*white-space:\s*normal/u);
+  assert.match(css, /\.rm-chat-loot__row-actions\s*\{[\s\S]*flex-wrap:\s*wrap/u);
 });
 
 test("lootgen app no longer posts a generated status message to chat", async () => {

@@ -120,6 +120,31 @@ function findLootgenRow(message, rowId) {
     ?? null;
 }
 
+async function openLootgenRowPreview(message, rowId) {
+  const row = findLootgenRow(message, rowId);
+  if (!row) {
+    throw new Error("Предмет добычи не найден.");
+  }
+
+  const itemUuid = String(row.itemUuid ?? "").trim();
+  if (itemUuid && typeof globalThis.fromUuid === "function") {
+    const document = await globalThis.fromUuid(itemUuid);
+    if (document?.sheet?.render) {
+      await document.sheet.render(true);
+      return true;
+    }
+  }
+
+  const itemData = cloneDragData(row.itemData);
+  if (!itemData || typeof globalThis.Item !== "function") {
+    throw new Error("Нет данных предмета для просмотра.");
+  }
+
+  const item = new globalThis.Item(itemData, { temporary: true });
+  await item.sheet?.render?.(true);
+  return true;
+}
+
 function renderRow(row) {
   const claimed = Boolean(row.claimed);
   const durabilityState = String(row?.itemData?.flags?.[MODULE_ID]?.durability?.state ?? "").trim();
@@ -161,6 +186,60 @@ function renderRow(row) {
   `.trim();
 }
 
+function renderLootgenChatRow(row) {
+  const claimed = Boolean(row.claimed);
+  const durabilityState = String(row?.itemData?.flags?.[MODULE_ID]?.durability?.state ?? "").trim();
+  const isBroken = row.isBroken === true || durabilityState === "broken";
+  const rowId = String(row.rowId ?? "");
+  const image = String(row.img ?? "icons/svg/item-bag.svg");
+  const quantity = Math.max(1, Number(row.quantity ?? 1));
+  const metaParts = [
+    row.typeLabel || "Предмет",
+    `ранг ${formatNumber(row.rank ?? 0)}`,
+    `x${formatNumber(quantity)}`,
+    `${formatNumber(row.totalValue ?? row.value ?? 0)} value`
+  ];
+
+  return `
+    <article
+      class="rm-chat-loot__row ${claimed ? "is-claimed" : ""}"
+      data-lootgen-chat-drag="${claimed ? "false" : "true"}"
+      data-lootgen-chat-row-id="${escapeHtml(rowId)}"
+      draggable="${claimed ? "false" : "true"}"
+      title="${claimed ? "Этот предмет уже забрали." : "Перетащите предмет в лист персонажа."}"
+    >
+      <img src="${escapeHtml(image)}" alt="">
+      <div class="rm-chat-loot__row-main">
+        <strong>${escapeHtml(row.name || "Предмет")}</strong>
+        <span class="rm-chat-loot__meta">${escapeHtml(metaParts.filter(Boolean).join(" • "))}</span>
+        ${isBroken ? `<span class="rm-chat-loot__condition rm-chat-loot__condition--broken">Сломано</span>` : ""}
+      </div>
+      <div class="rm-chat-loot__row-actions">
+        <button
+          type="button"
+          class="rm-chat-loot__view"
+          data-lootgen-chat-action="view-row"
+          data-lootgen-chat-row-id="${escapeHtml(rowId)}"
+          title="Открыть предмет"
+          aria-label="Открыть предмет"
+        >
+          <i class="fa-solid fa-eye"></i>
+          <span>Открыть</span>
+        </button>
+        <button
+          type="button"
+          class="rm-chat-loot__state"
+          data-lootgen-chat-action="claim-row"
+          data-lootgen-chat-row-id="${escapeHtml(rowId)}"
+          ${claimed ? "disabled" : ""}
+        >
+          ${claimed ? "Забрано" : "Взять"}
+        </button>
+      </div>
+    </article>
+  `.trim();
+}
+
 export function buildLootgenChatContent(state = {}) {
   const rows = Array.isArray(state.rows) ? state.rows : [];
   const availableRows = rows.filter((row) => !row.claimed);
@@ -182,7 +261,7 @@ export function buildLootgenChatContent(state = {}) {
 
       ${rows.length ? `
         <div class="rm-chat-loot__list">
-          ${rows.map(renderRow).join("")}
+          ${rows.map(renderLootgenChatRow).join("")}
         </div>
       ` : "<p class=\"rm-chat-loot__empty\">В этом результате нет предметов.</p>"}
 
@@ -287,6 +366,25 @@ function bindLootgenChatMessage(message, html) {
           type: "Item",
           data: itemData
         });
+      });
+    });
+
+    card.querySelectorAll("[data-lootgen-chat-action='view-row']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation?.();
+        const rowId = event.currentTarget.dataset.lootgenChatRowId || "";
+        if (!rowId) {
+          return;
+        }
+
+        try {
+          await openLootgenRowPreview(message, rowId);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to open lootgen chat item preview.`, error);
+          await postLootgenChatStatus("error", error.message || "Не удалось открыть предмет добычи.");
+        }
       });
     });
 

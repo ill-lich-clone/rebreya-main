@@ -164,6 +164,11 @@
           {{/if}}
         </section>
 
+        <div class="rm-inventory-value-summary">
+          <span>Стоимость вещей</span>
+          <strong>{{summary.totalItemValueLabel}}</strong>
+        </div>
+
         <section class="rm-compact-toolbar">
           <div class="rm-field">
             <input type="search" value="{{search}}" placeholder="Поиск: название, тип, материал" data-action="search">
@@ -171,6 +176,13 @@
           <div class="rm-field rm-field--narrow">
             <select data-action="type-filter">
               {{#each typeOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </div>
+          <div class="rm-field rm-field--narrow">
+            <select data-action="sort-mode" aria-label="Сортировка по">
+              {{#each sortOptions}}
                 <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
               {{/each}}
             </select>

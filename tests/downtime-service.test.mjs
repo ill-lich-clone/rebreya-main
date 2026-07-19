@@ -6499,7 +6499,7 @@ test("RebreyaMainModule propagates a failed legacy mutation without poisoning th
   }
 });
 
-test("RebreyaMainModule does not block legacy display messages behind queued mutations", async () => {
+test("RebreyaMainModule caches lootgen socket results without opening player viewer windows", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   const previousFoundry = globalThis.foundry;
@@ -6545,10 +6545,11 @@ test("RebreyaMainModule does not block legacy display messages behind queued mut
     await moduleApi.handleSocketMessage({
       type: "lootgen-show-result",
       senderId: "player-1",
-      payload: { rows: [] }
+      payload: { rows: [], generatedAt: "now" }
     });
 
-    assert.equal(displayCount, 1);
+    assert.equal(displayCount, 0);
+    assert.deepEqual(moduleApi.latestLootgenResult, { rows: [], generatedAt: "now" });
     releaseMutation();
     await mutation;
   }
