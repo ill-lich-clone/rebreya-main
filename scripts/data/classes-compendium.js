@@ -24,6 +24,7 @@ import {
 } from "./fighter-automation.js";
 import { getClassStartingEquipmentConfig } from "./class-starting-equipment.js";
 import { buildSlug } from "./item-classification.js";
+import { renderDescriptionMarkdown } from "./markdown-description.js";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
 import {
   getRuneKnightFeatureAutomation,
@@ -262,137 +263,7 @@ function escapeHtml(value) {
 }
 
 function toHtmlParagraphs(value) {
-  const text = cleanString(value);
-  if (!text) {
-    return "";
-  }
-
-  return text
-    .split(/\n{2,}/gu)
-    .flatMap((paragraph) => formatDescriptionBlocks(paragraph))
-    .join("");
-}
-
-function parseMarkdownTableRow(value) {
-  const text = String(value ?? "").trim();
-  if (!text.includes("|")) {
-    return null;
-  }
-
-  const normalized = text.replace(/^\|/u, "").replace(/\|$/u, "");
-  const cells = normalized.split("|").map((cell) => cleanString(cell));
-  return cells.length ? cells : null;
-}
-
-function isMarkdownTableDivider(value, columnCount) {
-  const cells = parseMarkdownTableRow(value);
-  return cells?.length === columnCount
-    && cells.every((cell) => /^:?-{3,}:?$/u.test(cell));
-}
-
-function formatMarkdownTable(header, rows) {
-  const headings = header.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("");
-  const body = rows
-    .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`)
-    .join("");
-
-  return `<table><thead><tr>${headings}</tr></thead><tbody>${body}</tbody></table>`;
-}
-
-function formatDescriptionBlocks(paragraph) {
-  const lines = String(paragraph ?? "").split(/\n/gu);
-  const output = [];
-  const textLines = [];
-  const flushText = () => {
-    if (textLines.some((line) => cleanString(line))) {
-      output.push(`<p>${formatParagraphLines(textLines.join("\n"))}</p>`);
-    }
-    textLines.length = 0;
-  };
-
-  for (let index = 0; index < lines.length;) {
-    const header = parseMarkdownTableRow(lines[index]);
-    if (!header || !isMarkdownTableDivider(lines[index + 1], header.length)) {
-      textLines.push(lines[index]);
-      index += 1;
-      continue;
-    }
-
-    const rows = [];
-    index += 2;
-    while (index < lines.length) {
-      const row = parseMarkdownTableRow(lines[index]);
-      if (!row || row.length !== header.length) {
-        break;
-      }
-      rows.push(row);
-      index += 1;
-    }
-
-    if (!rows.length) {
-      textLines.push(lines[index - 2], lines[index - 1]);
-      continue;
-    }
-
-    flushText();
-    output.push(formatMarkdownTable(header, rows));
-  }
-
-  flushText();
-  return output;
-}
-
-function isTextListLine(line) {
-  return /^(?:[●•▪*]|\d+[.)])\s*/u.test(cleanString(line));
-}
-
-function isTextLevelLine(line) {
-  return /^(?:\d+[-\s]?(?:й|го)\s+уровень|умение\s+\d)/iu.test(cleanString(line));
-}
-
-function isIndentedTextLine(line) {
-  return /^\s{4,}\S/u.test(String(line ?? ""));
-}
-
-function isLikelyStandaloneHeading(line) {
-  const text = cleanString(line);
-  if (!text || text.length > 72) {
-    return false;
-  }
-
-  return !/[.!?;:,]$/u.test(text);
-}
-
-function shouldStartHtmlLine(rawLine, line, segments) {
-  if (!segments.length) {
-    return true;
-  }
-
-  if (isTextListLine(line) || isTextLevelLine(line) || isIndentedTextLine(rawLine)) {
-    return true;
-  }
-
-  const previous = segments.at(-1) ?? "";
-  return isLikelyStandaloneHeading(previous);
-}
-
-function formatParagraphLines(paragraph) {
-  const segments = [];
-  for (const rawLine of String(paragraph ?? "").split(/\n/gu)) {
-    const line = cleanString(rawLine);
-    if (!line) {
-      continue;
-    }
-
-    if (shouldStartHtmlLine(rawLine, line, segments)) {
-      segments.push(line);
-    }
-    else {
-      segments[segments.length - 1] = `${segments.at(-1)} ${line}`;
-    }
-  }
-
-  return segments.map((segment) => escapeHtml(segment)).join("<br>");
+  return renderDescriptionMarkdown(value);
 }
 
 function escapeRegExp(value) {
