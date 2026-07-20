@@ -1190,6 +1190,30 @@ test("paladin magistrate oath stays inline in the paladin data file", () => {
   assert.equal(magistrate.features.some((feature) => feature.id === "magistrate-high-magistrate"), true);
 });
 
+test("paladin magistrate features expose automation metadata", () => {
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
+  const definitions = buildFeatureDefinitions(paladin);
+  const accusation = definitions.find((definition) => definition.featureId.endsWith("magistrate-accusation-smite"));
+  const detention = definitions.find((definition) => definition.featureId.endsWith("magistrate-detention-smite"));
+  const jurisdiction = definitions.find((definition) => definition.featureId.endsWith("magistrate-sovereign-jurisdiction"));
+  const accusationEntry = createFeatureEntryData(accusation, new Map());
+
+  assert.deepEqual(accusation.paladinAutomation, {
+    kind: "magistrateSmite",
+    variant: "accusation",
+    saveAbility: "cha",
+    duration: "sourceNextTurn"
+  });
+  assert.deepEqual(detention.paladinAutomation, {
+    kind: "magistrateSmite",
+    variant: "detention",
+    saveAbility: "wis",
+    duration: "sourceNextTurn"
+  });
+  assert.equal(jurisdiction.paladinAutomation.kind, "magistrateJurisdiction");
+  assert.deepEqual(accusationEntry.flags["rebreya-main"].paladinAutomation, accusation.paladinAutomation);
+});
+
 test("paladin advancements grant armor and strict weapon proficiency choices", () => {
   const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const advancement = buildClassAdvancement(paladin.classData, {});

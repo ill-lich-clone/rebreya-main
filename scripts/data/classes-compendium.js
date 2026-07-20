@@ -553,7 +553,10 @@ function normalizeFeatureEntry(rawFeature, index, {
     description: cleanString(rawFeature?.description),
     levels,
     requiredLevel,
-    optional: optional === true
+    optional: optional === true,
+    automation: rawFeature?.automation && typeof rawFeature.automation === "object"
+      ? foundry.utils.deepClone(rawFeature.automation)
+      : undefined
   };
 }
 
@@ -1454,7 +1457,10 @@ export function buildFeatureDefinitions(normalizedData) {
       optional: feature.optional === true,
       identifier: buildAsciiIdentifier(identifierSeed, `${classId}::${sourceType}::${feature.featureId}`),
       folderPath,
-      sourceLabel
+      sourceLabel,
+      paladinAutomation: feature.automation && typeof feature.automation === "object"
+        ? foundry.utils.deepClone(feature.automation)
+        : null
     };
   };
 
@@ -1475,7 +1481,10 @@ export function buildFeatureDefinitions(normalizedData) {
       optional: feature.optional === true,
       identifier: buildAsciiIdentifier(`${classId}-${feature.featureId}`, `${classId}::${feature.featureId}`),
       folderPath: normalizeFolderPath([classFeatureRootFolder, "Базовые умения"]),
-      sourceLabel
+      sourceLabel,
+      paladinAutomation: feature.automation && typeof feature.automation === "object"
+        ? foundry.utils.deepClone(feature.automation)
+        : null
     });
   }
 
@@ -1716,7 +1725,10 @@ export function buildFeatureDefinitions(normalizedData) {
           `${subclass.subclassId}::${feature.featureId}`
         ),
         folderPath: normalizeFolderPath([classFeatureRootFolder, "Архетипы", subclass.name]),
-        sourceLabel
+        sourceLabel,
+        paladinAutomation: feature.automation && typeof feature.automation === "object"
+          ? foundry.utils.deepClone(feature.automation)
+          : null
       });
     }
   }
@@ -1754,6 +1766,7 @@ function buildFeatureSignature(feature, context = {}) {
     damageType: feature.damageType ?? "",
     savingThrow: feature.savingThrow ?? "",
     runeKnightAutomation: runeKnightAutomation ?? null,
+    paladinAutomation: feature.paladinAutomation ?? null,
     startingEquipmentPackage: feature.startingEquipmentPackage ?? null,
     descriptionHtml: createFeatureDescriptionValue(feature, context),
     advancement: buildFeatureItemAdvancements(feature, context),
@@ -5105,6 +5118,9 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
     metamagicAutomation: feature.automation,
     spellAutomation: feature.automation === "advanced-spell-shatter"
       ? { kind: "spell-shatter" }
+      : undefined,
+    paladinAutomation: feature.paladinAutomation
+      ? foundry.utils.deepClone(feature.paladinAutomation)
       : undefined,
     stacking: feature.stacking,
     damageType: feature.damageType,
