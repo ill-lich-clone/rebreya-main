@@ -348,6 +348,29 @@ function collectionValues(collection) {
   return [];
 }
 
+function effectIsEnabled(effect) {
+  return effect && effect.disabled !== true && effect.isSuppressed !== true;
+}
+
+function actorHasReactionSuppression(actor) {
+  if (!(actor instanceof Actor)) {
+    return false;
+  }
+
+  return collectionValues(actor.effects).some((effect) => {
+    if (!effectIsEnabled(effect)) {
+      return false;
+    }
+
+    const automation = readDocumentFlag(effect, MODULE_ID, "paladinAutomation");
+    if (automation?.kind !== "magistrateEffect") {
+      return false;
+    }
+
+    return automation.effect === "detentionNoReaction" || automation.effect === "lawNoReaction";
+  });
+}
+
 function collectionEntries(collection) {
   if (!collection) {
     return [];
@@ -3849,7 +3872,8 @@ export class CombatAttackService {
   }
 
   canUseReaction(actorOrId, requiredUses = 1) {
-    const state = this.getReactionState(actorOrId);
+    const actor = this.#resolveActor(actorOrId);
+    const state = actor instanceof Actor ? this.getReactionState(actor) : null;
     if (!state) {
       return {
         actorId: null,
@@ -3860,6 +3884,16 @@ export class CombatAttackService {
     }
 
     const safeRequiredUses = Math.max(1, Math.floor(toNumber(requiredUses, 1)));
+    if (actorHasReactionSuppression(actor)) {
+      return {
+        actorId: state.actorId,
+        canUse: false,
+        requiredUses: safeRequiredUses,
+        reason: "reactionSuppressed",
+        state
+      };
+    }
+
     return {
       actorId: state.actorId,
       canUse: state.usesRemaining >= safeRequiredUses,

@@ -98,6 +98,10 @@ function collectionValues(collection) {
   return [];
 }
 
+function unique(values) {
+  return Array.from(new Set(Array.isArray(values) ? values : []));
+}
+
 function getProperty(source, path, fallback = undefined) {
   const value = foundry.utils.getProperty(source, path);
   return value === undefined ? fallback : value;
@@ -787,7 +791,10 @@ export class PaladinAutomationService {
     if (turnKey && !ignoresTurnLimit) {
       this._smiteTurnUses.add(turnKey);
     }
-    await this.#applyMagistrateSmiteVariants(actor, chosenTarget, selectedVariants);
+    await this.#applyMagistrateSmiteVariants(actor, chosenTarget, selectedVariants, {
+      workflow,
+      slotLevel: selectedSlot.level
+    });
 
     return true;
   }
@@ -858,6 +865,16 @@ export class PaladinAutomationService {
     return true;
   }
 
+  async handleCombatTurnChange(combat, updateData = {}) {
+    const actor = this.#resolveCombatTurnActor(combat, updateData);
+    if (!(actor instanceof Actor)) {
+      return true;
+    }
+
+    await this.#deleteSourceNextTurnMagistrateEffects(actor, combat);
+    return true;
+  }
+
   async handleCreatedItem(item, options = {}, userId = "") {
     void options;
     if (!isCurrentUserHook(userId) || !isPaladinSpellcastingFeature(item)) {
@@ -899,8 +916,8 @@ export class PaladinAutomationService {
     if (action === "paladin.layOnHands") {
       return this.#handleLayOnHandsSocketRequest(payload, { sender });
     }
-    if (action === "paladin.magistrateEffects") {
-      return this.#handleMagistrateEffectsSocketRequest(payload, { sender });
+    if (action === "paladin.magistrateSmite") {
+      return this.#handleMagistrateSmiteSocketRequest(payload, { sender });
     }
 
     return false;
@@ -953,6 +970,113 @@ export class PaladinAutomationService {
     if (target.workflowOptions && typeof target.workflowOptions === "object") {
       this.#stripD20Advantage(target.workflowOptions);
     }
+  }
+
+  #resolveCombatTurnActor(combat, updateData = {}) {
+    const current = updateData?.current ?? updateData;
+    const actor = current?.actor ?? current?.combatant?.actor ?? null;
+    if (actor instanceof Actor) {
+      return actor;
+    }
+
+    const combatantId = cleanText(current?.combatantId ?? current?.id);
+    if (combatantId) {
+      const combatant = combat?.combatants?.get?.(combatantId)
+        ?? collectionValues(combat?.combatants).find((entry) => cleanText(entry?.id) === combatantId);
+      if (combatant?.actor instanceof Actor) {
+        return combatant.actor;
+      }
+    }
+
+    const turn = Math.floor(toNumber(current?.turn ?? combat?.turn, -1));
+    const combatants = collectionValues(combat?.combatants);
+    const indexed = turn >= 0 ? combatants[turn] : null;
+    return indexed?.actor instanceof Actor ? indexed.actor : null;
+  }
+
+  async #deleteSourceNextTurnMagistrateEffects(sourceActor, combat = null) {
+    const sourceUuid = cleanText(sourceActor?.uuid);
+    if (!sourceUuid) {
+      return;
+    }
+
+    const actors = new Set();
+    for (const combatant of collectionValues(combat?.combatants)) {
+      if (combatant?.actor instanceof Actor) {
+        actors.add(combatant.actor);
+      }
+    }
+    for (const actor of collectionValues(game.actors)) {
+      if (actor instanceof Actor) {
+        actors.add(actor);
+      }
+    }
+
+    for (const actor of actors) {
+      for (const effect of collectionValues(actor?.effects)) {
+        if (!effectIsEnabled(effect)) {
+          continue;
+        }
+
+        if (
+          effectFlag(effect, "paladinAutomation.kind") !== "magistrateEffect"
+          || effectFlag(effect, "paladinAutomation.duration") !== "sourceNextTurn"
+          || cleanText(effectFlag(effect, "paladinAutomation.sourceActorUuid")) !== sourceUuid
+          || typeof effect?.delete !== "function"
+        ) {
+          continue;
+        }
+
+        await effect.delete();
+      }
+    }
+  }
+
+  #magistrateSocketSlotLooksSpent(actor, slotLevel) {
+    const safeSlotLevel = Math.floor(toNumber(slotLevel, 0));
+    if (safeSlotLevel < 1 || safeSlotLevel > 9) {
+      return false;
+    }
+
+    const slot = actor?.system?.spells?.[`spell${safeSlotLevel}`];
+    const max = Math.floor(toNumber(slot?.max, 0));
+    const value = Math.floor(toNumber(slot?.value, max));
+    return max > 0 && value < max;
+  }
+
+  #magistrateSocketWorkflowMatches(payload = {}, actor, target) {
+    const workflowId = cleanText(payload.workflowId);
+    if (!workflowId) {
+      return true;
+    }
+
+    const workflow = this._options.resolveMidiWorkflow?.(workflowId)
+      ?? globalThis.MidiQOL?.Workflow?.getWorkflow?.(workflowId)
+      ?? globalThis.MidiQOL?.Workflow?.workflows?.get?.(workflowId)
+      ?? null;
+    if (!workflow) {
+      return false;
+    }
+
+    const workflowActor = workflow.actor ?? workflow.activity?.actor ?? workflow.item?.actor ?? null;
+    const actorMatches = workflowActor === actor
+      || cleanText(workflowActor?.uuid) === cleanText(actor?.uuid)
+      || cleanText(workflowActor?.id) === cleanText(actor?.id);
+    if (!actorMatches) {
+      return false;
+    }
+
+    const itemUuid = cleanText(payload.workflowItemUuid);
+    const workflowItemUuid = cleanText(workflow.item?.uuid ?? workflow.activity?.item?.uuid);
+    if (itemUuid && workflowItemUuid && itemUuid !== workflowItemUuid) {
+      return false;
+    }
+
+    return targetActorsFromWorkflow(workflow).some((candidate) => (
+      candidate === target
+      || cleanText(candidate?.uuid) === cleanText(target?.uuid)
+      || cleanText(candidate?.id) === cleanText(target?.id)
+    ));
   }
 
   async #promptInitialPreparedSpells(actor, { spellcastingFeature = null } = {}) {
@@ -1106,9 +1230,22 @@ export class PaladinAutomationService {
     return `Божественная кара (${slotLevel} ур.)${suffix}`;
   }
 
-  async #applyMagistrateSmiteVariants(sourceActor, target, selectedVariants) {
-    for (const variant of selectedVariants) {
-      const automation = MAGISTRATE_SMITE_BY_ID.get(variant.id);
+  async #applyMagistrateSmiteVariants(sourceActor, target, selectedVariants, context = {}) {
+    const magistrateVariants = selectedVariants
+      .map((variant) => ({
+        variant,
+        automation: MAGISTRATE_SMITE_BY_ID.get(variant.id)
+      }))
+      .filter((entry) => entry.automation);
+    if (!magistrateVariants.length) {
+      return true;
+    }
+
+    if (!this.#canUpdate(target)) {
+      return this.#emitMagistrateSmiteAsGM(sourceActor, target, magistrateVariants.map((entry) => entry.variant), context);
+    }
+
+    for (const { variant, automation } of magistrateVariants) {
       if (!automation) {
         continue;
       }
@@ -1206,7 +1343,7 @@ export class PaladinAutomationService {
       return true;
     }
 
-    return this.#emitMagistrateEffectsAsGM(sourceActor, target, [data]);
+    return false;
   }
 
   #magistrateEffectData(target, { sourceActor, variant, automation, effect, save }) {
@@ -1227,6 +1364,8 @@ export class PaladinAutomationService {
       system: {},
       changes,
       disabled: false,
+      origin: cleanText(sourceActor?.uuid) || null,
+      transfer: false,
       duration: {
         startTime: globalThis.game?.time?.worldTime ?? null,
         seconds: null,
@@ -1238,6 +1377,9 @@ export class PaladinAutomationService {
       },
       description: `<p>${escapeHtml(target?.name)} под действием варианта ${escapeHtml(variant?.name)}.</p>`,
       flags: {
+        dae: {
+          specialDuration: ["turnStartSource", "combatEnd"]
+        },
         [MODULE_ID]: {
           paladinAutomation: {
             kind: "magistrateEffect",
@@ -1257,7 +1399,7 @@ export class PaladinAutomationService {
     };
   }
 
-  async #emitMagistrateEffectsAsGM(sourceActor, target, effects) {
+  async #emitMagistrateSmiteAsGM(sourceActor, target, variants, context = {}) {
     if (typeof game.socket?.emit !== "function") {
       globalThis.ui?.notifications?.warn("Кара магистрата: нет доступа к GM socket, эффект не применён.");
       return false;
@@ -1266,10 +1408,13 @@ export class PaladinAutomationService {
     game.socket.emit(SOCKET_CHANNEL, {
       type: SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION,
       payload: {
-        action: "paladin.magistrateEffects",
+        action: "paladin.magistrateSmite",
         sourceActorUuid: cleanText(sourceActor?.uuid),
         targetActorUuid: cleanText(target?.uuid),
-        effects: foundry.utils.deepClone(effects)
+        slotLevel: Math.max(1, Math.floor(toNumber(context.slotLevel, 1))),
+        variantIds: variants.map((variant) => cleanText(variant.id)).filter(Boolean),
+        workflowId: cleanText(context.workflow?.id),
+        workflowItemUuid: cleanText(context.workflow?.item?.uuid ?? context.workflow?.activity?.item?.uuid)
       },
       senderId: game.user?.id ?? ""
     });
@@ -1425,42 +1570,41 @@ export class PaladinAutomationService {
     return this.#applyLayOnHandsHealing(actor, layOnHands, target, healing, spent);
   }
 
-  async #handleMagistrateEffectsSocketRequest(payload = {}, { sender = null } = {}) {
+  async #handleMagistrateSmiteSocketRequest(payload = {}, { sender = null } = {}) {
     const actor = await resolveUuid(payload.sourceActorUuid);
     const target = await resolveUuid(payload.targetActorUuid);
     if (!(actor instanceof Actor) || !(target instanceof Actor) || !userOwnsActor(actor, sender)) {
       return false;
     }
 
-    const effects = [];
-    for (const requested of Array.isArray(payload.effects) ? payload.effects : []) {
-      const requestedAutomation = getProperty(requested, `flags.${MODULE_ID}.paladinAutomation`, {});
-      const effect = cleanText(requestedAutomation.effect);
-      const variantId = cleanText(requestedAutomation.variantId);
-      const variant = DIVINE_SMITE_VARIANT_BY_ID.get(variantId);
-      const automation = MAGISTRATE_SMITE_BY_ID.get(variantId);
-      if (!variant || !automation || !MAGISTRATE_EFFECT_LABELS[effect]) {
-        continue;
-      }
-
-      effects.push(this.#magistrateEffectData(target, {
-        sourceActor: actor,
-        variant,
-        automation,
-        effect,
-        save: {
-          total: toNumber(requestedAutomation.saveTotal, 0),
-          dc: toNumber(requestedAutomation.saveDc, this.#paladinSaveDc(actor))
-        }
-      }));
-    }
-
-    if (!effects.length || typeof target.createEmbeddedDocuments !== "function") {
+    if (!this.#findDivineSmite(actor)) {
       return false;
     }
 
-    await target.createEmbeddedDocuments("ActiveEffect", effects);
-    return true;
+    const slotLevel = Math.floor(toNumber(payload.slotLevel, 0));
+    if (!this.#magistrateSocketSlotLooksSpent(actor, slotLevel)) {
+      return false;
+    }
+
+    if (!this.#magistrateSocketWorkflowMatches(payload, actor, target)) {
+      return false;
+    }
+
+    const allowedVariants = new Map(this.#divineSmiteVariants(actor)
+      .filter((variant) => (
+        MAGISTRATE_SMITE_BY_ID.has(variant.id)
+        && Math.floor(toNumber(variant.minSlotLevel, 1)) <= slotLevel
+      ))
+      .map((variant) => [variant.id, variant]));
+    const variants = unique((Array.isArray(payload.variantIds) ? payload.variantIds : [])
+      .map((id) => cleanText(id)))
+      .map((id) => allowedVariants.get(id))
+      .filter(Boolean);
+    if (!variants.length) {
+      return false;
+    }
+
+    return this.#applyMagistrateSmiteVariants(actor, target, variants, { slotLevel });
   }
 
   async #applyLayOnHandsHealing(actor, layOnHands, target, healing, spent) {

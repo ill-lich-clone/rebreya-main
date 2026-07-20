@@ -327,6 +327,12 @@ export function registerCombatHooks(moduleApi) {
     if (hasSorcererService) {
       advanceSorcererCooldowns(combat, updateData, updateOptions);
     }
+
+    if (hasPaladinService) {
+      moduleApi.paladinAutomationService.handleCombatTurnChange(combat, updateData, updateOptions).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to handle paladin turn automation.`, error);
+      });
+    }
   });
 
   if (hasSorcererService) {

@@ -85,7 +85,8 @@ function makeActor(items, {
     dex: { mod: 3 },
     int: { mod: 0 }
   },
-  prof = 2
+  prof = 2,
+  effects = []
 } = {}) {
   const actor = new class extends Actor {
     constructor() {
@@ -105,6 +106,13 @@ function makeActor(items, {
       this.items = {
         contents: items,
         get: (itemId) => items.find((item) => item.id === itemId) ?? null
+      };
+      this.effects = {
+        contents: effects,
+        values: () => effects.values(),
+        [Symbol.iterator]: function* iterator() {
+          yield* effects;
+        }
       };
     }
 
@@ -2330,6 +2338,27 @@ test("attack reactions register with the global reaction queue", async () => {
   await service.initialize();
 
   assert.deepEqual(registered, ["provoked-attack", "parry", "interception"]);
+});
+
+test("combat reaction ledger rejects actors suppressed by Magistrate detention", () => {
+  const actor = makeActor([], {
+    effects: [{
+      disabled: false,
+      flags: {
+        "rebreya-main": {
+          paladinAutomation: {
+            kind: "magistrateEffect",
+            effect: "detentionNoReaction"
+          }
+        }
+      }
+    }]
+  });
+  const service = new CombatAttackService({});
+  const result = service.canUseReaction(actor, 1);
+
+  assert.equal(result.canUse, false);
+  assert.equal(result.reason, "reactionSuppressed");
 });
 
 test("manual parry resolution uses the global ten-second reaction workflow", async () => {

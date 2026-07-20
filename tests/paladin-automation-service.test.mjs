@@ -842,6 +842,62 @@ test("paladin lay on hands socket request rejects senders that do not own the so
   }
 });
 
+test("Magistrate socket rejects forged raw effect payloads", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  const paladin = new TestActor({
+    id: "source",
+    ownership: {
+      player: 3
+    },
+    items: []
+  });
+  const target = new TestActor({ id: "target", items: [] });
+  const gmUser = { id: "gm", isGM: true, active: true };
+  const playerUser = { id: "player", isGM: false, active: true };
+  globalThis.game = {
+    ...previousGame,
+    user: gmUser,
+    users: {
+      activeGM: gmUser,
+      get: (id) => ({ gm: gmUser, player: playerUser })[id] ?? null,
+      contents: [gmUser, playerUser]
+    }
+  };
+  globalThis.fromUuidSync = (uuid) => ({
+    [paladin.uuid]: paladin,
+    [target.uuid]: target
+  })[uuid] ?? null;
+
+  try {
+    const result = await new PaladinAutomationService({}).handleSocketMessage({
+      action: "paladin.magistrateEffects",
+      sourceActorUuid: paladin.uuid,
+      targetActorUuid: target.uuid,
+      effects: [{
+        flags: {
+          "rebreya-main": {
+            paladinAutomation: {
+              kind: "magistrateEffect",
+              effect: "detentionNoReaction",
+              variantId: "magistrate-detention-smite"
+            }
+          }
+        }
+      }]
+    }, {
+      senderId: "player"
+    });
+
+    assert.equal(result, false);
+    assert.equal(target.effects.contents.length, 0);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuidSync = previousFromUuidSync;
+  }
+});
+
 test("paladin divine smite spends the selected spell slot and adds radiant bonus damage", async () => {
   TestRoll.messages = [];
   const divineSmite = makeFeatureItem({
@@ -921,12 +977,16 @@ test("Magistrate accusation smite strips target advantage after a failed Charism
 
   assert.equal(paladin.system.spells.spell1.value, 0);
   assert.equal(config.rolls.length, 1);
+  const accusationEffect = target.effects.contents.find((effect) => (
+    effect.flags["rebreya-main"].paladinAutomation.effect === "accusationNoAdvantage"
+  ));
   assert.equal(
-    target.effects.contents.some((effect) => (
-      effect.flags["rebreya-main"].paladinAutomation.effect === "accusationNoAdvantage"
-    )),
+    Boolean(accusationEffect),
     true
   );
+  assert.equal(accusationEffect.origin, paladin.uuid);
+  assert.equal(accusationEffect.transfer, false);
+  assert.deepEqual(accusationEffect.flags.dae.specialDuration, ["turnStartSource", "combatEnd"]);
 });
 
 test("Magistrate detention smite slows on success and suppresses reactions on failure", async () => {
@@ -949,6 +1009,66 @@ test("Magistrate detention smite slows on success and suppresses reactions on fa
   assert.equal(config.rolls.length, 1);
   assert.equal(effects.includes("detentionSlow"), true);
   assert.equal(effects.includes("detentionNoReaction"), true);
+});
+
+test("Magistrate smite sends a constrained GM request when the player cannot update the target", async () => {
+  const previousGame = globalThis.game;
+  const paladin = magistratePaladinWithSmiteVariant("magistrate-detention-smite");
+  paladin.ownership = { player: 3 };
+  const target = new TestActor({
+    id: "target",
+    name: "Задержанный",
+    isOwner: false,
+    items: []
+  });
+  const emitted = [];
+  globalThis.game = {
+    ...previousGame,
+    user: {
+      id: "player",
+      isGM: false
+    },
+    combat: {
+      id: "combat",
+      round: 1,
+      turn: 0
+    },
+    socket: {
+      emit: (channel, message) => emitted.push({ channel, message })
+    }
+  };
+  const service = new PaladinAutomationService({}, {
+    promptDivineSmite: async () => ({
+      slotLevel: 1,
+      variantIds: ["magistrate-detention-smite"]
+    }),
+    rollPaladinSave: async () => ({ success: false, total: 6, dc: 15 })
+  });
+  const workflow = makeWeaponWorkflow({ actor: paladin, target });
+
+  try {
+    await service.applyMidiPreDamageRoll(workflow, workflow.activity, makeDamageConfig());
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+
+  assert.equal(target.effects.contents.length, 0);
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].channel, "module.rebreya-main");
+  assert.deepEqual(emitted[0].message, {
+    type: "character-class-automation",
+    payload: {
+      action: "paladin.magistrateSmite",
+      sourceActorUuid: paladin.uuid,
+      targetActorUuid: target.uuid,
+      slotLevel: 1,
+      variantIds: ["magistrate-detention-smite"],
+      workflowId: "",
+      workflowItemUuid: workflow.item.uuid
+    },
+    senderId: "player"
+  });
 });
 
 test("Magistrate accusation effect removes advantage from d20 tests", () => {
@@ -998,6 +1118,56 @@ test("Magistrate accusation effect removes advantage from d20 tests", () => {
   assert.equal(rollConfig.rolls[0].options.advantageMode, 0);
   assert.equal(dialogConfig.advantage, false);
   assert.equal(dialogConfig.options.advantage, false);
+});
+
+test("Magistrate source-next-turn effects expire at the start of the Paladin turn", async () => {
+  const deletedEffects = [];
+  const paladin = new TestActor({ id: "magistrate", name: "Магистрат" });
+  const makeEffect = (effect, sourceActorUuid = paladin.uuid) => ({
+    name: effect,
+    disabled: false,
+    flags: {
+      "rebreya-main": {
+        paladinAutomation: {
+          kind: "magistrateEffect",
+          effect,
+          sourceActorUuid,
+          duration: "sourceNextTurn"
+        }
+      }
+    },
+    async delete() {
+      deletedEffects.push(effect);
+    }
+  });
+  const target = new TestActor({
+    id: "target",
+    effects: [
+      makeEffect("detentionNoReaction"),
+      makeEffect("accusationNoAdvantage"),
+      makeEffect("detentionSlow", "Actor.other")
+    ]
+  });
+  globalThis.game.actors = {
+    get: (actorId) => (actorId === target.id ? target : null),
+    contents: [target],
+    values: () => [target].values()
+  };
+  const service = new PaladinAutomationService({});
+
+  try {
+    await service.handleCombatTurnChange({
+      combatants: {
+        contents: [{ actor: paladin }, { actor: target }],
+        values: () => [{ actor: paladin }, { actor: target }].values()
+      }
+    }, { current: { actor: paladin } });
+  }
+  finally {
+    delete globalThis.game.actors;
+  }
+
+  assert.deepEqual(deletedEffects.sort(), ["accusationNoAdvantage", "detentionNoReaction"]);
 });
 
 test("paladin divine smite uses DialogV2 input without the legacy Dialog class", async () => {
@@ -1214,6 +1384,7 @@ test("paladin divine smite automation hooks into midi pre-damage roll", async ()
   const workflow = { id: "workflow" };
   let handledWorkflow = null;
   let handledD20Config = null;
+  let handledCombat = null;
   globalThis.Hooks = {
     on(hookName, listener) {
       listeners.push({ hookName, listener });
@@ -1236,6 +1407,9 @@ test("paladin divine smite automation hooks into midi pre-damage roll", async ()
         applyDnd5ePreRollD20Test(rollConfig) {
           handledD20Config = rollConfig;
           return true;
+        },
+        async handleCombatTurnChange(combat) {
+          handledCombat = combat;
         }
       }
     });
@@ -1254,6 +1428,11 @@ test("paladin divine smite automation hooks into midi pre-damage roll", async ()
     const rollConfig = { id: "roll-config" };
     assert.equal(preRollD20Test.listener(rollConfig, {}, {}), true);
     assert.equal(handledD20Config, rollConfig);
+
+    const combatTurn = listeners.find((entry) => entry.hookName === "combatTurn");
+    assert.equal(typeof combatTurn?.listener, "function");
+    await combatTurn.listener({ id: "combat" }, {}, {});
+    assert.deepEqual(handledCombat, { id: "combat" });
   }
   finally {
     globalThis.Hooks = previousHooks;
