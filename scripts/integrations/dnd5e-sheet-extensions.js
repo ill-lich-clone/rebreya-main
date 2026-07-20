@@ -42,6 +42,7 @@ import {
   isHeldItemEligible
 } from "./held-items.js?v=1.4.96-npc-held-natural";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
+import { registerCraftsmanArchetypeTypes } from "./craftsman-archetype-types.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
 const HERO_DOLL_TAB_LABEL = "Кукла героя";
@@ -6892,7 +6893,7 @@ export async function registerRebreyaWeaponBaseItemsFromGearPack() {
 
 export function extendDnd5eItemTypes() {
   if (!isDnd5eWorld() || !CONFIG.DND5E) {
-    return;
+    return false;
   }
 
   registerRebreyaWeaponBaseItemsFromGearPack().catch((error) => {
@@ -6901,6 +6902,7 @@ export function extendDnd5eItemTypes() {
 
   registerNativeStateItemType();
   registerDowntimeItemType();
+  registerCraftsmanArchetypeTypes();
   registerNativeStateAdvancementTypes();
   registerNativeStateLanguages();
 

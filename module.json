@@ -40,6 +40,18 @@
           "description.value",
           "description.chat"
         ]
+      },
+      "research": {
+        "htmlFields": [
+          "description.value",
+          "description.chat"
+        ]
+      },
+      "specialty": {
+        "htmlFields": [
+          "description.value",
+          "description.chat"
+        ]
       }
     }
   },

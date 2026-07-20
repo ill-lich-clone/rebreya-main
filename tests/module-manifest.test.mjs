@@ -14,6 +14,17 @@ test("module manifest enables the Foundry module socket namespace", async () => 
   assert.equal(manifest.socket, true);
 });
 
+test("module manifest exposes both craftsman archetype item types", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
+
+  for (const type of ["research", "specialty"]) {
+    assert.deepEqual(manifest.documentTypes.Item[type].htmlFields, [
+      "description.value",
+      "description.chat"
+    ]);
+  }
+});
+
 test("module manifest loads the stable canonical entrypoint", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
