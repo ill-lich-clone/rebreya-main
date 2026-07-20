@@ -1054,6 +1054,20 @@ export function registerCombatHooks(moduleApi) {
       });
     });
 
+    Hooks.on("dnd5e.preRollD20Test", (rollConfig, dialogConfig, messageConfig) => {
+      try {
+        return moduleApi.paladinAutomationService.applyDnd5ePreRollD20Test(
+          rollConfig,
+          dialogConfig,
+          messageConfig
+        );
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply paladin d20 automation.`, error);
+        return true;
+      }
+    });
+
     Hooks.on("midi-qol.preDamageRoll", async (workflow, activity, config, dialog, message) => {
       try {
         return await moduleApi.paladinAutomationService.applyMidiPreDamageRoll(workflow, activity, config, dialog, message);

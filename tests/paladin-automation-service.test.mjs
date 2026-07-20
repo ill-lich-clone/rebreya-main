@@ -157,6 +157,14 @@ class TestActor extends Actor {
 
   async createEmbeddedDocuments(type, documents) {
     this.createdItems.push({ type, documents });
+    if (type === "ActiveEffect") {
+      for (const document of documents) {
+        const effect = foundry.utils.deepClone(document);
+        effect.parent = this;
+        effect.actor = this;
+        this.effects.contents.push(effect);
+      }
+    }
     return documents;
   }
 
@@ -314,6 +322,31 @@ function makeDamageConfig() {
   return {
     rolls: []
   };
+}
+
+function magistratePaladinWithSmiteVariant(variantId) {
+  const variantNames = {
+    "magistrate-accusation-smite": "Кара обвинения",
+    "magistrate-detention-smite": "Кара задержания"
+  };
+  const divineSmite = makeFeatureItem({
+    id: "divine-smite",
+    name: "Божественная кара",
+    featureId: "paladin-rework-v01::class::paladin-divine-smite"
+  });
+  const variant = makeFeatureItem({
+    id: variantId,
+    name: variantNames[variantId] ?? variantId,
+    featureId: `paladin-oath-magistrate::subclass::${variantId}`
+  });
+  return new TestActor({
+    id: "magistrate",
+    name: "Магистрат",
+    items: [divineSmite, variant],
+    spellSlots: {
+      spell1: { value: 1, max: 1 }
+    }
+  });
 }
 
 test("paladin long rest asks to change prepared spells and applies the browser selection", async () => {
@@ -871,6 +904,102 @@ test("paladin divine smite spends the selected spell slot and adds radiant bonus
   assert.equal(typeof config.rolls[0].options.flavor, "string");
 });
 
+test("Magistrate accusation smite strips target advantage after a failed Charisma save", async () => {
+  const paladin = magistratePaladinWithSmiteVariant("magistrate-accusation-smite");
+  const target = new TestActor({ id: "target", name: "Подсудимый", items: [] });
+  const service = new PaladinAutomationService({}, {
+    promptDivineSmite: async () => ({
+      slotLevel: 1,
+      variantIds: ["magistrate-accusation-smite"]
+    }),
+    rollPaladinSave: async () => ({ success: false, total: 7, dc: 15 })
+  });
+  const workflow = makeWeaponWorkflow({ actor: paladin, target });
+  const config = makeDamageConfig();
+
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
+
+  assert.equal(paladin.system.spells.spell1.value, 0);
+  assert.equal(config.rolls.length, 1);
+  assert.equal(
+    target.effects.contents.some((effect) => (
+      effect.flags["rebreya-main"].paladinAutomation.effect === "accusationNoAdvantage"
+    )),
+    true
+  );
+});
+
+test("Magistrate detention smite slows on success and suppresses reactions on failure", async () => {
+  const paladin = magistratePaladinWithSmiteVariant("magistrate-detention-smite");
+  const target = new TestActor({ id: "target", name: "Задержанный", items: [] });
+  const service = new PaladinAutomationService({}, {
+    promptDivineSmite: async () => ({
+      slotLevel: 1,
+      variantIds: ["magistrate-detention-smite"]
+    }),
+    rollPaladinSave: async () => ({ success: false, total: 6, dc: 15 })
+  });
+  const workflow = makeWeaponWorkflow({ actor: paladin, target });
+  const config = makeDamageConfig();
+
+  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
+
+  const effects = target.effects.contents.map((effect) => effect.flags["rebreya-main"].paladinAutomation.effect);
+  assert.equal(paladin.system.spells.spell1.value, 0);
+  assert.equal(config.rolls.length, 1);
+  assert.equal(effects.includes("detentionSlow"), true);
+  assert.equal(effects.includes("detentionNoReaction"), true);
+});
+
+test("Magistrate accusation effect removes advantage from d20 tests", () => {
+  const target = new TestActor({
+    id: "target",
+    effects: [{
+      name: "Кара обвинения: запрет преимущества",
+      disabled: false,
+      flags: {
+        "rebreya-main": {
+          paladinAutomation: {
+            kind: "magistrateEffect",
+            effect: "accusationNoAdvantage"
+          }
+        }
+      }
+    }]
+  });
+  const service = new PaladinAutomationService({});
+  const rollConfig = {
+    actor: target,
+    advantage: true,
+    rolls: [{
+      options: {
+        advantage: true,
+        advantageMode: 1
+      }
+    }],
+    options: {
+      advantage: true,
+      advantageMode: 1
+    }
+  };
+  const dialogConfig = {
+    advantage: true,
+    options: {
+      advantage: true
+    }
+  };
+
+  service.applyDnd5ePreRollD20Test(rollConfig, dialogConfig, {});
+
+  assert.equal(rollConfig.advantage, false);
+  assert.equal(rollConfig.options.advantage, false);
+  assert.equal(rollConfig.options.advantageMode, 0);
+  assert.equal(rollConfig.rolls[0].options.advantage, false);
+  assert.equal(rollConfig.rolls[0].options.advantageMode, 0);
+  assert.equal(dialogConfig.advantage, false);
+  assert.equal(dialogConfig.options.advantage, false);
+});
+
 test("paladin divine smite uses DialogV2 input without the legacy Dialog class", async () => {
   const previousDialog = globalThis.Dialog;
   const previousApplications = globalThis.foundry.applications;
@@ -1084,6 +1213,7 @@ test("paladin divine smite automation hooks into midi pre-damage roll", async ()
   const listeners = [];
   const workflow = { id: "workflow" };
   let handledWorkflow = null;
+  let handledD20Config = null;
   globalThis.Hooks = {
     on(hookName, listener) {
       listeners.push({ hookName, listener });
@@ -1102,18 +1232,28 @@ test("paladin divine smite automation hooks into midi pre-damage roll", async ()
       paladinAutomationService: {
         async applyMidiPreDamageRoll(value) {
           handledWorkflow = value;
+        },
+        applyDnd5ePreRollD20Test(rollConfig) {
+          handledD20Config = rollConfig;
+          return true;
         }
       }
     });
 
     const hookNames = listeners.map((entry) => entry.hookName);
     assert.ok(hookNames.includes("midi-qol.preDamageRoll"));
+    assert.ok(hookNames.includes("dnd5e.preRollD20Test"));
     assert.equal(hookNames.includes("midi-qol.DamageRollComplete"), false);
     assert.equal(hookNames.includes("midi-qol.RollComplete"), false);
 
     const preDamageRoll = listeners.find((entry) => entry.hookName === "midi-qol.preDamageRoll");
     await preDamageRoll.listener(workflow, workflow.activity, {});
     assert.equal(handledWorkflow, workflow);
+
+    const preRollD20Test = listeners.find((entry) => entry.hookName === "dnd5e.preRollD20Test");
+    const rollConfig = { id: "roll-config" };
+    assert.equal(preRollD20Test.listener(rollConfig, {}, {}), true);
+    assert.equal(handledD20Config, rollConfig);
   }
   finally {
     globalThis.Hooks = previousHooks;

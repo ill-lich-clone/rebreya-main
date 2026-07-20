@@ -31,6 +31,30 @@ const DIVINE_SMITE_VARIANTS = [
 ];
 
 const DIVINE_SMITE_VARIANT_BY_ID = new Map(DIVINE_SMITE_VARIANTS.map((variant) => [variant.id, variant]));
+const MAGISTRATE_SMITE_BY_ID = new Map([
+  ["magistrate-accusation-smite", {
+    variant: "accusation",
+    saveAbility: "cha",
+    failedEffects: ["accusationNoAdvantage"]
+  }],
+  ["magistrate-detention-smite", {
+    variant: "detention",
+    saveAbility: "wis",
+    successEffects: ["detentionSlow"],
+    failedEffects: ["detentionSlow", "detentionNoReaction"]
+  }]
+]);
+const MAGISTRATE_EFFECT_LABELS = {
+  accusationNoAdvantage: "Кара обвинения: запрет преимущества",
+  detentionSlow: "Кара задержания: замедление",
+  detentionNoReaction: "Кара задержания: запрет реакций"
+};
+const MAGISTRATE_EFFECT_ICONS = {
+  accusationNoAdvantage: "icons/svg/eye.svg",
+  detentionSlow: "icons/svg/clockwork.svg",
+  detentionNoReaction: "icons/svg/paralysis.svg"
+};
+const MOVEMENT_KEYS = ["burrow", "climb", "fly", "swim", "walk"];
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -549,6 +573,10 @@ function actorAutomationKey(actor, fallback = "actor") {
   return cleanText(actor?.uuid ?? actor?.id ?? actor?.name, fallback);
 }
 
+function activeEffectAddMode() {
+  return globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
+}
+
 function actorFromItem(item) {
   return item?.parent ?? item?.actor ?? item?.document?.parent ?? null;
 }
@@ -759,6 +787,7 @@ export class PaladinAutomationService {
     if (turnKey && !ignoresTurnLimit) {
       this._smiteTurnUses.add(turnKey);
     }
+    await this.#applyMagistrateSmiteVariants(actor, chosenTarget, selectedVariants);
 
     return true;
   }
@@ -781,6 +810,21 @@ export class PaladinAutomationService {
       await this.#useLayOnHands(actor, activity?.item);
     }
 
+    return true;
+  }
+
+  applyDnd5ePreRollD20Test(rollConfig = {}, dialogConfig = {}, messageConfig = {}) {
+    const actor = this.#actorFromRollContext(rollConfig, dialogConfig, messageConfig);
+    if (!(actor instanceof Actor) || !this.#hasMagistrateEffect(actor, "accusationNoAdvantage")) {
+      return true;
+    }
+
+    this.#stripD20Advantage(rollConfig);
+    this.#stripD20Advantage(dialogConfig);
+    for (const roll of collectionValues(rollConfig?.rolls)) {
+      this.#stripD20Advantage(roll);
+      this.#stripD20Advantage(roll?.options);
+    }
     return true;
   }
 
@@ -855,6 +899,9 @@ export class PaladinAutomationService {
     if (action === "paladin.layOnHands") {
       return this.#handleLayOnHandsSocketRequest(payload, { sender });
     }
+    if (action === "paladin.magistrateEffects") {
+      return this.#handleMagistrateEffectsSocketRequest(payload, { sender });
+    }
 
     return false;
   }
@@ -865,6 +912,47 @@ export class PaladinAutomationService {
 
   #canUpdate(document) {
     return Boolean(game.user?.isGM || document?.isOwner || document?.actor?.isOwner || document?.parent?.isOwner);
+  }
+
+  #actorFromRollContext(rollConfig = {}, dialogConfig = {}, messageConfig = {}) {
+    return rollConfig?.actor
+      ?? rollConfig?.subject?.actor
+      ?? rollConfig?.subject
+      ?? dialogConfig?.actor
+      ?? dialogConfig?.subject?.actor
+      ?? messageConfig?.actor
+      ?? messageConfig?.subject?.actor
+      ?? null;
+  }
+
+  #hasMagistrateEffect(actor, effectId) {
+    return collectionValues(actor?.effects).some((effect) => (
+      effectIsEnabled(effect)
+      && effectFlag(effect, "paladinAutomation.kind") === "magistrateEffect"
+      && effectFlag(effect, "paladinAutomation.effect") === effectId
+    ));
+  }
+
+  #stripD20Advantage(target) {
+    if (!target || typeof target !== "object") {
+      return;
+    }
+
+    if (Object.hasOwn(target, "advantage")) {
+      target.advantage = false;
+    }
+    if (Object.hasOwn(target, "heroicAdvantage")) {
+      target.heroicAdvantage = false;
+    }
+    if (Object.hasOwn(target, "advantageMode")) {
+      target.advantageMode = typeof target.advantageMode === "string" ? "normal" : 0;
+    }
+    if (target.options && typeof target.options === "object") {
+      this.#stripD20Advantage(target.options);
+    }
+    if (target.workflowOptions && typeof target.workflowOptions === "object") {
+      this.#stripD20Advantage(target.workflowOptions);
+    }
   }
 
   async #promptInitialPreparedSpells(actor, { spellcastingFeature = null } = {}) {
@@ -1018,6 +1106,176 @@ export class PaladinAutomationService {
     return `Божественная кара (${slotLevel} ур.)${suffix}`;
   }
 
+  async #applyMagistrateSmiteVariants(sourceActor, target, selectedVariants) {
+    for (const variant of selectedVariants) {
+      const automation = MAGISTRATE_SMITE_BY_ID.get(variant.id);
+      if (!automation) {
+        continue;
+      }
+
+      const save = await this.#resolvePaladinSave(target, {
+        sourceActor,
+        ability: automation.saveAbility,
+        flavor: variant.name
+      });
+      const effectIds = save.success === true
+        ? automation.successEffects ?? []
+        : automation.failedEffects ?? [];
+      for (const effect of effectIds) {
+        await this.#applyMagistrateEffect(target, {
+          sourceActor,
+          variant,
+          automation,
+          effect,
+          save
+        });
+      }
+    }
+  }
+
+  async #resolvePaladinSave(target, { sourceActor, ability, disadvantage = false, flavor = "" } = {}) {
+    const dc = this.#paladinSaveDc(sourceActor);
+    if (typeof this._options.rollPaladinSave === "function") {
+      const result = await this._options.rollPaladinSave(target, {
+        sourceActor,
+        ability,
+        dc,
+        disadvantage,
+        flavor
+      });
+      const total = Math.floor(toNumber(result?.total, 0));
+      const resultDc = Math.floor(toNumber(result?.dc, dc));
+      return {
+        success: typeof result?.success === "boolean" ? result.success : total >= resultDc,
+        total,
+        dc: resultDc
+      };
+    }
+
+    if (typeof target?.rollAbilitySave !== "function") {
+      return { success: true, total: 0, dc };
+    }
+
+    const result = await target.rollAbilitySave(ability, {
+      dc,
+      disadvantage,
+      flavor,
+      chatMessage: true,
+      fastForward: true
+    });
+    const total = Math.floor(toNumber(result?.total, 0));
+    return { success: total >= dc, total, dc };
+  }
+
+  #paladinSaveDc(actor) {
+    const explicitDc = Math.floor(toNumber(
+      actor?.system?.attributes?.spelldc
+        ?? actor?.system?.attributes?.spell?.dc
+        ?? actor?.system?.attributes?.spellcasting?.dc,
+      0
+    ));
+    if (explicitDc > 0) {
+      return explicitDc;
+    }
+
+    const proficiency = Math.floor(toNumber(
+      actor?.system?.attributes?.prof
+        ?? actor?.getRollData?.()?.prof,
+      0
+    ));
+    const level = paladinClassLevel(actor);
+    const fallbackProficiency = level > 0 ? 2 + Math.floor((level - 1) / 4) : 2;
+    const charisma = Math.floor(toNumber(actor?.system?.abilities?.cha?.mod, 0));
+    return 8 + (proficiency > 0 ? proficiency : fallbackProficiency) + charisma;
+  }
+
+  async #applyMagistrateEffect(target, { sourceActor, variant, automation, effect, save }) {
+    const data = this.#magistrateEffectData(target, {
+      sourceActor,
+      variant,
+      automation,
+      effect,
+      save
+    });
+    if (!data) {
+      return false;
+    }
+
+    if (this.#canUpdate(target) && typeof target.createEmbeddedDocuments === "function") {
+      await target.createEmbeddedDocuments("ActiveEffect", [data]);
+      return true;
+    }
+
+    return this.#emitMagistrateEffectsAsGM(sourceActor, target, [data]);
+  }
+
+  #magistrateEffectData(target, { sourceActor, variant, automation, effect, save }) {
+    const name = MAGISTRATE_EFFECT_LABELS[effect] ?? cleanText(variant?.name, "Кара магистрата");
+    const changes = effect === "detentionSlow"
+      ? MOVEMENT_KEYS.map((movement) => ({
+        key: `system.attributes.movement.${movement}`,
+        mode: activeEffectAddMode(),
+        value: "-10",
+        priority: 20
+      }))
+      : [];
+
+    return {
+      name,
+      type: "base",
+      img: MAGISTRATE_EFFECT_ICONS[effect] ?? "icons/svg/aura.svg",
+      system: {},
+      changes,
+      disabled: false,
+      duration: {
+        startTime: globalThis.game?.time?.worldTime ?? null,
+        seconds: null,
+        rounds: null,
+        turns: null,
+        startRound: globalThis.game?.combat?.round ?? null,
+        startTurn: globalThis.game?.combat?.turn ?? null,
+        combat: globalThis.game?.combat?.id ?? null
+      },
+      description: `<p>${escapeHtml(target?.name)} под действием варианта ${escapeHtml(variant?.name)}.</p>`,
+      flags: {
+        [MODULE_ID]: {
+          paladinAutomation: {
+            kind: "magistrateEffect",
+            effect,
+            variant: automation.variant,
+            variantId: variant.id,
+            sourceActorUuid: cleanText(sourceActor?.uuid),
+            sourceActorId: cleanText(sourceActor?.id),
+            targetActorUuid: cleanText(target?.uuid),
+            saveAbility: automation.saveAbility,
+            saveTotal: Math.floor(toNumber(save?.total, 0)),
+            saveDc: Math.floor(toNumber(save?.dc, 0)),
+            duration: "sourceNextTurn"
+          }
+        }
+      }
+    };
+  }
+
+  async #emitMagistrateEffectsAsGM(sourceActor, target, effects) {
+    if (typeof game.socket?.emit !== "function") {
+      globalThis.ui?.notifications?.warn("Кара магистрата: нет доступа к GM socket, эффект не применён.");
+      return false;
+    }
+
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION,
+      payload: {
+        action: "paladin.magistrateEffects",
+        sourceActorUuid: cleanText(sourceActor?.uuid),
+        targetActorUuid: cleanText(target?.uuid),
+        effects: foundry.utils.deepClone(effects)
+      },
+      senderId: game.user?.id ?? ""
+    });
+    return true;
+  }
+
   async #promptDivineSmite(actor, details) {
     if (typeof this._options.promptDivineSmite === "function") {
       const choice = await this._options.promptDivineSmite(actor, details);
@@ -1165,6 +1423,44 @@ export class PaladinAutomationService {
     }
 
     return this.#applyLayOnHandsHealing(actor, layOnHands, target, healing, spent);
+  }
+
+  async #handleMagistrateEffectsSocketRequest(payload = {}, { sender = null } = {}) {
+    const actor = await resolveUuid(payload.sourceActorUuid);
+    const target = await resolveUuid(payload.targetActorUuid);
+    if (!(actor instanceof Actor) || !(target instanceof Actor) || !userOwnsActor(actor, sender)) {
+      return false;
+    }
+
+    const effects = [];
+    for (const requested of Array.isArray(payload.effects) ? payload.effects : []) {
+      const requestedAutomation = getProperty(requested, `flags.${MODULE_ID}.paladinAutomation`, {});
+      const effect = cleanText(requestedAutomation.effect);
+      const variantId = cleanText(requestedAutomation.variantId);
+      const variant = DIVINE_SMITE_VARIANT_BY_ID.get(variantId);
+      const automation = MAGISTRATE_SMITE_BY_ID.get(variantId);
+      if (!variant || !automation || !MAGISTRATE_EFFECT_LABELS[effect]) {
+        continue;
+      }
+
+      effects.push(this.#magistrateEffectData(target, {
+        sourceActor: actor,
+        variant,
+        automation,
+        effect,
+        save: {
+          total: toNumber(requestedAutomation.saveTotal, 0),
+          dc: toNumber(requestedAutomation.saveDc, this.#paladinSaveDc(actor))
+        }
+      }));
+    }
+
+    if (!effects.length || typeof target.createEmbeddedDocuments !== "function") {
+      return false;
+    }
+
+    await target.createEmbeddedDocuments("ActiveEffect", effects);
+    return true;
   }
 
   async #applyLayOnHandsHealing(actor, layOnHands, target, healing, spent) {
