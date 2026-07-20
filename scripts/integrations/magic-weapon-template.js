@@ -160,8 +160,59 @@ function isCharacterOwnedItem(item) {
   return getOwnedActor(item)?.type === "character";
 }
 
+function normalizeUsers(users) {
+  if (!users) {
+    return [];
+  }
+
+  if (Array.isArray(users)) {
+    return users;
+  }
+
+  if (Array.isArray(users.contents)) {
+    return users.contents;
+  }
+
+  if (typeof users.values === "function") {
+    return Array.from(users.values());
+  }
+
+  return [];
+}
+
+function actorOwnerLevel() {
+  return Number(globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3);
+}
+
+function userOwnsActor(actor, user) {
+  if (!actor || !user?.id) {
+    return false;
+  }
+
+  if (typeof actor.testUserPermission === "function") {
+    return actor.testUserPermission(user, "OWNER") === true;
+  }
+
+  const ownership = actor.ownership ?? actor._source?.ownership ?? {};
+  return Number(ownership[user.id] ?? ownership.default ?? 0) >= actorOwnerLevel();
+}
+
+function hasActivePlayerOwner(actor) {
+  return normalizeUsers(globalThis.game?.users)
+    .some((user) => user?.isGM !== true && user?.active !== false && userOwnsActor(actor, user));
+}
+
 function canPromptForActor(actor) {
-  return Boolean(globalThis.game?.user?.isGM || actor?.isOwner);
+  const currentUser = globalThis.game?.user;
+  if (!currentUser) {
+    return actor?.isOwner === true;
+  }
+
+  if (currentUser.isGM === true) {
+    return !hasActivePlayerOwner(actor);
+  }
+
+  return actor?.isOwner === true || userOwnsActor(actor, currentUser);
 }
 
 function shouldSkipMagicTemplate(options = {}, skipKeys = []) {
@@ -185,6 +236,10 @@ function shouldSkipMagicArmorTemplate(options = {}) {
 
 function shouldSkipMagicAmmunitionTemplate(options = {}) {
   return shouldSkipMagicTemplate(options, ["skipMagicAmmunitionTemplate", "skipMagicEquipmentTemplate"]);
+}
+
+function shouldSkipMagicToolTemplate(options = {}) {
+  return shouldSkipMagicTemplate(options, ["skipMagicToolTemplate", "skipMagicEquipmentTemplate"]);
 }
 
 function getItemData(item) {
@@ -353,6 +408,17 @@ function buildMagicArmorDescription(baseDescription = "", magicRulesText = "", b
   );
 }
 
+function buildMagicToolDescription(baseDescription = "", magicRulesText = "", bonus = 0) {
+  const resolvedBonus = normalizeMagicTemplateBonus(bonus);
+  return buildMagicTemplateDescription(
+    baseDescription,
+    magicRulesText,
+    resolvedBonus
+      ? `<p><strong>Магический инструмент +${resolvedBonus}.</strong> Бонус применяется через поле dnd5e tool.bonus.</p>`
+      : "<p><strong>Магический инструмент.</strong> Базовый шаблон Rebreya применён к магическому предмету.</p>",
+  );
+}
+
 function normalizeModelGear(model) {
   if (Array.isArray(model?.gear)) {
     return model.gear;
@@ -478,6 +544,29 @@ function isArmorItemType(source) {
 function isWeaponItemType(source) {
   const itemType = normalizeMatchText(source?.itemType);
   return itemType === normalizeMatchText("Оружие") || itemType === normalizeMatchText("Посох");
+}
+
+function isToolItemType(source) {
+  const itemType = normalizeMatchText(source?.itemType);
+  return [
+    "Инструменты",
+    "Инструмент",
+    "Чудесный предмет",
+    "Чудестный предмет",
+    "Tool",
+    "Tools",
+    "Wondrous item",
+  ].some((type) => itemType === normalizeMatchText(type));
+}
+
+function isUniversalMagicToolSource(source) {
+  if (!isMagicItemSource(source) || !isToolItemType(source)) {
+    return false;
+  }
+
+  const name = normalizeMatchText(source?.name);
+  return /^(?:универсальный\s+)?инструмент(?:ы)?\s*\+\s*[123]$/iu.test(name)
+    || /^tool(?:s)?\s*\+\s*[123]$/iu.test(name);
 }
 
 function findTemplateRule(rules, subtype) {
@@ -622,6 +711,19 @@ export function parseMagicShieldBonus(itemOrName) {
   return item ? parseGenericMagicItemBonus(item, "Доспех", ["Щит", "Shield"]) : null;
 }
 
+export function parseMagicToolBonus(itemOrName) {
+  const item = typeof itemOrName === "string" ? null : itemOrName;
+  const name = cleanString(typeof itemOrName === "string" ? itemOrName : item?.name);
+  const exactMatch = name.match(/^(?:(?:универсальный\s+)?инструмент(?:ы)?|Tool|Tools)\s*\+\s*([123])$/iu);
+  if (exactMatch) {
+    return Number(exactMatch[1]);
+  }
+
+  return item && isUniversalMagicToolSource(getMagicItemTemplateSource(item))
+    ? parseNamedMagicEquipmentBonus(item, "tool")
+    : null;
+}
+
 function buildMagicArmorTemplateOption(item) {
   const id = cleanId(item?.id);
   const name = cleanString(item?.name);
@@ -675,6 +777,39 @@ export function buildMagicWeaponTemplateOptions(model) {
         weaponType: classification.systemTypeValue ?? "",
       };
     })
+    .filter(Boolean)
+    .sort((left, right) => collator.compare(left.name, right.name));
+}
+
+function buildMagicToolTemplateOption(item) {
+  const id = cleanId(item?.id);
+  const name = cleanString(item?.name);
+  if (!id || !name) {
+    return null;
+  }
+
+  const classification = classifyGearEntry(item);
+  if (classification.documentType !== "tool") {
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    item,
+    sourceCategory: classification.sourceCategory ?? "",
+    toolType: classification.systemTypeValue ?? "",
+  };
+}
+
+export function buildMagicToolTemplateOptions(model) {
+  const collator = new Intl.Collator("ru", {
+    numeric: true,
+    sensitivity: "base",
+  });
+
+  return normalizeModelGear(model)
+    .map((item) => buildMagicToolTemplateOption(item))
     .filter(Boolean)
     .sort((left, right) => collator.compare(left.name, right.name));
 }
@@ -887,6 +1022,36 @@ function getPromptableMagicAmmunitionContext(
   };
 }
 
+function getPromptableMagicToolContext(
+  item,
+  options = {},
+  userId = "",
+  { requireCurrentUser = true } = {},
+) {
+  if ((requireCurrentUser && !isCurrentUserHook(userId)) || shouldSkipMagicToolTemplate(options) || !isCharacterOwnedItem(item)) {
+    return null;
+  }
+
+  const actor = getOwnedActor(item);
+  if (!["equipment", "loot", "tool"].includes(cleanString(item?.type)) || isAlreadyTemplated(item, ["magicToolTemplate", "magicEquipmentTemplate"])) {
+    return null;
+  }
+
+  const bonus = parseMagicToolBonus(item);
+  if (!bonus) {
+    return null;
+  }
+
+  return {
+    actor,
+    bonus,
+    itemKind: "tool",
+    itemLabel: "Инструмент",
+    rule: null,
+    preserveMagicItemName: false,
+  };
+}
+
 export function createMagicWeaponTemplateUpdate(item, weaponTemplate, bonus, { iconLookup = null, preserveMagicItemName = false } = {}) {
   const itemData = getItemData(item);
   const currentSystem = clonePlainObject(itemData.system);
@@ -930,6 +1095,57 @@ export function createMagicWeaponTemplateUpdate(item, weaponTemplate, bonus, { i
         magicWeaponGearId: cleanId(weaponTemplate.id),
         magical: true,
         foundryType: "weapon",
+        foundrySubtype: baseModuleFlags.foundrySubtype ?? "",
+        foundrySubtypeExtra: baseModuleFlags.foundrySubtypeExtra ?? "",
+        foundryBaseItem: baseModuleFlags.foundryBaseItem ?? "",
+      },
+    },
+  };
+}
+
+export function createMagicToolTemplateUpdate(item, toolTemplate, bonus, { iconLookup = null, preserveMagicItemName = false } = {}) {
+  const itemData = getItemData(item);
+  const currentSystem = clonePlainObject(itemData.system);
+  const baseItemData = createDnd5eItemData(toolTemplate, new Map(), iconLookup);
+  const baseSystem = clonePlainObject(baseItemData.system);
+  const currentModuleFlags = getModuleFlags(item);
+  const baseModuleFlags = clonePlainObject(baseItemData.flags?.[MODULE_ID]);
+  const gearId = cleanId(toolTemplate.id);
+  const resolvedBonus = normalizeMagicTemplateBonus(bonus);
+  const magicItemId = cleanString(currentModuleFlags.magicItemId, resolvedBonus ? `tool-plus-${resolvedBonus}` : "magic-tool-template");
+
+  applyCommonPreservedFields(baseSystem, currentSystem);
+  baseSystem.properties = mergeProperties(baseSystem.properties, currentSystem.properties, ["mgc"]);
+  baseSystem.bonus = resolvedBonus ? `+${resolvedBonus}` : cleanString(currentSystem.bonus);
+
+  baseSystem.description ??= {};
+  baseSystem.description.value = buildMagicToolDescription(
+    baseSystem.description.value,
+    readMagicItemRulesText(item),
+    resolvedBonus,
+  );
+
+  return {
+    name: formatMagicTemplateName(itemData.name, toolTemplate.name, resolvedBonus, { preserveMagicItemName }),
+    type: "tool",
+    img: baseItemData.img,
+    system: baseSystem,
+    flags: {
+      [MODULE_ID]: {
+        ...baseModuleFlags,
+        ...currentModuleFlags,
+        sourceType: "magicItem",
+        magicItemId,
+        gearId,
+        magicEquipmentTemplate: true,
+        magicEquipmentKind: "tool",
+        magicEquipmentBonus: resolvedBonus,
+        magicEquipmentGearId: gearId,
+        magicToolTemplate: true,
+        magicToolBonus: resolvedBonus,
+        magicToolGearId: gearId,
+        magical: true,
+        foundryType: "tool",
         foundrySubtype: baseModuleFlags.foundrySubtype ?? "",
         foundrySubtypeExtra: baseModuleFlags.foundrySubtypeExtra ?? "",
         foundryBaseItem: baseModuleFlags.foundryBaseItem ?? "",
@@ -1288,6 +1504,65 @@ async function processMagicAmmunitionTemplateItem(
   }
 }
 
+async function processMagicToolTemplateItem(
+  item,
+  context,
+  moduleApi = globalThis.game?.rebreyaMain,
+  { prompt = promptMagicToolTemplate } = {},
+) {
+  const itemKey = magicWeaponTemplateItemKey(item);
+  if (!itemKey || pendingMagicWeaponTemplateItemKeys.has(itemKey)) {
+    return false;
+  }
+
+  pendingMagicWeaponTemplateItemKeys.add(itemKey);
+  try {
+    const model = await resolveModuleModel(moduleApi);
+    const options = filterTemplateOptions(buildMagicToolTemplateOptions(model), context.rule);
+    if (!options.length) {
+      globalThis.ui?.notifications?.warn?.("В данных Rebreya не найдено базовых шаблонов инструментов.");
+      return false;
+    }
+
+    const selectedId = cleanId(await prompt({
+      item,
+      bonus: context.bonus,
+      itemLabel: context.itemLabel,
+      options,
+    }));
+    if (!selectedId) {
+      return false;
+    }
+
+    const selectedTemplate = options.find((entry) => entry.id === selectedId);
+    if (!selectedTemplate) {
+      globalThis.ui?.notifications?.warn?.("Выбранный шаблон инструмента Rebreya не найден.");
+      return false;
+    }
+
+    const iconLookup = await buildGearIconLookup();
+    const updateData = createMagicToolTemplateUpdate(item, selectedTemplate.item, context.bonus, {
+      iconLookup,
+      preserveMagicItemName: context.preserveMagicItemName === true,
+    });
+    await item.update(updateData, {
+      [MODULE_ID]: {
+        skipMagicToolTemplate: true,
+        skipMagicEquipmentTemplate: true,
+      },
+      skipMagicToolTemplate: true,
+      skipMagicEquipmentTemplate: true,
+    });
+
+    const bonusText = context.bonus ? ` +${context.bonus}` : "";
+    globalThis.ui?.notifications?.info?.(`Инструмент${bonusText} превращён в «${updateData.name}».`);
+    return true;
+  }
+  finally {
+    pendingMagicWeaponTemplateItemKeys.delete(itemKey);
+  }
+}
+
 export async function promptMagicWeaponTemplate({ item, bonus, weapons }) {
   return promptMagicItemTemplate({
     item,
@@ -1318,6 +1593,16 @@ export async function promptMagicAmmunitionTemplate({ item, bonus, itemLabel = "
     itemLabel,
     options,
     emptyMessage: "В данных Rebreya не найдено базовых шаблонов боеприпасов.",
+  });
+}
+
+export async function promptMagicToolTemplate({ item, bonus, itemLabel = "Инструмент", options }) {
+  return promptMagicItemTemplate({
+    item,
+    bonus,
+    itemLabel,
+    options,
+    emptyMessage: "В данных Rebreya не найдено базовых шаблонов инструментов.",
   });
 }
 
@@ -1372,6 +1657,23 @@ export async function handleCreatedMagicAmmunitionItem(
   return processMagicAmmunitionTemplateItem(item, promptable, moduleApi, { prompt });
 }
 
+export async function handleCreatedMagicToolItem(
+  item,
+  options = {},
+  userId = "",
+  moduleApi = globalThis.game?.rebreyaMain,
+  { prompt = promptMagicToolTemplate } = {},
+) {
+  const promptable = getPromptableMagicToolContext(item, options, userId, {
+    requireCurrentUser: true,
+  });
+  if (!promptable) {
+    return false;
+  }
+
+  return processMagicToolTemplateItem(item, promptable, moduleApi, { prompt });
+}
+
 export async function handleActorRenderMagicWeapons(
   actor,
   moduleApi = globalThis.game?.rebreyaMain,
@@ -1379,6 +1681,7 @@ export async function handleActorRenderMagicWeapons(
     prompt = promptMagicWeaponTemplate,
     armorPrompt = promptMagicArmorTemplate,
     ammunitionPrompt = promptMagicAmmunitionTemplate,
+    toolPrompt = promptMagicToolTemplate,
   } = {},
 ) {
   if (actor?.type !== "character" || !canPromptForActor(actor)) {
@@ -1410,6 +1713,15 @@ export async function handleActorRenderMagicWeapons(
         prompt: ammunitionPrompt,
       });
     }
+
+    const promptableTool = getPromptableMagicToolContext(item, {}, "", {
+      requireCurrentUser: false,
+    });
+    if (promptableTool) {
+      return processMagicToolTemplateItem(item, promptableTool, moduleApi, {
+        prompt: toolPrompt,
+      });
+    }
   }
 
   return false;
@@ -1431,7 +1743,11 @@ export function registerMagicWeaponTemplateHook(moduleApi, { Hooks = globalThis.
         return true;
       }
 
-      return handleCreatedMagicAmmunitionItem(item, options, userId, moduleApi);
+      if (await handleCreatedMagicAmmunitionItem(item, options, userId, moduleApi)) {
+        return true;
+      }
+
+      return handleCreatedMagicToolItem(item, options, userId, moduleApi);
     })().catch((error) => {
       console.error(`${MODULE_ID} | Failed to apply magic equipment template.`, error);
       globalThis.ui?.notifications?.error?.(error.message || "Не удалось применить шаблон магического предмета.");

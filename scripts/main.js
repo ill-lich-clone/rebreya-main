@@ -86,6 +86,7 @@ import {
   PERFORMER_APPLY_RESULT_COMMAND,
   PerformerAutomationService
 } from "./combat/performer-automation-service.js?v=1.4.96";
+import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
 import { registerSceneControlsHook } from "./hooks.js?v=1.4.96-bg3-piles";
 import {
@@ -286,6 +287,40 @@ function getApplicationInstances(value) {
   return Object.values(value);
 }
 
+function getAppElementForState(app) {
+  const element = app?.element ?? null;
+  if (!element) {
+    return null;
+  }
+
+  if (globalThis.HTMLElement && element instanceof HTMLElement) {
+    return element;
+  }
+
+  return element[0] ?? null;
+}
+
+function isApplicationMinimized(app) {
+  if (app?.minimized === true || app?._minimized === true || app?.position?.minimized === true) {
+    return true;
+  }
+
+  const state = app?.state ?? app?._state;
+  const renderStates = globalThis.foundry?.applications?.api?.ApplicationV2?.RENDER_STATES
+    ?? globalThis.Application?.RENDER_STATES
+    ?? {};
+  if (
+    state === "minimized"
+    || (renderStates.MINIMIZED !== undefined && state === renderStates.MINIMIZED)
+    || (renderStates.MINIMIZE !== undefined && state === renderStates.MINIMIZE)
+  ) {
+    return true;
+  }
+
+  const element = getAppElementForState(app);
+  return element?.classList?.contains?.("minimized") === true;
+}
+
 function getOpenActorSheetApps() {
   const apps = [
     ...Object.values(globalThis.ui?.windows ?? {}),
@@ -293,7 +328,7 @@ function getOpenActorSheetApps() {
   ];
   const seen = new Set();
   return apps.filter((app) => {
-    if (!app || seen.has(app) || !app.rendered || typeof app.render !== "function") {
+    if (!app || seen.has(app) || !app.rendered || isApplicationMinimized(app) || typeof app.render !== "function") {
       return false;
     }
 
@@ -858,6 +893,7 @@ export class RebreyaMainModule {
     this.paladinAutomationService = new PaladinAutomationService(this);
     this.rogueAutomationService = new RogueAutomationService(this);
     this.performerAutomationService = new PerformerAutomationService(this);
+    this.bardicInspirationCompatService = new BardicInspirationCompatService(this);
     this.raceAutomationService = new RaceAutomationService(this);
     this.featChoiceAutomationService = new FeatChoiceAutomationService(this);
     this.repository.setGlobalEventsService(this.globalEventsService);

@@ -7,7 +7,7 @@
 ## Совместимость и точка входа
 
 - Module ID: `rebreya-main`.
-- Версия: `1.4.102`.
+- Версия: `1.4.103`.
 - Foundry VTT: minimum/verified `13`.
 - Основная система: `dnd5e`.
 - Обязательная зависимость: `statuscounter >= 3.0.4`.
@@ -206,6 +206,7 @@
 | `PaladinAutomationService` | item/actor updates, post-use, rest, `midi-qol.preDamageRoll` | prepared spells, Lay on Hands, Divine Smite; class `paladin-rework-v01` | чужая цель Lay on Hands идёт active GM; socket sender должен владеть source Actor; smite once/turn, prepared spells — long rest | `paladin-automation-service.test.mjs` |
 | `RogueAutomationService` | `midi-qol.preDamageRoll`; class `rogue-rework-v00` | Sneak Attack и Cunning Strike: Hamstring, Disrupt Aim, Open Position, Trip, Break Tempo и данные sourceType `rogueCunningStrike` | один Sneak Attack на combat turn; добавляет damage config до roll, статусы/карточку — после выбора | `rogue-automation-service.test.mjs` |
 | `PerformerAutomationService` | pre/post activity, d20 attack/skill/tool/ability/save, rest; feat identifier `ispolnitel`, action `activePerformance` | Активное выступление: проверка, союзный `d5` bonus или hostile penalty; два последовательных провала блокируют черту | игрок отправляет `performer.activePerformance.apply`; active GM проверяет владение исполнителем и создаёт эффект на target; effect удаляется после выбранного d20, streak — long rest | `performer-automation-service.test.mjs` |
+| `BardicInspirationCompatService` | `dnd5e.postUseActivity`; magic item flag `restoreBardicInspiration`; Laaru source UUID | Барабан задающего ритм восстанавливает одну кость Бардовского вдохновения из `laaru-dnd5-hw` | уменьшает `system.uses.spent` у laaru-фичи и не переполняет ресурс | `bardic-inspiration-compat-service.test.mjs` |
 | `RaceAutomationService` | attack config, post-use, pre/post damage, d20 rolls, pre/rest, movement blocking, Midi RollComplete, combat turn | runtime actions из race feature flags: linked/custom effects, elemental/demonic choices, pack tactics, damage reduction, relentless endurance, lucky reroll, rest rules, Fury of the Small, Keen Eye, Surprise/Celestial damage и временное игнорирование hostile spaces | remote damage/effect/heal исполняет active GM; once-turn damage имеет turn key; rest features чистятся/восстанавливаются по long rest | `race-automation-service.test.mjs` |
 | `FeatChoiceAutomationService` | owned feat create/update/delete | `flags.rebreya-main.choiceConfig`; создаёт native dnd5e ItemChoice advancement, разрешает UUID options, зеркалит выбор и удаляет advancement children | работает только на текущем клиенте-владельце/GM; при отсутствующих options может синхронизировать feats pack | `feat-choice-automation.test.mjs` |
 | Mechanus | libWrapper Roll evaluation hooks | при включённом `cosmologyState.mechanusEnabled` усредняет eligible dice; d20 advantage/disadvantage переводит в flat modifier; d20/d100 не усредняет как обычные dice | world toggle — typed GM command; выключенный режим не меняет Roll | `cosmology-mechanus-rolls.test.mjs` |
@@ -226,7 +227,7 @@
 | SmallTime | `smalltime-compat.js` | отображение календаря Rebreya и подтверждение расхода запасов при сдвиге world time |
 | Forien Quest Log | `forien-quest-log.js`, `quest-log-service.js` | metadata, requirements, grouped quests, rumors/events и UI overlays |
 | Rations | `ration-food-conversion.js` | созданные ration Items можно конвертировать в партийную еду |
-| Magic templates | `magic-weapon-template.js` | шаблон базового оружия/доспеха/щита для magic item |
+| Magic templates | `magic-weapon-template.js` | шаблон базового оружия/доспеха/щита/боеприпасов/инструмента для magic item |
 | BG3 Hotbar | `scripts/hooks.js` | подавляет auto-add служебных Items, чинит item-pile common actions/death saves |
 | transform-cleanup / SM Airship | соответствующие `*-compat.js` | узкие defensive patches, без владения доменной логикой |
 

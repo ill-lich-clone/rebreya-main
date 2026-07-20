@@ -414,6 +414,36 @@ test("player performer routes an unowned target effect through the active GM", a
   }
 });
 
+test("active performance GM commit clears performer failure uses on success", async () => {
+  const previousActors = globalThis.game.actors;
+  const performerItem = makePerformerItem({ spent: 1 });
+  performerItem.system.identifier = "ispolnitel";
+  const performer = new TestActor({ id: "performer", disposition: 1 });
+  const target = new TestActor({ id: "ally", disposition: 1 });
+  performer.items = makeActorCollection([performerItem]);
+  performerItem.system.activities = {
+    activePerformance: makeActivity(performer, performerItem)
+  };
+  globalThis.game.actors = makeActorCollection([performer, target]);
+  const service = new PerformerAutomationService({});
+
+  try {
+    const result = await service.commitActivePerformance({
+      sourceActorId: performer.id,
+      sourceItemId: performerItem.id,
+      targetActorId: target.id,
+      total: 24
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(performerItem.system.uses.spent, 0);
+    assert.equal(target.created[0].type, "ActiveEffect");
+  }
+  finally {
+    globalThis.game.actors = previousActors;
+  }
+});
+
 test("active performance can resolve the target from the dnd5e usage message", async () => {
   const previousTargets = globalThis.game.user.targets;
   const previousFromUuidSync = globalThis.fromUuidSync;

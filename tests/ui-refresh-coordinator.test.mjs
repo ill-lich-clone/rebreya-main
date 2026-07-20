@@ -241,6 +241,35 @@ test("downtime refresh renders only inventory and affected Actor sheets", async 
   }
 });
 
+test("actor sheet refreshes skip minimized character sheets", async () => {
+  const fixture = installUiFixture();
+  try {
+    fixture.moduleApi.inventoryApp = fixture.createApp("inventory");
+    globalThis.ui.windows = {
+      visible: fixture.createApp("visible", "actor-a"),
+      minimizedLegacy: {
+        ...fixture.createApp("minimizedLegacy", "actor-a"),
+        _minimized: true
+      }
+    };
+    globalThis.foundry.applications.instances = new Map([[
+      "minimizedV2",
+      {
+        ...fixture.createApp("minimizedV2", "actor-a"),
+        minimized: true,
+        document: { id: "actor-a", type: "character" }
+      }
+    ]]);
+
+    await fixture.moduleApi.refreshDowntimeViews({ actorIds: ["actor-a"] });
+
+    assert.deepEqual(fixture.calls.map((call) => call.name).sort(), ["inventory", "visible"]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("inventory refresh without actor ids does not render every open Actor sheet", async () => {
   const fixture = installUiFixture();
   try {

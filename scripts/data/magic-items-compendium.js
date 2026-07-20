@@ -94,6 +94,11 @@ function normalizeRarity(value) {
   }
 }
 
+function restoresBardicInspiration(item) {
+  return normalizeMatchText(item?.name).startsWith(normalizeMatchText("Барабан задающего ритм"))
+    && normalizeMatchText(item?.description).includes(normalizeMatchText("восстановить одну кость бардовского вдохновения"));
+}
+
 function resolveItemSlotGroup(item, classification) {
   const explicitSlot = normalizeHeroDollSlotGroup(item.itemSlot ?? "", "");
   if (explicitSlot) {
@@ -425,6 +430,7 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
         foundryFolder: folderPath,
         firearmClass: classification.firearmClass ?? "",
         magical: true,
+        restoreBardicInspiration: restoresBardicInspiration(item),
         attunement: item.attunement,
         bargaining: item.bargaining,
         itemBargaining: item.bargaining,

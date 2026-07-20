@@ -164,3 +164,18 @@ test("magic item compendium treats subtype-backed staves and ammunition as adapt
   const moonblade = magicItemsCompendium.createMagicItemData(byName.get("Лунный клинок"), new Map());
   assert.equal(moonblade.type, "weapon");
 });
+
+test("magic item compendium flags rhythm-maker drums as bardic inspiration restorers", () => {
+  const sourceItems = new Map(MAGIC_ITEMS.map((item) => [item.name, item]));
+  const normalizedItems = magicItemsCompendium.normalizeMagicItems([
+    sourceItems.get("Барабан задающего ритм +2"),
+    sourceItems.get("Инструмент иллюзий"),
+  ]);
+  const byName = new Map(normalizedItems.map((item) => [item.name, item]));
+
+  const drum = magicItemsCompendium.createMagicItemData(byName.get("Барабан задающего ритм +2"), new Map());
+  const illusionTool = magicItemsCompendium.createMagicItemData(byName.get("Инструмент иллюзий"), new Map());
+
+  assert.equal(drum.flags["rebreya-main"].restoreBardicInspiration, true);
+  assert.equal(illusionTool.flags["rebreya-main"].restoreBardicInspiration, false);
+});

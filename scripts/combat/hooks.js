@@ -12,11 +12,12 @@ export function registerCombatHooks(moduleApi) {
   const hasRogueService = Boolean(moduleApi?.rogueAutomationService);
   const hasAttackRollBoostService = Boolean(moduleApi?.attackRollBoostService);
   const hasPerformerService = Boolean(moduleApi?.performerAutomationService);
+  const hasBardicInspirationCompatService = Boolean(moduleApi?.bardicInspirationCompatService);
   const hasEnvironmentService = Boolean(moduleApi?.environmentAutomationService);
   const hasSpellService = Boolean(moduleApi?.spellAutomationService);
   const hasReactionCapabilityIndex = Boolean(moduleApi?.reactionCapabilityIndex);
   const hasRuneKnightService = Boolean(moduleApi?.runeKnightAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService) {
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService) {
     return;
   }
 
@@ -801,6 +802,19 @@ export function registerCombatHooks(moduleApi) {
       moduleApi.performerAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
         console.error(`${MODULE_ID} | Failed to clear performer rest automation.`, error);
       });
+    });
+  }
+
+  if (hasBardicInspirationCompatService) {
+    Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
+      moduleApi.bardicInspirationCompatService.applyDnd5ePostUseActivity(
+        activity,
+        usageConfig,
+        results
+      ).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to synchronize bardic inspiration compatibility.`, error);
+      });
+      return true;
     });
   }
 

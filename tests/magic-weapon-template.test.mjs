@@ -54,16 +54,20 @@ globalThis.game = {
 const {
   buildMagicArmorTemplateOptions,
   buildMagicShieldTemplateOptions,
+  buildMagicToolTemplateOptions,
   buildMagicWeaponTemplateOptions,
   createMagicArmorTemplateUpdate,
   createMagicShieldTemplateUpdate,
+  createMagicToolTemplateUpdate,
   createMagicWeaponTemplateUpdate,
   handleCreatedMagicAmmunitionItem,
   handleCreatedMagicArmorItem,
   handleActorRenderMagicWeapons,
+  handleCreatedMagicToolItem,
   handleCreatedMagicWeaponItem,
   parseMagicArmorBonus,
   parseMagicShieldBonus,
+  parseMagicToolBonus,
   parseMagicWeaponBonus,
   promptMagicWeaponTemplate,
   registerMagicWeaponTemplateHook,
@@ -297,6 +301,16 @@ function makeCrossbowBolts() {
   };
 }
 
+function makeThievesTools() {
+  return {
+    id: "thieves-tools",
+    name: "Инструменты воровские 0-й ранг",
+    equipmentType: "Инструменты",
+    priceGoldEquivalent: 25,
+    weight: 1,
+  };
+}
+
 class FakeItem {
   constructor({
     name = "Оружие +2",
@@ -341,10 +355,12 @@ class FakeActor {
   constructor({
     type = "character",
     isOwner = true,
+    ownership = {},
     items = [],
   } = {}) {
     this.type = type;
     this.isOwner = isOwner;
+    this.ownership = ownership;
     this.items = items;
     for (const item of items) {
       item.parent = this;
@@ -423,6 +439,39 @@ test("parseMagicShieldBonus matches only generic +1/+2/+3 shield templates", () 
   assert.equal(parseMagicShieldBonus({ name: "Shield +2" }), 2);
   assert.equal(parseMagicShieldBonus({ name: "Баклер +2" }), null);
   assert.equal(parseMagicShieldBonus({ name: "Щит +4" }), null);
+});
+
+test("parseMagicToolBonus matches universal +1/+2/+3 tool templates", () => {
+  assert.equal(parseMagicToolBonus({ name: "Универсальный инструмент +1" }), 1);
+  assert.equal(parseMagicToolBonus({ name: "Инструмент +2" }), 2);
+  assert.equal(parseMagicToolBonus({ name: "Tool +3" }), 3);
+  assert.equal(parseMagicToolBonus({ name: "Инструмент иллюзий" }), null);
+});
+
+test("buildMagicToolTemplateOptions lists Rebreya tool templates only", () => {
+  const options = buildMagicToolTemplateOptions({
+    gear: [makeThievesTools(), makeLongsword()],
+  });
+
+  assert.deepEqual(
+    options.map((option) => option.id),
+    ["thieves-tools"],
+  );
+});
+
+test("createMagicToolTemplateUpdate applies a base tool and keeps the magic bonus", () => {
+  const item = new FakeItem({
+    name: "Универсальный инструмент +2",
+    type: "equipment",
+  });
+
+  const update = createMagicToolTemplateUpdate(item, makeThievesTools(), 2);
+
+  assert.equal(update.name, "Инструменты воровские 0-й ранг +2");
+  assert.equal(update.type, "tool");
+  assert.equal(update.system.bonus, "+2");
+  assert.equal(update.flags["rebreya-main"].magicToolTemplate, true);
+  assert.equal(update.flags["rebreya-main"].magicToolGearId, "thieves-tools");
 });
 
 test("parseMagicShieldBonus can resolve generic magic shields from Rebreya flags", () => {
@@ -957,6 +1006,51 @@ test("handleCreatedMagicAmmunitionItem adapts magic arrows and preserves magic s
   assert.equal(arrowItem.updates[0].data.flags["rebreya-main"].magicAmmunitionGearId, "arrows");
 });
 
+test("handleCreatedMagicToolItem adapts universal tool templates for the current player", async () => {
+  const toolItem = new FakeItem({
+    name: "Универсальный инструмент +2",
+    type: "equipment",
+    flags: {
+      "rebreya-main": {
+        sourceType: "magicItem",
+        itemType: "Чудесный предмет",
+        itemSubtype: "—",
+        magicItemId: "universalnyy-instrument-2",
+      },
+    },
+  });
+  const moduleApi = {
+    getModel: async () => ({
+      gear: [makeThievesTools()],
+    }),
+  };
+
+  const handled = await handleCreatedMagicToolItem(
+    toolItem,
+    {},
+    "player-1",
+    moduleApi,
+    {
+      prompt: async (context) => {
+        assert.equal(context.bonus, 2);
+        assert.equal(context.itemLabel, "Инструмент");
+        assert.deepEqual(
+          context.options.map((option) => option.id),
+          ["thieves-tools"],
+        );
+        return "thieves-tools";
+      },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(toolItem.updates.length, 1);
+  assert.equal(toolItem.updates[0].data.type, "tool");
+  assert.equal(toolItem.updates[0].data.system.bonus, "+2");
+  assert.equal(toolItem.updates[0].data.flags["rebreya-main"].magicToolTemplate, true);
+  assert.equal(toolItem.updates[0].data.flags["rebreya-main"].magicToolGearId, "thieves-tools");
+});
+
 test("handleActorRenderMagicWeapons applies a fallback prompt for unresolved generic magic weapons on owned sheets", async () => {
   const item = new FakeItem();
   const actor = new FakeActor({
@@ -982,4 +1076,46 @@ test("handleActorRenderMagicWeapons applies a fallback prompt for unresolved gen
   assert.equal(handled, true);
   assert.equal(item.updates.length, 1);
   assert.equal(item.updates[0].data.name, "Длинный меч +2");
+});
+test("handleActorRenderMagicWeapons skips fallback prompts for active player-owned actors on GM clients", async () => {
+  const previousGame = globalThis.game;
+  globalThis.game = {
+    user: {
+      id: "gm",
+      isGM: true,
+    },
+    users: [
+      { id: "player-1", isGM: false, active: true },
+      { id: "gm", isGM: true, active: true },
+    ],
+  };
+
+  try {
+    const item = new FakeItem();
+    const actor = new FakeActor({
+      isOwner: true,
+      ownership: {
+        default: 0,
+        "player-1": 3,
+      },
+      items: [item],
+    });
+    const moduleApi = {
+      getModel: async () => ({
+        gear: [makeLongsword()],
+      }),
+    };
+
+    const handled = await handleActorRenderMagicWeapons(actor, moduleApi, {
+      prompt: async () => {
+        throw new Error("GM clients must not prompt for active player-owned actor sheets");
+      },
+    });
+
+    assert.equal(handled, false);
+    assert.equal(item.updates.length, 0);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
 });
