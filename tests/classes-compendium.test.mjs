@@ -1492,6 +1492,24 @@ test("paladin divine sense and lay on hands expose item resources and automation
   assert.equal(JSON.parse(layOnHandsEntry.flags["rebreya-main"].signature).templateVersion, 15);
 });
 
+test("Sovereign Jurisdiction generates a bonus-action target activity", () => {
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
+  const jurisdiction = buildFeatureDefinitions(paladin).find((definition) => (
+    definition.featureId.endsWith("magistrate-sovereign-jurisdiction")
+  ));
+  const entry = createFeatureEntryData(jurisdiction, new Map());
+  const activity = Object.values(entry.system.activities).find((candidate) => (
+    candidate.flags["rebreya-main"].automation === "paladin-magistrate-jurisdiction"
+  ));
+
+  assert.equal(activity.type, "utility");
+  assert.equal(activity.activation.type, "bonus");
+  assert.equal(activity.range.value, 60);
+  assert.equal(activity.target.prompt, true);
+  assert.equal(activity.target.affects.count, "1");
+  assert.equal(activity.target.affects.type, "creature");
+});
+
 test("paladin aura of protection exposes a DAE Active Auras saving throw bonus", () => {
   const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const definitions = buildFeatureDefinitions(paladin);

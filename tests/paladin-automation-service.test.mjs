@@ -1217,6 +1217,399 @@ test("Magistrate source-next-turn effects expire at the start of the Paladin tur
   assert.deepEqual(deletedEffects.sort(), ["accusationNoAdvantage", "detentionNoReaction", "detentionSlow"]);
 });
 
+test("Sovereign Jurisdiction applies supervised law status to a hostile target", async () => {
+  const previousTargets = globalThis.game.user.targets;
+  const jurisdiction = makeFeatureItem({
+    id: "jurisdiction",
+    name: "Державная юрисдикция",
+    featureId: "paladin-oath-magistrate::subclass::magistrate-sovereign-jurisdiction"
+  });
+  const paladin = new TestActor({
+    id: "magistrate",
+    name: "Магистрат",
+    chaMod: 4,
+    items: [jurisdiction]
+  });
+  const target = new TestActor({ id: "target", name: "Нарушитель", items: [] });
+  globalThis.game.user.targets = new Set([{
+    actor: target,
+    document: {
+      disposition: -1
+    }
+  }]);
+  const service = new PaladinAutomationService({});
+
+  try {
+    await service.applyDnd5ePostUseActivity({
+      actor: paladin,
+      item: jurisdiction,
+      flags: {
+        "rebreya-main": {
+          automation: "paladin-magistrate-jurisdiction"
+        }
+      }
+    }, {}, {});
+  }
+  finally {
+    globalThis.game.user.targets = previousTargets;
+  }
+
+  const status = target.effects.contents.find((effect) => (
+    effect.flags["rebreya-main"].paladinAutomation.effect === "supervisedByLaw"
+  ));
+  assert.equal(Boolean(status), true);
+  assert.equal(status.origin, paladin.uuid);
+  assert.equal(status.transfer, false);
+  assert.equal(status.duration.seconds, 60);
+  assert.equal(status.flags["rebreya-main"].paladinAutomation.sourceActorUuid, paladin.uuid);
+});
+
+test("Sovereign Jurisdiction sends a GM socket request when the player cannot update the target", async () => {
+  const previousGame = globalThis.game;
+  const jurisdiction = makeFeatureItem({
+    id: "jurisdiction",
+    name: "Державная юрисдикция",
+    featureId: "paladin-oath-magistrate::subclass::magistrate-sovereign-jurisdiction"
+  });
+  const paladin = new TestActor({
+    id: "magistrate",
+    items: [jurisdiction],
+    ownership: {
+      player: 3
+    }
+  });
+  const target = new TestActor({
+    id: "target",
+    isOwner: false,
+    items: []
+  });
+  const token = {
+    uuid: "Scene.world.Token.target",
+    actor: target,
+    disposition: -1
+  };
+  const emitted = [];
+  globalThis.game = {
+    ...previousGame,
+    user: {
+      id: "player",
+      isGM: false,
+      targets: new Set([{ actor: target, document: token }])
+    },
+    socket: {
+      emit: (channel, message) => emitted.push({ channel, message })
+    }
+  };
+  const service = new PaladinAutomationService({});
+
+  try {
+    await service.applyDnd5ePostUseActivity({
+      actor: paladin,
+      item: jurisdiction,
+      flags: {
+        "rebreya-main": {
+          automation: "paladin-magistrate-jurisdiction"
+        }
+      }
+    }, {}, {});
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+
+  assert.equal(target.effects.contents.length, 0);
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].channel, "module.rebreya-main");
+  assert.deepEqual(emitted[0].message, {
+    type: "character-class-automation",
+    payload: {
+      action: "paladin.sovereignJurisdiction",
+      sourceActorUuid: paladin.uuid,
+      sourceItemId: jurisdiction.id,
+      sourceItemUuid: jurisdiction.uuid,
+      targetActorUuid: target.uuid,
+      targetTokenUuid: token.uuid
+    },
+    senderId: "player"
+  });
+});
+
+test("Sovereign Jurisdiction socket request is applied by the active GM", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  const jurisdiction = makeFeatureItem({
+    id: "jurisdiction",
+    name: "Державная юрисдикция",
+    featureId: "paladin-oath-magistrate::subclass::magistrate-sovereign-jurisdiction"
+  });
+  const paladin = new TestActor({
+    id: "magistrate",
+    items: [jurisdiction],
+    ownership: {
+      player: 3
+    }
+  });
+  const target = new TestActor({ id: "target", items: [] });
+  const token = {
+    uuid: "Scene.world.Token.target",
+    actor: target,
+    disposition: -1
+  };
+  const gmUser = { id: "gm", isGM: true, active: true };
+  const playerUser = { id: "player", isGM: false, active: true };
+  globalThis.game = {
+    ...previousGame,
+    user: gmUser,
+    users: {
+      activeGM: gmUser,
+      get: (id) => ({ gm: gmUser, player: playerUser })[id] ?? null,
+      contents: [gmUser, playerUser]
+    }
+  };
+  globalThis.fromUuidSync = (uuid) => ({
+    [paladin.uuid]: paladin,
+    [target.uuid]: target,
+    [jurisdiction.uuid]: jurisdiction,
+    [token.uuid]: token
+  })[uuid] ?? null;
+
+  try {
+    const result = await new PaladinAutomationService({}).handleSocketMessage({
+      action: "paladin.sovereignJurisdiction",
+      sourceActorUuid: paladin.uuid,
+      sourceItemId: jurisdiction.id,
+      sourceItemUuid: jurisdiction.uuid,
+      targetActorUuid: target.uuid,
+      targetTokenUuid: token.uuid
+    }, {
+      senderId: "player"
+    });
+
+    assert.equal(result, true);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuidSync = previousFromUuidSync;
+  }
+
+  const status = target.effects.contents.find((effect) => (
+    effect.flags["rebreya-main"].paladinAutomation.effect === "supervisedByLaw"
+  ));
+  assert.equal(Boolean(status), true);
+  assert.equal(status.origin, paladin.uuid);
+  assert.equal(status.flags["rebreya-main"].paladinAutomation.sourceItemUuid, jurisdiction.uuid);
+});
+
+test("Sovereign Jurisdiction clears prior status from synthetic token actors", async () => {
+  const previousGame = globalThis.game;
+  const previousTargets = globalThis.game.user.targets;
+  const deletedEffects = [];
+  const jurisdiction = makeFeatureItem({
+    id: "jurisdiction",
+    name: "Державная юрисдикция",
+    featureId: "paladin-oath-magistrate::subclass::magistrate-sovereign-jurisdiction"
+  });
+  const paladin = new TestActor({
+    id: "magistrate",
+    items: [jurisdiction]
+  });
+  const previousTarget = new TestActor({
+    id: "previous-target",
+    effects: [{
+      disabled: false,
+      flags: {
+        "rebreya-main": {
+          paladinAutomation: {
+            kind: "magistrateEffect",
+            effect: "supervisedByLaw",
+            sourceActorUuid: paladin.uuid
+          }
+        }
+      },
+      async delete() {
+        deletedEffects.push("supervisedByLaw");
+      }
+    }]
+  });
+  const target = new TestActor({ id: "target", items: [] });
+  const previousToken = {
+    actor: previousTarget,
+    disposition: -1
+  };
+  const targetToken = {
+    actor: target,
+    disposition: -1
+  };
+  const scene = {
+    tokens: {
+      contents: [previousToken, targetToken],
+      values: () => [previousToken, targetToken].values()
+    }
+  };
+  globalThis.game = {
+    ...previousGame,
+    user: {
+      ...previousGame.user,
+      targets: new Set([{ actor: target, document: targetToken }])
+    },
+    actors: {
+      contents: [],
+      values: () => [].values()
+    },
+    scenes: {
+      active: scene,
+      contents: [scene],
+      values: () => [scene].values()
+    }
+  };
+
+  try {
+    await new PaladinAutomationService({}).applyDnd5ePostUseActivity({
+      actor: paladin,
+      item: jurisdiction,
+      flags: {
+        "rebreya-main": {
+          automation: "paladin-magistrate-jurisdiction"
+        }
+      }
+    }, {}, {});
+  }
+  finally {
+    globalThis.game = previousGame;
+    previousGame.user.targets = previousTargets;
+  }
+
+  assert.deepEqual(deletedEffects, ["supervisedByLaw"]);
+});
+
+test("Inevitable Sentence lets supervised targets be smitten again with disadvantaged saves", async () => {
+  const divineSmite = makeFeatureItem({
+    id: "divine-smite",
+    name: "Божественная кара",
+    featureId: "paladin-rework-v01::class::paladin-divine-smite"
+  });
+  const accusation = makeFeatureItem({
+    id: "accusation",
+    name: "Кара обвинения",
+    featureId: "paladin-oath-magistrate::subclass::magistrate-accusation-smite"
+  });
+  const inevitable = makeFeatureItem({
+    id: "inevitable",
+    name: "Неотвратимый приговор",
+    featureId: "paladin-oath-magistrate::subclass::magistrate-inevitable-sentence"
+  });
+  const paladin = new TestActor({
+    id: "magistrate",
+    items: [divineSmite, accusation, inevitable],
+    spellSlots: {
+      spell1: { value: 2, max: 2 }
+    }
+  });
+  const target = new TestActor({
+    id: "target",
+    effects: [{
+      disabled: false,
+      flags: {
+        "rebreya-main": {
+          paladinAutomation: {
+            kind: "magistrateEffect",
+            effect: "supervisedByLaw",
+            sourceActorUuid: paladin.uuid
+          }
+        }
+      }
+    }]
+  });
+  let prompts = 0;
+  const saves = [];
+  const service = new PaladinAutomationService({}, {
+    promptDivineSmite: async () => {
+      prompts += 1;
+      return {
+        slotLevel: 1,
+        variantIds: ["magistrate-accusation-smite"]
+      };
+    },
+    rollPaladinSave: async (_target, details) => {
+      saves.push(details);
+      return { success: false, total: 7, dc: 15 };
+    }
+  });
+  const firstConfig = makeDamageConfig();
+  const secondConfig = makeDamageConfig();
+
+  await service.applyMidiPreDamageRoll(makeWeaponWorkflow({ actor: paladin, target }), null, firstConfig);
+  await service.applyMidiPreDamageRoll(makeWeaponWorkflow({ actor: paladin, target }), null, secondConfig);
+
+  assert.equal(prompts, 2);
+  assert.equal(paladin.system.spells.spell1.value, 0);
+  assert.equal(firstConfig.rolls.length, 1);
+  assert.equal(secondConfig.rolls.length, 1);
+  assert.deepEqual(saves.map((save) => save.disadvantage), [true, true]);
+});
+
+test("Inevitable Sentence still limits divine smite to once per attack workflow", async () => {
+  const divineSmite = makeFeatureItem({
+    id: "divine-smite",
+    name: "Божественная кара",
+    featureId: "paladin-rework-v01::class::paladin-divine-smite"
+  });
+  const accusation = makeFeatureItem({
+    id: "accusation",
+    name: "Кара обвинения",
+    featureId: "paladin-oath-magistrate::subclass::magistrate-accusation-smite"
+  });
+  const inevitable = makeFeatureItem({
+    id: "inevitable",
+    name: "Неотвратимый приговор",
+    featureId: "paladin-oath-magistrate::subclass::magistrate-inevitable-sentence"
+  });
+  const paladin = new TestActor({
+    id: "magistrate",
+    items: [divineSmite, accusation, inevitable],
+    spellSlots: {
+      spell1: { value: 2, max: 2 }
+    }
+  });
+  const target = new TestActor({
+    id: "target",
+    effects: [{
+      disabled: false,
+      flags: {
+        "rebreya-main": {
+          paladinAutomation: {
+            kind: "magistrateEffect",
+            effect: "supervisedByLaw",
+            sourceActorUuid: paladin.uuid
+          }
+        }
+      }
+    }]
+  });
+  let prompts = 0;
+  const service = new PaladinAutomationService({}, {
+    promptDivineSmite: async () => {
+      prompts += 1;
+      return {
+        slotLevel: 1,
+        variantIds: ["magistrate-accusation-smite"]
+      };
+    },
+    rollPaladinSave: async () => ({ success: false, total: 7, dc: 15 })
+  });
+  const workflow = makeWeaponWorkflow({ actor: paladin, target });
+  const firstConfig = makeDamageConfig();
+  const secondConfig = makeDamageConfig();
+
+  await service.applyMidiPreDamageRoll(workflow, null, firstConfig);
+  await service.applyMidiPreDamageRoll(workflow, null, secondConfig);
+
+  assert.equal(prompts, 1);
+  assert.equal(paladin.system.spells.spell1.value, 1);
+  assert.equal(firstConfig.rolls.length, 1);
+  assert.equal(secondConfig.rolls.length, 0);
+});
+
 test("paladin divine smite uses DialogV2 input without the legacy Dialog class", async () => {
   const previousDialog = globalThis.Dialog;
   const previousApplications = globalThis.foundry.applications;

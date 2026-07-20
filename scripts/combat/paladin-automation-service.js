@@ -6,6 +6,7 @@ const PALADIN_CLASS_IDENTIFIER = "paladin-rework-v01";
 const PALADIN_SPELLCASTING_FEATURE_ID = "paladin-spellcasting";
 const PALADIN_LAY_ON_HANDS_FEATURE_ID = "paladin-lay-on-hands";
 const DIVINE_SMITE_FEATURE_ID = "paladin-divine-smite";
+const MAGISTRATE_INEVITABLE_SENTENCE_FEATURE_ID = "magistrate-inevitable-sentence";
 const DIVINE_SMITE_DAMAGE_TYPE = "radiant";
 const INITIAL_PREPARED_SPELLS_FLAG = "paladinInitialPreparedSpellsSelected";
 
@@ -55,6 +56,17 @@ const MAGISTRATE_EFFECT_ICONS = {
   detentionNoReaction: "icons/svg/paralysis.svg"
 };
 const MOVEMENT_KEYS = ["burrow", "climb", "fly", "swim", "walk"];
+const JURISDICTION_EFFECT_LABELS = {
+  protectedByLaw: "Под защитой закона",
+  supervisedByLaw: "Под надзором закона",
+  lawOrphan: "Беспризорник"
+};
+const JURISDICTION_EFFECT_ICONS = {
+  protectedByLaw: "icons/svg/shield.svg",
+  supervisedByLaw: "icons/svg/terror.svg",
+  lawOrphan: "icons/svg/mystery-man.svg"
+};
+const JURISDICTION_EFFECT_IDS = new Set(Object.keys(JURISDICTION_EFFECT_LABELS));
 
 function cleanText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -264,6 +276,10 @@ function isPaladinSpellcastingFeature(item) {
 function isLayOnHandsFeature(item) {
   return featureIdMatches(item, PALADIN_LAY_ON_HANDS_FEATURE_ID)
     || normalizeText(item?.name) === "наложение рук";
+}
+
+function isSovereignJurisdictionFeature(item) {
+  return featureIdMatches(item, "magistrate-sovereign-jurisdiction");
 }
 
 function hasActorFeature(actor, rawId, normalizedName = "") {
@@ -698,6 +714,8 @@ export class PaladinAutomationService {
   constructor(moduleApi, options = {}) {
     this.moduleApi = moduleApi;
     this._smiteTurnUses = new Set();
+    this._smiteWorkflowUses = new WeakSet();
+    this._smiteWorkflowKeys = new Set();
     this._initialPreparedSpellActors = new Set();
     this._options = options;
   }
@@ -732,6 +750,9 @@ export class PaladinAutomationService {
     if (!targets.length) {
       return true;
     }
+    if (this.#hasWorkflowSmiteUse(workflow)) {
+      return true;
+    }
 
     const slots = availableSpellSlots(actor);
     if (!slots.length) {
@@ -742,8 +763,9 @@ export class PaladinAutomationService {
     ));
 
     const turnKey = combatTurnKey(actor, workflow);
-    const ignoresTurnLimit = this.#canIgnoreDivineSmiteTurnLimit(actor);
-    if (turnKey && !ignoresTurnLimit && this._smiteTurnUses.has(turnKey)) {
+    const actorIgnoresTurnLimit = this.#canIgnoreDivineSmiteTurnLimit(actor);
+    const canReachInevitableTarget = targets.some((target) => this.#canUseInevitableSentence(actor, target));
+    if (turnKey && !actorIgnoresTurnLimit && !canReachInevitableTarget && this._smiteTurnUses.has(turnKey)) {
       return true;
     }
 
@@ -754,7 +776,7 @@ export class PaladinAutomationService {
         uuid: cleanText(target.uuid ?? target.id),
         name: cleanText(target.name, "Цель")
       })),
-      oncePerTurn: !ignoresTurnLimit,
+      oncePerTurn: !actorIgnoresTurnLimit && !canReachInevitableTarget,
       damageType: DIVINE_SMITE_DAMAGE_TYPE
     };
     const choice = await this.#promptDivineSmite(actor, details);
@@ -770,6 +792,10 @@ export class PaladinAutomationService {
 
     const chosenTarget = this.#chosenSmiteTarget(targets, choice) ?? targets[0];
     if (!(chosenTarget instanceof Actor)) {
+      return true;
+    }
+    const ignoresTurnLimit = actorIgnoresTurnLimit || this.#canUseInevitableSentence(actor, chosenTarget);
+    if (turnKey && !ignoresTurnLimit && this._smiteTurnUses.has(turnKey)) {
       return true;
     }
 
@@ -788,6 +814,7 @@ export class PaladinAutomationService {
       return true;
     }
     await actor.update?.({ [`system.spells.spell${selectedSlot.level}.value`]: latestValue - 1 });
+    this.#markWorkflowSmiteUse(workflow);
     if (turnKey && !ignoresTurnLimit) {
       this._smiteTurnUses.add(turnKey);
     }
@@ -815,6 +842,9 @@ export class PaladinAutomationService {
     const automation = cleanText(itemFlag(activity, MODULE_ID, "automation"));
     if (automation === "paladin-lay-on-hands") {
       await this.#useLayOnHands(actor, activity?.item);
+    }
+    if (automation === "paladin-magistrate-jurisdiction") {
+      await this.#useSovereignJurisdiction(actor, activity?.item);
     }
 
     return true;
@@ -916,6 +946,9 @@ export class PaladinAutomationService {
     if (action === "paladin.layOnHands") {
       return this.#handleLayOnHandsSocketRequest(payload, { sender });
     }
+    if (action === "paladin.sovereignJurisdiction") {
+      return this.#handleSovereignJurisdictionSocketRequest(payload, { sender });
+    }
     if (action === "paladin.magistrateSmite") {
       return this.#handleMagistrateSmiteSocketRequest(payload, { sender });
     }
@@ -929,6 +962,31 @@ export class PaladinAutomationService {
 
   #canUpdate(document) {
     return Boolean(game.user?.isGM || document?.isOwner || document?.actor?.isOwner || document?.parent?.isOwner);
+  }
+
+  #workflowSmiteKey(workflow) {
+    return cleanText(workflow?.id ?? workflow?.uuid);
+  }
+
+  #hasWorkflowSmiteUse(workflow) {
+    if (!workflow || typeof workflow !== "object") {
+      return false;
+    }
+
+    const key = this.#workflowSmiteKey(workflow);
+    return (key && this._smiteWorkflowKeys.has(key)) || this._smiteWorkflowUses.has(workflow);
+  }
+
+  #markWorkflowSmiteUse(workflow) {
+    if (!workflow || typeof workflow !== "object") {
+      return;
+    }
+
+    const key = this.#workflowSmiteKey(workflow);
+    if (key) {
+      this._smiteWorkflowKeys.add(key);
+    }
+    this._smiteWorkflowUses.add(workflow);
   }
 
   #actorFromRollContext(rollConfig = {}, dialogConfig = {}, messageConfig = {}) {
@@ -948,6 +1006,21 @@ export class PaladinAutomationService {
       && effectFlag(effect, "paladinAutomation.kind") === "magistrateEffect"
       && effectFlag(effect, "paladinAutomation.effect") === effectId
     ));
+  }
+
+  #hasMagistrateEffectFromSource(actor, effectId, sourceActor) {
+    const sourceUuid = cleanText(sourceActor?.uuid);
+    return collectionValues(actor?.effects).some((effect) => (
+      effectIsEnabled(effect)
+      && effectFlag(effect, "paladinAutomation.kind") === "magistrateEffect"
+      && effectFlag(effect, "paladinAutomation.effect") === effectId
+      && cleanText(effectFlag(effect, "paladinAutomation.sourceActorUuid")) === sourceUuid
+    ));
+  }
+
+  #canUseInevitableSentence(sourceActor, target) {
+    return hasActorFeature(sourceActor, MAGISTRATE_INEVITABLE_SENTENCE_FEATURE_ID)
+      && this.#hasMagistrateEffectFromSource(target, "supervisedByLaw", sourceActor);
   }
 
   #stripD20Advantage(target) {
@@ -1249,6 +1322,7 @@ export class PaladinAutomationService {
       const save = await this.#resolvePaladinSave(target, {
         sourceActor,
         ability: automation.saveAbility,
+        disadvantage: this.#canUseInevitableSentence(sourceActor, target),
         flavor: variant.name
       });
       const effectIds = save.success === true
@@ -1540,6 +1614,291 @@ export class PaladinAutomationService {
     return this.#applyLayOnHandsHealing(actor, layOnHands, target, healing, spent);
   }
 
+  async #useSovereignJurisdiction(actor, item) {
+    const jurisdiction = item ?? findActorFeature(actor, "magistrate-sovereign-jurisdiction");
+    if (!jurisdiction) {
+      globalThis.ui?.notifications?.warn("Державная юрисдикция: предмет умения не найден.");
+      return false;
+    }
+
+    const targetEntry = this.#selectedTargetEntry("Державная юрисдикция");
+    if (!targetEntry) {
+      return false;
+    }
+
+    if (!this.#canUpdate(targetEntry.actor) || typeof targetEntry.actor?.createEmbeddedDocuments !== "function") {
+      return this.#emitSovereignJurisdictionAsGM(actor, jurisdiction, targetEntry);
+    }
+
+    return this.#applySovereignJurisdiction(actor, jurisdiction, targetEntry);
+  }
+
+  async #applySovereignJurisdiction(actor, jurisdiction, targetEntry) {
+    const target = targetEntry?.actor;
+    if (!(target instanceof Actor)) {
+      return false;
+    }
+    if (target === actor || cleanText(target?.uuid) === cleanText(actor?.uuid)) {
+      globalThis.ui?.notifications?.warn("Державная юрисдикция: выберите существо, отличное от себя.");
+      return false;
+    }
+    if (!this.#canUpdate(target) || typeof target.createEmbeddedDocuments !== "function") {
+      globalThis.ui?.notifications?.warn("Державная юрисдикция: цель нельзя обновить с этого клиента.");
+      return false;
+    }
+
+    await this.#deleteSovereignJurisdictionEffects(actor, [target]);
+    const effect = this.#jurisdictionEffectForTarget(targetEntry);
+    if (effect === "protectedByLaw") {
+      await this.#applyJurisdictionTemporaryHp(actor, target);
+    }
+
+    return this.#applyJurisdictionEffect(target, {
+      sourceActor: actor,
+      item: jurisdiction,
+      effect
+    });
+  }
+
+  async #emitSovereignJurisdictionAsGM(actor, jurisdiction, targetEntry) {
+    if (typeof game.socket?.emit !== "function") {
+      globalThis.ui?.notifications?.warn("Державная юрисдикция: нет доступа к GM socket, статус не применён.");
+      return false;
+    }
+
+    const target = targetEntry?.actor;
+    const tokenUuid = cleanText(targetEntry?.token?.uuid);
+    if (!(target instanceof Actor) || !tokenUuid) {
+      globalThis.ui?.notifications?.warn("Державная юрисдикция: не найден токен цели для GM socket.");
+      return false;
+    }
+
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION,
+      payload: {
+        action: "paladin.sovereignJurisdiction",
+        sourceActorUuid: cleanText(actor?.uuid),
+        sourceItemId: cleanText(jurisdiction?.id),
+        sourceItemUuid: cleanText(jurisdiction?.uuid),
+        targetActorUuid: cleanText(target?.uuid),
+        targetTokenUuid: tokenUuid
+      },
+      senderId: game.user?.id ?? ""
+    });
+    return true;
+  }
+
+  async #applyJurisdictionTemporaryHp(sourceActor, target) {
+    if (typeof target?.update !== "function") {
+      return false;
+    }
+
+    const charisma = Math.max(0, Math.floor(toNumber(sourceActor?.system?.abilities?.cha?.mod, 0)));
+    if (charisma <= 0) {
+      return false;
+    }
+
+    const currentTemp = Math.max(0, Math.floor(toNumber(target?.system?.attributes?.hp?.temp, 0)));
+    const nextTemp = Math.max(currentTemp, charisma);
+    if (nextTemp === currentTemp) {
+      return true;
+    }
+
+    await target.update({ "system.attributes.hp.temp": nextTemp });
+    return true;
+  }
+
+  async #deleteSovereignJurisdictionEffects(sourceActor, seedActors = []) {
+    const sourceUuid = cleanText(sourceActor?.uuid);
+    if (!sourceUuid) {
+      return;
+    }
+
+    const actors = new Set();
+    for (const actor of collectionValues(seedActors)) {
+      if (actor instanceof Actor) {
+        actors.add(actor);
+      }
+    }
+    for (const actor of collectionValues(game.actors)) {
+      if (actor instanceof Actor) {
+        actors.add(actor);
+      }
+    }
+    for (const actor of this.#activeSceneTokenActors()) {
+      actors.add(actor);
+    }
+
+    for (const actor of actors) {
+      for (const effect of collectionValues(actor?.effects)) {
+        if (
+          effectFlag(effect, "paladinAutomation.kind") !== "magistrateEffect"
+          || !JURISDICTION_EFFECT_IDS.has(effectFlag(effect, "paladinAutomation.effect"))
+          || cleanText(effectFlag(effect, "paladinAutomation.sourceActorUuid")) !== sourceUuid
+          || typeof effect?.delete !== "function"
+        ) {
+          continue;
+        }
+
+        await effect.delete();
+      }
+    }
+  }
+
+  #activeSceneTokenActors() {
+    const actors = new Set();
+    const scenes = new Set();
+    if (game.scenes?.active) {
+      scenes.add(game.scenes.active);
+    }
+    if (globalThis.canvas?.scene) {
+      scenes.add(globalThis.canvas.scene);
+    }
+    for (const scene of collectionValues(game.scenes)) {
+      scenes.add(scene);
+    }
+
+    for (const scene of scenes) {
+      for (const token of collectionValues(scene?.tokens)) {
+        const actor = token?.actor ?? token?.document?.actor ?? token?.object?.actor ?? null;
+        if (actor instanceof Actor) {
+          actors.add(actor);
+        }
+      }
+    }
+    for (const token of collectionValues(globalThis.canvas?.tokens?.placeables)) {
+      const actor = token?.actor ?? token?.document?.actor ?? null;
+      if (actor instanceof Actor) {
+        actors.add(actor);
+      }
+    }
+
+    return actors;
+  }
+
+  #jurisdictionEffectForTarget(targetEntry) {
+    const disposition = Math.floor(toNumber(targetEntry?.token?.disposition, 0));
+    if (disposition < 0) {
+      return "supervisedByLaw";
+    }
+    if (disposition > 0) {
+      return "protectedByLaw";
+    }
+    return "lawOrphan";
+  }
+
+  async #applyJurisdictionEffect(target, { sourceActor, item, effect }) {
+    const data = this.#jurisdictionEffectData(target, {
+      sourceActor,
+      item,
+      effect
+    });
+    if (!data) {
+      return false;
+    }
+
+    await target.createEmbeddedDocuments("ActiveEffect", [data]);
+    return true;
+  }
+
+  #jurisdictionEffectData(target, { sourceActor, item, effect }) {
+    if (!JURISDICTION_EFFECT_IDS.has(effect)) {
+      return null;
+    }
+
+    return {
+      name: JURISDICTION_EFFECT_LABELS[effect] ?? cleanText(item?.name, "Державная юрисдикция"),
+      type: "base",
+      img: JURISDICTION_EFFECT_ICONS[effect] ?? "icons/svg/aura.svg",
+      system: {},
+      changes: this.#jurisdictionEffectChanges(effect),
+      disabled: false,
+      origin: cleanText(sourceActor?.uuid) || null,
+      transfer: false,
+      duration: {
+        startTime: globalThis.game?.time?.worldTime ?? null,
+        seconds: 60,
+        rounds: 10,
+        turns: null,
+        startRound: globalThis.game?.combat?.round ?? null,
+        startTurn: globalThis.game?.combat?.turn ?? null,
+        combat: globalThis.game?.combat?.id ?? null
+      },
+      description: `<p>${escapeHtml(target?.name)} находится под действием ${escapeHtml(cleanText(item?.name, "Державная юрисдикция"))}.</p>`,
+      flags: {
+        dae: {
+          specialDuration: ["combatEnd"]
+        },
+        [MODULE_ID]: {
+          paladinAutomation: {
+            kind: "magistrateEffect",
+            effect,
+            sourceActorUuid: cleanText(sourceActor?.uuid),
+            sourceActorId: cleanText(sourceActor?.id),
+            sourceItemUuid: cleanText(item?.uuid),
+            targetActorUuid: cleanText(target?.uuid),
+            duration: "oneMinute"
+          }
+        }
+      }
+    };
+  }
+
+  #jurisdictionEffectChanges(effect) {
+    if (effect !== "supervisedByLaw") {
+      return [];
+    }
+
+    return [
+      {
+        key: "system.attributes.ac.bonus",
+        mode: activeEffectAddMode(),
+        value: "-2",
+        priority: 20
+      },
+      {
+        key: "system.abilities.dex.bonuses.save",
+        mode: activeEffectAddMode(),
+        value: "-2",
+        priority: 20
+      }
+    ];
+  }
+
+  async #handleSovereignJurisdictionSocketRequest(payload = {}, { sender = null } = {}) {
+    const actor = await resolveUuid(payload.sourceActorUuid);
+    const target = await resolveUuid(payload.targetActorUuid);
+    if (!(actor instanceof Actor) || !(target instanceof Actor) || !userOwnsActor(actor, sender)) {
+      return false;
+    }
+
+    const jurisdiction = actorItemByIdOrUuid(actor, payload.sourceItemId, payload.sourceItemUuid)
+      ?? await resolveUuid(payload.sourceItemUuid);
+    if (!isSovereignJurisdictionFeature(jurisdiction) || !itemBelongsToActor(jurisdiction, actor)) {
+      return false;
+    }
+
+    const token = await resolveUuid(payload.targetTokenUuid);
+    if (!this.#tokenMatchesActor(token, target)) {
+      return false;
+    }
+
+    return this.#applySovereignJurisdiction(actor, jurisdiction, {
+      actor: target,
+      token
+    });
+  }
+
+  #tokenMatchesActor(token, actor) {
+    const tokenActor = token?.actor ?? token?.document?.actor ?? token?.object?.actor ?? null;
+    return tokenActor instanceof Actor
+      && (
+        tokenActor === actor
+        || cleanText(tokenActor.uuid) === cleanText(actor?.uuid)
+        || cleanText(tokenActor.id) === cleanText(actor?.id)
+      );
+  }
+
   async #handleLayOnHandsSocketRequest(payload = {}, { sender = null } = {}) {
     const actor = await resolveUuid(payload.sourceActorUuid);
     const target = await resolveUuid(payload.targetActorUuid);
@@ -1670,17 +2029,24 @@ export class PaladinAutomationService {
     return Math.max(0, paladinClassLevel(actor) * 5);
   }
 
-  #selectedTargetActor() {
+  #selectedTargetEntry(label = "Цель") {
     const targets = Array.from(game.user?.targets ?? []);
-    const targetActors = targets
-      .map((target) => target?.actor ?? target?.document?.actor ?? null)
-      .filter((actor) => actor instanceof Actor);
-    if (targetActors.length !== 1) {
-      globalThis.ui?.notifications?.warn("Наложение рук: выберите ровно одну цель.");
+    const entries = targets
+      .map((target) => ({
+        actor: target?.actor ?? target?.document?.actor ?? target?.object?.actor ?? target?.token?.actor ?? null,
+        token: target?.document ?? target?.object?.document ?? target?.token?.document ?? target
+      }))
+      .filter((entry) => entry.actor instanceof Actor);
+    if (entries.length !== 1) {
+      globalThis.ui?.notifications?.warn(`${label}: выберите ровно одну цель.`);
       return null;
     }
 
-    return targetActors[0];
+    return entries[0];
+  }
+
+  #selectedTargetActor() {
+    return this.#selectedTargetEntry("Наложение рук")?.actor ?? null;
   }
 
   async #promptLayOnHandsPoints(actor, item, details) {

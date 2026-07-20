@@ -3058,6 +3058,84 @@ function createPaladinLayOnHandsAutomation(feature) {
   };
 }
 
+function createPaladinSovereignJurisdictionAutomation(feature) {
+  const activityId = stableHashId(`${feature.classIdentifier}:${feature.featureId}:magistrate-jurisdiction`, "activity");
+  return {
+    activities: {
+      [activityId]: {
+        _id: activityId,
+        type: "utility",
+        name: feature.name,
+        img: RAGE_ACTION_ACTIVITY_IMAGE.utility,
+        sort: 0,
+        activation: {
+          type: "bonus",
+          value: 1,
+          condition: "",
+          override: false
+        },
+        consumption: {
+          scaling: {
+            allowed: false,
+            max: ""
+          },
+          spellSlot: false,
+          targets: []
+        },
+        description: {
+          chatFlavor: cleanString(feature.description)
+        },
+        duration: {
+          value: "1",
+          units: "minute",
+          special: "",
+          concentration: false,
+          override: false
+        },
+        effects: [],
+        flags: {
+          [MODULE_ID]: {
+            managed: true,
+            automation: "paladin-magistrate-jurisdiction"
+          }
+        },
+        range: {
+          value: 60,
+          units: "ft",
+          special: "",
+          override: false
+        },
+        target: {
+          template: {
+            count: "",
+            contiguous: false,
+            type: "",
+            size: "",
+            width: "",
+            height: "",
+            units: ""
+          },
+          affects: {
+            count: "1",
+            type: "creature",
+            choice: false,
+            special: ""
+          },
+          prompt: true,
+          override: false
+        },
+        uses: {
+          spent: 0,
+          max: "",
+          recovery: []
+        }
+      }
+    },
+    effects: [],
+    usesRecovery: []
+  };
+}
+
 function createPaladinAuraOfProtectionAutomation(feature) {
   const effectId = stableHashId(`${feature.classIdentifier}:${feature.featureId}:aura-of-protection`, "effect");
   return {
@@ -3334,6 +3412,10 @@ function createFeatureAutomation(feature, classIdentifier) {
     if (feature.sourceType === "subclassFeature" && normalizedName === "крылья дракона") {
       return createDraconicWingsAutomation(feature, classIdentifier);
     }
+  }
+
+  if (classIdentifier === "paladin-rework-v01" && feature.paladinAutomation?.kind === "magistrateJurisdiction") {
+    return createPaladinSovereignJurisdictionAutomation(feature);
   }
 
   if (feature.sourceType !== "classFeature") {
