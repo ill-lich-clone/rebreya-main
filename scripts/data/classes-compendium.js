@@ -1,11 +1,15 @@
 import {
   CLASS_FEATURES_COMPENDIUM_LABEL,
   CLASS_FEATURES_COMPENDIUM_NAME,
+  CRAFTSMAN_ARCHETYPES_COMPENDIUM_LABEL,
+  CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME,
   CLASSES_COMPENDIUM_LABEL,
   CLASSES_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
   MODULE_ID,
+  RESEARCH_ITEM_TYPE,
   SPELLS_COMPENDIUM_NAME,
+  SPECIALTY_ITEM_TYPE,
   SUBCLASSES_COMPENDIUM_LABEL,
   SUBCLASSES_COMPENDIUM_NAME
 } from "../constants.js";
@@ -59,11 +63,13 @@ const CLASS_ICON_SEARCH_PATHS = [
 const FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const SPELLS_PACK_ID = `world.${SPELLS_COMPENDIUM_NAME}`;
 const CLASS_FEATURES_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
+const CRAFTSMAN_ARCHETYPES_PACK_ID = `world.${CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME}`;
 const SUBCLASSES_PACK_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
 const CLASSES_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
 
 const CLASS_ROOT_FOLDER = "Классы";
 const SUBCLASS_ROOT_FOLDER = "Архетипы";
+const CRAFTSMAN_ARCHETYPE_ROOT_FOLDER = "Ремесленник";
 const CLASS_FEATURE_ROOT_FOLDER = "Варвар (Реворк V0.12)";
 const FIGHTER_CLASS_FEATURE_ROOT_FOLDER = "Воин (Реворк V0.28)";
 const PALADIN_CLASS_FEATURE_ROOT_FOLDER = "Паладин (Реворк V0.1)";
@@ -73,6 +79,7 @@ const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya 
 
 const CLASS_FEATURE_TEMPLATE_VERSION = 15;
 const SUBCLASS_TEMPLATE_VERSION = 3;
+const CRAFTSMAN_ARCHETYPE_TEMPLATE_VERSION = 1;
 const CLASS_TEMPLATE_VERSION = 6;
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 const ROGUE_CUNNING_STRIKE_SECTION_LABEL = "Хитрые удары";
@@ -251,6 +258,35 @@ export function buildFeatureUuidMap(featureDefinitions = [], packCollection = ""
   }
 
   return featureUuidById;
+}
+
+export function buildCraftsmanArchetypeUuidMap(archetypeDefinitions = [], packCollection = "", documents = []) {
+  const actualUuidByArchetypeId = new Map();
+  for (const document of Array.isArray(documents) ? documents : []) {
+    if (!document?.getFlag?.(MODULE_ID, "managed")) {
+      continue;
+    }
+
+    const archetypeId = cleanString(document.getFlag(MODULE_ID, "archetypeId"));
+    if (archetypeId && document.uuid) {
+      actualUuidByArchetypeId.set(archetypeId, document.uuid);
+    }
+  }
+
+  const archetypeUuidById = new Map();
+  for (const archetype of Array.isArray(archetypeDefinitions) ? archetypeDefinitions : []) {
+    const archetypeId = cleanString(archetype?.archetypeId);
+    if (!archetypeId) {
+      continue;
+    }
+
+    const uuid = actualUuidByArchetypeId.get(archetypeId)
+      || compendiumItemUuid(packCollection, archetype.documentId);
+    if (uuid) {
+      archetypeUuidById.set(archetypeId, uuid);
+    }
+  }
+  return archetypeUuidById;
 }
 
 function escapeHtml(value) {
@@ -1004,9 +1040,62 @@ function normalizeSpellChoiceData(value) {
   };
 }
 
+function normalizeCraftsmanArchetypeAxis(rawEntries, {
+  axis,
+  classIdentifier,
+  sourceRevision = ""
+} = {}) {
+  const fallbackLevel = axis === "research" ? 2 : 3;
+  const fallbackName = axis === "research" ? "Исследование" : "Специальность";
+  const usedArchetypeIds = new Set();
+
+  return (Array.isArray(rawEntries) ? rawEntries : []).map((rawArchetype, archetypeIndex) => {
+    const name = cleanString(rawArchetype?.name, `${fallbackName} ${archetypeIndex + 1}`);
+    const baseId = cleanString(
+      rawArchetype?.archetypeId ?? rawArchetype?.id ?? rawArchetype?.identifier,
+      buildAsciiIdentifier(
+        `${classIdentifier}-${axis}-${buildSlug(name, `${axis}-${archetypeIndex + 1}`)}`,
+        `${classIdentifier}::${axis}::${archetypeIndex + 1}`
+      )
+    );
+    const archetypeId = uniqueIdentifier(
+      baseId,
+      usedArchetypeIds,
+      `${classIdentifier}::${axis}::${archetypeIndex + 1}`
+    );
+    const usedFeatureIds = new Set();
+    const features = (Array.isArray(rawArchetype?.features) ? rawArchetype.features : [])
+      .map((feature, featureIndex) => normalizeFeatureEntry(feature, featureIndex, {
+        scopeId: `${classIdentifier}-${axis}-${archetypeId}-feature`,
+        fallbackName: `Умение: ${fallbackName.toLowerCase()}`,
+        fallbackLevel,
+        usedIds: usedFeatureIds
+      }))
+      .filter((feature) => feature.name);
+
+    return {
+      archetypeId,
+      axis,
+      type: axis === "research" ? RESEARCH_ITEM_TYPE : SPECIALTY_ITEM_TYPE,
+      name,
+      description: cleanString(rawArchetype?.descriptionMarkdown ?? rawArchetype?.description),
+      descriptionMarkdown: cleanString(rawArchetype?.descriptionMarkdown ?? rawArchetype?.description),
+      classIdentifier,
+      documentId: cleanString(
+        rawArchetype?.documentId,
+        stableHashId(`${classIdentifier}:${axis}:${archetypeId}`, "craftsman-archetype-document")
+      ),
+      sourceRevision: cleanString(rawArchetype?.sourceRevision, sourceRevision),
+      spellcasting: normalizeSpellcastingData(rawArchetype?.spellcasting),
+      features
+    };
+  });
+}
+
 export function normalizeClassCompendiumData(rawData) {
   const data = isPlainObject(rawData) ? rawData : {};
   const sourceLabel = cleanString(data.source, DEFAULT_SOURCE_LABEL);
+  const sourceRevision = cleanString(data.sourceRevision);
 
   const rawClass = isPlainObject(data.class) ? data.class : {};
   const className = cleanString(rawClass.name, "Варвар (реворк V0.12)");
@@ -1054,6 +1143,9 @@ export function normalizeClassCompendiumData(rawData) {
   const subclassTitle = cleanString(rawClass.subclassTitle, classIdentifier === "fighter-rework-v028" ? "Воинский архетип" : "Путь дикости");
   const subclassHint = cleanString(rawClass.subclassHint, classIdentifier === "fighter-rework-v028" ? "Выберите архетип воина." : "Выберите архетип варвара.");
   const subclassLevel = Math.max(1, Math.min(20, Math.floor(parseNumber(rawClass.subclassLevel, 3))));
+  const archetypeTracks = cleanString(rawClass.archetypeTracks);
+  const researchLevel = Math.max(1, Math.min(20, Math.floor(parseNumber(rawClass.researchLevel, 2))));
+  const specialtyLevel = Math.max(1, Math.min(20, Math.floor(parseNumber(rawClass.specialtyLevel, 3))));
 
   const usedClassFeatureIds = new Set();
   const classFeatures = (Array.isArray(rawClass.features) ? rawClass.features : [])
@@ -1226,9 +1318,20 @@ export function normalizeClassCompendiumData(rawData) {
 
   const draconicAncestors = deriveDraconicAncestors(subclasses);
   const rawDominanceProgression = isPlainObject(data.dominanceProgression) ? data.dominanceProgression : {};
+  const researches = normalizeCraftsmanArchetypeAxis(data.researches, {
+    axis: "research",
+    classIdentifier,
+    sourceRevision
+  });
+  const specialties = normalizeCraftsmanArchetypeAxis(data.specialties, {
+    axis: "specialty",
+    classIdentifier,
+    sourceRevision
+  });
 
   return {
     sourceLabel,
+    sourceRevision,
     classFeatureRootFolder,
     classData: {
       name: className,
@@ -1250,6 +1353,15 @@ export function normalizeClassCompendiumData(rawData) {
       spellcasting,
       spellChoices,
       scaleAdvancements: normalizeScaleAdvancements(rawClass.scaleAdvancements),
+      archetypeTracks,
+      researchTitle: cleanString(rawClass.researchTitle, "Направление исследований"),
+      researchHint: cleanString(rawClass.researchHint, "Выберите направление исследования ремесленника."),
+      researchLevel,
+      specialtyTitle: cleanString(rawClass.specialtyTitle, "Специальность ремесленника"),
+      specialtyHint: cleanString(rawClass.specialtyHint, "Выберите специальность ремесленника."),
+      specialtyLevel,
+      researches,
+      specialties,
       subclassTitle,
       subclassHint,
       subclassLevel,
@@ -1257,6 +1369,8 @@ export function normalizeClassCompendiumData(rawData) {
       metamagicOptions,
       features: classFeatures
     },
+    researches,
+    specialties,
     subclasses,
     rageActions,
     rageProgression: normalizeProgressionMap(data.rageProgression),
@@ -1512,6 +1626,42 @@ export function buildFeatureDefinitions(normalizedData) {
     });
   }
 
+  for (const archetype of [
+    ...(normalizedData.researches ?? []),
+    ...(normalizedData.specialties ?? [])
+  ]) {
+    for (const feature of archetype.features ?? []) {
+      const featureId = `${classId}::${archetype.axis}::${archetype.archetypeId}::${feature.featureId}`;
+      definitions.push({
+        featureId,
+        documentId: featureDocumentId(featureId),
+        sourceType: `${archetype.axis}Feature`,
+        axis: archetype.axis,
+        archetypeId: archetype.archetypeId,
+        archetypeName: archetype.name,
+        classIdentifier: classId,
+        className,
+        subclassId: null,
+        subclassName: null,
+        name: feature.name,
+        description: feature.description,
+        levels: feature.levels,
+        requiredLevel: feature.requiredLevel,
+        optional: false,
+        identifier: buildAsciiIdentifier(
+          `${archetype.archetypeId}-${feature.featureId}`,
+          featureId
+        ),
+        folderPath: normalizeFolderPath([
+          classFeatureRootFolder,
+          "Архетипы",
+          archetype.name
+        ]),
+        sourceLabel
+      });
+    }
+  }
+
   for (const subclass of normalizedData.subclasses) {
     for (const option of subclass.metamagicOptions ?? []) {
       const featureId = `${subclass.subclassId}::sorcererMetamagic::${option.featureId}`;
@@ -1615,6 +1765,9 @@ function buildFeatureSignature(feature, context = {}) {
     featureId: feature.featureId,
     documentId: feature.documentId,
     sourceType: feature.sourceType,
+    axis: feature.axis ?? "",
+    archetypeId: feature.archetypeId ?? "",
+    archetypeName: feature.archetypeName ?? "",
     classIdentifier: feature.classIdentifier,
     subclassId: feature.subclassId,
     subclassName: feature.subclassName,
@@ -1648,6 +1801,10 @@ function buildFeatureSignature(feature, context = {}) {
 
 function buildSubtypeRequirementsLabel(feature) {
   const level = Math.max(1, Math.floor(parseNumber(feature.requiredLevel, feature.levels?.[0] ?? 1)));
+  if (["researchFeature", "specialtyFeature"].includes(feature.sourceType) && feature.archetypeName) {
+    return `${feature.archetypeName}, ${level}-й уровень`;
+  }
+
   if (feature.sourceType === "subclassFeature" && feature.subclassName) {
     return `${feature.subclassName}, ${level}-й уровень`;
   }
@@ -4192,6 +4349,58 @@ function buildSubclassAdvancement(classIdentifier, classData = {}) {
   };
 }
 
+export function buildCraftsmanChoiceAdvancements(classData, context = {}) {
+  if (cleanString(classData?.archetypeTracks) !== "research-specialty") {
+    return [];
+  }
+
+  const archetypeUuidById = context.archetypeUuidById instanceof Map
+    ? context.archetypeUuidById
+    : new Map();
+  const specs = [
+    {
+      entries: classData.researches ?? [],
+      itemType: RESEARCH_ITEM_TYPE,
+      level: classData.researchLevel,
+      type: "ResearchChoice",
+      seed: "research-choice",
+      title: cleanString(classData.researchTitle, "Направление исследований"),
+      hint: cleanString(classData.researchHint, "Выберите направление исследования ремесленника.")
+    },
+    {
+      entries: classData.specialties ?? [],
+      itemType: SPECIALTY_ITEM_TYPE,
+      level: classData.specialtyLevel,
+      type: "SpecialtyChoice",
+      seed: "specialty-choice",
+      title: cleanString(classData.specialtyTitle, "Специальность ремесленника"),
+      hint: cleanString(classData.specialtyHint, "Выберите специальность ремесленника.")
+    }
+  ];
+
+  return specs.map((spec) => {
+    const pool = spec.entries.map((archetype) => {
+      const uuid = archetypeUuidById.get(archetype.archetypeId);
+      if (!uuid) {
+        throw new Error(`Missing craftsman archetype UUID: ${archetype.archetypeId}`);
+      }
+      return uuid;
+    });
+    const advancement = buildItemChoiceAdvancement({
+      classIdentifier: classData.identifier,
+      seed: spec.seed,
+      title: spec.title,
+      hint: spec.hint,
+      level: spec.level,
+      count: 1,
+      pool,
+      type: spec.itemType
+    });
+    advancement.type = spec.type;
+    return advancement;
+  });
+}
+
 function normalizeFeatIndexRecord(record, pack) {
   const id = record?._id ?? record?.id ?? "";
   const uuid = compendiumItemUuid(pack.collection, id);
@@ -4508,7 +4717,12 @@ export function buildClassAdvancement(classData, context = {}) {
     }));
   }
 
-  advancements.push(buildSubclassAdvancement(classIdentifier, classData));
+  if (cleanString(classData.archetypeTracks) === "research-specialty") {
+    advancements.push(...buildCraftsmanChoiceAdvancements(classData, context));
+  }
+  else {
+    advancements.push(buildSubclassAdvancement(classIdentifier, classData));
+  }
 
   for (const level of ASI_LEVELS) {
     advancements.push(buildAsiAdvancement(classIdentifier, level));
@@ -4843,6 +5057,86 @@ export function buildSubclassAdvancements(subclass, context = {}) {
   return advancements;
 }
 
+export function buildCraftsmanArchetypeAdvancements(archetype, context = {}) {
+  const featureUuidById = context.featureUuidById instanceof Map
+    ? context.featureUuidById
+    : new Map();
+
+  return (archetype.features ?? []).map((feature) => {
+    const featureKey = `${archetype.classIdentifier}::${archetype.axis}::${archetype.archetypeId}::${feature.featureId}`;
+    const uuid = featureUuidById.get(featureKey);
+    if (!uuid) {
+      throw new Error(`Missing craftsman archetype feature UUID: ${feature.featureId}`);
+    }
+
+    const advancement = buildItemGrantAdvancement({
+      classIdentifier: archetype.archetypeId,
+      seed: `grant-${feature.featureId}`,
+      title: `${archetype.name}: ${feature.name}`,
+      hint: `Умение архетипа «${archetype.name}».`,
+      level: feature.requiredLevel,
+      itemUuids: [uuid],
+      optional: false
+    });
+    advancement.value = { added: {} };
+    return advancement;
+  });
+}
+
+function createCraftsmanArchetypeSystem(archetype, advancement, sourceLabel) {
+  return {
+    description: {
+      value: toHtmlParagraphs(archetype.descriptionMarkdown),
+      chat: ""
+    },
+    source: createSourceData(sourceLabel),
+    identifier: buildAsciiIdentifier(archetype.archetypeId, archetype.name),
+    classIdentifier: buildAsciiIdentifier(archetype.classIdentifier, archetype.classIdentifier),
+    spellcasting: normalizeSpellcastingData(archetype.spellcasting),
+    advancement: foundry.utils.deepClone(advancement)
+  };
+}
+
+function buildCraftsmanArchetypeSignature(archetype, system, sourceLabel) {
+  return JSON.stringify({
+    templateVersion: CRAFTSMAN_ARCHETYPE_TEMPLATE_VERSION,
+    archetypeId: archetype.archetypeId,
+    axis: archetype.axis,
+    type: archetype.type,
+    name: archetype.name,
+    classIdentifier: archetype.classIdentifier,
+    source: sourceLabel,
+    sourceRevision: archetype.sourceRevision,
+    featureIds: (archetype.features ?? []).map((feature) => feature.featureId),
+    system
+  });
+}
+
+export function buildCraftsmanArchetypeDefinitions(normalizedData, context = {}) {
+  const archetypes = [
+    ...(normalizedData?.researches ?? []),
+    ...(normalizedData?.specialties ?? [])
+  ];
+
+  return archetypes.map((archetype) => {
+    const advancement = buildCraftsmanArchetypeAdvancements(archetype, context);
+    const system = createCraftsmanArchetypeSystem(
+      archetype,
+      advancement,
+      normalizedData.sourceLabel
+    );
+    return {
+      ...archetype,
+      system,
+      signature: buildCraftsmanArchetypeSignature(archetype, system, normalizedData.sourceLabel),
+      folderPath: normalizeFolderPath([
+        CRAFTSMAN_ARCHETYPE_ROOT_FOLDER,
+        archetype.axis === "research" ? "Исследования" : "Специальности"
+      ])
+    };
+  });
+}
+
 export function createClassSystem(classData, advancement = [], sourceLabel = DEFAULT_SOURCE_LABEL) {
   const spellcasting = normalizeSpellcastingData(classData.spellcasting);
   return {
@@ -5050,6 +5344,9 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
   const moduleFlags = {
     managed: true,
     sourceType: feature.sourceType,
+    axis: feature.axis,
+    archetypeId: feature.archetypeId,
+    archetypeName: feature.archetypeName,
     classIdentifier: feature.classIdentifier,
     subclassId: feature.subclassId,
     subclassName: feature.subclassName,
@@ -5154,6 +5451,32 @@ function createSubclassEntryData(entry, folderIdByPath, iconLookup = null) {
         sourceType: "subclass",
         subclassId: entry.subclass.subclassId,
         classIdentifier: entry.classIdentifier,
+        signature: entry.signature
+      }
+    }
+  };
+}
+
+function createCraftsmanArchetypeEntryData(entry, folderIdByPath, iconLookup = null) {
+  const folderPath = entry.folderPath.join("/");
+  return {
+    _id: entry.documentId,
+    name: entry.name,
+    type: entry.type,
+    img: resolveSubclassIcon(entry.name, iconLookup, entry.classIdentifier),
+    folder: folderIdByPath.get(folderPath) ?? null,
+    ownership: {
+      default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
+    },
+    system: foundry.utils.deepClone(entry.system),
+    effects: [],
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        sourceType: entry.axis,
+        archetypeId: entry.archetypeId,
+        classIdentifier: entry.classIdentifier,
+        sourceRevision: entry.sourceRevision,
         signature: entry.signature
       }
     }
@@ -5290,6 +5613,59 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
   };
 }
 
+export async function syncCraftsmanArchetypesPack(normalizedDataList, context = {}) {
+  const pack = await ensurePack(CRAFTSMAN_ARCHETYPES_PACK_ID, createPackMetadata({
+    name: CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME,
+    label: CRAFTSMAN_ARCHETYPES_COMPENDIUM_LABEL,
+    itemTypes: [RESEARCH_ITEM_TYPE, SPECIALTY_ITEM_TYPE]
+  }));
+  const normalized = Array.isArray(normalizedDataList) ? normalizedDataList : [normalizedDataList];
+  const archetypeDefinitions = normalized.flatMap((entry) => (
+    buildCraftsmanArchetypeDefinitions(entry, context)
+  ));
+  const documents = await getPackDocuments(pack);
+
+  await syncFlaggedManagedDocuments({
+    pack,
+    entries: archetypeDefinitions,
+    documents,
+    moduleId: MODULE_ID,
+    sourceIdFlag: "archetypeId",
+    prepareFolders: async (entries) => {
+      try {
+        return await ensureCompendiumFolders(pack, entries.map((entry) => entry.folderPath));
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to prepare compendium folders for ${pack.collection}.`, error);
+        return new Map();
+      }
+    },
+    buildData: (entry, folderIdByPath) => (
+      createCraftsmanArchetypeEntryData(entry, folderIdByPath, context.iconLookup)
+    )
+  });
+
+  const activePack = game.packs.get(CRAFTSMAN_ARCHETYPES_PACK_ID) ?? pack;
+  const activeDocuments = await getPackDocuments(activePack);
+  const definitionById = new Map(archetypeDefinitions.map((entry) => [entry.archetypeId, entry]));
+  await syncManagedDocumentIcons(activePack, activeDocuments, (document) => {
+    const archetypeId = cleanString(document.getFlag?.(MODULE_ID, "archetypeId"));
+    const definition = definitionById.get(archetypeId);
+    return definition
+      ? resolveSubclassIcon(definition.name, context.iconLookup, definition.classIdentifier)
+      : "";
+  });
+
+  return {
+    pack: activePack,
+    archetypeUuidById: buildCraftsmanArchetypeUuidMap(
+      archetypeDefinitions,
+      activePack.collection,
+      activeDocuments
+    )
+  };
+}
+
 async function syncSubclassesPack(normalizedDataList, context) {
   const pack = await ensurePack(SUBCLASSES_PACK_ID, createPackMetadata({
     name: SUBCLASSES_COMPENDIUM_NAME,
@@ -5377,6 +5753,7 @@ async function syncClassesPack(normalizedDataList, context) {
     const classFeatures = normalizedData.classData.features;
     const classAdvancement = buildClassAdvancement(normalizedData.classData, {
       featureUuidById: context.featureUuidById,
+      archetypeUuidById: context.archetypeUuidById,
       classFeatureEntries: classFeatures,
       rageActionEntries: normalizedData.rageActions,
       minorFeatUuids: context.minorFeatUuids,
@@ -5460,6 +5837,13 @@ export class ClassesCompendiumService {
       featLookupByName: featLookup.byName,
       rootFolders: normalizedData.map((classData) => classData.classFeatureRootFolder)
     });
+    const {
+      pack: craftsmanArchetypesPack,
+      archetypeUuidById
+    } = await syncCraftsmanArchetypesPack(normalizedData, {
+      featureUuidById,
+      iconLookup
+    });
     const subclassesPack = await syncSubclassesPack(normalizedData, {
       featureUuidById,
       iconLookup,
@@ -5467,6 +5851,7 @@ export class ClassesCompendiumService {
     });
     const classesPack = await syncClassesPack(normalizedData, {
       featureUuidById,
+      archetypeUuidById,
       minorFeatUuids: featLookup.minorFeatUuids,
       fightingStyleFeatUuids: featLookup.fightingStyleFeatUuids,
       spellUuidById,
@@ -5475,6 +5860,7 @@ export class ClassesCompendiumService {
 
     return {
       classesPack,
+      craftsmanArchetypesPack,
       subclassesPack,
       featuresPack
     }

@@ -25,6 +25,9 @@ globalThis.CONST ??= {
 
 const {
   buildMinorFeatPool,
+  buildCraftsmanArchetypeAdvancements,
+  buildCraftsmanArchetypeDefinitions,
+  buildCraftsmanChoiceAdvancements,
   buildClassAdvancement,
   buildFeatureDefinitions,
   buildFeatureUuidMap,
@@ -35,8 +38,53 @@ const {
   createPackMetadata,
   resolveSubclassIcon,
   createSubclassSystem,
-  normalizeClassCompendiumData
+  normalizeClassCompendiumData,
+  syncCraftsmanArchetypesPack
 } = await import("../scripts/data/classes-compendium.js");
+
+function craftsmanDualArchetypeFixture() {
+  return {
+    source: "D&D Ремесленник V0.1",
+    sourceRevision: "fixture-revision",
+    class: {
+      name: "Ремесленник",
+      identifier: "craftsman-v01",
+      hitDie: "d8",
+      archetypeTracks: "research-specialty",
+      researchTitle: "Направление исследований",
+      researchHint: "Выберите исследование ремесленника.",
+      researchLevel: 2,
+      specialtyTitle: "Специальность ремесленника",
+      specialtyHint: "Выберите специальность ремесленника.",
+      specialtyLevel: 3,
+      features: []
+    },
+    researches: [{
+      id: "craftsman-research-mechanic",
+      name: "Механик",
+      description: "Описание Механика.",
+      features: [
+        { id: "vehicle-training", name: "Умение обращаться с транспортом", levels: [2], description: "Текст 1." },
+        { id: "extra-attack", name: "Дополнительная атака", levels: [5], description: "Текст 2." },
+        { id: "advanced-improvement", name: "Продвинутое улучшение", levels: [5], description: "Текст 3." },
+        { id: "custom-layout", name: "Индивидуальная компоновка", levels: [9], description: "Текст 4." },
+        { id: "unified-system", name: "Единая система", levels: [13], description: "Текст 5." }
+      ]
+    }],
+    specialties: [{
+      id: "craftsman-specialty-constructor",
+      name: "Конструктор",
+      description: "Описание Конструктора.",
+      features: [
+        { id: "construct-assembly", name: "Сборка своего конструкта", levels: [3], description: "Текст 1." },
+        { id: "combat-mode", name: "Боевой режим", levels: [3], description: "Текст 2." },
+        { id: "extra-attack", name: "Дополнительная атака", levels: [6], description: "Текст 3." },
+        { id: "boundless-glimpse", name: "Безграничный проблеск", levels: [10], description: "Текст 4." },
+        { id: "absolute-machine", name: "Абсолютная машина", levels: [15], description: "Текст 5." }
+      ]
+    }]
+  };
+}
 
 function loadJson(path) {
   return JSON.parse(readFileSync(join(process.cwd(), path), "utf8").replace(/^\uFEFF/u, ""));
@@ -127,6 +175,199 @@ test("class compendiums delegate managed lifecycle to the shared diff synchroniz
   assert.doesNotMatch(source, /function shouldRebuildManagedPack/u);
   assert.doesNotMatch(source, /async function deleteManagedDocuments/u);
   assert.doesNotMatch(source, /async function createManagedDocuments/u);
+});
+
+test("craftsman class exposes independent research and specialty choices", () => {
+  const craftsman = normalizeClassCompendiumData(craftsmanDualArchetypeFixture());
+  const featureDefinitions = buildFeatureDefinitions(craftsman);
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const archetypeDefinitions = buildCraftsmanArchetypeDefinitions(craftsman, { featureUuidById });
+  const archetypeUuidById = new Map(archetypeDefinitions.map((entry) => [
+    entry.archetypeId,
+    `Compendium.world.rebreya-craftsman-archetypes.Item.${entry.documentId}`
+  ]));
+  const advancements = buildClassAdvancement(craftsman.classData, {
+    featureUuidById,
+    archetypeUuidById
+  });
+  const research = advancements.find((entry) => entry.type === "ResearchChoice");
+  const specialty = advancements.find((entry) => entry.type === "SpecialtyChoice");
+
+  assert.equal(craftsman.researches.length, 1);
+  assert.equal(craftsman.specialties.length, 1);
+  assert.equal(research.level, 2);
+  assert.equal(research.configuration.type, "rebreya-main.research");
+  assert.deepEqual(research.configuration.pool, [{
+    uuid: archetypeUuidById.get("craftsman-research-mechanic")
+  }]);
+  assert.equal(specialty.level, 3);
+  assert.equal(specialty.configuration.type, "rebreya-main.specialty");
+  assert.deepEqual(specialty.configuration.pool, [{
+    uuid: archetypeUuidById.get("craftsman-specialty-constructor")
+  }]);
+  assert.equal(advancements.some((entry) => entry.type === "Subclass"), false);
+});
+
+test("craftsman archetype items grant every feature at its source level", () => {
+  const craftsman = normalizeClassCompendiumData(craftsmanDualArchetypeFixture());
+  const featureDefinitions = buildFeatureDefinitions(craftsman);
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const archetypes = buildCraftsmanArchetypeDefinitions(craftsman, { featureUuidById });
+  const mechanic = archetypes.find((entry) => entry.archetypeId === "craftsman-research-mechanic");
+  const constructor = archetypes.find((entry) => entry.archetypeId === "craftsman-specialty-constructor");
+
+  assert.deepEqual(mechanic.system.advancement.map((entry) => entry.level), [2, 5, 5, 9, 13]);
+  assert.deepEqual(constructor.system.advancement.map((entry) => entry.level), [3, 3, 6, 10, 15]);
+  assert.equal(mechanic.type, "rebreya-main.research");
+  assert.equal(constructor.type, "rebreya-main.specialty");
+  assert.equal(mechanic.system.classIdentifier, "craftsman-v01");
+  assert.equal(constructor.system.classIdentifier, "craftsman-v01");
+  assert.equal(mechanic.sourceRevision, "fixture-revision");
+  assert.equal(constructor.sourceRevision, "fixture-revision");
+});
+
+test("craftsman archetype builders fail when a required feature or archetype UUID is missing", () => {
+  const craftsman = normalizeClassCompendiumData(craftsmanDualArchetypeFixture());
+  const mechanic = craftsman.researches[0];
+
+  assert.throws(
+    () => buildCraftsmanArchetypeAdvancements(mechanic, { featureUuidById: new Map() }),
+    /vehicle-training/u
+  );
+  assert.throws(
+    () => buildCraftsmanChoiceAdvancements(craftsman.classData, { archetypeUuidById: new Map() }),
+    /craftsman-research-mechanic/u
+  );
+});
+
+test("existing class data keeps the native subclass advancement", () => {
+  for (const path of [
+    "data/barbarian-rework-v012.json",
+    "data/fighter-rework-v028.json",
+    "data/paladin-rework-v01.json",
+    "data/rogue-rework-v00.json",
+    "data/sorcerer-rework-v011.json"
+  ]) {
+    const normalized = normalizeClassCompendiumData(loadJson(path));
+    const advancement = buildClassAdvancement(normalized.classData);
+    assert.equal(
+      advancement.some((entry) => entry.type === "Subclass"),
+      true,
+      normalized.classData.identifier
+    );
+  }
+});
+
+test("craftsman archetype pack sync is idempotent and preserves unrelated managed documents", async () => {
+  const originalFolder = globalThis.Folder;
+  const originalGame = globalThis.game;
+  const originalItem = globalThis.Item;
+  const originalDocuments = globalThis.foundry.documents;
+  const packDocuments = [];
+  const packFolders = [];
+  const pack = {
+    collection: "world.rebreya-craftsman-archetypes",
+    documentName: "Item",
+    folders: { contents: packFolders },
+    metadata: {
+      system: "dnd5e",
+      flags: {
+        dnd5e: {
+          sourceBook: "ЗоЗТ",
+          types: ["rebreya-main.research", "rebreya-main.specialty"]
+        }
+      }
+    },
+    async getDocuments() {
+      return packDocuments;
+    }
+  };
+  const makeDocument = (data) => ({
+    ...structuredClone(data),
+    id: data._id,
+    uuid: `Compendium.${pack.collection}.Item.${data._id}`,
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    },
+    async update(update) {
+      Object.assign(this, structuredClone(update));
+      if (update.system) this.system = structuredClone(update.system);
+      if (update["==system"]) this.system = structuredClone(update["==system"]);
+    }
+  });
+  packDocuments.push(makeDocument({
+    _id: "unrelatedManaged",
+    name: "Сторонний управляемый документ",
+    type: "feat",
+    img: "icons/svg/book.svg",
+    system: {},
+    flags: { "rebreya-main": { managed: true, sourceType: "unrelated" } }
+  }));
+
+  globalThis.game = {
+    system: { id: "dnd5e" },
+    packs: new Map([[pack.collection, pack]])
+  };
+  globalThis.Folder = {
+    async create(data) {
+      const folder = { ...data, id: `folder-${packFolders.length + 1}` };
+      packFolders.push(folder);
+      return folder;
+    }
+  };
+  const documentClass = {
+    async createDocuments(entries) {
+      packDocuments.push(...entries.map(makeDocument));
+    },
+    async deleteDocuments(ids) {
+      for (const id of ids) {
+        const index = packDocuments.findIndex((entry) => entry.id === id);
+        if (index >= 0) packDocuments.splice(index, 1);
+      }
+    },
+    async updateDocuments(updates) {
+      for (const update of updates) {
+        const document = packDocuments.find((entry) => entry.id === update._id);
+        if (document) await document.update(update);
+      }
+    }
+  };
+  pack.documentClass = documentClass;
+  globalThis.Item = { implementation: documentClass };
+  globalThis.foundry.documents = {
+    collections: {
+      CompendiumCollection: {
+        async createCompendium() {
+          throw new Error("existing pack should be reused");
+        }
+      }
+    }
+  };
+
+  try {
+    const craftsman = normalizeClassCompendiumData(craftsmanDualArchetypeFixture());
+    const featureUuidById = makeUuidMap(buildFeatureDefinitions(craftsman));
+    const first = await syncCraftsmanArchetypesPack([craftsman], { featureUuidById });
+    const firstIds = new Map(packDocuments
+      .filter((entry) => entry.getFlag("rebreya-main", "archetypeId"))
+      .map((entry) => [entry.getFlag("rebreya-main", "archetypeId"), entry.id]));
+    const second = await syncCraftsmanArchetypesPack([craftsman], { featureUuidById });
+    const secondIds = new Map(packDocuments
+      .filter((entry) => entry.getFlag("rebreya-main", "archetypeId"))
+      .map((entry) => [entry.getFlag("rebreya-main", "archetypeId"), entry.id]));
+
+    assert.deepEqual(secondIds, firstIds);
+    assert.equal(first.archetypeUuidById.size, 2);
+    assert.deepEqual(second.archetypeUuidById, first.archetypeUuidById);
+    assert.equal(packDocuments.some((entry) => entry.id === "unrelatedManaged"), true);
+    assert.equal(packDocuments.length, 3);
+  }
+  finally {
+    globalThis.Folder = originalFolder;
+    globalThis.game = originalGame;
+    globalThis.Item = originalItem;
+    globalThis.foundry.documents = originalDocuments;
+  }
 });
 
 test("class feature signature changes update the stable document without pack-wide deletion", async () => {
