@@ -303,6 +303,11 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime character sh
   try {
     const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-tabs=${Date.now()}`);
     const actor = createActor(stubs.Actor, { id: "actor-a", name: "Asha" });
+    actor.items.push({
+      id: "craftsman-class",
+      type: "class",
+      system: { identifier: "craftsman-v01", levels: 1 }
+    });
     const calls = [];
     const moduleApi = {
       heroDollService: {
@@ -328,13 +333,18 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime character sh
     );
     assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs$/u);
     assert.match(stubs.CharacterActorSheet.PARTS.downtime.template, /character-downtime-tab\.hbs$/u);
+    assert.match(stubs.CharacterActorSheet.PARTS.craftsmanArchetypes.template, /craftsman-archetypes-standard\.hbs$/u);
 
     const sheet = new stubs.CharacterActorSheet(actor);
     const heroContext = await sheet._preparePartContext("heroDoll", { base: true }, {});
     const downtimeContext = await sheet._preparePartContext("downtime", { base: true }, {});
+    const craftsmanContext = await sheet._preparePartContext("craftsmanArchetypes", { base: true }, {});
 
     assert.equal(heroContext.heroDoll.actorId, "actor-a");
     assert.equal(downtimeContext.characterDowntime.actorId, "actor-a");
+    assert.equal(craftsmanContext.craftsmanArchetypes.visible, true);
+    assert.equal(craftsmanContext.craftsmanArchetypes.research.name, "Не выбрано");
+    assert.equal(craftsmanContext.craftsmanArchetypes.specialty.name, "Не выбрано");
     assert.deepEqual(calls, [
       ["heroDoll", "actor-a"],
       ["downtime", "actor-a"]

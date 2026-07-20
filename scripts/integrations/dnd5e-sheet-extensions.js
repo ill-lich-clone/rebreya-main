@@ -43,6 +43,11 @@ import {
 } from "./held-items.js?v=1.4.96-npc-held-natural";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 import { registerCraftsmanArchetypeTypes } from "./craftsman-archetype-types.js";
+import {
+  buildCraftsmanArchetypeSheetState,
+  ensureCraftsmanArchetypePartDefinition,
+  registerCraftsmanTidyContent
+} from "./craftsman-archetype-sheet.js";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
 const HERO_DOLL_TAB_LABEL = "Кукла героя";
@@ -2417,6 +2422,12 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi) {
     const preparedWithFeatGroups = partId === "features"
       ? await splitRebreyaFeatSectionsInContext(prepared)
       : prepared;
+    if (partId === "craftsmanArchetypes") {
+      return {
+        ...preparedWithFeatGroups,
+        craftsmanArchetypes: buildCraftsmanArchetypeSheetState(this.actor)
+      };
+    }
     if (partId !== HERO_DOLL_TAB_ID && partId !== CHARACTER_DOWNTIME_TAB_ID) {
       return preparedWithFeatGroups;
     }
@@ -7008,8 +7019,10 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   const CharacterActorSheet = getCharacterActorSheetClass();
   if (CharacterActorSheet) {
     ensureHeroDollTabDefinition(CharacterActorSheet);
+    ensureCraftsmanArchetypePartDefinition(CharacterActorSheet);
     patchHeroDollPartContext(CharacterActorSheet, moduleApi);
   }
+  registerCraftsmanTidyContent();
   const ItemSheet5e = game.dnd5e?.applications?.item?.ItemSheet5e
     ?? globalThis.dnd5e?.applications?.item?.ItemSheet5e
     ?? null;

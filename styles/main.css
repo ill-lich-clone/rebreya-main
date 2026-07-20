@@ -11060,3 +11060,74 @@ summary:focus-visible {
   pointer-events: none;
   white-space: nowrap;
 }
+
+.rebreya-craftsman-archetypes {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  padding: 0.65rem;
+  border: 1px solid rgb(145 118 72 / 0.58);
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgb(42 36 29 / 0.86), rgb(24 25 27 / 0.92));
+  box-shadow: inset 0 0 0 1px rgb(255 220 150 / 0.06);
+}
+
+.rebreya-craftsman-archetypes__title {
+  margin: 0;
+  color: var(--color-text-light-highlight, #f0e4ca);
+  font-family: var(--dnd5e-font-roboto-slab, serif);
+  font-size: var(--font-size-16);
+  letter-spacing: 0.025em;
+}
+
+.rebreya-craftsman-archetypes__rows {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.rebreya-craftsman-archetypes__row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.8fr) minmax(8rem, 1.4fr) auto;
+  gap: 0.6rem;
+  align-items: center;
+  min-height: 2.4rem;
+  padding: 0.35rem 0.55rem;
+}
+
+.rebreya-craftsman-archetypes__row.is-selected {
+  cursor: pointer;
+  outline: 1px solid transparent;
+  transition: background-color 120ms ease, outline-color 120ms ease;
+}
+
+.rebreya-craftsman-archetypes__row.is-selected:hover,
+.rebreya-craftsman-archetypes__row.is-selected:focus-visible {
+  outline-color: rgb(210 166 88 / 0.84);
+  background-color: rgb(210 166 88 / 0.12);
+}
+
+.rebreya-craftsman-archetypes__row.is-empty {
+  color: var(--color-text-dark-secondary, #aaa);
+  opacity: 0.72;
+}
+
+.rebreya-craftsman-archetypes__axis {
+  color: rgb(212 175 104);
+  font-size: var(--font-size-11);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rebreya-craftsman-archetypes__name {
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rebreya-craftsman-archetypes__level {
+  color: var(--color-text-dark-secondary, #bbb);
+  font-size: var(--font-size-11);
+  white-space: nowrap;
+}
