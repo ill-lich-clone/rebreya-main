@@ -898,6 +898,51 @@ test("Magistrate socket rejects forged raw effect payloads", async () => {
   }
 });
 
+test("Magistrate socket rejects smite requests without workflow proof", async () => {
+  const previousGame = globalThis.game;
+  const previousFromUuidSync = globalThis.fromUuidSync;
+  const paladin = magistratePaladinWithSmiteVariant("magistrate-detention-smite");
+  paladin.ownership = { player: 3 };
+  paladin.system.spells.spell1.value = 0;
+  const target = new TestActor({ id: "target", items: [] });
+  const gmUser = { id: "gm", isGM: true, active: true };
+  const playerUser = { id: "player", isGM: false, active: true };
+  globalThis.game = {
+    ...previousGame,
+    user: gmUser,
+    users: {
+      activeGM: gmUser,
+      get: (id) => ({ gm: gmUser, player: playerUser })[id] ?? null,
+      contents: [gmUser, playerUser]
+    }
+  };
+  globalThis.fromUuidSync = (uuid) => ({
+    [paladin.uuid]: paladin,
+    [target.uuid]: target
+  })[uuid] ?? null;
+
+  try {
+    const result = await new PaladinAutomationService({}).handleSocketMessage({
+      action: "paladin.magistrateSmite",
+      sourceActorUuid: paladin.uuid,
+      targetActorUuid: target.uuid,
+      slotLevel: 1,
+      variantIds: ["magistrate-detention-smite"],
+      workflowId: "",
+      workflowItemUuid: "Actor.magistrate.Item.sword"
+    }, {
+      senderId: "player"
+    });
+
+    assert.equal(result, false);
+    assert.equal(target.effects.contents.length, 0);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.fromUuidSync = previousFromUuidSync;
+  }
+});
+
 test("paladin divine smite spends the selected spell slot and adds radiant bonus damage", async () => {
   TestRoll.messages = [];
   const divineSmite = makeFeatureItem({
@@ -1045,6 +1090,7 @@ test("Magistrate smite sends a constrained GM request when the player cannot upd
     rollPaladinSave: async () => ({ success: false, total: 6, dc: 15 })
   });
   const workflow = makeWeaponWorkflow({ actor: paladin, target });
+  workflow.id = "workflow-detain";
 
   try {
     await service.applyMidiPreDamageRoll(workflow, workflow.activity, makeDamageConfig());
@@ -1064,7 +1110,7 @@ test("Magistrate smite sends a constrained GM request when the player cannot upd
       targetActorUuid: target.uuid,
       slotLevel: 1,
       variantIds: ["magistrate-detention-smite"],
-      workflowId: "",
+      workflowId: "workflow-detain",
       workflowItemUuid: workflow.item.uuid
     },
     senderId: "player"
@@ -1123,9 +1169,9 @@ test("Magistrate accusation effect removes advantage from d20 tests", () => {
 test("Magistrate source-next-turn effects expire at the start of the Paladin turn", async () => {
   const deletedEffects = [];
   const paladin = new TestActor({ id: "magistrate", name: "Магистрат" });
-  const makeEffect = (effect, sourceActorUuid = paladin.uuid) => ({
+  const makeEffect = (effect, sourceActorUuid = paladin.uuid, { disabled = false } = {}) => ({
     name: effect,
-    disabled: false,
+    disabled,
     flags: {
       "rebreya-main": {
         paladinAutomation: {
@@ -1145,6 +1191,7 @@ test("Magistrate source-next-turn effects expire at the start of the Paladin tur
     effects: [
       makeEffect("detentionNoReaction"),
       makeEffect("accusationNoAdvantage"),
+      makeEffect("detentionSlow", paladin.uuid, { disabled: true }),
       makeEffect("detentionSlow", "Actor.other")
     ]
   });
@@ -1167,7 +1214,7 @@ test("Magistrate source-next-turn effects expire at the start of the Paladin tur
     delete globalThis.game.actors;
   }
 
-  assert.deepEqual(deletedEffects.sort(), ["accusationNoAdvantage", "detentionNoReaction"]);
+  assert.deepEqual(deletedEffects.sort(), ["accusationNoAdvantage", "detentionNoReaction", "detentionSlow"]);
 });
 
 test("paladin divine smite uses DialogV2 input without the legacy Dialog class", async () => {

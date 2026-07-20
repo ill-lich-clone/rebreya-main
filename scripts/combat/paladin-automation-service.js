@@ -1014,10 +1014,6 @@ export class PaladinAutomationService {
 
     for (const actor of actors) {
       for (const effect of collectionValues(actor?.effects)) {
-        if (!effectIsEnabled(effect)) {
-          continue;
-        }
-
         if (
           effectFlag(effect, "paladinAutomation.kind") !== "magistrateEffect"
           || effectFlag(effect, "paladinAutomation.duration") !== "sourceNextTurn"
@@ -1047,7 +1043,7 @@ export class PaladinAutomationService {
   #magistrateSocketWorkflowMatches(payload = {}, actor, target) {
     const workflowId = cleanText(payload.workflowId);
     if (!workflowId) {
-      return true;
+      return false;
     }
 
     const workflow = this._options.resolveMidiWorkflow?.(workflowId)
@@ -1405,6 +1401,12 @@ export class PaladinAutomationService {
       return false;
     }
 
+    const workflowId = cleanText(context.workflow?.id);
+    if (!workflowId) {
+      globalThis.ui?.notifications?.warn("Кара магистрата: не найден workflow атаки, эффект через GM socket не применён.");
+      return false;
+    }
+
     game.socket.emit(SOCKET_CHANNEL, {
       type: SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION,
       payload: {
@@ -1413,7 +1415,7 @@ export class PaladinAutomationService {
         targetActorUuid: cleanText(target?.uuid),
         slotLevel: Math.max(1, Math.floor(toNumber(context.slotLevel, 1))),
         variantIds: variants.map((variant) => cleanText(variant.id)).filter(Boolean),
-        workflowId: cleanText(context.workflow?.id),
+        workflowId,
         workflowItemUuid: cleanText(context.workflow?.item?.uuid ?? context.workflow?.activity?.item?.uuid)
       },
       senderId: game.user?.id ?? ""
