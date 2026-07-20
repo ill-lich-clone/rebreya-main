@@ -11,6 +11,7 @@ const CRAFTSMAN_TIDY_TEMPLATE = `/modules/${MODULE_ID}/templates/craftsman-arche
 const TIDY_FEATURES_SELECTOR = "[data-tab-contents-for='features']";
 const TIDY_ROW_SELECTOR = "[data-action='openCraftsmanArchetype'][data-item-id]";
 const tidyHookRegistrations = new WeakSet();
+const tidyApiRegistrations = new WeakSet();
 const tidyClickListeners = new WeakMap();
 
 function getActorItems(actor) {
@@ -117,6 +118,9 @@ function registerCraftsmanTidyContentWithApi(api) {
   if (!(api?.models?.HandlebarsContent instanceof Function) || !(api?.registerCharacterContent instanceof Function)) {
     return false;
   }
+  if (tidyApiRegistrations.has(api)) {
+    return true;
+  }
 
   api.registerCharacterContent(new api.models.HandlebarsContent({
     path: CRAFTSMAN_TIDY_TEMPLATE,
@@ -128,6 +132,7 @@ function registerCraftsmanTidyContentWithApi(api) {
     },
     onRender: ({ app, element }) => bindCraftsmanArchetypeRows(element, app?.actor)
   }), { layout: ["classic", "quadrone"] });
+  tidyApiRegistrations.add(api);
   return true;
 }
 
@@ -167,9 +172,14 @@ export function ensureCraftsmanArchetypePartDefinition(CharacterActorSheet) {
 }
 
 export function registerCraftsmanTidyContent() {
-  if (!globalThis.Hooks?.once || tidyHookRegistrations.has(globalThis.Hooks)) {
-    return;
+  const hooks = globalThis.Hooks;
+  if (hooks?.once && !tidyHookRegistrations.has(hooks)) {
+    tidyHookRegistrations.add(hooks);
+    hooks.once("tidy5e-sheet.ready", registerCraftsmanTidyContentWithApi);
   }
-  tidyHookRegistrations.add(globalThis.Hooks);
-  globalThis.Hooks.once("tidy5e-sheet.ready", registerCraftsmanTidyContentWithApi);
+
+  const tidyModule = globalThis.game?.modules?.get?.("tidy5e-sheet");
+  if (tidyModule?.active !== false && tidyModule?.api) {
+    registerCraftsmanTidyContentWithApi(tidyModule.api);
+  }
 }

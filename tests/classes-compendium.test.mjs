@@ -44,7 +44,8 @@ const {
   resolveSubclassIcon,
   createSubclassSystem,
   normalizeClassCompendiumData,
-  syncCraftsmanArchetypesPack
+  syncCraftsmanArchetypesPack,
+  syncClassesPack
 } = await import("../scripts/data/classes-compendium.js");
 
 function craftsmanDualArchetypeFixture() {
@@ -183,6 +184,182 @@ function sourceFingerprint(value) {
     hashB = Math.imul(hashB + code + index, 0x85ebca6b) >>> 0;
   }
   return `${hashA.toString(16).padStart(8, "0")}${hashB.toString(16).padStart(8, "0")}`;
+}
+
+class CraftsmanAdvancementManagerStub {
+  constructor({ craftsman, classAdvancements, archetypeDefinitions, featureDefinitions, selectedArchetypes }) {
+    this.craftsman = craftsman;
+    this.classAdvancements = classAdvancements;
+    this.archetypeByUuid = new Map(archetypeDefinitions.map((entry) => [
+      `Compendium.world.rebreya-craftsman-archetypes.Item.${entry.documentId}`,
+      entry
+    ]));
+    this.featureByUuid = new Map(featureDefinitions.map((entry) => [
+      `Compendium.world.rebreya-class-features.Item.${entry.documentId}`,
+      entry
+    ]));
+    this.selectedArchetypes = { ...selectedArchetypes };
+    this.classItem = {
+      id: "class-1",
+      type: "class",
+      name: craftsman.classData.name,
+      system: { identifier: craftsman.classData.identifier, levels: 1 },
+      flags: { dnd5e: {} }
+    };
+    this.items = new Map([[this.classItem.id, this.classItem]]);
+  }
+
+  get level() {
+    return this.classItem.system.levels;
+  }
+
+  getArchetype(axis) {
+    const type = axis === "research" ? "rebreya-main.research" : "rebreya-main.specialty";
+    return [...this.items.values()].find((item) => item.type === type) ?? null;
+  }
+
+  getFeatureNames(axis) {
+    const archetype = this.getArchetype(axis);
+    if (!archetype) return [];
+    return [...this.items.values()]
+      .filter((item) => item.type === "feat" && item.flags.dnd5e.advancementOrigin.startsWith(`${archetype.id}.`))
+      .map((item) => item.name)
+      .sort((left, right) => left.localeCompare(right, "ru"));
+  }
+
+  setLevel(targetLevel) {
+    const target = Math.max(1, Math.floor(Number(targetLevel)));
+    while (this.level < target) this.#advanceOneLevel();
+    while (this.level > target) this.#reverseOneLevel();
+  }
+
+  replaceArchetype(axis, archetypeId) {
+    const current = this.getArchetype(axis);
+    if (current) this.#deleteArchetype(current);
+    this.selectedArchetypes[axis] = archetypeId;
+    const choice = this.#choiceForAxis(axis);
+    this.#createArchetype(choice, archetypeId);
+    this.#applyArchetypeGrants(this.getArchetype(axis), 0, this.level);
+  }
+
+  #choiceForAxis(axis) {
+    const type = axis === "research" ? "ResearchChoice" : "SpecialtyChoice";
+    return this.classAdvancements.find((entry) => entry.type === type);
+  }
+
+  #advanceOneLevel() {
+    const nextLevel = this.level + 1;
+    this.classItem.system.levels = nextLevel;
+    for (const axis of ["research", "specialty"]) {
+      const choice = this.#choiceForAxis(axis);
+      if (choice?.level === nextLevel) this.#createArchetype(choice, this.selectedArchetypes[axis]);
+    }
+    for (const axis of ["research", "specialty"]) {
+      this.#applyArchetypeGrants(this.getArchetype(axis), nextLevel - 1, nextLevel);
+    }
+  }
+
+  #reverseOneLevel() {
+    const currentLevel = this.level;
+    for (const axis of ["specialty", "research"]) {
+      const archetype = this.getArchetype(axis);
+      if (!archetype) continue;
+      this.#removeArchetypeGrantsAtLevel(archetype, currentLevel);
+      const choice = this.#choiceForAxis(axis);
+      if (choice?.level === currentLevel) this.#deleteArchetype(archetype);
+    }
+    this.classItem.system.levels = currentLevel - 1;
+  }
+
+  #createArchetype(choice, archetypeId) {
+    const selected = choice.configuration.pool
+      .map((entry) => [entry.uuid, this.archetypeByUuid.get(entry.uuid)])
+      .find(([, definition]) => definition?.archetypeId === archetypeId);
+    assert.ok(selected, `missing selected archetype ${archetypeId}`);
+    const [sourceUuid, definition] = selected;
+    const item = {
+      id: `${definition.axis}-${definition.documentId}`,
+      type: definition.type,
+      name: definition.name,
+      sourceUuid,
+      system: structuredClone(definition.system),
+      flags: {
+        dnd5e: {
+          advancementOrigin: `${this.classItem.id}.${choice._id}`,
+          advancementRoot: `${this.classItem.id}.${choice._id}`
+        }
+      }
+    };
+    this.items.set(item.id, item);
+  }
+
+  #applyArchetypeGrants(archetype, previousLevel, currentLevel) {
+    if (!archetype) return;
+    for (const advancement of archetype.system.advancement) {
+      if (advancement.level <= previousLevel || advancement.level > currentLevel) continue;
+      for (const { uuid } of advancement.configuration.items) {
+        const definition = this.featureByUuid.get(uuid);
+        assert.ok(definition, `missing feature definition ${uuid}`);
+        const id = `${archetype.id}-${advancement._id}`;
+        this.items.set(id, {
+          id,
+          type: "feat",
+          name: definition.name,
+          flags: {
+            dnd5e: {
+              advancementOrigin: `${archetype.id}.${advancement._id}`,
+              advancementRoot: archetype.flags.dnd5e.advancementRoot
+            }
+          }
+        });
+      }
+    }
+  }
+
+  #removeArchetypeGrantsAtLevel(archetype, level) {
+    const advancementIds = new Set(archetype.system.advancement
+      .filter((advancement) => advancement.level === level)
+      .map((advancement) => advancement._id));
+    for (const [id, item] of this.items) {
+      const [originItemId, advancementId] = String(item.flags?.dnd5e?.advancementOrigin ?? "").split(".");
+      if (originItemId === archetype.id && advancementIds.has(advancementId)) this.items.delete(id);
+    }
+  }
+
+  #deleteArchetype(archetype) {
+    for (const [id, item] of this.items) {
+      if (id === archetype.id || String(item.flags?.dnd5e?.advancementOrigin ?? "").startsWith(`${archetype.id}.`)) {
+        this.items.delete(id);
+      }
+    }
+  }
+}
+
+function createCraftsmanAdvancementHarness(raw = loadJson("data/craftsman-v01.json"), selectedArchetypes = {}) {
+  const craftsman = normalizeClassCompendiumData(raw);
+  const featureDefinitions = buildFeatureDefinitions(craftsman);
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const archetypeDefinitions = buildCraftsmanArchetypeDefinitions(craftsman, { featureUuidById });
+  const archetypeUuidById = new Map(archetypeDefinitions.map((entry) => [
+    entry.archetypeId,
+    `Compendium.world.rebreya-craftsman-archetypes.Item.${entry.documentId}`
+  ]));
+  const classAdvancements = buildClassAdvancement(craftsman.classData, {
+    featureUuidById,
+    archetypeUuidById,
+    classFeatureEntries: craftsman.classData.features
+  });
+  return new CraftsmanAdvancementManagerStub({
+    craftsman,
+    classAdvancements,
+    archetypeDefinitions,
+    featureDefinitions,
+    selectedArchetypes: {
+      research: craftsman.researches[0]?.archetypeId,
+      specialty: craftsman.specialties[0]?.archetypeId,
+      ...selectedArchetypes
+    }
+  });
 }
 
 test("class compendiums delegate managed lifecycle to the shared diff synchronizer", () => {
@@ -332,6 +509,186 @@ test("craftsman archetype builders fail when a required feature or archetype UUI
     () => buildCraftsmanChoiceAdvancements(craftsman.classData, { archetypeUuidById: new Map() }),
     /craftsman-research-mechanic/u
   );
+});
+
+test("craftsman dual archetypes grant and revoke only their own features across class levels", () => {
+  const manager = createCraftsmanAdvancementHarness();
+  assert.equal(manager.getArchetype("research"), null);
+  assert.equal(manager.getArchetype("specialty"), null);
+
+  manager.setLevel(2);
+  const mechanic = manager.getArchetype("research");
+  assert.equal(mechanic.name, "Механик");
+  assert.equal(manager.getArchetype("specialty"), null);
+  assert.deepEqual(new Set(manager.getFeatureNames("research")), new Set([
+    "Умение обращаться с транспортом"
+  ]));
+
+  manager.setLevel(3);
+  const constructor = manager.getArchetype("specialty");
+  assert.strictEqual(manager.getArchetype("research"), mechanic);
+  assert.equal(constructor.name, "Конструктор");
+  assert.deepEqual(new Set(manager.getFeatureNames("specialty")), new Set([
+    "Сборка своего конструкта",
+    "Боевой режим"
+  ]));
+  for (const archetype of [mechanic, constructor]) {
+    assert.match(archetype.flags.dnd5e.advancementRoot, /^class-1\./u);
+    for (const feature of manager.items.values()) {
+      if (!String(feature.flags?.dnd5e?.advancementOrigin ?? "").startsWith(`${archetype.id}.`)) continue;
+      assert.equal(feature.flags.dnd5e.advancementRoot, archetype.flags.dnd5e.advancementRoot);
+      assert.match(feature.flags.dnd5e.advancementOrigin, new RegExp(`^${archetype.id}\\.`, "u"));
+    }
+  }
+
+  const specialtyAtThree = new Set(manager.getFeatureNames("specialty"));
+  manager.setLevel(5);
+  assert.deepEqual(new Set(manager.getFeatureNames("research")), new Set([
+    "Умение обращаться с транспортом",
+    "Дополнительная атака",
+    "Продвинутое улучшение"
+  ]));
+  assert.deepEqual(new Set(manager.getFeatureNames("specialty")), specialtyAtThree);
+
+  const researchAtFive = new Set(manager.getFeatureNames("research"));
+  manager.setLevel(6);
+  assert.deepEqual(new Set(manager.getFeatureNames("research")), researchAtFive);
+  assert.deepEqual(new Set(manager.getFeatureNames("specialty")), new Set([
+    "Сборка своего конструкта",
+    "Боевой режим",
+    "Дополнительная атака"
+  ]));
+
+  const specialtyAtSix = new Set(manager.getFeatureNames("specialty"));
+  manager.setLevel(9);
+  assert.equal(manager.getFeatureNames("research").includes("Индивидуальная компоновка"), true);
+  assert.deepEqual(new Set(manager.getFeatureNames("specialty")), specialtyAtSix);
+
+  const researchAtNine = new Set(manager.getFeatureNames("research"));
+  manager.setLevel(10);
+  assert.deepEqual(new Set(manager.getFeatureNames("research")), researchAtNine);
+  assert.equal(manager.getFeatureNames("specialty").includes("Безграничный проблеск"), true);
+
+  const specialtyAtTen = new Set(manager.getFeatureNames("specialty"));
+  manager.setLevel(13);
+  assert.equal(manager.getFeatureNames("research").includes("Единая система"), true);
+  assert.deepEqual(new Set(manager.getFeatureNames("specialty")), specialtyAtTen);
+
+  const researchAtThirteen = new Set(manager.getFeatureNames("research"));
+  manager.setLevel(15);
+  assert.deepEqual(new Set(manager.getFeatureNames("research")), researchAtThirteen);
+  assert.equal(manager.getFeatureNames("specialty").includes("Абсолютная машина"), true);
+
+  manager.setLevel(13);
+  assert.equal(manager.getFeatureNames("specialty").includes("Абсолютная машина"), false);
+  manager.setLevel(10);
+  assert.equal(manager.getFeatureNames("research").includes("Единая система"), false);
+  manager.setLevel(9);
+  assert.equal(manager.getFeatureNames("specialty").includes("Безграничный проблеск"), false);
+  manager.setLevel(6);
+  assert.equal(manager.getFeatureNames("research").includes("Индивидуальная компоновка"), false);
+  manager.setLevel(5);
+  assert.equal(manager.getFeatureNames("specialty").includes("Дополнительная атака"), false);
+  manager.setLevel(3);
+  assert.deepEqual(new Set(manager.getFeatureNames("research")), new Set(["Умение обращаться с транспортом"]));
+  manager.setLevel(2);
+  assert.equal(manager.getArchetype("specialty"), null);
+  assert.equal(manager.getArchetype("research").name, "Механик");
+  manager.setLevel(1);
+  assert.equal(manager.getArchetype("research"), null);
+  assert.deepEqual([...manager.items.keys()], ["class-1"]);
+});
+
+test("replacing research removes only that axis and preserves the selected specialty", () => {
+  const raw = structuredClone(loadJson("data/craftsman-v01.json"));
+  raw.researches.push({
+    id: "craftsman-research-alchemist",
+    name: "Алхимик",
+    description: "Тестовое исследование.",
+    features: [{
+      id: "alchemical-practice",
+      name: "Алхимическая практика",
+      levels: [2],
+      description: "Тестовое умение исследования."
+    }]
+  });
+  raw.specialties.push({
+    id: "craftsman-specialty-saboteur",
+    name: "Саботажник",
+    description: "Тестовая специальность.",
+    features: [{
+      id: "sabotage-practice",
+      name: "Практика саботажа",
+      levels: [3],
+      description: "Тестовое умение специальности."
+    }]
+  });
+  const manager = createCraftsmanAdvancementHarness(raw);
+  manager.setLevel(6);
+  const oldResearch = manager.getArchetype("research");
+  const specialty = manager.getArchetype("specialty");
+  const specialtyFeatures = new Set(manager.getFeatureNames("specialty"));
+
+  manager.replaceArchetype("research", "craftsman-research-alchemist");
+
+  assert.equal(manager.items.has(oldResearch.id), false);
+  assert.equal(manager.getArchetype("research").name, "Алхимик");
+  assert.deepEqual(manager.getFeatureNames("research"), ["Алхимическая практика"]);
+  assert.strictEqual(manager.getArchetype("specialty"), specialty);
+  assert.deepEqual(new Set(manager.getFeatureNames("specialty")), specialtyFeatures);
+  assert.match(manager.getArchetype("research").flags.dnd5e.advancementRoot, /^class-1\./u);
+});
+
+test("class pack synchronization aborts before class document mutation when an archetype UUID is missing", async () => {
+  const originalGame = globalThis.game;
+  const craftsman = normalizeClassCompendiumData(loadJson("data/craftsman-v01.json"));
+  const featureDefinitions = buildFeatureDefinitions(craftsman);
+  const featureUuidById = makeUuidMap(featureDefinitions);
+  const documentCalls = { get: 0, create: 0, update: 0, delete: 0 };
+  const pack = {
+    collection: "world.rebreya-classes",
+    documentName: "Item",
+    metadata: { system: "dnd5e", flags: { dnd5e: { sourceBook: "", types: ["class"] } } },
+    folders: { contents: [] },
+    async configure() {},
+    async getDocuments() {
+      documentCalls.get += 1;
+      return [{
+        id: "existing-class",
+        async update() { documentCalls.update += 1; },
+        getFlag() { return true; }
+      }];
+    },
+    documentClass: {
+      async createDocuments() { documentCalls.create += 1; },
+      async deleteDocuments() { documentCalls.delete += 1; }
+    }
+  };
+  globalThis.game = {
+    system: { id: "dnd5e" },
+    packs: new Map([[pack.collection, pack]])
+  };
+
+  try {
+    await assert.rejects(
+      syncClassesPack([craftsman], { featureUuidById, archetypeUuidById: new Map() }),
+      /Missing craftsman archetype UUID: craftsman-research-mechanic/u
+    );
+    await assert.rejects(
+      syncClassesPack([craftsman], {
+        featureUuidById,
+        archetypeUuidById: new Map([[
+          "craftsman-research-mechanic",
+          "Compendium.world.rebreya-craftsman-archetypes.Item.mechanic"
+        ]])
+      }),
+      /Missing craftsman archetype UUID: craftsman-specialty-constructor/u
+    );
+    assert.deepEqual(documentCalls, { get: 0, create: 0, update: 0, delete: 0 });
+  }
+  finally {
+    globalThis.game = originalGame;
+  }
 });
 
 test("existing class data keeps the native subclass advancement", () => {

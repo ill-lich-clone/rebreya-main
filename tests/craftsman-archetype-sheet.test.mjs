@@ -239,6 +239,62 @@ test("Tidy5e registration uses its custom-content API and binds one embedded-ite
   }
 });
 
+test("standard craftsman sheet part remains available when Tidy5e is absent", () => {
+  const originalHooks = globalThis.Hooks;
+  globalThis.Hooks = { on() {} };
+  class CharacterActorSheet {
+    static PARTS = { features: { template: "features.hbs" } };
+    static DEFAULT_OPTIONS = { actions: {} };
+  }
+
+  try {
+    assert.doesNotThrow(() => registerCraftsmanTidyContent());
+    ensureCraftsmanArchetypePartDefinition(CharacterActorSheet);
+    assert.match(CharacterActorSheet.PARTS.craftsmanArchetypes.template, /craftsman-archetypes-standard\.hbs$/u);
+  }
+  finally {
+    globalThis.Hooks = originalHooks;
+  }
+});
+
+test("late Tidy5e registration uses the active module API without duplicating the ready hook", () => {
+  const originalGame = globalThis.game;
+  const originalHooks = globalThis.Hooks;
+  const registrations = [];
+  let readyHandler;
+  class HandlebarsContent {
+    constructor(options) {
+      Object.assign(this, options);
+    }
+  }
+  const api = {
+    models: { HandlebarsContent },
+    registerCharacterContent(content, options) {
+      registrations.push({ content, options });
+    }
+  };
+  globalThis.game = {
+    modules: new Map([["tidy5e-sheet", { active: true, api }]])
+  };
+  globalThis.Hooks = {
+    once(hook, handler) {
+      assert.equal(hook, "tidy5e-sheet.ready");
+      readyHandler = handler;
+    }
+  };
+
+  try {
+    registerCraftsmanTidyContent();
+    assert.equal(registrations.length, 1);
+    readyHandler(api);
+    assert.equal(registrations.length, 1);
+  }
+  finally {
+    globalThis.game = originalGame;
+    globalThis.Hooks = originalHooks;
+  }
+});
+
 test("sheet templates use native feature context-menu selectors without fake item rows", () => {
   const sharedTemplate = readFileSync(new URL("../templates/craftsman-archetypes.hbs", import.meta.url), "utf8");
   const standardTemplate = readFileSync(new URL("../templates/craftsman-archetypes-standard.hbs", import.meta.url), "utf8");

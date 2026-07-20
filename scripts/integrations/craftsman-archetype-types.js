@@ -82,6 +82,9 @@ function createArchetypeDataModel(SubclassData, type) {
       if (typeof super._preCreate === "function" && (await super._preCreate(data, options, user)) === false) {
         return false;
       }
+      if (options?.isAdvancement === true) {
+        return undefined;
+      }
 
       const candidate = {
         type: this.parent?.type ?? type,

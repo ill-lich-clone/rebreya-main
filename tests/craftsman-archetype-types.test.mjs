@@ -127,6 +127,62 @@ test("craftsman archetype duplicate detection is scoped by axis and class", () =
   }, { excludeId: "research-a" }), false);
 });
 
+test("direct duplicate creation is blocked while advancement replacement remains atomic", async () => {
+  const originalConfig = globalThis.CONFIG;
+  const originalFoundry = globalThis.foundry;
+  const originalGame = globalThis.game;
+  const originalUi = globalThis.ui;
+  installDnd5eStubs();
+  const warnings = [];
+  globalThis.ui = {
+    notifications: {
+      warn(message) {
+        warnings.push(message);
+      }
+    }
+  };
+
+  try {
+    registerCraftsmanArchetypeTypes();
+    const ResearchData = CONFIG.Item.dataModels[RESEARCH_ITEM_TYPE];
+    const actor = {
+      items: [{
+        id: "research-current",
+        type: RESEARCH_ITEM_TYPE,
+        system: { classIdentifier: "craftsman-v01" }
+      }]
+    };
+    const model = new ResearchData();
+    model.parent = {
+      id: "research-new",
+      type: RESEARCH_ITEM_TYPE,
+      actor
+    };
+    model.classIdentifier = "craftsman-v01";
+
+    assert.equal(await model._preCreate({
+      system: { classIdentifier: "craftsman-v01" }
+    }, {}, {}), false);
+    assert.deepEqual(warnings, ["REBREYA_MAIN.CraftsmanArchetype.DuplicateResearch"]);
+
+    warnings.length = 0;
+    assert.equal(await model._preCreate({
+      system: { classIdentifier: "craftsman-v01" }
+    }, { isAdvancement: true }, {}), undefined);
+    assert.deepEqual(warnings, []);
+
+    assert.equal(await model._preCreate({
+      system: { classIdentifier: "another-class" }
+    }, {}, {}), undefined);
+  }
+  finally {
+    globalThis.CONFIG = originalConfig;
+    globalThis.foundry = originalFoundry;
+    globalThis.game = originalGame;
+    globalThis.ui = originalUi;
+  }
+});
+
 test("craftsman archetype registration fails closed without dnd5e", () => {
   const originalConfig = globalThis.CONFIG;
   const originalGame = globalThis.game;

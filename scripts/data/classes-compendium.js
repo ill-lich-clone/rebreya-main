@@ -5742,7 +5742,7 @@ async function syncSubclassesPack(normalizedDataList, context) {
   return activePack;
 }
 
-async function syncClassesPack(normalizedDataList, context) {
+export async function syncClassesPack(normalizedDataList, context) {
   const pack = await ensurePack(CLASSES_PACK_ID, createPackMetadata({
     name: CLASSES_COMPENDIUM_NAME,
     label: CLASSES_COMPENDIUM_LABEL,
