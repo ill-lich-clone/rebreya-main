@@ -5,6 +5,11 @@ import { join } from "node:path";
 import { getClassStartingEquipmentConfig } from "../scripts/data/class-starting-equipment.js";
 import { syncFlaggedManagedDocuments } from "../scripts/data/managed-compendium-sync.js";
 import {
+  canonicalizeDescriptionHtml,
+  canonicalizeDescriptionMarkdown,
+  renderDescriptionMarkdown
+} from "../scripts/data/markdown-description.js";
+import {
   RUNE_KNIGHT_AUTOMATION_IDS,
   getRuneKnightFeatureAutomation,
   getRuneKnightRuneAutomation
@@ -168,6 +173,18 @@ function makeUuidMap(definitions) {
   return new Map(definitions.map((definition) => [definition.featureId, `Compendium.world.rebreya-class-features.Item.${definition.documentId ?? definition.identifier}`]));
 }
 
+function sourceFingerprint(value) {
+  const text = String(value ?? "").replace(/\s+/gu, " ").trim();
+  let hashA = 0x811c9dc5;
+  let hashB = 0x9e3779b9;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    hashA = Math.imul(hashA ^ code, 0x01000193) >>> 0;
+    hashB = Math.imul(hashB + code + index, 0x85ebca6b) >>> 0;
+  }
+  return `${hashA.toString(16).padStart(8, "0")}${hashB.toString(16).padStart(8, "0")}`;
+}
+
 test("class compendiums delegate managed lifecycle to the shared diff synchronizer", () => {
   const source = readFileSync(new URL("../scripts/data/classes-compendium.js", import.meta.url), "utf8");
 
@@ -206,6 +223,83 @@ test("craftsman class exposes independent research and specialty choices", () =>
     uuid: archetypeUuidById.get("craftsman-specialty-constructor")
   }]);
   assert.equal(advancements.some((entry) => entry.type === "Subclass"), false);
+});
+
+test("craftsman V0.1 data matches its class progression and two archetype axes", () => {
+  const raw = loadJson("data/craftsman-v01.json");
+  const craftsman = normalizeClassCompendiumData(raw);
+  const mechanic = craftsman.researches.find((entry) => entry.archetypeId === "craftsman-research-mechanic");
+  const constructor = craftsman.specialties.find((entry) => entry.archetypeId === "craftsman-specialty-constructor");
+
+  assert.equal(craftsman.classData.identifier, "craftsman-v01");
+  assert.equal(craftsman.classData.hitDie, "d8");
+  assert.equal(craftsman.classData.spellcasting.progression, "none");
+  assert.deepEqual(craftsman.classData.saveProficiencies, ["con", "int"]);
+  assert.equal(craftsman.classData.skillChoiceCount, 2);
+  assert.deepEqual(craftsman.classData.skillPool, ["prc", "his", "slt", "arc", "med", "nat", "inv"]);
+  assert.deepEqual(craftsman.classData.scaleAdvancements.find((entry) => entry.identifier === "gadgets").progression, {
+    "1": 2, "5": 3, "9": 4, "13": 5, "17": 6
+  });
+  assert.deepEqual(craftsman.classData.scaleAdvancements.find((entry) => entry.identifier === "soul-xp").progression, {
+    "2": 200, "3": 300, "4": 400, "5": 500, "6": 600, "7": 700, "8": 800,
+    "9": 900, "10": 1000, "11": 5000, "12": 10000, "13": 20000, "14": 30000,
+    "15": 30000, "16": 30000, "17": 40000, "18": 40000, "19": 40000, "20": 40000
+  });
+  assert.deepEqual(craftsman.classData.features.map(({ name, requiredLevel }) => [name, requiredLevel]), [
+    ["Задорный гаджет", 1],
+    ["Рука творца", 1],
+    ["Душа творца", 2],
+    ["Прикладной работник", 2],
+    ["Подходящий инструмент", 3],
+    ["Проблеск гениальности", 7],
+    ["Крепкие чертежи", 7],
+    ["Эксперт в обращении с магическими предметами", 11],
+    ["Учённый по магическим предметам", 14],
+    ["Сердце создателя", 17],
+    ["Мастер в общении с магическими предметами", 18],
+    ["Душа изобретателя", 20],
+    ["Потенциал творца", 20]
+  ]);
+  assert.deepEqual(mechanic.features.map(({ name, requiredLevel }) => [name, requiredLevel]), [
+    ["Умение обращаться с транспортом", 2],
+    ["Дополнительная атака", 5],
+    ["Продвинутое улучшение", 5],
+    ["Индивидуальная компоновка", 9],
+    ["Единая система", 13]
+  ]);
+  assert.deepEqual(constructor.features.map(({ name, requiredLevel }) => [name, requiredLevel]), [
+    ["Сборка своего конструкта", 3],
+    ["Боевой режим", 3],
+    ["Дополнительная атака", 6],
+    ["Безграничный проблеск", 10],
+    ["Абсолютная машина", 15]
+  ]);
+});
+
+test("craftsman descriptions preserve every visible source character through Markdown rendering", () => {
+  const raw = loadJson("data/craftsman-v01.json");
+  const entries = [
+    { key: "classDescription", ...raw.class },
+    ...raw.class.features.map((entry) => ({ key: `class:${entry.id}`, ...entry })),
+    ...raw.researches.flatMap((archetype) => [
+      { key: `research:${archetype.id}`, ...archetype },
+      ...archetype.features.map((entry) => ({ key: `research:${entry.id}`, ...entry }))
+    ]),
+    ...raw.specialties.flatMap((archetype) => [
+      { key: `specialty:${archetype.id}`, ...archetype },
+      ...archetype.features.map((entry) => ({ key: `specialty:${entry.id}`, ...entry }))
+    ])
+  ];
+
+  for (const entry of entries) {
+    const markdown = entry.descriptionMarkdown;
+    const html = renderDescriptionMarkdown(markdown);
+    const visibleText = canonicalizeDescriptionMarkdown(markdown);
+    assert.equal(canonicalizeDescriptionHtml(html), visibleText, entry.key);
+    assert.equal(sourceFingerprint(visibleText), entry.sourceFingerprint, entry.key);
+    assert.doesNotMatch(markdown, /\b(?:TODO|TBD)\b/u, entry.key);
+    assert.doesNotMatch(markdown, /сокращён|краткое описание|см\. документ/iu, entry.key);
+  }
 });
 
 test("craftsman archetype items grant every feature at its source level", () => {

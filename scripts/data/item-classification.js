@@ -641,6 +641,10 @@ function buildGenericAmmoProfile(name) {
 
 function buildToolProfile(name) {
   const text = normalizeText(name);
+  if (/инструменты вора/u.test(text)) {
+    return { systemTypeValue: "thief" };
+  }
+
   if (/лютн|флейт|барабан|скрип|цитр|арф|мандол|рожок|волын|инструмент музы/u.test(text)) {
     return { systemTypeValue: "music" };
   }

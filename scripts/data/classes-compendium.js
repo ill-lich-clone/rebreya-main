@@ -44,7 +44,8 @@ const CLASS_DATA_PATHS = [
   `modules/${MODULE_ID}/data/fighter-rework-v028.json`,
   `modules/${MODULE_ID}/data/paladin-rework-v01.json`,
   `modules/${MODULE_ID}/data/rogue-rework-v00.json`,
-  `modules/${MODULE_ID}/data/sorcerer-rework-v011.json`
+  `modules/${MODULE_ID}/data/sorcerer-rework-v011.json`,
+  `modules/${MODULE_ID}/data/craftsman-v01.json`
 ];
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const CLASS_ICON_SEARCH_PATHS = [
@@ -457,7 +458,7 @@ function normalizeFeatureEntry(rawFeature, index, {
   return {
     featureId,
     name,
-    description: cleanString(rawFeature?.description),
+    description: cleanString(rawFeature?.descriptionMarkdown ?? rawFeature?.description),
     levels,
     requiredLevel,
     optional: optional === true,
@@ -1335,7 +1336,7 @@ export function normalizeClassCompendiumData(rawData) {
     classFeatureRootFolder,
     classData: {
       name: className,
-      description: cleanString(rawClass.description),
+      description: cleanString(rawClass.descriptionMarkdown ?? rawClass.description),
       identifier: classIdentifier,
       hitDie,
       primaryAbility,

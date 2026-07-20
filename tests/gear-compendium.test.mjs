@@ -563,6 +563,20 @@ test("ordinary weapons from the weapon sheet use registered dnd5e base weapon id
   }
 });
 
+test("craftsman tools use stable ids and native dnd5e tool subtypes", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const thievesTools = byId.get("instrumenty-vora");
+  const repairTools = byId.get("instrumenty-remontnika");
+
+  assert.ok(thievesTools);
+  assert.ok(repairTools);
+  assert.equal(createStableGearDocumentId("instrumenty-vora"), "re8ae4d6d637951f");
+  assert.equal(createStableGearDocumentId("instrumenty-remontnika"), "r154c7529b59a643");
+  assert.equal(createDnd5eItemData(thievesTools, new Map()).system.type.value, "thief");
+  assert.equal(createDnd5eItemData(repairTools, new Map()).system.type.value, "art");
+});
+
 test("real gear armor data maps every armor sheet row to dnd5e armor system keys", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const byId = new Map(gear.map((item) => [item.id, item]));
