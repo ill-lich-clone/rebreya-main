@@ -42,21 +42,6 @@ function loadJson(path) {
   return JSON.parse(readFileSync(join(process.cwd(), path), "utf8").replace(/^\uFEFF/u, ""));
 }
 
-function loadPaladinData() {
-  const source = loadJson("data/paladin-rework-v01.json");
-  const externalSubclasses = Array.isArray(source.subclassDataPaths)
-    ? source.subclassDataPaths.map((path) => loadJson(path))
-    : [];
-
-  return {
-    ...source,
-    subclasses: [
-      ...(Array.isArray(source.subclasses) ? source.subclasses : []),
-      ...externalSubclasses
-    ]
-  };
-}
-
 function loadSorcererSourceMarkdown() {
   const path = "ДнД реворк чародея V0.11.md";
   assert.equal(existsSync(join(process.cwd(), path)), true);
@@ -1179,7 +1164,7 @@ test("rogue cunning strike options are separate feature items in their sheet sec
 });
 
 test("paladin rework data defines ZoZT class basics, spellcasting, and subclasses", () => {
-  const paladin = normalizeClassCompendiumData(loadPaladinData());
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const system = createClassSystem(paladin.classData, [], paladin.sourceLabel);
 
   assert.equal(paladin.sourceLabel, "ЗоЗТ");
@@ -1196,19 +1181,17 @@ test("paladin rework data defines ZoZT class basics, spellcasting, and subclasse
   assert.equal(system.spellcasting.preparation.formula, "@abilities.cha.mod + floor(@classes.paladin-rework-v01.levels / 2)");
 });
 
-test("paladin magistrate oath lives in a dedicated subclass data file", () => {
+test("paladin magistrate oath stays inline in the paladin data file", () => {
   const paladinSource = loadJson("data/paladin-rework-v01.json");
-  const magistrate = loadJson("data/paladin-oath-magistrate-v01.json");
-  const inlineSubclassIds = paladinSource.subclasses.map((subclass) => subclass.identifier);
+  const magistrate = paladinSource.subclasses.find((subclass) => subclass.identifier === "paladin-oath-magistrate");
 
-  assert.deepEqual(paladinSource.subclassDataPaths, ["data/paladin-oath-magistrate-v01.json"]);
-  assert.equal(inlineSubclassIds.includes("paladin-oath-magistrate"), false);
-  assert.equal(magistrate.identifier, "paladin-oath-magistrate");
+  assert.equal(paladinSource.subclassDataPaths, undefined);
+  assert.equal(magistrate?.identifier, "paladin-oath-magistrate");
   assert.equal(magistrate.features.some((feature) => feature.id === "magistrate-high-magistrate"), true);
 });
 
 test("paladin advancements grant armor and strict weapon proficiency choices", () => {
-  const paladin = normalizeClassCompendiumData(loadPaladinData());
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const advancement = buildClassAdvancement(paladin.classData, {});
   const armor = advancement.find((entry) => entry.type === "Trait" && entry.title === "Владение доспехами");
   const simpleWeapons = advancement.find((entry) => entry.type === "Trait" && entry.title === "Владение простым оружием");
@@ -1235,7 +1218,7 @@ test("paladin advancements grant armor and strict weapon proficiency choices", (
 });
 
 test("paladin feature definitions include two preset starting equipment packages", () => {
-  const paladin = normalizeClassCompendiumData(loadPaladinData());
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const packageDefinitions = buildFeatureDefinitions(paladin)
     .filter((definition) => definition.sourceType === "paladinStartingEquipmentPackage");
 
@@ -1260,7 +1243,7 @@ test("paladin feature definitions include two preset starting equipment packages
 });
 
 test("paladin advancement exposes class grants, fighting style, minor feats, and equipment package choice", () => {
-  const paladin = normalizeClassCompendiumData(loadPaladinData());
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const featureDefinitions = buildFeatureDefinitions(paladin);
   const featureUuidById = makeUuidMap(featureDefinitions);
   const advancement = buildClassAdvancement(paladin.classData, {
@@ -1314,7 +1297,7 @@ test("managed class compendium documents preserve stable ids when created", () =
 
 test("paladin fighting style choice is a flat list of style feats plus paladin style", () => {
   const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
-  const paladin = normalizeClassCompendiumData(loadPaladinData());
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const featureDefinitions = [
     ...buildFeatureDefinitions(fighter),
     ...buildFeatureDefinitions(paladin)
@@ -1378,7 +1361,7 @@ test("paladin fighting style choice is a flat list of style feats plus paladin s
 });
 
 test("paladin divine smite variants are separate class and oath feature items", () => {
-  const paladin = normalizeClassCompendiumData(loadPaladinData());
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const featureDefinitions = buildFeatureDefinitions(paladin);
   const featureUuidById = makeUuidMap(featureDefinitions);
   const classAdvancement = buildClassAdvancement(paladin.classData, {
@@ -1438,7 +1421,7 @@ test("paladin divine smite variants are separate class and oath feature items", 
 });
 
 test("paladin divine sense and lay on hands expose item resources and automation activities", () => {
-  const paladin = normalizeClassCompendiumData(loadPaladinData());
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const definitions = buildFeatureDefinitions(paladin);
   const divineSense = definitions.find((definition) => (
     definition.sourceType === "classFeature" && definition.name === "Божественное чувство"
@@ -1486,7 +1469,7 @@ test("paladin divine sense and lay on hands expose item resources and automation
 });
 
 test("paladin aura of protection exposes a DAE Active Auras saving throw bonus", () => {
-  const paladin = normalizeClassCompendiumData(loadPaladinData());
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const definitions = buildFeatureDefinitions(paladin);
   const aura = definitions.find((definition) => (
     definition.sourceType === "classFeature" && definition.name === "Аура защиты"

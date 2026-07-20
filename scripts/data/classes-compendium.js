@@ -1419,42 +1419,6 @@ async function fetchJson(path, { optional = false } = {}) {
   return response.json();
 }
 
-function resolveModuleDataPath(path) {
-  const safePath = cleanString(path);
-  if (!safePath) {
-    return "";
-  }
-
-  if (safePath.startsWith("modules/") || safePath.startsWith("/")) {
-    return safePath;
-  }
-
-  return `modules/${MODULE_ID}/${safePath.replace(/^\.?\//u, "")}`;
-}
-
-async function loadClassDataWithExternalSubclasses(path) {
-  const rawData = await fetchJson(path);
-  const subclassDataPaths = Array.isArray(rawData?.subclassDataPaths)
-    ? rawData.subclassDataPaths.map(resolveModuleDataPath).filter(Boolean)
-    : [];
-  if (!subclassDataPaths.length) {
-    return rawData;
-  }
-
-  const externalSubclasses = [];
-  for (const subclassPath of subclassDataPaths) {
-    externalSubclasses.push(await fetchJson(subclassPath));
-  }
-
-  return {
-    ...rawData,
-    subclasses: [
-      ...(Array.isArray(rawData.subclasses) ? rawData.subclasses : []),
-      ...externalSubclasses
-    ]
-  };
-}
-
 export function buildFeatureDefinitions(normalizedData) {
   const definitions = [];
   const classId = normalizedData.classData.identifier;
@@ -5504,7 +5468,7 @@ async function syncClassesPack(normalizedDataList, context) {
 async function loadData() {
   const normalized = [];
   for (const path of CLASS_DATA_PATHS) {
-    const rawData = await loadClassDataWithExternalSubclasses(path);
+    const rawData = await fetchJson(path);
     normalized.push(normalizeBarbarianData(rawData));
   }
 
