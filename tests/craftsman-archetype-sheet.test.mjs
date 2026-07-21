@@ -308,6 +308,7 @@ test("sheet templates use native feature context-menu selectors without fake ite
   assert.match(sharedTemplate, /\{\{else\}\}[\s\S]*Не выбрано/u);
   assert.match(standardTemplate, /data-tab="features"/u);
   assert.match(standardTemplate, /data-group="primary"/u);
+  assert.match(standardTemplate, /^\s*<section[^>]*>[\s\S]*\{\{#if craftsmanArchetypes\.visible\}\}/u);
   assert.match(standardTemplate, /\{\{>\s*"modules\/rebreya-main\/templates\/craftsman-archetypes\.hbs"/u);
   assert.doesNotMatch(integrationSource, /insertAdjacentHTML|renderActorSheet/u);
 });
