@@ -13,6 +13,7 @@ import {
 } from "../constants.js";
 import { bringAppToFront } from "../ui.js";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
+import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";
 import {
   getRebreyaWeaponBaseItemDefinitions,
   getHeroDollSlotGroups,
@@ -6888,6 +6889,19 @@ export function registerRebreyaWeaponBaseItems(weaponIdsConfig = buildRebreyaWea
   return true;
 }
 
+export function registerRebreyaArtisanToolProficiencies() {
+  if (!isDnd5eWorld() || !CONFIG.DND5E) {
+    return false;
+  }
+
+  CONFIG.DND5E.tools ??= {};
+  for (const [toolId, configuration] of Object.entries(buildRebreyaArtisanToolConfig())) {
+    CONFIG.DND5E.tools[toolId] = configuration;
+  }
+
+  return true;
+}
+
 export async function registerRebreyaWeaponBaseItemsFromGearPack() {
   if (!isDnd5eWorld() || !CONFIG.DND5E) {
     return false;
@@ -6910,6 +6924,7 @@ export function extendDnd5eItemTypes() {
   registerRebreyaWeaponBaseItemsFromGearPack().catch((error) => {
     console.warn(`${MODULE_ID} | Failed to register Rebreya weapon base items from gear pack.`, error);
   });
+  registerRebreyaArtisanToolProficiencies();
 
   registerNativeStateItemType();
   registerDowntimeItemType();

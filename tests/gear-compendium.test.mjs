@@ -577,6 +577,37 @@ test("craftsman tools use stable ids and native dnd5e tool subtypes", () => {
   assert.equal(createDnd5eItemData(repairTools, new Map()).system.type.value, "art");
 });
 
+test("Rebreya artisan tool items use the same base ids and abilities as craftsman proficiencies", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byId = new Map(gear.map((item) => [item.id, item]));
+  const expected = {
+    "instrumenty-alkhimicheskie-0-y-rang": ["rebreyaAlchemy", "int"],
+    "instrumenty-kuznetsa-0-y-rang": ["rebreyaSmith", "str"],
+    "instrumenty-kalligrafa-0-y-rang": ["rebreyaCalligrapher", "dex"],
+    "instrumenty-poddelshchika-0-y-rang": ["rebreyaForgery", "dex"],
+    "instrumenty-grimyora-0-y-rang": ["rebreyaDisguise", "cha"],
+    "instrumenty-khudozhestvennye-0-y-rang": ["rebreyaArtisan", "wis"],
+    "instrumenty-issledovatelya-0-y-rang": ["rebreyaInvestigator", "int"],
+    "instrumenty-zhestyanshchika-0-y-rang": ["rebreyaTinker", "dex"],
+    "instrumenty-kamneloma-0-y-rang": ["rebreyaMason", "str"],
+    "instrumenty-kozhedela-0-y-rang": ["rebreyaLeatherworker", "dex"],
+    "instrumenty-pivovara-0-y-rang": ["rebreyaBrewer", "int"],
+    "instrumenty-derevyanshchika-0-y-rang": ["rebreyaWoodcarver", "dex"],
+    "instrumenty-povara-0-y-rang": ["rebreyaCook", "wis"],
+    "instrumenty-yuvelira-0-y-rang": ["rebreyaJeweler", "int"]
+  };
+
+  for (const [gearId, [baseItem, ability]] of Object.entries(expected)) {
+    const source = byId.get(gearId);
+    assert.ok(source, `${gearId} exists in Rebreya gear data`);
+    const item = createDnd5eItemData(source, new Map());
+    assert.equal(item.type, "tool");
+    assert.equal(item.system.type.value, "art");
+    assert.equal(item.system.type.baseItem, baseItem);
+    assert.equal(item.system.ability, ability);
+  }
+});
+
 test("real gear armor data maps every armor sheet row to dnd5e armor system keys", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const byId = new Map(gear.map((item) => [item.id, item]));

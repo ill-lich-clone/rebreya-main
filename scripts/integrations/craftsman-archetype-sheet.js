@@ -7,7 +7,8 @@ import {
 const CRAFTSMAN_CLASS_IDENTIFIER = "craftsman-v01";
 const CRAFTSMAN_PART_ID = "craftsmanArchetypes";
 const CRAFTSMAN_STANDARD_TEMPLATE = `modules/${MODULE_ID}/templates/craftsman-archetypes-standard.hbs`;
-const CRAFTSMAN_TIDY_TEMPLATE = `/modules/${MODULE_ID}/templates/craftsman-archetypes.hbs`;
+const CRAFTSMAN_SHARED_TEMPLATE = `modules/${MODULE_ID}/templates/craftsman-archetypes.hbs`;
+const CRAFTSMAN_TIDY_TEMPLATE = `/${CRAFTSMAN_SHARED_TEMPLATE}`;
 const TIDY_FEATURES_SELECTOR = "[data-tab-contents-for='features']";
 const TIDY_ROW_SELECTOR = "[data-action='openCraftsmanArchetype'][data-item-id]";
 const tidyHookRegistrations = new WeakSet();
@@ -158,7 +159,8 @@ export function ensureCraftsmanArchetypePartDefinition(CharacterActorSheet) {
   if (!CharacterActorSheet.PARTS?.[CRAFTSMAN_PART_ID]) {
     CharacterActorSheet.PARTS = insertPartAfterFeatures(CharacterActorSheet.PARTS, {
       container: { classes: ["tab-body"], id: "tabs" },
-      template: CRAFTSMAN_STANDARD_TEMPLATE
+      template: CRAFTSMAN_STANDARD_TEMPLATE,
+      templates: [CRAFTSMAN_SHARED_TEMPLATE]
     });
   }
 

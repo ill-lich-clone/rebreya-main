@@ -267,6 +267,7 @@ function buildGearSignature(item) {
     foundrySubtype: classification.systemTypeValue,
     foundrySubtypeExtra: classification.systemTypeSubtype,
     foundryBaseItem: classification.baseItem,
+    foundryToolAbility: classification.toolAbility ?? "",
     folderPath: buildFolderPath(classification),
     itemSlot,
     heroDollSlots,
@@ -968,6 +969,7 @@ function buildSystemData(item, classification, descriptionHtml, presentation = n
         value: classification.systemTypeValue || "art",
         baseItem: classification.baseItem || ""
       };
+      baseData.ability = classification.toolAbility || "";
       break;
 
     case "consumable":

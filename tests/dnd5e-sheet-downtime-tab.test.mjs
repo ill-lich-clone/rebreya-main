@@ -2273,6 +2273,55 @@ test("extendDnd5eItemTypes registers the Rebreya downtime item type", async () =
   }
 });
 
+test("extendDnd5eItemTypes registers Rebreya artisan tools from the gear compendium", async () => {
+  const stubs = installSheetExtensionStubs();
+  globalThis.game.modules = new Map([["rebreya-main", { documentTypes: { Item: { state: {}, downtime: {} } } }]]);
+  globalThis.CONFIG.Item = {
+    dataModels: {
+      background: class BackgroundData {
+        static metadata = {};
+      }
+    },
+    typeLabels: {},
+    typeIcons: {}
+  };
+  globalThis.CONFIG.DND5E.tools = {};
+
+  try {
+    const { extendDnd5eItemTypes } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?rebreya-tools=${Date.now()}`);
+
+    extendDnd5eItemTypes();
+
+    const expected = {
+      rebreyaAlchemy: "r48cd41e8e6cc941",
+      rebreyaSmith: "r0da9163edfd0f56",
+      rebreyaCalligrapher: "r2da59a59559e959",
+      rebreyaForgery: "r71e1ddba0c703bd",
+      rebreyaDisguise: "r64d06bc3d97ca5c",
+      rebreyaArtisan: "r544601797768613",
+      rebreyaInvestigator: "rbed825beb42cf6e",
+      rebreyaTinker: "racfb0e486a37167",
+      rebreyaMason: "r286aaec049efdc1",
+      rebreyaLeatherworker: "r8b30f70212c2c79",
+      rebreyaBrewer: "r373f2dcd3239c70",
+      rebreyaWoodcarver: "r7286b6eac2e8e7b",
+      rebreyaCook: "rc61877fa68d9a7d",
+      rebreyaJeweler: "rcdd4f18a1813729"
+    };
+    assert.deepEqual(Object.keys(CONFIG.DND5E.tools), Object.keys(expected));
+    for (const [key, documentId] of Object.entries(expected)) {
+      assert.equal(
+        CONFIG.DND5E.tools[key].id,
+        `Compendium.world.rebreya-gear.Item.${documentId}`
+      );
+      assert.match(CONFIG.DND5E.tools[key].ability, /^(?:str|dex|int|wis|cha)$/u);
+    }
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("extendDnd5eItemTypes registers firearm activity attack type and Midi action type", async () => {
   const stubs = installSheetExtensionStubs();
   globalThis.game.modules = new Map([["rebreya-main", { documentTypes: { Item: { state: {}, downtime: {} } } }]]);

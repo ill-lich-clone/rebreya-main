@@ -405,13 +405,44 @@ test("craftsman class exposes independent research and specialty choices", () =>
 test("craftsman V0.1 data matches its class progression and two archetype axes", () => {
   const raw = loadJson("data/craftsman-v01.json");
   const craftsman = normalizeClassCompendiumData(raw);
+  const featureUuidById = makeUuidMap(buildFeatureDefinitions(craftsman));
+  const archetypeDefinitions = buildCraftsmanArchetypeDefinitions(craftsman, { featureUuidById });
+  const archetypeUuidById = new Map(archetypeDefinitions.map((entry) => [
+    entry.archetypeId,
+    `Compendium.world.rebreya-craftsman-archetypes.Item.${entry.documentId}`
+  ]));
   const mechanic = craftsman.researches.find((entry) => entry.archetypeId === "craftsman-research-mechanic");
   const constructor = craftsman.specialties.find((entry) => entry.archetypeId === "craftsman-specialty-constructor");
+  const toolAdvancement = buildClassAdvancement(craftsman.classData, { featureUuidById, archetypeUuidById })
+    .find((entry) => entry.configuration?.grants?.includes("tool:art:rebreyaTinker"));
 
   assert.equal(craftsman.classData.identifier, "craftsman-v01");
   assert.equal(craftsman.classData.hitDie, "d8");
   assert.equal(craftsman.classData.spellcasting.progression, "none");
   assert.deepEqual(craftsman.classData.saveProficiencies, ["con", "int"]);
+  assert.deepEqual(craftsman.classData.toolProficiencies, ["tool:art:rebreyaTinker"]);
+  assert.deepEqual(craftsman.classData.toolProficiencyChoices, [{
+    count: 2,
+    pool: [
+      "tool:art:rebreyaAlchemy",
+      "tool:art:rebreyaSmith",
+      "tool:art:rebreyaCalligrapher",
+      "tool:art:rebreyaForgery",
+      "tool:art:rebreyaDisguise",
+      "tool:art:rebreyaArtisan",
+      "tool:art:rebreyaInvestigator",
+      "tool:art:rebreyaTinker",
+      "tool:art:rebreyaMason",
+      "tool:art:rebreyaLeatherworker",
+      "tool:art:rebreyaBrewer",
+      "tool:art:rebreyaWoodcarver",
+      "tool:art:rebreyaCook",
+      "tool:art:rebreyaJeweler"
+    ]
+  }]);
+  assert.ok(toolAdvancement, "craftsman grants Rebreya Tinker's Tools through the dnd5e tool trait");
+  assert.deepEqual(toolAdvancement.configuration.grants, ["tool:art:rebreyaTinker"]);
+  assert.deepEqual(toolAdvancement.configuration.choices, craftsman.classData.toolProficiencyChoices);
   assert.equal(craftsman.classData.skillChoiceCount, 2);
   assert.deepEqual(craftsman.classData.skillPool, ["prc", "his", "slt", "arc", "med", "nat", "inv"]);
   assert.deepEqual(craftsman.classData.scaleAdvancements.find((entry) => entry.identifier === "gadgets").progression, {

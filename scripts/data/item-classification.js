@@ -1,4 +1,6 @@
-﻿const BACK_SLOTS = ["back1", "back2", "back3", "back4", "back5"];
+﻿import { getRebreyaArtisanToolByGearId } from "./rebreya-tool-proficiencies.js";
+
+const BACK_SLOTS = ["back1", "back2", "back3", "back4", "back5"];
 const HAND_SLOTS = ["leftHand", "rightHand"];
 const RING_SLOTS = ["ring1", "ring2"];
 
@@ -639,25 +641,34 @@ function buildGenericAmmoProfile(name) {
   };
 }
 
-function buildToolProfile(name) {
+function buildToolProfile(name, gearId = "") {
+  const rebreyaTool = getRebreyaArtisanToolByGearId(gearId);
+  if (rebreyaTool) {
+    return {
+      ability: rebreyaTool.ability,
+      baseItem: rebreyaTool.dnd5eId,
+      systemTypeValue: "art"
+    };
+  }
+
   const text = normalizeText(name);
   if (/инструменты вора/u.test(text)) {
-    return { systemTypeValue: "thief" };
+    return { ability: "dex", baseItem: "thief", systemTypeValue: "thief" };
   }
 
   if (/лютн|флейт|барабан|скрип|цитр|арф|мандол|рожок|волын|инструмент музы/u.test(text)) {
-    return { systemTypeValue: "music" };
+    return { ability: "cha", baseItem: "", systemTypeValue: "music" };
   }
 
   if (/кости|карты|шахмат|кости|набор.*игр/u.test(text)) {
-    return { systemTypeValue: "game" };
+    return { ability: "wis", baseItem: "", systemTypeValue: "game" };
   }
 
   if (/транспорт|экипаж|повоз|седло/u.test(text)) {
-    return { systemTypeValue: "vehicle" };
+    return { ability: "wis", baseItem: "", systemTypeValue: "vehicle" };
   }
 
-  return { systemTypeValue: "art" };
+  return { ability: "", baseItem: "", systemTypeValue: "art" };
 }
 
 export function getHeroDollSlots() {
@@ -774,12 +785,13 @@ export function classifyGearEntry(item = {}) {
   }
 
   if (normalizedEquipmentType === normalizeText("Инструменты")) {
-    const toolProfile = buildToolProfile(item.name);
+    const toolProfile = buildToolProfile(item.name, item.id);
     return {
       documentType: "tool",
       systemTypeValue: toolProfile.systemTypeValue,
       systemTypeSubtype: "",
-      baseItem: "",
+      baseItem: toolProfile.baseItem,
+      toolAbility: toolProfile.ability,
       folderPath: "Инструменты",
       heroDollSlots: [],
       firearmClass: "",

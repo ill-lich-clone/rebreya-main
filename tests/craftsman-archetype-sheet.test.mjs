@@ -156,6 +156,9 @@ test("standard dnd5e sheet receives a feature-tab part and a safe open action", 
     id: "tabs"
   });
   assert.match(CharacterActorSheet.PARTS.craftsmanArchetypes.template, /craftsman-archetypes-standard\.hbs$/u);
+  assert.deepEqual(CharacterActorSheet.PARTS.craftsmanArchetypes.templates, [
+    "modules/rebreya-main/templates/craftsman-archetypes.hbs"
+  ]);
   assert.strictEqual(CharacterActorSheet.DEFAULT_OPTIONS.actions.existingAction, existingAction);
 
   const actor = makeActor();

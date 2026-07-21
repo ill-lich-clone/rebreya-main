@@ -19,9 +19,27 @@
     "weaponProficiencyChoices": [
       { "count": 1, "pool": ["weapon:sim:*"] }
     ],
-    "toolProficiencies": ["art:tinker"],
+    "toolProficiencies": ["tool:art:rebreyaTinker"],
     "toolProficiencyChoices": [
-      { "count": 2, "pool": ["tool:art:*"] }
+      {
+        "count": 2,
+        "pool": [
+          "tool:art:rebreyaAlchemy",
+          "tool:art:rebreyaSmith",
+          "tool:art:rebreyaCalligrapher",
+          "tool:art:rebreyaForgery",
+          "tool:art:rebreyaDisguise",
+          "tool:art:rebreyaArtisan",
+          "tool:art:rebreyaInvestigator",
+          "tool:art:rebreyaTinker",
+          "tool:art:rebreyaMason",
+          "tool:art:rebreyaLeatherworker",
+          "tool:art:rebreyaBrewer",
+          "tool:art:rebreyaWoodcarver",
+          "tool:art:rebreyaCook",
+          "tool:art:rebreyaJeweler"
+        ]
+      }
     ],
     "skillChoiceCount": 2,
     "skillPool": ["prc", "his", "slt", "arc", "med", "nat", "inv"],
