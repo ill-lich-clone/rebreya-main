@@ -27,6 +27,30 @@ function loadBundleItems() {
   return JSON.parse(readFileSync(bundleUrl, "utf8")).items;
 }
 
+test("Elemental Adept remains one repeatable runtime-managed feat without choice documents", () => {
+  const bundleItems = loadBundleItems();
+  const elementalAdepts = bundleItems.filter((item) => item.type === "feat" && item.system?.identifier === "stihiynyy-adept");
+
+  assert.equal(elementalAdepts.length, 1);
+  const elementalAdept = elementalAdepts[0];
+  assert.equal(elementalAdept.system.prerequisites.repeatable, true);
+  assert.equal(
+    Object.values(elementalAdept.system.advancement ?? {}).some((advancement) => advancement?.type === "ItemChoice"),
+    false
+  );
+  assert.equal(
+    bundleItems.some((item) => item.flags?.["rebreya-main"]?.choiceOption?.parentIdentifier === "stihiynyy-adept"),
+    false
+  );
+  assert.equal(elementalAdept.system.activities && Object.keys(elementalAdept.system.activities).length, 0);
+  assert.equal(elementalAdept.effects.length, 0);
+  assert.equal(elementalAdept.flags["rebreya-main"].automation.status, "full");
+  assert.deepEqual(elementalAdept.flags["rebreya-main"].automation.runtime, {
+    service: "ElementalAdeptAutomationService"
+  });
+  assert.match(elementalAdept.flags["rebreya-main"].automation.notes, /ElementalAdeptAutomationService/u);
+});
+
 test("performer feat exposes automated active performance runtime activity", () => {
   const feats = normalizeFeatItems(loadBundleItems());
   const performer = feats.find((feat) => feat.featId === "ispolnitel");

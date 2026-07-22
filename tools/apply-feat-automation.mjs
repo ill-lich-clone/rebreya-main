@@ -581,6 +581,18 @@ const CHOICE_CONFIGS = {
     }
 }
 
+const RUNTIME_AUTOMATIONS = {
+    "stihiynyy-adept": {
+        suppressEffects: true,
+        suppressActivities: true,
+        status: "full",
+        runtime: {
+            service: "ElementalAdeptAutomationService"
+        },
+        note: "Полная runtime-автоматизация ElementalAdeptAutomationService: выбор типа урона, минимальные результаты костей заклинаний и игнорирование сопротивления/поглощения."
+    }
+}
+
 const CURATED_ACTIVITIES = {
     "agressivnyy-provokator": [
         {
@@ -2667,7 +2679,7 @@ function clearAutomation(item) {
 }
 
 function addEffects(item, identifier, text, notes, mechanics) {
-    if (CHOICE_CONFIGS[identifier]?.suppressEffects === true) {
+    if (CHOICE_CONFIGS[identifier]?.suppressEffects === true || RUNTIME_AUTOMATIONS[identifier]?.suppressEffects === true) {
         return
     }
 
@@ -2980,7 +2992,7 @@ function updateBundleSummary(bundle) {
 }
 
 function addActivities(item, identifier, text, notes, mechanics) {
-    if (CHOICE_CONFIGS[identifier]?.suppressActivities === true) {
+    if (CHOICE_CONFIGS[identifier]?.suppressActivities === true || RUNTIME_AUTOMATIONS[identifier]?.suppressActivities === true) {
         return
     }
 
@@ -3402,16 +3414,18 @@ function automateItem(item, report) {
     const text = stripHtml(item.system?.description?.value)
     const notes = []
     const mechanics = new Set()
+    const runtimeAutomation = RUNTIME_AUTOMATIONS[identifier]
 
     addChoiceConfig(item, identifier, notes, mechanics)
     addEffects(item, identifier, text, notes, mechanics)
     addActivities(item, identifier, text, notes, mechanics)
 
-    const status = determineStatus(identifier, text, notes)
+    const status = runtimeAutomation?.status ?? determineStatus(identifier, text, notes)
     const automation = {
         version: VERSION,
         status,
-        notes: noteText(status, notes, text)
+        ...(runtimeAutomation?.runtime ? { runtime: clone(runtimeAutomation.runtime) } : {}),
+        notes: runtimeAutomation?.note ?? noteText(status, notes, text)
     }
 
     item.flags ??= {}
@@ -3438,6 +3452,7 @@ function applyToItems(items) {
     const report = {
         counts: {
             automated: 0,
+            full: 0,
             partial: 0,
             manual: 0
         },
@@ -3461,6 +3476,10 @@ function writeReport(report) {
         .filter((item) => item.status === "automated")
         .map((item) => `- ${item.name} (${item.section})`)
 
+    const full = report.items
+        .filter((item) => item.status === "full")
+        .map((item) => `- ${item.name} (${item.section}) — ${item.notes}`)
+
     const partial = report.items
         .filter((item) => item.status === "partial")
         .map((item) => `- ${item.name} (${item.section}) — ${item.notes}`)
@@ -3477,6 +3496,7 @@ function writeReport(report) {
         "## Итоги",
         "",
         `- Полностью автоматизировано: ${report.counts.automated}`,
+        `- Автоматизировано runtime-сервисом: ${report.counts.full}`,
         `- Частично автоматизировано: ${report.counts.partial}`,
         `- Оставлено ручными: ${report.counts.manual}`,
         "",
@@ -3487,6 +3507,10 @@ function writeReport(report) {
         "## Полностью автоматизированные",
         "",
         ...automated,
+        "",
+        "## Автоматизировано runtime-сервисом",
+        "",
+        ...full,
         "",
         "## Частично автоматизированные",
         "",

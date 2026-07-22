@@ -29963,8 +29963,11 @@
         "rebreya-main": {
           "automation": {
             "version": "0.8-dnd5e-5.2.5",
-            "status": "manual",
-            "notes": "Автоматизация не добавлена: есть выбор игрока или таблица вариантов."
+            "status": "full",
+            "runtime": {
+              "service": "ElementalAdeptAutomationService"
+            },
+            "notes": "Полная runtime-автоматизация ElementalAdeptAutomationService: выбор типа урона, минимальные результаты костей заклинаний и игнорирование сопротивления/поглощения."
           }
         }
       }
