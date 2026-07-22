@@ -1,4 +1,5 @@
 import {
+  CRAFTSMAN_ARCHETYPE_ID_FLAG,
   CRAFTSMAN_CLASS_IDENTIFIER,
   CRAFTSMAN_TRACK_FLAG,
   CRAFTSMAN_TRACKS,
@@ -29,6 +30,7 @@ const TRACK_CONFIG = Object.freeze({
 
 const INVALID_CLASS_KEY = "REBREYA_MAIN.CraftsmanSubclass.InvalidClass";
 const INVALID_TRACK_KEY = "REBREYA_MAIN.CraftsmanSubclass.InvalidTrack";
+const INVALID_SOURCE_KEY = "REBREYA_MAIN.CraftsmanSubclass.InvalidSource";
 const DUPLICATE_KEY = "REBREYA_MAIN.CraftsmanSubclass.Duplicate";
 const INVALID_TYPE_KEY = "DND5E.ADVANCEMENT.Subclass.Warning.InvalidType";
 
@@ -49,6 +51,20 @@ function duplicateError() {
   return new Error(localize(DUPLICATE_KEY));
 }
 
+function invalidSourceError() {
+  return new Error(localize(INVALID_SOURCE_KEY));
+}
+
+function getModuleFlag(item, key) {
+  return item?.getFlag?.(MODULE_ID, key)
+    ?? item?.flags?.[MODULE_ID]?.[key];
+}
+
+function hasValidSourceIdentity(item) {
+  return getModuleFlag(item, "managed") === true
+    && String(getModuleFlag(item, CRAFTSMAN_ARCHETYPE_ID_FLAG) ?? "").trim().length > 0;
+}
+
 function validateCandidate(item, track, actor, { notify = false, excludeId = "" } = {}) {
   if (item?.type !== "subclass") {
     if (notify) warn(INVALID_TYPE_KEY);
@@ -65,6 +81,11 @@ function validateCandidate(item, track, actor, { notify = false, excludeId = "" 
     else assertValidCraftsmanSubclass(item, track);
     return false;
   }
+  if (!hasValidSourceIdentity(item)) {
+    if (notify) warn(INVALID_SOURCE_KEY);
+    else throw invalidSourceError();
+    return false;
+  }
 
   assertValidCraftsmanSubclass(item, track);
   if (hasCraftsmanTrackDuplicate(actor, item, { excludeId })) {
@@ -73,6 +94,21 @@ function validateCandidate(item, track, actor, { notify = false, excludeId = "" 
     return false;
   }
   return true;
+}
+
+function validateRetainedData(retainedData, uuid, track, actor) {
+  if (!retainedData) return;
+  const dnd5eFlags = retainedData.flags?.dnd5e ?? {};
+  if (dnd5eFlags.sourceId !== uuid) return;
+  if (
+    Object.hasOwn(dnd5eFlags, "advancementOrigin")
+    || Object.hasOwn(dnd5eFlags, "advancementRoot")
+  ) {
+    throw invalidSourceError();
+  }
+  validateCandidate(retainedData, track, actor, {
+    excludeId: retainedData.id ?? retainedData._id
+  });
 }
 
 export function createTrackedSubclassFlow(SubclassFlow, track) {
@@ -162,6 +198,7 @@ export function createTrackedSubclassAdvancement(SubclassAdvancement, Flow, trac
     async apply(level, data, retainedData) {
       const subclass = await fromUuid(data?.uuid);
       validateCandidate(subclass, track, this.actor);
+      validateRetainedData(retainedData, data?.uuid, track, this.actor);
       return super.apply(level, data, retainedData);
     }
 
@@ -174,13 +211,17 @@ export function createTrackedSubclassAdvancement(SubclassAdvancement, Flow, trac
     async reverse(level) {
       const linkedSubclass = this.value?.document;
       if (linkedSubclass) {
-        assertValidCraftsmanSubclass(linkedSubclass, track);
+        validateCandidate(linkedSubclass, track, this.actor, {
+          excludeId: linkedSubclass.id ?? linkedSubclass._id
+        });
         return super.reverse(level);
       }
 
       const fallback = getCraftsmanSubclasses(this.item)[track];
       if (!fallback) return undefined;
-      assertValidCraftsmanSubclass(fallback, track);
+      validateCandidate(fallback, track, this.actor, {
+        excludeId: fallback.id ?? fallback._id
+      });
       this.actor.items.delete(fallback.id);
       this.updateSource({ value: { document: null, uuid: null } });
       return fallback.toObject();

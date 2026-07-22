@@ -5,6 +5,7 @@ import {
   registerCraftsmanSubclassAdvancements
 } from "../scripts/integrations/craftsman-subclass-advancements.js";
 import {
+  CRAFTSMAN_ARCHETYPE_ID_FLAG,
   CRAFTSMAN_CLASS_IDENTIFIER,
   CRAFTSMAN_TRACK_FLAG,
   CRAFTSMAN_TRACKS,
@@ -37,7 +38,14 @@ function setProperty(object, path, value) {
   return true;
 }
 
-function makeSubclass({ id, track, classIdentifier = CRAFTSMAN_CLASS_IDENTIFIER, type = "subclass" }) {
+function makeSubclass({
+  id,
+  track,
+  archetypeId = `archetype-${id}`,
+  classIdentifier = CRAFTSMAN_CLASS_IDENTIFIER,
+  managed = true,
+  type = "subclass"
+}) {
   return {
     id,
     _id: id,
@@ -46,7 +54,11 @@ function makeSubclass({ id, track, classIdentifier = CRAFTSMAN_CLASS_IDENTIFIER,
     type,
     system: { classIdentifier },
     flags: {
-      [MODULE_ID]: { [CRAFTSMAN_TRACK_FLAG]: track },
+      [MODULE_ID]: {
+        [CRAFTSMAN_ARCHETYPE_ID_FLAG]: archetypeId,
+        [CRAFTSMAN_TRACK_FLAG]: track,
+        managed
+      },
       dnd5e: { sourceId: `Compendium.world.rebreya-subclasses.Item.${id}` }
     },
     toAnchor() {
@@ -126,6 +138,10 @@ function installDnd5eContractStubs() {
   }
 
   class SubclassAdvancement {
+    static get typeName() {
+      return this.name.replace(/Advancement$/, "");
+    }
+
     static get metadata() {
       return {
         dataModels: { value: class SubclassValueData {} },
@@ -264,6 +280,8 @@ test("tracked advancements and flows inherit the complete native subclass contra
     assert.equal(SpecialtySubclass.prototype instanceof stubs.SubclassAdvancement, true);
     assert.equal(ResearchSubclass.name, "ResearchSubclassAdvancement");
     assert.equal(SpecialtySubclass.name, "SpecialtySubclassAdvancement");
+    assert.equal(ResearchSubclass.typeName, "ResearchSubclass");
+    assert.equal(SpecialtySubclass.typeName, "SpecialtySubclass");
     assert.equal(ResearchSubclassFlow.prototype instanceof stubs.SubclassFlow, true);
     assert.equal(SpecialtySubclassFlow.prototype instanceof stubs.SubclassFlow, true);
     assert.equal(ResearchSubclass.metadata.apps.flow, ResearchSubclassFlow);
@@ -276,6 +294,8 @@ test("tracked advancements and flows inherit the complete native subclass contra
     assert.equal(SpecialtySubclass.metadata.icon, "systems/dnd5e/icons/classes/fighter.webp");
     assert.deepEqual([...CONFIG.DND5E.advancementTypes.ResearchSubclass.validItemTypes], ["class"]);
     assert.deepEqual([...CONFIG.DND5E.advancementTypes.SpecialtySubclass.validItemTypes], ["class"]);
+    assert.equal(CONFIG.DND5E.advancementTypes.ResearchSubclass.documentClass.typeName, "ResearchSubclass");
+    assert.equal(CONFIG.DND5E.advancementTypes.SpecialtySubclass.documentClass.typeName, "SpecialtySubclass");
   }
   finally {
     stubs.restore();
@@ -348,6 +368,49 @@ test("each flow browses only native subclasses for its Craftsman track", async (
   }
 });
 
+test("both tracked browsers preserve selection on cancel and reject unresolved or unmanaged sources", async () => {
+  const stubs = installDnd5eContractStubs();
+  try {
+    registerCraftsmanSubclassAdvancements();
+    const { ResearchSubclass, SpecialtySubclass } = getCraftsmanSubclassAdvancementClasses();
+    const actor = makeActor();
+    const item = makeClass(actor);
+    const research = makeSubclass({ id: "research-selected", track: CRAFTSMAN_TRACKS.RESEARCH });
+    const specialty = makeSubclass({ id: "specialty-selected", track: CRAFTSMAN_TRACKS.SPECIALTY });
+    const flows = [
+      new ResearchSubclass.metadata.apps.flow({ advancement: new ResearchSubclass({ item, actor }), level: 2 }),
+      new SpecialtySubclass.metadata.apps.flow({ advancement: new SpecialtySubclass({ item, actor }), level: 3 })
+    ];
+    flows[0].subclass = research;
+    flows[1].subclass = specialty;
+
+    globalThis.__browserResult = null;
+    await flows[0]._onBrowseCompendium({ preventDefault() {} });
+    await flows[1]._onBrowseCompendium({ preventDefault() {} });
+    assert.equal(flows[0].subclass, research);
+    assert.equal(flows[1].subclass, specialty);
+
+    globalThis.__browserResult = "Compendium.world.rebreya-subclasses.Item.missing";
+    await flows[0]._onBrowseCompendium({ preventDefault() {} });
+    assert.equal(flows[0].subclass, research);
+    assert.equal(stubs.warnings.at(-1).key, "DND5E.ADVANCEMENT.Subclass.Warning.InvalidType");
+
+    const unmanaged = makeSubclass({
+      id: "specialty-unmanaged-browser",
+      managed: false,
+      track: CRAFTSMAN_TRACKS.SPECIALTY
+    });
+    stubs.sources.set(unmanaged.uuid, unmanaged);
+    globalThis.__browserResult = unmanaged.uuid;
+    await flows[1]._onBrowseCompendium({ preventDefault() {} });
+    assert.equal(flows[1].subclass, specialty);
+    assert.equal(stubs.warnings.at(-1).key, "REBREYA_MAIN.CraftsmanSubclass.InvalidSource");
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("drag-and-drop accepts only the requested Craftsman track and reports distinct failures", async () => {
   const stubs = installDnd5eContractStubs();
   try {
@@ -362,7 +425,9 @@ test("drag-and-drop accepts only the requested Craftsman track and reports disti
       makeSubclass({ id: "valid-research", track: CRAFTSMAN_TRACKS.RESEARCH }),
       makeSubclass({ id: "wrong-class", track: CRAFTSMAN_TRACKS.RESEARCH, classIdentifier: "fighter-v01" }),
       makeSubclass({ id: "wrong-track", track: CRAFTSMAN_TRACKS.SPECIALTY }),
-      makeSubclass({ id: "wrong-type", track: CRAFTSMAN_TRACKS.RESEARCH, type: "feat" })
+      makeSubclass({ id: "wrong-type", track: CRAFTSMAN_TRACKS.RESEARCH, type: "feat" }),
+      makeSubclass({ id: "unmanaged", managed: false, track: CRAFTSMAN_TRACKS.RESEARCH }),
+      makeSubclass({ id: "missing-archetype", archetypeId: "", track: CRAFTSMAN_TRACKS.RESEARCH })
     ];
     for (const candidate of candidates) stubs.sources.set(candidate.uuid, candidate);
     const drop = (candidate) => flow._onDrop({
@@ -375,16 +440,52 @@ test("drag-and-drop accepts only the requested Craftsman track and reports disti
     await drop(candidates[1]);
     await drop(candidates[2]);
     await drop(candidates[3]);
+    await drop(candidates[4]);
+    await drop(candidates[5]);
     assert.deepEqual(stubs.warnings.map(({ key }) => key), [
       "REBREYA_MAIN.CraftsmanSubclass.InvalidClass",
       "REBREYA_MAIN.CraftsmanSubclass.InvalidTrack",
-      "DND5E.ADVANCEMENT.Subclass.Warning.InvalidType"
+      "DND5E.ADVANCEMENT.Subclass.Warning.InvalidType",
+      "REBREYA_MAIN.CraftsmanSubclass.InvalidSource",
+      "REBREYA_MAIN.CraftsmanSubclass.InvalidSource"
     ]);
 
     actor.items.set(existing.id, existing);
     await drop(candidates[0]);
     assert.equal(stubs.warnings.at(-1).key, "REBREYA_MAIN.CraftsmanSubclass.Duplicate");
     assert.equal(flow.subclass, candidates[0]);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("drop handles unresolved UUIDs and accepts a valid Specialty independently", async () => {
+  const stubs = installDnd5eContractStubs();
+  try {
+    registerCraftsmanSubclassAdvancements();
+    const { SpecialtySubclass } = getCraftsmanSubclassAdvancementClasses();
+    const actor = makeActor([makeSubclass({ id: "research-other-axis", track: CRAFTSMAN_TRACKS.RESEARCH })]);
+    const advancement = new SpecialtySubclass({ item: makeClass(actor), actor });
+    const flow = new SpecialtySubclass.metadata.apps.flow({ advancement, level: 3 });
+
+    await flow._onDrop({
+      dataTransfer: {
+        getData: () => JSON.stringify({
+          type: "Item",
+          uuid: "Compendium.world.rebreya-subclasses.Item.unresolved"
+        })
+      }
+    });
+    assert.equal(flow.subclass, undefined);
+    assert.equal(stubs.warnings.at(-1).key, "DND5E.ADVANCEMENT.Subclass.Warning.InvalidType");
+
+    const specialty = makeSubclass({ id: "specialty-drop-valid", track: CRAFTSMAN_TRACKS.SPECIALTY });
+    stubs.sources.set(specialty.uuid, specialty);
+    await flow._onDrop({
+      dataTransfer: { getData: () => JSON.stringify({ type: "Item", uuid: specialty.uuid }) }
+    });
+    assert.equal(flow.subclass, specialty);
   }
   finally {
     stubs.restore();
@@ -411,6 +512,14 @@ test("apply and restore delegate native creation while validating track and prev
     assert.equal(stubs.parentCalls.at(-1).method, "apply");
     await assert.rejects(() => researchAdvancement.apply(2, { uuid: research2.uuid }), /duplicate/i);
     await assert.rejects(() => researchAdvancement.apply(2, { uuid: specialty.uuid }), /research/i);
+    const unmanagedResearch = makeSubclass({
+      id: "research-unmanaged-apply",
+      managed: false,
+      track: CRAFTSMAN_TRACKS.RESEARCH
+    });
+    stubs.sources.set(unmanagedResearch.uuid, unmanagedResearch);
+    await assert.rejects(() => new ResearchSubclass({ item: classItem, actor: makeActor() })
+      .apply(2, { uuid: unmanagedResearch.uuid }), /source|managed|archetype/i);
 
     const specialtyAdvancement = new SpecialtySubclass({ item: classItem, actor });
     await specialtyAdvancement.apply(3, { uuid: specialty.uuid });
@@ -424,6 +533,65 @@ test("apply and restore delegate native creation while validating track and prev
     await restoredAdvancement.restore(2, restoredResearch);
     assert.equal(stubs.parentCalls.at(-1).method, "restore");
     assert.equal(actor.items.has(research2.id), true);
+
+    const missingIdRestore = makeSubclass({
+      id: "research-missing-id-restore",
+      archetypeId: "",
+      track: CRAFTSMAN_TRACKS.RESEARCH
+    }).toObject();
+    await assert.rejects(() => new ResearchSubclass({ item: classItem, actor: makeActor() })
+      .restore(2, missingIdRestore), /source|managed|archetype/i);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("apply validates eligible retained subclass data before native reuse", async () => {
+  const stubs = installDnd5eContractStubs();
+  try {
+    registerCraftsmanSubclassAdvancements();
+    const { ResearchSubclass } = getCraftsmanSubclassAdvancementClasses();
+    const source = makeSubclass({ id: "research-retained-source", track: CRAFTSMAN_TRACKS.RESEARCH });
+    stubs.sources.set(source.uuid, source);
+
+    const makeAdvancement = () => {
+      const actor = makeActor();
+      return { actor, advancement: new ResearchSubclass({ item: makeClass(actor), actor }) };
+    };
+    const retained = (overrides = {}) => {
+      const data = source.toObject();
+      data._id = "research-retained-embedded";
+      data.flags.dnd5e.sourceId = source.uuid;
+      return mergeObject(data, overrides, { inplace: true });
+    };
+
+    const valid = makeAdvancement();
+    await valid.advancement.apply(2, { uuid: source.uuid }, retained());
+    assert.equal(valid.actor.items.has("research-retained-embedded"), true);
+    assert.equal(stubs.parentCalls.at(-1).retainedData._id, "research-retained-embedded");
+
+    const invalidRetained = [
+      retained({ type: "feat" }),
+      retained({ system: { classIdentifier: "fighter-v01" } }),
+      retained({ flags: { [MODULE_ID]: { [CRAFTSMAN_TRACK_FLAG]: CRAFTSMAN_TRACKS.SPECIALTY } } }),
+      retained({ flags: { [MODULE_ID]: { managed: false } } }),
+      retained({ flags: { [MODULE_ID]: { [CRAFTSMAN_ARCHETYPE_ID_FLAG]: "" } } }),
+      retained({ flags: { dnd5e: { advancementOrigin: "origin", advancementRoot: "root" } } })
+    ];
+    for (const data of invalidRetained) {
+      const { advancement } = makeAdvancement();
+      await assert.rejects(() => advancement.apply(2, { uuid: source.uuid }, data));
+    }
+
+    const replacement = makeAdvancement();
+    const staleRetained = retained({
+      flags: { dnd5e: { sourceId: "Compendium.world.rebreya-subclasses.Item.previous-choice" } }
+    });
+    await replacement.advancement.apply(2, { uuid: source.uuid }, staleRetained);
+    assert.equal(replacement.actor.items.has(source.id), true);
+    assert.equal(replacement.actor.items.has(staleRetained._id), false);
+    assert.equal(stubs.parentCalls.filter(({ method }) => method === "apply").length, 2);
   }
   finally {
     stubs.restore();
@@ -456,6 +624,69 @@ test("summary and reverse use the advancement document and preserve the other tr
 
     researchAdvancement.value.document = specialty;
     await assert.rejects(() => researchAdvancement.reverse(2), /research/i);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("linked reverse fails closed on duplicate track state and succeeds for a unique managed source", async () => {
+  const stubs = installDnd5eContractStubs();
+  try {
+    registerCraftsmanSubclassAdvancements();
+    const { ResearchSubclass } = getCraftsmanSubclassAdvancementClasses();
+    const research = makeSubclass({ id: "research-linked-primary", track: CRAFTSMAN_TRACKS.RESEARCH });
+    const duplicate = makeSubclass({ id: "research-linked-duplicate", track: CRAFTSMAN_TRACKS.RESEARCH });
+    const specialty = makeSubclass({ id: "specialty-linked-other", track: CRAFTSMAN_TRACKS.SPECIALTY });
+    const duplicateActor = makeActor([research, duplicate, specialty]);
+    const duplicateAdvancement = new ResearchSubclass({ item: makeClass(duplicateActor), actor: duplicateActor });
+    duplicateAdvancement.value = { document: research, uuid: research.uuid };
+
+    await assert.rejects(() => duplicateAdvancement.reverse(2), /duplicate/i);
+    assert.equal(duplicateActor.items.has(research.id), true);
+    assert.equal(duplicateActor.items.has(duplicate.id), true);
+    assert.equal(stubs.parentCalls.some(({ method }) => method === "reverse"), false);
+
+    const actor = makeActor([research, specialty]);
+    const advancement = new ResearchSubclass({ item: makeClass(actor), actor });
+    advancement.value = { document: research, uuid: research.uuid };
+    const reversed = await advancement.reverse(2);
+    assert.equal(reversed._id, research.id);
+    assert.equal(actor.items.has(research.id), false);
+    assert.equal(actor.items.has(specialty.id), true);
+    assert.equal(stubs.parentCalls.at(-1).method, "reverse");
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("linked and fallback reverse reject unmanaged or unidentified subclass data", async () => {
+  const stubs = installDnd5eContractStubs();
+  try {
+    registerCraftsmanSubclassAdvancements();
+    const { ResearchSubclass, SpecialtySubclass } = getCraftsmanSubclassAdvancementClasses();
+    const unmanaged = makeSubclass({
+      id: "research-unmanaged-reverse",
+      managed: false,
+      track: CRAFTSMAN_TRACKS.RESEARCH
+    });
+    const unmanagedActor = makeActor([unmanaged]);
+    const linked = new ResearchSubclass({ item: makeClass(unmanagedActor), actor: unmanagedActor });
+    linked.value = { document: unmanaged, uuid: unmanaged.uuid };
+    await assert.rejects(() => linked.reverse(2), /source|managed|archetype/i);
+    assert.equal(unmanagedActor.items.has(unmanaged.id), true);
+
+    const missingId = makeSubclass({
+      id: "specialty-missing-id-reverse",
+      archetypeId: "",
+      track: CRAFTSMAN_TRACKS.SPECIALTY
+    });
+    const fallbackActor = makeActor([missingId]);
+    const fallback = new SpecialtySubclass({ item: makeClass(fallbackActor), actor: fallbackActor });
+    fallback.value = { document: null, uuid: missingId.uuid };
+    await assert.rejects(() => fallback.reverse(3), /source|managed|archetype/i);
+    assert.equal(fallbackActor.items.has(missingId.id), true);
   }
   finally {
     stubs.restore();

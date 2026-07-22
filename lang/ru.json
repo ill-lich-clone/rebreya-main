@@ -21,6 +21,7 @@
   "REBREYA_MAIN.Advancement.SpecialtySubclass.Hint": "Выберите специальность ремесленника.",
   "REBREYA_MAIN.CraftsmanSubclass.InvalidClass": "Можно выбрать только подкласс Ремесленника V0.1.",
   "REBREYA_MAIN.CraftsmanSubclass.InvalidTrack": "Этот подкласс относится к другой оси развития Ремесленника.",
+  "REBREYA_MAIN.CraftsmanSubclass.InvalidSource": "Можно выбрать только управляемый подкласс Ремесленника с корректным идентификатором архетипа.",
   "REBREYA_MAIN.CraftsmanSubclass.Duplicate": "У этого персонажа уже выбран подкласс этой оси.",
   "REBREYA_MAIN.CraftsmanArchetype.DuplicateResearch": "У этого персонажа уже выбрано исследование данного класса.",
   "REBREYA_MAIN.CraftsmanArchetype.DuplicateSpecialty": "У этого персонажа уже выбрана специальность данного класса.",
