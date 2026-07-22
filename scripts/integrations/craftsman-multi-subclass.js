@@ -1,4 +1,5 @@
 import {
+  CRAFTSMAN_ARCHETYPE_ID_FLAG,
   CRAFTSMAN_CLASS_IDENTIFIER,
   CRAFTSMAN_TRACK_FLAG,
   CRAFTSMAN_TRACKS,
@@ -11,10 +12,19 @@ import {
 
 const ITEM_LINK_TARGET = "CONFIG.Item.documentClass.prototype.subclass";
 const LEVEL_CHANGE_TARGET = "game.dnd5e.applications.advancement.AdvancementManager.prototype.createLevelChangeSteps";
+const SHEET_DROP_TARGET = "game.dnd5e.applications.actor.CharacterActorSheet.prototype._onDropSingleItem";
+const PRE_CREATE_HOOK = "preCreateItem";
 const VALID_TRACKS = new Set(Object.values(CRAFTSMAN_TRACKS));
+const INVALID_TYPE_KEY = "REBREYA_MAIN.CraftsmanSubclass.InvalidType";
+const INVALID_CLASS_KEY = "REBREYA_MAIN.CraftsmanSubclass.InvalidClass";
+const INVALID_TRACK_KEY = "REBREYA_MAIN.CraftsmanSubclass.InvalidTrack";
+const INVALID_SOURCE_KEY = "REBREYA_MAIN.CraftsmanSubclass.InvalidSource";
+const DUPLICATE_KEY = "REBREYA_MAIN.CraftsmanSubclass.Duplicate";
 
 let itemLinkRegistration = null;
 let advancementManagerRegistration = null;
+let sheetDropRegistration = null;
+let preCreateHookRegistration = null;
 
 function cleanString(value, fallback = "unknown") {
   return String(value ?? "").trim() || fallback;
@@ -31,6 +41,74 @@ function getActorItems(actor) {
 function getRawTrack(item) {
   return item?.getFlag?.(MODULE_ID, CRAFTSMAN_TRACK_FLAG)
     ?? item?.flags?.[MODULE_ID]?.[CRAFTSMAN_TRACK_FLAG];
+}
+
+function getModuleFlag(item, key) {
+  return item?.getFlag?.(MODULE_ID, key)
+    ?? item?.flags?.[MODULE_ID]?.[key];
+}
+
+function getItemId(item) {
+  return cleanString(item?.id ?? item?._id, "");
+}
+
+function getCandidate(document, data) {
+  const source = data && typeof data === "object" ? data : {};
+  return {
+    id: source.id ?? source._id ?? document?.id ?? document?._id,
+    type: source.type ?? document?.type,
+    system: source.system ?? document?.system ?? {},
+    flags: source.flags ?? document?.flags ?? {}
+  };
+}
+
+function isCraftsmanCandidate(candidate) {
+  const moduleFlags = candidate?.flags?.[MODULE_ID] ?? {};
+  return candidate?.system?.classIdentifier === CRAFTSMAN_CLASS_IDENTIFIER
+    || moduleFlags.classIdentifier === CRAFTSMAN_CLASS_IDENTIFIER
+    || Object.hasOwn(moduleFlags, CRAFTSMAN_TRACK_FLAG);
+}
+
+function findDuplicateIdentifier(actor, candidate) {
+  const identifier = cleanString(candidate?.system?.identifier, "");
+  if (!identifier) return null;
+  return getActorItems(actor).find((item) => (
+    item?.type === "subclass"
+    && cleanString(item?.system?.identifier ?? item?.identifier, "") === identifier
+  )) ?? null;
+}
+
+function hasDuplicateTrack(actor, candidate) {
+  const track = getRawTrack(candidate);
+  const candidateId = getItemId(candidate);
+  return getActorItems(actor).some((item) => (
+    getItemId(item) !== candidateId
+    && item?.type === "subclass"
+    && item?.system?.classIdentifier === CRAFTSMAN_CLASS_IDENTIFIER
+    && getRawTrack(item) === track
+  ));
+}
+
+function notifyError(key, options) {
+  if (options === undefined) globalThis.ui?.notifications?.error?.(key);
+  else globalThis.ui?.notifications?.error?.(key, options);
+}
+
+function validateCraftsmanCandidate(candidate, actor, { allowDuplicate = false, notify = false } = {}) {
+  if (!isCraftsmanCandidate(candidate)) return { associated: false, valid: true };
+
+  let errorKey = null;
+  if (candidate?.type !== "subclass") errorKey = INVALID_TYPE_KEY;
+  else if (candidate?.system?.classIdentifier !== CRAFTSMAN_CLASS_IDENTIFIER) errorKey = INVALID_CLASS_KEY;
+  else if (!VALID_TRACKS.has(getRawTrack(candidate))) errorKey = INVALID_TRACK_KEY;
+  else if (
+    getModuleFlag(candidate, "managed") !== true
+    || !cleanString(getModuleFlag(candidate, CRAFTSMAN_ARCHETYPE_ID_FLAG), "")
+  ) errorKey = INVALID_SOURCE_KEY;
+  else if (!allowDuplicate && hasDuplicateTrack(actor, candidate)) errorKey = DUPLICATE_KEY;
+
+  if (errorKey && notify) notifyError(errorKey, { localize: true });
+  return { associated: true, errorKey, valid: !errorKey };
 }
 
 function getCraftsmanContext(classItemOrActor) {
@@ -111,6 +189,28 @@ function getAdvancementManagerContract() {
   const method = prototype?.createLevelChangeSteps;
   if (!prototype || !(method instanceof Function)) return null;
   return { method, prototype };
+}
+
+function getCharacterActorSheetContract() {
+  const documentClass = globalThis.game?.dnd5e?.applications?.actor?.CharacterActorSheet;
+  const prototype = documentClass?.prototype;
+  const method = prototype?._onDropSingleItem;
+  const genericPrototype = prototype && Object.getPrototypeOf(prototype);
+  const genericMethod = genericPrototype?._onDropSingleItem;
+  if (
+    !prototype
+    || !(method instanceof Function)
+    || !genericPrototype
+    || !(genericMethod instanceof Function)
+    || genericMethod === method
+  ) return null;
+  return { genericMethod, method, prototype };
+}
+
+function getHooksContract() {
+  const hooks = globalThis.Hooks;
+  if (!(hooks?.on instanceof Function) || !(hooks?.off instanceof Function)) return null;
+  return hooks;
 }
 
 export function registerCraftsmanSubclassItemLinks() {
@@ -273,21 +373,177 @@ export function unregisterCraftsmanAdvancementManagerPatch() {
   }
 }
 
+async function handleCraftsmanSheetDrop(sheet, delegate, genericMethod, event, itemData, args) {
+  const actor = sheet?.inventorySource ?? sheet?.actor ?? null;
+  const candidate = getCandidate(null, itemData);
+  if (actor?.type !== "character" || !isCraftsmanCandidate(candidate)) {
+    return delegate(event, itemData, ...args);
+  }
+
+  const duplicateIdentifier = findDuplicateIdentifier(actor, candidate);
+  if (candidate.type === "subclass" && duplicateIdentifier) {
+    const error = globalThis.game?.i18n?.format?.("DND5E.SubclassDuplicateError", {
+      identifier: duplicateIdentifier.system?.identifier ?? duplicateIdentifier.identifier
+    }) ?? "DND5E.SubclassDuplicateError";
+    notifyError(error);
+    return undefined;
+  }
+
+  const validation = validateCraftsmanCandidate(candidate, actor, { notify: true });
+  if (!validation.valid) return false;
+  return genericMethod.call(sheet, event, itemData, ...args);
+}
+
+export function registerCraftsmanCharacterSheetDropPatch() {
+  if (sheetDropRegistration) return true;
+  const contract = getCharacterActorSheetContract();
+  if (!contract) return false;
+
+  const libWrapperContract = getLibWrapperContract();
+  if (libWrapperContract.active) {
+    if (!libWrapperContract.api) return false;
+    const wrapper = function(wrapped, event, itemData, ...args) {
+      return handleCraftsmanSheetDrop(
+        this,
+        (delegatedEvent, delegatedData, ...delegatedArgs) => wrapped(
+          delegatedEvent,
+          delegatedData,
+          ...delegatedArgs
+        ),
+        contract.genericMethod,
+        event,
+        itemData,
+        args
+      );
+    };
+    const id = libWrapperContract.api.register(MODULE_ID, SHEET_DROP_TARGET, wrapper, "MIXED");
+    sheetDropRegistration = { api: libWrapperContract.api, id, kind: "libWrapper" };
+    return true;
+  }
+
+  const wrapper = function(event, itemData, ...args) {
+    return handleCraftsmanSheetDrop(
+      this,
+      (delegatedEvent, delegatedData, ...delegatedArgs) => contract.method.call(
+        this,
+        delegatedEvent,
+        delegatedData,
+        ...delegatedArgs
+      ),
+      contract.genericMethod,
+      event,
+      itemData,
+      args
+    );
+  };
+  contract.prototype._onDropSingleItem = wrapper;
+  sheetDropRegistration = {
+    kind: "direct",
+    originalMethod: contract.method,
+    ownedMethod: wrapper,
+    prototype: contract.prototype
+  };
+  return true;
+}
+
+export function unregisterCraftsmanCharacterSheetDropPatch() {
+  const registration = sheetDropRegistration;
+  sheetDropRegistration = null;
+  if (!registration) return;
+
+  if (registration.kind === "libWrapper") {
+    registration.api.unregister(MODULE_ID, registration.id);
+    return;
+  }
+
+  if (registration.prototype._onDropSingleItem === registration.ownedMethod) {
+    registration.prototype._onDropSingleItem = registration.originalMethod;
+  }
+}
+
+function validateCraftsmanPreCreate(document, data, options) {
+  const actor = document?.parent ?? document?.actor ?? null;
+  if (actor?.type !== "character" || !document?.parent) return undefined;
+  const candidate = getCandidate(document, data);
+  if (!isCraftsmanCandidate(candidate)) return undefined;
+  const validation = validateCraftsmanCandidate(candidate, actor, {
+    allowDuplicate: options?.rebreyaCraftsmanSubclassMigration === true,
+    notify: true
+  });
+  return validation.valid ? undefined : false;
+}
+
+export function registerCraftsmanSubclassCreateHook() {
+  if (preCreateHookRegistration) return true;
+  const hooks = getHooksContract();
+  if (!hooks) return false;
+  const callback = (document, data, options, userId) => (
+    validateCraftsmanPreCreate(document, data, options, userId)
+  );
+  const id = hooks.on(PRE_CREATE_HOOK, callback);
+  preCreateHookRegistration = { callback, hooks, id };
+  return true;
+}
+
+export function unregisterCraftsmanSubclassCreateHook() {
+  const registration = preCreateHookRegistration;
+  preCreateHookRegistration = null;
+  if (!registration) return;
+  registration.hooks.off(PRE_CREATE_HOOK, registration.id);
+}
+
+export function openCraftsmanSubclassChoice(actor, classId, track) {
+  if (!VALID_TRACKS.has(track)) return null;
+  const classItem = actor?.items?.get?.(classId)
+    ?? getActorItems(actor).find((item) => getItemId(item) === cleanString(classId, ""));
+  if (!isCraftsmanClass(classItem)) return null;
+  const AdvancementManager = globalThis.game?.dnd5e?.applications?.advancement?.AdvancementManager;
+  if (!(AdvancementManager?.forModifyChoices instanceof Function)) return null;
+  const level = track === CRAFTSMAN_TRACKS.RESEARCH ? 2 : 3;
+  const manager = AdvancementManager.forModifyChoices(actor, classId, level);
+  if (manager?.steps?.length) manager.render({ force: true });
+  return manager;
+}
+
 export function registerCraftsmanMultiSubclassIntegration() {
-  const itemLinksWereRegistered = Boolean(itemLinkRegistration);
-  if (!registerCraftsmanSubclassItemLinks()) return false;
+  const prior = {
+    advancementManager: Boolean(advancementManagerRegistration),
+    itemLinks: Boolean(itemLinkRegistration),
+    preCreateHook: Boolean(preCreateHookRegistration),
+    sheetDrop: Boolean(sheetDropRegistration)
+  };
+  const rollbackNewRegistrations = () => {
+    if (!prior.preCreateHook) unregisterCraftsmanSubclassCreateHook();
+    if (!prior.sheetDrop) unregisterCraftsmanCharacterSheetDropPatch();
+    if (!prior.advancementManager) unregisterCraftsmanAdvancementManagerPatch();
+    if (!prior.itemLinks) unregisterCraftsmanSubclassItemLinks();
+  };
+
   try {
-    if (registerCraftsmanAdvancementManagerPatch()) return true;
-    if (!itemLinksWereRegistered) unregisterCraftsmanSubclassItemLinks();
-    return false;
+    if (!registerCraftsmanSubclassItemLinks()) return false;
+    if (!registerCraftsmanAdvancementManagerPatch()) {
+      rollbackNewRegistrations();
+      return false;
+    }
+    if (!registerCraftsmanCharacterSheetDropPatch()) {
+      rollbackNewRegistrations();
+      return false;
+    }
+    if (!registerCraftsmanSubclassCreateHook()) {
+      rollbackNewRegistrations();
+      return false;
+    }
+    return true;
   }
   catch (error) {
-    if (!itemLinksWereRegistered) unregisterCraftsmanSubclassItemLinks();
+    rollbackNewRegistrations();
     throw error;
   }
 }
 
 export function unregisterCraftsmanMultiSubclassIntegration() {
+  unregisterCraftsmanSubclassCreateHook();
+  unregisterCraftsmanCharacterSheetDropPatch();
   unregisterCraftsmanAdvancementManagerPatch();
   unregisterCraftsmanSubclassItemLinks();
 }

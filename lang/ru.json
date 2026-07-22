@@ -19,6 +19,7 @@
   "REBREYA_MAIN.Advancement.ResearchSubclass.Hint": "Выберите направление исследования ремесленника.",
   "REBREYA_MAIN.Advancement.SpecialtySubclass.Title": "Выбор специальности",
   "REBREYA_MAIN.Advancement.SpecialtySubclass.Hint": "Выберите специальность ремесленника.",
+  "REBREYA_MAIN.CraftsmanSubclass.InvalidType": "Можно выбрать только нативный предмет подкласса Ремесленника.",
   "REBREYA_MAIN.CraftsmanSubclass.InvalidClass": "Можно выбрать только подкласс Ремесленника V0.1.",
   "REBREYA_MAIN.CraftsmanSubclass.InvalidTrack": "Этот подкласс относится к другой оси развития Ремесленника.",
   "REBREYA_MAIN.CraftsmanSubclass.InvalidSource": "Можно выбрать только управляемый подкласс Ремесленника с корректным идентификатором архетипа.",

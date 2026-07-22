@@ -2,28 +2,36 @@ import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
+  CRAFTSMAN_ARCHETYPE_ID_FLAG,
   CRAFTSMAN_CLASS_IDENTIFIER,
   CRAFTSMAN_TRACK_FLAG,
   CRAFTSMAN_TRACKS,
   MODULE_ID
 } from "../scripts/constants.js";
-import {
+import * as craftsmanIntegration from "../scripts/integrations/craftsman-multi-subclass.js";
+
+const {
   createCraftsmanLevelChangeSteps,
   getCraftsmanSubclasses,
   registerCraftsmanAdvancementManagerPatch,
   registerCraftsmanMultiSubclassIntegration,
   registerCraftsmanSubclassItemLinks,
   unregisterCraftsmanMultiSubclassIntegration
-} from "../scripts/integrations/craftsman-multi-subclass.js";
+} = craftsmanIntegration;
 
 const ORIGINAL_GLOBALS = {
   CONFIG: globalThis.CONFIG,
+  Hooks: globalThis.Hooks,
   Item: globalThis.Item,
   game: globalThis.game,
-  libWrapper: globalThis.libWrapper
+  libWrapper: globalThis.libWrapper,
+  ui: globalThis.ui
 };
 
 let originalSubclassCalls = 0;
+let characterDropCalls = 0;
+let genericDropCalls = 0;
+let notifications = [];
 
 class Item5eStub {
   constructor({
@@ -32,6 +40,8 @@ class Item5eStub {
     identifier,
     classIdentifier,
     track,
+    managed,
+    archetypeId,
     levels = 0,
     flows = {},
     advancementRootItem = null,
@@ -46,9 +56,11 @@ class Item5eStub {
       advancementRootItem,
       advancementClassLinked
     };
-    this.flags = track === undefined ? {} : {
-      [MODULE_ID]: { [CRAFTSMAN_TRACK_FLAG]: track }
-    };
+    const moduleFlags = {};
+    if (track !== undefined) moduleFlags[CRAFTSMAN_TRACK_FLAG] = track;
+    if (managed !== undefined) moduleFlags.managed = managed;
+    if (archetypeId !== undefined) moduleFlags[CRAFTSMAN_ARCHETYPE_ID_FLAG] = archetypeId;
+    this.flags = Object.keys(moduleFlags).length ? { [MODULE_ID]: moduleFlags } : {};
     this.flows = flows;
     this.parent = null;
     this.actor = null;
@@ -80,6 +92,10 @@ class Item5eStub {
       item.type === "subclass" && item.system.classIdentifier === classIdentifier
     ));
   }
+
+  getFlag(scope, key) {
+    return this.flags?.[scope]?.[key];
+  }
 }
 
 function attachActor(items, { id = "actor-1", level = 1, race = null } = {}) {
@@ -88,8 +104,13 @@ function attachActor(items, { id = "actor-1", level = 1, race = null } = {}) {
   collection.get = (itemId) => collection.find((item) => item.id === itemId);
   const actor = {
     id,
+    type: "character",
     items: collection,
-    system: { details: { level, race } }
+    system: { details: { level, race }, metadata: { supportsAdvancement: true } }
+  };
+  actor.itemTypes = {
+    class: collection.filter((item) => item.type === "class"),
+    subclass: collection.filter((item) => item.type === "subclass")
   };
   for (const item of collection) {
     item.parent = actor;
@@ -127,6 +148,7 @@ class AdvancementManagerStub {
   }
 
   static forModifyChoices(actor, itemId, level) {
+    AdvancementManagerStub.modifyCalls.push({ actor, itemId, level });
     const manager = new this(actor);
     const clonedItem = manager.clone.items.get(itemId);
     if (!clonedItem) return manager;
@@ -140,21 +162,143 @@ class AdvancementManagerStub {
       .forEach((flow) => manager.steps.push({ type: "restore", flow, automatic: true }));
     return manager;
   }
+
+  static forNewItem(actor, itemData) {
+    AdvancementManagerStub.newItemCalls.push({ actor, itemData });
+    const manager = new this(actor);
+    if (itemData.system?.advancement?.length) manager.steps.push({ type: "forward" });
+    return manager;
+  }
+
+  render(options) {
+    this.renderOptions = options;
+    AdvancementManagerStub.renderCalls.push({ manager: this, options });
+    return this;
+  }
 }
 AdvancementManagerStub.originalCalls = 0;
+AdvancementManagerStub.modifyCalls = [];
+AdvancementManagerStub.newItemCalls = [];
+AdvancementManagerStub.renderCalls = [];
 
-function installGlobals({ libWrapperActive = false, libWrapper = undefined } = {}) {
+class BaseActorSheetStub {
+  constructor(actor) {
+    this.actor = actor;
+    this.inventorySource = actor;
+    this.tabGroups = { primary: "features" };
+  }
+
+  async _onDropSingleItem(event, itemData) {
+    genericDropCalls += 1;
+    if (this.actor.system.metadata?.supportsAdvancement && itemData.system?.advancement?.length) {
+      const manager = AdvancementManagerStub.forNewItem(this.actor, itemData);
+      if (manager.steps.length) {
+        manager.render(true);
+        return false;
+      }
+    }
+    return itemData;
+  }
+}
+
+class CharacterActorSheetStub extends BaseActorSheetStub {
+  async _onDropSingleItem(event, itemData) {
+    characterDropCalls += 1;
+    if (itemData.type === "subclass") {
+      const other = this.actor.itemTypes.subclass.find((item) => item.identifier === itemData.system.identifier);
+      if (other) return undefined;
+      const cls = this.actor.itemTypes.class.find((item) => item.identifier === itemData.system.classIdentifier);
+      if (cls?.subclass) return undefined;
+    }
+    return super._onDropSingleItem(event, itemData);
+  }
+}
+
+function createHooksHarness() {
+  let nextId = 1;
+  const callbacks = new Map();
+  const calls = [];
+  return {
+    callbacks,
+    calls,
+    on(name, callback) {
+      const id = nextId++;
+      callbacks.set(name, { callback, id });
+      calls.push({ action: "on", name, id });
+      return id;
+    },
+    off(name, id) {
+      calls.push({ action: "off", name, id });
+      if (callbacks.get(name)?.id === id) callbacks.delete(name);
+    }
+  };
+}
+
+function installGlobals({ libWrapperActive = false, libWrapper = undefined, hooks = createHooksHarness() } = {}) {
   globalThis.Item = Item5eStub;
-  globalThis.CONFIG = { Item: { documentClass: Item5eStub } };
+  globalThis.CONFIG = { Item: { dataModels: {}, documentClass: Item5eStub } };
+  globalThis.Hooks = hooks;
   globalThis.game = {
+    i18n: {
+      format: (key, data) => `${key}:${JSON.stringify(data)}`,
+      localize: (key) => key
+    },
     modules: {
       get: (id) => id === "lib-wrapper" ? { active: libWrapperActive } : null
     },
     dnd5e: {
-      applications: { advancement: { AdvancementManager: AdvancementManagerStub } }
+      applications: {
+        actor: { CharacterActorSheet: CharacterActorSheetStub },
+        advancement: { AdvancementManager: AdvancementManagerStub }
+      }
     }
   };
   globalThis.libWrapper = libWrapper;
+  globalThis.ui = {
+    notifications: {
+      error: (key, options) => notifications.push({ key, options, type: "error" }),
+      warn: (key, options) => notifications.push({ key, options, type: "warn" })
+    }
+  };
+  return hooks;
+}
+
+function makeCraftsmanSubclassData({
+  id = "incoming-subclass",
+  identifier = "incoming-craftsman-subclass",
+  classIdentifier = CRAFTSMAN_CLASS_IDENTIFIER,
+  track = CRAFTSMAN_TRACKS.RESEARCH,
+  managed = true,
+  archetypeId = `${track}-archetype`,
+  type = "subclass",
+  advancement = []
+} = {}) {
+  return {
+    _id: id,
+    name: "Candidate",
+    type,
+    system: { advancement, classIdentifier, identifier },
+    flags: {
+      [MODULE_ID]: {
+        [CRAFTSMAN_ARCHETYPE_ID_FLAG]: archetypeId,
+        [CRAFTSMAN_TRACK_FLAG]: track,
+        classIdentifier: CRAFTSMAN_CLASS_IDENTIFIER,
+        managed,
+        sourceType: "subclass"
+      }
+    }
+  };
+}
+
+function makePreCreateDocument(actor, data) {
+  return {
+    ...structuredClone(data),
+    actor,
+    parent: actor,
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  };
 }
 
 function makeCraftsmanFixture({ level = 1, actorLevel = level } = {}) {
@@ -169,6 +313,7 @@ function makeCraftsmanFixture({ level = 1, actorLevel = level } = {}) {
   const research = makeItem({
     id: "research",
     type: "subclass",
+    identifier: "craftsman-research-existing",
     classIdentifier: CRAFTSMAN_CLASS_IDENTIFIER,
     track: CRAFTSMAN_TRACKS.RESEARCH,
     flows: {}
@@ -176,6 +321,7 @@ function makeCraftsmanFixture({ level = 1, actorLevel = level } = {}) {
   const specialty = makeItem({
     id: "specialty",
     type: "subclass",
+    identifier: "craftsman-specialty-existing",
     classIdentifier: CRAFTSMAN_CLASS_IDENTIFIER,
     track: CRAFTSMAN_TRACKS.SPECIALTY,
     flows: {}
@@ -202,6 +348,11 @@ function makeCraftsmanFixture({ level = 1, actorLevel = level } = {}) {
   return { actor, craftsman, dependentResearch, dependentSpecialty, general, race, research, specialty };
 }
 
+function removeActorItem(actor, item) {
+  actor.items.splice(actor.items.indexOf(item), 1);
+  actor.itemTypes[item.type] = actor.itemTypes[item.type].filter((entry) => entry !== item);
+}
+
 function flowStepLabels(manager) {
   return manager.steps.map((step) => step.flow
     ? `${step.type}:${step.flow.item.id}:${step.flow.type}:${step.flow.level}`
@@ -221,6 +372,11 @@ function createLibWrapperHarness() {
     "game.dnd5e.applications.advancement.AdvancementManager.prototype.createLevelChangeSteps": {
       prototype: AdvancementManagerStub.prototype,
       property: "createLevelChangeSteps",
+      kind: "method"
+    },
+    "game.dnd5e.applications.actor.CharacterActorSheet.prototype._onDropSingleItem": {
+      prototype: CharacterActorSheetStub.prototype,
+      property: "_onDropSingleItem",
       kind: "method"
     }
   };
@@ -294,11 +450,19 @@ function createLibWrapperHarness() {
 afterEach(() => {
   unregisterCraftsmanMultiSubclassIntegration();
   globalThis.CONFIG = ORIGINAL_GLOBALS.CONFIG;
+  globalThis.Hooks = ORIGINAL_GLOBALS.Hooks;
   globalThis.Item = ORIGINAL_GLOBALS.Item;
   globalThis.game = ORIGINAL_GLOBALS.game;
   globalThis.libWrapper = ORIGINAL_GLOBALS.libWrapper;
+  globalThis.ui = ORIGINAL_GLOBALS.ui;
   originalSubclassCalls = 0;
+  characterDropCalls = 0;
+  genericDropCalls = 0;
+  notifications = [];
   AdvancementManagerStub.originalCalls = 0;
+  AdvancementManagerStub.modifyCalls = [];
+  AdvancementManagerStub.newItemCalls = [];
+  AdvancementManagerStub.renderCalls = [];
 });
 
 test("the Item relationship wrapper keeps native links and deterministically exposes Research", () => {
@@ -523,38 +687,250 @@ test("native forModifyChoices preserves the opposite level choice while the wrap
   assert.equal(AdvancementManagerStub.originalCalls, 1);
 });
 
-test("direct registration teardown restores only wrappers still owned by this integration", () => {
+test("Standard drop accepts a valid opposite Craftsman axis through the generic native parent", async () => {
   installGlobals();
+  const { actor, specialty } = makeCraftsmanFixture({ level: 3, actorLevel: 3 });
+  removeActorItem(actor, specialty);
+  const sheet = new CharacterActorSheetStub(actor);
+  const candidate = makeCraftsmanSubclassData({
+    identifier: "new-specialty",
+    track: CRAFTSMAN_TRACKS.SPECIALTY,
+    advancement: [{ _id: "specialty-advancement" }]
+  });
+
+  assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
+  assert.equal(await sheet._onDropSingleItem({}, candidate), false);
+  assert.equal(characterDropCalls, 0, "only the Character singleton check is bypassed");
+  assert.equal(genericDropCalls, 1, "the installed generic parent handles the drop once");
+  assert.equal(AdvancementManagerStub.newItemCalls.length, 1, "native advancement creation remains active");
+  assert.equal(AdvancementManagerStub.renderCalls.length, 1);
+});
+
+test("Standard drop rejects the same Craftsman axis and preserves native duplicate identifiers", async () => {
+  installGlobals();
+  const { actor, specialty } = makeCraftsmanFixture({ level: 3, actorLevel: 3 });
+  removeActorItem(actor, specialty);
+  const sheet = new CharacterActorSheetStub(actor);
+  assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
+
+  const sameAxis = makeCraftsmanSubclassData({ identifier: "another-research" });
+  assert.equal(await sheet._onDropSingleItem({}, sameAxis), false);
+  assert.equal(genericDropCalls, 0);
+  assert.equal(notifications.at(-1)?.key, "REBREYA_MAIN.CraftsmanSubclass.Duplicate");
+
+  const duplicateIdentifier = makeCraftsmanSubclassData({
+    identifier: "craftsman-research-existing",
+    track: CRAFTSMAN_TRACKS.SPECIALTY
+  });
+  assert.equal(await sheet._onDropSingleItem({}, duplicateIdentifier), undefined);
+  assert.equal(genericDropCalls, 0);
+  assert.match(notifications.at(-1)?.key ?? "", /DND5E\.SubclassDuplicateError/u);
+});
+
+test("Standard drop rejects missing, unknown, unmanaged, and wrong-class Craftsman candidates", async () => {
+  installGlobals();
+  const { actor, specialty } = makeCraftsmanFixture({ level: 3, actorLevel: 3 });
+  removeActorItem(actor, specialty);
+  const sheet = new CharacterActorSheetStub(actor);
+  assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
+
+  const missingTrack = makeCraftsmanSubclassData({ track: CRAFTSMAN_TRACKS.SPECIALTY });
+  delete missingTrack.flags[MODULE_ID][CRAFTSMAN_TRACK_FLAG];
+  const invalidCandidates = [
+    missingTrack,
+    makeCraftsmanSubclassData({ track: "prototype" }),
+    makeCraftsmanSubclassData({ managed: false, track: CRAFTSMAN_TRACKS.SPECIALTY }),
+    makeCraftsmanSubclassData({ classIdentifier: "fighter-v01", track: CRAFTSMAN_TRACKS.SPECIALTY }),
+    makeCraftsmanSubclassData({ archetypeId: "", track: CRAFTSMAN_TRACKS.SPECIALTY })
+  ];
+
+  for (const candidate of invalidCandidates) {
+    assert.equal(await sheet._onDropSingleItem({}, candidate), false);
+  }
+  assert.equal(characterDropCalls, 0);
+  assert.equal(genericDropCalls, 0);
+  assert.equal(notifications.length, invalidCandidates.length);
+});
+
+test("Standard drop delegates every unrelated item and subclass to CharacterActorSheet exactly once", async () => {
+  installGlobals();
+  const { actor } = makeCraftsmanFixture({ level: 3, actorLevel: 3 });
+  const sheet = new CharacterActorSheetStub(actor);
+  assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
+
+  const feat = { type: "feat", system: { identifier: "feat" }, flags: {} };
+  assert.equal(await sheet._onDropSingleItem({}, feat), feat);
+  const ordinarySubclass = {
+    type: "subclass",
+    system: { classIdentifier: "fighter-v01", identifier: "champion" },
+    flags: {}
+  };
+  assert.equal(await sheet._onDropSingleItem({}, ordinarySubclass), ordinarySubclass);
+  assert.equal(characterDropCalls, 2);
+  assert.equal(genericDropCalls, 2);
+});
+
+test("core drop/create invariant protects Standard, Tidy, and programmatic creation including advancements", () => {
+  const hooks = installGlobals();
+  const { actor, specialty } = makeCraftsmanFixture({ level: 3, actorLevel: 3 });
+  removeActorItem(actor, specialty);
+  assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
+  const preCreate = hooks.callbacks.get("preCreateItem")?.callback;
+  assert.equal(typeof preCreate, "function");
+
+  for (const route of ["standard", "tidy", "programmatic"]) {
+    const data = makeCraftsmanSubclassData({
+      id: `${route}-specialty`,
+      identifier: `${route}-specialty`,
+      track: CRAFTSMAN_TRACKS.SPECIALTY
+    });
+    assert.notEqual(preCreate(makePreCreateDocument(actor, data), data, { route }, "user-1"), false);
+  }
+
+  const advancementData = makeCraftsmanSubclassData({
+    id: "advancement-specialty",
+    track: CRAFTSMAN_TRACKS.SPECIALTY
+  });
+  assert.notEqual(
+    preCreate(makePreCreateDocument(actor, advancementData), advancementData, { isAdvancement: true }, "user-1"),
+    false
+  );
+  const duplicate = makeCraftsmanSubclassData({ id: "duplicate-research" });
+  const unknown = makeCraftsmanSubclassData({ id: "unknown", track: "prototype" });
+  assert.equal(preCreate(makePreCreateDocument(actor, duplicate), duplicate, {}, "user-1"), false);
+  assert.equal(preCreate(makePreCreateDocument(actor, unknown), unknown, {}, "user-1"), false);
+});
+
+test("core drop/create invariant rejects exact type, class, managed source, and archetype violations", () => {
+  const hooks = installGlobals();
+  const { actor, specialty } = makeCraftsmanFixture({ level: 3, actorLevel: 3 });
+  removeActorItem(actor, specialty);
+  assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
+  const preCreate = hooks.callbacks.get("preCreateItem")?.callback;
+  assert.equal(typeof preCreate, "function");
+  const invalidCandidates = [
+    makeCraftsmanSubclassData({ type: "feat", track: CRAFTSMAN_TRACKS.SPECIALTY }),
+    makeCraftsmanSubclassData({ classIdentifier: "fighter-v01", track: CRAFTSMAN_TRACKS.SPECIALTY }),
+    makeCraftsmanSubclassData({ managed: false, track: CRAFTSMAN_TRACKS.SPECIALTY }),
+    makeCraftsmanSubclassData({ archetypeId: "", track: CRAFTSMAN_TRACKS.SPECIALTY })
+  ];
+
+  for (const data of invalidCandidates) {
+    assert.equal(preCreate(makePreCreateDocument(actor, data), data, {}, "user-1"), false);
+  }
+  const npc = { ...actor, type: "npc" };
+  const npcData = makeCraftsmanSubclassData({ track: CRAFTSMAN_TRACKS.SPECIALTY });
+  assert.notEqual(preCreate(makePreCreateDocument(npc, npcData), npcData, {}, "user-1"), false);
+});
+
+test("core drop/create migration bypass recognizes only the exact internal marker and only for duplicates", () => {
+  const hooks = installGlobals();
+  const { actor } = makeCraftsmanFixture({ level: 3, actorLevel: 3 });
+  assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
+  const preCreate = hooks.callbacks.get("preCreateItem")?.callback;
+  assert.equal(typeof preCreate, "function");
+  const duplicate = makeCraftsmanSubclassData({ id: "migrated-research" });
+  const document = makePreCreateDocument(actor, duplicate);
+
+  assert.equal(preCreate(document, duplicate, {}, "user-1"), false);
+  assert.equal(preCreate(document, duplicate, { rebreyaCraftsmanMigration: true }, "user-1"), false);
+  assert.equal(preCreate(document, duplicate, { rebreyaCraftsmanSubclassMigration: false }, "user-1"), false);
+  assert.notEqual(
+    preCreate(document, duplicate, { rebreyaCraftsmanSubclassMigration: true }, "user-1"),
+    false
+  );
+
+  const invalidClass = makeCraftsmanSubclassData({ classIdentifier: "fighter-v01" });
+  assert.equal(preCreate(
+    makePreCreateDocument(actor, invalidClass),
+    invalidClass,
+    { rebreyaCraftsmanSubclassMigration: true },
+    "user-1"
+  ), false);
+});
+
+test("modify choice opens only the native level 2 and level 3 managers when steps exist", () => {
+  installGlobals();
+  const { actor, craftsman } = makeCraftsmanFixture({ level: 3, actorLevel: 3 });
+  craftsman.flows = { 2: ["ResearchSubclass"], 3: ["SpecialtySubclass"] };
+  assert.equal(typeof craftsmanIntegration.openCraftsmanSubclassChoice, "function");
+
+  const researchManager = craftsmanIntegration.openCraftsmanSubclassChoice(
+    actor,
+    craftsman.id,
+    CRAFTSMAN_TRACKS.RESEARCH
+  );
+  const specialtyManager = craftsmanIntegration.openCraftsmanSubclassChoice(
+    actor,
+    craftsman.id,
+    CRAFTSMAN_TRACKS.SPECIALTY
+  );
+  assert.deepEqual(AdvancementManagerStub.modifyCalls.map(({ itemId, level }) => ({ itemId, level })), [
+    { itemId: craftsman.id, level: 2 },
+    { itemId: craftsman.id, level: 3 }
+  ]);
+  assert.equal(researchManager.renderOptions.force, true);
+  assert.equal(specialtyManager.renderOptions.force, true);
+  assert.equal(AdvancementManagerStub.renderCalls.length, 2);
+
+  craftsman.flows = {};
+  const emptyManager = craftsmanIntegration.openCraftsmanSubclassChoice(
+    actor,
+    craftsman.id,
+    CRAFTSMAN_TRACKS.RESEARCH
+  );
+  assert.equal(emptyManager.steps.length, 0);
+  assert.equal(AdvancementManagerStub.renderCalls.length, 2, "a manager without steps is not rendered");
+});
+
+test("direct registration teardown restores only wrappers and hook still owned by this integration", () => {
+  const hooks = installGlobals();
   const originalSubclass = Object.getOwnPropertyDescriptor(Item5eStub.prototype, "subclass");
   const originalManager = AdvancementManagerStub.prototype.createLevelChangeSteps;
+  const originalDrop = CharacterActorSheetStub.prototype._onDropSingleItem;
+  assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
   assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
   const ownedSubclass = Object.getOwnPropertyDescriptor(Item5eStub.prototype, "subclass");
   const ownedManager = AdvancementManagerStub.prototype.createLevelChangeSteps;
+  const ownedDrop = CharacterActorSheetStub.prototype._onDropSingleItem;
   assert.notEqual(ownedSubclass.get, originalSubclass.get);
   assert.notEqual(ownedManager, originalManager);
+  assert.notEqual(ownedDrop, originalDrop);
+  assert.deepEqual(hooks.calls, [
+    { action: "on", name: "preCreateItem", id: 1 }
+  ]);
 
   unregisterCraftsmanMultiSubclassIntegration();
   assert.equal(Object.getOwnPropertyDescriptor(Item5eStub.prototype, "subclass").get, originalSubclass.get);
   assert.equal(AdvancementManagerStub.prototype.createLevelChangeSteps, originalManager);
+  assert.equal(CharacterActorSheetStub.prototype._onDropSingleItem, originalDrop);
+  assert.deepEqual(hooks.calls, [
+    { action: "on", name: "preCreateItem", id: 1 },
+    { action: "off", name: "preCreateItem", id: 1 }
+  ]);
   unregisterCraftsmanMultiSubclassIntegration();
 
   registerCraftsmanMultiSubclassIntegration();
   const thirdPartySubclass = { ...ownedSubclass, get() { return "third-party"; } };
   const thirdPartyManager = function() { return "third-party"; };
+  const thirdPartyDrop = function() { return "third-party"; };
   Object.defineProperty(Item5eStub.prototype, "subclass", thirdPartySubclass);
   AdvancementManagerStub.prototype.createLevelChangeSteps = thirdPartyManager;
+  CharacterActorSheetStub.prototype._onDropSingleItem = thirdPartyDrop;
   unregisterCraftsmanMultiSubclassIntegration();
   assert.equal(Object.getOwnPropertyDescriptor(Item5eStub.prototype, "subclass").get, thirdPartySubclass.get);
   assert.equal(AdvancementManagerStub.prototype.createLevelChangeSteps, thirdPartyManager);
+  assert.equal(CharacterActorSheetStub.prototype._onDropSingleItem, thirdPartyDrop);
 
   Object.defineProperty(Item5eStub.prototype, "subclass", originalSubclass);
   AdvancementManagerStub.prototype.createLevelChangeSteps = originalManager;
+  CharacterActorSheetStub.prototype._onDropSingleItem = originalDrop;
 });
 
-test("active libWrapper is preferred, uses installed public targets, and unregisters by owned ids", () => {
+test("active libWrapper uses MIXED for all conditional wrappers and unregisters every owned id", async () => {
   const libWrapper = createLibWrapperHarness();
-  installGlobals({ libWrapperActive: true, libWrapper });
-  const { actor, craftsman, research } = makeCraftsmanFixture();
+  const hooks = installGlobals({ libWrapperActive: true, libWrapper });
+  const { actor, craftsman, research, specialty } = makeCraftsmanFixture();
   const ordinaryClass = makeItem({ id: "fighter", type: "class", identifier: "fighter-v01", levels: 1 });
   const ordinarySubclass = makeItem({ id: "fighter-subclass", type: "subclass", classIdentifier: "fighter-v01" });
   actor.items.push(ordinaryClass, ordinarySubclass);
@@ -579,16 +955,35 @@ test("active libWrapper is preferred, uses installed public targets, and unregis
   );
   assert.equal(originalSubclassCalls, 1, "the ordinary getter invokes its original exactly once");
   assert.equal(AdvancementManagerStub.originalCalls, 1, "the ordinary manager invokes its original exactly once");
+
+  const sheet = new CharacterActorSheetStub(actor);
+  const ordinaryDrop = { type: "feat", system: { identifier: "feat" }, flags: {} };
+  assert.equal(await sheet._onDropSingleItem({}, ordinaryDrop), ordinaryDrop);
+  removeActorItem(actor, specialty);
+  const craftsmanDrop = makeCraftsmanSubclassData({ track: CRAFTSMAN_TRACKS.SPECIALTY });
+  assert.equal(await sheet._onDropSingleItem({}, craftsmanDrop), craftsmanDrop);
+  assert.equal(await sheet._onDropSingleItem({}, craftsmanDrop), craftsmanDrop);
+  assert.equal(characterDropCalls, 1, "the unrelated drop invokes CharacterActorSheet once");
+  assert.equal(genericDropCalls, 3, "the unrelated and both Craftsman drops invoke the generic parent once each");
   assert.equal(libWrapper.calls.some((call) => call.action === "auto-unregister"), false);
   assert.deepEqual(libWrapper.calls.map((call) => [call.action, call.targetPath, call.type]), [
     ["register", "CONFIG.Item.documentClass.prototype.subclass", "MIXED"],
-    ["register", "game.dnd5e.applications.advancement.AdvancementManager.prototype.createLevelChangeSteps", "MIXED"]
+    ["register", "game.dnd5e.applications.advancement.AdvancementManager.prototype.createLevelChangeSteps", "MIXED"],
+    ["register", "game.dnd5e.applications.actor.CharacterActorSheet.prototype._onDropSingleItem", "MIXED"]
+  ]);
+  assert.deepEqual(hooks.calls, [
+    { action: "on", name: "preCreateItem", id: 1 }
   ]);
 
   unregisterCraftsmanMultiSubclassIntegration();
-  assert.deepEqual(libWrapper.calls.slice(2).map((call) => [call.action, call.id]), [
+  assert.deepEqual(libWrapper.calls.slice(3).map((call) => [call.action, call.id]), [
+    ["unregister", 3],
     ["unregister", 2],
     ["unregister", 1]
+  ]);
+  assert.deepEqual(hooks.calls, [
+    { action: "on", name: "preCreateItem", id: 1 },
+    { action: "off", name: "preCreateItem", id: 1 }
   ]);
 });
 
@@ -605,6 +1000,31 @@ test("a failed manager registration rolls back the newly owned Item wrapper", ()
   assert.throws(() => registerCraftsmanMultiSubclassIntegration(), /manager registration failed/);
   assert.equal(Object.getOwnPropertyDescriptor(Item5eStub.prototype, "subclass").get, originalSubclass.get);
   assert.deepEqual(libWrapper.calls.map((call) => call.action), ["register", "unregister"]);
+});
+
+test("a failed preCreate hook registration rolls back every newly owned drop and Task 5 wrapper", () => {
+  const libWrapper = createLibWrapperHarness();
+  const hooks = createHooksHarness();
+  hooks.on = () => {
+    throw new Error("hook registration failed");
+  };
+  installGlobals({ hooks, libWrapperActive: true, libWrapper });
+  const originalSubclass = Object.getOwnPropertyDescriptor(Item5eStub.prototype, "subclass");
+  const originalManager = AdvancementManagerStub.prototype.createLevelChangeSteps;
+  const originalDrop = CharacterActorSheetStub.prototype._onDropSingleItem;
+
+  assert.throws(() => registerCraftsmanMultiSubclassIntegration(), /hook registration failed/u);
+  assert.equal(Object.getOwnPropertyDescriptor(Item5eStub.prototype, "subclass").get, originalSubclass.get);
+  assert.equal(AdvancementManagerStub.prototype.createLevelChangeSteps, originalManager);
+  assert.equal(CharacterActorSheetStub.prototype._onDropSingleItem, originalDrop);
+  assert.deepEqual(libWrapper.calls.map((call) => [call.action, call.id]), [
+    ["register", 1],
+    ["register", 2],
+    ["register", 3],
+    ["unregister", 3],
+    ["unregister", 2],
+    ["unregister", 1]
+  ]);
 });
 
 test("the ready-phase dnd5e sheet integration registers the multi-subclass lifecycle", async () => {
