@@ -169,12 +169,30 @@ test("classifies the first owned copy as general before prompting", async () => 
 test("classifies later copies as minor even when the first copy is unresolved", async () => {
   setCurrentUser();
   const first = makeMutableFeat({ id: "first", subtype: "general" });
-  const later = makeMutableFeat({ id: "later" });
+  const later = makeMutableFeat({ id: "later", subtype: "general" });
   makeCharacter([first, later]);
   const service = new ElementalAdeptAutomationService(null, { prompt: async () => null });
 
   assert.equal(await service.handleCreatedItem(later, {}, "player-1"), false);
-  assert.equal(later.updates[0].data["system.type.subtype"], "minor");
+  assert.equal(later.system.type.subtype, "minor");
+});
+
+test("classifies sequential source acquisitions by their stable actor item order", async () => {
+  setCurrentUser();
+  const first = makeMutableFeat({ id: "first", subtype: "general" });
+  const actor = makeCharacter([first]);
+  const service = new ElementalAdeptAutomationService(null, {
+    prompt: async ({ item }) => item.id === "first" ? "fire" : "cold",
+  });
+
+  assert.equal(await service.handleCreatedItem(first, {}, "player-1"), true);
+  const second = makeMutableFeat({ id: "second", subtype: "general" });
+  second.parent = actor;
+  actor.items.push(second);
+  assert.equal(await service.handleCreatedItem(second, {}, "player-1"), true);
+
+  assert.equal(first.system.type.subtype, "general");
+  assert.equal(second.system.type.subtype, "minor");
 });
 
 test("selection updates the same item while preserving its Elemental Adept identity", async () => {
@@ -186,8 +204,24 @@ test("selection updates the same item while preserving its Elemental Adept ident
   assert.equal(await service.handleCreatedItem(item, {}, "player-1"), true);
   assert.equal(item.system.identifier, "stihiynyy-adept");
   assert.equal(item.flags["rebreya-main"].elementalAdept, "fire");
-  assert.match(item.name, /Огонь/u);
+  assert.equal(item.name, "Стихийный адепт: Огонь");
   assert.equal(item.deleted, false);
+});
+
+test("configured names replace raw, legacy parenthesized, and colon suffixes idempotently", async () => {
+  setCurrentUser();
+  for (const [index, name] of [
+    "Стихийный адепт",
+    "Стихийный адепт (Холод)",
+    "Стихийный адепт: Холод",
+  ].entries()) {
+    const item = makeMutableFeat({ id: `named-${index}`, name, subtype: "general" });
+    makeCharacter([item]);
+    const service = new ElementalAdeptAutomationService(null, { prompt: async () => "fire" });
+
+    assert.equal(await service.handleCreatedItem(item, {}, "player-1"), true);
+    assert.equal(item.name, "Стихийный адепт: Огонь");
+  }
 });
 
 test("cancellation retains classification and leaves the item unresolved", async () => {
@@ -343,8 +377,8 @@ test("default Elemental Adept prompt cancels safely when Dialog is unavailable",
 
 test("concurrent configuration calls serialize by actor and duplicate an Item only prompts once", async () => {
   setCurrentUser();
-  const first = makeMutableFeat({ id: "first" });
-  const second = makeMutableFeat({ id: "second" });
+  const first = makeMutableFeat({ id: "first", subtype: "general" });
+  const second = makeMutableFeat({ id: "second", subtype: "general" });
   makeCharacter([first, second]);
   const prompts = [];
   let activePrompts = 0;
@@ -376,7 +410,7 @@ test("concurrent configuration calls serialize by actor and duplicate an Item on
 test("an existing classified minor copy makes a later acquisition minor without a general copy", async () => {
   setCurrentUser();
   const existingMinor = makeMutableFeat({ id: "existing-minor", subtype: "minor" });
-  const acquired = makeMutableFeat({ id: "acquired" });
+  const acquired = makeMutableFeat({ id: "acquired", subtype: "general" });
   makeCharacter([existingMinor, acquired]);
   const service = new ElementalAdeptAutomationService(null, { prompt: async () => null });
 

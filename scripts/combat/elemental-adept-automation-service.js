@@ -366,6 +366,31 @@ function hasElementalAdeptAcquisitionSubtype(item) {
   return ["general", "minor"].includes(elementalAdeptSubtype(item));
 }
 
+function elementalAdeptAcquisitionSubtype(actor, item) {
+  const itemKey = elementalAdeptItemKey(item);
+  const acquisitions = normalizeCollection(actor?.items).filter(isElementalAdeptItem);
+  const acquisitionIndex = acquisitions.findIndex((candidate) => candidate === item
+    || (itemKey && elementalAdeptItemKey(candidate) === itemKey));
+  if (acquisitionIndex >= 0) {
+    return acquisitionIndex === 0 ? "general" : "minor";
+  }
+  return acquisitions.some((candidate) => candidate !== item && hasElementalAdeptAcquisitionSubtype(candidate))
+    ? "minor"
+    : "general";
+}
+
+function elementalAdeptBaseName(name) {
+  const fallback = "Стихийный адепт";
+  let baseName = cleanString(name, fallback);
+  while (true) {
+    const stripped = baseName.replace(/\s*(?:\([^()]*\)|:\s*[^:()]*)\s*$/u, "").trim();
+    if (!stripped || stripped === baseName) {
+      return stripped || fallback;
+    }
+    baseName = stripped;
+  }
+}
+
 function elementalAdeptUpdateOptions() {
   return {
     [MODULE_ID]: { skipElementalAdeptAutomation: true },
@@ -448,7 +473,10 @@ export class ElementalAdeptAutomationService {
     if (!isCurrentUserHook(userId) || shouldSkipElementalAdeptAutomation(options) || !isElementalAdeptItem(item)) {
       return false;
     }
-    return this.#enqueueActor(getElementalAdeptActor(item), () => this.#configureItem(item, { allowDeletion: true }));
+    return this.#enqueueActor(getElementalAdeptActor(item), () => this.#configureItem(item, {
+      allowDeletion: true,
+      classifyAcquisition: true,
+    }));
   }
 
   async handleUpdatedItem(item, _changed = {}, options = {}, userId = "") {
@@ -665,7 +693,7 @@ export class ElementalAdeptAutomationService {
     }
   }
 
-  async #configureItem(item, { allowDeletion = false } = {}) {
+  async #configureItem(item, { allowDeletion = false, classifyAcquisition = false } = {}) {
     const itemKey = elementalAdeptItemKey(item);
     if (!itemKey || this._pendingItems.has(itemKey) || !isElementalAdeptItem(item)) {
       return false;
@@ -676,10 +704,8 @@ export class ElementalAdeptAutomationService {
       if (getConfiguredElementalAdeptType(item)) {
         return false;
       }
-      if (!elementalAdeptSubtype(item)) {
-        const hasClassifiedSibling = normalizeCollection(actor?.items)
-          .some((candidate) => candidate !== item && isElementalAdeptItem(candidate) && hasElementalAdeptAcquisitionSubtype(candidate));
-        const subtype = hasClassifiedSibling ? "minor" : "general";
+      if (classifyAcquisition || !elementalAdeptSubtype(item)) {
+        const subtype = elementalAdeptAcquisitionSubtype(actor, item);
         await item.update?.({ "system.type.subtype": subtype }, elementalAdeptUpdateOptions());
       }
       let attempts = 0;
@@ -709,8 +735,8 @@ export class ElementalAdeptAutomationService {
           continue;
         }
         const label = ELEMENTAL_ADEPT_CHOICES.find((choice) => choice.value === selected)?.label ?? selected;
-        const baseName = cleanString(item.name, "Стихийный адепт").replace(/\s*\([^)]*\)\s*$/u, "");
-        const nextName = `${baseName} (${label})`;
+        const baseName = elementalAdeptBaseName(item.name);
+        const nextName = `${baseName}: ${label}`;
         await item.update?.({
           name: nextName,
           [ELEMENTAL_ADEPT_FLAG_PATH]: selected,
