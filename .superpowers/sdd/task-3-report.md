@@ -64,3 +64,15 @@ No implementation concerns. Hook registration and live Foundry validation are in
 ## Commit
 
 Implementation commit: `12fb694` (`feat(feats): bypass elemental adept damage resistance`).
+
+## Reviewer-fix amendment
+
+Reviewer feedback identified that a positional hook actor and `options.sourceActor` could disagree when no source UUID was supplied. The resolver previously selected the direct source in that case rather than failing open.
+
+- Added a focused native-fallback test with distinct positional and direct source actors, both otherwise eligible for fire bypass.
+- RED command: `node --test tests/elemental-adept-automation-service.test.mjs`
+  - Result: 28 passing, 1 failing. The new conflicting-source test received `true` instead of the expected `false`, proving the attribution gap.
+- Fixed `#resolveDamageSourceActor` to return `null` unless every available positional/direct actor candidate agrees when no source UUID is present. The existing UUID path already required equivalence with every resolved candidate.
+- GREEN command: `node --test tests/elemental-adept-automation-service.test.mjs`
+  - Result: 29 passing, 0 failing, 0 cancelled.
+- `git diff --check` passed after the amendment.

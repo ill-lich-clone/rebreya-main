@@ -536,6 +536,9 @@ export class ElementalAdeptAutomationService {
     const directSource = elementalAdeptActorDocument(options?.sourceActor ?? options?.midi?.sourceActor);
     const sourceActorUuid = cleanString(options?.midi?.sourceActorUuid ?? options?.sourceActorUuid);
     if (!sourceActorUuid) {
+      if (positionalActor && directSource && !elementalAdeptSameActor(positionalActor, directSource)) {
+        return null;
+      }
       return directSource ?? positionalActor;
     }
     if (typeof this._fromUuid !== "function") {

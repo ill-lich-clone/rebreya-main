@@ -619,6 +619,22 @@ test("Elemental Adept native fallback bypasses only resistance and fails open on
   assert.deepEqual(ambiguous.ignore, {});
 });
 
+test("Elemental Adept fails open when positional and direct source actors conflict without a UUID", async () => {
+  const positionalActor = makeConfiguredCharacter("fire");
+  positionalActor.uuid = "Actor.positional";
+  const directSource = makeConfiguredCharacter("fire");
+  directSource.uuid = "Actor.direct";
+  const options = { sourceActor: directSource, ignore: {} };
+  const service = new ElementalAdeptAutomationService();
+
+  assert.equal(await service.applyDnd5ePreCalculateDamage(
+    positionalActor,
+    [{ type: "fire", spell: true }],
+    options,
+  ), false);
+  assert.deepEqual(options.ignore, {});
+});
+
 test("Elemental Adept native fallback does not double-handle options processed by Midi", async () => {
   const actor = makeConfiguredCharacter("fire");
   const options = { ignore: {} };
