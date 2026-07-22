@@ -303,6 +303,41 @@ function makeGiantTribeFeature({
   return item;
 }
 
+function makeHalfGiantRace({ advancement = [] } = {}) {
+  const updateCalls = [];
+  const item = new class extends Item {
+    constructor() {
+      super();
+      this.id = "half-giant-race";
+      this.uuid = "Actor.half-giant.Item.half-giant-race";
+      this.name = "Полувеликаны";
+      this.type = "race";
+      this.pack = null;
+      this.flags = {
+        "rebreya-main": {
+          sourceType: "race",
+          raceId: "полувеликаны"
+        }
+      };
+      this.system = { advancement: structuredClone(advancement) };
+    }
+
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+
+    async update(patch, options = {}) {
+      updateCalls.push({ patch: structuredClone(patch), options: structuredClone(options) });
+      for (const [path, value] of Object.entries(patch)) {
+        foundry.utils.setProperty(this, path, structuredClone(value));
+      }
+      return this;
+    }
+  }();
+  item.updateCalls = updateCalls;
+  return item;
+}
+
 function activitiesOf(item) {
   return Object.values(item.system.activities ?? {});
 }
@@ -683,4 +718,36 @@ test("unconfigured Giant Tribe repair cleans a legacy chooser without guessing a
   assert.equal(prompts, 0);
   assert.equal(feature.flags["rebreya-main"].raceAutomation, undefined);
   assert.equal(activitiesOf(feature).length, 0);
+});
+
+test("repair adds an unconfigured GiantTribe advancement route to an existing Half-Giant race", async () => {
+  const race = makeHalfGiantRace();
+  const feature = makeGiantTribeFeature();
+  const actor = new TestActor({ id: "half-giant", items: [race, feature] });
+  let prompts = 0;
+  const service = new RaceAutomationService({}, {
+    promptChoice: async () => {
+      prompts += 1;
+      return "hill";
+    }
+  });
+
+  assert.equal(await service.repairActor(actor), true);
+  assert.equal(prompts, 0);
+  const advancement = race.system.advancement.find((entry) => entry.type === "GiantTribe");
+  assert.ok(advancement);
+  assert.deepEqual(advancement.configuration.sizes, ["hill", "stone", "frost", "fire", "cloud", "storm"]);
+  assert.deepEqual(advancement.value, {});
+});
+
+test("repair migrates a saved legacy tribe into the owned race advancement value", async () => {
+  const race = makeHalfGiantRace();
+  const feature = makeGiantTribeFeature({ selected: "frost" });
+  const actor = new TestActor({ id: "half-giant", items: [race, feature] });
+  const service = new RaceAutomationService({});
+
+  assert.equal(await service.repairActor(actor), true);
+  const advancement = race.system.advancement.find((entry) => entry.type === "GiantTribe");
+  assert.equal(advancement.value.size, "frost");
+  assert.equal(feature.effects.contents[0].changes[0].key, "system.traits.dr.value");
 });

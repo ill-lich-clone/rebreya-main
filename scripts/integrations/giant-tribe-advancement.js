@@ -1,7 +1,8 @@
 import {
+  clearGiantTribeItemData,
   configureGiantTribeItemData,
   isGiantTribeFeature
-} from "../combat/race-automation-service.js";
+} from "../combat/race-automation-service.js?v=1.4.110-giant-tribe-review-fixes";
 
 export const GIANT_TRIBE_CHOICES = Object.freeze({
   hill: "Холмовой великан",
@@ -65,6 +66,10 @@ export function createGiantTribeAdvancementClasses({ SizeAdvancement, Advancemen
       return [0];
     }
 
+    configuredForLevel() {
+      return Boolean(selectedTribe(this));
+    }
+
     summaryForLevel(level, { configMode = false } = {}) {
       if (configMode) return "";
       const tribe = selectedTribe(this);
@@ -99,6 +104,12 @@ export function createGiantTribeAdvancementClasses({ SizeAdvancement, Advancemen
 
     async reverse(level) {
       const size = selectedTribe(this) || null;
+      const feature = this.actor?.items?.find?.(isGiantTribeFeature);
+      if (feature) {
+        const cleared = clearGiantTribeItemData(feature);
+        this.actor.items.delete(feature.id ?? feature._id);
+        this.actor.updateSource({ items: [cleared] });
+      }
       this.updateSource({ "value.size": null });
       return { size };
     }

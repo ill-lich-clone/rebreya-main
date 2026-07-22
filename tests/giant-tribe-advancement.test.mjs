@@ -155,6 +155,7 @@ test("Giant Tribe advancement configures the granted feature without replacing i
   const actor = testActor([giantTribeFeature()]);
   const advancement = new GiantTribeAdvancement({ actor });
 
+  assert.equal(advancement.configuredForLevel(0), false);
   await advancement.apply(0, { size: "frost" });
 
   assert.equal(actor.items.contents.length, 1);
@@ -162,6 +163,7 @@ test("Giant Tribe advancement configures the granted feature without replacing i
   assert.equal(actor.items.contents[0].name, "Великанье племя (Ледяной великан)");
   assert.equal(actor.items.contents[0].effects[0].changes[0].key, "system.traits.dr.value");
   assert.equal(advancement.value.size, "frost");
+  assert.equal(advancement.configuredForLevel(0), true);
   assert.equal(advancement.automaticApplicationValue(), false);
 });
 
@@ -210,17 +212,38 @@ test("Giant Tribe advancement rejects empty, unknown, and missing-feature applic
   );
 });
 
-test("Giant Tribe reversal clears only the advancement value", async () => {
+test("Giant Tribe reversal clears managed feature data and restore reapplies the retained tribe", async () => {
   const { GiantTribeAdvancement } = createGiantTribeAdvancementClasses({
     SizeAdvancement: FakeSizeAdvancement,
     AdvancementFlow: FakeAdvancementFlow
   });
-  const actor = testActor([giantTribeFeature({ tribe: "fire" })]);
+  const customEffect = { _id: "custom-effect", name: "Пользовательский эффект", flags: {}, changes: [] };
+  const customActivity = { _id: "custom-activity", name: "Пользовательская активность", flags: {} };
+  const actor = testActor([giantTribeFeature({ effects: [customEffect], activities: {
+    "custom-activity": customActivity
+  } })]);
   const advancement = new GiantTribeAdvancement({ actor, value: { size: "fire" } });
+  await advancement.apply(0, { size: "fire" });
 
-  assert.deepEqual(await advancement.reverse(0), { size: "fire" });
+  const retained = await advancement.reverse(0);
+  assert.deepEqual(retained, { size: "fire" });
   assert.equal(advancement.value.size, null);
   assert.equal(actor.items.contents.length, 1);
+  assert.equal(actor.items.contents[0]._id, "giant-tribe-item");
+  assert.equal(actor.items.contents[0].name, "Великанье племя");
+  assert.equal(actor.items.contents[0].flags["rebreya-main"].raceAutomation?.giantTribe, undefined);
+  assert.deepEqual(actor.items.contents[0].effects.map((effect) => effect.name), ["Пользовательский эффект"]);
+  assert.deepEqual(Object.values(actor.items.contents[0].system.activities).map((activity) => activity.name), [
+    "Пользовательская активность"
+  ]);
+
+  await advancement.restore(0, retained);
+  assert.equal(advancement.value.size, "fire");
+  assert.equal(actor.items.contents[0].name, "Великанье племя (Огненный великан)");
+  assert.deepEqual(actor.items.contents[0].effects.map((effect) => effect.name), [
+    "Пользовательский эффект",
+    "Огненный великан: инструменты кузнеца"
+  ]);
 });
 
 test("registration publishes one hidden race-only GiantTribe advancement type", () => {

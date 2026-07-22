@@ -1,5 +1,8 @@
 import { MODULE_ID } from "../constants.js";
-import { createAutomationActivity } from "../data/races-compendium.js";
+import {
+  buildGiantTribeAdvancement,
+  createAutomationActivity
+} from "../data/races-compendium.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const SOCKET_EVENT_RACE_AUTOMATION = "race-automation";
@@ -302,6 +305,19 @@ function isOwnedRacePenaltyItem(item) {
   );
 }
 
+function isOwnedHalfGiantRace(item) {
+  const actor = actorFromOwnedItem(item);
+  const flags = item?.flags?.[MODULE_ID] ?? {};
+  return Boolean(
+    item
+    && !item.pack
+    && item.type === "race"
+    && actor?.type === "character"
+    && flags.sourceType === "race"
+    && flags.raceId === GIANT_TRIBE_RACE_ID
+  );
+}
+
 function racePenaltyUpdateOptions() {
   return { [MODULE_ID]: { skipRaceItemConfiguration: true } };
 }
@@ -562,6 +578,37 @@ export function configureGiantTribeItemData(itemData, value) {
   return source;
 }
 
+export function clearGiantTribeItemData(itemData) {
+  const source = typeof itemData?.toObject === "function"
+    ? itemData.toObject()
+    : foundry.utils.deepClone(itemData);
+  if (!isGiantTribeFeature(source)) {
+    throw new Error("Не найдена черта «Великанье племя».");
+  }
+
+  const configuredNames = new Set(Object.values(GIANT_TRIBE_LABELS)
+    .map((label) => `${GIANT_TRIBE_ITEM_NAME} (${label})`));
+  if (configuredNames.has(cleanText(source.name))) source.name = GIANT_TRIBE_ITEM_NAME;
+
+  const raceAutomation = source.flags?.[MODULE_ID]?.raceAutomation;
+  if (raceAutomation && typeof raceAutomation === "object") {
+    delete raceAutomation.giantTribe;
+  }
+  source.effects = foundry.utils.deepClone(
+    normalizeCollection(source.effects).filter((effect) => !isManagedGiantTribeEffect(effect))
+  );
+  source.system ??= {};
+  source.system.activities = Object.fromEntries(
+    ownedItemActivities(source)
+      .filter((activity) => !isManagedGiantTribeActivity(activity))
+      .map((activity, index) => {
+        const id = cleanText(activity?._id ?? activity?.id, `giant-tribe-activity-${index}`);
+        return [id, foundry.utils.deepClone(activity)];
+      })
+  );
+  return source;
+}
+
 function resolveTokenFromTarget(target) {
   if (!target) {
     return null;
@@ -778,13 +825,45 @@ export class RaceAutomationService {
       return false;
     }
     let changed = false;
-    for (const item of normalizeCollection(actor.items)) {
+    const items = normalizeCollection(actor.items);
+    const giantTribeFeature = items.find(isOwnedGiantTribeItem);
+    for (const item of items) {
       if (isOwnedRacePenaltyItem(item)) {
         changed = (await this.#configureRaceAbilityPenalty(item)) || changed;
+      }
+      if (isOwnedHalfGiantRace(item)) {
+        changed = (await this.#ensureGiantTribeAdvancement(item, giantTribeFeature)) || changed;
       }
       else if (isOwnedGiantTribeItem(item)) {
         changed = (await this.#configureGiantTribe(item)) || changed;
       }
+    }
+    return changed;
+  }
+
+  async #ensureGiantTribeAdvancement(race, feature) {
+    const source = typeof race?.toObject === "function" ? race.toObject() : race;
+    const advancements = foundry.utils.deepClone(
+      Array.isArray(source?.system?.advancement) ? source.system.advancement : []
+    );
+    const index = advancements.findIndex((advancement) => advancement?.type === "GiantTribe");
+    const tribe = cleanText(giantTribeFlag(feature)).toLowerCase();
+    const savedTribe = GIANT_TRIBE_VALUES.has(tribe) ? tribe : "";
+    let changed = false;
+
+    if (index < 0) {
+      const advancement = buildGiantTribeAdvancement({ id: GIANT_TRIBE_RACE_ID });
+      if (savedTribe) advancement.value = { size: savedTribe };
+      advancements.push(advancement);
+      changed = true;
+    }
+    else if (savedTribe && cleanText(advancements[index]?.value?.size).toLowerCase() !== savedTribe) {
+      advancements[index].value = { ...(advancements[index].value ?? {}), size: savedTribe };
+      changed = true;
+    }
+
+    if (changed) {
+      await race.update({ "system.advancement": advancements }, racePenaltyUpdateOptions());
     }
     return changed;
   }

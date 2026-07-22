@@ -45,7 +45,7 @@ import {
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 import { registerCraftsmanSubclassAdvancements } from "./craftsman-subclass-advancements.js";
 import { registerCraftsmanMultiSubclassIntegration } from "./craftsman-multi-subclass.js";
-import { registerGiantTribeAdvancement } from "./giant-tribe-advancement.js";
+import { registerGiantTribeAdvancement } from "./giant-tribe-advancement.js?v=1.4.110-giant-tribe-review-fixes";
 import {
   enhanceCraftsmanStandardClassCard,
   registerCraftsmanClassCardIntegration,

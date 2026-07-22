@@ -101,7 +101,7 @@ test("production registers the hidden GiantTribe advancement before race compend
 
   assert.match(
     sheetSource,
-    /import \{ registerGiantTribeAdvancement \} from "\.\/giant-tribe-advancement\.js";/u
+    /import \{ registerGiantTribeAdvancement \} from "\.\/giant-tribe-advancement\.js\?v=1\.4\.110-giant-tribe-review-fixes";/u
   );
   assert.match(
     sheetSource,
@@ -109,7 +109,7 @@ test("production registers the hidden GiantTribe advancement before race compend
   );
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-advancement/u
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-review-fixes/u
   );
 });
 
@@ -166,7 +166,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-advancement/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-review-fixes/u
   );
 
   for (const importPath of [
@@ -401,7 +401,7 @@ test("owned race and Giant Tribe configuration is wired to create and sheet repa
     readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8")
   ]);
 
-  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.110-giant-tribe-advancement/u);
+  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.110-giant-tribe-review-fixes/u);
   assert.match(
     hooksSource,
     /moduleApi\.raceAutomationService\.handleCreatedItem\(item, options, userId\)/u
@@ -418,7 +418,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-advancement/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-review-fixes/u,
   );
   assert.match(
     entrypointSource,

@@ -1740,7 +1740,7 @@ function normalizeFeatIndexRecord(record, pack) {
   };
 }
 
-function buildGiantTribeAdvancement(race) {
+export function buildGiantTribeAdvancement(race) {
   return {
     _id: stableHashId(`${race.id}:giant-tribe`, "adv"),
     type: "GiantTribe",
