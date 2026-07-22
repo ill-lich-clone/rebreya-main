@@ -19,6 +19,13 @@ export const STATE_ITEM_TYPE = `${MODULE_ID}.state`;
 export const DOWNTIME_ITEM_TYPE = `${MODULE_ID}.downtime`;
 export const RESEARCH_ITEM_TYPE = `${MODULE_ID}.research`;
 export const SPECIALTY_ITEM_TYPE = `${MODULE_ID}.specialty`;
+export const CRAFTSMAN_CLASS_IDENTIFIER = "craftsman-v01";
+export const CRAFTSMAN_TRACK_FLAG = "craftsmanTrack";
+export const CRAFTSMAN_ARCHETYPE_ID_FLAG = "archetypeId";
+export const CRAFTSMAN_TRACKS = Object.freeze({
+  RESEARCH: "research",
+  SPECIALTY: "specialty"
+});
 export const DOWNTIME_COMPENDIUM_NAME = "rebreya-downtime";
 export const DOWNTIME_COMPENDIUM_LABEL = "Простой Rebreya";
 export const CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME = "rebreya-craftsman-archetypes";
