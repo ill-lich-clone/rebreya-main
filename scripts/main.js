@@ -65,7 +65,7 @@ import { isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.109-character-size";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.109-race-item-config";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.109-character-size-reach";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.109-character-size";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
@@ -90,7 +90,7 @@ import {
   PerformerAutomationService
 } from "./combat/performer-automation-service.js?v=1.4.96";
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
-import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
+import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js?v=1.4.109-race-item-config";
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
 import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js";
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";

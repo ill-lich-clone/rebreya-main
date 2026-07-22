@@ -55,6 +55,7 @@ class TestActor extends Actor {
     this.id = id;
     this.uuid = `Actor.${id}`;
     this.name = name;
+    this.type = "character";
     this.isOwner = true;
     this.system = {
       attributes: {
@@ -80,6 +81,7 @@ class TestActor extends Actor {
 
     for (const item of items) {
       item.actor = this;
+      item.parent = this;
     }
   }
 
@@ -142,6 +144,71 @@ function makeFuryFeature() {
       return this;
     }
   };
+}
+
+function makeOwnedRace({ allowed = ["int", "cha"], amount = 2, selected = null, effects = [] } = {}) {
+  const updateCalls = [];
+  const item = new class extends Item {
+    constructor() {
+      super();
+      this.id = "race-item";
+      this.uuid = "Actor.actor-race.Item.race-item";
+      this.name = "Кентавры";
+      this.type = "race";
+      this.pack = null;
+      this.flags = {
+        "rebreya-main": {
+          abilityPenaltyChoice: { allowed: [...allowed], amount },
+          ...(selected ? { abilityPenalty: structuredClone(selected) } : {})
+        }
+      };
+      this.effects = {
+        contents: effects,
+        [Symbol.iterator]: function* iterator() {
+          yield* effects;
+        }
+      };
+    }
+
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+
+    async update(patch, options = {}) {
+      updateCalls.push({ patch: structuredClone(patch), options: structuredClone(options) });
+      for (const [path, value] of Object.entries(patch)) {
+        foundry.utils.setProperty(this, path, structuredClone(value));
+      }
+      return this;
+    }
+
+    async createEmbeddedDocuments(documentName, entries) {
+      assert.equal(documentName, "ActiveEffect");
+      const created = entries.map((entry, index) => ({
+        ...structuredClone(entry),
+        id: `race-effect-${this.effects.contents.length + index + 1}`
+      }));
+      this.effects.contents.push(...created);
+      return created;
+    }
+
+    async updateEmbeddedDocuments(documentName, entries) {
+      assert.equal(documentName, "ActiveEffect");
+      for (const entry of entries) {
+        const effect = this.effects.contents.find((candidate) => candidate.id === entry._id);
+        Object.assign(effect, structuredClone(entry));
+      }
+      return entries;
+    }
+
+    async deleteEmbeddedDocuments(documentName, ids) {
+      assert.equal(documentName, "ActiveEffect");
+      this.effects.contents = this.effects.contents.filter((effect) => !ids.includes(effect.id));
+      return ids;
+    }
+  }();
+  item.updateCalls = updateCalls;
+  return item;
 }
 
 function workflow({ source, target, activityType = "attack", actionType = "mwak", damageType = "slashing" } = {}) {
@@ -218,4 +285,78 @@ test("fury-small still prompts for a larger hostile damage target", async () => 
 
   assert.equal(prompts, 1);
   assert.equal(target.damageApplications.length, 0);
+});
+
+test("an owned race stores and transfers only the selected ability penalty", async () => {
+  const race = makeOwnedRace();
+  const actor = new TestActor({ id: "actor-race", items: [race] });
+  const service = new RaceAutomationService({}, { promptChoice: async () => "cha" });
+
+  assert.equal(await service.handleCreatedItem(race, {}, game.user.id), true);
+
+  assert.deepEqual(race.flags["rebreya-main"].abilityPenalty, { ability: "cha", amount: 2 });
+  assert.equal(race.effects.contents.length, 1);
+  assert.deepEqual(race.effects.contents[0].changes, [{
+    key: "system.abilities.cha.value",
+    mode: 2,
+    value: "-2",
+    priority: 20
+  }]);
+  assert.equal(race.effects.contents[0].transfer, true);
+  assert.equal(race.effects.contents[0].flags["rebreya-main"].raceAbilityPenalty.managed, true);
+  assert.equal(actor.effects, undefined, "penalty must stay on the removable race Item");
+});
+
+test("race penalty creation ignores hooks emitted for another user", async () => {
+  const race = makeOwnedRace();
+  new TestActor({ id: "actor-race", items: [race] });
+  let prompts = 0;
+  const service = new RaceAutomationService({}, {
+    promptChoice: async () => {
+      prompts += 1;
+      return "cha";
+    }
+  });
+
+  assert.equal(await service.handleCreatedItem(race, {}, "another-user"), false);
+  assert.equal(prompts, 0);
+  assert.equal(race.effects.contents.length, 0);
+});
+
+test("cancelled race penalty remains unresolved and actor repair prompts again", async () => {
+  const race = makeOwnedRace();
+  const actor = new TestActor({ id: "actor-race", items: [race] });
+  const answers = [null, "int"];
+  const service = new RaceAutomationService({}, { promptChoice: async () => answers.shift() });
+
+  assert.equal(await service.handleCreatedItem(race, {}, game.user.id), false);
+  assert.equal(race.flags["rebreya-main"].abilityPenalty, undefined);
+  assert.equal(race.effects.contents.length, 0);
+
+  assert.equal(await service.repairActor(actor), true);
+  assert.deepEqual(race.flags["rebreya-main"].abilityPenalty, { ability: "int", amount: 2 });
+  assert.equal(race.effects.contents.length, 1);
+});
+
+test("actor repair replaces an invalid saved penalty and removes duplicate managed effects", async () => {
+  const legacyEffect = {
+    id: "legacy-one",
+    name: "Расовый штраф",
+    transfer: true,
+    changes: [{ key: "system.abilities.str.value", mode: 2, value: "-2", priority: 20 }],
+    flags: { "rebreya-main": { raceAbilityPenalty: { managed: true, ability: "str", amount: 2 } } }
+  };
+  const duplicate = structuredClone(legacyEffect);
+  duplicate.id = "legacy-two";
+  const race = makeOwnedRace({
+    selected: { ability: "str", amount: 2 },
+    effects: [legacyEffect, duplicate]
+  });
+  const actor = new TestActor({ id: "actor-race", items: [race] });
+  const service = new RaceAutomationService({}, { promptChoice: async () => "cha" });
+
+  assert.equal(await service.repairActor(actor), true);
+  assert.deepEqual(race.flags["rebreya-main"].abilityPenalty, { ability: "cha", amount: 2 });
+  assert.equal(race.effects.contents.length, 1);
+  assert.equal(race.effects.contents[0].changes[0].key, "system.abilities.cha.value");
 });

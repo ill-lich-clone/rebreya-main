@@ -868,6 +868,19 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasRaceService) {
+    const handleRaceConfigurationError = (error) => {
+      console.error(`${MODULE_ID} | Failed to configure an owned race item.`, error);
+    };
+    Hooks.on("createItem", (item, options, userId) => {
+      moduleApi.raceAutomationService.handleCreatedItem(item, options, userId).catch(handleRaceConfigurationError);
+    });
+    for (const hookName of CHARACTER_SHEET_RENDER_HOOKS) {
+      Hooks.on(hookName, (app) => {
+        const actor = app?.actor ?? app?.document ?? null;
+        moduleApi.raceAutomationService.repairActor(actor).catch(handleRaceConfigurationError);
+      });
+    }
+
     Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
       moduleApi.raceAutomationService.applyDnd5ePostUseActivity(
         activity,

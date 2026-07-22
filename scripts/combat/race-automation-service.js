@@ -11,6 +11,15 @@ const RACE_AUTOMATION_FLAG = "automation";
 const RACE_ACTIVITY_RUNTIME_FLAG = "runtime";
 
 const DAMAGE_REDUCTION_FLAG = `flags.${MODULE_ID}.raceAutomation`;
+const RACE_ABILITY_KEYS = new Set(["str", "dex", "con", "int", "wis", "cha"]);
+const RACE_ABILITY_LABELS = {
+  str: "Сила",
+  dex: "Ловкость",
+  con: "Телосложение",
+  int: "Интеллект",
+  wis: "Мудрость",
+  cha: "Харизма"
+};
 
 const SIZE_ORDER = {
   tiny: 0,
@@ -192,6 +201,142 @@ function resolveActorFromTarget(target) {
 
 function resolveTokenFromActor(actor) {
   return actor?.getActiveTokens?.(true, true)?.[0] ?? actor?.getActiveTokens?.()[0] ?? null;
+}
+
+function normalizeCollection(collection) {
+  if (!collection) {
+    return [];
+  }
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+  if (Array.isArray(collection.contents)) {
+    return collection.contents;
+  }
+  if (typeof collection.values === "function") {
+    return Array.from(collection.values());
+  }
+  if (typeof collection[Symbol.iterator] === "function") {
+    return Array.from(collection);
+  }
+  return [];
+}
+
+function isCurrentUserHook(userId) {
+  const currentUserId = cleanText(globalThis.game?.user?.id);
+  const hookUserId = cleanText(userId);
+  return !hookUserId || !currentUserId || hookUserId === currentUserId;
+}
+
+function actorOwnerLevel() {
+  return Number(globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3);
+}
+
+function userOwnsActor(actor, user) {
+  if (!actor || !user?.id) {
+    return false;
+  }
+  if (typeof actor.testUserPermission === "function") {
+    return actor.testUserPermission(user, "OWNER") === true;
+  }
+  const ownership = actor.ownership ?? actor._source?.ownership ?? {};
+  return Number(ownership[user.id] ?? ownership.default ?? 0) >= actorOwnerLevel();
+}
+
+function hasActivePlayerOwner(actor) {
+  return normalizeCollection(globalThis.game?.users)
+    .some((user) => user?.isGM !== true && user?.active !== false && userOwnsActor(actor, user));
+}
+
+function canConfigureOwnedRaceActor(actor) {
+  const currentUser = globalThis.game?.user;
+  if (!currentUser) {
+    return actor?.isOwner === true;
+  }
+  if (currentUser.isGM === true) {
+    return !hasActivePlayerOwner(actor);
+  }
+  return actor?.isOwner === true || userOwnsActor(actor, currentUser);
+}
+
+function actorFromOwnedItem(item) {
+  return item?.parent ?? item?.actor ?? null;
+}
+
+function abilityPenaltyChoice(item) {
+  const raw = item?.getFlag?.(MODULE_ID, "abilityPenaltyChoice")
+    ?? getProperty(item, `flags.${MODULE_ID}.abilityPenaltyChoice`, null);
+  const amount = Math.max(0, Math.floor(toNumber(raw?.amount, 0)));
+  const allowed = Array.from(new Set((Array.isArray(raw?.allowed) ? raw.allowed : [])
+    .map((ability) => cleanText(ability).toLowerCase())
+    .filter((ability) => RACE_ABILITY_KEYS.has(ability))));
+  return amount > 0 && allowed.length > 0 ? { amount, allowed } : null;
+}
+
+function savedAbilityPenalty(item) {
+  return item?.getFlag?.(MODULE_ID, "abilityPenalty")
+    ?? getProperty(item, `flags.${MODULE_ID}.abilityPenalty`, null);
+}
+
+function isOwnedRacePenaltyItem(item) {
+  const actor = actorFromOwnedItem(item);
+  return Boolean(
+    item
+    && !item.pack
+    && item.type === "race"
+    && actor?.type === "character"
+    && abilityPenaltyChoice(item)
+  );
+}
+
+function racePenaltyUpdateOptions() {
+  return { [MODULE_ID]: { skipRaceItemConfiguration: true } };
+}
+
+function managedRacePenaltyEffects(item) {
+  return normalizeCollection(item?.effects).filter((effect) => (
+    effect?.flags?.[MODULE_ID]?.raceAbilityPenalty?.managed === true
+  ));
+}
+
+function buildRaceAbilityPenaltyEffect(ability, amount) {
+  const label = RACE_ABILITY_LABELS[ability] ?? ability;
+  return {
+    name: `Расовый штраф: ${label} -${amount}`,
+    type: "base",
+    img: "icons/svg/downgrade.svg",
+    disabled: false,
+    transfer: true,
+    changes: [{
+      key: `system.abilities.${ability}.value`,
+      mode: EFFECT_MODE_ADD,
+      value: String(-amount),
+      priority: 20
+    }],
+    flags: {
+      [MODULE_ID]: {
+        raceAbilityPenalty: { managed: true, ability, amount }
+      }
+    }
+  };
+}
+
+function racePenaltyEffectMatches(effect, desired) {
+  const normalized = (entry) => ({
+    name: cleanText(entry?.name),
+    type: cleanText(entry?.type, "base"),
+    img: cleanText(entry?.img),
+    disabled: entry?.disabled === true,
+    transfer: entry?.transfer === true,
+    changes: normalizeCollection(entry?.changes).map((change) => ({
+      key: cleanText(change?.key),
+      mode: Number(change?.mode ?? 0),
+      value: cleanText(change?.value),
+      priority: Number(change?.priority ?? 0)
+    })),
+    managed: entry?.flags?.[MODULE_ID]?.raceAbilityPenalty ?? null
+  });
+  return JSON.stringify(normalized(effect)) === JSON.stringify(normalized(desired));
 }
 
 function resolveTokenFromTarget(target) {
@@ -378,13 +523,133 @@ function activeEffectData(name, changes = [], options = {}) {
 }
 
 export class RaceAutomationService {
-  constructor(moduleApi) {
+  constructor(moduleApi, { promptChoice = null } = {}) {
     this.moduleApi = moduleApi;
+    this._promptChoice = typeof promptChoice === "function" ? promptChoice : null;
     this._turnDamageKeys = new Set();
+    this._pendingItemConfigurations = new Set();
   }
 
   async initialize() {
     return true;
+  }
+
+  async handleCreatedItem(item, options = {}, userId = "") {
+    if (
+      !isCurrentUserHook(userId)
+      || options?.[MODULE_ID]?.skipRaceItemConfiguration === true
+      || !isOwnedRacePenaltyItem(item)
+    ) {
+      return false;
+    }
+    return this.#configureRaceAbilityPenalty(item);
+  }
+
+  async repairActor(actor) {
+    if (actor?.type !== "character" || !canConfigureOwnedRaceActor(actor)) {
+      return false;
+    }
+    let changed = false;
+    for (const item of normalizeCollection(actor.items)) {
+      if (isOwnedRacePenaltyItem(item)) {
+        changed = (await this.#configureRaceAbilityPenalty(item)) || changed;
+      }
+    }
+    return changed;
+  }
+
+  async #configureRaceAbilityPenalty(item) {
+    const actor = actorFromOwnedItem(item);
+    if (!isOwnedRacePenaltyItem(item) || !canConfigureOwnedRaceActor(actor)) {
+      return false;
+    }
+
+    const itemKey = cleanText(item.uuid ?? item.id ?? item._id);
+    if (!itemKey || this._pendingItemConfigurations.has(itemKey)) {
+      return false;
+    }
+    this._pendingItemConfigurations.add(itemKey);
+
+    try {
+      const choiceConfig = abilityPenaltyChoice(item);
+      let saved = savedAbilityPenalty(item);
+      const savedAbility = cleanText(saved?.ability).toLowerCase();
+      const savedAmount = Math.max(0, Math.floor(toNumber(saved?.amount, 0)));
+      let changed = false;
+
+      if (!choiceConfig.allowed.includes(savedAbility) || savedAmount !== choiceConfig.amount) {
+        if (saved) {
+          await item.update({ [`flags.${MODULE_ID}.abilityPenalty`]: null }, racePenaltyUpdateOptions());
+          changed = true;
+        }
+        changed = (await this.#syncRacePenaltyEffect(item, null)) || changed;
+
+        const choices = choiceConfig.allowed.map((ability) => ({
+          value: ability,
+          label: cleanText(
+            globalThis.CONFIG?.DND5E?.abilities?.[ability]?.label
+              ?? globalThis.CONFIG?.DND5E?.abilities?.[ability],
+            RACE_ABILITY_LABELS[ability] ?? ability
+          )
+        }));
+        const ability = cleanText(
+          this._promptChoice
+            ? await this._promptChoice({ actor, item, title: "Выберите расовый штраф", choices })
+            : await this.#choice(actor, "Выберите расовый штраф", choices)
+        ).toLowerCase();
+        if (!choiceConfig.allowed.includes(ability)) {
+          return changed;
+        }
+
+        saved = { ability, amount: choiceConfig.amount };
+        await item.update({ [`flags.${MODULE_ID}.abilityPenalty`]: saved }, racePenaltyUpdateOptions());
+        changed = true;
+      }
+
+      return (await this.#syncRacePenaltyEffect(item, saved)) || changed;
+    }
+    finally {
+      this._pendingItemConfigurations.delete(itemKey);
+    }
+  }
+
+  async #syncRacePenaltyEffect(item, selected) {
+    const managed = managedRacePenaltyEffects(item);
+    const ability = cleanText(selected?.ability).toLowerCase();
+    const amount = Math.max(0, Math.floor(toNumber(selected?.amount, 0)));
+    const desired = RACE_ABILITY_KEYS.has(ability) && amount > 0
+      ? buildRaceAbilityPenaltyEffect(ability, amount)
+      : null;
+    const options = racePenaltyUpdateOptions();
+
+    if (!desired) {
+      const ids = managed.map((effect) => effect.id ?? effect._id).filter(Boolean);
+      if (ids.length > 0) {
+        await item.deleteEmbeddedDocuments("ActiveEffect", ids, options);
+      }
+      return ids.length > 0;
+    }
+
+    const [primary, ...duplicates] = managed;
+    let changed = false;
+    if (!primary) {
+      await item.createEmbeddedDocuments("ActiveEffect", [desired], options);
+      changed = true;
+    }
+    else if (!racePenaltyEffectMatches(primary, desired)) {
+      await item.updateEmbeddedDocuments("ActiveEffect", [{
+        _id: primary.id ?? primary._id,
+        ...desired
+      }], options);
+      changed = true;
+    }
+
+    const duplicateIds = duplicates.map((effect) => effect.id ?? effect._id).filter(Boolean);
+    if (duplicateIds.length > 0) {
+      await item.deleteEmbeddedDocuments("ActiveEffect", duplicateIds, options);
+      changed = true;
+    }
+    return changed;
   }
 
   async handleSocketMessage(payload = {}, { senderId = "" } = {}) {
