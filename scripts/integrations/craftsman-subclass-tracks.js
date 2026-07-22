@@ -68,7 +68,7 @@ export function getCraftsmanSubclasses(classItemOrActor) {
       continue;
     }
     if (subclasses[track]) {
-      throw new Error(`Duplicate Craftsman ${track} subclass on Actor ${cleanString(actor?.id ?? actor?._id, "unknown")}.`);
+      throw new Error(`Duplicate Craftsman ${track} subclass on Actor ${cleanString(actor?.id ?? actor?._id) || "unknown"}.`);
     }
     subclasses[track] = item;
   }

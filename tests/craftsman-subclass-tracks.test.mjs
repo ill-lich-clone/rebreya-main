@@ -85,6 +85,17 @@ test("Craftsman subclass resolution supports collection values and rejects dupli
   assert.throws(() => getCraftsmanSubclasses(craftsmanClass), /(?=.*actor-42)(?=.*research)/i);
 });
 
+test("duplicate track diagnostics use a non-empty fallback for an Actor without an id", () => {
+  const actor = {
+    items: [
+      makeSubclass({ id: "research-a", track: CRAFTSMAN_TRACKS.RESEARCH }),
+      makeSubclass({ id: "research-b", track: CRAFTSMAN_TRACKS.RESEARCH })
+    ]
+  };
+
+  assert.throws(() => getCraftsmanSubclasses(actor), /Actor unknown\./);
+});
+
 test("track duplicate detection ignores only the explicitly excluded item", () => {
   const existingResearch = makeSubclass({ id: "research-existing", track: CRAFTSMAN_TRACKS.RESEARCH });
   const actor = { items: [existingResearch] };
