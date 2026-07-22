@@ -1,0 +1,186 @@
+{
+  "documentId": "1txV83llt1cC6PEFQCUA5FB53HOquCPEIelxOdua9bf8",
+  "revision": "AIroW34SYHbxIEd8hfh8j8hzbnG0i0cRyrMv3r2tLosHyzGf2l4OIqoMC8xBU220H_tJnksnZGuBtol42YomSQ",
+  "entries": {
+    "classDescription": {
+      "visibleTextFingerprint": "f3bf12facc3254d4"
+    },
+    "class:gadget": {
+      "visibleTextFingerprint": "abe75d6f8f7a8324"
+    },
+    "class:creator-hand": {
+      "visibleTextFingerprint": "51351c01df141753"
+    },
+    "class:creator-soul": {
+      "visibleTextFingerprint": "e41c221d6f428eae"
+    },
+    "class:applied-worker": {
+      "visibleTextFingerprint": "574ae583abcc7e3e"
+    },
+    "class:suitable-tool": {
+      "visibleTextFingerprint": "e0b3a0e91d7cd660"
+    },
+    "class:flash-genius": {
+      "visibleTextFingerprint": "e9f9af91011a706b"
+    },
+    "class:strong-drawings": {
+      "visibleTextFingerprint": "def6c678f96ba40e"
+    },
+    "class:magic-item-expert": {
+      "visibleTextFingerprint": "1ac83bef19c5bbbe"
+    },
+    "class:magic-item-scholar": {
+      "visibleTextFingerprint": "399ae8e0350ceaaa"
+    },
+    "class:creator-heart": {
+      "visibleTextFingerprint": "1266fe11e56e5fc8"
+    },
+    "class:magic-item-master": {
+      "visibleTextFingerprint": "7e8d0b0e9908ac5c"
+    },
+    "class:inventor-soul": {
+      "visibleTextFingerprint": "3aab53c5fd8f490b"
+    },
+    "class:creator-potential": {
+      "visibleTextFingerprint": "5207b33314fd20d9"
+    },
+    "research:craftsman-research-weaponsmith": {
+      "visibleTextFingerprint": "839a6b3be48fb773"
+    },
+    "research:craftsman-research-weaponsmith:weapon-training": {
+      "visibleTextFingerprint": "80094c027a48d34e"
+    },
+    "research:craftsman-research-weaponsmith:combat-hardening": {
+      "visibleTextFingerprint": "2102e14ed91c4c9c"
+    },
+    "research:craftsman-research-weaponsmith:extra-attack": {
+      "visibleTextFingerprint": "0ace5e6be54abc13"
+    },
+    "research:craftsman-research-weaponsmith:advanced-improvement": {
+      "visibleTextFingerprint": "cde2b31b08fd044f"
+    },
+    "research:craftsman-research-weaponsmith:weapon-constructor": {
+      "visibleTextFingerprint": "efd42063955246a3"
+    },
+    "research:craftsman-research-weaponsmith:precision-engineering": {
+      "visibleTextFingerprint": "4fcfeeef823143ad"
+    },
+    "research:craftsman-research-armorer": {
+      "visibleTextFingerprint": "3cb924de6e136622"
+    },
+    "research:craftsman-research-armorer:armor-training": {
+      "visibleTextFingerprint": "a7fba1d948ee4510"
+    },
+    "research:craftsman-research-armorer:sturdy-armor": {
+      "visibleTextFingerprint": "b6e9930df7be8c27"
+    },
+    "research:craftsman-research-armorer:extra-attack": {
+      "visibleTextFingerprint": "d812e0d4826bdc5d"
+    },
+    "research:craftsman-research-armorer:advanced-improvement": {
+      "visibleTextFingerprint": "8e081d20a35b9d03"
+    },
+    "research:craftsman-research-armorer:multilayer-armor": {
+      "visibleTextFingerprint": "c1e09f7a85090884"
+    },
+    "research:craftsman-research-armorer:adaptive-armor": {
+      "visibleTextFingerprint": "2fdad445f86174da"
+    },
+    "research:craftsman-research-alchemist": {
+      "visibleTextFingerprint": "18cefcc66eada88b"
+    },
+    "research:craftsman-research-alchemist:potion-training-2": {
+      "visibleTextFingerprint": "a84273c05babf4b2"
+    },
+    "research:craftsman-research-alchemist:field-alchemy": {
+      "visibleTextFingerprint": "c64079b05c12fe2d"
+    },
+    "research:craftsman-research-alchemist:potion-training-5-a": {
+      "visibleTextFingerprint": "75848dc3f4e1d748"
+    },
+    "research:craftsman-research-alchemist:potion-training-5-b": {
+      "visibleTextFingerprint": "75848dc3f4e1d748"
+    },
+    "research:craftsman-research-alchemist:potion-training-9": {
+      "visibleTextFingerprint": "a963b71f15f5a36c"
+    },
+    "research:craftsman-research-alchemist:potion-training-13": {
+      "visibleTextFingerprint": "4f7e88680fb742ef"
+    },
+    "research:craftsman-research-artificer": {
+      "visibleTextFingerprint": "c8bb22b78465c857"
+    },
+    "research:craftsman-research-artificer:versatile-item-training": {
+      "visibleTextFingerprint": "d0cac526f882769f"
+    },
+    "research:craftsman-research-artificer:spellcasting": {
+      "visibleTextFingerprint": "af67d007a0d45fd9"
+    },
+    "research:craftsman-research-artificer:restore-charges": {
+      "visibleTextFingerprint": "445f814274564fd2"
+    },
+    "research:craftsman-research-artificer:advanced-improvement": {
+      "visibleTextFingerprint": "8c163072b49f0acf"
+    },
+    "research:craftsman-research-artificer:pure-soul": {
+      "visibleTextFingerprint": "a9a8d6c6c90d7112"
+    },
+    "research:craftsman-research-artificer:spell-storing-item": {
+      "visibleTextFingerprint": "ac5dcc614340427d"
+    },
+    "research:craftsman-research-occultist": {
+      "visibleTextFingerprint": "7d247f905433a0af"
+    },
+    "research:craftsman-research-healer": {
+      "visibleTextFingerprint": "b5377c7bea3aed27"
+    },
+    "research:craftsman-research-mechanic": {
+      "visibleTextFingerprint": "e88f4762f0f1af48"
+    },
+    "research:craftsman-research-mechanic:vehicle-training": {
+      "visibleTextFingerprint": "0d25ed0fe195cdd4"
+    },
+    "research:craftsman-research-mechanic:extra-attack": {
+      "visibleTextFingerprint": "91d46cf7c30c3fad"
+    },
+    "research:craftsman-research-mechanic:advanced-improvement": {
+      "visibleTextFingerprint": "09bd61c1863af660"
+    },
+    "research:craftsman-research-mechanic:custom-layout": {
+      "visibleTextFingerprint": "cc8c7ef2cd230a01"
+    },
+    "research:craftsman-research-mechanic:unified-system": {
+      "visibleTextFingerprint": "48601ebde777374e"
+    },
+    "specialty:craftsman-specialty-assault": {
+      "visibleTextFingerprint": "9f83d353dbe8ee29"
+    },
+    "specialty:craftsman-specialty-defender": {
+      "visibleTextFingerprint": "6ba13d7588ad00c5"
+    },
+    "specialty:craftsman-specialty-constructor": {
+      "visibleTextFingerprint": "9231cea5d543e11b"
+    },
+    "specialty:craftsman-specialty-constructor:construct-assembly": {
+      "visibleTextFingerprint": "9fa6ebb31f520813"
+    },
+    "specialty:craftsman-specialty-constructor:combat-mode": {
+      "visibleTextFingerprint": "dd27fb70f5757691"
+    },
+    "specialty:craftsman-specialty-constructor:extra-attack": {
+      "visibleTextFingerprint": "75dd1db2c188fce2"
+    },
+    "specialty:craftsman-specialty-constructor:boundless-glimpse": {
+      "visibleTextFingerprint": "8743f6a78b5ff4fc"
+    },
+    "specialty:craftsman-specialty-constructor:absolute-machine": {
+      "visibleTextFingerprint": "a289c65e4dd0ea6a"
+    },
+    "specialty:craftsman-specialty-artillerist": {
+      "visibleTextFingerprint": "ddc76d37b0518f5e"
+    },
+    "specialty:craftsman-specialty-tactician": {
+      "visibleTextFingerprint": "e979825653caa666"
+    }
+  }
+}

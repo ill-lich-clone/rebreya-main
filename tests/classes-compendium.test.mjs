@@ -413,10 +413,37 @@ test("craftsman V0.1 data matches its class progression and two archetype axes",
   ]));
   const mechanic = craftsman.researches.find((entry) => entry.archetypeId === "craftsman-research-mechanic");
   const constructor = craftsman.specialties.find((entry) => entry.archetypeId === "craftsman-specialty-constructor");
+  const artificer = craftsman.researches.find((entry) => entry.archetypeId === "craftsman-research-artificer");
   const toolAdvancement = buildClassAdvancement(craftsman.classData, { featureUuidById, archetypeUuidById })
     .find((entry) => entry.configuration?.grants?.includes("tool:art:rebreyaTinker"));
 
+  const expectedResearches = [
+    "Оружейник", "Бронник", "Алхимик", "Артефактор", "Оккультист", "Врачеватель", "Механик"
+  ];
+  const expectedSpecialties = [
+    "Штурмовик", "Защитник", "Конструктор", "Артиллерист", "Тактик"
+  ];
+  const expectedDocumentIds = new Map([
+    ["craftsman-research-weaponsmith", "fjf9y91usmmvo000"],
+    ["craftsman-research-armorer", "18cjg6m14nk7hb00"],
+    ["craftsman-research-alchemist", "9vn2lec3950y0000"],
+    ["craftsman-research-artificer", "1my4r33ufb9eb000"],
+    ["craftsman-research-occultist", "15zlg081ybp89o00"],
+    ["craftsman-research-healer", "1jneoaf1wzh47000"],
+    ["craftsman-research-mechanic", "a028poqh8xfm0000"],
+    ["craftsman-specialty-assault", "1xaf4xz14cr1zo00"],
+    ["craftsman-specialty-defender", "jej063u8aytv0000"],
+    ["craftsman-specialty-constructor", "1xoogq41lnvp5q00"],
+    ["craftsman-specialty-artillerist", "1dct6o91ps9ye900"],
+    ["craftsman-specialty-tactician", "4488d4505bp50000"]
+  ]);
+
   assert.equal(craftsman.classData.identifier, "craftsman-v01");
+  assert.deepEqual(craftsman.researches.map((entry) => entry.name), expectedResearches);
+  assert.deepEqual(craftsman.specialties.map((entry) => entry.name), expectedSpecialties);
+  for (const archetype of [...craftsman.researches, ...craftsman.specialties]) {
+    assert.equal(archetype.documentId, expectedDocumentIds.get(archetype.archetypeId), archetype.archetypeId);
+  }
   assert.equal(craftsman.classData.hitDie, "d8");
   assert.equal(craftsman.classData.spellcasting.progression, "none");
   assert.deepEqual(craftsman.classData.saveProficiencies, ["con", "int"]);
@@ -482,29 +509,68 @@ test("craftsman V0.1 data matches its class progression and two archetype axes",
     ["Безграничный проблеск", 10],
     ["Абсолютная машина", 15]
   ]);
+  assert.deepEqual(new Map(craftsman.researches.map((entry) => [
+    entry.name,
+    entry.features.map((feature) => feature.requiredLevel)
+  ])), new Map([
+    ["Оружейник", [2, 2, 5, 5, 9, 13]],
+    ["Бронник", [2, 2, 5, 5, 9, 13]],
+    ["Алхимик", [2, 2, 5, 5, 9, 13]],
+    ["Артефактор", [2, 2, 5, 5, 9, 13]],
+    ["Оккультист", []],
+    ["Врачеватель", []],
+    ["Механик", [2, 5, 5, 9, 13]]
+  ]));
+  assert.deepEqual(new Map(craftsman.specialties.map((entry) => [
+    entry.name,
+    entry.features.map((feature) => feature.requiredLevel)
+  ])), new Map([
+    ["Штурмовик", []],
+    ["Защитник", []],
+    ["Конструктор", [3, 3, 6, 10, 15]],
+    ["Артиллерист", []],
+    ["Тактик", []]
+  ]));
+  assert.equal(
+    craftsman.researches.find((entry) => entry.name === "Алхимик").features
+      .filter((entry) => entry.name === "Умение обращаться с зельями").length,
+    5
+  );
+  assert.deepEqual(artificer.spellcasting, { progression: "half", ability: "int" });
+  for (const archetype of [...craftsman.researches, ...craftsman.specialties]) {
+    if (archetype !== artificer) assert.equal(archetype.spellcasting.progression, "none", archetype.name);
+  }
 });
 
 test("craftsman descriptions preserve every visible source character through Markdown rendering", () => {
   const raw = loadJson("data/craftsman-v01.json");
+  const sourceManifest = loadJson("tests/fixtures/craftsman-v01-source-revision.json");
   const entries = [
     { key: "classDescription", ...raw.class },
     ...raw.class.features.map((entry) => ({ key: `class:${entry.id}`, ...entry })),
     ...raw.researches.flatMap((archetype) => [
       { key: `research:${archetype.id}`, ...archetype },
-      ...archetype.features.map((entry) => ({ key: `research:${entry.id}`, ...entry }))
+      ...archetype.features.map((entry) => ({ key: `research:${archetype.id}:${entry.id}`, ...entry }))
     ]),
     ...raw.specialties.flatMap((archetype) => [
       { key: `specialty:${archetype.id}`, ...archetype },
-      ...archetype.features.map((entry) => ({ key: `specialty:${entry.id}`, ...entry }))
+      ...archetype.features.map((entry) => ({ key: `specialty:${archetype.id}:${entry.id}`, ...entry }))
     ])
   ];
+
+  assert.equal(sourceManifest.documentId, "1txV83llt1cC6PEFQCUA5FB53HOquCPEIelxOdua9bf8");
+  assert.equal(sourceManifest.revision, raw.sourceRevision);
+  assert.deepEqual(
+    new Set(entries.map((entry) => entry.key)),
+    new Set(Object.keys(sourceManifest.entries))
+  );
 
   for (const entry of entries) {
     const markdown = entry.descriptionMarkdown;
     const html = renderDescriptionMarkdown(markdown);
-    const visibleText = canonicalizeDescriptionMarkdown(markdown);
-    assert.equal(canonicalizeDescriptionHtml(html), visibleText, entry.key);
-    assert.equal(sourceFingerprint(visibleText), entry.sourceFingerprint, entry.key);
+    const visible = canonicalizeDescriptionMarkdown(markdown);
+    assert.equal(sourceFingerprint(visible), sourceManifest.entries[entry.key].visibleTextFingerprint, entry.key);
+    assert.equal(canonicalizeDescriptionHtml(html), visible, entry.key);
     assert.doesNotMatch(markdown, /\b(?:TODO|TBD)\b/u, entry.key);
     assert.doesNotMatch(markdown, /сокращён|краткое описание|см\. документ/iu, entry.key);
   }
@@ -543,7 +609,10 @@ test("craftsman archetype builders fail when a required feature or archetype UUI
 });
 
 test("craftsman dual archetypes grant and revoke only their own features across class levels", () => {
-  const manager = createCraftsmanAdvancementHarness();
+  const manager = createCraftsmanAdvancementHarness(undefined, {
+    research: "craftsman-research-mechanic",
+    specialty: "craftsman-specialty-constructor"
+  });
   assert.equal(manager.getArchetype("research"), null);
   assert.equal(manager.getArchetype("specialty"), null);
 
@@ -632,29 +701,10 @@ test("craftsman dual archetypes grant and revoke only their own features across 
 
 test("replacing research removes only that axis and preserves the selected specialty", () => {
   const raw = structuredClone(loadJson("data/craftsman-v01.json"));
-  raw.researches.push({
-    id: "craftsman-research-alchemist",
-    name: "Алхимик",
-    description: "Тестовое исследование.",
-    features: [{
-      id: "alchemical-practice",
-      name: "Алхимическая практика",
-      levels: [2],
-      description: "Тестовое умение исследования."
-    }]
+  const manager = createCraftsmanAdvancementHarness(raw, {
+    research: "craftsman-research-mechanic",
+    specialty: "craftsman-specialty-constructor"
   });
-  raw.specialties.push({
-    id: "craftsman-specialty-saboteur",
-    name: "Саботажник",
-    description: "Тестовая специальность.",
-    features: [{
-      id: "sabotage-practice",
-      name: "Практика саботажа",
-      levels: [3],
-      description: "Тестовое умение специальности."
-    }]
-  });
-  const manager = createCraftsmanAdvancementHarness(raw);
   manager.setLevel(6);
   const oldResearch = manager.getArchetype("research");
   const specialty = manager.getArchetype("specialty");
@@ -664,7 +714,12 @@ test("replacing research removes only that axis and preserves the selected speci
 
   assert.equal(manager.items.has(oldResearch.id), false);
   assert.equal(manager.getArchetype("research").name, "Алхимик");
-  assert.deepEqual(manager.getFeatureNames("research"), ["Алхимическая практика"]);
+  assert.deepEqual(manager.getFeatureNames("research"), [
+    "Полевая алхимия",
+    "Умение обращаться с зельями",
+    "Умение обращаться с зельями",
+    "Умение обращаться с зельями"
+  ]);
   assert.strictEqual(manager.getArchetype("specialty"), specialty);
   assert.deepEqual(new Set(manager.getFeatureNames("specialty")), specialtyFeatures);
   assert.match(manager.getArchetype("research").flags.dnd5e.advancementRoot, /^class-1\./u);
@@ -703,15 +758,18 @@ test("class pack synchronization aborts before class document mutation when an a
   try {
     await assert.rejects(
       syncClassesPack([craftsman], { featureUuidById, archetypeUuidById: new Map() }),
-      /Missing craftsman archetype UUID: craftsman-research-mechanic/u
+      /Missing craftsman archetype UUID: craftsman-research-weaponsmith/u
     );
+    const allButConstructor = new Map([...craftsman.researches, ...craftsman.specialties]
+      .filter((entry) => entry.archetypeId !== "craftsman-specialty-constructor")
+      .map((entry) => [
+        entry.archetypeId,
+        `Compendium.world.rebreya-craftsman-archetypes.Item.${entry.documentId}`
+      ]));
     await assert.rejects(
       syncClassesPack([craftsman], {
         featureUuidById,
-        archetypeUuidById: new Map([[
-          "craftsman-research-mechanic",
-          "Compendium.world.rebreya-craftsman-archetypes.Item.mechanic"
-        ]])
+        archetypeUuidById: allButConstructor
       }),
       /Missing craftsman archetype UUID: craftsman-specialty-constructor/u
     );
