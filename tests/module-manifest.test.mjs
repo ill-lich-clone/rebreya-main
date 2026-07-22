@@ -1,11 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
 const RELEASED_CACHE_VERSION = "1\\.4\\.96";
 
 async function readCanonicalEntrypointSource() {
   return readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
+}
+
+async function readJavaScriptTree(relativeDirectory) {
+  const root = new URL(relativeDirectory, import.meta.url);
+  const files = [];
+
+  async function visit(directory, relativePath = "") {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const entryPath = new URL(entry.name, directory.href.endsWith("/") ? directory : new URL(`${directory.href}/`));
+      const relativeEntryPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await visit(new URL(`${entryPath.href}/`), relativeEntryPath);
+      }
+      else if (entry.isFile() && entry.name.endsWith(".js")) {
+        files.push({
+          path: `${relativeDirectory.replace(/^\.\.\//u, "")}${relativeEntryPath}`,
+          source: await readFile(entryPath, "utf8")
+        });
+      }
+    }
+  }
+
+  await visit(root);
+  return files;
 }
 
 test("module manifest enables the Foundry module socket namespace", async () => {
@@ -14,8 +38,12 @@ test("module manifest enables the Foundry module socket namespace", async () => 
   assert.equal(manifest.socket, true);
 });
 
-test("module manifest exposes both craftsman archetype item types", async () => {
+test("module manifest keeps both legacy Craftsman item types readable for migration compatibility", async () => {
   const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
+  const legacyTypeSource = await readFile(
+    new URL("../scripts/integrations/craftsman-archetype-types.js", import.meta.url),
+    "utf8"
+  );
 
   for (const type of ["research", "specialty"]) {
     assert.deepEqual(manifest.documentTypes.Item[type].htmlFields, [
@@ -23,6 +51,8 @@ test("module manifest exposes both craftsman archetype item types", async () => 
       "description.chat"
     ]);
   }
+  assert.match(legacyTypeSource, /export function registerLegacyCraftsmanArchetypeTypes/u);
+  assert.doesNotMatch(legacyTypeSource, /ResearchChoice|SpecialtyChoice/u);
 });
 
 test("module manifest loads the stable canonical entrypoint", async () => {
@@ -30,10 +60,93 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const entrypointSource = await readFile(new URL("scripts/main.js", manifestUrl), "utf8");
 
-  assert.equal(manifest.version, "1.4.107");
+  assert.equal(manifest.version, "1.4.108");
   assert.deepEqual(manifest.esmodules, ["scripts/main.js"]);
   assert.match(entrypointSource, /@rebreya-role canonical-composition-root/u);
   assert.match(entrypointSource, /export class RebreyaMainModule/u);
+});
+
+test("production wiring uses native Craftsman advancement, lifecycle, and migration modules", async () => {
+  const [entrypointSource, sheetSource] = await Promise.all([
+    readCanonicalEntrypointSource(),
+    readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8")
+  ]);
+
+  assert.match(
+    sheetSource,
+    /import \{ registerCraftsmanSubclassAdvancements \} from "\.\/craftsman-subclass-advancements\.js";/u
+  );
+  assert.match(
+    sheetSource,
+    /import \{ registerCraftsmanMultiSubclassIntegration \} from "\.\/craftsman-multi-subclass\.js";/u
+  );
+  assert.match(
+    sheetSource,
+    /registerCraftsmanClassCardIntegration,\s+registerCraftsmanTidyContent\s+\} from "\.\/craftsman-archetype-sheet\.js";/u
+  );
+  assert.match(sheetSource, /registerCraftsmanSubclassAdvancements\(\);/u);
+  assert.match(sheetSource, /registerCraftsmanMultiSubclassIntegration\(\);/u);
+  assert.match(sheetSource, /registerCraftsmanClassCardIntegration\(CharacterActorSheet\);/u);
+  assert.match(sheetSource, /registerCraftsmanTidyContent\(\);/u);
+
+  assert.match(
+    entrypointSource,
+    /import \{ CraftsmanSubclassMigrationService \} from "\.\/data\/craftsman-subclass-migration\.js";/u
+  );
+  assert.match(entrypointSource, /this\.craftsmanSubclassMigration = new CraftsmanSubclassMigrationService\(\);/u);
+  assert.match(entrypointSource, /await this\.craftsmanSubclassMigration\.migrateWorldActors\(\);/u);
+});
+
+test("production does not register legacy Craftsman choice advancements", async () => {
+  const productionFiles = await readJavaScriptTree("../scripts/");
+
+  for (const legacyType of ["ResearchChoice", "SpecialtyChoice"]) {
+    const references = productionFiles.filter(({ source }) => source.includes(legacyType));
+    assert.deepEqual(
+      references.map(({ path }) => path),
+      ["scripts/data/craftsman-subclass-migration.js"],
+      `${legacyType} must remain migration input only`
+    );
+  }
+});
+
+test("production has no preload, sheet part, or template reference to retired Craftsman templates", async () => {
+  const productionFiles = await readJavaScriptTree("../scripts/");
+  const manifestSource = await readFile(new URL("../module.json", import.meta.url), "utf8");
+  const templateNames = ["craftsman-archetypes.hbs", "craftsman-archetypes-standard.hbs"];
+
+  for (const templateName of templateNames) {
+    assert.equal(
+      productionFiles.some(({ source }) => source.includes(templateName)),
+      false,
+      templateName
+    );
+    assert.equal(manifestSource.includes(templateName), false, templateName);
+    await assert.rejects(readFile(new URL(`../templates/${templateName}`, import.meta.url), "utf8"), { code: "ENOENT" });
+  }
+  assert.equal(
+    productionFiles.some(({ source }) => /craftsmanArchetypes/u.test(source)),
+    false,
+    "retired craftsmanArchetypes sheet part"
+  );
+});
+
+test("legacy Craftsman compendium identifier is restricted to retirement and migration diagnostics", async () => {
+  const productionFiles = await readJavaScriptTree("../scripts/");
+  const literalReferences = productionFiles.filter(({ source }) => source.includes("rebreya-craftsman-archetypes"));
+  const constantReferences = productionFiles.filter(({ source }) => (
+    source.includes("LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME")
+  ));
+  const classesSource = await readFile(new URL("../scripts/data/classes-compendium.js", import.meta.url), "utf8");
+
+  assert.deepEqual(literalReferences.map(({ path }) => path), ["scripts/constants.js"]);
+  assert.deepEqual(constantReferences.map(({ path }) => path).sort(), [
+    "scripts/constants.js",
+    "scripts/data/classes-compendium.js"
+  ]);
+  assert.match(classesSource, /LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME/u);
+  assert.match(classesSource, /retireLegacyCraftsmanArchetypesPack/u);
+  assert.doesNotMatch(classesSource, /syncCraftsmanArchetypesPack/u);
 });
 
 test("current entrypoint cache-busts the changed craft durability and transfer graph", async () => {
