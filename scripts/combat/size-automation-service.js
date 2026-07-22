@@ -53,6 +53,60 @@ const CHARACTER_SIZE_RULES = Object.freeze({
   })
 });
 
+function collectionContents(collection) {
+  if (Array.isArray(collection)) {
+    return collection;
+  }
+  if (Array.isArray(collection?.contents)) {
+    return collection.contents;
+  }
+  if (collection && typeof collection[Symbol.iterator] === "function") {
+    return Array.from(collection);
+  }
+  return [];
+}
+
+function defaultCanManageActor(actor) {
+  const currentUser = globalThis.game?.user;
+  if (!currentUser) {
+    return false;
+  }
+  if (currentUser.isGM) {
+    return true;
+  }
+  if (typeof actor?.testUserPermission === "function") {
+    return actor.testUserPermission(currentUser, "OWNER");
+  }
+  return actor?.isOwner === true;
+}
+
+function isManagedSizeEffect(effect) {
+  return effect?.flags?.[MODULE_ID]?.sizeAutomation?.managed === true;
+}
+
+function comparableEffectData(effect) {
+  return {
+    name: String(effect?.name ?? ""),
+    img: String(effect?.img ?? ""),
+    disabled: effect?.disabled === true,
+    transfer: effect?.transfer === true,
+    changes: collectionContents(effect?.changes).map((change) => ({
+      key: String(change?.key ?? ""),
+      mode: Number(change?.mode ?? 0),
+      value: String(change?.value ?? ""),
+      priority: Number(change?.priority ?? 0)
+    })),
+    sizeAutomation: {
+      managed: effect?.flags?.[MODULE_ID]?.sizeAutomation?.managed === true,
+      size: String(effect?.flags?.[MODULE_ID]?.sizeAutomation?.size ?? "")
+    }
+  };
+}
+
+function effectDataMatches(effect, desired) {
+  return JSON.stringify(comparableEffectData(effect)) === JSON.stringify(comparableEffectData(desired));
+}
+
 export function getCharacterSizeRule(size) {
   const normalized = String(size ?? "").trim().toLowerCase();
   return CHARACTER_SIZE_RULES[normalized] ?? CHARACTER_SIZE_RULES.med;
@@ -98,4 +152,88 @@ export function buildCharacterSizeEffectData(size) {
       }
     }
   };
+}
+
+export class SizeAutomationService {
+  constructor(moduleApi, {
+    canManageActor = defaultCanManageActor,
+    actors = () => globalThis.game?.actors?.contents ?? []
+  } = {}) {
+    this.moduleApi = moduleApi;
+    this._canManageActor = canManageActor;
+    this._actors = actors;
+    this._actorQueues = new Map();
+  }
+
+  async initialize() {
+    for (const actor of this._actors()) {
+      await this.syncActor(actor);
+    }
+    return true;
+  }
+
+  syncActor(actor) {
+    if (actor?.type !== "character" || !this._canManageActor(actor)) {
+      return Promise.resolve(false);
+    }
+
+    const actorKey = actor.uuid ?? actor.id;
+    const previous = this._actorQueues.get(actorKey) ?? Promise.resolve();
+    const queued = previous.catch(() => false).then(() => this._syncActorNow(actor));
+    this._actorQueues.set(actorKey, queued);
+    return queued.finally(() => {
+      if (this._actorQueues.get(actorKey) === queued) {
+        this._actorQueues.delete(actorKey);
+      }
+    });
+  }
+
+  handleActorUpdated(actor, _changed, options = {}) {
+    if (options.rebreyaSizeAutomation === true) {
+      return Promise.resolve(false);
+    }
+    return this.syncActor(actor);
+  }
+
+  handleActiveEffectChanged(effect, options = {}) {
+    if (options.rebreyaSizeAutomation === true) {
+      return Promise.resolve(false);
+    }
+    return this.syncActor(effect?.parent);
+  }
+
+  async _syncActorNow(actor) {
+    const managed = collectionContents(actor?.effects).filter(isManagedSizeEffect);
+    const desired = buildCharacterSizeEffectData(actor?.system?.traits?.size);
+    const mutationOptions = { rebreyaSizeAutomation: true };
+
+    if (!desired) {
+      const ids = managed.map((effect) => effect.id ?? effect._id).filter(Boolean);
+      if (ids.length > 0) {
+        await actor.deleteEmbeddedDocuments("ActiveEffect", ids, mutationOptions);
+      }
+      return ids.length > 0;
+    }
+
+    const [primary, ...duplicates] = managed;
+    let changed = false;
+    if (!primary) {
+      await actor.createEmbeddedDocuments("ActiveEffect", [desired], mutationOptions);
+      changed = true;
+    }
+    else if (!effectDataMatches(primary, desired)) {
+      await actor.updateEmbeddedDocuments("ActiveEffect", [{
+        _id: primary.id ?? primary._id,
+        ...desired
+      }], mutationOptions);
+      changed = true;
+    }
+
+    const duplicateIds = duplicates.map((effect) => effect.id ?? effect._id).filter(Boolean);
+    if (duplicateIds.length > 0) {
+      await actor.deleteEmbeddedDocuments("ActiveEffect", duplicateIds, mutationOptions);
+      changed = true;
+    }
+    return changed;
+  }
 }

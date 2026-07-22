@@ -1,6 +1,12 @@
 import { MODULE_ID } from "../constants.js";
 
 const HOOKS_REGISTERED_KEY = `${MODULE_ID}.combatHooksRegistered`;
+const CHARACTER_SHEET_RENDER_HOOKS = Object.freeze([
+  "renderActorSheet",
+  "renderActorSheet5eCharacter2",
+  "renderActorSheet5eCharacter",
+  "renderCharacterActorSheet"
+]);
 
 export function registerCombatHooks(moduleApi) {
   const hasStatusService = Boolean(moduleApi?.combatStatusService);
@@ -18,7 +24,8 @@ export function registerCombatHooks(moduleApi) {
   const hasSpellService = Boolean(moduleApi?.spellAutomationService);
   const hasReactionCapabilityIndex = Boolean(moduleApi?.reactionCapabilityIndex);
   const hasRuneKnightService = Boolean(moduleApi?.runeKnightAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService) {
+  const hasSizeService = Boolean(moduleApi?.sizeAutomationService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService) {
     return;
   }
 
@@ -26,6 +33,29 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (hasSizeService) {
+    const handleSizeError = (error) => {
+      console.error(`${MODULE_ID} | Failed to synchronize character size modifiers.`, error);
+    };
+    Hooks.on("updateActor", (actor, changed, options) => {
+      moduleApi.sizeAutomationService.handleActorUpdated(actor, changed, options).catch(handleSizeError);
+    });
+    Hooks.on("createActiveEffect", (effect, options) => {
+      moduleApi.sizeAutomationService.handleActiveEffectChanged(effect, options).catch(handleSizeError);
+    });
+    Hooks.on("updateActiveEffect", (effect, _changed, options) => {
+      moduleApi.sizeAutomationService.handleActiveEffectChanged(effect, options).catch(handleSizeError);
+    });
+    Hooks.on("deleteActiveEffect", (effect, options) => {
+      moduleApi.sizeAutomationService.handleActiveEffectChanged(effect, options).catch(handleSizeError);
+    });
+    for (const hookName of CHARACTER_SHEET_RENDER_HOOKS) {
+      Hooks.on(hookName, (app) => {
+        moduleApi.sizeAutomationService.syncActor(app?.actor ?? app?.document).catch(handleSizeError);
+      });
+    }
+  }
 
   if (hasReactionCapabilityIndex) {
     const index = moduleApi.reactionCapabilityIndex;

@@ -65,8 +65,9 @@ import { isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.96-firearm-item-sheet-no-rerender";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.109-character-size";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.96-firearm-weight-threshold";
+import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.109-character-size";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
@@ -898,6 +899,7 @@ export class RebreyaMainModule {
     this.runeKnightAutomationService = new RuneKnightAutomationService(this);
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
+    this.sizeAutomationService = new SizeAutomationService(this);
     this.spellAutomationService = new SpellAutomationService(this);
     this.attackRollBoostService = new AttackRollBoostService(this);
     this.environmentAutomationService = new EnvironmentAutomationService(this);
@@ -1204,6 +1206,13 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize combat attack service.`, error);
+    }
+
+    try {
+      await this.sizeAutomationService.initialize();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to initialize character size automation.`, error);
     }
 
     try {

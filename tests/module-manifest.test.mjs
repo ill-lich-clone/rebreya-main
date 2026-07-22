@@ -328,7 +328,7 @@ test("combat automation imports preserve their released cache busts", async () =
 
   assert.match(
     entrypointSource,
-    new RegExp(`combat/hooks\\.js\\?v=${escapedVersion}-firearm-item-sheet-no-rerender`, "u"),
+    /combat\/hooks\.js\?v=1\.4\.109-character-size/u,
   );
   assert.match(
     entrypointSource,
@@ -354,6 +354,25 @@ test("combat automation imports preserve their released cache busts", async () =
     statusServiceSource,
     new RegExp(`status-definitions\\.js\\?v=${escapedVersion}-surrounded-ac`, "u"),
   );
+});
+
+test("character size automation is wired into module initialization and combat hooks", async () => {
+  const [entrypointSource, hooksSource] = await Promise.all([
+    readCanonicalEntrypointSource(),
+    readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8")
+  ]);
+
+  assert.match(
+    entrypointSource,
+    /import \{ SizeAutomationService \} from "\.\/combat\/size-automation-service\.js\?v=[^"]+";/u
+  );
+  assert.match(entrypointSource, /this\.sizeAutomationService = new SizeAutomationService\(this\);/u);
+  assert.match(entrypointSource, /await this\.sizeAutomationService\.initialize\(\);/u);
+  assert.match(hooksSource, /const hasSizeService = Boolean\(moduleApi\?\.sizeAutomationService\);/u);
+  assert.match(hooksSource, /Hooks\.on\("updateActor"[\s\S]+handleActorUpdated/u);
+  assert.match(hooksSource, /Hooks\.on\("createActiveEffect"[\s\S]+handleActiveEffectChanged/u);
+  assert.match(hooksSource, /Hooks\.on\("deleteActiveEffect"[\s\S]+handleActiveEffectChanged/u);
+  assert.match(hooksSource, /sizeAutomationService\.syncActor/u);
 });
 
 test("held item integrations preserve their released cache bust", async () => {
