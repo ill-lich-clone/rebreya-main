@@ -4617,6 +4617,9 @@ export class CombatAttackService {
     }
 
     if (kind === PROVOKED_ATTACK_REACTION_KIND) {
+      if (this.moduleApi?.craftsmanGadgetService?.suppressesProvokedAttack?.(state.target)) {
+        return false;
+      }
       const weapon = this.#resolveItem(
         reactor,
         state.options.weaponId ?? state.options.weaponName ?? state.options.weapon ?? ""
@@ -4867,6 +4870,9 @@ export class CombatAttackService {
     const target = this.#resolveActor(targetOrId);
     if (!(target instanceof Actor)) {
       throw new Error("Failed to resolve target actor for provoked attack.");
+    }
+    if (this.moduleApi?.craftsmanGadgetService?.suppressesProvokedAttack?.(target)) {
+      return { success: false, reason: "movementDoesNotProvoke" };
     }
     return this.#resolveQueuedAttackReaction(PROVOKED_ATTACK_REACTION_KIND, reactor, target, {}, options);
   }

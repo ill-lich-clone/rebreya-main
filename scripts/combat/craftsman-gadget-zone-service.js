@@ -64,6 +64,22 @@ export class CraftsmanGadgetZoneService {
     return template?.deleted ? null : template;
   }
 
+  unregisterTemplate(templateOrInstanceId) {
+    const instanceId = typeof templateOrInstanceId === "string"
+      ? cleanString(templateOrInstanceId)
+      : cleanString(smokeState(templateOrInstanceId)?.instanceId);
+    if (!instanceId) return false;
+    const registered = this._templates.get(instanceId);
+    if (typeof templateOrInstanceId !== "string" && registered && registered !== templateOrInstanceId) {
+      return false;
+    }
+    return this._templates.delete(instanceId);
+  }
+
+  clearTemplates() {
+    this._templates.clear();
+  }
+
   async poisonTemplate(instanceId, context = {}) {
     const key = cleanString(instanceId);
     let template = this.getTemplate(key);
@@ -140,6 +156,7 @@ export class CraftsmanGadgetZoneService {
     const templates = scene?.templates?.contents
       ?? (typeof scene?.templates?.values === "function" ? Array.from(scene.templates.values()) : [])
       ?? [];
+    this._templates.clear();
     for (const template of templates) this.registerTemplate(template);
     return this._templates.size;
   }
@@ -154,7 +171,7 @@ export class CraftsmanGadgetZoneService {
       return this.options.applyPoisonDamage(actor, amount, template);
     }
     if (typeof actor?.applyDamage === "function") {
-      return actor.applyDamage(amount, { type: "poison" });
+      return actor.applyDamage([{ value: amount, type: "poison" }]);
     }
     return false;
   }

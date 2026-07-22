@@ -2393,6 +2393,29 @@ test("manual parry resolution uses the global ten-second reaction workflow", asy
   assert.equal(service.getReactionState(defender).usesRemaining, 0);
 });
 
+test("Craftsman Charged Boot suppresses a provoked attack before opening the reaction queue", async () => {
+  const reactor = makeActor([makeWeaponItem()], { id: "reactor" });
+  const target = makeActor([], { id: "moving-target" });
+  let queueCalls = 0;
+  const moduleApi = {
+    craftsmanGadgetService: {
+      suppressesProvokedAttack: (actor) => actor === target
+    },
+    reactionQueueService: {
+      resolve: async () => {
+        queueCalls += 1;
+        return { status: "unexpected" };
+      }
+    }
+  };
+  const service = new CombatAttackService(moduleApi);
+
+  const result = await service.resolveProvokedAttack(reactor, target);
+
+  assert.deepEqual(result, { success: false, reason: "movementDoesNotProvoke" });
+  assert.equal(queueCalls, 0);
+});
+
 test("one provoked-attack trigger lets every eligible reactor act in initiative order", async () => {
   const first = makeActor([makeWeaponItem({ id: "first-sword" })], { id: "first-reactor" });
   const second = makeActor([makeWeaponItem({ id: "second-sword" })], { id: "second-reactor" });

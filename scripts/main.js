@@ -88,6 +88,9 @@ import {
 } from "./combat/performer-automation-service.js?v=1.4.96";
 import { BardicInspirationCompatService } from "./combat/bardic-inspiration-compat-service.js";
 import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/race-automation-service.js";
+import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
+import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js";
+import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";
 import { registerSceneControlsHook } from "./hooks.js?v=1.4.96-bg3-piles";
 import {
   extendDnd5eItemTypes,
@@ -112,6 +115,7 @@ import { runMapObjectTokenMacro } from "./integrations/map-object-token-macro.js
 import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTimeToCalendarTime } from "./integrations/smalltime-compat.js";
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
+import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.96";
 import {
@@ -895,6 +899,17 @@ export class RebreyaMainModule {
     this.performerAutomationService = new PerformerAutomationService(this);
     this.bardicInspirationCompatService = new BardicInspirationCompatService(this);
     this.raceAutomationService = new RaceAutomationService(this);
+    this.craftsmanGadgetZoneService = new CraftsmanGadgetZoneService({
+      isActiveGmClient: () => isActiveGmClient(globalThis.game)
+    });
+    this.craftsmanVehicleService = new CraftsmanVehicleService({
+      isActiveGmClient: () => isActiveGmClient(globalThis.game)
+    });
+    this.craftsmanGadgetService = new CraftsmanGadgetService(this, {
+      zoneService: this.craftsmanGadgetZoneService,
+      vehicleService: this.craftsmanVehicleService,
+      isActiveGmClient: () => isActiveGmClient(globalThis.game)
+    });
     this.featChoiceAutomationService = new FeatChoiceAutomationService(this);
     this.repository.setGlobalEventsService(this.globalEventsService);
     this.economyApp = null;
@@ -4676,6 +4691,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register combat hooks.`, error);
+  }
+
+  try {
+    registerCraftsmanGadgetHooks(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register Craftsman gadget hooks.`, error);
   }
 
   try {

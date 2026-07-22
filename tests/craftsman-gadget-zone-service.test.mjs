@@ -130,3 +130,29 @@ test("strong obscuration is reported when either endpoint or the line crosses sm
   assert.equal(service.isSightObscured(token(50, 250), token(450, 250)), true);
   assert.equal(service.isSightObscured(token(50, 50), token(50, 450)), false);
 });
+
+test("default poison damage uses a typed dnd5e poison damage entry", async () => {
+  const calls = [];
+  const actor = { applyDamage: async (...args) => calls.push(args) };
+  const zone = template({ poisoned: true });
+  const service = new CraftsmanGadgetZoneService({ isActiveGmClient: () => true });
+  service.registerTemplate(zone);
+
+  await service.handleCombatTurn({ combatant: { token: token(250, 250, actor) } });
+
+  assert.deepEqual(calls, [[[{ value: 5, type: "poison" }]]]);
+});
+
+test("scene reindex replaces stale templates and document deletion only unregisters", () => {
+  const first = template({ id: "first" });
+  const second = template({ id: "second" });
+  const service = new CraftsmanGadgetZoneService();
+  service.registerTemplate(first);
+  assert.equal(service.getTemplate("g1"), first);
+
+  service.registerSceneTemplates({ templates: { contents: [second] } });
+  assert.equal(service.getTemplate("g1"), second);
+  service.unregisterTemplate(second);
+  assert.equal(service.getTemplate("g1"), null);
+  assert.equal(second.deleted, undefined);
+});

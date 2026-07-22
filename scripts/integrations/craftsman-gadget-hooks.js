@@ -1,0 +1,181 @@
+import { MODULE_ID } from "../constants.js";
+
+const HOOKS_REGISTERED_KEY = `${MODULE_ID}.craftsmanGadgetHooksRegistered`;
+
+function cleanString(value) {
+  return String(value ?? "").trim();
+}
+
+function combatTurnKey(combat) {
+  const id = cleanString(combat?.id ?? combat?._id);
+  const round = Number(combat?.round);
+  const turn = Number(combat?.turn);
+  return id && Number.isFinite(round) && Number.isFinite(turn) ? `${id}:${round}:${turn}` : "";
+}
+
+function report(label, error) {
+  console.error(`${MODULE_ID} | ${label}`, error);
+}
+
+function runAsync(label, operation) {
+  Promise.resolve()
+    .then(operation)
+    .catch((error) => report(label, error));
+  return true;
+}
+
+export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
+  const Hooks = options.Hooks ?? globalThis.Hooks;
+  const game = options.game ?? globalThis.game;
+  const gadgetService = moduleApi?.craftsmanGadgetService;
+  const zoneService = moduleApi?.craftsmanGadgetZoneService;
+  const vehicleService = moduleApi?.craftsmanVehicleService;
+  if (!Hooks?.on || (!gadgetService && !zoneService && !vehicleService)) return false;
+  if (game?.[HOOKS_REGISTERED_KEY]) return true;
+  if (game) game[HOOKS_REGISTERED_KEY] = true;
+
+  if (gadgetService) {
+    Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
+      try {
+        return gadgetService.applyDnd5ePreUseActivity?.(
+          activity,
+          usageConfig,
+          dialogConfig,
+          messageConfig
+        ) ?? true;
+      }
+      catch (error) {
+        report("Failed to validate Craftsman gadget activity.", error);
+        return true;
+      }
+    });
+
+    Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => runAsync(
+      "Failed to apply Craftsman gadget activity.",
+      () => gadgetService.applyDnd5ePostUseActivity?.(activity, usageConfig, results)
+    ));
+
+    Hooks.on("dnd5e.preCreateActivityTemplate", (activity, templateData) => {
+      try {
+        return gadgetService.applyDnd5ePreCreateActivityTemplate?.(activity, templateData) ?? true;
+      }
+      catch (error) {
+        report("Failed to prepare Craftsman smoke template.", error);
+        return true;
+      }
+    });
+
+    Hooks.on("dnd5e.preRollAttack", (rollConfig, dialogConfig, messageConfig) => {
+      try {
+        return gadgetService.applyDnd5eAttackRollConfig?.(
+          rollConfig,
+          dialogConfig,
+          messageConfig
+        ) ?? true;
+      }
+      catch (error) {
+        report("Failed to apply Craftsman gadget attack modifiers.", error);
+        return true;
+      }
+    });
+
+    Hooks.on("dnd5e.rollAttack", (rolls, context) => runAsync(
+      "Failed to resolve Craftsman gadget attack roll.",
+      () => gadgetService.applyDnd5eRollAttack?.(rolls, context)
+    ));
+
+    Hooks.on("dnd5e.preRollDamage", (rollConfig, dialogConfig, messageConfig) => {
+      try {
+        return gadgetService.applyDnd5ePreRollDamage?.(
+          rollConfig,
+          dialogConfig,
+          messageConfig
+        ) ?? true;
+      }
+      catch (error) {
+        report("Failed to apply Craftsman gadget damage modifier.", error);
+        return true;
+      }
+    });
+
+    Hooks.on("updateWorldTime", (worldTime) => runAsync(
+      "Failed to expire Craftsman gadgets.",
+      () => gadgetService.handleWorldTime?.(worldTime)
+    ));
+
+    Hooks.on("dnd5e.restCompleted", (actor, result, config) => runAsync(
+      "Failed to prepare Craftsman gadgets after a long rest.",
+      () => gadgetService.handleRestCompleted?.(actor, result, config)
+    ));
+
+    Hooks.on("deleteItem", (item) => runAsync(
+      "Failed to tear down a deleted Craftsman gadget.",
+      () => gadgetService.handleDeletedItem?.(item)
+    ));
+  }
+
+  if (gadgetService || zoneService || vehicleService) {
+    Hooks.on("combatTurnChange", (combat) => {
+      const key = combatTurnKey(combat);
+      if (gadgetService) runAsync(
+        "Failed to advance Craftsman gadget turn state.",
+        () => gadgetService.handleCombatTurnChange?.(combat)
+      );
+      if (zoneService) runAsync(
+        "Failed to apply Craftsman smoke turn automation.",
+        () => zoneService.handleCombatTurn?.(combat)
+      );
+      if (vehicleService) runAsync(
+        "Failed to advance Craftsman vehicle gadget state.",
+        () => vehicleService.handleCombatTurnChange?.(key)
+      );
+      return true;
+    });
+  }
+
+  if (zoneService) {
+    Hooks.on("canvasReady", (canvas) => {
+      try {
+        zoneService.registerSceneTemplates?.(canvas?.scene ?? globalThis.canvas?.scene);
+      }
+      catch (error) {
+        report("Failed to index Craftsman smoke templates.", error);
+      }
+    });
+    for (const hookName of ["createMeasuredTemplate", "updateMeasuredTemplate"]) {
+      Hooks.on(hookName, (document) => {
+        try {
+          zoneService.registerTemplate?.(document);
+        }
+        catch (error) {
+          report("Failed to index a Craftsman smoke template document.", error);
+        }
+      });
+    }
+    Hooks.on("deleteMeasuredTemplate", (document) => {
+      try {
+        zoneService.unregisterTemplate?.(document);
+      }
+      catch (error) {
+        report("Failed to unregister a Craftsman smoke template document.", error);
+      }
+    });
+    Hooks.on("deleteScene", () => {
+      try {
+        zoneService.clearTemplates?.();
+      }
+      catch (error) {
+        report("Failed to clear Craftsman smoke templates for a deleted scene.", error);
+      }
+    });
+  }
+
+  if (vehicleService) {
+    Hooks.on("deleteCombat", () => runAsync(
+      "Failed to restore a Craftsman vehicle boost after combat deletion.",
+      () => vehicleService.handleCombatTurnChange?.("")
+    ));
+  }
+
+  return true;
+}

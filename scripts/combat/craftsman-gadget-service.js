@@ -178,7 +178,7 @@ export class CraftsmanGadgetService {
     if (operation.operation === "activate") {
       for (const other of getPreparedCraftsmanGadgets(actor)) {
         if (other !== item && instanceState(other)?.state === "active") {
-          await this.#updateGadgetState(other, { state: "spent", spentReason: "replaced" });
+          await this.#spendGadget(actor, other, "replaced");
         }
       }
       const activatedAtWorldTime = this.#worldTime();
@@ -195,7 +195,9 @@ export class CraftsmanGadgetService {
       await this.#applyGadgetActivation(actor, item);
       if (instanceState(item)?.catalogId === "smoke-device") {
         const zoneService = this.options.zoneService;
-        for (const template of collectionValues(results?.templates)) {
+        const placedTemplates = collectionValues(results?.templates)
+          .flatMap((entry) => collectionValues(entry).length ? collectionValues(entry) : [entry]);
+        for (const template of placedTemplates) {
           zoneService?.registerTemplate?.(template?.document ?? template);
         }
       }
@@ -225,13 +227,37 @@ export class CraftsmanGadgetService {
 
   applyDnd5eAttackRollConfig(config = {}, dialog = {}) {
     const actor = config?.subject?.actor ?? config?.subject?.item?.actor ?? null;
+    const targets = collectionValues(
+      this.options.attackTargets?.(config)
+      ?? globalThis.game?.user?.targets
+    );
+    const targetToken = targets.length === 1 ? targets[0] : null;
+    const targetActor = targetToken?.actor ?? targetToken?.document?.actor ?? null;
+    const attackAcBonus = this.getWeaponAttackAcBonus(targetActor, config?.subject);
+    if (attackAcBonus && Number.isFinite(Number(config.target)) && config.craftsmanMagneticAcApplied !== true) {
+      config.target = Number(config.target) + attackAcBonus;
+      config.craftsmanMagneticAcApplied = true;
+    }
+
+    const sourceToken = this.options.sourceToken?.(actor, config)
+      ?? actor?.getActiveTokens?.(true, true)?.[0]
+      ?? actor?.getActiveTokens?.()?.[0]
+      ?? null;
+    if (sourceToken && targetToken && this.options.zoneService?.isSightObscured?.(sourceToken, targetToken)) {
+      dialog.disadvantage = true;
+      for (const roll of config.rolls ?? []) {
+        roll.options ??= {};
+        roll.options.disadvantage = true;
+      }
+    }
+
     const gadget = this.#activeGadget(actor, "force-glove");
     if (!gadget || instanceState(gadget)?.forceAdvantageAvailable !== true) return true;
     dialog.advantage = true;
     config.rolls ??= [];
     for (const roll of config.rolls) {
       roll.options ??= {};
-      roll.options.advantageMode = 1;
+      roll.options.advantage = true;
     }
     return true;
   }
@@ -241,20 +267,28 @@ export class CraftsmanGadgetService {
     const gadget = this.#activeGadget(actor, "force-glove");
     if (!gadget) return true;
     const state = instanceState(gadget);
-    if (state.forceAdvantageAvailable === true) {
-      await this.#updateGadgetState(gadget, { forceAdvantageAvailable: false });
-    }
     const roll = collectionValues(rolls)[0];
     const total = Number(roll?.total);
     const target = Number(roll?.options?.target);
     const turnKey = this.#turnKey();
-    if (!Number.isFinite(total) || !Number.isFinite(target) || total < target || state.forceDamageUsedTurnKey === turnKey) {
+    const isEligibleHit = Number.isFinite(total)
+      && Number.isFinite(target)
+      && total >= target
+      && state.forceDamageUsedTurnKey !== turnKey;
+    const patch = {
+      ...(state.forceAdvantageAvailable === true ? { forceAdvantageAvailable: false } : {}),
+      ...(isEligibleHit ? { forceDamagePending: true, forceDamagePendingTurnKey: turnKey } : {})
+    };
+    const persistence = Object.keys(patch).length ? this.#updateGadgetState(gadget, patch) : Promise.resolve(true);
+    if (!isEligibleHit) {
+      await persistence;
       return true;
     }
     const confirm = this.options.confirmForceDamage;
     const accepted = typeof confirm === "function" ? await confirm(actor, gadget, roll, context) : true;
-    if (accepted) {
-      await this.#updateGadgetState(gadget, { forceDamagePending: true, forceDamagePendingTurnKey: turnKey });
+    await persistence;
+    if (!accepted) {
+      await this.#updateGadgetState(gadget, { forceDamagePending: false, forceDamagePendingTurnKey: "" });
     }
     return true;
   }
@@ -293,8 +327,9 @@ export class CraftsmanGadgetService {
   }
 
   async handleCombatTurnChange(combat) {
+    if (typeof this.options.isActiveGmClient === "function" && !this.options.isActiveGmClient()) return false;
     const currentTurnKey = combatTurnKey(combat);
-    for (const actor of this._knownActors) {
+    for (const actor of this.#actorDocuments()) {
       const marker = cleanString(actorGadgetState(actor)?.noProvokedMovementTurnKey);
       if (marker && marker !== currentTurnKey) {
         await this.#updateActorGadgetState(actor, { noProvokedMovementTurnKey: "" });
@@ -314,21 +349,31 @@ export class CraftsmanGadgetService {
   }
 
   async handleWorldTime(worldTime = this.#worldTime()) {
+    if (typeof this.options.isActiveGmClient === "function" && !this.options.isActiveGmClient()) return false;
     const now = Number(worldTime);
     if (!Number.isFinite(now)) return false;
     let changed = false;
-    for (const actor of this._knownActors) {
+    for (const actor of this.#actorDocuments()) {
       for (const item of getPreparedCraftsmanGadgets(actor)) {
         const state = instanceState(item);
         if (state?.state !== "active" || Number(state.expiresAtWorldTime) > now) continue;
-        await this.#updateGadgetState(item, { state: "spent", spentReason: "expired" });
-        if (cleanString(actorGadgetState(actor)?.activeInstanceId) === cleanString(state.instanceId)) {
-          await this.#updateActorGadgetState(actor, { activeInstanceId: "" });
-        }
+        await this.#spendGadget(actor, item, "expired");
         changed = true;
       }
     }
     return changed;
+  }
+
+  async handleDeletedItem(item) {
+    const state = instanceState(item);
+    if (!state?.managed) return false;
+    const actor = item?.actor ?? item?.parent ?? null;
+    if (!actor) return false;
+    await this.#cleanupGadget(actor, item, state);
+    if (cleanString(actorGadgetState(actor)?.activeInstanceId) === cleanString(state.instanceId)) {
+      await this.#updateActorGadgetState(actor, { activeInstanceId: "" });
+    }
+    return true;
   }
 
   async #replaceLoadout(actor) {
@@ -342,6 +387,11 @@ export class CraftsmanGadgetService {
       selectedIds: previousSelectedIds,
       activeInstanceId: ""
     });
+    for (const oldGadget of oldGadgets) {
+      if (instanceState(oldGadget)?.state === "active") {
+        await this.#cleanupGadget(actor, oldGadget, instanceState(oldGadget));
+      }
+    }
     const choices = await this.#availableTemplates(actor);
     if (!choices.length) return false;
 
@@ -359,9 +409,12 @@ export class CraftsmanGadgetService {
     }
 
     const needsVehicle = catalogIds.some((catalogId) => byId.get(catalogId)?.availability === "mechanic");
-    const researchVehicle = needsVehicle
+    let researchVehicle = needsVehicle
       ? await this.options.vehicleService?.resolveResearchObject?.(actor) ?? null
       : null;
+    if (needsVehicle && !researchVehicle) {
+      researchVehicle = await this.options.vehicleService?.selectResearchObject?.(actor) ?? null;
+    }
     const createData = catalogIds.map((catalogId) => {
       const entry = byId.get(catalogId);
       const data = stripEmbeddedIdentity(entry.documentData);
@@ -510,6 +563,48 @@ export class CraftsmanGadgetService {
     }) ?? null;
   }
 
+  #actorDocuments() {
+    const supplied = typeof this.options.actorDocuments === "function"
+      ? collectionValues(this.options.actorDocuments())
+      : collectionValues(globalThis.game?.actors);
+    return Array.from(new Set([...this._knownActors, ...supplied])).filter(Boolean);
+  }
+
+  async #spendGadget(actor, item, reason) {
+    const state = instanceState(item);
+    if (!state) return false;
+    await this.#cleanupGadget(actor, item, state);
+    await this.#updateGadgetState(item, { state: "spent", spentReason: cleanString(reason) });
+    if (cleanString(actorGadgetState(actor)?.activeInstanceId) === cleanString(state.instanceId)) {
+      await this.#updateActorGadgetState(actor, { activeInstanceId: "" });
+    }
+    return true;
+  }
+
+  async #cleanupGadget(actor, item, state = instanceState(item)) {
+    if (!state?.instanceId) return false;
+    if (state.catalogId === "smoke-device") {
+      await this.options.zoneService?.deleteByInstanceId?.(state.instanceId);
+    }
+    if (state.catalogId === "charged-boot" && typeof actor?.deleteEmbeddedDocuments === "function") {
+      const effectIds = collectionValues(actor?.effects)
+        .filter((effect) => (
+          cleanString(moduleFlags(effect).craftsmanGadgetEffect?.instanceId) === cleanString(state.instanceId)
+        ))
+        .map(documentId)
+        .filter(Boolean);
+      if (effectIds.length) await actor.deleteEmbeddedDocuments("ActiveEffect", effectIds);
+    }
+    if (["afterburner-injector", "emergency-regulator"].includes(state.catalogId)) {
+      const vehicle = await this.#resolveGadgetVehicle(actor, state);
+      await this.options.vehicleService?.deactivateGadget?.(vehicle, {
+        instanceId: state.instanceId,
+        gadgetId: state.catalogId
+      });
+    }
+    return true;
+  }
+
   async #applyGadgetActivation(actor, item) {
     const state = instanceState(item);
     if (["afterburner-injector", "emergency-regulator"].includes(state?.catalogId)) {
@@ -613,7 +708,8 @@ export class CraftsmanGadgetService {
       }
     }) ?? [];
     const placed = await previews[0]?.drawPreview?.();
-    return placed?.document ?? placed ?? null;
+    const document = collectionValues(placed)[0] ?? placed;
+    return document?.document ?? document ?? null;
   }
 
   async #updateActorGadgetState(actor, patch) {
@@ -633,13 +729,11 @@ export class CraftsmanGadgetService {
     const current = instanceState(item);
     if (!current) return false;
     const next = { ...clone(current), ...clone(patch) };
+    item.flags ??= {};
+    item.flags[MODULE_ID] ??= {};
+    item.flags[MODULE_ID].craftsmanGadget = next;
     if (typeof item?.update === "function") {
       await item.update({ [`flags.${MODULE_ID}.craftsmanGadget`]: next });
-    }
-    else {
-      item.flags ??= {};
-      item.flags[MODULE_ID] ??= {};
-      item.flags[MODULE_ID].craftsmanGadget = next;
     }
     return true;
   }

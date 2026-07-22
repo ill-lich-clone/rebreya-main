@@ -103,4 +103,5 @@ test("Smoke Device activation uses one native 15-foot cube template", () => {
   assert.deepEqual(activation.target.template, {
     count: "1", contiguous: false, type: "cube", size: "15", width: "", height: "", units: "ft"
   });
+  assert.equal(activation.target.prompt, true);
 });

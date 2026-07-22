@@ -67,6 +67,33 @@ test("research object binding accepts only an owned vehicle", async () => {
   assert.equal(await service.bindResearchObject(craftsman, target.uuid), false);
 });
 
+test("research object selection lists owned vehicle Actors and persists the chosen UUID", async () => {
+  const craftsman = owner();
+  const first = vehicle();
+  first.uuid = "Actor.first";
+  first.name = "Первый транспорт";
+  const second = vehicle();
+  second.uuid = "Actor.second";
+  second.name = "Второй транспорт";
+  const foreign = vehicle();
+  foreign.uuid = "Actor.foreign";
+  foreign.isOwner = false;
+  const byUuid = new Map([first, second, foreign].map((entry) => [entry.uuid, entry]));
+  const service = new CraftsmanVehicleService({
+    vehicleDocuments: () => [first, second, foreign],
+    fromUuid: async (uuid) => byUuid.get(uuid),
+    promptResearchObject: async (_owner, choices) => {
+      assert.deepEqual(new Set(choices.map((entry) => entry.uuid)), new Set([first.uuid, second.uuid]));
+      return second.uuid;
+    }
+  });
+
+  const selected = await service.selectResearchObject(craftsman);
+
+  assert.equal(selected, second);
+  assert.equal(craftsman.flags["rebreya-main"].craftsman.researchObjectUuid, second.uuid);
+});
+
 test("Afterburner passive increases acceleration when the vehicle has it", async () => {
   const target = vehicle({ acceleration: 20 });
   const service = new CraftsmanVehicleService();
@@ -115,4 +142,65 @@ test("Emergency Regulator lowers effective threshold and lets the player choose 
   assert.equal(result.selectedTotal, 14);
   assert.deepEqual(emitted, [result]);
   assert.equal(Object.hasOwn(result, "consequence"), false);
+});
+
+test("deactivating a vehicle gadget restores the exact passive baseline", async () => {
+  const target = vehicle({ acceleration: 20 });
+  const craftsman = owner();
+  const service = new CraftsmanVehicleService();
+  await service.activateAfterburner(target, craftsman, { instanceId: "afterburner" });
+  assert.equal(target.flags["rebreya-main"].vehicleState.acceleration, 30);
+
+  await service.deactivateGadget(target, { instanceId: "afterburner", gadgetId: "afterburner-injector" });
+
+  assert.equal(target.flags["rebreya-main"].vehicleState.acceleration, 20);
+  assert.equal(target.flags["rebreya-main"].vehicleState.gadgetEffects?.afterburner, undefined);
+});
+
+test("persisted temporary speed survives service reload and restores once on the active GM", async () => {
+  const target = vehicle();
+  const craftsman = owner();
+  const rolls = [];
+  const firstService = new CraftsmanVehicleService();
+  await firstService.useAfterburnerAction(target, craftsman, {
+    instanceId: "afterburner",
+    turnKey: "combat:1:2"
+  });
+  assert.equal(target.system.attributes.movement.land, 70);
+
+  const reloadedService = new CraftsmanVehicleService({
+    isActiveGmClient: () => true,
+    vehicleDocuments: () => [target],
+    rollD20: async () => ({ total: 8 }),
+    emitBreakdown: (context) => rolls.push(context)
+  });
+  await reloadedService.handleCombatTurnChange("combat:1:3");
+
+  assert.equal(target.system.attributes.movement.land, 40);
+  assert.equal(target.flags["rebreya-main"].vehicleState.temporaryAfterburner, undefined);
+  assert.equal(rolls.length, 1);
+});
+
+test("automatic Afterburner breakdown offers Emergency Regulator reroll", async () => {
+  const target = vehicle();
+  const craftsman = owner();
+  const d20 = [{ total: 1 }, { total: 12 }];
+  const emitted = [];
+  const service = new CraftsmanVehicleService({
+    isActiveGmClient: () => true,
+    vehicleDocuments: () => [target],
+    rollD20: async () => d20.shift(),
+    chooseBreakdownRoll: async ({ rolls }) => rolls[1],
+    emitBreakdown: (context) => emitted.push(context)
+  });
+  await service.activateEmergencyRegulator(target, craftsman, { instanceId: "regulator" });
+  await service.useAfterburnerAction(target, craftsman, {
+    instanceId: "afterburner",
+    turnKey: "combat:1:2"
+  });
+
+  await service.handleCombatTurnChange("combat:1:3");
+
+  assert.deepEqual(emitted[0].rolls, [1, 12]);
+  assert.equal(emitted[0].selectedTotal, 12);
 });

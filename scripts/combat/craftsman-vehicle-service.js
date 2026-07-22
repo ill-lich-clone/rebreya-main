@@ -4,10 +4,27 @@ function cleanString(value) {
   return String(value ?? "").trim();
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function clone(value) {
+  if (value === undefined || value === null) return value;
   return globalThis.foundry?.utils?.deepClone
     ? globalThis.foundry.utils.deepClone(value)
     : JSON.parse(JSON.stringify(value));
+}
+
+function collectionValues(collection) {
+  if (Array.isArray(collection?.contents)) return collection.contents.filter(Boolean);
+  if (Array.isArray(collection)) return collection.filter(Boolean);
+  if (typeof collection?.values === "function") return Array.from(collection.values()).filter(Boolean);
+  return [];
 }
 
 function vehicleState(vehicle) {
@@ -41,7 +58,7 @@ async function updatePath(document, path, value) {
 export class CraftsmanVehicleService {
   constructor(options = {}) {
     this.options = options;
-    this._temporarySpeed = new Map();
+    this._knownVehicles = new Set();
   }
 
   async bindResearchObject(owner, vehicleUuid) {
@@ -61,6 +78,51 @@ export class CraftsmanVehicleService {
     return vehicle?.type === "vehicle" && vehicle?.isOwner === true ? vehicle : null;
   }
 
+  async selectResearchObject(owner) {
+    const vehicles = this.#vehicleDocuments()
+      .filter((vehicle) => vehicle?.isOwner === true)
+      .sort((left, right) => cleanString(left?.name).localeCompare(cleanString(right?.name), "ru"));
+    if (!vehicles.length) {
+      globalThis.ui?.notifications?.warn?.("Нет доступного транспорта для объекта исследования Механика.");
+      return null;
+    }
+    const choices = vehicles.map((vehicle) => ({
+      uuid: cleanString(vehicle.uuid),
+      name: cleanString(vehicle.name) || cleanString(vehicle.uuid)
+    }));
+    let selectedUuid;
+    if (typeof this.options.promptResearchObject === "function") {
+      selectedUuid = cleanString(await this.options.promptResearchObject(owner, clone(choices)));
+    }
+    else if (choices.length === 1) {
+      selectedUuid = choices[0].uuid;
+    }
+    else {
+      const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+      if (typeof DialogV2?.wait !== "function") return null;
+      const options = choices.map((choice) => (
+        `<option value="${escapeHtml(choice.uuid)}">${escapeHtml(choice.name)}</option>`
+      )).join("");
+      selectedUuid = cleanString(await DialogV2.wait({
+        window: { title: "Объект исследования Механика" },
+        content: `<form><div class="form-group"><label>Транспорт</label><select name="vehicleUuid">${options}</select></div></form>`,
+        buttons: [{
+          action: "select",
+          label: "Выбрать",
+          default: true,
+          callback: (_event, _button, dialog) => dialog?.element?.querySelector?.('[name="vehicleUuid"]')?.value ?? ""
+        }, {
+          action: "cancel",
+          label: "Отмена",
+          callback: () => ""
+        }],
+        close: () => ""
+      }));
+    }
+    if (!selectedUuid || !await this.bindResearchObject(owner, selectedUuid)) return null;
+    return this.resolveResearchObject(owner);
+  }
+
   async resolveVehicle(vehicleUuid) {
     const vehicle = await this.#fromUuid(vehicleUuid);
     return vehicle?.type === "vehicle" && vehicle?.isOwner !== false ? vehicle : null;
@@ -77,64 +139,142 @@ export class CraftsmanVehicleService {
 
   async activateAfterburner(vehicle, owner, { instanceId = "" } = {}) {
     if (vehicle?.type !== "vehicle") return false;
-    const state = vehicleState(vehicle);
+    this._knownVehicles.add(vehicle);
+    const key = cleanString(instanceId);
+    const state = clone(vehicleState(vehicle));
+    const gadgetEffects = clone(state.gadgetEffects ?? {});
+    if (gadgetEffects[key]) return true;
+    gadgetEffects[key] = {
+      gadgetId: "afterburner-injector",
+      ownerUuid: cleanString(owner?.uuid),
+      baseline: {
+        hasAcceleration: Number.isFinite(Number(state.acceleration)),
+        acceleration: Number.isFinite(Number(state.acceleration)) ? Number(state.acceleration) : null,
+        movement: clone(vehicle?.system?.attributes?.movement ?? {}),
+        travel: clone(vehicle?.system?.attributes?.travel?.speeds ?? {})
+      }
+    };
+    const nextState = { ...state, gadgetEffects };
     if (Number.isFinite(Number(state.acceleration))) {
-      await updatePath(vehicle, `flags.${MODULE_ID}.vehicleState`, {
-        ...clone(state),
-        acceleration: Number(state.acceleration) + 10,
-        afterburner: { instanceId: cleanString(instanceId), ownerUuid: cleanString(owner?.uuid) }
-      });
+      nextState.acceleration = Number(state.acceleration) + 10;
+      nextState.afterburner = { instanceId: key, ownerUuid: cleanString(owner?.uuid) };
+      await updatePath(vehicle, `flags.${MODULE_ID}.vehicleState`, nextState);
       return true;
     }
     const movement = addToNonZero(vehicle?.system?.attributes?.movement, 10);
     const travel = addToNonZero(vehicle?.system?.attributes?.travel?.speeds, 10);
+    nextState.afterburner = { instanceId: key, ownerUuid: cleanString(owner?.uuid) };
+    await updatePath(vehicle, `flags.${MODULE_ID}.vehicleState`, nextState);
     await updatePath(vehicle, "system.attributes.movement", movement);
     await updatePath(vehicle, "system.attributes.travel.speeds", travel);
-    await updatePath(vehicle, `flags.${MODULE_ID}.vehicleState`, {
-      ...clone(state),
-      afterburner: { instanceId: cleanString(instanceId), ownerUuid: cleanString(owner?.uuid) }
-    });
     return true;
   }
 
   async activateEmergencyRegulator(vehicle, owner, { instanceId = "" } = {}) {
     if (vehicle?.type !== "vehicle") return false;
+    this._knownVehicles.add(vehicle);
+    const key = cleanString(instanceId);
+    const state = clone(vehicleState(vehicle));
+    const gadgetEffects = clone(state.gadgetEffects ?? {});
+    gadgetEffects[key] ??= {
+      gadgetId: "emergency-regulator",
+      ownerUuid: cleanString(owner?.uuid),
+      baseline: {}
+    };
     await updatePath(vehicle, `flags.${MODULE_ID}.vehicleState`, {
-      ...clone(vehicleState(vehicle)),
-      emergencyRegulator: { instanceId: cleanString(instanceId), ownerUuid: cleanString(owner?.uuid) }
+      ...state,
+      gadgetEffects,
+      emergencyRegulator: { instanceId: key, ownerUuid: cleanString(owner?.uuid) }
     });
+    return true;
+  }
+
+  async deactivateGadget(vehicle, { instanceId = "", gadgetId = "" } = {}) {
+    if (vehicle?.type !== "vehicle") return false;
+    this._knownVehicles.add(vehicle);
+    const key = cleanString(instanceId);
+    const state = clone(vehicleState(vehicle));
+    const gadgetEffects = clone(state.gadgetEffects ?? {});
+    const effect = gadgetEffects[key];
+    const resolvedGadgetId = cleanString(effect?.gadgetId ?? gadgetId);
+    const temporary = state.temporaryAfterburner;
+
+    if (temporary?.instanceId === key) {
+      await updatePath(vehicle, "system.attributes.movement", temporary.movement ?? {});
+      await updatePath(vehicle, "system.attributes.travel.speeds", temporary.travel ?? {});
+      delete state.temporaryAfterburner;
+    }
+
+    if (resolvedGadgetId === "afterburner-injector" && effect?.baseline) {
+      const baseline = effect.baseline;
+      await updatePath(vehicle, "system.attributes.movement", baseline.movement ?? {});
+      await updatePath(vehicle, "system.attributes.travel.speeds", baseline.travel ?? {});
+      if (baseline.hasAcceleration) state.acceleration = Number(baseline.acceleration);
+      else delete state.acceleration;
+      if (state.afterburner?.instanceId === key) delete state.afterburner;
+    }
+    if (resolvedGadgetId === "emergency-regulator" && state.emergencyRegulator?.instanceId === key) {
+      delete state.emergencyRegulator;
+    }
+    delete gadgetEffects[key];
+    if (Object.keys(gadgetEffects).length) state.gadgetEffects = gadgetEffects;
+    else delete state.gadgetEffects;
+    await updatePath(vehicle, `flags.${MODULE_ID}.vehicleState`, state);
     return true;
   }
 
   async useAfterburnerAction(vehicle, owner, { instanceId = "", turnKey = "" } = {}) {
     if (vehicle?.type !== "vehicle") return false;
+    this._knownVehicles.add(vehicle);
+    const state = clone(vehicleState(vehicle));
+    const existing = state.temporaryAfterburner;
+    if (existing) {
+      await updatePath(vehicle, "system.attributes.movement", existing.movement ?? {});
+      await updatePath(vehicle, "system.attributes.travel.speeds", existing.travel ?? {});
+    }
     const proficiency = Math.max(0, Math.floor(Number(owner?.system?.attributes?.prof) || 0));
     const amount = 10 * proficiency;
-    const key = cleanString(vehicle.uuid) || vehicle;
     const snapshot = {
       movement: clone(vehicle?.system?.attributes?.movement ?? {}),
       travel: clone(vehicle?.system?.attributes?.travel?.speeds ?? {}),
       instanceId: cleanString(instanceId),
       turnKey: cleanString(turnKey),
-      vehicle,
-      owner
+      ownerUuid: cleanString(owner?.uuid)
     };
-    this._temporarySpeed.set(key, snapshot);
+    await updatePath(vehicle, `flags.${MODULE_ID}.vehicleState`, {
+      ...state,
+      temporaryAfterburner: snapshot
+    });
     await updatePath(vehicle, "system.attributes.movement", addToNonZero(snapshot.movement, amount));
     await updatePath(vehicle, "system.attributes.travel.speeds", addToNonZero(snapshot.travel, amount));
     return true;
   }
 
   async handleCombatTurnChange(currentTurnKey) {
+    if (typeof this.options.isActiveGmClient === "function" && !this.options.isActiveGmClient()) return false;
     const key = cleanString(currentTurnKey);
-    for (const [vehicleKey, snapshot] of [...this._temporarySpeed]) {
+    for (const vehicle of this.#vehicleDocuments()) {
+      const state = clone(vehicleState(vehicle));
+      const snapshot = state.temporaryAfterburner;
+      if (!snapshot) continue;
       if (snapshot.turnKey === key) continue;
-      await updatePath(snapshot.vehicle, "system.attributes.movement", snapshot.movement);
-      await updatePath(snapshot.vehicle, "system.attributes.travel.speeds", snapshot.travel);
-      this._temporarySpeed.delete(vehicleKey);
-      await this.rollBreakdown(snapshot.vehicle, { sourceInstanceId: snapshot.instanceId });
+      await updatePath(vehicle, "system.attributes.movement", snapshot.movement ?? {});
+      await updatePath(vehicle, "system.attributes.travel.speeds", snapshot.travel ?? {});
+      delete state.temporaryAfterburner;
+      await updatePath(vehicle, `flags.${MODULE_ID}.vehicleState`, state);
+      await this.rollBreakdown(vehicle, {
+        sourceInstanceId: snapshot.instanceId,
+        allowReroll: Boolean(this.readVehicleState(vehicle).emergencyRegulator)
+      });
     }
     return true;
+  }
+
+  #vehicleDocuments() {
+    const supplied = typeof this.options.vehicleDocuments === "function"
+      ? collectionValues(this.options.vehicleDocuments())
+      : collectionValues(globalThis.game?.actors);
+    return Array.from(new Set([...this._knownVehicles, ...supplied])).filter((actor) => actor?.type === "vehicle");
   }
 
   async rollBreakdown(vehicle, { sourceInstanceId = "", allowReroll = false } = {}) {

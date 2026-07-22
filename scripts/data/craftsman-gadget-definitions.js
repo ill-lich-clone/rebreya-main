@@ -165,6 +165,7 @@ export function buildCraftsmanGadgetAutomation(gadgetDefinition) {
         height: "",
         units: "ft"
       };
+      activation.target.prompt = true;
     }
   }
   return {
