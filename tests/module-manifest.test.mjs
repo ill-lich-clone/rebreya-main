@@ -328,7 +328,7 @@ test("combat automation imports preserve their released cache busts", async () =
 
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.4\.109-giant-tribe/u,
+    /combat\/hooks\.js\?v=1\.4\.110-giant-tribe-cleanup/u,
   );
   assert.match(
     entrypointSource,
@@ -381,7 +381,7 @@ test("owned race and Giant Tribe configuration is wired to create and sheet repa
     readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8")
   ]);
 
-  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.109-giant-tribe/u);
+  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.110-giant-tribe-cleanup/u);
   assert.match(
     hooksSource,
     /moduleApi\.raceAutomationService\.handleCreatedItem\(item, options, userId\)/u

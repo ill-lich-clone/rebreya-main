@@ -264,6 +264,18 @@ function makeGiantTribeFeature({
     async update(patch, options = {}) {
       updateCalls.push({ patch: structuredClone(patch), options: structuredClone(options) });
       for (const [path, value] of Object.entries(patch)) {
+        if (path === "system.activities") {
+          Object.assign(this.system.activities, structuredClone(value));
+          continue;
+        }
+        if (path.startsWith("system.activities.-=")) {
+          delete this.system.activities[path.slice("system.activities.-=".length)];
+          continue;
+        }
+        if (path.startsWith("system.activities.")) {
+          this.system.activities[path.slice("system.activities.".length)] = structuredClone(value);
+          continue;
+        }
         foundry.utils.setProperty(this, path, structuredClone(value));
       }
       return this;

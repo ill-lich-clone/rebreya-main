@@ -939,15 +939,27 @@ export class RaceAutomationService {
       return false;
     }
 
-    const preserved = current.filter((activity) => !isManagedGiantTribeActivity(activity)).map(activityData);
-    const next = {};
-    for (const activity of [...preserved, ...desired]) {
+    const removalPatch = {};
+    for (const activity of current.filter(isManagedGiantTribeActivity)) {
       const id = cleanText(activity?._id ?? activity?.id);
       if (id) {
-        next[id] = activity;
+        removalPatch[`system.activities.-=${id}`] = null;
       }
     }
-    await item.update({ "system.activities": next }, racePenaltyUpdateOptions());
+    if (Object.keys(removalPatch).length > 0) {
+      await item.update(removalPatch, racePenaltyUpdateOptions());
+    }
+
+    const creationPatch = {};
+    for (const activity of desired) {
+      const id = cleanText(activity?._id ?? activity?.id);
+      if (id) {
+        creationPatch[`system.activities.${id}`] = activity;
+      }
+    }
+    if (Object.keys(creationPatch).length > 0) {
+      await item.update(creationPatch, racePenaltyUpdateOptions());
+    }
     return true;
   }
 
