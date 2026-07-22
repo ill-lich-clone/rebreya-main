@@ -155,6 +155,9 @@ function installSheetExtensionStubs() {
     static PARTS = {
       inventory: {
         template: "inventory.hbs"
+      },
+      features: {
+        template: "systems/dnd5e/templates/actors/tabs/character-features.hbs"
       }
     };
 
@@ -170,6 +173,10 @@ function installSheetExtensionStubs() {
         ...context,
         preparedPartId: partId
       };
+    }
+
+    async _prepareFeaturesContext(context, _options) {
+      return context;
     }
   }
 
@@ -298,7 +305,7 @@ function findTreeNode(root, predicate) {
   return null;
 }
 
-test("registerDnd5eSheetExtensions registers hero doll and downtime character sheet parts", async () => {
+test("registerDnd5eSheetExtensions registers hero doll, downtime, and the native Craftsman features replacement", async () => {
   const stubs = installSheetExtensionStubs();
   try {
     const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-tabs=${Date.now()}`);
@@ -333,18 +340,15 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime character sh
     );
     assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs$/u);
     assert.match(stubs.CharacterActorSheet.PARTS.downtime.template, /character-downtime-tab\.hbs$/u);
-    assert.match(stubs.CharacterActorSheet.PARTS.craftsmanArchetypes.template, /craftsman-archetypes-standard\.hbs$/u);
+    assert.match(stubs.CharacterActorSheet.PARTS.features.template, /craftsman-character-features\.hbs$/u);
+    assert.equal(stubs.CharacterActorSheet.PARTS.craftsmanArchetypes, undefined);
 
     const sheet = new stubs.CharacterActorSheet(actor);
     const heroContext = await sheet._preparePartContext("heroDoll", { base: true }, {});
     const downtimeContext = await sheet._preparePartContext("downtime", { base: true }, {});
-    const craftsmanContext = await sheet._preparePartContext("craftsmanArchetypes", { base: true }, {});
 
     assert.equal(heroContext.heroDoll.actorId, "actor-a");
     assert.equal(downtimeContext.characterDowntime.actorId, "actor-a");
-    assert.equal(craftsmanContext.craftsmanArchetypes.visible, true);
-    assert.equal(craftsmanContext.craftsmanArchetypes.research.name, "Не выбрано");
-    assert.equal(craftsmanContext.craftsmanArchetypes.specialty.name, "Не выбрано");
     assert.deepEqual(calls, [
       ["heroDoll", "actor-a"],
       ["downtime", "actor-a"]

@@ -1,112 +1,336 @@
 import {
-  MODULE_ID,
-  RESEARCH_ITEM_TYPE,
-  SPECIALTY_ITEM_TYPE
+  CRAFTSMAN_TRACKS,
+  MODULE_ID
 } from "../constants.js";
+import {
+  getCraftsmanSubclassTrack,
+  getCraftsmanSubclasses,
+  isCraftsmanClass
+} from "./craftsman-subclass-tracks.js";
+import { openCraftsmanSubclassChoice } from "./craftsman-multi-subclass.js";
 
-const CRAFTSMAN_CLASS_IDENTIFIER = "craftsman-v01";
-const CRAFTSMAN_PART_ID = "craftsmanArchetypes";
-const CRAFTSMAN_STANDARD_TEMPLATE = `modules/${MODULE_ID}/templates/craftsman-archetypes-standard.hbs`;
+const CRAFTSMAN_FEATURES_TEMPLATE = `modules/${MODULE_ID}/templates/craftsman-character-features.hbs`;
 const CRAFTSMAN_SHARED_TEMPLATE = `modules/${MODULE_ID}/templates/craftsman-archetypes.hbs`;
 const CRAFTSMAN_TIDY_TEMPLATE = `/${CRAFTSMAN_SHARED_TEMPLATE}`;
+const PREPARE_FEATURES_TARGET = "game.dnd5e.applications.actor.CharacterActorSheet.prototype._prepareFeaturesContext";
 const TIDY_FEATURES_SELECTOR = "[data-tab-contents-for='features']";
 const TIDY_ROW_SELECTOR = "[data-action='openCraftsmanArchetype'][data-item-id]";
+const TRACK_DEFINITIONS = Object.freeze({
+  [CRAFTSMAN_TRACKS.RESEARCH]: Object.freeze({ label: "Исследование", requiredLevel: 2 }),
+  [CRAFTSMAN_TRACKS.SPECIALTY]: Object.freeze({ label: "Специальность", requiredLevel: 3 })
+});
 const tidyHookRegistrations = new WeakSet();
 const tidyApiRegistrations = new WeakSet();
 const tidyClickListeners = new WeakMap();
 
+let classCardRegistration = null;
+
 function getActorItems(actor) {
   const collection = actor?.items;
-  if (Array.isArray(collection)) {
-    return collection;
-  }
-  if (Array.isArray(collection?.contents)) {
-    return collection.contents;
-  }
-  if (collection?.values instanceof Function) {
-    return Array.from(collection.values());
-  }
+  if (Array.isArray(collection)) return collection;
+  if (Array.isArray(collection?.contents)) return collection.contents;
+  if (collection?.values instanceof Function) return Array.from(collection.values());
   return [];
 }
 
 function getActorItem(actor, itemId) {
   const cleanItemId = String(itemId ?? "").trim();
-  if (!cleanItemId) {
-    return null;
-  }
+  if (!cleanItemId) return null;
   return actor?.items?.get?.(cleanItemId)
-    ?? getActorItems(actor).find((item) => item?.id === cleanItemId)
+    ?? getActorItems(actor).find((item) => (item?.id ?? item?._id) === cleanItemId)
     ?? null;
 }
 
-function makeAxisState(item, { label, requiredLevel }) {
+function getItemId(item) {
+  return String(item?.id ?? item?._id ?? "").trim();
+}
+
+function makeAxisViewModel(item, track, classLevel) {
+  const definition = TRACK_DEFINITIONS[track];
   return {
-    label,
+    track,
+    label: definition.label,
     name: item?.name ?? "Не выбрано",
-    itemId: item?.id ?? "",
+    img: item?.img ?? "",
+    uuid: item?.uuid ?? "",
+    itemId: getItemId(item),
+    requiredLevel: definition.requiredLevel,
+    needsSelection: !item && classLevel >= definition.requiredLevel
+  };
+}
+
+function makeLegacyTidyAxisState(item, track) {
+  const definition = TRACK_DEFINITIONS[track];
+  return {
+    label: definition.label,
+    name: item?.name ?? "Не выбрано",
+    itemId: getItemId(item),
     itemUuid: item?.uuid ?? "",
-    requiredLevel,
+    requiredLevel: definition.requiredLevel,
     selected: Boolean(item)
   };
 }
 
 function findCraftsmanClass(items) {
-  return items.find((item) => (
-    item?.type === "class"
-    && item?.system?.identifier === CRAFTSMAN_CLASS_IDENTIFIER
-  )) ?? null;
+  return items.find((item) => isCraftsmanClass(item)) ?? null;
 }
 
-function findCraftsmanArchetype(items, type) {
-  return items.find((item) => (
-    item?.type === type
-    && item?.system?.classIdentifier === CRAFTSMAN_CLASS_IDENTIFIER
-  )) ?? null;
-}
+function reorderCraftsmanSubclasses(context) {
+  const subclasses = context?.itemCategories?.subclasses;
+  if (!Array.isArray(subclasses)) return;
 
-async function openCraftsmanArchetype(event, target) {
-  const row = target?.closest?.("[data-item-id]") ?? target;
-  const item = getActorItem(this.actor, row?.dataset?.itemId);
-  if (!item) {
-    return;
+  const trackedPositions = [];
+  const trackedSubclasses = [];
+  for (let index = 0; index < subclasses.length; index += 1) {
+    const track = getCraftsmanSubclassTrack(subclasses[index]);
+    if (!track) continue;
+    trackedPositions.push(index);
+    trackedSubclasses.push(subclasses[index]);
   }
-  await item.sheet?.render?.(true);
+  if (trackedSubclasses.length < 2) return;
+
+  const order = {
+    [CRAFTSMAN_TRACKS.RESEARCH]: 0,
+    [CRAFTSMAN_TRACKS.SPECIALTY]: 1
+  };
+  trackedSubclasses.sort((left, right) => (
+    order[getCraftsmanSubclassTrack(left)] - order[getCraftsmanSubclassTrack(right)]
+  ));
+  trackedPositions.forEach((position, index) => {
+    subclasses[position] = trackedSubclasses[index];
+  });
 }
 
-function insertPartAfterFeatures(parts, partDefinition) {
-  const nextParts = {};
-  let inserted = false;
-  for (const [partId, definition] of Object.entries(parts ?? {})) {
-    nextParts[partId] = definition;
-    if (partId === "features") {
-      nextParts[CRAFTSMAN_PART_ID] = partDefinition;
-      inserted = true;
+function removeItemFromPreparedSections(sections, itemId) {
+  if (!itemId || !sections) return;
+  const sectionList = Array.isArray(sections) ? sections : Object.values(sections);
+  for (const section of sectionList) {
+    if (!section || typeof section !== "object") continue;
+    if (Array.isArray(section.items)) {
+      section.items = section.items.filter((item) => getItemId(item) !== itemId);
     }
+    if (section.sections) removeItemFromPreparedSections(section.sections, itemId);
   }
-  if (!inserted) {
-    nextParts[CRAFTSMAN_PART_ID] = partDefinition;
+}
+
+/**
+ * Extend the already-prepared native Standard-sheet context with two plain Craftsman axis models.
+ * The native method has already linked Research to the class; Specialty is removed from every
+ * remaining feature collection so it cannot render as an unrelated loose subclass.
+ */
+export function prepareCraftsmanClassCardContext(context) {
+  const classes = context?.classes ?? context?.itemCategories?.classes ?? [];
+  const craftsmanClass = classes.find((item) => isCraftsmanClass(item));
+  if (!craftsmanClass) return context;
+
+  const actor = craftsmanClass.actor ?? craftsmanClass.parent ?? context?.actor;
+  const { research, specialty } = getCraftsmanSubclasses(actor ?? craftsmanClass);
+  const classLevel = Number(craftsmanClass.system?.levels ?? 0);
+  context.itemContext ??= {};
+  const classContext = context.itemContext[getItemId(craftsmanClass)] ??= {};
+  delete classContext.needsSubclass;
+  classContext.craftsmanSubclasses = {
+    [CRAFTSMAN_TRACKS.RESEARCH]: makeAxisViewModel(
+      research,
+      CRAFTSMAN_TRACKS.RESEARCH,
+      classLevel
+    ),
+    [CRAFTSMAN_TRACKS.SPECIALTY]: makeAxisViewModel(
+      specialty,
+      CRAFTSMAN_TRACKS.SPECIALTY,
+      classLevel
+    )
+  };
+
+  const specialtyId = getItemId(specialty);
+  if (specialtyId) {
+    if (Array.isArray(context.subclasses)) {
+      context.subclasses = context.subclasses.filter((item) => getItemId(item) !== specialtyId);
+    }
+    const categorizedSubclasses = context.itemCategories?.subclasses;
+    if (Array.isArray(categorizedSubclasses)) {
+      context.itemCategories.subclasses = categorizedSubclasses.filter(
+        (item) => getItemId(item) !== specialtyId
+      );
+    }
+    removeItemFromPreparedSections(context.sections, specialtyId);
   }
-  return nextParts;
+  return context;
+}
+
+async function onOpenCraftsmanSubclassChoice(_event, target) {
+  const actionTarget = target?.closest?.("[data-class-id][data-track]") ?? target;
+  return openCraftsmanSubclassChoice(
+    this.actor,
+    actionTarget?.dataset?.classId,
+    actionTarget?.dataset?.track
+  );
+}
+
+function getCharacterActorSheetClass() {
+  return globalThis.game?.dnd5e?.applications?.actor?.CharacterActorSheet
+    ?? globalThis.dnd5e?.applications?.actor?.CharacterActorSheet
+    ?? null;
+}
+
+function getLibWrapperContract() {
+  const active = globalThis.game?.modules?.get?.("lib-wrapper")?.active === true;
+  if (!active) return { active: false, api: null };
+  const api = globalThis.libWrapper;
+  return {
+    active: true,
+    api: api?.register instanceof Function && api?.unregister instanceof Function ? api : null
+  };
+}
+
+function installClassCardDefinition(CharacterActorSheet) {
+  const features = CharacterActorSheet?.PARTS?.features;
+  if (!features || typeof features !== "object") return null;
+
+  const currentOptions = CharacterActorSheet.DEFAULT_OPTIONS ?? {};
+  const currentActions = currentOptions.actions ?? {};
+  const hadPriorAction = Object.hasOwn(currentActions, "openCraftsmanSubclassChoice");
+  const priorAction = currentActions.openCraftsmanSubclassChoice;
+  const definition = {
+    CharacterActorSheet,
+    features,
+    hadPriorAction,
+    priorAction,
+    priorTemplate: features.template
+  };
+
+  features.template = CRAFTSMAN_FEATURES_TEMPLATE;
+  CharacterActorSheet.DEFAULT_OPTIONS = {
+    ...currentOptions,
+    actions: {
+      ...currentActions,
+      openCraftsmanSubclassChoice: onOpenCraftsmanSubclassChoice
+    }
+  };
+  return definition;
+}
+
+function restoreClassCardDefinition(definition) {
+  if (!definition) return;
+  const { CharacterActorSheet, features } = definition;
+  if (features.template === CRAFTSMAN_FEATURES_TEMPLATE) {
+    features.template = definition.priorTemplate;
+  }
+
+  const currentOptions = CharacterActorSheet.DEFAULT_OPTIONS ?? {};
+  const currentActions = currentOptions.actions ?? {};
+  if (currentActions.openCraftsmanSubclassChoice !== onOpenCraftsmanSubclassChoice) return;
+  const restoredActions = { ...currentActions };
+  if (definition.hadPriorAction) {
+    restoredActions.openCraftsmanSubclassChoice = definition.priorAction;
+  }
+  else {
+    delete restoredActions.openCraftsmanSubclassChoice;
+  }
+  CharacterActorSheet.DEFAULT_OPTIONS = {
+    ...currentOptions,
+    actions: restoredActions
+  };
+}
+
+export function ensureCraftsmanClassCardDefinition(CharacterActorSheet) {
+  if (!CharacterActorSheet?.PARTS?.features) return false;
+  CharacterActorSheet.PARTS.features.template = CRAFTSMAN_FEATURES_TEMPLATE;
+  const currentOptions = CharacterActorSheet.DEFAULT_OPTIONS ?? {};
+  CharacterActorSheet.DEFAULT_OPTIONS = {
+    ...currentOptions,
+    actions: {
+      ...(currentOptions.actions ?? {}),
+      openCraftsmanSubclassChoice: onOpenCraftsmanSubclassChoice
+    }
+  };
+  return true;
+}
+
+export function registerCraftsmanClassCardIntegration(CharacterActorSheet = getCharacterActorSheetClass()) {
+  if (classCardRegistration?.CharacterActorSheet === CharacterActorSheet) return true;
+  if (classCardRegistration) unregisterCraftsmanClassCardIntegration();
+
+  const prototype = CharacterActorSheet?.prototype;
+  const originalMethod = prototype?._prepareFeaturesContext;
+  if (!(originalMethod instanceof Function) || !CharacterActorSheet?.PARTS?.features) return false;
+
+  const libWrapperContract = getLibWrapperContract();
+  if (libWrapperContract.active && !libWrapperContract.api) return false;
+  if (libWrapperContract.active && getCharacterActorSheetClass() !== CharacterActorSheet) return false;
+
+  const definition = installClassCardDefinition(CharacterActorSheet);
+  if (!definition) return false;
+
+  try {
+    if (libWrapperContract.active) {
+      const wrapper = async function(wrapped, context, options, ...args) {
+        reorderCraftsmanSubclasses(context);
+        const prepared = await wrapped(context, options, ...args);
+        return prepareCraftsmanClassCardContext(prepared ?? context);
+      };
+      const id = libWrapperContract.api.register(
+        MODULE_ID,
+        PREPARE_FEATURES_TARGET,
+        wrapper,
+        "MIXED"
+      );
+      classCardRegistration = {
+        CharacterActorSheet,
+        api: libWrapperContract.api,
+        definition,
+        id,
+        kind: "libWrapper"
+      };
+      return true;
+    }
+
+    const ownedMethod = async function(context, options, ...args) {
+      reorderCraftsmanSubclasses(context);
+      const prepared = await originalMethod.call(this, context, options, ...args);
+      return prepareCraftsmanClassCardContext(prepared ?? context);
+    };
+    prototype._prepareFeaturesContext = ownedMethod;
+    classCardRegistration = {
+      CharacterActorSheet,
+      definition,
+      kind: "direct",
+      originalMethod,
+      ownedMethod,
+      prototype
+    };
+    return true;
+  }
+  catch (error) {
+    restoreClassCardDefinition(definition);
+    throw error;
+  }
+}
+
+export function unregisterCraftsmanClassCardIntegration() {
+  const registration = classCardRegistration;
+  classCardRegistration = null;
+  if (!registration) return;
+
+  if (registration.kind === "libWrapper") {
+    registration.api.unregister(MODULE_ID, registration.id);
+  }
+  else if (registration.prototype._prepareFeaturesContext === registration.ownedMethod) {
+    registration.prototype._prepareFeaturesContext = registration.originalMethod;
+  }
+  restoreClassCardDefinition(registration.definition);
 }
 
 function bindCraftsmanArchetypeRows(element, actor) {
-  if (!element?.addEventListener) {
-    return;
-  }
+  if (!element?.addEventListener) return;
   const previousListener = tidyClickListeners.get(element);
-  if (previousListener) {
-    element.removeEventListener("click", previousListener);
-  }
+  if (previousListener) element.removeEventListener("click", previousListener);
 
   const listener = async (event) => {
     const row = event.target?.closest?.(TIDY_ROW_SELECTOR);
-    if (!row) {
-      return;
-    }
+    if (!row) return;
     const item = getActorItem(actor, row.dataset?.itemId);
-    if (!item) {
-      return;
-    }
+    if (!item) return;
     event.preventDefault?.();
     event.stopPropagation?.();
     await item.sheet?.render?.(true);
@@ -119,9 +343,7 @@ function registerCraftsmanTidyContentWithApi(api) {
   if (!(api?.models?.HandlebarsContent instanceof Function) || !(api?.registerCharacterContent instanceof Function)) {
     return false;
   }
-  if (tidyApiRegistrations.has(api)) {
-    return true;
-  }
+  if (tidyApiRegistrations.has(api)) return true;
 
   api.registerCharacterContent(new api.models.HandlebarsContent({
     path: CRAFTSMAN_TIDY_TEMPLATE,
@@ -137,39 +359,16 @@ function registerCraftsmanTidyContentWithApi(api) {
   return true;
 }
 
+// Retained for the existing Tidy extension until Task 8 replaces its shared template and layout bindings.
 export function buildCraftsmanArchetypeSheetState(actor) {
-  const items = getActorItems(actor);
-  const craftsmanClass = findCraftsmanClass(items);
-  const research = craftsmanClass ? findCraftsmanArchetype(items, RESEARCH_ITEM_TYPE) : null;
-  const specialty = craftsmanClass ? findCraftsmanArchetype(items, SPECIALTY_ITEM_TYPE) : null;
-
+  const craftsmanClass = findCraftsmanClass(getActorItems(actor));
+  const { research, specialty } = craftsmanClass
+    ? getCraftsmanSubclasses(craftsmanClass)
+    : { research: null, specialty: null };
   return {
     visible: Boolean(craftsmanClass),
-    title: "Архетипы Ремесленника",
-    research: makeAxisState(research, { label: "Исследование", requiredLevel: 2 }),
-    specialty: makeAxisState(specialty, { label: "Специальность", requiredLevel: 3 })
-  };
-}
-
-export function ensureCraftsmanArchetypePartDefinition(CharacterActorSheet) {
-  if (!CharacterActorSheet) {
-    return;
-  }
-
-  if (!CharacterActorSheet.PARTS?.[CRAFTSMAN_PART_ID]) {
-    CharacterActorSheet.PARTS = insertPartAfterFeatures(CharacterActorSheet.PARTS, {
-      container: { classes: ["tab-body"], id: "tabs" },
-      template: CRAFTSMAN_STANDARD_TEMPLATE,
-      templates: [CRAFTSMAN_SHARED_TEMPLATE]
-    });
-  }
-
-  CharacterActorSheet.DEFAULT_OPTIONS = {
-    ...(CharacterActorSheet.DEFAULT_OPTIONS ?? {}),
-    actions: {
-      ...(CharacterActorSheet.DEFAULT_OPTIONS?.actions ?? {}),
-      openCraftsmanArchetype
-    }
+    research: makeLegacyTidyAxisState(research, CRAFTSMAN_TRACKS.RESEARCH),
+    specialty: makeLegacyTidyAxisState(specialty, CRAFTSMAN_TRACKS.SPECIALTY)
   };
 }
 

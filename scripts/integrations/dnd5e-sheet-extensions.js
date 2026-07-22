@@ -47,8 +47,7 @@ import { registerLegacyCraftsmanArchetypeTypes } from "./craftsman-archetype-typ
 import { registerCraftsmanSubclassAdvancements } from "./craftsman-subclass-advancements.js";
 import { registerCraftsmanMultiSubclassIntegration } from "./craftsman-multi-subclass.js";
 import {
-  buildCraftsmanArchetypeSheetState,
-  ensureCraftsmanArchetypePartDefinition,
+  registerCraftsmanClassCardIntegration,
   registerCraftsmanTidyContent
 } from "./craftsman-archetype-sheet.js";
 
@@ -2425,12 +2424,6 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi) {
     const preparedWithFeatGroups = partId === "features"
       ? await splitRebreyaFeatSectionsInContext(prepared)
       : prepared;
-    if (partId === "craftsmanArchetypes") {
-      return {
-        ...preparedWithFeatGroups,
-        craftsmanArchetypes: buildCraftsmanArchetypeSheetState(this.actor)
-      };
-    }
     if (partId !== HERO_DOLL_TAB_ID && partId !== CHARACTER_DOWNTIME_TAB_ID) {
       return preparedWithFeatGroups;
     }
@@ -7047,7 +7040,7 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   const CharacterActorSheet = getCharacterActorSheetClass();
   if (CharacterActorSheet) {
     ensureHeroDollTabDefinition(CharacterActorSheet);
-    ensureCraftsmanArchetypePartDefinition(CharacterActorSheet);
+    registerCraftsmanClassCardIntegration(CharacterActorSheet);
     patchHeroDollPartContext(CharacterActorSheet, moduleApi);
   }
   registerCraftsmanTidyContent();
