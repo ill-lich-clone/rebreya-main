@@ -139,54 +139,6 @@ function elementalAdeptRollDamageTypes(roll) {
   return new Set(values.map(normalizeElementalAdeptDamageType).filter(Boolean));
 }
 
-function elementalAdeptRollIdentity(roll) {
-  return cleanString(
-    roll?.uuid
-    ?? roll?.id
-    ?? roll?._id
-    ?? roll?.options?.rollId
-    ?? roll?.options?.id
-    ?? roll?.options?._id,
-  );
-}
-
-function elementalAdeptRollPosition(roll) {
-  const position = Number(
-    roll?.index
-    ?? roll?._index
-    ?? roll?.options?.rollIndex
-    ?? roll?.options?.index,
-  );
-  return Number.isInteger(position) && position >= 0 ? position : -1;
-}
-
-function elementalAdeptRollSignature(roll) {
-  const serialized = roll?.toJSON?.() ?? roll ?? {};
-  const formula = cleanString(roll?.formula ?? roll?._formula ?? serialized?.formula);
-  const types = Array.from(elementalAdeptRollDamageTypes(roll)).sort().join(",");
-  return formula || types ? `${formula}\u0000${types}` : "";
-}
-
-function elementalAdeptMessageRollIndex(rolls, replacement) {
-  const identity = elementalAdeptRollIdentity(replacement);
-  if (identity) {
-    const index = rolls.findIndex((roll) => elementalAdeptRollIdentity(roll) === identity);
-    if (index >= 0) return index;
-  }
-  const position = elementalAdeptRollPosition(replacement);
-  if (position >= 0 && position < rolls.length) {
-    return position;
-  }
-  const signature = elementalAdeptRollSignature(replacement);
-  if (!signature) {
-    return -1;
-  }
-  const matches = rolls
-    .map((roll, index) => elementalAdeptRollSignature(roll) === signature ? index : -1)
-    .filter((index) => index >= 0);
-  return matches.length === 1 ? matches[0] : -1;
-}
-
 function isElementalAdeptDieTerm(term) {
   const DiceTerm = globalThis.DiceTerm ?? globalThis.foundry?.dice?.terms?.DiceTerm ?? null;
   if (typeof DiceTerm === "function" && term instanceof DiceTerm) {
@@ -443,16 +395,23 @@ export class ElementalAdeptAutomationService {
     }
 
     const changedRollsByMessage = new Map();
-    for (const roll of changedRolls) {
+    for (const [position, roll] of safeRolls.entries()) {
+      if (!changedRolls.has(roll)) {
+        continue;
+      }
       const message = roll.parent;
       if (typeof message?.update !== "function") {
         continue;
       }
-      const messageRolls = changedRollsByMessage.get(message) ?? [];
-      messageRolls.push(roll);
-      changedRollsByMessage.set(message, messageRolls);
+      const messageUpdate = changedRollsByMessage.get(message) ?? { replacements: [], safeRolls };
+      messageUpdate.replacements.push({ position, roll });
+      changedRollsByMessage.set(message, messageUpdate);
     }
-    await Promise.all(Array.from(changedRollsByMessage, ([message, messageRolls]) => this.#enqueueMessageUpdate(message, messageRolls)));
+    await Promise.all(Array.from(changedRollsByMessage, ([message, update]) => this.#enqueueMessageUpdate(
+      message,
+      update.replacements,
+      update.safeRolls,
+    )));
     return changedRolls.size > 0;
   }
 
@@ -482,17 +441,16 @@ export class ElementalAdeptAutomationService {
     return cleanString(message?.uuid ?? message?.id ?? message?._id) || message;
   }
 
-  async #enqueueMessageUpdate(message, rolls) {
+  async #enqueueMessageUpdate(message, replacements, safeRolls) {
     const key = this.#messageKey(message);
-    const state = this._messageRollStates.get(key) ?? { rolls: normalizeCollection(message?.rolls).slice() };
+    const completeRolls = normalizeCollection(message?.rolls);
+    const state = this._messageRollStates.get(key) ?? {
+      rolls: (completeRolls.length ? completeRolls : safeRolls).slice(),
+    };
     this._messageRollStates.set(key, state);
-    for (const roll of rolls) {
-      const index = elementalAdeptMessageRollIndex(state.rolls, roll);
-      if (index >= 0) {
-        state.rolls[index] = roll;
-      }
-      else {
-        state.rolls.push(roll);
+    for (const { position, roll } of replacements) {
+      if (position < state.rolls.length) {
+        state.rolls[position] = roll;
       }
     }
     const previous = this._messagePromises.get(key) ?? Promise.resolve();
