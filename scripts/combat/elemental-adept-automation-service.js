@@ -533,26 +533,25 @@ export class ElementalAdeptAutomationService {
 
   async #resolveDamageSourceActor(actor, options) {
     const positionalActor = elementalAdeptActorDocument(actor);
-    const directSource = elementalAdeptActorDocument(options?.sourceActor ?? options?.midi?.sourceActor);
+    const directSource = elementalAdeptActorDocument(options?.sourceActor);
+    const midiSource = elementalAdeptActorDocument(options?.midi?.sourceActor);
+    const candidates = [positionalActor, directSource, midiSource].filter(Boolean);
     const sourceActorUuid = cleanString(options?.midi?.sourceActorUuid ?? options?.sourceActorUuid);
-    if (!sourceActorUuid) {
-      if (positionalActor && directSource && !elementalAdeptSameActor(positionalActor, directSource)) {
+    if (sourceActorUuid) {
+      if (typeof this._fromUuid !== "function") {
         return null;
       }
-      return directSource ?? positionalActor;
+      const resolved = elementalAdeptActorDocument(await this._fromUuid(sourceActorUuid));
+      if (!resolved) {
+        return null;
+      }
+      candidates.push(resolved);
     }
-    if (typeof this._fromUuid !== "function") {
+    const sourceActor = candidates[0] ?? null;
+    if (!sourceActor || !candidates.every((candidate) => elementalAdeptSameActor(sourceActor, candidate))) {
       return null;
     }
-    const resolved = elementalAdeptActorDocument(await this._fromUuid(sourceActorUuid));
-    if (!resolved) {
-      return null;
-    }
-    if ((positionalActor && !elementalAdeptSameActor(positionalActor, resolved))
-      || (directSource && !elementalAdeptSameActor(directSource, resolved))) {
-      return null;
-    }
-    return resolved;
+    return sourceActor;
   }
 
   #markMidiDamageOptions(options) {

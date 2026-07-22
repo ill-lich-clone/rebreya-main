@@ -635,6 +635,57 @@ test("Elemental Adept fails open when positional and direct source actors confli
   assert.deepEqual(options.ignore, {});
 });
 
+test("Elemental Adept native fallback fails open when direct source actors conflict", async () => {
+  const sourceActor = makeConfiguredCharacter("fire");
+  sourceActor.uuid = "Actor.source";
+  const midiSourceActor = makeConfiguredCharacter("fire");
+  midiSourceActor.uuid = "Actor.midi-source";
+  const options = { sourceActor, midi: { sourceActor: midiSourceActor }, ignore: {} };
+  const service = new ElementalAdeptAutomationService();
+
+  assert.equal(await service.applyDnd5ePreCalculateDamage(
+    sourceActor,
+    [{ type: "fire", spell: true }],
+    options,
+  ), false);
+  assert.deepEqual(options.ignore, {});
+});
+
+test("Elemental Adept Midi bypass fails open when a UUID resolves against conflicting direct sources", async () => {
+  const sourceActor = makeConfiguredCharacter("fire");
+  sourceActor.uuid = "Actor.source";
+  const midiSourceActor = makeConfiguredCharacter("fire");
+  midiSourceActor.uuid = "Actor.midi-source";
+  const options = {
+    sourceActor,
+    midi: { sourceActor: midiSourceActor, sourceActorUuid: sourceActor.uuid },
+    ignore: {},
+  };
+  const service = new ElementalAdeptAutomationService(null, {
+    fromUuid: async (uuid) => uuid === sourceActor.uuid ? sourceActor : null,
+  });
+
+  assert.equal(await service.applyMidiPreCalculateDamage(
+    sourceActor,
+    [{ type: "fire", spell: true }],
+    options,
+  ), false);
+  assert.deepEqual(options.ignore, {});
+});
+
+test("Elemental Adept accepts an unambiguous direct source actor", async () => {
+  const sourceActor = makeConfiguredCharacter("fire");
+  const options = { sourceActor, ignore: {} };
+  const service = new ElementalAdeptAutomationService();
+
+  assert.equal(await service.applyDnd5ePreCalculateDamage(
+    null,
+    [{ type: "fire", spell: true }],
+    options,
+  ), true);
+  assert.deepEqual(Array.from(options.ignore.resistance), ["fire"]);
+});
+
 test("Elemental Adept native fallback does not double-handle options processed by Midi", async () => {
   const actor = makeConfiguredCharacter("fire");
   const options = { ignore: {} };

@@ -76,3 +76,16 @@ Reviewer feedback identified that a positional hook actor and `options.sourceAct
 - GREEN command: `node --test tests/elemental-adept-automation-service.test.mjs`
   - Result: 29 passing, 0 failing, 0 cancelled.
 - `git diff --check` passed after the amendment.
+
+## Second reviewer-fix amendment
+
+The previous guard compared the positional actor with only the first direct-source expression. It could therefore ignore a conflicting `options.midi.sourceActor` when `options.sourceActor` was also supplied.
+
+- Added focused tests proving that native damage fails open when `options.sourceActor` and `options.midi.sourceActor` conflict, and that Midi damage also fails open when the UUID resolves to one of those conflicting sources.
+- Added a direct-only positive test to retain valid explicit-source behavior.
+- RED command: `node --test tests/elemental-adept-automation-service.test.mjs`
+  - Result: 30 passing, 2 failing. Both new conflict tests returned `true` rather than the expected `false`.
+- Reworked the resolver to gather the positional actor, `options.sourceActor`, `options.midi.sourceActor`, and the resolved source UUID document. It returns a source only when every present actor has the same identity.
+- GREEN command: `node --test tests/elemental-adept-automation-service.test.mjs`
+  - Result: 32 passing, 0 failing, 0 cancelled.
+- `git diff --check` passed after the amendment.
