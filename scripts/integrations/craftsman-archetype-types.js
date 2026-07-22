@@ -18,9 +18,6 @@ const ARCHETYPE_CONFIG = Object.freeze({
   })
 });
 
-let ResearchChoice;
-let SpecialtyChoice;
-
 function cleanString(value) {
   return String(value ?? "").trim();
 }
@@ -122,42 +119,9 @@ function createArchetypeDataModel(SubclassData, type) {
   };
 }
 
-function createAdvancementClasses(ItemChoiceAdvancement) {
-  class ResearchChoiceAdvancement extends ItemChoiceAdvancement {
-    static VALID_TYPES = new Set([RESEARCH_ITEM_TYPE]);
-
-    static get metadata() {
-      return foundry.utils.mergeObject(super.metadata, {
-        title: localize("REBREYA_MAIN.Advancement.ResearchChoice.Title"),
-        hint: localize("REBREYA_MAIN.Advancement.ResearchChoice.Hint")
-      }, { inplace: false });
-    }
-  }
-
-  class SpecialtyChoiceAdvancement extends ItemChoiceAdvancement {
-    static VALID_TYPES = new Set([SPECIALTY_ITEM_TYPE]);
-
-    static get metadata() {
-      return foundry.utils.mergeObject(super.metadata, {
-        title: localize("REBREYA_MAIN.Advancement.SpecialtyChoice.Title"),
-        hint: localize("REBREYA_MAIN.Advancement.SpecialtyChoice.Hint")
-      }, { inplace: false });
-    }
-  }
-
-  ResearchChoice = ResearchChoiceAdvancement;
-  SpecialtyChoice = SpecialtyChoiceAdvancement;
-}
-
-export function getCraftsmanAdvancementClasses() {
-  return { ResearchChoice, SpecialtyChoice };
-}
-
-export function registerCraftsmanArchetypeTypes() {
+export function registerLegacyCraftsmanArchetypeTypes() {
   const SubclassData = globalThis.CONFIG?.Item?.dataModels?.subclass;
-  const ItemChoiceAdvancement = globalThis.game?.dnd5e?.documents?.advancement?.ItemChoiceAdvancement;
-  const advancementTypes = globalThis.CONFIG?.DND5E?.advancementTypes;
-  if (!SubclassData || !ItemChoiceAdvancement || !advancementTypes) {
+  if (!SubclassData) {
     return false;
   }
 
@@ -169,20 +133,6 @@ export function registerCraftsmanArchetypeTypes() {
     CONFIG.Item.typeIcons[type] ??= config.icon;
     CONFIG.Item.typeLabels[type] = config.labelKey;
     CONFIG.Item.typeLabels[`${type}Pl`] = config.pluralLabelKey;
-  }
-
-  createAdvancementClasses(ItemChoiceAdvancement);
-  advancementTypes.ResearchChoice = {
-    documentClass: ResearchChoice,
-    validItemTypes: new Set(["class"])
-  };
-  advancementTypes.SpecialtyChoice = {
-    documentClass: SpecialtyChoice,
-    validItemTypes: new Set(["class"])
-  };
-  if (advancementTypes.ItemGrant?.validItemTypes instanceof Set) {
-    advancementTypes.ItemGrant.validItemTypes.add(RESEARCH_ITEM_TYPE);
-    advancementTypes.ItemGrant.validItemTypes.add(SPECIALTY_ITEM_TYPE);
   }
 
   return true;

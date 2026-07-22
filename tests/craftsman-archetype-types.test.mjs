@@ -1,17 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  getCraftsmanAdvancementClasses,
-  hasDuplicateCraftsmanArchetype,
-  registerCraftsmanArchetypeTypes
-} from "../scripts/integrations/craftsman-archetype-types.js";
+import { registerLegacyCraftsmanArchetypeTypes } from "../scripts/integrations/craftsman-archetype-types.js";
 import {
   RESEARCH_ITEM_TYPE,
   SPECIALTY_ITEM_TYPE
 } from "../scripts/constants.js";
 
 function mergeObject(original, other, { inplace = true } = {}) {
-  const target = inplace ? original : structuredClone(original ?? {});
+  const target = inplace ? original : { ...(original ?? {}) };
   for (const [key, value] of Object.entries(other ?? {})) {
     if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Set)) {
       target[key] = mergeObject(target[key] ?? {}, value, { inplace: true });
@@ -28,18 +24,6 @@ function installDnd5eStubs() {
     static metadata = Object.freeze({ singleton: false });
 
     async getSheetData() {}
-  }
-
-  class ItemChoiceAdvancement {
-    static VALID_TYPES = new Set(["feat"]);
-
-    static get metadata() {
-      return {
-        apps: { config: class Config {}, flow: class Flow {} },
-        hint: "Item choice hint",
-        title: "Item choice"
-      };
-    }
   }
 
   globalThis.foundry = { utils: { mergeObject } };
@@ -59,35 +43,26 @@ function installDnd5eStubs() {
     }
   };
   globalThis.game = {
-    dnd5e: { documents: { advancement: { ItemChoiceAdvancement } } },
-    i18n: {
-      localize: (key) => key
-    }
+    dnd5e: { documents: { advancement: {} } },
+    i18n: { localize: (key) => key }
   };
 
-  return { ItemChoiceAdvancement, SubclassData };
+  return { SubclassData };
 }
 
-test("craftsman archetype types inherit subclass data without widening ItemChoice", () => {
+test("legacy Craftsman item types remain readable without custom choice advancements", () => {
   const originalConfig = globalThis.CONFIG;
   const originalFoundry = globalThis.foundry;
   const originalGame = globalThis.game;
-  const { ItemChoiceAdvancement, SubclassData } = installDnd5eStubs();
+  const { SubclassData } = installDnd5eStubs();
 
   try {
-    assert.equal(registerCraftsmanArchetypeTypes(), true);
-    const { ResearchChoice, SpecialtyChoice } = getCraftsmanAdvancementClasses();
-
+    assert.equal(registerLegacyCraftsmanArchetypeTypes(), true);
     assert.equal(CONFIG.Item.dataModels[RESEARCH_ITEM_TYPE].prototype instanceof SubclassData, true);
     assert.equal(CONFIG.Item.dataModels[SPECIALTY_ITEM_TYPE].prototype instanceof SubclassData, true);
-    assert.deepEqual([...ResearchChoice.VALID_TYPES], [RESEARCH_ITEM_TYPE]);
-    assert.deepEqual([...SpecialtyChoice.VALID_TYPES], [SPECIALTY_ITEM_TYPE]);
-    assert.deepEqual([...CONFIG.DND5E.advancementTypes.ResearchChoice.validItemTypes], ["class"]);
-    assert.deepEqual([...CONFIG.DND5E.advancementTypes.SpecialtyChoice.validItemTypes], ["class"]);
-    assert.equal(CONFIG.DND5E.advancementTypes.ItemGrant.validItemTypes.has(RESEARCH_ITEM_TYPE), true);
-    assert.equal(CONFIG.DND5E.advancementTypes.ItemGrant.validItemTypes.has(SPECIALTY_ITEM_TYPE), true);
-    assert.equal(ItemChoiceAdvancement.VALID_TYPES.has(RESEARCH_ITEM_TYPE), false);
-    assert.equal(ItemChoiceAdvancement.VALID_TYPES.has(SPECIALTY_ITEM_TYPE), false);
+    assert.equal(CONFIG.DND5E.advancementTypes.ResearchChoice, undefined);
+    assert.equal(CONFIG.DND5E.advancementTypes.SpecialtyChoice, undefined);
+    assert.deepEqual([...CONFIG.DND5E.advancementTypes.ItemGrant.validItemTypes], ["class", "subclass"]);
   }
   finally {
     globalThis.CONFIG = originalConfig;
@@ -96,101 +71,14 @@ test("craftsman archetype types inherit subclass data without widening ItemChoic
   }
 });
 
-test("craftsman archetype duplicate detection is scoped by axis and class", () => {
-  const actor = {
-    items: [
-      {
-        id: "research-a",
-        type: RESEARCH_ITEM_TYPE,
-        system: { classIdentifier: "craftsman-v01" }
-      },
-      {
-        id: "specialty-other-class",
-        type: SPECIALTY_ITEM_TYPE,
-        system: { classIdentifier: "another-class" }
-      }
-    ]
-  };
-
-  assert.equal(hasDuplicateCraftsmanArchetype(actor, {
-    type: RESEARCH_ITEM_TYPE,
-    system: { classIdentifier: "craftsman-v01" }
-  }), true);
-  assert.equal(hasDuplicateCraftsmanArchetype(actor, {
-    type: SPECIALTY_ITEM_TYPE,
-    system: { classIdentifier: "craftsman-v01" }
-  }), false);
-  assert.equal(hasDuplicateCraftsmanArchetype(actor, {
-    id: "research-a",
-    type: RESEARCH_ITEM_TYPE,
-    system: { classIdentifier: "craftsman-v01" }
-  }, { excludeId: "research-a" }), false);
-});
-
-test("direct duplicate creation is blocked while advancement replacement remains atomic", async () => {
-  const originalConfig = globalThis.CONFIG;
-  const originalFoundry = globalThis.foundry;
-  const originalGame = globalThis.game;
-  const originalUi = globalThis.ui;
-  installDnd5eStubs();
-  const warnings = [];
-  globalThis.ui = {
-    notifications: {
-      warn(message) {
-        warnings.push(message);
-      }
-    }
-  };
-
-  try {
-    registerCraftsmanArchetypeTypes();
-    const ResearchData = CONFIG.Item.dataModels[RESEARCH_ITEM_TYPE];
-    const actor = {
-      items: [{
-        id: "research-current",
-        type: RESEARCH_ITEM_TYPE,
-        system: { classIdentifier: "craftsman-v01" }
-      }]
-    };
-    const model = new ResearchData();
-    model.parent = {
-      id: "research-new",
-      type: RESEARCH_ITEM_TYPE,
-      actor
-    };
-    model.classIdentifier = "craftsman-v01";
-
-    assert.equal(await model._preCreate({
-      system: { classIdentifier: "craftsman-v01" }
-    }, {}, {}), false);
-    assert.deepEqual(warnings, ["REBREYA_MAIN.CraftsmanArchetype.DuplicateResearch"]);
-
-    warnings.length = 0;
-    assert.equal(await model._preCreate({
-      system: { classIdentifier: "craftsman-v01" }
-    }, { isAdvancement: true }, {}), undefined);
-    assert.deepEqual(warnings, []);
-
-    assert.equal(await model._preCreate({
-      system: { classIdentifier: "another-class" }
-    }, {}, {}), undefined);
-  }
-  finally {
-    globalThis.CONFIG = originalConfig;
-    globalThis.foundry = originalFoundry;
-    globalThis.game = originalGame;
-    globalThis.ui = originalUi;
-  }
-});
-
-test("craftsman archetype registration fails closed without dnd5e", () => {
+test("legacy Craftsman item registration fails closed without the subclass data model", () => {
   const originalConfig = globalThis.CONFIG;
   const originalGame = globalThis.game;
-  globalThis.CONFIG = { Item: {}, DND5E: {} };
+  globalThis.CONFIG = { Item: {}, DND5E: { advancementTypes: {} } };
   globalThis.game = {};
 
   try {
-    assert.equal(registerCraftsmanArchetypeTypes(), false);
+    assert.equal(registerLegacyCraftsmanArchetypeTypes(), false);
     assert.equal(CONFIG.Item.dataModels, undefined);
   }
   finally {
