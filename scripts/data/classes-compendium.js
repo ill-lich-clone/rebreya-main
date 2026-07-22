@@ -4360,16 +4360,22 @@ export function buildCraftsmanSubclassAdvancements(classData) {
     return [];
   }
 
+  for (const [field, expected] of [["researchLevel", 2], ["specialtyLevel", 3]]) {
+    if (classData?.[field] !== expected) {
+      throw new Error(`Invalid craftsman ${field}: expected ${expected}, received ${String(classData?.[field])}`);
+    }
+  }
+
   const specs = [
     {
-      level: classData.researchLevel,
+      level: 2,
       type: "ResearchSubclass",
       seed: "research-choice",
       title: cleanString(classData.researchTitle, "Направление исследований"),
       hint: cleanString(classData.researchHint, "Выберите направление исследования ремесленника.")
     },
     {
-      level: classData.specialtyLevel,
+      level: 3,
       type: "SpecialtySubclass",
       seed: "specialty-choice",
       title: cleanString(classData.specialtyTitle, "Специальность ремесленника"),
@@ -4382,7 +4388,7 @@ export function buildCraftsmanSubclassAdvancements(classData) {
     type: spec.type,
     title: spec.title,
     hint: spec.hint,
-    level: Math.max(1, Math.min(20, Math.floor(parseNumber(spec.level, spec.type === "ResearchSubclass" ? 2 : 3)))),
+    level: spec.level,
     configuration: {},
     value: {
       document: null,

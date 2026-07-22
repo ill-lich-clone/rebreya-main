@@ -405,6 +405,24 @@ test("craftsman class exposes independent native subclass advancements", () => {
   assert.equal(specialty._id, repeated[1]._id);
 });
 
+test("craftsman subclass advancements reject conflicting source levels", () => {
+  const craftsman = normalizeClassCompendiumData(craftsmanDualArchetypeFixture());
+  assert.throws(
+    () => buildCraftsmanSubclassAdvancements({
+      ...craftsman.classData,
+      researchLevel: 9
+    }),
+    /researchLevel.*expected 2.*received 9/u
+  );
+  assert.throws(
+    () => buildCraftsmanSubclassAdvancements({
+      ...craftsman.classData,
+      specialtyLevel: 10
+    }),
+    /specialtyLevel.*expected 3.*received 10/u
+  );
+});
+
 test("craftsman V0.1 data matches its class progression and two archetype axes", () => {
   const raw = loadJson("data/craftsman-v01.json");
   const craftsman = normalizeClassCompendiumData(raw);
@@ -597,6 +615,17 @@ test("craftsman subclass items grant every feature at its source level", () => {
   assert.equal(constructor.system.classIdentifier, "craftsman-v01");
   assert.equal(mechanic.sourceRevision, "fixture-revision");
   assert.equal(constructor.sourceRevision, "fixture-revision");
+});
+
+test("craftsman subclass definitions preserve Artificer spellcasting only", () => {
+  const craftsman = normalizeClassCompendiumData(loadJson("data/craftsman-v01.json"));
+  const featureUuidById = makeUuidMap(buildFeatureDefinitions(craftsman));
+  const definitions = buildCraftsmanSubclassDefinitions(craftsman, { featureUuidById });
+  const artificer = definitions.find((entry) => entry.archetypeId === "craftsman-research-artificer");
+  const weaponsmith = definitions.find((entry) => entry.archetypeId === "craftsman-research-weaponsmith");
+
+  assert.deepEqual(artificer.system.spellcasting, { progression: "half", ability: "int" });
+  assert.equal(weaponsmith.system.spellcasting.progression, "none");
 });
 
 test("craftsman subclass builders fail when a required feature UUID is missing", () => {
