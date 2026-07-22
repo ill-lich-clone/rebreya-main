@@ -11087,3 +11087,83 @@ summary:focus-visible {
 .dnd5e2.sheet.actor .classes .class.pill-lg.rebreya-craftsman-class .rebreya-craftsman-axis-missing {
   opacity: 0.72;
 }
+
+.tidy5e-sheet .rebreya-craftsman-tidy-subclasses {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.tidy5e-sheet .rebreya-craftsman-tidy-axis {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.tidy5e-sheet .rebreya-craftsman-tidy-axis__action {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 2rem;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--t5e-faint-color, rgb(0 0 0 / 0.2));
+  border-radius: 0.25rem;
+  color: inherit;
+  background: var(--t5e-faintest-color, rgb(0 0 0 / 0.08));
+  font: inherit;
+  text-align: start;
+}
+
+.tidy5e-sheet button.rebreya-craftsman-tidy-axis__action {
+  cursor: pointer;
+}
+
+.tidy5e-sheet button.rebreya-craftsman-tidy-axis__action:hover,
+.tidy5e-sheet button.rebreya-craftsman-tidy-axis__action:focus-visible {
+  border-color: var(--t5e-primary-accent-color, currentcolor);
+  box-shadow: 0 0 0 1px var(--t5e-primary-accent-color, currentcolor);
+}
+
+.tidy5e-sheet .rebreya-craftsman-tidy-axis__action.is-locked {
+  opacity: 0.65;
+}
+
+.tidy5e-sheet .rebreya-craftsman-tidy-axis__image,
+.tidy5e-sheet .rebreya-craftsman-tidy-axis__placeholder {
+  flex: 0 0 1.6rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin-inline-end: 0.35rem;
+  border: 0;
+  border-radius: 0.2rem;
+  object-fit: cover;
+}
+
+.tidy5e-sheet .rebreya-craftsman-tidy-axis__placeholder {
+  display: grid;
+  place-items: center;
+  line-height: 1.6rem;
+  text-align: center;
+}
+
+.tidy5e-sheet .rebreya-craftsman-tidy-axis__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.tidy5e-sheet .rebreya-craftsman-tidy-axis__label {
+  color: var(--t5e-secondary-color, currentcolor);
+  font-size: var(--font-size-11);
+  line-height: 1.1;
+}
+
+.tidy5e-sheet .rebreya-craftsman-tidy-axis__name {
+  overflow: hidden;
+  font-weight: 600;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

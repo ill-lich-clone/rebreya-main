@@ -1,0 +1,52 @@
+<div
+  class="rebreya-craftsman-tidy-subclasses"
+  data-rebreya-craftsman-class-id="{{ classId }}"
+  role="list"
+>
+  {{#each axes as |axis|}}
+    <div class="rebreya-craftsman-tidy-axis" data-track="{{ axis.track }}" role="listitem">
+      {{#if axis.itemId}}
+        <button
+          type="button"
+          class="rebreya-craftsman-tidy-axis__action is-selected"
+          data-action="showDocument"
+          data-item-id="{{ axis.itemId }}"
+          data-track="{{ axis.track }}"
+          data-uuid="{{ axis.uuid }}"
+          title="{{ axis.name }}"
+        >
+          <img class="rebreya-craftsman-tidy-axis__image" src="{{ axis.img }}" alt="{{ axis.name }}">
+          <span class="rebreya-craftsman-tidy-axis__text">
+            <span class="rebreya-craftsman-tidy-axis__label">{{ axis.label }}</span>
+            <span class="rebreya-craftsman-tidy-axis__name">{{ axis.name }}</span>
+          </span>
+        </button>
+      {{else}}
+        {{#if axis.needsSelection}}
+          <button
+            type="button"
+            class="rebreya-craftsman-tidy-axis__action is-missing"
+            data-action="openCraftsmanSubclassChoice"
+            data-class-id="{{ axis.classId }}"
+            data-track="{{ axis.track }}"
+            title="Выбрать: {{ axis.label }}"
+          >
+            <i class="fa-solid fa-plus rebreya-craftsman-tidy-axis__placeholder" aria-hidden="true"></i>
+            <span class="rebreya-craftsman-tidy-axis__text">
+              <span class="rebreya-craftsman-tidy-axis__label">{{ axis.label }}</span>
+              <span class="rebreya-craftsman-tidy-axis__name">Не выбрано</span>
+            </span>
+          </button>
+        {{else}}
+          <div class="rebreya-craftsman-tidy-axis__action is-locked" aria-disabled="true">
+            <i class="fa-solid fa-lock rebreya-craftsman-tidy-axis__placeholder" aria-hidden="true"></i>
+            <span class="rebreya-craftsman-tidy-axis__text">
+              <span class="rebreya-craftsman-tidy-axis__label">{{ axis.label }}</span>
+              <span class="rebreya-craftsman-tidy-axis__name">Уровень {{ axis.requiredLevel }}</span>
+            </span>
+          </div>
+        {{/if}}
+      {{/if}}
+    </div>
+  {{/each}}
+</div>

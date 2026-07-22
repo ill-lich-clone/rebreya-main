@@ -10,20 +10,24 @@ import {
 import { openCraftsmanSubclassChoice } from "./craftsman-multi-subclass.js";
 
 const CRAFTSMAN_FEATURES_TEMPLATE = `modules/${MODULE_ID}/templates/craftsman-character-features.hbs`;
-const CRAFTSMAN_SHARED_TEMPLATE = `modules/${MODULE_ID}/templates/craftsman-archetypes.hbs`;
-const CRAFTSMAN_TIDY_TEMPLATE = `/${CRAFTSMAN_SHARED_TEMPLATE}`;
+const CRAFTSMAN_TIDY_TEMPLATE = `/modules/${MODULE_ID}/templates/craftsman-tidy-class-subclasses.hbs`;
 const PREPARE_FEATURES_TARGET = "game.dnd5e.applications.actor.CharacterActorSheet.prototype._prepareFeaturesContext";
-const TIDY_FEATURES_SELECTOR = "[data-tab-contents-for='features']";
-const TIDY_ROW_SELECTOR = "[data-action='openCraftsmanArchetype'][data-item-id]";
+const TIDY_CLASSIC_SELECTOR = '[data-tidy-section-key="classes"] .item-table-body';
+const TIDY_QUADRONE_SELECTOR = ".class-list";
+const TIDY_FRAGMENT_SELECTOR = ".rebreya-craftsman-tidy-subclasses";
+const TIDY_FRAGMENT_CLASS_ATTRIBUTE = "data-rebreya-craftsman-class-id";
+const TIDY_ACTION_SELECTOR = "[data-action][data-track]";
 const TRACK_DEFINITIONS = Object.freeze({
   [CRAFTSMAN_TRACKS.RESEARCH]: Object.freeze({ label: "Исследование", requiredLevel: 2 }),
   [CRAFTSMAN_TRACKS.SPECIALTY]: Object.freeze({ label: "Специальность", requiredLevel: 3 })
 });
-const tidyHookRegistrations = new WeakSet();
-const tidyApiRegistrations = new WeakSet();
+const tidyHookRegistrations = new WeakMap();
+const tidyApiRegistrations = new WeakMap();
 const tidyClickListeners = new WeakMap();
 
 let classCardRegistration = null;
+let tidyActive = false;
+let tidyGeneration = 0;
 
 function getActorItems(actor) {
   const collection = actor?.items;
@@ -56,18 +60,6 @@ function makeAxisViewModel(item, track, classLevel) {
     itemId: getItemId(item),
     requiredLevel: definition.requiredLevel,
     needsSelection: !item && classLevel >= definition.requiredLevel
-  };
-}
-
-function makeLegacyTidyAxisState(item, track) {
-  const definition = TRACK_DEFINITIONS[track];
-  return {
-    label: definition.label,
-    name: item?.name ?? "Не выбрано",
-    itemId: getItemId(item),
-    itemUuid: item?.uuid ?? "",
-    requiredLevel: definition.requiredLevel,
-    selected: Boolean(item)
   };
 }
 
@@ -321,66 +313,246 @@ export function unregisterCraftsmanClassCardIntegration() {
   restoreClassCardDefinition(registration.definition);
 }
 
-function bindCraftsmanArchetypeRows(element, actor) {
+function bindCraftsmanTidyFragment(element, actor) {
   if (!element?.addEventListener) return;
   const previousListener = tidyClickListeners.get(element);
   if (previousListener) element.removeEventListener("click", previousListener);
 
   const listener = async (event) => {
-    const row = event.target?.closest?.(TIDY_ROW_SELECTOR);
-    if (!row) return;
-    const item = getActorItem(actor, row.dataset?.itemId);
-    if (!item) return;
+    const target = event.target?.closest?.(TIDY_ACTION_SELECTOR);
+    if (!target || !element.contains?.(target)) return;
+    const action = target.dataset?.action;
+    const track = target.dataset?.track;
+    if (!Object.values(CRAFTSMAN_TRACKS).includes(track)) return;
+
+    if (action === "showDocument") {
+      const item = getActorItem(actor, target.dataset?.itemId);
+      if (!item || getCraftsmanSubclassTrack(item) !== track) return;
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      await item.sheet?.render?.(true);
+      return;
+    }
+    if (action !== "openCraftsmanSubclassChoice") return;
     event.preventDefault?.();
     event.stopPropagation?.();
-    await item.sheet?.render?.(true);
+    await openCraftsmanSubclassChoice(actor, target.dataset?.classId, track);
   };
   tidyClickListeners.set(element, listener);
   element.addEventListener("click", listener);
 }
 
-function registerCraftsmanTidyContentWithApi(api) {
+function escapeAttributeValue(value) {
+  return String(value ?? "").replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function resolveTidyFragmentRoots(nodes, element, anchorSelector, classId) {
+  const expectedClassId = String(classId ?? "");
+  const roots = [];
+  for (const node of Array.from(nodes ?? [])) {
+    if (
+      node?.matches?.(TIDY_FRAGMENT_SELECTOR)
+      && node.getAttribute?.(TIDY_FRAGMENT_CLASS_ATTRIBUTE) === expectedClassId
+    ) {
+      roots.push(node);
+      continue;
+    }
+    for (const child of node?.querySelectorAll?.(TIDY_FRAGMENT_SELECTOR) ?? []) {
+      if (child.getAttribute?.(TIDY_FRAGMENT_CLASS_ATTRIBUTE) === expectedClassId) roots.push(child);
+    }
+  }
+  if (roots.length) return roots;
+
+  // Tidy 13.3.0 inserts the HTML correctly but accidentally passes an empty nodes array.
+  const anchor = element?.querySelector?.(anchorSelector);
+  if (!anchor) return [];
+  const escapedClassId = escapeAttributeValue(expectedClassId);
+  return Array.from(anchor.querySelectorAll?.(
+    `${TIDY_FRAGMENT_SELECTOR}[${TIDY_FRAGMENT_CLASS_ATTRIBUTE}="${escapedClassId}"]`
+  ) ?? []);
+}
+
+function removeClassicSpecialtyArtifacts(context, specialty) {
+  const specialtyId = getItemId(specialty);
+  if (!specialtyId) return;
+
+  if (Array.isArray(context?.orphanedSubclasses)) {
+    context.orphanedSubclasses = context.orphanedSubclasses.filter(
+      (item) => getItemId(item) !== specialtyId
+    );
+  }
+  for (const section of context?.features ?? []) {
+    if (section?.isClass || section?.key === "classes" || !Array.isArray(section?.items)) continue;
+    section.items = section.items.filter((item) => getItemId(item) !== specialtyId);
+  }
+
+  const mismatchMessage = globalThis.game?.i18n?.format?.("DND5E.SubclassMismatchWarn", {
+    name: specialty.name,
+    class: specialty.system?.classIdentifier
+  });
+  if (mismatchMessage && Array.isArray(context?.warnings)) {
+    context.warnings = context.warnings.filter((warning) => (
+      (warning?.message ?? warning) !== mismatchMessage
+    ));
+  }
+}
+
+function prepareCraftsmanTidyData(context, layout) {
+  const state = buildCraftsmanArchetypeSheetState(context?.actor);
+  if (layout === "classic" && state.visible) {
+    const specialty = getActorItem(context.actor, state.specialty.itemId);
+    if (specialty) removeClassicSpecialtyArtifacts(context, specialty);
+  }
+  return state;
+}
+
+function relocateClassicCraftsmanFragment({ app, element, nodes }) {
+  const state = buildCraftsmanArchetypeSheetState(app?.actor);
+  if (!state.visible) return;
+  const roots = resolveTidyFragmentRoots(
+    nodes,
+    element,
+    TIDY_CLASSIC_SELECTOR,
+    state.classId
+  );
+  if (!roots.length) return;
+
+  const anchor = element?.querySelector?.(TIDY_CLASSIC_SELECTOR);
+  const classRow = anchor?.querySelector?.(
+    `[data-item-id="${escapeAttributeValue(state.classId)}"]`
+  );
+  if (!classRow) return;
+  let nextNode = classRow.nextSibling;
+  const alreadyPlaced = roots.every((root) => {
+    if (nextNode !== root) return false;
+    nextNode = root.nextSibling;
+    return true;
+  });
+  if (!alreadyPlaced) classRow.after?.(...roots);
+  for (const root of roots) bindCraftsmanTidyFragment(root, app?.actor);
+}
+
+function removeQuadroneCraftsmanSingleton(element, state) {
+  const classList = element?.querySelector?.(TIDY_QUADRONE_SELECTOR);
+  if (!classList) return;
+  const classTitle = `${state.className} ${state.classLevel}`;
+  const classLabel = Array.from(classList.querySelectorAll?.("[title]") ?? [])
+    .find((node) => node.getAttribute?.("title") === classTitle);
+  const summary = classLabel?.parentElement;
+  if (!summary) return;
+  const selectedNames = new Set(
+    state.axes.filter((axis) => axis.itemId).map((axis) => axis.name)
+  );
+  for (const node of Array.from(summary.querySelectorAll?.("[title]") ?? [])) {
+    if (node !== classLabel && selectedNames.has(node.getAttribute?.("title"))) node.remove?.();
+  }
+}
+
+function prepareQuadroneCraftsmanFragment({ app, element, nodes }) {
+  const state = buildCraftsmanArchetypeSheetState(app?.actor);
+  if (!state.visible) return;
+  const roots = resolveTidyFragmentRoots(
+    nodes,
+    element,
+    TIDY_QUADRONE_SELECTOR,
+    state.classId
+  );
+  for (const root of roots) bindCraftsmanTidyFragment(root, app?.actor);
+  removeQuadroneCraftsmanSingleton(element, state);
+}
+
+function isTidyGenerationActive(generation) {
+  return tidyActive && tidyGeneration === generation;
+}
+
+function registerCraftsmanTidyContentWithApi(api, generation = tidyGeneration) {
   if (!(api?.models?.HandlebarsContent instanceof Function) || !(api?.registerCharacterContent instanceof Function)) {
     return false;
   }
-  if (tidyApiRegistrations.has(api)) return true;
+  if (!isTidyGenerationActive(generation)) return false;
 
-  api.registerCharacterContent(new api.models.HandlebarsContent({
-    path: CRAFTSMAN_TIDY_TEMPLATE,
-    enabled: (context) => buildCraftsmanArchetypeSheetState(context?.actor).visible,
-    getData: (context) => buildCraftsmanArchetypeSheetState(context?.actor),
-    injectParams: {
-      selector: TIDY_FEATURES_SELECTOR,
-      position: "afterbegin"
+  let registration = tidyApiRegistrations.get(api);
+  if (registration?.generation !== generation) {
+    registration = { generation, layouts: new Set() };
+    tidyApiRegistrations.set(api, registration);
+  }
+  const definitions = [
+    {
+      layout: "classic",
+      selector: TIDY_CLASSIC_SELECTOR,
+      getData: (context) => prepareCraftsmanTidyData(context, "classic"),
+      onRender: relocateClassicCraftsmanFragment
     },
-    onRender: ({ app, element }) => bindCraftsmanArchetypeRows(element, app?.actor)
-  }), { layout: ["classic", "quadrone"] });
-  tidyApiRegistrations.add(api);
-  return true;
+    {
+      layout: "quadrone",
+      selector: TIDY_QUADRONE_SELECTOR,
+      getData: (context) => prepareCraftsmanTidyData(context, "quadrone"),
+      onRender: prepareQuadroneCraftsmanFragment
+    }
+  ];
+
+  for (const definition of definitions) {
+    if (registration.layouts.has(definition.layout)) continue;
+    api.registerCharacterContent(new api.models.HandlebarsContent({
+      path: CRAFTSMAN_TIDY_TEMPLATE,
+      enabled: (context) => (
+        isTidyGenerationActive(generation)
+        && buildCraftsmanArchetypeSheetState(context?.actor).visible
+      ),
+      getData: definition.getData,
+      injectParams: {
+        selector: definition.selector,
+        position: "beforeend"
+      },
+      onRender: definition.onRender
+    }), { layout: definition.layout });
+    registration.layouts.add(definition.layout);
+  }
+  return registration.layouts.size === definitions.length;
 }
 
-// Retained for the existing Tidy extension until Task 8 replaces its shared template and layout bindings.
 export function buildCraftsmanArchetypeSheetState(actor) {
-  const craftsmanClass = findCraftsmanClass(getActorItems(actor));
+  const craftsmanClass = actor?.type === "character"
+    ? findCraftsmanClass(getActorItems(actor))
+    : null;
   const { research, specialty } = craftsmanClass
     ? getCraftsmanSubclasses(craftsmanClass)
     : { research: null, specialty: null };
+  const classLevel = Number(craftsmanClass?.system?.levels ?? 0);
+  const classId = getItemId(craftsmanClass);
+  const researchState = makeAxisViewModel(research, CRAFTSMAN_TRACKS.RESEARCH, classLevel);
+  const specialtyState = makeAxisViewModel(specialty, CRAFTSMAN_TRACKS.SPECIALTY, classLevel);
   return {
     visible: Boolean(craftsmanClass),
-    research: makeLegacyTidyAxisState(research, CRAFTSMAN_TRACKS.RESEARCH),
-    specialty: makeLegacyTidyAxisState(specialty, CRAFTSMAN_TRACKS.SPECIALTY)
+    classId,
+    className: craftsmanClass?.name ?? "",
+    classLevel,
+    research: researchState,
+    specialty: specialtyState,
+    axes: [researchState, specialtyState].map((axis) => ({ ...axis, classId }))
   };
 }
 
 export function registerCraftsmanTidyContent() {
+  if (!tidyActive) {
+    tidyActive = true;
+    tidyGeneration += 1;
+  }
+  const generation = tidyGeneration;
   const hooks = globalThis.Hooks;
-  if (hooks?.once && !tidyHookRegistrations.has(hooks)) {
-    tidyHookRegistrations.add(hooks);
-    hooks.once("tidy5e-sheet.ready", registerCraftsmanTidyContentWithApi);
+  if (hooks?.once && tidyHookRegistrations.get(hooks) !== generation) {
+    tidyHookRegistrations.set(hooks, generation);
+    hooks.once("tidy5e-sheet.ready", (api) => (
+      registerCraftsmanTidyContentWithApi(api, generation)
+    ));
   }
 
   const tidyModule = globalThis.game?.modules?.get?.("tidy5e-sheet");
   if (tidyModule?.active !== false && tidyModule?.api) {
-    registerCraftsmanTidyContentWithApi(tidyModule.api);
+    registerCraftsmanTidyContentWithApi(tidyModule.api, generation);
   }
+}
+
+export function unregisterCraftsmanTidyContent() {
+  tidyActive = false;
 }

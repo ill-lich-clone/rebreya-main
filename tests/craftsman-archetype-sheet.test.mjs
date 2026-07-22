@@ -21,8 +21,13 @@ const NATIVE_ACTOR_CLASSES_URL = new URL(
 );
 const ORIGINAL_GLOBALS = {
   game: globalThis.game,
+  Hooks: globalThis.Hooks,
   libWrapper: globalThis.libWrapper
 };
+
+const TIDY_TEMPLATE = `/modules/${MODULE_ID}/templates/craftsman-tidy-class-subclasses.hbs`;
+const TIDY_BUNDLE_URL = new URL("../../tidy5e-sheet/tidy5e-sheet.js", import.meta.url);
+const TIDY_MANIFEST_URL = new URL("../../tidy5e-sheet/module.json", import.meta.url);
 
 function makeItem({
   id,
@@ -209,9 +214,251 @@ function installDirectGlobals(AdvancementManager = null) {
   globalThis.libWrapper = undefined;
 }
 
+class TestElement {
+  constructor(tagName = "div", { attributes = {}, classes = [] } = {}) {
+    this.tagName = tagName.toUpperCase();
+    this.attributes = new Map();
+    this.children = [];
+    this.parentElement = null;
+    this.parentNode = null;
+    this.listeners = new Map();
+    this.classList = {
+      contains: (name) => this.attributes.get("class")?.split(/\s+/u).includes(name) ?? false
+    };
+    if (classes.length) this.setAttribute("class", classes.join(" "));
+    for (const [name, value] of Object.entries(attributes)) this.setAttribute(name, value);
+  }
+
+  get dataset() {
+    return Object.fromEntries(
+      Array.from(this.attributes.entries())
+        .filter(([name]) => name.startsWith("data-"))
+        .map(([name, value]) => [
+          name.slice(5).replace(/-([a-z])/gu, (_match, letter) => letter.toUpperCase()),
+          value
+        ])
+    );
+  }
+
+  get nextSibling() {
+    if (!this.parentElement) return null;
+    const index = this.parentElement.children.indexOf(this);
+    return this.parentElement.children[index + 1] ?? null;
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
+
+  getAttribute(name) {
+    return this.attributes.get(name) ?? null;
+  }
+
+  append(...nodes) {
+    for (const node of nodes) {
+      node.remove?.();
+      node.parentElement = this;
+      node.parentNode = this;
+      this.children.push(node);
+    }
+  }
+
+  insertBefore(node, reference) {
+    node.remove?.();
+    const index = reference ? this.children.indexOf(reference) : -1;
+    node.parentElement = this;
+    node.parentNode = this;
+    if (index < 0) this.children.push(node);
+    else this.children.splice(index, 0, node);
+  }
+
+  after(...nodes) {
+    if (!this.parentElement) return;
+    const reference = this.nextSibling;
+    for (const node of nodes) this.parentElement.insertBefore(node, reference);
+  }
+
+  remove() {
+    if (!this.parentElement) return;
+    const index = this.parentElement.children.indexOf(this);
+    if (index >= 0) this.parentElement.children.splice(index, 1);
+    this.parentElement = null;
+    this.parentNode = null;
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type, listener) {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  async dispatch(type, target) {
+    const event = {
+      target,
+      defaultPrevented: false,
+      propagationStopped: false,
+      preventDefault() { this.defaultPrevented = true; },
+      stopPropagation() { this.propagationStopped = true; }
+    };
+    for (const listener of this.listeners.get(type) ?? []) await listener(event);
+    return event;
+  }
+
+  contains(candidate) {
+    for (let current = candidate; current; current = current.parentElement) {
+      if (current === this) return true;
+    }
+    return false;
+  }
+
+  matches(selector) {
+    const tag = selector.match(/^[a-z][a-z0-9-]*/iu)?.[0];
+    if (tag && this.tagName !== tag.toUpperCase()) return false;
+    for (const className of selector.matchAll(/\.([a-z0-9_-]+)/giu)) {
+      if (!this.classList.contains(className[1])) return false;
+    }
+    for (const attribute of selector.matchAll(/\[([^\]=]+)(?:=["']([^"']*)["'])?\]/gu)) {
+      if (!this.attributes.has(attribute[1])) return false;
+      if (attribute[2] !== undefined && this.getAttribute(attribute[1]) !== attribute[2]) return false;
+    }
+    return true;
+  }
+
+  closest(selector) {
+    for (let current = this; current; current = current.parentElement) {
+      if (current.matches(selector)) return current;
+    }
+    return null;
+  }
+
+  querySelectorAll(selector) {
+    const parts = selector.trim().split(/\s+/u);
+    let scope = [this];
+    for (const part of parts) {
+      const next = [];
+      for (const root of scope) {
+        const visit = (node) => {
+          for (const child of node.children) {
+            if (child.matches(part)) next.push(child);
+            visit(child);
+          }
+        };
+        visit(root);
+      }
+      scope = next;
+    }
+    return scope;
+  }
+
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+}
+
+function makeTidyApi() {
+  const registrations = [];
+  class HandlebarsContent {
+    constructor(properties) {
+      Object.assign(this, properties);
+    }
+  }
+  return {
+    api: {
+      models: { HandlebarsContent },
+      registerCharacterContent(content, options) {
+        registrations.push({ content, options });
+      }
+    },
+    HandlebarsContent,
+    registrations
+  };
+}
+
+function installTidyGlobals(api, AdvancementManager = null) {
+  const hookCallbacks = [];
+  globalThis.Hooks = {
+    once(name, callback) {
+      hookCallbacks.push({ name, callback });
+      return hookCallbacks.length;
+    }
+  };
+  globalThis.game = {
+    i18n: {
+      format: (key, data) => `${key}:${data.name}:${data.class}`
+    },
+    modules: {
+      get: (id) => id === "tidy5e-sheet" ? { active: true, api } : null
+    },
+    dnd5e: { applications: { advancement: { AdvancementManager } } }
+  };
+  return hookCallbacks;
+}
+
+function makeTidyFragment(classId) {
+  return new TestElement("div", {
+    classes: ["rebreya-craftsman-tidy-subclasses"],
+    attributes: { "data-rebreya-craftsman-class-id": classId }
+  });
+}
+
+function makeClassicTidyDom(craftsman, researchItem, fragment) {
+  const sheet = new TestElement("form");
+  const tab = new TestElement("div", { attributes: { "data-tab-contents-for": "features" } });
+  const table = new TestElement("section", {
+    classes: ["item-table"],
+    attributes: { "data-tidy-section-key": "classes" }
+  });
+  const body = new TestElement("div", { classes: ["item-table-body"] });
+  const classRow = new TestElement("div", { attributes: { "data-item-id": craftsman.id } });
+  const researchRow = new TestElement("div", { attributes: { "data-item-id": researchItem?.id ?? "" } });
+  body.append(classRow);
+  if (researchItem) body.append(researchRow);
+  body.append(fragment);
+  table.append(body);
+  tab.append(table);
+  sheet.append(tab);
+  return { body, classRow, researchRow, sheet, table };
+}
+
+function makeQuadroneTidyDom({ craftsman, fighter, researchItem, specialtyItem, fragment }) {
+  const sheet = new TestElement("form");
+  const classList = new TestElement("section", { classes: ["class-list"] });
+  const craftsmanSummary = new TestElement("span", { classes: ["flex-no-grow"] });
+  const craftsmanTitle = new TestElement("span", {
+    attributes: { title: `${craftsman.name} ${craftsman.system.levels}` }
+  });
+  const singletonTitle = new TestElement("span", {
+    attributes: { title: specialtyItem?.name ?? researchItem?.name ?? "" }
+  });
+  craftsmanSummary.append(craftsmanTitle, singletonTitle);
+  const fighterSummary = new TestElement("span", { classes: ["flex-no-grow"] });
+  const fighterTitle = new TestElement("span", {
+    attributes: { title: `${fighter.name} ${fighter.system.levels}` }
+  });
+  const championTitle = new TestElement("span", { attributes: { title: "Champion" } });
+  fighterSummary.append(fighterTitle, championTitle);
+  classList.append(craftsmanSummary, fighterSummary, fragment);
+  sheet.append(classList);
+  return {
+    championTitle,
+    classList,
+    craftsmanSummary,
+    craftsmanTitle,
+    fighterSummary,
+    sheet,
+    singletonTitle
+  };
+}
+
 afterEach(() => {
   sheetIntegration.unregisterCraftsmanClassCardIntegration?.();
+  sheetIntegration.unregisterCraftsmanTidyContent?.();
   globalThis.game = ORIGINAL_GLOBALS.game;
+  globalThis.Hooks = ORIGINAL_GLOBALS.Hooks;
   globalThis.libWrapper = ORIGINAL_GLOBALS.libWrapper;
 });
 
@@ -531,4 +778,294 @@ test("obsolete Standard part and standalone-section CSS are removed in favor of 
   assert.match(css, /\.rebreya-craftsman-axis/u);
   assert.doesNotMatch(integrationSource, /RESEARCH_ITEM_TYPE|SPECIALTY_ITEM_TYPE/u);
   assert.doesNotMatch(integrationSource, /craftsmanArchetypes|craftsman-archetypes-standard/u);
+});
+
+test("Tidy official API registers separate Classic and Quadrone Handlebars content idempotently", () => {
+  assert.equal(typeof sheetIntegration.registerCraftsmanTidyContent, "function");
+  assert.equal(typeof sheetIntegration.unregisterCraftsmanTidyContent, "function");
+  const { api, HandlebarsContent, registrations } = makeTidyApi();
+  const hooks = installTidyGlobals(api);
+  const fixture = makeStandardFixture();
+  const ordinaryActor = attachActor([makeItem({
+    id: "fighter-only",
+    type: "class",
+    name: "Fighter",
+    identifier: "fighter",
+    levels: 3
+  })]);
+
+  sheetIntegration.registerCraftsmanTidyContent();
+  sheetIntegration.registerCraftsmanTidyContent();
+
+  assert.equal(hooks.length, 1, "the ready hook does not stack");
+  assert.deepEqual(
+    registrations.map(({ options }) => options.layout),
+    ["classic", "quadrone"]
+  );
+  assert.equal(registrations.every(({ content }) => content instanceof HandlebarsContent), true);
+  assert.equal(registrations.every(({ content }) => content.path === TIDY_TEMPLATE), true);
+
+  const classic = registrations.find(({ options }) => options.layout === "classic").content;
+  const quadrone = registrations.find(({ options }) => options.layout === "quadrone").content;
+  assert.deepEqual(classic.injectParams, {
+    selector: '[data-tidy-section-key="classes"] .item-table-body',
+    position: "beforeend"
+  });
+  assert.deepEqual(quadrone.injectParams, {
+    selector: ".class-list",
+    position: "beforeend"
+  });
+  assert.equal(classic.enabled({ actor: fixture.actor }), true);
+  assert.equal(quadrone.enabled({ actor: ordinaryActor }), false);
+
+  sheetIntegration.unregisterCraftsmanTidyContent();
+  assert.equal(classic.enabled({ actor: fixture.actor }), false, "disposed registrations are inactive");
+  assert.equal(quadrone.enabled({ actor: fixture.actor }), false);
+
+  sheetIntegration.registerCraftsmanTidyContent();
+  assert.equal(registrations.length, 4, "a new active generation is registered after disposal");
+  assert.equal(registrations.at(-2).content.enabled({ actor: fixture.actor }), true);
+  assert.equal(registrations.at(-1).content.enabled({ actor: fixture.actor }), true);
+});
+
+test("Tidy view model contains only the two native Craftsman subclass axes", () => {
+  const fixture = makeStandardFixture();
+  const legacyResearch = makeItem({
+    id: "legacy-research",
+    type: "research",
+    name: "Legacy Research",
+    classIdentifier: CRAFTSMAN_CLASS_IDENTIFIER,
+    track: CRAFTSMAN_TRACKS.RESEARCH
+  });
+  const legacySpecialty = makeItem({
+    id: "legacy-specialty",
+    type: "specialty",
+    name: "Legacy Specialty",
+    classIdentifier: CRAFTSMAN_CLASS_IDENTIFIER,
+    track: CRAFTSMAN_TRACKS.SPECIALTY
+  });
+  fixture.actor.items.push(legacyResearch, legacySpecialty);
+
+  const state = sheetIntegration.buildCraftsmanArchetypeSheetState(fixture.actor);
+
+  assert.deepEqual({
+    visible: state.visible,
+    classId: state.classId,
+    className: state.className,
+    classLevel: state.classLevel
+  }, {
+    visible: true,
+    classId: fixture.craftsman.id,
+    className: fixture.craftsman.name,
+    classLevel: 3
+  });
+  assert.deepEqual(state.axes.map((axis) => ({
+    track: axis.track,
+    itemId: axis.itemId,
+    name: axis.name,
+    needsSelection: axis.needsSelection
+  })), [
+    {
+      track: CRAFTSMAN_TRACKS.RESEARCH,
+      itemId: fixture.researchItem.id,
+      name: fixture.researchItem.name,
+      needsSelection: false
+    },
+    {
+      track: CRAFTSMAN_TRACKS.SPECIALTY,
+      itemId: fixture.specialtyItem.id,
+      name: fixture.specialtyItem.name,
+      needsSelection: false
+    }
+  ]);
+  assert.equal(state.axes.some((axis) => axis.itemId.startsWith("legacy-")), false);
+
+  const missing = makeStandardFixture({ research: false, specialty: false, includeOrdinaryClass: false });
+  const missingState = sheetIntegration.buildCraftsmanArchetypeSheetState(missing.actor);
+  assert.deepEqual(
+    missingState.axes.map((axis) => [axis.track, axis.requiredLevel, axis.needsSelection]),
+    [
+      [CRAFTSMAN_TRACKS.RESEARCH, 2, true],
+      [CRAFTSMAN_TRACKS.SPECIALTY, 3, true]
+    ]
+  );
+});
+
+test("Tidy Classic relocates a nonempty fragment beside Craftsman and scrubs only Specialty orphan state", () => {
+  const { api, registrations } = makeTidyApi();
+  installTidyGlobals(api);
+  const fixture = makeStandardFixture();
+  const foreignOrphan = makeItem({
+    id: "foreign-orphan",
+    type: "subclass",
+    name: "Foreign Orphan",
+    classIdentifier: "missing-class"
+  });
+  const craftsmanWarning = `DND5E.SubclassMismatchWarn:${fixture.specialtyItem.name}:${CRAFTSMAN_CLASS_IDENTIFIER}`;
+  const foreignWarning = "foreign-warning";
+  const context = {
+    actor: fixture.actor,
+    orphanedSubclasses: [fixture.specialtyItem, foreignOrphan],
+    features: [
+      { key: "classes", items: [fixture.craftsman, fixture.researchItem] },
+      { key: "passive", items: [fixture.specialtyItem, foreignOrphan] }
+    ],
+    warnings: [
+      { message: craftsmanWarning, type: "warning" },
+      { message: foreignWarning, type: "warning" }
+    ]
+  };
+  sheetIntegration.registerCraftsmanTidyContent();
+  const classic = registrations.find(({ options }) => options.layout === "classic").content;
+
+  const data = classic.getData(context);
+  assert.equal(data.research.itemId, fixture.researchItem.id);
+  assert.equal(data.specialty.itemId, fixture.specialtyItem.id);
+  assert.deepEqual(context.orphanedSubclasses, [foreignOrphan]);
+  assert.deepEqual(context.features[0].items, [fixture.craftsman, fixture.researchItem]);
+  assert.deepEqual(context.features[1].items, [foreignOrphan]);
+  assert.deepEqual(context.warnings, [{ message: foreignWarning, type: "warning" }]);
+
+  const fragment = makeTidyFragment(fixture.craftsman.id);
+  const dom = makeClassicTidyDom(fixture.craftsman, fixture.researchItem, fragment);
+  const nodes = [fragment];
+  assert.ok(nodes.length > 0, "the official onRender contract supplies inserted nodes");
+  classic.onRender({ app: { actor: fixture.actor }, element: dom.sheet, nodes });
+  assert.strictEqual(dom.classRow.nextSibling, fragment);
+  classic.onRender({ app: { actor: fixture.actor }, element: dom.sheet, nodes });
+  assert.equal(fragment.listeners.get("click")?.size, 1, "repeat render replaces its listener");
+  assert.strictEqual(dom.classRow.nextSibling, fragment, "repeat render preserves class-local placement");
+
+  fragment.remove();
+  const fallbackFragment = makeTidyFragment(fixture.craftsman.id);
+  dom.body.append(fallbackFragment);
+  classic.onRender({ app: { actor: fixture.actor }, element: dom.sheet, nodes: [] });
+  assert.strictEqual(
+    dom.classRow.nextSibling,
+    fallbackFragment,
+    "Tidy 13.3.0 empty-nodes regression uses only the injected Craftsman marker"
+  );
+});
+
+test("Tidy Quadrone removes only the Craftsman singleton subclass summary", () => {
+  const { api, registrations } = makeTidyApi();
+  installTidyGlobals(api);
+  const fixture = makeStandardFixture();
+  sheetIntegration.registerCraftsmanTidyContent();
+  const quadrone = registrations.find(({ options }) => options.layout === "quadrone").content;
+  const fragment = makeTidyFragment(fixture.craftsman.id);
+  const dom = makeQuadroneTidyDom({ ...fixture, fragment });
+
+  quadrone.onRender({ app: { actor: fixture.actor }, element: dom.sheet, nodes: [fragment] });
+
+  assert.strictEqual(dom.craftsmanTitle.parentElement, dom.craftsmanSummary, "class and level remain native");
+  assert.equal(dom.singletonTitle.parentElement, null, "the one-axis native subclass summary is removed");
+  assert.strictEqual(dom.championTitle.parentElement, dom.fighterSummary, "another class summary is untouched");
+  assert.strictEqual(fragment.parentElement, dom.classList);
+});
+
+test("Tidy fragment actions show selected Items and open native level 2 or 3 choices without stacking", async () => {
+  const modifyCalls = [];
+  class AdvancementManager {
+    static forModifyChoices(actor, classId, level) {
+      const manager = {
+        steps: [{}],
+        renderOptions: null,
+        render(options) { this.renderOptions = options; }
+      };
+      modifyCalls.push({ actor, classId, level, manager });
+      return manager;
+    }
+  }
+  const { api, registrations } = makeTidyApi();
+  installTidyGlobals(api, AdvancementManager);
+  const fixture = makeStandardFixture({ specialty: false });
+  const renderCalls = [];
+  fixture.researchItem.sheet = { render: async (force) => renderCalls.push(force) };
+  sheetIntegration.registerCraftsmanTidyContent();
+  const classic = registrations.find(({ options }) => options.layout === "classic").content;
+  const fragment = makeTidyFragment(fixture.craftsman.id);
+  const selected = new TestElement("button", {
+    attributes: {
+      "data-action": "showDocument",
+      "data-item-id": fixture.researchItem.id,
+      "data-track": CRAFTSMAN_TRACKS.RESEARCH
+    }
+  });
+  const missing = new TestElement("button", {
+    attributes: {
+      "data-action": "openCraftsmanSubclassChoice",
+      "data-class-id": fixture.craftsman.id,
+      "data-track": CRAFTSMAN_TRACKS.SPECIALTY
+    }
+  });
+  fragment.append(selected, missing);
+  const dom = makeClassicTidyDom(fixture.craftsman, fixture.researchItem, fragment);
+
+  classic.onRender({ app: { actor: fixture.actor }, element: dom.sheet, nodes: [fragment] });
+  classic.onRender({ app: { actor: fixture.actor }, element: dom.sheet, nodes: [fragment] });
+  assert.equal(fragment.listeners.get("click")?.size, 1);
+
+  const selectedEvent = await fragment.dispatch("click", selected);
+  const missingEvent = await fragment.dispatch("click", missing);
+
+  const researchMissingFixture = makeStandardFixture({ research: false, specialty: true });
+  const researchMissingFragment = makeTidyFragment(researchMissingFixture.craftsman.id);
+  const missingResearch = new TestElement("button", {
+    attributes: {
+      "data-action": "openCraftsmanSubclassChoice",
+      "data-class-id": researchMissingFixture.craftsman.id,
+      "data-track": CRAFTSMAN_TRACKS.RESEARCH
+    }
+  });
+  researchMissingFragment.append(missingResearch);
+  const researchMissingDom = makeClassicTidyDom(
+    researchMissingFixture.craftsman,
+    researchMissingFixture.specialtyItem,
+    researchMissingFragment
+  );
+  classic.onRender({
+    app: { actor: researchMissingFixture.actor },
+    element: researchMissingDom.sheet,
+    nodes: [researchMissingFragment]
+  });
+  await researchMissingFragment.dispatch("click", missingResearch);
+
+  assert.deepEqual(renderCalls, [true]);
+  assert.deepEqual(modifyCalls.map(({ classId, level }) => ({ classId, level })), [
+    { classId: fixture.craftsman.id, level: 3 },
+    { classId: researchMissingFixture.craftsman.id, level: 2 }
+  ]);
+  assert.equal(modifyCalls.every(({ manager }) => manager.renderOptions?.force === true), true);
+  assert.equal(selectedEvent.defaultPrevented, true);
+  assert.equal(missingEvent.propagationStopped, true);
+});
+
+test("Tidy 13.3.0 fixtures and inline template replace the obsolete standalone section", () => {
+  const manifest = JSON.parse(readFileSync(TIDY_MANIFEST_URL, "utf8"));
+  const tidyBundle = readFileSync(TIDY_BUNDLE_URL, "utf8");
+  const templateUrl = new URL("../templates/craftsman-tidy-class-subclasses.hbs", import.meta.url);
+  const oldTemplateUrl = new URL("../templates/craftsman-archetypes.hbs", import.meta.url);
+  const css = readFileSync(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.equal(manifest.version, "13.3.0");
+  assert.match(tidyBundle, /registerCharacterContent\(content, options2\)/u);
+  assert.match(tidyBundle, /class-list/u);
+  assert.match(tidyBundle, /data-tidy-section-key/u);
+  assert.match(
+    tidyBundle,
+    /injectedNodes2\.push\(\.\.\.injectedNodes2\)/u,
+    "the compatibility fallback is pinned to the installed empty-nodes regression"
+  );
+  assert.equal(existsSync(templateUrl), true);
+  assert.equal(existsSync(oldTemplateUrl), false);
+  const template = readFileSync(templateUrl, "utf8");
+  assert.match(template, /rebreya-craftsman-tidy-subclasses/u);
+  assert.match(template, /data-action="showDocument"/u);
+  assert.match(template, /data-action="openCraftsmanSubclassChoice"/u);
+  assert.match(template, /data-class-id="\{\{ axis\.classId \}\}"/u);
+  assert.doesNotMatch(template, /\.\.\/classId/u);
+  assert.doesNotMatch(template, /<h[1-6][^>]*>/u);
+  assert.match(css, /\.rebreya-craftsman-tidy-subclasses/u);
+  assert.doesNotMatch(css, /\.rebreya-craftsman-archetypes(?:__|\s|\{)/u);
 });
