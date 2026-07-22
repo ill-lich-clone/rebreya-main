@@ -144,6 +144,10 @@ function elementalAdeptSubtype(item) {
   return cleanString(getProperty(item, "system.type.subtype"));
 }
 
+function hasElementalAdeptAcquisitionSubtype(item) {
+  return ["general", "minor"].includes(elementalAdeptSubtype(item));
+}
+
 function elementalAdeptUpdateOptions() {
   return {
     [MODULE_ID]: { skipElementalAdeptAutomation: true },
@@ -280,15 +284,20 @@ export class ElementalAdeptAutomationService {
         return false;
       }
       if (!elementalAdeptSubtype(item)) {
-        const siblingCopies = normalizeCollection(actor?.items).filter((candidate) => candidate !== item && isElementalAdeptItem(candidate));
-        const subtype = siblingCopies.length ? "minor" : "general";
+        const hasClassifiedSibling = normalizeCollection(actor?.items)
+          .some((candidate) => candidate !== item && isElementalAdeptItem(candidate) && hasElementalAdeptAcquisitionSubtype(candidate));
+        const subtype = hasClassifiedSibling ? "minor" : "general";
         await item.update?.({ "system.type.subtype": subtype }, elementalAdeptUpdateOptions());
       }
       let attempts = 0;
       while (attempts < 5) {
         const choices = getAvailableElementalAdeptChoices(actor, item);
         if (!choices.length) {
-          if (!allowDeletion || typeof item.delete !== "function") {
+          if (!allowDeletion) {
+            globalThis.ui?.notifications?.warn?.("Нет доступных типов урона для настройки черты Стихийный адепт.");
+            return false;
+          }
+          if (typeof item.delete !== "function") {
             globalThis.ui?.notifications?.warn?.("Не удалось удалить лишнюю копию черты Стихийный адепт.");
             return false;
           }

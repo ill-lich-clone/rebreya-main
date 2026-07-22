@@ -135,7 +135,7 @@ test("classifies the first owned copy as general before prompting", async () => 
 
 test("classifies later copies as minor even when the first copy is unresolved", async () => {
   setCurrentUser();
-  const first = makeMutableFeat({ id: "first" });
+  const first = makeMutableFeat({ id: "first", subtype: "general" });
   const later = makeMutableFeat({ id: "later" });
   makeCharacter([first, later]);
   const service = new ElementalAdeptAutomationService(null, { prompt: async () => null });
@@ -249,6 +249,30 @@ test("sheet repair never deletes an existing unresolved copy when every type is 
   assert.equal(unresolved.system.type.subtype, "minor");
 });
 
+test("sheet repair uses a capacity warning instead of a failed-deletion warning", async () => {
+  setCurrentUser();
+  const previousUi = globalThis.ui;
+  const warnings = [];
+  globalThis.ui = { notifications: { warn: (message) => warnings.push(message) } };
+  try {
+    const owned = ELEMENTAL_ADEPT_CHOICES.map((choice) => makeMutableFeat({
+      id: choice.value,
+      configuredType: choice.value,
+    }));
+    const unresolved = makeMutableFeat({ id: "cancelled", subtype: "minor" });
+    const actor = makeCharacter([...owned, unresolved]);
+    const service = new ElementalAdeptAutomationService(null, { prompt: async () => assert.fail("repair must not prompt") });
+
+    assert.equal(await service.repairActor(actor), false);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /нет доступных типов урона/iu);
+    assert.doesNotMatch(warnings[0], /удалить/u);
+  }
+  finally {
+    globalThis.ui = previousUi;
+  }
+});
+
 test("ordinary updates preserve an already configured acquisition subtype", async () => {
   setCurrentUser();
   const original = makeMutableFeat({ id: "original", subtype: "general", configuredType: "fire" });
@@ -310,6 +334,19 @@ test("concurrent configuration calls serialize by actor and duplicate an Item on
 
   assert.deepEqual([firstResult, secondResult, duplicateResult], [true, true, false]);
   assert.deepEqual(prompts, ["first", "second"]);
+  assert.equal(first.system.type.subtype, "general");
+  assert.equal(second.system.type.subtype, "minor");
   assert.equal(first.flags["rebreya-main"].elementalAdept, "fire");
   assert.equal(second.flags["rebreya-main"].elementalAdept, "cold");
+});
+
+test("an existing classified minor copy makes a later acquisition minor without a general copy", async () => {
+  setCurrentUser();
+  const existingMinor = makeMutableFeat({ id: "existing-minor", subtype: "minor" });
+  const acquired = makeMutableFeat({ id: "acquired" });
+  makeCharacter([existingMinor, acquired]);
+  const service = new ElementalAdeptAutomationService(null, { prompt: async () => null });
+
+  assert.equal(await service.handleCreatedItem(acquired, {}, "player-1"), false);
+  assert.equal(acquired.system.type.subtype, "minor");
 });
