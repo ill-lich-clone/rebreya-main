@@ -93,6 +93,26 @@ test("production wiring uses native Craftsman advancement and lifecycle without 
   );
 });
 
+test("production registers the hidden GiantTribe advancement before race compendiums are materialized", async () => {
+  const [entrypointSource, sheetSource] = await Promise.all([
+    readCanonicalEntrypointSource(),
+    readFile(new URL("../scripts/integrations/dnd5e-sheet-extensions.js", import.meta.url), "utf8")
+  ]);
+
+  assert.match(
+    sheetSource,
+    /import \{ registerGiantTribeAdvancement \} from "\.\/giant-tribe-advancement\.js";/u
+  );
+  assert.match(
+    sheetSource,
+    /extendDnd5eItemTypes[\s\S]*?registerGiantTribeAdvancement\(\);/u
+  );
+  assert.match(
+    entrypointSource,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-advancement/u
+  );
+});
+
 test("production does not register legacy Craftsman choice advancements", async () => {
   const productionFiles = await readJavaScriptTree("../scripts/");
 
@@ -146,7 +166,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   assert.match(
     canonicalSource,
-    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.109-craftsman-native-standard/u
+    /integrations\/dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-advancement/u
   );
 
   for (const importPath of [
@@ -381,7 +401,7 @@ test("owned race and Giant Tribe configuration is wired to create and sheet repa
     readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8")
   ]);
 
-  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.110-giant-tribe-cleanup/u);
+  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.110-giant-tribe-advancement/u);
   assert.match(
     hooksSource,
     /moduleApi\.raceAutomationService\.handleCreatedItem\(item, options, userId\)/u
@@ -398,7 +418,7 @@ test("held item integrations preserve their released cache bust", async () => {
 
   assert.match(
     entrypointSource,
-    /dnd5e-sheet-extensions\.js\?v=1\.4\.109-craftsman-native-standard/u,
+    /dnd5e-sheet-extensions\.js\?v=1\.4\.110-giant-tribe-advancement/u,
   );
   assert.match(
     entrypointSource,

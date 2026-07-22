@@ -45,6 +45,7 @@ import {
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 import { registerCraftsmanSubclassAdvancements } from "./craftsman-subclass-advancements.js";
 import { registerCraftsmanMultiSubclassIntegration } from "./craftsman-multi-subclass.js";
+import { registerGiantTribeAdvancement } from "./giant-tribe-advancement.js";
 import {
   enhanceCraftsmanStandardClassCard,
   registerCraftsmanClassCardIntegration,
@@ -6924,6 +6925,7 @@ export function extendDnd5eItemTypes() {
   registerNativeStateItemType();
   registerDowntimeItemType();
   registerCraftsmanSubclassAdvancements();
+  registerGiantTribeAdvancement();
   registerNativeStateAdvancementTypes();
   registerNativeStateLanguages();
 
