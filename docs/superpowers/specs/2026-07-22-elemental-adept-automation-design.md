@@ -19,15 +19,13 @@ The automation must:
 
 The source compendium contains one repeatable feat with identifier `stihiynyy-adept`. It remains a single source document and does not receive an `ItemChoice` advancement or generate child option Items.
 
-Each configured owned copy stores a module flag with stable machine data:
+Each configured owned copy stores its normalized damage type directly in a module flag:
 
 ```js
-flags["rebreya-main"].elementalAdept = {
-  configured: true,
-  damageType: "fire",
-  label: "Огонь"
-}
+flags["rebreya-main"].elementalAdept = "fire"
 ```
+
+The localized label is derived from that stable value and is not persisted separately.
 
 The configured Item is renamed to `Стихийный адепт: <стихия>`. Its `system.identifier` remains `stihiynyy-adept` so source identity, repeatability, and migration remain stable.
 
