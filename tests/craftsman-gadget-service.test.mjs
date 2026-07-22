@@ -41,11 +41,12 @@ function gadgetTemplate(id, availability = "base") {
   };
 }
 
-function preparedGadget(id, generation = "old", instanceId = `old-${id}`) {
+function preparedGadget(id, generation = "old", instanceId = `old-${id}`, quantity = 1) {
   const item = {
     id: instanceId,
     name: id,
     type: "feat",
+    system: { quantity },
     flags: {
       "rebreya-main": {
         craftsmanGadget: {
@@ -169,24 +170,43 @@ test("gadget capacity prefers the class scale and falls back to Craftsman level"
   assert.equal(getCraftsmanGadgetCapacity(new TestActor({ level: 1, scale: { value: 4 } })), 4);
 });
 
-test("long rest creates duplicate gadget instances with one fresh generation", async () => {
+test("long rest groups duplicate choices into one fresh physical gadget stack", async () => {
   const actor = new TestActor({ level: 1, items: [preparedGadget("smoke-device")] });
   const service = makeService({
     selection: ["force-glove", "force-glove"],
-    randomIds: ["generation-new", "instance-a", "instance-b"]
+    randomIds: ["generation-new", "instance-a"]
   });
 
   assert.equal(await service.handleRestCompleted(actor, { type: "long" }, {}), true);
   const gadgets = getPreparedCraftsmanGadgets(actor);
-  assert.deepEqual(gadgets.map((item) => item.flags["rebreya-main"].craftsmanGadget.catalogId), [
-    "force-glove", "force-glove"
-  ]);
-  assert.deepEqual(gadgets.map((item) => item.flags["rebreya-main"].craftsmanGadget.instanceId), [
-    "instance-a", "instance-b"
-  ]);
+  assert.equal(gadgets.length, 1);
+  assert.equal(gadgets[0].type, "rebreya-main.gadget");
+  assert.equal(gadgets[0].system.quantity, 2);
+  assert.equal(gadgets[0].flags["rebreya-main"].craftsmanGadget.catalogId, "force-glove");
+  assert.equal(gadgets[0].flags["rebreya-main"].craftsmanGadget.instanceId, "instance-a");
   assert.ok(gadgets.every((item) => item.flags["rebreya-main"].craftsmanGadget.restGeneration === "generation-new"));
   assert.equal(actor.flags["rebreya-main"].craftsmanGadgets.restGeneration, "generation-new");
+  assert.deepEqual(actor.flags["rebreya-main"].craftsmanGadgets.selectedIds, ["force-glove", "force-glove"]);
   assert.deepEqual(actor.deleted, ["old-smoke-device"]);
+});
+
+test("level 17 groups six selections of two unique gadgets into 3 + 3 stacks", async () => {
+  const actor = new TestActor({ level: 17 });
+  const service = makeService({
+    selection: [
+      "charged-boot", "charged-boot", "charged-boot",
+      "force-glove", "force-glove", "force-glove"
+    ],
+    randomIds: ["generation-new", "instance-boot", "instance-glove"]
+  });
+
+  assert.equal(await service.handleRestCompleted(actor, { type: "long" }, {}), true);
+  const gadgets = getPreparedCraftsmanGadgets(actor);
+  assert.equal(gadgets.length, 2);
+  assert.deepEqual(
+    gadgets.map((item) => [item.flags["rebreya-main"].craftsmanGadget.catalogId, item.system.quantity]),
+    [["charged-boot", 3], ["force-glove", 3]]
+  );
 });
 
 test("Mechanic templates are hidden from other Craftsmen and allowed for Mechanic", async () => {
@@ -212,14 +232,14 @@ test("Mechanic templates are hidden from other Craftsmen and allowed for Mechani
 test("cancelling selection recreates the previous types as a fresh generation", async () => {
   const actor = new TestActor({
     level: 1,
-    items: [preparedGadget("force-glove"), preparedGadget("smoke-device")]
+    items: [preparedGadget("force-glove", "old", "old-force", 2)]
   });
-  const service = makeService({ selection: null, randomIds: ["generation-new", "instance-a", "instance-b"] });
+  const service = makeService({ selection: null, randomIds: ["generation-new", "instance-a"] });
   await service.handleRestCompleted(actor, { type: "long" }, {});
   const gadgets = getPreparedCraftsmanGadgets(actor);
-  assert.deepEqual(gadgets.map((item) => item.flags["rebreya-main"].craftsmanGadget.catalogId), [
-    "force-glove", "smoke-device"
-  ]);
+  assert.equal(gadgets.length, 1);
+  assert.equal(gadgets[0].flags["rebreya-main"].craftsmanGadget.catalogId, "force-glove");
+  assert.equal(gadgets[0].system.quantity, 2);
   assert.ok(gadgets.every((item) => item.flags["rebreya-main"].craftsmanGadget.restGeneration === "generation-new"));
 });
 
@@ -237,22 +257,54 @@ test("failed creation rolls back only the new generation and retains old gadgets
   });
 
   assert.equal(await service.handleRestCompleted(actor, { type: "long" }, {}), false);
-  assert.deepEqual(getPreparedCraftsmanGadgets(actor), []);
+  assert.deepEqual(getPreparedCraftsmanGadgets(actor), [old]);
   assert.equal(actor.items.contents.includes(old), true);
   assert.deepEqual(actor.deleted, ["partial-new"]);
+  assert.equal(actor.flags["rebreya-main"]?.craftsmanGadgets, undefined);
 });
 
-test("old generation expires before the preparation prompt opens", async () => {
+test("old generation remains authoritative until the replacement set is complete", async () => {
   const old = preparedGadget("smoke-device");
   const actor = new TestActor({ level: 1, items: [old] });
   const service = makeService({ randomIds: ["generation-new", "instance-a"] });
   service.options.promptLoadout = async () => {
-    assert.equal(actor.flags["rebreya-main"].craftsmanGadgets.restGeneration, "generation-new");
-    assert.deepEqual(getPreparedCraftsmanGadgets(actor), []);
+    assert.equal(actor.flags["rebreya-main"]?.craftsmanGadgets, undefined);
+    assert.deepEqual(getPreparedCraftsmanGadgets(actor), [old]);
     return null;
   };
 
   await service.handleRestCompleted(actor, { type: "long" }, {});
+});
+
+test("next long rest removes managed prepared active and spent gadgets from every generation", async () => {
+  const prepared = preparedGadget("force-glove", "current", "old-prepared");
+  const active = preparedGadget("smoke-device", "older", "old-active");
+  const spent = preparedGadget("charged-boot", "oldest", "old-spent");
+  active.flags["rebreya-main"].craftsmanGadget.state = "active";
+  spent.flags["rebreya-main"].craftsmanGadget.state = "spent";
+  const unmanaged = preparedGadget("magnetic-engine", "foreign", "unmanaged");
+  unmanaged.flags["rebreya-main"].craftsmanGadget.managed = false;
+  const actor = new TestActor({ level: 1, items: [prepared, active, spent, unmanaged] });
+  actor.flags["rebreya-main"] = {
+    craftsmanGadgets: {
+      restGeneration: "current",
+      selectedIds: ["force-glove", "force-glove"]
+    }
+  };
+  const cleanedSmoke = [];
+  const service = makeService({
+    selection: ["force-glove", "force-glove"],
+    randomIds: ["generation-new", "instance-new"]
+  });
+  service.options.zoneService = { deleteByInstanceId: async (id) => cleanedSmoke.push(id) };
+
+  assert.equal(await service.handleRestCompleted(actor, { type: "long" }, {}), true);
+  assert.equal(actor.items.contents.includes(prepared), false);
+  assert.equal(actor.items.contents.includes(active), false);
+  assert.equal(actor.items.contents.includes(spent), false);
+  assert.equal(actor.items.contents.includes(unmanaged), true);
+  assert.deepEqual(cleanedSmoke, ["old-active"]);
+  assert.deepEqual(actor.deleted.sort(), ["old-active", "old-prepared", "old-spent"].sort());
 });
 
 test("activating another gadget spends the previous active instance", async () => {

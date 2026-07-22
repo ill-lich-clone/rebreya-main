@@ -3,6 +3,10 @@ import {
   CRAFTSMAN_CLASS_IDENTIFIER,
   MODULE_ID
 } from "../constants.js";
+import {
+  buildCraftsmanGadgetItemSource,
+  expandCraftsmanGadgetSelection
+} from "../data/craftsman-gadget-item-data.js";
 import { getCraftsmanSubclasses } from "../integrations/craftsman-subclass-tracks.js";
 
 const MECHANIC_ARCHETYPE_ID = "craftsman-research-mechanic";
@@ -92,12 +96,6 @@ function combatTurnKey(combat) {
   return id && Number.isFinite(round) && Number.isFinite(turn) ? `${id}:${round}:${turn}` : "";
 }
 
-function stripEmbeddedIdentity(data) {
-  const copy = clone(data);
-  for (const key of ["_id", "id", "uuid", "folder", "pack", "parent"]) delete copy[key];
-  return copy;
-}
-
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -121,12 +119,7 @@ export function getCraftsmanGadgetCapacity(actor) {
 }
 
 export function getPreparedCraftsmanGadgets(actor) {
-  const currentGeneration = cleanString(actorGadgetState(actor)?.restGeneration);
-  return actorItems(actor).filter((item) => {
-    const state = instanceState(item);
-    return state?.managed === true
-      && (!currentGeneration || cleanString(state.restGeneration) === currentGeneration);
-  });
+  return actorItems(actor).filter((item) => instanceState(item)?.managed === true);
 }
 
 export class CraftsmanGadgetService {
@@ -378,28 +371,21 @@ export class CraftsmanGadgetService {
 
   async #replaceLoadout(actor) {
     const oldGadgets = getPreparedCraftsmanGadgets(actor);
-    const previousSelectedIds = oldGadgets
-      .map((item) => cleanString(instanceState(item)?.catalogId))
-      .filter(Boolean);
+    const savedSelectedIds = Array.isArray(actorGadgetState(actor)?.selectedIds)
+      ? actorGadgetState(actor).selectedIds.map(cleanString).filter(Boolean)
+      : [];
+    const previousSelectedIds = savedSelectedIds.length
+      ? savedSelectedIds
+      : expandCraftsmanGadgetSelection(oldGadgets);
     const restGeneration = this.#randomId();
-    await this.#updateActorGadgetState(actor, {
-      restGeneration,
-      selectedIds: previousSelectedIds,
-      activeInstanceId: ""
-    });
-    for (const oldGadget of oldGadgets) {
-      if (instanceState(oldGadget)?.state === "active") {
-        await this.#cleanupGadget(actor, oldGadget, instanceState(oldGadget));
-      }
-    }
     const choices = await this.#availableTemplates(actor);
     if (!choices.length) return false;
 
     const capacity = getCraftsmanGadgetCapacity(actor);
-    const selected = await this.#promptLoadout(actor, choices, capacity, oldGadgets);
+    const selected = await this.#promptLoadout(actor, choices, capacity, previousSelectedIds);
     const requestedIds = Array.isArray(selected)
       ? selected.map(cleanString).filter(Boolean)
-      : oldGadgets.map((item) => cleanString(instanceState(item)?.catalogId)).filter(Boolean);
+      : previousSelectedIds;
     const byId = new Map(choices.map((entry) => [entry.id, entry]));
     const catalogIds = requestedIds.slice(0, capacity).filter((id) => byId.has(id));
     if (!catalogIds.length) return false;
@@ -415,24 +401,26 @@ export class CraftsmanGadgetService {
     if (needsVehicle && !researchVehicle) {
       researchVehicle = await this.options.vehicleService?.selectResearchObject?.(actor) ?? null;
     }
-    const createData = catalogIds.map((catalogId) => {
-      const entry = byId.get(catalogId);
-      const data = stripEmbeddedIdentity(entry.documentData);
-      data.flags ??= {};
-      data.flags[MODULE_ID] ??= {};
-      data.flags[MODULE_ID].craftsmanGadget = {
-        managed: true,
-        catalogId,
+    const groupedSelections = new Map();
+    for (const catalogId of catalogIds) {
+      const vehicleUuid = byId.get(catalogId)?.availability === "mechanic"
+        ? cleanString(researchVehicle?.uuid)
+        : "";
+      const key = `${catalogId}\u0000${vehicleUuid}`;
+      const group = groupedSelections.get(key) ?? { catalogId, vehicleUuid, quantity: 0 };
+      group.quantity += 1;
+      groupedSelections.set(key, group);
+    }
+    const createData = Array.from(groupedSelections.values()).map((group) => (
+      buildCraftsmanGadgetItemSource(byId.get(group.catalogId).documentData, {
+        catalogId: group.catalogId,
         ownerUuid: cleanString(actor?.uuid),
         instanceId: this.#randomId(),
         restGeneration,
-        state: "prepared",
-        vehicleUuid: byId.get(catalogId)?.availability === "mechanic"
-          ? cleanString(researchVehicle?.uuid)
-          : ""
-      };
-      return data;
-    });
+        quantity: group.quantity,
+        vehicleUuid: group.vehicleUuid
+      })
+    ));
 
     try {
       const created = await actor.createEmbeddedDocuments?.("Item", createData) ?? [];
@@ -440,17 +428,20 @@ export class CraftsmanGadgetService {
       if (createdStates.length !== createData.length || new Set(createdStates.map((state) => state.instanceId)).size !== createData.length) {
         throw new Error("Craftsman gadget generation was not created completely");
       }
+      for (const oldGadget of oldGadgets) {
+        await this.#cleanupGadget(actor, oldGadget, instanceState(oldGadget));
+      }
+      const oldIds = oldGadgets.map(documentId).filter(Boolean);
+      if (oldIds.length) await actor.deleteEmbeddedDocuments?.("Item", oldIds);
       await this.#updateActorGadgetState(actor, {
         restGeneration,
         selectedIds: catalogIds,
         activeInstanceId: ""
       });
-      const oldIds = oldGadgets.map(documentId).filter(Boolean);
-      if (oldIds.length) await actor.deleteEmbeddedDocuments?.("Item", oldIds);
       return true;
     }
     catch (error) {
-      const partialIds = getPreparedCraftsmanGadgets(actor)
+      const partialIds = actorItems(actor)
         .filter((item) => instanceState(item)?.restGeneration === restGeneration)
         .map(documentId)
         .filter(Boolean);
@@ -505,17 +496,17 @@ export class CraftsmanGadgetService {
     return typeof pack?.getDocuments === "function" ? collectionValues(await pack.getDocuments()) : [];
   }
 
-  async #promptLoadout(actor, choices, capacity, oldGadgets) {
+  async #promptLoadout(actor, choices, capacity, previousSelectedIds) {
     if (typeof this.options.promptLoadout === "function") {
       return this.options.promptLoadout(actor, clone(choices), {
         capacity,
-        previous: oldGadgets.map((item) => cleanString(instanceState(item)?.catalogId)).filter(Boolean)
+        previous: clone(previousSelectedIds)
       });
     }
     if (!actor?.isOwner && !globalThis.game?.user?.isGM) return null;
     const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
     if (typeof DialogV2?.wait !== "function") return null;
-    const previous = oldGadgets.map((item) => cleanString(instanceState(item)?.catalogId));
+    const previous = clone(previousSelectedIds);
     const selects = Array.from({ length: capacity }, (_, index) => {
       const options = choices.map((choice) => (
         `<option value="${escapeHtml(choice.id)}"${previous[index] === choice.id ? " selected" : ""}>${escapeHtml(choice.name)}</option>`
