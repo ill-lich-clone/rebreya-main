@@ -125,7 +125,7 @@ export function registerCraftsmanSubclassItemLinks() {
       if (!isCraftsmanClass(this)) return wrapped(...args);
       return getCraftsmanSubclasses(this).research;
     };
-    const id = libWrapperContract.api.register(MODULE_ID, ITEM_LINK_TARGET, wrapper, "WRAPPER");
+    const id = libWrapperContract.api.register(MODULE_ID, ITEM_LINK_TARGET, wrapper, "MIXED");
     itemLinkRegistration = { api: libWrapperContract.api, id, kind: "libWrapper" };
     return true;
   }
@@ -237,7 +237,7 @@ export function registerCraftsmanAdvancementManagerPatch() {
       if (!isCraftsmanClass(classItem)) return wrapped(classItem, levelDelta, ...args);
       return createCraftsmanLevelChangeSteps(this, classItem, levelDelta);
     };
-    const id = libWrapperContract.api.register(MODULE_ID, LEVEL_CHANGE_TARGET, wrapper, "WRAPPER");
+    const id = libWrapperContract.api.register(MODULE_ID, LEVEL_CHANGE_TARGET, wrapper, "MIXED");
     advancementManagerRegistration = { api: libWrapperContract.api, id, kind: "libWrapper" };
     return true;
   }

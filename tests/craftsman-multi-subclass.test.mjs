@@ -225,7 +225,23 @@ function createLibWrapperHarness() {
     }
   };
 
-  return {
+  const restoreRegistration = (id, action = null, packageId = MODULE_ID) => {
+    const registration = registrations.get(id);
+    if (!registration) return;
+    if (action) calls.push({ action, packageId, id });
+    if (registration.kind === "getter") {
+      const current = Object.getOwnPropertyDescriptor(registration.prototype, registration.property);
+      if (current?.get === registration.owned.get) {
+        Object.defineProperty(registration.prototype, registration.property, registration.original);
+      }
+    }
+    else if (registration.prototype[registration.property] === registration.owned) {
+      registration.prototype[registration.property] = registration.original;
+    }
+    registrations.delete(id);
+  };
+
+  const harness = {
     calls,
     register(packageId, targetPath, wrapper, type) {
       const target = targets[targetPath];
@@ -237,38 +253,42 @@ function createLibWrapperHarness() {
         const owned = {
           ...original,
           get: function() {
-            return wrapper.call(this, original.get.bind(this));
+            let chained = false;
+            const wrapped = (...args) => {
+              chained = true;
+              return original.get.call(this, ...args);
+            };
+            const result = wrapper.call(this, wrapped);
+            if (type === "WRAPPER" && !chained) restoreRegistration(id, "auto-unregister", packageId);
+            return result;
           }
         };
         Object.defineProperty(target.prototype, target.property, owned);
-        registrations.set(id, { ...target, original, owned });
+        registrations.set(id, { ...target, original, owned, type });
       }
       else {
         const original = target.prototype[target.property];
         const owned = function(...args) {
-          return wrapper.call(this, original.bind(this), ...args);
+          let chained = false;
+          const wrapped = (...wrappedArgs) => {
+            chained = true;
+            return original.call(this, ...wrappedArgs);
+          };
+          const result = wrapper.call(this, wrapped, ...args);
+          if (type === "WRAPPER" && !chained) restoreRegistration(id, "auto-unregister", packageId);
+          return result;
         };
         target.prototype[target.property] = owned;
-        registrations.set(id, { ...target, original, owned });
+        registrations.set(id, { ...target, original, owned, type });
       }
       return id;
     },
     unregister(packageId, id) {
       calls.push({ action: "unregister", packageId, id });
-      const registration = registrations.get(id);
-      if (!registration) return;
-      if (registration.kind === "getter") {
-        const current = Object.getOwnPropertyDescriptor(registration.prototype, registration.property);
-        if (current?.get === registration.owned.get) {
-          Object.defineProperty(registration.prototype, registration.property, registration.original);
-        }
-      }
-      else if (registration.prototype[registration.property] === registration.owned) {
-        registration.prototype[registration.property] = registration.original;
-      }
-      registrations.delete(id);
+      restoreRegistration(id);
     }
   };
+  return harness;
 }
 
 afterEach(() => {
@@ -534,15 +554,36 @@ test("direct registration teardown restores only wrappers still owned by this in
 test("active libWrapper is preferred, uses installed public targets, and unregisters by owned ids", () => {
   const libWrapper = createLibWrapperHarness();
   installGlobals({ libWrapperActive: true, libWrapper });
-  const { craftsman, research } = makeCraftsmanFixture();
+  const { actor, craftsman, research } = makeCraftsmanFixture();
+  const ordinaryClass = makeItem({ id: "fighter", type: "class", identifier: "fighter-v01", levels: 1 });
+  const ordinarySubclass = makeItem({ id: "fighter-subclass", type: "subclass", classIdentifier: "fighter-v01" });
+  actor.items.push(ordinaryClass, ordinarySubclass);
+  ordinaryClass.actor = ordinaryClass.parent = actor;
+  ordinarySubclass.actor = ordinarySubclass.parent = actor;
 
   assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
   assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
+  assert.equal(ordinaryClass.subclass, ordinarySubclass, "an ordinary getter invocation chains to native");
+  assert.equal(craftsman.subclass, research, "a Craftsman getter invocation may skip wrapped");
+  assert.equal(craftsman.subclass, research, "skipping wrapped must not unregister the getter");
+
+  const ordinaryManager = new AdvancementManagerStub(actor);
+  assert.equal(ordinaryManager.createLevelChangeSteps(ordinaryClass, 1).native, true);
+  const craftsmanManager = new AdvancementManagerStub(actor);
+  assert.equal(craftsmanManager.createLevelChangeSteps(craftsman, 0), craftsmanManager);
+  const repeatedCraftsmanManager = new AdvancementManagerStub(actor);
+  assert.equal(
+    repeatedCraftsmanManager.createLevelChangeSteps(craftsman, 0),
+    repeatedCraftsmanManager,
+    "skipping wrapped must not unregister the manager patch"
+  );
+  assert.equal(originalSubclassCalls, 1, "the ordinary getter invokes its original exactly once");
+  assert.equal(AdvancementManagerStub.originalCalls, 1, "the ordinary manager invokes its original exactly once");
+  assert.equal(libWrapper.calls.some((call) => call.action === "auto-unregister"), false);
   assert.deepEqual(libWrapper.calls.map((call) => [call.action, call.targetPath, call.type]), [
-    ["register", "CONFIG.Item.documentClass.prototype.subclass", "WRAPPER"],
-    ["register", "game.dnd5e.applications.advancement.AdvancementManager.prototype.createLevelChangeSteps", "WRAPPER"]
+    ["register", "CONFIG.Item.documentClass.prototype.subclass", "MIXED"],
+    ["register", "game.dnd5e.applications.advancement.AdvancementManager.prototype.createLevelChangeSteps", "MIXED"]
   ]);
-  assert.equal(craftsman.subclass, research, "the registered libWrapper getter must execute real relationship behavior");
 
   unregisterCraftsmanMultiSubclassIntegration();
   assert.deepEqual(libWrapper.calls.slice(2).map((call) => [call.action, call.id]), [
