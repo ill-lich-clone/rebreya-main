@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { createAutomationActivity } from "../data/races-compendium.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const SOCKET_EVENT_RACE_AUTOMATION = "race-automation";
@@ -9,6 +10,18 @@ const EFFECT_MODE_OVERRIDE = 5;
 
 const RACE_AUTOMATION_FLAG = "automation";
 const RACE_ACTIVITY_RUNTIME_FLAG = "runtime";
+const GIANT_TRIBE_ITEM_NAME = "Великанье племя";
+const GIANT_TRIBE_RACE_ID = "полувеликаны";
+const GIANT_TRIBE_ABILITY_ID = "полувеликаны-ability-3";
+const GIANT_TRIBE_VALUES = new Set(["hill", "stone", "frost", "fire", "cloud", "storm"]);
+const GIANT_TRIBE_LABELS = {
+  hill: "Холмовой великан",
+  stone: "Каменный великан",
+  frost: "Ледяной великан",
+  fire: "Огненный великан",
+  cloud: "Облачный великан",
+  storm: "Штормовой великан"
+};
 
 const DAMAGE_REDUCTION_FLAG = `flags.${MODULE_ID}.raceAutomation`;
 const RACE_ABILITY_KEYS = new Set(["str", "dex", "con", "int", "wis", "cha"]);
@@ -339,6 +352,190 @@ function racePenaltyEffectMatches(effect, desired) {
   return JSON.stringify(normalized(effect)) === JSON.stringify(normalized(desired));
 }
 
+function giantTribeFlag(item) {
+  return item?.getFlag?.(MODULE_ID, "raceAutomation")?.giantTribe
+    ?? getProperty(item, `flags.${MODULE_ID}.raceAutomation.giantTribe`, null);
+}
+
+function isOwnedGiantTribeItem(item) {
+  const actor = actorFromOwnedItem(item);
+  const flags = item?.flags?.[MODULE_ID] ?? {};
+  return Boolean(
+    item
+    && !item.pack
+    && item.type === "feat"
+    && actor?.type === "character"
+    && flags.sourceType === "raceFeature"
+    && flags.raceId === GIANT_TRIBE_RACE_ID
+    && (
+      flags.abilityId === GIANT_TRIBE_ABILITY_ID
+      || flags.featureId === `${GIANT_TRIBE_RACE_ID}::${GIANT_TRIBE_ABILITY_ID}`
+    )
+  );
+}
+
+function giantTribeEffect(name, tribe, changes) {
+  return {
+    name,
+    type: "base",
+    img: "icons/svg/aura.svg",
+    disabled: false,
+    transfer: true,
+    changes: changes.map((change) => ({ ...change, priority: 20 })),
+    flags: {
+      [MODULE_ID]: {
+        giantTribe: { managed: true, tribe }
+      }
+    }
+  };
+}
+
+function giantTribeActivity(spec, index, tribe) {
+  const activity = createAutomationActivity({
+    featureId: `${GIANT_TRIBE_RACE_ID}::${GIANT_TRIBE_ABILITY_ID}::configured`,
+    name: GIANT_TRIBE_ITEM_NAME
+  }, spec, index, []);
+  activity.flags[MODULE_ID].giantTribe = { managed: true, tribe };
+  return activity;
+}
+
+export function buildGiantTribeConfiguration(value) {
+  const tribe = cleanText(value).toLowerCase();
+  if (!GIANT_TRIBE_VALUES.has(tribe)) {
+    return null;
+  }
+
+  const effects = [];
+  if (tribe === "hill") {
+    effects.push(giantTribeEffect("Холмовой великан: Выживание", tribe, [{
+      key: "system.skills.sur.roll.mode",
+      mode: EFFECT_MODE_ADD,
+      value: "1"
+    }]));
+  }
+  else if (tribe === "frost") {
+    effects.push(giantTribeEffect("Ледяной великан: сопротивление холоду", tribe, [{
+      key: "system.traits.dr.value",
+      mode: EFFECT_MODE_ADD,
+      value: "cold"
+    }]));
+  }
+  else if (tribe === "fire") {
+    effects.push(giantTribeEffect("Огненный великан: инструменты кузнеца", tribe, [{
+      key: "system.tools.smith.value",
+      mode: EFFECT_MODE_UPGRADE,
+      value: "1"
+    }]));
+  }
+  else if (tribe === "cloud") {
+    effects.push(
+      giantTribeEffect("Облачный великан: Обман", tribe, [{
+        key: "system.skills.dec.bonuses.check",
+        mode: EFFECT_MODE_ADD,
+        value: "2"
+      }]),
+      giantTribeEffect("Облачный великан: Убеждение", tribe, [{
+        key: "system.skills.per.bonuses.check",
+        mode: EFFECT_MODE_ADD,
+        value: "2"
+      }])
+    );
+  }
+
+  const activities = [giantTribeActivity({
+    type: "utility",
+    name: "Выбрать племя",
+    activation: "special",
+    runtime: {
+      action: "chooseGiantTribe",
+      mechanic: "giant-tribe-choice"
+    },
+    note: "Повторно выберите племя полувеликана. Предыдущая автоматизация будет заменена."
+  }, 0, tribe)];
+
+  if (tribe === "storm") {
+    activities.push(giantTribeActivity({
+      type: "damage",
+      name: "Штормовой великан: касание",
+      activation: "special",
+      condition: "Цель поддерживает с вами прямой контакт.",
+      range: null,
+      rangeUnits: "touch",
+      targetType: "creature",
+      targetCount: "1",
+      prompt: true,
+      damage: {
+        formula: "1d4",
+        types: ["lightning"]
+      },
+      note: "Цель при прямом контакте получает 1к4 урона электричеством."
+    }, 1, tribe));
+  }
+
+  return {
+    tribe,
+    label: GIANT_TRIBE_LABELS[tribe],
+    effects,
+    activities
+  };
+}
+
+function effectComparable(effect) {
+  return {
+    name: cleanText(effect?.name),
+    type: cleanText(effect?.type, "base"),
+    img: cleanText(effect?.img),
+    disabled: effect?.disabled === true,
+    transfer: effect?.transfer === true,
+    changes: normalizeCollection(effect?.changes).map((change) => ({
+      key: cleanText(change?.key),
+      mode: Number(change?.mode ?? 0),
+      value: cleanText(change?.value),
+      priority: Number(change?.priority ?? 0)
+    })),
+    giantTribe: effect?.flags?.[MODULE_ID]?.giantTribe ?? null
+  };
+}
+
+function activityData(activity) {
+  if (typeof activity?.toObject === "function") {
+    return activity.toObject();
+  }
+  return foundry.utils.deepClone(activity);
+}
+
+function ownedItemActivities(item) {
+  const activities = item?.system?.activities;
+  if (!activities) {
+    return [];
+  }
+  if (Array.isArray(activities)) {
+    return activities;
+  }
+  if (Array.isArray(activities.contents)) {
+    return activities.contents;
+  }
+  if (typeof activities.values === "function") {
+    return Array.from(activities.values());
+  }
+  return Object.values(activities);
+}
+
+function isManagedGiantTribeEffect(effect) {
+  const flags = effect?.flags?.[MODULE_ID] ?? {};
+  return flags.giantTribe?.managed === true || flags.automation === "race-feature-effect";
+}
+
+function isManagedGiantTribeActivity(activity) {
+  const flags = activity?.flags?.[MODULE_ID] ?? {};
+  const runtimeAction = cleanText(flags.runtime?.action);
+  return flags.giantTribe?.managed === true
+    || flags.automation === "race-feature-activity"
+    || runtimeAction === "chooseGiantTribe"
+    || (runtimeAction === "promptCustomEffect" && cleanText(activity?.name) === "Применить остаток механики")
+    || cleanText(activity?.name) === "Штормовой великан: касание";
+}
+
 function resolveTokenFromTarget(target) {
   if (!target) {
     return null;
@@ -538,11 +735,16 @@ export class RaceAutomationService {
     if (
       !isCurrentUserHook(userId)
       || options?.[MODULE_ID]?.skipRaceItemConfiguration === true
-      || !isOwnedRacePenaltyItem(item)
     ) {
       return false;
     }
-    return this.#configureRaceAbilityPenalty(item);
+    if (isOwnedRacePenaltyItem(item)) {
+      return this.#configureRaceAbilityPenalty(item);
+    }
+    if (isOwnedGiantTribeItem(item)) {
+      return this.#configureGiantTribe(item);
+    }
+    return false;
   }
 
   async repairActor(actor) {
@@ -553,6 +755,9 @@ export class RaceAutomationService {
     for (const item of normalizeCollection(actor.items)) {
       if (isOwnedRacePenaltyItem(item)) {
         changed = (await this.#configureRaceAbilityPenalty(item)) || changed;
+      }
+      else if (isOwnedGiantTribeItem(item)) {
+        changed = (await this.#configureGiantTribe(item)) || changed;
       }
     }
     return changed;
@@ -652,6 +857,100 @@ export class RaceAutomationService {
     return changed;
   }
 
+  async #configureGiantTribe(item, { forceChoice = false } = {}) {
+    const actor = actorFromOwnedItem(item);
+    if (!isOwnedGiantTribeItem(item) || !canConfigureOwnedRaceActor(actor)) {
+      return false;
+    }
+
+    const itemKey = cleanText(item.uuid ?? item.id ?? item._id);
+    if (!itemKey || this._pendingItemConfigurations.has(itemKey)) {
+      return false;
+    }
+    this._pendingItemConfigurations.add(itemKey);
+
+    try {
+      let tribe = cleanText(giantTribeFlag(item)).toLowerCase();
+      if (forceChoice || !GIANT_TRIBE_VALUES.has(tribe)) {
+        const choices = Array.from(GIANT_TRIBE_VALUES, (value) => ({
+          value,
+          label: GIANT_TRIBE_LABELS[value]
+        }));
+        tribe = cleanText(
+          this._promptChoice
+            ? await this._promptChoice({ actor, item, title: "Выберите великанье племя", choices })
+            : await this.#choice(actor, "Выберите великанье племя", choices)
+        ).toLowerCase();
+        if (!GIANT_TRIBE_VALUES.has(tribe)) {
+          return false;
+        }
+      }
+
+      const configuration = buildGiantTribeConfiguration(tribe);
+      let changed = false;
+      changed = (await this.#syncGiantTribeEffects(item, configuration)) || changed;
+      changed = (await this.#syncGiantTribeActivities(item, configuration)) || changed;
+
+      const desiredName = `${GIANT_TRIBE_ITEM_NAME} (${configuration.label})`;
+      if (cleanText(item.name) !== desiredName || cleanText(giantTribeFlag(item)).toLowerCase() !== tribe) {
+        await item.update({
+          name: desiredName,
+          [`flags.${MODULE_ID}.raceAutomation.giantTribe`]: tribe
+        }, racePenaltyUpdateOptions());
+        changed = true;
+      }
+      return changed;
+    }
+    finally {
+      this._pendingItemConfigurations.delete(itemKey);
+    }
+  }
+
+  async #syncGiantTribeEffects(item, configuration) {
+    const managed = normalizeCollection(item?.effects).filter(isManagedGiantTribeEffect);
+    const desired = configuration.effects;
+    const matches = managed.length === desired.length
+      && managed.every((effect, index) => (
+        JSON.stringify(effectComparable(effect)) === JSON.stringify(effectComparable(desired[index]))
+      ));
+    if (matches) {
+      return false;
+    }
+
+    const ids = managed.map((effect) => effect.id ?? effect._id).filter(Boolean);
+    if (ids.length > 0) {
+      await item.deleteEmbeddedDocuments("ActiveEffect", ids, racePenaltyUpdateOptions());
+    }
+    if (desired.length > 0) {
+      await item.createEmbeddedDocuments(
+        "ActiveEffect",
+        foundry.utils.deepClone(desired),
+        racePenaltyUpdateOptions()
+      );
+    }
+    return ids.length > 0 || desired.length > 0;
+  }
+
+  async #syncGiantTribeActivities(item, configuration) {
+    const current = ownedItemActivities(item);
+    const managed = current.filter(isManagedGiantTribeActivity).map(activityData);
+    const desired = configuration.activities;
+    if (JSON.stringify(managed) === JSON.stringify(desired)) {
+      return false;
+    }
+
+    const preserved = current.filter((activity) => !isManagedGiantTribeActivity(activity)).map(activityData);
+    const next = {};
+    for (const activity of [...preserved, ...desired]) {
+      const id = cleanText(activity?._id ?? activity?.id);
+      if (id) {
+        next[id] = activity;
+      }
+    }
+    await item.update({ "system.activities": next }, racePenaltyUpdateOptions());
+    return true;
+  }
+
   async handleSocketMessage(payload = {}, { senderId = "" } = {}) {
     if (!canProcessRaceAutomationSocket(senderId)) {
       return false;
@@ -718,6 +1017,11 @@ export class RaceAutomationService {
 
     const runtime = activityRuntime(activity) ?? {};
     const action = cleanText(runtime.action);
+
+    if (action === "chooseGiantTribe") {
+      await this.#configureGiantTribe(activity?.item, { forceChoice: true });
+      return true;
+    }
 
     if (action === "applyItemEffects") {
       await this.#applyLinkedActivityEffects(activity, actor);

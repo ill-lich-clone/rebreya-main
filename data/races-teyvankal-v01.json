@@ -7653,101 +7653,41 @@
           "options": [],
           "automation": {
             "version": "0.1-dnd5e-5.2.5",
-            "coverage": "full",
-            "status": "automated",
-            "effects": [
-              {
-                "label": "Ледяной великан: сопротивление холоду",
-                "key": "system.traits.dr.value",
-                "value": "cold",
-                "mode": 2,
-                "priority": null,
-                "note": "Ледяной великан: сопротивление холоду",
-                "transfer": false,
-                "mechanic": "damage-traits"
-              },
-              {
-                "label": "Огненный великан: инструменты кузнеца",
-                "key": "system.tools.smith.value",
-                "value": "1",
-                "mode": 4,
-                "priority": null,
-                "note": "Владение инструментами кузнеца",
-                "transfer": false,
-                "mechanic": "proficiencies"
-              },
-              {
-                "label": "Облачный великан: Обман",
-                "key": "system.skills.dec.bonuses.check",
-                "value": "2",
-                "mode": 2,
-                "priority": null,
-                "note": "+2 к Обману",
-                "transfer": false,
-                "mechanic": "proficiencies"
-              },
-              {
-                "label": "Облачный великан: Убеждение",
-                "key": "system.skills.per.bonuses.check",
-                "value": "2",
-                "mode": 2,
-                "priority": null,
-                "note": "+2 к Убеждению",
-                "transfer": false,
-                "mechanic": "proficiencies"
-              }
-            ],
+            "coverage": "partial",
+            "status": "partial",
+            "effects": [],
             "activities": [
               {
-                "type": "damage",
-                "name": "Штормовой великан: касание",
-                "activation": "special",
-                "condition": "",
-                "range": null,
-                "uses": null,
-                "damage": {
-                  "formula": "1d4",
-                  "types": [
-                    "lightning"
-                  ]
-                },
-                "appliedEffects": [],
-                "runtime": null,
-                "note": "Урон 1к4 электричеством при контакте добавлен как кнопка.",
-                "mechanic": "damage-activity"
-              },
-              {
                 "type": "utility",
-                "name": "Применить остаток механики",
+                "name": "Выбрать племя",
                 "activation": "special",
                 "condition": "",
                 "range": null,
                 "uses": null,
                 "appliedEffects": [],
                 "runtime": {
-                  "action": "promptCustomEffect",
+                  "action": "chooseGiantTribe",
                   "activation": "special",
                   "uses": null,
-                  "mechanic": "interactive-runtime",
-                  "title": "Великанье племя",
-                  "prompt": "У особенности есть условный выбор, сцена, цель или ресурс. Подтвердите применение и задайте Active Effect; rebreya-main создаст эффект и отследит длительность."
+                  "mechanic": "giant-tribe-choice",
+                  "title": "Великанье племя"
                 },
-                "note": "Интерактивное применение условной части: prompt, расход activity uses, создание Active Effect.",
-                "mechanic": "interactive-runtime"
+                "note": "Выберите племя полувеликана. Черта получит только соответствующую автоматизацию.",
+                "mechanic": "giant-tribe-choice"
               }
             ],
             "uses": null,
             "advancements": [],
             "runtime": null,
             "mechanics": [
-              "choice-table",
-              "damage-traits",
-              "proficiencies",
-              "damage-activity",
+              "giant-tribe-choice",
               "interactive-runtime"
             ],
-            "manualNotes": [],
-            "notes": "Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.",
+            "manualNotes": [
+              "Каменный великан остаётся описательной механикой.",
+              "Штормовой великан предоставляет ручную кнопку урона по выбранной цели."
+            ],
+            "notes": "При выдаче черты модуль спрашивает племя и добавляет только выбранный пассивный эффект либо штормовую кнопку урона.",
             "sourceRef": {
               "raceId": "полувеликаны",
               "entryId": "полувеликаны-ability-3",

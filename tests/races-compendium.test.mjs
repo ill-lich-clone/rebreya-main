@@ -281,3 +281,21 @@ test("Нечеловеческая сила raises only the Strength maximum to 
   }]);
   assert.equal(changes.some((change) => change.key === "system.abilities.str.value"), false);
 });
+
+test("Великанье племя publishes only the runtime tribe chooser", () => {
+  const source = JSON.parse(readFileSync(
+    new URL("../data/races-teyvankal-v01.json", import.meta.url),
+    "utf8"
+  ));
+  const halfGiant = source.races.find((race) => race.id === "полувеликаны");
+  const feature = halfGiant.abilities.find((ability) => ability.name === "Великанье племя");
+
+  assert.equal(feature.automation.coverage, "partial");
+  assert.deepEqual(feature.automation.effects, []);
+  assert.deepEqual(feature.automation.mechanics, ["giant-tribe-choice", "interactive-runtime"]);
+  assert.equal(feature.automation.activities.length, 1);
+  assert.equal(feature.automation.activities[0].type, "utility");
+  assert.equal(feature.automation.activities[0].name, "Выбрать племя");
+  assert.equal(feature.automation.activities[0].runtime.action, "chooseGiantTribe");
+  assert.equal(feature.automation.activities.some((activity) => activity.type === "damage"), false);
+});

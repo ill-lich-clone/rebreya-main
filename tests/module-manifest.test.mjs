@@ -328,7 +328,7 @@ test("combat automation imports preserve their released cache busts", async () =
 
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.4\.109-race-item-config/u,
+    /combat\/hooks\.js\?v=1\.4\.109-giant-tribe/u,
   );
   assert.match(
     entrypointSource,
@@ -375,13 +375,13 @@ test("character size automation is wired into module initialization and combat h
   assert.match(hooksSource, /sizeAutomationService\.syncActor/u);
 });
 
-test("owned race penalty configuration is wired to create and sheet repair hooks", async () => {
+test("owned race and Giant Tribe configuration is wired to create and sheet repair hooks", async () => {
   const [entrypointSource, hooksSource] = await Promise.all([
     readCanonicalEntrypointSource(),
     readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8")
   ]);
 
-  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.109-race-item-config/u);
+  assert.match(entrypointSource, /race-automation-service\.js\?v=1\.4\.109-giant-tribe/u);
   assert.match(
     hooksSource,
     /moduleApi\.raceAutomationService\.handleCreatedItem\(item, options, userId\)/u

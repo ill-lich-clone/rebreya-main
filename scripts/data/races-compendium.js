@@ -1228,7 +1228,7 @@ function defaultActivityTarget(activity) {
   };
 }
 
-function createAutomationActivity(feature, activity, index = 0, effectRefs = []) {
+export function createAutomationActivity(feature, activity, index = 0, effectRefs = []) {
   const type = cleanString(activity?.type, "utility");
   const rangeValue = activity?.range ?? null;
   const rangeUnits = cleanString(activity?.rangeUnits, rangeValue ? "ft" : "self");

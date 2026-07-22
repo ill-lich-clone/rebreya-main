@@ -5,8 +5,8 @@
 ## Итог
 
 - Рас: full 34, partial 0, manual 0.
-- Особенностей и вариантов: full 131, partial 0, manual 0.
-- Типы механик: ability-score-advancement, armor-class, attack-damage, attack-hook, broken-source, carrying-capacity, choice-options, choice-runtime, choice-table, climb-penalty, condition-traits, conditional-attack-advantage, conditional-damage-reduction, conditional-save-advantage, crafting, crafting-flags, creature-type, d20-reroll, damage-absorption-choice, damage-activity, damage-choice, damage-hook, damage-reduction, damage-resistance-choice, damage-traits, dnd5e-character-flag, effects, elemental-subrace-choice, environment-adaptation, environment-flags, feat-choice, feat-grant, feature-grants, fury-small, gm-defined-runtime, gm-defined-terrain, half-proficiency, healing-activity, hit-points, interactive-runtime, keen-eye-damage, language-advancement, midi-damage-hook, movement, movement-hook, movement-permission, opportunity-attacks, placeholder, proficiencies, proficiency-swap, race-base-fields, race-size, racial-feat-choice, reaction-suppression, rest-hook, rest-rules, save-activity, saving-throw-proficiency-choice, senses, spell-choice, spell-slot-scaling, surprise-attack, tool-proficiency-choice, utility-activity, zero-hp-recovery.
+- Особенностей и вариантов: full 130, partial 1, manual 0.
+- Типы механик: ability-score-advancement, armor-class, attack-damage, attack-hook, broken-source, carrying-capacity, choice-options, choice-runtime, choice-table, climb-penalty, condition-traits, conditional-attack-advantage, conditional-damage-reduction, conditional-save-advantage, crafting, crafting-flags, creature-type, d20-reroll, damage-absorption-choice, damage-activity, damage-choice, damage-hook, damage-reduction, damage-resistance-choice, damage-traits, dnd5e-character-flag, effects, elemental-subrace-choice, environment-adaptation, environment-flags, feat-choice, feat-grant, feature-grants, fury-small, giant-tribe-choice, gm-defined-runtime, gm-defined-terrain, half-proficiency, healing-activity, hit-points, interactive-runtime, keen-eye-damage, language-advancement, midi-damage-hook, movement, movement-hook, movement-permission, opportunity-attacks, placeholder, proficiencies, proficiency-swap, race-base-fields, race-size, racial-feat-choice, reaction-suppression, rest-hook, rest-rules, save-activity, saving-throw-proficiency-choice, senses, spell-choice, spell-slot-scaling, surprise-attack, tool-proficiency-choice, utility-activity, zero-hp-recovery.
 
 ## Полностью автоматизировано
 
@@ -120,7 +120,6 @@
 - Леониды: Тёмное зрение — Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.
 - Полувеликаны: Большое тело — Большой размер учитывается штатным полем расы.
 - Полувеликаны: Нечеловеческая сила — Автоматизировано: effects.
-- Полувеликаны: Великанье племя — Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.
 - Нефилимы: Разрозненная душа — Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.
 - Пепельные: Тёмное зрение — Автоматизировано: senses.
 - Пепельные: Боязнь воды — Полностью автоматизировано: штатная часть применена effects/activities, условная часть оформлена интерактивным runtime prompt с созданием Active Effect и расходом uses.
@@ -144,5 +143,6 @@
 
 ## Частично автоматизировано
 
+- Полувеликаны: Великанье племя — При выдаче черты модуль спрашивает племя и настраивает тот же Item. Холмовое, ледяное, огненное и облачное племена получают выбранный пассивный эффект; штормовое — кнопку 1к4 электричеством по цели. Каменное племя остаётся описательным.
 
 ## Вручную
