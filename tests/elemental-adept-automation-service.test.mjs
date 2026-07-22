@@ -517,3 +517,116 @@ test("Elemental Adept preserves full multi-roll messages while serializing concu
   assert.equal(await service.applyDnd5ePostDamageRoll(safeRolls, { subject: spellActivity(fireActor) }), false);
   assert.equal(updates.length, 2);
 });
+
+test("Elemental Adept Midi damage bypass merges selected spell types into resistance and absorption only", async () => {
+  const actor = makeCharacter([
+    makeFeat({ id: "fire", configuredType: "fire" }),
+    makeFeat({ id: "cold", configuredType: "cold" }),
+  ]);
+  const existingResistance = new Set(["acid"]);
+  const existingAbsorption = new Set(["lightning"]);
+  const options = {
+    ignore: {
+      resistance: existingResistance,
+      absorption: existingAbsorption,
+      immunity: new Set(["thunder"]),
+      vulnerability: false,
+      modification: new Set(["fire"]),
+      threshold: true,
+    },
+    save: { multiplier: 0.5 },
+  };
+  const untouched = structuredClone({
+    immunity: Array.from(options.ignore.immunity),
+    vulnerability: options.ignore.vulnerability,
+    modification: Array.from(options.ignore.modification),
+    threshold: options.ignore.threshold,
+    save: options.save,
+  });
+  const service = new ElementalAdeptAutomationService();
+
+  assert.equal(await service.applyMidiPreCalculateDamage(actor, [{
+    types: new Set(["fire", "cold", "radiant"]),
+    spell: true,
+  }], options), true);
+  assert.equal(options.ignore.resistance, existingResistance);
+  assert.equal(options.ignore.absorption, existingAbsorption);
+  assert.deepEqual(Array.from(options.ignore.resistance).sort(), ["acid", "cold", "fire"]);
+  assert.deepEqual(Array.from(options.ignore.absorption).sort(), ["cold", "fire", "lightning"]);
+  assert.deepEqual({
+    immunity: Array.from(options.ignore.immunity),
+    vulnerability: options.ignore.vulnerability,
+    modification: Array.from(options.ignore.modification),
+    threshold: options.ignore.threshold,
+    save: options.save,
+  }, untouched);
+});
+
+test("Elemental Adept Midi bypass resolves its source actor by UUID and skips unmatched or mundane damage", async () => {
+  const source = makeConfiguredCharacter("fire");
+  source.uuid = "Actor.elemental-source";
+  const options = { midi: { sourceActorUuid: source.uuid }, ignore: {} };
+  const resolved = [];
+  const service = new ElementalAdeptAutomationService(null, {
+    fromUuid: async (uuid) => {
+      resolved.push(uuid);
+      return uuid === source.uuid ? source : null;
+    },
+  });
+
+  assert.equal(await service.applyMidiPreCalculateDamage(null, [
+    { types: new Set(["fire"]), spell: false },
+    { types: new Set(["radiant"]), spell: true },
+  ], options), false);
+  assert.deepEqual(resolved, [source.uuid]);
+  assert.deepEqual(options.ignore, {});
+
+  assert.equal(await service.applyMidiPreCalculateDamage(null, [{
+    types: new Set(["fire"]),
+    spell: { type: "spell" },
+  }], options), true);
+  assert.deepEqual(Array.from(options.ignore.resistance), ["fire"]);
+  assert.deepEqual(Array.from(options.ignore.absorption), ["fire"]);
+});
+
+test("Elemental Adept tolerates absent and boolean ignore settings without changing immunity", async () => {
+  const actor = makeConfiguredCharacter("fire");
+  const service = new ElementalAdeptAutomationService();
+  const absent = {};
+  const booleanEntries = { ignore: { resistance: false, absorption: true, immunity: true } };
+  const damage = [{ type: "fire", spell: true }];
+
+  assert.equal(await service.applyMidiPreCalculateDamage(actor, damage, absent), true);
+  assert.deepEqual(Array.from(absent.ignore.resistance), ["fire"]);
+  assert.deepEqual(Array.from(absent.ignore.absorption), ["fire"]);
+  assert.equal(await service.applyMidiPreCalculateDamage(actor, damage, booleanEntries), true);
+  assert.deepEqual(Array.from(booleanEntries.ignore.resistance), ["fire"]);
+  assert.equal(booleanEntries.ignore.absorption, true);
+  assert.equal(booleanEntries.ignore.immunity, true);
+});
+
+test("Elemental Adept native fallback bypasses only resistance and fails open on ambiguous source attribution", async () => {
+  const actor = makeConfiguredCharacter("fire");
+  const service = new ElementalAdeptAutomationService();
+  const options = { ignore: { absorption: new Set(["cold"]) } };
+
+  assert.equal(await service.applyDnd5ePreCalculateDamage(actor, [{ types: new Set(["fire"]), spell: true }], options), true);
+  assert.deepEqual(Array.from(options.ignore.resistance), ["fire"]);
+  assert.deepEqual(Array.from(options.ignore.absorption), ["cold"]);
+
+  const ambiguous = { sourceActorUuid: "Actor.unknown", ignore: {} };
+  assert.equal(await service.applyDnd5ePreCalculateDamage(actor, [{ type: "fire", spell: true }], ambiguous), false);
+  assert.deepEqual(ambiguous.ignore, {});
+});
+
+test("Elemental Adept native fallback does not double-handle options processed by Midi", async () => {
+  const actor = makeConfiguredCharacter("fire");
+  const options = { ignore: {} };
+  const damage = [{ types: new Set(["fire"]), spell: true }];
+  const service = new ElementalAdeptAutomationService();
+
+  assert.equal(await service.applyMidiPreCalculateDamage(actor, damage, options), true);
+  assert.equal(await service.applyDnd5ePreCalculateDamage(actor, damage, options), false);
+  assert.deepEqual(Array.from(options.ignore.resistance), ["fire"]);
+  assert.deepEqual(Array.from(options.ignore.absorption), ["fire"]);
+});

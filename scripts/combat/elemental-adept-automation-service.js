@@ -13,6 +13,7 @@ export const ELEMENTAL_ADEPT_CHOICES = Object.freeze([
 ]);
 
 const ELEMENTAL_ADEPT_DAMAGE_TYPE_SET = new Set(ELEMENTAL_ADEPT_DAMAGE_TYPES);
+const ELEMENTAL_ADEPT_MIDI_DAMAGE_MARKER = Symbol("elementalAdeptMidiDamageHandled");
 
 function cleanString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -137,6 +138,70 @@ function elementalAdeptRollDamageTypes(roll) {
   const options = roll?.options ?? {};
   const values = [options.type, ...(typeof options.types === "string" ? [options.types] : normalizeCollection(options.types))];
   return new Set(values.map(normalizeElementalAdeptDamageType).filter(Boolean));
+}
+
+function elementalAdeptDamageDescriptionTypes(damage) {
+  const types = [damage?.type, damage?.damageType, ...normalizeCollection(damage?.types)];
+  return new Set(types.map(normalizeElementalAdeptDamageType).filter(Boolean));
+}
+
+function elementalAdeptDamageIsSpell(damage) {
+  return hasElementalAdeptSpellEvidence(damage?.activity ?? damage?.subject ?? damage, damage);
+}
+
+function elementalAdeptActorDocument(document) {
+  const candidates = [
+    document,
+    document?.actor,
+    document?.parent,
+    document?.parent?.actor,
+  ];
+  return candidates.find((candidate) => candidate?.type === "character") ?? null;
+}
+
+function elementalAdeptSameActor(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+  if (left === right) {
+    return true;
+  }
+  const leftUuid = cleanString(left.uuid);
+  const rightUuid = cleanString(right.uuid);
+  if (leftUuid && rightUuid) {
+    return leftUuid === rightUuid;
+  }
+  const leftId = cleanString(left.id ?? left._id);
+  const rightId = cleanString(right.id ?? right._id);
+  return Boolean(leftId && rightId && leftId === rightId);
+}
+
+function elementalAdeptMergeIgnoredDamageTypes(options, key, types) {
+  if (!options || typeof options !== "object" || options.ignore === true) {
+    return false;
+  }
+  if (!options.ignore || typeof options.ignore !== "object" || Array.isArray(options.ignore)) {
+    options.ignore = {};
+  }
+  const current = options.ignore[key];
+  if (current === true) {
+    return false;
+  }
+  const ignored = current instanceof Set
+    ? current
+    : new Set(current === false || current === undefined || current === null ? [] : normalizeCollection(current));
+  let changed = false;
+  for (const type of types) {
+    if (!ignored.has(type)) {
+      ignored.add(type);
+      changed = true;
+    }
+  }
+  if (current !== ignored) {
+    options.ignore[key] = ignored;
+    changed = true;
+  }
+  return changed;
 }
 
 function isElementalAdeptDieTerm(term) {
@@ -339,6 +404,8 @@ export class ElementalAdeptAutomationService {
     this._actorPromises = new Map();
     this._messagePromises = new Map();
     this._messageRollStates = new Map();
+    this._fromUuid = options.fromUuid ?? options.uuidResolver ?? globalThis.fromUuid ?? globalThis.fromUuidSync;
+    this._midiDamageOptions = new WeakSet();
   }
 
   async handleCreatedItem(item, options = {}, userId = "") {
@@ -415,8 +482,95 @@ export class ElementalAdeptAutomationService {
     return changedRolls.size > 0;
   }
 
+  async applyMidiPreCalculateDamage(actor, damages = [], options = {}) {
+    this.#markMidiDamageOptions(options);
+    return this.#applyPreCalculateDamage(actor, damages, options, { absorption: true });
+  }
+
+  async applyDnd5ePreCalculateDamage(actor, damages = [], options = {}) {
+    if (this.#hasMidiDamageMarker(options)) {
+      return false;
+    }
+    return this.#applyPreCalculateDamage(actor, damages, options, { absorption: false });
+  }
+
   #actorKey(actor) {
     return cleanString(actor?.uuid ?? actor?.id ?? actor?._id) || actor;
+  }
+
+  async #applyPreCalculateDamage(actor, damages, options, { absorption }) {
+    try {
+      const sourceActor = await this.#resolveDamageSourceActor(actor, options);
+      const selectedTypes = new Set(getConfiguredElementalAdeptTypes(sourceActor));
+      if (!selectedTypes.size) {
+        return false;
+      }
+      const matchingTypes = new Set();
+      for (const damage of normalizeCollection(damages)) {
+        if (!elementalAdeptDamageIsSpell(damage)) {
+          continue;
+        }
+        for (const type of elementalAdeptDamageDescriptionTypes(damage)) {
+          if (selectedTypes.has(type)) {
+            matchingTypes.add(type);
+          }
+        }
+      }
+      if (!matchingTypes.size) {
+        return false;
+      }
+      const resistanceChanged = elementalAdeptMergeIgnoredDamageTypes(options, "resistance", matchingTypes);
+      const absorptionChanged = absorption
+        ? elementalAdeptMergeIgnoredDamageTypes(options, "absorption", matchingTypes)
+        : false;
+      return resistanceChanged || absorptionChanged;
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to apply Elemental Adept damage bypass.`, error);
+      return false;
+    }
+  }
+
+  async #resolveDamageSourceActor(actor, options) {
+    const positionalActor = elementalAdeptActorDocument(actor);
+    const directSource = elementalAdeptActorDocument(options?.sourceActor ?? options?.midi?.sourceActor);
+    const sourceActorUuid = cleanString(options?.midi?.sourceActorUuid ?? options?.sourceActorUuid);
+    if (!sourceActorUuid) {
+      return directSource ?? positionalActor;
+    }
+    if (typeof this._fromUuid !== "function") {
+      return null;
+    }
+    const resolved = elementalAdeptActorDocument(await this._fromUuid(sourceActorUuid));
+    if (!resolved) {
+      return null;
+    }
+    if ((positionalActor && !elementalAdeptSameActor(positionalActor, resolved))
+      || (directSource && !elementalAdeptSameActor(directSource, resolved))) {
+      return null;
+    }
+    return resolved;
+  }
+
+  #markMidiDamageOptions(options) {
+    if (!options || typeof options !== "object") {
+      return;
+    }
+    this._midiDamageOptions.add(options);
+    try {
+      Object.defineProperty(options, ELEMENTAL_ADEPT_MIDI_DAMAGE_MARKER, {
+        value: true,
+        configurable: true,
+      });
+    }
+    catch (_error) {
+      // The per-service WeakSet marker still protects non-extensible hook options.
+    }
+  }
+
+  #hasMidiDamageMarker(options) {
+    return Boolean(options?.[ELEMENTAL_ADEPT_MIDI_DAMAGE_MARKER])
+      || Boolean(options && typeof options === "object" && this._midiDamageOptions.has(options));
   }
 
   async #enqueueActor(actor, operation) {
