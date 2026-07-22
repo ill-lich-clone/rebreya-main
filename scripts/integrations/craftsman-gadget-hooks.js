@@ -35,10 +35,17 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
   if (game?.[HOOKS_REGISTERED_KEY]) return true;
   if (game) game[HOOKS_REGISTERED_KEY] = true;
 
-  if (gadgetService) {
+  if (gadgetService || constructorService) {
     Hooks.on("dnd5e.preUseActivity", (activity, usageConfig, dialogConfig, messageConfig) => {
       try {
-        return gadgetService.applyDnd5ePreUseActivity?.(
+        const gadgetAllowed = gadgetService?.applyDnd5ePreUseActivity?.(
+          activity,
+          usageConfig,
+          dialogConfig,
+          messageConfig
+        ) ?? true;
+        if (gadgetAllowed === false) return false;
+        return constructorService?.applyDnd5ePreUseActivity?.(
           activity,
           usageConfig,
           dialogConfig,
@@ -46,11 +53,13 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
         ) ?? true;
       }
       catch (error) {
-        report("Failed to validate Craftsman gadget activity.", error);
+        report("Failed to validate Craftsman activity.", error);
         return true;
       }
     });
+  }
 
+  if (gadgetService) {
     Hooks.on("dnd5e.preCreateActivityTemplate", (activity, templateData) => {
       try {
         return gadgetService.applyDnd5ePreCreateActivityTemplate?.(activity, templateData) ?? true;

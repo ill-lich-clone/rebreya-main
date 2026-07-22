@@ -128,17 +128,12 @@ function constructState(token) {
   return moduleFlags(token).craftsmanConstruct ?? null;
 }
 
-function isConstructSummonActivity(activity) {
-  return constructActivityState(activity)?.kind === "constructSummon";
+function preparedConstructConfiguration(actor) {
+  return normalizedConfiguration(moduleFlags(actor).craftsmanConstructPreparation);
 }
 
-function findConstructSummonActivity(actor) {
-  for (const item of collectionValues(actor?.items)) {
-    for (const activity of collectionValues(item?.system?.activities)) {
-      if (isConstructSummonActivity(activity)) return activity;
-    }
-  }
-  return null;
+function isConstructSummonActivity(activity) {
+  return constructActivityState(activity)?.kind === "constructSummon";
 }
 
 function bodyAssembly(id) {
@@ -253,7 +248,7 @@ function constructFeatureItems(configuration) {
       "Восстановить Конструкта",
       "Вы можете восстановить Конструкта, совершив 10-минутный перерыв. По его окончанию Конструкт может бросить кости хитов словно завершил короткий отдых. Если у конструкта больше 0 хитов, то он придёт в себя спустя минуту либо во время проверки инициативы.",
       "repair",
-      { lchconstrrepair: utilityActivity("lchconstrrepair", "Восстановить Конструкта", "repair", "special", "10-минутный перерыв") }
+      { lchconstrrepair1: utilityActivity("lchconstrrepair1", "Восстановить Конструкта", "repair", "special", "10-минутный перерыв") }
     ),
     featureItem(
       "Отключиться",
@@ -292,25 +287,20 @@ export class CraftsmanConstructorService {
 
   async handleRestCompleted(actor, result = {}, config = {}) {
     if (!isLongRest(result, config) || craftsmanLevel(actor) < 3 || !this.#isConstructor(actor)) return true;
-    const activity = findConstructSummonActivity(actor);
-    if (!activity || !this.#canSummon(actor)) return false;
-    if (!(this.options.sceneProvider?.() ?? globalThis.canvas?.scene)) {
-      this.#notify("warn", "Для сборки Конструкта откройте сцену.");
-      return false;
-    }
-    if (typeof this.options.openSummonActivity === "function") {
-      return this.options.openSummonActivity(activity, actor);
-    }
-    if (typeof activity.use !== "function") return false;
-    await activity.use({
-      create: { summons: true },
-      summons: {
-        profile: "lchconstructprof",
-        creatureSize: "med",
-        creatureType: "construct"
-      }
-    }, { configure: false });
+    const selected = normalizedConfiguration(await this.#promptConfiguration(actor, { result, config }));
+    if (!selected) return false;
+    await this.#updatePreparation(actor, selected);
+    this.#notify("info", "Сборка Конструкта подготовлена. Разместите его активностью «Собрать Конструкта» на нужной сцене.");
     return true;
+  }
+
+  applyDnd5ePreUseActivity(activity) {
+    if (!isConstructSummonActivity(activity)) return true;
+    const owner = activity?.item?.actor ?? activity?.actor ?? null;
+    if (!owner || !this.#isConstructor(owner)) return false;
+    if (preparedConstructConfiguration(owner)) return true;
+    this.#notify("warn", "Сначала подготовьте сборку Конструкта во время продолжительного отдыха.");
+    return false;
   }
 
   async handlePostSummon(activity, profile, tokens = [], options = {}) {
@@ -320,7 +310,7 @@ export class CraftsmanConstructorService {
     const key = cleanString(owner.uuid ?? owner.id) || owner;
     const previous = this._queues.get(key) ?? Promise.resolve();
     const current = previous.catch(() => undefined).then(() => (
-      this.#completeSummon(owner, collectionValues(tokens), { activity, profile, options })
+      this.#completeSummon(owner, collectionValues(tokens))
     ));
     this._queues.set(key, current);
     try {
@@ -497,9 +487,9 @@ export class CraftsmanConstructorService {
     return true;
   }
 
-  async #completeSummon(owner, tokens, context) {
+  async #completeSummon(owner, tokens) {
     if (!tokens.length) return false;
-    const selected = normalizedConfiguration(await this.#promptConfiguration(owner, context));
+    const selected = preparedConstructConfiguration(owner);
     if (!selected) {
       await Promise.all(tokens.map((token) => token?.delete?.()));
       return false;
@@ -518,6 +508,7 @@ export class CraftsmanConstructorService {
       if (tokens.includes(oldToken) || newUuids.has(cleanString(oldToken?.uuid))) continue;
       await this.#retireOldConstruct(oldToken);
     }
+    await this.#updatePreparation(owner, null);
     return true;
   }
 
@@ -607,15 +598,17 @@ export class CraftsmanConstructorService {
     return isCraftsmanConstructor(actor, this.options.getCraftsmanSubclasses);
   }
 
-  #canSummon(actor) {
-    if (!actor?.isOwner && !globalThis.game?.user?.isGM) return false;
-    const game = globalThis.game;
-    if (!game?.user) return true;
-    const canCreate = typeof game.user.can !== "function" || game.user.can("TOKEN_CREATE");
-    const enabled = game.user.isGM || game.settings?.get?.("dnd5e", "allowSummoning") === true;
-    if (canCreate && enabled) return true;
-    this.#notify("warn", "Разрешите игрокам создание призванных существ в настройках dnd5e.");
-    return false;
+  async #updatePreparation(actor, configuration) {
+    const path = `flags.${MODULE_ID}.craftsmanConstructPreparation`;
+    if (typeof actor?.update === "function") {
+      await actor.update({ [path]: clone(configuration) });
+    }
+    else {
+      actor.flags ??= {};
+      actor.flags[MODULE_ID] ??= {};
+      actor.flags[MODULE_ID].craftsmanConstructPreparation = clone(configuration);
+    }
+    return configuration;
   }
 
   #canReconcileSharedState() {

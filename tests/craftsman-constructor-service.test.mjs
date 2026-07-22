@@ -17,17 +17,27 @@ function collection(contents = []) {
   return { contents, values: () => contents.values() };
 }
 
-function ownerActor({ constructor = true } = {}) {
+const PREPARED_CONSTRUCT = Object.freeze({
+  bodyId: "sturdy-body",
+  combatModeId: "blind-fighting",
+  skillIds: ["inv", "prc"]
+});
+
+function ownerActor({ constructor = true, prepared = true } = {}) {
   const summonUses = [];
+  const updates = [];
   const activity = {
     id: "lchconstructsumm",
     flags: { "rebreya-main": { craftsmanConstructor: { kind: "constructSummon" } } },
     async use(...args) { summonUses.push(args); return true; }
   };
-  return {
+  const actor = {
     id: "owner-1",
     uuid: "Actor.owner-1",
     isOwner: true,
+    flags: prepared ? {
+      "rebreya-main": { craftsmanConstructPreparation: structuredClone(PREPARED_CONSTRUCT) }
+    } : {},
     system: { traits: { languages: { value: ["common"], custom: "Эльфийский" } } },
     items: collection([
       { type: "class", system: { identifier: "craftsman-v01", levels: 5 } },
@@ -38,8 +48,22 @@ function ownerActor({ constructor = true } = {}) {
       { type: "feat", system: { activities: collection([activity]) } }
     ]),
     summonUses,
-    activity
+    updates,
+    activity,
+    async update(patch) {
+      updates.push(structuredClone(patch));
+      if (Object.hasOwn(patch, "flags.rebreya-main.craftsmanConstructPreparation")) {
+        const preparation = patch["flags.rebreya-main.craftsmanConstructPreparation"];
+        this.flags["rebreya-main"] ??= {};
+        this.flags["rebreya-main"].craftsmanConstructPreparation = preparation === null
+          ? null
+          : structuredClone(preparation);
+      }
+      return this;
+    }
   };
+  activity.item = { actor };
+  return actor;
 }
 
 function constructToken(id = "new-token") {
@@ -87,11 +111,25 @@ test("constructor eligibility requires the Craftsman class and Constructor speci
   assert.equal(isLongRest({ type: "short" }, {}), false);
 });
 
-test("long rest opens the embedded native Summon activity", async () => {
-  const owner = ownerActor();
-  const service = new CraftsmanConstructorService({ sceneProvider: () => ({ id: "scene-1" }) });
+test("long rest stores construct choices without using or placing the Summon activity", async () => {
+  const owner = ownerActor({ prepared: false });
+  const service = new CraftsmanConstructorService({
+    promptConfiguration: async () => structuredClone(PREPARED_CONSTRUCT)
+  });
   assert.equal(await service.handleRestCompleted(owner, { longRest: true }), true);
-  assert.equal(owner.summonUses.length, 1);
+  assert.equal(owner.summonUses.length, 0);
+  assert.deepEqual(
+    owner.flags["rebreya-main"].craftsmanConstructPreparation,
+    PREPARED_CONSTRUCT
+  );
+});
+
+test("native Summon activity is blocked until long-rest construct choices exist", () => {
+  const preparedOwner = ownerActor();
+  const unpreparedOwner = ownerActor({ prepared: false });
+  const service = new CraftsmanConstructorService();
+  assert.equal(service.applyDnd5ePreUseActivity(preparedOwner.activity), true);
+  assert.equal(service.applyDnd5ePreUseActivity(unpreparedOwner.activity), false);
 });
 
 test("post-summon configures the new synthetic actor before retiring an old construct", async () => {
@@ -107,11 +145,7 @@ test("post-summon configures the new synthetic actor before retiring an old cons
   old.token.delete = async () => { events.push("old-retired"); old.token.deleted = true; };
 
   const service = new CraftsmanConstructorService({
-    promptConfiguration: async () => ({
-      bodyId: "sturdy-body",
-      combatModeId: "blind-fighting",
-      skillIds: ["inv", "prc"]
-    }),
+    promptConfiguration: async () => { throw new Error("post-summon must not prompt"); },
     findConstructTokens: () => [old.token]
   });
   const activity = { ...owner.activity, item: { actor: owner } };
@@ -127,20 +161,25 @@ test("post-summon configures the new synthetic actor before retiring an old cons
   assert.equal(actorPatch["flags.rebreya-main.craftsmanConstruct"].state, "active");
   assert.equal(fresh.createdItems.some((item) => item.name === "Сборка тела: Крепкий корпус"), true);
   assert.equal(fresh.createdItems.some((item) => item.name === "Боевой режим: Сражение вслепую"), true);
+  for (const item of fresh.createdItems) {
+    for (const [id, activity] of Object.entries(item.system?.activities ?? {})) {
+      assert.match(id, /^[A-Za-z0-9]{16}$/u);
+      assert.equal(activity._id, id);
+    }
+  }
   assert.equal(old.token.deleted, true);
+  assert.equal(owner.flags["rebreya-main"].craftsmanConstructPreparation, null);
+  assert.equal(service.applyDnd5ePreUseActivity(owner.activity), false);
 });
 
-test("canceling configuration removes only the new token and preserves the old construct", async () => {
-  const owner = ownerActor();
+test("summoning without prepared choices removes only the new token and preserves the old construct", async () => {
+  const owner = ownerActor({ prepared: false });
   const fresh = constructToken();
   const old = constructToken("old-token");
   old.token.flags = {
     "rebreya-main": { craftsmanConstruct: { state: "active", ownerUuid: owner.uuid } }
   };
-  const service = new CraftsmanConstructorService({
-    promptConfiguration: async () => null,
-    findConstructTokens: () => [old.token]
-  });
+  const service = new CraftsmanConstructorService({ findConstructTokens: () => [old.token] });
   const activity = { ...owner.activity, item: { actor: owner } };
   assert.equal(await service.handlePostSummon(activity, {}, [fresh.token], {}), false);
   assert.equal(fresh.token.deleted, true);

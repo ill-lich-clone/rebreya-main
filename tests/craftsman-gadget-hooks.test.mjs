@@ -114,6 +114,7 @@ test("Craftsman rest and native summon hooks serialize gadget choices before Con
       }
     },
     craftsmanConstructorService: {
+      applyDnd5ePreUseActivity: () => false,
       async handleRestCompleted() { calls.push("constructor-rest"); },
       async handlePostSummon(...args) { calls.push(["post-summon", ...args]); },
       async handlePostUseActivity(...args) { calls.push(["construct-activity", ...args]); },
@@ -123,6 +124,7 @@ test("Craftsman rest and native summon hooks serialize gadget choices before Con
   };
   registerCraftsmanGadgetHooks(moduleApi, { Hooks, game: {} });
   const actor = { id: "craftsman" };
+  assert.equal(listeners.get("dnd5e.preUseActivity")({ id: "construct-summon" }, {}, {}, {}), false);
   listeners.get("dnd5e.restCompleted")(actor, { longRest: true }, {});
   listeners.get("dnd5e.postSummon")({ id: "activity" }, { id: "profile" }, [{ id: "token" }], {});
   listeners.get("updateToken")({ id: "token" }, { delta: {} });
