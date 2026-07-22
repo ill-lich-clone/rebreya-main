@@ -248,6 +248,53 @@ export function buildMapObjectMacroData() {
   };
 }
 
+export function buildMapObjectActorDelta({ name, hp, ac, damageThreshold = 0 } = {}) {
+  const normalized = normalizeMapObjectInput({ name, hp, ac, damageThreshold, size: 1 });
+  return {
+    name: normalized.name,
+    system: {
+      attributes: {
+        hp: {
+          value: normalized.hp,
+          max: normalized.hp,
+          temp: 0,
+          tempmax: 0,
+          dt: normalized.damageThreshold
+        },
+        ac: {
+          calc: "flat",
+          flat: normalized.ac
+        }
+      }
+    }
+  };
+}
+
+export function buildExistingMapObjectTokenPatch({ token, name, hp, ac, damageThreshold = 0, flags = {} } = {}) {
+  const delta = buildMapObjectActorDelta({
+    name: name ?? token?.name ?? token?.actor?.name ?? DEFAULT_INPUT.name,
+    hp,
+    ac,
+    damageThreshold
+  });
+  return {
+    actorLink: false,
+    displayBars: foundryConstant("TOKEN_DISPLAY_MODES", "ALWAYS", FALLBACK_TOKEN_DISPLAY_ALWAYS),
+    bar1: { attribute: "attributes.hp" },
+    sight: { enabled: false },
+    delta,
+    flags: {
+      ...(token?.flags ?? {}),
+      [MODULE_ID]: {
+        ...(token?.flags?.[MODULE_ID] ?? {}),
+        [MODULE_FLAGS.MANAGED]: true,
+        [MODULE_FLAGS.MAP_OBJECT_TOKEN]: true,
+        ...flags
+      }
+    }
+  };
+}
+
 export function buildMapObjectTokenData({ actor, input, point, gridSize } = {}) {
   const normalized = normalizeMapObjectInput(input);
   const actorId = requireActorId(actor);
@@ -264,24 +311,7 @@ export function buildMapObjectTokenData({ actor, input, point, gridSize } = {}) 
     height: normalized.size,
     x: snappedPoint.x - (dimensions / 2),
     y: snappedPoint.y - (dimensions / 2),
-    delta: {
-      name: normalized.name,
-      system: {
-        attributes: {
-          hp: {
-            value: normalized.hp,
-            max: normalized.hp,
-            temp: 0,
-            tempmax: 0,
-            dt: normalized.damageThreshold
-          },
-          ac: {
-            calc: "flat",
-            flat: normalized.ac
-          }
-        }
-      }
-    },
+    delta: buildMapObjectActorDelta(normalized),
     flags: managedFlags(MAP_OBJECT_ACTOR_SOURCE_ID, { [MODULE_FLAGS.MAP_OBJECT_TOKEN]: true })
   };
 }
@@ -337,6 +367,56 @@ export class MapObjectTokenService {
     });
     const created = await scene.createEmbeddedDocuments("Token", [data]);
     return Array.isArray(created) ? created[0] ?? null : created;
+  }
+
+  async convertTokenToObject(token, input = {}, options = {}) {
+    if (typeof token?.update !== "function") throw new TypeError("token.update is required");
+    const patch = buildExistingMapObjectTokenPatch({
+      token,
+      ...input,
+      flags: options.flags ?? {}
+    });
+    await token.update(patch, options.updateOptions ?? {});
+    return token;
+  }
+
+  async restoreObjectActor(token, snapshot = {}, options = {}) {
+    if (typeof token?.update !== "function") throw new TypeError("token.update is required");
+    const attributes = snapshot?.system?.attributes ?? snapshot?.delta?.system?.attributes ?? {};
+    const patch = {
+      delta: {
+        ...(snapshot.name ? { name: snapshot.name } : {}),
+        system: { attributes }
+      },
+      ...(snapshot.sight ? { sight: snapshot.sight } : {}),
+      flags: {
+        ...(token?.flags ?? {}),
+        [MODULE_ID]: {
+          ...(token?.flags?.[MODULE_ID] ?? {}),
+          [MODULE_FLAGS.MAP_OBJECT_TOKEN]: false,
+          ...(snapshot.flags ?? {})
+        }
+      }
+    };
+    await token.update(patch, options.updateOptions ?? {});
+    return token;
+  }
+
+  async markObjectDestroyed(token, options = {}) {
+    if (typeof token?.update !== "function") throw new TypeError("token.update is required");
+    const patch = {
+      flags: {
+        ...(token?.flags ?? {}),
+        [MODULE_ID]: {
+          ...(token?.flags?.[MODULE_ID] ?? {}),
+          [MODULE_FLAGS.MANAGED]: true,
+          [MODULE_FLAGS.MAP_OBJECT_TOKEN]: true,
+          ...(options.flags ?? {})
+        }
+      }
+    };
+    await token.update(patch, options.updateOptions ?? {});
+    return token;
   }
 
   async #syncActor(game) {

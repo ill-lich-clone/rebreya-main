@@ -8,7 +8,9 @@ import {
   MAP_OBJECT_TEMPLATE_ACTOR_NAME,
   MapObjectTokenService,
   TRANSPARENT_OBJECT_TOKEN_PATH,
+  buildExistingMapObjectTokenPatch,
   buildMapObjectMacroData,
+  buildMapObjectActorDelta,
   buildMapObjectTemplateActorData,
   buildMapObjectTokenData,
   normalizeMapObjectInput
@@ -235,6 +237,73 @@ test("buildMapObjectTokenData builds an unlinked neutral object token with delta
       }
     }
   });
+});
+
+test("existing-token object patch preserves identity, art, size, items, and effects", () => {
+  const token = {
+    actorId: "construct-actor",
+    texture: { src: "construct.webp" },
+    width: 1,
+    height: 1,
+    actor: { items: [{ id: "weapon" }], effects: [{ id: "body" }] },
+    flags: { "rebreya-main": { craftsmanConstruct: { state: "active" } } }
+  };
+  const patch = buildExistingMapObjectTokenPatch({
+    token,
+    hp: 26,
+    ac: 17,
+    damageThreshold: 0,
+    flags: { craftsmanConstruct: { state: "disabled" } }
+  });
+
+  assert.equal(Object.hasOwn(patch, "actorId"), false);
+  assert.equal(Object.hasOwn(patch, "texture"), false);
+  assert.equal(Object.hasOwn(patch, "width"), false);
+  assert.deepEqual(token.actor.items, [{ id: "weapon" }]);
+  assert.deepEqual(token.actor.effects, [{ id: "body" }]);
+  assert.deepEqual(patch.delta.system.attributes.hp, { value: 26, max: 26, temp: 0, tempmax: 0, dt: 0 });
+  assert.deepEqual(patch.flags["rebreya-main"].craftsmanConstruct, { state: "disabled" });
+});
+
+test("map object ActorDelta builder is shared by new and existing object tokens", () => {
+  const delta = buildMapObjectActorDelta({ name: "Конструкт", hp: 20, ac: 16, damageThreshold: 2 });
+  assert.deepEqual(delta, {
+    name: "Конструкт",
+    system: {
+      attributes: {
+        hp: { value: 20, max: 20, temp: 0, tempmax: 0, dt: 2 },
+        ac: { calc: "flat", flat: 16 }
+      }
+    }
+  });
+});
+
+test("existing token conversion and restoration update only object attributes and managed flags", async () => {
+  const updates = [];
+  const token = {
+    name: "Конструкт",
+    flags: {},
+    async update(patch) {
+      updates.push(structuredClone(patch));
+      mergeInto(this, structuredClone(patch));
+      return this;
+    }
+  };
+  const { service } = createServiceEnvironment();
+  await service.convertTokenToObject(token, { name: "Конструкт", hp: 20, ac: 16 }, {
+    flags: { craftsmanConstruct: { state: "disabled" } }
+  });
+  await service.restoreObjectActor(token, {
+    name: "Конструкт",
+    system: { attributes: { hp: { value: 3, max: 20 }, ac: { calc: "flat", flat: 16 } } },
+    flags: { craftsmanConstruct: { state: "active" } }
+  });
+  await service.markObjectDestroyed(token, { flags: { craftsmanConstruct: { state: "destroyed" } } });
+
+  assert.equal(updates.length, 3);
+  assert.equal(updates[0].flags["rebreya-main"].mapObjectToken, true);
+  assert.equal(updates[1].delta.system.attributes.hp.value, 3);
+  assert.equal(updates[2].flags["rebreya-main"].craftsmanConstruct.state, "destroyed");
 });
 
 test("transparent template and placed tokens bind bar1 to HP", () => {
