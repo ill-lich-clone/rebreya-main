@@ -79,19 +79,19 @@ const CLASS_FEATURE_TEMPLATE_VERSION = 15;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CRAFTSMAN_SUBCLASS_TEMPLATE_VERSION = 1;
 const CLASS_TEMPLATE_VERSION = 6;
-const CRAFTSMAN_NATIVE_SUBCLASS_TRACK_BY_ID = Object.freeze({
-  "craftsman-research-weaponsmith": "research",
-  "craftsman-research-armorer": "research",
-  "craftsman-research-alchemist": "research",
-  "craftsman-research-artificer": "research",
-  "craftsman-research-occultist": "research",
-  "craftsman-research-healer": "research",
-  "craftsman-research-mechanic": "research",
-  "craftsman-specialty-assault": "specialty",
-  "craftsman-specialty-defender": "specialty",
-  "craftsman-specialty-constructor": "specialty",
-  "craftsman-specialty-artillerist": "specialty",
-  "craftsman-specialty-tactician": "specialty"
+const CRAFTSMAN_NATIVE_SUBCLASS_BY_ID = Object.freeze({
+  "craftsman-research-weaponsmith": Object.freeze({ documentId: "fjf9y91usmmvo000", track: "research" }),
+  "craftsman-research-armorer": Object.freeze({ documentId: "18cjg6m14nk7hb00", track: "research" }),
+  "craftsman-research-alchemist": Object.freeze({ documentId: "9vn2lec3950y0000", track: "research" }),
+  "craftsman-research-artificer": Object.freeze({ documentId: "1my4r33ufb9eb000", track: "research" }),
+  "craftsman-research-occultist": Object.freeze({ documentId: "15zlg081ybp89o00", track: "research" }),
+  "craftsman-research-healer": Object.freeze({ documentId: "1jneoaf1wzh47000", track: "research" }),
+  "craftsman-research-mechanic": Object.freeze({ documentId: "a028poqh8xfm0000", track: "research" }),
+  "craftsman-specialty-assault": Object.freeze({ documentId: "1xaf4xz14cr1zo00", track: "specialty" }),
+  "craftsman-specialty-defender": Object.freeze({ documentId: "jej063u8aytv0000", track: "specialty" }),
+  "craftsman-specialty-constructor": Object.freeze({ documentId: "1xoogq41lnvp5q00", track: "specialty" }),
+  "craftsman-specialty-artillerist": Object.freeze({ documentId: "1dct6o91ps9ye900", track: "specialty" }),
+  "craftsman-specialty-tactician": Object.freeze({ documentId: "4488d4505bp50000", track: "specialty" })
 });
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 const ROGUE_CUNNING_STRIKE_SECTION_LABEL = "Хитрые удары";
@@ -5746,8 +5746,19 @@ async function validatePublishedNativeCraftsmanSubclasses() {
   }
 
   const documents = await getPackDocuments(pack);
-  for (const [archetypeId, expectedTrack] of Object.entries(CRAFTSMAN_NATIVE_SUBCLASS_TRACK_BY_ID)) {
-    const matches = documents.filter((document) => (
+  const managedCraftsmanSubclasses = documents.filter((document) => (
+    documentModuleFlag(document, "managed") === true
+    && documentModuleFlag(document, "sourceType") === "subclass"
+    && documentModuleFlag(document, "classIdentifier") === "craftsman-v01"
+  ));
+  for (const document of managedCraftsmanSubclasses) {
+    const archetypeId = cleanString(documentModuleFlag(document, "archetypeId"));
+    if (!Object.hasOwn(CRAFTSMAN_NATIVE_SUBCLASS_BY_ID, archetypeId)) {
+      throw new Error(`Unexpected published native Craftsman subclass: ${archetypeId || "<missing>"}`);
+    }
+  }
+  for (const [archetypeId, expected] of Object.entries(CRAFTSMAN_NATIVE_SUBCLASS_BY_ID)) {
+    const matches = managedCraftsmanSubclasses.filter((document) => (
       documentModuleFlag(document, "archetypeId") === archetypeId
     ));
     if (matches.length !== 1) {
@@ -5755,17 +5766,21 @@ async function validatePublishedNativeCraftsmanSubclasses() {
     }
 
     const [document] = matches;
-    const expectedUuid = compendiumItemUuid(SUBCLASSES_PACK_ID, documentId(document));
+    const expectedUuid = compendiumItemUuid(SUBCLASSES_PACK_ID, expected.documentId);
     if (
       document?.type !== "subclass"
+      || documentId(document) !== expected.documentId
       || documentModuleFlag(document, "managed") !== true
       || documentModuleFlag(document, "sourceType") !== "subclass"
       || documentModuleFlag(document, "classIdentifier") !== "craftsman-v01"
-      || documentModuleFlag(document, "craftsmanTrack") !== expectedTrack
+      || documentModuleFlag(document, "craftsmanTrack") !== expected.track
       || cleanString(document?.uuid) !== expectedUuid
     ) {
       throw new Error(`Invalid published native Craftsman subclass: ${archetypeId}`);
     }
+  }
+  if (managedCraftsmanSubclasses.length !== Object.keys(CRAFTSMAN_NATIVE_SUBCLASS_BY_ID).length) {
+    throw new Error(`Unexpected published native Craftsman subclass count: ${managedCraftsmanSubclasses.length}`);
   }
 }
 
@@ -5793,6 +5808,21 @@ export async function retireLegacyCraftsmanArchetypesPack(pack) {
     return result;
   }
 
+  const initialFolders = getPackFolders(pack);
+  const initialFolderById = new Map(initialFolders
+    .map((folder) => [documentId(folder), folder])
+    .filter(([id]) => id));
+  const impactedFolderIds = new Set();
+  for (const document of retiredDocuments) {
+    const visited = new Set();
+    let folderId = documentFolderId(document);
+    while (folderId && initialFolderById.has(folderId) && !visited.has(folderId)) {
+      visited.add(folderId);
+      impactedFolderIds.add(folderId);
+      folderId = documentFolderId(initialFolderById.get(folderId));
+    }
+  }
+
   const documentClass = globalThis.Item?.implementation ?? pack.documentClass;
   if (typeof documentClass?.deleteDocuments !== "function") {
     throw new Error(`Foundry Item document API is unavailable for ${pack.collection}`);
@@ -5803,62 +5833,52 @@ export async function retireLegacyCraftsmanArchetypesPack(pack) {
   });
   result.deletedDocumentIds.push(...retiredDocumentIds);
 
-  const folders = getPackFolders(pack);
-  const folderById = new Map(folders
-    .map((folder) => [documentId(folder), folder])
-    .filter(([id]) => id));
-  const impactedFolderIds = new Set();
-  for (const document of retiredDocuments) {
-    const visited = new Set();
-    let folderId = documentFolderId(document);
-    while (folderId && folderById.has(folderId) && !visited.has(folderId)) {
-      visited.add(folderId);
-      impactedFolderIds.add(folderId);
-      folderId = documentFolderId(folderById.get(folderId));
-    }
-  }
-
-  const retiredIdSet = new Set(retiredDocumentIds);
-  const remainingDocumentFolderIds = new Set(documents
-    .filter((document) => !retiredIdSet.has(documentId(document)))
-    .map(documentFolderId)
-    .filter(Boolean));
-  const remainingFolderIds = new Set(folderById.keys());
   const folderClass = globalThis.Folder?.implementation ?? globalThis.Folder;
+  const blockedFolderIds = new Set();
   while (true) {
-    const emptyManagedFolders = folders.filter((folder) => {
+    const currentDocuments = await getPackDocuments(pack);
+    const currentFolders = getPackFolders(pack);
+    const candidate = currentFolders.find((folder) => {
       const id = documentId(folder);
       if (
-        !remainingFolderIds.has(id)
-        || !impactedFolderIds.has(id)
+        !impactedFolderIds.has(id)
+        || blockedFolderIds.has(id)
         || documentModuleFlag(folder, "managed") !== true
-        || remainingDocumentFolderIds.has(id)
+        || currentDocuments.some((document) => documentFolderId(document) === id)
       ) {
         return false;
       }
-      return !folders.some((candidate) => (
-        remainingFolderIds.has(documentId(candidate))
-        && documentFolderId(candidate) === id
+      return !currentFolders.some((child) => (
+        documentFolderId(child) === id
       ));
     });
-    if (!emptyManagedFolders.length) {
+    if (!candidate) {
       break;
     }
     if (typeof folderClass?.deleteDocuments !== "function") {
       throw new Error(`Foundry Folder document API is unavailable for ${pack.collection}`);
     }
 
-    for (const folder of emptyManagedFolders) {
-      const id = documentId(folder);
-      await folderClass.deleteDocuments([id], {
-        pack: pack.collection,
-        deleteContents: false,
-        deleteSubfolders: false,
-        render: false
-      });
-      remainingFolderIds.delete(id);
-      result.deletedFolderIds.push(id);
+    const candidateId = documentId(candidate);
+    const latestDocuments = await getPackDocuments(pack);
+    const latestFolders = getPackFolders(pack);
+    const latestCandidate = latestFolders.find((folder) => documentId(folder) === candidateId);
+    const isStillEmptyManagedFolder = latestCandidate
+      && documentModuleFlag(latestCandidate, "managed") === true
+      && !latestDocuments.some((document) => documentFolderId(document) === candidateId)
+      && !latestFolders.some((folder) => documentFolderId(folder) === candidateId);
+    if (!isStillEmptyManagedFolder) {
+      blockedFolderIds.add(candidateId);
+      continue;
     }
+
+    await folderClass.deleteDocuments([candidateId], {
+      pack: pack.collection,
+      deleteContents: false,
+      deleteSubfolders: false,
+      render: false
+    });
+    result.deletedFolderIds.push(candidateId);
   }
 
   return result;

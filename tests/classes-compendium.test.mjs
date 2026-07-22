@@ -175,6 +175,31 @@ function makeUuidMap(definitions) {
   return new Map(definitions.map((definition) => [definition.featureId, `Compendium.world.rebreya-class-features.Item.${definition.documentId ?? definition.identifier}`]));
 }
 
+function makePublishedNativeCraftsmanSubclassDocuments() {
+  const craftsman = normalizeClassCompendiumData(loadJson("data/craftsman-v01.json"));
+  const definitions = buildCraftsmanSubclassDefinitions(craftsman, {
+    featureUuidById: makeUuidMap(buildFeatureDefinitions(craftsman))
+  });
+  assert.equal(definitions.length, 12);
+  return definitions.map((definition) => ({
+    id: definition.documentId,
+    uuid: `Compendium.world.rebreya-subclasses.Item.${definition.documentId}`,
+    type: "subclass",
+    flags: {
+      "rebreya-main": {
+        managed: true,
+        sourceType: "subclass",
+        archetypeId: definition.archetypeId,
+        craftsmanTrack: definition.axis,
+        classIdentifier: "craftsman-v01"
+      }
+    },
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  }));
+}
+
 function sourceFingerprint(value) {
   const text = String(value ?? "").replace(/\s+/gu, " ").trim();
   let hashA = 0x811c9dc5;
@@ -1117,6 +1142,129 @@ test("legacy Craftsman pack retirement refuses cleanup until all 12 native subcl
   }
 });
 
+test("legacy Craftsman pack retirement rejects a self-consistent UUID with the wrong canonical document id", async () => {
+  const originalGame = globalThis.game;
+  const originalItem = globalThis.Item;
+  const nativeDocuments = makePublishedNativeCraftsmanSubclassDocuments();
+  nativeDocuments[0].id = "self-consistent-wrong-id";
+  nativeDocuments[0].uuid = "Compendium.world.rebreya-subclasses.Item.self-consistent-wrong-id";
+  const legacyDocuments = [{
+    id: "legacy-research",
+    flags: { "rebreya-main": { managed: true, sourceType: "research" } },
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  }];
+  const legacyPack = {
+    collection: "world.rebreya-craftsman-archetypes",
+    folders: { contents: [] },
+    async getDocuments() {
+      return legacyDocuments;
+    }
+  };
+  let itemDeletes = 0;
+  globalThis.game = {
+    packs: new Map([
+      ["world.rebreya-subclasses", {
+        collection: "world.rebreya-subclasses",
+        async getDocuments() {
+          return nativeDocuments;
+        }
+      }],
+      [legacyPack.collection, legacyPack]
+    ])
+  };
+  globalThis.Item = {
+    implementation: {
+      async deleteDocuments() {
+        itemDeletes += 1;
+      }
+    }
+  };
+
+  try {
+    await assert.rejects(
+      retireLegacyCraftsmanArchetypesPack(legacyPack),
+      /Invalid published native Craftsman subclass: craftsman-research-weaponsmith/u
+    );
+    assert.equal(itemDeletes, 0);
+    assert.equal(legacyDocuments.length, 1);
+  }
+  finally {
+    globalThis.game = originalGame;
+    globalThis.Item = originalItem;
+  }
+});
+
+test("legacy Craftsman pack retirement rejects a thirteenth managed Craftsman subclass", async () => {
+  const originalGame = globalThis.game;
+  const originalItem = globalThis.Item;
+  const nativeDocuments = makePublishedNativeCraftsmanSubclassDocuments();
+  nativeDocuments.push({
+    id: "extra-managed-craftsman",
+    uuid: "Compendium.world.rebreya-subclasses.Item.extra-managed-craftsman",
+    type: "subclass",
+    flags: {
+      "rebreya-main": {
+        managed: true,
+        sourceType: "subclass",
+        archetypeId: "craftsman-research-experimental",
+        craftsmanTrack: "research",
+        classIdentifier: "craftsman-v01"
+      }
+    },
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  });
+  const legacyDocuments = [{
+    id: "legacy-research",
+    flags: { "rebreya-main": { managed: true, sourceType: "research" } },
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  }];
+  const legacyPack = {
+    collection: "world.rebreya-craftsman-archetypes",
+    folders: { contents: [] },
+    async getDocuments() {
+      return legacyDocuments;
+    }
+  };
+  let itemDeletes = 0;
+  globalThis.game = {
+    packs: new Map([
+      ["world.rebreya-subclasses", {
+        collection: "world.rebreya-subclasses",
+        async getDocuments() {
+          return nativeDocuments;
+        }
+      }],
+      [legacyPack.collection, legacyPack]
+    ])
+  };
+  globalThis.Item = {
+    implementation: {
+      async deleteDocuments() {
+        itemDeletes += 1;
+      }
+    }
+  };
+
+  try {
+    await assert.rejects(
+      retireLegacyCraftsmanArchetypesPack(legacyPack),
+      /Unexpected published native Craftsman subclass: craftsman-research-experimental/u
+    );
+    assert.equal(itemDeletes, 0);
+    assert.equal(legacyDocuments.length, 1);
+  }
+  finally {
+    globalThis.game = originalGame;
+    globalThis.Item = originalItem;
+  }
+});
+
 test("legacy Craftsman pack retirement deletes only owned archetypes and newly empty owned folders", async () => {
   const originalGame = globalThis.game;
   const originalItem = globalThis.Item;
@@ -1179,7 +1327,7 @@ test("legacy Craftsman pack retirement deletes only owned archetypes and newly e
     collection: "world.rebreya-craftsman-archetypes",
     folders: { contents: legacyFolders },
     async getDocuments() {
-      return legacyDocuments;
+      return Array.from(legacyDocuments);
     }
   };
   globalThis.game = {
@@ -1251,6 +1399,108 @@ test("legacy Craftsman pack retirement deletes only owned archetypes and newly e
       "unrelated-empty-managed",
       "foreign-folder"
     ]);
+  }
+  finally {
+    globalThis.game = originalGame;
+    globalThis.Item = originalItem;
+    globalThis.Folder = originalFolder;
+  }
+});
+
+test("legacy Craftsman pack retirement rechecks a folder after Item deletion hooks add foreign content", async () => {
+  const originalGame = globalThis.game;
+  const originalItem = globalThis.Item;
+  const originalFolder = globalThis.Folder;
+  const nativeDocuments = makePublishedNativeCraftsmanSubclassDocuments();
+  const folder = (id, parentId) => ({
+    id,
+    folder: parentId,
+    flags: { "rebreya-main": { managed: true } },
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  });
+  const legacyFolders = [
+    folder("race-root", null),
+    folder("race-child", "race-root")
+  ];
+  const legacyDocuments = [{
+    id: "owned-research",
+    folder: "race-child",
+    flags: { "rebreya-main": { managed: true, sourceType: "research" } },
+    getFlag(scope, key) {
+      return this.flags?.[scope]?.[key];
+    }
+  }];
+  const legacyPack = {
+    collection: "world.rebreya-craftsman-archetypes",
+    folders: { contents: legacyFolders },
+    async getDocuments() {
+      return Array.from(legacyDocuments);
+    }
+  };
+  const folderDeleteCalls = [];
+  globalThis.game = {
+    packs: new Map([
+      ["world.rebreya-subclasses", {
+        collection: "world.rebreya-subclasses",
+        async getDocuments() {
+          return nativeDocuments;
+        }
+      }],
+      [legacyPack.collection, legacyPack]
+    ])
+  };
+  globalThis.Item = {
+    implementation: {
+      async deleteDocuments(ids) {
+        for (const id of ids) {
+          const index = legacyDocuments.findIndex((entry) => entry.id === id);
+          if (index >= 0) legacyDocuments.splice(index, 1);
+        }
+        legacyDocuments.push({
+          id: "hook-created-foreign-item",
+          folder: "race-child",
+          flags: { "rebreya-main": { managed: false, sourceType: "foreign" } },
+          getFlag(scope, key) {
+            return this.flags?.[scope]?.[key];
+          }
+        });
+      }
+    }
+  };
+  globalThis.Folder = {
+    implementation: {
+      async deleteDocuments(ids) {
+        for (const id of ids) {
+          folderDeleteCalls.push(id);
+          const target = legacyFolders.find((entry) => entry.id === id);
+          const parentId = target?.folder ?? null;
+          for (const document of legacyDocuments) {
+            if (document.folder === id) document.folder = parentId;
+          }
+          for (const child of legacyFolders) {
+            if (child.folder === id) child.folder = parentId;
+          }
+          const index = legacyFolders.findIndex((entry) => entry.id === id);
+          if (index >= 0) legacyFolders.splice(index, 1);
+        }
+      }
+    }
+  };
+
+  try {
+    const result = await retireLegacyCraftsmanArchetypesPack(legacyPack);
+
+    assert.deepEqual(result, {
+      deletedDocumentIds: ["owned-research"],
+      deletedFolderIds: []
+    });
+    assert.deepEqual(folderDeleteCalls, []);
+    assert.deepEqual(legacyFolders.map((entry) => entry.id), ["race-root", "race-child"]);
+    assert.equal(legacyDocuments.length, 1);
+    assert.equal(legacyDocuments[0].id, "hook-created-foreign-item");
+    assert.equal(legacyDocuments[0].folder, "race-child");
   }
   finally {
     globalThis.game = originalGame;
