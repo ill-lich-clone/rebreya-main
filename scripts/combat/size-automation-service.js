@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { getActiveGm } from "../infrastructure/foundry/active-gm.js";
 
 const EFFECT_MODE_ADD = globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
 
@@ -66,18 +67,55 @@ function collectionContents(collection) {
   return [];
 }
 
+function gameUsers(users) {
+  if (Array.isArray(users?.contents)) return users.contents;
+  if (Array.isArray(users)) return users;
+  if (typeof users?.values === "function") return Array.from(users.values());
+  if (users && typeof users[Symbol.iterator] === "function") return Array.from(users);
+  return [];
+}
+
 function defaultCanManageActor(actor) {
-  const currentUser = globalThis.game?.user;
-  if (!currentUser) {
-    return false;
-  }
-  if (currentUser.isGM) {
-    return true;
-  }
-  if (typeof actor?.testUserPermission === "function") {
-    return actor.testUserPermission(currentUser, "OWNER");
+  const game = globalThis.game;
+  const currentUser = game?.user;
+  if (!currentUser?.active) return false;
+
+  const activeGm = getActiveGm(game);
+  if (activeGm) return String(activeGm.id) === String(currentUser.id);
+
+  const activeOwners = gameUsers(game?.users)
+    .filter((user) => (
+      user?.active
+      && !user.isGM
+      && actor?.testUserPermission?.(user, "OWNER") === true
+    ))
+    .sort((left, right) => {
+      const leftId = String(left.id);
+      const rightId = String(right.id);
+      if (leftId < rightId) return -1;
+      if (leftId > rightId) return 1;
+      return 0;
+    });
+  if (activeOwners.length > 0) {
+    return String(activeOwners[0].id) === String(currentUser.id);
   }
   return actor?.isOwner === true;
+}
+
+function isMissingActiveEffectError(error) {
+  const message = String(error?.message ?? error ?? "");
+  return /ActiveEffect\s+"[^"]+"\s+does not exist!?/iu.test(message);
+}
+
+async function deleteManagedEffects(actor, ids, options) {
+  for (const id of new Set(ids.filter(Boolean))) {
+    try {
+      await actor.deleteEmbeddedDocuments("ActiveEffect", [id], options);
+    }
+    catch (error) {
+      if (!isMissingActiveEffectError(error)) throw error;
+    }
+  }
 }
 
 function isManagedSizeEffect(effect) {
@@ -210,7 +248,7 @@ export class SizeAutomationService {
     if (!desired) {
       const ids = managed.map((effect) => effect.id ?? effect._id).filter(Boolean);
       if (ids.length > 0) {
-        await actor.deleteEmbeddedDocuments("ActiveEffect", ids, mutationOptions);
+        await deleteManagedEffects(actor, ids, mutationOptions);
       }
       return ids.length > 0;
     }
@@ -231,7 +269,7 @@ export class SizeAutomationService {
 
     const duplicateIds = duplicates.map((effect) => effect.id ?? effect._id).filter(Boolean);
     if (duplicateIds.length > 0) {
-      await actor.deleteEmbeddedDocuments("ActiveEffect", duplicateIds, mutationOptions);
+      await deleteManagedEffects(actor, duplicateIds, mutationOptions);
       changed = true;
     }
     return changed;

@@ -106,3 +106,67 @@ test("syncActor ignores NPC actors and unauthorized clients", async () => {
   assert.equal(npc.effects.contents.length, 0);
   assert.equal(denied.effects.contents.length, 0);
 });
+
+test("default size synchronization authority belongs only to the active GM", async () => {
+  const previousGame = globalThis.game;
+  const activeGm = { id: "gm-active", active: true, isGM: true };
+  const standbyGm = { id: "gm-standby", active: true, isGM: true };
+  const actor = makeActor({ type: "character", size: "lg" });
+
+  try {
+    globalThis.game = {
+      user: standbyGm,
+      users: { activeGM: activeGm, contents: [activeGm, standbyGm] }
+    };
+    assert.equal(await new SizeAutomationService({}).syncActor(actor), false);
+    assert.equal(actor.effects.contents.length, 0);
+
+    globalThis.game.user = activeGm;
+    assert.equal(await new SizeAutomationService({}).syncActor(actor), true);
+    assert.equal(actor.effects.contents.length, 1);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("default authority elects exactly one active owner when no GM is online", async () => {
+  const previousGame = globalThis.game;
+  const electedOwner = { id: "I-owner", active: true, isGM: false };
+  const otherOwner = { id: "i-owner", active: true, isGM: false };
+  const actor = makeActor({ type: "character", size: "lg" });
+  actor.testUserPermission = (user, permission) => permission === "OWNER" && [
+    electedOwner.id,
+    otherOwner.id
+  ].includes(user.id);
+
+  try {
+    globalThis.game = {
+      user: otherOwner,
+      users: { activeGM: null, contents: [otherOwner, electedOwner] }
+    };
+    assert.equal(await new SizeAutomationService({}).syncActor(actor), false);
+    assert.equal(actor.effects.contents.length, 0);
+
+    globalThis.game.user = electedOwner;
+    assert.equal(await new SizeAutomationService({}).syncActor(actor), true);
+    assert.equal(actor.effects.contents.length, 1);
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+});
+
+test("removing a managed size effect is idempotent when another client already deleted it", async () => {
+  const actor = makeActor({ type: "character", size: "med" });
+  actor.effects.contents.push({
+    id: "stale-size-effect",
+    flags: { "rebreya-main": { sizeAutomation: { managed: true, size: "lg" } } }
+  });
+  actor.deleteEmbeddedDocuments = async () => {
+    throw new Error('ActiveEffect "stale-size-effect" does not exist!');
+  };
+
+  const service = new SizeAutomationService({}, { canManageActor: () => true });
+  assert.equal(await service.syncActor(actor), true);
+});

@@ -67,7 +67,7 @@ import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.110-giant-tribe-cleanup";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.109-character-size-reach";
-import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.109-character-size";
+import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
