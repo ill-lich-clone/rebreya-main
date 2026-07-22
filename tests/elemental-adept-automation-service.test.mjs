@@ -85,6 +85,7 @@ function makeConfiguredCharacter(damageType = "fire") {
 }
 
 function makeDamageRoll({
+  id = "",
   type = "fire",
   types = [],
   terms = [],
@@ -92,6 +93,7 @@ function makeDamageRoll({
   total = 0,
 } = {}) {
   return {
+    id,
     options: { type, types },
     terms,
     parent,
@@ -481,12 +483,14 @@ test("Elemental Adept preserves full multi-roll messages while serializing concu
       activeUpdates -= 1;
     },
   };
-  const first = makeDamageRoll({ parent: message, terms: [{ results: [{ result: 1, active: true }] }] });
+  const first = makeDamageRoll({ id: "fire-roll", parent: message, terms: [{ results: [{ result: 1, active: true }] }] });
   first.terms[0].class = "Die";
   first.terms[0].faces = 6;
-  const radiant = makeDamageRoll({ type: "radiant", parent: message, total: 9, terms: [{ class: "Die", faces: 6, results: [{ result: 1, active: true }] }] });
-  const second = makeDamageRoll({ type: "lightning", parent: message, terms: [{ class: "Die", faces: 6, results: [{ result: 2, active: true }] }] });
-  message.rolls = [first, radiant, second];
+  const second = makeDamageRoll({ id: "lightning-roll", type: "lightning", parent: message, terms: [{ class: "Die", faces: 6, results: [{ result: 2, active: true }] }] });
+  const firstCopy = makeDamageRoll({ id: "fire-roll", total: 1, terms: [{ class: "Die", faces: 6, results: [{ result: 1, active: true }] }] });
+  const radiantCopy = makeDamageRoll({ id: "radiant-roll", type: "radiant", total: 9, terms: [{ class: "Die", faces: 6, results: [{ result: 1, active: true }] }] });
+  const secondCopy = makeDamageRoll({ id: "lightning-roll", type: "lightning", total: 2, terms: [{ class: "Die", faces: 6, results: [{ result: 2, active: true }] }] });
+  message.rolls = [firstCopy, radiantCopy, secondCopy];
   const service = new ElementalAdeptAutomationService();
   const context = { subject: spellActivity(actor) };
 
@@ -499,7 +503,9 @@ test("Elemental Adept preserves full multi-roll messages while serializing concu
     { rolls: [{ total: 42, type: "fire" }, { total: 9, type: "radiant" }, { total: 42, type: "lightning" }] },
     { rolls: [{ total: 42, type: "fire" }, { total: 9, type: "radiant" }, { total: 42, type: "lightning" }] },
   ]);
-  assert.equal(radiant.terms[0].results[0].result, 1);
+  assert.equal(firstCopy.terms[0].results[0].result, 1, "message roll copies remain stale until their serialized replacement is applied");
+  assert.equal(radiantCopy.terms[0].results[0].result, 1);
+  assert.equal(secondCopy.terms[0].results[0].result, 2, "concurrent hook copies must also be merged into the final patch");
 
   assert.equal(await service.applyDnd5ePostDamageRoll([first], context), false);
   assert.equal(updates.length, 2);

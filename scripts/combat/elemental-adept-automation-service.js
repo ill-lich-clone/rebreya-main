@@ -139,6 +139,54 @@ function elementalAdeptRollDamageTypes(roll) {
   return new Set(values.map(normalizeElementalAdeptDamageType).filter(Boolean));
 }
 
+function elementalAdeptRollIdentity(roll) {
+  return cleanString(
+    roll?.uuid
+    ?? roll?.id
+    ?? roll?._id
+    ?? roll?.options?.rollId
+    ?? roll?.options?.id
+    ?? roll?.options?._id,
+  );
+}
+
+function elementalAdeptRollPosition(roll) {
+  const position = Number(
+    roll?.index
+    ?? roll?._index
+    ?? roll?.options?.rollIndex
+    ?? roll?.options?.index,
+  );
+  return Number.isInteger(position) && position >= 0 ? position : -1;
+}
+
+function elementalAdeptRollSignature(roll) {
+  const serialized = roll?.toJSON?.() ?? roll ?? {};
+  const formula = cleanString(roll?.formula ?? roll?._formula ?? serialized?.formula);
+  const types = Array.from(elementalAdeptRollDamageTypes(roll)).sort().join(",");
+  return formula || types ? `${formula}\u0000${types}` : "";
+}
+
+function elementalAdeptMessageRollIndex(rolls, replacement) {
+  const identity = elementalAdeptRollIdentity(replacement);
+  if (identity) {
+    const index = rolls.findIndex((roll) => elementalAdeptRollIdentity(roll) === identity);
+    if (index >= 0) return index;
+  }
+  const position = elementalAdeptRollPosition(replacement);
+  if (position >= 0 && position < rolls.length) {
+    return position;
+  }
+  const signature = elementalAdeptRollSignature(replacement);
+  if (!signature) {
+    return -1;
+  }
+  const matches = rolls
+    .map((roll, index) => elementalAdeptRollSignature(roll) === signature ? index : -1)
+    .filter((index) => index >= 0);
+  return matches.length === 1 ? matches[0] : -1;
+}
+
 function isElementalAdeptDieTerm(term) {
   const DiceTerm = globalThis.DiceTerm ?? globalThis.foundry?.dice?.terms?.DiceTerm ?? null;
   if (typeof DiceTerm === "function" && term instanceof DiceTerm) {
@@ -338,6 +386,7 @@ export class ElementalAdeptAutomationService {
     this._pendingItems = new Set();
     this._actorPromises = new Map();
     this._messagePromises = new Map();
+    this._messageRollStates = new Map();
   }
 
   async handleCreatedItem(item, options = {}, userId = "") {
@@ -393,11 +442,17 @@ export class ElementalAdeptAutomationService {
       }
     }
 
-    const changedMessages = new Set(Array.from(changedRolls, (roll) => roll.parent).filter((message) => typeof message?.update === "function"));
-    await Promise.all(Array.from(changedMessages, (message) => this.#enqueueMessageUpdate(
-      message,
-      safeRolls.filter((roll) => roll?.parent === message),
-    )));
+    const changedRollsByMessage = new Map();
+    for (const roll of changedRolls) {
+      const message = roll.parent;
+      if (typeof message?.update !== "function") {
+        continue;
+      }
+      const messageRolls = changedRollsByMessage.get(message) ?? [];
+      messageRolls.push(roll);
+      changedRollsByMessage.set(message, messageRolls);
+    }
+    await Promise.all(Array.from(changedRollsByMessage, ([message, messageRolls]) => this.#enqueueMessageUpdate(message, messageRolls)));
     return changedRolls.size > 0;
   }
 
@@ -429,14 +484,21 @@ export class ElementalAdeptAutomationService {
 
   async #enqueueMessageUpdate(message, rolls) {
     const key = this.#messageKey(message);
+    const state = this._messageRollStates.get(key) ?? { rolls: normalizeCollection(message?.rolls).slice() };
+    this._messageRollStates.set(key, state);
+    for (const roll of rolls) {
+      const index = elementalAdeptMessageRollIndex(state.rolls, roll);
+      if (index >= 0) {
+        state.rolls[index] = roll;
+      }
+      else {
+        state.rolls.push(roll);
+      }
+    }
     const previous = this._messagePromises.get(key) ?? Promise.resolve();
     const current = previous
       .catch(() => undefined)
-      .then(() => {
-        const completeRolls = normalizeCollection(message?.rolls);
-        const finalRolls = completeRolls.length ? completeRolls : rolls;
-        return message.update({ rolls: finalRolls.map((roll) => roll.toJSON?.() ?? roll) });
-      });
+      .then(() => message.update({ rolls: state.rolls.map((roll) => roll.toJSON?.() ?? roll) }));
     this._messagePromises.set(key, current);
     try {
       await current;
@@ -444,6 +506,7 @@ export class ElementalAdeptAutomationService {
     finally {
       if (this._messagePromises.get(key) === current) {
         this._messagePromises.delete(key);
+        this._messageRollStates.delete(key);
       }
     }
   }
