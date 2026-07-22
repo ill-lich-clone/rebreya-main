@@ -155,6 +155,15 @@ const RACE_LANGUAGE_RULE_OVERRIDES = {
 };
 
 const RACE_ABILITY_OVERRIDES = {
+  минотавры: [
+    {
+      fixed: { con: 2, int: -1 },
+      points: 2,
+      cap: 2,
+      allowed: ["str", "wis", "cha"],
+      hint: "Выберите Силу, Мудрость или Харизму для увеличения на 2."
+    }
+  ],
   кентавры: [
     {
       fixed: { wis: 2 },
@@ -204,6 +213,24 @@ const RACE_ABILITY_OVERRIDES = {
       hint: "Распределите два дополнительных пункта по +1."
     }
   ],
+  полувеликаны: [
+    {
+      fixed: { str: 2, dex: -2 },
+      points: 2,
+      cap: 2,
+      allowed: ["con", "wis"],
+      hint: "Выберите Телосложение или Мудрость для увеличения на 2."
+    }
+  ],
+  пепельные: [
+    {
+      fixed: { cha: 1 },
+      points: 2,
+      cap: 2,
+      allowed: ["wis", "dex"],
+      hint: "Выберите Мудрость или Ловкость для увеличения на 2."
+    }
+  ],
   големы: [
     {
       fixed: { con: 2, int: -1 },
@@ -213,6 +240,13 @@ const RACE_ABILITY_OVERRIDES = {
       hint: "Выберите Силу, Мудрость или Харизму для увеличения на 2."
     }
   ]
+};
+
+const RACE_ABILITY_PENALTY_CHOICES = {
+  кентавры: { amount: 2, allowed: ["int", "cha"] },
+  леониды: { amount: 1, allowed: ["wis", "con"] },
+  нефилимы: { amount: 2, allowed: ["con", "wis"] },
+  пепельные: { amount: 2, allowed: ["con", "str"] }
 };
 
 function cleanString(value, fallback = "") {
@@ -423,7 +457,7 @@ function parseAbilityIncreaseSpecs(race) {
       return false;
     }
 
-    const hasChoice = /\bили\b/u.test(matchText);
+    const hasChoice = /(?:^|\s)или(?:\s|$)/u.test(matchText);
     if (hasChoice) {
       if (isDecrease) {
         notes.push(`Снижение (${keys.join("/")}) на ${parsedAmount} нужно применить вручную.`);
@@ -448,24 +482,37 @@ function parseAbilityIncreaseSpecs(race) {
     return true;
   };
 
-  const increaseRegex = /([а-яa-z,\s]+?)\s+увеличива\w*\s+на\s+(\d+)/gu;
+  const increaseRegex = /([а-яa-z,\s]+?)\s+увеличива\p{L}*\s+на\s+(\d+)/gu;
   for (const match of text.matchAll(increaseRegex)) {
     handleClause(match[1], match[2], false);
   }
 
-  const decreaseRegex = /([а-яa-z,\s]+?)\s+уменьша\w*\s+на\s+(\d+)/gu;
+  const decreaseRegex = /([а-яa-z,\s]+?)\s+уменьша\p{L}*\s+на\s+(\d+)/gu;
   for (const match of text.matchAll(decreaseRegex)) {
     handleClause(match[1], match[2], true);
+  }
+
+  const trailingRestrictedChoiceRegex = /(?:^|[,.]|\sи\s)\s*([а-яa-z]+(?:\s+или\s+[а-яa-z]+)+)\s+на\s+(\d+)/gu;
+  for (const match of text.matchAll(trailingRestrictedChoiceRegex)) {
+    handleClause(match[1], match[2], false);
   }
 
   const genericSpecs = [];
   const fixedPlusTwoKeys = ABILITY_KEYS.filter((key) => fixed[key] >= 2);
   const hasFixedPlusTwo = fixedPlusTwoKeys.length > 0;
+  const hasGenericPlusTwoPlusOne = (
+    /увеличьте\s+значение\s+одной\s+характеристики\s+на\s+2\s+и\s+другой\s+на\s+1/u.test(text)
+    || /(?:значение\s+)?одн\p{L}*\s+(?:(?:ваш\p{L}*|люб\p{L}*)\s+)?характеристик\p{L}*[^.]*увеличива\p{L}*\s+на\s+2[\s\S]*?(?:одн\p{L}*\s+)?друг\p{L}*[^\d]*на\s+1/u.test(text)
+  );
 
   if (/двух характеристик[^.]*на 1[^.]*либо[^.]*на 2/u.test(text)) {
     genericSpecs.push({ points: 2, cap: 2 });
   }
-  else if (/выберите один из вариантов/u.test(text) || /выбер[её]те одно из/u.test(text)) {
+  else if (
+    /выберите один из вариантов/u.test(text)
+    || /выбер[её]те одно из/u.test(text)
+    || hasGenericPlusTwoPlusOne
+  ) {
     genericSpecs.push({ points: 3, cap: 2 });
   }
   else if (/две другие[^.]*на 1/u.test(text) || /двух других[^.]*на 1/u.test(text)) {
@@ -488,13 +535,33 @@ function parseAbilityIncreaseSpecs(race) {
     !genericSpecs.length
     && hasFixedPlusTwo
     && !choiceSpecs.length
-    && /(другая характеристика увеличивается на 1|другой на 1)/u.test(text)
+    && /(другая характеристика[^.]*увеличивается на 1|другой на 1)/u.test(text)
   ) {
     genericSpecs.push({ points: 1, cap: 1, disallow: fixedPlusTwoKeys });
   }
 
+  const variableSpecs = [...choiceSpecs];
+  for (const generic of genericSpecs) {
+    const disallow = new Set(Array.isArray(generic.disallow) ? generic.disallow : []);
+    const allowed = ABILITY_KEYS.filter((key) => !disallow.has(key));
+    variableSpecs.push({
+      fixed: createAbilityFixed(),
+      points: Math.max(0, Math.floor(parseNumber(generic.points, 0))),
+      cap: Math.max(1, Math.floor(parseNumber(generic.cap, 2))),
+      allowed,
+      hint: ""
+    });
+  }
+
   const specs = [];
-  if (hasAnyFixedChange(fixed)) {
+  if (hasAnyFixedChange(fixed) && variableSpecs.length === 1) {
+    variableSpecs[0].fixed = createAbilityFixed(fixed);
+    variableSpecs[0].cap = Math.max(
+      variableSpecs[0].cap,
+      ...ABILITY_KEYS.map((key) => Math.max(0, fixed[key]))
+    );
+  }
+  else if (hasAnyFixedChange(fixed)) {
     specs.push({
       fixed,
       points: 0,
@@ -503,22 +570,7 @@ function parseAbilityIncreaseSpecs(race) {
       hint: ""
     });
   }
-
-  for (const entry of choiceSpecs) {
-    specs.push(entry);
-  }
-
-  for (const generic of genericSpecs) {
-    const disallow = new Set(Array.isArray(generic.disallow) ? generic.disallow : []);
-    const allowed = ABILITY_KEYS.filter((key) => !disallow.has(key));
-    specs.push({
-      fixed: createAbilityFixed(),
-      points: Math.max(0, Math.floor(parseNumber(generic.points, 0))),
-      cap: Math.max(1, Math.floor(parseNumber(generic.cap, 2))),
-      allowed,
-      hint: ""
-    });
-  }
+  specs.push(...variableSpecs);
 
   if (!specs.length) {
     return [];
@@ -1596,6 +1648,7 @@ function getFixedRaceSize(race) {
 }
 
 export function buildRaceFlags(race, signature = "") {
+  const abilityPenaltyChoice = RACE_ABILITY_PENALTY_CHOICES[getRaceKey(race)];
   return {
     [MODULE_ID]: {
       managed: true,
@@ -1605,6 +1658,12 @@ export function buildRaceFlags(race, signature = "") {
       hands: {
         max: RACE_HANDS_DEFAULT
       },
+      ...(abilityPenaltyChoice ? {
+        abilityPenaltyChoice: {
+          amount: abilityPenaltyChoice.amount,
+          allowed: [...abilityPenaltyChoice.allowed]
+        }
+      } : {}),
       automation: buildFeatureAutomationFlag(race?.automation),
       signature
     }

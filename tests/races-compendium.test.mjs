@@ -157,3 +157,127 @@ test("generated race flags expose the default two usable hands", () => {
     max: 2
   });
 });
+
+const ABILITY_KEYS = ["str", "dex", "con", "int", "wis", "cha"];
+
+function expectedAbilityConfig({ fixed = {}, points, cap, allowed = null }) {
+  return {
+    fixed: Object.fromEntries(ABILITY_KEYS.map((key) => [key, fixed[key] ?? 0])),
+    points,
+    cap,
+    locked: Array.isArray(allowed) ? ABILITY_KEYS.filter((key) => !allowed.includes(key)) : []
+  };
+}
+
+const EXPECTED_RACE_ABILITY_CONFIGS = {
+  люди: [{ points: 2, cap: 2 }],
+  дварфы: [{ fixed: { con: 2 }, points: 1, cap: 2, allowed: ["str", "wis"] }],
+  полуэльфы: [{ points: 2, cap: 2 }, { points: 2, cap: 1 }],
+  "высшие-эльфы": [{ points: 3, cap: 2 }],
+  полурослики: [{ points: 3, cap: 2 }],
+  полуорки: [{ fixed: { str: 2 }, points: 1, cap: 2, allowed: ["dex", "con", "int", "wis", "cha"] }],
+  орки: [{ points: 3, cap: 2 }],
+  "лесные-эльфы": [{ fixed: { dex: 2 }, points: 1, cap: 2, allowed: ["str", "con", "int", "wis", "cha"] }],
+  "морские-эльфы": [{ points: 3, cap: 2 }],
+  кирисан: [{ points: 3, cap: 2 }],
+  таргулы: [{ points: 3, cap: 2 }],
+  гномы: [{ points: 3, cap: 2 }],
+  гоблины: [{ points: 3, cap: 2 }],
+  голиафы: [{ points: 3, cap: 2 }],
+  драконорождённые: [{ points: 3, cap: 2 }],
+  железорождённые: [{ fixed: { con: 2 }, points: 1, cap: 2, allowed: ["str", "dex", "int", "wis", "cha"] }],
+  гении: [{ points: 3, cap: 2 }],
+  синтеты: [{ points: 3, cap: 2 }],
+  дроу: [{ points: 3, cap: 2 }],
+  ааракокры: [{ points: 3, cap: 2 }],
+  людоящеры: [{ points: 3, cap: 2 }],
+  тортлы: [{ points: 3, cap: 2 }],
+  багбиры: [{ points: 3, cap: 2 }],
+  кобольды: [{ points: 2, cap: 2 }],
+  грунги: [{ points: 3, cap: 2 }],
+  гноллы: [{ points: 3, cap: 2 }],
+  табакси: [{ points: 3, cap: 2 }],
+  минотавры: [{ fixed: { con: 2, int: -1 }, points: 2, cap: 2, allowed: ["str", "wis", "cha"] }],
+  кентавры: [{ fixed: { wis: 2 }, points: 2, cap: 2, allowed: ["str", "dex"] }],
+  леониды: [
+    { points: 2, cap: 2, allowed: ["str", "dex"] },
+    { points: 2, cap: 2, allowed: ["cha", "int"] }
+  ],
+  полувеликаны: [{ fixed: { str: 2, dex: -2 }, points: 2, cap: 2, allowed: ["con", "wis"] }],
+  нефилимы: [
+    { points: 2, cap: 2, allowed: ["int", "cha"] },
+    { points: 1, cap: 1, allowed: ["dex", "str"] }
+  ],
+  пепельные: [{ fixed: { cha: 1 }, points: 2, cap: 2, allowed: ["wis", "dex"] }],
+  големы: [{ fixed: { con: 2, int: -1 }, points: 2, cap: 2, allowed: ["str", "wis", "cha"] }]
+};
+
+test("all Teyvankal races generate the exact documented ability advancements", () => {
+  const source = JSON.parse(readFileSync(
+    new URL("../data/races-teyvankal-v01.json", import.meta.url),
+    "utf8"
+  ));
+  assert.equal(source.races.length, 34);
+  assert.deepEqual(Object.keys(EXPECTED_RACE_ABILITY_CONFIGS).sort(), source.races.map((race) => race.id).sort());
+
+  for (const race of source.races) {
+    const actual = buildRaceAdvancement({
+      ...race,
+      abilities: [],
+      raceFeatNames: []
+    })
+      .filter((entry) => entry.type === "AbilityScoreImprovement")
+      .map((entry) => ({
+        fixed: entry.configuration.fixed,
+        points: entry.configuration.points,
+        cap: entry.configuration.cap,
+        locked: entry.configuration.locked
+      }));
+    const expected = EXPECTED_RACE_ABILITY_CONFIGS[race.id].map(expectedAbilityConfig);
+    assert.deepEqual(actual, expected, race.name);
+  }
+});
+
+test("selectable racial penalties are published only for the four affected races", () => {
+  const source = JSON.parse(readFileSync(
+    new URL("../data/races-teyvankal-v01.json", import.meta.url),
+    "utf8"
+  ));
+  const expected = {
+    кентавры: { amount: 2, allowed: ["int", "cha"] },
+    леониды: { amount: 1, allowed: ["wis", "con"] },
+    нефилимы: { amount: 2, allowed: ["con", "wis"] },
+    пепельные: { amount: 2, allowed: ["con", "str"] }
+  };
+
+  for (const race of source.races) {
+    assert.deepEqual(
+      buildRaceFlags(race)["rebreya-main"].abilityPenaltyChoice,
+      expected[race.id],
+      race.name
+    );
+  }
+});
+
+test("Нечеловеческая сила raises only the Strength maximum to 22", () => {
+  const source = JSON.parse(readFileSync(
+    new URL("../data/races-teyvankal-v01.json", import.meta.url),
+    "utf8"
+  ));
+  const halfGiant = source.races.find((race) => race.id === "полувеликаны");
+  const feature = halfGiant.abilities.find((ability) => ability.name === "Нечеловеческая сила");
+  const changes = feature.automation.effects.map((effect) => ({
+    key: effect.key,
+    mode: effect.mode,
+    value: effect.value,
+    transfer: effect.transfer
+  }));
+
+  assert.deepEqual(changes, [{
+    key: "system.abilities.str.max",
+    mode: 4,
+    value: "22",
+    transfer: true
+  }]);
+  assert.equal(changes.some((change) => change.key === "system.abilities.str.value"), false);
+});
