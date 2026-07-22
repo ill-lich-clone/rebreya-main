@@ -1,15 +1,11 @@
 import {
   CLASS_FEATURES_COMPENDIUM_LABEL,
   CLASS_FEATURES_COMPENDIUM_NAME,
-  CRAFTSMAN_ARCHETYPES_COMPENDIUM_LABEL,
-  CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME,
   CLASSES_COMPENDIUM_LABEL,
   CLASSES_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
   MODULE_ID,
-  RESEARCH_ITEM_TYPE,
   SPELLS_COMPENDIUM_NAME,
-  SPECIALTY_ITEM_TYPE,
   SUBCLASSES_COMPENDIUM_LABEL,
   SUBCLASSES_COMPENDIUM_NAME
 } from "../constants.js";
@@ -64,13 +60,12 @@ const CLASS_ICON_SEARCH_PATHS = [
 const FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const SPELLS_PACK_ID = `world.${SPELLS_COMPENDIUM_NAME}`;
 const CLASS_FEATURES_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
-const CRAFTSMAN_ARCHETYPES_PACK_ID = `world.${CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME}`;
 const SUBCLASSES_PACK_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
 const CLASSES_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
 
 const CLASS_ROOT_FOLDER = "Классы";
 const SUBCLASS_ROOT_FOLDER = "Архетипы";
-const CRAFTSMAN_ARCHETYPE_ROOT_FOLDER = "Ремесленник";
+const CRAFTSMAN_SUBCLASS_ROOT_FOLDER = "Ремесленник V0.1";
 const CLASS_FEATURE_ROOT_FOLDER = "Варвар (Реворк V0.12)";
 const FIGHTER_CLASS_FEATURE_ROOT_FOLDER = "Воин (Реворк V0.28)";
 const PALADIN_CLASS_FEATURE_ROOT_FOLDER = "Паладин (Реворк V0.1)";
@@ -80,7 +75,7 @@ const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya 
 
 const CLASS_FEATURE_TEMPLATE_VERSION = 15;
 const SUBCLASS_TEMPLATE_VERSION = 3;
-const CRAFTSMAN_ARCHETYPE_TEMPLATE_VERSION = 1;
+const CRAFTSMAN_SUBCLASS_TEMPLATE_VERSION = 1;
 const CLASS_TEMPLATE_VERSION = 6;
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 const ROGUE_CUNNING_STRIKE_SECTION_LABEL = "Хитрые удары";
@@ -261,33 +256,43 @@ export function buildFeatureUuidMap(featureDefinitions = [], packCollection = ""
   return featureUuidById;
 }
 
-export function buildCraftsmanArchetypeUuidMap(archetypeDefinitions = [], packCollection = "", documents = []) {
-  const actualUuidByArchetypeId = new Map();
+export function buildSubclassUuidMap(subclassEntries = [], documents = []) {
+  const documentsBySubclassId = new Map();
   for (const document of Array.isArray(documents) ? documents : []) {
-    if (!document?.getFlag?.(MODULE_ID, "managed")) {
+    if (
+      !document?.getFlag?.(MODULE_ID, "managed")
+      || document.getFlag(MODULE_ID, "sourceType") !== "subclass"
+    ) {
       continue;
     }
 
-    const archetypeId = cleanString(document.getFlag(MODULE_ID, "archetypeId"));
-    if (archetypeId && document.uuid) {
-      actualUuidByArchetypeId.set(archetypeId, document.uuid);
+    const subclassId = cleanString(document.getFlag(MODULE_ID, "subclassId"));
+    if (subclassId && document.uuid) {
+      documentsBySubclassId.set(subclassId, document);
     }
   }
 
-  const archetypeUuidById = new Map();
-  for (const archetype of Array.isArray(archetypeDefinitions) ? archetypeDefinitions : []) {
-    const archetypeId = cleanString(archetype?.archetypeId);
-    if (!archetypeId) {
+  const subclassUuidById = new Map();
+  for (const entry of Array.isArray(subclassEntries) ? subclassEntries : []) {
+    const subclassId = cleanString(entry?.subclassId);
+    const document = documentsBySubclassId.get(subclassId);
+    if (!subclassId || !document) {
       continue;
     }
 
-    const uuid = actualUuidByArchetypeId.get(archetypeId)
-      || compendiumItemUuid(packCollection, archetype.documentId);
-    if (uuid) {
-      archetypeUuidById.set(archetypeId, uuid);
+    if (entry.archetypeId && (
+      document.getFlag(MODULE_ID, "archetypeId") !== entry.archetypeId
+      || document.getFlag(MODULE_ID, "craftsmanTrack") !== entry.axis
+      || document.getFlag(MODULE_ID, "classIdentifier") !== entry.classIdentifier
+      || document.getFlag(MODULE_ID, "sourceRevision") !== entry.sourceRevision
+      || document.getFlag(MODULE_ID, "signature") !== entry.signature
+    )) {
+      continue;
     }
+
+    subclassUuidById.set(subclassId, document.uuid);
   }
-  return archetypeUuidById;
+  return subclassUuidById;
 }
 
 function escapeHtml(value) {
@@ -1077,7 +1082,7 @@ function normalizeCraftsmanArchetypeAxis(rawEntries, {
     return {
       archetypeId,
       axis,
-      type: axis === "research" ? RESEARCH_ITEM_TYPE : SPECIALTY_ITEM_TYPE,
+      type: "subclass",
       name,
       description: cleanString(rawArchetype?.descriptionMarkdown ?? rawArchetype?.description),
       descriptionMarkdown: cleanString(rawArchetype?.descriptionMarkdown ?? rawArchetype?.description),
@@ -4350,56 +4355,40 @@ function buildSubclassAdvancement(classIdentifier, classData = {}) {
   };
 }
 
-export function buildCraftsmanChoiceAdvancements(classData, context = {}) {
+export function buildCraftsmanSubclassAdvancements(classData) {
   if (cleanString(classData?.archetypeTracks) !== "research-specialty") {
     return [];
   }
 
-  const archetypeUuidById = context.archetypeUuidById instanceof Map
-    ? context.archetypeUuidById
-    : new Map();
   const specs = [
     {
-      entries: classData.researches ?? [],
-      itemType: RESEARCH_ITEM_TYPE,
       level: classData.researchLevel,
-      type: "ResearchChoice",
+      type: "ResearchSubclass",
       seed: "research-choice",
       title: cleanString(classData.researchTitle, "Направление исследований"),
       hint: cleanString(classData.researchHint, "Выберите направление исследования ремесленника.")
     },
     {
-      entries: classData.specialties ?? [],
-      itemType: SPECIALTY_ITEM_TYPE,
       level: classData.specialtyLevel,
-      type: "SpecialtyChoice",
+      type: "SpecialtySubclass",
       seed: "specialty-choice",
       title: cleanString(classData.specialtyTitle, "Специальность ремесленника"),
       hint: cleanString(classData.specialtyHint, "Выберите специальность ремесленника.")
     }
   ];
 
-  return specs.map((spec) => {
-    const pool = spec.entries.map((archetype) => {
-      const uuid = archetypeUuidById.get(archetype.archetypeId);
-      if (!uuid) {
-        throw new Error(`Missing craftsman archetype UUID: ${archetype.archetypeId}`);
-      }
-      return uuid;
-    });
-    const advancement = buildItemChoiceAdvancement({
-      classIdentifier: classData.identifier,
-      seed: spec.seed,
-      title: spec.title,
-      hint: spec.hint,
-      level: spec.level,
-      count: 1,
-      pool,
-      type: spec.itemType
-    });
-    advancement.type = spec.type;
-    return advancement;
-  });
+  return specs.map((spec) => ({
+    _id: stableHashId(`${classData.identifier}:${spec.seed}`, "adv"),
+    type: spec.type,
+    title: spec.title,
+    hint: spec.hint,
+    level: Math.max(1, Math.min(20, Math.floor(parseNumber(spec.level, spec.type === "ResearchSubclass" ? 2 : 3)))),
+    configuration: {},
+    value: {
+      document: null,
+      uuid: null
+    }
+  }));
 }
 
 function normalizeFeatIndexRecord(record, pack) {
@@ -4719,7 +4708,7 @@ export function buildClassAdvancement(classData, context = {}) {
   }
 
   if (cleanString(classData.archetypeTracks) === "research-specialty") {
-    advancements.push(...buildCraftsmanChoiceAdvancements(classData, context));
+    advancements.push(...buildCraftsmanSubclassAdvancements(classData));
   }
   else {
     advancements.push(buildSubclassAdvancement(classIdentifier, classData));
@@ -5084,23 +5073,9 @@ export function buildCraftsmanArchetypeAdvancements(archetype, context = {}) {
   });
 }
 
-function createCraftsmanArchetypeSystem(archetype, advancement, sourceLabel) {
-  return {
-    description: {
-      value: toHtmlParagraphs(archetype.descriptionMarkdown),
-      chat: ""
-    },
-    source: createSourceData(sourceLabel),
-    identifier: buildAsciiIdentifier(archetype.archetypeId, archetype.name),
-    classIdentifier: buildAsciiIdentifier(archetype.classIdentifier, archetype.classIdentifier),
-    spellcasting: normalizeSpellcastingData(archetype.spellcasting),
-    advancement: foundry.utils.deepClone(advancement)
-  };
-}
-
-function buildCraftsmanArchetypeSignature(archetype, system, sourceLabel) {
+function buildCraftsmanSubclassSignature(archetype, system, sourceLabel) {
   return JSON.stringify({
-    templateVersion: CRAFTSMAN_ARCHETYPE_TEMPLATE_VERSION,
+    templateVersion: CRAFTSMAN_SUBCLASS_TEMPLATE_VERSION,
     archetypeId: archetype.archetypeId,
     axis: archetype.axis,
     type: archetype.type,
@@ -5113,7 +5088,7 @@ function buildCraftsmanArchetypeSignature(archetype, system, sourceLabel) {
   });
 }
 
-export function buildCraftsmanArchetypeDefinitions(normalizedData, context = {}) {
+export function buildCraftsmanSubclassDefinitions(normalizedData, context = {}) {
   const archetypes = [
     ...(normalizedData?.researches ?? []),
     ...(normalizedData?.specialties ?? [])
@@ -5121,17 +5096,23 @@ export function buildCraftsmanArchetypeDefinitions(normalizedData, context = {})
 
   return archetypes.map((archetype) => {
     const advancement = buildCraftsmanArchetypeAdvancements(archetype, context);
-    const system = createCraftsmanArchetypeSystem(
-      archetype,
+    const system = createSubclassSystem(
+      {
+        ...archetype,
+        subclassId: archetype.archetypeId
+      },
+      archetype.classIdentifier,
       advancement,
       normalizedData.sourceLabel
     );
     return {
       ...archetype,
+      subclassId: archetype.archetypeId,
       system,
-      signature: buildCraftsmanArchetypeSignature(archetype, system, normalizedData.sourceLabel),
+      signature: buildCraftsmanSubclassSignature(archetype, system, normalizedData.sourceLabel),
       folderPath: normalizeFolderPath([
-        CRAFTSMAN_ARCHETYPE_ROOT_FOLDER,
+        SUBCLASS_ROOT_FOLDER,
+        CRAFTSMAN_SUBCLASS_ROOT_FOLDER,
         archetype.axis === "research" ? "Исследования" : "Специальности"
       ])
     };
@@ -5458,7 +5439,7 @@ function createSubclassEntryData(entry, folderIdByPath, iconLookup = null) {
   };
 }
 
-function createCraftsmanArchetypeEntryData(entry, folderIdByPath, iconLookup = null) {
+function createCraftsmanSubclassEntryData(entry, folderIdByPath, iconLookup = null) {
   const folderPath = entry.folderPath.join("/");
   return {
     _id: entry.documentId,
@@ -5474,8 +5455,10 @@ function createCraftsmanArchetypeEntryData(entry, folderIdByPath, iconLookup = n
     flags: {
       [MODULE_ID]: {
         managed: true,
-        sourceType: entry.axis,
+        sourceType: "subclass",
+        subclassId: entry.archetypeId,
         archetypeId: entry.archetypeId,
+        craftsmanTrack: entry.axis,
         classIdentifier: entry.classIdentifier,
         sourceRevision: entry.sourceRevision,
         signature: entry.signature
@@ -5614,60 +5597,8 @@ async function syncClassFeaturePack(featureDefinitions, context = {}) {
   };
 }
 
-export async function syncCraftsmanArchetypesPack(normalizedDataList, context = {}) {
-  const pack = await ensurePack(CRAFTSMAN_ARCHETYPES_PACK_ID, createPackMetadata({
-    name: CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME,
-    label: CRAFTSMAN_ARCHETYPES_COMPENDIUM_LABEL,
-    itemTypes: [RESEARCH_ITEM_TYPE, SPECIALTY_ITEM_TYPE]
-  }));
+export async function syncSubclassesPack(normalizedDataList, context = {}) {
   const normalized = Array.isArray(normalizedDataList) ? normalizedDataList : [normalizedDataList];
-  const archetypeDefinitions = normalized.flatMap((entry) => (
-    buildCraftsmanArchetypeDefinitions(entry, context)
-  ));
-  const documents = await getPackDocuments(pack);
-
-  await syncFlaggedManagedDocuments({
-    pack,
-    entries: archetypeDefinitions,
-    documents,
-    moduleId: MODULE_ID,
-    sourceIdFlag: "archetypeId",
-    prepareFolders: async (entries) => {
-      try {
-        return await ensureCompendiumFolders(pack, entries.map((entry) => entry.folderPath));
-      }
-      catch (error) {
-        console.warn(`${MODULE_ID} | Failed to prepare compendium folders for ${pack.collection}.`, error);
-        return new Map();
-      }
-    },
-    buildData: (entry, folderIdByPath) => (
-      createCraftsmanArchetypeEntryData(entry, folderIdByPath, context.iconLookup)
-    )
-  });
-
-  const activePack = game.packs.get(CRAFTSMAN_ARCHETYPES_PACK_ID) ?? pack;
-  const activeDocuments = await getPackDocuments(activePack);
-  const definitionById = new Map(archetypeDefinitions.map((entry) => [entry.archetypeId, entry]));
-  await syncManagedDocumentIcons(activePack, activeDocuments, (document) => {
-    const archetypeId = cleanString(document.getFlag?.(MODULE_ID, "archetypeId"));
-    const definition = definitionById.get(archetypeId);
-    return definition
-      ? resolveSubclassIcon(definition.name, context.iconLookup, definition.classIdentifier)
-      : "";
-  });
-
-  return {
-    pack: activePack,
-    archetypeUuidById: buildCraftsmanArchetypeUuidMap(
-      archetypeDefinitions,
-      activePack.collection,
-      activeDocuments
-    )
-  };
-}
-
-async function syncSubclassesPack(normalizedDataList, context) {
   const pack = await ensurePack(SUBCLASSES_PACK_ID, createPackMetadata({
     name: SUBCLASSES_COMPENDIUM_NAME,
     label: SUBCLASSES_COMPENDIUM_LABEL,
@@ -5675,7 +5606,7 @@ async function syncSubclassesPack(normalizedDataList, context) {
   }));
 
   const subclassEntries = [];
-  for (const normalizedData of Array.isArray(normalizedDataList) ? normalizedDataList : [normalizedDataList]) {
+  for (const normalizedData of normalized) {
     const classIdentifier = normalizedData.classData.identifier;
     for (const subclass of normalizedData.subclasses) {
       const advancement = buildSubclassAdvancements(subclass, {
@@ -5689,6 +5620,7 @@ async function syncSubclassesPack(normalizedDataList, context) {
       const system = createSubclassSystem(subclass, classIdentifier, advancement, normalizedData.sourceLabel);
       subclassEntries.push({
         subclass,
+        subclassId: subclass.subclassId,
         classIdentifier,
         system,
         signature: buildSubclassSignature(subclass, system, {
@@ -5699,6 +5631,13 @@ async function syncSubclassesPack(normalizedDataList, context) {
         folderPath: normalizeFolderPath([SUBCLASS_ROOT_FOLDER, normalizedData.classData.name])
       });
     }
+
+    for (const craftsmanSubclass of buildCraftsmanSubclassDefinitions(normalizedData, context)) {
+      subclassEntries.push({
+        ...craftsmanSubclass,
+        isCraftsmanSubclass: true
+      });
+    }
   }
 
   const documents = await getPackDocuments(pack);
@@ -5707,10 +5646,7 @@ async function syncSubclassesPack(normalizedDataList, context) {
   }
   await syncFlaggedManagedDocuments({
     pack,
-    entries: subclassEntries.map((entry) => ({
-      ...entry,
-      subclassId: entry.subclass.subclassId
-    })),
+    entries: subclassEntries,
     documents,
     moduleId: MODULE_ID,
     sourceIdFlag: "subclassId",
@@ -5723,7 +5659,11 @@ async function syncSubclassesPack(normalizedDataList, context) {
         return new Map();
       }
     },
-    buildData: (entry, folderIdByPath) => createSubclassEntryData(entry, folderIdByPath, context.iconLookup)
+    buildData: (entry, folderIdByPath) => (
+      entry.isCraftsmanSubclass
+        ? createCraftsmanSubclassEntryData(entry, folderIdByPath, context.iconLookup)
+        : createSubclassEntryData(entry, folderIdByPath, context.iconLookup)
+    )
   });
 
   const activePack = game.packs.get(SUBCLASSES_PACK_ID) ?? pack;
@@ -5739,10 +5679,35 @@ async function syncSubclassesPack(normalizedDataList, context) {
     )
   );
 
-  return activePack;
+  return {
+    pack: activePack,
+    subclassUuidById: buildSubclassUuidMap(subclassEntries, activeDocuments)
+  };
 }
 
-export async function syncClassesPack(normalizedDataList, context) {
+function validateCraftsmanSubclassUuidMap(normalizedDataList, subclassUuidById) {
+  const uuidById = subclassUuidById instanceof Map ? subclassUuidById : new Map();
+  for (const normalizedData of normalizedDataList) {
+    if (cleanString(normalizedData?.classData?.archetypeTracks) !== "research-specialty") {
+      continue;
+    }
+
+    for (const subclass of [
+      ...(normalizedData.researches ?? []),
+      ...(normalizedData.specialties ?? [])
+    ]) {
+      const expectedUuid = compendiumItemUuid(SUBCLASSES_PACK_ID, subclass.documentId);
+      if (uuidById.get(subclass.archetypeId) !== expectedUuid) {
+        throw new Error(`Missing craftsman subclass UUID: ${subclass.archetypeId}`);
+      }
+    }
+  }
+}
+
+export async function syncClassesPack(normalizedDataList, context = {}) {
+  const normalized = Array.isArray(normalizedDataList) ? normalizedDataList : [normalizedDataList];
+  validateCraftsmanSubclassUuidMap(normalized, context.subclassUuidById);
+
   const pack = await ensurePack(CLASSES_PACK_ID, createPackMetadata({
     name: CLASSES_COMPENDIUM_NAME,
     label: CLASSES_COMPENDIUM_LABEL,
@@ -5750,11 +5715,10 @@ export async function syncClassesPack(normalizedDataList, context) {
   }));
 
   const classEntries = [];
-  for (const normalizedData of Array.isArray(normalizedDataList) ? normalizedDataList : [normalizedDataList]) {
+  for (const normalizedData of normalized) {
     const classFeatures = normalizedData.classData.features;
     const classAdvancement = buildClassAdvancement(normalizedData.classData, {
       featureUuidById: context.featureUuidById,
-      archetypeUuidById: context.archetypeUuidById,
       classFeatureEntries: classFeatures,
       rageActionEntries: normalizedData.rageActions,
       minorFeatUuids: context.minorFeatUuids,
@@ -5839,20 +5803,16 @@ export class ClassesCompendiumService {
       rootFolders: normalizedData.map((classData) => classData.classFeatureRootFolder)
     });
     const {
-      pack: craftsmanArchetypesPack,
-      archetypeUuidById
-    } = await syncCraftsmanArchetypesPack(normalizedData, {
-      featureUuidById,
-      iconLookup
-    });
-    const subclassesPack = await syncSubclassesPack(normalizedData, {
+      pack: subclassesPack,
+      subclassUuidById
+    } = await syncSubclassesPack(normalizedData, {
       featureUuidById,
       iconLookup,
       spellUuidById
     });
     const classesPack = await syncClassesPack(normalizedData, {
       featureUuidById,
-      archetypeUuidById,
+      subclassUuidById,
       minorFeatUuids: featLookup.minorFeatUuids,
       fightingStyleFeatUuids: featLookup.fightingStyleFeatUuids,
       spellUuidById,
@@ -5861,7 +5821,6 @@ export class ClassesCompendiumService {
 
     return {
       classesPack,
-      craftsmanArchetypesPack,
       subclassesPack,
       featuresPack
     }

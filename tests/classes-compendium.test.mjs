@@ -31,8 +31,8 @@ globalThis.CONST ??= {
 const {
   buildMinorFeatPool,
   buildCraftsmanArchetypeAdvancements,
-  buildCraftsmanArchetypeDefinitions,
-  buildCraftsmanChoiceAdvancements,
+  buildCraftsmanSubclassDefinitions,
+  buildCraftsmanSubclassAdvancements,
   buildClassAdvancement,
   buildFeatureDefinitions,
   buildFeatureUuidMap,
@@ -44,7 +44,7 @@ const {
   resolveSubclassIcon,
   createSubclassSystem,
   normalizeClassCompendiumData,
-  syncCraftsmanArchetypesPack,
+  syncSubclassesPack,
   syncClassesPack
 } = await import("../scripts/data/classes-compendium.js");
 
@@ -190,10 +190,7 @@ class CraftsmanAdvancementManagerStub {
   constructor({ craftsman, classAdvancements, archetypeDefinitions, featureDefinitions, selectedArchetypes }) {
     this.craftsman = craftsman;
     this.classAdvancements = classAdvancements;
-    this.archetypeByUuid = new Map(archetypeDefinitions.map((entry) => [
-      `Compendium.world.rebreya-craftsman-archetypes.Item.${entry.documentId}`,
-      entry
-    ]));
+    this.archetypeById = new Map(archetypeDefinitions.map((entry) => [entry.archetypeId, entry]));
     this.featureByUuid = new Map(featureDefinitions.map((entry) => [
       `Compendium.world.rebreya-class-features.Item.${entry.documentId}`,
       entry
@@ -214,8 +211,11 @@ class CraftsmanAdvancementManagerStub {
   }
 
   getArchetype(axis) {
-    const type = axis === "research" ? "rebreya-main.research" : "rebreya-main.specialty";
-    return [...this.items.values()].find((item) => item.type === type) ?? null;
+    return [...this.items.values()].find((item) => (
+      item.type === "subclass"
+      && item.system.classIdentifier === "craftsman-v01"
+      && item.flags?.["rebreya-main"]?.craftsmanTrack === axis
+    )) ?? null;
   }
 
   getFeatureNames(axis) {
@@ -243,7 +243,7 @@ class CraftsmanAdvancementManagerStub {
   }
 
   #choiceForAxis(axis) {
-    const type = axis === "research" ? "ResearchChoice" : "SpecialtyChoice";
+    const type = axis === "research" ? "ResearchSubclass" : "SpecialtySubclass";
     return this.classAdvancements.find((entry) => entry.type === type);
   }
 
@@ -272,11 +272,9 @@ class CraftsmanAdvancementManagerStub {
   }
 
   #createArchetype(choice, archetypeId) {
-    const selected = choice.configuration.pool
-      .map((entry) => [entry.uuid, this.archetypeByUuid.get(entry.uuid)])
-      .find(([, definition]) => definition?.archetypeId === archetypeId);
-    assert.ok(selected, `missing selected archetype ${archetypeId}`);
-    const [sourceUuid, definition] = selected;
+    const definition = this.archetypeById.get(archetypeId);
+    assert.ok(definition, `missing selected archetype ${archetypeId}`);
+    const sourceUuid = `Compendium.world.rebreya-subclasses.Item.${definition.documentId}`;
     const item = {
       id: `${definition.axis}-${definition.documentId}`,
       type: definition.type,
@@ -284,6 +282,11 @@ class CraftsmanAdvancementManagerStub {
       sourceUuid,
       system: structuredClone(definition.system),
       flags: {
+        "rebreya-main": {
+          archetypeId: definition.archetypeId,
+          classIdentifier: definition.classIdentifier,
+          craftsmanTrack: definition.axis
+        },
         dnd5e: {
           advancementOrigin: `${this.classItem.id}.${choice._id}`,
           advancementRoot: `${this.classItem.id}.${choice._id}`
@@ -339,14 +342,14 @@ function createCraftsmanAdvancementHarness(raw = loadJson("data/craftsman-v01.js
   const craftsman = normalizeClassCompendiumData(raw);
   const featureDefinitions = buildFeatureDefinitions(craftsman);
   const featureUuidById = makeUuidMap(featureDefinitions);
-  const archetypeDefinitions = buildCraftsmanArchetypeDefinitions(craftsman, { featureUuidById });
-  const archetypeUuidById = new Map(archetypeDefinitions.map((entry) => [
+  const archetypeDefinitions = buildCraftsmanSubclassDefinitions(craftsman, { featureUuidById });
+  const subclassUuidById = new Map(archetypeDefinitions.map((entry) => [
     entry.archetypeId,
-    `Compendium.world.rebreya-craftsman-archetypes.Item.${entry.documentId}`
+    `Compendium.world.rebreya-subclasses.Item.${entry.documentId}`
   ]));
   const classAdvancements = buildClassAdvancement(craftsman.classData, {
     featureUuidById,
-    archetypeUuidById,
+    subclassUuidById,
     classFeatureEntries: craftsman.classData.features
   });
   return new CraftsmanAdvancementManagerStub({
@@ -371,50 +374,50 @@ test("class compendiums delegate managed lifecycle to the shared diff synchroniz
   assert.doesNotMatch(source, /async function createManagedDocuments/u);
 });
 
-test("craftsman class exposes independent research and specialty choices", () => {
+test("craftsman class exposes independent native subclass advancements", () => {
   const craftsman = normalizeClassCompendiumData(craftsmanDualArchetypeFixture());
-  const featureDefinitions = buildFeatureDefinitions(craftsman);
-  const featureUuidById = makeUuidMap(featureDefinitions);
-  const archetypeDefinitions = buildCraftsmanArchetypeDefinitions(craftsman, { featureUuidById });
-  const archetypeUuidById = new Map(archetypeDefinitions.map((entry) => [
-    entry.archetypeId,
-    `Compendium.world.rebreya-craftsman-archetypes.Item.${entry.documentId}`
-  ]));
-  const advancements = buildClassAdvancement(craftsman.classData, {
-    featureUuidById,
-    archetypeUuidById
-  });
-  const research = advancements.find((entry) => entry.type === "ResearchChoice");
-  const specialty = advancements.find((entry) => entry.type === "SpecialtyChoice");
+  const advancements = buildCraftsmanSubclassAdvancements(craftsman.classData);
+  const repeated = buildCraftsmanSubclassAdvancements(craftsman.classData);
+  const research = advancements.find((entry) => entry.type === "ResearchSubclass");
+  const specialty = advancements.find((entry) => entry.type === "SpecialtySubclass");
 
   assert.equal(craftsman.researches.length, 1);
   assert.equal(craftsman.specialties.length, 1);
-  assert.equal(research.level, 2);
-  assert.equal(research.configuration.type, "rebreya-main.research");
-  assert.deepEqual(research.configuration.pool, [{
-    uuid: archetypeUuidById.get("craftsman-research-mechanic")
-  }]);
-  assert.equal(specialty.level, 3);
-  assert.equal(specialty.configuration.type, "rebreya-main.specialty");
-  assert.deepEqual(specialty.configuration.pool, [{
-    uuid: archetypeUuidById.get("craftsman-specialty-constructor")
-  }]);
-  assert.equal(advancements.some((entry) => entry.type === "Subclass"), false);
+  assert.deepEqual(research, {
+    _id: repeated[0]._id,
+    type: "ResearchSubclass",
+    title: craftsman.classData.researchTitle,
+    hint: craftsman.classData.researchHint,
+    level: 2,
+    configuration: {},
+    value: { document: null, uuid: null }
+  });
+  assert.deepEqual(specialty, {
+    _id: repeated[1]._id,
+    type: "SpecialtySubclass",
+    title: craftsman.classData.specialtyTitle,
+    hint: craftsman.classData.specialtyHint,
+    level: 3,
+    configuration: {},
+    value: { document: null, uuid: null }
+  });
+  assert.equal(research._id, repeated[0]._id);
+  assert.equal(specialty._id, repeated[1]._id);
 });
 
 test("craftsman V0.1 data matches its class progression and two archetype axes", () => {
   const raw = loadJson("data/craftsman-v01.json");
   const craftsman = normalizeClassCompendiumData(raw);
   const featureUuidById = makeUuidMap(buildFeatureDefinitions(craftsman));
-  const archetypeDefinitions = buildCraftsmanArchetypeDefinitions(craftsman, { featureUuidById });
-  const archetypeUuidById = new Map(archetypeDefinitions.map((entry) => [
+  const archetypeDefinitions = buildCraftsmanSubclassDefinitions(craftsman, { featureUuidById });
+  const subclassUuidById = new Map(archetypeDefinitions.map((entry) => [
     entry.archetypeId,
-    `Compendium.world.rebreya-craftsman-archetypes.Item.${entry.documentId}`
+    `Compendium.world.rebreya-subclasses.Item.${entry.documentId}`
   ]));
   const mechanic = craftsman.researches.find((entry) => entry.archetypeId === "craftsman-research-mechanic");
   const constructor = craftsman.specialties.find((entry) => entry.archetypeId === "craftsman-specialty-constructor");
   const artificer = craftsman.researches.find((entry) => entry.archetypeId === "craftsman-research-artificer");
-  const toolAdvancement = buildClassAdvancement(craftsman.classData, { featureUuidById, archetypeUuidById })
+  const toolAdvancement = buildClassAdvancement(craftsman.classData, { featureUuidById, subclassUuidById })
     .find((entry) => entry.configuration?.grants?.includes("tool:art:rebreyaTinker"));
 
   const expectedResearches = [
@@ -576,35 +579,33 @@ test("craftsman descriptions preserve every visible source character through Mar
   }
 });
 
-test("craftsman archetype items grant every feature at its source level", () => {
+test("craftsman subclass items grant every feature at its source level", () => {
   const craftsman = normalizeClassCompendiumData(craftsmanDualArchetypeFixture());
   const featureDefinitions = buildFeatureDefinitions(craftsman);
   const featureUuidById = makeUuidMap(featureDefinitions);
-  const archetypes = buildCraftsmanArchetypeDefinitions(craftsman, { featureUuidById });
+  const archetypes = buildCraftsmanSubclassDefinitions(craftsman, { featureUuidById });
   const mechanic = archetypes.find((entry) => entry.archetypeId === "craftsman-research-mechanic");
   const constructor = archetypes.find((entry) => entry.archetypeId === "craftsman-specialty-constructor");
 
   assert.deepEqual(mechanic.system.advancement.map((entry) => entry.level), [2, 5, 5, 9, 13]);
   assert.deepEqual(constructor.system.advancement.map((entry) => entry.level), [3, 3, 6, 10, 15]);
-  assert.equal(mechanic.type, "rebreya-main.research");
-  assert.equal(constructor.type, "rebreya-main.specialty");
+  assert.equal(mechanic.type, "subclass");
+  assert.equal(constructor.type, "subclass");
+  assert.equal(mechanic.system.identifier, "craftsman-research-mechanic");
+  assert.equal(constructor.system.identifier, "craftsman-specialty-constructor");
   assert.equal(mechanic.system.classIdentifier, "craftsman-v01");
   assert.equal(constructor.system.classIdentifier, "craftsman-v01");
   assert.equal(mechanic.sourceRevision, "fixture-revision");
   assert.equal(constructor.sourceRevision, "fixture-revision");
 });
 
-test("craftsman archetype builders fail when a required feature or archetype UUID is missing", () => {
+test("craftsman subclass builders fail when a required feature UUID is missing", () => {
   const craftsman = normalizeClassCompendiumData(craftsmanDualArchetypeFixture());
   const mechanic = craftsman.researches[0];
 
   assert.throws(
     () => buildCraftsmanArchetypeAdvancements(mechanic, { featureUuidById: new Map() }),
     /vehicle-training/u
-  );
-  assert.throws(
-    () => buildCraftsmanChoiceAdvancements(craftsman.classData, { archetypeUuidById: new Map() }),
-    /craftsman-research-mechanic/u
   );
 });
 
@@ -725,7 +726,7 @@ test("replacing research removes only that axis and preserves the selected speci
   assert.match(manager.getArchetype("research").flags.dnd5e.advancementRoot, /^class-1\./u);
 });
 
-test("class pack synchronization aborts before class document mutation when an archetype UUID is missing", async () => {
+test("craftsman class pack synchronization aborts before mutation when a standard subclass UUID is missing", async () => {
   const originalGame = globalThis.game;
   const craftsman = normalizeClassCompendiumData(loadJson("data/craftsman-v01.json"));
   const featureDefinitions = buildFeatureDefinitions(craftsman);
@@ -757,21 +758,37 @@ test("class pack synchronization aborts before class document mutation when an a
 
   try {
     await assert.rejects(
-      syncClassesPack([craftsman], { featureUuidById, archetypeUuidById: new Map() }),
-      /Missing craftsman archetype UUID: craftsman-research-weaponsmith/u
+      syncClassesPack([craftsman], { featureUuidById, subclassUuidById: new Map() }),
+      /Missing craftsman subclass UUID: craftsman-research-weaponsmith/u
     );
     const allButConstructor = new Map([...craftsman.researches, ...craftsman.specialties]
       .filter((entry) => entry.archetypeId !== "craftsman-specialty-constructor")
       .map((entry) => [
         entry.archetypeId,
-        `Compendium.world.rebreya-craftsman-archetypes.Item.${entry.documentId}`
+        `Compendium.world.rebreya-subclasses.Item.${entry.documentId}`
       ]));
     await assert.rejects(
       syncClassesPack([craftsman], {
         featureUuidById,
-        archetypeUuidById: allButConstructor
+        subclassUuidById: allButConstructor
       }),
-      /Missing craftsman archetype UUID: craftsman-specialty-constructor/u
+      /Missing craftsman subclass UUID: craftsman-specialty-constructor/u
+    );
+    const wrongPack = new Map([...craftsman.researches, ...craftsman.specialties]
+      .map((entry) => [
+        entry.archetypeId,
+        `Compendium.world.rebreya-subclasses.Item.${entry.documentId}`
+      ]));
+    wrongPack.set(
+      "craftsman-research-mechanic",
+      `Compendium.world.rebreya-craftsman-archetypes.Item.${craftsman.researches.at(-1).documentId}`
+    );
+    await assert.rejects(
+      syncClassesPack([craftsman], {
+        featureUuidById,
+        subclassUuidById: wrongPack
+      }),
+      /Missing craftsman subclass UUID: craftsman-research-mechanic/u
     );
     assert.deepEqual(documentCalls, { get: 0, create: 0, update: 0, delete: 0 });
   }
@@ -798,7 +815,7 @@ test("existing class data keeps the native subclass advancement", () => {
   }
 });
 
-test("craftsman archetype pack sync is idempotent and preserves unrelated managed documents", async () => {
+test("craftsman subclass pack sync publishes all 12 native subclasses beside ordinary subclasses idempotently", async () => {
   const originalFolder = globalThis.Folder;
   const originalGame = globalThis.game;
   const originalItem = globalThis.Item;
@@ -806,7 +823,7 @@ test("craftsman archetype pack sync is idempotent and preserves unrelated manage
   const packDocuments = [];
   const packFolders = [];
   const pack = {
-    collection: "world.rebreya-craftsman-archetypes",
+    collection: "world.rebreya-subclasses",
     documentName: "Item",
     folders: { contents: packFolders },
     metadata: {
@@ -814,7 +831,7 @@ test("craftsman archetype pack sync is idempotent and preserves unrelated manage
       flags: {
         dnd5e: {
           sourceBook: "ЗоЗТ",
-          types: ["rebreya-main.research", "rebreya-main.specialty"]
+          types: ["subclass"]
         }
       }
     },
@@ -822,10 +839,11 @@ test("craftsman archetype pack sync is idempotent and preserves unrelated manage
       return packDocuments;
     }
   };
+  let generatedDocumentId = 0;
   const makeDocument = (data) => ({
     ...structuredClone(data),
-    id: data._id,
-    uuid: `Compendium.${pack.collection}.Item.${data._id}`,
+    id: data._id ?? `generated-subclass-${++generatedDocumentId}`,
+    uuid: `Compendium.${pack.collection}.Item.${data._id ?? `generated-subclass-${generatedDocumentId}`}`,
     getFlag(scope, key) {
       return this.flags?.[scope]?.[key];
     },
@@ -885,22 +903,61 @@ test("craftsman archetype pack sync is idempotent and preserves unrelated manage
   };
 
   try {
-    const craftsman = normalizeClassCompendiumData(craftsmanDualArchetypeFixture());
-    const featureUuidById = makeUuidMap(buildFeatureDefinitions(craftsman));
-    const first = await syncCraftsmanArchetypesPack([craftsman], { featureUuidById });
+    const craftsman = normalizeClassCompendiumData(loadJson("data/craftsman-v01.json"));
+    const barbarian = normalizeClassCompendiumData(loadJson("data/barbarian-rework-v012.json"));
+    const featureUuidById = makeUuidMap([
+      ...buildFeatureDefinitions(craftsman),
+      ...buildFeatureDefinitions(barbarian)
+    ]);
+    const first = await syncSubclassesPack([barbarian, craftsman], { featureUuidById });
     const firstIds = new Map(packDocuments
       .filter((entry) => entry.getFlag("rebreya-main", "archetypeId"))
       .map((entry) => [entry.getFlag("rebreya-main", "archetypeId"), entry.id]));
-    const second = await syncCraftsmanArchetypesPack([craftsman], { featureUuidById });
+    const second = await syncSubclassesPack([barbarian, craftsman], { featureUuidById });
     const secondIds = new Map(packDocuments
       .filter((entry) => entry.getFlag("rebreya-main", "archetypeId"))
       .map((entry) => [entry.getFlag("rebreya-main", "archetypeId"), entry.id]));
+    const craftsmanDocuments = packDocuments.filter((entry) => entry.getFlag("rebreya-main", "archetypeId"));
+    const definitions = buildCraftsmanSubclassDefinitions(craftsman, { featureUuidById });
+    const definitionById = new Map(definitions.map((entry) => [entry.archetypeId, entry]));
+    const folderById = new Map(packFolders.map((folder) => [folder.id, folder]));
+    const folderPathOf = (document) => {
+      const path = [];
+      let folder = folderById.get(document.folder);
+      while (folder) {
+        path.unshift(folder.name);
+        folder = folderById.get(folder.folder);
+      }
+      return path.join("/");
+    };
 
     assert.deepEqual(secondIds, firstIds);
-    assert.equal(first.archetypeUuidById.size, 2);
-    assert.deepEqual(second.archetypeUuidById, first.archetypeUuidById);
+    assert.equal(craftsmanDocuments.length, 12);
+    assert.equal(first.subclassUuidById.size, barbarian.subclasses.length + 12);
+    assert.deepEqual(second.subclassUuidById, first.subclassUuidById);
     assert.equal(packDocuments.some((entry) => entry.id === "unrelatedManaged"), true);
-    assert.equal(packDocuments.length, 3);
+    assert.equal(packDocuments.some((entry) => entry.getFlag("rebreya-main", "subclassId") === barbarian.subclasses[0].subclassId), true);
+    assert.equal(packDocuments.length, barbarian.subclasses.length + 13);
+    for (const document of craftsmanDocuments) {
+      const archetypeId = document.getFlag("rebreya-main", "archetypeId");
+      const definition = definitionById.get(archetypeId);
+      assert.ok(definition, archetypeId);
+      assert.equal(document.id, definition.documentId);
+      assert.equal(document.uuid, `Compendium.world.rebreya-subclasses.Item.${definition.documentId}`);
+      assert.equal(document.type, "subclass");
+      assert.deepEqual(document.system, definition.system);
+      assert.deepEqual(document.flags["rebreya-main"], {
+        managed: true,
+        sourceType: "subclass",
+        subclassId: archetypeId,
+        archetypeId,
+        craftsmanTrack: definition.axis,
+        classIdentifier: "craftsman-v01",
+        sourceRevision: definition.sourceRevision,
+        signature: definition.signature
+      });
+      assert.equal(folderPathOf(document), `Архетипы/Ремесленник V0.1/${definition.axis === "research" ? "Исследования" : "Специальности"}`);
+    }
   }
   finally {
     globalThis.Folder = originalFolder;
