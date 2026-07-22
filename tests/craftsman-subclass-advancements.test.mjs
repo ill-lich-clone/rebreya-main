@@ -154,10 +154,17 @@ function installDnd5eContractStubs() {
       };
     }
 
-    constructor({ item, actor } = {}) {
-      this.item = item;
-      this.actor = actor;
-      this.value = {};
+    constructor(source = {}, options = {}) {
+      const persisted = Object.hasOwn(source, "type");
+      if (persisted && source.type !== this.constructor.typeName) {
+        throw new Error(`Advancement type must be the same as ${this.constructor.typeName}.`);
+      }
+      this._source = persisted ? structuredClone(source) : undefined;
+      this.item = options.item ?? source.item;
+      this.actor = options.actor ?? source.actor;
+      this.configuration = persisted ? structuredClone(source.configuration) : {};
+      this.value = persisted ? structuredClone(source.value) : {};
+      this.level = persisted ? source.level : undefined;
     }
 
     configuredForLevel() {
@@ -296,6 +303,44 @@ test("tracked advancements and flows inherit the complete native subclass contra
     assert.deepEqual([...CONFIG.DND5E.advancementTypes.SpecialtySubclass.validItemTypes], ["class"]);
     assert.equal(CONFIG.DND5E.advancementTypes.ResearchSubclass.documentClass.typeName, "ResearchSubclass");
     assert.equal(CONFIG.DND5E.advancementTypes.SpecialtySubclass.documentClass.typeName, "SpecialtySubclass");
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
+test("persisted advancement source types validate against the constructor-derived typeName", () => {
+  const stubs = installDnd5eContractStubs();
+  try {
+    registerCraftsmanSubclassAdvancements();
+    const { ResearchSubclass, SpecialtySubclass } = getCraftsmanSubclassAdvancementClasses();
+    const actor = makeActor();
+    const item = makeClass(actor);
+    const researchSource = {
+      _id: "research-advancement",
+      type: "ResearchSubclass",
+      configuration: {},
+      value: {},
+      level: 2
+    };
+    const specialtySource = {
+      _id: "specialty-advancement",
+      type: "SpecialtySubclass",
+      configuration: {},
+      value: {},
+      level: 3
+    };
+
+    const research = new ResearchSubclass(researchSource, { item, actor });
+    const specialty = new SpecialtySubclass(specialtySource, { item, actor });
+    assert.deepEqual(research._source, researchSource);
+    assert.deepEqual(specialty._source, specialtySource);
+    assert.equal(research._source.type, ResearchSubclass.typeName);
+    assert.equal(specialty._source.type, SpecialtySubclass.typeName);
+    assert.throws(
+      () => new ResearchSubclass({ ...researchSource, type: "SpecialtySubclass" }, { item, actor }),
+      /ResearchSubclass/
+    );
   }
   finally {
     stubs.restore();
@@ -592,6 +637,22 @@ test("apply validates eligible retained subclass data before native reuse", asyn
     assert.equal(replacement.actor.items.has(source.id), true);
     assert.equal(replacement.actor.items.has(staleRetained._id), false);
     assert.equal(stubs.parentCalls.filter(({ method }) => method === "apply").length, 2);
+
+    const existing = makeSubclass({ id: "research-existing-other", track: CRAFTSMAN_TRACKS.RESEARCH });
+    const duplicateActor = makeActor([existing]);
+    const duplicateAdvancement = new ResearchSubclass({
+      item: makeClass(duplicateActor),
+      actor: duplicateActor
+    });
+    const applyCallsBeforeDuplicate = stubs.parentCalls.filter(({ method }) => method === "apply").length;
+    await assert.rejects(
+      () => duplicateAdvancement.apply(2, { uuid: source.uuid }, retained()),
+      /duplicate/i
+    );
+    assert.equal(
+      stubs.parentCalls.filter(({ method }) => method === "apply").length,
+      applyCallsBeforeDuplicate
+    );
   }
   finally {
     stubs.restore();
