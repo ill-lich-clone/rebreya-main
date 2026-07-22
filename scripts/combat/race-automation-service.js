@@ -2,7 +2,7 @@ import { MODULE_ID } from "../constants.js";
 import {
   buildGiantTribeAdvancement,
   createAutomationActivity
-} from "../data/races-compendium.js";
+} from "../data/races-compendium.js?v=1.4.110-giant-tribe-cache-fixes-2";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const SOCKET_EVENT_RACE_AUTOMATION = "race-automation";

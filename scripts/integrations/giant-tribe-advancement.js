@@ -2,7 +2,7 @@ import {
   clearGiantTribeItemData,
   configureGiantTribeItemData,
   isGiantTribeFeature
-} from "../combat/race-automation-service.js?v=1.4.110-giant-tribe-review-fixes";
+} from "../combat/race-automation-service.js?v=1.4.110-giant-tribe-cache-fixes-2";
 
 export const GIANT_TRIBE_CHOICES = Object.freeze({
   hill: "Холмовой великан",
