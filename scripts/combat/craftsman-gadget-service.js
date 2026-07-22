@@ -85,6 +85,13 @@ function getArchetypeId(item) {
   return cleanString(moduleFlags(item).archetypeId);
 }
 
+function combatTurnKey(combat) {
+  const id = cleanString(combat?.id ?? combat?._id);
+  const round = Number(combat?.round);
+  const turn = Number(combat?.turn);
+  return id && Number.isFinite(round) && Number.isFinite(turn) ? `${id}:${round}:${turn}` : "";
+}
+
 function stripEmbeddedIdentity(data) {
   const copy = clone(data);
   for (const key of ["_id", "id", "uuid", "folder", "pack", "parent"]) delete copy[key];
@@ -161,7 +168,7 @@ export class CraftsmanGadgetService {
     return false;
   }
 
-  async applyDnd5ePostUseActivity(activity, _usageConfig = {}, _results = {}, _messageConfig = {}) {
+  async applyDnd5ePostUseActivity(activity, _usageConfig = {}, results = {}, _messageConfig = {}) {
     const operation = activityState(activity);
     if (!operation || !this.applyDnd5ePreUseActivity(activity)) return true;
     const item = activity.item;
@@ -185,9 +192,124 @@ export class CraftsmanGadgetService {
       await this.#updateActorGadgetState(actor, {
         activeInstanceId: cleanString(instanceState(item)?.instanceId)
       });
+      await this.#applyGadgetActivation(actor, item);
+      if (instanceState(item)?.catalogId === "smoke-device") {
+        const zoneService = this.options.zoneService;
+        for (const template of collectionValues(results?.templates)) {
+          zoneService?.registerTemplate?.(template?.document ?? template);
+        }
+      }
       return true;
     }
     await this.#updateGadgetState(item, { actionUsed: true });
+    await this.#applyGadgetAction(actor, item);
+    return true;
+  }
+
+  applyDnd5ePreCreateActivityTemplate(activity, templateData = {}) {
+    const operation = activityState(activity);
+    const item = activity?.item;
+    const state = instanceState(item);
+    if (operation?.operation !== "activate" || state?.catalogId !== "smoke-device") return true;
+    templateData.flags ??= {};
+    templateData.flags[MODULE_ID] ??= {};
+    templateData.flags[MODULE_ID].craftsmanSmoke = {
+      instanceId: state.instanceId,
+      ownerActorUuid: cleanString(item?.actor?.uuid),
+      craftsmanLevel: this.#craftsmanLevel(item?.actor),
+      poisoned: false,
+      expiresAtTurnKey: this.#nextOwnerTurnKey(item?.actor)
+    };
+    return true;
+  }
+
+  applyDnd5eAttackRollConfig(config = {}, dialog = {}) {
+    const actor = config?.subject?.actor ?? config?.subject?.item?.actor ?? null;
+    const gadget = this.#activeGadget(actor, "force-glove");
+    if (!gadget || instanceState(gadget)?.forceAdvantageAvailable !== true) return true;
+    dialog.advantage = true;
+    config.rolls ??= [];
+    for (const roll of config.rolls) {
+      roll.options ??= {};
+      roll.options.advantageMode = 1;
+    }
+    return true;
+  }
+
+  async applyDnd5eRollAttack(rolls = [], context = {}) {
+    const actor = context?.subject?.actor ?? context?.subject?.item?.actor ?? null;
+    const gadget = this.#activeGadget(actor, "force-glove");
+    if (!gadget) return true;
+    const state = instanceState(gadget);
+    if (state.forceAdvantageAvailable === true) {
+      await this.#updateGadgetState(gadget, { forceAdvantageAvailable: false });
+    }
+    const roll = collectionValues(rolls)[0];
+    const total = Number(roll?.total);
+    const target = Number(roll?.options?.target);
+    const turnKey = this.#turnKey();
+    if (!Number.isFinite(total) || !Number.isFinite(target) || total < target || state.forceDamageUsedTurnKey === turnKey) {
+      return true;
+    }
+    const confirm = this.options.confirmForceDamage;
+    const accepted = typeof confirm === "function" ? await confirm(actor, gadget, roll, context) : true;
+    if (accepted) {
+      await this.#updateGadgetState(gadget, { forceDamagePending: true, forceDamagePendingTurnKey: turnKey });
+    }
+    return true;
+  }
+
+  applyDnd5ePreRollDamage(config = {}) {
+    const actor = config?.subject?.actor ?? config?.subject?.item?.actor ?? null;
+    const gadget = this.#activeGadget(actor, "force-glove");
+    const state = instanceState(gadget);
+    const turnKey = this.#turnKey();
+    if (!gadget || state?.forceDamagePending !== true || state.forceDamageUsedTurnKey === turnKey) return true;
+    const base = collectionValues(config?.rolls).find((entry) => entry?.base) ?? config?.rolls?.[0];
+    if (!base) return true;
+    base.parts ??= [];
+    if (!base.parts.includes("@abilities.int.mod")) base.parts.push("@abilities.int.mod");
+    const next = {
+      ...clone(state),
+      forceDamagePending: false,
+      forceDamagePendingTurnKey: "",
+      forceDamageUsedTurnKey: turnKey
+    };
+    gadget.flags[MODULE_ID].craftsmanGadget = next;
+    gadget.update?.({ [`flags.${MODULE_ID}.craftsmanGadget`]: next })?.catch?.((error) => {
+      this.#logError(`${MODULE_ID} | Failed to persist Force Glove damage use.`, error);
+    });
+    return true;
+  }
+
+  getWeaponAttackAcBonus(targetActor, attackActivity) {
+    if (attackActivity?.item?.type !== "weapon") return 0;
+    return this.#activeGadget(targetActor, "magnetic-engine") ? 2 : 0;
+  }
+
+  suppressesProvokedAttack(actor) {
+    const marker = cleanString(actorGadgetState(actor)?.noProvokedMovementTurnKey);
+    return Boolean(marker) && marker === this.#turnKey();
+  }
+
+  async handleCombatTurnChange(combat) {
+    const currentTurnKey = combatTurnKey(combat);
+    for (const actor of this._knownActors) {
+      const marker = cleanString(actorGadgetState(actor)?.noProvokedMovementTurnKey);
+      if (marker && marker !== currentTurnKey) {
+        await this.#updateActorGadgetState(actor, { noProvokedMovementTurnKey: "" });
+      }
+      for (const gadget of getPreparedCraftsmanGadgets(actor)) {
+        const state = instanceState(gadget);
+        if (state?.forceDamageUsedTurnKey && state.forceDamageUsedTurnKey !== currentTurnKey) {
+          await this.#updateGadgetState(gadget, {
+            forceDamageUsedTurnKey: "",
+            forceDamagePending: false,
+            forceDamagePendingTurnKey: ""
+          });
+        }
+      }
+    }
     return true;
   }
 
@@ -236,6 +358,10 @@ export class CraftsmanGadgetService {
       return false;
     }
 
+    const needsVehicle = catalogIds.some((catalogId) => byId.get(catalogId)?.availability === "mechanic");
+    const researchVehicle = needsVehicle
+      ? await this.options.vehicleService?.resolveResearchObject?.(actor) ?? null
+      : null;
     const createData = catalogIds.map((catalogId) => {
       const entry = byId.get(catalogId);
       const data = stripEmbeddedIdentity(entry.documentData);
@@ -248,7 +374,9 @@ export class CraftsmanGadgetService {
         instanceId: this.#randomId(),
         restGeneration,
         state: "prepared",
-        vehicleUuid: ""
+        vehicleUuid: byId.get(catalogId)?.availability === "mechanic"
+          ? cleanString(researchVehicle?.uuid)
+          : ""
       };
       return data;
     });
@@ -367,6 +495,125 @@ export class CraftsmanGadgetService {
   #worldTime() {
     const value = this.options.worldTime?.() ?? globalThis.game?.time?.worldTime ?? 0;
     return Number.isFinite(Number(value)) ? Number(value) : 0;
+  }
+
+  #turnKey() {
+    const injected = cleanString(this.options.turnKey?.());
+    return injected || combatTurnKey(globalThis.game?.combat) || `world:${Math.floor(this.#worldTime())}`;
+  }
+
+  #activeGadget(actor, catalogId) {
+    if (!actor) return null;
+    return getPreparedCraftsmanGadgets(actor).find((item) => {
+      const state = instanceState(item);
+      return state?.catalogId === catalogId && state.state === "active";
+    }) ?? null;
+  }
+
+  async #applyGadgetActivation(actor, item) {
+    const state = instanceState(item);
+    if (["afterburner-injector", "emergency-regulator"].includes(state?.catalogId)) {
+      const vehicle = await this.#resolveGadgetVehicle(actor, state);
+      if (state.catalogId === "afterburner-injector") {
+        await this.options.vehicleService?.activateAfterburner?.(vehicle, actor, { instanceId: state.instanceId });
+      }
+      else {
+        await this.options.vehicleService?.activateEmergencyRegulator?.(vehicle, actor, { instanceId: state.instanceId });
+      }
+      return;
+    }
+    if (state?.catalogId !== "charged-boot" || typeof actor?.createEmbeddedDocuments !== "function") return;
+    await actor.createEmbeddedDocuments("ActiveEffect", [{
+      name: "Заряженный ботинок",
+      img: item.img ?? "icons/svg/upgrade.svg",
+      transfer: false,
+      disabled: false,
+      duration: { seconds: 60, startTime: this.#worldTime() },
+      changes: [{ key: "system.attributes.movement.walk", mode: 2, value: "10", priority: 20 }],
+      flags: {
+        [MODULE_ID]: {
+          managed: true,
+          craftsmanGadgetEffect: {
+            instanceId: state.instanceId,
+            gadgetId: state.catalogId
+          }
+        }
+      }
+    }]);
+  }
+
+  async #applyGadgetAction(actor, item) {
+    const state = instanceState(item);
+    if (state?.catalogId === "force-glove") {
+      await this.#updateGadgetState(item, { forceAdvantageAvailable: true });
+      return;
+    }
+    if (state?.catalogId === "charged-boot") {
+      await this.#updateActorGadgetState(actor, { noProvokedMovementTurnKey: this.#turnKey() });
+      return;
+    }
+    if (state?.catalogId === "smoke-device") {
+      await this.options.zoneService?.poisonTemplate?.(state.instanceId, {
+        ownerActorUuid: cleanString(actor?.uuid),
+        craftsmanLevel: this.#craftsmanLevel(actor),
+        expiresAtTurnKey: this.#nextOwnerTurnKey(actor),
+        createPoisonedTemplate: (context) => this.#createSmokeTemplate(item, context)
+      });
+      return;
+    }
+    if (state?.catalogId === "afterburner-injector") {
+      const vehicle = await this.#resolveGadgetVehicle(actor, state);
+      await this.options.vehicleService?.useAfterburnerAction?.(vehicle, actor, {
+        instanceId: state.instanceId,
+        turnKey: this.#turnKey()
+      });
+    }
+  }
+
+  #craftsmanLevel(actor) {
+    return Math.max(1, Math.floor(Number(craftsmanClass(actor)?.system?.levels) || 1));
+  }
+
+  #nextOwnerTurnKey(_actor) {
+    if (typeof this.options.nextOwnerTurnKey === "function") return cleanString(this.options.nextOwnerTurnKey(_actor));
+    const combat = globalThis.game?.combat;
+    const id = cleanString(combat?.id ?? combat?._id);
+    const round = Number(combat?.round);
+    const turn = Number(combat?.turn);
+    return id && Number.isFinite(round) && Number.isFinite(turn) ? `${id}:${round + 1}:${turn}` : "";
+  }
+
+  async #resolveGadgetVehicle(actor, state) {
+    const service = this.options.vehicleService;
+    if (!service) return null;
+    const exact = await service.resolveVehicle?.(state?.vehicleUuid);
+    if (exact) return exact;
+    const research = await service.resolveResearchObject?.(actor);
+    return !state?.vehicleUuid || cleanString(research?.uuid) === cleanString(state.vehicleUuid) ? research : null;
+  }
+
+  async #createSmokeTemplate(item, context) {
+    if (typeof this.options.createSmokeTemplate === "function") {
+      return this.options.createSmokeTemplate(item, context);
+    }
+    const activities = collectionValues(item?.system?.activities);
+    const activation = activities.find((entry) => activityState(entry)?.operation === "activate");
+    const AbilityTemplate = globalThis.dnd5e?.canvas?.AbilityTemplate;
+    const previews = AbilityTemplate?.fromActivity?.(activation, {
+      flags: {
+        [MODULE_ID]: {
+          craftsmanSmoke: {
+            instanceId: context.instanceId,
+            ownerActorUuid: context.ownerActorUuid,
+            craftsmanLevel: context.craftsmanLevel,
+            poisoned: true,
+            expiresAtTurnKey: context.expiresAtTurnKey
+          }
+        }
+      }
+    }) ?? [];
+    const placed = await previews[0]?.drawPreview?.();
+    return placed?.document ?? placed ?? null;
   }
 
   async #updateActorGadgetState(actor, patch) {

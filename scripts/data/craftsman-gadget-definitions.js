@@ -132,6 +132,41 @@ export function buildCraftsmanGadgetAutomation(gadgetDefinition) {
     buildUtilityActivity(gadget, "activate", "special", "Активировать вместо атаки", 100),
     buildUtilityActivity(gadget, "action", "special", "Действие гаджета", 200)
   ];
+  if (gadget.id === CRAFTSMAN_GADGET_IDS.MAGNETIC_ENGINE) {
+    const action = activities[2];
+    action.type = "attack";
+    action.img = "systems/dnd5e/icons/svg/activity/attack.svg";
+    action.attack = {
+      ability: "int",
+      bonus: "",
+      critical: { threshold: null },
+      flat: false,
+      type: { value: "ranged", classification: "weapon" }
+    };
+    action.damage = {
+      critical: { bonus: "" },
+      includeBase: false,
+      parts: []
+    };
+    action.range = { value: 30, units: "ft", special: "", override: true };
+    action.target.affects = { count: "1", type: "object", choice: true, special: "металлический предмет" };
+    action.target.prompt = true;
+  }
+  if (gadget.id === CRAFTSMAN_GADGET_IDS.SMOKE_DEVICE) {
+    for (const activation of activities.filter((entry) => (
+      entry.flags[MODULE_ID].craftsmanGadget.operation === "activate"
+    ))) {
+      activation.target.template = {
+        count: "1",
+        contiguous: false,
+        type: "cube",
+        size: "15",
+        width: "",
+        height: "",
+        units: "ft"
+      };
+    }
+  }
   return {
     activities: Object.fromEntries(activities.map((activity) => [activity._id, activity])),
     effects: [],

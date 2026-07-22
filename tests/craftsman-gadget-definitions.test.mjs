@@ -61,12 +61,14 @@ test("gadget descriptions copy the existing source blocks verbatim", () => {
   }
 });
 
-test("each gadget publishes three native utility activities with stable operation flags", () => {
+test("each gadget publishes three native activities with stable operation flags", () => {
   for (const gadget of normalizeCraftsmanGadgets(source)) {
     const automation = buildCraftsmanGadgetAutomation(gadget);
     const activities = Object.values(automation.activities);
     assert.equal(activities.length, 3);
-    assert.deepEqual(activities.map((activity) => activity.type), ["utility", "utility", "utility"]);
+    assert.deepEqual(activities.map((activity) => activity.type), [
+      "utility", "utility", gadget.id === "magnetic-engine" ? "attack" : "utility"
+    ]);
     assert.deepEqual(activities.map((activity) => activity.activation.type), ["bonus", "special", "special"]);
     assert.deepEqual(activities.map((activity) => activity.flags["rebreya-main"].craftsmanGadget.operation), [
       "activate", "activate", "action"
@@ -81,4 +83,24 @@ test("gadget templates are managed feature definitions but are not class advance
   assert.ok(definitions.every((definition) => definition.sourceType === "craftsmanGadget"));
   assert.ok(definitions.every((definition) => definition.optional === true));
   assert.ok(definitions.every((definition) => definition.featureId.startsWith("craftsman-v01::gadget::")));
+});
+
+test("Magnetic Engine gadget action is a native Intelligence attack at 30 feet", () => {
+  const gadget = normalizeCraftsmanGadgets(source).find((entry) => entry.id === "magnetic-engine");
+  const activity = Object.values(buildCraftsmanGadgetAutomation(gadget))
+    .flatMap((value) => value && typeof value === "object" ? Object.values(value) : [])
+    .find((entry) => entry?.flags?.["rebreya-main"]?.craftsmanGadget?.operation === "action");
+  assert.equal(activity.type, "attack");
+  assert.equal(activity.attack.ability, "int");
+  assert.deepEqual(activity.attack.type, { value: "ranged", classification: "weapon" });
+  assert.deepEqual(activity.range, { value: 30, units: "ft", special: "", override: true });
+});
+
+test("Smoke Device activation uses one native 15-foot cube template", () => {
+  const gadget = normalizeCraftsmanGadgets(source).find((entry) => entry.id === "smoke-device");
+  const activation = Object.values(buildCraftsmanGadgetAutomation(gadget).activities)
+    .find((entry) => entry.flags["rebreya-main"].craftsmanGadget.operation === "activate");
+  assert.deepEqual(activation.target.template, {
+    count: "1", contiguous: false, type: "cube", size: "15", width: "", height: "", units: "ft"
+  });
 });

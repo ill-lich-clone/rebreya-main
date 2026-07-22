@@ -101,6 +101,7 @@ class TestActor {
     for (const item of this.items.contents) item.actor = this;
     this.created = [];
     this.deleted = [];
+    this.createdEffects = [];
   }
 
   async update(patch) {
@@ -114,6 +115,11 @@ class TestActor {
   }
 
   async createEmbeddedDocuments(type, rows) {
+    if (type === "ActiveEffect") {
+      const created = rows.map((row, index) => ({ ...structuredClone(row), id: `effect-${index}` }));
+      this.createdEffects.push(...created);
+      return created;
+    }
     assert.equal(type, "Item");
     const created = rows.map((row, index) => ({ ...structuredClone(row), id: `created-${this.created.length}-${index}` }));
     this.created.push(...created);
@@ -288,4 +294,94 @@ test("world time expiry permanently spends an active gadget", async () => {
   assert.equal(item.flags["rebreya-main"].craftsmanGadget.state, "active");
   await service.handleWorldTime(160);
   assert.equal(item.flags["rebreya-main"].craftsmanGadget.state, "spent");
+});
+
+test("Force Glove action grants the next attack advantage and a confirmed hit adds Intelligence damage once", async () => {
+  const item = preparedGadget("force-glove", "current", "force");
+  const actor = new TestActor({ items: [item] });
+  actor.system.abilities = { int: { mod: 4 } };
+  const service = makeService();
+  service.options.worldTime = () => 100;
+  service.options.turnKey = () => "combat:1:2";
+  service.options.confirmForceDamage = async () => true;
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate"), {}, {}, {});
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "action"), {}, {}, {});
+
+  const attackConfig = { subject: { actor, item: { type: "weapon" } }, rolls: [{ options: {} }] };
+  const attackDialog = {};
+  service.applyDnd5eAttackRollConfig(attackConfig, attackDialog, {});
+  assert.equal(attackDialog.advantage, true);
+  await service.applyDnd5eRollAttack([{ total: 18, options: { target: 15 } }], { subject: attackConfig.subject });
+
+  const damage = { subject: attackConfig.subject, rolls: [{ base: true, parts: ["1d8"] }] };
+  assert.equal(service.applyDnd5ePreRollDamage(damage), true);
+  assert.deepEqual(damage.rolls[0].parts, ["1d8", "@abilities.int.mod"]);
+  const secondDamage = { subject: attackConfig.subject, rolls: [{ base: true, parts: ["1d8"] }] };
+  service.applyDnd5ePreRollDamage(secondDamage);
+  assert.deepEqual(secondDamage.rolls[0].parts, ["1d8"]);
+});
+
+test("Charged Boot activation adds walk speed and its action suppresses provoked attacks for the turn", async () => {
+  const item = preparedGadget("charged-boot", "current", "boot");
+  const actor = new TestActor({ items: [item] });
+  const service = makeService();
+  service.options.turnKey = () => "combat:1:2";
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate"), {}, {}, {});
+  assert.deepEqual(actor.createdEffects[0].changes, [{
+    key: "system.attributes.movement.walk", mode: 2, value: "10", priority: 20
+  }]);
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "action"), {}, {}, {});
+  assert.equal(service.suppressesProvokedAttack(actor), true);
+  await service.handleCombatTurnChange({ id: "combat", round: 1, turn: 3 });
+  assert.equal(service.suppressesProvokedAttack(actor), false);
+});
+
+test("Magnetic Engine grants two AC only against weapon attacks", async () => {
+  const item = preparedGadget("magnetic-engine", "current", "magnet");
+  const actor = new TestActor({ items: [item] });
+  const service = makeService();
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate"), {}, {}, {});
+  assert.equal(service.getWeaponAttackAcBonus(actor, { item: { type: "weapon" } }), 2);
+  assert.equal(service.getWeaponAttackAcBonus(actor, { item: { type: "spell" } }), 0);
+  assert.equal(service.getWeaponAttackAcBonus(new TestActor(), { item: { type: "weapon" } }), 0);
+});
+
+test("Smoke Device registers the native activation template and poisons that same cloud", async () => {
+  const item = preparedGadget("smoke-device", "current", "smoke");
+  new TestActor({ items: [item] });
+  const calls = [];
+  const service = makeService();
+  service.options.zoneService = {
+    registerTemplate: (template) => calls.push(["register", template]),
+    poisonTemplate: async (instanceId, context) => calls.push(["poison", instanceId, context])
+  };
+  const cloud = { id: "cloud" };
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate"), {}, { templates: [cloud] });
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "action"), {}, {});
+  assert.equal(calls[0][0], "register");
+  assert.equal(calls[0][1], cloud);
+  assert.deepEqual(calls[1].slice(0, 2), ["poison", "smoke"]);
+});
+
+test("Mechanic gadget instances bind to the research vehicle and delegate activation/action", async () => {
+  const targetVehicle = { uuid: "Actor.vehicle", type: "vehicle" };
+  const vehicleCalls = [];
+  const vehicleService = {
+    resolveResearchObject: async () => targetVehicle,
+    activateAfterburner: async (...args) => vehicleCalls.push(["activateAfterburner", ...args]),
+    useAfterburnerAction: async (...args) => vehicleCalls.push(["useAfterburnerAction", ...args])
+  };
+  const actor = new TestActor({ level: 2 });
+  const service = makeService({
+    mechanic: true,
+    selection: ["afterburner-injector", "afterburner-injector"],
+    randomIds: ["generation", "afterburner-a", "afterburner-b"]
+  });
+  service.options.vehicleService = vehicleService;
+  await service.handleRestCompleted(actor, { longRest: true }, {});
+  const item = getPreparedCraftsmanGadgets(actor)[0];
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.vehicleUuid, targetVehicle.uuid);
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate"), {}, {});
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "action"), {}, {});
+  assert.deepEqual(vehicleCalls.map((entry) => entry[0]), ["activateAfterburner", "useAfterburnerAction"]);
 });
