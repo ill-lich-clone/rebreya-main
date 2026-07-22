@@ -104,11 +104,11 @@ git commit -m "feat: define Craftsman subclass tracks"
 
 Проверить:
 
-- `ResearchSubclass` и `SpecialtySubclass` наследуют системный `SubclassAdvancement`;
+- явно именованные JS-классы `ResearchSubclassAdvancement` и `SpecialtySubclassAdvancement` наследуют системный `SubclassAdvancement`, а их `name`/`typeName` равны соответственно `ResearchSubclassAdvancement`/`ResearchSubclass` и `SpecialtySubclassAdvancement`/`SpecialtySubclass`;
 - их `metadata.apps.flow` наследуют системный `SubclassFlow` и сохраняют системный template `systems/dnd5e/templates/advancement/subclass-flow.hbs`;
 - регистрация создаёт `CONFIG.DND5E.advancementTypes.ResearchSubclass` и `.SpecialtySubclass` с `validItemTypes: new Set(["class"])`;
 - `availableForItem` разрешает соответствующий Advancement только классу `craftsman-v01` и только один раз на ось;
-- `summaryforLevel` читает `value.document`, а не одиночный `item.subclass`;
+- `summaryForLevel` с заглавной `F` читает `value.document`, а не одиночный `item.subclass`; lowercase `summaryforLevel` допустим только как compatibility alias для опечатки установленной dnd5e;
 - Browser получает `types: new Set(["subclass"])`, `additional.class: { "craftsman-v01": 1 }` и arbitrary-фильтр `{ k: "flags.rebreya-main.craftsmanTrack", o: "exact", v: track }`;
 - drag-and-drop принимает только `subclass` Ремесленника нужного трека и отклоняет другой класс, другую ось и Item другого типа;
 - `apply`, `restore` и fallback `reverse` валидируют трек и не создают второй Item той же оси.
@@ -133,12 +133,12 @@ Expected: отсутствуют новые Advancement-классы; стары
 
 ### Step 4: Реализовать tracked subclass Advancement
 
-Создать фабрику `createTrackedSubclassAdvancement(SubclassAdvancement, Flow, track)`. Наследник должен:
+Создать фабрику `createTrackedSubclassAdvancement(SubclassAdvancement, Flow, track)`, возвращающую явно именованный `ResearchSubclassAdvancement` или `SpecialtySubclassAdvancement`: dnd5e выводит persisted `typeName` из `constructor.name.replace(/Advancement$/, "")`, поэтому анонимный `class extends` недопустим. Наследник должен:
 
 - переопределить `metadata` только для title, hint, icon и `apps.flow`;
 - использовать родительские `configuredForLevel`, создание source Item и dnd5e-флаги;
 - перед `super.apply` разрешить source UUID и проверить тип, classIdentifier, track и отсутствие дубля;
-- в `summaryforLevel` вывести anchor `this.value.document`;
+- в `summaryForLevel` вывести anchor `this.value.document`; при необходимости добавить lowercase alias, делегирующий uppercase-методу;
 - в `reverse` использовать `this.value.document`, а если ссылка уже не разрешается — Item своей оси из `getCraftsmanSubclasses(this.item)`.
 
 Экспортировать `registerCraftsmanSubclassAdvancements()` и `getCraftsmanSubclassAdvancementClasses()`.
@@ -147,7 +147,7 @@ Expected: отсутствуют новые Advancement-классы; стары
 
 Из `scripts/integrations/craftsman-archetype-types.js` удалить создание и регистрацию `ResearchChoice`/`SpecialtyChoice`, а также расширение `ItemGrant.validItemTypes`. Оставить регистрацию data model старых типов под новым явным экспортом `registerLegacyCraftsmanArchetypeTypes()`; duplicate guard старых Item не расширять новой логикой.
 
-В `extendDnd5eItemTypes()` вызвать сначала legacy-регистрацию, затем `registerCraftsmanSubclassAdvancements()`. Обновить старые тесты так, чтобы они подтверждали только читаемость legacy Items и отсутствие старых Advancement в `CONFIG.DND5E.advancementTypes`.
+В `extendDnd5eItemTypes()` на `init`, до dnd5e `i18nInit`, вызвать сначала legacy-регистрацию, затем `registerCraftsmanSubclassAdvancements()`: система локализует каждый зарегистрированный `documentClass`, поэтому поздняя регистрация недопустима. Обновить старые тесты так, чтобы они подтверждали только читаемость legacy Items и отсутствие старых Advancement в `CONFIG.DND5E.advancementTypes`.
 
 ### Step 6: Подтвердить GREEN
 
@@ -475,6 +475,8 @@ git commit -m "feat: advance both Craftsman subclasses"
 - subclass без `craftsmanTrack`, с другим `classIdentifier` или неизвестным треком отклонён;
 - duplicate `system.identifier` по-прежнему отклонён;
 - drop subclass другого класса полностью делегируется исходному CharacterActorSheet;
+- core `preCreateItem` разрешает одну ось каждого типа и отклоняет duplicate/unknown track как для Standard, так и для Tidy/programmatic create;
+- валидный create из `AdvancementManager` с `options.isAdvancement === true` проходит ту же проверку без ложной блокировки;
 - `openCraftsmanSubclassChoice(actor, classId, "research")` вызывает `AdvancementManager.forModifyChoices(actor, classId, 2)`;
 - для `specialty` используется уровень 3.
 
@@ -484,16 +486,18 @@ Run: `node --test --test-name-pattern="drop|modify" tests/craftsman-multi-subcla
 
 Expected: штатная проверка блокирует второй subclass из-за `cls.subclass`.
 
-### Step 3: Реализовать узкий CharacterActorSheet patch
+### Step 3: Реализовать общий create-инвариант и узкий CharacterActorSheet patch
 
-Сохранить исходный `_onDropSingleItem`. Для Item не типа `subclass` и subclass не Ремесленника вызвать исходный метод. Для валидного Craftsman subclass:
+Зарегистрировать core `preCreateItem(document, data, options, userId)` hook как общий invariant для Standard, Tidy и programmatic create. Ограничить его embedded character Actor и входящими `subclass` Ремесленника: проверять managed source, `classIdentifier`, известный `craftsmanTrack` и отсутствие другой оси того же типа. Сохранить Hook ID и снимать его при unregister. `options.isAdvancement` не отключает проверки формы данных, но валидный create из AdvancementManager должен проходить.
+
+Отдельно сохранить исходный Standard `CharacterActorSheet._onDropSingleItem`, потому что его singleton-проверка выполняется до core create hook. Для Item не типа `subclass` и subclass не Ремесленника вызвать исходный метод. Для валидного Craftsman subclass:
 
 1. проверить duplicate identifier;
 2. проверить `classIdentifier` и track;
 3. проверить отсутствие Item той же оси;
 4. вызвать generic `_onDropSingleItem` прототипа-родителя CharacterActorSheet, минуя только системную проверку «у класса уже есть один subclass».
 
-Патч должен устанавливаться один раз и не изменять поведение NPC/обычных классов.
+Патч и hook должны устанавливаться один раз, иметь симметричный unregister и не изменять поведение NPC/обычных классов. Не патчить приватные/скомпилированные классы Tidy: их create-пути покрывает core hook.
 
 ### Step 4: Реализовать нативное изменение выбора
 
@@ -540,7 +544,7 @@ git commit -m "feat: support native Craftsman subclass changes"
 
 - добавить `context.itemContext[classId].craftsmanSubclasses` с двумя view models;
 - показывать icon, name, UUID, itemId, requiredLevel и `needsSelection` каждой оси;
-- не оставлять второй Craftsman subclass в `context.subclasses` как несвязанный loose Item;
+- не оставлять второй Craftsman subclass ни в `context.subclasses`, ни в уже подготовленных feature sections как несвязанный loose Item;
 - не изменять item context обычного класса;
 - для уровня 1 не требовать выбора, на уровне 2 требовать Исследование, на уровне 3 — Специальность;
 - давать action открытия Item, удаления Item и `openCraftsmanSubclassChoice` для соответствующего уровня.
@@ -559,6 +563,7 @@ Expected: код всё ещё добавляет отдельный PART `craft
 
 - вычислить обе оси через helper;
 - удалить оставшуюся Специальность из `context.subclasses`;
+- удалить тот же Item по ID из уже собранных `context.sections[*].items`/эквивалентной prepared feature-коллекции: штатный метод до возврата копирует остаток через spread, поэтому одной очистки `context.subclasses` недостаточно;
 - записать plain view model в `context.itemContext[classId].craftsmanSubclasses`;
 - заменить `ctx.needsSubclass` на отдельные `research.needsSelection` и `specialty.needsSelection` для Ремесленника.
 
@@ -612,10 +617,12 @@ git commit -m "feat: show both Craftsman subclasses in class card"
 Проверить регистрацию через официальный `api.models.HandlebarsContent` и `api.registerCharacterContent`:
 
 - `enabled` true только для Actor с `craftsman-v01`;
-- `injectParams.selector === ".class-list"` и position помещает содержимое внутрь штатной области классов;
+- для Quadrone `injectParams.selector === ".class-list"` и position помещает содержимое внутрь штатной области классов;
+- для Classic используется отдельный существующий selector, а `onRender.nodes` переносит fragment рядом со строкой Craftsman `[data-item-id="<classId>"]`; тест обязан подтвердить ненулевой `nodes.length` в реалистичном Classic DOM;
 - `getData` возвращает обе оси из настоящих `subclass` Items;
 - повторный hook/API вызов идемпотентен;
 - click на выбранной оси открывает Item, а click по отсутствующей доступной оси запускает native `forModifyChoices` уровня 2 или 3;
+- Quadrone не дублирует штатную singleton-summary, а Classic не оставляет Specialty в `orphanedSubclasses`/features и не показывает `SubclassMismatchWarn`;
 - legacy Item types не участвуют в новом Tidy view model.
 
 ### Step 2: Подтвердить RED
@@ -624,15 +631,15 @@ Run: `node --test --test-name-pattern="Tidy" tests/craftsman-archetype-sheet.tes
 
 Expected: старый content вставляется в `[data-tab-contents-for='features']` отдельным блоком.
 
-### Step 3: Перенести Tidy content в `.class-list`
+### Step 3: Перенести Tidy content в layout-specific class areas
 
-Новый Handlebars template рендерит две компактные записи с иконками и названиями внутри штатной области классов. Не использовать заголовок отдельной секции. `onRender` привязывает:
+Новый Handlebars template рендерит две компактные записи с иконками и названиями внутри штатной области классов. Не использовать заголовок отдельной секции. Создать две официальные регистрации: Quadrone якорится на `.class-list`; Classic якорится на существующий стабильный контейнер и через `onRender.nodes` перемещает fragment рядом со строкой Craftsman по `data-item-id`. `.class-list` в установленной Tidy 13.3.0 существует только в Quadrone, поэтому общий selector для двух layouts запрещён. `onRender` привязывает:
 
 - `showDocument` к `item.sheet.render(true)`;
 - `openCraftsmanSubclassChoice` к native AdvancementManager;
 - повторную привязку без накопления listeners.
 
-Зарегистрировать layouts `classic` и `quadrone`, как в существующей интеграции.
+Для Quadrone удалить/скрыть только штатную singleton-summary Ремесленника, иначе одна ось будет продублирована. Для Classic удалить/скрыть только orphaned Specialty и связанное mismatch-warning, не затрагивая настоящие orphaned subclasses других классов. Зарегистрировать layouts `classic` и `quadrone` идемпотентно через официальный API; поскольку API не возвращает unregister token, `enabled` должен учитывать активное поколение регистрации.
 
 ### Step 4: Удалить общий старый template
 
@@ -642,7 +649,7 @@ Expected: старый content вставляется в `[data-tab-contents-for
 
 Run: `node --test --test-name-pattern="Tidy" tests/craftsman-archetype-sheet.test.mjs`
 
-Expected: официальный API регистрируется один раз, selector указывает на `.class-list`, обе оси интерактивны.
+Expected: официальный API регистрируется один раз для каждого layout, Quadrone использует `.class-list`, Classic реально вставляет fragment рядом со строкой класса, singleton/orphan дубли отсутствуют, обе оси интерактивны.
 
 ### Step 6: Commit
 
@@ -672,9 +679,11 @@ git commit -m "feat: integrate Craftsman subclasses with Tidy classes"
 2. только одна выбранная legacy-ось;
 3. уже мигрированный Actor;
 4. частично созданный новый subclass при сохранённом legacy Item;
-5. отсутствующий source subclass UUID;
-6. отсутствующий feature source;
-7. сторонний документ в `world.rebreya-craftsman-archetypes` без `flags.rebreya-main.managed`.
+5. частично заполненный `ItemGrant.value.added` либо переписанные feature flags без grant value;
+6. отсутствующий source subclass UUID;
+7. отсутствующий feature source;
+8. сторонний документ в `world.rebreya-craftsman-archetypes` без `flags.rebreya-main.managed`;
+9. Actor, импортированный после того, как world migration version уже стала текущей.
 
 ### Step 2: Написать падающие тесты двухфазной миграции
 
@@ -682,12 +691,14 @@ git commit -m "feat: integrate Craftsman subclasses with Tidy classes"
 
 - `archetypeId` сопоставляет старый Item с новым `subclass` source;
 - class advancement types становятся `ResearchSubclass`/`SpecialtySubclass`, уровни 2/3 и `value.document/uuid` указывают на новые embedded Items;
-- `flags.dnd5e.sourceId`, `advancementOrigin` и `advancementRoot` новых subclass/features валидны;
-- feature Items сохраняются, а их origin переводится со старого archetype Item ID на новый subclass Item ID;
+- у новых subclass Items валиден `flags.dnd5e.sourceId`, а `advancementOrigin`/`advancementRoot` отсутствуют, как после штатного `SubclassAdvancement.apply`;
+- feature Items сохраняются, их origin/root переводятся со старого archetype Item ID на точный `newSubclassId.itemGrantAdvancementId`;
+- каждый новый subclass `ItemGrant.value.added` содержит отображение `{ [embeddedFeatureId]: sourceFeatureUuid }`, поэтому level-down удаляет feature, а повторный level-up не создаёт дубль;
 - каждая ось мигрируется независимо;
 - повторный запуск не создаёт дубли;
 - при любой недостающей source-ссылке legacy Items не удаляются;
-- при ошибке после создания новых Items изменения откатываются по snapshot;
+- при ошибке после любой mutation boundary полные class/feature/legacy/partial-native snapshots восстанавливаются, включая legacy Item с прежним ID после частичного удаления;
+- при текущей world migration version всё равно сканируется Actor без актуального actor flag, импортированный позже;
 - сторонний документ legacy pack не удаляется.
 
 ### Step 3: Подтвердить RED
@@ -705,7 +716,8 @@ Expected: migration service отсутствует.
 - разрешить новый source из `world.rebreya-subclasses` по `flags.rebreya-main.archetypeId` и проверить track/classIdentifier;
 - сопоставить feature Items по module flags `featureId`, `archetypeId`, `axis`, а не по имени;
 - получить новый Advancement `_id` из опубликованного class source;
-- убедиться, что все будущие roots/origins разрешимы.
+- сопоставить каждый feature с точным `ItemGrant` нового subclass по configured source UUID/уровню и подготовить его `value.added`;
+- убедиться, что все будущие feature roots/origins разрешаются в `newSubclassId.itemGrantAdvancementId`; на самом subclass root/origin не планировать.
 
 Если preflight не полон, бросить ошибку с Actor ID, axis и отсутствующим идентификатором до первой записи.
 
@@ -713,17 +725,17 @@ Expected: migration service отсутствует.
 
 Для Actor с успешным preflight:
 
-1. сохранить snapshots class advancement и затрагиваемых feature flags;
-2. создать новые embedded `subclass` Items с sourceId и новыми ID;
-3. обновить class advancement values;
-4. перепривязать feature origins/roots;
-5. повторно прочитать Actor и проверить обе связи и все feature links;
+1. сохранить полные source snapshots class Item, затрагиваемых feature Items, всех legacy Items, уже существующих partial-native subclass Items и actor migration flag;
+2. создать только отсутствующие embedded `subclass` Items с sourceId и новыми ID; удалить с них `advancementOrigin`/`advancementRoot`;
+3. обновить class advancement values и `ItemGrant.value.added` каждого нового subclass;
+4. перепривязать feature origins/roots к точному ItemGrant нового subclass;
+5. повторно прочитать Actor и проверить обе связи, sourceId, отсутствие subclass root/origin, все feature links и grant maps;
 6. только после проверки удалить legacy embedded Items;
-7. записать actor flag версии миграции.
+7. записать actor flag версии миграции последним.
 
-При исключении восстановить class/features snapshots, удалить только созданные этим запуском новые Items и оставить legacy Items. Для состояния «новый Item уже есть, legacy ещё есть» не создавать второй новый Item: завершить валидацию и удаление идемпотентно.
+При исключении восстановить полные class/features/partial-native snapshots, пересоздать уже удалённые legacy Items с исходными ID, удалить только созданные этим запуском новые Items и восстановить actor flag. Для состояния «новый Item уже есть, legacy ещё есть» не создавать второй новый Item: сверить и починить class value, grant maps и feature links, затем завершить валидацию и удаление идемпотентно. Actor flag считается подсказкой, а не заменой структурной проверки: crash между вызовами document API должен сходиться при повторном запуске.
 
-Добавить скрытую world setting `SETTINGS_KEYS.CRAFTSMAN_SUBCLASS_MIGRATION_VERSION`; значение повышать только после полного GM-прохода всех Actor. Actor flag остаётся источником идемпотентности для импортированных позже персонажей.
+Добавить скрытую world setting `SETTINGS_KEYS.CRAFTSMAN_SUBCLASS_MIGRATION_VERSION`; значение повышать только после полного GM-прохода всех Actor. Даже при текущем world version выполнять дешёвый scan actor flags/структуры и мигрировать импортированных позже персонажей; world setting не должен быть единственным условием раннего выхода.
 
 ### Step 6: Вызвать миграцию после публикации паков
 
