@@ -79,6 +79,38 @@ function setCurrentUser({ id = "player-1", isGM = false, users = [] } = {}) {
   globalThis.game = { user: { id, isGM }, users };
 }
 
+function makeConfiguredCharacter(damageType = "fire") {
+  const adept = makeFeat({ configuredType: damageType });
+  return makeCharacter([adept]);
+}
+
+function makeDamageRoll({
+  type = "fire",
+  types = [],
+  terms = [],
+  parent = null,
+  total = 0,
+} = {}) {
+  return {
+    options: { type, types },
+    terms,
+    parent,
+    _total: total,
+    evaluations: 0,
+    _evaluateTotal() {
+      this.evaluations += 1;
+      return 42;
+    },
+    toJSON() {
+      return { total: this._total, type: this.options.type };
+    },
+  };
+}
+
+function spellActivity(actor, itemType = "spell") {
+  return { item: { type: itemType, parent: actor } };
+}
+
 test("recognizes only owned Elemental Adept feat items", () => {
   const elementalAdept = makeFeat();
   makeCharacter([elementalAdept]);
@@ -349,4 +381,86 @@ test("an existing classified minor copy makes a later acquisition minor without 
 
   assert.equal(await service.handleCreatedItem(acquired, {}, "player-1"), false);
   assert.equal(acquired.system.type.subtype, "minor");
+});
+
+test("Elemental Adept raises only active 1s and 2s in nested completed spell damage dice", async () => {
+  const actor = makeConfiguredCharacter("fire");
+  const direct = {
+    results: [
+      { result: 1, active: true },
+      { result: 2, active: true },
+      { result: 3, active: true },
+      { result: 1, active: false },
+      { result: 1, active: true, rerolled: true },
+      { result: 2, active: true, discarded: true },
+    ],
+  };
+  const nested = { results: [{ result: 2, active: true }] };
+  const roll = makeDamageRoll({ terms: [direct, { dice: [nested] }] });
+  const service = new ElementalAdeptAutomationService();
+
+  assert.equal(await service.applyDnd5ePostDamageRoll([roll], { subject: spellActivity(actor) }), true);
+  assert.deepEqual(direct.results.map(({ result }) => result), [3, 3, 3, 1, 1, 2]);
+  assert.equal(nested.results[0].result, 3);
+  assert.equal(roll._total, 42);
+  assert.equal(roll.evaluations, 1);
+});
+
+test("Elemental Adept adjusts only matching spell damage rolls, including spell-tagged non-spell sources", async () => {
+  const actor = makeConfiguredCharacter("fire");
+  const service = new ElementalAdeptAutomationService();
+  const fire = makeDamageRoll({ type: "fire", terms: [{ results: [{ result: 1, active: true }] }] });
+  const radiant = makeDamageRoll({ type: "radiant", terms: [{ results: [{ result: 1, active: true }] }] });
+  const tagged = makeDamageRoll({ types: ["fire"], terms: [{ results: [{ result: 2, active: true }] }] });
+  const noAdept = makeDamageRoll({ terms: [{ results: [{ result: 1, active: true }] }] });
+  const mundane = makeDamageRoll({ terms: [{ results: [{ result: 1, active: true }] }] });
+
+  assert.equal(await service.applyDnd5ePostDamageRoll([fire, radiant], { subject: spellActivity(actor) }), true);
+  assert.equal(fire.terms[0].results[0].result, 3);
+  assert.equal(radiant.terms[0].results[0].result, 1);
+
+  const spellTaggedActivity = {
+    item: { type: "feat", parent: actor },
+    system: { properties: new Set(["spell"]) },
+  };
+  assert.equal(await service.applyDnd5ePostDamageRoll([tagged], { subject: spellTaggedActivity }), true);
+  assert.equal(tagged.terms[0].results[0].result, 3);
+
+  assert.equal(await service.applyDnd5ePostDamageRoll([noAdept], { subject: spellActivity(makeCharacter()) }), false);
+  assert.equal(await service.applyDnd5ePostDamageRoll([mundane], { subject: spellActivity(actor, "weapon") }), false);
+  assert.equal(noAdept.terms[0].results[0].result, 1);
+  assert.equal(mundane.terms[0].results[0].result, 1);
+});
+
+test("Elemental Adept writes changed rolls once and serializes updates for the same chat message", async () => {
+  const actor = makeConfiguredCharacter("fire");
+  const updates = [];
+  let activeUpdates = 0;
+  let maximumActiveUpdates = 0;
+  const message = {
+    async update(patch) {
+      activeUpdates += 1;
+      maximumActiveUpdates = Math.max(maximumActiveUpdates, activeUpdates);
+      updates.push(patch);
+      await Promise.resolve();
+      activeUpdates -= 1;
+    },
+  };
+  const first = makeDamageRoll({ parent: message, terms: [{ results: [{ result: 1, active: true }] }] });
+  const second = makeDamageRoll({ parent: message, terms: [{ results: [{ result: 2, active: true }] }] });
+  const service = new ElementalAdeptAutomationService();
+  const context = { subject: spellActivity(actor) };
+
+  await Promise.all([
+    service.applyDnd5ePostDamageRoll([first], context),
+    service.applyDnd5ePostDamageRoll([second], context),
+  ]);
+  assert.equal(maximumActiveUpdates, 1);
+  assert.deepEqual(updates, [
+    { rolls: [{ total: 42, type: "fire" }] },
+    { rolls: [{ total: 42, type: "fire" }] },
+  ]);
+
+  assert.equal(await service.applyDnd5ePostDamageRoll([first], context), false);
+  assert.equal(updates.length, 2);
 });

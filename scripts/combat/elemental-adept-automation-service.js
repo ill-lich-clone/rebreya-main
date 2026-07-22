@@ -94,6 +94,67 @@ export function normalizeElementalAdeptSpellSubject(subject) {
   return item?.type === "spell" ? item : null;
 }
 
+function elementalAdeptActorFromSubject(subject) {
+  const activity = subject?.activity ?? subject ?? null;
+  const item = activity?.item ?? activity?.spell ?? null;
+  return activity?.actor
+    ?? subject?.actor
+    ?? (activity?.parent?.type === "character" ? activity.parent : null)
+    ?? getElementalAdeptActor(item)
+    ?? getElementalAdeptActor(activity?.parent)
+    ?? null;
+}
+
+function elementalAdeptSpellProperty(value) {
+  const properties = value instanceof Set
+    ? Array.from(value)
+    : Array.isArray(value)
+      ? value
+      : normalizeCollection(value);
+  return properties.some((property) => cleanString(
+    typeof property === "object" ? property?.id ?? property?.key ?? property?.value : property,
+  ).toLowerCase() === "spell");
+}
+
+function hasElementalAdeptSpellEvidence(activity, roll) {
+  const item = activity?.item ?? activity?.spell ?? null;
+  if (activity?.type === "spell" || item?.type === "spell") {
+    return true;
+  }
+  return [activity, item, roll?.options, roll].some((source) => (
+    source?.isSpell === true
+    || source?.spell === true
+    || source?.isSpellDamage === true
+    || source?.spellDamage === true
+    || getProperty(source, "flags.dnd5e.spell") === true
+    || getProperty(source, "flags.dnd5e.spellDamage") === true
+    || elementalAdeptSpellProperty(source?.properties)
+    || elementalAdeptSpellProperty(source?.system?.properties)
+  ));
+}
+
+function elementalAdeptRollDamageTypes(roll) {
+  const options = roll?.options ?? {};
+  const values = [options.type, ...(typeof options.types === "string" ? [options.types] : normalizeCollection(options.types))];
+  return new Set(values.map(normalizeElementalAdeptDamageType).filter(Boolean));
+}
+
+function elementalAdeptDieTerms(terms, seen = new Set(), dice = []) {
+  for (const term of normalizeCollection(terms)) {
+    if (!term || typeof term !== "object" || seen.has(term)) {
+      continue;
+    }
+    seen.add(term);
+    if (Array.isArray(term.results)) {
+      dice.push(term);
+    }
+    elementalAdeptDieTerms(term.terms, seen, dice);
+    elementalAdeptDieTerms(term.dice, seen, dice);
+    elementalAdeptDieTerms(term.rolls, seen, dice);
+  }
+  return dice;
+}
+
 function isCurrentUserHook(userId) {
   const currentUserId = cleanString(globalThis.game?.user?.id);
   const hookUserId = cleanString(userId);
@@ -216,6 +277,7 @@ export class ElementalAdeptAutomationService {
     this._prompt = typeof options.prompt === "function" ? options.prompt : promptElementalAdeptChoice;
     this._pendingItems = new Set();
     this._actorPromises = new Map();
+    this._messagePromises = new Map();
   }
 
   async handleCreatedItem(item, options = {}, userId = "") {
@@ -250,6 +312,51 @@ export class ElementalAdeptAutomationService {
     });
   }
 
+  async applyDnd5ePostDamageRoll(rolls = [], context = {}) {
+    const safeRolls = (Array.isArray(rolls) ? rolls : [rolls]).filter(Boolean);
+    const activity = context?.subject?.activity ?? context?.subject ?? null;
+    const actor = elementalAdeptActorFromSubject(context?.subject);
+    const configuredTypes = new Set(getConfiguredElementalAdeptTypes(actor));
+    if (!configuredTypes.size) {
+      return false;
+    }
+
+    const changedRolls = new Set();
+    for (const roll of safeRolls) {
+      const rollTypes = elementalAdeptRollDamageTypes(roll);
+      if (!hasElementalAdeptSpellEvidence(activity, roll) || !Array.from(rollTypes).some((type) => configuredTypes.has(type))) {
+        continue;
+      }
+      let changed = false;
+      for (const die of elementalAdeptDieTerms(roll.terms)) {
+        for (const result of die.results) {
+          if (
+            result?.active === true
+            && result?.rerolled !== true
+            && result?.discarded !== true
+            && (result.result === 1 || result.result === 2)
+          ) {
+            result.result = 3;
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        if (typeof roll._evaluateTotal === "function") {
+          roll._total = roll._evaluateTotal();
+        }
+        changedRolls.add(roll);
+      }
+    }
+
+    const changedMessages = new Set(Array.from(changedRolls, (roll) => roll.parent).filter((message) => typeof message?.update === "function"));
+    await Promise.all(Array.from(changedMessages, (message) => this.#enqueueMessageUpdate(
+      message,
+      safeRolls.filter((roll) => roll?.parent === message),
+    )));
+    return changedRolls.size > 0;
+  }
+
   #actorKey(actor) {
     return cleanString(actor?.uuid ?? actor?.id ?? actor?._id) || actor;
   }
@@ -268,6 +375,27 @@ export class ElementalAdeptAutomationService {
     finally {
       if (this._actorPromises.get(key) === current) {
         this._actorPromises.delete(key);
+      }
+    }
+  }
+
+  #messageKey(message) {
+    return cleanString(message?.uuid ?? message?.id ?? message?._id) || message;
+  }
+
+  async #enqueueMessageUpdate(message, rolls) {
+    const key = this.#messageKey(message);
+    const previous = this._messagePromises.get(key) ?? Promise.resolve();
+    const current = previous
+      .catch(() => undefined)
+      .then(() => message.update({ rolls: rolls.map((roll) => roll.toJSON?.() ?? roll) }));
+    this._messagePromises.set(key, current);
+    try {
+      await current;
+    }
+    finally {
+      if (this._messagePromises.get(key) === current) {
+        this._messagePromises.delete(key);
       }
     }
   }
