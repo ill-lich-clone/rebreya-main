@@ -1,0 +1,234 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+const {
+  ElementalAdeptAutomationService,
+  ELEMENTAL_ADEPT_CHOICES,
+  getAvailableElementalAdeptChoices,
+  getConfiguredElementalAdeptTypes,
+  isElementalAdeptItem,
+} = await import("../scripts/combat/elemental-adept-automation-service.js");
+
+function makeFeat({
+  id = "elemental-adept",
+  type = "feat",
+  identifier = "stihiynyy-adept",
+  configuredType = "",
+} = {}) {
+  return {
+    id,
+    type,
+    system: { identifier },
+    flags: {
+      "rebreya-main": {
+        elementalAdept: configuredType,
+      },
+    },
+  };
+}
+
+function makeCharacter(items = []) {
+  const actor = { id: "character-1", type: "character", items, isOwner: true };
+  for (const item of items) {
+    item.parent = actor;
+  }
+  return actor;
+}
+
+function setPath(target, path, value) {
+  const parts = path.split(".");
+  let current = target;
+  for (const part of parts.slice(0, -1)) {
+    current[part] ??= {};
+    current = current[part];
+  }
+  current[parts.at(-1)] = value;
+}
+
+function makeMutableFeat(options = {}) {
+  const item = makeFeat(options);
+  item.name = options.name ?? "Стихийный адепт";
+  item.system.type = { subtype: options.subtype ?? "" };
+  item.updates = [];
+  item.deleted = false;
+  item.update = async (data, updateOptions) => {
+    item.updates.push({ data, options: updateOptions });
+    for (const [path, value] of Object.entries(data)) {
+      if (path.includes(".")) {
+        setPath(item, path, value);
+      }
+      else if (value && typeof value === "object" && !Array.isArray(value)) {
+        item[path] = structuredClone(value);
+      }
+      else {
+        item[path] = value;
+      }
+    }
+    return item;
+  };
+  item.delete = async (deleteOptions) => {
+    item.deleted = deleteOptions;
+    return item;
+  };
+  return item;
+}
+
+function setCurrentUser({ id = "player-1", isGM = false, users = [] } = {}) {
+  globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OWNER: 3 } };
+  globalThis.game = { user: { id, isGM }, users };
+}
+
+test("recognizes only owned Elemental Adept feat items", () => {
+  const elementalAdept = makeFeat();
+  makeCharacter([elementalAdept]);
+
+  assert.equal(isElementalAdeptItem(elementalAdept), true);
+  assert.equal(isElementalAdeptItem(makeFeat({ type: "spell" })), false);
+  assert.equal(isElementalAdeptItem(makeFeat({ identifier: "other-feat" })), false);
+  assert.equal(isElementalAdeptItem(makeFeat({ identifier: "stihiynyy-adept", type: "feat" })), false);
+});
+
+test("exports the five supported elemental damage choices", () => {
+  assert.deepEqual(
+    ELEMENTAL_ADEPT_CHOICES.map((choice) => choice.value),
+    ["acid", "cold", "fire", "lightning", "thunder"],
+  );
+});
+
+test("excludes sibling configured types while retaining the current item's own type during repair", () => {
+  const current = makeFeat({ id: "current", configuredType: "fire" });
+  const sibling = makeFeat({ id: "sibling", configuredType: "cold" });
+  const actor = makeCharacter([current, sibling]);
+
+  assert.deepEqual(getConfiguredElementalAdeptTypes(actor, { excludeItem: current }), ["cold"]);
+  assert.deepEqual(
+    getAvailableElementalAdeptChoices(actor, current).map((choice) => choice.value),
+    ["acid", "fire", "lightning", "thunder"],
+  );
+});
+
+test("ignores non-character and compendium Elemental Adept items", () => {
+  const npcItem = makeFeat({ id: "npc" });
+  npcItem.parent = { type: "npc", items: [npcItem] };
+  const compendiumItem = makeFeat({ id: "compendium" });
+  compendiumItem.pack = "world.rebreya-feats";
+
+  assert.equal(isElementalAdeptItem(npcItem), false);
+  assert.equal(isElementalAdeptItem(compendiumItem), false);
+});
+
+test("classifies the first owned copy as general before prompting", async () => {
+  setCurrentUser();
+  const item = makeMutableFeat();
+  makeCharacter([item]);
+  const service = new ElementalAdeptAutomationService(null, {
+    prompt: async ({ item: prompted }) => {
+      assert.equal(prompted.system.type.subtype, "general");
+      return "fire";
+    },
+  });
+
+  assert.equal(await service.handleCreatedItem(item, {}, "player-1"), true);
+  assert.equal(item.updates[0].data["system.type.subtype"], "general");
+});
+
+test("classifies later copies as minor even when the first copy is unresolved", async () => {
+  setCurrentUser();
+  const first = makeMutableFeat({ id: "first" });
+  const later = makeMutableFeat({ id: "later" });
+  makeCharacter([first, later]);
+  const service = new ElementalAdeptAutomationService(null, { prompt: async () => null });
+
+  assert.equal(await service.handleCreatedItem(later, {}, "player-1"), false);
+  assert.equal(later.updates[0].data["system.type.subtype"], "minor");
+});
+
+test("selection updates the same item while preserving its Elemental Adept identity", async () => {
+  setCurrentUser();
+  const item = makeMutableFeat();
+  makeCharacter([item]);
+  const service = new ElementalAdeptAutomationService(null, { prompt: async () => "fire" });
+
+  assert.equal(await service.handleCreatedItem(item, {}, "player-1"), true);
+  assert.equal(item.system.identifier, "stihiynyy-adept");
+  assert.equal(item.flags["rebreya-main"].elementalAdept, "fire");
+  assert.match(item.name, /Огонь/u);
+  assert.equal(item.deleted, false);
+});
+
+test("cancellation retains classification and leaves the item unresolved", async () => {
+  setCurrentUser();
+  const item = makeMutableFeat();
+  makeCharacter([item]);
+  const service = new ElementalAdeptAutomationService(null, { prompt: async () => null });
+
+  assert.equal(await service.handleCreatedItem(item, {}, "player-1"), false);
+  assert.equal(item.system.type.subtype, "general");
+  assert.equal(item.flags["rebreya-main"].elementalAdept, "");
+});
+
+test("sheet repair prompts unresolved copies and skips configured copies", async () => {
+  setCurrentUser();
+  const unresolved = makeMutableFeat({ id: "unresolved" });
+  const configured = makeMutableFeat({ id: "configured", configuredType: "cold" });
+  const actor = makeCharacter([unresolved, configured]);
+  const prompted = [];
+  const service = new ElementalAdeptAutomationService(null, {
+    prompt: async ({ item }) => {
+      prompted.push(item.id);
+      return "fire";
+    },
+  });
+
+  assert.equal(await service.repairActor(actor), true);
+  assert.deepEqual(prompted, ["unresolved"]);
+  assert.equal(unresolved.flags["rebreya-main"].elementalAdept, "fire");
+});
+
+test("deletes an unresolved sixth copy after every elemental type is owned", async () => {
+  setCurrentUser();
+  const owned = ELEMENTAL_ADEPT_CHOICES.map((choice) => makeMutableFeat({
+    id: choice.value,
+    configuredType: choice.value,
+  }));
+  const sixth = makeMutableFeat({ id: "sixth" });
+  makeCharacter([...owned, sixth]);
+  const service = new ElementalAdeptAutomationService(null, { prompt: async () => assert.fail("must not prompt") });
+
+  assert.equal(await service.handleCreatedItem(sixth, {}, "player-1"), true);
+  assert.notEqual(sixth.deleted, false);
+});
+
+test("rejects a concurrently unavailable selection and refreshes the prompt choices", async () => {
+  setCurrentUser();
+  const item = makeMutableFeat();
+  const sibling = makeMutableFeat({ id: "sibling" });
+  makeCharacter([item, sibling]);
+  const offered = [];
+  const service = new ElementalAdeptAutomationService(null, {
+    prompt: async ({ options }) => {
+      offered.push(options.map((choice) => choice.value));
+      if (offered.length === 1) {
+        sibling.flags["rebreya-main"].elementalAdept = "fire";
+        return "fire";
+      }
+      return "cold";
+    },
+  });
+
+  assert.equal(await service.handleCreatedItem(item, {}, "player-1"), true);
+  assert.deepEqual(offered[1], ["acid", "cold", "lightning", "thunder"]);
+  assert.equal(item.flags["rebreya-main"].elementalAdept, "cold");
+});
+
+test("an active player owner takes precedence over a GM prompt and recursive updates are ignored", async () => {
+  const item = makeMutableFeat();
+  const actor = makeCharacter([item]);
+  actor.ownership = { "player-1": 3 };
+  setCurrentUser({ id: "gm-1", isGM: true, users: [{ id: "player-1", active: true, isGM: false }] });
+  const service = new ElementalAdeptAutomationService(null, { prompt: async () => assert.fail("GM must not prompt") });
+
+  assert.equal(await service.handleCreatedItem(item, {}, "gm-1"), false);
+  setCurrentUser({ id: "player-1", users: [{ id: "player-1", active: true, isGM: false }] });
+  assert.equal(await service.handleCreatedItem(item, { "rebreya-main": { skipElementalAdeptAutomation: true } }, "player-1"), false);
+});
