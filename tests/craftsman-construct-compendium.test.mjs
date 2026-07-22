@@ -47,6 +47,67 @@ test("construct compendium sync skips non-active GM clients", async () => {
   assert.deepEqual(await service.sync(), { skipped: true, pack: null, worldActor: null });
 });
 
+test("construct compendium creation preserves the CompendiumCollection class receiver", async () => {
+  const packDocuments = [];
+  const worldActors = [];
+  const pack = {
+    collection: "world.rebreya-craftsman-constructs",
+    documentName: "Actor",
+    metadata: { system: "dnd5e" },
+    documentClass: {
+      async createDocuments(rows) {
+        packDocuments.push(...rows.map((row) => ({
+          ...structuredClone(row),
+          id: row._id,
+          getFlag(scope, key) { return this.flags?.[scope]?.[key]; }
+        })));
+      },
+      async deleteDocuments() {}
+    },
+    async getDocuments() { return packDocuments; }
+  };
+  class FakeCompendiumCollection {
+    static async createCompendium(metadata) {
+      assert.equal(this, FakeCompendiumCollection);
+      assert.equal(metadata.name, "rebreya-craftsman-constructs");
+      return pack;
+    }
+  }
+  const previousFoundry = globalThis.foundry;
+  globalThis.foundry = {
+    ...previousFoundry,
+    documents: { collections: { CompendiumCollection: FakeCompendiumCollection } }
+  };
+  const game = {
+    system: { id: "dnd5e" },
+    packs: { get: () => null },
+    actors: { contents: worldActors }
+  };
+  const Actor = {
+    async create(data) {
+      const actor = {
+        ...structuredClone(data),
+        id: "world-construct",
+        getFlag(scope, key) { return this.flags?.[scope]?.[key]; }
+      };
+      worldActors.push(actor);
+      return actor;
+    }
+  };
+  try {
+    const service = new CraftsmanConstructCompendiumService({
+      gameProvider: () => game,
+      actorProvider: () => Actor,
+      isActiveGmClient: () => true
+    });
+    const result = await service.sync();
+    assert.equal(result.pack, pack);
+  }
+  finally {
+    globalThis.foundry = previousFoundry;
+  }
+});
+
 test("construct compendium sync creates the stable Actor document and technical world Actor", async () => {
   const packDocuments = [];
   const worldActors = [];

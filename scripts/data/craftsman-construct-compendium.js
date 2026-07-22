@@ -145,16 +145,24 @@ export class CraftsmanConstructCompendiumService {
       pack = null;
     }
     if (!pack) {
-      const create = this.options.createCompendium
-        ?? globalThis.foundry?.documents?.collections?.CompendiumCollection?.createCompendium;
-      if (typeof create !== "function") throw new TypeError("CompendiumCollection.createCompendium is required");
-      pack = await create({
+      const CompendiumCollection = globalThis.foundry?.documents?.collections?.CompendiumCollection;
+      const create = this.options.createCompendium;
+      const metadata = {
         name: CRAFTSMAN_CONSTRUCTS_COMPENDIUM_NAME,
         label: CRAFTSMAN_CONSTRUCTS_COMPENDIUM_LABEL,
         type: "Actor",
         system: "dnd5e",
         package: "world"
-      });
+      };
+      if (typeof create === "function") {
+        pack = await create(metadata);
+      }
+      else if (typeof CompendiumCollection?.createCompendium === "function") {
+        pack = await CompendiumCollection.createCompendium(metadata);
+      }
+      else {
+        throw new TypeError("CompendiumCollection.createCompendium is required");
+      }
     }
     return pack;
   }
