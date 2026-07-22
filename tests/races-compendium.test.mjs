@@ -282,7 +282,30 @@ test("Нечеловеческая сила raises only the Strength maximum to 
   assert.equal(changes.some((change) => change.key === "system.abilities.str.value"), false);
 });
 
-test("Великанье племя publishes only the runtime tribe chooser", () => {
+test("Half-Giant publishes one required six-option GiantTribe advancement after its feature grant", () => {
+  const source = JSON.parse(readFileSync(
+    new URL("../data/races-teyvankal-v01.json", import.meta.url),
+    "utf8"
+  ));
+  const halfGiant = source.races.find((race) => race.id === "полувеликаны");
+  const featureUuidById = new Map(halfGiant.abilities.map((ability) => [
+    ability.featureId,
+    `Compendium.world.race-features.Item.${ability.id}`
+  ]));
+  const advancement = buildRaceAdvancement(halfGiant, { featureUuidById });
+  const grantIndex = advancement.findIndex((entry) => entry.type === "ItemGrant");
+  const tribeIndex = advancement.findIndex((entry) => entry.type === "GiantTribe");
+  const tribe = advancement[tribeIndex];
+
+  assert.equal(tribeIndex, grantIndex + 1);
+  assert.equal(advancement.filter((entry) => entry.type === "GiantTribe").length, 1);
+  assert.equal(tribe.level, 0);
+  assert.equal(tribe.title, "Великанье племя");
+  assert.deepEqual(tribe.configuration.sizes, ["hill", "stone", "frost", "fire", "cloud", "storm"]);
+  assert.deepEqual(tribe.value, {});
+});
+
+test("Великанье племя source contains no runtime chooser or random choice", () => {
   const source = JSON.parse(readFileSync(
     new URL("../data/races-teyvankal-v01.json", import.meta.url),
     "utf8"
@@ -292,10 +315,7 @@ test("Великанье племя publishes only the runtime tribe chooser", (
 
   assert.equal(feature.automation.coverage, "partial");
   assert.deepEqual(feature.automation.effects, []);
-  assert.deepEqual(feature.automation.mechanics, ["giant-tribe-choice", "interactive-runtime"]);
-  assert.equal(feature.automation.activities.length, 1);
-  assert.equal(feature.automation.activities[0].type, "utility");
-  assert.equal(feature.automation.activities[0].name, "Выбрать племя");
-  assert.equal(feature.automation.activities[0].runtime.action, "chooseGiantTribe");
-  assert.equal(feature.automation.activities.some((activity) => activity.type === "damage"), false);
+  assert.deepEqual(feature.automation.mechanics, ["giant-tribe-advancement"]);
+  assert.deepEqual(feature.automation.activities, []);
+  assert.doesNotMatch(JSON.stringify(feature), /chooseGiantTribe|случайно определите/u);
 });

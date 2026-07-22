@@ -1740,6 +1740,20 @@ function normalizeFeatIndexRecord(record, pack) {
   };
 }
 
+function buildGiantTribeAdvancement(race) {
+  return {
+    _id: stableHashId(`${race.id}:giant-tribe`, "adv"),
+    type: "GiantTribe",
+    title: "Великанье племя",
+    hint: "Выберите одно из шести великаньих племён.",
+    level: 0,
+    configuration: {
+      sizes: ["hill", "stone", "frost", "fire", "cloud", "storm"]
+    },
+    value: {}
+  };
+}
+
 function pickPreferredFeat(records = [], preferredSection = "") {
   const list = Array.isArray(records) ? records.filter((entry) => entry?.uuid) : [];
   if (!list.length) {
@@ -1822,6 +1836,14 @@ export function buildRaceAdvancement(race, {
     .filter(Boolean);
   if (baseFeatureUuids.length) {
     advancement.push(buildAdvancementItemGrant(race, baseFeatureUuids));
+    const giantTribeAbility = race.abilities.find((ability) => ability.id === "полувеликаны-ability-3");
+    if (
+      getRaceKey(race) === "полувеликаны"
+      && giantTribeAbility
+      && featureUuidById.has(giantTribeAbility.featureId)
+    ) {
+      advancement.push(buildGiantTribeAdvancement(race));
+    }
   }
 
   for (const ability of race.abilities) {
