@@ -12,6 +12,7 @@ export const ELEMENTAL_ADEPT_CHOICES = Object.freeze([
   { value: "thunder", label: "Гром" },
 ]);
 
+const ELEMENTAL_ADEPT_CANONICAL_NAME = "Стихийный адепт";
 const ELEMENTAL_ADEPT_DAMAGE_TYPE_SET = new Set(ELEMENTAL_ADEPT_DAMAGE_TYPES);
 const ELEMENTAL_ADEPT_MIDI_DAMAGE_MARKER = Symbol("elementalAdeptMidiDamageHandled");
 
@@ -379,16 +380,9 @@ function elementalAdeptAcquisitionSubtype(actor, item) {
     : "general";
 }
 
-function elementalAdeptBaseName(name) {
-  const fallback = "Стихийный адепт";
-  let baseName = cleanString(name, fallback);
-  while (true) {
-    const stripped = baseName.replace(/\s*(?:\([^()]*\)|:\s*[^:()]*)\s*$/u, "").trim();
-    if (!stripped || stripped === baseName) {
-      return stripped || fallback;
-    }
-    baseName = stripped;
-  }
+function elementalAdeptConfiguredName(type) {
+  const label = ELEMENTAL_ADEPT_CHOICES.find((choice) => choice.value === type)?.label ?? type;
+  return `${ELEMENTAL_ADEPT_CANONICAL_NAME}: ${label}`;
 }
 
 function elementalAdeptUpdateOptions() {
@@ -496,7 +490,7 @@ export class ElementalAdeptAutomationService {
     return this.#enqueueActor(actor, async () => {
       let changed = false;
       for (const item of normalizeCollection(actor.items)) {
-        if (isElementalAdeptItem(item) && !getConfiguredElementalAdeptType(item)) {
+        if (isElementalAdeptItem(item)) {
           changed = (await this.#configureItem(item)) || changed;
         }
       }
@@ -701,8 +695,14 @@ export class ElementalAdeptAutomationService {
     this._pendingItems.add(itemKey);
     try {
       const actor = getElementalAdeptActor(item);
-      if (getConfiguredElementalAdeptType(item)) {
-        return false;
+      const configuredType = getConfiguredElementalAdeptType(item);
+      if (configuredType) {
+        const canonicalName = elementalAdeptConfiguredName(configuredType);
+        if (item.name === canonicalName) {
+          return false;
+        }
+        await item.update?.({ name: canonicalName }, elementalAdeptUpdateOptions());
+        return true;
       }
       if (classifyAcquisition || !elementalAdeptSubtype(item)) {
         const subtype = elementalAdeptAcquisitionSubtype(actor, item);
@@ -734,9 +734,7 @@ export class ElementalAdeptAutomationService {
           globalThis.ui?.notifications?.warn?.("Этот тип урона уже выбран другой копией черты. Выберите другой тип.");
           continue;
         }
-        const label = ELEMENTAL_ADEPT_CHOICES.find((choice) => choice.value === selected)?.label ?? selected;
-        const baseName = elementalAdeptBaseName(item.name);
-        const nextName = `${baseName}: ${label}`;
+        const nextName = elementalAdeptConfiguredName(selected);
         await item.update?.({
           name: nextName,
           [ELEMENTAL_ADEPT_FLAG_PATH]: selected,

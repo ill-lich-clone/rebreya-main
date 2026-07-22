@@ -253,11 +253,44 @@ test("sheet repair prompts unresolved copies and skips configured copies", async
   assert.equal(unresolved.flags["rebreya-main"].elementalAdept, "fire");
 });
 
+test("sheet repair normalizes configured legacy names without prompting or reclassification", async () => {
+  setCurrentUser();
+  const configured = makeMutableFeat({
+    id: "configured-legacy",
+    configuredType: "cold",
+    name: "Стихийный адепт (Холод)",
+    subtype: "minor",
+  });
+  const actor = makeCharacter([configured]);
+  const service = new ElementalAdeptAutomationService(null, {
+    prompt: async () => assert.fail("configured Item must not prompt"),
+  });
+
+  assert.equal(await service.repairActor(actor), true);
+  assert.equal(configured.name, "Стихийный адепт: Холод");
+  assert.equal(configured.system.type.subtype, "minor");
+  assert.deepEqual(configured.updates.map(({ data }) => data), [{ name: "Стихийный адепт: Холод" }]);
+});
+
+test("configured names always use the canonical feat base name", async () => {
+  setCurrentUser();
+  const item = makeMutableFeat({
+    name: "Произвольное имя: Холод (устаревшее)",
+    subtype: "general",
+  });
+  makeCharacter([item]);
+  const service = new ElementalAdeptAutomationService(null, { prompt: async () => "fire" });
+
+  assert.equal(await service.handleCreatedItem(item, {}, "player-1"), true);
+  assert.equal(item.name, "Стихийный адепт: Огонь");
+});
+
 test("deletes an unresolved sixth copy after every elemental type is owned", async () => {
   setCurrentUser();
   const owned = ELEMENTAL_ADEPT_CHOICES.map((choice) => makeMutableFeat({
     id: choice.value,
     configuredType: choice.value,
+    name: `Стихийный адепт: ${choice.label}`,
   }));
   const sixth = makeMutableFeat({ id: "sixth" });
   makeCharacter([...owned, sixth]);
@@ -306,6 +339,7 @@ test("sheet repair never deletes an existing unresolved copy when every type is 
   const owned = ELEMENTAL_ADEPT_CHOICES.map((choice) => makeMutableFeat({
     id: choice.value,
     configuredType: choice.value,
+    name: `Стихийный адепт: ${choice.label}`,
   }));
   const unresolved = makeMutableFeat({ id: "cancelled", subtype: "minor" });
   const actor = makeCharacter([...owned, unresolved]);
@@ -325,6 +359,7 @@ test("sheet repair uses a capacity warning instead of a failed-deletion warning"
     const owned = ELEMENTAL_ADEPT_CHOICES.map((choice) => makeMutableFeat({
       id: choice.value,
       configuredType: choice.value,
+      name: `Стихийный адепт: ${choice.label}`,
     }));
     const unresolved = makeMutableFeat({ id: "cancelled", subtype: "minor" });
     const actor = makeCharacter([...owned, unresolved]);
@@ -342,8 +377,18 @@ test("sheet repair uses a capacity warning instead of a failed-deletion warning"
 
 test("ordinary updates preserve an already configured acquisition subtype", async () => {
   setCurrentUser();
-  const original = makeMutableFeat({ id: "original", subtype: "general", configuredType: "fire" });
-  const later = makeMutableFeat({ id: "later", subtype: "minor", configuredType: "cold" });
+  const original = makeMutableFeat({
+    id: "original",
+    name: "Стихийный адепт: Огонь",
+    subtype: "general",
+    configuredType: "fire",
+  });
+  const later = makeMutableFeat({
+    id: "later",
+    name: "Стихийный адепт: Холод",
+    subtype: "minor",
+    configuredType: "cold",
+  });
   makeCharacter([original, later]);
   const service = new ElementalAdeptAutomationService(null, { prompt: async () => assert.fail("configured Item must not prompt") });
 
@@ -405,6 +450,25 @@ test("concurrent configuration calls serialize by actor and duplicate an Item on
   assert.equal(second.system.type.subtype, "minor");
   assert.equal(first.flags["rebreya-main"].elementalAdept, "fire");
   assert.equal(second.flags["rebreya-main"].elementalAdept, "cold");
+});
+
+test("concurrent acquisition classification follows actor order when hooks arrive in reverse", async () => {
+  setCurrentUser();
+  const first = makeMutableFeat({ id: "first", subtype: "general" });
+  const second = makeMutableFeat({ id: "second", subtype: "general" });
+  makeCharacter([first, second]);
+  const service = new ElementalAdeptAutomationService(null, {
+    prompt: async ({ item }) => item.id === "first" ? "fire" : "cold",
+  });
+
+  const [secondResult, firstResult] = await Promise.all([
+    service.handleCreatedItem(second, {}, "player-1"),
+    service.handleCreatedItem(first, {}, "player-1"),
+  ]);
+
+  assert.deepEqual([secondResult, firstResult], [true, true]);
+  assert.equal(first.system.type.subtype, "general");
+  assert.equal(second.system.type.subtype, "minor");
 });
 
 test("an existing classified minor copy makes a later acquisition minor without a general copy", async () => {
