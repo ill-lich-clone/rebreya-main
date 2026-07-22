@@ -4,6 +4,7 @@ import {
   CLASSES_COMPENDIUM_LABEL,
   CLASSES_COMPENDIUM_NAME,
   FEATS_COMPENDIUM_NAME,
+  LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME,
   MODULE_ID,
   SPELLS_COMPENDIUM_NAME,
   SUBCLASSES_COMPENDIUM_LABEL,
@@ -62,6 +63,7 @@ const SPELLS_PACK_ID = `world.${SPELLS_COMPENDIUM_NAME}`;
 const CLASS_FEATURES_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
 const SUBCLASSES_PACK_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
 const CLASSES_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
+const LEGACY_CRAFTSMAN_ARCHETYPES_PACK_ID = `world.${LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME}`;
 
 const CLASS_ROOT_FOLDER = "Классы";
 const SUBCLASS_ROOT_FOLDER = "Архетипы";
@@ -77,6 +79,20 @@ const CLASS_FEATURE_TEMPLATE_VERSION = 15;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CRAFTSMAN_SUBCLASS_TEMPLATE_VERSION = 1;
 const CLASS_TEMPLATE_VERSION = 6;
+const CRAFTSMAN_NATIVE_SUBCLASS_TRACK_BY_ID = Object.freeze({
+  "craftsman-research-weaponsmith": "research",
+  "craftsman-research-armorer": "research",
+  "craftsman-research-alchemist": "research",
+  "craftsman-research-artificer": "research",
+  "craftsman-research-occultist": "research",
+  "craftsman-research-healer": "research",
+  "craftsman-research-mechanic": "research",
+  "craftsman-specialty-assault": "specialty",
+  "craftsman-specialty-defender": "specialty",
+  "craftsman-specialty-constructor": "specialty",
+  "craftsman-specialty-artillerist": "specialty",
+  "craftsman-specialty-tactician": "specialty"
+});
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 const ROGUE_CUNNING_STRIKE_SECTION_LABEL = "Хитрые удары";
 
@@ -5710,6 +5726,144 @@ function validateCraftsmanSubclassUuidMap(normalizedDataList, subclassUuidById) 
   }
 }
 
+function documentModuleFlag(document, key) {
+  return document?.getFlag?.(MODULE_ID, key)
+    ?? foundry.utils.getProperty(document, `flags.${MODULE_ID}.${key}`);
+}
+
+function documentId(document) {
+  return cleanString(document?.id ?? document?._id);
+}
+
+function documentFolderId(document) {
+  return cleanString(document?.folder?.id ?? document?.folder);
+}
+
+async function validatePublishedNativeCraftsmanSubclasses() {
+  const pack = game.packs.get(SUBCLASSES_PACK_ID);
+  if (!pack || cleanString(pack.collection) !== SUBCLASSES_PACK_ID) {
+    throw new Error(`Missing native Craftsman subclass pack: ${SUBCLASSES_PACK_ID}`);
+  }
+
+  const documents = await getPackDocuments(pack);
+  for (const [archetypeId, expectedTrack] of Object.entries(CRAFTSMAN_NATIVE_SUBCLASS_TRACK_BY_ID)) {
+    const matches = documents.filter((document) => (
+      documentModuleFlag(document, "archetypeId") === archetypeId
+    ));
+    if (matches.length !== 1) {
+      throw new Error(`Missing published native Craftsman subclass: ${archetypeId}`);
+    }
+
+    const [document] = matches;
+    const expectedUuid = compendiumItemUuid(SUBCLASSES_PACK_ID, documentId(document));
+    if (
+      document?.type !== "subclass"
+      || documentModuleFlag(document, "managed") !== true
+      || documentModuleFlag(document, "sourceType") !== "subclass"
+      || documentModuleFlag(document, "classIdentifier") !== "craftsman-v01"
+      || documentModuleFlag(document, "craftsmanTrack") !== expectedTrack
+      || cleanString(document?.uuid) !== expectedUuid
+    ) {
+      throw new Error(`Invalid published native Craftsman subclass: ${archetypeId}`);
+    }
+  }
+}
+
+export async function retireLegacyCraftsmanArchetypesPack(pack) {
+  const result = {
+    deletedDocumentIds: [],
+    deletedFolderIds: []
+  };
+  if (!pack) {
+    return result;
+  }
+  if (cleanString(pack.collection) !== LEGACY_CRAFTSMAN_ARCHETYPES_PACK_ID) {
+    throw new Error(`Refusing to retire unexpected Craftsman pack: ${cleanString(pack.collection) || "<missing>"}`);
+  }
+
+  await validatePublishedNativeCraftsmanSubclasses();
+
+  const documents = await getPackDocuments(pack);
+  const retiredDocuments = documents.filter((document) => (
+    documentModuleFlag(document, "managed") === true
+    && ["research", "specialty"].includes(documentModuleFlag(document, "sourceType"))
+  ));
+  const retiredDocumentIds = retiredDocuments.map(documentId).filter(Boolean);
+  if (!retiredDocumentIds.length) {
+    return result;
+  }
+
+  const documentClass = globalThis.Item?.implementation ?? pack.documentClass;
+  if (typeof documentClass?.deleteDocuments !== "function") {
+    throw new Error(`Foundry Item document API is unavailable for ${pack.collection}`);
+  }
+  await documentClass.deleteDocuments(retiredDocumentIds, {
+    pack: pack.collection,
+    render: false
+  });
+  result.deletedDocumentIds.push(...retiredDocumentIds);
+
+  const folders = getPackFolders(pack);
+  const folderById = new Map(folders
+    .map((folder) => [documentId(folder), folder])
+    .filter(([id]) => id));
+  const impactedFolderIds = new Set();
+  for (const document of retiredDocuments) {
+    const visited = new Set();
+    let folderId = documentFolderId(document);
+    while (folderId && folderById.has(folderId) && !visited.has(folderId)) {
+      visited.add(folderId);
+      impactedFolderIds.add(folderId);
+      folderId = documentFolderId(folderById.get(folderId));
+    }
+  }
+
+  const retiredIdSet = new Set(retiredDocumentIds);
+  const remainingDocumentFolderIds = new Set(documents
+    .filter((document) => !retiredIdSet.has(documentId(document)))
+    .map(documentFolderId)
+    .filter(Boolean));
+  const remainingFolderIds = new Set(folderById.keys());
+  const folderClass = globalThis.Folder?.implementation ?? globalThis.Folder;
+  while (true) {
+    const emptyManagedFolders = folders.filter((folder) => {
+      const id = documentId(folder);
+      if (
+        !remainingFolderIds.has(id)
+        || !impactedFolderIds.has(id)
+        || documentModuleFlag(folder, "managed") !== true
+        || remainingDocumentFolderIds.has(id)
+      ) {
+        return false;
+      }
+      return !folders.some((candidate) => (
+        remainingFolderIds.has(documentId(candidate))
+        && documentFolderId(candidate) === id
+      ));
+    });
+    if (!emptyManagedFolders.length) {
+      break;
+    }
+    if (typeof folderClass?.deleteDocuments !== "function") {
+      throw new Error(`Foundry Folder document API is unavailable for ${pack.collection}`);
+    }
+
+    for (const folder of emptyManagedFolders) {
+      const id = documentId(folder);
+      await folderClass.deleteDocuments([id], {
+        pack: pack.collection,
+        deleteContents: false,
+        deleteSubfolders: false,
+        render: false
+      });
+      remainingFolderIds.delete(id);
+      result.deletedFolderIds.push(id);
+    }
+  }
+
+  return result;
+}
+
 export async function syncClassesPack(normalizedDataList, context = {}) {
   const normalized = Array.isArray(normalizedDataList) ? normalizedDataList : [normalizedDataList];
   validateCraftsmanSubclassUuidMap(normalized, context.subclassUuidById);
@@ -5816,6 +5970,7 @@ export class ClassesCompendiumService {
       iconLookup,
       spellUuidById
     });
+    validateCraftsmanSubclassUuidMap(normalizedData, subclassUuidById);
     const classesPack = await syncClassesPack(normalizedData, {
       featureUuidById,
       subclassUuidById,
@@ -5824,6 +5979,9 @@ export class ClassesCompendiumService {
       spellUuidById,
       iconLookup
     });
+    await retireLegacyCraftsmanArchetypesPack(
+      game.packs.get(LEGACY_CRAFTSMAN_ARCHETYPES_PACK_ID)
+    );
 
     return {
       classesPack,

@@ -28,8 +28,8 @@ export const CRAFTSMAN_TRACKS = Object.freeze({
 });
 export const DOWNTIME_COMPENDIUM_NAME = "rebreya-downtime";
 export const DOWNTIME_COMPENDIUM_LABEL = "Простой Rebreya";
-export const CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME = "rebreya-craftsman-archetypes";
-export const CRAFTSMAN_ARCHETYPES_COMPENDIUM_LABEL = "Ремесленник: архетипы";
+export const LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME = "rebreya-craftsman-archetypes";
+export const LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_LABEL = "Ремесленник: архетипы";
 export const TEYVANKAL_STATE_LANGUAGE_GROUP_ID = "teyvankal";
 export const TEYVANKAL_STATE_LANGUAGES = Object.freeze([
   { id: "umeliluan", label: "Умелилуанский" },
