@@ -41,14 +41,65 @@ function gadgetTemplate(id, availability = "base") {
   };
 }
 
+function gadgetActivitySources(id) {
+  const build = (activityId, operation) => ({
+    _id: activityId,
+    type: "utility",
+    name: operation,
+    flags: {
+      "rebreya-main": {
+        craftsmanGadget: { gadgetId: id, operation }
+      }
+    }
+  });
+  return {
+    aaaaaaaaaaaaaaaa: build("aaaaaaaaaaaaaaaa", "activate"),
+    bbbbbbbbbbbbbbbb: build("bbbbbbbbbbbbbbbb", "activate"),
+    cccccccccccccccc: build("cccccccccccccccc", "action")
+  };
+}
+
+function applyFlatPatch(target, patch) {
+  for (const [path, value] of Object.entries(patch)) {
+    const keys = path.split(".");
+    let destination = target;
+    for (const key of keys.slice(0, -1)) destination = destination[key] ??= {};
+    destination[keys.at(-1)] = structuredClone(value);
+  }
+}
+
+function attachTestItemMethods(item) {
+  item.update ??= async (patch) => {
+    if (item.failNextUpdate) {
+      item.failNextUpdate = false;
+      throw new Error("item update failed");
+    }
+    applyFlatPatch(item, patch);
+    return item;
+  };
+  item.toObject ??= () => {
+    const { actor, update, toObject, failNextUpdate, ...data } = item;
+    return structuredClone(data);
+  };
+  return item;
+}
+
 function preparedGadget(id, generation = "old", instanceId = `old-${id}`, quantity = 1) {
+  const activitySources = gadgetActivitySources(id);
   const item = {
     id: instanceId,
     name: id,
-    type: "feat",
-    system: { quantity },
+    type: "rebreya-main.gadget",
+    system: {
+      quantity,
+      activities: {
+        aaaaaaaaaaaaaaaa: structuredClone(activitySources.aaaaaaaaaaaaaaaa),
+        bbbbbbbbbbbbbbbb: structuredClone(activitySources.bbbbbbbbbbbbbbbb)
+      }
+    },
     flags: {
       "rebreya-main": {
+        craftsmanGadgetActivities: activitySources,
         craftsmanGadget: {
           managed: true,
           catalogId: id,
@@ -61,16 +112,7 @@ function preparedGadget(id, generation = "old", instanceId = `old-${id}`, quanti
       }
     }
   };
-  item.update = async (patch) => {
-    for (const [path, value] of Object.entries(patch)) {
-      const keys = path.split(".");
-      let target = item;
-      for (const key of keys.slice(0, -1)) target = target[key] ??= {};
-      target[keys.at(-1)] = value;
-    }
-    return item;
-  };
-  return item;
+  return attachTestItemMethods(item);
 }
 
 function gadgetActivity(item, operation, activationType = "special") {
@@ -126,7 +168,10 @@ class TestActor {
     const created = rows.map((row, index) => ({ ...structuredClone(row), id: `created-${this.created.length}-${index}` }));
     this.created.push(...created);
     this.items.contents.push(...created);
-    for (const item of created) item.actor = this;
+    for (const item of created) {
+      item.actor = this;
+      attachTestItemMethods(item);
+    }
     return created;
   }
 
@@ -142,14 +187,14 @@ class TestActor {
   }
 }
 
-function makeService({ selection, mechanic = false, templates = null, randomIds = [] } = {}) {
+function makeService({ selection, mechanic = false, templates = null, randomIds = [], moduleApi = {} } = {}) {
   const documents = templates ?? [
     gadgetTemplate("force-glove"), gadgetTemplate("magnetic-engine"),
     gadgetTemplate("charged-boot"), gadgetTemplate("smoke-device"),
     gadgetTemplate("afterburner-injector", "mechanic"), gadgetTemplate("emergency-regulator", "mechanic")
   ];
   let idIndex = 0;
-  return new CraftsmanGadgetService({}, {
+  return new CraftsmanGadgetService(moduleApi, {
     promptLoadout: async () => selection,
     getCraftsmanSubclasses: () => ({
       research: mechanic ? { flags: { "rebreya-main": { archetypeId: "craftsman-research-mechanic" } } } : null,
@@ -307,6 +352,374 @@ test("next long rest removes managed prepared active and spent gadgets from ever
   assert.deepEqual(actor.deleted.sort(), ["old-active", "old-prepared", "old-spent"].sort());
 });
 
+test("activating a quantity-one gadget updates the same inventory Item", async () => {
+  const item = preparedGadget("force-glove", "current", "single", 1);
+  const actor = new TestActor({ items: [item] });
+  const service = makeService();
+
+  assert.equal(await service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate")), true);
+
+  const managed = getPreparedCraftsmanGadgets(actor);
+  assert.equal(managed.length, 1);
+  assert.equal(managed[0], item);
+  assert.equal(item.name, "force-glove (активный)");
+  assert.equal(item.system.quantity, 1);
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.state, "active");
+  assert.deepEqual(
+    Object.values(item.system.activities).map((entry) => entry.flags["rebreya-main"].craftsmanGadget.operation),
+    ["action"]
+  );
+  assert.equal(actor.created.length, 0);
+});
+
+test("activating a stack splits one active Item and leaves a smaller prepared stack", async () => {
+  const item = preparedGadget("force-glove", "current", "stack-instance", 3);
+  const actor = new TestActor({ items: [item] });
+  const service = makeService({ randomIds: ["next-stack-instance"] });
+
+  assert.equal(await service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate")), true);
+
+  const prepared = getPreparedCraftsmanGadgets(actor).find((entry) => (
+    entry.flags["rebreya-main"].craftsmanGadget.state === "prepared"
+  ));
+  const active = getPreparedCraftsmanGadgets(actor).find((entry) => (
+    entry.flags["rebreya-main"].craftsmanGadget.state === "active"
+  ));
+  assert.equal(prepared, item);
+  assert.equal(prepared.system.quantity, 2);
+  assert.equal(prepared.flags["rebreya-main"].craftsmanGadget.instanceId, "next-stack-instance");
+  assert.equal(prepared.name, "force-glove");
+  assert.notEqual(active, item);
+  assert.equal(active.system.quantity, 1);
+  assert.equal(active.flags["rebreya-main"].craftsmanGadget.instanceId, "stack-instance");
+  assert.equal(active.name, "force-glove (активный)");
+  assert.deepEqual(
+    Object.values(active.system.activities).map((entry) => entry.flags["rebreya-main"].craftsmanGadget.operation),
+    ["action"]
+  );
+  assert.equal(actor.flags["rebreya-main"].craftsmanGadgets.activeInstanceId, "stack-instance");
+});
+
+test("smoke stack activation keeps the workflow instance ID on the active split Item", async () => {
+  const item = preparedGadget("smoke-device", "current", "smoke-workflow", 2);
+  const actor = new TestActor({ items: [item] });
+  const service = makeService({ randomIds: ["smoke-remainder"] });
+  const templateData = {};
+  const activation = gadgetActivity(item, "activate");
+  service.applyDnd5ePreCreateActivityTemplate(activation, templateData);
+
+  await service.applyDnd5ePostUseActivity(activation, {}, {}, {});
+
+  const active = getPreparedCraftsmanGadgets(actor).find((entry) => (
+    entry.flags["rebreya-main"].craftsmanGadget.state === "active"
+  ));
+  assert.equal(templateData.flags["rebreya-main"].craftsmanSmoke.instanceId, "smoke-workflow");
+  assert.equal(active.flags["rebreya-main"].craftsmanGadget.instanceId, "smoke-workflow");
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.instanceId, "smoke-remainder");
+});
+
+test("failed stack update removes the active clone without consuming quantity", async () => {
+  const item = preparedGadget("force-glove", "current", "rollback-stack", 2);
+  const actor = new TestActor({ items: [item] });
+  const service = makeService({ randomIds: ["rollback-remainder"] });
+  item.failNextUpdate = true;
+
+  await assert.rejects(
+    service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate")),
+    /item update failed/u
+  );
+
+  assert.equal(item.system.quantity, 2);
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.instanceId, "rollback-stack");
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.state, "prepared");
+  assert.deepEqual(getPreparedCraftsmanGadgets(actor), [item]);
+  assert.equal(actor.deleted.length, 1);
+});
+
+test("concurrent activation hooks consume a prepared stack only once", async () => {
+  const item = preparedGadget("force-glove", "current", "queued-stack", 2);
+  const actor = new TestActor({ items: [item] });
+  const service = makeService({ randomIds: ["queued-remainder"] });
+  const activation = gadgetActivity(item, "activate");
+
+  await Promise.all([
+    service.applyDnd5ePostUseActivity(activation),
+    service.applyDnd5ePostUseActivity(activation)
+  ]);
+
+  const states = getPreparedCraftsmanGadgets(actor).map((entry) => (
+    [entry.flags["rebreya-main"].craftsmanGadget.state, entry.system.quantity]
+  )).sort(([left], [right]) => left.localeCompare(right));
+  assert.deepEqual(states, [["active", 1], ["prepared", 1]]);
+});
+
+test("zero-quantity gadget stacks cannot be activated", async () => {
+  const item = preparedGadget("force-glove", "current", "empty-stack", 0);
+  const actor = new TestActor({ items: [item] });
+  const service = makeService();
+  const activation = gadgetActivity(item, "activate");
+
+  assert.equal(service.applyDnd5ePreUseActivity(activation, {}), false);
+  assert.equal(await service.applyDnd5ePostUseActivity(activation, {}), false);
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.state, "prepared");
+  assert.equal(item.system.quantity, 0);
+  assert.equal(actor.created.length, 0);
+});
+
+test("template creation reserves one actor activation before smoke can be created twice", async () => {
+  const item = preparedGadget("smoke-device", "current", "reserved-smoke", 2);
+  new TestActor({ items: [item] });
+  const service = makeService({ randomIds: ["smoke-remainder"] });
+  const firstUsage = {};
+  const secondUsage = {};
+  const firstActivity = gadgetActivity(item, "activate");
+  const secondActivity = gadgetActivity(item, "activate");
+
+  assert.equal(service.applyDnd5ePreUseActivity(firstActivity, firstUsage), true);
+  assert.equal(service.applyDnd5ePreUseActivity(secondActivity, secondUsage), true);
+  const templateData = {};
+  assert.equal(service.applyDnd5ePreCreateActivityTemplate(firstActivity, templateData), true);
+  assert.equal(service.applyDnd5ePreCreateActivityTemplate(secondActivity, {}), false);
+  assert.equal(templateData.flags["rebreya-main"].craftsmanSmoke.instanceId, "reserved-smoke");
+
+  await service.applyDnd5ePostUseActivity(firstActivity, firstUsage, {}, {});
+  assert.equal(service.applyDnd5ePreUseActivity(gadgetActivity(item, "activate"), {}), true);
+});
+
+test("two different prepared Items on one actor cannot become active concurrently", async () => {
+  const first = preparedGadget("force-glove", "current", "actor-first", 1);
+  const second = preparedGadget("charged-boot", "current", "actor-second", 1);
+  const actor = new TestActor({ items: [first, second] });
+  const service = makeService();
+
+  await Promise.all([
+    service.applyDnd5ePostUseActivity(gadgetActivity(first, "activate"), {}),
+    service.applyDnd5ePostUseActivity(gadgetActivity(second, "activate"), {})
+  ]);
+
+  assert.deepEqual(
+    getPreparedCraftsmanGadgets(actor).map((item) => item.flags["rebreya-main"].craftsmanGadget.state),
+    ["active", "prepared"]
+  );
+});
+
+test("concurrent gadget action hooks execute their side effect only once", async () => {
+  const item = preparedGadget("afterburner-injector", "current", "action-once", 1);
+  item.flags["rebreya-main"].craftsmanGadget.vehicleUuid = "Actor.vehicle";
+  new TestActor({ items: [item] });
+  let actionCalls = 0;
+  const service = makeService();
+  service.options.vehicleService = {
+    resolveResearchObject: async () => ({ uuid: "Actor.vehicle", type: "vehicle" }),
+    activateAfterburner: async () => true,
+    useAfterburnerAction: async () => { actionCalls += 1; }
+  };
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate"), {});
+  const action = gadgetActivity(item, "action");
+
+  await Promise.all([
+    service.applyDnd5ePostUseActivity(action, {}),
+    service.applyDnd5ePostUseActivity(action, {})
+  ]);
+
+  assert.equal(actionCalls, 1);
+});
+
+test("long rest serializes behind activation and removes the activated old generation", async () => {
+  const item = preparedGadget("force-glove", "current", "rest-race", 2);
+  const actor = new TestActor({ level: 1, items: [item] });
+  const service = makeService({
+    selection: ["charged-boot", "charged-boot"],
+    randomIds: ["activation-remainder", "rest-generation", "rest-instance"]
+  });
+
+  await Promise.all([
+    service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate"), {}),
+    service.handleRestCompleted(actor, { type: "long" }, {})
+  ]);
+
+  const managed = getPreparedCraftsmanGadgets(actor);
+  assert.equal(managed.length, 1);
+  assert.equal(managed[0].flags["rebreya-main"].craftsmanGadget.catalogId, "charged-boot");
+  assert.equal(managed[0].flags["rebreya-main"].craftsmanGadget.state, "prepared");
+  assert.equal(managed[0].system.quantity, 2);
+});
+
+test("activation effect failure restores the source stack and removes the active clone", async () => {
+  const item = preparedGadget("afterburner-injector", "current", "effect-rollback", 2);
+  item.flags["rebreya-main"].craftsmanGadget.vehicleUuid = "Actor.vehicle";
+  const actor = new TestActor({ items: [item] });
+  const service = makeService({ randomIds: ["failed-remainder"] });
+  service.options.vehicleService = {
+    resolveResearchObject: async () => ({ uuid: "Actor.vehicle", type: "vehicle" }),
+    activateAfterburner: async () => { throw new Error("vehicle activation failed"); },
+    deactivateGadget: async () => true
+  };
+
+  await assert.rejects(
+    service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate"), {}),
+    /vehicle activation failed/u
+  );
+
+  assert.deepEqual(getPreparedCraftsmanGadgets(actor), [item]);
+  assert.equal(item.system.quantity, 2);
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.instanceId, "effect-rollback");
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.state, "prepared");
+  assert.equal(actor.flags["rebreya-main"]?.craftsmanGadgets?.activeInstanceId ?? "", "");
+});
+
+test("non-authoritative clients route gadget activation to the active GM with CAS identity", async () => {
+  const item = preparedGadget("smoke-device", "current", "socket-smoke", 2);
+  const actor = new TestActor({ items: [item] });
+  actor.flags["rebreya-main"] = {
+    craftsmanGadgets: { restGeneration: "current", activeInstanceId: "" }
+  };
+  const requests = [];
+  const service = makeService({
+    moduleApi: {
+      socketCommandBus: {
+        request: async (command, payload) => {
+          requests.push([command, payload]);
+          return true;
+        }
+      }
+    }
+  });
+  service.options.isActiveGmClient = () => false;
+  const cloud = { uuid: "Scene.scene.MeasuredTemplate.cloud" };
+
+  assert.equal(await service.applyDnd5ePostUseActivity(
+    gadgetActivity(item, "activate"),
+    {},
+    { templates: [[cloud]] }
+  ), true);
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0][0], "craftsman.gadget.mutate");
+  assert.deepEqual(requests[0][1], {
+    kind: "use",
+    actorUuid: "Actor.craftsman",
+    itemId: "socket-smoke",
+    gadgetId: "smoke-device",
+    operation: "activate",
+    expectedInstanceId: "socket-smoke",
+    expectedActiveInstanceId: "",
+    expectedRestGeneration: "current",
+    templateUuids: ["Scene.scene.MeasuredTemplate.cloud"]
+  });
+  assert.equal(item.system.quantity, 2);
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.state, "prepared");
+});
+
+test("authoritative CAS rejects a stale second activation and deletes only its cloud", async () => {
+  const item = preparedGadget("smoke-device", "current", "authoritative-smoke", 2);
+  const actor = new TestActor({ items: [item] });
+  actor.flags["rebreya-main"] = {
+    craftsmanGadgets: { restGeneration: "current", activeInstanceId: "winner" }
+  };
+  const cloud = {
+    uuid: "Scene.scene.MeasuredTemplate.loser",
+    documentName: "MeasuredTemplate",
+    parent: { id: "scene", documentName: "Scene" },
+    flags: {
+      "rebreya-main": {
+        craftsmanSmoke: {
+          instanceId: "authoritative-smoke",
+          ownerActorUuid: actor.uuid
+        }
+      }
+    },
+    deleted: false,
+    async delete() { this.deleted = true; }
+  };
+  const service = makeService();
+  service.options.fromUuid = async (uuid) => (
+    uuid === actor.uuid ? actor : uuid === cloud.uuid ? cloud : null
+  );
+
+  assert.equal(await service.executeAuthoritativeMutation({
+    kind: "use",
+    actorUuid: actor.uuid,
+    itemId: item.id,
+    gadgetId: "smoke-device",
+    operation: "activate",
+    expectedInstanceId: "authoritative-smoke",
+    expectedActiveInstanceId: "",
+    expectedRestGeneration: "current",
+    templateUuids: [cloud.uuid]
+  }), false);
+
+  assert.equal(cloud.deleted, true);
+  assert.equal(item.system.quantity, 2);
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.state, "prepared");
+});
+
+test("authoritative rejection never deletes an unverified document UUID", async () => {
+  const item = preparedGadget("smoke-device", "current", "safe-smoke", 1);
+  const actor = new TestActor({ items: [item] });
+  actor.flags["rebreya-main"] = {
+    craftsmanGadgets: { restGeneration: "current", activeInstanceId: "winner" }
+  };
+  const foreignItem = {
+    uuid: "Actor.foreign.Item.target",
+    documentName: "Item",
+    deleted: false,
+    async delete() { this.deleted = true; }
+  };
+  const service = makeService();
+  service.options.fromUuid = async (uuid) => (
+    uuid === actor.uuid ? actor : uuid === foreignItem.uuid ? foreignItem : null
+  );
+
+  assert.equal(await service.executeAuthoritativeMutation({
+    kind: "use",
+    actorUuid: actor.uuid,
+    itemId: item.id,
+    gadgetId: "smoke-device",
+    operation: "activate",
+    expectedInstanceId: "safe-smoke",
+    expectedActiveInstanceId: "",
+    expectedRestGeneration: "current",
+    templateUuids: [foreignItem.uuid]
+  }), false);
+
+  assert.equal(foreignItem.deleted, false);
+});
+
+test("long rest mutates from the confirmed local hook and never exposes a socket rest command", async () => {
+  const item = preparedGadget("force-glove", "current", "socket-rest-old", 2);
+  const actor = new TestActor({ level: 1, items: [item] });
+  actor.flags["rebreya-main"] = {
+    craftsmanGadgets: {
+      restGeneration: "current",
+      activeInstanceId: "",
+      selectedIds: ["force-glove", "force-glove"]
+    }
+  };
+  const requests = [];
+  const service = makeService({
+    selection: ["charged-boot", "charged-boot"],
+    randomIds: ["socket-rest-generation"],
+    moduleApi: {
+      socketCommandBus: {
+        request: async (command, payload) => {
+          requests.push([command, payload]);
+          return true;
+        }
+      }
+    }
+  });
+  service.options.isActiveGmClient = () => false;
+
+  assert.equal(await service.handleRestCompleted(actor, { type: "long" }, {}), true);
+
+  assert.equal(requests.length, 0);
+  assert.equal(actor.items.contents.includes(item), false);
+  assert.equal(actor.created.length, 1);
+  assert.equal(actor.created[0].system.quantity, 2);
+  assert.equal(actor.created[0].flags["rebreya-main"].craftsmanGadget.catalogId, "charged-boot");
+});
+
 test("activating another gadget spends the previous active instance", async () => {
   const first = preparedGadget("force-glove", "current", "first");
   const second = preparedGadget("charged-boot", "current", "second");
@@ -385,7 +798,7 @@ test("replacing an active gadget tears down smoke, boot effect, and vehicle stat
   const service = makeService();
   service.options.zoneService = { deleteByInstanceId: async (id) => calls.push(["smoke", id]) };
   service.options.vehicleService = {
-    resolveVehicle: async () => vehicle,
+    resolveResearchObject: async () => vehicle,
     activateAfterburner: async () => true,
     deactivateGadget: async (_vehicle, state) => calls.push(["vehicle", state.instanceId])
   };
@@ -571,11 +984,34 @@ test("Mechanic gadget instances bind to the research vehicle and delegate activa
   });
   service.options.vehicleService = vehicleService;
   await service.handleRestCompleted(actor, { longRest: true }, {});
-  const item = getPreparedCraftsmanGadgets(actor)[0];
-  assert.equal(item.flags["rebreya-main"].craftsmanGadget.vehicleUuid, targetVehicle.uuid);
-  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate"), {}, {});
-  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "action"), {}, {});
+  const prepared = getPreparedCraftsmanGadgets(actor)[0];
+  assert.equal(prepared.flags["rebreya-main"].craftsmanGadget.vehicleUuid, targetVehicle.uuid);
+  await service.applyDnd5ePostUseActivity(gadgetActivity(prepared, "activate"), {}, {});
+  const active = getPreparedCraftsmanGadgets(actor).find((item) => (
+    item.flags["rebreya-main"].craftsmanGadget.state === "active"
+  ));
+  await service.applyDnd5ePostUseActivity(gadgetActivity(active, "action"), {}, {});
   assert.deepEqual(vehicleCalls.map((entry) => entry[0]), ["activateAfterburner", "useAfterburnerAction"]);
+});
+
+test("Mechanic gadget cannot mutate a vehicle other than the actor research object", async () => {
+  const item = preparedGadget("afterburner-injector", "current", "foreign-vehicle", 1);
+  item.flags["rebreya-main"].craftsmanGadget.vehicleUuid = "Actor.foreign-vehicle";
+  const actor = new TestActor({ level: 2, items: [item] });
+  const calls = [];
+  const service = makeService({ mechanic: true });
+  service.options.vehicleService = {
+    resolveVehicle: async () => ({ uuid: "Actor.foreign-vehicle", type: "vehicle" }),
+    resolveResearchObject: async () => ({ uuid: "Actor.research-vehicle", type: "vehicle" }),
+    activateAfterburner: async (...args) => calls.push(args)
+  };
+
+  await assert.rejects(
+    service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate"), {}, {}),
+    /research object/u
+  );
+  assert.deepEqual(calls, []);
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.state, "prepared");
 });
 
 test("Mechanic preparation opens research object selection when no vehicle is bound", async () => {

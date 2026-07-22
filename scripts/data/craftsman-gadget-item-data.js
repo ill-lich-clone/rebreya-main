@@ -55,8 +55,10 @@ function appendActiveSuffix(name) {
 }
 
 export function getCraftsmanGadgetQuantity(item) {
-  const quantity = Math.trunc(Number(item?.system?.quantity));
-  return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+  const rawQuantity = item?.system?.quantity;
+  if (rawQuantity === undefined || rawQuantity === null || rawQuantity === "") return 1;
+  const quantity = Math.trunc(Number(rawQuantity));
+  return Number.isFinite(quantity) ? Math.max(0, quantity) : 0;
 }
 
 export function expandCraftsmanGadgetSelection(items) {

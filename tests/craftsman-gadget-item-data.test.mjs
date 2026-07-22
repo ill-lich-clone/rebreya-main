@@ -155,7 +155,9 @@ test("reads physical quantities and expands managed stacks into exact prior sele
   ];
 
   assert.equal(getCraftsmanGadgetQuantity(items[0]), 3);
-  assert.equal(getCraftsmanGadgetQuantity({ system: { quantity: 0 } }), 1);
+  assert.equal(getCraftsmanGadgetQuantity({ system: { quantity: 0 } }), 0);
+  assert.equal(getCraftsmanGadgetQuantity({ system: { quantity: -2 } }), 0);
+  assert.equal(getCraftsmanGadgetQuantity({ system: {} }), 1);
   assert.deepEqual(expandCraftsmanGadgetSelection(items), [
     "charged-boot", "charged-boot", "charged-boot", "force-glove"
   ]);

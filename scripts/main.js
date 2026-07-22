@@ -61,7 +61,7 @@ import { WorldMutationCoordinator } from "./application/world-mutation-coordinat
 import { LootClaimService } from "./application/loot-claim-service.js";
 import { GroupStateRepository } from "./infrastructure/foundry/group-state-repository.js";
 import { TraderStateRepository } from "./infrastructure/foundry/trader-state-repository.js";
-import { isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
+import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-gm.js";
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
@@ -120,6 +120,7 @@ import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTim
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
+import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.96";
@@ -920,7 +921,8 @@ export class RebreyaMainModule {
     this.craftsmanGadgetService = new CraftsmanGadgetService(this, {
       zoneService: this.craftsmanGadgetZoneService,
       vehicleService: this.craftsmanVehicleService,
-      isActiveGmClient: () => isActiveGmClient(globalThis.game)
+      isActiveGmClient: () => isActiveGmClient(globalThis.game),
+      hasActiveGm: () => Boolean(getActiveGm(globalThis.game))
     });
     this.craftsmanConstructorService = new CraftsmanConstructorService({
       mapObjectTokenService: this.mapObjectTokenService,
@@ -955,6 +957,7 @@ export class RebreyaMainModule {
   }
 
   #registerTypedSocketCommands() {
+    registerCraftsmanGadgetSocketCommand(this);
     const authorizeGroup = (payload, { sender }) => this.#canSenderManageGroup(sender, payload.groupActorId);
     this.socketCommandBus.register(GROUP_CALENDAR_PATCH_COMMAND, {
       validate: isValidCalendarPatchPayload,
