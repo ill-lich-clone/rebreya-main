@@ -30,6 +30,10 @@ import {
   buildCraftsmanGadgetFeatureDefinitions,
   normalizeCraftsmanGadgets
 } from "./craftsman-gadget-definitions.js";
+import {
+  CRAFTSMAN_CONSTRUCT_FEATURE_ID,
+  buildCraftsmanConstructSummonAutomation
+} from "./craftsman-construct-definitions.js";
 import { buildSlug } from "./item-classification.js";
 import { renderDescriptionMarkdown } from "./markdown-description.js";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
@@ -80,7 +84,7 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 16;
+const CLASS_FEATURE_TEMPLATE_VERSION = 17;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CRAFTSMAN_SUBCLASS_TEMPLATE_VERSION = 1;
 const CLASS_TEMPLATE_VERSION = 6;
@@ -3442,6 +3446,9 @@ function createFighterMultiattackAutomation(feature, classIdentifier) {
 }
 
 function createFeatureAutomation(feature, classIdentifier) {
+  if (feature.featureId === CRAFTSMAN_CONSTRUCT_FEATURE_ID) {
+    return buildCraftsmanConstructSummonAutomation(feature);
+  }
   if (feature.sourceType === "craftsmanGadget") {
     return buildCraftsmanGadgetAutomation(feature.craftsmanGadget);
   }

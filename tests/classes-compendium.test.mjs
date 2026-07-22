@@ -2377,7 +2377,7 @@ test("paladin divine sense and lay on hands expose item resources and automation
   assert.equal(layOnHandsActivity.target.affects.type, "creature");
   assert.equal(layOnHandsActivity.flags["rebreya-main"].automation, "paladin-lay-on-hands");
   assert.deepEqual(layOnHandsActivity.consumption.targets, []);
-  assert.equal(JSON.parse(layOnHandsEntry.flags["rebreya-main"].signature).templateVersion, 16);
+  assert.equal(JSON.parse(layOnHandsEntry.flags["rebreya-main"].signature).templateVersion, 17);
 });
 
 test("Sovereign Jurisdiction generates a bonus-action target activity", () => {
