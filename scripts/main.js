@@ -8,6 +8,7 @@ import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
 import { StatesCompendiumService } from "./data/states-compendium.js";
 import { RacesCompendiumService } from "./data/races-compendium.js";
 import { ClassesCompendiumService } from "./data/classes-compendium.js";
+import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js";
 import { SpellsCompendiumService } from "./data/spells-compendium.js";
 import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
@@ -91,6 +92,7 @@ import { RaceAutomationService, SOCKET_EVENT_RACE_AUTOMATION } from "./combat/ra
 import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
 import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js";
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";
+import { CraftsmanConstructorService } from "./combat/craftsman-constructor-service.js";
 import { registerSceneControlsHook } from "./hooks.js?v=1.4.96-bg3-piles";
 import {
   extendDnd5eItemTypes,
@@ -116,6 +118,7 @@ import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTim
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
+import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
 import { registerForienQuestLogIntegration, refreshForienQuestLogApps } from "./integrations/forien-quest-log.js?v=1.4.96";
 import {
@@ -799,6 +802,11 @@ export class RebreyaMainModule {
     this.statesCompendium = new StatesCompendiumService();
     this.racesCompendium = new RacesCompendiumService();
     this.spellsCompendium = new SpellsCompendiumService();
+    this.craftsmanConstructCompendium = new CraftsmanConstructCompendiumService({
+      gameProvider: () => globalThis.game,
+      actorProvider: () => globalThis.Actor,
+      isActiveGmClient
+    });
     this.classesCompendium = new ClassesCompendiumService();
     this.actionsCompendium = new ActionsCompendiumService();
     this.downtimeCompendium = new DowntimeCompendiumService();
@@ -908,6 +916,12 @@ export class RebreyaMainModule {
     this.craftsmanGadgetService = new CraftsmanGadgetService(this, {
       zoneService: this.craftsmanGadgetZoneService,
       vehicleService: this.craftsmanVehicleService,
+      isActiveGmClient: () => isActiveGmClient(globalThis.game)
+    });
+    this.craftsmanConstructorService = new CraftsmanConstructorService({
+      mapObjectTokenService: this.mapObjectTokenService,
+      getCraftsmanSubclasses,
+      sceneDocuments: () => globalThis.game?.scenes,
       isActiveGmClient: () => isActiveGmClient(globalThis.game)
     });
     this.featChoiceAutomationService = new FeatChoiceAutomationService(this);
@@ -2048,11 +2062,12 @@ export class RebreyaMainModule {
     }
 
     try {
+      await this.craftsmanConstructCompendium.sync();
       await this.classesCompendium.sync();
     }
     catch (error) {
-      console.error(`${MODULE_ID} | Failed to sync classes compendium.`, error);
-      ui.notifications?.warn("Не удалось синхронизировать компендиумы классов и архетипов.");
+      console.error(`${MODULE_ID} | Failed to sync classes or Craftsman construct compendium.`, error);
+      ui.notifications?.warn("Не удалось синхронизировать компендиумы классов, архетипов или Конструкта.");
     }
 
     try {

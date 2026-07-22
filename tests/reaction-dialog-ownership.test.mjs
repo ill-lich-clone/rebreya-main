@@ -6,6 +6,9 @@ const combatDirectory = new URL("../scripts/combat/", import.meta.url);
 const dialogPattern = /(?:\bnew\s+Dialog(?:V2)?\s*\(|\bDialog(?:V2)?\.wait\s*\()/u;
 const dialogAllowlist = new Set([
   "attack-roll-boost-service.js",
+  "craftsman-constructor-service.js",
+  "craftsman-gadget-service.js",
+  "craftsman-vehicle-service.js",
   "fighter-automation-service.js",
   "paladin-automation-service.js",
   "race-automation-service.js",

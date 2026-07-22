@@ -31,16 +31,56 @@ export const CRAFTSMAN_BODY_ASSEMBLIES = Object.freeze({
 });
 
 export const CRAFTSMAN_COMBAT_MODES = Object.freeze({
-  DUELIST: Object.freeze({ id: "duelist", label: "Дуэлянт" }),
-  DEFENSE: Object.freeze({ id: "defense", label: "Защита" }),
-  LIGHT_ARMOR: Object.freeze({ id: "light-armor", label: "Сражение в лёгком доспехе" }),
-  MASSIVE_ARMOR: Object.freeze({ id: "massive-armor", label: "Сражение в массивных доспехах" }),
-  GREAT_WEAPON: Object.freeze({ id: "great-weapon", label: "Сражение большим оружием" }),
-  TWO_WEAPONS: Object.freeze({ id: "two-weapons", label: "Сражение двумя оружиями" }),
-  ARCHERY: Object.freeze({ id: "archery", label: "Стрельба" }),
-  BLIND_FIGHTING: Object.freeze({ id: "blind-fighting", label: "Сражение вслепую" }),
-  INTERCEPTION: Object.freeze({ id: "interception", label: "Перехват" }),
-  BORDERING_POTENTIAL: Object.freeze({ id: "bordering-potential", label: "Граничащий потенциал" })
+  DUELIST: Object.freeze({
+    id: "duelist",
+    label: "Дуэлянт",
+    descriptionMarkdown: "**Дуэлянт.** Пока вы держите одно рукопашное оружие в одной руке и не держите другого оружия, вы получаете бонус +2 к броскам урона этим оружием."
+  }),
+  DEFENSE: Object.freeze({
+    id: "defense",
+    label: "Защита",
+    descriptionMarkdown: "**Защита.** Пока вы держите щит, вы считаетесь укрытием наполовину для одного существа Вашего и меньше размера, по Вашему выбору, в пределах 5 футов. Даже если в любом другом случае у этого существа не было бы укрытия — этот бонус применяется ко всем атакам пока существо находиться в пределах 5 футов от вас, независимо от того применялось бы укрытие при стандартных правилах."
+  }),
+  LIGHT_ARMOR: Object.freeze({
+    id: "light-armor",
+    label: "Сражение в лёгком доспехе",
+    descriptionMarkdown: "**Сражение в лёгком доспехе.** Пока вы носите лёгкие доспехи, вы получаете +5 футов к скорости перемещения."
+  }),
+  MASSIVE_ARMOR: Object.freeze({
+    id: "massive-armor",
+    label: "Сражение в массивных доспехах",
+    descriptionMarkdown: "**Сражение в массивных доспехах.** Пока вы носите средние или тяжёлые доспехи, вы получаете бонус +1 к КД."
+  }),
+  GREAT_WEAPON: Object.freeze({
+    id: "great-weapon",
+    label: "Сражение большим оружием",
+    descriptionMarkdown: "**Сражение большим оружием.** Если у вас выпало «1» или «2» на кости урона оружия при атаке, которую вы совершали рукопашным оружием, удерживая его двумя руками, то вы можете считать «1» или «2» на кости урона как «3»."
+  }),
+  TWO_WEAPONS: Object.freeze({
+    id: "two-weapons",
+    label: "Сражение двумя оружиями",
+    descriptionMarkdown: "**Сражение двумя оружиями.** Если вы сражаетесь двумя оружиями, вы можете добавить модификатор характеристики к урону от второй атаки."
+  }),
+  ARCHERY: Object.freeze({
+    id: "archery",
+    label: "Стрельба",
+    descriptionMarkdown: "**Стрельба.** Вы получаете бонус к броскам атаки, когда атакуете дальнобойным или огнестрельным оружием равный половине вашего БМ."
+  }),
+  BLIND_FIGHTING: Object.freeze({
+    id: "blind-fighting",
+    label: "Сражение вслепую",
+    descriptionMarkdown: "**Сражение вслепую.** Вы получаете слепое зрение в радиусе 10 футов. Вы чувствуете существ, которые не находятся за полным укрытием и не спрятаны от вас, даже если вы в темноте или ослеплены."
+  }),
+  INTERCEPTION: Object.freeze({
+    id: "interception",
+    label: "Перехват",
+    descriptionMarkdown: "**Перехват.** Вы получаете владение реакцией Перехват ⚡."
+  }),
+  BORDERING_POTENTIAL: Object.freeze({
+    id: "bordering-potential",
+    label: "Граничащий потенциал",
+    descriptionMarkdown: "**Граничащий потенциал.** После использование 5-футового шага досягаемость Вашей следующей рукопашной атаки до конца хода увеличивается на 5 футов и вы получаете преимущество на эту атаку."
+  })
 });
 
 export function buildCraftsmanConstructSummonAutomation(feature = {}) {

@@ -102,6 +102,40 @@ test("Craftsman gadget hook registration is idempotent", () => {
   assert.equal(listeners.size, count);
 });
 
+test("Craftsman rest and native summon hooks serialize gadget choices before Constructor automation", async () => {
+  const { Hooks, listeners } = hookHarness();
+  const calls = [];
+  const moduleApi = {
+    craftsmanGadgetService: {
+      async handleRestCompleted() {
+        calls.push("gadgets-start");
+        await Promise.resolve();
+        calls.push("gadgets-end");
+      }
+    },
+    craftsmanConstructorService: {
+      async handleRestCompleted() { calls.push("constructor-rest"); },
+      async handlePostSummon(...args) { calls.push(["post-summon", ...args]); },
+      async handlePostUseActivity(...args) { calls.push(["construct-activity", ...args]); },
+      async handleTokenUpdated(...args) { calls.push(["token", ...args]); },
+      async handleActorUpdated(...args) { calls.push(["actor", ...args]); }
+    }
+  };
+  registerCraftsmanGadgetHooks(moduleApi, { Hooks, game: {} });
+  const actor = { id: "craftsman" };
+  listeners.get("dnd5e.restCompleted")(actor, { longRest: true }, {});
+  listeners.get("dnd5e.postSummon")({ id: "activity" }, { id: "profile" }, [{ id: "token" }], {});
+  listeners.get("updateToken")({ id: "token" }, { delta: {} });
+  listeners.get("updateActor")({ id: "actor" }, { system: {} });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(calls.slice(0, 3), ["gadgets-start", [
+    "post-summon", { id: "activity" }, { id: "profile" }, [{ id: "token" }], {}
+  ], ["token", { id: "token" }, { delta: {} }]]);
+  assert.ok(calls.indexOf("gadgets-end") < calls.indexOf("constructor-rest"));
+  assert.equal(calls.some((entry) => Array.isArray(entry) && entry[0] === "actor"), true);
+});
+
 test("document hooks keep smoke, deleted gadgets, and temporary vehicles recoverable across clients", async () => {
   const { Hooks, listeners } = hookHarness();
   const calls = [];
@@ -145,5 +179,11 @@ test("live module composition root constructs and registers Craftsman gadget aut
   assert.match(source, /this\.craftsmanGadgetZoneService = new CraftsmanGadgetZoneService\(/u);
   assert.match(source, /this\.craftsmanVehicleService = new CraftsmanVehicleService\(/u);
   assert.match(source, /this\.craftsmanGadgetService = new CraftsmanGadgetService\(this,/u);
+  assert.match(source, /this\.craftsmanConstructorService = new CraftsmanConstructorService\(/u);
+  assert.match(source, /this\.craftsmanConstructorService = new CraftsmanConstructorService\(\{[\s\S]*?isActiveGmClient: \(\) => isActiveGmClient\(globalThis\.game\)[\s\S]*?\}\);/u);
+  const constructPackSync = source.indexOf("await this.craftsmanConstructCompendium.sync()");
+  const classPackSync = source.indexOf("await this.classesCompendium.sync()", constructPackSync);
+  assert.ok(constructPackSync >= 0);
+  assert.ok(classPackSync > constructPackSync);
   assert.match(source, /registerCraftsmanGadgetHooks\(moduleApi\)/u);
 });

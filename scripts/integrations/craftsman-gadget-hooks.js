@@ -30,7 +30,8 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
   const gadgetService = moduleApi?.craftsmanGadgetService;
   const zoneService = moduleApi?.craftsmanGadgetZoneService;
   const vehicleService = moduleApi?.craftsmanVehicleService;
-  if (!Hooks?.on || (!gadgetService && !zoneService && !vehicleService)) return false;
+  const constructorService = moduleApi?.craftsmanConstructorService;
+  if (!Hooks?.on || (!gadgetService && !zoneService && !vehicleService && !constructorService)) return false;
   if (game?.[HOOKS_REGISTERED_KEY]) return true;
   if (game) game[HOOKS_REGISTERED_KEY] = true;
 
@@ -49,11 +50,6 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
         return true;
       }
     });
-
-    Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => runAsync(
-      "Failed to apply Craftsman gadget activity.",
-      () => gadgetService.applyDnd5ePostUseActivity?.(activity, usageConfig, results)
-    ));
 
     Hooks.on("dnd5e.preCreateActivityTemplate", (activity, templateData) => {
       try {
@@ -98,19 +94,64 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
       }
     });
 
-    Hooks.on("updateWorldTime", (worldTime) => runAsync(
-      "Failed to expire Craftsman gadgets.",
-      () => gadgetService.handleWorldTime?.(worldTime)
+  }
+
+  if (gadgetService || constructorService) {
+    Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => runAsync(
+      "Failed to apply Craftsman activity.",
+      async () => {
+        await gadgetService?.applyDnd5ePostUseActivity?.(activity, usageConfig, results);
+        await constructorService?.handlePostUseActivity?.(activity, usageConfig, results);
+      }
     ));
 
     Hooks.on("dnd5e.restCompleted", (actor, result, config) => runAsync(
-      "Failed to prepare Craftsman gadgets after a long rest.",
-      () => gadgetService.handleRestCompleted?.(actor, result, config)
+      "Failed to process Craftsman long-rest choices.",
+      async () => {
+        await gadgetService?.handleRestCompleted?.(actor, result, config);
+        await constructorService?.handleRestCompleted?.(actor, result, config);
+      }
     ));
 
-    Hooks.on("deleteItem", (item) => runAsync(
-      "Failed to tear down a deleted Craftsman gadget.",
-      () => gadgetService.handleDeletedItem?.(item)
+    Hooks.on("updateWorldTime", (worldTime) => runAsync(
+      "Failed to advance Craftsman timed automation.",
+      async () => {
+        await gadgetService?.handleWorldTime?.(worldTime);
+        await constructorService?.handleWorldTime?.(worldTime);
+      }
+    ));
+
+    for (const hookName of ["createItem", "updateItem", "deleteItem"]) {
+      Hooks.on(hookName, (item) => runAsync(
+        "Failed to reconcile Craftsman embedded items.",
+        async () => {
+          if (hookName === "deleteItem") await gadgetService?.handleDeletedItem?.(item);
+          await constructorService?.handleOwnerItemChanged?.(item);
+        }
+      ));
+    }
+  }
+
+  if (constructorService) {
+    Hooks.on("dnd5e.postSummon", (activity, profile, tokens, summonOptions) => runAsync(
+      "Failed to configure a summoned Craftsman construct.",
+      () => constructorService.handlePostSummon?.(activity, profile, tokens, summonOptions)
+    ));
+    Hooks.on("updateToken", (token, changed) => runAsync(
+      "Failed to reconcile a Craftsman construct token.",
+      () => constructorService.handleTokenUpdated?.(token, changed)
+    ));
+    Hooks.on("updateActor", (actor, changed) => runAsync(
+      "Failed to reconcile a Craftsman construct actor.",
+      () => constructorService.handleActorUpdated?.(actor, changed)
+    ));
+    Hooks.on("deleteActor", (actor) => runAsync(
+      "Failed to unlink Craftsman constructs from a deleted owner.",
+      () => constructorService.handleOwnerDeleted?.(actor)
+    ));
+    Hooks.on("combatStart", (combat) => runAsync(
+      "Failed to restore a repaired Craftsman construct for initiative.",
+      () => constructorService.handleCombatStart?.(combat)
     ));
   }
 
@@ -133,15 +174,19 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
     });
   }
 
-  if (zoneService) {
+  if (zoneService || constructorService) {
     Hooks.on("canvasReady", (canvas) => {
       try {
-        zoneService.registerSceneTemplates?.(canvas?.scene ?? globalThis.canvas?.scene);
+        zoneService?.registerSceneTemplates?.(canvas?.scene ?? globalThis.canvas?.scene);
+        constructorService?.reconcileScene?.(canvas?.scene ?? globalThis.canvas?.scene);
       }
       catch (error) {
-        report("Failed to index Craftsman smoke templates.", error);
+        report("Failed to reconcile Craftsman scene automation.", error);
       }
     });
+  }
+
+  if (zoneService) {
     for (const hookName of ["createMeasuredTemplate", "updateMeasuredTemplate"]) {
       Hooks.on(hookName, (document) => {
         try {

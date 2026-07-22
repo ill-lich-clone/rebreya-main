@@ -37,6 +37,18 @@ test("Constructor registries contain four body assemblies and ten independent co
     "Сражение большим оружием", "Сражение двумя оружиями", "Стрельба", "Сражение вслепую",
     "Перехват", "Граничащий потенциал"
   ]);
+  const constructorDescription = source().specialties
+    .find((entry) => entry.id === "craftsman-specialty-constructor")
+    .features.find((entry) => entry.id === "construct-assembly").descriptionMarkdown;
+  for (const entry of Object.values(CRAFTSMAN_BODY_ASSEMBLIES)) {
+    assert.equal(constructorDescription.includes(entry.descriptionMarkdown.replace(/^\*\*[^*]+\.\*\*\s*/u, "")), true);
+  }
+  const modeDescription = source().specialties
+    .find((entry) => entry.id === "craftsman-specialty-constructor")
+    .features.find((entry) => entry.id === "combat-mode").descriptionMarkdown;
+  for (const entry of Object.values(CRAFTSMAN_COMBAT_MODES)) {
+    assert.equal(modeDescription.includes(entry.descriptionMarkdown.replace(/^\*\*[^*]+\.\*\*\s*/u, "")), true);
+  }
 });
 
 test("construct assembly contains one dnd5e 5.2.5 Summon Activity and one profile", () => {
