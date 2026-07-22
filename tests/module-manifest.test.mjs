@@ -332,7 +332,7 @@ test("combat automation imports preserve their released cache busts", async () =
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-weight-threshold`, "u"),
+    /attack-service\.js\?v=1\.4\.109-character-size-reach/u,
   );
   assert.match(
     entrypointSource,
@@ -387,7 +387,7 @@ test("held item integrations preserve their released cache bust", async () => {
   );
   assert.match(
     entrypointSource,
-    new RegExp(`attack-service\\.js\\?v=${escapedVersion}-firearm-weight-threshold`, "u"),
+    /attack-service\.js\?v=1\.4\.109-character-size-reach/u,
   );
   assert.match(
     sheetSource,

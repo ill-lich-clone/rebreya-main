@@ -1,5 +1,6 @@
 import { HELD_ITEM_UPDATED_HOOK, MODULE_ID } from "../constants.js";
 import { getFighterManeuverAutomation } from "../data/fighter-automation.js";
+import { getCharacterSizeRule } from "./size-automation-service.js?v=1.4.109-character-size";
 import {
   buildHeldItemHandUpdate,
   canUseHeldItemForHandRequirement,
@@ -804,6 +805,22 @@ function convertFeetToUnits(feet, units) {
     case "ft":
     default:
       return safeFeet;
+  }
+}
+
+function convertUnitsToFeet(value, units) {
+  const safeValue = Math.max(0, toNumber(value, 0));
+  const normalizedUnits = String(units ?? "").trim().toLowerCase();
+  switch (normalizedUnits) {
+    case "m":
+      return safeValue / 0.3048;
+    case "km":
+      return safeValue / 0.0003048;
+    case "mi":
+      return safeValue * 5280;
+    case "ft":
+    default:
+      return safeValue;
   }
 }
 
@@ -1670,23 +1687,37 @@ export class CombatAttackService {
     };
   }
 
-  #resolveReachBonusFeet(item, options = {}) {
-    const explicit = toNumber(options.reachBonusFeet, NaN);
+  #resolveWeaponReachBonusFeet(item, options = {}) {
+    const explicit = toNumber(options.weaponReachBonusFeet ?? options.reachBonusFeet, NaN);
     if (Number.isFinite(explicit)) {
       return Math.max(0, explicit);
     }
-    const actorBonus = toNumber(item.actor?.getFlag?.(MODULE_ID, "racialReachBonusFeet"), NaN);
-    const runeKnightBonus = this.#resolveRuneKnightReachBonusFeet(item.actor);
-
-    if (!this.#hasItemProperty(item, "lchReach")) {
-      return Math.max(Number.isFinite(actorBonus) ? Math.max(0, actorBonus) : 0, runeKnightBonus);
+    if (this.#hasItemProperty(item, "lchReach")) {
+      const values = this.#getLichWeaponPropertyValues(item, options);
+      return Math.max(0, toNumber(values.reachBonus, 0));
     }
 
-    const values = this.#getLichWeaponPropertyValues(item, options);
-    const parsed = toNumber(values.reachBonus, NaN);
-    const itemBonus = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    const units = cleanText(foundry.utils.getProperty(item, "system.range.units"), "ft");
+    const storedReach = toNumber(foundry.utils.getProperty(item, "system.range.reach"), NaN);
+    const storedFeet = Number.isFinite(storedReach) ? convertUnitsToFeet(storedReach, units) : 5;
+    return Math.max(0, storedFeet - 5);
+  }
 
-    return Math.max(itemBonus, Number.isFinite(actorBonus) ? Math.max(0, actorBonus) : 0, runeKnightBonus);
+  #resolveReachBonusFeet(item, options = {}) {
+    const actor = options.actor ?? item.actor ?? item.parent ?? null;
+    const actorBonus = Math.max(0, toNumber(actor?.getFlag?.(MODULE_ID, "racialReachBonusFeet"), 0));
+    const runeKnightBonus = this.#resolveRuneKnightReachBonusFeet(actor);
+    const weaponBonus = this.#resolveWeaponReachBonusFeet(item, options);
+
+    return weaponBonus + actorBonus + runeKnightBonus;
+  }
+
+  #resolveFinalMeleeReachFeet(item, options = {}) {
+    const actor = options.actor ?? item.actor ?? item.parent ?? null;
+    const sizeBase = getCharacterSizeRule(actor?.system?.traits?.size).baseReachFeet;
+    const independentBonuses = this.#resolveReachBonusFeet(item, { ...options, actor });
+
+    return Math.max(0, sizeBase + independentBonuses);
   }
 
   #resolveRuneKnightReachBonusFeet(actor) {
@@ -3274,27 +3305,23 @@ export class CombatAttackService {
 
       this.#ensureBaseDamageUsageButton(activity);
 
-      const automation = this.#getLichAutomationState(item);
-      if (automation.reachBonusFeet <= 0) {
-        return true;
-      }
-
       const attackType = String(foundry.utils.getProperty(activity, "attack.type.value") ?? "").trim().toLowerCase();
       if (attackType && attackType !== "melee") {
         return true;
       }
 
       const itemRangeUnits = String(foundry.utils.getProperty(item, "system.range.units") ?? "ft").trim().toLowerCase();
-      const itemReachRaw = toNumber(foundry.utils.getProperty(item, "system.range.reach"), NaN);
-      const baseReach = Number.isFinite(itemReachRaw)
-        ? Math.max(0, itemReachRaw)
-        : convertFeetToUnits(5, itemRangeUnits);
-      const reachBonusInItemUnits = convertFeetToUnits(automation.reachBonusFeet, itemRangeUnits);
-      const nextReach = Math.max(0, baseReach + reachBonusInItemUnits);
+      const activityRangeUnits = String(
+        foundry.utils.getProperty(activity, "range.units") ?? itemRangeUnits ?? "ft"
+      ).trim().toLowerCase() || "ft";
+      const finalReachFeet = this.#resolveFinalMeleeReachFeet(item, {
+        actor: activity.actor ?? item.actor ?? item.parent ?? null
+      });
+      const nextReach = convertFeetToUnits(finalReachFeet, activityRangeUnits);
 
       foundry.utils.setProperty(activity, "range.reach", nextReach);
       if (!foundry.utils.getProperty(activity, "range.units")) {
-        foundry.utils.setProperty(activity, "range.units", itemRangeUnits || "ft");
+        foundry.utils.setProperty(activity, "range.units", activityRangeUnits);
       }
     }
     catch (error) {

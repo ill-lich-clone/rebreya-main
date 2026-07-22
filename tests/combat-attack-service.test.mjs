@@ -86,7 +86,9 @@ function makeActor(items, {
     int: { mod: 0 }
   },
   prof = 2,
-  effects = []
+  effects = [],
+  size = "med",
+  racialReachBonusFeet = 0
 } = {}) {
   const actor = new class extends Actor {
     constructor() {
@@ -98,10 +100,11 @@ function makeActor(items, {
         abilities,
         attributes: {
           prof
-        }
+        },
+        traits: { size }
       };
       this.flags = {
-        [MODULE_ID]: {}
+        [MODULE_ID]: racialReachBonusFeet > 0 ? { racialReachBonusFeet } : {}
       };
       this.items = {
         contents: items,
@@ -257,7 +260,10 @@ function makeWeaponItem({
   handRequirement = null,
   properties = {},
   attackModes = [],
-  deferUpdateMutation = false
+  deferUpdateMutation = false,
+  rangeUnits = "ft",
+  reach = 5,
+  lichWeaponPropertyValues = {}
 } = {}) {
   const updateCalls = [];
   const item = new class extends Item {
@@ -272,14 +278,14 @@ function makeWeaponItem({
           value: "simpleM"
         },
         range: {
-          units: "ft",
-          reach: 5
+          units: rangeUnits,
+          reach
         },
         properties,
         attackModes
       };
       this.flags = {
-        [MODULE_ID]: {}
+        [MODULE_ID]: { lichWeaponPropertyValues }
       };
       if (heldHands.length) {
         this.flags[MODULE_ID].heldHands = heldHands;
@@ -393,6 +399,7 @@ test("weapon attack activities mark auto-held items before activity use continue
 test("Runic Juggernaut reach comes only from its active Huge form and only affects melee", () => {
   const weapon = makeWeaponItem({ heldHands: ["left"] });
   const actor = makeActor([weapon]);
+  actor.system.traits.size = "huge";
   actor.effects = [{
     id: "giant-form",
     disabled: false,
@@ -423,12 +430,13 @@ test("Runic Juggernaut reach comes only from its active Huge form and only affec
   const service = new CombatAttackService({});
 
   assert.equal(service.applyDnd5ePreUseActivity(melee), true);
-  assert.equal(melee.range.reach, 10);
+  assert.equal(melee.range.reach, 20);
   assert.equal(weapon.system.range.reach, 5);
   assert.equal(service.applyDnd5ePreUseActivity(ranged), true);
   assert.equal(ranged.range.reach, undefined);
 
   actor.effects[0].disabled = true;
+  actor.system.traits.size = "med";
   const inactive = {
     type: "attack",
     actor,
@@ -437,7 +445,125 @@ test("Runic Juggernaut reach comes only from its active Huge form and only affec
     range: {}
   };
   assert.equal(service.applyDnd5ePreUseActivity(inactive), true);
-  assert.equal(inactive.range.reach, undefined);
+  assert.equal(inactive.range.reach, 5);
+});
+
+test("Large size base reach adds a five-foot Lich weapon bonus", () => {
+  const weapon = makeWeaponItem({
+    heldHands: ["left"],
+    properties: ["lchReach"],
+    lichWeaponPropertyValues: { reachBonus: 5 }
+  });
+  const actor = makeActor([weapon], { size: "lg" });
+  const activity = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: { type: { value: "melee" } },
+    range: {}
+  };
+
+  assert.equal(new CombatAttackService({}).applyDnd5ePreUseActivity(activity), true);
+  assert.equal(activity.range.reach, 15);
+  assert.equal(weapon.system.range.reach, 5);
+});
+
+test("ordinary dnd5e reach is converted from the Medium baseline", () => {
+  for (const [storedReach, expected] of [[5, 15], [10, 20]]) {
+    const weapon = makeWeaponItem({ heldHands: ["left"], reach: storedReach });
+    const actor = makeActor([weapon], { size: "huge" });
+    const activity = {
+      type: "attack",
+      actor,
+      item: weapon,
+      attack: { type: { value: "melee" } },
+      range: {}
+    };
+
+    assert.equal(new CombatAttackService({}).applyDnd5ePreUseActivity(activity), true);
+    assert.equal(activity.range.reach, expected);
+    assert.equal(weapon.system.range.reach, storedReach);
+  }
+});
+
+test("every character size supplies the complete melee base reach including Tiny zero", () => {
+  const expected = { tiny: 0, sm: 5, med: 5, lg: 10, huge: 15, grg: 20 };
+
+  for (const [size, reach] of Object.entries(expected)) {
+    const weapon = makeWeaponItem({ heldHands: ["left"] });
+    const actor = makeActor([weapon], { size });
+    const activity = {
+      type: "attack",
+      actor,
+      item: weapon,
+      attack: { type: { value: "melee" } },
+      range: {}
+    };
+    new CombatAttackService({}).applyDnd5ePreUseActivity(activity);
+    assert.equal(activity.range.reach, reach, size);
+  }
+});
+
+test("size, Lich weapon, racial, and Rune Knight reach bonuses stack independently", () => {
+  const weapon = makeWeaponItem({
+    heldHands: ["left"],
+    properties: ["lchReach"],
+    lichWeaponPropertyValues: { reachBonus: 5 }
+  });
+  const actor = makeActor([weapon], {
+    size: "huge",
+    racialReachBonusFeet: 5,
+    effects: [{
+      id: "giant-form",
+      disabled: false,
+      flags: {
+        [MODULE_ID]: {
+          runeKnight: {
+            automation: "giant-might-form",
+            reachBonus: 5,
+            form: { appliedActorSize: "huge" }
+          }
+        }
+      }
+    }]
+  });
+  const activity = {
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: { type: { value: "melee" } },
+    range: {}
+  };
+
+  new CombatAttackService({}).applyDnd5ePreUseActivity(activity);
+  assert.equal(activity.range.reach, 30);
+});
+
+test("ordinary reach converts m, km, and mi to feet before adding the size base", () => {
+  const tenFeetByUnit = {
+    m: 3.048,
+    km: 0.003048,
+    mi: 10 / 5280
+  };
+  const fifteenFeetByUnit = {
+    m: 4.572,
+    km: 0.004572,
+    mi: 15 / 5280
+  };
+
+  for (const [units, storedReach] of Object.entries(tenFeetByUnit)) {
+    const weapon = makeWeaponItem({ heldHands: ["left"], rangeUnits: units, reach: storedReach });
+    const actor = makeActor([weapon], { size: "lg" });
+    const activity = {
+      type: "attack",
+      actor,
+      item: weapon,
+      attack: { type: { value: "melee" } },
+      range: {}
+    };
+    new CombatAttackService({}).applyDnd5ePreUseActivity(activity);
+    assert.ok(Math.abs(activity.range.reach - fifteenFeetByUnit[units]) < 1e-12, units);
+  }
 });
 
 test("two-handed weapon attack auto-holds the item in one hand and uses a free hand for the attack", async () => {
