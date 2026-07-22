@@ -45,6 +45,7 @@ import {
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
 import { registerLegacyCraftsmanArchetypeTypes } from "./craftsman-archetype-types.js";
 import { registerCraftsmanSubclassAdvancements } from "./craftsman-subclass-advancements.js";
+import { registerCraftsmanMultiSubclassIntegration } from "./craftsman-multi-subclass.js";
 import {
   buildCraftsmanArchetypeSheetState,
   ensureCraftsmanArchetypePartDefinition,
@@ -7028,6 +7029,16 @@ export function extendDnd5eItemTypes() {
 export function registerDnd5eSheetExtensions(moduleApi) {
   if (!isDnd5eWorld() || !CONFIG.DND5E) {
     return;
+  }
+
+  const multiSubclassRegistered = registerCraftsmanMultiSubclassIntegration();
+  if (!multiSubclassRegistered && (
+    globalThis.CONFIG?.Item?.documentClass
+    || globalThis.game?.dnd5e?.applications?.advancement?.AdvancementManager
+  )) {
+    console.warn(
+      `${MODULE_ID} | Craftsman multi-subclass integration requires the public Item subclass getter and AdvancementManager level-change method.`
+    );
   }
 
   registerHeldItemUpdatedHook();
