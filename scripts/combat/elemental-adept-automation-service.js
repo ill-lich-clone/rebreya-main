@@ -20,6 +20,38 @@ function cleanString(value, fallback = "") {
   return text || String(fallback ?? "").trim();
 }
 
+function consumeThenableRejection(value) {
+  let then;
+  try {
+    then = value?.then;
+  }
+  catch (_error) {
+    return true;
+  }
+  if (typeof then !== "function") {
+    return false;
+  }
+
+  try {
+    const catchMethod = value.catch;
+    if (typeof catchMethod === "function") {
+      catchMethod.call(value, () => undefined);
+      return true;
+    }
+  }
+  catch (_error) {
+    return true;
+  }
+
+  try {
+    then.call(value, undefined, () => undefined);
+  }
+  catch (_error) {
+    // Synchronous pre-calculate hooks must fail open for exotic thenables.
+  }
+  return true;
+}
+
 function getProperty(source, path, fallback = undefined) {
   const value = globalThis.foundry?.utils?.getProperty
     ? globalThis.foundry.utils.getProperty(source, path)
@@ -546,7 +578,7 @@ export class ElementalAdeptAutomationService {
         return null;
       }
       const resolvedDocument = this._fromUuidSync(sourceActorUuid);
-      if (typeof resolvedDocument?.then === "function") {
+      if (consumeThenableRejection(resolvedDocument)) {
         return null;
       }
       const resolved = elementalAdeptActorDocument(resolvedDocument);

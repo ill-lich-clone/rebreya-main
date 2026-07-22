@@ -903,3 +903,38 @@ test("Elemental Adept ignores asynchronous UUID resolvers without scheduling a l
   await Promise.resolve();
   assert.deepEqual(options.ignore, {});
 });
+
+test("Elemental Adept consumes rejected UUID thenables while failing open synchronously", async () => {
+  const source = makeConfiguredCharacter("fire");
+  source.uuid = "Actor.elemental-source";
+  const options = { midi: { sourceActorUuid: source.uuid }, ignore: {} };
+  const rejected = Promise.reject(new Error("expected UUID resolver rejection"));
+  const unhandled = [];
+  const observeUnhandledRejection = (reason) => unhandled.push(reason);
+  process.on("unhandledRejection", observeUnhandledRejection);
+
+  try {
+    const service = new ElementalAdeptAutomationService(null, {
+      fromUuid: () => rejected
+    });
+
+    assert.equal(service.applyMidiPreCalculateDamage(null, [{ type: "fire", spell: true }], options), false);
+    assert.deepEqual(options.ignore, {});
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(options.ignore, {});
+    assert.deepEqual(unhandled, []);
+
+    const exoticOptions = { midi: { sourceActorUuid: source.uuid }, ignore: {} };
+    const exoticService = new ElementalAdeptAutomationService(null, {
+      fromUuid: () => ({
+        then() {},
+        catch() { throw new Error("expected exotic catch failure"); }
+      })
+    });
+    assert.equal(exoticService.applyMidiPreCalculateDamage(null, [{ type: "fire", spell: true }], exoticOptions), false);
+    assert.deepEqual(exoticOptions.ignore, {});
+  }
+  finally {
+    process.off("unhandledRejection", observeUnhandledRejection);
+  }
+});
