@@ -597,6 +597,27 @@ test("craftsman descriptions preserve every visible source character through Mar
   }
 });
 
+test("craftsman gadget catalog publishes six managed native feature Items outside advancements", () => {
+  const normalized = normalizeClassCompendiumData(loadJson("data/craftsman-v01.json"));
+  const definitions = buildFeatureDefinitions(normalized)
+    .filter((feature) => feature.sourceType === "craftsmanGadget");
+  assert.equal(definitions.length, 6);
+
+  const entries = definitions.map((feature) => createFeatureEntryData(feature, new Map()));
+  for (const entry of entries) {
+    assert.equal(entry.flags["rebreya-main"].sourceType, "craftsmanGadget");
+    assert.equal(entry.flags["rebreya-main"].craftsmanGadgetTemplate.gadgetId.length > 0, true);
+    assert.equal(Object.keys(entry.system.activities).length, 3);
+    assert.equal(entry.system.description.value, renderDescriptionMarkdown(
+      definitions.find((feature) => feature.featureId === entry.flags["rebreya-main"].featureId).description
+    ));
+  }
+
+  const advancement = buildClassAdvancement(normalized.classData, new Map());
+  const granted = JSON.stringify(advancement);
+  for (const definition of definitions) assert.equal(granted.includes(definition.featureId), false);
+});
+
 test("craftsman subclass items grant every feature at its source level", () => {
   const craftsman = normalizeClassCompendiumData(craftsmanDualArchetypeFixture());
   const featureDefinitions = buildFeatureDefinitions(craftsman);
@@ -2356,7 +2377,7 @@ test("paladin divine sense and lay on hands expose item resources and automation
   assert.equal(layOnHandsActivity.target.affects.type, "creature");
   assert.equal(layOnHandsActivity.flags["rebreya-main"].automation, "paladin-lay-on-hands");
   assert.deepEqual(layOnHandsActivity.consumption.targets, []);
-  assert.equal(JSON.parse(layOnHandsEntry.flags["rebreya-main"].signature).templateVersion, 15);
+  assert.equal(JSON.parse(layOnHandsEntry.flags["rebreya-main"].signature).templateVersion, 16);
 });
 
 test("Sovereign Jurisdiction generates a bonus-action target activity", () => {

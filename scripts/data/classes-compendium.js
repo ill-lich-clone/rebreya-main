@@ -25,6 +25,11 @@ import {
   getFighterSecondWindAutomation
 } from "./fighter-automation.js";
 import { getClassStartingEquipmentConfig } from "./class-starting-equipment.js";
+import {
+  buildCraftsmanGadgetAutomation,
+  buildCraftsmanGadgetFeatureDefinitions,
+  normalizeCraftsmanGadgets
+} from "./craftsman-gadget-definitions.js";
 import { buildSlug } from "./item-classification.js";
 import { renderDescriptionMarkdown } from "./markdown-description.js";
 import { syncFlaggedManagedDocuments } from "./managed-compendium-sync.js";
@@ -75,7 +80,7 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 15;
+const CLASS_FEATURE_TEMPLATE_VERSION = 16;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CRAFTSMAN_SUBCLASS_TEMPLATE_VERSION = 1;
 const CLASS_TEMPLATE_VERSION = 6;
@@ -1336,6 +1341,9 @@ export function normalizeClassCompendiumData(rawData) {
     classIdentifier,
     sourceRevision
   });
+  const craftsmanGadgets = Array.isArray(data.automation?.gadgets)
+    ? normalizeCraftsmanGadgets(data)
+    : [];
 
   return {
     sourceLabel,
@@ -1370,6 +1378,7 @@ export function normalizeClassCompendiumData(rawData) {
       specialtyLevel,
       researches,
       specialties,
+      craftsmanGadgets,
       subclassTitle,
       subclassHint,
       subclassLevel,
@@ -1379,6 +1388,7 @@ export function normalizeClassCompendiumData(rawData) {
     },
     researches,
     specialties,
+    craftsmanGadgets,
     subclasses,
     rageActions,
     rageProgression: normalizeProgressionMap(data.rageProgression),
@@ -1670,6 +1680,16 @@ export function buildFeatureDefinitions(normalizedData) {
     }
   }
 
+  for (const gadget of buildCraftsmanGadgetFeatureDefinitions(normalizedData.craftsmanGadgets ?? [])) {
+    definitions.push({
+      ...gadget,
+      documentId: featureDocumentId(gadget.featureId),
+      className,
+      sourceLabel,
+      folderPath: normalizeFolderPath([classFeatureRootFolder, "Гаджеты"])
+    });
+  }
+
   for (const subclass of normalizedData.subclasses) {
     for (const option of subclass.metamagicOptions ?? []) {
       const featureId = `${subclass.subclassId}::sorcererMetamagic::${option.featureId}`;
@@ -1797,6 +1817,7 @@ function buildFeatureSignature(feature, context = {}) {
     stacking: feature.stacking ?? "",
     damageType: feature.damageType ?? "",
     savingThrow: feature.savingThrow ?? "",
+    craftsmanGadget: feature.craftsmanGadget ?? null,
     runeKnightAutomation: runeKnightAutomation ?? null,
     paladinAutomation: feature.paladinAutomation ?? null,
     startingEquipmentPackage: feature.startingEquipmentPackage ?? null,
@@ -3421,6 +3442,10 @@ function createFighterMultiattackAutomation(feature, classIdentifier) {
 }
 
 function createFeatureAutomation(feature, classIdentifier) {
+  if (feature.sourceType === "craftsmanGadget") {
+    return buildCraftsmanGadgetAutomation(feature.craftsmanGadget);
+  }
+
   if (feature.sourceType === "rageAction") {
     return createRageActionAutomation(feature, classIdentifier);
   }
@@ -5365,6 +5390,14 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
     stacking: feature.stacking,
     damageType: feature.damageType,
     savingThrow: feature.savingThrow,
+    craftsmanGadgetTemplate: feature.sourceType === "craftsmanGadget"
+      ? {
+        gadgetId: feature.craftsmanGadget?.id,
+        availability: feature.craftsmanGadget?.availability,
+        requiredLevel: feature.craftsmanGadget?.requiredLevel,
+        attachment: feature.craftsmanGadget?.attachment ?? ""
+      }
+      : undefined,
     runeKnightAutomation: runeKnightAutomation
       ? foundry.utils.deepClone(runeKnightAutomation)
       : undefined,
