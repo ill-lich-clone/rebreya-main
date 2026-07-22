@@ -386,6 +386,8 @@ test("an existing classified minor copy makes a later acquisition minor without 
 test("Elemental Adept raises only active 1s and 2s in nested completed spell damage dice", async () => {
   const actor = makeConfiguredCharacter("fire");
   const direct = {
+    class: "Die",
+    faces: 6,
     results: [
       { result: 1, active: true },
       { result: 2, active: true },
@@ -395,7 +397,7 @@ test("Elemental Adept raises only active 1s and 2s in nested completed spell dam
       { result: 2, active: true, discarded: true },
     ],
   };
-  const nested = { results: [{ result: 2, active: true }] };
+  const nested = { class: "Die", faces: 6, results: [{ result: 2, active: true }] };
   const roll = makeDamageRoll({ terms: [direct, { dice: [nested] }] });
   const service = new ElementalAdeptAutomationService();
 
@@ -409,9 +411,9 @@ test("Elemental Adept raises only active 1s and 2s in nested completed spell dam
 test("Elemental Adept adjusts only matching spell damage rolls, including spell-tagged non-spell sources", async () => {
   const actor = makeConfiguredCharacter("fire");
   const service = new ElementalAdeptAutomationService();
-  const fire = makeDamageRoll({ type: "fire", terms: [{ results: [{ result: 1, active: true }] }] });
-  const radiant = makeDamageRoll({ type: "radiant", terms: [{ results: [{ result: 1, active: true }] }] });
-  const tagged = makeDamageRoll({ types: ["fire"], terms: [{ results: [{ result: 2, active: true }] }] });
+  const fire = makeDamageRoll({ type: "fire", terms: [{ class: "Die", faces: 6, results: [{ result: 1, active: true }] }] });
+  const radiant = makeDamageRoll({ type: "radiant", terms: [{ class: "Die", faces: 6, results: [{ result: 1, active: true }] }] });
+  const tagged = makeDamageRoll({ types: ["fire"], terms: [{ class: "Die", faces: 6, results: [{ result: 2, active: true }] }] });
   const noAdept = makeDamageRoll({ terms: [{ results: [{ result: 1, active: true }] }] });
   const mundane = makeDamageRoll({ terms: [{ results: [{ result: 1, active: true }] }] });
 
@@ -432,12 +434,45 @@ test("Elemental Adept adjusts only matching spell damage rolls, including spell-
   assert.equal(mundane.terms[0].results[0].result, 1);
 });
 
-test("Elemental Adept writes changed rolls once and serializes updates for the same chat message", async () => {
+test("Elemental Adept ignores PoolTerm aggregate results and refreshes nested damage rolls bottom-up", async () => {
   const actor = makeConfiguredCharacter("fire");
+  const evaluations = [];
+  const die = { class: "Die", faces: 6, results: [{ result: 1, active: true }] };
+  const nestedRoll = makeDamageRoll({ terms: [die] });
+  nestedRoll._evaluateTotal = () => {
+    evaluations.push("nested");
+    return 3;
+  };
+  const pool = {
+    class: "PoolTerm",
+    results: [{ result: 1, active: true }],
+  };
+  const parenthetical = { class: "ParentheticalTerm", roll: nestedRoll };
+  const roll = makeDamageRoll({ terms: [pool, parenthetical] });
+  roll._evaluateTotal = () => {
+    evaluations.push("outer");
+    return nestedRoll._total;
+  };
+  const service = new ElementalAdeptAutomationService();
+
+  assert.equal(await service.applyDnd5ePostDamageRoll([roll], { subject: spellActivity(actor) }), true);
+  assert.equal(die.results[0].result, 3);
+  assert.equal(pool.results[0].result, 1);
+  assert.deepEqual(evaluations, ["nested", "outer"]);
+  assert.equal(nestedRoll._total, 3);
+  assert.equal(roll._total, 3);
+});
+
+test("Elemental Adept preserves full multi-roll messages while serializing concurrent updates", async () => {
+  const actor = makeCharacter([
+    makeFeat({ id: "fire-adept", configuredType: "fire" }),
+    makeFeat({ id: "lightning-adept", configuredType: "lightning" }),
+  ]);
   const updates = [];
   let activeUpdates = 0;
   let maximumActiveUpdates = 0;
   const message = {
+    rolls: [],
     async update(patch) {
       activeUpdates += 1;
       maximumActiveUpdates = Math.max(maximumActiveUpdates, activeUpdates);
@@ -447,7 +482,11 @@ test("Elemental Adept writes changed rolls once and serializes updates for the s
     },
   };
   const first = makeDamageRoll({ parent: message, terms: [{ results: [{ result: 1, active: true }] }] });
-  const second = makeDamageRoll({ parent: message, terms: [{ results: [{ result: 2, active: true }] }] });
+  first.terms[0].class = "Die";
+  first.terms[0].faces = 6;
+  const radiant = makeDamageRoll({ type: "radiant", parent: message, total: 9, terms: [{ class: "Die", faces: 6, results: [{ result: 1, active: true }] }] });
+  const second = makeDamageRoll({ type: "lightning", parent: message, terms: [{ class: "Die", faces: 6, results: [{ result: 2, active: true }] }] });
+  message.rolls = [first, radiant, second];
   const service = new ElementalAdeptAutomationService();
   const context = { subject: spellActivity(actor) };
 
@@ -457,9 +496,10 @@ test("Elemental Adept writes changed rolls once and serializes updates for the s
   ]);
   assert.equal(maximumActiveUpdates, 1);
   assert.deepEqual(updates, [
-    { rolls: [{ total: 42, type: "fire" }] },
-    { rolls: [{ total: 42, type: "fire" }] },
+    { rolls: [{ total: 42, type: "fire" }, { total: 9, type: "radiant" }, { total: 42, type: "lightning" }] },
+    { rolls: [{ total: 42, type: "fire" }, { total: 9, type: "radiant" }, { total: 42, type: "lightning" }] },
   ]);
+  assert.equal(radiant.terms[0].results[0].result, 1);
 
   assert.equal(await service.applyDnd5ePostDamageRoll([first], context), false);
   assert.equal(updates.length, 2);

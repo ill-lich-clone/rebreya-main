@@ -139,20 +139,80 @@ function elementalAdeptRollDamageTypes(roll) {
   return new Set(values.map(normalizeElementalAdeptDamageType).filter(Boolean));
 }
 
-function elementalAdeptDieTerms(terms, seen = new Set(), dice = []) {
+function isElementalAdeptDieTerm(term) {
+  const DiceTerm = globalThis.DiceTerm ?? globalThis.foundry?.dice?.terms?.DiceTerm ?? null;
+  if (typeof DiceTerm === "function" && term instanceof DiceTerm) {
+    return true;
+  }
+  const kind = cleanString(term?.class ?? term?.constructor?.name).toLowerCase();
+  return kind === "die" || kind === "dieterm" || (Array.isArray(term?.results) && term?.faces !== undefined);
+}
+
+function elementalAdeptDiceForRoll(roll, seen = new Set(), dice = []) {
+  const collect = (terms) => {
+    for (const term of normalizeCollection(terms)) {
+      if (!term || typeof term !== "object" || seen.has(term)) {
+        continue;
+      }
+      seen.add(term);
+      if (isElementalAdeptDieTerm(term)) {
+        dice.push(term);
+      }
+      collect(term.terms);
+      collect(term.dice);
+    }
+  };
+  collect(roll?.dice);
+  collect(roll?.terms);
+  return dice;
+}
+
+function elementalAdeptNestedRolls(terms, seen = new Set(), nested = []) {
   for (const term of normalizeCollection(terms)) {
     if (!term || typeof term !== "object" || seen.has(term)) {
       continue;
     }
     seen.add(term);
-    if (Array.isArray(term.results)) {
-      dice.push(term);
+    if (term.roll && typeof term.roll === "object") {
+      nested.push(term.roll);
     }
-    elementalAdeptDieTerms(term.terms, seen, dice);
-    elementalAdeptDieTerms(term.dice, seen, dice);
-    elementalAdeptDieTerms(term.rolls, seen, dice);
+    for (const nestedRoll of normalizeCollection(term.rolls)) {
+      if (nestedRoll && typeof nestedRoll === "object") {
+        nested.push(nestedRoll);
+      }
+    }
+    elementalAdeptNestedRolls(term.terms, seen, nested);
+    elementalAdeptNestedRolls(term.dice, seen, nested);
   }
-  return dice;
+  return nested;
+}
+
+function adjustElementalAdeptRoll(roll, seen = new Set()) {
+  if (!roll || typeof roll !== "object" || seen.has(roll)) {
+    return false;
+  }
+  seen.add(roll);
+  let changed = false;
+  for (const nestedRoll of elementalAdeptNestedRolls(roll.terms)) {
+    changed = adjustElementalAdeptRoll(nestedRoll, seen) || changed;
+  }
+  for (const die of elementalAdeptDiceForRoll(roll)) {
+    for (const result of die.results) {
+      if (
+        result?.active === true
+        && result?.rerolled !== true
+        && result?.discarded !== true
+        && (result.result === 1 || result.result === 2)
+      ) {
+        result.result = 3;
+        changed = true;
+      }
+    }
+  }
+  if (changed && typeof roll._evaluateTotal === "function") {
+    roll._total = roll._evaluateTotal();
+  }
+  return changed;
 }
 
 function isCurrentUserHook(userId) {
@@ -327,24 +387,8 @@ export class ElementalAdeptAutomationService {
       if (!hasElementalAdeptSpellEvidence(activity, roll) || !Array.from(rollTypes).some((type) => configuredTypes.has(type))) {
         continue;
       }
-      let changed = false;
-      for (const die of elementalAdeptDieTerms(roll.terms)) {
-        for (const result of die.results) {
-          if (
-            result?.active === true
-            && result?.rerolled !== true
-            && result?.discarded !== true
-            && (result.result === 1 || result.result === 2)
-          ) {
-            result.result = 3;
-            changed = true;
-          }
-        }
-      }
+      const changed = adjustElementalAdeptRoll(roll);
       if (changed) {
-        if (typeof roll._evaluateTotal === "function") {
-          roll._total = roll._evaluateTotal();
-        }
         changedRolls.add(roll);
       }
     }
@@ -388,7 +432,11 @@ export class ElementalAdeptAutomationService {
     const previous = this._messagePromises.get(key) ?? Promise.resolve();
     const current = previous
       .catch(() => undefined)
-      .then(() => message.update({ rolls: rolls.map((roll) => roll.toJSON?.() ?? roll) }));
+      .then(() => {
+        const completeRolls = normalizeCollection(message?.rolls);
+        const finalRolls = completeRolls.length ? completeRolls : rolls;
+        return message.update({ rolls: finalRolls.map((roll) => roll.toJSON?.() ?? roll) });
+      });
     this._messagePromises.set(key, current);
     try {
       await current;
