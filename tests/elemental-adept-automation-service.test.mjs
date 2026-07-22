@@ -569,7 +569,7 @@ test("Elemental Adept Midi bypass resolves its source actor by UUID and skips un
   const options = { midi: { sourceActorUuid: source.uuid }, ignore: {} };
   const resolved = [];
   const service = new ElementalAdeptAutomationService(null, {
-    fromUuid: async (uuid) => {
+    fromUuidSync: (uuid) => {
       resolved.push(uuid);
       return uuid === source.uuid ? source : null;
     },
@@ -663,7 +663,7 @@ test("Elemental Adept Midi bypass fails open when a UUID resolves against confli
     ignore: {},
   };
   const service = new ElementalAdeptAutomationService(null, {
-    fromUuid: async (uuid) => uuid === sourceActor.uuid ? sourceActor : null,
+    fromUuidSync: (uuid) => uuid === sourceActor.uuid ? sourceActor : null,
   });
 
   assert.equal(await service.applyMidiPreCalculateDamage(
@@ -843,4 +843,63 @@ test("shared damage hook applies Elemental Adept after Sorcerer rerolls and pers
     globalThis.Hooks = previousHooks;
     globalThis.game = previousGame;
   }
+});
+
+test("pre-calculate damage hooks synchronously mutate matching source options", () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
+  const source = makeConfiguredCharacter("fire");
+  source.uuid = "Actor.elemental-source";
+  globalThis.Hooks = {
+    on(name, callback) {
+      handlers.set(name, [...(handlers.get(name) ?? []), callback]);
+    }
+  };
+  globalThis.game = { user: { id: "user", isGM: true } };
+
+  try {
+    registerCombatHooks({
+      elementalAdeptAutomationService: new ElementalAdeptAutomationService(null, {
+        fromUuidSync: (uuid) => uuid === source.uuid ? source : null,
+        fromUuid: async () => {
+          throw new Error("the asynchronous resolver must not be used");
+        }
+      })
+    });
+
+    const midiOptions = { midi: { sourceActorUuid: source.uuid }, ignore: {} };
+    assert.equal(
+      handlers.get("midi-qol.dnd5ePreCalculateDamage")[0](null, [{ type: "fire", spell: true }], midiOptions),
+      true
+    );
+    assert.deepEqual(Array.from(midiOptions.ignore.resistance), ["fire"]);
+    assert.deepEqual(Array.from(midiOptions.ignore.absorption), ["fire"]);
+
+    const nativeOptions = { ignore: {} };
+    assert.equal(
+      handlers.get("dnd5e.preCalculateDamage")[0](source, [{ type: "fire", spell: true }], nativeOptions),
+      true
+    );
+    assert.deepEqual(Array.from(nativeOptions.ignore.resistance), ["fire"]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("Elemental Adept ignores asynchronous UUID resolvers without scheduling a later bypass", async () => {
+  const source = makeConfiguredCharacter("fire");
+  source.uuid = "Actor.elemental-source";
+  const options = { midi: { sourceActorUuid: source.uuid }, ignore: {} };
+  const service = new ElementalAdeptAutomationService(null, {
+    fromUuid: async () => source
+  });
+
+  assert.equal(service.applyMidiPreCalculateDamage(null, [{ type: "fire", spell: true }], options), false);
+  assert.deepEqual(options.ignore, {});
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(options.ignore, {});
 });

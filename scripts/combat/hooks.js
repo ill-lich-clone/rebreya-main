@@ -1066,9 +1066,9 @@ export function registerCombatHooks(moduleApi) {
       });
     });
 
-    Hooks.on("midi-qol.dnd5ePreCalculateDamage", async (actor, damages, options) => {
+    Hooks.on("midi-qol.dnd5ePreCalculateDamage", (actor, damages, options) => {
       try {
-        await moduleApi.elementalAdeptAutomationService.applyMidiPreCalculateDamage(actor, damages, options);
+        moduleApi.elementalAdeptAutomationService.applyMidiPreCalculateDamage(actor, damages, options);
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to apply Elemental Adept Midi-QOL damage bypass.`, error);
@@ -1076,9 +1076,9 @@ export function registerCombatHooks(moduleApi) {
       return true;
     });
 
-    Hooks.on("dnd5e.preCalculateDamage", async (actor, damages, options) => {
+    Hooks.on("dnd5e.preCalculateDamage", (actor, damages, options) => {
       try {
-        await moduleApi.elementalAdeptAutomationService.applyDnd5ePreCalculateDamage(actor, damages, options);
+        moduleApi.elementalAdeptAutomationService.applyDnd5ePreCalculateDamage(actor, damages, options);
       }
       catch (error) {
         console.error(`${MODULE_ID} | Failed to apply Elemental Adept native damage bypass.`, error);

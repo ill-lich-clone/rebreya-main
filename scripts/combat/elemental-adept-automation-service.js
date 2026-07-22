@@ -404,7 +404,11 @@ export class ElementalAdeptAutomationService {
     this._actorPromises = new Map();
     this._messagePromises = new Map();
     this._messageRollStates = new Map();
-    this._fromUuid = options.fromUuid ?? options.uuidResolver ?? globalThis.fromUuid ?? globalThis.fromUuidSync;
+    this._fromUuidSync = options.fromUuidSync
+      ?? options.uuidResolverSync
+      ?? options.fromUuid
+      ?? options.uuidResolver
+      ?? globalThis.fromUuidSync;
     this._midiDamageOptions = new WeakSet();
   }
 
@@ -482,12 +486,12 @@ export class ElementalAdeptAutomationService {
     return changedRolls.size > 0;
   }
 
-  async applyMidiPreCalculateDamage(actor, damages = [], options = {}) {
+  applyMidiPreCalculateDamage(actor, damages = [], options = {}) {
     this.#markMidiDamageOptions(options);
     return this.#applyPreCalculateDamage(actor, damages, options, { absorption: true });
   }
 
-  async applyDnd5ePreCalculateDamage(actor, damages = [], options = {}) {
+  applyDnd5ePreCalculateDamage(actor, damages = [], options = {}) {
     if (this.#hasMidiDamageMarker(options)) {
       return false;
     }
@@ -498,9 +502,9 @@ export class ElementalAdeptAutomationService {
     return cleanString(actor?.uuid ?? actor?.id ?? actor?._id) || actor;
   }
 
-  async #applyPreCalculateDamage(actor, damages, options, { absorption }) {
+  #applyPreCalculateDamage(actor, damages, options, { absorption }) {
     try {
-      const sourceActor = await this.#resolveDamageSourceActor(actor, options);
+      const sourceActor = this.#resolveDamageSourceActor(actor, options);
       const selectedTypes = new Set(getConfiguredElementalAdeptTypes(sourceActor));
       if (!selectedTypes.size) {
         return false;
@@ -531,17 +535,21 @@ export class ElementalAdeptAutomationService {
     }
   }
 
-  async #resolveDamageSourceActor(actor, options) {
+  #resolveDamageSourceActor(actor, options) {
     const positionalActor = elementalAdeptActorDocument(actor);
     const directSource = elementalAdeptActorDocument(options?.sourceActor);
     const midiSource = elementalAdeptActorDocument(options?.midi?.sourceActor);
     const candidates = [positionalActor, directSource, midiSource].filter(Boolean);
     const sourceActorUuid = cleanString(options?.midi?.sourceActorUuid ?? options?.sourceActorUuid);
     if (sourceActorUuid) {
-      if (typeof this._fromUuid !== "function") {
+      if (typeof this._fromUuidSync !== "function") {
         return null;
       }
-      const resolved = elementalAdeptActorDocument(await this._fromUuid(sourceActorUuid));
+      const resolvedDocument = this._fromUuidSync(sourceActorUuid);
+      if (typeof resolvedDocument?.then === "function") {
+        return null;
+      }
+      const resolved = elementalAdeptActorDocument(resolvedDocument);
       if (!resolved) {
         return null;
       }
