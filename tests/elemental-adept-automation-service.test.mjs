@@ -7,6 +7,7 @@ const {
   getAvailableElementalAdeptChoices,
   getConfiguredElementalAdeptTypes,
   isElementalAdeptItem,
+  promptElementalAdeptChoice,
 } = await import("../scripts/combat/elemental-adept-automation-service.js");
 
 function makeFeat({
@@ -231,4 +232,84 @@ test("an active player owner takes precedence over a GM prompt and recursive upd
   assert.equal(await service.handleCreatedItem(item, {}, "gm-1"), false);
   setCurrentUser({ id: "player-1", users: [{ id: "player-1", active: true, isGM: false }] });
   assert.equal(await service.handleCreatedItem(item, { "rebreya-main": { skipElementalAdeptAutomation: true } }, "player-1"), false);
+});
+
+test("sheet repair never deletes an existing unresolved copy when every type is already owned", async () => {
+  setCurrentUser();
+  const owned = ELEMENTAL_ADEPT_CHOICES.map((choice) => makeMutableFeat({
+    id: choice.value,
+    configuredType: choice.value,
+  }));
+  const unresolved = makeMutableFeat({ id: "cancelled", subtype: "minor" });
+  const actor = makeCharacter([...owned, unresolved]);
+  const service = new ElementalAdeptAutomationService(null, { prompt: async () => assert.fail("repair must not prompt") });
+
+  assert.equal(await service.repairActor(actor), false);
+  assert.equal(unresolved.deleted, false);
+  assert.equal(unresolved.system.type.subtype, "minor");
+});
+
+test("ordinary updates preserve an already configured acquisition subtype", async () => {
+  setCurrentUser();
+  const original = makeMutableFeat({ id: "original", subtype: "general", configuredType: "fire" });
+  const later = makeMutableFeat({ id: "later", subtype: "minor", configuredType: "cold" });
+  makeCharacter([original, later]);
+  const service = new ElementalAdeptAutomationService(null, { prompt: async () => assert.fail("configured Item must not prompt") });
+
+  assert.equal(await service.handleUpdatedItem(original, { name: "unchanged" }, {}, "player-1"), false);
+  assert.equal(original.system.type.subtype, "general");
+  assert.equal(original.updates.length, 0);
+});
+
+test("ordinary updates do not recompute an already classified unresolved subtype", async () => {
+  setCurrentUser();
+  const original = makeMutableFeat({ id: "original", subtype: "general" });
+  const later = makeMutableFeat({ id: "later", subtype: "minor" });
+  makeCharacter([original, later]);
+  const service = new ElementalAdeptAutomationService(null, { prompt: async () => null });
+
+  assert.equal(await service.handleUpdatedItem(original, { name: "unchanged" }, {}, "player-1"), false);
+  assert.equal(original.system.type.subtype, "general");
+  assert.equal(original.updates.length, 0);
+});
+
+test("default Elemental Adept prompt cancels safely when Dialog is unavailable", async () => {
+  const previousDialog = globalThis.Dialog;
+  globalThis.Dialog = undefined;
+  try {
+    assert.equal(await promptElementalAdeptChoice({ choices: ELEMENTAL_ADEPT_CHOICES }), null);
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+  }
+});
+
+test("concurrent configuration calls serialize by actor and duplicate an Item only prompts once", async () => {
+  setCurrentUser();
+  const first = makeMutableFeat({ id: "first" });
+  const second = makeMutableFeat({ id: "second" });
+  makeCharacter([first, second]);
+  const prompts = [];
+  let activePrompts = 0;
+  const service = new ElementalAdeptAutomationService(null, {
+    prompt: async ({ item }) => {
+      prompts.push(item.id);
+      activePrompts += 1;
+      assert.equal(activePrompts, 1, "prompts for one actor must not overlap");
+      await Promise.resolve();
+      activePrompts -= 1;
+      return item.id === "first" ? "fire" : "cold";
+    },
+  });
+
+  const [firstResult, secondResult, duplicateResult] = await Promise.all([
+    service.handleCreatedItem(first, {}, "player-1"),
+    service.handleCreatedItem(second, {}, "player-1"),
+    service.handleCreatedItem(first, {}, "player-1"),
+  ]);
+
+  assert.deepEqual([firstResult, secondResult, duplicateResult], [true, true, false]);
+  assert.deepEqual(prompts, ["first", "second"]);
+  assert.equal(first.flags["rebreya-main"].elementalAdept, "fire");
+  assert.equal(second.flags["rebreya-main"].elementalAdept, "cold");
 });

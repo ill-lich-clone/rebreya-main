@@ -168,7 +168,8 @@ export async function promptElementalAdeptChoice({ item, choices = [] } = {}) {
     return null;
   }
   if (typeof globalThis.Dialog !== "function") {
-    return choices[0].value;
+    globalThis.ui?.notifications?.warn?.("Невозможно выбрать тип урона: диалог Foundry недоступен.");
+    return null;
   }
   return new Promise((resolve) => {
     let settled = false;
@@ -217,14 +218,17 @@ export class ElementalAdeptAutomationService {
     if (!isCurrentUserHook(userId) || shouldSkipElementalAdeptAutomation(options) || !isElementalAdeptItem(item)) {
       return false;
     }
-    return this.#enqueueActor(getElementalAdeptActor(item), () => this.#configureItem(item));
+    return this.#enqueueActor(getElementalAdeptActor(item), () => this.#configureItem(item, { allowDeletion: true }));
   }
 
   async handleUpdatedItem(item, _changed = {}, options = {}, userId = "") {
     if (shouldSkipElementalAdeptAutomation(options)) {
       return false;
     }
-    return this.handleCreatedItem(item, options, userId);
+    if (!isCurrentUserHook(userId) || !isElementalAdeptItem(item)) {
+      return false;
+    }
+    return this.#enqueueActor(getElementalAdeptActor(item), () => this.#configureItem(item));
   }
 
   async repairActor(actor) {
@@ -264,7 +268,7 @@ export class ElementalAdeptAutomationService {
     }
   }
 
-  async #configureItem(item) {
+  async #configureItem(item, { allowDeletion = false } = {}) {
     const itemKey = elementalAdeptItemKey(item);
     if (!itemKey || this._pendingItems.has(itemKey) || !isElementalAdeptItem(item)) {
       return false;
@@ -272,19 +276,19 @@ export class ElementalAdeptAutomationService {
     this._pendingItems.add(itemKey);
     try {
       const actor = getElementalAdeptActor(item);
-      const siblingCopies = normalizeCollection(actor?.items).filter((candidate) => candidate !== item && isElementalAdeptItem(candidate));
-      const subtype = siblingCopies.length ? "minor" : "general";
-      if (elementalAdeptSubtype(item) !== subtype) {
-        await item.update?.({ "system.type.subtype": subtype }, elementalAdeptUpdateOptions());
-      }
       if (getConfiguredElementalAdeptType(item)) {
         return false;
+      }
+      if (!elementalAdeptSubtype(item)) {
+        const siblingCopies = normalizeCollection(actor?.items).filter((candidate) => candidate !== item && isElementalAdeptItem(candidate));
+        const subtype = siblingCopies.length ? "minor" : "general";
+        await item.update?.({ "system.type.subtype": subtype }, elementalAdeptUpdateOptions());
       }
       let attempts = 0;
       while (attempts < 5) {
         const choices = getAvailableElementalAdeptChoices(actor, item);
         if (!choices.length) {
-          if (typeof item.delete !== "function") {
+          if (!allowDeletion || typeof item.delete !== "function") {
             globalThis.ui?.notifications?.warn?.("Не удалось удалить лишнюю копию черты Стихийный адепт.");
             return false;
           }
