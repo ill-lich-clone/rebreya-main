@@ -8,6 +8,7 @@ export function registerCombatHooks(moduleApi) {
   const hasRaceService = Boolean(moduleApi?.raceAutomationService);
   const hasFighterService = Boolean(moduleApi?.fighterAutomationService);
   const hasSorcererService = Boolean(moduleApi?.sorcererAutomationService);
+  const hasElementalAdeptService = Boolean(moduleApi?.elementalAdeptAutomationService);
   const hasPaladinService = Boolean(moduleApi?.paladinAutomationService);
   const hasRogueService = Boolean(moduleApi?.rogueAutomationService);
   const hasAttackRollBoostService = Boolean(moduleApi?.attackRollBoostService);
@@ -17,7 +18,7 @@ export function registerCombatHooks(moduleApi) {
   const hasSpellService = Boolean(moduleApi?.spellAutomationService);
   const hasReactionCapabilityIndex = Boolean(moduleApi?.reactionCapabilityIndex);
   const hasRuneKnightService = Boolean(moduleApi?.runeKnightAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService) {
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService) {
     return;
   }
 
@@ -628,13 +629,6 @@ export function registerCombatHooks(moduleApi) {
       });
     }
 
-    Hooks.on("dnd5e.rollDamage", (rolls, context) => {
-      moduleApi.sorcererAutomationService.applyDnd5ePostDamageRoll(rolls, context).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to apply Sorcerer empowered spell automation.`, error);
-      });
-      return true;
-    });
-
     Hooks.on("dnd5e.postCreateUsageMessage", (activity, message) => {
       try {
         return moduleApi.sorcererAutomationService.handleDnd5ePostCreateUsageMessage(activity, message);
@@ -643,6 +637,25 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to capture Sorcerer save overrides.`, error);
         return true;
       }
+    });
+  }
+
+  if (hasSorcererService || hasElementalAdeptService) {
+    Hooks.on("dnd5e.rollDamage", (rolls, context) => {
+      let completion = Promise.resolve();
+      if (hasSorcererService) {
+        completion = completion.then(() => moduleApi.sorcererAutomationService.applyDnd5ePostDamageRoll(rolls, context))
+          .catch((error) => {
+            console.error(`${MODULE_ID} | Failed to apply Sorcerer empowered spell automation.`, error);
+          });
+      }
+      if (hasElementalAdeptService) {
+        completion = completion.then(() => moduleApi.elementalAdeptAutomationService.applyDnd5ePostDamageRoll(rolls, context))
+          .catch((error) => {
+            console.error(`${MODULE_ID} | Failed to apply Elemental Adept post-damage automation.`, error);
+          });
+      }
+      return completion.then(() => true);
     });
   }
 
@@ -1021,6 +1034,56 @@ export function registerCombatHooks(moduleApi) {
       moduleApi.sorcererAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
         console.error(`${MODULE_ID} | Failed to restore Sorcery Points after rest.`, error);
       });
+    });
+  }
+
+  if (hasElementalAdeptService) {
+    const repairElementalAdeptActor = (app) => {
+      const actor = app?.actor ?? app?.document ?? null;
+      moduleApi.elementalAdeptAutomationService.repairActor(actor).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to repair Elemental Adept items.`, error);
+      });
+    };
+
+    for (const hookName of [
+      "renderActorSheet",
+      "renderActorSheet5eCharacter2",
+      "renderActorSheet5eCharacter",
+      "renderCharacterActorSheet"
+    ]) {
+      Hooks.on(hookName, repairElementalAdeptActor);
+    }
+
+    Hooks.on("createItem", (item, options, userId) => {
+      moduleApi.elementalAdeptAutomationService.handleCreatedItem(item, options, userId).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to process Elemental Adept item creation.`, error);
+      });
+    });
+
+    Hooks.on("updateItem", (item, changed, options, userId) => {
+      moduleApi.elementalAdeptAutomationService.handleUpdatedItem(item, changed, options, userId).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to process Elemental Adept item update.`, error);
+      });
+    });
+
+    Hooks.on("midi-qol.dnd5ePreCalculateDamage", async (actor, damages, options) => {
+      try {
+        await moduleApi.elementalAdeptAutomationService.applyMidiPreCalculateDamage(actor, damages, options);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply Elemental Adept Midi-QOL damage bypass.`, error);
+      }
+      return true;
+    });
+
+    Hooks.on("dnd5e.preCalculateDamage", async (actor, damages, options) => {
+      try {
+        await moduleApi.elementalAdeptAutomationService.applyDnd5ePreCalculateDamage(actor, damages, options);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to apply Elemental Adept native damage bypass.`, error);
+      }
+      return true;
     });
   }
 

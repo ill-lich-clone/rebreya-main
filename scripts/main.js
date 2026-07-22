@@ -78,6 +78,7 @@ import { EnvironmentAutomationService } from "./combat/environment-automation-se
 import { registerMechanusRollHooks } from "./cosmology/mechanus-rolls.js?v=1.4.96-mechanus-d20-advantage-mode";
 import { FighterAutomationService } from "./combat/fighter-automation-service.js?v=1.4.96";
 import { SorcererAutomationService } from "./combat/sorcerer-automation-service.js?v=1.4.96-sorcerer-cooldown-card";
+import { ElementalAdeptAutomationService } from "./combat/elemental-adept-automation-service.js";
 import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
@@ -902,6 +903,7 @@ export class RebreyaMainModule {
     this.environmentAutomationService = new EnvironmentAutomationService(this);
     this.fighterAutomationService = new FighterAutomationService(this);
     this.sorcererAutomationService = new SorcererAutomationService(this);
+    this.elementalAdeptAutomationService = new ElementalAdeptAutomationService(this);
     this.paladinAutomationService = new PaladinAutomationService(this);
     this.rogueAutomationService = new RogueAutomationService(this);
     this.performerAutomationService = new PerformerAutomationService(this);

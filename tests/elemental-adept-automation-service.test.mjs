@@ -9,6 +9,7 @@ const {
   isElementalAdeptItem,
   promptElementalAdeptChoice,
 } = await import("../scripts/combat/elemental-adept-automation-service.js");
+const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
 
 function makeFeat({
   id = "elemental-adept",
@@ -696,4 +697,150 @@ test("Elemental Adept native fallback does not double-handle options processed b
   assert.equal(await service.applyDnd5ePreCalculateDamage(actor, damage, options), false);
   assert.deepEqual(Array.from(options.ignore.resistance), ["fire"]);
   assert.deepEqual(Array.from(options.ignore.absorption), ["fire"]);
+});
+
+test("combat hooks register Elemental Adept once and await it after Sorcerer damage handling", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
+  const calls = [];
+  globalThis.Hooks = {
+    on(name, callback) {
+      handlers.set(name, [...(handlers.get(name) ?? []), callback]);
+    }
+  };
+  globalThis.game = { user: { id: "user", isGM: true } };
+
+  try {
+    const moduleApi = {
+      elementalAdeptAutomationService: {
+        async handleCreatedItem(...args) { calls.push(["create", ...args]); },
+        async repairActor(actor) { calls.push(["repair", actor]); },
+        async applyMidiPreCalculateDamage(...args) { calls.push(["midi", ...args]); },
+        async applyDnd5ePreCalculateDamage(...args) { calls.push(["native", ...args]); },
+        async applyDnd5ePostDamageRoll() { calls.push("elemental"); }
+      }
+    };
+
+    registerCombatHooks(moduleApi);
+    registerCombatHooks(moduleApi);
+
+    for (const hookName of [
+      "createItem",
+      "updateItem",
+      "renderActorSheet",
+      "renderActorSheet5eCharacter2",
+      "renderActorSheet5eCharacter",
+      "renderCharacterActorSheet",
+      "midi-qol.dnd5ePreCalculateDamage",
+      "dnd5e.preCalculateDamage",
+      "dnd5e.rollDamage"
+    ]) {
+      assert.equal(handlers.get(hookName)?.length, 1, `${hookName} should have one handler`);
+    }
+
+    const item = {};
+    handlers.get("createItem")[0](item, { source: "test" }, "user");
+    await Promise.resolve();
+    assert.deepEqual(calls.at(-1), ["create", item, { source: "test" }, "user"]);
+
+    const actor = {};
+    handlers.get("renderActorSheet")[0]({ actor });
+    await handlers.get("midi-qol.dnd5ePreCalculateDamage")[0](actor, ["damage"], { midi: true });
+    await handlers.get("dnd5e.preCalculateDamage")[0](actor, ["damage"], { native: true });
+    assert.deepEqual(calls.slice(-3), [
+      ["repair", actor],
+      ["midi", actor, ["damage"], { midi: true }],
+      ["native", actor, ["damage"], { native: true }]
+    ]);
+
+    handlers.clear();
+    delete globalThis.game["rebreya-main.combatHooksRegistered"];
+    moduleApi.sorcererAutomationService = {
+      async applyDnd5ePostDamageRoll() {
+        calls.push("sorcerer:start");
+        await Promise.resolve();
+        calls.push("sorcerer:finish");
+      }
+    };
+    registerCombatHooks(moduleApi);
+
+    const promise = handlers.get("dnd5e.rollDamage")[0]([], {});
+    assert.equal(typeof promise?.then, "function");
+    assert.equal(await promise, true);
+    assert.deepEqual(calls.slice(-3), ["sorcerer:start", "sorcerer:finish", "elemental"]);
+
+    moduleApi.sorcererAutomationService.applyDnd5ePostDamageRoll = async () => {
+      calls.push("sorcerer:failed");
+      throw new Error("expected Sorcerer failure");
+    };
+    const previousConsoleError = console.error;
+    console.error = () => {};
+    try {
+      assert.equal(await handlers.get("dnd5e.rollDamage")[0]([], {}), true);
+      assert.deepEqual(calls.slice(-2), ["sorcerer:failed", "elemental"]);
+    }
+    finally {
+      console.error = previousConsoleError;
+    }
+
+    moduleApi.elementalAdeptAutomationService.applyDnd5ePostDamageRoll = async () => {
+      calls.push("elemental:failed");
+      throw new Error("expected Elemental Adept failure");
+    };
+    const previousElementalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      assert.equal(await handlers.get("dnd5e.rollDamage")[0]([], {}), true);
+      assert.equal(calls.at(-1), "elemental:failed");
+    }
+    finally {
+      console.error = previousElementalConsoleError;
+    }
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
+test("shared damage hook applies Elemental Adept after Sorcerer rerolls and persists the final roll", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
+  const actor = makeConfiguredCharacter("fire");
+  const die = { class: "Die", faces: 6, results: [{ result: 1, active: true }] };
+  const updates = [];
+  const message = {
+    rolls: [],
+    async update(patch) { updates.push(patch); }
+  };
+  const roll = makeDamageRoll({ parent: message, terms: [die] });
+  message.rolls = [roll];
+  globalThis.Hooks = {
+    on(name, callback) {
+      handlers.set(name, [...(handlers.get(name) ?? []), callback]);
+    }
+  };
+  globalThis.game = { user: { id: "user", isGM: true } };
+
+  try {
+    registerCombatHooks({
+      sorcererAutomationService: {
+        async applyDnd5ePostDamageRoll() {
+          await Promise.resolve();
+          die.results[0].result = 2;
+        }
+      },
+      elementalAdeptAutomationService: new ElementalAdeptAutomationService()
+    });
+
+    assert.equal(await handlers.get("dnd5e.rollDamage")[0]([roll], { subject: spellActivity(actor) }), true);
+    assert.equal(die.results[0].result, 3);
+    assert.deepEqual(updates, [{ rolls: [{ total: 42, type: "fire" }] }]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
 });
