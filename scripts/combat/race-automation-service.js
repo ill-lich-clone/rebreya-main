@@ -357,14 +357,11 @@ function giantTribeFlag(item) {
     ?? getProperty(item, `flags.${MODULE_ID}.raceAutomation.giantTribe`, null);
 }
 
-function isOwnedGiantTribeItem(item) {
-  const actor = actorFromOwnedItem(item);
+export function isGiantTribeFeature(item) {
   const flags = item?.flags?.[MODULE_ID] ?? {};
   return Boolean(
     item
-    && !item.pack
     && item.type === "feat"
-    && actor?.type === "character"
     && flags.sourceType === "raceFeature"
     && flags.raceId === GIANT_TRIBE_RACE_ID
     && (
@@ -372,6 +369,11 @@ function isOwnedGiantTribeItem(item) {
       || flags.featureId === `${GIANT_TRIBE_RACE_ID}::${GIANT_TRIBE_ABILITY_ID}`
     )
   );
+}
+
+function isOwnedGiantTribeItem(item) {
+  const actor = actorFromOwnedItem(item);
+  return Boolean(isGiantTribeFeature(item) && !item.pack && actor?.type === "character");
 }
 
 function giantTribeEffect(name, tribe, changes) {
@@ -442,16 +444,7 @@ export function buildGiantTribeConfiguration(value) {
     );
   }
 
-  const activities = [giantTribeActivity({
-    type: "utility",
-    name: "Выбрать племя",
-    activation: "special",
-    runtime: {
-      action: "chooseGiantTribe",
-      mechanic: "giant-tribe-choice"
-    },
-    note: "Повторно выберите племя полувеликана. Предыдущая автоматизация будет заменена."
-  }, 0, tribe)];
+  const activities = [];
 
   if (tribe === "storm") {
     activities.push(giantTribeActivity({
@@ -469,7 +462,7 @@ export function buildGiantTribeConfiguration(value) {
         types: ["lightning"]
       },
       note: "Цель при прямом контакте получает 1к4 урона электричеством."
-    }, 1, tribe));
+    }, 0, tribe));
   }
 
   return {
@@ -534,6 +527,39 @@ function isManagedGiantTribeActivity(activity) {
     || runtimeAction === "chooseGiantTribe"
     || (runtimeAction === "promptCustomEffect" && cleanText(activity?.name) === "Применить остаток механики")
     || cleanText(activity?.name) === "Штормовой великан: касание";
+}
+
+export function configureGiantTribeItemData(itemData, value) {
+  const configuration = buildGiantTribeConfiguration(value);
+  if (!configuration) {
+    throw new Error("Не выбрано допустимое великанье племя.");
+  }
+
+  const source = typeof itemData?.toObject === "function"
+    ? itemData.toObject()
+    : foundry.utils.deepClone(itemData);
+  if (!isGiantTribeFeature(source)) {
+    throw new Error("Не найдена черта «Великанье племя».");
+  }
+
+  const preservedEffects = normalizeCollection(source.effects)
+    .filter((effect) => !isManagedGiantTribeEffect(effect));
+  const preservedActivities = ownedItemActivities(source)
+    .filter((activity) => !isManagedGiantTribeActivity(activity));
+  const activities = [...preservedActivities, ...foundry.utils.deepClone(configuration.activities)];
+
+  source.name = `${GIANT_TRIBE_ITEM_NAME} (${configuration.label})`;
+  setProperty(source, `flags.${MODULE_ID}.raceAutomation.giantTribe`, configuration.tribe);
+  source.effects = [
+    ...foundry.utils.deepClone(preservedEffects),
+    ...foundry.utils.deepClone(configuration.effects)
+  ];
+  source.system ??= {};
+  source.system.activities = Object.fromEntries(activities.map((activity, index) => {
+    const id = cleanText(activity?._id ?? activity?.id, `giant-tribe-activity-${index}`);
+    return [id, activity];
+  }));
+  return source;
 }
 
 function resolveTokenFromTarget(target) {
@@ -742,7 +768,7 @@ export class RaceAutomationService {
       return this.#configureRaceAbilityPenalty(item);
     }
     if (isOwnedGiantTribeItem(item)) {
-      return this.#configureGiantTribe(item);
+      return false;
     }
     return false;
   }
@@ -857,7 +883,7 @@ export class RaceAutomationService {
     return changed;
   }
 
-  async #configureGiantTribe(item, { forceChoice = false } = {}) {
+  async #configureGiantTribe(item) {
     const actor = actorFromOwnedItem(item);
     if (!isOwnedGiantTribeItem(item) || !canConfigureOwnedRaceActor(actor)) {
       return false;
@@ -870,20 +896,12 @@ export class RaceAutomationService {
     this._pendingItemConfigurations.add(itemKey);
 
     try {
-      let tribe = cleanText(giantTribeFlag(item)).toLowerCase();
-      if (forceChoice || !GIANT_TRIBE_VALUES.has(tribe)) {
-        const choices = Array.from(GIANT_TRIBE_VALUES, (value) => ({
-          value,
-          label: GIANT_TRIBE_LABELS[value]
-        }));
-        tribe = cleanText(
-          this._promptChoice
-            ? await this._promptChoice({ actor, item, title: "Выберите великанье племя", choices })
-            : await this.#choice(actor, "Выберите великанье племя", choices)
-        ).toLowerCase();
-        if (!GIANT_TRIBE_VALUES.has(tribe)) {
-          return false;
-        }
+      const tribe = cleanText(giantTribeFlag(item)).toLowerCase();
+      if (!GIANT_TRIBE_VALUES.has(tribe)) {
+        let changed = false;
+        changed = (await this.#syncGiantTribeEffects(item, { effects: [] })) || changed;
+        changed = (await this.#syncGiantTribeActivities(item, { activities: [] })) || changed;
+        return changed;
       }
 
       const configuration = buildGiantTribeConfiguration(tribe);
@@ -1029,11 +1047,6 @@ export class RaceAutomationService {
 
     const runtime = activityRuntime(activity) ?? {};
     const action = cleanText(runtime.action);
-
-    if (action === "chooseGiantTribe") {
-      await this.#configureGiantTribe(activity?.item, { forceChoice: true });
-      return true;
-    }
 
     if (action === "applyItemEffects") {
       await this.#applyLinkedActivityEffects(activity, actor);

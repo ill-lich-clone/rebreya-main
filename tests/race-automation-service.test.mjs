@@ -49,7 +49,9 @@ globalThis.game ??= {
 
 const {
   RaceAutomationService,
-  buildGiantTribeConfiguration
+  buildGiantTribeConfiguration,
+  configureGiantTribeItemData,
+  isGiantTribeFeature
 } = await import("../scripts/combat/race-automation-service.js");
 
 class TestActor extends Actor {
@@ -478,41 +480,81 @@ test("giant tribe configurations expose only the selected passive benefit", () =
       tribe
     );
     assert.equal(configuration.effects.every((effect) => effect.transfer === true), true, tribe);
-    assert.equal(configuration.activities.some((activity) => activity.flags["rebreya-main"].runtime?.action === "chooseGiantTribe"), true);
-    assert.equal(configuration.activities.filter((activity) => activity.type === "damage").length, tribe === "storm" ? 1 : 0);
+    assert.equal(configuration.activities.some((activity) => activity.flags["rebreya-main"].runtime?.action === "chooseGiantTribe"), false);
+    assert.equal(configuration.activities.length, tribe === "storm" ? 1 : 0);
   }
 });
 
-test("adding Giant Tribe configures the same feature as Frost Giant", async () => {
+test("pure Giant Tribe configuration replaces only managed data on the same feature", () => {
+  const source = makeGiantTribeFeature({
+    effects: [{
+      _id: "custom-effect",
+      name: "Пользовательский эффект",
+      changes: [{ key: "system.attributes.ac.bonus", mode: 2, value: "1" }],
+      flags: {}
+    }, {
+      _id: "legacy-effect",
+      name: "Старый эффект племени",
+      changes: [],
+      flags: { "rebreya-main": { giantTribe: { managed: true, tribe: "frost" } } }
+    }],
+    activities: {
+      customActivity: {
+        _id: "customActivity",
+        type: "utility",
+        name: "Пользовательская активность",
+        flags: {}
+      },
+      chooseActivity: {
+        _id: "chooseActivity",
+        type: "utility",
+        name: "Выбрать племя",
+        flags: { "rebreya-main": { runtime: { action: "chooseGiantTribe" } } }
+      }
+    }
+  });
+
+  const configured = configureGiantTribeItemData(source, "storm");
+
+  assert.equal(configured._id ?? configured.id, "giant-tribe-item");
+  assert.equal(configured.name, "Великанье племя (Штормовой великан)");
+  assert.equal(configured.flags["rebreya-main"].raceAutomation.giantTribe, "storm");
+  assert.deepEqual(
+    Object.values(configured.system.activities).map((activity) => activity.name),
+    ["Пользовательская активность", "Штормовой великан: касание"]
+  );
+  assert.deepEqual(configured.effects.map((effect) => effect.name), ["Пользовательский эффект"]);
+  assert.equal(isGiantTribeFeature(configured), true);
+  assert.throws(() => configureGiantTribeItemData(source, ""), /великанье племя/u);
+  assert.throws(() => configureGiantTribeItemData(source, "random"), /великанье племя/u);
+});
+
+test("adding an unconfigured Giant Tribe feature never opens a second dialog", async () => {
   const feature = makeGiantTribeFeature();
   const actor = new TestActor({ id: "half-giant", items: [feature] });
-  const service = new RaceAutomationService({}, { promptChoice: async () => "frost" });
+  let prompts = 0;
+  const service = new RaceAutomationService({}, {
+    promptChoice: async () => {
+      prompts += 1;
+      return "frost";
+    }
+  });
 
-  assert.equal(await service.handleCreatedItem(feature, {}, game.user.id), true);
+  assert.equal(await service.handleCreatedItem(feature, {}, game.user.id), false);
+  assert.equal(prompts, 0);
   assert.equal(feature.id, "giant-tribe-item");
-  assert.equal(feature.flags["rebreya-main"].raceAutomation.giantTribe, "frost");
-  assert.equal(feature.name, "Великанье племя (Ледяной великан)");
-  assert.equal(feature.effects.contents.length, 1);
-  assert.deepEqual(feature.effects.contents[0].changes, [{
-    key: "system.traits.dr.value",
-    mode: 2,
-    value: "cold",
-    priority: 20
-  }]);
-  assert.equal(feature.effects.contents[0].transfer, true);
-  assert.equal(activitiesOf(feature).length, 1);
-  assert.equal(activitiesOf(feature)[0].flags["rebreya-main"].runtime.action, "chooseGiantTribe");
+  assert.equal(feature.flags["rebreya-main"].raceAutomation, undefined);
+  assert.equal(feature.effects.contents.length, 0);
+  assert.equal(activitiesOf(feature).length, 0);
   assert.equal(actor.items.contents.length, 1);
 });
 
-test("Storm Giant receives a targeted touch damage button without passive effects", async () => {
+test("pure Storm Giant configuration receives one targeted touch damage button", () => {
   const feature = makeGiantTribeFeature();
-  new TestActor({ id: "half-giant", items: [feature] });
-  const service = new RaceAutomationService({}, { promptChoice: async () => "storm" });
+  const configured = configureGiantTribeItemData(feature, "storm");
 
-  assert.equal(await service.handleCreatedItem(feature, {}, game.user.id), true);
-  assert.equal(feature.effects.contents.length, 0);
-  const damage = activitiesOf(feature).find((activity) => activity.type === "damage");
+  assert.equal(configured.effects.length, 0);
+  const damage = Object.values(configured.system.activities).find((activity) => activity.type === "damage");
   assert.ok(damage);
   assert.equal(damage.range.units, "touch");
   assert.equal(damage.target.affects.type, "creature");
@@ -523,24 +565,26 @@ test("Storm Giant receives a targeted touch damage button without passive effect
   assert.deepEqual(damage.flags["rebreya-main"].giantTribe, { managed: true, tribe: "storm" });
 });
 
-test("using the tribe choice activity replaces Storm with Cloud on the same feature", async () => {
-  const feature = makeGiantTribeFeature();
+test("legacy tribe choice activities no longer open a dialog", async () => {
+  const feature = makeGiantTribeFeature({ selected: "storm" });
   const actor = new TestActor({ id: "half-giant", items: [feature] });
-  const answers = ["storm", "cloud"];
-  const service = new RaceAutomationService({}, { promptChoice: async () => answers.shift() });
-  await service.handleCreatedItem(feature, {}, game.user.id);
-  const choose = activitiesOf(feature).find((activity) => activity.flags["rebreya-main"].runtime?.action === "chooseGiantTribe");
+  let prompts = 0;
+  const service = new RaceAutomationService({}, {
+    promptChoice: async () => {
+      prompts += 1;
+      return "cloud";
+    }
+  });
+  const choose = {
+    actor,
+    item: feature,
+    flags: { "rebreya-main": { runtime: { action: "chooseGiantTribe" } } }
+  };
 
   await service.applyDnd5ePostUseActivity({ ...choose, actor, item: feature }, {}, {});
 
-  assert.equal(feature.flags["rebreya-main"].raceAutomation.giantTribe, "cloud");
-  assert.equal(feature.effects.contents.length, 2);
-  assert.deepEqual(feature.effects.contents.map((effect) => effect.changes[0].key).sort(), [
-    "system.skills.dec.bonuses.check",
-    "system.skills.per.bonuses.check"
-  ]);
-  assert.equal(activitiesOf(feature).filter((activity) => activity.type === "damage").length, 0);
-  assert.equal(activitiesOf(feature).length, 1);
+  assert.equal(prompts, 0);
+  assert.equal(feature.flags["rebreya-main"].raceAutomation.giantTribe, "storm");
 });
 
 test("repairing a legacy Giant Tribe removes dormant effects and old activities", async () => {
@@ -576,19 +620,25 @@ test("repairing a legacy Giant Tribe removes dormant effects and old activities"
     }
   });
   const actor = new TestActor({ id: "half-giant", items: [feature] });
-  const service = new RaceAutomationService({}, { promptChoice: async () => "hill" });
+  let prompts = 0;
+  const service = new RaceAutomationService({}, {
+    promptChoice: async () => {
+      prompts += 1;
+      return "hill";
+    }
+  });
 
   assert.equal(await service.repairActor(actor), true);
-  assert.equal(feature.effects.contents.length, 1);
-  assert.equal(feature.effects.contents[0].changes[0].key, "system.skills.sur.roll.mode");
+  assert.equal(prompts, 0);
+  assert.equal(feature.effects.contents.length, 0);
   assert.equal(feature.effects.contents.some((effect) => effect.flags["rebreya-main"].automation === "race-feature-effect"), false);
-  assert.equal(activitiesOf(feature).length, 2);
+  assert.equal(activitiesOf(feature).length, 1);
   assert.equal(activitiesOf(feature).some((activity) => activity.name === "Пользовательская активность"), true);
-  assert.equal(activitiesOf(feature).some((activity) => activity.flags["rebreya-main"]?.runtime?.action === "chooseGiantTribe"), true);
+  assert.equal(activitiesOf(feature).some((activity) => activity.flags["rebreya-main"]?.runtime?.action === "chooseGiantTribe"), false);
 });
 
-test("repair leaves an already valid Giant Tribe configuration unchanged", async () => {
-  const feature = makeGiantTribeFeature();
+test("repair normalizes a saved Giant Tribe without prompting and then stays unchanged", async () => {
+  const feature = makeGiantTribeFeature({ selected: "frost" });
   const actor = new TestActor({ id: "half-giant", items: [feature] });
   let prompts = 0;
   const service = new RaceAutomationService({}, {
@@ -597,23 +647,40 @@ test("repair leaves an already valid Giant Tribe configuration unchanged", async
       return "frost";
     }
   });
-  await service.handleCreatedItem(feature, {}, game.user.id);
+  assert.equal(await service.repairActor(actor), true);
+  assert.equal(feature.name, "Великанье племя (Ледяной великан)");
+  assert.equal(feature.effects.contents.length, 1);
   const updatesAfterConfiguration = feature.updateCalls.length;
 
   assert.equal(await service.repairActor(actor), false);
-  assert.equal(prompts, 1);
+  assert.equal(prompts, 0);
   assert.equal(feature.updateCalls.length, updatesAfterConfiguration);
 });
 
-test("cancelled Giant Tribe choice stays unresolved and repair asks again", async () => {
-  const feature = makeGiantTribeFeature();
+test("unconfigured Giant Tribe repair cleans a legacy chooser without guessing a tribe", async () => {
+  const feature = makeGiantTribeFeature({
+    activities: {
+      chooseActivity: {
+        _id: "chooseActivity",
+        type: "utility",
+        name: "Выбрать племя",
+        flags: { "rebreya-main": { runtime: { action: "chooseGiantTribe" } } }
+      }
+    }
+  });
   const actor = new TestActor({ id: "half-giant", items: [feature] });
-  const answers = [null, "fire"];
-  const service = new RaceAutomationService({}, { promptChoice: async () => answers.shift() });
+  let prompts = 0;
+  const service = new RaceAutomationService({}, {
+    promptChoice: async () => {
+      prompts += 1;
+      return "fire";
+    }
+  });
 
   assert.equal(await service.handleCreatedItem(feature, {}, game.user.id), false);
   assert.equal(feature.flags["rebreya-main"].raceAutomation, undefined);
   assert.equal(await service.repairActor(actor), true);
-  assert.equal(feature.flags["rebreya-main"].raceAutomation.giantTribe, "fire");
-  assert.equal(feature.effects.contents[0].changes[0].key, "system.tools.smith.value");
+  assert.equal(prompts, 0);
+  assert.equal(feature.flags["rebreya-main"].raceAutomation, undefined);
+  assert.equal(activitiesOf(feature).length, 0);
 });
