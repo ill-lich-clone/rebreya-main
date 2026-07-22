@@ -6,11 +6,37 @@ import {
 } from "../scripts/integrations/craftsman-subclass-advancements.js";
 import {
   CRAFTSMAN_ARCHETYPE_ID_FLAG,
+  CRAFTSMAN_ARCHETYPE_REGISTRY,
   CRAFTSMAN_CLASS_IDENTIFIER,
   CRAFTSMAN_TRACK_FLAG,
   CRAFTSMAN_TRACKS,
   MODULE_ID
 } from "../scripts/constants.js";
+
+const CANONICAL_ARCHETYPES = Object.freeze({
+  [CRAFTSMAN_TRACKS.RESEARCH]: Object.keys(CRAFTSMAN_ARCHETYPE_REGISTRY)
+    .filter((id) => CRAFTSMAN_ARCHETYPE_REGISTRY[id].track === CRAFTSMAN_TRACKS.RESEARCH),
+  [CRAFTSMAN_TRACKS.SPECIALTY]: Object.keys(CRAFTSMAN_ARCHETYPE_REGISTRY)
+    .filter((id) => CRAFTSMAN_ARCHETYPE_REGISTRY[id].track === CRAFTSMAN_TRACKS.SPECIALTY)
+});
+
+function canonicalArchetypeFor(track, seed) {
+  const explicitIndexes = new Map([
+    ["valid-research", 0],
+    ["wrong-class", 1],
+    ["wrong-type", 2],
+    ["unmanaged", 3],
+    ["missing-archetype", 4]
+  ]);
+  const choices = CANONICAL_ARCHETYPES[track] ?? CANONICAL_ARCHETYPES[CRAFTSMAN_TRACKS.RESEARCH];
+  if (explicitIndexes.has(seed)) return choices[explicitIndexes.get(seed) % choices.length];
+  let hash = 2166136261;
+  for (const character of String(seed ?? "")) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return choices[(hash >>> 0) % choices.length];
+}
 
 function mergeObject(original, other, { inplace = true } = {}) {
   const target = inplace ? (original ?? {}) : { ...(original ?? {}) };
@@ -41,25 +67,32 @@ function setProperty(object, path, value) {
 function makeSubclass({
   id,
   track,
-  archetypeId = `archetype-${id}`,
+  archetypeId = undefined,
   classIdentifier = CRAFTSMAN_CLASS_IDENTIFIER,
   managed = true,
   type = "subclass"
 }) {
+  const fallbackArchetypeId = canonicalArchetypeFor(track, id);
+  const identityArchetypeId = archetypeId === undefined ? fallbackArchetypeId : archetypeId;
+  const definition = CRAFTSMAN_ARCHETYPE_REGISTRY[identityArchetypeId]
+    ?? CRAFTSMAN_ARCHETYPE_REGISTRY[fallbackArchetypeId];
   return {
-    id,
-    _id: id,
-    uuid: `Compendium.world.rebreya-subclasses.Item.${id}`,
+    id: definition.documentId,
+    _id: definition.documentId,
+    _embeddedId: id,
+    uuid: definition.uuid,
     name: `Subclass ${id}`,
     type,
     system: { classIdentifier },
     flags: {
       [MODULE_ID]: {
-        [CRAFTSMAN_ARCHETYPE_ID_FLAG]: archetypeId,
+        [CRAFTSMAN_ARCHETYPE_ID_FLAG]: identityArchetypeId,
         [CRAFTSMAN_TRACK_FLAG]: track,
+        classIdentifier,
+        sourceType: "subclass",
         managed
       },
-      dnd5e: { sourceId: `Compendium.world.rebreya-subclasses.Item.${id}` }
+      dnd5e: { sourceId: definition.uuid }
     },
     toAnchor() {
       return { outerHTML: `<a data-id="${this.id}">${this.name}</a>` };
@@ -77,7 +110,17 @@ function makeSubclass({
 }
 
 function makeActor(items = []) {
-  const collection = new Map(items.map((item) => [item.id, item]));
+  const collection = new Map();
+  const setEmbedded = (key, item) => {
+    const embeddedId = item?._embeddedId ?? key ?? item?.id;
+    item.id = embeddedId;
+    item._id = embeddedId;
+    item.uuid = `Actor.test.Item.${embeddedId}`;
+    Map.prototype.set.call(collection, embeddedId, item);
+    return collection;
+  };
+  collection.set = setEmbedded;
+  for (const item of items) setEmbedded(item.id, item);
   return {
     items: collection,
     updateSource(update) {
@@ -537,6 +580,73 @@ test("drop handles unresolved UUIDs and accepts a valid Specialty independently"
   }
 });
 
+test("every advancement path rejects non-canonical identity and normalizes an embedded drop to its source", async () => {
+  const stubs = installDnd5eContractStubs();
+  try {
+    registerCraftsmanSubclassAdvancements();
+    const { ResearchSubclass } = getCraftsmanSubclassAdvancementClasses();
+    const actor = makeActor();
+    const advancement = new ResearchSubclass({ item: makeClass(actor), actor });
+    const Flow = ResearchSubclass.metadata.apps.flow;
+    const flow = new Flow({ advancement, level: 2 });
+    const archetypeId = "craftsman-research-weaponsmith";
+    const source = makeSubclass({ id: "canonical-source", track: CRAFTSMAN_TRACKS.RESEARCH, archetypeId });
+    stubs.sources.set(source.uuid, source);
+
+    const embedded = makeSubclass({ id: "embedded-drop", track: CRAFTSMAN_TRACKS.RESEARCH, archetypeId });
+    embedded.id = embedded._id = "embedded-drop";
+    embedded.uuid = "Actor.actor-1.Item.embedded-drop";
+    stubs.sources.set(embedded.uuid, embedded);
+    await flow._onDrop({
+      dataTransfer: { getData: () => JSON.stringify({ type: "Item", uuid: embedded.uuid }) }
+    });
+    assert.equal(flow.subclass, source, "an owned drag is normalized to the canonical compendium document");
+
+    const invalidBrowserSources = [
+      makeSubclass({
+        id: "fake-browser",
+        track: CRAFTSMAN_TRACKS.RESEARCH,
+        archetypeId: "craftsman-research-fake"
+      }),
+      makeSubclass({
+        id: "swapped-browser",
+        track: CRAFTSMAN_TRACKS.RESEARCH,
+        archetypeId: "craftsman-specialty-constructor"
+      })
+    ];
+    const wrongUuid = "Compendium.world.rebreya-subclasses.Item.selfconsistentbad";
+    const wrongDocument = makeSubclass({
+      id: "wrong-document-browser",
+      track: CRAFTSMAN_TRACKS.RESEARCH,
+      archetypeId
+    });
+    wrongDocument.id = wrongDocument._id = "selfconsistentbad";
+    wrongDocument.uuid = wrongUuid;
+    wrongDocument.flags.dnd5e.sourceId = wrongUuid;
+    invalidBrowserSources.push(wrongDocument);
+    for (const invalid of invalidBrowserSources) {
+      stubs.sources.set(invalid.uuid, invalid);
+      globalThis.__browserResult = invalid.uuid;
+      await flow._onBrowseCompendium({ preventDefault() {} });
+      assert.equal(flow.subclass, source);
+    }
+
+    const wrongRequestUuid = "Compendium.world.rebreya-subclasses.Item.alias-request";
+    stubs.sources.set(wrongRequestUuid, source);
+    await assert.rejects(() => advancement.apply(2, { uuid: wrongRequestUuid }), /source|canonical/i);
+
+    const conflictingRestore = source.toObject();
+    conflictingRestore._id = "conflicting-embedded";
+    conflictingRestore._stats = {
+      compendiumSource: "Compendium.world.rebreya-subclasses.Item.conflict"
+    };
+    await assert.rejects(() => advancement.restore(2, conflictingRestore), /source|provenance|canonical/i);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("apply and restore delegate native creation while validating track and preventing duplicates", async () => {
   const stubs = installDnd5eContractStubs();
   try {
@@ -622,6 +732,7 @@ test("apply validates eligible retained subclass data before native reuse", asyn
       retained({ flags: { [MODULE_ID]: { [CRAFTSMAN_TRACK_FLAG]: CRAFTSMAN_TRACKS.SPECIALTY } } }),
       retained({ flags: { [MODULE_ID]: { managed: false } } }),
       retained({ flags: { [MODULE_ID]: { [CRAFTSMAN_ARCHETYPE_ID_FLAG]: "" } } }),
+      retained({ _stats: { compendiumSource: "Compendium.world.rebreya-subclasses.Item.conflict" } }),
       retained({ flags: { dnd5e: { advancementOrigin: "origin", advancementRoot: "root" } } })
     ];
     for (const data of invalidRetained) {

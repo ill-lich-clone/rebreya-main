@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  CRAFTSMAN_ARCHETYPE_REGISTRY,
   CRAFTSMAN_CLASS_IDENTIFIER,
   CRAFTSMAN_TRACKS,
   MODULE_ID,
@@ -28,9 +29,9 @@ const MIGRATION_OPTION = Object.freeze({ rebreyaCraftsmanSubclassMigration: true
 
 const AXIS_DATA = Object.freeze({
   [CRAFTSMAN_TRACKS.RESEARCH]: Object.freeze({
-    archetypeId: "research-alpha",
+    archetypeId: "craftsman-research-weaponsmith",
     classAdvancementId: "advResearchNativ",
-    featureId: "craftsman-v01::research::research-alpha::research-feature",
+    featureId: "craftsman-v01::research::craftsman-research-weaponsmith::research-feature",
     featureEmbeddedId: "featureResearch1",
     featureSourceId: "sourceFeatureRes",
     grantId: "grantResearch001",
@@ -42,9 +43,9 @@ const AXIS_DATA = Object.freeze({
     nativeType: "ResearchSubclass"
   }),
   [CRAFTSMAN_TRACKS.SPECIALTY]: Object.freeze({
-    archetypeId: "specialty-beta",
+    archetypeId: "craftsman-specialty-constructor",
     classAdvancementId: "advSpecialtyNat",
-    featureId: "craftsman-v01::specialty::specialty-beta::specialty-feature",
+    featureId: "craftsman-v01::specialty::craftsman-specialty-constructor::specialty-feature",
     featureEmbeddedId: "featureSpecialty",
     featureSourceId: "sourceFeatureSpe",
     grantId: "grantSpecialty01",
@@ -56,6 +57,10 @@ const AXIS_DATA = Object.freeze({
     nativeType: "SpecialtySubclass"
   })
 });
+
+function subclassSourceId(axis) {
+  return CRAFTSMAN_ARCHETYPE_REGISTRY[AXIS_DATA[axis].archetypeId].documentId;
+}
 
 function clone(value) {
   return value === undefined ? undefined : structuredClone(value);
@@ -350,7 +355,7 @@ function classSource({ classNativeAxes = [], selectedAxes = [] } = {}) {
         const advancement = publishedClassAdvancement(axis);
         const data = AXIS_DATA[axis];
         advancement.value = selectedSet.has(axis)
-          ? { document: data.nativeId, uuid: sourceUuid(SUBCLASS_PACK_ID, axis === "research" ? "sourceResearch01" : "sourceSpecialty") }
+          ? { document: data.nativeId, uuid: sourceUuid(SUBCLASS_PACK_ID, subclassSourceId(axis)) }
           : { document: null, uuid: null };
         return advancement;
       }),
@@ -418,7 +423,7 @@ function featureSource(axis, { linkedToNative = false } = {}) {
 
 function subclassPackSource(axis) {
   const data = AXIS_DATA[axis];
-  const id = axis === CRAFTSMAN_TRACKS.RESEARCH ? "sourceResearch01" : "sourceSpecialty";
+  const id = subclassSourceId(axis);
   const featureUuid = sourceUuid(FEATURE_PACK_ID, data.featureSourceId);
   return {
     _id: id,
@@ -475,7 +480,7 @@ function embeddedNativeSource(axis, { correct = false } = {}) {
   source.folder = null;
   source.ownership = { default: 3 };
   source.flags.dnd5e = correct
-    ? dnd5eFlags(sourceUuid(SUBCLASS_PACK_ID, axis === "research" ? "sourceResearch01" : "sourceSpecialty"))
+    ? dnd5eFlags(sourceUuid(SUBCLASS_PACK_ID, subclassSourceId(axis)))
     : dnd5eFlags("Compendium.world.wrong.Item.stale", "legacy.bad", "legacy.bad");
   source.system.classIdentifier = correct ? CRAFTSMAN_CLASS_IDENTIFIER : "wrong-class";
   source.system.advancement[0].value = correct
@@ -652,7 +657,7 @@ function assertSelectedAxisMigrated(actor, axis) {
   assert.ok(native, `${axis} native subclass exists`);
   const expectedSubclassUuid = sourceUuid(
     SUBCLASS_PACK_ID,
-    axis === CRAFTSMAN_TRACKS.RESEARCH ? "sourceResearch01" : "sourceSpecialty"
+    subclassSourceId(axis)
   );
   assert.equal(native.getFlag(MODULE_ID, "managed"), true);
   assert.equal(native.getFlag(MODULE_ID, "archetypeId"), data.archetypeId);
@@ -832,7 +837,7 @@ test("preflight fails closed before the first write for missing, unmanaged, ambi
         const [removed] = pack.documents.splice(0, 1);
         fixture.uuidMap.delete(removed.uuid);
       },
-      error: /Actor actorCraftsman01.*research.*research-alpha/u
+      error: /Actor actorCraftsman01.*research.*craftsman-research-weaponsmith/u
     },
     {
       name: "unmanaged subclass source collision",
@@ -851,6 +856,35 @@ test("preflight fails closed before the first write for missing, unmanaged, ambi
         fixture.uuidMap.set(item.uuid, item);
       },
       error: /Actor actorCraftsman01.*research.*ambiguous/u
+    },
+    {
+      name: "fake selected archetype identity",
+      mutate(fixture) {
+        fixture.actor.items.get(AXIS_DATA.research.legacyId)
+          .flags[MODULE_ID].archetypeId = "craftsman-research-fake";
+      },
+      error: /Actor actorCraftsman01.*research.*unknown canonical archetypeId/u
+    },
+    {
+      name: "real archetype selected on the wrong axis",
+      mutate(fixture) {
+        fixture.actor.items.get(AXIS_DATA.research.legacyId)
+          .flags[MODULE_ID].archetypeId = "craftsman-specialty-constructor";
+      },
+      error: /Actor actorCraftsman01.*research.*belongs to specialty/u
+    },
+    {
+      name: "self-consistent subclass source with a wrong canonical document id",
+      mutate(fixture) {
+        const source = fixture.packs.get(SUBCLASS_PACK_ID).documents.find((document) => (
+          document.getFlag(MODULE_ID, "archetypeId") === AXIS_DATA.research.archetypeId
+        ));
+        fixture.uuidMap.delete(source.uuid);
+        source._source._id = "selfconsistentbad";
+        source.uuid = sourceUuid(SUBCLASS_PACK_ID, source.id);
+        fixture.uuidMap.set(source.uuid, source);
+      },
+      error: /Actor actorCraftsman01.*research.*wrong canonical document identity/u
     },
     {
       name: "missing feature source",

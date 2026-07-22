@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import {
+  CRAFTSMAN_ARCHETYPE_REGISTRY,
   CRAFTSMAN_CLASS_IDENTIFIER,
   CRAFTSMAN_TRACK_FLAG,
   CRAFTSMAN_TRACKS,
@@ -40,6 +41,12 @@ function makeItem({
   track = null,
   advancement = { byType: {} }
 }) {
+  const archetypeId = track === CRAFTSMAN_TRACKS.RESEARCH
+    ? "craftsman-research-mechanic"
+    : track === CRAFTSMAN_TRACKS.SPECIALTY
+      ? "craftsman-specialty-constructor"
+      : "";
+  const definition = CRAFTSMAN_ARCHETYPE_REGISTRY[archetypeId];
   const item = {
     id,
     _id: id,
@@ -54,7 +61,16 @@ function makeItem({
       levels
     },
     advancement,
-    flags: track ? { [MODULE_ID]: { [CRAFTSMAN_TRACK_FLAG]: track } } : {}
+    flags: track ? {
+      [MODULE_ID]: {
+        [CRAFTSMAN_TRACK_FLAG]: track,
+        archetypeId,
+        classIdentifier: CRAFTSMAN_CLASS_IDENTIFIER,
+        managed: true,
+        sourceType: "subclass"
+      },
+      dnd5e: { sourceId: definition.uuid }
+    } : {}
   };
   item.getFlag = (scope, key) => item.flags?.[scope]?.[key];
   return item;
@@ -834,15 +850,13 @@ test("Tidy view model contains only the two native Craftsman subclass axes", () 
     id: "legacy-research",
     type: "research",
     name: "Legacy Research",
-    classIdentifier: CRAFTSMAN_CLASS_IDENTIFIER,
-    track: CRAFTSMAN_TRACKS.RESEARCH
+    classIdentifier: CRAFTSMAN_CLASS_IDENTIFIER
   });
   const legacySpecialty = makeItem({
     id: "legacy-specialty",
     type: "specialty",
     name: "Legacy Specialty",
-    classIdentifier: CRAFTSMAN_CLASS_IDENTIFIER,
-    track: CRAFTSMAN_TRACKS.SPECIALTY
+    classIdentifier: CRAFTSMAN_CLASS_IDENTIFIER
   });
   fixture.actor.items.push(legacyResearch, legacySpecialty);
 

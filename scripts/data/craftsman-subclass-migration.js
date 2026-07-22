@@ -1,13 +1,14 @@
 import {
   CLASS_FEATURES_COMPENDIUM_NAME,
   CLASSES_COMPENDIUM_NAME,
+  CRAFTSMAN_ARCHETYPE_REGISTRY,
   CRAFTSMAN_CLASS_IDENTIFIER,
+  CRAFTSMAN_SUBCLASS_COMPENDIUM_ID,
   CRAFTSMAN_TRACKS,
   MODULE_ID,
   RESEARCH_ITEM_TYPE,
   SETTINGS_KEYS,
-  SPECIALTY_ITEM_TYPE,
-  SUBCLASSES_COMPENDIUM_NAME
+  SPECIALTY_ITEM_TYPE
 } from "../constants.js";
 import { isActiveGmClient } from "../infrastructure/foundry/active-gm.js";
 
@@ -17,7 +18,7 @@ const MIGRATION_OPTIONS = Object.freeze({
   rebreyaCraftsmanSubclassMigration: true
 });
 const CLASS_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
-const SUBCLASS_PACK_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
+const SUBCLASS_PACK_ID = CRAFTSMAN_SUBCLASS_COMPENDIUM_ID;
 const FEATURE_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
 const ACTOR_FLAG = "craftsmanSubclassMigrationVersion";
 const AXIS_CONFIG = Object.freeze({
@@ -132,13 +133,30 @@ function packDocuments(pack) {
 }
 
 function expectedUuid(packId, document) {
-  return `Compendium.${packId}.Item.${itemId(document)}`;
+  const id = typeof (document?.id ?? document?._id) === "string"
+    ? (document.id ?? document._id)
+    : "";
+  return `Compendium.${packId}.Item.${id}`;
 }
 
 function preflightError(actor, axis, detail) {
   return new Error(
     `Craftsman subclass migration preflight failed [Actor ${actorId(actor)}] [axis ${axis || "all"}]: ${detail}`
   );
+}
+
+function canonicalArchetype(actor, axis, archetypeId, label = "archetype") {
+  const definition = typeof archetypeId === "string"
+    && Object.hasOwn(CRAFTSMAN_ARCHETYPE_REGISTRY, archetypeId)
+    ? CRAFTSMAN_ARCHETYPE_REGISTRY[archetypeId]
+    : null;
+  if (!definition) {
+    throw preflightError(actor, axis, `${label} has unknown canonical archetypeId ${cleanString(archetypeId) || "<missing>"}`);
+  }
+  if (definition.track !== axis) {
+    throw preflightError(actor, axis, `${label} archetypeId ${archetypeId} belongs to ${definition.track}`);
+  }
+  return definition;
 }
 
 function rollbackError(actor, originalError, rollbackFailure) {
@@ -149,16 +167,19 @@ function rollbackError(actor, originalError, rollbackFailure) {
 }
 
 function validatePack(pack, expectedCollection, actor, axis) {
-  if (!pack || cleanString(pack.collection) !== expectedCollection) {
+  if (!pack || pack.collection !== expectedCollection) {
     throw preflightError(actor, axis, `missing exact compendium ${expectedCollection}`);
   }
   return pack;
 }
 
 function validateSourceUuid(source, packId, actor, axis, label) {
-  const uuid = cleanString(source?.uuid);
+  const uuid = typeof source?.uuid === "string" ? source.uuid : "";
   const expected = expectedUuid(packId, source);
-  if (!itemId(source) || uuid !== expected) {
+  const sourceId = typeof (source?.id ?? source?._id) === "string"
+    ? (source.id ?? source._id)
+    : "";
+  if (!sourceId || uuid !== expected) {
     throw preflightError(actor, axis, `${label} has invalid UUID ${uuid || "<missing>"}; expected ${expected}`);
   }
   return uuid;
@@ -283,9 +304,7 @@ function actorLegacyAxes(actor, items) {
     const candidates = items.filter((item) => item?.type === config.legacyItemType);
     for (const item of candidates) {
       validateManagedSource(item, actor, axis, "legacy axis Item", axis);
-      if (!cleanString(moduleFlag(item, "archetypeId"))) {
-        throw preflightError(actor, axis, "legacy axis Item has no archetypeId");
-      }
+      canonicalArchetype(actor, axis, moduleFlag(item, "archetypeId"), "legacy axis Item");
     }
     if (candidates.length > 1) throw preflightError(actor, axis, "duplicate legacy axis Items");
     return [axis, candidates[0] ?? null];
@@ -312,9 +331,7 @@ function actorNativeAxes(actor, items) {
       throw preflightError(actor, cleanString(axis) || "unknown", "unmanaged or unknown tracked Craftsman subclass Item");
     }
     validateManagedSource(item, actor, axis, "native tracked subclass Item", "subclass");
-    if (!cleanString(moduleFlag(item, "archetypeId"))) {
-      throw preflightError(actor, axis, "native tracked subclass Item has no archetypeId");
-    }
+    canonicalArchetype(actor, axis, moduleFlag(item, "archetypeId"), "native tracked subclass Item");
     grouped[axis].push(item);
   }
   for (const axis of AXES) {
@@ -324,6 +341,7 @@ function actorNativeAxes(actor, items) {
 }
 
 function resolveSubclassSource(actor, axis, archetypeId, documents) {
+  const expected = canonicalArchetype(actor, axis, archetypeId, "subclass source request");
   const candidates = documents.filter((document) => moduleFlag(document, "archetypeId") === archetypeId);
   const source = uniqueIdentity(candidates, actor, axis, "subclass source", archetypeId);
   if (source?.type !== "subclass") throw preflightError(actor, axis, `subclass source ${archetypeId} has the wrong Item type`);
@@ -333,6 +351,12 @@ function resolveSubclassSource(actor, axis, archetypeId, documents) {
   }
   if (source?.system?.classIdentifier !== CRAFTSMAN_CLASS_IDENTIFIER) {
     throw preflightError(actor, axis, `subclass source ${archetypeId} has the wrong system classIdentifier`);
+  }
+  const sourceId = typeof (source?.id ?? source?._id) === "string"
+    ? (source.id ?? source._id)
+    : "";
+  if (sourceId !== expected.documentId || source?.uuid !== expected.uuid) {
+    throw preflightError(actor, axis, `subclass source ${archetypeId} has the wrong canonical document identity`);
   }
   return source;
 }
@@ -777,7 +801,7 @@ export class CraftsmanSubclassMigrationService {
   async #validateResolution(actor, axis, source, packId, label) {
     const uuid = validateSourceUuid(source, packId, actor, axis, label);
     const resolved = await this.fromUuid(uuid);
-    if (!resolved || itemId(resolved) !== itemId(source) || cleanString(resolved.uuid) !== uuid) {
+    if (!resolved || itemId(resolved) !== itemId(source) || resolved.uuid !== uuid) {
       throw preflightError(actor, axis, `${label} UUID does not resolve exactly: ${uuid}`);
     }
   }

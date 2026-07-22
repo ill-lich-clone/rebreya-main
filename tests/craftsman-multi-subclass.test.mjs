@@ -3,11 +3,23 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   CRAFTSMAN_ARCHETYPE_ID_FLAG,
+  CRAFTSMAN_ARCHETYPE_REGISTRY,
   CRAFTSMAN_CLASS_IDENTIFIER,
   CRAFTSMAN_TRACK_FLAG,
   CRAFTSMAN_TRACKS,
   MODULE_ID
 } from "../scripts/constants.js";
+
+function defaultArchetypeId(track) {
+  return track === CRAFTSMAN_TRACKS.SPECIALTY
+    ? "craftsman-specialty-constructor"
+    : "craftsman-research-weaponsmith";
+}
+
+function sourceDefinition(track, archetypeId) {
+  return CRAFTSMAN_ARCHETYPE_REGISTRY[archetypeId]
+    ?? CRAFTSMAN_ARCHETYPE_REGISTRY[defaultArchetypeId(track)];
+}
 import * as craftsmanIntegration from "../scripts/integrations/craftsman-multi-subclass.js";
 
 const {
@@ -57,10 +69,21 @@ class Item5eStub {
       advancementClassLinked
     };
     const moduleFlags = {};
-    if (track !== undefined) moduleFlags[CRAFTSMAN_TRACK_FLAG] = track;
-    if (managed !== undefined) moduleFlags.managed = managed;
-    if (archetypeId !== undefined) moduleFlags[CRAFTSMAN_ARCHETYPE_ID_FLAG] = archetypeId;
-    this.flags = Object.keys(moduleFlags).length ? { [MODULE_ID]: moduleFlags } : {};
+    if (track !== undefined) {
+      const identityArchetypeId = archetypeId ?? defaultArchetypeId(track);
+      const definition = sourceDefinition(track, identityArchetypeId);
+      moduleFlags[CRAFTSMAN_TRACK_FLAG] = track;
+      moduleFlags[CRAFTSMAN_ARCHETYPE_ID_FLAG] = identityArchetypeId;
+      moduleFlags.classIdentifier = classIdentifier;
+      moduleFlags.managed = managed ?? true;
+      moduleFlags.sourceType = "subclass";
+      this.flags = {
+        [MODULE_ID]: moduleFlags,
+        dnd5e: { sourceId: definition.uuid }
+      };
+    }
+    else this.flags = {};
+    this.uuid = `Actor.actor-1.Item.${id}`;
     this.flows = flows;
     this.parent = null;
     this.actor = null;
@@ -269,7 +292,8 @@ function makeCraftsmanSubclassData({
   classIdentifier = CRAFTSMAN_CLASS_IDENTIFIER,
   track = CRAFTSMAN_TRACKS.RESEARCH,
   managed = true,
-  archetypeId = `${track}-archetype`,
+  archetypeId = defaultArchetypeId(track),
+  sourceUuid = sourceDefinition(track, archetypeId).uuid,
   type = "subclass",
   advancement = []
 } = {}) {
@@ -277,6 +301,7 @@ function makeCraftsmanSubclassData({
     _id: id,
     name: "Candidate",
     type,
+    _stats: { compendiumSource: sourceUuid },
     system: { advancement, classIdentifier, identifier },
     flags: {
       [MODULE_ID]: {
@@ -752,6 +777,49 @@ test("Standard drop rejects missing, unknown, unmanaged, and wrong-class Craftsm
   assert.equal(notifications.length, invalidCandidates.length);
 });
 
+test("Standard and core creation reject fake, cross-axis, self-consistent, and conflicting canonical identities", async () => {
+  const hooks = installGlobals();
+  const { actor, specialty } = makeCraftsmanFixture({ level: 3, actorLevel: 3 });
+  removeActorItem(actor, specialty);
+  const sheet = new CharacterActorSheetStub(actor);
+  assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
+  const preCreate = hooks.callbacks.get("preCreateItem")?.callback;
+  const wrongUuid = "Compendium.world.rebreya-subclasses.Item.selfconsistentbad";
+  const conflicting = makeCraftsmanSubclassData({ track: CRAFTSMAN_TRACKS.SPECIALTY });
+  conflicting.flags.dnd5e = {
+    sourceId: "Compendium.world.rebreya-subclasses.Item.conflicting"
+  };
+  const invalidCandidates = [
+    makeCraftsmanSubclassData({
+      track: CRAFTSMAN_TRACKS.SPECIALTY,
+      archetypeId: "craftsman-specialty-fake"
+    }),
+    makeCraftsmanSubclassData({
+      track: CRAFTSMAN_TRACKS.RESEARCH,
+      archetypeId: "craftsman-specialty-constructor"
+    }),
+    makeCraftsmanSubclassData({
+      id: "selfconsistentbad",
+      track: CRAFTSMAN_TRACKS.SPECIALTY,
+      sourceUuid: wrongUuid
+    }),
+    conflicting,
+    makeCraftsmanSubclassData({ type: "feat", track: CRAFTSMAN_TRACKS.SPECIALTY })
+  ];
+
+  for (const candidate of invalidCandidates) {
+    assert.equal(await sheet._onDropSingleItem({}, candidate), false);
+    assert.equal(preCreate(
+      makePreCreateDocument(actor, candidate),
+      candidate,
+      { route: "programmatic", rebreyaCraftsmanSubclassMigration: true },
+      "user-1"
+    ), false);
+  }
+  assert.equal(characterDropCalls, 0);
+  assert.equal(genericDropCalls, 0);
+});
+
 test("Standard drop delegates every unrelated item and subclass to CharacterActorSheet exactly once", async () => {
   installGlobals();
   const { actor } = makeCraftsmanFixture({ level: 3, actorLevel: 3 });
@@ -763,7 +831,14 @@ test("Standard drop delegates every unrelated item and subclass to CharacterActo
   const ordinarySubclass = {
     type: "subclass",
     system: { classIdentifier: "fighter-v01", identifier: "champion" },
-    flags: {}
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        sourceType: "subclass",
+        classIdentifier: "fighter-v01",
+        subclassId: "fighter-champion"
+      }
+    }
   };
   assert.equal(await sheet._onDropSingleItem({}, ordinarySubclass), ordinarySubclass);
   assert.equal(characterDropCalls, 2);

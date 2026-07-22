@@ -1,5 +1,4 @@
 import {
-  CRAFTSMAN_ARCHETYPE_ID_FLAG,
   CRAFTSMAN_CLASS_IDENTIFIER,
   CRAFTSMAN_TRACK_FLAG,
   CRAFTSMAN_TRACKS,
@@ -7,10 +6,11 @@ import {
 } from "../constants.js";
 import {
   assertValidCraftsmanSubclass,
-  getCraftsmanSubclassTrack,
+  CraftsmanSubclassIdentityError,
   getCraftsmanSubclasses,
   hasCraftsmanTrackDuplicate,
-  isCraftsmanClass
+  isCraftsmanClass,
+  validateCraftsmanSubclassIdentity
 } from "./craftsman-subclass-tracks.js";
 
 const TRACK_CONFIG = Object.freeze({
@@ -55,45 +55,36 @@ function invalidSourceError() {
   return new Error(localize(INVALID_SOURCE_KEY));
 }
 
-function getModuleFlag(item, key) {
-  return item?.getFlag?.(MODULE_ID, key)
-    ?? item?.flags?.[MODULE_ID]?.[key];
+function identityWarningKey(error) {
+  if (!(error instanceof CraftsmanSubclassIdentityError)) return INVALID_SOURCE_KEY;
+  if (error.reason === "type") return INVALID_TYPE_KEY;
+  if (error.reason === "class") return INVALID_CLASS_KEY;
+  if (error.reason === "track") return INVALID_TRACK_KEY;
+  return INVALID_SOURCE_KEY;
 }
 
-function hasValidSourceIdentity(item) {
-  return getModuleFlag(item, "managed") === true
-    && String(getModuleFlag(item, CRAFTSMAN_ARCHETYPE_ID_FLAG) ?? "").trim().length > 0;
-}
-
-function validateCandidate(item, track, actor, { notify = false, excludeId = "" } = {}) {
-  if (item?.type !== "subclass") {
-    if (notify) warn(INVALID_TYPE_KEY);
-    else assertValidCraftsmanSubclass(item, track);
-    return false;
+function validateCandidate(item, track, actor, {
+  notify = false,
+  excludeId = "",
+  sourceUuid = ""
+} = {}) {
+  let definition;
+  try {
+    definition = validateCraftsmanSubclassIdentity(item, track);
+    if (sourceUuid && sourceUuid !== definition.uuid) throw invalidSourceError();
   }
-  if (item?.system?.classIdentifier !== CRAFTSMAN_CLASS_IDENTIFIER) {
-    if (notify) warn(INVALID_CLASS_KEY);
-    else assertValidCraftsmanSubclass(item, track);
-    return false;
-  }
-  if (getCraftsmanSubclassTrack(item) !== track) {
-    if (notify) warn(INVALID_TRACK_KEY);
-    else assertValidCraftsmanSubclass(item, track);
-    return false;
-  }
-  if (!hasValidSourceIdentity(item)) {
-    if (notify) warn(INVALID_SOURCE_KEY);
-    else throw invalidSourceError();
+  catch (error) {
+    if (!notify) throw error;
+    warn(identityWarningKey(error));
     return false;
   }
 
-  assertValidCraftsmanSubclass(item, track);
   if (hasCraftsmanTrackDuplicate(actor, item, { excludeId })) {
     if (notify) warn(DUPLICATE_KEY);
     else throw duplicateError();
     return false;
   }
-  return true;
+  return definition;
 }
 
 function validateRetainedData(retainedData, uuid, track, actor) {
@@ -107,7 +98,8 @@ function validateRetainedData(retainedData, uuid, track, actor) {
     throw invalidSourceError();
   }
   validateCandidate(retainedData, track, actor, {
-    excludeId: retainedData.id ?? retainedData._id
+    excludeId: retainedData.id ?? retainedData._id,
+    sourceUuid: uuid
   });
 }
 
@@ -133,7 +125,10 @@ export function createTrackedSubclassFlow(SubclassFlow, track) {
       const result = await game.dnd5e.applications.CompendiumBrowser.selectOne({ filters });
       if (result) {
         const subclass = await fromUuid(result);
-        if (validateCandidate(subclass, track, this.advancement?.actor, { notify: true })) {
+        if (validateCandidate(subclass, track, this.advancement?.actor, {
+          notify: true,
+          sourceUuid: result
+        })) {
           this.subclass = subclass;
         }
       }
@@ -151,11 +146,18 @@ export function createTrackedSubclassFlow(SubclassFlow, track) {
 
       if (data.type !== "Item") return false;
       const item = await Item.implementation.fromDropData(data);
-      if (!validateCandidate(item, track, this.advancement?.actor, { notify: true })) {
+      const definition = validateCandidate(item, track, this.advancement?.actor, { notify: true });
+      if (!definition) {
         return undefined;
       }
 
-      this.subclass = item;
+      const source = await fromUuid(definition.uuid);
+      if (!validateCandidate(source, track, this.advancement?.actor, {
+        notify: true,
+        sourceUuid: definition.uuid
+      })) return undefined;
+
+      this.subclass = source;
       this.render();
       return undefined;
     }
@@ -197,7 +199,7 @@ export function createTrackedSubclassAdvancement(SubclassAdvancement, Flow, trac
 
     async apply(level, data, retainedData) {
       const subclass = await fromUuid(data?.uuid);
-      validateCandidate(subclass, track, this.actor);
+      validateCandidate(subclass, track, this.actor, { sourceUuid: data?.uuid });
       validateRetainedData(retainedData, data?.uuid, track, this.actor);
       return super.apply(level, data, retainedData);
     }

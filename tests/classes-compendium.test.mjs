@@ -185,6 +185,7 @@ function makePublishedNativeCraftsmanSubclassDocuments() {
     id: definition.documentId,
     uuid: `Compendium.world.rebreya-subclasses.Item.${definition.documentId}`,
     type: "subclass",
+    system: { classIdentifier: "craftsman-v01" },
     flags: {
       "rebreya-main": {
         managed: true,
@@ -1081,6 +1082,7 @@ test("legacy Craftsman pack retirement refuses cleanup until all 12 native subcl
     id: definition.documentId,
     uuid: `Compendium.world.rebreya-subclasses.Item.${definition.documentId}`,
     type: "subclass",
+    system: { classIdentifier: "craftsman-v01" },
     flags: {
       "rebreya-main": {
         managed: true,
@@ -1278,6 +1280,7 @@ test("legacy Craftsman pack retirement deletes only owned archetypes and newly e
     id: definition.documentId,
     uuid: `Compendium.world.rebreya-subclasses.Item.${definition.documentId}`,
     type: "subclass",
+    system: { classIdentifier: "craftsman-v01" },
     flags: {
       "rebreya-main": {
         managed: true,

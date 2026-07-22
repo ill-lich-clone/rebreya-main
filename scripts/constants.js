@@ -53,6 +53,69 @@ export const CLASS_FEATURES_COMPENDIUM_NAME = "rebreya-class-features";
 export const CLASS_FEATURES_COMPENDIUM_LABEL = "Умения классов Rebreya";
 export const SUBCLASSES_COMPENDIUM_NAME = "rebreya-subclasses";
 export const SUBCLASSES_COMPENDIUM_LABEL = "Архетипы Rebreya (D&D 5e 2014)";
+export const CRAFTSMAN_SUBCLASS_COMPENDIUM_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
+export const CRAFTSMAN_ARCHETYPE_REGISTRY = Object.freeze({
+  "craftsman-research-weaponsmith": Object.freeze({
+    track: CRAFTSMAN_TRACKS.RESEARCH,
+    documentId: "fjf9y91usmmvo000",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.fjf9y91usmmvo000`
+  }),
+  "craftsman-research-armorer": Object.freeze({
+    track: CRAFTSMAN_TRACKS.RESEARCH,
+    documentId: "18cjg6m14nk7hb00",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.18cjg6m14nk7hb00`
+  }),
+  "craftsman-research-alchemist": Object.freeze({
+    track: CRAFTSMAN_TRACKS.RESEARCH,
+    documentId: "9vn2lec3950y0000",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.9vn2lec3950y0000`
+  }),
+  "craftsman-research-artificer": Object.freeze({
+    track: CRAFTSMAN_TRACKS.RESEARCH,
+    documentId: "1my4r33ufb9eb000",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.1my4r33ufb9eb000`
+  }),
+  "craftsman-research-occultist": Object.freeze({
+    track: CRAFTSMAN_TRACKS.RESEARCH,
+    documentId: "15zlg081ybp89o00",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.15zlg081ybp89o00`
+  }),
+  "craftsman-research-healer": Object.freeze({
+    track: CRAFTSMAN_TRACKS.RESEARCH,
+    documentId: "1jneoaf1wzh47000",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.1jneoaf1wzh47000`
+  }),
+  "craftsman-research-mechanic": Object.freeze({
+    track: CRAFTSMAN_TRACKS.RESEARCH,
+    documentId: "a028poqh8xfm0000",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.a028poqh8xfm0000`
+  }),
+  "craftsman-specialty-assault": Object.freeze({
+    track: CRAFTSMAN_TRACKS.SPECIALTY,
+    documentId: "1xaf4xz14cr1zo00",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.1xaf4xz14cr1zo00`
+  }),
+  "craftsman-specialty-defender": Object.freeze({
+    track: CRAFTSMAN_TRACKS.SPECIALTY,
+    documentId: "jej063u8aytv0000",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.jej063u8aytv0000`
+  }),
+  "craftsman-specialty-constructor": Object.freeze({
+    track: CRAFTSMAN_TRACKS.SPECIALTY,
+    documentId: "1xoogq41lnvp5q00",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.1xoogq41lnvp5q00`
+  }),
+  "craftsman-specialty-artillerist": Object.freeze({
+    track: CRAFTSMAN_TRACKS.SPECIALTY,
+    documentId: "1dct6o91ps9ye900",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.1dct6o91ps9ye900`
+  }),
+  "craftsman-specialty-tactician": Object.freeze({
+    track: CRAFTSMAN_TRACKS.SPECIALTY,
+    documentId: "4488d4505bp50000",
+    uuid: `Compendium.${CRAFTSMAN_SUBCLASS_COMPENDIUM_ID}.Item.4488d4505bp50000`
+  })
+});
 export const CLASSES_COMPENDIUM_NAME = "rebreya-classes";
 export const CLASSES_COMPENDIUM_LABEL = "Классы Rebreya (D&D 5e 2014)";
 export const SPELLS_COMPENDIUM_NAME = "rebreya-spells";

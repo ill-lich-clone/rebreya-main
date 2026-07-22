@@ -1,13 +1,15 @@
 import {
-  CRAFTSMAN_ARCHETYPE_ID_FLAG,
   CRAFTSMAN_CLASS_IDENTIFIER,
   CRAFTSMAN_TRACK_FLAG,
   CRAFTSMAN_TRACKS,
   MODULE_ID
 } from "../constants.js";
 import {
+  CraftsmanSubclassIdentityError,
   getCraftsmanSubclasses as getCommittedCraftsmanSubclasses,
-  isCraftsmanClass
+  isCraftsmanClass,
+  isCraftsmanSubclassCandidate,
+  validateCraftsmanSubclassIdentity
 } from "./craftsman-subclass-tracks.js";
 
 const ITEM_LINK_TARGET = "CONFIG.Item.documentClass.prototype.subclass";
@@ -43,11 +45,6 @@ function getRawTrack(item) {
     ?? item?.flags?.[MODULE_ID]?.[CRAFTSMAN_TRACK_FLAG];
 }
 
-function getModuleFlag(item, key) {
-  return item?.getFlag?.(MODULE_ID, key)
-    ?? item?.flags?.[MODULE_ID]?.[key];
-}
-
 function getItemId(item) {
   return cleanString(item?.id ?? item?._id, "");
 }
@@ -56,17 +53,18 @@ function getCandidate(document, data) {
   const source = data && typeof data === "object" ? data : {};
   return {
     id: source.id ?? source._id ?? document?.id ?? document?._id,
+    _id: source._id ?? source.id ?? document?._id ?? document?.id,
+    _stats: source._stats ?? document?._stats,
     type: source.type ?? document?.type,
     system: source.system ?? document?.system ?? {},
-    flags: source.flags ?? document?.flags ?? {}
+    flags: source.flags ?? document?.flags ?? {},
+    pack: source.pack ?? document?.pack,
+    uuid: source.uuid ?? document?.uuid
   };
 }
 
 function isCraftsmanCandidate(candidate) {
-  const moduleFlags = candidate?.flags?.[MODULE_ID] ?? {};
-  return candidate?.system?.classIdentifier === CRAFTSMAN_CLASS_IDENTIFIER
-    || moduleFlags.classIdentifier === CRAFTSMAN_CLASS_IDENTIFIER
-    || Object.hasOwn(moduleFlags, CRAFTSMAN_TRACK_FLAG);
+  return isCraftsmanSubclassCandidate(candidate);
 }
 
 function findDuplicateIdentifier(actor, candidate) {
@@ -98,14 +96,19 @@ function validateCraftsmanCandidate(candidate, actor, { allowDuplicate = false, 
   if (!isCraftsmanCandidate(candidate)) return { associated: false, valid: true };
 
   let errorKey = null;
-  if (candidate?.type !== "subclass") errorKey = INVALID_TYPE_KEY;
-  else if (candidate?.system?.classIdentifier !== CRAFTSMAN_CLASS_IDENTIFIER) errorKey = INVALID_CLASS_KEY;
-  else if (!VALID_TRACKS.has(getRawTrack(candidate))) errorKey = INVALID_TRACK_KEY;
-  else if (
-    getModuleFlag(candidate, "managed") !== true
-    || !cleanString(getModuleFlag(candidate, CRAFTSMAN_ARCHETYPE_ID_FLAG), "")
-  ) errorKey = INVALID_SOURCE_KEY;
-  else if (!allowDuplicate && hasDuplicateTrack(actor, candidate)) errorKey = DUPLICATE_KEY;
+  try {
+    validateCraftsmanSubclassIdentity(candidate);
+  }
+  catch (error) {
+    if (error instanceof CraftsmanSubclassIdentityError) {
+      if (error.reason === "type") errorKey = INVALID_TYPE_KEY;
+      else if (error.reason === "class") errorKey = INVALID_CLASS_KEY;
+      else if (error.reason === "track") errorKey = INVALID_TRACK_KEY;
+      else errorKey = INVALID_SOURCE_KEY;
+    }
+    else throw error;
+  }
+  if (!errorKey && !allowDuplicate && hasDuplicateTrack(actor, candidate)) errorKey = DUPLICATE_KEY;
 
   if (errorKey && notify) notifyError(errorKey, { localize: true });
   return { associated: true, errorKey, valid: !errorKey };
@@ -131,31 +134,14 @@ function getCraftsmanContext(classItemOrActor) {
  */
 export function getCraftsmanSubclasses(classItemOrActor) {
   const { actor, classItem } = getCraftsmanContext(classItemOrActor);
-  const actorId = cleanString(actor?.id ?? actor?._id);
-  const classId = cleanString(classItem?.id ?? classItem?._id);
-  const seenTracks = new Set();
-
-  for (const item of getActorItems(actor)) {
-    if (item?.type !== "subclass" || item?.system?.classIdentifier !== CRAFTSMAN_CLASS_IDENTIFIER) {
-      continue;
-    }
-
-    const track = getRawTrack(item);
-    const diagnosticTrack = cleanString(track, "missing");
-    if (!VALID_TRACKS.has(track)) {
-      throw new Error(
-        `Unknown Craftsman subclass track ${diagnosticTrack} on Actor ${actorId}, class ${classId}.`
-      );
-    }
-    if (seenTracks.has(track)) {
-      throw new Error(
-        `Duplicate Craftsman ${track} subclass on Actor ${actorId}, class ${classId}.`
-      );
-    }
-    seenTracks.add(track);
+  try {
+    return getCommittedCraftsmanSubclasses(actor ?? classItemOrActor);
   }
-
-  return getCommittedCraftsmanSubclasses(actor ?? classItemOrActor);
+  catch (error) {
+    const actorId = cleanString(actor?.id ?? actor?._id);
+    const classId = cleanString(classItem?.id ?? classItem?._id);
+    throw new Error(`${error.message} [Actor ${actorId}, class ${classId}]`, { cause: error });
+  }
 }
 
 function getLibWrapperContract() {
@@ -380,6 +366,9 @@ async function handleCraftsmanSheetDrop(sheet, delegate, genericMethod, event, i
     return delegate(event, itemData, ...args);
   }
 
+  const validation = validateCraftsmanCandidate(candidate, actor, { notify: true });
+  if (!validation.valid) return false;
+
   const duplicateIdentifier = findDuplicateIdentifier(actor, candidate);
   if (candidate.type === "subclass" && duplicateIdentifier) {
     const error = globalThis.game?.i18n?.format?.("DND5E.SubclassDuplicateError", {
@@ -389,8 +378,6 @@ async function handleCraftsmanSheetDrop(sheet, delegate, genericMethod, event, i
     return undefined;
   }
 
-  const validation = validateCraftsmanCandidate(candidate, actor, { notify: true });
-  if (!validation.valid) return false;
   return genericMethod.call(sheet, event, itemData, ...args);
 }
 

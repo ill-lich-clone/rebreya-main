@@ -3,6 +3,9 @@ import {
   CLASS_FEATURES_COMPENDIUM_NAME,
   CLASSES_COMPENDIUM_LABEL,
   CLASSES_COMPENDIUM_NAME,
+  CRAFTSMAN_ARCHETYPE_REGISTRY,
+  CRAFTSMAN_CLASS_IDENTIFIER,
+  CRAFTSMAN_SUBCLASS_COMPENDIUM_ID,
   FEATS_COMPENDIUM_NAME,
   LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME,
   MODULE_ID,
@@ -61,7 +64,7 @@ const CLASS_ICON_SEARCH_PATHS = [
 const FEATS_PACK_ID = `world.${FEATS_COMPENDIUM_NAME}`;
 const SPELLS_PACK_ID = `world.${SPELLS_COMPENDIUM_NAME}`;
 const CLASS_FEATURES_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
-const SUBCLASSES_PACK_ID = `world.${SUBCLASSES_COMPENDIUM_NAME}`;
+const SUBCLASSES_PACK_ID = CRAFTSMAN_SUBCLASS_COMPENDIUM_ID;
 const CLASSES_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
 const LEGACY_CRAFTSMAN_ARCHETYPES_PACK_ID = `world.${LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME}`;
 
@@ -79,20 +82,6 @@ const CLASS_FEATURE_TEMPLATE_VERSION = 15;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CRAFTSMAN_SUBCLASS_TEMPLATE_VERSION = 1;
 const CLASS_TEMPLATE_VERSION = 6;
-const CRAFTSMAN_NATIVE_SUBCLASS_BY_ID = Object.freeze({
-  "craftsman-research-weaponsmith": Object.freeze({ documentId: "fjf9y91usmmvo000", track: "research" }),
-  "craftsman-research-armorer": Object.freeze({ documentId: "18cjg6m14nk7hb00", track: "research" }),
-  "craftsman-research-alchemist": Object.freeze({ documentId: "9vn2lec3950y0000", track: "research" }),
-  "craftsman-research-artificer": Object.freeze({ documentId: "1my4r33ufb9eb000", track: "research" }),
-  "craftsman-research-occultist": Object.freeze({ documentId: "15zlg081ybp89o00", track: "research" }),
-  "craftsman-research-healer": Object.freeze({ documentId: "1jneoaf1wzh47000", track: "research" }),
-  "craftsman-research-mechanic": Object.freeze({ documentId: "a028poqh8xfm0000", track: "research" }),
-  "craftsman-specialty-assault": Object.freeze({ documentId: "1xaf4xz14cr1zo00", track: "specialty" }),
-  "craftsman-specialty-defender": Object.freeze({ documentId: "jej063u8aytv0000", track: "specialty" }),
-  "craftsman-specialty-constructor": Object.freeze({ documentId: "1xoogq41lnvp5q00", track: "specialty" }),
-  "craftsman-specialty-artillerist": Object.freeze({ documentId: "1dct6o91ps9ye900", track: "specialty" }),
-  "craftsman-specialty-tactician": Object.freeze({ documentId: "4488d4505bp50000", track: "specialty" })
-});
 const FIGHTER_MANEUVER_SECTION_LABEL = "Воинские приёмы";
 const ROGUE_CUNNING_STRIKE_SECTION_LABEL = "Хитрые удары";
 
@@ -5718,8 +5707,13 @@ function validateCraftsmanSubclassUuidMap(normalizedDataList, subclassUuidById) 
       ...(normalizedData.researches ?? []),
       ...(normalizedData.specialties ?? [])
     ]) {
-      const expectedUuid = compendiumItemUuid(SUBCLASSES_PACK_ID, subclass.documentId);
-      if (uuidById.get(subclass.archetypeId) !== expectedUuid) {
+      const expected = CRAFTSMAN_ARCHETYPE_REGISTRY[subclass.archetypeId];
+      if (
+        !expected
+        || subclass.axis !== expected.track
+        || subclass.documentId !== expected.documentId
+        || uuidById.get(subclass.archetypeId) !== expected.uuid
+      ) {
         throw new Error(`Missing craftsman subclass UUID: ${subclass.archetypeId}`);
       }
     }
@@ -5749,15 +5743,15 @@ async function validatePublishedNativeCraftsmanSubclasses() {
   const managedCraftsmanSubclasses = documents.filter((document) => (
     documentModuleFlag(document, "managed") === true
     && documentModuleFlag(document, "sourceType") === "subclass"
-    && documentModuleFlag(document, "classIdentifier") === "craftsman-v01"
+    && documentModuleFlag(document, "classIdentifier") === CRAFTSMAN_CLASS_IDENTIFIER
   ));
   for (const document of managedCraftsmanSubclasses) {
     const archetypeId = cleanString(documentModuleFlag(document, "archetypeId"));
-    if (!Object.hasOwn(CRAFTSMAN_NATIVE_SUBCLASS_BY_ID, archetypeId)) {
+    if (!Object.hasOwn(CRAFTSMAN_ARCHETYPE_REGISTRY, archetypeId)) {
       throw new Error(`Unexpected published native Craftsman subclass: ${archetypeId || "<missing>"}`);
     }
   }
-  for (const [archetypeId, expected] of Object.entries(CRAFTSMAN_NATIVE_SUBCLASS_BY_ID)) {
+  for (const [archetypeId, expected] of Object.entries(CRAFTSMAN_ARCHETYPE_REGISTRY)) {
     const matches = managedCraftsmanSubclasses.filter((document) => (
       documentModuleFlag(document, "archetypeId") === archetypeId
     ));
@@ -5766,20 +5760,23 @@ async function validatePublishedNativeCraftsmanSubclasses() {
     }
 
     const [document] = matches;
-    const expectedUuid = compendiumItemUuid(SUBCLASSES_PACK_ID, expected.documentId);
+    const exactDocumentId = typeof (document?.id ?? document?._id) === "string"
+      ? (document.id ?? document._id)
+      : "";
     if (
       document?.type !== "subclass"
-      || documentId(document) !== expected.documentId
+      || exactDocumentId !== expected.documentId
       || documentModuleFlag(document, "managed") !== true
       || documentModuleFlag(document, "sourceType") !== "subclass"
-      || documentModuleFlag(document, "classIdentifier") !== "craftsman-v01"
+      || documentModuleFlag(document, "classIdentifier") !== CRAFTSMAN_CLASS_IDENTIFIER
       || documentModuleFlag(document, "craftsmanTrack") !== expected.track
-      || cleanString(document?.uuid) !== expectedUuid
+      || document?.system?.classIdentifier !== CRAFTSMAN_CLASS_IDENTIFIER
+      || cleanString(document?.uuid) !== expected.uuid
     ) {
       throw new Error(`Invalid published native Craftsman subclass: ${archetypeId}`);
     }
   }
-  if (managedCraftsmanSubclasses.length !== Object.keys(CRAFTSMAN_NATIVE_SUBCLASS_BY_ID).length) {
+  if (managedCraftsmanSubclasses.length !== Object.keys(CRAFTSMAN_ARCHETYPE_REGISTRY).length) {
     throw new Error(`Unexpected published native Craftsman subclass count: ${managedCraftsmanSubclasses.length}`);
   }
 }
