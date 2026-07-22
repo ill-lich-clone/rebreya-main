@@ -42,7 +42,7 @@ function gadgetTemplate(id, availability = "base") {
 }
 
 function preparedGadget(id, generation = "old", instanceId = `old-${id}`) {
-  return {
+  const item = {
     id: instanceId,
     name: id,
     type: "feat",
@@ -60,6 +60,32 @@ function preparedGadget(id, generation = "old", instanceId = `old-${id}`) {
       }
     }
   };
+  item.update = async (patch) => {
+    for (const [path, value] of Object.entries(patch)) {
+      const keys = path.split(".");
+      let target = item;
+      for (const key of keys.slice(0, -1)) target = target[key] ??= {};
+      target[keys.at(-1)] = value;
+    }
+    return item;
+  };
+  return item;
+}
+
+function gadgetActivity(item, operation, activationType = "special") {
+  return {
+    item,
+    actor: item.actor,
+    activation: { type: activationType },
+    flags: {
+      "rebreya-main": {
+        craftsmanGadget: {
+          gadgetId: item.flags["rebreya-main"].craftsmanGadget.catalogId,
+          operation
+        }
+      }
+    }
+  };
 }
 
 class TestActor {
@@ -67,12 +93,24 @@ class TestActor {
     this.id = "craftsman";
     this.uuid = "Actor.craftsman";
     this.isOwner = true;
+    this.flags = {};
     this.system = {
       scale: scale === null ? {} : { "craftsman-v01": { gadgets: scale } }
     };
     this.items = { contents: [classItem(level), ...items] };
+    for (const item of this.items.contents) item.actor = this;
     this.created = [];
     this.deleted = [];
+  }
+
+  async update(patch) {
+    for (const [path, value] of Object.entries(patch)) {
+      const keys = path.split(".");
+      let target = this;
+      for (const key of keys.slice(0, -1)) target = target[key] ??= {};
+      target[keys.at(-1)] = structuredClone(value);
+    }
+    return this;
   }
 
   async createEmbeddedDocuments(type, rows) {
@@ -80,6 +118,7 @@ class TestActor {
     const created = rows.map((row, index) => ({ ...structuredClone(row), id: `created-${this.created.length}-${index}` }));
     this.created.push(...created);
     this.items.contents.push(...created);
+    for (const item of created) item.actor = this;
     return created;
   }
 
@@ -135,6 +174,7 @@ test("long rest creates duplicate gadget instances with one fresh generation", a
     "instance-a", "instance-b"
   ]);
   assert.ok(gadgets.every((item) => item.flags["rebreya-main"].craftsmanGadget.restGeneration === "generation-new"));
+  assert.equal(actor.flags["rebreya-main"].craftsmanGadgets.restGeneration, "generation-new");
   assert.deepEqual(actor.deleted, ["old-smoke-device"]);
 });
 
@@ -186,6 +226,66 @@ test("failed creation rolls back only the new generation and retains old gadgets
   });
 
   assert.equal(await service.handleRestCompleted(actor, { type: "long" }, {}), false);
-  assert.deepEqual(getPreparedCraftsmanGadgets(actor).map((item) => item.id), ["old-smoke-device"]);
+  assert.deepEqual(getPreparedCraftsmanGadgets(actor), []);
+  assert.equal(actor.items.contents.includes(old), true);
   assert.deepEqual(actor.deleted, ["partial-new"]);
+});
+
+test("old generation expires before the preparation prompt opens", async () => {
+  const old = preparedGadget("smoke-device");
+  const actor = new TestActor({ level: 1, items: [old] });
+  const service = makeService({ randomIds: ["generation-new", "instance-a"] });
+  service.options.promptLoadout = async () => {
+    assert.equal(actor.flags["rebreya-main"].craftsmanGadgets.restGeneration, "generation-new");
+    assert.deepEqual(getPreparedCraftsmanGadgets(actor), []);
+    return null;
+  };
+
+  await service.handleRestCompleted(actor, { type: "long" }, {});
+});
+
+test("activating another gadget spends the previous active instance", async () => {
+  const first = preparedGadget("force-glove", "current", "first");
+  const second = preparedGadget("charged-boot", "current", "second");
+  const actor = new TestActor({ items: [first, second] });
+  const service = makeService();
+  service.options.worldTime = () => 100;
+
+  await service.applyDnd5ePostUseActivity(gadgetActivity(first, "activate", "bonus"), {}, {}, {});
+  await service.applyDnd5ePostUseActivity(gadgetActivity(second, "activate"), {}, {}, {});
+
+  assert.equal(first.flags["rebreya-main"].craftsmanGadget.state, "spent");
+  assert.equal(second.flags["rebreya-main"].craftsmanGadget.state, "active");
+  assert.equal(second.flags["rebreya-main"].craftsmanGadget.expiresAtWorldTime, 160);
+  assert.equal(actor.flags["rebreya-main"].craftsmanGadgets.activeInstanceId, "second");
+  assert.equal(actor.items.contents.includes(first), true);
+});
+
+test("gadget action is accepted once only while its instance is active", async () => {
+  const item = preparedGadget("force-glove", "current", "g1");
+  const actor = new TestActor({ items: [item] });
+  const service = makeService();
+  service.options.worldTime = () => 100;
+  const activation = gadgetActivity(item, "activate");
+  const action = gadgetActivity(item, "action");
+
+  assert.equal(service.applyDnd5ePreUseActivity(action), false);
+  await service.applyDnd5ePostUseActivity(activation, {}, {}, {});
+  assert.equal(service.applyDnd5ePreUseActivity(action), true);
+  await service.applyDnd5ePostUseActivity(action, {}, {}, {});
+  assert.equal(service.applyDnd5ePreUseActivity(action), false);
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.actionUsed, true);
+  assert.equal(actor.items.contents.includes(item), true);
+});
+
+test("world time expiry permanently spends an active gadget", async () => {
+  const item = preparedGadget("smoke-device", "current", "g1");
+  new TestActor({ items: [item] });
+  const service = makeService();
+  service.options.worldTime = () => 100;
+  await service.applyDnd5ePostUseActivity(gadgetActivity(item, "activate"), {}, {}, {});
+  await service.handleWorldTime(159);
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.state, "active");
+  await service.handleWorldTime(160);
+  assert.equal(item.flags["rebreya-main"].craftsmanGadget.state, "spent");
 });
