@@ -17,6 +17,7 @@ export const STATES_COMPENDIUM_NAME = "rebreya-states";
 export const STATES_COMPENDIUM_LABEL = "Государства Тейванкаля Rebreya";
 export const STATE_ITEM_TYPE = `${MODULE_ID}.state`;
 export const DOWNTIME_ITEM_TYPE = `${MODULE_ID}.downtime`;
+export const CRAFTSMAN_GADGET_ITEM_TYPE = `${MODULE_ID}.gadget`;
 export const CRAFTSMAN_CLASS_IDENTIFIER = "craftsman-v01";
 export const CRAFTSMAN_CONSTRUCTS_COMPENDIUM_NAME = "rebreya-craftsman-constructs";
 export const CRAFTSMAN_CONSTRUCTS_COMPENDIUM_LABEL = "Конструкты Ремесленника Rebreya";

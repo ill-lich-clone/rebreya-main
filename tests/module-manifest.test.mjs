@@ -50,6 +50,14 @@ test("module manifest exposes only native subclass Items for Craftsman", async (
   );
 });
 
+test("module manifest declares the physical Craftsman gadget Item type", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../module.json", import.meta.url), "utf8"));
+
+  assert.deepEqual(manifest.documentTypes.Item.gadget, {
+    htmlFields: ["description.value", "description.chat"]
+  });
+});
+
 test("module manifest loads the stable canonical entrypoint", async () => {
   const manifestUrl = new URL("../module.json", import.meta.url);
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));

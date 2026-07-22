@@ -40,6 +40,12 @@
           "description.value",
           "description.chat"
         ]
+      },
+      "gadget": {
+        "htmlFields": [
+          "description.value",
+          "description.chat"
+        ]
       }
     }
   },

@@ -11,6 +11,7 @@ import {
   TEYVANKAL_STATE_LANGUAGE_GROUP_ID,
   TEYVANKAL_STATE_LANGUAGES
 } from "../constants.js";
+import { registerCraftsmanGadgetItemType } from "./craftsman-gadget-item-type.js";
 import { bringAppToFront } from "../ui.js";
 import { createStableGearDocumentId } from "../data/gear-document-ids.js";
 import { buildRebreyaArtisanToolConfig } from "../data/rebreya-tool-proficiencies.js";
@@ -6924,6 +6925,7 @@ export function extendDnd5eItemTypes() {
 
   registerNativeStateItemType();
   registerDowntimeItemType();
+  registerCraftsmanGadgetItemType();
   registerCraftsmanSubclassAdvancements();
   registerGiantTribeAdvancement();
   registerNativeStateAdvancementTypes();
