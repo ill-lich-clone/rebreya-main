@@ -305,7 +305,7 @@ function findTreeNode(root, predicate) {
   return null;
 }
 
-test("registerDnd5eSheetExtensions registers hero doll, downtime, and the native Craftsman features replacement", async () => {
+test("registerDnd5eSheetExtensions registers hero doll and downtime without replacing native class templates", async () => {
   const stubs = installSheetExtensionStubs();
   try {
     const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?downtime-tabs=${Date.now()}`);
@@ -340,7 +340,10 @@ test("registerDnd5eSheetExtensions registers hero doll, downtime, and the native
     );
     assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs$/u);
     assert.match(stubs.CharacterActorSheet.PARTS.downtime.template, /character-downtime-tab\.hbs$/u);
-    assert.match(stubs.CharacterActorSheet.PARTS.features.template, /craftsman-character-features\.hbs$/u);
+    assert.equal(
+      stubs.CharacterActorSheet.PARTS.features.template,
+      "systems/dnd5e/templates/actors/tabs/character-features.hbs"
+    );
     assert.equal(stubs.CharacterActorSheet.PARTS.craftsmanArchetypes, undefined);
 
     const sheet = new stubs.CharacterActorSheet(actor);

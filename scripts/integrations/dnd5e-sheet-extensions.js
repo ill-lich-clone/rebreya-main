@@ -43,13 +43,13 @@ import {
   isHeldItemEligible
 } from "./held-items.js?v=1.4.96-npc-held-natural";
 import { getDnd5eSheetStatusPresentation } from "./dnd5e-sheet-status-references.js";
-import { registerLegacyCraftsmanArchetypeTypes } from "./craftsman-archetype-types.js";
 import { registerCraftsmanSubclassAdvancements } from "./craftsman-subclass-advancements.js";
 import { registerCraftsmanMultiSubclassIntegration } from "./craftsman-multi-subclass.js";
 import {
+  enhanceCraftsmanStandardClassCard,
   registerCraftsmanClassCardIntegration,
   registerCraftsmanTidyContent
-} from "./craftsman-archetype-sheet.js";
+} from "./craftsman-archetype-sheet.js?v=1.4.109-native-standard";
 
 const HERO_DOLL_TAB_ID = "heroDoll";
 const HERO_DOLL_TAB_LABEL = "Кукла героя";
@@ -6923,7 +6923,6 @@ export function extendDnd5eItemTypes() {
 
   registerNativeStateItemType();
   registerDowntimeItemType();
-  registerLegacyCraftsmanArchetypeTypes();
   registerCraftsmanSubclassAdvancements();
   registerNativeStateAdvancementTypes();
   registerNativeStateLanguages();
@@ -7081,6 +7080,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
     }
 
     if (actor.type === "character") {
+      try {
+        enhanceCraftsmanStandardClassCard(root, actor);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to enhance the native Craftsman class card.`, error);
+      }
       bindCharacterSheetBranding(root);
       bindHeroDollPanel(root, app, moduleApi);
       bindCharacterDowntimePanel(root, app, moduleApi);
@@ -7192,6 +7197,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
 
     const actor = getActorFromSheetApp(app);
     if (actor?.type === "character" && isActorSheetRenderApp(app)) {
+      try {
+        enhanceCraftsmanStandardClassCard(root, actor);
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to enhance the native Craftsman class card on ApplicationV2 render.`, error);
+      }
       bindCharacterSheetBranding(root);
       bindHeroDollPanel(root, app, moduleApi);
       bindCharacterDowntimePanel(root, app, moduleApi);

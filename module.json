@@ -7,7 +7,7 @@
       "name": "ill_lich"
     }
   ],
-  "version": "1.4.108",
+  "version": "1.4.109",
   "compatibility": {
     "minimum": "13",
     "verified": "13"
@@ -36,18 +36,6 @@
         ]
       },
       "downtime": {
-        "htmlFields": [
-          "description.value",
-          "description.chat"
-        ]
-      },
-      "research": {
-        "htmlFields": [
-          "description.value",
-          "description.chat"
-        ]
-      },
-      "specialty": {
         "htmlFields": [
           "description.value",
           "description.chat"

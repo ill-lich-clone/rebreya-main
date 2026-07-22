@@ -1,6 +1,5 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import {
   CRAFTSMAN_ARCHETYPE_REGISTRY,
@@ -11,19 +10,15 @@ import {
 } from "../scripts/constants.js";
 import * as sheetIntegration from "../scripts/integrations/craftsman-archetype-sheet.js";
 
-const MODULE_FEATURES_TEMPLATE = `modules/${MODULE_ID}/templates/craftsman-character-features.hbs`;
 const NATIVE_CHARACTER_FEATURES_URL = new URL(
   "../../../systems/dnd5e/templates/actors/tabs/character-features.hbs",
-  import.meta.url
-);
-const NATIVE_ACTOR_CLASSES_URL = new URL(
-  "../../../systems/dnd5e/templates/actors/parts/actor-classes.hbs",
   import.meta.url
 );
 const ORIGINAL_GLOBALS = {
   game: globalThis.game,
   Hooks: globalThis.Hooks,
-  libWrapper: globalThis.libWrapper
+  libWrapper: globalThis.libWrapper,
+  document: globalThis.document
 };
 
 const TIDY_TEMPLATE = `/modules/${MODULE_ID}/templates/craftsman-tidy-class-subclasses.hbs`;
@@ -239,7 +234,17 @@ class TestElement {
     this.parentNode = null;
     this.listeners = new Map();
     this.classList = {
-      contains: (name) => this.attributes.get("class")?.split(/\s+/u).includes(name) ?? false
+      add: (...names) => {
+        const classes = new Set(this.attributes.get("class")?.split(/\s+/u).filter(Boolean) ?? []);
+        for (const name of names) classes.add(name);
+        this.attributes.set("class", Array.from(classes).join(" "));
+      },
+      contains: (name) => this.attributes.get("class")?.split(/\s+/u).includes(name) ?? false,
+      remove: (...names) => {
+        const removed = new Set(names);
+        const classes = this.attributes.get("class")?.split(/\s+/u).filter((name) => name && !removed.has(name)) ?? [];
+        this.attributes.set("class", classes.join(" "));
+      }
     };
     if (classes.length) this.setAttribute("class", classes.join(" "));
     for (const [name, value] of Object.entries(attributes)) this.setAttribute(name, value);
@@ -476,6 +481,7 @@ afterEach(() => {
   globalThis.game = ORIGINAL_GLOBALS.game;
   globalThis.Hooks = ORIGINAL_GLOBALS.Hooks;
   globalThis.libWrapper = ORIGINAL_GLOBALS.libWrapper;
+  globalThis.document = ORIGINAL_GLOBALS.document;
 });
 
 test("Standard context orders Research before Specialty for native linking and scrubs every loose Specialty copy", async () => {
@@ -574,7 +580,11 @@ test("missing Craftsman selections become independently actionable only at level
     );
     assert.equal(axes.research.name, "Не выбрано");
     assert.equal(axes.specialty.name, "Не выбрано");
-    assert.equal("needsSubclass" in context.itemContext[craftsman.id], false);
+    assert.equal(
+      context.itemContext[craftsman.id].needsSubclass === true,
+      level >= 2,
+      `native Research choice visibility at level ${level}`
+    );
   }
 });
 
@@ -613,7 +623,7 @@ test("ordinary classes and their prepared item context remain untouched", () => 
   assert.strictEqual(context.itemContext[fighter.id], ordinaryItemContext);
 });
 
-test("Standard registration replaces only the native features template, delegates actions, and tears down cleanly", async () => {
+test("Standard registration preserves the native features template, delegates actions, and tears down cleanly", async () => {
   assert.equal(typeof sheetIntegration.registerCraftsmanClassCardIntegration, "function");
   assert.equal(typeof sheetIntegration.unregisterCraftsmanClassCardIntegration, "function");
   const modifyCalls = [];
@@ -642,7 +652,7 @@ test("Standard registration replaces only the native features template, delegate
   assert.strictEqual(CharacterActorSheet.prototype._prepareFeaturesContext, ownedPrepare, "registration does not stack");
   assert.strictEqual(CharacterActorSheet.DEFAULT_OPTIONS.actions.openCraftsmanSubclassChoice, ownedAction);
   assert.deepEqual(Object.keys(CharacterActorSheet.PARTS), ["header", "features", "spells"]);
-  assert.equal(CharacterActorSheet.PARTS.features.template, MODULE_FEATURES_TEMPLATE);
+  assert.equal(CharacterActorSheet.PARTS.features.template, originalFeaturesTemplate);
   assert.strictEqual(CharacterActorSheet.DEFAULT_OPTIONS.actions.existingAction, originalAction);
 
   const sheet = new CharacterActorSheet(fixture.actor);
@@ -662,6 +672,49 @@ test("Standard registration replaces only the native features template, delegate
   assert.strictEqual(CharacterActorSheet.prototype._prepareFeaturesContext, originalPrepare);
   assert.equal("openCraftsmanSubclassChoice" in CharacterActorSheet.DEFAULT_OPTIONS.actions, false);
   assert.strictEqual(CharacterActorSheet.DEFAULT_OPTIONS.actions.existingAction, originalAction);
+});
+
+test("Standard render augments the native Craftsman class pill with both independent axes", () => {
+  assert.equal(typeof sheetIntegration.enhanceCraftsmanStandardClassCard, "function");
+  const fixture = makeStandardFixture();
+  const root = new TestElement("form");
+  const classes = new TestElement("section", { classes: ["classes"] });
+  const pill = new TestElement("div", {
+    classes: ["class", "pill-lg"],
+    attributes: { "data-item-id": fixture.craftsman.id }
+  });
+  const icons = new TestElement("div", { classes: ["icons", "subclass"] });
+  const classIcon = new TestElement("img", { attributes: { "data-item-id": fixture.craftsman.id } });
+  const researchIcon = new TestElement("img", { attributes: { "data-item-id": fixture.researchItem.id } });
+  const controls = new TestElement("div", { classes: ["controls"] });
+  const names = new TestElement("div", { classes: ["name-stacked"] });
+  const title = new TestElement("div", { classes: ["title"] });
+  const nativeSubtitle = new TestElement("div", { classes: ["subtitle"] });
+  nativeSubtitle.textContent = fixture.researchItem.name;
+  names.append(title, nativeSubtitle);
+  icons.append(classIcon, researchIcon, controls);
+  pill.append(icons, names);
+  classes.append(pill);
+  root.append(classes);
+
+  globalThis.document = { createElement: (tagName) => new TestElement(tagName) };
+  assert.strictEqual(sheetIntegration.enhanceCraftsmanStandardClassCard(root, fixture.actor), pill);
+  assert.equal(pill.classList.contains("rebreya-craftsman-class"), true);
+  assert.equal(
+    icons.querySelector(`[data-item-id="${fixture.specialtyItem.id}"]`)?.dataset?.track,
+    CRAFTSMAN_TRACKS.SPECIALTY
+  );
+  assert.equal(researchIcon.dataset.track, CRAFTSMAN_TRACKS.RESEARCH);
+  assert.deepEqual(
+    names.querySelectorAll(".subtitle").map((element) => element.textContent),
+    [
+      `Исследование — ${fixture.researchItem.name}`,
+      `Специальность — ${fixture.specialtyItem.name}`
+    ]
+  );
+
+  sheetIntegration.enhanceCraftsmanStandardClassCard(root, fixture.actor);
+  assert.equal(icons.querySelectorAll(".rebreya-craftsman-generated").length, 2, "render enhancement is idempotent");
 });
 
 test("Standard teardown never overwrites later template, action, or method owners", () => {
@@ -721,61 +774,20 @@ test("libWrapper registration uses one MIXED public-method wrapper and unregiste
   assert.deepEqual(calls.at(-1), { action: "unregister", packageId: MODULE_ID, id: 73 });
 });
 
-test("module templates pin installed dnd5e structure and keep both axes in one native class pill", () => {
+test("Standard integration keeps the installed dnd5e features template and has no custom partial copies", () => {
   const nativeFeatures = readFileSync(NATIVE_CHARACTER_FEATURES_URL, "utf8");
-  const nativeClasses = readFileSync(NATIVE_ACTOR_CLASSES_URL, "utf8");
   const featuresTemplateUrl = new URL("../templates/craftsman-character-features.hbs", import.meta.url);
   const classesTemplateUrl = new URL("../templates/craftsman-actor-classes.hbs", import.meta.url);
-  assert.equal(existsSync(featuresTemplateUrl), true, "module features template exists");
-  assert.equal(existsSync(classesTemplateUrl), true, "module class partial exists");
-  const featuresTemplate = readFileSync(featuresTemplateUrl, "utf8");
-  const classesTemplate = readFileSync(classesTemplateUrl, "utf8");
-  const hash = (source) => createHash("sha256").update(source).digest("hex");
-
-  assert.equal(hash(nativeFeatures), "f580249840dab53955fe0a8735491992e90c57f23014a7de0e285ba6ed5e442c");
-  assert.equal(hash(nativeClasses), "5f8d379291f78d00d70c51cef2d82922b8c3295dd80a333e72598b9a80a23666");
-  assert.equal(featuresTemplate, nativeFeatures.replace(
-    '{{> "dnd5e.actor-classes" }}',
-    '{{> "modules/rebreya-main/templates/craftsman-actor-classes.hbs" }}'
-  ));
-
-  const pillStart = classesTemplate.indexOf('<div class="class pill-lg');
-  const pillEnd = classesTemplate.indexOf("{{/dnd5e-itemContext}}", pillStart);
-  const classPill = classesTemplate.slice(pillStart, pillEnd);
-  assert.ok(pillStart >= 0 && pillEnd > pillStart);
-  assert.match(classPill, /ctx\.craftsmanSubclasses\.research/u);
-  assert.match(classPill, /ctx\.craftsmanSubclasses\.specialty/u);
-  assert.ok(
-    classPill.indexOf("ctx.craftsmanSubclasses.research")
-      < classPill.indexOf("ctx.craftsmanSubclasses.specialty"),
-    "Research markup precedes Specialty markup"
+  const integrationSource = readFileSync(
+    new URL("../scripts/integrations/craftsman-archetype-sheet.js", import.meta.url),
+    "utf8"
   );
-  assert.match(classPill, /data-action="showDocument"[\s\S]*data-item-id="\{\{ axis\.itemId \}\}"/u);
-  assert.match(classPill, /data-action="deleteDocument"[\s\S]*data-item-id="\{\{ axis\.itemId \}\}"/u);
-  assert.match(classPill, /data-action="openCraftsmanSubclassChoice"/u);
-  assert.match(classPill, /data-class-id="\{\{ cls\.id \}\}"/u);
-  assert.doesNotMatch(classesTemplate, /Архетипы Ремесленника/u);
 
-  for (const nativeOrdinaryFragment of [
-    'data-action="findItem" data-item-type="subclass"',
-    'data-class-identifier="{{ cls.identifier }}" data-tooltip="DND5E.SubclassAdd"',
-    '<select class="level-selector">',
-    '{{ selectOptions ctx.availableLevels selected=0 }}',
-    '{{#if @root.showClassDrop}}'
-  ]) {
-    assert.ok(classesTemplate.includes(nativeOrdinaryFragment), `preserves native fragment: ${nativeOrdinaryFragment}`);
-  }
+  assert.match(nativeFeatures, /\{\{> "dnd5e\.actor-classes" \}\}/u);
+  assert.equal(existsSync(featuresTemplateUrl), false);
+  assert.equal(existsSync(classesTemplateUrl), false);
+  assert.doesNotMatch(integrationSource, /PARTS\.features\.template|CRAFTSMAN_FEATURES_TEMPLATE/u);
 
-  const nativePillStart = nativeClasses.indexOf('<div class="class pill-lg"');
-  const nativePillEnd = nativeClasses.indexOf("    {{/dnd5e-itemContext}}", nativePillStart);
-  const ordinaryMarker = "{{!-- Ordinary classes keep the installed native pill byte-for-byte. --}}";
-  const moduleOrdinaryStart = classesTemplate.indexOf('<div class="class pill-lg"', classesTemplate.indexOf(ordinaryMarker));
-  const moduleOrdinaryEnd = classesTemplate.indexOf("    {{/if}}\n    {{/dnd5e-itemContext}}", moduleOrdinaryStart);
-  assert.equal(
-    classesTemplate.slice(moduleOrdinaryStart, moduleOrdinaryEnd).trimEnd(),
-    nativeClasses.slice(nativePillStart, nativePillEnd).trimEnd(),
-    "the ordinary-class pill is an exact installed-native fixture"
-  );
 });
 
 test("obsolete Standard part and standalone-section CSS are removed in favor of class-pill modifiers", () => {

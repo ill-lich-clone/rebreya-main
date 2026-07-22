@@ -92,7 +92,7 @@ function notifyError(key, options) {
   else globalThis.ui?.notifications?.error?.(key, options);
 }
 
-function validateCraftsmanCandidate(candidate, actor, { allowDuplicate = false, notify = false } = {}) {
+function validateCraftsmanCandidate(candidate, actor, { notify = false } = {}) {
   if (!isCraftsmanCandidate(candidate)) return { associated: false, valid: true };
 
   let errorKey = null;
@@ -108,7 +108,7 @@ function validateCraftsmanCandidate(candidate, actor, { allowDuplicate = false, 
     }
     else throw error;
   }
-  if (!errorKey && !allowDuplicate && hasDuplicateTrack(actor, candidate)) errorKey = DUPLICATE_KEY;
+  if (!errorKey && hasDuplicateTrack(actor, candidate)) errorKey = DUPLICATE_KEY;
 
   if (errorKey && notify) notifyError(errorKey, { localize: true });
   return { associated: true, errorKey, valid: !errorKey };
@@ -448,15 +448,12 @@ export function unregisterCraftsmanCharacterSheetDropPatch() {
   }
 }
 
-function validateCraftsmanPreCreate(document, data, options) {
+function validateCraftsmanPreCreate(document, data) {
   const actor = document?.parent ?? document?.actor ?? null;
   if (actor?.type !== "character" || !document?.parent) return undefined;
   const candidate = getCandidate(document, data);
   if (!isCraftsmanCandidate(candidate)) return undefined;
-  const validation = validateCraftsmanCandidate(candidate, actor, {
-    allowDuplicate: options?.rebreyaCraftsmanSubclassMigration === true,
-    notify: true
-  });
+  const validation = validateCraftsmanCandidate(candidate, actor, { notify: true });
   return validation.valid ? undefined : false;
 }
 

@@ -9,7 +9,6 @@ import {
 } from "./craftsman-subclass-tracks.js";
 import { openCraftsmanSubclassChoice } from "./craftsman-multi-subclass.js";
 
-const CRAFTSMAN_FEATURES_TEMPLATE = `modules/${MODULE_ID}/templates/craftsman-character-features.hbs`;
 const CRAFTSMAN_TIDY_TEMPLATE = `/modules/${MODULE_ID}/templates/craftsman-tidy-class-subclasses.hbs`;
 const PREPARE_FEATURES_TARGET = "game.dnd5e.applications.actor.CharacterActorSheet.prototype._prepareFeaturesContext";
 const TIDY_CLASSIC_SELECTOR = '[data-tidy-section-key="classes"] .item-table-body';
@@ -120,7 +119,12 @@ export function prepareCraftsmanClassCardContext(context) {
   const classLevel = Number(craftsmanClass.system?.levels ?? 0);
   context.itemContext ??= {};
   const classContext = context.itemContext[getItemId(craftsmanClass)] ??= {};
-  delete classContext.needsSubclass;
+  if (!research && classLevel >= TRACK_DEFINITIONS[CRAFTSMAN_TRACKS.RESEARCH].requiredLevel) {
+    classContext.needsSubclass = true;
+  }
+  else {
+    delete classContext.needsSubclass;
+  }
   classContext.craftsmanSubclasses = {
     [CRAFTSMAN_TRACKS.RESEARCH]: makeAxisViewModel(
       research,
@@ -159,6 +163,152 @@ async function onOpenCraftsmanSubclassChoice(_event, target) {
   );
 }
 
+function addClasses(element, ...names) {
+  if (!element) return;
+  if (element.classList?.add instanceof Function) {
+    element.classList.add(...names);
+    return;
+  }
+  const existing = new Set(String(element.getAttribute?.("class") ?? "").split(/\s+/u).filter(Boolean));
+  for (const name of names) existing.add(name);
+  element.setAttribute?.("class", Array.from(existing).join(" "));
+}
+
+function setAttributes(element, attributes) {
+  for (const [name, value] of Object.entries(attributes)) {
+    if (value !== undefined && value !== null && value !== "") element.setAttribute?.(name, value);
+  }
+}
+
+function createStandardAxisIcon(document, axis, classId) {
+  if (!document?.createElement) return null;
+  if (axis.itemId) {
+    const icon = document.createElement("img");
+    addClasses(icon, "draggable", "gold-icon", "item-tooltip", "rebreya-craftsman-axis", "rebreya-craftsman-generated");
+    setAttributes(icon, {
+      src: axis.img,
+      alt: axis.name,
+      "data-action": "showDocument",
+      "data-uuid": axis.uuid,
+      "data-item-id": axis.itemId,
+      "data-track": axis.track
+    });
+    return icon;
+  }
+  if (!axis.needsSelection) return null;
+
+  const action = document.createElement("a");
+  addClasses(action, "gold-icon", "subclass-icon", "rebreya-craftsman-axis", "rebreya-craftsman-generated");
+  setAttributes(action, {
+    "data-action": "openCraftsmanSubclassChoice",
+    "data-class-id": classId,
+    "data-track": axis.track,
+    "data-tooltip": "DND5E.SubclassAdd",
+    "aria-label": globalThis.game?.i18n?.localize?.("DND5E.SubclassAdd") ?? "DND5E.SubclassAdd"
+  });
+  const icon = document.createElement("i");
+  addClasses(icon, "fa-solid", "fa-circle-plus");
+  icon.setAttribute?.("inert", "");
+  action.append?.(icon);
+  return action;
+}
+
+function createStandardDeleteControl(document, axis) {
+  if (!document?.createElement || !axis.itemId) return null;
+  const action = document.createElement("a");
+  addClasses(action, "deletion-control", "item-control", "item-action", "rebreya-craftsman-generated");
+  setAttributes(action, {
+    "data-action": "deleteDocument",
+    "data-tooltip": "DND5E.ItemDelete",
+    "data-uuid": axis.uuid,
+    "data-item-id": axis.itemId,
+    "data-track": axis.track,
+    "aria-label": globalThis.game?.i18n?.localize?.("DND5E.ItemDelete") ?? "DND5E.ItemDelete"
+  });
+  const icon = document.createElement("i");
+  addClasses(icon, "fas", "fa-circle-xmark");
+  icon.setAttribute?.("inert", "");
+  action.append?.(icon);
+  return action;
+}
+
+function setAxisSubtitle(document, container, axis) {
+  if (!document?.createElement || !container) return null;
+  const existing = Array.from(container.querySelectorAll?.(".subtitle") ?? [])
+    .find((element) => element.getAttribute?.("data-rebreya-craftsman-axis") === axis.track);
+  if (!axis.itemId && !axis.needsSelection) {
+    existing?.remove?.();
+    return null;
+  }
+  const subtitle = existing ?? document.createElement("div");
+  addClasses(subtitle, "subtitle", "rebreya-craftsman-axis-subtitle");
+  if (!axis.itemId) addClasses(subtitle, "rebreya-craftsman-axis-missing");
+  subtitle.setAttribute?.("data-rebreya-craftsman-axis", axis.track);
+  subtitle.textContent = `${axis.label} — ${axis.name}`;
+  if (!existing) container.append?.(subtitle);
+  return subtitle;
+}
+
+/**
+ * Keep dnd5e's installed features template intact and decorate only the rendered Craftsman pill.
+ * Research remains the native singleton subclass; Specialty is added beside it as a second native Item.
+ */
+export function enhanceCraftsmanStandardClassCard(root, actor) {
+  const state = buildCraftsmanArchetypeSheetState(actor);
+  if (!state.visible || !root?.querySelector) return null;
+  const classId = escapeAttributeValue(state.classId);
+  const pill = root.querySelector(`.classes .class.pill-lg[data-item-id="${classId}"]`);
+  if (!pill) return null;
+
+  for (const generated of Array.from(pill.querySelectorAll?.(".rebreya-craftsman-generated") ?? [])) {
+    generated.remove?.();
+  }
+  addClasses(pill, "rebreya-craftsman-class");
+
+  const icons = pill.querySelector?.(".icons");
+  const names = pill.querySelector?.(".name-stacked");
+  if (!icons || !names) return pill;
+  addClasses(icons, "subclass");
+
+  const research = state.research;
+  const specialty = state.specialty;
+  if (research.itemId) {
+    const researchIcon = icons.querySelector?.(`[data-item-id="${escapeAttributeValue(research.itemId)}"]`);
+    addClasses(researchIcon, "rebreya-craftsman-axis");
+    researchIcon?.setAttribute?.("data-track", CRAFTSMAN_TRACKS.RESEARCH);
+    const nativeSubtitle = Array.from(names.querySelectorAll?.(".subtitle") ?? [])
+      .find((element) => !element.getAttribute?.("data-rebreya-craftsman-axis"));
+    if (nativeSubtitle) nativeSubtitle.setAttribute?.("data-rebreya-craftsman-axis", CRAFTSMAN_TRACKS.RESEARCH);
+  }
+  else if (research.needsSelection) {
+    const nativeChoice = icons.querySelector?.(
+      `.subclass-icon[data-track="${CRAFTSMAN_TRACKS.RESEARCH}"]`
+    ) ?? icons.querySelector?.('.subclass-icon[data-action="findItem"]');
+    if (nativeChoice) {
+      addClasses(nativeChoice, "rebreya-craftsman-axis");
+      setAttributes(nativeChoice, {
+        "data-action": "openCraftsmanSubclassChoice",
+        "data-class-id": state.classId,
+        "data-track": CRAFTSMAN_TRACKS.RESEARCH
+      });
+      nativeChoice.removeAttribute?.("data-item-type");
+      nativeChoice.removeAttribute?.("data-class-identifier");
+    }
+    else {
+      const researchChoice = createStandardAxisIcon(globalThis.document, research, state.classId);
+      if (researchChoice) icons.insertBefore?.(researchChoice, icons.querySelector?.(".controls") ?? null);
+    }
+  }
+
+  const specialtyIcon = createStandardAxisIcon(globalThis.document, specialty, state.classId);
+  if (specialtyIcon) icons.insertBefore?.(specialtyIcon, icons.querySelector?.(".controls") ?? null);
+  const specialtyDelete = createStandardDeleteControl(globalThis.document, specialty);
+  if (specialtyDelete) icons.querySelector?.(".controls")?.append?.(specialtyDelete);
+  setAxisSubtitle(globalThis.document, names, research);
+  setAxisSubtitle(globalThis.document, names, specialty);
+  return pill;
+}
+
 function getCharacterActorSheetClass() {
   return globalThis.game?.dnd5e?.applications?.actor?.CharacterActorSheet
     ?? globalThis.dnd5e?.applications?.actor?.CharacterActorSheet
@@ -176,8 +326,7 @@ function getLibWrapperContract() {
 }
 
 function installClassCardDefinition(CharacterActorSheet) {
-  const features = CharacterActorSheet?.PARTS?.features;
-  if (!features || typeof features !== "object") return null;
+  if (!CharacterActorSheet) return null;
 
   const currentOptions = CharacterActorSheet.DEFAULT_OPTIONS ?? {};
   const currentActions = currentOptions.actions ?? {};
@@ -185,13 +334,10 @@ function installClassCardDefinition(CharacterActorSheet) {
   const priorAction = currentActions.openCraftsmanSubclassChoice;
   const definition = {
     CharacterActorSheet,
-    features,
     hadPriorAction,
-    priorAction,
-    priorTemplate: features.template
+    priorAction
   };
 
-  features.template = CRAFTSMAN_FEATURES_TEMPLATE;
   CharacterActorSheet.DEFAULT_OPTIONS = {
     ...currentOptions,
     actions: {
@@ -204,10 +350,7 @@ function installClassCardDefinition(CharacterActorSheet) {
 
 function restoreClassCardDefinition(definition) {
   if (!definition) return;
-  const { CharacterActorSheet, features } = definition;
-  if (features.template === CRAFTSMAN_FEATURES_TEMPLATE) {
-    features.template = definition.priorTemplate;
-  }
+  const { CharacterActorSheet } = definition;
 
   const currentOptions = CharacterActorSheet.DEFAULT_OPTIONS ?? {};
   const currentActions = currentOptions.actions ?? {};
@@ -226,8 +369,7 @@ function restoreClassCardDefinition(definition) {
 }
 
 export function ensureCraftsmanClassCardDefinition(CharacterActorSheet) {
-  if (!CharacterActorSheet?.PARTS?.features) return false;
-  CharacterActorSheet.PARTS.features.template = CRAFTSMAN_FEATURES_TEMPLATE;
+  if (!CharacterActorSheet) return false;
   const currentOptions = CharacterActorSheet.DEFAULT_OPTIONS ?? {};
   CharacterActorSheet.DEFAULT_OPTIONS = {
     ...currentOptions,
@@ -245,7 +387,7 @@ export function registerCraftsmanClassCardIntegration(CharacterActorSheet = getC
 
   const prototype = CharacterActorSheet?.prototype;
   const originalMethod = prototype?._prepareFeaturesContext;
-  if (!(originalMethod instanceof Function) || !CharacterActorSheet?.PARTS?.features) return false;
+  if (!(originalMethod instanceof Function)) return false;
 
   const libWrapperContract = getLibWrapperContract();
   if (libWrapperContract.active && !libWrapperContract.api) return false;

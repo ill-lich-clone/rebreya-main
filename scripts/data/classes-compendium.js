@@ -4,10 +4,8 @@ import {
   CLASSES_COMPENDIUM_LABEL,
   CLASSES_COMPENDIUM_NAME,
   CRAFTSMAN_ARCHETYPE_REGISTRY,
-  CRAFTSMAN_CLASS_IDENTIFIER,
   CRAFTSMAN_SUBCLASS_COMPENDIUM_ID,
   FEATS_COMPENDIUM_NAME,
-  LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME,
   MODULE_ID,
   SPELLS_COMPENDIUM_NAME,
   SUBCLASSES_COMPENDIUM_LABEL,
@@ -66,7 +64,6 @@ const SPELLS_PACK_ID = `world.${SPELLS_COMPENDIUM_NAME}`;
 const CLASS_FEATURES_PACK_ID = `world.${CLASS_FEATURES_COMPENDIUM_NAME}`;
 const SUBCLASSES_PACK_ID = CRAFTSMAN_SUBCLASS_COMPENDIUM_ID;
 const CLASSES_PACK_ID = `world.${CLASSES_COMPENDIUM_NAME}`;
-const LEGACY_CRAFTSMAN_ARCHETYPES_PACK_ID = `world.${LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME}`;
 
 const CLASS_ROOT_FOLDER = "Классы";
 const SUBCLASS_ROOT_FOLDER = "Архетипы";
@@ -5720,167 +5717,6 @@ function validateCraftsmanSubclassUuidMap(normalizedDataList, subclassUuidById) 
   }
 }
 
-function documentModuleFlag(document, key) {
-  return document?.getFlag?.(MODULE_ID, key)
-    ?? foundry.utils.getProperty(document, `flags.${MODULE_ID}.${key}`);
-}
-
-function documentId(document) {
-  return cleanString(document?.id ?? document?._id);
-}
-
-function documentFolderId(document) {
-  return cleanString(document?.folder?.id ?? document?.folder);
-}
-
-async function validatePublishedNativeCraftsmanSubclasses() {
-  const pack = game.packs.get(SUBCLASSES_PACK_ID);
-  if (!pack || cleanString(pack.collection) !== SUBCLASSES_PACK_ID) {
-    throw new Error(`Missing native Craftsman subclass pack: ${SUBCLASSES_PACK_ID}`);
-  }
-
-  const documents = await getPackDocuments(pack);
-  const managedCraftsmanSubclasses = documents.filter((document) => (
-    documentModuleFlag(document, "managed") === true
-    && documentModuleFlag(document, "sourceType") === "subclass"
-    && documentModuleFlag(document, "classIdentifier") === CRAFTSMAN_CLASS_IDENTIFIER
-  ));
-  for (const document of managedCraftsmanSubclasses) {
-    const archetypeId = cleanString(documentModuleFlag(document, "archetypeId"));
-    if (!Object.hasOwn(CRAFTSMAN_ARCHETYPE_REGISTRY, archetypeId)) {
-      throw new Error(`Unexpected published native Craftsman subclass: ${archetypeId || "<missing>"}`);
-    }
-  }
-  for (const [archetypeId, expected] of Object.entries(CRAFTSMAN_ARCHETYPE_REGISTRY)) {
-    const matches = managedCraftsmanSubclasses.filter((document) => (
-      documentModuleFlag(document, "archetypeId") === archetypeId
-    ));
-    if (matches.length !== 1) {
-      throw new Error(`Missing published native Craftsman subclass: ${archetypeId}`);
-    }
-
-    const [document] = matches;
-    const exactDocumentId = typeof (document?.id ?? document?._id) === "string"
-      ? (document.id ?? document._id)
-      : "";
-    if (
-      document?.type !== "subclass"
-      || exactDocumentId !== expected.documentId
-      || documentModuleFlag(document, "managed") !== true
-      || documentModuleFlag(document, "sourceType") !== "subclass"
-      || documentModuleFlag(document, "classIdentifier") !== CRAFTSMAN_CLASS_IDENTIFIER
-      || documentModuleFlag(document, "craftsmanTrack") !== expected.track
-      || document?.system?.classIdentifier !== CRAFTSMAN_CLASS_IDENTIFIER
-      || cleanString(document?.uuid) !== expected.uuid
-    ) {
-      throw new Error(`Invalid published native Craftsman subclass: ${archetypeId}`);
-    }
-  }
-  if (managedCraftsmanSubclasses.length !== Object.keys(CRAFTSMAN_ARCHETYPE_REGISTRY).length) {
-    throw new Error(`Unexpected published native Craftsman subclass count: ${managedCraftsmanSubclasses.length}`);
-  }
-}
-
-export async function retireLegacyCraftsmanArchetypesPack(pack) {
-  const result = {
-    deletedDocumentIds: [],
-    deletedFolderIds: []
-  };
-  if (!pack) {
-    return result;
-  }
-  if (cleanString(pack.collection) !== LEGACY_CRAFTSMAN_ARCHETYPES_PACK_ID) {
-    throw new Error(`Refusing to retire unexpected Craftsman pack: ${cleanString(pack.collection) || "<missing>"}`);
-  }
-
-  await validatePublishedNativeCraftsmanSubclasses();
-
-  const documents = await getPackDocuments(pack);
-  const retiredDocuments = documents.filter((document) => (
-    documentModuleFlag(document, "managed") === true
-    && ["research", "specialty"].includes(documentModuleFlag(document, "sourceType"))
-  ));
-  const retiredDocumentIds = retiredDocuments.map(documentId).filter(Boolean);
-  if (!retiredDocumentIds.length) {
-    return result;
-  }
-
-  const initialFolders = getPackFolders(pack);
-  const initialFolderById = new Map(initialFolders
-    .map((folder) => [documentId(folder), folder])
-    .filter(([id]) => id));
-  const impactedFolderIds = new Set();
-  for (const document of retiredDocuments) {
-    const visited = new Set();
-    let folderId = documentFolderId(document);
-    while (folderId && initialFolderById.has(folderId) && !visited.has(folderId)) {
-      visited.add(folderId);
-      impactedFolderIds.add(folderId);
-      folderId = documentFolderId(initialFolderById.get(folderId));
-    }
-  }
-
-  const documentClass = globalThis.Item?.implementation ?? pack.documentClass;
-  if (typeof documentClass?.deleteDocuments !== "function") {
-    throw new Error(`Foundry Item document API is unavailable for ${pack.collection}`);
-  }
-  await documentClass.deleteDocuments(retiredDocumentIds, {
-    pack: pack.collection,
-    render: false
-  });
-  result.deletedDocumentIds.push(...retiredDocumentIds);
-
-  const folderClass = globalThis.Folder?.implementation ?? globalThis.Folder;
-  const blockedFolderIds = new Set();
-  while (true) {
-    const currentDocuments = await getPackDocuments(pack);
-    const currentFolders = getPackFolders(pack);
-    const candidate = currentFolders.find((folder) => {
-      const id = documentId(folder);
-      if (
-        !impactedFolderIds.has(id)
-        || blockedFolderIds.has(id)
-        || documentModuleFlag(folder, "managed") !== true
-        || currentDocuments.some((document) => documentFolderId(document) === id)
-      ) {
-        return false;
-      }
-      return !currentFolders.some((child) => (
-        documentFolderId(child) === id
-      ));
-    });
-    if (!candidate) {
-      break;
-    }
-    if (typeof folderClass?.deleteDocuments !== "function") {
-      throw new Error(`Foundry Folder document API is unavailable for ${pack.collection}`);
-    }
-
-    const candidateId = documentId(candidate);
-    const latestDocuments = await getPackDocuments(pack);
-    const latestFolders = getPackFolders(pack);
-    const latestCandidate = latestFolders.find((folder) => documentId(folder) === candidateId);
-    const isStillEmptyManagedFolder = latestCandidate
-      && documentModuleFlag(latestCandidate, "managed") === true
-      && !latestDocuments.some((document) => documentFolderId(document) === candidateId)
-      && !latestFolders.some((folder) => documentFolderId(folder) === candidateId);
-    if (!isStillEmptyManagedFolder) {
-      blockedFolderIds.add(candidateId);
-      continue;
-    }
-
-    await folderClass.deleteDocuments([candidateId], {
-      pack: pack.collection,
-      deleteContents: false,
-      deleteSubfolders: false,
-      render: false
-    });
-    result.deletedFolderIds.push(candidateId);
-  }
-
-  return result;
-}
-
 export async function syncClassesPack(normalizedDataList, context = {}) {
   const normalized = Array.isArray(normalizedDataList) ? normalizedDataList : [normalizedDataList];
   validateCraftsmanSubclassUuidMap(normalized, context.subclassUuidById);
@@ -5996,10 +5832,6 @@ export class ClassesCompendiumService {
       spellUuidById,
       iconLookup
     });
-    await retireLegacyCraftsmanArchetypesPack(
-      game.packs.get(LEGACY_CRAFTSMAN_ARCHETYPES_PACK_ID)
-    );
-
     return {
       classesPack,
       subclassesPack,

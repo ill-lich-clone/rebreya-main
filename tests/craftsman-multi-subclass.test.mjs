@@ -812,7 +812,7 @@ test("Standard and core creation reject fake, cross-axis, self-consistent, and c
     assert.equal(preCreate(
       makePreCreateDocument(actor, candidate),
       candidate,
-      { route: "programmatic", rebreyaCraftsmanSubclassMigration: true },
+      { route: "programmatic" },
       "user-1"
     ), false);
   }
@@ -898,7 +898,7 @@ test("core drop/create invariant rejects exact type, class, managed source, and 
   assert.notEqual(preCreate(makePreCreateDocument(npc, npcData), npcData, {}, "user-1"), false);
 });
 
-test("core drop/create migration bypass recognizes only the exact internal marker and only for duplicates", () => {
+test("core drop/create never bypasses duplicate protection through legacy migration options", () => {
   const hooks = installGlobals();
   const { actor } = makeCraftsmanFixture({ level: 3, actorLevel: 3 });
   assert.equal(registerCraftsmanMultiSubclassIntegration(), true);
@@ -910,10 +910,7 @@ test("core drop/create migration bypass recognizes only the exact internal marke
   assert.equal(preCreate(document, duplicate, {}, "user-1"), false);
   assert.equal(preCreate(document, duplicate, { rebreyaCraftsmanMigration: true }, "user-1"), false);
   assert.equal(preCreate(document, duplicate, { rebreyaCraftsmanSubclassMigration: false }, "user-1"), false);
-  assert.notEqual(
-    preCreate(document, duplicate, { rebreyaCraftsmanSubclassMigration: true }, "user-1"),
-    false
-  );
+  assert.equal(preCreate(document, duplicate, { rebreyaCraftsmanSubclassMigration: true }, "user-1"), false);
 
   const invalidClass = makeCraftsmanSubclassData({ classIdentifier: "fighter-v01" });
   assert.equal(preCreate(

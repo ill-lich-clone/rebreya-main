@@ -17,8 +17,6 @@ export const STATES_COMPENDIUM_NAME = "rebreya-states";
 export const STATES_COMPENDIUM_LABEL = "Государства Тейванкаля Rebreya";
 export const STATE_ITEM_TYPE = `${MODULE_ID}.state`;
 export const DOWNTIME_ITEM_TYPE = `${MODULE_ID}.downtime`;
-export const RESEARCH_ITEM_TYPE = `${MODULE_ID}.research`;
-export const SPECIALTY_ITEM_TYPE = `${MODULE_ID}.specialty`;
 export const CRAFTSMAN_CLASS_IDENTIFIER = "craftsman-v01";
 export const CRAFTSMAN_TRACK_FLAG = "craftsmanTrack";
 export const CRAFTSMAN_ARCHETYPE_ID_FLAG = "archetypeId";
@@ -28,8 +26,6 @@ export const CRAFTSMAN_TRACKS = Object.freeze({
 });
 export const DOWNTIME_COMPENDIUM_NAME = "rebreya-downtime";
 export const DOWNTIME_COMPENDIUM_LABEL = "Простой Rebreya";
-export const LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_NAME = "rebreya-craftsman-archetypes";
-export const LEGACY_CRAFTSMAN_ARCHETYPES_COMPENDIUM_LABEL = "Ремесленник: архетипы";
 export const TEYVANKAL_STATE_LANGUAGE_GROUP_ID = "teyvankal";
 export const TEYVANKAL_STATE_LANGUAGES = Object.freeze([
   { id: "umeliluan", label: "Умелилуанский" },
@@ -178,8 +174,7 @@ export const SETTINGS_KEYS = {
   TRADE_ROUTE_OVERRIDES: "tradeRouteOverrides",
   STATE_POLICIES: "statePolicies",
   COSMOLOGY_STATE: "cosmologyState",
-  GLOBAL_EVENTS_STATE: "globalEventsState",
-  CRAFTSMAN_SUBCLASS_MIGRATION_VERSION: "craftsmanSubclassMigrationVersion"
+  GLOBAL_EVENTS_STATE: "globalEventsState"
 };
 
 export const DATA_SOURCE_MODES = {
