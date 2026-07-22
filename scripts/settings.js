@@ -273,4 +273,11 @@ export function registerSettings() {
       draft: null
     }
   });
+
+  game.settings.register(MODULE_ID, SETTINGS_KEYS.CRAFTSMAN_SUBCLASS_MIGRATION_VERSION, {
+    scope: "world",
+    config: false,
+    type: Number,
+    default: 0
+  });
 }

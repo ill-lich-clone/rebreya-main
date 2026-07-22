@@ -115,7 +115,8 @@ export const SETTINGS_KEYS = {
   TRADE_ROUTE_OVERRIDES: "tradeRouteOverrides",
   STATE_POLICIES: "statePolicies",
   COSMOLOGY_STATE: "cosmologyState",
-  GLOBAL_EVENTS_STATE: "globalEventsState"
+  GLOBAL_EVENTS_STATE: "globalEventsState",
+  CRAFTSMAN_SUBCLASS_MIGRATION_VERSION: "craftsmanSubclassMigrationVersion"
 };
 
 export const DATA_SOURCE_MODES = {

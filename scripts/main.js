@@ -8,6 +8,7 @@ import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
 import { StatesCompendiumService } from "./data/states-compendium.js";
 import { RacesCompendiumService } from "./data/races-compendium.js";
 import { ClassesCompendiumService } from "./data/classes-compendium.js";
+import { CraftsmanSubclassMigrationService } from "./data/craftsman-subclass-migration.js";
 import { SpellsCompendiumService } from "./data/spells-compendium.js";
 import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
@@ -796,6 +797,7 @@ export class RebreyaMainModule {
     this.racesCompendium = new RacesCompendiumService();
     this.spellsCompendium = new SpellsCompendiumService();
     this.classesCompendium = new ClassesCompendiumService();
+    this.craftsmanSubclassMigration = new CraftsmanSubclassMigrationService();
     this.actionsCompendium = new ActionsCompendiumService();
     this.downtimeCompendium = new DowntimeCompendiumService();
     this.traderService = new TraderService(this, {
@@ -2034,6 +2036,13 @@ export class RebreyaMainModule {
 
     try {
       await this.classesCompendium.sync();
+      try {
+        await this.craftsmanSubclassMigration.migrateWorldActors();
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to migrate Craftsman subclasses.`, error);
+        ui.notifications?.warn("Миграция архетипов Ремесленника не завершена. Подробности в консоли.");
+      }
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to sync classes compendium.`, error);
