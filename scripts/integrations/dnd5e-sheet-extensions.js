@@ -57,6 +57,10 @@ const HERO_DOLL_TAB_ID = "heroDoll";
 const HERO_DOLL_TAB_LABEL = "Кукла героя";
 const HERO_DOLL_TAB_ICON = "fa-solid fa-person";
 const HERO_DOLL_TEMPLATE = `modules/${MODULE_ID}/templates/hero-doll-tab.hbs`;
+const MODIFICATION_TAB_ID = "modification";
+const MODIFICATION_TAB_LABEL = "Модифицирование";
+const MODIFICATION_TAB_ICON = "fa-solid fa-microchip";
+const MODIFICATION_TEMPLATE = `modules/${MODULE_ID}/templates/modification-tab.hbs`;
 const CHARACTER_DOWNTIME_TAB_ID = "downtime";
 const CHARACTER_DOWNTIME_TAB_LABEL = "Простой";
 const CHARACTER_DOWNTIME_TAB_ICON = "fa-solid fa-hourglass-half";
@@ -2286,6 +2290,19 @@ function buildCharacterDowntimeTabState(app) {
   };
 }
 
+function buildModificationTabState(app) {
+  const active = app.tabGroups?.primary === MODIFICATION_TAB_ID;
+  return {
+    id: MODIFICATION_TAB_ID,
+    tab: MODIFICATION_TAB_ID,
+    group: "primary",
+    label: MODIFICATION_TAB_LABEL,
+    icon: MODIFICATION_TAB_ICON,
+    active,
+    cssClass: active ? "active" : ""
+  };
+}
+
 function buildItemModsTabState(app) {
   const active = app.tabGroups?.primary === ITEM_MODS_TAB_ID;
   return {
@@ -2309,6 +2326,11 @@ function ensureHeroDollTabDefinition(CharacterActorSheet) {
       tab: HERO_DOLL_TAB_ID,
       label: HERO_DOLL_TAB_LABEL,
       icon: HERO_DOLL_TAB_ICON
+    },
+    {
+      tab: MODIFICATION_TAB_ID,
+      label: MODIFICATION_TAB_LABEL,
+      icon: MODIFICATION_TAB_ICON
     },
     {
       tab: CHARACTER_DOWNTIME_TAB_ID,
@@ -2336,6 +2358,16 @@ function ensureHeroDollTabDefinition(CharacterActorSheet) {
       classes: ["flexcol"],
       container: { classes: ["tab-body"], id: "tabs" },
       template: HERO_DOLL_TEMPLATE,
+      scrollable: [""]
+    },
+    [MODIFICATION_TAB_ID]: {
+      classes: ["flexcol"],
+      container: { classes: ["tab-body"], id: "tabs" },
+      template: MODIFICATION_TEMPLATE,
+      templates: [
+        "systems/dnd5e/templates/inventory/inventory.hbs",
+        "systems/dnd5e/templates/inventory/activity.hbs"
+      ],
       scrollable: [""]
     },
     [CHARACTER_DOWNTIME_TAB_ID]: {
@@ -2422,12 +2454,38 @@ function patchHeroDollPartContext(CharacterActorSheet, moduleApi) {
 
   const originalPreparePartContext = CharacterActorSheet.prototype._preparePartContext;
   CharacterActorSheet.prototype._preparePartContext = async function (partId, context, options) {
-    const prepared = await originalPreparePartContext.call(this, partId, context, options);
+    const preparedPartId = partId === MODIFICATION_TAB_ID ? "inventory" : partId;
+    const prepared = await originalPreparePartContext.call(this, preparedPartId, context, options);
     const preparedWithFeatGroups = partId === "features"
       ? await splitRebreyaFeatSectionsInContext(prepared)
       : prepared;
-    if (partId !== HERO_DOLL_TAB_ID && partId !== CHARACTER_DOWNTIME_TAB_ID) {
+    if (
+      partId !== HERO_DOLL_TAB_ID
+      && partId !== MODIFICATION_TAB_ID
+      && partId !== CHARACTER_DOWNTIME_TAB_ID
+    ) {
       return preparedWithFeatGroups;
+    }
+
+    if (partId === MODIFICATION_TAB_ID) {
+      const tab = buildModificationTabState(this);
+      const modification = moduleApi.implantService.getActorSnapshot(this.actor);
+      const implantIds = new Set(modification.entries.map((entry) => entry.itemId));
+      const sections = (preparedWithFeatGroups.sections ?? [])
+        .map((section) => ({
+          ...section,
+          items: (section.items ?? []).filter((item) => implantIds.has(item?.id))
+        }))
+        .filter((section) => section.items.length > 0);
+      return {
+        ...preparedWithFeatGroups,
+        tab,
+        modificationTab: tab,
+        modification,
+        sections,
+        showCurrency: false,
+        listControls: null
+      };
     }
 
     if (partId === CHARACTER_DOWNTIME_TAB_ID) {

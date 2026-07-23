@@ -1,5 +1,5 @@
 ﻿import { BUILTIN_DATA_PATH, DATA_SOURCE_MODES, MODULE_ID, SETTINGS_KEYS } from "../constants.js";
-import { normalizeEconomyDataset } from "./normalizer.js";
+import { normalizeEconomyDataset } from "./normalizer.js?v=1.4.109-implants-1";
 
 function trimTrailingSlash(path) {
   return String(path ?? "").trim().replace(/[\\/]+$/, "");
@@ -39,13 +39,14 @@ async function fetchJson(path, { optional = false } = {}) {
 
 async function loadFromBasePath(basePath) {
   const normalizedBasePath = trimTrailingSlash(basePath);
-  const [goods, regions, cities, reference, materials, gear] = await Promise.all([
+  const [goods, regions, cities, reference, materials, gear, implants] = await Promise.all([
     fetchJson(`${normalizedBasePath}/goods.json`),
     fetchJson(`${normalizedBasePath}/regions.json`),
     fetchJson(`${normalizedBasePath}/cities.json`),
     fetchJson(`${normalizedBasePath}/reference.json`),
     fetchJson(`${normalizedBasePath}/materials.json`, { optional: true }),
-    fetchJson(`${normalizedBasePath}/gear.json`, { optional: true })
+    fetchJson(`${normalizedBasePath}/gear.json`, { optional: true }),
+    fetchJson(`${normalizedBasePath}/implants.json`, { optional: true })
   ]);
 
   return normalizeEconomyDataset({
@@ -54,7 +55,10 @@ async function loadFromBasePath(basePath) {
     cities,
     reference,
     materials: Array.isArray(materials) ? materials : [],
-    gear: Array.isArray(gear) ? gear : [],
+    gear: [
+      ...(Array.isArray(gear) ? gear : []),
+      ...(Array.isArray(implants) ? implants : [])
+    ],
     source: {
       basePath: normalizedBasePath
     }

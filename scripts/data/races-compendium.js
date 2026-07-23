@@ -1654,6 +1654,7 @@ export function buildRaceFlags(race, signature = "") {
       managed: true,
       sourceType: "race",
       raceId: race?.id ?? "",
+      raceGroup: race?.group ?? "",
       fixedSize: getFixedRaceSize(race),
       hands: {
         max: RACE_HANDS_DEFAULT

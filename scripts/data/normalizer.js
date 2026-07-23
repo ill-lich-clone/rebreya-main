@@ -86,7 +86,8 @@ const GEAR_FIELD_ALIASES = {
   heroDollSlots: ["heroDollSlots", "heroSlots", "itemSlots", "slots"],
   firearmClass: ["firearmClass", "gunClass", "firearmSubtype"],
   weapon: ["weapon", "weaponData", "dnd5eWeapon"],
-  armor: ["armor", "armorData", "dnd5eArmor"]
+  armor: ["armor", "armorData", "dnd5eArmor"],
+  implant: ["implant", "implantData", "rebreyaImplant"]
 };
 
 function isObject(value) {
@@ -658,6 +659,7 @@ function normalizeGear(rawGear, materialAliasMap, materials) {
       firearmClass: cleanString(getValue(record, GEAR_FIELD_ALIASES.firearmClass)),
       weapon: clonePlainObject(getValue(record, GEAR_FIELD_ALIASES.weapon)),
       armor: normalizeArmorData(getValue(record, GEAR_FIELD_ALIASES.armor)),
+      implant: clonePlainObject(getValue(record, GEAR_FIELD_ALIASES.implant)),
       source: cleanString(record?.source ?? "gear-workbook")
     };
   });

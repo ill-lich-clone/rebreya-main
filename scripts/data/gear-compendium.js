@@ -273,7 +273,8 @@ function buildGearSignature(item) {
     heroDollSlots,
     firearmClass: classification.firearmClass,
     weapon: isPlainObject(item.weapon) ? item.weapon : null,
-    armor: isPlainObject(item.armor) ? item.armor : null
+    armor: isPlainObject(item.armor) ? item.armor : null,
+    implant: isPlainObject(item.implant) ? item.implant : null
   });
 }
 
@@ -398,6 +399,7 @@ function resolveWeaponHandRequirement(weapon) {
 function buildMetadataRows(item, classification) {
   const itemSlotGroup = resolveItemSlotGroup(item, classification);
   const weapon = isPlainObject(item.weapon) ? item.weapon : {};
+  const implant = isPlainObject(item.implant) ? item.implant : {};
   const handRequirement = resolveWeaponHandRequirement(weapon);
   const itemSlotLabel = {
     head: "Голова",
@@ -453,7 +455,10 @@ function buildMetadataRows(item, classification) {
     ["Урон", weapon.damageFormula],
     ["Тип урона", weapon.damageTypeLabel],
     ["Руки", handRequirement?.source],
-    ["Свойства оружия", weapon.propertiesText]
+    ["Свойства оружия", weapon.propertiesText],
+    ["Очки модификации", implant.pointsText],
+    ["Тип импланта", implant.type],
+    ["Требования импланта", implant.requirements]
   ].filter(([, value]) => value !== null && value !== undefined && value !== "");
 }
 
@@ -1075,7 +1080,8 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
         handRequirement: handRequirement ? clonePlainObject(handRequirement) : null,
         lichWeaponPropertyValues: lichWeaponPropertyValues && Object.keys(lichWeaponPropertyValues).length
           ? lichWeaponPropertyValues
-          : null
+          : null,
+        implant: clonePlainObject(item.implant)
       }
     }
   };

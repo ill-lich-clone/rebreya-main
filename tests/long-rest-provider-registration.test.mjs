@@ -91,7 +91,8 @@ test("composition root registers background services after constructing the pipe
     "sorcererAutomationService",
     "raceAutomationService",
     "craftsmanGadgetService",
-    "craftsmanConstructorService"
+    "craftsmanConstructorService",
+    "implantService"
   ]) {
     assert.match(
       source.slice(pipelineIndex, registrationIndex),

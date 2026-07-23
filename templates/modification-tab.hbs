@@ -1,0 +1,30 @@
+<section class="tab {{ modificationTab.cssClass }} rm-modification-tab"
+         data-tab="{{ modificationTab.id }}" data-group="{{ modificationTab.group }}">
+  <header class="rm-modification-tab__header card">
+    <div class="rm-modification-tab__copy">
+      <h2>Модифицирование</h2>
+      <p>
+        Здесь показаны настоящие предметы Foundry из инвентаря персонажа.
+        Откройте строку, чтобы прочитать описание, посмотреть эффекты или скопировать ссылку.
+        Установленный набор меняется во время продолжительного отдыха.
+      </p>
+    </div>
+    <div class="rm-modification-tab__points" aria-label="Очки модификации">
+      <span>Очки модификации</span>
+      <strong>{{ modification.used }} / {{ modification.capacity }}</strong>
+      <small>Свободно: {{ modification.remaining }}</small>
+    </div>
+  </header>
+
+  {{#if modification.hasImplants}}
+    {{> "systems/dnd5e/templates/inventory/inventory.hbs" }}
+  {{else}}
+    <section class="rm-modification-tab__empty card">
+      <i class="fa-solid fa-microchip"></i>
+      <div>
+        <strong>В инвентаре нет имплантов</strong>
+        <p>Перетащите Foundry Item импланта в инвентарь персонажа — он появится здесь без копирования данных.</p>
+      </div>
+    </section>
+  {{/if}}
+</section>

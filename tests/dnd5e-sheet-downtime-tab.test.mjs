@@ -329,6 +329,18 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime without repl
           return { actorId: targetActor.id, hasGroup: true };
         }
       },
+      implantService: {
+        getActorSnapshot(targetActor) {
+          calls.push(["modification", targetActor.id]);
+          return {
+            actorId: targetActor.id,
+            capacity: 2,
+            used: 1,
+            remaining: 1,
+            entries: []
+          };
+        }
+      },
       async refreshOpenApps() {}
     };
 
@@ -336,9 +348,15 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime without repl
 
     assert.deepEqual(
       stubs.CharacterActorSheet.TABS.map((tab) => tab.tab),
-      ["inventory", "heroDoll", "downtime", "specialTraits"]
+      ["inventory", "heroDoll", "modification", "downtime", "specialTraits"]
     );
     assert.match(stubs.CharacterActorSheet.PARTS.heroDoll.template, /hero-doll-tab\.hbs$/u);
+    assert.match(stubs.CharacterActorSheet.PARTS.modification.template, /modification-tab\.hbs$/u);
+    assert.ok(
+      stubs.CharacterActorSheet.PARTS.modification.templates.includes(
+        "systems/dnd5e/templates/inventory/inventory.hbs"
+      )
+    );
     assert.match(stubs.CharacterActorSheet.PARTS.downtime.template, /character-downtime-tab\.hbs$/u);
     assert.equal(
       stubs.CharacterActorSheet.PARTS.features.template,
@@ -348,12 +366,16 @@ test("registerDnd5eSheetExtensions registers hero doll and downtime without repl
 
     const sheet = new stubs.CharacterActorSheet(actor);
     const heroContext = await sheet._preparePartContext("heroDoll", { base: true }, {});
+    const modificationContext = await sheet._preparePartContext("modification", { base: true }, {});
     const downtimeContext = await sheet._preparePartContext("downtime", { base: true }, {});
 
     assert.equal(heroContext.heroDoll.actorId, "actor-a");
+    assert.equal(modificationContext.modification.actorId, "actor-a");
+    assert.equal(modificationContext.preparedPartId, "inventory");
     assert.equal(downtimeContext.characterDowntime.actorId, "actor-a");
     assert.deepEqual(calls, [
       ["heroDoll", "actor-a"],
+      ["modification", "actor-a"],
       ["downtime", "actor-a"]
     ]);
   }

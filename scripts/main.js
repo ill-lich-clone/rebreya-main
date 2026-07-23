@@ -1,19 +1,19 @@
 // @rebreya-role canonical-composition-root
 import { MODULE_ID, SETTINGS_KEYS } from "./constants.js";
 import { MaterialsCompendiumService } from "./data/materials-compendium.js";
-import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.96-firearm-template-version-18";
+import { GearCompendiumService } from "./data/gear-compendium.js?v=1.4.96-firearm-template-version-18&implants=1";
 import { MagicItemsCompendiumService } from "./data/magic-items-compendium.js";
 import { FeatsCompendiumService } from "./data/feats-compendium.js";
 import { BackgroundsCompendiumService } from "./data/backgrounds-compendium.js";
 import { StatesCompendiumService } from "./data/states-compendium.js";
-import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.110-giant-tribe-cache-fixes-2";
+import { RacesCompendiumService } from "./data/races-compendium.js?v=1.4.110-giant-tribe-cache-fixes-2&implants=1";
 import { ClassesCompendiumService } from "./data/classes-compendium.js";
 import { CraftsmanConstructCompendiumService } from "./data/craftsman-construct-compendium.js";
 import { SpellsCompendiumService } from "./data/spells-compendium.js";
 import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
-import { EconomyRepository } from "./data/repository.js";
+import { EconomyRepository } from "./data/repository.js?v=1.4.109-implants-1";
 import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.96-durability";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import {
@@ -52,6 +52,7 @@ import {
 import { DurabilityService } from "./data/durability-service.js?v=1.4.96-durability";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService } from "./data/hero-doll-service.js";
+import { ImplantService } from "./data/implant-service.js";
 import { CraftingService } from "./data/crafting-service.js?v=1.4.96-craft-calendar";
 import { CraftDowntimeService } from "./data/craft-downtime-service.js?v=1.4.96-craft-calendar";
 import { ItemUpgradeService } from "./data/item-upgrade-service.js?v=1.4.96-item-upgrades";
@@ -101,7 +102,7 @@ import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
   registerRebreyaWeaponBaseItemsFromGearPack
-} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.110-giant-tribe-cache-fixes-2";
+} from "./integrations/dnd5e-sheet-extensions.js?v=1.4.110-giant-tribe-cache-fixes-2&implants=1";
 import { registerHeldShieldArmorClassPatch } from "./integrations/held-shield-ac.js?v=1.4.96";
 import {
   patchDurabilityItemEffectSuppression,
@@ -864,6 +865,7 @@ export class RebreyaMainModule {
       coordinator: this.worldMutationCoordinator
     });
     this.heroDollService = new HeroDollService(this);
+    this.implantService = new ImplantService();
     this.craftingService = new CraftingService(this);
     this.craftDowntimeService = new CraftDowntimeService({
       craftingService: this.craftingService,
@@ -944,7 +946,8 @@ export class RebreyaMainModule {
       this.raceAutomationService,
       this.paladinAutomationService,
       this.craftsmanGadgetService,
-      this.craftsmanConstructorService
+      this.craftsmanConstructorService,
+      this.implantService
     ]) {
       service.registerLongRestSteps?.(this.longRestPipelineService);
     }

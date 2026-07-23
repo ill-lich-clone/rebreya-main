@@ -7886,6 +7886,124 @@ summary:focus-visible {
   display: grid;
 }
 
+.tab.rm-modification-tab {
+  display: none;
+  gap: 12px;
+  container-type: inline-size;
+}
+
+.tab.rm-modification-tab.active {
+  display: grid;
+}
+
+.rm-modification-tab__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--rm-border-subtle);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(23, 21, 22, 0.94), rgba(16, 15, 16, 0.96));
+}
+
+.rm-modification-tab__copy h2,
+.rm-modification-tab__copy p,
+.rm-modification-tab__empty p {
+  margin: 0;
+}
+
+.rm-modification-tab__copy p,
+.rm-modification-tab__empty p {
+  margin-top: 4px;
+  color: var(--rm-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.rm-modification-tab__points {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  padding: 9px 12px;
+  border: 1px solid var(--rm-border-default);
+  border-radius: 12px;
+  background: var(--rm-surface-subtle);
+}
+
+.rm-modification-tab__points span,
+.rm-modification-tab__points small {
+  color: var(--rm-muted);
+  font-size: 11px;
+}
+
+.rm-modification-tab__points strong {
+  color: var(--rm-accent-strong);
+  font-size: 20px;
+}
+
+.rm-modification-tab__empty {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 18px;
+}
+
+.rm-modification-tab__empty > i {
+  color: var(--rm-accent);
+  font-size: 24px;
+}
+
+.rm-implant-dialog .rm-implant-dialog__item .item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.rm-implant-dialog__install {
+  display: grid;
+  grid-template-columns: auto 36px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.rm-implant-dialog__install .item-name {
+  display: grid;
+  min-width: 0;
+}
+
+.rm-implant-dialog__install small {
+  color: var(--rm-muted);
+}
+
+.rm-implant-dialog__points,
+.rm-implant-dialog__union {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.rm-implant-dialog__points input {
+  width: 54px;
+}
+
+@container (max-width: 700px) {
+  .rm-modification-tab__header {
+    grid-template-columns: 1fr;
+  }
+
+  .rm-modification-tab__points {
+    justify-items: start;
+  }
+
+  .rm-implant-dialog .rm-implant-dialog__item .item-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+}
+
 .rm-hero-doll-tab__layout {
   display: grid;
   grid-template-columns: minmax(420px, 520px) minmax(0, 1fr);

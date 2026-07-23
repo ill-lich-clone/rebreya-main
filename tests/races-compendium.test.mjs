@@ -145,10 +145,11 @@ test("variable-size races keep the size advancement step", () => {
   assert.deepEqual(sizeAdvancement.configuration.sizes, ["med", "sm"]);
 });
 
-test("generated race flags expose the default two usable hands", () => {
+test("generated race flags expose the default two usable hands and race group", () => {
   const flags = buildRaceFlags({
     id: "humans",
     name: "Humans",
+    group: "Обычные",
     size: "med",
     automation: null
   }, "signature");
@@ -156,6 +157,7 @@ test("generated race flags expose the default two usable hands", () => {
   assert.deepEqual(flags["rebreya-main"].hands, {
     max: 2
   });
+  assert.equal(flags["rebreya-main"].raceGroup, "Обычные");
 });
 
 const ABILITY_KEYS = ["str", "dex", "con", "int", "wis", "cha"];
