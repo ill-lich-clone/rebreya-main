@@ -1,6 +1,81 @@
 ﻿import { BUILTIN_DATA_PATH, DATA_SOURCE_MODES, MODULE_ID, SETTINGS_KEYS } from "../constants.js";
 import { normalizeEconomyDataset } from "./normalizer.js?v=1.4.109-implants-1";
 
+const LEGACY_IMPLANT_ID_BY_SOURCE_NAME = Object.freeze({
+  "Настроенные сервопривод": "nastroennye-servoprivody",
+  "Сокрушительные конечности (М)": "sokrushitelnye-konechnosti",
+  "Конденсатор магии (М)": "kondensator-magii",
+  "Модуль чувства жизни (М)": "modul-chuvstva-zhizni",
+  "Телепатический модуль (М)": "telepaticheskiy-modul",
+  "Язык чудовища (м)": "yazyk-chudovishcha",
+  "Модуль иммитации речи (м)": "modul-imitatsii-rechi",
+  "Искуственный глаз": "iskusstvennyy-glaz"
+});
+
+const IMPLANT_CLASSIFICATION_FIELDS = Object.freeze([
+  "foundryType",
+  "foundrySubtype",
+  "foundrySubtypeExtra",
+  "foundryBaseItem",
+  "foundryFolder",
+  "itemSlot",
+  "heroDollSlots"
+]);
+
+function normalizeImplantMatchText(value) {
+  return String(value ?? "")
+    .trim()
+    .toLocaleLowerCase("ru-RU")
+    .replaceAll("ё", "е")
+    .replace(/\s+/gu, " ");
+}
+
+function isGearImplant(record) {
+  return normalizeImplantMatchText(record?.equipmentType) === "имплант";
+}
+
+function enrichExistingImplant(base, source) {
+  const merged = {
+    ...base,
+    implant: source?.implant && typeof source.implant === "object"
+      ? JSON.parse(JSON.stringify(source.implant))
+      : null
+  };
+  for (const field of IMPLANT_CLASSIFICATION_FIELDS) {
+    if (source?.[field] !== undefined) {
+      merged[field] = Array.isArray(source[field]) ? [...source[field]] : source[field];
+    }
+  }
+  return merged;
+}
+
+export function mergeGearWithImplants(gear = [], implants = []) {
+  const merged = (Array.isArray(gear) ? gear : []).map((entry) => ({ ...entry }));
+  const existingById = new Map();
+  const existingByName = new Map();
+  for (const [index, entry] of merged.entries()) {
+    if (!isGearImplant(entry)) continue;
+    const id = String(entry?.id ?? "").trim();
+    const name = normalizeImplantMatchText(entry?.name);
+    if (id) existingById.set(id, index);
+    if (name) existingByName.set(name, index);
+  }
+
+  for (const source of Array.isArray(implants) ? implants : []) {
+    const legacyId = LEGACY_IMPLANT_ID_BY_SOURCE_NAME[source?.name];
+    const existingIndex = (
+      (legacyId ? existingById.get(legacyId) : undefined)
+      ?? existingByName.get(normalizeImplantMatchText(source?.name))
+    );
+    if (existingIndex === undefined) {
+      merged.push({ ...source });
+      continue;
+    }
+    merged[existingIndex] = enrichExistingImplant(merged[existingIndex], source);
+  }
+  return merged;
+}
+
 function trimTrailingSlash(path) {
   return String(path ?? "").trim().replace(/[\\/]+$/, "");
 }
@@ -55,10 +130,7 @@ async function loadFromBasePath(basePath) {
     cities,
     reference,
     materials: Array.isArray(materials) ? materials : [],
-    gear: [
-      ...(Array.isArray(gear) ? gear : []),
-      ...(Array.isArray(implants) ? implants : [])
-    ],
+    gear: mergeGearWithImplants(gear, implants),
     source: {
       basePath: normalizedBasePath
     }

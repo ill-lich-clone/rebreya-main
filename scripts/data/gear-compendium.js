@@ -458,7 +458,8 @@ function buildMetadataRows(item, classification) {
     ["Свойства оружия", weapon.propertiesText],
     ["Очки модификации", implant.pointsText],
     ["Тип импланта", implant.type],
-    ["Требования импланта", implant.requirements]
+    ["Требования импланта", implant.requirements],
+    ["Эффект импланта", cleanString(implant.effect) !== cleanString(item.description) ? implant.effect : null]
   ].filter(([, value]) => value !== null && value !== undefined && value !== "");
 }
 

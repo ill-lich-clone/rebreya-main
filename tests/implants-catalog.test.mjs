@@ -85,8 +85,72 @@ test("gear normalization and Foundry Item creation preserve implant data", () =>
   assert.match(itemData.system.description.value, /Навесная броня|\+1 к КД/u);
 });
 
-test("builtin importer merges implants into the ordinary gear pipeline", () => {
+test("builtin importer merges implant rules into existing implant gear without duplicate Items", async () => {
   const source = readFileSync(join(MODULE_DIR, "scripts", "data", "importer.js"), "utf8");
   assert.match(source, /implants\.json/u);
-  assert.match(source, /gear:\s*\[[\s\S]*Array\.isArray\(gear\)[\s\S]*Array\.isArray\(implants\)/u);
+  assert.match(source, /mergeGearWithImplants/u);
+
+  const importer = await import(`../scripts/data/importer.js?implant-merge-test=${Date.now()}`);
+  assert.equal(typeof importer.mergeGearWithImplants, "function");
+
+  const gear = JSON.parse(
+    readFileSync(join(MODULE_DIR, "data", "gear.json"), "utf8").replace(/^\uFEFF/u, "")
+  );
+  const implants = loadImplants();
+  const merged = importer.mergeGearWithImplants(gear, implants);
+  const mergedImplants = merged.filter((entry) => entry.equipmentType === "Имплант");
+  const implantNames = mergedImplants.map((entry) => entry.name);
+
+  assert.equal(mergedImplants.length, implants.length);
+  assert.equal(mergedImplants.every((entry) => entry.implant), true);
+  assert.equal(new Set(implantNames).size, implantNames.length);
+  assert.equal(merged.length, gear.length + implants.length - 52);
+
+  const armor = mergedImplants.find((entry) => entry.name === "Навесная броня");
+  assert.equal(armor.id, "navesnaya-bronya");
+  assert.equal(armor.shopSubtype, "Клиника аугментаций");
+  assert.equal(armor.predominantMaterialName, "Сталь");
+  assert.equal(armor.linkedTool, "Жестянщика");
+  assert.match(armor.description, /бронепластин/u);
+  assert.equal(armor.foundryType, "equipment");
+  assert.equal(armor.implant.automationKey, "mounted-armor-ac");
+  assert.match(armor.implant.effect, /\+1 к КД/u);
+  assert.equal(
+    merged.some((entry) => entry.id === "implant-navesnaya-bronya"),
+    false
+  );
+  const mergedArmorItem = createDnd5eItemData(
+    normalizeEconomyDataset({
+      goods: [],
+      regions: [],
+      cities: [],
+      reference: {},
+      materials: [],
+      gear: [armor]
+    }).gear[0],
+    new Map([[armor.foundryFolder, "implant-folder"]])
+  );
+  assert.match(mergedArmorItem.system.description.value, /бронепластин/u);
+  assert.match(mergedArmorItem.system.description.value, /\+1 к КД/u);
+
+  for (const [name, expectedId] of [
+    ["Настроенные сервоприводы", "nastroennye-servoprivody"],
+    ["Сокрушительные конечности", "sokrushitelnye-konechnosti"],
+    ["Конденсатор магии", "kondensator-magii"],
+    ["Модуль чувства жизни", "modul-chuvstva-zhizni"],
+    ["Телепатический модуль", "telepaticheskiy-modul"],
+    ["Язык чудовища", "yazyk-chudovishcha"],
+    ["Модуль имитации речи", "modul-imitatsii-rechi"],
+    ["Искусственный глаз", "iskusstvennyy-glaz"]
+  ]) {
+    const item = mergedImplants.find((entry) => entry.id === expectedId);
+    assert.equal(item?.name, name);
+    assert.ok(item?.implant, name);
+  }
+
+  const lightweightBodies = merged.filter((entry) => entry.name === "Облегчённый корпус");
+  assert.deepEqual(
+    lightweightBodies.map((entry) => entry.equipmentType).sort(),
+    ["Имплант", "Обвес"]
+  );
 });
