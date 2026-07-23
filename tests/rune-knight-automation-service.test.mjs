@@ -1255,9 +1255,14 @@ test("Runic Juggernaut can create a Huge form with source-owned reach", async ()
 
 test("Rune Knight hooks stay actor-local", async () => {
   const source = await readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8");
+  const serviceSource = await readFile(
+    new URL("../scripts/combat/rune-knight-automation-service.js", import.meta.url),
+    "utf8"
+  );
 
   assert.match(source, /hasRuneKnightService/u);
-  assert.match(source, /runeKnightAutomationService\.handleRestCompleted\(actor, result, config\)/u);
+  assert.match(serviceSource, /id: "rune-knight\.restore"/u);
+  assert.match(serviceSource, /registerLongRestSteps\(pipeline\)/u);
   assert.match(source, /runeKnightAutomationService\.handleEmbeddedItemChange\(item\)/u);
   assert.match(source, /runeKnightAutomationService\.handleEmbeddedEffectChange\(effect\)/u);
   assert.match(source, /runeKnightAutomationService\.applyDnd5ePostUseActivity/u);
