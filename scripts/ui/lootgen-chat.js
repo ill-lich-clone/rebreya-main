@@ -103,6 +103,17 @@ function cloneDragData(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function prepareLootgenPreviewItem(item) {
+  if (!item || typeof item !== "object") {
+    return;
+  }
+
+  item.labels = item.labels && typeof item.labels === "object" ? item.labels : {};
+  item.labels.activations = Array.isArray(item.labels.activations) ? item.labels.activations : [];
+  item.labels.attacks = Array.isArray(item.labels.attacks) ? item.labels.attacks : [];
+  item.labels.damages = Array.isArray(item.labels.damages) ? item.labels.damages : [];
+}
+
 function getLootgenState(message) {
   const state = message?.getFlag?.(MODULE_ID, "lootgenChat") ?? {};
   return state && typeof state === "object" ? state : {};
@@ -141,6 +152,7 @@ async function openLootgenRowPreview(message, rowId) {
   }
 
   const item = new globalThis.Item(itemData, { temporary: true });
+  prepareLootgenPreviewItem(item);
   await item.sheet?.render?.(true);
   return true;
 }

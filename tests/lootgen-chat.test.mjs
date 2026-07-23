@@ -514,6 +514,96 @@ test("lootgen chat renders and opens a persisted item preview button", async () 
   }
 });
 
+test("lootgen chat preview prepares fallback temporary item labels before rendering", async () => {
+  const restoreFoundry = installLootgenChatFoundryStubs();
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousItem = globalThis.Item;
+  const previousChatMessage = globalThis.ChatMessage;
+  const listeners = [];
+  const rendered = [];
+  const statuses = [];
+  const state = {
+    lootId: "loot-1",
+    rows: [{
+      rowId: "row-1",
+      name: "Legacy Weapon",
+      quantity: 1,
+      itemData: {
+        name: "Legacy Weapon",
+        type: "weapon",
+        system: {
+          activities: {}
+        }
+      }
+    }]
+  };
+
+  globalThis.Hooks = {
+    on(hookName, listener) {
+      listeners.push({ hookName, listener });
+    }
+  };
+  globalThis.game = {
+    user: {
+      id: "player-1",
+      isGM: true
+    }
+  };
+  globalThis.ChatMessage = {
+    getSpeaker: () => ({}),
+    create: async (data) => {
+      statuses.push(data);
+      return data;
+    }
+  };
+  globalThis.Item = class FakeDnd5eItem {
+    constructor(data, options = {}) {
+      this.data = data;
+      this.name = data.name;
+      this.type = data.type;
+      this.system = data.system;
+      this.options = options;
+      this.sheet = {
+        render: async (force) => {
+          const activations = this.labels.activations;
+          rendered.push({ activations, force });
+        }
+      };
+    }
+  };
+
+  try {
+    const { registerLootgenChatHooks } = await import(`../scripts/ui/lootgen-chat.js?preview-labels=${Date.now()}`);
+    registerLootgenChatHooks({});
+    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessage")?.listener;
+    const { card, viewButton } = createBoundLootgenChatCard({ state });
+
+    renderListener({
+      getFlag: () => state
+    }, card);
+
+    assert.equal(typeof viewButton.listeners.click?.[0], "function");
+    await viewButton.listeners.click[0]({
+      currentTarget: viewButton,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.equal(rendered.length, 1);
+    assert.equal(statuses.length, 0);
+    assert.deepEqual(rendered[0].activations, []);
+    assert.equal(rendered[0].force, true);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.Item = previousItem;
+    globalThis.ChatMessage = previousChatMessage;
+    restoreFoundry();
+  }
+});
+
 test("lootgen chat item metadata wraps instead of clipping long descriptions", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
