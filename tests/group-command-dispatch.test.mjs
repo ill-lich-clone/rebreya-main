@@ -549,6 +549,14 @@ test("typed inventory mutations authorize group members and dispatch strict payl
       calls.push(["import", clone(payload)]);
       return { action: "import" };
     };
+    moduleApi.inventoryService.executeCurrencyUpdateMutation = async (payload) => {
+      calls.push(["currency-update", clone(payload)]);
+      return { action: "currency-update" };
+    };
+    moduleApi.inventoryService.executeCurrencyConvertMutation = async (payload) => {
+      calls.push(["currency-convert", clone(payload)]);
+      return { action: "currency-convert" };
+    };
     const sourceItem = { parent: fixture.memberA };
     globalThis.fromUuid = async (uuid) => uuid === "Actor.character-a.Item.source"
       ? sourceItem
@@ -571,7 +579,15 @@ test("typed inventory mutations authorize group members and dispatch strict payl
         inventoryActorId: fixture.groupA.id,
         itemUuid: "Actor.character-a.Item.source",
         mutationId: "inventory-import-1"
-      }, "inventory-import")
+      }, "inventory-import"),
+      commandRequest("inventory.currency.update", fixture.users.playerA.id, {
+        inventoryActorId: fixture.groupA.id,
+        values: { pp: 1, gp: 319, sp: 0, cp: 2 }
+      }, "inventory-currency-update"),
+      commandRequest("inventory.currency.convert", fixture.users.playerA.id, {
+        inventoryActorId: fixture.groupA.id,
+        mode: "gp"
+      }, "inventory-currency-convert")
     ];
 
     for (const request of requests) {
@@ -583,13 +599,18 @@ test("typed inventory mutations authorize group members and dispatch strict payl
       mutationId: "inventory-sale-denied",
       quantity: 1
     }, "inventory-sale-denied"));
+    await moduleApi.handleSocketMessage(commandRequest("inventory.currency.convert", fixture.users.playerB.id, {
+      inventoryActorId: fixture.groupA.id,
+      mode: "gp"
+    }, "inventory-currency-denied"));
     await flushCommands();
 
-    assert.deepEqual(calls.map(([kind]) => kind), ["take", "sale", "import"]);
+    assert.deepEqual(calls.map(([kind]) => kind), ["take", "sale", "import", "currency-update", "currency-convert"]);
     for (const request of requests) {
       assert.equal(resultFor(fixture, request.requestId)?.ok, true);
     }
     assert.equal(resultFor(fixture, "inventory-sale-denied")?.error?.code, "unauthorized");
+    assert.equal(resultFor(fixture, "inventory-currency-denied")?.error?.code, "unauthorized");
   }
   finally {
     globalThis.fromUuid = previousFromUuid;

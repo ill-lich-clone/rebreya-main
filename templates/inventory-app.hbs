@@ -127,7 +127,7 @@
           data-currency-sp="{{summary.currency.sp}}"
           data-currency-cp="{{summary.currency.cp}}"
         >
-          {{#if canManage}}
+          {{#if canEditCurrency}}
             <button type="button" class="rm-coin-badge rm-coin-badge--pp" data-action="edit-currency" title="Редактировать монеты">
               <strong>{{rmNum summary.currency.pp precision=0}}</strong>
               <span>ПМ</span>

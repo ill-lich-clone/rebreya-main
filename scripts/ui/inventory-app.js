@@ -2478,12 +2478,22 @@ function hasOpenDowntimeTargetActionDialog() {
   return Boolean(globalThis.document?.querySelector?.(".rm-downtime-target-action-window"));
 }
 
-function readCurrencyValuesFromRoot(root) {
+function parseCurrencyInputValue(rawValue, fallback = 0) {
+  const text = String(rawValue ?? "").trim();
+  const safeFallback = toInteger(fallback, 0);
+  if (/^[+-]\d+$/u.test(text)) {
+    return Math.max(0, safeFallback + toInteger(text, 0));
+  }
+
+  return Math.max(0, toInteger(text, safeFallback));
+}
+
+function readCurrencyValuesFromRoot(root, baseCurrency = {}) {
   return {
-    pp: toInteger(root?.querySelector("[data-field='currency-pp']")?.value, 0),
-    gp: toInteger(root?.querySelector("[data-field='currency-gp']")?.value, 0),
-    sp: toInteger(root?.querySelector("[data-field='currency-sp']")?.value, 0),
-    cp: toInteger(root?.querySelector("[data-field='currency-cp']")?.value, 0)
+    pp: parseCurrencyInputValue(root?.querySelector("[data-field='currency-pp']")?.value, baseCurrency.pp),
+    gp: parseCurrencyInputValue(root?.querySelector("[data-field='currency-gp']")?.value, baseCurrency.gp),
+    sp: parseCurrencyInputValue(root?.querySelector("[data-field='currency-sp']")?.value, baseCurrency.sp),
+    cp: parseCurrencyInputValue(root?.querySelector("[data-field='currency-cp']")?.value, baseCurrency.cp)
   };
 }
 
@@ -2593,19 +2603,19 @@ async function promptCurrencyDialog(currency = {}) {
           <div class="rm-currency-dialog__grid">
             <div class="rm-field rm-field--narrow">
               <label>Пм</label>
-              <input type="number" min="0" step="1" value="${safeCurrency.pp}" data-field="currency-pp">
+              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.pp}" data-field="currency-pp">
             </div>
             <div class="rm-field rm-field--narrow">
               <label>Зм</label>
-              <input type="number" min="0" step="1" value="${safeCurrency.gp}" data-field="currency-gp">
+              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.gp}" data-field="currency-gp">
             </div>
             <div class="rm-field rm-field--narrow">
               <label>См</label>
-              <input type="number" min="0" step="1" value="${safeCurrency.sp}" data-field="currency-sp">
+              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.sp}" data-field="currency-sp">
             </div>
             <div class="rm-field rm-field--narrow">
               <label>Мм</label>
-              <input type="number" min="0" step="1" value="${safeCurrency.cp}" data-field="currency-cp">
+              <input type="text" inputmode="numeric" pattern="[+-]?[0-9]*" value="${safeCurrency.cp}" data-field="currency-cp">
             </div>
           </div>
           <p class="rm-muted">Сначала отредактируйте значения, затем при необходимости примените конвертацию.</p>
@@ -2618,7 +2628,7 @@ async function promptCurrencyDialog(currency = {}) {
             const root = getDialogRoot(html);
             resolveWith({
               action: "save",
-              values: readCurrencyValuesFromRoot(root)
+              values: readCurrencyValuesFromRoot(root, safeCurrency)
             });
           }
         },
@@ -2629,7 +2639,7 @@ async function promptCurrencyDialog(currency = {}) {
             resolveWith({
               action: "convert",
               mode: "normalized",
-              values: readCurrencyValuesFromRoot(root)
+              values: readCurrencyValuesFromRoot(root, safeCurrency)
             });
           }
         },
@@ -2640,7 +2650,7 @@ async function promptCurrencyDialog(currency = {}) {
             resolveWith({
               action: "convert",
               mode: "gp",
-              values: readCurrencyValuesFromRoot(root)
+              values: readCurrencyValuesFromRoot(root, safeCurrency)
             });
           }
         },
@@ -2651,7 +2661,7 @@ async function promptCurrencyDialog(currency = {}) {
             resolveWith({
               action: "convert",
               mode: "sp",
-              values: readCurrencyValuesFromRoot(root)
+              values: readCurrencyValuesFromRoot(root, safeCurrency)
             });
           }
         },
@@ -2662,7 +2672,7 @@ async function promptCurrencyDialog(currency = {}) {
             resolveWith({
               action: "convert",
               mode: "cp",
-              values: readCurrencyValuesFromRoot(root)
+              values: readCurrencyValuesFromRoot(root, safeCurrency)
             });
           }
         },
@@ -2678,7 +2688,7 @@ async function promptCurrencyDialog(currency = {}) {
         }
       }
     }, {
-      classes: ["rebreya-main", "rebreya-trader-dialog"]
+      classes: ["rebreya-main", "rebreya-trader-dialog", "rm-currency-dialog-window"]
     });
 
     renderDialogOnTop(dialog);
@@ -3456,6 +3466,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         || partySnapshot.canDropInventoryItems
         || inventorySnapshot.canDropInventoryItems
       );
+      const canEditCurrency = Boolean(canManage || canDropInventoryItems);
       this.canManage = canManage;
       this.canDropInventoryItems = canDropInventoryItems;
       this.partyMembershipManagedByNativeGroup = membershipManagedByNativeGroup;
@@ -3635,7 +3646,8 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         actionFeedback,
         canManage,
-        canDropInventoryItems
+        canDropInventoryItems,
+        canEditCurrency
       };
     }
     catch (error) {

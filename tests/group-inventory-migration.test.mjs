@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { DOWNTIME_ITEM_TYPE, MODULE_ID } from "../scripts/constants.js";
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
 import {
+  INVENTORY_CURRENCY_CONVERT_COMMAND,
+  INVENTORY_CURRENCY_UPDATE_COMMAND,
   InventoryService,
   captureInventoryTransferIdentity
 } from "../scripts/data/inventory-service.js";
@@ -1258,6 +1260,105 @@ test("player inventory item drops into an unowned group actor are routed through
     fixture.restore();
     globalThis.Item = previousItem;
     globalThis.fromUuid = previousFromUuid;
+  }
+});
+
+test("player party currency edits and conversions route through the GM command bus", async () => {
+  const memberActor = createActor({ id: "member-1", name: "Hero", type: "character", isOwner: true });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: false,
+    flags: { [MODULE_ID]: { managedPartyGroup: true } },
+    members: [{ actor: memberActor }]
+  });
+  const requests = [];
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    user: { id: "player-1", isGM: false }
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({
+        groupActor,
+        members: [memberActor],
+        canManage: true
+      })
+    },
+    socketCommandBus: {
+      request: async (command, payload) => {
+        requests.push({ command, payload });
+        return { requested: true, command, payload };
+      }
+    }
+  });
+
+  try {
+    const updateResult = await service.updateCurrency({ pp: 1, gp: 319, sp: 0, cp: 2 });
+    const convertResult = await service.convertCurrency("gp");
+
+    assert.equal(updateResult.requested, true);
+    assert.equal(convertResult.requested, true);
+    assert.deepEqual(requests, [
+      {
+        command: INVENTORY_CURRENCY_UPDATE_COMMAND,
+        payload: {
+          inventoryActorId: "group-1",
+          values: { pp: 1, gp: 319, sp: 0, cp: 2 }
+        }
+      },
+      {
+        command: INVENTORY_CURRENCY_CONVERT_COMMAND,
+        payload: {
+          inventoryActorId: "group-1",
+          mode: "gp"
+        }
+      }
+    ]);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("active GM executes party currency socket mutations on the managed group actor", async () => {
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    currency: { pp: 2, gp: 5, sp: 11, cp: 9 },
+    flags: { [MODULE_ID]: { managedPartyGroup: true } }
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor],
+    user: { id: "gm", isGM: true, active: true }
+  });
+  const service = new InventoryService({});
+
+  try {
+    const updated = await service.executeCurrencyUpdateMutation({
+      inventoryActorId: "group-1",
+      values: { pp: 0, gp: 12, sp: 3, cp: 4 }
+    });
+    const converted = await service.executeCurrencyConvertMutation({
+      inventoryActorId: "group-1",
+      mode: "gp"
+    });
+
+    assert.deepEqual(
+      { pp: updated.pp, gp: updated.gp, sp: updated.sp, cp: updated.cp, totalCopper: updated.totalCopper },
+      { pp: 0, gp: 12, sp: 3, cp: 4, totalCopper: 1234 }
+    );
+    assert.deepEqual(
+      { pp: converted.pp, gp: converted.gp, sp: converted.sp, cp: converted.cp, totalCopper: converted.totalCopper },
+      { pp: 0, gp: 12, sp: 3, cp: 4, totalCopper: 1234 }
+    );
+    assert.equal(groupActor.system.currency.gp, 12);
+  }
+  finally {
+    fixture.restore();
   }
 });
 

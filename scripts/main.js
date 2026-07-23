@@ -38,6 +38,8 @@ import {
 } from "./data/travel-service.js";
 import { TravelMapService } from "./data/travel-map-service.js";
 import {
+  INVENTORY_CURRENCY_CONVERT_COMMAND,
+  INVENTORY_CURRENCY_UPDATE_COMMAND,
   INVENTORY_IMPORT_COMMAND,
   INVENTORY_SALE_COMMAND,
   INVENTORY_TAKE_COMMAND,
@@ -581,6 +583,27 @@ function isValidInventoryImportPayload(payload) {
     && isValidInventoryMutationId(payload.mutationId);
 }
 
+function isValidCurrencyInteger(value) {
+  return Number.isInteger(value) && value >= 0;
+}
+
+function isValidInventoryCurrencyValues(values) {
+  return hasExactKeys(values, ["cp", "gp", "pp", "sp"])
+    && ["cp", "gp", "pp", "sp"].every((key) => isValidCurrencyInteger(values[key]));
+}
+
+function isValidInventoryCurrencyUpdatePayload(payload) {
+  return hasExactKeys(payload, ["inventoryActorId", "values"])
+    && isTrimmedNonEmptyString(payload.inventoryActorId)
+    && isValidInventoryCurrencyValues(payload.values);
+}
+
+function isValidInventoryCurrencyConvertPayload(payload) {
+  return hasExactKeys(payload, ["inventoryActorId", "mode"])
+    && isTrimmedNonEmptyString(payload.inventoryActorId)
+    && ["normalized", "gp", "sp", "cp"].includes(payload.mode);
+}
+
 function isValidItemPileDamagePayload(payload) {
   return hasExactKeys(payload, ["amount", "damageType", "itemUuid", "mutationId"])
     && isTrimmedNonEmptyString(payload.itemUuid)
@@ -1025,6 +1048,16 @@ export class RebreyaMainModule {
       validate: isValidInventoryImportPayload,
       authorize: (payload, { sender }) => this.#canSenderImportInventoryItem(sender, payload),
       execute: (payload) => this.inventoryService.executeImportMutation(payload)
+    });
+    this.socketCommandBus.register(INVENTORY_CURRENCY_UPDATE_COMMAND, {
+      validate: isValidInventoryCurrencyUpdatePayload,
+      authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      execute: (payload) => this.inventoryService.executeCurrencyUpdateMutation(payload)
+    });
+    this.socketCommandBus.register(INVENTORY_CURRENCY_CONVERT_COMMAND, {
+      validate: isValidInventoryCurrencyConvertPayload,
+      authorize: (payload, { sender }) => this.#canSenderManageGroup(sender, payload.inventoryActorId),
+      execute: (payload) => this.inventoryService.executeCurrencyConvertMutation(payload)
     });
     this.socketCommandBus.register(ITEM_PILE_DAMAGE_COMMAND, {
       validate: isValidItemPileDamagePayload,

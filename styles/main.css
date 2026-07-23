@@ -4065,8 +4065,8 @@ summary:focus-visible {
   align-items: stretch;
 }
 
-.rm-currency-dialog-window .dialog-buttons .dialog-button,
-.rm-currency-dialog-window .dialog-buttons button {
+.rebreya-trader-dialog.rm-currency-dialog-window .dialog-buttons .dialog-button,
+.rebreya-trader-dialog.rm-currency-dialog-window .dialog-buttons button {
   flex: 1 1 116px !important;
   min-width: min(100%, 116px);
   white-space: normal;

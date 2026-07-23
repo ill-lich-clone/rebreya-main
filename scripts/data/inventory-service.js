@@ -26,6 +26,8 @@ export const SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT = "inventory-item-action-
 export const INVENTORY_TAKE_COMMAND = "inventory.take";
 export const INVENTORY_SALE_COMMAND = "inventory.sale";
 export const INVENTORY_IMPORT_COMMAND = "inventory.import";
+export const INVENTORY_CURRENCY_UPDATE_COMMAND = "inventory.currency.update";
+export const INVENTORY_CURRENCY_CONVERT_COMMAND = "inventory.currency.convert";
 const DEFAULT_PARTY_ACTOR_NAME = "Инвентарь группы Rebreya";
 const DEFAULT_PARTY_ACTOR_IMAGE = "icons/svg/item-bag.svg";
 const LOOTGEN_CHAT_ACTOR_NAME = "Лут Rebreya";
@@ -754,6 +756,19 @@ function copperToCurrency(totalCopper, mode = "normalized") {
   remaining -= result.sp * CURRENCY_MULTIPLIERS.sp;
   result.cp = remaining;
   return result;
+}
+
+function normalizeCurrencyMode(mode = "normalized") {
+  return ["normalized", "gp", "sp", "cp"].includes(mode) ? mode : "normalized";
+}
+
+function buildNextCurrency(values = {}, currentCurrency = {}) {
+  return {
+    pp: values.pp !== undefined ? Math.max(0, Math.floor(toNumber(values.pp, currentCurrency.pp))) : currentCurrency.pp,
+    gp: values.gp !== undefined ? Math.max(0, Math.floor(toNumber(values.gp, currentCurrency.gp))) : currentCurrency.gp,
+    sp: values.sp !== undefined ? Math.max(0, Math.floor(toNumber(values.sp, currentCurrency.sp))) : currentCurrency.sp,
+    cp: values.cp !== undefined ? Math.max(0, Math.floor(toNumber(values.cp, currentCurrency.cp))) : currentCurrency.cp
+  };
 }
 
 function buildCurrencyUpdatePatch(currency) {
@@ -3456,36 +3471,73 @@ export class InventoryService {
 
   async updateCurrency(values = {}) {
     const actor = await this.getInventoryActor({ create: true });
-    this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
     const currentCurrency = buildCurrencySnapshot(actor);
-    const nextCurrency = {
-      pp: values.pp !== undefined ? Math.max(0, Math.floor(toNumber(values.pp, currentCurrency.pp))) : currentCurrency.pp,
-      gp: values.gp !== undefined ? Math.max(0, Math.floor(toNumber(values.gp, currentCurrency.gp))) : currentCurrency.gp,
-      sp: values.sp !== undefined ? Math.max(0, Math.floor(toNumber(values.sp, currentCurrency.sp))) : currentCurrency.sp,
-      cp: values.cp !== undefined ? Math.max(0, Math.floor(toNumber(values.cp, currentCurrency.cp))) : currentCurrency.cp
-    };
-    await actor.update(buildCurrencyUpdatePatch(nextCurrency));
-    return buildCurrencySnapshot(actor);
+    const nextCurrency = buildNextCurrency(values, currentCurrency);
+    if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
+      return this.moduleApi.socketCommandBus.request(INVENTORY_CURRENCY_UPDATE_COMMAND, {
+        inventoryActorId: actor.id,
+        values: nextCurrency
+      });
+    }
+
+    this.#assertCanManagePartyInventory(actor);
+    return this.#updateCurrencyOnActor(actor, nextCurrency);
   }
 
   async convertCurrency(mode = "normalized") {
     const actor = await this.getInventoryActor({ create: true });
-    this.#assertCanManagePartyInventory(actor);
     if (!actor) {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
-    const totalCopper = actorCurrencyToCopper(actor);
-    const nextCurrency = copperToCurrency(totalCopper, mode);
+    const safeMode = normalizeCurrencyMode(mode);
+    if (!game.user?.isGM && typeof this.moduleApi.socketCommandBus?.request === "function") {
+      return this.moduleApi.socketCommandBus.request(INVENTORY_CURRENCY_CONVERT_COMMAND, {
+        inventoryActorId: actor.id,
+        mode: safeMode
+      });
+    }
+
+    this.#assertCanManagePartyInventory(actor);
+    return this.#convertCurrencyOnActor(actor, safeMode);
+  }
+
+  async #updateCurrencyOnActor(actor, values = {}) {
+    const currentCurrency = buildCurrencySnapshot(actor);
+    const nextCurrency = buildNextCurrency(values, currentCurrency);
     await actor.update(buildCurrencyUpdatePatch(nextCurrency));
+    return buildCurrencySnapshot(actor);
+  }
+
+  async #convertCurrencyOnActor(actor, mode = "normalized") {
+    const totalCopper = actorCurrencyToCopper(actor);
+    await actor.update(buildCurrencyUpdatePatch(copperToCurrency(totalCopper, normalizeCurrencyMode(mode))));
     return {
       ...buildCurrencySnapshot(actor),
       totalCopper
     };
+  }
+
+  async executeCurrencyUpdateMutation(payload = {}) {
+    const inventoryActor = game.actors?.get?.(cleanId(payload.inventoryActorId)) ?? null;
+    if (!isManagedPartyGroup(inventoryActor)) {
+      throw new Error("Некорректный партийный склад для изменения монет.");
+    }
+
+    return this.#updateCurrencyOnActor(inventoryActor, payload.values ?? {});
+  }
+
+  async executeCurrencyConvertMutation(payload = {}) {
+    const inventoryActor = game.actors?.get?.(cleanId(payload.inventoryActorId)) ?? null;
+    if (!isManagedPartyGroup(inventoryActor)) {
+      throw new Error("Некорректный партийный склад для конвертации монет.");
+    }
+
+    return this.#convertCurrencyOnActor(inventoryActor, payload.mode);
   }
 
   async addModelItemToInventory(sourceType, sourceId, quantity = 1) {

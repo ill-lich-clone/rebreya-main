@@ -638,6 +638,147 @@ test("InventoryApp item service menu exposes stock actions without duplicate ope
   }
 });
 
+test("InventoryApp currency dialog parses relative coin edits and uses the compact currency window class", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousUi = globalThis.ui;
+  const updates = [];
+  globalThis.ui = {
+    notifications: {
+      info() {},
+      error() {}
+    },
+    windows: {}
+  };
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      Dialog.instances.push(this);
+    }
+
+    render() {}
+  };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?currency-relative=${Date.now()}`);
+    const editButton = createFakeElement();
+    const currencyRoot = createFakeElement({
+      dataset: {
+        currencyPp: "2",
+        currencyGp: "249",
+        currencySp: "8",
+        currencyCp: "2"
+      }
+    });
+    const appRoot = createFakeElement();
+    appRoot.querySelector = (selector) => selector === "[data-action='edit-currency-root']"
+      ? currencyRoot
+      : null;
+    appRoot.querySelectorAll = (selector) => selector === "[data-action='edit-currency']"
+      ? [editButton]
+      : [];
+    const moduleApi = createModuleApi({
+      getGroupContext: () => null
+    });
+    moduleApi.updatePartyCurrency = async (values) => {
+      updates.push(values);
+    };
+    const app = new InventoryApp(moduleApi);
+    app.element = appRoot;
+
+    await app._onRender({}, {});
+    const clickPromise = editButton.listeners.click[0]();
+    const dialog = globalThis.Dialog.instances.at(-1);
+    const fields = {
+      "[data-field='currency-pp']": { value: "2" },
+      "[data-field='currency-gp']": { value: "+70" },
+      "[data-field='currency-sp']": { value: "-40" },
+      "[data-field='currency-cp']": { value: "2" }
+    };
+    const dialogRoot = createFakeElement();
+    dialogRoot.querySelector = (selector) => fields[selector] ?? null;
+    dialog.config.buttons.save.callback(dialogRoot);
+    await clickPromise;
+
+    assert.equal(dialog.options.classes.includes("rm-currency-dialog-window"), true);
+    assert.deepEqual(updates, [{
+      pp: 2,
+      gp: 319,
+      sp: 0,
+      cp: 2
+    }]);
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp currency dialog uses text inputs and currency-specific button sizing", async () => {
+  const [appSource, css] = await Promise.all([
+    readFile(new URL("../scripts/ui/inventory-app.js", import.meta.url), "utf8"),
+    readFile(new URL("../styles/main.css", import.meta.url), "utf8")
+  ]);
+
+  assert.match(appSource, /class="rm-purchase-dialog rm-currency-dialog"/u);
+  assert.match(appSource, /type="text"[^>]+inputmode="numeric"[^>]+data-field="currency-gp"/u);
+  assert.match(appSource, /classes:\s*\["rebreya-main",\s*"rebreya-trader-dialog",\s*"rm-currency-dialog-window"\]/u);
+  assert.match(css, /\.rebreya-trader-dialog\.rm-currency-dialog-window\s+\.dialog-buttons\s+\.(?:dialog-button|[^,{]+button)/u);
+});
+
+test("InventoryApp allows inventory drop users to edit party currency through the template", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?currency-drop-users=${Date.now()}`);
+    const app = new InventoryApp(createModuleApi({
+      getGroupContext: () => null,
+      inventorySnapshot: {
+        actor: { id: "group-1", name: "Party", img: "", canEdit: false },
+        hasActor: true,
+        items: [],
+        allItems: [],
+        emptyInventory: true,
+        summary: {
+          distinctCount: 0,
+          totalQuantity: 0,
+          totalWeight: 0,
+          foodLb: 0,
+          waterGal: 0,
+          currencyLabel: "1 зм",
+          currency: { pp: 0, gp: 1, sp: 0, cp: 0, totalCopper: 100, label: "1 зм" }
+        }
+      },
+      partySnapshot: {
+        canManage: false,
+        canDropInventoryItems: true
+      }
+    }));
+
+    const context = await app._prepareContext();
+
+    assert.equal(context.canManage, false);
+    assert.equal(context.canDropInventoryItems, true);
+    assert.equal(context.canEditCurrency, true);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp template gates currency buttons by canEditCurrency", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+
+  assert.match(template, /\{\{#if canEditCurrency\}\}/u);
+  assert.doesNotMatch(template, /\{\{#if canManage\}\}\s*<button type="button" class="rm-coin-badge/u);
+});
+
 test("InventoryApp template exposes stock item service actions to inventory drop users", async () => {
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
 
