@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { FighterAutomationService } from "../scripts/combat/fighter-automation-service.js";
+import { PaladinAutomationService } from "../scripts/combat/paladin-automation-service.js";
 import { PerformerAutomationService } from "../scripts/combat/performer-automation-service.js";
 import { RaceAutomationService } from "../scripts/combat/race-automation-service.js";
 import { RuneKnightAutomationService } from "../scripts/combat/rune-knight-automation-service.js";
@@ -79,4 +80,69 @@ test("composition root registers background services after constructing the pipe
       new RegExp(`this\\.${property}`, "u")
     );
   }
+});
+
+test("race, Fighter, and Paladin register ordered interactive long-rest choices", () => {
+  const { pipeline, steps } = stepRecorder();
+  const services = [
+    new RaceAutomationService({}),
+    new FighterAutomationService({}),
+    new PaladinAutomationService({})
+  ];
+
+  for (const service of services) {
+    service.registerLongRestSteps(pipeline);
+  }
+
+  assert.deepEqual(
+    steps
+      .filter((step) => step.interactive === true)
+      .map(({ id, order, interactive }) => ({ id, order, interactive })),
+    [
+      { id: "race.proficiency-swap", order: 200, interactive: true },
+      { id: "fighter.multiattack", order: 210, interactive: true },
+      { id: "paladin.prepared-spells", order: 220, interactive: true }
+    ]
+  );
+  for (const step of steps.filter((entry) => entry.interactive === true)) {
+    assert.equal(typeof step.isEligible, "function", step.id);
+    assert.equal(typeof step.run, "function", step.id);
+  }
+});
+
+test("interactive long-rest dialogs consume pipeline progress", async () => {
+  const sources = await Promise.all([
+    "race-automation-service.js",
+    "fighter-automation-service.js",
+    "paladin-automation-service.js"
+  ].map(async (file) => [
+    file,
+    await readFile(new URL(`../scripts/combat/${file}`, import.meta.url), "utf8")
+  ]));
+  const byFile = new Map(sources);
+
+  assert.match(
+    byFile.get("race-automation-service.js"),
+    /progress\?\.title\?\.\(title, substep\)/u
+  );
+  assert.match(
+    byFile.get("race-automation-service.js"),
+    /progress\?\.header\?\.\(title, substep\)/u
+  );
+  assert.match(
+    byFile.get("fighter-automation-service.js"),
+    /progress\?\.title\?\.\("Воинская мультиатака"\)/u
+  );
+  assert.match(
+    byFile.get("fighter-automation-service.js"),
+    /progress\?\.header\?\.\("Воинская мультиатака"\)/u
+  );
+  assert.match(
+    byFile.get("paladin-automation-service.js"),
+    /progress\?\.title\?\.\("Заклинания паладина"\)/u
+  );
+  assert.match(
+    byFile.get("paladin-automation-service.js"),
+    /progress\?\.header\?\.\("Заклинания паладина"\)/u
+  );
 });

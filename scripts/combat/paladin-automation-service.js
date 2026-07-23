@@ -724,6 +724,25 @@ export class PaladinAutomationService {
     return true;
   }
 
+  registerLongRestSteps(pipeline) {
+    if (typeof pipeline?.registerStep !== "function") return false;
+    pipeline.registerStep({
+      id: "paladin.prepared-spells",
+      label: "Заклинания паладина",
+      order: 220,
+      interactive: true,
+      isEligible: ({ actor }) => (
+        isActorDocument(actor)
+        && paladinMaxSpellLevel(paladinClassLevel(actor)) > 0
+        && this.#canPrompt(actor)
+      ),
+      run: ({ actor, progress }) => (
+        this.choosePaladinSpellsAfterLongRest(actor, { progress })
+      )
+    });
+    return true;
+  }
+
   async applyMidiPreDamageRoll(workflow, activity, config = {}) {
     if (workflow && activity && !workflow.activity) {
       workflow.activity = activity;
@@ -870,10 +889,15 @@ export class PaladinAutomationService {
       return true;
     }
 
+    await this.choosePaladinSpellsAfterLongRest(actor);
+    return true;
+  }
+
+  async choosePaladinSpellsAfterLongRest(actor, execution = {}) {
     const paladinLevel = paladinClassLevel(actor);
     const maxSpellLevel = paladinMaxSpellLevel(paladinLevel);
     if (maxSpellLevel <= 0 || !this.#canPrompt(actor)) {
-      return true;
+      return { status: "skipped" };
     }
 
     const details = {
@@ -881,18 +905,26 @@ export class PaladinAutomationService {
       preparedCount: paladinPreparedSpellCount(actor, paladinLevel),
       maxSpellLevel
     };
-    const confirmed = await this.#confirmPreparedSpellChange(actor, details);
+    const confirmed = await this.#confirmPreparedSpellChange(
+      actor,
+      details,
+      execution.progress
+    );
     if (!confirmed) {
-      return true;
+      return { status: "skipped" };
     }
 
-    const selectedUuids = await this.#selectPreparedSpellUuids(actor, details);
+    const selectedUuids = await this.#selectPreparedSpellUuids(
+      actor,
+      details,
+      execution.progress
+    );
     if (!selectedUuids) {
-      return true;
+      return { status: "skipped" };
     }
 
     await this.#applyPreparedSpellSelection(actor, selectedUuids);
-    return true;
+    return { status: "completed" };
   }
 
   async handleCombatTurnChange(combat, updateData = {}) {
@@ -2100,26 +2132,33 @@ export class PaladinAutomationService {
     });
   }
 
-  async #confirmPreparedSpellChange(actor, details) {
+  async #confirmPreparedSpellChange(actor, details, progress = null) {
     if (typeof this._options.confirmPreparedSpellChange === "function") {
-      return this._options.confirmPreparedSpellChange(actor, details);
+      return this._options.confirmPreparedSpellChange(actor, details, {
+        progress
+      });
     }
 
-    const content = [
+    const progressHeader = progress?.header?.("Заклинания паладина") ?? "";
+    const content = progressHeader + [
       `Вы завершили продолжительный отдых. Изменить подготовленные заклинания паладина?`,
       `Можно подготовить ${details.preparedCount} закл. до ${details.maxSpellLevel}-го уровня.`
     ].map((line) => `<p>${escapeHtml(line)}</p>`).join("");
     const DialogV2 = foundry.applications?.api?.DialogV2;
     if (typeof DialogV2?.confirm === "function") {
       return DialogV2.confirm({
-        window: { title: "Заклинания паладина" },
+        window: {
+          title: progress?.title?.("Заклинания паладина")
+            ?? "Заклинания паладина"
+        },
         content
       });
     }
 
     if (typeof globalThis.Dialog?.confirm === "function") {
       return globalThis.Dialog.confirm({
-        title: "Заклинания паладина",
+        title: progress?.title?.("Заклинания паладина")
+          ?? "Заклинания паладина",
         content,
         yes: () => true,
         no: () => false,
@@ -2130,9 +2169,11 @@ export class PaladinAutomationService {
     return false;
   }
 
-  async #selectPreparedSpellUuids(actor, details) {
+  async #selectPreparedSpellUuids(actor, details, progress = null) {
     if (typeof this._options.selectPreparedSpellUuids === "function") {
-      return this._options.selectPreparedSpellUuids(actor, details);
+      return this._options.selectPreparedSpellUuids(actor, details, {
+        progress
+      });
     }
 
     const CompendiumBrowser = globalThis.dnd5e?.applications?.CompendiumBrowser ?? null;

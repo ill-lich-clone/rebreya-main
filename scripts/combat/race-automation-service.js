@@ -1241,6 +1241,21 @@ export class RaceAutomationService {
     return this.#restoreHighElfSpellSlot(actor);
   }
 
+  async chooseRaceProficiencyAfterLongRest(actor, execution = {}) {
+    if (
+      !(actor instanceof Actor)
+      || !this.#hasMechanic(actor, "proficiency-swap")
+      || !this.#canPrompt(actor)
+    ) {
+      return { status: "skipped" };
+    }
+    const changed = await this.#promptSkillProficiencySwap(
+      actor,
+      execution.progress
+    );
+    return { status: changed ? "completed" : "skipped" };
+  }
+
   registerLongRestSteps(pipeline) {
     if (typeof pipeline?.registerStep !== "function") return false;
     pipeline.registerStep({
@@ -1255,6 +1270,20 @@ export class RaceAutomationService {
         const restored = await this.restoreRaceSpellSlotAfterLongRest(actor);
         return { status: restored ? "completed" : "skipped" };
       }
+    });
+    pipeline.registerStep({
+      id: "race.proficiency-swap",
+      label: "Смена владения навыком",
+      order: 200,
+      interactive: true,
+      isEligible: ({ actor }) => (
+        Boolean(actor)
+        && this.#hasMechanic(actor, "proficiency-swap")
+        && this.#canPrompt(actor)
+      ),
+      run: ({ actor, progress }) => (
+        this.chooseRaceProficiencyAfterLongRest(actor, { progress })
+      )
     });
     return true;
   }
@@ -1617,7 +1646,7 @@ export class RaceAutomationService {
     });
   }
 
-  async #choice(actor, title, choices) {
+  async #choice(actor, title, choices, progress = null, substep = "") {
     if (!this.#canPrompt(actor) || !choices.length) {
       return null;
     }
@@ -1625,9 +1654,12 @@ export class RaceAutomationService {
     return new Promise((resolve) => {
       let settled = false;
       const options = choices.map((choice) => `<option value="${escapeHtml(choice.value)}">${escapeHtml(choice.label)}</option>`).join("");
+      const progressTitle = progress?.title?.(title, substep) ?? title;
+      const progressHeader = progress?.header?.(title, substep) ?? "";
       const dialog = new Dialog({
-        title,
+        title: progressTitle,
         content: `
+          ${progressHeader}
           <form>
             <div class="form-group">
               <label>${escapeHtml(title)}</label>
@@ -1712,7 +1744,7 @@ export class RaceAutomationService {
     });
   }
 
-  async #promptSkillProficiencySwap(actor) {
+  async #promptSkillProficiencySwap(actor, progress = null) {
     if (!this.#canPrompt(actor)) {
       return false;
     }
@@ -1721,12 +1753,24 @@ export class RaceAutomationService {
       value,
       label: config.label ?? value
     }));
-    const oldSkill = await this.#choice(actor, "Людская натура: убрать владение", skills);
+    const oldSkill = await this.#choice(
+      actor,
+      "Людская натура: убрать владение",
+      skills,
+      progress,
+      "1/2"
+    );
     if (!oldSkill) {
       return false;
     }
 
-    const newSkill = await this.#choice(actor, "Людская натура: добавить владение", skills.filter((entry) => entry.value !== oldSkill));
+    const newSkill = await this.#choice(
+      actor,
+      "Людская натура: добавить владение",
+      skills.filter((entry) => entry.value !== oldSkill),
+      progress,
+      "2/2"
+    );
     if (!newSkill) {
       return false;
     }

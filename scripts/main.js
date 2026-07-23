@@ -941,7 +941,8 @@ export class RebreyaMainModule {
       this.performerAutomationService,
       this.fighterAutomationService,
       this.sorcererAutomationService,
-      this.raceAutomationService
+      this.raceAutomationService,
+      this.paladinAutomationService
     ]) {
       service.registerLongRestSteps?.(this.longRestPipelineService);
     }

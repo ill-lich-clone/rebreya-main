@@ -639,6 +639,17 @@ export class FighterAutomationService {
     return true;
   }
 
+  async chooseFighterMultiattackAfterLongRest(actor, execution = {}) {
+    if (!(actor instanceof Actor) || !this.#canPrompt(actor)) {
+      return { status: "skipped" };
+    }
+    const changed = await this.#handleMultiattackRestChoice(
+      actor,
+      execution.progress
+    );
+    return { status: changed ? "completed" : "skipped" };
+  }
+
   registerLongRestSteps(pipeline) {
     if (typeof pipeline?.registerStep !== "function") return false;
     pipeline.registerStep({
@@ -651,6 +662,23 @@ export class FighterAutomationService {
         const restored = await this.restoreAfterLongRest(actor);
         return { status: restored ? "completed" : "skipped" };
       }
+    });
+    pipeline.registerStep({
+      id: "fighter.multiattack",
+      label: "Воинская мультиатака",
+      order: 210,
+      interactive: true,
+      isEligible: ({ actor }) => (
+        Boolean(actor)
+        && this.#canPrompt(actor)
+        && (
+          this.#fighterMultiattackItems(actor).length > 0
+          || this.#fighterLevel(actor) >= 2
+        )
+      ),
+      run: ({ actor, progress }) => (
+        this.chooseFighterMultiattackAfterLongRest(actor, { progress })
+      )
     });
     return true;
   }
@@ -874,7 +902,7 @@ export class FighterAutomationService {
     });
   }
 
-  async #handleMultiattackRestChoice(actor) {
+  async #handleMultiattackRestChoice(actor, progress = null) {
     const multiattackItems = this.#fighterMultiattackItems(actor);
     if (!multiattackItems.length && this.#fighterLevel(actor) < 2) {
       return false;
@@ -888,7 +916,11 @@ export class FighterAutomationService {
         itemId: ownedItem?.id ?? ownedItem?._id ?? ""
       };
     });
-    const selectedId = cleanText(await this.#promptFighterMultiattackChoice(actor, choices));
+    const selectedId = cleanText(await this.#promptFighterMultiattackChoice(
+      actor,
+      choices,
+      progress
+    ));
     const selected = choices.find((choice) => choice.featureId === selectedId || choice.itemId === selectedId) ?? null;
     if (!selected) {
       return false;
@@ -1904,9 +1936,11 @@ export class FighterAutomationService {
     });
   }
 
-  async #promptFighterMultiattackChoice(actor, choices) {
+  async #promptFighterMultiattackChoice(actor, choices, progress = null) {
     if (typeof this._options.promptFighterMultiattackChoice === "function") {
-      return this._options.promptFighterMultiattackChoice(actor, choices);
+      return this._options.promptFighterMultiattackChoice(actor, choices, {
+        progress
+      });
     }
 
     if (!this.#canPrompt(actor) || typeof Dialog !== "function") {
@@ -1920,9 +1954,13 @@ export class FighterAutomationService {
         return `<option value="${escapeHtml(choice.featureId)}">${escapeHtml(choice.name)}${suffix}</option>`;
       });
 
+      const title = progress?.title?.("Воинская мультиатака")
+        ?? "Воинская мультиатака";
+      const progressHeader = progress?.header?.("Воинская мультиатака") ?? "";
       const dialog = new Dialog({
-        title: "Воинская мультиатака",
+        title,
         content: `
+          ${progressHeader}
           <form>
             <div class="form-group">
               <label>Оставить вариант до следующего продолжительного отдыха</label>
