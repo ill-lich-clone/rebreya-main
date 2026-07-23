@@ -29,6 +29,8 @@ function loadImplants() {
 test("implant catalog preserves all named spreadsheet rows and exact armor metadata", () => {
   const implants = loadImplants();
   assert.equal(implants.length, 90);
+  assert.ok(implants.some((entry) => entry.name === "Облегчённый корпус авто"));
+  assert.equal(implants.some((entry) => entry.name === "Облегчённый корпус"), false);
 
   const armor = implants.find((entry) => entry.name === "Навесная броня");
   assert.ok(armor);
@@ -97,14 +99,33 @@ test("builtin importer merges implant rules into existing implant gear without d
     readFileSync(join(MODULE_DIR, "data", "gear.json"), "utf8").replace(/^\uFEFF/u, "")
   );
   const implants = loadImplants();
+  const sourceGearImplants = gear.filter((entry) => entry.equipmentType === "Имплант");
   const merged = importer.mergeGearWithImplants(gear, implants);
   const mergedImplants = merged.filter((entry) => entry.equipmentType === "Имплант");
   const implantNames = mergedImplants.map((entry) => entry.name);
 
+  assert.equal(sourceGearImplants.length, implants.length);
   assert.equal(mergedImplants.length, implants.length);
   assert.equal(mergedImplants.every((entry) => entry.implant), true);
   assert.equal(new Set(implantNames).size, implantNames.length);
-  assert.equal(merged.length, gear.length + implants.length - 52);
+  assert.equal(merged.length, gear.length);
+
+  const thermoregulation = sourceGearImplants.find((entry) => entry.name === "Система термоконтроля");
+  assert.equal(thermoregulation?.priceText, "200 зм");
+  assert.equal(thermoregulation?.predominantMaterialName, "Сталь");
+  assert.equal(thermoregulation?.linkedTool, "Жестянщика");
+
+  const orphanRule = {
+    ...implants[0],
+    id: "implant-orphan-rule",
+    name: "Имплант без предмета снаряжения"
+  };
+  const mergedWithOrphan = importer.mergeGearWithImplants(gear, [...implants, orphanRule]);
+  assert.equal(mergedWithOrphan.length, gear.length);
+  assert.equal(
+    mergedWithOrphan.some((entry) => entry.id === orphanRule.id),
+    false
+  );
 
   const armor = mergedImplants.find((entry) => entry.name === "Навесная броня");
   assert.equal(armor.id, "navesnaya-bronya");
@@ -148,9 +169,9 @@ test("builtin importer merges implant rules into existing implant gear without d
     assert.ok(item?.implant, name);
   }
 
-  const lightweightBodies = merged.filter((entry) => entry.name === "Облегчённый корпус");
-  assert.deepEqual(
-    lightweightBodies.map((entry) => entry.equipmentType).sort(),
-    ["Имплант", "Обвес"]
-  );
+  const lightweightBodyAttachment = merged.find((entry) => entry.name === "Облегчённый корпус");
+  const lightweightBodyImplant = merged.find((entry) => entry.name === "Облегчённый корпус авто");
+  assert.equal(lightweightBodyAttachment?.equipmentType, "Обвес");
+  assert.equal(lightweightBodyImplant?.equipmentType, "Имплант");
+  assert.ok(lightweightBodyImplant?.implant);
 });

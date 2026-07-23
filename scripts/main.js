@@ -13,7 +13,7 @@ import { SpellsCompendiumService } from "./data/spells-compendium.js";
 import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
-import { EconomyRepository } from "./data/repository.js?v=1.4.109-implants-2";
+import { EconomyRepository } from "./data/repository.js?v=1.4.109-implants-3";
 import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.96-durability";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import {

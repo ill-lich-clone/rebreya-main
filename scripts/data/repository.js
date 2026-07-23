@@ -1,6 +1,6 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
 import { buildDetailedCitySnapshot, buildEconomyModel, buildReachableImportRoutesForCity } from "../engine/economy-engine.js";
-import { loadEconomyDataset } from "./importer.js?v=1.4.109-implants-2";
+import { loadEconomyDataset } from "./importer.js?v=1.4.109-implants-3";
 
 function buildReferenceNoteKey(entryType, entryId) {
   return `${entryType}::${entryId}`;

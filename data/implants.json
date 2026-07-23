@@ -2657,8 +2657,8 @@
     }
   },
   {
-    "id": "implant-oblegchyonnyy-korpus",
-    "name": "Облегчённый корпус",
+    "id": "implant-oblegchyonnyy-korpus-avto",
+    "name": "Облегчённый корпус авто",
     "equipmentType": "Имплант",
     "shopSubtype": "",
     "priceText": "200 зм",

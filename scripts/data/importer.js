@@ -9,7 +9,10 @@ const LEGACY_IMPLANT_ID_BY_SOURCE_NAME = Object.freeze({
   "Телепатический модуль (М)": "telepaticheskiy-modul",
   "Язык чудовища (м)": "yazyk-chudovishcha",
   "Модуль иммитации речи (м)": "modul-imitatsii-rechi",
-  "Искуственный глаз": "iskusstvennyy-glaz"
+  "Искуственный глаз": "iskusstvennyy-glaz",
+  "Контейнер для фамильяра (М)": "konteyner-dlya-familyara",
+  "Контейнер для фамильяра «Колыбель» (М)": "konteyner-dlya-familyara-kolybel",
+  "Симбиотический мозг (М)": "simbioticheskiy-mozg"
 });
 
 const IMPLANT_CLASSIFICATION_FIELDS = Object.freeze([
@@ -68,7 +71,6 @@ export function mergeGearWithImplants(gear = [], implants = []) {
       ?? existingByName.get(normalizeImplantMatchText(source?.name))
     );
     if (existingIndex === undefined) {
-      merged.push({ ...source });
       continue;
     }
     merged[existingIndex] = enrichExistingImplant(merged[existingIndex], source);
