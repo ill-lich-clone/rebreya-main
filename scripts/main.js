@@ -70,6 +70,7 @@ import { CombatAttackService } from "./combat/attack-service.js?v=1.4.109-charac
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js";
+import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
@@ -120,6 +121,7 @@ import { refreshSmallTimeDateDisplay, registerSmallTimeIntegration, syncSmallTim
 import { registerRationFoodConversionHook } from "./integrations/ration-food-conversion.js";
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
+import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
@@ -896,6 +898,10 @@ export class RebreyaMainModule {
     this.reactionQueueService = new ReactionQueueService(this, {
       capabilityIndex: this.reactionCapabilityIndex,
       logger: console
+    });
+    this.longRestPipelineService = new LongRestPipelineService({
+      logger: console,
+      notifyError: (message) => globalThis.ui?.notifications?.error?.(message)
     });
     this.runeKnightAutomationService = new RuneKnightAutomationService(this);
     this.combatStatusService = new CombatStatusService(this);
@@ -2215,6 +2221,18 @@ export class RebreyaMainModule {
 
   registerReactionCapability(kind, resolver, options = {}) {
     return this.reactionCapabilityIndex.registerProvider(kind, resolver, options);
+  }
+
+  registerLongRestStep(definition) {
+    return this.longRestPipelineService.registerStep(definition);
+  }
+
+  runLongRestPipeline(actor, result = {}, config = {}) {
+    return this.longRestPipelineService.enqueue(actor, result, config);
+  }
+
+  getRecentLongRestRuns() {
+    return this.longRestPipelineService.getRecentRuns();
   }
 
   invalidateReactionActor(actor) {
@@ -4713,6 +4731,13 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register durability hooks.`, error);
+  }
+
+  try {
+    registerLongRestHooks(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register long-rest hooks.`, error);
   }
 
   try {
