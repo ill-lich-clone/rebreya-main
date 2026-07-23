@@ -57,6 +57,18 @@ function createBoundLootgenChatCard({ state, rowDataset = {} }) {
       lootgenChatRowId: state.rows[0].rowId
     }
   });
+  const inventoryButton = new FakeElement({
+    dataset: {
+      lootgenChatId: state.lootId,
+      lootgenChatRowId: state.rows[0].rowId
+    }
+  });
+  const selfButton = new FakeElement({
+    dataset: {
+      lootgenChatId: state.lootId,
+      lootgenChatRowId: state.rows[0].rowId
+    }
+  });
   const viewButton = new FakeElement({
     dataset: {
       lootgenChatId: state.lootId,
@@ -77,13 +89,15 @@ function createBoundLootgenChatCard({ state, rowDataset = {} }) {
       "[data-lootgen-chat-drag='true']": [row],
       "[data-lootgen-chat-action='view-row']": [viewButton],
       "[data-lootgen-chat-action='claim-row']": [claimButton],
+      "[data-lootgen-chat-action='claim-row-inventory']": [inventoryButton],
+      "[data-lootgen-chat-action='claim-row-self']": [selfButton],
       "[data-lootgen-chat-action='claim-coins']": [],
       "[data-lootgen-chat-action='claim-all']": [claimAllButton]
     }
   });
   card.queryMap["[data-lootgen-chat-action='undo-clear']"] = [];
 
-  return { card, row, viewButton, claimButton, claimAllButton };
+  return { card, row, viewButton, claimButton, inventoryButton, selfButton, claimAllButton };
 }
 
 test("lootgen chat createItem hook ignores item drops from other users", async () => {
@@ -125,7 +139,7 @@ test("lootgen chat createItem hook ignores item drops from other users", async (
   }
 });
 
-test("lootgen chat rows render a real claim button without dnd5e item uuid hooks", async () => {
+test("lootgen chat rows render real claim buttons without dnd5e item uuid hooks", async () => {
   const restoreFoundry = installLootgenChatFoundryStubs();
 
   try {
@@ -144,7 +158,8 @@ test("lootgen chat rows render a real claim button without dnd5e item uuid hooks
       }]
     });
 
-    assert.match(content, /<button[^>]+data-lootgen-chat-action="claim-row"/u);
+    assert.match(content, /<button[^>]+data-lootgen-chat-action="claim-row-inventory"/u);
+    assert.match(content, /<button[^>]+data-lootgen-chat-action="claim-row-self"/u);
     assert.match(content, /data-lootgen-chat-row-id="row-1"/u);
     assert.doesNotMatch(content, /data-item-uuid=/u);
   }
@@ -186,7 +201,36 @@ test("lootgen chat renders broken condition from persisted item data without ren
   }
 });
 
-test("lootgen chat claim button takes a row through the module API", async () => {
+test("lootgen chat rows render separate inventory and self claim buttons", async () => {
+  const restoreFoundry = installLootgenChatFoundryStubs();
+
+  try {
+    const { buildLootgenChatContent } = await import(`../scripts/ui/lootgen-chat.js?render-split-claim=${Date.now()}`);
+    const content = buildLootgenChatContent({
+      lootId: "loot-1",
+      rows: [{
+        rowId: "row-1",
+        name: "Test Relic",
+        quantity: 1,
+        itemData: {
+          name: "Test Relic",
+          type: "loot"
+        }
+      }]
+    });
+
+    assert.match(content, /data-lootgen-chat-action="claim-row-inventory"/u);
+    assert.match(content, /data-lootgen-chat-action="claim-row-self"/u);
+    assert.match(content, /fa-(box-archive|box-open|briefcase)/u);
+    assert.match(content, /fa-hand/u);
+    assert.doesNotMatch(content, />\s*Забрать\s*</u);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("lootgen chat inventory button takes a row through the party inventory API", async () => {
   const restoreFoundry = installLootgenChatFoundryStubs();
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
@@ -224,19 +268,97 @@ test("lootgen chat claim button takes a row through the module API", async () =>
     const { registerLootgenChatHooks } = await import(`../scripts/ui/lootgen-chat.js?claim-click=${Date.now()}`);
     registerLootgenChatHooks({});
     const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessage")?.listener;
-    const { card, claimButton } = createBoundLootgenChatCard({ state });
+    const { card, inventoryButton } = createBoundLootgenChatCard({ state });
 
     renderListener({
       getFlag: () => state
     }, card);
 
-    assert.equal(typeof claimButton.listeners.click?.[0], "function");
-    await claimButton.listeners.click[0]({
-      currentTarget: claimButton,
+    assert.equal(typeof inventoryButton.listeners.click?.[0], "function");
+    await inventoryButton.listeners.click[0]({
+      currentTarget: inventoryButton,
       preventDefault() {}
     });
 
     assert.deepEqual(calls, [["loot-1", "row-1"]]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    restoreFoundry();
+  }
+});
+
+test("lootgen chat self button creates the row item on the user's character and claims the row", async () => {
+  const restoreFoundry = installLootgenChatFoundryStubs();
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const listeners = [];
+  const calls = [];
+  const created = [];
+  const character = {
+    id: "actor-1",
+    isOwner: true,
+    async createEmbeddedDocuments(type, documents, options = {}) {
+      created.push({ type, documents, options });
+      return documents;
+    }
+  };
+  const state = {
+    lootId: "loot-1",
+    rows: [{
+      rowId: "row-1",
+      name: "Test Relic",
+      itemData: {
+        name: "Test Relic",
+        type: "loot",
+        system: {
+          quantity: 1
+        }
+      }
+    }]
+  };
+
+  globalThis.Hooks = {
+    on(hookName, listener) {
+      listeners.push({ hookName, listener });
+    }
+  };
+  globalThis.game = {
+    user: {
+      id: "player-1",
+      character
+    },
+    rebreyaMain: {
+      async claimLootgenChatRow(lootId, rowId) {
+        calls.push([lootId, rowId]);
+        return true;
+      }
+    }
+  };
+
+  try {
+    const { registerLootgenChatHooks } = await import(`../scripts/ui/lootgen-chat.js?self-click=${Date.now()}`);
+    registerLootgenChatHooks({});
+    const renderListener = listeners.find((entry) => entry.hookName === "renderChatMessage")?.listener;
+    const { card, selfButton } = createBoundLootgenChatCard({ state });
+
+    renderListener({
+      getFlag: () => state
+    }, card);
+
+    assert.equal(typeof selfButton.listeners.click?.[0], "function");
+    await selfButton.listeners.click[0]({
+      currentTarget: selfButton,
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(calls, [["loot-1", "row-1"]]);
+    assert.equal(created.length, 1);
+    assert.equal(created[0].type, "Item");
+    assert.equal(created[0].documents[0].name, "Test Relic");
+    assert.equal(created[0].options["rebreya-main"].skipLootgenChatAutoClaim, true);
   }
   finally {
     globalThis.Hooks = previousHooks;

@@ -7744,9 +7744,12 @@ summary:focus-visible {
 }
 
 .rm-chat-loot__state,
-.rm-chat-loot__view {
+.rm-chat-loot__view,
+.rm-chat-loot__inventory,
+.rm-chat-loot__self {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   padding: 4px 8px;
   border: 1px solid transparent;
@@ -7760,19 +7763,37 @@ summary:focus-visible {
   cursor: pointer;
 }
 
+.rm-chat-loot__inventory,
+.rm-chat-loot__self {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
 .rm-chat-loot__view {
   background: rgb(var(--rm-color-surface-raised-rgb) / 0.7);
   color: var(--rm-text-secondary) !important;
 }
 
-.rm-chat-loot__row.is-claimed .rm-chat-loot__state {
+.rm-chat-loot__self {
+  background: rgb(var(--rm-color-surface-raised-rgb) / 0.7);
+  color: var(--rm-text-secondary) !important;
+}
+
+.rm-chat-loot__row.is-claimed .rm-chat-loot__state,
+.rm-chat-loot__row.is-claimed .rm-chat-loot__inventory,
+.rm-chat-loot__row.is-claimed .rm-chat-loot__self,
+.rm-chat-loot__inventory:disabled,
+.rm-chat-loot__self:disabled {
   background: rgba(159, 146, 125, 0.16);
   color: var(--rm-text-dim) !important;
   cursor: default;
 }
 
 .rm-chat-loot__state:not(:disabled):hover,
-.rm-chat-loot__view:hover {
+.rm-chat-loot__view:hover,
+.rm-chat-loot__inventory:not(:disabled):hover,
+.rm-chat-loot__self:not(:disabled):hover {
   border-color: rgb(var(--rm-color-gold-rgb) / 0.4);
   background: rgb(var(--rm-color-gold-rgb) / 0.22);
 }

@@ -145,6 +145,46 @@ async function openLootgenRowPreview(message, rowId) {
   return true;
 }
 
+function resolveLootgenSelfActor() {
+  const user = globalThis.game?.user ?? null;
+  const character = user?.character ?? null;
+  if (character && (user?.isGM || character.isOwner === true)) {
+    return character;
+  }
+
+  const controlledActors = Array.from(globalThis.canvas?.tokens?.controlled ?? [])
+    .map((token) => token?.actor)
+    .filter(Boolean);
+
+  return controlledActors.find((actor) => user?.isGM || actor?.isOwner === true) ?? null;
+}
+
+async function claimLootgenRowToSelf(message, lootId, rowId) {
+  const row = findLootgenRow(message, rowId);
+  if (!row) {
+    throw new Error("Предмет добычи не найден.");
+  }
+
+  const itemData = cloneDragData(row.itemData);
+  if (!itemData) {
+    throw new Error("Нет данных предмета для получения.");
+  }
+
+  const actor = resolveLootgenSelfActor();
+  if (!actor || typeof actor.createEmbeddedDocuments !== "function") {
+    throw new Error("Не удалось определить персонажа для получения добычи.");
+  }
+
+  await actor.createEmbeddedDocuments("Item", [itemData], {
+    [MODULE_ID]: {
+      skipLootgenChatAutoClaim: true
+    }
+  });
+
+  await globalThis.game?.rebreyaMain?.claimLootgenChatRow?.(lootId, rowId);
+  return true;
+}
+
 function renderRow(row) {
   const claimed = Boolean(row.claimed);
   const durabilityState = String(row?.itemData?.flags?.[MODULE_ID]?.durability?.state ?? "").trim();
@@ -228,12 +268,25 @@ function renderLootgenChatRow(row) {
         </button>
         <button
           type="button"
-          class="rm-chat-loot__state"
-          data-lootgen-chat-action="claim-row"
+          class="rm-chat-loot__inventory"
+          data-lootgen-chat-action="claim-row-inventory"
           data-lootgen-chat-row-id="${escapeHtml(rowId)}"
+          title="Забрать в партийный инвентарь"
+          aria-label="Забрать в партийный инвентарь"
           ${claimed ? "disabled" : ""}
         >
-          ${claimed ? "Забрано" : "Взять"}
+          <i class="fa-solid fa-box-archive"></i>
+        </button>
+        <button
+          type="button"
+          class="rm-chat-loot__self"
+          data-lootgen-chat-action="claim-row-self"
+          data-lootgen-chat-row-id="${escapeHtml(rowId)}"
+          title="Забрать себе"
+          aria-label="Забрать себе"
+          ${claimed ? "disabled" : ""}
+        >
+          <i class="fa-solid fa-hand"></i>
         </button>
       </div>
     </article>
@@ -412,6 +465,57 @@ function bindLootgenChatMessage(message, html) {
         catch (error) {
           console.error(`${MODULE_ID} | Failed to claim lootgen chat row.`, error);
           await postLootgenChatStatus("error", error.message || "Не удалось забрать предмет из добычи.");
+        }
+      });
+    });
+
+    card.querySelectorAll("[data-lootgen-chat-action='claim-row-inventory']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation?.();
+        const lootId = event.currentTarget.dataset.lootgenChatId
+          || card.dataset.lootgenChatId
+          || getLootgenState(message).lootId
+          || "";
+        const rowId = event.currentTarget.dataset.lootgenChatRowId || "";
+        if (!lootId || !rowId) {
+          return;
+        }
+
+        try {
+          if (typeof game.rebreyaMain?.claimLootgenChatRowToInventory === "function") {
+            await game.rebreyaMain.claimLootgenChatRowToInventory(lootId, rowId);
+          }
+          else {
+            await game.rebreyaMain?.claimLootgenChatRow?.(lootId, rowId);
+          }
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to claim lootgen chat row to inventory.`, error);
+          await postLootgenChatStatus("error", error.message || "Не удалось забрать предмет добычи в склад.");
+        }
+      });
+    });
+
+    card.querySelectorAll("[data-lootgen-chat-action='claim-row-self']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation?.();
+        const lootId = event.currentTarget.dataset.lootgenChatId
+          || card.dataset.lootgenChatId
+          || getLootgenState(message).lootId
+          || "";
+        const rowId = event.currentTarget.dataset.lootgenChatRowId || "";
+        if (!lootId || !rowId) {
+          return;
+        }
+
+        try {
+          await claimLootgenRowToSelf(message, lootId, rowId);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to claim lootgen chat row to actor.`, error);
+          await postLootgenChatStatus("error", error.message || "Не удалось забрать предмет добычи себе.");
         }
       });
     });
