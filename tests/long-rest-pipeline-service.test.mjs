@@ -148,6 +148,70 @@ test("failed step is recorded and later steps still run", async () => {
   assert.match(notifications[0], /1/u);
 });
 
+test("provider planning errors are recorded and later steps still run", async () => {
+  const calls = [];
+  const errors = [];
+  const notifications = [];
+  const pipeline = new LongRestPipelineService({
+    logger: { error: (...args) => errors.push(args) },
+    notifyError: (message) => notifications.push(message)
+  });
+  pipeline.registerStep({
+    id: "broken-eligibility",
+    order: 100,
+    isEligible: () => {
+      throw new Error("eligibility failed");
+    },
+    run: async () => {
+      calls.push("broken-eligibility");
+    }
+  });
+  pipeline.registerStep({
+    id: "broken-interactive",
+    order: 110,
+    interactive: () => {
+      throw new Error("interactive failed");
+    },
+    run: async () => {
+      calls.push("broken-interactive");
+    }
+  });
+  pipeline.registerStep({
+    id: "broken-label",
+    order: 120,
+    label: () => {
+      throw new Error("label failed");
+    },
+    run: async () => {
+      calls.push("broken-label");
+    }
+  });
+  pipeline.registerStep({
+    id: "healthy",
+    order: 200,
+    run: async () => {
+      calls.push("healthy");
+      return { status: "completed" };
+    }
+  });
+
+  const result = await pipeline.run(actor("planning-errors"), { type: "long" }, {});
+
+  assert.deepEqual(calls, ["healthy"]);
+  assert.deepEqual(
+    result.steps.map(({ id, status }) => ({ id, status })),
+    [
+      { id: "broken-eligibility", status: "failed" },
+      { id: "broken-interactive", status: "failed" },
+      { id: "broken-label", status: "failed" },
+      { id: "healthy", status: "completed" }
+    ]
+  );
+  assert.equal(errors.length, 3);
+  assert.equal(notifications.length, 1);
+  assert.match(notifications[0], /3/u);
+});
+
 test("provider is revalidated before execution", async () => {
   let eligible = true;
   let secondRuns = 0;

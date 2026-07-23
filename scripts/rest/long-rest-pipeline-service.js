@@ -124,51 +124,66 @@ export class LongRestPipelineService {
       config,
       runId
     });
-    const eligible = [];
-
-    for (const step of this._steps.values()) {
-      const applies = typeof step.isEligible === "function"
-        ? await step.isEligible(baseContext)
-        : true;
-      if (applies !== false) {
-        eligible.push(step);
-      }
-    }
-
-    eligible.sort((left, right) => (
+    const ordered = [...this._steps.values()].sort((left, right) => (
       left.order - right.order
       || left.id.localeCompare(right.id)
     ));
+    const planned = [];
+    for (const step of ordered) {
+      try {
+        const applies = typeof step.isEligible === "function"
+          ? await step.isEligible(baseContext)
+          : true;
+        if (applies !== false) {
+          planned.push({ step, error: null });
+        }
+      }
+      catch (error) {
+        planned.push({ step, error });
+      }
+    }
 
     const interactiveStates = new Map();
-    for (const step of eligible) {
-      interactiveStates.set(
-        step.id,
-        typeof step.interactive === "function"
-          ? await step.interactive(baseContext) === true
-          : step.interactive === true
-      );
+    for (const entry of planned) {
+      if (entry.error) continue;
+      try {
+        interactiveStates.set(
+          entry.step.id,
+          typeof entry.step.interactive === "function"
+            ? await entry.step.interactive(baseContext) === true
+            : entry.step.interactive === true
+        );
+      }
+      catch (error) {
+        entry.error = error;
+      }
     }
     const interactiveTotal = [...interactiveStates.values()]
       .filter(Boolean)
       .length;
     const steps = [];
     let interactiveCurrent = 0;
-    for (const step of eligible) {
+    for (const entry of planned) {
+      const { step } = entry;
+      const startedAt = this.#now();
+      if (entry.error) {
+        steps.push(this.#failedStep(step.id, entry.error, startedAt));
+        this.#logStepError({ actorUuid, runId, step, error: entry.error });
+        continue;
+      }
       const interactive = interactiveStates.get(step.id) === true;
       if (interactive) {
         interactiveCurrent += 1;
       }
-      const label = typeof step.label === "function"
-        ? cleanString(await step.label(baseContext))
-        : cleanString(step.label) || step.id;
-      const progress = this.#createProgress({
-        current: interactive ? interactiveCurrent : 0,
-        total: interactiveTotal,
-        label
-      });
-      const startedAt = this.#now();
       try {
+        const label = typeof step.label === "function"
+          ? cleanString(await step.label(baseContext))
+          : cleanString(step.label) || step.id;
+        const progress = this.#createProgress({
+          current: interactive ? interactiveCurrent : 0,
+          total: interactiveTotal,
+          label
+        });
         if (
           typeof step.isEligible === "function"
           && await step.isEligible(baseContext) === false
@@ -194,17 +209,8 @@ export class LongRestPipelineService {
         });
       }
       catch (error) {
-        const message = errorMessage(error);
-        steps.push({
-          id: step.id,
-          status: LONG_REST_STEP_STATUS.FAILED,
-          durationMs: this.#durationSince(startedAt),
-          error: message
-        });
-        this.options.logger?.error?.(
-          `Long-rest step ${step.id} failed`,
-          { actorUuid, runId, stepId: step.id, error }
-        );
+        steps.push(this.#failedStep(step.id, error, startedAt));
+        this.#logStepError({ actorUuid, runId, step, error });
       }
     }
 
@@ -241,6 +247,22 @@ export class LongRestPipelineService {
         + "</strong></p>"
       )
     });
+  }
+
+  #failedStep(stepId, error, startedAt) {
+    return {
+      id: stepId,
+      status: LONG_REST_STEP_STATUS.FAILED,
+      durationMs: this.#durationSince(startedAt),
+      error: errorMessage(error)
+    };
+  }
+
+  #logStepError({ actorUuid, runId, step, error }) {
+    this.options.logger?.error?.(
+      `Long-rest step ${step.id} failed`,
+      { actorUuid, runId, stepId: step.id, error }
+    );
   }
 
   #now() {
