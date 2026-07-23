@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { buildCounterspellActivity } from "../data/counterspell-activity.js";
 
 const COUNTERSPELL_KIND = "counterspell";
 const SPELL_SHATTER_KIND = "spell-shatter";
@@ -239,6 +240,39 @@ function counterspellActivity(item) {
   return itemActivities(item).find((activity) => activity?.item === item || activity?.parent === item) ?? itemActivities(item)[0] ?? null;
 }
 
+function counterspellRepairPatch(item) {
+  if (spellReactionKind(item) !== COUNTERSPELL_KIND) {
+    return null;
+  }
+
+  const activities = item?.system?.activities && typeof item.system.activities === "object"
+    ? item.system.activities
+    : {};
+  const keys = Object.keys(activities);
+  const current = activities.counterspell;
+  const riderActivity = item?.flags?.dnd5e?.riders?.activity;
+  const hasRiderActivities = Array.isArray(riderActivity) ? riderActivity.length > 0 : riderActivity != null;
+  const needsRepair = keys.length !== 1
+    || keys[0] !== "counterspell"
+    || current?.type !== "utility"
+    || current?.check !== undefined
+    || current?.save !== undefined
+    || current?.attack !== undefined
+    || current?.damage !== undefined
+    || hasRiderActivities;
+
+  if (!needsRepair) {
+    return null;
+  }
+
+  return {
+    "system.activities": {
+      counterspell: buildCounterspellActivity(item?.system ?? {})
+    },
+    "flags.dnd5e.riders.activity": []
+  };
+}
+
 function normalizeChoice(choice, fallbackLevel) {
   if (choice === true) {
     return { accepted: true, spellLevel: fallbackLevel };
@@ -298,6 +332,25 @@ export class SpellAutomationService {
       reactionQueueService.registerType(SPELL_REACTION_TRIGGER_KIND, this.#reactionProvider());
     }
     return Boolean(reactionQueueService);
+  }
+
+  async repairCounterspellItems(document) {
+    const items = document?.type === "spell"
+      ? [document]
+      : collectionValues(document?.items);
+    let repaired = false;
+
+    for (const item of items) {
+      const patch = counterspellRepairPatch(item);
+      if (!patch || typeof item?.update !== "function") {
+        continue;
+      }
+
+      await item.update(patch, { render: false, rebreyaRepair: true });
+      repaired = true;
+    }
+
+    return repaired;
   }
 
   async applyDnd5ePreUseActivity(activity, usageConfig = {}, dialogConfig = {}, messageConfig = {}) {

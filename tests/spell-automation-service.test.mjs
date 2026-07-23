@@ -567,6 +567,47 @@ test("the global reaction prompt offers only available Counterspell slot levels"
   assert.deepEqual(prompt.fields[0].options, [{ value: 5, label: "5" }]);
 });
 
+test("repairCounterspellItems cleans legacy owned Counterspell activities", async () => {
+  const service = makeService();
+  const item = counterspellItem();
+  const updateCalls = [];
+  item.flags.dnd5e = {
+    riders: {
+      activity: ["legacy-check"]
+    }
+  };
+  item.system.activities = {
+    counterspell: {
+      _id: "counterspell",
+      type: "check",
+      activation: { type: "reaction", value: 1 },
+      check: { ability: "int" },
+      spell: { level: 3, scaling: { mode: "level", formula: "" } }
+    },
+    legacyCheck: {
+      _id: "legacyCheck",
+      type: "check",
+      check: { ability: "int" }
+    }
+  };
+  item.update = async (patch, options) => {
+    updateCalls.push({ patch, options });
+    item.system.activities = patch["system.activities"];
+    item.flags.dnd5e.riders.activity = patch["flags.dnd5e.riders.activity"];
+    return item;
+  };
+  const actor = new TestActor({ id: "reactor", items: [item] });
+
+  assert.equal(await service.repairCounterspellItems(actor), true);
+  assert.equal(updateCalls.length, 1);
+  assert.deepEqual(Object.keys(updateCalls[0].patch["system.activities"]), ["counterspell"]);
+  assert.equal(updateCalls[0].patch["system.activities"].counterspell.type, "utility");
+  assert.equal(updateCalls[0].patch["system.activities"].counterspell.check, undefined);
+  assert.deepEqual(updateCalls[0].patch["flags.dnd5e.riders.activity"], []);
+  assert.deepEqual(updateCalls[0].options, { render: false, rebreyaRepair: true });
+  assert.equal(await service.repairCounterspellItems(actor), false);
+});
+
 test("pre-use activity returns false only when the root spell is cancelled", async () => {
   const service = makeService({ candidates: [counterspellCandidate()] });
   const activity = {

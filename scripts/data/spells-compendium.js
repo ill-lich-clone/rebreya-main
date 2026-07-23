@@ -3,6 +3,7 @@ import {
   SPELLS_COMPENDIUM_LABEL,
   SPELLS_COMPENDIUM_NAME
 } from "../constants.js";
+import { buildCounterspellActivity } from "./counterspell-activity.js";
 import { ensurePackSidebarFolder } from "./compendium-utils.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
@@ -126,53 +127,6 @@ function getSpellSource(document) {
   }
 
   return document;
-}
-
-function buildCounterspellActivity(sourceSystem = {}) {
-  const activities = sourceSystem.activities && typeof sourceSystem.activities === "object"
-    ? sourceSystem.activities
-    : {};
-  const sourceActivity = activities.counterspell
-    ?? Object.values(activities).find((activity) => cleanString(activity?._id) === "counterspell")
-    ?? Object.values(activities)[0]
-    ?? {};
-
-  const {
-    check: _check,
-    save: _save,
-    attack: _attack,
-    damage: _damage,
-    ...activity
-  } = clone(sourceActivity) ?? {};
-
-  return {
-    ...activity,
-    _id: "counterspell",
-    type: "utility",
-    activation: {
-      ...(activity.activation ?? {}),
-      type: "reaction",
-      value: activity.activation?.value ?? 1
-    },
-    consumption: {
-      ...(activity.consumption ?? {}),
-      targets: Array.isArray(activity.consumption?.targets) ? activity.consumption.targets : [],
-      scaling: {
-        ...(activity.consumption?.scaling ?? {}),
-        allowed: true,
-        max: activity.consumption?.scaling?.max ?? ""
-      }
-    },
-    spell: {
-      ...(activity.spell ?? {}),
-      level: 3,
-      scaling: {
-        ...(activity.spell?.scaling ?? {}),
-        mode: "level",
-        formula: activity.spell?.scaling?.formula ?? ""
-      }
-    }
-  };
 }
 
 export function buildRebreyaSpellItem(source) {
