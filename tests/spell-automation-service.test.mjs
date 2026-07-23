@@ -583,6 +583,27 @@ test("pre-use activity returns false only when the root spell is cancelled", asy
   assert.equal(await service.applyDnd5ePreUseActivity(activity, {}), false);
 });
 
+test("pre-use activity resumes when a lower-level Counterspell ability check fails", async () => {
+  const service = makeService({
+    candidates: [counterspellCandidate({ selectedLevel: 3 })],
+    rollTotal: 10
+  });
+  const activity = {
+    id: "activity-root",
+    uuid: "Activity.root",
+    actor: { uuid: "Actor.caster" },
+    item: {
+      uuid: "Item.root",
+      system: { level: 6, components: { vocal: true, somatic: false } }
+    },
+    system: { range: { value: 90, units: "ft" } }
+  };
+  const usageConfig = {};
+
+  assert.equal(await service.applyDnd5ePreUseActivity(activity, usageConfig), true);
+  assert.equal(usageConfig.flags?.[MODULE_ID]?.reactionCheckComplete, true);
+});
+
 test("pre-use activity recognizes dnd5e vocal and somatic properties", async () => {
   const service = makeService({ candidates: [counterspellCandidate()] });
   const activity = {
@@ -705,6 +726,24 @@ test("MIDI workflow returns false only when the root spell is cancelled", async 
   };
 
   assert.equal(await service.applyMidiWorkflow(workflow), false);
+});
+
+test("MIDI workflow continues when a lower-level Counterspell ability check fails", async () => {
+  const service = makeService({
+    candidates: [counterspellCandidate({ selectedLevel: 3 })],
+    rollTotal: 10
+  });
+  const workflow = {
+    id: "workflow-root",
+    actor: { uuid: "Actor.caster" },
+    item: {
+      uuid: "Item.root",
+      system: { level: 6, components: { verbal: true, somatic: false } }
+    },
+    activity: { uuid: "Activity.root", system: { range: { value: 90, units: "ft" } } }
+  };
+
+  assert.equal(await service.applyMidiWorkflow(workflow), true);
 });
 
 test("deferred dnd5e pre-use resumes an active root cast with a bypass marker", async () => {

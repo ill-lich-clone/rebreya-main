@@ -72,3 +72,46 @@ test("Rebreya Counterspell is a third-level reaction spell", () => {
     formula: ""
   });
 });
+
+test("Rebreya Counterspell strips native check activities so automation owns the roll outcome", () => {
+  const source = counterspellSource();
+  source.system.activities.counterspell = {
+    ...source.system.activities.counterspell,
+    type: "check",
+    check: {
+      ability: "int",
+      dc: {
+        calculation: "spellcasting"
+      }
+    }
+  };
+  source.system.activities.backup = {
+    _id: "backup",
+    type: "utility",
+    activation: {
+      type: "reaction",
+      value: 1,
+      condition: ""
+    },
+    consumption: {
+      targets: [],
+      scaling: {
+        allowed: true,
+        max: ""
+      }
+    },
+    spell: {
+      level: 3,
+      scaling: {
+        mode: "level",
+        formula: ""
+      }
+    }
+  };
+
+  const item = buildRebreyaSpellItem(source);
+
+  assert.deepEqual(Object.keys(item.system.activities), ["counterspell"]);
+  assert.equal(item.system.activities.counterspell.type, "utility");
+  assert.equal(item.system.activities.counterspell.check, undefined);
+});
