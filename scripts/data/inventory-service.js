@@ -469,6 +469,13 @@ async function resolveUuid(uuid) {
   }
 }
 
+function getLootgenChatClaimFromDropData(dropData = {}) {
+  const chatFlag = dropData?.data?.flags?.[MODULE_ID]?.lootgenChat ?? null;
+  const lootId = cleanId(chatFlag?.lootId);
+  const rowId = cleanId(chatFlag?.rowId);
+  return lootId && rowId ? { lootId, rowId } : null;
+}
+
 function durabilityTransferSignature(item) {
   const itemData = item?.toObject?.() ?? item;
   if (!isDurabilityEligible(itemData)) {
@@ -4581,8 +4588,16 @@ export class InventoryService {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
+    const lootgenClaim = getLootgenChatClaimFromDropData(dropData);
+    if (!dropData?.uuid && lootgenClaim) {
+      if (typeof this.moduleApi.claimLootgenChatRowToInventory !== "function") {
+        throw new Error("Текущая версия склада не поддерживает перенос добычи из чата.");
+      }
+      return this.moduleApi.claimLootgenChatRowToInventory(lootgenClaim.lootId, lootgenClaim.rowId);
+    }
+
     const itemDocument = dropData?.uuid ? await resolveUuid(dropData.uuid) : null;
-    if (!(itemDocument instanceof Item)) {
+    if (!isItemDocument(itemDocument)) {
       throw new Error("Перетащите предмет из листа персонажа или компендиума.");
     }
 

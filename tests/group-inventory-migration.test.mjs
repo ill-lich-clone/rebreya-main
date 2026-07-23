@@ -1263,6 +1263,61 @@ test("player inventory item drops into an unowned group actor are routed through
   }
 });
 
+test("lootgen chat item data drops into party inventory through the loot claim API", async () => {
+  const memberActor = createActor({ id: "member-1", name: "Hero", type: "character", isOwner: true });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: false,
+    flags: { [MODULE_ID]: { managedPartyGroup: true } },
+    members: [{ actor: memberActor }]
+  });
+  const claims = [];
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    user: { id: "player-1", isGM: false }
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({
+        groupActor,
+        members: [memberActor],
+        canManage: true
+      })
+    },
+    claimLootgenChatRowToInventory: async (lootId, rowId) => {
+      claims.push({ lootId, rowId });
+      return true;
+    }
+  });
+
+  try {
+    const result = await service.importDroppedItem({
+      type: "Item",
+      data: {
+        name: "Test Relic",
+        type: "loot",
+        flags: {
+          [MODULE_ID]: {
+            lootgenChat: {
+              lootId: "loot-1",
+              rowId: "row-1"
+            }
+          }
+        }
+      }
+    });
+
+    assert.equal(result, true);
+    assert.deepEqual(claims, [{ lootId: "loot-1", rowId: "row-1" }]);
+    assert.deepEqual(groupActor.items.contents, []);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("player party currency edits and conversions route through the GM command bus", async () => {
   const memberActor = createActor({ id: "member-1", name: "Hero", type: "character", isOwner: true });
   const groupActor = createActor({

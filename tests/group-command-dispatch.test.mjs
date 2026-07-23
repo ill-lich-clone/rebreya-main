@@ -618,6 +618,57 @@ test("typed inventory mutations authorize group members and dispatch strict payl
   }
 });
 
+test("typed inventory import lets group members copy compendium items into the party inventory", async () => {
+  const fixture = installFixture();
+  const previousFromUuid = globalThis.fromUuid;
+  const calls = [];
+  const compendiumItem = {
+    id: "compendium-item",
+    uuid: "Compendium.rebreya-main.gear.Item.compendium-item",
+    pack: "rebreya-main.gear",
+    system: {
+      quantity: 1
+    },
+    toObject() {
+      return {
+        name: "Compendium Torch",
+        type: "loot",
+        system: {
+          quantity: 1
+        }
+      };
+    }
+  };
+
+  try {
+    const moduleApi = new RebreyaMainModule();
+    moduleApi.inventoryService.executeImportMutation = async (payload) => {
+      calls.push(clone(payload));
+      return { action: "import" };
+    };
+    globalThis.fromUuid = async (uuid) => uuid === compendiumItem.uuid ? compendiumItem : null;
+    const request = commandRequest("inventory.import", fixture.users.playerA.id, {
+      inventoryActorId: fixture.groupA.id,
+      itemUuid: compendiumItem.uuid,
+      mutationId: "inventory-import-compendium"
+    }, "inventory-import-compendium");
+
+    await moduleApi.handleSocketMessage(request);
+    await flushCommands();
+
+    assert.deepEqual(calls, [{
+      inventoryActorId: fixture.groupA.id,
+      itemUuid: compendiumItem.uuid,
+      mutationId: "inventory-import-compendium"
+    }]);
+    assert.equal(resultFor(fixture, request.requestId)?.ok, true);
+  }
+  finally {
+    globalThis.fromUuid = previousFromUuid;
+    fixture.restore();
+  }
+});
+
 test("player setCombatStatus routes environment status changes for unowned actors through sockets", async () => {
   const globals = installCombatStatusGlobals();
   const fixture = installFixture({ currentUserId: "player-a" });

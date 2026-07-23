@@ -652,6 +652,16 @@ function traderActorIsOwnedByUser(actor, user) {
   return Number(ownership[user.id] ?? 0) >= 3 || Number(ownership.default ?? 0) >= 3;
 }
 
+function isCompendiumItemDocument(item) {
+  return Boolean(
+    item
+    && (
+      String(item.uuid ?? "").startsWith("Compendium.")
+      || String(item.pack ?? "").trim()
+    )
+  );
+}
+
 function isValidIsoDate(value) {
   return parseCalendarIsoDate(value) != null;
 }
@@ -1200,6 +1210,9 @@ export class RebreyaMainModule {
       : null;
     const sourceActor = item?.parent ?? null;
     const groupActor = resolveActorById(payload.inventoryActorId);
+    if (!sourceActor) {
+      return isCompendiumItemDocument(item);
+    }
     return traderActorIsOwnedByUser(sourceActor, sender)
       && getGroupMemberActors(groupActor).some((actor) => actor?.id === sourceActor?.id);
   }
