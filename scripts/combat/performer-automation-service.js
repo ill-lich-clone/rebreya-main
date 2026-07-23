@@ -264,6 +264,22 @@ export class PerformerAutomationService {
     return true;
   }
 
+  registerLongRestSteps(pipeline) {
+    if (typeof pipeline?.registerStep !== "function") return false;
+    pipeline.registerStep({
+      id: "performer.clear-state",
+      label: "Состояние Исполнителя",
+      order: 120,
+      interactive: false,
+      isEligible: ({ actor }) => isActorDocument(actor),
+      run: async ({ actor, result, config }) => {
+        await this.handleRestCompleted(actor, result, config);
+        return { status: "completed" };
+      }
+    });
+    return true;
+  }
+
   applyDnd5ePreUseActivity(activity) {
     const actor = activity?.actor ?? activity?.item?.actor;
     if (!isActivePerformanceActivity(activity) || !isActorDocument(actor)) {

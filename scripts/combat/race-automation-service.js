@@ -1229,10 +1229,33 @@ export class RaceAutomationService {
       await this.#promptSkillProficiencySwap(actor);
     }
 
-    if (this.#hasMechanic(actor, "spell-slot-scaling")) {
-      await this.#restoreHighElfSpellSlot(actor);
-    }
+    await this.restoreRaceSpellSlotAfterLongRest(actor);
 
+    return true;
+  }
+
+  async restoreRaceSpellSlotAfterLongRest(actor) {
+    if (!(actor instanceof Actor) || !this.#hasMechanic(actor, "spell-slot-scaling")) {
+      return false;
+    }
+    return this.#restoreHighElfSpellSlot(actor);
+  }
+
+  registerLongRestSteps(pipeline) {
+    if (typeof pipeline?.registerStep !== "function") return false;
+    pipeline.registerStep({
+      id: "race.restore-spell-slot",
+      label: "Расовое восстановление ячейки",
+      order: 150,
+      interactive: false,
+      isEligible: ({ actor }) => (
+        Boolean(actor) && this.#hasMechanic(actor, "spell-slot-scaling")
+      ),
+      run: async ({ actor }) => {
+        const restored = await this.restoreRaceSpellSlotAfterLongRest(actor);
+        return { status: restored ? "completed" : "skipped" };
+      }
+    });
     return true;
   }
 

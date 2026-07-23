@@ -2871,6 +2871,22 @@ export class SorcererAutomationService {
     return true;
   }
 
+  registerLongRestSteps(pipeline) {
+    if (typeof pipeline?.registerStep !== "function") return false;
+    pipeline.registerStep({
+      id: "sorcerer.restore",
+      label: "Восстановление Чародея",
+      order: 140,
+      interactive: false,
+      isEligible: ({ actor }) => Boolean(actor),
+      run: async ({ actor, result, config }) => {
+        await this.handleRestCompleted(actor, result, config);
+        return { status: "completed" };
+      }
+    });
+    return true;
+  }
+
   async handleRestCompleted(actor, result = {}, config = {}) {
     if (!isLongRest(result, config)) {
       return true;

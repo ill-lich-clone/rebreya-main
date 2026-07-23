@@ -361,6 +361,22 @@ export class RuneKnightAutomationService {
     return true;
   }
 
+  registerLongRestSteps(pipeline) {
+    if (typeof pipeline?.registerStep !== "function") return false;
+    pipeline.registerStep({
+      id: "rune-knight.restore",
+      label: "Восстановление Рунного рыцаря",
+      order: 110,
+      interactive: false,
+      isEligible: ({ actor }) => isActorDocument(actor),
+      run: async ({ actor, result, config }) => {
+        await this.handleRestCompleted(actor, result, config);
+        return { status: "completed" };
+      }
+    });
+    return true;
+  }
+
   repairActor(actor, options = {}) {
     if (!isActorDocument(actor)) {
       return Promise.resolve(false);

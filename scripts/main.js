@@ -936,6 +936,15 @@ export class RebreyaMainModule {
       sceneDocuments: () => globalThis.game?.scenes,
       isActiveGmClient: () => isActiveGmClient(globalThis.game)
     });
+    for (const service of [
+      this.runeKnightAutomationService,
+      this.performerAutomationService,
+      this.fighterAutomationService,
+      this.sorcererAutomationService,
+      this.raceAutomationService
+    ]) {
+      service.registerLongRestSteps?.(this.longRestPipelineService);
+    }
     this.featChoiceAutomationService = new FeatChoiceAutomationService(this);
     this.repository.setGlobalEventsService(this.globalEventsService);
     this.economyApp = null;

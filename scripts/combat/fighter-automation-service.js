@@ -619,6 +619,16 @@ export class FighterAutomationService {
       return true;
     }
 
+    await this.restoreAfterLongRest(actor);
+    await this.#handleMultiattackRestChoice(actor);
+    return true;
+  }
+
+  async restoreAfterLongRest(actor) {
+    if (!(actor instanceof Actor)) {
+      return false;
+    }
+
     await this.repairActor(actor);
 
     const secondWind = this.#findSecondWind(actor);
@@ -626,7 +636,22 @@ export class FighterAutomationService {
       await this.#ensureSecondWindResource(actor, secondWind, { restore: true });
     }
 
-    await this.#handleMultiattackRestChoice(actor);
+    return true;
+  }
+
+  registerLongRestSteps(pipeline) {
+    if (typeof pipeline?.registerStep !== "function") return false;
+    pipeline.registerStep({
+      id: "fighter.restore",
+      label: "Восстановление Воина",
+      order: 130,
+      interactive: false,
+      isEligible: ({ actor }) => Boolean(actor),
+      run: async ({ actor }) => {
+        const restored = await this.restoreAfterLongRest(actor);
+        return { status: restored ? "completed" : "skipped" };
+      }
+    });
     return true;
   }
 
