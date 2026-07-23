@@ -31,8 +31,7 @@ test("Craftsman gadget hooks bridge native dnd5e activity and template events", 
         return false;
       },
       applyDnd5ePostUseActivity: async (...args) => calls.push(["postUse", ...args]),
-      applyDnd5ePreCreateActivityTemplate: (...args) => calls.push(["template", ...args]),
-      handleRestCompleted: async (...args) => calls.push(["rest", ...args])
+      applyDnd5ePreCreateActivityTemplate: (...args) => calls.push(["template", ...args])
     }
   };
 
@@ -41,9 +40,8 @@ test("Craftsman gadget hooks bridge native dnd5e activity and template events", 
   assert.equal(listeners.get("dnd5e.preUseActivity")(activity, {}, {}, {}), false);
   listeners.get("dnd5e.postUseActivity")(activity, {}, results);
   listeners.get("dnd5e.preCreateActivityTemplate")(activity, templateData);
-  listeners.get("dnd5e.restCompleted")({ id: "actor" }, { longRest: true }, {});
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(new Set(calls.map((entry) => entry[0])), new Set(["preUse", "postUse", "template", "rest"]));
+  assert.deepEqual(new Set(calls.map((entry) => entry[0])), new Set(["preUse", "postUse", "template"]));
   assert.equal(calls.find((entry) => entry[0] === "postUse")[3], results);
   assert.equal(calls.find((entry) => entry[0] === "template")[2], templateData);
 });
@@ -102,20 +100,13 @@ test("Craftsman gadget hook registration is idempotent", () => {
   assert.equal(listeners.size, count);
 });
 
-test("Craftsman rest and native summon hooks serialize gadget choices before Constructor automation", async () => {
+test("Craftsman native summon and document hooks remain registered outside the rest pipeline", async () => {
   const { Hooks, listeners } = hookHarness();
   const calls = [];
   const moduleApi = {
-    craftsmanGadgetService: {
-      async handleRestCompleted() {
-        calls.push("gadgets-start");
-        await Promise.resolve();
-        calls.push("gadgets-end");
-      }
-    },
+    craftsmanGadgetService: {},
     craftsmanConstructorService: {
       applyDnd5ePreUseActivity: () => false,
-      async handleRestCompleted() { calls.push("constructor-rest"); },
       async handlePostSummon(...args) { calls.push(["post-summon", ...args]); },
       async handlePostUseActivity(...args) { calls.push(["construct-activity", ...args]); },
       async handleTokenUpdated(...args) { calls.push(["token", ...args]); },
@@ -123,18 +114,15 @@ test("Craftsman rest and native summon hooks serialize gadget choices before Con
     }
   };
   registerCraftsmanGadgetHooks(moduleApi, { Hooks, game: {} });
-  const actor = { id: "craftsman" };
   assert.equal(listeners.get("dnd5e.preUseActivity")({ id: "construct-summon" }, {}, {}, {}), false);
-  listeners.get("dnd5e.restCompleted")(actor, { longRest: true }, {});
   listeners.get("dnd5e.postSummon")({ id: "activity" }, { id: "profile" }, [{ id: "token" }], {});
   listeners.get("updateToken")({ id: "token" }, { delta: {} });
   listeners.get("updateActor")({ id: "actor" }, { system: {} });
   await new Promise((resolve) => setImmediate(resolve));
 
-  assert.deepEqual(calls.slice(0, 3), ["gadgets-start", [
+  assert.deepEqual(calls.slice(0, 2), [[
     "post-summon", { id: "activity" }, { id: "profile" }, [{ id: "token" }], {}
   ], ["token", { id: "token" }, { delta: {} }]]);
-  assert.ok(calls.indexOf("gadgets-end") < calls.indexOf("constructor-rest"));
   assert.equal(calls.some((entry) => Array.isArray(entry) && entry[0] === "actor"), true);
 });
 

@@ -160,10 +160,33 @@ export class CraftsmanGadgetService {
     this._knownActors = new Set();
   }
 
+  registerLongRestSteps(pipeline) {
+    if (typeof pipeline?.registerStep !== "function") return false;
+    pipeline.registerStep({
+      id: "craftsman.gadgets",
+      label: "Подготовка гаджетов",
+      order: 230,
+      interactive: true,
+      isEligible: ({ actor }) => getCraftsmanGadgetCapacity(actor) > 0,
+      run: ({ actor, progress }) => this.chooseGadgetsAfterLongRest(actor, { progress })
+    });
+    return true;
+  }
+
+  async chooseGadgetsAfterLongRest(actor, execution = {}) {
+    if (getCraftsmanGadgetCapacity(actor) <= 0) return { status: "skipped" };
+    this._knownActors.add(actor);
+    const changed = await this.#queueActorMutation(
+      actor,
+      () => this.#replaceLoadout(actor, execution.progress)
+    );
+    return { status: changed ? "completed" : "skipped" };
+  }
+
   async handleRestCompleted(actor, result = {}, config = {}) {
     if (!isLongRest(result, config) || getCraftsmanGadgetCapacity(actor) <= 0) return true;
-    this._knownActors.add(actor);
-    return this.#queueActorMutation(actor, () => this.#replaceLoadout(actor));
+    const outcome = await this.chooseGadgetsAfterLongRest(actor);
+    return outcome.status === "completed";
   }
 
   async executeAuthoritativeMutation(payload) {
@@ -530,7 +553,7 @@ export class CraftsmanGadgetService {
     return true;
   }
 
-  async #replaceLoadout(actor) {
+  async #replaceLoadout(actor, progress) {
     const oldGadgets = getPreparedCraftsmanGadgets(actor);
     const initialActorState = clone(actorGadgetState(actor) ?? {});
     const savedSelectedIds = Array.isArray(actorGadgetState(actor)?.selectedIds)
@@ -544,14 +567,19 @@ export class CraftsmanGadgetService {
     if (!choices.length) return false;
 
     const capacity = getCraftsmanGadgetCapacity(actor);
-    const selected = await this.#promptLoadout(actor, choices, capacity, previousSelectedIds);
-    const requestedIds = Array.isArray(selected)
-      ? selected.map(cleanString).filter(Boolean)
-      : previousSelectedIds;
+    const selected = await this.#promptLoadout(
+      actor,
+      choices,
+      capacity,
+      previousSelectedIds,
+      progress
+    );
+    if (!Array.isArray(selected)) return false;
+    const requestedIds = selected.map(cleanString).filter(Boolean);
     const byId = new Map(choices.map((entry) => [entry.id, entry]));
     const catalogIds = requestedIds.slice(0, capacity).filter((id) => byId.has(id));
     if (!catalogIds.length) return false;
-    if (Array.isArray(selected) && catalogIds.length !== capacity) {
+    if (catalogIds.length !== capacity) {
       globalThis.ui?.notifications?.warn?.(`Выберите ${capacity} гаджета.`);
       return false;
     }
@@ -687,11 +715,12 @@ export class CraftsmanGadgetService {
     return typeof pack?.getDocuments === "function" ? collectionValues(await pack.getDocuments()) : [];
   }
 
-  async #promptLoadout(actor, choices, capacity, previousSelectedIds) {
+  async #promptLoadout(actor, choices, capacity, previousSelectedIds, progress) {
     if (typeof this.options.promptLoadout === "function") {
       return this.options.promptLoadout(actor, clone(choices), {
         capacity,
-        previous: clone(previousSelectedIds)
+        previous: clone(previousSelectedIds),
+        progress
       });
     }
     if (!actor?.isOwner && !globalThis.game?.user?.isGM) return null;
@@ -704,9 +733,11 @@ export class CraftsmanGadgetService {
       )).join("");
       return `<div class="form-group"><label>Гаджет ${index + 1}</label><select name="gadget-${index}">${options}</select></div>`;
     }).join("");
+    const title = progress?.title?.("Подготовка гаджетов") ?? "Подготовка гаджетов";
+    const progressHeader = progress?.header?.("Подготовка гаджетов") ?? "";
     return DialogV2.wait({
-      window: { title: "Подготовка гаджетов" },
-      content: `<form>${selects}</form>`,
+      window: { title },
+      content: `${progressHeader}<form>${selects}</form>`,
       buttons: [{
         action: "prepare",
         label: "Подготовить",

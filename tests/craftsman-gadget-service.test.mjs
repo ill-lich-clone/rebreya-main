@@ -274,18 +274,22 @@ test("Mechanic templates are hidden from other Craftsmen and allowed for Mechani
   assert.equal(observed.filter((entry) => entry.availability === "mechanic").length, 2);
 });
 
-test("cancelling selection recreates the previous types as a fresh generation", async () => {
+test("cancelling long-rest selection keeps the previous generation unchanged", async () => {
   const actor = new TestActor({
     level: 1,
     items: [preparedGadget("force-glove", "old", "old-force", 2)]
   });
   const service = makeService({ selection: null, randomIds: ["generation-new", "instance-a"] });
-  await service.handleRestCompleted(actor, { type: "long" }, {});
+
+  assert.equal(await service.handleRestCompleted(actor, { type: "long" }, {}), false);
+
   const gadgets = getPreparedCraftsmanGadgets(actor);
   assert.equal(gadgets.length, 1);
   assert.equal(gadgets[0].flags["rebreya-main"].craftsmanGadget.catalogId, "force-glove");
   assert.equal(gadgets[0].system.quantity, 2);
-  assert.ok(gadgets.every((item) => item.flags["rebreya-main"].craftsmanGadget.restGeneration === "generation-new"));
+  assert.equal(gadgets[0].flags["rebreya-main"].craftsmanGadget.restGeneration, "old");
+  assert.deepEqual(actor.created, []);
+  assert.deepEqual(actor.deleted, []);
 });
 
 test("failed creation rolls back only the new generation and retains old gadgets", async () => {

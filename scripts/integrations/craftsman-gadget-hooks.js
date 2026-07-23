@@ -114,14 +114,6 @@ export function registerCraftsmanGadgetHooks(moduleApi, options = {}) {
       }
     ));
 
-    Hooks.on("dnd5e.restCompleted", (actor, result, config) => runAsync(
-      "Failed to process Craftsman long-rest choices.",
-      async () => {
-        await gadgetService?.handleRestCompleted?.(actor, result, config);
-        await constructorService?.handleRestCompleted?.(actor, result, config);
-      }
-    ));
-
     Hooks.on("updateWorldTime", (worldTime) => runAsync(
       "Failed to advance Craftsman timed automation.",
       async () => {

@@ -285,13 +285,39 @@ export class CraftsmanConstructorService {
     this._queues = new Map();
   }
 
-  async handleRestCompleted(actor, result = {}, config = {}) {
-    if (!isLongRest(result, config) || craftsmanLevel(actor) < 3 || !this.#isConstructor(actor)) return true;
-    const selected = normalizedConfiguration(await this.#promptConfiguration(actor, { result, config }));
-    if (!selected) return false;
+  registerLongRestSteps(pipeline) {
+    if (typeof pipeline?.registerStep !== "function") return false;
+    pipeline.registerStep({
+      id: "craftsman.constructor",
+      label: "Сборка Конструкта",
+      order: 240,
+      interactive: true,
+      isEligible: ({ actor }) => craftsmanLevel(actor) >= 3 && this.#isConstructor(actor),
+      run: ({ actor, result, config, progress }) => this.chooseConstructorAfterLongRest(
+        actor,
+        { result, config, progress }
+      )
+    });
+    return true;
+  }
+
+  async chooseConstructorAfterLongRest(actor, execution = {}) {
+    if (craftsmanLevel(actor) < 3 || !this.#isConstructor(actor)) {
+      return { status: "skipped" };
+    }
+    const selected = normalizedConfiguration(
+      await this.#promptConfiguration(actor, execution)
+    );
+    if (!selected) return { status: "skipped" };
     await this.#updatePreparation(actor, selected);
     this.#notify("info", "Сборка Конструкта подготовлена. Разместите его активностью «Собрать Конструкта» на нужной сцене.");
-    return true;
+    return { status: "completed" };
+  }
+
+  async handleRestCompleted(actor, result = {}, config = {}) {
+    if (!isLongRest(result, config) || craftsmanLevel(actor) < 3 || !this.#isConstructor(actor)) return true;
+    const outcome = await this.chooseConstructorAfterLongRest(actor, { result, config });
+    return outcome.status === "completed";
   }
 
   applyDnd5ePreUseActivity(activity) {
@@ -644,9 +670,12 @@ export class CraftsmanConstructorService {
     const skillOptions = skills.map((entry) => (
       `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>`
     )).join("");
+    const progress = context?.progress;
+    const assemblyTitle = progress?.title?.("Сборка Конструкта", "1/2") ?? "Сборка Конструкта";
+    const assemblyHeader = progress?.header?.("Сборка Конструкта", "1/2") ?? "";
     const assembly = await DialogV2.wait({
-      window: { title: "Сборка Конструкта" },
-      content: `<form><div class="form-group"><label>Сборка тела</label><select name="body">${bodyOptions}</select></div><div class="form-group"><label>Первый навык</label><select name="skill-1">${skillOptions}</select></div><div class="form-group"><label>Второй навык</label><select name="skill-2">${skillOptions}</select></div></form>`,
+      window: { title: assemblyTitle },
+      content: `${assemblyHeader}<form><div class="form-group"><label>Сборка тела</label><select name="body">${bodyOptions}</select></div><div class="form-group"><label>Первый навык</label><select name="skill-1">${skillOptions}</select></div><div class="form-group"><label>Второй навык</label><select name="skill-2">${skillOptions}</select></div></form>`,
       buttons: [{
         action: "next",
         label: "Далее",
@@ -669,9 +698,11 @@ export class CraftsmanConstructorService {
     const modeOptions = Object.values(CRAFTSMAN_COMBAT_MODES).map((entry) => (
       `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.label)}</option>`
     )).join("");
+    const modeTitle = progress?.title?.("Сборка Конструкта", "2/2") ?? "Боевой режим Конструкта";
+    const modeHeader = progress?.header?.("Сборка Конструкта", "2/2") ?? "";
     const mode = await DialogV2.wait({
-      window: { title: "Боевой режим Конструкта" },
-      content: `<form><div class="form-group"><label>Боевой режим</label><select name="mode">${modeOptions}</select></div></form>`,
+      window: { title: modeTitle },
+      content: `${modeHeader}<form><div class="form-group"><label>Боевой режим</label><select name="mode">${modeOptions}</select></div></form>`,
       buttons: [{
         action: "assemble",
         label: "Собрать",

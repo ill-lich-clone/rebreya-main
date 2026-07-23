@@ -110,11 +110,6 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to restore Rune Knight form state.`, error);
       });
     });
-    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
-      moduleApi.runeKnightAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to restore Rune Knight resources.`, error);
-      });
-    });
     Hooks.on("dnd5e.postUseActivity", (activity, usageConfig, results) => {
       moduleApi.runeKnightAutomationService.applyDnd5ePostUseActivity(activity, usageConfig, results).catch((error) => {
         console.error(`${MODULE_ID} | Failed to apply Rune Knight activity automation.`, error);
@@ -847,11 +842,6 @@ export function registerCombatHooks(moduleApi) {
       });
     });
 
-    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
-      moduleApi.performerAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to clear performer rest automation.`, error);
-      });
-    });
   }
 
   if (hasBardicInspirationCompatService) {
@@ -952,12 +942,6 @@ export function registerCombatHooks(moduleApi) {
       }
     });
 
-    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
-      moduleApi.raceAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to apply race rest automation.`, error);
-      });
-    });
-
     Hooks.on("dnd5e.determineOccupiedGridSpaceBlocking", (gridSpace, token, options, found) => {
       try {
         moduleApi.raceAutomationService.handleMovementBlocking(gridSpace, token, options, found);
@@ -1027,12 +1011,6 @@ export function registerCombatHooks(moduleApi) {
       return true;
     });
 
-    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
-      moduleApi.fighterAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to apply fighter rest automation.`, error);
-      });
-    });
-
     Hooks.on("midi-qol.RollComplete", (workflow) => {
       try {
         return moduleApi.fighterAutomationService.applyMidiRollComplete(workflow);
@@ -1073,11 +1051,6 @@ export function registerCombatHooks(moduleApi) {
       });
     });
 
-    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
-      moduleApi.sorcererAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to restore Sorcery Points after rest.`, error);
-      });
-    });
   }
 
   if (hasElementalAdeptService) {
@@ -1158,12 +1131,6 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to apply paladin activity automation.`, error);
       });
       return true;
-    });
-
-    Hooks.on("dnd5e.restCompleted", (actor, result, config) => {
-      moduleApi.paladinAutomationService.handleRestCompleted(actor, result, config).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to apply paladin rest automation.`, error);
-      });
     });
 
     Hooks.on("dnd5e.preRollD20Test", (rollConfig, dialogConfig, messageConfig) => {

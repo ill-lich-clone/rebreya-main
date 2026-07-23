@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { CraftsmanConstructorService } from "../scripts/combat/craftsman-constructor-service.js";
+import { CraftsmanGadgetService } from "../scripts/combat/craftsman-gadget-service.js";
 import { FighterAutomationService } from "../scripts/combat/fighter-automation-service.js";
 import { PaladinAutomationService } from "../scripts/combat/paladin-automation-service.js";
 import { PerformerAutomationService } from "../scripts/combat/performer-automation-service.js";
@@ -20,6 +24,18 @@ function stepRecorder() {
       }
     }
   };
+}
+
+async function javascriptFiles(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const nested = await Promise.all(entries.map((entry) => {
+    const target = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      return javascriptFiles(target);
+    }
+    return entry.isFile() && entry.name.endsWith(".js") ? [target] : [];
+  }));
+  return nested.flat();
 }
 
 test("background automation services register ordered non-interactive long-rest steps", () => {
@@ -73,7 +89,9 @@ test("composition root registers background services after constructing the pipe
     "performerAutomationService",
     "fighterAutomationService",
     "sorcererAutomationService",
-    "raceAutomationService"
+    "raceAutomationService",
+    "craftsmanGadgetService",
+    "craftsmanConstructorService"
   ]) {
     assert.match(
       source.slice(pipelineIndex, registrationIndex),
@@ -145,4 +163,83 @@ test("interactive long-rest dialogs consume pipeline progress", async () => {
     byFile.get("paladin-automation-service.js"),
     /progress\?\.header\?\.\("Заклинания паладина"\)/u
   );
+});
+
+test("Craftsman services register gadget and Constructor choices after class choices", () => {
+  const { pipeline, steps } = stepRecorder();
+  const services = [
+    new CraftsmanGadgetService({}),
+    new CraftsmanConstructorService({})
+  ];
+
+  for (const service of services) {
+    service.registerLongRestSteps(pipeline);
+  }
+
+  assert.deepEqual(
+    steps.map(({ id, order, interactive }) => ({ id, order, interactive })),
+    [
+      { id: "craftsman.gadgets", order: 230, interactive: true },
+      { id: "craftsman.constructor", order: 240, interactive: true }
+    ]
+  );
+});
+
+test("Craftsman long-rest dialogs use outer progress and Constructor substeps", async () => {
+  const gadgetSource = await readFile(
+    new URL("../scripts/combat/craftsman-gadget-service.js", import.meta.url),
+    "utf8"
+  );
+  const constructorSource = await readFile(
+    new URL("../scripts/combat/craftsman-constructor-service.js", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(
+    gadgetSource,
+    /progress\?\.title\?\.\("Подготовка гаджетов"\)/u
+  );
+  assert.match(
+    gadgetSource,
+    /progress\?\.header\?\.\("Подготовка гаджетов"\)/u
+  );
+  assert.match(
+    constructorSource,
+    /progress\?\.title\?\.\("Сборка Конструкта", "1\/2"\)/u
+  );
+  assert.match(
+    constructorSource,
+    /progress\?\.title\?\.\("Сборка Конструкта", "2\/2"\)/u
+  );
+  assert.match(
+    constructorSource,
+    /progress\?\.header\?\.\("Сборка Конструкта", "1\/2"\)/u
+  );
+  assert.match(
+    constructorSource,
+    /progress\?\.header\?\.\("Сборка Конструкта", "2\/2"\)/u
+  );
+});
+
+test("module contains one restCompleted registration and preserves preLongRest", async () => {
+  const scriptsRoot = fileURLToPath(new URL("../scripts/", import.meta.url));
+  const files = await javascriptFiles(scriptsRoot);
+  const registrations = [];
+  for (const file of files) {
+    const source = await readFile(file, "utf8");
+    for (const _match of source.matchAll(
+      /Hooks\.on\("dnd5e\.restCompleted"/gu
+    )) {
+      registrations.push(
+        path.relative(scriptsRoot, file).replaceAll("\\", "/")
+      );
+    }
+  }
+
+  assert.deepEqual(registrations, ["integrations/long-rest-hooks.js"]);
+  const combatHooks = await readFile(
+    new URL("../scripts/combat/hooks.js", import.meta.url),
+    "utf8"
+  );
+  assert.match(combatHooks, /Hooks\.on\("dnd5e\.preLongRest"/u);
 });
