@@ -733,20 +733,6 @@ export function registerCombatHooks(moduleApi) {
   }
 
   if (hasSpellService) {
-    const repairCounterspellItems = (document) => {
-      moduleApi.spellAutomationService.repairCounterspellItems(document).catch((error) => {
-        console.error(`${MODULE_ID} | Failed to repair Counterspell activities.`, error);
-      });
-    };
-
-    for (const hookName of CHARACTER_SHEET_RENDER_HOOKS) {
-      Hooks.on(hookName, (app) => {
-        repairCounterspellItems(app?.actor ?? app?.document);
-      });
-    }
-    Hooks.on("createItem", repairCounterspellItems);
-    Hooks.on("updateItem", repairCounterspellItems);
-
     Hooks.on("midi-qol.preItemRoll", async (workflow) => {
       try {
         return await moduleApi.spellAutomationService.applyMidiWorkflow(workflow);
