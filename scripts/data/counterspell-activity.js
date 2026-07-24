@@ -3,6 +3,16 @@ function cleanString(value, fallback = "") {
   return text || fallback;
 }
 
+const FOUNDRY_DOCUMENT_ID_PATTERN = /^[A-Za-z0-9]{16}$/u;
+const COUNTERSPELL_ACTIVITY_ID = "counterspell0000";
+
+function resolveActivityId(sourceActivity = {}) {
+  const sourceId = cleanString(sourceActivity?._id ?? sourceActivity?.id);
+  return FOUNDRY_DOCUMENT_ID_PATTERN.test(sourceId)
+    ? sourceId
+    : COUNTERSPELL_ACTIVITY_ID;
+}
+
 function clone(value) {
   if (globalThis.foundry?.utils?.deepClone) {
     return globalThis.foundry.utils.deepClone(value);
@@ -30,7 +40,7 @@ export function buildCounterspellActivity(sourceSystem = {}) {
 
   return {
     ...activity,
-    _id: "counterspell",
+    _id: resolveActivityId(sourceActivity),
     type: "utility",
     activation: {
       ...(activity.activation ?? {}),

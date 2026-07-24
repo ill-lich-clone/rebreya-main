@@ -23,10 +23,226 @@ import {
 const PACK_ID = `world.${MAGIC_ITEMS_COMPENDIUM_NAME}`;
 const DND5E_SYSTEM_ID = "dnd5e";
 const COMPENDIUM_SIDEBAR_FOLDER = ["Ребрея"];
+const EFFECT_MODE_CUSTOM = 0;
+const EFFECT_MODE_ADD = 2;
+const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
 const MAGIC_TEMPLATE_VERSION = 3;
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const MAGIC_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Magic Items`, MODULE_ICONS_BASE_PATH];
+const BELLMAN_POWER_ITEM_NAME = "Жемчужина силы";
+const HOARDING_POUCH_ITEM_NAME = "Сумка хранения";
+const WATCHER_SHIELD_ITEM_NAME = "Щит часового";
+const RING_BONUS_ITEM_PREFIX = "Кольцо характеристики";
+const RING_BONUS_VARIANTS = [
+  { id: "легендарное", bonus: 2, maxAbilityScore: 26 },
+  { id: "необычное", bonus: 2, maxAbilityScore: 12 },
+  { id: "очень редкое", bonus: 2, maxAbilityScore: 20 },
+  { id: "редкое", bonus: 1, maxAbilityScore: 16 },
+  { id: "обычное", bonus: 1, maxAbilityScore: 10 }
+];
+const RING_BONUS_VARIANTS_NORMALIZED = RING_BONUS_VARIANTS
+  .map((entry) => ({ ...entry, normalizedId: normalizeMatchText(entry.id) }));
+
+function stableHashId(seed, scope = "id") {
+  const source = `${scope}:${seed}`;
+  let hashA = 0x811c9dc5;
+  let hashB = 0x9e3779b9;
+
+  for (const char of source) {
+    const code = char.codePointAt(0) ?? 0;
+    hashA = Math.imul(hashA ^ code, 0x01000193) >>> 0;
+    hashB = Math.imul(hashB + code + ((hashB << 6) >>> 0) + (hashB >>> 2), 0x85ebca6b) >>> 0;
+  }
+
+  const token = `${hashA.toString(36)}${hashB.toString(36)}`.replace(/[^a-z0-9]/gu, "");
+  return token.padEnd(16, "0").slice(0, 16);
+}
+
+function buildMagicItemEffectId(item, suffix) {
+  return stableHashId(`magic-item:${String(item?.id ?? "").trim()}:${suffix}`, "magic-item-effect");
+}
+
+function buildPassiveMagicItemEffect({
+  id,
+  name,
+  description = "",
+  changes = [],
+  transfer = true,
+  flags = {}
+}) {
+  return {
+    _id: id,
+    name,
+    type: "base",
+    img: DEFAULT_MAGIC_ITEM_ICON,
+    system: {},
+    changes,
+    disabled: false,
+    duration: {
+      startTime: null,
+      seconds: null,
+      combat: null,
+      rounds: null,
+      turns: null,
+      startRound: null,
+      startTurn: null
+    },
+    description,
+    origin: null,
+    transfer,
+    statuses: [],
+    sort: 0,
+    flags: {
+      [MODULE_ID]: {
+        managed: true,
+        magicItemAutomation: true
+      },
+      ...flags
+    }
+  };
+}
+
+function parseItemBonusFromName(itemName) {
+  const match = String(itemName ?? "").match(/\+(\d+)/u);
+  return match ? Number(match[1]) : 0;
+}
+
+function resolveMagicItemAutomationDefinition(item) {
+  const normalizedName = normalizeMatchText(item?.name);
+  const normalizedPoweName = normalizeMatchText(BELLMAN_POWER_ITEM_NAME);
+  const normalizedPouchName = normalizeMatchText(HOARDING_POUCH_ITEM_NAME);
+  const normalizedWatcherShieldName = normalizeMatchText(WATCHER_SHIELD_ITEM_NAME);
+  const normalizedRingPrefix = normalizeMatchText(RING_BONUS_ITEM_PREFIX);
+
+  if (normalizedName === normalizedPouchName) {
+    return {
+      kind: "bagOfHolding",
+      coverage: "partial",
+      capacity: {
+        count: null,
+        volume: { value: 64, units: "ft3" },
+        weight: { value: 500, units: "lb" },
+        note: "В модуле контейнерная модель для мешка хранения применена через метаданные и требует ручной верификации."
+      }
+    };
+  }
+
+  if (normalizedName === normalizedPoweName) {
+    return {
+      kind: "pearlOfPower",
+      coverage: "manual",
+      note: "Требуется ручной выбор и восстановление ячейки заклинания после использования."
+    };
+  }
+
+  if (normalizedName.startsWith(normalizedWatcherShieldName)) {
+    return {
+      kind: "itemAbility",
+      coverage: "full",
+      note: "Автоматизируется статическим эффектом в разделe `effects`."
+    };
+  }
+
+  if (normalizedName.startsWith(normalizedRingPrefix)) {
+    const variant = RING_BONUS_VARIANTS_NORMALIZED
+      .find((entry) => normalizedName.includes(entry.normalizedId));
+    if (!variant) {
+      return null;
+    }
+
+    return {
+      kind: "abilityRing",
+      coverage: "manual-choice",
+      bonus: variant.bonus,
+      maxAbilityScore: variant.maxAbilityScore,
+      note: `Выберите одну характеристику для повышения на ${variant.bonus} (максимум ${variant.maxAbilityScore}).`
+    };
+  }
+
+  return null;
+}
+
+function buildMagicItemAutomationEffects(item) {
+  const normalizedName = normalizeMatchText(item?.name);
+  const itemBonuses = parseItemBonusFromName(item?.name);
+
+  if (normalizedName === normalizeMatchText("Ночные очки")) {
+    return [
+      buildPassiveMagicItemEffect({
+        id: buildMagicItemEffectId(item, "night-goggles"),
+        name: `${item?.name}: Темное зрение`,
+        description: item?.description,
+        changes: [{
+          key: "system.attributes.senses.darkvision",
+          mode: EFFECT_MODE_UPGRADE,
+          value: "60",
+          priority: 20
+        }]
+      })
+    ];
+  }
+
+  if (normalizedName.startsWith(normalizeMatchText("Плащ защиты"))) {
+    if (!itemBonuses) {
+      return [];
+    }
+
+    return [
+      buildPassiveMagicItemEffect({
+        id: buildMagicItemEffectId(item, `cloak-of-protection-${itemBonuses}`),
+        name: `${item?.name}: Защита`,
+        description: item?.description,
+        changes: [
+          {
+            key: "system.attributes.ac.bonus",
+            mode: EFFECT_MODE_ADD,
+            value: `${itemBonuses}`,
+            priority: 20
+          },
+          {
+            key: "system.bonuses.abilities.save",
+            mode: EFFECT_MODE_ADD,
+            value: `+${itemBonuses}`,
+            priority: 20
+          }
+        ]
+      })
+    ];
+  }
+
+  if (normalizedName === normalizeMatchText("Щит часового")) {
+    return [
+      buildPassiveMagicItemEffect({
+        id: buildMagicItemEffectId(item, "watcher-shield"),
+        name: `${item?.name}: Боевая подготовка`,
+        description: item?.description,
+        changes: [
+          {
+            key: "flags.midi-qol.advantage.check.dex",
+            mode: EFFECT_MODE_CUSTOM,
+            value: "1",
+            priority: 20
+          },
+          {
+            key: "flags.midi-qol.advantage.ability.check.dex",
+            mode: EFFECT_MODE_CUSTOM,
+            value: "1",
+            priority: 20
+          },
+          {
+            key: "flags.midi-qol.advantage.skill.prc",
+            mode: EFFECT_MODE_CUSTOM,
+            value: "1",
+            priority: 20
+          }
+        ]
+      })
+    ];
+  }
+
+  return [];
+}
 
 function normalizeMatchText(value) {
   return String(value ?? "")
@@ -401,16 +617,28 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
   const rank = clampRank(item.rank);
   const folderPath = buildFolderPath(classification).join("/");
   const descriptionHtml = buildDescriptionHtml(item, classification);
+  const magicItemAutomation = resolveMagicItemAutomationDefinition(item);
+  const systemData = buildSystemData(item, classification, descriptionHtml);
+
+  if (magicItemAutomation?.kind === "bagOfHolding") {
+    systemData.capacity = magicItemAutomation.capacity ?? {
+      count: null,
+      volume: { value: 64, units: "ft3" },
+      weight: { value: 500, units: "lb" }
+    };
+    systemData.type.value = "backpack";
+  }
 
   return {
     name: item.name,
     type: classification.documentType,
     img: getMagicItemIcon(item, classification, iconLookup),
     folder: folderIdByPath.get(folderPath) ?? null,
+    effects: buildMagicItemAutomationEffects(item),
     ownership: {
       default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
     },
-    system: buildSystemData(item, classification, descriptionHtml),
+    system: systemData,
     flags: {
       [MODULE_ID]: {
         managed: true,
@@ -430,6 +658,7 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
         foundryFolder: folderPath,
         firearmClass: classification.firearmClass ?? "",
         magical: true,
+        magicItemAutomation,
         restoreBardicInspiration: restoresBardicInspiration(item),
         attunement: item.attunement,
         bargaining: item.bargaining,

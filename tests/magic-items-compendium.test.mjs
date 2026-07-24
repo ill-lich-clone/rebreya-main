@@ -179,3 +179,74 @@ test("magic item compendium flags rhythm-maker drums as bardic inspiration resto
   assert.equal(drum.flags["rebreya-main"].restoreBardicInspiration, true);
   assert.equal(illusionTool.flags["rebreya-main"].restoreBardicInspiration, false);
 });
+
+test("magic item compendium builds automation for selected magic items", () => {
+  const sourceItems = new Map(MAGIC_ITEMS.map((item) => [item.name, item]));
+  const nightGogglesName = "\u041D\u043E\u0447\u043D\u044B\u0435 \u043E\u0447\u043A\u0438";
+  const cloakName = "\u041F\u043B\u0430\u0449 \u0437\u0430\u0449\u0438\u0442\u044B +2";
+  const hoardingPouchName = "\u0421\u0443\u043C\u043A\u0430 \u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F";
+  const pearlName = "\u0416\u0435\u043C\u0447\u0443\u0436\u0438\u043D\u0430 \u0441\u0438\u043B\u044B";
+  const watcherShieldName = "\u0429\u0438\u0442 \u0447\u0430\u0441\u043E\u0432\u043E\u0433\u043E";
+  const ringCommonName = "\u041A\u043E\u043B\u044C\u0446\u043E \u0445\u0430\u0440\u0430\u043A\u0442\u0435\u0440\u0438\u0441\u0442\u0438\u043A\u0438 \u043E\u0431\u044B\u0447\u043D\u043E\u0435";
+  const ringUncommonName = "\u041A\u043E\u043B\u044C\u0446\u043E \u0445\u0430\u0440\u0430\u043A\u0442\u0435\u0440\u0438\u0441\u0442\u0438\u043A\u0438 \u043D\u0435\u043E\u0431\u044B\u0447\u043D\u043E\u0435";
+  const ringRareName = "\u041A\u043E\u043B\u044C\u0446\u043E \u0445\u0430\u0440\u0430\u043A\u0442\u0435\u0440\u0438\u0441\u0442\u0438\u043A\u0438 \u0440\u0435\u0434\u043A\u043E\u0435";
+  const ringVeryRareName = "\u041A\u043E\u043B\u044C\u0446\u043E \u0445\u0430\u0440\u0430\u043A\u0442\u0435\u0440\u0438\u0441\u0442\u0438\u043A\u0438 \u043E\u0447\u0435\u043D\u044C \u0440\u0435\u0434\u043A\u043E\u0435";
+  const ringLegendaryName = "\u041A\u043E\u043B\u044C\u0446\u043E \u0445\u0430\u0440\u0430\u043A\u0442\u0435\u0440\u0438\u0441\u0442\u0438\u043A\u0438 \u043B\u0435\u0433\u0435\u043D\u0434\u0430\u0440\u043D\u043E\u0435";
+  const normalizedItems = magicItemsCompendium.normalizeMagicItems([
+    sourceItems.get(nightGogglesName),
+    sourceItems.get(cloakName),
+    sourceItems.get(hoardingPouchName),
+    sourceItems.get(pearlName),
+    sourceItems.get(watcherShieldName),
+    sourceItems.get(ringCommonName),
+    sourceItems.get(ringUncommonName),
+    sourceItems.get(ringRareName),
+    sourceItems.get(ringVeryRareName),
+    sourceItems.get(ringLegendaryName)
+  ]);
+  const byName = new Map(normalizedItems.map((item) => [item.name, item]));
+
+  const nightGoggles = magicItemsCompendium.createMagicItemData(byName.get(nightGogglesName), new Map());
+  assert.equal(nightGoggles.effects.length, 1);
+  assert.equal(nightGoggles.effects[0].changes[0]?.key, "system.attributes.senses.darkvision");
+  assert.equal(nightGoggles.effects[0].changes[0]?.value, "60");
+  assert.equal(nightGoggles.effects[0].changes[0]?.mode, 4);
+
+  const cloakOfProtection = magicItemsCompendium.createMagicItemData(byName.get(cloakName), new Map());
+  assert.equal(cloakOfProtection.effects.length, 1);
+  assert.equal(cloakOfProtection.effects[0].changes[0]?.key, "system.attributes.ac.bonus");
+  assert.equal(cloakOfProtection.effects[0].changes[0]?.value, "2");
+  assert.equal(cloakOfProtection.effects[0].changes[1]?.key, "system.bonuses.abilities.save");
+  assert.equal(cloakOfProtection.effects[0].changes[1]?.value, "+2");
+
+  const watcherShield = magicItemsCompendium.createMagicItemData(byName.get(watcherShieldName), new Map());
+  assert.equal(watcherShield.effects.length, 1);
+  assert.match(watcherShield.effects[0].changes.map((entry) => entry.key).join("|"), /flags\.midi-qol\.advantage\.ability\.check\.dex/u);
+
+  const hoardingPouch = magicItemsCompendium.createMagicItemData(byName.get(hoardingPouchName), new Map());
+  assert.equal(hoardingPouch.system.type.value, "backpack");
+  assert.equal(hoardingPouch.system.capacity?.weight?.value, 500);
+  assert.equal(hoardingPouch.flags["rebreya-main"].magicItemAutomation?.kind, "bagOfHolding");
+  assert.equal(hoardingPouch.flags["rebreya-main"].magicItemAutomation?.capacity?.volume?.value, 64);
+
+  const pearlOfPower = magicItemsCompendium.createMagicItemData(byName.get(pearlName), new Map());
+  assert.equal(pearlOfPower.effects.length, 0);
+  assert.equal(pearlOfPower.flags["rebreya-main"].magicItemAutomation?.kind, "pearlOfPower");
+
+  const ringVariants = [
+    [ringCommonName, 1, 10],
+    [ringUncommonName, 2, 12],
+    [ringRareName, 1, 16],
+    [ringVeryRareName, 2, 20],
+    [ringLegendaryName, 2, 26]
+  ];
+
+  for (const [ringName, expectedBonus, expectedMaxAbilityScore] of ringVariants) {
+    const ring = magicItemsCompendium.createMagicItemData(byName.get(ringName), new Map());
+    const automation = ring.flags["rebreya-main"].magicItemAutomation;
+    assert.equal(ring.effects.length, 0);
+    assert.equal(automation?.kind, "abilityRing");
+    assert.equal(automation?.bonus, expectedBonus);
+    assert.equal(automation?.maxAbilityScore, expectedMaxAbilityScore);
+  }
+});

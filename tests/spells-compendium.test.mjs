@@ -63,6 +63,8 @@ test("Rebreya Counterspell is a third-level reaction spell", () => {
 
   assert.equal(item.system.identifier, "counterspell-rebreya");
   assert.equal(item.system.level, 3);
+  assert.equal(item.system.activities.counterspell._id, "counterspell0000");
+  assert.match(item.system.activities.counterspell._id, /^[A-Za-z0-9]{16}$/u);
   assert.equal(item.system.activities.counterspell.activation.type, "reaction");
   assert.deepEqual(item.flags["rebreya-main"].spellAutomation, { kind: "counterspell" });
   assert.deepEqual(item.system.properties, ["vocal", "somatic"]);
