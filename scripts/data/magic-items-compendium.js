@@ -619,10 +619,8 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
   const descriptionHtml = buildDescriptionHtml(item, classification);
   const magicItemAutomation = resolveMagicItemAutomationDefinition(item);
   const systemData = buildSystemData(item, classification, descriptionHtml);
-  const isBagOfHolding = magicItemAutomation?.kind === "bagOfHolding";
-  const documentType = isBagOfHolding ? "container" : classification.documentType;
 
-  if (isBagOfHolding) {
+  if (magicItemAutomation?.kind === "bagOfHolding") {
     systemData.capacity = magicItemAutomation.capacity ?? {
       count: null,
       volume: { value: 64, units: "ft3" },
@@ -633,7 +631,7 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
 
   return {
     name: item.name,
-    type: documentType,
+    type: classification.documentType,
     img: getMagicItemIcon(item, classification, iconLookup),
     folder: folderIdByPath.get(folderPath) ?? null,
     effects: buildMagicItemAutomationEffects(item),
