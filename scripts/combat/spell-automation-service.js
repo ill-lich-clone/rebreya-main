@@ -341,6 +341,13 @@ export class SpellAutomationService {
     let repaired = false;
 
     for (const item of items) {
+      const canUpdate = typeof item?.canUser === "function"
+        ? item.canUser("UPDATE")
+        : true;
+      if (!canUpdate) {
+        continue;
+      }
+
       const patch = counterspellRepairPatch(item);
       if (!patch || typeof item?.update !== "function") {
         continue;
