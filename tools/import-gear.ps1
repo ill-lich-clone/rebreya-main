@@ -2,7 +2,11 @@
   [string]$WorkbookPath = "",
   [string]$MaterialsPath = "",
   [string]$OutputPath = "",
+  [string]$UpgradesOutputPath = "",
+  [string]$EnrichmentSourcePath = "",
+  [string[]]$DeferredUpgradeNames = @("Медная проволка"),
   [switch]$AugmentExisting,
+  [switch]$AllowUnmatchedProfiles,
   [switch]$Quiet
 )
 
@@ -24,6 +28,10 @@ function Resolve-OutputPath([string]$ConfiguredPath) {
   if (-not [string]::IsNullOrWhiteSpace($ConfiguredPath)) { return [System.IO.Path]::GetFullPath($ConfiguredPath) }
   return (Join-Path (Resolve-ModuleRoot) "data\gear.json")
 }
+function Resolve-UpgradesOutputPath([string]$ConfiguredPath) {
+  if (-not [string]::IsNullOrWhiteSpace($ConfiguredPath)) { return [System.IO.Path]::GetFullPath($ConfiguredPath) }
+  return (Join-Path (Resolve-ModuleRoot) "data\upgrades.json")
+}
 function Normalize-DisplayText([string]$Value) {
   if ([string]::IsNullOrWhiteSpace($Value)) { return "" }
   return (($Value -replace "\s+", " ").Trim())
@@ -37,6 +45,9 @@ function Get-LooseMatchKey([string]$Value) {
   $text = Get-MatchKey $Value
   if ([string]::IsNullOrWhiteSpace($text)) { return "" }
   return ($text -replace "[^\p{L}\p{Nd}]", "")
+}
+function Get-GearMatchKey([string]$EquipmentType, [string]$Name) {
+  return "$(Get-MatchKey $EquipmentType)|$(Get-MatchKey $Name)"
 }
 function Convert-ToPlainNumber([string]$Value, [switch]$AllowNull) {
   if ([string]::IsNullOrWhiteSpace($Value)) { return $(if ($AllowNull) { $null } else { 0 }) }
@@ -198,6 +209,58 @@ function Get-Value($Row, [string]$Column) {
   if ($property) { return $property.Value }
   return ""
 }
+function Find-WorksheetHeader([object[]]$Rows) {
+  foreach ($row in ($Rows | Where-Object { $_.__row -le 20 })) {
+    $columns = @{}
+    foreach ($property in $row.PSObject.Properties) {
+      if ($property.Name -eq '__row') { continue }
+      $key = Get-MatchKey ([string]$property.Value)
+      if ($key -and -not $columns.ContainsKey($key)) {
+        $columns[$key] = $property.Name
+      }
+    }
+    $hasPriceColumn = @($columns.Keys | Where-Object { $_.StartsWith((Get-MatchKey 'Цена')) }).Count -gt 0
+    if ($columns.ContainsKey((Get-MatchKey 'Название')) -and $hasPriceColumn) {
+      return [pscustomobject]@{
+        RowNumber = [int]$row.__row
+        Columns = $columns
+      }
+    }
+  }
+  return $null
+}
+function Get-HeaderColumn($Header, [string[]]$Aliases) {
+  if (-not $Header) { return "" }
+  foreach ($alias in $Aliases) {
+    $key = Get-MatchKey $alias
+    if ($Header.Columns.ContainsKey($key)) { return [string]$Header.Columns[$key] }
+  }
+  return ""
+}
+function Get-HeaderValue($Row, $Header, [string[]]$Aliases) {
+  $column = Get-HeaderColumn $Header $Aliases
+  if (-not $column) { return "" }
+  return Get-Value $Row $column
+}
+function Read-NamedWorksheetWithHeader(
+  [System.IO.Compression.ZipArchive]$Zip,
+  [string[]]$SharedStrings,
+  [string[]]$WorksheetNames
+) {
+  foreach ($worksheetName in $WorksheetNames) {
+    $path = Get-WorksheetPathByName $Zip $worksheetName
+    if (-not $path) { continue }
+    $rows = Read-WorksheetRows $Zip $path $SharedStrings
+    $header = Find-WorksheetHeader $rows
+    if (-not $header) { continue }
+    return [pscustomobject]@{
+      Name = $worksheetName
+      Rows = $rows
+      Header = $header
+    }
+  }
+  return $null
+}
 function Resolve-MaterialMatch([string]$Name, [object[]]$Materials) {
   $strictKey = Get-MatchKey $Name
   $looseKey = Get-LooseMatchKey $Name
@@ -208,7 +271,11 @@ function Resolve-MaterialMatch([string]$Name, [object[]]$Materials) {
   return $null
 }
 function Write-JsonFile([string]$Path, $Data) {
-  [System.IO.File]::WriteAllText($Path, ($Data | ConvertTo-Json -Depth 50), [System.Text.UTF8Encoding]::new($false))
+  [System.IO.File]::WriteAllText(
+    $Path,
+    (ConvertTo-Json -InputObject @($Data) -Depth 50),
+    [System.Text.UTF8Encoding]::new($false)
+  )
 }
 function Normalize-DamageFormula([string]$Value) {
   $text = Normalize-DisplayText $Value
@@ -231,6 +298,7 @@ function Convert-DamageTypeLabelToDnd5e([string]$Value) {
     'электричество' { return 'lightning' }
     'электричеством' { return 'lightning' }
     'яд' { return 'poison' }
+    'чистая сила' { return 'force' }
     default { return "" }
   }
 }
@@ -470,23 +538,175 @@ function Merge-FirearmWeaponData([object[]]$Gear, [object[]]$FirearmRows) {
 
   return $matched
 }
+function Resolve-UpgradeProduct(
+  $UpgradeRow,
+  $UpgradeHeader,
+  [object[]]$Gear,
+  [hashtable]$CanonicalNameBySourceRow,
+  [bool]$AllowUnmatched
+) {
+  $sourceRow = [int]$UpgradeRow.__row
+  $profileName = Normalize-DisplayText (Get-HeaderValue $UpgradeRow $UpgradeHeader @('Название'))
+  $explicitCanonicalName = if ($CanonicalNameBySourceRow.ContainsKey($sourceRow)) {
+    Normalize-DisplayText ([string]$CanonicalNameBySourceRow[$sourceRow])
+  } else {
+    ""
+  }
+
+  if ($explicitCanonicalName) {
+    $explicitMatches = @($Gear | Where-Object {
+      (Get-MatchKey $_.name) -eq (Get-MatchKey $explicitCanonicalName)
+    })
+    if ($explicitMatches.Count -eq 1) { return $explicitMatches[0] }
+    throw "Upgrade row $sourceRow ('$profileName') maps to '$explicitCanonicalName', but found $($explicitMatches.Count) base products."
+  }
+
+  $exactMatches = @($Gear | Where-Object {
+    (Get-MatchKey $_.equipmentType) -eq (Get-MatchKey 'Усовершенствование') -and
+    (Get-MatchKey $_.name) -eq (Get-MatchKey $profileName)
+  })
+  if ($exactMatches.Count -eq 1) { return $exactMatches[0] }
+  if ($exactMatches.Count -gt 1) {
+    throw "Upgrade row $sourceRow ('$profileName') matches multiple base products by name."
+  }
+
+  $sourceMaterialName = Normalize-DisplayText (Get-HeaderValue $UpgradeRow $UpgradeHeader @('Источник'))
+  $profilePrice = (Parse-Price (Get-HeaderValue $UpgradeRow $UpgradeHeader @('Цена (зм)', 'Цена'))).GoldEquivalent
+  $materialMatches = @($Gear | Where-Object {
+    (Get-MatchKey $_.equipmentType) -eq (Get-MatchKey 'Усовершенствование') -and
+    (Get-MatchKey $_.predominantMaterialName) -eq (Get-MatchKey $sourceMaterialName) -and
+    [math]::Abs(([double]$_.priceGoldEquivalent) - ([double]$profilePrice)) -lt 0.000001
+  })
+  if ($materialMatches.Count -eq 1) { return $materialMatches[0] }
+  if ($materialMatches.Count -gt 1) {
+    throw "Upgrade row $sourceRow ('$profileName') matches multiple base products by material and price."
+  }
+
+  if ($AllowUnmatched) {
+    Write-Info "Skipped unmatched upgrade row $sourceRow ('$profileName'): exact=$($exactMatches.Count), material=$($materialMatches.Count), gear=$($Gear.Count)."
+    return $null
+  }
+  throw "Upgrade row $sourceRow ('$profileName') does not match a base product."
+}
+function Build-UpgradeCatalog(
+  [object[]]$UpgradeRows,
+  $UpgradeHeader,
+  [object[]]$Gear,
+  [object[]]$ReferenceRows,
+  [string[]]$DeferredNames,
+  [bool]$AllowUnmatched
+) {
+  if (-not $UpgradeHeader) { return @() }
+
+  $canonicalNameBySourceRow = @{}
+  foreach ($row in $ReferenceRows) {
+    $sourceId = Normalize-DisplayText (Get-Value $row 'S')
+    $canonicalName = Normalize-DisplayText (Get-Value $row 'T')
+    if ($sourceId -match '^Усовершенствования V0\.21!A(\d+)$' -and $canonicalName) {
+      $canonicalNameBySourceRow[[int]$Matches[1]] = $canonicalName
+    }
+  }
+
+  $upgrades = @()
+  foreach ($row in ($UpgradeRows | Where-Object { $_.__row -gt $UpgradeHeader.RowNumber })) {
+    $name = Normalize-DisplayText (Get-HeaderValue $row $UpgradeHeader @('Название'))
+    if (-not $name) { continue }
+    $profileType = Normalize-DisplayText (Get-HeaderValue $row $UpgradeHeader @('Тип'))
+    if ((Get-MatchKey $profileType) -eq (Get-MatchKey 'Проклятье')) { continue }
+    if (@($DeferredNames | Where-Object { (Get-MatchKey $_) -eq (Get-MatchKey $name) }).Count -gt 0) {
+      Write-Info "Deferred upgrade row $([int]$row.__row) ('$name')."
+      continue
+    }
+    $product = Resolve-UpgradeProduct `
+      -UpgradeRow $row `
+      -UpgradeHeader $UpgradeHeader `
+      -Gear $Gear `
+      -CanonicalNameBySourceRow $canonicalNameBySourceRow `
+      -AllowUnmatched $AllowUnmatched
+    if (-not $product) { continue }
+    $price = Parse-Price (Get-HeaderValue $row $UpgradeHeader @('Цена (зм)', 'Цена'))
+    $sourceMaterialName = Normalize-DisplayText (Get-HeaderValue $row $UpgradeHeader @('Источник'))
+    if ($sourceMaterialName -eq '—' -or $sourceMaterialName -eq '-') { $sourceMaterialName = "" }
+
+    $upgrades += [pscustomobject][ordered]@{
+      name = $name
+      productId = $product.id
+      canonicalName = $product.name
+      upgrade = [pscustomobject][ordered]@{
+        rank = Convert-ToPlainNumber (Get-HeaderValue $row $UpgradeHeader @('Ранг')) -AllowNull
+        appliesTo = Normalize-DisplayText (Get-HeaderValue $row $UpgradeHeader @('Применимо к'))
+        effect = Normalize-DisplayText (Get-HeaderValue $row $UpgradeHeader @('Эффект'))
+        priceGold = $price.GoldEquivalent
+        sourceMaterialName = $sourceMaterialName
+        sourceMaterialId = $product.predominantMaterialId
+        type = $profileType
+        sourceSheet = 'Усовершенствования V0.21'
+        sourceSheetRow = [int]$row.__row
+      }
+    }
+  }
+  return $upgrades
+}
 
 if ([string]::IsNullOrWhiteSpace($WorkbookPath)) { throw "WorkbookPath is required." }
 $resolvedMaterialsPath = Resolve-MaterialsPath $MaterialsPath
 $resolvedOutputPath = Resolve-OutputPath $OutputPath
+$resolvedUpgradesOutputPath = Resolve-UpgradesOutputPath $UpgradesOutputPath
 $outputDirectory = [System.IO.Path]::GetDirectoryName($resolvedOutputPath)
 if (-not (Test-Path -LiteralPath $outputDirectory)) { New-Item -ItemType Directory -Path $outputDirectory | Out-Null }
+$upgradesOutputDirectory = [System.IO.Path]::GetDirectoryName($resolvedUpgradesOutputPath)
+if (-not (Test-Path -LiteralPath $upgradesOutputDirectory)) {
+  New-Item -ItemType Directory -Path $upgradesOutputDirectory | Out-Null
+}
 
 $materials = @()
 if (Test-Path -LiteralPath $resolvedMaterialsPath) {
   $materials = Get-Content -Raw -Encoding UTF8 $resolvedMaterialsPath | ConvertFrom-Json
 }
+$resolvedEnrichmentSourcePath = if (-not [string]::IsNullOrWhiteSpace($EnrichmentSourcePath)) {
+  [System.IO.Path]::GetFullPath($EnrichmentSourcePath)
+} elseif (Test-Path -LiteralPath $resolvedOutputPath) {
+  $resolvedOutputPath
+} else {
+  ""
+}
+$enrichmentByKey = @{}
+if ($resolvedEnrichmentSourcePath -and (Test-Path -LiteralPath $resolvedEnrichmentSourcePath)) {
+  $enrichmentRows = @(Get-Content -Raw -Encoding UTF8 $resolvedEnrichmentSourcePath | ConvertFrom-Json)
+  while ($enrichmentRows.Count -eq 1 -and $enrichmentRows[0] -is [System.Array]) {
+    $enrichmentRows = @($enrichmentRows[0])
+  }
+  foreach ($entry in $enrichmentRows) {
+    $key = Get-GearMatchKey ([string]$entry.equipmentType) ([string]$entry.name)
+    if (-not $key -or $key -eq '|') { continue }
+    if ($enrichmentByKey.ContainsKey($key)) {
+      throw "Enrichment source contains duplicate gear key '$key'."
+    }
+    $enrichmentByKey[$key] = $entry
+  }
+}
 
 $zip = [System.IO.Compression.ZipFile]::OpenRead($WorkbookPath)
 try {
   $sharedStrings = Load-SharedStrings $zip
-  $worksheetPath = Get-FirstWorksheetPath $zip
-  $rows = Read-WorksheetRows $zip $worksheetPath $sharedStrings
+  $gearWorksheet = Read-NamedWorksheetWithHeader $zip $sharedStrings @(
+    "Общий компендиум снаряжения V0.1",
+    "Немагическое снаряжение V0.1"
+  )
+  if (-not $gearWorksheet) {
+    throw "Unable to find a supported gear worksheet with 'Название' and 'Цена' headers."
+  }
+  $rows = $gearWorksheet.Rows
+  $gearHeader = $gearWorksheet.Header
+  $upgradeWorksheet = Read-NamedWorksheetWithHeader $zip $sharedStrings @("Усовершенствования V0.21")
+  $upgradeRows = if ($upgradeWorksheet) { $upgradeWorksheet.Rows } else { @() }
+  $upgradeHeader = if ($upgradeWorksheet) { $upgradeWorksheet.Header } else { $null }
+  $referenceWorksheetPath = Get-WorksheetPathByName $zip "_СПРАВОЧНИК_СНАРЯЖЕНИЯ"
+  $referenceRows = if ($referenceWorksheetPath) {
+    Read-WorksheetRows $zip $referenceWorksheetPath $sharedStrings
+  } else {
+    @()
+  }
   $firearmWorksheetPath = Get-WorksheetPathByName $zip "Огнестрел V0.36"
   $firearmRows = if ($firearmWorksheetPath) { Read-WorksheetRows $zip $firearmWorksheetPath $sharedStrings } else { @() }
 }
@@ -495,37 +715,75 @@ finally { $zip.Dispose() }
 $gear = @()
 $usedIds = @{}
 $rowCounter = 1
-foreach ($row in ($rows | Where-Object { $_.__row -ge 2 })) {
-  $name = Normalize-DisplayText (Get-Value $row 'A')
+$enrichmentMatchCount = 0
+foreach ($row in ($rows | Where-Object { $_.__row -gt $gearHeader.RowNumber })) {
+  $name = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Название'))
   if ([string]::IsNullOrWhiteSpace($name)) { continue }
 
-  $price = Parse-Price (Get-Value $row 'C')
-  $materialName = Normalize-DisplayText (Get-Value $row 'I')
+  $equipmentType = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Тип снаряжения'))
+  $enrichmentKey = Get-GearMatchKey $equipmentType $name
+  $enrichment = if ($enrichmentByKey.ContainsKey($enrichmentKey)) {
+    $enrichmentByKey[$enrichmentKey]
+  } else {
+    $null
+  }
+  $price = Parse-Price (Get-HeaderValue $row $gearHeader @('Цена'))
+  $materialName = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @(
+    'Преобладающий материал (источник)',
+    'Преобладающий материал'
+  ))
   $material = if ($materialName) { Resolve-MaterialMatch $materialName $materials } else { $null }
-  $preferredId = Convert-ToSlug $name
+  $preferredId = if ($enrichment -and $enrichment.id) {
+    Normalize-DisplayText ([string]$enrichment.id)
+  } else {
+    Convert-ToSlug $name
+  }
   if ([string]::IsNullOrWhiteSpace($preferredId)) { $preferredId = "gear-$rowCounter" }
 
-  $gear += [pscustomobject][ordered]@{
+  $item = [pscustomobject][ordered]@{
     id = New-UniqueId $preferredId $usedIds "gear"
     name = $name
-    equipmentType = Normalize-DisplayText (Get-Value $row 'B')
+    equipmentType = $equipmentType
+    shopSubtype = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Подтип (магазин)'))
     priceText = $price.RawText
     priceValue = $price.Value
     priceDenomination = $price.Denomination
     priceGoldEquivalent = $price.GoldEquivalent
-    rank = Convert-ToPlainNumber (Get-Value $row 'D') -AllowNull
-    weight = Convert-ToPlainNumber (Get-Value $row 'E') -AllowNull
-    volume = Normalize-DisplayText (Get-Value $row 'F')
-    capacity = Normalize-DisplayText (Get-Value $row 'G')
-    description = Normalize-DisplayText (Get-Value $row 'H')
+    rank = Convert-ToPlainNumber (Get-HeaderValue $row $gearHeader @('Ранг')) -AllowNull
+    weight = Convert-ToPlainNumber (Get-HeaderValue $row $gearHeader @('Вес')) -AllowNull
+    volume = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Объем', 'Объём'))
+    capacity = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Вместимость'))
+    description = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Описание'))
     predominantMaterialId = if ($material) { $material.id } else { $null }
     predominantMaterialName = if ($material) { $material.name } else { $materialName }
-    linkedTool = Normalize-DisplayText (Get-Value $row 'J')
-    value = Normalize-DisplayText (Get-Value $row 'K')
-    itemSlot = Normalize-DisplayText (Get-Value $row 'L')
-    heroDollSlots = Normalize-DisplayText (Get-Value $row 'M')
+    linkedTool = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Связанный инструмент'))
+    value = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Value'))
+    itemSlot = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Слот'))
+    heroDollSlots = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Слоты куклы'))
     source = 'gear-workbook'
   }
+  if ($enrichment) {
+    $enrichmentMatchCount += 1
+    foreach ($field in @(
+      'containerCapacity',
+      'containerContents',
+      'foundryType',
+      'foundrySubtype',
+      'foundrySubtypeExtra',
+      'foundryBaseItem',
+      'foundryFolder',
+      'itemSlot',
+      'heroDollSlots',
+      'firearmClass',
+      'weapon',
+      'armor'
+    )) {
+      $property = $enrichment.PSObject.Properties[$field]
+      if (-not $property -or $null -eq $property.Value) { continue }
+      $item | Add-Member -NotePropertyName $field -NotePropertyValue $property.Value -Force
+    }
+  }
+  $gear += $item
   $rowCounter += 1
 }
 
@@ -539,10 +797,23 @@ if ($gear.Count -eq 0 -and $AugmentExisting -and (Test-Path -LiteralPath $resolv
 }
 
 $firearmMatchCount = Merge-FirearmWeaponData $gear $firearmRows
+$upgrades = @(
+  Build-UpgradeCatalog `
+    -UpgradeRows $upgradeRows `
+    -UpgradeHeader $upgradeHeader `
+    -Gear $gear `
+    -ReferenceRows $referenceRows `
+    -DeferredNames $DeferredUpgradeNames `
+    -AllowUnmatched ([bool]$AllowUnmatchedProfiles)
+)
 
 Write-JsonFile $resolvedOutputPath $gear
+Write-JsonFile $resolvedUpgradesOutputPath $upgrades
 Write-Info 'Gear import complete.'
 Write-Info "Gear items: $($gear.Count)"
+Write-Info "Gear worksheet: $($gearWorksheet.Name)"
+Write-Info "Existing gear enrichments matched: $enrichmentMatchCount"
 Write-Info "Firearm weapon rows matched: $firearmMatchCount"
+Write-Info "Upgrade profiles: $(@($upgrades).Count)"
 Write-Info "Path: $resolvedOutputPath"
-
+Write-Info "Upgrades path: $resolvedUpgradesOutputPath"

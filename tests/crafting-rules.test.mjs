@@ -85,10 +85,16 @@ test("buildCraftBatch records incompatible tools and firearm requirements", () =
 });
 
 test("empty linkedTool remains unresolved and makes the batch ineligible", () => {
-  const sourceGear = realGearById.get("nauchnaya-kniga");
+  const sourceGear = {
+    ...gearById.get("sword"),
+    id: "unresolved-tool",
+    requiredToolId: "",
+    linkedTool: "",
+    rank: 0
+  };
   assert.equal(sourceGear.linkedTool, "");
 
-  const batch = buildCraftBatch([{ sourceId: sourceGear.id, quantity: 1 }], realGearById);
+  const batch = buildCraftBatch([{ sourceId: sourceGear.id, quantity: 1 }], [sourceGear]);
   assert.equal(batch.requiredToolId, null);
   assert.deepEqual(batch.requiredToolIds, []);
 
@@ -132,7 +138,7 @@ test("buildCraftBatch accepts only an explicit numeric zero for weightless gear"
 });
 
 test("buildCraftBatch recognizes repository magic-item markers", () => {
-  const baseGear = realGearById.get("nauchnaya-kniga");
+  const baseGear = gearById.get("sword");
   const markerCases = [
     ["type", { type: "Магический предмет" }],
     ["equipmentType", { equipmentType: "Магический предмет" }],
@@ -152,7 +158,7 @@ test("buildCraftBatch recognizes repository magic-item markers", () => {
 });
 
 test("buildCraftBatch preserves dnd5e magic markers", () => {
-  const baseGear = realGearById.get("nauchnaya-kniga");
+  const baseGear = gearById.get("sword");
   const markerCases = [
     ["mgc property", { system: { properties: new Set(["mgc"]) } }],
     ["rarity", { system: { rarity: "rare" } }]

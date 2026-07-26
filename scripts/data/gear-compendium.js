@@ -274,7 +274,8 @@ function buildGearSignature(item) {
     firearmClass: classification.firearmClass,
     weapon: isPlainObject(item.weapon) ? item.weapon : null,
     armor: isPlainObject(item.armor) ? item.armor : null,
-    implant: isPlainObject(item.implant) ? item.implant : null
+    implant: isPlainObject(item.implant) ? item.implant : null,
+    upgrade: isPlainObject(item.upgrade) ? item.upgrade : null
   });
 }
 
@@ -400,6 +401,7 @@ function buildMetadataRows(item, classification) {
   const itemSlotGroup = resolveItemSlotGroup(item, classification);
   const weapon = isPlainObject(item.weapon) ? item.weapon : {};
   const implant = isPlainObject(item.implant) ? item.implant : {};
+  const upgrade = isPlainObject(item.upgrade) ? item.upgrade : {};
   const handRequirement = resolveWeaponHandRequirement(weapon);
   const itemSlotLabel = {
     head: "Голова",
@@ -459,7 +461,10 @@ function buildMetadataRows(item, classification) {
     ["Очки модификации", implant.pointsText],
     ["Тип импланта", implant.type],
     ["Требования импланта", implant.requirements],
-    ["Эффект импланта", cleanString(implant.effect) !== cleanString(item.description) ? implant.effect : null]
+    ["Эффект импланта", cleanString(implant.effect) !== cleanString(item.description) ? implant.effect : null],
+    ["Применяется к", upgrade.appliesTo],
+    ["Эффект усовершенствования", upgrade.effect],
+    ["Материал усовершенствования", upgrade.sourceMaterialName]
   ].filter(([, value]) => value !== null && value !== undefined && value !== "");
 }
 
@@ -1082,7 +1087,8 @@ export function createDnd5eItemData(item, folderIdByPath, iconLookup = null) {
         lichWeaponPropertyValues: lichWeaponPropertyValues && Object.keys(lichWeaponPropertyValues).length
           ? lichWeaponPropertyValues
           : null,
-        implant: clonePlainObject(item.implant)
+        implant: clonePlainObject(item.implant),
+        upgrade: clonePlainObject(item.upgrade)
       }
     }
   };

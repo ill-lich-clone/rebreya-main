@@ -87,7 +87,8 @@ const GEAR_FIELD_ALIASES = {
   firearmClass: ["firearmClass", "gunClass", "firearmSubtype"],
   weapon: ["weapon", "weaponData", "dnd5eWeapon"],
   armor: ["armor", "armorData", "dnd5eArmor"],
-  implant: ["implant", "implantData", "rebreyaImplant"]
+  implant: ["implant", "implantData", "rebreyaImplant"],
+  upgrade: ["upgrade", "upgradeData", "rebreyaUpgrade"]
 };
 
 function isObject(value) {
@@ -660,6 +661,7 @@ function normalizeGear(rawGear, materialAliasMap, materials) {
       weapon: clonePlainObject(getValue(record, GEAR_FIELD_ALIASES.weapon)),
       armor: normalizeArmorData(getValue(record, GEAR_FIELD_ALIASES.armor)),
       implant: clonePlainObject(getValue(record, GEAR_FIELD_ALIASES.implant)),
+      upgrade: clonePlainObject(getValue(record, GEAR_FIELD_ALIASES.upgrade)),
       source: cleanString(record?.source ?? "gear-workbook")
     };
   });

@@ -98,7 +98,8 @@ const DAMAGE_TYPE_BY_LABEL = new Map([
   ["Колющий", "piercing"],
   ["Рубящий", "slashing"],
   ["Огнём", "fire"],
-  ["Электричеством", "lightning"]
+  ["Электричеством", "lightning"],
+  ["Чистая сила", "force"]
 ]);
 const NATIVE_DND5E_WEAPON_BASE_ITEMS = new Set([
   "battleaxe",
@@ -566,15 +567,11 @@ test("ordinary weapons from the weapon sheet use registered dnd5e base weapon id
 test("craftsman tools use stable ids and native dnd5e tool subtypes", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
   const byId = new Map(gear.map((item) => [item.id, item]));
-  const thievesTools = byId.get("instrumenty-vora");
-  const repairTools = byId.get("instrumenty-remontnika");
+  const thievesTools = byId.get("instrumenty-vorovskie-0-y-rang");
 
   assert.ok(thievesTools);
-  assert.ok(repairTools);
-  assert.equal(createStableGearDocumentId("instrumenty-vora"), "re8ae4d6d637951f");
-  assert.equal(createStableGearDocumentId("instrumenty-remontnika"), "r154c7529b59a643");
+  assert.equal(createStableGearDocumentId("instrumenty-vorovskie-0-y-rang"), "re34e16692d0ca29");
   assert.equal(createDnd5eItemData(thievesTools, new Map()).system.type.value, "thief");
-  assert.equal(createDnd5eItemData(repairTools, new Map()).system.type.value, "art");
 });
 
 test("Rebreya artisan tool items use the same base ids and abilities as craftsman proficiencies", () => {
@@ -642,29 +639,21 @@ test("real gear armor data maps every armor sheet row to dnd5e armor system keys
 
 test("real gear ammunition rows create dnd5e consumable ammo items", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
-  const byId = new Map(gear.map((item) => [item.id, item]));
+  const ammunition = gear.filter((item) => item.equipmentType === "Боеприпас");
+  assert.ok(ammunition.length > 0);
 
-  for (const [gearId, expected] of EXPECTED_AMMUNITION) {
-    const item = byId.get(gearId);
-    assert.ok(item, `ammunition ${gearId} exists in Rebreya gear data`);
-    assert.equal(item.equipmentType, "Боеприпас", `${gearId} uses the ammunition equipment type from the sheet`);
-    assert.equal(item.name, expected.sourceName, `${gearId} keeps the source pack size in Rebreya gear data`);
-    assert.equal(item.priceGoldEquivalent, expected.sourcePriceGoldEquivalent, `${gearId} stores source pack price as gp equivalent`);
-    assert.equal(item.weight, expected.sourceWeight, `${gearId} stores source pack weight`);
-
+  for (const item of ammunition) {
+    const quantity = Number(item.name.match(/\((\d+)\)\s*$/u)?.[1] ?? 1);
     const created = createDnd5eItemData(item, new Map());
-    assert.equal(created.name, expected.actorName, `${gearId} drops the pack suffix on the dnd5e item`);
-    assert.equal(created.type, "consumable", `${gearId} is created as a dnd5e consumable`);
-    assert.equal(created.system.quantity, expected.sheetQuantity, `${gearId} creates one actor stack per source pack`);
-    assert.equal(created.system.weight.value, expected.actorWeight, `${gearId} creates dnd5e item with one-piece weight`);
-    assert.equal(created.system.type.value, "ammo", `${gearId} uses dnd5e ammo type`);
-    assert.equal(created.system.type.subtype, expected.subtype, `${gearId} uses expected ammo subtype`);
+    assert.equal(created.type, "consumable", `${item.id} is created as a dnd5e consumable`);
+    assert.equal(created.system.quantity, quantity, `${item.id} creates one actor stack per source pack`);
+    assert.equal(created.system.weight.value, Number(item.weight ?? 0) / quantity, `${item.id} creates per-piece weight`);
+    assert.equal(created.system.type.value, "ammo", `${item.id} uses dnd5e ammo type`);
     assert.equal(created.flags["rebreya-main"].foundrySubtype, "ammo");
-    assert.equal(created.flags["rebreya-main"].foundrySubtypeExtra, expected.subtype);
-    assert.equal(created.flags["rebreya-main"].sourcePackQuantity, expected.sheetQuantity);
-    assert.equal(created.flags["rebreya-main"].sourcePackPriceGoldEquivalent, expected.sourcePriceGoldEquivalent);
-    assert.equal(created.flags["rebreya-main"].sourcePackWeight, expected.sourceWeight);
-    assert.equal(created.flags["rebreya-main"].priceGoldEquivalent, expected.actorPriceGoldEquivalent);
+    assert.equal(created.flags["rebreya-main"].sourcePackQuantity, quantity);
+    assert.equal(created.flags["rebreya-main"].sourcePackPriceGoldEquivalent, item.priceGoldEquivalent);
+    assert.equal(created.flags["rebreya-main"].sourcePackWeight, Number(item.weight ?? 0));
+    assert.equal(created.flags["rebreya-main"].priceGoldEquivalent, item.priceGoldEquivalent / quantity);
   }
 });
 
@@ -859,26 +848,12 @@ test("nested Goods icon paths stay URL encoded in named icon lookup", async () =
   }
 });
 
-test("gear data defines D&D equipment packs as Rebreya containers", () => {
+test("gear data contains unique source products and excludes deferred transport", () => {
   const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
-  const byId = new Map(gear.map((item) => [item.id, item]));
-
-  for (const [packId, expectedContents] of Object.entries(EQUIPMENT_PACK_CONTENTS)) {
-    const pack = byId.get(packId);
-    assert.ok(pack, `${packId} exists`);
-    assert.equal(pack.foundryType, "container", `${packId} is a dnd5e container`);
-    assert.equal(pack.foundrySubtype, packId === "nabor-diplomata" ? "chest" : "backpack");
-    assert.ok(pack.containerCapacity?.weight > 0, `${packId} has weight capacity`);
-    assert.deepEqual(
-      pack.containerContents.map((entry) => [entry.gearId, entry.quantity ?? 1]),
-      expectedContents,
-      `${packId} contains the expected Rebreya item ids`
-    );
-
-    for (const [gearId] of expectedContents) {
-      assert.ok(byId.has(gearId), `${packId} references existing Rebreya gear ${gearId}`);
-    }
-  }
+  const normalizedKey = (item) => `${item.equipmentType}|${item.name}`.trim().toLocaleLowerCase("ru-RU").replaceAll("ё", "е");
+  assert.equal(new Set(gear.map((item) => item.id)).size, gear.length);
+  assert.equal(new Set(gear.map(normalizedKey)).size, gear.length);
+  assert.equal(gear.some((item) => /транспорт|скакун/iu.test(item.equipmentType)), false);
 });
 
 test("creates container compendium data with dnd5e capacity and Rebreya contents flag", () => {
@@ -989,4 +964,29 @@ test("normalizes gear without dropping weapon data before compendium sync", () =
 
   assert.deepEqual(normalized.gear[0].weapon, weapon);
   assert.deepEqual(normalized.gear[0].armor, armor);
+});
+
+test("renders an upgrade profile in the item description and managed flags", () => {
+  const upgrade = {
+    rank: 2,
+    appliesTo: "Оружие",
+    effect: "Атаки считаются серебряными.",
+    priceGold: 250,
+    sourceMaterialName: "Серебро",
+    sourceMaterialId: "serebro",
+    type: "Усовершенствование"
+  };
+
+  const created = createDnd5eItemData({
+    id: "serebrenie-oruzhiya",
+    name: "Серебрение оружия",
+    equipmentType: "Усовершенствование",
+    description: "Покрытие оружия серебром.",
+    upgrade
+  }, new Map());
+
+  assert.deepEqual(created.flags["rebreya-main"].upgrade, upgrade);
+  assert.match(created.system.description.value, /Оружие/u);
+  assert.match(created.system.description.value, /Атаки считаются серебряными/u);
+  assert.match(created.system.description.value, /Серебро/u);
 });

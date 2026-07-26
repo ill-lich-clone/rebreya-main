@@ -652,7 +652,7 @@ function buildToolProfile(name, gearId = "") {
   }
 
   const text = normalizeText(name);
-  if (/инструменты вора/u.test(text)) {
+  if (/инструменты (?:вора|воровские)/u.test(text)) {
     return { ability: "dex", baseItem: "thief", systemTypeValue: "thief" };
   }
 

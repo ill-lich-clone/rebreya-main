@@ -37,6 +37,73 @@ function isGearImplant(record) {
   return normalizeImplantMatchText(record?.equipmentType) === "имплант";
 }
 
+function cloneCatalogValue(value) {
+  return value && typeof value === "object"
+    ? JSON.parse(JSON.stringify(value))
+    : value;
+}
+
+export class GearCatalogIntegrityError extends Error {
+  constructor(issues = []) {
+    super(`Gear catalog contains ${issues.length} integrity issue(s).`);
+    this.name = "GearCatalogIntegrityError";
+    this.issues = cloneCatalogValue(issues);
+  }
+}
+
+export function mergeGearCatalogExtensions(gear = [], { implants = [], upgrades = [] } = {}) {
+  const merged = mergeGearWithImplants(gear, implants);
+  const productIndexById = new Map();
+  const productIndexesByName = new Map();
+  for (const [index, entry] of merged.entries()) {
+    const id = String(entry?.id ?? "").trim();
+    if (id) productIndexById.set(id, index);
+    const name = normalizeImplantMatchText(entry?.name);
+    const indexes = productIndexesByName.get(name) ?? [];
+    indexes.push(index);
+    productIndexesByName.set(name, indexes);
+  }
+  const issues = [];
+
+  for (const source of Array.isArray(upgrades) ? upgrades : []) {
+    const productId = String(source?.productId ?? "").trim();
+    const canonicalName = normalizeImplantMatchText(source?.canonicalName);
+    const candidateIndexes = productId && productIndexById.has(productId)
+      ? [productIndexById.get(productId)]
+      : (productIndexesByName.get(canonicalName) ?? []);
+    if (!candidateIndexes.length) {
+      issues.push({
+        kind: "orphan",
+        profile: "upgrade",
+        sourceName: String(source?.name ?? "").trim(),
+        canonicalName: String(source?.canonicalName ?? "").trim()
+      });
+      continue;
+    }
+    if (candidateIndexes.length > 1) {
+      issues.push({
+        kind: "ambiguous",
+        profile: "upgrade",
+        sourceName: String(source?.name ?? "").trim(),
+        canonicalName: String(source?.canonicalName ?? "").trim(),
+        candidateIds: candidateIndexes.map((index) => String(merged[index]?.id ?? "").trim())
+      });
+      continue;
+    }
+    const [existingIndex] = candidateIndexes;
+    merged[existingIndex] = {
+      ...merged[existingIndex],
+      upgrade: cloneCatalogValue(source?.upgrade) ?? null
+    };
+  }
+
+  if (issues.length) {
+    throw new GearCatalogIntegrityError(issues);
+  }
+
+  return merged;
+}
+
 function enrichExistingImplant(base, source) {
   const merged = {
     ...base,
@@ -116,14 +183,15 @@ async function fetchJson(path, { optional = false } = {}) {
 
 async function loadFromBasePath(basePath) {
   const normalizedBasePath = trimTrailingSlash(basePath);
-  const [goods, regions, cities, reference, materials, gear, implants] = await Promise.all([
+  const [goods, regions, cities, reference, materials, gear, implants, upgrades] = await Promise.all([
     fetchJson(`${normalizedBasePath}/goods.json`),
     fetchJson(`${normalizedBasePath}/regions.json`),
     fetchJson(`${normalizedBasePath}/cities.json`),
     fetchJson(`${normalizedBasePath}/reference.json`),
     fetchJson(`${normalizedBasePath}/materials.json`, { optional: true }),
     fetchJson(`${normalizedBasePath}/gear.json`, { optional: true }),
-    fetchJson(`${normalizedBasePath}/implants.json`, { optional: true })
+    fetchJson(`${normalizedBasePath}/implants.json`, { optional: true }),
+    fetchJson(`${normalizedBasePath}/upgrades.json`, { optional: true })
   ]);
 
   return normalizeEconomyDataset({
@@ -132,7 +200,7 @@ async function loadFromBasePath(basePath) {
     cities,
     reference,
     materials: Array.isArray(materials) ? materials : [],
-    gear: mergeGearWithImplants(gear, implants),
+    gear: mergeGearCatalogExtensions(gear, { implants, upgrades }),
     source: {
       basePath: normalizedBasePath
     }

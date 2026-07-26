@@ -1,0 +1,1234 @@
+[
+    {
+        "name":  "Серебро",
+        "productId":  "serebrenie-oruzhiya",
+        "canonicalName":  "Серебрение оружия",
+        "upgrade":  {
+                        "rank":  2,
+                        "appliesTo":  "Оружие",
+                        "effect":  "У некоторых чудовищ есть иммунитет или сопротивление немагическому оружию или уязвимость перед серебряным оружием, поэтому осторожные искатели приключений за дополнительную плату покрывают своё оружие серебром. Кроме того, когда вы атакуете нежить или исчадие таким оружием, то оно считается магическим",
+                        "priceGold":  125,
+                        "sourceMaterialName":  "Серебро",
+                        "sourceMaterialId":  "serebro",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  6
+                    }
+    },
+    {
+        "name":  "Адамантин",
+        "productId":  "adamantinovoe-pokrytie",
+        "canonicalName":  "Адамантиновое покрытие",
+        "upgrade":  {
+                        "rank":  4,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Рукопашное оружие и боеприпасы, сделанные из адамантина или покрытые им, обычно эффективнее при разрушении предметов. Когда адамантиновое оружие или боеприпас попадает по предмету или искусственному конструкту, то попадание считается критическим.",
+                        "priceGold":  500,
+                        "sourceMaterialName":  "Адамантин",
+                        "sourceMaterialId":  "material-168",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  7
+                    }
+    },
+    {
+        "name":  "Эльфийская сталь",
+        "productId":  "elfiyskaya-stal",
+        "canonicalName":  "Эльфийская сталь",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Атаки таким оружием наносят дополнительно 2 урона нежити.",
+                        "priceGold":  250,
+                        "sourceMaterialName":  "Эльфийская сталь",
+                        "sourceMaterialId":  "material-169",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  8
+                    }
+    },
+    {
+        "name":  "Кристаллы забытых Титанов",
+        "productId":  "kristally-zabytykh-titanov",
+        "canonicalName":  "Кристаллы забытых Титанов",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Атаки таким оружием наносят дополнительно 2 урона Великанам и Исчадиям.",
+                        "priceGold":  500,
+                        "sourceMaterialName":  "Кристаллы забытых Титанов",
+                        "sourceMaterialId":  "material-170",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  9
+                    }
+    },
+    {
+        "name":  "Кости мантикоры",
+        "productId":  "kosti-mantikory",
+        "canonicalName":  "Кости мантикоры",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Атаки таким оружием наносят дополнительно 1d4 урона ядом гуманоидом.",
+                        "priceGold":  375,
+                        "sourceMaterialName":  "Кости мантикоры",
+                        "sourceMaterialId":  "material-171",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  10
+                    }
+    },
+    {
+        "name":  "Осколки метеоритных звёзд",
+        "productId":  "oskolki-meteoritnykh-zvyozd",
+        "canonicalName":  "Осколки метеоритных звёзд",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Если вы совершаете атаку с преимуществом, то при попадании нанесёте дополнительно 2 урона.",
+                        "priceGold":  1250,
+                        "sourceMaterialName":  "Осколки метеоритных звёзд",
+                        "sourceMaterialId":  "material-172",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  11
+                    }
+    },
+    {
+        "name":  "Искажающая сталь",
+        "productId":  "iskazhayushchaya-stal",
+        "canonicalName":  "Искажающая сталь",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Атаки таким оружием наносят дополнительно 2 урона элементалям.",
+                        "priceGold":  125,
+                        "sourceMaterialName":  "Искажающая сталь",
+                        "sourceMaterialId":  "material-173",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  12
+                    }
+    },
+    {
+        "name":  "Дьявольское железо",
+        "productId":  "dyavolskoe-zhelezo",
+        "canonicalName":  "Дьявольское железо",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Атаки таким оружием наносят дополнительно 2 урона небожителям.",
+                        "priceGold":  125,
+                        "sourceMaterialName":  "Дьявольское железо",
+                        "sourceMaterialId":  "material-174",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  13
+                    }
+    },
+    {
+        "name":  "Ночная сталь",
+        "productId":  "nochnaya-stal",
+        "canonicalName":  "Ночная сталь",
+        "upgrade":  {
+                        "rank":  6,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Вы совершаете с преимуществом все атаки по существам со значение пассивной проверки Мудрости (Восприятие) менее 12.",
+                        "priceGold":  500,
+                        "sourceMaterialName":  "Ночная сталь",
+                        "sourceMaterialId":  "material-175",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  14
+                    }
+    },
+    {
+        "name":  "Радужный металл",
+        "productId":  "raduzhnyy-metall",
+        "canonicalName":  "Радужный металл",
+        "upgrade":  {
+                        "rank":  7,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Оружие из такого металла декоративно переливается цветами радуги, если находится в области яркого света.",
+                        "priceGold":  125,
+                        "sourceMaterialName":  "Радужный металл",
+                        "sourceMaterialId":  "material-176",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  15
+                    }
+    },
+    {
+        "name":  "Коричневая сталь",
+        "productId":  "korichnevaya-stal",
+        "canonicalName":  "Коричневая сталь",
+        "upgrade":  {
+                        "rank":  4,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Вы получаете бонус +2 к атакам, совершаемым по гуманоидам.",
+                        "priceGold":  375,
+                        "sourceMaterialName":  "Коричневая сталь",
+                        "sourceMaterialId":  "material-177",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  16
+                    }
+    },
+    {
+        "name":  "Адамантин",
+        "productId":  "adamantinovaya-otdelka-dospekha",
+        "canonicalName":  "Адамантиновая отделка доспеха",
+        "upgrade":  {
+                        "rank":  4,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Пока вы носите эти доспехи, все критические попадания по вам считаются обычными попаданиями, если только не совершены с помощью оружия покрытого адамантом",
+                        "priceGold":  2000,
+                        "sourceMaterialName":  "Адамантин",
+                        "sourceMaterialId":  "material-168",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  20
+                    }
+    },
+    {
+        "name":  "Мифрил",
+        "productId":  "mifrilovaya-peredelka-dospekha",
+        "canonicalName":  "Мифриловая переделка доспеха",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Сделанная из мифрила кольчужная рубаха или кираса может носиться под обычной одеждой. Если в обычном исполнении доспех накладывает помеху на проверки Ловкости (Скрытность) или имеет требования к Силе, то в версии из мифрила он не обладает этими недостатками.",
+                        "priceGold":  500,
+                        "sourceMaterialName":  "Мифрил",
+                        "sourceMaterialId":  "material-178",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  21
+                    }
+    },
+    {
+        "name":  "Лунный металл",
+        "productId":  "lunnyy-metall",
+        "canonicalName":  "Лунный металл",
+        "upgrade":  {
+                        "rank":  7,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Доспех теряет помеху на проверки Ловкости (Скрытность), если её не было изначально, то вы получаете преимущества на проверки Ловкости (Скрытность).",
+                        "priceGold":  1000,
+                        "sourceMaterialName":  "Лунный металл",
+                        "sourceMaterialId":  "material-179",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  22
+                    }
+    },
+    {
+        "name":  "Шерсть гриффона",
+        "productId":  "sherst-griffona",
+        "canonicalName":  "Шерсть гриффона",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Ваша скорость ходьбы увеличивается на 5 футов.",
+                        "priceGold":  250,
+                        "sourceMaterialName":  "Шерсть гриффона",
+                        "sourceMaterialId":  "material-180",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  23
+                    }
+    },
+    {
+        "name":  "Корень драконьего дерева",
+        "productId":  "koren-drakonego-dereva",
+        "canonicalName":  "Корень драконьего дерева",
+        "upgrade":  {
+                        "rank":  6,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Деревья, что растут на Диких землях невероятно прочны и доспех из такого материала наделит частицей своей мощи носителя. Ваш максимум хитов увеличивается на 5.",
+                        "priceGold":  875,
+                        "sourceMaterialName":  "Корень драконьего дерева",
+                        "sourceMaterialId":  "material-181",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  24
+                    }
+    },
+    {
+        "name":  "Освящённый адамантий",
+        "productId":  "osvyashchyonnyy-adamantiy",
+        "canonicalName":  "Освящённый адамантий",
+        "upgrade":  {
+                        "rank":  8,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Вы узнаёте заклинание щит веры [Shield of Faith] и можете наложить его минимально возможным уровнем. После наложения заклинания таким образом Вы должны закончить продолжительный отдых, прежде чем сможете наложить его снова. Базовая характеристика для заклинания — Харизма.",
+                        "priceGold":  3000,
+                        "sourceMaterialName":  "Освящённый адамантий",
+                        "sourceMaterialId":  "material-182",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  25
+                    }
+    },
+    {
+        "name":  "Прах модронов",
+        "productId":  "prakh-modronov",
+        "canonicalName":  "Прах модронов",
+        "upgrade":  {
+                        "rank":  6,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "В пределах 10 футов от вас образуется аура порядка. Скорость всех существ с нейтральным и хаотическим мировоззрением уменьшается на 10 футов.",
+                        "priceGold":  1200,
+                        "sourceMaterialName":  "Прах модронов",
+                        "sourceMaterialId":  "material-183",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  26
+                    }
+    },
+    {
+        "name":  "Порошок Дрохубы",
+        "productId":  "poroshok-drokhuby",
+        "canonicalName":  "Порошок Дрохубы",
+        "upgrade":  {
+                        "rank":  9,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Ваша скорость ходьбы увеличивается на 10 футов.",
+                        "priceGold":  2000,
+                        "sourceMaterialName":  "Порошок Дрохубы",
+                        "sourceMaterialId":  "material-184",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  27
+                    }
+    },
+    {
+        "name":  "Шёпот тьмы",
+        "productId":  "shyopot-t-my",
+        "canonicalName":  "Шёпот тьмы",
+        "upgrade":  {
+                        "rank":  8,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Существо, что носит такой доспех скрыто от магии школы Прорицания. Существо не можете быть целью подобной магии, и его не воспринимают магические сенсоры слежения.",
+                        "priceGold":  1625,
+                        "sourceMaterialName":  "Шёпот тьмы",
+                        "sourceMaterialId":  "material-185",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  28
+                    }
+    },
+    {
+        "name":  "Панцирь кристального левиафана",
+        "productId":  "pantsir-kristal-nogo-leviafana",
+        "canonicalName":  "Панцирь кристального левиафана",
+        "upgrade":  {
+                        "rank":  8,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Вы получаете сопротивление Холодом. Действием вы можете сомкнуть чешуйки, чтобы высвободить их Силу вокруг. Все существа в пределах 30 футов от вас притягиваются на 25 футов к вам, в смежное пространство. Вы можете использовать это Действие раз в минуту. Если вы Окровавлены, то вы можете совершить его Бонусным действием Вы получаете владение реакций Хлопок ⚡. Триггер: Вы получаете урон. Эффект: Все существа по вашему выбору в пределах 10-футовой эманации отбрасываются на 30 футов от вас.",
+                        "priceGold":  20000,
+                        "sourceMaterialName":  "Кристальный левиафан",
+                        "sourceMaterialId":  null,
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  31
+                    }
+    },
+    {
+        "name":  "Череп Оркуса",
+        "productId":  "cherep-orkusa",
+        "canonicalName":  "Череп Оркуса",
+        "upgrade":  {
+                        "rank":  9,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Осквернённый череп Принца нежити. Носитель начинает слышать голоса мёртвых и получает пророческие видения. Вы можете наложить заклинание Предвидение [Foresight]. После наложения заклинания таким образом Вы должны закончить продолжительный отдых, прежде чем сможете наложить его снова. Базовая характеристика для заклинания — Харизма. ПРОКЛЯТЬЕ: На Нежить и Аббераций не распространяется эффект Предвиденья. Для существ этого типа считается, что не вы находитесь под действием этого заклиннаия, а они",
+                        "priceGold":  40000,
+                        "sourceMaterialName":  "Оркус",
+                        "sourceMaterialId":  null,
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  32
+                    }
+    },
+    {
+        "name":  "Кости Тролля",
+        "productId":  "gear-3",
+        "canonicalName":  "Кости Тролля",
+        "upgrade":  {
+                        "rank":  4,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "",
+                        "priceGold":  200,
+                        "sourceMaterialName":  "Кости тролля",
+                        "sourceMaterialId":  "material-186",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  33
+                    }
+    },
+    {
+        "name":  "Панцирная пластина Дредноута",
+        "productId":  "pantsirnaya-plastina-drednouta-oruzhie",
+        "canonicalName":  "Панцирная пластина Дредноута (оружие)",
+        "upgrade":  {
+                        "rank":  9,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Если у вас выпало «1–5» или на урона Чистой силой при атаке, то вы можете считать «1–5» на кости урона как «6».",
+                        "priceGold":  25000,
+                        "sourceMaterialName":  "Астральный дредноут",
+                        "sourceMaterialId":  null,
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  34
+                    }
+    },
+    {
+        "name":  "Панцирная пластина Дредноута",
+        "productId":  "pantsirnaya-plastina-drednouta-dospekh",
+        "canonicalName":  "Панцирная пластина Дредноута (доспех)",
+        "upgrade":  {
+                        "rank":  9,
+                        "appliesTo":  "Доспех",
+                        "effect":  "Вы получаете сопротивление Чистой силе. Если вы получаете более 20 урона Чистой силой из одного источника до применения любых модификаторов, то можете совершить Перекат (не требует каких либо действий)",
+                        "priceGold":  25000,
+                        "sourceMaterialName":  "Астральный дредноут",
+                        "sourceMaterialId":  null,
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  35
+                    }
+    },
+    {
+        "name":  "Клешни дредноута",
+        "productId":  "kleshni-drednouta",
+        "canonicalName":  "Клешни дредноута",
+        "upgrade":  {
+                        "rank":  9,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Когда вы совершаете атаку по существу родом из плана, отличного от материального плана, то существо получает дополнительно 2к12 урона чистой силой при попадании",
+                        "priceGold":  10000,
+                        "sourceMaterialName":  "Астральный дредноут",
+                        "sourceMaterialId":  null,
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  36
+                    }
+    },
+    {
+        "name":  "Синтезатор яда",
+        "productId":  "gear-4",
+        "canonicalName":  "Синтезатор яда",
+        "upgrade":  {
+                        "rank":  6,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Синтезатор яда обладает запасом яда в виде 12к8. Когда вы используете дыхание ядом, то расходуете кости из запаса, но не более чем 6к8 за раз. Одна кость восстанавливается в течении часа. Вы можете Бонусным действием либо вместо одной из атак выплеснуть ядовитую струю 10-футовым конусом. Все цели в области поражения должны совершить спасбросок Телосложения Сл вашего класса. Провал: цель получает урон ядом в количестве равном потрачены костям. Успех: половина урона",
+                        "priceGold":  10000,
+                        "sourceMaterialName":  "Железный голем",
+                        "sourceMaterialId":  null,
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  37
+                    }
+    },
+    {
+        "name":  "Осколок кости чудовища",
+        "productId":  "oskolok-kosti-chudovishcha",
+        "canonicalName":  "Осколок кости чудовища",
+        "upgrade":  {
+                        "rank":  1,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Поглощение немагического дробящего урона 1. Слабость к немагическому колющему урону 1.",
+                        "priceGold":  25,
+                        "sourceMaterialName":  "Осколок кости чудовища",
+                        "sourceMaterialId":  "material-5",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  38
+                    }
+    },
+    {
+        "name":  "Зачарование лёгкости",
+        "productId":  "zacharovanie-lyogkosti",
+        "canonicalName":  "Зачарование лёгкости",
+        "upgrade":  {
+                        "rank":  1,
+                        "appliesTo":  "Любой",
+                        "effect":  "Вес элемента снаряжения уменьшается на 10 фунтов",
+                        "priceGold":  25,
+                        "sourceMaterialName":  "Перо чудовища",
+                        "sourceMaterialId":  "material-7",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  39
+                    }
+    },
+    {
+        "name":  "Хребет чудовища",
+        "productId":  "khrebet-chudovishcha",
+        "canonicalName":  "Хребет чудовища",
+        "upgrade":  {
+                        "rank":  1,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Поглощение немагического рубящего урона 1. Слабость к немагическому дробящему урону 1.",
+                        "priceGold":  25,
+                        "sourceMaterialName":  "Хребет чудовища",
+                        "sourceMaterialId":  "material-11",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  40
+                    }
+    },
+    {
+        "name":  "Зачарование поглощения",
+        "productId":  "zacharovanie-pogloshcheniya",
+        "canonicalName":  "Зачарование поглощения",
+        "upgrade":  {
+                        "rank":  1,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Поглощение 1 к одну виду урона на ваш выбор",
+                        "priceGold":  125,
+                        "sourceMaterialName":  "Чернила чудовища",
+                        "sourceMaterialId":  "material-12",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  41
+                    }
+    },
+    {
+        "name":  "Осколок тени",
+        "productId":  "oskolok-teni",
+        "canonicalName":  "Осколок тени",
+        "upgrade":  {
+                        "rank":  1,
+                        "appliesTo":  "Чудестный предмет",
+                        "effect":  "Вы можете накладывать заговор Малая илюзия с помощью этого чудестного предмета. Базовая характеристика для него — Интеллект",
+                        "priceGold":  125,
+                        "sourceMaterialName":  "Осколок тени",
+                        "sourceMaterialId":  "material-15",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  42
+                    }
+    },
+    {
+        "name":  "Осколок черепа чудовища",
+        "productId":  "oskolok-cherepa-chudovishcha",
+        "canonicalName":  "Осколок черепа чудовища",
+        "upgrade":  {
+                        "rank":  2,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Вы получаете бонус +1 к проверкам с применением навыка Запугивание",
+                        "priceGold":  100,
+                        "sourceMaterialName":  "Осколок черепа чудовища",
+                        "sourceMaterialId":  "material-17",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  43
+                    }
+    },
+    {
+        "name":  "Коготь чудовища",
+        "productId":  "kogot-chudovishcha-2",
+        "canonicalName":  "Коготь чудовища",
+        "upgrade":  {
+                        "rank":  2,
+                        "appliesTo":  "Оружие (кастет или металлическая перчатка)",
+                        "effect":  "Урон выбранного оружия увеличивается на один шаг. Кастет до 1к3 и перчата до 1к4 соответственно",
+                        "priceGold":  50,
+                        "sourceMaterialName":  "Коготь чудовища",
+                        "sourceMaterialId":  "material-18",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  44
+                    }
+    },
+    {
+        "name":  "Шкура чудовища",
+        "productId":  "shkura-chudovishcha",
+        "canonicalName":  "Шкура чудовища",
+        "upgrade":  {
+                        "rank":  2,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Поглощение дробящего урона 1.",
+                        "priceGold":  75,
+                        "sourceMaterialName":  "Шкура чудовища",
+                        "sourceMaterialId":  "material-19",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  45
+                    }
+    },
+    {
+        "name":  "Жало чудовища",
+        "productId":  "zhalo-chudovishcha",
+        "canonicalName":  "Жало чудовища",
+        "upgrade":  {
+                        "rank":  2,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Ваше оружие получает свойство Отравляющее",
+                        "priceGold":  250,
+                        "sourceMaterialName":  "Жало чудовища",
+                        "sourceMaterialId":  "material-21",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  46
+                    }
+    },
+    {
+        "name":  "Желчный покров",
+        "productId":  "zhelchnyy-pokrov",
+        "canonicalName":  "Желчный покров",
+        "upgrade":  {
+                        "rank":  2,
+                        "appliesTo":  "Оружие (не металлическое)",
+                        "effect":  "Когда вы попадаете по цели атакой оружием, то вы можете создать на её доспехе степень поломки, если доспех металлический. Вы не можете создать более одной степени поломки на одном объекте таким образом.",
+                        "priceGold":  500,
+                        "sourceMaterialName":  "Желчь чудовища",
+                        "sourceMaterialId":  "material-23",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  47
+                    }
+    },
+    {
+        "name":  "Хитиновое покрытие",
+        "productId":  "khitinovoe-pokrytie",
+        "canonicalName":  "Хитиновое покрытие",
+        "upgrade":  {
+                        "rank":  2,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Если в обычном исполнении доспех накладывает помеху на проверки Ловкости (Скрытность), то после покрытия хитином он не обладает этими недостатками.",
+                        "priceGold":  125,
+                        "sourceMaterialName":  "Хитин чудовища",
+                        "sourceMaterialId":  "material-24",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  48
+                    }
+    },
+    {
+        "name":  "Фрагмент панциря чудовища",
+        "productId":  "fragment-pantsirya-chudovishcha",
+        "canonicalName":  "Фрагмент панциря чудовища",
+        "upgrade":  {
+                        "rank":  2,
+                        "appliesTo":  "Верхняя одежда (Щит)",
+                        "effect":  "Поглощение рубящего урона 1.",
+                        "priceGold":  250,
+                        "sourceMaterialName":  "Фрагмент панциря чудовища",
+                        "sourceMaterialId":  "material-27",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  49
+                    }
+    },
+    {
+        "name":  "Сухожилие чудовища",
+        "productId":  "sukhozhilie-chudovishcha",
+        "canonicalName":  "Сухожилие чудовища",
+        "upgrade":  {
+                        "rank":  2,
+                        "appliesTo":  "Оружие (Дальнобойное)",
+                        "effect":  "Вы получаете бонус +1 к броскам урона, совершённым с помощью этого оружия",
+                        "priceGold":  250,
+                        "sourceMaterialName":  "Сухожилие чудовища",
+                        "sourceMaterialId":  "material-28",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  50
+                    }
+    },
+    {
+        "name":  "Зачарование прыжков",
+        "productId":  "zacharovanie-pryzhkov",
+        "canonicalName":  "Зачарование прыжков",
+        "upgrade":  {
+                        "rank":  2,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Дальность ваших прыжков в длину и высоту увеличивается на 5 футов",
+                        "priceGold":  125,
+                        "sourceMaterialName":  "Эссенция воздуха",
+                        "sourceMaterialId":  "material-29",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  51
+                    }
+    },
+    {
+        "name":  "Рог чудовища",
+        "productId":  "rog-chudovishcha",
+        "canonicalName":  "Рог чудовища",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Оружие получает свойство «Наскок 1к2». Если у оружия уже был «Наскок», то его значение увеличивается на 1к2",
+                        "priceGold":  500,
+                        "sourceMaterialName":  "Рог чудовища",
+                        "sourceMaterialId":  "material-30",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  52
+                    }
+    },
+    {
+        "name":  "Чешуя монстра",
+        "productId":  "cheshuya-monstra",
+        "canonicalName":  "Чешуя монстра",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Вы получаете поглощение урону 2 к одному из следующих типов: Огонь, Холод, Кислота, Яд, Электричество",
+                        "priceGold":  500,
+                        "sourceMaterialName":  "Чешуя монстра",
+                        "sourceMaterialId":  "material-31",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  53
+                    }
+    },
+    {
+        "name":  "Щупальце чудовища",
+        "productId":  "shchupaltse-chudovishcha-2",
+        "canonicalName":  "Щупальце чудовища",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Вы можете с помощью этого оружия схватить существо. Для такого Захвата вам не нужна свободная рука, но размер существа, которое вы можете схватить на один размер меньше, чем обычно (обычно — ваш размер)",
+                        "priceGold":  2500,
+                        "sourceMaterialName":  "Щупальце чудовища",
+                        "sourceMaterialId":  "material-33",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  54
+                    }
+    },
+    {
+        "name":  "Душевное зачарование",
+        "productId":  "dushevnoe-zacharovanie",
+        "canonicalName":  "Душевное зачарование",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Чудестный предмет",
+                        "effect":  "Вы получаете бонус +1 к проверкам с применением навыков Убеждение и Выступление.",
+                        "priceGold":  300,
+                        "sourceMaterialName":  "Малый осколок души",
+                        "sourceMaterialId":  "material-37",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  55
+                    }
+    },
+    {
+        "name":  "Закалённая чешуя",
+        "productId":  "zakalyonnaya-cheshuya",
+        "canonicalName":  "Закалённая чешуя",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Поглощение колющего урона 1.",
+                        "priceGold":  500,
+                        "sourceMaterialName":  "Закалённая чешуя",
+                        "sourceMaterialId":  "material-38",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  56
+                    }
+    },
+    {
+        "name":  "Ледяной клык",
+        "productId":  "ledyanoy-klyk-2",
+        "canonicalName":  "Ледяной клык",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Оружие",
+                        "effect":  "После попадание атакой этим оружием, скорость цели до начала вашего следующего хода уменьшается на 5 футов.",
+                        "priceGold":  250,
+                        "sourceMaterialName":  "Ледяной клык",
+                        "sourceMaterialId":  "material-39",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  57
+                    }
+    },
+    {
+        "name":  "Эктоплазма",
+        "productId":  "ektoplazma-2",
+        "canonicalName":  "Эктоплазма",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Чудестный предмет",
+                        "effect":  "После накладывания заклинания ваша скорость увеличивается на 10 футов до конца текущего хода.",
+                        "priceGold":  500,
+                        "sourceMaterialName":  "Эктоплазма",
+                        "sourceMaterialId":  "material-40",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  58
+                    }
+    },
+    {
+        "name":  "Эссенция тени",
+        "productId":  "essentsiya-teni",
+        "canonicalName":  "Эссенция тени",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Вокруг вашего меча начинает кружиться тёмная аура. Люди могут увидеть в вас опасность.",
+                        "priceGold":  100,
+                        "sourceMaterialName":  "Эссенция тени",
+                        "sourceMaterialId":  "material-41",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  59
+                    }
+    },
+    {
+        "name":  "Малое зачарование остроты",
+        "productId":  "maloe-zacharovanie-ostroty",
+        "canonicalName":  "Малое зачарование остроты",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Ваше оружие получает бонус +1 к броскам урона, совершённым с помощью этого оружия.",
+                        "priceGold":  2500,
+                        "sourceMaterialName":  "Осколок маны",
+                        "sourceMaterialId":  "material-43",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  60
+                    }
+    },
+    {
+        "name":  "Малое зачарование защиты",
+        "productId":  "maloe-zacharovanie-zashchity",
+        "canonicalName":  "Малое зачарование защиты",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Вы получаете бонус +1 к КД.",
+                        "priceGold":  2500,
+                        "sourceMaterialName":  "Осколок маны",
+                        "sourceMaterialId":  "material-43",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  61
+                    }
+    },
+    {
+        "name":  "Малое зачарование стойкости",
+        "productId":  "maloe-zacharovanie-stoykosti",
+        "canonicalName":  "Малое зачарование стойкости",
+        "upgrade":  {
+                        "rank":  3,
+                        "appliesTo":  "Чудестный предмет",
+                        "effect":  "Вы получаете бонус +1 к спасброскам.",
+                        "priceGold":  2500,
+                        "sourceMaterialName":  "Осколок маны",
+                        "sourceMaterialId":  "material-43",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  62
+                    }
+    },
+    {
+        "name":  "Панцирь чудовища",
+        "productId":  "pantsir-chudovishcha",
+        "canonicalName":  "Панцирь чудовища",
+        "upgrade":  {
+                        "rank":  4,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Поглощение рубящего и колющего урона 1.",
+                        "priceGold":  1000,
+                        "sourceMaterialName":  "Панцирь чудовища",
+                        "sourceMaterialId":  "material-44",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  63
+                    }
+    },
+    {
+        "name":  "Гигантский коготь",
+        "productId":  "gigantskiy-kogot",
+        "canonicalName":  "Гигантский коготь",
+        "upgrade":  {
+                        "rank":  4,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Оружие получает свойство «Смертельное»",
+                        "priceGold":  4800,
+                        "sourceMaterialName":  "Гигантский коготь",
+                        "sourceMaterialId":  "material-48",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  64
+                    }
+    },
+    {
+        "name":  "Зачарование некромантии",
+        "productId":  "zacharovanie-nekromantii",
+        "canonicalName":  "Зачарование некромантии",
+        "upgrade":  {
+                        "rank":  4,
+                        "appliesTo":  "Оружие",
+                        "effect":  "При попадании вы наносите дополнительно 1к3 урона некротической энергией",
+                        "priceGold":  2400,
+                        "sourceMaterialName":  "Эссенция духа",
+                        "sourceMaterialId":  "material-50",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  65
+                    }
+    },
+    {
+        "name":  "Живой корень",
+        "productId":  "zhivoy-koren",
+        "canonicalName":  "Живой корень",
+        "upgrade":  {
+                        "rank":  4,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Когда вы попадаете по существу, то корень оскорбляет цель. Следующая атака существа получает штраф -1, а если цель этой атаки вы, то штраф увеличивается до -2.",
+                        "priceGold":  3000,
+                        "sourceMaterialName":  "Живой корень",
+                        "sourceMaterialId":  "material-52",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  66
+                    }
+    },
+    {
+        "name":  "Живой корень",
+        "productId":  "zhivoy-koren-dospekh",
+        "canonicalName":  "Живой корень (доспех)",
+        "upgrade":  {
+                        "rank":  4,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Когда по вам попадает атака корень может прокоментировать действия атакующего. Следующая атака по атакующему совершается с бонусом +1. Если эту атаку совершаете вы, то бонус увеличивается до +2",
+                        "priceGold":  3000,
+                        "sourceMaterialName":  "Живой корень",
+                        "sourceMaterialId":  "material-52",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  67
+                    }
+    },
+    {
+        "name":  "Бивень чудовища",
+        "productId":  "biven-chudovishcha",
+        "canonicalName":  "Бивень чудовища",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Оружие получает свойство «Силовое». Вы можете использовать это свойство два раза в ход, атакуя этим оружием.",
+                        "priceGold":  1800,
+                        "sourceMaterialName":  "Бивень чудовища",
+                        "sourceMaterialId":  "material-53",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  68
+                    }
+    },
+    {
+        "name":  "Эссенция света",
+        "productId":  "essentsiya-sveta-2",
+        "canonicalName":  "Эссенция света",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Вы получаете поглощение урона излучением 3 и поглощение урона от нежити 3.",
+                        "priceGold":  2500,
+                        "sourceMaterialName":  "Эссенция света",
+                        "sourceMaterialId":  "material-56",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  70
+                    }
+    },
+    {
+        "name":  "Грозовой камень",
+        "productId":  "grozovoy-kamen",
+        "canonicalName":  "Грозовой камень",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Оружие",
+                        "effect":  "После определения последствия атаки вы можете нанести 2к10 урона электричеством другой цели в пределах 10 футов от цели атаки. Если других существ (исключая вас) в этом радиусе нету, то вы можете нанести цели атаки 1к6 урона",
+                        "priceGold":  2500,
+                        "sourceMaterialName":  "Грозовой камень",
+                        "sourceMaterialId":  "material-57",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  71
+                    }
+    },
+    {
+        "name":  "Живая вода",
+        "productId":  "zhivaya-voda-2",
+        "canonicalName":  "Живая вода",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Чудестный предмет",
+                        "effect":  "Ваш запас костей хитов увеличивается на значение равное вашему БМ",
+                        "priceGold":  3600,
+                        "sourceMaterialName":  "Живая вода",
+                        "sourceMaterialId":  "material-58",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  72
+                    }
+    },
+    {
+        "name":  "Мана-ускоритель",
+        "productId":  "mana-uskoritel",
+        "canonicalName":  "Мана-ускоритель",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Ваше оружие получает свойство «Размах». Бонус Размаха увеличивается до +4, когда вы атакуете другое существо.",
+                        "priceGold":  2000,
+                        "sourceMaterialName":  "Магический конденсатор",
+                        "sourceMaterialId":  "material-59",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  73
+                    }
+    },
+    {
+        "name":  "Зачарование остроты",
+        "productId":  "zacharovanie-ostroty",
+        "canonicalName":  "Зачарование остроты",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Ваше оружие получает бонус +1 к броскам атаки и урона, совершённым с помощью этого оружия.",
+                        "priceGold":  6000,
+                        "sourceMaterialName":  "Крупный кристалл маны",
+                        "sourceMaterialId":  "material-60",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  74
+                    }
+    },
+    {
+        "name":  "Зачарование защиты",
+        "productId":  "zacharovanie-zashchity",
+        "canonicalName":  "Зачарование защиты",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Вы получаете бонус +1 к КД и спасброскам.",
+                        "priceGold":  6000,
+                        "sourceMaterialName":  "Крупный кристалл маны",
+                        "sourceMaterialId":  "material-60",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  75
+                    }
+    },
+    {
+        "name":  "Огненная мазь",
+        "productId":  "ognennaya-maz",
+        "canonicalName":  "Огненная мазь",
+        "upgrade":  {
+                        "rank":  6,
+                        "appliesTo":  "Оружие",
+                        "effect":  "При попадании вы наносите дополнительно 1к6 урона огнём",
+                        "priceGold":  15000,
+                        "sourceMaterialName":  "Пылающее ядро",
+                        "sourceMaterialId":  "material-64",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  76
+                    }
+    },
+    {
+        "name":  "Ледяная мазь",
+        "productId":  "ledyanaya-maz",
+        "canonicalName":  "Ледяная мазь",
+        "upgrade":  {
+                        "rank":  6,
+                        "appliesTo":  "Оружие",
+                        "effect":  "При попадании вы наносите дополнительно 1к6 урона холодом",
+                        "priceGold":  13500,
+                        "sourceMaterialName":  "Заиндевелое ядро",
+                        "sourceMaterialId":  "material-65",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  78
+                    }
+    },
+    {
+        "name":  "Великое зачарование остроты",
+        "productId":  "velikoe-zacharovanie-ostroty",
+        "canonicalName":  "Великое зачарование остроты",
+        "upgrade":  {
+                        "rank":  7,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Ваше оружие получает бонус +1 к броскам атаки и урона, совершённым с помощью этого оружия и ваше оружие игнорирует сопротивление к тому типу урона, который наносит",
+                        "priceGold":  12000,
+                        "sourceMaterialName":  "Великий осколок души",
+                        "sourceMaterialId":  "material-68",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  79
+                    }
+    },
+    {
+        "name":  "Великое зачарование защиты",
+        "productId":  "velikoe-zacharovanie-zashchity",
+        "canonicalName":  "Великое зачарование защиты",
+        "upgrade":  {
+                        "rank":  7,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Вы получаете бонус +1 к КД, спасброскам и поглощению урона.",
+                        "priceGold":  12000,
+                        "sourceMaterialName":  "Великий осколок души",
+                        "sourceMaterialId":  "material-68",
+                        "type":  "Зачарование",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  80
+                    }
+    },
+    {
+        "name":  "Эссенция кошмаров",
+        "productId":  "essentsiya-koshmarov",
+        "canonicalName":  "Эссенция кошмаров",
+        "upgrade":  {
+                        "rank":  7,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Когда вы совершаете критическое попадание этим оружием, то цель становиться Испуганной 2. Если частью атаки вы можете испугать цель, то значение этого испуга увеличивается на 1",
+                        "priceGold":  8000,
+                        "sourceMaterialName":  "Эссенция кошмаров",
+                        "sourceMaterialId":  "material-69",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  81
+                    }
+    },
+    {
+        "name":  "Сердцевина древня",
+        "productId":  "serdtsevina-drevnya",
+        "canonicalName":  "Сердцевина древня",
+        "upgrade":  {
+                        "rank":  7,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Когда вы восстанавливаете хиты, то дополнительно восстанавливаете 2 хита.",
+                        "priceGold":  6500,
+                        "sourceMaterialName":  "Сердцевина древня",
+                        "sourceMaterialId":  "material-70",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  82
+                    }
+    },
+    {
+        "name":  "Священная сталь",
+        "productId":  "svyashchennaya-stal",
+        "canonicalName":  "Священная сталь",
+        "upgrade":  {
+                        "rank":  7,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Тип урона оружия меняется на Излучение, кости урона оружия удваиваются",
+                        "priceGold":  18000,
+                        "sourceMaterialName":  "Эссенция небес",
+                        "sourceMaterialId":  "material-74",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  83
+                    }
+    },
+    {
+        "name":  "Астральное жало",
+        "productId":  "astralnoe-zhalo",
+        "canonicalName":  "Астральное жало",
+        "upgrade":  {
+                        "rank":  8,
+                        "appliesTo":  "Оружие",
+                        "effect":  "Атакуя таким оружием вы можете поразить существо на эфирном плане даже, если находитесь на материальном",
+                        "priceGold":  4000,
+                        "sourceMaterialName":  "Астральный котёл",
+                        "sourceMaterialId":  "material-78",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  84
+                    }
+    },
+    {
+        "name":  "Хребет бесконечной плоти",
+        "productId":  "khrebet-beskonechnoy-ploti",
+        "canonicalName":  "Хребет бесконечной плоти",
+        "upgrade":  {
+                        "rank":  9,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "",
+                        "priceGold":  35000,
+                        "sourceMaterialName":  "Хребет бесконечной плоти",
+                        "sourceMaterialId":  "material-81",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  85
+                    }
+    },
+    {
+        "name":  "Абсолютная Пустота",
+        "productId":  "absolyutnaya-pustota",
+        "canonicalName":  "Абсолютная Пустота",
+        "upgrade":  {
+                        "rank":  9,
+                        "appliesTo":  "Чудестный предмет",
+                        "effect":  "",
+                        "priceGold":  40000,
+                        "sourceMaterialName":  "Абсолютная пустота",
+                        "sourceMaterialId":  "material-84",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  86
+                    }
+    },
+    {
+        "name":  "Голова Эриданы",
+        "productId":  "golova-eridany",
+        "canonicalName":  "Голова Эриданы",
+        "upgrade":  {
+                        "rank":  10,
+                        "appliesTo":  "Верхняя одежда",
+                        "effect":  "Вы получаете сопротивление Кислоте. Если вы меняете положение существа каким либо образом в пространстве, вы можете нанести цели 1d10 урона кислотой за каждые 5 футов перемещения с максимумом в 6d10 за одно перемещение. Когда вы попадаете по существу атакой или существо проваливает спасбросок против вашего эффекта вы, после определения всех последствий, можете переместить цель в горизонтальном пространстве на расстояние влоть до 10 футов в любом направлении.",
+                        "priceGold":  30000,
+                        "sourceMaterialName":  "Эридана",
+                        "sourceMaterialId":  null,
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  87
+                    }
+    },
+    {
+        "name":  "Паучья тетива",
+        "productId":  "pauchya-tetiva",
+        "canonicalName":  "Паучья тетива",
+        "upgrade":  {
+                        "rank":  5,
+                        "appliesTo":  "Оружие (дальнобойное)",
+                        "effect":  "Совершение атаки в пределах максимальной дистанции не вызывает помеху к броску атаки этим оружием. Если цель атаки этим оружием находиться в пределах максимальной дистанции, то атака получает свойство МУ 1",
+                        "priceGold":  1000,
+                        "sourceMaterialName":  "Паутина гиганского паука",
+                        "sourceMaterialId":  "material-187",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  88
+                    }
+    },
+    {
+        "name":  "Фейское плечо",
+        "productId":  "feyskoe-plecho",
+        "canonicalName":  "Фейское плечо",
+        "upgrade":  {
+                        "rank":  4,
+                        "appliesTo":  "Оружие (дальнобойное)",
+                        "effect":  "Плечи оружия из этого материала куда крепче. Перед атакой вы можете уменьшить дистанцию стрельбы вдвое. В таком случае кость урона оружия увеличивается на один шаг",
+                        "priceGold":  500,
+                        "sourceMaterialName":  "Фейское дерево",
+                        "sourceMaterialId":  "material-188",
+                        "type":  "Материал",
+                        "sourceSheet":  "Усовершенствования V0.21",
+                        "sourceSheetRow":  89
+                    }
+    }
+]
