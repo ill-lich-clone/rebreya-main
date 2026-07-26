@@ -432,6 +432,10 @@ function isPaladinPreparedSpellItem(item) {
     return false;
   }
 
+  if (itemFlag(item, MODULE_ID, "paladinDogmaSpell")) {
+    return false;
+  }
+
   if (itemFlag(item, MODULE_ID, "paladinPreparedSpell") === true) {
     return true;
   }

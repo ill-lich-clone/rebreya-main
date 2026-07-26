@@ -16,6 +16,7 @@ export function registerCombatHooks(moduleApi) {
   const hasSorcererService = Boolean(moduleApi?.sorcererAutomationService);
   const hasElementalAdeptService = Boolean(moduleApi?.elementalAdeptAutomationService);
   const hasPaladinService = Boolean(moduleApi?.paladinAutomationService);
+  const hasPaladinDogmaService = Boolean(moduleApi?.paladinDogmaAutomationService);
   const hasRogueService = Boolean(moduleApi?.rogueAutomationService);
   const hasAttackRollBoostService = Boolean(moduleApi?.attackRollBoostService);
   const hasPerformerService = Boolean(moduleApi?.performerAutomationService);
@@ -26,7 +27,7 @@ export function registerCombatHooks(moduleApi) {
   const hasRuneKnightService = Boolean(moduleApi?.runeKnightAutomationService);
   const hasSizeService = Boolean(moduleApi?.sizeAutomationService);
   const hasCurseEaterService = Boolean(moduleApi?.curseEaterAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService) {
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasPaladinDogmaService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService) {
     return;
   }
 
@@ -1198,6 +1199,20 @@ export function registerCombatHooks(moduleApi) {
         console.error(`${MODULE_ID} | Failed to apply paladin MIDI pre-damage automation.`, error);
         return true;
       }
+    });
+  }
+
+  if (hasPaladinDogmaService) {
+    Hooks.on("createItem", (item, options, userId) => {
+      moduleApi.paladinDogmaAutomationService.handleCreatedItem(item, options, userId).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to handle paladin dogma item creation.`, error);
+      });
+    });
+
+    Hooks.on("updateItem", (item, changed, options, userId) => {
+      moduleApi.paladinDogmaAutomationService.handleUpdatedItem(item, changed, options, userId).catch((error) => {
+        console.error(`${MODULE_ID} | Failed to handle paladin dogma item update.`, error);
+      });
     });
   }
 

@@ -370,7 +370,7 @@ test("combat automation imports preserve their released cache busts", async () =
 
   assert.match(
     entrypointSource,
-    /combat\/hooks\.js\?v=1\.4\.110-giant-tribe-cleanup/u,
+    /combat\/hooks\.js\?v=1\.4\.111-paladin-dogmas/u,
   );
   assert.match(
     entrypointSource,
@@ -415,6 +415,38 @@ test("character size automation is wired into module initialization and combat h
   assert.match(hooksSource, /Hooks\.on\("createActiveEffect"[\s\S]+handleActiveEffectChanged/u);
   assert.match(hooksSource, /Hooks\.on\("deleteActiveEffect"[\s\S]+handleActiveEffectChanged/u);
   assert.match(hooksSource, /sizeAutomationService\.syncActor/u);
+});
+
+test("paladin dogma automation is constructed and routed through the current combat hooks import", async () => {
+  const [entrypointSource, hooksSource] = await Promise.all([
+    readCanonicalEntrypointSource(),
+    readFile(new URL("../scripts/combat/hooks.js", import.meta.url), "utf8")
+  ]);
+
+  assert.match(
+    entrypointSource,
+    /import \{ PaladinDogmaAutomationService \} from "\.\/combat\/paladin-dogma-automation-service\.js\?v=1\.4\.111-paladin-dogmas";/u
+  );
+  assert.match(
+    entrypointSource,
+    /combat\/hooks\.js\?v=1\.4\.111-paladin-dogmas/u
+  );
+  assert.match(
+    entrypointSource,
+    /this\.paladinDogmaAutomationService = new PaladinDogmaAutomationService\(this\);/u
+  );
+  assert.match(
+    hooksSource,
+    /const hasPaladinDogmaService = Boolean\(moduleApi\?\.paladinDogmaAutomationService\);/u
+  );
+  assert.match(
+    hooksSource,
+    /paladinDogmaAutomationService\.handleCreatedItem\(item, options, userId\)/u
+  );
+  assert.match(
+    hooksSource,
+    /paladinDogmaAutomationService\.handleUpdatedItem\(item, changed, options, userId\)/u
+  );
 });
 
 test("owned race and Giant Tribe configuration is wired to create and sheet repair hooks", async () => {

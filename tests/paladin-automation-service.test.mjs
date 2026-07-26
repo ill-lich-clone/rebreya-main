@@ -434,6 +434,37 @@ test("paladin long rest leaves spells untouched when the player declines the pro
   assert.deepEqual(actor.createdItems, []);
 });
 
+test("paladin daily preparation never unprepares a dogma-managed spell", async () => {
+  const dogmaSpell = makeSpellItem({
+    id: "command",
+    name: "Приказ",
+    sourceId: "Compendium.dnd5e.spells.Item.command",
+    identifier: "command",
+    prepared: 1
+  });
+  delete dogmaSpell.flags["rebreya-main"].paladinPreparedSpell;
+  dogmaSpell.flags["rebreya-main"].paladinDogmaSpell = {
+    dogmaIds: ["magistrate-3-command"]
+  };
+  const actor = new TestActor({ level: 5, chaMod: 2, items: [dogmaSpell] });
+  const bless = makeCompendiumSpell({
+    uuid: "Compendium.dnd5e.spells.Item.bless",
+    name: "Благословение",
+    identifier: "bless"
+  });
+  const service = new PaladinAutomationService({}, {
+    confirmPreparedSpellChange: async () => true,
+    selectPreparedSpellUuids: async () => [bless.uuid],
+    fromUuid: async (uuid) => (uuid === bless.uuid ? bless : null)
+  });
+
+  await service.handleRestCompleted(actor, { type: "long" }, {});
+
+  assert.equal(dogmaSpell.system.prepared, 1);
+  assert.deepEqual(dogmaSpell.updates, []);
+  assert.equal(actor.createdItems[0].documents[0].name, "Благословение");
+});
+
 test("paladin spellcasting feature creation asks for initial prepared spells once", async () => {
   const spellcasting = makeFeatureItem({
     id: "spellcasting",

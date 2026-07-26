@@ -68,7 +68,7 @@ import { getActiveGm, isActiveGmClient } from "./infrastructure/foundry/active-g
 import { SocketCommandBus } from "./infrastructure/foundry/socket-command-bus.js";
 import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator.js";
 import { GlobalEventsService } from "./data/global-events-service.js";
-import { registerCombatHooks } from "./combat/hooks.js?v=1.4.110-giant-tribe-cleanup";
+import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.109-character-size-reach";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
@@ -89,6 +89,7 @@ import {
   PaladinAutomationService,
   SOCKET_EVENT_CHARACTER_CLASS_AUTOMATION
 } from "./combat/paladin-automation-service.js?v=1.4.96";
+import { PaladinDogmaAutomationService } from "./combat/paladin-dogma-automation-service.js?v=1.4.111-paladin-dogmas";
 import { RogueAutomationService } from "./combat/rogue-automation-service.js?v=1.4.96-rebreya-open-position";
 import {
   PERFORMER_APPLY_RESULT_COMMAND,
@@ -956,6 +957,7 @@ export class RebreyaMainModule {
     this.sorcererAutomationService = new SorcererAutomationService(this);
     this.elementalAdeptAutomationService = new ElementalAdeptAutomationService(this);
     this.paladinAutomationService = new PaladinAutomationService(this);
+    this.paladinDogmaAutomationService = new PaladinDogmaAutomationService(this);
     this.rogueAutomationService = new RogueAutomationService(this);
     this.performerAutomationService = new PerformerAutomationService(this);
     this.bardicInspirationCompatService = new BardicInspirationCompatService(this);
