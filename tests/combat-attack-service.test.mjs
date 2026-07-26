@@ -1987,6 +1987,69 @@ test("firearm misfire rolls an extra d20 and jams the weapon before the attack",
   assert.match(TestRoll.messages[0].messageData.flavor, /Осечка/u);
 });
 
+test("arquebus attacks disable dnd5e ammunition selection so only reloading spends bullets", () => {
+  const weapon = makeFirearmItem({
+    name: "Аркебуза",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Мушкетный",
+      reload: "Перезарядка 1"
+    },
+    ammoState: {
+      current: 1,
+      capacity: 1,
+      ammunition: "Мушкетный"
+    }
+  });
+  const ammo = makeAmmoItem({
+    id: "musket-ammo",
+    name: "Мушкетный патрон",
+    quantity: 98
+  });
+  const actor = makeActor([weapon, ammo]);
+  const activity = {
+    id: "firearmAttack",
+    type: "attack",
+    actor,
+    item: weapon,
+    attack: {
+      type: {
+        value: "firearm"
+      }
+    }
+  };
+  const config = {
+    subject: activity,
+    ammunition: ammo.id,
+    rolls: [{
+      options: {
+        ammunition: ammo.id
+      }
+    }]
+  };
+  const dialog = {
+    options: {
+      ammunitionOptions: [{
+        value: ammo.id,
+        label: ammo.name
+      }]
+    }
+  };
+  const service = new CombatAttackService({});
+
+  const result = service.applyDnd5eAttackRollConfig(config, dialog, {});
+
+  assert.equal(result, true);
+  assert.equal(config.ammunition, false);
+  assert.equal(config.rolls[0].options.ammunition, false);
+  assert.deepEqual(dialog.options.ammunitionOptions, []);
+  assert.equal(ammo.system.quantity, 98);
+  assert.equal(ammo.updateCalls.length, 0);
+});
+
 test("firearm attack roll notes ammo and misfire in the originating attack card", () => {
   TestRoll.queuedTotals = [13];
   TestRoll.messages = [];

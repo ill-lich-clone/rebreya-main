@@ -3347,6 +3347,14 @@ export class CombatAttackService {
       const actor = activity.actor ?? item.actor ?? null;
       const firearmMessageOptions = isFirearm ? { ...config, messageConfig: message } : config;
       if (isFirearm) {
+        config.ammunition = false;
+        for (const rollConfig of config?.rolls ?? []) {
+          rollConfig.options ??= {};
+          rollConfig.options.ammunition = false;
+        }
+        dialog.options ??= {};
+        dialog.options.ammunitionOptions = [];
+
         if (this.#getFirearmAmmoShotBlock(item)) {
           return true;
         }
