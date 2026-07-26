@@ -856,6 +856,29 @@ test("gear data contains unique source products and excludes deferred transport"
   assert.equal(gear.some((item) => /транспорт|скакун/iu.test(item.equipmentType)), false);
 });
 
+test("gear data contains every curse product from the common equipment compendium", () => {
+  const gear = JSON.parse(readFileSync(join(TESTS_DIR, "..", "data", "gear.json"), "utf8").replace(/^\uFEFF/u, ""));
+  const byName = new Map(gear.map((item) => [item.name, item]));
+  const expectedCurses = [
+    "Проклятье молниеносной реакции",
+    "Проклятье преследующего успеха",
+    "Проклятье жизни и смерти",
+    "Проклятье тяжести жизни",
+    "Проклятье кровопускания",
+    "Проклятье скорбящего прошлого",
+    "Проклятье притягивание снарядов",
+    "Проклятье огненной души",
+    "Проклятье воли к жизни",
+    "Проклятье цепей",
+    "Проклятье обсидиана"
+  ];
+
+  assert.deepEqual(expectedCurses.filter((name) => !byName.has(name)), []);
+  for (const name of expectedCurses) {
+    assert.equal(byName.get(name).equipmentType, "Усовершенствование", name);
+  }
+});
+
 test("creates container compendium data with dnd5e capacity and Rebreya contents flag", () => {
   const created = createDnd5eItemData({
     id: "test-pack",

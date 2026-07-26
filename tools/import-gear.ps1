@@ -691,6 +691,7 @@ try {
   $sharedStrings = Load-SharedStrings $zip
   $gearWorksheet = Read-NamedWorksheetWithHeader $zip $sharedStrings @(
     "Общий компендиум снаряжения V0.1",
+    "Общий компендиум снаряжения V0.",
     "Немагическое снаряжение V0.1"
   )
   if (-not $gearWorksheet) {
@@ -721,6 +722,7 @@ foreach ($row in ($rows | Where-Object { $_.__row -gt $gearHeader.RowNumber })) 
   if ([string]::IsNullOrWhiteSpace($name)) { continue }
 
   $equipmentType = Normalize-DisplayText (Get-HeaderValue $row $gearHeader @('Тип снаряжения'))
+  if ((Get-MatchKey $equipmentType) -match 'транспорт|скакун') { continue }
   $enrichmentKey = Get-GearMatchKey $equipmentType $name
   $enrichment = if ($enrichmentByKey.ContainsKey($enrichmentKey)) {
     $enrichmentByKey[$enrichmentKey]

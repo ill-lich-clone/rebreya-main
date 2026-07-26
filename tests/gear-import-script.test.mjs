@@ -40,6 +40,30 @@ test("PowerShell gear import selects the named base sheet and maps columns by he
     const output = readFileSync(outputPath, "utf8");
     assert.notEqual(output.trim(), "", "gear import must produce a JSON catalog");
     const gear = JSON.parse(output);
+    const expectedCurses = [
+      "Проклятье молниеносной реакции",
+      "Проклятье преследующего успеха",
+      "Проклятье жизни и смерти",
+      "Проклятье тяжести жизни",
+      "Проклятье кровопускания",
+      "Проклятье скорбящего прошлого",
+      "Проклятье притягивание снарядов",
+      "Проклятье огненной души",
+      "Проклятье воли к жизни",
+      "Проклятье цепей",
+      "Проклятье обсидиана"
+    ];
+    assert.deepEqual(
+      expectedCurses.filter((name) => !gear.some((entry) => entry.name === name)),
+      [],
+      "current common gear sheet must import every curse product"
+    );
+    assert.equal(new Set(gear.map((entry) => entry.id)).size, gear.length);
+    assert.equal(
+      gear.some((entry) => /транспорт|скакун/iu.test(entry.equipmentType)),
+      false,
+      "deferred transport rows must stay outside the gear catalog"
+    );
     const silvering = gear.find((entry) => entry.name === "Серебрение оружия");
     const tendon = gear.find((entry) => entry.name === "Сухожилие чудовища");
 
