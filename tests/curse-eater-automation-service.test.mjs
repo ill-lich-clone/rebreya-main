@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { registerCombatHooks } from "../scripts/combat/hooks.js";
 import {
   buildCurseEaterEffectData,
   calculateCurseEaterProgress,
@@ -57,6 +58,7 @@ function makeActor(items, slots) {
     name: "Hero",
     type: "character",
     isOwner: true,
+    createActiveEffectCalls: 0,
     items: new Map(items.map((item) => [item.id, item])),
     effects: new Map(),
     flags: {
@@ -74,6 +76,7 @@ function makeActor(items, slots) {
     },
     async createEmbeddedDocuments(documentName, rows) {
       assert.equal(documentName, "ActiveEffect");
+      this.createActiveEffectCalls += 1;
       return rows.map((row, index) => {
         const id = `effect-${this.effects.size + index + 1}`;
         const effect = {
@@ -336,4 +339,157 @@ test("tier notifications fire only when the effective tier changes", async () =>
   await service.syncActor(actor);
 
   assert.deepEqual(notifications, [[0, 1], [1, 0]]);
+});
+
+test("tier four adds one to an owned save activity once per use", () => {
+  const actor = makeActor([], {});
+  const effectData = buildCurseEaterEffectData({ tier: 4, usedItems: [] }, []);
+  actor.effects.set("curse-eater-effect", {
+    ...effectData,
+    id: "curse-eater-effect"
+  });
+  const activity = {
+    type: "save",
+    actor,
+    save: { dc: { bonus: "" } }
+  };
+  const usageConfig = {};
+  const service = new CurseEaterAutomationService();
+
+  assert.equal(service.applyDnd5ePreUseActivity(activity, usageConfig), true);
+  assert.equal(activity.save.dc.bonus, "1");
+  assert.equal(service.applyDnd5ePreUseActivity(activity, usageConfig), true);
+  assert.equal(activity.save.dc.bonus, "1");
+});
+
+test("outgoing save DC is unchanged below tier four", () => {
+  const actor = makeActor([], {});
+  actor.effects.set("curse-eater-effect", {
+    ...buildCurseEaterEffectData({ tier: 3, usedItems: [] }, []),
+    id: "curse-eater-effect"
+  });
+  const activity = {
+    type: "save",
+    actor,
+    save: { dc: { bonus: "2" } }
+  };
+
+  new CurseEaterAutomationService().applyDnd5ePreUseActivity(activity, {});
+
+  assert.equal(activity.save.dc.bonus, "2");
+});
+
+test("actor and item change bursts coalesce into one synchronization", async () => {
+  const feat = makeItem("curse-eater", {
+    type: "feat",
+    identifier: "pozhiratel-proklyatiy"
+  });
+  const crown = makeItem("crown", {
+    rarity: "uncommon",
+    description: "Проклятье: шёпот."
+  });
+  const actor = makeActor([feat, crown], { head: { itemId: "crown" } });
+  const service = new CurseEaterAutomationService({ debounceMs: 0 });
+
+  await Promise.all([
+    service.handleItemChanged(crown),
+    service.handleItemChanged(crown),
+    service.handleActorChanged(actor, {
+      flags: { "rebreya-main": { heroDoll: {} } }
+    })
+  ]);
+
+  assert.equal(actor.createActiveEffectCalls, 1);
+  assert.equal(managedEffects(actor).length, 1);
+});
+
+test("initialization continues synchronizing actors after one actor fails", async () => {
+  const makeEligibleActor = (id) => {
+    const feat = makeItem(`${id}-feat`, {
+      type: "feat",
+      identifier: "pozhiratel-proklyatiy"
+    });
+    const curse = makeItem(`${id}-curse`, {
+      rarity: "uncommon",
+      description: "Проклятье: испытание."
+    });
+    const actor = makeActor([feat, curse], { head: { itemId: curse.id } });
+    actor.id = id;
+    return actor;
+  };
+  const broken = makeEligibleActor("broken");
+  broken.createEmbeddedDocuments = async () => {
+    throw new Error("broken actor");
+  };
+  const healthy = makeEligibleActor("healthy");
+  const previousGame = globalThis.game;
+  const warnings = [];
+  globalThis.game = {
+    actors: new Map([
+      [broken.id, broken],
+      [healthy.id, healthy]
+    ])
+  };
+
+  try {
+    await new CurseEaterAutomationService({
+      logger: { warn: (...args) => warnings.push(args) }
+    }).initialize();
+  }
+  finally {
+    globalThis.game = previousGame;
+  }
+
+  assert.equal(warnings.length, 1);
+  assert.equal(managedEffects(healthy).length, 1);
+});
+
+test("combat hooks route actor, item, and save activity events to Curse Eater", async () => {
+  const previousGame = globalThis.game;
+  const previousHooks = globalThis.Hooks;
+  const registered = new Map();
+  const calls = [];
+  globalThis.game = {};
+  globalThis.Hooks = {
+    on(name, callback) {
+      registered.set(name, callback);
+    }
+  };
+  const service = {
+    async handleActorChanged(...args) {
+      calls.push(["actor", ...args]);
+    },
+    async handleItemChanged(...args) {
+      calls.push(["item", ...args]);
+    },
+    applyDnd5ePreUseActivity(...args) {
+      calls.push(["activity", ...args]);
+      return true;
+    }
+  };
+
+  try {
+    registerCombatHooks({ curseEaterAutomationService: service });
+    const actor = { id: "actor" };
+    const item = { id: "item" };
+    const activity = { id: "activity" };
+    const usageConfig = {};
+    await registered.get("updateActor")(actor, { flags: {} }, { actorOption: true });
+    await registered.get("createItem")(item, { createOption: true });
+    await registered.get("updateItem")(item, { name: "Changed" }, { updateOption: true });
+    await registered.get("deleteItem")(item, { deleteOption: true });
+    assert.equal(registered.get("dnd5e.preUseActivity")(activity, usageConfig), true);
+
+    assert.deepEqual(calls, [
+      ["actor", actor, { flags: {} }, { actorOption: true }],
+      ["item", item, { createOption: true }],
+      ["item", item, { updateOption: true }],
+      ["item", item, { deleteOption: true }],
+      ["activity", activity, usageConfig]
+    ]);
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.Hooks = previousHooks;
+  }
 });

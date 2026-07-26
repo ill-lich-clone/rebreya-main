@@ -357,6 +357,7 @@ function managedEffectTier(effect) {
 export class CurseEaterAutomationService {
   constructor(options = {}) {
     this.options = options && typeof options === "object" ? options : {};
+    this._pendingSyncs = new Map();
   }
 
   #notifyTierChanged(actor, previousTier, nextTier) {
@@ -368,6 +369,78 @@ export class CurseEaterAutomationService {
     globalThis.ui?.notifications?.info?.(
       `Пожиратель проклятий: ступень ${previousTier} → ${nextTier}.`
     );
+  }
+
+  applyDnd5ePreUseActivity(activity, usageConfig = {}) {
+    if (
+      activity?.type !== "save"
+      || usageConfig?.rebreyaCurseEaterDcApplied === true
+    ) {
+      return true;
+    }
+
+    const actor = activity?.actor ?? activity?.item?.actor ?? null;
+    const effect = collectionValues(actor?.effects).find(isManagedCurseEaterEffect);
+    if (managedEffectTier(effect) < 4 || !activity?.save?.dc) {
+      return true;
+    }
+
+    const currentBonus = String(activity.save.dc.bonus ?? "").trim();
+    activity.save.dc.bonus = currentBonus ? `${currentBonus} + 1` : "1";
+    usageConfig.rebreyaCurseEaterDcApplied = true;
+    return true;
+  }
+
+  #scheduleActorSync(actor) {
+    if (!actor) return Promise.resolve({ tier: 0, usedItemIds: [], usedItems: [] });
+    const current = this._pendingSyncs.get(actor);
+    if (current) return current;
+
+    const debounceMs = Math.max(0, Number(this.options.debounceMs ?? 40) || 0);
+    const pending = new Promise((resolve, reject) => {
+      globalThis.setTimeout(async () => {
+        try {
+          resolve(await this.syncActor(actor));
+        }
+        catch (error) {
+          reject(error);
+        }
+        finally {
+          this._pendingSyncs.delete(actor);
+        }
+      }, debounceMs);
+    });
+    this._pendingSyncs.set(actor, pending);
+    return pending;
+  }
+
+  handleActorChanged(actor, _changed = {}, options = {}) {
+    if (options?.rebreyaCurseEaterSync === true) {
+      return Promise.resolve({ tier: 0, usedItemIds: [], usedItems: [] });
+    }
+    return this.#scheduleActorSync(actor);
+  }
+
+  handleItemChanged(item, options = {}) {
+    if (options?.rebreyaCurseEaterSync === true) {
+      return Promise.resolve({ tier: 0, usedItemIds: [], usedItems: [] });
+    }
+    return this.#scheduleActorSync(item?.actor ?? item?.parent ?? null);
+  }
+
+  async initialize() {
+    const logger = this.options.logger ?? globalThis.console;
+    for (const actor of collectionValues(globalThis.game?.actors)) {
+      try {
+        await this.syncActor(actor);
+      }
+      catch (error) {
+        logger?.warn?.(
+          `${MODULE_ID} | Failed to initialize Curse Eater automation for '${actor?.name ?? actor?.id ?? "actor"}'.`,
+          error
+        );
+      }
+    }
   }
 
   async syncActor(actor) {

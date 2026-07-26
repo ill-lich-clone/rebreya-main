@@ -75,6 +75,7 @@ import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js";
 import { LongRestPipelineService } from "./rest/long-rest-pipeline-service.js";
 import { RuneKnightAutomationService } from "./combat/rune-knight-automation-service.js";
+import { CurseEaterAutomationService } from "./combat/curse-eater-automation-service.js";
 import { SpellAutomationService } from "./combat/spell-automation-service.js?v=1.4.109-counterspell-sanitize";
 import { registerRadialStatusEffects } from "./combat/radial-status-effects.js";
 import { CombatStatusService, registerCombatStatusConfig } from "./combat/status-service.js?v=1.4.100-stale-active-effect-delete";
@@ -942,6 +943,7 @@ export class RebreyaMainModule {
       notifyError: (message) => globalThis.ui?.notifications?.error?.(message)
     });
     this.runeKnightAutomationService = new RuneKnightAutomationService(this);
+    this.curseEaterAutomationService = new CurseEaterAutomationService();
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.sizeAutomationService = new SizeAutomationService(this);
@@ -1267,6 +1269,13 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.warn(`${MODULE_ID} | Failed to initialize Rune Knight automation.`, error);
+    }
+
+    try {
+      await this.curseEaterAutomationService.initialize();
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to initialize Curse Eater automation.`, error);
     }
 
     try {

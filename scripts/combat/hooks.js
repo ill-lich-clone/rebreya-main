@@ -25,7 +25,8 @@ export function registerCombatHooks(moduleApi) {
   const hasReactionCapabilityIndex = Boolean(moduleApi?.reactionCapabilityIndex);
   const hasRuneKnightService = Boolean(moduleApi?.runeKnightAutomationService);
   const hasSizeService = Boolean(moduleApi?.sizeAutomationService);
-  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService) {
+  const hasCurseEaterService = Boolean(moduleApi?.curseEaterAutomationService);
+  if (!hasStatusService && !hasAttackService && !hasRaceService && !hasFighterService && !hasSorcererService && !hasElementalAdeptService && !hasPaladinService && !hasRogueService && !hasAttackRollBoostService && !hasPerformerService && !hasBardicInspirationCompatService && !hasEnvironmentService && !hasSpellService && !hasReactionCapabilityIndex && !hasRuneKnightService && !hasSizeService && !hasCurseEaterService) {
     return;
   }
 
@@ -33,6 +34,34 @@ export function registerCombatHooks(moduleApi) {
     return;
   }
   game[HOOKS_REGISTERED_KEY] = true;
+
+  if (hasCurseEaterService) {
+    const service = moduleApi.curseEaterAutomationService;
+    const handleError = (error) => {
+      console.error(`${MODULE_ID} | Failed to synchronize Curse Eater automation.`, error);
+    };
+    Hooks.on("updateActor", (actor, changed, options) => {
+      service.handleActorChanged(actor, changed, options).catch(handleError);
+    });
+    Hooks.on("createItem", (item, options) => {
+      service.handleItemChanged(item, options).catch(handleError);
+    });
+    Hooks.on("updateItem", (item, _changed, options) => {
+      service.handleItemChanged(item, options).catch(handleError);
+    });
+    Hooks.on("deleteItem", (item, options) => {
+      service.handleItemChanged(item, options).catch(handleError);
+    });
+    Hooks.on("dnd5e.preUseActivity", (activity, usageConfig) => {
+      try {
+        return service.applyDnd5ePreUseActivity(activity, usageConfig);
+      }
+      catch (error) {
+        handleError(error);
+        return true;
+      }
+    });
+  }
 
   if (hasSizeService) {
     const handleSizeError = (error) => {
