@@ -81,3 +81,17 @@ test("performer feat exposes automated active performance runtime activity", () 
   });
   assert.equal(performer.flags["rebreya-main"].automation.status, "active");
 });
+
+test("Curse Eater compendium entry delegates all tier mechanics to its runtime service", () => {
+  const feats = normalizeFeatItems(loadBundleItems());
+  const curseEater = feats.find((feat) => feat.featId === "pozhiratel-proklyatiy");
+
+  assert.ok(curseEater);
+  assert.deepEqual(curseEater.effects, []);
+  assert.deepEqual(curseEater.system.activities, {});
+  assert.equal(curseEater.flags["rebreya-main"].automation.status, "active");
+  assert.match(
+    curseEater.flags["rebreya-main"].automation.notes,
+    /Ступени 1–7.+ступень 8 вручную/u
+  );
+});

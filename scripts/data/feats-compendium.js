@@ -24,6 +24,7 @@ const FEATS_BUNDLE_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-p
 const FEATS_ITEMS_PATH = `modules/${MODULE_ID}/cherty-v08-foundry-2014-import-pack/cherty-v08-foundry-2014-items.json`;
 const DEFAULT_FEAT_SUBTYPE = "general";
 const PERFORMER_FEAT_ID = "ispolnitel";
+const CURSE_EATER_FEAT_ID = "pozhiratel-proklyatiy";
 const ACTIVE_PERFORMANCE_ACTIVITY_ID = "bd37d8496d0f0415";
 const REBREYA_FEAT_SUBTYPE_BY_SECTION = new Map([
   ["\u043c\u043b\u0430\u0434\u0448\u0438\u0435 \u0447\u0435\u0440\u0442\u044b", "minor"],
@@ -284,6 +285,29 @@ export function createPerformerActivePerformanceActivity() {
 }
 
 function applyFeatAutomationOverrides(feat) {
+  if (feat.featId === CURSE_EATER_FEAT_ID) {
+    const moduleFlags = isPlainObject(feat.flags?.[MODULE_ID]) ? foundry.utils.deepClone(feat.flags[MODULE_ID]) : {};
+    return {
+      ...feat,
+      effects: [],
+      system: {
+        ...feat.system,
+        activities: {}
+      },
+      flags: {
+        ...feat.flags,
+        [MODULE_ID]: {
+          ...moduleFlags,
+          automation: {
+            ...(isPlainObject(moduleFlags.automation) ? moduleFlags.automation : {}),
+            status: "active",
+            notes: "Ступени 1–7 автоматизированы сервисом Пожирателя проклятий; ступень 8 вручную."
+          }
+        }
+      }
+    };
+  }
+
   if (feat.featId !== PERFORMER_FEAT_ID) {
     return feat;
   }
