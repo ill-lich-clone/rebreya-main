@@ -1055,6 +1055,8 @@ function buildDefaultPartyState() {
     version: 1,
     inventoryActorId: "",
     defaultCapMod: DEFAULT_CAPACITY_MULTIPLIER,
+    coverFoodExpenses: false,
+    coverWaterExpenses: false,
     members: {}
   };
 }
@@ -1156,6 +1158,8 @@ export class InventoryService {
     const state = foundry.utils.mergeObject(buildDefaultPartyState(), foundry.utils.deepClone(rawState ?? {}));
     state.inventoryActorId = String(state.inventoryActorId ?? "").trim();
     state.defaultCapMod = Math.max(1, roundNumber(toNumber(state.defaultCapMod, DEFAULT_CAPACITY_MULTIPLIER), 2));
+    state.coverFoodExpenses = state.coverFoodExpenses === true;
+    state.coverWaterExpenses = state.coverWaterExpenses === true;
     state.members = state.members && typeof state.members === "object" ? state.members : {};
 
     for (const [actorId, member] of Object.entries(state.members)) {
@@ -3209,8 +3213,10 @@ export class InventoryService {
     const memberInventoryWeight = roundNumber(partyMembers.reduce((sum, member) => sum + member.inventoryWeight, 0), 2);
     const inventoryWeight = roundNumber(partyInventoryWeight + memberInventoryWeight, 2);
     const totalCapacityLb = roundNumber(partyMembers.reduce((sum, member) => sum + member.capacityLb, 0), 2);
-    const totalFoodPerDay = roundNumber(partyMembers.reduce((sum, member) => sum + member.foodPerDay, 0), 2);
-    const totalWaterGalPerDay = roundNumber(partyMembers.reduce((sum, member) => sum + member.waterGalPerDay, 0), 2);
+    const foodRequiredPerDay = roundNumber(partyMembers.reduce((sum, member) => sum + member.foodPerDay, 0), 2);
+    const waterRequiredPerDay = roundNumber(partyMembers.reduce((sum, member) => sum + member.waterGalPerDay, 0), 2);
+    const totalFoodPerDay = state.coverFoodExpenses ? 0 : foodRequiredPerDay;
+    const totalWaterGalPerDay = state.coverWaterExpenses ? 0 : waterRequiredPerDay;
     const totalEnergyCurrent = roundNumber(partyMembers.reduce((sum, member) => sum + member.energyCurrent, 0), 0);
     const totalEnergyMax = roundNumber(partyMembers.reduce((sum, member) => sum + member.energyMax, 0), 0);
     const availableActors = membershipManagedByNativeGroup
@@ -3245,6 +3251,8 @@ export class InventoryService {
 
     return {
       defaultCapMod: state.defaultCapMod,
+      coverFoodExpenses: state.coverFoodExpenses,
+      coverWaterExpenses: state.coverWaterExpenses,
       members: partyMembers,
       memberCount: partyMembers.length,
       emptyMembers: partyMembers.length === 0,
@@ -4139,6 +4147,12 @@ export class InventoryService {
         const nextValue = Math.max(1, roundNumber(toNumber(patch.defaultCapMod, state.defaultCapMod), 2));
         state.defaultCapMod = nextValue;
       }
+      if (patch.coverFoodExpenses !== undefined) {
+        state.coverFoodExpenses = patch.coverFoodExpenses === true;
+      }
+      if (patch.coverWaterExpenses !== undefined) {
+        state.coverWaterExpenses = patch.coverWaterExpenses === true;
+      }
 
       return foundry.utils.deepClone(state);
     });
@@ -4392,8 +4406,12 @@ export class InventoryService {
             continue;
           }
 
-          const foodNeed = Math.max(0, roundNumber(toNumber(row.memberState.foodPerDay, 0), 2));
-          const waterNeed = Math.max(0, roundNumber(toNumber(row.memberState.waterGalPerDay, 0), 2));
+          const foodNeed = partySnapshot.coverFoodExpenses
+            ? 0
+            : Math.max(0, roundNumber(toNumber(row.memberState.foodPerDay, 0), 2));
+          const waterNeed = partySnapshot.coverWaterExpenses
+            ? 0
+            : Math.max(0, roundNumber(toNumber(row.memberState.waterGalPerDay, 0), 2));
           const foodCovered = Math.min(availableFood, foodNeed);
           const waterCovered = Math.min(availableWater, waterNeed);
           availableFood = roundNumber(availableFood - foodCovered, 2);

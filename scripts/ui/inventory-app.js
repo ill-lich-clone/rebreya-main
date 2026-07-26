@@ -6073,6 +6073,27 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       button.addEventListener("click", (event) => this.#handleCraftApproval(event.currentTarget), listenerOptions);
     });
 
+    element.querySelectorAll("[data-action='party-default-field']").forEach((field) => {
+      field.addEventListener("change", async (event) => {
+        const fieldName = event.currentTarget.dataset.field;
+        if (!fieldName) {
+          return;
+        }
+
+        try {
+          await this.moduleApi.updatePartyDefaults({
+            [fieldName]: event.currentTarget.type === "checkbox"
+              ? event.currentTarget.checked
+              : (event.currentTarget.value ?? "")
+          });
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to update party default field '${fieldName}'.`, error);
+          ui.notifications?.error(error.message || "Не удалось обновить настройки группы.");
+        }
+      }, listenerOptions);
+    });
+
     element.querySelectorAll("[data-action='craft-return-request']").forEach((button) => {
       button.addEventListener("click", (event) => (
         this.#handleCraftRequestDecision(event.currentTarget, "returned")

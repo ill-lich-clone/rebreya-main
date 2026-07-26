@@ -2040,3 +2040,73 @@ test("consumeSuppliesOneDay applies energy only to native group system.members",
     fixture.restore();
   }
 });
+
+test("party supply coverage makes food and water expenses zero without energy penalties", async () => {
+  const memberActor = createActor({
+    id: "member-a",
+    name: "Druid-fed Member",
+    type: "character",
+    abilities: { con: { mod: 0 } }
+  });
+  const food = createItem({
+    id: "food",
+    name: "Food",
+    quantity: 5,
+    flags: { [MODULE_ID]: { resourceKey: "food" } }
+  });
+  const water = createItem({
+    id: "water",
+    name: "Water",
+    quantity: 5,
+    flags: { [MODULE_ID]: { resourceKey: "water" } }
+  });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [food, water],
+    members: [{ actor: memberActor }]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    partyState: {
+      coverFoodExpenses: true,
+      coverWaterExpenses: true,
+      members: {
+        "member-a": { foodPerDay: 2, waterGalPerDay: 3, energyCurrent: 3 }
+      }
+    }
+  });
+  const service = new InventoryService({
+    groupContextService: { resolveForCurrentUser: () => ({ groupActor }) },
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const snapshot = await service.getPartySnapshot({ actor: groupActor });
+    const result = await service.consumeSuppliesOneDay();
+
+    assert.equal(snapshot.coverFoodExpenses, true);
+    assert.equal(snapshot.coverWaterExpenses, true);
+    assert.equal(snapshot.totalFoodPerDay, 0);
+    assert.equal(snapshot.totalWaterGalPerDay, 0);
+    assert.equal(result.foodSpent, 0);
+    assert.equal(result.waterSpent, 0);
+    assert.equal(result.foodShortage, 0);
+    assert.equal(result.waterShortage, 0);
+    assert.equal(result.energyUpdates[0].hungry, false);
+    assert.equal(fixture.state.members["member-a"].energyCurrent, 3);
+    assert.equal(food.system.quantity, 5);
+    assert.equal(water.system.quantity, 5);
+  }
+  finally {
+    fixture.restore();
+  }
+});

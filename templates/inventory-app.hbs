@@ -335,6 +335,19 @@
           </section>
         {{/if}}
 
+        <section class="rm-party-toolbar">
+          <div class="rm-party-toolbar__actions">
+            <label class="rm-checkbox">
+              <input type="checkbox" data-action="party-default-field" data-field="coverFoodExpenses" {{#if party.coverFoodExpenses}}checked{{/if}} {{#unless canManage}}disabled{{/unless}}>
+              <span>Покрыть расходы еды</span>
+            </label>
+            <label class="rm-checkbox">
+              <input type="checkbox" data-action="party-default-field" data-field="coverWaterExpenses" {{#if party.coverWaterExpenses}}checked{{/if}} {{#unless canManage}}disabled{{/unless}}>
+              <span>Покрыть расходы воды</span>
+            </label>
+          </div>
+        </section>
+
         {{#if party.emptyMembers}}
           <p class="rm-empty">Группа пока не собрана.</p>
         {{else}}
