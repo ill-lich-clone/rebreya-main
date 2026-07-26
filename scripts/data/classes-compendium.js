@@ -30,6 +30,7 @@ import {
   buildCraftsmanGadgetFeatureDefinitions,
   normalizeCraftsmanGadgets
 } from "./craftsman-gadget-definitions.js";
+import { resolveCraftsmanGadgetIcon } from "./gear-icon-resolver.js";
 import {
   CRAFTSMAN_CONSTRUCT_FEATURE_ID,
   buildCraftsmanConstructSummonAutomation
@@ -5298,6 +5299,13 @@ function resolveClassFeatureIcon(featureOrName, iconLookup) {
   const { prefix, suffix } = splitQualifiedFeatureName(featureName);
   const candidates = [];
   const seenCandidates = new Set();
+
+  if (sourceType === "craftsmanGadget") {
+    const gadgetIcon = resolveCraftsmanGadgetIcon(featureName);
+    if (gadgetIcon) {
+      return gadgetIcon;
+    }
+  }
 
   if (sourceType === "subclassFeature" && subclassName) {
     addIconCandidate(candidates, seenCandidates, `${featureName} — ${subclassName}`);

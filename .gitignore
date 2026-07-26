@@ -2,3 +2,4 @@ tmp/
 __pycache__/
 *.pyc
 .playwright-mcp/
+Trace-20260724T044510.json
