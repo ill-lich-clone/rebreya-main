@@ -27,7 +27,7 @@ const EFFECT_MODE_CUSTOM = 0;
 const EFFECT_MODE_ADD = 2;
 const EFFECT_MODE_UPGRADE = 4;
 const DEFAULT_MAGIC_ITEM_ICON = "systems/dnd5e/icons/svg/items/loot.svg";
-const MAGIC_TEMPLATE_VERSION = 3;
+const MAGIC_TEMPLATE_VERSION = 4;
 const MODULE_ICONS_BASE_PATH = `modules/${MODULE_ID}/templates/icons`;
 const MAGIC_ICON_SEARCH_PATHS = [`${MODULE_ICONS_BASE_PATH}/Magic Items`, MODULE_ICONS_BASE_PATH];
 const BELLMAN_POWER_ITEM_NAME = "Жемчужина силы";
@@ -626,12 +626,17 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
       volume: { value: 64, units: "ft3" },
       weight: { value: 500, units: "lb" }
     };
+    systemData.weight = { value: 15, units: "lb" };
+    systemData.properties = ["mgc", "weightlessContents"];
     systemData.type.value = "backpack";
   }
+  const documentType = magicItemAutomation?.kind === "bagOfHolding"
+    ? "container"
+    : classification.documentType;
 
   return {
     name: item.name,
-    type: classification.documentType,
+    type: documentType,
     img: getMagicItemIcon(item, classification, iconLookup),
     folder: folderIdByPath.get(folderPath) ?? null,
     effects: buildMagicItemAutomationEffects(item),
@@ -651,7 +656,7 @@ export function createMagicItemData(item, folderIdByPath, iconLookup = null) {
         itemSlot,
         heroDollSlots,
         rank,
-        foundryType: classification.documentType,
+        foundryType: documentType,
         foundrySubtype: classification.systemTypeValue ?? "",
         foundrySubtypeExtra: classification.systemTypeSubtype ?? "",
         foundryBaseItem: classification.baseItem ?? "",
@@ -685,7 +690,7 @@ function getDesiredPackMetadata() {
     flags: {
       dnd5e: {
         sourceBook: "Rebreya",
-        types: ["loot", "weapon", "equipment", "tool", "consumable"]
+        types: ["loot", "weapon", "equipment", "tool", "consumable", "container"]
       }
     }
   };

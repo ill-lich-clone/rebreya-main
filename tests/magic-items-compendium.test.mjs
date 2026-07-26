@@ -224,8 +224,15 @@ test("magic item compendium builds automation for selected magic items", () => {
   assert.match(watcherShield.effects[0].changes.map((entry) => entry.key).join("|"), /flags\.midi-qol\.advantage\.ability\.check\.dex/u);
 
   const hoardingPouch = magicItemsCompendium.createMagicItemData(byName.get(hoardingPouchName), new Map());
+  assert.equal(hoardingPouch.type, "container");
   assert.equal(hoardingPouch.system.type.value, "backpack");
+  assert.deepEqual(hoardingPouch.system.weight, { value: 15, units: "lb" });
+  assert.deepEqual(
+    [...hoardingPouch.system.properties].sort(),
+    ["mgc", "weightlessContents"]
+  );
   assert.equal(hoardingPouch.system.capacity?.weight?.value, 500);
+  assert.equal(hoardingPouch.system.capacity?.volume?.value, 64);
   assert.equal(hoardingPouch.flags["rebreya-main"].magicItemAutomation?.kind, "bagOfHolding");
   assert.equal(hoardingPouch.flags["rebreya-main"].magicItemAutomation?.capacity?.volume?.value, 64);
 
