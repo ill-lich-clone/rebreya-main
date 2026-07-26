@@ -2102,6 +2102,53 @@ test("paladin magistrate features expose automation metadata", () => {
   assert.deepEqual(accusationEntry.flags["rebreya-main"].paladinAutomation, accusation.paladinAutomation);
 });
 
+test("paladin feature compendium publishes every dogma as a readable managed item", () => {
+  const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
+  const dogmas = buildFeatureDefinitions(paladin)
+    .filter((definition) => definition.sourceType === "paladinDogma");
+
+  assert.equal(dogmas.length, 70);
+  assert.equal(new Set(dogmas.map((definition) => definition.featureId)).size, 70);
+
+  const protection = dogmas.find((definition) => (
+    definition.featureId === "paladin-rework-v01::paladinDogma::devotion-3-protection-from-evil-and-good"
+  ));
+  assert.equal(protection.name, "Догмат Преданности: Защита от зла и добра");
+  assert.equal(protection.requiredLevel, 3);
+  assert.deepEqual(protection.folderPath, [
+    "Паладин (Реворк V0.1)",
+    "Архетипы",
+    "Преданность",
+    "Догматы"
+  ]);
+  assert.match(protection.description, /Я не жду награды за добрые дела/u);
+  assert.match(protection.description, /Защита от зла и добра \[Protection from evil and good\]/u);
+
+  const entry = createFeatureEntryData(protection, new Map());
+  assert.match(entry.system.description.value, /Я не жду награды за добрые дела/u);
+  assert.match(entry.system.description.value, /Protection from evil and good/u);
+  assert.deepEqual(entry.flags["rebreya-main"].paladinDogma, {
+    id: "devotion-3-protection-from-evil-and-good",
+    oathId: "devotion",
+    oathName: "Преданность",
+    level: 3,
+    tenet: "«Я не жду награды за добрые дела. Моё предназначение – творить справедливость, даже если никто этого не увидит»",
+    spell: {
+      identifier: "protection-from-evil-and-good",
+      nameEn: "Protection from evil and good",
+      nameRu: "Защита от зла и добра"
+    }
+  });
+});
+
+test("non-paladin feature compendiums do not publish paladin dogmas", () => {
+  const fighter = normalizeClassCompendiumData(loadJson("data/fighter-rework-v028.json"));
+  assert.equal(
+    buildFeatureDefinitions(fighter).some((definition) => definition.sourceType === "paladinDogma"),
+    false
+  );
+});
+
 test("paladin advancements grant armor and strict weapon proficiency choices", () => {
   const paladin = normalizeClassCompendiumData(loadJson("data/paladin-rework-v01.json"));
   const advancement = buildClassAdvancement(paladin.classData, {});
@@ -2377,7 +2424,7 @@ test("paladin divine sense and lay on hands expose item resources and automation
   assert.equal(layOnHandsActivity.target.affects.type, "creature");
   assert.equal(layOnHandsActivity.flags["rebreya-main"].automation, "paladin-lay-on-hands");
   assert.deepEqual(layOnHandsActivity.consumption.targets, []);
-  assert.equal(JSON.parse(layOnHandsEntry.flags["rebreya-main"].signature).templateVersion, 17);
+  assert.equal(JSON.parse(layOnHandsEntry.flags["rebreya-main"].signature).templateVersion, 18);
 });
 
 test("Sovereign Jurisdiction generates a bonus-action target activity", () => {

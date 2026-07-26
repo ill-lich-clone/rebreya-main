@@ -41,6 +41,7 @@ import {
   getRuneKnightFeatureAutomation,
   getRuneKnightRuneAutomation
 } from "./rune-knight-automation.js";
+import { PALADIN_OATHS } from "./paladin-dogmas.js";
 
 const DND5E_SYSTEM_ID = "dnd5e";
 const DEFAULT_SOURCE_LABEL = "ЗоЗТ";
@@ -84,7 +85,7 @@ const LEGACY_CLASS_ROOT_FOLDERS = ["Классы Rebreya"];
 const LEGACY_SUBCLASS_ROOT_FOLDERS = ["Архетипы Rebreya"];
 const LEGACY_CLASS_FEATURE_ROOT_FOLDERS = ["Умения варвара Rebreya (Реворк V0.12)"];
 
-const CLASS_FEATURE_TEMPLATE_VERSION = 17;
+const CLASS_FEATURE_TEMPLATE_VERSION = 18;
 const SUBCLASS_TEMPLATE_VERSION = 3;
 const CRAFTSMAN_SUBCLASS_TEMPLATE_VERSION = 1;
 const CLASS_TEMPLATE_VERSION = 6;
@@ -1786,6 +1787,46 @@ export function buildFeatureDefinitions(normalizedData) {
     }
   }
 
+  if (classId === "paladin-rework-v01") {
+    const oathDogmaLabels = {
+      devotion: "Преданности",
+      vengeance: "Мести",
+      glory: "Подвига",
+      oathbreaker: "Клятвопреступника",
+      nirkadu: "Нир’Каду",
+      arcana: "Арканы",
+      magistrate: "Магистрата"
+    };
+    for (const oath of PALADIN_OATHS) {
+      for (const dogma of oath.dogmas) {
+        const featureId = `${classId}::paladinDogma::${dogma.id}`;
+        definitions.push({
+          featureId,
+          documentId: featureDocumentId(featureId),
+          sourceType: "paladinDogma",
+          classIdentifier: classId,
+          className,
+          subclassId: null,
+          subclassName: oath.name,
+          name: `Догмат ${oathDogmaLabels[oath.id] ?? oath.name}: ${dogma.spell.nameRu}`,
+          description: `${dogma.tenet}\n\n**Заклинание:** ${dogma.spell.nameRu} [${dogma.spell.nameEn}]`,
+          levels: [dogma.level],
+          requiredLevel: dogma.level,
+          optional: true,
+          identifier: dogma.id,
+          folderPath: normalizeFolderPath([
+            classFeatureRootFolder,
+            "Архетипы",
+            oath.name,
+            "Догматы"
+          ]),
+          sourceLabel,
+          paladinDogma: foundry.utils.deepClone(dogma)
+        });
+      }
+    }
+  }
+
   return definitions;
 }
 
@@ -1824,6 +1865,7 @@ function buildFeatureSignature(feature, context = {}) {
     craftsmanGadget: feature.craftsmanGadget ?? null,
     runeKnightAutomation: runeKnightAutomation ?? null,
     paladinAutomation: feature.paladinAutomation ?? null,
+    paladinDogma: feature.paladinDogma ?? null,
     startingEquipmentPackage: feature.startingEquipmentPackage ?? null,
     descriptionHtml: createFeatureDescriptionValue(feature, context),
     advancement: buildFeatureItemAdvancements(feature, context),
@@ -5393,6 +5435,9 @@ export function createFeatureEntryData(feature, folderIdByPath, iconLookup = nul
       : undefined,
     paladinAutomation: feature.paladinAutomation
       ? foundry.utils.deepClone(feature.paladinAutomation)
+      : undefined,
+    paladinDogma: feature.paladinDogma
+      ? foundry.utils.deepClone(feature.paladinDogma)
       : undefined,
     stacking: feature.stacking,
     damageType: feature.damageType,
