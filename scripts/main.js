@@ -189,6 +189,7 @@ export const ITEM_PILE_DAMAGE_COMMAND = "durability.item-pile.damage";
 const ENVIRONMENT_COMBAT_STATUS_IDS = new Set(["rebreya-surrounded", "rebreya-open-position"]);
 const ENVIRONMENT_STATUS_SOURCE = "rebreya-environment";
 const ENVIRONMENT_STATUS_VERSION = "surrounded-ac-1";
+const COUNTERSPELL_AUTOMATION_ENABLED = false;
 let socketModuleApi = null;
 const queuedSocketMessages = [];
 
@@ -840,7 +841,9 @@ export class RebreyaMainModule {
     this.backgroundsCompendium = new BackgroundsCompendiumService();
     this.statesCompendium = new StatesCompendiumService();
     this.racesCompendium = new RacesCompendiumService();
-    this.spellsCompendium = new SpellsCompendiumService();
+    this.spellsCompendium = COUNTERSPELL_AUTOMATION_ENABLED
+      ? new SpellsCompendiumService()
+      : null;
     this.craftsmanConstructCompendium = new CraftsmanConstructCompendiumService({
       gameProvider: () => globalThis.game,
       actorProvider: () => globalThis.Actor,
@@ -942,7 +945,9 @@ export class RebreyaMainModule {
     this.combatStatusService = new CombatStatusService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.sizeAutomationService = new SizeAutomationService(this);
-    this.spellAutomationService = new SpellAutomationService(this);
+    this.spellAutomationService = COUNTERSPELL_AUTOMATION_ENABLED
+      ? new SpellAutomationService(this)
+      : null;
     this.attackRollBoostService = new AttackRollBoostService(this);
     this.environmentAutomationService = new EnvironmentAutomationService(this);
     this.fighterAutomationService = new FighterAutomationService(this);
@@ -1285,11 +1290,13 @@ export class RebreyaMainModule {
       console.warn(`${MODULE_ID} | Failed to initialize character size automation.`, error);
     }
 
-    try {
-      await this.spellAutomationService.initialize();
-    }
-    catch (error) {
-      console.warn(`${MODULE_ID} | Failed to initialize spell reaction automation.`, error);
+    if (this.spellAutomationService) {
+      try {
+        await this.spellAutomationService.initialize();
+      }
+      catch (error) {
+        console.warn(`${MODULE_ID} | Failed to initialize spell reaction automation.`, error);
+      }
     }
 
     try {
@@ -2134,12 +2141,14 @@ export class RebreyaMainModule {
       ui.notifications?.warn(game.i18n.localize("REBREYA_MAIN.Notifications.RacesCompendiumSyncFailed"));
     }
 
-    try {
-      await this.spellsCompendium.sync();
-    }
-    catch (error) {
-      console.error(`${MODULE_ID} | Failed to sync spells compendium.`, error);
-      ui.notifications?.warn("Не удалось синхронизировать компендиум заклинаний Rebreya.");
+    if (this.spellsCompendium) {
+      try {
+        await this.spellsCompendium.sync();
+      }
+      catch (error) {
+        console.error(`${MODULE_ID} | Failed to sync spells compendium.`, error);
+        ui.notifications?.warn("Не удалось синхронизировать компендиум заклинаний Rebreya.");
+      }
     }
 
     try {
