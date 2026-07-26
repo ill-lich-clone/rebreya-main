@@ -134,6 +134,34 @@ test("broken item effects are filtered and the dnd5e suppression getter is patch
   assert.equal(normallySuppressed.areEffectsSuppressed, true);
 });
 
+test("effect suppression reads document fields without serializing the item", async () => {
+  const { patchDurabilityItemEffectSuppression } = await import(
+    `../scripts/integrations/durability-hooks.js?effects-fast-path=${Date.now()}`
+  );
+  let toObjectCalls = 0;
+
+  class ItemDocument {
+    toObject() {
+      toObjectCalls += 1;
+      return { ...this };
+    }
+  }
+  Object.defineProperty(ItemDocument.prototype, "areEffectsSuppressed", {
+    configurable: true,
+    get() {
+      return false;
+    }
+  });
+  patchDurabilityItemEffectSuppression({
+    CONFIG: { Item: { documentClass: ItemDocument } }
+  });
+
+  const broken = Object.assign(new ItemDocument(), makeItem({ state: "broken" }));
+  assert.equal(broken.areEffectsSuppressed, true);
+  assert.equal(broken.areEffectsSuppressed, true);
+  assert.equal(toObjectCalls, 0);
+});
+
 test("broken body armor cannot be re-equipped while broken held objects stay allowed", async () => {
   const { registerDurabilityHooks } = await import(`../scripts/integrations/durability-hooks.js?updates=${Date.now()}`);
   const Hooks = createHooks();

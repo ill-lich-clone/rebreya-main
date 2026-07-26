@@ -120,8 +120,7 @@ function forceBrokenArmorUnequipped(item, update) {
 }
 
 export function isBrokenDurabilityItem(item) {
-  const itemData = itemDataOf(item);
-  if (!itemData || isNaturalWeapon(itemData) || !isDurabilityEligible(itemData)) {
+  if (!item || typeof item !== "object" || isNaturalWeapon(item) || !isDurabilityEligible(item)) {
     return false;
   }
 
