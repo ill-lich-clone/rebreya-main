@@ -332,11 +332,11 @@ test("legacy settings relay fails closed when a world-setting socket is unavaila
   }
 });
 
-test("module stylesheet cache bust preserves the released item upgrade version", async () => {
+test("module stylesheet cache bust loads readable installed upgrade controls", async () => {
   const entrypointSource = await readCanonicalEntrypointSource();
   const escapedVersion = RELEASED_CACHE_VERSION;
 
-  assert.match(entrypointSource, new RegExp(`const MODULE_STYLE_VERSION = "${escapedVersion}-item-upgrade-slots";`, "u"));
+  assert.match(entrypointSource, new RegExp(`const MODULE_STYLE_VERSION = "${escapedVersion}-item-upgrade-readable";`, "u"));
   assert.match(entrypointSource, /const stylesheetHref = `\$\{MODULE_STYLE_PATH\}\?v=\$\{encodeURIComponent\(MODULE_STYLE_VERSION\)\}`;/u);
   assert.doesNotMatch(entrypointSource, /module\?\.version\s*\?\?/u);
 });
@@ -471,7 +471,7 @@ test("item upgrade service and sheet integration preserve their released cache b
   assert.match(entrypointSource, /setItemUpgradeCapacity\(hostItem, capacity\)/u);
   assert.match(
     sheetSource,
-    new RegExp(`item-upgrade-sheet\\.js\\?v=${escapedVersion}-item-upgrade-row-root`, "u"),
+    new RegExp(`item-upgrade-sheet\\.js\\?v=${escapedVersion}-item-upgrade-readable`, "u"),
   );
   assert.match(sheetSource, /item-mods-tab\.hbs/u);
   assert.match(sheetSource, /bindItemUpgradeSheet\(root, app, moduleApi/u);

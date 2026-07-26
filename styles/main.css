@@ -10887,6 +10887,23 @@ summary:focus-visible {
   color: var(--rm-text-primary);
 }
 
+.rm-item-upgrades__open {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--rm-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rm-item-upgrades__open:hover,
+.rm-item-upgrades__open:focus-visible {
+  color: var(--rm-accent-strong);
+  text-decoration: underline;
+}
+
 .rm-item-upgrades__empty-label {
   color: var(--rm-text-dim);
 }

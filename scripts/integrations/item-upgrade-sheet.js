@@ -276,7 +276,13 @@ function createPanelHtml(hostItem) {
       <li class="rm-item-upgrades__slot" data-upgrade-slot="${slotIndex}" data-item-id="${escapeHtml(getItemId(upgrade))}">
         <span class="rm-item-upgrades__slot-index">${slotIndex}</span>
         <img class="rm-item-upgrades__icon" src="${escapeHtml(upgrade.img ?? "icons/svg/item-bag.svg")}" alt="">
-        <span class="rm-item-upgrades__name">${escapeHtml(upgrade.name ?? "Усовершенствование")}</span>
+        <button type="button"
+          class="rm-item-upgrades__name rm-item-upgrades__open"
+          data-action="rebreya-item-upgrade-open"
+          data-item-id="${escapeHtml(getItemId(upgrade))}"
+          title="Открыть усовершенствование">
+          ${escapeHtml(upgrade.name ?? "Усовершенствование")}
+        </button>
         <button type="button"
           class="rm-item-upgrades__remove"
           data-action="rebreya-item-upgrade-remove"
@@ -393,6 +399,20 @@ async function rerenderItemSheet(app, moduleApi) {
     await app?.render?.(true);
   }
   await moduleApi?.refreshOpenApps?.();
+}
+
+async function openInstalledUpgradeSheet(hostItem, upgradeItemId) {
+  const upgradeItem = resolveActorItem(getItemActor(hostItem), upgradeItemId);
+  if (!(upgradeItem?.sheet?.render instanceof Function)) {
+    throw new Error("Карточка установленного усовершенствования недоступна.");
+  }
+
+  try {
+    await upgradeItem.sheet.render({ force: true });
+  }
+  catch (_error) {
+    await upgradeItem.sheet.render(true);
+  }
 }
 
 async function rerenderActorSheetAfterUpgrade(app, moduleApi, rerenderActorSheet) {
@@ -641,7 +661,7 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
   }, { capture: true });
 
   panel.addEventListener("click", async (event) => {
-    const action = event.target?.closest?.("[data-action='rebreya-item-upgrade-remove'], [data-action='rebreya-item-upgrade-capacity']");
+    const action = event.target?.closest?.("[data-action='rebreya-item-upgrade-open'], [data-action='rebreya-item-upgrade-remove'], [data-action='rebreya-item-upgrade-capacity']");
     if (!(action instanceof HTMLElement)) {
       return;
     }
@@ -649,6 +669,10 @@ export function bindItemUpgradeSheet(root, app, moduleApi) {
     event.preventDefault?.();
     event.stopPropagation?.();
     try {
+      if (action.dataset.action === "rebreya-item-upgrade-open") {
+        await openInstalledUpgradeSheet(hostItem, action.dataset.itemId);
+        return;
+      }
       if (action.dataset.action === "rebreya-item-upgrade-remove") {
         await moduleApi.removeItemUpgrade(hostItem, action.dataset.itemId);
       }

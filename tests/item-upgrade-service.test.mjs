@@ -695,3 +695,97 @@ test("item upgrade hold ring is shown immediately when Sequencer is active", asy
     globalThis.Sequence = previousSequence;
   }
 });
+
+test("clicking an installed upgrade in the host panel opens its item sheet", async () => {
+  const restoreFoundry = installFoundryStubs();
+  const previousHTMLElement = globalThis.HTMLElement;
+
+  class FakeHTMLElement {
+    constructor({ dataset = {}, querySelector = () => null } = {}) {
+      this.dataset = dataset;
+      this.listeners = {};
+      this.querySelector = querySelector;
+    }
+
+    addEventListener(type, listener) {
+      this.listeners[type] ??= [];
+      this.listeners[type].push(listener);
+    }
+
+    closest(selector) {
+      return selector.includes(`[data-action='${this.dataset.action}']`) ? this : null;
+    }
+
+    contains() {
+      return false;
+    }
+  }
+
+  globalThis.HTMLElement = FakeHTMLElement;
+
+  try {
+    const suffix = Date.now();
+    const { ItemUpgradeService } = await import(`../scripts/data/item-upgrade-service.js?open-installed=${suffix}`);
+    const {
+      bindItemUpgradeSheet,
+      createItemUpgradePanelHtml
+    } = await import(`../scripts/integrations/item-upgrade-sheet.js?open-installed=${suffix}`);
+    const actor = new FakeActor();
+    const host = actor.addItem({
+      _id: "traveler-coat",
+      name: "Traveler Coat",
+      type: "equipment",
+      system: { type: { value: "light" }, quantity: 1 },
+      flags: {}
+    });
+    const upgrade = makeUpgrade(actor, {
+      _id: "load-bearing-upgrade",
+      name: "Load-bearing Upgrade"
+    });
+    const renderCalls = [];
+    upgrade.sheet = {
+      async render(options) {
+        renderCalls.push(options);
+      }
+    };
+    await new ItemUpgradeService().installUpgrade(host, upgrade);
+    const panelHtml = createItemUpgradePanelHtml(host);
+    assert.match(
+      panelHtml,
+      /data-action="rebreya-item-upgrade-open"[^>]+data-item-id="load-bearing-upgrade"/u
+    );
+
+    const panel = new FakeHTMLElement();
+    const root = new FakeHTMLElement({
+      querySelector(selector) {
+        return selector === "[data-rebreya-item-upgrades='true']" ? panel : null;
+      }
+    });
+    const moduleApi = {
+      async installItemUpgrade() {},
+      async removeItemUpgrade() {},
+      async setItemUpgradeCapacity() {},
+      async refreshOpenApps() {}
+    };
+    assert.equal(bindItemUpgradeSheet(root, { item: host }, moduleApi), true);
+
+    const openButton = new FakeHTMLElement({
+      dataset: {
+        action: "rebreya-item-upgrade-open",
+        itemId: upgrade.id
+      }
+    });
+    const event = {
+      target: openButton,
+      preventDefault() {},
+      stopPropagation() {}
+    };
+    await panel.listeners.click[0](event);
+
+    assert.deepEqual(renderCalls, [{ force: true }]);
+  }
+  finally {
+    globalThis.HTMLElement = previousHTMLElement;
+    restoreFoundry();
+  }
+});
