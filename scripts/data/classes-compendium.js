@@ -5301,6 +5301,11 @@ function resolveClassFeatureIcon(featureOrName, iconLookup) {
   const seenCandidates = new Set();
 
   if (sourceType === "craftsmanGadget") {
+    const directGadgetIcon = resolveNamedIcon(featureName, iconLookup);
+    if (directGadgetIcon) {
+      return directGadgetIcon;
+    }
+
     const gadgetIcon = resolveCraftsmanGadgetIcon(featureName);
     if (gadgetIcon) {
       return gadgetIcon;
