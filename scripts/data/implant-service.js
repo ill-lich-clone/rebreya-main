@@ -5,6 +5,9 @@ const AGGREGATE_EFFECT_FLAG = "implantAggregate";
 const INSTALLATION_FLAG = "implantInstallation";
 const IMPLANT_FLAG = "implant";
 const MOUNTED_ARMOR_AUTOMATION = "mounted-armor-ac";
+const NAUSEATED_STATUS_ID = "rebreya-nauseated";
+const IMPLANT_NAUSEA_META_KEY = "implantNausea";
+const IMPLANT_NAUSEA_VALUE = 2;
 const MYTHIC_RACE_MARKERS = Object.freeze([
   "минотавр",
   "кентавр",
@@ -328,7 +331,81 @@ export class ImplantService {
       await actor.updateEmbeddedDocuments("Item", itemUpdates);
     }
     await this.#syncAggregateEffect(actor, planned);
+    await this.#syncNauseaStatus(actor, planned);
     return this.getActorSnapshot(actor);
+  }
+
+  async #syncNauseaStatus(actor, planned) {
+    const statusService = this.options?.combatStatusService;
+    if (
+      typeof statusService?.getStatus !== "function"
+      || typeof statusService?.setStatus !== "function"
+      || typeof statusService?.setStatusValue !== "function"
+      || typeof statusService?.clearStatus !== "function"
+    ) {
+      return false;
+    }
+
+    const requiresNausea = planned.some(({ compatibility, state }) => (
+      state.installed
+      && compatibility.requiresUnion
+      && state.united !== true
+    ));
+    const current = statusService.getStatus(actor, NAUSEATED_STATUS_ID);
+    const currentMeta = current?.meta && typeof current.meta === "object"
+      ? clone(current.meta)
+      : {};
+    const managedByImplants = currentMeta?.[IMPLANT_NAUSEA_META_KEY] === true;
+
+    if (!requiresNausea) {
+      if (!managedByImplants) return false;
+
+      const previousValue = Number(currentMeta.previousValue);
+      const previousMeta = currentMeta.previousMeta && typeof currentMeta.previousMeta === "object"
+        ? clone(currentMeta.previousMeta)
+        : {};
+      if (Number.isFinite(previousValue) && previousValue > 0) {
+        await statusService.setStatusValue(actor, NAUSEATED_STATUS_ID, previousValue, previousMeta);
+      }
+      else {
+        await statusService.clearStatus(actor, NAUSEATED_STATUS_ID);
+      }
+      return true;
+    }
+
+    const currentValue = Number(current?.value);
+    if (current?.active && managedByImplants) {
+      if (Number.isFinite(currentValue) && currentValue >= IMPLANT_NAUSEA_VALUE) return false;
+      await statusService.setStatusValue(
+        actor,
+        NAUSEATED_STATUS_ID,
+        IMPLANT_NAUSEA_VALUE,
+        currentMeta
+      );
+      return true;
+    }
+
+    if (current?.active && Number.isFinite(currentValue) && currentValue >= IMPLANT_NAUSEA_VALUE) {
+      return false;
+    }
+
+    const meta = {
+      ...currentMeta,
+      [IMPLANT_NAUSEA_META_KEY]: true,
+      previousValue: current?.active && Number.isFinite(currentValue) ? currentValue : null,
+      previousMeta: clone(currentMeta)
+    };
+    if (current?.active) {
+      await statusService.setStatusValue(actor, NAUSEATED_STATUS_ID, IMPLANT_NAUSEA_VALUE, meta);
+    }
+    else {
+      await statusService.setStatus(actor, NAUSEATED_STATUS_ID, {
+        active: true,
+        value: IMPLANT_NAUSEA_VALUE,
+        meta
+      });
+    }
+    return true;
   }
 
   async #syncAggregateEffect(actor, planned) {

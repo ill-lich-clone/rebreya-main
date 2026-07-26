@@ -17,6 +17,7 @@ const DAE_MODULE_ID = "dae";
 const LEGACY_BLOODIED_STATUS_ID = "rebreya-bloodied";
 const LEGACY_RESTRAINED_STATUS_ID = "rebreya-restrained";
 const FRIGHTENED_STATUS_ID = REBREYA_FRIGHTENED_STATUS_ID;
+const NAUSEATED_STATUS_ID = "rebreya-nauseated";
 const STATUS_COUNTER_MODULE_ID = "statuscounter";
 const DAE_SPECIAL_DURATION_TURN_START_SOURCE = "turnStartSource";
 const DAE_SPECIAL_DURATION_TURN_END_SOURCE = "turnEndSource";
@@ -29,6 +30,14 @@ const FRIGHTENED_ATTACK_BONUS_KEYS = Object.freeze([
   "system.bonuses.rsak.attack"
 ]);
 const FRIGHTENED_ATTACK_BONUS_KEY_SET = new Set(FRIGHTENED_ATTACK_BONUS_KEYS);
+const NAUSEATED_PENALTY_KEYS = Object.freeze([
+  "system.bonuses.mwak.attack",
+  "system.bonuses.rwak.attack",
+  "system.bonuses.msak.attack",
+  "system.bonuses.rsak.attack",
+  "system.bonuses.abilities.save",
+  "system.bonuses.spell.dc"
+]);
 const FRIGHTENED_PRESERVED_CHANGE_KEYS = new Set([
   "flags.midi-qol.OverTime"
 ]);
@@ -275,6 +284,16 @@ function normalizeFrightenedValue(value, context = {}) {
 
 function activeEffectAddMode() {
   return globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
+}
+
+export function buildNauseatedChanges(value) {
+  const penalty = normalizeStatusValue(value, 1);
+  return NAUSEATED_PENALTY_KEYS.map((key) => ({
+    key,
+    mode: activeEffectAddMode(),
+    value: String(-penalty),
+    priority: 20
+  }));
 }
 
 function statusLabel(statusId) {
@@ -924,6 +943,10 @@ function buildStaticStatusChanges(statusId) {
 function buildDynamicStatusChanges(statusId, value) {
   if (statusId === FRIGHTENED_STATUS_ID) {
     return buildFrightenedChanges(value);
+  }
+
+  if (statusId === NAUSEATED_STATUS_ID) {
+    return buildNauseatedChanges(value);
   }
 
   return buildStaticStatusChanges(statusId);

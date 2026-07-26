@@ -13,6 +13,7 @@ import {
   buildDiscreetStatusSyncUpdates,
   buildFrightenedStatusEffectData,
   buildFrightenedStatusSyncUpdates,
+  buildNauseatedChanges,
   registerCombatStatusConfig
 } from "../scripts/combat/status-service.js";
 
@@ -177,6 +178,20 @@ test("frightened effect data stores a visible counter and attack penalties only"
       ["system.bonuses.rwak.attack", "-3"],
       ["system.bonuses.msak.attack", "-3"],
       ["system.bonuses.rsak.attack", "-3"]
+    ]
+  );
+});
+
+test("nausea value penalizes attacks, saving throws, and spell save DC", () => {
+  assert.deepEqual(
+    buildNauseatedChanges(2).map((change) => [change.key, change.value]),
+    [
+      ["system.bonuses.mwak.attack", "-2"],
+      ["system.bonuses.rwak.attack", "-2"],
+      ["system.bonuses.msak.attack", "-2"],
+      ["system.bonuses.rsak.attack", "-2"],
+      ["system.bonuses.abilities.save", "-2"],
+      ["system.bonuses.spell.dc", "-2"]
     ]
   );
 });

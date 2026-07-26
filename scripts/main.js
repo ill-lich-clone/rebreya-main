@@ -903,7 +903,7 @@ export class RebreyaMainModule {
       coordinator: this.worldMutationCoordinator
     });
     this.heroDollService = new HeroDollService(this);
-    this.implantService = new ImplantService();
+    this.implantService = new ImplantService(this);
     this.craftingService = new CraftingService(this);
     this.craftDowntimeService = new CraftDowntimeService({
       craftingService: this.craftingService,

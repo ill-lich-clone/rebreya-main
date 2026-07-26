@@ -12,6 +12,7 @@ const dialogAllowlist = new Set([
   "curse-eater-automation-service.js",
   "fighter-automation-service.js",
   "paladin-automation-service.js",
+  "paladin-dogma-automation-service.js",
   "race-automation-service.js",
   "reaction-queue-service.js",
   "sorcerer-automation-service.js",

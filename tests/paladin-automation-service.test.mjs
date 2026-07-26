@@ -976,6 +976,12 @@ test("Magistrate socket rejects smite requests without workflow proof", async ()
 
 test("paladin divine smite spends the selected spell slot and adds radiant bonus damage", async () => {
   TestRoll.messages = [];
+  const chatMessages = [];
+  const previousCreate = globalThis.ChatMessage.create;
+  globalThis.ChatMessage.create = async (data) => {
+    chatMessages.push(data);
+    return data;
+  };
   const divineSmite = makeFeatureItem({
     id: "divine-smite",
     name: "Божественная кара",
@@ -1010,30 +1016,77 @@ test("paladin divine smite spends the selected spell slot and adds radiant bonus
   const workflow = makeWeaponWorkflow({ actor: paladin, target });
   const config = makeDamageConfig();
 
-  await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
+  try {
+    await service.applyMidiPreDamageRoll(workflow, workflow.activity, config);
 
-  assert.equal(prompts.length, 1);
-  assert.equal(prompts[0].actor, paladin);
-  assert.deepEqual(prompts[0].details.slots.map((slot) => [slot.level, slot.value, slot.max]), [
-    [1, 1, 2],
-    [2, 1, 1],
-    [3, 1, 1],
-    [4, 1, 1]
-  ]);
-  assert.deepEqual(prompts[0].details.variants.map((variant) => [variant.id, variant.name]), [
-    ["paladin-heavenly-smite", "Небесная кара"]
-  ]);
-  assert.equal(paladin.system.spells.spell4.value, 0);
-  assert.deepEqual(paladin.updates.at(-1), {
-    "system.spells.spell4.value": 0
+    assert.equal(prompts.length, 1);
+    assert.equal(prompts[0].actor, paladin);
+    assert.deepEqual(prompts[0].details.slots.map((slot) => [slot.level, slot.value, slot.max]), [
+      [1, 1, 2],
+      [2, 1, 1],
+      [3, 1, 1],
+      [4, 1, 1]
+    ]);
+    assert.deepEqual(prompts[0].details.variants.map((variant) => [variant.id, variant.name]), [
+      ["paladin-heavenly-smite", "Небесная кара"]
+    ]);
+    assert.equal(paladin.system.spells.spell4.value, 0);
+    assert.deepEqual(paladin.updates.at(-1), {
+      "system.spells.spell4.value": 0
+    });
+    assert.equal(target.damageApplications.length, 0);
+    assert.equal(TestRoll.messages.length, 0);
+    assert.equal(config.rolls.length, 1);
+    assert.deepEqual(config.rolls[0].parts, ["5d8"]);
+    assert.equal(config.rolls[0].options.type, "radiant");
+    assert.deepEqual(config.rolls[0].options.types, ["radiant"]);
+    assert.equal(typeof config.rolls[0].options.flavor, "string");
+    assert.equal(chatMessages.length, 1);
+    assert.deepEqual(chatMessages[0].speaker, {
+      actor: paladin.id,
+      alias: paladin.name
+    });
+    assert.match(
+      chatMessages[0].flavor,
+      /Божественная кара \(4 ур\.\): Небесная кара/u
+    );
+  }
+  finally {
+    globalThis.ChatMessage.create = previousCreate;
+  }
+});
+
+test("cancelled paladin divine smite does not create a chat message", async () => {
+  const chatMessages = [];
+  const previousCreate = globalThis.ChatMessage.create;
+  globalThis.ChatMessage.create = async (data) => {
+    chatMessages.push(data);
+    return data;
+  };
+  const divineSmite = makeFeatureItem({
+    id: "divine-smite-cancelled",
+    name: "Божественная кара",
+    featureId: "paladin-rework-v01::class::paladin-divine-smite"
   });
-  assert.equal(target.damageApplications.length, 0);
-  assert.equal(TestRoll.messages.length, 0);
-  assert.equal(config.rolls.length, 1);
-  assert.deepEqual(config.rolls[0].parts, ["5d8"]);
-  assert.equal(config.rolls[0].options.type, "radiant");
-  assert.deepEqual(config.rolls[0].options.types, ["radiant"]);
-  assert.equal(typeof config.rolls[0].options.flavor, "string");
+  const paladin = new TestActor({
+    items: [divineSmite],
+    spellSlots: {
+      spell1: { value: 1, max: 1 }
+    }
+  });
+  const target = new TestActor({ id: "cancel-target", items: [] });
+  const service = new PaladinAutomationService({}, {
+    promptDivineSmite: async () => null
+  });
+
+  try {
+    const workflow = makeWeaponWorkflow({ actor: paladin, target });
+    await service.applyMidiPreDamageRoll(workflow, workflow.activity, makeDamageConfig());
+    assert.equal(chatMessages.length, 0);
+  }
+  finally {
+    globalThis.ChatMessage.create = previousCreate;
+  }
 });
 
 test("Magistrate accusation smite strips target advantage after a failed Charisma save", async () => {

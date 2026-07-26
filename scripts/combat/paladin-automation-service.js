@@ -833,7 +833,8 @@ export class PaladinAutomationService {
     }
 
     const formula = damageDiceFormula(divineSmiteDamageDice(selectedSlot.level), 8);
-    if (!appendDamageRollConfig(config, workflow, actor, formula, DIVINE_SMITE_DAMAGE_TYPE, this.#divineSmiteLabel(selectedSlot.level, selectedVariants))) {
+    const smiteLabel = this.#divineSmiteLabel(selectedSlot.level, selectedVariants);
+    if (!appendDamageRollConfig(config, workflow, actor, formula, DIVINE_SMITE_DAMAGE_TYPE, smiteLabel)) {
       return true;
     }
     await actor.update?.({ [`system.spells.spell${selectedSlot.level}.value`]: latestValue - 1 });
@@ -844,6 +845,10 @@ export class PaladinAutomationService {
     await this.#applyMagistrateSmiteVariants(actor, chosenTarget, selectedVariants, {
       workflow,
       slotLevel: selectedSlot.level
+    });
+    await globalThis.ChatMessage?.create?.({
+      speaker: speakerForActor(actor),
+      flavor: `<p><strong>${escapeHtml(actor.name)}</strong> использует <strong>${escapeHtml(smiteLabel)}</strong>.</p>`
     });
 
     return true;

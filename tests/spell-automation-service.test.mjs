@@ -886,11 +886,14 @@ test("combat hooks route dnd5e and MIDI pre-use events through spell automation"
   assert.deepEqual(calls, ["dnd5e", "midi"]);
 });
 
-test("module API constructs and initializes the generic spell automation service", async () => {
+test("module API gates and conditionally initializes the generic spell automation service", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
 
   assert.match(source, /import \{ SpellAutomationService \} from "\.\/combat\/spell-automation-service\.js/);
-  assert.match(source, /this\.spellAutomationService = new SpellAutomationService\(this\);/);
+  assert.match(
+    source,
+    /this\.spellAutomationService = COUNTERSPELL_AUTOMATION_ENABLED\s*\?\s*new SpellAutomationService\(this\)\s*:\s*null;/u
+  );
   assert.match(source, /await this\.spellAutomationService\.initialize\(\);/);
   assert.match(source, /function dispatchSocketMessage\(message, senderId\)/);
   assert.match(source, /queuedSocketMessages\.push\(\{ message, senderId \}\)/);

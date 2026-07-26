@@ -133,6 +133,43 @@ function actorStub({ prof = 3, items = [] } = {}) {
   return actor;
 }
 
+function combatStatusServiceStub(initial = null) {
+  return {
+    current: initial,
+    setCalls: [],
+    valueCalls: [],
+    clearCalls: [],
+    getStatus() {
+      return this.current;
+    },
+    async setStatus(_actor, statusId, options) {
+      this.setCalls.push({ statusId, options });
+      this.current = {
+        active: true,
+        statusId,
+        value: options.value,
+        meta: options.meta ?? {}
+      };
+      return true;
+    },
+    async setStatusValue(_actor, statusId, value, meta) {
+      this.valueCalls.push({ statusId, value, meta });
+      this.current = {
+        active: true,
+        statusId,
+        value,
+        meta: meta ?? {}
+      };
+      return true;
+    },
+    async clearStatus(_actor, statusId) {
+      this.clearCalls.push(statusId);
+      this.current = null;
+      return true;
+    }
+  };
+}
+
 test("modification point capacity follows humanoid, Synth, and Ironborn rules", () => {
   assert.equal(getModificationPointCapacity(actorStub({ prof: 3 })), 2);
   assert.equal(
@@ -238,6 +275,121 @@ test("mounted armor contributes +1 AC only after installation and required union
     value: "1",
     priority: 20
   }]);
+});
+
+test("ununited implants apply one fixed Nausea 2 and clear it after the last union", async () => {
+  const first = implantItem({ id: "first", automationKey: "" });
+  const second = implantItem({ id: "second", automationKey: "" });
+  const actor = actorStub({ items: [first, second] });
+  const combatStatusService = combatStatusServiceStub();
+  const service = new ImplantService({ combatStatusService });
+
+  await service.applyLoadout(actor, [
+    { itemId: first.id, installed: true, united: false, spentPoints: 1 },
+    { itemId: second.id, installed: true, united: false, spentPoints: 1 }
+  ]);
+
+  assert.equal(combatStatusService.setCalls.length, 1);
+  assert.deepEqual(combatStatusService.setCalls[0], {
+    statusId: "rebreya-nauseated",
+    options: {
+      active: true,
+      value: 2,
+      meta: {
+        implantNausea: true,
+        previousValue: null,
+        previousMeta: {}
+      }
+    }
+  });
+
+  await service.applyLoadout(actor, [
+    { itemId: first.id, installed: true, united: false, spentPoints: 1 },
+    { itemId: second.id, installed: true, united: false, spentPoints: 1 }
+  ]);
+
+  assert.equal(combatStatusService.setCalls.length, 1);
+  assert.equal(combatStatusService.valueCalls.length, 0);
+
+  await service.applyLoadout(actor, [
+    { itemId: first.id, installed: true, united: true, spentPoints: 1 },
+    { itemId: second.id, installed: true, united: true, spentPoints: 1 }
+  ]);
+
+  assert.deepEqual(combatStatusService.clearCalls, ["rebreya-nauseated"]);
+});
+
+test("implant nausea temporarily raises a weaker foreign nausea without deleting it", async () => {
+  const implant = implantItem({ automationKey: "" });
+  const actor = actorStub({ items: [implant] });
+  const combatStatusService = combatStatusServiceStub({
+    active: true,
+    statusId: "rebreya-nauseated",
+    value: 1,
+    meta: { source: "poison" }
+  });
+  const service = new ImplantService({ combatStatusService });
+
+  await service.applyLoadout(actor, [{
+    itemId: implant.id,
+    installed: true,
+    united: false,
+    spentPoints: 1
+  }]);
+
+  assert.deepEqual(combatStatusService.valueCalls, [{
+    statusId: "rebreya-nauseated",
+    value: 2,
+    meta: {
+      source: "poison",
+      implantNausea: true,
+      previousValue: 1,
+      previousMeta: { source: "poison" }
+    }
+  }]);
+
+  await service.applyLoadout(actor, [{
+    itemId: implant.id,
+    installed: true,
+    united: true,
+    spentPoints: 1
+  }]);
+
+  assert.deepEqual(combatStatusService.valueCalls.at(-1), {
+    statusId: "rebreya-nauseated",
+    value: 1,
+    meta: { source: "poison" }
+  });
+  assert.equal(combatStatusService.clearCalls.length, 0);
+});
+
+test("implant nausea leaves an equal or stronger foreign nausea unchanged", async () => {
+  const implant = implantItem({ automationKey: "" });
+  const actor = actorStub({ items: [implant] });
+  const combatStatusService = combatStatusServiceStub({
+    active: true,
+    statusId: "rebreya-nauseated",
+    value: 3,
+    meta: { source: "disease" }
+  });
+  const service = new ImplantService({ combatStatusService });
+
+  await service.applyLoadout(actor, [{
+    itemId: implant.id,
+    installed: true,
+    united: false,
+    spentPoints: 1
+  }]);
+  await service.applyLoadout(actor, [{
+    itemId: implant.id,
+    installed: true,
+    united: true,
+    spentPoints: 1
+  }]);
+
+  assert.equal(combatStatusService.setCalls.length, 0);
+  assert.equal(combatStatusService.valueCalls.length, 0);
+  assert.equal(combatStatusService.clearCalls.length, 0);
 });
 
 test("loadout validation rejects impossible implants and point overflow", async () => {
