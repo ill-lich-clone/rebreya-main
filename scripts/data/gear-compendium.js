@@ -1288,6 +1288,20 @@ async function syncManagedDocumentIcons(pack, documents, iconLookup) {
   await Item.implementation.updateDocuments(updates, { pack: pack.collection });
 }
 
+async function refreshQuickInsertIndex() {
+  const quickInsert = globalThis.QuickInsert;
+  if (typeof quickInsert?.forceIndex !== "function") {
+    return;
+  }
+
+  try {
+    await quickInsert.forceIndex();
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to refresh the Quick Insert index after gear sync.`, error);
+  }
+}
+
 export function getPrimaryGearDocumentCreateOptions(pack) {
   return {
     pack: pack.collection,
@@ -1396,6 +1410,7 @@ export class GearCompendiumService {
 
     const syncedDocuments = await getPackDocuments(pack);
     await syncManagedDocumentIcons(pack, syncedDocuments, iconLookup);
+    await refreshQuickInsertIndex();
 
     return game.packs.get(PACK_ID) ?? pack;
   }
