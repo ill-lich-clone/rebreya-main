@@ -1465,6 +1465,21 @@ function activeCooldownsByIdentifier(actor) {
   return result;
 }
 
+function activeCooldownKeysForItem(actor, item) {
+  if (item?.type !== "spell") {
+    return [];
+  }
+  const identifiers = spellItemIdentifiers(item);
+  const cooldowns = actorFlag(actor, COOLDOWNS_FLAG);
+  return Object.entries(cooldowns)
+    .filter(([, record]) => cooldownRemaining(record) > 0)
+    .filter(([key]) => {
+      const parsed = splitCooldownKey(key);
+      return parsed && identifiers.has(parsed.identifier);
+    })
+    .map(([key]) => key);
+}
+
 function resetCooldownSheetRow(row) {
   for (const badge of Array.from(row.querySelectorAll?.("[data-rebreya-sorcerer-cooldown-badge='true']") ?? [])) {
     badge.remove?.();
@@ -1485,6 +1500,22 @@ function hasAncestorItemRow(row, root) {
     candidate = candidate.parentElement;
   }
   return false;
+}
+
+async function clearItemCooldowns(actor, item) {
+  if (!actorCanModify(actor)) {
+    return false;
+  }
+  const keys = activeCooldownKeysForItem(actor, item);
+  if (!keys.length) {
+    return false;
+  }
+  const cooldowns = deepClone(actorFlag(actor, COOLDOWNS_FLAG));
+  for (const key of keys) {
+    delete cooldowns[key];
+  }
+  await setActorFlag(actor, COOLDOWNS_FLAG, cooldowns);
+  return true;
 }
 
 export function bindSorcererVirtualSlotCooldownBadges(root, actor) {
@@ -1510,6 +1541,24 @@ export function bindSorcererVirtualSlotCooldownBadges(root, actor) {
     const item = actorItemById(actor, row.dataset?.itemId);
     if (item?.type !== "spell") {
       continue;
+    }
+    if (row.dataset.rebreyaSorcererCooldownContextBound !== "true") {
+      row.dataset.rebreyaSorcererCooldownContextBound = "true";
+      row.addEventListener?.("contextmenu", (event) => {
+        const currentItem = actorItemById(actor, row.dataset?.itemId);
+        if (!activeCooldownKeysForItem(actor, currentItem).length || !actorCanModify(actor)) {
+          return;
+        }
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        clearItemCooldowns(actor, currentItem).then((cleared) => {
+          if (cleared) {
+            resetCooldownSheetRow(row);
+          }
+        }).catch((error) => {
+          console.error(`${MODULE_ID} | Failed to reset Sorcerer spell cooldown.`, error);
+        });
+      });
     }
     const cooldown = Array.from(spellItemIdentifiers(item))
       .map((identifier) => active.get(identifier))

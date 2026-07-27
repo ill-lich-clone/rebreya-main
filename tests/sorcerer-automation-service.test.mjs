@@ -2032,6 +2032,109 @@ test("RED: actor spell cooldown indicator ignores nested item rows for the same 
   }
 });
 
+test("RED: right-clicking a Sorcerer cooldown spell row clears that spell cooldown", async () => {
+  const previousHTMLElement = globalThis.HTMLElement;
+
+  class FakeElement {
+    constructor({ dataset = {}, selectorAll = {} } = {}) {
+      this.dataset = dataset;
+      this.selectorAll = selectorAll;
+      this.listeners = {};
+      this.children = [];
+      this.attributes = {};
+      this.classList = {
+        values: new Set(),
+        add: (...names) => names.forEach((name) => this.classList.values.add(name)),
+        remove: (...names) => names.forEach((name) => this.classList.values.delete(name)),
+        contains: (name) => this.classList.values.has(name)
+      };
+    }
+
+    append(...children) {
+      for (const child of children) {
+        child.parentElement = this;
+        this.children.push(child);
+      }
+    }
+
+    addEventListener(type, callback) {
+      this.listeners[type] ??= [];
+      this.listeners[type].push(callback);
+    }
+
+    dispatchEvent(event) {
+      for (const callback of this.listeners[event.type] ?? []) {
+        callback(event);
+      }
+    }
+
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    }
+
+    removeAttribute(name) {
+      delete this.attributes[name];
+    }
+
+    querySelectorAll(selector) {
+      return this.selectorAll[selector] ?? [];
+    }
+  }
+
+  globalThis.HTMLElement = FakeElement;
+
+  try {
+    const actor = levelActor(3, { includePoints: true });
+    actor.items.contents.push(makeItemFromData(actor, {
+      name: "Witch Bolt",
+      type: "spell",
+      system: { identifier: "witch-bolt", level: 1 }
+    }, "witch-bolt-item"));
+    actor.flags[MODULE_ID] = {
+      "sorcererAutomation.virtualSlotCooldowns": {
+        "witch-bolt:2": { remaining: 2 },
+        "shield:1": { remaining: 1 }
+      }
+    };
+
+    const row = new FakeElement({ dataset: { itemId: "witch-bolt-item" } });
+    const root = new FakeElement({
+      selectorAll: {
+        "[data-item-id]": [row]
+      }
+    });
+    const event = {
+      type: "contextmenu",
+      defaultPrevented: false,
+      prevented: false,
+      stopped: false,
+      preventDefault() {
+        this.prevented = true;
+        this.defaultPrevented = true;
+      },
+      stopPropagation() {
+        this.stopped = true;
+      }
+    };
+    const service = new SorcererAutomationService({});
+
+    assert.equal(service.bindActorSheetCooldownBadges(root, actor), true);
+    row.dispatchEvent(event);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.equal(event.prevented, true);
+    assert.equal(event.stopped, true);
+    assert.equal(row.classList.contains("has-rebreya-sorcerer-cooldown"), false);
+    assert.equal(row.dataset.rebreyaSorcererCooldownRemaining, undefined);
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "shield:1": { remaining: 1 }
+    });
+  }
+  finally {
+    globalThis.HTMLElement = previousHTMLElement;
+  }
+});
+
 test("high-level virtual slots are limited once per level until long rest unless overridden", async () => {
   const actor = levelActor(13, { includePoints: true });
   const service = new SorcererAutomationService({});
