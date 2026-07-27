@@ -2458,6 +2458,115 @@ export class SorcererAutomationService {
     messageConfig.data.flags[MODULE_ID].spellCast = deepClone(spellCast);
   }
 
+  #preflightMetamagicConfig(activity, plan) {
+    const meta = plan.metamagic ?? {};
+    const modifiers = {};
+    let components = spellComponents(activity);
+    for (const id of meta.ids ?? []) {
+      if (id === "careful-spell") {
+        modifiers.careful = { targets: meta.targetUuids };
+      }
+      else if (id === "distant-spell") {
+        const range = spellRange(activity);
+        modifiers.distant = true;
+        plan.range ??= range.units === "touch"
+          ? { value: 30, units: "ft" }
+          : { value: range.value * 2, units: range.units };
+      }
+      else if (id === "heightened-spell") {
+        modifiers.heightened = { targetUuid: meta.targetUuids[0], firstSaveDisadvantage: true };
+      }
+      else if (id === "subtle-spell") {
+        components = sharedSpellComponents(activity, { verbal: false, somatic: false });
+        modifiers.subtle = true;
+      }
+      else if (id === "draconic-ancestral-spell") {
+        modifiers.draconicAncestralSpell = { damageType: draconicAncestorDamageType(plan.actor) };
+      }
+      else if (id === "draconic-dragon-protection") {
+        modifiers.draconicDragonProtection = { damageType: firstAllowedSpellDamageType(activity, DRACONIC_PROTECTION_DAMAGE_TYPES) };
+      }
+      else if (id === "draconic-dragon-spell") {
+        const option = meta.options?.find((entry) => entry.id === id) ?? { selectedCost: 1 };
+        const diceCount = this.#metamagicCost(option, plan.choice.spellLevel, option.selectedCost);
+        modifiers.draconicDragonSpell = {
+          formula: `${diceCount}d6`,
+          damageType: draconicAncestorDamageType(plan.actor) || firstSpellDamageType(activity),
+          cost: diceCount
+        };
+      }
+      else if (id === "draconic-dragon-wing") {
+        const option = meta.options?.find((entry) => entry.id === id) ?? { selectedCost: 1 };
+        const cost = this.#metamagicCost(option, plan.choice.spellLevel, option.selectedCost);
+        modifiers.draconicDragonWing = {
+          flySpeed: cost * 10,
+          cost
+        };
+      }
+      else if (id === "advanced-mana-storm") {
+        const tempHp = Math.max(1, toInteger(plan.choice.spellLevel, 1));
+        modifiers.manaStorm = {
+          tempHp,
+          radius: 10,
+          damage: tempHp,
+          damageType: "force"
+        };
+      }
+      else if (id === "extended-spell") {
+        const duration = spellDuration(activity);
+        modifiers.extended = true;
+        plan.duration ??= durationFromSeconds(durationSeconds(duration) * 2, duration.units);
+      }
+      else if (id === "twinned-spell") {
+        modifiers.twinned = { targetUuids: [...meta.currentTargets] };
+      }
+      else if (id === "empowered-spell") {
+        modifiers.empowered = { damageDice: meta.selectedDamageDice };
+      }
+      else if (id === "quickened-spell") {
+        modifiers.quickened = true;
+        plan.activation ??= { type: "bonus", value: 1 };
+      }
+      else if (id === "seeking-spell") {
+        const option = meta.options?.find((entry) => entry.id === id) ?? { cost: meta.seekingCost ?? 2 };
+        modifiers.seeking = {
+          pending: true,
+          cost: plan.spendResource === false ? 0 : this.#metamagicCost(option, plan.choice.spellLevel, option.selectedCost)
+        };
+      }
+    }
+    if (meta.ids?.length) {
+      modifiers.metamagic = metamagicSummary(meta, plan.choice.spellLevel);
+    }
+    return { components, modifiers };
+  }
+
+  #applyPreflightCastContext(activity, usageConfig = {}, plan) {
+    const meta = plan.metamagic ?? {};
+    const preview = this.#preflightMetamagicConfig(activity, plan);
+    usageConfig.flags ??= {};
+    usageConfig.flags[MODULE_ID] ??= {};
+    usageConfig.flags[MODULE_ID].castContext = {
+      components: deepClone(preview.components),
+      targetUuids: meta.ids?.includes("twinned-spell")
+        ? [...meta.currentTargets]
+        : undefined
+    };
+    usageConfig.spellCast = {
+      spellLevel: plan.choice.spellLevel,
+      castingMode: plan.castingMode,
+      components: preview.components,
+      payment: { resource: "sorcery-points", cost: plan.totalCost },
+      metamagic: metamagicSummary(meta, plan.choice.spellLevel),
+      modifiers: preview.modifiers
+    };
+    if (plan.range) usageConfig.spellCast.range = deepClone(plan.range);
+    if (plan.duration) usageConfig.spellCast.duration = deepClone(plan.duration);
+    if (plan.activation) usageConfig.spellCast.activation = deepClone(plan.activation);
+    usageConfig.flags[MODULE_ID].spellCast = deepClone(usageConfig.spellCast);
+    return preview;
+  }
+
   #persistResolvedPlan(usageConfig, plan) {
     usageConfig[MODULE_ID] ??= {};
     usageConfig[MODULE_ID][PREFLIGHT_FLAG] = {
@@ -3039,7 +3148,7 @@ export class SorcererAutomationService {
         notifyWarning("The stored Sorcerer spell plan is no longer valid.");
         return false;
       }
-      this.#applyMetamagicConfig(activity, usageConfig, preflightPlan, messageConfig);
+      this.#applyPreflightCastContext(activity, usageConfig, preflightPlan);
       return true;
     }
 
@@ -3573,22 +3682,8 @@ export class SorcererAutomationService {
           ...(usageConfig?.[MODULE_ID] ?? {})
         }
       };
+      this.#applyPreflightCastContext(activity, preflightUsageConfig, plan);
       this.#persistResolvedPlan(preflightUsageConfig, plan);
-      const metamagicConfig = this.#applyMetamagicConfig(activity, preflightUsageConfig, plan, messageConfig);
-      preflightUsageConfig.spellCast = {
-        spellLevel: plan.choice.spellLevel,
-        castingMode: plan.castingMode,
-        components: metamagicConfig.components,
-        payment: { resource: "sorcery-points", cost: plan.totalCost },
-        metamagic: metamagicSummary(plan.metamagic, plan.choice.spellLevel),
-        modifiers: metamagicConfig.modifiers
-      };
-      if (plan.range) preflightUsageConfig.spellCast.range = deepClone(plan.range);
-      if (plan.duration) preflightUsageConfig.spellCast.duration = deepClone(plan.duration);
-      if (plan.activation) preflightUsageConfig.spellCast.activation = deepClone(plan.activation);
-      preflightUsageConfig.flags ??= {};
-      preflightUsageConfig.flags[MODULE_ID] ??= {};
-      preflightUsageConfig.flags[MODULE_ID].spellCast = deepClone(preflightUsageConfig.spellCast);
       this.#applySpellCastMessageConfig(messageConfig, preflightUsageConfig.spellCast);
       await activity.use(
         preflightUsageConfig,

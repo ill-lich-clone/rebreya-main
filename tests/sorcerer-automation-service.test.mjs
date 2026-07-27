@@ -1022,6 +1022,74 @@ test("a generic deferred resume reaches one paid Sorcerer final cast after neutr
   }
 });
 
+test("RED: Sorcerer preflight does not reach native dnd5e usage when spell reactions are disabled", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const handlers = new Map();
+  const actor = levelActor(5, { includePoints: true });
+  let prompts = 0;
+  let nativeUses = 0;
+  let attackHookCalls = 0;
+  const usageConfigs = [];
+
+  globalThis.Hooks = {
+    on: (name, callback) => {
+      const callbacks = handlers.get(name) ?? [];
+      callbacks.push(callback);
+      handlers.set(name, callbacks);
+    }
+  };
+  globalThis.game = { user: { id: "user", isGM: true }, combat: { round: 1 } };
+
+  try {
+    const { registerCombatHooks } = await import("../scripts/combat/hooks.js");
+    const service = new SorcererAutomationService({
+      chooseVirtualSpellLevel: async () => {
+        prompts += 1;
+        return { accepted: true, spellLevel: 3 };
+      }
+    });
+    await service.syncSorceryPoints(actor);
+    registerCombatHooks({
+      sorcererAutomationService: service,
+      combatAttackService: {
+        applyDnd5ePreUseActivity: () => {
+          attackHookCalls += 1;
+          return true;
+        }
+      }
+    });
+    const preUse = handlers.get("dnd5e.preUseActivity")?.[0];
+    const activity = makeSorcererSpell(actor, { baseLevel: 3 });
+    activity.use = async (usageConfig, ...rest) => {
+      usageConfigs.push(usageConfig);
+      const hookResult = preUse(activity, usageConfig, ...rest);
+      if (hookResult !== true) return undefined;
+      nativeUses += 1;
+      consumeDnd5eSpellSlot(actor, usageConfig);
+      return { updates: [] };
+    };
+
+    assert.equal(preUse(activity, {}, {}, {}), false);
+    await waitForDeferredActivityUse();
+    await waitForDeferredActivityUse();
+
+    assert.equal(prompts, 1);
+    assert.equal(nativeUses, 1);
+    assert.equal(usageConfigs.length, 2);
+    assert.equal(usageConfigs[0][MODULE_ID].sorcererAutomationPreflight.accepted, true);
+    assert.equal(usageConfigs[0].flags[MODULE_ID].reactionCheckComplete, true);
+    assert.equal(usageConfigs[1][MODULE_ID].sorcererAutomationBypass, true);
+    assert.equal(pointsItem(actor).system.uses.spent, 5);
+    assert.equal(actor.system.spells?.spell3?.value, undefined);
+    assert.equal(attackHookCalls, 1);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+  }
+});
+
 test("a deferred virtual cast locks the resumed dialog and virtual-cast usage configuration", async () => {
   const actor = levelActor(5, { includePoints: true });
   actor.system.spells = {
@@ -1144,6 +1212,8 @@ test("RED: a deferred Draconic Dragon Spell cast forwards its bonus dice to the 
   await waitForDeferredActivityUse();
 
   const [preflightUsageConfig, preflightDialogConfig, preflightMessageConfig] = resumedUses[0];
+  assert.equal(preflightMessageConfig.data?.flags?.[MODULE_ID]?.damageBonus, undefined);
+  assert.deepEqual(activity.system.damage.parts, [{ _id: "base-fire", formula: "1d6", types: ["fire"] }]);
   assert.equal(service.finalizeDnd5ePreUseActivity(
     activity,
     completeReactionCheck(preflightUsageConfig),
@@ -3581,7 +3651,7 @@ test("RED: a canceled final cast holds its actor payment lock through rollback",
   assert.equal(pointsItem(actor).system.uses.spent, 2);
 });
 
-test("deferred Distant plan keeps one resolved range across every temporary activity clone", async () => {
+test("deferred Distant plan keeps one resolved range without mutating preflight clones", async () => {
   const actor = metamagicActor();
   const service = new SorcererAutomationService({
     chooseVirtualSpellLevel: async () => ({ accepted: true, spellLevel: 1 }),
@@ -3598,7 +3668,8 @@ test("deferred Distant plan keeps one resolved range across every temporary acti
   const secondClone = makeDnd5eActivityClone(makeSorcererSpell(actor, { system: { range: { value: 120, units: "ft" } } }));
   assert.equal(service.deferDnd5ePreUseActivity(firstClone, preflight, {}, {}), true);
   assert.equal(service.deferDnd5ePreUseActivity(secondClone, preflight, {}, {}), true);
-  assert.deepEqual(firstClone.range, { value: 120, units: "ft" });
+  assert.deepEqual(preflight[MODULE_ID].sorcererAutomationPreflight.range, { value: 120, units: "ft" });
+  assert.deepEqual(firstClone.range, { value: 60, units: "ft" });
   assert.deepEqual(secondClone.range, { value: 120, units: "ft" });
 });
 

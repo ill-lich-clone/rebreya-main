@@ -8,6 +8,15 @@ const CHARACTER_SHEET_RENDER_HOOKS = Object.freeze([
   "renderCharacterActorSheet"
 ]);
 
+function completeSorcererReactionCheckWhenNoSpellService(usageConfig = {}) {
+  if (!usageConfig?.[MODULE_ID]?.sorcererAutomationPreflight) {
+    return;
+  }
+  usageConfig.flags ??= {};
+  usageConfig.flags[MODULE_ID] ??= {};
+  usageConfig.flags[MODULE_ID].reactionCheckComplete = true;
+}
+
 export function registerCombatHooks(moduleApi) {
   const hasStatusService = Boolean(moduleApi?.combatStatusService);
   const hasAttackService = Boolean(moduleApi?.combatAttackService);
@@ -451,6 +460,10 @@ export function registerCombatHooks(moduleApi) {
             return false;
           }
 
+          if (hasSorcererService && !hasSpellService) {
+            completeSorcererReactionCheckWhenNoSpellService(usageConfig);
+          }
+
           if (
             hasSpellService
             && moduleApi.spellAutomationService.deferDnd5ePreUseActivity(
@@ -727,6 +740,10 @@ export function registerCombatHooks(moduleApi) {
           ) === false
         ) {
           return false;
+        }
+
+        if (hasSorcererService && !hasSpellService) {
+          completeSorcererReactionCheckWhenNoSpellService(usageConfig);
         }
 
         if (
