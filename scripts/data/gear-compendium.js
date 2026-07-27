@@ -1259,18 +1259,56 @@ async function findGearDocument(pack, gearItem) {
   }) ?? primaryDocuments.find((entry) => normalizeMatchText(entry.name) === normalizeMatchText(gearItem.name)) ?? null;
 }
 
-async function syncManagedDocumentIcons(pack, documents, iconLookup) {
+function getGearDocumentFlag(document, key) {
+  return document?.getFlag?.(MODULE_ID, key)
+    ?? document?.flags?.[MODULE_ID]?.[key];
+}
+
+function buildGearSourceLookups(gear = []) {
+  const byId = new Map();
+  const byName = new Map();
+  for (const entry of Array.isArray(gear) ? gear : []) {
+    const gearId = cleanString(entry?.id);
+    const gearName = normalizeMatchText(entry?.name);
+    if (gearId) {
+      byId.set(gearId, entry);
+    }
+    if (gearName) {
+      byName.set(gearName, entry);
+    }
+  }
+  return { byId, byName };
+}
+
+function resolveStoredGearSource(document, { byId, byName }) {
+  const sourceType = cleanString(getGearDocumentFlag(document, "sourceType"));
+  if (sourceType && sourceType !== "gear") {
+    return null;
+  }
+
+  const gearId = cleanString(getGearDocumentFlag(document, "gearId"));
+  return byId.get(gearId) ?? byName.get(normalizeMatchText(document?.name)) ?? null;
+}
+
+async function syncManagedDocumentIcons(pack, documents, iconLookup, sourceLookups) {
   const updates = [];
   for (const document of Array.isArray(documents) ? documents : []) {
-    if (!document?.getFlag?.(MODULE_ID, "managed")) {
+    const managed = getGearDocumentFlag(document, "managed") === true;
+    const sourceGear = resolveStoredGearSource(document, sourceLookups);
+    const currentIcon = String(document.img ?? "").trim() || DEFAULT_GEAR_ICON;
+    if (!managed && (!sourceGear || currentIcon !== DEFAULT_GEAR_ICON)) {
       continue;
     }
 
-    const currentIcon = String(document.img ?? "").trim() || DEFAULT_GEAR_ICON;
-    const nextIcon = resolveGearNamedIcon({
-      name: document.name,
-      equipmentType: document.getFlag(MODULE_ID, "equipmentType")
-    }, iconLookup) || currentIcon;
+    const nextIcon = sourceGear
+      ? resolveGearItemIcon(sourceGear, {
+        classification: classifyGearEntry(sourceGear),
+        iconLookup
+      })
+      : resolveGearNamedIcon({
+        name: document.name,
+        equipmentType: getGearDocumentFlag(document, "equipmentType")
+      }, iconLookup);
     if (!nextIcon || nextIcon === currentIcon) {
       continue;
     }
@@ -1286,6 +1324,40 @@ async function syncManagedDocumentIcons(pack, documents, iconLookup) {
   }
 
   await Item.implementation.updateDocuments(updates, { pack: pack.collection });
+}
+
+async function syncStoredActorGearIcons(iconLookup, sourceLookups) {
+  const actors = Array.from(game.actors?.contents ?? game.actors ?? []);
+  for (const actor of actors) {
+    const updates = [];
+    for (const item of actor.items?.contents ?? []) {
+      const sourceGear = resolveStoredGearSource(item, sourceLookups);
+      const currentIcon = String(item.img ?? "").trim() || DEFAULT_GEAR_ICON;
+      const managed = getGearDocumentFlag(item, "managed") === true;
+      if (!sourceGear || (!managed && currentIcon !== DEFAULT_GEAR_ICON)) {
+        continue;
+      }
+
+      const nextIcon = resolveGearItemIcon(sourceGear, {
+        classification: classifyGearEntry(sourceGear),
+        iconLookup
+      });
+      if (nextIcon && nextIcon !== currentIcon) {
+        updates.push({ _id: item.id, img: nextIcon });
+      }
+    }
+
+    if (!updates.length || typeof actor.updateEmbeddedDocuments !== "function") {
+      continue;
+    }
+
+    try {
+      await actor.updateEmbeddedDocuments("Item", updates, { render: false });
+    }
+    catch (error) {
+      console.warn(`${MODULE_ID} | Failed to refresh gear icons on actor ${actor.name ?? actor.id}.`, error);
+    }
+  }
 }
 
 export function getPrimaryGearDocumentCreateOptions(pack) {
@@ -1306,6 +1378,7 @@ export class GearCompendiumService {
     await deduplicateCompendiumFolders(pack, ["Обвес", "Обвесы", "Огнестрельное оружие", "Примитивное", "Продвинутое"]);
     const documents = await getPackDocuments(pack);
     const iconLookup = await buildGearIconLookup({ forceRefresh: true });
+    const sourceLookups = buildGearSourceLookups(safeGear);
     let folderIdByPath = new Map();
     try {
       folderIdByPath = await ensureCompendiumFolders(
@@ -1395,7 +1468,8 @@ export class GearCompendiumService {
     });
 
     const syncedDocuments = await getPackDocuments(pack);
-    await syncManagedDocumentIcons(pack, syncedDocuments, iconLookup);
+    await syncManagedDocumentIcons(pack, syncedDocuments, iconLookup, sourceLookups);
+    await syncStoredActorGearIcons(iconLookup, sourceLookups);
 
     return game.packs.get(PACK_ID) ?? pack;
   }
