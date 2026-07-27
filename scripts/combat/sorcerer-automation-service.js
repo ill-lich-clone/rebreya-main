@@ -32,6 +32,10 @@ const DRACONIC_ANCESTOR_SOURCE_TYPE = "sorcererDraconicAncestor";
 const DRACONIC_ELEMENTAL_AFFINITY_PART_ID = "rebreya-draconic-elemental-affinity";
 const MAX_EXTENDED_DURATION_SECONDS = 24 * 60 * 60;
 const SORCERER_CAST_DIALOG_WIDTH = 720;
+const RESET_COOLDOWN_CONTEXT_CLASS = "rebreya-reset-sorcerer-cooldown-context-item";
+let cooldownContextHookRegistered = false;
+let cooldownContextClickFallbackRegistered = false;
+const cooldownContextRows = new WeakMap();
 const EFFECT_MODE_ADD = globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2;
 const EFFECT_MODE_UPGRADE = globalThis.CONST?.ACTIVE_EFFECT_MODES?.UPGRADE ?? 4;
 const COMPONENT_PROPERTY_KEYS = Object.freeze(new Set(["vocal", "somatic", "verbal", "s"]));
@@ -1419,6 +1423,24 @@ function actorFlag(actor, key, fallback = {}) {
   return value && typeof value === "object" ? deepClone(value) : fallback;
 }
 
+function isFoundryActorDocument(actor) {
+  return actor?.documentName === "Actor"
+    || actor?.constructor?.documentName === "Actor"
+    || typeof actor?.updateSource === "function";
+}
+
+async function deleteActorObjectFlagKeys(actor, key, keys, fallbackValue) {
+  if (isFoundryActorDocument(actor) && typeof actor?.update === "function") {
+    const patch = {};
+    for (const entryKey of keys) {
+      patch[`flags.${MODULE_ID}.${key}.-=${entryKey}`] = null;
+    }
+    await actor.update(patch);
+    return;
+  }
+  await setActorFlag(actor, key, fallbackValue);
+}
+
 function actorItemById(actor, itemId) {
   const id = cleanText(itemId);
   if (!actor || !id) {
@@ -1514,13 +1536,145 @@ async function clearItemCooldowns(actor, item) {
   for (const key of keys) {
     delete cooldowns[key];
   }
-  await setActorFlag(actor, COOLDOWNS_FLAG, cooldowns);
+  await deleteActorObjectFlagKeys(actor, COOLDOWNS_FLAG, keys, cooldowns);
+  return true;
+}
+
+async function renderCooldownOwnerSheet(actor) {
+  if (!actor?.sheet?.render) {
+    return;
+  }
+  try {
+    await actor.sheet.render({ force: true });
+  }
+  catch (_error) {
+    await actor.sheet.render(true);
+  }
+}
+
+async function resetVirtualSlotCooldownForItem(actor, item, moduleApi = {}, row = null) {
+  const cleared = await clearItemCooldowns(actor, item);
+  if (!cleared) {
+    return false;
+  }
+  if (row) {
+    resetCooldownSheetRow(row);
+  }
+  await moduleApi?.refreshOpenApps?.();
+  await renderCooldownOwnerSheet(actor);
+  return true;
+}
+
+function contextResetElement(target) {
+  const element = target?.closest?.(`.${RESET_COOLDOWN_CONTEXT_CLASS}`);
+  if (!element?.closest?.("#context-menu")) {
+    return null;
+  }
+  return element;
+}
+
+function contextCooldownRecordFromRow(row) {
+  let candidate = row;
+  while (candidate) {
+    const record = cooldownContextRows.get(candidate);
+    if (record) {
+      return { ...record, row: candidate };
+    }
+    candidate = candidate.parentElement;
+  }
+  return null;
+}
+
+function actorFromSheetContextRow(row) {
+  const sheet = row?.closest?.("[id*='Actor-']");
+  const actorId = cleanText(sheet?.id?.match?.(/Actor-([A-Za-z0-9]{16})/)?.[1]);
+  if (!actorId) {
+    return null;
+  }
+  return globalThis.game?.actors?.get?.(actorId) ?? null;
+}
+
+function actorCooldownRecordFromContextRow(row) {
+  const record = contextCooldownRecordFromRow(row);
+  if (record?.actor) {
+    return record;
+  }
+  const actor = actorFromSheetContextRow(row);
+  return actor ? { actor, row } : null;
+}
+
+function handleSorcererCooldownContextActivation(event, moduleApi = {}) {
+  if (!contextResetElement(event?.target)) {
+    return;
+  }
+  const row = globalThis.document?.querySelector?.("[data-item-id].context");
+  const record = actorCooldownRecordFromContextRow(row);
+  const item = actorItemById(record?.actor, row?.dataset?.itemId);
+  if (!record?.actor || item?.type !== "spell") {
+    return;
+  }
+  void resetVirtualSlotCooldownForItem(record.actor, item, moduleApi, record.row).catch((error) => {
+    console.error(`${MODULE_ID} | Failed to reset Sorcerer spell cooldown.`, error);
+    globalThis.ui?.notifications?.error?.(error.message || "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u043f\u0435\u0440\u0435\u0437\u0430\u0440\u044f\u0434\u043a\u0443.");
+  });
+}
+
+function registerSorcererCooldownContextClickFallback(moduleApi = {}) {
+  if (cooldownContextClickFallbackRegistered || !globalThis.document?.addEventListener) {
+    return false;
+  }
+  cooldownContextClickFallbackRegistered = true;
+  const listener = (event) => {
+    handleSorcererCooldownContextActivation(event, moduleApi);
+  };
+  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+    globalThis.document.addEventListener(type, listener, true);
+  }
+  return true;
+}
+
+export function registerSorcererVirtualSlotCooldownContextHook(moduleApi = {}) {
+  if (cooldownContextHookRegistered || !globalThis.Hooks?.on) {
+    return false;
+  }
+  cooldownContextHookRegistered = true;
+  registerSorcererCooldownContextClickFallback(moduleApi);
+  Hooks.on("dnd5e.getItemContextOptions", (item, options) => {
+    const actor = item?.actor ?? item?.parent ?? null;
+    if (!Array.isArray(options) || item?.type !== "spell" || !actor) {
+      return;
+    }
+    if (!activeCooldownKeysForItem(actor, item).length) {
+      return;
+    }
+    options.push({
+      id: "rebreya-reset-sorcerer-cooldown",
+      name: "\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u043f\u0435\u0440\u0435\u0437\u0430\u0440\u044f\u0434\u043a\u0443",
+      icon: '<i class="fa-solid fa-hourglass-end fa-fw"></i>',
+      classes: RESET_COOLDOWN_CONTEXT_CLASS,
+      condition: () => actorCanModify(actor) && activeCooldownKeysForItem(actor, item).length > 0,
+      callback: async () => {
+        try {
+          await resetVirtualSlotCooldownForItem(actor, item, moduleApi);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to reset Sorcerer spell cooldown.`, error);
+          globalThis.ui?.notifications?.error?.(error.message || "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u043f\u0435\u0440\u0435\u0437\u0430\u0440\u044f\u0434\u043a\u0443.");
+        }
+      },
+      group: "state"
+    });
+  });
   return true;
 }
 
 export function bindSorcererVirtualSlotCooldownBadges(root, actor) {
   if (typeof globalThis.HTMLElement === "undefined" || !(root instanceof globalThis.HTMLElement)) {
     return false;
+  }
+  const liveModuleApi = globalThis.game?.modules?.get?.(MODULE_ID)?.api;
+  if (liveModuleApi) {
+    registerSorcererCooldownContextClickFallback(liveModuleApi);
   }
   const active = activeCooldownsByIdentifier(actor);
   let changed = false;
@@ -1542,24 +1696,7 @@ export function bindSorcererVirtualSlotCooldownBadges(root, actor) {
     if (item?.type !== "spell") {
       continue;
     }
-    if (row.dataset.rebreyaSorcererCooldownContextBound !== "true") {
-      row.dataset.rebreyaSorcererCooldownContextBound = "true";
-      row.addEventListener?.("contextmenu", (event) => {
-        const currentItem = actorItemById(actor, row.dataset?.itemId);
-        if (!activeCooldownKeysForItem(actor, currentItem).length || !actorCanModify(actor)) {
-          return;
-        }
-        event?.preventDefault?.();
-        event?.stopPropagation?.();
-        clearItemCooldowns(actor, currentItem).then((cleared) => {
-          if (cleared) {
-            resetCooldownSheetRow(row);
-          }
-        }).catch((error) => {
-          console.error(`${MODULE_ID} | Failed to reset Sorcerer spell cooldown.`, error);
-        });
-      });
-    }
+    cooldownContextRows.set(row, { actor });
     const cooldown = Array.from(spellItemIdentifiers(item))
       .map((identifier) => active.get(identifier))
       .find(Boolean);
@@ -1893,6 +2030,10 @@ export class SorcererAutomationService {
 
   bindActorSheetCooldownBadges(root, actor) {
     return bindSorcererVirtualSlotCooldownBadges(root, actor);
+  }
+
+  registerItemContextHook(moduleApi = this.moduleApi) {
+    return registerSorcererVirtualSlotCooldownContextHook(moduleApi);
   }
 
   async #chooseVirtualSpellLevel({

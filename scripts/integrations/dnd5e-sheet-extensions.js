@@ -7122,6 +7122,12 @@ export function registerDnd5eSheetExtensions(moduleApi) {
   bindCharacterDowntimeDocumentContinueDelegation(moduleApi);
   bindCharacterDowntimeDocumentProjectCloseDelegation(moduleApi);
   registerUniversalBeltItemContextHook(moduleApi);
+  try {
+    moduleApi?.sorcererAutomationService?.registerItemContextHook?.(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register Sorcerer cooldown item context menu.`, error);
+  }
 
   const onRenderActorSheet = (app, html) => {
     const actor = getActorFromSheetApp(app);

@@ -893,6 +893,30 @@ test("actor sheet render delegates Sorcerer virtual-slot cooldown badges", async
   }
 });
 
+test("registerDnd5eSheetExtensions delegates Sorcerer cooldown item context hook", async () => {
+  const stubs = installSheetExtensionStubs();
+  try {
+    const { registerDnd5eSheetExtensions } = await import(`../scripts/integrations/dnd5e-sheet-extensions.js?sorcerer-cooldown-context=${Date.now()}`);
+    const calls = [];
+    const moduleApi = {
+      sorcererAutomationService: {
+        registerItemContextHook(api) {
+          calls.push(api);
+          return true;
+        }
+      }
+    };
+
+    registerDnd5eSheetExtensions(moduleApi);
+
+    assert.equal(calls.length, 1);
+    assert.strictEqual(calls[0], moduleApi);
+  }
+  finally {
+    stubs.restore();
+  }
+});
+
 test("held item context menu opens above existing Foundry windows", async () => {
   const stubs = installSheetExtensionStubs();
   try {

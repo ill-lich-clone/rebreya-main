@@ -2102,8 +2102,10 @@ test("RED: actor spell cooldown indicator ignores nested item rows for the same 
   }
 });
 
-test("RED: right-clicking a Sorcerer cooldown spell row clears that spell cooldown", async () => {
+test("RED: Sorcerer cooldowns reset from the dnd5e item context option, not the row right-click", async () => {
   const previousHTMLElement = globalThis.HTMLElement;
+  const previousHooks = globalThis.Hooks;
+  const previousDocument = globalThis.document;
 
   class FakeElement {
     constructor({ dataset = {}, selectorAll = {} } = {}) {
@@ -2146,25 +2148,63 @@ test("RED: right-clicking a Sorcerer cooldown spell row clears that spell cooldo
       delete this.attributes[name];
     }
 
+    closest(selector) {
+      if (selector === "#context-menu") {
+        return this.id === "context-menu" ? this : (this.parentElement?.closest?.(selector) ?? null);
+      }
+      if (selector?.startsWith?.(".")) {
+        return this.classList.contains(selector.slice(1)) ? this : (this.parentElement?.closest?.(selector) ?? null);
+      }
+      return null;
+    }
+
     querySelectorAll(selector) {
       return this.selectorAll[selector] ?? [];
     }
   }
 
   globalThis.HTMLElement = FakeElement;
+  let hookListener = null;
+  const documentListeners = {};
+  const documentListenerOptions = {};
+  globalThis.Hooks = {
+    on(name, listener) {
+      if (name === "dnd5e.getItemContextOptions") hookListener = listener;
+    }
+  };
 
   try {
     const actor = levelActor(3, { includePoints: true });
-    actor.items.contents.push(makeItemFromData(actor, {
+    const spell = makeItemFromData(actor, {
       name: "Witch Bolt",
       type: "spell",
       system: { identifier: "witch-bolt", level: 1 }
-    }, "witch-bolt-item"));
+    }, "witch-bolt-item");
+    const otherSpell = makeItemFromData(actor, {
+      name: "Mage Armor",
+      type: "spell",
+      system: { identifier: "mage-armor", level: 1 }
+    }, "mage-armor-item");
+    actor.items.contents.push(spell, otherSpell);
     actor.flags[MODULE_ID] = {
       "sorcererAutomation.virtualSlotCooldowns": {
         "witch-bolt:2": { remaining: 2 },
         "shield:1": { remaining: 1 }
       }
+    };
+    actor.documentName = "Actor";
+    actor.update = async (patch) => {
+      actor.updates.push(patch);
+      const cooldownDeletePrefix = `flags.${MODULE_ID}.sorcererAutomation.virtualSlotCooldowns.-=`;
+      for (const [path, value] of Object.entries(patch)) {
+        if (path.startsWith(cooldownDeletePrefix)) {
+          delete actor.flags[MODULE_ID]["sorcererAutomation.virtualSlotCooldowns"][path.slice(cooldownDeletePrefix.length)];
+        }
+        else {
+          foundry.utils.setProperty(actor, path, value);
+        }
+      }
+      return actor;
     };
 
     const row = new FakeElement({ dataset: { itemId: "witch-bolt-item" } });
@@ -2175,33 +2215,89 @@ test("RED: right-clicking a Sorcerer cooldown spell row clears that spell cooldo
     });
     const event = {
       type: "contextmenu",
-      defaultPrevented: false,
       prevented: false,
       stopped: false,
       preventDefault() {
         this.prevented = true;
-        this.defaultPrevented = true;
       },
       stopPropagation() {
         this.stopped = true;
       }
     };
+    globalThis.document = {
+      addEventListener(type, listener, options) {
+        documentListeners[type] = listener;
+        documentListenerOptions[type] = options;
+      },
+      querySelector(selector) {
+        return selector === "[data-item-id].context" ? row : null;
+      }
+    };
     const service = new SorcererAutomationService({});
+    const renderCalls = [];
+    actor.sheet = {
+      async render(...args) {
+        renderCalls.push(args);
+        service.bindActorSheetCooldownBadges(root, actor);
+      }
+    };
 
     assert.equal(service.bindActorSheetCooldownBadges(root, actor), true);
     row.dispatchEvent(event);
+
+    assert.equal(event.prevented, false);
+    assert.equal(event.stopped, false);
+    assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
+      "witch-bolt:2": { remaining: 2 },
+      "shield:1": { remaining: 1 }
+    });
+    assert.equal(row.classList.contains("has-rebreya-sorcerer-cooldown"), true);
+    assert.equal(row.dataset.rebreyaSorcererCooldownRemaining, "2");
+
+    let refreshed = 0;
+    assert.equal(service.registerItemContextHook({ refreshOpenApps: async () => { refreshed += 1; } }), true);
+    assert.equal(typeof hookListener, "function");
+
+    const activeOptions = [];
+    hookListener(spell, activeOptions);
+    const resetOption = activeOptions.find((option) => option.id === "rebreya-reset-sorcerer-cooldown");
+    assert.ok(resetOption);
+    assert.equal(resetOption.name, "\u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u043f\u0435\u0440\u0435\u0437\u0430\u0440\u044f\u0434\u043a\u0443");
+    assert.equal(resetOption.classes, "rebreya-reset-sorcerer-cooldown-context-item");
+    assert.equal(resetOption.condition(), true);
+    assert.equal(typeof documentListeners.pointerup, "function");
+    assert.equal(typeof documentListeners.click, "function");
+    assert.equal(documentListenerOptions.pointerup, true);
+    assert.equal(documentListenerOptions.click, true);
+
+    const inactiveOptions = [];
+    hookListener(otherSpell, inactiveOptions);
+    assert.equal(inactiveOptions.some((option) => option.id === "rebreya-reset-sorcerer-cooldown"), false);
+    row.classList.add("context");
+    const menu = new FakeElement();
+    menu.id = "context-menu";
+    const menuItem = new FakeElement();
+    menuItem.classList.add("rebreya-reset-sorcerer-cooldown-context-item");
+    menu.append(menuItem);
+    documentListeners.pointerup({ target: menuItem });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    assert.equal(event.prevented, true);
-    assert.equal(event.stopped, true);
     assert.equal(row.classList.contains("has-rebreya-sorcerer-cooldown"), false);
     assert.equal(row.dataset.rebreyaSorcererCooldownRemaining, undefined);
     assert.deepEqual(actor.getFlag(MODULE_ID, "sorcererAutomation.virtualSlotCooldowns"), {
       "shield:1": { remaining: 1 }
     });
+    assert.deepEqual(actor.updates.at(-1), {
+      [`flags.${MODULE_ID}.sorcererAutomation.virtualSlotCooldowns.-=witch-bolt:2`]: null
+    });
+    assert.equal(refreshed, 1);
+    assert.equal(renderCalls.length, 1);
   }
   finally {
     globalThis.HTMLElement = previousHTMLElement;
+    globalThis.Hooks = previousHooks;
+    globalThis.document = previousDocument;
   }
 });
 
