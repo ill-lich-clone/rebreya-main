@@ -41,15 +41,20 @@ function implantItem({
   installed = false,
   united = false,
   spentPoints = pointsMin,
-  automationKey = "mounted-armor-ac"
+  automationKey = "mounted-armor-ac",
+  gearId = automationKey === "mounted-armor-ac" ? "navesnaya-bronya" : "",
+  quantity = 1,
+  installedCount = installed ? 1 : 0
 } = {}) {
   return {
     id,
     uuid: `Actor.hero.Item.${id}`,
     name,
     type: "equipment",
+    system: { quantity },
     flags: {
       [MODULE_ID]: {
+        gearId,
         implant: {
           pointsText: pointsMin === pointsMax ? String(pointsMin) : `${pointsMin}–${pointsMax}`,
           pointsMin,
@@ -64,6 +69,7 @@ function implantItem({
         },
         implantInstallation: {
           installed,
+          installedCount,
           united,
           spentPoints
         }
@@ -277,6 +283,64 @@ test("mounted armor contributes +1 AC only after installation and required union
   }]);
 });
 
+test("all passive implant changes share one aggregate effect and are replaced on removal", async () => {
+  const armor = implantItem({ id: "armor" });
+  const vision = implantItem({
+    id: "vision",
+    name: "Модуль ночного зрения",
+    gearId: "modul-nochnogo-zreniya",
+    automationKey: ""
+  });
+  const actor = actorStub({
+    items: [raceItem("Синтеты", "синтеты"), armor, vision]
+  });
+  const service = new ImplantService();
+
+  await service.applyLoadout(actor, [
+    { itemId: armor.id, installed: true, united: false, spentPoints: 1 },
+    { itemId: vision.id, installed: true, united: false, spentPoints: 1 }
+  ]);
+
+  assert.equal(actor.effects.length, 1);
+  assert.deepEqual(actor.effects[0].changes, [
+    { key: "system.attributes.ac.bonus", mode: 2, value: "1", priority: 20 },
+    { key: "system.attributes.senses.darkvision", mode: 4, value: "60", priority: 20 }
+  ]);
+
+  await service.applyLoadout(actor, [
+    { itemId: armor.id, installed: false, united: false, spentPoints: 1 },
+    { itemId: vision.id, installed: true, united: false, spentPoints: 1 }
+  ]);
+
+  assert.equal(actor.effectCreates.length, 1);
+  assert.equal(actor.effectUpdates.length, 1);
+  assert.deepEqual(actor.effects[0].changes, [
+    { key: "system.attributes.senses.darkvision", mode: 4, value: "60", priority: 20 }
+  ]);
+});
+
+test("reconciliation removes stale aggregate bonuses after an installed item is deleted", async () => {
+  const armor = implantItem();
+  const actor = actorStub({
+    items: [raceItem("Синтеты", "синтеты"), armor]
+  });
+  const service = new ImplantService();
+
+  await service.applyLoadout(actor, [{
+    itemId: armor.id,
+    installed: true,
+    spentPoints: 1
+  }]);
+  assert.equal(actor.effects[0].changes.length, 1);
+
+  actor.items.splice(actor.items.indexOf(armor), 1);
+  await service.reconcileActor(actor, { reason: "deleteItem" });
+
+  assert.equal(actor.effectCreates.length, 1);
+  assert.equal(actor.effectUpdates.length, 1);
+  assert.deepEqual(actor.effects[0].changes, []);
+});
+
 test("ununited implants apply one fixed Nausea 2 and clear it after the last union", async () => {
   const first = implantItem({ id: "first", automationKey: "" });
   const second = implantItem({ id: "second", automationKey: "" });
@@ -417,6 +481,74 @@ test("loadout validation rejects impossible implants and point overflow", async 
       spentPoints: 3
     }]),
     /очк/u
+  );
+});
+
+test("additional limbs install by owned quantity and spend points per copy", async () => {
+  const limb = implantItem({
+    id: "limb",
+    name: "Дополнительная конечность",
+    type: "Военная",
+    gearId: "dopolnitelnaya-konechnost",
+    pointsMin: 2,
+    pointsMax: 2,
+    quantity: 3,
+    automationKey: ""
+  });
+  const actor = actorStub({
+    prof: 3,
+    items: [raceItem("Железорождённые", "железорождённые"), limb]
+  });
+  const service = new ImplantService();
+
+  await service.applyLoadout(actor, [{
+    itemId: limb.id,
+    installed: true,
+    installedCount: 2,
+    united: false,
+    spentPoints: 2
+  }]);
+
+  assert.deepEqual(limb.flags[MODULE_ID].implantInstallation, {
+    installed: true,
+    installedCount: 2,
+    united: false,
+    spentPoints: 2
+  });
+  assert.equal(service.getActorSnapshot(actor).used, 4);
+
+  limb.system.quantity = 1;
+  await service.reconcileActor(actor, { reason: "quantityChanged" });
+  assert.equal(limb.flags[MODULE_ID].implantInstallation.installedCount, 1);
+  assert.equal(service.getActorSnapshot(actor).used, 2);
+
+  await assert.rejects(
+    service.applyLoadout(actor, [{
+      itemId: limb.id,
+      installed: true,
+      installedCount: 4,
+      united: false,
+      spentPoints: 2
+    }]),
+    /количеств/u
+  );
+});
+
+test("non-stackable implants reject an installed count above one", async () => {
+  const armor = implantItem({ quantity: 4 });
+  const actor = actorStub({
+    items: [raceItem("Синтеты", "синтеты"), armor]
+  });
+
+  await assert.rejects(
+    new ImplantService().applyLoadout(actor, [{
+      itemId: armor.id,
+      installed: true,
+      installedCount: 2,
+      united: false,
+      spentPoints: 1
+    }]),
+    /одного экземпляра/u
   );
 });
 

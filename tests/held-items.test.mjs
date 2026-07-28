@@ -92,6 +92,67 @@ test("hand helpers read race capacity, occupied hand slots, and held-item requir
   assert.equal(canUseHeldItemForHandRequirement(actor, dagger, { requiredHands: 1 }).ok, false);
 });
 
+test("installed extra limbs add secondary hand slots that can use only light weapons", async () => {
+  const {
+    buildHeldItemEquipMenuActions,
+    canUseHeldItemForHandRequirement,
+    getActorHandCapacity,
+    getActorHandSlots
+  } = await import(`../scripts/integrations/held-items.js?implant-hands=${Date.now()}`);
+  const light = makeItem({
+    id: "dagger",
+    equipped: true,
+    system: { properties: ["lgt"] },
+    flags: {
+      "rebreya-main": {
+        heldHands: ["hand3"]
+      }
+    }
+  });
+  const heavy = makeItem({
+    id: "sword",
+    equipped: true,
+    flags: {
+      "rebreya-main": {
+        heldHands: ["hand3"]
+      }
+    }
+  });
+  const actor = makeActor([light]);
+  actor.effects = {
+    contents: [{
+      name: "Импланты",
+      flags: {
+        "rebreya-main": {
+          implantAggregate: true,
+          automation: {
+            actorFlags: { secondaryHands: 2 }
+          }
+        }
+      }
+    }]
+  };
+
+  assert.equal(getActorHandCapacity(actor), 4);
+  assert.deepEqual(getActorHandSlots(actor), ["left", "right", "hand3", "hand4"]);
+  assert.equal(canUseHeldItemForHandRequirement(actor, light, { requiredHands: 1 }).ok, true);
+  assert.deepEqual(
+    buildHeldItemEquipMenuActions(actor, light)
+      .filter((action) => action.id.startsWith("hand"))
+      .map((action) => [action.id, action.disabled]),
+    [["hand3", false], ["hand4", false]]
+  );
+
+  actor.items.contents = [heavy];
+  assert.equal(canUseHeldItemForHandRequirement(actor, heavy, { requiredHands: 1 }).reason, "secondaryHandRestricted");
+  assert.deepEqual(
+    buildHeldItemEquipMenuActions(actor, heavy)
+      .filter((action) => action.id.startsWith("hand"))
+      .map((action) => [action.id, action.disabled]),
+    [["hand3", true], ["hand4", true]]
+  );
+});
+
 test("hand update patches equip items into a specific hand and can clear hand state", async () => {
   const {
     buildHeldItemHandUpdate,

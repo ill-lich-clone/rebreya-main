@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { MODULE_ID } from "../scripts/constants.js";
 import { createDnd5eItemData } from "../scripts/data/gear-compendium.js";
+import { SUPPORTED_MECHANICAL_IMPLANT_IDS } from "../scripts/data/implant-automation-registry.js";
 import { normalizeEconomyDataset } from "../scripts/data/normalizer.js";
 
 const TESTS_DIR = dirname(fileURLToPath(import.meta.url));
@@ -109,6 +110,13 @@ test("builtin importer merges implant rules into existing implant gear without d
   assert.equal(mergedImplants.every((entry) => entry.implant), true);
   assert.equal(new Set(implantNames).size, implantNames.length);
   assert.equal(merged.length, gear.length);
+  assert.equal(SUPPORTED_MECHANICAL_IMPLANT_IDS.size, 36);
+  for (const id of SUPPORTED_MECHANICAL_IMPLANT_IDS) {
+    const entry = mergedImplants.find((implant) => implant.id === id);
+    assert.ok(entry, id);
+    assert.equal(entry.implant.kind, "mechanical", id);
+    assert.ok(["Военная", "Общая", "Сверхтяжёлая"].includes(entry.implant.type), id);
+  }
 
   const thermoregulation = sourceGearImplants.find((entry) => entry.name === "Система термоконтроля");
   assert.equal(thermoregulation?.priceText, "200 зм");

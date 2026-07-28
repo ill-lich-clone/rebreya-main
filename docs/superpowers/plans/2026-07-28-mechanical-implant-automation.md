@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add strict installation requirements, idempotent reconciliation, and explicit automation for the 36 supported mechanical implants while retaining one aggregate `Импланты` Active Effect.
+**Goal:** Add idempotent reconciliation and explicit automation for the 36 supported mechanical implants while retaining one aggregate `Импланты` Active Effect. Requirement enforcement is deferred.
 
-**Architecture:** A pure registry resolves automation by `flags.rebreya-main.gearId`, validates requirements, and compiles installed implants into aggregate effect changes and capabilities. `ImplantService` owns installation and reconciliation; a focused runtime service consumes compiled capabilities through existing Foundry/D&D5e hooks without creating per-implant effects.
+**Architecture:** A pure registry resolves automation by `flags.rebreya-main.gearId` and compiles installed implants into aggregate effect changes and capabilities. `ImplantService` owns installation and reconciliation; a focused runtime service consumes compiled capabilities through existing Foundry/D&D5e hooks without creating per-implant effects.
 
 **Tech Stack:** Foundry VTT 13, D&D5e 5.2.5, native ES modules, `node:test`, existing Rebreya attack/hand/rest/status/crafting services.
 
@@ -19,10 +19,11 @@
 - Closing the long-rest dialog skips the step and lets the pipeline continue.
 - No migration is required while the feature remains under test.
 - Tests are written and observed failing before production changes.
+- Implant requirement text remains informational; automatic requirement enforcement is deferred.
 
 ---
 
-### Task 1: Explicit registry and strict requirements
+### Task 1: Explicit registry
 
 **Files:**
 - Create: `scripts/data/implant-automation-registry.js`
@@ -34,7 +35,6 @@
 - Produces:
   - `SUPPORTED_MECHANICAL_IMPLANT_IDS: ReadonlySet<string>`
   - `getMechanicalImplantDefinition(item): object | null`
-  - `evaluateMechanicalImplantRequirements(actor, item): { satisfied: boolean, failures: string[] }`
   - `compileMechanicalImplants(actor, planned): { changes, actorFlags, capabilities, warnings }`
 
 - [ ] **Step 1: Write the failing catalog coverage test**
@@ -56,7 +56,7 @@ Expected: FAIL because `implant-automation-registry.js` does not exist.
 
 - [ ] **Step 3: Add the 36 explicit registry entries**
 
-Each entry contains `id`, `requirements`, and one or more declarative capability keys. Do not parse `implant.effect` or `implant.requirements` at runtime.
+Each entry contains `id` and one or more declarative capability keys. Do not parse `implant.effect` at runtime.
 
 ```js
 export const SUPPORTED_MECHANICAL_IMPLANT_IDS = new Set([
@@ -99,37 +99,19 @@ export const SUPPORTED_MECHANICAL_IMPLANT_IDS = new Set([
 ]);
 ```
 
-- [ ] **Step 4: Add failing requirement tests**
-
-Cover every non-empty requirement:
-
-```js
-assert.deepEqual(failuresFor("sokrushitelnye-konechnosti", { str: 12 }), ["Требуется Сила 13"]);
-assert.deepEqual(failuresFor("pomoshch-v-postroenii-traektorii", { int: 12 }), ["Требуется Интеллект 13"]);
-assert.deepEqual(failuresFor("kondensator-magii", { spellcasting: false }), ["Требуется использование заклинаний"]);
-assert.deepEqual(failuresFor("modul-pareniya", { fly: 0 }), ["Требуется скорость полёта"]);
-assert.deepEqual(failuresFor("konteyner-dlya-familyara", { familiar: false }), ["Требуется доступ к фамильяру"]);
-assert.deepEqual(failuresFor("ruka-boga", { int: 13, con: 13 }), [
-  "Требуется Интеллект 14",
-  "Требуется Телосложение 14"
-]);
-```
-
-Spellcasting is satisfied by a cast-capable class or spellcasting activity. Familiar access is satisfied by a `find-familiar` spell/activity, a module-managed familiar feature, or an owned familiar actor linked to the character.
-
-- [ ] **Step 5: Implement requirement evaluation and run the test**
+- [ ] **Step 4: Run catalog and registry tests**
 
 Run: `node --test tests/implant-automation-registry.test.mjs tests/implants-catalog.test.mjs`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the registry**
+- [ ] **Step 5: Commit the registry**
 
 ```text
 feat: define mechanical implant automation registry
 ```
 
-### Task 2: Installation counts, validation, and reconciliation
+### Task 2: Installation counts and reconciliation
 
 **Files:**
 - Modify: `scripts/data/implant-service.js`
@@ -146,62 +128,36 @@ feat: define mechanical implant automation registry
   - installation state `{ installed, installedCount, united, spentPoints }`
   - `registerImplantHooks(moduleApi)`
 
-- [ ] **Step 1: Write failing installation tests**
-
-Tests must prove:
-
-```js
-await assert.rejects(
-  service.applyLoadout(actorWithInt(12), install("pomoshch-v-postroenii-traektorii")),
-  /Требуется Интеллект 13/u
-);
-assert.equal(actor.itemUpdates.length, 0);
-assert.equal(actor.effectCreates.length, 0);
-```
-
-Also cover spellcasting, flight, familiar access, multiple simultaneous failures, and a valid installation.
-
-- [ ] **Step 2: Run the focused test and verify it fails for missing validation**
-
-Run: `node --test tests/implant-service.test.mjs`
-
-Expected: FAIL because the current service ignores requirements.
-
-- [ ] **Step 3: Validate the complete loadout before writes**
-
-Build all planned states, validate compatibility, cost, count, and requirements, then perform Item/effect writes. A failed requirement must leave the actor unchanged.
-
-- [ ] **Step 4: Add failing stack-count tests**
+- [ ] **Step 1: Add failing stack-count tests**
 
 For `Дополнительная конечность`, assert `installedCount` can range from zero to `system.quantity` and consumes two points per count. Other implants reject `installedCount > 1`.
 
-- [ ] **Step 5: Implement count-aware installation**
+- [ ] **Step 2: Implement count-aware installation**
 
 Read legacy `installed: true` as count one. Write both `installed` and `installedCount`; no world migration is created.
 
-- [ ] **Step 6: Add failing reconciliation tests**
+- [ ] **Step 3: Add failing reconciliation tests**
 
 Cover:
 
 - deleting an installed implant removes its aggregate change;
-- lowering an attribute below a requirement disables the implant and records a warning;
 - race/class/BM changes recompute capacity and compatibility;
 - repeated reconciliation produces identical changes and no duplicate effects.
 
-- [ ] **Step 7: Implement `reconcileActor` and hook registration**
+- [ ] **Step 4: Implement `reconcileActor` and hook registration**
 
 Register bounded, debounced handlers for `createItem`, `updateItem`, `deleteItem`, `updateActor`, `ready`, and actor restoration. Ignore unrelated updates and prevent re-entry from the service’s own writes.
 
-- [ ] **Step 8: Run focused tests**
+- [ ] **Step 5: Run focused tests**
 
 Run: `node --test tests/implant-service.test.mjs tests/implant-hooks.test.mjs`
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit validation and reconciliation**
+- [ ] **Step 6: Commit counts and reconciliation**
 
 ```text
-feat: validate and reconcile installed implants
+feat: reconcile installed implants
 ```
 
 ### Task 3: Aggregate passive bonuses
@@ -455,12 +411,12 @@ feat: automate super-heavy implant systems
 - Modify: `tests/implant-service.test.mjs`
 
 **Interfaces:**
-- Consumes: requirement results, compiled warnings, resource summaries.
-- Produces: visible requirement failures and installed capability/resource summaries.
+- Consumes: compiled warnings and resource summaries.
+- Produces: visible installed capability/resource summaries.
 
 - [ ] **Step 1: Write failing UI tests**
 
-Assert snapshots expose `requirementsSatisfied`, `requirementFailures`, `installedCount`, and resource summaries. Disabled rest-dialog controls display the exact failures.
+Assert snapshots expose `installedCount` and resource summaries. Requirement text remains informational.
 
 - [ ] **Step 2: Implement UI context without replacing native inventory rows**
 
@@ -493,7 +449,7 @@ Confirm:
 
 - no magic or transport automation definitions;
 - no per-implant Active Effects;
-- strict requirements run before writes;
+- requirement enforcement remains deferred;
 - reconciliation is idempotent;
 - all 36 IDs have tested behavior;
 - unrelated user changes are absent.

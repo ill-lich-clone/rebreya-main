@@ -1,10 +1,13 @@
 import { MODULE_ID } from "../constants.js";
+import {
+  compileMechanicalImplants,
+  getMechanicalImplantDefinition
+} from "./implant-automation-registry.js";
 
 const AGGREGATE_EFFECT_NAME = "Импланты";
 const AGGREGATE_EFFECT_FLAG = "implantAggregate";
 const INSTALLATION_FLAG = "implantInstallation";
 const IMPLANT_FLAG = "implant";
-const MOUNTED_ARMOR_AUTOMATION = "mounted-armor-ac";
 const NAUSEATED_STATUS_ID = "rebreya-nauseated";
 const IMPLANT_NAUSEA_META_KEY = "implantNausea";
 const IMPLANT_NAUSEA_VALUE = 2;
@@ -129,8 +132,15 @@ export function getImplantInstallation(item) {
   const state = getModuleFlag(item, INSTALLATION_FLAG);
   const implant = getImplantData(item);
   const fallbackPoints = Number(implant?.pointsMin ?? 0);
+  const rawInstalledCount = Number(state?.installedCount ?? 1);
+  const installedCount = Number.isFinite(rawInstalledCount)
+    ? Math.max(1, Math.floor(rawInstalledCount))
+    : 1;
   return {
     installed: state?.installed === true,
+    installedCount: state?.installed === true
+      ? installedCount
+      : 0,
     united: state?.united === true,
     spentPoints: Number.isFinite(Number(state?.spentPoints))
       ? Number(state.spentPoints)
@@ -245,6 +255,10 @@ export class ImplantService {
           requirements: cleanString(implant?.requirements),
           installable: isInstallable(implant),
           installed: installation.installed,
+          installedCount: installation.installedCount,
+          maximumInstallableCount: getMechanicalImplantDefinition(item)?.stackable === true
+            ? Math.max(0, Math.floor(Number(item?.system?.quantity ?? 1)))
+            : 1,
           united: installation.united,
           spentPoints: installation.spentPoints,
           effective: installation.installed && isEffective(compatibility, installation),
@@ -257,7 +271,7 @@ export class ImplantService {
       ));
     const used = entries
       .filter((entry) => entry.installed)
-      .reduce((sum, entry) => sum + entry.spentPoints, 0);
+      .reduce((sum, entry) => sum + (entry.spentPoints * entry.installedCount), 0);
     return {
       capacity,
       used,
@@ -278,6 +292,59 @@ export class ImplantService {
     return { status: "completed" };
   }
 
+  async reconcileActor(actor, { reason = "manual" } = {}) {
+    const planned = [];
+    const itemUpdates = [];
+    for (const item of collectionValues(actor?.items).filter(isImplantItem)) {
+      const implant = getImplantData(item);
+      const current = getImplantInstallation(item);
+      const definition = getMechanicalImplantDefinition(item);
+      const maximumCount = definition?.stackable === true
+        ? Math.max(0, Math.floor(Number(item?.system?.quantity ?? 1)))
+        : 1;
+      const installedCount = Math.min(current.installedCount, maximumCount);
+      const state = {
+        ...current,
+        installed: current.installed && installedCount > 0,
+        installedCount
+      };
+      if (
+        current.installed !== state.installed
+        || current.installedCount !== state.installedCount
+      ) {
+        itemUpdates.push({
+          _id: item.id,
+          [`flags.${MODULE_ID}.${INSTALLATION_FLAG}`]: state
+        });
+      }
+      const compatibility = getImplantCompatibility(actor, item);
+      planned.push({
+        item,
+        implant,
+        state,
+        compatibility,
+        effective: state.installed && isEffective(compatibility, state)
+      });
+    }
+    if (itemUpdates.length) {
+      await actor.updateEmbeddedDocuments("Item", itemUpdates, {
+        rebreyaImplantReconcile: true
+      });
+    }
+    const hasAggregate = collectionValues(actor?.effects).some((effect) => (
+      getModuleFlag(effect, AGGREGATE_EFFECT_FLAG) === true
+      || cleanString(effect?.name) === AGGREGATE_EFFECT_NAME
+    ));
+    if (planned.length || hasAggregate) {
+      await this.#syncAggregateEffect(actor, planned);
+    }
+    await this.#syncNauseaStatus(actor, planned);
+    return {
+      reason,
+      snapshot: this.getActorSnapshot(actor)
+    };
+  }
+
   async applyLoadout(actor, selections) {
     const items = collectionValues(actor?.items).filter(isImplantItem);
     const selectionById = new Map(
@@ -293,12 +360,30 @@ export class ImplantService {
       const compatibility = getImplantCompatibility(actor, item);
       const selection = selectionById.get(cleanString(item.id));
       const installed = selection?.installed === true;
+      const definition = getMechanicalImplantDefinition(item);
+      const currentInstallation = getImplantInstallation(item);
+      const requestedCount = installed
+        ? Number(selection?.installedCount ?? (currentInstallation.installedCount || 1))
+        : 0;
+      if (!Number.isInteger(requestedCount) || requestedCount < 0) {
+        throw new Error(`Недопустимое количество устанавливаемых экземпляров импланта «${item.name}».`);
+      }
+      const maximumCount = definition?.stackable === true
+        ? Math.max(0, Math.floor(Number(item?.system?.quantity ?? 1)))
+        : 1;
+      if (requestedCount > maximumCount) {
+        const message = definition?.stackable === true
+          ? `Количество устанавливаемых экземпляров импланта «${item.name}» превышает количество предметов.`
+          : `Нельзя установить больше одного экземпляра импланта «${item.name}».`;
+        throw new Error(message);
+      }
       const state = {
-        installed,
+        installed: installed && requestedCount > 0,
+        installedCount: requestedCount,
         united: installed && selection?.united === true,
         spentPoints: normalizeSpentPoints(
           implant,
-          selection?.spentPoints ?? getImplantInstallation(item).spentPoints
+          selection?.spentPoints ?? currentInstallation.spentPoints
         )
       };
       if (installed && !isInstallable(implant)) {
@@ -307,8 +392,14 @@ export class ImplantService {
       if (installed && compatibility.impossible) {
         throw new Error(`Имплант «${item.name}» несовместим с персонажем.`);
       }
-      if (installed) usedPoints += state.spentPoints;
-      planned.push({ item, implant, compatibility, state });
+      if (state.installed) usedPoints += state.spentPoints * state.installedCount;
+      planned.push({
+        item,
+        implant,
+        compatibility,
+        state,
+        effective: state.installed && isEffective(compatibility, state)
+      });
     }
 
     const capacity = getModificationPointCapacity(actor);
@@ -320,6 +411,7 @@ export class ImplantService {
       .filter(({ item, state }) => {
         const current = getImplantInstallation(item);
         return current.installed !== state.installed
+          || current.installedCount !== state.installedCount
           || current.united !== state.united
           || current.spentPoints !== state.spentPoints;
       })
@@ -328,7 +420,9 @@ export class ImplantService {
         [`flags.${MODULE_ID}.${INSTALLATION_FLAG}`]: state
       }));
     if (itemUpdates.length) {
-      await actor.updateEmbeddedDocuments("Item", itemUpdates);
+      await actor.updateEmbeddedDocuments("Item", itemUpdates, {
+        rebreyaImplantReconcile: true
+      });
     }
     await this.#syncAggregateEffect(actor, planned);
     await this.#syncNauseaStatus(actor, planned);
@@ -409,26 +503,19 @@ export class ImplantService {
   }
 
   async #syncAggregateEffect(actor, planned) {
-    const effectiveArmorCount = planned.filter(({ implant, compatibility, state }) => (
-      state.installed
-      && implant?.automationKey === MOUNTED_ARMOR_AUTOMATION
-      && isEffective(compatibility, state)
-    )).length;
-    const addMode = Number(globalThis.CONST?.ACTIVE_EFFECT_MODES?.ADD ?? 2);
-    const changes = effectiveArmorCount > 0
-      ? [{
-          key: "system.attributes.ac.bonus",
-          mode: addMode,
-          value: String(effectiveArmorCount),
-          priority: 20
-        }]
-      : [];
+    const compiled = compileMechanicalImplants(actor, planned);
+    const changes = compiled.changes;
     const installedItemIds = planned
       .filter(({ state }) => state.installed)
       .map(({ item }) => item.id);
     const effectFlags = {
       [AGGREGATE_EFFECT_FLAG]: true,
-      installedItemIds
+      installedItemIds,
+      automation: {
+        actorFlags: compiled.actorFlags,
+        capabilities: compiled.capabilities,
+        warnings: compiled.warnings
+      }
     };
     const effectData = {
       name: AGGREGATE_EFFECT_NAME,
@@ -441,10 +528,11 @@ export class ImplantService {
       changes
     };
     const effects = collectionValues(actor?.effects);
-    const managed = effects.filter((effect) => getModuleFlag(effect, AGGREGATE_EFFECT_FLAG) === true);
-    const aggregate = managed[0]
-      ?? effects.find((effect) => cleanString(effect?.name) === AGGREGATE_EFFECT_NAME)
-      ?? null;
+    const aggregateCandidates = effects.filter((effect) => (
+      getModuleFlag(effect, AGGREGATE_EFFECT_FLAG) === true
+      || cleanString(effect?.name) === AGGREGATE_EFFECT_NAME
+    ));
+    const aggregate = aggregateCandidates[0] ?? null;
     if (aggregate) {
       await actor.updateEmbeddedDocuments("ActiveEffect", [{
         _id: aggregate.id,
@@ -460,7 +548,7 @@ export class ImplantService {
         }
       }]);
     }
-    const duplicateIds = managed.slice(1).map((effect) => effect.id).filter(Boolean);
+    const duplicateIds = aggregateCandidates.slice(1).map((effect) => effect.id).filter(Boolean);
     if (duplicateIds.length && typeof actor.deleteEmbeddedDocuments === "function") {
       await actor.deleteEmbeddedDocuments("ActiveEffect", duplicateIds);
     }
@@ -475,7 +563,9 @@ export class ImplantService {
     if (typeof DialogV2?.wait !== "function") return null;
 
     const rows = snapshot.entries.map((entry) => {
-      const disabled = !entry.installable || entry.compatibility.impossible;
+      const disabled = !entry.installable
+        || entry.compatibility.impossible
+        || entry.maximumInstallableCount <= 0;
       const variablePoints = entry.pointsMin !== entry.pointsMax;
       return `
         <li class="item collapsible rm-implant-dialog__item"
@@ -490,10 +580,17 @@ export class ImplantService {
               </span>
             </label>
             <label class="rm-implant-dialog__points" title="Очки модификации">
-              <span>Очки</span>
+              <span>Очки${entry.maximumInstallableCount > 1 ? " за шт." : ""}</span>
               <input type="number" name="spentPoints" min="${entry.pointsMin}" max="${entry.pointsMax}"
                      value="${entry.spentPoints}" ${variablePoints ? "" : "readonly"}>
             </label>
+            ${entry.maximumInstallableCount > 1 ? `
+              <label class="rm-implant-dialog__points" title="Количество установленных экземпляров">
+                <span>Кол-во</span>
+                <input type="number" name="installedCount" min="1" max="${entry.maximumInstallableCount}"
+                       value="${entry.installedCount || 1}">
+              </label>
+            ` : ""}
             ${entry.compatibility.requiresUnion ? `
               <label class="rm-implant-dialog__union">
                 <input type="checkbox" name="united" ${entry.united ? "checked" : ""}>
@@ -536,6 +633,7 @@ export class ImplantService {
         ).map((row) => ({
           itemId: cleanString(row.dataset.itemId),
           installed: row.querySelector('[name="installed"]')?.checked === true,
+          installedCount: Number(row.querySelector('[name="installedCount"]')?.value ?? 1),
           united: row.querySelector('[name="united"]')?.checked === true,
           spentPoints: Number(row.querySelector('[name="spentPoints"]')?.value ?? 0)
         }))

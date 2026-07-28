@@ -645,20 +645,26 @@ export function getHeldItemDamageFormulaPresentation(item, formula) {
 
 export function getActorHandCapacity(actor) {
   const actorCapacity = readHandCapacity(getDocumentFlag(actor, RACE_HANDS_FLAG));
-  if (actorCapacity > 0) {
-    return actorCapacity;
-  }
-
   let raceCapacity = 0;
-  for (const item of collectionValues(actor?.items)) {
-    if (item?.type !== "race") {
-      continue;
+  if (actorCapacity <= 0) {
+    for (const item of collectionValues(actor?.items)) {
+      if (item?.type !== "race") {
+        continue;
+      }
+      raceCapacity = Math.max(raceCapacity, readHandCapacity(getDocumentFlag(item, RACE_HANDS_FLAG)));
     }
-
-    raceCapacity = Math.max(raceCapacity, readHandCapacity(getDocumentFlag(item, RACE_HANDS_FLAG)));
   }
-
-  return raceCapacity > 0 ? raceCapacity : DEFAULT_HAND_CAPACITY;
+  const baseCapacity = actorCapacity > 0
+    ? actorCapacity
+    : raceCapacity > 0 ? raceCapacity : DEFAULT_HAND_CAPACITY;
+  const aggregate = collectionValues(actor?.effects).find((effect) => (
+    getDocumentFlag(effect, "implantAggregate") === true
+  ));
+  const secondaryHands = positiveInteger(
+    getDocumentFlag(aggregate, "automation")?.actorFlags?.secondaryHands,
+    0
+  );
+  return baseCapacity + secondaryHands;
 }
 
 export function getActorHandSlots(actor) {
@@ -731,6 +737,12 @@ export function getHeldItemEquipPresentation(item) {
   if (heldHands[0] && HELD_ITEM_PRESENTATIONS[heldHands[0]]) {
     return HELD_ITEM_PRESENTATIONS[heldHands[0]];
   }
+  if (GENERIC_HAND_SLOT_PATTERN.test(heldHands[0] ?? "")) {
+    return {
+      label: `Дополнительная рука ${Number(heldHands[0].slice(4)) - DEFAULT_HAND_CAPACITY}`,
+      icon: "fa-solid fa-hand fa-fw"
+    };
+  }
 
   return HELD_ITEM_PRESENTATIONS.worn;
 }
@@ -770,7 +782,21 @@ export function canUseHeldItemForHandRequirement(actor, item, { requiredHands = 
     };
   }
 
-  if ((heldHands.length + freeHands.length) < required) {
+  const usesSecondaryHand = heldHands.some((hand) => GENERIC_HAND_SLOT_PATTERN.test(hand));
+  if (usesSecondaryHand && item?.type === "weapon" && !hasSystemProperty(item, "lgt")) {
+    return {
+      ok: false,
+      reason: "secondaryHandRestricted",
+      requiredHands: required,
+      heldHands,
+      freeHands
+    };
+  }
+
+  const availableHands = required > 1
+    ? [...heldHands, ...freeHands].filter((hand) => HAND_SLOT_SET.has(hand))
+    : [...heldHands, ...freeHands];
+  if (availableHands.length < required) {
     return {
       ok: false,
       reason: "insufficientAvailableHands",
@@ -807,19 +833,30 @@ export function buildHeldItemEquipMenuActions(actor, item) {
       ...HELD_ITEM_PRESENTATIONS.unequipped,
       update: buildHeldItemWornUpdate(false, item)
     },
-    ...HAND_SLOTS.map((slot) => ({
+    ...getActorHandSlots(actor).map((slot) => {
+      const secondary = GENERIC_HAND_SLOT_PATTERN.test(slot);
+      const secondaryRestricted = secondary
+        && item?.type === "weapon"
+        && !hasSystemProperty(item, "lgt");
+      const presentation = HELD_ITEM_PRESENTATIONS[slot] ?? {
+        label: `Дополнительная рука ${Number(slot.slice(4)) - DEFAULT_HAND_CAPACITY}`,
+        icon: "fa-solid fa-hand fa-fw"
+      };
+      return {
       id: slot,
-      ...HELD_ITEM_PRESENTATIONS[slot],
-      disabled: false,
+      ...presentation,
+      disabled: secondaryRestricted,
       carryOnly: singleHandCarryOnly,
       occupied: occupied.has(slot),
       replacements: itemReplacementDescriptors(occupied, [slot]),
       tooltip: [
+        secondaryRestricted ? "Дополнительная конечность может использовать только лёгкое оружие" : "",
         singleHandCarryOnly ? "Только переноска: для атаки нужны две руки" : "",
         occupied.has(slot) ? `Заменить ${occupied.get(slot)?.name ?? "предмет"}` : ""
       ].filter(Boolean).join(". "),
       update: buildHeldItemHandUpdate(slot, item)
-    }))
+      };
+    })
   ];
 
   if (canHoldItemInTwoHands(item)) {

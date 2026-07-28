@@ -127,6 +127,10 @@ import { registerRationFoodConversionHook } from "./integrations/ration-food-con
 import { registerMagicWeaponTemplateHook } from "./integrations/magic-weapon-template.js?v=1.4.96";
 import { registerCraftsmanGadgetHooks } from "./integrations/craftsman-gadget-hooks.js";
 import { registerLongRestHooks } from "./integrations/long-rest-hooks.js";
+import {
+  registerImplantDataModelPatch,
+  registerImplantHooks
+} from "./integrations/implant-hooks.js";
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
@@ -4835,6 +4839,14 @@ Hooks.once("ready", async () => {
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register long-rest hooks.`, error);
+  }
+
+  try {
+    registerImplantDataModelPatch();
+    registerImplantHooks(moduleApi);
+  }
+  catch (error) {
+    console.error(`${MODULE_ID} | Failed to register implant hooks.`, error);
   }
 
   try {
