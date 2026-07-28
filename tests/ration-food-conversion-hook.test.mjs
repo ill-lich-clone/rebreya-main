@@ -19,6 +19,7 @@ test("ration conversion hook prompts the dropping user and converts after confir
     }
   };
   const moduleApi = {
+    refreshCalls: 0,
     inventoryService: {
       canManagePartyInventory: () => true,
       getRationFoodConversion: (sourceItem) => {
@@ -43,6 +44,9 @@ test("ration conversion hook prompts the dropping user and converts after confir
       render(options) {
         this.renderOptions = options;
       }
+    },
+    async refreshInventoryViews() {
+      this.refreshCalls += 1;
     }
   };
 
@@ -68,7 +72,8 @@ test("ration conversion hook prompts the dropping user and converts after confir
 
     assert.equal(handled, true);
     assert.equal(convertedItem, item);
-    assert.deepEqual(moduleApi.inventoryApp.renderOptions, { force: true });
+    assert.equal(moduleApi.refreshCalls, 1);
+    assert.equal(moduleApi.inventoryApp.renderOptions, null);
     assert.equal(infos.some((message) => message.includes("4 фнт. еды группы")), true);
   }
   finally {

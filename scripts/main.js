@@ -4344,7 +4344,7 @@ export class RebreyaMainModule {
   }
 
   #appRefreshTask(app, options = {}) {
-    if (!app?.rendered || typeof app.render !== "function") {
+    if (!app?.rendered || isApplicationMinimized(app) || typeof app.render !== "function") {
       return null;
     }
 

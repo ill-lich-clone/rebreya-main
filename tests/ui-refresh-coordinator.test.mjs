@@ -270,6 +270,23 @@ test("actor sheet refreshes skip minimized character sheets", async () => {
   }
 });
 
+test("inventory refresh skips the party inventory while it is minimized", async () => {
+  const fixture = installUiFixture();
+  try {
+    fixture.moduleApi.inventoryApp = {
+      ...fixture.createApp("inventory"),
+      minimized: true
+    };
+
+    await fixture.moduleApi.refreshInventoryViews();
+
+    assert.deepEqual(fixture.calls, []);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("inventory refresh without actor ids does not render every open Actor sheet", async () => {
   const fixture = installUiFixture();
   try {

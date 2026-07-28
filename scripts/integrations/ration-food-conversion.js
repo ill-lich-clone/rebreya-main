@@ -102,7 +102,12 @@ export async function handleCreatedRationItem(
 
   const result = await moduleApi.inventoryService.convertRationItemToFoodSupply(item);
   globalThis.ui?.notifications?.info?.(`Добавлено ${result.foodLb} фнт. еды группы из «${result.itemName}».`);
-  moduleApi.inventoryApp?.render?.({ force: true });
+  if (typeof moduleApi.refreshInventoryViews === "function") {
+    await moduleApi.refreshInventoryViews();
+  }
+  else if (moduleApi.inventoryApp?.rendered) {
+    await moduleApi.inventoryApp.render?.({ force: true });
+  }
   return true;
 }
 
