@@ -2581,6 +2581,67 @@ async function confirmAction(title, content) {
   });
 }
 
+async function confirmActionOnTop(title, content) {
+  const documentRef = globalThis.document;
+  if (globalThis.game?.ready !== true || !documentRef?.body) {
+    return confirmAction(title, content);
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const overlay = documentRef.createElement("div");
+    overlay.className = "rm-calendar-confirm-overlay";
+    overlay.innerHTML = `
+      <section class="rm-calendar-confirm" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+        <header class="rm-calendar-confirm__header">
+          <h3>${escapeHtml(title)}</h3>
+        </header>
+        <div class="rm-calendar-confirm__body">${content}</div>
+        <footer class="rm-calendar-confirm__actions">
+          <button type="button" class="rm-button rm-button--secondary" data-action="cancel">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            <span>Нет</span>
+          </button>
+          <button type="button" class="rm-button rm-button--primary" data-action="confirm">
+            <i class="fa-solid fa-check" aria-hidden="true"></i>
+            <span>Да</span>
+          </button>
+        </footer>
+      </section>
+    `;
+
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      documentRef.removeEventListener("keydown", onKeyDown);
+      overlay.remove();
+      resolve(value);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(false);
+      }
+    };
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay || event.target.closest("[data-action='cancel']")) {
+        event.preventDefault();
+        finish(false);
+      }
+      else if (event.target.closest("[data-action='confirm']")) {
+        event.preventDefault();
+        finish(true);
+      }
+    });
+    documentRef.addEventListener("keydown", onKeyDown);
+    documentRef.body.append(overlay);
+    overlay.querySelector("[data-action='confirm']")?.focus?.();
+  });
+}
+
 async function promptCurrencyDialog(currency = {}) {
   return new Promise((resolve) => {
     let settled = false;
@@ -3764,7 +3825,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       : "";
     const message = `Пропущено ${result.daysAdvanced} дн.: еда -${roundNumber(supplyTotals.foodSpent ?? 0, 2)}, вода -${roundNumber(supplyTotals.waterSpent ?? 0, 2)}, завершено крафта ${craftCompleted}.${shortageText}${dateLabel}${traderResetText}${eventText}`;
     this.#setActionFeedback("success", message);
-    ui.notifications?.info(message);
+    globalThis.window?.setTimeout?.(() => ui.notifications?.info(message), 0);
   }
 
   async #confirmCalendarTransition(toIsoDate, { processSupplies = false } = {}) {
@@ -3806,7 +3867,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         <p><strong>Затронуто заявок:</strong> ${affectedCount}</p>
       </section>
     `;
-    const confirmed = await confirmAction("Изменить дату календаря", content);
+    const confirmed = await confirmActionOnTop("Изменить дату календаря", content);
     return confirmed ? preview : null;
   }
 
@@ -3841,6 +3902,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         consumeSupplies: processSupplies,
         applyEnergy: processSupplies,
         processCraft: processSupplies,
+        refreshApps: false,
         reason: "calendar-ui"
       };
       if (processSupplies) {
@@ -3851,6 +3913,9 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
 
       const result = await this.moduleApi.setCalendarDate(year, month, day, options);
+      this.render({ force: true })?.catch?.((error) => {
+        console.error(`${MODULE_ID} | Failed to refresh inventory calendar after transition.`, error);
+      });
       return { preview, result };
     }
     finally {

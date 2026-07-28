@@ -165,6 +165,7 @@ const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_REQUEST = "downtime-project-close-requ
 const SOCKET_EVENT_DOWNTIME_PROJECT_CLOSE_RESULT = "downtime-project-close-result";
 const SOCKET_EVENT_DOWNTIME_UPDATED = "downtime-updated";
 const SOCKET_EVENT_TRAVEL_MAP_SYNC_REQUEST = "travel-map-sync-request";
+const GROUP_CALENDAR_TRANSITION_COMMAND = "group.calendar.transition";
 const INVENTORY_REFRESH_SETTLE_MS = 80;
 const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_DOWNTIME_CREATE_REQUEST,
@@ -253,6 +254,35 @@ function createSocketRequestId(prefix) {
 function cleanSocketId(value) {
   return String(value ?? "").trim();
 }
+
+const CALENDAR_TRANSITION_BOOLEAN_OPTION_KEYS = new Set([
+  "applyEnergy",
+  "consumeSupplies",
+  "processCraft",
+  "processDailyCycles",
+  "processDowntime",
+  "processSupplies",
+  "refreshApps",
+  "refreshSmallTime"
+]);
+const CALENDAR_TRANSITION_INTEGER_OPTION_LIMITS = Object.freeze({
+  hour: [0, 23],
+  minute: [0, 59],
+  monthResetCount: [0, 240],
+  second: [0, 59],
+  timeOfDaySeconds: [0, 86399]
+});
+const CALENDAR_TRANSITION_STRING_OPTION_KEYS = new Set([
+  "expectedFromIsoDate",
+  "monthResetMode",
+  "reason",
+  "toIsoDate"
+]);
+const CALENDAR_TRANSITION_OPTION_KEYS = new Set([
+  ...CALENDAR_TRANSITION_BOOLEAN_OPTION_KEYS,
+  ...Object.keys(CALENDAR_TRANSITION_INTEGER_OPTION_LIMITS),
+  ...CALENDAR_TRANSITION_STRING_OPTION_KEYS
+]);
 
 function getGameUsers() {
   const users = globalThis.game?.users;
@@ -695,6 +725,84 @@ function isValidCalendarPatchPayload(payload) {
       && payload.patch.timeOfDaySeconds <= 86399);
 }
 
+function normalizeCalendarTransitionOptionsForSocket(options = {}) {
+  const source = isPlainObject(options) ? options : {};
+  const normalized = {};
+
+  for (const key of CALENDAR_TRANSITION_BOOLEAN_OPTION_KEYS) {
+    if (Object.hasOwn(source, key) && typeof source[key] === "boolean") {
+      normalized[key] = source[key];
+    }
+  }
+
+  for (const [key, [minimum, maximum]] of Object.entries(CALENDAR_TRANSITION_INTEGER_OPTION_LIMITS)) {
+    if (!Object.hasOwn(source, key)) {
+      continue;
+    }
+
+    const value = Math.floor(Number(source[key]));
+    if (Number.isInteger(value) && value >= minimum && value <= maximum) {
+      normalized[key] = value;
+    }
+  }
+
+  if (Object.hasOwn(source, "toIsoDate")) {
+    normalized.toIsoDate = cleanSocketId(source.toIsoDate);
+  }
+  if (Object.hasOwn(source, "expectedFromIsoDate")) {
+    normalized.expectedFromIsoDate = cleanSocketId(source.expectedFromIsoDate);
+  }
+  if (Object.hasOwn(source, "reason")) {
+    const reason = cleanSocketId(source.reason).slice(0, 120);
+    if (reason) {
+      normalized.reason = reason;
+    }
+  }
+  if (Object.hasOwn(source, "monthResetMode")) {
+    const monthResetMode = cleanSocketId(source.monthResetMode);
+    if (["crossed", "target-first"].includes(monthResetMode)) {
+      normalized.monthResetMode = monthResetMode;
+    }
+  }
+
+  return normalized;
+}
+
+function isValidCalendarTransitionOptions(options) {
+  if (!isPlainObject(options) || !isValidIsoDate(options.toIsoDate)) {
+    return false;
+  }
+  if (Object.keys(options).some((key) => !CALENDAR_TRANSITION_OPTION_KEYS.has(key))) {
+    return false;
+  }
+  for (const key of CALENDAR_TRANSITION_BOOLEAN_OPTION_KEYS) {
+    if (Object.hasOwn(options, key) && typeof options[key] !== "boolean") {
+      return false;
+    }
+  }
+  for (const [key, [minimum, maximum]] of Object.entries(CALENDAR_TRANSITION_INTEGER_OPTION_LIMITS)) {
+    if (Object.hasOwn(options, key)
+      && (!Number.isInteger(options[key]) || options[key] < minimum || options[key] > maximum)) {
+      return false;
+    }
+  }
+  if (Object.hasOwn(options, "expectedFromIsoDate") && !isValidIsoDate(options.expectedFromIsoDate)) {
+    return false;
+  }
+  if (Object.hasOwn(options, "reason")
+    && (!isTrimmedNonEmptyString(options.reason) || options.reason.length > 120)) {
+    return false;
+  }
+  return !Object.hasOwn(options, "monthResetMode")
+    || ["crossed", "target-first"].includes(options.monthResetMode);
+}
+
+function isValidCalendarTransitionPayload(payload) {
+  return hasExactKeys(payload, ["groupActorId", "options"])
+    && isTrimmedNonEmptyString(payload.groupActorId)
+    && isValidCalendarTransitionOptions(payload.options);
+}
+
 function isValidTravelReplacePayload(payload) {
   return hasExactKeys(payload, ["groupActorId", "travelState"])
     && typeof payload.groupActorId === "string"
@@ -1033,6 +1141,11 @@ export class RebreyaMainModule {
       validate: isValidCalendarPatchPayload,
       authorize: authorizeGroup,
       execute: (payload) => this.calendarService.patchGroupCalendar(payload.groupActorId, payload.patch)
+    });
+    this.socketCommandBus.register(GROUP_CALENDAR_TRANSITION_COMMAND, {
+      validate: isValidCalendarTransitionPayload,
+      authorize: authorizeGroup,
+      execute: (payload) => this.calendarTransitionCoordinator.moveTo(payload.options)
     });
     this.socketCommandBus.register(GROUP_TRAVEL_REPLACE_STATE_COMMAND, {
       validate: isValidTravelReplacePayload,
@@ -3880,6 +3993,31 @@ export class RebreyaMainModule {
     return this.calendarTransitionCoordinator.preview(options);
   }
 
+  #buildCalendarTransitionPayload(options = {}) {
+    const context = this.groupContextService.resolveForCurrentUser();
+    const groupActorId = cleanSocketId(context?.groupId ?? context?.groupActor?.id);
+    const payload = {
+      groupActorId,
+      options: normalizeCalendarTransitionOptionsForSocket(options)
+    };
+    if (!isValidCalendarTransitionPayload(payload)) {
+      throw new Error("Invalid calendar transition socket payload.");
+    }
+    return payload;
+  }
+
+  async #runCalendarTransition(options = {}) {
+    const transitionOptions = normalizeCalendarTransitionOptionsForSocket(options);
+    if (isActiveGmClient(globalThis.game)) {
+      return this.calendarTransitionCoordinator.moveTo(transitionOptions);
+    }
+
+    return this.socketCommandBus.request(
+      GROUP_CALENDAR_TRANSITION_COMMAND,
+      this.#buildCalendarTransitionPayload(transitionOptions)
+    );
+  }
+
   async setCalendarTimeOfDay(seconds, options = {}) {
     const result = await this.calendarService.setTimeOfDaySeconds(seconds);
     const shouldRefreshApps = options.refreshApps !== false && options.reason !== "smalltime-world-time";
@@ -3936,7 +4074,7 @@ export class RebreyaMainModule {
   async setCalendarDate(year, month, day, options = {}) {
     const target = this.calendarService.previewDate(year, month, day);
     const processDailyCycles = options.processDailyCycles === true;
-    const result = await this.calendarTransitionCoordinator.moveTo({
+    const result = await this.#runCalendarTransition({
       ...options,
       toIsoDate: target.to.isoDate,
       processDowntime: options.processDowntime !== false,
@@ -4036,7 +4174,7 @@ export class RebreyaMainModule {
     const safeDays = Math.trunc(toNumber(days, 0));
     const target = this.calendarService.previewShiftDays(safeDays);
     const processDailyCycles = options.processDailyCycles === true;
-    const result = await this.calendarTransitionCoordinator.moveTo({
+    const result = await this.#runCalendarTransition({
       ...options,
       toIsoDate: target.to.isoDate,
       processDowntime: options.processDowntime !== false,
@@ -4057,7 +4195,7 @@ export class RebreyaMainModule {
     const safeDays = Math.max(0, Math.floor(toNumber(days, 0)));
     const target = this.calendarService.previewShiftDays(safeDays);
     const processDailyCycles = options.processDailyCycles !== false;
-    const result = await this.calendarTransitionCoordinator.moveTo({
+    const result = await this.#runCalendarTransition({
       ...options,
       toIsoDate: target.to.isoDate,
       processDowntime: options.processDowntime !== false,
@@ -4083,7 +4221,7 @@ export class RebreyaMainModule {
     const safeMonths = Math.max(0, Math.floor(toNumber(months, 0)));
     const target = this.calendarService.previewAdvanceMonths(safeMonths);
     const processDailyCycles = options.processDailyCycles !== false;
-    const result = await this.calendarTransitionCoordinator.moveTo({
+    const result = await this.#runCalendarTransition({
       ...options,
       toIsoDate: target.to.isoDate,
       processDowntime: options.processDowntime !== false,

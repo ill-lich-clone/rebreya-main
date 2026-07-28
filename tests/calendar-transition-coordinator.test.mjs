@@ -36,6 +36,15 @@ function createGroupActor(id = "group-a") {
   };
 }
 
+function createDowntimeSummary(isoDate, requestId = `request-${isoDate}`) {
+  return {
+    isoDate,
+    total: 1,
+    counts: { free: 0, pending: 1, approved: 0, processed: 0, blocked: 0 },
+    slots: [{ id: `slot-${isoDate}`, requestId }]
+  };
+}
+
 function createHarness({
   isoDate = "2026-07-20",
   calendarByIsoDate = {},
@@ -53,6 +62,7 @@ function createHarness({
   const previousGame = globalThis.game;
   const previousFoundry = globalThis.foundry;
   const groupActor = createGroupActor();
+  const writes = [];
   const state = {
     [SETTINGS_KEYS.CALENDAR_STATE]: { version: 1, isoDate: "1300-01-01" },
     [SETTINGS_KEYS.GROUP_STATE]: {
@@ -89,6 +99,7 @@ function createHarness({
       },
       async set(moduleId, key, value) {
         assert.equal(moduleId, MODULE_ID);
+        writes.push({ key, value: clone(value) });
         state[key] = clone(value);
       }
     }
@@ -123,6 +134,7 @@ function createHarness({
     createCoordinator,
     groupContextService,
     state,
+    writes,
     restore() {
       globalThis.game = previousGame;
       globalThis.foundry = previousFoundry;
@@ -185,6 +197,10 @@ test("preview enumerates crossed dates chronologically and summarizes affected d
 test("moveTo persists the forward date before processing every crossed downtime date", async () => {
   const calls = [];
   const harness = createHarness({
+    calendarByIsoDate: {
+      "2026-07-21": createDowntimeSummary("2026-07-21"),
+      "2026-07-22": createDowntimeSummary("2026-07-22")
+    },
     processScheduledDate: async (isoDate, { transitionId }) => {
       calls.push({
         isoDate,
@@ -220,6 +236,76 @@ test("moveTo persists the forward date before processing every crossed downtime 
     assert.equal(calendarState.transitionJournal.counter, 1);
     assert.equal(calendarState.transitionJournal.entries[0].transitionId, result.transitionId);
     assert.match(result.transitionId, /^calendar:group-a:1:2026-07-20:2026-07-22$/u);
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("moveTo skips downtime processing when no crossed dates have scheduled requests", async () => {
+  const calls = [];
+  const harness = createHarness({
+    processScheduledDate: async (isoDate) => calls.push(isoDate)
+  });
+
+  try {
+    const result = await harness.createCoordinator().moveTo({
+      toIsoDate: "2026-08-20",
+      processDowntime: true,
+      processDailyCycles: false,
+      refreshApps: false,
+      refreshSmallTime: false,
+      reason: "calendar-ui"
+    });
+
+    assert.equal(result.calendar.isoDate, "2026-08-20");
+    assert.equal(result.counts.affectedDowntimeDates, 0);
+    assert.deepEqual(result.downtime, []);
+    assert.deepEqual(calls, []);
+
+    const entry = harness.state[SETTINGS_KEYS.GROUP_STATE]
+      .groupsById["group-a"].calendar.transitionJournal.entries[0];
+    assert.deepEqual(entry.downtimeByIsoDate, {});
+  }
+  finally {
+    harness.restore();
+  }
+});
+
+test("month transition without scheduled downtime keeps journal writes bounded", async () => {
+  const harness = createHarness({
+    callbacks: {
+      refreshGlobalEvents: async () => ({ changed: false }),
+      resetTraderMonth: async (monthResetCount, reason) => ({
+        triggered: monthResetCount > 0,
+        reason,
+        monthResetCount,
+        refreshedTraderCount: 0,
+        removedTraderCount: 0
+      }),
+      processDayCycles: async (days) => ({ days, supplies: [], supplyTotals: {}, craft: { completed: [], completedCount: 0 } }),
+      refreshApps: async () => ({ refreshed: true }),
+      refreshSmallTime: async () => ({ refreshed: true })
+    }
+  });
+
+  try {
+    const result = await harness.createCoordinator().moveTo({
+      toIsoDate: "2026-08-20",
+      processDowntime: true,
+      processSupplies: true,
+      processDailyCycles: true,
+      monthResetCount: 1,
+      reason: "calendar-ui"
+    });
+
+    assert.equal(result.calendar.isoDate, "2026-08-20");
+    assert.equal(result.counts.affectedDowntimeDates, 0);
+    assert.deepEqual(result.downtime, []);
+    assert.ok(
+      harness.writes.length <= 12,
+      `expected no more than 12 group calendar writes, got ${harness.writes.length}`
+    );
   }
   finally {
     harness.restore();
@@ -331,7 +417,14 @@ test("retry reuses the persisted transition and only retries its reconciliation 
       skipped: []
     };
   };
-  const harness = createHarness({ processScheduledDate });
+  const harness = createHarness({
+    calendarByIsoDate: {
+      "2026-07-21": createDowntimeSummary("2026-07-21"),
+      "2026-07-22": createDowntimeSummary("2026-07-22"),
+      "2026-07-23": createDowntimeSummary("2026-07-23")
+    },
+    processScheduledDate
+  });
 
   try {
     const first = await harness.createCoordinator().moveTo({
@@ -373,6 +466,10 @@ test("resume restores a rewound calendar to the target before retrying domain wo
   const observed = [];
   let failTargetDate = true;
   const harness = createHarness({
+    calendarByIsoDate: {
+      "2026-07-21": createDowntimeSummary("2026-07-21"),
+      "2026-07-22": createDowntimeSummary("2026-07-22")
+    },
     processScheduledDate: async (isoDate, { transitionId }) => {
       observed.push({
         isoDate,
@@ -507,6 +604,10 @@ test("concurrent moves serialize from preview through domain stages and leave th
   let first;
   let second;
   const harness = createHarness({
+    calendarByIsoDate: {
+      "2026-07-21": createDowntimeSummary("2026-07-21"),
+      "2026-07-22": createDowntimeSummary("2026-07-22")
+    },
     processScheduledDate: async (isoDate) => {
       calls.push(["downtime", isoDate]);
       return {
@@ -718,6 +819,10 @@ test("GM failover after calendar persistence stops domain stages and resumes saf
   const releaseCalendar = createDeferred();
   const calls = [];
   const harness = createHarness({
+    calendarByIsoDate: {
+      "2026-07-21": createDowntimeSummary("2026-07-21"),
+      "2026-07-22": createDowntimeSummary("2026-07-22")
+    },
     processScheduledDate: async (isoDate) => {
       calls.push(["downtime", isoDate]);
       return {
@@ -1253,6 +1358,10 @@ test("only the active GM client may execute calendar transition domain stages", 
 test("a blocked downtime day remains visible and does not stop later crossed dates", async () => {
   const processedDates = [];
   const harness = createHarness({
+    calendarByIsoDate: {
+      "2026-07-21": createDowntimeSummary("2026-07-21"),
+      "2026-07-22": createDowntimeSummary("2026-07-22")
+    },
     processScheduledDate: async (isoDate, { transitionId }) => {
       processedDates.push(isoDate);
       return {
@@ -1437,6 +1546,114 @@ test("all public calendar movement APIs delegate to the transition coordinator",
   finally {
     globalThis.Hooks = previousHooks;
     globalThis.game = previousGame;
+  }
+});
+
+test("calendar movement APIs route through the active GM when the current GM is not active", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousFoundry = globalThis.foundry;
+  const groupActor = createGroupActor();
+  const users = new Map([
+    ["codex", { id: "codex", isGM: true, active: true }],
+    ["gm", { id: "gm", isGM: true, active: true }]
+  ]);
+  users.activeGM = users.get("gm");
+  const state = {
+    [SETTINGS_KEYS.CALENDAR_STATE]: { version: 1, isoDate: "1300-01-01" },
+    [SETTINGS_KEYS.GROUP_STATE]: {
+      version: 1,
+      activeGroupActorId: groupActor.id,
+      groupsById: {
+        [groupActor.id]: {
+          version: 1,
+          groupActorId: groupActor.id,
+          calendar: { version: 1, isoDate: "2026-07-20" }
+        }
+      }
+    }
+  };
+
+  globalThis.Hooks = { once() {}, on() {} };
+  globalThis.foundry = {
+    utils: {
+      deepClone: clone,
+      mergeObject: (base, update) => ({ ...clone(base), ...clone(update) })
+    }
+  };
+  globalThis.game = {
+    user: users.get("codex"),
+    users,
+    actors: {
+      contents: [groupActor],
+      get(id) {
+        return id === groupActor.id ? groupActor : null;
+      }
+    },
+    settings: {
+      get(moduleId, key) {
+        assert.equal(moduleId, MODULE_ID);
+        return clone(state[key]);
+      },
+      async set(moduleId, key, value) {
+        assert.equal(moduleId, MODULE_ID);
+        state[key] = clone(value);
+      }
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?calendar-inactive-gm-route=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    const requests = [];
+    moduleApi.calendarService.previewDate = (year, month, day) => ({
+      to: { isoDate: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}` }
+    });
+    moduleApi.calendarTransitionCoordinator = {
+      async moveTo() {
+        throw new Error("local calendar transition should not run on inactive GM");
+      }
+    };
+    moduleApi.socketCommandBus = {
+      async request(command, payload) {
+        requests.push({ command, payload: clone(payload) });
+        return { calendar: { isoDate: payload.options.toIsoDate }, routed: true };
+      }
+    };
+
+    const result = await moduleApi.setCalendarDate(2026, 7, 21, {
+      processDowntime: false,
+      processSupplies: true,
+      processDailyCycles: true,
+      consumeSupplies: false,
+      applyEnergy: false,
+      monthResetCount: 1,
+      reason: "calendar-ui"
+    });
+
+    assert.equal(result.routed, true);
+    assert.deepEqual(requests, [{
+      command: "group.calendar.transition",
+      payload: {
+        groupActorId: groupActor.id,
+        options: {
+          applyEnergy: false,
+          consumeSupplies: false,
+          monthResetCount: 1,
+          monthResetMode: "target-first",
+          processDailyCycles: true,
+          processDowntime: false,
+          processSupplies: true,
+          reason: "calendar-ui",
+          toIsoDate: "2026-07-21"
+        }
+      }
+    }]);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.foundry = previousFoundry;
   }
 });
 

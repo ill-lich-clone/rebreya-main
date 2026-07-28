@@ -197,6 +197,19 @@ function completedOperationMatches(entry, preview, options) {
     && preview.toIsoDate === entry.toIsoDate;
 }
 
+function affectedDowntimeIsoDates(preview) {
+  const seen = new Set();
+  return asArray(preview?.affectedDowntime)
+    .map((summary) => cleanText(summary?.isoDate))
+    .filter((isoDate) => {
+      if (!isoDate || seen.has(isoDate)) {
+        return false;
+      }
+      seen.add(isoDate);
+      return true;
+    });
+}
+
 function classifyDowntimeResult(result) {
   if (
     cleanText(result?.journalStatus) === "reconciliation-required"
@@ -331,11 +344,26 @@ export class CalendarTransitionCoordinator {
     }
 
     const downtime = await this.#processDowntimeDates(groupId, claim.entry, preview, executionUserId);
+    const externalStageRunId = `${transitionId}:external:${Date.now()}`;
+    await this.#startExternalStages(
+      groupId,
+      transitionId,
+      [
+        this.refreshGlobalEvents ? "globalEvents" : "",
+        preview.direction === "forward" && this.resetTraderMonth ? "traderMonthlyReset" : "",
+        preview.direction === "forward" && normalizedOptions.processDailyCycles && this.processDayCycles ? "dayCycles" : "",
+        normalizedOptions.refreshApps && this.refreshApps ? "refreshApps" : "",
+        normalizedOptions.refreshSmallTime && this.refreshSmallTime ? "refreshSmallTime" : ""
+      ],
+      externalStageRunId,
+      executionUserId
+    );
     const eventStage = await this.#runExternalStage({
       groupId,
       transitionId,
       executionUserId,
       name: "globalEvents",
+      stageRunId: externalStageRunId,
       callback: this.refreshGlobalEvents
         ? (executionContext) => this.refreshGlobalEvents(preview.toIsoDate, preview.fromIsoDate, {
           ...executionContext,
@@ -350,6 +378,7 @@ export class CalendarTransitionCoordinator {
         transitionId,
         executionUserId,
         name: "traderMonthlyReset",
+        stageRunId: externalStageRunId,
         callback: this.resetTraderMonth
           ? (executionContext) => this.resetTraderMonth(monthResetCount, normalizedOptions.reason, {
             ...executionContext,
@@ -364,6 +393,7 @@ export class CalendarTransitionCoordinator {
         transitionId,
         executionUserId,
         name: "dayCycles",
+        stageRunId: externalStageRunId,
         callback: this.processDayCycles
           ? (executionContext) => this.processDayCycles(preview.crossedDates.length, {
             ...options,
@@ -383,6 +413,7 @@ export class CalendarTransitionCoordinator {
         transitionId,
         executionUserId,
         name: "refreshApps",
+        stageRunId: externalStageRunId,
         callback: this.refreshApps
           ? (executionContext) => this.refreshApps({
             ...executionContext,
@@ -397,6 +428,7 @@ export class CalendarTransitionCoordinator {
         transitionId,
         executionUserId,
         name: "refreshSmallTime",
+        stageRunId: externalStageRunId,
         callback: this.refreshSmallTime
           ? (executionContext) => this.refreshSmallTime({
             ...executionContext,
@@ -527,6 +559,9 @@ export class CalendarTransitionCoordinator {
             ? (preview.fromIsoDate !== preview.toIsoDate && Number(preview.to?.day ?? 0) === 1 ? 1 : 0)
             : preview.monthStartDates.length
         : 0;
+      const downtimeIsoDates = options.processDowntime && preview.direction === "forward"
+        ? affectedDowntimeIsoDates(preview)
+        : [];
       const now = Date.now();
       const entry = {
         counter,
@@ -552,11 +587,10 @@ export class CalendarTransitionCoordinator {
           refreshApps: { status: "pending" },
           refreshSmallTime: { status: "pending" }
         },
-        downtimeByIsoDate: Object.fromEntries(
-          options.processDowntime && preview.direction === "forward"
-            ? preview.crossedDates.map((isoDate) => [isoDate, { status: "pending" }])
-            : []
-        ),
+        downtimeByIsoDate: Object.fromEntries(downtimeIsoDates.map((isoDate) => [
+          isoDate,
+          { status: "pending" }
+        ])),
         createdAt: now,
         updatedAt: now
       };
@@ -617,8 +651,14 @@ export class CalendarTransitionCoordinator {
       return [];
     }
 
+    const pendingDates = new Set(Object.keys(asObject(entry.downtimeByIsoDate)).map(cleanText).filter(Boolean));
+    const downtimeDates = asArray(preview.crossedDates).filter((isoDate) => pendingDates.has(isoDate));
+    if (downtimeDates.length <= 0) {
+      return [];
+    }
+
     const results = [];
-    for (const isoDate of preview.crossedDates) {
+    for (const isoDate of downtimeDates) {
       this.#assertExecutionContext(groupId, executionUserId);
       const claim = await this.#mutateEntry(groupId, entry.transitionId, (journalEntry) => {
         const current = asObject(journalEntry.downtimeByIsoDate[isoDate]);
@@ -672,38 +712,67 @@ export class CalendarTransitionCoordinator {
     return results;
   }
 
-  async #runExternalStage({ groupId, transitionId, executionUserId = "", name, callback }) {
+  async #startExternalStages(groupId, transitionId, names, stageRunId, executionUserId = "") {
+    const stageNames = [...new Set(asArray(names).map(cleanText).filter(Boolean))];
+    const runId = cleanText(stageRunId);
+    if (stageNames.length <= 0 || !runId) {
+      return;
+    }
+
+    this.#assertExecutionContext(groupId, executionUserId);
+    await this.#mutateEntry(groupId, transitionId, (entry) => {
+      const started = [];
+      for (const stageName of stageNames) {
+        const stage = asObject(entry.stages[stageName]);
+        if (["completed", "skipped", "reconciliation-required", "processing"].includes(stage.status)) {
+          continue;
+        }
+        entry.stages[stageName] = {
+          ...stage,
+          status: "processing",
+          startedAt: Number(stage.startedAt) || Date.now(),
+          runId
+        };
+        started.push(stageName);
+      }
+      return started;
+    }, executionUserId);
+    this.#assertExecutionContext(groupId, executionUserId);
+  }
+
+  async #runExternalStage({ groupId, transitionId, executionUserId = "", name, stageRunId = "", callback }) {
     this.#assertExecutionContext(groupId, executionUserId);
     if (!callback) {
       return this.#skipStage(groupId, transitionId, name, executionUserId);
     }
 
-    const claim = await this.#mutateEntry(groupId, transitionId, (entry) => {
-      const stage = asObject(entry.stages[name]);
-      if (["completed", "skipped", "reconciliation-required"].includes(stage.status)) {
-        return { run: false, stage: clone(stage) };
-      }
-      if (stage.status === "processing") {
-        const ambiguous = {
-          ...stage,
-          status: "reconciliation-required",
-          error: "External stage completion is ambiguous after an interrupted transition.",
-          completedAt: Date.now()
-        };
-        entry.stages[name] = ambiguous;
-        return { run: false, stage: clone(ambiguous) };
-      }
-
-      entry.stages[name] = {
-        status: "processing",
-        startedAt: Date.now()
-      };
-      return { run: true };
-    }, executionUserId);
-    this.#assertExecutionContext(groupId, executionUserId);
-    if (!claim.run) {
-      return { name, ...claim.stage };
+    const currentEntry = this.#readTransitionEntry(groupId, transitionId);
+    const currentStage = asObject(currentEntry?.stages?.[name]);
+    if (["completed", "skipped", "reconciliation-required"].includes(currentStage.status)) {
+      return { name, ...clone(currentStage) };
     }
+    const runId = cleanText(stageRunId);
+    if (currentStage.status === "processing" && (!runId || cleanText(currentStage.runId) !== runId)) {
+      const ambiguousStage = await this.#markExternalStageAmbiguous(
+        groupId,
+        transitionId,
+        name,
+        currentStage,
+        executionUserId
+      );
+      return { name, ...ambiguousStage };
+    }
+    if (currentStage.status !== "processing") {
+      await this.#startExternalStages(
+        groupId,
+        transitionId,
+        [name],
+        runId || `${transitionId}:${name}:${Date.now()}`,
+        executionUserId
+      );
+    }
+
+    this.#assertExecutionContext(groupId, executionUserId);
 
     let status = "completed";
     let result = null;
@@ -725,11 +794,47 @@ export class CalendarTransitionCoordinator {
       error,
       completedAt: Date.now()
     };
-    await this.#mutateEntry(groupId, transitionId, (entry) => {
+    const persistedStage = await this.#mutateEntry(groupId, transitionId, (entry) => {
+      const latestStage = asObject(entry.stages[name]);
+      if (["completed", "skipped", "reconciliation-required"].includes(latestStage.status)) {
+        return clone(latestStage);
+      }
+      if (latestStage.status === "processing" && runId && cleanText(latestStage.runId) !== runId) {
+        const ambiguous = {
+          ...latestStage,
+          status: "reconciliation-required",
+          error: "External stage completion is ambiguous after an interrupted transition.",
+          completedAt: Date.now()
+        };
+        entry.stages[name] = ambiguous;
+        return clone(ambiguous);
+      }
       entry.stages[name] = clone(stage);
+      return clone(stage);
     }, executionUserId);
     this.#assertExecutionContext(groupId, executionUserId);
-    return { name, ...stage };
+    return { name, ...persistedStage };
+  }
+
+  async #markExternalStageAmbiguous(groupId, transitionId, name, stage, executionUserId = "") {
+    this.#assertExecutionContext(groupId, executionUserId);
+    const ambiguous = await this.#mutateEntry(groupId, transitionId, (entry) => {
+      const current = asObject(entry.stages[name]);
+      if (["completed", "skipped", "reconciliation-required"].includes(current.status)) {
+        return clone(current);
+      }
+      const next = {
+        ...stage,
+        ...current,
+        status: "reconciliation-required",
+        error: "External stage completion is ambiguous after an interrupted transition.",
+        completedAt: Date.now()
+      };
+      entry.stages[name] = next;
+      return clone(next);
+    }, executionUserId);
+    this.#assertExecutionContext(groupId, executionUserId);
+    return ambiguous;
   }
 
   async #skipStage(groupId, transitionId, name, executionUserId = "") {

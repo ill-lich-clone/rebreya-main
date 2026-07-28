@@ -7272,6 +7272,48 @@ summary:focus-visible {
   flex-wrap: wrap;
 }
 
+.rm-calendar-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(5, 7, 10, 0.42);
+  z-index: 100100;
+}
+
+.rm-calendar-confirm {
+  width: min(420px, calc(100vw - 36px));
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--rm-border-strong);
+  border-radius: 8px;
+  background: var(--rm-surface-window);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.48);
+  color: var(--rm-text-primary);
+}
+
+.rm-calendar-confirm__header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.rm-calendar-confirm__body p {
+  margin: 0 0 8px;
+}
+
+.rm-calendar-confirm__body p:last-child {
+  margin-bottom: 0;
+}
+
+.rm-calendar-confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .rm-calendar-day-dialog {
   display: grid;
   gap: 8px;
