@@ -720,6 +720,101 @@ test("InventoryApp currency dialog parses relative coin edits and uses the compa
   }
 });
 
+test("InventoryApp item quantity and supply dialogs parse signed edits as relative deltas", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const previousDialog = globalThis.Dialog;
+  const previousUi = globalThis.ui;
+  const updates = [];
+  const supplies = [];
+  const editQuantityButton = createFakeElement({
+    dataset: {
+      itemId: "water-item",
+      itemName: "Галлоны воды",
+      quantity: "20"
+    }
+  });
+  const addWaterButton = createFakeElement();
+  const appRoot = createFakeElement();
+  appRoot.querySelector = (selector) => selector === "[data-action='add-water']"
+    ? addWaterButton
+    : null;
+  appRoot.querySelectorAll = (selector) => selector === "[data-action='edit-item-quantity']"
+    ? [editQuantityButton]
+    : [];
+  globalThis.ui = {
+    notifications: {
+      info() {},
+      error() {}
+    },
+    windows: {}
+  };
+  globalThis.Dialog = class Dialog {
+    static instances = [];
+
+    constructor(config, options = {}) {
+      this.config = config;
+      this.options = options;
+      Dialog.instances.push(this);
+    }
+
+    render() {}
+  };
+
+  try {
+    const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?relative-quantity=${Date.now()}`);
+    const moduleApi = createModuleApi({
+      getGroupContext: () => null
+    });
+    moduleApi.updateInventoryItemQuantity = async (itemId, quantity) => {
+      updates.push({ itemId, quantity });
+    };
+    moduleApi.addPartySupply = async (resourceKey, quantity) => {
+      supplies.push({ resourceKey, quantity });
+    };
+    const app = new InventoryApp(moduleApi);
+    app.element = appRoot;
+
+    await app._onRender({}, {});
+    let quantityPromise = editQuantityButton.listeners.click[0]({ currentTarget: editQuantityButton });
+    let dialog = globalThis.Dialog.instances.at(-1);
+    let fields = { "[data-field='numeric-value']": { value: "+10" } };
+    let dialogRoot = createFakeElement();
+    dialogRoot.querySelector = (selector) => fields[selector] ?? null;
+    dialog.config.buttons.confirm.callback(dialogRoot);
+    await quantityPromise;
+
+    quantityPromise = editQuantityButton.listeners.click[0]({ currentTarget: editQuantityButton });
+    dialog = globalThis.Dialog.instances.at(-1);
+    fields = { "[data-field='numeric-value']": { value: "-10" } };
+    dialogRoot = createFakeElement();
+    dialogRoot.querySelector = (selector) => fields[selector] ?? null;
+    dialog.config.buttons.confirm.callback(dialogRoot);
+    await quantityPromise;
+
+    const supplyPromise = addWaterButton.listeners.click[0]({ currentTarget: addWaterButton });
+    dialog = globalThis.Dialog.instances.at(-1);
+    fields = { "[data-field='numeric-value']": { value: "-5" } };
+    dialogRoot = createFakeElement();
+    dialogRoot.querySelector = (selector) => fields[selector] ?? null;
+    dialog.config.buttons.confirm.callback(dialogRoot);
+    await supplyPromise;
+
+    assert.deepEqual(updates, [
+      { itemId: "water-item", quantity: 30 },
+      { itemId: "water-item", quantity: 10 }
+    ]);
+    assert.deepEqual(supplies, [{ resourceKey: "water", quantity: -5 }]);
+    assert.match(dialog.config.content, /type="text"[^>]+inputmode="decimal"[^>]+data-field="numeric-value"/u);
+  }
+  finally {
+    globalThis.Dialog = previousDialog;
+    globalThis.ui = previousUi;
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp currency dialog uses text inputs and currency-specific button sizing", async () => {
   const [appSource, css] = await Promise.all([
     readFile(new URL("../scripts/ui/inventory-app.js", import.meta.url), "utf8"),

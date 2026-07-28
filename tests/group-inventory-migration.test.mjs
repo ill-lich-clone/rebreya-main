@@ -1838,6 +1838,49 @@ test("addSupply rejects when resolved group actor is not owned by a non-GM user"
   }
 });
 
+test("addSupply accepts negative supply deltas and clamps the final stock at zero", async () => {
+  const water = createItem({
+    id: "water",
+    name: "Water",
+    quantity: 20,
+    weight: 8,
+    flags: { [MODULE_ID]: { resourceKey: "water" } }
+  });
+  const food = createItem({
+    id: "food",
+    name: "Food",
+    quantity: 4,
+    weight: 1,
+    flags: { [MODULE_ID]: { resourceKey: "food" } }
+  });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [water, food]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor]
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({ groupActor })
+    }
+  });
+
+  try {
+    await service.addSupply("water", -10);
+    await service.addSupply("food", -40);
+
+    assert.equal(water.system.quantity, 10);
+    assert.equal(food.system.quantity, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("getPartySnapshot uses native group system.members and ignores stale partyState members", async () => {
   const memberActor = createActor({
     id: "member-a",

@@ -2488,6 +2488,20 @@ function parseCurrencyInputValue(rawValue, fallback = 0) {
   return Math.max(0, toInteger(text, safeFallback));
 }
 
+function parseQuantityInputValue(rawValue, fallback = 0, { relative = false, min = null } = {}) {
+  const text = String(rawValue ?? "").trim().replace(",", ".");
+  const safeFallback = roundNumber(fallback, 2);
+  const relativeNumberPattern = /^[+-](?:\d+(?:\.\d+)?|\.\d+)$/u;
+  const absoluteNumberPattern = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/u;
+  const parsed = relative && relativeNumberPattern.test(text)
+    ? safeFallback + Number(text)
+    : absoluteNumberPattern.test(text)
+      ? Number(text)
+      : safeFallback;
+  const rounded = roundNumber(parsed, 2);
+  return min === null ? rounded : Math.max(min, rounded);
+}
+
 function readCurrencyValuesFromRoot(root, baseCurrency = {}) {
   return {
     pp: parseCurrencyInputValue(root?.querySelector("[data-field='currency-pp']")?.value, baseCurrency.pp),
@@ -2497,9 +2511,13 @@ function readCurrencyValuesFromRoot(root, baseCurrency = {}) {
   };
 }
 
-async function promptNumericValue({ title, label, value = "", min = 0, step = "0.01", confirmLabel = "Сохранить" }) {
+async function promptNumericValue({ title, label, value = "", min = 0, step = "0.01", confirmLabel = "Сохранить", allowRelative = false }) {
   return new Promise((resolve) => {
     let settled = false;
+    const inputType = allowRelative ? "text" : "number";
+    const relativeAttributes = allowRelative
+      ? 'inputmode="decimal" pattern="[+-]?(?:[0-9]+(?:[.,][0-9]+)?|[.,][0-9]+)"'
+      : `min="${foundry.utils.escapeHTML(String(min))}" step="${foundry.utils.escapeHTML(String(step))}"`;
 
     const dialog = new Dialog({
       title,
@@ -2509,9 +2527,8 @@ async function promptNumericValue({ title, label, value = "", min = 0, step = "0
             <label for="rm-number-prompt">${foundry.utils.escapeHTML(label)}</label>
             <input
               id="rm-number-prompt"
-              type="number"
-              min="${foundry.utils.escapeHTML(String(min))}"
-              step="${foundry.utils.escapeHTML(String(step))}"
+              type="${inputType}"
+              ${relativeAttributes}
               value="${foundry.utils.escapeHTML(String(value ?? ""))}"
               data-field="numeric-value"
             >
@@ -3733,19 +3750,19 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async #promptSupply(resourceKey) {
     const quantity = await promptNumericValue({
-      title: resourceKey === "water" ? "Добавить воду" : "Добавить еду",
-      label: resourceKey === "water" ? "Сколько галлонов добавить" : "Сколько фунтов добавить",
+      title: resourceKey === "water" ? "Изменить воду" : "Изменить еду",
+      label: resourceKey === "water" ? "Сколько галлонов добавить или убрать" : "Сколько фунтов добавить или убрать",
       value: "0",
-      min: 0,
       step: "0.01",
-      confirmLabel: "Добавить"
+      confirmLabel: "Изменить",
+      allowRelative: true
     });
 
     if (quantity === null) {
       return;
     }
 
-    await this.moduleApi.addPartySupply(resourceKey, quantity);
+    await this.moduleApi.addPartySupply(resourceKey, parseQuantityInputValue(quantity, 0, { relative: true }));
     const successMessage = resourceKey === "water"
       ? "Запас воды обновлён."
       : "Запас еды обновлён.";
@@ -5734,14 +5751,19 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
             value: currentQuantity,
             min: 0,
             step: "0.01",
-            confirmLabel: "Сохранить"
+            confirmLabel: "Сохранить",
+            allowRelative: true
           });
 
           if (nextQuantity === null) {
             return;
           }
 
-          await this.moduleApi.updateInventoryItemQuantity(itemId, nextQuantity);
+          const parsedQuantity = parseQuantityInputValue(nextQuantity, currentQuantity, {
+            relative: true,
+            min: 0
+          });
+          await this.moduleApi.updateInventoryItemQuantity(itemId, parsedQuantity);
           ui.notifications?.info(`Количество предмета «${itemName}» обновлено.`);
           bringAppToFront(this);
         }

@@ -3466,7 +3466,7 @@ export class InventoryService {
 
   async addSupply(resourceKey, quantity) {
     const normalizedKey = resourceKey === "water" ? "water" : "food";
-    const safeQuantity = Math.max(0, roundNumber(toNumber(quantity, 0), 2));
+    const quantityDelta = roundNumber(toNumber(quantity, 0), 2);
     const actor = await this.getInventoryActor({ create: true });
     this.#assertCanManagePartyInventory(actor);
     const item = await this.#ensureSupplyItem(actor, normalizedKey);
@@ -3475,7 +3475,7 @@ export class InventoryService {
     }
 
     const currentQuantity = getRawQuantity(item.toObject());
-    const nextQuantity = roundNumber(currentQuantity + safeQuantity, 2);
+    const nextQuantity = Math.max(0, roundNumber(currentQuantity + quantityDelta, 2));
     await item.update({
       "system.quantity": nextQuantity,
       "system.weight.value": normalizedKey === "water" ? WATER_LB_PER_GALLON : 1
