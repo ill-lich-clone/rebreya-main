@@ -67,6 +67,23 @@ export function bringAppToFront(app) {
   return windowElement;
 }
 
+export function notifyUser(type, message, options) {
+  const notifications = globalThis.ui?.notifications;
+  const notify = notifications?.[type];
+  if (typeof notify !== "function") {
+    return false;
+  }
+
+  try {
+    notify.call(notifications, message, options);
+    return true;
+  }
+  catch (error) {
+    console.warn(`${MODULE_ID} | Failed to display ${type} notification.`, error);
+    return false;
+  }
+}
+
 export function rerenderApp(app, { focus = true, preserveScroll = false } = {}) {
   if (!app?.render) {
     return Promise.resolve();

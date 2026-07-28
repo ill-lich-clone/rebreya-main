@@ -144,7 +144,7 @@ import {
   registerSettings
 } from "./settings.js";
 import { buildLootgenChatContent, buildLootgenStatusContent, registerLootgenChatHooks } from "./ui/lootgen-chat.js?v=1.4.96-durability";
-import { bringAppToFront, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
+import { bringAppToFront, notifyUser, registerHandlebarsHelpers, rerenderApp } from "./ui.js";
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 const SOCKET_EVENT_LOOTGEN_SHOW = "lootgen-show-result";
@@ -4559,7 +4559,7 @@ export class RebreyaMainModule {
     }
     catch (error) {
       console.error(`${MODULE_ID} | Failed to open inventory app.`, error);
-      ui.notifications?.error("Не удалось открыть партийный инвентарь.");
+      notifyUser("error", "Не удалось открыть партийный инвентарь.");
       throw error;
     }
   }
