@@ -4318,27 +4318,77 @@ export class InventoryService {
     };
   }
 
-  async consumeSuppliesOneDay(options = {}) {
+  #resolveSupplyConsumptionActor(requestedGroupId) {
+    if (requestedGroupId) {
+      const context = this.moduleApi.groupContextService?.resolveForGroup?.(requestedGroupId);
+      const groupActor = context?.groupActor ?? null;
+      if (
+        cleanId(context?.groupId) !== requestedGroupId
+        || cleanId(groupActor?.id) !== requestedGroupId
+        || groupActor?.type !== "group"
+      ) {
+        throw new Error("Calendar supply mutation group does not match its captured group.");
+      }
+      return groupActor;
+    }
+
+    return null;
+  }
+
+  #buildSupplyConsumptionSnapshot(state, inventoryActor) {
+    const members = this.#buildPartyMemberRows(state, inventoryActor)
+      .map(({ actorId, actor: actorDocument, memberState }) => {
+        const normalizedMember = this.#normalizeMemberState(memberState);
+        const energyState = clampEnergyCurrent(normalizedMember, actorDocument);
+        return {
+          actorId,
+          actor: actorDocument,
+          actorName: actorDocument?.name ?? actorId,
+          memberState: normalizedMember,
+          energyCurrent: energyState.current,
+          energyMax: energyState.max,
+          foodPerDay: normalizedMember.foodPerDay,
+          waterGalPerDay: normalizedMember.waterGalPerDay
+        };
+      })
+      .sort((left, right) => String(left.actorName).localeCompare(String(right.actorName), "ru"));
+    const foodRequiredPerDay = roundNumber(members.reduce((sum, member) => sum + member.foodPerDay, 0), 2);
+    const waterRequiredPerDay = roundNumber(members.reduce((sum, member) => sum + member.waterGalPerDay, 0), 2);
+
+    return {
+      coverFoodExpenses: state.coverFoodExpenses === true,
+      coverWaterExpenses: state.coverWaterExpenses === true,
+      members,
+      memberCount: members.length,
+      totalFoodPerDay: state.coverFoodExpenses ? 0 : foodRequiredPerDay,
+      totalWaterGalPerDay: state.coverWaterExpenses ? 0 : waterRequiredPerDay
+    };
+  }
+
+  async consumeSuppliesDays(days = 1, options = {}) {
     const { applyEnergy = true } = options;
-    const requestedGroupId = cleanId(options.groupId);
+    const safeDays = Math.max(0, Math.floor(toNumber(days, 0)));
     const guard = options.guard ?? options.assertExecutionContext;
     if (guard !== undefined && typeof guard !== "function") {
       throw new TypeError("calendar execution guard must be a function");
     }
+    if (safeDays <= 0) {
+      return {
+        days: 0,
+        supplies: [],
+        supplyTotals: {
+          foodSpent: 0,
+          waterSpent: 0,
+          foodShortage: 0,
+          waterShortage: 0
+        }
+      };
+    }
+
+    const requestedGroupId = cleanId(options.groupId);
     guard?.();
     const actor = requestedGroupId
-      ? (() => {
-          const context = this.moduleApi.groupContextService?.resolveForGroup?.(requestedGroupId);
-          const groupActor = context?.groupActor ?? null;
-          if (
-            cleanId(context?.groupId) !== requestedGroupId
-            || cleanId(groupActor?.id) !== requestedGroupId
-            || groupActor?.type !== "group"
-          ) {
-            throw new Error("Calendar supply mutation group does not match its captured group.");
-          }
-          return groupActor;
-        })()
+      ? this.#resolveSupplyConsumptionActor(requestedGroupId)
       : await this.getInventoryActor({ create: true });
     guard?.();
     this.#assertCanManagePartyInventory(actor);
@@ -4346,117 +4396,146 @@ export class InventoryService {
       throw new Error("Не удалось получить партийный инвентарь.");
     }
 
-    const partySnapshot = await this.getPartySnapshot({ actor });
+    const partySnapshot = this.#buildSupplyConsumptionSnapshot(this.#getState(), actor);
     guard?.();
     const foodItem = this.#findSupplyItem(actor, "food");
     const waterItem = this.#findSupplyItem(actor, "water");
-    const currentFood = foodItem ? getRawQuantity(foodItem.toObject()) : 0;
-    const currentWater = waterItem ? getRawQuantity(waterItem.toObject()) : 0;
-    const foodSpent = Math.min(currentFood, partySnapshot.totalFoodPerDay);
-    const waterSpent = Math.min(currentWater, partySnapshot.totalWaterGalPerDay);
-    const nextFood = roundNumber(currentFood - foodSpent, 2);
-    const nextWater = roundNumber(currentWater - waterSpent, 2);
+    const initialFood = foodItem ? getRawQuantity(foodItem.toObject()) : 0;
+    const initialWater = waterItem ? getRawQuantity(waterItem.toObject()) : 0;
+    let remainingFood = initialFood;
+    let remainingWater = initialWater;
+    const currentEnergyByActorId = new Map(partySnapshot.members.map((member) => [
+      member.actorId,
+      member.energyCurrent
+    ]));
+    const supplies = [];
 
-    if (foodItem) {
-      guard?.();
-      if (nextFood <= 0) {
-        await foodItem.delete();
-      }
-      else {
-        await foodItem.update({ "system.quantity": nextFood });
-      }
-      guard?.();
-    }
+    for (let dayIndex = 0; dayIndex < safeDays; dayIndex += 1) {
+      const dayFoodStart = remainingFood;
+      const dayWaterStart = remainingWater;
+      const foodSpent = Math.min(dayFoodStart, partySnapshot.totalFoodPerDay);
+      const waterSpent = Math.min(dayWaterStart, partySnapshot.totalWaterGalPerDay);
+      remainingFood = roundNumber(dayFoodStart - foodSpent, 2);
+      remainingWater = roundNumber(dayWaterStart - waterSpent, 2);
+      const energyUpdates = [];
 
-    if (waterItem) {
-      guard?.();
-      if (nextWater <= 0) {
-        await waterItem.delete();
-      }
-      else {
-        await waterItem.update({ "system.quantity": nextWater });
-      }
-      guard?.();
-    }
+      if (applyEnergy && partySnapshot.memberCount > 0) {
+        let availableFood = dayFoodStart;
+        let availableWater = dayWaterStart;
 
-    let energyUpdates = [];
-    if (applyEnergy && partySnapshot.memberCount > 0) {
-      let availableFood = currentFood;
-      let availableWater = currentWater;
-
-      energyUpdates = await this.#writeState((state) => {
-        const updates = [];
-        const memberIds = new Set(partySnapshot.members.map((member) => member.actorId));
-        const sortedMembers = partySnapshot.members
-          .map((member) => {
-            const actorId = member.actorId;
-            const memberState = this.#normalizeMemberState(
-              state.members[actorId] ?? buildDefaultMemberState(member.role)
-            );
-            return {
-              actorId,
-              actor: game.actors.get(actorId) ?? null,
-              memberState
-            };
-          })
-          .sort((left, right) => String(left.actor?.name ?? left.actorId).localeCompare(String(right.actor?.name ?? right.actorId), "ru"));
-
-        for (const row of sortedMembers) {
-          if (!memberIds.has(row.actorId)) {
-            continue;
-          }
-
+        for (const member of partySnapshot.members) {
           const foodNeed = partySnapshot.coverFoodExpenses
             ? 0
-            : Math.max(0, roundNumber(toNumber(row.memberState.foodPerDay, 0), 2));
+            : Math.max(0, roundNumber(toNumber(member.memberState.foodPerDay, 0), 2));
           const waterNeed = partySnapshot.coverWaterExpenses
             ? 0
-            : Math.max(0, roundNumber(toNumber(row.memberState.waterGalPerDay, 0), 2));
+            : Math.max(0, roundNumber(toNumber(member.memberState.waterGalPerDay, 0), 2));
           const foodCovered = Math.min(availableFood, foodNeed);
           const waterCovered = Math.min(availableWater, waterNeed);
           availableFood = roundNumber(availableFood - foodCovered, 2);
           availableWater = roundNumber(availableWater - waterCovered, 2);
           const isHungry = foodCovered + 1e-9 < foodNeed || waterCovered + 1e-9 < waterNeed;
-
-          const actorDocument = row.actor;
-          const normalizedMember = this.#normalizeMemberState(row.memberState, row.memberState.role);
-          const energyState = clampEnergyCurrent(normalizedMember, actorDocument);
+          const currentEnergy = currentEnergyByActorId.get(member.actorId) ?? member.energyCurrent;
           const nextEnergy = isHungry
-            ? Math.max(0, energyState.current - 1)
-            : Math.min(energyState.max, energyState.current);
-          normalizedMember.energyCurrent = nextEnergy;
-          state.members[row.actorId] = this.#normalizeMemberState(normalizedMember, normalizedMember.role);
+            ? Math.max(0, currentEnergy - 1)
+            : Math.min(member.energyMax, currentEnergy);
+          currentEnergyByActorId.set(member.actorId, nextEnergy);
 
-          updates.push({
-            actorId: row.actorId,
-            actorName: actorDocument?.name ?? row.actorId,
+          energyUpdates.push({
+            actorId: member.actorId,
+            actorName: member.actorName,
             hungry: isHungry,
             foodNeed,
             waterNeed,
             foodCovered,
             waterCovered,
             energyCurrent: nextEnergy,
-            energyMax: energyState.max
+            energyMax: member.energyMax
           });
         }
+      }
 
-        return updates;
+      supplies.push({
+        memberCount: partySnapshot.memberCount,
+        foodRequired: partySnapshot.totalFoodPerDay,
+        waterRequired: partySnapshot.totalWaterGalPerDay,
+        foodSpent,
+        waterSpent,
+        foodShortage: roundNumber(Math.max(0, partySnapshot.totalFoodPerDay - foodSpent), 2),
+        waterShortage: roundNumber(Math.max(0, partySnapshot.totalWaterGalPerDay - waterSpent), 2),
+        nextFood: remainingFood,
+        nextWater: remainingWater,
+        energyUpdates
+      });
+    }
+
+    if (foodItem && !inventoryQuantitiesMatch(initialFood, remainingFood)) {
+      guard?.();
+      if (remainingFood <= 0) {
+        await foodItem.delete();
+      }
+      else {
+        await foodItem.update({ "system.quantity": remainingFood });
+      }
+      guard?.();
+    }
+
+    if (waterItem && !inventoryQuantitiesMatch(initialWater, remainingWater)) {
+      guard?.();
+      if (remainingWater <= 0) {
+        await waterItem.delete();
+      }
+      else {
+        await waterItem.update({ "system.quantity": remainingWater });
+      }
+      guard?.();
+    }
+
+    if (applyEnergy && partySnapshot.memberCount > 0) {
+      await this.#writeState((state) => {
+        for (const member of partySnapshot.members) {
+          const memberState = this.#normalizeMemberState(
+            state.members[member.actorId] ?? buildDefaultMemberState(member.memberState.role),
+            member.memberState.role
+          );
+          memberState.energyCurrent = currentEnergyByActorId.get(member.actorId) ?? member.energyCurrent;
+          state.members[member.actorId] = this.#normalizeMemberState(memberState, memberState.role);
+        }
       }, { guard });
     }
 
     guard?.();
 
     return {
-      memberCount: partySnapshot.memberCount,
-      foodRequired: partySnapshot.totalFoodPerDay,
-      waterRequired: partySnapshot.totalWaterGalPerDay,
-      foodSpent,
-      waterSpent,
-      foodShortage: roundNumber(Math.max(0, partySnapshot.totalFoodPerDay - foodSpent), 2),
-      waterShortage: roundNumber(Math.max(0, partySnapshot.totalWaterGalPerDay - waterSpent), 2),
-      nextFood,
-      nextWater,
-      energyUpdates
+      days: safeDays,
+      supplies,
+      supplyTotals: supplies.reduce((totals, row) => ({
+        foodSpent: roundNumber(totals.foodSpent + Number(row.foodSpent ?? 0), 2),
+        waterSpent: roundNumber(totals.waterSpent + Number(row.waterSpent ?? 0), 2),
+        foodShortage: roundNumber(totals.foodShortage + Number(row.foodShortage ?? 0), 2),
+        waterShortage: roundNumber(totals.waterShortage + Number(row.waterShortage ?? 0), 2)
+      }), {
+        foodSpent: 0,
+        waterSpent: 0,
+        foodShortage: 0,
+        waterShortage: 0
+      })
+    };
+  }
+
+  async consumeSuppliesOneDay(options = {}) {
+    const result = await this.consumeSuppliesDays(1, options);
+    return result.supplies[0] ?? {
+      memberCount: 0,
+      foodRequired: 0,
+      waterRequired: 0,
+      foodSpent: 0,
+      waterSpent: 0,
+      foodShortage: 0,
+      waterShortage: 0,
+      nextFood: 0,
+      nextWater: 0,
+      energyUpdates: []
     };
   }
 

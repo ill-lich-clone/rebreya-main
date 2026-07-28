@@ -2110,3 +2110,207 @@ test("party supply coverage makes food and water expenses zero without energy pe
     fixture.restore();
   }
 });
+
+test("consumeSuppliesOneDay uses a lightweight party snapshot without loading the economy model", async () => {
+  const memberActor = createActor({
+    id: "member-a",
+    name: "Hungry Member",
+    type: "character",
+    abilities: { con: { mod: 0 } }
+  });
+  const food = createItem({
+    id: "food",
+    name: "Food",
+    quantity: 5,
+    flags: { [MODULE_ID]: { resourceKey: "food" } }
+  });
+  const water = createItem({
+    id: "water",
+    name: "Water",
+    quantity: 5,
+    flags: { [MODULE_ID]: { resourceKey: "water" } }
+  });
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [food, water],
+    members: [{ actor: memberActor }]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    partyState: {
+      members: {
+        "member-a": { foodPerDay: 1, waterGalPerDay: 1, energyCurrent: 3 }
+      }
+    }
+  });
+  const service = new InventoryService({
+    groupContextService: { resolveForCurrentUser: () => ({ groupActor }) },
+    getModel: async () => {
+      throw new Error("economy model should not be loaded for supply consumption");
+    }
+  });
+
+  try {
+    const result = await service.consumeSuppliesOneDay();
+
+    assert.equal(result.foodSpent, 1);
+    assert.equal(result.waterSpent, 1);
+    assert.equal(food.system.quantity, 4);
+    assert.equal(water.system.quantity, 4);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("consumeSuppliesDays batches supply item and energy writes for calendar month shifts", async () => {
+  const memberActor = createActor({
+    id: "member-a",
+    name: "Batch Member",
+    type: "character",
+    abilities: { con: { mod: 0 } }
+  });
+  const food = createItem({
+    id: "food",
+    name: "Food",
+    quantity: 10,
+    flags: { [MODULE_ID]: { resourceKey: "food" } }
+  });
+  const water = createItem({
+    id: "water",
+    name: "Water",
+    quantity: 10,
+    flags: { [MODULE_ID]: { resourceKey: "water" } }
+  });
+  let foodUpdates = 0;
+  let waterUpdates = 0;
+  food.update = async (patch) => {
+    foodUpdates += 1;
+    applyPatch(food, patch);
+    return food;
+  };
+  water.update = async (patch) => {
+    waterUpdates += 1;
+    applyPatch(water, patch);
+    return water;
+  };
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [food, water],
+    members: [{ actor: memberActor }]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    partyState: {
+      members: {
+        "member-a": { foodPerDay: 1, waterGalPerDay: 1, energyCurrent: 3 }
+      }
+    }
+  });
+  let stateWrites = 0;
+  const originalSet = game.settings.set;
+  game.settings.set = async (...args) => {
+    stateWrites += 1;
+    return originalSet(...args);
+  };
+  const service = new InventoryService({
+    groupContextService: { resolveForCurrentUser: () => ({ groupActor }) },
+    getModel: async () => {
+      throw new Error("economy model should not be loaded for batched supply consumption");
+    }
+  });
+
+  try {
+    const result = await service.consumeSuppliesDays(3);
+
+    assert.equal(result.days, 3);
+    assert.equal(result.supplies.length, 3);
+    assert.deepEqual(result.supplyTotals, {
+      foodSpent: 3,
+      waterSpent: 3,
+      foodShortage: 0,
+      waterShortage: 0
+    });
+    assert.equal(food.system.quantity, 7);
+    assert.equal(water.system.quantity, 7);
+    assert.equal(foodUpdates, 1);
+    assert.equal(waterUpdates, 1);
+    assert.equal(stateWrites, 1);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("consumeSuppliesDays skips supply item writes when coverage prevents spending", async () => {
+  const memberActor = createActor({
+    id: "member-a",
+    name: "Covered Member",
+    type: "character",
+    abilities: { con: { mod: 0 } }
+  });
+  const food = createItem({
+    id: "food",
+    name: "Food",
+    quantity: 10,
+    flags: { [MODULE_ID]: { resourceKey: "food" } }
+  });
+  const water = createItem({
+    id: "water",
+    name: "Water",
+    quantity: 10,
+    flags: { [MODULE_ID]: { resourceKey: "water" } }
+  });
+  let supplyWrites = 0;
+  food.update = async (patch) => {
+    supplyWrites += 1;
+    applyPatch(food, patch);
+    return food;
+  };
+  water.update = async (patch) => {
+    supplyWrites += 1;
+    applyPatch(water, patch);
+    return water;
+  };
+  const groupActor = createActor({
+    id: "group-1",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [food, water],
+    members: [{ actor: memberActor }]
+  });
+  const fixture = installInventoryFixture({
+    actors: [groupActor, memberActor],
+    partyState: {
+      coverFoodExpenses: true,
+      coverWaterExpenses: true,
+      members: {
+        "member-a": { foodPerDay: 5, waterGalPerDay: 5, energyCurrent: 3 }
+      }
+    }
+  });
+  const service = new InventoryService({
+    groupContextService: { resolveForCurrentUser: () => ({ groupActor }) },
+    getModel: async () => ({ materials: [], materialById: new Map(), materialByGoodId: new Map(), gear: [], gearById: new Map() })
+  });
+
+  try {
+    const result = await service.consumeSuppliesDays(5);
+
+    assert.equal(result.supplyTotals.foodSpent, 0);
+    assert.equal(result.supplyTotals.waterSpent, 0);
+    assert.equal(food.system.quantity, 10);
+    assert.equal(water.system.quantity, 10);
+    assert.equal(supplyWrites, 0);
+  }
+  finally {
+    fixture.restore();
+  }
+});

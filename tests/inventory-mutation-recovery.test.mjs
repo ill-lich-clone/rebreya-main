@@ -195,18 +195,24 @@ test("calendar execution guard stops supply mutations before the next persistent
       waterUpdates += 1;
     }
   });
+  const member = createActor({ id: "guard-member", type: "character" });
   const group = createActor({
     id: "guard-group",
     type: "group",
     managed: true,
     items: [food, water],
-    members: []
+    members: [{ actor: member }]
   });
   const fixture = installFixture({
     group,
-    actors: [group],
+    actors: [group, member],
     moduleApi: {
       getModel: async () => ({ materials: [], materialById: new Map(), materialByGoodId: new Map(), gear: [], gearById: new Map() })
+    },
+    partyState: {
+      members: {
+        [member.id]: { role: "member", foodPerDay: 1, waterGalPerDay: 1 }
+      }
     }
   });
   const guard = () => {

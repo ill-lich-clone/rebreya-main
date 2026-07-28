@@ -50,7 +50,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.96-durable-transfer";
+} from "./data/inventory-service.js?v=1.4.109-calendar-supply-bulk";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.96-durability";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService } from "./data/hero-doll-service.js";
@@ -3945,15 +3945,25 @@ export class RebreyaMainModule {
     const supplies = [];
 
     guard?.();
-    for (let index = 0; index < safeDays; index += 1) {
+    if (consumeSupplies && typeof this.inventoryService.consumeSuppliesDays === "function") {
+      const supplyBatch = await this.inventoryService.consumeSuppliesDays(safeDays, {
+        applyEnergy,
+        ...executionContext
+      });
       guard?.();
-      if (consumeSupplies) {
-        const supplyResult = await this.inventoryService.consumeSuppliesOneDay({
-          applyEnergy,
-          ...executionContext
-        });
+      supplies.push(...(Array.isArray(supplyBatch?.supplies) ? supplyBatch.supplies : []));
+    }
+    else {
+      for (let index = 0; index < safeDays; index += 1) {
         guard?.();
-        supplies.push(supplyResult);
+        if (consumeSupplies) {
+          const supplyResult = await this.inventoryService.consumeSuppliesOneDay({
+            applyEnergy,
+            ...executionContext
+          });
+          guard?.();
+          supplies.push(supplyResult);
+        }
       }
     }
 

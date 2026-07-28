@@ -193,7 +193,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
 
   for (const importPath of [
     "data/downtime-service.js?v=1.4.96-craft-calendar",
-    "data/inventory-service.js?v=1.4.96-durable-transfer",
+    "data/inventory-service.js?v=1.4.109-calendar-supply-bulk",
     "data/durability-service.js?v=1.4.96-durability",
     "data/crafting-service.js?v=1.4.96-craft-calendar",
     "data/craft-downtime-service.js?v=1.4.96-craft-calendar",

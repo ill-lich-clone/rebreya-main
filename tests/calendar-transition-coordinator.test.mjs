@@ -1456,14 +1456,18 @@ test("main day-cycle callback guards every supply mutation with the captured gro
         throw new Error("calendar execution context changed");
       }
     };
-    moduleApi.inventoryService.consumeSuppliesOneDay = async (options = {}) => {
+    moduleApi.inventoryService.consumeSuppliesDays = async (_days, options = {}) => {
       supplyContexts.push({
         groupId: options.groupId,
         transitionId: options.transitionId,
         sharesGuard: options.guard === guard && options.assertExecutionContext === guard
       });
       executionActive = false;
-      return { foodSpent: 1, waterSpent: 1, foodShortage: 0, waterShortage: 0 };
+      return {
+        days: 2,
+        supplies: [{ foodSpent: 1, waterSpent: 1, foodShortage: 0, waterShortage: 0 }],
+        supplyTotals: { foodSpent: 1, waterSpent: 1, foodShortage: 0, waterShortage: 0 }
+      };
     };
 
     await assert.rejects(
@@ -1587,9 +1591,23 @@ test("calendar daily cycles consume supplies without calling the legacy craft da
     const moduleApi = new RebreyaMainModule();
     let supplyCalls = 0;
     let craftCalls = 0;
-    moduleApi.inventoryService.consumeSuppliesOneDay = async () => {
+    moduleApi.inventoryService.consumeSuppliesDays = async (days) => {
       supplyCalls += 1;
-      return { foodSpent: 1, waterSpent: 1, foodShortage: 0, waterShortage: 0 };
+      return {
+        days,
+        supplies: Array.from({ length: days }, () => ({
+          foodSpent: 1,
+          waterSpent: 1,
+          foodShortage: 0,
+          waterShortage: 0
+        })),
+        supplyTotals: {
+          foodSpent: days,
+          waterSpent: days,
+          foodShortage: 0,
+          waterShortage: 0
+        }
+      };
     };
     moduleApi.craftingService.processOneDay = async () => {
       craftCalls += 1;
@@ -1605,8 +1623,113 @@ test("calendar daily cycles consume supplies without calling the legacy craft da
       refreshSmallTime: false
     });
 
-    assert.equal(supplyCalls, 2);
+    assert.equal(supplyCalls, 1);
     assert.equal(craftCalls, 0);
+  }
+  finally {
+    globalThis.Hooks = previousHooks;
+    globalThis.game = previousGame;
+    globalThis.foundry = previousFoundry;
+    globalThis.ui = previousUi;
+  }
+});
+
+test("calendar daily cycles use batched supply consumption when available", async () => {
+  const previousHooks = globalThis.Hooks;
+  const previousGame = globalThis.game;
+  const previousFoundry = globalThis.foundry;
+  const previousUi = globalThis.ui;
+  const groupActor = createGroupActor();
+  globalThis.Hooks = { once() {}, on() {} };
+  globalThis.foundry = {
+    applications: { instances: new Map() },
+    utils: {
+      deepClone: clone,
+      mergeObject: (base, update) => ({ ...clone(base), ...clone(update) })
+    }
+  };
+  globalThis.ui = { windows: {} };
+  globalThis.game = {
+    user: { id: "gm", isGM: true, active: true },
+    actors: {
+      contents: [groupActor],
+      get(id) {
+        return id === groupActor.id ? groupActor : null;
+      }
+    },
+    modules: { get: () => ({ active: false }) },
+    settings: {
+      get(_moduleId, key) {
+        if (key === SETTINGS_KEYS.CALENDAR_STATE) return { version: 1, isoDate: "1300-01-01" };
+        if (key === SETTINGS_KEYS.GROUP_STATE) {
+          return {
+            version: 1,
+            activeGroupActorId: groupActor.id,
+            groupsById: {
+              [groupActor.id]: {
+                version: 1,
+                groupActorId: groupActor.id,
+                calendar: { version: 1, isoDate: "2026-07-20" }
+              }
+            }
+          };
+        }
+        return {};
+      },
+      async set() {}
+    }
+  };
+
+  try {
+    const { RebreyaMainModule } = await import(`../scripts/main.js?calendar-bulk-supplies=${Date.now()}`);
+    const moduleApi = new RebreyaMainModule();
+    let bulkCalls = 0;
+    let oneDayCalls = 0;
+    moduleApi.inventoryService.consumeSuppliesDays = async (days, options = {}) => {
+      bulkCalls += 1;
+      assert.equal(days, 30);
+      assert.equal(options.groupId, "group-a");
+      assert.equal(options.transitionId, "calendar:group-a:1:2026-07-20:2026-08-19");
+      return {
+        days,
+        supplies: Array.from({ length: days }, () => ({
+          foodSpent: 1,
+          waterSpent: 1,
+          foodShortage: 0,
+          waterShortage: 0
+        })),
+        supplyTotals: {
+          foodSpent: 30,
+          waterSpent: 30,
+          foodShortage: 0,
+          waterShortage: 0
+        }
+      };
+    };
+    moduleApi.inventoryService.consumeSuppliesOneDay = async () => {
+      oneDayCalls += 1;
+      throw new Error("calendar should not call per-day supply consumption when bulk is available");
+    };
+
+    const result = await moduleApi.calendarTransitionCoordinator.processDayCycles(30, {
+      groupId: "group-a",
+      transitionId: "calendar:group-a:1:2026-07-20:2026-08-19",
+      assertExecutionContext: () => undefined,
+      guard: () => undefined,
+      consumeSupplies: true,
+      applyEnergy: true
+    });
+
+    assert.equal(bulkCalls, 1);
+    assert.equal(oneDayCalls, 0);
+    assert.equal(result.days, 30);
+    assert.equal(result.supplies.length, 30);
+    assert.deepEqual(result.supplyTotals, {
+      foodSpent: 30,
+      waterSpent: 30,
+      foodShortage: 0,
+      waterShortage: 0
+    });
   }
   finally {
     globalThis.Hooks = previousHooks;
