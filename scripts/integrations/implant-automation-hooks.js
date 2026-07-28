@@ -1,4 +1,5 @@
 import { MODULE_ID } from "../constants.js";
+import { renderImplantItemSheetActions } from "./implant-item-sheet.js";
 
 const registeredHookSets = new WeakSet();
 
@@ -47,6 +48,17 @@ export function registerImplantAutomationHooks(moduleApi, { Hooks = globalThis.H
       return true;
     }
   });
+
+  const renderImplantItemSheet = (app, html) => {
+    try {
+      renderImplantItemSheetActions(app, html, moduleApi);
+    }
+    catch (error) {
+      console.error(`${MODULE_ID} | Failed to render implant Item actions.`, error);
+    }
+  };
+  Hooks.on("renderItemSheet", renderImplantItemSheet);
+  Hooks.on("renderItemSheet5e", renderImplantItemSheet);
 
   Hooks.on("preUpdateToken", (token, changed) => (
     service.handlePreUpdateToken(token, changed)

@@ -83,7 +83,10 @@ function implantItem({
   };
 }
 
-function actorStub({ prof = 3, items = [] } = {}) {
+function actorStub({ prof = 3, items = [], spells = null } = {}) {
+  const nativeSpellMaximums = Object.fromEntries(
+    Object.entries(spells ?? {}).map(([key, slot]) => [key, Number(slot?.max ?? 0)])
+  );
   const actor = {
     id: "hero",
     uuid: "Actor.hero",
@@ -92,7 +95,8 @@ function actorStub({ prof = 3, items = [] } = {}) {
     system: {
       attributes: {
         prof
-      }
+      },
+      ...(spells ? { spells: structuredClone(spells) } : {})
     },
     items: collection(items),
     effects: collection([]),
@@ -100,6 +104,37 @@ function actorStub({ prof = 3, items = [] } = {}) {
     effectCreates: [],
     effectUpdates: [],
     effectDeletes: [],
+    actorUpdates: [],
+    refreshDerivedSpellMaximums() {
+      if (!this.system.spells) return;
+      for (const [key, maximum] of Object.entries(nativeSpellMaximums)) {
+        this.system.spells[key].max = maximum;
+      }
+      const capability = this.effects
+        .flatMap((effect) => effect.flags?.[MODULE_ID]?.automation?.capabilities ?? [])
+        .find(({ type }) => type === "spellCondenser");
+      if (!capability) return;
+      const highestAvailable = Object.entries(nativeSpellMaximums)
+        .filter(([key, maximum]) => /^spell\d+$/u.test(key) && maximum > 0)
+        .map(([key]) => Number(key.slice(5)))
+        .reduce((highest, level) => Math.max(highest, level), 0);
+      const level = Math.min(Number(capability.spentPoints), highestAvailable);
+      if (level > 0) this.system.spells[`spell${level}`].max += 1;
+    },
+    async update(changed) {
+      this.actorUpdates.push(changed);
+      for (const [path, value] of Object.entries(changed)) {
+        const parts = path.split(".");
+        let target = this;
+        while (parts.length > 1) {
+          const part = parts.shift();
+          target[part] ??= {};
+          target = target[part];
+        }
+        target[parts[0]] = value;
+      }
+      return this;
+    },
     async updateEmbeddedDocuments(type, updates) {
       if (type === "Item") {
         this.itemUpdates.push(...updates);
@@ -116,6 +151,7 @@ function actorStub({ prof = 3, items = [] } = {}) {
           effect.flags ??= {};
           effect.flags[MODULE_ID] = update[`flags.${MODULE_ID}`] ?? effect.flags[MODULE_ID];
         }
+        this.refreshDerivedSpellMaximums();
       }
       return updates;
     },
@@ -130,6 +166,7 @@ function actorStub({ prof = 3, items = [] } = {}) {
       }));
       this.effectCreates.push(...rows);
       this.effects.push(...created);
+      this.refreshDerivedSpellMaximums();
       return created;
     },
     async deleteEmbeddedDocuments(type, ids) {
@@ -355,6 +392,68 @@ test("mounted armor contributes +1 AC only after installation and required union
     value: "1",
     priority: 20
   }]);
+});
+
+test("spell condenser grants one current slot once and clamps it after level changes or removal", async () => {
+  const condenser = implantItem({
+    id: "condenser",
+    name: "Конденсатор магии (М)",
+    pointsMin: 1,
+    pointsMax: 5,
+    automationKey: "",
+    gearId: "kondensator-magii"
+  });
+  const actor = actorStub({
+    prof: 4,
+    items: [
+      raceItem("Синтеты", "синтеты"),
+      condenser
+    ],
+    spells: {
+      spell1: { value: 4, max: 4 },
+      spell2: { value: 3, max: 3 },
+      spell3: { value: 2, max: 2 },
+      spell4: { value: 0, max: 0 },
+      spell5: { value: 0, max: 0 }
+    }
+  });
+  const service = new ImplantService();
+
+  await service.applyLoadout(actor, [{
+    itemId: condenser.id,
+    installed: true,
+    united: false,
+    spentPoints: 3
+  }]);
+
+  assert.equal(actor.system.spells.spell3.max, 3);
+  assert.equal(actor.system.spells.spell3.value, 3);
+
+  await service.reconcileActor(actor, { reason: "repeat" });
+
+  assert.equal(actor.system.spells.spell3.value, 3);
+
+  await service.applyLoadout(actor, [{
+    itemId: condenser.id,
+    installed: true,
+    united: false,
+    spentPoints: 2
+  }]);
+
+  assert.equal(actor.system.spells.spell3.max, 2);
+  assert.equal(actor.system.spells.spell3.value, 2);
+  assert.equal(actor.system.spells.spell2.max, 4);
+  assert.equal(actor.system.spells.spell2.value, 4);
+
+  await service.applyLoadout(actor, [{
+    itemId: condenser.id,
+    installed: false,
+    united: false,
+    spentPoints: 2
+  }]);
+
+  assert.equal(actor.system.spells.spell2.max, 3);
+  assert.equal(actor.system.spells.spell2.value, 3);
 });
 
 test("all passive implant changes share one aggregate effect and are replaced on removal", async () => {

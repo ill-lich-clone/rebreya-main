@@ -1014,6 +1014,7 @@ export class CraftingService {
       toolAccess: quote.toolAccess,
       hoursPerDay: quote.hoursPerDay,
       ownedWorkshop: quote.ownedWorkshop,
+      effectiveBaseGold,
       dailyProgressGold,
       requiredWorkdays,
       requiredDowntimeWeeks,

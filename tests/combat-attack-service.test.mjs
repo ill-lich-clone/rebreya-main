@@ -117,10 +117,25 @@ function makeActor(items, {
           yield* effects;
         }
       };
+      this.updateCalls = [];
     }
 
     getFlag(scope, key) {
       return this.flags?.[scope]?.[key];
+    }
+
+    async setFlag(scope, key, value) {
+      this.flags[scope] ??= {};
+      this.flags[scope][key] = value;
+      return this;
+    }
+
+    async update(updates = {}) {
+      this.updateCalls.push(updates);
+      for (const [path, value] of Object.entries(updates)) {
+        foundry.utils.setProperty(this, path, value);
+      }
+      return this;
     }
   }();
 
@@ -2473,6 +2488,197 @@ test("reloading a firearm resolves selected ammunition item identifiers", async 
   assert.deepEqual(ammo.updateCalls.at(-1), {
     "system.quantity": 2
   });
+});
+
+test("weapon reload implant loads one ammunition type into its twenty-round reservoir", async () => {
+  const rifleAmmo = makeAmmoItem({
+    id: "rifle-ammo",
+    name: "Винтовочный патрон",
+    quantity: 30
+  });
+  const musketAmmo = makeAmmoItem({
+    id: "musket-ammo",
+    name: "Мушкетный патрон",
+    quantity: 10
+  });
+  const actor = makeActor([rifleAmmo, musketAmmo]);
+  const service = new CombatAttackService({
+    implantAutomationService: {
+      hasCapability: (candidate, type) => (
+        candidate === actor && type === "reloadWithoutFreeHand"
+      )
+    }
+  });
+
+  const loaded = await service.loadImplantReloadReservoir(actor, {
+    ammunitionItemId: rifleAmmo.id,
+    amount: 12,
+    createMessage: false
+  });
+
+  assert.equal(loaded.success, true);
+  assert.equal(loaded.loaded, 12);
+  assert.equal(rifleAmmo.system.quantity, 18);
+  assert.deepEqual(actor.getFlag(MODULE_ID, "implantReloadReservoir"), {
+    ammunitionItemId: rifleAmmo.id,
+    ammunitionIdentifier: rifleAmmo.id,
+    ammunitionName: rifleAmmo.name,
+    quantity: 12,
+    capacity: 20
+  });
+
+  const toppedUp = await service.loadImplantReloadReservoir(actor, {
+    ammunitionItemId: rifleAmmo.id,
+    amount: 20,
+    createMessage: false
+  });
+
+  assert.equal(toppedUp.loaded, 8);
+  assert.equal(rifleAmmo.system.quantity, 10);
+  assert.equal(actor.getFlag(MODULE_ID, "implantReloadReservoir").quantity, 20);
+
+  const mixed = await service.loadImplantReloadReservoir(actor, {
+    ammunitionItemId: musketAmmo.id,
+    amount: 1,
+    createMessage: false
+  });
+
+  assert.equal(mixed.success, false);
+  assert.equal(mixed.reason, "implantReloadAmmunitionMismatch");
+  assert.equal(musketAmmo.system.quantity, 10);
+  assert.equal(actor.getFlag(MODULE_ID, "implantReloadReservoir").quantity, 20);
+});
+
+test("weapon reload implant loading requires its installed capability and cancelled selection is inert", async () => {
+  const ammo = makeAmmoItem({ quantity: 5 });
+  const actor = makeActor([ammo]);
+  const missingService = new CombatAttackService({
+    implantAutomationService: {
+      hasCapability: () => false
+    }
+  });
+
+  const missing = await missingService.loadImplantReloadReservoir(actor, {
+    ammunitionItemId: ammo.id,
+    amount: 5,
+    createMessage: false
+  });
+
+  assert.equal(missing.success, false);
+  assert.equal(missing.reason, "implantReloadUnavailable");
+  assert.equal(ammo.system.quantity, 5);
+
+  const cancelledService = new CombatAttackService({
+    implantAutomationService: {
+      hasCapability: () => true
+    }
+  });
+  const cancelled = await cancelledService.loadImplantReloadReservoir(actor, {
+    createMessage: false
+  });
+
+  assert.equal(cancelled.success, false);
+  assert.equal(cancelled.reason, "cancelled");
+  assert.equal(ammo.system.quantity, 5);
+  assert.equal(actor.getFlag(MODULE_ID, "implantReloadReservoir"), undefined);
+});
+
+test("firearm reload spends compatible implant reservoir before actor inventory", async () => {
+  const weapon = makeFirearmItem({
+    name: "Автоматическая винтовка",
+    typeValue: "firearmAdvanced",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Винтовочный",
+      reload: "Смена магазина 24"
+    },
+    ammoState: {
+      current: 4,
+      capacity: 24,
+      ammunition: "Винтовочный"
+    }
+  });
+  const ammo = makeAmmoItem({
+    id: "rifle-ammo",
+    name: "Винтовочный патрон",
+    quantity: 20
+  });
+  const actor = makeActor([weapon, ammo]);
+  await actor.setFlag(MODULE_ID, "implantReloadReservoir", {
+    ammunitionItemId: ammo.id,
+    ammunitionIdentifier: ammo.id,
+    ammunitionName: ammo.name,
+    quantity: 6,
+    capacity: 20
+  });
+  const service = new CombatAttackService({
+    implantAutomationService: {
+      hasCapability: () => true
+    }
+  });
+
+  const result = await service.reloadFirearm(actor, weapon, { createMessage: false });
+
+  assert.equal(result.loaded, 20);
+  assert.equal(result.reservoirLoaded, 6);
+  assert.equal(result.inventoryLoaded, 14);
+  assert.equal(actor.getFlag(MODULE_ID, "implantReloadReservoir").quantity, 0);
+  assert.equal(ammo.system.quantity, 6);
+  assert.equal(weapon.getFlag(MODULE_ID, "firearmAmmoState").current, 24);
+});
+
+test("firearm reload leaves incompatible implant ammunition untouched", async () => {
+  const weapon = makeFirearmItem({
+    name: "Мушкет",
+    properties: {
+      lchFirearmAmmunition: true,
+      lchFirearmReload: true
+    },
+    values: {
+      ammunition: "Мушкетный",
+      reload: "Перезарядка 1"
+    },
+    ammoState: {
+      current: 0,
+      capacity: 1,
+      ammunition: "Мушкетный"
+    }
+  });
+  const rifleAmmo = makeAmmoItem({
+    id: "rifle-ammo",
+    name: "Винтовочный патрон",
+    quantity: 6
+  });
+  const musketAmmo = makeAmmoItem({
+    id: "musket-ammo",
+    name: "Мушкетный патрон",
+    quantity: 2
+  });
+  const actor = makeActor([weapon, rifleAmmo, musketAmmo]);
+  await actor.setFlag(MODULE_ID, "implantReloadReservoir", {
+    ammunitionItemId: rifleAmmo.id,
+    ammunitionIdentifier: rifleAmmo.id,
+    ammunitionName: rifleAmmo.name,
+    quantity: 6,
+    capacity: 20
+  });
+  const service = new CombatAttackService({
+    implantAutomationService: {
+      hasCapability: () => true
+    }
+  });
+
+  const result = await service.reloadFirearm(actor, weapon, { createMessage: false });
+
+  assert.equal(result.loaded, 1);
+  assert.equal(result.reservoirLoaded, 0);
+  assert.equal(result.inventoryLoaded, 1);
+  assert.equal(actor.getFlag(MODULE_ID, "implantReloadReservoir").quantity, 6);
+  assert.equal(rifleAmmo.system.quantity, 6);
+  assert.equal(musketAmmo.system.quantity, 1);
 });
 
 test("automatic fire area action empties the magazine and reports save data", async () => {

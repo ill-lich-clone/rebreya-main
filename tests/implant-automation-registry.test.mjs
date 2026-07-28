@@ -171,6 +171,25 @@ test("compiler carries the selected built-in artisan tool into its runtime capab
   }]);
 });
 
+test("compiler carries selected modification points into the spell condenser capability", () => {
+  const compiled = compileMechanicalImplants([{
+    item: implantItem("kondensator-magii"),
+    state: {
+      installed: true,
+      installedCount: 1,
+      spentPoints: 3
+    },
+    effective: true
+  }]);
+
+  assert.deepEqual(compiled.capabilities, [{
+    implantId: "kondensator-magii",
+    count: 1,
+    type: "spellCondenser",
+    spentPoints: 3
+  }]);
+});
+
 test("compiler ignores unsupported, ineffective, and uninstalled implants", () => {
   const compiled = compileMechanicalImplants([
     { item: implantItem("navesnaya-bronya"), state: { installed: false, installedCount: 0 }, effective: true },

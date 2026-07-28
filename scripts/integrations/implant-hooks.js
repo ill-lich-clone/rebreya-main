@@ -28,11 +28,70 @@ function moduleFlag(document, key) {
   return document?.flags?.[MODULE_ID]?.[key];
 }
 
-function implantActorFlags(actor) {
+function implantAutomation(actor) {
   const aggregate = collectionValues(actor?.effects).find((effect) => (
     moduleFlag(effect, "implantAggregate") === true
   ));
-  return moduleFlag(aggregate, "automation")?.actorFlags ?? {};
+  const automation = moduleFlag(aggregate, "automation");
+  return automation && typeof automation === "object"
+    ? automation
+    : {};
+}
+
+function implantActorFlags(actor) {
+  return implantAutomation(actor).actorFlags ?? {};
+}
+
+function implantCapabilities(actor) {
+  const capabilities = implantAutomation(actor).capabilities;
+  return Array.isArray(capabilities) ? capabilities : [];
+}
+
+function applySpellCondenser(model, capabilities) {
+  const capability = capabilities.find(({ type }) => type === "spellCondenser");
+  const spentPoints = Math.max(1, Math.min(5, Math.floor(Number(capability?.spentPoints))));
+  if (!capability || !Number.isFinite(spentPoints)) return;
+
+  let highestAvailableLevel = 0;
+  for (let level = 1; level <= 9; level += 1) {
+    const maximum = Number(model?.spells?.[`spell${level}`]?.max);
+    if (Number.isFinite(maximum) && maximum > 0) {
+      highestAvailableLevel = level;
+    }
+  }
+  if (highestAvailableLevel <= 0) return;
+
+  const level = Math.min(spentPoints, highestAvailableLevel);
+  const slot = model?.spells?.[`spell${level}`];
+  const maximum = Number(slot?.max);
+  if (slot && Number.isFinite(maximum)) {
+    slot.max = maximum + 1;
+  }
+}
+
+function applyTelepathyLanguage(model, capabilities) {
+  if (!capabilities.some(({ type }) => type === "telepathy")) return;
+  const languages = model?.traits?.languages;
+  if (!languages) return;
+
+  const label = "Телепатия (60 фт.)";
+  const current = String(languages.custom ?? "").trim();
+  const entries = current
+    .split(/\s*;\s*/u)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (!entries.includes(label)) entries.push(label);
+  languages.custom = entries.join("; ");
+}
+
+function applyRocketThrust(model, capabilities) {
+  if (!capabilities.some(({ type }) => type === "rocketThrust")) return;
+  const movement = model?.attributes?.movement;
+  if (!movement) return;
+  const walk = Number(movement.walk);
+  const fly = Number(movement.fly);
+  if (!Number.isFinite(walk)) return;
+  movement.fly = Math.max(walk, Number.isFinite(fly) ? fly : 0);
 }
 
 function applyCarryingStrengthBonus(model, actorFlags) {
@@ -84,6 +143,7 @@ export function registerImplantDataModelPatch({ CONFIG = globalThis.CONFIG } = {
     const original = prototype.prepareDerivedData;
     prototype.prepareDerivedData = function rebreyaImplantPrepareDerivedData(...args) {
       const actorFlags = implantActorFlags(this.parent);
+      const capabilities = implantCapabilities(this.parent);
       const maximums = actorFlags?.abilityMaximums ?? {};
       for (const [ability, maximum] of Object.entries(maximums)) {
         const data = this.abilities?.[ability];
@@ -95,6 +155,9 @@ export function registerImplantDataModelPatch({ CONFIG = globalThis.CONFIG } = {
       }
       const result = original.apply(this, args);
       applyCarryingStrengthBonus(this, actorFlags);
+      applySpellCondenser(this, capabilities);
+      applyTelepathyLanguage(this, capabilities);
+      applyRocketThrust(this, capabilities);
       return result;
     };
     Object.defineProperty(prototype, DATA_MODEL_PATCH, {

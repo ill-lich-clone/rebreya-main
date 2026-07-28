@@ -139,6 +139,12 @@ export function compileMechanicalImplants(actorOrPlanned, maybePlanned) {
       : 1;
     for (const capability of definition.capabilities) {
       const compiledCapability = { implantId: definition.id, count, ...capability };
+      if (capability.type === "spellCondenser") {
+        const spentPoints = Number(entry?.state?.spentPoints);
+        if (Number.isFinite(spentPoints)) {
+          compiledCapability.spentPoints = Math.max(1, Math.min(5, Math.floor(spentPoints)));
+        }
+      }
       if (capability.type === "artisanToolBonus") {
         const toolItemId = String(entry?.state?.artisanToolId ?? "").trim();
         if (toolItemId) compiledCapability.toolItemId = toolItemId;

@@ -171,7 +171,8 @@ function installFixture({
   failCancellationPersistBeforeWriteOnce = false,
   loseReleaseResponseOnce = false,
   onInventoryOperation = null,
-  materialAvailability = null
+  materialAvailability = null,
+  resolveCraftProgressBase = async () => 5
 } = {}) {
   const restoreFoundry = installFoundryUtils();
   const previousGame = globalThis.game;
@@ -412,7 +413,7 @@ function installFixture({
         tools: [{ toolId: "smith", owned: true, rank: 1 }]
       }]
     }),
-    resolveCraftProgressBase: async () => 5
+    resolveCraftProgressBase
   };
 
   return {
@@ -666,6 +667,45 @@ test("draft craft preview calculates workdays and reports current material stock
     assert.equal(preview.materialAvailability.sufficient, true);
     assert.equal(preview.materials.every((row) => row.required <= row.available), true);
     assert.equal(preview.canSubmit, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("Hand of God craft base is shared by preview and processed workdays", async () => {
+  const resolverCalls = [];
+  const fixture = installFixture({
+    model: createCraftModel({ priceGold: 30 }),
+    resolveCraftProgressBase: async (...args) => {
+      resolverCalls.push(args);
+      return 10;
+    }
+  });
+  try {
+    const preview = await fixture.service.previewRequest({
+      actorId: "crafter",
+      craftProject: {
+        outputs: [{ sourceType: "gear", sourceId: "iron-gear", quantity: 1 }],
+        hoursPerDay: 8,
+        ownedWorkshop: true,
+        predominantMaterialId: "iron"
+      }
+    });
+    const project = await approveDefaultProject(fixture);
+    const processed = await fixture.service.processProjectWorkday(project.id, {
+      isoDate: "2026-07-28",
+      transitionId: "hand-of-god-day",
+      mutationId: "hand-of-god-workday"
+    });
+
+    assert.equal(preview.effectiveBaseGold, 10);
+    assert.equal(preview.dailyProgressGold, 10);
+    assert.equal(preview.requiredWorkdays, 3);
+    assert.equal(processed.result.progressGold, 10);
+    assert.equal(resolverCalls.length, 2);
+    assert.equal(resolverCalls[0][0].actorId, "crafter");
+    assert.equal(resolverCalls[1][0].id, "crafter");
   }
   finally {
     fixture.restore();

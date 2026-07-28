@@ -2245,6 +2245,19 @@ export class RebreyaMainModule {
     return this.durabilityService.isBroken(item);
   }
 
+  resolveCraftProgressBase(actorOrContext) {
+    const actorId = typeof actorOrContext === "string"
+      ? actorOrContext
+      : String(actorOrContext?.actorId ?? "").trim();
+    const actor = actorId
+      ? resolveActorById(actorId)
+      : actorOrContext;
+    return this.implantAutomationService.resolveCraftProgressBase(actor, {
+      baseGold: 5,
+      construct: false
+    });
+  }
+
   getCombatStatusDefinitions() {
     return this.combatStatusService.getStatusDefinitions();
   }

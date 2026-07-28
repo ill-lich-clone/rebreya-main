@@ -169,10 +169,18 @@ export class ImplantAutomationService {
     this.completedTurnDistances = new Map();
     this.boostedActor = null;
     this.tokenMovementOrigins = new WeakMap();
+    this.processedRegenerationTurns = new Set();
   }
 
   hasCapability(actor, type) {
     return Boolean(capabilityOf(actor, type));
+  }
+
+  resolveCraftProgressBase(actor, { baseGold = 5, construct = false } = {}) {
+    const base = Math.max(0, finiteNumber(baseGold, 5));
+    if (construct) return base;
+    const capability = capabilityOf(actor, "craftingInvestmentBonus");
+    return base + Math.max(0, finiteNumber(capability?.ordinary, 0));
   }
 
   getPhysicalProfile(actor, { previousTurnDistance = null } = {}) {
@@ -230,6 +238,7 @@ export class ImplantAutomationService {
     const incomingActor = combat?.combatant?.actor ?? null;
     const incomingKey = cleanText(incomingActor?.uuid ?? incomingActor?.id);
     if (!incomingKey) return true;
+    await this.#applyTurnRegeneration(combat, incomingActor, incomingKey);
 
     const previousActor = this.activeTurnActor;
     const previousKey = cleanText(previousActor?.uuid ?? previousActor?.id);
@@ -267,6 +276,7 @@ export class ImplantAutomationService {
     this.activeTurnDistance = 0;
     this.completedTurnDistances.clear();
     this.boostedActor = null;
+    this.processedRegenerationTurns.clear();
     return true;
   }
 
@@ -418,6 +428,43 @@ export class ImplantAutomationService {
       .sort((left, right) => cleanText(left?.id).localeCompare(cleanText(right?.id), "en"));
     const responsible = playerOwners[0] ?? users.find((user) => user?.isGM === true) ?? currentUser;
     return cleanText(responsible?.id) === cleanText(currentUser?.id);
+  }
+
+  async #applyTurnRegeneration(combat, actor, actorKey) {
+    const capability = capabilityOf(actor, "turnRegeneration");
+    if (!capability || !this.#isResponsibleClient(actor)) return false;
+
+    const turnKey = [
+      cleanText(combat?.id ?? combat?._id ?? "combat"),
+      Number.isFinite(Number(combat?.round)) ? Number(combat.round) : 0,
+      Number.isFinite(Number(combat?.turn)) ? Number(combat.turn) : 0,
+      actorKey
+    ].join("/");
+    if (this.processedRegenerationTurns.has(turnKey)) return false;
+    this.processedRegenerationTurns.add(turnKey);
+    if (this.processedRegenerationTurns.size > 512) {
+      const oldest = this.processedRegenerationTurns.values().next().value;
+      this.processedRegenerationTurns.delete(oldest);
+    }
+
+    const hitPoints = actor?.system?.attributes?.hp;
+    const current = finiteNumber(hitPoints?.value, 0);
+    const maximum = finiteNumber(hitPoints?.max, 0);
+    const minimum = Math.max(1, finiteNumber(capability.minimumHitPoints, 2));
+    const healing = Math.max(0, finiteNumber(capability.value, 1));
+    if (
+      current < minimum
+      || current >= maximum
+      || maximum <= 0
+      || healing <= 0
+      || typeof actor?.update !== "function"
+    ) {
+      return false;
+    }
+    await actor.update({
+      "system.attributes.hp.value": Math.min(maximum, current + healing)
+    });
+    return true;
   }
 
   async #promptImpulseLegs(actor) {

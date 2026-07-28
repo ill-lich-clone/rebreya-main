@@ -101,6 +101,25 @@ test("built-in workshop adds +2 only to the selected artisan tool", () => {
   assert.equal(brewer.bonus, undefined);
 });
 
+test("Hand of God doubles the ordinary five-gold crafting base without enabling construct crafting", () => {
+  const actor = actorWithCapabilities([{
+    implantId: "ruka-boga",
+    type: "craftingInvestmentBonus",
+    ordinary: 5,
+    construct: 10
+  }]);
+  const ordinary = new ImplantAutomationService();
+  const withoutImplant = new ImplantAutomationService();
+
+  assert.equal(ordinary.resolveCraftProgressBase(actor), 10);
+  assert.equal(ordinary.resolveCraftProgressBase(actor, { baseGold: 7 }), 12);
+  assert.equal(ordinary.resolveCraftProgressBase(actor, {
+    baseGold: 5,
+    construct: true
+  }), 5);
+  assert.equal(withoutImplant.resolveCraftProgressBase(actorWithCapabilities([])), 5);
+});
+
 test("physical profile exposes exact impulse, climbing, and hover rules", () => {
   const actor = actorWithCapabilities([
     { implantId: "impulsnye-nogi", type: "impulseLegs" },
@@ -183,6 +202,109 @@ test("impulse legs do not trigger when the actor moved during its previous turn"
   await service.handleCombatTurnChange({ combatant: { actor: impulseActor } });
 
   assert.deepEqual(prompts, []);
+});
+
+test("recovery module heals once at the start of an eligible combat turn", async () => {
+  function recoveryActor(id, value, max = 20) {
+    const actor = actorWithCapabilities([{
+      implantId: "modul-vosstanovleniya",
+      type: "turnRegeneration",
+      value: 1,
+      minimumHitPoints: 2
+    }], {
+      attributes: {
+        hp: { value, max }
+      }
+    });
+    actor.id = id;
+    actor.uuid = `Actor.${id}`;
+    actor.updateCalls = [];
+    actor.update = async function update(changed) {
+      this.updateCalls.push(changed);
+      this.system.attributes.hp.value = changed["system.attributes.hp.value"];
+    };
+    return actor;
+  }
+
+  const oneHp = recoveryActor("one", 1);
+  const twoHp = recoveryActor("two", 2);
+  const wounded = recoveryActor("wounded", 19);
+  const full = recoveryActor("full", 20);
+  const service = new ImplantAutomationService();
+
+  await service.handleCombatTurnChange({
+    id: "combat",
+    round: 1,
+    turn: 0,
+    combatant: { actor: oneHp }
+  });
+  await service.handleCombatTurnChange({
+    id: "combat",
+    round: 1,
+    turn: 1,
+    combatant: { actor: twoHp }
+  });
+  await service.handleCombatTurnChange({
+    id: "combat",
+    round: 1,
+    turn: 1,
+    combatant: { actor: twoHp }
+  });
+  await service.handleCombatTurnChange({
+    id: "combat",
+    round: 1,
+    turn: 2,
+    combatant: { actor: wounded }
+  });
+  await service.handleCombatTurnChange({
+    id: "combat",
+    round: 1,
+    turn: 3,
+    combatant: { actor: full }
+  });
+
+  assert.equal(oneHp.system.attributes.hp.value, 1);
+  assert.equal(twoHp.system.attributes.hp.value, 3);
+  assert.equal(wounded.system.attributes.hp.value, 20);
+  assert.equal(full.system.attributes.hp.value, 20);
+  assert.equal(twoHp.updateCalls.length, 1);
+  assert.equal(wounded.updateCalls.length, 1);
+  assert.equal(oneHp.updateCalls.length, 0);
+  assert.equal(full.updateCalls.length, 0);
+});
+
+test("recovery module is applied only by the responsible client", async () => {
+  const actor = actorWithCapabilities([{
+    implantId: "modul-vosstanovleniya",
+    type: "turnRegeneration",
+    value: 1,
+    minimumHitPoints: 2
+  }], {
+    attributes: {
+      hp: { value: 10, max: 20 }
+    }
+  });
+  actor.updateCalls = [];
+  actor.update = async (changed) => actor.updateCalls.push(changed);
+  actor.testUserPermission = () => true;
+  const service = new ImplantAutomationService({
+    game: {
+      user: { id: "player-b", active: true, isGM: false },
+      users: [
+        { id: "player-a", active: true, isGM: false },
+        { id: "player-b", active: true, isGM: false }
+      ]
+    }
+  });
+
+  await service.handleCombatTurnChange({
+    id: "combat",
+    round: 1,
+    turn: 0,
+    combatant: { actor }
+  });
+
+  assert.deepEqual(actor.updateCalls, []);
 });
 
 test("token movement hooks feed measured distance into the active implant turn", async () => {

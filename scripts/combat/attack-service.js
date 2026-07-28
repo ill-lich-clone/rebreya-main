@@ -19,6 +19,8 @@ const FIREARM_RUST_PROPERTY = "lchFirearmRust";
 const FIREARM_MISFIRE_DIE_FORMULA = "1d20";
 const FIREARM_AMMO_STATE_FLAG = "firearmAmmoState";
 const FIREARM_CHAT_NOTES_FLAG = "firearmChatNotes";
+const IMPLANT_RELOAD_RESERVOIR_FLAG = "implantReloadReservoir";
+const IMPLANT_RELOAD_RESERVOIR_CAPACITY = 20;
 const FIREARM_JAM_NAME_SUFFIX = " (клин)";
 const FIREARM_CLEAR_JAM_ACTIVITY_ID = "lchClearBreech01";
 const FIREARM_MAINTAIN_ACTIVITY_ID = "lchMaintainGun01";
@@ -1573,6 +1575,58 @@ export class CombatAttackService {
       spent: requested - remaining,
       updates
     };
+  }
+
+  async #spendImplantReloadReservoir(actor, ammunitionLabel, amount) {
+    const requested = Math.max(0, Math.floor(toNumber(amount, 0)));
+    const implantAutomationService = this.moduleApi?.implantAutomationService;
+    if (
+      requested <= 0
+      || typeof implantAutomationService?.hasCapability !== "function"
+      || !implantAutomationService.hasCapability(actor, "reloadWithoutFreeHand")
+    ) {
+      return { spent: 0, reservoir: null };
+    }
+
+    const source = readDocumentFlag(actor, MODULE_ID, IMPLANT_RELOAD_RESERVOIR_FLAG);
+    const quantity = clampInteger(source?.quantity, 0, IMPLANT_RELOAD_RESERVOIR_CAPACITY);
+    if (quantity <= 0) return { spent: 0, reservoir: source ?? null };
+
+    const wanted = cleanText(ammunitionLabel);
+    const reservoirIdentifiers = [
+      source?.ammunitionItemId,
+      source?.ammunitionIdentifier
+    ].map(cleanText).filter(Boolean);
+    const wantedStem = this.#ammunitionStem(wanted);
+    const reservoirStem = this.#ammunitionStem(source?.ammunitionName);
+    const compatible = reservoirIdentifiers.includes(wanted)
+      || (
+        wantedStem
+        && reservoirStem
+        && (
+          wantedStem.includes(reservoirStem)
+          || reservoirStem.includes(wantedStem)
+        )
+      );
+    if (!compatible) return { spent: 0, reservoir: source };
+
+    const spent = Math.min(requested, quantity);
+    const reservoir = {
+      ammunitionItemId: cleanText(source?.ammunitionItemId),
+      ammunitionIdentifier: cleanText(source?.ammunitionIdentifier),
+      ammunitionName: cleanText(source?.ammunitionName),
+      quantity: quantity - spent,
+      capacity: IMPLANT_RELOAD_RESERVOIR_CAPACITY
+    };
+    if (typeof actor?.setFlag === "function") {
+      await actor.setFlag(MODULE_ID, IMPLANT_RELOAD_RESERVOIR_FLAG, reservoir);
+    }
+    else {
+      await actor?.update?.({
+        [`flags.${MODULE_ID}.${IMPLANT_RELOAD_RESERVOIR_FLAG}`]: reservoir
+      });
+    }
+    return { spent, reservoir };
   }
 
   #resolveMinimumStrengthRequirement(actor, item, options = {}) {
@@ -4224,8 +4278,18 @@ export class CombatAttackService {
       };
     }
 
-    const spent = await this.#spendActorAmmunition(actor, state.ammunition, missing);
-    if (spent.spent <= 0) {
+    const reservoirSpent = await this.#spendImplantReloadReservoir(
+      actor,
+      state.ammunition,
+      missing
+    );
+    const inventorySpent = await this.#spendActorAmmunition(
+      actor,
+      state.ammunition,
+      Math.max(0, missing - reservoirSpent.spent)
+    );
+    const totalSpent = reservoirSpent.spent + inventorySpent.spent;
+    if (totalSpent <= 0) {
       ui.notifications?.warn?.(`${weapon.name}: нет подходящих боеприпасов (${state.ammunition || "тип не задан"}).`);
       return {
         success: false,
@@ -4241,7 +4305,7 @@ export class CombatAttackService {
 
     const nextState = this.#setFirearmAmmoStateSync(weapon, {
       ...state,
-      current: Math.min(state.capacity, state.current + spent.spent)
+      current: Math.min(state.capacity, state.current + totalSpent)
     });
     this.#createFirearmChatMessage(
       actor,
@@ -4254,12 +4318,135 @@ export class CombatAttackService {
       success: true,
       weaponId: weapon.id,
       weaponName: weapon.name,
-      loaded: spent.spent,
+      loaded: totalSpent,
+      reservoirLoaded: reservoirSpent.spent,
+      inventoryLoaded: inventorySpent.spent,
       requested: missing,
       current: nextState.current,
       capacity: nextState.capacity,
       ammunition: state.ammunition,
-      ammoUpdates: spent.updates
+      ammoUpdates: inventorySpent.updates
+    };
+  }
+
+  async loadImplantReloadReservoir(actorOrId, options = {}) {
+    const actor = this.#resolveActor(actorOrId);
+    const implantAutomationService = this.moduleApi?.implantAutomationService;
+    if (
+      !(actor instanceof Actor)
+      || typeof implantAutomationService?.hasCapability !== "function"
+      || !implantAutomationService.hasCapability(actor, "reloadWithoutFreeHand")
+    ) {
+      ui.notifications?.warn?.("Механизм перезарядки не установлен.");
+      return {
+        success: false,
+        reason: "implantReloadUnavailable",
+        loaded: 0
+      };
+    }
+
+    const selection = options;
+    if (!cleanText(selection?.ammunitionItemId)) {
+      return {
+        success: false,
+        reason: "cancelled",
+        loaded: 0
+      };
+    }
+
+    const ammunitionItem = this.#resolveAmmunitionItemByIdentifier(
+      actor,
+      cleanText(selection.ammunitionItemId)
+    );
+    if (!ammunitionItem) {
+      ui.notifications?.warn?.("Выбранные боеприпасы недоступны.");
+      return {
+        success: false,
+        reason: "implantReloadAmmunitionUnavailable",
+        loaded: 0
+      };
+    }
+
+    const currentSource = readDocumentFlag(actor, MODULE_ID, IMPLANT_RELOAD_RESERVOIR_FLAG);
+    const current = {
+      ammunitionItemId: cleanText(currentSource?.ammunitionItemId),
+      ammunitionIdentifier: cleanText(currentSource?.ammunitionIdentifier),
+      ammunitionName: cleanText(currentSource?.ammunitionName),
+      quantity: clampInteger(currentSource?.quantity, 0, IMPLANT_RELOAD_RESERVOIR_CAPACITY),
+      capacity: IMPLANT_RELOAD_RESERVOIR_CAPACITY
+    };
+    const sameAmmunition = current.quantity <= 0
+      || current.ammunitionItemId === cleanText(ammunitionItem.id)
+      || (
+        this.#ammunitionStem(current.ammunitionName)
+        && this.#ammunitionStem(current.ammunitionName) === this.#ammunitionStem(ammunitionItem.name)
+      );
+    if (!sameAmmunition) {
+      ui.notifications?.warn?.("В механизме уже находятся боеприпасы другого типа.");
+      return {
+        success: false,
+        reason: "implantReloadAmmunitionMismatch",
+        loaded: 0,
+        reservoir: current
+      };
+    }
+
+    const remainingCapacity = Math.max(0, IMPLANT_RELOAD_RESERVOIR_CAPACITY - current.quantity);
+    if (remainingCapacity <= 0) {
+      return {
+        success: true,
+        reason: "implantReloadReservoirFull",
+        loaded: 0,
+        reservoir: current
+      };
+    }
+    const available = this.#getItemQuantity(ammunitionItem);
+    const requestedValue = Number(selection.amount);
+    const requested = Number.isFinite(requestedValue)
+      ? Math.max(0, Math.floor(requestedValue))
+      : remainingCapacity;
+    const loaded = Math.min(requested, remainingCapacity, available);
+    if (loaded <= 0) {
+      return {
+        success: false,
+        reason: "implantReloadAmmunitionUnavailable",
+        loaded: 0,
+        reservoir: current
+      };
+    }
+
+    const nextQuantity = available - loaded;
+    await ammunitionItem.update?.({
+      [this.#itemQuantityUpdatePath(ammunitionItem)]: nextQuantity
+    });
+    const reservoir = {
+      ammunitionItemId: cleanText(ammunitionItem.id),
+      ammunitionIdentifier: cleanText(ammunitionItem.id),
+      ammunitionName: cleanText(ammunitionItem.name),
+      quantity: current.quantity + loaded,
+      capacity: IMPLANT_RELOAD_RESERVOIR_CAPACITY
+    };
+    if (typeof actor.setFlag === "function") {
+      await actor.setFlag(MODULE_ID, IMPLANT_RELOAD_RESERVOIR_FLAG, reservoir);
+    }
+    else {
+      await actor.update?.({
+        [`flags.${MODULE_ID}.${IMPLANT_RELOAD_RESERVOIR_FLAG}`]: reservoir
+      });
+    }
+    this.#createFirearmChatMessage(
+      actor,
+      ammunitionItem,
+      `Механизм перезарядки: загружено ${loaded}, боезапас ${reservoir.quantity}/${reservoir.capacity}.`,
+      options
+    );
+    return {
+      success: true,
+      loaded,
+      ammunitionItemId: ammunitionItem.id,
+      ammunitionName: ammunitionItem.name,
+      inventoryRemaining: nextQuantity,
+      reservoir
     };
   }
 

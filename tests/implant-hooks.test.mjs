@@ -173,3 +173,98 @@ test("implant data-model patch applies reinforced-joint carrying strength withou
   assert.equal(model.attributes.encumbrance.max, 255);
   assert.equal(Math.round(model.attributes.encumbrance.pct * 100) / 100, 39.22);
 });
+
+test("implant data-model patch derives condenser slot, telepathy language, and rocket flight idempotently", () => {
+  class CharacterData {
+    prepareDerivedData() {
+      this.spells = {
+        spell1: { max: 4, value: 4 },
+        spell2: { max: 3, value: 3 },
+        spell3: { max: 2, value: 2 },
+        spell4: { max: 0, value: 0 },
+        spell5: { max: 0, value: 0 }
+      };
+      this.traits.languages.custom = "Морзянка";
+      this.attributes.movement = { walk: 30, fly: 20 };
+    }
+  }
+  const CONFIG = { Actor: { dataModels: { character: CharacterData } } };
+  registerImplantDataModelPatch({ CONFIG });
+  const model = new CharacterData();
+  model.abilities = {};
+  model.attributes = { movement: {} };
+  model.traits = { languages: { custom: "" } };
+  model.spells = {};
+  model.parent = {
+    effects: [{
+      flags: {
+        [MODULE_ID]: {
+          implantAggregate: true,
+          automation: {
+            actorFlags: {},
+            capabilities: [
+              { type: "spellCondenser", spentPoints: 5 },
+              { type: "telepathy" },
+              { type: "rocketThrust" }
+            ]
+          }
+        }
+      }
+    }]
+  };
+
+  model.prepareDerivedData();
+
+  assert.equal(model.spells.spell3.max, 3);
+  assert.equal(model.spells.spell5.max, 0);
+  assert.equal(model.traits.languages.custom, "Морзянка; Телепатия (60 фт.)");
+  assert.equal(model.attributes.movement.fly, 30);
+
+  model.prepareDerivedData();
+
+  assert.equal(model.spells.spell3.max, 3);
+  assert.equal(model.traits.languages.custom, "Морзянка; Телепатия (60 фт.)");
+  assert.equal(model.attributes.movement.fly, 30);
+});
+
+test("implant derived data preserves stronger flight and skips condenser without native slots", () => {
+  class NpcData {
+    prepareDerivedData() {
+      this.spells = {
+        spell1: { max: 0, value: 0 },
+        spell2: { max: 0, value: 0 }
+      };
+      this.traits.languages.custom = "";
+      this.attributes.movement = { walk: 30, fly: 60 };
+    }
+  }
+  const CONFIG = { Actor: { dataModels: { npc: NpcData } } };
+  registerImplantDataModelPatch({ CONFIG });
+  const model = new NpcData();
+  model.abilities = {};
+  model.attributes = { movement: {} };
+  model.traits = { languages: { custom: "" } };
+  model.spells = {};
+  model.parent = {
+    effects: [{
+      flags: {
+        [MODULE_ID]: {
+          implantAggregate: true,
+          automation: {
+            actorFlags: {},
+            capabilities: [
+              { type: "spellCondenser", spentPoints: 2 },
+              { type: "rocketThrust" }
+            ]
+          }
+        }
+      }
+    }]
+  };
+
+  model.prepareDerivedData();
+
+  assert.equal(model.spells.spell1.max, 0);
+  assert.equal(model.spells.spell2.max, 0);
+  assert.equal(model.attributes.movement.fly, 60);
+});

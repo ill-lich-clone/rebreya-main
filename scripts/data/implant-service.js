@@ -219,6 +219,28 @@ function isInstallable(implant) {
     && Number.isFinite(Number(implant?.pointsMax));
 }
 
+function effectCapability(effect, type) {
+  const capabilities = getModuleFlag(effect, "automation")?.capabilities;
+  if (!Array.isArray(capabilities)) return null;
+  return capabilities.find((capability) => capability?.type === type) ?? null;
+}
+
+function spellCondenserLevel(actor, capability) {
+  const spentPoints = Math.max(1, Math.min(5, Math.floor(Number(capability?.spentPoints))));
+  if (!capability || !Number.isFinite(spentPoints)) return 0;
+
+  let highestAvailableLevel = 0;
+  for (let level = 1; level <= 9; level += 1) {
+    const maximum = Number(actor?.system?.spells?.[`spell${level}`]?.max);
+    if (Number.isFinite(maximum) && maximum > 0) {
+      highestAvailableLevel = level;
+    }
+  }
+  return highestAvailableLevel > 0
+    ? Math.min(spentPoints, highestAvailableLevel)
+    : 0;
+}
+
 function normalizeSpentPoints(implant, value) {
   const min = Number(implant?.pointsMin ?? 0);
   const max = Number(implant?.pointsMax ?? min);
@@ -613,6 +635,13 @@ export class ImplantService {
       || cleanString(effect?.name) === AGGREGATE_EFFECT_NAME
     ));
     const aggregate = aggregateCandidates[0] ?? null;
+    const previousCondenserLevel = spellCondenserLevel(
+      actor,
+      effectCapability(aggregate, "spellCondenser")
+    );
+    const nextCondenserCapability = compiled.capabilities.find(({ type }) => (
+      type === "spellCondenser"
+    )) ?? null;
     const runtimeMultiplier = Number(
       getModuleFlag(aggregate, "automation")?.runtime?.movementMultiplier
     );
@@ -639,6 +668,38 @@ export class ImplantService {
     if (duplicateIds.length && typeof actor.deleteEmbeddedDocuments === "function") {
       await actor.deleteEmbeddedDocuments("ActiveEffect", duplicateIds);
     }
+    const nextCondenserLevel = spellCondenserLevel(actor, nextCondenserCapability);
+    await this.#syncSpellCondenserResource(actor, previousCondenserLevel, nextCondenserLevel);
+  }
+
+  async #syncSpellCondenserResource(actor, previousLevel, nextLevel) {
+    if (
+      previousLevel === nextLevel
+      || typeof actor?.update !== "function"
+    ) {
+      return false;
+    }
+
+    const updates = {};
+    if (previousLevel > 0) {
+      const previousSlot = actor?.system?.spells?.[`spell${previousLevel}`];
+      const current = Number(previousSlot?.value);
+      const maximum = Number(previousSlot?.max);
+      if (Number.isFinite(current) && Number.isFinite(maximum) && current > maximum) {
+        updates[`system.spells.spell${previousLevel}.value`] = maximum;
+      }
+    }
+    if (nextLevel > 0) {
+      const nextSlot = actor?.system?.spells?.[`spell${nextLevel}`];
+      const current = Number(nextSlot?.value);
+      const maximum = Number(nextSlot?.max);
+      if (Number.isFinite(current) && Number.isFinite(maximum) && current < maximum) {
+        updates[`system.spells.spell${nextLevel}.value`] = Math.min(maximum, current + 1);
+      }
+    }
+    if (!Object.keys(updates).length) return false;
+    await actor.update(updates, { rebreyaImplantReconcile: true });
+    return true;
   }
 
   async #promptLoadout(actor, snapshot, progress) {
