@@ -1,13 +1,14 @@
 ﻿import { MODULE_ID, SETTINGS_KEYS } from "../constants.js";
 import {
   applyMarketPrice,
+  buildCityTraderPlanHeaders,
   buildCityTraderPlans,
   getExpectedTraderCount,
   getGearBasePriceGold,
   getGearPriceModifier,
   getMaterialPriceModifier,
   getTraderPlanByKey
-} from "../engine/trader-engine.js";
+} from "../engine/trader-engine.js?v=1.4.109-lazy-trader-restock";
 import { buildGearIconLookup, resolveGearItemIcon } from "./gear-icon-resolver.js";
 import { classifyGearEntry } from "./item-classification.js";
 import { formatPercent, formatSignedPercent } from "../ui.js";
@@ -154,6 +155,14 @@ function buildPlanSignature(plan) {
     .map((item) => `${item.sourceType}:${item.sourceId}:${Math.max(0, Math.floor(toNumber(item.quantity, 0)))}`)
     .sort((left, right) => left.localeCompare(right, "ru"))
     .join("|");
+}
+
+function isTraderStateCurrentForPlan(traderState, expectedPlanSignature, seedSalt) {
+  return Boolean(
+    traderState
+    && String(traderState.planSignature ?? "") === String(expectedPlanSignature ?? "")
+    && String(traderState.assortmentSeedSalt ?? "").trim() === String(seedSalt ?? "").trim()
+  );
 }
 
 export function createEmptyTraderState() {
@@ -2097,6 +2106,15 @@ export class TraderService {
     return actors.length;
   }
 
+  async ensureTraderState(cityId, traderKey) {
+    const citySnapshot = this.moduleApi.getCitySnapshot(cityId);
+    if (!citySnapshot) {
+      throw new Error(`City '${cityId}' was not found.`);
+    }
+
+    return this.#ensureTraderState(citySnapshot, traderKey);
+  }
+
   async #ensureTraderState(citySnapshot, traderKey) {
     const model = await this.moduleApi.getModel();
     const seedSalt = getTraderSeedSalt(this.moduleApi);
@@ -2118,8 +2136,7 @@ export class TraderService {
         state.traders[traderId] = traderState;
       }
       else {
-        const currentPlanSignature = String(traderState.planSignature ?? "");
-        if (currentPlanSignature !== expectedPlanSignature) {
+        if (!isTraderStateCurrentForPlan(traderState, expectedPlanSignature, seedSalt)) {
           const preservedPortrait = String(traderState.portrait ?? "");
           const preservedDescription = String(traderState.description ?? "");
           const preservedOpenedAt = Math.max(0, Math.floor(toNumber(traderState.openedAt, Date.now())));
@@ -2400,42 +2417,44 @@ export class TraderService {
 
     const state = this.#getState();
     const seedSalt = getTraderSeedSalt(this.moduleApi);
-    return buildCityTraderPlans(model, citySnapshot, { seedSalt }).map((plan) => {
+    return buildCityTraderPlanHeaders(model, citySnapshot).map((plan) => {
       const traderId = getTraderStateKey(cityId, plan.traderKey);
       const traderState = state.traders[traderId] ?? null;
-      const expectedPlanSignature = buildPlanSignature(plan);
-      const isSignatureCurrent = Boolean(traderState && String(traderState.planSignature ?? "") === expectedPlanSignature);
-      const inventory = (traderState && isSignatureCurrent) ? traderState.inventory : createStateFromPlan(citySnapshot, plan, {
-        moduleApi: this.moduleApi,
-        model,
-        assortmentSeedSalt: seedSalt
-      }).inventory;
-      const totalQuantity = inventory.reduce((sum, item) => sum + Math.max(0, Math.floor(toNumber(item.quantity, 0))), 0);
       const isMonthlyFresh = Boolean(
         traderState
         && String(traderState.assortmentSeedSalt ?? "").trim() === seedSalt
       );
+      const inventory = isMonthlyFresh && Array.isArray(traderState?.inventory) ? traderState.inventory : [];
+      const totalQuantity = inventory.reduce((sum, item) => sum + Math.max(0, Math.floor(toNumber(item.quantity, 0))), 0);
       const assortmentStatus = String(traderState?.assortmentStatus ?? "").trim().toLowerCase();
       const statusLabel = !traderState
         ? "Готов к открытию"
         : (
-          assortmentStatus === "frozen"
-            ? "Ассортимент заморожен ивентом"
+          !isMonthlyFresh
+            ? "Обновится при открытии"
             : (
-              assortmentStatus === "merged"
-                ? "Ассортимент частично обновлён"
-                : (isMonthlyFresh ? "Ассортимент был обновлён" : "Ассортимент сохранён")
+              assortmentStatus === "frozen"
+                ? "Ассортимент заморожен ивентом"
+                : (
+                  assortmentStatus === "merged"
+                    ? "Ассортимент частично обновлён"
+                    : "Ассортимент был обновлён"
+                )
             )
         );
       const statusClass = !traderState
         ? ""
         : (
-          assortmentStatus === "frozen"
+          !isMonthlyFresh
             ? "rm-badge--warn"
             : (
-              assortmentStatus === "merged"
+              assortmentStatus === "frozen"
                 ? "rm-badge--warn"
-                : (isMonthlyFresh ? "rm-badge--updated" : "rm-badge--good")
+                : (
+                  assortmentStatus === "merged"
+                    ? "rm-badge--warn"
+                    : "rm-badge--updated"
+                )
             )
         );
 
@@ -2479,14 +2498,14 @@ export class TraderService {
     const traderId = getTraderStateKey(cityId, traderKey);
     let traderState = this.#getState().traders[traderId] ?? null;
     const expectedPlanSignature = buildPlanSignature(plan);
-    const isSignatureCurrent = Boolean(traderState && String(traderState.planSignature ?? "") === expectedPlanSignature);
-    if ((!traderState || !isSignatureCurrent) && persistState && game.user?.isGM) {
+    const isAssortmentCurrent = isTraderStateCurrentForPlan(traderState, expectedPlanSignature, seedSalt);
+    if ((!traderState || !isAssortmentCurrent) && persistState && game.user?.isGM) {
       traderState = await this.#ensureTraderState(citySnapshot, traderKey);
     }
-    if ((!traderState || !isSignatureCurrent) && !persistState) {
+    if ((!traderState || !isAssortmentCurrent) && !persistState) {
       throw new Error("Trader state is unavailable or stale for read-only preparation.");
     }
-    if (!traderState) {
+    if (!traderState || !isTraderStateCurrentForPlan(traderState, expectedPlanSignature, seedSalt)) {
       traderState = createStateFromPlan(citySnapshot, plan, {
         moduleApi: this.moduleApi,
         model,

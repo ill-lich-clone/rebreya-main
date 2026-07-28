@@ -209,6 +209,203 @@ test("trader snapshot resolves gear icons from the shared gear icon lookup", asy
   }
 });
 
+test("trader snapshot refreshes stale monthly assortment on first GM open even when the plan signature is unchanged", async () => {
+  const restoreFoundry = installFoundryUtils();
+  const previousGame = globalThis.game;
+  const previousCanvas = globalThis.canvas;
+
+  let currentMonth = 3;
+  let state = createEmptyTraderState();
+  const goodRow = {
+    goodId: "iron-good",
+    goodName: "Железо",
+    production: 10,
+    demand: 0,
+    surplus: 5,
+    deficit: 0,
+    priceModifierPercent: 0,
+    routePriceModifierPercent: 0,
+    eventPriceModifierPercent: 0,
+    importSources: [],
+    eventSourceNames: []
+  };
+  const material = {
+    id: "iron",
+    name: "Железо",
+    linkedGoodId: goodRow.goodId,
+    linkedGoodName: goodRow.goodName,
+    priceGold: 2,
+    weight: 1,
+    rank: 1,
+    type: "Материал"
+  };
+  const model = {
+    materials: [material],
+    materialById: new Map([[material.id, material]]),
+    materialByGoodId: new Map([[material.linkedGoodId, material]]),
+    gear: [],
+    gearById: new Map(),
+    reference: {},
+    goods: []
+  };
+  const citySnapshot = {
+    id: "city-1",
+    name: "Тестоград",
+    state: "state-1",
+    regionName: "Регион",
+    rank: 1,
+    cityType: "столичный",
+    goodsRows: [goodRow],
+    goodsRowById: {
+      [goodRow.goodId]: goodRow
+    }
+  };
+
+  globalThis.canvas = {
+    tokens: {
+      controlled: []
+    }
+  };
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    actors: {
+      get: () => null,
+      contents: []
+    },
+    settings: {
+      get: () => state,
+      set: async (_moduleId, _key, nextState) => {
+        state = nextState;
+      }
+    }
+  };
+
+  const service = new TraderService({
+    getModel: async () => model,
+    getCitySnapshot: (cityId) => cityId === citySnapshot.id ? citySnapshot : null,
+    getCalendarSnapshot: () => ({ year: 1200, month: currentMonth }),
+    inventoryService: {
+      getInventoryActor: async () => null
+    },
+    globalEventsService: {
+      collectMerchantModifiers: () => ({
+        buyPricePercent: 0,
+        sellPricePercent: 0,
+        stockPercent: 0,
+        blocked: false,
+        rarityShift: 0,
+        restockMode: "",
+        sourceEventNames: []
+      })
+    },
+    getEffectiveStatePolicy: () => ({
+      taxPercent: 0,
+      generalDutyPercent: 0,
+      bilateralDuties: {},
+      eventDelta: {
+        sourceEventNames: []
+      }
+    })
+  });
+
+  try {
+    const firstSnapshot = await service.getTraderSnapshot(citySnapshot.id, "materials-shop");
+    const traderId = `${citySnapshot.id}::materials-shop`;
+    assert.equal(firstSnapshot.inventory[0].quantity, 5);
+    assert.equal(state.traders[traderId].assortmentSeedSalt, "1200-03");
+
+    currentMonth = 4;
+    const secondSnapshot = await service.getTraderSnapshot(citySnapshot.id, "materials-shop");
+
+    assert.equal(secondSnapshot.inventory[0].quantity, 5);
+    assert.equal(state.traders[traderId].assortmentSeedSalt, "1200-04");
+    assert.equal(state.traders[traderId].assortmentStatus, "updated");
+  }
+  finally {
+    globalThis.game = previousGame;
+    globalThis.canvas = previousCanvas;
+    restoreFoundry();
+  }
+});
+
+test("city trader summaries do not generate unopened shop inventories", async () => {
+  const restoreFoundry = installFoundryUtils();
+  const previousGame = globalThis.game;
+
+  let state = createEmptyTraderState();
+  const goodRow = {
+    goodId: "wood-good",
+    goodName: "Древесина",
+    production: 20,
+    demand: 0,
+    surplus: 12,
+    deficit: 0,
+    priceModifierPercent: 0,
+    importSources: []
+  };
+  const material = {
+    id: "wood",
+    name: "Древесина",
+    linkedGoodId: goodRow.goodId,
+    linkedGoodName: goodRow.goodName,
+    priceGold: 1,
+    weight: 1,
+    rank: 1,
+    type: "Материал"
+  };
+  const model = {
+    materials: [material],
+    materialById: new Map([[material.id, material]]),
+    materialByGoodId: new Map([[material.linkedGoodId, material]]),
+    gear: [],
+    gearById: new Map(),
+    reference: {},
+    goods: []
+  };
+  const citySnapshot = {
+    id: "city-1",
+    name: "Тестоград",
+    state: "state-1",
+    regionName: "Регион",
+    rank: 1,
+    cityType: "столичный",
+    goodsRows: [goodRow],
+    goodsRowById: {
+      [goodRow.goodId]: goodRow
+    }
+  };
+
+  globalThis.game = {
+    user: { id: "gm", isGM: true },
+    settings: {
+      get: () => state,
+      set: async (_moduleId, _key, nextState) => {
+        state = nextState;
+      }
+    }
+  };
+
+  const service = new TraderService({
+    getModel: async () => model,
+    getCitySnapshot: (cityId) => cityId === citySnapshot.id ? citySnapshot : null,
+    getCalendarSnapshot: () => ({ year: 1200, month: 5 })
+  });
+
+  try {
+    const summaries = await service.getCityTraderSummaries(citySnapshot.id);
+    const materialsSummary = summaries.find((entry) => entry.traderKey === "materials-shop");
+
+    assert.equal(Object.keys(state.traders).length, 0);
+    assert.equal(materialsSummary.totalDistinctItems, 0);
+    assert.equal(materialsSummary.totalQuantity, 0);
+    assert.equal(materialsSummary.statusLabel, "Готов к открытию");
+  }
+  finally {
+    globalThis.game = previousGame;
+    restoreFoundry();
+  }
+});
+
 test("trader purchase expands ammunition packs into actor item quantity", async () => {
   const restoreFoundry = installFoundryUtils();
   const previousGame = globalThis.game;

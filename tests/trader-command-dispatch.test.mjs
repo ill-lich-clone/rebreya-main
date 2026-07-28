@@ -143,6 +143,7 @@ test("typed trader purchase validates exact payload and derives requester from s
   try {
     const moduleApi = new RebreyaMainModule();
     const calls = [];
+    moduleApi.traderService.ensureTraderState = async () => ({ traderId: "city-a::smith" });
     moduleApi.tradeTransactionService.purchase = async (payload) => {
       calls.push(clone(payload));
       return { transactionId: payload.transactionId, committed: true };
@@ -187,11 +188,65 @@ test("typed trader purchase validates exact payload and derives requester from s
   }
 });
 
+test("typed trader purchase materializes the shop before committing the transaction", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.traderService.ensureTraderState = async (cityId, traderKey) => {
+      calls.push({
+        type: "ensure",
+        cityId,
+        traderKey
+      });
+      return { traderId: `${cityId}::${traderKey}` };
+    };
+    moduleApi.tradeTransactionService.purchase = async (payload) => {
+      calls.push({
+        type: "purchase",
+        cityId: payload.cityId,
+        traderKey: payload.traderKey,
+        actorId: payload.actorId
+      });
+      return { transactionId: payload.transactionId, committed: true };
+    };
+
+    await dispatch(moduleApi, request("trader.purchase", fixture.users.player.id, {
+      transactionId: "purchase_lazy_01",
+      legacy: false,
+      actorId: fixture.actors.character.id,
+      cityId: "city-a",
+      traderKey: "smith",
+      itemKey: "gear:sword",
+      quantity: 1
+    }, "purchase-lazy"));
+
+    assert.deepEqual(calls, [
+      {
+        type: "ensure",
+        cityId: "city-a",
+        traderKey: "smith"
+      },
+      {
+        type: "purchase",
+        cityId: "city-a",
+        traderKey: "smith",
+        actorId: fixture.actors.character.id
+      }
+    ]);
+    assert.equal(result(fixture, "purchase-lazy")?.ok, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("typed trader sale authorizes any owned Actor including party NPC", async () => {
   const fixture = installFixture();
   try {
     const moduleApi = new RebreyaMainModule();
     const calls = [];
+    moduleApi.traderService.ensureTraderState = async () => ({ traderId: "city-a::smith" });
     moduleApi.tradeTransactionService.sale = async (payload) => {
       calls.push(clone(payload));
       return { transactionId: payload.transactionId };
@@ -224,6 +279,58 @@ test("typed trader sale authorizes any owned Actor including party NPC", async (
   }
 });
 
+test("typed trader sale materializes the shop before committing the transaction", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const calls = [];
+    moduleApi.traderService.ensureTraderState = async (cityId, traderKey) => {
+      calls.push({
+        type: "ensure",
+        cityId,
+        traderKey
+      });
+      return { traderId: `${cityId}::${traderKey}` };
+    };
+    moduleApi.tradeTransactionService.sale = async (payload) => {
+      calls.push({
+        type: "sale",
+        cityId: payload.cityId,
+        traderKey: payload.traderKey,
+        actorId: payload.actorId
+      });
+      return { transactionId: payload.transactionId, committed: true };
+    };
+
+    await dispatch(moduleApi, request("trader.sell", fixture.users.player.id, {
+      transactionId: "sale_lazy_01",
+      actorId: fixture.actors.character.id,
+      cityId: "city-a",
+      traderKey: "smith",
+      itemUuid: "Actor.actor-a.Item.sword",
+      quantity: 1
+    }, "sale-lazy"));
+
+    assert.deepEqual(calls, [
+      {
+        type: "ensure",
+        cityId: "city-a",
+        traderKey: "smith"
+      },
+      {
+        type: "sale",
+        cityId: "city-a",
+        traderKey: "smith",
+        actorId: fixture.actors.character.id
+      }
+    ]);
+    assert.equal(result(fixture, "sale-lazy")?.ok, true);
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 test("public trader APIs route only the active GM locally and preserve the economic ID", async () => {
   for (const currentUserId of ["gm-a", "gm-b", "player-a"]) {
     const fixture = installFixture({ currentUserId });
@@ -235,6 +342,7 @@ test("public trader APIs route only the active GM locally and preserve the econo
         local.push(clone(payload));
         return { transactionId: payload.transactionId };
       };
+      moduleApi.traderService.ensureTraderState = async () => ({ traderId: "city-a::smith" });
       moduleApi.socketCommandBus.request = async (command, payload) => {
         remote.push({ command, payload: clone(payload) });
         return { transactionId: payload.transactionId };
@@ -300,6 +408,7 @@ test("live engine failures never call the legacy trader implementation", async (
     const moduleApi = new RebreyaMainModule();
     let legacyCalls = 0;
     moduleApi.traderService.purchaseItemLegacy = async () => { legacyCalls += 1; };
+    moduleApi.traderService.ensureTraderState = async () => ({ traderId: "city-a::smith" });
     moduleApi.tradeTransactionService.purchase = async () => {
       const error = new Error("needs reconciliation");
       error.code = "reconciliation-required";

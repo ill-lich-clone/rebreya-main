@@ -910,6 +910,29 @@ function buildProfileShopPlan(model, citySnapshot, shopRow, shopIndex, seedSalt 
   };
 }
 
+function buildProfileShopHeader(citySnapshot, shopRow, shopIndex) {
+  const cityRank = getCityRank(citySnapshot);
+  const owner = buildShopOwner(citySnapshot, shopRow.key);
+  return {
+    traderKey: `shop-${shopRow.key}`,
+    traderType: "shop",
+    traderIndex: shopIndex,
+    name: shopRow.label,
+    roleLabel: owner.merchantName,
+    merchantName: owner.merchantName,
+    merchantRole: owner.merchantRole,
+    shopSubtype: shopRow.label,
+    shopPriorityScore: roundNumber(shopRow.priorityScore, 2),
+    cityId: citySnapshot.id,
+    cityName: citySnapshot.name,
+    cityRank,
+    totalTraderValue: 0,
+    targetTraderValue: getRankBudget(cityRank),
+    totalDistinctItems: 0,
+    totalQuantity: 0
+  };
+}
+
 function buildMaterialsTraderPlan(model, citySnapshot, seedSalt = "") {
   const rng = createSeededRandom(buildSeed(`${citySnapshot.id}::${MATERIALS_SHOP_KEY}`, seedSalt));
   const owner = buildShopOwner(citySnapshot, MATERIALS_SHOP_KEY);
@@ -962,6 +985,27 @@ function buildMaterialsTraderPlan(model, citySnapshot, seedSalt = "") {
     targetTraderValue: MATERIAL_STOCK_BASE,
     totalDistinctItems: items.length,
     totalQuantity: items.reduce((sum, item) => sum + toNumber(item.quantity, 0), 0)
+  };
+}
+
+function buildMaterialsTraderHeader(citySnapshot) {
+  const owner = buildShopOwner(citySnapshot, MATERIALS_SHOP_KEY);
+  return {
+    traderKey: MATERIALS_SHOP_KEY,
+    traderType: "materials",
+    traderIndex: 0,
+    name: MATERIALS_SHOP_LABEL,
+    roleLabel: owner.merchantName,
+    merchantName: owner.merchantName,
+    merchantRole: owner.merchantRole,
+    shopSubtype: MATERIALS_SHOP_LABEL,
+    cityId: citySnapshot.id,
+    cityName: citySnapshot.name,
+    cityRank: getCityRank(citySnapshot),
+    totalTraderValue: 0,
+    targetTraderValue: MATERIAL_STOCK_BASE,
+    totalDistinctItems: 0,
+    totalQuantity: 0
   };
 }
 
@@ -1063,6 +1107,28 @@ function buildMagicShopPlan(citySnapshot, seedSalt = "") {
   };
 }
 
+function buildMagicShopHeader(citySnapshot) {
+  const cityRank = getCityRank(citySnapshot);
+  const owner = buildShopOwner(citySnapshot, MAGIC_SHOP_KEY);
+  return {
+    traderKey: MAGIC_SHOP_KEY,
+    traderType: "magicItems",
+    traderIndex: getCityShopSlotCount(citySnapshot) + 2,
+    name: MAGIC_SHOP_LABEL,
+    roleLabel: owner.merchantName,
+    merchantName: owner.merchantName,
+    merchantRole: owner.merchantRole,
+    shopSubtype: MAGIC_SHOP_LABEL,
+    cityId: citySnapshot.id,
+    cityName: citySnapshot.name,
+    cityRank,
+    totalTraderValue: 0,
+    targetTraderValue: getRankBudget(cityRank),
+    totalDistinctItems: 0,
+    totalQuantity: 0
+  };
+}
+
 export function buildCityTraderPlans(model, citySnapshot, { seedSalt = "" } = {}) {
   const selectedProfileShops = selectProfileShopsForCity(model, citySnapshot);
   const plans = selectedProfileShops.map((shopRow, index) => (
@@ -1070,6 +1136,16 @@ export function buildCityTraderPlans(model, citySnapshot, { seedSalt = "" } = {}
   ));
   plans.push(buildMaterialsTraderPlan(model, citySnapshot, seedSalt));
   plans.push(buildMagicShopPlan(citySnapshot, seedSalt));
+  return plans;
+}
+
+export function buildCityTraderPlanHeaders(model, citySnapshot) {
+  const selectedProfileShops = selectProfileShopsForCity(model, citySnapshot);
+  const plans = selectedProfileShops.map((shopRow, index) => (
+    buildProfileShopHeader(citySnapshot, shopRow, index + 1)
+  ));
+  plans.push(buildMaterialsTraderHeader(citySnapshot));
+  plans.push(buildMagicShopHeader(citySnapshot));
   return plans;
 }
 

@@ -1494,7 +1494,7 @@ test("main day-cycle callback guards every supply mutation with the captured gro
   }
 });
 
-test("main trader reset forwards the captured group guard into the persistent service", async () => {
+test("main trader month reset leaves shop inventories lazy until first open", async () => {
   const previousHooks = globalThis.Hooks;
   const previousGame = globalThis.game;
   globalThis.Hooks = { once() {}, on() {} };
@@ -1510,10 +1510,8 @@ test("main trader reset forwards the captured group guard into the persistent se
       assertExecutionContext: guard,
       guard
     });
-    const receivedContexts = [];
-    moduleApi.traderService.resetAssortments = async (options) => {
-      receivedContexts.push(options);
-      return { refreshedTraderCount: 2, removedTraderCount: 1 };
+    moduleApi.traderService.resetAssortments = async () => {
+      assert.fail("calendar month reset should not eagerly regenerate trader inventories");
     };
 
     const result = await moduleApi.calendarTransitionCoordinator.resetTraderMonth(
@@ -1522,14 +1520,12 @@ test("main trader reset forwards the captured group guard into the persistent se
       executionContext
     );
 
-    assert.equal(receivedContexts.length, 1);
-    assert.equal(receivedContexts[0], executionContext);
     assert.deepEqual(result, {
       triggered: true,
       reason: "calendar-ui",
       monthResetCount: 1,
-      refreshedTraderCount: 2,
-      removedTraderCount: 1
+      refreshedTraderCount: 0,
+      removedTraderCount: 0
     });
   }
   finally {

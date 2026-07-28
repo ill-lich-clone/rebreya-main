@@ -14,7 +14,7 @@ import { ActionsCompendiumService } from "./data/actions-compendium.js";
 import { DowntimeCompendiumService } from "./data/downtime-compendium.js";
 import { FeatChoiceAutomationService, registerFeatChoiceAutomationHooks } from "./automation/feat-choice-service.js";
 import { EconomyRepository } from "./data/repository.js?v=1.4.109-implants-3";
-import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.96-durability";
+import { TraderService, normalizeTraderState } from "./data/trader-service.js?v=1.4.109-lazy-trader-restock";
 import { TradeTransactionService } from "./features/trading/trade-transaction-service.js";
 import {
   createTradeTransactionId,
@@ -1104,28 +1104,34 @@ export class RebreyaMainModule {
     this.socketCommandBus.register(TRADER_PURCHASE_COMMAND, {
       validate: isValidTraderPurchasePayload,
       authorize: authorizeTradeActor,
-      execute: (payload, { sender }) => this.tradeTransactionService.purchase({
-        transactionId: payload.transactionId,
-        actorId: payload.actorId,
-        cityId: payload.cityId,
-        traderKey: payload.traderKey,
-        itemKey: payload.itemKey,
-        quantity: payload.quantity,
-        requestedByUserId: sender.id
-      }, { source: "typed-socket" })
+      execute: async (payload, { sender }) => {
+        await this.traderService.ensureTraderState(payload.cityId, payload.traderKey);
+        return this.tradeTransactionService.purchase({
+          transactionId: payload.transactionId,
+          actorId: payload.actorId,
+          cityId: payload.cityId,
+          traderKey: payload.traderKey,
+          itemKey: payload.itemKey,
+          quantity: payload.quantity,
+          requestedByUserId: sender.id
+        }, { source: "typed-socket" });
+      }
     });
     this.socketCommandBus.register(TRADER_SELL_COMMAND, {
       validate: isValidTraderSalePayload,
       authorize: authorizeTradeActor,
-      execute: (payload, { sender }) => this.tradeTransactionService.sale({
-        transactionId: payload.transactionId,
-        actorId: payload.actorId,
-        cityId: payload.cityId,
-        traderKey: payload.traderKey,
-        itemUuid: payload.itemUuid,
-        quantity: payload.quantity,
-        requestedByUserId: sender.id
-      }, { source: "typed-socket" })
+      execute: async (payload, { sender }) => {
+        await this.traderService.ensureTraderState(payload.cityId, payload.traderKey);
+        return this.tradeTransactionService.sale({
+          transactionId: payload.transactionId,
+          actorId: payload.actorId,
+          cityId: payload.cityId,
+          traderKey: payload.traderKey,
+          itemUuid: payload.itemUuid,
+          quantity: payload.quantity,
+          requestedByUserId: sender.id
+        }, { source: "typed-socket" });
+      }
     });
   }
 
@@ -2583,6 +2589,7 @@ export class RebreyaMainModule {
       throw new Error("Invalid trader purchase request");
     }
     if (isActiveGmClient(globalThis.game)) {
+      await this.traderService.ensureTraderState(cityId, traderKey);
       return this.tradeTransactionService.purchase({
         transactionId,
         actorId,
@@ -2614,6 +2621,7 @@ export class RebreyaMainModule {
       throw new Error("Invalid trader sale request");
     }
     if (isActiveGmClient(globalThis.game)) {
+      await this.traderService.ensureTraderState(cityId, traderKey);
       return this.tradeTransactionService.sale({
         ...payload,
         requestedByUserId: String(globalThis.game?.user?.id ?? "")
@@ -3896,14 +3904,12 @@ export class RebreyaMainModule {
     }
 
     guard?.();
-    const resetResult = await this.traderService.resetAssortments(executionContext);
-    guard?.();
     return {
       triggered: true,
       reason,
       monthResetCount: safeResetCount,
-      refreshedTraderCount: Math.max(0, Math.floor(Number(resetResult?.refreshedTraderCount ?? 0))),
-      removedTraderCount: Math.max(0, Math.floor(Number(resetResult?.removedTraderCount ?? 0)))
+      refreshedTraderCount: 0,
+      removedTraderCount: 0
     };
   }
 

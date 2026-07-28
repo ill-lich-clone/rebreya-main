@@ -185,6 +185,7 @@ test("production has no legacy Craftsman compendium retirement path", async () =
 
 test("current entrypoint cache-busts the changed craft durability and transfer graph", async () => {
   const canonicalSource = await readCanonicalEntrypointSource();
+  const traderServiceSource = await readFile(new URL("../scripts/data/trader-service.js", import.meta.url), "utf8");
 
   assert.match(
     canonicalSource,
@@ -192,6 +193,7 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   );
 
   for (const importPath of [
+    "data/trader-service.js?v=1.4.109-lazy-trader-restock",
     "data/downtime-service.js?v=1.4.96-craft-calendar",
     "data/inventory-service.js?v=1.4.109-calendar-supply-bulk",
     "data/durability-service.js?v=1.4.96-durability",
@@ -208,6 +210,10 @@ test("current entrypoint cache-busts the changed craft durability and transfer g
   assert.match(
     canonicalSource,
     /import\(`\.\/ui\/lootgen-app\.js\?v=\$\{encodeURIComponent\(moduleVersion\)\}`\)/u
+  );
+  assert.match(
+    traderServiceSource,
+    /engine\/trader-engine\.js\?v=1\.4\.109-lazy-trader-restock/u
   );
 });
 
