@@ -44,7 +44,8 @@ function implantItem({
   automationKey = "mounted-armor-ac",
   gearId = automationKey === "mounted-armor-ac" ? "navesnaya-bronya" : "",
   quantity = 1,
-  installedCount = installed ? 1 : 0
+  installedCount = installed ? 1 : 0,
+  artisanToolId
 } = {}) {
   return {
     id,
@@ -71,7 +72,8 @@ function implantItem({
           installed,
           installedCount,
           united,
-          spentPoints
+          spentPoints,
+          ...(artisanToolId ? { artisanToolId } : {})
         }
       }
     },
@@ -200,6 +202,78 @@ test("mechanical compatibility requires manual union for an ordinary General imp
     }), implantItem()).status,
     "safe"
   );
+});
+
+test("built-in workshop persists the selected artisan tool in the aggregate capability", async () => {
+  const workshop = implantItem({
+    id: "workshop",
+    name: "Встроенный станок",
+    gearId: "vstroennyy-stanok"
+  });
+  const smithTools = {
+    id: "tool-smith",
+    name: "Инструменты кузнеца",
+    type: "tool",
+    system: { type: { value: "art" } }
+  };
+  const actor = actorStub({ prof: 4, items: [workshop, smithTools] });
+  const service = new ImplantService();
+
+  await service.applyLoadout(actor, [{
+    itemId: workshop.id,
+    installed: true,
+    installedCount: 1,
+    united: true,
+    spentPoints: 1,
+    artisanToolId: "tool-smith"
+  }]);
+
+  assert.equal(workshop.flags[MODULE_ID].implantInstallation.artisanToolId, "tool-smith");
+  assert.deepEqual(
+    actor.effects[0].flags[MODULE_ID].automation.capabilities.find(({ type }) => type === "artisanToolBonus"),
+    {
+      implantId: "vstroennyy-stanok",
+      count: 1,
+      type: "artisanToolBonus",
+      value: 2,
+      toolItemId: "tool-smith"
+    }
+  );
+});
+
+test("impulse legs reuse the aggregate effect for a turn-scoped speed multiplier", async () => {
+  const legs = implantItem({
+    id: "legs",
+    name: "Импульсные ноги",
+    gearId: "impulsnye-nogi"
+  });
+  const actor = actorStub({ prof: 4, items: [legs] });
+  const service = new ImplantService();
+  await service.applyLoadout(actor, [{
+    itemId: legs.id,
+    installed: true,
+    installedCount: 1,
+    united: true,
+    spentPoints: 1
+  }]);
+  const effectId = actor.effects[0].id;
+
+  assert.equal(await service.setMovementMultiplier(actor, 2), true);
+  assert.equal(actor.effects.length, 1);
+  assert.equal(actor.effects[0].id, effectId);
+  assert.deepEqual(
+    actor.effects[0].changes.filter((change) => change.priority === 40),
+    ["burrow", "climb", "fly", "swim", "walk"].map((movement) => ({
+      key: `system.attributes.movement.${movement}`,
+      mode: 1,
+      value: "2",
+      priority: 40
+    }))
+  );
+
+  assert.equal(await service.setMovementMultiplier(actor, 1), true);
+  assert.equal(actor.effects.length, 1);
+  assert.equal(actor.effects[0].changes.some((change) => change.priority === 40), false);
 });
 
 test("magical compatibility follows caster tier and blocks constructs", () => {

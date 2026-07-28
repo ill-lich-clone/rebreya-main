@@ -11,6 +11,8 @@ const IMPLANT_FLAG = "implant";
 const NAUSEATED_STATUS_ID = "rebreya-nauseated";
 const IMPLANT_NAUSEA_META_KEY = "implantNausea";
 const IMPLANT_NAUSEA_VALUE = 2;
+const MOVEMENT_TYPES = Object.freeze(["burrow", "climb", "fly", "swim", "walk"]);
+const RUNTIME_MOVEMENT_PRIORITY = 40;
 const MYTHIC_RACE_MARKERS = Object.freeze([
   "минотавр",
   "кентавр",
@@ -62,6 +64,25 @@ function clone(value) {
   if (value === undefined) return undefined;
   if (typeof globalThis.structuredClone === "function") return globalThis.structuredClone(value);
   return JSON.parse(JSON.stringify(value));
+}
+
+function runtimeMovementChanges(multiplier) {
+  const numericMultiplier = Number(multiplier);
+  if (!Number.isFinite(numericMultiplier) || numericMultiplier <= 1) return [];
+  return MOVEMENT_TYPES.map((movement) => ({
+    key: `system.attributes.movement.${movement}`,
+    mode: 1,
+    value: String(numericMultiplier),
+    priority: RUNTIME_MOVEMENT_PRIORITY
+  }));
+}
+
+function isRuntimeMovementChange(change) {
+  return change?.mode === 1
+    && change?.priority === RUNTIME_MOVEMENT_PRIORITY
+    && MOVEMENT_TYPES.some((movement) => (
+      change?.key === `system.attributes.movement.${movement}`
+    ));
 }
 
 function actorRaceProfile(actor) {
@@ -136,7 +157,7 @@ export function getImplantInstallation(item) {
   const installedCount = Number.isFinite(rawInstalledCount)
     ? Math.max(1, Math.floor(rawInstalledCount))
     : 1;
-  return {
+  const installation = {
     installed: state?.installed === true,
     installedCount: state?.installed === true
       ? installedCount
@@ -146,6 +167,9 @@ export function getImplantInstallation(item) {
       ? Number(state.spentPoints)
       : fallbackPoints
   };
+  const artisanToolId = cleanString(state?.artisanToolId);
+  if (artisanToolId) installation.artisanToolId = artisanToolId;
+  return installation;
 }
 
 export function getModificationPointCapacity(actor) {
@@ -253,6 +277,7 @@ export class ImplantService {
           pointsMax: Number(implant?.pointsMax ?? implant?.pointsMin ?? 0),
           effect: cleanString(implant?.effect),
           requirements: cleanString(implant?.requirements),
+          automationId: getMechanicalImplantDefinition(item)?.id ?? "",
           installable: isInstallable(implant),
           installed: installation.installed,
           installedCount: installation.installedCount,
@@ -261,6 +286,7 @@ export class ImplantService {
             : 1,
           united: installation.united,
           spentPoints: installation.spentPoints,
+          artisanToolId: cleanString(installation.artisanToolId),
           effective: installation.installed && isEffective(compatibility, installation),
           compatibility
         };
@@ -279,6 +305,17 @@ export class ImplantService {
       entries,
       installedEntries: entries.filter((entry) => entry.installed),
       availableEntries: entries.filter((entry) => !entry.installed),
+      artisanTools: collectionValues(actor?.items)
+        .filter((item) => (
+          item?.type === "tool"
+          && ["art", "artisan"].includes(cleanString(item?.system?.type?.value).toLowerCase())
+        ))
+        .map((item) => ({
+          id: cleanString(item?.id),
+          name: cleanString(item?.name)
+        }))
+        .filter(({ id }) => id)
+        .sort((left, right) => left.name.localeCompare(right.name, "ru")),
       hasImplants: entries.length > 0
     };
   }
@@ -386,6 +423,21 @@ export class ImplantService {
           selection?.spentPoints ?? currentInstallation.spentPoints
         )
       };
+      if (definition?.id === "vstroennyy-stanok") {
+        const artisanToolId = cleanString(
+          selection?.artisanToolId ?? currentInstallation.artisanToolId
+        );
+        if (artisanToolId) {
+          if (state.installed) {
+            const selectedTool = collectionValues(actor?.items).find((candidate) => candidate.id === artisanToolId);
+            const toolType = cleanString(selectedTool?.system?.type?.value).toLowerCase();
+            if (selectedTool?.type !== "tool" || !["art", "artisan"].includes(toolType)) {
+              throw new Error(`Для импланта «${item.name}» выбран недоступный набор ремесленных инструментов.`);
+            }
+          }
+          state.artisanToolId = artisanToolId;
+        }
+      }
       if (installed && !isInstallable(implant)) {
         throw new Error(`Имплант «${item.name}» пока не содержит полной стоимости установки.`);
       }
@@ -413,7 +465,8 @@ export class ImplantService {
         return current.installed !== state.installed
           || current.installedCount !== state.installedCount
           || current.united !== state.united
-          || current.spentPoints !== state.spentPoints;
+          || current.spentPoints !== state.spentPoints
+          || cleanString(current.artisanToolId) !== cleanString(state.artisanToolId);
       })
       .map(({ item, state }) => ({
         _id: item.id,
@@ -427,6 +480,33 @@ export class ImplantService {
     await this.#syncAggregateEffect(actor, planned);
     await this.#syncNauseaStatus(actor, planned);
     return this.getActorSnapshot(actor);
+  }
+
+  async setMovementMultiplier(actor, multiplier) {
+    const aggregate = collectionValues(actor?.effects).find((effect) => (
+      getModuleFlag(effect, AGGREGATE_EFFECT_FLAG) === true
+      || cleanString(effect?.name) === AGGREGATE_EFFECT_NAME
+    ));
+    if (!aggregate || typeof actor?.updateEmbeddedDocuments !== "function") return false;
+
+    const numericMultiplier = Number(multiplier);
+    const appliedMultiplier = Number.isFinite(numericMultiplier) && numericMultiplier > 1
+      ? numericMultiplier
+      : 1;
+    const changes = collectionValues(aggregate?.changes)
+      .filter((change) => !isRuntimeMovementChange(change));
+    changes.push(...runtimeMovementChanges(appliedMultiplier));
+    const moduleFlags = clone(aggregate?.flags?.[MODULE_ID] ?? {});
+    moduleFlags.automation ??= {};
+    moduleFlags.automation.runtime ??= {};
+    moduleFlags.automation.runtime.movementMultiplier = appliedMultiplier;
+
+    await actor.updateEmbeddedDocuments("ActiveEffect", [{
+      _id: aggregate.id,
+      changes,
+      [`flags.${MODULE_ID}`]: moduleFlags
+    }]);
+    return true;
   }
 
   async #syncNauseaStatus(actor, planned) {
@@ -533,6 +613,13 @@ export class ImplantService {
       || cleanString(effect?.name) === AGGREGATE_EFFECT_NAME
     ));
     const aggregate = aggregateCandidates[0] ?? null;
+    const runtimeMultiplier = Number(
+      getModuleFlag(aggregate, "automation")?.runtime?.movementMultiplier
+    );
+    if (Number.isFinite(runtimeMultiplier) && runtimeMultiplier > 1) {
+      effectData.changes = [...changes, ...runtimeMovementChanges(runtimeMultiplier)];
+      effectFlags.automation.runtime = { movementMultiplier: runtimeMultiplier };
+    }
     if (aggregate) {
       await actor.updateEmbeddedDocuments("ActiveEffect", [{
         _id: aggregate.id,
@@ -567,6 +654,21 @@ export class ImplantService {
         || entry.compatibility.impossible
         || entry.maximumInstallableCount <= 0;
       const variablePoints = entry.pointsMin !== entry.pointsMax;
+      const artisanToolControl = entry.automationId === "vstroennyy-stanok"
+        ? `
+          <label class="rm-implant-dialog__tool">
+            <span>Встроенные инструменты</span>
+            <select name="artisanToolId">
+              <option value="">Не выбраны</option>
+              ${snapshot.artisanTools.map((tool) => `
+                <option value="${escapeHtml(tool.id)}" ${tool.id === entry.artisanToolId ? "selected" : ""}>
+                  ${escapeHtml(tool.name)}
+                </option>
+              `).join("")}
+            </select>
+          </label>
+        `
+        : "";
       return `
         <li class="item collapsible rm-implant-dialog__item"
             data-implant-row data-item-id="${escapeHtml(entry.itemId)}" data-uuid="${escapeHtml(entry.uuid)}">
@@ -597,6 +699,7 @@ export class ImplantService {
                 <span>Объединение</span>
               </label>
             ` : ""}
+            ${artisanToolControl}
           </div>
           <div class="item-summary">
             <p><strong>Требования:</strong> ${escapeHtml(entry.requirements || "—")}</p>
@@ -635,7 +738,8 @@ export class ImplantService {
           installed: row.querySelector('[name="installed"]')?.checked === true,
           installedCount: Number(row.querySelector('[name="installedCount"]')?.value ?? 1),
           united: row.querySelector('[name="united"]')?.checked === true,
-          spentPoints: Number(row.querySelector('[name="spentPoints"]')?.value ?? 0)
+          spentPoints: Number(row.querySelector('[name="spentPoints"]')?.value ?? 0),
+          artisanToolId: cleanString(row.querySelector('[name="artisanToolId"]')?.value)
         }))
       }, {
         action: "cancel",

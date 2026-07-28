@@ -85,7 +85,9 @@ test("ready reconciliation visits only actors that own implants", async () => {
 test("module composition registers implant reconciliation hooks", async () => {
   const source = await readFile(new URL("../scripts/main.js", import.meta.url), "utf8");
   assert.match(source, /registerImplantHooks\s*\}\s*from "\.\/integrations\/implant-hooks\.js"/u);
+  assert.match(source, /new ImplantAutomationService\(this\)/u);
   assert.match(source, /registerImplantHooks\(moduleApi\)/u);
+  assert.match(source, /registerImplantAutomationHooks\(moduleApi\)/u);
   assert.match(source, /registerImplantDataModelPatch\(\)/u);
 });
 
@@ -125,4 +127,49 @@ test("implant data-model patch enforces compiled ability maximums before derived
 
   assert.equal(model.abilities.dex.value, 22);
   assert.equal(model.abilities.dex.mod, 6);
+});
+
+test("implant data-model patch applies reinforced-joint carrying strength without changing Strength", () => {
+  class CharacterData {
+    prepareDerivedData() {
+      this.attributes.encumbrance = {
+        value: 100,
+        thresholds: { encumbered: 75, heavilyEncumbered: 150, maximum: 225 },
+        max: 225,
+        pct: 100 / 225 * 100,
+        stops: {
+          encumbered: 75 / 225 * 100,
+          heavilyEncumbered: 150 / 225 * 100
+        }
+      };
+    }
+  }
+  const CONFIG = { Actor: { dataModels: { character: CharacterData } } };
+  registerImplantDataModelPatch({ CONFIG });
+  const model = new CharacterData();
+  model.abilities = { str: { value: 15, mod: 2 } };
+  model.attributes = {};
+  model.parent = {
+    effects: [{
+      flags: {
+        [MODULE_ID]: {
+          implantAggregate: true,
+          automation: {
+            actorFlags: { carryingStrengthBonus: 2 }
+          }
+        }
+      }
+    }]
+  };
+
+  model.prepareDerivedData();
+
+  assert.equal(model.abilities.str.value, 15);
+  assert.deepEqual(model.attributes.encumbrance.thresholds, {
+    encumbered: 85,
+    heavilyEncumbered: 170,
+    maximum: 255
+  });
+  assert.equal(model.attributes.encumbrance.max, 255);
+  assert.equal(Math.round(model.attributes.encumbrance.pct * 100) / 100, 39.22);
 });

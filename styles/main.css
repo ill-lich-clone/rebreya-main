@@ -7979,7 +7979,8 @@ summary:focus-visible {
 }
 
 .rm-implant-dialog__points,
-.rm-implant-dialog__union {
+.rm-implant-dialog__union,
+.rm-implant-dialog__tool {
   display: inline-flex;
   gap: 6px;
   align-items: center;
@@ -7987,6 +7988,15 @@ summary:focus-visible {
 
 .rm-implant-dialog__points input {
   width: 54px;
+}
+
+.rm-implant-dialog__tool {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+
+.rm-implant-dialog__tool select {
+  min-width: min(260px, 100%);
 }
 
 @container (max-width: 700px) {
@@ -8001,6 +8011,12 @@ summary:focus-visible {
   .rm-implant-dialog .rm-implant-dialog__item .item-row {
     grid-template-columns: 1fr;
     align-items: start;
+  }
+
+  .rm-implant-dialog__tool {
+    justify-content: stretch;
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

@@ -140,8 +140,6 @@ test("compiler emits deterministic native bonuses and runtime capabilities", () 
     { key: "system.attributes.movement.walk", mode: 2, value: "10", priority: 20 },
     { key: "system.attributes.senses.blindsight", mode: 4, value: "10", priority: 20 },
     { key: "system.attributes.senses.darkvision", mode: 4, value: "60", priority: 20 },
-    { key: "system.bonuses.mwak.attack", mode: 2, value: "1", priority: 20 },
-    { key: "system.bonuses.rwak.attack", mode: 2, value: "1", priority: 20 }
   ]);
   assert.deepEqual(compiled.actorFlags, {
     abilityMaximums: { dex: 22, int: 20 },
@@ -151,6 +149,26 @@ test("compiler emits deterministic native bonuses and runtime capabilities", () 
   });
   assert.equal(compiled.capabilities.some(({ type }) => type === "symbioticSpells"), true);
   assert.deepEqual(compiled.warnings, []);
+});
+
+test("compiler carries the selected built-in artisan tool into its runtime capability", () => {
+  const compiled = compileMechanicalImplants([{
+    item: implantItem("vstroennyy-stanok"),
+    state: {
+      installed: true,
+      installedCount: 1,
+      artisanToolId: "tool-smith"
+    },
+    effective: true
+  }]);
+
+  assert.deepEqual(compiled.capabilities, [{
+    implantId: "vstroennyy-stanok",
+    count: 1,
+    type: "artisanToolBonus",
+    value: 2,
+    toolItemId: "tool-smith"
+  }]);
 });
 
 test("compiler ignores unsupported, ineffective, and uninstalled implants", () => {

@@ -35,6 +35,41 @@ function implantActorFlags(actor) {
   return moduleFlag(aggregate, "automation")?.actorFlags ?? {};
 }
 
+function applyCarryingStrengthBonus(model, actorFlags) {
+  const bonus = Number(actorFlags?.carryingStrengthBonus);
+  const strength = Number(model?.abilities?.str?.value);
+  const encumbrance = model?.attributes?.encumbrance;
+  if (
+    !Number.isFinite(bonus)
+    || bonus <= 0
+    || !Number.isFinite(strength)
+    || strength <= 0
+    || !encumbrance?.thresholds
+  ) {
+    return;
+  }
+
+  const ratio = (strength + bonus) / strength;
+  for (const key of ["encumbered", "heavilyEncumbered", "maximum"]) {
+    const current = Number(encumbrance.thresholds[key]);
+    if (Number.isFinite(current)) {
+      encumbrance.thresholds[key] = Math.round(current * ratio * 10) / 10;
+    }
+  }
+  encumbrance.max = encumbrance.thresholds.maximum;
+  if (Number.isFinite(Number(encumbrance.value)) && Number.isFinite(Number(encumbrance.max))) {
+    encumbrance.pct = Math.min(100, Math.max(0, Number(encumbrance.value) * 100 / Number(encumbrance.max)));
+  }
+  encumbrance.stops ??= {};
+  for (const key of ["encumbered", "heavilyEncumbered"]) {
+    const threshold = Number(encumbrance.thresholds[key]);
+    const maximum = Number(encumbrance.max);
+    if (Number.isFinite(threshold) && Number.isFinite(maximum) && maximum > 0) {
+      encumbrance.stops[key] = Math.min(100, Math.max(0, threshold * 100 / maximum));
+    }
+  }
+}
+
 export function registerImplantDataModelPatch({ CONFIG = globalThis.CONFIG } = {}) {
   const patched = [];
   for (const type of ["character", "npc"]) {
@@ -48,7 +83,8 @@ export function registerImplantDataModelPatch({ CONFIG = globalThis.CONFIG } = {
     }
     const original = prototype.prepareDerivedData;
     prototype.prepareDerivedData = function rebreyaImplantPrepareDerivedData(...args) {
-      const maximums = implantActorFlags(this.parent)?.abilityMaximums ?? {};
+      const actorFlags = implantActorFlags(this.parent);
+      const maximums = actorFlags?.abilityMaximums ?? {};
       for (const [ability, maximum] of Object.entries(maximums)) {
         const data = this.abilities?.[ability];
         const numericMaximum = Number(maximum);
@@ -57,7 +93,9 @@ export function registerImplantDataModelPatch({ CONFIG = globalThis.CONFIG } = {
           data.value = Math.min(value, numericMaximum);
         }
       }
-      return original.apply(this, args);
+      const result = original.apply(this, args);
+      applyCarryingStrengthBonus(this, actorFlags);
+      return result;
     };
     Object.defineProperty(prototype, DATA_MODEL_PATCH, {
       value: true,

@@ -75,11 +75,6 @@ function capabilityChanges(capability) {
       return [effectChange(`system.abilities.${capability.ability}.value`, 2, capability.value)];
     case "abilityMinimum":
       return [effectChange(`system.abilities.${capability.ability}.value`, 4, capability.value)];
-    case "weaponAttackBonus":
-      return [
-        effectChange("system.bonuses.mwak.attack", 2, capability.value),
-        effectChange("system.bonuses.rwak.attack", 2, capability.value)
-      ];
     case "senseMinimum":
       return [effectChange(`system.attributes.senses.${capability.sense}`, 4, capability.value)];
     case "hover":
@@ -144,6 +139,10 @@ export function compileMechanicalImplants(actorOrPlanned, maybePlanned) {
       : 1;
     for (const capability of definition.capabilities) {
       const compiledCapability = { implantId: definition.id, count, ...capability };
+      if (capability.type === "artisanToolBonus") {
+        const toolItemId = String(entry?.state?.artisanToolId ?? "").trim();
+        if (toolItemId) compiledCapability.toolItemId = toolItemId;
+      }
       capabilities.push(compiledCapability);
       for (let index = 0; index < count; index += 1) {
         changes.push(...capabilityChanges(capability));

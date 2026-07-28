@@ -70,6 +70,7 @@ import { UiRefreshCoordinator } from "./infrastructure/ui/ui-refresh-coordinator
 import { GlobalEventsService } from "./data/global-events-service.js";
 import { registerCombatHooks } from "./combat/hooks.js?v=1.4.111-paladin-dogmas";
 import { CombatAttackService } from "./combat/attack-service.js?v=1.4.109-firearm-native-ammo";
+import { ImplantAutomationService } from "./combat/implant-automation-service.js";
 import { SizeAutomationService } from "./combat/size-automation-service.js?v=1.4.110-character-size-authority";
 import { ReactionCapabilityIndex } from "./combat/reaction-capability-index.js";
 import { ReactionQueueService } from "./combat/reaction-queue-service.js";
@@ -131,6 +132,7 @@ import {
   registerImplantDataModelPatch,
   registerImplantHooks
 } from "./integrations/implant-hooks.js";
+import { registerImplantAutomationHooks } from "./integrations/implant-automation-hooks.js";
 import { registerCraftsmanGadgetSocketCommand } from "./integrations/craftsman-gadget-socket.js";
 import { getCraftsmanSubclasses } from "./integrations/craftsman-subclass-tracks.js";
 import { patchTransformCleanupUpdateActorHook } from "./integrations/transform-cleanup-compat.js";
@@ -950,6 +952,7 @@ export class RebreyaMainModule {
     this.runeKnightAutomationService = new RuneKnightAutomationService(this);
     this.curseEaterAutomationService = new CurseEaterAutomationService();
     this.combatStatusService = new CombatStatusService(this);
+    this.implantAutomationService = new ImplantAutomationService(this);
     this.combatAttackService = new CombatAttackService(this);
     this.sizeAutomationService = new SizeAutomationService(this);
     this.spellAutomationService = COUNTERSPELL_AUTOMATION_ENABLED
@@ -4851,6 +4854,7 @@ Hooks.once("ready", async () => {
 
   try {
     registerCombatHooks(moduleApi);
+    registerImplantAutomationHooks(moduleApi);
   }
   catch (error) {
     console.error(`${MODULE_ID} | Failed to register combat hooks.`, error);
