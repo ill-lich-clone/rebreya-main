@@ -133,6 +133,11 @@ class FakeElement {
     this.children.push(child);
   }
 
+  replaceChildren(...children) {
+    this.children = [];
+    children.forEach((child) => this.append(child));
+  }
+
   setAttribute(name, value) {
     this.attributes[name] = String(value);
   }
@@ -352,7 +357,7 @@ test("variable-size race items leave character size to dnd5e advancement", async
   assert.equal(await applyFixedRaceSize(item), false);
 });
 
-test("player list gets one external round Rebreya inventory button", async () => {
+test("player list inventory button shows and refreshes the active group token", async () => {
   const document = createFakeDocument();
   const playersElement = new FakeElement("div", document);
   playersElement.getBoundingClientRect = () => ({
@@ -364,8 +369,25 @@ test("player list gets one external round Rebreya inventory button", async () =>
     height: 120
   });
   const opened = [];
+  const groupA = {
+    prototypeToken: {
+      texture: {
+        src: "tokens/groups/group-a.webp"
+      }
+    },
+    img: "actors/groups/group-a.webp"
+  };
+  const groupB = {
+    prototypeToken: {
+      texture: {
+        src: "tokens/groups/group-b.webp"
+      }
+    },
+    img: "actors/groups/group-b.webp"
+  };
 
   const inserted = ensurePlayerInventoryQuickButton(playersElement, {
+    getGroupContext: () => ({ groupActor: groupA }),
     openInventoryApp: async () => {
       opened.push(true);
     }
@@ -376,6 +398,7 @@ test("player list gets one external round Rebreya inventory button", async () =>
     }
   });
   const insertedAgain = ensurePlayerInventoryQuickButton(playersElement, {
+    getGroupContext: () => ({ groupActor: groupB }),
     openInventoryApp: async () => {
       opened.push("duplicate");
     }
@@ -395,7 +418,11 @@ test("player list gets one external round Rebreya inventory button", async () =>
   assert.equal(button.dataset.rebreyaPlayerInventoryButton, "true");
   assert.equal(button.classList.contains("rm-player-inventory-button"), true);
   assert.equal(button.getAttribute("aria-label"), "Открыть инвентарь Rebreya");
-  assert.equal(button.style.left, "clamp(220px, 8.5vw, 280px)");
+  assert.equal(button.children.length, 1);
+  assert.equal(button.children[0].tagName, "IMG");
+  assert.equal(button.children[0].src, "tokens/groups/group-b.webp");
+  assert.equal(button.children[0].getAttribute("aria-hidden"), "true");
+  assert.equal(button.style.left, "calc(clamp(220px, 8.5vw, 280px) + 8px)");
   assert.match(button.style.top, /vh$/u);
 
   await button.listeners.click[0]({

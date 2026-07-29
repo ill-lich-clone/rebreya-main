@@ -104,7 +104,10 @@ import { CraftsmanGadgetService } from "./combat/craftsman-gadget-service.js";
 import { CraftsmanGadgetZoneService } from "./combat/craftsman-gadget-zone-service.js";
 import { CraftsmanVehicleService } from "./combat/craftsman-vehicle-service.js";
 import { CraftsmanConstructorService } from "./combat/craftsman-constructor-service.js";
-import { registerSceneControlsHook } from "./hooks.js?v=1.4.96-bg3-piles";
+import {
+  refreshPlayerInventoryQuickButton,
+  registerSceneControlsHook
+} from "./hooks.js?v=1.4.111-party-inventory-token-launcher";
 import {
   extendDnd5eItemTypes,
   registerDnd5eSheetExtensions,
@@ -5017,6 +5020,7 @@ Hooks.once("ready", async () => {
   }
 
   game.rebreyaMain = moduleApi;
+  refreshPlayerInventoryQuickButton(moduleApi);
   socketModuleApi = moduleApi;
   const module = game.modules.get(MODULE_ID);
   if (module) {

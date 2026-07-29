@@ -69,6 +69,19 @@ test("module manifest loads the stable canonical entrypoint", async () => {
   assert.match(entrypointSource, /export class RebreyaMainModule/u);
 });
 
+test("canonical entrypoint cache-busts the player-list inventory token launcher", async () => {
+  const entrypointSource = await readCanonicalEntrypointSource();
+
+  assert.match(
+    entrypointSource,
+    /hooks\.js\?v=1\.4\.111-party-inventory-token-launcher/u
+  );
+  assert.match(
+    entrypointSource,
+    /game\.rebreyaMain = moduleApi;[\s\S]*?refreshPlayerInventoryQuickButton\(moduleApi\);/u
+  );
+});
+
 test("production wiring uses native Craftsman advancement and lifecycle without actor migration", async () => {
   const [entrypointSource, sheetSource] = await Promise.all([
     readCanonicalEntrypointSource(),

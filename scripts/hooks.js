@@ -14,7 +14,8 @@ const BG3_AUTO_POPULATE_CREATE_TOKEN_PATH = `/modules/${BG3_HOTBAR_MODULE_ID}/sc
 const BG3_DEATH_SAVES_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3DeathSavesPatch`);
 const BG3_ITEM_PILE_COMMON_ACTIONS_PATCH_FLAG = Symbol.for(`${MODULE_ID}.bg3ItemPileCommonActionsPatch`);
 const PLAYER_INVENTORY_BUTTON_SELECTOR = "[data-rebreya-player-inventory-button='true']";
-const PLAYER_INVENTORY_BUTTON_LEFT = "clamp(220px, 8.5vw, 280px)";
+const PLAYER_INVENTORY_BUTTON_LEFT = "calc(clamp(220px, 8.5vw, 280px) + 8px)";
+const PLAYER_INVENTORY_BUTTON_SIZE = 36;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -350,13 +351,53 @@ export function positionPlayerInventoryQuickButton(button, playersElement, { vie
     return false;
   }
 
-  const buttonSize = 30;
   const centerY = rect.top + (rect.height * 0.58);
-  const top = Math.max(8, Math.min(viewportHeight - buttonSize - 8, centerY - (buttonSize / 2)));
+  const top = Math.max(
+    8,
+    Math.min(
+      viewportHeight - PLAYER_INVENTORY_BUTTON_SIZE - 8,
+      centerY - (PLAYER_INVENTORY_BUTTON_SIZE / 2)
+    )
+  );
 
   button.style.left = PLAYER_INVENTORY_BUTTON_LEFT;
   button.style.top = formatViewportUnit(top, viewportHeight, "vh");
   return true;
+}
+
+function resolvePlayerInventoryQuickButtonImage(moduleApi) {
+  try {
+    const context = moduleApi?.getGroupContext?.()
+      ?? moduleApi?.groupContextService?.resolveForCurrentUser?.()
+      ?? null;
+    const groupActor = context?.groupActor ?? null;
+    const candidates = [
+      groupActor?.prototypeToken?.texture?.src,
+      groupActor?.img
+    ];
+
+    return candidates.find((value) => typeof value === "string" && value.trim())?.trim() ?? "";
+  }
+  catch {
+    return "";
+  }
+}
+
+function updatePlayerInventoryQuickButtonImage(button, moduleApi, ownerDocument) {
+  const imageSrc = resolvePlayerInventoryQuickButtonImage(moduleApi);
+  const media = ownerDocument.createElement(imageSrc ? "img" : "i");
+
+  if (imageSrc) {
+    media.src = imageSrc;
+    media.alt = "";
+    media.draggable = false;
+  }
+  else {
+    media.classList?.add?.("fa-solid", "fa-bag-shopping");
+  }
+
+  media.setAttribute?.("aria-hidden", "true");
+  button.replaceChildren?.(media);
 }
 
 function removeEmbeddedPlayerInventoryButton(playersElement, buttonHost) {
@@ -381,6 +422,7 @@ export function ensurePlayerInventoryQuickButton(
 
   const existingButton = buttonHost.querySelector(PLAYER_INVENTORY_BUTTON_SELECTOR);
   if (existingButton) {
+    updatePlayerInventoryQuickButtonImage(existingButton, moduleApi, ownerDocument);
     positionPlayerInventoryQuickButton(existingButton, playersElement, { viewport });
     return false;
   }
@@ -392,7 +434,7 @@ export function ensurePlayerInventoryQuickButton(
   button.classList?.add?.("rm-player-inventory-button");
   button.title = label;
   button.setAttribute?.("aria-label", label);
-  button.innerHTML = '<i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>';
+  updatePlayerInventoryQuickButtonImage(button, moduleApi, ownerDocument);
   button.addEventListener?.("click", async (event) => {
     event.preventDefault?.();
     event.stopPropagation?.();
@@ -418,6 +460,11 @@ export function ensurePlayerInventoryQuickButton(
 function injectPlayerInventoryQuickButton(app, html) {
   const playersElement = resolvePlayerInventoryButtonAnchor(app, html);
   ensurePlayerInventoryQuickButton(playersElement);
+}
+
+export function refreshPlayerInventoryQuickButton(moduleApi = globalThis.game?.rebreyaMain) {
+  const playersElement = resolvePlayerInventoryButtonAnchor(null, null);
+  return ensurePlayerInventoryQuickButton(playersElement, moduleApi);
 }
 
 function registerPlayerInventoryQuickButtonHook() {
