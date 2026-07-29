@@ -413,6 +413,84 @@ test("getTransportSnapshot exposes transport items stored on the group actor", a
   }
 });
 
+test("getTransportSnapshot ignores ordinary character members", async () => {
+  const hero = createActor({
+    id: "hero-1",
+    name: "Hero",
+    type: "character",
+    isOwner: true,
+    abilities: {
+      str: { value: 20 }
+    }
+  });
+  hero.system.attributes = {
+    movement: {
+      walk: 30
+    },
+    hp: {
+      value: 80,
+      max: 80
+    }
+  };
+  const groupActor = createActor({
+    id: "group-members",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    members: [{ actor: hero }]
+  });
+  const groupState = {
+    groupsById: {
+      [groupActor.id]: {
+        transportState: {
+          activeTransportId: ""
+        }
+      }
+    }
+  };
+  const fixture = installInventoryFixture({
+    actors: [groupActor, hero],
+    groupState,
+    partyState: {
+      members: {
+        [hero.id]: {
+          role: "member"
+        }
+      }
+    }
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({
+        groupActor,
+        groupId: groupActor.id,
+        canManage: true,
+        groupState: groupState.groupsById[groupActor.id]
+      })
+    },
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const transportSnapshot = await service.getTransportSnapshot();
+
+    assert.equal(transportSnapshot.hasVehicles, false);
+    assert.deepEqual(transportSnapshot.vehicles, []);
+    assert.equal(transportSnapshot.activeVehicle, null);
+    assert.equal(transportSnapshot.effectiveSpeedMph, 3);
+    assert.equal(transportSnapshot.speedSourceLabel, "Пешком");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 function createGroupContextService(groupActor, fixture, { onSetRegistry = null } = {}) {
   return {
     resolveForGroup(groupActorId) {

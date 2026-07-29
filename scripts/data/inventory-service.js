@@ -869,6 +869,16 @@ function buildTransportProfile({
 function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacityLb = 0, memberRole = "" } = {}) {
   const actorData = actor?.toObject?.() ?? actor ?? {};
   const transportFlags = asPlainObject(getProperty(actorData, `flags.${MODULE_ID}.transport`));
+  const role = normalizeRole(memberRole || memberState.role);
+  const hasTransportFlags = Object.keys(transportFlags).length > 0;
+  const isExplicitTransportActor = actor?.type === "vehicle"
+    || role === "transport"
+    || role === "mount"
+    || hasTransportFlags;
+  if (!isExplicitTransportActor) {
+    return null;
+  }
+
   const movementLand = firstDefinedValue(actorData, [
     "system.attributes.movement.land",
     "system.attributes.movement.walk",
@@ -880,7 +890,7 @@ function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacit
     img: actor?.img,
     sourceKind: "member",
     sourceLabel: "Участник группы",
-    typeLabel: cleanId(transportFlags.typeLabel) || (actor?.type === "vehicle" ? "Транспорт" : getRoleLabel(memberRole || memberState.role)),
+    typeLabel: cleanId(transportFlags.typeLabel) || (actor?.type === "vehicle" ? "Транспорт" : getRoleLabel(role)),
     speedValue: firstDefinedValue(actorData, [
       `flags.${MODULE_ID}.transport.speedMph`,
       `flags.${MODULE_ID}.transport.travelSpeedMph`,
@@ -935,7 +945,7 @@ function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacit
       "system.traits.size",
       "system.attributes.size"
     ]),
-    isTransport: actor?.type === "vehicle" || normalizeRole(memberRole || memberState.role) === "transport" || normalizeRole(memberRole || memberState.role) === "mount"
+    isTransport: true
   });
 
   return profile.isTransport ? profile : null;
