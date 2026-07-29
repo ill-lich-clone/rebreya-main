@@ -109,3 +109,36 @@ test("openPartyInventoryCrestPicker reports persistence failure without replacin
 
   assert.deepEqual(reported, [failure]);
 });
+
+test("openPartyInventoryCrestPicker does not report a post-save rerender failure as persistence failure", async () => {
+  const failure = new Error("rerender failed");
+  const reported = [];
+  let persisted = false;
+  class Picker {
+    constructor(options) {
+      this.options = options;
+    }
+
+    render() {
+      return this;
+    }
+  }
+
+  const picker = openPartyInventoryCrestPicker({
+    actor: {
+      async setFlag() {
+        persisted = true;
+      }
+    },
+    current: "old.webp",
+    pickerClass: Picker,
+    onSelected: async () => {
+      throw failure;
+    },
+    onError: (error) => reported.push(error)
+  });
+
+  await assert.rejects(picker.options.callback("new.webp"), failure);
+  assert.equal(persisted, true);
+  assert.deepEqual(reported, []);
+});

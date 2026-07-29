@@ -5727,7 +5727,13 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           actor: this.groupActor,
           current: resolvePartyInventoryCrest(this.groupActor),
           onSelected: async () => {
-            await this.render({ force: true });
+            try {
+              await this.render({ force: true });
+            }
+            catch (error) {
+              console.error(`${MODULE_ID} | Party inventory crest was saved, but rerender failed.`, error);
+              ui.notifications?.warn("Герб сохранён, но окно не удалось обновить.");
+            }
           },
           onError: (error) => {
             console.error(`${MODULE_ID} | Failed to update party inventory crest.`, error);

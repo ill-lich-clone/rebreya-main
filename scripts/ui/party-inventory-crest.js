@@ -38,11 +38,12 @@ export function openPartyInventoryCrestPicker({
       }
       try {
         await actor.setFlag(MODULE_ID, PARTY_INVENTORY_CREST_FLAG, selected);
-        await onSelected?.(selected);
       }
       catch (error) {
         onError?.(error);
+        return;
       }
+      await onSelected?.(selected);
     }
   });
   void picker.render({ force: true });
