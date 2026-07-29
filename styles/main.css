@@ -4335,10 +4335,18 @@ summary:focus-visible {
 
 .rebreya-inventory-app .rm-inventory-book__identity {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 18px;
   min-width: 0;
   max-width: 48%;
+}
+
+.rebreya-inventory-app .rm-inventory-book__identity-column {
+  width: 124px;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  flex: 0 0 124px;
 }
 
 .rebreya-inventory-app .rm-inventory-book__crest,
@@ -4407,6 +4415,11 @@ summary:focus-visible {
   pointer-events: none;
 }
 
+.rebreya-inventory-app .rm-inventory-book__heading {
+  min-width: 0;
+  padding-top: 28px;
+}
+
 .rebreya-inventory-app .rm-inventory-book__title {
   max-width: 820px;
   margin: 0;
@@ -4421,6 +4434,63 @@ summary:focus-visible {
     0 1px 0 rgb(0 0 0 / 0.95),
     0 2px 3px rgb(0 0 0 / 0.86),
     0 0 10px rgb(0 0 0 / 0.62);
+}
+
+.rebreya-inventory-app .rm-inventory-book__section-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 0 0;
+  color: rgb(var(--rm-color-gold-rgb) / 0.82);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.9);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.rebreya-inventory-app .rm-inventory-book__section-title::after {
+  content: "";
+  width: 68px;
+  height: 1px;
+  background: linear-gradient(90deg, rgb(var(--rm-color-gold-rgb) / 0.62), transparent);
+}
+
+.rebreya-inventory-app .rm-inventory-book__wallet {
+  width: 124px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge {
+  min-width: 0;
+  min-height: 24px;
+  justify-content: space-between;
+  gap: 3px;
+  padding: 3px 5px;
+  border-color: rgb(var(--rm-color-gold-rgb) / 0.25);
+  border-radius: 5px;
+  background: rgb(var(--rm-color-ink-rgb) / 0.84);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.025);
+}
+
+.rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+.rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge span {
+  flex: 0 0 auto;
+  font-size: 8px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__wallet span.rm-coin-badge {
+  cursor: default;
 }
 
 .rebreya-inventory-app .rm-inventory-book__controls {
@@ -4635,6 +4705,22 @@ summary:focus-visible {
   display: grid;
   gap: 12px;
   padding: 10px 14px 14px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__inventory-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 7px;
+  min-width: 0;
+  color: var(--rm-text-secondary);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.rebreya-inventory-app .rm-inventory-book__inventory-meta strong {
+  color: var(--rm-text-primary);
+  font-weight: 600;
 }
 
 .rebreya-inventory-app .rm-inventory-book__tabs {
@@ -7477,31 +7563,6 @@ summary:focus-visible {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-}
-
-.rm-inventory-value-summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: max-content;
-  max-width: 100%;
-  padding: 5px 10px;
-  border: 1px solid var(--rm-border-default);
-  border-radius: var(--rm-ui-button-radius);
-  background: rgb(var(--rm-color-gold-rgb) / 0.1);
-  color: var(--rm-text);
-}
-
-.rm-inventory-value-summary span {
-  color: var(--rm-text-secondary);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.rm-inventory-value-summary strong {
-  font-size: 13px;
-  line-height: 1.15;
 }
 
 .rm-coin-badge {

@@ -7,35 +7,84 @@
     <section class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable">
       <header class="rm-inventory-book__header">
         <div class="rm-inventory-book__identity">
-          {{#if partyIdentity.canEditCrest}}
-            <button
-              type="button"
-              class="rm-inventory-book__crest-button"
-              data-action="edit-party-crest"
-              title="Изменить герб группы"
-              aria-label="Изменить герб группы"
-            >
-              <img
-                class="rm-inventory-book__crest-image"
-                src="{{partyIdentity.crestUrl}}"
-                alt=""
+          <div class="rm-inventory-book__identity-column">
+            {{#if partyIdentity.canEditCrest}}
+              <button
+                type="button"
+                class="rm-inventory-book__crest-button"
+                data-action="edit-party-crest"
+                title="Изменить герб группы"
+                aria-label="Изменить герб группы"
               >
-              <span class="rm-inventory-book__crest-edit" aria-hidden="true">
-                <i class="fa-solid fa-pen"></i>
+                <img
+                  class="rm-inventory-book__crest-image"
+                  src="{{partyIdentity.crestUrl}}"
+                  alt=""
+                >
+                <span class="rm-inventory-book__crest-edit" aria-hidden="true">
+                  <i class="fa-solid fa-pen"></i>
+                </span>
+              </button>
+            {{else}}
+              <span class="rm-inventory-book__crest">
+                <img
+                  class="rm-inventory-book__crest-image"
+                  src="{{partyIdentity.crestUrl}}"
+                  alt=""
+                >
               </span>
-            </button>
-          {{else}}
-            <span class="rm-inventory-book__crest">
-              <img
-                class="rm-inventory-book__crest-image"
-                src="{{partyIdentity.crestUrl}}"
-                alt=""
-              >
-            </span>
-          {{/if}}
+            {{/if}}
+
+            <section
+              class="rm-currency-compact rm-inventory-book__wallet"
+              data-action="edit-currency-root"
+              data-currency-pp="{{summary.currency.pp}}"
+              data-currency-gp="{{summary.currency.gp}}"
+              data-currency-sp="{{summary.currency.sp}}"
+              data-currency-cp="{{summary.currency.cp}}"
+              aria-label="Монеты группы"
+            >
+              {{#if canEditCurrency}}
+                <button type="button" class="rm-coin-badge rm-coin-badge--pp" data-action="edit-currency" title="Редактировать монеты">
+                  <strong>{{rmNum summary.currency.pp precision=0}}</strong>
+                  <span>ПМ</span>
+                </button>
+                <button type="button" class="rm-coin-badge rm-coin-badge--gp" data-action="edit-currency" title="Редактировать монеты">
+                  <strong>{{rmNum summary.currency.gp precision=0}}</strong>
+                  <span>ЗМ</span>
+                </button>
+                <button type="button" class="rm-coin-badge rm-coin-badge--sp" data-action="edit-currency" title="Редактировать монеты">
+                  <strong>{{rmNum summary.currency.sp precision=0}}</strong>
+                  <span>СМ</span>
+                </button>
+                <button type="button" class="rm-coin-badge rm-coin-badge--cp" data-action="edit-currency" title="Редактировать монеты">
+                  <strong>{{rmNum summary.currency.cp precision=0}}</strong>
+                  <span>ММ</span>
+                </button>
+              {{else}}
+                <span class="rm-coin-badge rm-coin-badge--pp">
+                  <strong>{{rmNum summary.currency.pp precision=0}}</strong>
+                  <span>ПМ</span>
+                </span>
+                <span class="rm-coin-badge rm-coin-badge--gp">
+                  <strong>{{rmNum summary.currency.gp precision=0}}</strong>
+                  <span>ЗМ</span>
+                </span>
+                <span class="rm-coin-badge rm-coin-badge--sp">
+                  <strong>{{rmNum summary.currency.sp precision=0}}</strong>
+                  <span>СМ</span>
+                </span>
+                <span class="rm-coin-badge rm-coin-badge--cp">
+                  <strong>{{rmNum summary.currency.cp precision=0}}</strong>
+                  <span>ММ</span>
+                </span>
+              {{/if}}
+            </section>
+          </div>
 
           <div class="rm-inventory-book__heading">
             <h2 class="rm-inventory-book__title">{{partyIdentity.name}}</h2>
+            <p class="rm-inventory-book__section-title">{{activeTabLabel}}</p>
           </div>
         </div>
 
@@ -129,67 +178,10 @@
         class="rm-panel rm-panel--full rm-panel--compact {{#if canDropInventoryItems}}rm-inventory-drop-surface{{/if}}"
         {{#if canDropInventoryItems}}data-action="inventory-dropzone"{{/if}}
       >
-        <div class="rm-panel__header rm-panel__header--compact">
-          <h3>Склад</h3>
-          <div class="rm-inventory-drop-header">
-            {{#if canDropInventoryItems}}
-              <span class="rm-inventory-drop-hint">
-                <i class="fa-solid fa-box-open"></i>
-                Перетащите предмет в область склада
-              </span>
-            {{/if}}
-            <span class="rm-muted">{{rmNum inventoryCount precision=0}} поз.</span>
-          </div>
-        </div>
-
-        <section
-          class="rm-currency-compact"
-          data-action="edit-currency-root"
-          data-currency-pp="{{summary.currency.pp}}"
-          data-currency-gp="{{summary.currency.gp}}"
-          data-currency-sp="{{summary.currency.sp}}"
-          data-currency-cp="{{summary.currency.cp}}"
-        >
-          {{#if canEditCurrency}}
-            <button type="button" class="rm-coin-badge rm-coin-badge--pp" data-action="edit-currency" title="Редактировать монеты">
-              <strong>{{rmNum summary.currency.pp precision=0}}</strong>
-              <span>ПМ</span>
-            </button>
-            <button type="button" class="rm-coin-badge rm-coin-badge--gp" data-action="edit-currency" title="Редактировать монеты">
-              <strong>{{rmNum summary.currency.gp precision=0}}</strong>
-              <span>ЗМ</span>
-            </button>
-            <button type="button" class="rm-coin-badge rm-coin-badge--sp" data-action="edit-currency" title="Редактировать монеты">
-              <strong>{{rmNum summary.currency.sp precision=0}}</strong>
-              <span>СМ</span>
-            </button>
-            <button type="button" class="rm-coin-badge rm-coin-badge--cp" data-action="edit-currency" title="Редактировать монеты">
-              <strong>{{rmNum summary.currency.cp precision=0}}</strong>
-              <span>ММ</span>
-            </button>
-          {{else}}
-            <span class="rm-coin-badge rm-coin-badge--pp">
-              <strong>{{rmNum summary.currency.pp precision=0}}</strong>
-              <span>ПМ</span>
-            </span>
-            <span class="rm-coin-badge rm-coin-badge--gp">
-              <strong>{{rmNum summary.currency.gp precision=0}}</strong>
-              <span>ЗМ</span>
-            </span>
-            <span class="rm-coin-badge rm-coin-badge--sp">
-              <strong>{{rmNum summary.currency.sp precision=0}}</strong>
-              <span>СМ</span>
-            </span>
-            <span class="rm-coin-badge rm-coin-badge--cp">
-              <strong>{{rmNum summary.currency.cp precision=0}}</strong>
-              <span>ММ</span>
-            </span>
-          {{/if}}
-        </section>
-
-        <div class="rm-inventory-value-summary">
-          <span>Стоимость вещей</span>
-          <strong>{{summary.totalItemValueLabel}}</strong>
+        <div class="rm-inventory-book__inventory-meta">
+          <span>{{rmNum inventoryCount precision=0}} поз.</span>
+          <span aria-hidden="true">·</span>
+          <span>Стоимость вещей: <strong>{{summary.totalItemValueLabel}}</strong></span>
         </div>
 
         <section class="rm-compact-toolbar">

@@ -2868,6 +2868,16 @@ function buildCalendarAdvanceIsoDate(isoDate, unit, value) {
   return formatCalendarIsoDate(date);
 }
 
+const INVENTORY_TAB_LABELS = Object.freeze({
+  inventory: "Инвентарь",
+  party: "Группа",
+  craft: "Крафт",
+  calendar: "Календарь",
+  travel: "Путешествие",
+  transport: "Транспорт",
+  downtime: "Простой"
+});
+
 export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     classes: ["rebreya-main", "rebreya-inventory-app"],
@@ -2936,7 +2946,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   setActiveTab(tab, { render = true } = {}) {
-    const allowedTabs = new Set(["inventory", "party", "craft", "calendar", "travel", "transport", "downtime"]);
+    const allowedTabs = new Set(Object.keys(INVENTORY_TAB_LABELS));
     const nextTab = allowedTabs.has(tab) ? tab : "inventory";
     if (this.activeTab === nextTab) {
       return;
@@ -3689,6 +3699,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           canEdit: false
         },
         activeTab: this.activeTab,
+        activeTabLabel: INVENTORY_TAB_LABELS[this.activeTab] ?? INVENTORY_TAB_LABELS.inventory,
         appDomId: this.id,
         search: this.search,
         typeFilter: this.typeFilter,

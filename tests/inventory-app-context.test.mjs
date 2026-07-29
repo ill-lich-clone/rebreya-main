@@ -483,6 +483,41 @@ test("InventoryApp keeps crest editing disabled for non-managers", async () => {
   }
 });
 
+test("InventoryApp exposes the active tab label for the shared party header", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import(
+    `../scripts/ui/inventory-app.js?active-tab-label=${Date.now()}`
+  );
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null
+  }));
+  const labels = new Map([
+    ["inventory", "Инвентарь"],
+    ["party", "Группа"],
+    ["craft", "Крафт"],
+    ["calendar", "Календарь"],
+    ["travel", "Путешествие"],
+    ["transport", "Транспорт"],
+    ["downtime", "Простой"]
+  ]);
+
+  try {
+    for (const [tab, label] of labels) {
+      app.setActiveTab(tab, { render: false });
+      const context = await app._prepareContext();
+      assert.equal(context.activeTabLabel, label);
+    }
+
+    app.setActiveTab("unsupported-tab", { render: false });
+    const fallbackContext = await app._prepareContext();
+    assert.equal(fallbackContext.activeTab, "inventory");
+    assert.equal(fallbackContext.activeTabLabel, "Инвентарь");
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp crest action persists a new image and rerenders", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
@@ -560,6 +595,8 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
   assert.match(template, /class="rm-inventory-book__identity"/u);
   assert.match(template, /partyIdentity\.crestUrl/u);
   assert.match(template, /partyIdentity\.name/u);
+  assert.match(template, /class="rm-inventory-book__section-title">\{\{activeTabLabel\}\}/u);
+  assert.match(template, /class="rm-currency-compact rm-inventory-book__wallet"/u);
   assert.match(
     template,
     /\{\{#if partyIdentity\.canEditCrest\}\}[\s\S]*data-action="edit-party-crest"[\s\S]*\{\{else\}\}/u
@@ -587,6 +624,18 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
   );
   assert.doesNotMatch(template, /Партийная логистика/u);
   assert.doesNotMatch(template, /<span>Группа:\s*\{\{group\.name\}\}/u);
+  assert.doesNotMatch(template, /<h3>Склад<\/h3>/u);
+  assert.doesNotMatch(template, /Перетащите предмет в область склада/u);
+  assert.doesNotMatch(template, /class="rm-inventory-value-summary"/u);
+  assert.match(
+    template,
+    /class="rm-inventory-book__inventory-meta"[\s\S]*inventoryCount[\s\S]*totalItemValueLabel/u
+  );
+
+  const walletIndex = template.indexOf('class="rm-currency-compact rm-inventory-book__wallet"');
+  const inventoryBranchIndex = template.indexOf("{{#if tabs.isInventory}}");
+  assert.ok(walletIndex >= 0, "expected the shared currency wallet");
+  assert.ok(walletIndex < inventoryBranchIndex, "expected the wallet outside the inventory-only branch");
 
   for (const tab of ["inventory", "party", "craft", "calendar", "travel", "transport", "downtime"]) {
     assert.match(template, new RegExp(`data-action="switch-tab"[^>]+data-tab="${tab}"`, "u"));
@@ -607,9 +656,13 @@ test("InventoryApp positions external book tabs and keeps the character-style ar
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header::before\s*\{[^}]*var\(--rm-party-inventory-header-image\)[^}]*mask-image:\s*linear-gradient\(180deg,\s*#000 0%,\s*#000 58%,\s*rgb\(0 0 0 \/ 0\.72\) 75%,\s*transparent 100%\);/u);
   assert.doesNotMatch(css, /\.rebreya-inventory-app \.rm-inventory-book__header-shade/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__identity\s*\{[^}]*display:\s*flex;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__identity-column\s*\{[^}]*display:\s*grid;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__crest-button\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__crest-image\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__title\s*\{[^}]*font-family:\s*var\(--dnd5e-font-modesto\)[^}]*font-size:\s*36px;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__section-title\s*\{/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__wallet\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__inventory-meta\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__action\s*\{[^}]*min-height:\s*36px;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tabs\s*\{[^}]*position:\s*absolute;[^}]*right:\s*-\d+px;[^}]*grid-auto-flow:\s*row;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__summary\s*\{/u);
@@ -728,14 +781,15 @@ test("InventoryApp sorts party inventory rows and exposes item value totals", as
   }
 });
 
-test("InventoryApp inventory toolbar exposes sorting and total item value controls", async () => {
+test("InventoryApp inventory toolbar exposes sorting and subdued total item value metadata", async () => {
   const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
   assert.match(template, /data-action="sort-mode"/u);
   assert.match(template, /sortOptions/u);
   assert.match(template, /summary\.totalItemValueLabel/u);
-  assert.match(css, /\.rm-inventory-value-summary/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__inventory-meta/u);
+  assert.doesNotMatch(css, /\.rm-inventory-value-summary/u);
 });
 
 test("InventoryApp CSS does not cap the party inventory below its configured size", async () => {
