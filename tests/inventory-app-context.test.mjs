@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 
 import { GROUP_CONTEXT_ERRORS } from "../scripts/data/group-context-service.js";
 
@@ -447,7 +447,7 @@ test("InventoryApp renders a compact header summary without redundant warehouse 
   assert.match(template, /\{\{#if canManage\}\}[\s\S]*data-action="add-food"[\s\S]*data-action="add-water"[\s\S]*\{\{\/if\}\}/u);
 });
 
-test("InventoryApp positions external book tabs and mirrors the character artwork mask", async () => {
+test("InventoryApp positions external book tabs and keeps the character-style artwork mask", async () => {
   const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
 
   assert.match(css, /\.rebreya-inventory-app \.window-content\s*\{[^}]*position:\s*relative;[^}]*overflow:\s*visible;/u);
@@ -455,7 +455,7 @@ test("InventoryApp positions external book tabs and mirrors the character artwor
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book\s*\{[^}]*display:\s*contents;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__page\s*\{[^}]*overflow-y:\s*auto;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header\s*\{[^}]*height:\s*300px;[^}]*min-height:\s*300px;/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header::before\s*\{[^}]*var\(--rm-character-sheet-header-image\)[^}]*mask-image:\s*linear-gradient\(180deg,\s*#000 0%,\s*#000 58%,\s*rgb\(0 0 0 \/ 0\.72\) 75%,\s*transparent 100%\);/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header::before\s*\{[^}]*var\(--rm-party-inventory-header-image\)[^}]*mask-image:\s*linear-gradient\(180deg,\s*#000 0%,\s*#000 58%,\s*rgb\(0 0 0 \/ 0\.72\) 75%,\s*transparent 100%\);/u);
   assert.doesNotMatch(css, /\.rebreya-inventory-app \.rm-inventory-book__header-shade/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__title\s*\{[^}]*font-family:\s*var\(--dnd5e-font-modesto\)[^}]*font-size:\s*36px;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__action\s*\{[^}]*min-height:\s*36px;/u);
@@ -467,6 +467,28 @@ test("InventoryApp positions external book tabs and mirrors the character artwor
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tab\.is-active\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tab:hover/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tab:focus-visible/u);
+});
+
+test("InventoryApp uses its own workshop artwork without changing the character header", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+  const workshopAsset = await stat(new URL(
+    "../assets/ui/rebreya-party-inventory-workshop.webp",
+    import.meta.url
+  ));
+
+  assert.ok(workshopAsset.size > 0);
+  assert.match(
+    css,
+    /--rm-party-inventory-header-image:\s*url\("\.\.\/assets\/ui\/rebreya-party-inventory-workshop\.webp"\);/u
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__header::before\s*\{[^}]*var\(--rm-party-inventory-header-image\)/u
+  );
+  assert.match(
+    css,
+    /--rm-character-sheet-header-image:\s*url\("\/modules\/rebreya-main\/assets\/ui\/rebreya-character-header\.webp"\);/u
+  );
 });
 
 test("InventoryApp sorts party inventory rows and exposes item value totals", async () => {

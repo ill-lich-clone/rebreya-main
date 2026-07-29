@@ -29,6 +29,7 @@
   --rm-surface-overlay: rgb(var(--rm-color-ink-rgb) / 0.94);
   --rm-surface-subtle: rgb(255 255 255 / 0.04);
   --rm-character-sheet-header-image: url("/modules/rebreya-main/assets/ui/rebreya-character-header.webp");
+  --rm-party-inventory-header-image: url("../assets/ui/rebreya-party-inventory-workshop.webp");
   --rm-border-subtle: rgb(var(--rm-color-gold-rgb) / 0.1);
   --rm-border-default: rgb(var(--rm-color-gold-rgb) / 0.16);
   --rm-border-strong: rgb(var(--rm-color-gold-rgb) / 0.34);
@@ -4311,7 +4312,7 @@ summary:focus-visible {
   position: absolute;
   z-index: 0;
   inset: 0;
-  background-image: var(--rm-character-sheet-header-image);
+  background-image: var(--rm-party-inventory-header-image);
   background-position: center top;
   background-repeat: no-repeat;
   background-size: cover;
