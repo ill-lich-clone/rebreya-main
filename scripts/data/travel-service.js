@@ -949,7 +949,12 @@ function buildModeOptions(state) {
   }));
 }
 
-export function buildTravelSnapshot(rawNetwork = {}, rawState = {}, { warning = "", canAdvance = true } = {}) {
+export function buildTravelSnapshot(rawNetwork = {}, rawState = {}, {
+  warning = "",
+  canAdvance = true,
+  speedLabel = "",
+  speedSourceLabel = ""
+} = {}) {
   const network = normalizeTravelNetwork(rawNetwork);
   const state = normalizeTravelState(rawState);
   const plan = buildTravelPlan(network, state);
@@ -976,21 +981,48 @@ export function buildTravelSnapshot(rawNetwork = {}, rawState = {}, { warning = 
     mapPosition,
     emptyMessage: plan.reason || "Выберите города и способ пути.",
     speedMph: network.speedMph,
-    speedLabel: `${network.speedMph} мили/час`
+    speedLabel: cleanId(speedLabel) || `${network.speedMph} мили/час`,
+    speedSourceLabel: cleanId(speedSourceLabel)
   };
 }
 
 export class TravelService {
-  constructor({ groupContextService = null, commandBus = null, networkPath = TRAVEL_NETWORK_PATH, citiesPath = CANONICAL_CITY_CONNECTIONS_PATH } = {}) {
+  constructor({ groupContextService = null, commandBus = null, networkPath = TRAVEL_NETWORK_PATH, citiesPath = CANONICAL_CITY_CONNECTIONS_PATH, speedProvider = null } = {}) {
     this.groupContextService = groupContextService;
     this.commandBus = commandBus;
     this.networkPath = networkPath;
     this.citiesPath = citiesPath;
     this.networkPromise = null;
+    this.speedProvider = typeof speedProvider === "function" ? speedProvider : null;
   }
 
   setGroupContextService(groupContextService) {
     this.groupContextService = groupContextService;
+  }
+
+  setSpeedProvider(speedProvider) {
+    this.speedProvider = typeof speedProvider === "function" ? speedProvider : null;
+  }
+
+  async #resolveNetworkForContext(network, context) {
+    if (!this.speedProvider) {
+      return {
+        network,
+        speedLabel: `${network.speedMph} мили/час`,
+        speedSourceLabel: ""
+      };
+    }
+
+    const speedMeta = await this.speedProvider(context);
+    const speedMph = Math.max(0.01, toNumber(speedMeta?.speedMph, network.speedMph));
+    return {
+      network: {
+        ...network,
+        speedMph
+      },
+      speedLabel: cleanId(speedMeta?.label) || `${speedMph} мили/час`,
+      speedSourceLabel: cleanId(speedMeta?.sourceLabel)
+    };
   }
 
   async #loadNetwork() {
@@ -1062,7 +1094,7 @@ export class TravelService {
   }
 
   async getSnapshot() {
-    const network = await this.#loadNetwork();
+    const baseNetwork = await this.#loadNetwork();
     let context = null;
     try {
       context = this.#getCurrentGroupContext();
@@ -1072,14 +1104,17 @@ export class TravelService {
         throw error;
       }
 
-      return buildTravelSnapshot(network, {}, {
+      return buildTravelSnapshot(baseNetwork, {}, {
         warning: error.message || "Группа для путешествия не выбрана.",
         canAdvance: false
       });
     }
 
+    const { network, speedLabel, speedSourceLabel } = await this.#resolveNetworkForContext(baseNetwork, context);
     return buildTravelSnapshot(network, context?.groupState?.travelState ?? {}, {
-      canAdvance: Boolean(context?.canManage)
+      canAdvance: Boolean(context?.canManage),
+      speedLabel,
+      speedSourceLabel
     });
   }
 
@@ -1094,24 +1129,31 @@ export class TravelService {
       traveledMiles: 0
     });
     const committedState = await this.#writeGroupTravelState(context, nextState);
-    const network = await this.#loadNetwork();
+    const baseNetwork = await this.#loadNetwork();
+    const { network, speedLabel, speedSourceLabel } = await this.#resolveNetworkForContext(baseNetwork, context);
     return buildTravelSnapshot(network, committedState, {
-      canAdvance: Boolean(context?.canManage)
+      canAdvance: Boolean(context?.canManage),
+      speedLabel,
+      speedSourceLabel
     });
   }
 
   async clearRoute() {
     const context = this.#getCurrentGroupContext();
     const committedState = await this.#writeGroupTravelState(context, normalizeTravelState({}));
-    const network = await this.#loadNetwork();
+    const baseNetwork = await this.#loadNetwork();
+    const { network, speedLabel, speedSourceLabel } = await this.#resolveNetworkForContext(baseNetwork, context);
     return buildTravelSnapshot(network, committedState, {
-      canAdvance: Boolean(context?.canManage)
+      canAdvance: Boolean(context?.canManage),
+      speedLabel,
+      speedSourceLabel
     });
   }
 
   async advanceHours(hours = 0) {
-    const network = await this.#loadNetwork();
+    const baseNetwork = await this.#loadNetwork();
     const context = this.#getCurrentGroupContext();
+    const { network, speedLabel, speedSourceLabel } = await this.#resolveNetworkForContext(baseNetwork, context);
     const currentState = normalizeTravelState(context?.groupState?.travelState ?? {});
     const plan = buildTravelPlan(network, currentState);
     if (!plan.available) {
@@ -1121,7 +1163,9 @@ export class TravelService {
     const nextState = advanceTravelProgress(currentState, plan, hours);
     const committedState = await this.#writeGroupTravelState(context, nextState);
     const snapshot = buildTravelSnapshot(network, committedState, {
-      canAdvance: Boolean(context?.canManage)
+      canAdvance: Boolean(context?.canManage),
+      speedLabel,
+      speedSourceLabel
     });
     return {
       ...snapshot,

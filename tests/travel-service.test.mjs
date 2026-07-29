@@ -199,6 +199,43 @@ test("buildTravelSnapshot exposes travel days and rewind availability", () => {
   assert.equal(snapshot.canRewind, true);
 });
 
+test("TravelService applies the active transport speed to travel timing", async () => {
+  const groupContextService = {
+    resolveForCurrentUser() {
+      return {
+        groupId: "group-a",
+        canManage: true,
+        groupState: {
+          travelState: {
+            originCityId: "a",
+            destinationCityId: "c",
+            mode: "land",
+            traveledMiles: 0
+          },
+          transportState: {
+            activeTransportId: "member:wagon"
+          }
+        }
+      };
+    }
+  };
+  const service = new TravelService({ groupContextService });
+  service.networkPromise = Promise.resolve(normalizeTravelNetwork(network));
+  service.setSpeedProvider(() => ({
+    speedMph: 9,
+    label: "9 миль/час",
+    sourceLabel: "Тяжёлый гражданский фургон"
+  }));
+
+  const snapshot = await service.getSnapshot();
+
+  assert.equal(snapshot.speedMph, 9);
+  assert.equal(snapshot.speedLabel, "9 миль/час");
+  assert.equal(snapshot.speedSourceLabel, "Тяжёлый гражданский фургон");
+  assert.equal(snapshot.plan.totalHours, 3);
+  assert.equal(snapshot.plan.legs[0].hours, 1.33);
+});
+
 test("actual travel network does not use the conflicting Orlanis-Freh land bridge", async () => {
   const actualNetwork = JSON.parse(await readFile(new URL("../data/travel-network.json", import.meta.url), "utf8"));
   const economyCities = JSON.parse(await readFile(new URL("../data/cities.json", import.meta.url), "utf8"));

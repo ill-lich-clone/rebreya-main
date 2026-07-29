@@ -1457,6 +1457,40 @@ function prepareTravelContext(snapshot = {}, trackTime = false) {
   };
 }
 
+function buildEmptyTransportContext({ warning = "" } = {}) {
+  return {
+    available: !warning,
+    warning,
+    canManage: false,
+    vehicles: [],
+    hasVehicles: false,
+    activeTransportId: "",
+    activeVehicle: null,
+    effectiveSpeedMph: 3,
+    speedLabel: "3 мили/час",
+    speedSourceLabel: "Пешком",
+    cargoLabel: "-",
+    cargoUsageLabel: "-",
+    cargoFreeLabel: "-",
+    cargoOverloaded: false,
+    durabilityLabel: "-"
+  };
+}
+
+function prepareTransportContext(snapshot = {}) {
+  const source = snapshot && typeof snapshot === "object" ? snapshot : buildEmptyTransportContext();
+  const vehicles = Array.isArray(source.vehicles) ? source.vehicles : [];
+  return {
+    ...buildEmptyTransportContext(),
+    ...source,
+    vehicles,
+    hasVehicles: Boolean(source.hasVehicles ?? vehicles.length > 0),
+    canManage: Boolean(source.canManage),
+    activeVehicle: source.activeVehicle ?? null,
+    cargoOverloaded: Boolean(source.cargoOverloaded)
+  };
+}
+
 function applyTravelProgressSnapshot(element, snapshot = {}) {
   if (!element || !snapshot?.progress || !snapshot?.plan?.available) {
     return false;
@@ -2897,7 +2931,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   setActiveTab(tab, { render = true } = {}) {
-    const allowedTabs = new Set(["inventory", "party", "craft", "calendar", "travel", "downtime"]);
+    const allowedTabs = new Set(["inventory", "party", "craft", "calendar", "travel", "transport", "downtime"]);
     const nextTab = allowedTabs.has(tab) ? tab : "inventory";
     if (this.activeTab === nextTab) {
       return;
@@ -3412,6 +3446,21 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         travelWarning = error.message || "Не удалось определить группу Rebreya.";
       }
+      let transportSnapshot = null;
+      let transportWarning = "";
+      try {
+        transportSnapshot = await this.moduleApi.getTransportSnapshot?.({
+          partySnapshot,
+          inventorySnapshot
+        });
+      }
+      catch (error) {
+        if (!isKnownGroupContextError(error)) {
+          throw error;
+        }
+
+        transportWarning = error.message || "Не удалось определить группу Rebreya.";
+      }
       let downtimeSnapshot = null;
       let downtimeWarning = "";
       try {
@@ -3618,6 +3667,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         };
       });
       const travel = prepareTravelContext(travelSnapshot ?? buildEmptyTravelContext({ warning: travelWarning }), this.travelTrackTime);
+      const transport = prepareTransportContext(transportSnapshot ?? buildEmptyTransportContext({ warning: transportWarning }));
       const calendarCells = buildCalendarDowntimeCells(calendarSnapshot, downtimeSnapshot);
       this.calendarDowntimeByIsoDate = Object.fromEntries(calendarCells.map((cell) => [cell.isoDate, cell.downtime]));
 
@@ -3700,6 +3750,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           dayValue: calendarSnapshot.day
         },
         travel,
+        transport,
         downtime,
         typeOptions: [
           { value: "all", label: "Все", selected: this.typeFilter === "all" },
@@ -3720,6 +3771,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
           isCraft: this.activeTab === "craft",
           isCalendar: this.activeTab === "calendar",
           isTravel: this.activeTab === "travel",
+          isTransport: this.activeTab === "transport",
           isDowntime: this.activeTab === "downtime"
         },
         actionFeedback,
@@ -5442,6 +5494,25 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
         ui.notifications?.error(message);
       }
     }, listenerOptions);
+
+    element.querySelectorAll("[data-action='transport-select']").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        const transportId = cleanText(event.currentTarget.dataset.transportId);
+        event.currentTarget.disabled = true;
+        try {
+          await this.moduleApi.setActiveTransport?.(transportId);
+          this.#setActionFeedback("success", "Активный транспорт обновлён.");
+          bringAppToFront(this);
+        }
+        catch (error) {
+          console.error(`${MODULE_ID} | Failed to select active transport.`, error);
+          const message = error.message || "Не удалось выбрать транспорт.";
+          this.#setActionFeedback("error", message);
+          this.render({ force: true });
+          ui.notifications?.error(message);
+        }
+      }, listenerOptions);
+    });
 
     const bindDowntimeField = (selector, assign) => {
       element.querySelector(selector)?.addEventListener("change", (event) => {

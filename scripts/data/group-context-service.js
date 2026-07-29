@@ -236,6 +236,9 @@ export function buildDefaultGroupState(groupActorId, { now = Date.now() } = {}) 
     globalEventsState: {},
     craftState: {},
     travelState: {},
+    transportState: {
+      activeTransportId: ""
+    },
     questState: {
       unlocksByQuestId: {},
       activities: {
@@ -254,6 +257,13 @@ export function buildDefaultGroupState(groupActorId, { now = Date.now() } = {}) 
       legacyInventoryMergedAt: 0,
       legacyInventoryActorId: ""
     }
+  };
+}
+
+export function normalizeGroupTransportState(value = {}) {
+  const source = asObject(value);
+  return {
+    activeTransportId: cleanId(source.activeTransportId)
   };
 }
 
@@ -277,6 +287,7 @@ export function normalizeGroupState(groupActorId, value = {}) {
     globalEventsState: clone(asObject(source.globalEventsState)),
     craftState: clone(asObject(source.craftState)),
     travelState: clone(asObject(source.travelState)),
+    transportState: normalizeGroupTransportState(source.transportState),
     questState: normalizeQuestState(source.questState),
     downtimeState: {
       balancesByActorId: clone(asObject(downtimeState.balancesByActorId)),

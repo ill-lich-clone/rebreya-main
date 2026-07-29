@@ -137,6 +137,7 @@ function createModuleApi({
   downtimeSnapshot,
   downtimeError,
   travelSnapshot,
+  transportSnapshot,
   calendarSnapshot,
   calendarPreview,
   calls = []
@@ -238,6 +239,27 @@ function createModuleApi({
           percent: 0
         }
       };
+    },
+    async getTransportSnapshot(options = {}) {
+      calls.push(["getTransportSnapshot", options]);
+      return transportSnapshot ?? {
+        available: true,
+        warning: "",
+        canManage: false,
+        vehicles: [],
+        hasVehicles: false,
+        activeVehicle: null,
+        activeTransportId: "",
+        effectiveSpeedMph: 3,
+        speedLabel: "3 мили/час",
+        speedSourceLabel: "Пешком",
+        cargoLabel: "-",
+        durabilityLabel: "-"
+      };
+    },
+    async setActiveTransport(activeTransportId) {
+      calls.push(["setActiveTransport", activeTransportId]);
+      return {};
     },
     async setTravelRoute(payload) {
       calls.push(["setTravelRoute", payload]);
@@ -1120,6 +1142,113 @@ test("InventoryApp allows travel tab and maps travel snapshot into context", asy
   }
 });
 
+test("InventoryApp allows transport tab and maps the active group transport", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-tab=${Date.now()}`);
+  const calls = [];
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => ({
+      groupActor: {
+        id: "group-a",
+        name: "Transport Group",
+        system: {
+          members: []
+        }
+      },
+      groupId: "group-a",
+      memberActorIds: []
+    }),
+    transportSnapshot: {
+      available: true,
+      warning: "",
+      canManage: true,
+      activeTransportId: "member:wagon",
+      effectiveSpeedMph: 12,
+      speedLabel: "12 миль/час",
+      speedSourceLabel: "Тяжёлый гражданский фургон",
+      cargoLabel: "5 000 фнт.",
+      durabilityLabel: "200 / 200",
+      hasVehicles: true,
+      vehicles: [{
+        id: "member:wagon",
+        name: "Тяжёлый гражданский фургон",
+        typeLabel: "Механический транспорт",
+        sourceLabel: "Участник группы",
+        speedMph: 12,
+        speedLabel: "12 миль/час",
+        cargoCapacityLb: 5000,
+        cargoLabel: "5 000 фнт.",
+        durabilityLabel: "200 / 200",
+        active: true
+      }],
+      activeVehicle: {
+        id: "member:wagon",
+        name: "Тяжёлый гражданский фургон",
+        speedMph: 12,
+        cargoCapacityLb: 5000,
+        durabilityLabel: "200 / 200"
+      }
+    },
+    calls
+  }));
+
+  try {
+    app.setActiveTab("transport", { render: false });
+
+    const context = await app._prepareContext();
+
+    assert.equal(context.activeTab, "transport");
+    assert.equal(context.tabs.isTransport, true);
+    assert.equal(context.transport.activeTransportId, "member:wagon");
+    assert.equal(context.transport.effectiveSpeedMph, 12);
+    assert.equal(context.transport.activeVehicle.name, "Тяжёлый гражданский фургон");
+    const [transportCall] = calls.filter((call) => call[0] === "getTransportSnapshot");
+    assert.ok(transportCall);
+    assert.ok(transportCall[1].partySnapshot);
+    assert.ok(transportCall[1].inventorySnapshot);
+  }
+  finally {
+    restoreFoundry();
+  }
+});
+
+test("InventoryApp transport selection delegates to the module API", async () => {
+  const restoreFoundry = installFoundryApplicationStub();
+  const dom = installMinimalDom();
+  const { InventoryApp } = await import(`../scripts/ui/inventory-app.js?transport-select=${Date.now()}`);
+  const calls = [];
+  const selectButton = createFakeControl({ dataset: { transportId: "member:wagon" } });
+  const root = createFakeElement({
+    closest: () => root
+  });
+  root.querySelector = () => null;
+  root.querySelectorAll = (selector) => {
+    if (selector === "[data-action='transport-select']") {
+      return [selectButton];
+    }
+    return [];
+  };
+  const app = new InventoryApp(createModuleApi({
+    getGroupContext: () => null,
+    calls
+  }));
+  app.element = root;
+
+  try {
+    await app._onRender({}, {});
+    await dispatchClick(selectButton);
+
+    assert.deepEqual(calls.filter((call) => call[0] === "setActiveTransport"), [[
+      "setActiveTransport",
+      "member:wagon"
+    ]]);
+  }
+  finally {
+    dom.restore();
+    restoreFoundry();
+  }
+});
+
 test("InventoryApp travel city autocomplete selects the preview with Enter", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const dom = installMinimalDom();
@@ -1357,6 +1486,19 @@ test("InventoryApp travel autocomplete and progress token have readable styles",
   assert.match(css, /\.rm-travel-progress-token\s*\{/u);
   assert.match(css, /\.rm-travel-leg-list\s*\{[\s\S]*max-height:/u);
   assert.match(css, /\.rm-travel-leg-list\s*\{[\s\S]*overflow-y:\s*auto/u);
+});
+
+test("InventoryApp template exposes the transport tab and active transport controls", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(template, /data-tab="transport"/u);
+  assert.match(template, /\{\{#if tabs\.isTransport\}\}/u);
+  assert.match(template, /data-action="transport-select"/u);
+  assert.match(template, /transport\.activeVehicle/u);
+  assert.match(template, /transport\.speedSourceLabel/u);
+  assert.match(css, /\.rm-transport-panel/u);
+  assert.match(css, /\.rm-transport-row\.is-active/u);
 });
 
 test("InventoryApp downtime context can switch queue pages to archive requests", async () => {

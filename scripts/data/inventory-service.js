@@ -9,7 +9,12 @@
   REBREYA_TOOLS,
   SETTINGS_KEYS
 } from "../constants.js";
-import { GROUP_CONTEXT_ERRORS, getGroupMemberActors, isManagedPartyGroup } from "./group-context-service.js";
+import {
+  GROUP_CONTEXT_ERRORS,
+  getGroupMemberActors,
+  isManagedPartyGroup,
+  normalizeGroupTransportState
+} from "./group-context-service.js";
 import { DurableMutationJournal } from "../application/durable-mutation-journal.js";
 import { WorldMutationCoordinator } from "../application/world-mutation-coordinator.js";
 import { finiteNumber as toNumber } from "../shared/foundry-values.js";
@@ -28,6 +33,7 @@ export const INVENTORY_SALE_COMMAND = "inventory.sale";
 export const INVENTORY_IMPORT_COMMAND = "inventory.import";
 export const INVENTORY_CURRENCY_UPDATE_COMMAND = "inventory.currency.update";
 export const INVENTORY_CURRENCY_CONVERT_COMMAND = "inventory.currency.convert";
+export const GROUP_TRANSPORT_REPLACE_STATE_COMMAND = "group.transport.replaceState";
 const DEFAULT_PARTY_ACTOR_NAME = "Инвентарь группы Rebreya";
 const DEFAULT_PARTY_ACTOR_IMAGE = "icons/svg/item-bag.svg";
 const LOOTGEN_CHAT_ACTOR_NAME = "Лут Rebreya";
@@ -38,6 +44,7 @@ const FOOD_SUPPLY_ICON = "icons/consumables/food/berries-ration-round-red.webp";
 const WATER_SUPPLY_ICON = "icons/sundries/survival/waterskin-leather-brown.webp";
 const RATION_ITEM_NAME_WORDS = new Set(["ration", "rations", "паек", "пайки", "рацион", "рационы"]);
 const DEFAULT_CAPACITY_MULTIPLIER = 15;
+const DEFAULT_TRAVEL_SPEED_MPH = 3;
 const COIN_LABELS = {
   pp: "пм",
   gp: "зм",
@@ -667,6 +674,433 @@ function getRoleLabel(role) {
     default:
       return "Член группы";
   }
+}
+
+function getProperty(source, path) {
+  if (!path) {
+    return undefined;
+  }
+  if (globalThis.foundry?.utils?.getProperty) {
+    return globalThis.foundry.utils.getProperty(source, path);
+  }
+
+  return String(path).split(".").reduce((value, key) => (
+    value && typeof value === "object" ? value[key] : undefined
+  ), source);
+}
+
+function asPlainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function firstDefinedValue(source, paths = []) {
+  for (const path of paths) {
+    const value = getProperty(source, path);
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function extractNumber(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  const text = String(value ?? "").replace(/\s+/gu, " ").replace(",", ".");
+  const match = text.match(/-?\d+(?:\.\d+)?/u);
+  if (!match) {
+    return null;
+  }
+  const number = Number(match[0]);
+  return Number.isFinite(number) ? number : null;
+}
+
+function parseSpeedMph(value) {
+  const number = extractNumber(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    return null;
+  }
+
+  const normalized = normalizeText(value);
+  if (normalized.includes("фут")) {
+    return roundNumber(number / 10, 2);
+  }
+  return roundNumber(number, 2);
+}
+
+function parseWeightToPounds(value) {
+  const number = extractNumber(value);
+  if (!Number.isFinite(number) || number < 0) {
+    return null;
+  }
+
+  const normalized = normalizeText(value);
+  if (normalized.includes("тонн") || normalized.includes("ton")) {
+    return roundNumber(number * 2000, 2);
+  }
+  if (normalized.includes("кг") || normalized.includes("kg")) {
+    return roundNumber(number * 2.20462, 2);
+  }
+  return roundNumber(number, 2);
+}
+
+function formatTransportSpeedLabel(speedMph) {
+  const speed = roundNumber(toNumber(speedMph, 0), 2);
+  return speed > 0 ? `${formatNumberLabel(speed)} миль/час` : "-";
+}
+
+function formatPoundLabel(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return "-";
+  }
+  const pounds = roundNumber(numericValue, 2);
+  return `${formatNumberLabel(pounds)} фнт.`;
+}
+
+function formatNumberLabel(value, precision = 2) {
+  const rounded = roundNumber(value, precision);
+  return Number.isInteger(rounded)
+    ? String(rounded)
+    : String(rounded).replace(".", ",");
+}
+
+function getDurabilityLabel(value, maximum) {
+  const currentHp = extractNumber(value);
+  const maxHp = extractNumber(maximum);
+  if (Number.isFinite(currentHp) && Number.isFinite(maxHp) && maxHp > 0) {
+    return `${formatNumberLabel(currentHp)} / ${formatNumberLabel(maxHp)}`;
+  }
+  if (Number.isFinite(maxHp) && maxHp > 0) {
+    return `${formatNumberLabel(maxHp)} хитов`;
+  }
+  if (Number.isFinite(currentHp) && currentHp > 0) {
+    return `${formatNumberLabel(currentHp)} хитов`;
+  }
+  return "-";
+}
+
+function isTransportText(value) {
+  const text = normalizeText(value);
+  return Boolean(text && (
+    text.includes("транспорт")
+    || text.includes("скакун")
+    || text.includes("автомоб")
+    || text.includes("фургон")
+    || text.includes("локомотив")
+    || text.includes("вертол")
+    || text.includes("самолет")
+    || text.includes("самолёт")
+    || text.includes("кораб")
+    || text.includes("лодк")
+    || text.includes("дирижаб")
+    || text.includes("велосипед")
+    || text.includes("мотоцикл")
+    || text.includes("лошад")
+    || text.includes("мул")
+    || text.includes("пони")
+  ));
+}
+
+function buildTransportProfile({
+  id,
+  name,
+  img = "",
+  sourceKind = "",
+  sourceLabel = "",
+  typeLabel = "",
+  speedValue = null,
+  fallbackSpeedValue = null,
+  cargoValue = null,
+  hpValue = null,
+  hpMax = null,
+  acValue = null,
+  crew = null,
+  passengers = null,
+  fuel = "",
+  rank = null,
+  size = "",
+  quantity = null,
+  isTransport = false
+} = {}) {
+  const speedMph = parseSpeedMph(speedValue) ?? parseSpeedMph(fallbackSpeedValue) ?? 0;
+  const cargoCapacityLb = parseWeightToPounds(cargoValue) ?? 0;
+  const ac = extractNumber(acValue);
+  const safeRank = extractNumber(rank);
+  const crewCount = extractNumber(crew);
+  const passengerCount = extractNumber(passengers);
+  const details = [
+    typeLabel,
+    Number.isFinite(safeRank) && safeRank > 0 ? `ранг ${safeRank}` : "",
+    cleanId(size),
+    cleanId(fuel)
+  ].filter(Boolean);
+
+  return {
+    id: cleanId(id),
+    name: cleanId(name) || "Транспорт",
+    img: cleanId(img) || "icons/svg/wingfoot.svg",
+    sourceKind: cleanId(sourceKind),
+    sourceLabel: cleanId(sourceLabel),
+    typeLabel: cleanId(typeLabel) || "Транспорт",
+    speedMph,
+    speedLabel: formatTransportSpeedLabel(speedMph),
+    cargoCapacityLb,
+    cargoLabel: formatPoundLabel(cargoCapacityLb),
+    hpValue: extractNumber(hpValue) ?? 0,
+    hpMax: extractNumber(hpMax) ?? 0,
+    ac: Number.isFinite(ac) ? ac : 0,
+    acLabel: Number.isFinite(ac) && ac > 0 ? String(ac) : "-",
+    durabilityLabel: getDurabilityLabel(hpValue, hpMax),
+    crew: Number.isFinite(crewCount) ? crewCount : null,
+    passengers: Number.isFinite(passengerCount) ? passengerCount : null,
+    crewLabel: Number.isFinite(crewCount) ? String(crewCount) : "-",
+    passengersLabel: Number.isFinite(passengerCount) ? String(passengerCount) : "-",
+    fuel: cleanId(fuel),
+    rank: Number.isFinite(safeRank) ? safeRank : null,
+    size: cleanId(size),
+    quantity: quantity === null ? null : Math.max(0, roundNumber(toNumber(quantity, 0), 2)),
+    detailsLabel: details.join(" • "),
+    isTransport: Boolean(isTransport || speedMph > 0 || cargoCapacityLb > 0 || isTransportText(typeLabel) || isTransportText(name))
+  };
+}
+
+function buildTransportProfileFromActor(actor, memberState = {}, { memberCapacityLb = 0, memberRole = "" } = {}) {
+  const actorData = actor?.toObject?.() ?? actor ?? {};
+  const transportFlags = asPlainObject(getProperty(actorData, `flags.${MODULE_ID}.transport`));
+  const movementLand = firstDefinedValue(actorData, [
+    "system.attributes.movement.land",
+    "system.attributes.movement.walk",
+    "system.attributes.movement.ground"
+  ]);
+  const profile = buildTransportProfile({
+    id: actor?.id ? `member:${actor.id}` : "",
+    name: actor?.name,
+    img: actor?.img,
+    sourceKind: "member",
+    sourceLabel: "Участник группы",
+    typeLabel: cleanId(transportFlags.typeLabel) || (actor?.type === "vehicle" ? "Транспорт" : getRoleLabel(memberRole || memberState.role)),
+    speedValue: firstDefinedValue(actorData, [
+      `flags.${MODULE_ID}.transport.speedMph`,
+      `flags.${MODULE_ID}.transport.travelSpeedMph`,
+      "system.attributes.travel.speeds.land",
+      "system.attributes.travel.speeds.walk",
+      "system.attributes.travel.speeds.ground"
+    ]),
+    fallbackSpeedValue: movementLand == null ? null : `${movementLand} футов`,
+    cargoValue: firstDefinedValue(actorData, [
+      `flags.${MODULE_ID}.transport.cargoCapacityLb`,
+      `flags.${MODULE_ID}.transport.cargoCapacity`,
+      "system.attributes.capacity.cargo",
+      "system.attributes.capacity.weight.value",
+      "system.capacity.weight.value"
+    ]) ?? memberCapacityLb,
+    hpValue: firstDefinedValue(actorData, [
+      `flags.${MODULE_ID}.transport.hp.value`,
+      "system.attributes.hp.value"
+    ]),
+    hpMax: firstDefinedValue(actorData, [
+      `flags.${MODULE_ID}.transport.hp.max`,
+      "system.attributes.hp.max"
+    ]),
+    acValue: firstDefinedValue(actorData, [
+      `flags.${MODULE_ID}.transport.ac`,
+      "system.attributes.ac.flat",
+      "system.attributes.ac.value"
+    ]),
+    crew: firstDefinedValue(actorData, [
+      `flags.${MODULE_ID}.transport.crew`,
+      "system.attributes.crew",
+      "system.crew"
+    ]),
+    passengers: firstDefinedValue(actorData, [
+      `flags.${MODULE_ID}.transport.passengers`,
+      "system.attributes.passengers",
+      "system.passengers"
+    ]),
+    fuel: firstDefinedValue(actorData, [
+      `flags.${MODULE_ID}.transport.fuel`,
+      `flags.${MODULE_ID}.transport.consumption`,
+      "system.attributes.fuel",
+      "system.fuel"
+    ]),
+    rank: firstDefinedValue(actorData, [
+      `flags.${MODULE_ID}.transport.rank`,
+      `flags.${MODULE_ID}.rank`,
+      "system.details.level"
+    ]),
+    size: firstDefinedValue(actorData, [
+      `flags.${MODULE_ID}.transport.size`,
+      "system.traits.size",
+      "system.attributes.size"
+    ]),
+    isTransport: actor?.type === "vehicle" || normalizeRole(memberRole || memberState.role) === "transport" || normalizeRole(memberRole || memberState.role) === "mount"
+  });
+
+  return profile.isTransport ? profile : null;
+}
+
+function buildTransportProfileFromInventoryItem(itemData, {
+  itemId = "",
+  itemUuid = "",
+  itemTypeLabel = "",
+  sourceTypeLabel = "",
+  sourceFlags = {},
+  matchedGear = null,
+  quantity = null
+} = {}) {
+  const moduleFlags = asPlainObject(itemData?.flags?.[MODULE_ID]);
+  const transportFlags = asPlainObject(moduleFlags.transport);
+  const typeLabel = cleanId(transportFlags.typeLabel)
+    || cleanId(matchedGear?.transportType)
+    || cleanId(matchedGear?.equipmentType)
+    || cleanId(sourceFlags.transportType)
+    || cleanId(itemTypeLabel);
+  const isTransport = Boolean(
+    moduleFlags.transport
+    || moduleFlags.sourceType === "transport"
+    || itemData?.type === "vehicle"
+    || isTransportText(typeLabel)
+    || isTransportText(sourceTypeLabel)
+    || isTransportText(sourceFlags.equipmentType)
+    || isTransportText(itemData?.name)
+  );
+  if (!isTransport) {
+    return null;
+  }
+
+  const profile = buildTransportProfile({
+    id: itemId ? `item:${itemId}` : cleanId(itemUuid),
+    name: itemData?.name,
+    img: itemData?.img,
+    sourceKind: "item",
+    sourceLabel: "Склад",
+    typeLabel,
+    speedValue: transportFlags.speedMph
+      ?? transportFlags.travelSpeedMph
+      ?? matchedGear?.speedMph
+      ?? matchedGear?.travelSpeed
+      ?? sourceFlags.speedMph
+      ?? sourceFlags.travelSpeedMph,
+    fallbackSpeedValue: (() => {
+      const movement = firstDefinedValue(itemData, [
+      "system.attributes.movement.land",
+      "system.attributes.movement.walk",
+      "system.movement.land"
+      ]);
+      return movement == null ? null : `${movement} футов`;
+    })(),
+    cargoValue: transportFlags.cargoCapacityLb
+      ?? transportFlags.cargoCapacity
+      ?? matchedGear?.cargoCapacityLb
+      ?? matchedGear?.capacity
+      ?? sourceFlags.cargoCapacityLb
+      ?? sourceFlags.capacity
+      ?? firstDefinedValue(itemData, [
+        "system.capacity.weight.value",
+        "system.attributes.capacity.cargo"
+      ]),
+    hpValue: transportFlags.hp?.value ?? firstDefinedValue(itemData, ["system.attributes.hp.value"]),
+    hpMax: transportFlags.hp?.max ?? firstDefinedValue(itemData, ["system.attributes.hp.max"]),
+    acValue: transportFlags.ac ?? firstDefinedValue(itemData, ["system.attributes.ac.value", "system.armor.value"]),
+    crew: transportFlags.crew ?? sourceFlags.crew,
+    passengers: transportFlags.passengers ?? sourceFlags.passengers,
+    fuel: transportFlags.fuel ?? transportFlags.consumption ?? sourceFlags.fuel ?? sourceFlags.consumption,
+    rank: transportFlags.rank ?? moduleFlags.rank ?? sourceFlags.rank ?? matchedGear?.rank,
+    size: transportFlags.size ?? sourceFlags.size,
+    quantity,
+    isTransport
+  });
+
+  return profile.isTransport ? profile : null;
+}
+
+function buildTransportProfileFromPartyMember(member = {}) {
+  if (member.transport && typeof member.transport === "object") {
+    return {
+      ...member.transport,
+      id: cleanId(member.transport.id) || (member.actorId ? `member:${member.actorId}` : ""),
+      name: cleanId(member.transport.name) || cleanId(member.actorName) || "Транспорт",
+      img: cleanId(member.transport.img) || cleanId(member.actorImg) || "icons/svg/wingfoot.svg",
+      sourceKind: "member",
+      sourceLabel: cleanId(member.transport.sourceLabel) || "Участник группы",
+      speedLabel: cleanId(member.transport.speedLabel) || formatTransportSpeedLabel(member.transport.speedMph),
+      cargoLabel: cleanId(member.transport.cargoLabel) || formatPoundLabel(member.transport.cargoCapacityLb),
+      durabilityLabel: cleanId(member.transport.durabilityLabel) || getDurabilityLabel(member.transport.hpValue, member.transport.hpMax),
+      isTransport: true
+    };
+  }
+
+  const role = normalizeRole(member.role);
+  if (role !== "transport" && role !== "mount" && member.isVehicle !== true) {
+    return null;
+  }
+
+  return buildTransportProfile({
+    id: member.actorId ? `member:${member.actorId}` : "",
+    name: member.actorName,
+    img: member.actorImg,
+    sourceKind: "member",
+    sourceLabel: "Участник группы",
+    typeLabel: role === "mount" ? "Скакун" : "Транспорт",
+    speedValue: member.speedMph,
+    cargoValue: member.capacityLb,
+    hpValue: member.hpValue,
+    hpMax: member.hpMax,
+    acValue: member.ac,
+    isTransport: true
+  });
+}
+
+function buildTransportProfileFromInventoryEntry(entry = {}) {
+  if (entry.transport && typeof entry.transport === "object") {
+    return {
+      ...entry.transport,
+      id: cleanId(entry.transport.id) || (entry.itemId ? `item:${entry.itemId}` : ""),
+      name: cleanId(entry.transport.name) || cleanId(entry.name) || "Транспорт",
+      img: cleanId(entry.transport.img) || cleanId(entry.img) || "icons/svg/wingfoot.svg",
+      sourceKind: "item",
+      sourceLabel: cleanId(entry.transport.sourceLabel) || "Склад",
+      quantity: entry.quantity,
+      speedLabel: cleanId(entry.transport.speedLabel) || formatTransportSpeedLabel(entry.transport.speedMph),
+      cargoLabel: cleanId(entry.transport.cargoLabel) || formatPoundLabel(entry.transport.cargoCapacityLb),
+      durabilityLabel: cleanId(entry.transport.durabilityLabel) || getDurabilityLabel(entry.transport.hpValue, entry.transport.hpMax),
+      isTransport: true
+    };
+  }
+
+  if (!isTransportText([entry.name, entry.itemTypeLabel, entry.sourceTypeLabel].join(" "))) {
+    return null;
+  }
+
+  return buildTransportProfile({
+    id: entry.itemId ? `item:${entry.itemId}` : "",
+    name: entry.name,
+    img: entry.img,
+    sourceKind: "item",
+    sourceLabel: "Склад",
+    typeLabel: entry.itemTypeLabel,
+    quantity: entry.quantity,
+    isTransport: true
+  });
+}
+
+function buildEmptyTransportSnapshot({ warning = "", canManage = false } = {}) {
+  return {
+    available: !warning,
+    warning,
+    canManage: Boolean(canManage),
+    vehicles: [],
+    hasVehicles: false,
+    activeTransportId: "",
+    activeVehicle: null,
+    effectiveSpeedMph: DEFAULT_TRAVEL_SPEED_MPH,
+    speedLabel: `${DEFAULT_TRAVEL_SPEED_MPH} мили/час`,
+    speedSourceLabel: "Пешком",
+    cargoLabel: "-",
+    durabilityLabel: "-"
+  };
 }
 
 function getRawQuantity(itemData) {
@@ -2597,10 +3031,28 @@ export class InventoryService {
       ?? sourceFlags.itemType
       ?? sourceFlags.magicItemType
       ?? String(foundry.utils.getProperty(itemData, "system.type.subtype") || item.type || "Предмет"));
+    const sourceTypeLabel = sourceType === "material"
+      ? "Материал"
+      : (sourceType === "gear"
+        ? "Снаряжение"
+        : (sourceType === "magicItem"
+          ? "Магический предмет"
+          : (sourceType === "supply"
+            ? "Запасы"
+            : (sourceType === "downtime" ? "Простой" : "Прочее"))));
     const materialLabel = matchedMaterial?.name
       ?? matchedGear?.predominantMaterialName
       ?? sourceFlags.predominantMaterialName
       ?? "";
+    const transport = buildTransportProfileFromInventoryItem(itemData, {
+      itemId: item.id,
+      itemUuid: item.uuid,
+      itemTypeLabel,
+      sourceTypeLabel,
+      sourceFlags,
+      matchedGear,
+      quantity
+    });
 
     const priceCopper = priceToCopper(foundry.utils.getProperty(itemData, "system.price") ?? {});
 
@@ -2615,20 +3067,13 @@ export class InventoryService {
       priceLabel: formatPriceLabel(foundry.utils.getProperty(itemData, "system.price") ?? {}),
       priceCopper,
       sourceType,
-      sourceTypeLabel: sourceType === "material"
-        ? "Материал"
-        : (sourceType === "gear"
-          ? "Снаряжение"
-          : (sourceType === "magicItem"
-            ? "Магический предмет"
-            : (sourceType === "supply"
-              ? "Запасы"
-              : (sourceType === "downtime" ? "Простой" : "Прочее")))),
+      sourceTypeLabel,
       sourceId,
       sourceName: item.name,
       canOpenEntry: sourceType === "material" || sourceType === "gear" || sourceType === "magicItem",
       itemTypeLabel,
       materialLabel,
+      transport,
       isFood,
       isWater,
       canSell: !isMagicalInventoryItem(itemData) && priceCopper > 0
@@ -3161,6 +3606,10 @@ export class InventoryService {
         const capacityLb = memberState.role === "transport"
           ? roundNumber(memberState.capBonusLb, 2)
           : roundNumber((effectiveStrength * capacityMultiplier) + memberState.capBonusLb, 2);
+        const transportProfile = buildTransportProfileFromActor(actorDocument, memberState, {
+          memberCapacityLb: capacityLb,
+          memberRole: memberState.role
+        });
         const energyState = clampEnergyCurrent(memberState, actorDocument);
         const conModEffective = memberState.conModOverride ?? getActorConMod(actorDocument);
         const toolEntries = REBREYA_TOOLS.map((tool) => {
@@ -3179,6 +3628,9 @@ export class InventoryService {
           actorId,
           actorName: actorDocument?.name ?? actorId,
           actorImg: actorDocument?.img ?? "icons/svg/mystery-man.svg",
+          actorType: actorDocument?.type ?? "",
+          isVehicle: actorDocument?.type === "vehicle",
+          transport: transportProfile,
           isMissing: !actorDocument,
           role: memberState.role,
           roleLabel: getRoleLabel(memberState.role),
@@ -3273,6 +3725,130 @@ export class InventoryService {
       waterDaysLeft: totalWaterGalPerDay > 0 ? roundNumber(waterGal / totalWaterGalPerDay, 1) : null,
       canManage: this.canManagePartyInventory(inventoryActor),
       canDropInventoryItems: this.canDropInventoryItems(inventoryActor)
+    };
+  }
+
+  replaceGroupTransportState(groupActorId, nextState) {
+    if (!this.moduleApi.groupContextService?.mutateGroupState) {
+      throw new Error("Group context service is unavailable.");
+    }
+
+    const transportState = normalizeGroupTransportState(nextState);
+    return this.moduleApi.groupContextService.mutateGroupState(groupActorId, (groupState) => {
+      groupState.transportState = foundry.utils.deepClone(transportState);
+      return transportState;
+    });
+  }
+
+  async getTransportSnapshot({
+    partySnapshot = null,
+    inventorySnapshot = null,
+    transportState = null,
+    context = null
+  } = {}) {
+    let groupContext = context;
+    if (!groupContext) {
+      try {
+        groupContext = this.moduleApi.groupContextService?.resolveForCurrentUser?.() ?? null;
+      }
+      catch (error) {
+        if (!GROUP_CONTEXT_FALLBACK_ERRORS.has(error?.message)) {
+          throw error;
+        }
+
+        return buildEmptyTransportSnapshot({
+          warning: error.message || "Группа для транспорта не выбрана.",
+          canManage: false
+        });
+      }
+    }
+
+    const resolvedPartySnapshot = partySnapshot ?? await this.getPartySnapshot();
+    const resolvedInventorySnapshot = inventorySnapshot ?? await this.getInventorySnapshot({
+      createActor: false
+    });
+    const state = normalizeGroupTransportState(
+      transportState ?? groupContext?.groupState?.transportState ?? {}
+    );
+    const canManage = Boolean(
+      groupContext?.canManage
+      || resolvedPartySnapshot?.canManage
+      || resolvedInventorySnapshot?.actor?.canEdit
+      || resolvedInventorySnapshot?.canDropInventoryItems
+    );
+    const vehiclesById = new Map();
+    const addVehicle = (vehicle) => {
+      if (!vehicle?.id || !vehicle.isTransport) {
+        return;
+      }
+      if (!vehiclesById.has(vehicle.id)) {
+        vehiclesById.set(vehicle.id, vehicle);
+      }
+    };
+
+    for (const member of resolvedPartySnapshot?.members ?? []) {
+      addVehicle(buildTransportProfileFromPartyMember(member));
+    }
+    for (const entry of resolvedInventorySnapshot?.allItems ?? resolvedInventorySnapshot?.items ?? []) {
+      addVehicle(buildTransportProfileFromInventoryEntry(entry));
+    }
+
+    const vehicles = [...vehiclesById.values()]
+      .sort((left, right) => {
+        const sourceSort = String(left.sourceKind).localeCompare(String(right.sourceKind), "ru");
+        return sourceSort || left.name.localeCompare(right.name, "ru");
+      });
+    const requestedActive = state.activeTransportId ? vehiclesById.get(state.activeTransportId) ?? null : null;
+    const activeVehicle = requestedActive ?? (vehicles.length === 1 ? vehicles[0] : null);
+    const activeTransportId = activeVehicle?.id ?? state.activeTransportId;
+    const effectiveSpeedMph = activeVehicle?.speedMph > 0
+      ? roundNumber(activeVehicle.speedMph, 2)
+      : DEFAULT_TRAVEL_SPEED_MPH;
+    const cargoCapacityLb = Math.max(0, toNumber(activeVehicle?.cargoCapacityLb, 0));
+    const cargoUsedLb = roundNumber(toNumber(resolvedPartySnapshot?.inventoryWeight, 0), 2);
+    const cargoFreeLb = roundNumber(cargoCapacityLb - cargoUsedLb, 2);
+    const vehiclesWithActiveState = vehicles.map((vehicle) => ({
+      ...vehicle,
+      active: Boolean(activeVehicle && vehicle.id === activeVehicle.id)
+    }));
+
+    return {
+      available: true,
+      warning: "",
+      canManage,
+      vehicles: vehiclesWithActiveState,
+      hasVehicles: vehiclesWithActiveState.length > 0,
+      activeTransportId,
+      activeVehicle: activeVehicle
+        ? {
+            ...activeVehicle,
+            active: true
+          }
+        : null,
+      effectiveSpeedMph,
+      speedLabel: formatTransportSpeedLabel(effectiveSpeedMph),
+      speedSourceLabel: activeVehicle?.name ?? "Пешком",
+      cargoCapacityLb,
+      cargoUsedLb,
+      cargoFreeLb,
+      cargoLabel: activeVehicle ? formatPoundLabel(cargoCapacityLb) : "-",
+      cargoUsageLabel: activeVehicle && cargoCapacityLb > 0
+        ? `${formatPoundLabel(cargoUsedLb)} / ${formatPoundLabel(cargoCapacityLb)}`
+        : "-",
+      cargoFreeLabel: activeVehicle && cargoCapacityLb > 0 ? formatPoundLabel(cargoFreeLb) : "-",
+      cargoOverloaded: activeVehicle && cargoCapacityLb > 0 && cargoFreeLb < 0,
+      durabilityLabel: activeVehicle?.durabilityLabel ?? "-",
+      fallbackSpeedMph: DEFAULT_TRAVEL_SPEED_MPH,
+      fallbackSpeedLabel: formatTransportSpeedLabel(DEFAULT_TRAVEL_SPEED_MPH)
+    };
+  }
+
+  async getActiveTransportSpeedMeta({ context = null } = {}) {
+    const snapshot = await this.getTransportSnapshot({ context });
+    return {
+      speedMph: snapshot.effectiveSpeedMph,
+      label: snapshot.speedLabel,
+      sourceLabel: snapshot.speedSourceLabel
     };
   }
 

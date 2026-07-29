@@ -26,7 +26,8 @@ import {
   getGroupMemberActors,
   isManagedPartyGroup,
   normalizeGroupRegistry,
-  normalizeGroupState
+  normalizeGroupState,
+  normalizeGroupTransportState
 } from "./data/group-context-service.js";
 import { RebreyaQuestLogService } from "./data/quest-log-service.js";
 import { DowntimeService } from "./data/downtime-service.js?v=1.4.96-craft-calendar";
@@ -43,6 +44,7 @@ import {
   INVENTORY_IMPORT_COMMAND,
   INVENTORY_SALE_COMMAND,
   INVENTORY_TAKE_COMMAND,
+  GROUP_TRANSPORT_REPLACE_STATE_COMMAND,
   InventoryService,
   SOCKET_EVENT_INVENTORY_IMPORT_REQUEST,
   SOCKET_EVENT_INVENTORY_IMPORT_RESULT,
@@ -50,7 +52,7 @@ import {
   SOCKET_EVENT_INVENTORY_SOURCE_DEPLETION_RESULT,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_REQUEST,
   SOCKET_EVENT_INVENTORY_ITEM_ACTION_RESULT
-} from "./data/inventory-service.js?v=1.4.109-calendar-supply-bulk";
+} from "./data/inventory-service.js?v=1.4.110-transport-tab";
 import { DurabilityService } from "./data/durability-service.js?v=1.4.96-durability";
 import { MapObjectTokenService } from "./data/map-object-token-service.js?v=1.4.97-map-object-token";
 import { HeroDollService } from "./data/hero-doll-service.js";
@@ -186,7 +188,7 @@ const LEGACY_WORLD_MUTATION_SOCKET_TYPES = new Set([
   SOCKET_EVENT_LOOTGEN_CLAIM_COINS
 ]);
 const MODULE_STYLE_PATH = `modules/${MODULE_ID}/styles/main.css`;
-const MODULE_STYLE_VERSION = "1.4.96-item-upgrade-readable";
+const MODULE_STYLE_VERSION = "1.4.110-transport-tab";
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_DAY = 86400;
 const TRAVEL_DAY_HOURS = 8;
@@ -810,6 +812,13 @@ function isValidTravelReplacePayload(payload) {
     && isPlainObject(payload.travelState);
 }
 
+function isValidTransportReplacePayload(payload) {
+  return hasExactKeys(payload, ["groupActorId", "transportState"])
+    && typeof payload.groupActorId === "string"
+    && payload.groupActorId.trim().length > 0
+    && isPlainObject(payload.transportState);
+}
+
 function isValidMechanusPayload(payload) {
   return hasExactKeys(payload, ["enabled"])
     && typeof payload.enabled === "boolean";
@@ -990,6 +999,7 @@ export class RebreyaMainModule {
     this.travelMapService = new TravelMapService();
     this.inventoryService = new InventoryService(this);
     this.durabilityService = new DurabilityService(this);
+    this.travelService.setSpeedProvider((context) => this.inventoryService.getActiveTransportSpeedMeta({ context }));
     this.mapObjectTokenService = new MapObjectTokenService({
       gameProvider: () => globalThis.game,
       actorProvider: () => globalThis.Actor,
@@ -1153,6 +1163,14 @@ export class RebreyaMainModule {
       execute: (payload) => this.travelService.replaceGroupTravelState(
         payload.groupActorId,
         normalizeTravelState(payload.travelState)
+      )
+    });
+    this.socketCommandBus.register(GROUP_TRANSPORT_REPLACE_STATE_COMMAND, {
+      validate: isValidTransportReplacePayload,
+      authorize: authorizeGroup,
+      execute: (payload) => this.inventoryService.replaceGroupTransportState(
+        payload.groupActorId,
+        normalizeGroupTransportState(payload.transportState)
       )
     });
     this.socketCommandBus.register(COSMOLOGY_SET_MECHANUS_COMMAND, {
@@ -2810,6 +2828,40 @@ export class RebreyaMainModule {
 
   async getPartySnapshot(options = {}) {
     return this.inventoryService.getPartySnapshot(options);
+  }
+
+  async getTransportSnapshot(options = {}) {
+    return this.inventoryService.getTransportSnapshot(options);
+  }
+
+  async setActiveTransport(activeTransportId = "") {
+    const context = this.groupContextService.resolveForCurrentUser();
+    const groupActorId = cleanSocketId(context?.groupId ?? context?.groupActor?.id);
+    if (!groupActorId) {
+      throw new Error("Группа для транспорта не выбрана.");
+    }
+
+    const nextState = normalizeGroupTransportState({ activeTransportId });
+    const currentSnapshot = await this.inventoryService.getTransportSnapshot({
+      context,
+      transportState: nextState
+    });
+    if (nextState.activeTransportId && !currentSnapshot.vehicles.some((vehicle) => vehicle.id === nextState.activeTransportId)) {
+      throw new Error("Транспорт не найден в группе или складе.");
+    }
+
+    const committedState = isActiveGmClient(globalThis.game)
+      ? await this.inventoryService.replaceGroupTransportState(groupActorId, nextState)
+      : await this.socketCommandBus.request(GROUP_TRANSPORT_REPLACE_STATE_COMMAND, {
+        groupActorId,
+        transportState: nextState
+      });
+    const snapshot = await this.inventoryService.getTransportSnapshot({
+      context,
+      transportState: committedState
+    });
+    await this.refreshOpenApps();
+    return snapshot;
   }
 
   async getTravelSnapshot() {

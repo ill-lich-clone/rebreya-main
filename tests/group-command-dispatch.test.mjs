@@ -8,6 +8,7 @@ import {
   SOCKET_CHANNEL
 } from "../scripts/infrastructure/foundry/socket-command-bus.js";
 import { normalizeTravelState } from "../scripts/data/travel-service.js";
+import { normalizeGroupTransportState } from "../scripts/data/group-context-service.js";
 import { requestSettingsUpdate } from "../scripts/legacy/settings-socket-relay.js";
 
 const originalHooks = globalThis.Hooks;
@@ -369,6 +370,44 @@ test("group.travel.replaceState normalizes input and replaces only travelState",
       fixture.users.playerA.id,
       { groupActorId: fixture.groupA.id, travelState, extra: true },
       "travel-extra"
+    );
+    await moduleApi.handleSocketMessage(invalid);
+    await flushCommands();
+    assert.equal(resultFor(fixture, invalid.requestId)?.error?.code, "invalid-payload");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
+test("group.transport.replaceState normalizes input and replaces only transportState", async () => {
+  const fixture = installFixture();
+  try {
+    const moduleApi = new RebreyaMainModule();
+    const transportState = {
+      activeTransportId: " member:wagon ",
+      ignored: true
+    };
+    const request = commandRequest(
+      "group.transport.replaceState",
+      fixture.users.playerA.id,
+      { groupActorId: fixture.groupA.id, transportState },
+      "transport-valid"
+    );
+
+    await moduleApi.handleSocketMessage(request);
+    await flushCommands();
+
+    const groupState = fixture.store[SETTINGS_KEYS.GROUP_STATE].groupsById[fixture.groupA.id];
+    assert.deepEqual(groupState.transportState, normalizeGroupTransportState(transportState));
+    assert.deepEqual(groupState.travelState, normalizeTravelState({ version: 1, originCityId: "old", destinationCityId: "", mode: "land", traveledMiles: 2 }));
+    assert.deepEqual(resultFor(fixture, request.requestId)?.data, normalizeGroupTransportState(transportState));
+
+    const invalid = commandRequest(
+      "group.transport.replaceState",
+      fixture.users.playerA.id,
+      { groupActorId: fixture.groupA.id, transportState, extra: true },
+      "transport-extra"
     );
     await moduleApi.handleSocketMessage(invalid);
     await flushCommands();

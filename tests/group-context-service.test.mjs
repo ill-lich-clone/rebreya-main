@@ -181,6 +181,7 @@ test("normalizeGroupRegistry preserves active group and per-group state", () => 
     globalEventsState: { season: "rain" },
     craftState: { queue: ["item-a"] },
     travelState: {},
+    transportState: { activeTransportId: "" },
     questState: {
       unlocksByQuestId: {},
       activities: {
@@ -332,6 +333,18 @@ test("normalizeGroupRegistry keeps outer registry key when nested groupActorId i
 test("normalizeGroupState uses deterministic initializedAt fallback", () => {
   assert.equal(normalizeGroupState("group-a", {}).initializedAt, 0);
   assert.equal(normalizeGroupState("group-a", { initializedAt: "bad" }).initializedAt, 0);
+});
+
+test("normalizeGroupState preserves a trimmed active transport selection", () => {
+  const state = normalizeGroupState("group-a", {
+    transportState: {
+      activeTransportId: " member:wagon "
+    }
+  });
+
+  assert.deepEqual(state.transportState, {
+    activeTransportId: "member:wagon"
+  });
 });
 
 test("normalizeGroupState preserves unknown migration pair and item fields", () => {
@@ -519,6 +532,7 @@ test("buildDefaultGroupState creates file-backed empty runtime state without leg
     globalEventsState: {},
     craftState: {},
     travelState: {},
+    transportState: { activeTransportId: "" },
     questState: {
       unlocksByQuestId: {},
       activities: {

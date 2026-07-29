@@ -335,6 +335,84 @@ test("getInventorySnapshot classifies Rebreya downtime items as downtime templat
   }
 });
 
+test("getTransportSnapshot exposes transport items stored on the group actor", async () => {
+  const wagon = createItem({
+    id: "wagon-1",
+    name: "Тяжёлый гражданский фургон",
+    type: "equipment",
+    quantity: 1,
+    weight: 6000,
+    flags: {
+      [MODULE_ID]: {
+        sourceType: "gear",
+        transport: {
+          typeLabel: "Механический транспорт",
+          travelSpeedMph: 12,
+          cargoCapacityLb: 10000,
+          hp: { value: 200, max: 200 },
+          ac: 14,
+          crew: 1,
+          passengers: 8,
+          fuel: "Жидкий уголь 1/8 галлона"
+        }
+      }
+    }
+  });
+  const groupActor = createActor({
+    id: "group-transport",
+    name: "Party",
+    type: "group",
+    isOwner: true,
+    items: [wagon]
+  });
+  const groupState = {
+    groupsById: {
+      [groupActor.id]: {
+        transportState: {
+          activeTransportId: "item:wagon-1"
+        }
+      }
+    }
+  };
+  const fixture = installInventoryFixture({
+    actors: [groupActor],
+    groupState
+  });
+  const service = new InventoryService({
+    groupContextService: {
+      resolveForCurrentUser: () => ({
+        groupActor,
+        groupId: groupActor.id,
+        canManage: true,
+        groupState: groupState.groupsById[groupActor.id]
+      })
+    },
+    getModel: async () => ({
+      materials: [],
+      materialById: new Map(),
+      materialByGoodId: new Map(),
+      gear: [],
+      gearById: new Map()
+    })
+  });
+
+  try {
+    const inventorySnapshot = await service.getInventorySnapshot();
+    const transportSnapshot = await service.getTransportSnapshot({ inventorySnapshot });
+
+    assert.equal(transportSnapshot.hasVehicles, true);
+    assert.equal(transportSnapshot.activeTransportId, "item:wagon-1");
+    assert.equal(transportSnapshot.activeVehicle.name, "Тяжёлый гражданский фургон");
+    assert.equal(transportSnapshot.effectiveSpeedMph, 12);
+    assert.equal(transportSnapshot.cargoLabel, "10000 фнт.");
+    assert.equal(transportSnapshot.durabilityLabel, "200 / 200");
+    assert.equal(transportSnapshot.vehicles[0].sourceLabel, "Склад");
+  }
+  finally {
+    fixture.restore();
+  }
+});
+
 function createGroupContextService(groupActor, fixture, { onSetRegistry = null } = {}) {
   return {
     resolveForGroup(groupActorId) {
