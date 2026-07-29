@@ -4246,6 +4246,7 @@ summary:focus-visible {
 
 .rebreya-inventory-app.application,
 .rebreya-inventory-app.window-app {
+  overflow: visible !important;
   background: transparent !important;
   background-color: transparent !important;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.52);
@@ -4259,13 +4260,12 @@ summary:focus-visible {
 }
 
 .rebreya-inventory-app .window-content {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 112px;
-  grid-template-rows: minmax(0, 1fr);
+  position: relative;
+  display: block;
   min-width: 0;
   min-height: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   background: transparent !important;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -4277,6 +4277,7 @@ summary:focus-visible {
 }
 
 .rebreya-inventory-app .rm-inventory-book__page {
+  width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
@@ -4302,30 +4303,25 @@ summary:focus-visible {
   gap: 24px;
   padding: 28px 30px;
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgb(7 9 13 / 0.05) 0%, rgb(7 9 13 / 0.1) 52%, rgb(7 9 13 / 0.82) 100%),
-    var(--rm-character-sheet-header-image) center top / cover no-repeat;
+  background: var(--rm-surface-window);
 }
 
-.rebreya-inventory-app .rm-inventory-book__header::after {
+.rebreya-inventory-app .rm-inventory-book__header::before {
   content: "";
   position: absolute;
-  z-index: -1;
-  inset: auto 0 0;
-  height: 42%;
-  background: linear-gradient(180deg, transparent, rgb(var(--rm-color-dark-rgb) / 0.96));
-  pointer-events: none;
-}
-
-.rebreya-inventory-app .rm-inventory-book__header-shade {
-  position: absolute;
-  z-index: -1;
+  z-index: 0;
   inset: 0;
-  background: linear-gradient(90deg, rgb(3 5 8 / 0.72) 0%, rgb(3 5 8 / 0.26) 52%, rgb(3 5 8 / 0.58) 100%);
+  background-image: var(--rm-character-sheet-header-image);
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: cover;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 58%, rgb(0 0 0 / 0.72) 75%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 58%, rgb(0 0 0 / 0.72) 75%, transparent 100%);
   pointer-events: none;
 }
 
 .rebreya-inventory-app .rm-inventory-book__heading,
+.rebreya-inventory-app .rm-inventory-book__controls,
 .rebreya-inventory-app .rm-inventory-book__actions {
   position: relative;
   z-index: 1;
@@ -4347,12 +4343,24 @@ summary:focus-visible {
     0 0 10px rgb(0 0 0 / 0.62);
 }
 
+.rebreya-inventory-app .rm-inventory-book__controls {
+  width: 420px;
+  max-width: 46%;
+  display: grid;
+  gap: 8px;
+}
+
 .rebreya-inventory-app .rm-inventory-book__actions {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 7px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+.rebreya-inventory-app .rm-inventory-book__action:first-child {
+  flex: 1 1 auto;
 }
 
 .rebreya-inventory-app .rm-inventory-book__action {
@@ -4385,24 +4393,195 @@ summary:focus-visible {
   outline-offset: 2px;
 }
 
+.rebreya-inventory-app .rm-inventory-book__summary {
+  display: grid;
+  gap: 7px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo,
+.rebreya-inventory-app .rm-inventory-book__supply {
+  min-width: 0;
+  border: 1px solid var(--rm-border-default);
+  border-radius: 6px;
+  background: rgb(var(--rm-color-ink-rgb) / 0.84);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.025);
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo {
+  display: grid;
+  gap: 6px;
+  padding: 7px 9px 8px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__metric-heading {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__metric-heading span,
+.rebreya-inventory-app .rm-inventory-book__supply span {
+  color: var(--rm-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.rebreya-inventory-app .rm-inventory-book__metric-heading strong {
+  color: var(--rm-text-primary);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo-bar {
+  position: relative;
+  height: 9px;
+  border: 1px solid var(--rm-border-default);
+  border-radius: 999px;
+  background: rgb(var(--rm-color-ink-rgb) / 0.74);
+  cursor: help;
+  outline: none;
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo-bar:focus-visible {
+  outline: 2px solid var(--rm-accent);
+  outline-offset: 2px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(128, 196, 126, 0.9), rgba(188, 225, 151, 0.92));
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo-fill.is-warning {
+  background: linear-gradient(90deg, rgb(var(--rm-color-gold-rgb) / 0.92), rgb(var(--rm-color-gold-rgb) / 0.92));
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo-fill.is-danger {
+  background: linear-gradient(90deg, rgba(186, 81, 68, 0.95), rgba(229, 125, 112, 0.95));
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo-tooltip {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 9px);
+  right: 0;
+  width: 300px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid rgb(var(--rm-color-gold-rgb) / 0.54);
+  border-radius: 7px;
+  background: rgb(var(--rm-color-ink-rgb) / 0.97);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.55);
+  color: var(--rm-text-primary);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms ease;
+  pointer-events: none;
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo-tooltip::before {
+  content: "";
+  position: absolute;
+  right: 18px;
+  bottom: 100%;
+  border: 6px solid transparent;
+  border-bottom-color: rgb(var(--rm-color-gold-rgb) / 0.54);
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo-tooltip span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 6px 7px;
+  border: 1px solid var(--rm-border-subtle);
+  border-radius: 5px;
+  background: rgb(var(--rm-color-surface-rgb) / 0.88);
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo-tooltip small {
+  color: var(--rm-text-secondary);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo-tooltip strong {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.rebreya-inventory-app .rm-inventory-book__cargo-bar:hover .rm-inventory-book__cargo-tooltip,
+.rebreya-inventory-app .rm-inventory-book__cargo-bar:focus-visible .rm-inventory-book__cargo-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.rebreya-inventory-app .rm-inventory-book__supply-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__supply {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 7px;
+  padding: 7px 8px;
+}
+
+.rebreya-inventory-app .rm-inventory-book__supply strong {
+  color: var(--rm-text-primary);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.rebreya-inventory-app .rm-inventory-book__supply small {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--rm-text-secondary);
+  font-size: 9px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .rebreya-inventory-app .rm-inventory-book__content {
   display: grid;
   gap: 12px;
-  padding: 0 14px 14px;
+  padding: 10px 14px 14px;
 }
 
 .rebreya-inventory-app .rm-inventory-book__tabs {
+  position: absolute;
+  z-index: 20;
+  top: 30px;
+  right: -104px;
   align-self: start;
   display: grid;
   grid-auto-flow: row;
   gap: 7px;
-  width: 112px;
+  width: 104px;
   min-width: 0;
   box-sizing: border-box;
-  padding: 30px 8px 20px;
+  padding: 0;
 }
 
 .rebreya-inventory-app .rm-inventory-book__tab {
+  width: 104px;
   min-width: 0;
   min-height: 40px;
   padding: 8px 8px 8px 12px;
@@ -4435,7 +4614,7 @@ summary:focus-visible {
 }
 
 .rebreya-inventory-app .rm-inventory-book__tab.is-active {
-  width: 104px;
+  width: 112px;
   margin-left: -8px;
   padding-left: 20px;
   border-color: rgb(var(--rm-color-gold-rgb) / 0.72);

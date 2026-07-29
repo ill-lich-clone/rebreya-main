@@ -2873,7 +2873,7 @@ export class InventoryApp extends HandlebarsApplicationMixin(ApplicationV2) {
       resizable: true
     },
     position: {
-      width: 1440,
+      width: 1320,
       height: 920
     }
   };

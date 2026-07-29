@@ -6,26 +6,80 @@
   <section class="rm-inventory-book">
     <section class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable">
       <header class="rm-inventory-book__header">
-        <div class="rm-inventory-book__header-shade" aria-hidden="true"></div>
         <div class="rm-inventory-book__heading">
           <h2 class="rm-inventory-book__title">{{#if group}}{{group.name}}{{else}}{{actor.name}}{{/if}}</h2>
         </div>
 
-        <div class="rm-inventory-book__actions">
-          <button type="button" class="rm-inventory-book__action" data-action="open-actor-sheet" title="Открыть лист склада">
-            <i class="fa-solid fa-up-right-from-square"></i>
-            <span>Лист склада</span>
-          </button>
-          {{#if canManage}}
-            <button type="button" class="rm-inventory-book__action" data-action="add-food" title="Добавить еду">
-              <i class="fa-solid fa-bread-slice"></i>
-              <span>Еда</span>
+        <div class="rm-inventory-book__controls">
+          <div class="rm-inventory-book__actions">
+            <button type="button" class="rm-inventory-book__action" data-action="open-actor-sheet" title="Открыть лист склада">
+              <i class="fa-solid fa-up-right-from-square"></i>
+              <span>Лист склада</span>
             </button>
-            <button type="button" class="rm-inventory-book__action" data-action="add-water" title="Добавить воду">
-              <i class="fa-solid fa-droplet"></i>
-              <span>Вода</span>
-            </button>
-          {{/if}}
+            {{#if canManage}}
+              <button type="button" class="rm-inventory-book__action" data-action="add-food" title="Добавить еду">
+                <i class="fa-solid fa-bread-slice"></i>
+                <span>Еда</span>
+              </button>
+              <button type="button" class="rm-inventory-book__action" data-action="add-water" title="Добавить воду">
+                <i class="fa-solid fa-droplet"></i>
+                <span>Вода</span>
+              </button>
+            {{/if}}
+          </div>
+
+          <section class="rm-inventory-book__summary" aria-label="Сводка партийных запасов">
+            <article class="rm-inventory-book__cargo {{party.dashboard.weight.className}}">
+              <div class="rm-inventory-book__metric-heading">
+                <span>Груз</span>
+                <strong>{{rmNum party.inventoryWeight}} / {{rmNum party.totalCapacityLb}} фнт.</strong>
+              </div>
+              <div
+                class="rm-inventory-book__cargo-bar"
+                tabindex="0"
+                aria-describedby="rm-inventory-cargo-tooltip"
+                aria-label="Загрузка склада: {{party.dashboard.weight.meterPercent}}%"
+              >
+                <div class="rm-inventory-book__cargo-fill {{party.dashboard.weight.meterClass}}" style="width: {{party.dashboard.weight.meterPercent}}%;"></div>
+                <div class="rm-inventory-book__cargo-tooltip" id="rm-inventory-cargo-tooltip" role="tooltip">
+                  <span>
+                    <small>Позиций</small>
+                    <strong>{{rmNum summary.distinctCount precision=0}}</strong>
+                  </span>
+                  <span>
+                    <small>Единиц</small>
+                    <strong>{{rmNum summary.totalQuantity}}</strong>
+                  </span>
+                  <span>
+                    <small>Монеты</small>
+                    <strong>{{summary.currencyLabel}}</strong>
+                  </span>
+                  <span>
+                    <small>Свободно</small>
+                    <strong>{{rmNum summary.freeCapacityLb}} фнт.</strong>
+                  </span>
+                </div>
+              </div>
+            </article>
+
+            <div class="rm-inventory-book__supply-row">
+              <article class="rm-inventory-book__supply {{party.dashboard.food.className}}">
+                <span>Еда</span>
+                <strong>{{rmNum summary.foodLb}} фнт.</strong>
+                <small>{{party.dashboard.food.daysLabel}}</small>
+              </article>
+              <article class="rm-inventory-book__supply {{party.dashboard.water.className}}">
+                <span>Вода</span>
+                <strong>{{rmNum summary.waterGal}} гал.</strong>
+                <small>{{party.dashboard.water.daysLabel}}</small>
+              </article>
+              <article class="rm-inventory-book__supply {{party.dashboard.energy.className}}">
+                <span>Энергия</span>
+                <strong>{{party.dashboard.energy.ratioLabel}}</strong>
+                <small>{{party.dashboard.energy.note}}</small>
+              </article>
+            </div>
+          </section>
         </div>
       </header>
 
@@ -36,54 +90,6 @@
         <span>{{groupContextError}}</span>
       </p>
     {{/if}}
-
-    <section class="rm-compact-pill-strip rm-compact-pill-strip--primary">
-      <article class="rm-compact-pill rm-compact-pill--focus {{party.dashboard.weight.className}}">
-        <span>Груз</span>
-        <strong>{{rmNum party.inventoryWeight}} / {{rmNum party.totalCapacityLb}} фнт.</strong>
-        <small>{{party.dashboard.weight.note}}</small>
-        <div class="rm-compact-pill__meter" aria-hidden="true">
-          <div class="rm-compact-pill__meter-bar {{party.dashboard.weight.meterClass}}" style="width: {{party.dashboard.weight.meterPercent}}%;"></div>
-        </div>
-      </article>
-      <article class="rm-compact-pill {{party.dashboard.food.className}}">
-        <span>Еда</span>
-        <strong>{{rmNum summary.foodLb}} фнт.</strong>
-        <small>{{party.dashboard.food.daysLabel}} • {{party.dashboard.food.note}}</small>
-      </article>
-      <article class="rm-compact-pill {{party.dashboard.water.className}}">
-        <span>Вода</span>
-        <strong>{{rmNum summary.waterGal}} гал.</strong>
-        <small>{{party.dashboard.water.daysLabel}} • {{party.dashboard.water.note}}</small>
-      </article>
-      <article class="rm-compact-pill rm-compact-pill--energy {{party.dashboard.energy.className}}">
-        <span>Энергия</span>
-        <strong>{{party.dashboard.energy.ratioLabel}}</strong>
-        <small>{{party.dashboard.energy.note}}</small>
-      </article>
-    </section>
-
-    <details class="rm-compact-pill-details">
-      <summary class="rm-compact-pill-details__toggle rm-toggle-affordance">Подробнее по складу</summary>
-      <section class="rm-compact-pill-strip rm-compact-pill-strip--details">
-        <div class="rm-compact-pill">
-          <span>Поз.</span>
-          <strong>{{rmNum summary.distinctCount precision=0}}</strong>
-        </div>
-        <div class="rm-compact-pill">
-          <span>Ед.</span>
-          <strong>{{rmNum summary.totalQuantity}}</strong>
-        </div>
-        <div class="rm-compact-pill">
-          <span>Монеты</span>
-          <strong>{{summary.currencyLabel}}</strong>
-        </div>
-        <div class="rm-compact-pill {{summary.freeCapacityClass}}">
-          <span>Свободно</span>
-          <strong>{{rmNum summary.freeCapacityLb}} фнт.</strong>
-        </div>
-      </section>
-    </details>
 
     {{#if actionFeedback}}
       <p class="{{actionFeedback.className}}">{{actionFeedback.message}}</p>
