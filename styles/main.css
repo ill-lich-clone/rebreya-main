@@ -4353,7 +4353,7 @@ summary:focus-visible {
   width: 124px;
   display: grid;
   justify-items: center;
-  gap: 8px;
+  gap: 4px;
   flex: 0 0 124px;
 }
 
@@ -4448,13 +4448,17 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   gap: 9px;
-  margin: 8px 0 0;
+  margin: 7px 0 0 80px;
   color: rgb(var(--rm-color-gold-rgb) / 0.82);
-  font-size: 11px;
+  font-family: var(--dnd5e-font-modesto), "Modesto Condensed", serif;
+  font-size: 32px;
   font-weight: 700;
-  letter-spacing: 0.16em;
-  line-height: 1;
-  text-shadow: 0 1px 3px rgb(0 0 0 / 0.9);
+  letter-spacing: 0.04em;
+  line-height: 0.95;
+  text-shadow:
+    0 1px 0 rgb(0 0 0 / 0.95),
+    0 2px 3px rgb(0 0 0 / 0.86),
+    0 0 8px rgb(0 0 0 / 0.58);
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -4467,18 +4471,18 @@ summary:focus-visible {
 }
 
 .rebreya-inventory-app .rm-inventory-book__wallet {
-  width: 124px;
+  width: 260px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge {
   min-width: 0;
-  min-height: 24px;
+  min-height: 28px;
   justify-content: space-between;
-  gap: 3px;
-  padding: 3px 5px;
+  gap: 5px;
+  padding: 4px 8px;
   border-color: rgb(var(--rm-color-gold-rgb) / 0.25);
   border-radius: 5px;
   background: rgb(var(--rm-color-ink-rgb) / 0.84);
@@ -4488,13 +4492,13 @@ summary:focus-visible {
 .rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge strong {
   min-width: 0;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 14px;
   text-overflow: ellipsis;
 }
 
 .rebreya-inventory-app .rm-inventory-book__wallet .rm-coin-badge span {
   flex: 0 0 auto;
-  font-size: 8px;
+  font-size: 9px;
 }
 
 .rebreya-inventory-app .rm-inventory-book__wallet span.rm-coin-badge {

@@ -656,12 +656,22 @@ test("InventoryApp positions external book tabs and keeps the character-style ar
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header::before\s*\{[^}]*var\(--rm-party-inventory-header-image\)[^}]*mask-image:\s*linear-gradient\(180deg,\s*#000 0%,\s*#000 58%,\s*rgb\(0 0 0 \/ 0\.72\) 75%,\s*transparent 100%\);/u);
   assert.doesNotMatch(css, /\.rebreya-inventory-app \.rm-inventory-book__header-shade/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__identity\s*\{[^}]*display:\s*flex;/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__identity-column\s*\{[^}]*display:\s*grid;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__identity-column\s*\{[^}]*display:\s*grid;[^}]*gap:\s*4px;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__crest-button\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__crest-image\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__title\s*\{[^}]*font-family:\s*var\(--dnd5e-font-modesto\)[^}]*font-size:\s*36px;/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__section-title\s*\{/u);
-  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__wallet\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/u);
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__section-title\s*\{[^}]*margin:\s*7px 0 0 80px;[^}]*font-family:\s*var\(--dnd5e-font-modesto\)[^}]*font-size:\s*32px;/u
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__wallet\s*\{[^}]*width:\s*260px;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/u
+  );
+  assert.match(
+    css,
+    /\.rebreya-inventory-app \.rm-inventory-book__wallet \.rm-coin-badge\s*\{[^}]*min-height:\s*28px;/u
+  );
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__inventory-meta\s*\{/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__action\s*\{[^}]*min-height:\s*36px;/u);
   assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tabs\s*\{[^}]*position:\s*absolute;[^}]*right:\s*-\d+px;[^}]*grid-auto-flow:\s*row;/u);
