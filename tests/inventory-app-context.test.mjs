@@ -404,17 +404,52 @@ test("InventoryApp _prepareContext never creates Foundry documents while renderi
   }
 });
 
-test("InventoryApp keeps the wide party inventory window size", async () => {
+test("InventoryApp reserves window space for right-side book tabs", async () => {
   const restoreFoundry = installFoundryApplicationStub();
   const { InventoryApp } = await import("../scripts/ui/inventory-app.js");
 
   try {
-    assert.equal(InventoryApp.DEFAULT_OPTIONS.position.width, 1320);
-    assert.equal(InventoryApp.DEFAULT_OPTIONS.position.height, 900);
+    assert.equal(InventoryApp.DEFAULT_OPTIONS.position.width, 1440);
+    assert.equal(InventoryApp.DEFAULT_OPTIONS.position.height, 920);
   }
   finally {
     restoreFoundry();
   }
+});
+
+test("InventoryApp template renders a scrollable book page beside right-side tabs", async () => {
+  const template = await readFile(new URL("../templates/inventory-app.hbs", import.meta.url), "utf8");
+  const pageIndex = template.indexOf('class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable"');
+  const tabsIndex = template.indexOf('class="rm-inventory-book__tabs"');
+
+  assert.match(template, /class="rm-inventory-book"/u);
+  assert.ok(pageIndex >= 0, "expected the scrollable book page");
+  assert.ok(tabsIndex > pageIndex, "expected the tab rail after the book page");
+  assert.match(template, /\{\{#if group\}\}\{\{group\.name\}\}\{\{else\}\}\{\{actor\.name\}\}\{\{\/if\}\}/u);
+  assert.doesNotMatch(template, /Партийная логистика/u);
+  assert.doesNotMatch(template, /<span>Группа:\s*\{\{group\.name\}\}/u);
+
+  for (const tab of ["inventory", "party", "craft", "calendar", "travel", "transport", "downtime"]) {
+    assert.match(template, new RegExp(`data-action="switch-tab"[^>]+data-tab="${tab}"`, "u"));
+  }
+
+  assert.match(template, /class="rm-inventory-book__actions"[\s\S]*data-action="open-actor-sheet"/u);
+  assert.match(template, /\{\{#if canManage\}\}[\s\S]*data-action="add-food"[\s\S]*data-action="add-water"[\s\S]*\{\{\/if\}\}/u);
+});
+
+test("InventoryApp styles the artwork page and vertical book tabs", async () => {
+  const css = await readFile(new URL("../styles/main.css", import.meta.url), "utf8");
+
+  assert.match(css, /\.rebreya-inventory-app \.window-content\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+112px;[^}]*overflow:\s*hidden;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book\s*\{[^}]*display:\s*contents;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__page\s*\{[^}]*overflow-y:\s*auto;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__header\s*\{[^}]*height:\s*300px;[^}]*min-height:\s*300px;[^}]*var\(--rm-character-sheet-header-image\)/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__title\s*\{[^}]*font-family:\s*var\(--dnd5e-font-modesto\)[^}]*font-size:\s*36px;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__action\s*\{[^}]*min-height:\s*36px;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tabs\s*\{[^}]*grid-auto-flow:\s*row;/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tab\.is-active\s*\{/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tab:hover/u);
+  assert.match(css, /\.rebreya-inventory-app \.rm-inventory-book__tab:focus-visible/u);
 });
 
 test("InventoryApp sorts party inventory rows and exposes item value totals", async () => {

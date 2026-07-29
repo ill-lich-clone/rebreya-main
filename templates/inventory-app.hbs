@@ -3,36 +3,33 @@
     <p class="rm-empty">{{errorMessage}}</p>
   </section>
 {{else}}
-  <section class="rm-shell rm-inventory-shell rm-inventory-shell--compact scrollable">
-    <header class="rm-compact-shell-header">
-      <div class="rm-compact-shell-header__title">
-        <p class="rm-eyebrow">Партийная логистика</p>
-        <h2>{{actor.name}}</h2>
-      </div>
+  <section class="rm-inventory-book">
+    <section class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable">
+      <header class="rm-inventory-book__header">
+        <div class="rm-inventory-book__header-shade" aria-hidden="true"></div>
+        <div class="rm-inventory-book__heading">
+          <h2 class="rm-inventory-book__title">{{#if group}}{{group.name}}{{else}}{{actor.name}}{{/if}}</h2>
+        </div>
 
-      <div class="rm-compact-shell-header__actions">
-        <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="open-actor-sheet" title="Открыть лист склада">
-          <i class="fa-solid fa-up-right-from-square"></i>
-          <span>Лист склада</span>
-        </button>
-        {{#if canManage}}
-          <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="add-food" title="Добавить еду">
-            <i class="fa-solid fa-bread-slice"></i>
-            <span>Еда</span>
+        <div class="rm-inventory-book__actions">
+          <button type="button" class="rm-inventory-book__action" data-action="open-actor-sheet" title="Открыть лист склада">
+            <i class="fa-solid fa-up-right-from-square"></i>
+            <span>Лист склада</span>
           </button>
-          <button type="button" class="rm-button rm-button--small rm-button--secondary" data-action="add-water" title="Добавить воду">
-            <i class="fa-solid fa-droplet"></i>
-            <span>Вода</span>
-          </button>
-        {{/if}}
-      </div>
-    </header>
+          {{#if canManage}}
+            <button type="button" class="rm-inventory-book__action" data-action="add-food" title="Добавить еду">
+              <i class="fa-solid fa-bread-slice"></i>
+              <span>Еда</span>
+            </button>
+            <button type="button" class="rm-inventory-book__action" data-action="add-water" title="Добавить воду">
+              <i class="fa-solid fa-droplet"></i>
+              <span>Вода</span>
+            </button>
+          {{/if}}
+        </div>
+      </header>
 
-    {{#if group}}
-      <p class="rm-inline-status rm-inline-status--info">
-        <span>Группа: {{group.name}} • {{group.memberCount}} уч.</span>
-      </p>
-    {{/if}}
+      <div class="rm-inventory-book__content">
 
     {{#if groupContextError}}
       <p class="rm-inline-status rm-inline-status--warning">
@@ -87,16 +84,6 @@
         </div>
       </section>
     </details>
-
-    <nav class="rm-tabs rm-tabs--compact">
-      <button type="button" class="rm-tab {{#if tabs.isInventory}}is-active{{/if}}" data-action="switch-tab" data-tab="inventory">Инвентарь</button>
-      <button type="button" class="rm-tab {{#if tabs.isParty}}is-active{{/if}}" data-action="switch-tab" data-tab="party">Группа</button>
-      <button type="button" class="rm-tab {{#if tabs.isCraft}}is-active{{/if}}" data-action="switch-tab" data-tab="craft">Крафт</button>
-      <button type="button" class="rm-tab {{#if tabs.isCalendar}}is-active{{/if}}" data-action="switch-tab" data-tab="calendar">Календарь</button>
-      <button type="button" class="rm-tab {{#if tabs.isTravel}}is-active{{/if}}" data-action="switch-tab" data-tab="travel">Путешествие</button>
-      <button type="button" class="rm-tab {{#if tabs.isTransport}}is-active{{/if}}" data-action="switch-tab" data-tab="transport">Транспорт</button>
-      <button type="button" class="rm-tab {{#if tabs.isDowntime}}is-active{{/if}}" data-action="switch-tab" data-tab="downtime">Простой</button>
-    </nav>
 
     {{#if actionFeedback}}
       <p class="{{actionFeedback.className}}">{{actionFeedback.message}}</p>
@@ -334,7 +321,7 @@
               </div>
             {{/unless}}
           </section>
-        {{/if}}
+    {{/if}}
 
         <section class="rm-party-toolbar">
           <div class="rm-party-toolbar__actions">
@@ -1067,7 +1054,19 @@
           <button type="button" class="rm-button rm-button--secondary" data-action="calendar-advance" data-unit="month" data-value="1">Пропустить месяц</button>
         </section>
       </section>
-    {{/if}}
+        {{/if}}
+      </div>
+    </section>
+
+    <nav class="rm-inventory-book__tabs" aria-label="Разделы партийного инвентаря">
+      <button type="button" class="rm-inventory-book__tab {{#if tabs.isInventory}}is-active{{/if}}" data-action="switch-tab" data-tab="inventory">Инвентарь</button>
+      <button type="button" class="rm-inventory-book__tab {{#if tabs.isParty}}is-active{{/if}}" data-action="switch-tab" data-tab="party">Группа</button>
+      <button type="button" class="rm-inventory-book__tab {{#if tabs.isCraft}}is-active{{/if}}" data-action="switch-tab" data-tab="craft">Крафт</button>
+      <button type="button" class="rm-inventory-book__tab {{#if tabs.isCalendar}}is-active{{/if}}" data-action="switch-tab" data-tab="calendar">Календарь</button>
+      <button type="button" class="rm-inventory-book__tab {{#if tabs.isTravel}}is-active{{/if}}" data-action="switch-tab" data-tab="travel">Путешествие</button>
+      <button type="button" class="rm-inventory-book__tab {{#if tabs.isTransport}}is-active{{/if}}" data-action="switch-tab" data-tab="transport">Транспорт</button>
+      <button type="button" class="rm-inventory-book__tab {{#if tabs.isDowntime}}is-active{{/if}}" data-action="switch-tab" data-tab="downtime">Простой</button>
+    </nav>
   </section>
 {{/if}}
 
