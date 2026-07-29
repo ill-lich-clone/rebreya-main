@@ -6,8 +6,37 @@
   <section class="rm-inventory-book">
     <section class="rm-shell rm-inventory-shell rm-inventory-shell--compact rm-inventory-book__page scrollable">
       <header class="rm-inventory-book__header">
-        <div class="rm-inventory-book__heading">
-          <h2 class="rm-inventory-book__title">{{#if group}}{{group.name}}{{else}}{{actor.name}}{{/if}}</h2>
+        <div class="rm-inventory-book__identity">
+          {{#if partyIdentity.canEditCrest}}
+            <button
+              type="button"
+              class="rm-inventory-book__crest-button"
+              data-action="edit-party-crest"
+              title="Изменить герб группы"
+              aria-label="Изменить герб группы"
+            >
+              <img
+                class="rm-inventory-book__crest-image"
+                src="{{partyIdentity.crestUrl}}"
+                alt=""
+              >
+              <span class="rm-inventory-book__crest-edit" aria-hidden="true">
+                <i class="fa-solid fa-pen"></i>
+              </span>
+            </button>
+          {{else}}
+            <span class="rm-inventory-book__crest">
+              <img
+                class="rm-inventory-book__crest-image"
+                src="{{partyIdentity.crestUrl}}"
+                alt=""
+              >
+            </span>
+          {{/if}}
+
+          <div class="rm-inventory-book__heading">
+            <h2 class="rm-inventory-book__title">{{partyIdentity.name}}</h2>
+          </div>
         </div>
 
         <div class="rm-inventory-book__controls">
@@ -29,7 +58,7 @@
           </div>
 
           <section class="rm-inventory-book__summary" aria-label="Сводка партийных запасов">
-            <article class="rm-inventory-book__cargo {{party.dashboard.weight.className}}">
+            <article class="rm-inventory-book__cargo">
               <div class="rm-inventory-book__metric-heading">
                 <span>Груз</span>
                 <strong>{{rmNum party.inventoryWeight}} / {{rmNum party.totalCapacityLb}} фнт.</strong>
@@ -40,7 +69,7 @@
                 aria-describedby="rm-inventory-cargo-tooltip"
                 aria-label="Загрузка склада: {{party.dashboard.weight.meterPercent}}%"
               >
-                <div class="rm-inventory-book__cargo-fill {{party.dashboard.weight.meterClass}}" style="width: {{party.dashboard.weight.meterPercent}}%;"></div>
+                <div class="rm-inventory-book__cargo-fill" style="width: {{party.dashboard.weight.meterPercent}}%;"></div>
                 <div class="rm-inventory-book__cargo-tooltip" id="rm-inventory-cargo-tooltip" role="tooltip">
                   <span>
                     <small>Позиций</small>
@@ -73,7 +102,7 @@
                 <strong>{{rmNum summary.waterGal}} гал.</strong>
                 <small>{{party.dashboard.water.daysLabel}}</small>
               </article>
-              <article class="rm-inventory-book__supply {{party.dashboard.energy.className}}">
+              <article class="rm-inventory-book__supply">
                 <span>Энергия</span>
                 <strong>{{party.dashboard.energy.ratioLabel}}</strong>
                 <small>{{party.dashboard.energy.note}}</small>
